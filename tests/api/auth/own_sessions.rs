@@ -179,7 +179,7 @@ async fn signs_out_one_other_session_or_every_other_one() {
     let path = format!("{LIST}/{phone_handle}");
     let refused = unsafe_call(&harness, &mac, "DELETE", &path, false).await;
     assert_eq!(
-        (refused.status, refused.api_error()),
+        refused.error(),
         (403, "csrf".into()),
         "CSRF as on every unsafe admin route"
     );
@@ -194,14 +194,11 @@ async fn signs_out_one_other_session_or_every_other_one() {
     assert_eq!(ended.status, 204, "{}", ended.text());
     assert!(!alive(&harness, &phone).await);
     let again = unsafe_call(&harness, &mac, "DELETE", &path, true).await;
-    assert_eq!((again.status, again.api_error()), (404, "not_found".into()));
+    assert_eq!(again.error(), (404, "not_found".into()));
     assert_valid("error.json#/$defs/ApiError", &path, &again.json());
 
     let current = unsafe_call(&harness, &mac, "DELETE", &format!("{LIST}/{own}"), true).await;
-    assert_eq!(
-        (current.status, current.api_error()),
-        (409, "current_session".into())
-    );
+    assert_eq!(current.error(), (409, "current_session".into()));
     assert!(alive(&harness, &mac).await);
 
     let everywhere = unsafe_call(&harness, &mac, "POST", OTHERS, true).await;

@@ -13,13 +13,13 @@ use kanade::{
     },
     domain::{
         attendance::AttendancePolicy,
-        history::{Actor, ChangeHistory, ChangeMeta, Origin, Surface},
+        history::ChangeHistory,
         members::{MemberStore, Roster},
         notify::{
             Claim, DedupeKey, DeliveryJournal, DeliverySettings, DeliveryTarget, DispatchInput,
             NotificationIntent, Receipt, plan_dispatch,
         },
-        schedule::{Change, ChangeSet, Reminder, Run},
+        schedule::{Change, Reminder, Run},
         scheduler::{ScheduleStore, Scope},
         settings::MessageStyle,
     },
@@ -27,9 +27,9 @@ use kanade::{
 use serde_json::Value;
 
 use crate::{
-    reads::Reads,
+    reads::{Reads, commit_as},
     schemas::assert_valid,
-    support::{ADMIN_HOST, Fixture, PUBLIC_HOST, public, request},
+    support::{ADMIN_HOST, Fixture, PUBLIC_HOST, find, public, request},
 };
 
 const SCHEMA: &str = "reminders.json#/$defs/ReminderPreview";
@@ -136,12 +136,7 @@ async fn reminders_carry_the_server_now_and_exact_fire_times() {
         .read("/api/admin/reminders", "reminders.json#/$defs/Reminders")
         .await;
     assert_eq!(list["generated_at"], "2026-09-29T04:00:00Z");
-    let row = list["upcoming"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|row| row["id"] == "m-kalos-15")
-        .unwrap();
+    let row = find(&list["upcoming"], "id", "m-kalos-15");
     assert_eq!(row["fire_at"], "2026-09-29T13:45:00Z");
     assert_eq!(row["at"], "Tue 29 Sep 21:45");
 }
@@ -186,24 +181,7 @@ fn morning() -> DateTime<Utc> {
 }
 
 async fn commit(reads: &Reads, changes: Vec<Change>) {
-    let revision = reads.store.load(&Scope::All).await.unwrap().revision;
-    reads
-        .store
-        .commit(
-            revision,
-            ChangeSet { changes },
-            ChangeMeta {
-                origin: Origin::new(Actor::admin("test"), Surface::AdminPortal),
-                at: morning(),
-                notices: Vec::new(),
-                refs: Vec::new(),
-                request_digest: None,
-                expect: Default::default(),
-                outbox: Vec::new(),
-            },
-        )
-        .await
-        .unwrap();
+    commit_as(&reads.store, "test", morning(), changes).await;
 }
 
 fn day_of(id: &str, run: &str, fire: DateTime<Utc>, sent: Option<DateTime<Utc>>) -> Reminder {

@@ -13,7 +13,7 @@ use serde_json::{Value, json};
 use crate::{
     reads::Reads,
     schemas::assert_valid,
-    support::{ADMIN_HOST, Reply, send},
+    support::{ADMIN_HOST, Reply, find, send},
 };
 
 const ORIGIN: (&str, &str) = ("Origin", "https://kanade.test");
@@ -70,6 +70,27 @@ impl Reads {
     pub(crate) async fn version(&self) -> u64 {
         self.store.history_head().await.unwrap().seq
     }
+
+    /// Signed in but without the CSRF token.
+    pub(crate) async fn without_csrf(&self, method: &str, path: &str, body: &Value) -> Reply {
+        let headers = [("Cookie", self.cookie.as_str()), ORIGIN];
+        let body = body.to_string();
+        send(self.admin, method, ADMIN_HOST, path, &headers, Some(&body)).await
+    }
+
+    /// An unmounted route: the generic 404 signed in (sending `body`) and
+    /// before the session check.
+    pub(crate) async fn assert_unmounted(&self, method: &str, path: &str, body: Value) {
+        let signed_in = self.call(method, path, body, &[]).await;
+        assert_eq!(
+            signed_in.error(),
+            (404, "not_found".into()),
+            "{method} {path}"
+        );
+        let anonymous = send(self.admin, method, ADMIN_HOST, path, &[ORIGIN], Some("{}")).await;
+        assert_eq!(anonymous.status, 404, "{method} {path} signed out");
+        assert_valid(ERROR, path, &anonymous.json());
+    }
 }
 
 #[tokio::test]
@@ -96,16 +117,10 @@ async fn moves_are_attributed_to_the_session_and_csrf_is_required() {
     assert_eq!(record.origin.surface, Surface::AdminPortal);
 
     // No CSRF token, or no session: refused before anything is written.
-    let no_csrf = send(
-        reads.admin,
-        "POST",
-        ADMIN_HOST,
-        "/api/admin/runs/r-kalos/move",
-        &[("Cookie", reads.cookie.as_str()), ORIGIN],
-        Some(&body.to_string()),
-    )
-    .await;
-    assert_eq!((no_csrf.status, no_csrf.api_error()), (403, "csrf".into()));
+    let no_csrf = reads
+        .without_csrf("POST", "/api/admin/runs/r-kalos/move", &body)
+        .await;
+    assert_eq!(no_csrf.error(), (403, "csrf".into()));
     let anonymous = send(
         reads.admin,
         "POST",
@@ -141,15 +156,7 @@ async fn planner_swap_is_atomic_replayable_and_revertible() {
     let before = reads
         .read("/api/admin/week?week=next", "week.json#/$defs/Week")
         .await;
-    let run = |id: &str| {
-        before["runs"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .find(|run| run["id"] == id)
-            .unwrap()
-            .clone()
-    };
+    let run = |id: &str| find(&before["runs"], "id", id).clone();
     let kalos = run("n-kalos");
     let own_time = run("n-star");
     let body = json!({"with": "n-star", "version": v});
@@ -196,7 +203,7 @@ async fn planner_swap_is_atomic_replayable_and_revertible() {
         )
         .await;
     assert_eq!(
-        (changed_version.status, changed_version.api_error()),
+        changed_version.error(),
         (422, "idempotency_mismatch".into())
     );
     assert_eq!(
@@ -217,12 +224,7 @@ async fn planner_swap_is_atomic_replayable_and_revertible() {
         .read("/api/admin/week?week=next", "week.json#/$defs/Week")
         .await;
     for original in [kalos, own_time] {
-        let current = restored["runs"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .find(|run| run["id"] == original["id"])
-            .unwrap();
+        let current = find(&restored["runs"], "id", original["id"].as_str().unwrap());
         assert_eq!(
             (current["day"].clone(), current["time"].clone()),
             (original["day"].clone(), original["time"].clone())
@@ -378,15 +380,10 @@ impl Reads {
         let fixed = self
             .read("/api/admin/fixed", "fixed.json#/$defs/FixedRows")
             .await;
-        let find = |rows: &Value, id: &str| {
-            rows.as_array()
-                .unwrap()
-                .iter()
-                .find(|row| row["id"] == id)
-                .unwrap()
-                .clone()
-        };
-        (find(&week["runs"], "r-kalos"), find(&fixed, "f-kalos"))
+        (
+            find(&week["runs"], "id", "r-kalos").clone(),
+            find(&fixed, "id", "f-kalos").clone(),
+        )
     }
 }
 
@@ -524,11 +521,7 @@ async fn same_version_edits_merge_by_field_and_never_lose_an_update() {
                 "{pair}: an edit changes its own field"
             );
             if conflicts {
-                assert_eq!(
-                    (reply.status, reply.api_error()),
-                    (409, "stale".into()),
-                    "{pair}"
-                );
+                assert_eq!(reply.error(), (409, "stale".into()), "{pair}");
                 assert_eq!(
                     reads.rows().await,
                     after_first,
@@ -537,11 +530,7 @@ async fn same_version_edits_merge_by_field_and_never_lose_an_update() {
             } else if first.name == "slot" && second.name == "fixed time" {
                 // The move amended r-kalos after the form was loaded, so moving
                 // the timing now needs an update/keep for it: refused, nothing lost.
-                assert_eq!(
-                    (reply.status, reply.api_error()),
-                    (422, "choices_required".into()),
-                    "{pair}"
-                );
+                assert_eq!(reply.error(), (422, "choices_required".into()), "{pair}");
                 assert_eq!(reads.rows().await, after_first, "{pair}");
             } else {
                 assert_eq!(reply.status, 200, "{pair}: {}", reply.text());
@@ -607,16 +596,13 @@ async fn idempotency_keys_replay_the_first_result_and_refuse_reuse() {
             &[("Idempotency-Key", "move-2")],
         )
         .await;
-    assert_eq!((stale.status, stale.api_error()), (409, "stale".into()));
+    assert_eq!(stale.error(), (409, "stale".into()));
 
     let other = json!({"day": 4, "time": "21:00", "version": v});
     let reused = reads
         .call("POST", "/api/admin/runs/r-kalos/move", other, &key)
         .await;
-    assert_eq!(
-        (reused.status, reused.api_error()),
-        (422, "idempotency_mismatch".into())
-    );
+    assert_eq!(reused.error(), (422, "idempotency_mismatch".into()));
     let bad = reads
         .call(
             "POST",
@@ -625,10 +611,7 @@ async fn idempotency_keys_replay_the_first_result_and_refuse_reuse() {
             &[("Idempotency-Key", "no spaces")],
         )
         .await;
-    assert_eq!(
-        (bad.status, bad.api_error()),
-        (400, "invalid_idempotency_key".into())
-    );
+    assert_eq!(bad.error(), (400, "invalid_idempotency_key".into()));
 }
 
 #[tokio::test]
@@ -914,10 +897,7 @@ async fn decline_rsvp_idempotency_binds_expectations_and_replays_once() {
         )
         .await;
     assert_eq!(
-        (
-            different_expectation.status,
-            different_expectation.api_error()
-        ),
+        different_expectation.error(),
         (422, "idempotency_mismatch".into())
     );
 
@@ -1357,7 +1337,7 @@ async fn alias_removal_is_idempotent_and_keeps_order() {
         None,
     )
     .await;
-    assert_eq!((no_csrf.status, no_csrf.api_error()), (403, "csrf".into()));
+    assert_eq!(no_csrf.error(), (403, "csrf".into()));
     let stored = reads.store.load_member("1002").await.unwrap().unwrap();
     assert_eq!(stored.aliases, ["bobby", "bob-2"], "nothing written");
 }
@@ -1473,10 +1453,7 @@ async fn timing_replays_survive_a_lost_role() {
             &[("Idempotency-Key", "c-1")],
         )
         .await;
-    assert_eq!(
-        (reused.status, reused.api_error()),
-        (422, "idempotency_mismatch".into())
-    );
+    assert_eq!(reused.error(), (422, "idempotency_mismatch".into()));
     let fresh = reads
         .call(
             "POST",
@@ -1485,7 +1462,7 @@ async fn timing_replays_survive_a_lost_role() {
             &[("Idempotency-Key", "c-2")],
         )
         .await;
-    assert_eq!((fresh.status, fresh.api_error()), (422, "invalid".into()));
+    assert_eq!(fresh.error(), (422, "invalid".into()));
 }
 
 /// A retire retry is matched on the recorded change, not on the scheduler's
@@ -1510,10 +1487,7 @@ async fn retire_replays_by_record() {
     let elsewhere = reads
         .call("DELETE", "/api/admin/fixed/other", json!({}), &key)
         .await;
-    assert_eq!(
-        (elsewhere.status, elsewhere.api_error()),
-        (422, "idempotency_mismatch".into())
-    );
+    assert_eq!(elsewhere.error(), (422, "idempotency_mismatch".into()));
 }
 
 impl Reads {
@@ -1590,11 +1564,7 @@ async fn timing_owner_is_set_changed_validated_and_blamed() {
         let mut bad = create.clone();
         bad["owner_id"] = owner.into();
         let reply = reads.call("POST", "/api/admin/fixed", bad, &[]).await;
-        assert_eq!(
-            (reply.status, reply.api_error()),
-            (422, "invalid".into()),
-            "{owner}"
-        );
+        assert_eq!(reply.error(), (422, "invalid".into()), "{owner}");
         assert_eq!(reply.json()["message"], "Pick an owner from the roster.");
         let mut bad = timing(v, "22:00", "bring pots");
         bad["owner_id"] = owner.into();
@@ -1765,5 +1735,5 @@ async fn timing_owner_replays_survive_a_lost_role() {
             &[("Idempotency-Key", "own-c2")],
         )
         .await;
-    assert_eq!((fresh.status, fresh.api_error()), (422, "invalid".into()));
+    assert_eq!(fresh.error(), (422, "invalid".into()));
 }

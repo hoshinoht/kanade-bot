@@ -114,11 +114,7 @@ async fn admin_api_is_not_served_before_auth_exists() {
     // Without a configured sign-in, mounted admin routes fail closed rather than disappear.
     for path in ["/api/admin/session", "/api/admin/week", "/api/admin/drafts"] {
         let reply = get(admin, ADMIN_HOST, path).await;
-        assert_eq!(
-            (reply.status, reply.api_error()),
-            (503, "auth_unavailable".into()),
-            "{path}"
-        );
+        assert_eq!(reply.error(), (503, "auth_unavailable".into()), "{path}");
     }
     let reply = get(admin, ADMIN_HOST, "/api/admin/auth/discord/start").await;
     assert_eq!(reply.header("location"), Some("/?login_error=unavailable"));

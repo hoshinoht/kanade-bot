@@ -23,8 +23,8 @@ use kanade::{
         ProfileSource,
     },
     domain::settings::{
-        Models, Reasoning, RoleModel, RoleProfileAssignment, RuntimeSettings, SettingsStore, keys,
-        load_settings,
+        Models, Reasoning, RoleModel, RoleProfileAssignment, RuntimeSettings, SettingsChange,
+        SettingsStore, keys, load_settings,
     },
     infrastructure::llm::{
         AdmissionLimits, Effort, TrustZone,
@@ -36,9 +36,9 @@ use kanade::{
 use serde_json::{Value, json};
 
 use crate::{
-    reads::{EDGE_HEADERS, NORMAL_PILL, Reads},
+    reads::{EDGE_HEADERS, NORMAL_PILL, Reads, commit_as, snapshot},
     schemas::assert_valid,
-    support::{ADMIN_HOST, Reply, request, send},
+    support::{ADMIN_HOST, Reply, find, items, request, send, strs},
 };
 
 const VIEW: &str = "config.json#/$defs/ConfigView";
@@ -46,6 +46,7 @@ const ERROR: &str = "error.json#/$defs/ApiError";
 const ORIGIN: (&str, &str) = ("Origin", "https://kanade.test");
 const PATH: &str = "/api/admin/config";
 const RELOAD: &str = "/api/admin/config/profiles/reload";
+const PERSONAS: &str = "/api/admin/personas";
 
 fn model(
     alias: &str,
@@ -252,48 +253,102 @@ struct Config {
     dir: PersonaDir,
 }
 
+/// The less common parts of a [`Config`] build.
+struct Setup {
+    gateway: bool,
+    groups: Vec<CapacityGroup>,
+    settings: RuntimeSettings,
+    two_admins: bool,
+    role_directory_connected: bool,
+    model_limits: Option<ModelLimits>,
+}
+
+impl Default for Setup {
+    fn default() -> Self {
+        Self {
+            gateway: true,
+            groups: Vec::new(),
+            settings: settings(),
+            two_admins: false,
+            role_directory_connected: true,
+            model_limits: None,
+        }
+    }
+}
+
+/// A second admin signed in through the trusted edge.
+struct Admin {
+    cookie: String,
+    csrf: String,
+    login: &'static str,
+}
+
+/// The desk as serve builds it, over the fake catalog when `gateway`.
+fn desk(
+    settings: RuntimeSettings,
+    store: Arc<SqliteStore>,
+    gateway: Option<Arc<FakeCatalog>>,
+    groups: Vec<CapacityGroup>,
+    dir: PathBuf,
+    personas: Arc<PersonaStore>,
+) -> Arc<ConfigDesk> {
+    let model_gateway = gateway.as_ref().map(|_| "https://kanata.test/v1".into());
+    Arc::new(ConfigDesk::new(ConfigInputs {
+        settings,
+        store,
+        models: gateway.map(|catalog| catalog as Arc<dyn ModelCatalog>),
+        facts: ConfigFacts {
+            timezone: "Asia/Kuala_Lumpur".into(),
+            model_gateway,
+            model_permits: 2,
+            model_groups: groups,
+            chat_pilot_role_id: Some("30".into()),
+        },
+        personas: Some(PersonaFiles {
+            dir,
+            store: personas,
+        }),
+    }))
+}
+
 impl Config {
     async fn new() -> Self {
-        Self::build(true).await
+        Self::with(Setup::default()).await
     }
 
-    async fn build(gateway: bool) -> Self {
-        Self::with_groups(gateway, Vec::new()).await
+    async fn with_groups(groups: Vec<CapacityGroup>) -> Self {
+        Self::with(Setup {
+            groups,
+            ..Setup::default()
+        })
+        .await
     }
 
-    async fn with_groups(gateway: bool, groups: Vec<CapacityGroup>) -> Self {
-        Self::with_settings(gateway, groups, settings()).await
-    }
-
-    async fn with_settings(
-        gateway: bool,
-        groups: Vec<CapacityGroup>,
-        settings: RuntimeSettings,
-    ) -> Self {
-        Self::with_settings_and_logins(gateway, groups, settings, false).await
+    async fn with_settings(settings: RuntimeSettings) -> Self {
+        Self::with(Setup {
+            settings,
+            ..Setup::default()
+        })
+        .await
     }
 
     async fn with_two_admins() -> Self {
-        Self::with_settings_and_logins(true, Vec::new(), settings(), true).await
+        Self::with(Setup {
+            two_admins: true,
+            ..Setup::default()
+        })
+        .await
     }
 
-    async fn with_settings_and_logins(
-        gateway: bool,
-        groups: Vec<CapacityGroup>,
-        settings: RuntimeSettings,
-        two_admins: bool,
-    ) -> Self {
-        Self::with_role_directory(gateway, groups, settings, two_admins, true, None).await
-    }
-
-    async fn with_role_directory(
-        gateway: bool,
-        groups: Vec<CapacityGroup>,
-        settings: RuntimeSettings,
-        two_admins: bool,
-        role_directory_connected: bool,
-        model_limits: Option<ModelLimits>,
-    ) -> Self {
+    async fn with(setup: Setup) -> Self {
+        let Setup {
+            gateway,
+            groups,
+            settings,
+            two_admins,
+            role_directory_connected,
+            model_limits,
+        } = setup;
         let dir = PersonaDir::new();
         let root = PersonaRoot::open(&dir.0).unwrap();
         let personas = Arc::new(PersonaStore::new(PersonaSnapshot::startup(&root, None)));
@@ -311,27 +366,12 @@ impl Config {
         let reads = {
             let (slot, catalog, personas, dir) = (
                 slot.clone(),
-                catalog.clone(),
+                gateway.then(|| catalog.clone()),
                 personas.clone(),
                 dir.0.clone(),
             );
             let make = move |store: Arc<SqliteStore>| {
-                let desk = Arc::new(ConfigDesk::new(ConfigInputs {
-                    settings,
-                    store,
-                    models: gateway.then_some(catalog as Arc<dyn ModelCatalog>),
-                    facts: ConfigFacts {
-                        timezone: "Asia/Kuala_Lumpur".into(),
-                        model_gateway: gateway.then(|| "https://kanata.test/v1".into()),
-                        model_permits: 2,
-                        model_groups: groups.clone(),
-                        chat_pilot_role_id: Some("30".into()),
-                    },
-                    personas: Some(PersonaFiles {
-                        dir,
-                        store: personas,
-                    }),
-                }));
+                let desk = desk(settings, store, catalog, groups, dir, personas);
                 slot.set(desk.clone()).ok().unwrap();
                 desk
             };
@@ -366,24 +406,38 @@ impl Config {
         view(&reply, "GET")
     }
 
-    async fn get_as(&self, cookie: &str, edge_login: &str) -> Value {
-        let mut headers = vec![("Cookie", cookie)];
+    /// Signs in `login` (one of the two edge admins).
+    async fn admin(&self, login: &'static str) -> Admin {
+        let (cookie, csrf) = self.reads.tailscale_session_as(login).await;
+        Admin {
+            cookie,
+            csrf,
+            login,
+        }
+    }
+
+    async fn get_as(&self, admin: &Admin) -> Value {
+        let mut headers = vec![("Cookie", admin.cookie.as_str())];
         let mut edge_headers = EDGE_HEADERS;
-        edge_headers[2] = ("Tailscale-User-Login", edge_login);
+        edge_headers[2] = ("Tailscale-User-Login", admin.login);
         headers.extend_from_slice(&edge_headers);
         let reply = request(self.reads.admin, "GET", ADMIN_HOST, PATH, &headers).await;
         view(&reply, "GET as admin")
     }
 
     async fn send(&self, method: &str, path: &str, key: Option<&str>, body: &Value) -> Reply {
-        self.send_as(
-            (&self.reads.cookie, &self.reads.csrf, None),
-            method,
-            path,
-            key,
-            body,
-        )
-        .await
+        let session = (self.reads.cookie.as_str(), self.reads.csrf.as_str(), None);
+        self.send_as(session, method, path, key, body).await
+    }
+
+    /// A config PATCH as `admin`.
+    async fn patch_as(&self, admin: &Admin, key: Option<&str>, body: &Value) -> Reply {
+        let session = (
+            admin.cookie.as_str(),
+            admin.csrf.as_str(),
+            Some(admin.login),
+        );
+        self.send_as(session, "PATCH", PATH, key, body).await
     }
 
     async fn send_as(
@@ -405,15 +459,8 @@ impl Config {
             headers.push(("Idempotency-Key", key));
         }
         let body = body.to_string();
-        send(
-            self.reads.admin,
-            method,
-            ADMIN_HOST,
-            path,
-            &headers,
-            Some(&body),
-        )
-        .await
+        let admin = self.reads.admin;
+        send(admin, method, ADMIN_HOST, path, &headers, Some(&body)).await
     }
 
     async fn patch(&self, body: Value) -> Value {
@@ -423,9 +470,49 @@ impl Config {
         )
     }
 
+    /// A keyed PATCH answered with the view.
+    async fn keyed(&self, key: &str, body: &Value) -> Value {
+        view(&self.send("PATCH", PATH, Some(key), body).await, key)
+    }
+
     async fn refused(&self, body: Value, status: u16, code: &str) -> String {
         let reply = self.send("PATCH", PATH, None, &body).await;
         refused(&reply, status, code, &body.to_string())
+    }
+
+    /// A PATCH refused `422 invalid`: its message.
+    async fn invalid(&self, body: Value) -> String {
+        self.refused(body, 422, "invalid").await
+    }
+
+    async fn reload(&self) {
+        let reply = self.send("POST", RELOAD, None, &json!({})).await;
+        assert_eq!(reply.status, 200, "{}", reply.text());
+    }
+
+    /// The reply profiles members may choose, as the live desk offers them.
+    fn offered(&self) -> Vec<String> {
+        let choices = self.desk.profile_choices();
+        choices
+            .options
+            .iter()
+            .map(|item| item.key.clone())
+            .collect()
+    }
+
+    /// The current role-profile digest.
+    async fn digest(&self) -> String {
+        let view = self.get().await;
+        view["persona"]["role_profiles_digest"]
+            .as_str()
+            .unwrap()
+            .to_owned()
+    }
+
+    /// Every stored settings change, newest first.
+    async fn changes(&self) -> Vec<SettingsChange> {
+        let store = &self.reads.store;
+        store.settings_changes(Default::default()).await.unwrap()
     }
 
     /// As a restarted process: a fresh desk over the saved settings (no
@@ -433,22 +520,9 @@ impl Config {
     async fn restart(&mut self, skew: chrono::TimeDelta) {
         let store = self.reads.store.clone();
         let saved = load_settings(&*store, &settings()).await.unwrap();
-        let desk = Arc::new(ConfigDesk::new(ConfigInputs {
-            settings: saved,
-            store,
-            models: Some(self.catalog.clone() as Arc<dyn ModelCatalog>),
-            facts: ConfigFacts {
-                timezone: "Asia/Kuala_Lumpur".into(),
-                model_gateway: Some("https://kanata.test/v1".into()),
-                model_permits: 2,
-                model_groups: Vec::new(),
-                chat_pilot_role_id: Some("30".into()),
-            },
-            personas: Some(PersonaFiles {
-                dir: self.dir.0.clone(),
-                store: self.personas.clone(),
-            }),
-        }));
+        let catalog = Some(self.catalog.clone());
+        let (dir, personas) = (self.dir.0.clone(), self.personas.clone());
+        let desk = desk(saved, store, catalog, Vec::new(), dir, personas);
         self.reads.restart(skew, Some(desk.clone())).await;
         self.desk = desk;
     }
@@ -472,24 +546,48 @@ fn roles(view: &Value) -> Value {
     view["models"]["roles"].clone()
 }
 
+/// Role-profile assignments `(role id, profile)`, in order.
+fn assignments(pairs: &[(&str, &str)]) -> Vec<RoleProfileAssignment> {
+    let assignment = |(role_id, profile): &(&str, &str)| RoleProfileAssignment {
+        role_id: (*role_id).into(),
+        profile: (*profile).into(),
+    };
+    pairs.iter().map(assignment).collect()
+}
+
+/// [`settings`] with these role-profile assignments saved.
+fn with_assignments(pairs: &[(&str, &str)]) -> RuntimeSettings {
+    let mut settings = settings();
+    settings.persona.role_profiles = assignments(pairs);
+    settings
+}
+
+/// A role-profile PATCH body: `(role id, profile)` pairs over `digest`.
+fn role_profiles(pairs: &[(&str, &str)], digest: &impl serde::Serialize) -> Value {
+    let rows: Vec<Value> = pairs
+        .iter()
+        .map(|(role_id, profile)| json!({"role_id": role_id, "profile": profile}))
+        .collect();
+    json!({"persona": {"role_profiles": rows, "role_profiles_digest": digest}})
+}
+
+/// A visibility delta: `(profile key, public)` pairs.
+fn visibility(pairs: &[(&str, bool)]) -> Value {
+    let rows: Vec<Value> = pairs
+        .iter()
+        .map(|(key, public)| json!({"key": key, "public": public}))
+        .collect();
+    json!({"persona": {"visibility": rows}})
+}
+
 async fn admin_week(config: &Config, query: &str) -> Value {
-    let reply = config
-        .send("GET", &format!("/api/admin/week{query}"), None, &json!({}))
-        .await;
-    assert_eq!(reply.status, 200, "{}", reply.text());
-    let value = reply.json();
-    assert_valid("week.json#/$defs/Week", "admin week", &value);
-    value
+    let path = format!("/api/admin/week{query}");
+    config.reads.read(&path, "week.json#/$defs/Week").await
 }
 
 async fn admin_summary(config: &Config) -> Value {
-    let reply = config
-        .send("GET", "/api/admin/summary", None, &json!({}))
-        .await;
-    assert_eq!(reply.status, 200, "{}", reply.text());
-    let value = reply.json();
-    assert_valid("week.json#/$defs/Summary", "admin summary", &value);
-    value
+    let path = "/api/admin/summary";
+    config.reads.read(path, "week.json#/$defs/Summary").await
 }
 
 #[tokio::test]
@@ -520,15 +618,7 @@ async fn get_shows_settings_models_personas_and_env_facts() {
     assert_eq!(roles(&view)["chat"]["reasoning"], "");
     assert_eq!(roles(&view)["rewrite"]["alias"], "kanata/rewrite-small");
     assert_eq!(roles(&view)["chat"]["context"]["window"], 8192);
-    let info = |id: &str| {
-        models["catalog"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .find(|model| model["id"] == id)
-            .unwrap()
-            .clone()
-    };
+    let info = |id: &str| find(&models["catalog"], "id", id).clone();
     assert_eq!(info("kanata/extract")["trust_zone"], "homelab");
     assert_eq!(info("kanata/extract")["leaves_homelab"], false);
     assert_eq!(info("kanata/chat-cloud")["leaves_homelab"], true);
@@ -567,16 +657,8 @@ async fn get_shows_settings_models_personas_and_env_facts() {
         json!([{"level": "ok", "message": "Group gateway: 2 permits, matching Kanata's limit.", "group": "gateway"}])
     );
 
-    let env = |key: &str| {
-        view["env"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .find(|row| row["key"] == key)
-            .unwrap_or_else(|| panic!("{key}"))["value"]
-            .clone()
-    };
-    let env_rows = view["env"].as_array().unwrap();
+    let env = |key: &str| find(&view["env"], "key", key)["value"].clone();
+    let env_rows = items(&view["env"]);
     for retired in ["KANADE_ALLOW_EXTERNAL_UNMASKED", "KANADE_PSEUDONYMIZE"] {
         assert!(
             !env_rows.iter().any(|row| row["key"] == retired),
@@ -586,13 +668,7 @@ async fn get_shows_settings_models_personas_and_env_facts() {
     assert_eq!(env("KANADE_TIMEZONE"), "Asia/Kuala_Lumpur");
     assert_eq!(env("KANADE_MODEL_PERMITS"), "2");
     assert_eq!(env("KANADE_BOSS_WEEK_RESET_WEEKDAY"), "Thu 00:00");
-    let copy = |key: &str| {
-        env_rows
-            .iter()
-            .find(|row| row["key"] == key)
-            .unwrap_or_else(|| panic!("{key}"))["copy"]
-            .clone()
-    };
+    let copy = |key: &str| find(&view["env"], "key", key)["copy"].clone();
     assert_eq!(copy("KANADE_TIMEZONE"), "Asia/Kuala_Lumpur");
     assert_eq!(copy("KANADE_BOSS_WEEK_RESET_WEEKDAY"), "thu");
     assert_eq!(copy("KANADE_MODEL_PERMITS"), "2");
@@ -613,13 +689,7 @@ async fn get_shows_settings_models_personas_and_env_facts() {
     assert_eq!(view["last_digest"], Value::Null, "no digest posted yet");
 
     let persona = &view["persona"];
-    let keys: Vec<&str> = persona["personas"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|entry| entry["key"].as_str().unwrap())
-        .collect();
-    assert_eq!(keys, ["kanade", "calm"]);
+    assert_eq!(strs(&persona["personas"], "key"), ["kanade", "calm"]);
     assert_eq!(persona["personas"][1]["bundle"], "bundles/calm.yaml");
     assert_eq!(persona["profiles"].as_array().unwrap().len(), 1);
     assert_eq!(persona["profiles"][0]["key"], "calm");
@@ -640,22 +710,10 @@ async fn get_shows_settings_models_personas_and_env_facts() {
 async fn role_profile_assignments_save_in_order_and_replay_before_digest_check() {
     let config = Config::new().await;
     let mut changes = config.desk.subscribe();
-    let initial = config.get().await;
-    let digest = initial["persona"]["role_profiles_digest"]
-        .as_str()
-        .unwrap()
-        .to_owned();
-    let body = json!({"persona": {
-        "role_profiles": [
-            {"role_id": "700", "profile": "calm"},
-            {"role_id": "702", "profile": "calm"}
-        ],
-        "role_profiles_digest": digest
-    }});
-    let first = config
-        .send("PATCH", PATH, Some("role-profile-save"), &body)
-        .await;
-    let saved = view(&first, "save private role profiles");
+    let digest = config.digest().await;
+    let pairs = [("700", "calm"), ("702", "calm")];
+    let body = role_profiles(&pairs, &digest);
+    let saved = config.keyed("role-profile-save", &body).await;
     assert_eq!(
         saved["persona"]["role_profiles"],
         json!([
@@ -666,16 +724,7 @@ async fn role_profile_assignments_save_in_order_and_replay_before_digest_check()
     assert_eq!(saved["persona"]["profiles"][0]["public"], false);
     assert_eq!(
         config.desk.settings().await.persona.role_profiles,
-        [
-            RoleProfileAssignment {
-                role_id: "700".into(),
-                profile: "calm".into(),
-            },
-            RoleProfileAssignment {
-                role_id: "702".into(),
-                profile: "calm".into(),
-            },
-        ]
+        assignments(&pairs)
     );
     assert_eq!(
         config.reads.store.settings_rows().await.unwrap()["v5.role_profiles"],
@@ -684,24 +733,16 @@ async fn role_profile_assignments_save_in_order_and_replay_before_digest_check()
     );
     let saved_digest = saved["persona"]["role_profiles_digest"].as_str().unwrap();
     assert_ne!(saved_digest, digest);
-    assert_eq!(
-        config.get().await["persona"]["role_profiles_digest"],
-        saved_digest
-    );
+    assert_eq!(config.digest().await, saved_digest);
     changes.changed().await.expect("live settings notification");
     assert_eq!(
         changes.borrow().settings.persona.role_profiles,
         config.desk.settings().await.persona.role_profiles
     );
 
-    let replay = config
-        .send("PATCH", PATH, Some("role-profile-save"), &body)
-        .await;
-    view(&replay, "idempotent stale-digest replay");
-    let other_body = json!({"persona": {
-        "role_profiles": [],
-        "role_profiles_digest": digest
-    }});
+    // The idempotent replay answers before the (now stale) digest check.
+    config.keyed("role-profile-save", &body).await;
+    let other_body = role_profiles(&[], &digest);
     let other = config
         .send("PATCH", PATH, Some("role-profile-save"), &other_body)
         .await;
@@ -715,78 +756,27 @@ async fn role_profile_assignments_save_in_order_and_replay_before_digest_check()
 
 #[tokio::test]
 async fn stale_role_profile_reorder_conflicts_between_admins() {
-    let mut initial_settings = settings();
-    initial_settings.persona.role_profiles = vec![
-        RoleProfileAssignment {
-            role_id: "700".into(),
-            profile: "calm".into(),
-        },
-        RoleProfileAssignment {
-            role_id: "701".into(),
-            profile: "calm".into(),
-        },
-    ];
-    let config =
-        Config::with_role_directory(true, Vec::new(), initial_settings, true, true, None).await;
-    let (cookie_a, csrf_a) = config.reads.tailscale_session_as("ops@example.com").await;
-    let (cookie_b, csrf_b) = config
-        .reads
-        .tailscale_session_as("second-ops@example.com")
-        .await;
-    let view_a = config.get_as(&cookie_a, "ops@example.com").await;
-    let view_b = config.get_as(&cookie_b, "second-ops@example.com").await;
-    let digest_a = view_a["persona"]["role_profiles_digest"]
-        .as_str()
-        .unwrap()
-        .to_owned();
-    let digest_b = view_b["persona"]["role_profiles_digest"]
-        .as_str()
-        .unwrap()
-        .to_owned();
+    let config = Config::with(Setup {
+        settings: with_assignments(&[("700", "calm"), ("701", "calm")]),
+        two_admins: true,
+        ..Setup::default()
+    })
+    .await;
+    let a = config.admin("ops@example.com").await;
+    let b = config.admin("second-ops@example.com").await;
+    let digest_a = config.get_as(&a).await["persona"]["role_profiles_digest"].clone();
+    let digest_b = config.get_as(&b).await["persona"]["role_profiles_digest"].clone();
     assert_eq!(digest_a, digest_b);
-    let reordered = json!({"persona": {
-        "role_profiles": [
-            {"role_id": "701", "profile": "calm"},
-            {"role_id": "700", "profile": "calm"}
-        ],
-        "role_profiles_digest": digest_a
-    }});
-    let first = config
-        .send_as(
-            (&cookie_a, &csrf_a, Some("ops@example.com")),
-            "PATCH",
-            PATH,
-            Some("reorder-role-profiles"),
-            &reordered,
-        )
-        .await;
+    let reordered = role_profiles(&[("701", "calm"), ("700", "calm")], &digest_a);
+    let key = Some("reorder-role-profiles");
+    let first = config.patch_as(&a, key, &reordered).await;
     view(&first, "first admin reorders roles");
-    let replay = config
-        .send_as(
-            (&cookie_a, &csrf_a, Some("ops@example.com")),
-            "PATCH",
-            PATH,
-            Some("reorder-role-profiles"),
-            &reordered,
-        )
-        .await;
+    let replay = config.patch_as(&a, key, &reordered).await;
     view(&replay, "replayed reorder before digest check");
 
-    let stale = json!({"persona": {
-        "role_profiles": [
-            {"role_id": "700", "profile": "calm"},
-            {"role_id": "701", "profile": "calm"}
-        ],
-        "role_profiles_digest": digest_b
-    }});
+    let stale = role_profiles(&[("700", "calm"), ("701", "calm")], &digest_b);
     let reply = config
-        .send_as(
-            (&cookie_b, &csrf_b, Some("second-ops@example.com")),
-            "PATCH",
-            PATH,
-            Some("stale-role-profiles"),
-            &stale,
-        )
+        .patch_as(&b, Some("stale-role-profiles"), &stale)
         .await;
     refused(&reply, 409, "conflict", "stale role-profile reorder");
     assert_eq!(
@@ -798,153 +788,76 @@ async fn stale_role_profile_reorder_conflicts_between_admins() {
 #[tokio::test]
 async fn role_profile_patch_validates_ids_readable_profiles_and_the_limit() {
     let config = Config::new().await;
-    let digest = config.get().await["persona"]["role_profiles_digest"]
-        .as_str()
-        .unwrap()
-        .to_owned();
-    for roles in [
-        json!([{"role_id": "0700", "profile": "calm"}]),
-        json!([{"role_id": "900", "profile": "calm"}]),
-        json!([{"role_id": "999", "profile": "calm"}]),
-        json!([{"role_id": "700", "profile": "ghost"}]),
-        json!([
-            {"role_id": "700", "profile": "calm"},
-            {"role_id": "700", "profile": "calm"}
-        ]),
+    let digest = config.digest().await;
+    for pairs in [
+        &[("0700", "calm")][..],
+        &[("900", "calm")],
+        &[("999", "calm")],
+        &[("700", "ghost")],
+        &[("700", "calm"), ("700", "calm")],
     ] {
-        config
-            .refused(
-                json!({"persona": {"role_profiles": roles, "role_profiles_digest": digest}}),
-                422,
-                "invalid",
-            )
-            .await;
+        config.invalid(role_profiles(pairs, &digest)).await;
     }
-    let too_many = (1..=21)
-        .map(|id| json!({"role_id": id.to_string(), "profile": "calm"}))
-        .collect::<Vec<_>>();
-    let message = config
-        .refused(
-            json!({"persona": {"role_profiles": too_many, "role_profiles_digest": digest}}),
-            422,
-            "invalid",
-        )
-        .await;
+    let ids: Vec<String> = (1..=21).map(|id| id.to_string()).collect();
+    let too_many: Vec<(&str, &str)> = ids.iter().map(|id| (id.as_str(), "calm")).collect();
+    let message = config.invalid(role_profiles(&too_many, &digest)).await;
     assert!(message.contains("at most 20"), "{message}");
 }
 
 #[tokio::test]
 async fn a_missing_role_assignment_can_be_reordered_or_removed_but_not_rebound() {
-    let mut initial_settings = settings();
-    initial_settings.persona.role_profiles = vec![
-        RoleProfileAssignment {
-            role_id: "998".into(),
-            profile: "calm".into(),
-        },
-        RoleProfileAssignment {
-            role_id: "999".into(),
-            profile: "calm".into(),
-        },
-    ];
-    let config = Config::with_settings(true, Vec::new(), initial_settings).await;
+    let missing = with_assignments(&[("998", "calm"), ("999", "calm")]);
+    let config = Config::with_settings(missing).await;
     config.dir.profile("bold");
-    let reload = config.send("POST", RELOAD, None, &json!({})).await;
-    assert_eq!(reload.status, 200, "{}", reload.text());
+    config.reload().await;
 
     let initial = config.get().await;
     assert_eq!(
         initial["persona"]["role_profiles"][0]["role_name"],
         Value::Null
     );
-    let reordered = config
-        .patch(json!({"persona": {
-            "role_profiles": [
-                {"role_id": "999", "profile": "calm"},
-                {"role_id": "998", "profile": "calm"}
-            ],
-            "role_profiles_digest": initial["persona"]["role_profiles_digest"]
-        }}))
-        .await;
-    let rebound = json!({"persona": {
-        "role_profiles": [
-            {"role_id": "999", "profile": "bold"},
-            {"role_id": "998", "profile": "calm"}
-        ],
-        "role_profiles_digest": reordered["persona"]["role_profiles_digest"]
-    }});
-    config.refused(rebound, 422, "invalid").await;
+    let digest = &initial["persona"]["role_profiles_digest"];
+    let body = role_profiles(&[("999", "calm"), ("998", "calm")], digest);
+    let reordered = config.patch(body).await;
+    let digest = &reordered["persona"]["role_profiles_digest"];
+    let rebound = role_profiles(&[("999", "bold"), ("998", "calm")], digest);
+    config.invalid(rebound).await;
     assert_eq!(
         config.desk.settings().await.persona.role_profiles[0].profile,
         "calm"
     );
 
     let removed = config
-        .patch(json!({"persona": {
-            "role_profiles": [{"role_id": "998", "profile": "calm"}],
-            "role_profiles_digest": reordered["persona"]["role_profiles_digest"]
-        }}))
+        .patch(role_profiles(&[("998", "calm")], digest))
         .await;
-    assert_eq!(
-        removed["persona"]["role_profiles"]
-            .as_array()
-            .unwrap()
-            .len(),
-        1
-    );
+    assert_eq!(items(&removed["persona"]["role_profiles"]).len(), 1);
 }
 
 #[tokio::test]
 async fn unavailable_role_directory_keeps_missing_rows_editable_only_by_reorder_or_remove() {
-    let mut initial_settings = settings();
-    initial_settings.persona.role_profiles = vec![
-        RoleProfileAssignment {
-            role_id: "998".into(),
-            profile: "calm".into(),
-        },
-        RoleProfileAssignment {
-            role_id: "999".into(),
-            profile: "calm".into(),
-        },
-    ];
-    let config =
-        Config::with_role_directory(true, Vec::new(), initial_settings, false, false, None).await;
+    let config = Config::with(Setup {
+        settings: with_assignments(&[("998", "calm"), ("999", "calm")]),
+        role_directory_connected: false,
+        ..Setup::default()
+    })
+    .await;
     let initial = config.get().await;
     assert_eq!(
         initial["persona"]["role_profiles"][0]["role_name"],
         Value::Null
     );
-    let reordered = config
-        .patch(json!({"persona": {
-            "role_profiles": [
-                {"role_id": "999", "profile": "calm"},
-                {"role_id": "998", "profile": "calm"}
-            ],
-            "role_profiles_digest": initial["persona"]["role_profiles_digest"]
-        }}))
-        .await;
+    let digest = &initial["persona"]["role_profiles_digest"];
+    let body = role_profiles(&[("999", "calm"), ("998", "calm")], digest);
+    let reordered = config.patch(body).await;
     assert_eq!(reordered["persona"]["role_profiles"][0]["role_id"], "999");
-    let digest = reordered["persona"]["role_profiles_digest"].clone();
+    let digest = &reordered["persona"]["role_profiles_digest"];
     let removed = config
-        .patch(json!({"persona": {
-            "role_profiles": [{"role_id": "998", "profile": "calm"}],
-            "role_profiles_digest": digest
-        }}))
+        .patch(role_profiles(&[("998", "calm")], digest))
         .await;
-    assert_eq!(
-        removed["persona"]["role_profiles"]
-            .as_array()
-            .unwrap()
-            .len(),
-        1
-    );
+    assert_eq!(items(&removed["persona"]["role_profiles"]).len(), 1);
 
-    let changed = json!({"persona": {
-        "role_profiles": [
-            {"role_id": "998", "profile": "calm"},
-            {"role_id": "700", "profile": "calm"}
-        ],
-        "role_profiles_digest": removed["persona"]["role_profiles_digest"]
-    }});
+    let digest = &removed["persona"]["role_profiles_digest"];
+    let changed = role_profiles(&[("998", "calm"), ("700", "calm")], digest);
     let reply = config.send("PATCH", PATH, None, &changed).await;
     refused(
         &reply,
@@ -1019,79 +932,49 @@ async fn each_section_saves_normalised_and_reads_back_after_a_restart() {
 async fn unknown_read_only_and_bad_values_are_422_and_nothing_is_saved() {
     let config = Config::new().await;
     let before = config.get().await;
-    for (body, code) in [
-        (json!({}), "invalid"),
-        (
-            json!({"pings": {"day_of_ping_time": "09:00"}, "watching": {"paused": true}}),
-            "invalid",
-        ),
-        (json!({"pings": {}}), "invalid"),
-        (json!({"nope": {"x": 1}}), "unknown_field"),
-        (json!({"pings": {"timezone": "UTC"}}), "unknown_field"),
-        (
-            json!({"chatbot": {"member_rate": {"burst": 2}}}),
-            "unknown_field",
-        ),
-        (
-            json!({"models": {"roles": {"judge": {"alias": "kanata/chat"}}}}),
-            "unknown_field",
-        ),
-        (
-            json!({"models": {"roles": {"chat": {"model": "kanata/chat"}}}}),
-            "unknown_field",
-        ),
-        (json!({"env": []}), "read_only"),
-        (json!({"manage_messages": {"missing": []}}), "read_only"),
-        (
-            json!({"self_service": {"effective_mode": "cards_only"}}),
-            "read_only",
-        ),
-        (json!({"chatbot": {"configured": true}}), "read_only"),
-        (json!({"models": {"catalog": []}}), "read_only"),
-        (json!({"models": {"pii_pseudonymise": true}}), "read_only"),
-        (
-            json!({"models": {"groups": [{"model": "kanata/chat", "group": "chat", "permits": 1}]}}),
-            "read_only",
-        ),
-        (json!({"persona": {"role_profiles": []}}), "invalid"),
-        (
-            json!({"persona": {"role_profiles_digest": "sha256-v1:stale"}}),
-            "read_only",
-        ),
-        (json!({"persona": {"profiles": []}}), "read_only"),
-        (json!({"pings": {"day_of_ping_time": "9:00"}}), "invalid"),
-        (json!({"pings": {"countdown_minutes": [4]}}), "invalid"),
-        (
-            json!({"pings": {"countdown_minutes": [5, 10, 15, 20, 25]}}),
-            "invalid",
-        ),
-        (json!({"watching": {"paused": "yes"}}), "invalid"),
-        (json!({"chatbot": {"guild_rate": {"count": 0}}}), "invalid"),
-        (
-            json!({"chatbot": {"member_rate": {"window_s": 5}}}),
-            "invalid",
-        ),
-        (json!({"chatbot": {"enabled": true}}), "invalid"),
-        (json!({"self_service": {"mode": "links"}}), "invalid"),
-        (json!({"persona": {"active": ""}}), "invalid"),
-        (json!({"persona": {"active": "ghost"}}), "invalid"),
-        (
-            json!({"models": {"roles": {"chat": {"alias": "kanata/gone"}}}}),
-            "invalid",
-        ),
-        (
-            json!({"models": {"roles": {"chat": {"alias": "kanata/extract"}}}}),
-            "invalid",
-        ),
-        (
-            json!({"models": {"roles": {"extraction": {"reasoning": ""}}}}),
-            "invalid",
-        ),
-        (
-            json!({"models": {"roles": {"extraction": {"reasoning": "loud"}}}}),
-            "invalid",
-        ),
-    ] {
+    let unknown = [
+        json!({"nope": {"x": 1}}),
+        json!({"pings": {"timezone": "UTC"}}),
+        json!({"chatbot": {"member_rate": {"burst": 2}}}),
+        json!({"models": {"roles": {"judge": {"alias": "kanata/chat"}}}}),
+        json!({"models": {"roles": {"chat": {"model": "kanata/chat"}}}}),
+    ];
+    let read_only = [
+        json!({"env": []}),
+        json!({"manage_messages": {"missing": []}}),
+        json!({"self_service": {"effective_mode": "cards_only"}}),
+        json!({"chatbot": {"configured": true}}),
+        json!({"models": {"catalog": []}}),
+        json!({"models": {"pii_pseudonymise": true}}),
+        json!({"models": {"groups": [{"model": "kanata/chat", "group": "chat", "permits": 1}]}}),
+        json!({"persona": {"role_profiles_digest": "sha256-v1:stale"}}),
+        json!({"persona": {"profiles": []}}),
+    ];
+    let invalid = [
+        json!({}),
+        json!({"pings": {"day_of_ping_time": "09:00"}, "watching": {"paused": true}}),
+        json!({"pings": {}}),
+        json!({"persona": {"role_profiles": []}}),
+        json!({"pings": {"day_of_ping_time": "9:00"}}),
+        json!({"pings": {"countdown_minutes": [4]}}),
+        json!({"pings": {"countdown_minutes": [5, 10, 15, 20, 25]}}),
+        json!({"watching": {"paused": "yes"}}),
+        json!({"chatbot": {"guild_rate": {"count": 0}}}),
+        json!({"chatbot": {"member_rate": {"window_s": 5}}}),
+        json!({"chatbot": {"enabled": true}}),
+        json!({"self_service": {"mode": "links"}}),
+        json!({"persona": {"active": ""}}),
+        json!({"persona": {"active": "ghost"}}),
+        json!({"models": {"roles": {"chat": {"alias": "kanata/gone"}}}}),
+        json!({"models": {"roles": {"chat": {"alias": "kanata/extract"}}}}),
+        json!({"models": {"roles": {"extraction": {"reasoning": ""}}}}),
+        json!({"models": {"roles": {"extraction": {"reasoning": "loud"}}}}),
+    ];
+    let cases = (unknown.map(|body| (body, "unknown_field")).into_iter())
+        .chain(read_only.map(|body| (body, "read_only")))
+        .chain(invalid.map(|body| (body, "invalid")));
+    // Each refusal is labelled by its body.
+    for (body, code) in cases {
         config.refused(body, 422, code).await;
     }
     let malformed = config.send("PATCH", PATH, None, &json!("x")).await;
@@ -1119,54 +1002,24 @@ async fn visibility_delta_is_live_for_admin_members_and_chat_resolution() {
     let config = Config::new().await;
     let initial = config.get().await;
     assert_eq!(initial["persona"]["profiles"][0]["public"], false);
-    assert!(config.desk.profile_choices().options.is_empty());
-    assert_eq!(
-        config
-            .reads
-            .read("/api/admin/personas", "members.json#/$defs/Personas")
-            .await,
-        json!([])
-    );
+    assert!(config.offered().is_empty());
+    let personas = || config.reads.read(PERSONAS, "members.json#/$defs/Personas");
+    assert_eq!(personas().await, json!([]));
 
     config.dir.profile("bold");
-    let reload = config.send("POST", RELOAD, None, &json!({})).await;
-    assert_eq!(reload.status, 200, "{}", reload.text());
+    config.reload().await;
 
-    let published = config
-        .patch(json!({"persona": {"active": "calm", "visibility": [
-            {"key": "calm", "public": true},
-            {"key": "bold", "public": true}
-        ]}}))
-        .await;
+    let mut body = visibility(&[("calm", true), ("bold", true)]);
+    body["persona"]["active"] = json!("calm");
+    let published = config.patch(body).await;
     assert_eq!(published["persona"]["active"], "calm");
     assert_eq!(
         published["notices"],
         json!(["Reply profile visibility updated."])
     );
     assert_eq!(published["persona"]["profiles"][0]["public"], true);
-    assert_eq!(
-        config
-            .desk
-            .profile_choices()
-            .options
-            .iter()
-            .map(|item| item.key.as_str())
-            .collect::<Vec<_>>(),
-        ["calm", "bold"]
-    );
-    let options = config
-        .reads
-        .read("/api/admin/personas", "members.json#/$defs/Personas")
-        .await;
-    assert_eq!(
-        options
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|item| item["key"].as_str().unwrap())
-            .collect::<Vec<_>>(),
-        ["calm", "bold"]
-    );
+    assert_eq!(config.offered(), ["calm", "bold"]);
+    assert_eq!(strs(&personas().await, "key"), ["calm", "bold"]);
 
     let member = config
         .reads
@@ -1200,15 +1053,8 @@ async fn visibility_delta_is_live_for_admin_members_and_chat_resolution() {
         ProfileSource::MemberSelection
     );
 
-    let private = config
-        .patch(json!({"persona": {"visibility": [{"key": "calm", "public": false}]}}))
-        .await;
-    let calm_profile = private["persona"]["profiles"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|profile| profile["key"] == "calm")
-        .unwrap();
+    let private = config.patch(visibility(&[("calm", false)])).await;
+    let calm_profile = find(&private["persona"]["profiles"], "key", "calm");
     assert_eq!(calm_profile["public"], false);
     assert_eq!(
         resolution(&config.desk.profile_choices()),
@@ -1220,12 +1066,7 @@ async fn visibility_delta_is_live_for_admin_members_and_chat_resolution() {
         .reads
         .read("/api/admin/members", "members.json#/$defs/MemberRows")
         .await;
-    let alice = rows
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|row| row["id"] == "1001")
-        .unwrap();
+    let alice = find(&rows, "id", "1001");
     assert_eq!(alice["persona"], "calm", "private selection is retained");
     assert_eq!(alice["persona_available"], false);
     assert_eq!(
@@ -1240,59 +1081,26 @@ async fn visibility_delta_is_live_for_admin_members_and_chat_resolution() {
         (422, "invalid".into())
     );
 
-    config
-        .patch(json!({"persona": {"visibility": [{"key": "calm", "public": true}]}}))
-        .await;
+    config.patch(visibility(&[("calm", true)])).await;
     fs::remove_file(config.dir.0.join("profiles/calm.yaml")).unwrap();
-    assert_eq!(
-        config.send("POST", RELOAD, None, &json!({})).await.status,
-        200
-    );
-    assert!(
-        !config
-            .desk
-            .profile_choices()
-            .options
-            .iter()
-            .any(|item| item.key == "calm")
-    );
+    config.reload().await;
+    assert!(!config.offered().contains(&"calm".to_owned()));
     config.dir.profile("calm");
-    assert_eq!(
-        config.send("POST", RELOAD, None, &json!({})).await.status,
-        200
-    );
-    assert!(
-        config
-            .desk
-            .profile_choices()
-            .options
-            .iter()
-            .any(|item| item.key == "calm")
-    );
+    config.reload().await;
+    assert!(config.offered().contains(&"calm".to_owned()));
 }
 
 #[tokio::test]
 async fn visibility_delta_rejects_unknown_ids_bad_flags_and_duplicate_keys() {
     let config = Config::new().await;
     for (body, code) in [
-        (
-            json!({"persona": {"visibility": [{"key": "../private", "public": true}]}}),
-            "invalid",
-        ),
-        (
-            json!({"persona": {"visibility": [{"key": "missing", "public": true}]}}),
-            "invalid",
-        ),
+        (visibility(&[("../private", true)]), "invalid"),
+        (visibility(&[("missing", true)]), "invalid"),
         (
             json!({"persona": {"visibility": [{"key": "calm", "public": "yes"}]}}),
             "invalid",
         ),
-        (
-            json!({"persona": {"visibility": [
-                {"key": "calm", "public": true}, {"key": "calm", "public": false}
-            ]}}),
-            "invalid",
-        ),
+        (visibility(&[("calm", true), ("calm", false)]), "invalid"),
         (
             json!({"persona": {"visibility": [{"key": "calm", "public": true, "extra": 1}]}}),
             "unknown_field",
@@ -1319,64 +1127,26 @@ async fn visibility_delta_rejects_unknown_ids_bad_flags_and_duplicate_keys() {
 async fn stale_admin_visibility_deltas_do_not_republish_another_admins_private_profile() {
     let config = Config::with_two_admins().await;
     config.dir.profile("bold");
-    assert_eq!(
-        config.send("POST", RELOAD, None, &json!({})).await.status,
-        200
-    );
-    let (cookie_a, csrf_a) = config.reads.tailscale_session_as("ops@example.com").await;
-    let (cookie_b, csrf_b) = config
-        .reads
-        .tailscale_session_as("second-ops@example.com")
-        .await;
+    config.reload().await;
+    let a = config.admin("ops@example.com").await;
+    let b = config.admin("second-ops@example.com").await;
 
-    let publish_b = json!({"persona": {"visibility": [{"key": "bold", "public": true}]}});
-    let a = config
-        .send_as(
-            (&cookie_a, &csrf_a, Some("ops@example.com")),
-            "PATCH",
-            PATH,
-            None,
-            &publish_b,
-        )
-        .await;
-    view(&a, "admin A publishes bold");
-    let stale = config.get_as(&cookie_b, "second-ops@example.com").await;
+    let publish_b = visibility(&[("bold", true)]);
+    let reply = config.patch_as(&a, None, &publish_b).await;
+    view(&reply, "admin A publishes bold");
+    let stale = config.get_as(&b).await;
     assert_eq!(stale["persona"]["profiles"][0]["key"], "bold");
     assert_eq!(stale["persona"]["profiles"][0]["public"], true);
 
-    let make_b_private = json!({"persona": {"visibility": [{"key": "bold", "public": false}]}});
-    let a = config
-        .send_as(
-            (&cookie_a, &csrf_a, Some("ops@example.com")),
-            "PATCH",
-            PATH,
-            None,
-            &make_b_private,
-        )
-        .await;
-    view(&a, "admin A makes bold private");
-    let publish_c = json!({"persona": {"visibility": [{"key": "calm", "public": true}]}});
-    let b = config
-        .send_as(
-            (&cookie_b, &csrf_b, Some("second-ops@example.com")),
-            "PATCH",
-            PATH,
-            None,
-            &publish_c,
-        )
-        .await;
-    let final_view = view(&b, "admin B publishes calm from stale view");
-    let profiles = final_view["persona"]["profiles"].as_array().unwrap();
-    let is_public = |key: &str| {
-        profiles
-            .iter()
-            .find(|profile| profile["key"] == key)
-            .unwrap()["public"]
-            .as_bool()
-            .unwrap()
-    };
-    assert!(!is_public("bold"));
-    assert!(is_public("calm"));
+    let make_b_private = visibility(&[("bold", false)]);
+    let reply = config.patch_as(&a, None, &make_b_private).await;
+    view(&reply, "admin A makes bold private");
+    let publish_c = visibility(&[("calm", true)]);
+    let reply = config.patch_as(&b, None, &publish_c).await;
+    let final_view = view(&reply, "admin B publishes calm from stale view");
+    let profiles = &final_view["persona"]["profiles"];
+    assert_eq!(find(profiles, "key", "bold")["public"], false);
+    assert_eq!(find(profiles, "key", "calm")["public"], true);
     assert_eq!(
         config.desk.settings().await.persona.profile_visibility,
         ["calm"]
@@ -1386,8 +1156,8 @@ async fn stale_admin_visibility_deltas_do_not_republish_another_admins_private_p
 #[tokio::test]
 async fn concurrent_same_key_visibility_patches_have_one_winner() {
     let config = Config::new().await;
-    let publish = json!({"persona": {"visibility": [{"key": "calm", "public": true}]}});
-    let private = json!({"persona": {"visibility": [{"key": "calm", "public": false}]}});
+    let publish = visibility(&[("calm", true)]);
+    let private = visibility(&[("calm", false)]);
     let (left, right) = tokio::join!(
         config.send("PATCH", PATH, Some("visibility-race"), &publish),
         config.send("PATCH", PATH, Some("visibility-race"), &private),
@@ -1426,11 +1196,7 @@ async fn reasoning_follows_published_efforts_and_strands_reset_with_notices() {
     assert_eq!(legacy["notices"], json!([]));
     // An explicit level the alias does not publish is refused, naming what it takes.
     let message = config
-        .refused(
-            json!({"models": {"roles": {"chat": {"reasoning": "high"}}}}),
-            422,
-            "invalid",
-        )
+        .invalid(json!({"models": {"roles": {"chat": {"reasoning": "high"}}}}))
         .await;
     assert_eq!(
         message,
@@ -1439,15 +1205,11 @@ async fn reasoning_follows_published_efforts_and_strands_reset_with_notices() {
     // The app sends all three roles: extraction to high while chat still
     // inherits is judged on the final extraction level.
     let message = config
-        .refused(
-            json!({"models": {"roles": {
-                "extraction": {"alias": "kanata/extract", "reasoning": "high"},
-                "chat": {"alias": "kanata/chat", "reasoning": ""},
-                "rewrite": {"alias": "kanata/legacy", "reasoning": "minimal"},
-            }}}),
-            422,
-            "invalid",
-        )
+        .invalid(json!({"models": {"roles": {
+            "extraction": {"alias": "kanata/extract", "reasoning": "high"},
+            "chat": {"alias": "kanata/chat", "reasoning": ""},
+            "rewrite": {"alias": "kanata/legacy", "reasoning": "minimal"},
+        }}}))
         .await;
     assert!(
         message.starts_with("chat inherits high from extraction"),
@@ -1562,7 +1324,11 @@ async fn model_saves_need_a_reachable_gateway_other_sections_do_not() {
         .patch(json!({"notifications": {"quiet_mode": true}}))
         .await;
 
-    let bare = Config::build(false).await;
+    let bare = Config::with(Setup {
+        gateway: false,
+        ..Setup::default()
+    })
+    .await;
     let view = bare.get().await;
     assert_eq!(view["models"]["reachable"], false);
     assert_eq!(view["models"]["catalog"], json!([]));
@@ -1585,16 +1351,10 @@ async fn a_keyed_patch_replays_and_a_reused_key_is_refused() {
     let config = Config::new().await;
     let mut changes = config.desk.subscribe();
     let body = json!({"models": {"roles": {"extraction": {"reasoning": "high"}}}});
-    let first = view(
-        &config.send("PATCH", PATH, Some("cfg-1"), &body).await,
-        "first",
-    );
+    let first = config.keyed("cfg-1", &body).await;
     assert_eq!(first["notices"].as_array().unwrap().len(), 1);
     // The client's retry after a lost answer: same result, applied once.
-    let retry = view(
-        &config.send("PATCH", PATH, Some("cfg-1"), &body).await,
-        "retry",
-    );
+    let retry = config.keyed("cfg-1", &body).await;
     assert_eq!(retry, first);
     assert_eq!(changes.borrow_and_update().revision, 1);
     let other = config
@@ -1629,28 +1389,14 @@ async fn a_keyed_patch_replays_and_a_reused_key_is_refused() {
 #[tokio::test]
 async fn a_keyed_patch_replays_across_a_restart_and_expires() {
     let mut config = Config::new().await;
-    let saves = async |config: &Config| {
-        config
-            .reads
-            .store
-            .settings_changes(Default::default())
-            .await
-            .unwrap()
-            .len()
-    };
+    let saves = async |config: &Config| config.changes().await.len();
     let body = json!({"models": {"roles": {"extraction": {"reasoning": "high"}}}});
-    let first = view(
-        &config.send("PATCH", PATH, Some("cfg-r"), &body).await,
-        "first",
-    );
+    let first = config.keyed("cfg-r", &body).await;
     assert_eq!(first["notices"].as_array().unwrap().len(), 1);
     assert_eq!(saves(&config).await, 1);
 
     config.restart(chrono::TimeDelta::zero()).await;
-    let replay = view(
-        &config.send("PATCH", PATH, Some("cfg-r"), &body).await,
-        "replay",
-    );
+    let replay = config.keyed("cfg-r", &body).await;
     assert_eq!(replay["notices"], first["notices"], "the first answer");
     assert_eq!(saves(&config).await, 1, "saved once");
     assert_eq!(
@@ -1672,10 +1418,7 @@ async fn a_keyed_patch_replays_across_a_restart_and_expires() {
         .restart(kanade::infrastructure::store::replays::REPLAY_TTL + chrono::TimeDelta::hours(1))
         .await;
     let paused = json!({"watching": {"paused": true}});
-    let anew = view(
-        &config.send("PATCH", PATH, Some("cfg-r"), &paused).await,
-        "expired",
-    );
+    let anew = config.keyed("cfg-r", &paused).await;
     assert_eq!(anew["watching"]["paused"], true, "applied anew");
     assert_eq!(saves(&config).await, 2);
 }
@@ -1690,19 +1433,9 @@ async fn run_lengths_are_validated_saved_once_and_apply_to_the_next_week_read() 
         json!([{ "boss": "BM", "difficulty": "h", "minutes": 60 }])
     );
     let before = admin_week(&config, "").await;
-    let kalos = before["runs"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|run| run["id"] == "r-kalos")
-        .unwrap();
+    let kalos = find(&before["runs"], "id", "r-kalos");
     assert_eq!(kalos["minutes"], 30, "one non-overridden boss");
-    let star = before["runs"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|run| run["id"] == "r-star")
-        .unwrap();
+    let star = find(&before["runs"], "id", "r-star");
     assert_eq!(star["minutes"], 90, "three default bosses sum");
     let own_time = admin_week(&config, "?week=next").await["runs"]
         .as_array()
@@ -1725,30 +1458,19 @@ async fn run_lengths_are_validated_saved_once_and_apply_to_the_next_week_read() 
             {"boss": "BM", "difficulty": "h", "minutes": 75}
         ]}}),
     ] {
-        config.refused(body, 422, "invalid").await;
+        config.invalid(body).await;
     }
 
     let mut changes = config.desk.subscribe();
     let body = json!({"run_lengths": {"default_minutes": 20}});
-    let saved = view(
-        &config.send("PATCH", PATH, Some("run-lengths"), &body).await,
-        "run lengths save",
-    );
+    let saved = config.keyed("run-lengths", &body).await;
     assert_eq!(saved["run_lengths"]["default_minutes"], 20);
-    let replay = view(
-        &config.send("PATCH", PATH, Some("run-lengths"), &body).await,
-        "run lengths replay",
-    );
+    let replay = config.keyed("run-lengths", &body).await;
     assert_eq!(replay, saved);
     assert_eq!(changes.borrow_and_update().revision, 1);
     assert!(!changes.has_changed().unwrap());
     let changed = admin_week(&config, "").await;
-    let kalos = changed["runs"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|run| run["id"] == "r-kalos")
-        .unwrap();
+    let kalos = find(&changed["runs"], "id", "r-kalos");
     assert_eq!(kalos["minutes"], 20, "the next read uses the saved default");
     let no_op = config.patch(body).await;
     assert_eq!(no_op["run_lengths"]["default_minutes"], 20);
@@ -1831,7 +1553,7 @@ async fn profanity_is_validated_saved_and_published_live() {
         json!({"profanity": {"deflection_line": "Watch the shit talk."}}),
         json!({"profanity": {"extra_words": ["clean"]}}),
     ] {
-        config.refused(body, 422, "invalid").await;
+        config.invalid(body).await;
     }
     config
         .refused(
@@ -1851,10 +1573,7 @@ async fn profanity_is_validated_saved_and_published_live() {
         "check_replies": false,
         "deflection_line": "  Language, please!  ",
     }});
-    let saved = view(
-        &config.send("PATCH", PATH, Some("profanity"), &body).await,
-        "profanity save",
-    );
+    let saved = config.keyed("profanity", &body).await;
     assert_eq!(saved["profanity"]["extra_words"], json!(["frick", "heck"]));
     assert_eq!(saved["profanity"]["allowed_words"], json!(["babi"]));
     assert_eq!(saved["profanity"]["check_replies"], false);
@@ -1868,11 +1587,7 @@ async fn profanity_is_validated_saved_and_published_live() {
     }
     // The line is checked against the list it would be sent with.
     config
-        .refused(
-            json!({"profanity": {"deflection_line": "Oh heck, ask nicely."}}),
-            422,
-            "invalid",
-        )
+        .invalid(json!({"profanity": {"deflection_line": "Oh heck, ask nicely."}}))
         .await;
     let reloaded = config.get().await;
     assert_eq!(reloaded["profanity"], saved["profanity"]);
@@ -1926,11 +1641,7 @@ async fn effective_saves_are_listed_in_history_with_before_and_after() {
         .patch(json!({"notifications": {"quiet_mode": true}}))
         .await;
     config
-        .refused(
-            json!({"pings": {"day_of_ping_time": "25:00"}}),
-            422,
-            "invalid",
-        )
+        .invalid(json!({"pings": {"day_of_ping_time": "25:00"}}))
         .await;
     // The persona switch persists through the persona reload path.
     config.patch(json!({"persona": {"active": "calm"}})).await;
@@ -1941,7 +1652,7 @@ async fn effective_saves_are_listed_in_history_with_before_and_after() {
         page["total"], empty["total"],
         "journal totals are unchanged"
     );
-    let settings = page["settings"].as_array().unwrap();
+    let settings = items(&page["settings"]);
     assert_eq!(settings.len(), 2);
     let (persona, quiet) = (&settings[0], &settings[1]);
     assert_eq!(persona["section"], "persona");
@@ -1949,12 +1660,7 @@ async fn effective_saves_are_listed_in_history_with_before_and_after() {
     assert_eq!(persona["surface"], "admin_portal");
     assert_eq!(persona["revision"], 2);
     assert_eq!(persona["week"], "2026-09-23T16:00:00+00:00");
-    let persona_row = persona["values"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|row| row["key"] == "persona")
-        .expect("persona row");
+    let persona_row = find(&persona["values"], "key", "persona");
     assert_eq!(persona_row["to"], "calm");
     assert_ne!(persona_row["from"], "calm");
     assert_eq!(quiet["section"], "notifications");
@@ -1968,30 +1674,18 @@ async fn effective_saves_are_listed_in_history_with_before_and_after() {
     // Who and Week filters apply; a run's log never lists settings.
     let mine = history("?actor=admin:token").await;
     assert_eq!(mine["settings_total"], 2);
-    let other = history("?actor=admin:seed").await;
-    assert_eq!(
-        (other["settings"].clone(), other["settings_total"].clone()),
-        (json!([]), json!(0))
-    );
     assert_eq!(history("?week=2026-09-24").await["settings_total"], 2);
-    let next = history("?week=2026-10-01").await;
-    assert_eq!(
-        (next["settings"].clone(), next["settings_total"].clone()),
-        (json!([]), json!(0))
-    );
-    let run = history("?run=r-kalos").await;
-    assert_eq!(
-        (run["settings"].clone(), run["settings_total"].clone()),
-        (json!([]), json!(0))
-    );
+    for query in ["?actor=admin:seed", "?week=2026-10-01", "?run=r-kalos"] {
+        let page = history(query).await;
+        assert_eq!(
+            (&page["settings"], &page["settings_total"]),
+            (&json!([]), &json!(0)),
+            "{query}"
+        );
+    }
 
     // Stored with the rows: a restart's store still lists them.
-    let stored = config
-        .reads
-        .store
-        .settings_changes(Default::default())
-        .await
-        .unwrap();
+    let stored = config.changes().await;
     assert_eq!(stored.len(), 2);
     assert_eq!(stored[0].values["persona"].to, "calm");
 }
@@ -2021,25 +1715,14 @@ async fn profiles_reload_and_persona_switch_swap_the_live_snapshot() {
             "Reloaded 2 reply profiles from config/personas/profiles/. 1 unreadable file(s) were skipped."
         );
     }
-    let keys: Vec<String> = config.get().await["persona"]["profiles"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|profile| profile["key"].as_str().unwrap().to_owned())
-        .collect();
-    assert_eq!(keys, ["calm", "terse"]);
+    let view = config.get().await;
+    assert_eq!(strs(&view["persona"]["profiles"], "key"), ["calm", "terse"]);
 
-    // Nothing saved yet: the persona in use is reported, never "".
-    let unset = config.get().await;
-    let active = unset["persona"]["active"].as_str().unwrap().to_owned();
+    // Nothing saved yet: the persona in use is reported (one of the listed
+    // personas), never "".
+    let active = view["persona"]["active"].as_str().unwrap();
     assert!(!active.is_empty());
-    assert!(
-        unset["persona"]["personas"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .any(|entry| entry["key"] == active.as_str())
-    );
+    find(&view["persona"]["personas"], "key", active);
 
     let switched = config.patch(json!({"persona": {"active": "calm"}})).await;
     assert_eq!(switched["persona"]["active"], "calm");
@@ -2052,7 +1735,7 @@ async fn profiles_reload_and_persona_switch_swap_the_live_snapshot() {
     // A persona whose bundle is broken is refused; nothing changes.
     fs::write(config.dir.0.join("bundles/kanade.yaml"), "id: [\n").unwrap();
     config
-        .refused(json!({"persona": {"active": "kanade"}}), 422, "invalid")
+        .invalid(json!({"persona": {"active": "kanade"}}))
         .await;
     assert_eq!(effective(&config.personas).as_deref(), Some("calm"));
     assert_eq!(config.desk.settings().await.persona.active, "calm");
@@ -2066,45 +1749,15 @@ async fn config_routes_need_a_session_and_writes_need_csrf() {
         let reply = send(admin, method, ADMIN_HOST, path, &[ORIGIN], Some("{}")).await;
         refused(&reply, 401, "unauthenticated", path);
     }
-    let digest = config.get().await["persona"]["role_profiles_digest"]
-        .as_str()
-        .unwrap()
-        .to_owned();
-    let body = json!({"persona": {
-        "role_profiles": [{"role_id": "700", "profile": "calm"}],
-        "role_profiles_digest": digest
-    }})
-    .to_string();
+    let body = role_profiles(&[("700", "calm")], &config.digest().await).to_string();
     for (method, path) in [("PATCH", PATH), ("POST", RELOAD)] {
-        let reply = send(
-            admin,
-            method,
-            ADMIN_HOST,
-            path,
-            &[ORIGIN, ("Cookie", &config.reads.cookie)],
-            Some(&body),
-        )
-        .await;
+        let headers = [ORIGIN, ("Cookie", config.reads.cookie.as_str())];
+        let reply = send(admin, method, ADMIN_HOST, path, &headers, Some(&body)).await;
         refused(&reply, 403, "csrf", path);
     }
-    assert!(
-        config
-            .desk
-            .settings()
-            .await
-            .persona
-            .profile_visibility
-            .is_empty()
-    );
-    assert!(
-        config
-            .desk
-            .settings()
-            .await
-            .persona
-            .role_profiles
-            .is_empty()
-    );
+    let persona = config.desk.settings().await.persona;
+    assert!(persona.profile_visibility.is_empty());
+    assert!(persona.role_profiles.is_empty());
     // The mounted route validates its required body before it reaches the
     // offline delivery port.
     let reply = config
@@ -2181,61 +1834,40 @@ async fn access_reports_watched_and_digest_channels() {
     let mut digest = settings();
     // Not watched: listed as the digest channel only.
     digest.posting.channel_id = Some("star".into());
-    let config = Config::with_settings(true, Vec::new(), digest).await;
+    let config = Config::with_settings(digest).await;
     let admin = config.reads.admin;
     for (method, path) in [("GET", ACCESS), ("POST", RECHECK)] {
         let reply = send(admin, method, ADMIN_HOST, path, &[ORIGIN], Some("{}")).await;
         refused(&reply, 401, "unauthenticated", path);
     }
-    let reply = send(
-        admin,
-        "POST",
-        ADMIN_HOST,
-        RECHECK,
-        &[ORIGIN, ("Cookie", &config.reads.cookie)],
-        Some("{}"),
-    )
-    .await;
+    let reply = config.reads.without_csrf("POST", RECHECK, &json!({})).await;
     refused(&reply, 403, "csrf", RECHECK);
 
-    let get = request(
-        admin,
-        "GET",
-        ADMIN_HOST,
-        ACCESS,
-        &[("Cookie", &config.reads.cookie)],
-    )
-    .await;
+    const REPORT: &str = "config.json#/$defs/AccessReport";
+    const FLAGS: [&str; 6] = [
+        "view",
+        "send",
+        "history",
+        "embed",
+        "react",
+        "manage_messages",
+    ];
+    let get = config.reads.read(ACCESS, REPORT).await;
     let recheck = config.send("POST", RECHECK, None, &json!({})).await;
-    for reply in [get, recheck] {
-        assert_eq!(reply.status, 200, "{}", reply.text());
-        let report = reply.json();
-        assert_valid("config.json#/$defs/AccessReport", "access", &report);
+    for report in [get, recheck.expect(200, REPORT)] {
         assert_eq!(report["connected"], true);
         assert!(
             report["checked_at"].as_str().unwrap().len() == 16,
             "{report}"
         );
-        let rows = report["rows"].as_array().unwrap();
-        let flags = |row: &Value| {
-            [
-                "view",
-                "send",
-                "history",
-                "embed",
-                "react",
-                "manage_messages",
-            ]
-            .map(|key| row[key].as_bool().unwrap())
-        };
-        let summary: Vec<_> = rows
+        let summary: Vec<_> = items(&report["rows"])
             .iter()
             .map(|row| {
                 (
                     row["id"].as_str().unwrap(),
                     row["watched"].as_bool().unwrap(),
                     row["digest"].as_bool().unwrap(),
-                    flags(row),
+                    FLAGS.map(|key| row[key].as_bool().unwrap()),
                 )
             })
             .collect();
@@ -2261,15 +1893,7 @@ async fn off_is_refused_where_the_alias_requires_reasoning() {
     let config = Config::new().await;
     // kanata/chat publishes low and medium but not none.
     let view = config.get().await;
-    let off_allowed = |id: &str| {
-        view["models"]["catalog"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .find(|model| model["id"] == id)
-            .unwrap()["off_allowed"]
-            .clone()
-    };
+    let off_allowed = |id: &str| find(&view["models"]["catalog"], "id", id)["off_allowed"].clone();
     assert_eq!(off_allowed("kanata/chat"), json!(false));
     assert_eq!(off_allowed("kanata/legacy"), json!(true), "null list");
     assert_eq!(
@@ -2279,25 +1903,17 @@ async fn off_is_refused_where_the_alias_requires_reasoning() {
     );
 
     let message = config
-        .refused(
-            json!({"models": {"roles": {"chat": {"reasoning": "off"}}}}),
-            422,
-            "invalid",
-        )
+        .invalid(json!({"models": {"roles": {"chat": {"reasoning": "off"}}}}))
         .await;
     assert_eq!(
         message,
         "kanata/chat requires reasoning: pick low or medium."
     );
     let message = config
-        .refused(
-            json!({"models": {"roles": {
-                "extraction": {"alias": "kanata/legacy", "reasoning": "off"},
-                "chat": {"reasoning": ""},
-            }}}),
-            422,
-            "invalid",
-        )
+        .invalid(json!({"models": {"roles": {
+            "extraction": {"alias": "kanata/legacy", "reasoning": "off"},
+            "chat": {"reasoning": ""},
+        }}}))
         .await;
     assert_eq!(
         message,
@@ -2318,15 +1934,7 @@ async fn off_is_refused_where_the_alias_requires_reasoning() {
 async fn reasoning_variants_are_marked_and_their_fixed_level_wins() {
     let config = Config::new().await;
     let view = config.get().await;
-    let info = |id: &str| {
-        view["models"]["catalog"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .find(|model| model["id"] == id)
-            .unwrap()
-            .clone()
-    };
+    let info = |id: &str| find(&view["models"]["catalog"], "id", id).clone();
     let variant = info("kanata/chat:medium");
     assert_eq!(variant["variant_of"], "kanata/chat");
     assert_eq!(variant["fixed_effort"], "medium");
@@ -2380,13 +1988,10 @@ fn group(name: &str, permits: u32, aliases: &[&str]) -> CapacityGroup {
 #[tokio::test]
 async fn declared_groups_are_listed_checked_per_group_and_summarised() {
     // kanata/rewrite-small is left out on purpose; kanata/legacy is unused.
-    let config = Config::with_groups(
-        true,
-        vec![
-            group("local", 2, &["kanata/extract", "kanata/chat"]),
-            group("spare", 3, &["kanata/legacy"]),
-        ],
-    )
+    let config = Config::with_groups(vec![
+        group("local", 2, &["kanata/extract", "kanata/chat"]),
+        group("spare", 3, &["kanata/legacy"]),
+    ])
     .await;
     let view = config.get().await;
     let models = &view["models"];
@@ -2411,13 +2016,12 @@ async fn declared_groups_are_listed_checked_per_group_and_summarised() {
             {"level": "warning", "message": "Group spare uses 3 of the 8 permits Kanata admits.", "group": "spare"},
         ])
     );
-    let row = view["env"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|row| row["key"] == "KANADE_MODEL_PERMITS / kanade.toml [[models.groups]]")
-        .unwrap()
-        .clone();
+    let row = find(
+        &view["env"],
+        "key",
+        "KANADE_MODEL_PERMITS / kanade.toml [[models.groups]]",
+    )
+    .clone();
     assert_eq!(row["value"], "2 groups: local 2, spare 3");
     assert_eq!(row["copy"], Value::Null, "no single env value");
     assert_eq!(
@@ -2435,46 +2039,17 @@ async fn declared_groups_are_listed_checked_per_group_and_summarised() {
 
 #[tokio::test]
 async fn groups_carry_the_governors_in_flight_permits() {
-    use kanade::infrastructure::llm::governor::{
-        BreakerState, BreakerView, Counters, GroupSnapshot, PermitUsage, RateLevel, RetryLevel,
-    };
-    let snapshot = |name: &str, in_use: u32| GroupSnapshot {
-        name: name.into(),
-        backend: "Kanata".into(),
-        models: Vec::new(),
-        permits: PermitUsage { in_use, total: 2 },
-        queue: Vec::new(),
-        holders: Vec::new(),
-        rate: RateLevel {
-            available: 1,
-            capacity: 1,
-            refill_per_min: 1,
-        },
-        retry: RetryLevel {
-            remaining: 1,
-            capacity: 1,
-        },
-        breaker: BreakerView {
-            state: BreakerState::Closed,
-            failures: 0,
-            since: chrono::DateTime::UNIX_EPOCH,
-            retry_at: None,
-        },
-        counters: Counters::default(),
-    };
     // `spare` is not running (a restart is pending): its rows stay null.
-    let limits: ModelLimits = Arc::new(move |_| vec![snapshot("local", 1), snapshot("old", 2)]);
-    let config = Config::with_role_directory(
-        true,
-        vec![
+    let limits: ModelLimits =
+        Arc::new(move |_| vec![snapshot("local", 1, 2), snapshot("old", 2, 2)]);
+    let config = Config::with(Setup {
+        groups: vec![
             group("local", 2, &["kanata/extract", "kanata/chat"]),
             group("spare", 3, &["kanata/legacy"]),
         ],
-        settings(),
-        false,
-        true,
-        Some(limits),
-    )
+        model_limits: Some(limits),
+        ..Setup::default()
+    })
     .await;
     let view = config.get().await;
     assert_eq!(
@@ -2489,19 +2064,16 @@ async fn groups_carry_the_governors_in_flight_permits() {
 
 #[tokio::test]
 async fn a_declared_group_over_kanata_limit_refuses_the_save() {
-    let config = Config::with_groups(
-        true,
-        vec![group(
-            "local",
-            2,
-            &[
-                "kanata/extract",
-                "kanata/chat",
-                "kanata/rewrite-small",
-                "kanata/tiny",
-            ],
-        )],
-    )
+    let config = Config::with_groups(vec![group(
+        "local",
+        2,
+        &[
+            "kanata/extract",
+            "kanata/chat",
+            "kanata/rewrite-small",
+            "kanata/tiny",
+        ],
+    )])
     .await;
     let view = config.get().await;
     assert_eq!(
@@ -2556,9 +2128,7 @@ async fn a_models_save_switches_the_running_roles_and_the_view_shows_them() {
 const MODELS_UNAPPLIED: &str = "The saved models are not running yet: switching to them failed, so the previous ones stay in use until a retry succeeds or the bot restarts.";
 
 fn says_unapplied(view: &Value) -> bool {
-    view["notices"]
-        .as_array()
-        .unwrap()
+    items(&view["notices"])
         .iter()
         .any(|notice| notice == MODELS_UNAPPLIED)
 }
@@ -2569,12 +2139,7 @@ async fn a_failed_models_switch_stays_visible_and_is_retried_until_it_runs() {
     config.catalog.4.store(true, Ordering::SeqCst);
     let body =
         json!({"models": {"roles": {"chat": {"alias": "kanata/legacy", "reasoning": "high"}}}});
-    let keyed = || async {
-        view(
-            &config.send("PATCH", PATH, Some("models-k1"), &body).await,
-            "keyed",
-        )
-    };
+    let keyed = || config.keyed("models-k1", &body);
     let saved = keyed().await;
     // Durable first: the save stands, and the answer says it is not running.
     let wanted = config.desk.settings().await.models;
@@ -2616,14 +2181,11 @@ async fn a_failed_models_switch_stays_visible_and_is_retried_until_it_runs() {
 
 #[tokio::test]
 async fn a_role_switched_to_an_ungrouped_alias_is_refused_and_nothing_moves() {
-    let config = Config::with_groups(
-        true,
-        vec![group(
-            "local",
-            8,
-            &["kanata/extract", "kanata/chat", "kanata/rewrite-small"],
-        )],
-    )
+    let config = Config::with_groups(vec![group(
+        "local",
+        8,
+        &["kanata/extract", "kanata/chat", "kanata/rewrite-small"],
+    )])
     .await;
     let message = config
         .refused(
@@ -2653,7 +2215,7 @@ async fn a_first_extraction_or_rewrite_model_says_it_starts_after_a_restart() {
     let mut start = settings();
     start.models.extraction.alias = None;
     start.models.rewrite.alias = None;
-    let config = Config::with_settings(true, Vec::new(), start).await;
+    let config = Config::with_settings(start).await;
     // What the stack reports once those roles have a model it did not start with.
     *config.catalog.3.lock().unwrap() = vec![Role::Extraction, Role::Rewrite];
     let saved = config
@@ -2818,24 +2380,15 @@ async fn invalid_context_settings_are_refused_with_422() {
         ),
     ] {
         let message = config
-            .refused(
-                json!({"models": {"context": context(fields.clone())}}),
-                422,
-                "invalid",
-            )
+            .invalid(json!({"models": {"context": context(fields.clone())}}))
             .await;
         assert!(message.contains(needle), "{fields}: {message}");
     }
     // A reserve past the hard cap is refused even for a role with no model.
     let mut unrouted = settings();
     unrouted.models.rewrite.alias = None;
-    let bare = Config::with_settings(true, Vec::new(), unrouted).await;
-    let message = bare
-        .refused(
-            json!({"models": {"context": context(json!({"rewrite": {"reserve": 131_073, "cap": null}}))}}),
-            422,
-            "invalid",
-        )
+    let bare = Config::with_settings(unrouted).await;
+    let message = bare.invalid(json!({"models": {"context": context(json!({"rewrite": {"reserve": 131_073, "cap": null}}))}}))
         .await;
     assert!(message.contains("models.context.rewrite"), "{message}");
     // A reserve that leaves no prompt room in the call token budget, even
@@ -2843,15 +2396,11 @@ async fn invalid_context_settings_are_refused_with_422() {
     // rewrite before sending).
     for (role, reserve) in [("rewrite", 16_000), ("chat", 15_360)] {
         let message = config
-            .refused(
-                json!({"models": {"context": context(json!({
-                    "cloud_default": 65_536,
-                    "local_default": 65_536,
-                    role: {"reserve": reserve, "cap": null},
-                }))}}),
-                422,
-                "invalid",
-            )
+            .invalid(json!({"models": {"context": context(json!({
+                "cloud_default": 65_536,
+                "local_default": 65_536,
+                role: {"reserve": reserve, "cap": null},
+            }))}}))
             .await;
         assert_eq!(
             message,
@@ -2872,11 +2421,7 @@ async fn invalid_context_settings_are_refused_with_422() {
     bare.patch(json!({"models": {"context": without}})).await;
     // Partial objects are refused rather than merged.
     config
-        .refused(
-            json!({"models": {"context": {"cloud_default": 32768}}}),
-            422,
-            "invalid",
-        )
+        .invalid(json!({"models": {"context": {"cloud_default": 32768}}}))
         .await;
     assert_eq!(
         config.desk.settings().await.models.context,
@@ -2892,9 +2437,18 @@ fn seeded_lists() -> RuntimeSettings {
     seed
 }
 
+/// [`seeded_lists`] as a later env changes them.
+fn changed_env() -> RuntimeSettings {
+    let mut next_env = seeded_lists();
+    next_env.watching.channel_ids = vec!["13".into()];
+    next_env.watching.category_ids = vec!["22".into()];
+    next_env.chatbot.category_ids = vec!["32".into()];
+    next_env
+}
+
 #[tokio::test]
 async fn toggle_saves_never_freeze_env_seeded_channel_lists() {
-    let config = Config::with_settings(true, Vec::new(), seeded_lists()).await;
+    let config = Config::with_settings(seeded_lists()).await;
     config.patch(json!({"watching": {"paused": true}})).await;
     config
         .patch(json!({"watching": {"extract_enabled": false}}))
@@ -2920,10 +2474,7 @@ async fn toggle_saves_never_freeze_env_seeded_channel_lists() {
         assert!(!rows.contains_key(key), "{key} was frozen: {rows:?}");
     }
     // The toggles themselves are stored, and a changed env applies on restart.
-    let mut next_env = seeded_lists();
-    next_env.watching.channel_ids = vec!["13".into()];
-    next_env.watching.category_ids = vec!["22".into()];
-    next_env.chatbot.category_ids = vec!["32".into()];
+    let next_env = changed_env();
     let restarted = load_settings(&*config.reads.store, &next_env)
         .await
         .unwrap();
@@ -2935,12 +2486,7 @@ async fn toggle_saves_never_freeze_env_seeded_channel_lists() {
     assert_eq!(restarted.watching.category_ids, ["22"]);
     assert_eq!(restarted.chatbot.category_ids, ["32"]);
     // History lists only the toggles each save changed.
-    let changes = config
-        .reads
-        .store
-        .settings_changes(Default::default())
-        .await
-        .unwrap();
+    let changes = config.changes().await;
     assert_eq!(changes.len(), 3);
     for change in &changes {
         assert!(
@@ -2952,13 +2498,10 @@ async fn toggle_saves_never_freeze_env_seeded_channel_lists() {
 
 #[tokio::test]
 async fn an_explicit_list_save_persists_only_that_list_and_applies_live() {
-    let config = Config::with_settings(true, Vec::new(), seeded_lists()).await;
+    let config = Config::with_settings(seeded_lists()).await;
     let mut changes = config.desk.subscribe();
     let body = json!({"watching": {"category_ids": ["41", "40"]}});
-    let first = view(
-        &config.send("PATCH", PATH, Some("list-1"), &body).await,
-        "list save",
-    );
+    let first = config.keyed("list-1", &body).await;
     {
         let change = changes.borrow_and_update();
         assert_eq!(change.revision, 1);
@@ -2967,10 +2510,7 @@ async fn an_explicit_list_save_persists_only_that_list_and_applies_live() {
         assert_eq!(change.settings.watching.channel_ids, ["12"]);
     }
     // A replay answers the same view without a second write or publish.
-    let replay = view(
-        &config.send("PATCH", PATH, Some("list-1"), &body).await,
-        "replay",
-    );
+    let replay = config.keyed("list-1", &body).await;
     assert_eq!(replay, first);
     let other = config
         .send(
@@ -2998,10 +2538,7 @@ async fn an_explicit_list_save_persists_only_that_list_and_applies_live() {
     assert_eq!(rows[keys::CHAT_CATEGORIES], "51");
     assert!(!rows.contains_key(keys::WATCHED_CHANNELS), "{rows:?}");
     // Saved lists win over a changed env; the unsaved one still follows it.
-    let mut next_env = seeded_lists();
-    next_env.watching.channel_ids = vec!["13".into()];
-    next_env.watching.category_ids = vec!["22".into()];
-    next_env.chatbot.category_ids = vec!["32".into()];
+    let next_env = changed_env();
     let restarted = load_settings(&*config.reads.store, &next_env)
         .await
         .unwrap();
@@ -3010,12 +2547,7 @@ async fn an_explicit_list_save_persists_only_that_list_and_applies_live() {
     assert_eq!(restarted.chatbot.category_ids, ["51"]);
 
     // History records each list save as its section with just that row.
-    let stored = config
-        .reads
-        .store
-        .settings_changes(Default::default())
-        .await
-        .unwrap();
+    let stored = config.changes().await;
     assert_eq!(stored.len(), 2);
     assert_eq!(stored[0].section, "chatbot");
     assert_eq!(
@@ -3043,7 +2575,7 @@ async fn an_explicit_list_save_persists_only_that_list_and_applies_live() {
 
 #[tokio::test]
 async fn list_saves_refuse_mixed_bodies_bad_ids_and_the_removed_chat_channel_list() {
-    let config = Config::with_settings(true, Vec::new(), seeded_lists()).await;
+    let config = Config::with_settings(seeded_lists()).await;
     for (body, code) in [
         (
             json!({"watching": {"paused": true, "channel_ids": ["1"]}}),
@@ -3075,7 +2607,7 @@ async fn list_saves_refuse_mixed_bodies_bad_ids_and_the_removed_chat_channel_lis
 
 #[tokio::test]
 async fn a_list_save_needs_a_session_and_csrf() {
-    let config = Config::with_settings(true, Vec::new(), seeded_lists()).await;
+    let config = Config::with_settings(seeded_lists()).await;
     let body = json!({"watching": {"channel_ids": ["77"]}}).to_string();
     let no_csrf = send(
         config.reads.admin,
@@ -3115,11 +2647,7 @@ async fn a_config_save_hints_settings_to_open_event_streams() {
     );
     // A refused save writes nothing and hints nothing.
     config
-        .refused(
-            json!({"notifications": {"quiet_mode": "yes"}}),
-            422,
-            "invalid",
-        )
+        .invalid(json!({"notifications": {"quiet_mode": "yes"}}))
         .await;
     assert!(
         stream
@@ -3139,10 +2667,7 @@ async fn account_reply_style_shows_role_overrides_and_the_saved_public_choice() 
 
     let config = Config::with_two_admins().await;
     config.dir.profile("bold");
-    assert_eq!(
-        config.send("POST", RELOAD, None, &json!({})).await.status,
-        200
-    );
+    config.reload().await;
     config
         .patch(json!({"persona": {"visibility": [{"key": "bold", "public": true}]}}))
         .await;
@@ -3158,17 +2683,15 @@ async fn account_reply_style_shows_role_overrides_and_the_saved_public_choice() 
     config.reads.store.put_member(cara).await.unwrap();
     let (cookie, csrf) = config.reads.discord_session(1003, "Cara").await;
     let style = async || {
+        let headers = [("Cookie", cookie.as_str())];
         let reply = request(
             config.reads.admin,
             "GET",
             ADMIN_HOST,
             "/api/admin/me",
-            &[("Cookie", &cookie)],
-        )
-        .await;
-        assert_eq!(reply.status, 200, "{}", reply.text());
-        let me = reply.json();
-        assert_valid("identity.json#/$defs/Me", "me", &me);
+            &headers,
+        );
+        let me = reply.await.expect(200, "identity.json#/$defs/Me");
         me["member"]["reply_style"].clone()
     };
     assert_eq!(
@@ -3187,21 +2710,23 @@ async fn account_reply_style_shows_role_overrides_and_the_saved_public_choice() 
     );
     assert_eq!(personas.as_array().unwrap().len(), 1);
 
-    let save = |persona: &str| {
+    let save = async |persona: &str| {
+        let path = "/api/admin/members/1003";
+        let headers = [
+            ORIGIN,
+            ("Cookie", cookie.as_str()),
+            ("X-Kanade-CSRF", &csrf),
+        ];
         let body = json!({ "persona": persona }).to_string();
-        let (cookie, csrf) = (cookie.clone(), csrf.clone());
-        let admin = config.reads.admin;
-        async move {
-            send(
-                admin,
-                "PATCH",
-                ADMIN_HOST,
-                "/api/admin/members/1003",
-                &[ORIGIN, ("Cookie", &cookie), ("X-Kanade-CSRF", &csrf)],
-                Some(&body),
-            )
-            .await
-        }
+        send(
+            config.reads.admin,
+            "PATCH",
+            ADMIN_HOST,
+            path,
+            &headers,
+            Some(&body),
+        )
+        .await
     };
     assert_eq!(save("bold").await.status, 200);
     let bold = json!({"key": "bold", "name": "Example", "public": true});
@@ -3215,20 +2740,9 @@ async fn account_reply_style_shows_role_overrides_and_the_saved_public_choice() 
         "a private profile is refused"
     );
 
-    let digest = config.get().await["persona"]["role_profiles_digest"]
-        .as_str()
-        .unwrap()
-        .to_owned();
-    config
-        .patch(json!({"persona": {
-            "role_profiles": [
-                {"role_id": "702", "profile": "bold"},
-                {"role_id": "700", "profile": "calm"},
-                {"role_id": "701", "profile": "bold"}
-            ],
-            "role_profiles_digest": digest
-        }}))
-        .await;
+    let pairs = [("702", "bold"), ("700", "calm"), ("701", "bold")];
+    let body = role_profiles(&pairs, &config.digest().await);
+    config.patch(body).await;
     let calm = json!({"key": "calm", "name": "Example", "public": false});
     assert_eq!(
         style().await,
@@ -3265,12 +2779,7 @@ async fn message_style_saves_live_and_records_only_its_row() {
     );
     let rows = config.reads.store.settings_rows().await.unwrap();
     assert_eq!(rows[keys::MESSAGE_STYLE], "redesigned");
-    let recorded = config
-        .reads
-        .store
-        .settings_changes(Default::default())
-        .await
-        .unwrap();
+    let recorded = config.changes().await;
     assert_eq!(recorded[0].section, "notifications");
     assert_eq!(
         recorded[0].values.keys().collect::<Vec<_>>(),
@@ -3294,11 +2803,7 @@ async fn message_style_saves_live_and_records_only_its_row() {
 
     for bad in [json!("fancy"), json!("Classic"), json!(true)] {
         config
-            .refused(
-                json!({"notifications": {"message_style": bad}}),
-                422,
-                "invalid",
-            )
+            .invalid(json!({"notifications": {"message_style": bad}}))
             .await;
     }
     assert_eq!(
@@ -3334,12 +2839,7 @@ async fn header_generation_time_saves_live_records_its_row_and_refuses_bad_clock
     );
     let rows = config.reads.store.settings_rows().await.unwrap();
     assert_eq!(rows[keys::HEADER_GENERATION_TIME], "03:30");
-    let recorded = config
-        .reads
-        .store
-        .settings_changes(Default::default())
-        .await
-        .unwrap();
+    let recorded = config.changes().await;
     assert_eq!(
         recorded[0].values.keys().collect::<Vec<_>>(),
         [keys::HEADER_GENERATION_TIME]
@@ -3351,11 +2851,7 @@ async fn header_generation_time_saves_live_records_its_row_and_refuses_bad_clock
     assert_eq!(recorded[0].values[keys::HEADER_GENERATION_TIME].to, "03:30");
     for bad in [json!("3:30"), json!("24:00"), json!("03:61"), json!(330)] {
         let message = config
-            .refused(
-                json!({"notifications": {"header_generation_time": bad}}),
-                422,
-                "invalid",
-            )
+            .invalid(json!({"notifications": {"header_generation_time": bad}}))
             .await;
         assert_eq!(
             message,
@@ -3375,8 +2871,7 @@ async fn header_generation_time_saves_live_records_its_row_and_refuses_bad_clock
 #[tokio::test]
 async fn a_redesigned_day_of_previews_one_embed_per_run() {
     use chrono::{TimeZone, Utc};
-    use kanade::domain::history::{Actor, ChangeMeta, Origin, Surface};
-    use kanade::domain::schedule::{Change, ChangeSet, Reminder, Run};
+    use kanade::domain::schedule::{Change, Reminder, Run};
     use kanade::domain::scheduler::{ScheduleStore, Scope};
 
     let config = Config::new().await;
@@ -3407,40 +2902,18 @@ async fn a_redesigned_day_of_previews_one_embed_per_run() {
         bosses: vec!["NMaleficStar".into()],
         ..kalos
     };
-    store
-        .commit(
-            schedule.revision,
-            ChangeSet {
-                changes: vec![
-                    Change::PutReminder(day_of("m-kalos-day", "r-kalos")),
-                    Change::PutRun(twin),
-                    Change::PutReminder(day_of("m-twin-day", "r-twin")),
-                ],
-            },
-            ChangeMeta {
-                origin: Origin::new(Actor::admin("test"), Surface::AdminPortal),
-                at: fire,
-                notices: Vec::new(),
-                refs: Vec::new(),
-                request_digest: None,
-                expect: Default::default(),
-                outbox: Vec::new(),
-            },
-        )
-        .await
-        .unwrap();
+    let changes = vec![
+        Change::PutReminder(day_of("m-kalos-day", "r-kalos")),
+        Change::PutRun(twin),
+        Change::PutReminder(day_of("m-twin-day", "r-twin")),
+    ];
+    commit_as(store, "test", fire, changes).await;
 
-    let reply = request(
-        config.reads.admin,
-        "GET",
-        ADMIN_HOST,
-        "/api/admin/reminders/m-kalos-day/preview",
-        &[("Cookie", &config.reads.cookie)],
-    )
-    .await;
-    assert_eq!(reply.status, 200, "{}", reply.text());
-    let preview = reply.json();
-    assert_valid("reminders.json#/$defs/ReminderPreview", "preview", &preview);
+    let path = "/api/admin/reminders/m-kalos-day/preview";
+    let preview = config
+        .reads
+        .read(path, "reminders.json#/$defs/ReminderPreview")
+        .await;
     let card = &preview["card"];
     let content = card["content"].as_str().unwrap();
     assert!(content.starts_with("📅 **"), "{content}");
@@ -3448,9 +2921,7 @@ async fn a_redesigned_day_of_previews_one_embed_per_run() {
     let more = card["more_embeds"].as_array().unwrap();
     assert_eq!(more.len(), 1, "{card}");
     for embed in [card, &more[0]] {
-        let fields: Vec<(&str, bool)> = embed["fields"]
-            .as_array()
-            .unwrap()
+        let fields: Vec<(&str, bool)> = items(&embed["fields"])
             .iter()
             .map(|field| (field["name"].as_str().unwrap(), field["inline"] == true))
             .collect();

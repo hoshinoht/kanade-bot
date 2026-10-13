@@ -55,13 +55,7 @@ async fn inbox_count(reads: &Reads) -> u64 {
 /// `(owner_id, owner_pinned)` of the seeded timing as `/api/admin/fixed` shows it.
 async fn owner(reads: &Reads) -> (String, bool) {
     let rows = get(reads, "/api/admin/fixed").await;
-    let row = rows
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|row| row["id"] == "f-kalos")
-        .unwrap()
-        .clone();
+    let row = find(&rows, "id", "f-kalos").clone();
     (
         row["owner_id"].as_str().unwrap().to_owned(),
         row["owner_pinned"].as_bool().unwrap(),
@@ -133,16 +127,9 @@ async fn ownership_requests_are_listed_counted_and_decided_by_any_admin_session(
 
     // Refusals write nothing.
     let before = head(&reads).await;
-    let no_csrf = send(
-        reads.admin,
-        "POST",
-        ADMIN_HOST,
-        &decision("own-bob", "accept"),
-        &[("Cookie", reads.cookie.as_str()), ORIGIN],
-        Some("{}"),
-    )
-    .await;
-    assert_eq!((no_csrf.status, no_csrf.api_error()), (403, "csrf".into()));
+    let path = decision("own-bob", "accept");
+    let no_csrf = reads.without_csrf("POST", &path, &json!({})).await;
+    assert_eq!(no_csrf.error(), (403, "csrf".into()));
     for action in ["accept", "decline"] {
         let reply = post(&reads, &token, &decision("nope", action), &[]).await;
         assert_eq!(refused(&reply), code(404, "not_found"), "{action}");

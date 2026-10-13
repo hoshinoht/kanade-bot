@@ -23,7 +23,7 @@ use kanade::{
 };
 
 use super::member_support::{Browser, MIKAN, MemberHarness, PUB_ORIGIN, cookie, discord_user};
-use crate::support::{Fixture, PUBLIC_HOST, Reply, send, spawn_router};
+use crate::support::{Fixture, PUBLIC_HOST, Reply, find, send, spawn_router};
 
 const HOME: &str = "198.51.100.10";
 const MOBILE: &str = "203.0.113.77";
@@ -60,10 +60,7 @@ async fn sessions_end_after_the_idle_or_the_absolute_lifetime() {
     assert_eq!(me(&harness, &browser.id, HOME).await.status, 200);
     harness.advance(TimeDelta::minutes(30));
     let idle = me(&harness, &browser.id, HOME).await;
-    assert_eq!(
-        (idle.status, idle.api_error()),
-        (401, "unauthenticated".into())
-    );
+    assert_eq!(idle.error(), (401, "unauthenticated".into()));
     assert_eq!(
         idle.cookie(wire::MEMBER_SESSION_COOKIE).as_deref(),
         Some("")
@@ -119,10 +116,7 @@ async fn unavailable_member_data_answers_503_and_keeps_the_session() {
     harness.gate.force(Some(Eligibility::Unavailable));
     harness.advance(TimeDelta::minutes(5));
     let reply = me(&harness, &browser.id, HOME).await;
-    assert_eq!(
-        (reply.status, reply.api_error()),
-        (503, "auth_unavailable".into())
-    );
+    assert_eq!(reply.error(), (503, "auth_unavailable".into()));
     assert_eq!(harness.rows(MIKAN).await.len(), 1);
     harness.gate.force(None);
     assert_eq!(me(&harness, &browser.id, HOME).await.status, 200);
@@ -226,10 +220,7 @@ async fn a_new_client_address_rotates_the_id_rechecks_and_keeps_a_read_only_grac
     );
     assert_eq!(grace.json()["fresh_until"], "2026-10-08T04:15:00Z");
     let write = end_other(&harness, &old, &old.csrf, HOME).await;
-    assert_eq!(
-        (write.status, write.api_error()),
-        (401, "unauthenticated".into())
-    );
+    assert_eq!(write.error(), (401, "unauthenticated".into()));
     let new = Browser {
         id: new_id.clone(),
         csrf: new_csrf.clone(),
@@ -319,11 +310,7 @@ async fn sign_out_needs_this_origin_and_the_member_token() {
         let reply = harness
             .request("POST", "/api/public/auth/logout", &headers)
             .await;
-        assert_eq!(
-            (reply.status, reply.api_error()),
-            (403, "csrf".into()),
-            "{why}"
-        );
+        assert_eq!(reply.error(), (403, "csrf".into()), "{why}");
     }
     assert_eq!(harness.rows(MIKAN).await.len(), 1);
 
@@ -378,10 +365,7 @@ async fn a_rotated_out_id_cannot_sign_out_during_its_grace() {
             ],
         )
         .await;
-    assert_eq!(
-        (reply.status, reply.api_error()),
-        (401, "unauthenticated".into())
-    );
+    assert_eq!(reply.error(), (401, "unauthenticated".into()));
     assert_eq!(
         reply.cookie(wire::MEMBER_SESSION_COOKIE),
         None,
@@ -415,12 +399,7 @@ async fn ending_a_device_needs_this_origin_and_the_member_token() {
         )
         .await
         .json();
-    let handle = list["sessions"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|row| row["current"] == false)
-        .unwrap()["handle"]
+    let handle = find(&list["sessions"], "current", false)["handle"]
         .as_str()
         .unwrap()
         .to_owned();
@@ -502,10 +481,7 @@ async fn the_fresh_write_window_ends_fifteen_minutes_after_sign_in() {
     assert_eq!((fresh.status, fresh.text()), (200, "fresh".into()));
     harness.advance(TimeDelta::seconds(1));
     let stale = write(browser.clone()).await;
-    assert_eq!(
-        (stale.status, stale.api_error()),
-        (401, ApiError::REAUTH_REQUIRED.error.into())
-    );
+    assert_eq!(stale.error(), (401, ApiError::REAUTH_REQUIRED.error.into()));
     assert_eq!(
         me(&harness, &browser.id, HOME).await.status,
         200,

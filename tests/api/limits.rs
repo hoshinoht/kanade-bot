@@ -149,7 +149,7 @@ async fn resetting_a_window_needs_csrf_and_replays_once() {
         None,
     )
     .await;
-    assert_eq!((no_csrf.status, no_csrf.api_error()), (403, "csrf".into()));
+    assert_eq!(no_csrf.error(), (403, "csrf".into()));
 
     let first = write(&reads, RESET, Some("reset-1001"), None).await;
     assert_eq!(first.status, 200, "{}", first.text());
@@ -164,10 +164,7 @@ async fn resetting_a_window_needs_csrf_and_replays_once() {
         None,
     )
     .await;
-    assert_eq!(
-        (mismatch.status, mismatch.api_error()),
-        (422, "idempotency_mismatch".into())
-    );
+    assert_eq!(mismatch.error(), (422, "idempotency_mismatch".into()));
     for reply in [first, replay, mismatch] {
         assert!(!reply.dump().contains(TOKEN));
     }
@@ -281,7 +278,7 @@ async fn digest_uses_the_delivery_port_and_replays_once() {
         Some(&body),
     )
     .await;
-    assert_eq!((no_csrf.status, no_csrf.api_error()), (403, "csrf".into()));
+    assert_eq!(no_csrf.error(), (403, "csrf".into()));
 
     let mut headers = vec![
         ORIGIN,
@@ -321,10 +318,7 @@ async fn digest_uses_the_delivery_port_and_replays_once() {
         Some(&other),
     )
     .await;
-    assert_eq!(
-        (mismatch.status, mismatch.api_error()),
-        (422, "idempotency_mismatch".into())
-    );
+    assert_eq!(mismatch.error(), (422, "idempotency_mismatch".into()));
     headers.pop();
     let unknown = json!({"week": "this", "channel_id": "gone"}).to_string();
     let bad_channel = send(
@@ -336,10 +330,7 @@ async fn digest_uses_the_delivery_port_and_replays_once() {
         Some(&unknown),
     )
     .await;
-    assert_eq!(
-        (bad_channel.status, bad_channel.api_error()),
-        (422, "invalid".into())
-    );
+    assert_eq!(bad_channel.error(), (422, "invalid".into()));
     for reply in [first, replay, mismatch, bad_channel] {
         assert!(!reply.dump().contains(TOKEN));
     }
@@ -362,10 +353,7 @@ async fn digest_is_unavailable_without_live_delivery() {
         Some(&body),
     )
     .await;
-    assert_eq!(
-        (reply.status, reply.api_error()),
-        (503, "unavailable".into())
-    );
+    assert_eq!(reply.error(), (503, "unavailable".into()));
     assert_valid(ERROR, "offline digest", &reply.json());
 }
 

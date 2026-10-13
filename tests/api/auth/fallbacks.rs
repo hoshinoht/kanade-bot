@@ -113,7 +113,7 @@ async fn tailscale_sign_in_needs_the_trusted_edge_and_an_allow_listed_login() {
             None,
         )
         .await;
-    assert_eq!((cross.status, cross.api_error()), (403, "csrf".into()));
+    assert_eq!(cross.error(), (403, "csrf".into()));
 }
 
 #[tokio::test]
@@ -143,11 +143,7 @@ async fn tailscale_headers_need_both_the_edge_peer_and_the_edge_secret() {
         let reply = harness
             .post("/api/admin/auth/tailscale", &extra, None)
             .await;
-        assert_eq!(
-            (reply.status, reply.api_error()),
-            (401, "unauthenticated".into()),
-            "{case}"
-        );
+        assert_eq!(reply.error(), (401, "unauthenticated".into()), "{case}");
         assert!(reply.cookie(wire::SESSION_COOKIE).is_none(), "{case}");
     }
     let refused = same_peer.audit.records();
@@ -175,11 +171,7 @@ async fn the_authenticated_edge_must_name_the_client() {
             extra.push(("X-Forwarded-For", value));
         }
         let reply = harness.get("/api/admin/auth/methods", &extra).await;
-        assert_eq!(
-            (reply.status, reply.api_error()),
-            (400, "bad_forwarding".into()),
-            "{xff:?}"
-        );
+        assert_eq!(reply.error(), (400, "bad_forwarding".into()), "{xff:?}");
     }
     // Without the secret nothing is vouched for, so no forwarding is needed.
     assert_eq!(

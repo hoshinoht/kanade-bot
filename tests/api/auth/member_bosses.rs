@@ -7,83 +7,14 @@ use std::collections::BTreeSet;
 
 use serde_json::Value;
 
-use super::member_support::{Browser, MemberHarness, Options, discord_user};
-use crate::{reads::Reads, schemas::assert_valid, support::Reply};
+use super::member_writes::{ALICE, IP, Portal, all_keys, keys, set};
+use crate::support::items;
 
-const IP: &str = "198.51.100.10";
-const ALICE: u64 = 1001;
 const LIST: &str = "/api/public/bosses";
 const EVENTS: &str = "/api/public/bosses/events";
 const CARLING: &str = "/api/public/bosses/Carling/knowledge";
-const KNOWLEDGE_KEYS: [&str; 10] = [
-    "animated",
-    "doc",
-    "hue",
-    "in_use",
-    "key",
-    "level",
-    "missions",
-    "name",
-    "portrait",
-    "researched_as_of",
-];
-
-struct Portal {
-    reads: Reads,
-    harness: MemberHarness,
-}
-
-impl Portal {
-    async fn new() -> Self {
-        let reads = Reads::new().await;
-        let harness = MemberHarness::with(Options {
-            state: reads.site.state.clone(),
-            boss_dir: reads.site.boss_dir.clone(),
-            ..Options::default()
-        })
-        .await;
-        harness.roster(ALICE, true).await;
-        Self { reads, harness }
-    }
-
-    async fn sign_in(&self) -> Browser {
-        self.harness
-            .sign_in_from(discord_user(ALICE, "Member"), IP)
-            .await
-    }
-
-    async fn get(&self, browser: Option<&Browser>, path: &str) -> Reply {
-        let cookie = browser.map(Browser::cookie);
-        let mut headers = vec![("CF-Connecting-IP", IP)];
-        if let Some((name, value)) = &cookie {
-            headers.push((name, value));
-        }
-        self.harness.get(path, &headers).await
-    }
-
-    /// A signed-in JSON read: 200, `no-store`, valid against `target`.
-    async fn read(&self, browser: &Browser, path: &str, target: &str) -> Value {
-        let reply = self.get(Some(browser), path).await;
-        assert_eq!(reply.status, 200, "{path}: {}", reply.text());
-        assert_eq!(reply.header("cache-control"), Some("no-store"), "{path}");
-        let value = reply.json();
-        assert_valid(target, path, &value);
-        value
-    }
-}
-
-fn all_keys<'a>(value: &'a Value, out: &mut BTreeSet<&'a str>) {
-    match value {
-        Value::Object(map) => {
-            for (key, inner) in map {
-                out.insert(key);
-                all_keys(inner, out);
-            }
-        }
-        Value::Array(items) => items.iter().for_each(|item| all_keys(item, out)),
-        _ => {}
-    }
-}
+const KNOWLEDGE_KEYS: &str =
+    "animated doc hue in_use key level missions name portrait researched_as_of";
 
 fn has_key(value: &Value, key: &str) -> bool {
     let mut keys = BTreeSet::new();
@@ -108,7 +39,7 @@ fn without_detail(value: &Value) -> Value {
 #[tokio::test]
 async fn the_list_and_event_bosses_are_the_admin_reads() {
     let portal = Portal::new().await;
-    let alice = portal.sign_in().await;
+    let alice = portal.sign_in(ALICE).await;
     let list = portal
         .read(&alice, LIST, "bosses.json#/$defs/BossRows")
         .await;
@@ -116,7 +47,7 @@ async fn the_list_and_event_bosses_are_the_admin_reads() {
         .reads
         .read("/api/admin/bosses", "bosses.json#/$defs/BossRows")
         .await;
-    assert!(!list.as_array().unwrap().is_empty());
+    assert!(!items(&list).is_empty());
     assert_eq!(list, admin);
 
     let events = portal
@@ -128,9 +59,7 @@ async fn the_list_and_event_bosses_are_the_admin_reads() {
         .await;
     // Out-of-season event bosses are listed, marked by their `event` (Q9).
     assert!(
-        events
-            .as_array()
-            .unwrap()
+        items(&events)
             .iter()
             .any(|boss| boss["key"] == "Kai" && boss["event"]["availability"].is_string())
     );
@@ -140,7 +69,7 @@ async fn the_list_and_event_bosses_are_the_admin_reads() {
 #[tokio::test]
 async fn knowledge_drops_the_path_and_every_detail() {
     let portal = Portal::new().await;
-    let alice = portal.sign_in().await;
+    let alice = portal.sign_in(ALICE).await;
     for key in ["Carling", "MaleficStar", "Kai", "StarWyrm"] {
         let path = format!("/api/public/bosses/{key}/knowledge");
         let member = portal
@@ -153,18 +82,15 @@ async fn knowledge_drops_the_path_and_every_detail() {
                 "bosses.json#/$defs/Knowledge",
             )
             .await;
-        let keys: BTreeSet<&str> = member
-            .as_object()
-            .unwrap()
-            .keys()
-            .map(String::as_str)
-            .collect();
-        assert_eq!(keys, KNOWLEDGE_KEYS.into_iter().collect(), "{key}");
+        assert_eq!(keys(&member), set(KNOWLEDGE_KEYS), "{key}");
         assert!(!has_key(&member, "detail"), "{key}");
         assert!(!has_key(&member, "path"), "{key}");
         // Everything else is the admin page's.
         assert_eq!(member["doc"], without_detail(&admin["doc"]), "{key}");
-        for field in KNOWLEDGE_KEYS.into_iter().filter(|field| *field != "doc") {
+        for field in set(KNOWLEDGE_KEYS)
+            .into_iter()
+            .filter(|field| *field != "doc")
+        {
             assert_eq!(member[field], admin[field], "{key}.{field}");
         }
     }
@@ -183,7 +109,7 @@ async fn knowledge_drops_the_path_and_every_detail() {
 #[tokio::test]
 async fn unknown_keys_are_not_found() {
     let portal = Portal::new().await;
-    let alice = portal.sign_in().await;
+    let alice = portal.sign_in(ALICE).await;
     for path in [
         "/api/public/bosses/Nobody/knowledge",
         "/api/public/bosses/..%2F..%2Fetc/knowledge",
@@ -191,25 +117,17 @@ async fn unknown_keys_are_not_found() {
         "/api/public/bosses/Carling",
     ] {
         let reply = portal.get(Some(&alice), path).await;
-        assert_eq!(
-            (reply.status, reply.api_error()),
-            (404, "not_found".into()),
-            "{path}"
-        );
+        assert_eq!(reply.error(), (404, "not_found".into()), "{path}");
     }
 }
 
 #[tokio::test]
 async fn boss_reads_need_an_open_portal_and_a_session() {
     let portal = Portal::new().await;
-    let alice = portal.sign_in().await;
+    let alice = portal.sign_in(ALICE).await;
     for path in [LIST, EVENTS, CARLING] {
         let reply = portal.get(None, path).await;
-        assert_eq!(
-            (reply.status, reply.api_error()),
-            (401, "unauthenticated".into()),
-            "{path}"
-        );
+        assert_eq!(reply.error(), (401, "unauthenticated".into()), "{path}");
         assert_eq!(reply.header("cache-control"), Some("no-store"));
     }
     // An admin session means nothing here.
@@ -224,11 +142,7 @@ async fn boss_reads_need_an_open_portal_and_a_session() {
     for browser in [None, Some(&alice)] {
         for path in [LIST, EVENTS, CARLING, "/api/public/bosses/Nobody/knowledge"] {
             let reply = portal.get(browser, path).await;
-            assert_eq!(
-                (reply.status, reply.api_error()),
-                (503, "closed".into()),
-                "{path}"
-            );
+            assert_eq!(reply.error(), (503, "closed".into()), "{path}");
         }
     }
     portal.harness.set_open(true);

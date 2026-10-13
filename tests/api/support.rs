@@ -194,6 +194,52 @@ impl Reply {
         assert!(object["message"].is_string());
         object["error"].as_str().unwrap().to_owned()
     }
+
+    /// `(status, error code)` of an `ApiError` reply.
+    pub fn error(&self) -> (u16, String) {
+        (self.status, self.api_error())
+    }
+
+    /// Asserts `status`, validates the body against `target` and returns it.
+    #[track_caller]
+    pub fn expect(&self, status: u16, target: &str) -> serde_json::Value {
+        assert_eq!(self.status, status, "{target}: {}", self.text());
+        let value = self.json();
+        crate::schemas::assert_valid(target, target, &value);
+        value
+    }
+}
+
+/// The entry of the JSON array `list` whose `field` equals `value`.
+#[track_caller]
+pub fn find<'a, V>(list: &'a serde_json::Value, field: &str, value: V) -> &'a serde_json::Value
+where
+    V: std::fmt::Display,
+    serde_json::Value: PartialEq<V>,
+{
+    items(list)
+        .iter()
+        .find(|item| item[field] == value)
+        .unwrap_or_else(|| panic!("no {field} = {value} in {list}"))
+}
+
+/// Each entry's string `field`, in order.
+#[track_caller]
+pub fn strs<'a>(list: &'a serde_json::Value, field: &str) -> Vec<&'a str> {
+    items(list)
+        .iter()
+        .map(|item| {
+            item[field]
+                .as_str()
+                .unwrap_or_else(|| panic!("{field}: {item}"))
+        })
+        .collect()
+}
+
+#[track_caller]
+pub fn items(list: &serde_json::Value) -> &Vec<serde_json::Value> {
+    list.as_array()
+        .unwrap_or_else(|| panic!("not an array: {list}"))
 }
 
 /// Sends raw bytes so tests can craft malformed or duplicated headers.

@@ -22,23 +22,21 @@ use axum::{
     response::{IntoResponse, Response},
     routing::get,
 };
-use kanade::{
-    api::admin::config::{ConfigDesk, ConfigFacts, ConfigInputs},
-    domain::{chardata::NOTICE_VERSION, settings::RuntimeSettings},
-    infrastructure::{
-        character_data::{CharacterData, ConfirmOutcome, RosterSide, Timing},
-        nexon::{ApiKey, NexonClient},
-        scouter::{Estimates, MAX_QUEUED, ScouterClient, TIMEOUT},
-        store::MemoryCharData,
-    },
+use kanade::infrastructure::{
+    character_data::{CharacterData, ConfirmOutcome, RosterSide, Timing},
+    nexon::{ApiKey, NexonClient},
+    scouter::{Estimates, MAX_QUEUED, ScouterClient, TIMEOUT},
+    store::MemoryCharData,
 };
 use serde_json::{Value, json};
 use tokio::sync::Notify;
 
 use crate::{
-    reads::{CharacterDataMaker, ConfigMaker, Reads},
+    character_data::{config, confirm},
+    readiness::slot as ready_slot,
+    reads::{CharacterDataMaker, Reads},
     schemas::assert_valid,
-    support::{ADMIN_HOST, send},
+    support::{items, strs},
 };
 
 const JOB: &str = "character_data.json#/$defs/EstimateJob";
@@ -300,34 +298,17 @@ async fn fake_nexon() -> SocketAddr {
     address
 }
 
-fn config() -> ConfigMaker {
-    Box::new(|store| {
-        Arc::new(ConfigDesk::new(ConfigInputs {
-            settings: RuntimeSettings::default(),
-            store,
-            models: None,
-            facts: ConfigFacts {
-                timezone: "Asia/Kuala_Lumpur".into(),
-                model_gateway: None,
-                model_permits: 2,
-                model_groups: Vec::new(),
-                chat_pilot_role_id: None,
-            },
-            personas: None,
-        }))
-    })
-}
-
 /// The module with estimates at `scouter` (off with `None`) under the
-/// client `timeout`, and the Open API at `nexon` when given; the service is
-/// handed back through `slot`.
-fn module(
+/// client `timeout`, and the Open API at `nexon` when given: the reads and
+/// the service.
+async fn serve(
     scouter: Option<SocketAddr>,
     nexon: Option<SocketAddr>,
-    slot: Arc<std::sync::OnceLock<Arc<CharacterData>>>,
     timeout: Duration,
-) -> CharacterDataMaker {
-    Box::new(move |store, clock| {
+) -> (Reads, Arc<CharacterData>) {
+    let slot = Arc::new(std::sync::OnceLock::new());
+    let handed = Arc::clone(&slot);
+    let module: CharacterDataMaker = Box::new(move |store, clock| {
         let mut service = CharacterData::new(
             Arc::new(MemoryCharData::new()),
             store as Arc<dyn RosterSide>,
@@ -344,44 +325,27 @@ fn module(
             service = service.with_estimates(Estimates::new(client, url, clock));
         }
         let service = Arc::new(service);
-        let _ = slot.set(Arc::clone(&service));
+        let _ = handed.set(Arc::clone(&service));
         service
-    })
+    });
+    let reads = Reads::with_character_data(Some(config()), module).await;
+    (reads, slot.get().unwrap().clone())
 }
 
 async fn on(scouter: Option<SocketAddr>) -> Reads {
-    Reads::with_character_data(
-        Some(config()),
-        module(scouter, None, Arc::default(), CLIENT_TIMEOUT),
-    )
-    .await
+    serve(scouter, None, CLIENT_TIMEOUT).await.0
 }
 
 /// [`on`] for tests that hold a `Gate…` lookup until they release it: the
 /// client timeout is far past any runner's pace, so the held lookup never
 /// fails on its own and the line moves only when the test says so.
 async fn on_gated(scouter: SocketAddr) -> Reads {
-    Reads::with_character_data(
-        Some(config()),
-        module(
-            Some(scouter),
-            None,
-            Arc::default(),
-            Duration::from_secs(120),
-        ),
-    )
-    .await
+    serve(Some(scouter), None, Duration::from_secs(120)).await.0
 }
 
 async fn character(reads: &Reads, member: &str, ign: &str) -> String {
-    let reply = reads
-        .call(
-            "POST",
-            &format!("/api/admin/members/{member}/characters"),
-            json!({"ign": ign}),
-            &[],
-        )
-        .await;
+    let path = format!("/api/admin/members/{member}/characters");
+    let reply = reads.call("POST", &path, json!({"ign": ign}), &[]).await;
     assert_eq!(reply.status, 201, "{}", reply.text());
     reply.json()["id"].as_str().unwrap().to_owned()
 }
@@ -389,29 +353,21 @@ async fn character(reads: &Reads, member: &str, ign: &str) -> String {
 /// `POST` → `202 {job}`, schema-checked.
 async fn post(reads: &Reads, body: Value) -> Value {
     let reply = reads.call("POST", ESTIMATES, body, &[]).await;
-    assert_eq!(reply.status, 202, "{}", reply.text());
-    let started = reply.json();
-    assert_valid(STARTED, ESTIMATES, &started);
-    started["job"].clone()
+    reply.expect(202, STARTED)["job"].clone()
 }
 
 async fn refused(reads: &Reads, body: Value) -> (u16, String) {
     let reply = reads.call("POST", ESTIMATES, body, &[]).await;
     assert_valid(ERROR, ESTIMATES, &reply.json());
-    (reply.status, reply.api_error())
+    reply.error()
 }
 
 /// The job once it has finished (`done` or `failed`).
 async fn settled(reads: &Reads, job: &Value) -> Value {
-    let path = format!("{ESTIMATES}/{}", job["id"].as_str().unwrap());
-    for _ in 0..400 {
-        let read = reads.read(&path, JOB).await;
-        if read["state"] == "done" || read["state"] == "failed" {
-            return read;
-        }
-        tokio::time::sleep(Duration::from_millis(10)).await;
-    }
-    panic!("{path} still queued or running");
+    read_until(reads, job, |read| {
+        read["state"] == "done" || read["state"] == "failed"
+    })
+    .await
 }
 
 /// Job `job` once `ready` holds for it, still unfinished or not.
@@ -433,12 +389,7 @@ async fn look_up(reads: &Reads, body: Value) -> Value {
 }
 
 fn tokens(member: &Value) -> Vec<&str> {
-    member["bosses"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|boss| boss["boss"].as_str().unwrap())
-        .collect()
+    strs(&member["bosses"], "boss")
 }
 
 #[tokio::test]
@@ -449,24 +400,8 @@ async fn routes_are_the_generic_404_while_the_module_or_the_url_is_off() {
             ("POST", ESTIMATES.to_owned()),
             ("GET", format!("{ESTIMATES}/any")),
         ] {
-            let signed_in = reads
-                .call(method, &path, json!({"run_id": "r-kalos"}), &[])
-                .await;
-            assert_eq!(
-                (signed_in.status, signed_in.api_error()),
-                (404, "not_found".into()),
-                "{method} {path}"
-            );
-            let anonymous = send(
-                reads.admin,
-                method,
-                ADMIN_HOST,
-                &path,
-                &[("Origin", "https://kanade.test")],
-                Some("{}"),
-            )
-            .await;
-            assert_eq!(anonymous.status, 404, "{method} {path} signed out");
+            let body = json!({"run_id": "r-kalos"});
+            reads.assert_unmounted(method, &path, body).await;
         }
     }
     // On without a URL: Config says the scouter is off.
@@ -574,7 +509,7 @@ async fn one_character_is_one_ign_lookup_with_a_pinned_request() {
     let gone = reads
         .call("GET", &format!("{ESTIMATES}/nope"), json!(null), &[])
         .await;
-    assert_eq!((gone.status, gone.api_error()), (404, "not_found".into()));
+    assert_eq!(gone.error(), (404, "not_found".into()));
 
     // Config's health block.
     let view = reads.read("/api/admin/config", CONFIG).await;
@@ -600,20 +535,9 @@ async fn post_needs_csrf_and_a_valid_body() {
         .await;
     let gms = gms.json()["id"].as_str().unwrap().to_owned();
     let id = character(&reads, "1001", "MikaBish").await;
-    let body = json!({"character_ids": [id]}).to_string();
-    let forged = send(
-        reads.admin,
-        "POST",
-        ADMIN_HOST,
-        ESTIMATES,
-        &[
-            ("Cookie", reads.cookie.as_str()),
-            ("Origin", "https://kanade.test"),
-        ],
-        Some(&body),
-    )
-    .await;
-    assert_eq!((forged.status, forged.api_error()), (403, "csrf".into()));
+    let body = json!({"character_ids": [id]});
+    let forged = reads.without_csrf("POST", ESTIMATES, &body).await;
+    assert_eq!(forged.error(), (403, "csrf".into()));
 
     for (body, status, code) in [
         (json!({}), 422, "invalid"),
@@ -659,7 +583,7 @@ async fn post_needs_csrf_and_a_valid_body() {
             &[],
         )
         .await;
-    assert_eq!((bad.status, bad.api_error()), (422, "invalid".into()));
+    assert_eq!(bad.error(), (422, "invalid".into()));
     assert!(fake.lookups().is_empty(), "nothing was looked up");
 }
 
@@ -667,23 +591,24 @@ async fn post_needs_csrf_and_a_valid_body() {
 async fn scouter_errors_map_to_the_drawn_states_and_are_never_cached() {
     let (address, fake) = fake_scouter().await;
     let reads = on(Some(address)).await;
-    let cases = [
-        (
-            "BusyAa",
-            "busy",
-            Some(429),
-            "busy",
-            Some(5),
-            "The scouter is busy.",
-        ),
-        (
-            "LimitedAa",
-            "busy",
-            Some(429),
-            "upstream_rate_limited",
-            Some(40),
-            "The scouter is busy.",
-        ),
+    let busy = [
+        ("BusyAa", "busy", Some(5)),
+        ("LimitedAa", "upstream_rate_limited", Some(40)),
+    ]
+    .map(|(ign, detail, retry)| {
+        let message = "The scouter is busy.";
+        (ign, "busy", Some(429), detail, retry, message)
+    });
+    let failed = [
+        ("BlockedAa", Some(502), "upstream_blocked"),
+        ("MismatchAa", Some(502), "result_mismatch"),
+        ("ExtractAa", Some(502), "extraction_failed"),
+        ("FailedAa", Some(502), "lookup_failed"),
+        ("SlowAa", Some(504), "lookup_timeout"),
+        ("HangAa", None, "timeout"),
+    ]
+    .map(|(ign, status, detail)| (ign, "failed", status, detail, None, "Lookup failed."));
+    let cases = busy.into_iter().chain([
         (
             "CritAa",
             "critical_rate",
@@ -700,49 +625,9 @@ async fn scouter_errors_map_to_the_drawn_states_and_are_never_cached() {
             None,
             "Scouter needs a manual check.",
         ),
-        (
-            "BlockedAa",
-            "failed",
-            Some(502),
-            "upstream_blocked",
-            None,
-            "Lookup failed.",
-        ),
-        (
-            "MismatchAa",
-            "failed",
-            Some(502),
-            "result_mismatch",
-            None,
-            "Lookup failed.",
-        ),
-        (
-            "ExtractAa",
-            "failed",
-            Some(502),
-            "extraction_failed",
-            None,
-            "Lookup failed.",
-        ),
-        (
-            "FailedAa",
-            "failed",
-            Some(502),
-            "lookup_failed",
-            None,
-            "Lookup failed.",
-        ),
-        (
-            "SlowAa",
-            "failed",
-            Some(504),
-            "lookup_timeout",
-            None,
-            "Lookup failed.",
-        ),
-        ("HangAa", "failed", None, "timeout", None, "Lookup failed."),
-    ];
-    for (ign, code, status, detail, retry, message) in cases {
+    ]);
+    // HangAa (a timeout) last: the success below keeps its error.
+    for (ign, code, status, detail, retry, message) in cases.chain(failed) {
         let id = character(&reads, "1001", ign).await;
         let failed = look_up(&reads, json!({"character_ids": [id]})).await;
         assert_eq!(failed["state"], "failed", "{ign}: {failed}");
@@ -1144,10 +1029,7 @@ async fn the_line_holds_16_and_refuses_more() {
         .call("POST", ESTIMATES, json!({"character_ids": [late]}), &[])
         .await;
     assert_valid(ERROR, ESTIMATES, &reply.json());
-    assert_eq!(
-        (reply.status, reply.api_error()),
-        (429, "estimate_queue_full".into())
-    );
+    assert_eq!(reply.error(), (429, "estimate_queue_full".into()));
     assert_eq!(
         reply.json()["message"],
         "16 lookups are waiting already. Try again in a few minutes."
@@ -1171,11 +1053,7 @@ async fn the_line_holds_16_and_refuses_more() {
 async fn busy_is_asked_again_after_retry_after_within_the_deadline() {
     let (address, fake) = fake_scouter().await;
     // One call's budget (3 s) leaves room for the 1-second wait.
-    let reads = Reads::with_character_data(
-        Some(config()),
-        module(Some(address), None, Arc::default(), Duration::from_secs(3)),
-    )
-    .await;
+    let (reads, _) = serve(Some(address), None, Duration::from_secs(3)).await;
     let id = character(&reads, "1001", "OnceAa").await;
     let begun = Instant::now();
     let done = look_up(&reads, json!({"character_ids": [id]})).await;
@@ -1196,11 +1074,7 @@ async fn busy_is_asked_again_after_retry_after_within_the_deadline() {
 #[tokio::test]
 async fn a_huge_retry_after_fails_as_busy_and_the_line_moves_on() {
     let (address, _) = fake_scouter().await;
-    let reads = Reads::with_character_data(
-        Some(config()),
-        module(Some(address), None, Arc::default(), Duration::from_secs(3)),
-    )
-    .await;
+    let (reads, _) = serve(Some(address), None, Duration::from_secs(3)).await;
     let huge = character(&reads, "1001", "HugeAa").await;
     let failed = look_up(&reads, json!({"character_ids": [huge]})).await;
     assert_eq!(failed["state"], "failed", "{failed}");
@@ -1243,30 +1117,10 @@ async fn an_assumed_critical_rate_is_labelled_in_the_result_and_readiness() {
 async fn scouter_requests_never_carry_nexon_fields() {
     let (address, fake) = fake_scouter().await;
     let nexon = fake_nexon().await;
-    let slot = Arc::new(std::sync::OnceLock::new());
-    let reads = Reads::with_character_data(
-        Some(config()),
-        module(
-            Some(address),
-            Some(nexon),
-            Arc::clone(&slot),
-            CLIENT_TIMEOUT,
-        ),
-    )
-    .await;
-    let service = slot.get().unwrap().clone();
+    let (reads, service) = serve(Some(address), Some(nexon), CLIENT_TIMEOUT).await;
     // The create already asked the member to link it (pending).
     let id = character(&reads, "1001", "MikaBish").await;
-    let ConfirmOutcome::Linked(..) = service
-        .confirm_link(
-            "1001",
-            &id,
-            NOTICE_VERSION,
-            kanade::domain::chardata::ConsentSurface::Discord,
-        )
-        .await
-        .unwrap()
-    else {
+    let ConfirmOutcome::Linked(..) = confirm(&service, "1001", &id).await else {
         panic!("not linked");
     };
     let linked = reads
@@ -1359,10 +1213,7 @@ async fn jobs_stay_24_hours_one_per_target_past_many_lookups() {
             &[],
         )
         .await;
-    assert_eq!(
-        (replaced.status, replaced.api_error()),
-        (404, "not_found".into())
-    );
+    assert_eq!(replaced.error(), (404, "not_found".into()));
     let status = reads
         .read(&format!("{ESTIMATES}?character_ids={}", ids[0]), STATUS)
         .await;
@@ -1370,15 +1221,6 @@ async fn jobs_stay_24_hours_one_per_target_past_many_lookups() {
 }
 
 const READY: &str = "character_data.json#/$defs/RunReadiness";
-
-fn ready_slot<'a>(answer: &'a Value, member: &str) -> &'a Value {
-    answer["slots"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|slot| slot["member_id"] == member)
-        .unwrap_or_else(|| panic!("no slot for {member}: {answer}"))
-}
 
 /// Readiness (`r-kalos` XKalos; `r-star` HMaleficStar + HLucid with Alice)
 /// shows each character's cached scouter reading per boss, from a
@@ -1390,32 +1232,12 @@ async fn readiness_shows_cached_scouter_readings_per_boss_and_never_looks_up() {
     const STAR: &str = "/api/admin/runs/r-star/readiness";
     let (address, fake) = fake_scouter().await;
     let nexon = fake_nexon().await;
-    let slot = Arc::new(std::sync::OnceLock::new());
-    let reads = Reads::with_character_data(
-        Some(config()),
-        module(
-            Some(address),
-            Some(nexon),
-            Arc::clone(&slot),
-            CLIENT_TIMEOUT,
-        ),
-    )
-    .await;
-    let service = slot.get().unwrap().clone();
+    let (reads, service) = serve(Some(address), Some(nexon), CLIENT_TIMEOUT).await;
     // Alice brings RenShade (pending, no data), Bob MikaBish (linked), Dan
     // nobody. A MapleSEA create already asks for the link.
     let ren = character(&reads, "1001", "RenShade").await;
     let mika = character(&reads, "1002", "MikaBish").await;
-    let ConfirmOutcome::Linked(..) = service
-        .confirm_link(
-            "1002",
-            &mika,
-            NOTICE_VERSION,
-            kanade::domain::chardata::ConsentSurface::Discord,
-        )
-        .await
-        .unwrap()
-    else {
+    let ConfirmOutcome::Linked(..) = confirm(&service, "1002", &mika).await else {
         panic!("not linked");
     };
     let nexon_cp = json!({"kind": "nexon_cp", "value": 48_213_377, "as_of": "2026-09-28"});
@@ -1451,9 +1273,7 @@ async fn readiness_shows_cached_scouter_readings_per_boss_and_never_looks_up() {
     assert_eq!(bob["bosses"][0]["scouter"], Value::Null);
     // Mapped bosses only: Star has a card; Lucid has none at the scouter.
     let star = reads.read(STAR, READY).await;
-    let shares: Vec<&Value> = ready_slot(&star, "1001")["bosses"]
-        .as_array()
-        .unwrap()
+    let shares: Vec<&Value> = items(&ready_slot(&star, "1001")["bosses"])
         .iter()
         .map(|boss| &boss["scouter"]["percentage"])
         .collect();

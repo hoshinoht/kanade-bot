@@ -79,10 +79,7 @@ async fn the_device_list_names_sessions_by_handle_and_ends_one() {
         &format!("/api/public/sessions/{mine}"),
     )
     .await;
-    assert_eq!(
-        (current.status, current.api_error()),
-        (409, "current_session".into())
-    );
+    assert_eq!(current.error(), (409, "current_session".into()));
     let ended = write(
         &harness,
         &second,
@@ -98,7 +95,7 @@ async fn the_device_list_names_sessions_by_handle_and_ends_one() {
         &format!("/api/public/sessions/{other}"),
     )
     .await;
-    assert_eq!((again.status, again.api_error()), (404, "not_found".into()));
+    assert_eq!(again.error(), (404, "not_found".into()));
     let gone = harness
         .get(
             "/api/public/session",
@@ -312,7 +309,7 @@ async fn admin_credentials_mean_nothing_on_the_public_origin() {
         for path in ["/api/public/session", "/api/public/sessions"] {
             let reply = harness.get(path, &headers).await;
             assert_eq!(
-                (reply.status, reply.api_error()),
+                reply.error(),
                 (401, "unauthenticated".into()),
                 "{path} {headers:?}"
             );
@@ -345,11 +342,7 @@ async fn a_member_session_means_nothing_on_the_admin_origin() {
         let reply = harness
             .admin_get("/api/admin/session", &[("Cookie", cookie)])
             .await;
-        assert_eq!(
-            (reply.status, reply.api_error()),
-            (401, "unauthenticated".into()),
-            "{cookie}"
-        );
+        assert_eq!(reply.error(), (401, "unauthenticated".into()), "{cookie}");
     }
     // Every member route is absent on admin, even with the realm misassigned there.
     for (method, path) in [
@@ -372,10 +365,6 @@ async fn a_member_session_means_nothing_on_the_admin_origin() {
             None,
         )
         .await;
-        assert_eq!(
-            (reply.status, reply.api_error()),
-            (404, "not_found".into()),
-            "{method} {path}"
-        );
+        assert_eq!(reply.error(), (404, "not_found".into()), "{method} {path}");
     }
 }

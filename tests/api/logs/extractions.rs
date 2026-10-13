@@ -9,7 +9,7 @@ use kanade::{
 use serde_json::json;
 
 use super::{ERROR, Logs, extraction as log_row, ids, utc};
-use crate::schemas::assert_valid;
+use crate::{schemas::assert_valid, support::find};
 
 const EXTRACTIONS: &str = "extractions.json#/$defs/Extractions";
 const EXTRACTION: &str = "extractions.json#/$defs/Extraction";
@@ -242,15 +242,7 @@ async fn store_text_in_a_logged_failure_never_reaches_the_portal() {
     );
     let value = listed.json();
     assert_valid(EXTRACTIONS, "list", &value);
-    let error_of = |id: &str| {
-        value["rows"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .find(|row| row["id"] == id)
-            .unwrap()["error"]
-            .clone()
-    };
+    let error_of = |id: &str| find(&value["rows"], "id", id)["error"].clone();
     assert_eq!(error_of("x-leak"), CALL_FAILED);
     assert_eq!(error_of("x-v4"), CALL_FAILED);
     assert_eq!(error_of("x-fixed"), SCHEDULE_UNREADABLE);

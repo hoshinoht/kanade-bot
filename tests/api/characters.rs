@@ -15,7 +15,7 @@ use serde_json::{Value, json};
 use crate::{
     reads::Reads,
     schemas::assert_valid,
-    support::{ADMIN_HOST, Reply, request, send},
+    support::{ADMIN_HOST, Reply, find, request, strs},
 };
 
 const ROW: &str = "characters.json#/$defs/CharacterRow";
@@ -26,6 +26,10 @@ const ALICE: &str = "/api/admin/members/1001/characters";
 
 fn character(id: &str) -> String {
     format!("/api/admin/characters/{id}")
+}
+
+async fn edit(reads: &Reads, id: &str, body: Value) -> Value {
+    reads.ok("PATCH", &character(id), body, ROW).await
 }
 
 async fn records(reads: &Reads) -> Vec<SettingsChange> {
@@ -70,26 +74,8 @@ async fn every_route_is_the_generic_404_while_the_module_is_off() {
         ("PATCH", id.as_str()),
         ("DELETE", id.as_str()),
     ] {
-        let signed_in = reads
-            .call(method, path, json!({"ign": "Wisteria", "version": 1}), &[])
-            .await;
-        assert_eq!(
-            (signed_in.status, signed_in.api_error()),
-            (404, "not_found".into()),
-            "{method} {path}"
-        );
-        // Before the session too, as an unmounted path.
-        let anonymous = send(
-            reads.admin,
-            method,
-            ADMIN_HOST,
-            path,
-            &[("Origin", "https://kanade.test")],
-            Some("{}"),
-        )
-        .await;
-        assert_eq!(anonymous.status, 404, "{method} {path} signed out");
-        assert_valid("error.json#/$defs/ApiError", path, &anonymous.json());
+        let body = json!({"ign": "Wisteria", "version": 1});
+        reads.assert_unmounted(method, path, body).await;
     }
     assert!(records(&reads).await.is_empty());
 }
@@ -135,58 +121,35 @@ async fn characters_are_created_listed_edited_retired_and_deleted() {
     assert_eq!((&alt["role"], &alt["class"]), (&json!("alt"), &Value::Null));
     let listed = reads.read(ALICE, LIST).await;
     // The pinned clock gives both one creation time: the id breaks the tie.
-    let mut igns: Vec<&str> = listed["characters"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|row| row["ign"].as_str().unwrap())
-        .collect();
+    let mut igns = strs(&listed["characters"], "ign");
     igns.sort_unstable();
     assert_eq!(igns, ["Heather9", "Wisteria"]);
 
     let alt_id = alt["id"].as_str().unwrap();
-    let edited = reads
-        .ok(
-            "PATCH",
-            &character(alt_id),
-            json!({"version": 1, "class": "Shadower", "level": 210}),
-            ROW,
-        )
-        .await;
+    let edited = edit(
+        &reads,
+        alt_id,
+        json!({"version": 1, "class": "Shadower", "level": 210}),
+    )
+    .await;
     assert_eq!(
         (&edited["class"], &edited["level"], &edited["version"]),
         (&json!("Shadower"), &json!(210), &json!(2))
     );
-    let cleared = reads
-        .ok(
-            "PATCH",
-            &character(alt_id),
-            json!({"version": 2, "class": null, "level": null}),
-            ROW,
-        )
-        .await;
+    let cleared = edit(
+        &reads,
+        alt_id,
+        json!({"version": 2, "class": null, "level": null}),
+    )
+    .await;
     assert_eq!(
         (&cleared["class"], &cleared["level"], &cleared["version"]),
         (&Value::Null, &Value::Null, &json!(3))
     );
-    let retired = reads
-        .ok(
-            "PATCH",
-            &character(alt_id),
-            json!({"version": 3, "retired": true}),
-            ROW,
-        )
-        .await;
+    let retired = edit(&reads, alt_id, json!({"version": 3, "retired": true})).await;
     assert_eq!(retired["retired_at"], "2026-09-29T04:00:00Z");
     // A no-op answers the row and records nothing.
-    let same = reads
-        .ok(
-            "PATCH",
-            &character(alt_id),
-            json!({"version": 4, "retired": true}),
-            ROW,
-        )
-        .await;
+    let same = edit(&reads, alt_id, json!({"version": 4, "retired": true})).await;
     assert_eq!(same, retired);
 
     let deleted = reads
@@ -213,37 +176,18 @@ async fn characters_are_created_listed_edited_retired_and_deleted() {
     let row = &newest.values[&format!("character.{alt_id}")];
     assert!(row.from.contains(r#""retired":true"#), "{row:?}");
     assert_eq!(row.to, "");
-    let history = request(
-        reads.admin,
-        "GET",
-        ADMIN_HOST,
-        "/api/admin/history",
-        &[("Cookie", &reads.cookie)],
-    )
-    .await;
-    assert_eq!(history.status, 200, "{}", history.text());
-    let sections: Vec<Value> = history.json()["settings"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|row| row["section"].clone())
-        .collect();
-    assert_eq!(sections, vec![json!("characters"); 6]);
+    let history = reads
+        .read("/api/admin/history", "history.json#/$defs/HistoryPage")
+        .await;
+    assert_eq!(strs(&history["settings"], "section"), ["characters"; 6]);
 }
 
 #[tokio::test]
 async fn writes_need_the_csrf_token_and_a_session() {
     let reads = Reads::with_characters().await;
-    let no_csrf = send(
-        reads.admin,
-        "POST",
-        ADMIN_HOST,
-        ALICE,
-        &[("Cookie", &reads.cookie), ("Origin", "https://kanade.test")],
-        Some(&json!({"ign": "Wisteria"}).to_string()),
-    )
-    .await;
-    assert_eq!((no_csrf.status, no_csrf.api_error()), (403, "csrf".into()));
+    let body = json!({"ign": "Wisteria"});
+    let no_csrf = reads.without_csrf("POST", ALICE, &body).await;
+    assert_eq!(no_csrf.error(), (403, "csrf".into()));
     let signed_out = request(reads.admin, "GET", ADMIN_HOST, ALICE, &[]).await;
     assert_eq!(signed_out.status, 401);
     assert!(
@@ -375,7 +319,7 @@ async fn the_first_character_is_the_main_and_the_crown_moves() {
             .call(method, &character(&first_id), body.clone(), &[])
             .await;
         assert_eq!(
-            (reply.status, reply.api_error()),
+            reply.error(),
             (409, "main_required".into()),
             "{method} {body}"
         );
@@ -387,14 +331,7 @@ async fn the_first_character_is_the_main_and_the_crown_moves() {
         );
     }
     // Make another main first: the crown moves in one write.
-    let promoted = reads
-        .ok(
-            "PATCH",
-            &character(&second_id),
-            json!({"version": 1, "role": "main"}),
-            ROW,
-        )
-        .await;
+    let promoted = edit(&reads, &second_id, json!({"version": 1, "role": "main"})).await;
     assert_eq!(promoted["role"], "main");
     let listed = reads.read(ALICE, LIST).await;
     let mut roles: Vec<(&str, &str)> = listed["characters"]
@@ -405,12 +342,7 @@ async fn the_first_character_is_the_main_and_the_crown_moves() {
         .collect();
     roles.sort_unstable();
     assert_eq!(roles, [("Heather", "main"), ("Wisteria", "alt")]);
-    let demoted = listed["characters"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|row| row["ign"] == "Wisteria")
-        .unwrap();
+    let demoted = find(&listed["characters"], "ign", "Wisteria");
     assert_eq!(demoted["version"], 2);
     assert_eq!(demoted["updated_by"]["kind"], "admin");
     let saves = records(&reads).await;
@@ -420,14 +352,7 @@ async fn the_first_character_is_the_main_and_the_crown_moves() {
         "one History row names both characters"
     );
     // Now the old main retires.
-    reads
-        .ok(
-            "PATCH",
-            &character(&first_id),
-            json!({"version": 2, "retired": true}),
-            ROW,
-        )
-        .await;
+    edit(&reads, &first_id, json!({"version": 2, "retired": true})).await;
 }
 
 #[tokio::test]
@@ -451,10 +376,7 @@ async fn keyed_writes_replay_across_a_restart() {
         "created once"
     );
     let other = keyed(&reads, "POST", ALICE, "char-k", json!({"ign": "Heather"})).await;
-    assert_eq!(
-        (other.status, other.api_error()),
-        (422, "idempotency_mismatch".into())
-    );
+    assert_eq!(other.error(), (422, "idempotency_mismatch".into()));
 
     let patch = json!({"version": 1, "level": 250});
     let edited = keyed(&reads, "PATCH", &character(&id), "char-p", patch.clone()).await;
@@ -472,7 +394,7 @@ async fn keyed_writes_replay_across_a_restart() {
         json!({"ign": "wisteria"}),
     )
     .await;
-    assert_eq!((clash.status, clash.api_error()), (422, "ign_taken".into()));
+    assert_eq!(clash.error(), (422, "ign_taken".into()));
 
     let gone = keyed(&reads, "DELETE", &character(&id), "char-d", json!({})).await;
     assert_eq!(gone.status, 200, "{}", gone.text());

@@ -13,20 +13,19 @@ use std::collections::BTreeSet;
 
 use chrono::{DateTime, TimeZone, Utc};
 use kanade::domain::{
-    history::{Actor, ChangeHistory, ChangeMeta, ChangeRecord, Origin, Surface},
-    schedule::{Change, ChangeSet, Run, RunSource, RunStatus},
-    scheduler::{ScheduleStore, Scope},
+    history::{ChangeHistory, ChangeRecord},
+    schedule::{Change, Run, RunSource, RunStatus},
 };
 use serde_json::Value;
 
 use super::member_support::{Browser, MemberHarness, Options, PUB_ORIGIN, discord_user};
 use crate::{
-    reads::Reads,
+    reads::{Reads, commit_as},
     schemas::assert_valid,
-    support::{PUBLIC_HOST, Reply, send},
+    support::Reply,
 };
 
-const IP: &str = "198.51.100.10";
+pub(super) const IP: &str = "198.51.100.10";
 pub(super) const ALICE: u64 = 1001;
 pub(super) const BOB: u64 = 1002;
 pub(super) const CARA: u64 = 1003;
@@ -49,6 +48,25 @@ pub(super) fn keys(value: &Value) -> BTreeSet<&str> {
         .keys()
         .map(String::as_str)
         .collect()
+}
+
+/// A key set written space-separated.
+pub(super) fn set(words: &str) -> BTreeSet<&str> {
+    words.split_whitespace().collect()
+}
+
+/// Every object key in `value`, at any depth.
+pub(super) fn all_keys<'a>(value: &'a Value, out: &mut BTreeSet<&'a str>) {
+    match value {
+        Value::Object(map) => {
+            for (key, inner) in map {
+                out.insert(key);
+                all_keys(inner, out);
+            }
+        }
+        Value::Array(items) => items.iter().for_each(|item| all_keys(item, out)),
+        _ => {}
+    }
 }
 
 pub(super) fn refused(reply: &Reply) -> (u16, String) {
@@ -111,24 +129,7 @@ impl Portal {
 
     /// Rows written behind the API, as an admin's seed.
     pub async fn seed(&self, changes: Vec<Change>) {
-        let revision = self.reads.store.load(&Scope::All).await.unwrap().revision;
-        self.reads
-            .store
-            .commit(
-                revision,
-                ChangeSet { changes },
-                ChangeMeta {
-                    origin: Origin::new(Actor::admin("seed"), Surface::AdminPortal),
-                    at: utc(9, 28, 0, 0),
-                    notices: Vec::new(),
-                    refs: Vec::new(),
-                    request_digest: None,
-                    expect: Default::default(),
-                    outbox: Vec::new(),
-                },
-            )
-            .await
-            .unwrap();
+        commit_as(&self.reads.store, "seed", utc(9, 28, 0, 0), changes).await;
     }
 
     pub async fn version(&self) -> u64 {
@@ -142,12 +143,7 @@ impl Portal {
     }
 
     pub async fn get(&self, browser: Option<&Browser>, path: &str) -> Reply {
-        let cookie = browser.map(Browser::cookie);
-        let mut headers = vec![("CF-Connecting-IP", IP)];
-        if let Some((name, value)) = &cookie {
-            headers.push((name, value));
-        }
-        self.harness.get(path, &headers).await
+        self.harness.member_get(browser, path).await
     }
 
     /// A signed-in JSON read: 200, `no-store`, valid against `target`.
@@ -169,16 +165,10 @@ impl Portal {
         headers: &[(&str, &str)],
         body: Option<&str>,
     ) -> Reply {
-        let cookie = browser.map(Browser::cookie);
-        let mut all = vec![("CF-Connecting-IP", IP)];
-        if let Some((name, value)) = &cookie {
-            all.push((name, value));
-        }
-        all.extend_from_slice(headers);
-        if body.is_none() {
-            all.push(("Content-Length", "0"));
-        }
-        send(self.harness.public, method, PUBLIC_HOST, path, &all, body).await
+        let harness = &self.harness;
+        harness
+            .member_send(browser, method, path, headers, body)
+            .await
     }
 
     /// A member write with every marker: same origin, CSRF token and `key`.

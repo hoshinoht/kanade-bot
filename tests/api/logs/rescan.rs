@@ -12,7 +12,7 @@ use serde_json::{Value, json};
 use super::{ERROR, Logs, ORIGIN, policy, utc};
 use crate::{
     schemas::assert_valid,
-    support::{ADMIN_HOST, Reply, request, send},
+    support::{ADMIN_HOST, Reply, request, send, strs},
 };
 
 const JOB: &str = "extractions.json#/$defs/RescanJob";
@@ -45,12 +45,7 @@ fn progress(job: &Value) -> Value {
 }
 
 fn states(job: &Value) -> Vec<&str> {
-    job["channels"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|channel| channel["state"].as_str().unwrap())
-        .collect()
+    strs(&job["channels"], "state")
 }
 
 #[tokio::test]
