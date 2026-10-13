@@ -1,49 +1,62 @@
 <!--
-  The member sheet's Characters tab (module `roster`; boards B_RosterChars,
-  B_PhoneRosterChars, B_RosterStates): a summary and Add, the active
-  characters (main first, crowned), the retired ones dimmed in their own
-  group, each with Edit and a More menu (Make main / Retire or Bring back,
-  Delete…). Retire, Bring back and Make main undo from a toast; Delete is
-  confirmed. The main's Retire and Delete wait, explained, while other
-  characters are active. Characters stay in the admin app: never model input.
+  One member's characters (module `roster`): the admin member sheet's
+  Characters tab (boards B_RosterChars, B_PhoneRosterChars, B_RosterStates)
+  and the portal's Account › Characters (M_Chars, M_CharsMenu, M_PhoneChars).
+  A summary and Add, the active characters (main first, crowned), the retired
+  ones dimmed in their own group, each with Edit and a More menu (Make main /
+  Retire or Bring back, and for admins Delete…). Retire, Bring back and Make
+  main undo from a toast; Delete is confirmed. The main's Retire and Delete
+  wait, explained, while other characters are active. A member's rows carry
+  each character's link state; members never delete ("only an admin
+  deletes"). Characters are never model input.
 -->
 <script lang="ts">
-  import { tick } from 'svelte';
-  import type { CharacterRow, MemberCharacters, MemberRow } from '@kanade/api-types';
-  import { Icon, LoadError, LoadingState, StateNote, type Toaster } from '@kanade/ui';
-  import { memberLabel } from '../names/directory.svelte';
-  import { actorName } from '../history/describe';
-  import { send, type Resource } from '../resource.svelte';
+  import { tick, type Snippet } from 'svelte';
+  import type { CharacterLink, CharacterRow } from '@kanade/api-types';
+  import Icon from '../components/Icon.svelte';
+  import LoadError from '../components/LoadError.svelte';
+  import LoadingState from '../components/LoadingState.svelte';
+  import StateNote from '../components/StateNote.svelte';
+  import StatusChip from '../components/StatusChip.svelte';
+  import type { Toaster } from '../components/toaster.svelte';
+  import '@kanade/ui/styles/screens/members.scss';
+  import { STRIP_TAGS, stripState } from './chardata';
   import CharacterDialog from './CharacterDialog.svelte';
   import DeleteCharacter from './DeleteCharacter.svelte';
-  import { dayMonth, DEFAULT_REGION, mainLocked, mainOf, regionLabel, splitCharacters } from './characters';
-  import { dialogLayer } from './layer.svelte';
+  import type { CharacterChange, CharacterFids, CharacterKit } from './kit.svelte';
+  import { dayMonth, DEFAULT_REGION, mainLocked, mainOf, regionLabel, splitCharacters } from './roster';
 
   let {
-    member,
-    memberName,
-    members,
-    characters,
+    kit,
+    rows,
+    failed = '',
+    onretry,
     phone,
-    timeZone,
     toaster,
+    layer,
+    links = null,
+    fids = {},
   }: {
-    member: MemberRow;
-    /** The member as the page names them ("Mika", "Ren (2)"). */
-    memberName: string;
-    members: MemberRow[];
-    characters: Resource<MemberCharacters>;
+    kit: CharacterKit;
+    /** The member's characters; null while loading. */
+    rows: CharacterRow[] | null;
+    /** Why the list did not load, in full. */
+    failed?: string;
+    onretry: () => void;
     /** The phone frame: 44 px targets, bottom sheets. */
     phone: boolean;
-    timeZone: string;
     toaster: Toaster;
+    /** Where the dialogs mount (the admin Members page, over the page); without one, after the panel. */
+    layer?: { hold(dialogs: Snippet): () => void };
+    /** Member: each character's link, drawn as a chip by the IGN (module `character_data`). */
+    links?: Record<string, CharacterLink> | null;
+    fids?: CharacterFids;
   } = $props();
 
   const uid = $props.id();
-  // Add/Edit and Delete open over the page (MembersPage mounts them), not inside this pane.
-  const layer = dialogLayer();
-  $effect(() => layer.hold(dialogs));
-  const rows = $derived(characters.data?.member_id === member.id ? characters.data.characters : null);
+  const member = $derived(kit.audience === 'member');
+  const memberName = $derived(kit.owner);
+  $effect(() => layer?.hold(dialogs));
   const groups = $derived(splitCharacters(rows ?? []));
 
   let menuFor = $state<string | null>(null);
@@ -59,13 +72,9 @@
   /** Where focus lands after a delete: the next row's Edit, else Add. */
   let afterDelete: string | null = null;
 
-  const names = (id: string) => memberLabel(members, id);
-  const known = (id: string) => members.some((m) => m.id === id);
-  const updatedBy = (row: CharacterRow) => actorName(row.updated_by, names, known);
-
-  async function refresh(): Promise<CharacterRow[]> {
-    await characters.refresh();
-    return characters.data?.characters ?? [];
+  /** Open Add (null) or Edit: the portal's deep links and its "Confirm it's you" come back through this. */
+  export function edit(row: CharacterRow | null) {
+    openDialog(row);
   }
 
   /** After the list re-renders, focus this character's control (`edit` or `more`), else Add. */
@@ -75,13 +84,17 @@
     target?.focus({ preventScroll: true });
   }
 
-  type Change = { retired?: boolean; role?: 'main' };
+  type Change = Pick<CharacterChange, 'retired' | 'role'>;
 
   /** One menu write; `undo` names the change that puts it back. */
   async function change(row: CharacterRow, body: Change, done: string, undo: (() => Promise<void>) | null) {
-    const result = await send((c) => c.patch<CharacterRow>(`/api/admin/characters/${encodeURIComponent(row.id)}`, { version: row.version, ...body }));
-    await refresh();
+    const result = await kit.api.patch(row.id, { version: row.version, ...body });
+    await kit.api.refresh();
     if (!result.ok) {
+      if (result.reauth && kit.onreauth) {
+        kit.onreauth({ kind: 'change', row, verb: body.role === 'main' ? 'main' : body.retired ? 'retire' : 'restore' });
+        return false;
+      }
       toaster.show({
         message: `Couldn't change ${row.ign}: ${result.message}`,
         tone: 'error',
@@ -95,28 +108,31 @@
 
   /** Again, at the version now listed. */
   async function retry(id: string, body: Change, done: string, undo: (() => Promise<void>) | null) {
-    const row = (await refresh()).find((c) => c.id === id);
+    const row = (await kit.api.refresh()).find((c) => c.id === id);
     if (row) await change(row, body, done, undo);
   }
 
   /** Undo puts back the state recorded at the change, at the version listed now. */
   async function revert(id: string, body: Change, done: string) {
-    const row = (await refresh()).find((c) => c.id === id);
+    const row = (await kit.api.refresh()).find((c) => c.id === id);
     if (row) await change(row, body, done, null);
   }
 
+  const retiredWords = (ign: string) => (member ? `${ign} retired. Kept for history.` : `Retired ${ign}.`);
+  const whose = $derived(member ? 'your' : `${memberName}'s`);
+
   async function retire(row: CharacterRow) {
-    if (await change(row, { retired: true }, `Retired ${row.ign}.`, () => revert(row.id, { retired: false }, `Brought back ${row.ign}.`))) void focusRow(row.id, 'more');
+    if (await change(row, { retired: true }, retiredWords(row.ign), () => revert(row.id, { retired: false }, `Brought back ${row.ign}.`))) void focusRow(row.id, 'more');
   }
 
   async function bringBack(row: CharacterRow) {
-    if (await change(row, { retired: false }, `Brought back ${row.ign}.`, () => revert(row.id, { retired: true }, `Retired ${row.ign}.`))) void focusRow(row.id, 'more');
+    if (await change(row, { retired: false }, `Brought back ${row.ign}.`, () => revert(row.id, { retired: true }, retiredWords(row.ign)))) void focusRow(row.id, 'more');
   }
 
   async function makeMain(row: CharacterRow) {
     const before = mainOf(rows ?? []);
-    const undo = before ? () => revert(before.id, { role: 'main' }, `${before.ign} is ${memberName}'s main again.`) : null;
-    if (await change(row, { role: 'main' }, `${row.ign} is ${memberName}'s main now.`, undo)) void focusRow(row.id, 'more');
+    const undo = before ? () => revert(before.id, { role: 'main' }, `${before.ign} is ${whose} main again.`) : null;
+    if (await change(row, { role: 'main' }, `${row.ign} is ${whose} main now.`, undo)) void focusRow(row.id, 'more');
   }
 
   function askDelete(row: CharacterRow) {
@@ -130,18 +146,19 @@
 
   async function confirmDelete() {
     const row = deleting!;
+    const remove = kit.api.remove!;
     deleteBusy = true;
-    const result = await send((c) => c.delete<{ message: string }>(`/api/admin/characters/${encodeURIComponent(row.id)}`));
+    const result = await remove(row.id);
     deleteBusy = false;
     if (!result.ok) {
       deleteError =
         result.code === 'main_required'
           ? `${row.ign} is ${memberName}'s main now, and the main stays while other characters are active. Make another character main first.`
           : `Couldn't delete ${row.ign}: ${result.message}`;
-      void refresh();
+      void kit.api.refresh();
       return;
     }
-    await refresh();
+    await kit.api.refresh();
     toaster.show({ message: `Deleted ${row.ign}. History keeps the audit row.`, tone: 'ok' });
     deleteOpen = false;
   }
@@ -227,15 +244,19 @@
   {@const retired = c.retired_at !== null}
   {@const locked = mainLocked(c, rows ?? [])}
   {@const open = menuFor === c.id}
+  {@const link = links?.[c.id]}
+  {@const state = link ? stripState(link, c) : null}
   <li class="rosterrow" class:rosterrow--retired={retired} data-character={c.id} data-fid={tagged ? 'roster-row' : undefined}>
     <span class="rosterrow__id">
       <span class="rosterrow__ign"
         >{c.ign}{#if c.role === 'main' && !retired}<span class="rosterrow__crown" data-fid={tagged ? 'roster-main' : undefined}><Icon name="crown" />main</span
-          >{/if}{#if retired}<span class="rosterrow__retag">retired</span>{/if}</span
+          >{/if}{#if retired}<span class="rosterrow__retag">retired</span>{/if}{#if state}<StatusChip tone={STRIP_TAGS[state].tone} data-fid={tagged ? fids.linkState : undefined}
+            ><Icon name={STRIP_TAGS[state].icon} />{state === 'pending' ? 'waiting for you' : STRIP_TAGS[state].label}</StatusChip
+          >{/if}</span
       >
       <span class="rosterrow__meta"
         >{#if c.level}<span class="rosterrow__lvmeta mono">Lv. {c.level}</span><span class="rosterrow__lvsep">&nbsp;·&nbsp;</span>{/if}{c.class ?? 'No class'}{#if c.world !== DEFAULT_REGION}{` · ${regionLabel(c.world)}`}{/if}<span
-          class="rosterrow__updated">&nbsp;· updated <span class="mono">{dayMonth(c.updated_at, timeZone)}</span></span
+          class="rosterrow__updated">&nbsp;· updated <span class="mono">{dayMonth(c.updated_at, kit.timeZone)}</span></span
         ></span
       >
     </span>
@@ -272,34 +293,44 @@
             onclick={() => pick(() => void retire(c), locked)}><Icon name="archive" />Retire</button
           >
         {/if}
-        <span class="rosterrow__sep" role="separator"></span>
-        <button
-          type="button"
-          role="menuitem"
-          tabindex="-1"
-          class="rosterrow__item rosterrow__item--risk"
-          aria-disabled={locked ? 'true' : undefined}
-          aria-describedby={locked ? `${uid}-why` : undefined}
-          data-fid="roster-menu-delete"
-          onclick={() => pick(() => askDelete(c), locked)}><Icon name="trash-2" />Delete…</button
-        >
-        {#if locked}<span class="rosterrow__why" id="{uid}-why" data-fid="roster-menu-why">{c.ign} is the main. Make another character main first.</span>{/if}
+        {#if member}
+          <!-- No Delete for members: the board says so where Delete would be. -->
+          {#if locked}
+            <span class="rosterrow__why" id="{uid}-why" data-fid="roster-menu-why">{c.ign} is your main. Make another character main first.</span>
+          {:else}
+            <span class="rosterrow__sep" role="separator"></span>
+            <span class="rosterrow__why rosterrow__why--flush">Only an admin deletes a character. Retire keeps it for history.</span>
+          {/if}
+        {:else}
+          <span class="rosterrow__sep" role="separator"></span>
+          <button
+            type="button"
+            role="menuitem"
+            tabindex="-1"
+            class="rosterrow__item rosterrow__item--risk"
+            aria-disabled={locked ? 'true' : undefined}
+            aria-describedby={locked ? `${uid}-why` : undefined}
+            data-fid="roster-menu-delete"
+            onclick={() => pick(() => askDelete(c), locked)}><Icon name="trash-2" />Delete…</button
+          >
+          {#if locked}<span class="rosterrow__why" id="{uid}-why" data-fid="roster-menu-why">{c.ign} is the main. Make another character main first.</span>{/if}
+        {/if}
       </div>
     {/if}
   </li>
 {/snippet}
 
 <div class="rosterpanel" class:rosterpanel--phone={phone} data-fid="roster-panel" bind:this={panel}>
-  {#if characters.error && !rows}
+  {#if failed && !rows}
     <div class="rosterpanel__state" data-fid="roster-error">
-      <LoadError thing="characters" reason="{characters.error} The Profile tab still works." level={3} onretry={() => void characters.load()} />
+      <LoadError thing="characters" reason={failed} level={3} {onretry} />
     </div>
   {:else if !rows}
     <LoadingState text="Loading characters…" />
   {:else if rows.length === 0}
     <div class="rosterpanel__state" data-fid="roster-empty">
       <StateNote icon="crown" title="No characters yet" level={3}>
-        {memberName}'s first character becomes the main; add alts after it.
+        {member ? 'Your first character becomes your main; add alts after it. The admins see the same list.' : `${memberName}'s first character becomes the main; add alts after it.`}
         {#snippet actions()}
           <button type="button" class="btn btn--primary rosterpanel__add" data-fid="roster-add" onclick={() => openDialog(null)}><Icon name="plus" />Add character</button>
         {/snippet}
@@ -314,46 +345,49 @@
       <button type="button" class="btn rosterpanel__add" data-fid="roster-add" onclick={() => openDialog(null)}><Icon name="plus" />Add character</button>
     </div>
     {#if groups.active.length}
-      <ul class="rosterrows" aria-label="{memberName}'s characters">
+      <ul class="rosterrows" aria-label={member ? 'Your characters' : `${memberName}'s characters`}>
         {#each groups.active as c (c.id)}{@render row(c, true)}{/each}
       </ul>
     {/if}
     {#if groups.retired.length}
       <section class="rosterpanel__retired" data-fid="roster-retired" aria-labelledby="{uid}-retired">
         <h3 class="cap" id="{uid}-retired">Retired</h3>
-        <ul class="rosterrows" aria-label="{memberName}'s retired characters">
+        <ul class="rosterrows" aria-label={member ? 'Your retired characters' : `${memberName}'s retired characters`}>
           {#each groups.retired as c (c.id)}{@render row(c, false)}{/each}
         </ul>
       </section>
     {/if}
   {/if}
-  {#if rows}
-    <p class="rosterpanel__note" data-fid="roster-note">Kept when {memberName} leaves the server; only an admin deletes them. Characters are never sent to the chatbot.</p>
+  {#if rows && (rows.length || !member)}
+    <p class="rosterpanel__note" data-fid="roster-note">
+      {#if member}The same roster the admins see. Kept when you leave the server; only an admin deletes a character. Your changes show in History as yours. Characters are never
+        sent to the chatbot.{:else}Kept when {memberName} leaves the server; only an admin deletes them. Characters are never sent to the chatbot.{/if}
+    </p>
   {/if}
 </div>
+{#if !layer}{@render dialogs()}{/if}
 
 {#snippet dialogs()}
   <!-- Mounted while in use: from the first open until it has closed (focus restored). -->
   {#if editorMounted}
     <CharacterDialog
       bind:open={dialogOpen}
-      memberId={member.id}
-      {memberName}
+      {kit}
       character={editing}
       rows={rows ?? []}
       sheet={phone}
-      {timeZone}
-      {updatedBy}
-      actor={(who) => actorName(who, names, known)}
-      onrefresh={refresh}
-      onsaved={(saved, message) => {
+      {fids}
+      onsaved={(saved, message, linkable) => {
         toaster.show({ message, tone: 'ok' });
-        void refresh().then(() => focusRow(saved.id, 'edit'));
+        void kit.api.refresh().then(() => focusRow(saved.id, 'edit'));
+        if (!editing) kit.onadded?.({ row: saved, note: '', linkable });
       }}
-      ondelete={(c) => {
-        dialogOpen = false;
-        askDelete(c);
-      }}
+      ondelete={kit.api.remove
+        ? (c) => {
+            dialogOpen = false;
+            askDelete(c);
+          }
+        : undefined}
       onclosed={() => (editorMounted = dialogOpen)}
     />
   {/if}

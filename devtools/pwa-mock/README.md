@@ -211,6 +211,34 @@ Nothing is kept. A character create answers `CharacterCreated`: with the
 module on and connected, a MapleSEA (`msea`) create also makes the member's
 `pending` link (`link: "pending"`), otherwise `link: null`.
 
+Member characters on the public origin (`src/member_characters.rs`,
+`src/mock/member_characters.rs`, as `src/api/public/characters/`): `GET`/`POST
+/api/public/me/characters` (`MyCharacters`; Add answers `201
+MyCharacterCreated`, asks for no link, `422 class_level_required` without class
+and level unless MapleSEA and connected), `PATCH /api/public/me/characters/{id}`
+(the admin rules; no DELETE), `POST …/characters/lookup` (the admin lookup's
+prefixes), `GET`/`POST`/`DELETE …/characters/{id}/link`, `GET
+…/{id}/link/notice` (notice v1 word for word), `POST …/{id}/link/cancel`,
+`DELETE …/characters/links`, `GET /api/public/me/data`, `GET`/`POST
+/api/public/me/estimates` and `GET …/estimates/{job}` (only Asahi's own
+characters; one counted start per 30 minutes, `429 member_limited` with
+`next_at`, a failed lookup not counting; the pinned clock never ages it, so it
+lasts until the reset) and `GET /api/public/runs/{id}/characters` (a run
+Asahi is on: roster levels for the others, her own NEXON level, cached
+readings per boss). Each answers `closed` while closed, then the generic 404
+while its module is off (`roster`; `character_data`; estimates for the
+lookups), before the session; another member's character or job is the
+generic 404. Add, Edit and Link need the fresh window; Unlink and Unlink all
+the token and key only. Link outcomes by IGN prefix: `Nope…` `not_found`,
+`Busy…` `busy`, `Later…` `linked_later`; the `alert`/`refused` health is
+`unavailable`. `POST /__mock/public/characters {"roster": "board"}` draws
+Asahi's characters as the member-characters boards do (AsahiKanna linked
+main with one share card, AsahiDK pending on Ren's request, AsahiPath stale,
+AsahiBlaze expired, AsahiMech retired; ids `ch-b1`…`ch-b5`), `"empty"` gives
+her none; the other board states come from `/__mock/modules`,
+`/__mock/character-data {"health": "setup"}` (not connected) and
+`/__mock/estimates {scenario}`. Not rate-limited otherwise.
+
 Run readiness (`src/mock/readiness.rs`; on with the module):
 `GET /api/admin/runs/{id}/readiness` answers each party slot as the server
 does: its level (fresh NEXON level else the manual one) and power (NEXON

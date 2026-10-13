@@ -1,9 +1,11 @@
 //! Member writes on the public origin (`member-writes-contract.md`): answers
-//! and moves of the member's own runs, the run deep link, and requests, over
+//! and moves of the member's own runs, the run deep link, requests and the
+//! member's own characters, over
 //! the admin reads' seeded store, writer and pinned clock (Tue 29 Sep 2026
 //! 12:00 in Kuala Lumpur; boss weeks reset Thursday). The seeded members
 //! 1001 Alice, 1002 Bob and 1004 Dan have the bossing role; 1003 Cara does not.
 
+mod characters;
 mod requests;
 mod runs;
 

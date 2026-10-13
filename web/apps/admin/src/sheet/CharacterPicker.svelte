@@ -11,9 +11,8 @@
 <script lang="ts">
   import { tick, untrack, type Snippet } from 'svelte';
   import type { CharacterChoice, RunCharacterSlot } from '@kanade/api-types';
-  import { Icon, Modal } from '@kanade/ui';
+  import { DEFAULT_REGION, Icon, Modal, regionLabel } from '@kanade/ui';
   import '@kanade/ui/styles/screens/character-pick.scss';
-  import { DEFAULT_REGION, regionLabel } from '../members/characters';
 
   let {
     slot,

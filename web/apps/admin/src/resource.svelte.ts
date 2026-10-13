@@ -1,6 +1,6 @@
 import type { EventTopic } from '@kanade/api-types';
 import { ApiRequestError, createClient, createLiveEvents, wroteWithin, type Client, type LiveEvents } from '@kanade/client';
-import { ARRIVAL_FALLBACK_MS } from '@kanade/ui';
+import { ARRIVAL_FALLBACK_MS, type Outcome } from '@kanade/ui';
 
 /** The server's generic 404 for a route it does not serve (an unbuilt feature, not a missing item). */
 const UNBUILT = 'No such endpoint on this origin.';
@@ -217,10 +217,6 @@ export function pinnedFirst(source: () => unknown): (rows: readonly { id: string
     return pin;
   };
 }
-
-export type Outcome<T = unknown> =
-  | { ok: true; value: T }
-  | { ok: false; message: string; status?: number | null; code?: string | null; /** The route is not served (`isUnbuilt`). */ unbuilt?: boolean };
 
 /** One request with a typed outcome, for forms that keep their input on failure. */
 export async function send<T>(work: (client: Client) => Promise<T>): Promise<Outcome<T>> {

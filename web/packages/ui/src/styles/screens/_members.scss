@@ -260,6 +260,11 @@ dialog.membersheet.membersheet--tabbed .membersheet__content { padding: 0.8rem 1
 .rosterrow__item[aria-disabled='true'] { color: var(--dim-text); cursor: default; }
 .rosterrow__sep { height: 1.5px; margin: 4px 6px; background: var(--line); }
 .rosterrow__why { padding: 0 12px 6px 38px; color: var(--dim-text); font-size: var(--fs-mini); line-height: 1.35; }
+// The portal's menu says why there is no Delete, under the items' text rather than their icons.
+.rosterrow__why--flush { padding-left: 12px; }
+// A member's rows: the link state beside the IGN (the strip's chip, row-sized).
+.rosterrow__ign .status-chip { height: 20px; min-height: 20px; padding: 0 8px; font-size: var(--fs-micro); font-weight: 600; }
+.rosterrow__ign .status-chip .icon { width: 12px; height: 12px; margin-right: 4px; }
 
 // Phones: 44 px targets, the level on the second line.
 .rosterpanel--phone .rosterrow { grid-template-columns: minmax(0, 1fr) 44px 44px; min-height: 60px; }

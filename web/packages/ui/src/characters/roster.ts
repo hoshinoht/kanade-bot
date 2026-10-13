@@ -1,9 +1,11 @@
-// The Members sheet's Characters tab (module `roster`, boards in
-// docs/research/2026-10-11-roster-mockups): the list's grouping, the form's
-// choices and checks, and the API's refusals in the boards' words. UI only:
-// characters never reach a model path.
+// A member's characters (module `roster`; boards in
+// docs/research/2026-10-11-roster-mockups and, for the member portal,
+// 2026-10-13-member-characters): the list's grouping, the form's choices and
+// checks, and the API's refusals in the boards' words. Shared by the admin
+// Members sheet and the portal's Account › Characters. UI only: characters
+// never reach a model path.
 import type { CharacterRow } from '@kanade/api-types';
-import type { SelectOption } from '@kanade/ui';
+import type { SelectOption } from '../components/select';
 
 /** The server's default world key: the guild plays MapleSEA. */
 export const DEFAULT_REGION = 'msea';

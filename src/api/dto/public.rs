@@ -1,11 +1,18 @@
 //! Wire shapes of the member session routes (`public.json`). The structs
 //! carry no doc comments so the generated TypeScript stays exactly the
 //! frozen shapes; the schema documents each field. The member's own-run
-//! writes and requests are in `runs` and `requests`.
+//! writes and requests are in `runs` and `requests`, their own characters
+//! in `characters`.
 
+mod characters;
 mod requests;
 mod runs;
 
+pub use characters::{
+    LinkCancelled, LinkNotice, LinkOutcome, MemberEstimateLimit, MyCharacterCreated, MyCharacters,
+    MyData, MyDataEntry, NoticeSection, PartyCharacter, PartyCharacterSlot, PartyEstimate,
+    PartyMember, PendingLink, RunPartyCharacters, SharedCard, Unlinked, UnlinkedAll,
+};
 pub use requests::{
     MemberProposed, MemberRequest, MemberRequestLimit, MemberRequestOptions, MemberRequests,
     RequestView,

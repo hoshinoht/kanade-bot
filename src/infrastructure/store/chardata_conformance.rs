@@ -7,8 +7,8 @@
 use chrono::{DateTime, TimeDelta, TimeZone, Utc};
 
 use crate::domain::chardata::{
-    CharDataStore, Link, LinkPut, LinkStatus, NOTICE_VERSION, Post, PostState, RefreshState,
-    STRIP_AFTER, Snapshot,
+    CharDataStore, ConsentSurface, Link, LinkPut, LinkStatus, NOTICE_VERSION, Post, PostState,
+    RefreshState, STRIP_AFTER, Snapshot,
 };
 use crate::domain::history::Actor;
 use crate::domain::scheduler::StoreError;
@@ -40,6 +40,7 @@ pub fn active(character: &str) -> Link {
         consent_version: Some(NOTICE_VERSION),
         consented_at: Some(at(1, 0)),
         linked_at: Some(at(1, 0)),
+        consent_surface: Some(ConsentSurface::Discord),
         version: 1,
     }
 }
@@ -122,6 +123,7 @@ async fn pending_and_stale_links_hold_no_data<S: CharDataStore>(store: S) {
             next.consent_version = None;
             next.consented_at = None;
             next.linked_at = None;
+            next.consent_surface = None;
         }
         store.put_link(next, 1).await.unwrap();
         assert_eq!(store.snapshot("c1".into(), at(2, 1)).await.unwrap(), None);
@@ -295,6 +297,16 @@ async fn malformed_rows_are_refused<S: CharDataStore>(store: S) {
         ..active("c1")
     };
     assert!(refused(store.put_link(unconsented, 0).await.map(drop)));
+    let pending_with_surface = Link {
+        status: LinkStatus::Pending,
+        consent_version: None,
+        consented_at: None,
+        linked_at: None,
+        ..active("c1")
+    };
+    assert!(refused(
+        store.put_link(pending_with_surface, 0).await.map(drop)
+    ));
     store.put_link(active("c1"), 0).await.unwrap();
     let mut wrong_expiry = snapshot("c1", at(2, 0));
     wrong_expiry.expires_at = at(2, 0) + TimeDelta::days(60);

@@ -4101,3 +4101,305 @@ async fn character_lookup_matches_the_contract() {
         .await;
     assert!(h.failures.is_empty(), "{}", h.failures.join("\n"));
 }
+
+/// The member's own characters on the public origin: every route against
+/// `public.json` (and the reused `character_data.json`/`characters.json`
+/// shapes), over the boards' roster (`POST /__mock/public/characters`).
+#[tokio::test]
+async fn public_member_characters_match_the_contract() {
+    let mut h = Harness::new();
+    let none: &[(&str, &str)] = &[];
+    let mine = "/api/public/me/characters";
+    h.public("GET", mine, none, StatusCode::UNAUTHORIZED, "")
+        .await;
+    let (_, headers, _) = h
+        .send_with(true, "POST", "/__mock/public/sign-in", None, none)
+        .await;
+    let cookie = session_cookie(&headers);
+    let token = header_value(&headers, "x-kanade-csrf").to_owned();
+    let read = [("cookie", cookie.as_str())];
+    let marked = [
+        ("cookie", cookie.as_str()),
+        ("x-kanade-csrf", token.as_str()),
+    ];
+    h.send_with(
+        true,
+        "POST",
+        "/__mock/public/characters",
+        Some(json!({ "roster": "board" })),
+        none,
+    )
+    .await;
+
+    // The roster, the request waiting first, the notice and Cancel.
+    let (_, list) = h
+        .public(
+            "GET",
+            mine,
+            &read,
+            StatusCode::OK,
+            "public.json#/$defs/MyCharacters",
+        )
+        .await;
+    assert_eq!(list["characters"].as_array().unwrap().len(), 5);
+    assert_eq!(list["pending"][0]["character_id"], "ch-b2");
+    assert_eq!(list["pending"][0]["requested_by_name"], "Ren");
+    let states: Vec<&str> = ["ch-b1", "ch-b2", "ch-b3", "ch-b4", "ch-b5"]
+        .iter()
+        .map(|id| list["links"][id]["state"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        states,
+        ["linked", "pending", "stale", "expired", "not_linked"]
+    );
+    let (_, notice) = h
+        .public(
+            "GET",
+            "/api/public/me/characters/ch-b2/link/notice",
+            &read,
+            StatusCode::OK,
+            "public.json#/$defs/LinkNotice",
+        )
+        .await;
+    assert_eq!(
+        notice["lead"],
+        "Ren asked to link AsahiDK (MapleSEA). Nothing is fetched until you press Link."
+    );
+    let (_, kept) = h
+        .public(
+            "POST",
+            "/api/public/me/characters/ch-b2/link/cancel",
+            &marked,
+            StatusCode::OK,
+            "public.json#/$defs/LinkCancelled",
+        )
+        .await;
+    assert_eq!(kept["request_kept"], true);
+    let (_, data) = h
+        .public(
+            "GET",
+            "/api/public/me/data",
+            &read,
+            StatusCode::OK,
+            "public.json#/$defs/MyData",
+        )
+        .await;
+    assert_eq!(data["entries"][0]["state"], "pending");
+
+    // Link (consent on the portal), Unlink, Unlink all.
+    let (_, outdated) = h
+        .public_with(
+            "POST",
+            "/api/public/me/characters/ch-b2/link",
+            Some(json!({ "notice": 2 })),
+            &signed(&cookie, &token, "l-0"),
+            StatusCode::CONFLICT,
+            "",
+        )
+        .await;
+    assert_eq!(outdated["error"], "notice_changed");
+    let (_, linked) = h
+        .public_with(
+            "POST",
+            "/api/public/me/characters/ch-b2/link",
+            Some(json!({ "notice": 1 })),
+            &signed(&cookie, &token, "l-1"),
+            StatusCode::OK,
+            "public.json#/$defs/LinkOutcome",
+        )
+        .await;
+    assert_eq!(
+        (&linked["state"], &linked["link"]["consent_surface"]),
+        (&json!("linked"), &json!("portal"))
+    );
+    let (_, gone) = h
+        .public(
+            "DELETE",
+            "/api/public/me/characters/ch-b1/link",
+            &signed(&cookie, &token, "u-1"),
+            StatusCode::OK,
+            "public.json#/$defs/Unlinked",
+        )
+        .await;
+    assert_eq!(gone, json!({"unlinked": "AsahiKanna", "cards": 1}));
+    let (_, all) = h
+        .public(
+            "DELETE",
+            "/api/public/me/characters/links",
+            &signed(&cookie, &token, "u-2"),
+            StatusCode::OK,
+            "public.json#/$defs/UnlinkedAll",
+        )
+        .await;
+    assert_eq!(all["unlinked"].as_array().unwrap().len(), 3);
+
+    // Add, Edit, the lookup preview.
+    let add = json!({ "ign": "AsahiLumi" });
+    let (_, created) = h
+        .public_with(
+            "POST",
+            mine,
+            Some(add.clone()),
+            &signed(&cookie, &token, "a-1"),
+            StatusCode::CREATED,
+            "public.json#/$defs/MyCharacterCreated",
+        )
+        .await;
+    assert_eq!(created["linkable"], true);
+    let (_, again) = h
+        .public_with(
+            "POST",
+            mine,
+            Some(add),
+            &signed(&cookie, &token, "a-1"),
+            StatusCode::CREATED,
+            "public.json#/$defs/MyCharacterCreated",
+        )
+        .await;
+    assert_eq!(again, created);
+    let (_, manual) = h
+        .public_with(
+            "POST",
+            mine,
+            Some(json!({ "ign": "AsahiGms", "world": "gms" })),
+            &signed(&cookie, &token, "a-2"),
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "",
+        )
+        .await;
+    assert_eq!(manual["error"], "class_level_required");
+    h.public_with(
+        "PATCH",
+        "/api/public/me/characters/ch-b3",
+        Some(json!({ "version": 1, "class": "Pathfinder" })),
+        &signed(&cookie, &token, "e-1"),
+        StatusCode::OK,
+        "characters.json#/$defs/CharacterRow",
+    )
+    .await;
+    h.public_with(
+        "POST",
+        "/api/public/me/characters/lookup",
+        Some(json!({ "ign": "AsahiLumi" })),
+        &marked,
+        StatusCode::OK,
+        "character_data.json#/$defs/CharacterLookup",
+    )
+    .await;
+
+    // A lookup of her own character, then the 30-minute limit.
+    let (_, started) = h
+        .public_with(
+            "POST",
+            "/api/public/me/estimates",
+            Some(json!({ "character_id": "ch-b1" })),
+            &marked,
+            StatusCode::ACCEPTED,
+            "character_data.json#/$defs/EstimateStarted",
+        )
+        .await;
+    let job = format!("/api/public/me/estimates/{}", s(&started["job"]["id"]));
+    for _ in 0..3 {
+        h.public(
+            "GET",
+            &job,
+            &read,
+            StatusCode::OK,
+            "character_data.json#/$defs/EstimateJob",
+        )
+        .await;
+    }
+    let (_, status) = h
+        .public(
+            "GET",
+            "/api/public/me/estimates?character_id=ch-b1",
+            &read,
+            StatusCode::OK,
+            "character_data.json#/$defs/EstimateStatus",
+        )
+        .await;
+    assert_eq!(status["job"]["state"], "done");
+    let (code, _, limited) = h
+        .send_with(
+            true,
+            "POST",
+            "/api/public/me/estimates",
+            Some(json!({ "character_id": "ch-b1", "refresh": true })),
+            &marked,
+        )
+        .await;
+    assert_eq!(code, StatusCode::TOO_MANY_REQUESTS);
+    assert!(
+        validator("public.json#/$defs/MemberEstimateLimit").is_valid(&limited),
+        "{limited}"
+    );
+
+    // The party on her run; other members' characters and runs are the 404.
+    let (_, party) = h
+        .public(
+            "GET",
+            "/api/public/runs/r-carling/characters",
+            &read,
+            StatusCode::OK,
+            "public.json#/$defs/RunPartyCharacters",
+        )
+        .await;
+    let slots = party["slots"].as_array().unwrap();
+    assert!(slots.iter().filter(|slot| slot["you"] == true).count() == 1);
+    assert!(
+        slots.iter().filter(|slot| slot["you"] == false).all(
+            |slot| slot["character"].is_null() || slot["character"]["level_source"] == "roster"
+        )
+    );
+    for (method, path) in [
+        ("GET", "/api/public/me/characters/ch-s3/link"),
+        ("GET", "/api/public/runs/nope/characters"),
+        ("GET", "/api/public/me/estimates/est-seed-1"),
+    ] {
+        h.public(method, path, &read, StatusCode::NOT_FOUND, "")
+            .await;
+    }
+    h.public_with(
+        "PATCH",
+        "/api/public/me/characters/ch-s3",
+        Some(json!({ "version": 1, "retired": true })),
+        &signed(&cookie, &token, "e-2"),
+        StatusCode::NOT_FOUND,
+        "",
+    )
+    .await;
+
+    // Module off: the generic 404 before the session.
+    h.send(
+        false,
+        "POST",
+        "/__mock/modules",
+        Some(json!({ "character_data": false })),
+    )
+    .await;
+    h.public(
+        "GET",
+        "/api/public/me/data",
+        none,
+        StatusCode::NOT_FOUND,
+        "",
+    )
+    .await;
+    h.public(
+        "GET",
+        mine,
+        &read,
+        StatusCode::OK,
+        "public.json#/$defs/MyCharacters",
+    )
+    .await;
+    h.send(
+        false,
+        "POST",
+        "/__mock/modules",
+        Some(json!({ "roster": false })),
+    )
+    .await;
+    h.public("GET", mine, none, StatusCode::NOT_FOUND, "").await;
+    assert!(h.failures.is_empty(), "{}", h.failures.join("\n"));
+}

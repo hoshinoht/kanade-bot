@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://kanade.invalid/api-schemas/public.json",
-  "title": "Public portal: status, the member session, the member's signed-in devices, the member week, the member's own runs (answer, move, deep link), the member's weekly timings and their ownership, the member's requests, the member's own chat allowance and boss guides",
+  "title": "Public portal: status, the member session, the member's signed-in devices, the member week, the member's own runs (answer, move, deep link, the party's characters), the member's weekly timings and their ownership, the member's requests, the member's own chat allowance, boss guides, and the member's own characters (roster, NEXON link and consent, My data, MapleScouter lookups)",
   "$defs": {
     "PublicStatus": {
       "type": "object",
@@ -403,6 +403,293 @@
         { "type": "array", "items": { "$ref": "#/$defs/WithoutDetail" } },
         { "type": "object", "not": { "required": ["detail"] }, "additionalProperties": { "$ref": "#/$defs/WithoutDetail" } }
       ]
+    },
+    "MyCharacters": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "GET /api/public/me/characters (module `roster`): the caller's own roster rows (active and retired, as the admin's `MemberCharacters` lists them), each one's link by character id and the admins' link requests waiting for them, oldest first. Without module `character_data`, `links` is empty and `pending` too. `Cache-Control: no-store`.",
+      "required": ["characters", "links", "pending", "character_data", "connected", "estimates", "notice_version", "privacy_url"],
+      "properties": {
+        "characters": { "type": "array", "items": { "$ref": "characters.json#/$defs/CharacterRow" } },
+        "links": { "type": "object", "additionalProperties": { "$ref": "character_data.json#/$defs/CharacterLink" }, "description": "Keyed by character id; every character has one while module `character_data` is on." },
+        "pending": { "type": "array", "items": { "$ref": "#/$defs/PendingLink" }, "description": "\"Waiting for you\": the links an admin asked for and the member has not confirmed." },
+        "character_data": { "type": "boolean", "description": "Module `character_data` is on (links, notice, My data)." },
+        "connected": { "type": "boolean", "description": "A NEXON key is configured: Add looks up, links can be made, class and level may be left out for MapleSEA." },
+        "estimates": { "type": "boolean", "description": "MapleScouter lookups are on (`KANADE_SCOUTER_URL`)." },
+        "notice_version": { "type": "integer", "minimum": 1 },
+        "privacy_url": { "$ref": "common.json#/$defs/NullableString", "description": "The public /privacy page; null without a public listener." }
+      }
+    },
+    "PendingLink": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "A link request waiting for the member: who asked and when it lapses (14 days).",
+      "required": ["character_id", "ign", "class", "requested_by", "requested_by_name", "requested_at", "expires_at"],
+      "properties": {
+        "character_id": { "type": "string" },
+        "ign": { "type": "string" },
+        "class": { "$ref": "common.json#/$defs/NullableString", "description": "The roster class." },
+        "requested_by": { "$ref": "history.json#/$defs/Actor" },
+        "requested_by_name": { "$ref": "common.json#/$defs/NullableString", "description": "The asking admin's member name when they signed in with Discord; null otherwise (\"An admin\")." },
+        "requested_at": { "type": "string" },
+        "expires_at": { "type": "string" }
+      }
+    },
+    "MyCharacterCreate": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Body of POST /api/public/me/characters: `characters.json#/$defs/CharacterCreate` for the caller. `class` and `level` are required (422 `class_level_required`) unless the character is MapleSEA and NEXON is connected.",
+      "required": ["ign"],
+      "properties": {
+        "ign": { "type": "string" },
+        "world": { "type": "string" },
+        "class": { "type": "string" },
+        "level": { "type": "integer" },
+        "role": { "enum": ["main", "alt"] }
+      }
+    },
+    "MyCharacterCreated": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "`201` answer of POST /api/public/me/characters: the row as stored plus `linkable` (MapleSEA with NEXON connected: the portal opens the notice next). No link request is made.",
+      "required": ["id", "member_id", "ign", "world", "class", "level", "role", "retired_at", "created_at", "updated_at", "updated_by", "version", "linkable"],
+      "properties": {
+        "id": { "$ref": "characters.json#/$defs/CharacterRow/properties/id" },
+        "member_id": { "$ref": "characters.json#/$defs/CharacterRow/properties/member_id" },
+        "ign": { "$ref": "characters.json#/$defs/CharacterRow/properties/ign" },
+        "world": { "$ref": "characters.json#/$defs/CharacterRow/properties/world" },
+        "class": { "$ref": "characters.json#/$defs/CharacterRow/properties/class" },
+        "level": { "$ref": "characters.json#/$defs/CharacterRow/properties/level" },
+        "role": { "$ref": "characters.json#/$defs/CharacterRow/properties/role" },
+        "retired_at": { "$ref": "characters.json#/$defs/CharacterRow/properties/retired_at" },
+        "created_at": { "$ref": "characters.json#/$defs/CharacterRow/properties/created_at" },
+        "updated_at": { "$ref": "characters.json#/$defs/CharacterRow/properties/updated_at" },
+        "updated_by": { "$ref": "characters.json#/$defs/CharacterRow/properties/updated_by" },
+        "version": { "$ref": "characters.json#/$defs/CharacterRow/properties/version" },
+        "linkable": { "type": "boolean" }
+      }
+    },
+    "MyCharacterPatch": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Body of PATCH /api/public/me/characters/{id}: `characters.json#/$defs/CharacterPatch` for one of the caller's characters.",
+      "required": ["version"],
+      "properties": {
+        "version": { "type": "integer", "minimum": 1 },
+        "ign": { "type": "string" },
+        "world": { "type": "string" },
+        "class": { "type": ["string", "null"] },
+        "level": { "type": ["integer", "null"] },
+        "role": { "enum": ["main", "alt"] },
+        "retired": { "type": "boolean" }
+      }
+    },
+    "MemberLookupRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Body of POST /api/public/me/characters/lookup: a MapleSEA IGN as typed.",
+      "required": ["ign"],
+      "properties": { "ign": { "type": "string" } }
+    },
+    "NoticeSection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["heading", "text"],
+      "properties": { "heading": { "type": "string" }, "text": { "type": "string" } }
+    },
+    "LinkNotice": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "GET /api/public/me/characters/{id}/link/notice: the `/character link` notice (version `version`) word for word as plain text, for one of the caller's active MapleSEA characters that is not linked; `request` names the admin's request when one waits. 404 for another member's character, 409 `not_connected`/`retired`/`already_linked`, 422 `region`.",
+      "required": ["character_id", "ign", "version", "title", "lead", "what", "why", "how_long", "who", "as_is", "link_label", "cancel_label", "request", "privacy_url", "attribution"],
+      "properties": {
+        "character_id": { "type": "string" },
+        "ign": { "type": "string" },
+        "version": { "type": "integer", "minimum": 1, "description": "Send it back with Link (`LinkConfirm.notice`)." },
+        "title": { "type": "string" },
+        "lead": { "type": "string" },
+        "what": { "$ref": "#/$defs/NoticeSection" },
+        "why": { "$ref": "#/$defs/NoticeSection" },
+        "how_long": { "$ref": "#/$defs/NoticeSection" },
+        "who": { "$ref": "#/$defs/NoticeSection" },
+        "as_is": { "type": "string", "description": "Followed by the Privacy notice link." },
+        "link_label": { "type": "string" },
+        "cancel_label": { "type": "string" },
+        "request": { "anyOf": [{ "$ref": "#/$defs/PendingLink" }, { "type": "null" }] },
+        "privacy_url": { "$ref": "common.json#/$defs/NullableString" },
+        "attribution": { "const": "Data based on NEXON Open API" }
+      }
+    },
+    "LinkConfirm": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Body of POST /api/public/me/characters/{id}/link: the notice version the member read.",
+      "required": ["notice"],
+      "properties": { "notice": { "type": "integer", "minimum": 1 } }
+    },
+    "LinkOutcome": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "POST /api/public/me/characters/{id}/link: the consent is recorded (surface `portal`) and the first fetch runs, as Discord's Link. `linked` with data; `linked_later`: linked, the data comes with the next refresh; `busy`: the daily NEXON budget cannot cover it (nothing kept); `unavailable`: calls are held (nothing kept); `not_found`: NEXON has no such character (nothing kept); `other_region`: not a MapleSEA character.",
+      "required": ["state", "link"],
+      "properties": {
+        "state": { "enum": ["linked", "linked_later", "busy", "unavailable", "not_found", "other_region"] },
+        "link": { "anyOf": [{ "$ref": "character_data.json#/$defs/CharacterLink" }, { "type": "null" }], "description": "With `linked` and `linked_later` only." }
+      }
+    },
+    "LinkCancelled": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "POST /api/public/me/characters/{id}/link/cancel: nothing changes; an admin's request stays waiting.",
+      "required": ["request_kept", "requested_by_name"],
+      "properties": {
+        "request_kept": { "type": "boolean" },
+        "requested_by_name": { "$ref": "common.json#/$defs/NullableString" }
+      }
+    },
+    "Unlinked": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "DELETE /api/public/me/characters/{id}/link: the link and its data are deleted in one write; `cards` share cards are being cleared.",
+      "required": ["unlinked", "cards"],
+      "properties": {
+        "unlinked": { "type": "string", "description": "The IGN." },
+        "cards": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "UnlinkedAll": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "DELETE /api/public/me/characters/links: every link of the caller's, deleted at once (empty when nothing was linked).",
+      "required": ["unlinked"],
+      "properties": { "unlinked": { "type": "array", "items": { "type": "string" } } }
+    },
+    "SharedCard": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "A tracked `/character share` card: its channel's name (never the id), when it was posted and when it is cleared.",
+      "required": ["channel", "posted_at", "cleared_by"],
+      "properties": {
+        "channel": { "$ref": "common.json#/$defs/NullableString" },
+        "posted_at": { "type": "string" },
+        "cleared_by": { "type": "string" }
+      }
+    },
+    "MyDataEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["character_id", "ign", "state", "retired", "data", "requested_by", "requested_by_name", "requested_at", "request_expires_at", "linked_at", "notice", "consented_at", "consent_surface", "cards"],
+      "properties": {
+        "character_id": { "type": "string" },
+        "ign": { "type": "string" },
+        "state": { "enum": ["pending", "linked", "stale", "expired", "not_linked"] },
+        "retired": { "type": "boolean" },
+        "data": { "anyOf": [{ "$ref": "character_data.json#/$defs/CharacterFacts" }, { "type": "null" }] },
+        "requested_by": { "anyOf": [{ "$ref": "history.json#/$defs/Actor" }, { "type": "null" }], "description": "While pending." },
+        "requested_by_name": { "$ref": "common.json#/$defs/NullableString" },
+        "requested_at": { "$ref": "common.json#/$defs/NullableString" },
+        "request_expires_at": { "$ref": "common.json#/$defs/NullableString" },
+        "linked_at": { "$ref": "common.json#/$defs/NullableString" },
+        "notice": { "type": ["integer", "null"], "minimum": 1, "description": "The notice version consented to." },
+        "consented_at": { "$ref": "common.json#/$defs/NullableString" },
+        "consent_surface": { "enum": ["discord", "portal", null], "description": "Where the consent was given; null while pending and for consents before it was recorded." },
+        "cards": { "type": "array", "items": { "$ref": "#/$defs/SharedCard" } }
+      }
+    },
+    "MyData": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "GET /api/public/me/data (`/character data`): everything kept for the caller, requests waiting for them first; MapleSEA characters with nothing kept are `not_linked`. `Cache-Control: no-store`.",
+      "required": ["entries", "notice_version", "privacy_url", "attribution"],
+      "properties": {
+        "entries": { "type": "array", "items": { "$ref": "#/$defs/MyDataEntry" } },
+        "notice_version": { "type": "integer", "minimum": 1 },
+        "privacy_url": { "$ref": "common.json#/$defs/NullableString" },
+        "attribution": { "const": "Data based on NEXON Open API" }
+      }
+    },
+    "MemberEstimateRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Body of POST /api/public/me/estimates: one of the caller's characters; `refresh` skips the 24-hour memory (Look up again).",
+      "required": ["character_id"],
+      "properties": {
+        "character_id": { "type": "string" },
+        "refresh": { "type": "boolean" }
+      }
+    },
+    "MemberEstimateLimit": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "The 429 body of POST /api/public/me/estimates within 30 minutes of the caller's last counted lookup start: `error.json#/$defs/ApiError` plus when the next may start. A failed lookup does not count.",
+      "required": ["error", "message", "next_at"],
+      "properties": {
+        "error": { "const": "member_limited" },
+        "message": { "type": "string" },
+        "next_at": { "type": "string" }
+      }
+    },
+    "PartyMember": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name"],
+      "properties": { "id": { "type": "string" }, "name": { "type": "string" } }
+    },
+    "PartyCharacter": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "The character a party member brings: roster values, except on the caller's own slot, whose level is the fresh NEXON level when linked (`level_source: nexon`, `as_of`). No combat power, no verdicts.",
+      "required": ["ign", "class", "level", "level_source", "as_of"],
+      "properties": {
+        "ign": { "type": "string" },
+        "class": { "$ref": "common.json#/$defs/NullableString" },
+        "level": { "type": ["integer", "null"], "minimum": 1 },
+        "level_source": { "enum": ["roster", "nexon"] },
+        "as_of": { "$ref": "common.json#/$defs/NullableString", "description": "`YYYY-MM-DD` with `nexon`; null with `roster`." }
+      }
+    },
+    "PartyEstimate": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "One boss of the run: the character's cached MapleScouter reading (`character_data.json#/$defs/ScouterReading` plus the boss).",
+      "required": ["boss", "difficulty", "percentage", "rating", "estimated_minutes", "fetched_at", "critical_rate_assumed", "critical_rate_actual"],
+      "properties": {
+        "boss": { "type": "string" },
+        "difficulty": { "$ref": "common.json#/$defs/Difficulty" },
+        "percentage": { "$ref": "character_data.json#/$defs/ScouterReading/properties/percentage" },
+        "rating": { "$ref": "character_data.json#/$defs/ScouterReading/properties/rating" },
+        "estimated_minutes": { "$ref": "character_data.json#/$defs/ScouterReading/properties/estimated_minutes" },
+        "fetched_at": { "$ref": "character_data.json#/$defs/ScouterReading/properties/fetched_at" },
+        "critical_rate_assumed": { "$ref": "character_data.json#/$defs/ScouterReading/properties/critical_rate_assumed" },
+        "critical_rate_actual": { "$ref": "character_data.json#/$defs/ScouterReading/properties/critical_rate_actual" }
+      }
+    },
+    "PartyCharacterSlot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["member", "you", "character", "scouter"],
+      "properties": {
+        "member": { "$ref": "#/$defs/PartyMember" },
+        "you": { "type": "boolean" },
+        "character": { "anyOf": [{ "$ref": "#/$defs/PartyCharacter" }, { "type": "null" }], "description": "null: no character on the roster." },
+        "scouter": { "anyOf": [{ "type": "array", "items": { "$ref": "#/$defs/PartyEstimate" } }, { "type": "null" }], "description": "Per boss of the run from the 24-hour memory (empty: no lookup in the last 24 h); null with estimates off or no character." }
+      }
+    },
+    "RunPartyCharacters": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "GET /api/public/runs/{id}/characters (module `roster`): on a run the caller is on, the character each party member brings (the run's pick, else its timing's pick, else the main, else the only one) and its cached MapleScouter readings. Never another member's NEXON data or link state. 404 `not_found` for anyone not on the run, as for a run that does not exist. `Cache-Control: no-store`.",
+      "required": ["run_id", "slots", "character_data", "estimates", "nexon_data", "attribution", "estimate_label", "estimate_note"],
+      "properties": {
+        "run_id": { "type": "string" },
+        "slots": { "type": "array", "items": { "$ref": "#/$defs/PartyCharacterSlot" } },
+        "character_data": { "type": "boolean" },
+        "estimates": { "type": "boolean" },
+        "nexon_data": { "type": "boolean", "description": "The caller's own slot shows NEXON data: show `attribution` with it." },
+        "attribution": { "const": "Data based on NEXON Open API" },
+        "estimate_label": { "const": "Estimate from MapleScouter" },
+        "estimate_note": { "const": "Estimate for planning only, not eligibility" }
+      }
     }
   }
 }

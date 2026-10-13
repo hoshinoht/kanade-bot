@@ -77,6 +77,17 @@ pub struct EstimateRequest {
     refresh: bool,
 }
 
+impl EstimateRequest {
+    /// One character's lookup (a member's own).
+    pub(super) fn character(id: String, refresh: bool) -> Self {
+        Self {
+            character_ids: Some(vec![id]),
+            run_id: None,
+            refresh,
+        }
+    }
+}
+
 #[derive(Clone)]
 struct Subject {
     character_id: String,
@@ -103,6 +114,8 @@ pub struct Job {
     reads: usize,
     cache_hit: bool,
     fetched_at: Option<i64>,
+    /// Who asked for it (`kind`, `id`): an admin, or a member on the portal.
+    started_by: (&'static str, String),
 }
 
 /// The mock's estimate state.
@@ -345,7 +358,7 @@ impl Job {
             "position": position,
             "run_id": self.run_id,
             "character_ids": self.character_ids,
-            "started_by": {"kind": "admin", "id": "discord:1001"},
+            "started_by": {"kind": self.started_by.0, "id": self.started_by.1},
             "started_at": iso_secs(self.started_at),
             "finished_at": finished.map(iso_secs),
             "characters": self.subjects.iter().enumerate().map(|(at, s)| {
@@ -391,6 +404,7 @@ impl Estimates {
                 reads: 1,
                 cache_hit: false,
                 fetched_at: Some(at + 20),
+                started_by: ("admin", "discord:1001".into()),
             }],
             next: 1,
         }
@@ -398,6 +412,26 @@ impl Estimates {
 
     pub fn on(&self) -> bool {
         self.scenario != Scenario::Off
+    }
+
+    /// Job `id`'s state while it is kept.
+    pub(super) fn job_state(&self, id: &str) -> Option<&'static str> {
+        self.jobs.iter().find(|job| job.id == id).map(Job::state)
+    }
+
+    /// Job `id` looks up only `member`'s characters (no run's party).
+    pub(super) fn only_of(&self, id: &str, member: &str) -> bool {
+        self.jobs.iter().any(|job| {
+            job.id == id
+                && job.run_id.is_none()
+                && !job.subjects.is_empty()
+                && job.subjects.iter().all(|s| s.member_id == member)
+        })
+    }
+
+    /// The running job's id.
+    pub(super) fn running_id(&self) -> Option<&str> {
+        self.running().map(|job| job.id.as_str())
     }
 
     fn running(&self) -> Option<&Job> {
@@ -472,6 +506,13 @@ impl Store {
     /// `POST /__mock/estimates {scenario}`.
     pub fn set_estimate_scenario(&mut self, scenario: Scenario) {
         self.estimates.scenario = scenario;
+    }
+
+    /// A member started `job` on the portal: History and the row name them, as the server does.
+    pub fn estimate_started_by_member(&mut self, job: &str, member: &str) {
+        if let Some(found) = self.estimates.jobs.iter_mut().find(|j| j.id == job) {
+            found.started_by = ("member", format!("discord:{member}"));
+        }
     }
 
     /// Estimate routes answer the generic 404 while off (or the module is).
@@ -618,6 +659,7 @@ impl Store {
             reads: 0,
             cache_hit: cached.is_some(),
             fetched_at: cached,
+            started_by: ("admin", "discord:1001".into()),
         });
         estimates.promote();
         Ok(json!({ "job": estimates.json(estimates.jobs.len() - 1) }))

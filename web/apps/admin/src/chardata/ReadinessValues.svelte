@@ -9,9 +9,9 @@
 -->
 <script lang="ts">
   import type { CharacterChoice, ReadinessSlot } from '@kanade/api-types';
-  import { StatusChip } from '@kanade/ui';
+  import { dayTime, scouterChip, StatusChip } from '@kanade/ui';
   import '@kanade/ui/styles/screens/character-data.scss';
-  import { dayTime, levelChip, readinessLine, scouterAt, scouterChip } from './format';
+  import { levelChip, readinessLine, scouterAt } from './format';
 
   let {
     slot,

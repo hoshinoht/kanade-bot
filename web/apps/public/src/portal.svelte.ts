@@ -1,6 +1,7 @@
 import type { Identity, MemberAllowance, MemberEventTopic, PublicSession, PublicSessions, PublicStatus, SessionsEnded } from '@kanade/api-types';
 import { ApiRequestError, createClient, createLiveEvents, onUnauthenticated, type LiveEvents } from '@kanade/client';
 import { MemberBosses } from './bosses/bosses.svelte';
+import { MemberCharacters } from './characters/characters.svelte';
 import type { Landing } from './landing';
 import { MemberRequestsList } from './requests/requests.svelte';
 import { MemberTimingsList } from './timings/timings.svelte';
@@ -56,6 +57,8 @@ export class Portal {
   readonly requests = new MemberRequestsList(client, (error) => this.#gone(error));
   /** The member's change hints (`GET /api/public/events`), open while signed in and the tab is shown. */
   readonly live: LiveEvents<MemberEventTopic> = createLiveEvents<MemberEventTopic>({ url: '/api/public/events' });
+  /** The member's own characters, links and lookups (Account › Characters, a run's party), read when used. */
+  readonly characters = new MemberCharacters(client, (error) => this.#gone(error));
   #landing: Landing;
   #refreshing: Promise<void> | null = null;
   #unfollow: (() => void) | null = null;
@@ -257,6 +260,7 @@ export class Portal {
     this.timings.clear();
     this.bosses.clear();
     this.requests.clear();
+    this.characters.clear();
   }
 
   /** A closed portal or an ended session replaces the screen (401 arrives through `watch`). */

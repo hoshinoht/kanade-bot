@@ -8,8 +8,8 @@
  */
 import type { CharacterChoice, CharacterClash, RunCharacterSlot, Week } from '@kanade/api-types';
 import { ApiRequestError, createClient } from '@kanade/client';
-import { dayLabel } from '@kanade/ui';
-import { errorText, isUnbuilt, live, send, type Outcome } from '../resource.svelte';
+import { dayLabel, type Outcome } from '@kanade/ui';
+import { errorText, isUnbuilt, live, send } from '../resource.svelte';
 
 /**
  * Module off after all: the server answered the generic 404 for a character

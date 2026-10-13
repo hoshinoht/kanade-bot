@@ -74,6 +74,73 @@ export type MemberRequests = { requests: Array<MemberRequest>, open: number, tod
 
 export type MemberRequestLimit = { error: 'request_limit', message: string, limit: 'open' | 'today', };
 
+export type MyCharacters = { characters: Array<CharacterRow>, links: { [key in string]: CharacterLink }, pending: Array<PendingLink>, character_data: boolean, connected: boolean, estimates: boolean, notice_version: number, privacy_url: string | null, };
+
+export type PendingLink = { character_id: string, ign: string, class: string | null, requested_by: SettingsActor, requested_by_name: string | null, requested_at: string, expires_at: string, };
+
+export type MyCharacterCreated = { linkable: boolean, id: string, member_id: string, ign: string, world: string, class: string | null, level: number | null, role: 'main' | 'alt', 
+/**
+ * When it was retired; `null` while active.
+ */
+retired_at: string | null, created_at: string, updated_at: string, 
+/**
+ * Who made the last write (the create, else the last edit).
+ */
+updated_by: SettingsActor, 
+/**
+ * Send it back as the `PATCH` precondition.
+ */
+version: number, };
+
+export type LinkNotice = { character_id: string, ign: string, version: number, title: string, lead: string, what: NoticeSection, why: NoticeSection, how_long: NoticeSection, who: NoticeSection, as_is: string, link_label: string, cancel_label: string, request: PendingLink | null, privacy_url: string | null, attribution: string, };
+
+export type NoticeSection = { heading: string, text: string, };
+
+export type LinkOutcome = { state: 'linked' | 'linked_later' | 'busy' | 'unavailable' | 'not_found' | 'other_region', link: CharacterLink | null, };
+
+export type LinkCancelled = { request_kept: boolean, requested_by_name: string | null, };
+
+export type Unlinked = { unlinked: string, cards: number, };
+
+export type UnlinkedAll = { unlinked: Array<string>, };
+
+export type MyData = { entries: Array<MyDataEntry>, notice_version: number, privacy_url: string | null, attribution: string, };
+
+export type MyDataEntry = { character_id: string, ign: string, state: 'pending' | 'linked' | 'stale' | 'expired' | 'not_linked', retired: boolean, data: CharacterFacts | null, requested_by: SettingsActor | null, requested_by_name: string | null, requested_at: string | null, request_expires_at: string | null, linked_at: string | null, notice: number | null, consented_at: string | null, consent_surface: 'discord' | 'portal' | null, cards: Array<SharedCard>, };
+
+export type SharedCard = { channel: string | null, posted_at: string, cleared_by: string, };
+
+export type MemberEstimateLimit = { error: 'member_limited', message: string, next_at: string, };
+
+export type RunPartyCharacters = { run_id: string, slots: Array<PartyCharacterSlot>, character_data: boolean, estimates: boolean, nexon_data: boolean, attribution: string, estimate_label: string, estimate_note: string, };
+
+export type PartyCharacterSlot = { member: PartyMember, you: boolean, character: PartyCharacter | null, scouter: Array<PartyEstimate> | null, };
+
+export type PartyMember = { id: string, name: string, };
+
+export type PartyCharacter = { ign: string, class: string | null, level: number | null, level_source: 'roster' | 'nexon', as_of: string | null, };
+
+export type PartyEstimate = { boss: string, difficulty: Difficulty, 
+/**
+ * The character's share (`effective_percentage`), else the card's
+ * percentage.
+ */
+percentage: number, rating: string, estimated_minutes: number | null, 
+/**
+ * When kanade received it from MapleScouter.
+ */
+fetched_at: string, 
+/**
+ * MapleScouter assumed a 100% critical rate for this character (theirs
+ * is under it): label it "Assumes 100% critical rate (actual N%)".
+ */
+critical_rate_assumed: boolean, 
+/**
+ * The character's own critical rate with an assumed reading; `null`
+ * otherwise, or when MapleScouter didn't say.
+ */
+critical_rate_actual: number | null, };
+
 export type ApiError = { error: string, message: string, };
 
 export type Identity = { name: string, 
@@ -360,6 +427,12 @@ connected: boolean, requested_by: SettingsActor | null, requested_at: string | n
  * The notice version the member confirmed.
  */
 consent_version: number | null, consented_at: string | null, linked_at: string | null, 
+/**
+ * Where the member consented: `discord` (`/character link`) or
+ * `portal`; `null` while not consented and for consents given before
+ * it was recorded.
+ */
+consent_surface: 'discord' | 'portal' | null, 
 /**
  * The current notice version.
  */

@@ -1,5 +1,6 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import type { EstimateJob, EstimateStarted } from '@kanade/api-types';
 import type { Locator, Page } from '@playwright/test';
 import { boardExists, composite, diff, markdown, MOCKUPS, renderBoard, settle, skeleton } from './fidelity-kit';
 import { ADMIN, expect, PINNED_NOW, PUBLIC, test, choose, csrf, openList, setPortal, signInPublic } from './support';
@@ -298,6 +299,125 @@ const PUBLIC_PAIRS: Pair[] = [
   // `/privacy` (boards P_Privacy, P_PhonePrivacy: KANADE_MOCKUPS=…/docs/research/2026-10-12-chardata-mockups).
   { name: 'pub-privacy', board: 'P_Privacy', path: '/privacy', ready: signedOut },
   { name: 'pub-phone-privacy', board: 'P_PhonePrivacy', path: '/privacy', ready: signedOut },
+].map((pair) => ({ ...pair, app: 'public' as const }));
+
+// Member characters (boards: KANADE_MOCKUPS=…/docs/research/2026-10-13-member-characters, with a
+// `render` link to the M3E mockups' renderer). Asahi's characters as the boards draw them
+// (`/__mock/public/characters {"roster": "board"}`). The states boards (M_CharStates*,
+// M_LinkOutcomes, M_EstStates*, M_RunStates, M_PhoneCharStates, M_PhoneEstStates*) are grids of
+// cells over several screens: e2e/public-characters.spec.ts covers each of their states instead.
+const boardRoster = async (page: Page) => {
+  await signInPublic(page);
+  expect((await page.request.post(`${PUBLIC}/__mock/public/characters`, { data: { roster: 'board' } })).status()).toBe(204);
+};
+/** M_CharsMenu draws no waiting request: an admin withdraws Ren's first. */
+const boardRosterNoRequest = async (page: Page) => {
+  await boardRoster(page);
+  expect((await page.request.delete(`${ADMIN}/api/admin/characters/ch-b2/link`, { headers: await csrf(page.request) })).ok()).toBe(true);
+};
+const boardRosterUnfresh = async (page: Page) => {
+  await boardRoster(page);
+  expect((await page.request.post(`${PUBLIC}/__mock/public/unfresh`)).ok()).toBe(true);
+};
+/** The board draws the party's cached estimates: an admin looks the run's party up first (each read advances the mock's job). */
+const boardRosterWithReadings = async (page: Page) => {
+  await boardRoster(page);
+  const headers = await csrf(page.request);
+  const started: EstimateStarted = await (await page.request.post(`${ADMIN}/api/admin/estimates`, { headers, data: { run_id: 'r-carling' } })).json();
+  await expect
+    .poll(
+      async () => {
+        const job: EstimateJob = await (await page.request.get(`${ADMIN}/api/admin/estimates/${started.job.id}`)).json();
+        return job.state;
+      },
+      { timeout: 30_000 },
+    )
+    .toBe('done');
+};
+const charsShown = async (page: Page) => {
+  await page.waitForLoadState('networkidle');
+  await expect(page.locator('[data-fid="mychars-panel"] .rosterrow').first()).toBeVisible();
+};
+const charsMenu = async (page: Page) => {
+  await charsShown(page);
+  await page.getByRole('button', { name: 'More actions for AsahiPath' }).click();
+  await expect(page.getByRole('menu', { name: 'AsahiPath' })).toBeVisible();
+};
+const charsAdd = async (page: Page) => {
+  await charsShown(page);
+  await page.getByRole('button', { name: 'Add character' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Add character' });
+  await dialog.getByLabel('IGN').fill('AsahiLumi');
+  await dialog.getByRole('button', { name: 'Look up' }).click();
+  await expect(dialog.getByRole('region', { name: 'NEXON lookup' })).toContainText('found');
+};
+/** Edit AsahiKanna with a done lookup, scrolled to the strip as the board leaves it. */
+const charEdit = async (page: Page) => {
+  await charsShown(page);
+  await page.getByRole('button', { name: 'Edit AsahiKanna' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Edit AsahiKanna' });
+  await dialog.locator('.estimate').getByRole('button', { name: /^Look up/ }).click();
+  await expect(dialog.locator('.estimate table')).toBeVisible({ timeout: 20_000 });
+  await dialog.locator('.chardata').evaluate((strip) => {
+    const body = strip.closest('.modal__body')!;
+    body.scrollTop = strip.getBoundingClientRect().top - body.getBoundingClientRect().top + body.scrollTop - 8;
+  });
+};
+const linkNotice = async (page: Page) => {
+  await charsShown(page);
+  await page.getByRole('button', { name: 'Review and link…' }).click();
+  await expect(page.locator('[data-fid="link-notice"]')).toBeVisible();
+};
+const myData = async (page: Page) => {
+  await charsShown(page);
+  await page.getByRole('button', { name: 'My data…' }).click();
+  await expect(page.locator('[data-fid="mydata-entry"]').first()).toBeVisible();
+};
+const confirmAdd = async (page: Page) => {
+  await charsShown(page);
+  await page.getByRole('button', { name: 'Add character' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Add character' });
+  await dialog.getByLabel('IGN').fill('AsahiLumi');
+  await dialog.getByRole('button', { name: 'Add character' }).click();
+  await expect(page.getByRole('dialog', { name: "Confirm it's you" })).toBeVisible();
+  // The board draws Confirm alone: the refused Add has closed (nothing was added).
+  await expect(dialog).toBeHidden();
+};
+const confirmLink = async (page: Page) => {
+  await linkNotice(page);
+  await page.getByRole('button', { name: 'Link AsahiDK' }).click();
+  await expect(page.getByRole('dialog', { name: "Confirm it's you" })).toBeVisible();
+};
+/** The own run's pane (or phone screen), scrolled to Party · characters. */
+const runParty = async (page: Page) => {
+  await page.waitForLoadState('networkidle');
+  const section = page.locator('[data-fid="week-party-chars"]');
+  await expect(section.locator('.party-char__line, .party-char__none').first()).toBeVisible();
+  await section.evaluate((node) => {
+    for (let box = node.parentElement; box; box = box.parentElement)
+      if (box.scrollHeight > box.clientHeight && getComputedStyle(box).overflowY !== 'visible') {
+        box.scrollTop = node.getBoundingClientRect().top - box.getBoundingClientRect().top + box.scrollTop - 8;
+        break;
+      }
+  });
+};
+const CHARS = '/account?tab=characters';
+const MEMBER_CHAR_PAIRS: Pair[] = [
+  { name: 'mc-chars', board: 'M_Chars', path: CHARS, setup: boardRoster, ready: charsShown },
+  { name: 'mc-chars-menu', board: 'M_CharsMenu', path: CHARS, setup: boardRosterNoRequest, ready: charsMenu },
+  { name: 'mc-chars-add', board: 'M_CharsAdd', path: CHARS, setup: boardRoster, ready: charsAdd },
+  { name: 'mc-char-edit', board: 'M_CharEdit', path: CHARS, setup: boardRoster, ready: charEdit },
+  { name: 'mc-link-notice', board: 'M_LinkNotice', path: CHARS, setup: boardRoster, ready: linkNotice },
+  { name: 'mc-mydata', board: 'M_MyData', path: CHARS, setup: boardRoster, ready: myData },
+  { name: 'mc-confirm', board: 'M_Confirm', path: CHARS, setup: boardRosterUnfresh, ready: confirmAdd },
+  { name: 'mc-run-party', board: 'M_RunParty', path: '/?run=r-carling', setup: boardRosterWithReadings, ready: runParty },
+  { name: 'mc-phone-chars', board: 'M_PhoneChars', path: CHARS, setup: boardRoster, ready: charsShown },
+  { name: 'mc-phone-chars-add', board: 'M_PhoneCharsAdd', path: CHARS, setup: boardRoster, ready: charsAdd },
+  { name: 'mc-phone-char-edit', board: 'M_PhoneCharEdit', path: CHARS, setup: boardRoster, ready: charEdit },
+  { name: 'mc-phone-link-notice', board: 'M_PhoneLinkNotice', path: CHARS, setup: boardRoster, ready: linkNotice },
+  { name: 'mc-phone-mydata', board: 'M_PhoneMyData', path: CHARS, setup: boardRoster, ready: myData },
+  { name: 'mc-phone-confirm', board: 'M_PhoneConfirm', path: CHARS, setup: boardRosterUnfresh, ready: confirmLink },
+  { name: 'mc-phone-run-party', board: 'M_PhoneRunParty', path: '/?run=r-carling', setup: boardRosterWithReadings, ready: runParty },
 ].map((pair) => ({ ...pair, app: 'public' as const }));
 
 // The character roster (module `roster`, on in the mock): Mika's sheet on its Characters tab.
@@ -1662,7 +1782,7 @@ const PAIRS: Pair[] = [
 test.describe('layout fidelity', () => {
   test.skip(!ENABLED, 'run with `bun run fidelity` (needs a KANADE_FIDELITY=1 build)');
 
-  for (const pair of [...PAIRS, ...DRAFT_PAIRS, ...GRAPH_PAIRS, ...PRESENCE_PAIRS, ...PUBLIC_PAIRS].filter((p) => !ONLY.length || ONLY.includes(p.name))) {
+  for (const pair of [...PAIRS, ...DRAFT_PAIRS, ...GRAPH_PAIRS, ...PRESENCE_PAIRS, ...PUBLIC_PAIRS, ...MEMBER_CHAR_PAIRS].filter((p) => !ONLY.length || ONLY.includes(p.name))) {
     test(pair.name, async ({ page, browser }) => {
       test.skip(!boardExists(pair.board), `no board ${pair.board}.dc.html under ${MOCKUPS}`);
       const dir = join(OUT, pair.name);

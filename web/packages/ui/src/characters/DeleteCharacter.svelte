@@ -1,14 +1,16 @@
 <!--
-  Delete one character for good (boards B_RosterDelete, B_PhoneRosterDelete):
-  an alertdialog that names the character, says it cannot be brought back
-  here and that History keeps an audit row, offers Retire instead for an
-  active one, and starts on Cancel. Delete is the roster's only confirmed action.
+  Delete one character for good (boards B_RosterDelete, B_PhoneRosterDelete;
+  admin only, members never delete): an alertdialog that names the character,
+  says it cannot be brought back here and that History keeps an audit row,
+  offers Retire instead for an active one, and starts on Cancel. Delete is
+  the roster's only confirmed action.
 -->
 <script lang="ts">
   import type { CharacterRow } from '@kanade/api-types';
-  import { Icon, Modal } from '@kanade/ui';
+  import Icon from '../components/Icon.svelte';
+  import Modal from '../components/Modal.svelte';
   import '@kanade/ui/styles/screens/settings.scss';
-  import { regionLabel } from './characters';
+  import { regionLabel } from './roster';
 
   let {
     open = $bindable(false),

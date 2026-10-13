@@ -22,8 +22,8 @@ use super::schedule::store_error;
 use super::writer::{LeaseError, Writer, WriterLease};
 use super::{SqliteStoreConfig, SqliteStoreError, connect};
 use crate::domain::chardata::{
-    CALL_WINDOW, CharDataStore, FUTURE_SKEW, Link, LinkPut, LinkStatus, Post, PostState,
-    RefreshState, Snapshot, StoreFuture, date_text,
+    CALL_WINDOW, CharDataStore, ConsentSurface, FUTURE_SKEW, Link, LinkPut, LinkStatus, Post,
+    PostState, RefreshState, Snapshot, StoreFuture, date_text,
 };
 use crate::domain::scheduler::StoreError;
 use rows::{LINK_COLUMNS, POST_COLUMNS, SNAPSHOT_COLUMNS, at, link, post, snapshot};
@@ -152,8 +152,8 @@ impl SqliteCharData {
             sqlx::query(
                 "INSERT INTO links (character_id, member_id, ign_key, region, status,
                      requested_by_kind, requested_by_id, requested_at, consent_version,
-                     consented_at, linked_at, version)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
+                     consented_at, linked_at, version, consent_surface)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
                  ON CONFLICT (character_id) DO UPDATE SET member_id = excluded.member_id,
                      ign_key = excluded.ign_key, region = excluded.region,
                      status = excluded.status, requested_by_kind = excluded.requested_by_kind,
@@ -161,7 +161,7 @@ impl SqliteCharData {
                      requested_at = excluded.requested_at,
                      consent_version = excluded.consent_version,
                      consented_at = excluded.consented_at, linked_at = excluded.linked_at,
-                     version = excluded.version",
+                     version = excluded.version, consent_surface = excluded.consent_surface",
             )
             .bind(&new.character_id)
             .bind(&new.member_id)
@@ -175,6 +175,7 @@ impl SqliteCharData {
             .bind(&consented_at)
             .bind(&linked_at)
             .bind(i64::from(new.version))
+            .bind(new.consent_surface.map(ConsentSurface::as_str))
             .execute(&mut *tx)
             .await
             .map_err(store_error)?;

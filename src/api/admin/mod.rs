@@ -5,8 +5,8 @@
 mod account;
 mod auth;
 mod avatars;
-mod character_data;
-mod characters;
+pub(crate) mod character_data;
+pub(crate) mod characters;
 pub mod config;
 pub(crate) mod context;
 mod drafts;
@@ -20,7 +20,7 @@ mod logs;
 mod presence;
 pub(crate) mod read;
 mod reminders;
-mod replay;
+pub(crate) mod replay;
 mod tonight;
 pub(crate) mod write;
 

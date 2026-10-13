@@ -8,11 +8,11 @@
 -->
 <script lang="ts">
   import type { Boss, DraftConflict, DraftDetail, DraftPreviewView, DraftWritten, Run, RowChange, Week } from '@kanade/api-types';
-  import { DecisionCard, Icon, PendingLabel, Portrait, StatusChip, Toaster, runTitle } from '@kanade/ui';
+  import { DecisionCard, Icon, PendingLabel, Portrait, StatusChip, Toaster, runTitle, type Outcome } from '@kanade/ui';
   import { tick } from 'svelte';
   import DiffRow from '../history/DiffRow.svelte';
   import { shortAt } from '../history/describe';
-  import { Resource, send, type Outcome } from '../resource.svelte';
+  import { Resource, send } from '../resource.svelte';
   import { answers, changeNo, changesLabel, closedLabel, draftPath, editedAt, flagsByOp, kindLabel, opFlag, removalLabel, settled, shortDate, type Answer } from './drafts';
 
   let {

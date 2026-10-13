@@ -7,10 +7,10 @@
 -->
 <script lang="ts">
   import type { CharacterDataHealth } from '@kanade/api-types';
-  import { Icon, StatusChip, WavyProgress, type IconName } from '@kanade/ui';
+  import { dayMonth, dayTime, Icon, StatusChip, WavyProgress, type IconName } from '@kanade/ui';
   import '@kanade/ui/styles/screens/character-data.scss';
   import { directory } from '../names/directory.svelte';
-  import { dayMonth, dayTime, hourMinute, nexonTag, scouterTag, sweeperTag } from '../chardata/format';
+  import { hourMinute, nexonTag, scouterTag, sweeperTag } from '../chardata/format';
   import SettingsPanel from './SettingsPanel.svelte';
 
   let { health, timeZone }: { health: CharacterDataHealth; timeZone: string } = $props();

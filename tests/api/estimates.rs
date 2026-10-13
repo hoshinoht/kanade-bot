@@ -52,14 +52,14 @@ const CLIENT_TIMEOUT: Duration = Duration::from_millis(400);
 
 /// One request the fake received.
 #[derive(Clone, Debug)]
-struct Seen {
+pub(crate) struct Seen {
     /// Path and query exactly as sent.
     target: String,
     headers: Vec<(String, String)>,
 }
 
 #[derive(Clone, Default)]
-struct Fake {
+pub(crate) struct Fake {
     seen: Arc<Mutex<Vec<Seen>>>,
     gate: Arc<Notify>,
     /// `Once…` IGNs already answered busy.
@@ -68,7 +68,7 @@ struct Fake {
 
 impl Fake {
     /// The lookups received (`/healthz` probes left out).
-    fn lookups(&self) -> Vec<Seen> {
+    pub(crate) fn lookups(&self) -> Vec<Seen> {
         self.seen
             .lock()
             .unwrap()
@@ -78,7 +78,7 @@ impl Fake {
             .collect()
     }
 
-    fn targets(&self) -> Vec<String> {
+    pub(crate) fn targets(&self) -> Vec<String> {
         self.lookups().into_iter().map(|seen| seen.target).collect()
     }
 }
@@ -236,7 +236,7 @@ async fn bosses(State(fake): State<Fake>, request: Request) -> Response {
     }
 }
 
-async fn fake_scouter() -> (SocketAddr, Fake) {
+pub(crate) async fn fake_scouter() -> (SocketAddr, Fake) {
     let fake = Fake::default();
     let recorded = fake.clone();
     let app = Router::new()
@@ -1242,7 +1242,12 @@ async fn scouter_requests_never_carry_nexon_fields() {
     // The create already asked the member to link it (pending).
     let id = character(&reads, "1001", "MikaBish").await;
     let ConfirmOutcome::Linked(..) = service
-        .confirm_link("1001", &id, NOTICE_VERSION)
+        .confirm_link(
+            "1001",
+            &id,
+            NOTICE_VERSION,
+            kanade::domain::chardata::ConsentSurface::Discord,
+        )
         .await
         .unwrap()
     else {
@@ -1386,7 +1391,12 @@ async fn readiness_shows_cached_scouter_readings_per_boss_and_never_looks_up() {
     let ren = character(&reads, "1001", "RenShade").await;
     let mika = character(&reads, "1002", "MikaBish").await;
     let ConfirmOutcome::Linked(..) = service
-        .confirm_link("1002", &mika, NOTICE_VERSION)
+        .confirm_link(
+            "1002",
+            &mika,
+            NOTICE_VERSION,
+            kanade::domain::chardata::ConsentSurface::Discord,
+        )
         .await
         .unwrap()
     else {

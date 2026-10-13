@@ -9,20 +9,27 @@
   Adding a MapleSEA character while NEXON is connected (module
   `character_data` with a key) asks no class or level: Look up (or Enter in
   the IGN) asks NEXON once and shows what it says, never stored (NEXON terms
-  count copied values as NEXON data), and saving also asks the member to link
-  it, from which class and level come once they confirm in Discord. Other
-  regions, or no module or key, keep the manual fields; editing is unchanged.
+  count copied values as NEXON data). For an admin, saving also asks the
+  member to link it, from which class and level come once they confirm in
+  Discord; for a member adding their own (the portal, M_CharsAdd) the NEXON
+  notice opens next. Other regions, or no module or key, keep the manual
+  fields; editing is unchanged. Members have no Delete, and a write the
+  portal refuses for want of a fresh sign-in closes this for "Confirm it's
+  you" (`kit.onreauth`).
 -->
 <script lang="ts">
   import { tick, untrack } from 'svelte';
-  import type { CharacterCreated, CharacterLookup, CharacterRow, SettingsActor } from '@kanade/api-types';
-  import { Icon, LiveRegion, Modal, Select, StatusChip } from '@kanade/ui';
+  import type { CharacterLookup, CharacterRow } from '@kanade/api-types';
+  import Icon from '../components/Icon.svelte';
+  import LiveRegion from '../components/LiveRegion.svelte';
+  import Modal from '../components/Modal.svelte';
+  import Select from '../components/Select.svelte';
+  import StatusChip from '../components/StatusChip.svelte';
   import '@kanade/ui/styles/core/select.scss';
   import '@kanade/ui/styles/screens/settings.scss';
-  import { send } from '../resource.svelte';
-  import CharacterDataStrip from '../chardata/CharacterDataStrip.svelte';
-  import { asOfDate, createdLinkNote, lookupLine, lookupMiss, type LookupMiss } from '../chardata/format';
-  import { chardataRoutes, lookUp, lookupConnected } from '../chardata/routes.svelte';
+  import { asOfDate, lookupLine, lookupMiss, type LookupMiss } from './chardata';
+  import CharacterDataStrip from './CharacterDataStrip.svelte';
+  import type { CharacterChange, CharacterFids, CharacterKit } from './kit.svelte';
   import {
     checkForm,
     classOptions,
@@ -39,43 +46,39 @@
     takenText,
     type Field,
     type FieldErrors,
-  } from './characters';
+  } from './roster';
 
   let {
     open = $bindable(false),
-    memberId,
-    memberName,
+    kit,
     character,
     rows,
     sheet,
-    timeZone,
-    updatedBy,
-    actor,
+    fids = {},
     onsaved,
     ondelete,
-    onrefresh,
     onclosed,
   }: {
     open: boolean;
-    memberId: string;
-    memberName: string;
+    kit: CharacterKit;
     /** The character being edited; null adds one. */
     character: CharacterRow | null;
     /** The member's characters as listed (for the role hint and its rule). */
     rows: CharacterRow[];
     /** The phone frame: a bottom sheet with 44 px targets. */
     sheet: boolean;
-    timeZone: string;
-    updatedBy: (row: CharacterRow) => string;
-    /** A History actor's name (who asked for a link, who started a lookup). */
-    actor: (who: SettingsActor) => string;
-    onsaved: (row: CharacterRow, message: string) => void;
-    ondelete: (row: CharacterRow) => void;
-    /** Re-read the list (after a stale or missing answer); resolves to the fresh rows. */
-    onrefresh: () => Promise<CharacterRow[]>;
+    fids?: CharacterFids;
+    /** Saved; `linkable`: an add that can be linked next (the portal opens the notice). */
+    onsaved: (row: CharacterRow, message: string, linkable: boolean) => void;
+    /** Admin only: Delete… in the foot. */
+    ondelete?: (row: CharacterRow) => void;
     /** Closed and focus given back: the caller may unmount it. */
     onclosed: () => void;
   } = $props();
+
+  const member = $derived(kit.audience === 'member');
+  const memberName = $derived(kit.owner);
+  const timeZone = $derived(kit.timeZone);
 
   const uid = $props.id();
   let ign = $state('');
@@ -132,7 +135,7 @@
     if (!character) {
       const mine = ++opened;
       // Untracked: the read may mark the module gone, which must not reset the form.
-      void untrack(lookupConnected).then((value) => {
+      void untrack(() => kit.api.lookupConnected()).then((value) => {
         if (mine === opened) connected = value;
       });
     }
@@ -156,7 +159,7 @@
     }
     looked = { ign: name, state: 'busy' };
     said = `Asking NEXON about ${name}…`;
-    const result = await lookUp(name, world);
+    const result = await kit.api.lookUp(name, world);
     // Typed on, or closed, meanwhile: this answer is for another name.
     if (!open || looked?.ign !== name || ign.trim() !== name) return;
     if (result.ok) {
@@ -166,13 +169,13 @@
     }
     if (result.unbuilt) {
       // The module is off: the manual fields come back.
-      chardataRoutes.gone = true;
+      kit.routes.gone = true;
       connected = false;
       looked = null;
       said = '';
       return;
     }
-    const miss = lookupMiss(result.code, name, result.message);
+    const miss = lookupMiss(result.code, name, result.message, member);
     // No key after all: the manual fields come back, with the reason above them.
     if (miss.miss === 'not_connected') connected = false;
     looked = { ign: name, state: 'miss', ...miss };
@@ -180,6 +183,12 @@
   }
 
   const roleHint = $derived.by(() => {
+    if (member) {
+      if (keepsMain) return 'Your main. To change it, choose Main on another character.';
+      if (firstActive) return 'Your first character becomes your main.';
+      if (!currentMain) return '';
+      return character ? `Your main is ${currentMain.ign}. Choosing Main moves the crown here.` : `Your main stays ${currentMain.ign}. Choose Main to move the crown here.`;
+    }
     if (keepsMain) return `${character!.ign} is ${memberName}'s main. Make another character main to move the crown.`;
     if (firstActive) return `${memberName}'s first character becomes the main.`;
     if (!currentMain) return '';
@@ -215,22 +224,23 @@
     busy = true;
     let result;
     if (character) {
-      const patch: Record<string, unknown> = { version };
+      const patch: CharacterChange = { version };
       if (trimmed !== character.ign) patch.ign = trimmed;
       if (world !== character.world) patch.world = world;
       if (klass !== (character.class ?? '')) patch.class = klass || null;
       if (parsed !== character.level) patch.level = parsed;
       if (main !== (character.role === 'main')) patch.role = main ? 'main' : 'alt';
       if (retired !== (character.retired_at !== null)) patch.retired = retired;
-      result = await send((c) => c.patch<CharacterRow>(`/api/admin/characters/${encodeURIComponent(character!.id)}`, patch));
+      result = await kit.api.patch(character.id, patch);
     } else {
       // Shown-only NEXON values are never sent: with NEXON connected a MapleSEA add has no class or level.
-      const body = nexon ? { ign: trimmed, world, role: main ? 'main' : 'alt' } : { ign: trimmed, world, class: klass, level: parsed, role: main ? 'main' : 'alt' };
-      const created = await send((c) => c.post<CharacterCreated>(`/api/admin/members/${encodeURIComponent(memberId)}/characters`, body));
+      const role = main ? 'main' : 'alt';
+      const created = await kit.api.create(nexon ? { ign: trimmed, world, role } : { ign: trimmed, world, class: klass, level: parsed, role });
       if (created.ok) {
         busy = false;
-        const { link, ...row } = created.value;
-        onsaved(row, `Added ${row.ign}${row.role === 'main' ? `, ${memberName}'s main` : ''}.${createdLinkNote(link, memberName)}`);
+        const { row, note, linkable } = created.value;
+        const whose = member ? 'your' : `${memberName}'s`;
+        onsaved(row, `Added ${row.ign}${row.role === 'main' ? `, ${whose} main` : ''}.${note}`, linkable);
         open = false;
         return;
       }
@@ -238,8 +248,14 @@
     }
     busy = false;
     if (result.ok) {
-      onsaved(result.value, `Saved ${result.value.ign}.`);
+      onsaved(result.value, `Saved ${result.value.ign}.`, false);
       open = false;
+      return;
+    }
+    if (result.reauth && kit.onreauth) {
+      // Nothing was saved: "Confirm it's you" takes over, and the sign-in brings this form back.
+      open = false;
+      kit.onreauth(character ? { kind: 'edit', row: character } : { kind: 'add' });
       return;
     }
     if (result.code === 'ign_taken') {
@@ -255,20 +271,26 @@
       }
     }
     if (result.code === 'main_required') {
-      errors = { role: `${memberName} keeps a main while other characters are active: make another character the main first.` };
+      errors = { role: `${member ? 'You keep' : `${memberName} keeps`} a main while other characters are active: make another character the main first.` };
+      return report();
+    }
+    if (result.code === 'class_level_required') {
+      // NEXON can't be asked for this one (another region, or not connected): class and level by hand.
+      connected = false;
+      errors = klass ? { level: result.message } : { class: result.message };
       return report();
     }
     errors = {};
     if (result.code === 'stale' && character) {
       // Someone saved it meanwhile: take the new version and keep these edits.
-      const fresh = (await onrefresh()).find((c) => c.id === character.id);
+      const fresh = (await kit.api.refresh()).find((c) => c.id === character.id);
       if (fresh) {
         version = fresh.version;
         return report(`${character.ign} changed while you were editing it (now ${fresh.ign}${fresh.level ? `, Lv. ${fresh.level}` : ''}). Save again to replace that with your edits.`);
       }
     }
     if (result.status === 404) {
-      void onrefresh();
+      void kit.api.refresh();
       return report(`${character?.ign ?? 'This character'} is no longer on the roster.`);
     }
     return report(`Couldn't save ${trimmed || 'the character'}: ${result.message} Your edits are kept.`);
@@ -379,7 +401,7 @@
       <span class="rosterlookup__value" data-fid="roster-lookup-values">{lookupLine(shown.found) || 'No class or level from NEXON'}</span>
       <span class="rosterlookup__sub">{shown.found.name ?? shown.ign} · as of {asOfDate(shown.found.as_of)} (SGT)</span>
       <span class="rosterlookup__sub">{shown.found.attribution}</span>
-      <span class="rosterlookup__sub"><b>Shown only; saved after the member confirms in Discord.</b></span>
+      <span class="rosterlookup__sub"><b>{member ? 'Shown only; kept only once you link it.' : 'Shown only; saved after the member confirms in Discord.'}</b></span>
     {:else if shown.state === 'miss'}
       <span class="rosterlookup__value">{shown.lead}</span>
       <span class="rosterlookup__sub">{shown.text}</span>
@@ -390,7 +412,11 @@
 <Modal
   bind:open
   title={character ? `Edit ${character.ign}` : 'Add character'}
-  eyebrow={character ? `${memberName} · updated ${dayMonth(character.updated_at, timeZone)} by ${updatedBy(character)}` : memberName}
+  eyebrow={member
+    ? `Your character${character ? ` · updated ${dayMonth(character.updated_at, timeZone)} by ${kit.updatedBy(character)}` : ''}`
+    : character
+      ? `${memberName} · updated ${dayMonth(character.updated_at, timeZone)} by ${kit.updatedBy(character)}`
+      : memberName}
   narrow
   className="rosterdialog {sheet ? 'rosterdialog--sheet' : ''}"
   dismissible={!busy}
@@ -432,8 +458,9 @@
       {#if sheet}{@render roleNote()}{/if}
       <p class="rosterform__note" id="{uid}-link-note" data-fid="roster-link-note">
         <Icon name="link" /><span
-          >Adding asks {memberName} to link {ign.trim() || 'it'}: nothing from NEXON is kept until {memberName} confirms with
-          <span class="mono">/character link</span> in Discord, and class and level then come from that link. Kanade doesn’t message {memberName}; tell them.</span
+          >{#if member}Next, Kanade shows you the NEXON notice for {ign.trim() || 'it'}. Nothing from NEXON is kept unless you press Link there; class and level then come
+            from that link.{:else}Adding asks {memberName} to link {ign.trim() || 'it'}: nothing from NEXON is kept until {memberName} confirms with
+            <span class="mono">/character link</span> in Discord, and class and level then come from that link. Kanade doesn’t message {memberName}; tell them.{/if}</span
         >
       </p>
     {:else}
@@ -485,7 +512,11 @@
         <span class="rosterform__switch-text">
           <b id="{uid}-retired">Retired</b>
           <span class="rosterform__hint" id="{uid}-retired-hint"
-            >{keepsMain ? `The main stays while ${memberName} has other active characters.` : 'Kept for history; never offered when a run picks a character.'}</span
+            >{keepsMain
+              ? member
+                ? `${character.ign} is your main, so it can’t be retired while other characters are active. Make another character main first.`
+                : `The main stays while ${memberName} has other active characters.`
+              : 'Kept for history; never offered when a run picks a character.'}</span
           >
         </span>
         <button
@@ -504,12 +535,14 @@
         >
       </div>
       <!-- Module `character_data`: NEXON data and estimates (draws nothing while the module is off). -->
-      <CharacterDataStrip {character} {memberName} {sheet} {timeZone} updatedBy={updatedBy(character)} {actor} />
+      <CharacterDataStrip {kit} {character} {sheet} {fids} />
     {/if}
   </form>
   {#snippet footer(close)}
-    {#if character}
+    {#if character && ondelete}
       <button type="button" class="btn btn--danger" data-fid="roster-delete" disabled={busy} onclick={() => ondelete(character)}>Delete…</button>
+      <span class="rosterform__grow"></span>
+    {:else if member}
       <span class="rosterform__grow"></span>
     {/if}
     <button type="button" class="btn" disabled={busy} onclick={close}>Cancel</button>

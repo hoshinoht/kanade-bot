@@ -26,8 +26,8 @@ use super::{MoveError, Store};
 pub const ATTRIBUTION: &str = "Data based on NEXON Open API";
 /// The public `/privacy` page (invented host).
 pub const PRIVACY_URL: &str = "https://portal.example.invalid/privacy";
-const NOTICE_VERSION: u32 = 1;
-const DAY: i64 = 86_400;
+pub(super) const NOTICE_VERSION: u32 = 1;
+pub(super) const DAY: i64 = 86_400;
 const BUDGET: u32 = 800;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize)]
@@ -48,19 +48,29 @@ pub struct HealthRequest {
 
 #[derive(Clone)]
 pub struct Link {
-    character_id: String,
+    pub(super) character_id: String,
     /// `pending`, `linked` or `stale`; a linked one with no fresh data 30
     /// days after linking reads as `expired`.
-    state: &'static str,
-    version: u32,
-    requested_by: (&'static str, String),
-    requested_at: i64,
-    linked_at: Option<i64>,
+    pub(super) state: &'static str,
+    pub(super) version: u32,
+    pub(super) requested_by: (&'static str, String),
+    pub(super) requested_at: i64,
+    pub(super) linked_at: Option<i64>,
+    /// Where the member consented: `discord` or `portal`.
+    pub(super) consent_surface: Option<&'static str>,
     /// Invented data and when it was fetched.
-    data: Option<(Value, i64)>,
+    pub(super) data: Option<(Value, i64)>,
+    /// Tracked share cards: channel name and when each was posted.
+    pub(super) cards: Vec<(&'static str, i64)>,
 }
 
-fn facts(name: &str, class: &str, level: i64, power: i64, fetched: i64) -> Option<(Value, i64)> {
+pub(super) fn facts(
+    name: &str,
+    class: &str,
+    level: i64,
+    power: i64,
+    fetched: i64,
+) -> Option<(Value, i64)> {
     Some((
         json!({
             "name": name,
@@ -74,7 +84,7 @@ fn facts(name: &str, class: &str, level: i64, power: i64, fetched: i64) -> Optio
     ))
 }
 
-fn linked(id: &str, member: &str, linked_at: i64, data: Option<(Value, i64)>) -> Link {
+pub(super) fn linked(id: &str, member: &str, linked_at: i64, data: Option<(Value, i64)>) -> Link {
     Link {
         character_id: id.into(),
         state: "linked",
@@ -82,7 +92,9 @@ fn linked(id: &str, member: &str, linked_at: i64, data: Option<(Value, i64)>) ->
         requested_by: ("member", member.into()),
         requested_at: linked_at - 600,
         linked_at: Some(linked_at),
+        consent_surface: Some("discord"),
         data,
+        cards: Vec::new(),
     }
 }
 
@@ -123,7 +135,9 @@ pub fn seed() -> Vec<Link> {
             requested_by: ("admin", "discord:1001".into()),
             requested_at: now - 20 * 60,
             linked_at: None,
+            consent_surface: None,
             data: None,
+            cards: Vec::new(),
         },
         linked(
             "ch-s8",
@@ -162,19 +176,26 @@ pub struct LookupRequest {
     world: Option<String>,
 }
 
-fn coded(status: u16, code: &'static str, message: &str) -> MoveError {
+impl LookupRequest {
+    /// A member's lookup: always MapleSEA.
+    pub(super) fn msea(ign: String) -> Self {
+        Self { ign, world: None }
+    }
+}
+
+pub(super) fn coded(status: u16, code: &'static str, message: &str) -> MoveError {
     MoveError::Coded(status, code, message.into())
 }
 
 /// The data a reader may show: kept at most 30 days, never stamped in the future.
-fn fresh(link: Option<&Link>, now: i64) -> Option<&(Value, i64)> {
+pub(super) fn fresh(link: Option<&Link>, now: i64) -> Option<&(Value, i64)> {
     link.and_then(|link| link.data.as_ref())
         .filter(|(_, fetched)| fetched + 30 * DAY > now && *fetched <= now + 300)
 }
 
 /// The strip's state of an existing link: `expired` is linked with no fresh
 /// data 30 days after linking, as the server derives it.
-fn state_of(link: &Link, now: i64) -> &'static str {
+pub(super) fn state_of(link: &Link, now: i64) -> &'static str {
     match link.state {
         "linked"
             if fresh(Some(link), now).is_none()
@@ -186,7 +207,7 @@ fn state_of(link: &Link, now: i64) -> &'static str {
     }
 }
 
-fn view(id: &str, link: Option<&Link>, connected: bool, now: i64) -> Value {
+pub(super) fn view(id: &str, link: Option<&Link>, connected: bool, now: i64) -> Value {
     let iso = iso_secs;
     let data = fresh(link, now).map(|(data, fetched)| {
         let mut data = data.clone();
@@ -211,6 +232,7 @@ fn view(id: &str, link: Option<&Link>, connected: bool, now: i64) -> Value {
         "consent_version": link.and_then(|link| link.linked_at).map(|_| NOTICE_VERSION),
         "consented_at": link.and_then(|link| link.linked_at).map(iso),
         "linked_at": link.and_then(|link| link.linked_at).map(iso),
+        "consent_surface": link.and_then(|link| link.consent_surface),
         "notice_version": NOTICE_VERSION,
         "data": data,
         "refresh": {
@@ -245,7 +267,7 @@ impl Store {
         }
     }
 
-    fn connected(&self) -> bool {
+    pub(super) fn connected(&self) -> bool {
         self.chardata_health != Health::Setup
     }
 
@@ -256,7 +278,7 @@ impl Store {
             .ok_or_else(|| coded(404, "not_found", "That character is not on the roster."))
     }
 
-    fn link_of(&self, id: &str) -> Option<&Link> {
+    pub(super) fn link_of(&self, id: &str) -> Option<&Link> {
         self.links.iter().find(|link| link.character_id == id)
     }
 
@@ -337,7 +359,9 @@ impl Store {
             requested_by: ("admin", "discord:1001".into()),
             requested_at: now,
             linked_at: None,
+            consent_surface: None,
             data: None,
+            cards: Vec::new(),
         };
         let answer = view(id, Some(&link), true, now);
         self.links.push(link);

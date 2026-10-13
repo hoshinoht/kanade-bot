@@ -18,7 +18,9 @@ use chrono::{DateTime, TimeDelta, TimeZone, Utc};
 
 use super::*;
 use crate::domain::characters::{CharacterChange, CharacterRecord, CharacterRole};
-use crate::domain::chardata::{CharDataStore, DAILY_CALLS, Link, LinkStatus, NOTICE_VERSION, Post};
+use crate::domain::chardata::{
+    CharDataStore, ConsentSurface, DAILY_CALLS, Link, LinkStatus, NOTICE_VERSION, Post,
+};
 use crate::domain::history::{Actor, Surface};
 use crate::domain::settings::SettingsChangeQuery;
 use crate::infrastructure::nexon::{ApiKey, KEY_HEADER};
@@ -289,7 +291,12 @@ impl Rig {
 
     async fn confirm(&self) -> ConfirmOutcome {
         self.service
-            .confirm_link("1001", "c1", NOTICE_VERSION)
+            .confirm_link(
+                "1001",
+                "c1",
+                NOTICE_VERSION,
+                crate::domain::chardata::ConsentSurface::Discord,
+            )
             .await
             .unwrap()
     }
@@ -378,14 +385,14 @@ async fn an_admin_request_waits_for_the_member_and_calls_nothing() {
     // Only the member, with the current notice, makes it active.
     assert_eq!(
         rig.service
-            .confirm_link("1002", "c1", NOTICE_VERSION)
+            .confirm_link("1002", "c1", NOTICE_VERSION, ConsentSurface::Discord)
             .await
             .unwrap(),
         ConfirmOutcome::NotEligible
     );
     assert_eq!(
         rig.service
-            .confirm_link("1001", "c1", NOTICE_VERSION + 1)
+            .confirm_link("1001", "c1", NOTICE_VERSION + 1, ConsentSurface::Discord)
             .await
             .unwrap(),
         ConfirmOutcome::NoticeOutdated
@@ -397,6 +404,7 @@ async fn an_admin_request_waits_for_the_member_and_calls_nothing() {
     assert_eq!(linked.status, LinkStatus::Active);
     assert_eq!(linked.consent_version, Some(NOTICE_VERSION));
     assert_eq!(linked.consented_at, Some(at(11, 0)));
+    assert_eq!(linked.consent_surface, Some(ConsentSurface::Discord));
     assert_eq!(linked.requested_by, admin, "the request stays the admin's");
     assert_eq!(rig.fake.calls(), ["id", "basic", "stat"]);
     assert!(
@@ -609,7 +617,12 @@ async fn a_second_429_ends_the_batch_for_the_day() {
     let rig = rig().await;
     for (id, member) in [("c1", "1001"), ("c2", "1001")] {
         rig.service
-            .confirm_link(member, id, NOTICE_VERSION)
+            .confirm_link(
+                member,
+                id,
+                NOTICE_VERSION,
+                crate::domain::chardata::ConsentSurface::Discord,
+            )
             .await
             .unwrap();
     }
@@ -818,7 +831,12 @@ async fn roster_edits_unlink_and_the_orphan_pass_catches_the_rest() {
     let rig = rig().await;
     rig.confirm().await;
     rig.service
-        .confirm_link("1001", "c2", NOTICE_VERSION)
+        .confirm_link(
+            "1001",
+            "c2",
+            NOTICE_VERSION,
+            crate::domain::chardata::ConsentSurface::Discord,
+        )
         .await
         .unwrap();
     let mut renamed = CharacterStore::character(&*rig.roster, "c1")
@@ -1281,6 +1299,7 @@ async fn the_startup_pass_leaves_expired_stale_and_pending_links_alone() {
                     consent_version: None,
                     consented_at: None,
                     linked_at: None,
+                    consent_surface: None,
                     ..link.with_status(LinkStatus::Pending)
                 };
                 rig.file.put_link(pending, version).await.unwrap();

@@ -101,3 +101,67 @@ export { clashes, fromMinutes, toMinutes, type Clash, type Slot, type TimedRun }
 export { default as Select } from './components/Select.svelte';
 export { default as MultiSelect } from './components/MultiSelect.svelte';
 export { countWords, filterOptions, NATIVE_QUERY, type SelectOption } from './components/select';
+export type { Outcome } from './outcome';
+// A member's characters and their character data (modules `roster`, `character_data`): the admin
+// Members sheet and the portal's Account › Characters, with the routes and wording each app passes.
+export { default as CharacterPanel } from './characters/CharacterPanel.svelte';
+export { default as EstimateProgress } from './characters/EstimateProgress.svelte';
+export {
+  activeJob,
+  CharacterLinkView,
+  EstimateLookup,
+  type Added,
+  type Audience,
+  type CharacterAdd,
+  type CharacterApi,
+  type CharacterChange,
+  type CharacterFids,
+  type CharacterKit,
+  type ChardataRoutes,
+  type EstimateApi,
+  type LinkApi,
+  type Reauth,
+} from './characters/kit.svelte';
+export {
+  checkForm,
+  classOptions,
+  dayMonth,
+  DEFAULT_REGION,
+  FIELD_LABELS,
+  IGN_ERROR,
+  invalidField,
+  LEVEL_ERROR,
+  mainLocked,
+  mainOf,
+  parseLevel,
+  REGIONS,
+  regionLabel,
+  splitCharacters,
+  takenKey,
+  takenText,
+  type Field,
+  type FieldErrors,
+  type FormValues,
+} from './characters/roster';
+export {
+  asOfDate,
+  assumedCrit,
+  catalogBoss,
+  clock,
+  combatPower,
+  ESTIMATE_LABEL,
+  ESTIMATE_NOTE,
+  estimateErrorText,
+  lookupLine,
+  lookupMiss,
+  minutes,
+  PENDING_DAYS,
+  percent,
+  queuedText,
+  scouterChip,
+  STRIP_TAGS,
+  stripState,
+  type ChipTone,
+  type LookupMiss,
+  type StripState,
+} from './characters/chardata';

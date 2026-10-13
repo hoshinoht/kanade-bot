@@ -544,6 +544,72 @@ pub fn stub() -> Vec<Component> {
     vec![container(GREY, vec![text(STUB)])]
 }
 
+// ── the portal's notice ──
+
+/// One titled part of the notice.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct NoticePart {
+    pub heading: &'static str,
+    pub text: String,
+}
+
+/// The notice (version [`NOTICE_VERSION`]) as plain text for the public
+/// portal: word for word [`notice`], without Discord's markdown. Consent on
+/// either surface is consent to these words.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct NoticeText {
+    pub title: String,
+    pub lead: String,
+    pub what: NoticePart,
+    pub why: NoticePart,
+    pub how_long: NoticePart,
+    pub who: NoticePart,
+    /// "The data is shown as is …"; the privacy link follows it.
+    pub as_is: &'static str,
+    pub link_label: String,
+    pub cancel_label: &'static str,
+}
+
+/// [`NoticeText`] for `ign`; `request` as for [`notice`].
+pub fn notice_text(ign: &str, request: Option<Option<&str>>) -> NoticeText {
+    debug_assert_eq!(NOTICE_VERSION, 1, "a new notice needs new copy");
+    let lead = match request {
+        Some(requester) => format!(
+            "{} asked to link {ign} (MapleSEA). Nothing is fetched until you press Link.",
+            requester.unwrap_or("An admin")
+        ),
+        None => "Nothing is fetched until you press Link.".to_owned(),
+    };
+    NoticeText {
+        title: format!("Link {ign} to its NEXON Open API data?"),
+        lead,
+        what: NoticePart {
+            heading: "What Kanade fetches",
+            text: format!(
+                "Name, world, class, level, combat power and the character image link, for {ign} only."
+            ),
+        },
+        why: NoticePart {
+            heading: "Why",
+            text: "So guild admins can check boss readiness (level and combat power) when they plan runs."
+                .to_owned(),
+        },
+        how_long: NoticePart {
+            heading: "How long",
+            text: "Refreshed once a day and kept 30 days at most. /character unlink deletes it at once."
+                .to_owned(),
+        },
+        who: NoticePart {
+            heading: "Who sees it",
+            text: "Guild admins in Kanade’s admin app, and the channel when you post a /character share card. It is never shared with anyone else and never sent to chat models."
+                .to_owned(),
+        },
+        as_is: "The data is shown as is and may be out of date. Kanade is not affiliated with or endorsed by NEXON.",
+        link_label: format!("Link {ign}"),
+        cancel_label: "Cancel",
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use chrono::{NaiveDate, TimeZone};
@@ -583,5 +649,59 @@ mod tests {
             unlinked_all(&["MikaBish", "Mikadere"]),
             "Unlinked everything left: **MikaBish**, **Mikadere**. Nothing from NEXON is kept for you now."
         );
+    }
+
+    /// Every text of `components`, with Discord's markdown taken out.
+    fn bare_texts(components: &[Component]) -> Vec<String> {
+        fn walk(value: &serde_json::Value, out: &mut Vec<String>) {
+            match value {
+                serde_json::Value::Object(map) => {
+                    for (key, inner) in map {
+                        match (key.as_str(), inner) {
+                            ("content" | "label", serde_json::Value::String(text)) => out.push(
+                                text.replace("**", "")
+                                    .replace('`', "")
+                                    .replace("### ", "")
+                                    .replace("-# ", "")
+                                    .replace('\n', " "),
+                            ),
+                            _ => walk(inner, out),
+                        }
+                    }
+                }
+                serde_json::Value::Array(items) => items.iter().for_each(|item| walk(item, out)),
+                _ => {}
+            }
+        }
+        let mut out = Vec::new();
+        walk(&serde_json::to_value(components).unwrap(), &mut out);
+        out
+    }
+
+    /// The portal's notice is the Discord notice word for word.
+    #[test]
+    fn the_portal_notice_is_the_discord_notice() {
+        for request in [None, Some(None), Some(Some("Ren"))] {
+            let portal = notice_text("AsahiDK", request);
+            let discord = bare_texts(&notice(
+                "AsahiDK",
+                request,
+                Some("https://pub.example/privacy"),
+                "l".into(),
+                "c".into(),
+            ));
+            let mut expected = vec![portal.title.clone(), portal.lead.clone()];
+            for part in [&portal.what, &portal.why, &portal.how_long, &portal.who] {
+                expected.push(format!("{} {}", part.heading, part.text));
+            }
+            expected.push(format!(
+                "{} [Privacy notice](https://pub.example/privacy)",
+                portal.as_is
+            ));
+            expected.push(ATTRIBUTION.to_owned());
+            expected.push(portal.link_label.clone());
+            expected.push(portal.cancel_label.to_owned());
+            assert_eq!(discord, expected, "{request:?}");
+        }
     }
 }

@@ -329,7 +329,12 @@ async fn an_admin_request_is_pending_until_the_member_confirms() {
 
     // The member confirms (S3's /character link): active with data.
     let ConfirmOutcome::Linked(..) = service
-        .confirm_link("1001", &id, NOTICE_VERSION)
+        .confirm_link(
+            "1001",
+            &id,
+            NOTICE_VERSION,
+            kanade::domain::chardata::ConsentSurface::Discord,
+        )
         .await
         .unwrap()
     else {
@@ -408,7 +413,12 @@ async fn roster_deletes_and_ign_edits_unlink() {
     let service = slot.get().unwrap().clone();
     let id = character(&reads, IGN).await;
     service
-        .confirm_link("1001", &id, NOTICE_VERSION)
+        .confirm_link(
+            "1001",
+            &id,
+            NOTICE_VERSION,
+            kanade::domain::chardata::ConsentSurface::Discord,
+        )
         .await
         .unwrap();
     // A class edit keeps the link; an IGN edit removes it.
@@ -435,7 +445,12 @@ async fn roster_deletes_and_ign_edits_unlink() {
 
     let other = character(&reads, "Heather9").await;
     service
-        .confirm_link("1001", &other, NOTICE_VERSION)
+        .confirm_link(
+            "1001",
+            &other,
+            NOTICE_VERSION,
+            kanade::domain::chardata::ConsentSurface::Discord,
+        )
         .await
         .unwrap();
     let deleted = reads

@@ -211,7 +211,7 @@ test('chardata estimate panel: party lookup with totals, missing members and the
   const sheet = await carling(page);
   const panel = sheet.locator('.estimate-panel');
   await expect(panel.locator('.estimate__label')).toHaveText('Estimate from MapleScouter');
-  await expect(panel.locator('.estimate__head + .chardata__sub')).toContainText('Estimate for planning only, not eligibility. Admins only; members never see it.');
+  await expect(panel.locator('.estimate__head + .chardata__sub')).toContainText("Estimate for planning only, not eligibility. Members see their own and their run party’s estimates.");
   await expect(panel).toContainText('this run brings (at most 6)');
   // Mika brings MikaBish from the timing; only Ren (2), with no characters, is missing.
   await expect(panel).toContainText('Ren (2) has no character yet and will be listed as missing.');

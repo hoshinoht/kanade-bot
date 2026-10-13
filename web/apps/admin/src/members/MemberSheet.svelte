@@ -1,13 +1,14 @@
 <script lang="ts">
   import { tick } from 'svelte';
   import type { MemberCharacters, MemberPatch, MemberRow, Persona, PingLevel } from '@kanade/api-types';
-  import { Avatar, enter, Icon, Modal, Select, type Toaster } from '@kanade/ui';
+  import { Avatar, CharacterPanel, enter, Icon, Modal, Select, type Toaster } from '@kanade/ui';
   import '@kanade/ui/styles/core/select.scss';
   import { Resource, send } from '../resource.svelte';
   import { directory } from '../names/directory.svelte';
   import Name from '../names/Name.svelte';
   import { memberAvatar } from '../shared/avatar';
-  import CharacterPanel from './CharacterPanel.svelte';
+  import { adminCharacterKit } from './characterKit';
+  import { dialogLayer } from './layer.svelte';
   import { ANSWER_WORDS, type MemberWeek } from './runs';
 
   let {
@@ -56,6 +57,9 @@
     void characters?.load();
   });
   const activeCount = $derived(characters?.data?.member_id === memberId ? characters.data.characters.filter((c) => c.retired_at === null).length : null);
+  // Add/Edit and Delete open over the page (MembersPage mounts them), not inside this pane.
+  const layer = dialogLayer();
+  const kit = $derived(characters ? adminCharacterKit(member, memberName, members, characters, timeZone) : null);
 
   function tabKey(event: KeyboardEvent) {
     const next = ({ ArrowRight: 1, ArrowLeft: -1, Home: 0, End: 1 } as Record<string, number>)[event.key];
@@ -279,8 +283,16 @@
     <div class="membersheet__panel" role="tabpanel" id="{uid}-panel" aria-labelledby="{uid}-tab-{tab}" tabindex="0">
       {#if tab === 'profile'}
         {@render content()}
-      {:else}
-        <CharacterPanel {member} {memberName} {members} {characters} {phone} {timeZone} {toaster} />
+      {:else if characters && kit}
+        <CharacterPanel
+          {kit}
+          rows={characters.data?.member_id === member.id ? characters.data.characters : null}
+          failed={characters.error ? `${characters.error} The Profile tab still works.` : ''}
+          onretry={() => void characters.load()}
+          {phone}
+          {toaster}
+          {layer}
+        />
       {/if}
     </div>
   {:else}

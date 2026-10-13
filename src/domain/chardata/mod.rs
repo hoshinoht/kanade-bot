@@ -11,10 +11,10 @@ mod readiness;
 mod rules;
 
 pub use model::{
-    ATTRIBUTION, CALL_WINDOW, DAILY_CALLS, FUTURE_SKEW, LINK_REGION, Link, LinkStatus,
-    MAX_TEXT_CHARS, MAX_URL_CHARS, NOTICE_VERSION, OCID_RENEW_AFTER, PENDING_TTL, Post, PostState,
-    REFRESH_AGE, RefreshState, SNAPSHOT_TTL, STRIP_AFTER, STRIP_RETRY_AGAIN, STRIP_RETRY_FIRST,
-    Snapshot, date_text, parse_date,
+    ATTRIBUTION, CALL_WINDOW, ConsentSurface, DAILY_CALLS, FUTURE_SKEW, LINK_REGION, Link,
+    LinkStatus, MAX_TEXT_CHARS, MAX_URL_CHARS, NOTICE_VERSION, OCID_RENEW_AFTER, PENDING_TTL, Post,
+    PostState, REFRESH_AGE, RefreshState, SNAPSHOT_TTL, STRIP_AFTER, STRIP_RETRY_AGAIN,
+    STRIP_RETRY_FIRST, Snapshot, date_text, parse_date,
 };
 pub use port::{CharDataStore, LinkPut, StoreFuture};
 pub use readiness::{

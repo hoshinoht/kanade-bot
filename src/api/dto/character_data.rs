@@ -6,7 +6,7 @@ use serde::Serialize;
 
 use super::{history::SettingsActor, iso_instant};
 use crate::domain::chardata::{
-    ATTRIBUTION, LinkStatus, NOTICE_VERSION, SNAPSHOT_TTL, Snapshot, date_text,
+    ATTRIBUTION, ConsentSurface, LinkStatus, NOTICE_VERSION, SNAPSHOT_TTL, Snapshot, date_text,
 };
 use crate::infrastructure::character_data::{Found, Health, LinkView};
 
@@ -31,6 +31,11 @@ pub struct CharacterLink {
     pub consent_version: Option<u32>,
     pub consented_at: Option<String>,
     pub linked_at: Option<String>,
+    /// Where the member consented: `discord` (`/character link`) or
+    /// `portal`; `null` while not consented and for consents given before
+    /// it was recorded.
+    #[cfg_attr(test, ts(type = "'discord' | 'portal' | null"))]
+    pub consent_surface: Option<&'static str>,
     /// The current notice version.
     pub notice_version: u32,
     /// Fresh Nexon data; `null` without any.
@@ -68,7 +73,7 @@ pub struct RefreshInfo {
     pub last_error: Option<String>,
 }
 
-fn facts(snapshot: &Snapshot) -> CharacterFacts {
+pub fn facts(snapshot: &Snapshot) -> CharacterFacts {
     CharacterFacts {
         name: snapshot.character_name.clone(),
         world: snapshot.world_name.clone(),
@@ -114,6 +119,9 @@ pub fn link(character_id: &str, view: &LinkView, privacy_url: Option<&str>) -> C
         consent_version: link.and_then(|link| link.consent_version),
         consented_at: link.and_then(|link| link.consented_at).map(iso_instant),
         linked_at: link.and_then(|link| link.linked_at).map(iso_instant),
+        consent_surface: link
+            .and_then(|link| link.consent_surface)
+            .map(ConsentSurface::as_str),
         notice_version: NOTICE_VERSION,
         data: view
             .snapshot

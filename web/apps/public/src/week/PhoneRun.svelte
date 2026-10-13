@@ -11,6 +11,9 @@
 <script lang="ts">
   import type { MemberRun, MemberWeek } from '@kanade/api-types';
   import { ANSWER_MARKS, answerCounts, Avatar, BossArt, BossTag, dayLabel, enter, Icon, StatusMark } from '@kanade/ui';
+  import { RunPartyView, type MemberCharacters } from '../characters/characters.svelte';
+  import PartyCharLine from '../characters/PartyCharLine.svelte';
+  import PartyNote from '../characters/PartyNote.svelte';
   import { countdownWords, yours, youFirst } from '../member';
   import type { Route } from '../route.svelte';
   import type { WeekKey } from '../weeks.svelte';
@@ -26,6 +29,7 @@
     memberId,
     flow,
     route,
+    characters,
     picked = null,
     onpress,
   }: {
@@ -35,10 +39,19 @@
     memberId: string;
     flow: RunFlow;
     route: Route;
+    /** The member's characters: each party slot's character on a run they are on. */
+    characters: MemberCharacters;
     /** The answer a fresh sign-in came back with, not saved yet. */
     picked?: Choice | null;
     onpress?: () => void;
   } = $props();
+  // Party · characters: only on a run the member is on (another run's would be the 404).
+  const onRun = $derived(Boolean(yours(run, memberId)));
+  const party = $derived(onRun ? new RunPartyView(characters, run.id) : null);
+  $effect(() => {
+    void party?.load();
+  });
+  const slots = $derived(new Map((party?.data?.slots ?? []).map((slot) => [slot.member.id, slot])));
 
   const counts = $derived(answerCounts(run.participants));
   const art = $derived(run.bosses.find((b) => b.art) ?? null);
@@ -85,15 +98,27 @@
     </div>
   </div>
   <div class="member-hero__panel" id="phone-run-panel" role="tabpanel" aria-labelledby="phone-run-party" tabindex="-1">
-    <ul class="member-slots" data-fid="week-party">
-      {#each youFirst(run, memberId) as person (person.id)}
-        <li class="member-slot" class:member-slot--me={person.id === memberId}>
-          <Avatar class="member-slot__avatar" src={null} name={person.name} />
-          <span class="member-slot__name">{person.id === memberId ? 'You' : person.name}</span>
-          <span class="chip chip--{person.answer}"><span aria-hidden="true">{ANSWER_MARKS[person.answer].mark}</span> {ANSWER_MARKS[person.answer].word}</span>
-        </li>
-      {/each}
-    </ul>
+    {#snippet list(tagged: boolean)}
+      <ul class="member-slots" data-fid={tagged ? 'week-party' : undefined} aria-label={party?.data ? 'Party characters' : undefined}>
+        {#each youFirst(run, memberId) as person (person.id)}
+          {@const slot = slots.get(person.id)}
+          <li class="member-slot" class:member-slot--me={person.id === memberId} class:member-slot--chars={slot !== undefined}>
+            <Avatar class="member-slot__avatar" src={null} name={person.name} />
+            <span class="member-slot__name">{person.id === memberId ? 'You' : person.name}</span>
+            <span class="chip chip--{person.answer}"><span aria-hidden="true">{ANSWER_MARKS[person.answer].mark}</span> {ANSWER_MARKS[person.answer].word}</span>
+            {#if slot}<span class="member-slot__chars"><PartyCharLine {slot} boxed /></span>{/if}
+          </li>
+        {/each}
+      </ul>
+    {/snippet}
+    {#if party?.data}
+      <div class="party-chars-list" data-fid="week-party-chars">
+        <PartyNote party={party.data} />
+        {@render list(false)}
+      </div>
+    {:else}
+      {@render list(true)}
+    {/if}
   </div>
 </section>
 {#if !run.mine}

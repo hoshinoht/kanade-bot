@@ -123,7 +123,12 @@ async fn readiness_judges_each_slot_per_boss_and_writes_nothing() {
     // The create already asked her to link it (pending).
     let alice = character(&reads, "1001", "Wisteria", 260).await;
     let ConfirmOutcome::Linked(..) = service
-        .confirm_link("1001", &alice, NOTICE_VERSION)
+        .confirm_link(
+            "1001",
+            &alice,
+            NOTICE_VERSION,
+            kanade::domain::chardata::ConsentSurface::Discord,
+        )
         .await
         .unwrap()
     else {

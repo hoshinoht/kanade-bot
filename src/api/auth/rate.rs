@@ -10,7 +10,7 @@ use std::{
     sync::Mutex,
 };
 
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, TimeDelta, Utc};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Route {
@@ -56,6 +56,30 @@ pub const MEMBER_READS: Rule = Rule {
 
 /// The audited route name of a refused member read.
 pub const MEMBER_READ_ROUTE: &str = "member_read";
+
+/// The portal's NEXON lookup previews, per member: 10 per 10 minutes.
+pub const MEMBER_LOOKUPS: Rule = Rule {
+    burst: 10.0,
+    per_minute: 1.0,
+};
+
+/// The audited route name of a refused member lookup preview.
+pub const MEMBER_LOOKUP_ROUTE: &str = "member_lookup";
+
+/// A member starts at most one MapleScouter lookup this often; a lookup
+/// that fails does not count.
+pub const MEMBER_ESTIMATE_SPACING: TimeDelta = TimeDelta::minutes(30);
+
+/// The audited route name of a refused member lookup start.
+pub const MEMBER_ESTIMATE_ROUTE: &str = "member_estimate";
+
+/// A member's last counted MapleScouter lookup start.
+#[derive(Clone, Debug)]
+struct EstimateStart {
+    at: DateTime<Utc>,
+    /// The job it started; `None` while the start is in flight.
+    job: Option<String>,
+}
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Limits {
@@ -123,6 +147,10 @@ struct State {
     members: HashMap<String, Bucket>,
     /// [`MEMBER_READS`] buckets by member id.
     readers: HashMap<String, Bucket>,
+    /// [`MEMBER_LOOKUPS`] buckets by member id.
+    lookups: HashMap<String, Bucket>,
+    /// The last counted lookup start by member id.
+    estimates: HashMap<String, EstimateStart>,
 }
 
 /// The bucket key of a client address: IPv4 (and IPv4-mapped IPv6) as is,
@@ -197,6 +225,60 @@ impl RateLimits {
     /// taken) when they are spent.
     pub fn take_member_read(&self, member: &str, now: DateTime<Utc>) -> bool {
         self.take_member(MEMBER_READS, |state| &mut state.readers, member, now)
+    }
+
+    /// Take one of `member`'s [`MEMBER_LOOKUPS`] tokens; `false` (and
+    /// nothing taken) when they are spent.
+    pub fn take_member_lookup(&self, member: &str, now: DateTime<Utc>) -> bool {
+        self.take_member(MEMBER_LOOKUPS, |state| &mut state.lookups, member, now)
+    }
+
+    /// Claim `member`'s MapleScouter lookup start at `now`: refused with the
+    /// time the next one may start while their last counted start is under
+    /// [`MEMBER_ESTIMATE_SPACING`] old, unless `failed` says that job failed
+    /// (a failure never counts). A claim must be settled with
+    /// [`Self::settle_estimate`].
+    pub fn claim_estimate(
+        &self,
+        member: &str,
+        now: DateTime<Utc>,
+        failed: impl Fn(&str) -> bool,
+    ) -> Result<(), DateTime<Utc>> {
+        let mut state = self.state();
+        let starts = &mut state.estimates;
+        if let Some(last) = starts.get(member) {
+            let next = last.at + MEMBER_ESTIMATE_SPACING;
+            let refunded = last.job.as_deref().is_some_and(&failed);
+            if now < next && !refunded {
+                return Err(next);
+            }
+        }
+        if !starts.contains_key(member) && starts.len() >= MAX_CLIENTS {
+            starts.retain(|_, start| now < start.at + MEMBER_ESTIMATE_SPACING);
+        }
+        // As for the buckets: a still-full table serves a newcomer
+        // unremembered rather than refusing them.
+        if starts.contains_key(member) || starts.len() < MAX_CLIENTS {
+            starts.insert(member.to_owned(), EstimateStart { at: now, job: None });
+        }
+        Ok(())
+    }
+
+    /// Settle a claim: `Some(job)` counts it against that job, `None` (no
+    /// lookup started: joined, answered from memory or refused) gives it
+    /// back.
+    pub fn settle_estimate(&self, member: &str, job: Option<&str>) {
+        let mut state = self.state();
+        match job {
+            Some(job) => {
+                if let Some(start) = state.estimates.get_mut(member) {
+                    start.job = Some(job.to_owned());
+                }
+            }
+            None => {
+                state.estimates.remove(member);
+            }
+        }
     }
 
     fn take_member(

@@ -15,7 +15,8 @@ mod runs;
 mod write;
 
 pub(super) use fixed::{Both, Timing};
-pub(super) use runs::party;
+pub(crate) use runs::party;
+pub(crate) use write::present;
 
 use std::sync::Arc;
 

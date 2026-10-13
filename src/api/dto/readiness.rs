@@ -134,7 +134,7 @@ pub struct ScouterReading {
 }
 
 /// The card for `boss` in `member`'s result, through the scouter key table.
-fn reading(
+pub fn reading(
     boss: &Requirement,
     member: &Member,
     fetched_at: DateTime<Utc>,

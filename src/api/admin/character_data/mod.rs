@@ -9,7 +9,7 @@
 //! nothing until the member confirms in Discord; the refresh shares the
 //! batch's 24-hour cap and daily budget.
 
-mod estimates;
+pub(crate) mod estimates;
 mod lookup;
 mod readiness;
 

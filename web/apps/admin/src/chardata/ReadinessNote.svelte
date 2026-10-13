@@ -7,7 +7,7 @@
 -->
 <script lang="ts">
   import '@kanade/ui/styles/screens/character-data.scss';
-  import { ESTIMATE_LABEL, ESTIMATE_NOTE } from './format';
+  import { ESTIMATE_LABEL, ESTIMATE_NOTE } from '@kanade/ui';
 
   let {
     tag = 'p',

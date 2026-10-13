@@ -13,7 +13,8 @@ register every file as an in-memory resource under its `$id`.
   scores, rates and seconds stay `number`.
 - Every non-2xx JSON body on both origins is `error.json#/$defs/ApiError`,
   except `429 request_limit`, which adds `limit`
-  (`public.json#/$defs/MemberRequestLimit`).
+  (`public.json#/$defs/MemberRequestLimit`), and `429 member_limited`, which
+  adds `next_at` (`public.json#/$defs/MemberEstimateLimit`).
 - Successful admin JSON `GET`s (outside `/api/admin/auth/`) carry a strong
   `ETag`; `If-None-Match` naming it answers `304` with no body and the same
   headers.
@@ -50,6 +51,21 @@ Pointers are `<file>#/$defs/<Name>`.
 | `GET /api/public/bosses/events` | `bosses.json#/$defs/EventBosses` (as admin) |
 | `GET /api/public/bosses/{key}/knowledge` | `public.json#/$defs/PublicKnowledge` (no `path`, no bullet `detail`; 404 `not_found` for an unknown key) |
 | `GET /art/{kind}/{key}` (public origin) | boss art as on the admin origin, signed-in members only (401 signed out, 503 `closed` while closed) |
+| `GET /api/public/me/characters` | `public.json#/$defs/MyCharacters` (module `roster`: every member character route answers the generic 404, before the session check, while `modules.roster` is off, and the link, data and estimate routes also while `modules.character_data` is off (the estimate routes also without `KANADE_SCOUTER_URL`); the caller's own rows only, with each link and the admins' requests waiting for them) |
+| `POST /api/public/me/characters` | body `public.json#/$defs/MyCharacterCreate`; `201` `public.json#/$defs/MyCharacterCreated` (a character of the caller's, with the admin create's rules and refusals (422 `invalid`, `ign_taken`); 422 `class_level_required` without class and level unless MapleSEA with NEXON connected; no link request is made; fresh sign-in, else 401 `reauth_required`; Idempotency-Key replays the first answer, another request under it is 422 `idempotency_mismatch`; counts against the member write bucket (20 per 10 min, 429 `rate_limited`); History settings row, section `characters`, actor the member, surface `public_portal`) |
+| `PATCH /api/public/me/characters/{id}` | body `public.json#/$defs/MyCharacterPatch`; `characters.json#/$defs/CharacterRow` (one of the caller's characters, else the generic 404: edit, retire, restore, Make main; no DELETE; the admin PATCH's rules and refusals (422 `version_required`, 409 `stale`, 422 `ign_taken`, 409 `main_required`); fresh sign-in, key, bucket and History as the POST; a new IGN or region unlinks it at once) |
+| `POST /api/public/me/characters/lookup` | body `public.json#/$defs/MemberLookupRequest`; `character_data.json#/$defs/CharacterLookup` (the admin lookup for the Add dialog, shown only and never stored; 10 per 10 min per member (429 `rate_limited`) besides the shared budget and 3 s spacing (429 `lookup_cooldown`); 404 `not_found`, 409 `not_connected`, 503 `nexon_unavailable` as admin; no fresh sign-in) |
+| `GET /api/public/me/characters/{id}/link` | `character_data.json#/$defs/CharacterLink` (one of the caller's characters, else the generic 404) |
+| `GET /api/public/me/characters/{id}/link/notice` | `public.json#/$defs/LinkNotice` (notice v1 word for word, the admin's request when one waits; 409 `not_connected`, `retired`, `already_linked`, 422 `region`) |
+| `POST /api/public/me/characters/{id}/link` | body `public.json#/$defs/LinkConfirm`; `public.json#/$defs/LinkOutcome` (records the consent (notice version, time, surface `portal`) and runs the first fetch, as Discord's Link; answers an admin's pending request; 409 `notice_changed` for another notice version, `retired`, `not_connected`, `stale`; fresh sign-in; History row `link.<id>`, actor the member, surface `public_portal`) |
+| `POST /api/public/me/characters/{id}/link/cancel` | `public.json#/$defs/LinkCancelled` (changes nothing: an admin's request stays) |
+| `DELETE /api/public/me/characters/{id}/link` | `public.json#/$defs/Unlinked` (no confirm and no fresh sign-in: deletes the link and its data in one write and makes its share cards due for clearing; 404 `not_linked`; Idempotency-Key replays) |
+| `DELETE /api/public/me/characters/links` | `public.json#/$defs/UnlinkedAll` (every link of the caller's, at once; no fresh sign-in) |
+| `GET /api/public/me/data` | `public.json#/$defs/MyData` (`/character data`: everything kept for the caller, requests first) |
+| `POST /api/public/me/estimates` | body `public.json#/$defs/MemberEstimateRequest`; `202` `character_data.json#/$defs/EstimateStarted` (one of the caller's characters (else the generic 404) in the admins' FIFO queue; a lookup of it already queued or running answers that job; one counted start per 30 min per member, else 429 `public.json#/$defs/MemberEstimateLimit` with `next_at`; a failed lookup or an answer from the 24-hour memory does not count; 429 `estimate_queue_full`; 422 `region`/`unsupported_ign`; no fresh sign-in) |
+| `GET /api/public/me/estimates?character_id=<id>` | `character_data.json#/$defs/EstimateStatus` (that character's newest job; `running` only when it is a lookup of the caller's own characters) |
+| `GET /api/public/me/estimates/{job}` | `character_data.json#/$defs/EstimateJob` (only a lookup of the caller's own characters, else the generic 404) |
+| `GET /api/public/runs/{id}/characters` | `public.json#/$defs/RunPartyCharacters` (module `roster`; a run the caller is on, else 404 `not_found` as for a run that does not exist; each party member's IGN, class and roster level (the caller's own NEXON level when linked), their cached MapleScouter readings per boss; never another member's NEXON data or link state) |
 | `GET /api/admin/session` | `identity.json#/$defs/Session` |
 | `GET /api/admin/me` | `identity.json#/$defs/Me` |
 | `GET /api/admin/me/sessions` | `identity.json#/$defs/AccountSessions` |
@@ -275,3 +291,11 @@ Pointers are `<file>#/$defs/<Name>`.
   `picked_at`, `picked_by`), `CharacterClash.inferred` becomes `basis`, and
   `ReadinessSlot.inferred` becomes `basis` (plus `candidates`). The main is
   now the default on runs too.
+- Member characters (2026-10-13): `public.json` `MyCharacters`,
+  `PendingLink`, `MyCharacterCreate`/`MyCharacterCreated`,
+  `MyCharacterPatch`, `MemberLookupRequest`, `LinkNotice`, `LinkConfirm`,
+  `LinkOutcome`, `LinkCancelled`, `Unlinked`, `UnlinkedAll`, `MyData`,
+  `MemberEstimateRequest`, `MemberEstimateLimit` and `RunPartyCharacters`
+  for the member's own characters, NEXON consent and MapleScouter lookups on
+  the portal; `character_data.json` `CharacterLink.consent_surface`
+  (`discord` | `portal`, optional so earlier responses stay valid).

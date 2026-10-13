@@ -42,7 +42,8 @@
     </dd>
     <dt>Estimates</dt>
     <dd>
-      Admins can ask MapleScouter for a clear-time estimate. It receives the IGN on the roster and nothing from NEXON; the answer is kept in memory for 24 hours.
+      Admins can ask MapleScouter for a clear-time estimate, and you can for your own characters. It receives the IGN on the roster and nothing from NEXON; the answer
+      is kept in memory for 24 hours. Admins see every estimate; you see your own, and those of your party on runs you are on.
     </dd>
     <dt>As is</dt>
     <dd>

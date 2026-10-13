@@ -12,11 +12,24 @@
 -->
 <script lang="ts">
   import type { Boss, EstimateCharacter, RunCharacters } from '@kanade/api-types';
-  import { DIFFICULTY_WORDS, Icon, StatusChip } from '@kanade/ui';
+  import {
+    activeJob,
+    assumedCrit,
+    dayTime,
+    DIFFICULTY_WORDS,
+    ESTIMATE_LABEL,
+    ESTIMATE_NOTE,
+    estimateErrorText,
+    EstimateLookup,
+    EstimateProgress,
+    Icon,
+    minutes,
+    percent,
+    StatusChip,
+  } from '@kanade/ui';
   import '@kanade/ui/styles/screens/character-data.scss';
-  import EstimateProgress from './EstimateProgress.svelte';
-  import { assumedCrit, dayTime, ESTIMATE_LABEL, ESTIMATE_NOTE, estimateErrorText, joinNames, minutes, MISSING_REASONS, percent } from './format';
-  import { activeJob, chardataRoutes, EstimateLookup } from './routes.svelte';
+  import { joinNames, MISSING_REASONS } from './format';
+  import { adminEstimateApi, chardataRoutes, estimateStep } from './routes.svelte';
 
   let {
     runId,
@@ -39,7 +52,7 @@
   } = $props();
 
   const uid = $props.id();
-  const lookup = $derived(new EstimateLookup({ run_id: runId }));
+  const lookup = $derived(new EstimateLookup(adminEstimateApi({ run_id: runId }), chardataRoutes, estimateStep));
   $effect(() => {
     const current = lookup;
     void current.load();
@@ -135,7 +148,7 @@
       {#if !sheet}{@render button()}{/if}
     </div>
     <span class="chardata__sub" data-fid="estimate-disclaimer"
-      ><b>{job?.note ?? ESTIMATE_NOTE}.</b> Admins only; members never see it. {#if done && job?.fetched_at}Looked up
+      ><b>{job?.note ?? ESTIMATE_NOTE}.</b> Members see their own and their run party’s estimates. {#if done && job?.fetched_at}Looked up
         <span class="mono">{dayTime(job.fetched_at, timeZone)}</span>, kept 24 h in memory.{/if}</span
     >
 

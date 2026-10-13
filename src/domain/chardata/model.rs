@@ -4,7 +4,7 @@
 
 use chrono::{DateTime, NaiveDate, TimeDelta, Utc};
 
-use crate::domain::history::Actor;
+use crate::domain::history::{Actor, Surface};
 use crate::domain::scheduler::StoreError;
 
 /// The `/character link` notice version a consent records. Bumping it
@@ -100,6 +100,39 @@ impl LinkStatus {
     }
 }
 
+/// Where the member gave their consent: Discord's `/character link` or the
+/// public portal. Links consented before it was recorded have none.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum ConsentSurface {
+    Discord,
+    Portal,
+}
+
+impl ConsentSurface {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Discord => "discord",
+            Self::Portal => "portal",
+        }
+    }
+
+    pub fn parse(text: &str) -> Option<Self> {
+        match text {
+            "discord" => Some(Self::Discord),
+            "portal" => Some(Self::Portal),
+            _ => None,
+        }
+    }
+
+    /// The History surface of a link change made here.
+    pub fn history(self) -> Surface {
+        match self {
+            Self::Discord => Surface::Discord,
+            Self::Portal => Surface::PublicPortal,
+        }
+    }
+}
+
 /// One `links` row: a roster character opted in to Nexon data.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Link {
@@ -117,6 +150,9 @@ pub struct Link {
     pub consented_at: Option<DateTime<Utc>>,
     /// When it first became active.
     pub linked_at: Option<DateTime<Utc>>,
+    /// Where the consent was given; `None` while pending and on links
+    /// consented before it was recorded.
+    pub consent_surface: Option<ConsentSurface>,
     /// 1 on create, +1 on every status change.
     pub version: u32,
 }
@@ -140,7 +176,9 @@ impl Link {
             return refuse("consent needs both its version and time");
         }
         match self.status {
-            LinkStatus::Pending if consented => refuse("pending has no consent"),
+            LinkStatus::Pending if consented || self.consent_surface.is_some() => {
+                refuse("pending has no consent")
+            }
             LinkStatus::Active | LinkStatus::Stale if !consented || self.linked_at.is_none() => {
                 refuse("active or stale needs consent and a link time")
             }

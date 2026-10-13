@@ -12,11 +12,11 @@
 -->
 <script lang="ts">
   import type { BossRow, CharacterChoice, ReadinessSlot, RunCharacterSlot, TimingCharacters } from '@kanade/api-types';
-  import { Icon } from '@kanade/ui';
+  import { dayMonth, Icon } from '@kanade/ui';
   import '@kanade/ui/styles/screens/character-pick.scss';
   import '@kanade/ui/styles/screens/settings.scss';
   import { tick, untrack } from 'svelte';
-  import { dayMonth, scouterAt } from '../chardata/format';
+  import { scouterAt } from '../chardata/format';
   import ReadinessNote from '../chardata/ReadinessNote.svelte';
   import ReadinessValues from '../chardata/ReadinessValues.svelte';
   import { estimateEnds, fixedReadyRoutes, TimingReadinessView, type TimingTarget } from '../chardata/routes.svelte';

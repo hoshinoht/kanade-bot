@@ -29,11 +29,11 @@ pub struct Char {
 }
 
 impl Char {
-    fn active_main(&self) -> bool {
+    pub(super) fn active_main(&self) -> bool {
         self.main && self.retired_at.is_none()
     }
 
-    fn json(&self) -> Value {
+    pub(super) fn json(&self) -> Value {
         json!({
             "id": self.id, "member_id": self.member_id, "ign": self.ign, "world": self.world,
             "class": self.class, "level": self.level,
@@ -109,15 +109,15 @@ pub fn seed() -> Vec<Char> {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CharacterCreate {
-    ign: String,
+    pub(super) ign: String,
     #[serde(default)]
-    world: Option<String>,
+    pub(super) world: Option<String>,
     #[serde(default)]
-    class: Option<String>,
+    pub(super) class: Option<String>,
     #[serde(default)]
-    level: Option<i64>,
+    pub(super) level: Option<i64>,
     #[serde(default)]
-    role: Option<String>,
+    pub(super) role: Option<String>,
 }
 
 pub(super) fn present<'de, D: serde::Deserializer<'de>, T: Deserialize<'de>>(
@@ -132,9 +132,9 @@ pub struct CharacterPatch {
     #[serde(default)]
     version: Option<u64>,
     #[serde(default)]
-    ign: Option<String>,
+    pub(super) ign: Option<String>,
     #[serde(default)]
-    world: Option<String>,
+    pub(super) world: Option<String>,
     #[serde(default, deserialize_with = "present")]
     class: Option<Option<String>>,
     #[serde(default, deserialize_with = "present")]
@@ -263,6 +263,18 @@ impl Store {
         member: &str,
         req: CharacterCreate,
     ) -> Result<Value, MoveError> {
+        self.insert_character(member, req, true)
+    }
+
+    /// A create with the roster rules; `ask_link`: a MapleSEA character's
+    /// member is asked to link it (the admin's create; a member's own asks
+    /// nothing).
+    pub(super) fn insert_character(
+        &mut self,
+        member: &str,
+        req: CharacterCreate,
+        ask_link: bool,
+    ) -> Result<Value, MoveError> {
         let ign = ign(&req.ign)?;
         let world = world(req.world.as_deref())?;
         let class = class(req.class.as_deref())?;
@@ -301,12 +313,14 @@ impl Store {
             version: 1,
         };
         let mut out = row.json();
-        let ask = (row.world == "msea").then(|| row.id.clone());
+        let ask = (ask_link && row.world == "msea").then(|| row.id.clone());
         self.characters.push(row);
-        // Module `character_data` connected: a MapleSEA create also asks the
-        // member to link it (pending), as the server's create does.
-        let link = ask.and_then(|id| self.ask_link_on_create(&id));
-        out["link"] = json!(link);
+        if ask_link {
+            // Module `character_data` connected: a MapleSEA create also asks
+            // the member to link it (pending), as the server's create does.
+            let link = ask.and_then(|id| self.ask_link_on_create(&id));
+            out["link"] = json!(link);
+        }
         Ok(out)
     }
 

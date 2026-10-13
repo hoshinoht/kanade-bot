@@ -6,7 +6,7 @@
 use std::os::unix::fs::PermissionsExt;
 
 use chrono::TimeDelta;
-use kanade::domain::chardata::{CharDataStore, DAILY_CALLS};
+use kanade::domain::chardata::{CharDataStore, ConsentSurface, DAILY_CALLS};
 use kanade::infrastructure::store::chardata_conformance::{active, at, snapshot};
 use kanade::infrastructure::store::{SqliteCharData, SqliteStoreError};
 use sqlx::{ConnectOptions, Connection, sqlite::SqliteConnectOptions};
@@ -53,7 +53,7 @@ async fn the_file_is_private_owned_and_never_wal() {
         .fetch_all(&mut conn)
         .await
         .unwrap();
-    assert_eq!(ledger, [1]);
+    assert_eq!(ledger, [1, 2]);
     conn.close().await.unwrap();
 }
 
@@ -85,15 +85,62 @@ async fn a_changed_or_newer_ledger_refuses_to_open() {
         .await
         .unwrap();
     let mut conn = raw(&other.db_path).await;
-    sqlx::query("INSERT INTO chardata_migrations VALUES (2, 'x', 'then')")
+    sqlx::query("INSERT INTO chardata_migrations VALUES (3, 'x', 'then')")
         .execute(&mut conn)
         .await
         .unwrap();
     conn.close().await.unwrap();
     assert!(matches!(
         SqliteCharData::open(&other).await,
-        Err(SqliteStoreError::FutureVersion { found: 2, known: 1 })
+        Err(SqliteStoreError::FutureVersion { found: 3, known: 2 })
     ));
+}
+
+/// A file at version 1 (links without `consent_surface`) migrates to 2 on
+/// open: its links keep reading, with no surface recorded; consents from
+/// then on record theirs, and a pending link can never carry one.
+#[tokio::test]
+async fn a_version_one_file_reads_its_links_without_a_surface() {
+    let dir = TempDir::new();
+    let config = dir.config("chardata");
+    SqliteCharData::open(&config)
+        .await
+        .unwrap()
+        .close()
+        .await
+        .unwrap();
+    let mut conn = raw(&config.db_path).await;
+    for sql in [
+        "DELETE FROM chardata_migrations WHERE version = 2",
+        "ALTER TABLE links DROP COLUMN consent_surface",
+        "INSERT INTO links VALUES ('c1', '1001', 'wisteria', 'msea', 'active', 'member', '1001',
+            '2026-09-01T00:00:00+00:00', 1, '2026-09-01T00:00:00+00:00',
+            '2026-09-01T00:00:00+00:00', 1)",
+    ] {
+        sqlx::query(sql).execute(&mut conn).await.unwrap();
+    }
+    conn.close().await.unwrap();
+    let store = SqliteCharData::open(&config).await.unwrap();
+    let old = store.link("c1".into()).await.unwrap().unwrap();
+    assert_eq!(old.consent_surface, None);
+    assert_eq!(old.consent_version, Some(1));
+    let portal = kanade::domain::chardata::Link {
+        consent_surface: Some(ConsentSurface::Portal),
+        ..active("c2")
+    };
+    store.put_link(portal, 0).await.unwrap();
+    let read = store.link("c2".into()).await.unwrap().unwrap();
+    assert_eq!(read.consent_surface, Some(ConsentSurface::Portal));
+    store.close().await.unwrap();
+    let mut conn = raw(&config.db_path).await;
+    let refused = sqlx::query(
+        "UPDATE links SET status = 'pending', consent_version = NULL, consented_at = NULL
+         WHERE character_id = 'c2'",
+    )
+    .execute(&mut conn)
+    .await;
+    assert!(refused.is_err(), "a pending link never carries a surface");
+    conn.close().await.unwrap();
 }
 
 #[tokio::test]

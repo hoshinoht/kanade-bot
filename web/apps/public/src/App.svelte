@@ -66,7 +66,7 @@
 
   const page: Page = $derived(route.page);
   // Account's tab lives in the address (`?tab=`), as the admin Account's does.
-  const TABS: AccountTab[] = ['profile', 'devices', 'browser'];
+  const TABS: AccountTab[] = ['profile', 'characters', 'devices', 'browser'];
   const tab: AccountTab = $derived(TABS.find((t) => t === route.params.get('tab')) ?? 'profile');
   const showTab = (to: AccountTab) => route.set({ tab: to === 'profile' ? '' : to });
 
@@ -356,6 +356,7 @@
       <WeekPage
         {weeks}
         runs={portal.runs}
+        characters={portal.characters}
         {route}
         session={screen.session}
         current={portal.devices?.sessions.find((s) => s.current) ?? null}
@@ -403,7 +404,19 @@
         notice={offlineNotice}
       />
     {:else}
-      <Account {portal} session={screen.session} {toaster} {phone} {zone} {timeZone} {tab} ontab={showTab} notice={offlineNotice} />
+      <Account
+        {portal}
+        session={screen.session}
+        current={portal.devices?.sessions.find((s) => s.current) ?? null}
+        {toaster}
+        {phone}
+        {zone}
+        {timeZone}
+        {tab}
+        {route}
+        ontab={showTab}
+        notice={offlineNotice}
+      />
     {/if}
   </main>
   <ToastRegion {toaster} />

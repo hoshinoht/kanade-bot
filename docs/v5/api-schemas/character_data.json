@@ -21,6 +21,7 @@
         "consent_version": { "type": ["integer", "null"], "minimum": 1, "description": "The notice version the member confirmed." },
         "consented_at": { "$ref": "common.json#/$defs/NullableString" },
         "linked_at": { "$ref": "common.json#/$defs/NullableString" },
+        "consent_surface": { "enum": ["discord", "portal", null], "description": "Where the member consented: Discord's `/character link` or the public portal's Link; null while not consented and for consents given before it was recorded. Optional so earlier responses stay valid; the server always sends it." },
         "notice_version": { "type": "integer", "minimum": 1, "description": "The current notice version." },
         "data": { "oneOf": [{ "$ref": "#/$defs/CharacterFacts" }, { "type": "null" }], "description": "Fresh Nexon data; null without any (never expired or stamped in the future)." },
         "refresh": { "$ref": "#/$defs/RefreshInfo" },

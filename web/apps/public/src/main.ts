@@ -15,6 +15,8 @@ import './week/week.scss';
 // Weekly timings' Hand to… and Confirm it's you (the shared Modal's look).
 import '@kanade/ui/styles/core/modal.scss';
 import './timings/timings.scss';
+// Account › Characters and a run's party characters (the roster's shared styles come with its components).
+import './characters/characters.scss';
 // The admin's motion that the member screens share: arrival marks and number
 // ticks (week reads from elsewhere) and the loading standard's morphing shape
 // (LoadingState renders it; Experiment A, on by default).

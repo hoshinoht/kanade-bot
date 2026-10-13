@@ -19,6 +19,7 @@ pub mod knowledge;
 mod limits;
 pub mod logfilter;
 pub mod member;
+pub mod member_characters;
 pub mod member_runs;
 mod model_context;
 mod ownership;
@@ -135,6 +136,10 @@ pub struct Store {
     links: Vec<character_data::Link>,
     /// MapleScouter estimate jobs and the scenario (`estimates.rs`).
     estimates: estimates::Estimates,
+    /// Member character writes already answered, by `Idempotency-Key`.
+    member_character_writes: Vec<member_characters::Keyed>,
+    /// The member's last counted MapleScouter lookup start and its job.
+    member_estimate: Option<(i64, String)>,
     /// The roster module's startup flag (on unless `/__mock/modules` turns it off).
     roster: bool,
     /// Module `character_data`'s startup flag (on with the roster unless
@@ -181,6 +186,8 @@ impl Store {
             characters: Vec::new(),
             links: Vec::new(),
             estimates: estimates::Estimates::seed(),
+            member_character_writes: Vec::new(),
+            member_estimate: None,
             picks: Vec::new(),
             roster: true,
             character_data: true,
@@ -210,6 +217,8 @@ impl Store {
         self.picks = run_picks::seed();
         self.links = character_data::seed();
         self.estimates = estimates::Estimates::seed();
+        self.member_character_writes.clear();
+        self.member_estimate = None;
         self.roster = true;
         self.character_data = true;
         self.chardata_health = character_data::Health::Ok;

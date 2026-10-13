@@ -364,7 +364,7 @@ async fn ask_link(
 }
 
 /// A present JSON field, `null` included: `Some(None)` clears.
-pub(super) fn present<'de, D, T>(deserializer: D) -> Result<Option<Option<T>>, D::Error>
+pub(crate) fn present<'de, D, T>(deserializer: D) -> Result<Option<Option<T>>, D::Error>
 where
     D: Deserializer<'de>,
     T: Deserialize<'de>,

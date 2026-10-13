@@ -150,6 +150,7 @@ impl CharacterData {
                     pending.consent_version = None;
                     pending.consented_at = None;
                     pending.linked_at = None;
+                    pending.consent_surface = None;
                     // A new request by the sweeper: its 14 days start now,
                     // not at the original request.
                     pending.requested_by = actor.clone();

@@ -12,6 +12,8 @@
 <script lang="ts">
   import type { MemberRun, MemberWeek } from '@kanade/api-types';
   import { ANSWER_MARKS, answerCounts, AnswerBar, BossArt, BossTag, dayLabel, enter, Icon, runCountdown, runFullTitle, StatusMark, WavyProgress } from '@kanade/ui';
+  import { RunPartyView, type MemberCharacters } from '../characters/characters.svelte';
+  import PartyCharacters from '../characters/PartyCharacters.svelte';
   import { countdownWords, yours } from '../member';
   import MemberMove from '../move/MemberMove.svelte';
   import type { Route } from '../route.svelte';
@@ -28,6 +30,7 @@
     memberId,
     flow,
     route,
+    characters,
     picked = null,
     onpress,
     leaving = false,
@@ -40,6 +43,8 @@
     memberId: string;
     flow: RunFlow;
     route: Route;
+    /** The member's characters: the party's characters on a run they are on. */
+    characters: MemberCharacters;
     /** The answer a fresh sign-in came back with, not saved yet. */
     picked?: Choice | null;
     onpress?: () => void;
@@ -47,6 +52,12 @@
     onleft?: (event: AnimationEvent) => void;
     onclose: () => void;
   } = $props();
+  // Party · characters: only on a run the member is on (another run's would be the 404).
+  const onRun = $derived(Boolean(yours(run, memberId)));
+  const party = $derived(onRun ? new RunPartyView(characters, run.id) : null);
+  $effect(() => {
+    void party?.load();
+  });
 
   const counts = $derived(answerCounts(run.participants));
   const art = $derived(run.bosses.find((b) => b.art) ?? null);
@@ -119,6 +130,7 @@
           <p class="cap" id="member-answer-title">Your answer</p>
           <AnswerChoice {run} {week} {which} {memberId} {flow} {picked} {onpress} data-fid="week-answer" />
         </section>
+        {#if party?.data}<PartyCharacters party={party.data} {run} />{/if}
         {#if movable(run, week, which, memberId)}
           <MemberMove
             {run}

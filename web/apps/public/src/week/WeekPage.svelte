@@ -17,6 +17,7 @@
   import { tick, untrack, type Snippet } from 'svelte';
   import { countdownWords, isPast, nextOwn, shownRuns } from '../member';
   import type { Route } from '../route.svelte';
+  import type { MemberCharacters } from '../characters/characters.svelte';
   import type { MemberWeeks, WeekKey } from '../weeks.svelte';
   import ConfirmRun from '../writes/ConfirmRun.svelte';
   import { RunFlow } from '../writes/flow.svelte';
@@ -32,6 +33,7 @@
   let {
     weeks,
     runs: writes,
+    characters,
     route,
     session,
     current,
@@ -42,6 +44,8 @@
     weeks: MemberWeeks;
     /** The member's answers and moves (`Portal.runs`). */
     runs: RunWrites;
+    /** The member's characters (`Portal.characters`): their run's party characters. */
+    characters: MemberCharacters;
     route: Route;
     session: PublicSession;
     /** This device's row in the session list, for when it signed in (Confirm it's you). */
@@ -223,6 +227,7 @@
     {memberId}
     {flow}
     {route}
+    {characters}
     picked={picked?.run === selected.id ? picked.answer : null}
     onpress={() => (picked = null)}
   />
@@ -327,6 +332,7 @@
             {memberId}
             {flow}
             {route}
+            {characters}
             picked={picked?.run === paneRun.run.id ? picked.answer : null}
             onpress={() => (picked = null)}
             leaving={pane.leaving && !selected}

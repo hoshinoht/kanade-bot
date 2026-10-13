@@ -11,8 +11,8 @@ use super::refresh::FetchState;
 use super::{CharacterData, log};
 use crate::domain::characters::{Character, ign_key};
 use crate::domain::chardata::{
-    CALL_WINDOW, DAILY_CALLS, LINK_REGION, Link, LinkPut, LinkStatus, NOTICE_VERSION, RefreshState,
-    Snapshot, UnlinkReason, link_change, same_identity,
+    CALL_WINDOW, ConsentSurface, DAILY_CALLS, LINK_REGION, Link, LinkPut, LinkStatus,
+    NOTICE_VERSION, RefreshState, Snapshot, UnlinkReason, link_change, same_identity,
 };
 use crate::domain::history::{Actor, Surface};
 use crate::domain::scheduler::StoreError;
@@ -134,6 +134,7 @@ impl CharacterData {
                     consent_version: None,
                     consented_at: None,
                     linked_at: None,
+                    consent_surface: None,
                     ..link
                 }
             } else {
@@ -236,6 +237,7 @@ impl CharacterData {
             consent_version: None,
             consented_at: None,
             linked_at: None,
+            consent_surface: None,
             version: expected + 1,
         };
         match self.store.put_link(link.clone(), expected).await? {
@@ -257,14 +259,16 @@ impl CharacterData {
     }
 
     /// The member `member_id` confirms notice `notice_version` for one of
-    /// their characters: a pending request (or, with none, their own
-    /// active character directly) becomes active with the consent recorded,
-    /// then `id` + `basic` + `stat` run. S3's `/character link` calls this.
+    /// their characters on `surface`: a pending request (or, with none,
+    /// their own active character directly) becomes active with the consent
+    /// (and where it was given) recorded, then `id` + `basic` + `stat` run.
+    /// Discord's `/character link` and the portal's Link call this.
     pub async fn confirm_link(
         &self,
         member_id: &str,
         character_id: &str,
         notice_version: u32,
+        surface: ConsentSurface,
     ) -> Result<ConfirmOutcome, StoreError> {
         if !self.connected() {
             return Ok(ConfirmOutcome::NotConnected);
@@ -313,6 +317,7 @@ impl CharacterData {
             consent_version: Some(NOTICE_VERSION),
             consented_at: Some(now),
             linked_at: Some(now),
+            consent_surface: Some(surface),
             version: expected + 1,
         };
         if self.store.put_link(link.clone(), expected).await? != LinkPut::Written {
@@ -324,7 +329,7 @@ impl CharacterData {
             before,
             Some(LinkStatus::Active),
             &actor,
-            Surface::Discord,
+            surface.history(),
             None,
         )
         .await?;

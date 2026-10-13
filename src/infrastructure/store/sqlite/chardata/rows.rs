@@ -5,13 +5,15 @@ use chrono::{DateTime, Utc};
 use sqlx::Row;
 use sqlx::sqlite::SqliteRow;
 
-use crate::domain::chardata::{Link, LinkStatus, Post, PostState, Snapshot, parse_date};
+use crate::domain::chardata::{
+    ConsentSurface, Link, LinkStatus, Post, PostState, Snapshot, parse_date,
+};
 use crate::domain::history::Actor;
 use crate::domain::scheduler::StoreError;
 
 pub(super) const LINK_COLUMNS: &str = "character_id, member_id, ign_key, region, status, \
      requested_by_kind, requested_by_id, requested_at, consent_version, consented_at, \
-     linked_at, version";
+     linked_at, version, consent_surface";
 pub(super) const SNAPSHOT_COLUMNS: &str = "character_id, ocid, ocid_fetched_at, character_name, \
      world_name, character_class, level, combat_power, image_url, data_date, fetched_at, \
      expires_at";
@@ -55,6 +57,7 @@ pub(super) fn link(row: &SqliteRow) -> Result<Link, StoreError> {
     let kind: String = get(row, "requested_by_kind")?;
     let id: String = get(row, "requested_by_id")?;
     let version: i64 = get(row, "version")?;
+    let surface: Option<String> = get(row, "consent_surface")?;
     Ok(Link {
         character_id: get(row, "character_id")?,
         member_id: get(row, "member_id")?,
@@ -66,6 +69,10 @@ pub(super) fn link(row: &SqliteRow) -> Result<Link, StoreError> {
         consent_version: number(get(row, "consent_version")?, "consent_version")?,
         consented_at: optional_instant(row, "consented_at")?,
         linked_at: optional_instant(row, "linked_at")?,
+        consent_surface: surface
+            .as_deref()
+            .map(|text| ConsentSurface::parse(text).ok_or_else(|| corrupt("consent_surface")))
+            .transpose()?,
         version: number(Some(version), "version")?.ok_or_else(|| corrupt("version"))?,
     })
 }

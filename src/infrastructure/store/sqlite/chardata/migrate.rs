@@ -13,10 +13,16 @@ struct Migration {
     sql: &'static str,
 }
 
-const MIGRATIONS: &[Migration] = &[Migration {
-    version: 1,
-    sql: include_str!("migrations/0001_init.sql"),
-}];
+const MIGRATIONS: &[Migration] = &[
+    Migration {
+        version: 1,
+        sql: include_str!("migrations/0001_init.sql"),
+    },
+    Migration {
+        version: 2,
+        sql: include_str!("migrations/0002_link_surface.sql"),
+    },
+];
 
 const LEDGER: &str = "CREATE TABLE IF NOT EXISTS chardata_migrations (
     version    INTEGER PRIMARY KEY,
@@ -73,10 +79,16 @@ mod tests {
     /// main store's are: append new versions, never edit old ones.
     #[test]
     fn shipped_chardata_migrations_never_change() {
-        const SHIPPED: &[(i64, &str)] = &[(
-            1,
-            "2566d5ba648ca185c4d105864324fc2f2ecf53c0e2c59d41c1b38e40faf22dcb",
-        )];
+        const SHIPPED: &[(i64, &str)] = &[
+            (
+                1,
+                "2566d5ba648ca185c4d105864324fc2f2ecf53c0e2c59d41c1b38e40faf22dcb",
+            ),
+            (
+                2,
+                "ec706a780435e20f64fd82bbd688bdb0566cc49f37b2811a811b5a3b4546945b",
+            ),
+        ];
         for (version, sum) in SHIPPED {
             let migration = MIGRATIONS
                 .iter()

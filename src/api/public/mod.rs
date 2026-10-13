@@ -15,6 +15,7 @@
 
 mod auth;
 mod bosses;
+mod characters;
 mod events;
 mod ownership;
 mod read;
@@ -134,6 +135,8 @@ pub fn routes(site: Arc<Site>) -> Router<Arc<Site>> {
         )
         .route_layer(from_fn_with_state(site.clone(), member::require_session))
         .route_layer(from_fn_with_state(site.clone(), closed));
+    // The member's own characters (modules `roster`, `character_data`).
+    let characters = characters::routes(&site);
     // The stream: the same bucket and `closed`, a session check that never
     // touches the session (nor rotates its id).
     let stream = Router::new()
@@ -155,6 +158,7 @@ pub fn routes(site: Arc<Site>) -> Router<Arc<Site>> {
         .merge(signed_in)
         .merge(reads)
         .merge(stream)
+        .merge(characters)
         .route("/api/public/{*rest}", any(unmounted))
 }
 

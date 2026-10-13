@@ -16,7 +16,7 @@ use crate::{
     infrastructure::store::replays::{ReplayScope, StoredReplay},
 };
 
-pub(super) fn mismatch() -> Refusal {
+pub(crate) fn mismatch() -> Refusal {
     Refusal::new(
         StatusCode::UNPROCESSABLE_ENTITY,
         "idempotency_mismatch",
@@ -25,7 +25,7 @@ pub(super) fn mismatch() -> Refusal {
 }
 
 /// One keyed request: its desk, sender, key and identity.
-pub(super) struct Keyed {
+pub(crate) struct Keyed {
     scope: ReplayScope,
     actor: String,
     key: String,
@@ -44,6 +44,17 @@ impl Keyed {
             scope,
             actor: format!("{}:{}", session.actor.kind(), session.actor.id()),
             key,
+            request: sha256_hex(request.as_bytes()),
+        }
+    }
+
+    /// A member's portal write: actor `member:<id>`, its key under
+    /// `public:` so it never meets an admin's or a Discord request id.
+    pub(crate) fn member(scope: ReplayScope, user_id: &str, key: &str, request: &str) -> Self {
+        Self {
+            scope,
+            actor: format!("member:{user_id}"),
+            key: format!("public:{key}"),
             request: sha256_hex(request.as_bytes()),
         }
     }
@@ -69,7 +80,7 @@ impl Keyed {
     }
 
     /// [`Self::check`] against the API store.
-    pub(super) async fn recall(
+    pub(crate) async fn recall(
         &self,
         store: &dyn ReadStore,
         now: DateTime<Utc>,
@@ -82,7 +93,7 @@ impl Keyed {
     }
 
     /// The row recording `body` (answered with `status`) for this request.
-    pub(super) fn answered(
+    pub(crate) fn answered(
         &self,
         status: StatusCode,
         body: &Value,
@@ -101,7 +112,7 @@ impl Keyed {
 }
 
 /// The stored answer as it was sent: its status and JSON body.
-pub(super) fn replayed(replay: &StoredReplay) -> Result<axum::response::Response, Refusal> {
+pub(crate) fn replayed(replay: &StoredReplay) -> Result<axum::response::Response, Refusal> {
     let status = StatusCode::from_u16(replay.status).map_err(|_| unavailable_replay())?;
     let body: Value = serde_json::from_str(&replay.body).map_err(|_| unavailable_replay())?;
     Ok((status, Json(body)).into_response())

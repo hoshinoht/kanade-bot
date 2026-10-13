@@ -236,6 +236,7 @@ mod tests {
             consent_version: Some(NOTICE_VERSION),
             consented_at: Some(at(1, 0)),
             linked_at: Some(at(1, 0)),
+            consent_surface: None,
             version: 1,
         }
     }

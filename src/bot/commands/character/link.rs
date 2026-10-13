@@ -99,7 +99,12 @@ impl<T: DiscordTransport> CharacterCommand<T> {
         let ign = entry.character.ign.as_str();
         let outcome = self
             .service
-            .confirm_link(&member, id, notice)
+            .confirm_link(
+                &member,
+                id,
+                notice,
+                crate::domain::chardata::ConsentSurface::Discord,
+            )
             .await
             .map_err(super::store_failed)?;
         match outcome {

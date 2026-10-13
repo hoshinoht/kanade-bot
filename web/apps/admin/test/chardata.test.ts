@@ -15,22 +15,17 @@ import {
   catalogBoss,
   clock,
   combatPower,
-  createdLinkNote,
   dayTime,
   estimateErrorText,
-  healthNote,
-  joinNames,
-  levelChip,
   lookupLine,
   lookupMiss,
   minutes,
   percent,
   queuedText,
-  readinessLine,
-  scouterAt,
   scouterChip,
   stripState,
-} from '../src/chardata/format';
+} from '@kanade/ui';
+import { createdLinkNote, healthNote, joinNames, levelChip, readinessLine, scouterAt } from '../src/chardata/format';
 
 // Wholly invented data, as the mock seeds it.
 const row = (retired: boolean): CharacterRow => ({

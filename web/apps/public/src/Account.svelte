@@ -12,28 +12,34 @@
   controls disabled and no figures.
 -->
 <script lang="ts" module>
-  export type AccountTab = 'profile' | 'devices' | 'browser';
+  export type AccountTab = 'profile' | 'characters' | 'devices' | 'browser';
 </script>
 
 <script lang="ts">
-  import type { PublicSession } from '@kanade/api-types';
+  import type { PublicSession, PublicSessionRow } from '@kanade/api-types';
   import { Avatar, dayTime, Icon, motionPreference, resetSpan, SessionList, SwitchRow, ThemeTiles, windowWords, type IconName, type Toaster } from '@kanade/ui';
   import { tick, untrack, type Snippet } from 'svelte';
+  import CharactersTab from './characters/CharactersTab.svelte';
   import type { Portal } from './portal.svelte';
+  import type { Route } from './route.svelte';
 
   let {
     portal,
     session,
+    current,
     toaster,
     phone,
     zone,
     timeZone,
-    tab,
+    tab: asked,
+    route,
     ontab,
     notice,
   }: {
     portal: Portal;
     session: PublicSession;
+    /** This device's row in the session list, for when it signed in (Confirm it's you). */
+    current: PublicSessionRow | null;
     toaster: Toaster;
     phone: boolean;
     /** The device's zone as an offset ("GMT+8"). */
@@ -41,21 +47,29 @@
     /** The device's IANA zone, for times. */
     timeZone: string;
     tab: AccountTab;
+    route: Route;
     ontab: (tab: AccountTab) => void;
     /** A notice about the whole screen (offline), under the page line or the title bar. */
     notice?: Snippet;
   } = $props();
 
-  const TABS: { id: AccountTab; label: string }[] = [
+  // Characters (module `roster`) shows once the member's characters answer; off, the route is the generic 404 and the tab never shows.
+  const characters = $derived(portal.characters);
+  const showCharacters = $derived(Boolean(characters.data) || (asked === 'characters' && !characters.gone));
+  const tab: AccountTab = $derived(asked === 'characters' && characters.gone ? 'profile' : asked);
+  const activeCharacters = $derived(characters.data ? characters.data.characters.filter((c) => c.retired_at === null).length : null);
+  const TABS: { id: AccountTab; label: string }[] = $derived([
     { id: 'profile', label: 'Profile' },
+    ...(showCharacters ? [{ id: 'characters' as const, label: 'Characters' }] : []),
     { id: 'devices', label: 'Devices' },
     { id: 'browser', label: 'This browser' },
-  ];
+  ]);
   // The server keeps at most ten sessions per member (D5-A): an 11th sign-in ends the oldest.
   const SESSION_LIMIT = 10;
   // The allowance is read each time Account opens: it changes with every chat answer.
   $effect(() => {
     void untrack(() => portal.loadAllowance());
+    void untrack(() => characters.load());
   });
 
   const member = $derived(session.member);
@@ -331,7 +345,10 @@
           bind:this={tabs[t.id]}
           onclick={() => choose(t.id)}
           onkeydown={(event) => tabKey(event, index)}
-          >{t.label}{#if t.id === 'devices' && rows}<span class="tabs__count">{rows.length}</span>{/if}</button
+          data-fid={t.id === 'characters' ? 'account-tab-characters' : undefined}
+          >{t.label}{#if t.id === 'devices' && rows}<span class="tabs__count">{rows.length}</span>{:else if t.id === 'characters' && activeCharacters !== null}<span class="tabs__count"
+              >{activeCharacters}</span
+            >{/if}</button
         >
       {/each}
     </div>
@@ -339,7 +356,15 @@
 {/snippet}
 
 {#snippet panel()}
-  {#if tab === 'devices'}{@render devices()}{:else if tab === 'browser'}{@render browser()}{:else}{@render profile()}{/if}
+  {#if tab === 'devices'}{@render devices()}{:else if tab === 'browser'}{@render browser()}{:else if tab === 'characters'}<CharactersTab
+      {portal}
+      {session}
+      {current}
+      {phone}
+      {toaster}
+      {timeZone}
+      {route}
+    />{:else}{@render profile()}{/if}
 {/snippet}
 
 {#if phone}

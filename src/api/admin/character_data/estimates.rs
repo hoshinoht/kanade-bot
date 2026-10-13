@@ -92,7 +92,7 @@ fn not_found() -> Refusal {
 
 /// What one character is to MapleScouter: an IGN to look up, or why not.
 /// Readiness reads the cache under the same IGN.
-pub(super) fn lookup_name(character: &Character) -> Result<RosterIgn, MissingReason> {
+pub(crate) fn lookup_name(character: &Character) -> Result<RosterIgn, MissingReason> {
     if character.world != DEFAULT_WORLD {
         return Err(MissingReason::OtherRegion);
     }
