@@ -357,6 +357,22 @@ async fn on(scouter: Option<SocketAddr>) -> Reads {
     .await
 }
 
+/// [`on`] for tests that hold a `Gate…` lookup until they release it: the
+/// client timeout is far past any runner's pace, so the held lookup never
+/// fails on its own and the line moves only when the test says so.
+async fn on_gated(scouter: SocketAddr) -> Reads {
+    Reads::with_character_data(
+        Some(config()),
+        module(
+            Some(scouter),
+            None,
+            Arc::default(),
+            Duration::from_secs(120),
+        ),
+    )
+    .await
+}
+
 async fn character(reads: &Reads, member: &str, ign: &str) -> String {
     let reply = reads
         .call(
@@ -986,7 +1002,7 @@ async fn a_party_with_nobody_found_fails_with_each_reason() {
 #[tokio::test]
 async fn party_results_fill_in_as_each_character_finishes() {
     let (address, fake) = fake_scouter().await;
-    let reads = on(Some(address)).await;
+    let reads = on_gated(address).await;
     let mika = character(&reads, "1001", "MikaBish").await;
     let gate = character(&reads, "1002", "GateAa").await;
     let job = post(&reads, json!({"run_id": "r-kalos"})).await;
@@ -1031,7 +1047,7 @@ async fn party_results_fill_in_as_each_character_finishes() {
 #[tokio::test]
 async fn lookups_wait_in_line_in_order_with_their_position() {
     let (address, fake) = fake_scouter().await;
-    let reads = on(Some(address)).await;
+    let reads = on_gated(address).await;
     let gate = character(&reads, "1001", "GateAa").await;
     let mika = character(&reads, "1002", "MikaBish").await;
     let ren = character(&reads, "1001", "RenShade").await;
@@ -1113,7 +1129,7 @@ async fn lookups_wait_in_line_in_order_with_their_position() {
 async fn the_line_holds_16_and_refuses_more() {
     assert_eq!(MAX_QUEUED, 16);
     let (address, fake) = fake_scouter().await;
-    let reads = on(Some(address)).await;
+    let reads = on_gated(address).await;
     let gate = character(&reads, "1001", "GateAa").await;
     post(&reads, json!({"character_ids": [gate]})).await;
     let mut queued = Vec::new();

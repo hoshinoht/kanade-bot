@@ -484,13 +484,16 @@ pub(super) async fn unlink_all(
 }
 
 /// `GET /api/public/me/data` → `MyData`: everything kept for the caller,
-/// with dates (`/character data`), waiting requests first.
+/// with dates (`/character data`): waiting requests first, then the active
+/// main, other active characters and retired ones, each group by IGN.
 pub(super) async fn data(State(site): State<Arc<Site>>, session: MemberSession) -> Reply {
     let state = state(&site)?;
     let module = module(state)?;
     let profiles = state.store.members().await.map_err(unavailable)?;
     let channels = state.channels.channels();
     let now = module.now();
+    // Each entry with its place: the roster's own order breaks creation-time
+    // ties by random id, so the order is spelled out here.
     let mut entries = Vec::new();
     for entry in module
         .member_characters(&session.user_id)
@@ -501,22 +504,25 @@ pub(super) async fn data(State(site): State<Arc<Site>>, session: MemberSession) 
         let linkable = entry.linkable();
         let Some(kept) = entry.link else {
             if linkable {
-                entries.push(MyDataEntry {
-                    character_id: character.id.clone(),
-                    ign: character.ign.clone(),
-                    state: "not_linked",
-                    retired: false,
-                    data: None,
-                    requested_by: None,
-                    requested_by_name: None,
-                    requested_at: None,
-                    request_expires_at: None,
-                    linked_at: None,
-                    notice: None,
-                    consented_at: None,
-                    consent_surface: None,
-                    cards: Vec::new(),
-                });
+                entries.push((
+                    order(character, false),
+                    MyDataEntry {
+                        character_id: character.id.clone(),
+                        ign: character.ign.clone(),
+                        state: "not_linked",
+                        retired: false,
+                        data: None,
+                        requested_by: None,
+                        requested_by_name: None,
+                        requested_at: None,
+                        request_expires_at: None,
+                        linked_at: None,
+                        notice: None,
+                        consented_at: None,
+                        consent_surface: None,
+                        cards: Vec::new(),
+                    },
+                ));
             }
             continue;
         };
@@ -534,53 +540,69 @@ pub(super) async fn data(State(site): State<Arc<Site>>, session: MemberSession) 
             "expired" => "expired",
             _ => "linked",
         };
-        entries.push(MyDataEntry {
-            character_id: character.id.clone(),
-            ign: character.ign.clone(),
-            state,
-            retired: !character.is_active(),
-            data: kept
-                .snapshot
-                .as_ref()
-                .filter(|snapshot| snapshot.has_data())
-                .map(facts),
-            requested_by: pending.then(|| SettingsActor {
-                kind: found.requested_by.kind(),
-                id: found.requested_by.id().to_owned(),
-            }),
-            requested_by_name: if pending {
-                requester(found, &profiles)
-            } else {
-                None
+        entries.push((
+            order(character, pending),
+            MyDataEntry {
+                character_id: character.id.clone(),
+                ign: character.ign.clone(),
+                state,
+                retired: !character.is_active(),
+                data: kept
+                    .snapshot
+                    .as_ref()
+                    .filter(|snapshot| snapshot.has_data())
+                    .map(facts),
+                requested_by: pending.then(|| SettingsActor {
+                    kind: found.requested_by.kind(),
+                    id: found.requested_by.id().to_owned(),
+                }),
+                requested_by_name: if pending {
+                    requester(found, &profiles)
+                } else {
+                    None
+                },
+                requested_at: pending.then(|| iso_instant(found.requested_at)),
+                request_expires_at: pending.then(|| iso_instant(found.requested_at + PENDING_TTL)),
+                linked_at: found.linked_at.map(iso_instant),
+                notice: found.consent_version,
+                consented_at: found.consented_at.map(iso_instant),
+                consent_surface: found.consent_surface.map(ConsentSurface::as_str),
+                cards: kept
+                    .posts
+                    .iter()
+                    .map(|post| SharedCard {
+                        // The channel's name only: its id never leaves the server.
+                        channel: channels
+                            .iter()
+                            .find(|channel| channel.id == post.channel_id)
+                            .map(|channel| channel.name.clone()),
+                        posted_at: iso_instant(post.posted_at),
+                        cleared_by: iso_instant(post.strip_due_at),
+                    })
+                    .collect(),
             },
-            requested_at: pending.then(|| iso_instant(found.requested_at)),
-            request_expires_at: pending.then(|| iso_instant(found.requested_at + PENDING_TTL)),
-            linked_at: found.linked_at.map(iso_instant),
-            notice: found.consent_version,
-            consented_at: found.consented_at.map(iso_instant),
-            consent_surface: found.consent_surface.map(ConsentSurface::as_str),
-            cards: kept
-                .posts
-                .iter()
-                .map(|post| SharedCard {
-                    // The channel's name only: its id never leaves the server.
-                    channel: channels
-                        .iter()
-                        .find(|channel| channel.id == post.channel_id)
-                        .map(|channel| channel.name.clone()),
-                    posted_at: iso_instant(post.posted_at),
-                    cleared_by: iso_instant(post.strip_due_at),
-                })
-                .collect(),
-        });
+        ));
     }
-    // Waiting for the member first; otherwise roster order (oldest first).
-    entries.sort_by_key(|entry| entry.state != "pending");
+    entries.sort_by(|a, b| a.0.cmp(&b.0));
     Ok(Json(MyData {
-        entries,
+        entries: entries.into_iter().map(|(_, entry)| entry).collect(),
         notice_version: NOTICE_VERSION,
         privacy_url: module.privacy_url().map(str::to_owned),
         attribution: ATTRIBUTION,
     })
     .into_response())
+}
+
+/// My data's place for a character: waiting for the member first, then the
+/// active main, other active characters, retired ones; by IGN within each
+/// (case-insensitive, then exact, then id, so the order is total).
+fn order(character: &Character, pending: bool) -> (bool, bool, bool, String, String, String) {
+    (
+        !pending,
+        !character.is_active(),
+        !character.is_active_main(),
+        character.ign_key(),
+        character.ign.clone(),
+        character.id.clone(),
+    )
 }

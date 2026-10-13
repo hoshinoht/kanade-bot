@@ -599,7 +599,7 @@
     "MyData": {
       "type": "object",
       "additionalProperties": false,
-      "description": "GET /api/public/me/data (`/character data`): everything kept for the caller, requests waiting for them first; MapleSEA characters with nothing kept are `not_linked`. `Cache-Control: no-store`.",
+      "description": "GET /api/public/me/data (`/character data`): everything kept for the caller, requests waiting for them first, then the active main, other active characters and retired ones, each group by IGN (case-insensitive); MapleSEA characters with nothing kept are `not_linked`. `Cache-Control: no-store`.",
       "required": ["entries", "notice_version", "privacy_url", "attribution"],
       "properties": {
         "entries": { "type": "array", "items": { "$ref": "#/$defs/MyDataEntry" } },

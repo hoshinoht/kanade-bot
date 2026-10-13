@@ -53,6 +53,9 @@ pub use snapshots::ReadPause;
 use crate::domain::history::{ChangeHistory, ChangeRef};
 use writer::Writer;
 
+/// How long [`SqliteStore::close`] waits for readers handed back late.
+const READER_DRAIN: std::time::Duration = std::time::Duration::from_secs(5);
+
 /// Where the database lives and where its owner lock is taken.
 ///
 /// Both must be absolute paths without `..` or symbolic links. The database's
@@ -401,7 +404,33 @@ impl SqliteStore {
             ..
         } = self;
         unclosed.armed = false;
+        // A reader handed back while the pool closes (SQLx 0.8 pings it
+        // first, after its closed check) lands in the idle queue after
+        // `close` has emptied it, and `close` still returns once every
+        // permit is back. Dropped there, it would close later on its own
+        // thread, after the writer: the writer's close then cannot take the
+        // lock to checkpoint, and the read-only straggler cannot either, so
+        // the `-wal` stays and SQLite runs past the ownership release. Each
+        // further `close` closes what is idle, so go on until none is left,
+        // for at most `READER_DRAIN`: shutdown must not hang on a reader
+        // that never comes back.
         readers.close().await;
+        let drained = tokio::time::timeout(READER_DRAIN, async {
+            while readers.size() > 0 {
+                // A connection SQLx itself has out (its idle reaper) is let
+                // go by its own task: give that task its turn.
+                tokio::task::yield_now().await;
+                readers.close().await;
+            }
+        })
+        .await;
+        if drained.is_err() {
+            crate::runtime::logging::event(
+                "WARN",
+                "store_readers_not_drained",
+                serde_json::json!({ "open": readers.size() }),
+            );
+        }
         let closed = writer.shutdown().await;
         (closed.map_err(Into::into), owner)
     }

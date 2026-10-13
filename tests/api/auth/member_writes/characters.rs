@@ -946,24 +946,33 @@ async fn the_notice_link_cancel_unlink_and_my_data_follow_discord() {
         .expect("the consent's History row");
     assert_eq!(consent.surface, Surface::PublicPortal);
 
-    // My data: the link with its consent, then what is not linked.
+    // My data: the link with its consent, and what is not linked.
     let data = chars.portal.read(&alice, DATA, MY_DATA).await;
     let entries = data["entries"].as_array().unwrap();
-    assert_eq!(entries.len(), 2);
-    let first = &entries[0];
+    let entry = |id: &str| {
+        entries
+            .iter()
+            .find(|entry| entry["character_id"] == id)
+            .unwrap_or_else(|| panic!("{id} in My data: {entries:?}"))
+    };
+    let linked = entry(&dk);
     assert_eq!(
         (
-            &first["character_id"],
-            &first["state"],
-            &first["notice"],
-            &first["consent_surface"]
+            &linked["state"],
+            &linked["notice"],
+            &linked["consent_surface"]
         ),
-        (&json!(dk), &json!("linked"), &json!(1), &json!("portal"))
+        (&json!("linked"), &json!(1), &json!("portal"))
     );
-    assert_eq!(first["data"]["level"], 271);
+    assert_eq!(linked["data"]["level"], 271);
+    assert_eq!(entry(&kanna)["state"], "not_linked");
+    // Nothing waits, so the active main (AsahiDK, the first added) leads.
     assert_eq!(
-        (&entries[1]["character_id"], &entries[1]["state"]),
-        (&json!(kanna), &json!("not_linked"))
+        entries
+            .iter()
+            .map(|entry| entry["character_id"].clone())
+            .collect::<Vec<_>>(),
+        [json!(dk), json!(kanna)]
     );
 
     // Unlink: no fresh sign-in, the data goes at once.

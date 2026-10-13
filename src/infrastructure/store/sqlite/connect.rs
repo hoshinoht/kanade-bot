@@ -157,4 +157,44 @@ mod tests {
         store.close().await.expect("close");
         let _ = std::fs::remove_dir_all(&dir);
     }
+
+    /// A read's reader goes back to the pool on a spawned task (with a
+    /// ping), so `close` right after a read races it: every reader must
+    /// still be closed before the writer, which then checkpoints and
+    /// deletes the WAL, so a clean close leaves no journal file.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn a_close_right_after_reads_leaves_no_journal_files() {
+        use std::os::unix::fs::DirBuilderExt;
+
+        use super::super::{SqliteStore, SqliteStoreConfig};
+        use crate::domain::history::ChangeHistory;
+
+        let root = std::fs::canonicalize(std::env::temp_dir()).expect("temp dir");
+        let dir = root.join(format!("kanade-close-{}", uuid::Uuid::new_v4()));
+        for path in [dir.clone(), dir.join("locks")] {
+            std::fs::DirBuilder::new()
+                .mode(0o700)
+                .create(&path)
+                .expect("create");
+        }
+        let config = SqliteStoreConfig {
+            db_path: dir.join("db.sqlite3"),
+            owner_lock_dir: dir.join("locks"),
+        };
+        for round in 0..40 {
+            let store = SqliteStore::open(&config).await.expect("open");
+            store.schema_version().await.expect("read");
+            store.history_head().await.expect("read");
+            store.close().await.expect("close");
+            for suffix in ["-wal", "-shm"] {
+                let mut path = config.db_path.clone().into_os_string();
+                path.push(suffix);
+                assert!(
+                    !std::path::Path::new(&path).exists(),
+                    "round {round}: {suffix} left after close"
+                );
+            }
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }

@@ -172,7 +172,12 @@ test('fixed: the owner defaults to the first in the party, a pick pins it, Defau
   let sent = page.waitForRequest((r) => r.method() === 'PATCH' && r.url().includes('/api/admin/fixed/'));
   await editor.getByRole('button', { name: 'Save changes' }).click();
   expect((await sent).postDataJSON()).toMatchObject({ owner_id: '1009' });
-  await expect(toast(page, 'Saved Tuesday 23:30 — XBM.')).toBeVisible();
+  const firstSaved = toast(page, 'Saved Tuesday 23:30 — XBM.');
+  await expect(firstSaved).toBeVisible();
+  // The second save toasts the same words; a slow run reaches it inside this toast's 6 s,
+  // so dismiss it first and the one checked below can only be the second save's.
+  await firstSaved.getByRole('button', { name: 'Dismiss' }).click();
+  await expect(firstSaved).toHaveCount(0);
   const xbm = async () => ((await (await page.request.get(`${ADMIN}/api/admin/fixed`)).json()) as { owner_id: string; owner: string; owner_pinned: boolean; bosses: { token: string }[] }[]).find((r) => r.bosses.some((b) => b.token === 'XBM'));
   expect(await xbm()).toMatchObject({ owner_id: '1009', owner: 'Kaito', owner_pinned: true });
   // The list's search reads the owner: Kaito now finds XBM.

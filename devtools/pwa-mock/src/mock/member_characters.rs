@@ -429,10 +429,11 @@ impl Store {
         Ok(answer)
     }
 
-    /// `GET /api/public/me/data`: `MyData`, requests first.
+    /// `GET /api/public/me/data`: `MyData`, requests first, then the active
+    /// main, other active characters and retired ones, each group by IGN.
     pub fn my_data(&self, me: &str) -> Value {
         let now = now_secs();
-        let mut entries: Vec<Value> = self
+        let mut entries: Vec<_> = self
             .mine(me)
             .filter_map(|c| {
                 let link = self.link_of(&c.id);
@@ -442,7 +443,15 @@ impl Store {
                 let state = link.map_or("not_linked", |link| state_of(link, now));
                 let pending = state == "pending";
                 let shown = view(&c.id, link, true, now);
-                Some(json!({
+                let order = (
+                    !pending,
+                    c.retired_at.is_some(),
+                    !c.active_main(),
+                    c.ign.to_ascii_lowercase(),
+                    c.ign.clone(),
+                    c.id.clone(),
+                );
+                Some((order, json!({
                     "character_id": c.id, "ign": c.ign, "state": state,
                     "retired": c.retired_at.is_some(),
                     "data": shown["data"],
@@ -457,12 +466,12 @@ impl Store {
                     "cards": link.map(|link| link.cards.iter().map(|(channel, at)| json!({
                         "channel": channel, "posted_at": iso_secs(*at), "cleared_by": iso_secs(at + 29 * DAY),
                     })).collect::<Vec<_>>()).unwrap_or_default(),
-                }))
+                })))
             })
             .collect();
-        entries.sort_by_key(|entry| entry["state"] != "pending");
+        entries.sort_by(|a, b| a.0.cmp(&b.0));
         json!({
-            "entries": entries,
+            "entries": entries.into_iter().map(|(_, entry)| entry).collect::<Vec<_>>(),
             "notice_version": NOTICE_VERSION,
             "privacy_url": PRIVACY_URL,
             "attribution": ATTRIBUTION,
