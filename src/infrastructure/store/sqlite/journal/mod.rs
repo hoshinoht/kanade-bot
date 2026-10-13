@@ -66,31 +66,12 @@ fn decode(
     })
 }
 
-/// Run `$body` (which may use `&mut *$tx`) in one write transaction; commit
-/// on `Ok`, roll back on `Err`, and orphan the connection if either fails.
+/// `write_txn!` with journal errors: `$body` (which may use `&mut *$tx`)
+/// runs in one write transaction, committed on `Ok`.
 macro_rules! write_tx {
-    ($store:expr, $tx:ident => $body:expr) => {{
-        let mut lease = $store
-            .writer
-            .lease()
-            .await
-            .map_err(|error| JournalError::Backend(error.to_string()))?;
-        let (result, healthy) = match lease.conn().begin_with("BEGIN IMMEDIATE").await {
-            Ok(mut $tx) => match $body.await {
-                Ok(value) => match $tx.commit().await {
-                    Ok(()) => (Ok(value), true),
-                    Err(error) => (Err(backend(error)), false),
-                },
-                Err(error) => {
-                    let healthy = $tx.rollback().await.is_ok();
-                    (Err(error), healthy)
-                }
-            },
-            Err(error) => (Err(backend(error)), false),
-        };
-        lease.finish(healthy);
-        result
-    }};
+    ($store:expr, $tx:ident => $body:expr) => {
+        write_txn!(JournalError, backend; $store, $tx, $body)
+    };
 }
 
 /// The lease exists, is live, is this lease's, and the store is OPEN.

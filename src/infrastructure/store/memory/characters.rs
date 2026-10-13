@@ -109,6 +109,26 @@ impl super::MemoryScheduleStore {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
+
+    /// `apply` under the characters and settings-changes locks, appending
+    /// its History row when it has one.
+    fn recorded_character_write<W>(
+        &self,
+        apply: impl FnOnce(&mut CharacterTable) -> Result<(W, Option<SettingsChange>), StoreError>,
+    ) -> Result<W, StoreError> {
+        let mut table = self.characters();
+        let mut changes = self.changes();
+        let (written, change) = apply(&mut table)?;
+        let recorded = change.is_some();
+        if let Some(change) = change {
+            append(&mut changes, change);
+        }
+        drop((table, changes));
+        if recorded {
+            self.written.notify(Written::Settings);
+        }
+        Ok(written)
+    }
 }
 
 impl CharacterStore for super::MemoryScheduleStore {
@@ -125,18 +145,7 @@ impl CharacterStore for super::MemoryScheduleStore {
         change: CharacterChange,
         record: CharacterRecord,
     ) -> Result<CharacterWrite, StoreError> {
-        let mut table = self.characters();
-        let mut changes = self.changes();
-        let (written, change) = apply(&mut table, change, &record)?;
-        let recorded = change.is_some();
-        if let Some(change) = change {
-            append(&mut changes, change);
-        }
-        drop((table, changes));
-        if recorded {
-            self.written.notify(Written::Settings);
-        }
-        Ok(written)
+        self.recorded_character_write(|table| apply(table, change, &record))
     }
 
     async fn picks(&self, scope: PickScope, targets: &[String]) -> Result<Vec<Pick>, StoreError> {
@@ -154,17 +163,6 @@ impl CharacterStore for super::MemoryScheduleStore {
         change: PickChange,
         record: CharacterRecord,
     ) -> Result<PickWrite, StoreError> {
-        let mut table = self.characters();
-        let mut changes = self.changes();
-        let (written, change) = apply_pick(&mut table, change, &record)?;
-        let recorded = change.is_some();
-        if let Some(change) = change {
-            append(&mut changes, change);
-        }
-        drop((table, changes));
-        if recorded {
-            self.written.notify(Written::Settings);
-        }
-        Ok(written)
+        self.recorded_character_write(|table| apply_pick(table, change, &record))
     }
 }

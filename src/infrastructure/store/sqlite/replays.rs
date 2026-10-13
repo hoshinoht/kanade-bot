@@ -19,6 +19,7 @@ use crate::infrastructure::store::Written;
 use crate::infrastructure::store::replays::{
     KeyedWrite, PortalRecord, PortalWrite, ReplayScope, ReplayStore, StoredReplay, keyed, replayed,
 };
+use crate::infrastructure::store::rules::refuse_unknown_settings;
 
 fn corrupt(column: &str, detail: impl std::fmt::Display) -> StoreError {
     StoreError::Backend(format!(
@@ -134,7 +135,7 @@ impl ReplayStore for SqliteStore {
         change: Option<SettingsChange>,
         replay: StoredReplay,
     ) -> Result<(), StoreError> {
-        settings::refuse_unknown(&rows)?;
+        refuse_unknown_settings(&rows)?;
         replay.check()?;
         let result = write_txn!(self, tx, async {
             settings::write(&mut tx, &rows).await?;

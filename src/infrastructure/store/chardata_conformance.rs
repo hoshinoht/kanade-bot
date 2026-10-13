@@ -6,12 +6,12 @@
 
 use chrono::{DateTime, TimeDelta, TimeZone, Utc};
 
+use super::fixtures::{refused, refused_for};
 use crate::domain::chardata::{
     CharDataStore, ConsentSurface, Link, LinkPut, LinkStatus, NOTICE_VERSION, Post, PostState,
     RefreshState, STRIP_AFTER, Snapshot,
 };
 use crate::domain::history::Actor;
-use crate::domain::scheduler::StoreError;
 
 pub async fn run_suite<S: CharDataStore>(make: impl AsyncFn() -> S) {
     links_are_versioned(make().await).await;
@@ -87,12 +87,9 @@ async fn links_are_versioned<S: CharDataStore>(store: S) {
             .unwrap(),
         LinkPut::Stale(Some(stale.clone()))
     );
-    assert!(
-        matches!(
-            store.put_link(stale.clone(), 2).await,
-            Err(StoreError::Constraint(_))
-        ),
-        "a replacement takes the next version"
+    refused_for(
+        "a replacement takes the next version",
+        store.put_link(stale.clone(), 2).await,
     );
     let other = Link {
         character_id: "c2".into(),
@@ -285,18 +282,17 @@ async fn posts_are_tracked_once<S: CharDataStore>(store: S) {
 }
 
 async fn malformed_rows_are_refused<S: CharDataStore>(store: S) {
-    let refused = |result: Result<_, StoreError>| matches!(result, Err(StoreError::Constraint(_)));
     let other_region = Link {
         region: "kms".into(),
         ..active("c1")
     };
-    assert!(refused(store.put_link(other_region, 0).await.map(drop)));
+    refused(store.put_link(other_region, 0).await);
     let unconsented = Link {
         consent_version: None,
         consented_at: None,
         ..active("c1")
     };
-    assert!(refused(store.put_link(unconsented, 0).await.map(drop)));
+    refused(store.put_link(unconsented, 0).await);
     let pending_with_surface = Link {
         status: LinkStatus::Pending,
         consent_version: None,
@@ -304,13 +300,11 @@ async fn malformed_rows_are_refused<S: CharDataStore>(store: S) {
         linked_at: None,
         ..active("c1")
     };
-    assert!(refused(
-        store.put_link(pending_with_surface, 0).await.map(drop)
-    ));
+    refused(store.put_link(pending_with_surface, 0).await);
     store.put_link(active("c1"), 0).await.unwrap();
     let mut wrong_expiry = snapshot("c1", at(2, 0));
     wrong_expiry.expires_at = at(2, 0) + TimeDelta::days(60);
-    assert!(refused(store.put_snapshot(wrong_expiry).await.map(drop)));
+    refused(store.put_snapshot(wrong_expiry).await);
     let bad_ref = Post::new("XYZ".into(), "900".into(), "c1".into(), at(2, 0));
-    assert!(refused(store.create_post(bad_ref).await.map(drop)));
+    refused(store.create_post(bad_ref).await);
 }

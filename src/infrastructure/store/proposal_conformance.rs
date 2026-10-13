@@ -5,6 +5,7 @@
 
 use chrono::{DateTime, TimeDelta, TimeZone, Utc};
 
+use super::fixtures::{refused, refused_for};
 use crate::domain::drafts::{
     DEFAULT_PROPOSAL_TTL, DraftEventKind, DraftKind, DraftStatus, MergeCommit, NewDraft,
     NewProposal, ProposalCreated, ProposalSource, ProposalStore, ProposalSubmission, SUPERSEDED,
@@ -16,7 +17,7 @@ use crate::domain::notify::{
 };
 use crate::domain::proposals::{CardDetails, ChangeKind, ProposalCardStore, ProposalSubject};
 use crate::domain::schedule::{Change, ChangeSet, Run, RunSource, RunStatus};
-use crate::domain::scheduler::{CARDLESS_CHAT_GRACE, ScheduleStore, Scope, StoreError};
+use crate::domain::scheduler::{CARDLESS_CHAT_GRACE, ScheduleStore, Scope};
 use crate::infrastructure::store::snapshots::SnapshotReads;
 
 /// Run every check, each against a fresh store from `make`.
@@ -150,21 +151,15 @@ async fn creation_refusals<S: ScheduleStore + ChangeHistory + ProposalStore>(sto
     let base = base(&store).await;
     let mut member = proposal("p-1", &base, None);
     member.author = Actor::member("1");
-    assert!(
-        matches!(
-            store.create_proposal(member).await,
-            Err(StoreError::Constraint(_))
-        ),
-        "refusals: a proposal's author is a system component"
+    refused_for(
+        "refusals: a proposal's author is a system component",
+        store.create_proposal(member).await,
     );
     let mut zero = proposal("p-1", &base, None);
     zero.ttl = TimeDelta::zero();
-    assert!(
-        matches!(
-            store.create_proposal(zero).await,
-            Err(StoreError::Constraint(_))
-        ),
-        "refusals: the TTL is positive"
+    refused_for(
+        "refusals: the TTL is positive",
+        store.create_proposal(zero).await,
     );
     let plain = NewDraft {
         id: "p-2".into(),
@@ -179,12 +174,9 @@ async fn creation_refusals<S: ScheduleStore + ChangeHistory + ProposalStore>(sto
         request: None,
         submit: None,
     };
-    assert!(
-        matches!(
-            store.create_draft(plain).await,
-            Err(StoreError::Constraint(_))
-        ),
-        "refusals: create_draft never makes a proposal"
+    refused_for(
+        "refusals: create_draft never makes a proposal",
+        store.create_draft(plain).await,
     );
     assert!(store.list_drafts(None).await.expect("drafts").is_empty());
 }
@@ -202,12 +194,9 @@ async fn same_source_ids_replay<S: ScheduleStore + ChangeHistory + ProposalStore
     assert_eq!(replayed.id, "p-1");
     let mut other = proposal("p-1", &base, None);
     other.source = ProposalSource::Chat;
-    assert!(
-        matches!(
-            store.create_proposal(other).await,
-            Err(StoreError::Constraint(_))
-        ),
-        "replay: another source's id is refused"
+    refused_for(
+        "replay: another source's id is refused",
+        store.create_proposal(other).await,
     );
     let admin = NewDraft {
         id: "d-1".into(),
@@ -223,12 +212,9 @@ async fn same_source_ids_replay<S: ScheduleStore + ChangeHistory + ProposalStore
         submit: None,
     };
     store.create_draft(admin).await.expect("admin draft");
-    assert!(
-        matches!(
-            store.create_proposal(proposal("d-1", &base, None)).await,
-            Err(StoreError::Constraint(_))
-        ),
-        "replay: an admin draft's id is refused"
+    refused_for(
+        "replay: an admin draft's id is refused",
+        store.create_proposal(proposal("d-1", &base, None)).await,
     );
     assert_eq!(
         store.list_proposals(false).await.expect("list").len(),
@@ -546,12 +532,9 @@ where
     }
     // Same id still replays, even when a matching sibling could be reused.
     let replay = run_move("p-old", &base, "900", ProposalSource::Extraction);
-    assert!(
-        matches!(
-            store.create_proposal_or_existing(replay, week).await,
-            Err(StoreError::Constraint(_))
-        ),
-        "chat-only port"
+    refused_for(
+        "chat-only port",
+        store.create_proposal_or_existing(replay, week).await,
     );
     let chat = run_move("p-chat", &base, "901", ProposalSource::Chat);
     created(&store, chat.clone()).await;
@@ -560,10 +543,7 @@ where
     );
     let mut conflicting = new;
     conflicting.id = "p-old".into();
-    assert!(matches!(
-        store.create_proposal_or_existing(conflicting, week).await,
-        Err(StoreError::Constraint(_))
-    ));
+    refused(store.create_proposal_or_existing(conflicting, week).await);
 }
 
 async fn expired_proposals_do_not_block_lookup_or_create<S>(store: S)

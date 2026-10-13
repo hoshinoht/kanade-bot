@@ -6,6 +6,7 @@
 
 use chrono::{DateTime, NaiveTime, TimeZone, Utc, Weekday};
 
+use super::fixtures::refused_for;
 use crate::domain::history::{Actor, ChangeMeta, Origin, Surface};
 use crate::domain::schedule::{
     Change, ChangeSet, FixedRun, Reminder, Rsvp, RsvpSource, RsvpState, Run, RunSource, RunStatus,
@@ -269,10 +270,7 @@ async fn duplicate_reminder_kind_is_rejected_atomically<S: ScheduleStore>(store:
         ],
     )
     .await;
-    assert!(
-        matches!(result, Err(StoreError::Constraint(_))),
-        "duplicate (run_id, kind): {result:?}"
-    );
+    refused_for("duplicate (run_id, kind)", result);
     assert_eq!(load(store, Scope::All).await, before, "nothing was written");
 }
 
@@ -287,10 +285,7 @@ async fn duplicate_weekly_week_is_rejected_atomically<S: ScheduleStore>(store: &
         ],
     )
     .await;
-    assert!(
-        matches!(result, Err(StoreError::Constraint(_))),
-        "duplicate (fixed_run_id, week_start): {result:?}"
-    );
+    refused_for("duplicate (fixed_run_id, week_start)", result);
     assert_eq!(load(store, Scope::All).await, before, "nothing was written");
     commit(store, vec![Change::PutRun(run("r-free", None, week(), 14))])
         .await
@@ -392,10 +387,7 @@ async fn rows_without_a_run_are_rejected_atomically<S: ScheduleStore>(store: &S)
             vec![Change::PutFixedRun(fixed("f-c", Weekday::Fri, 7)), orphan],
         )
         .await;
-        assert!(
-            matches!(result, Err(StoreError::Constraint(_))),
-            "a row needs its run: {result:?}"
-        );
+        refused_for("a row needs its run", result);
         assert_eq!(load(store, Scope::All).await, before, "nothing was written");
     }
 }
@@ -433,9 +425,6 @@ async fn instants_keep_microsecond_precision<S: ScheduleStore>(store: &S) {
     let mut timing = fixed("f-fine", Weekday::Mon, 21);
     timing.time += ns(500_000_000);
     let result = commit(store, vec![Change::PutFixedRun(timing)]).await;
-    assert!(
-        matches!(result, Err(StoreError::Constraint(_))),
-        "a weekly time keeps whole seconds: {result:?}"
-    );
+    refused_for("a weekly time keeps whole seconds", result);
     assert_eq!(load(store, Scope::All).await, before, "nothing was written");
 }

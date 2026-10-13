@@ -23,6 +23,8 @@ use crate::domain::notify::change_source;
 use crate::domain::scheduler::{Committed, RecordedRequest, StoreError};
 use crate::domain::time::from_iso;
 use crate::infrastructure::store::history::{changed_rows, touched_weeks};
+// History maps every sqlx error to a backend error, transactions included.
+use self::backend as store_error;
 
 fn backend(error: impl std::fmt::Display) -> StoreError {
     StoreError::Backend(error.to_string())
@@ -834,14 +836,7 @@ impl BlameIndex for SqliteStore {
     }
 
     async fn read_versioned(&self, targets: &[BlameTarget]) -> Result<Vec<Versioned>, StoreError> {
-        let mut conn = self.readers.acquire().await.map_err(backend)?;
-        let mut tx = conn.begin().await.map_err(backend)?;
-        let read = versioned_in(&mut tx, targets).await;
-        let ended = tx.rollback().await.is_ok();
-        if !ended {
-            conn.close_on_drop();
-        }
-        read
+        read_txn!(self, tx, versioned_in(&mut tx, targets))
     }
 }
 
@@ -962,21 +957,7 @@ async fn create_checkpoint_in(
 impl Checkpoints for SqliteStore {
     async fn create_checkpoint(&self, new: NewCheckpoint) -> Result<CheckpointCreated, StoreError> {
         check_checkpoint(&new)?;
-        let mut lease = self.writer.lease().await.map_err(backend)?;
-        let (result, healthy) = match lease.conn().begin_with("BEGIN IMMEDIATE").await {
-            Ok(mut tx) => match create_checkpoint_in(&mut tx, &new).await {
-                Ok(created) => match tx.commit().await {
-                    Ok(()) => (Ok(created), true),
-                    Err(error) => (Err(backend(error)), false),
-                },
-                Err(error) => {
-                    let healthy = tx.rollback().await.is_ok();
-                    (Err(error), healthy)
-                }
-            },
-            Err(error) => (Err(backend(error)), false),
-        };
-        lease.finish(healthy);
+        let result = write_txn!(self, tx, create_checkpoint_in(&mut tx, &new));
         self.written().after_if(
             crate::infrastructure::store::Written::Schedule,
             result,

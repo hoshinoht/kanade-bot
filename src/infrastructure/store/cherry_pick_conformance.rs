@@ -4,22 +4,21 @@
 //! 29 March 2026. Failures panic with the check name.
 
 use std::collections::BTreeSet;
-use std::sync::{Arc, Mutex};
 
-use chrono::{DateTime, NaiveTime, TimeZone, Utc, Weekday};
+use chrono::{DateTime, NaiveTime, Utc, Weekday};
 
+use super::fixtures::{Ids, Stopped, admin, delivery, policy_in, timing, utc2026};
 use crate::domain::history::{
     Actor, BlameIndex, BlameTarget, ChangeHistory, ChangeRef, EDIT_OVERRIDE, Expect,
     HistoryRefusal, Origin, PickMode, PickRefusal, PickStep, RevertMode, Surface, Via, blame,
 };
-use crate::domain::ids::IdGenerator;
 use crate::domain::members::{Member, Roster};
 use crate::domain::notify::DeliveryJournal;
 use crate::domain::schedule::{
-    EMOJI_NO, EMOJI_YES, NewFixedRun, NewRun, ReminderPolicy, RsvpSource, RsvpState, RunSource,
-    RunStatus, SchedulePolicy, ScheduleSnapshot, StatusChange,
+    EMOJI_NO, EMOJI_YES, NewFixedRun, NewRun, RsvpSource, RsvpState, RunSource, RunStatus,
+    SchedulePolicy, ScheduleSnapshot, StatusChange,
 };
-use crate::domain::scheduler::{Clock, PickError, ScheduleStore, SchedulerService, Scope};
+use crate::domain::scheduler::{PickError, ScheduleStore, SchedulerService, Scope};
 
 /// Run every check, each against a fresh store from `make`.
 pub async fn run_suite<S: ScheduleStore + ChangeHistory + BlameIndex + DeliveryJournal + Sync>(
@@ -43,51 +42,19 @@ pub async fn run_suite<S: ScheduleStore + ChangeHistory + BlameIndex + DeliveryJ
     an_emptied_trimmed_delta_is_no_effect_in_both_modes(make().await).await;
 }
 
-#[derive(Clone, Default)]
-struct Ids(Arc<Mutex<u64>>);
-
-impl IdGenerator for Ids {
-    fn new_id(&mut self) -> String {
-        let mut next = self
-            .0
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        *next += 1;
-        format!("id-{next:04}")
-    }
-}
-
-#[derive(Clone, Copy)]
-struct Now;
-
-impl Clock for Now {
-    fn now(&self) -> DateTime<Utc> {
-        utc(3, 19, 1, 0)
-    }
-}
-
-type Service<S> = SchedulerService<S, Ids, Now>;
+type Service<S> = SchedulerService<S, Ids, Stopped>;
 
 fn utc(month: u32, day: u32, hour: u32, minute: u32) -> DateTime<Utc> {
-    Utc.with_ymd_and_hms(2026, month, day, hour, minute, 0)
-        .single()
-        .expect("valid instant")
+    utc2026(month, day, hour, minute)
+}
+
+/// Thursday 19 Mar 01:00, early in boss week 0.
+fn now() -> Stopped {
+    Stopped(utc(3, 19, 1, 0))
 }
 
 fn policy() -> SchedulePolicy {
-    SchedulePolicy::new(
-        ReminderPolicy {
-            zone: chrono_tz::Europe::London,
-            ping_time: NaiveTime::from_hms_opt(9, 0, 0).expect("valid time"),
-            countdowns: vec![60],
-        },
-        Weekday::Thu,
-        NaiveTime::MIN,
-    )
-}
-
-fn admin() -> Origin {
-    Origin::new(Actor::admin("root"), Surface::AdminPortal)
+    policy_in(chrono_tz::Europe::London)
 }
 
 fn roster() -> Roster {
@@ -116,26 +83,14 @@ fn week(index: u32) -> DateTime<Utc> {
 /// A Saturday 20:00 London timing (party 1 and 2) materialised for weeks
 /// 0 to 2; returns the service, the timing and its runs by week.
 async fn fixture<S: ScheduleStore>(store: S) -> (Service<S>, String, [String; 3]) {
-    let mut service = SchedulerService::new(store, Ids::default(), Now);
+    let mut service = SchedulerService::new(store, Ids::default(), now());
     let fixed = service
         .as_origin(admin())
-        .add_fixed_run(NewFixedRun {
-            owner_pinned: false,
-            owner_id: "1".into(),
-            channel_id: Some("900".into()),
-            bosses: vec!["HFA".into()],
-            weekday: Weekday::Sat,
-            time: NaiveTime::from_hms_opt(20, 0, 0).expect("valid time"),
-            participants: vec!["1".into(), "2".into()],
-            note: None,
-        })
+        .add_fixed_run(timing(Weekday::Sat))
         .await
         .expect("timing");
     service
-        .as_origin(Origin::new(
-            Actor::system("delivery"),
-            Surface::DeliveryTick,
-        ))
+        .as_origin(delivery())
         .materialise_weeks(&policy())
         .await
         .expect("materialise");
@@ -159,6 +114,19 @@ async fn snapshot<S: ScheduleStore>(service: &Service<S>) -> ScheduleSnapshot {
 
 async fn head<S: ScheduleStore + ChangeHistory>(service: &Service<S>) -> ChangeRef {
     service.store().history_head().await.expect("head")
+}
+
+/// `root` picks change `seq` into the boss week of `target` under `mode`.
+async fn pick<S: ScheduleStore + ChangeHistory + BlameIndex>(
+    service: &mut Service<S>,
+    request_id: Option<String>,
+    seq: u64,
+    target: DateTime<Utc>,
+    mode: PickMode,
+) -> Result<crate::domain::scheduler::Picked, PickError> {
+    service
+        .cherry_pick("root", request_id, seq, target, mode, &policy(), &roster())
+        .await
 }
 
 async fn datetime<S: ScheduleStore>(service: &Service<S>, run: &str) -> DateTime<Utc> {
@@ -202,16 +170,7 @@ async fn a_slot_maps_to_the_same_local_time_across_spring_forward<
         utc(4, 4, 19, 0),
         "dst: the target run is 20:00 BST"
     );
-    let outcome = service
-        .cherry_pick(
-            "root",
-            None,
-            picked.seq,
-            week(2),
-            PickMode::Strict,
-            &policy(),
-            &roster(),
-        )
+    let outcome = pick(&mut service, None, picked.seq, week(2), PickMode::Strict)
         .await
         .expect("dst: pick");
     // 21:00 local in the summer-time week is 20:00 UTC, not 21:00 UTC.
@@ -268,17 +227,7 @@ async fn strict_refuses_conflicts_and_force_is_bound_to_the_review<
         .amend_run(&runs[1], utc(3, 28, 18, 0), &policy())
         .await
         .expect("conflict: target move");
-    let result = service
-        .cherry_pick(
-            "root",
-            None,
-            picked.seq,
-            week(1),
-            PickMode::Strict,
-            &policy(),
-            &roster(),
-        )
-        .await;
+    let result = pick(&mut service, None, picked.seq, week(1), PickMode::Strict).await;
     let Err(PickError::Conflicts(conflicts)) = result else {
         panic!("conflict: expected Conflicts, got {result:?}");
     };
@@ -296,17 +245,14 @@ async fn strict_refuses_conflicts_and_force_is_bound_to_the_review<
         .await
         .expect("conflict: moved again");
     let theirs = head(&service).await;
-    let result = service
-        .cherry_pick(
-            "root",
-            None,
-            picked.seq,
-            week(1),
-            PickMode::Force(reviewed),
-            &policy(),
-            &roster(),
-        )
-        .await;
+    let result = pick(
+        &mut service,
+        None,
+        picked.seq,
+        week(1),
+        PickMode::Force(reviewed),
+    )
+    .await;
     assert!(
         matches!(result, Err(PickError::PickStale { .. })),
         "force: stale review {result:?}"
@@ -320,18 +266,15 @@ async fn strict_refuses_conflicts_and_force_is_bound_to_the_review<
         .force;
     assert_eq!(reviewed.overrides, std::slice::from_ref(&theirs), "force");
     let force = || PickMode::Force(reviewed.clone());
-    let outcome = service
-        .cherry_pick(
-            "root",
-            Some("force-1".into()),
-            picked.seq,
-            week(1),
-            force(),
-            &policy(),
-            &roster(),
-        )
-        .await
-        .expect("conflict: forced");
+    let outcome = pick(
+        &mut service,
+        Some("force-1".into()),
+        picked.seq,
+        week(1),
+        force(),
+    )
+    .await
+    .expect("conflict: forced");
     assert_eq!(
         datetime(&service, &runs[1]).await,
         utc(3, 28, 21, 0),
@@ -403,17 +346,7 @@ async fn timings_and_one_off_runs_are_unsupported<
 ) {
     let (mut service, _fixed, _runs) = fixture(store).await;
     // Change 1 added the weekly timing.
-    let result = service
-        .cherry_pick(
-            "root",
-            None,
-            1,
-            week(1),
-            PickMode::Strict,
-            &policy(),
-            &roster(),
-        )
-        .await;
+    let result = pick(&mut service, None, 1, week(1), PickMode::Strict).await;
     assert!(
         matches!(
             result,
@@ -441,17 +374,7 @@ async fn timings_and_one_off_runs_are_unsupported<
         .await
         .expect("one-off move");
     let moved = head(&service).await;
-    let result = service
-        .cherry_pick(
-            "root",
-            None,
-            moved.seq,
-            week(1),
-            PickMode::Strict,
-            &policy(),
-            &roster(),
-        )
-        .await;
+    let result = pick(&mut service, None, moved.seq, week(1), PickMode::Strict).await;
     assert!(
         matches!(
             &result,
@@ -472,17 +395,7 @@ async fn timings_and_one_off_runs_are_unsupported<
         .await
         .expect("revert");
     let revert = head(&service).await;
-    let result = service
-        .cherry_pick(
-            "root",
-            None,
-            revert.seq,
-            week(1),
-            PickMode::Strict,
-            &policy(),
-            &roster(),
-        )
-        .await;
+    let result = pick(&mut service, None, revert.seq, week(1), PickMode::Strict).await;
     assert!(
         matches!(result, Err(PickError::Refused(PickRefusal::Rollback))),
         "unsupported: rollback {result:?}"
@@ -521,16 +434,7 @@ async fn answers_map_to_members_on_the_target_run<
         .await
         .expect("answers: source answer");
     let answered = head(&service).await;
-    service
-        .cherry_pick(
-            "root",
-            None,
-            answered.seq,
-            week(1),
-            PickMode::Strict,
-            &policy(),
-            &roster(),
-        )
+    pick(&mut service, None, answered.seq, week(1), PickMode::Strict)
         .await
         .expect("answers: pick");
     let state = snapshot(&service).await;
@@ -546,17 +450,14 @@ async fn answers_map_to_members_on_the_target_run<
         .swap_participants(&runs[2], &["2".into()], &["3".into()], true, &roster())
         .await
         .expect("answers: swap");
-    let result = service
-        .cherry_pick(
-            "root",
-            None,
-            answered.seq,
-            week(2),
-            PickMode::Force(Expect::default()),
-            &policy(),
-            &roster(),
-        )
-        .await;
+    let result = pick(
+        &mut service,
+        None,
+        answered.seq,
+        week(2),
+        PickMode::Force(Expect::default()),
+    )
+    .await;
     assert!(
         matches!(
             result,
@@ -578,18 +479,15 @@ async fn picks_are_idempotent_per_request_id<
         .await
         .expect("idempotent: source move");
     let picked = head(&service).await;
-    let first = service
-        .cherry_pick(
-            "root",
-            Some("pick-1".into()),
-            picked.seq,
-            week(1),
-            PickMode::Strict,
-            &policy(),
-            &roster(),
-        )
-        .await
-        .expect("idempotent: pick");
+    let first = pick(
+        &mut service,
+        Some("pick-1".into()),
+        picked.seq,
+        week(1),
+        PickMode::Strict,
+    )
+    .await
+    .expect("idempotent: pick");
     assert!(
         matches!(
             service
@@ -679,24 +577,21 @@ async fn weeks_without_a_target_run_and_bad_weeks_are_refused<
         .await
         .expect("weeks: source move");
     let picked = head(&service).await;
-    let pick = |target: DateTime<Utc>| (picked.seq, target);
+    let aim = |target: DateTime<Utc>| (picked.seq, target);
     for (target, check) in [
         (utc(4, 9, 12, 0), "no target run"),
         (utc(3, 20, 12, 0), "same week"),
         (utc(3, 12, 12, 0), "past week"),
     ] {
-        let (seq, target) = pick(target);
-        let result = service
-            .cherry_pick(
-                "root",
-                None,
-                seq,
-                target,
-                PickMode::Force(Expect::default()),
-                &policy(),
-                &roster(),
-            )
-            .await;
+        let (seq, target) = aim(target);
+        let result = pick(
+            &mut service,
+            None,
+            seq,
+            target,
+            PickMode::Force(Expect::default()),
+        )
+        .await;
         let expected = match check {
             "no target run" => matches!(
                 &result,
@@ -774,16 +669,7 @@ async fn picked_answers_recount_the_target_status<
         RunStatus::AtRisk,
         "recount"
     );
-    service
-        .cherry_pick(
-            "root",
-            None,
-            declined.seq,
-            week(1),
-            PickMode::Strict,
-            &policy(),
-            &roster(),
-        )
+    pick(&mut service, None, declined.seq, week(1), PickMode::Strict)
         .await
         .expect("recount: pick no");
     assert_eq!(
@@ -795,16 +681,7 @@ async fn picked_answers_recount_the_target_status<
     react(&mut service, &runs[2], "2", EMOJI_YES).await;
     react(&mut service, &runs[0], "1", EMOJI_YES).await;
     let accepted = head(&service).await;
-    service
-        .cherry_pick(
-            "root",
-            None,
-            accepted.seq,
-            week(2),
-            PickMode::Strict,
-            &policy(),
-            &roster(),
-        )
+    pick(&mut service, None, accepted.seq, week(2), PickMode::Strict)
         .await
         .expect("recount: pick yes");
     assert_eq!(
@@ -837,9 +714,7 @@ async fn finished_and_otot_targets<
         .await
         .expect("finished: cancel");
     for mode in [PickMode::Strict, PickMode::Force(Expect::default())] {
-        let result = service
-            .cherry_pick("root", None, moved.seq, week(1), mode, &policy(), &roster())
-            .await;
+        let result = pick(&mut service, None, moved.seq, week(1), mode).await;
         assert!(
             matches!(
                 result,
@@ -855,17 +730,7 @@ async fn finished_and_otot_targets<
         .set_status(&runs[2], set(RunStatus::Otot), &policy().reminders)
         .await
         .expect("finished: otot");
-    let result = service
-        .cherry_pick(
-            "root",
-            None,
-            moved.seq,
-            week(2),
-            PickMode::Strict,
-            &policy(),
-            &roster(),
-        )
-        .await;
+    let result = pick(&mut service, None, moved.seq, week(2), PickMode::Strict).await;
     assert!(
         matches!(
             result,
@@ -879,16 +744,7 @@ async fn finished_and_otot_targets<
         .await
         .expect("otot: answer");
     let answered = head(&service).await;
-    service
-        .cherry_pick(
-            "root",
-            None,
-            answered.seq,
-            week(2),
-            PickMode::Strict,
-            &policy(),
-            &roster(),
-        )
+    pick(&mut service, None, answered.seq, week(2), PickMode::Strict)
         .await
         .expect("otot: answers pick");
     assert_eq!(
@@ -916,18 +772,15 @@ async fn a_forced_field_without_history_is_still_an_override<
     assert_eq!(preview.force.fields.len(), 1, "no history");
     assert_eq!(preview.force.fields[0].seen, None, "no history");
     assert!(preview.force.overrides.is_empty(), "no history");
-    let outcome = service
-        .cherry_pick(
-            "root",
-            None,
-            changed.seq,
-            week(1),
-            PickMode::Force(preview.force),
-            &policy(),
-            &roster(),
-        )
-        .await
-        .expect("no history: forced");
+    let outcome = pick(
+        &mut service,
+        None,
+        changed.seq,
+        week(1),
+        PickMode::Force(preview.force),
+    )
+    .await
+    .expect("no history: forced");
     let record = service
         .store()
         .load_change(outcome.seq)
@@ -979,16 +832,7 @@ async fn swaps_and_sole_statuses_pick<
         .await
         .expect("swap: source");
     let swapped = head(&service).await;
-    service
-        .cherry_pick(
-            "root",
-            None,
-            swapped.seq,
-            week(1),
-            PickMode::Strict,
-            &policy(),
-            &roster(),
-        )
+    pick(&mut service, None, swapped.seq, week(1), PickMode::Strict)
         .await
         .expect("swap: pick");
     let state = snapshot(&service).await;
@@ -1022,16 +866,7 @@ async fn swaps_and_sole_statuses_pick<
         .await
         .expect("status: source");
     let status = head(&service).await;
-    service
-        .cherry_pick(
-            "root",
-            None,
-            status.seq,
-            week(2),
-            PickMode::Strict,
-            &policy(),
-            &roster(),
-        )
+    pick(&mut service, None, status.seq, week(2), PickMode::Strict)
         .await
         .expect("status: pick");
     assert_eq!(
@@ -1064,18 +899,15 @@ async fn a_forced_swap_drops_members_already_gone<
         .await
         .expect("forced swap: preview");
     assert_eq!(preview.plan.conflicts.len(), 1, "forced swap");
-    service
-        .cherry_pick(
-            "root",
-            None,
-            swapped.seq,
-            week(1),
-            PickMode::Force(preview.force),
-            &policy(),
-            &roster(),
-        )
-        .await
-        .expect("forced swap: no NotOnRun");
+    pick(
+        &mut service,
+        None,
+        swapped.seq,
+        week(1),
+        PickMode::Force(preview.force),
+    )
+    .await
+    .expect("forced swap: no NotOnRun");
     let state = snapshot(&service).await;
     let mut party = state
         .runs
@@ -1134,16 +966,7 @@ async fn a_shifted_source_slot_is_not_a_conflict<
         .await
         .expect("shifted: source move");
     let moved = head(&service).await;
-    service
-        .cherry_pick(
-            "root",
-            None,
-            moved.seq,
-            week(2),
-            PickMode::Strict,
-            &policy(),
-            &roster(),
-        )
+    pick(&mut service, None, moved.seq, week(2), PickMode::Strict)
         .await
         .expect("shifted: no false conflict");
     assert_eq!(
@@ -1337,7 +1160,7 @@ async fn a_preview_reads_values_and_versions_consistently<
 ) {
     let (store, runs, picked) = conflicted(store).await;
     let racy = racing(&store, Race::BeforeVersions, &runs[1]);
-    let service = SchedulerService::new(racy, Ids::default(), Now);
+    let service = SchedulerService::new(racy, Ids::default(), now());
     let preview = service
         .preview_cherry_pick(picked.seq, week(1), &policy(), &roster())
         .await
@@ -1369,24 +1192,21 @@ async fn a_change_inside_the_forced_commit_is_stale<
     // A wrapper that has already fired: the preview sees no race.
     let calm = racing(&store, Race::BeforeVersions, &runs[1]);
     calm.fired.store(true, std::sync::atomic::Ordering::SeqCst);
-    let reviewed = SchedulerService::new(calm, Ids::default(), Now)
+    let reviewed = SchedulerService::new(calm, Ids::default(), now())
         .preview_cherry_pick(picked.seq, week(1), &policy(), &roster())
         .await
         .expect("stale commit: preview")
         .force;
     let racy = racing(&store, Race::BeforeCommit, &runs[1]);
-    let mut service = SchedulerService::new(racy, Ids::default(), Now);
-    let result = service
-        .cherry_pick(
-            "root",
-            None,
-            picked.seq,
-            week(1),
-            PickMode::Force(reviewed),
-            &policy(),
-            &roster(),
-        )
-        .await;
+    let mut service = SchedulerService::new(racy, Ids::default(), now());
+    let result = pick(
+        &mut service,
+        None,
+        picked.seq,
+        week(1),
+        PickMode::Force(reviewed),
+    )
+    .await;
     assert!(
         matches!(result, Err(PickError::PickStale { .. })),
         "stale commit: the store's in-transaction check {result:?}"

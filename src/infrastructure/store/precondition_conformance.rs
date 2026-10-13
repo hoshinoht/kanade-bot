@@ -2,24 +2,27 @@
 //! transaction, driven through [`SchedulerService`] by two editors sharing a
 //! fresh store per check. Failures panic with the check name.
 
+use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
 
-use chrono::{DateTime, NaiveTime, TimeDelta, TimeZone, Utc, Weekday};
+use chrono::{DateTime, TimeDelta, Utc, Weekday};
 
+use super::fixtures::{Ids, Stopped, delivery, member, status, timing, utc2026};
 use crate::domain::history::{
     Actor, BlameIndex, BlameTarget, ChangeHistory, ChangeMeta, ChangeRef, EDIT_OVERRIDE, Expect,
     Origin, Precondition, PreconditionError, RowValue, Surface, Via, blame, rsvp_field,
 };
-use crate::domain::ids::IdGenerator;
 use crate::domain::schedule::{
-    Change, ChangeSet, FixedEdit, NewFixedRun, ReminderPolicy, RsvpSource, RsvpState, RunStatus,
-    SchedulePolicy, ScheduleSnapshot, StatusChange,
+    Change, ChangeSet, FixedEdit, RsvpSource, RsvpState, RunStatus, SchedulePolicy,
+    ScheduleSnapshot,
 };
 use crate::domain::scheduler::{
-    Clock, Committed, RecordedRequest, ScheduleStore, SchedulerError, SchedulerService, Scope,
-    StoreError,
+    Committed, RecordedRequest, ScheduleStore, SchedulerError, SchedulerService, Scope, StoreError,
 };
+
+fn policy() -> SchedulePolicy {
+    super::fixtures::policy_in(chrono_tz::UTC)
+}
 
 /// Run every check, each against a fresh store from `make`.
 pub async fn run_suite<S: ScheduleStore + ChangeHistory + BlameIndex + Sync>(
@@ -82,66 +85,17 @@ async fn cleared_rsvp_keeps_blame_version<S: ScheduleStore + ChangeHistory + Bla
     );
 }
 
-#[derive(Clone, Default)]
-struct Ids(Arc<Mutex<u64>>);
-
-impl IdGenerator for Ids {
-    fn new_id(&mut self) -> String {
-        let mut next = self
-            .0
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        *next += 1;
-        format!("id-{next:04}")
-    }
-}
-
-#[derive(Clone, Copy)]
-struct FixedClock;
-
-impl Clock for FixedClock {
-    fn now(&self) -> DateTime<Utc> {
-        utc(27, 1)
-    }
-}
-
 fn utc(day: u32, hour: u32) -> DateTime<Utc> {
-    Utc.with_ymd_and_hms(2026, 8, day, hour, 0, 0)
-        .single()
-        .expect("valid instant")
-}
-
-fn policy() -> SchedulePolicy {
-    SchedulePolicy::new(
-        ReminderPolicy {
-            zone: chrono_tz::UTC,
-            ping_time: NaiveTime::from_hms_opt(9, 0, 0).expect("valid time"),
-            countdowns: vec![60],
-        },
-        Weekday::Thu,
-        NaiveTime::MIN,
-    )
+    utc2026(8, day, hour, 0)
 }
 
 fn admin(id: &str) -> Origin {
     Origin::new(Actor::admin(id), Surface::AdminPortal)
 }
 
-fn member(id: &str) -> Origin {
-    Origin::new(Actor::member(id), Surface::PublicPortal)
-}
-
-fn status(status: RunStatus) -> StatusChange {
-    StatusChange {
-        status,
-        announce: false,
-        via_portal: true,
-    }
-}
-
 /// An editor: its own service (ids, clock) over the shared store.
-fn editor<S: ScheduleStore + Sync>(store: &S) -> SchedulerService<&S, Ids, FixedClock> {
-    SchedulerService::new(store, Ids::default(), FixedClock)
+fn editor<S: ScheduleStore + Sync>(store: &S) -> SchedulerService<&S, Ids, Stopped> {
+    SchedulerService::new(store, Ids::default(), Stopped(utc(27, 1)))
 }
 
 /// One weekly timing (Sat 20:00, channel 900) with its runs materialised;
@@ -150,23 +104,11 @@ async fn seed<S: ScheduleStore + Sync>(store: &S) -> (String, String) {
     let mut service = editor(store);
     let fixed = service
         .as_origin(admin("seed"))
-        .add_fixed_run(NewFixedRun {
-            owner_pinned: false,
-            owner_id: "1".into(),
-            channel_id: Some("900".into()),
-            bosses: vec!["HFA".into()],
-            weekday: Weekday::Sat,
-            time: NaiveTime::from_hms_opt(20, 0, 0).expect("valid time"),
-            participants: vec!["1".into(), "2".into()],
-            note: None,
-        })
+        .add_fixed_run(timing(Weekday::Sat))
         .await
         .expect("fixed run");
     service
-        .as_origin(Origin::new(
-            Actor::system("delivery"),
-            Surface::DeliveryTick,
-        ))
+        .as_origin(delivery())
         .materialise_weeks(&policy())
         .await
         .expect("materialise");
@@ -290,6 +232,42 @@ async fn different_fields_of_one_run_both_apply<
     );
 }
 
+/// Commit an unrelated `upstream` admin's `edit` of `run` at the current
+/// revision, as a racing editor would.
+async fn upstream_edit<S: ScheduleStore>(
+    store: &S,
+    run: &str,
+    edit: impl FnOnce(&mut crate::domain::schedule::Run),
+) -> Result<(), StoreError> {
+    let snapshot = store.load(&Scope::All).await?;
+    let mut row = snapshot
+        .runs
+        .iter()
+        .find(|row| row.id == run)
+        .expect("upstream: run")
+        .clone();
+    edit(&mut row);
+    let upstream = ChangeMeta {
+        origin: admin("upstream"),
+        at: utc(27, 1),
+        notices: Vec::new(),
+        refs: Vec::new(),
+        request_digest: None,
+        expect: Expect::default(),
+        outbox: Vec::new(),
+    };
+    store
+        .commit(
+            snapshot.revision,
+            ChangeSet {
+                changes: vec![Change::PutRun(row)],
+            },
+            upstream,
+        )
+        .await?;
+    Ok(())
+}
+
 /// Lands a newer slot change on `run` right before the first commit it
 /// forwards (after the editor planned).
 struct Upstream<'a, S> {
@@ -318,32 +296,10 @@ impl<S: ScheduleStore + Sync> ScheduleStore for Upstream<'_, S> {
         meta: ChangeMeta,
     ) -> Result<Option<Committed>, StoreError> {
         if !self.fired.swap(true, Ordering::SeqCst) {
-            let snapshot = self.inner.load(&Scope::All).await?;
-            let mut moved = snapshot
-                .runs
-                .iter()
-                .find(|row| row.id == self.run)
-                .expect("upstream: run")
-                .clone();
-            moved.datetime += TimeDelta::hours(3);
-            let upstream = ChangeMeta {
-                origin: admin("upstream"),
-                at: utc(27, 1),
-                notices: Vec::new(),
-                refs: Vec::new(),
-                request_digest: None,
-                expect: Expect::default(),
-                outbox: Vec::new(),
-            };
-            self.inner
-                .commit(
-                    snapshot.revision,
-                    ChangeSet {
-                        changes: vec![Change::PutRun(moved)],
-                    },
-                    upstream,
-                )
-                .await?;
+            upstream_edit(self.inner, &self.run, |run| {
+                run.datetime += TimeDelta::hours(3);
+            })
+            .await?;
         }
         self.inner.commit(expected_revision, changes, meta).await
     }
@@ -361,7 +317,7 @@ async fn an_upstream_commit_between_plan_and_commit_is_stale<
         run: run.clone(),
         fired: AtomicBool::new(false),
     };
-    let mut service = SchedulerService::new(&racing, Ids::default(), FixedClock);
+    let mut service = editor(&racing);
     let result = service
         .as_origin(admin("b"))
         .expecting(Expect::fields([view]))
@@ -990,32 +946,10 @@ impl<S: ScheduleStore + Sync> ScheduleStore for ConflictOnce<'_, S> {
             seen.len() == 1
         };
         if first {
-            let snapshot = self.inner.load(&Scope::All).await?;
-            let mut other = snapshot
-                .runs
-                .iter()
-                .find(|row| row.id == self.other_run)
-                .expect("conflict_once: other run")
-                .clone();
-            other.status = RunStatus::Confirmed;
-            let upstream = ChangeMeta {
-                origin: admin("upstream"),
-                at: utc(27, 1),
-                notices: Vec::new(),
-                refs: Vec::new(),
-                request_digest: None,
-                expect: Expect::default(),
-                outbox: Vec::new(),
-            };
-            self.inner
-                .commit(
-                    snapshot.revision,
-                    ChangeSet {
-                        changes: vec![Change::PutRun(other)],
-                    },
-                    upstream,
-                )
-                .await?;
+            upstream_edit(self.inner, &self.other_run, |run| {
+                run.status = RunStatus::Confirmed;
+            })
+            .await?;
         }
         self.inner.commit(expected_revision, changes, meta).await
     }
@@ -1040,7 +974,7 @@ async fn expectations_survive_a_revision_conflict<
         other_run,
         seen: Mutex::new(Vec::new()),
     };
-    let mut service = SchedulerService::new(&racing, Ids::default(), FixedClock);
+    let mut service = editor(&racing);
     service
         .as_origin(admin("b"))
         .expecting(Expect::fields([view.clone()]))

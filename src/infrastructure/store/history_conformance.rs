@@ -3,10 +3,12 @@
 //! Failures panic with the check name.
 
 use std::collections::BTreeSet;
-use std::sync::{Arc, Mutex};
 
-use chrono::{DateTime, NaiveTime, TimeDelta, TimeZone, Utc, Weekday};
+use chrono::{DateTime, NaiveTime, TimeDelta, Utc, Weekday};
 
+use super::fixtures::{
+    Ids, TestClock, admin, delivery, member, policy_in, status, timing, utc2026,
+};
 use crate::domain::history::{
     Actor, ChangeFilter, ChangeHistory, ChangeMeta, ChangeQuery, ChangeRecord, GENESIS_PREV_HASH,
     HistoryRefusal, Origin, RevertMode, RevertOutcome, RowKey, Surface,
@@ -15,12 +17,11 @@ use crate::domain::history::{
     Blame, BlameIndex, BlameTarget, CheckpointCreated, CheckpointKind, Checkpoints, NewCheckpoint,
     Via, auto_checkpoint_name, blame,
 };
-use crate::domain::ids::IdGenerator;
 use crate::domain::members::{Member, Roster};
 use crate::domain::notify::due_reminders;
 use crate::domain::schedule::{
-    Change, ChangeSet, EMOJI_YES, FixedEdit, NewFixedRun, NewRun, NoticeChange, ReminderPolicy,
-    RsvpSource, RsvpState, RunSource, RunStatus, SchedulePolicy, ScheduleSnapshot, StatusChange,
+    Change, ChangeSet, EMOJI_YES, FixedEdit, NewRun, NoticeChange, RsvpSource, RsvpState,
+    RunSource, RunStatus, SchedulePolicy, ScheduleSnapshot, StatusChange,
 };
 use crate::domain::scheduler::{
     Clock, Committed, ScheduleStore, SchedulerError, SchedulerService, Scope, StoreError,
@@ -58,47 +59,10 @@ pub async fn run_suite<
     restoring_a_checkpoint_previews_then_applies(make().await).await;
 }
 
-#[derive(Clone, Default)]
-struct Ids(Arc<Mutex<u64>>);
-
-impl IdGenerator for Ids {
-    fn new_id(&mut self) -> String {
-        let mut next = self
-            .0
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        *next += 1;
-        format!("id-{next:04}")
-    }
-}
-
-#[derive(Clone)]
-struct TestClock(Arc<Mutex<DateTime<Utc>>>);
-
-impl TestClock {
-    fn advance(&self, by: TimeDelta) {
-        *self
-            .0
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner) += by;
-    }
-}
-
-impl Clock for TestClock {
-    fn now(&self) -> DateTime<Utc> {
-        *self
-            .0
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-    }
-}
-
 type Service<S> = SchedulerService<S, Ids, TestClock>;
 
 fn utc(month: u32, day: u32, hour: u32, minute: u32) -> DateTime<Utc> {
-    Utc.with_ymd_and_hms(2026, month, day, hour, minute, 0)
-        .single()
-        .expect("valid instant")
+    utc2026(month, day, hour, minute)
 }
 
 /// Boss weeks reset Thursday 00:00 UTC.
@@ -107,23 +71,7 @@ fn week(index: i64) -> DateTime<Utc> {
 }
 
 fn policy() -> SchedulePolicy {
-    SchedulePolicy::new(
-        ReminderPolicy {
-            zone: chrono_tz::UTC,
-            ping_time: NaiveTime::from_hms_opt(9, 0, 0).expect("valid time"),
-            countdowns: vec![60],
-        },
-        Weekday::Thu,
-        NaiveTime::MIN,
-    )
-}
-
-fn admin() -> Origin {
-    Origin::new(Actor::admin("root"), Surface::AdminPortal)
-}
-
-fn member(id: &str) -> Origin {
-    Origin::new(Actor::member(id), Surface::PublicPortal)
+    policy_in(chrono_tz::UTC)
 }
 
 fn roster() -> Roster {
@@ -139,14 +87,6 @@ fn roster() -> Roster {
     roster
 }
 
-fn status(status: RunStatus) -> StatusChange {
-    StatusChange {
-        status,
-        announce: false,
-        via_portal: true,
-    }
-}
-
 /// Two weekly timings (Sat, Sun 20:00) materialised for three boss weeks;
 /// the clock is Thursday 27 Aug 01:00, early in boss week 0.
 struct Fixture<S> {
@@ -156,32 +96,20 @@ struct Fixture<S> {
 }
 
 async fn fixture<S: ScheduleStore>(store: S) -> Fixture<S> {
-    let clock = TestClock(Arc::new(Mutex::new(utc(8, 27, 1, 0))));
+    let clock = TestClock::at(utc(8, 27, 1, 0));
     let mut service = SchedulerService::new(store, Ids::default(), clock.clone());
     let mut fixed = Vec::new();
     for weekday in [Weekday::Sat, Weekday::Sun] {
         fixed.push(
             service
                 .as_origin(admin())
-                .add_fixed_run(NewFixedRun {
-                    owner_pinned: false,
-                    owner_id: "1".into(),
-                    channel_id: Some("900".into()),
-                    bosses: vec!["HFA".into()],
-                    weekday,
-                    time: NaiveTime::from_hms_opt(20, 0, 0).expect("valid time"),
-                    participants: vec!["1".into(), "2".into()],
-                    note: None,
-                })
+                .add_fixed_run(timing(weekday))
                 .await
                 .expect("fixed run"),
         );
     }
     service
-        .as_origin(Origin::new(
-            Actor::system("delivery"),
-            Surface::DeliveryTick,
-        ))
+        .as_origin(delivery())
         .materialise_weeks(&policy())
         .await
         .expect("materialise");

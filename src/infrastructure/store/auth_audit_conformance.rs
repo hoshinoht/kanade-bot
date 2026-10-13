@@ -4,7 +4,7 @@
 
 use chrono::{DateTime, TimeDelta, TimeZone, Utc};
 
-use crate::domain::scheduler::StoreError;
+use super::fixtures::refused_for;
 use crate::infrastructure::store::auth_audit::{
     AUDIT_RETENTION, AuditFilter, AuditKind, AuditRealm, AuditRow, AuthAuditStore,
 };
@@ -210,12 +210,9 @@ async fn malformed_rows_are_refused<S: AuthAuditStore>(store: S) {
         },
     ];
     for bad in cases {
-        assert!(
-            matches!(
-                store.append_audit(bad.clone()).await,
-                Err(StoreError::Constraint(_))
-            ),
-            "audit: {bad:?} is refused"
+        refused_for(
+            format!("audit: {bad:?} is refused"),
+            store.append_audit(bad.clone()).await,
         );
     }
     assert!(

@@ -4,6 +4,7 @@
 
 use chrono::{DateTime, TimeZone, Utc};
 
+use super::fixtures::refused_for;
 use crate::domain::drafts::{
     DEFAULT_PROPOSAL_TTL, DraftChange, DraftStatus, DraftUpdate, NewProposal, ProposalSource,
     ProposalStore, StagedOp, Target,
@@ -14,7 +15,7 @@ use crate::domain::notify::{
     NotificationIntent, Receipt,
 };
 use crate::domain::proposals::{CardDetails, CardPayload, ChangeKind, ProposalCardStore};
-use crate::domain::scheduler::{ScheduleStore, Scope, StoreError};
+use crate::domain::scheduler::{ScheduleStore, Scope};
 
 const CHANNEL: &str = "900";
 
@@ -88,14 +89,11 @@ async fn details_are_written_once_beside_a_proposal<S>(store: S)
 where
     S: ScheduleStore + ChangeHistory + ProposalStore + ProposalCardStore,
 {
-    assert!(
-        matches!(
-            store
-                .save_card("absent", CHANNEL, &details("x"), utc(12))
-                .await,
-            Err(StoreError::Constraint(_))
-        ),
-        "cards: only a proposal has a card"
+    refused_for(
+        "cards: only a proposal has a card",
+        store
+            .save_card("absent", CHANNEL, &details("x"), utc(12))
+            .await,
     );
     propose(&store, "p-1").await;
     propose(&store, "p-2").await;
@@ -111,14 +109,11 @@ where
         .save_card("p-1", CHANNEL, &details("first"), utc(14))
         .await
         .expect("the same card again is a no-op");
-    assert!(
-        matches!(
-            store
-                .save_card("p-1", CHANNEL, &details("other"), utc(14))
-                .await,
-            Err(StoreError::Constraint(_))
-        ),
-        "cards: details never change"
+    refused_for(
+        "cards: details never change",
+        store
+            .save_card("p-1", CHANNEL, &details("other"), utc(14))
+            .await,
     );
     let loaded = store
         .load_cards(&["p-2".into(), "absent".into(), "p-1".into()])

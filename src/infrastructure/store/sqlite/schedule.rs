@@ -348,7 +348,7 @@ enum Outcome {
 /// One commit on the writer. The flag is false when the connection's
 /// transaction state is unknown (a failed COMMIT or ROLLBACK, e.g. after
 /// SQLite rolled back on its own), so the caller must replace it.
-pub(super) async fn commit_on(
+async fn commit_on(
     conn: &mut SqliteConnection,
     expected_revision: u64,
     changes: ChangeSet,
@@ -407,6 +407,43 @@ pub(super) async fn commit_on(
     }
 }
 
+impl SqliteStore {
+    /// One schedule commit on the writer lease, with the decline-notice rows
+    /// it decides; observers hear only a written, non-replayed commit.
+    pub(super) async fn commit_schedule(
+        &self,
+        expected_revision: u64,
+        changes: ChangeSet,
+        meta: ChangeMeta,
+        candidates: &[crate::domain::notify::DeclineNotice],
+        retractions: &[(String, String)],
+    ) -> Result<Option<Committed>, StoreError> {
+        let mut lease = self
+            .writer_lease()
+            .await
+            .map_err(|error| StoreError::Backend(error.to_string()))?;
+        let runs = crate::infrastructure::store::observer::touched_runs(&changes);
+        let (result, healthy) = commit_on(
+            lease.conn(),
+            expected_revision,
+            changes,
+            meta,
+            candidates,
+            retractions,
+        )
+        .await;
+        lease.finish(healthy);
+        if let Ok(Some(committed)) = &result
+            && !committed.replayed
+        {
+            self.runs_written(&runs);
+            self.written()
+                .notify(crate::infrastructure::store::Written::Schedule);
+        }
+        result
+    }
+}
+
 impl AttendanceHistory for SqliteStore {
     async fn member_history(
         &self,
@@ -429,14 +466,7 @@ impl ScheduleStore for SqliteStore {
     }
 
     async fn load(&self, scope: &Scope) -> Result<ScheduleSnapshot, StoreError> {
-        let mut conn = self.readers.acquire().await.map_err(store_error)?;
-        let mut tx = conn.begin().await.map_err(store_error)?;
-        let snapshot = load(&mut tx, scope).await;
-        let ended = tx.rollback().await.is_ok();
-        if !ended {
-            conn.close_on_drop();
-        }
-        snapshot
+        read_txn!(self, tx, load(&mut tx, scope))
     }
 
     async fn commit(
@@ -445,22 +475,7 @@ impl ScheduleStore for SqliteStore {
         changes: ChangeSet,
         meta: ChangeMeta,
     ) -> Result<Option<Committed>, StoreError> {
-        let mut lease = self
-            .writer
-            .lease()
+        self.commit_schedule(expected_revision, changes, meta, &[], &[])
             .await
-            .map_err(|error| StoreError::Backend(error.to_string()))?;
-        let runs = crate::infrastructure::store::observer::touched_runs(&changes);
-        let (result, healthy) =
-            commit_on(lease.conn(), expected_revision, changes, meta, &[], &[]).await;
-        lease.finish(healthy);
-        if let Ok(Some(committed)) = &result
-            && !committed.replayed
-        {
-            self.runs_written(&runs);
-            self.written()
-                .notify(crate::infrastructure::store::Written::Schedule);
-        }
-        result
     }
 }

@@ -7,7 +7,7 @@ use std::collections::BTreeMap;
 use chrono::{DateTime, Utc};
 
 use super::members::portal;
-use super::settings::{append, refuse_change, refuse_unknown};
+use super::settings::{append, refuse_change};
 use crate::domain::characters::{
     CharacterChange, CharacterRecord, CharacterWrite, PickChange, PickWrite,
 };
@@ -18,6 +18,7 @@ use crate::infrastructure::store::Written;
 use crate::infrastructure::store::replays::{
     KeyedWrite, PortalRecord, PortalWrite, ReplayScope, ReplayStore, StoredReplay, keyed, replayed,
 };
+use crate::infrastructure::store::rules::refuse_unknown_settings;
 
 pub(super) type ReplayTable = BTreeMap<(ReplayScope, String, String), StoredReplay>;
 
@@ -83,7 +84,7 @@ impl ReplayStore for super::MemoryScheduleStore {
         replay: StoredReplay,
     ) -> Result<(), StoreError> {
         let result = async {
-            refuse_unknown(&rows)?;
+            refuse_unknown_settings(&rows)?;
             if let Some(change) = &change {
                 refuse_change(change)?;
             }
@@ -150,27 +151,10 @@ impl ReplayStore for super::MemoryScheduleStore {
         record: CharacterRecord,
         replay: StoredReplay,
     ) -> Result<KeyedWrite<CharacterWrite>, StoreError> {
-        replay.check()?;
-        let mut characters = self.characters();
-        let mut changes = self.changes();
-        let mut table = self.replays();
-        let key = (replay.scope, replay.actor.clone(), replay.key.clone());
-        if let Some(answer) = keyed(table.get(&key).cloned(), &replay) {
-            return Ok(answer);
-        }
-        let (written, change) = super::characters::apply(&mut characters, change, &record)?;
-        let recorded = change.is_some();
-        if let Some(change) = change {
-            append(&mut changes, change);
-        }
-        if written.applied() {
-            put(&mut table, replay);
-        }
-        drop((characters, changes, table));
-        if recorded {
-            self.written.notify(Written::Settings);
-        }
-        Ok(KeyedWrite::Applied(written))
+        self.keyed_character_write(replay, |characters| {
+            let (written, change) = super::characters::apply(characters, change, &record)?;
+            Ok((written.applied(), written, change))
+        })
     }
 
     async fn apply_pick_replayed(
@@ -179,6 +163,28 @@ impl ReplayStore for super::MemoryScheduleStore {
         record: CharacterRecord,
         replay: StoredReplay,
     ) -> Result<KeyedWrite<PickWrite>, StoreError> {
+        self.keyed_character_write(replay, |characters| {
+            let (written, change) = super::characters::apply_pick(characters, change, &record)?;
+            Ok((written.applied(), written, change))
+        })
+    }
+
+    async fn prune_replays(&self, now: DateTime<Utc>) -> Result<u64, StoreError> {
+        Ok(prune(&mut self.replays(), now))
+    }
+}
+
+impl super::MemoryScheduleStore {
+    /// A keyed character-table write under the characters, settings-changes
+    /// and replays locks: the key's live answer, or `apply`'s write with its
+    /// History row, the replay stored only when the write applied.
+    fn keyed_character_write<W>(
+        &self,
+        replay: StoredReplay,
+        apply: impl FnOnce(
+            &mut super::characters::CharacterTable,
+        ) -> Result<(bool, W, Option<SettingsChange>), StoreError>,
+    ) -> Result<KeyedWrite<W>, StoreError> {
         replay.check()?;
         let mut characters = self.characters();
         let mut changes = self.changes();
@@ -187,12 +193,12 @@ impl ReplayStore for super::MemoryScheduleStore {
         if let Some(answer) = keyed(table.get(&key).cloned(), &replay) {
             return Ok(answer);
         }
-        let (written, change) = super::characters::apply_pick(&mut characters, change, &record)?;
+        let (applied, written, change) = apply(&mut characters)?;
         let recorded = change.is_some();
         if let Some(change) = change {
             append(&mut changes, change);
         }
-        if written.applied() {
+        if applied {
             put(&mut table, replay);
         }
         drop((characters, changes, table));
@@ -200,9 +206,5 @@ impl ReplayStore for super::MemoryScheduleStore {
             self.written.notify(Written::Settings);
         }
         Ok(KeyedWrite::Applied(written))
-    }
-
-    async fn prune_replays(&self, now: DateTime<Utc>) -> Result<u64, StoreError> {
-        Ok(prune(&mut self.replays(), now))
     }
 }

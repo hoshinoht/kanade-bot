@@ -9,12 +9,12 @@
 
 use chrono::{DateTime, TimeZone, Utc};
 
+use super::fixtures::refused;
 use crate::domain::characters::{
     CHARACTERS_SECTION, Character, CharacterChange, CharacterEdit, CharacterRecord, CharacterRole,
     CharacterStore, Pick, PickChange, PickScope, PickWrite,
 };
 use crate::domain::history::{Actor, Surface};
-use crate::domain::scheduler::StoreError;
 use crate::domain::settings::{SettingsChange, SettingsChangeQuery, SettingsStore};
 use crate::infrastructure::store::replays::{KeyedWrite, ReplayScope, ReplayStore, StoredReplay};
 
@@ -473,10 +473,7 @@ async fn malformed_picks_are_refused<S: CharacterStore + SettingsStore>(
         set(scope, "", "1001", "c-1", 0),
         set(scope, &"t".repeat(65), "1001", "c-1", 0),
     ] {
-        assert!(matches!(
-            store.apply_pick(bad, record(4)).await,
-            Err(StoreError::Constraint(_))
-        ));
+        refused(store.apply_pick(bad, record(4)).await);
     }
     assert!(history(&store, scope).await.is_empty());
 }

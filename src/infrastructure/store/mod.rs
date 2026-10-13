@@ -8,6 +8,7 @@ pub mod maintenance;
 mod observer;
 mod order;
 pub mod replays;
+mod rules;
 pub mod snapshots;
 pub mod sqlite;
 pub mod web_sessions;
@@ -30,6 +31,8 @@ pub mod conformance;
 pub mod decline_conformance;
 #[cfg(any(test, feature = "test-support"))]
 pub mod draft_conformance;
+#[cfg(any(test, feature = "test-support"))]
+mod fixtures;
 #[cfg(any(test, feature = "test-support"))]
 pub mod hints_conformance;
 #[cfg(any(test, feature = "test-support"))]

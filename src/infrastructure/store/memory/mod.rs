@@ -132,6 +132,55 @@ impl Tables {
                 .map(RowValue::Rsvp),
         }
     }
+
+    /// Bump the revision and seal the record of `before` → `self` over `keys`.
+    fn seal(
+        &mut self,
+        before: &Tables,
+        keys: &BTreeSet<RowKey>,
+        meta: &ChangeMeta,
+    ) -> Result<ChangeRecord, StoreError> {
+        self.revision += 1;
+        let rows = changed_rows(keys, |key| before.value(key), |key| self.value(key));
+        let weeks = touched_weeks(&rows, |run_id| {
+            self.runs
+                .get(run_id)
+                .or_else(|| before.runs.get(run_id))
+                .map(|run| run.week_start)
+        });
+        ChangeRecord::seal(
+            self.history
+                .records
+                .last()
+                .map(|last| (last.seq, last.hash.as_str())),
+            uuid::Uuid::new_v4().to_string(),
+            self.revision,
+            meta.clone(),
+            weeks,
+            rows,
+        )
+        .map_err(|error| StoreError::Constraint(error.to_string()))
+    }
+
+    /// Append a sealed record with its request digest, blame fields and
+    /// outbox notices.
+    fn append(&mut self, record: ChangeRecord, meta: &ChangeMeta) -> Result<Committed, StoreError> {
+        let committed = Committed {
+            seq: record.seq,
+            revision: record.revision,
+            replayed: false,
+        };
+        if let Some(digest) = &meta.request_digest {
+            self.history.digests.insert(record.seq, digest.clone());
+        }
+        for key in changed_fields(&record) {
+            self.history.fields.insert(key, record.seq);
+        }
+        self.outbox
+            .enqueue(&change_source(record.seq), &meta.outbox, meta.at)?;
+        self.history.records.push(record);
+        Ok(committed)
+    }
 }
 
 /// An in-process [`ScheduleStore`] and delivery journal with the same
@@ -255,44 +304,11 @@ impl MemoryScheduleStore {
                     notice.retract_pending = true;
                 }
             }
-            next.revision += 1;
-            let rows = changed_rows(&keys, |key| tables.value(key), |key| next.value(key));
-            let weeks = touched_weeks(&rows, |run_id| {
-                next.runs
-                    .get(run_id)
-                    .or_else(|| tables.runs.get(run_id))
-                    .map(|run| run.week_start)
-            });
-            let request_digest = meta.request_digest.clone();
-            let record = ChangeRecord::seal(
-                next.history
-                    .records
-                    .last()
-                    .map(|last| (last.seq, last.hash.as_str())),
-                uuid::Uuid::new_v4().to_string(),
-                next.revision,
-                meta.clone(),
-                weeks,
-                rows,
-            )
-            .map_err(|error| StoreError::Constraint(error.to_string()))?;
+            let record = next.seal(&tables, &keys, &meta)?;
             meta.expect
                 .check_overrides_changed(&changed_fields(&record))
                 .map_err(StoreError::Precondition)?;
-            let committed = Committed {
-                seq: record.seq,
-                revision: record.revision,
-                replayed: false,
-            };
-            if let Some(digest) = request_digest {
-                next.history.digests.insert(record.seq, digest);
-            }
-            for key in changed_fields(&record) {
-                next.history.fields.insert(key, record.seq);
-            }
-            next.outbox
-                .enqueue(&change_source(record.seq), &meta.outbox, meta.at)?;
-            next.history.records.push(record);
+            let committed = next.append(record, &meta)?;
             *tables = next;
             Ok(Some(committed))
         })();
@@ -902,31 +918,12 @@ impl DraftStore for MemoryScheduleStore {
                 }
             }
             let expires_week = new.submit.as_ref().and_then(|submit| submit.expires_week);
-            let stored = StoredDraft {
-                id: new.id.clone(),
-                kind: new.kind,
-                title: new.title.clone(),
-                author: new.author.clone(),
-                base: new.base.clone(),
-                base_revision: new.base_revision,
-                version: 1,
-                status: if new.submit.is_some() {
-                    crate::domain::drafts::DraftStatus::Submitted
-                } else {
-                    crate::domain::drafts::DraftStatus::Open
-                },
-                request_type: new.request_type.clone(),
-                subject: new.subject.clone(),
-                merged_seq: None,
-                closed_by: None,
-                close_reason: None,
-                created_at: new.at,
-                updated_at: new.at,
-                scope: match expires_week {
-                    None => crate::domain::drafts::DraftScope::Weekly,
-                    Some(week) => crate::domain::drafts::DraftScope::Week(week),
-                },
+            let status = if new.submit.is_some() {
+                crate::domain::drafts::DraftStatus::Submitted
+            } else {
+                crate::domain::drafts::DraftStatus::Open
             };
+            let stored = super::rules::created_draft(&new, status, expires_week);
             tables.drafts.drafts.insert(new.id.clone(), stored.clone());
             tables.drafts.order.push(new.id.clone());
             if let Some(request) = &new.request {
@@ -1205,41 +1202,8 @@ impl DraftStore for MemoryScheduleStore {
                 apply(&mut next, change)?;
             }
             validate(&next)?;
-            next.revision += 1;
-            let rows = changed_rows(&keys, |key| tables.value(key), |key| next.value(key));
-            let weeks = touched_weeks(&rows, |run_id| {
-                next.runs
-                    .get(run_id)
-                    .or_else(|| tables.runs.get(run_id))
-                    .map(|run| run.week_start)
-            });
-            let request_digest = meta.request_digest.clone();
-            let record = ChangeRecord::seal(
-                next.history
-                    .records
-                    .last()
-                    .map(|last| (last.seq, last.hash.as_str())),
-                uuid::Uuid::new_v4().to_string(),
-                next.revision,
-                meta.clone(),
-                weeks,
-                rows,
-            )
-            .map_err(|error| StoreError::Constraint(error.to_string()))?;
-            let committed = Committed {
-                seq: record.seq,
-                revision: record.revision,
-                replayed: false,
-            };
-            if let Some(digest) = request_digest {
-                next.history.digests.insert(record.seq, digest);
-            }
-            for key in changed_fields(&record) {
-                next.history.fields.insert(key, record.seq);
-            }
-            next.outbox
-                .enqueue(&change_source(record.seq), &meta.outbox, meta.at)?;
-            next.history.records.push(record);
+            let record = next.seal(&tables, &keys, &meta)?;
+            let committed = next.append(record, &meta)?;
             let mut draft = draft;
             draft.status = crate::domain::drafts::DraftStatus::Merged;
             draft.version += 1;
