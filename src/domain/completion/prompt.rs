@@ -13,51 +13,25 @@ use crate::domain::scheduler::StoreError;
 /// as well as a generic (the delivery tick).
 pub type PromptFuture<'a, T> = Pin<Box<dyn Future<Output = Result<T, StoreError>> + Send + 'a>>;
 
-/// How an ask was closed.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum PromptOutcome {
-    /// A party member or admin pressed Done.
-    Done,
-    /// … pressed Didn't happen: the run is cancelled.
-    DidntHappen,
-    /// … pressed Not yet: the next ask is due later.
-    NotYet,
-    /// Unanswered at the cutoff: Kanade marked the run done.
-    AutoDone,
-    /// The run moved after this ask was planned; a new one replaces it.
-    Moved,
-    /// The run became done, cancelled or own time another way (or is gone).
-    Closed,
+spelled! {
+    /// How an ask was closed.
+    PromptOutcome {
+        /// A party member or admin pressed Done.
+        Done => "done",
+        /// … pressed Didn't happen: the run is cancelled.
+        DidntHappen => "didnt_happen",
+        /// … pressed Not yet: the next ask is due later.
+        NotYet => "not_yet",
+        /// Unanswered at the cutoff: Kanade marked the run done.
+        AutoDone => "auto_done",
+        /// The run moved after this ask was planned; a new one replaces it.
+        Moved => "moved",
+        /// The run became done, cancelled or own time another way (or is gone).
+        Closed => "closed",
+    }
 }
 
 impl PromptOutcome {
-    pub const ALL: &[Self] = &[
-        Self::Done,
-        Self::DidntHappen,
-        Self::NotYet,
-        Self::AutoDone,
-        Self::Moved,
-        Self::Closed,
-    ];
-
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Done => "done",
-            Self::DidntHappen => "didnt_happen",
-            Self::NotYet => "not_yet",
-            Self::AutoDone => "auto_done",
-            Self::Moved => "moved",
-            Self::Closed => "closed",
-        }
-    }
-
-    pub fn parse(text: &str) -> Option<Self> {
-        Self::ALL
-            .iter()
-            .copied()
-            .find(|outcome| outcome.as_str() == text)
-    }
-
     /// Pressed by someone, who is recorded.
     pub fn pressed(self) -> bool {
         matches!(self, Self::Done | Self::DidntHappen | Self::NotYet)

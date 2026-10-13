@@ -24,7 +24,7 @@ use super::write::{admit, invalid_body, keyed_id, path_id};
 use crate::{
     api::{
         admin::{
-            context::{context, frames, roster, run_ends, unavailable},
+            context::{context, frames, roster, run_ends, unavailable, weeks},
             write::{Refusal, scheduler, state, write_context_of},
         },
         auth::{audit::AuditContext, member::MemberSession},
@@ -180,11 +180,7 @@ impl Basis {
     async fn load(state: &ApiState) -> Result<Self, Refusal> {
         let now = state.now();
         let frames = frames(state, now)?;
-        let base = state
-            .store
-            .snapshot(Scope::Weeks(vec![frames[0].start, frames[1].start]))
-            .await
-            .map_err(unavailable)?;
+        let base = weeks(state, vec![frames[0].start, frames[1].start]).await?;
         let profiles = state.store.members().await.map_err(unavailable)?;
         Ok(Self {
             now,
@@ -337,19 +333,15 @@ pub(super) async fn mine(
         .count();
     // Waiting requests about older runs (shown expired) read those runs'
     // weeks in one go; a closed one's older run is shown as gone.
-    let weeks: BTreeSet<DateTime<Utc>> = requests
+    let older: BTreeSet<DateTime<Utc>> = requests
         .iter()
         .filter(|loaded| loaded.draft.status.is_live() && outside(&basis.base, loaded).is_some())
         .filter_map(|loaded| loaded.draft.scope.expires_week())
         .collect();
-    let old = if weeks.is_empty() {
+    let old = if older.is_empty() {
         ScheduleSnapshot::default()
     } else {
-        state
-            .store
-            .snapshot(Scope::Weeks(weeks.into_iter().collect()))
-            .await
-            .map_err(unavailable)?
+        weeks(state, older.into_iter().collect()).await?
     };
     let mut shown = Vec::with_capacity(requests.len());
     for loaded in &requests {

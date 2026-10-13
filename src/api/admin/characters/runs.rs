@@ -19,14 +19,15 @@ use axum::{
 use serde_json::json;
 
 use super::{
+    super::replay::recall,
     Reply, Roster,
-    picks::{CharacterPick, SlotWrite, apply, named, stale, unavailable},
-    write::{recall, record},
+    picks::{CharacterPick, SlotWrite, apply, named, stale},
+    write::record,
 };
 use crate::{
     api::{
         admin::{
-            context::{context, run_ends},
+            context::{context, run_ends, weeks},
             write::{Refusal, bad_body, load_run, state},
         },
         auth::AdminSession,
@@ -41,7 +42,6 @@ use crate::{
         },
         members::Roster as Members,
         schedule::{FixedRun, RUN_ENDED, Run},
-        scheduler::Scope,
     },
 };
 
@@ -84,11 +84,7 @@ impl Week {
         roster: &dyn CharacterRoster,
         run: &Run,
     ) -> Result<Self, Refusal> {
-        let snapshot = state
-            .store
-            .snapshot(Scope::Weeks(vec![run.week_start]))
-            .await
-            .map_err(unavailable)?;
+        let snapshot = weeks(state, vec![run.week_start]).await?;
         let mut runs = snapshot.runs;
         // The run as just read, whatever the week read saw.
         runs.retain(|other| other.id != run.id);
@@ -98,7 +94,7 @@ impl Week {
             let rows = roster
                 .member_characters(member.clone())
                 .await
-                .map_err(unavailable)?;
+                .map_err(Refusal::unavailable)?;
             characters.insert(member.clone(), rows);
         }
         let mut picks = roster
@@ -107,7 +103,7 @@ impl Week {
                 runs.iter().map(|run| run.id.clone()).collect(),
             )
             .await
-            .map_err(unavailable)?;
+            .map_err(Refusal::unavailable)?;
         let mut fixed: Vec<String> = runs
             .iter()
             .filter_map(|run| run.fixed_run_id.clone())
@@ -119,7 +115,7 @@ impl Week {
                 roster
                     .picks(PickScope::Timing, fixed)
                     .await
-                    .map_err(unavailable)?,
+                    .map_err(Refusal::unavailable)?,
             );
         }
         Ok(Self {

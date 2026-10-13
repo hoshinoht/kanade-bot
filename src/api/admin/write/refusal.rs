@@ -44,6 +44,11 @@ impl Refusal {
             "The week changed since it was loaded.",
         )
     }
+
+    /// `503 unavailable` for a backend error, whose text never leaves.
+    pub fn unavailable<E>(_: E) -> Self {
+        ApiError::UNAVAILABLE.into()
+    }
 }
 
 impl From<ApiError> for Refusal {

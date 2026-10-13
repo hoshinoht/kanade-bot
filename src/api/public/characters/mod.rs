@@ -163,10 +163,6 @@ async fn gate(
     }
 }
 
-fn unavailable<E>(_: E) -> Refusal {
-    ApiError::UNAVAILABLE.into()
-}
-
 /// The roster (its gate let the request through).
 fn roster(state: &ApiState) -> Result<&Arc<dyn CharacterRoster>, Refusal> {
     state
@@ -189,6 +185,6 @@ async fn own(roster: &dyn CharacterRoster, me: &str, id: &str) -> Result<Charact
     match roster.character(id.to_owned()).await {
         Ok(Some(character)) if character.member_id == me => Ok(character),
         Ok(_) => Err(ApiError::NOT_FOUND.into()),
-        Err(error) => Err(unavailable(error)),
+        Err(error) => Err(Refusal::unavailable(error)),
     }
 }

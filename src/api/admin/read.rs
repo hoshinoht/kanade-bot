@@ -12,15 +12,12 @@ use axum::{
     routing::get,
 };
 
-use super::context::{context, frames, next_week, roster, state, unavailable};
-use crate::{
-    api::{
-        auth::AdminSession,
-        dto::{self, Art, Named},
-        error::ApiError,
-        listeners::Site,
-    },
-    domain::scheduler::Scope,
+use super::context::{context, frames, next_week, roster, run_lengths, state, unavailable, weeks};
+use crate::api::{
+    auth::AdminSession,
+    dto::{self, Art, Named},
+    error::ApiError,
+    listeners::Site,
 };
 
 pub fn routes() -> Router<Arc<Site>> {
@@ -50,17 +47,10 @@ async fn week(State(site): State<Arc<Site>>, _: AdminSession, uri: Uri) -> Reply
     // Head first: a commit landing in between makes `version` lag the data
     // (a spurious 409 later), never lead it (a lost update under API-1).
     let version = state.store.head().await.map_err(unavailable)?.seq;
-    let snapshot = state
-        .store
-        .snapshot(Scope::Weeks(vec![frame.start]))
-        .await
-        .map_err(unavailable)?;
+    let snapshot = weeks(state, vec![frame.start]).await?;
     let profiles = state.store.members().await.map_err(unavailable)?;
     let ctx = context(&site, state, roster(&profiles), now);
-    let run_lengths = match &state.config {
-        Some(desk) => desk.settings().await.run_lengths,
-        None => Default::default(),
-    };
+    let run_lengths = run_lengths(state).await;
     Ok(Json(dto::week::week(
         &ctx,
         &snapshot,
@@ -77,11 +67,7 @@ async fn stats(State(site): State<Arc<Site>>, _: AdminSession, uri: Uri) -> Repl
     let now = state.now();
     let [this, following] = frames(state, now)?;
     let frame = if next { following } else { this };
-    let snapshot = state
-        .store
-        .snapshot(Scope::Weeks(vec![frame.start]))
-        .await
-        .map_err(unavailable)?;
+    let snapshot = weeks(state, vec![frame.start]).await?;
     let ctx = context(&site, state, roster(&[]), now);
     Ok(Json(dto::week::stats(&ctx, &snapshot, &frame)).into_response())
 }
@@ -90,11 +76,7 @@ async fn summary(State(site): State<Arc<Site>>, _: AdminSession) -> Reply {
     let state = state(&site)?;
     let now = state.now();
     let [this, next] = frames(state, now)?;
-    let snapshot = state
-        .store
-        .snapshot(Scope::Weeks(vec![this.start, next.start]))
-        .await
-        .map_err(unavailable)?;
+    let snapshot = weeks(state, vec![this.start, next.start]).await?;
     // Open ownership requests wait in the Inbox too (expired ones are unlisted).
     let owner_requests = state
         .store
@@ -129,11 +111,7 @@ async fn fixed(State(site): State<Arc<Site>>, _: AdminSession) -> Reply {
     let state = state(&site)?;
     let now = state.now();
     let [this, next] = frames(state, now)?;
-    let snapshot = state
-        .store
-        .snapshot(Scope::Weeks(vec![this.start, next.start]))
-        .await
-        .map_err(unavailable)?;
+    let snapshot = weeks(state, vec![this.start, next.start]).await?;
     let profiles = state.store.members().await.map_err(unavailable)?;
     let ctx = context(&site, state, roster(&profiles), now);
     Ok(Json(dto::fixed::rows(&ctx, &snapshot, [this.start, next.start])).into_response())
@@ -143,11 +121,7 @@ async fn reminders(State(site): State<Arc<Site>>, _: AdminSession) -> Reply {
     let state = state(&site)?;
     let now = state.now();
     let [this, next] = frames(state, now)?;
-    let snapshot = state
-        .store
-        .snapshot(Scope::Weeks(vec![this.start, next.start]))
-        .await
-        .map_err(unavailable)?;
+    let snapshot = weeks(state, vec![this.start, next.start]).await?;
     let profiles = state.store.members().await.map_err(unavailable)?;
     let ctx = context(&site, state, roster(&profiles), now);
     Ok(Json(dto::reminders::reminders(&ctx, &snapshot)).into_response())
@@ -156,11 +130,7 @@ async fn reminders(State(site): State<Arc<Site>>, _: AdminSession) -> Reply {
 async fn members(State(site): State<Arc<Site>>, _: AdminSession) -> Reply {
     let state = state(&site)?;
     let [this, _] = frames(state, state.now())?;
-    let snapshot = state
-        .store
-        .snapshot(Scope::Weeks(vec![this.start]))
-        .await
-        .map_err(unavailable)?;
+    let snapshot = weeks(state, vec![this.start]).await?;
     let profiles = state.store.members().await.map_err(unavailable)?;
     let personas = state.profile_options();
     Ok(Json(dto::members::rows(
@@ -222,11 +192,7 @@ async fn knowledge(
 pub(crate) async fn boss_rows(site: &Site) -> Result<Vec<dto::bosses::BossRow>, ApiError> {
     let state = state(site)?;
     // Weekly timings are always loaded; no runs are needed.
-    let snapshot = state
-        .store
-        .snapshot(Scope::Weeks(Vec::new()))
-        .await
-        .map_err(unavailable)?;
+    let snapshot = weeks(state, Vec::new()).await?;
     let art = Art {
         root: site.boss_dir.as_deref(),
     };
@@ -267,11 +233,7 @@ pub(crate) async fn boss_knowledge(
 ) -> Result<dto::bosses::Knowledge, ApiError> {
     let state = state(site)?;
     let dir = state.knowledge_dir.clone().ok_or(ApiError::NOT_FOUND)?;
-    let snapshot = state
-        .store
-        .snapshot(Scope::Weeks(Vec::new()))
-        .await
-        .map_err(unavailable)?;
+    let snapshot = weeks(state, Vec::new()).await?;
     let (catalog, root, key) = (state.catalog.clone(), site.boss_dir.clone(), key.to_owned());
     tokio::task::spawn_blocking(move || {
         let art = Art {

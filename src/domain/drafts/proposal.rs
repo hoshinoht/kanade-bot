@@ -21,25 +21,11 @@ pub const DEFAULT_PROPOSAL_TTL: TimeDelta = TimeDelta::hours(24);
 /// The `close_reason` of a proposal a newer one replaced.
 pub const SUPERSEDED: &str = "superseded";
 
-/// What staged a proposal.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub enum ProposalSource {
-    Extraction,
-    Chat,
-}
-
-impl ProposalSource {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Extraction => "extraction",
-            Self::Chat => "chat",
-        }
-    }
-
-    pub fn parse(value: &str) -> Option<Self> {
-        [Self::Extraction, Self::Chat]
-            .into_iter()
-            .find(|source| source.as_str() == value)
+spelled! {
+    /// What staged a proposal.
+    ProposalSource {
+        Extraction => "extraction",
+        Chat => "chat",
     }
 }
 

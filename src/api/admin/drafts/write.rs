@@ -86,13 +86,13 @@ async fn keyed(
     } else {
         StatusCode::OK
     };
-    let value = serde_json::to_value(&body).map_err(|_| Refusal::from(ApiError::UNAVAILABLE))?;
+    let value = serde_json::to_value(&body).map_err(Refusal::unavailable)?;
     if let Some(keyed) = keyed {
         state
             .store
             .put_replay(keyed.answered(status, &value, now))
             .await
-            .map_err(|_| Refusal::from(ApiError::UNAVAILABLE))?;
+            .map_err(Refusal::unavailable)?;
     }
     Ok((status, Json(value)).into_response())
 }
@@ -205,11 +205,10 @@ pub async fn add_op(
         .store
         .snapshot(Scope::All)
         .await
-        .map_err(|_| Refusal::from(ApiError::UNAVAILABLE))?;
+        .map_err(Refusal::unavailable)?;
     let ctx = context(&site, state, roster(&[]), state.now());
     let op = body.op.op(&state.policy, &ctx, &current)?;
-    let normalized =
-        serde_json::to_string(&body.op).map_err(|_| Refusal::from(ApiError::UNAVAILABLE))?;
+    let normalized = serde_json::to_string(&body.op).map_err(Refusal::unavailable)?;
     keyed(
         state,
         &session,

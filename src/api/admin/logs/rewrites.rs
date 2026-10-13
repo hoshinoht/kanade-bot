@@ -9,7 +9,7 @@ use axum::{
     response::IntoResponse,
 };
 
-use super::{Reply, filter, state, store_down};
+use super::{Reply, filter, state};
 use crate::api::admin::write::Refusal;
 use crate::{
     api::{
@@ -29,7 +29,7 @@ async fn every(state: &ApiState, mut filter: RewriteFilter) -> Result<Vec<Rewrit
             .store
             .rewrite_logs(filter.clone())
             .await
-            .map_err(store_down)?;
+            .map_err(Refusal::unavailable)?;
         rows.extend(page.items);
         match page.next {
             Some(cursor) => filter.cursor = Some(cursor),
@@ -41,7 +41,11 @@ async fn every(state: &ApiState, mut filter: RewriteFilter) -> Result<Vec<Rewrit
 pub async fn list(State(site): State<Arc<Site>>, _: AdminSession, uri: Uri) -> Reply {
     let state = state(&site)?;
     let filter = filter::rewrites(&uri, state.policy.zone())?;
-    let facets = state.store.rewrite_log_facets().await.map_err(store_down)?;
+    let facets = state
+        .store
+        .rewrite_log_facets()
+        .await
+        .map_err(Refusal::unavailable)?;
     let rows = every(state, filter).await?;
     Ok(Json(Rewrites {
         summary: rewrite_summary(&rows),
@@ -62,7 +66,7 @@ pub async fn detail(
         .store
         .rewrite_log(id)
         .await
-        .map_err(store_down)?
+        .map_err(Refusal::unavailable)?
         .ok_or(ApiError::NOT_FOUND)?;
     Ok(Json(rewrite(&log)).into_response())
 }

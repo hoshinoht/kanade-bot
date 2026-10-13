@@ -17,14 +17,10 @@ use std::{
     time::{Duration, Instant},
 };
 
-use axum::{
-    http::{HeaderMap, StatusCode, header},
-    response::{IntoResponse, Response},
-};
-use ring::digest::{SHA256, digest};
+use axum::{http::HeaderMap, response::Response};
 use tokio::sync::Semaphore;
 
-use super::assets::monogram;
+use super::assets::{etagged, monogram};
 use crate::bot::identity::{self, Cdn, Image, files};
 
 /// Requested edge in pixels: a 2x portrait for the largest place it shows.
@@ -356,28 +352,7 @@ fn remove_user(dir: &Path, user_id: &str, keep: Option<&str>) -> io::Result<()> 
 pub fn respond(portrait: Option<Portrait>, name: &str, request: &HeaderMap) -> Response {
     let (content_type, bytes) =
         portrait.unwrap_or_else(|| ("image/svg+xml", monogram(name).into_bytes()));
-    let etag = format!(
-        "\"{}\"",
-        digest(&SHA256, &bytes).as_ref()[..8]
-            .iter()
-            .map(|byte| format!("{byte:02x}"))
-            .collect::<String>()
-    );
-    let fresh = request
-        .get(header::IF_NONE_MATCH)
-        .and_then(|value| value.to_str().ok())
-        .is_some_and(|tags| tags.split(',').any(|tag| tag.trim() == etag));
-    if fresh {
-        return (StatusCode::NOT_MODIFIED, [(header::ETAG, etag)]).into_response();
-    }
-    (
-        [
-            (header::CONTENT_TYPE, content_type.to_owned()),
-            (header::ETAG, etag),
-        ],
-        bytes,
-    )
-        .into_response()
+    etagged(content_type, bytes, request)
 }
 
 #[cfg(test)]

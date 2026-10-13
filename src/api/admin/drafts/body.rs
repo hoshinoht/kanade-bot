@@ -34,11 +34,8 @@ pub struct RetitleBody {
 /// The query's only parameter `name`, if sent once with a value; any other
 /// parameter (or a repeat) is `422 invalid_query`.
 pub fn query_param(uri: &Uri, name: &str) -> Result<Option<String>, ApiError> {
-    let pairs = wire::query_pairs(uri.query());
-    let sent = uri.query().map_or(0, |query| {
-        query.split('&').filter(|pair| !pair.is_empty()).count()
-    });
-    if pairs.len() != sent || pairs.len() > 1 || pairs.iter().any(|(key, _)| key != name) {
+    let pairs = wire::strict_query_pairs(uri.query()).ok_or(ApiError::INVALID_QUERY)?;
+    if pairs.len() > 1 || pairs.iter().any(|(key, _)| key != name) {
         return Err(ApiError::INVALID_QUERY);
     }
     match wire::query_value(&pairs, name) {
@@ -65,11 +62,8 @@ pub fn version_param(uri: &Uri) -> Result<Option<u64>, Refusal> {
 /// `?from=<seq>&to=<seq>` of the graph read: both once, decimal, at most
 /// the largest stored seq, `from <= to`; anything else is `422 invalid_query`.
 pub fn seq_range(uri: &Uri) -> Result<(u64, u64), ApiError> {
-    let pairs = wire::query_pairs(uri.query());
-    let sent = uri.query().map_or(0, |query| {
-        query.split('&').filter(|pair| !pair.is_empty()).count()
-    });
-    if pairs.len() != sent || pairs.iter().any(|(key, _)| key != "from" && key != "to") {
+    let pairs = wire::strict_query_pairs(uri.query()).ok_or(ApiError::INVALID_QUERY)?;
+    if pairs.iter().any(|(key, _)| key != "from" && key != "to") {
         return Err(ApiError::INVALID_QUERY);
     }
     let seq = |key: &str| {

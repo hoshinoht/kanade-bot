@@ -10,29 +10,13 @@ use super::origin::Actor;
 use super::record::ChangeRef;
 use crate::domain::scheduler::StoreError;
 
-/// Who made a checkpoint.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum CheckpointKind {
-    /// At a boss-week rollover; one per week.
-    Auto,
-    /// Named by an administrator.
-    Admin,
-}
-
-impl CheckpointKind {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Auto => "auto",
-            Self::Admin => "admin",
-        }
-    }
-
-    pub fn parse(value: &str) -> Option<Self> {
-        match value {
-            "auto" => Some(Self::Auto),
-            "admin" => Some(Self::Admin),
-            _ => None,
-        }
+spelled! {
+    /// Who made a checkpoint.
+    CheckpointKind {
+        /// At a boss-week rollover; one per week.
+        Auto => "auto",
+        /// Named by an administrator.
+        Admin => "admin",
     }
 }
 

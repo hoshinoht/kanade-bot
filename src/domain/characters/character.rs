@@ -15,27 +15,11 @@ pub const MAX_CLASS_CHARS: usize = 32;
 pub const MAX_WORLD_CHARS: usize = 16;
 pub const LEVELS: std::ops::RangeInclusive<u16> = 1..=300;
 
-/// A member's main character, or one of their alts.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum CharacterRole {
-    Main,
-    Alt,
-}
-
-impl CharacterRole {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Main => "main",
-            Self::Alt => "alt",
-        }
-    }
-
-    pub fn parse(text: &str) -> Option<Self> {
-        match text {
-            "main" => Some(Self::Main),
-            "alt" => Some(Self::Alt),
-            _ => None,
-        }
+spelled! {
+    /// A member's main character, or one of their alts.
+    CharacterRole {
+        Main => "main",
+        Alt => "alt",
     }
 }
 

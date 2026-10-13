@@ -21,7 +21,7 @@ use super::write::{admit, invalid_body, origin, path_id};
 use crate::{
     api::{
         admin::{
-            context::{context, frames, roster, run_ends, unavailable},
+            context::{context, frames, roster, run_ends, unavailable, weeks},
             write::{
                 Answer, Explicit, Previous, Refusal, SlotError, load_run, put_answer, reloaded,
                 run_not_found, scheduler, slot, state, write_run,
@@ -48,7 +48,6 @@ use crate::{
         schedule::{
             MemberRunRefusal, RsvpState, Run, ScheduleError, ScheduleSnapshot, utc_instant,
         },
-        scheduler::Scope,
     },
 };
 
@@ -346,11 +345,7 @@ async fn this_week(
     endings: &RunEnds,
     me: &str,
 ) -> Result<Option<MemberRun>, Refusal> {
-    let snapshot = state
-        .store
-        .snapshot(Scope::Weeks(vec![frames[0].start]))
-        .await
-        .map_err(unavailable)?;
+    let snapshot = weeks(state, vec![frames[0].start]).await?;
     Ok(snapshot
         .runs
         .iter()

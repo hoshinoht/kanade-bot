@@ -459,7 +459,7 @@ pub fn changes(ctx: &Context<'_>, current: &ScheduleSnapshot, set: &ChangeSet) -
     out
 }
 
-fn value(value: Option<&FieldValue>) -> String {
+pub(super) fn value(value: Option<&FieldValue>) -> String {
     match value {
         None | Some(FieldValue::Text(None)) => NONE.into(),
         Some(FieldValue::Text(Some(text))) => text.clone(),

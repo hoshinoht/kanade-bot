@@ -37,10 +37,6 @@ use crate::{
     },
 };
 
-fn unavailable<T>(_: T) -> Refusal {
-    ApiError::UNAVAILABLE.into()
-}
-
 /// A backend failure fails the list; anything else only blocks its item.
 fn proposal_reason(error: &ProposalError) -> Result<String, Refusal> {
     match error {
@@ -121,7 +117,7 @@ pub async fn list(
         .store
         .snapshot(Scope::All)
         .await
-        .map_err(unavailable)?;
+        .map_err(Refusal::unavailable)?;
     let ctx = context(&site, state, roster(&profiles), now);
     let common = Common {
         ctx: &ctx,
@@ -133,15 +129,24 @@ pub async fn list(
     let approver = session.discord_user();
     let mut items = Vec::new();
 
-    let proposals = state.store.live_proposals().await.map_err(unavailable)?;
+    let proposals = state
+        .store
+        .live_proposals()
+        .await
+        .map_err(Refusal::unavailable)?;
     let cards = state
         .store
         .cards(proposals.iter().map(|p| p.draft.id.clone()).collect())
         .await
-        .map_err(unavailable)?;
+        .map_err(Refusal::unavailable)?;
     for stored in &proposals {
         let id = &stored.draft.id;
-        let Some(loaded) = state.store.draft(id.clone()).await.map_err(unavailable)? else {
+        let Some(loaded) = state
+            .store
+            .draft(id.clone())
+            .await
+            .map_err(Refusal::unavailable)?
+        else {
             continue;
         };
         let Some(subject) = loaded
@@ -177,7 +182,7 @@ pub async fn list(
         .store
         .submitted_requests()
         .await
-        .map_err(unavailable)?
+        .map_err(Refusal::unavailable)?
     {
         let (choices, assumed) = match amended(&common, &loaded, &current) {
             Some((choices, assumed)) => (Some(choices), Some(assumed)),

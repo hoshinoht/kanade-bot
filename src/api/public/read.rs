@@ -13,19 +13,16 @@ use axum::{
     response::{IntoResponse, Response},
 };
 
-use crate::{
-    api::{
-        admin::{
-            context::{context, frames, next_week, roster, run_ends, state, unavailable},
-            limits::{allowance_row, allowance_snapshot},
-        },
-        assets::art_of,
-        auth::member::MemberSession,
-        dto::public::{MemberAllowance, MemberWeek, member_allowance, member_week},
-        error::ApiError,
-        listeners::Site,
+use crate::api::{
+    admin::{
+        context::{context, frames, next_week, roster, run_ends, state, unavailable, weeks},
+        limits::{allowance_row, allowance_snapshot},
     },
-    domain::scheduler::Scope,
+    assets::art_of,
+    auth::member::MemberSession,
+    dto::public::{MemberAllowance, MemberWeek, member_allowance, member_week},
+    error::ApiError,
+    listeners::Site,
 };
 
 /// `GET /art/{kind}/{key}`; every other `/art/…` shape is a plain 404, but
@@ -57,11 +54,7 @@ pub(super) async fn week(
     let frame = if next { following } else { this };
     // Head first, as the admin week: `version` may lag the data, never lead it.
     let version = state.store.head().await.map_err(unavailable)?.seq;
-    let snapshot = state
-        .store
-        .snapshot(Scope::Weeks(vec![frame.start]))
-        .await
-        .map_err(unavailable)?;
+    let snapshot = weeks(state, vec![frame.start]).await?;
     let profiles = state.store.members().await.map_err(unavailable)?;
     let ctx = context(&site, state, roster(&profiles), now);
     let ends = run_ends(state).await;

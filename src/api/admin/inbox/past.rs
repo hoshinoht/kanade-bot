@@ -34,11 +34,8 @@ struct PageQuery {
 
 /// `before` and `limit`, each at most once; anything else is `422 invalid_query`.
 fn page_query(uri: &Uri) -> Result<PageQuery, ApiError> {
-    let pairs = wire::query_pairs(uri.query());
-    let sent = uri.query().map_or(0, |query| {
-        query.split('&').filter(|pair| !pair.is_empty()).count()
-    });
-    if pairs.len() != sent || pairs.iter().any(|(key, _)| !PARAMS.contains(&key.as_str())) {
+    let pairs = wire::strict_query_pairs(uri.query()).ok_or(ApiError::INVALID_QUERY)?;
+    if pairs.iter().any(|(key, _)| !PARAMS.contains(&key.as_str())) {
         return Err(ApiError::INVALID_QUERY);
     }
     let value = |key: &str| -> Result<Option<String>, ApiError> {

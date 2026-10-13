@@ -4,23 +4,16 @@
 //! It ends when the session ends, after the hub's lifetime, on shutdown, or
 //! when the client goes away.
 
-use std::{
-    convert::Infallible,
-    pin::Pin,
-    sync::Arc,
-    task::{Context, Poll},
-};
+use std::sync::Arc;
 
 use axum::{
     Router,
-    body::{Body, Bytes, HttpBody},
+    body::Bytes,
     extract::State,
-    http::{HeaderValue, header, request::Parts},
+    http::request::Parts,
     response::{IntoResponse, Response},
     routing::get,
 };
-use hyper::body::Frame;
-use serde::Serialize;
 use tokio::{
     sync::{broadcast::error::RecvError, mpsc},
     time::{Instant, interval_at, sleep},
@@ -33,10 +26,8 @@ use crate::api::{
     error::ApiError,
     events::{EventsConfig, Subscription},
     listeners::Site,
+    sse::{self, data},
 };
-
-/// How long the browser waits before reconnecting a stream that ended.
-const RETRY_MS: u32 = 3_000;
 
 pub fn routes() -> Router<Arc<Site>> {
     Router::new().route("/api/admin/events", get(events))
@@ -69,24 +60,7 @@ async fn events(State(site): State<Arc<Site>>, parts: Parts) -> Response {
         session.session_id().map(str::to_owned),
         state.events.config(),
     ));
-    let mut response = Body::new(Stream(body)).into_response();
-    let headers = response.headers_mut();
-    headers.insert(
-        header::CONTENT_TYPE,
-        HeaderValue::from_static("text/event-stream"),
-    );
-    // Proxies that buffer by default (nginx-style) pass this through unbuffered.
-    headers.insert("x-accel-buffering", HeaderValue::from_static("no"));
-    response
-}
-
-fn data<T: Serialize>(event: Option<&str>, value: &T) -> Bytes {
-    let json = serde_json::to_string(value).unwrap_or_default();
-    match event {
-        Some(name) => format!("event: {name}\ndata: {json}\n\n"),
-        None => format!("data: {json}\n\n"),
-    }
-    .into()
+    sse::response(body)
 }
 
 /// Writes one stream until something ends it; dropping `frames` ends the body.
@@ -104,16 +78,11 @@ async fn pump(
         boot,
         mut closed,
     } = subscription;
-    let opening = format!("retry: {RETRY_MS}\n");
-    let mut first = Vec::from(opening.as_bytes());
-    first.extend_from_slice(&data(
-        Some("ready"),
-        &EventReady {
-            seq: ready,
-            boot: boot.clone(),
-        },
-    ));
-    if frames.send(first.into()).await.is_err() {
+    let ready = EventReady {
+        seq: ready,
+        boot: boot.clone(),
+    };
+    if frames.send(sse::opening(&ready)).await.is_err() {
         return;
     }
     let lifetime = sleep(config.max_lifetime);
@@ -150,22 +119,5 @@ async fn pump(
             () = &mut closing => return,
             () = &mut lifetime => return,
         }
-    }
-}
-
-/// The response body: frames as the pump writes them, ending when it stops.
-struct Stream(mpsc::Receiver<Bytes>);
-
-impl HttpBody for Stream {
-    type Data = Bytes;
-    type Error = Infallible;
-
-    fn poll_frame(
-        mut self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-    ) -> Poll<Option<Result<Frame<Bytes>, Infallible>>> {
-        self.0
-            .poll_recv(cx)
-            .map(|bytes| bytes.map(|bytes| Ok(Frame::data(bytes))))
     }
 }

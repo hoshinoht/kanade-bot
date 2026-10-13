@@ -21,8 +21,8 @@ use crate::{
     domain::{
         completion::RunEnds,
         members::{MemberProfile, Roster},
-        schedule::utc_instant,
-        scheduler::StoreError,
+        schedule::{ScheduleSnapshot, utc_instant},
+        scheduler::{Scope, StoreError},
         settings::RunLengths,
     },
 };
@@ -34,6 +34,18 @@ pub fn state(site: &Site) -> Result<&Arc<ApiState>, ApiError> {
 /// Backend text never reaches the client.
 pub fn unavailable(_: StoreError) -> ApiError {
     ApiError::UNAVAILABLE
+}
+
+/// The schedule snapshot of the boss weeks starting at `starts`.
+pub async fn weeks(
+    state: &ApiState,
+    starts: Vec<DateTime<Utc>>,
+) -> Result<ScheduleSnapshot, ApiError> {
+    state
+        .store
+        .snapshot(Scope::Weeks(starts))
+        .await
+        .map_err(unavailable)
 }
 
 /// This and next boss week, from one clock read.

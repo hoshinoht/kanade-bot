@@ -19,13 +19,17 @@ use axum::{
 use serde_json::json;
 
 use super::{
+    super::replay::recall,
     Reply,
-    picks::{CharacterPick, SlotWrite, apply, named, stale, unavailable},
-    write::{recall, record},
+    picks::{CharacterPick, SlotWrite, apply, named, stale},
+    write::record,
 };
 use crate::{
     api::{
-        admin::write::{Refusal, bad_body, state},
+        admin::{
+            context::weeks,
+            write::{Refusal, bad_body, state},
+        },
         auth::AdminSession,
         dto::characters::{TimingCharacters, slot},
         error::ApiError,
@@ -37,7 +41,6 @@ use crate::{
             Character, PartySlot, Pick, PickScope, StoredPicks, pick_version, timing_slots,
         },
         schedule::FixedRun,
-        scheduler::Scope,
     },
 };
 
@@ -86,12 +89,7 @@ impl Timing {
         fixed_id: Option<&str>,
         party: Option<&[String]>,
     ) -> Result<Self, Refusal> {
-        let timings = state
-            .store
-            .snapshot(Scope::Weeks(Vec::new()))
-            .await
-            .map_err(unavailable)?
-            .fixed_runs;
+        let timings = weeks(state, Vec::new()).await?.fixed_runs;
         let fixed = match fixed_id {
             Some(id) => Some(
                 timings
@@ -113,14 +111,14 @@ impl Timing {
             let rows = roster
                 .member_characters(member.clone())
                 .await
-                .map_err(unavailable)?;
+                .map_err(Refusal::unavailable)?;
             characters.insert(member.clone(), rows);
         }
         let picks = match &fixed {
             Some(fixed) => roster
                 .picks(PickScope::Timing, vec![fixed.id.clone()])
                 .await
-                .map_err(unavailable)?,
+                .map_err(Refusal::unavailable)?,
             None => Vec::new(),
         };
         Ok(Self {

@@ -16,7 +16,7 @@ mod write;
 
 pub(super) use fixed::{Both, Timing};
 pub(crate) use runs::party;
-pub(crate) use write::present;
+pub(crate) use write::{CharacterCreate, CharacterPatch, patch_request, write_row};
 
 use std::sync::Arc;
 
@@ -102,7 +102,7 @@ async fn list(
     let characters = roster
         .member_characters(member_id.clone())
         .await
-        .map_err(|_| Refusal::from(ApiError::UNAVAILABLE))?;
+        .map_err(Refusal::unavailable)?;
     Ok(Json(MemberCharacters {
         member_id,
         characters: characters.iter().map(row).collect(),

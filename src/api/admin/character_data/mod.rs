@@ -13,6 +13,8 @@ pub(crate) mod estimates;
 mod lookup;
 mod readiness;
 
+pub(crate) use lookup::answer as lookup_answer;
+
 use std::sync::Arc;
 
 use axum::{
@@ -26,8 +28,8 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 use super::{
-    replay::{Keyed, replayed},
-    write::{Refusal, bad_body, origin, state},
+    replay::recall,
+    write::{Refusal, bad_body, state},
 };
 use crate::{
     api::{
@@ -35,10 +37,7 @@ use crate::{
         state::ApiState,
     },
     domain::chardata::UnlinkReason,
-    infrastructure::{
-        character_data::{CharacterData, LinkView, RefreshOutcome, RequestOutcome},
-        store::replays::ReplayScope,
-    },
+    infrastructure::character_data::{CharacterData, LinkView, RefreshOutcome, RequestOutcome},
 };
 
 pub fn routes() -> Router<Arc<Site>> {
@@ -71,10 +70,6 @@ impl FromRequestParts<Arc<Site>> for Module {
     }
 }
 
-fn unavailable<E>(_: E) -> Refusal {
-    ApiError::UNAVAILABLE.into()
-}
-
 fn not_found() -> Refusal {
     Refusal::new(
         StatusCode::NOT_FOUND,
@@ -83,7 +78,7 @@ fn not_found() -> Refusal {
     )
 }
 
-fn not_connected() -> Refusal {
+pub(crate) fn not_connected() -> Refusal {
     Refusal::new(
         StatusCode::CONFLICT,
         "not_connected",
@@ -99,26 +94,6 @@ fn not_linked() -> Refusal {
     )
 }
 
-/// The request's key, if any, and its stored answer when it already has
-/// one (`idempotency_mismatch` for another request under it).
-async fn recall(
-    state: &ApiState,
-    session: &AdminSession,
-    headers: &HeaderMap,
-    request: &str,
-) -> Result<(Option<Keyed>, Option<Response>), Refusal> {
-    let Some(key) = origin(session, headers)?.request_id else {
-        return Ok((None, None));
-    };
-    let keyed = Keyed::new(ReplayScope::Config, session, key, request);
-    Ok(
-        match keyed.recall(state.store.as_ref(), state.now()).await? {
-            Some(found) => (None, Some(replayed(&found)?)),
-            None => (Some(keyed), None),
-        },
-    )
-}
-
 /// The roster character must exist (its link may not).
 async fn require_character(state: &ApiState, id: &str) -> Result<(), Refusal> {
     let Some(roster) = &state.characters else {
@@ -127,12 +102,12 @@ async fn require_character(state: &ApiState, id: &str) -> Result<(), Refusal> {
     match roster.character(id.to_owned()).await {
         Ok(Some(_)) => Ok(()),
         Ok(None) => Err(not_found()),
-        Err(error) => Err(unavailable(error)),
+        Err(error) => Err(Refusal::unavailable(error)),
     }
 }
 
 async fn view(module: &CharacterData, id: &str) -> Result<Value, Refusal> {
-    let view = module.view(id).await.map_err(unavailable)?;
+    let view = module.view(id).await.map_err(Refusal::unavailable)?;
     Ok(json!(link(id, &view, module.privacy_url())))
 }
 
@@ -201,7 +176,7 @@ async fn request(
             replay
         })
         .await
-        .map_err(unavailable)?;
+        .map_err(Refusal::unavailable)?;
     match outcome {
         RequestOutcome::Requested(_) => {
             Ok((StatusCode::CREATED, Json(answer.unwrap_or(Value::Null))).into_response())
@@ -257,7 +232,7 @@ async fn unlink(
             replay,
         )
         .await
-        .map_err(unavailable)?
+        .map_err(Refusal::unavailable)?
     {
         Some(_) => Ok(Json(body).into_response()),
         None => Err(Refusal::new(
@@ -283,7 +258,11 @@ async fn refresh(
         return Ok(answer);
     }
     require_character(state, &id).await?;
-    match module.refresh_now(&id).await.map_err(unavailable)? {
+    match module
+        .refresh_now(&id)
+        .await
+        .map_err(Refusal::unavailable)?
+    {
         RefreshOutcome::Done(_) => {}
         RefreshOutcome::NotConnected => return Err(not_connected()),
         RefreshOutcome::NotLinked => return Err(not_linked()),
@@ -301,7 +280,7 @@ async fn refresh(
             .store
             .put_replay(keyed.answered(StatusCode::OK, &body, state.now()))
             .await
-            .map_err(unavailable)?;
+            .map_err(Refusal::unavailable)?;
     }
     Ok(Json(body).into_response())
 }

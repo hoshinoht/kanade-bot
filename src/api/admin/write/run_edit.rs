@@ -15,7 +15,6 @@ use super::{
 use crate::{
     api::{
         dto::week::{Context, day_index, run_time},
-        error::ApiError,
         state::ApiState,
         write::RunWrite,
     },
@@ -60,7 +59,7 @@ pub async fn load_run(state: &ApiState, run_id: &str) -> Result<ScheduleSnapshot
         .store
         .snapshot(Scope::Run(run_id.to_owned()))
         .await
-        .map_err(|_| Refusal::from(ApiError::UNAVAILABLE))?;
+        .map_err(Refusal::unavailable)?;
     if snapshot.runs.iter().any(|run| run.id == run_id) {
         Ok(snapshot)
     } else {
@@ -71,12 +70,7 @@ pub async fn load_run(state: &ApiState, run_id: &str) -> Result<ScheduleSnapshot
 /// The run as it stands after a write, with the version read first (so it
 /// can only lag the data: a later edit at it may 409, never lose an update).
 pub async fn reloaded(state: &ApiState, run_id: &str) -> Result<(ScheduleSnapshot, u64), Refusal> {
-    let version = state
-        .store
-        .head()
-        .await
-        .map_err(|_| Refusal::from(ApiError::UNAVAILABLE))?
-        .seq;
+    let version = state.store.head().await.map_err(Refusal::unavailable)?.seq;
     Ok((load_run(state, run_id).await?, version))
 }
 

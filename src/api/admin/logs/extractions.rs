@@ -9,7 +9,7 @@ use axum::{
     response::IntoResponse,
 };
 
-use super::{Directory, Reply, filter, state, store_down};
+use super::{Directory, Reply, filter, state};
 use crate::api::admin::write::Refusal;
 use crate::{
     api::{
@@ -32,7 +32,7 @@ async fn every(
             .store
             .extraction_logs(filter.clone())
             .await
-            .map_err(store_down)?;
+            .map_err(Refusal::unavailable)?;
         rows.extend(page.items);
         match page.next {
             Some(cursor) => filter.cursor = Some(cursor),
@@ -51,7 +51,7 @@ async fn current_model(state: &ApiState) -> Result<String, Refusal> {
             ..ExtractionFilter::default()
         })
         .await
-        .map_err(store_down)?;
+        .map_err(Refusal::unavailable)?;
     Ok(newest
         .items
         .first()
@@ -66,7 +66,7 @@ pub async fn list(State(site): State<Arc<Site>>, _: AdminSession, uri: Uri) -> R
         .store
         .extraction_log_facets()
         .await
-        .map_err(store_down)?;
+        .map_err(Refusal::unavailable)?;
     let rows = every(state, filter).await?;
     let model = current_model(state).await?;
     let directory = Directory::load(state).await?;
@@ -91,13 +91,13 @@ pub async fn detail(
         .store
         .extraction_log(id)
         .await
-        .map_err(store_down)?
+        .map_err(Refusal::unavailable)?
         .ok_or(ApiError::NOT_FOUND)?;
     let cards = state
         .store
         .cards(log.proposal_ids.clone())
         .await
-        .map_err(store_down)?;
+        .map_err(Refusal::unavailable)?;
     let mut drafts = Vec::with_capacity(log.proposal_ids.len());
     for proposal in &log.proposal_ids {
         drafts.push(
@@ -105,7 +105,7 @@ pub async fn detail(
                 .store
                 .draft(proposal.clone())
                 .await
-                .map_err(store_down)?,
+                .map_err(Refusal::unavailable)?,
         );
     }
     let proposed: Vec<Proposed<'_>> = log
@@ -121,7 +121,7 @@ pub async fn detail(
         .store
         .messages_by_id(log.message_ids.clone())
         .await
-        .map_err(store_down)?;
+        .map_err(Refusal::unavailable)?;
     let directory = Directory::load(state).await?;
     Ok(Json(extraction(
         &directory.names(),

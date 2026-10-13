@@ -40,10 +40,6 @@ use crate::{
 
 type Reply = Result<Response, Refusal>;
 
-fn unavailable<T>(_: T) -> Refusal {
-    ApiError::UNAVAILABLE.into()
-}
-
 /// The session admin's own administrator draft, else `404`.
 pub async fn own(
     state: &ApiState,
@@ -54,7 +50,7 @@ pub async fn own(
         .store
         .draft(id.to_owned())
         .await
-        .map_err(unavailable)?
+        .map_err(Refusal::unavailable)?
     {
         Some(loaded)
             if loaded.draft.kind == crate::domain::drafts::DraftKind::Admin
@@ -71,8 +67,8 @@ async fn current(state: &ApiState) -> Result<(ScheduleSnapshot, u64), Refusal> {
         .store
         .snapshot(Scope::All)
         .await
-        .map_err(unavailable)?;
-    let head = state.store.head().await.map_err(unavailable)?;
+        .map_err(Refusal::unavailable)?;
+    let head = state.store.head().await.map_err(Refusal::unavailable)?;
     Ok((current, head.seq))
 }
 
@@ -90,7 +86,7 @@ pub async fn list(State(site): State<Arc<Site>>, session: AdminSession, uri: Uri
         .store
         .author_drafts(session.actor.clone())
         .await
-        .map_err(unavailable)?
+        .map_err(Refusal::unavailable)?
         .into_iter()
         .filter(|loaded| loaded.draft.status.is_live() == open)
         .map(|loaded| drafts::row(&ctx, &current, &loaded, head))
@@ -115,7 +111,7 @@ pub async fn graph(State(site): State<Arc<Site>>, session: AdminSession, uri: Ur
             .store
             .change(seq)
             .await
-            .map_err(unavailable)?
+            .map_err(Refusal::unavailable)?
             .map(|record| record.at),
     };
     let mut lanes = Vec::new();
@@ -123,7 +119,7 @@ pub async fn graph(State(site): State<Arc<Site>>, session: AdminSession, uri: Ur
         .store
         .author_drafts(session.actor.clone())
         .await
-        .map_err(unavailable)?
+        .map_err(Refusal::unavailable)?
     {
         let draft = &loaded.draft;
         let closed = if draft.status.is_live() {
@@ -133,7 +129,7 @@ pub async fn graph(State(site): State<Arc<Site>>, session: AdminSession, uri: Ur
                 .store
                 .draft_events(draft.id.clone())
                 .await
-                .map_err(unavailable)?;
+                .map_err(Refusal::unavailable)?;
             Some(closed_at(&events).unwrap_or(draft.updated_at))
         };
         let reaches = match (draft.status, closed) {
@@ -183,6 +179,6 @@ pub async fn preview(
         .preview_draft(&id, &write_ctx, now)
         .await
         .map_err(|error| refused(error, Doing::Landing))?;
-    let view = drafts::preview(&ctx, &preview).map_err(unavailable)?;
+    let view = drafts::preview(&ctx, &preview).map_err(Refusal::unavailable)?;
     Ok(Json(view).into_response())
 }

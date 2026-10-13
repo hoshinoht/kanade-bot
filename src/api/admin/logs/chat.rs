@@ -9,7 +9,7 @@ use axum::{
     response::IntoResponse,
 };
 
-use super::{Directory, Reply, filter, state, store_down};
+use super::{Directory, Reply, filter, state};
 use crate::api::admin::write::Refusal;
 use crate::{
     api::{
@@ -29,7 +29,7 @@ async fn every(state: &ApiState, mut filter: ChatFilter) -> Result<Vec<ChatInter
             .store
             .chat_logs(filter.clone())
             .await
-            .map_err(store_down)?;
+            .map_err(Refusal::unavailable)?;
         rows.extend(page.items);
         match page.next {
             Some(cursor) => filter.cursor = Some(cursor),
@@ -54,7 +54,11 @@ pub async fn list(State(site): State<Arc<Site>>, _: AdminSession, uri: Uri) -> R
     let state = state(&site)?;
     let filter = filter::chats(&uri, state.policy.zone())?;
     let q = filter.q.clone();
-    let facets = state.store.chat_log_facets().await.map_err(store_down)?;
+    let facets = state
+        .store
+        .chat_log_facets()
+        .await
+        .map_err(Refusal::unavailable)?;
     let rows: Vec<ChatInteraction> = every(state, filter)
         .await?
         .into_iter()
@@ -81,18 +85,18 @@ pub async fn detail(
         .store
         .chat_log(id)
         .await
-        .map_err(store_down)?
+        .map_err(Refusal::unavailable)?
         .ok_or(ApiError::NOT_FOUND)?;
     let cards = state
         .store
         .cards(created_proposals(&chat))
         .await
-        .map_err(store_down)?;
+        .map_err(Refusal::unavailable)?;
     let masked = state
         .store
         .masked_chat(chat.id.clone())
         .await
-        .map_err(store_down)?;
+        .map_err(Refusal::unavailable)?;
     let directory = Directory::load(state).await?;
     Ok(Json(chat_turn(
         &directory.names(),

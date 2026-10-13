@@ -16,7 +16,7 @@ use serde_json::json;
 
 use super::{
     super::{
-        context::{context, roster},
+        context::{context, roster, weeks},
         write::{Refusal, origin, state, write_context},
     },
     refusal,
@@ -25,18 +25,13 @@ use crate::{
     api::{
         auth::AdminSession,
         dto::inbox::{self, OwnerRequestDto},
-        error::ApiError,
         listeners::Site,
         ownership::{self, OwnerDesk},
     },
-    domain::{ids::short_id, ownership::OwnerRequestStatus, scheduler::Scope},
+    domain::{ids::short_id, ownership::OwnerRequestStatus},
 };
 
 type Reply = Result<Response, Refusal>;
-
-fn unavailable<T>(_: T) -> Refusal {
-    ApiError::UNAVAILABLE.into()
-}
 
 /// `GET /api/admin/inbox/ownership`: requests still open now, oldest first
 /// (one past its expiry waits for the tick to close it, unlisted).
@@ -47,13 +42,9 @@ pub async fn list(State(site): State<Arc<Site>>, _: AdminSession) -> Reply {
         .store
         .open_owner_requests()
         .await
-        .map_err(unavailable)?;
-    let profiles = state.store.members().await.map_err(unavailable)?;
-    let snapshot = state
-        .store
-        .snapshot(Scope::Weeks(Vec::new()))
-        .await
-        .map_err(unavailable)?;
+        .map_err(Refusal::unavailable)?;
+    let profiles = state.store.members().await.map_err(Refusal::unavailable)?;
+    let snapshot = weeks(state, Vec::new()).await?;
     let ctx = context(&site, state, roster(&profiles), now);
     // The store lists them oldest first.
     let items: Vec<OwnerRequestDto> = requests
@@ -84,7 +75,7 @@ async fn decide(
         .store
         .owner_request(id.to_owned())
         .await
-        .map_err(unavailable)?
+        .map_err(Refusal::unavailable)?
         .ok_or_else(refusal::not_found)?;
     let wanted = if accept {
         OwnerRequestStatus::Accepted

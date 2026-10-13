@@ -19,21 +19,15 @@
 
 use std::{
     collections::{BTreeSet, hash_map::DefaultHasher},
-    convert::Infallible,
     hash::{Hash, Hasher},
-    pin::Pin,
     sync::Arc,
-    task::{Context, Poll},
 };
 
 use axum::{
-    body::{Body, Bytes, HttpBody},
+    body::Bytes,
     extract::State,
-    http::{HeaderValue, header},
     response::{IntoResponse, Response},
 };
-use hyper::body::Frame;
-use serde::Serialize;
 use tokio::{
     sync::{
         broadcast::error::{RecvError, TryRecvError},
@@ -56,6 +50,7 @@ use crate::{
         error::ApiError,
         events::{EventsConfig, MemberSubscription},
         listeners::Site,
+        sse::{self, data},
         state::ApiState,
     },
     domain::{
@@ -64,9 +59,6 @@ use crate::{
     },
     infrastructure::store::web_sessions::{LoginMethod, SessionOrigin},
 };
-
-/// How long the browser waits before reconnecting a stream that ended.
-const RETRY_MS: u32 = 3_000;
 
 pub(super) async fn events(
     State(site): State<Arc<Site>>,
@@ -95,25 +87,7 @@ pub(super) async fn events(
     };
     let (frames, body) = mpsc::channel(8);
     tokio::spawn(pump(frames, subscription, watch, config));
-    let mut response = Body::new(Stream(body)).into_response();
-    let headers = response.headers_mut();
-    headers.insert(
-        header::CONTENT_TYPE,
-        HeaderValue::from_static("text/event-stream"),
-    );
-    // Cache-Control (`no-store, no-transform`) comes from the header layer,
-    // which sets it on every event stream.
-    headers.insert("x-accel-buffering", HeaderValue::from_static("no"));
-    response
-}
-
-fn data<T: Serialize>(event: Option<&str>, value: &T) -> Bytes {
-    let json = serde_json::to_string(value).unwrap_or_default();
-    match event {
-        Some(name) => format!("event: {name}\ndata: {json}\n\n"),
-        None => format!("data: {json}\n\n"),
-    }
-    .into()
+    sse::response(body)
 }
 
 /// The hub hint kinds a member stream looks into.
@@ -429,9 +403,11 @@ async fn pump(
         boot,
         mut closed,
     } = subscription;
-    let mut first = format!("retry: {RETRY_MS}\n").into_bytes();
-    first.extend_from_slice(&data(Some("ready"), &MemberReady { boot }));
-    if frames.send(first.into()).await.is_err() {
+    if frames
+        .send(sse::opening(&MemberReady { boot }))
+        .await
+        .is_err()
+    {
         return;
     }
     let lifetime = sleep(config.max_lifetime);
@@ -489,22 +465,5 @@ async fn pump(
             () = &mut closing => return,
             () = &mut lifetime => return,
         }
-    }
-}
-
-/// The response body: frames as the pump writes them, ending when it stops.
-struct Stream(mpsc::Receiver<Bytes>);
-
-impl HttpBody for Stream {
-    type Data = Bytes;
-    type Error = Infallible;
-
-    fn poll_frame(
-        mut self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-    ) -> Poll<Option<Result<Frame<Bytes>, Infallible>>> {
-        self.0
-            .poll_recv(cx)
-            .map(|bytes| bytes.map(|bytes| Ok(Frame::data(bytes))))
     }
 }

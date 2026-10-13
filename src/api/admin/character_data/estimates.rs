@@ -70,10 +70,6 @@ impl Scouter {
     }
 }
 
-fn unavailable<E>(_: E) -> Refusal {
-    ApiError::UNAVAILABLE.into()
-}
-
 fn roster(state: &ApiState) -> Result<&Arc<dyn CharacterRoster>, Refusal> {
     // The module needs the roster; without it there is nothing to look up.
     state
@@ -97,6 +93,22 @@ pub(crate) fn lookup_name(character: &Character) -> Result<RosterIgn, MissingRea
         return Err(MissingReason::OtherRegion);
     }
     RosterIgn::of(character).ok_or(MissingReason::UnsupportedIgn)
+}
+
+/// [`lookup_name`] for a character asked for by id: why not is a `422`.
+pub(crate) fn estimate_ign(character: &Character) -> Result<RosterIgn, Refusal> {
+    lookup_name(character).map_err(|reason| match reason {
+        MissingReason::OtherRegion => Refusal::new(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "region",
+            "Estimates cover MapleSEA characters only.",
+        ),
+        _ => Refusal::new(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "unsupported_ign",
+            "This IGN can't be looked up for an estimate.",
+        ),
+    })
 }
 
 /// Unique by IGN (the scouter refuses duplicates).
@@ -126,20 +138,9 @@ async fn characters(roster: &dyn CharacterRoster, ids: Vec<String>) -> Result<Re
         let character = roster
             .character(id.clone())
             .await
-            .map_err(unavailable)?
+            .map_err(Refusal::unavailable)?
             .ok_or_else(not_found)?;
-        let ign = lookup_name(&character).map_err(|reason| match reason {
-            MissingReason::OtherRegion => Refusal::new(
-                StatusCode::UNPROCESSABLE_ENTITY,
-                "region",
-                "Estimates cover MapleSEA characters only.",
-            ),
-            _ => Refusal::new(
-                StatusCode::UNPROCESSABLE_ENTITY,
-                "unsupported_ign",
-                "This IGN can't be looked up for an estimate.",
-            ),
-        })?;
+        let ign = estimate_ign(&character)?;
         push(
             &mut subjects,
             Subject {

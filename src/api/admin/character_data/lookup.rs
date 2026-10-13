@@ -17,7 +17,7 @@ use axum::{
 use serde::Deserialize;
 
 use super::super::write::{Refusal, bad_body};
-use super::{Module, not_connected, unavailable};
+use super::{Module, not_connected};
 use crate::{
     api::{
         auth::AdminSession,
@@ -73,11 +73,17 @@ async fn look_up(
             "Only MapleSEA characters can be looked up.",
         ));
     }
-    match module
-        .look_up(&session.origin().actor, &ign)
-        .await
-        .map_err(unavailable)?
-    {
+    answer(
+        module
+            .look_up(&session.origin().actor, &ign)
+            .await
+            .map_err(Refusal::unavailable)?,
+    )
+}
+
+/// A lookup's answer, the same on both origins.
+pub(crate) fn answer(outcome: LookupOutcome) -> Reply {
+    match outcome {
         LookupOutcome::Found(found) => Ok(Json(lookup(found)).into_response()),
         LookupOutcome::NotFound => Err(Refusal::new(
             StatusCode::NOT_FOUND,

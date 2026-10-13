@@ -14,7 +14,7 @@ use axum::{
     response::{IntoResponse, Response},
 };
 
-use super::{roster, unavailable};
+use super::roster;
 use crate::{
     api::{
         admin::{
@@ -51,7 +51,7 @@ pub(super) async fn read(
     if !run.participants.iter().any(|id| id == me) {
         return Err(run_not_found());
     }
-    let profiles = state.store.members().await.map_err(unavailable)?;
+    let profiles = state.store.members().await.map_err(Refusal::unavailable)?;
     let ctx = context(&site, state, directory(&profiles), state.now());
     let bosses: Vec<Requirement> = run
         .bosses
@@ -77,7 +77,7 @@ pub(super) async fn read(
                     Some(module) if you => module
                         .data(&character.id)
                         .await
-                        .map_err(unavailable)?
+                        .map_err(Refusal::unavailable)?
                         .and_then(|snapshot| {
                             snapshot
                                 .level

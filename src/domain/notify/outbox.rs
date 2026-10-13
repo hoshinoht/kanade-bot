@@ -30,30 +30,15 @@ pub fn draft_source(draft_id: &str) -> String {
     format!("draft:{draft_id}")
 }
 
-/// Why a notice left the outbox.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum DrainReason {
-    /// It went through the journal (posted, held, uncertain or rejected).
-    Journal,
-    /// Too old when reached; never claimed or posted.
-    Stale,
-    /// Nothing to post any more (its run or timing is gone); never claimed.
-    Silent,
-}
-
-impl DrainReason {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Journal => "journal",
-            Self::Stale => "stale",
-            Self::Silent => "silent",
-        }
-    }
-
-    pub fn parse(value: &str) -> Option<Self> {
-        [Self::Journal, Self::Stale, Self::Silent]
-            .into_iter()
-            .find(|reason| reason.as_str() == value)
+spelled! {
+    /// Why a notice left the outbox.
+    DrainReason {
+        /// It went through the journal (posted, held, uncertain or rejected).
+        Journal => "journal",
+        /// Too old when reached; never claimed or posted.
+        Stale => "stale",
+        /// Nothing to post any more (its run or timing is gone); never claimed.
+        Silent => "silent",
     }
 }
 

@@ -26,7 +26,7 @@ use crate::{
             crypto,
             csrf::{self, CSRF_HEADER},
             device,
-            discord::{BeginError, CodeExchange, DiscordError, DiscordLogin},
+            discord::{BeginError, DiscordLogin},
             rate::Route,
             staff::StaffCheck,
             wire::{self, LOGIN_COOKIE, SESSION_COOKIE, landing, see_other},
@@ -239,72 +239,22 @@ async fn discord_callback(
         );
         login_error(code)
     };
-    let cooled = |wait| {
-        discord.cool_down(auth.now(), wait);
-        refused("discord_rate_limited", None, "unavailable")
-    };
     let Some(resumed) = resumed else {
         return refused("state", None, "state");
     };
-    if wire::query_value(&pairs, "error").is_some() {
-        return refused("denied", None, "denied");
-    }
-    let Some(code) =
-        wire::query_value(&pairs, "code").filter(|code| (1..=512).contains(&code.len()))
-    else {
-        return refused("no_code", None, "discord");
-    };
-    if discord.cooling_down(auth.now()) {
-        return refused("discord_cooling_down", None, "unavailable");
-    }
-    let grant = match discord
-        .api
-        .exchange_code(CodeExchange {
-            client: &discord.client,
-            code: &code,
-            code_verifier: &resumed.verifier,
-        })
+    let user = match discord
+        .identify(
+            &pairs,
+            &resumed,
+            || auth.now(),
+            |event| {
+                auth.audit(&context, event);
+            },
+        )
         .await
     {
-        Ok(grant) => grant,
-        Err(DiscordError::Rejected) => return refused("code_rejected", None, "discord"),
-        Err(DiscordError::RateLimited(wait)) => return cooled(wait),
-        Err(_) => return refused("discord_unavailable", None, "unavailable"),
-    };
-    let scope_ok = grant.identify_only();
-    // A broader grant is refused without using the token at all.
-    let user = if scope_ok {
-        Some(discord.api.current_user(&grant.token).await)
-    } else {
-        None
-    };
-    // One call per token: it is revoked before the identity is even used.
-    let user_id = user
-        .as_ref()
-        .and_then(|user| user.as_ref().ok())
-        .map(|user| user.id.clone());
-    if let Err(error) = discord.api.revoke(&discord.client, grant.token).await {
-        if let DiscordError::RateLimited(wait) = error {
-            discord.cool_down(auth.now(), wait);
-        }
-        auth.audit(
-            &context,
-            AuditEvent::RevokeFailed {
-                reason: match error {
-                    DiscordError::RateLimited(_) => "rate_limited",
-                    DiscordError::Rejected => "rejected",
-                    _ => "unavailable",
-                },
-                user: user_id.clone(),
-            },
-        );
-    }
-    let user = match user {
-        None => return refused("scope", None, "discord"),
-        Some(Ok(user)) => user,
-        Some(Err(DiscordError::Rejected)) => return refused("user_rejected", None, "discord"),
-        Some(Err(DiscordError::RateLimited(wait))) => return cooled(wait),
-        Some(Err(_)) => return refused("discord_unavailable", None, "unavailable"),
+        Ok(user) => user,
+        Err((reason, code)) => return refused(reason, None, code),
     };
     if user.bot {
         return refused("bot_account", Some(&user.id), "forbidden");

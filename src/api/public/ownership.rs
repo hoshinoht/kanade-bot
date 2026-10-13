@@ -21,7 +21,7 @@ use super::write::{admit, invalid_body, keyed_id, origin, path_id, snowflake};
 use crate::{
     api::{
         admin::{
-            context::{context, roster, unavailable},
+            context::{context, roster, unavailable, weeks},
             write::{Refusal, scheduler, state, write_context},
         },
         auth::{audit::AuditContext, member::MemberSession},
@@ -37,7 +37,6 @@ use crate::{
     domain::{
         ownership::{OwnerRequest, OwnerRequestStatus, OwnershipRefusal},
         schedule::FixedRun,
-        scheduler::Scope,
     },
 };
 
@@ -75,11 +74,8 @@ fn refusal(error: OwnershipError) -> Refusal {
 
 /// Whether `me` owns the timing `fixed_id` (a removed one is nobody's).
 async fn owns(state: &ApiState, fixed_id: &str, me: &str) -> Result<bool, Refusal> {
-    Ok(state
-        .store
-        .snapshot(Scope::Weeks(Vec::new()))
-        .await
-        .map_err(unavailable)?
+    Ok(weeks(state, Vec::new())
+        .await?
         .fixed_runs
         .iter()
         .any(|fixed| fixed.id == fixed_id && fixed.owner() == me))
@@ -118,11 +114,7 @@ pub(super) async fn timings(
     session: MemberSession,
 ) -> Result<Json<MemberTimings>, Refusal> {
     let state = state(&site)?;
-    let snapshot = state
-        .store
-        .snapshot(Scope::Weeks(Vec::new()))
-        .await
-        .map_err(unavailable)?;
+    let snapshot = weeks(state, Vec::new()).await?;
     let open = state
         .store
         .open_owner_requests()

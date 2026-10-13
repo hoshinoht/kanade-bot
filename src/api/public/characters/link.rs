@@ -22,11 +22,11 @@ use serde_json::json;
 use super::{
     module, own, roster as roster_of,
     roster::{pending, requester},
-    unavailable,
 };
 use crate::{
     api::{
         admin::{
+            character_data::{lookup_answer, not_connected},
             replay::{Keyed, replayed},
             write::{Refusal, state},
         },
@@ -36,7 +36,7 @@ use crate::{
             rate::MEMBER_LOOKUP_ROUTE,
         },
         dto::{
-            character_data::{CharacterLink, facts, link, link_state, lookup},
+            character_data::{CharacterLink, facts, link, link_state},
             history::SettingsActor,
             iso_instant,
             public::{
@@ -59,20 +59,12 @@ use crate::{
         history::{Actor, Surface},
     },
     infrastructure::{
-        character_data::{CharacterData, ConfirmOutcome, FetchState, LinkView, LookupOutcome},
+        character_data::{CharacterData, ConfirmOutcome, FetchState, LinkView},
         store::replays::ReplayScope,
     },
 };
 
 type Reply = Result<Response, Refusal>;
-
-fn not_connected() -> Refusal {
-    Refusal::new(
-        StatusCode::CONFLICT,
-        "not_connected",
-        "Character data isn't connected yet.",
-    )
-}
 
 fn retired() -> Refusal {
     Refusal::new(
@@ -109,7 +101,7 @@ async fn mine<'a>(
 }
 
 async fn view_of(module: &CharacterData, id: &str) -> Result<CharacterLink, Refusal> {
-    let view = module.view(id).await.map_err(unavailable)?;
+    let view = module.view(id).await.map_err(Refusal::unavailable)?;
     Ok(link(id, &view, module.privacy_url()))
 }
 
@@ -148,29 +140,12 @@ pub(super) async fn look_up(
     };
     let ign = parse_ign(&body.ign).map_err(|error| Refusal::invalid(error.to_string()))?;
     let module = module(state(&site)?)?;
-    match module
-        .look_up(&Actor::member(session.user_id.clone()), &ign)
-        .await
-        .map_err(unavailable)?
-    {
-        LookupOutcome::Found(found) => Ok(Json(lookup(found)).into_response()),
-        LookupOutcome::NotFound => Err(Refusal::new(
-            StatusCode::NOT_FOUND,
-            "not_found",
-            "NEXON has no MapleSEA character by that name.",
-        )),
-        LookupOutcome::NotConnected => Err(not_connected()),
-        LookupOutcome::TooSoon => Err(Refusal::new(
-            StatusCode::TOO_MANY_REQUESTS,
-            "lookup_cooldown",
-            "Wait a few seconds before looking up again.",
-        )),
-        LookupOutcome::Unavailable(reason) => Err(Refusal::new(
-            StatusCode::SERVICE_UNAVAILABLE,
-            "nexon_unavailable",
-            format!("The Open API can't be called right now ({reason})."),
-        )),
-    }
+    lookup_answer(
+        module
+            .look_up(&Actor::member(session.user_id.clone()), &ign)
+            .await
+            .map_err(Refusal::unavailable)?,
+    )
 }
 
 /// `GET /api/public/me/characters/{id}/link` → `CharacterLink`.
@@ -212,7 +187,7 @@ pub(super) async fn notice(
     if !character.is_active() {
         return Err(retired());
     }
-    let view = module.status(&id).await.map_err(unavailable)?;
+    let view = module.status(&id).await.map_err(Refusal::unavailable)?;
     let request = match &view.link {
         Some(found) if found.status == LinkStatus::Active => {
             return Err(Refusal::new(
@@ -224,7 +199,7 @@ pub(super) async fn notice(
         Some(found)
             if found.status == LinkStatus::Pending && found.requested_by.kind() == "admin" =>
         {
-            let profiles = state.store.members().await.map_err(unavailable)?;
+            let profiles = state.store.members().await.map_err(Refusal::unavailable)?;
             Some(pending(&character, found, &profiles))
         }
         _ => None,
@@ -295,10 +270,15 @@ pub(super) async fn confirm(
     match module
         .confirm_link(me, &id, notice, ConsentSurface::Portal)
         .await
-        .map_err(unavailable)?
+        .map_err(Refusal::unavailable)?
     {
         ConfirmOutcome::Linked(_, FetchState::Stored) => {
-            let state = if module.data(&id).await.map_err(unavailable)?.is_some() {
+            let state = if module
+                .data(&id)
+                .await
+                .map_err(Refusal::unavailable)?
+                .is_some()
+            {
                 "linked"
             } else {
                 "linked_later"
@@ -319,7 +299,7 @@ pub(super) async fn confirm(
                     None,
                 )
                 .await
-                .map_err(unavailable)?;
+                .map_err(Refusal::unavailable)?;
             Ok(outcome("not_found", None))
         }
         ConfirmOutcome::Linked(_, FetchState::Unlinked) => Err(ApiError::UNAVAILABLE.into()),
@@ -352,12 +332,15 @@ pub(super) async fn cancel(
     let id = path_id(path)?;
     let state = state(&site)?;
     let (_, module) = mine(state, &session, &id).await?;
-    let view = module.status(&id).await.map_err(unavailable)?;
+    let view = module.status(&id).await.map_err(Refusal::unavailable)?;
     let request = view.link.filter(|found| {
         found.status == LinkStatus::Pending && found.requested_by.kind() == "admin"
     });
     let requested_by_name = match &request {
-        Some(found) => requester(found, &state.store.members().await.map_err(unavailable)?),
+        Some(found) => requester(
+            found,
+            &state.store.members().await.map_err(Refusal::unavailable)?,
+        ),
         None => None,
     };
     Ok(Json(LinkCancelled {
@@ -395,7 +378,7 @@ pub(super) async fn unlink(
     let cards = module
         .character_posts(&id)
         .await
-        .map_err(unavailable)?
+        .map_err(Refusal::unavailable)?
         .len();
     let body = json!(Unlinked {
         unlinked: character.ign,
@@ -411,7 +394,7 @@ pub(super) async fn unlink(
             Some(replay),
         )
         .await
-        .map_err(unavailable)?
+        .map_err(Refusal::unavailable)?
     {
         Some(_) => Ok(Json(body).into_response()),
         None => Err(not_linked()),
@@ -446,7 +429,11 @@ pub(super) async fn unlink_all(
     let actor = Actor::member(me);
     let mut unlinked = Vec::new();
     let mut failed = None;
-    for entry in module.member_characters(me).await.map_err(unavailable)? {
+    for entry in module
+        .member_characters(me)
+        .await
+        .map_err(Refusal::unavailable)?
+    {
         if entry.link.is_none() {
             continue;
         }
@@ -463,7 +450,7 @@ pub(super) async fn unlink_all(
             Ok(Some(_)) => unlinked.push(entry.character.ign),
             Ok(None) => {}
             Err(error) => {
-                failed = Some(unavailable(error));
+                failed = Some(Refusal::unavailable(error));
             }
         }
     }
@@ -489,7 +476,7 @@ pub(super) async fn unlink_all(
 pub(super) async fn data(State(site): State<Arc<Site>>, session: MemberSession) -> Reply {
     let state = state(&site)?;
     let module = module(state)?;
-    let profiles = state.store.members().await.map_err(unavailable)?;
+    let profiles = state.store.members().await.map_err(Refusal::unavailable)?;
     let channels = state.channels.channels();
     let now = module.now();
     // Each entry with its place: the roster's own order breaks creation-time
@@ -498,7 +485,7 @@ pub(super) async fn data(State(site): State<Arc<Site>>, session: MemberSession) 
     for entry in module
         .member_characters(&session.user_id)
         .await
-        .map_err(unavailable)?
+        .map_err(Refusal::unavailable)?
     {
         let character = &entry.character;
         let linkable = entry.linkable();
