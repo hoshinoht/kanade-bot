@@ -6,7 +6,7 @@
 use super::dto::{Boss, Named, Participant};
 use super::history::Actor;
 use super::seed::{self, Rec};
-use super::{MoveError, Store};
+use super::{MoveError, Store, coded};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Serialize)]
@@ -566,10 +566,6 @@ pub(super) fn label(kind: &str) -> &'static str {
         "leave" => "Leave",
         _ => "Change",
     }
-}
-
-fn coded(status: u16, code: &'static str, message: impl Into<String>) -> MoveError {
-    MoveError::Coded(status, code, message.into())
 }
 
 const DOW_MON: [&str; 7] = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];

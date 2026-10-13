@@ -16,7 +16,7 @@ use super::dto::Previous;
 use super::history::{Actor, Record};
 use super::member::{MemberRun, member_run};
 use super::seed::{self, Rec};
-use super::{MoveError, Store};
+use super::{MoveError, Store, coded};
 
 /// A member write already answered under an `Idempotency-Key`.
 pub struct KeyedWrite {
@@ -128,10 +128,6 @@ pub fn past_runs() -> Vec<Rec> {
         channel: "kalos-four",
         fixed_id: Some("f-kalos".into()),
     }]
-}
-
-fn coded(status: u16, code: &'static str, message: &str) -> MoveError {
-    MoveError::Coded(status, code, message.into())
 }
 
 pub fn invalid_body() -> MoveError {

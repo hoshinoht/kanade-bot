@@ -11,7 +11,7 @@ use serde_json::{Value, json};
 
 use super::clock::{iso_z, local_now, week_start};
 use super::dto::{MoveRequest, StatusRequest};
-use super::{MoveError, Store};
+use super::{MoveError, Store, coded};
 
 const UNTITLED: &str = "Untitled draft";
 
@@ -240,10 +240,6 @@ pub fn seed() -> Vec<MockDraft> {
             close_reason: None,
         },
     ]
-}
-
-fn coded(status: u16, code: &'static str, message: impl Into<String>) -> MoveError {
-    MoveError::Coded(status, code, message.into())
 }
 
 fn not_found() -> MoveError {

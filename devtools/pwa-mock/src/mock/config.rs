@@ -1499,104 +1499,62 @@ fn check_patch_keys(patch: &Value) -> Result<(), MoveError> {
                     format!("{section}.{key}: saving it is not supported yet."),
                 ));
             }
+            let path = format!("{section}.{key}");
+            // A list whose every item has only `allowed` keys and each `required` one.
+            let list_of = |allowed: &[&str], required: &[&str]| {
+                let list = value.as_array().ok_or_else(|| bad(&path))?;
+                match list.iter().all(|item| shaped(item, allowed, required)) {
+                    true => Ok(()),
+                    false => Err(bad(&format!("{path}[]"))),
+                }
+            };
             match (section.as_str(), key.as_str()) {
                 ("chatbot", "member_rate" | "guild_rate") => {
                     for nested in ["count", "window_s"] {
                         if value.get(nested).is_none() {
-                            return Err(bad(&format!("{section}.{key}.{nested}")));
+                            return Err(bad(&format!("{path}.{nested}")));
                         }
                     }
-                    if !value.as_object().is_some_and(|o| {
-                        o.keys()
-                            .all(|k| ["count", "window_s"].contains(&k.as_str()))
-                    }) {
-                        return Err(bad(&format!("{section}.{key}")));
+                    if !shaped(value, &["count", "window_s"], &[]) {
+                        return Err(bad(&path));
                     }
                 }
                 ("persona", "role_profiles") => {
-                    let list = value
-                        .as_array()
-                        .ok_or_else(|| bad(&format!("{section}.{key}")))?;
-                    for item in list {
-                        if !item.as_object().is_some_and(|o| {
-                            o.keys()
-                                .all(|k| ["role_id", "profile"].contains(&k.as_str()))
-                                && o.contains_key("role_id")
-                                && o.contains_key("profile")
-                        }) {
-                            return Err(bad(&format!("{section}.{key}[]")));
-                        }
-                    }
+                    list_of(&["role_id", "profile"], &["role_id", "profile"])?;
                 }
                 ("persona", "role_profiles_digest") => {
                     if !value.as_str().is_some_and(|digest| !digest.is_empty()) {
-                        return Err(bad(&format!("{section}.{key}")));
+                        return Err(bad(&path));
                     }
                 }
-                ("persona", "visibility") => {
-                    let list = value
-                        .as_array()
-                        .ok_or_else(|| bad(&format!("{section}.{key}")))?;
-                    for item in list {
-                        if !item.as_object().is_some_and(|o| {
-                            o.keys().all(|k| ["key", "public"].contains(&k.as_str()))
-                                && o.contains_key("key")
-                                && o.contains_key("public")
-                        }) {
-                            return Err(bad(&format!("{section}.{key}[]")));
-                        }
-                    }
-                }
+                ("persona", "visibility") => list_of(&["key", "public"], &["key", "public"])?,
                 ("models", "roles") => {
-                    let roles = value
-                        .as_object()
-                        .ok_or_else(|| bad(&format!("{section}.{key}")))?;
+                    let roles = value.as_object().ok_or_else(|| bad(&path))?;
                     for (role, fields) in roles {
-                        if !["extraction", "chat", "rewrite"].contains(&role.as_str()) {
-                            return Err(bad(&format!("{section}.{key}.{role}")));
-                        }
-                        if !fields.as_object().is_some_and(|o| {
-                            o.keys()
-                                .all(|k| ["alias", "reasoning"].contains(&k.as_str()))
-                        }) {
-                            return Err(bad(&format!("{section}.{key}.{role}")));
-                        }
-                    }
-                }
-                ("models", "groups") => {
-                    let list = value
-                        .as_array()
-                        .ok_or_else(|| bad(&format!("{section}.{key}")))?;
-                    for item in list {
-                        if !item.as_object().is_some_and(|o| {
-                            o.keys()
-                                .all(|k| ["model", "group", "permits"].contains(&k.as_str()))
-                        }) {
-                            return Err(bad(&format!("{section}.{key}[]")));
+                        if !["extraction", "chat", "rewrite"].contains(&role.as_str())
+                            || !shaped(fields, &["alias", "reasoning"], &[])
+                        {
+                            return Err(bad(&format!("{path}.{role}")));
                         }
                     }
                 }
                 ("run_lengths", "overrides") => {
-                    let list = value
-                        .as_array()
-                        .ok_or_else(|| bad(&format!("{section}.{key}")))?;
-                    for item in list {
-                        if !item.as_object().is_some_and(|o| {
-                            o.keys()
-                                .all(|k| ["boss", "difficulty", "minutes"].contains(&k.as_str()))
-                                && o.contains_key("boss")
-                                && o.contains_key("difficulty")
-                                && o.contains_key("minutes")
-                        }) {
-                            return Err(bad(&format!("{section}.{key}[]")));
-                        }
-                    }
+                    let fields = ["boss", "difficulty", "minutes"];
+                    list_of(&fields, &fields)?;
                 }
                 _ => {}
             }
         }
     }
     Ok(())
+}
+
+/// An object with only `allowed` keys and every `required` one.
+fn shaped(value: &Value, allowed: &[&str], required: &[&str]) -> bool {
+    value.as_object().is_some_and(|o| {
+        o.keys().all(|k| allowed.contains(&k.as_str()))
+            && required.iter().all(|k| o.contains_key(*k))
+    })
 }
 
 #[cfg(test)]

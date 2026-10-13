@@ -56,6 +56,11 @@ impl MoveError {
     }
 }
 
+/// A [`MoveError::Coded`] refusal.
+pub(crate) fn coded(status: u16, code: &'static str, message: impl Into<String>) -> MoveError {
+    MoveError::Coded(status, code, message.into())
+}
+
 impl std::fmt::Display for MoveError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {

@@ -19,14 +19,14 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 use super::character_data::{
-    ATTRIBUTION, DAY, Link, LookupRequest, NOTICE_VERSION, PRIVACY_URL, coded, facts, linked,
-    state_of, view,
+    ATTRIBUTION, DAY, Link, LookupRequest, NOTICE_VERSION, PRIVACY_URL, facts, linked, state_of,
+    view,
 };
 use super::characters::{Char, CharacterCreate, CharacterPatch};
 use super::clock::{iso_secs, now_secs};
 use super::estimates::{EstimateRequest, LABEL, NOTE};
 use super::portal::snowflake;
-use super::{MoveError, Store};
+use super::{MoveError, Store, coded};
 
 /// A member starts one counted scouter lookup this often.
 const ESTIMATE_SPACING: i64 = 30 * 60;

@@ -12,7 +12,7 @@ use super::dto::{Boss, Named};
 use super::history::Actor;
 use super::portal::snowflake;
 use super::seed::{self, Fixed};
-use super::{MoveError, Store};
+use super::{MoveError, Store, coded};
 
 /// How long a request stays open.
 const TTL_SECS: i64 = 24 * 3600;
@@ -134,10 +134,6 @@ fn member_named(id: &str) -> Named {
         id: snowflake(id),
         name: name(id),
     }
-}
-
-fn coded(status: u16, code: &'static str, message: impl Into<String>) -> MoveError {
-    MoveError::Coded(status, code, message.into())
 }
 
 fn refused(message: &str) -> MoveError {
