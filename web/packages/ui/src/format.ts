@@ -1,4 +1,4 @@
-import type { Answer, Difficulty, PublicRun, RunStatus, Tally, WeekShape } from '@kanade/api-types';
+import type { Answer, Difficulty, Participant, PublicRun, RunStatus, Tally, WeekShape } from '@kanade/api-types';
 import type { IconName } from './components/Icon.svelte';
 
 /** v4 STATUS_LABEL without the emoji (templating.STATUS_WORDS). */
@@ -92,6 +92,12 @@ export function runAccessibleName(week: WeekShape, run: PublicRun): string {
 
 export function sortRuns<R extends PublicRun>(runs: R[]): R[] {
   return [...runs].sort((a, b) => a.day - b.day || (a.time ?? '99').localeCompare(b.time ?? '99') || a.id.localeCompare(b.id));
+}
+
+/** Twins read "Ren (2)": their place among same-named members, never the id; undefined for a unique name. */
+export function twinName(all: Participant[], p: Participant): string | undefined {
+  const twins = all.filter((o) => o.name === p.name);
+  return twins.length > 1 ? `${p.name} (${twins.indexOf(p) + 1})` : undefined;
 }
 
 /** HH:MM:SS in `timeZone`; HH:MM with `seconds: false` (the admin Live chip). */
