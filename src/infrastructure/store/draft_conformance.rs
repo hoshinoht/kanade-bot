@@ -7,7 +7,7 @@ use chrono::{DateTime, Utc, Weekday};
 use super::fixtures::{Ids, TestClock, admin, refused, timing, utc2026};
 use crate::domain::drafts::{
     DraftChange, DraftCreated, DraftEventKind, DraftScope, DraftStale, DraftStatus, DraftStore,
-    DraftUpdate, DraftWrite, MergeCommit, NewDraft, closed_at,
+    DraftUpdate, DraftWrite, MergeCommit, NewDraft, StoredDraft, closed_at,
 };
 use crate::domain::history::{Actor, ChangeHistory, ChangeMeta, ChangeRef, Origin, Surface};
 use crate::domain::schedule::{
@@ -61,6 +61,18 @@ async fn snapshot<S: ScheduleStore>(service: &Service<S>) -> ScheduleSnapshot {
     service.store().load(&Scope::All).await.expect("load")
 }
 
+/// Create `new`, which the store must take as a new draft.
+async fn create<S: ScheduleStore + DraftStore>(
+    service: &Service<S>,
+    new: NewDraft,
+    check: &str,
+) -> StoredDraft {
+    match service.store().create_draft(new).await.expect("create") {
+        DraftCreated::Created(created) => created,
+        other => panic!("{check}: not created: {other:?}"),
+    }
+}
+
 fn draft(base: &ChangeRef, revision: u64) -> NewDraft {
     NewDraft {
         id: "draft-1".into(),
@@ -109,14 +121,7 @@ async fn create_load_list_and_log<S: ScheduleStore + ChangeHistory + DraftStore>
     let service = service(store).await;
     let base = head(&service).await;
     let revision = snapshot(&service).await.revision;
-    let DraftCreated::Created(created) = service
-        .store()
-        .create_draft(draft(&base, revision))
-        .await
-        .expect("create")
-    else {
-        panic!("create_load_list_and_log: not created");
-    };
+    let created = create(&service, draft(&base, revision), "create_load_list_and_log").await;
     assert_eq!(created.version, 1);
     assert_eq!(created.status, DraftStatus::Open);
     assert_eq!(created.base, base);
@@ -156,10 +161,7 @@ async fn create_load_list_and_log<S: ScheduleStore + ChangeHistory + DraftStore>
     );
     let mut second = draft(&base, revision);
     second.id = "draft-2".into();
-    let DraftCreated::Created(_) = service.store().create_draft(second).await.expect("create")
-    else {
-        panic!("create_load_list_and_log: second draft not created");
-    };
+    create(&service, second, "create_load_list_and_log: second draft").await;
     let ids: Vec<String> = service
         .store()
         .list_drafts(None)
@@ -198,14 +200,7 @@ async fn create_request_ids_replay_or_mismatch<S: ScheduleStore + ChangeHistory 
         });
         new
     };
-    let DraftCreated::Created(first) = service
-        .store()
-        .create_draft(request("digest"))
-        .await
-        .expect("create")
-    else {
-        panic!("create_request_ids: not created");
-    };
+    let first = create(&service, request("digest"), "create_request_ids").await;
     let DraftCreated::Replayed(replayed) = service
         .store()
         .create_draft(request("digest"))
@@ -234,14 +229,7 @@ async fn op_edits_bump_the_version_and_refuse_stale_writes<
     let service = service(store).await;
     let base = head(&service).await;
     let revision = snapshot(&service).await.revision;
-    let DraftCreated::Created(created) = service
-        .store()
-        .create_draft(draft(&base, revision))
-        .await
-        .expect("create")
-    else {
-        panic!("op_edits: not created");
-    };
+    let created = create(&service, draft(&base, revision), "op_edits").await;
     let staged = |ord: usize| crate::domain::drafts::StagedOp {
         ord,
         op: crate::domain::drafts::DraftOp::ResetToFixed {
@@ -323,14 +311,7 @@ async fn rebase_moves_the_base_and_close_is_final<S: ScheduleStore + ChangeHisto
     let mut service = service(store).await;
     let base = head(&service).await;
     let revision = snapshot(&service).await.revision;
-    let DraftCreated::Created(created) = service
-        .store()
-        .create_draft(draft(&base, revision))
-        .await
-        .expect("create")
-    else {
-        panic!("rebase: not created");
-    };
+    let created = create(&service, draft(&base, revision), "rebase").await;
     // New history lands after the base.
     service
         .as_origin(admin())
@@ -523,14 +504,7 @@ async fn commit_merge_writes_rows_record_and_close<
     let service = service(store).await;
     let base = head(&service).await;
     let revision = snapshot(&service).await.revision;
-    let DraftCreated::Created(created) = service
-        .store()
-        .create_draft(draft(&base, revision))
-        .await
-        .expect("create")
-    else {
-        panic!("commit_merge: not created");
-    };
+    let created = create(&service, draft(&base, revision), "commit_merge").await;
     let week = utc(26, 16, 0);
     let changes = ChangeSet {
         changes: vec![Change::PutRun(run("run-9", week, utc(29, 20, 0)))],
@@ -622,10 +596,7 @@ async fn commit_merge_replays_request_ids<S: ScheduleStore + ChangeHistory + Dra
     for id in ["draft-a", "draft-b"] {
         let mut new = draft(&base, revision);
         new.id = id.into();
-        let DraftCreated::Created(_) = service.store().create_draft(new).await.expect("create")
-        else {
-            panic!("commit_merge_replay: not created");
-        };
+        create(&service, new, "commit_merge_replay").await;
     }
     let week = utc(26, 16, 0);
     let changes = || ChangeSet {
@@ -690,14 +661,7 @@ async fn commit_merge_refuses_empty_stale_and_conflicted<
     let mut service = service(store).await;
     let base = head(&service).await;
     let revision = snapshot(&service).await.revision;
-    let DraftCreated::Created(created) = service
-        .store()
-        .create_draft(draft(&base, revision))
-        .await
-        .expect("create")
-    else {
-        panic!("commit_merge_refusals: not created");
-    };
+    let created = create(&service, draft(&base, revision), "commit_merge_refusals").await;
     // An empty change set is refused.
     refused(
         service
@@ -784,10 +748,7 @@ async fn expiry_closes_only_past_weeks<S: ScheduleStore + ChangeHistory + DraftS
     for id in ["draft-past", "draft-current"] {
         let mut new = draft(&base, revision);
         new.id = id.into();
-        let DraftCreated::Created(_) = service.store().create_draft(new).await.expect("create")
-        else {
-            panic!("expiry: not created");
-        };
+        create(&service, new, "expiry").await;
     }
     // The scope arrives with the operations, in the same write.
     let scope = |week: Option<DateTime<Utc>>| DraftUpdate {
@@ -1106,14 +1067,7 @@ async fn commit_merge_records_its_note<S: ScheduleStore + ChangeHistory + DraftS
     let service = service(store).await;
     let base = head(&service).await;
     let revision = snapshot(&service).await.revision;
-    let DraftCreated::Created(created) = service
-        .store()
-        .create_draft(draft(&base, revision))
-        .await
-        .expect("create")
-    else {
-        panic!("merge_note: not created");
-    };
+    let created = create(&service, draft(&base, revision), "merge_note").await;
     let MergeCommit::Committed(committed) = service
         .store()
         .commit_merge(

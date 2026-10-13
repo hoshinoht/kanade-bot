@@ -232,6 +232,42 @@ async fn different_fields_of_one_run_both_apply<
     );
 }
 
+/// Commit an unrelated `upstream` admin's `edit` of `run` at the current
+/// revision, as a racing editor would.
+async fn upstream_edit<S: ScheduleStore>(
+    store: &S,
+    run: &str,
+    edit: impl FnOnce(&mut crate::domain::schedule::Run),
+) -> Result<(), StoreError> {
+    let snapshot = store.load(&Scope::All).await?;
+    let mut row = snapshot
+        .runs
+        .iter()
+        .find(|row| row.id == run)
+        .expect("upstream: run")
+        .clone();
+    edit(&mut row);
+    let upstream = ChangeMeta {
+        origin: admin("upstream"),
+        at: utc(27, 1),
+        notices: Vec::new(),
+        refs: Vec::new(),
+        request_digest: None,
+        expect: Expect::default(),
+        outbox: Vec::new(),
+    };
+    store
+        .commit(
+            snapshot.revision,
+            ChangeSet {
+                changes: vec![Change::PutRun(row)],
+            },
+            upstream,
+        )
+        .await?;
+    Ok(())
+}
+
 /// Lands a newer slot change on `run` right before the first commit it
 /// forwards (after the editor planned).
 struct Upstream<'a, S> {
@@ -260,32 +296,10 @@ impl<S: ScheduleStore + Sync> ScheduleStore for Upstream<'_, S> {
         meta: ChangeMeta,
     ) -> Result<Option<Committed>, StoreError> {
         if !self.fired.swap(true, Ordering::SeqCst) {
-            let snapshot = self.inner.load(&Scope::All).await?;
-            let mut moved = snapshot
-                .runs
-                .iter()
-                .find(|row| row.id == self.run)
-                .expect("upstream: run")
-                .clone();
-            moved.datetime += TimeDelta::hours(3);
-            let upstream = ChangeMeta {
-                origin: admin("upstream"),
-                at: utc(27, 1),
-                notices: Vec::new(),
-                refs: Vec::new(),
-                request_digest: None,
-                expect: Expect::default(),
-                outbox: Vec::new(),
-            };
-            self.inner
-                .commit(
-                    snapshot.revision,
-                    ChangeSet {
-                        changes: vec![Change::PutRun(moved)],
-                    },
-                    upstream,
-                )
-                .await?;
+            upstream_edit(self.inner, &self.run, |run| {
+                run.datetime += TimeDelta::hours(3);
+            })
+            .await?;
         }
         self.inner.commit(expected_revision, changes, meta).await
     }
@@ -932,32 +946,10 @@ impl<S: ScheduleStore + Sync> ScheduleStore for ConflictOnce<'_, S> {
             seen.len() == 1
         };
         if first {
-            let snapshot = self.inner.load(&Scope::All).await?;
-            let mut other = snapshot
-                .runs
-                .iter()
-                .find(|row| row.id == self.other_run)
-                .expect("conflict_once: other run")
-                .clone();
-            other.status = RunStatus::Confirmed;
-            let upstream = ChangeMeta {
-                origin: admin("upstream"),
-                at: utc(27, 1),
-                notices: Vec::new(),
-                refs: Vec::new(),
-                request_digest: None,
-                expect: Expect::default(),
-                outbox: Vec::new(),
-            };
-            self.inner
-                .commit(
-                    snapshot.revision,
-                    ChangeSet {
-                        changes: vec![Change::PutRun(other)],
-                    },
-                    upstream,
-                )
-                .await?;
+            upstream_edit(self.inner, &self.other_run, |run| {
+                run.status = RunStatus::Confirmed;
+            })
+            .await?;
         }
         self.inner.commit(expected_revision, changes, meta).await
     }
