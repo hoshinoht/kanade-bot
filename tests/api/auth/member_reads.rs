@@ -8,174 +8,56 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use chrono::{DateTime, NaiveTime, TimeDelta, TimeZone, Utc};
+use chrono::{DateTime, NaiveTime, TimeDelta, Utc};
 use kanade::{
     api::auth::{audit::AuditEvent, rate::MEMBER_READ_ROUTE},
     domain::{
-        history::{Actor, ChangeMeta, Origin, Surface},
         members::MemberStore,
-        schedule::{Change, ChangeSet, Run, RunSource, RunStatus},
-        scheduler::{ScheduleStore, Scope},
+        schedule::{Change, Run, RunSource, RunStatus},
     },
-    infrastructure::llm::governor::{
-        BreakerState, BreakerView, CallKind, Counters, GroupSnapshot, PermitUsage, QueuedCall,
-        RateLevel, RetryLevel,
-    },
+    infrastructure::llm::governor::{CallKind, GroupSnapshot, QueuedCall},
 };
 use serde_json::{Value, json};
 
-use super::member_support::{Browser, MemberHarness, Options, discord_user};
+use super::{
+    member_support::Browser,
+    member_writes::{ALICE, BOB, CARA, DAN, IP, Portal, keys, utc},
+};
 use crate::{
-    reads::Reads,
-    schemas::assert_valid,
-    support::{ADMIN_HOST, Reply, request},
+    reads::{Reads, commit_as, snapshot},
+    support::{ADMIN_HOST, find, items, request},
 };
 
-const IP: &str = "198.51.100.10";
 const WEEK: &str = "/api/public/week";
 const ALLOWANCE: &str = "/api/public/me/allowance";
 const ART: &str = "/art/portraits/MaleficStar";
-const ALICE: u64 = 1001;
-const BOB: u64 = 1002;
-const CARA: u64 = 1003;
-const DAN: u64 = 1004;
 
-const WEEK_KEYS: [&str; 7] = [
-    "days",
-    "generated_at",
-    "reset",
-    "runs",
-    "starts",
-    "timezone",
-    "version",
-];
-const RUN_KEYS: [&str; 13] = [
-    "bosses",
-    "can_edit",
-    "channel",
-    "day",
-    "fixed_id",
-    "id",
-    "mine",
-    "minutes",
-    "participants",
-    "party",
-    "status",
-    "tally",
-    "time",
-];
-const ALLOWANCE_KEYS: [&str; 6] = [
-    "allowance",
-    "bot_busy",
-    "generated_at",
-    "queue_position",
-    "resets_at",
-    "used",
-];
+// Key sets, space-separated.
+const WEEK_KEYS: &str = "days generated_at reset runs starts timezone version";
+const RUN_KEYS: &str =
+    "bosses can_edit channel day fixed_id id mine minutes participants party status tally time";
+const ALLOWANCE_KEYS: &str = "allowance bot_busy generated_at queue_position resets_at used";
 /// Admin-only fields that must never reach a member, at any depth.
-const FORBIDDEN: [&str; 9] = [
-    "short_id",
-    "channel_id",
-    "cards",
-    "amended",
-    "roster_change",
-    "role",
-    "roles",
-    "role_id",
-    "role_ids",
-];
+const FORBIDDEN: &str =
+    "short_id channel_id cards amended roster_change role roles role_id role_ids";
 /// `MemberRun` fields that are the admin run's own.
-const SHARED: [&str; 11] = [
-    "id",
-    "day",
-    "time",
-    "minutes",
-    "status",
-    "bosses",
-    "tally",
-    "participants",
-    "party",
-    "channel",
-    "fixed_id",
-];
+const SHARED: &str = "id day time minutes status bosses tally participants party channel fixed_id";
 
-/// The public origin over `reads`' state and art, with the seeded members
-/// 1001–1004 eligible for the portal.
-struct Portal {
-    reads: Reads,
-    harness: MemberHarness,
+fn set(words: &str) -> BTreeSet<&str> {
+    words.split_whitespace().collect()
 }
 
 impl Portal {
-    async fn over(reads: Reads) -> Self {
-        let harness = MemberHarness::with(Options {
-            state: reads.site.state.clone(),
-            boss_dir: reads.site.boss_dir.clone(),
-            ..Options::default()
-        })
-        .await;
-        for id in [ALICE, BOB, CARA, DAN] {
-            harness.roster(id, true).await;
-        }
-        Self { reads, harness }
-    }
-
-    async fn new() -> Self {
-        Self::over(Reads::new().await).await
-    }
-
-    async fn sign_in(&self, id: u64) -> Browser {
-        self.harness
-            .sign_in_from(discord_user(id, "Member"), IP)
-            .await
-    }
-
-    async fn get(&self, browser: Option<&Browser>, path: &str) -> Reply {
-        let cookie = browser.map(Browser::cookie);
-        let mut headers = vec![("CF-Connecting-IP", IP)];
-        if let Some((name, value)) = &cookie {
-            headers.push((name, value));
-        }
-        self.harness.get(path, &headers).await
-    }
-
-    /// A signed-in JSON read: 200, `no-store`, valid against `target`.
-    async fn read(&self, browser: &Browser, path: &str, target: &str) -> Value {
-        let reply = self.get(Some(browser), path).await;
-        assert_eq!(reply.status, 200, "{path}: {}", reply.text());
-        assert_eq!(reply.header("cache-control"), Some("no-store"), "{path}");
-        let value = reply.json();
-        assert_valid(target, path, &value);
-        value
-    }
-
     async fn week(&self, browser: &Browser, query: &str) -> Value {
-        self.read(
-            browser,
-            &format!("{WEEK}{query}"),
-            "public.json#/$defs/MemberWeek",
-        )
-        .await
+        let path = format!("{WEEK}{query}");
+        self.read(browser, &path, "public.json#/$defs/MemberWeek")
+            .await
     }
 
     async fn allowance(&self, browser: &Browser) -> Value {
         self.read(browser, ALLOWANCE, "public.json#/$defs/MemberAllowance")
             .await
     }
-}
-
-fn utc(month: u32, day: u32, hour: u32, minute: u32) -> DateTime<Utc> {
-    Utc.with_ymd_and_hms(2026, month, day, hour, minute, 0)
-        .unwrap()
-}
-
-fn keys(value: &Value) -> BTreeSet<&str> {
-    value
-        .as_object()
-        .unwrap()
-        .keys()
-        .map(String::as_str)
-        .collect()
 }
 
 fn all_keys<'a>(value: &'a Value, out: &mut BTreeSet<&'a str>) {
@@ -192,14 +74,11 @@ fn all_keys<'a>(value: &'a Value, out: &mut BTreeSet<&'a str>) {
 }
 
 fn runs(week: &Value) -> &Vec<Value> {
-    week["runs"].as_array().unwrap()
+    items(&week["runs"])
 }
 
 fn run<'a>(week: &'a Value, id: &str) -> &'a Value {
-    runs(week)
-        .iter()
-        .find(|run| run["id"] == id)
-        .unwrap_or_else(|| panic!("{id} in {week:#}"))
+    find(&week["runs"], "id", id)
 }
 
 fn flags(week: &Value, id: &str) -> (bool, bool) {
@@ -212,13 +91,13 @@ fn flags(week: &Value, id: &str) -> (bool, bool) {
 
 /// Exactly the frozen keys, nothing admin-only at any depth.
 fn assert_member_week_shape(week: &Value) {
-    assert_eq!(keys(week), WEEK_KEYS.into());
+    assert_eq!(keys(week), set(WEEK_KEYS));
     for run in runs(week) {
-        assert_eq!(keys(run), RUN_KEYS.into(), "{run}");
+        assert_eq!(keys(run), set(RUN_KEYS), "{run}");
     }
     let mut seen = BTreeSet::new();
     all_keys(week, &mut seen);
-    for key in FORBIDDEN {
+    for key in set(FORBIDDEN) {
         assert!(!seen.contains(key), "{key} leaked: {week:#}");
     }
 }
@@ -226,45 +105,21 @@ fn assert_member_week_shape(week: &Value) {
 /// The member week is the admin week's frame, run set and order, and each
 /// run's shared fields are the admin run's.
 fn assert_matches_admin(member: &Value, admin: &Value) {
-    for key in [
-        "starts",
-        "timezone",
-        "reset",
-        "days",
-        "generated_at",
-        "version",
-    ] {
+    for key in set("starts timezone reset days generated_at version") {
         assert_eq!(member[key], admin[key], "{key}");
     }
     let ids =
         |week: &Value| -> Vec<Value> { runs(week).iter().map(|run| run["id"].clone()).collect() };
     assert_eq!(ids(member), ids(admin));
     for (mine, theirs) in runs(member).iter().zip(runs(admin)) {
-        for key in SHARED {
+        for key in set(SHARED) {
             assert_eq!(mine[key], theirs[key], "{} {key}", mine["id"]);
         }
     }
 }
 
 async fn commit(reads: &Reads, changes: Vec<Change>) {
-    let revision = reads.store.load(&Scope::All).await.unwrap().revision;
-    reads
-        .store
-        .commit(
-            revision,
-            ChangeSet { changes },
-            ChangeMeta {
-                origin: Origin::new(Actor::admin("test"), Surface::AdminPortal),
-                at: utc(9, 29, 3, 0),
-                notices: Vec::new(),
-                refs: Vec::new(),
-                request_digest: None,
-                expect: Default::default(),
-                outbox: Vec::new(),
-            },
-        )
-        .await
-        .unwrap();
+    commit_as(&reads.store, "test", utc(9, 29, 3, 0), changes).await;
 }
 
 fn put_run(
@@ -587,32 +442,10 @@ async fn data_reads_take_the_members_read_bucket_and_art_does_not() {
 }
 
 fn group(name: &str, busy: bool, queue: Vec<QueuedCall>) -> GroupSnapshot {
+    let in_use = if busy { 2 } else { 1 };
     GroupSnapshot {
-        name: name.into(),
-        backend: "Kanata".into(),
-        models: Vec::new(),
-        permits: PermitUsage {
-            in_use: if busy { 2 } else { 1 },
-            total: 2,
-        },
         queue,
-        holders: Vec::new(),
-        rate: RateLevel {
-            available: 1,
-            capacity: 1,
-            refill_per_min: 1,
-        },
-        retry: RetryLevel {
-            remaining: 1,
-            capacity: 1,
-        },
-        breaker: BreakerView {
-            state: BreakerState::Closed,
-            failures: 0,
-            since: DateTime::UNIX_EPOCH,
-            retry_at: None,
-        },
-        counters: Counters::default(),
+        ..snapshot(name, in_use, 2)
     }
 }
 
@@ -626,12 +459,8 @@ fn queued(position: u32, kind: CallKind, who: &str) -> QueuedCall {
 }
 
 async fn set_roles(reads: &Reads, id: u64, roles: &[&str]) {
-    let mut profile = reads
-        .store
-        .load_member(&id.to_string())
-        .await
-        .unwrap()
-        .unwrap();
+    let id = id.to_string();
+    let mut profile = reads.store.load_member(&id).await.unwrap().unwrap();
     profile.roles = roles.iter().map(|role| (*role).to_owned()).collect();
     reads.store.put_member(profile).await.unwrap();
 }
@@ -676,18 +505,15 @@ async fn the_allowance_is_the_callers_own() {
     )
     .await
     .json();
-    let admin_row = limits["allowances"]
-        .as_array()
-        .unwrap()
+    let admin_row = items(&limits["allowances"])
         .iter()
         .find(|row| row["member"]["id"] == "1001")
-        .cloned()
         .unwrap();
 
     let alice = portal.sign_in(ALICE).await;
     let reply = portal.get(Some(&alice), ALLOWANCE).await;
     let own = portal.allowance(&alice).await;
-    assert_eq!(keys(&own), ALLOWANCE_KEYS.into());
+    assert_eq!(keys(&own), set(ALLOWANCE_KEYS));
     assert_eq!(own["allowance"], admin_row["allowance"]);
     assert!(own["allowance"]["count"].as_u64().unwrap() > 0);
     assert_eq!(own["used"], 1);

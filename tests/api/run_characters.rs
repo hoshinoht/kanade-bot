@@ -11,16 +11,14 @@
 use chrono::{DateTime, TimeDelta, TimeZone, Utc};
 use kanade::domain::{
     characters::{CharacterStore, PickScope},
-    history::{Actor, ChangeMeta, Origin, Surface},
-    schedule::{Change, ChangeSet, Run, RunSource, RunStatus},
-    scheduler::{ScheduleStore, Scope},
+    schedule::{Change, Run, RunSource, RunStatus},
     settings::{SettingsChange, SettingsChangeQuery, SettingsStore},
 };
 use serde_json::{Value, json};
 
 use crate::{
     readiness::slot,
-    reads::Reads,
+    reads::{Reads, commit_as},
     support::{ADMIN_HOST, request, strs},
 };
 
@@ -117,7 +115,6 @@ fn run(id: &str, at: DateTime<Utc>, bosses: &[&str], party: &[&str]) -> Run {
 /// and Cara, and a Star run on Mon 28 Sep 21:00 KL with Alice, still
 /// planned and so frozen (past its end).
 async fn add_runs(reads: &Reads) {
-    let revision = reads.store.load(&Scope::All).await.unwrap().revision;
     let changes = vec![
         Change::PutRun(run(
             "r-ckalos",
@@ -127,17 +124,7 @@ async fn add_runs(reads: &Reads) {
         )),
         Change::PutRun(run("r-ended", utc(9, 28, 13), &["NMaleficStar"], &["1001"])),
     ];
-    let meta = ChangeMeta {
-        origin: Origin::new(Actor::admin("seed"), Surface::AdminPortal),
-        at: utc(9, 28, 0),
-        notices: Vec::new(),
-        refs: Vec::new(),
-        request_digest: None,
-        expect: Default::default(),
-        outbox: Vec::new(),
-    };
-    let set = ChangeSet { changes };
-    reads.store.commit(revision, set, meta).await.unwrap();
+    commit_as(&reads.store, "seed", utc(9, 28, 0), changes).await;
 }
 
 async fn created(reads: &Reads, member: &str, body: Value) -> String {

@@ -13,20 +13,19 @@ use std::collections::BTreeSet;
 
 use chrono::{DateTime, TimeZone, Utc};
 use kanade::domain::{
-    history::{Actor, ChangeHistory, ChangeMeta, ChangeRecord, Origin, Surface},
-    schedule::{Change, ChangeSet, Run, RunSource, RunStatus},
-    scheduler::{ScheduleStore, Scope},
+    history::{ChangeHistory, ChangeRecord},
+    schedule::{Change, Run, RunSource, RunStatus},
 };
 use serde_json::Value;
 
 use super::member_support::{Browser, MemberHarness, Options, PUB_ORIGIN, discord_user};
 use crate::{
-    reads::Reads,
+    reads::{Reads, commit_as},
     schemas::assert_valid,
     support::{PUBLIC_HOST, Reply, send},
 };
 
-const IP: &str = "198.51.100.10";
+pub(super) const IP: &str = "198.51.100.10";
 pub(super) const ALICE: u64 = 1001;
 pub(super) const BOB: u64 = 1002;
 pub(super) const CARA: u64 = 1003;
@@ -111,24 +110,7 @@ impl Portal {
 
     /// Rows written behind the API, as an admin's seed.
     pub async fn seed(&self, changes: Vec<Change>) {
-        let revision = self.reads.store.load(&Scope::All).await.unwrap().revision;
-        self.reads
-            .store
-            .commit(
-                revision,
-                ChangeSet { changes },
-                ChangeMeta {
-                    origin: Origin::new(Actor::admin("seed"), Surface::AdminPortal),
-                    at: utc(9, 28, 0, 0),
-                    notices: Vec::new(),
-                    refs: Vec::new(),
-                    request_digest: None,
-                    expect: Default::default(),
-                    outbox: Vec::new(),
-                },
-            )
-            .await
-            .unwrap();
+        commit_as(&self.reads.store, "seed", utc(9, 28, 0, 0), changes).await;
     }
 
     pub async fn version(&self) -> u64 {

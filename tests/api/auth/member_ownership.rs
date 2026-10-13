@@ -11,9 +11,9 @@ use kanade::{
     api::auth::{audit::AuditEvent, rate::MEMBER_WRITE_ROUTE},
     domain::{
         attendance::AttendanceDefault,
-        history::{Actor, ChangeMeta, Origin, Surface},
+        history::{Actor, Origin, Surface},
         members::{GatewayMember, MemberStore},
-        schedule::{Change, ChangeSet, FixedRun},
+        schedule::{Change, FixedRun},
         scheduler::{ScheduleStore, Scope},
     },
 };
@@ -21,7 +21,7 @@ use serde_json::{Value, json};
 
 use super::member_support::{Browser, MemberHarness, Options, PUB_ORIGIN, discord_user};
 use crate::{
-    reads::Reads,
+    reads::{Reads, commit_as},
     schemas::assert_valid,
     support::{PUBLIC_HOST, Reply, send, strs},
 };
@@ -238,26 +238,8 @@ impl Portal {
 
 /// Commit `fixed` as an admin.
 async fn put_fixed(reads: &Reads, fixed: FixedRun) {
-    let revision = reads.store.load(&Scope::All).await.unwrap().revision;
-    reads
-        .store
-        .commit(
-            revision,
-            ChangeSet {
-                changes: vec![Change::PutFixedRun(fixed)],
-            },
-            ChangeMeta {
-                origin: Origin::new(Actor::admin("test"), Surface::AdminPortal),
-                at: Utc.with_ymd_and_hms(2026, 9, 29, 3, 0, 0).unwrap(),
-                notices: Vec::new(),
-                refs: Vec::new(),
-                request_digest: None,
-                expect: Default::default(),
-                outbox: Vec::new(),
-            },
-        )
-        .await
-        .unwrap();
+    let at = Utc.with_ymd_and_hms(2026, 9, 29, 3, 0, 0).unwrap();
+    commit_as(&reads.store, "test", at, vec![Change::PutFixedRun(fixed)]).await;
 }
 
 fn request_body(reply: &Reply) -> Value {

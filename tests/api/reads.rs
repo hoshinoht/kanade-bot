@@ -545,23 +545,28 @@ async fn seed(store: &SqliteStore, reset: NaiveTime) {
             None,
         )),
     ];
+    commit_as(store, "seed", utc(9, 28, 0, 0), changes).await;
+}
+
+/// Commits `changes` behind the API, as admin `actor` at `at`.
+pub(crate) async fn commit_as(
+    store: &SqliteStore,
+    actor: &str,
+    at: DateTime<Utc>,
+    changes: Vec<Change>,
+) {
     let revision = store.load(&Scope::All).await.unwrap().revision;
-    store
-        .commit(
-            revision,
-            ChangeSet { changes },
-            ChangeMeta {
-                origin: Origin::new(Actor::admin("seed"), Surface::AdminPortal),
-                at: utc(9, 28, 0, 0),
-                notices: Vec::new(),
-                refs: Vec::new(),
-                request_digest: None,
-                expect: Default::default(),
-                outbox: Vec::new(),
-            },
-        )
-        .await
-        .unwrap();
+    let meta = ChangeMeta {
+        origin: Origin::new(Actor::admin(actor), Surface::AdminPortal),
+        at,
+        notices: Vec::new(),
+        refs: Vec::new(),
+        request_digest: None,
+        expect: Default::default(),
+        outbox: Vec::new(),
+    };
+    let set = ChangeSet { changes };
+    store.commit(revision, set, meta).await.unwrap();
 }
 
 impl Reads {
@@ -1177,12 +1182,43 @@ impl Reads {
 }
 
 fn run<'a>(week: &'a Value, id: &str) -> &'a Value {
-    week["runs"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|run| run["id"] == id)
-        .unwrap_or_else(|| panic!("{id} in {week:#}"))
+    crate::support::find(&week["runs"], "id", id)
+}
+
+/// A healthy governor group with `in_use` of `total` permits, nothing
+/// queued or held.
+pub(crate) fn snapshot(
+    name: &str,
+    in_use: u32,
+    total: u32,
+) -> kanade::infrastructure::llm::governor::GroupSnapshot {
+    use kanade::infrastructure::llm::governor::{
+        BreakerState, BreakerView, Counters, GroupSnapshot, PermitUsage, RateLevel, RetryLevel,
+    };
+    GroupSnapshot {
+        name: name.into(),
+        backend: "Kanata".into(),
+        models: Vec::new(),
+        permits: PermitUsage { in_use, total },
+        queue: Vec::new(),
+        holders: Vec::new(),
+        rate: RateLevel {
+            available: 1,
+            capacity: 1,
+            refill_per_min: 1,
+        },
+        retry: RetryLevel {
+            remaining: 1,
+            capacity: 1,
+        },
+        breaker: BreakerView {
+            state: BreakerState::Closed,
+            failures: 0,
+            since: DateTime::UNIX_EPOCH,
+            retry_at: None,
+        },
+        counters: Counters::default(),
+    }
 }
 
 #[tokio::test]
@@ -1347,38 +1383,15 @@ async fn stats_summary_and_reminders() {
 
 #[tokio::test]
 async fn summary_reports_a_full_governor_group_and_a_switched_off_rescan() {
-    use kanade::infrastructure::llm::governor::{
-        BreakerState, BreakerView, CallKind, Counters, GroupSnapshot, HeldPermit, PermitUsage,
-        RateLevel, RetryLevel,
-    };
+    use kanade::infrastructure::llm::governor::{CallKind, GroupSnapshot, HeldPermit};
     let held = |kind: CallKind, held_s: u64| HeldPermit {
         kind,
         who: "someone".into(),
         held_s,
     };
     let group = |name: &str, in_use: u32, total: u32, holders: Vec<HeldPermit>| GroupSnapshot {
-        name: name.into(),
-        backend: "Kanata".into(),
-        models: Vec::new(),
-        permits: PermitUsage { in_use, total },
-        queue: Vec::new(),
         holders,
-        rate: RateLevel {
-            available: 1,
-            capacity: 1,
-            refill_per_min: 1,
-        },
-        retry: RetryLevel {
-            remaining: 1,
-            capacity: 1,
-        },
-        breaker: BreakerView {
-            state: BreakerState::Closed,
-            failures: 0,
-            since: DateTime::UNIX_EPOCH,
-            retry_at: None,
-        },
-        counters: Counters::default(),
+        ..snapshot(name, in_use, total)
     };
     let busy = Arc::new(Mutex::new(false));
     let limits: kanade::api::state::ModelLimits = {

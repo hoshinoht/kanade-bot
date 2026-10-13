@@ -13,13 +13,13 @@ use kanade::{
     },
     domain::{
         attendance::AttendancePolicy,
-        history::{Actor, ChangeHistory, ChangeMeta, Origin, Surface},
+        history::ChangeHistory,
         members::{MemberStore, Roster},
         notify::{
             Claim, DedupeKey, DeliveryJournal, DeliverySettings, DeliveryTarget, DispatchInput,
             NotificationIntent, Receipt, plan_dispatch,
         },
-        schedule::{Change, ChangeSet, Reminder, Run},
+        schedule::{Change, Reminder, Run},
         scheduler::{ScheduleStore, Scope},
         settings::MessageStyle,
     },
@@ -27,7 +27,7 @@ use kanade::{
 use serde_json::Value;
 
 use crate::{
-    reads::Reads,
+    reads::{Reads, commit_as},
     schemas::assert_valid,
     support::{ADMIN_HOST, Fixture, PUBLIC_HOST, find, public, request},
 };
@@ -181,24 +181,7 @@ fn morning() -> DateTime<Utc> {
 }
 
 async fn commit(reads: &Reads, changes: Vec<Change>) {
-    let revision = reads.store.load(&Scope::All).await.unwrap().revision;
-    reads
-        .store
-        .commit(
-            revision,
-            ChangeSet { changes },
-            ChangeMeta {
-                origin: Origin::new(Actor::admin("test"), Surface::AdminPortal),
-                at: morning(),
-                notices: Vec::new(),
-                refs: Vec::new(),
-                request_digest: None,
-                expect: Default::default(),
-                outbox: Vec::new(),
-            },
-        )
-        .await
-        .unwrap();
+    commit_as(&reads.store, "test", morning(), changes).await;
 }
 
 fn day_of(id: &str, run: &str, fire: DateTime<Utc>, sent: Option<DateTime<Utc>>) -> Reminder {

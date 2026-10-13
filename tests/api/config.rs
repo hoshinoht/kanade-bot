@@ -36,7 +36,7 @@ use kanade::{
 use serde_json::{Value, json};
 
 use crate::{
-    reads::{EDGE_HEADERS, NORMAL_PILL, Reads},
+    reads::{EDGE_HEADERS, NORMAL_PILL, Reads, commit_as, snapshot},
     schemas::assert_valid,
     support::{ADMIN_HOST, Reply, find, items, request, send, strs},
 };
@@ -2039,35 +2039,9 @@ async fn declared_groups_are_listed_checked_per_group_and_summarised() {
 
 #[tokio::test]
 async fn groups_carry_the_governors_in_flight_permits() {
-    use kanade::infrastructure::llm::governor::{
-        BreakerState, BreakerView, Counters, GroupSnapshot, PermitUsage, RateLevel, RetryLevel,
-    };
-    let snapshot = |name: &str, in_use: u32| GroupSnapshot {
-        name: name.into(),
-        backend: "Kanata".into(),
-        models: Vec::new(),
-        permits: PermitUsage { in_use, total: 2 },
-        queue: Vec::new(),
-        holders: Vec::new(),
-        rate: RateLevel {
-            available: 1,
-            capacity: 1,
-            refill_per_min: 1,
-        },
-        retry: RetryLevel {
-            remaining: 1,
-            capacity: 1,
-        },
-        breaker: BreakerView {
-            state: BreakerState::Closed,
-            failures: 0,
-            since: chrono::DateTime::UNIX_EPOCH,
-            retry_at: None,
-        },
-        counters: Counters::default(),
-    };
     // `spare` is not running (a restart is pending): its rows stay null.
-    let limits: ModelLimits = Arc::new(move |_| vec![snapshot("local", 1), snapshot("old", 2)]);
+    let limits: ModelLimits =
+        Arc::new(move |_| vec![snapshot("local", 1, 2), snapshot("old", 2, 2)]);
     let config = Config::with(Setup {
         groups: vec![
             group("local", 2, &["kanata/extract", "kanata/chat"]),
@@ -2897,8 +2871,7 @@ async fn header_generation_time_saves_live_records_its_row_and_refuses_bad_clock
 #[tokio::test]
 async fn a_redesigned_day_of_previews_one_embed_per_run() {
     use chrono::{TimeZone, Utc};
-    use kanade::domain::history::{Actor, ChangeMeta, Origin, Surface};
-    use kanade::domain::schedule::{Change, ChangeSet, Reminder, Run};
+    use kanade::domain::schedule::{Change, Reminder, Run};
     use kanade::domain::scheduler::{ScheduleStore, Scope};
 
     let config = Config::new().await;
@@ -2929,28 +2902,12 @@ async fn a_redesigned_day_of_previews_one_embed_per_run() {
         bosses: vec!["NMaleficStar".into()],
         ..kalos
     };
-    store
-        .commit(
-            schedule.revision,
-            ChangeSet {
-                changes: vec![
-                    Change::PutReminder(day_of("m-kalos-day", "r-kalos")),
-                    Change::PutRun(twin),
-                    Change::PutReminder(day_of("m-twin-day", "r-twin")),
-                ],
-            },
-            ChangeMeta {
-                origin: Origin::new(Actor::admin("test"), Surface::AdminPortal),
-                at: fire,
-                notices: Vec::new(),
-                refs: Vec::new(),
-                request_digest: None,
-                expect: Default::default(),
-                outbox: Vec::new(),
-            },
-        )
-        .await
-        .unwrap();
+    let changes = vec![
+        Change::PutReminder(day_of("m-kalos-day", "r-kalos")),
+        Change::PutRun(twin),
+        Change::PutReminder(day_of("m-twin-day", "r-twin")),
+    ];
+    commit_as(store, "test", fire, changes).await;
 
     let path = "/api/admin/reminders/m-kalos-day/preview";
     let preview = config
