@@ -24,6 +24,18 @@ pub enum Message {
     },
 }
 
+impl Message {
+    /// The message text; an assistant turn with only tool calls has none.
+    pub fn text(&self) -> &str {
+        match self {
+            Self::System { content } | Self::User { content } | Self::Tool { content, .. } => {
+                content
+            }
+            Self::Assistant { content, .. } => content.as_deref().unwrap_or_default(),
+        }
+    }
+}
+
 #[derive(Clone, PartialEq, Serialize, Deserialize)]
 pub struct ToolCallRequest {
     pub id: String,

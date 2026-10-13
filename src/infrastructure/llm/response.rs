@@ -15,6 +15,18 @@ pub enum FinishReason {
     ContentFilter,
     Other(String),
 }
+impl FinishReason {
+    /// The wire `finish_reason` text.
+    pub fn as_str(&self) -> &str {
+        match self {
+            Self::Stop => "stop",
+            Self::ToolCalls => "tool_calls",
+            Self::Length => "length",
+            Self::ContentFilter => "content_filter",
+            Self::Other(other) => other,
+        }
+    }
+}
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Usage {
     pub prompt_tokens: u32,

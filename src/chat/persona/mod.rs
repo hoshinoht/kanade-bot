@@ -37,4 +37,4 @@ pub use snapshot::{
 };
 pub use staging::{BOSS_FIELD, MAX_RENDERED_STAGING_CHARS, MAX_STAGING_CHARS, StagingState};
 
-pub(crate) use markdown::strip as py_strip;
+pub(crate) use markdown::split_lines;

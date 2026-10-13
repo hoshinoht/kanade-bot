@@ -12,33 +12,11 @@ fn usage() -> Error {
 }
 
 pub fn parse(arguments: &[String]) -> Result<Options, Error> {
-    let (mut from, mut identity, mut apply) = (None, None, false);
-    let mut rest = arguments;
-    while let Some((flag, tail)) = rest.split_first() {
-        rest = tail;
-        match flag.as_str() {
-            "--apply" if !apply => apply = true,
-            "--from" | "--identity" => {
-                let Some((value, tail)) = rest.split_first().filter(|(value, _)| !value.is_empty())
-                else {
-                    return Err(usage());
-                };
-                rest = tail;
-                let slot = if flag == "--from" {
-                    &mut from
-                } else {
-                    &mut identity
-                };
-                if slot.replace(PathBuf::from(value)).is_some() {
-                    return Err(usage());
-                }
-            }
-            _ => return Err(usage()),
-        }
-    }
+    let ([apply], [from, identity]) =
+        super::options(arguments, ["--apply"], ["--from", "--identity"], usage)?;
     Ok(Options {
-        from: from.ok_or_else(usage)?,
-        identity,
+        from: from.map(PathBuf::from).ok_or_else(usage)?,
+        identity: identity.map(PathBuf::from),
         apply,
     })
 }

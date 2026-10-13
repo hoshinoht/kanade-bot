@@ -7,7 +7,7 @@ use std::time::Duration;
 use tokio::time::Instant;
 
 use super::super::{
-    ChatRequest, Effort, FinishReason, Message,
+    ChatRequest, Effort, Message,
     governor::{QuestionLimits, Refused, Role, SessionError, SessionFailure},
 };
 use super::ModelStack;
@@ -133,7 +133,7 @@ impl ModelStack {
             Ok(response) => Ok((
                 ProbeOutcome::Ok {
                     latency_ms: u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX),
-                    finish_reason: finish(&response.finish_reason),
+                    finish_reason: response.finish_reason.as_str().to_owned(),
                 },
                 ids,
             )),
@@ -161,15 +161,5 @@ impl From<SessionError> for Refusal {
             SessionFailure::Refused(Refused::RateLimited { wait }) => Self::Rate(wait),
             _ => Self::Other(error.to_string()),
         }
-    }
-}
-
-fn finish(reason: &FinishReason) -> String {
-    match reason {
-        FinishReason::Stop => "stop".into(),
-        FinishReason::ToolCalls => "tool_calls".into(),
-        FinishReason::Length => "length".into(),
-        FinishReason::ContentFilter => "content_filter".into(),
-        FinishReason::Other(other) => other.clone(),
     }
 }

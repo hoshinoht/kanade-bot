@@ -31,8 +31,8 @@ use crate::domain::scheduler::{Clock, IdSource, ScheduleStore, Scope};
 use crate::infrastructure::llm::governor::{SentRequest, Session, SessionError, SessionFailure};
 use crate::infrastructure::llm::identity::PassthroughSession;
 use crate::infrastructure::llm::{
-    ChatRequest, CompletionResponse, ErrorCode, FinishReason, LlmProvider, Message, Sampling,
-    ToolCallRequest, ToolDefinition,
+    ChatRequest, CompletionResponse, ErrorCode, LlmProvider, Message, Sampling, ToolCallRequest,
+    ToolDefinition,
 };
 
 /// Why the reserved clean retry is spent.
@@ -115,16 +115,6 @@ fn heard<'c>(conversation: &'c [Message], speaker: &str, card: &'c [String]) -> 
         question,
         earlier,
         card,
-    }
-}
-
-fn finish_name(reason: &FinishReason) -> String {
-    match reason {
-        FinishReason::Stop => "stop".into(),
-        FinishReason::ToolCalls => "tool_calls".into(),
-        FinishReason::Length => "length".into(),
-        FinishReason::ContentFilter => "content_filter".into(),
-        FinishReason::Other(other) => other.clone(),
     }
 }
 
@@ -241,7 +231,7 @@ impl Loop<'_, '_> {
             reasoning_tokens: response.reasoning_tokens,
             content: response.content.clone(),
             requested_tools: response.tool_calls.iter().map(|c| c.name.clone()).collect(),
-            finish_reason: Some(finish_name(&response.finish_reason)),
+            finish_reason: Some(response.finish_reason.as_str().to_owned()),
             bundles,
             latency_ms,
             clean,

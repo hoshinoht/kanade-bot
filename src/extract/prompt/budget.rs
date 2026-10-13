@@ -30,18 +30,9 @@ pub fn estimate_tokens(text: &str) -> usize {
     ids * TOKENS_PER_ID + (rest as f64 / CHARS_PER_TOKEN) as usize
 }
 
-fn content(message: &Message) -> &str {
-    match message {
-        Message::System { content } | Message::User { content } | Message::Tool { content, .. } => {
-            content
-        }
-        Message::Assistant { content, .. } => content.as_deref().unwrap_or_default(),
-    }
-}
-
 /// Every message's content joined by blank lines, as v4 logs the prompt.
 pub fn prompt_text(messages: &[Message]) -> String {
-    let contents: Vec<&str> = messages.iter().map(content).collect();
+    let contents: Vec<&str> = messages.iter().map(Message::text).collect();
     contents.join("\n\n")
 }
 

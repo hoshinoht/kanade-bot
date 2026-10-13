@@ -46,26 +46,11 @@ fn usage() -> Error {
 }
 
 pub fn parse(arguments: &[String]) -> Result<Args, Error> {
-    let (mut dry_run, mut dir) = (false, None);
-    let mut rest = arguments;
-    while let Some((flag, tail)) = rest.split_first() {
-        rest = tail;
-        match flag.as_str() {
-            "--dry-run" if !dry_run => dry_run = true,
-            "--dir" if dir.is_none() => {
-                let Some((value, tail)) = rest.split_first() else {
-                    return Err(usage());
-                };
-                if value.is_empty() {
-                    return Err(usage());
-                }
-                rest = tail;
-                dir = Some(PathBuf::from(value));
-            }
-            _ => return Err(usage()),
-        }
-    }
-    Ok(Args { dry_run, dir })
+    let ([dry_run], [dir]) = super::options(arguments, ["--dry-run"], ["--dir"], usage)?;
+    Ok(Args {
+        dry_run,
+        dir: dir.map(PathBuf::from),
+    })
 }
 
 pub async fn run(args: &Args, environment: &BTreeMap<String, String>) -> Result<(), Error> {

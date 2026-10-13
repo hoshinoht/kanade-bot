@@ -7,18 +7,16 @@ use std::sync::{Arc, Mutex};
 use serde_json::json;
 
 use super::delivery::{Cause, Deletion, Delivery, DeliveryRecord, Placeholder, append_error, lock};
+use super::run::{cut_signal, ended};
 use super::{Answerer, Asked, ChatDriver, Job, Prepared, Surface, new_row_id};
-use crate::chat::answer::{
-    AnswerFailure, AnswerSettings, Generation, Question, interaction, with_persona,
-};
+use crate::chat::answer::{AnswerSettings, Generation, Question, interaction, with_persona};
 use crate::chat::context::{ChatTurn, TurnRole, assemble, system_prompt};
-use crate::chat::gate::{IncomingMessage, is_chat_channel};
+use crate::chat::gate::{ChannelInfo, IncomingMessage, is_chat_channel};
 use crate::chat::pilot::{ChatPilot, failure_reply};
 use crate::chat::sanitize::reply_parts;
 use crate::chat::tools::ToolContext;
 use crate::domain::members::member_name;
 use crate::domain::model_log::ChatInteraction;
-use crate::infrastructure::llm::governor::{Charge, SessionError, SessionFailure};
 
 /// One rejected proposal's server-side card facts. They never come from a
 /// Discord message, so a reactor cannot steer the prompt by editing text.
@@ -84,21 +82,6 @@ fn prompt(request: &FollowUpRequest, prepared: &Prepared) -> String {
     format!(
         "[Note from the scheduler, not from anybody in the channel.] {who} just reacted ❌ on the card you posted for them, so it is off and nothing has changed. The card said: {facts}. Write one short message to {who}: say the card is off, and ask what they would like instead -- the day, the time, the boss, whoever is on it, whichever of those you cannot tell from the card. Ask, do not guess, and do not apologise at length. You cannot post a card in this message; their reply comes back to you as a normal message and you can post the corrected card then."
     )
-}
-
-fn ended() -> Generation {
-    Generation::failed(AnswerFailure::Session(SessionError {
-        failure: SessionFailure::Ended,
-        charge: Charge::Refunded,
-    }))
-}
-
-async fn cut_signal(mut cut: tokio::sync::watch::Receiver<bool>) {
-    while !*cut.borrow_and_update() {
-        if cut.changed().await.is_err() {
-            std::future::pending::<()>().await;
-        }
-    }
 }
 
 /// A follow-up is not a normal admitted question, but it still has to settle
@@ -325,34 +308,32 @@ impl<A: Answerer, S: Surface> RejectionFollowUp for ChatDriver<A, S> {
 }
 
 impl<A: Answerer, S: Surface> ChatDriver<A, S> {
+    /// Whether chat is on, ready and allowed in `channel_id`, with the
+    /// channel's live record.
+    fn chat_allowed(&self, channel_id: &str) -> (bool, Option<ChannelInfo>) {
+        let setup = self.shared.answerer.setup();
+        let channels = self.shared.answerer.channels();
+        let channel = channels.channel(channel_id);
+        let allowed = setup.enabled
+            && setup.ready
+            && setup.pilot.configured()
+            && is_chat_channel(channel.as_ref(), channels, &setup.pilot);
+        (allowed, channel)
+    }
+
     async fn offer_follow_up(&self, request: FollowUpRequest) {
         if request.source_ids.is_empty() || request.cards.is_empty() {
             return;
         }
-        let setup = self.shared.answerer.setup();
-        let channels = self.shared.answerer.channels();
-        let channel = channels.channel(&request.channel_id);
-        if !(setup.enabled
-            && setup.ready
-            && setup.pilot.configured()
-            && is_chat_channel(channel.as_ref(), channels, &setup.pilot))
+        if !self.chat_allowed(&request.channel_id).0
+            || !self.shared.answerer.owns_rejection(&request).await
         {
             return;
         }
-        if !self.shared.answerer.owns_rejection(&request).await {
-            return;
-        }
-
         // The source load above can wait; make both live checks again before
         // reserving the channel's in-memory cooldown.
-        let setup = self.shared.answerer.setup();
-        let channels = self.shared.answerer.channels();
-        let channel = channels.channel(&request.channel_id);
-        if !(setup.enabled
-            && setup.ready
-            && setup.pilot.configured()
-            && is_chat_channel(channel.as_ref(), channels, &setup.pilot))
-        {
+        let (allowed, channel) = self.chat_allowed(&request.channel_id);
+        if !allowed {
             return;
         }
         let origin_id = channel

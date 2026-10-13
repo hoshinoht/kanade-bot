@@ -52,39 +52,3 @@ fn pattern_i(source: &str) -> Regex {
 fn is_word(c: char) -> bool {
     c.is_alphanumeric() || c == '_'
 }
-
-/// Python `str.splitlines()` (`\r\n` counts once).
-fn splitlines(text: &str) -> Vec<&str> {
-    let is_break = |c: char| {
-        matches!(
-            c,
-            '\n' | '\r'
-                | '\x0b'
-                | '\x0c'
-                | '\x1c'
-                | '\x1d'
-                | '\x1e'
-                | '\u{85}'
-                | '\u{2028}'
-                | '\u{2029}'
-        )
-    };
-    let mut lines = Vec::new();
-    let mut start = 0;
-    let mut chars = text.char_indices().peekable();
-    while let Some((at, c)) = chars.next() {
-        if !is_break(c) {
-            continue;
-        }
-        lines.push(&text[start..at]);
-        start = at + c.len_utf8();
-        if c == '\r' && chars.peek().is_some_and(|&(_, next)| next == '\n') {
-            chars.next();
-            start += 1;
-        }
-    }
-    if start < text.len() {
-        lines.push(&text[start..]);
-    }
-    lines
-}

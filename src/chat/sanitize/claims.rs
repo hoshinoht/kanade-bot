@@ -4,7 +4,8 @@ use std::sync::LazyLock;
 
 use regex::Regex;
 
-use super::{pattern_i, splitlines};
+use super::pattern_i;
+use crate::chat::persona::split_lines;
 use crate::domain::pytext::strip;
 
 /// A write claim that must never survive a refusal.
@@ -22,7 +23,7 @@ pub fn claims_new_card(text: &str) -> bool {
 
 /// Drop lines claiming a new card when none was posted.
 pub fn strip_false_card_claim(text: &str) -> String {
-    let kept: Vec<&str> = splitlines(text)
+    let kept: Vec<&str> = split_lines(text)
         .into_iter()
         .filter(|line| !READ_FALSE_CLAIM.is_match(line))
         .collect();

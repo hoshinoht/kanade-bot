@@ -3,7 +3,7 @@
 
 use std::{collections::BTreeMap, path::PathBuf, time::Duration};
 
-use super::{Error, HttpConfig, non_empty, parse_bounded_u64};
+use super::{Error, HttpConfig, non_empty, parse_bounded_u64, refuse_plain};
 
 /// The only callback path the admin origin serves.
 const CALLBACK_PATH: &str = "/api/admin/auth/discord/callback";
@@ -14,6 +14,38 @@ pub struct DiscordOAuthSettings {
     pub client_secret_file: PathBuf,
     /// Exact redirect URI registered with Discord.
     pub redirect_uri: String,
+}
+
+impl DiscordOAuthSettings {
+    /// The `[client id, secret file, redirect URI]` keys, all set or all unset;
+    /// `purpose` names the sign-in when only some are. The redirect URI is the
+    /// caller's to check.
+    pub(super) fn from_keys(
+        values: &BTreeMap<String, String>,
+        keys: [&str; 3],
+        purpose: &str,
+    ) -> Result<Option<Self>, Error> {
+        let [id_key, secret_key, uri_key] = keys;
+        let parts = keys.map(|key| non_empty(values, key));
+        let [Some(client_id), Some(secret_file), Some(redirect_uri)] = parts else {
+            if parts.iter().any(Option::is_some) {
+                return Err(Error::Configuration(format!(
+                    "{purpose} needs {id_key}, {secret_key} and {uri_key}"
+                )));
+            }
+            return Ok(None);
+        };
+        if client_id.len() > 20 || !client_id.bytes().all(|byte| byte.is_ascii_digit()) {
+            return Err(Error::Configuration(format!(
+                "{id_key} must be a Discord application id"
+            )));
+        }
+        Ok(Some(Self {
+            client_id: client_id.to_owned(),
+            client_secret_file: PathBuf::from(secret_file),
+            redirect_uri: redirect_uri.to_owned(),
+        }))
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -43,13 +75,12 @@ impl AdminAuthSettings {
         values: &BTreeMap<String, String>,
         http: &HttpConfig,
     ) -> Result<Self, Error> {
-        for plain in ["KANADE_ADMIN_TOKEN", "KANADE_ADMIN_DISCORD_CLIENT_SECRET"] {
-            if non_empty(values, plain).is_some() {
-                return Err(Error::Configuration(format!(
-                    "{plain} is not read; use {plain}_FILE"
-                )));
-            }
-        }
+        refuse_plain(values, "KANADE_ADMIN_TOKEN", "KANADE_ADMIN_TOKEN_FILE")?;
+        refuse_plain(
+            values,
+            "KANADE_ADMIN_DISCORD_CLIENT_SECRET",
+            "KANADE_ADMIN_DISCORD_CLIENT_SECRET_FILE",
+        )?;
         let tailscale_logins = tailscale_logins(values)?;
         if !tailscale_logins.is_empty() {
             match http.trusted_proxy {
@@ -116,42 +147,23 @@ fn discord(
     values: &BTreeMap<String, String>,
     http: &HttpConfig,
 ) -> Result<Option<DiscordOAuthSettings>, Error> {
-    let parts = [
-        non_empty(values, "KANADE_ADMIN_DISCORD_CLIENT_ID"),
-        non_empty(values, "KANADE_ADMIN_DISCORD_CLIENT_SECRET_FILE"),
-        non_empty(values, "KANADE_ADMIN_DISCORD_REDIRECT_URI"),
+    let keys = [
+        "KANADE_ADMIN_DISCORD_CLIENT_ID",
+        "KANADE_ADMIN_DISCORD_CLIENT_SECRET_FILE",
+        "KANADE_ADMIN_DISCORD_REDIRECT_URI",
     ];
-    let [Some(client_id), Some(secret_file), Some(redirect_uri)] = parts else {
-        if parts.iter().any(Option::is_some) {
-            return Err(Error::Configuration(
-                "Discord sign-in needs KANADE_ADMIN_DISCORD_CLIENT_ID, \
-                 KANADE_ADMIN_DISCORD_CLIENT_SECRET_FILE and KANADE_ADMIN_DISCORD_REDIRECT_URI"
-                    .into(),
-            ));
-        }
+    let Some(settings) = DiscordOAuthSettings::from_keys(values, keys, "Discord sign-in")? else {
         return Ok(None);
     };
-    if client_id.is_empty()
-        || client_id.len() > 20
-        || !client_id.bytes().all(|byte| byte.is_ascii_digit())
-    {
-        return Err(Error::Configuration(
-            "KANADE_ADMIN_DISCORD_CLIENT_ID must be a Discord application id".into(),
-        ));
-    }
     let admin_host = http.admin_host.as_deref().ok_or_else(|| {
         Error::Configuration("KANADE_ADMIN_HOST is required for Discord sign-in".into())
     })?;
-    if !redirect_matches(redirect_uri, admin_host) {
+    if !redirect_matches(&settings.redirect_uri, admin_host) {
         return Err(Error::Configuration(format!(
             "KANADE_ADMIN_DISCORD_REDIRECT_URI must be https://KANADE_ADMIN_HOST{CALLBACK_PATH}"
         )));
     }
-    Ok(Some(DiscordOAuthSettings {
-        client_id: client_id.to_owned(),
-        client_secret_file: PathBuf::from(secret_file),
-        redirect_uri: redirect_uri.to_owned(),
-    }))
+    Ok(Some(settings))
 }
 
 /// Exactly `https://{admin_host}{CALLBACK_PATH}`; `http:` only for loopback development hosts.

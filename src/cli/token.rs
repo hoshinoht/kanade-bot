@@ -27,30 +27,13 @@ fn usage() -> Error {
 }
 
 pub fn parse(arguments: &[String]) -> Result<Args, Error> {
-    let Some((verb, mut rest)) = arguments.split_first() else {
-        return Err(usage());
-    };
+    let (verb, rest) = arguments.split_first().ok_or_else(usage)?;
     if verb != "rotate" {
         return Err(usage());
     }
-    let (mut out, mut force) = (None, false);
-    while let Some((flag, tail)) = rest.split_first() {
-        rest = tail;
-        match flag.as_str() {
-            "--force" if !force => force = true,
-            "--out" if out.is_none() => {
-                let Some((value, tail)) = rest.split_first().filter(|(value, _)| !value.is_empty())
-                else {
-                    return Err(usage());
-                };
-                rest = tail;
-                out = Some(PathBuf::from(value));
-            }
-            _ => return Err(usage()),
-        }
-    }
+    let ([force], [out]) = super::options(rest, ["--force"], ["--out"], usage)?;
     Ok(Args {
-        out: out.ok_or_else(usage)?,
+        out: out.map(PathBuf::from).ok_or_else(usage)?,
         force,
     })
 }

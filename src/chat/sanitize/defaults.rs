@@ -74,16 +74,17 @@ fn singular_next_run(text: &str) -> bool {
         return false;
     }
     let remaining = NEXT_RUN.replace_all(text, " ");
-    let remaining = FOR_ME.replace_all(&remaining, " ");
-    if !remaining
+    only_words(&FOR_ME.replace_all(&remaining, " "), NEXT_RUN_WORDS)
+}
+
+/// Nothing but ASCII letters, spaces and apostrophes, and every word in `allowed`.
+fn only_words(remaining: &str, allowed: &[&str]) -> bool {
+    remaining
         .chars()
         .all(|ch| ch.is_ascii_alphabetic() || ch.is_ascii_whitespace() || ch == '\'' || ch == '’')
-    {
-        return false;
-    }
-    remaining
-        .split_whitespace()
-        .all(|word| NEXT_RUN_WORDS.contains(&word.to_lowercase().as_str()))
+        && remaining
+            .split_whitespace()
+            .all(|word| allowed.contains(&word.to_ascii_lowercase().as_str()))
 }
 
 fn names_a_person(text: &str) -> bool {
@@ -153,16 +154,7 @@ fn self_only_schedule(text: &str) -> bool {
     if !SELF_REFERENCE.is_match(text) {
         return false;
     }
-    let remaining = SELF_REFERENCE.replace_all(text, " ");
-    if !remaining
-        .chars()
-        .all(|ch| ch.is_ascii_alphabetic() || ch.is_ascii_whitespace() || ch == '\'' || ch == '’')
-    {
-        return false;
-    }
-    remaining
-        .split_whitespace()
-        .all(|word| SELF_CONTEXT_WORDS.contains(&word.to_ascii_lowercase().as_str()))
+    only_words(&SELF_REFERENCE.replace_all(text, " "), SELF_CONTEXT_WORDS)
 }
 
 /// The question with the bot's own user and role mentions removed.

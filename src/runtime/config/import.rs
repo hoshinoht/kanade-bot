@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 
 use chrono_tz::Tz;
 
-use super::{Error, FileSettings, StoreSettings};
+use super::{Error, FileSettings, StoreSettings, non_empty, timezone};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ImportConfig {
@@ -16,12 +16,7 @@ pub struct ImportConfig {
 
 impl ImportConfig {
     pub fn from_mapping(values: &BTreeMap<String, String>) -> Result<Self, Error> {
-        let timezone = super::non_empty(values, "KANADE_TIMEZONE")
-            .ok_or_else(|| Error::Configuration("KANADE_TIMEZONE is required".into()))?
-            .parse::<Tz>()
-            .map_err(|_| {
-                Error::Configuration("KANADE_TIMEZONE must be a valid IANA timezone".into())
-            })?;
+        let timezone = timezone(non_empty(values, "KANADE_TIMEZONE"))?;
         Ok(Self {
             timezone,
             store: StoreSettings::from_mapping(values)?,

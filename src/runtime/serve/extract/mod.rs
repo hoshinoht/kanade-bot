@@ -53,7 +53,7 @@ use crate::{
             CallContext, DEFAULT_DEBOUNCE, DEFAULT_DRAIN_INTERVAL, Deps, Extractor, Pipeline,
             PipelineConfig, SelfServiceConfig, SelfServiceDeps,
         },
-        redirect::{PublicPortalLinks, SelfServiceMode},
+        redirect::PublicPortalLinks,
         rescan::Rescans,
     },
     infrastructure::{
@@ -134,7 +134,7 @@ pub struct Inputs<T> {
 /// The planner's view of the saved `self_service` section.
 fn self_service_config(saved: &SelfService) -> SelfServiceConfig {
     SelfServiceConfig {
-        mode: SelfServiceMode::parse(saved.mode.as_str()).unwrap_or_default(),
+        mode: saved.mode,
         public_portal_open: saved.public_portal,
     }
 }

@@ -12,7 +12,8 @@ use super::fence::fenced;
 use super::listing::Block;
 use super::personal::{split, strip_context_copies};
 use super::tidy::SCHEDULE_RUN_LINE;
-use super::{pattern, pattern_i, splitlines};
+use super::{pattern, pattern_i};
+use crate::chat::persona::split_lines;
 use crate::chat::tools::{ToolName, ToolOutcome};
 use crate::domain::pytext::strip;
 
@@ -41,7 +42,7 @@ pub fn canonical_schedule_output(outcomes: &[ToolOutcome]) -> Option<&str> {
         .find(|outcome| {
             outcome.name == ToolName::GetSchedule.as_str()
                 && outcome.ok
-                && splitlines(&outcome.output)
+                && split_lines(&outcome.output)
                     .iter()
                     .any(|line| RECORD_ID.is_match(line))
         })
@@ -163,7 +164,7 @@ pub(super) fn ground(reply: &str, outcomes: &[ToolOutcome]) -> Grounded {
         .map(|run| (run.id.clone(), run.label.clone()))
         .collect();
     let listed = Listed::of(schedule);
-    let lines = splitlines(reply);
+    let lines = split_lines(reply);
     let code = fenced_lines(reply, &lines);
     let prose = |at: usize| at < lines.len() && !code[at];
     let known = |line: &str| mentions_id(line, &ids);
@@ -339,7 +340,7 @@ pub(super) fn ground(reply: &str, outcomes: &[ToolOutcome]) -> Grounded {
             if inserted[number] {
                 rebuilt.push("");
             }
-            rebuilt.extend(splitlines(piece));
+            rebuilt.extend(split_lines(piece));
             if inserted[number] && end < lines.len() && !blank(end) {
                 rebuilt.push("");
             }

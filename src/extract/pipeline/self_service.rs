@@ -2,7 +2,7 @@
 //! effective mode, and claim the author's once-per-boss-week lead-in only for
 //! a link that will actually be posted.
 
-use chrono::{DateTime, Datelike, Timelike, Utc, Weekday};
+use chrono::{DateTime, Datelike, Timelike, Utc};
 
 use super::call::Kept;
 use super::extractor::Extractor;
@@ -20,18 +20,6 @@ pub(super) struct LinkPlan {
     pub link: RedirectLink,
     pub keep_card: bool,
     pub author_id: String,
-}
-
-fn day_code(weekday: Weekday) -> &'static str {
-    match weekday {
-        Weekday::Mon => "Mon",
-        Weekday::Tue => "Tue",
-        Weekday::Wed => "Wed",
-        Weekday::Thu => "Thu",
-        Weekday::Fri => "Fri",
-        Weekday::Sat => "Sat",
-        Weekday::Sun => "Sun",
-    }
 }
 
 impl<S, P, X, O> Extractor<S, P, X, O>
@@ -152,7 +140,7 @@ where
             (Some(at), _) => {
                 let local = at.with_timezone(&self.config.zone);
                 (
-                    day_code(local.weekday()).to_owned(),
+                    local.weekday().to_string(),
                     format!("{:02}:{:02}", local.hour(), local.minute()),
                 )
             }
@@ -164,7 +152,7 @@ where
                     ..
                 },
             ) => (
-                day_code(*weekday).to_owned(),
+                weekday.to_string(),
                 format!("{:02}:{:02}", time.hour(), time.minute()),
             ),
             _ => (String::new(), String::new()),

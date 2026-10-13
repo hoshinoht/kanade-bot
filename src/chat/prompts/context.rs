@@ -76,7 +76,7 @@ pub fn clock_header<A: TimeZone, B: TimeZone>(
 
 /// Runtime-model fact line; an unset model is named as such, never invented.
 pub fn runtime_line(model: &str) -> String {
-    let named = crate::chat::persona::py_strip(model);
+    let named = crate::domain::pytext::strip(model);
     let model = if named.is_empty() {
         "an unnamed model".to_owned()
     } else {
@@ -92,7 +92,7 @@ pub fn runtime_line(model: &str) -> String {
 
 /// Channel-scoped current-card context, or `""` when there is no card.
 pub fn focus_line(card: &str) -> String {
-    let text = crate::chat::persona::py_strip(card);
+    let text = crate::domain::pytext::strip(card);
     if text.is_empty() {
         return String::new();
     }
