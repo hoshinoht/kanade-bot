@@ -7,7 +7,7 @@ use serde::Serialize;
 use super::{
     consequence::consequence,
     history::{self as diff, RowChange},
-    inbox::slot,
+    inbox::{slot, value},
     inbox_past::{Decider, decider},
     iso_date, iso_instant,
     week::Context,
@@ -15,8 +15,8 @@ use super::{
 };
 use crate::domain::{
     drafts::{
-        DraftOp, DraftScope, DraftStatus, Entity, FieldValue, LoadedDraft, MergeConflict, Removal,
-        StagedOp, Target,
+        DraftOp, DraftScope, DraftStatus, Entity, LoadedDraft, MergeConflict, Removal, StagedOp,
+        Target,
     },
     history::{ChangeRecord, RecordError, RowKey, changed_rows},
     ids::short_id,
@@ -410,15 +410,6 @@ pub fn detail(
             .iter()
             .map(|staged| staged_row(ctx, current, staged))
             .collect(),
-    }
-}
-
-fn value(value: Option<&FieldValue>) -> String {
-    match value {
-        None | Some(FieldValue::Text(None)) => "—".into(),
-        Some(FieldValue::Text(Some(text))) => text.clone(),
-        Some(FieldValue::Set(items)) if items.is_empty() => "—".into(),
-        Some(FieldValue::Set(items)) => items.join(", "),
     }
 }
 
