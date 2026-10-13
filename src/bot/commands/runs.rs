@@ -100,22 +100,12 @@ impl RunCommand {
             Ok(()) | Err(SchedulerError::AlreadyApplied { .. }) => {}
             Err(error) => return Err(refused(error)),
         }
-        everything(&self.ctx)
-            .await?
-            .runs
-            .into_iter()
-            .find(|run| run.id == run_id)
-            .ok_or_else(|| CommandError::Internal(format!("run {run_id} vanished")))
+        self.reload(run_id).await
     }
 
     async fn amend_run(&self, invocation: &Invocation) -> Result<InteractionReply, CommandError> {
         let args = Args(&invocation.options);
-        let (_, run) = load_run(
-            &self.ctx,
-            &invocation.invoker,
-            args.text("run_id").unwrap_or_default(),
-        )
-        .await?;
+        let run = self.picked_run(invocation).await?;
         let zone = self.ctx.policy.zone();
         let to = parse_when(args.text("to").unwrap_or_default(), zone, self.ctx.now())
             .map_err(CommandError::User)?;
@@ -132,12 +122,7 @@ impl RunCommand {
 
     async fn set_status(&self, invocation: &Invocation) -> Result<InteractionReply, CommandError> {
         let args = Args(&invocation.options);
-        let (_, run) = load_run(
-            &self.ctx,
-            &invocation.invoker,
-            args.text("run_id").unwrap_or_default(),
-        )
-        .await?;
+        let run = self.picked_run(invocation).await?;
         let status = RunStatus::parse(args.text("state").unwrap_or_default())
             .map_err(|error| CommandError::User(error.to_string()))?;
         // A slash change is a chat decision: announced, without the portal mark.
@@ -168,12 +153,7 @@ impl RunCommand {
 
     async fn swap_people(&self, invocation: &Invocation) -> Result<InteractionReply, CommandError> {
         let args = Args(&invocation.options);
-        let (_, run) = load_run(
-            &self.ctx,
-            &invocation.invoker,
-            args.text("run_id").unwrap_or_default(),
-        )
-        .await?;
+        let run = self.picked_run(invocation).await?;
         let remove: Vec<String> = ["out", "out2"]
             .iter()
             .filter_map(|name| args.user(name))
@@ -262,31 +242,41 @@ impl RunCommand {
                         },
                     )
                     .await
-                    .map(|updated| {
-                        InteractionReply::ephemeral(format!(
-                            "Noted: **{answer}** for run `#{}` ({}).",
-                            short_id(&id),
-                            status_label(updated.status)
-                        ))
-                    });
+                    .map(|updated| noted(answer, &id, &updated));
             }
             Err(error) => return Err(refused(error)),
         };
         if result.retract {
             self.ctx.retract_decline(id.clone(), user.clone()).await;
         }
-        let updated = everything(&self.ctx)
+        let updated = self.reload(&id).await?;
+        Ok(noted(answer, &id, &updated))
+    }
+
+    /// The run as it stands now.
+    async fn reload(&self, run_id: &str) -> Result<Run, CommandError> {
+        everything(&self.ctx)
             .await?
             .runs
             .into_iter()
-            .find(|run| run.id == id)
-            .ok_or_else(|| CommandError::Internal(format!("run {id} vanished")))?;
-        Ok(InteractionReply::ephemeral(format!(
-            "Noted: **{answer}** for run `#{}` ({}).",
-            short_id(&id),
-            status_label(updated.status)
-        )))
+            .find(|run| run.id == run_id)
+            .ok_or_else(|| CommandError::Internal(format!("run {run_id} vanished")))
     }
+
+    /// The run the `run_id` option picks, if the invoker may change it.
+    async fn picked_run(&self, invocation: &Invocation) -> Result<Run, CommandError> {
+        let run_id = Args(&invocation.options).text("run_id").unwrap_or_default();
+        let (_, run) = load_run(&self.ctx, &invocation.invoker, run_id).await?;
+        Ok(run)
+    }
+}
+
+fn noted(answer: &str, run_id: &str, updated: &Run) -> InteractionReply {
+    InteractionReply::ephemeral(format!(
+        "Noted: **{answer}** for run `#{}` ({}).",
+        short_id(run_id),
+        status_label(updated.status)
+    ))
 }
 
 impl SlashCommand for RunCommand {
