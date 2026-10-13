@@ -13,6 +13,7 @@ pub mod presence;
 pub mod public;
 pub mod rescan;
 pub mod server;
+pub(crate) mod sse;
 pub mod state;
 pub mod write;
 

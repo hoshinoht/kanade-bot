@@ -138,6 +138,11 @@ async fn identity_image(site: &Site, stem: &str, request: &HeaderMap) -> Respons
         None if stem == "avatar" => ("image/svg+xml", monogram(&live_name(site)).into_bytes()),
         None => ("image/svg+xml", WASH.as_bytes().to_vec()),
     };
+    etagged(content_type, bytes, request)
+}
+
+/// `bytes` with a content ETag; a matching `If-None-Match` is a 304.
+pub(crate) fn etagged(content_type: &str, bytes: Vec<u8>, request: &HeaderMap) -> Response {
     let etag = format!("\"{}\"", hex(&digest(&SHA256, &bytes).as_ref()[..8]));
     let fresh = request
         .get(header::IF_NONE_MATCH)

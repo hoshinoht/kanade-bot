@@ -16,7 +16,7 @@ use std::{
 
 use chrono::{DateTime, TimeDelta, Utc};
 
-use super::{crypto, wire};
+use super::{audit::AuditEvent, crypto, wire};
 
 pub const AUTHORIZE_URL: &str = "https://discord.com/oauth2/authorize";
 /// The admin origin's callback.
@@ -316,6 +316,80 @@ impl DiscordLogin {
             verifier: pending.verifier,
             next: pending.next,
         })
+    }
+
+    /// The rest of a callback whose state matched, the same on both origins:
+    /// Discord's own `error` (never echoed), the code, the token exchange,
+    /// the identity (only for an exactly-`identify` grant, a broader one is
+    /// refused without using the token at all) and the token's revocation,
+    /// one call per token, before the identity is used. A failed revocation
+    /// goes to `audit`; a rate limit cools the login down. A refusal is the
+    /// audit reason and the `login_error` code.
+    pub async fn identify(
+        &self,
+        pairs: &[(String, String)],
+        resumed: &Resumed,
+        now: impl Fn() -> DateTime<Utc>,
+        audit: impl FnOnce(AuditEvent),
+    ) -> Result<DiscordUser, (&'static str, &'static str)> {
+        let cooled = |wait| {
+            self.cool_down(now(), wait);
+            ("discord_rate_limited", "unavailable")
+        };
+        if wire::query_value(pairs, "error").is_some() {
+            return Err(("denied", "denied"));
+        }
+        let Some(code) =
+            wire::query_value(pairs, "code").filter(|code| (1..=512).contains(&code.len()))
+        else {
+            return Err(("no_code", "discord"));
+        };
+        if self.cooling_down(now()) {
+            return Err(("discord_cooling_down", "unavailable"));
+        }
+        let grant = match self
+            .api
+            .exchange_code(CodeExchange {
+                client: &self.client,
+                code: &code,
+                code_verifier: &resumed.verifier,
+            })
+            .await
+        {
+            Ok(grant) => grant,
+            Err(DiscordError::Rejected) => return Err(("code_rejected", "discord")),
+            Err(DiscordError::RateLimited(wait)) => return Err(cooled(wait)),
+            Err(_) => return Err(("discord_unavailable", "unavailable")),
+        };
+        let user = if grant.identify_only() {
+            Some(self.api.current_user(&grant.token).await)
+        } else {
+            None
+        };
+        let user_id = user
+            .as_ref()
+            .and_then(|user| user.as_ref().ok())
+            .map(|user| user.id.clone());
+        if let Err(error) = self.api.revoke(&self.client, grant.token).await {
+            if let DiscordError::RateLimited(wait) = error {
+                self.cool_down(now(), wait);
+            }
+            audit(AuditEvent::RevokeFailed {
+                reason: match error {
+                    DiscordError::RateLimited(_) => "rate_limited",
+                    DiscordError::Rejected => "rejected",
+                    _ => "unavailable",
+                },
+                user: user_id,
+            });
+        }
+        match user {
+            None => Err(("scope", "discord")),
+            Some(Ok(user)) => Ok(user),
+            Some(Err(DiscordError::Rejected)) => Err(("user_rejected", "discord")),
+            Some(Err(DiscordError::RateLimited(wait))) => Err(cooled(wait)),
+            Some(Err(_)) => Err(("discord_unavailable", "unavailable")),
+        }
     }
 }
 
