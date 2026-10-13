@@ -5,10 +5,8 @@
 
 use std::sync::Arc;
 
-use chrono::TimeDelta;
 use kanade::bot::delivery::cards::redesign::{
-    MAX_COMPONENTS, MAX_EMBEDS, MAX_ROW_BUTTONS, MAX_ROWS, NO_MARKS, OPEN_IN_PORTAL,
-    component_count,
+    MAX_COMPONENTS, MAX_EMBEDS, MAX_ROW_BUTTONS, MAX_ROWS, OPEN_IN_PORTAL, component_count,
 };
 use kanade::bot::delivery::cards::{self, Card, CardArt, CardContext, V2Kit, fetch_art};
 use kanade::bot::transport::{COMPONENTS_V2, OutgoingMessage, legacy_rows, v2_body_valid};
@@ -20,7 +18,9 @@ use kanade::domain::schedule::ScheduleSnapshot;
 use twilight_model::channel::message::component::{Button, ButtonStyle};
 use twilight_model::channel::message::{Component, MessageFlags};
 
-use super::{KALOS, MALEFIC, art, context, members, redesigned, week};
+use super::{
+    KALOS, MALEFIC, art, context, countdown, day_of, kalos_copies, members, redesigned_v5, week,
+};
 use crate::cards::catalog;
 
 const ORIGIN: &str = "https://portal.example";
@@ -33,19 +33,6 @@ fn portal(origin: Option<&str>, open: bool) -> V2Kit {
     }
 }
 
-fn day_of(run_ids: &[&str]) -> IntentContent {
-    IntentContent::DayOf {
-        run_ids: run_ids.iter().map(|id| (*id).to_owned()).collect(),
-    }
-}
-
-fn countdown(run_id: &str) -> IntentContent {
-    IntentContent::Countdown {
-        run_id: run_id.into(),
-        minutes: 15,
-    }
-}
-
 fn styled<'a>(
     schedule: &'a ScheduleSnapshot,
     roster: &'a Roster,
@@ -54,14 +41,7 @@ fn styled<'a>(
 ) -> CardContext<'a> {
     CardContext {
         v2: kit,
-        ..redesigned(
-            schedule,
-            roster,
-            table,
-            AttendancePolicy::V5,
-            false,
-            &NO_MARKS,
-        )
+        ..redesigned_v5(schedule, roster, table)
     }
 }
 
@@ -227,23 +207,7 @@ async fn several_runs_or_an_unsafe_id_open_the_portal_root() {
 #[tokio::test]
 async fn the_largest_card_stays_within_the_component_limits() {
     let (mut schedule, roster, table) = (week(), members(), catalog());
-    let base = schedule
-        .runs
-        .iter()
-        .find(|run| run.id == KALOS)
-        .unwrap()
-        .clone();
-    schedule.runs.clear();
-    let mut run_ids = Vec::new();
-    for index in 0..25 {
-        let id = format!("{index:08x}-0000-4000-8000-000000000000");
-        schedule.runs.push(kanade::domain::schedule::Run {
-            id: id.clone(),
-            datetime: base.datetime + TimeDelta::minutes(10 * index),
-            ..base.clone()
-        });
-        run_ids.push(id);
-    }
+    let run_ids = kalos_copies(&mut schedule, 25, |_| {});
     let kit = portal(Some(ORIGIN), true);
     let ctx = styled(&schedule, &roster, &table, Some(&kit));
     let content = IntentContent::DayOf { run_ids };

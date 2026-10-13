@@ -8,16 +8,12 @@
 //! card's whole run list singles its run out only among the runs the asker's
 //! words fit.
 
-use std::sync::Arc;
-use std::time::Duration;
-
 use chrono::Utc;
-use kanade::chat::answer::{AnswerDeps, AnswerSettings, Generation, Question, answer};
+use kanade::chat::answer::Generation;
 use kanade::chat::context::{
     ChatTurn, FIELD_LIMIT, RUN_CONTEXT_HEADER, RUN_CONTEXT_LIMIT, RunContext, TurnRole, assemble,
     budgeted, run_block, system_prompt,
 };
-use kanade::chat::persona::{CompiledPersona, PersonaId, PersonaRoot};
 use kanade::chat::tools::REFUSED;
 use kanade::chat::tools::bundles::ToolOffer;
 use kanade::domain::notify::{
@@ -27,17 +23,14 @@ use kanade::domain::proposals::{CardDetails, CardPayload, ChangeKind, ProposalCa
 use kanade::domain::scheduler::Clock;
 use kanade::extract::prompt::estimate_tokens;
 use kanade::infrastructure::llm::identity::PassthroughSession;
-use kanade::infrastructure::llm::{
-    CALL_TOKEN_BUDGET, CompletionResponse, FakeAction, FakeProvider, FinishReason, Message,
-    ModelCapabilities, ToolCall,
-};
+use kanade::infrastructure::llm::{CALL_TOKEN_BUDGET, FakeAction, Message};
 use kanade::runtime::serve::chat::run_context;
 use serde_json::{Value, json};
 
 use crate::common::utc;
-use crate::looping::{Ports, said};
-use crate::model::{Scripted, client};
-use crate::world::World;
+use crate::looping::{Ports, ask_full_set, said};
+use crate::wire::kanade;
+use crate::world::{World, member, sgt_run as run};
 
 const MODEL: &str = "synthetic-runctx";
 const JUNIPER: &str = "100000000000000111";
@@ -65,17 +58,6 @@ const CLEARED: &str = "- [c3000005] Hard FA · Thu 08 Oct 12:00 · done";
 /// card's run), the weekly Extreme Kalos tomorrow, a cancelled Hard FA and
 /// next boss week's Hard Limbo; Normal Baldrix tonight in the other channel.
 async fn world() -> World {
-    let run = |id: &str, bosses: &[&str], at: &str, channel: &str, party: &[&str], status: &str| {
-        let week = if at < "2026-10-15" {
-            "2026-10-08T00:00:00+08:00"
-        } else {
-            "2026-10-15T00:00:00+08:00"
-        };
-        json!({"id": id, "bosses": bosses, "at": format!("{at}:00+08:00"), "channel_id": channel,
-               "participants": party, "status": status, "week_start": week, "fixed_run_id": null})
-    };
-    let member =
-        |id: &str, name: &str| json!({"user_id": id, "display_name": name, "has_role": true});
     let party = [JUNIPER, KESTREL, LINDEN, MARLOW, NETTLE];
     World::new(&json!({
         "clock": "2026-10-08T20:45:00+08:00", "timezone": "Asia/Singapore",
@@ -107,16 +89,6 @@ async fn world() -> World {
             ]}
     }))
     .await
-}
-
-fn kanade() -> CompiledPersona {
-    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("config/personas");
-    let root = PersonaRoot::open(&root).expect("tracked personas");
-    let bundle = root
-        .load_bundle(&PersonaId::parse("kanade").expect("id"))
-        .expect("kanade bundle")
-        .value;
-    CompiledPersona::compile(&bundle, None)
 }
 
 /// What `ServeAnswerer::prepare` builds for a question replying to `replied`.
@@ -154,22 +126,11 @@ fn system(world: &World, runs: &str) -> String {
 }
 
 fn calls(calls: &[(&str, Value)]) -> FakeAction {
-    FakeAction::Response(CompletionResponse {
-        reasoning_content: None,
-        reasoning_tokens: None,
-        model: MODEL.into(),
-        content: None,
-        tool_calls: calls
-            .iter()
-            .map(|(name, arguments)| ToolCall {
-                id: format!("call-{name}"),
-                name: (*name).into(),
-                arguments: arguments.to_string(),
-            })
-            .collect(),
-        finish_reason: FinishReason::ToolCalls,
-        usage: None,
-    })
+    crate::model::calls(MODEL, calls)
+}
+
+fn says(text: &str) -> FakeAction {
+    FakeAction::Response(said(MODEL, text))
 }
 
 /// One question over `conversation` with `card` as its trusted context and
@@ -181,41 +142,10 @@ async fn ask(
     actions: Vec<FakeAction>,
     window: usize,
 ) -> (Generation, Ports, Vec<Vec<Message>>) {
-    let mut caps = ModelCapabilities::minimal();
-    caps.function_tools = true;
-    let provider = Arc::new(Scripted {
-        caps,
-        fake: FakeProvider::new(actions),
-    });
-    let (_governor, client) = client(Some(MODEL), Arc::clone(&provider));
-    let deps = AnswerDeps {
-        client: &client,
-        route: None,
-    };
     let mut ctx = world.context(&json!({"author_id": JUNIPER, "channel_id": HOME}));
     ctx.run_context = card.clone();
-    let ports = Ports::default();
-    let generation = {
-        let (guild, mut proposer) = world.question_parts();
-        let question = Question {
-            ctx: &ctx,
-            conversation,
-            profanity: None,
-            reminder: "Keep the tool facts exact.".into(),
-            offer: ToolOffer::full_set(false),
-            settings: AnswerSettings {
-                tool_rounds: 4,
-                timeout: Duration::from_secs(60),
-                reasoning: None,
-                temperature: None,
-                max_output_tokens: RESERVE,
-                model_context_tokens: window,
-                clean_retry: false,
-            },
-        };
-        answer(&deps, question, &guild, &mut proposer, &ports).await
-    };
-    assert_eq!(generation.failure, None, "{:?}", generation.failure);
+    let (generation, ports, provider) =
+        ask_full_set(world, &ctx, MODEL, conversation, actions, window).await;
     let sent = provider
         .fake
         .requests()
@@ -261,13 +191,14 @@ fn posted_runs(ports: &Ports) -> Vec<Option<String>> {
 
 const MOVE_IT: &str = "Juniper: move it to 23:00 tonight";
 
+fn moves(run: &str, to: &str) -> FakeAction {
+    calls(&[("propose_move", json!({"run_query": run, "to_when": to}))])
+}
+
 fn move_carling() -> Vec<FakeAction> {
     vec![
-        calls(&[(
-            "propose_move",
-            json!({"run_query": "c3000001", "to_when": "thu 23:00"}),
-        )]),
-        FakeAction::Response(said(MODEL, "Moving Carling to 23:00.")),
+        moves("c3000001", "thu 23:00"),
+        says("Moving Carling to 23:00."),
     ]
 }
 
@@ -327,13 +258,7 @@ async fn the_card_never_overrides_words_about_another_run() {
         &card.block,
         "Juniper: move the xkalos to saturday 22:00",
     );
-    let actions = vec![
-        calls(&[(
-            "propose_move",
-            json!({"run_query": "c3000001", "to_when": "sat 22:00"}),
-        )]),
-        FakeAction::Response(said(MODEL, "Which one?")),
-    ];
+    let actions = vec![moves("c3000001", "sat 22:00"), says("Which one?")];
     let (generation, ports, _) = ask(&mut world, &card, conversation, actions, 32_768).await;
     refused_with(&generation, &ports, &["c3000002"]);
 }
@@ -490,10 +415,7 @@ async fn a_reply_asking_for_an_extra_run_is_still_an_add() {
         if extra {
             call["extra"] = json!(true);
         }
-        vec![
-            calls(&[("propose_add", call)]),
-            FakeAction::Response(said(MODEL, "Done.")),
-        ]
+        vec![calls(&[("propose_add", call)]), says("Done.")]
     };
     let mut world = world().await;
     let card = day_of(&world).await;
@@ -658,17 +580,25 @@ async fn a_block_over_the_call_budget_is_dropped_and_the_call_succeeds() {
     let with = lone(padded(&world, &card.block, "x", count));
     assert!(estimate(&with, &schemas, reminder) > budget);
 
-    let actions = vec![FakeAction::Response(said(
-        MODEL,
-        "Still on, see you there.",
-    ))];
-    let (generation, _, sent) = ask(&mut world, &card, with, actions, 65_536).await;
+    sent_without_block(&mut world, &card, with, &bare).await;
+}
+
+/// Asked over `with`, a request whose block is over budget: the call goes
+/// out as `bare` and is answered.
+async fn sent_without_block(
+    world: &mut World,
+    card: &RunContext,
+    with: Vec<Message>,
+    bare: &[Message],
+) {
+    let actions = vec![says("Still on, see you there.")];
+    let (generation, _, sent) = ask(world, card, with, actions, 65_536).await;
     assert!(
         generation.reply.contains("Still on"),
         "{}",
         generation.reply
     );
-    assert_eq!(system_sent(&sent[0]), system_sent(&bare));
+    assert_eq!(system_sent(&sent[0]), system_sent(bare));
 }
 
 /// The call-budget path, as the runner counts: CJK padding (3 bytes a
@@ -697,17 +627,7 @@ async fn a_block_over_the_runners_count_is_dropped_too() {
         "the chat estimate alone ({chat}) would keep the block"
     );
 
-    let actions = vec![FakeAction::Response(said(
-        MODEL,
-        "Still on, see you there.",
-    ))];
-    let (generation, _, sent) = ask(&mut world, &card, with, actions, 65_536).await;
-    assert!(
-        generation.reply.contains("Still on"),
-        "{}",
-        generation.reply
-    );
-    assert_eq!(system_sent(&sent[0]), system_sent(&bare));
+    sent_without_block(&mut world, &card, with, &bare).await;
 }
 
 /// A header-looking string in the focus part (a card summary echoing the
@@ -766,7 +686,7 @@ async fn a_model_echo_of_the_block_is_stripped_from_the_reply() {
     let echo = format!(
         "Sure!\n```\n{RUN_CONTEXT_HEADER}\n{CARLING}\n```\n* **c3000001 — Hard Carling, Thu 08 Oct 22:30, planned**\nThat's the one."
     );
-    let actions = vec![FakeAction::Response(said(MODEL, &echo))];
+    let actions = vec![says(&echo)];
     let (generation, _, _) = ask(&mut world, &card, conversation, actions, 32_768).await;
     let reply = &generation.reply;
     assert!(

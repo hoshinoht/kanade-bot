@@ -9,20 +9,24 @@ use kanade::bot::delivery::{
     StoreRef,
 };
 use kanade::bot::events::CardIndex;
-use kanade::bot::transport::FakeDiscord;
+use kanade::bot::transport::{AmbiguousKind, FakeDiscord, Op, Step};
+use kanade::domain::history::Origin;
 use kanade::domain::ids::{IdGenerator, short_id};
 use kanade::domain::members::{Member, PingLevel, Roster};
 use kanade::domain::notify::{
     Claim, DeliveryJournal, DeliveryTarget, DeliveryWarning, DigestInclusion, EffectKind,
     IntentContent, Lease, NotificationIntent, Receipt,
 };
-use kanade::domain::schedule::{ReminderPolicy, SchedulePolicy, ScheduleSnapshot};
-use kanade::domain::scheduler::{ScheduleStore, SchedulerService, Scope};
+use kanade::domain::schedule::{
+    NewRun, ReminderPolicy, RunSource, RunStatus, SchedulePolicy, ScheduleSnapshot,
+};
+use kanade::domain::scheduler::{ScheduleStore, SchedulerError, SchedulerService, Scope};
+use kanade::domain::time::isoformat;
 use kanade::infrastructure::store::{SqliteStore, SqliteStoreConfig};
 use serde_json::{Value, json};
 use twilight_model::channel::message::Component;
 
-use crate::common::{clock_time, countdowns, strings, text, weekday, zone};
+use crate::common::{SeqIds, clock_time, countdowns, instant, strings, text, utc, weekday, zone};
 
 /// v4's first stub message id.
 pub const FIRST_MESSAGE_ID: u64 = 700_000_000_000_000_001;
@@ -91,6 +95,23 @@ impl TempDir {
 
     pub async fn open(&self) -> SqliteStore {
         SqliteStore::open(&self.config()).await.expect("open store")
+    }
+
+    /// Run `sql` on the store's database behind its back.
+    pub async fn raw(&self, sql: &str) {
+        use sqlx::sqlite::SqliteConnectOptions;
+        use sqlx::{ConnectOptions, Connection};
+
+        let mut conn = SqliteConnectOptions::new()
+            .filename(self.config().db_path)
+            .connect()
+            .await
+            .expect("raw connection");
+        sqlx::raw_sql(sql)
+            .execute(&mut conn)
+            .await
+            .expect("raw sql");
+        conn.close().await.expect("close");
     }
 }
 
@@ -191,6 +212,17 @@ pub async fn with_lease<S: Store, R>(
     let value = work(&lease).await;
     store.end_lease(&lease, now).await.expect("end lease");
     value
+}
+
+/// Raise the digest marker to `week` at `now`, under a test lease.
+pub async fn mark_digest_week<S: Store>(store: &S, week: DateTime<Utc>, now: DateTime<Utc>) {
+    with_lease(store, now, async |lease| {
+        store
+            .record_digest_week(lease, week, now)
+            .await
+            .expect("digest marker");
+    })
+    .await;
 }
 
 /// A digest intent for `week` in `channel` (for seeding cards).
@@ -313,6 +345,53 @@ pub async fn register_materialised(
             run_refs.insert(format!("{key}@{week_text}"), run.id.clone());
         }
     }
+}
+
+/// The vector steps the dispatch and digest replays share: `create_run`,
+/// `set_clock` and `set_transport`. `None` for any other op.
+pub async fn shared_step<S: Store>(
+    store: &S,
+    ids: &mut SeqIds,
+    now: &mut DateTime<Utc>,
+    fake: &FakeDiscord,
+    run_refs: &mut BTreeMap<String, String>,
+    step: &Value,
+) -> Option<Result<Value, SchedulerError>> {
+    Some(match text(&step["op"]) {
+        "create_run" => {
+            let id = service(store, ids, *now)
+                .as_origin(Origin::for_tests())
+                .create_run(NewRun {
+                    fixed_run_id: None,
+                    channel_id: step["channel_id"].as_str().map(str::to_owned),
+                    week_start: utc(&step["week_start"]),
+                    datetime: utc(&step["at"]),
+                    bosses: strings(&step["bosses"]),
+                    participants: strings(&step["participants"]),
+                    status: RunStatus::parse(text(&step["status"])).unwrap(),
+                    source: RunSource::parse(text(&step["source"])).unwrap(),
+                })
+                .await
+                .expect("create_run");
+            run_refs.insert(text(&step["run_key"]).to_owned(), id.clone());
+            Ok(json!(id))
+        }
+        "set_clock" => {
+            let at = instant(&step["clock"]);
+            *now = at.with_timezone(&Utc);
+            Ok(json!(isoformat(&at)))
+        }
+        "set_transport" => {
+            let fail = step["fail_sends"].as_bool().expect("fail_sends");
+            let step = fail.then_some(Step::Ambiguous {
+                kind: AmbiguousKind::Timeout,
+                applied: false,
+            });
+            fake.set_default(Op::Create, step);
+            Ok(json!(fail))
+        }
+        _ => return None,
+    })
 }
 
 /// Every text display of a Components V2 layout, in order (sections and

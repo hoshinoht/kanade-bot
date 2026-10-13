@@ -5,16 +5,14 @@ use std::collections::BTreeMap;
 
 use chrono::{DateTime, Utc};
 use kanade::bot::delivery::{AlertRecorder, Delivery};
-use kanade::bot::transport::{AmbiguousKind, Op, Step};
+use kanade::domain::history::Origin;
 use kanade::domain::notify::due_reminders;
-use kanade::domain::schedule::{NewRun, RsvpSource, RsvpState, RunSource, RunStatus};
+use kanade::domain::schedule::{RsvpSource, RsvpState};
 use kanade::domain::scheduler::SchedulerError;
-use kanade::domain::time::isoformat;
 use serde_json::{Value, json};
 
 use crate::common::{
-    self, Deviation, SeqIds, apply_deviations, assert_case, instant, run_ref, step_result, strings,
-    text, utc,
+    self, Deviation, SeqIds, apply_deviations, assert_case, run_ref, step_result, text, utc,
 };
 use crate::support::{self, Store, on_both_stores};
 
@@ -129,30 +127,12 @@ async fn replay<S: Store>(store: &S, case: &Value) -> Value {
     let mut steps = Vec::new();
     for step in input["steps"].as_array().expect("steps") {
         let result: Result<Value, SchedulerError> = match text(&step["op"]) {
-            "create_run" => {
-                let id = support::service(store, &mut ids, now)
-                    .as_origin(kanade::domain::history::Origin::for_tests())
-                    .create_run(NewRun {
-                        fixed_run_id: None,
-                        channel_id: step["channel_id"].as_str().map(str::to_owned),
-                        week_start: utc(&step["week_start"]),
-                        datetime: utc(&step["at"]),
-                        bosses: strings(&step["bosses"]),
-                        participants: strings(&step["participants"]),
-                        status: RunStatus::parse(text(&step["status"])).unwrap(),
-                        source: RunSource::parse(text(&step["source"])).unwrap(),
-                    })
-                    .await
-                    .expect("create_run");
-                run_refs.insert(text(&step["run_key"]).to_owned(), id.clone());
-                Ok(json!(id))
-            }
             "set_rsvp" => {
                 let run = run_ref(&run_refs, &step["run_key"]).to_owned();
                 let state = RsvpState::parse(text(&step["state"])).unwrap();
                 let source = RsvpSource::parse(text(&step["source"])).unwrap();
                 support::service(store, &mut ids, now)
-                    .as_origin(kanade::domain::history::Origin::for_tests())
+                    .as_origin(Origin::for_tests())
                     .set_rsvp(&run, text(&step["user_id"]), state, source)
                     .await
                     .map(|()| json!(state.as_str()))
@@ -160,7 +140,7 @@ async fn replay<S: Store>(store: &S, case: &Value) -> Value {
             "add_reminder" => {
                 let run = run_ref(&run_refs, &step["run_key"]).to_owned();
                 support::service(store, &mut ids, now)
-                    .as_origin(kanade::domain::history::Origin::for_tests())
+                    .as_origin(Origin::for_tests())
                     .add_reminder(&run, text(&step["kind"]), utc(&step["fire_at"]), None)
                     .await
                     .map(|id| json!(id))
@@ -181,21 +161,9 @@ async fn replay<S: Store>(store: &S, case: &Value) -> Value {
                 Ok(Value::Null)
             }
             "mark_done" => Ok(json!(delivery.mark_done(now).await.expect("mark_done"))),
-            "set_clock" => {
-                let at = instant(&step["clock"]);
-                now = at.with_timezone(&Utc);
-                Ok(json!(isoformat(&at)))
-            }
-            "set_transport" => {
-                let fail = step["fail_sends"].as_bool().expect("fail_sends");
-                let step = fail.then_some(Step::Ambiguous {
-                    kind: AmbiguousKind::Timeout,
-                    applied: false,
-                });
-                fake.set_default(Op::Create, step);
-                Ok(json!(fail))
-            }
-            other => panic!("unknown dispatch vector operation {other:?}"),
+            op => support::shared_step(store, &mut ids, &mut now, &fake, &mut run_refs, step)
+                .await
+                .unwrap_or_else(|| panic!("unknown dispatch vector operation {op:?}")),
         };
         steps.push(step_result(step, result));
     }

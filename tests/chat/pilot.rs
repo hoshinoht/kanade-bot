@@ -24,9 +24,7 @@ use kanade::chat::tools::{ToolContext, ToolName};
 use kanade::domain::model_log::ModelLogStore;
 use kanade::domain::model_log::{AllowanceOverride, ChatOutcome};
 use kanade::infrastructure::llm::governor::{Charge, Refused, SessionError, SessionFailure};
-use kanade::infrastructure::llm::{
-    CompletionResponse, FakeAction, FakeProvider, FinishReason, Message,
-};
+use kanade::infrastructure::llm::{FakeAction, FakeProvider, Message};
 use kanade::infrastructure::store::MemoryScheduleStore;
 use serde_json::json;
 
@@ -674,15 +672,7 @@ async fn other_failures_say_v4s_line_and_turned_away_questions_are_refunded() {
 }
 
 fn filtered() -> FakeAction {
-    FakeAction::Response(CompletionResponse {
-        reasoning_content: None,
-        reasoning_tokens: None,
-        model: MODEL.into(),
-        content: None,
-        tool_calls: Vec::new(),
-        finish_reason: FinishReason::ContentFilter,
-        usage: None,
-    })
+    crate::model::filtered(MODEL)
 }
 
 /// A filtered first round, then `after` for the clean retry, concluded:

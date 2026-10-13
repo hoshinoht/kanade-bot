@@ -18,13 +18,11 @@ use kanade::chat::persona::{
 use kanade::chat::pilot::ChatPilot;
 use kanade::chat::prompts::REMINDER_PREFIX;
 use kanade::chat::sanitize::{ScheduleDefaults, schedule_defaults};
-use kanade::chat::tools::ToolContext;
 use kanade::domain::scheduler::Clock;
 use kanade::extract::prompt::estimate_tokens;
 use kanade::infrastructure::llm::governor::{DEFAULT_TOOL_ROUNDS, Governor, Role};
 use kanade::infrastructure::llm::{
-    ChatRequest, CompletionResponse, Effort, FakeAction, FakeProvider, FinishReason, Message,
-    ToolCall, wire_body,
+    ChatRequest, Effort, FakeAction, FakeProvider, Message, wire_body,
 };
 use serde_json::{Value, json};
 
@@ -48,22 +46,10 @@ const NOW: f64 = 1000.0;
 const PROFILE: &str = "schema_version: 1\nid: brisk\nlabel: Brisk\nvoice: Short, dry and a little smug.\nprompt: |\n  # Reply profile\n\n  Keep replies brisk; one tease at most.\n";
 
 fn wants(calls: &[(&str, &str, Value)]) -> FakeAction {
-    FakeAction::Response(CompletionResponse {
-        reasoning_content: None,
-        reasoning_tokens: None,
-        model: MODEL.into(),
-        content: None,
-        tool_calls: calls
-            .iter()
-            .map(|(id, name, arguments)| ToolCall {
-                id: (*id).into(),
-                name: (*name).into(),
-                arguments: arguments.to_string(),
-            })
-            .collect(),
-        finish_reason: FinishReason::ToolCalls,
-        usage: None,
-    })
+    let calls = calls
+        .iter()
+        .map(|(id, name, arguments)| (*id, *name, arguments));
+    crate::model::wants(MODEL, calls)
 }
 
 fn words(text: &str) -> FakeAction {
@@ -140,19 +126,6 @@ fn conversation(
     assemble(&turns, system(world, persona), 16_384, 1024, "")
 }
 
-/// The driver's trusted tool context (`driver/run.rs` `tool_context`).
-fn tool_context(world: &World, message: &QuestionMessage) -> ToolContext {
-    let mut ctx = world.context(&json!({"author_id": ASKER, "channel_id": CHANNEL}));
-    let defaults = schedule_defaults(&message.content, Some(BOT), Some(ROLE));
-    ctx.force_all_channels = defaults.force_all_channels;
-    ctx.force_channel_scope = defaults.force_channel_scope;
-    ctx.force_group_schedule = defaults.force_group_schedule;
-    ctx.self_schedule_requested = defaults.self_schedule_requested;
-    ctx.upcoming_only = defaults.upcoming_only;
-    ctx.next_only = defaults.next_only;
-    ctx
-}
-
 struct Captured {
     requests: Vec<ChatRequest>,
     bodies: Vec<Value>,
@@ -180,7 +153,7 @@ async fn capture(
     if route_effort.is_some() {
         assert!(governor.set_effort(Role::Chat, route_effort));
     }
-    let ctx = tool_context(&world, message);
+    let ctx = world.driver_context(ASKER, CHANNEL, &message.content, (BOT, ROLE));
     let conversation = conversation(&world, persona, message);
     let system = match &conversation[0] {
         Message::System { content } => content.clone(),

@@ -23,7 +23,7 @@ use kanade::infrastructure::store::MemoryScheduleStore;
 use twilight_model::id::Id;
 
 use crate::intercept::Intercept;
-use crate::support::{self, Store, TempDir, on_both_stores, seed_digest, with_lease};
+use crate::support::{self, Store, TempDir, mark_digest_week, on_both_stores, seed_digest};
 
 pub(crate) const HOME: &str = "222";
 pub(crate) const POST: &str = "555";
@@ -409,13 +409,7 @@ async fn quiet_mode_posts_mention_nobody() {
 
 /// A card for this week exists; the marker says last week was the last post.
 pub(crate) async fn seed_replaceable<S: Store>(store: &S, world: &World) {
-    with_lease(store, now(), async |lease| {
-        store
-            .record_digest_week(lease, previous_week(), now())
-            .await
-            .expect("marker");
-    })
-    .await;
+    mark_digest_week(store, previous_week(), now()).await;
     seed_digest(store, week(), POST, "7001", now()).await;
     world.fake.seed_message(Id::new(555), Id::new(7001));
 }
@@ -516,13 +510,7 @@ async fn ambiguous_digest_deletion_suppresses_the_replacement() {
 
 async fn rollback<S: Store>(store: &S) {
     let world = world();
-    with_lease(store, now(), async |lease| {
-        store
-            .record_digest_week(lease, week(), now())
-            .await
-            .expect("marker");
-    })
-    .await;
+    mark_digest_week(store, week(), now()).await;
     let mut delivery = delivery(store, &world, &world.fake);
     let earlier = now() - chrono::Duration::days(7);
     let report = delivery.tick_at(earlier).await.expect("tick");

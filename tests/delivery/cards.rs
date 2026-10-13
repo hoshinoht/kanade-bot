@@ -42,7 +42,7 @@ use twilight_model::channel::message::Embed;
 use twilight_model::id::Id;
 
 use crate::scenarios::{self, HOME, World, now, previous_week, week};
-use crate::support::{self, Store, TempDir, on_both_stores, with_lease};
+use crate::support::{self, Store, TempDir, mark_digest_week, on_both_stores};
 
 pub(crate) const STAR_COLOUR: u32 = 0xF8DD4A;
 
@@ -505,13 +505,7 @@ async fn digest_matches_v4<S: Store>(store: &S) {
         RunStatus::Otot,
     )
     .await;
-    with_lease(store, now(), async |lease| {
-        store
-            .record_digest_week(lease, previous_week(), now())
-            .await
-            .expect("digest week");
-    })
-    .await;
+    mark_digest_week(store, previous_week(), now()).await;
     let mut delivery = scenarios::delivery(store, &world, &world.fake).with_cards(kit(Some(&art)));
     delivery.post_week_digest(now()).await.expect("digest");
     let posts = created(&world.fake);
@@ -579,13 +573,7 @@ async fn a_legacy_digest_replacement_keeps_the_fixed_phrase_on_delete_failure() 
         RunStatus::Planned,
     )
     .await;
-    with_lease(&*store, now(), async |lease| {
-        store
-            .record_digest_week(lease, previous_week(), now())
-            .await
-            .expect("digest marker");
-    })
-    .await;
+    mark_digest_week(&*store, previous_week(), now()).await;
     support::seed_digest(&*store, week(), HOME, "7001", now()).await;
     fake.script(Op::Delete, Step::Reject(RejectionKind::NotSent));
     let rewriter = Scripted::new(Script::Reply("Waku waku!"));
@@ -610,15 +598,7 @@ async fn a_legacy_digest_replacement_keeps_the_fixed_phrase_on_delete_failure() 
     );
 
     fake.script(Op::Edit, Step::Succeed);
-    let refresh = CardRefresh {
-        store: Arc::clone(&store),
-        transport: Arc::clone(&fake),
-        members: Arc::new(world.roster.clone()),
-        cards,
-        policy: scenarios::config().policy,
-        quiet: Arc::new(AtomicBool::new(false)),
-        now: Arc::new(|| now() + TimeDelta::minutes(1)),
-    };
+    let refresh = refresher(&store, &fake, &world, cards);
     assert_eq!(refresh.refresh(std::slice::from_ref(&run_id)).await, 1);
     assert_eq!(
         edits(&fake).last().and_then(|edit| edit.content.as_deref()),
@@ -733,6 +713,20 @@ impl Scripted {
     pub(crate) fn calls(&self) -> usize {
         self.calls.load(Ordering::SeqCst)
     }
+
+    /// The first rewrite was seeded with `seed`, and neither its system
+    /// prompt nor its seed carries any of `private`.
+    pub(crate) fn assert_first_prompt(&self, seed: &str, private: &[&str]) {
+        let prompts = self.prompts.lock().unwrap().clone();
+        let (system, sent) = &prompts[0];
+        assert_eq!(sent, seed);
+        for private in private {
+            assert!(
+                !system.contains(private) && !sent.contains(private),
+                "rewrite prompt included {private}"
+            );
+        }
+    }
 }
 
 impl NudgeRewriter for Scripted {
@@ -839,17 +833,13 @@ async fn an_accepted_rewrite_replaces_the_heading_with_the_day_filled_in() {
         Some("📅 **Rise and shine, it's Thu 10 Sep!**\n<@1001> Bex")
     );
     assert_eq!(rewriter.calls(), 1);
-    let prompts = rewriter.prompts.lock().unwrap().clone();
-    let (system, seed) = &prompts[0];
-    assert_eq!(seed, "Today — {day}", "the day is left for the model");
-    for private in [
-        "Kalos", "Malefic", "1001", "1002", "Aria", "Bex", "Thu", "10 Sep", "21:00", HOME,
-    ] {
-        assert!(
-            !system.contains(private) && !seed.contains(private),
-            "the prompt must not carry {private}"
-        );
-    }
+    // The day is left for the model.
+    rewriter.assert_first_prompt(
+        "Today — {day}",
+        &[
+            "Kalos", "Malefic", "1001", "1002", "Aria", "Bex", "Thu", "10 Sep", "21:00", HOME,
+        ],
+    );
 }
 
 #[tokio::test(start_paused = true)]
@@ -982,26 +972,21 @@ async fn countdown_header_rewrites_persona_phrases_and_keeps_facts_out_of_the_pr
         );
         assert_eq!(rewriter.calls(), calls);
         if phrase == "Waku waku!" {
-            let prompts = rewriter.prompts.lock().unwrap().clone();
-            let (system, seed) = &prompts[0];
-            assert_eq!(seed, "Onward!");
-            for private in [
-                "XKalos",
-                "Kalos",
-                "1001",
-                "1002",
-                "Aria",
-                "Bex",
-                "20:14",
-                "21:00",
-                "Thu 10 Sep",
-                HOME,
-            ] {
-                assert!(
-                    !system.contains(private) && !seed.contains(private),
-                    "rewrite prompt included {private}"
-                );
-            }
+            rewriter.assert_first_prompt(
+                "Onward!",
+                &[
+                    "XKalos",
+                    "Kalos",
+                    "1001",
+                    "1002",
+                    "Aria",
+                    "Bex",
+                    "20:14",
+                    "21:00",
+                    "Thu 10 Sep",
+                    HOME,
+                ],
+            );
         }
     }
     let message = pregenerated_countdown(redesigned(kit(None))).await;
@@ -1082,13 +1067,7 @@ async fn digest_header_rewrite_has_only_persona_and_seed_and_refresh_keeps_facts
         RunStatus::Planned,
     )
     .await;
-    with_lease(&*store, now(), async |lease| {
-        store
-            .record_digest_week(lease, previous_week(), now())
-            .await
-            .expect("digest marker");
-    })
-    .await;
+    mark_digest_week(&*store, previous_week(), now()).await;
     let rewriter = Scripted::new(Script::Reply("Waku waku!"));
     let cards = redesigned(rewriting(&rewriter));
     // The pass before the reset writes the coming week's phrase.
@@ -1112,24 +1091,19 @@ async fn digest_header_rewrite_has_only_persona_and_seed_and_refresh_keeps_facts
         (None, 0)
     );
     assert_eq!(rewriter.calls(), 1);
-    let prompts = rewriter.prompts.lock().unwrap().clone();
-    let (system, seed) = &prompts[0];
-    assert_eq!(seed, "Let's go!");
-    for private in [
-        "XKalos",
-        "Kalos",
-        "1001",
-        "Aria",
-        "21:00",
-        "Thu 10 Sep",
-        "Wed 09 Sep",
-        HOME,
-    ] {
-        assert!(
-            !system.contains(private) && !seed.contains(private),
-            "rewrite prompt included {private}"
-        );
-    }
+    rewriter.assert_first_prompt(
+        "Let's go!",
+        &[
+            "XKalos",
+            "Kalos",
+            "1001",
+            "Aria",
+            "21:00",
+            "Thu 10 Sep",
+            "Wed 09 Sep",
+            HOME,
+        ],
+    );
     let key = DedupeKey::native(&[DeliveryTarget::Digest(week())]).expect("digest target");
     assert_eq!(
         store
@@ -1147,15 +1121,7 @@ async fn digest_header_rewrite_has_only_persona_and_seed_and_refresh_keeps_facts
         now() + TimeDelta::minutes(1),
     )
     .await;
-    let refresh = CardRefresh {
-        store: Arc::clone(&store),
-        transport: Arc::clone(&fake),
-        members: Arc::new(world.roster.clone()),
-        cards,
-        policy: scenarios::config().policy,
-        quiet: Arc::new(AtomicBool::new(false)),
-        now: Arc::new(|| now() + TimeDelta::minutes(1)),
-    };
+    let refresh = refresher(&store, &fake, &world, cards);
     assert_eq!(refresh.refresh(std::slice::from_ref(&run_id)).await, 1);
     let refreshed = edits(&fake);
     let [edit] = refreshed.as_slice() else {
@@ -1228,13 +1194,7 @@ async fn countdown_phrase_record_failures_stop_before_claim_then_retry() {
             RunStatus::Planned,
         )
         .await;
-        with_lease(&store, now(), async |lease| {
-            store
-                .record_digest_week(lease, previous_week(), now())
-                .await
-                .expect("digest marker");
-        })
-        .await;
+        mark_digest_week(&store, previous_week(), now()).await;
         if fail_write {
             store.fail_next_digest_phrase_write();
         } else {
@@ -1378,6 +1338,21 @@ fn gated_cards(rewriter: &Arc<GateRewriter>) -> CardKit {
     }
 }
 
+/// Drive `pass` until `rewriter`'s gated rewrite starts; the pass must not
+/// finish first.
+async fn until_gated<F>(rewriter: &GateRewriter, pass: &mut F)
+where
+    F: Future<Output = PregenReport> + Unpin,
+{
+    let started = rewriter.started.notified();
+    tokio::pin!(started);
+    tokio::select! {
+        biased;
+        _ = &mut started => {}
+        report = pass => panic!("pass finished before the rewrite gate: {report:?}"),
+    }
+}
+
 /// A Kalos countdown 14 minutes out and its record key.
 async fn countdown_key(store: &MemoryScheduleStore) -> (String, String) {
     let run_id = run(
@@ -1409,13 +1384,7 @@ async fn a_send_during_a_pregeneration_uses_the_seed_which_then_wins() {
     let cards = redesigned(gated_cards(&rewriter));
     let worker = pregen(&store, &world, &cards, before_due());
     let mut pass = Box::pin(worker.pass());
-    let started = rewriter.started.notified();
-    tokio::pin!(started);
-    tokio::select! {
-        biased;
-        _ = &mut started => {}
-        report = &mut pass => panic!("pass finished before the rewrite gate: {report:?}"),
-    }
+    until_gated(&rewriter, &mut pass).await;
     // The rewrite is in flight: the send neither waits nor calls the model.
     let mut delivery = scenarios::delivery(&*store, &world, &*fake).with_cards(cards.clone());
     delivery.dispatch_reminders(now()).await.expect("dispatch");
@@ -1446,15 +1415,7 @@ async fn a_send_during_a_pregeneration_uses_the_seed_which_then_wins() {
         now() + TimeDelta::minutes(1),
     )
     .await;
-    let refresh = CardRefresh {
-        store: Arc::clone(&store),
-        transport: Arc::clone(&fake),
-        members: Arc::new(world.roster.clone()),
-        cards: cards.clone(),
-        policy: scenarios::config().policy,
-        quiet: Arc::new(AtomicBool::new(false)),
-        now: Arc::new(|| now() + TimeDelta::minutes(1)),
-    };
+    let refresh = refresher(&store, &fake, &world, cards.clone());
     assert_eq!(refresh.refresh(std::slice::from_ref(&run_id)).await, 1);
     let edit = edits(&fake).pop().expect("countdown refresh");
     assert!(
@@ -1483,13 +1444,7 @@ async fn a_card_posted_without_its_record_during_a_pregeneration_keeps_the_seed(
     let cards = gated_cards(&rewriter);
     let worker = pregen(&store, &world, &cards, before_due());
     let mut pass = Box::pin(worker.pass());
-    let started = rewriter.started.notified();
-    tokio::pin!(started);
-    tokio::select! {
-        biased;
-        _ = &mut started => {}
-        report = &mut pass => panic!("pass finished before the rewrite gate: {report:?}"),
-    }
+    until_gated(&rewriter, &mut pass).await;
     // The send's record write fails: day-of still posts its unsaved seed.
     store.fail_next_card_record_write();
     let mut delivery = scenarios::delivery(&*store, &world, &*fake).with_cards(cards.clone());
@@ -1517,15 +1472,7 @@ async fn a_card_posted_without_its_record_during_a_pregeneration_keeps_the_seed(
     assert_eq!(store.card_record(key.as_str()).await.expect("record"), None);
 
     answer(&*store, &star, "1002", true, now() + TimeDelta::minutes(1)).await;
-    let refresh = CardRefresh {
-        store: Arc::clone(&store),
-        transport: Arc::clone(&fake),
-        members: Arc::new(world.roster.clone()),
-        cards,
-        policy: scenarios::config().policy,
-        quiet: Arc::new(AtomicBool::new(false)),
-        now: Arc::new(|| now() + TimeDelta::minutes(1)),
-    };
+    let refresh = refresher(&store, &fake, &world, cards);
     refresh.refresh(std::slice::from_ref(&star)).await;
     assert!(
         edits(&fake).iter().all(|edit| edit
@@ -1548,24 +1495,12 @@ async fn a_digest_posted_during_a_pregeneration_keeps_the_seed() {
         RunStatus::Planned,
     )
     .await;
-    with_lease(&*store, now(), async |lease| {
-        store
-            .record_digest_week(lease, previous_week(), now())
-            .await
-            .expect("digest marker");
-    })
-    .await;
+    mark_digest_week(&*store, previous_week(), now()).await;
     let rewriter = GateRewriter::new();
     let cards = redesigned(gated_cards(&rewriter));
     let worker = pregen(&store, &world, &cards, week() - TimeDelta::minutes(1));
     let mut pass = Box::pin(worker.pass());
-    let started = rewriter.started.notified();
-    tokio::pin!(started);
-    tokio::select! {
-        biased;
-        _ = &mut started => {}
-        report = &mut pass => panic!("pass finished before the rewrite gate: {report:?}"),
-    }
+    until_gated(&rewriter, &mut pass).await;
     let mut delivery = scenarios::delivery(&*store, &world, &world.fake).with_cards(cards);
     delivery.post_week_digest(now()).await.expect("digest");
     assert_eq!(
@@ -1594,13 +1529,7 @@ async fn a_cancelled_pregeneration_stores_nothing_and_a_later_pass_retries() {
     let worker = pregen(&store, &world, &cards, before_due());
     {
         let mut pass = Box::pin(worker.pass());
-        let started = rewriter.started.notified();
-        tokio::pin!(started);
-        tokio::select! {
-            biased;
-            _ = &mut started => {}
-            report = &mut pass => panic!("pass finished unexpectedly: {report:?}"),
-        }
+        until_gated(&rewriter, &mut pass).await;
     }
     assert_eq!(store.card_record(&key).await.expect("record lookup"), None);
     assert_eq!(worker.pass().await.stored, 1, "the next pass retries");
@@ -1682,15 +1611,7 @@ async fn countdown_phrase_survives_not_sent_restart_and_refresh_without_rewrite(
         now() + TimeDelta::minutes(1),
     )
     .await;
-    let refresh = CardRefresh {
-        store: Arc::clone(&store),
-        transport: Arc::clone(&fake),
-        members: Arc::new(world.roster.clone()),
-        cards,
-        policy: scenarios::config().policy,
-        quiet: Arc::new(AtomicBool::new(false)),
-        now: Arc::new(|| now() + TimeDelta::minutes(1)),
-    };
+    let refresh = refresher(&store, &fake, &world, cards);
     assert_eq!(refresh.refresh(std::slice::from_ref(&run_id)).await, 1);
     let edits = edits(&fake);
     let edit = edits.last().expect("countdown refresh");
@@ -1753,15 +1674,7 @@ async fn retries_and_reaction_edits_reuse_the_stored_heading() {
 
     // 1002 answers ✅: the card is edited in place from current answers.
     answer(&*store, &star, "1002", true, now() + TimeDelta::minutes(1)).await;
-    let refresh = CardRefresh {
-        store: Arc::clone(&store),
-        transport: Arc::clone(&fake),
-        members: Arc::new(world.roster.clone()),
-        cards,
-        policy: scenarios::config().policy,
-        quiet: Arc::new(AtomicBool::new(false)),
-        now: Arc::new(|| now() + TimeDelta::minutes(1)),
-    };
+    let refresh = refresher(&store, &fake, &world, cards);
     assert_eq!(refresh.refresh(std::slice::from_ref(&star)).await, 1);
     let edited = edits(&fake);
     let [edit] = edited.as_slice() else {
@@ -1899,12 +1812,13 @@ fn refresh_requests_coalesce_and_are_bounded() {
     );
 }
 
-pub(crate) fn refresher(
-    store: &Arc<MemoryScheduleStore>,
+/// A refresh worker over `store` and `fake` whose clock reads a minute on.
+pub(crate) fn refresher<S>(
+    store: &Arc<S>,
     fake: &Arc<FakeDiscord>,
     world: &World,
     cards: CardKit,
-) -> CardRefresh<MemoryScheduleStore, FakeDiscord> {
+) -> CardRefresh<S, FakeDiscord> {
     CardRefresh {
         store: Arc::clone(store),
         transport: Arc::clone(fake),
@@ -1924,13 +1838,7 @@ async fn store_writes_drive_the_refresh_task_for_cards_and_the_digest() {
     let world = world();
     let fake = Arc::new(support::fake());
     let (star, _) = seed_day_of(&*store).await;
-    with_lease(&*store, now(), async |lease| {
-        store
-            .record_digest_week(lease, previous_week(), now())
-            .await
-            .expect("digest week");
-    })
-    .await;
+    mark_digest_week(&*store, previous_week(), now()).await;
     let mut delivery = scenarios::delivery(&*store, &world, &*fake).with_cards(kit(None));
     delivery.post_week_digest(now()).await.expect("digest");
     delivery.dispatch_reminders(now()).await.expect("dispatch");

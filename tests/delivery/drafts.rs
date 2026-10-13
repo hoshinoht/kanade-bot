@@ -91,7 +91,7 @@ async fn a_failed_expiry_never_aborts_the_tick() {
     let dir = TempDir::new();
     let store = dir.open().await;
     let world = world();
-    raw(&dir, "DROP TABLE drafts;").await;
+    dir.raw("DROP TABLE drafts;").await;
     let mut tick = delivery(&store, &world, &world.fake);
     tick.tick_at(now()).await.expect("the tick still runs");
     assert!(
@@ -105,22 +105,6 @@ async fn a_failed_expiry_never_aborts_the_tick() {
     );
     drop(tick);
     store.close().await.expect("close");
-}
-
-async fn raw(dir: &TempDir, sql: &str) {
-    use sqlx::sqlite::SqliteConnectOptions;
-    use sqlx::{ConnectOptions, Connection};
-
-    let mut conn = SqliteConnectOptions::new()
-        .filename(dir.config().db_path)
-        .connect()
-        .await
-        .expect("raw connection");
-    sqlx::raw_sql(sql)
-        .execute(&mut conn)
-        .await
-        .expect("raw sql");
-    conn.close().await.expect("close");
 }
 
 #[tokio::test]

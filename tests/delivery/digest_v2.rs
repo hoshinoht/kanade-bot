@@ -11,7 +11,6 @@ use chrono::TimeDelta;
 use kanade::bot::delivery::cards::CardKit;
 use kanade::bot::delivery::cards::redesign::{MY_RUNS, OPEN_PORTAL};
 use kanade::bot::transport::{Call, FakeDiscord, MessageId, Op, Outcome, RejectionKind};
-use kanade::domain::notify::DeliveryJournal;
 use kanade::domain::schedule::RunStatus;
 use kanade::domain::settings::MessageStyle;
 use kanade::infrastructure::store::MemoryScheduleStore;
@@ -20,7 +19,7 @@ use twilight_model::channel::message::component::ButtonStyle;
 
 use crate::cards::{answer, created, edits, kit, refresher, run, tonight, world};
 use crate::scenarios::{self, now, previous_week};
-use crate::support::{self, with_lease};
+use crate::support::{self, mark_digest_week};
 
 /// `kit(None)` in the redesigned style while `redesign` is set, read live.
 fn switchable(redesign: &Arc<AtomicBool>) -> CardKit {
@@ -54,13 +53,7 @@ impl Week {
             let at = tonight() + TimeDelta::minutes(n);
             runs.push(run(&*store, &["XKalos"], &["1001"], at, RunStatus::Planned).await);
         }
-        with_lease(&*store, now(), async |lease| {
-            store
-                .record_digest_week(lease, previous_week(), now())
-                .await
-                .expect("digest marker");
-        })
-        .await;
+        mark_digest_week(&*store, previous_week(), now()).await;
         Self {
             store,
             fake: Arc::new(support::fake()),

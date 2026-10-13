@@ -2,7 +2,6 @@
 //! content and subtext, per-run embeds, colours, timestamps, art and the
 //! Discord limits.
 
-use chrono::TimeDelta;
 use kanade::bot::delivery::cards::redesign::{
     AT_RISK_RED, DifficultyMarks, INK_BLUE, MAX_EMBEDS, MAX_TOTAL_CHARS, NO_MARKS, SETTLED_GREEN,
     WAITING_AMBER,
@@ -16,7 +15,8 @@ use kanade::domain::schedule::{RunStatus, ScheduleSnapshot};
 use twilight_model::channel::message::Embed;
 
 use super::{
-    CLEARED, KALOS, MALEFIC, RISKY, art, inclusion, members, redesigned, week, week_start,
+    CLEARED, KALOS, MALEFIC, RISKY, art, countdown, day_of, inclusion, kalos_copies, members,
+    redesigned, redesigned_v5, week, week_start,
 };
 use crate::cards::{STAR_COLOUR, catalog};
 
@@ -60,30 +60,10 @@ fn uploads(message: &OutgoingMessage) -> Vec<&str> {
         .collect()
 }
 
-fn day_of(run_ids: &[&str]) -> IntentContent {
-    IntentContent::DayOf {
-        run_ids: ids(run_ids),
-    }
-}
-
-fn countdown(run_id: &str) -> IntentContent {
-    IntentContent::Countdown {
-        run_id: run_id.into(),
-        minutes: 15,
-    }
-}
-
 #[tokio::test]
 async fn a_v5_day_of_has_one_embed_per_run_and_pings_the_waiting_in_subtext() {
     let (schedule, roster, table) = (week(), members(), catalog());
-    let ctx = redesigned(
-        &schedule,
-        &roster,
-        &table,
-        AttendancePolicy::V5,
-        false,
-        &NO_MARKS,
-    );
+    let ctx = redesigned_v5(&schedule, &roster, &table);
     let mentioned = ids(&["1003"]);
     let card = cards::build(&day_of(&[KALOS, MALEFIC]), &ctx, None, &mentioned).unwrap();
     let message = post(&card, &mentioned).await;
@@ -210,14 +190,7 @@ async fn difficulty_marks_replace_the_written_difficulty() {
 #[tokio::test]
 async fn one_boss_on_two_runs_is_uploaded_once() {
     let (schedule, roster, table) = (week(), members(), catalog());
-    let ctx = redesigned(
-        &schedule,
-        &roster,
-        &table,
-        AttendancePolicy::V5,
-        false,
-        &NO_MARKS,
-    );
+    let ctx = redesigned_v5(&schedule, &roster, &table);
     let card = cards::build(&day_of(&[MALEFIC, RISKY]), &ctx, None, &[]).unwrap();
     let message = post(&card, &[]).await;
     assert_eq!(
@@ -252,31 +225,8 @@ async fn one_boss_on_two_runs_is_uploaded_once() {
 #[tokio::test]
 async fn runs_past_ten_embeds_share_a_last_compact_embed() {
     let (mut schedule, roster, table) = (week(), members(), catalog());
-    let base = schedule
-        .runs
-        .iter()
-        .find(|run| run.id == KALOS)
-        .unwrap()
-        .clone();
-    let mut run_ids = Vec::new();
-    schedule.runs.clear();
-    for index in 0..12 {
-        let id = format!("{index:08x}-0000-4000-8000-000000000000");
-        schedule.runs.push(kanade::domain::schedule::Run {
-            id: id.clone(),
-            datetime: base.datetime + TimeDelta::minutes(10 * index),
-            ..base.clone()
-        });
-        run_ids.push(id);
-    }
-    let ctx = redesigned(
-        &schedule,
-        &roster,
-        &table,
-        AttendancePolicy::V5,
-        false,
-        &NO_MARKS,
-    );
+    let run_ids = kalos_copies(&mut schedule, 12, |_| {});
+    let ctx = redesigned_v5(&schedule, &roster, &table);
     let content = IntentContent::DayOf { run_ids };
     let card = cards::build(&content, &ctx, None, &[]).unwrap();
     assert_eq!(card.embeds.len(), MAX_EMBEDS);
@@ -308,34 +258,12 @@ async fn the_character_budget_moves_runs_into_the_last_embed() {
             ..Member::default()
         });
     }
-    let base = schedule
-        .runs
-        .iter()
-        .find(|run| run.id == KALOS)
-        .unwrap()
-        .clone();
-    let mut run_ids = Vec::new();
-    schedule.runs.clear();
     schedule.rsvps.clear();
-    for index in 0..6 {
-        let id = format!("{index:08x}-0000-4000-8000-000000000000");
-        schedule.runs.push(kanade::domain::schedule::Run {
-            id: id.clone(),
-            datetime: base.datetime + TimeDelta::minutes(10 * index),
-            participants: party.clone(),
-            status: RunStatus::Planned,
-            ..base.clone()
-        });
-        run_ids.push(id);
-    }
-    let ctx = redesigned(
-        &schedule,
-        &roster,
-        &table,
-        AttendancePolicy::V5,
-        false,
-        &NO_MARKS,
-    );
+    let run_ids = kalos_copies(&mut schedule, 6, |run| {
+        run.participants.clone_from(&party);
+        run.status = RunStatus::Planned;
+    });
+    let ctx = redesigned_v5(&schedule, &roster, &table);
     let card = cards::build(&IntentContent::DayOf { run_ids }, &ctx, None, &[]).unwrap();
     let message = post(&card, &[]).await;
     let chars: usize = message
@@ -371,14 +299,7 @@ async fn the_character_budget_moves_runs_into_the_last_embed() {
 #[tokio::test]
 async fn countdowns_are_coloured_by_state_not_boss() {
     let (schedule, roster, table) = (week(), members(), catalog());
-    let ctx = redesigned(
-        &schedule,
-        &roster,
-        &table,
-        AttendancePolicy::V5,
-        false,
-        &NO_MARKS,
-    );
+    let ctx = redesigned_v5(&schedule, &roster, &table);
 
     let mentioned = ids(&["1001", "1003"]);
     let card = cards::build(&countdown(MALEFIC), &ctx, None, &mentioned).unwrap();
@@ -434,14 +355,7 @@ async fn countdowns_are_coloured_by_state_not_boss() {
 #[tokio::test]
 async fn the_digest_is_one_line_per_run_with_a_cleared_bar() {
     let (schedule, roster, table) = (week(), members(), catalog());
-    let ctx = redesigned(
-        &schedule,
-        &roster,
-        &table,
-        AttendancePolicy::V5,
-        false,
-        &NO_MARKS,
-    );
+    let ctx = redesigned_v5(&schedule, &roster, &table);
     let content = IntentContent::Digest {
         week_start: week_start(),
         inclusion: inclusion(&schedule),
@@ -503,14 +417,7 @@ async fn a_one_channel_digest_names_no_channel_and_an_empty_week_keeps_the_class
     for run in &mut schedule.runs {
         run.channel_id = Some("111".into());
     }
-    let ctx = redesigned(
-        &schedule,
-        &roster,
-        &table,
-        AttendancePolicy::V5,
-        false,
-        &NO_MARKS,
-    );
+    let ctx = redesigned_v5(&schedule, &roster, &table);
     let content = IntentContent::Digest {
         week_start: week_start(),
         inclusion: inclusion(&schedule),
@@ -527,14 +434,7 @@ async fn a_one_channel_digest_names_no_channel_and_an_empty_week_keeps_the_class
     );
 
     let empty = ScheduleSnapshot::default();
-    let ctx = redesigned(
-        &empty,
-        &roster,
-        &table,
-        AttendancePolicy::V5,
-        false,
-        &NO_MARKS,
-    );
+    let ctx = redesigned_v5(&empty, &roster, &table);
     let content = IntentContent::Digest {
         week_start: week_start(),
         inclusion: Default::default(),

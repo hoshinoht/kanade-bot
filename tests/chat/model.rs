@@ -83,6 +83,64 @@ pub fn capabilities(raw: &Value) -> ModelCapabilities {
     caps
 }
 
+/// A reply asking for `calls`, each `(id, name, arguments)`.
+pub fn wants<'a, Id: Into<String>>(
+    model: &str,
+    calls: impl IntoIterator<Item = (Id, &'a str, &'a Value)>,
+) -> FakeAction {
+    FakeAction::Response(CompletionResponse {
+        reasoning_content: None,
+        reasoning_tokens: None,
+        model: model.into(),
+        content: None,
+        tool_calls: calls
+            .into_iter()
+            .map(|(id, name, arguments)| ToolCall {
+                id: id.into(),
+                name: name.into(),
+                arguments: arguments.to_string(),
+            })
+            .collect(),
+        finish_reason: FinishReason::ToolCalls,
+        usage: None,
+    })
+}
+
+/// [`wants`] with each call's id `call-{name}` (unique across rounds while
+/// no tool repeats: a transcript never repeats an id).
+pub fn calls(model: &str, calls: &[(&str, Value)]) -> FakeAction {
+    wants(
+        model,
+        calls
+            .iter()
+            .map(|(name, arguments)| (format!("call-{name}"), *name, arguments)),
+    )
+}
+
+/// An empty reply the provider's content filter stopped.
+pub fn filtered(model: &str) -> FakeAction {
+    FakeAction::Response(CompletionResponse {
+        reasoning_content: None,
+        reasoning_tokens: None,
+        model: model.into(),
+        content: None,
+        tool_calls: Vec::new(),
+        finish_reason: FinishReason::ContentFilter,
+        usage: None,
+    })
+}
+
+/// The fake provider replaying `actions` behind the minimal capabilities
+/// plus function tools.
+pub fn tool_model(actions: impl IntoIterator<Item = FakeAction>) -> Arc<Scripted> {
+    let mut caps = ModelCapabilities::minimal();
+    caps.function_tools = true;
+    Arc::new(Scripted {
+        caps,
+        fake: FakeProvider::new(actions),
+    })
+}
+
 /// v5 `wire::parse_completion` over one scripted body (it is crate-private):
 /// missing ids become `call_<index>`, usage needs both integer counts.
 pub fn completion(raw: &Value, model: &str) -> Option<CompletionResponse> {

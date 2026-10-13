@@ -8,6 +8,7 @@ use chrono::Utc;
 use chrono_tz::Tz;
 use kanade::chat::answer::GuildView;
 use kanade::chat::gate::{ChannelDirectory, ChannelInfo, PilotSettings};
+use kanade::chat::sanitize::schedule_defaults;
 use kanade::chat::tools::bundles::ToolOffer;
 use kanade::chat::tools::dispatch::{self, Dispatched};
 use kanade::chat::tools::propose::Proposer;
@@ -24,7 +25,7 @@ use kanade::domain::scheduler::{Clock, ScheduleStore, Scope};
 use kanade::infrastructure::llm::identity::PassthroughSession;
 use kanade::infrastructure::store::MemoryScheduleStore;
 use kanade::infrastructure::store::conformance::meta;
-use serde_json::Value;
+use serde_json::{Value, json};
 
 use crate::common::{self, SeqIds, TestClock, clock_time, strings, text, utc, weekday, zone};
 
@@ -308,34 +309,8 @@ impl World {
         arguments: &Value,
     ) -> Dispatched {
         let snapshot = self.snapshot().await;
-        let Self {
-            service,
-            policy,
-            zone,
-            guild,
-            catalog,
-            channels,
-            pilot,
-            guides,
-            ..
-        } = self;
-        let (guild, policy) = (&*guild, &*policy);
-        let world = ToolWorld {
-            snapshot: &snapshot,
-            members: &guild.members,
-            directory: guild,
-            catalog: &*catalog,
-            channels: &*channels,
-            pilot: &*pilot,
-            zone: *zone,
-            reset_weekday: policy.reset_weekday,
-            reset_time: policy.reset_time,
-            pending: &[],
-            guides: Some(&*guides),
-            run_ends: None,
-            heard: Heard::default(),
-        };
-        let mut proposer = Proposer { service, policy };
+        let (view, mut proposer) = self.question_parts();
+        let world = tool_world(view, &snapshot);
         dispatch::run(ctx, &world, offer, &mut proposer, session, name, arguments).await
     }
 
@@ -390,21 +365,7 @@ impl World {
     }
 
     pub fn tool_world<'a>(&'a self, snapshot: &'a ScheduleSnapshot) -> ToolWorld<'a> {
-        ToolWorld {
-            snapshot,
-            members: &self.guild.members,
-            directory: &self.guild,
-            catalog: &self.catalog,
-            channels: &self.channels,
-            pilot: &self.pilot,
-            zone: self.zone,
-            reset_weekday: self.policy.reset_weekday,
-            reset_time: self.policy.reset_time,
-            pending: &[],
-            guides: Some(&self.guides),
-            run_ends: None,
-            heard: Heard::default(),
-        }
+        tool_world(self.guild_view(), snapshot)
     }
 
     /// v4 `host.tool_context`: the step's trusted facts.
@@ -431,4 +392,67 @@ impl World {
         ctx.next_only = flag("next_only");
         ctx
     }
+
+    /// The driver's trusted tool context (`driver/run.rs` `tool_context`)
+    /// for `content` from `asker` in `channel`.
+    pub fn driver_context(
+        &self,
+        asker: &str,
+        channel: &str,
+        content: &str,
+        (bot, role): (&str, &str),
+    ) -> ToolContext {
+        let mut ctx = self.context(&json!({"author_id": asker, "channel_id": channel}));
+        let defaults = schedule_defaults(content, Some(bot), Some(role));
+        ctx.force_all_channels = defaults.force_all_channels;
+        ctx.force_channel_scope = defaults.force_channel_scope;
+        ctx.force_group_schedule = defaults.force_group_schedule;
+        ctx.self_schedule_requested = defaults.self_schedule_requested;
+        ctx.upcoming_only = defaults.upcoming_only;
+        ctx.next_only = defaults.next_only;
+        ctx
+    }
+}
+
+/// The tools' view of `view` over `snapshot`: no pending cards or heard words.
+fn tool_world<'a>(view: GuildView<'a>, snapshot: &'a ScheduleSnapshot) -> ToolWorld<'a> {
+    ToolWorld {
+        snapshot,
+        members: view.members,
+        directory: view.directory,
+        catalog: view.catalog,
+        channels: view.channels,
+        pilot: view.pilot,
+        zone: view.zone,
+        reset_weekday: view.reset_weekday,
+        reset_time: view.reset_time,
+        pending: &[],
+        guides: view.guides,
+        run_ends: view.run_ends,
+        heard: Heard::default(),
+    }
+}
+
+/// An invented roster row.
+pub fn member(id: &str, name: &str) -> Value {
+    json!({"user_id": id, "display_name": name, "has_role": true})
+}
+
+/// An invented run row at `at` (`YYYY-MM-DDTHH:MM` Singapore time) in the
+/// boss week from Thursday 08 or 15 Oct 2026.
+pub fn sgt_run(
+    id: &str,
+    bosses: &[&str],
+    at: &str,
+    channel: &str,
+    party: &[&str],
+    status: &str,
+) -> Value {
+    let week = if at < "2026-10-15" {
+        "2026-10-08T00:00:00+08:00"
+    } else {
+        "2026-10-15T00:00:00+08:00"
+    };
+    json!({"id": id, "bosses": bosses, "at": format!("{at}:00+08:00"), "channel_id": channel,
+           "participants": party, "status": status, "week_start": week, "fixed_run_id": null})
 }
