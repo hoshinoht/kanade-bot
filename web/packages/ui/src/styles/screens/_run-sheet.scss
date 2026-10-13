@@ -143,7 +143,9 @@ dialog.runsheet--narrow .modal__head {
 .runsheet--wide .runsheet__hero {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
-  column-gap: 28px;
+  // Row 1 keeps the card's height; the notice line, when there is one, adds a row under it.
+  grid-template-rows: 1fr;
+  gap: 6px 28px;
 }
 
 .runsheet--wide .runsheet__hero > .run__arts {
@@ -232,6 +234,7 @@ dialog.runsheet--narrow .modal__head {
 .runsheet__hero .chanmark,
 .runsheet__hero .id,
 .runsheet__hero .sheet__offnote,
+.runsheet__hero .sheet__notice,
 .runsheet--narrow .runsheet__when > :not(.runsheet__stripe),
 .#{$pane}__art .boss,
 .#{$pane}__art .chanmark,
@@ -460,18 +463,22 @@ dialog.runsheet--narrow .modal__head {
   padding: 0 12px;
 }
 
-.runsheet__hero .swap,
-.runsheet__hero .run__error,
-.runsheet__hero .sheet__notice {
+// Swap is a floating panel over the card's foot (its own surface and shadow).
+.runsheet__hero .swap {
   position: absolute;
   inset: auto 20px 8px auto;
-  max-width: 34rem;
-}
-
-.runsheet__hero .swap {
   z-index: 1;
+  max-width: 34rem;
   background: var(--surface);
   box-shadow: var(--shadow);
+}
+
+// The notice line (pick, status, move… with Undo) and the swap error take a row
+// of their own under the status group, never over it (the pane's order too).
+.runsheet--wide .runsheet__hero .sheet__notice,
+.runsheet--wide .runsheet__hero .run__error {
+  justify-content: flex-end;
+  text-align: end;
 }
 
 .runsheet__hero .sheet__notice:empty,
@@ -775,9 +782,7 @@ dialog.runsheet--narrow .modal__head {
   justify-content: flex-start;
 }
 
-.runsheet--narrow .runsheet__hero .swap,
-.runsheet--narrow .runsheet__hero .run__error,
-.runsheet--narrow .runsheet__hero .sheet__notice {
+.runsheet--narrow .runsheet__hero .swap {
   position: static;
   max-width: none;
   box-shadow: none;

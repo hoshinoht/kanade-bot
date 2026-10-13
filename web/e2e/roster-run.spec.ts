@@ -214,6 +214,58 @@ test('roster run: the phone picks from a bottom sheet, 44 px rows', async ({ pag
   await expect(slot(sheet, 'Ren (2)').getByRole('link', { name: /add them on Members/ })).toHaveText('add');
 });
 
+/** The notice line (and its Undo) never lies over the status group or any of its buttons. */
+async function clearOfStatus(sheet: Locator) {
+  const line = notice(sheet);
+  await expect(line).toBeVisible();
+  await settle(sheet.page());
+  const boxes = [(await line.boundingBox())!];
+  for (const undo of await line.getByRole('button', { name: 'Undo' }).all()) boxes.push((await undo.boundingBox())!);
+  const status = sheet.locator('.seg--status');
+  const targets = [(await status.boundingBox())!];
+  for (const button of await status.locator('.seg__btn').all()) targets.push((await button.boundingBox())!);
+  expect(targets.length).toBeGreaterThan(1);
+  for (const a of boxes)
+    for (const b of targets) {
+      const overlap = a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
+      expect(overlap, `notice ${JSON.stringify(a)} over status ${JSON.stringify(b)}`).toBe(false);
+    }
+}
+
+// The pick notice used to sit over the hero's status group on laptop sheets (1566 px).
+for (const [width, height] of [
+  [1566, 900],
+  [1280, 800],
+  [390, 844],
+] as const) {
+  test(`roster run: the pick and status notices keep clear of the status group at ${width}x${height}`, async ({ page }) => {
+    await page.setViewportSize({ width, height });
+    const sheet = await carling(page);
+    const before = (await picked(page, '1003')).picked;
+    await sheet.getByRole('button', { name: /^Pick Mika's character/ }).click();
+    if (width < 900) {
+      const picker = page.getByRole('dialog', { name: "Mika's character" });
+      await picker.getByRole('radio', { name: /MikaBish/ }).check();
+      await picker.getByRole('button', { name: 'Use MikaBish' }).click();
+    } else {
+      await page.keyboard.press('ArrowDown');
+      await page.keyboard.press('Enter');
+    }
+    await expect(notice(sheet)).toContainText('Mika brings MikaBish to HCarling + HStar.');
+    await clearOfStatus(sheet);
+
+    // Undo still works and hands focus back to the slot's character button.
+    await notice(sheet).getByRole('button', { name: 'Undo' }).click();
+    await expect.poll(async () => (await picked(page, '1003')).picked).toBe(before);
+    await expect(slot(sheet, 'Mika').getByRole('button', { name: /^(Pick )?Mika's character/ })).toBeFocused();
+
+    // A status change's notice (with its own Undo) uses the same line.
+    await sheet.locator('.seg--status').getByRole('button', { name: 'Confirmed' }).click();
+    await expect(notice(sheet).getByRole('button', { name: 'Undo' })).toBeVisible();
+    await clearOfStatus(sheet);
+  });
+}
+
 // For user approval (not assertions): desktop and phone, blossom and marigold.
 const CAPTURES = '/private/tmp/roster-run/captures';
 for (const colorway of ['blossom', 'marigold']) {

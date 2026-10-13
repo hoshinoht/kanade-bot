@@ -27,6 +27,7 @@ Notable changes to the Boss Scheduler Bot, newest first.
 - Admin: an answer in History reads "Tsubame → on for HCarling + HStar (was out)" instead of "→ on on run <id>": the Timeline, the Graph, the change pane and the revert preview name the run from the loaded weeks or the newest loaded change that carries it, and say "a run" when neither has it.
 - Character data: linking an IGN NEXON doesn't know now says so ("NEXON couldn't find …", nothing kept). Live MapleSEA answers an unknown name with `400 OPENAPI00004` rather than an empty body, which was treated as a one-off error: the link stayed and every daily batch called for it again.
 - Character data: an admin Refresh runs at any time (only the shared 24-hour call budget limits it); `refresh.refreshable_at` and `429 refresh_cap` are gone. `CharacterLink.privacy_url` names the public `/privacy` page for the admin strip (`null` without a public listener).
+- Admin: on the laptop run sheet the notice line ("Mika brings MikaBish to HCarling + HStar.", a status change, a cleared pick…) and its Undo, and a Swap error, get a row of their own under the status buttons instead of covering them; the line sits on the card's text plate over the boss art.
 
 ## 1.0.0-beta.6 (2026-10-12)
 
