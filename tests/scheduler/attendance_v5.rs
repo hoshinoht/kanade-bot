@@ -10,32 +10,19 @@ use kanade::domain::attendance::{
     AnswerState, AssumedSource, AttendanceDefault, AttendancePolicy, StatusLabel, Tally,
     snapshot_states, status_label,
 };
-use kanade::domain::drafts::{DraftOp, Target};
 use kanade::domain::history::{
-    Actor, BlameTarget, ChangeHistory, Origin, PickMode, PickRefusal, Surface, blame,
+    Actor, Attribution, BlameTarget, ChangeHistory, Origin, PickMode, PickRefusal, Surface, blame,
 };
-use kanade::domain::ids::IdGenerator;
 use kanade::domain::members::{Directory, Member};
 use kanade::domain::schedule::{
-    EMOJI_NO, EMOJI_YES, FixedEdit, NewFixedRun, ReminderPolicy, RsvpSource, RsvpState, Run,
-    RunStatus, ScheduleError, SchedulePolicy, ScheduleSnapshot, StatusChange,
+    EMOJI_NO, EMOJI_YES, FixedEdit, ReminderPolicy, RsvpSource, RsvpState, Run, RunStatus,
+    ScheduleError, SchedulePolicy, StatusChange,
 };
-use kanade::domain::scheduler::{
-    DraftError, PickError, ScheduleStore, SchedulerError, SchedulerService, Scope,
-};
+use kanade::domain::scheduler::{DraftError, PickError, SchedulerError, SchedulerService};
 use kanade::infrastructure::store::MemoryScheduleStore;
 
 use crate::common::TestClock;
-
-#[derive(Default)]
-struct CountingIds(u32);
-
-impl IdGenerator for CountingIds {
-    fn new_id(&mut self) -> String {
-        self.0 += 1;
-        format!("id-{:04}", self.0)
-    }
-}
+use crate::support::{CountingIds, hm, snapshot, swap, weekly};
 
 struct Guild;
 
@@ -66,7 +53,7 @@ fn policy(attendance: AttendancePolicy) -> SchedulePolicy {
     SchedulePolicy::new(
         ReminderPolicy {
             zone: Kuala_Lumpur,
-            ping_time: NaiveTime::from_hms_opt(9, 0, 0).unwrap(),
+            ping_time: hm(9, 0),
             countdowns: vec![60],
         },
         Weekday::Thu,
@@ -113,16 +100,7 @@ async fn fixture_with(attendance: AttendancePolicy, party: &[&str]) -> Fixture {
     .with_attendance(attendance);
     let fixed = service
         .as_origin(admin())
-        .add_fixed_run(NewFixedRun {
-            owner_pinned: false,
-            owner_id: "1001".into(),
-            channel_id: Some("222".into()),
-            bosses: vec!["HFA".into()],
-            weekday: Weekday::Sat,
-            time: NaiveTime::from_hms_opt(20, 0, 0).unwrap(),
-            participants: party.iter().map(|user| (*user).to_owned()).collect(),
-            note: None,
-        })
+        .add_fixed_run(weekly("222", Weekday::Sat, hm(20, 0), party))
         .await
         .unwrap();
     service
@@ -132,13 +110,8 @@ async fn fixture_with(attendance: AttendancePolicy, party: &[&str]) -> Fixture {
         .unwrap();
     let state = snapshot(&service).await;
     let run_at = |day: DateTime<FixedOffset>| {
-        state
-            .runs
-            .iter()
-            .find(|run| run.datetime == day.with_timezone(&Utc))
-            .unwrap()
-            .id
-            .clone()
+        let run = state.runs.iter().find(|run| run.datetime == day);
+        run.unwrap().id.clone()
     };
     let runs = [
         run_at(kl(8, 29, 20, 0)),
@@ -158,17 +131,9 @@ async fn fixture(attendance: AttendancePolicy) -> Fixture {
     fixture_with(attendance, &["1001", "1002"]).await
 }
 
-async fn snapshot(service: &Service) -> ScheduleSnapshot {
-    service.store().load(&Scope::All).await.unwrap()
-}
-
 async fn run_row(service: &Service, run: &str) -> Run {
-    snapshot(service)
-        .await
-        .runs
-        .into_iter()
-        .find(|row| row.id == run)
-        .unwrap()
+    let state = snapshot(service).await;
+    state.runs.into_iter().find(|row| row.id == run).unwrap()
 }
 
 async fn status(service: &Service, run: &str) -> RunStatus {
@@ -177,6 +142,27 @@ async fn status(service: &Service, run: &str) -> RunStatus {
 
 async fn head(service: &Service) -> u64 {
     service.store().history_head().await.unwrap().seq
+}
+
+async fn recount(f: &mut Fixture) -> Vec<String> {
+    f.service
+        .as_origin(tick())
+        .recount_attendance()
+        .await
+        .unwrap()
+}
+
+/// Cherry-pick record `seq` into `week` as `root`.
+async fn pick(
+    f: &mut Fixture,
+    seq: u64,
+    week: DateTime<Utc>,
+    policy: &SchedulePolicy,
+) -> Result<(), PickError> {
+    let picked = f
+        .service
+        .cherry_pick("root", None, seq, week, PickMode::Strict, policy, &Guild);
+    picked.await.map(drop)
 }
 
 /// The run's tally and whether it reads "expected" (confirmed on assumed
@@ -264,13 +250,7 @@ async fn the_timing_default_confirms_and_withdraws_in_its_own_commit() {
         assert_eq!(status(&f.service, run).await, RunStatus::Confirmed);
     }
     // The tick's recount finds nothing left to do.
-    let recounted = f
-        .service
-        .as_origin(tick())
-        .recount_attendance()
-        .await
-        .unwrap();
-    assert!(recounted.is_empty());
+    assert!(recount(&mut f).await.is_empty());
     // An explicit reaction always wins over the default.
     assert_eq!(
         react(&mut f, 0, "1002", EMOJI_NO, true).await,
@@ -368,26 +348,18 @@ async fn unknown_answers_put_a_run_at_risk_once_its_window_opens() {
     f.clock
         .set(start - TimeDelta::hours(12) - TimeDelta::minutes(1));
     let before = head(&f.service).await;
-    let recount = f
-        .service
-        .as_origin(tick())
-        .recount_attendance()
-        .await
-        .unwrap();
-    assert!(recount.is_empty(), "not yet");
+    assert!(recount(&mut f).await.is_empty(), "not yet");
     assert_eq!(
         head(&f.service).await,
         before,
         "an idle recount records nothing"
     );
     f.clock.set(start - TimeDelta::hours(12));
-    let recount = f
-        .service
-        .as_origin(tick())
-        .recount_attendance()
-        .await
-        .unwrap();
-    assert_eq!(recount, std::slice::from_ref(&run), "the window opened");
+    assert_eq!(
+        recount(&mut f).await,
+        std::slice::from_ref(&run),
+        "the window opened"
+    );
     assert_eq!(status(&f.service, &run).await, RunStatus::AtRisk);
     // A late ✅ from the unknown member confirms it again.
     assert_eq!(
@@ -411,13 +383,7 @@ async fn v4_compat_ignores_standing_answers_defaults_and_the_window() {
     );
     f.clock.set(kl(8, 29, 19, 0));
     let before = head(&f.service).await;
-    let recount = f
-        .service
-        .as_origin(tick())
-        .recount_attendance()
-        .await
-        .unwrap();
-    assert!(recount.is_empty());
+    assert!(recount(&mut f).await.is_empty());
     assert_eq!(head(&f.service).await, before);
     assert_eq!(
         react(&mut f, 0, "1002", EMOJI_YES, true).await,
@@ -464,26 +430,15 @@ async fn reactions_merges_and_picks_derive_status_from_one_source() {
                 "root",
                 &draft.id,
                 draft.version,
-                DraftOp::SwapParticipants {
-                    run: Target::Existing(run.clone()),
-                    remove: vec!["1003".into()],
-                    add: Vec::new(),
-                    via_portal: true,
-                },
+                swap(&run, &["1003"], &[]),
                 &schedule,
                 &Guild,
             )
             .await
             .unwrap();
+        let version = staged.draft.version;
         f.service
-            .merge_draft(
-                "root",
-                &draft.id,
-                staged.draft.version,
-                &schedule,
-                &Guild,
-                None,
-            )
+            .merge_draft("root", &draft.id, version, &schedule, &Guild, None)
             .await
             .unwrap();
         assert_eq!(
@@ -497,18 +452,7 @@ async fn reactions_merges_and_picks_derive_status_from_one_source() {
         react(&mut f, 1, "1003", EMOJI_YES, true).await;
         let picked = head(&f.service).await;
         let week = run_row(&f.service, &run).await.week_start;
-        f.service
-            .cherry_pick(
-                "root",
-                None,
-                picked,
-                week,
-                PickMode::Strict,
-                &schedule,
-                &Guild,
-            )
-            .await
-            .unwrap();
+        pick(&mut f, picked, week, &schedule).await.unwrap();
         assert_eq!(
             status(&f.service, &run).await,
             expected,
@@ -541,19 +485,9 @@ async fn a_policy_with_other_attendance_rules_is_refused() {
             .unwrap_err(),
         DraftError::Schedule(mismatch.clone())
     );
+    let week = run_row(&f.service, f.run()).await.week_start;
     assert_eq!(
-        f.service
-            .cherry_pick(
-                "root",
-                None,
-                1,
-                run_row(&f.service, f.run()).await.week_start,
-                PickMode::Strict,
-                &other,
-                &Guild
-            )
-            .await
-            .unwrap_err(),
+        pick(&mut f, 1, week, &other).await.unwrap_err(),
         PickError::Schedule(mismatch)
     );
 }
@@ -567,28 +501,12 @@ async fn tick_changes_cannot_be_cherry_picked() {
     // Next week's run goes at risk by the recount inside its window.
     react(&mut f, 1, "1002", EMOJI_YES, false).await;
     f.clock.set(kl(9, 5, 8, 0));
-    let recounted = f
-        .service
-        .as_origin(tick())
-        .recount_attendance()
-        .await
-        .unwrap();
-    assert_eq!(recounted, std::slice::from_ref(&f.runs[1]));
+    assert_eq!(recount(&mut f).await, std::slice::from_ref(&f.runs[1]));
     let seq = head(&f.service).await;
     f.clock.set(kl(8, 27, 2, 0));
     let week = run_row(&f.service, &run).await.week_start;
     assert!(matches!(
-        f.service
-            .cherry_pick(
-                "root",
-                None,
-                seq,
-                week,
-                PickMode::Strict,
-                &policy(AttendancePolicy::V5),
-                &Guild
-            )
-            .await,
+        pick(&mut f, seq, week, &policy(AttendancePolicy::V5)).await,
         Err(PickError::Refused(PickRefusal::UnsupportedPick { .. }))
     ));
 }
@@ -596,27 +514,16 @@ async fn tick_changes_cannot_be_cherry_picked() {
 async fn set_status(f: &mut Fixture, run: usize, status: RunStatus) {
     let run = f.runs[run].clone();
     let reminders = policy(f.attendance).reminders;
+    let change = StatusChange {
+        status,
+        announce: false,
+        via_portal: true,
+    };
     f.service
         .as_origin(admin())
-        .set_status(
-            &run,
-            StatusChange {
-                status,
-                announce: false,
-                via_portal: true,
-            },
-            &reminders,
-        )
+        .set_status(&run, change, &reminders)
         .await
         .unwrap();
-}
-
-async fn recount(f: &mut Fixture) -> Vec<String> {
-    f.service
-        .as_origin(tick())
-        .recount_attendance()
-        .await
-        .unwrap()
 }
 
 async fn label(f: &Fixture, run: usize) -> Option<StatusLabel> {
@@ -766,18 +673,8 @@ async fn a_cherry_picked_status_step_pins() {
     set_status(&mut f, 1, RunStatus::Confirmed).await;
     let picked = head(&f.service).await;
     let week = run_row(&f.service, &run).await.week_start;
-    f.service
-        .cherry_pick(
-            "root",
-            None,
-            picked,
-            week,
-            PickMode::Strict,
-            &policy(f.attendance),
-            &Guild,
-        )
-        .await
-        .unwrap();
+    let schedule = policy(f.attendance);
+    pick(&mut f, picked, week, &schedule).await.unwrap();
     let row = run_row(&f.service, &run).await;
     assert_eq!(row.status, RunStatus::Confirmed);
     assert_eq!(
@@ -850,20 +747,22 @@ async fn assert_unpinned_and_derived(f: &mut Fixture, run: &str) {
     assert_eq!(status(&f.service, run).await, RunStatus::Planned);
 }
 
+/// The admin moves `run` two hours later, to Sat 29 Aug 22:00.
+async fn move_run(f: &mut Fixture, run: &str) {
+    let to = kl(8, 29, 22, 0).with_timezone(&Utc);
+    f.service
+        .as_origin(admin())
+        .amend_run(run, to, &policy(f.attendance))
+        .await
+        .unwrap();
+}
+
 #[tokio::test]
 async fn a_move_ends_the_pin_and_re_derives() {
     let mut f = fixture(AttendancePolicy::V5).await;
     let run = pinned_on_incomplete_answers(&mut f).await;
     let before = head(&f.service).await;
-    f.service
-        .as_origin(admin())
-        .amend_run(
-            &run,
-            kl(8, 29, 22, 0).with_timezone(&Utc),
-            &policy(f.attendance),
-        )
-        .await
-        .unwrap();
+    move_run(&mut f, &run).await;
     assert_eq!(head(&f.service).await, before + 1, "one commit");
     assert_unpinned_and_derived(&mut f, &run).await;
 }
@@ -872,15 +771,7 @@ async fn a_move_ends_the_pin_and_re_derives() {
 async fn a_reset_of_slot_only_ends_the_pin_and_re_derives() {
     let mut f = fixture(AttendancePolicy::V5).await;
     let run = f.run().to_owned();
-    f.service
-        .as_origin(admin())
-        .amend_run(
-            &run,
-            kl(8, 29, 22, 0).with_timezone(&Utc),
-            &policy(f.attendance),
-        )
-        .await
-        .unwrap();
+    move_run(&mut f, &run).await;
     pinned_on_incomplete_answers(&mut f).await;
     let before = head(&f.service).await;
     let outcome = f
@@ -900,17 +791,13 @@ async fn a_weekly_time_edit_moving_the_run_ends_the_pin() {
     let run = pinned_on_incomplete_answers(&mut f).await;
     let fixed = f.fixed.clone();
     let before = head(&f.service).await;
+    let edit = FixedEdit {
+        time: Some(hm(21, 0)),
+        ..FixedEdit::default()
+    };
     f.service
         .as_origin(admin())
-        .update_fixed(
-            &fixed,
-            FixedEdit {
-                time: NaiveTime::from_hms_opt(21, 0, 0),
-                ..FixedEdit::default()
-            },
-            &Guild,
-            &policy(f.attendance),
-        )
+        .update_fixed(&fixed, edit, &Guild, &policy(f.attendance))
         .await
         .unwrap();
     assert_eq!(head(&f.service).await, before + 1, "one commit");
@@ -926,7 +813,7 @@ async fn after_the_start_party_changes_keep_the_pin() {
     let mut f = fixture(AttendancePolicy::V5).await;
     let run = pinned_on_incomplete_answers(&mut f).await;
     let pinned = run_row(&f.service, &run).await.status_pin;
-    async fn pin_blame(service: &Service, run: &str) -> kanade::domain::history::Attribution {
+    async fn pin_blame(service: &Service, run: &str) -> Attribution {
         blame(service.store(), &BlameTarget::Run(run.to_owned()))
             .await
             .unwrap()

@@ -4,29 +4,16 @@
 
 use std::collections::BTreeSet;
 
-use chrono::{DateTime, FixedOffset, NaiveTime, TimeZone, Utc, Weekday};
-use chrono_tz::Asia::Kuala_Lumpur;
+use chrono::{DateTime, FixedOffset, TimeZone, Utc, Weekday};
 use kanade::domain::history::{
     Actor, ChangeHistory, Origin, RevertMode, RevertOutcome, RowChange, RowKey, Surface,
 };
-use kanade::domain::ids::IdGenerator;
-use kanade::domain::schedule::{
-    NewFixedRun, ReminderPolicy, RsvpSource, RsvpState, SchedulePolicy, ScheduleSnapshot,
-};
-use kanade::domain::scheduler::{ScheduleStore, SchedulerService, Scope};
+use kanade::domain::schedule::{RsvpSource, RsvpState, SchedulePolicy};
+use kanade::domain::scheduler::SchedulerService;
 use kanade::infrastructure::store::MemoryScheduleStore;
 
 use crate::common::TestClock;
-
-#[derive(Default)]
-struct CountingIds(u32);
-
-impl IdGenerator for CountingIds {
-    fn new_id(&mut self) -> String {
-        self.0 += 1;
-        format!("id-{:04}", self.0)
-    }
-}
+use crate::support::{self, CountingIds, hm, snapshot, weekly};
 
 type Service = SchedulerService<MemoryScheduleStore, CountingIds, TestClock>;
 
@@ -37,16 +24,11 @@ fn kl(month: u32, day: u32, hour: u32) -> DateTime<FixedOffset> {
         .unwrap()
 }
 
+/// The shared policy with a single 60-minute countdown.
 fn policy() -> SchedulePolicy {
-    SchedulePolicy::new(
-        ReminderPolicy {
-            zone: Kuala_Lumpur,
-            ping_time: NaiveTime::from_hms_opt(9, 0, 0).unwrap(),
-            countdowns: vec![60],
-        },
-        Weekday::Thu,
-        NaiveTime::MIN,
-    )
+    let mut policy = support::policy();
+    policy.reminders.countdowns = vec![60];
+    policy
 }
 
 fn admin() -> Origin {
@@ -72,16 +54,7 @@ async fn fixture() -> Fixture {
     );
     service
         .as_origin(admin())
-        .add_fixed_run(NewFixedRun {
-            owner_pinned: false,
-            owner_id: "1001".into(),
-            channel_id: Some("222".into()),
-            bosses: vec!["HFA".into()],
-            weekday: Weekday::Sat,
-            time: NaiveTime::from_hms_opt(20, 0, 0).unwrap(),
-            participants: vec!["1001".into(), "1002".into()],
-            note: None,
-        })
+        .add_fixed_run(weekly("222", Weekday::Sat, hm(20, 0), &["1001", "1002"]))
         .await
         .unwrap();
     service
@@ -101,10 +74,6 @@ async fn fixture() -> Fixture {
         run: run.id,
         week: run.week_start,
     }
-}
-
-async fn snapshot(service: &Service) -> ScheduleSnapshot {
-    service.store().load(&Scope::All).await.unwrap()
 }
 
 async fn answer(f: &mut Fixture, user: &str, state: RsvpState) -> u64 {

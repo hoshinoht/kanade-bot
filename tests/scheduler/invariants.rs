@@ -4,7 +4,7 @@
 use chrono::{DateTime, FixedOffset, NaiveTime, TimeDelta, TimeZone, Utc, Weekday};
 use chrono_tz::{America::New_York, Asia::Kuala_Lumpur, Tz};
 use kanade::domain::{
-    ids::IdGenerator,
+    history::Origin,
     schedule::{
         COUNTDOWN_GRACE, DAY_OF, DAY_OF_GRACE, NewFixedRun, NewRun, ReminderPolicy, RunSource,
         RunStatus, ScheduleSnapshot, is_stale, reminder_specs,
@@ -14,16 +14,7 @@ use kanade::domain::{
 use kanade::infrastructure::store::MemoryScheduleStore;
 
 use crate::common::TestClock;
-
-#[derive(Default)]
-struct CountingIds(u32);
-
-impl IdGenerator for CountingIds {
-    fn new_id(&mut self) -> String {
-        self.0 += 1;
-        format!("id-{:04}", self.0)
-    }
-}
+use crate::support::{CountingIds, hm};
 
 type Service = SchedulerService<MemoryScheduleStore, CountingIds, TestClock>;
 
@@ -32,10 +23,6 @@ fn kl(y: i32, mo: u32, d: u32, h: u32, mi: u32) -> DateTime<FixedOffset> {
         .unwrap()
         .with_ymd_and_hms(y, mo, d, h, mi, 0)
         .unwrap()
-}
-
-fn hm(hour: u32, minute: u32) -> NaiveTime {
-    NaiveTime::from_hms_opt(hour, minute, 0).unwrap()
 }
 
 fn policy(zone: Tz, ping: NaiveTime) -> ReminderPolicy {
@@ -86,23 +73,23 @@ async fn materialising_twice_yields_an_identical_snapshot() {
     let mut service = service(&clock);
     let policy = policy(Kuala_Lumpur, hm(9, 0));
     service
-        .as_origin(kanade::domain::history::Origin::for_tests())
+        .as_origin(Origin::for_tests())
         .add_fixed_run(weekly(Weekday::Mon, hm(21, 30), &["HFA"]))
         .await
         .unwrap();
     service
-        .as_origin(kanade::domain::history::Origin::for_tests())
+        .as_origin(Origin::for_tests())
         .add_fixed_run(weekly(Weekday::Wed, hm(0, 30), &["HMaleficStar"]))
         .await
         .unwrap();
     service
-        .as_origin(kanade::domain::history::Origin::for_tests())
+        .as_origin(Origin::for_tests())
         .add_fixed_run(weekly(Weekday::Tue, hm(20, 0), &["HLucid"]))
         .await
         .unwrap();
     // A matching one-off the Tuesday timing adopts rather than duplicates.
     let one_off = service
-        .as_origin(kanade::domain::history::Origin::for_tests())
+        .as_origin(Origin::for_tests())
         .create_run(NewRun {
             fixed_run_id: None,
             channel_id: Some("900".into()),
@@ -117,13 +104,13 @@ async fn materialising_twice_yields_an_identical_snapshot() {
         .unwrap();
     for week in [kl(2026, 8, 27, 0, 0), kl(2026, 9, 3, 0, 0)] {
         let first = service
-            .as_origin(kanade::domain::history::Origin::for_tests())
+            .as_origin(Origin::for_tests())
             .materialise_week(week, &policy)
             .await
             .unwrap();
         let once = state(&service).await;
         let again = service
-            .as_origin(kanade::domain::history::Origin::for_tests())
+            .as_origin(Origin::for_tests())
             .materialise_week(week, &policy)
             .await
             .unwrap();
@@ -154,11 +141,11 @@ async fn a_tick_free_restart_creates_no_due_reminders_for_past_slots() {
     // and a slot more than two hours past is not created at all.
     let clock = TestClock::new(late);
     let mut cold = service(&clock);
-    cold.as_origin(kanade::domain::history::Origin::for_tests())
+    cold.as_origin(Origin::for_tests())
         .add_fixed_run(weekly(Weekday::Mon, hm(21, 30), &["HFA"]))
         .await
         .unwrap();
-    cold.as_origin(kanade::domain::history::Origin::for_tests())
+    cold.as_origin(Origin::for_tests())
         .add_fixed_run(weekly(Weekday::Mon, hm(18, 0), &["HLucid"]))
         .await
         .unwrap();
@@ -184,11 +171,11 @@ async fn a_tick_free_restart_creates_no_due_reminders_for_past_slots() {
     // restart adds nothing, and the backlog it finds is judged by staleness.
     let clock = TestClock::new(kl(2026, 8, 31, 8, 0));
     let mut warm = service(&clock);
-    warm.as_origin(kanade::domain::history::Origin::for_tests())
+    warm.as_origin(Origin::for_tests())
         .add_fixed_run(weekly(Weekday::Mon, hm(21, 30), &["HFA"]))
         .await
         .unwrap();
-    warm.as_origin(kanade::domain::history::Origin::for_tests())
+    warm.as_origin(Origin::for_tests())
         .materialise_week(week, &policy)
         .await
         .unwrap();
@@ -225,18 +212,18 @@ async fn cancelled_and_done_runs_keep_no_pending_reminders() {
     let policy = policy(Kuala_Lumpur, hm(9, 0));
     let weeks = [kl(2026, 8, 27, 0, 0), kl(2026, 9, 3, 0, 0)];
     let retired = service
-        .as_origin(kanade::domain::history::Origin::for_tests())
+        .as_origin(Origin::for_tests())
         .add_fixed_run(weekly(Weekday::Mon, hm(21, 30), &["HFA"]))
         .await
         .unwrap();
     service
-        .as_origin(kanade::domain::history::Origin::for_tests())
+        .as_origin(Origin::for_tests())
         .add_fixed_run(weekly(Weekday::Tue, hm(21, 30), &["HLucid"]))
         .await
         .unwrap();
     for week in weeks {
         service
-            .as_origin(kanade::domain::history::Origin::for_tests())
+            .as_origin(Origin::for_tests())
             .materialise_week(week, &policy)
             .await
             .unwrap();
@@ -354,7 +341,7 @@ async fn a_reset_inside_a_dst_gap_materialises_like_v4() {
         (Weekday::Sat, hm(23, 0)),
     ] {
         service
-            .as_origin(kanade::domain::history::Origin::for_tests())
+            .as_origin(Origin::for_tests())
             .add_fixed_run(NewFixedRun {
                 owner_pinned: false,
                 owner_id: "42".into(),
@@ -386,7 +373,7 @@ async fn a_reset_inside_a_dst_gap_materialises_like_v4() {
     let mut created = Vec::new();
     for week in weeks {
         let ids = service
-            .as_origin(kanade::domain::history::Origin::for_tests())
+            .as_origin(Origin::for_tests())
             .materialise_week(week, &policy.reminders)
             .await
             .unwrap();

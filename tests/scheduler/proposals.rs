@@ -3,26 +3,28 @@
 //! when the schedule moved, attendance rules and TTL expiry.
 
 use chrono::{DateTime, FixedOffset, NaiveTime, TimeZone, Utc, Weekday};
-use chrono_tz::Asia::Kuala_Lumpur;
 use kanade::domain::attendance::AttendancePolicy;
-use kanade::domain::drafts::RequestLimit;
-use kanade::domain::drafts::{DraftStatus, ProposalSource, ProposalStore};
-use kanade::domain::history::{Actor, ChangeHistory, Origin, Surface};
+use kanade::domain::drafts::{
+    DraftEventKind, DraftOp, DraftStatus, DraftStore, LoadedDraft, ProposalSource, ProposalStore,
+    RequestLimit, Target,
+};
+use kanade::domain::history::{Actor, ChangeHistory, ChangeRecord, Origin, Surface};
 use kanade::domain::ids::RandomIds;
 use kanade::domain::members::{Directory, Member};
 use kanade::domain::proposals::{Approver, ChangeKind, ProposedChange, Refusal};
 use kanade::domain::requests::{NoFreezes, RequestSpec, Subject};
 use kanade::domain::schedule::{
-    NewFixedRun, NewRun, NoticeChange, ReminderPolicy, RsvpState, RunSource, RunStatus,
-    SchedulePolicy, ScheduleSnapshot, StatusChange,
+    NewFixedRun, NewRun, NoticeChange, RsvpState, Run, RunSource, RunStatus, SchedulePolicy,
+    StatusChange,
 };
 use kanade::domain::scheduler::{
-    DraftError, ProposalError, ProposalRequest, RequestError, ScheduleStore, SchedulerService,
-    Scope, Supersede,
+    DraftError, ProposalApproved, ProposalError, ProposalPreview, ProposalRequest, RequestError,
+    SchedulerService, Supersede,
 };
 use kanade::infrastructure::store::MemoryScheduleStore;
 
 use crate::common::TestClock;
+use crate::support::{self, snapshot, utc};
 
 type Service = SchedulerService<MemoryScheduleStore, RandomIds, TestClock>;
 
@@ -51,21 +53,8 @@ fn kl(month: u32, day: u32, hour: u32, minute: u32) -> DateTime<FixedOffset> {
         .unwrap()
 }
 
-fn utc(at: DateTime<FixedOffset>) -> DateTime<Utc> {
-    at.with_timezone(&Utc)
-}
-
 fn policy(attendance: AttendancePolicy) -> SchedulePolicy {
-    SchedulePolicy::new(
-        ReminderPolicy {
-            zone: Kuala_Lumpur,
-            ping_time: NaiveTime::from_hms_opt(9, 0, 0).unwrap(),
-            countdowns: vec![60, 15],
-        },
-        Weekday::Thu,
-        NaiveTime::MIN,
-    )
-    .with_attendance(attendance)
+    support::policy().with_attendance(attendance)
 }
 
 fn member(id: &str) -> Approver {
@@ -144,10 +133,6 @@ async fn fixture(attendance: AttendancePolicy) -> Fixture {
     }
 }
 
-async fn snapshot(service: &Service) -> ScheduleSnapshot {
-    service.store().load(&Scope::All).await.unwrap()
-}
-
 fn cancel(run: &str, channel: &str) -> ProposedChange {
     ProposedChange {
         run_id: Some(run.into()),
@@ -198,26 +183,56 @@ impl Fixture {
         &mut self,
         id: &str,
         approver: &Approver,
-    ) -> Result<kanade::domain::scheduler::ProposalApproved, ProposalError> {
+    ) -> Result<ProposalApproved, ProposalError> {
         self.service
             .approve_proposal(id, approver, &self.policy, &Guild)
             .await
     }
 
+    async fn loaded(&self, id: &str) -> LoadedDraft {
+        let loaded = self.service.store().load_proposal(id).await.unwrap();
+        loaded.unwrap().0
+    }
+
     async fn status(&self, id: &str) -> DraftStatus {
-        let (loaded, _) = self
-            .service
-            .store()
-            .load_proposal(id)
-            .await
-            .unwrap()
-            .unwrap();
-        loaded.draft.status
+        self.loaded(id).await.draft.status
+    }
+
+    async fn run_row(&self, id: &str) -> Run {
+        let state = snapshot(&self.service).await;
+        state.runs.into_iter().find(|run| run.id == id).unwrap()
     }
 
     async fn run_status(&self, id: &str) -> RunStatus {
-        let state = snapshot(&self.service).await;
-        state.runs.iter().find(|run| run.id == id).unwrap().status
+        self.run_row(id).await.status
+    }
+
+    async fn record(&self, seq: u64) -> ChangeRecord {
+        self.service
+            .store()
+            .load_change(seq)
+            .await
+            .unwrap()
+            .unwrap()
+    }
+
+    /// Another writer moves `run` outside the proposal.
+    async fn amend(&mut self, run: &str, to: DateTime<FixedOffset>) {
+        self.service
+            .as_origin(Origin::for_tests())
+            .amend_run(run, utc(to), &self.policy)
+            .await
+            .unwrap();
+    }
+
+    /// Another writer swaps `out` for `into` on `run`.
+    async fn swap(&mut self, run: &str, out: &str, into: &str) {
+        let (out, into) = ([out.to_owned()], [into.to_owned()]);
+        self.service
+            .as_origin(Origin::for_tests())
+            .swap_participants(run, &out, &into, false, &Guild)
+            .await
+            .unwrap();
     }
 }
 
@@ -228,13 +243,7 @@ async fn a_participant_approves_through_the_source_surface_quietly() {
     let approved = f.approve(&id, &member("1002")).await.unwrap();
     assert_eq!(f.run_status(&f.run.clone()).await, RunStatus::Cancelled);
     assert_eq!(f.status(&id).await, DraftStatus::Merged);
-    let record = f
-        .service
-        .store()
-        .load_change(approved.merge.seq)
-        .await
-        .unwrap()
-        .unwrap();
+    let record = f.record(approved.merge.seq).await;
     assert_eq!(record.origin.actor, Actor::member("1002"));
     assert_eq!(record.origin.surface, Surface::ExtractionApproval);
     // v4 parity: an approved cancel announces nothing (the card says it).
@@ -251,13 +260,7 @@ async fn a_participant_approves_through_the_source_surface_quietly() {
         .await
         .unwrap();
     let approved = f.approve(&chat, &member("1001")).await.unwrap();
-    let record = f
-        .service
-        .store()
-        .load_change(approved.merge.seq)
-        .await
-        .unwrap()
-        .unwrap();
+    let record = f.record(approved.merge.seq).await;
     assert_eq!(record.origin.surface, Surface::ChatApproval);
 }
 
@@ -347,13 +350,7 @@ async fn a_newer_proposal_supersedes_the_live_one_for_its_target() {
         .await
         .unwrap();
     assert_eq!(proposed.superseded, std::slice::from_ref(&older));
-    let (loaded, _) = f
-        .service
-        .store()
-        .load_proposal(&older)
-        .await
-        .unwrap()
-        .unwrap();
+    let loaded = f.loaded(&older).await;
     assert_eq!(loaded.draft.status, DraftStatus::Discarded);
     assert_eq!(loaded.draft.close_reason.as_deref(), Some("superseded"));
     assert_eq!(loaded.draft.closed_by, Some(Actor::system("extraction")));
@@ -375,13 +372,7 @@ async fn approving_retires_the_sibling_proposals() {
     }
     let approved = f.approve(&ids[1], &member("1001")).await.unwrap();
     assert_eq!(approved.superseded, [ids[0].clone()]);
-    let (loaded, _) = f
-        .service
-        .store()
-        .load_proposal(&ids[0])
-        .await
-        .unwrap()
-        .unwrap();
+    let loaded = f.loaded(&ids[0]).await;
     assert_eq!(loaded.draft.close_reason.as_deref(), Some("superseded"));
 }
 
@@ -426,11 +417,7 @@ async fn an_answer_for_someone_swapped_off_meanwhile_is_refused_at_approval() {
     let mut f = fixture(AttendancePolicy::V4_COMPAT).await;
     let run = f.run.clone();
     let id = f.propose(answer(&run, "1003", RsvpState::Yes)).await;
-    f.service
-        .as_origin(Origin::for_tests())
-        .swap_participants(&run, &["1003".into()], &["1004".into()], false, &Guild)
-        .await
-        .unwrap();
+    f.swap(&run, "1003", "1004").await;
     let refused = f.approve(&id, &member("1001")).await.unwrap_err();
     assert_eq!(refused, ProposalError::Refused(Refusal::AnswerForOutsider));
     assert_eq!(
@@ -444,19 +431,7 @@ async fn an_answer_for_someone_swapped_off_meanwhile_is_refused_at_approval() {
 async fn proposed_answers_recount_but_never_end_a_pin_or_move_a_started_run() {
     let mut f = fixture(AttendancePolicy::V5).await;
     let run = f.run.clone();
-    f.service
-        .as_origin(Origin::for_tests())
-        .set_status(
-            &run,
-            StatusChange {
-                status: RunStatus::Confirmed,
-                announce: false,
-                via_portal: true,
-            },
-            &f.policy.reminders,
-        )
-        .await
-        .unwrap();
+    f.hand_set(&run, RunStatus::Confirmed).await;
     let id = f.propose(answer(&run, "1001", RsvpState::No)).await;
     f.approve(&id, &member("1002")).await.unwrap();
     let state = snapshot(&f.service).await;
@@ -609,17 +584,14 @@ impl Fixture {
     }
 
     async fn hand_set(&mut self, run: &str, status: RunStatus) {
+        let change = StatusChange {
+            status,
+            announce: false,
+            via_portal: true,
+        };
         self.service
             .as_origin(Origin::for_tests())
-            .set_status(
-                run,
-                StatusChange {
-                    status,
-                    announce: false,
-                    via_portal: true,
-                },
-                &self.policy.reminders,
-            )
+            .set_status(run, change, &self.policy.reminders)
             .await
             .unwrap();
     }
@@ -674,21 +646,8 @@ async fn a_proposed_answer_recounts_against_the_status_at_approval() {
 async fn other_upstream_changes_still_conflict() {
     let mut f = fixture(AttendancePolicy::V4_COMPAT).await;
     let run = f.run.clone();
-    let id = f
-        .propose(ProposedChange {
-            new_datetime: Some(utc(kl(9, 1, 21, 30))),
-            ..ProposedChange {
-                kind: ChangeKind::Move,
-                ..cancel(&run, "222")
-            }
-        })
-        .await;
-    let policy = f.policy.clone();
-    f.service
-        .as_origin(Origin::for_tests())
-        .amend_run(&run, utc(kl(9, 2, 21, 0)), &policy)
-        .await
-        .unwrap();
+    let id = f.propose(move_to(&run, utc(kl(9, 1, 21, 30)))).await;
+    f.amend(&run, kl(9, 2, 21, 0)).await;
     let before = snapshot(&f.service).await;
     assert!(matches!(
         f.approve(&id, &member("1001")).await.unwrap_err(),
@@ -705,15 +664,7 @@ async fn a_proposed_move_revives_a_cancelled_or_otot_run() {
         f.react(&run, "1001", "\u{2705}").await;
         f.hand_set(&run, status).await;
         let to = utc(kl(9, 1, 21, 30));
-        let id = f
-            .propose(ProposedChange {
-                new_datetime: Some(to),
-                ..ProposedChange {
-                    kind: ChangeKind::Move,
-                    ..cancel(&run, "222")
-                }
-            })
-            .await;
+        let id = f.propose(move_to(&run, to)).await;
         f.approve(&id, &member("1002")).await.unwrap();
         let state = snapshot(&f.service).await;
         let row = state.runs.iter().find(|row| row.id == run).unwrap();
@@ -745,18 +696,9 @@ async fn in_v5_a_revived_run_is_rederived_unpinned_or_kept_once_started() {
         f.react(&run, "1003", "\u{274c}").await;
         f.hand_set(&run, RunStatus::Confirmed).await;
         f.hand_set(&run, RunStatus::Cancelled).await;
-        let id = f
-            .propose(ProposedChange {
-                new_datetime: Some(utc(to)),
-                ..ProposedChange {
-                    kind: ChangeKind::Move,
-                    ..cancel(&run, "222")
-                }
-            })
-            .await;
+        let id = f.propose(move_to(&run, utc(to))).await;
         f.approve(&id, &member("1002")).await.unwrap();
-        let state = snapshot(&f.service).await;
-        let row = state.runs.iter().find(|row| row.id == run).unwrap();
+        let row = f.run_row(&run).await;
         assert_eq!((row.status, row.status_pin), (want, None), "{to}");
     }
 }
@@ -766,12 +708,7 @@ async fn an_admin_amend_leaves_a_cancelled_run_cancelled() {
     let mut f = fixture(AttendancePolicy::V4_COMPAT).await;
     let run = f.run.clone();
     f.hand_set(&run, RunStatus::Cancelled).await;
-    let policy = f.policy.clone();
-    f.service
-        .as_origin(Origin::for_tests())
-        .amend_run(&run, utc(kl(9, 1, 21, 30)), &policy)
-        .await
-        .unwrap();
+    f.amend(&run, kl(9, 1, 21, 30)).await;
     assert_eq!(f.run_status(&run).await, RunStatus::Cancelled);
 }
 
@@ -804,8 +741,6 @@ async fn a_repeated_approval_never_retires_a_newer_sibling() {
 
 #[tokio::test]
 async fn drafts_and_requests_refuse_proposal_only_operations() {
-    use kanade::domain::drafts::{DraftOp, Target};
-
     let mut f = fixture(AttendancePolicy::V4_COMPAT).await;
     let run = Target::Existing(f.run.clone());
     let internal = [
@@ -903,11 +838,7 @@ async fn an_approver_taken_off_the_run_meanwhile_is_refused() {
     let mut f = fixture(AttendancePolicy::V4_COMPAT).await;
     let run = f.run.clone();
     let id = f.propose(cancel(&run, "222")).await;
-    f.service
-        .as_origin(Origin::for_tests())
-        .swap_participants(&run, &["1003".into()], &["1004".into()], false, &Guild)
-        .await
-        .unwrap();
+    f.swap(&run, "1003", "1004").await;
     let before = snapshot(&f.service).await;
     assert_eq!(
         f.approve(&id, &member("1003")).await.unwrap_err(),
@@ -931,9 +862,15 @@ impl Fixture {
         id: &str,
         approver: &Approver,
         edit: DateTime<Utc>,
-    ) -> Result<kanade::domain::scheduler::ProposalApproved, ProposalError> {
+    ) -> Result<ProposalApproved, ProposalError> {
         self.service
             .approve_proposal_at(id, approver, Some(edit), &self.policy, &Guild)
+            .await
+    }
+
+    async fn preview(&self, id: &str, by: Option<&str>) -> Result<ProposalPreview, ProposalError> {
+        self.service
+            .preview_proposal(id, by, &self.policy, &Guild)
             .await
     }
 
@@ -942,15 +879,11 @@ impl Fixture {
     }
 
     async fn merged_detail(&self, id: &str) -> Option<String> {
-        use kanade::domain::drafts::{DraftEventKind, DraftStore};
-        self.service
-            .store()
-            .draft_events(id)
-            .await
-            .unwrap()
+        let events = self.service.store().draft_events(id).await.unwrap();
+        let merged = events
             .into_iter()
-            .find(|event| event.kind == DraftEventKind::Merged)
-            .and_then(|event| event.detail)
+            .find(|event| event.kind == DraftEventKind::Merged);
+        merged.and_then(|event| event.detail)
     }
 }
 
@@ -964,29 +897,14 @@ async fn an_edited_approval_merges_one_record_at_the_new_time() {
     let approved = f.approve_at(&id, &member("1002"), edit).await.unwrap();
     assert_eq!(approved.merge.seq, head + 1);
     assert_eq!(f.head().await, head + 1, "one record, no second write");
-    let record = f
-        .service
-        .store()
-        .load_change(approved.merge.seq)
-        .await
-        .unwrap()
-        .unwrap();
+    let record = f.record(approved.merge.seq).await;
     assert_eq!(record.origin.actor, Actor::member("1002"));
     assert_eq!(record.origin.surface, Surface::ExtractionApproval);
     assert_eq!(
         record.origin.request_id.as_deref(),
         Some(&*format!("approve:{id}"))
     );
-    let state = snapshot(&f.service).await;
-    assert_eq!(
-        state
-            .runs
-            .iter()
-            .find(|row| row.id == run)
-            .unwrap()
-            .datetime,
-        edit
-    );
+    assert_eq!(f.run_row(&run).await.datetime, edit);
     assert_eq!(
         f.merged_detail(&id).await,
         Some(format!(
@@ -1093,12 +1011,7 @@ async fn an_edited_approval_keeps_the_authority_conflict_and_refusal_rules() {
         f.approve_at(&id, &member("1004"), edit).await.unwrap_err(),
         ProposalError::Unauthorised
     );
-    let policy = f.policy.clone();
-    f.service
-        .as_origin(Origin::for_tests())
-        .amend_run(&run, utc(kl(9, 2, 21, 0)), &policy)
-        .await
-        .unwrap();
+    f.amend(&run, kl(9, 2, 21, 0)).await;
     let before = snapshot(&f.service).await;
     assert!(matches!(
         f.approve_at(&id, &member("1001"), edit).await.unwrap_err(),
@@ -1123,45 +1036,25 @@ async fn previewing_a_proposal_writes_nothing() {
     let run = f.run.clone();
     let id = f.propose(move_to(&run, utc(kl(9, 1, 21, 30)))).await;
     let head = f.head().await;
-    let clean = f
-        .service
-        .preview_proposal(&id, None, &f.policy, &Guild)
-        .await
-        .unwrap();
+    let clean = f.preview(&id, None).await.unwrap();
     assert!(clean.analysis.conflicts.is_empty() && clean.refusal.is_none());
     assert!(!clean.no_effect && !clean.expired);
     assert_eq!(clean.info.source, ProposalSource::Extraction);
     assert!(!clean.analysis.result_changes.unwrap().changes.is_empty());
 
-    let policy = f.policy.clone();
-    f.service
-        .as_origin(Origin::for_tests())
-        .amend_run(&run, utc(kl(9, 2, 21, 0)), &policy)
-        .await
-        .unwrap();
+    f.amend(&run, kl(9, 2, 21, 0)).await;
     let head = head + 1;
-    let moved = f
-        .service
-        .preview_proposal(&id, Some("1001"), &f.policy, &Guild)
-        .await
-        .unwrap();
+    let moved = f.preview(&id, Some("1001")).await.unwrap();
     assert!(!moved.analysis.conflicts.is_empty());
 
     // Past its TTL: reported, never closed by a preview.
     f.clock.set(kl(8, 28, 2, 0));
-    let late = f
-        .service
-        .preview_proposal(&id, None, &f.policy, &Guild)
-        .await
-        .unwrap();
+    let late = f.preview(&id, None).await.unwrap();
     assert!(late.expired);
     assert_eq!(f.status(&id).await, DraftStatus::Submitted);
     assert_eq!(f.head().await, head);
     assert_eq!(
-        f.service
-            .preview_proposal("nope", None, &f.policy, &Guild)
-            .await
-            .unwrap_err(),
+        f.preview("nope", None).await.unwrap_err(),
         ProposalError::Draft(DraftError::UnknownDraft("nope".into()))
     );
 }
@@ -1228,13 +1121,7 @@ async fn an_approved_move_announces_the_move_and_nothing_else() {
     for via_portal in [false, true] {
         let mut f = fixture(AttendancePolicy::V4_COMPAT).await;
         let run = f.run.clone();
-        let from = snapshot(&f.service)
-            .await
-            .runs
-            .iter()
-            .find(|row| row.id == run)
-            .unwrap()
-            .datetime;
+        let from = f.run_row(&run).await.datetime;
         let to = utc(kl(9, 1, 21, 30));
         let id = f.propose(move_to(&run, to)).await;
         let approver = Approver {
@@ -1255,13 +1142,7 @@ async fn an_approved_move_announces_the_move_and_nothing_else() {
         assert_eq!(notices[0].channel_id.as_deref(), Some("222"));
         assert_eq!(notices[0].listed, ["1001", "1002", "1003"]);
         assert_eq!(notices[0].via_portal, via_portal);
-        let record = f
-            .service
-            .store()
-            .load_change(approved.merge.seq)
-            .await
-            .unwrap()
-            .unwrap();
+        let record = f.record(approved.merge.seq).await;
         assert_eq!(record.notices, ["notice.run.move.moved"]);
     }
 }

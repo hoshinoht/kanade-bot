@@ -2,16 +2,17 @@
 //! failed commit leaves neither, a success writes one change record, and a
 //! key a plain create recorded still replays.
 
-use chrono::{FixedOffset, NaiveTime, TimeZone, Weekday};
-use chrono_tz::Asia::Kuala_Lumpur;
+use chrono::{FixedOffset, TimeZone, Weekday};
 use kanade::domain::history::{ChangeHistory, Origin, RowKey};
 use kanade::domain::ids::RandomIds;
-use kanade::domain::schedule::{NewFixedRun, ReminderPolicy, SchedulePolicy};
+use kanade::domain::schedule::NewFixedRun;
 use kanade::domain::scheduler::{ScheduleStore, SchedulerError, SchedulerService, Scope};
 use kanade::infrastructure::store::MemoryScheduleStore;
 
 use crate::common::TestClock;
+use crate::support::{hm, policy, weekly};
 
+/// On Sun 27 Sep 01:00 in Kuala Lumpur.
 fn service() -> SchedulerService<MemoryScheduleStore, RandomIds, TestClock> {
     let now = FixedOffset::east_opt(8 * 3600)
         .unwrap()
@@ -20,29 +21,8 @@ fn service() -> SchedulerService<MemoryScheduleStore, RandomIds, TestClock> {
     SchedulerService::new(MemoryScheduleStore::new(), RandomIds, TestClock::new(now))
 }
 
-fn policy() -> SchedulePolicy {
-    SchedulePolicy::new(
-        ReminderPolicy {
-            zone: Kuala_Lumpur,
-            ping_time: NaiveTime::from_hms_opt(9, 0, 0).unwrap(),
-            countdowns: vec![60, 15],
-        },
-        Weekday::Thu,
-        NaiveTime::MIN,
-    )
-}
-
 fn timing() -> NewFixedRun {
-    NewFixedRun {
-        owner_pinned: false,
-        owner_id: "1001".into(),
-        channel_id: Some("222".into()),
-        bosses: vec!["HFA".into()],
-        weekday: Weekday::Mon,
-        time: NaiveTime::from_hms_opt(21, 30, 0).unwrap(),
-        participants: vec!["1001".into(), "1002".into()],
-        note: None,
-    }
+    weekly("222", Weekday::Mon, hm(21, 30), &["1001", "1002"])
 }
 
 #[tokio::test]

@@ -15,7 +15,7 @@ use kanade::domain::schedule::{
     utc_instant,
 };
 use kanade::domain::scheduler::{
-    DeclineNoticeContext, ScheduleStore, SchedulerError, SchedulerService, Scope,
+    Attributed, DeclineNoticeContext, ScheduleStore, SchedulerError, SchedulerService, Scope,
 };
 use kanade::domain::settings::RunLengths;
 use kanade::infrastructure::store::MemoryScheduleStore;
@@ -61,6 +61,13 @@ struct World {
     clock: TestClock,
     run: String,
     fixed: String,
+}
+
+impl World {
+    /// A handle for one mutation attributed to the tests.
+    fn op(&mut self) -> Attributed<'_, MemoryScheduleStore, SeqIds, TestClock> {
+        self.service.as_origin(Origin::for_tests())
+    }
 }
 
 fn ids() -> SeqIds {
@@ -147,20 +154,13 @@ async fn a_move_is_refused_once_the_run_has_ended() {
     let to = utc(12, 12, 0);
     let mut open = world(RunStatus::Planned, before_end()).await;
     let run = open.run.clone();
-    open.service
-        .as_origin(Origin::for_tests())
+    open.op()
         .amend_run(&run, to, &policy)
         .await
         .expect("before its end the run moves");
     let mut frozen = world(RunStatus::Planned, after_end()).await;
     let run = frozen.run.clone();
-    ended(
-        frozen
-            .service
-            .as_origin(Origin::for_tests())
-            .amend_run(&run, to, &policy)
-            .await,
-    );
+    ended(frozen.op().amend_run(&run, to, &policy).await);
 }
 
 #[tokio::test]
@@ -169,8 +169,7 @@ async fn a_swap_is_refused_once_the_run_has_ended() {
     let remove = [BOB.to_owned()];
     let mut open = world(RunStatus::Planned, before_end()).await;
     let run = open.run.clone();
-    open.service
-        .as_origin(Origin::for_tests())
+    open.op()
         .swap_participants(&run, &remove, &[], false, &roster)
         .await
         .expect("before its end the party changes");
@@ -178,8 +177,7 @@ async fn a_swap_is_refused_once_the_run_has_ended() {
     let run = frozen.run.clone();
     ended(
         frozen
-            .service
-            .as_origin(Origin::for_tests())
+            .op()
             .swap_participants(&run, &remove, &[], false, &roster)
             .await,
     );
@@ -190,14 +188,12 @@ async fn a_late_answer_by_reaction_or_the_admin_api_is_refused() {
     let mut open = world(RunStatus::Planned, before_end()).await;
     let run = open.run.clone();
     let result = open
-        .service
-        .as_origin(Origin::for_tests())
+        .op()
         .apply_reaction(&run, ALICE, "\u{2705}", true)
         .await
         .expect("before its end a reaction counts");
     assert!(result.applied);
-    open.service
-        .as_origin(Origin::for_tests())
+    open.op()
         .portal_answer(&run, BOB, Some(RsvpState::Yes))
         .await
         .expect("before its end an admin answer counts");
@@ -206,22 +202,19 @@ async fn a_late_answer_by_reaction_or_the_admin_api_is_refused() {
     let run = frozen.run.clone();
     ended(
         frozen
-            .service
-            .as_origin(Origin::for_tests())
+            .op()
             .apply_reaction(&run, ALICE, "\u{2705}", true)
             .await,
     );
     ended(
         frozen
-            .service
-            .as_origin(Origin::for_tests())
+            .op()
             .portal_answer(&run, BOB, Some(RsvpState::Yes))
             .await,
     );
     ended(
         frozen
-            .service
-            .as_origin(Origin::for_tests())
+            .op()
             .set_rsvp(&run, BOB, RsvpState::No, RsvpSource::Chat)
             .await,
     );
@@ -238,13 +231,11 @@ async fn a_member_move_and_answer_are_refused_with_run_ended() {
     // Before its start the member may still move it and answer.
     let mut open = world(RunStatus::Planned, utc(10, 11, 50)).await;
     let run = open.run.clone();
-    open.service
-        .as_origin(Origin::for_tests())
+    open.op()
         .member_answer_with_decline(&run, ALICE, RsvpState::Yes, context(), &policy)
         .await
         .expect("an answer before the end");
-    open.service
-        .as_origin(Origin::for_tests())
+    open.op()
         .member_amend_run(ALICE, &run, utc(12, 12, 0), &policy)
         .await
         .expect("a move before the start");
@@ -253,15 +244,13 @@ async fn a_member_move_and_answer_are_refused_with_run_ended() {
     let run = frozen.run.clone();
     member_ended(
         frozen
-            .service
-            .as_origin(Origin::for_tests())
+            .op()
             .member_answer_with_decline(&run, ALICE, RsvpState::Yes, context(), &policy)
             .await,
     );
     member_ended(
         frozen
-            .service
-            .as_origin(Origin::for_tests())
+            .op()
             .member_amend_run(ALICE, &run, utc(12, 12, 0), &policy)
             .await,
     );
@@ -279,8 +268,7 @@ async fn weekly_edits_and_retirement_skip_an_ended_run() {
         let mut world = world(RunStatus::Planned, now).await;
         let fixed = world.fixed.clone();
         let count = world
-            .service
-            .as_origin(Origin::for_tests())
+            .op()
             .edit_fixed_run(
                 &fixed,
                 patch(),
@@ -292,8 +280,7 @@ async fn weekly_edits_and_retirement_skip_an_ended_run() {
             .unwrap();
         assert_eq!(count, touched, "edit at {now}");
         let retired = world
-            .service
-            .as_origin(Origin::for_tests())
+            .op()
             .retire_fixed_run(&fixed, &weeks, &policy.reminders)
             .await
             .unwrap();
@@ -313,8 +300,7 @@ async fn staff_status_and_the_prompt_still_settle_an_ended_run() {
     let mut staff = world(RunStatus::Planned, after_end()).await;
     let run = staff.run.clone();
     staff
-        .service
-        .as_origin(Origin::for_tests())
+        .op()
         .set_status(
             &run,
             StatusChange {
@@ -331,8 +317,7 @@ async fn staff_status_and_the_prompt_still_settle_an_ended_run() {
     let mut prompt = world(RunStatus::Planned, after_end()).await;
     let run = prompt.run.clone();
     let settled = prompt
-        .service
-        .as_origin(Origin::for_tests())
+        .op()
         .settle_run(
             SettleRun {
                 run_id: run,
@@ -356,20 +341,13 @@ async fn an_own_time_run_stays_editable_until_the_reset() {
     // Tue 15 Sep 23:59 local: long after its slot, still before the reset.
     let mut open = world(RunStatus::Otot, utc(15, 15, 59)).await;
     let run = open.run.clone();
-    open.service
-        .as_origin(Origin::for_tests())
+    open.op()
         .swap_participants(&run, &remove, &[], false, &Roster::new())
         .await
         .expect("own time is open all week");
     let mut frozen = world(RunStatus::Otot, utc(15, 16, 0)).await;
     let run = frozen.run.clone();
-    ended(
-        frozen
-            .service
-            .as_origin(Origin::for_tests())
-            .amend_run(&run, utc(16, 12, 0), &policy)
-            .await,
-    );
+    ended(frozen.op().amend_run(&run, utc(16, 12, 0), &policy).await);
 }
 
 #[tokio::test]
@@ -400,11 +378,11 @@ async fn a_cherry_pick_onto_an_ended_run_is_refused() {
     let this_week = utc_instant(&policy.week_of(&start()).unwrap()).unwrap();
     for (now, refused) in [(before_end(), false), (after_end(), true)] {
         let mut world = world(RunStatus::Planned, utc(1, 0, 0)).await;
+        let fixed = world.fixed.clone();
         let next = world
-            .service
-            .as_origin(Origin::for_tests())
+            .op()
             .create_run(NewRun {
-                fixed_run_id: Some(world.fixed.clone()),
+                fixed_run_id: Some(fixed),
                 channel_id: Some("900".into()),
                 week_start: this_week + chrono::TimeDelta::days(7),
                 datetime: start() + chrono::TimeDelta::days(7),
@@ -416,8 +394,7 @@ async fn a_cherry_pick_onto_an_ended_run_is_refused() {
             .await
             .unwrap();
         world
-            .service
-            .as_origin(Origin::for_tests())
+            .op()
             .swap_participants(&next, &[BOB.to_owned()], &[], false, &Roster::new())
             .await
             .unwrap();
@@ -462,8 +439,7 @@ async fn a_weekly_change_asks_no_choice_for_an_ended_amended_run() {
     let run = world.run.clone();
     // Amended to 19:30 local: it ends at 12:00Z.
     world
-        .service
-        .as_origin(Origin::for_tests())
+        .op()
         .amend_run(&run, utc(10, 11, 30), &policy)
         .await
         .unwrap();
@@ -495,8 +471,7 @@ async fn a_weekly_change_asks_no_choice_for_an_ended_amended_run() {
         choices: FixedEditChoices::PerRun(Default::default()),
     };
     world
-        .service
-        .as_origin(Origin::for_tests())
+        .op()
         .apply_fixed_edit(&request, &Roster::new(), &policy)
         .await
         .expect("approves without a choice for the ended run");

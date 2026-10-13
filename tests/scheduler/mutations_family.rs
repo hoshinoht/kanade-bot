@@ -6,12 +6,14 @@ use std::collections::{BTreeMap, BTreeSet};
 use chrono::{NaiveDate, NaiveTime, Utc};
 use kanade::domain::{
     catalog::{BossSpec, BossTable, CatalogSpec, DifficultySpec},
+    history::Origin,
     members::{Directory, Member, PingLevel},
     notify::{ChannelDirectory, DeliverySettings, plan_notice},
     schedule::{
-        FixedEdit, FixedRun, NewFixedRun, NewRun, Notice, ReminderPolicy, RsvpSource, RsvpState,
-        RunSource, RunState, RunStatus, SchedulePolicy, StatusChange, settable_status,
+        FixedEdit, FixedRun, Notice, Outcome, ReminderPolicy, RsvpSource, RsvpState, RunState,
+        RunStatus, SchedulePolicy, StatusChange, settable_status,
     },
+    scheduler::SchedulerResult,
     time::ZonedDateTime,
     weeks,
 };
@@ -19,8 +21,9 @@ use serde_json::{Value, json};
 
 use crate::common::{
     self, Deviation, Service, apply_deviations, assert_case, clock_time, countdowns, instant,
-    register_materialised, run_ref, step_result, strings, text, utc, weekday, zone,
+    register_materialised, run_ref, step_result, strings, text, weekday, zone,
 };
+use crate::vector_steps::{add_fixed, create_run};
 
 /// Decision (a): a weekly participants edit drops the answers of members it
 /// took off the upcoming runs (and re-derives status; no frozen status
@@ -255,6 +258,22 @@ impl Replay<'_> {
         }
     }
 
+    /// A mutation's step value: its view, after recording its notices and
+    /// drawing the audit id when v4 would have audited it.
+    fn settle<T>(
+        &mut self,
+        result: SchedulerResult<Outcome<T>>,
+        audited: impl FnOnce(&[Notice]) -> bool,
+        view: fn(&T, &Guild) -> Value,
+    ) -> Result<Value, String> {
+        let outcome = result.map_err(|error| error.to_string())?;
+        if audited(&outcome.notices) {
+            draw_audit_id(&mut self.ids);
+        }
+        self.record(&outcome.notices);
+        Ok(view(&outcome.value, &self.guild))
+    }
+
     async fn register(&mut self) {
         let now = self.clock_now();
         for week in self.policy.materialised_weeks(now).expect("weeks") {
@@ -287,52 +306,17 @@ impl Replay<'_> {
 
     async fn step(&mut self, index: usize, step: &Value, expected: &Value) -> Value {
         let result: Result<Value, String> = match text(&step["op"]) {
-            "add_fixed" => {
-                let id = self
-                    .service
-                    .as_origin(kanade::domain::history::Origin::for_tests())
-                    .add_fixed_run(NewFixedRun {
-                        owner_pinned: false,
-                        owner_id: text(&step["owner_id"]).into(),
-                        channel_id: Some(text(&step["channel_id"]).into()),
-                        bosses: strings(&step["bosses"]),
-                        weekday: weekday(&step["weekday"]),
-                        time: clock_time(&step["time"]),
-                        participants: strings(&step["participants"]),
-                        note: None,
-                    })
-                    .await
-                    .expect("add_fixed");
-                self.fixed_refs
-                    .insert(text(&step["fixed_key"]).to_owned(), id.clone());
-                Ok(json!(id))
-            }
+            "add_fixed" => Ok(add_fixed(&mut self.service, step, &mut self.fixed_refs).await),
             "create_run" => {
-                let id = self
-                    .service
-                    .as_origin(kanade::domain::history::Origin::for_tests())
-                    .create_run(NewRun {
-                        fixed_run_id: None,
-                        channel_id: Some(text(&step["channel_id"]).into()),
-                        week_start: utc(&step["week_start"]),
-                        datetime: utc(&step["at"]),
-                        bosses: strings(&step["bosses"]),
-                        participants: strings(&step["participants"]),
-                        status: RunStatus::parse(text(&step["status"])).unwrap(),
-                        source: RunSource::parse(text(&step["source"])).unwrap(),
-                    })
-                    .await
-                    .expect("create_run");
-                self.run_refs
-                    .insert(text(&step["run_key"]).to_owned(), id.clone());
-                Ok(json!(id))
+                let week = &step["week_start"];
+                Ok(create_run(&mut self.service, step, week, &mut self.run_refs).await)
             }
             "set_rsvp" => {
                 let run = run_ref(&self.run_refs, &step["run_key"]).to_owned();
                 let state = RsvpState::parse(text(&step["state"])).unwrap();
                 let source = RsvpSource::parse(text(&step["source"])).unwrap();
                 self.service
-                    .as_origin(kanade::domain::history::Origin::for_tests())
+                    .as_origin(Origin::for_tests())
                     .set_rsvp(&run, text(&step["user_id"]), state, source)
                     .await
                     .map(|()| json!(state.as_str()))
@@ -346,7 +330,7 @@ impl Replay<'_> {
             "materialise_weeks" => {
                 let result = self
                     .service
-                    .as_origin(kanade::domain::history::Origin::for_tests())
+                    .as_origin(Origin::for_tests())
                     .materialise_weeks(&self.policy)
                     .await;
                 self.register().await;
@@ -364,89 +348,61 @@ impl Replay<'_> {
                         via_portal: step["mark"].as_bool().expect("mark"),
                     };
                     let before = self.status_of(&run).await;
-                    match self
+                    let result = self
                         .service
-                        .as_origin(kanade::domain::history::Origin::for_tests())
+                        .as_origin(Origin::for_tests())
                         .set_status(&run, change, &self.policy.reminders)
-                        .await
-                    {
-                        Ok(outcome) => {
-                            if before != status {
-                                draw_audit_id(&mut self.ids);
-                            }
-                            self.record(&outcome.notices);
-                            Ok(run_view(&outcome.value))
-                        }
-                        Err(error) => Err(error.to_string()),
-                    }
+                        .await;
+                    self.settle(result, |_| before != status, |state, _| run_view(state))
                 }
             },
             "amend" => {
                 let run = run_ref(&self.run_refs, &step["run_key"]).to_owned();
-                match read_when(text(&step["to"]), &self.policy) {
-                    None => {
-                        assert!(
-                            TEXT_PARSING_OWNED_ELSEWHERE.contains(&(self.case_id, index)),
-                            "{} step {index}: unreadable amend target",
-                            self.case_id
-                        );
-                        assert!(expected.get("error").is_some(), "must be a refusal");
-                        self.skipped += 1;
-                        return expected.clone();
-                    }
-                    Some(to) => match self
-                        .service
-                        .as_origin(kanade::domain::history::Origin::for_tests())
-                        .amend_run(&run, to, &self.policy)
-                        .await
-                    {
-                        Ok(outcome) => {
-                            draw_audit_id(&mut self.ids);
-                            self.record(&outcome.notices);
-                            Ok(run_view(&outcome.value))
-                        }
-                        Err(error) => Err(error.to_string()),
-                    },
-                }
+                let Some(to) = read_when(text(&step["to"]), &self.policy) else {
+                    assert!(
+                        TEXT_PARSING_OWNED_ELSEWHERE.contains(&(self.case_id, index)),
+                        "{} step {index}: unreadable amend target",
+                        self.case_id
+                    );
+                    assert!(expected.get("error").is_some(), "must be a refusal");
+                    self.skipped += 1;
+                    return expected.clone();
+                };
+                let result = self
+                    .service
+                    .as_origin(Origin::for_tests())
+                    .amend_run(&run, to, &self.policy)
+                    .await;
+                self.settle(result, |_| true, |state, _| run_view(state))
             }
             "swap" => {
                 let run = run_ref(&self.run_refs, &step["run_key"]).to_owned();
                 let remove = strings(&step["remove"]);
                 let add = strings(&step["add"]);
                 let via_portal = step["mark"].as_bool().expect("mark");
-                match self
+                let result = self
                     .service
-                    .as_origin(kanade::domain::history::Origin::for_tests())
+                    .as_origin(Origin::for_tests())
                     .swap_participants(&run, &remove, &add, via_portal, &self.guild)
-                    .await
-                {
-                    Ok(outcome) => {
-                        if !outcome.notices.is_empty() {
-                            draw_audit_id(&mut self.ids);
-                        }
-                        self.record(&outcome.notices);
-                        Ok(run_view(&outcome.value))
-                    }
-                    Err(error) => Err(error.to_string()),
-                }
+                    .await;
+                self.settle(
+                    result,
+                    |notices| !notices.is_empty(),
+                    |state, _| run_view(state),
+                )
             }
             "update_fixed" => {
                 let fixed = self.fixed_refs[text(&step["fixed_key"])].clone();
                 let result = match edit_from(&step["changes"], &self.table) {
                     Err(error) => Err(error),
-                    Ok(edit) => match self
-                        .service
-                        .as_origin(kanade::domain::history::Origin::for_tests())
-                        .update_fixed(&fixed, edit, &self.guild, &self.policy)
-                        .await
-                    {
-                        Ok(outcome) => {
-                            draw_audit_id(&mut self.ids);
-                            self.record(&outcome.notices);
-                            Ok(fixed_view(&outcome.value, &self.guild))
-                        }
-                        Err(error) => Err(error.to_string()),
-                    },
+                    Ok(edit) => {
+                        let updated = self
+                            .service
+                            .as_origin(Origin::for_tests())
+                            .update_fixed(&fixed, edit, &self.guild, &self.policy)
+                            .await;
+                        self.settle(updated, |_| true, fixed_view)
+                    }
                 };
                 self.register().await;
                 result

@@ -3,8 +3,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use chrono::{DateTime, FixedOffset, NaiveTime, TimeZone, Utc, Weekday};
-use chrono_tz::Asia::Kuala_Lumpur;
+use chrono::{DateTime, TimeZone, Utc, Weekday};
 use kanade::domain::{
     drafts::{
         DRAFT_OP_FORMAT, DraftOp, Entity, Field, FieldValue, MergeAnalysis, MergeConflict, Removal,
@@ -14,148 +13,22 @@ use kanade::domain::{
         ChangeFilter, ChangeHistory, ChangeQuery, ChangeRecord, ChangeRef, HistoryGap, MAX_PAGE,
         Origin, rewind,
     },
-    ids::IdGenerator,
-    members::{Directory, Member},
     schedule::{
-        AmendedRunChoice, FixedEdit, FixedEditChoices, FixedEditRequest, NewFixedRun,
-        ReminderPolicy, RsvpSource, RsvpState, RunSource, RunStatus, ScheduleError, SchedulePolicy,
-        ScheduleSnapshot, StatusChange,
+        AmendedRunChoice, FixedEdit, FixedEditChoices, FixedEditRequest, FixedField, NewFixedRun,
+        RsvpState, RunSource, RunStatus, ScheduleError, ScheduleSnapshot, StatusChange,
     },
-    scheduler::{ScheduleStore, SchedulerService, Scope},
+    scheduler::SchedulerService,
 };
 use kanade::infrastructure::store::MemoryScheduleStore;
+use serde_json::{Value, json};
 
 use crate::common::TestClock;
-
-#[derive(Default)]
-struct CountingIds(u32);
-
-impl IdGenerator for CountingIds {
-    fn new_id(&mut self) -> String {
-        self.0 += 1;
-        format!("id-{:04}", self.0)
-    }
-}
-
-struct Guild;
-
-impl Directory for Guild {
-    fn member(&self, user_id: &str) -> Option<Member> {
-        ["1001", "1002", "1003", "1004"]
-            .contains(&user_id)
-            .then(|| Member {
-                user_id: user_id.to_owned(),
-                display_name: Some(format!("member {user_id}")),
-                has_role: true,
-                ..Member::default()
-            })
-    }
-
-    fn is_watched(&self, channel_id: &str) -> bool {
-        ["222", "333"].contains(&channel_id)
-    }
-}
+use crate::support::{
+    CountingIds, Guild, amend, existing, hm, kalos_run, kl, now, one_timing as fixture, owned,
+    policy, rsvp, snapshot, swap, utc, weekly,
+};
 
 type Service = SchedulerService<MemoryScheduleStore, CountingIds, TestClock>;
-
-fn kl(d: u32, h: u32, mi: u32) -> DateTime<FixedOffset> {
-    let month = if d >= 27 { 8 } else { 9 };
-    FixedOffset::east_opt(8 * 3600)
-        .unwrap()
-        .with_ymd_and_hms(2026, month, d, h, mi, 0)
-        .unwrap()
-}
-
-fn utc(at: DateTime<FixedOffset>) -> DateTime<Utc> {
-    at.with_timezone(&Utc)
-}
-
-fn now() -> DateTime<Utc> {
-    utc(kl(27, 1, 0))
-}
-
-fn policy() -> SchedulePolicy {
-    SchedulePolicy::new(
-        ReminderPolicy {
-            zone: Kuala_Lumpur,
-            ping_time: NaiveTime::from_hms_opt(9, 0, 0).unwrap(),
-            countdowns: vec![60, 15],
-        },
-        Weekday::Thu,
-        NaiveTime::MIN,
-    )
-}
-
-/// Weekly Mon 21:30 with runs for 31 Aug, 7 Sep and 14 Sep; the 7 Sep run
-/// is amended to Wed 9 Sep 21:00.
-struct Fixture {
-    service: Service,
-    clock: TestClock,
-    fixed: String,
-    runs: [String; 3],
-}
-
-async fn fixture() -> Fixture {
-    let clock = TestClock::new(kl(27, 1, 0));
-    let mut service = SchedulerService::new(
-        MemoryScheduleStore::new(),
-        CountingIds::default(),
-        clock.clone(),
-    );
-    let fixed = service
-        .as_origin(Origin::for_tests())
-        .add_fixed_run(NewFixedRun {
-            owner_pinned: false,
-            owner_id: "1001".into(),
-            channel_id: Some("222".into()),
-            bosses: vec!["HFA".into()],
-            weekday: Weekday::Mon,
-            time: NaiveTime::from_hms_opt(21, 30, 0).unwrap(),
-            participants: vec!["1001".into(), "1002".into()],
-            note: None,
-        })
-        .await
-        .unwrap();
-    service
-        .as_origin(Origin::for_tests())
-        .materialise_weeks(&policy())
-        .await
-        .unwrap();
-    let state = snapshot(&service).await;
-    let run_at = |at: DateTime<FixedOffset>| {
-        state
-            .runs
-            .iter()
-            .find(|run| run.datetime == utc(at))
-            .unwrap()
-            .id
-            .clone()
-    };
-    let runs = [
-        run_at(kl(31, 21, 30)),
-        run_at(kl(7, 21, 30)),
-        run_at(kl(14, 21, 30)),
-    ];
-    service
-        .as_origin(Origin::for_tests())
-        .amend_run(&runs[1], utc(kl(9, 21, 0)), &policy())
-        .await
-        .unwrap();
-    Fixture {
-        service,
-        clock,
-        fixed,
-        runs,
-    }
-}
-
-async fn snapshot(service: &Service) -> ScheduleSnapshot {
-    service.store().load(&Scope::All).await.unwrap()
-}
-
-fn existing(id: &str) -> Target {
-    Target::Existing(id.to_owned())
-}
 
 fn id(target: &Target) -> &str {
     match target {
@@ -166,14 +39,10 @@ fn id(target: &Target) -> &str {
 
 /// Commit one operation through the service, as another member would.
 async fn commit(service: &mut Service, op: &DraftOp) {
-    match op {
-        DraftOp::AddFixedRun(new) => {
-            service
-                .as_origin(Origin::for_tests())
-                .add_fixed_run(new.clone())
-                .await
-                .unwrap();
-        }
+    let policy = policy();
+    let origin = service.as_origin(Origin::for_tests());
+    let committed = match op {
+        DraftOp::AddFixedRun(new) => origin.add_fixed_run(new.clone()).await.map(drop),
         DraftOp::ApplyFixedEdit {
             fixed,
             edit,
@@ -184,78 +53,46 @@ async fn commit(service: &mut Service, op: &DraftOp) {
                 edit: edit.clone(),
                 choices: choices.clone(),
             };
-            service
-                .as_origin(Origin::for_tests())
-                .apply_fixed_edit(&request, &Guild, &policy())
-                .await
-                .unwrap();
+            let applied = origin.apply_fixed_edit(&request, &Guild, &policy);
+            applied.await.map(drop)
         }
-        DraftOp::FixedParticipants { fixed, add, remove } => {
-            // The real delta operation, as an approved request commits it.
-            service
-                .as_origin(Origin::for_tests())
-                .change_fixed_party(id(fixed), add, remove, &Guild, &policy())
-                .await
-                .unwrap();
-        }
-        DraftOp::RetireFixedRun { fixed, weeks } => {
-            service
-                .as_origin(Origin::for_tests())
-                .retire_fixed_run(id(fixed), weeks, &policy().reminders)
-                .await
-                .unwrap();
-        }
+        // The real delta operation, as an approved request commits it.
+        DraftOp::FixedParticipants { fixed, add, remove } => origin
+            .change_fixed_party(id(fixed), add, remove, &Guild, &policy)
+            .await
+            .map(drop),
+        DraftOp::RetireFixedRun { fixed, weeks } => origin
+            .retire_fixed_run(id(fixed), weeks, &policy.reminders)
+            .await
+            .map(drop),
         DraftOp::CreateRun { .. } => panic!("not used upstream"),
-        DraftOp::AmendRun { run, to } => {
-            service
-                .as_origin(Origin::for_tests())
-                .amend_run(id(run), *to, &policy())
-                .await
-                .unwrap();
-        }
-        DraftOp::SetStatus { run, change } => {
-            service
-                .as_origin(Origin::for_tests())
-                .set_status(id(run), *change, &policy().reminders)
-                .await
-                .unwrap();
-        }
+        DraftOp::AmendRun { run, to } => origin.amend_run(id(run), *to, &policy).await.map(drop),
+        DraftOp::SetStatus { run, change } => origin
+            .set_status(id(run), *change, &policy.reminders)
+            .await
+            .map(drop),
         DraftOp::SwapParticipants {
             run,
             remove,
             add,
             via_portal,
-        } => {
-            service
-                .as_origin(Origin::for_tests())
-                .swap_participants(id(run), remove, add, *via_portal, &Guild)
-                .await
-                .unwrap();
-        }
+        } => origin
+            .swap_participants(id(run), remove, add, *via_portal, &Guild)
+            .await
+            .map(drop),
         DraftOp::SetRsvp {
             run,
             user_id,
             state,
             source,
-        } => {
-            service
-                .as_origin(Origin::for_tests())
-                .set_rsvp(id(run), user_id, *state, *source)
-                .await
-                .unwrap();
-        }
-        DraftOp::ResetToFixed { run } => {
-            service
-                .as_origin(Origin::for_tests())
-                .reset_to_fixed(id(run), &policy())
-                .await
-                .unwrap();
-        }
+        } => origin.set_rsvp(id(run), user_id, *state, *source).await,
+        DraftOp::ResetToFixed { run } => origin.reset_to_fixed(id(run), &policy).await.map(drop),
         DraftOp::SetRunBosses { .. }
         | DraftOp::EnsureReminders { .. }
         | DraftOp::RecountRun { .. }
         | DraftOp::ReviveRun { .. } => panic!("proposal-only; not used upstream"),
-    }
+    };
+    committed.unwrap();
 }
 
 /// Analyse `draft` drafted on the fixture after `upstream` was committed.
@@ -268,31 +105,6 @@ async fn merge(upstream: &[DraftOp], draft: &[DraftOp]) -> (MergeAnalysis, Sched
     let current = snapshot(&f.service).await;
     let analysis = analyze_merge(&base, &current, draft, &policy(), None, &Guild, now());
     (analysis, current)
-}
-
-fn amend(run: &str, to: DateTime<FixedOffset>) -> DraftOp {
-    DraftOp::AmendRun {
-        run: existing(run),
-        to: utc(to),
-    }
-}
-
-fn swap(run: &str, remove: &[&str], add: &[&str]) -> DraftOp {
-    DraftOp::SwapParticipants {
-        run: existing(run),
-        remove: remove.iter().map(|id| (*id).to_owned()).collect(),
-        add: add.iter().map(|id| (*id).to_owned()).collect(),
-        via_portal: true,
-    }
-}
-
-fn rsvp(run: &str, user: &str, state: RsvpState) -> DraftOp {
-    DraftOp::SetRsvp {
-        run: existing(run),
-        user_id: user.to_owned(),
-        state,
-        source: RsvpSource::Chat,
-    }
 }
 
 fn status(run: &str, status: RunStatus) -> DraftOp {
@@ -323,25 +135,22 @@ fn note(text: &str) -> FixedEdit {
 
 fn bosses(names: &[&str]) -> FixedEdit {
     FixedEdit {
-        bosses: Some(names.iter().map(|name| (*name).to_owned()).collect()),
+        bosses: Some(owned(names)),
         ..FixedEdit::default()
     }
 }
 
 fn members(ids: &[&str]) -> FieldValue {
-    FieldValue::Set(ids.iter().map(|id| (*id).to_owned()).collect())
+    FieldValue::Set(owned(ids))
+}
+
+fn set(ids: &[&str]) -> BTreeSet<String> {
+    owned(ids).into_iter().collect()
 }
 
 fn participants(state: &ScheduleSnapshot, run: &str) -> BTreeSet<String> {
-    state
-        .runs
-        .iter()
-        .find(|row| row.id == run)
-        .unwrap()
-        .participants
-        .iter()
-        .cloned()
-        .collect()
+    let row = state.runs.iter().find(|row| row.id == run).unwrap();
+    row.participants.iter().cloned().collect()
 }
 
 // ---- codec ----------------------------------------------------------------
@@ -350,20 +159,14 @@ fn codec_samples() -> Vec<DraftOp> {
     let at = utc(kl(31, 21, 30));
     vec![
         DraftOp::AddFixedRun(NewFixedRun {
-            owner_pinned: false,
-            owner_id: "1001".into(),
-            channel_id: Some("222".into()),
             bosses: vec!["HFA".into(), "Kalos".into()],
-            weekday: Weekday::Sat,
-            time: NaiveTime::from_hms_opt(20, 15, 0).unwrap(),
-            participants: vec!["1001".into(), "1002".into()],
-            note: None,
+            ..weekly("222", Weekday::Sat, hm(20, 15), &["1001", "1002"])
         }),
         DraftOp::ApplyFixedEdit {
             fixed: Target::Created(0),
             edit: FixedEdit {
                 weekday: Some(Weekday::Sun),
-                time: Some(NaiveTime::from_hms_opt(21, 0, 0).unwrap()),
+                time: Some(hm(21, 0)),
                 note: Some("prog \"night\"".into()),
                 ..FixedEdit::default()
             },
@@ -437,10 +240,10 @@ fn codec_matches_the_pinned_v1_encoding_and_round_trips() {
         .map(|op| encode(op).unwrap())
         .collect();
     if std::env::var_os("KANADE_PRINT_GOLDEN").is_some() {
-        let file = serde_json::json!({"format": DRAFT_OP_FORMAT, "ops": encoded});
+        let file = json!({"format": DRAFT_OP_FORMAT, "ops": encoded});
         println!("{}", serde_json::to_string_pretty(&file).unwrap());
     }
-    let golden: serde_json::Value =
+    let golden: Value =
         serde_json::from_str(&std::fs::read_to_string(golden_path()).unwrap()).unwrap();
     assert_eq!(golden["format"], DRAFT_OP_FORMAT);
     let pinned: Vec<&str> = golden["ops"]
@@ -469,51 +272,26 @@ fn codec_is_strict_about_keys_times_targets_and_instants() {
         .iter()
         .map(|op| encode(op).unwrap())
         .collect();
-    let edit = |index: usize, change: &dyn Fn(&mut serde_json::Value)| {
-        let mut value: serde_json::Value = serde_json::from_str(&pinned[index]).unwrap();
-        change(&mut value);
-        decode(&value.to_string())
-    };
-    // Unknown keys, at the top and nested.
-    assert!(
-        edit(6, &|v| {
-            v["extra"] = 1.into();
-        })
-        .is_err()
-    );
-    assert!(
-        edit(0, &|v| {
-            v["fixed_run"]["extra"] = 1.into();
-        })
-        .is_err()
-    );
-    assert!(
-        edit(1, &|v| {
-            v["edit"]["owner_id"] = "1".into();
-        })
-        .is_err()
-    );
-    assert!(
-        edit(6, &|v| {
-            v["change"]["extra"] = true.into();
-        })
-        .is_err()
-    );
-    assert!(
-        edit(1, &|v| {
-            v["choices"]["all"] = true.into();
-        })
-        .is_err()
-    );
-    // Missing optionals must be written as null.
-    assert!(
-        edit(0, &|v| {
-            v["fixed_run"].as_object_mut().unwrap().remove("note");
-        })
-        .is_err()
-    );
+    // (sample, key path, new value; `None` removes the key)
+    let mut cases: Vec<(usize, &[&str], Option<Value>)> = vec![
+        // Unknown keys, at the top and nested.
+        (6, &["extra"], Some(json!(1))),
+        (0, &["fixed_run", "extra"], Some(json!(1))),
+        (1, &["edit", "owner_id"], Some(json!("1"))),
+        (6, &["change", "extra"], Some(json!(true))),
+        (1, &["choices", "all"], Some(json!(true))),
+        // Missing optionals must be written as null.
+        (0, &["fixed_run", "note"], None),
+        // Targets hold exactly one of `existing` or `created`.
+        (6, &["run", "created"], Some(json!(0))),
+        (6, &["run"], Some(json!({}))),
+        (6, &["run"], Some(json!({"existing": 7}))),
+        (5, &["run"], Some(json!({"created": -1}))),
+        // Instants only in the encoder's spelling.
+        (5, &["to"], Some(json!("2026-09-01T20:00:00+08:00"))),
+    ];
     // Only exact HH:MM:SS.
-    for bad in [
+    let times = [
         "20:15",
         "20:15:00.0",
         "2:15:00",
@@ -521,47 +299,21 @@ fn codec_is_strict_about_keys_times_targets_and_instants() {
         "24:00:00",
         " 20:15:0",
         "+1:15:00",
-    ] {
+    ];
+    cases.extend(times.map(|bad| (0, &["fixed_run", "time"][..], Some(json!(bad)))));
+    for (sample, path, value) in cases {
+        let mut op: Value = serde_json::from_str(&pinned[sample]).unwrap();
+        let (key, parents) = path.split_last().unwrap();
+        let parent = parents.iter().fold(&mut op, |node, key| &mut node[*key]);
+        match &value {
+            Some(value) => parent[*key] = value.clone(),
+            None => drop(parent.as_object_mut().unwrap().remove(*key)),
+        }
         assert!(
-            edit(0, &|v| {
-                v["fixed_run"]["time"] = bad.into();
-            })
-            .is_err(),
-            "{bad}"
+            decode(&op.to_string()).is_err(),
+            "sample {sample}: {path:?} = {value:?}"
         );
     }
-    // Targets hold exactly one of `existing` or `created`.
-    assert!(
-        edit(6, &|v| {
-            v["run"]["created"] = 0.into();
-        })
-        .is_err()
-    );
-    assert!(
-        edit(6, &|v| {
-            v["run"] = serde_json::json!({});
-        })
-        .is_err()
-    );
-    assert!(
-        edit(6, &|v| {
-            v["run"] = serde_json::json!({"existing": 7});
-        })
-        .is_err()
-    );
-    assert!(
-        edit(5, &|v| {
-            v["run"] = serde_json::json!({"created": -1});
-        })
-        .is_err()
-    );
-    // Instants only in the encoder's spelling.
-    assert!(
-        edit(5, &|v| {
-            v["to"] = "2026-09-01T20:00:00+08:00".into();
-        })
-        .is_err()
-    );
     // The untouched samples still decode.
     for text in &pinned {
         decode(text).unwrap();
@@ -574,18 +326,8 @@ fn codec_is_strict_about_keys_times_targets_and_instants() {
 async fn replay_is_deterministic_resolves_created_targets_and_writes_nothing() {
     let f = fixture().await;
     let base = snapshot(&f.service).await;
-    let week = utc(kl(27, 0, 0));
     let ops = vec![
-        DraftOp::CreateRun {
-            fixed: None,
-            channel_id: Some("222".into()),
-            week_start: week,
-            datetime: utc(kl(29, 20, 0)),
-            bosses: vec!["Kalos".into()],
-            participants: vec!["1001".into()],
-            status: RunStatus::Planned,
-            source: RunSource::Amend,
-        },
+        kalos_run(None, utc(kl(27, 0, 0))),
         DraftOp::AmendRun {
             run: Target::Created(0),
             to: utc(kl(30, 20, 0)),
@@ -623,14 +365,10 @@ async fn rewinding_the_records_after_a_base_restores_the_base_snapshot() {
         swap(&f.runs[2], &["1002"], &["1003"]),
         fixed_edit(&f.fixed, note("moved")),
         DraftOp::AddFixedRun(NewFixedRun {
-            owner_pinned: false,
             owner_id: "1002".into(),
             channel_id: None,
             bosses: vec!["Kalos".into()],
-            weekday: Weekday::Fri,
-            time: NaiveTime::from_hms_opt(22, 0, 0).unwrap(),
-            participants: vec!["1002".into()],
-            note: None,
+            ..weekly("", Weekday::Fri, hm(22, 0), &["1002"])
         }),
         status(&f.runs[1], RunStatus::Cancelled),
     ];
@@ -773,16 +511,31 @@ async fn conflict_matrix() {
     let f = fixture().await;
     let [r0, _, r2] = f.runs.clone();
     let fixed = f.fixed.clone();
-    let run = |id: &str| Entity::Run(id.to_owned());
     type Check = Box<dyn Fn(&[MergeConflict]) -> bool>;
     let clean: fn() -> Check = || Box::new(|conflicts| conflicts.is_empty());
+    let removed = |entity: Entity, removal: Removal| -> Check {
+        Box::new(move |c| {
+            c == [MergeConflict::UpstreamRemoved {
+                entity: entity.clone(),
+                removal,
+            }]
+        })
+    };
+    let answer_1002 = || Entity::Rsvp {
+        run_id: r0.clone(),
+        user_id: "1002".into(),
+    };
+    let retire = || DraftOp::RetireFixedRun {
+        fixed: existing(&fixed),
+        weeks: vec![utc(kl(27, 0, 0))],
+    };
     let cases: Vec<(&str, Vec<DraftOp>, Vec<DraftOp>, Check)> = vec![
         (
             "both moved a run to different slots",
             vec![amend(&r0, kl(1, 20, 0))],
             vec![amend(&r0, kl(2, 20, 0))],
             {
-                let entity = run(&r0);
+                let entity = Entity::Run(r0.clone());
                 Box::new(move |c| {
                     c.iter().any(|c| matches!(c, MergeConflict::BothChanged { entity: e, field: Field::Slot, .. } if *e == entity))
                 })
@@ -798,39 +551,17 @@ async fn conflict_matrix() {
             "upstream cancelled the run the draft answers on",
             vec![status(&r0, RunStatus::Cancelled)],
             vec![rsvp(&r0, "1002", RsvpState::Yes)],
-            {
-                let entity = Entity::Rsvp {
-                    run_id: r0.clone(),
-                    user_id: "1002".into(),
-                };
-                Box::new(move |c| {
-                    c == [MergeConflict::UpstreamRemoved {
-                        entity: entity.clone(),
-                        removal: Removal::Cancelled,
-                    }]
-                })
-            },
+            removed(answer_1002(), Removal::Cancelled),
         ),
         (
             "upstream cancelled the run the draft moves",
             vec![status(&r0, RunStatus::Cancelled)],
             vec![amend(&r0, kl(1, 20, 0))],
-            {
-                let entity = run(&r0);
-                Box::new(move |c| {
-                    c == [MergeConflict::UpstreamRemoved {
-                        entity: entity.clone(),
-                        removal: Removal::Cancelled,
-                    }]
-                })
-            },
+            removed(Entity::Run(r0.clone()), Removal::Cancelled),
         ),
         (
             "upstream retired the weekly timing the draft edits",
-            vec![DraftOp::RetireFixedRun {
-                fixed: existing(&fixed),
-                weeks: vec![utc(kl(27, 0, 0))],
-            }],
+            vec![retire()],
             vec![fixed_edit(&fixed, note("draft"))],
             Box::new(|c| {
                 matches!(
@@ -862,10 +593,7 @@ async fn conflict_matrix() {
         ),
         (
             "the draft attaches a new run to a timing upstream retired",
-            vec![DraftOp::RetireFixedRun {
-                fixed: existing(&fixed),
-                weeks: vec![utc(kl(27, 0, 0))],
-            }],
+            vec![retire()],
             vec![DraftOp::CreateRun {
                 fixed: Some(existing(&fixed)),
                 channel_id: Some("222".into()),
@@ -892,18 +620,7 @@ async fn conflict_matrix() {
             "the draft answers for a member upstream took off the run",
             vec![swap(&r0, &["1002"], &[])],
             vec![rsvp(&r0, "1002", RsvpState::Yes)],
-            {
-                let entity = Entity::Rsvp {
-                    run_id: r0.clone(),
-                    user_id: "1002".into(),
-                };
-                Box::new(move |c| {
-                    c == [MergeConflict::UpstreamRemoved {
-                        entity: entity.clone(),
-                        removal: Removal::LeftRun,
-                    }]
-                })
-            },
+            removed(answer_1002(), Removal::LeftRun),
         ),
         (
             "both answered for one member differently",
@@ -935,30 +652,25 @@ async fn conflict_matrix() {
     }
 }
 
+/// The preview of a merge that must come out clean.
+async fn clean_preview(upstream: &[DraftOp], draft: &[DraftOp]) -> ScheduleSnapshot {
+    let (analysis, _) = merge(upstream, draft).await;
+    assert!(analysis.is_clean(), "{:?}", analysis.conflicts);
+    analysis.preview.unwrap()
+}
+
 #[tokio::test]
 async fn participants_merge_as_sets() {
     let f = fixture().await;
     let r0 = f.runs[0].clone();
     // Base line-up {1001, 1002}: upstream drops 1002, the draft adds 1003.
-    let (analysis, _) = merge(&[swap(&r0, &["1002"], &[])], &[swap(&r0, &[], &["1003"])]).await;
-    assert!(analysis.is_clean(), "{:?}", analysis.conflicts);
-    let preview = analysis.preview.unwrap();
-    assert_eq!(
-        participants(&preview, &r0),
-        BTreeSet::from(["1001".to_owned(), "1003".to_owned()])
-    );
+    let preview = clean_preview(&[swap(&r0, &["1002"], &[])], &[swap(&r0, &[], &["1003"])]).await;
+    assert_eq!(participants(&preview, &r0), set(&["1001", "1003"]));
 
     // Upstream swaps 1002 for 1004, the draft adds 1003: one union.
-    let (analysis, _) = merge(
-        &[swap(&r0, &["1002"], &["1004"])],
-        &[swap(&r0, &[], &["1003"])],
-    )
-    .await;
-    assert!(analysis.is_clean(), "{:?}", analysis.conflicts);
-    assert_eq!(
-        participants(&analysis.preview.unwrap(), &r0),
-        BTreeSet::from(["1001".to_owned(), "1003".to_owned(), "1004".to_owned()])
-    );
+    let upstream = [swap(&r0, &["1002"], &["1004"])];
+    let preview = clean_preview(&upstream, &[swap(&r0, &[], &["1003"])]).await;
+    assert_eq!(participants(&preview, &r0), set(&["1001", "1003", "1004"]));
 
     // Both drop 1002: the draft's swap no longer applies as written, so the
     // merge refuses it rather than guessing (replay on the current schedule).
@@ -977,23 +689,17 @@ async fn participants_merge_as_sets() {
     );
 
     // The draft re-adds someone upstream removed: set merge keeps the add.
-    let (analysis, _) = merge(
-        &[swap(&r0, &["1001"], &[])],
-        &[swap(&r0, &["1002"], &["1003"])],
-    )
-    .await;
-    let expected = members(&["1003"]);
-    assert!(analysis.is_clean(), "{:?}", analysis.conflicts);
-    let preview = analysis.preview.unwrap();
+    let upstream = [swap(&r0, &["1001"], &[])];
+    let preview = clean_preview(&upstream, &[swap(&r0, &["1002"], &["1003"])]).await;
     let got: Vec<String> = participants(&preview, &r0).into_iter().collect();
-    assert_eq!(FieldValue::Set(got), expected);
+    assert_eq!(FieldValue::Set(got), members(&["1003"]));
 }
 
 fn party_delta(fixed: &str, add: &[&str], remove: &[&str]) -> DraftOp {
     DraftOp::FixedParticipants {
         fixed: existing(fixed),
-        add: add.iter().map(|id| (*id).to_owned()).collect(),
-        remove: remove.iter().map(|id| (*id).to_owned()).collect(),
+        add: owned(add),
+        remove: owned(remove),
     }
 }
 
@@ -1002,18 +708,9 @@ async fn weekly_party_deltas_merge_as_sets() {
     let f = fixture().await;
     let (fixed, r0) = (f.fixed.clone(), f.runs[0].clone());
     let party_of = |state: &ScheduleSnapshot| -> BTreeSet<String> {
-        state
-            .fixed_runs
-            .iter()
-            .find(|row| row.id == fixed)
-            .unwrap()
-            .participants
-            .iter()
-            .cloned()
-            .collect()
+        let timing = state.fixed_runs.iter().find(|row| row.id == fixed).unwrap();
+        timing.participants.iter().cloned().collect()
     };
-    let set =
-        |ids: &[&str]| -> BTreeSet<String> { ids.iter().map(|id| (*id).to_owned()).collect() };
     // Upstream adds 1003 to the timing, the draft adds 1004: both apply,
     // on the timing and its live runs.
     let (analysis, current) = merge(
@@ -1030,13 +727,8 @@ async fn weekly_party_deltas_merge_as_sets() {
         set(&["1001", "1002", "1003", "1004"])
     );
     // Upstream substitutes on one run; the draft's weekly join keeps it.
-    let (analysis, _) = merge(
-        &[swap(&r0, &["1002"], &["1004"])],
-        &[party_delta(&fixed, &["1003"], &[])],
-    )
-    .await;
-    assert!(analysis.is_clean(), "{:?}", analysis.conflicts);
-    let preview = analysis.preview.unwrap();
+    let upstream = [swap(&r0, &["1002"], &["1004"])];
+    let preview = clean_preview(&upstream, &[party_delta(&fixed, &["1003"], &[])]).await;
     assert_eq!(participants(&preview, &r0), set(&["1001", "1003", "1004"]));
     assert_eq!(party_of(&preview), set(&["1001", "1002", "1003"]));
 }
@@ -1048,7 +740,7 @@ async fn per_run_choices_go_stale_when_the_amended_runs_change() {
     let edit = DraftOp::ApplyFixedEdit {
         fixed: existing(&f.fixed),
         edit: FixedEdit {
-            time: Some(NaiveTime::from_hms_opt(22, 0, 0).unwrap()),
+            time: Some(hm(22, 0)),
             ..FixedEdit::default()
         },
         choices: FixedEditChoices::PerRun(BTreeMap::from([(
@@ -1265,15 +957,9 @@ async fn a_retirement_staged_before_a_reset_goes_stale() {
         .expect("the fourth week's run")
         .id
         .clone();
-    let analysis = analyze_merge(
-        &base,
-        &current,
-        &retire,
-        &policy(),
-        None,
-        &Guild,
-        utc(later),
-    );
+    let analyze =
+        |ops: &[DraftOp]| analyze_merge(&base, &current, ops, &policy(), None, &Guild, utc(later));
+    let analysis = analyze(&retire);
     let expected = MergeConflict::StaleWeeks {
         ord: 0,
         staged: staged.clone(),
@@ -1295,15 +981,7 @@ async fn a_retirement_staged_before_a_reset_goes_stale() {
         fixed: existing(&f.fixed),
         weeks: materialised_now(utc(later)),
     }];
-    let analysis = analyze_merge(
-        &base,
-        &current,
-        &restaged,
-        &policy(),
-        None,
-        &Guild,
-        utc(later),
-    );
+    let analysis = analyze(&restaged);
     assert!(
         !analysis
             .conflicts
@@ -1324,45 +1002,17 @@ async fn edit_fixed_run_skips_absent_timings_and_empty_edits_before_reading_week
     let mut f = fixture().await;
     // A UTC instant whose Kuala Lumpur wall clock is past year 9999.
     let edge = Utc.with_ymd_and_hms(9999, 12, 31, 20, 0, 0).unwrap();
-    let note = [kanade::domain::schedule::FixedField::Note];
-    let touched = f
-        .service
-        .as_origin(Origin::for_tests())
-        .edit_fixed_run(
-            &f.fixed,
-            Default::default(),
-            &[],
-            &[edge],
-            &policy().reminders,
-        )
-        .await
-        .unwrap();
-    assert_eq!(touched, 0);
-    let touched = f
-        .service
-        .as_origin(Origin::for_tests())
-        .edit_fixed_run(
-            "no-such-timing",
-            Default::default(),
-            &note,
-            &[edge],
-            &policy().reminders,
-        )
-        .await
-        .unwrap();
-    assert_eq!(touched, 0);
-    // With something to push the week is read, and refused.
-    assert!(
+    let note = [FixedField::Note];
+    let reminders = policy().reminders;
+    let mut edit = async |fixed: &str, changed: &[FixedField]| {
         f.service
             .as_origin(Origin::for_tests())
-            .edit_fixed_run(
-                &f.fixed,
-                Default::default(),
-                &note,
-                &[edge],
-                &policy().reminders
-            )
+            .edit_fixed_run(fixed, Default::default(), changed, &[edge], &reminders)
             .await
-            .is_err()
-    );
+    };
+    let fixed = f.fixed.clone();
+    assert_eq!(edit(&fixed, &[]).await.unwrap(), 0);
+    assert_eq!(edit("no-such-timing", &note).await.unwrap(), 0);
+    // With something to push the week is read, and refused.
+    assert!(edit(&fixed, &note).await.is_err());
 }
