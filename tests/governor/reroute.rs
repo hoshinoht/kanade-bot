@@ -2,15 +2,16 @@
 //! permits already held (and their requeues) keep the old ones, a new
 //! alias starts external, and only the open group grows.
 
-use std::{sync::Arc, time::Duration};
+use std::time::Duration;
 
 use kanade::infrastructure::llm::{
-    ChatRequest, CompletionResponse, Effort, ExecutionLimits, FakeAction, FakeProvider,
-    FinishReason, Message, RetryPolicy,
-    governor::{GovernorConfig, ModelClient, Priority, QuestionLimits, Refused, Role, RouteTarget},
+    Effort, FakeAction,
+    governor::{GovernorConfig, Priority, QuestionLimits, Refused, Role, RouteTarget},
 };
 
-use crate::support::{ALIAS, LONG, build, group, roles, single, ticket, wall};
+use crate::support::{
+    ALIAS, LONG, ask, build, client, group, reply, roles, roomy, single, ticket, wall,
+};
 
 /// One role to `alias` (no effort, zone unknown); `None` unroutes it.
 fn to(role: Role, alias: Option<&str>) -> [(Role, Option<RouteTarget>); 1] {
@@ -182,60 +183,20 @@ fn one_reroute_installs_alias_effort_and_zone_together() {
 
 #[tokio::test(start_paused = true)]
 async fn a_requeue_returns_to_the_alias_the_session_opened_with() {
-    let mut config = single(1, 6_000);
-    config.groups[0].burst = Some(1_000);
-    config.policy.retry_floor = 10;
+    let mut config = roomy(1, 10);
     config
         .groups
         .push(group("cloud", 1, 6_000, &["cloud-model"]));
     let governor = build(&config);
-    let ok = FakeAction::Response(CompletionResponse {
-        reasoning_content: None,
-        reasoning_tokens: None,
-        model: ALIAS.into(),
-        content: Some("soon".into()),
-        tool_calls: Vec::new(),
-        finish_reason: FinishReason::Stop,
-        usage: None,
-    });
-    let provider = Arc::new(FakeProvider::new([
-        FakeAction::AdmissionRefused(Some(Duration::from_secs(1))),
-        ok,
-    ]));
-    let client = ModelClient::new(
-        governor.clone(),
-        provider.clone(),
-        ExecutionLimits::default(),
-        RetryPolicy {
-            total_deadline: Duration::from_secs(30),
-            max_attempts: 3,
-            backoff: Duration::from_millis(100),
-        },
-    )
-    .unwrap();
-    let mut question = client
-        .open_question(
-            "member",
-            false,
-            QuestionLimits::new(Duration::from_secs(60)),
-        )
-        .await
-        .unwrap();
+    let refusal = FakeAction::AdmissionRefused(Some(Duration::from_secs(1)));
+    let ok = FakeAction::Response(reply("soon"));
+    let (provider, client) = client(governor.clone(), [refusal, ok]);
+    let limits = QuestionLimits::new(Duration::from_secs(60));
+    let mut question = client.open_question("member", false, limits).await.unwrap();
     governor
         .reroute(to(Role::Chat, Some("cloud-model")), None)
         .unwrap();
-    let request = ChatRequest {
-        model: ALIAS.into(),
-        messages: vec![Message::User {
-            content: "when?".into(),
-        }],
-        tools: Vec::new(),
-        output_schema: None,
-        max_output_tokens: 16,
-        reasoning: None,
-        sampling: None,
-    };
-    question.complete(&request).await.unwrap();
+    question.complete(&ask("when?", 16)).await.unwrap();
     assert!(question.requeued());
     assert_eq!(question.alias(), Some(ALIAS));
     assert!(provider.requests().iter().all(|sent| sent.model == ALIAS));
