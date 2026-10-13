@@ -4,9 +4,9 @@ What changed in each Kanade release, newest first. Upgrading across several rele
 
 ## 1.0.0-beta.7
 
-_In development_
+_13 Oct 2026_
 
-Character data from NEXON: members link their MapleSEA characters, admins see who brings which character to a run and how ready they are, and members manage their own characters on the public portal.
+Character data from NEXON and a simpler setup: members link and manage their MapleSEA characters, admins see who brings which character to a run and how ready they are, and a fresh host needs only a few settings to start. This is the first release on `master`; v4 is retired.
 
 > [!IMPORTANT]
 > - This release adds store migrations: to go back to an older image, restore the pre-deploy tarball ([runbook](deploy/README.md#deploy-an-update)), as an older image refuses the migrated store.
