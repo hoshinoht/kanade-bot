@@ -142,14 +142,7 @@ impl RuntimeConfig {
         }
         let admin_auth = AdminAuthSettings::from_mapping(values, &http)?;
         let public_auth = PublicAuthSettings::from_mapping(values, &http)?;
-        let timezone = values
-            .get("KANADE_TIMEZONE")
-            .ok_or_else(|| Error::Configuration("KANADE_TIMEZONE is required".into()))?
-            .parse::<Tz>()
-            .map_err(|_| {
-                Error::Configuration("KANADE_TIMEZONE must be a valid IANA timezone".into())
-            })?;
-
+        let timezone = timezone(values.get("KANADE_TIMEZONE").map(String::as_str))?;
         Ok(Self {
             admin_bind,
             public_bind,
@@ -198,6 +191,14 @@ impl HealthcheckConfig {
             )?),
         })
     }
+}
+
+/// `KANADE_TIMEZONE`, an IANA name.
+fn timezone(value: Option<&str>) -> Result<Tz, Error> {
+    value
+        .ok_or_else(|| Error::Configuration("KANADE_TIMEZONE is required".into()))?
+        .parse()
+        .map_err(|_| Error::Configuration("KANADE_TIMEZONE must be a valid IANA timezone".into()))
 }
 
 /// Empty values count as unset, as Compose passes them for blank variables.
