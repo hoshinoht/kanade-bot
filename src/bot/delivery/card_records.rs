@@ -12,11 +12,11 @@ use chrono::{DateTime, Utc};
 use serde_json::json;
 use tokio::sync::Mutex as AsyncMutex;
 
-use super::cards::local_day;
 use super::cards::{
     CardContext, CardKit, CardRecord, DAY_OF_KIND, DigestPhraseStore, PhraseKind,
     ReminderCardStore, card_runs, seed_heading,
 };
+use crate::bot::commands::text::local_day;
 use crate::domain::notify::{DedupeKey, DeliveryTarget, IntentContent, NotificationIntent};
 use crate::runtime::logging;
 

@@ -13,7 +13,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{Arc, Mutex, PoisonError};
 
-use chrono::{DateTime, Timelike, Utc};
+use chrono::{DateTime, Utc};
 use chrono_tz::Tz;
 use serde_json::json;
 use twilight_model::channel::message::embed::{EmbedField, EmbedFooter};
@@ -27,6 +27,7 @@ use super::react::OUT_OF_DATE_NOTICE;
 use super::styled::{CardState, Closure, Look, StyledCard, styled_card};
 use super::v2::card_components;
 use crate::api::state::DeclineRetraction;
+use crate::bot::commands::text::{hhmm, weekday_name};
 use crate::bot::delivery::cards::CardKit;
 use crate::bot::delivery::cards::redesign::learn_after_refusal;
 use crate::bot::delivery::{
@@ -109,12 +110,6 @@ impl<S, T, I, A> std::fmt::Debug for CardDesk<S, T, I, A> {
             .field("instance_id", &self.settings.instance_id)
             .finish_non_exhaustive()
     }
-}
-
-const WEEKDAY_NAMES: [&str; 7] = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
-
-fn hhmm(time: chrono::NaiveTime) -> String {
-    format!("{:02}:{:02}", time.hour(), time.minute())
 }
 
 fn weekday_index(weekday: chrono::Weekday) -> u8 {
@@ -428,7 +423,7 @@ where
         {
             payload.weekly_when = Some(format!(
                 "{} {}",
-                WEEKDAY_NAMES[usize::from(weekday_index(fixed.weekday))],
+                weekday_name(fixed.weekday),
                 hhmm(fixed.time)
             ));
         }

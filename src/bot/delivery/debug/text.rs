@@ -3,9 +3,8 @@
 
 use chrono::TimeDelta;
 
-use crate::bot::delivery::cards::{
-    CardContext, People, REACT_HINT, format_bosses, local_day, local_time,
-};
+use crate::bot::commands::text::{format_bosses, local_day, local_time};
+use crate::bot::delivery::cards::{CardContext, People, REACT_HINT};
 use crate::domain::ids::short_id;
 use crate::domain::schedule::Run;
 

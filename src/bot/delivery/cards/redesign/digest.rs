@@ -18,7 +18,7 @@ use serde_json::json;
 use twilight_model::channel::message::Component;
 use twilight_model::channel::message::component::ButtonStyle;
 
-use super::super::common::{CardContext, local_day, local_time};
+use super::super::common::CardContext;
 use super::super::digest::DIGEST_EMPTY;
 use super::super::heading::DIGEST_PHRASE_SEED;
 use super::super::{Card, CardEmbed, CardField};
@@ -29,6 +29,7 @@ use super::v2::{
     text, within_budget,
 };
 use super::vocab::{INK_BLUE, boss_labels};
+use crate::bot::commands::text::{local_day, local_time};
 use crate::domain::attendance::Tally;
 use crate::domain::notify::DigestInclusion;
 use crate::domain::schedule::{Run, RunStatus};

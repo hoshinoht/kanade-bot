@@ -2,16 +2,16 @@
 
 use std::collections::BTreeMap;
 
-use chrono::{DateTime, Datelike, Timelike, Utc};
 use chrono_tz::Tz;
 
+use crate::bot::commands::text;
 use crate::domain::attendance::{
     AnswerState, AttendanceMode, AttendancePolicy, Tally, snapshot_states, status_label,
 };
 use crate::domain::catalog::BossTable;
 use crate::domain::members::Directory;
 use crate::domain::notify::display_names;
-use crate::domain::schedule::{Run, RunStatus, ScheduleSnapshot};
+use crate::domain::schedule::{Run, ScheduleSnapshot};
 use crate::domain::settings::MessageStyle;
 
 use super::redesign::{DifficultyMarks, V2Kit};
@@ -26,11 +26,6 @@ pub const COLOUR_COUNTDOWN: u32 = 0xFEE75C;
 pub const COLOUR_ALL_SET: u32 = 0x57F287;
 /// v4 `COLOUR_DIGEST`.
 pub const COLOUR_DIGEST: u32 = 0x5865F2;
-
-const WEEKDAY_NAMES: [&str; 7] = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
-const MONTH_NAMES: [&str; 12] = [
-    "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
-];
 
 /// What a card is rendered from besides its intent.
 #[derive(Clone, Copy)]
@@ -62,27 +57,6 @@ impl CardContext<'_> {
     }
 }
 
-/// v4 `STATUS_LABEL`.
-pub fn status_text(status: RunStatus) -> &'static str {
-    match status {
-        RunStatus::Planned => "⚠️ unconfirmed",
-        RunStatus::Confirmed => "✅ confirmed",
-        RunStatus::AtRisk => "❗ at risk",
-        RunStatus::Otot => "🕒 own time",
-        RunStatus::Done => "🏁 done",
-        RunStatus::Cancelled => "🚫 cancelled",
-    }
-}
-
-/// v4 `format_bosses`: the stored tokens joined with ` + `.
-pub fn format_bosses(bosses: &[String]) -> String {
-    if bosses.is_empty() {
-        "(no bosses)".to_owned()
-    } else {
-        bosses.join(" + ")
-    }
-}
-
 /// v4 `format_offset`: `60` → `1h`, `90` → `1h30m`, `15` → `15m`.
 pub fn format_offset(minutes: i64) -> String {
     let (hours, mins) = (minutes.div_euclid(60), minutes.rem_euclid(60));
@@ -93,27 +67,10 @@ pub fn format_offset(minutes: i64) -> String {
     }
 }
 
-/// v4 `local_time`: `HH:MM` in the guild zone.
-pub fn local_time(at: DateTime<Utc>, zone: Tz) -> String {
-    let local = at.with_timezone(&zone);
-    format!("{:02}:{:02}", local.hour(), local.minute())
-}
-
-/// v4 `local_day`: `Fri 25 Sep` in the guild zone.
-pub fn local_day(at: DateTime<Utc>, zone: Tz) -> String {
-    let local = at.with_timezone(&zone);
-    format!(
-        "{} {:02} {}",
-        WEEKDAY_NAMES[local.weekday().num_days_from_monday() as usize],
-        local.day(),
-        MONTH_NAMES[local.month0() as usize]
-    )
-}
-
 /// v4 `boss_detail`: one line per boss with its catalog description.
 pub fn boss_detail(bosses: &[String], catalog: Option<&BossTable>) -> String {
     match catalog {
-        None => format!("**{}**", format_bosses(bosses)),
+        None => format!("**{}**", text::format_bosses(bosses)),
         Some(table) => bosses
             .iter()
             .map(|name| format!("**{name}** · {}", table.describe(name)))
@@ -169,7 +126,11 @@ pub fn answers_text(ctx: &CardContext<'_>, run: &Run) -> String {
 
 /// v4 `status_line`.
 pub fn status_line(ctx: &CardContext<'_>, run: &Run) -> String {
-    format!("{} · {}", status_text(run.status), answers_text(ctx, run))
+    format!(
+        "{} · {}",
+        text::status_label(run.status),
+        answers_text(ctx, run)
+    )
 }
 
 /// Participants whose answer is unknown (v4 `unanswered`: no ✅/❌; in v5
@@ -258,11 +219,11 @@ impl People {
 
 #[cfg(test)]
 mod tests {
-    use chrono::TimeZone;
+    use chrono::{TimeZone, Utc};
 
     use super::*;
     use crate::domain::attendance::StatusPin;
-    use crate::domain::schedule::{EMOJI_NO, EMOJI_YES, RunSource};
+    use crate::domain::schedule::{EMOJI_NO, EMOJI_YES, RunSource, RunStatus};
 
     fn schedule(pin: Option<StatusPin>) -> ScheduleSnapshot {
         let at = Utc.with_ymd_and_hms(2026, 9, 12, 13, 0, 0).unwrap();
@@ -312,6 +273,6 @@ mod tests {
         assert_eq!(format_offset(90), "1h30m");
         assert_eq!(format_offset(15), "15m");
         assert_eq!(format_offset(0), "0m");
-        assert_eq!(format_bosses(&[]), "(no bosses)");
+        assert_eq!(text::format_bosses(&[]), "(no bosses)");
     }
 }
