@@ -268,28 +268,8 @@ impl ChatPilot {
         &mut self,
         store: &S,
     ) -> Result<usize, StoreError> {
-        let mut ids = Vec::new();
-        let mut filter = ChatFilter {
-            outcomes: vec![ChatOutcome::Withheld],
-            limit: MAX_PAGE,
-            ..ChatFilter::default()
-        };
-        while ids.len() < WITHHELD_CACHE {
-            let page = store.list_chats(&filter).await?;
-            ids.extend(
-                page.items
-                    .into_iter()
-                    .filter(|row| row.withheld)
-                    .filter_map(|row| row.message_id),
-            );
-            match page.next {
-                Some(cursor) => filter.cursor = Some(cursor),
-                None => break,
-            }
-        }
-        ids.truncate(WITHHELD_CACHE);
-        // Pages are newest first; insert oldest first so eviction order holds.
-        for id in ids.iter().rev() {
+        let ids = flagged_ids(store, ChatOutcome::Withheld, |row| row.withheld).await?;
+        for id in &ids {
             self.conversations.withhold(id);
         }
         Ok(ids.len())
@@ -304,31 +284,13 @@ impl ChatPilot {
         &mut self,
         store: &S,
     ) -> Result<usize, StoreError> {
-        let mut ids = Vec::new();
-        let mut filter = ChatFilter {
-            outcomes: vec![ChatOutcome::Profanity],
-            limit: MAX_PAGE,
-            ..ChatFilter::default()
-        };
-        while ids.len() < WITHHELD_CACHE {
-            let page = store.list_chats(&filter).await?;
-            ids.extend(
-                page.items
-                    .into_iter()
-                    .filter(|row| {
-                        row.guardrail
-                            .pointer("/profanity/sent")
-                            .is_some_and(serde_json::Value::is_string)
-                    })
-                    .filter_map(|row| row.message_id),
-            );
-            match page.next {
-                Some(cursor) => filter.cursor = Some(cursor),
-                None => break,
-            }
-        }
-        ids.truncate(WITHHELD_CACHE);
-        for id in ids.iter().rev() {
+        let ids = flagged_ids(store, ChatOutcome::Profanity, |row| {
+            row.guardrail
+                .pointer("/profanity/sent")
+                .is_some_and(serde_json::Value::is_string)
+        })
+        .await?;
+        for id in &ids {
             self.conversations.exclude(id);
         }
         Ok(ids.len())
@@ -341,4 +303,36 @@ impl ChatPilot {
             clean_retry: self.guard.view(now),
         }
     }
+}
+
+/// The message ids of the newest [`WITHHELD_CACHE`] `outcome` rows `keep`
+/// accepts, oldest first: pages are newest first, and inserting oldest first
+/// keeps the eviction order.
+async fn flagged_ids<S: ModelLogStore + Sync>(
+    store: &S,
+    outcome: ChatOutcome,
+    keep: impl Fn(&ChatInteraction) -> bool,
+) -> Result<Vec<String>, StoreError> {
+    let mut ids = Vec::new();
+    let mut filter = ChatFilter {
+        outcomes: vec![outcome],
+        limit: MAX_PAGE,
+        ..ChatFilter::default()
+    };
+    while ids.len() < WITHHELD_CACHE {
+        let page = store.list_chats(&filter).await?;
+        ids.extend(
+            page.items
+                .into_iter()
+                .filter(|row| keep(row))
+                .filter_map(|row| row.message_id),
+        );
+        match page.next {
+            Some(cursor) => filter.cursor = Some(cursor),
+            None => break,
+        }
+    }
+    ids.truncate(WITHHELD_CACHE);
+    ids.reverse();
+    Ok(ids)
 }

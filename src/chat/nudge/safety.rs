@@ -348,28 +348,27 @@ impl Hit<'_> {
     }
 }
 
-/// Every built-in entry once, sorted: the words an admin may allow again.
-/// Allowing one removes it from every list it is on (whole-word and inside).
-pub fn builtin_words() -> Vec<&'static str> {
-    let mut words: Vec<&'static str> = DENY_LIST
+/// Every built-in entry, whole-word lists first, then the inside-word list.
+fn builtin_entries() -> impl Iterator<Item = &'static str> {
+    DENY_LIST
         .iter()
         .chain(DENY_SOUNDALIKE)
         .chain(DENY_SEA)
         .chain(DENY_INSIDE)
         .copied()
-        .collect();
+}
+
+/// Every built-in entry once, sorted: the words an admin may allow again.
+/// Allowing one removes it from every list it is on (whole-word and inside).
+pub fn builtin_words() -> Vec<&'static str> {
+    let mut words: Vec<&'static str> = builtin_entries().collect();
     words.sort_unstable();
     words.dedup();
     words
 }
 
 pub fn is_builtin_word(word: &str) -> bool {
-    DENY_LIST
-        .iter()
-        .chain(DENY_SOUNDALIKE)
-        .chain(DENY_SEA)
-        .chain(DENY_INSIDE)
-        .any(|entry| *entry == word)
+    builtin_entries().any(|entry| entry == word)
 }
 
 /// The effective deny-list: built-ins minus `allowed`, plus admin `extra`
@@ -428,22 +427,7 @@ impl WordFilter {
                         });
                     whole && (!RUN_STRICT.contains(&entry) || covers(raw_word, entry))
                 };
-                self.builtin_whole
-                    .iter()
-                    .find(|(collapsed, entry)| matches(collapsed, entry))
-                    .map(|(_, entry)| Hit::Builtin(entry))
-                    .or_else(|| {
-                        self.extra_whole
-                            .iter()
-                            .find(|(collapsed, entry)| matches(collapsed, entry))
-                            .map(|(_, entry)| Hit::Extra(entry.as_str()))
-                    })
-                    .or_else(|| {
-                        self.inside
-                            .iter()
-                            .find(|entry| word.contains(*entry))
-                            .map(|entry| Hit::Builtin(entry))
-                    })
+                self.hit(&word, matches)
             })
     }
 
@@ -455,29 +439,36 @@ impl WordFilter {
             .split(|c: char| !c.is_alphabetic())
             .filter(|word| !word.is_empty())
             .find_map(|word| {
-                let matches = |entry: &str| {
-                    word == entry
+                let matches = |collapsed: &str, _: &str| {
+                    word == collapsed
                         || SUFFIXES.iter().any(|suffix| {
-                            word.strip_prefix(entry)
+                            word.strip_prefix(collapsed)
                                 .is_some_and(|rest| rest == collapse(suffix))
                         })
                 };
-                self.builtin_whole
+                self.hit(word, matches)
+            })
+    }
+
+    /// The first built-in, then admin-added, whole-word entry `matches`
+    /// accepts (collapsed form, entry), else the first inside-word entry in
+    /// `word`.
+    fn hit(&self, word: &str, matches: impl Fn(&str, &str) -> bool) -> Option<Hit<'_>> {
+        self.builtin_whole
+            .iter()
+            .find(|(collapsed, entry)| matches(collapsed, entry))
+            .map(|(_, entry)| Hit::Builtin(entry))
+            .or_else(|| {
+                self.extra_whole
                     .iter()
-                    .find(|(collapsed, _)| matches(collapsed))
-                    .map(|(_, entry)| Hit::Builtin(entry))
-                    .or_else(|| {
-                        self.extra_whole
-                            .iter()
-                            .find(|(collapsed, _)| matches(collapsed))
-                            .map(|(_, word)| Hit::Extra(word.as_str()))
-                    })
-                    .or_else(|| {
-                        self.inside
-                            .iter()
-                            .find(|entry| word.contains(*entry))
-                            .map(|entry| Hit::Builtin(entry))
-                    })
+                    .find(|(collapsed, entry)| matches(collapsed, entry))
+                    .map(|(_, entry)| Hit::Extra(entry.as_str()))
+            })
+            .or_else(|| {
+                self.inside
+                    .iter()
+                    .find(|entry| word.contains(*entry))
+                    .map(|entry| Hit::Builtin(entry))
             })
     }
 }

@@ -58,14 +58,15 @@ fn at_once<F: Future>(future: F) -> Option<F::Output> {
 }
 
 /// A question that ended without an answer and before any charge: refunded.
-fn ended() -> Generation {
+pub(super) fn ended() -> Generation {
     Generation::failed(AnswerFailure::Session(SessionError {
         failure: SessionFailure::Ended,
         charge: Charge::Refunded,
     }))
 }
 
-async fn cut_signal(mut cut: watch::Receiver<bool>) {
+/// Resolves once shutdown cuts in-flight questions; never if the sender is gone.
+pub(super) async fn cut_signal(mut cut: watch::Receiver<bool>) {
     while !*cut.borrow_and_update() {
         if cut.changed().await.is_err() {
             std::future::pending::<()>().await;

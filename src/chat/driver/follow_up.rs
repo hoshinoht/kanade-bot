@@ -7,10 +7,9 @@ use std::sync::{Arc, Mutex};
 use serde_json::json;
 
 use super::delivery::{Cause, Deletion, Delivery, DeliveryRecord, Placeholder, append_error, lock};
+use super::run::{cut_signal, ended};
 use super::{Answerer, Asked, ChatDriver, Job, Prepared, Surface, new_row_id};
-use crate::chat::answer::{
-    AnswerFailure, AnswerSettings, Generation, Question, interaction, with_persona,
-};
+use crate::chat::answer::{AnswerSettings, Generation, Question, interaction, with_persona};
 use crate::chat::context::{ChatTurn, TurnRole, assemble, system_prompt};
 use crate::chat::gate::{ChannelInfo, IncomingMessage, is_chat_channel};
 use crate::chat::pilot::{ChatPilot, failure_reply};
@@ -18,7 +17,6 @@ use crate::chat::sanitize::reply_parts;
 use crate::chat::tools::ToolContext;
 use crate::domain::members::member_name;
 use crate::domain::model_log::ChatInteraction;
-use crate::infrastructure::llm::governor::{Charge, SessionError, SessionFailure};
 
 /// One rejected proposal's server-side card facts. They never come from a
 /// Discord message, so a reactor cannot steer the prompt by editing text.
@@ -84,21 +82,6 @@ fn prompt(request: &FollowUpRequest, prepared: &Prepared) -> String {
     format!(
         "[Note from the scheduler, not from anybody in the channel.] {who} just reacted ❌ on the card you posted for them, so it is off and nothing has changed. The card said: {facts}. Write one short message to {who}: say the card is off, and ask what they would like instead -- the day, the time, the boss, whoever is on it, whichever of those you cannot tell from the card. Ask, do not guess, and do not apologise at length. You cannot post a card in this message; their reply comes back to you as a normal message and you can post the corrected card then."
     )
-}
-
-fn ended() -> Generation {
-    Generation::failed(AnswerFailure::Session(SessionError {
-        failure: SessionFailure::Ended,
-        charge: Charge::Refunded,
-    }))
-}
-
-async fn cut_signal(mut cut: tokio::sync::watch::Receiver<bool>) {
-    while !*cut.borrow_and_update() {
-        if cut.changed().await.is_err() {
-            std::future::pending::<()>().await;
-        }
-    }
 }
 
 /// A follow-up is not a normal admitted question, but it still has to settle
