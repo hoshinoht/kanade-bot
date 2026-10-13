@@ -15,7 +15,7 @@ use serde_json::{Value, json};
 use crate::{
     reads::Reads,
     schemas::assert_valid,
-    support::{ADMIN_HOST, Reply, find, request, strs},
+    support::{ADMIN_HOST, find, request, strs},
 };
 
 const ROW: &str = "characters.json#/$defs/CharacterRow";
@@ -41,12 +41,6 @@ async fn records(reads: &Reads) -> Vec<SettingsChange> {
         .into_iter()
         .filter(|change| change.section == "characters")
         .collect()
-}
-
-async fn keyed(reads: &Reads, method: &str, path: &str, key: &str, body: Value) -> Reply {
-    reads
-        .call(method, path, body, &[("Idempotency-Key", key)])
-        .await
 }
 
 async fn created(reads: &Reads, path: &str, body: Value) -> Value {
@@ -358,13 +352,17 @@ async fn the_first_character_is_the_main_and_the_crown_moves() {
 #[tokio::test]
 async fn keyed_writes_replay_across_a_restart() {
     let mut reads = Reads::with_characters().await;
-    let first = keyed(&reads, "POST", ALICE, "char-k", json!({"ign": "Wisteria"})).await;
+    let first = reads
+        .keyed("POST", ALICE, "char-k", json!({"ign": "Wisteria"}))
+        .await;
     assert_eq!(first.status, 201, "{}", first.text());
     let row = first.json();
     let id = row["id"].as_str().unwrap().to_owned();
 
     reads.restart(TimeDelta::zero(), None).await;
-    let again = keyed(&reads, "POST", ALICE, "char-k", json!({"ign": "Wisteria"})).await;
+    let again = reads
+        .keyed("POST", ALICE, "char-k", json!({"ign": "Wisteria"}))
+        .await;
     assert_eq!(
         (again.status, again.json()),
         (201, row.clone()),
@@ -375,39 +373,47 @@ async fn keyed_writes_replay_across_a_restart() {
         1,
         "created once"
     );
-    let other = keyed(&reads, "POST", ALICE, "char-k", json!({"ign": "Heather"})).await;
+    let other = reads
+        .keyed("POST", ALICE, "char-k", json!({"ign": "Heather"}))
+        .await;
     assert_eq!(other.error(), (422, "idempotency_mismatch".into()));
 
     let patch = json!({"version": 1, "level": 250});
-    let edited = keyed(&reads, "PATCH", &character(&id), "char-p", patch.clone()).await;
+    let edited = reads
+        .keyed("PATCH", &character(&id), "char-p", patch.clone())
+        .await;
     assert_eq!(edited.status, 200, "{}", edited.text());
     // The retry carries the version it was made from; it replays, not 409.
-    let replay = keyed(&reads, "PATCH", &character(&id), "char-p", patch).await;
+    let replay = reads.keyed("PATCH", &character(&id), "char-p", patch).await;
     assert_eq!((replay.status, replay.json()), (200, edited.json()));
 
     // A refused write stores no answer: the key applies once it can.
-    let clash = keyed(
-        &reads,
-        "POST",
-        "/api/admin/members/1002/characters",
-        "char-b",
-        json!({"ign": "wisteria"}),
-    )
-    .await;
+    let clash = reads
+        .keyed(
+            "POST",
+            "/api/admin/members/1002/characters",
+            "char-b",
+            json!({"ign": "wisteria"}),
+        )
+        .await;
     assert_eq!(clash.error(), (422, "ign_taken".into()));
 
-    let gone = keyed(&reads, "DELETE", &character(&id), "char-d", json!({})).await;
+    let gone = reads
+        .keyed("DELETE", &character(&id), "char-d", json!({}))
+        .await;
     assert_eq!(gone.status, 200, "{}", gone.text());
-    let gone_again = keyed(&reads, "DELETE", &character(&id), "char-d", json!({})).await;
+    let gone_again = reads
+        .keyed("DELETE", &character(&id), "char-d", json!({}))
+        .await;
     assert_eq!((gone_again.status, gone_again.json()), (200, gone.json()));
-    let clash = keyed(
-        &reads,
-        "POST",
-        "/api/admin/members/1002/characters",
-        "char-b",
-        json!({"ign": "wisteria"}),
-    )
-    .await;
+    let clash = reads
+        .keyed(
+            "POST",
+            "/api/admin/members/1002/characters",
+            "char-b",
+            json!({"ign": "wisteria"}),
+        )
+        .await;
     assert_eq!(clash.status, 201, "{}", clash.text());
     assert_eq!(
         records(&reads).await.len(),

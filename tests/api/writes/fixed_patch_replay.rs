@@ -39,9 +39,7 @@ async fn other_call(reads: &Reads, method: &str, path: &str, body: Value) -> Rep
 
 /// A keyed PATCH of `f-kalos`.
 async fn patch(reads: &Reads, body: Value, key: &str) -> Reply {
-    reads
-        .call("PATCH", KALOS, body, &[("Idempotency-Key", key)])
-        .await
+    reads.keyed("PATCH", KALOS, key, body).await
 }
 
 /// [`patch`] spawned, to be held at the lookup gate.

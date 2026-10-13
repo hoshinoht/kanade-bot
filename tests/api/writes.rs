@@ -18,7 +18,19 @@ use crate::{
 
 const ORIGIN: (&str, &str) = ("Origin", "https://kanade.test");
 const RUN_RESULT: &str = "week.json#/$defs/RunResult";
+const MOVE_RESULT: &str = "week.json#/$defs/MoveResult";
+const WEEK: &str = "week.json#/$defs/Week";
+const FIXED_ROW: &str = "fixed.json#/$defs/FixedRow";
+const MEMBER_ROW: &str = "members.json#/$defs/MemberRow";
 const ERROR: &str = "error.json#/$defs/ApiError";
+const FIXED: &str = "/api/admin/fixed";
+const F_KALOS: &str = "/api/admin/fixed/f-kalos";
+const MOVE_KALOS: &str = "/api/admin/runs/r-kalos/move";
+const RSVP_KALOS: &str = "/api/admin/runs/r-kalos/rsvp";
+const MOVE_NKALOS: &str = "/api/admin/runs/n-kalos/move";
+const SWAP: &str = "/api/admin/runs/n-kalos/swap";
+const NEXT_WEEK: &str = "/api/admin/week?week=next";
+const BOB_ALIASES: &str = "/api/admin/members/1002/aliases";
 
 mod fixed_patch_replay;
 
@@ -45,6 +57,12 @@ impl Reads {
             Some(&body.to_string()),
         )
         .await
+    }
+
+    /// [`Reads::call`] under the `Idempotency-Key` `key`.
+    pub(crate) async fn keyed(&self, method: &str, path: &str, key: &str, body: Value) -> Reply {
+        self.call(method, path, body, &[("Idempotency-Key", key)])
+            .await
     }
 
     /// 2xx validated against `target`, anything else against `ApiError`.
@@ -78,6 +96,12 @@ impl Reads {
         send(self.admin, method, ADMIN_HOST, path, &headers, Some(&body)).await
     }
 
+    /// Signed out (no session cookie).
+    pub(crate) async fn anonymous(&self, method: &str, path: &str, body: &Value) -> Reply {
+        let body = body.to_string();
+        send(self.admin, method, ADMIN_HOST, path, &[ORIGIN], Some(&body)).await
+    }
+
     /// An unmounted route: the generic 404 signed in (sending `body`) and
     /// before the session check.
     pub(crate) async fn assert_unmounted(&self, method: &str, path: &str, body: Value) {
@@ -99,12 +123,7 @@ async fn moves_are_attributed_to_the_session_and_csrf_is_required() {
     let v = reads.version().await;
     let body = json!({"day": 6, "time": "21:00", "version": v});
     let reply = reads
-        .ok(
-            "POST",
-            "/api/admin/runs/r-kalos/move",
-            body.clone(),
-            "week.json#/$defs/MoveResult",
-        )
+        .ok("POST", MOVE_KALOS, body.clone(), MOVE_RESULT)
         .await;
     assert_eq!(reply["previous"], json!({"day": 5, "time": "22:00"}));
     assert_eq!(
@@ -117,19 +136,9 @@ async fn moves_are_attributed_to_the_session_and_csrf_is_required() {
     assert_eq!(record.origin.surface, Surface::AdminPortal);
 
     // No CSRF token, or no session: refused before anything is written.
-    let no_csrf = reads
-        .without_csrf("POST", "/api/admin/runs/r-kalos/move", &body)
-        .await;
+    let no_csrf = reads.without_csrf("POST", MOVE_KALOS, &body).await;
     assert_eq!(no_csrf.error(), (403, "csrf".into()));
-    let anonymous = send(
-        reads.admin,
-        "POST",
-        ADMIN_HOST,
-        "/api/admin/runs/r-kalos/move",
-        &[ORIGIN],
-        Some(&body.to_string()),
-    )
-    .await;
+    let anonymous = reads.anonymous("POST", MOVE_KALOS, &body).await;
     assert_eq!(anonymous.status, 401);
     assert_eq!(reads.version().await, v + 1);
 
@@ -153,17 +162,13 @@ async fn moves_are_attributed_to_the_session_and_csrf_is_required() {
 async fn planner_swap_is_atomic_replayable_and_revertible() {
     let reads = Reads::new().await;
     let v = reads.version().await;
-    let before = reads
-        .read("/api/admin/week?week=next", "week.json#/$defs/Week")
-        .await;
+    let before = reads.read(NEXT_WEEK, WEEK).await;
     let run = |id: &str| find(&before["runs"], "id", id).clone();
     let kalos = run("n-kalos");
     let own_time = run("n-star");
     let body = json!({"with": "n-star", "version": v});
     let key = [("Idempotency-Key", "planner-swap-1")];
-    let swapped = reads
-        .call("POST", "/api/admin/runs/n-kalos/swap", body.clone(), &key)
-        .await;
+    let swapped = reads.call("POST", SWAP, body.clone(), &key).await;
     assert_eq!(swapped.status, 200, "{}", swapped.text());
     let swapped = swapped.json();
     assert_valid("week.json#/$defs/SwapResult", "swap", &swapped);
@@ -187,21 +192,13 @@ async fn planner_swap_is_atomic_replayable_and_revertible() {
         "one move notice per run"
     );
 
-    let replay = reads
-        .call("POST", "/api/admin/runs/n-kalos/swap", body, &key)
-        .await;
+    let replay = reads.call("POST", SWAP, body, &key).await;
     assert_eq!(replay.status, 200, "{}", replay.text());
     assert_eq!(replay.json(), swapped, "same response on replay");
     assert_eq!(reads.version().await, v + 1, "one record only");
     assert_eq!(reads.store.outbox_notices().await.unwrap().len(), 2);
-    let changed_version = reads
-        .call(
-            "POST",
-            "/api/admin/runs/n-kalos/swap",
-            json!({"with": "n-star", "version": v + 1}),
-            &key,
-        )
-        .await;
+    let body = json!({"with": "n-star", "version": v + 1});
+    let changed_version = reads.call("POST", SWAP, body, &key).await;
     assert_eq!(
         changed_version.error(),
         (422, "idempotency_mismatch".into())
@@ -212,17 +209,12 @@ async fn planner_swap_is_atomic_replayable_and_revertible() {
         "changed-version reuse writes nothing"
     );
 
+    let revert = json!({"seqs": [v + 1]});
+    let plan = "history.json#/$defs/RevertPlan";
     reads
-        .ok(
-            "POST",
-            "/api/admin/history/revert",
-            json!({"seqs": [v + 1]}),
-            "history.json#/$defs/RevertPlan",
-        )
+        .ok("POST", "/api/admin/history/revert", revert, plan)
         .await;
-    let restored = reads
-        .read("/api/admin/week?week=next", "week.json#/$defs/Week")
-        .await;
+    let restored = reads.read(NEXT_WEEK, WEEK).await;
     for original in [kalos, own_time] {
         let current = find(&restored["runs"], "id", original["id"].as_str().unwrap());
         assert_eq!(
@@ -236,24 +228,10 @@ async fn planner_swap_is_atomic_replayable_and_revertible() {
 async fn planner_swap_refusals_leave_both_runs_unchanged() {
     let reads = Reads::new().await;
     let v = reads.version().await;
-    for (path, body) in [
-        (
-            "/api/admin/runs/n-kalos/swap",
-            json!({"with": "n-kalos", "version": v}),
-        ),
-        (
-            "/api/admin/runs/n-kalos/swap",
-            json!({"with": "r-kalos", "version": v}),
-        ),
-        (
-            "/api/admin/runs/n-kalos/swap",
-            json!({"with": "r-star", "version": v}),
-        ),
-    ] {
-        assert_eq!(
-            reads.refused("POST", path, body).await,
-            (422, "invalid".into())
-        );
+    for with in ["n-kalos", "r-kalos", "r-star"] {
+        let body = json!({"with": with, "version": v});
+        let refusal = reads.refused("POST", SWAP, body).await;
+        assert_eq!(refusal, (422, "invalid".into()), "{with}");
     }
     assert_eq!(reads.version().await, v);
     assert!(reads.store.outbox_notices().await.unwrap().is_empty());
@@ -263,33 +241,13 @@ async fn planner_swap_refusals_leave_both_runs_unchanged() {
 async fn stale_planner_swap_changes_neither_run() {
     let reads = Reads::new().await;
     let v = reads.version().await;
-    reads
-        .ok(
-            "POST",
-            "/api/admin/runs/n-kalos/move",
-            json!({"day": 6, "time": "20:00", "version": v}),
-            "week.json#/$defs/MoveResult",
-        )
-        .await;
-    let before = reads
-        .read("/api/admin/week?week=next", "week.json#/$defs/Week")
-        .await;
-    assert_eq!(
-        reads
-            .refused(
-                "POST",
-                "/api/admin/runs/n-kalos/swap",
-                json!({"with": "n-star", "version": v}),
-            )
-            .await,
-        (409, "stale".into())
-    );
-    assert_eq!(
-        reads
-            .read("/api/admin/week?week=next", "week.json#/$defs/Week")
-            .await,
-        before
-    );
+    let body = json!({"day": 6, "time": "20:00", "version": v});
+    reads.ok("POST", MOVE_NKALOS, body, MOVE_RESULT).await;
+    let before = reads.read(NEXT_WEEK, WEEK).await;
+    let body = json!({"with": "n-star", "version": v});
+    let refusal = reads.refused("POST", SWAP, body).await;
+    assert_eq!(refusal, (409, "stale".into()));
+    assert_eq!(reads.read(NEXT_WEEK, WEEK).await, before);
     assert!(reads.store.outbox_notices().await.unwrap().len() == 1);
 }
 
@@ -297,44 +255,18 @@ async fn stale_planner_swap_changes_neither_run() {
 async fn planner_swap_refuses_a_non_midnight_reset_week_escape() {
     let reset = chrono::NaiveTime::from_hms_opt(12, 0, 0).unwrap();
     let reads = Reads::with_reset(reset).await;
-    let mut version = reads.version().await;
-    let moved = reads
-        .ok(
-            "POST",
-            "/api/admin/runs/n-kalos/move",
-            json!({"day": 1, "time": "10:00", "version": version}),
-            "week.json#/$defs/MoveResult",
-        )
-        .await;
-    version = moved["version"].as_u64().unwrap();
-    let moved = reads
-        .ok(
-            "POST",
-            "/api/admin/runs/n-star/move",
-            json!({"day": 0, "time": null, "version": version}),
-            "week.json#/$defs/MoveResult",
-        )
-        .await;
-    version = moved["version"].as_u64().unwrap();
-    let before = reads
-        .read("/api/admin/week?week=next", "week.json#/$defs/Week")
-        .await;
-    assert_eq!(
-        reads
-            .refused(
-                "POST",
-                "/api/admin/runs/n-kalos/swap",
-                json!({"with": "n-star", "version": version}),
-            )
-            .await,
-        (422, "invalid".into())
-    );
-    assert_eq!(
-        reads
-            .read("/api/admin/week?week=next", "week.json#/$defs/Week")
-            .await,
-        before
-    );
+    let version = reads.version().await;
+    let body = json!({"day": 1, "time": "10:00", "version": version});
+    let moved = reads.ok("POST", MOVE_NKALOS, body, MOVE_RESULT).await;
+    let body = json!({"day": 0, "time": null, "version": moved["version"]});
+    let path = "/api/admin/runs/n-star/move";
+    let moved = reads.ok("POST", path, body, MOVE_RESULT).await;
+    let version = moved["version"].as_u64().unwrap();
+    let before = reads.read(NEXT_WEEK, WEEK).await;
+    let body = json!({"with": "n-star", "version": version});
+    let refusal = reads.refused("POST", SWAP, body).await;
+    assert_eq!(refusal, (422, "invalid".into()));
+    assert_eq!(reads.read(NEXT_WEEK, WEEK).await, before);
     assert_eq!(reads.version().await, version);
 }
 
@@ -365,21 +297,13 @@ impl Reads {
     /// from `f-kalos` (r-kalos keeps its own, amended roster).
     async fn drop_cara(&self) {
         let form = timing(self.version().await, "22:00", "bring pots");
-        self.ok(
-            "PATCH",
-            "/api/admin/fixed/f-kalos",
-            form,
-            "fixed.json#/$defs/FixedRow",
-        )
-        .await;
+        self.ok("PATCH", F_KALOS, form, FIXED_ROW).await;
     }
 
     /// `r-kalos` and `f-kalos` as the admin screens show them.
     async fn rows(&self) -> (Value, Value) {
-        let week = self.read("/api/admin/week", "week.json#/$defs/Week").await;
-        let fixed = self
-            .read("/api/admin/fixed", "fixed.json#/$defs/FixedRows")
-            .await;
+        let week = self.read("/api/admin/week", WEEK).await;
+        let fixed = self.read(FIXED, "fixed.json#/$defs/FixedRows").await;
         (
             find(&week["runs"], "id", "r-kalos").clone(),
             find(&fixed, "id", "f-kalos").clone(),
@@ -403,7 +327,7 @@ async fn same_version_edits_merge_by_field_and_never_lose_an_update() {
         path,
         body,
         result: if path == "move" {
-            "week.json#/$defs/MoveResult"
+            MOVE_RESULT
         } else {
             RUN_RESULT
         },
@@ -415,7 +339,7 @@ async fn same_version_edits_merge_by_field_and_never_lose_an_update() {
         method: "PATCH",
         path: "",
         body,
-        result: "fixed.json#/$defs/FixedRow",
+        result: FIXED_ROW,
     };
     let edits = [
         run(
@@ -470,21 +394,15 @@ async fn same_version_edits_merge_by_field_and_never_lose_an_update() {
             // Dropping Cara synced r-kalos's roster; amend it again so a reset
             // has something to undo.
             let add = json!({"add": "1004", "version": reads.version().await});
-            reads
-                .ok(
-                    "PATCH",
-                    "/api/admin/runs/r-kalos/participants",
-                    add,
-                    RUN_RESULT,
-                )
-                .await;
+            let path = "/api/admin/runs/r-kalos/participants";
+            reads.ok("PATCH", path, add, RUN_RESULT).await;
             // What the PWA holds: the week's version, read before its data.
-            let v = reads.read("/api/admin/week", "week.json#/$defs/Week").await["version"]
+            let v = reads.read("/api/admin/week", WEEK).await["version"]
                 .as_u64()
                 .unwrap();
             let url = |edit: &Edit| {
                 if edit.fixed {
-                    "/api/admin/fixed/f-kalos".to_owned()
+                    F_KALOS.to_owned()
                 } else {
                     format!("/api/admin/runs/r-kalos/{}", edit.path)
                 }
@@ -550,17 +468,10 @@ async fn a_stale_timing_form_cannot_revert_another_edit() {
     let v = reads.version().await;
     let b = timing(v, "21:30", "bring pots");
     assert_valid("fixed.json#/$defs/FixedRequest", "form", &b);
-    reads
-        .ok(
-            "PATCH",
-            "/api/admin/fixed/f-kalos",
-            b,
-            "fixed.json#/$defs/FixedRow",
-        )
-        .await;
+    reads.ok("PATCH", F_KALOS, b, FIXED_ROW).await;
     let a = timing(v, "22:00", "bring elixirs");
     assert_eq!(
-        reads.refused("PATCH", "/api/admin/fixed/f-kalos", a).await,
+        reads.refused("PATCH", F_KALOS, a).await,
         (409, "stale".into())
     );
     let (_, timing) = reads.rows().await;
@@ -576,41 +487,23 @@ async fn idempotency_keys_replay_the_first_result_and_refuse_reuse() {
     let v = reads.version().await;
     let body = json!({"day": 6, "time": "21:00", "version": v});
     let key = [("Idempotency-Key", "move-1")];
-    let first = reads
-        .call("POST", "/api/admin/runs/r-kalos/move", body.clone(), &key)
-        .await;
+    let first = reads.call("POST", MOVE_KALOS, body.clone(), &key).await;
     assert_eq!(first.status, 200);
     // A retry after the slot moved (by itself) replays instead of 409.
-    let again = reads
-        .call("POST", "/api/admin/runs/r-kalos/move", body, &key)
-        .await;
+    let again = reads.call("POST", MOVE_KALOS, body, &key).await;
     assert_eq!(again.status, 200, "{}", again.text());
     assert_eq!(again.json()["run"], first.json()["run"]);
     assert_eq!(reads.version().await, v + 1, "applied once");
     // A fresh key from the same stale version is a real conflict, not a replay.
-    let stale = reads
-        .call(
-            "POST",
-            "/api/admin/runs/r-kalos/move",
-            json!({"day": 4, "time": "21:00", "version": v}),
-            &[("Idempotency-Key", "move-2")],
-        )
-        .await;
+    let body = json!({"day": 4, "time": "21:00", "version": v});
+    let stale = reads.keyed("POST", MOVE_KALOS, "move-2", body).await;
     assert_eq!(stale.error(), (409, "stale".into()));
 
     let other = json!({"day": 4, "time": "21:00", "version": v});
-    let reused = reads
-        .call("POST", "/api/admin/runs/r-kalos/move", other, &key)
-        .await;
+    let reused = reads.call("POST", MOVE_KALOS, other, &key).await;
     assert_eq!(reused.error(), (422, "idempotency_mismatch".into()));
-    let bad = reads
-        .call(
-            "POST",
-            "/api/admin/runs/r-kalos/move",
-            json!({"day": 1, "time": "21:00", "version": v}),
-            &[("Idempotency-Key", "no spaces")],
-        )
-        .await;
+    let body = json!({"day": 1, "time": "21:00", "version": v});
+    let bad = reads.keyed("POST", MOVE_KALOS, "no spaces", body).await;
     assert_eq!(bad.error(), (400, "invalid_idempotency_key".into()));
 }
 
@@ -618,29 +511,19 @@ async fn idempotency_keys_replay_the_first_result_and_refuse_reuse() {
 async fn explicit_expectations_and_admin_overrides() {
     let reads = Reads::new().await;
     let v = reads.version().await;
-    reads
-        .ok(
-            "POST",
-            "/api/admin/runs/r-kalos/move",
-            json!({"day": 6, "time": "21:00", "version": v}),
-            "week.json#/$defs/MoveResult",
-        )
-        .await;
+    let body = json!({"day": 6, "time": "21:00", "version": v});
+    reads.ok("POST", MOVE_KALOS, body, MOVE_RESULT).await;
     let head = reads.store.history_head().await.unwrap();
     // Declaring the stale `seen` is a conflict; overriding the change it names applies.
     let stale =
         json!({"day": 4, "time": "21:00", "version": v, "expect": [{"field": "slot", "seen": v}]});
     assert_eq!(
-        reads
-            .refused("POST", "/api/admin/runs/r-kalos/move", stale)
-            .await,
+        reads.refused("POST", MOVE_KALOS, stale).await,
         (409, "stale".into())
     );
     let unknown = json!({"day": 4, "time": "21:00", "version": v, "expect": [{"field": "colour", "seen": null}]});
     assert_eq!(
-        reads
-            .refused("POST", "/api/admin/runs/r-kalos/move", unknown)
-            .await,
+        reads.refused("POST", MOVE_KALOS, unknown).await,
         (422, "unknown_field".into())
     );
     let forced = json!({
@@ -648,14 +531,7 @@ async fn explicit_expectations_and_admin_overrides() {
         "expect": [{"field": "slot", "seen": head.seq}],
         "override": [{"seq": head.seq, "hash": head.hash}],
     });
-    let reply = reads
-        .ok(
-            "POST",
-            "/api/admin/runs/r-kalos/move",
-            forced,
-            "week.json#/$defs/MoveResult",
-        )
-        .await;
+    let reply = reads.ok("POST", MOVE_KALOS, forced, MOVE_RESULT).await;
     assert_eq!(reply["run"]["day"], 4);
 }
 
@@ -663,81 +539,45 @@ async fn explicit_expectations_and_admin_overrides() {
 async fn run_edits_refuse_with_the_table_codes() {
     let reads = Reads::new().await;
     let v = reads.version().await;
-    let cases: [(&str, &str, Value, u16, &str); 10] = [
+    // Each body is sent at the current `version`.
+    let invalid = [
+        ("PATCH", "r-kalos/status", json!({"status": "sideways"})),
+        ("PATCH", "r-kalos/status", json!({"status": "at_risk"})),
+        ("POST", "r-kalos/move", json!({"day": 7, "time": "21:00"})),
+        ("POST", "r-kalos/move", json!({"day": 1, "time": "9pm"})),
+        ("POST", "r-star/move", json!({"day": 1, "time": "21:00"})),
+        ("PATCH", "r-kalos/participants", json!({"add": "1006"})),
+        ("PATCH", "r-kalos/participants", json!({})),
+    ]
+    .map(|(method, run, body)| (method, run, body, 422, "invalid"));
+    let others = [
         (
             "PATCH",
-            "/api/admin/runs/r-kalos/status",
-            json!({"status": "sideways", "version": v}),
-            422,
-            "invalid",
-        ),
-        (
-            "PATCH",
-            "/api/admin/runs/r-kalos/status",
-            json!({"status": "at_risk", "version": v}),
-            422,
-            "invalid",
-        ),
-        (
-            "PATCH",
-            "/api/admin/runs/nope/status",
-            json!({"status": "done", "version": v}),
+            "nope/status",
+            json!({"status": "done"}),
             404,
             "not_found",
         ),
         (
             "POST",
-            "/api/admin/runs/r-kalos/move",
-            json!({"day": 7, "time": "21:00", "version": v}),
-            422,
-            "invalid",
-        ),
-        (
-            "POST",
-            "/api/admin/runs/r-kalos/move",
-            json!({"day": 1, "time": "9pm", "version": v}),
-            422,
-            "invalid",
-        ),
-        (
-            "POST",
-            "/api/admin/runs/r-star/move",
-            json!({"day": 1, "time": "21:00", "version": v}),
-            422,
-            "invalid",
-        ),
-        (
-            "POST",
-            "/api/admin/runs/r-kalos/rsvp",
-            json!({"member_id": "1006", "answer": "yes", "version": v}),
+            "r-kalos/rsvp",
+            json!({"member_id": "1006", "answer": "yes"}),
             422,
             "not_on_run",
         ),
         (
             "PATCH",
-            "/api/admin/runs/r-kalos/participants",
-            json!({"add": "1006", "version": v}),
-            422,
-            "invalid",
-        ),
-        (
-            "PATCH",
-            "/api/admin/runs/r-kalos/participants",
-            json!({"version": v}),
-            422,
-            "invalid",
-        ),
-        (
-            "PATCH",
-            "/api/admin/runs/r-kalos/status",
-            json!({"status": "done", "version": v, "colour": 1}),
+            "r-kalos/status",
+            json!({"status": "done", "colour": 1}),
             400,
             "invalid_body",
         ),
     ];
-    for (method, path, body, status, code) in cases {
+    for (method, run, mut body, status, code) in invalid.into_iter().chain(others) {
+        body["version"] = v.into();
+        let path = format!("/api/admin/runs/{run}");
         assert_eq!(
-            reads.refused(method, path, body.clone()).await,
+            reads.refused(method, &path, body.clone()).await,
             (status, code.into()),
             "{method} {path} {body}"
         );
@@ -757,54 +597,27 @@ async fn rsvp_participants_reset_and_ping() {
             .find(|p| p["id"] == id)
             .map(|p| p["answer"].clone())
     };
-    let run = reads
-        .ok(
-            "POST",
-            "/api/admin/runs/r-kalos/rsvp",
-            json!({"member_id": "1004", "answer": "yes", "version": v}),
-            RUN_RESULT,
-        )
-        .await;
+    let body = json!({"member_id": "1004", "answer": "yes", "version": v});
+    let run = reads.ok("POST", RSVP_KALOS, body, RUN_RESULT).await;
     assert_eq!(answer(&run, "1004"), Some("yes".into()));
-    let run = reads
-        .ok(
-            "POST",
-            "/api/admin/runs/r-kalos/rsvp",
-            json!({"member_id": "1001", "answer": "clear", "version": v}),
-            RUN_RESULT,
-        )
-        .await;
+    let body = json!({"member_id": "1001", "answer": "clear", "version": v});
+    let run = reads.ok("POST", RSVP_KALOS, body, RUN_RESULT).await;
     assert_eq!(answer(&run, "1001"), Some("waiting".into()));
 
-    let run = reads
-        .ok(
-            "PATCH",
-            "/api/admin/runs/r-kalos/participants",
-            json!({"remove": "1004", "version": v}),
-            RUN_RESULT,
-        )
-        .await;
+    let body = json!({"remove": "1004", "version": v});
+    let path = "/api/admin/runs/r-kalos/participants";
+    let run = reads.ok("PATCH", path, body, RUN_RESULT).await;
     assert_eq!(answer(&run, "1004"), None);
 
-    let run = reads
-        .ok(
-            "POST",
-            "/api/admin/runs/r-kalos/reset",
-            json!({"version": reads.version().await}),
-            RUN_RESULT,
-        )
-        .await;
+    let body = json!({"version": reads.version().await});
+    let path = "/api/admin/runs/r-kalos/reset";
+    let run = reads.ok("POST", path, body, RUN_RESULT).await;
     assert_eq!(run["run"]["amended"], false);
     assert_eq!(run["run"]["roster_change"], Value::Null);
 
-    let ping = reads
-        .ok(
-            "POST",
-            "/api/admin/runs/r-kalos/ping",
-            json!({}),
-            "common.json#/$defs/Message",
-        )
-        .await;
+    let message = "common.json#/$defs/Message";
+    let ping = reads.ok("POST", "/api/admin/runs/r-kalos/ping", json!({}), message);
+    let ping = ping.await;
     // The pwa-mock mirrors this wording; the run sheet shows it verbatim.
     let message = ping["message"].as_str().unwrap();
     assert!(
@@ -812,12 +625,8 @@ async fn rsvp_participants_reset_and_ping() {
             && message.ends_with('.'),
         "{message}"
     );
-    assert_eq!(
-        reads
-            .refused("POST", "/api/admin/runs/nope/ping", json!({}))
-            .await,
-        (404, "not_found".into())
-    );
+    let refusal = reads.refused("POST", "/api/admin/runs/nope/ping", json!({}));
+    assert_eq!(refusal.await, (404, "not_found".into()));
 }
 
 #[tokio::test]
@@ -826,12 +635,7 @@ async fn rsvp_retracts_only_after_its_committed_write() {
     let version = reads.version().await;
     let body = json!({"member_id": "1002", "answer": "yes", "version": version});
     let first = reads
-        .call(
-            "POST",
-            "/api/admin/runs/r-kalos/rsvp",
-            body.clone(),
-            &[("Idempotency-Key", "rsvp-retract")],
-        )
+        .keyed("POST", RSVP_KALOS, "rsvp-retract", body.clone())
         .await;
     assert_eq!(first.status, 200, "{}", first.text());
     assert_eq!(
@@ -839,25 +643,12 @@ async fn rsvp_retracts_only_after_its_committed_write() {
         [("r-kalos".into(), "1002".into())]
     );
 
-    let replay = reads
-        .call(
-            "POST",
-            "/api/admin/runs/r-kalos/rsvp",
-            body,
-            &[("Idempotency-Key", "rsvp-retract")],
-        )
-        .await;
+    let replay = reads.keyed("POST", RSVP_KALOS, "rsvp-retract", body).await;
     assert_eq!(replay.status, 200, "{}", replay.text());
     assert_eq!(reads.decline_retractions.lock().unwrap().len(), 1);
 
-    let refused = reads
-        .call(
-            "POST",
-            "/api/admin/runs/r-kalos/rsvp",
-            json!({"member_id": "1006", "answer": "yes", "version": reads.version().await}),
-            &[("Idempotency-Key", "rsvp-refused")],
-        )
-        .await;
+    let body = json!({"member_id": "1006", "answer": "yes", "version": reads.version().await});
+    let refused = reads.keyed("POST", RSVP_KALOS, "rsvp-refused", body).await;
     assert_eq!(refused.status, 422, "{}", refused.text());
     assert_eq!(reads.decline_retractions.lock().unwrap().len(), 1);
 }
@@ -876,9 +667,7 @@ async fn decline_rsvp_idempotency_binds_expectations_and_replays_once() {
     };
     let key = [("Idempotency-Key", "decline-expectations")];
 
-    let first = reads
-        .call("POST", "/api/admin/runs/r-kalos/rsvp", body(None), &key)
-        .await;
+    let first = reads.call("POST", RSVP_KALOS, body(None), &key).await;
     assert_eq!(first.status, 200, "{}", first.text());
     assert_eq!(reads.version().await, version + 1);
     let candidate = reads
@@ -889,21 +678,14 @@ async fn decline_rsvp_idempotency_binds_expectations_and_replays_once() {
         .expect("first decline candidate");
 
     let different_expectation = reads
-        .call(
-            "POST",
-            "/api/admin/runs/r-kalos/rsvp",
-            body(Some(version)),
-            &key,
-        )
+        .call("POST", RSVP_KALOS, body(Some(version)), &key)
         .await;
     assert_eq!(
         different_expectation.error(),
         (422, "idempotency_mismatch".into())
     );
 
-    let replay = reads
-        .call("POST", "/api/admin/runs/r-kalos/rsvp", body(None), &key)
-        .await;
+    let replay = reads.call("POST", RSVP_KALOS, body(None), &key).await;
     assert_eq!(replay.status, 200, "{}", replay.text());
     assert_eq!(reads.version().await, version + 1, "one history record");
     assert_eq!(
@@ -929,14 +711,8 @@ async fn decline_rsvp_idempotency_binds_expectations_and_replays_once() {
 #[tokio::test]
 async fn a_no_op_yes_does_not_retract_a_pending_decline() {
     let reads = Reads::new().await;
-    let first = reads
-        .call(
-            "POST",
-            "/api/admin/runs/r-kalos/rsvp",
-            json!({"member_id": "1001", "answer": "yes", "version": reads.version().await}),
-            &[],
-        )
-        .await;
+    let body = json!({"member_id": "1001", "answer": "yes", "version": reads.version().await});
+    let first = reads.call("POST", RSVP_KALOS, body, &[]).await;
     assert_eq!(first.status, 200, "{}", first.text());
     assert!(reads.decline_retractions.lock().unwrap().is_empty());
 
@@ -991,14 +767,8 @@ async fn a_no_op_yes_does_not_retract_a_pending_decline() {
         .expect("pending decline candidate");
     assert!(!candidate.retract_pending);
 
-    let repeated = reads
-        .call(
-            "POST",
-            "/api/admin/runs/r-kalos/rsvp",
-            json!({"member_id": "1001", "answer": "yes", "version": version}),
-            &[],
-        )
-        .await;
+    let body = json!({"member_id": "1001", "answer": "yes", "version": version});
+    let repeated = reads.call("POST", RSVP_KALOS, body, &[]).await;
     assert_eq!(repeated.status, 200, "{}", repeated.text());
     assert_eq!(
         reads.version().await,
@@ -1032,9 +802,7 @@ async fn weekly_timings_create_edit_with_decisions_and_retire() {
             .seq
     };
     let before = head().await;
-    let created = reads
-        .call("POST", "/api/admin/fixed", create.clone(), &key)
-        .await;
+    let created = reads.call("POST", FIXED, create.clone(), &key).await;
     assert_eq!(created.status, 201, "{}", created.text());
     assert_eq!(
         head().await,
@@ -1042,7 +810,7 @@ async fn weekly_timings_create_edit_with_decisions_and_retire() {
         "the timing and its runs are one change record"
     );
     let row = created.json();
-    assert_valid("fixed.json#/$defs/FixedRow", "create", &row);
+    assert_valid(FIXED_ROW, "create", &row);
     assert_eq!(row["weekday_name"], "Thursday");
     assert_eq!(row["bosses"][0]["token"], "HMaleficStar");
     assert_eq!(row["note"], Value::Null);
@@ -1050,69 +818,43 @@ async fn weekly_timings_create_edit_with_decisions_and_retire() {
         row["runs"][0]["week"], "next",
         "this week's Thursday has passed"
     );
-    let replay = reads
-        .call("POST", "/api/admin/fixed", create.clone(), &key)
-        .await;
+    let replay = reads.call("POST", FIXED, create.clone(), &key).await;
     assert_eq!(replay.status, 201);
     assert_eq!(replay.json()["id"], row["id"]);
     assert_eq!(head().await, before + 1, "a replay records nothing");
-    let rows = reads
-        .read("/api/admin/fixed", "fixed.json#/$defs/FixedRows")
-        .await;
+    let rows = reads.read(FIXED, "fixed.json#/$defs/FixedRows").await;
     assert_eq!(rows.as_array().unwrap().len(), 2, "created once");
 
     let mut unwatched = create.clone();
     unwatched["channel_id"] = "star".into();
-    assert_eq!(
-        reads.refused("POST", "/api/admin/fixed", unwatched).await.0,
-        422
-    );
+    assert_eq!(reads.refused("POST", FIXED, unwatched).await.0, 422);
     let mut unknown_boss = create.clone();
     unknown_boss["bosses"] = "hwhatever".into();
     assert_eq!(
-        reads
-            .refused("POST", "/api/admin/fixed", unknown_boss)
-            .await,
+        reads.refused("POST", FIXED, unknown_boss).await,
         (422, "invalid".into())
     );
 
     // f-kalos: Tue 22:00. Move this week's run off it; moving the timing then needs a decision.
     let v = reads.version().await;
-    reads
-        .ok(
-            "POST",
-            "/api/admin/runs/r-kalos/move",
-            json!({"day": 5, "time": "23:00", "version": v}),
-            "week.json#/$defs/MoveResult",
-        )
-        .await;
+    let body = json!({"day": 5, "time": "23:00", "version": v});
+    reads.ok("POST", MOVE_KALOS, body, MOVE_RESULT).await;
     let mut edit = json!({
         "weekday": 1, "time": "21:30", "bosses": "xkalos", "participants": ["1001", "1002"],
         "channel_id": "kalos-four", "note": "bring pots"
     });
     assert_eq!(
-        reads
-            .refused("PATCH", "/api/admin/fixed/f-kalos", edit.clone())
-            .await,
+        reads.refused("PATCH", F_KALOS, edit.clone()).await,
         (422, "version_required".into())
     );
     edit["version"] = reads.version().await.into();
     assert_eq!(
-        reads
-            .refused("PATCH", "/api/admin/fixed/f-kalos", edit.clone())
-            .await,
+        reads.refused("PATCH", F_KALOS, edit.clone()).await,
         (422, "choices_required".into())
     );
     let mut kept = edit.clone();
     kept["decisions"] = json!({"r-kalos": "keep"});
-    let row = reads
-        .ok(
-            "PATCH",
-            "/api/admin/fixed/f-kalos",
-            kept,
-            "fixed.json#/$defs/FixedRow",
-        )
-        .await;
+    let row = reads.ok("PATCH", F_KALOS, kept, FIXED_ROW).await;
     assert_eq!(row["time"], "21:30");
     let times: Vec<_> = row["runs"]
         .as_array()
@@ -1132,132 +874,78 @@ async fn weekly_timings_create_edit_with_decisions_and_retire() {
     wrong["version"] = reads.version().await.into();
     wrong["decisions"] = json!({"n-kalos": "keep"});
     assert_eq!(
-        reads
-            .refused("PATCH", "/api/admin/fixed/f-kalos", wrong)
-            .await
-            .1,
+        reads.refused("PATCH", F_KALOS, wrong).await.1,
         "choices_not_applicable"
     );
 
-    let retired = reads
-        .ok(
-            "DELETE",
-            "/api/admin/fixed/f-kalos",
-            json!({}),
-            "fixed.json#/$defs/FixedRetired",
-        )
-        .await;
+    let retired = "fixed.json#/$defs/FixedRetired";
+    let retired = reads.ok("DELETE", F_KALOS, json!({}), retired).await;
     assert_eq!(
         retired["cancelled"], 3,
         "this, next and the materialised week after"
     );
     assert_eq!(
-        reads
-            .refused("DELETE", "/api/admin/fixed/f-kalos", json!({}))
-            .await,
+        reads.refused("DELETE", F_KALOS, json!({})).await,
         (404, "not_found".into())
     );
     assert_eq!(
-        reads
-            .refused("PATCH", "/api/admin/fixed/f-kalos", edit)
-            .await,
+        reads.refused("PATCH", F_KALOS, edit).await,
         (404, "not_found".into())
     );
 
-    let valid = reads
-        .ok(
-            "POST",
-            "/api/admin/validate/bosses",
-            json!({"text": "xkalos, hstar"}),
-            "fixed.json#/$defs/ValidateResult",
-        )
-        .await;
-    assert_eq!(valid["bosses"].as_array().unwrap().len(), 2);
-    assert_eq!(
-        reads
-            .refused(
-                "POST",
-                "/api/admin/validate/bosses",
-                json!({"text": "kalos"})
-            )
-            .await
-            .1,
-        "invalid"
-    );
+    let path = "/api/admin/validate/bosses";
+    let result = "fixed.json#/$defs/ValidateResult";
+    let valid = reads.ok("POST", path, json!({"text": "xkalos, hstar"}), result);
+    assert_eq!(valid.await["bosses"].as_array().unwrap().len(), 2);
+    let refusal = reads.refused("POST", path, json!({"text": "kalos"})).await;
+    assert_eq!(refusal.1, "invalid");
 }
 
 #[tokio::test]
 async fn member_edits_and_aliases() {
     let reads = Reads::new().await;
-    let row = reads
-        .ok(
-            "PATCH",
-            "/api/admin/members/1001",
-            json!({"ping_level": "all", "persona": "default"}),
-            "members.json#/$defs/MemberRow",
-        )
-        .await;
+    let alice = "/api/admin/members/1001";
+    let body = json!({"ping_level": "all", "persona": "default"});
+    let row = reads.ok("PATCH", alice, body, MEMBER_ROW).await;
     assert_eq!(
         (row["ping_level"].clone(), row["persona"].clone()),
         ("all".into(), Value::Null)
     );
     let row = reads
-        .ok(
-            "PATCH",
-            "/api/admin/members/1001",
-            json!({"persona": ""}),
-            "members.json#/$defs/MemberRow",
-        )
+        .ok("PATCH", alice, json!({"persona": ""}), MEMBER_ROW)
         .await;
     assert_eq!(row["persona"], Value::Null);
     assert_eq!(row["aliases"], json!(["ali"]), "untouched");
 
-    let row = reads
-        .ok(
-            "POST",
-            "/api/admin/members/1002/aliases",
-            json!({"alias": " Bobby "}),
-            "members.json#/$defs/MemberRow",
-        )
-        .await;
+    let body = json!({"alias": " Bobby "});
+    let row = reads.ok("POST", BOB_ALIASES, body, MEMBER_ROW).await;
     assert_eq!(row["aliases"], json!(["bobby"]));
-    for (path, body, status, code) in [
+    let bob = "/api/admin/members/1002";
+    for (method, path, body, status, code) in [
         (
-            "/api/admin/members/1002/aliases",
+            "POST",
+            BOB_ALIASES,
             json!({"alias": "ali"}),
             422,
             "alias_taken",
         ),
         (
-            "/api/admin/members/1002/aliases",
+            "POST",
+            BOB_ALIASES,
             json!({"alias": "two words"}),
             422,
             "invalid",
         ),
+        ("PATCH", bob, json!({"ping_level": "loud"}), 422, "invalid"),
+        ("PATCH", bob, json!({"persona": "pirate"}), 422, "invalid"),
         (
-            "/api/admin/members/1002",
-            json!({"ping_level": "loud"}),
-            422,
-            "invalid",
-        ),
-        (
-            "/api/admin/members/1002",
-            json!({"persona": "pirate"}),
-            422,
-            "invalid",
-        ),
-        (
+            "PATCH",
             "/api/admin/members/9999",
             json!({"ping_level": "all"}),
             404,
             "not_found",
         ),
     ] {
-        let method = if path.ends_with("aliases") {
-            "POST"
-        } else {
-            "PATCH"
-        };
         assert_eq!(
             reads.refused(method, path, body).await,
             (status, code.into()),
@@ -1266,59 +954,36 @@ async fn member_edits_and_aliases() {
     }
 }
 
+impl Reads {
+    /// DELETE `alias` from Bob (as sent, before decoding): his row.
+    async fn drop_alias(&self, alias: &str) -> Value {
+        let path = format!("{BOB_ALIASES}/{alias}");
+        self.ok("DELETE", &path, json!({}), MEMBER_ROW).await
+    }
+}
+
 #[tokio::test]
 async fn alias_removal_is_idempotent_and_keeps_order() {
     let reads = Reads::new().await;
     for alias in ["bobby", "rob", "bob-2"] {
-        reads
-            .ok(
-                "POST",
-                "/api/admin/members/1002/aliases",
-                json!({ "alias": alias }),
-                "members.json#/$defs/MemberRow",
-            )
-            .await;
+        let body = json!({ "alias": alias });
+        reads.ok("POST", BOB_ALIASES, body, MEMBER_ROW).await;
     }
     // The path alias is percent-decoded, trimmed and lowercased.
-    let row = reads
-        .ok(
-            "DELETE",
-            "/api/admin/members/1002/aliases/%20Rob%20",
-            json!({}),
-            "members.json#/$defs/MemberRow",
-        )
-        .await;
+    let row = reads.drop_alias("%20Rob%20").await;
     assert_eq!(row["aliases"], json!(["bobby", "bob-2"]));
-    let again = reads
-        .ok(
-            "DELETE",
-            "/api/admin/members/1002/aliases/rob",
-            json!({}),
-            "members.json#/$defs/MemberRow",
-        )
-        .await;
+    let again = reads.drop_alias("rob").await;
     assert_eq!(again, row, "an alias not held leaves the row unchanged");
     let stored = reads.store.load_member("1002").await.unwrap().unwrap();
     assert_eq!(stored.aliases, ["bobby", "bob-2"]);
     // Another member's alias is not this member's to drop.
-    reads
-        .ok(
-            "DELETE",
-            "/api/admin/members/1002/aliases/ali",
-            json!({}),
-            "members.json#/$defs/MemberRow",
-        )
-        .await;
+    reads.drop_alias("ali").await;
     let alice = reads.store.load_member("1001").await.unwrap().unwrap();
     assert_eq!(alice.aliases, ["ali"]);
     // Released: another member may take it.
+    let path = "/api/admin/members/1001/aliases";
     let row = reads
-        .ok(
-            "POST",
-            "/api/admin/members/1001/aliases",
-            json!({"alias": "rob"}),
-            "members.json#/$defs/MemberRow",
-        )
+        .ok("POST", path, json!({"alias": "rob"}), MEMBER_ROW)
         .await;
     assert_eq!(row["aliases"], json!(["ali", "rob"]));
 
@@ -1349,25 +1014,12 @@ async fn a_move_never_leaves_the_boss_week() {
     let reset = chrono::NaiveTime::from_hms_opt(5, 0, 0).unwrap();
     let reads = Reads::with_reset(reset).await;
     let v = reads.version().await;
-    assert_eq!(
-        reads
-            .refused(
-                "POST",
-                "/api/admin/runs/r-kalos/move",
-                json!({"day": 0, "time": "03:00", "version": v}),
-            )
-            .await,
-        (422, "invalid".into())
-    );
+    let body = json!({"day": 0, "time": "03:00", "version": v});
+    let refusal = reads.refused("POST", MOVE_KALOS, body).await;
+    assert_eq!(refusal, (422, "invalid".into()));
     assert_eq!(reads.version().await, v);
-    let moved = reads
-        .ok(
-            "POST",
-            "/api/admin/runs/r-kalos/move",
-            json!({"day": 0, "time": "06:00", "version": v}),
-            "week.json#/$defs/MoveResult",
-        )
-        .await;
+    let body = json!({"day": 0, "time": "06:00", "version": v});
+    let moved = reads.ok("POST", MOVE_KALOS, body, MOVE_RESULT).await;
     assert_eq!(
         (moved["run"]["day"].clone(), moved["run"]["time"].clone()),
         (0.into(), "06:00".into())
@@ -1384,60 +1036,23 @@ async fn timing_replays_survive_a_lost_role() {
         "weekday": 3, "time": "21:00", "bosses": "hstar", "participants": ["1001", "1004"],
         "channel_id": "kalos-four", "note": null
     });
-    let created = reads
-        .call(
-            "POST",
-            "/api/admin/fixed",
-            create.clone(),
-            &[("Idempotency-Key", "c-1")],
-        )
-        .await;
+    let created = reads.keyed("POST", FIXED, "c-1", create.clone()).await;
     assert_eq!(created.status, 201, "{}", created.text());
     let id = created.json()["id"].as_str().unwrap().to_owned();
     reads.drop_cara().await;
     let v = reads.version().await;
     let edit = timing(v, "22:00", "bring elixirs");
-    let edited = reads
-        .call(
-            "PATCH",
-            "/api/admin/fixed/f-kalos",
-            edit.clone(),
-            &[("Idempotency-Key", "e-1")],
-        )
-        .await;
+    let edited = reads.keyed("PATCH", F_KALOS, "e-1", edit.clone()).await;
     assert_eq!(edited.status, 200, "{}", edited.text());
 
     // Dan (on the new timing) and Bob (on f-kalos) lose the bossing role.
     for user in ["1004", "1002"] {
-        let mut profile = reads
-            .store
-            .list_members()
-            .await
-            .unwrap()
-            .into_iter()
-            .find(|profile| profile.member.user_id == user)
-            .unwrap();
-        profile.member.has_role = false;
-        reads.store.put_member(profile).await.unwrap();
+        reads.demote(user).await;
     }
-    let replay = reads
-        .call(
-            "POST",
-            "/api/admin/fixed",
-            create.clone(),
-            &[("Idempotency-Key", "c-1")],
-        )
-        .await;
+    let replay = reads.keyed("POST", FIXED, "c-1", create.clone()).await;
     assert_eq!(replay.status, 201, "{}", replay.text());
     assert_eq!(replay.json()["id"], id.as_str());
-    let replay = reads
-        .call(
-            "PATCH",
-            "/api/admin/fixed/f-kalos",
-            edit.clone(),
-            &[("Idempotency-Key", "e-1")],
-        )
-        .await;
+    let replay = reads.keyed("PATCH", F_KALOS, "e-1", edit.clone()).await;
     assert_eq!(replay.status, 200, "{}", replay.text());
     assert_eq!(replay.json()["note"], "bring elixirs");
     assert_eq!(reads.version().await, v + 1, "nothing applied twice");
@@ -1445,23 +1060,9 @@ async fn timing_replays_survive_a_lost_role() {
     // A different body under a used key is still a mismatch; a fresh key is validated.
     let mut other = create.clone();
     other["time"] = "20:00".into();
-    let reused = reads
-        .call(
-            "POST",
-            "/api/admin/fixed",
-            other,
-            &[("Idempotency-Key", "c-1")],
-        )
-        .await;
+    let reused = reads.keyed("POST", FIXED, "c-1", other).await;
     assert_eq!(reused.error(), (422, "idempotency_mismatch".into()));
-    let fresh = reads
-        .call(
-            "POST",
-            "/api/admin/fixed",
-            create,
-            &[("Idempotency-Key", "c-2")],
-        )
-        .await;
+    let fresh = reads.keyed("POST", FIXED, "c-2", create).await;
     assert_eq!(fresh.error(), (422, "invalid".into()));
 }
 
@@ -1471,15 +1072,11 @@ async fn timing_replays_survive_a_lost_role() {
 async fn retire_replays_by_record() {
     let reads = Reads::new().await;
     let key = [("Idempotency-Key", "retire-1")];
-    let first = reads
-        .call("DELETE", "/api/admin/fixed/f-kalos", json!({}), &key)
-        .await;
+    let first = reads.call("DELETE", F_KALOS, json!({}), &key).await;
     assert_eq!(first.status, 200, "{}", first.text());
     assert_eq!(first.json()["cancelled"], 2, "this and next week's runs");
     let v = reads.version().await;
-    let again = reads
-        .call("DELETE", "/api/admin/fixed/f-kalos", json!({}), &key)
-        .await;
+    let again = reads.call("DELETE", F_KALOS, json!({}), &key).await;
     assert_eq!(again.status, 200, "{}", again.text());
     assert_valid("fixed.json#/$defs/FixedRetired", "replay", &again.json());
     assert_eq!(again.json()["cancelled"], 0);
@@ -1521,14 +1118,7 @@ async fn timing_owner_is_set_changed_validated_and_blamed() {
         "weekday": 2, "time": "21:00", "bosses": "hstar", "participants": ["1002", "1001"],
         "channel_id": "kalos-four", "note": null
     });
-    let created = reads
-        .ok(
-            "POST",
-            "/api/admin/fixed",
-            plain,
-            "fixed.json#/$defs/FixedRow",
-        )
-        .await;
+    let created = reads.ok("POST", FIXED, plain, FIXED_ROW).await;
     assert_eq!(
         (created["owner_id"].clone(), created["owner_pinned"].clone()),
         ("1002".into(), false.into())
@@ -1540,14 +1130,7 @@ async fn timing_owner_is_set_changed_validated_and_blamed() {
         "channel_id": "kalos-four", "note": null, "owner_id": "1004"
     });
     assert_valid("fixed.json#/$defs/FixedRequest", "create", &create);
-    let created = reads
-        .ok(
-            "POST",
-            "/api/admin/fixed",
-            create.clone(),
-            "fixed.json#/$defs/FixedRow",
-        )
-        .await;
+    let created = reads.ok("POST", FIXED, create.clone(), FIXED_ROW).await;
     assert_eq!(
         (
             created["owner_id"].clone(),
@@ -1563,15 +1146,13 @@ async fn timing_owner_is_set_changed_validated_and_blamed() {
     for owner in ["9999", "1003", "1005", "abc"] {
         let mut bad = create.clone();
         bad["owner_id"] = owner.into();
-        let reply = reads.call("POST", "/api/admin/fixed", bad, &[]).await;
+        let reply = reads.call("POST", FIXED, bad, &[]).await;
         assert_eq!(reply.error(), (422, "invalid".into()), "{owner}");
         assert_eq!(reply.json()["message"], "Pick an owner from the roster.");
         let mut bad = timing(v, "22:00", "bring pots");
         bad["owner_id"] = owner.into();
         assert_eq!(
-            reads
-                .refused("PATCH", "/api/admin/fixed/f-kalos", bad)
-                .await,
+            reads.refused("PATCH", F_KALOS, bad).await,
             (422, "invalid".into()),
             "{owner}"
         );
@@ -1581,14 +1162,7 @@ async fn timing_owner_is_set_changed_validated_and_blamed() {
     // Update: only the owner differs, so only `owner` is edited and blamed.
     let mut edit = timing(v, "22:00", "bring pots");
     edit["owner_id"] = "1002".into();
-    let row = reads
-        .ok(
-            "PATCH",
-            "/api/admin/fixed/f-kalos",
-            edit,
-            "fixed.json#/$defs/FixedRow",
-        )
-        .await;
+    let row = reads.ok("PATCH", F_KALOS, edit, FIXED_ROW).await;
     assert_eq!(row["owner_id"], "1002");
     let record = reads.store.load_change(v + 1).await.unwrap().unwrap();
     // Runs carry no owner: the timing row alone changes.
@@ -1603,19 +1177,11 @@ async fn timing_owner_is_set_changed_validated_and_blamed() {
     let mut stale = timing(v, "22:00", "bring pots");
     stale["owner_id"] = "1001".into();
     assert_eq!(
-        reads
-            .refused("PATCH", "/api/admin/fixed/f-kalos", stale)
-            .await,
+        reads.refused("PATCH", F_KALOS, stale).await,
         (409, "stale".into())
     );
-    let row = reads
-        .ok(
-            "PATCH",
-            "/api/admin/fixed/f-kalos",
-            timing(v, "22:00", "bring elixirs"),
-            "fixed.json#/$defs/FixedRow",
-        )
-        .await;
+    let form = timing(v, "22:00", "bring elixirs");
+    let row = reads.ok("PATCH", F_KALOS, form, FIXED_ROW).await;
     assert_eq!(
         (row["owner_id"].clone(), row["note"].clone()),
         ("1002".into(), "bring elixirs".into())
@@ -1625,25 +1191,11 @@ async fn timing_owner_is_set_changed_validated_and_blamed() {
     // edit of other fields.
     let mut form = timing(reads.version().await, "22:00", "bring elixirs");
     form["owner_id"] = "1004".into();
-    reads
-        .ok(
-            "PATCH",
-            "/api/admin/fixed/f-kalos",
-            form,
-            "fixed.json#/$defs/FixedRow",
-        )
-        .await;
+    reads.ok("PATCH", F_KALOS, form, FIXED_ROW).await;
     reads.demote("1004").await;
     let mut form = timing(reads.version().await, "22:00", "bring pots");
     form["owner_id"] = "1004".into();
-    let row = reads
-        .ok(
-            "PATCH",
-            "/api/admin/fixed/f-kalos",
-            form,
-            "fixed.json#/$defs/FixedRow",
-        )
-        .await;
+    let row = reads.ok("PATCH", F_KALOS, form, FIXED_ROW).await;
     assert_eq!(
         (row["owner_id"].clone(), row["note"].clone()),
         ("1004".into(), "bring pots".into())
@@ -1653,14 +1205,7 @@ async fn timing_owner_is_set_changed_validated_and_blamed() {
     let v = reads.version().await;
     let mut form = timing(v, "22:00", "bring pots");
     form["owner_id"] = "".into();
-    let row = reads
-        .ok(
-            "PATCH",
-            "/api/admin/fixed/f-kalos",
-            form,
-            "fixed.json#/$defs/FixedRow",
-        )
-        .await;
+    let row = reads.ok("PATCH", F_KALOS, form, FIXED_ROW).await;
     assert_eq!(
         (row["owner_id"].clone(), row["owner_pinned"].clone()),
         ("1001".into(), false.into())
@@ -1682,58 +1227,23 @@ async fn timing_owner_replays_survive_a_lost_role() {
         "weekday": 3, "time": "21:00", "bosses": "hstar", "participants": ["1001"],
         "channel_id": "kalos-four", "note": null, "owner_id": "1004"
     });
-    let created = reads
-        .call(
-            "POST",
-            "/api/admin/fixed",
-            create.clone(),
-            &[("Idempotency-Key", "own-c")],
-        )
-        .await;
+    let created = reads.keyed("POST", FIXED, "own-c", create.clone()).await;
     assert_eq!(created.status, 201, "{}", created.text());
     let mut edit = timing(reads.version().await, "22:00", "bring pots");
     edit["owner_id"] = "1004".into();
-    let edited = reads
-        .call(
-            "PATCH",
-            "/api/admin/fixed/f-kalos",
-            edit.clone(),
-            &[("Idempotency-Key", "own-e")],
-        )
-        .await;
+    let edited = reads.keyed("PATCH", F_KALOS, "own-e", edit.clone()).await;
     assert_eq!(edited.status, 200, "{}", edited.text());
     let v = reads.version().await;
 
     reads.demote("1004").await;
-    let replay = reads
-        .call(
-            "POST",
-            "/api/admin/fixed",
-            create.clone(),
-            &[("Idempotency-Key", "own-c")],
-        )
-        .await;
+    let replay = reads.keyed("POST", FIXED, "own-c", create.clone()).await;
     assert_eq!(replay.status, 201, "{}", replay.text());
     assert_eq!(replay.json()["id"], created.json()["id"]);
-    let replay = reads
-        .call(
-            "PATCH",
-            "/api/admin/fixed/f-kalos",
-            edit,
-            &[("Idempotency-Key", "own-e")],
-        )
-        .await;
+    let replay = reads.keyed("PATCH", F_KALOS, "own-e", edit).await;
     assert_eq!(replay.status, 200, "{}", replay.text());
     assert_eq!(replay.json()["owner_id"], "1004");
     assert_eq!(reads.version().await, v, "nothing applied twice");
 
-    let fresh = reads
-        .call(
-            "POST",
-            "/api/admin/fixed",
-            create,
-            &[("Idempotency-Key", "own-c2")],
-        )
-        .await;
+    let fresh = reads.keyed("POST", FIXED, "own-c2", create).await;
     assert_eq!(fresh.error(), (422, "invalid".into()));
 }
