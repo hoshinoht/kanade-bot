@@ -19,7 +19,7 @@ use chrono::{DateTime, Utc};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use super::{module, own, roster, unavailable};
+use super::{module, own, roster};
 use crate::{
     api::{
         admin::{
@@ -107,7 +107,7 @@ async fn write(
         Ok(KeyedWrite::Applied(written)) => Err(refused(written)),
         Ok(KeyedWrite::Replayed(found)) => replayed(&found).map(Some),
         Ok(KeyedWrite::KeyTaken) => Err(mismatch()),
-        Err(error) => Err(unavailable(error)),
+        Err(error) => Err(Refusal::unavailable(error)),
     }
 }
 
@@ -152,14 +152,17 @@ pub(super) async fn list(State(site): State<Arc<Site>>, session: MemberSession) 
     let characters = roster(state)?
         .member_characters(session.user_id.clone())
         .await
-        .map_err(unavailable)?;
+        .map_err(Refusal::unavailable)?;
     let module = state.character_data.as_ref();
     let mut links = BTreeMap::new();
     let mut waiting = Vec::new();
     if let Some(module) = module {
-        let profiles = state.store.members().await.map_err(unavailable)?;
+        let profiles = state.store.members().await.map_err(Refusal::unavailable)?;
         for character in &characters {
-            let view = module.view(&character.id).await.map_err(unavailable)?;
+            let view = module
+                .view(&character.id)
+                .await
+                .map_err(Refusal::unavailable)?;
             if let Some(found) = view
                 .link
                 .as_ref()
@@ -258,7 +261,7 @@ pub(super) async fn create(
     let others = roster
         .member_characters(me.to_owned())
         .await
-        .map_err(unavailable)?;
+        .map_err(Refusal::unavailable)?;
     let character = Character {
         id: RandomIds.new_id(),
         member_id: me.to_owned(),
@@ -391,7 +394,7 @@ pub(super) async fn update(
     let mut others = roster
         .member_characters(me.to_owned())
         .await
-        .map_err(unavailable)?;
+        .map_err(Refusal::unavailable)?;
     others.retain(|other| other.id != current.id);
     let actor = Actor::member(me);
     let after = current.edited(&edit, &others, now, &actor);

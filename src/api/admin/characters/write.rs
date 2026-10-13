@@ -154,14 +154,14 @@ async fn member_characters(
     roster
         .member_characters(member_id.to_owned())
         .await
-        .map_err(|_| Refusal::from(ApiError::UNAVAILABLE))
+        .map_err(Refusal::unavailable)
 }
 
 async fn current(roster: &dyn CharacterRoster, id: &str) -> Result<Character, Refusal> {
     roster
         .character(id.to_owned())
         .await
-        .map_err(|_| Refusal::from(ApiError::UNAVAILABLE))?
+        .map_err(Refusal::unavailable)?
         .ok_or_else(not_found)
 }
 
@@ -287,8 +287,7 @@ async fn resume_link(
     keyed: &Keyed,
     found: StoredReplay,
 ) -> Reply {
-    let mut body: Value =
-        serde_json::from_str(&found.body).map_err(|_| Refusal::from(ApiError::UNAVAILABLE))?;
+    let mut body: Value = serde_json::from_str(&found.body).map_err(Refusal::unavailable)?;
     let unanswered = found.status == StatusCode::CREATED.as_u16()
         && body.get("link").is_some_and(Value::is_null)
         && body["world"] == LINK_REGION

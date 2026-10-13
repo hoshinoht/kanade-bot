@@ -70,10 +70,6 @@ impl Scouter {
     }
 }
 
-fn unavailable<E>(_: E) -> Refusal {
-    ApiError::UNAVAILABLE.into()
-}
-
 fn roster(state: &ApiState) -> Result<&Arc<dyn CharacterRoster>, Refusal> {
     // The module needs the roster; without it there is nothing to look up.
     state
@@ -126,7 +122,7 @@ async fn characters(roster: &dyn CharacterRoster, ids: Vec<String>) -> Result<Re
         let character = roster
             .character(id.clone())
             .await
-            .map_err(unavailable)?
+            .map_err(Refusal::unavailable)?
             .ok_or_else(not_found)?;
         let ign = lookup_name(&character).map_err(|reason| match reason {
             MissingReason::OtherRegion => Refusal::new(

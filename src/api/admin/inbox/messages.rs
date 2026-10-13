@@ -15,7 +15,6 @@ use crate::{
             week::Context,
             when,
         },
-        error::ApiError,
         state::ApiState,
     },
     domain::{model_log::WatchedMessage, proposals::StoredCard},
@@ -76,7 +75,7 @@ pub async fn said(
         .store
         .messages(card.channel_id.clone(), start - CONTEXT_WINDOW)
         .await
-        .map_err(|_| Refusal::from(ApiError::UNAVAILABLE))?;
+        .map_err(Refusal::unavailable)?;
     let evidence = ids
         .iter()
         .map(

@@ -20,7 +20,7 @@ use serde_json::json;
 
 use super::{
     Reply, Roster,
-    picks::{CharacterPick, SlotWrite, apply, named, stale, unavailable},
+    picks::{CharacterPick, SlotWrite, apply, named, stale},
     write::{recall, record},
 };
 use crate::{
@@ -88,7 +88,7 @@ impl Week {
             .store
             .snapshot(Scope::Weeks(vec![run.week_start]))
             .await
-            .map_err(unavailable)?;
+            .map_err(Refusal::unavailable)?;
         let mut runs = snapshot.runs;
         // The run as just read, whatever the week read saw.
         runs.retain(|other| other.id != run.id);
@@ -98,7 +98,7 @@ impl Week {
             let rows = roster
                 .member_characters(member.clone())
                 .await
-                .map_err(unavailable)?;
+                .map_err(Refusal::unavailable)?;
             characters.insert(member.clone(), rows);
         }
         let mut picks = roster
@@ -107,7 +107,7 @@ impl Week {
                 runs.iter().map(|run| run.id.clone()).collect(),
             )
             .await
-            .map_err(unavailable)?;
+            .map_err(Refusal::unavailable)?;
         let mut fixed: Vec<String> = runs
             .iter()
             .filter_map(|run| run.fixed_run_id.clone())
@@ -119,7 +119,7 @@ impl Week {
                 roster
                     .picks(PickScope::Timing, fixed)
                     .await
-                    .map_err(unavailable)?,
+                    .map_err(Refusal::unavailable)?,
             );
         }
         Ok(Self {

@@ -242,10 +242,10 @@ async fn update(
             .store
             .replay(keyed.actor().to_owned(), keyed.key().to_owned(), now)
             .await
-            .map_err(|_| Refusal::from(ApiError::UNAVAILABLE))?;
+            .map_err(Refusal::unavailable)?;
         if let Some(found) = keyed.check(found)? {
             let mut notices = serde_json::from_str::<Notices>(&found.body)
-                .map_err(|_| Refusal::from(ApiError::UNAVAILABLE))?
+                .map_err(Refusal::unavailable)?
                 .notices;
             // The stored models notice is as of the first answer: retry the
             // switch now and say what holds today.
@@ -546,7 +546,7 @@ async fn switch_persona(
         })
     })
     .await
-    .map_err(|_| Refusal::from(ApiError::UNAVAILABLE))?;
+    .map_err(Refusal::unavailable)?;
     match outcome {
         Ok(_) => {
             changes::persona_switched(&before, &files.store.pin());
@@ -585,7 +585,7 @@ async fn reload_profiles(State(site): State<Arc<Site>>, _: AdminSession) -> Repl
         personas.reload(&root, &id, |_| Ok::<(), Infallible>(()))
     })
     .await
-    .map_err(|_| Refusal::from(ApiError::UNAVAILABLE))?;
+    .map_err(Refusal::unavailable)?;
     drop(current);
     if outcome.is_err() {
         return Err(Refusal::invalid(

@@ -25,7 +25,7 @@ use axum::{
     routing::{delete, patch, post},
 };
 
-use super::context::{roster, unavailable};
+use super::context::roster;
 use crate::{
     api::{
         auth::AdminSession, error::ApiError, listeners::Site, state::ApiState, write::WriteContext,
@@ -122,11 +122,7 @@ pub fn state(site: &Site) -> Result<&Arc<ApiState>, Refusal> {
 pub async fn write_context(
     state: &ApiState,
 ) -> Result<(WriteContext, Vec<MemberProfile>), Refusal> {
-    let profiles = state
-        .store
-        .members()
-        .await
-        .map_err(|error| Refusal::from(unavailable(error)))?;
+    let profiles = state.store.members().await.map_err(Refusal::unavailable)?;
     Ok((write_context_of(state, &profiles), profiles))
 }
 

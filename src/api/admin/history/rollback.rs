@@ -153,7 +153,6 @@ async fn run(
         policy: state.policy.clone(),
         directory: Roster::new(),
     };
-    let unavailable = |_| Refusal::from(ApiError::UNAVAILABLE);
     let outcome = match state
         .writer
         .rollback(origin, request, state.store.as_ref(), &ctx)
@@ -166,7 +165,7 @@ async fn run(
                 .store
                 .change(seq)
                 .await
-                .map_err(unavailable)?
+                .map_err(Refusal::unavailable)?
                 .ok_or_else(|| Refusal::from(ApiError::UNAVAILABLE))?;
             return Ok(Json(encoded(dto::replayed(&record))?).into_response());
         }
@@ -185,7 +184,7 @@ async fn run(
                 .store
                 .change(*seq)
                 .await
-                .map_err(unavailable)?
+                .map_err(Refusal::unavailable)?
                 .ok_or_else(|| Refusal::from(ApiError::UNAVAILABLE))?,
         ),
         _ => None,

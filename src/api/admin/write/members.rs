@@ -45,7 +45,7 @@ async fn reply(state: &ApiState, profile: &MemberProfile) -> Reply {
         .store
         .snapshot(Scope::Weeks(vec![this.start]))
         .await
-        .map_err(|_| Refusal::from(ApiError::UNAVAILABLE))?;
+        .map_err(Refusal::unavailable)?;
     let personas = state.profile_options();
     Ok(Json(dto::members::row(
         profile,

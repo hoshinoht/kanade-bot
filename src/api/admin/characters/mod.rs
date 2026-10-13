@@ -102,7 +102,7 @@ async fn list(
     let characters = roster
         .member_characters(member_id.clone())
         .await
-        .map_err(|_| Refusal::from(ApiError::UNAVAILABLE))?;
+        .map_err(Refusal::unavailable)?;
     Ok(Json(MemberCharacters {
         member_id,
         characters: characters.iter().map(row).collect(),

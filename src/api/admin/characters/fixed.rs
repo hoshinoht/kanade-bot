@@ -20,7 +20,7 @@ use serde_json::json;
 
 use super::{
     Reply,
-    picks::{CharacterPick, SlotWrite, apply, named, stale, unavailable},
+    picks::{CharacterPick, SlotWrite, apply, named, stale},
     write::{recall, record},
 };
 use crate::{
@@ -90,7 +90,7 @@ impl Timing {
             .store
             .snapshot(Scope::Weeks(Vec::new()))
             .await
-            .map_err(unavailable)?
+            .map_err(Refusal::unavailable)?
             .fixed_runs;
         let fixed = match fixed_id {
             Some(id) => Some(
@@ -113,14 +113,14 @@ impl Timing {
             let rows = roster
                 .member_characters(member.clone())
                 .await
-                .map_err(unavailable)?;
+                .map_err(Refusal::unavailable)?;
             characters.insert(member.clone(), rows);
         }
         let picks = match &fixed {
             Some(fixed) => roster
                 .picks(PickScope::Timing, vec![fixed.id.clone()])
                 .await
-                .map_err(unavailable)?,
+                .map_err(Refusal::unavailable)?,
             None => Vec::new(),
         };
         Ok(Self {

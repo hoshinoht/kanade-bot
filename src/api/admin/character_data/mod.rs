@@ -71,10 +71,6 @@ impl FromRequestParts<Arc<Site>> for Module {
     }
 }
 
-fn unavailable<E>(_: E) -> Refusal {
-    ApiError::UNAVAILABLE.into()
-}
-
 fn not_found() -> Refusal {
     Refusal::new(
         StatusCode::NOT_FOUND,
@@ -127,12 +123,12 @@ async fn require_character(state: &ApiState, id: &str) -> Result<(), Refusal> {
     match roster.character(id.to_owned()).await {
         Ok(Some(_)) => Ok(()),
         Ok(None) => Err(not_found()),
-        Err(error) => Err(unavailable(error)),
+        Err(error) => Err(Refusal::unavailable(error)),
     }
 }
 
 async fn view(module: &CharacterData, id: &str) -> Result<Value, Refusal> {
-    let view = module.view(id).await.map_err(unavailable)?;
+    let view = module.view(id).await.map_err(Refusal::unavailable)?;
     Ok(json!(link(id, &view, module.privacy_url())))
 }
 
@@ -201,7 +197,7 @@ async fn request(
             replay
         })
         .await
-        .map_err(unavailable)?;
+        .map_err(Refusal::unavailable)?;
     match outcome {
         RequestOutcome::Requested(_) => {
             Ok((StatusCode::CREATED, Json(answer.unwrap_or(Value::Null))).into_response())
@@ -257,7 +253,7 @@ async fn unlink(
             replay,
         )
         .await
-        .map_err(unavailable)?
+        .map_err(Refusal::unavailable)?
     {
         Some(_) => Ok(Json(body).into_response()),
         None => Err(Refusal::new(
@@ -283,7 +279,11 @@ async fn refresh(
         return Ok(answer);
     }
     require_character(state, &id).await?;
-    match module.refresh_now(&id).await.map_err(unavailable)? {
+    match module
+        .refresh_now(&id)
+        .await
+        .map_err(Refusal::unavailable)?
+    {
         RefreshOutcome::Done(_) => {}
         RefreshOutcome::NotConnected => return Err(not_connected()),
         RefreshOutcome::NotLinked => return Err(not_linked()),
@@ -301,7 +301,7 @@ async fn refresh(
             .store
             .put_replay(keyed.answered(StatusCode::OK, &body, state.now()))
             .await
-            .map_err(unavailable)?;
+            .map_err(Refusal::unavailable)?;
     }
     Ok(Json(body).into_response())
 }

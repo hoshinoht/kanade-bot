@@ -17,7 +17,7 @@ use axum::{
 use serde::Deserialize;
 
 use super::super::write::{Refusal, bad_body};
-use super::{Module, not_connected, unavailable};
+use super::{Module, not_connected};
 use crate::{
     api::{
         auth::AdminSession,
@@ -76,7 +76,7 @@ async fn look_up(
     match module
         .look_up(&session.origin().actor, &ign)
         .await
-        .map_err(unavailable)?
+        .map_err(Refusal::unavailable)?
     {
         LookupOutcome::Found(found) => Ok(Json(lookup(found)).into_response()),
         LookupOutcome::NotFound => Err(Refusal::new(

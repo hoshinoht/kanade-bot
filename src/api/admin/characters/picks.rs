@@ -25,10 +25,6 @@ use crate::{
     infrastructure::store::replays::KeyedWrite,
 };
 
-pub(super) fn unavailable<T>(_: T) -> Refusal {
-    ApiError::UNAVAILABLE.into()
-}
-
 /// What the slot is on, for the stale message.
 fn on(scope: PickScope) -> &'static str {
     match scope {
@@ -121,7 +117,7 @@ pub(super) async fn named(
     let character = roster
         .character(character_id.to_owned())
         .await
-        .map_err(unavailable)?
+        .map_err(Refusal::unavailable)?
         .ok_or_else(character_not_found)?;
     if character.member_id != member_id {
         return Err(not_theirs());

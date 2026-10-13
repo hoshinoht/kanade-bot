@@ -29,7 +29,6 @@ use super::{
     },
     Module, Reply,
     estimates::lookup_name,
-    unavailable,
 };
 use crate::{
     api::{
@@ -82,7 +81,7 @@ async fn requirements(state: &ApiState, tokens: Vec<String>) -> Result<Vec<Requi
             .collect()
     })
     .await
-    .map_err(unavailable)
+    .map_err(Refusal::unavailable)
 }
 
 /// Each slot's readiness against `bosses`, in order, and whether any shows
@@ -99,7 +98,10 @@ async fn answers(
         let brings = slot.brought();
         let (link, ready, scouter) = match brings {
             Some((character, _)) => {
-                let view = module.status(&character.id).await.map_err(unavailable)?;
+                let view = module
+                    .status(&character.id)
+                    .await
+                    .map_err(Refusal::unavailable)?;
                 let subject = Subject {
                     manual_level: character.level,
                     link: view.link.as_ref().map(|link| link.status),

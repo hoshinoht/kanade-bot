@@ -150,7 +150,7 @@ async fn row(
         .store
         .snapshot(Scope::Weeks(vec![this.start, next.start]))
         .await
-        .map_err(|_| Refusal::from(ApiError::UNAVAILABLE))?;
+        .map_err(Refusal::unavailable)?;
     let ctx = context(site, state, roster(profiles), now);
     dto::fixed::rows(&ctx, &snapshot, [this.start, next.start])
         .into_iter()
@@ -174,7 +174,7 @@ async fn recorded(state: &ApiState, origin: &Origin) -> Result<Option<ChangeReco
         .store
         .recorded_change(origin.actor.clone(), request_id)
         .await
-        .map_err(|_| Refusal::from(ApiError::UNAVAILABLE))
+        .map_err(Refusal::unavailable)
 }
 
 /// A replay is checked against the roster as the first attempt saw it, not
@@ -340,7 +340,7 @@ pub async fn update(
         .store
         .snapshot(Scope::Weeks(Vec::new()))
         .await
-        .map_err(|_| Refusal::from(ApiError::UNAVAILABLE))?;
+        .map_err(Refusal::unavailable)?;
     let Some(current) = snapshot
         .fixed_runs
         .iter()
@@ -506,7 +506,7 @@ pub async fn retire(
         .store
         .snapshot(Scope::Weeks(Vec::new()))
         .await
-        .map_err(|_| Refusal::from(ApiError::UNAVAILABLE))?
+        .map_err(Refusal::unavailable)?
         .fixed_runs
         .iter()
         .any(|fixed| fixed.id == fixed_id);

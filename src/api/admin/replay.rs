@@ -113,11 +113,7 @@ impl Keyed {
 
 /// The stored answer as it was sent: its status and JSON body.
 pub(crate) fn replayed(replay: &StoredReplay) -> Result<axum::response::Response, Refusal> {
-    let status = StatusCode::from_u16(replay.status).map_err(|_| unavailable_replay())?;
-    let body: Value = serde_json::from_str(&replay.body).map_err(|_| unavailable_replay())?;
+    let status = StatusCode::from_u16(replay.status).map_err(Refusal::unavailable)?;
+    let body: Value = serde_json::from_str(&replay.body).map_err(Refusal::unavailable)?;
     Ok((status, Json(body)).into_response())
-}
-
-fn unavailable_replay() -> Refusal {
-    crate::api::error::ApiError::UNAVAILABLE.into()
 }

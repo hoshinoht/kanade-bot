@@ -13,7 +13,7 @@ use std::{collections::BTreeMap, sync::Arc};
 use axum::{Router, routing::get};
 
 use super::{
-    context::{roster, unavailable},
+    context::roster,
     write::{Refusal, state},
 };
 use crate::{
@@ -51,11 +51,7 @@ struct Directory {
 
 impl Directory {
     async fn load(state: &ApiState) -> Result<Self, Refusal> {
-        let profiles = state
-            .store
-            .members()
-            .await
-            .map_err(|error| Refusal::from(unavailable(error)))?;
+        let profiles = state.store.members().await.map_err(Refusal::unavailable)?;
         Ok(Self {
             roster: roster(&profiles),
             channels: state
@@ -73,8 +69,4 @@ impl Directory {
             channels: &self.channels,
         }
     }
-}
-
-fn store_down<E>(_: E) -> Refusal {
-    crate::api::error::ApiError::UNAVAILABLE.into()
 }
