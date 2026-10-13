@@ -197,6 +197,8 @@ test('motion: a 180 ms drop, and a 120 ms fade only under reduced motion', async
 });
 
 test('a11y: open single, searchable and multi dropdowns pass axe', async ({ page }) => {
+  // Four pages and four full axe scans: as the other axe specs, more than 30 s on a slow runner.
+  test.setTimeout(60_000);
   const filters = await reminderFilters(page);
   await filters.getByRole('combobox', { name: 'Run' }).click();
   await serious(page, 'reminders run');
