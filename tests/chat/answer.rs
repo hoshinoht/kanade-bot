@@ -15,15 +15,12 @@ use kanade::chat::tools::bundles::{Bundle, NO_ROUND_LEFT, ToolOffer};
 use kanade::chat::tools::propose::Proposer;
 use kanade::chat::tools::{REFUSED, ToolContext, UNKNOWN};
 use kanade::domain::drafts::{DraftStatus, ProposalSource, ProposalStore, SUPERSEDED};
-use kanade::domain::model_log::{ChatOutcome, ModelLogStore};
+use kanade::domain::model_log::{ChatInteraction, ChatOutcome, ModelLogStore};
 use kanade::domain::proposals::{ChangeKind, ProposedChange};
 use kanade::domain::scheduler::Clock;
 use kanade::domain::scheduler::{ProposalRequest, SchedulerService, Supersede};
 use kanade::infrastructure::llm::governor::{DEFAULT_TOOL_ROUNDS, Governor};
-use kanade::infrastructure::llm::identity::Passthrough;
-use kanade::infrastructure::llm::{
-    ChatRequest, CompletionResponse, FakeAction, FakeProvider, FinishReason, Message, ToolCall,
-};
+use kanade::infrastructure::llm::{ChatRequest, Effort, FakeAction, FakeProvider, Message};
 use serde_json::{Value, json};
 
 use crate::looping::{Ports, V4_TOOL_ROUNDS, said, settings};
@@ -36,22 +33,10 @@ use crate::world::World;
 const MODEL: &str = "synthetic-chat";
 
 fn wants(calls: &[(&str, &str, Value)]) -> FakeAction {
-    FakeAction::Response(CompletionResponse {
-        reasoning_content: None,
-        reasoning_tokens: None,
-        model: MODEL.into(),
-        content: None,
-        tool_calls: calls
-            .iter()
-            .map(|(id, name, arguments)| ToolCall {
-                id: (*id).into(),
-                name: (*name).into(),
-                arguments: arguments.to_string(),
-            })
-            .collect(),
-        finish_reason: FinishReason::ToolCalls,
-        usage: None,
-    })
+    let calls = calls
+        .iter()
+        .map(|(id, name, arguments)| (*id, *name, arguments));
+    crate::model::wants(MODEL, calls)
 }
 
 fn words(text: &str) -> FakeAction {
@@ -59,15 +44,7 @@ fn words(text: &str) -> FakeAction {
 }
 
 fn filtered() -> FakeAction {
-    FakeAction::Response(CompletionResponse {
-        reasoning_content: None,
-        reasoning_tokens: None,
-        model: MODEL.into(),
-        content: None,
-        tool_calls: Vec::new(),
-        finish_reason: FinishReason::ContentFilter,
-        usage: None,
-    })
+    crate::model::filtered(MODEL)
 }
 
 struct Run {
@@ -78,7 +55,24 @@ struct Run {
     world: World,
     input: Value,
     ctx: ToolContext,
+    question: String,
     _governor: Arc<Governor>,
+}
+
+impl Run {
+    /// The chat-log row of this question at the world's clock.
+    fn row(&self, id: &str, reasoning: Option<Effort>, latency_ms: u64) -> ChatInteraction {
+        interaction(
+            id.into(),
+            self.world.clock.now().with_timezone(&Utc),
+            &self.ctx,
+            &self.question,
+            &self.generation,
+            MODEL,
+            reasoning,
+            latency_ms,
+        )
+    }
 }
 
 async fn run(
@@ -86,19 +80,9 @@ async fn run(
     offer: ToolOffer,
     tool_rounds: u8,
     question: &str,
-    passthrough: &Passthrough,
     ports: &impl kanade::chat::answer::ChatPorts,
 ) -> Run {
-    run_routed(
-        actions,
-        offer,
-        tool_rounds,
-        question,
-        passthrough,
-        ports,
-        |_| {},
-    )
-    .await
+    run_routed(actions, offer, tool_rounds, question, ports, |_| {}).await
 }
 
 /// `route` adjusts the governor before the question.
@@ -107,7 +91,6 @@ async fn run_routed(
     offer: ToolOffer,
     tool_rounds: u8,
     question: &str,
-    _passthrough: &Passthrough,
     ports: &impl kanade::chat::answer::ChatPorts,
     route: impl FnOnce(&Governor),
 ) -> Run {
@@ -147,6 +130,7 @@ async fn run_routed(
     };
     Run {
         generation,
+        question: question.to_owned(),
         requests: provider.fake.requests(),
         request_ids: provider.fake.request_ids(),
         world,
@@ -184,7 +168,6 @@ async fn requested_tools_apply_from_the_next_round() {
         ToolOffer::dynamic([], false),
         8,
         "can we move hstar?",
-        &Passthrough,
         &ports,
     )
     .await;
@@ -215,7 +198,6 @@ async fn request_tools_spends_a_round_of_the_cap() {
         ToolOffer::dynamic([], false),
         4,
         "how do we do hstar?",
-        &Passthrough,
         &Ports::default(),
     )
     .await;
@@ -254,7 +236,6 @@ async fn request_tools_beside_a_posted_write_is_not_charged() {
         ToolOffer::dynamic([Bundle::RunWrites], false),
         4,
         "move hstar and tell me the strats",
-        &Passthrough,
         &Ports::default(),
     )
     .await;
@@ -284,7 +265,6 @@ async fn refused_without_room(tool_rounds: u8, earlier: usize) -> Run {
         ToolOffer::dynamic([], false),
         tool_rounds,
         "how do we do hstar?",
-        &Passthrough,
         &Ports::default(),
     )
     .await
@@ -333,7 +313,6 @@ async fn a_tool_requested_in_the_same_reply_waits_for_the_next_round() {
         ToolOffer::dynamic([], false),
         8,
         "cancel hstar",
-        &Passthrough,
         &Ports::default(),
     )
     .await;
@@ -372,7 +351,6 @@ async fn a_hanging_card_post_ends_the_question_at_its_deadline() {
         ToolOffer::full_set(false),
         8,
         "move hstar",
-        &Passthrough,
         &ports,
     )
     .await;
@@ -388,17 +366,7 @@ async fn a_hanging_card_post_ends_the_question_at_its_deadline() {
     assert_eq!(run.requests.len(), 1);
     assert_eq!(generation.created.len(), 1);
     assert!(generation.posted.is_empty());
-    let at = run.world.clock.now().with_timezone(&Utc);
-    let row = interaction(
-        "chat-t".into(),
-        at,
-        &run.ctx,
-        "move hstar",
-        generation,
-        MODEL,
-        None,
-        60_000,
-    );
+    let row = run.row("chat-t", None, 60_000);
     assert_eq!(row.outcome, ChatOutcome::Timeout);
     assert_eq!(row.error.as_deref(), Some("no answer within 60s"));
     // The persisted row still shows the call and the proposal it created.
@@ -428,7 +396,6 @@ async fn unknown_tools_and_schema_invalid_arguments_get_notes_not_failures() {
         ToolOffer::full_set(false),
         8,
         "hmm",
-        &Passthrough,
         &Ports::default(),
     )
     .await;
@@ -483,7 +450,6 @@ async fn an_unoffered_tool_is_steered_to_request_tools() {
         ToolOffer::dynamic([], false),
         8,
         "cancel hstar",
-        &Passthrough,
         &Ports::default(),
     )
     .await;
@@ -519,7 +485,6 @@ async fn an_undelivered_card_is_reported_to_the_model_as_not_posted() {
         ToolOffer::full_set(false),
         V4_TOOL_ROUNDS,
         "move hstar to thu 22:00",
-        &Passthrough,
         &ports,
     )
     .await;
@@ -563,7 +528,6 @@ async fn a_posted_card_reply_is_not_regrounded_into_the_lookup() {
         ToolOffer::full_set(false),
         V4_TOOL_ROUNDS,
         "move hstar to thu 22:00",
-        &Passthrough,
         &Ports::default(),
     )
     .await;
@@ -596,7 +560,6 @@ async fn a_posted_card_reply_never_carries_copied_context() {
         ToolOffer::full_set(false),
         V4_TOOL_ROUNDS,
         "move hstar to thu 22:00",
-        &Passthrough,
         &Ports::default(),
     )
     .await;
@@ -611,7 +574,6 @@ async fn a_content_filter_spends_the_clean_retry_then_blocks() {
         ToolOffer::full_set(false),
         8,
         "what's on?",
-        &Passthrough,
         &Ports::default(),
     )
     .await;
@@ -628,7 +590,6 @@ async fn a_content_filter_spends_the_clean_retry_then_blocks() {
         ToolOffer::full_set(false),
         8,
         "what's on?",
-        &Passthrough,
         &Ports::default(),
     )
     .await;
@@ -658,7 +619,6 @@ async fn external_chat_rounds_tools_and_clean_retry_send_raw_synthetic_data() {
         ToolOffer::full_set(false),
         8,
         &question,
-        &Passthrough,
         &Ports::default(),
         |governor| {
             governor.set_external(Role::Chat, true);
@@ -685,16 +645,7 @@ async fn external_chat_rounds_tools_and_clean_retry_send_raw_synthetic_data() {
         })
         .expect("tool result is in the next raw round");
     assert_eq!(tool_result, &run.generation.outcomes[0].outcome.output);
-    let row = interaction(
-        "chat-raw".into(),
-        run.world.clock.now().with_timezone(&Utc),
-        &run.ctx,
-        &question,
-        &run.generation,
-        MODEL,
-        None,
-        1,
-    );
+    let row = run.row("chat-raw", None, 1);
     assert_eq!(row.guardrail, json!({"external_unmasked": true}));
 }
 
@@ -777,7 +728,6 @@ async fn an_external_admitted_failure_keeps_the_disclosure_guardrail() {
         ToolOffer::dynamic([], false),
         8,
         "synthetic external failure",
-        &Passthrough,
         &Ports::default(),
         |governor| {
             governor.set_external(Role::Chat, true);
@@ -789,16 +739,7 @@ async fn an_external_admitted_failure_keeps_the_disclosure_guardrail() {
     assert!(!run.requests.is_empty());
     assert!(run.generation.external_unmasked);
 
-    let row = interaction(
-        "chat-admitted-failure".into(),
-        run.world.clock.now().with_timezone(&Utc),
-        &run.ctx,
-        "synthetic external failure",
-        &run.generation,
-        MODEL,
-        None,
-        1,
-    );
+    let row = run.row("chat-admitted-failure", None, 1);
     assert_eq!(
         row.guardrail,
         json!({"content_filter": true, "external_unmasked": true})
@@ -815,21 +756,10 @@ async fn a_question_is_logged_as_one_interaction_with_its_rounds() {
         ToolOffer::dynamic([Bundle::Strategy], false),
         8,
         "which weeklies?",
-        &Passthrough,
         &Ports::default(),
     )
     .await;
-    let at = run.world.clock.now().with_timezone(&Utc);
-    let row = interaction(
-        "chat-1".into(),
-        at,
-        &run.ctx,
-        "which weeklies?",
-        &run.generation,
-        MODEL,
-        settings(&run.input, 8).reasoning,
-        1234,
-    );
+    let row = run.row("chat-1", settings(&run.input, 8).reasoning, 1234);
     assert_eq!(row.outcome, ChatOutcome::Answered);
     assert_eq!(row.request_count, 2);
     assert_eq!(row.rounds.len(), 2);
@@ -894,20 +824,10 @@ async fn each_round_logs_its_reported_pair_and_prompt_estimate() {
         ToolOffer::dynamic([Bundle::Strategy], false),
         8,
         "which weeklies?",
-        &Passthrough,
         &Ports::default(),
     )
     .await;
-    let row = interaction(
-        "chat-usage".into(),
-        run.world.clock.now().with_timezone(&Utc),
-        &run.ctx,
-        "which weeklies?",
-        &run.generation,
-        MODEL,
-        settings(&run.input, 8).reasoning,
-        1,
-    );
+    let row = run.row("chat-usage", settings(&run.input, 8).reasoning, 1);
     assert_eq!(run.requests.len(), 2);
     let usage: Vec<_> = row
         .rounds
@@ -960,20 +880,10 @@ async fn reasoning_is_logged_per_round_but_never_enters_the_tool_loop() {
         ToolOffer::dynamic([Bundle::Strategy], false),
         8,
         "which weeklies?",
-        &Passthrough,
         &Ports::default(),
     )
     .await;
-    let row = interaction(
-        "chat-reasoning".into(),
-        run.world.clock.now().with_timezone(&Utc),
-        &run.ctx,
-        "which weeklies?",
-        &run.generation,
-        MODEL,
-        settings(&run.input, 8).reasoning,
-        1,
-    );
+    let row = run.row("chat-reasoning", settings(&run.input, 8).reasoning, 1);
     assert_eq!(row.rounds[0].reasoning_tokens, Some(32));
     let text = row.rounds[0].reasoning_content.as_deref().expect("text");
     assert!(text.len() <= REASONING_CAP && text.ends_with(REASONING_TRUNCATED));
@@ -1009,7 +919,6 @@ async fn the_clean_retry_is_a_round_with_its_own_usage() {
         ToolOffer::full_set(false),
         8,
         "what's on?",
-        &Passthrough,
         &Ports::default(),
     )
     .await;
@@ -1034,17 +943,8 @@ async fn the_clean_retry_is_a_round_with_its_own_usage() {
 }
 
 /// The chat-log row of `run`, stored and read back.
-async fn stored_row(run: &Run, id: &str) -> kanade::domain::model_log::ChatInteraction {
-    let row = interaction(
-        id.into(),
-        run.world.clock.now().with_timezone(&Utc),
-        &run.ctx,
-        "which weeklies?",
-        &run.generation,
-        MODEL,
-        settings(&run.input, 8).reasoning,
-        1,
-    );
+async fn stored_row(run: &Run, id: &str) -> ChatInteraction {
+    let row = run.row(id, settings(&run.input, 8).reasoning, 1);
     let store = run.world.service.store();
     store.record_chat(row.clone()).await.expect("record");
     let stored = store.load_chat(id).await.expect("load").expect("row");
@@ -1071,7 +971,6 @@ async fn logged_request_ids_are_exactly_the_ids_sent_across_rounds_and_retries()
         ToolOffer::dynamic([Bundle::Strategy], false),
         8,
         "which weeklies?",
-        &Passthrough,
         &Ports::default(),
     )
     .await;
@@ -1096,7 +995,6 @@ async fn logged_request_ids_are_exactly_the_ids_sent_across_rounds_and_retries()
         ToolOffer::full_set(false),
         8,
         "which weeklies?",
-        &Passthrough,
         &Ports::default(),
         |_| {},
     )
@@ -1148,7 +1046,6 @@ async fn a_logged_call_keeps_its_result_and_wall_time_through_the_store_and_the_
         ToolOffer::full_set(false),
         8,
         "which weeklies?",
-        &Passthrough,
         &SlowPorts::default(),
     )
     .await;
@@ -1158,20 +1055,7 @@ async fn a_logged_call_keeps_its_result_and_wall_time_through_the_store_and_the_
     assert!(took >= 250, "{took}");
     assert_eq!(run.generation.tools_ms, took);
 
-    let at = run.world.clock.now().with_timezone(&Utc);
-    let log = |generation: &Generation| {
-        interaction(
-            "chat-t".into(),
-            at,
-            &run.ctx,
-            "which weeklies?",
-            generation,
-            MODEL,
-            None,
-            10,
-        )
-    };
-    let row = log(&run.generation);
+    let row = run.row("chat-t", None, 10);
     assert_eq!(row.rounds[0].tool_calls[0]["result"], output.as_str());
     assert_eq!(row.rounds[0].tool_calls[0]["took_ms"], took);
     let store = run.world.service.store();
@@ -1191,7 +1075,7 @@ async fn a_logged_call_keeps_its_result_and_wall_time_through_the_store_and_the_
     // 8 KiB are kept, cut before a two-byte char that straddles the cap.
     let long = format!("a{}", "é".repeat(5000));
     run.generation.outcomes[0].outcome.output.clone_from(&long);
-    let result = log(&run.generation).rounds[0].tool_calls[0]["result"]
+    let result = run.row("chat-t", None, 10).rounds[0].tool_calls[0]["result"]
         .as_str()
         .unwrap()
         .to_owned();
@@ -1202,7 +1086,7 @@ async fn a_logged_call_keeps_its_result_and_wall_time_through_the_store_and_the_
     let exact = "b".repeat(8192);
     run.generation.outcomes[0].outcome.output.clone_from(&exact);
     assert_eq!(
-        log(&run.generation).rounds[0].tool_calls[0]["result"],
+        run.row("chat-t", None, 10).rounds[0].tool_calls[0]["result"],
         exact.as_str()
     );
 }
@@ -1352,7 +1236,6 @@ async fn external_unmasked_chat_runs_without_opt_in_and_marks_the_guardrail() {
         ToolOffer::dynamic([], false),
         8,
         "what's on?",
-        &Passthrough,
         &ports,
         move |governor: &Governor| {
             governor.set_external(Role::Chat, true);
@@ -1362,16 +1245,6 @@ async fn external_unmasked_chat_runs_without_opt_in_and_marks_the_guardrail() {
     assert_eq!(run.generation.reply, "Nothing on.");
     assert!(run.generation.external_unmasked);
     assert_eq!(run.generation.route(), "external_unmasked");
-    let at = run.world.clock.now().with_timezone(&Utc);
-    let row = interaction(
-        "chat-x".into(),
-        at,
-        &run.ctx,
-        "what's on?",
-        &run.generation,
-        MODEL,
-        None,
-        10,
-    );
+    let row = run.row("chat-x", None, 10);
     assert_eq!(row.guardrail, json!({"external_unmasked": true}));
 }

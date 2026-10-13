@@ -14,12 +14,10 @@ use kanade::chat::tools::ToolContext;
 use kanade::chat::tools::bundles::{Bundle, ToolOffer};
 use kanade::domain::model_log::ChatOutcome;
 use kanade::domain::scheduler::Clock;
-use kanade::infrastructure::llm::{
-    CompletionResponse, FakeAction, FakeProvider, FinishReason, Message, ToolCall,
-};
+use kanade::infrastructure::llm::{FakeAction, FakeProvider, Message};
 
 use crate::looping::{Ports, said, settings};
-use crate::model::{Scripted, capabilities, client};
+use crate::model::{Scripted, capabilities, client, wants};
 use crate::support::load;
 use crate::wire::kanade;
 use crate::world::World;
@@ -178,21 +176,7 @@ async fn an_overflow_after_a_posted_card_does_not_invite_a_resend() {
     let padding: String = std::iter::repeat_n('p', 60_000).collect();
     let arguments =
         serde_json::json!({"run_query": "hstar", "to_when": "thu 22:00", "note": padding});
-    let propose = || {
-        FakeAction::Response(CompletionResponse {
-            reasoning_content: None,
-            reasoning_tokens: None,
-            model: MODEL.into(),
-            content: None,
-            tool_calls: vec![ToolCall {
-                id: "m1".into(),
-                name: "propose_move".into(),
-                arguments: arguments.to_string(),
-            }],
-            finish_reason: FinishReason::ToolCalls,
-            usage: None,
-        })
-    };
+    let propose = || wants(MODEL, [("m1", "propose_move", &arguments)]);
     let offer = || ToolOffer::dynamic([Bundle::RunWrites], false);
     let first_round = {
         let probe = ask_scripted(0, 0, vec![propose()], offer(), &Ports::default()).await;

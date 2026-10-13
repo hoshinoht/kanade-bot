@@ -4,12 +4,11 @@
 use std::{sync::Arc, time::Duration};
 
 use kanade::chat::answer::{AnswerDeps, AnswerFailure, AnswerSettings, Question, answer};
-use kanade::chat::tools::ToolContext;
 use kanade::chat::tools::bundles::ToolOffer;
 use kanade::chat::tools::propose::Proposer;
-
+use kanade::chat::tools::{ToolContext, ToolOutcome};
 use kanade::domain::drafts::{
-    DraftChange, DraftStatus, DraftStore, DraftUpdate, ProposalSource, ProposalStore,
+    DraftChange, DraftStatus, DraftStore, DraftUpdate, ProposalSource, ProposalStore, StoredDraft,
 };
 use kanade::domain::history::Actor;
 use kanade::domain::notify::{
@@ -20,15 +19,12 @@ use kanade::domain::proposals::{
 };
 use kanade::domain::scheduler::{Clock, ProposalRequest, SchedulerService, Supersede};
 use kanade::infrastructure::llm::identity::PassthroughSession;
-use kanade::infrastructure::llm::{
-    CompletionResponse, FakeAction, FakeProvider, FinishReason, Message, ModelCapabilities,
-    ToolCall,
-};
+use kanade::infrastructure::llm::{FakeAction, Message};
 use serde_json::{Value, json};
 
 use crate::common::utc;
 use crate::looping::{Ports, said};
-use crate::model::{Scripted, client};
+use crate::model::{Scripted, client, tool_model, wants};
 use crate::slow_store::SlowStore;
 use crate::world::World;
 
@@ -59,6 +55,30 @@ fn step(channel: &str, tool: &str, extra: Value) -> Value {
     json!({"author_id": "101", "channel_id": channel, "tool": tool, "arguments": arguments})
 }
 
+async fn propose(
+    world: &mut World,
+    change: ProposedChange,
+    source: ProposalSource,
+    source_id: &str,
+) -> String {
+    world
+        .service
+        .propose(
+            ProposalRequest {
+                change,
+                source,
+                source_id: source_id.into(),
+                supersede: Supersede::Keep,
+            },
+            &world.policy,
+            &world.guild,
+        )
+        .await
+        .unwrap()
+        .proposal
+        .id
+}
+
 async fn seed(world: &mut World, source: ProposalSource, kind: ChangeKind) -> String {
     let mut change = ProposedChange::new(kind);
     change.run_id = Some(RUN.into());
@@ -71,22 +91,28 @@ async fn seed(world: &mut World, source: ProposalSource, kind: ChangeKind) -> St
         change.participants = vec!["101".into()];
         change.rsvp = Some(kanade::domain::schedule::RsvpState::Yes);
     }
+    propose(world, change, source, "invented-source").await
+}
+
+/// Member 101 asks in `channel` to move the run to `to`.
+async fn ask_move(world: &mut World, channel: &str, to: &str) -> ToolOutcome {
+    let step = step(channel, "propose_move", json!({"to_when": to}));
+    world.run_tool(&step, &mut PassthroughSession).await
+}
+
+async fn proposals(world: &World) -> usize {
     world
         .service
-        .propose(
-            ProposalRequest {
-                change,
-                source,
-                source_id: "invented-source".into(),
-                supersede: Supersede::Keep,
-            },
-            &world.policy,
-            &world.guild,
-        )
+        .store()
+        .list_proposals(false)
         .await
         .unwrap()
-        .proposal
-        .id
+        .len()
+}
+
+async fn draft(world: &World, id: &str) -> StoredDraft {
+    let loaded = world.service.store().load_proposal(id).await.unwrap();
+    loaded.unwrap().0.draft
 }
 
 async fn save_card(world: &World, id: &str) {
@@ -143,21 +169,12 @@ async fn cross_channel_existing_extraction_and_chat_card_is_reused_with_jump_lin
         let mut world = world().await;
         let id = seed(&mut world, source, ChangeKind::Move).await;
         bind_card(&world, &id).await;
-        let before = world.service.store().load_proposal(&id).await.unwrap();
-        let events = world.service.store().draft_events(&id).await.unwrap();
-        let cards = world
-            .service
-            .store()
-            .load_cards(std::slice::from_ref(&id))
-            .await
-            .unwrap();
+        let store = world.service.store();
+        let before = store.load_proposal(&id).await.unwrap();
+        let events = store.draft_events(&id).await.unwrap();
+        let cards = store.load_cards(std::slice::from_ref(&id)).await.unwrap();
         let snapshot = world.snapshot().await;
-        let outcome = world
-            .run_tool(
-                &step("901", "propose_move", json!({"to_when": "mon 22:00"})),
-                &mut PassthroughSession,
-            )
-            .await;
+        let outcome = ask_move(&mut world, "901", "mon 22:00").await;
         assert!(outcome.ok, "{}", outcome.output);
         assert!(outcome.created.is_empty() && outcome.cards.is_empty());
         assert!(
@@ -170,28 +187,11 @@ async fn cross_channel_existing_extraction_and_chat_card_is_reused_with_jump_lin
                     .output
                     .contains("https://discord.com/channels/800/900/950001")
         );
-        assert_eq!(
-            world
-                .service
-                .store()
-                .list_proposals(false)
-                .await
-                .unwrap()
-                .len(),
-            1
-        );
-        assert_eq!(
-            world.service.store().load_proposal(&id).await.unwrap(),
-            before
-        );
-        assert_eq!(
-            world.service.store().draft_events(&id).await.unwrap(),
-            events
-        );
-        assert_eq!(
-            world.service.store().load_cards(&[id]).await.unwrap(),
-            cards
-        );
+        assert_eq!(proposals(&world).await, 1);
+        let store = world.service.store();
+        assert_eq!(store.load_proposal(&id).await.unwrap(), before);
+        assert_eq!(store.draft_events(&id).await.unwrap(), events);
+        assert_eq!(store.load_cards(&[id]).await.unwrap(), cards);
         assert_eq!(world.snapshot().await, snapshot);
     }
 }
@@ -204,25 +204,11 @@ async fn unposted_proposal_is_reused_before_and_after_card_details_are_saved() {
         if saved {
             save_card(&world, &id).await;
         }
-        let outcome = world
-            .run_tool(
-                &step("901", "propose_move", json!({"to_when": "mon 22:00"})),
-                &mut PassthroughSession,
-            )
-            .await;
+        let outcome = ask_move(&mut world, "901", "mon 22:00").await;
         assert!(outcome.ok && outcome.cards.is_empty() && outcome.created.is_empty());
         assert!(outcome.output.contains("still being posted") && outcome.output.contains("<#900>"));
         assert!(!outcome.output.contains("https://discord.com/channels/"));
-        assert_eq!(
-            world
-                .service
-                .store()
-                .list_proposals(false)
-                .await
-                .unwrap()
-                .len(),
-            1
-        );
+        assert_eq!(proposals(&world).await, 1);
     }
 }
 
@@ -234,38 +220,12 @@ async fn different_target_cross_channel_creates_and_same_channel_supersedes_as_b
     ] {
         let mut world = world().await;
         let id = seed(&mut world, ProposalSource::Extraction, ChangeKind::Move).await;
-        let outcome = world
-            .run_tool(
-                &step(channel, "propose_move", json!({"to_when": to})),
-                &mut PassthroughSession,
-            )
-            .await;
+        let outcome = ask_move(&mut world, channel, to).await;
         assert!(outcome.ok, "{}", outcome.output);
         assert_eq!(outcome.cards.len(), 1);
         assert_eq!(outcome.created.len(), 1);
-        assert_eq!(
-            world
-                .service
-                .store()
-                .list_proposals(false)
-                .await
-                .unwrap()
-                .len(),
-            2
-        );
-        assert_eq!(
-            world
-                .service
-                .store()
-                .load_proposal(&id)
-                .await
-                .unwrap()
-                .unwrap()
-                .0
-                .draft
-                .status,
-            old_status
-        );
+        assert_eq!(proposals(&world).await, 2);
+        assert_eq!(draft(&world, &id).await.status, old_status);
         assert_eq!(
             outcome.cards[0].superseded,
             if channel == "900" { vec![id] } else { vec![] }
@@ -317,27 +277,10 @@ async fn rejected_discarded_and_approved_proposals_do_not_block_new_chat_proposa
                 .await
                 .unwrap();
         }
-        let outcome = world
-            .run_tool(
-                &step("901", "propose_move", json!({"to_when": "mon 22:00"})),
-                &mut PassthroughSession,
-            )
-            .await;
+        let outcome = ask_move(&mut world, "901", "mon 22:00").await;
         assert!(outcome.ok, "{}", outcome.output);
         assert_eq!(outcome.cards.len(), 1);
-        assert_eq!(
-            world
-                .service
-                .store()
-                .load_proposal(&id)
-                .await
-                .unwrap()
-                .unwrap()
-                .0
-                .draft
-                .status,
-            status
-        );
+        assert_eq!(draft(&world, &id).await.status, status);
     }
 }
 
@@ -356,78 +299,38 @@ async fn cancel_and_rsvp_match_only_the_same_kind_and_rsvp_member_answer() {
         if kind == ChangeKind::Rsvp {
             let mut other = step("901", tool, json!({"answer": "yes"}));
             other["author_id"] = json!("102");
-            assert_eq!(
-                world
-                    .run_tool(&other, &mut PassthroughSession)
-                    .await
-                    .cards
-                    .len(),
-                1
-            );
+            let outcome = world.run_tool(&other, &mut PassthroughSession).await;
+            assert_eq!(outcome.cards.len(), 1);
         }
     }
-    let mut world = world().await;
-    seed(&mut world, ProposalSource::Chat, ChangeKind::Rsvp).await;
-    assert_eq!(
-        world
-            .run_tool(
-                &step("901", "propose_rsvp", json!({"answer": "no"})),
-                &mut PassthroughSession
-            )
-            .await
-            .cards
-            .len(),
-        1
-    );
-    let mut world = self::world().await;
-    seed(&mut world, ProposalSource::Chat, ChangeKind::Move).await;
-    assert_eq!(
-        world
-            .run_tool(
-                &step("901", "propose_cancel", json!({})),
-                &mut PassthroughSession
-            )
-            .await
-            .cards
-            .len(),
-        1
-    );
+    for (seeded, tool, args) in [
+        (ChangeKind::Rsvp, "propose_rsvp", json!({"answer": "no"})),
+        (ChangeKind::Move, "propose_cancel", json!({})),
+    ] {
+        let mut world = world().await;
+        seed(&mut world, ProposalSource::Chat, seeded).await;
+        let outcome = world
+            .run_tool(&step("901", tool, args), &mut PassthroughSession)
+            .await;
+        assert_eq!(outcome.cards.len(), 1, "{tool} over a {seeded:?}");
+    }
 }
 
 #[tokio::test]
 async fn home_channel_ask_reuses_the_other_channels_chat_proposal_without_retiring_it() {
     let mut world = world().await;
-    let first = world
-        .run_tool(
-            &step("901", "propose_move", json!({"to_when": "mon 22:00"})),
-            &mut PassthroughSession,
-        )
-        .await;
+    let first = ask_move(&mut world, "901", "mon 22:00").await;
     assert!(first.ok && first.cards.len() == 1, "{}", first.output);
     let id = &first.created[0];
     let before = world.service.store().load_proposal(id).await.unwrap();
-    let outcome = world
-        .run_tool(
-            &step("900", "propose_move", json!({"to_when": "mon 22:00"})),
-            &mut PassthroughSession,
-        )
-        .await;
+    let outcome = ask_move(&mut world, "900", "mon 22:00").await;
     assert!(outcome.ok && outcome.cards.is_empty() && outcome.created.is_empty());
     assert!(outcome.output.contains("<#901>") && outcome.output.contains("still being posted"));
     assert_eq!(
         world.service.store().load_proposal(id).await.unwrap(),
         before
     );
-    assert_eq!(
-        world
-            .service
-            .store()
-            .list_proposals(false)
-            .await
-            .unwrap()
-            .len(),
-        1
-    );
+    assert_eq!(proposals(&world).await, 1);
 }
 
 #[tokio::test]
@@ -445,42 +348,17 @@ async fn duplicate_lookup_does_not_bypass_authority_or_read_only_checks() {
         let outcome = world.run_tool(&ask, &mut PassthroughSession).await;
         assert!(!outcome.ok && outcome.cards.is_empty());
         assert!(!outcome.output.contains("950001"));
-        assert_eq!(
-            world
-                .service
-                .store()
-                .list_proposals(false)
-                .await
-                .unwrap()
-                .len(),
-            1
-        );
+        assert_eq!(proposals(&world).await, 1);
     }
 }
 
 fn move_model() -> Arc<Scripted> {
     let model = "synthetic-dedupe";
-    let mut caps = ModelCapabilities::minimal();
-    caps.function_tools = true;
-    Arc::new(Scripted {
-        caps,
-        fake: FakeProvider::new([
-            FakeAction::Response(CompletionResponse {
-                reasoning_content: None,
-                reasoning_tokens: None,
-                model: model.into(),
-                content: None,
-                tool_calls: vec![ToolCall {
-                    id: "m1".into(),
-                    name: "propose_move".into(),
-                    arguments: json!({"run_query": RUN, "to_when": "mon 22:00"}).to_string(),
-                }],
-                finish_reason: FinishReason::ToolCalls,
-                usage: None,
-            }),
-            FakeAction::Response(said(model, "It's awaiting approval.")),
-        ]),
-    })
+    let to = json!({"run_query": RUN, "to_when": "mon 22:00"});
+    tool_model([
+        wants(model, [("m1", "propose_move", &to)]),
+        FakeAction::Response(said(model, "It's awaiting approval.")),
+    ])
 }
 
 fn question(ctx: &ToolContext) -> Question<'_> {
@@ -520,22 +398,7 @@ async fn seed_move_at(
     change.channel_id = Some(channel.into());
     change.bosses = vec!["HFA".into()];
     change.new_datetime = Some(utc(&json!(to)));
-    world
-        .service
-        .propose(
-            ProposalRequest {
-                change,
-                source,
-                source_id: "invented-seed".into(),
-                supersede: Supersede::Keep,
-            },
-            &world.policy,
-            &world.guild,
-        )
-        .await
-        .unwrap()
-        .proposal
-        .id
+    propose(world, change, source, "invented-seed").await
 }
 
 #[tokio::test]
@@ -564,15 +427,7 @@ async fn reuse_retires_this_channels_different_or_identical_proposal_and_refresh
             assert!(generation.created.is_empty() && generation.posted.is_empty());
             assert!(ports.posted.lock().unwrap().is_empty());
             assert_eq!(*ports.refreshed.lock().unwrap(), vec![old.clone()]);
-            let discarded = world
-                .service
-                .store()
-                .load_proposal(&old)
-                .await
-                .unwrap()
-                .unwrap()
-                .0
-                .draft;
+            let discarded = draft(&world, &old).await;
             assert_eq!(discarded.status, DraftStatus::Discarded);
             assert_eq!(discarded.close_reason.as_deref(), Some("superseded"));
             assert_eq!(
@@ -580,16 +435,7 @@ async fn reuse_retires_this_channels_different_or_identical_proposal_and_refresh
                 before,
                 "the kept match is never retired or modified"
             );
-            assert_eq!(
-                world
-                    .service
-                    .store()
-                    .list_proposals(false)
-                    .await
-                    .unwrap()
-                    .len(),
-                2
-            );
+            assert_eq!(proposals(&world).await, 2);
             assert!(
                 generation.outcomes[0]
                     .outcome
@@ -657,12 +503,7 @@ async fn a_timed_out_cardless_chat_proposal_does_not_block_a_later_cross_channel
     world
         .clock
         .set(crate::common::instant(&json!("2026-10-02T12:02:00+00:00")));
-    let outcome = world
-        .run_tool(
-            &step("901", "propose_move", json!({"to_when": "mon 22:00"})),
-            &mut PassthroughSession,
-        )
-        .await;
+    let outcome = ask_move(&mut world, "901", "mon 22:00").await;
     assert!(outcome.ok, "{}", outcome.output);
     assert_eq!(outcome.created.len(), 1);
     assert_eq!(outcome.cards.len(), 1);

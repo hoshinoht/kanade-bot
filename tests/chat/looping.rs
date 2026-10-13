@@ -10,16 +10,16 @@ use kanade::chat::answer::{
     AnswerDeps, AnswerSettings, CONTEXT_BUDGET_REPLY, ChatPorts, Generation, Question, answer,
 };
 use kanade::chat::context::COMPLETION_RESERVE_TOKENS;
-use kanade::chat::tools::ProposalCard;
 use kanade::chat::tools::bundles::ToolOffer;
 use kanade::chat::tools::read::PendingCard;
+use kanade::chat::tools::{ProposalCard, ToolContext};
 use kanade::infrastructure::llm::{
-    CompletionResponse, FakeAction, FakeProvider, FinishReason, wire_body,
+    CompletionResponse, FakeAction, FakeProvider, FinishReason, Message, wire_body,
 };
 use serde_json::{Value, json};
 
 use crate::common::text;
-use crate::model::{Scripted, action, capabilities, client, effort};
+use crate::model::{Scripted, action, capabilities, client, effort, tool_model};
 use crate::read_tools::outcome_json;
 use crate::support::{Named, check_family, dev, unknown_op, value};
 use crate::wire::{kanade, messages};
@@ -78,6 +78,47 @@ pub fn settings(input: &Value, tool_rounds: u8) -> AnswerSettings {
         .expect("usize"),
         clean_retry: true,
     }
+}
+
+/// One question in v4's full-set tool mode with plain settings (4 tool
+/// rounds, a 1024-token reply, no reasoning or clean retry): `conversation`
+/// from its system prompt on and the `model`'s scripted `actions`. Asserts
+/// the answer did not fail; the provider comes back for its requests.
+pub async fn ask_full_set(
+    world: &mut World,
+    ctx: &ToolContext,
+    model: &str,
+    conversation: Vec<Message>,
+    actions: Vec<FakeAction>,
+    window: usize,
+) -> (Generation, Ports, Arc<Scripted>) {
+    let provider = tool_model(actions);
+    let (_governor, client) = client(Some(model), Arc::clone(&provider));
+    let deps = AnswerDeps {
+        client: &client,
+        route: None,
+    };
+    let ports = Ports::default();
+    let (guild, mut proposer) = world.question_parts();
+    let question = Question {
+        ctx,
+        conversation,
+        profanity: None,
+        reminder: "Keep the tool facts exact.".into(),
+        offer: ToolOffer::full_set(false),
+        settings: AnswerSettings {
+            tool_rounds: 4,
+            timeout: Duration::from_secs(60),
+            reasoning: None,
+            temperature: None,
+            max_output_tokens: 1024,
+            model_context_tokens: window,
+            clean_retry: false,
+        },
+    };
+    let generation = answer(&deps, question, &guild, &mut proposer, &ports).await;
+    assert_eq!(generation.failure, None, "{:?}", generation.failure);
+    (generation, ports, provider)
 }
 
 /// A request as the recorder saw it: the wire body with tools as names.

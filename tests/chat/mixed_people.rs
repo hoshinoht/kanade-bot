@@ -12,13 +12,11 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use kanade::chat::answer::{AnswerDeps, Generation, Question, answer};
 use kanade::chat::pilot::ChatPilot;
-use kanade::chat::sanitize::{schedule_defaults, schedule_people};
+use kanade::chat::sanitize::schedule_people;
 use kanade::chat::tools::ToolContext;
 use kanade::domain::members::MemberProfile;
 use kanade::infrastructure::llm::governor::DEFAULT_TOOL_ROUNDS;
-use kanade::infrastructure::llm::{
-    ChatRequest, CompletionResponse, FakeAction, FakeProvider, FinishReason, Message, ToolCall,
-};
+use kanade::infrastructure::llm::{ChatRequest, FakeAction, FakeProvider, Message};
 use serde_json::{Value, json};
 
 use crate::looping::{Ports, said, settings};
@@ -91,14 +89,7 @@ fn roster(world: &World) -> Vec<MemberProfile> {
 
 /// The driver's trusted tool context (`driver/run.rs` `tool_context`).
 fn tool_context(world: &World, asker: &str, content: &str) -> ToolContext {
-    let mut ctx = world.context(&json!({"author_id": asker, "channel_id": CHANNEL}));
-    let defaults = schedule_defaults(content, Some(BOT), Some(ROLE));
-    ctx.force_all_channels = defaults.force_all_channels;
-    ctx.force_channel_scope = defaults.force_channel_scope;
-    ctx.force_group_schedule = defaults.force_group_schedule;
-    ctx.self_schedule_requested = defaults.self_schedule_requested;
-    ctx.upcoming_only = defaults.upcoming_only;
-    ctx.next_only = defaults.next_only;
+    let mut ctx = world.driver_context(asker, CHANNEL, content, (BOT, ROLE));
     ctx.schedule_people = schedule_people(content, Some(BOT), Some(ROLE), asker, &roster(world));
     ctx
 }
@@ -106,23 +97,12 @@ fn tool_context(world: &World, asker: &str, content: &str) -> ToolContext {
 static CALL_IDS: AtomicUsize = AtomicUsize::new(0);
 
 fn wants(calls: &[(&str, Value)]) -> FakeAction {
-    FakeAction::Response(CompletionResponse {
-        reasoning_content: None,
-        reasoning_tokens: None,
-        model: MODEL.into(),
-        content: None,
-        tool_calls: calls
-            .iter()
-            .map(|(name, arguments)| ToolCall {
-                // Unique across rounds: the runner rejects a reused id.
-                id: format!("call-{}", CALL_IDS.fetch_add(1, Ordering::Relaxed)),
-                name: (*name).into(),
-                arguments: arguments.to_string(),
-            })
-            .collect(),
-        finish_reason: FinishReason::ToolCalls,
-        usage: None,
-    })
+    // Unique across rounds: the runner rejects a reused id.
+    let calls = calls.iter().map(|(name, arguments)| {
+        let id = format!("call-{}", CALL_IDS.fetch_add(1, Ordering::Relaxed));
+        (id, *name, arguments)
+    });
+    crate::model::wants(MODEL, calls)
 }
 
 fn words(text: &str) -> FakeAction {

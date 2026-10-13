@@ -4,22 +4,15 @@
 //! `propose_move`; `extra: true` is the model's way past it once the asker
 //! clearly wants a second run. Weekly adds are unchanged.
 
-use std::sync::Arc;
-use std::time::Duration;
-
-use kanade::chat::answer::{AnswerDeps, AnswerSettings, Generation, Question, answer};
+use kanade::chat::answer::Generation;
 use kanade::chat::tools::REFUSED;
-use kanade::chat::tools::bundles::ToolOffer;
 use kanade::domain::proposals::ChangeKind;
-use kanade::infrastructure::llm::{
-    CompletionResponse, FakeAction, FakeProvider, FinishReason, Message, ModelCapabilities,
-    ToolCall,
-};
+use kanade::infrastructure::llm::{FakeAction, Message};
 use serde_json::{Value, json};
 
-use crate::looping::{Ports, said};
-use crate::model::{Scripted, client};
-use crate::world::World;
+use crate::looping::{Ports, ask_full_set, said};
+use crate::model::calls;
+use crate::world::{World, member, sgt_run};
 
 const MODEL: &str = "synthetic-dupadd";
 const ASTER: &str = "100000000000000101";
@@ -33,16 +26,13 @@ const OTHER: &str = "100000000000000202";
 /// The weekly Extreme Kalos run this boss week (Fri 09 Oct 22:00).
 const KALOS: &str = "k1000001";
 
-/// A run row; `week` is the boss week's Thursday.
+/// A run row; the Kalos run comes from the weekly.
 fn run(id: &str, bosses: &[&str], at: &str, channel: &str, party: &[&str], status: &str) -> Value {
-    let week = if at < "2026-10-15" {
-        "2026-10-08T00:00:00+08:00"
-    } else {
-        "2026-10-15T00:00:00+08:00"
-    };
-    let fixed = (id == KALOS).then_some("f1000001");
-    json!({"id": id, "bosses": bosses, "at": format!("{at}:00+08:00"), "channel_id": channel,
-           "participants": party, "status": status, "week_start": week, "fixed_run_id": fixed})
+    let mut row = sgt_run(id, bosses, at, channel, party, status);
+    if id == KALOS {
+        row["fixed_run_id"] = json!("f1000001");
+    }
+    row
 }
 
 fn kalos(channel: &str, status: &str) -> Value {
@@ -60,8 +50,6 @@ fn kalos(channel: &str, status: &str) -> Value {
 /// Thursday 00:00). Hard Carling tonight 22:30 and, from the weekly, Extreme
 /// Kalos Friday 22:00 with five members; `runs` replaces the Kalos run.
 async fn world(runs: Vec<Value>) -> World {
-    let member =
-        |id: &str, name: &str| json!({"user_id": id, "display_name": name, "has_role": true});
     let mut all = vec![run(
         "c1000002",
         &["HCarling"],
@@ -97,19 +85,7 @@ async fn world(runs: Vec<Value>) -> World {
 }
 
 fn add(arguments: Value) -> FakeAction {
-    FakeAction::Response(CompletionResponse {
-        reasoning_content: None,
-        reasoning_tokens: None,
-        model: MODEL.into(),
-        content: None,
-        tool_calls: vec![ToolCall {
-            id: "call-propose_add".into(),
-            name: "propose_add".into(),
-            arguments: arguments.to_string(),
-        }],
-        finish_reason: FinishReason::ToolCalls,
-        usage: None,
-    })
+    calls(MODEL, &[("propose_add", arguments)])
 }
 
 /// The live call's arguments: four of the Kalos party, by mention and name.
@@ -120,17 +96,6 @@ fn party_add(boss: &str, when: &str) -> Value {
 
 /// Aster answers tonight's Carling reminder: "10pm we xkalos first".
 async fn ask(world: &mut World, call: Value) -> (Generation, Ports) {
-    let mut caps = ModelCapabilities::minimal();
-    caps.function_tools = true;
-    let provider = Arc::new(Scripted {
-        caps,
-        fake: FakeProvider::new(vec![add(call), FakeAction::Response(said(MODEL, "Noted."))]),
-    });
-    let (_governor, client) = client(Some(MODEL), provider);
-    let deps = AnswerDeps {
-        client: &client,
-        route: None,
-    };
     let ctx = world.context(&json!({"author_id": ASTER, "channel_id": HOME}));
     let conversation = vec![
         Message::System {
@@ -140,28 +105,9 @@ async fn ask(world: &mut World, call: Value) -> (Generation, Ports) {
             content: format!("Aster: 10pm we xkalos first <@{BRAMBLE}> <@{COBALT}> <@{DUNE}>"),
         },
     ];
-    let ports = Ports::default();
-    let generation = {
-        let (guild, mut proposer) = world.question_parts();
-        let question = Question {
-            ctx: &ctx,
-            conversation,
-            profanity: None,
-            reminder: "Keep the tool facts exact.".into(),
-            offer: ToolOffer::full_set(false),
-            settings: AnswerSettings {
-                tool_rounds: 4,
-                timeout: Duration::from_secs(60),
-                reasoning: None,
-                temperature: None,
-                max_output_tokens: 1024,
-                model_context_tokens: 32768,
-                clean_retry: false,
-            },
-        };
-        answer(&deps, question, &guild, &mut proposer, &ports).await
-    };
-    assert_eq!(generation.failure, None, "{:?}", generation.failure);
+    let actions = vec![add(call), FakeAction::Response(said(MODEL, "Noted."))];
+    let (generation, ports, _) =
+        ask_full_set(world, &ctx, MODEL, conversation, actions, 32768).await;
     (generation, ports)
 }
 

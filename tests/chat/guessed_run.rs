@@ -4,23 +4,15 @@
 //! vague `run_query` gets. Words that single the run out, a typed id, and a
 //! follow-up answer to the bot's own question still produce the card.
 
-use std::sync::Arc;
-use std::time::Duration;
-
-use kanade::chat::answer::{AnswerDeps, AnswerSettings, Generation, Question, answer};
+use kanade::chat::answer::Generation;
 use kanade::chat::tools::REFUSED;
-use kanade::chat::tools::bundles::ToolOffer;
 use kanade::domain::schedule::{Change, Run, RunSource, RunStatus};
-use kanade::infrastructure::llm::{
-    CompletionResponse, FakeAction, FakeProvider, FinishReason, Message, ModelCapabilities,
-    ToolCall,
-};
+use kanade::infrastructure::llm::{FakeAction, Message};
 use serde_json::{Value, json};
 
 use crate::common::utc;
-use crate::looping::{Ports, said};
-use crate::model::{Scripted, client};
-use crate::world::World;
+use crate::looping::{Ports, ask_full_set, said};
+use crate::world::{World, member, sgt_run as run};
 
 const MODEL: &str = "synthetic-guessed";
 const ASTER: &str = "100000000000000101";
@@ -32,20 +24,9 @@ const HOME: &str = "100000000000000201";
 /// Wednesday (Hard Malefic Star 21:30 and Extreme Kalos 23:00 here, Normal
 /// Baldrix 22:00 in the other channel).
 async fn world() -> World {
-    let run = |id: &str, bosses: &[&str], at: &str, channel: &str, party: &[&str], status: &str| {
-        let week = if at < "2026-10-15" {
-            "2026-10-08T00:00:00+08:00"
-        } else {
-            "2026-10-15T00:00:00+08:00"
-        };
-        json!({"id": id, "bosses": bosses, "at": format!("{at}:00+08:00"), "channel_id": channel,
-               "participants": party, "status": status, "week_start": week, "fixed_run_id": null})
-    };
     let other = "100000000000000202";
     let (aster, bramble, cobalt) = (ASTER, BRAMBLE, COBALT);
     let (dune, fennel) = ("100000000000000104", "100000000000000105");
-    let member =
-        |id: &str, name: &str| json!({"user_id": id, "display_name": name, "has_role": true});
     World::new(&json!({
         "clock": "2026-10-13T15:30:00+08:00", "timezone": "Asia/Singapore",
         "reset_weekday": 3, "reset_time": "00:00",
@@ -83,23 +64,19 @@ async fn world() -> World {
 }
 
 fn calls(calls: &[(&str, Value)]) -> FakeAction {
-    FakeAction::Response(CompletionResponse {
-        reasoning_content: None,
-        reasoning_tokens: None,
-        model: MODEL.into(),
-        content: None,
-        tool_calls: calls
-            .iter()
-            .map(|(name, arguments)| ToolCall {
-                // Unique across rounds: a transcript never repeats an id.
-                id: format!("call-{name}"),
-                name: (*name).into(),
-                arguments: arguments.to_string(),
-            })
-            .collect(),
-        finish_reason: FinishReason::ToolCalls,
-        usage: None,
-    })
+    crate::model::calls(MODEL, calls)
+}
+
+fn moves(run: &str, to: &str) -> FakeAction {
+    calls(&[("propose_move", json!({"run_query": run, "to_when": to}))])
+}
+
+fn cancels(run: &str) -> FakeAction {
+    calls(&[("propose_cancel", json!({"run_query": run}))])
+}
+
+fn says(text: &str) -> FakeAction {
+    FakeAction::Response(said(MODEL, text))
 }
 
 fn user(text: &str) -> Message {
@@ -119,49 +96,18 @@ fn bot(text: &str) -> Message {
 /// sees (member turns read `Name: text`), the model's scripted tool calls,
 /// then its words.
 async fn ask(
-    world: &mut World,
+    mut world: World,
     asker: &str,
     turns: Vec<Message>,
     actions: Vec<FakeAction>,
 ) -> (Generation, Ports) {
-    let mut caps = ModelCapabilities::minimal();
-    caps.function_tools = true;
-    let provider = Arc::new(Scripted {
-        caps,
-        fake: FakeProvider::new(actions),
-    });
-    let (_governor, client) = client(Some(MODEL), provider);
-    let deps = AnswerDeps {
-        client: &client,
-        route: None,
-    };
     let ctx = world.context(&json!({"author_id": asker, "channel_id": HOME}));
     let mut conversation = vec![Message::System {
         content: "SYSTEM".into(),
     }];
     conversation.extend(turns);
-    let ports = Ports::default();
-    let generation = {
-        let (guild, mut proposer) = world.question_parts();
-        let question = Question {
-            ctx: &ctx,
-            conversation,
-            profanity: None,
-            reminder: "Keep the tool facts exact.".into(),
-            offer: ToolOffer::full_set(false),
-            settings: AnswerSettings {
-                tool_rounds: 4,
-                timeout: Duration::from_secs(60),
-                reasoning: None,
-                temperature: None,
-                max_output_tokens: 1024,
-                model_context_tokens: 32768,
-                clean_retry: false,
-            },
-        };
-        answer(&deps, question, &guild, &mut proposer, &ports).await
-    };
-    assert_eq!(generation.failure, None, "{:?}", generation.failure);
+    let (generation, ports, _) =
+        ask_full_set(&mut world, &ctx, MODEL, conversation, actions, 32768).await;
     (generation, ports)
 }
 
@@ -209,74 +155,48 @@ fn refused(generation: &Generation, ports: &Ports, tool: &str, asked: &str, list
     assert!(ports.posted.lock().unwrap().is_empty());
 }
 
+const WEDNESDAY_RUN: &str = "move the wednesday run to 22:00";
+
 #[tokio::test]
 async fn c15_an_id_from_the_models_own_read_is_refused_when_the_day_has_several_runs() {
-    let mut world = world().await;
     let (generation, ports) = ask(
-        &mut world,
+        world().await,
         COBALT,
-        vec![user("Cobalt: move the wednesday run to 22:00")],
+        vec![user(&format!("Cobalt: {WEDNESDAY_RUN}"))],
         vec![
             calls(&[("get_schedule", json!({"week": "auto", "day": "wednesday"}))]),
-            calls(&[(
-                "propose_move",
-                json!({"run_query": "a1000003", "to_when": "wed 22:00"}),
-            )]),
-            FakeAction::Response(said(
-                MODEL,
-                "Which one -- the HStar at 21:30 or the Kalos at 23:00?",
-            )),
+            moves("a1000003", "wed 22:00"),
+            says("Which one -- the HStar at 21:30 or the Kalos at 23:00?"),
         ],
     )
     .await;
-    refused(
-        &generation,
-        &ports,
-        "propose_move",
-        "move the wednesday run to 22:00",
-        &["a1000003", "b2000005", "a1000004"],
-    );
+    let listed = ["a1000003", "b2000005", "a1000004"];
+    refused(&generation, &ports, "propose_move", WEDNESDAY_RUN, &listed);
 }
 
 #[tokio::test]
 async fn a_description_the_model_made_up_is_refused_the_same_way() {
-    let mut world = world().await;
     let (generation, ports) = ask(
-        &mut world,
+        world().await,
         COBALT,
-        vec![user("Cobalt: move the wednesday run to 22:00")],
-        vec![
-            calls(&[(
-                "propose_move",
-                json!({"run_query": "kalos wednesday", "to_when": "wed 22:00"}),
-            )]),
-            FakeAction::Response(said(MODEL, "Which one?")),
-        ],
+        vec![user(&format!("Cobalt: {WEDNESDAY_RUN}"))],
+        vec![moves("kalos wednesday", "wed 22:00"), says("Which one?")],
     )
     .await;
-    refused(
-        &generation,
-        &ports,
-        "propose_move",
-        "move the wednesday run to 22:00",
-        &["a1000003", "a1000004"],
-    );
+    let listed = ["a1000003", "a1000004"];
+    refused(&generation, &ports, "propose_move", WEDNESDAY_RUN, &listed);
 }
 
 #[tokio::test]
 async fn c13_a_boss_and_day_that_single_out_the_run_keep_the_card() {
-    let mut world = world().await;
     let (generation, ports) = ask(
-        &mut world,
+        world().await,
         BRAMBLE,
         vec![user("Bramble: can we push the kalos tomorrow to 23:30?")],
         vec![
             calls(&[("get_schedule", json!({"week": "auto", "day": "wednesday"}))]),
-            calls(&[(
-                "propose_move",
-                json!({"run_query": "a1000004", "to_when": "tomorrow 23:30"}),
-            )]),
-            FakeAction::Response(said(MODEL, "Card's up -- it needs a ✅.")),
+            moves("a1000004", "tomorrow 23:30"),
+            says("Card's up -- it needs a ✅."),
         ],
     )
     .await;
@@ -285,17 +205,13 @@ async fn c13_a_boss_and_day_that_single_out_the_run_keep_the_card() {
 
 #[tokio::test]
 async fn c14_a_cancel_of_the_named_boss_on_its_day_keeps_the_card() {
-    let mut world = world().await;
     let (generation, ports) = ask(
-        &mut world,
+        world().await,
         COBALT,
         vec![user(
             "Cobalt: cancel the hstar on wednesday, we can't make it",
         )],
-        vec![
-            calls(&[("propose_cancel", json!({"run_query": "a1000003"}))]),
-            FakeAction::Response(said(MODEL, "Card's up -- it needs a ✅.")),
-        ],
+        vec![cancels("a1000003"), says("Card's up -- it needs a ✅.")],
     )
     .await;
     carded(&generation, &ports, "propose_cancel", "a1000003");
@@ -303,18 +219,11 @@ async fn c14_a_cancel_of_the_named_boss_on_its_day_keeps_the_card() {
 
 #[tokio::test]
 async fn an_id_the_asker_typed_is_taken_even_on_a_busy_day() {
-    let mut world = world().await;
     let (generation, ports) = ask(
-        &mut world,
+        world().await,
         COBALT,
         vec![user("Cobalt: move the wednesday run #a1000003 to 22:00")],
-        vec![
-            calls(&[(
-                "propose_move",
-                json!({"run_query": "a1000003", "to_when": "wed 22:00"}),
-            )]),
-            FakeAction::Response(said(MODEL, "Card's up.")),
-        ],
+        vec![moves("a1000003", "wed 22:00"), says("Card's up.")],
     )
     .await;
     carded(&generation, &ports, "propose_move", "a1000003");
@@ -322,37 +231,25 @@ async fn an_id_the_asker_typed_is_taken_even_on_a_busy_day() {
 
 #[tokio::test]
 async fn a_different_run_than_the_one_the_asker_singled_out_is_refused() {
-    let mut world = world().await;
+    let asked = "cancel the HStar on Wednesday";
     let (generation, ports) = ask(
-        &mut world,
+        world().await,
         COBALT,
-        vec![user("Cobalt: cancel the HStar on Wednesday")],
-        vec![
-            calls(&[("propose_cancel", json!({"run_query": "a1000004"}))]),
-            FakeAction::Response(said(MODEL, "Which one?")),
-        ],
+        vec![user(&format!("Cobalt: {asked}"))],
+        vec![cancels("a1000004"), says("Which one?")],
     )
     .await;
-    refused(
-        &generation,
-        &ports,
-        "propose_cancel",
-        "cancel the HStar on Wednesday",
-        &["a1000003", "a1000004"],
-    );
+    let listed = ["a1000003", "a1000004"];
+    refused(&generation, &ports, "propose_cancel", asked, &listed);
 }
 
 #[tokio::test]
 async fn words_that_fit_no_open_run_refuse_the_models_pick() {
-    let mut world = world().await;
     let (generation, ports) = ask(
-        &mut world,
+        world().await,
         COBALT,
         vec![user("Cobalt: cancel the limbo on wednesday")],
-        vec![
-            calls(&[("propose_cancel", json!({"run_query": "a1000003"}))]),
-            FakeAction::Response(said(MODEL, "There's no Limbo on Wednesday.")),
-        ],
+        vec![cancels("a1000003"), says("There's no Limbo on Wednesday.")],
     )
     .await;
     let outcome = write_outcome(&generation, "propose_cancel");
@@ -369,18 +266,11 @@ async fn words_that_fit_no_open_run_refuse_the_models_pick() {
 
 #[tokio::test]
 async fn the_day_a_move_goes_to_does_not_describe_the_run() {
-    let mut world = world().await;
     let (generation, ports) = ask(
-        &mut world,
+        world().await,
         COBALT,
         vec![user("Cobalt: move the hstar to friday 21:30")],
-        vec![
-            calls(&[(
-                "propose_move",
-                json!({"run_query": "a1000003", "to_when": "fri 21:30"}),
-            )]),
-            FakeAction::Response(said(MODEL, "Card's up.")),
-        ],
+        vec![moves("a1000003", "fri 21:30"), says("Card's up.")],
     )
     .await;
     carded(&generation, &ports, "propose_move", "a1000003");
@@ -388,26 +278,25 @@ async fn the_day_a_move_goes_to_does_not_describe_the_run() {
 
 const WHICH: &str = "Which one -- HStar 21:30, Baldrix 22:00 in #boss-beta, or Kalos 23:00?";
 
-#[tokio::test]
-async fn the_answer_to_the_bots_which_one_question_produces_the_card() {
-    let mut world = world().await;
-    let (generation, ports) = ask(
-        &mut world,
+/// `who` asks to move the Wednesday run, the bot asks which, and Cobalt
+/// answers "the hstar one"; the model then moves `a1000003`.
+async fn answered_which(world: World, who: &str, words: &str) -> (Generation, Ports) {
+    ask(
+        world,
         COBALT,
         vec![
-            user("Cobalt: move the wednesday run to 22:00"),
+            user(&format!("{who}: {WEDNESDAY_RUN}")),
             bot(WHICH),
             user("Cobalt: the hstar one"),
         ],
-        vec![
-            calls(&[(
-                "propose_move",
-                json!({"run_query": "a1000003", "to_when": "wed 22:00"}),
-            )]),
-            FakeAction::Response(said(MODEL, "Card's up.")),
-        ],
+        vec![moves("a1000003", "wed 22:00"), says(words)],
     )
-    .await;
+    .await
+}
+
+#[tokio::test]
+async fn the_answer_to_the_bots_which_one_question_produces_the_card() {
+    let (generation, ports) = answered_which(world().await, "Cobalt", "Card's up.").await;
     carded(&generation, &ports, "propose_move", "a1000003");
 }
 
@@ -435,62 +324,28 @@ async fn two_hstars() -> World {
 
 #[tokio::test]
 async fn a_follow_up_is_read_with_the_question_it_answers() {
-    let mut world = two_hstars().await;
-    let (generation, ports) = ask(
-        &mut world,
-        COBALT,
-        vec![
-            user("Cobalt: move the wednesday run to 22:00"),
-            bot(WHICH),
-            user("Cobalt: the hstar one"),
-        ],
-        vec![
-            calls(&[(
-                "propose_move",
-                json!({"run_query": "a1000003", "to_when": "wed 22:00"}),
-            )]),
-            FakeAction::Response(said(MODEL, "Card's up.")),
-        ],
-    )
-    .await;
+    let (generation, ports) = answered_which(two_hstars().await, "Cobalt", "Card's up.").await;
     carded(&generation, &ports, "propose_move", "a1000003");
 }
 
 #[tokio::test]
 async fn somebody_elses_message_is_never_read_as_the_askers() {
-    let mut world = two_hstars().await;
-    let (generation, ports) = ask(
-        &mut world,
-        COBALT,
-        vec![
-            user("Aster: move the wednesday run to 22:00"),
-            bot(WHICH),
-            user("Cobalt: the hstar one"),
-        ],
-        vec![
-            calls(&[(
-                "propose_move",
-                json!({"run_query": "a1000003", "to_when": "wed 22:00"}),
-            )]),
-            FakeAction::Response(said(MODEL, "Which hstar?")),
-        ],
-    )
-    .await;
+    let (generation, ports) = answered_which(two_hstars().await, "Aster", "Which hstar?").await;
+    let listed = ["a1000003", "a1000009"];
     refused(
         &generation,
         &ports,
         "propose_move",
         "the hstar one",
-        &["a1000003", "a1000009"],
+        &listed,
     );
 }
 
 #[tokio::test]
 async fn an_rsvp_weighs_only_the_runs_the_asker_is_on() {
     for (asker, name, outcome) in [(ASTER, "Aster", true), (COBALT, "Cobalt", false)] {
-        let mut world = world().await;
         let (generation, ports) = ask(
-            &mut world,
+            world().await,
             asker,
             vec![user(&format!("{name}: can't make it wednesday, sorry"))],
             vec![
@@ -498,7 +353,7 @@ async fn an_rsvp_weighs_only_the_runs_the_asker_is_on() {
                     "propose_rsvp",
                     json!({"run_query": "a1000003", "answer": "no"}),
                 )]),
-                FakeAction::Response(said(MODEL, "Noted.")),
+                says("Noted."),
             ],
         )
         .await;

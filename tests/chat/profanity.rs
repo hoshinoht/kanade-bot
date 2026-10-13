@@ -17,7 +17,7 @@ use kanade::infrastructure::llm::{ChatRequest, FakeAction, FakeProvider, Message
 use serde_json::json;
 
 use crate::looping::{Ports, said, settings};
-use crate::model::{Scripted, capabilities, client};
+use crate::model::{Scripted, capabilities, client, wants};
 use crate::support::load;
 use crate::wire::kanade;
 use crate::world::World;
@@ -285,38 +285,15 @@ async fn grounded_records_from_store_data_are_not_checked() {
 }
 
 fn wants_schedule() -> FakeAction {
-    FakeAction::Response(kanade::infrastructure::llm::CompletionResponse {
-        reasoning_content: None,
-        reasoning_tokens: None,
-        model: MODEL.into(),
-        content: None,
-        tool_calls: vec![kanade::infrastructure::llm::ToolCall {
-            id: "s1".into(),
-            name: "get_schedule".into(),
-            arguments: json!({"scope": "all"}).to_string(),
-        }],
-        finish_reason: kanade::infrastructure::llm::FinishReason::ToolCalls,
-        usage: None,
-    })
+    wants(MODEL, [("s1", "get_schedule", &json!({"scope": "all"}))])
 }
 
 /// An unposted write replaces the model's reply with fixed status text, so
 /// its words are never shown: no check, no retry, no profanity row.
 #[tokio::test(start_paused = true)]
 async fn a_replaced_write_reply_is_not_checked() {
-    let propose = FakeAction::Response(kanade::infrastructure::llm::CompletionResponse {
-        reasoning_content: None,
-        reasoning_tokens: None,
-        model: MODEL.into(),
-        content: None,
-        tool_calls: vec![kanade::infrastructure::llm::ToolCall {
-            id: "m1".into(),
-            name: "propose_move".into(),
-            arguments: json!({"run_query": "hstar", "to_when": "thu 22:00"}).to_string(),
-        }],
-        finish_reason: kanade::infrastructure::llm::FinishReason::ToolCalls,
-        usage: None,
-    });
+    let to = json!({"run_query": "hstar", "to_when": "thu 22:00"});
+    let propose = wants(MODEL, [("m1", "propose_move", &to)]);
     let run = run_in(
         vec![propose, words("Card's up, shit yeah!")],
         &ProfanityGuard::default(),
