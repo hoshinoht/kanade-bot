@@ -40,7 +40,7 @@ use crate::{
     auth::member_support::{Browser, PUB_ORIGIN},
     reads::{CharacterDataMaker, Reads},
     schemas::assert_valid,
-    support::{ADMIN_HOST, Reply, send, strs},
+    support::{ADMIN_HOST, Reply, request, spawn_router, strs},
 };
 
 const MINE: &str = "/api/public/me/characters";
@@ -155,12 +155,7 @@ async fn fake_nexon() -> SocketAddr {
         };
         reply
     });
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let address = listener.local_addr().unwrap();
-    tokio::spawn(async move {
-        let _ = axum::serve(listener, app).await;
-    });
-    address
+    spawn_router(app).await
 }
 
 /// The module, its clock moved by `skew` (the lookup spacing), with the
@@ -250,15 +245,8 @@ impl Chars {
     /// An admin adds a character for `member` (a pending link request for
     /// a MapleSEA one while NEXON is connected): its id.
     async fn admin_add(&self, member: u64, body: Value) -> String {
-        let reply = self
-            .reads()
-            .call(
-                "POST",
-                &format!("/api/admin/members/{member}/characters"),
-                body,
-                &[],
-            )
-            .await;
+        let path = format!("/api/admin/members/{member}/characters");
+        let reply = self.reads().call("POST", &path, body, &[]).await;
         assert_eq!(reply.status, 201, "{}", reply.text());
         id(&reply.json())
     }
@@ -279,15 +267,15 @@ impl Chars {
             .await
     }
 
+    /// [`Chars::patch`] answered 200 with the row.
+    async fn edited(&self, browser: &Browser, id: &str, key: &str, body: Value) -> Value {
+        answer(&self.patch(browser, id, key, body).await, 200, ROW)
+    }
+
     async fn link(&self, browser: &Browser, id: &str, key: &str, notice: u32) -> Reply {
+        let body = json!({ "notice": notice });
         self.portal
-            .write(
-                browser,
-                "POST",
-                &link(id),
-                key,
-                Some(&json!({ "notice": notice })),
-            )
+            .write(browser, "POST", &link(id), key, Some(&body))
             .await
     }
 
@@ -319,6 +307,22 @@ impl Chars {
 
     async fn start(&self, browser: &Browser, body: Value) -> Reply {
         self.post(browser, ESTIMATES, Some(&body)).await
+    }
+
+    /// [`Chars::start`] answered 202.
+    async fn started(&self, browser: &Browser, body: Value) -> Value {
+        answer(&self.start(browser, body).await, 202, STARTED)
+    }
+
+    /// Cancel on `id`'s link notice, answered 200.
+    async fn cancelled(&self, browser: &Browser, id: &str) -> Value {
+        answer(&self.post(browser, &cancel(id), None).await, 200, CANCELLED)
+    }
+
+    /// A link with the current notice, answered 200.
+    async fn linked(&self, browser: &Browser, id: &str, key: &str) -> Value {
+        let reply = self.link(browser, id, key, NOTICE_VERSION).await;
+        answer(&reply, 200, OUTCOME)
     }
 
     /// Job `job` once it has finished, read from the queue itself (polling
@@ -439,12 +443,9 @@ async fn every_route_is_the_generic_404_while_its_module_is_off() {
 async fn admin_routes_stay_off_the_public_origin_and_member_routes_off_the_admin() {
     let chars = Chars::new(true, true).await;
     let alice = chars.portal.sign_in(ALICE).await;
-    let bob = chars
-        .admin_add(
-            BOB,
-            json!({"ign": "BobKnight", "class": "Hero", "level": 260}),
-        )
-        .await;
+    let hero = json!({"ign": "BobKnight", "class": "Hero", "level": 260});
+    let bob = chars.admin_add(BOB, hero).await;
+    let markers = [PUB_ORIGIN, ("X-Kanade-CSRF", alice.csrf.as_str())];
     for (method, path) in [
         ("GET", "/api/admin/members/1002/characters".to_owned()),
         ("POST", "/api/admin/members/1001/characters".to_owned()),
@@ -458,13 +459,7 @@ async fn admin_routes_stay_off_the_public_origin_and_member_routes_off_the_admin
     ] {
         let reply = chars
             .portal
-            .send(
-                Some(&alice),
-                method,
-                &path,
-                &[PUB_ORIGIN, ("X-Kanade-CSRF", &alice.csrf)],
-                Some("{}"),
-            )
+            .send(Some(&alice), method, &path, &markers, Some("{}"))
             .await;
         assert_eq!(
             refused(&reply),
@@ -473,16 +468,9 @@ async fn admin_routes_stay_off_the_public_origin_and_member_routes_off_the_admin
         );
     }
     let reads = chars.reads();
+    let cookie = [("Cookie", reads.cookie.as_str())];
     for path in [MINE, DATA, PARTY] {
-        let reply = send(
-            reads.admin,
-            "GET",
-            ADMIN_HOST,
-            path,
-            &[("Cookie", reads.cookie.as_str())],
-            None,
-        )
-        .await;
+        let reply = request(reads.admin, "GET", ADMIN_HOST, path, &cookie).await;
         assert_eq!(reply.status, 404, "{path}: {}", reply.text());
     }
 }
@@ -533,49 +521,16 @@ async fn members_add_edit_and_retire_only_their_own_characters() {
 
     // The admin rules: the main stays while an alt is active, Make main
     // moves the crown, a stale version is refused.
-    let locked = chars
-        .patch(
-            &alice,
-            &id(&kanna),
-            "e-1",
-            json!({"version": 1, "retired": true}),
-        )
-        .await;
+    let (kanna_id, mech_id) = (id(&kanna), id(&mech));
+    let retire = |version| json!({"version": version, "retired": true});
+    let locked = chars.patch(&alice, &kanna_id, "e-1", retire(1)).await;
     assert_eq!(refused(&locked), (409, "main_required".into()));
-    let crowned = answer(
-        &chars
-            .patch(
-                &alice,
-                &id(&mech),
-                "e-2",
-                json!({"version": 1, "role": "main"}),
-            )
-            .await,
-        200,
-        ROW,
-    );
+    let crown = json!({"version": 1, "role": "main"});
+    let crowned = chars.edited(&alice, &mech_id, "e-2", crown).await;
     assert_eq!(crowned["role"], "main");
-    let stale = chars
-        .patch(
-            &alice,
-            &id(&kanna),
-            "e-3",
-            json!({"version": 1, "retired": true}),
-        )
-        .await;
+    let stale = chars.patch(&alice, &kanna_id, "e-3", retire(1)).await;
     assert_eq!(refused(&stale), (409, "stale".into()));
-    let retired = answer(
-        &chars
-            .patch(
-                &alice,
-                &id(&kanna),
-                "e-4",
-                json!({"version": 2, "retired": true}),
-            )
-            .await,
-        200,
-        ROW,
-    );
+    let retired = chars.edited(&alice, &kanna_id, "e-4", retire(2)).await;
     assert!(retired["retired_at"].is_string());
     // No member delete.
     let delete = chars
@@ -603,12 +558,8 @@ async fn members_add_edit_and_retire_only_their_own_characters() {
 
     // Bob's characters: not listed, not readable, not writable, the same
     // 404 as an id nobody has.
-    let bob = chars
-        .admin_add(
-            BOB,
-            json!({"ign": "BobKnight", "class": "Hero", "level": 260}),
-        )
-        .await;
+    let hero = json!({"ign": "BobKnight", "class": "Hero", "level": 260});
+    let bob = chars.admin_add(BOB, hero).await;
     let mine = chars.portal.read(&alice, MINE, MY_CHARACTERS).await;
     let ids: Vec<&str> = strs(&mine["characters"], "id");
     assert!(!ids.contains(&bob.as_str()));
@@ -731,14 +682,8 @@ async fn writes_need_the_markers_and_character_writes_and_link_a_fresh_sign_in()
     chars.portal.harness.advance(TimeDelta::minutes(16));
     let add = chars.add(&alice, "a-2", json!({"ign": "AsahiPath"})).await;
     assert_eq!(refused(&add), (401, "reauth_required".into()));
-    let edit = chars
-        .patch(
-            &alice,
-            &kanna,
-            "e-1",
-            json!({"version": 1, "class": "Kanna"}),
-        )
-        .await;
+    let class = json!({"version": 1, "class": "Kanna"});
+    let edit = chars.patch(&alice, &kanna, "e-1", class).await;
     assert_eq!(refused(&edit), (401, "reauth_required".into()));
     let linked = chars.link(&alice, &kanna, "l-1", NOTICE_VERSION).await;
     assert_eq!(refused(&linked), (401, "reauth_required".into()));
@@ -750,27 +695,15 @@ async fn writes_need_the_markers_and_character_writes_and_link_a_fresh_sign_in()
         .await;
     assert_eq!(answer(&all, 200, UNLINKED_ALL), json!({"unlinked": []}));
     answer(&chars.look_up(&alice, "AsahiKanna").await, 200, PREVIEW);
-    answer(
-        &chars.post(&alice, &cancel(&kanna), None).await,
-        200,
-        CANCELLED,
-    );
-    answer(
-        &chars.start(&alice, json!({"character_id": kanna})).await,
-        202,
-        STARTED,
-    );
+    chars.cancelled(&alice, &kanna).await;
+    chars.started(&alice, json!({"character_id": kanna})).await;
     chars.portal.read(&alice, MINE, MY_CHARACTERS).await;
     // Signed in again, the same writes go through.
     let alice = chars.portal.sign_in(ALICE).await;
     chars
         .added(&alice, "a-2", json!({"ign": "AsahiPath"}))
         .await;
-    answer(
-        &chars.link(&alice, &kanna, "l-1", NOTICE_VERSION).await,
-        200,
-        OUTCOME,
-    );
+    chars.linked(&alice, &kanna, "l-1").await;
 }
 
 #[tokio::test]
@@ -782,10 +715,10 @@ async fn character_writes_share_the_member_write_bucket() {
         .added(&alice, "a-1", json!({"ign": "AsahiKanna"}))
         .await);
     for n in 0..19 {
-        let reply = chars
-            .patch(&alice, &kanna, &format!("e-{n}"), json!({"version": 1}))
+        let key = format!("e-{n}");
+        chars
+            .edited(&alice, &kanna, &key, json!({"version": 1}))
             .await;
-        answer(&reply, 200, ROW);
     }
     for (method, path) in [
         ("PATCH", row(&kanna)),
@@ -809,13 +742,8 @@ async fn character_writes_share_the_member_write_bucket() {
     // The bucket refills: two writes a minute.
     chars.portal.harness.advance(TimeDelta::minutes(1));
     let alice = chars.portal.sign_in(ALICE).await;
-    answer(
-        &chars
-            .patch(&alice, &kanna, "e-y", json!({"version": 1}))
-            .await,
-        200,
-        ROW,
-    );
+    let body = json!({"version": 1});
+    chars.edited(&alice, &kanna, "e-y", body).await;
 }
 
 #[tokio::test]
@@ -878,20 +806,12 @@ async fn the_notice_link_cancel_unlink_and_my_data_follow_discord() {
     assert_eq!(own["request"], Value::Null);
 
     // Cancel changes nothing: the admin's request stays.
-    let kept = answer(
-        &chars.post(&alice, &cancel(&dk), None).await,
-        200,
-        CANCELLED,
-    );
+    let kept = chars.cancelled(&alice, &dk).await;
     assert_eq!(
         kept,
         json!({"request_kept": true, "requested_by_name": null})
     );
-    let none = answer(
-        &chars.post(&alice, &cancel(&kanna), None).await,
-        200,
-        CANCELLED,
-    );
+    let none = chars.cancelled(&alice, &kanna).await;
     assert_eq!(none["request_kept"], false);
     assert_eq!(
         chars.portal.read(&alice, &link(&dk), LINK).await["state"],
@@ -906,11 +826,7 @@ async fn the_notice_link_cancel_unlink_and_my_data_follow_discord() {
     // the portal and fetches at once.
     let outdated = chars.link(&alice, &dk, "l-0", NOTICE_VERSION + 1).await;
     assert_eq!(refused(&outdated), (409, "notice_changed".into()));
-    let linked = answer(
-        &chars.link(&alice, &dk, "l-1", NOTICE_VERSION).await,
-        200,
-        OUTCOME,
-    );
+    let linked = chars.linked(&alice, &dk, "l-1").await;
     assert_eq!(linked["state"], "linked");
     assert_eq!(linked["link"]["state"], "linked");
     assert_eq!(linked["link"]["consent_surface"], "portal");
@@ -991,11 +907,7 @@ async fn the_notice_link_cancel_unlink_and_my_data_follow_discord() {
 
     // Unlink all.
     let alice = chars.portal.sign_in(ALICE).await;
-    answer(
-        &chars.link(&alice, &kanna, "l-2", NOTICE_VERSION).await,
-        200,
-        OUTCOME,
-    );
+    chars.linked(&alice, &kanna, "l-2").await;
     // A failed unlink answers 503 and records nothing under the key: the
     // same key retried later removes what is left.
     chars.file.fail_unlinks(true);
@@ -1006,14 +918,11 @@ async fn the_notice_link_cancel_unlink_and_my_data_follow_discord() {
     assert_eq!(refused(&failed).0, 503);
     assert!(chars.service.status(&kanna).await.unwrap().link.is_some());
     chars.file.fail_unlinks(false);
-    let all = answer(
-        &chars
-            .portal
-            .write(&alice, "DELETE", LINKS, "u-3", None)
-            .await,
-        200,
-        UNLINKED_ALL,
-    );
+    let all = chars
+        .portal
+        .write(&alice, "DELETE", LINKS, "u-3", None)
+        .await;
+    let all = answer(&all, 200, UNLINKED_ALL);
     assert_eq!(all, json!({"unlinked": ["AsahiKanna"]}));
     assert_eq!(chars.service.status(&kanna).await.unwrap().link, None);
     let data = chars.portal.read(&alice, DATA, MY_DATA).await;
@@ -1069,17 +978,11 @@ async fn members_look_up_their_own_characters_once_per_30_minutes() {
     let bobs = id(&chars.added(&bob, "b-1", manual("BobKnight")).await);
 
     // A failed lookup does not count.
-    let first = answer(
-        &chars.start(&alice, json!({"character_id": failing})).await,
-        202,
-        STARTED,
-    );
+    let first = chars
+        .started(&alice, json!({"character_id": failing}))
+        .await;
     assert_eq!(chars.settled(&id(&first["job"])).await, JobState::Failed);
-    let second = answer(
-        &chars.start(&alice, json!({"character_id": kanna})).await,
-        202,
-        STARTED,
-    );
+    let second = chars.started(&alice, json!({"character_id": kanna})).await;
     let job = id(&second["job"]);
     assert_eq!(chars.settled(&job).await, JobState::Done);
     let status = chars
@@ -1120,11 +1023,7 @@ async fn members_look_up_their_own_characters_once_per_30_minutes() {
     let theirs = chars.start(&bob, json!({"character_id": kanna})).await;
     assert_eq!(refused(&theirs), (404, "not_found".into()));
     // His own limit is his.
-    let his = answer(
-        &chars.start(&bob, json!({"character_id": bobs})).await,
-        202,
-        STARTED,
-    );
+    let his = chars.started(&bob, json!({"character_id": bobs})).await;
     assert_eq!(chars.settled(&id(&his["job"])).await, JobState::Done);
     let status = chars
         .portal
@@ -1135,13 +1034,8 @@ async fn members_look_up_their_own_characters_once_per_30_minutes() {
     chars.portal.harness.advance(TimeDelta::minutes(31));
     // Past the session's idle window too: a new sign-in, the same limit.
     let alice = chars.portal.sign_in(ALICE).await;
-    answer(
-        &chars
-            .start(&alice, json!({"character_id": kanna, "refresh": true}))
-            .await,
-        202,
-        STARTED,
-    );
+    let again = json!({"character_id": kanna, "refresh": true});
+    chars.started(&alice, again).await;
     // The scouter only ever got roster IGNs.
     let targets = chars.scouter.as_ref().unwrap().targets();
     assert!(
@@ -1157,18 +1051,10 @@ async fn members_look_up_their_own_characters_once_per_30_minutes() {
 #[tokio::test]
 async fn the_party_sees_roster_levels_and_estimates_never_another_members_nexon_data() {
     let chars = Chars::new(true, true).await;
-    let kanna = chars
-        .admin_add(
-            ALICE,
-            json!({"ign": "AsahiKanna", "class": "Kanna", "level": 250}),
-        )
-        .await;
-    let knight = chars
-        .admin_add(
-            BOB,
-            json!({"ign": "BobKnight", "class": "Hero", "level": 260}),
-        )
-        .await;
+    let kanna = json!({"ign": "AsahiKanna", "class": "Kanna", "level": 250});
+    let kanna = chars.admin_add(ALICE, kanna).await;
+    let knight = json!({"ign": "BobKnight", "class": "Hero", "level": 260});
+    let knight = chars.admin_add(BOB, knight).await;
     for (member, character) in [("1001", &kanna), ("1002", &knight)] {
         let outcome = chars
             .service
@@ -1236,14 +1122,8 @@ async fn the_party_sees_roster_levels_and_estimates_never_another_members_nexon_
 
     // Cached scouter readings per boss, never looked up here.
     let reads = chars.reads();
-    let started = reads
-        .ok(
-            "POST",
-            "/api/admin/estimates",
-            json!({"run_id": "r-kalos"}),
-            STARTED,
-        )
-        .await;
+    let run = json!({"run_id": "r-kalos"});
+    let started = reads.ok("POST", "/api/admin/estimates", run, STARTED).await;
     assert_eq!(chars.settled(&id(&started["job"])).await, JobState::Done);
     let seen = chars.scouter.as_ref().unwrap().targets().len();
     let party = chars.portal.read(&alice, PARTY, PARTY_VIEW).await;

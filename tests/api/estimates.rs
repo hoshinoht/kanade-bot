@@ -36,7 +36,7 @@ use crate::{
     readiness::slot as ready_slot,
     reads::{CharacterDataMaker, Reads},
     schemas::assert_valid,
-    support::{items, strs},
+    support::{items, spawn_router, strs},
 };
 
 const JOB: &str = "character_data.json#/$defs/EstimateJob";
@@ -269,12 +269,7 @@ pub(crate) async fn fake_scouter() -> (SocketAddr, Fake) {
             },
         ))
         .with_state(fake.clone());
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let address = listener.local_addr().unwrap();
-    tokio::spawn(async move {
-        let _ = axum::serve(listener, app).await;
-    });
-    (address, fake)
+    (spawn_router(app).await, fake)
 }
 
 /// A fake Open API for linking (invented data; the Nexon name differs in
@@ -290,12 +285,7 @@ async fn fake_nexon() -> SocketAddr {
             r#"{"final_stat":[{"stat_name":"Combat Power","stat_value":"48213377"}]}"#.to_owned()
         }
     });
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let address = listener.local_addr().unwrap();
-    tokio::spawn(async move {
-        let _ = axum::serve(listener, app).await;
-    });
-    address
+    spawn_router(app).await
 }
 
 /// The module with estimates at `scouter` (off with `None`) under the
@@ -392,6 +382,29 @@ fn tokens(member: &Value) -> Vec<&str> {
     strs(&member["bosses"], "boss")
 }
 
+/// The status read for `query` (`run_id=…` or `character_ids=…`).
+async fn status(reads: &Reads, query: &str) -> Value {
+    reads.read(&format!("{ESTIMATES}?{query}"), STATUS).await
+}
+
+/// A `GET` under [`ESTIMATES`] that may be refused.
+async fn fetch(reads: &Reads, rest: &str) -> crate::support::Reply {
+    let path = format!("{ESTIMATES}{rest}");
+    reads.call("GET", &path, json!(null), &[]).await
+}
+
+/// An XKalos party total the run's lookup reports as incomplete.
+fn incomplete_kalos(sum: f64) -> Value {
+    json!([{
+        "boss": "XKalos",
+        "combined_percentage": sum,
+        "estimated_minutes": 3000.0 / sum,
+        "technically_possible": false,
+        "complete": false,
+        "issues": [],
+    }])
+}
+
 #[tokio::test]
 async fn routes_are_the_generic_404_while_the_module_or_the_url_is_off() {
     for reads in [Reads::with_characters().await, on(None).await] {
@@ -485,14 +498,10 @@ async fn one_character_is_one_ign_lookup_with_a_pinned_request() {
     assert_eq!(names, ["accept", "host", "user-agent"]);
 
     // The status read finds it again (closed and reopened).
-    let status = reads
-        .read(&format!("{ESTIMATES}?character_ids={id}"), STATUS)
-        .await;
-    assert_eq!(status["job"]["id"], done["id"]);
-    assert_eq!(status["running"], Value::Null);
-    let none = reads
-        .read(&format!("{ESTIMATES}?character_ids=nobody"), STATUS)
-        .await;
+    let status_read = status(&reads, &format!("character_ids={id}")).await;
+    assert_eq!(status_read["job"]["id"], done["id"]);
+    assert_eq!(status_read["running"], Value::Null);
+    let none = status(&reads, "character_ids=nobody").await;
     assert_eq!(none, json!({"job": null, "running": null}));
 
     // The 24-hour memory answers at once, without the sidecar.
@@ -506,9 +515,7 @@ async fn one_character_is_one_ign_lookup_with_a_pinned_request() {
     assert_eq!(again["result"]["cache_hit"], false);
     assert_eq!(fake.targets(), ["/v1/bosses?ign=MikaBish"; 2]);
 
-    let gone = reads
-        .call("GET", &format!("{ESTIMATES}/nope"), json!(null), &[])
-        .await;
+    let gone = fetch(&reads, "/nope").await;
     assert_eq!(gone.error(), (404, "not_found".into()));
 
     // Config's health block.
@@ -525,14 +532,9 @@ async fn post_needs_csrf_and_a_valid_body() {
     let (address, fake) = fake_scouter().await;
     let reads = on(Some(address)).await;
     // Alice's main (her first character) is on GMS.
-    let gms = reads
-        .call(
-            "POST",
-            "/api/admin/members/1001/characters",
-            json!({"ign": "MikaGms", "world": "gms"}),
-            &[],
-        )
-        .await;
+    let gms = json!({"ign": "MikaGms", "world": "gms"});
+    let path = "/api/admin/members/1001/characters";
+    let gms = reads.call("POST", path, gms, &[]).await;
     let gms = gms.json()["id"].as_str().unwrap().to_owned();
     let id = character(&reads, "1001", "MikaBish").await;
     let body = json!({"character_ids": [id]});
@@ -575,14 +577,7 @@ async fn post_needs_csrf_and_a_valid_body() {
         refused(&reads, json!({"run_id": "r-kalos"})).await,
         (422, "nothing_to_look_up".into())
     );
-    let bad = reads
-        .call(
-            "GET",
-            &format!("{ESTIMATES}?run_id=a&character_ids=b"),
-            json!(null),
-            &[],
-        )
-        .await;
+    let bad = fetch(&reads, "?run_id=a&character_ids=b").await;
     assert_eq!(bad.error(), (422, "invalid".into()));
     assert!(fake.lookups().is_empty(), "nothing was looked up");
 }
@@ -694,14 +689,9 @@ async fn a_run_is_looked_up_one_by_one_then_as_a_party_with_missing_members() {
     character(&reads, "1001", "MikaHero").await;
     let mika = character(&reads, "1001", "MikaBish").await;
     let ren = character(&reads, "1002", "RenShade").await;
-    let picked = reads
-        .call(
-            "PUT",
-            "/api/admin/runs/r-kalos/characters/1001",
-            json!({"character_id": mika, "version": 0}),
-            &[],
-        )
-        .await;
+    let pick = json!({"character_id": mika, "version": 0});
+    let path = "/api/admin/runs/r-kalos/characters/1001";
+    let picked = reads.call("PUT", path, pick, &[]).await;
     assert_eq!(picked.status, 200, "{}", picked.text());
 
     let done = look_up(&reads, json!({"run_id": "r-kalos"})).await;
@@ -734,23 +724,11 @@ async fn a_run_is_looked_up_one_by_one_then_as_a_party_with_missing_members() {
     let result = &done["result"];
     assert_eq!(result["complete"], false, "a member is missing");
     // The run's boss only, never 0% for the missing member.
-    assert_eq!(
-        result["combined"],
-        json!([{
-            "boss": "XKalos",
-            "combined_percentage": 18.0,
-            "estimated_minutes": 3000.0 / 18.0,
-            "technically_possible": false,
-            "complete": false,
-            "issues": [],
-        }])
-    );
+    assert_eq!(result["combined"], incomplete_kalos(18.0));
     assert_eq!(result["members"].as_array().unwrap().len(), 2);
 
     // Cached by the party's IGN set, and each character by its own.
-    let status = reads
-        .read(&format!("{ESTIMATES}?run_id=r-kalos"), STATUS)
-        .await;
+    let status = status(&reads, "run_id=r-kalos").await;
     assert_eq!(status["job"]["id"], done["id"]);
     let again = post(&reads, json!({"run_id": "r-kalos"})).await;
     assert_eq!(
@@ -830,17 +808,7 @@ async fn a_party_member_failure_never_stops_the_others() {
     assert_eq!(result["members"].as_array().unwrap().len(), 1);
     assert_eq!(result["members"][0]["character_id"], mika);
     // The total counts MikaBish only and is never complete.
-    assert_eq!(
-        result["combined"],
-        json!([{
-            "boss": "XKalos",
-            "combined_percentage": 9.0,
-            "estimated_minutes": 3000.0 / 9.0,
-            "technically_possible": false,
-            "complete": false,
-            "issues": [],
-        }])
-    );
+    assert_eq!(result["combined"], incomplete_kalos(9.0));
     assert_eq!(result["complete"], false);
     assert_eq!(
         fake.targets(),
@@ -964,14 +932,12 @@ async fn lookups_wait_in_line_in_order_with_their_position() {
         (&running["id"], &json!("running"))
     );
     // The status read reports the place too, and the job ahead.
-    let status = reads
-        .read(&format!("{ESTIMATES}?character_ids={ren}"), STATUS)
-        .await;
+    let status_read = status(&reads, &format!("character_ids={ren}")).await;
     assert_eq!(
-        (&status["job"]["id"], &status["job"]["position"]),
+        (&status_read["job"]["id"], &status_read["job"]["position"]),
         (&second["id"], &json!(2))
     );
-    assert_eq!(status["running"]["id"], running["id"]);
+    assert_eq!(status_read["running"]["id"], running["id"]);
     assert!(
         fake.targets()
             .iter()
@@ -996,9 +962,7 @@ async fn lookups_wait_in_line_in_order_with_their_position() {
         "first in, first looked up"
     );
     assert_eq!(
-        reads
-            .read(&format!("{ESTIMATES}?character_ids={ren}"), STATUS)
-            .await["running"],
+        status(&reads, &format!("character_ids={ren}")).await["running"],
         Value::Null,
         "the worker stops once the line is empty"
     );
@@ -1195,28 +1159,15 @@ async fn jobs_stay_24_hours_one_per_target_past_many_lookups() {
         }
         ids.push(id);
     }
-    let kept = reads
-        .read(
-            &format!("{ESTIMATES}/{}", first["id"].as_str().unwrap()),
-            JOB,
-        )
-        .await;
+    let path = format!("/{}", first["id"].as_str().unwrap());
+    let kept = reads.read(&format!("{ESTIMATES}{path}"), JOB).await;
     assert_eq!(kept["state"], "done", "the first job is still there");
     // A repeat lookup of a target replaces its job.
     let again = post(&reads, json!({"character_ids": [ids[0]]})).await;
     assert_ne!(again["id"], first["id"]);
-    let replaced = reads
-        .call(
-            "GET",
-            &format!("{ESTIMATES}/{}", first["id"].as_str().unwrap()),
-            json!(null),
-            &[],
-        )
-        .await;
+    let replaced = fetch(&reads, &path).await;
     assert_eq!(replaced.error(), (404, "not_found".into()));
-    let status = reads
-        .read(&format!("{ESTIMATES}?character_ids={}", ids[0]), STATUS)
-        .await;
+    let status = status(&reads, &format!("character_ids={}", ids[0])).await;
     assert_eq!(status["job"]["id"], again["id"]);
 }
 
@@ -1253,9 +1204,7 @@ async fn readiness_shows_cached_scouter_readings_per_boss_and_never_looks_up() {
     }
     assert!(fake.lookups().is_empty());
     assert_eq!(
-        reads
-            .read(&format!("{ESTIMATES}?run_id=r-kalos"), STATUS)
-            .await,
+        status(&reads, "run_id=r-kalos").await,
         json!({"job": null, "running": null})
     );
 
@@ -1294,9 +1243,7 @@ async fn readiness_shows_cached_scouter_readings_per_boss_and_never_looks_up() {
     reads.read(STAR, READY).await;
     assert_eq!(fake.lookups().len(), lookups, "readiness never looks up");
     assert_eq!(
-        reads
-            .read(&format!("{ESTIMATES}?run_id=r-kalos"), STATUS)
-            .await["running"],
+        status(&reads, "run_id=r-kalos").await["running"],
         Value::Null
     );
 }
