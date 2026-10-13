@@ -263,13 +263,12 @@ mod tests {
 
     use super::*;
 
-    const BASE: [(&str, &str); 7] = [
+    const BASE: [(&str, &str); 6] = [
         ("KANADE_TIMEZONE", "Asia/Kuala_Lumpur"),
         (
             "KANADE_DISCORD_TOKEN_FILE",
             "/run/secrets/kanade_discord_token",
         ),
-        ("KANADE_EXPECT_V4_STOPPED", "1"),
         ("KANADE_GUILD_ID", "123456789012345678"),
         ("KANADE_BOSSING_ROLE_ID", "223456789012345678"),
         ("KANADE_DB_PATH", "/data/kanade.sqlite3"),
@@ -372,27 +371,7 @@ mod tests {
     }
 
     #[test]
-    fn live_serve_needs_a_token_file_and_the_gateway_needs_the_v4_guard() {
-        for (guard, stopped) in [("", false), ("0", false), ("1", true)] {
-            let discord = config(&[("KANADE_EXPECT_V4_STOPPED", guard)])
-                .unwrap()
-                .discord;
-            assert_eq!(discord.v4_stopped, stopped);
-            assert_eq!(discord.require_v4_stopped().is_ok(), stopped);
-        }
-        assert_eq!(
-            config(&[("KANADE_EXPECT_V4_STOPPED", "")])
-                .unwrap()
-                .discord
-                .require_v4_stopped()
-                .unwrap_err()
-                .to_string(),
-            "KANADE_EXPECT_V4_STOPPED must be 1: stop the v4 container first"
-        );
-        assert_eq!(
-            config(&[("KANADE_EXPECT_V4_STOPPED", "yes")]).unwrap_err(),
-            "KANADE_EXPECT_V4_STOPPED must be 0 or 1"
-        );
+    fn live_serve_needs_a_token_file_and_a_strict_gateway_flag() {
         for (value, gateway) in [("", true), ("1", true), ("0", false)] {
             let discord = config(&[("KANADE_DISCORD_GATEWAY", value)])
                 .unwrap()

@@ -1,10 +1,11 @@
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, path::Path};
 
 use super::{keys::KEYS, merge, resolve};
-use crate::runtime::config::{ModelSettings, RuntimeConfig, ServeConfig};
+use crate::runtime::config::{ModelSettings, RuntimeConfig, ServeConfig, SettingSeeds};
 
 const EXAMPLE: &str = include_str!("../../../../kanade.example.toml");
 const OPENAI_COMPATIBLE: &str = include_str!("../../../../kanade.openai-compatible.example.toml");
+const COMPOSE: &str = include_str!("../../../../deploy/compose.yaml");
 
 fn env(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
     pairs
@@ -17,22 +18,85 @@ fn error(text: &str) -> String {
     merge(text, BTreeMap::new()).unwrap_err().to_string()
 }
 
+/// The bot's `environment:` in deploy/compose.yaml as Compose passes it with
+/// no `.env` and no override: `${VAR:-default}` is the default and
+/// `${VAR:+value}` is empty.
+fn compose_environment() -> BTreeMap<String, String> {
+    #[derive(serde::Deserialize)]
+    struct Compose {
+        services: BTreeMap<String, Service>,
+    }
+    #[derive(serde::Deserialize)]
+    struct Service {
+        #[serde(default)]
+        environment: BTreeMap<String, String>,
+    }
+    let compose: Compose = serde_saphyr::from_str(COMPOSE).unwrap();
+    compose.services["bot"]
+        .environment
+        .iter()
+        .map(|(key, value)| {
+            let value = match value
+                .strip_prefix("${")
+                .and_then(|rest| rest.strip_suffix('}'))
+            {
+                Some(expression) => match expression.split_once(":-") {
+                    Some((_, default)) => default.to_owned(),
+                    None => {
+                        assert!(expression.contains(":+"), "{key}: {value}");
+                        String::new()
+                    }
+                },
+                None => value.clone(),
+            };
+            assert!(!value.contains('$'), "{key}: unsupported interpolation");
+            (key.clone(), value)
+        })
+        .collect()
+}
+
+/// The example plus `environment` from the base Compose file.
+fn compose_env(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
+    let mut values = compose_environment();
+    values.extend(env(pairs));
+    values
+}
+
+/// A first start: the example file under the base deploy/compose.yaml, with
+/// no override and no `.env`, is a complete live config with every add-on off.
 #[test]
-fn the_example_file_is_a_complete_live_config() {
-    let resolved = merge(EXAMPLE, BTreeMap::new()).unwrap();
+fn the_example_file_starts_under_the_base_compose_file() {
+    let resolved = merge(EXAMPLE, compose_environment()).unwrap();
     let config = ServeConfig::from_mapping(&resolved.values).unwrap();
     assert_eq!(config.runtime.timezone, chrono_tz::Asia::Kuala_Lumpur);
     assert_eq!(config.guild.guild_id, 123456789012345678);
-    assert_eq!(config.instance_id, "kanade-example");
-    assert!(!config.discord.v4_stopped && config.discord.gateway);
-    assert!(config.runtime.admin_auth.discord.is_some());
-    assert_eq!(config.models.chat_model.as_deref(), Some("kanata/chat"));
-    assert_eq!(config.models.groups.len(), 1);
-    assert_eq!(
-        config.models.groups[0].aliases,
-        ["kanata/extract", "kanata/chat"]
+    assert_eq!(config.guild.bossing_role_id, 223456789012345678);
+    assert!(config.discord.gateway);
+    assert!(
+        config.runtime.admin_auth.discord.is_none(),
+        "admin Discord sign-in is an add-on"
     );
-    assert_eq!(config.seeds.watch_channel_ids, Vec::<u64>::new());
+    assert!(config.runtime.admin_auth.token_file.is_some());
+    assert_eq!(config.runtime.http.admin_host, None, "localhost names only");
+    assert_eq!(config.runtime.http.trusted_proxy, None);
+    assert_eq!(
+        config.runtime.admin_bind,
+        "172.23.0.10:8080".parse().unwrap()
+    );
+    assert_eq!(config.runtime.public_bind, None);
+    assert!(config.runtime.public_auth.discord.is_none());
+    assert_eq!(
+        config.models.base_url.as_deref(),
+        Some("https://kanata.example/v1")
+    );
+    assert_eq!(config.store.db_path, Path::new("/data/db/kanade.sqlite"));
+    assert_eq!(
+        config.files.catalog_file,
+        Path::new("/app/boss/bosses.yaml")
+    );
+    assert_eq!(config.backup_recipients_file, None);
+    assert_eq!(config.character_data, None);
+    assert_eq!(config.seeds, SettingSeeds::default());
 }
 
 #[test]
@@ -86,7 +150,7 @@ fn the_example_file_documents_every_key() {
 fn a_non_empty_environment_variable_overrides_one_key() {
     let resolved = merge(
         EXAMPLE,
-        env(&[
+        compose_env(&[
             ("KANADE_GUILD_ID", "999999999999999999"),
             // Compose passes blank variables as empty: the file still applies.
             ("KANADE_BOSSING_ROLE_ID", ""),
@@ -380,12 +444,11 @@ fn capability_declarations_feed_the_model_settings() {
 
 #[test]
 fn the_debug_test_channel_is_an_optional_snowflake() {
+    // The last active `[discord]` line.
+    const ROLE: &str = "bossing_role_id = \"223456789012345678\"";
     let channel = |line: &str| {
-        let text = EXAMPLE.replace(
-            "debug_user_ids = []",
-            &format!("debug_user_ids = []\n{line}"),
-        );
-        let resolved = merge(&text, BTreeMap::new())?;
+        let text = EXAMPLE.replace(ROLE, &format!("{ROLE}\n{line}"));
+        let resolved = merge(&text, compose_environment())?;
         ServeConfig::from_mapping(&resolved.values).map(|config| config.guild.test_channel_id)
     };
     assert_eq!(channel("").unwrap(), None);
@@ -409,11 +472,8 @@ fn the_debug_test_channel_is_an_optional_snowflake() {
     );
     // The environment overrides the file, like every key.
     let resolved = merge(
-        &EXAMPLE.replace(
-            "debug_user_ids = []",
-            "debug_user_ids = []\ntest_channel = \"5\"",
-        ),
-        env(&[("KANADE_TEST_CHANNEL_ID", "6")]),
+        &EXAMPLE.replace(ROLE, &format!("{ROLE}\ntest_channel = \"5\"")),
+        compose_env(&[("KANADE_TEST_CHANNEL_ID", "6")]),
     )
     .unwrap();
     assert_eq!(

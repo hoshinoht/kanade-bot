@@ -248,7 +248,6 @@ async fn run() -> Result<ExitCode, String> {
         ("KANADE_BOSSING_ROLE_ID", world::BOSSING.to_string()),
         ("KANADE_CHAT_PILOT_ROLE_ID", world::BOSSING.to_string()),
         ("KANADE_DISCORD_GATEWAY", "1".to_owned()),
-        ("KANADE_EXPECT_V4_STOPPED", "1".to_owned()),
         ("KANADE_CHAT_ENABLED", "1".to_owned()),
         ("KANADE_CHAT_CATEGORY_IDS", world::CATEGORY.to_string()),
         ("KANADE_EXTRACTION_ENABLED", "1".to_owned()),

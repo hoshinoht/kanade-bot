@@ -119,11 +119,6 @@ pub(super) const KEYS: &[(&str, &str, Kind)] = &[
         Int,
     ),
     ("discord.token_file", "KANADE_DISCORD_TOKEN_FILE", Text),
-    (
-        "discord.expect_v4_stopped",
-        "KANADE_EXPECT_V4_STOPPED",
-        Flag,
-    ),
     ("discord.gateway", "KANADE_DISCORD_GATEWAY", Flag),
     ("discord.guild_id", "KANADE_GUILD_ID", Id),
     ("discord.bossing_role_id", "KANADE_BOSSING_ROLE_ID", Id),

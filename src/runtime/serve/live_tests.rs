@@ -22,7 +22,7 @@ use super::{
     discord::{self, Discord, Wiring},
     extract,
     health::LiveHealth,
-    serve_until, serve_with, store,
+    serve_with, store,
     tests::Temp,
 };
 use crate::{
@@ -304,7 +304,6 @@ impl Harness {
         let temp = Temp::new();
         let mut values = vec![
             ("KANADE_DISCORD_GATEWAY", "1"),
-            ("KANADE_EXPECT_V4_STOPPED", "1"),
             ("KANADE_ADMIN_ROLE_ID", "20"),
         ];
         values.extend_from_slice(extra);
@@ -1200,22 +1199,7 @@ async fn a_check_on_a_proposal_card_is_approved_through_the_desk_not_via_portal(
     finish(&harness, ctx).await;
 }
 
-// ---- Startup guards and fatal closes ----
-
-#[tokio::test]
-async fn serve_refuses_to_connect_until_v4_is_stopped() {
-    let temp = Temp::new();
-    let config = temp.config(&[("KANADE_DISCORD_GATEWAY", "1")]);
-    let error = serve_until(config, std::future::pending())
-        .await
-        .unwrap_err()
-        .to_string();
-    assert_eq!(
-        error,
-        "KANADE_EXPECT_V4_STOPPED must be 1: stop the v4 container first"
-    );
-    assert!(!temp.0.join("db").exists(), "the store was not opened");
-}
+// ---- Fatal closes and serve lifecycle ----
 
 #[tokio::test]
 async fn a_disallowed_intents_close_keeps_serving_http_without_reconnecting() {

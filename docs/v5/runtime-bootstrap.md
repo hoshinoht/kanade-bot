@@ -59,7 +59,7 @@ job is queued or running) or `idle`.
 and `storage` `ok`, ignoring extra fields.
 Binds are loopback-only unless `KANADE_ALLOW_PRIVATE_BIND=1` also admits a
 private address (RFC 1918, IPv4 link-local, IPv6 `fc00::/7` and `fe80::/10`)
-on the internal edge network; wildcard (`0.0.0.0`, `::`) and public addresses
+on a container network; wildcard (`0.0.0.0`, `::`) and public addresses
 are always refused. Runtime configuration comes from the process
 environment and, when `KANADE_CONFIG` names one, the `kanade.toml` file
 ("Config file" below); `.env` is not loaded automatically. `healthcheck` accepts only a
@@ -121,7 +121,6 @@ lists are comma-separated.
 | Variable | Default | Meaning |
 |---|---|---|
 | `KANADE_DISCORD_TOKEN_FILE` | required | Bot token file (one line, ≤ 4 KiB); read at startup (also with the gateway off), so a missing secret fails the deploy. Plain `KANADE_DISCORD_TOKEN`/`DISCORD_TOKEN` are refused by every command. |
-| `KANADE_EXPECT_V4_STOPPED` | `0` | `0` or `1`. Must be `1` before the gateway connects ("stop the v4 container first"): checked before the store opens. Set it only after `docker stop kanade-bot`. Not checked with `KANADE_DISCORD_GATEWAY=0`. |
 | `KANADE_DISCORD_GATEWAY` | `1` | `0` or `1`. `0` serves the admin API only: no gateway, roster sync or delivery tick (tests, maintenance). |
 | `KANADE_GUILD_ID`, `KANADE_BOSSING_ROLE_ID` | required | Snowflakes. |
 | `KANADE_ADMIN_ROLE_ID`, `KANADE_CHAT_PILOT_ROLE_ID` | unset | Snowflakes. |
@@ -239,8 +238,8 @@ Each key sets one variable below, whose rules apply unchanged
 `models check`, `backup`, `restore`, `portal`, `sessions`, `token`) read it.
 
 - Precedence: a non-empty `KANADE_*` environment variable (Compose
-  `environment:` or `env_file`) overrides its key; an empty one does not, so a
-  blank Compose variable cannot clear a file value.
+  `environment:`) overrides its key; an empty one does not, so a blank
+  Compose variable cannot clear a file value.
 - Secrets never go in the file: a key containing `token`, `secret`, `key`,
   `password`, `passwd` or `credential` that does not end in `_file` stops
   startup; `*_file` keys name the secret files.
@@ -289,7 +288,6 @@ Each key sets one variable below, whose rules apply unchanged
 | `public.session_absolute_hours` | `KANADE_PUBLIC_SESSION_ABSOLUTE_HOURS` | integer |
 | `public.fresh_write_minutes` | `KANADE_PUBLIC_FRESH_WRITE_MINUTES` | integer |
 | `discord.token_file` | `KANADE_DISCORD_TOKEN_FILE` | string |
-| `discord.expect_v4_stopped` | `KANADE_EXPECT_V4_STOPPED` | bool |
 | `discord.gateway` | `KANADE_DISCORD_GATEWAY` | bool |
 | `discord.guild_id` | `KANADE_GUILD_ID` | snowflake (string or integer) |
 | `discord.bossing_role_id` | `KANADE_BOSSING_ROLE_ID` | snowflake (string or integer) |
@@ -419,11 +417,11 @@ with …") and the view shows no `running` for it. `model_role` lines are
 startup-only.
 
 `serve` (`src/runtime/serve/`) reads the bot token file, checks
-`KANADE_BACKUP_RECIPIENTS_FILE` when set, checks
-`KANADE_EXPECT_V4_STOPPED`, opens and owns the store, loads the catalog,
-knowledge and personas, resolves settings, then serves both listeners: one
-shared `SchedulerWriter`, `ApiState` (schedule policy from settings, one
-`GuildAccess` shared with the staff gate, guild id for card links, the
+`KANADE_BACKUP_RECIPIENTS_FILE` when set, opens and owns the store, loads
+the catalog, knowledge and personas, resolves settings, then serves both
+listeners: one shared `SchedulerWriter`, `ApiState` (schedule policy from
+settings, one `GuildAccess` shared with the staff gate, guild id for card
+links, the
 gateway's `GuildCache` as the channel list) and `AdminAuth` (Discord OAuth,
 Tailscale and break-glass per the HTTP environment) with `GuildStaffGate`
 over `StoreGuildMembers`.
@@ -607,9 +605,8 @@ So serve normally returns within 25 s of the signal. Known limit (accepted
 write that starts just before 22 s can wait the full 5 s `busy_timeout`, and
 serve can take about 27 s, still inside Compose's 30 s.
 
-Runbook (production token, real guild): `docker stop kanade-bot` (v4) first,
-then set `KANADE_EXPECT_V4_STOPPED=1` and start v5; to roll back, stop v5,
-set it back to `0` and `docker start kanade-bot`.
+Runbook: `deploy/README.md`. Never run two bots on one token: Discord allows
+one gateway session per token.
 
 Still not wired: the inbox's Discord card refresh/close.
 
@@ -682,19 +679,20 @@ it with that default. Still dropped: the inbox's Discord card refresh/close
 Bot token (user decision 2026-09-25): `KANADE_DISCORD_TOKEN_FILE` (e.g.
 `/run/secrets/kanade_discord_token`, a Compose secret from a host file outside
 the repo); plain `KANADE_DISCORD_TOKEN`/`DISCORD_TOKEN` are refused at startup.
-v5 reuses the production bot application, so it must never run while v4 is
-connected (one gateway session per token), and it must act only in its
+Discord allows one gateway session per token, so never run two bots on one
+token, and v5 must act only in its
 configured guild: ignore every event from other guilds and register commands
 per guild, never globally (the production guild keeps v4's commands).
 
 ### Edge contract (admin origin)
 
-For the shared edge (`sites/kanade`); owned and applied by the edge owner.
+For a reverse proxy in front of the admin origin (`deploy/README.md`
+"Reverse proxy"); owned and applied by whoever runs the proxy.
 
-- Topology: the admin listener binds a private address on the internal
-  `kanade_edge` network (`KANADE_ALLOW_PRIVATE_BIND=1`,
+- Topology: the admin listener binds a private address on the proxy's
+  container network (`KANADE_ALLOW_PRIVATE_BIND=1`,
   `KANADE_ADMIN_BIND=<kanade's address>:8080`), and `KANADE_TRUSTED_PROXY` is
-  the edge container's fixed address on that network. Kanade refuses a
+  the proxy container's fixed address on that network. Kanade refuses a
   loopback `KANADE_TRUSTED_PROXY` whenever Tailscale sign-in is enabled,
   because every local process shares the loopback address.
 - Shared secret: at least 32 random bytes (for example `openssl rand -base64

@@ -4,6 +4,8 @@
 !.env.example
 # Private v5 settings; kanade.example.toml is the tracked template.
 /kanade.toml
+# Host-specific Compose add-ons; deploy/compose.override.example.yaml is the template.
+/deploy/compose.override.yaml
 data/
 .venv/
 target/

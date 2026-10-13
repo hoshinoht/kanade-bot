@@ -249,8 +249,6 @@ pub async fn serve_until(
         store::close(store, clock.store(CLOSE_WAIT)).await;
         return served;
     }
-    // One gateway session per token: v4 must be stopped before this connects.
-    config.discord.require_v4_stopped()?;
     let wiring = Wiring {
         source: shard(token.expose().to_owned()),
         transport: Arc::new(LateTransport::new(token)),
