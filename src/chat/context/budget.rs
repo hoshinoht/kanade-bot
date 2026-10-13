@@ -37,15 +37,6 @@ impl std::error::Error for ContextBudgetError {}
 /// response has been removed from the usable context.
 pub const ELIDED_TOOL_RESULT: &str = "[tool result elided for context budget]";
 
-fn content(message: &Message) -> &str {
-    match message {
-        Message::System { content } | Message::User { content } | Message::Tool { content, .. } => {
-            content
-        }
-        Message::Assistant { content, .. } => content.as_deref().unwrap_or_default(),
-    }
-}
-
 /// Every assistant turn's tool calls as v4 serialised them for the estimate.
 fn tool_suffix(messages: &[Message]) -> String {
     let calls: Vec<Value> = messages
@@ -143,7 +134,7 @@ pub fn budgeted(
     loop {
         let mut outgoing = messages.clone();
         outgoing.push(reminder.clone());
-        let material: Vec<&str> = outgoing.iter().map(content).collect();
+        let material: Vec<&str> = outgoing.iter().map(Message::text).collect();
         let request = estimate_tokens(&format!(
             "{}\n\n{}",
             material.join("\n\n"),
