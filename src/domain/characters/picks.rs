@@ -299,27 +299,17 @@ fn pick_record(
     })
 }
 
-/// Where the character a member brings comes from, first match wins.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Basis {
-    /// The run's own pick (runs only).
-    RunPick,
-    /// The weekly timing's pick (on a run: inherited from its timing).
-    TimingPick,
-    /// Their roster main.
-    Main,
-    /// Their only active character, with no main.
-    Only,
-}
-
-impl Basis {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::RunPick => "run_pick",
-            Self::TimingPick => "timing_pick",
-            Self::Main => "main",
-            Self::Only => "only",
-        }
+spelled! {
+    /// Where the character a member brings comes from, first match wins.
+    Basis {
+        /// The run's own pick (runs only).
+        RunPick => "run_pick",
+        /// The weekly timing's pick (on a run: inherited from its timing).
+        TimingPick => "timing_pick",
+        /// Their roster main.
+        Main => "main",
+        /// Their only active character, with no main.
+        Only => "only",
     }
 }
 

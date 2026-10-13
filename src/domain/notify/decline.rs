@@ -120,7 +120,7 @@ pub trait DeclineNoticeStore {
     ) -> impl Future<Output = Result<bool, StoreError>> + Send;
 }
 
-impl<T: DeclineNoticeStore + Send + Sync> DeclineNoticeStore for std::sync::Arc<T> {
+forward_store!(DeclineNoticeStore for [arc, ref] {
     fn commit_with_decline_notices(
         &self,
         expected_revision: u64,
@@ -128,134 +128,31 @@ impl<T: DeclineNoticeStore + Send + Sync> DeclineNoticeStore for std::sync::Arc<
         meta: ChangeMeta,
         candidates: Vec<DeclineNotice>,
         retractions: Vec<(String, String)>,
-    ) -> impl Future<Output = Result<Option<Committed>, StoreError>> + Send {
-        (**self).commit_with_decline_notices(
-            expected_revision,
-            changes,
-            meta,
-            candidates,
-            retractions,
-        )
-    }
-
+    ) -> Result<Option<Committed>, StoreError>;
     fn decline_notice(
         &self,
         run_id: &str,
         user_id: &str,
-    ) -> impl Future<Output = Result<Option<DeclineNotice>, StoreError>> + Send {
-        (**self).decline_notice(run_id, user_id)
-    }
-
-    fn pending_decline_notices(
-        &self,
-        limit: usize,
-    ) -> impl Future<Output = Result<Vec<DeclineNotice>, StoreError>> + Send {
-        (**self).pending_decline_notices(limit)
-    }
-
+    ) -> Result<Option<DeclineNotice>, StoreError>;
+    fn pending_decline_notices(&self, limit: usize) -> Result<Vec<DeclineNotice>, StoreError>;
     fn bind_decline_notice(
         &self,
         run_id: &str,
         user_id: &str,
         channel_id: &str,
         message_id: &str,
-    ) -> impl Future<Output = Result<bool, StoreError>> + Send {
-        (**self).bind_decline_notice(run_id, user_id, channel_id, message_id)
-    }
-
-    fn mark_decline_retract_pending(
-        &self,
-        run_id: &str,
-        user_id: &str,
-    ) -> impl Future<Output = Result<bool, StoreError>> + Send {
-        (**self).mark_decline_retract_pending(run_id, user_id)
-    }
-
+    ) -> Result<bool, StoreError>;
+    fn mark_decline_retract_pending(&self, run_id: &str, user_id: &str) -> Result<bool, StoreError>;
     fn clear_decline_notice_message(
         &self,
         run_id: &str,
         user_id: &str,
         message_id: &str,
-    ) -> impl Future<Output = Result<bool, StoreError>> + Send {
-        (**self).clear_decline_notice_message(run_id, user_id, message_id)
-    }
-
+    ) -> Result<bool, StoreError>;
     fn decline_notice_on_cooldown(
         &self,
         run_id: &str,
         user_id: &str,
         now: DateTime<Utc>,
-    ) -> impl Future<Output = Result<bool, StoreError>> + Send {
-        (**self).decline_notice_on_cooldown(run_id, user_id, now)
-    }
-}
-
-impl<T: DeclineNoticeStore + Sync> DeclineNoticeStore for &T {
-    fn commit_with_decline_notices(
-        &self,
-        expected_revision: u64,
-        changes: ChangeSet,
-        meta: ChangeMeta,
-        candidates: Vec<DeclineNotice>,
-        retractions: Vec<(String, String)>,
-    ) -> impl Future<Output = Result<Option<Committed>, StoreError>> + Send {
-        (**self).commit_with_decline_notices(
-            expected_revision,
-            changes,
-            meta,
-            candidates,
-            retractions,
-        )
-    }
-
-    fn decline_notice(
-        &self,
-        run_id: &str,
-        user_id: &str,
-    ) -> impl Future<Output = Result<Option<DeclineNotice>, StoreError>> + Send {
-        (**self).decline_notice(run_id, user_id)
-    }
-
-    fn pending_decline_notices(
-        &self,
-        limit: usize,
-    ) -> impl Future<Output = Result<Vec<DeclineNotice>, StoreError>> + Send {
-        (**self).pending_decline_notices(limit)
-    }
-
-    fn bind_decline_notice(
-        &self,
-        run_id: &str,
-        user_id: &str,
-        channel_id: &str,
-        message_id: &str,
-    ) -> impl Future<Output = Result<bool, StoreError>> + Send {
-        (**self).bind_decline_notice(run_id, user_id, channel_id, message_id)
-    }
-
-    fn mark_decline_retract_pending(
-        &self,
-        run_id: &str,
-        user_id: &str,
-    ) -> impl Future<Output = Result<bool, StoreError>> + Send {
-        (**self).mark_decline_retract_pending(run_id, user_id)
-    }
-
-    fn clear_decline_notice_message(
-        &self,
-        run_id: &str,
-        user_id: &str,
-        message_id: &str,
-    ) -> impl Future<Output = Result<bool, StoreError>> + Send {
-        (**self).clear_decline_notice_message(run_id, user_id, message_id)
-    }
-
-    fn decline_notice_on_cooldown(
-        &self,
-        run_id: &str,
-        user_id: &str,
-        now: DateTime<Utc>,
-    ) -> impl Future<Output = Result<bool, StoreError>> + Send {
-        (**self).decline_notice_on_cooldown(run_id, user_id, now)
-    }
-}
+    ) -> Result<bool, StoreError>;
+});

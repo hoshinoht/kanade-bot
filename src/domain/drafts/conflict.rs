@@ -17,41 +17,25 @@ pub enum Entity {
     Rsvp { run_id: String, user_id: String },
 }
 
-/// The fields a merge compares. Reminders, run `source` and `week_start`
-/// (derived from the slot) and RSVP timestamps are not merged.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub enum Field {
-    /// Run: the instant.
-    Slot,
-    /// Weekly timing: weekday and wall time together.
-    DayTime,
-    Bosses,
-    /// Merged as a set.
-    Participants,
-    Channel,
-    Status,
-    /// Run: its weekly timing.
-    FixedRun,
-    Note,
-    Owner,
-    /// RSVP: state and source together.
-    Answer,
-}
-
-impl Field {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Slot => "slot",
-            Self::DayTime => "day_time",
-            Self::Bosses => "bosses",
-            Self::Participants => "participants",
-            Self::Channel => "channel",
-            Self::Status => "status",
-            Self::FixedRun => "fixed_run",
-            Self::Note => "note",
-            Self::Owner => "owner",
-            Self::Answer => "answer",
-        }
+spelled! {
+    /// The fields a merge compares. Reminders, run `source` and `week_start`
+    /// (derived from the slot) and RSVP timestamps are not merged.
+    Field {
+        /// Run: the instant.
+        Slot => "slot",
+        /// Weekly timing: weekday and wall time together.
+        DayTime => "day_time",
+        Bosses => "bosses",
+        /// Merged as a set.
+        Participants => "participants",
+        Channel => "channel",
+        Status => "status",
+        /// Run: its weekly timing.
+        FixedRun => "fixed_run",
+        Note => "note",
+        Owner => "owner",
+        /// RSVP: state and source together.
+        Answer => "answer",
     }
 }
 

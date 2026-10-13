@@ -4,7 +4,10 @@
 //! reach members verbatim and are frozen in `docs/v5/vectors/domain`.
 
 #[macro_use]
+mod forward;
+#[macro_use]
 mod spelled;
+pub(crate) use spelled::spelled;
 
 pub mod attendance;
 pub mod catalog;

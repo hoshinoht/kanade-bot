@@ -251,83 +251,11 @@ pub trait ChangeHistory {
     }
 }
 
-impl<T: ChangeHistory + Sync> ChangeHistory for &T {
-    fn load_change(
-        &self,
-        seq: u64,
-    ) -> impl Future<Output = Result<Option<ChangeRecord>, StoreError>> + Send {
-        (**self).load_change(seq)
-    }
-
-    fn load_checked(
-        &self,
-        seq: u64,
-    ) -> impl Future<Output = Result<CheckedChange, StoreError>> + Send {
-        (**self).load_checked(seq)
-    }
-
-    fn list_changes(
-        &self,
-        query: &ChangeQuery,
-    ) -> impl Future<Output = Result<ChangePage, StoreError>> + Send {
-        (**self).list_changes(query)
-    }
-
-    fn count_changes(
-        &self,
-        filter: &ChangeFilter,
-    ) -> impl Future<Output = Result<u64, StoreError>> + Send {
-        (**self).count_changes(filter)
-    }
-
-    fn verify_history(
-        &self,
-    ) -> impl Future<Output = Result<HistoryVerification, StoreError>> + Send {
-        (**self).verify_history()
-    }
-
-    fn history_head(&self) -> impl Future<Output = Result<ChangeRef, StoreError>> + Send {
-        (**self).history_head()
-    }
-}
-
-/// A shared store (the API's writer holds one `Arc` beside its readers).
-impl<T: ChangeHistory + Send + Sync> ChangeHistory for std::sync::Arc<T> {
-    fn load_change(
-        &self,
-        seq: u64,
-    ) -> impl Future<Output = Result<Option<ChangeRecord>, StoreError>> + Send {
-        (**self).load_change(seq)
-    }
-
-    fn load_checked(
-        &self,
-        seq: u64,
-    ) -> impl Future<Output = Result<CheckedChange, StoreError>> + Send {
-        (**self).load_checked(seq)
-    }
-
-    fn list_changes(
-        &self,
-        query: &ChangeQuery,
-    ) -> impl Future<Output = Result<ChangePage, StoreError>> + Send {
-        (**self).list_changes(query)
-    }
-
-    fn count_changes(
-        &self,
-        filter: &ChangeFilter,
-    ) -> impl Future<Output = Result<u64, StoreError>> + Send {
-        (**self).count_changes(filter)
-    }
-
-    fn verify_history(
-        &self,
-    ) -> impl Future<Output = Result<HistoryVerification, StoreError>> + Send {
-        (**self).verify_history()
-    }
-
-    fn history_head(&self) -> impl Future<Output = Result<ChangeRef, StoreError>> + Send {
-        (**self).history_head()
-    }
-}
+forward_store!(ChangeHistory for [ref, arc] {
+    fn load_change(&self, seq: u64) -> Result<Option<ChangeRecord>, StoreError>;
+    fn load_checked(&self, seq: u64) -> Result<CheckedChange, StoreError>;
+    fn list_changes(&self, query: &ChangeQuery) -> Result<ChangePage, StoreError>;
+    fn count_changes(&self, filter: &ChangeFilter) -> Result<u64, StoreError>;
+    fn verify_history(&self) -> Result<HistoryVerification, StoreError>;
+    fn history_head(&self) -> Result<ChangeRef, StoreError>;
+});

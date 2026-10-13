@@ -11,27 +11,19 @@ use chrono::{NaiveTime, Timelike, Weekday};
 use super::RequestRefusal;
 use crate::domain::drafts::DraftOp;
 
-/// Which part of an operation a change is: the whole operation, or one
-/// field group of a weekly-timing change.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub enum Part {
-    Whole,
-    DayTime,
-    Party,
-    Channel,
+spelled! {
+    /// Which part of an operation a change is: the whole operation, or one
+    /// field group of a weekly-timing change.
+    Part {
+        Whole => "whole",
+        DayTime => "day_time",
+        Party => "party",
+        Channel => "channel",
+    }
 }
 
 impl Part {
     const SPLIT: [Self; 3] = [Self::DayTime, Self::Party, Self::Channel];
-
-    fn as_str(self) -> &'static str {
-        match self {
-            Self::Whole => "whole",
-            Self::DayTime => "day_time",
-            Self::Party => "party",
-            Self::Channel => "channel",
-        }
-    }
 }
 
 /// One change a request asks for: `<ord>` for a whole operation,

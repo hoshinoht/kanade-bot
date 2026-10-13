@@ -142,32 +142,20 @@ pub trait ScheduleStore {
     ) -> impl Future<Output = Result<Option<Committed>, StoreError>> + Send;
 }
 
-/// A shared store: the API's single writer and its readers hold one `Arc`.
-impl<T: ScheduleStore + Send + Sync> ScheduleStore for std::sync::Arc<T> {
-    fn load(
-        &self,
-        scope: &Scope,
-    ) -> impl Future<Output = Result<ScheduleSnapshot, StoreError>> + Send {
-        (**self).load(scope)
-    }
-
+forward_store!(ScheduleStore for [arc, ref] {
+    fn load(&self, scope: &Scope) -> Result<ScheduleSnapshot, StoreError>;
     fn recorded_request(
         &self,
         actor: &Actor,
         request_id: &str,
-    ) -> impl Future<Output = Result<Option<RecordedRequest>, StoreError>> + Send {
-        (**self).recorded_request(actor, request_id)
-    }
-
+    ) -> Result<Option<RecordedRequest>, StoreError>;
     fn commit(
         &self,
         expected_revision: u64,
         changes: ChangeSet,
         meta: ChangeMeta,
-    ) -> impl Future<Output = Result<Option<Committed>, StoreError>> + Send {
-        (**self).commit(expected_revision, changes, meta)
-    }
-}
+    ) -> Result<Option<Committed>, StoreError>;
+});
 
 /// v5 attendance reads: one member's recorded attendance.
 pub trait AttendanceHistory {
@@ -181,39 +169,6 @@ pub trait AttendanceHistory {
     ) -> impl Future<Output = Result<Vec<PastRun>, StoreError>> + Send;
 }
 
-impl<T: AttendanceHistory + Sync> AttendanceHistory for &T {
-    fn member_history(
-        &self,
-        member: &str,
-        per_timing: usize,
-    ) -> impl Future<Output = Result<Vec<PastRun>, StoreError>> + Send {
-        (**self).member_history(member, per_timing)
-    }
-}
-
-/// A shared store (several services over one store) is a store.
-impl<T: ScheduleStore + Sync> ScheduleStore for &T {
-    fn load(
-        &self,
-        scope: &Scope,
-    ) -> impl Future<Output = Result<ScheduleSnapshot, StoreError>> + Send {
-        (**self).load(scope)
-    }
-
-    fn recorded_request(
-        &self,
-        actor: &Actor,
-        request_id: &str,
-    ) -> impl Future<Output = Result<Option<RecordedRequest>, StoreError>> + Send {
-        (**self).recorded_request(actor, request_id)
-    }
-
-    fn commit(
-        &self,
-        expected_revision: u64,
-        changes: ChangeSet,
-        meta: ChangeMeta,
-    ) -> impl Future<Output = Result<Option<Committed>, StoreError>> + Send {
-        (**self).commit(expected_revision, changes, meta)
-    }
-}
+forward_store!(AttendanceHistory for [ref] {
+    fn member_history(&self, member: &str, per_timing: usize) -> Result<Vec<PastRun>, StoreError>;
+});
