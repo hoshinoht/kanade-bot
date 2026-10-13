@@ -27,7 +27,7 @@ use super::{
 use crate::{
     api::{
         admin::{
-            context::{context, run_ends},
+            context::{context, run_ends, weeks},
             write::{Refusal, bad_body, load_run, state},
         },
         auth::AdminSession,
@@ -42,7 +42,6 @@ use crate::{
         },
         members::Roster as Members,
         schedule::{FixedRun, RUN_ENDED, Run},
-        scheduler::Scope,
     },
 };
 
@@ -85,11 +84,7 @@ impl Week {
         roster: &dyn CharacterRoster,
         run: &Run,
     ) -> Result<Self, Refusal> {
-        let snapshot = state
-            .store
-            .snapshot(Scope::Weeks(vec![run.week_start]))
-            .await
-            .map_err(Refusal::unavailable)?;
+        let snapshot = weeks(state, vec![run.week_start]).await?;
         let mut runs = snapshot.runs;
         // The run as just read, whatever the week read saw.
         runs.retain(|other| other.id != run.id);

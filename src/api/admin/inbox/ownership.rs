@@ -16,7 +16,7 @@ use serde_json::json;
 
 use super::{
     super::{
-        context::{context, roster},
+        context::{context, roster, weeks},
         write::{Refusal, origin, state, write_context},
     },
     refusal,
@@ -28,7 +28,7 @@ use crate::{
         listeners::Site,
         ownership::{self, OwnerDesk},
     },
-    domain::{ids::short_id, ownership::OwnerRequestStatus, scheduler::Scope},
+    domain::{ids::short_id, ownership::OwnerRequestStatus},
 };
 
 type Reply = Result<Response, Refusal>;
@@ -44,11 +44,7 @@ pub async fn list(State(site): State<Arc<Site>>, _: AdminSession) -> Reply {
         .await
         .map_err(Refusal::unavailable)?;
     let profiles = state.store.members().await.map_err(Refusal::unavailable)?;
-    let snapshot = state
-        .store
-        .snapshot(Scope::Weeks(Vec::new()))
-        .await
-        .map_err(Refusal::unavailable)?;
+    let snapshot = weeks(state, Vec::new()).await?;
     let ctx = context(&site, state, roster(&profiles), now);
     // The store lists them oldest first.
     let items: Vec<OwnerRequestDto> = requests

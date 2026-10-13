@@ -21,7 +21,7 @@ use super::{bad_body, origin, refusal::Refusal, state};
 use crate::{
     api::{
         admin::{
-            context::frames,
+            context::{frames, weeks},
             replay::{Keyed, mismatch},
         },
         auth::AdminSession,
@@ -32,7 +32,7 @@ use crate::{
     },
     domain::{
         members::{MemberProfile, PingLevel, PortalEdit},
-        scheduler::{Scope, StoreError},
+        scheduler::StoreError,
     },
     infrastructure::store::replays::{PortalRecord, PortalWrite, ReplayScope},
 };
@@ -41,11 +41,7 @@ type Reply = Result<Response, Refusal>;
 
 async fn reply(state: &ApiState, profile: &MemberProfile) -> Reply {
     let [this, _] = frames(state, state.now()).map_err(Refusal::from)?;
-    let snapshot = state
-        .store
-        .snapshot(Scope::Weeks(vec![this.start]))
-        .await
-        .map_err(Refusal::unavailable)?;
+    let snapshot = weeks(state, vec![this.start]).await?;
     let personas = state.profile_options();
     Ok(Json(dto::members::row(
         profile,

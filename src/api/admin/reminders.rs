@@ -13,7 +13,7 @@ use axum::{
     routing::get,
 };
 
-use super::context::{context, frames, roster, state, unavailable};
+use super::context::{context, frames, roster, state, unavailable, weeks};
 use crate::{
     api::{
         auth::AdminSession,
@@ -32,7 +32,7 @@ use crate::{
         cards::{Card, CardContext},
         preview::{posted, record_key, reminder_card, reminder_intent},
     },
-    domain::{notify::DeliverySettings, scheduler::Scope, settings::RuntimeSettings},
+    domain::{notify::DeliverySettings, settings::RuntimeSettings},
 };
 
 pub fn routes() -> Router<Arc<Site>> {
@@ -50,11 +50,7 @@ async fn preview(
     let state = state(&site)?;
     let now = state.now();
     let [this, next] = frames(state, now)?;
-    let snapshot = state
-        .store
-        .snapshot(Scope::Weeks(vec![this.start, next.start]))
-        .await
-        .map_err(unavailable)?;
+    let snapshot = weeks(state, vec![this.start, next.start]).await?;
     let profiles = state.store.members().await.map_err(unavailable)?;
     let ctx = context(&site, state, roster(&profiles), now);
     let (reminder, run, kind, row_state) = classified(&ctx, &snapshot)

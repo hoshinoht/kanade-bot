@@ -20,7 +20,7 @@ use super::{
 };
 use crate::{
     api::{
-        admin::context::{context, frames, roster},
+        admin::context::{context, frames, roster, weeks},
         auth::AdminSession,
         dto::{self, Art},
         error::ApiError,
@@ -35,7 +35,7 @@ use crate::{
             AmendedRunChoice, FixedEdit, FixedEditChoices, FixedEditRequest, NewFixedRun,
             ScheduleError, validate_channel, validate_participants,
         },
-        scheduler::{SchedulerError, Scope},
+        scheduler::SchedulerError,
     },
 };
 
@@ -146,11 +146,7 @@ async fn row(
 ) -> Result<Response, Refusal> {
     let now = state.now();
     let [this, next] = frames(state, now).map_err(Refusal::from)?;
-    let snapshot = state
-        .store
-        .snapshot(Scope::Weeks(vec![this.start, next.start]))
-        .await
-        .map_err(Refusal::unavailable)?;
+    let snapshot = weeks(state, vec![this.start, next.start]).await?;
     let ctx = context(site, state, roster(profiles), now);
     dto::fixed::rows(&ctx, &snapshot, [this.start, next.start])
         .into_iter()
@@ -336,11 +332,7 @@ pub async fn update(
     // The week version the screen loaded: without it a stale full-body edit
     // would silently revert fields someone else changed (user decision).
     let version = version.expect("fresh request checked above");
-    let snapshot = state
-        .store
-        .snapshot(Scope::Weeks(Vec::new()))
-        .await
-        .map_err(Refusal::unavailable)?;
+    let snapshot = weeks(state, Vec::new()).await?;
     let Some(current) = snapshot
         .fixed_runs
         .iter()
@@ -502,11 +494,8 @@ pub async fn retire(
         };
     }
     let (ctx, _) = write_context(state).await?;
-    let exists = state
-        .store
-        .snapshot(Scope::Weeks(Vec::new()))
-        .await
-        .map_err(Refusal::unavailable)?
+    let exists = weeks(state, Vec::new())
+        .await?
         .fixed_runs
         .iter()
         .any(|fixed| fixed.id == fixed_id);

@@ -11,11 +11,8 @@ use axum::{
     routing::get,
 };
 
-use super::context::{context, frames, roster, state, unavailable};
-use crate::{
-    api::{dto, error::ApiError, listeners::Site},
-    domain::scheduler::Scope,
-};
+use super::context::{context, frames, roster, state, weeks};
+use crate::api::{dto, error::ApiError, listeners::Site};
 
 pub fn routes() -> Router<Arc<Site>> {
     Router::new().route("/api/admin/auth/tonight", get(tonight))
@@ -26,11 +23,7 @@ async fn tonight(State(site): State<Arc<Site>>) -> Result<Response, ApiError> {
     let now = state.now();
     // Both weeks: a reset later today puts tonight's run in the next one.
     let [this, next] = frames(state, now)?;
-    let snapshot = state
-        .store
-        .snapshot(Scope::Weeks(vec![this.start, next.start]))
-        .await
-        .map_err(unavailable)?;
+    let snapshot = weeks(state, vec![this.start, next.start]).await?;
     let ctx = context(&site, state, roster(&[]), now);
     Ok(Json(dto::week::tonight(&ctx, &snapshot)).into_response())
 }

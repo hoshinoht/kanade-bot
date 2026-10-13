@@ -26,7 +26,10 @@ use super::{
 };
 use crate::{
     api::{
-        admin::write::{Refusal, bad_body, state},
+        admin::{
+            context::weeks,
+            write::{Refusal, bad_body, state},
+        },
         auth::AdminSession,
         dto::characters::{TimingCharacters, slot},
         error::ApiError,
@@ -38,7 +41,6 @@ use crate::{
             Character, PartySlot, Pick, PickScope, StoredPicks, pick_version, timing_slots,
         },
         schedule::FixedRun,
-        scheduler::Scope,
     },
 };
 
@@ -87,12 +89,7 @@ impl Timing {
         fixed_id: Option<&str>,
         party: Option<&[String]>,
     ) -> Result<Self, Refusal> {
-        let timings = state
-            .store
-            .snapshot(Scope::Weeks(Vec::new()))
-            .await
-            .map_err(Refusal::unavailable)?
-            .fixed_runs;
+        let timings = weeks(state, Vec::new()).await?.fixed_runs;
         let fixed = match fixed_id {
             Some(id) => Some(
                 timings
