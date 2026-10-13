@@ -5,7 +5,7 @@
 
 use chrono::{DateTime, TimeDelta, TimeZone, Utc};
 
-use crate::domain::scheduler::StoreError;
+use super::fixtures::refused_for;
 use crate::infrastructure::store::web_sessions::{
     LoginMethod, SessionOrigin, WebSession, WebSessionStore,
 };
@@ -57,13 +57,7 @@ async fn sessions_round_trip_and_rotate<S: WebSessionStore>(store: S) {
         Some(first.clone()),
         "round trip"
     );
-    assert!(
-        matches!(
-            store.put_session(&first, None).await,
-            Err(StoreError::Constraint(_))
-        ),
-        "duplicate id hash"
-    );
+    refused_for("duplicate id hash", store.put_session(&first, None).await);
 
     let rotated = session('b', LoginMethod::Discord, "100");
     store
@@ -282,12 +276,9 @@ async fn replace_never_crosses_origins<S: WebSessionStore>(store: S) {
 
     let mut colliding = session('a', LoginMethod::Discord, "100");
     colliding.origin = SessionOrigin::Public;
-    assert!(
-        matches!(
-            store.put_session(&colliding, Some(&admin.id_hash)).await,
-            Err(StoreError::Constraint(_))
-        ),
-        "replacing another origin's id with itself is still a duplicate"
+    refused_for(
+        "replacing another origin's id with itself is still a duplicate",
+        store.put_session(&colliding, Some(&admin.id_hash)).await,
     );
     assert_eq!(
         store.load_session(&admin.id_hash).await.expect("load"),
@@ -308,12 +299,9 @@ async fn rotation_keeps_the_old_id_for_its_grace<S: WebSessionStore>(store: S) {
     new.client_tag = Some(hash('f'));
     new.created_at = at(1);
 
-    assert!(
-        matches!(
-            store.rotate_session(&old, &old.id_hash, at(10)).await,
-            Err(StoreError::Constraint(_))
-        ),
-        "the new id must be fresh"
+    refused_for(
+        "the new id must be fresh",
+        store.rotate_session(&old, &old.id_hash, at(10)).await,
     );
     assert_eq!(
         store.load_session(&old.id_hash).await.expect("load"),
@@ -515,13 +503,7 @@ async fn malformed_rows_are_refused<S: WebSessionStore>(store: S) {
         ("empty subject", empty_subject),
         ("long display", long_display),
     ] {
-        assert!(
-            matches!(
-                store.put_session(&session, None).await,
-                Err(StoreError::Constraint(_))
-            ),
-            "{case}"
-        );
+        refused_for(case, store.put_session(&session, None).await);
     }
 }
 
@@ -610,25 +592,19 @@ async fn capped_put_holds_the_cap_per_identity<S: WebSessionStore>(store: S) {
     );
     assert_eq!(live(&store).await, [hash('9'), hash('a'), hash('b')]);
 
-    assert!(
-        matches!(
-            store
-                .put_capped_session(&capped('b', 8), None, 3, at(8), at(-1))
-                .await,
-            Err(StoreError::Constraint(_))
-        ),
-        "duplicate id hash"
+    refused_for(
+        "duplicate id hash",
+        store
+            .put_capped_session(&capped('b', 8), None, 3, at(8), at(-1))
+            .await,
     );
     let mut superseded = capped('c', 8);
     superseded.superseded_until = Some(at(10));
-    assert!(
-        matches!(
-            store
-                .put_capped_session(&superseded, None, 3, at(8), at(-1))
-                .await,
-            Err(StoreError::Constraint(_))
-        ),
-        "starts superseded"
+    refused_for(
+        "starts superseded",
+        store
+            .put_capped_session(&superseded, None, 3, at(8), at(-1))
+            .await,
     );
     assert_eq!(
         live(&store).await,

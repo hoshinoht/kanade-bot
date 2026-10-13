@@ -4,23 +4,22 @@
 //! Failures panic with the check name.
 
 use std::collections::BTreeSet;
-use std::sync::{Arc, Mutex};
 
-use chrono::{DateTime, NaiveTime, TimeZone, Utc, Weekday};
+use chrono::{DateTime, Utc, Weekday};
 
+use super::fixtures::{self, Ids, Stopped, admin, member, policy_in, utc2026};
 use crate::domain::attendance::{AttendanceDefault, AttendancePolicy, AttendanceRefusal, Patterns};
 use crate::domain::history::{
     ATTENDANCE_DEFAULT_FIELD, Actor, BlameIndex, BlameTarget, ChangeHistory, Expect, Origin,
     Precondition, RowValue, STATUS_PIN_FIELD, Surface, attended_field, blame, standing_field,
 };
-use crate::domain::ids::IdGenerator;
 use crate::domain::members::{Member, Roster};
 use crate::domain::schedule::{
-    EMOJI_NO, FixedEdit, FixedRun, NewFixedRun, ReminderPolicy, RsvpSource, RsvpState, Run,
-    RunStatus, ScheduleError, SchedulePolicy, StatusChange,
+    EMOJI_NO, FixedEdit, FixedRun, RsvpSource, RsvpState, Run, RunStatus, ScheduleError,
+    SchedulePolicy, StatusChange,
 };
 use crate::domain::scheduler::{
-    AttendanceHistory, Clock, ScheduleStore, SchedulerError, SchedulerService, Scope,
+    AttendanceHistory, ScheduleStore, SchedulerError, SchedulerService, Scope,
 };
 
 /// Run every check, each against a fresh store from `make`.
@@ -38,51 +37,10 @@ pub async fn run_suite<S: ScheduleStore + ChangeHistory + BlameIndex + Attendanc
     status_pins_are_recorded_blamed_and_guarded(make().await).await;
 }
 
-#[derive(Clone, Default)]
-struct Ids(Arc<Mutex<u64>>);
-
-impl IdGenerator for Ids {
-    fn new_id(&mut self) -> String {
-        let mut next = self
-            .0
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        *next += 1;
-        format!("id-{next:04}")
-    }
-}
-
-#[derive(Clone, Copy)]
-struct Now;
-
-impl Clock for Now {
-    fn now(&self) -> DateTime<Utc> {
-        Utc.with_ymd_and_hms(2026, 8, 27, 1, 0, 0)
-            .single()
-            .expect("valid instant")
-    }
-}
-
-type Service<S> = SchedulerService<S, Ids, Now>;
+type Service<S> = SchedulerService<S, Ids, Stopped>;
 
 fn policy() -> SchedulePolicy {
-    SchedulePolicy::new(
-        ReminderPolicy {
-            zone: chrono_tz::UTC,
-            ping_time: NaiveTime::from_hms_opt(9, 0, 0).expect("valid time"),
-            countdowns: vec![60],
-        },
-        Weekday::Thu,
-        NaiveTime::MIN,
-    )
-}
-
-fn admin() -> Origin {
-    Origin::new(Actor::admin("root"), Surface::AdminPortal)
-}
-
-fn member(id: &str) -> Origin {
-    Origin::new(Actor::member(id), Surface::PublicPortal)
+    policy_in(chrono_tz::UTC)
 }
 
 fn roster() -> Roster {
@@ -97,21 +55,17 @@ fn roster() -> Roster {
     roster
 }
 
+/// Thursday 27 Aug 01:00, the service clock.
+fn now() -> DateTime<Utc> {
+    utc2026(8, 27, 1, 0)
+}
+
 /// A Saturday timing with party 1 and 2, materialised.
 async fn fixture<S: ScheduleStore>(store: S) -> (Service<S>, String) {
-    let mut service = SchedulerService::new(store, Ids::default(), Now);
+    let mut service = SchedulerService::new(store, Ids::default(), Stopped(now()));
     let fixed = service
         .as_origin(admin())
-        .add_fixed_run(NewFixedRun {
-            owner_pinned: false,
-            owner_id: "1".into(),
-            channel_id: Some("900".into()),
-            bosses: vec!["HFA".into()],
-            weekday: Weekday::Sat,
-            time: NaiveTime::from_hms_opt(20, 0, 0).expect("valid time"),
-            participants: vec!["1".into(), "2".into()],
-            note: None,
-        })
+        .add_fixed_run(fixtures::timing(Weekday::Sat))
         .await
         .expect("timing");
     service
@@ -888,7 +842,7 @@ async fn status_pins_are_recorded_blamed_and_guarded<
     let row = runs(&service).await[0].clone();
     assert_eq!(
         row.status_pin.map(|pin| (pin.status, pin.at)),
-        Some((RunStatus::Confirmed, Now.now())),
+        Some((RunStatus::Confirmed, now())),
         "pin: stored"
     );
     assert_eq!(

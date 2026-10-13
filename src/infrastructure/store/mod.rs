@@ -32,6 +32,8 @@ pub mod decline_conformance;
 #[cfg(any(test, feature = "test-support"))]
 pub mod draft_conformance;
 #[cfg(any(test, feature = "test-support"))]
+mod fixtures;
+#[cfg(any(test, feature = "test-support"))]
 pub mod hints_conformance;
 #[cfg(any(test, feature = "test-support"))]
 pub mod history_conformance;

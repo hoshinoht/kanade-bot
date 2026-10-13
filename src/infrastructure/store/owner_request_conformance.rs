@@ -3,10 +3,10 @@
 
 use chrono::{DateTime, TimeZone, Utc};
 
+use super::fixtures::refused_for;
 use crate::domain::ownership::{
     OWNER_REQUEST_TTL, OwnerRequest, OwnerRequestStatus, OwnerRequestStore,
 };
-use crate::domain::scheduler::StoreError;
 
 pub async fn run_suite<S: OwnerRequestStore>(make: impl AsyncFn() -> S) {
     requests_round_trip_and_list_open_oldest_first(make().await).await;
@@ -58,14 +58,11 @@ async fn one_open_request_per_member_and_timing<S: OwnerRequestStore>(store: S) 
         .create_owner_request(request("a", "f-1", "11", 1))
         .await
         .unwrap();
-    assert!(
-        matches!(
-            store
-                .create_owner_request(request("b", "f-1", "11", 2))
-                .await,
-            Err(StoreError::Constraint(_))
-        ),
-        "owner requests: a second open one by the same member is refused"
+    refused_for(
+        "owner requests: a second open one by the same member is refused",
+        store
+            .create_owner_request(request("b", "f-1", "11", 2))
+            .await,
     );
     // Another member, or the same member once theirs closed, may ask.
     store

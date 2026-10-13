@@ -4,22 +4,21 @@
 //! 29 March 2026. Failures panic with the check name.
 
 use std::collections::BTreeSet;
-use std::sync::{Arc, Mutex};
 
-use chrono::{DateTime, NaiveTime, TimeZone, Utc, Weekday};
+use chrono::{DateTime, NaiveTime, Utc, Weekday};
 
+use super::fixtures::{Ids, Stopped, admin, delivery, policy_in, timing, utc2026};
 use crate::domain::history::{
     Actor, BlameIndex, BlameTarget, ChangeHistory, ChangeRef, EDIT_OVERRIDE, Expect,
     HistoryRefusal, Origin, PickMode, PickRefusal, PickStep, RevertMode, Surface, Via, blame,
 };
-use crate::domain::ids::IdGenerator;
 use crate::domain::members::{Member, Roster};
 use crate::domain::notify::DeliveryJournal;
 use crate::domain::schedule::{
-    EMOJI_NO, EMOJI_YES, NewFixedRun, NewRun, ReminderPolicy, RsvpSource, RsvpState, RunSource,
-    RunStatus, SchedulePolicy, ScheduleSnapshot, StatusChange,
+    EMOJI_NO, EMOJI_YES, NewFixedRun, NewRun, RsvpSource, RsvpState, RunSource, RunStatus,
+    SchedulePolicy, ScheduleSnapshot, StatusChange,
 };
-use crate::domain::scheduler::{Clock, PickError, ScheduleStore, SchedulerService, Scope};
+use crate::domain::scheduler::{PickError, ScheduleStore, SchedulerService, Scope};
 
 /// Run every check, each against a fresh store from `make`.
 pub async fn run_suite<S: ScheduleStore + ChangeHistory + BlameIndex + DeliveryJournal + Sync>(
@@ -43,51 +42,19 @@ pub async fn run_suite<S: ScheduleStore + ChangeHistory + BlameIndex + DeliveryJ
     an_emptied_trimmed_delta_is_no_effect_in_both_modes(make().await).await;
 }
 
-#[derive(Clone, Default)]
-struct Ids(Arc<Mutex<u64>>);
-
-impl IdGenerator for Ids {
-    fn new_id(&mut self) -> String {
-        let mut next = self
-            .0
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        *next += 1;
-        format!("id-{next:04}")
-    }
-}
-
-#[derive(Clone, Copy)]
-struct Now;
-
-impl Clock for Now {
-    fn now(&self) -> DateTime<Utc> {
-        utc(3, 19, 1, 0)
-    }
-}
-
-type Service<S> = SchedulerService<S, Ids, Now>;
+type Service<S> = SchedulerService<S, Ids, Stopped>;
 
 fn utc(month: u32, day: u32, hour: u32, minute: u32) -> DateTime<Utc> {
-    Utc.with_ymd_and_hms(2026, month, day, hour, minute, 0)
-        .single()
-        .expect("valid instant")
+    utc2026(month, day, hour, minute)
+}
+
+/// Thursday 19 Mar 01:00, early in boss week 0.
+fn now() -> Stopped {
+    Stopped(utc(3, 19, 1, 0))
 }
 
 fn policy() -> SchedulePolicy {
-    SchedulePolicy::new(
-        ReminderPolicy {
-            zone: chrono_tz::Europe::London,
-            ping_time: NaiveTime::from_hms_opt(9, 0, 0).expect("valid time"),
-            countdowns: vec![60],
-        },
-        Weekday::Thu,
-        NaiveTime::MIN,
-    )
-}
-
-fn admin() -> Origin {
-    Origin::new(Actor::admin("root"), Surface::AdminPortal)
+    policy_in(chrono_tz::Europe::London)
 }
 
 fn roster() -> Roster {
@@ -116,26 +83,14 @@ fn week(index: u32) -> DateTime<Utc> {
 /// A Saturday 20:00 London timing (party 1 and 2) materialised for weeks
 /// 0 to 2; returns the service, the timing and its runs by week.
 async fn fixture<S: ScheduleStore>(store: S) -> (Service<S>, String, [String; 3]) {
-    let mut service = SchedulerService::new(store, Ids::default(), Now);
+    let mut service = SchedulerService::new(store, Ids::default(), now());
     let fixed = service
         .as_origin(admin())
-        .add_fixed_run(NewFixedRun {
-            owner_pinned: false,
-            owner_id: "1".into(),
-            channel_id: Some("900".into()),
-            bosses: vec!["HFA".into()],
-            weekday: Weekday::Sat,
-            time: NaiveTime::from_hms_opt(20, 0, 0).expect("valid time"),
-            participants: vec!["1".into(), "2".into()],
-            note: None,
-        })
+        .add_fixed_run(timing(Weekday::Sat))
         .await
         .expect("timing");
     service
-        .as_origin(Origin::new(
-            Actor::system("delivery"),
-            Surface::DeliveryTick,
-        ))
+        .as_origin(delivery())
         .materialise_weeks(&policy())
         .await
         .expect("materialise");
@@ -1337,7 +1292,7 @@ async fn a_preview_reads_values_and_versions_consistently<
 ) {
     let (store, runs, picked) = conflicted(store).await;
     let racy = racing(&store, Race::BeforeVersions, &runs[1]);
-    let service = SchedulerService::new(racy, Ids::default(), Now);
+    let service = SchedulerService::new(racy, Ids::default(), now());
     let preview = service
         .preview_cherry_pick(picked.seq, week(1), &policy(), &roster())
         .await
@@ -1369,13 +1324,13 @@ async fn a_change_inside_the_forced_commit_is_stale<
     // A wrapper that has already fired: the preview sees no race.
     let calm = racing(&store, Race::BeforeVersions, &runs[1]);
     calm.fired.store(true, std::sync::atomic::Ordering::SeqCst);
-    let reviewed = SchedulerService::new(calm, Ids::default(), Now)
+    let reviewed = SchedulerService::new(calm, Ids::default(), now())
         .preview_cherry_pick(picked.seq, week(1), &policy(), &roster())
         .await
         .expect("stale commit: preview")
         .force;
     let racy = racing(&store, Race::BeforeCommit, &runs[1]);
-    let mut service = SchedulerService::new(racy, Ids::default(), Now);
+    let mut service = SchedulerService::new(racy, Ids::default(), now());
     let result = service
         .cherry_pick(
             "root",

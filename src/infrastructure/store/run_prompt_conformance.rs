@@ -4,8 +4,8 @@
 
 use chrono::{DateTime, TimeZone, Utc};
 
+use super::fixtures::{refused, refused_for};
 use crate::domain::completion::{PromptClose, PromptOutcome, RunPrompt, RunPromptStore};
-use crate::domain::scheduler::StoreError;
 
 pub async fn run_suite<S: RunPromptStore>(make: impl AsyncFn() -> S) {
     asks_round_trip_and_list_open_by_due_time(make().await).await;
@@ -52,29 +52,23 @@ async fn asks_round_trip_and_list_open_by_due_time<S: RunPromptStore>(store: S) 
         ["r-2:0", "r-1:0"],
         "run prompts: open asks earliest due first"
     );
-    assert!(
-        matches!(
-            store
-                .create_run_prompt(RunPrompt {
-                    cutoff_at: at(9),
-                    ..ask("r-3", 0, 9)
-                })
-                .await,
-            Err(StoreError::Constraint(_))
-        ),
-        "run prompts: the cutoff follows the due time"
+    refused_for(
+        "run prompts: the cutoff follows the due time",
+        store
+            .create_run_prompt(RunPrompt {
+                cutoff_at: at(9),
+                ..ask("r-3", 0, 9)
+            })
+            .await,
     );
 }
 
 async fn one_open_ask_per_run<S: RunPromptStore>(store: S) {
     store.create_run_prompt(ask("r-1", 0, 9)).await.unwrap();
     for duplicate in [ask("r-1", 0, 10), ask("r-1", 1, 10)] {
-        assert!(
-            matches!(
-                store.create_run_prompt(duplicate).await,
-                Err(StoreError::Constraint(_))
-            ),
-            "run prompts: one open ask per run and one row per ask"
+        refused_for(
+            "run prompts: one open ask per run and one row per ask",
+            store.create_run_prompt(duplicate).await,
         );
     }
     assert_eq!(store.open_run_prompts().await.unwrap().len(), 1);
@@ -82,14 +76,11 @@ async fn one_open_ask_per_run<S: RunPromptStore>(store: S) {
 
 async fn an_ask_closes_once_with_its_next_ask<S: RunPromptStore>(store: S) {
     store.create_run_prompt(ask("r-1", 0, 9)).await.unwrap();
-    assert!(
-        matches!(
-            store
-                .close_run_prompt("r-1".into(), 0, close(PromptOutcome::Done, None, None))
-                .await,
-            Err(StoreError::Constraint(_))
-        ),
-        "run prompts: a press names its presser"
+    refused_for(
+        "run prompts: a press names its presser",
+        store
+            .close_run_prompt("r-1".into(), 0, close(PromptOutcome::Done, None, None))
+            .await,
     );
     let not_yet = close(PromptOutcome::NotYet, Some("1001"), Some(ask("r-1", 1, 13)));
     assert!(
@@ -129,16 +120,10 @@ async fn an_ask_closes_once_with_its_next_ask<S: RunPromptStore>(store: S) {
 async fn a_refused_next_ask_leaves_the_close_unapplied<S: RunPromptStore>(store: S) {
     store.create_run_prompt(ask("r-1", 0, 9)).await.unwrap();
     // Ask 0 again: that row exists, so the whole write is refused.
-    let refused = close(PromptOutcome::Moved, None, Some(ask("r-1", 0, 14)));
-    assert!(matches!(
-        store.close_run_prompt("r-1".into(), 0, refused).await,
-        Err(StoreError::Constraint(_))
-    ));
+    let repeated = close(PromptOutcome::Moved, None, Some(ask("r-1", 0, 14)));
+    refused(store.close_run_prompt("r-1".into(), 0, repeated).await);
     let other_run = close(PromptOutcome::Moved, None, Some(ask("r-2", 1, 14)));
-    assert!(matches!(
-        store.close_run_prompt("r-1".into(), 0, other_run).await,
-        Err(StoreError::Constraint(_))
-    ));
+    refused(store.close_run_prompt("r-1".into(), 0, other_run).await);
     assert!(
         store
             .run_prompt("r-1".into(), 0)

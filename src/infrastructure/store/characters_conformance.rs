@@ -8,13 +8,13 @@
 
 use chrono::{DateTime, TimeZone, Timelike, Utc};
 
+use super::fixtures::refused;
 use crate::domain::characters::{
     CHARACTERS_SECTION, Character, CharacterChange, CharacterEdit, CharacterRecord, CharacterRole,
     CharacterStore, CharacterWrite,
 };
 use crate::domain::history::{Actor, Surface};
 use crate::domain::members::MemberStore;
-use crate::domain::scheduler::StoreError;
 use crate::domain::settings::{SettingsChange, SettingsChangeQuery, SettingsStore};
 use crate::infrastructure::store::members_conformance::gateway;
 use crate::infrastructure::store::replays::{KeyedWrite, ReplayScope, ReplayStore, StoredReplay};
@@ -393,12 +393,11 @@ async fn edits_need_the_current_version<S: CharacterStore + SettingsStore>(store
             ..edited.clone()
         },
     ] {
-        assert!(matches!(
+        refused(
             store
                 .apply_character(CharacterChange::Update { version: 2, after }, record(6))
                 .await,
-            Err(StoreError::Constraint(_))
-        ));
+        );
     }
     assert_eq!(stored(&store, "c-1").await, edited);
 }
@@ -555,19 +554,17 @@ async fn malformed_rows_are_refused<S: CharacterStore + SettingsStore>(store: S)
             ..good.clone()
         },
     ] {
-        assert!(matches!(
+        refused(
             store
                 .apply_character(CharacterChange::Create(bad), record(1))
                 .await,
-            Err(StoreError::Constraint(_))
-        ));
+        );
     }
     create(&store, &good).await;
-    assert!(matches!(
+    refused(
         store
             .apply_character(CharacterChange::Create(good), record(2))
             .await,
-        Err(StoreError::Constraint(_))
-    ));
+    );
     assert_eq!(history(&store).await.len(), 1);
 }

@@ -4,9 +4,9 @@
 
 use chrono::{DateTime, NaiveTime, Utc, Weekday};
 
+use super::fixtures::refused_for;
 use crate::domain::attendance::AttendanceMode;
 use crate::domain::history::{Actor, Surface};
-use crate::domain::scheduler::StoreError;
 use crate::domain::settings::{
     IdList, MessageStyle, Reasoning, RuntimeSettings, Section, SelfServiceMode, SettingsChange,
     SettingsChangeQuery, SettingsError, SettingsStore, diff_rows, keys, load_settings,
@@ -322,10 +322,7 @@ async fn refused_writes_store_nothing<S: SettingsStore>(store: S) {
             ("last_digest_week", "2026-09-24T00:00:00+00:00"),
         ]))
         .await;
-    assert!(
-        matches!(outside, Err(StoreError::Constraint(_))),
-        "{outside:?}"
-    );
+    refused_for("a key outside the allowlist", outside);
 
     let mut chatbot = RuntimeSettings::default().chatbot;
     chatbot.enabled = true;
@@ -484,10 +481,7 @@ async fn refused_recorded_saves_record_nothing<S: SettingsStore>(store: S) {
             ),
         )
         .await;
-    assert!(
-        matches!(outside, Err(StoreError::Constraint(_))),
-        "{outside:?}"
-    );
+    refused_for("a key outside the allowlist, recorded", outside);
     let empty = store
         .put_settings_rows_recorded(
             raw(&[(keys::QUIET_MODE, "1")]),
@@ -499,7 +493,7 @@ async fn refused_recorded_saves_record_nothing<S: SettingsStore>(store: S) {
             ),
         )
         .await;
-    assert!(matches!(empty, Err(StoreError::Constraint(_))), "{empty:?}");
+    refused_for("an empty change", empty);
     assert!(store.settings_rows().await.expect("rows").is_empty());
     assert!(
         store

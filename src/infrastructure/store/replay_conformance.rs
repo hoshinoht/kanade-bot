@@ -5,9 +5,9 @@
 
 use chrono::{DateTime, TimeDelta, TimeZone, Utc};
 
+use super::fixtures::{refused, refused_for};
 use crate::domain::history::{Actor, Surface};
 use crate::domain::members::{MemberStore, PingLevel, PortalEdit};
-use crate::domain::scheduler::StoreError;
 use crate::domain::settings::{RowDiff, SettingsChange, SettingsChangeQuery, SettingsStore, keys};
 use crate::infrastructure::store::members_conformance::gateway;
 use crate::infrastructure::store::replays::{
@@ -74,10 +74,7 @@ async fn a_live_key_refuses_another_request<S: ReplayStore>(store: S) {
     let first = replay(ReplayScope::Config, "k", 'a', at(1));
     store.put_replay(first.clone()).await.expect("put");
     let other = replay(ReplayScope::Config, "k", 'b', at(2));
-    assert!(matches!(
-        store.put_replay(other).await,
-        Err(StoreError::Constraint(_))
-    ));
+    refused(store.put_replay(other).await);
     assert_eq!(
         store
             .replay(ReplayScope::Config, "admin:token", "k", at(2))
@@ -286,12 +283,9 @@ async fn portal_edits_record_and_replay_in_one_write<
         .apply_portal("100", taken.clone())
         .await
         .expect("bob's alias");
-    assert!(
-        matches!(
-            edit(taken, "k-taken", 'e').await,
-            Err(StoreError::Constraint(_))
-        ),
-        "{name}: the alias is held"
+    refused_for(
+        format!("{name}: the alias is held"),
+        edit(taken, "k-taken", 'e').await,
     );
     for key in ["k-404", "k-taken"] {
         assert!(
@@ -343,10 +337,7 @@ async fn settings_rows_record_and_replay_commit_together<S: ReplayStore + Settin
             replay(ReplayScope::Config, "taken", 'b', at(1)),
         ),
     ] {
-        assert!(matches!(
-            store.put_settings_rows_replayed(rows, change, replay).await,
-            Err(StoreError::Constraint(_))
-        ));
+        refused(store.put_settings_rows_replayed(rows, change, replay).await);
     }
     assert!(store.settings_rows().await.unwrap().is_empty());
     assert!(store.settings_changes(all()).await.unwrap().is_empty());
@@ -422,12 +413,9 @@ async fn malformed_replays_are_refused<S: ReplayStore>(store: S) {
     expiry.expires_at = expiry.created_at;
     bad.push(expiry);
     for replay in bad {
-        assert!(
-            matches!(
-                store.put_replay(replay.clone()).await,
-                Err(StoreError::Constraint(_))
-            ),
-            "replays: {replay:?} is refused"
+        refused_for(
+            format!("replays: {replay:?} is refused"),
+            store.put_replay(replay.clone()).await,
         );
     }
     assert_eq!(

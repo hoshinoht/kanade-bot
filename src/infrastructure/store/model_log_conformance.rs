@@ -6,6 +6,7 @@
 use chrono::{DateTime, TimeZone, Utc};
 use serde_json::json;
 
+use super::fixtures::{refused, refused_for};
 use crate::domain::model_log::{
     AllowanceOverride, ChatFilter, ChatInteraction, ChatOutcome, ChatRound, ExtractionFilter,
     ExtractionLog, ExtractionOutcome, ExtractionRefusal, LogFacets, MaskedName, MaskedRound,
@@ -13,7 +14,6 @@ use crate::domain::model_log::{
     RescanStatus, RewriteFilter, RewriteKind, RewriteLog, RewriteLogStore, RewriteStage,
     WatchedMessage,
 };
-use crate::domain::scheduler::StoreError;
 
 /// Run every check, each against a fresh store from `make`.
 pub async fn run_suite<S: ModelLogStore + RewriteLogStore + Sync>(make: impl AsyncFn() -> S) {
@@ -155,18 +155,12 @@ async fn reasoning_round_trips_with_independent_nulls_and_row_retention<S: Model
         let mut bad = log.clone();
         bad.id = "x-bad".into();
         bad.reasoning_content = Some(text.clone());
-        assert!(matches!(
-            store.record_extraction(bad).await,
-            Err(StoreError::Constraint(_))
-        ));
+        refused(store.record_extraction(bad).await);
         let mut bad = chat("c-bad", utc(20, 12, 0));
         let mut r = round("m", &[]);
         r.reasoning_content = Some(text);
         bad.rounds.push(r);
-        assert!(matches!(
-            store.record_chat(bad).await,
-            Err(StoreError::Constraint(_))
-        ));
+        refused(store.record_chat(bad).await);
     }
     for (index, tokens) in [i64::MAX as u64, 1_u64 << 63].into_iter().enumerate() {
         let mut count_log = log.clone();
@@ -270,31 +264,19 @@ async fn correlation_ids_round_trip_and_refuse_malformed_ids<S: ModelLogStore>(s
         let mut wrong = log.clone();
         wrong.id = "x-bad-request".into();
         wrong.request_ids = vec![bad.to_owned()];
-        assert!(matches!(
-            store.record_extraction(wrong).await,
-            Err(StoreError::Constraint(_))
-        ));
+        refused(store.record_extraction(wrong).await);
         let mut wrong = log.clone();
         wrong.id = "x-bad-session".into();
         wrong.session_id = Some(bad.to_owned());
-        assert!(matches!(
-            store.record_extraction(wrong).await,
-            Err(StoreError::Constraint(_))
-        ));
+        refused(store.record_extraction(wrong).await);
         let mut wrong = chat("c-bad-session", utc(20, 12, 0));
         wrong.session_id = Some(bad.to_owned());
-        assert!(matches!(
-            store.record_chat(wrong).await,
-            Err(StoreError::Constraint(_))
-        ));
+        refused(store.record_chat(wrong).await);
         let mut wrong = chat("c-bad-round", utc(20, 12, 0));
         let mut r = round("m", &[]);
         r.request_ids = vec![bad.to_owned()];
         wrong.rounds.push(r);
-        assert!(matches!(
-            store.record_chat(wrong).await,
-            Err(StoreError::Constraint(_))
-        ));
+        refused(store.record_chat(wrong).await);
     }
 }
 
@@ -613,21 +595,15 @@ async fn extraction_logs_round_trip_and_refuse_bad_rows<S: ModelLogStore>(store:
         Some(log.clone()),
         "extractions: round trip"
     );
-    assert!(
-        matches!(
-            store.record_extraction(log.clone()).await,
-            Err(StoreError::Constraint(_))
-        ),
-        "extractions: a duplicate id is refused"
+    refused_for(
+        "extractions: a duplicate id is refused",
+        store.record_extraction(log.clone()).await,
     );
     let mut bad = extraction("x-2", utc(20, 12, 0));
     bad.guardrail = json!(["not", "an", "object"]);
-    assert!(
-        matches!(
-            store.record_extraction(bad).await,
-            Err(StoreError::Constraint(_))
-        ),
-        "extractions: guardrail must be an object"
+    refused_for(
+        "extractions: guardrail must be an object",
+        store.record_extraction(bad).await,
     );
     assert_eq!(store.load_extraction("x-2").await.expect("load"), None);
     assert_eq!(store.load_extraction("absent").await.expect("load"), None);
@@ -845,28 +821,25 @@ async fn chat_logs_round_trip_with_rounds<S: ModelLogStore>(store: S) {
         Some(interaction.clone()),
         "chat: round trip keeps rounds in order"
     );
-    assert!(matches!(
-        store.record_chat(interaction.clone()).await,
-        Err(StoreError::Constraint(_))
-    ));
+    refused(store.record_chat(interaction.clone()).await);
     let mut bad = chat("c-2", utc(20, 12, 0));
     bad.rounds[0].tool_calls = json!({});
-    assert!(
-        matches!(store.record_chat(bad).await, Err(StoreError::Constraint(_))),
-        "chat: tool_calls must be an array"
+    refused_for(
+        "chat: tool_calls must be an array",
+        store.record_chat(bad).await,
     );
     assert_eq!(store.load_chat("c-2").await.expect("load"), None);
     let mut bad = chat("c-3", utc(20, 12, 0));
     bad.profile_source = Some("guessed".into());
-    assert!(
-        matches!(store.record_chat(bad).await, Err(StoreError::Constraint(_))),
-        "chat: profile_source is saved, role or default"
+    refused_for(
+        "chat: profile_source is saved, role or default",
+        store.record_chat(bad).await,
     );
     let mut bad = chat("c-4", utc(20, 12, 0));
     bad.rounds[0].route = Some("cloud".into());
-    assert!(
-        matches!(store.record_chat(bad).await, Err(StoreError::Constraint(_))),
-        "chat: a round's route is a known route"
+    refused_for(
+        "chat: a round's route is a known route",
+        store.record_chat(bad).await,
     );
 }
 
@@ -916,12 +889,9 @@ async fn token_usage_round_trips_and_pairs_are_whole<S: ModelLogStore>(store: S)
         let mut half = extraction(&format!("x-half-{n}"), utc(20, 13, 0));
         half.prompt_tokens = prompt;
         half.completion_tokens = completion;
-        assert!(
-            matches!(
-                store.record_extraction(half.clone()).await,
-                Err(StoreError::Constraint(_))
-            ),
-            "usage: a half extraction pair is refused"
+        refused_for(
+            "usage: a half extraction pair is refused",
+            store.record_extraction(half.clone()).await,
         );
         assert_eq!(store.load_extraction(&half.id).await.expect("load"), None);
     }
@@ -973,12 +943,9 @@ async fn token_usage_round_trips_and_pairs_are_whole<S: ModelLogStore>(store: S)
             completion_tokens: completion,
             ..round("kanata/chat", &[])
         });
-        assert!(
-            matches!(
-                store.record_chat(half.clone()).await,
-                Err(StoreError::Constraint(_))
-            ),
-            "usage: a half round pair is refused"
+        refused_for(
+            "usage: a half round pair is refused",
+            store.record_chat(half.clone()).await,
         );
         assert_eq!(store.load_chat(&half.id).await.expect("load"), None);
     }
@@ -1063,12 +1030,9 @@ async fn masked_chat_views_round_trip_and_prune<S: ModelLogStore>(store: S) {
     );
     let mut bad = masked();
     bad.rounds[0].request = json!({});
-    assert!(
-        matches!(
-            store.record_masked_chat(chat("c-bad", old), bad).await,
-            Err(StoreError::Constraint(_))
-        ),
-        "masked chat: the request must be an array"
+    refused_for(
+        "masked chat: the request must be an array",
+        store.record_masked_chat(chat("c-bad", old), bad).await,
     );
     assert_eq!(store.load_chat("c-bad").await.expect("load"), None);
     store.prune_model_logs(cutoff).await.expect("prune");
@@ -1311,10 +1275,7 @@ async fn rescan_jobs_stop_changing_once_final<S: ModelLogStore>(store: S) {
         .insert_rescan_job(rescan("r-2", utc(21, 9, 0)))
         .await
         .expect("insert");
-    assert!(matches!(
-        store.insert_rescan_job(rescan("r-1", utc(22, 9, 0))).await,
-        Err(StoreError::Constraint(_))
-    ));
+    refused(store.insert_rescan_job(rescan("r-1", utc(22, 9, 0))).await);
     let mut running = rescan("r-1", utc(20, 9, 0));
     running.status = RescanStatus::Running;
     running.started_at = Some(utc(20, 9, 1));
@@ -1369,10 +1330,7 @@ async fn allowance_overrides_replace_and_clear<S: ModelLogStore>(store: S) {
     );
     let mut zero = entry("3", 1);
     zero.window_ms = 0;
-    assert!(matches!(
-        store.set_allowance_override(zero).await,
-        Err(StoreError::Constraint(_))
-    ));
+    refused(store.set_allowance_override(zero).await);
     assert!(store.clear_allowance_override("1").await.expect("clear"));
     assert!(
         !store
@@ -1520,12 +1478,9 @@ async fn rewrite_logs_round_trip_and_refuse_bad_rows<S: RewriteLogStore>(store: 
             at,
         );
         spoil(&mut log);
-        assert!(
-            matches!(
-                store.record_rewrite(log).await,
-                Err(StoreError::Constraint(_))
-            ),
-            "rewrites: refuses {what}"
+        refused_for(
+            format!("rewrites: refuses {what}"),
+            store.record_rewrite(log).await,
         );
     }
     assert_eq!(store.rewrite_facets().await.expect("facets").total, 2);

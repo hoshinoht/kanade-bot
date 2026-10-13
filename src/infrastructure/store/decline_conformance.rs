@@ -2,6 +2,7 @@
 
 use chrono::{DateTime, TimeDelta, TimeZone, Utc};
 
+use super::fixtures::refused;
 use crate::domain::notify::{DECLINE_NOTICE_COOLDOWN, DeclineNotice, DeclineNoticeStore};
 use crate::domain::schedule::{
     Change, ChangeSet, Reminder, Rsvp, RsvpSource, RsvpState, Run, RunSource, RunStatus,
@@ -91,7 +92,7 @@ async fn create<S: DeclineNoticeStore>(store: &S) {
 async fn candidates_commit_atomically_and_replay_is_inert<S: ScheduleStore + DeclineNoticeStore>(
     store: &S,
 ) {
-    let refused = store
+    let refused_write = store
         .commit_with_decline_notices(
             0,
             ChangeSet {
@@ -109,10 +110,7 @@ async fn candidates_commit_atomically_and_replay_is_inert<S: ScheduleStore + Dec
             Vec::new(),
         )
         .await;
-    assert!(
-        matches!(refused, Err(StoreError::Constraint(_))),
-        "{refused:?}"
-    );
+    refused(refused_write);
     assert!(
         store
             .decline_notice("run-1", "member-1")

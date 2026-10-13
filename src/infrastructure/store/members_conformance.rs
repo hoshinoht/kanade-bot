@@ -1,10 +1,10 @@
 //! Member storage every store must keep: round trips, replace-in-place with
 //! the ping level and aliases, alias uniqueness and validity.
 
+use super::fixtures::{refused, refused_for};
 use crate::domain::members::{
     GatewayMember, Member, MemberProfile, MemberStore, PingLevel, PortalEdit,
 };
-use crate::domain::scheduler::StoreError;
 
 pub async fn run_suite<S: MemberStore>(make: impl AsyncFn() -> S) {
     members_round_trip_and_replace(make().await).await;
@@ -93,10 +93,7 @@ async fn gateway_and_portal_writes_own_their_fields<S: MemberStore>(store: S) {
             },
         )
         .await;
-    assert!(
-        matches!(taken, Err(StoreError::Constraint(_))),
-        "alias held by Alice"
-    );
+    refused_for("alias held by Alice", taken);
     let bob = store.load_member("100").await.expect("load").expect("row");
     assert_eq!(
         bob.member.ping_level,
@@ -221,7 +218,7 @@ async fn portal_alias_removal_releases_the_alias<S: MemberStore>(store: S) {
             },
         )
         .await;
-    assert!(matches!(taken, Err(StoreError::Constraint(_))));
+    refused(taken);
     let bob = store
         .apply_portal(
             "100",
@@ -305,10 +302,7 @@ async fn aliases_are_unique_and_one_word<S: MemberStore>(store: S) {
     ] {
         let mut bob = profile("100", "Bob");
         bob.aliases = aliases.into_iter().map(str::to_owned).collect();
-        assert!(
-            matches!(store.put_member(bob).await, Err(StoreError::Constraint(_))),
-            "{case}"
-        );
+        refused_for(case, store.put_member(bob).await);
         assert_eq!(
             store.load_member("100").await.expect("load"),
             None,
