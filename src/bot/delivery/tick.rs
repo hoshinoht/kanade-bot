@@ -39,7 +39,10 @@ use super::render::{render, unrendered};
 use super::run_prompts::RunPromptReport;
 use crate::bot::{
     gateway::{DeliveryEligibility, DeliveryOperation},
-    transport::{DiscordTransport, OutgoingMessage},
+    transport::{
+        ChannelId, DiscordTransport, MessageEdit, MessageId, Outcome, OutgoingMessage,
+        RejectionKind,
+    },
 };
 use crate::domain::completion::{RunEnds, RunEndsSource, RunPromptStore};
 use crate::domain::drafts::ProposalStore;
@@ -49,8 +52,8 @@ use crate::domain::history::{
 use crate::domain::members::Directory;
 use crate::domain::notify::{
     ChannelDirectory, DeliveryJournal, DeliverySettings, DigestAction, DigestPostInput,
-    DispatchInput, JournalError, Lease, NoticeOutbox, Queued, RecordReason, Recovery,
-    SendDisposition, WeekReset, plan_digest_post, plan_digest_tick, plan_dispatch,
+    DispatchInput, JournalError, Lease, NoticeOutbox, NotificationIntent, Queued, RecordReason,
+    Recovery, SendDisposition, WeekReset, plan_digest_post, plan_digest_tick, plan_dispatch,
 };
 use crate::domain::ownership::OwnerRequestStore;
 use crate::domain::schedule::SchedulePolicy;
@@ -445,6 +448,67 @@ where
             throttle: &self.throttle,
             lease,
         }
+    }
+
+    /// Post `message` once by its durable `source` key (ordinal 0) in a newly
+    /// admitted operation. `None` when not admitted or the operation did not
+    /// begin; otherwise the settled outcome with the operation still held, so
+    /// the caller records a bound post before releasing it.
+    pub(super) async fn post_source(
+        &self,
+        lease: &Lease,
+        intent: &NotificationIntent,
+        message: &OutgoingMessage,
+        source: &str,
+        now: DateTime<Utc>,
+    ) -> Result<Option<(DeliveryOperation, SendOutcome)>, DeliveryError> {
+        let Some(mut operation) = self.admit().await else {
+            return Ok(None);
+        };
+        let result = self
+            .executor(lease)
+            .execute_source_in_operation(&mut operation, intent, message, source, 0, now)
+            .await;
+        match result.transpose().map(settle) {
+            Some(Ok(outcome)) => Ok(Some((operation, outcome))),
+            None => {
+                operation.settle();
+                Ok(None)
+            }
+            Some(Err(error)) => {
+                operation.settle();
+                Err(error)
+            }
+        }
+    }
+
+    /// Edit a post in a newly admitted operation (`edit` is built once it
+    /// begins): `true` when Discord confirmed the edit or the post, or the
+    /// bot's access to it, is gone.
+    pub(super) async fn edit_or_gone(
+        &self,
+        channel: ChannelId,
+        message: MessageId,
+        edit: impl FnOnce() -> MessageEdit,
+    ) -> bool {
+        let Some(mut operation) = self.admit().await else {
+            return false;
+        };
+        if !operation.begin() {
+            return false;
+        }
+        let outcome = self.transport.edit_message(channel, message, &edit()).await;
+        operation.settle();
+        matches!(
+            outcome,
+            Outcome::Delivered(())
+                | Outcome::DefinitelyRejected(
+                    RejectionKind::UnknownMessage
+                        | RejectionKind::UnknownChannel
+                        | RejectionKind::MissingAccess
+                        | RejectionKind::MissingPermissions,
+                )
+        )
     }
 
     pub(super) async fn leased<R>(
