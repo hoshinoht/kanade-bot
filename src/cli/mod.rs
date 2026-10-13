@@ -134,6 +134,38 @@ fn usage() -> Error {
     ))
 }
 
+/// `--switch` and `--flag value` arguments in any order, each at most once
+/// and every value non-empty; anything else is the command's `usage`.
+fn options<'a, const S: usize, const V: usize>(
+    arguments: &'a [String],
+    switches: [&str; S],
+    valued: [&str; V],
+    usage: fn() -> Error,
+) -> Result<([bool; S], [Option<&'a str>; V]), Error> {
+    let (mut on, mut values) = ([false; S], [None; V]);
+    let mut rest = arguments;
+    while let Some((flag, tail)) = rest.split_first() {
+        rest = tail;
+        if let Some(slot) = switches.iter().position(|name| name == flag) {
+            if std::mem::replace(&mut on[slot], true) {
+                return Err(usage());
+            }
+        } else if let Some(slot) = valued.iter().position(|name| name == flag) {
+            let Some((value, tail)) = rest.split_first().filter(|(value, _)| !value.is_empty())
+            else {
+                return Err(usage());
+            };
+            rest = tail;
+            if values[slot].replace(value.as_str()).is_some() {
+                return Err(usage());
+            }
+        } else {
+            return Err(usage());
+        }
+    }
+    Ok((on, values))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

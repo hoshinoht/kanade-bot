@@ -35,19 +35,20 @@ fn usage() -> Error {
 pub fn parse(arguments: &[String]) -> Result<Args, Error> {
     match arguments.split_first() {
         Some((tool, rest)) if tool == "keygen" => {
-            let [out] = flags(rest, ["--out"])?;
+            let ([], [out]) = super::options(rest, [], ["--out"], usage)?;
             Ok(Args::Keygen {
                 out: required(out)?,
             })
         }
         Some((tool, rest)) if tool == "encrypt" => {
-            let [recipients] = flags(rest, ["--recipients"])?;
+            let ([], [recipients]) = super::options(rest, [], ["--recipients"], usage)?;
             Ok(Args::Encrypt {
                 recipients: recipients.map(PathBuf::from),
             })
         }
         Some((tool, rest)) if tool == "decrypt" => {
-            let [identity, input, output] = flags(rest, ["--identity", "--in", "--out"])?;
+            let ([], [identity, input, output]) =
+                super::options(rest, [], ["--identity", "--in", "--out"], usage)?;
             Ok(Args::Decrypt {
                 identity: required(identity)?,
                 input: required(input)?,
@@ -55,31 +56,6 @@ pub fn parse(arguments: &[String]) -> Result<Args, Error> {
             })
         }
         _ => snapshot(arguments),
-    }
-}
-
-/// `--flag value` pairs in any order, each at most once and non-empty.
-fn flags<'a, const N: usize>(
-    arguments: &'a [String],
-    names: [&str; N],
-) -> Result<[Option<&'a str>; N], Error> {
-    let mut values = [None; N];
-    let mut rest = arguments;
-    while let [flag, value, tail @ ..] = rest {
-        let slot = names
-            .iter()
-            .position(|name| name == flag)
-            .ok_or_else(usage)?;
-        if values[slot].is_some() || value.is_empty() {
-            return Err(usage());
-        }
-        values[slot] = Some(value.as_str());
-        rest = tail;
-    }
-    if rest.is_empty() {
-        Ok(values)
-    } else {
-        Err(usage())
     }
 }
 
