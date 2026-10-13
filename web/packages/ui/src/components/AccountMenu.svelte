@@ -9,6 +9,7 @@
   import { tick, type Snippet } from 'svelte';
   import Avatar from './Avatar.svelte';
   import Icon from './Icon.svelte';
+  import { focusMenuItem, menuButtonKey, menuKey } from './menu';
 
   let {
     who,
@@ -32,43 +33,16 @@
   let open = $state(false);
   let chip = $state<HTMLButtonElement>();
   let menu = $state<HTMLDivElement>();
-  const menuItems = () => [...(menu?.querySelectorAll<HTMLElement>('[role="menuitem"]') ?? [])];
 
   async function show(at: 'first' | 'last') {
     open = true;
     await tick();
-    const all = menuItems();
-    (at === 'first' ? all[0] : all[all.length - 1])?.focus();
+    focusMenuItem(menu, at);
   }
 
   function hide(refocus = true) {
     open = false;
     if (refocus) chip?.focus();
-  }
-
-  function onChipKey(event: KeyboardEvent) {
-    if (event.key === 'ArrowDown' || event.key === 'Enter' || event.key === ' ') {
-      event.preventDefault();
-      void show('first');
-    } else if (event.key === 'ArrowUp') {
-      event.preventDefault();
-      void show('last');
-    }
-  }
-
-  function onMenuKey(event: KeyboardEvent) {
-    const all = menuItems();
-    const at = all.indexOf(document.activeElement as HTMLElement);
-    const moves: Record<string, number> = { ArrowDown: at + 1, ArrowUp: at - 1, Home: 0, End: all.length - 1 };
-    if (event.key in moves) {
-      event.preventDefault();
-      all[(moves[event.key]! + all.length) % all.length]?.focus();
-    } else if (event.key === 'Escape') {
-      event.preventDefault();
-      hide();
-    } else if (event.key === 'Tab') {
-      hide(false);
-    }
   }
 
   // A click anywhere else closes it, as a menu does.
@@ -92,7 +66,7 @@
     aria-controls="{uid}-menu"
     aria-label="Account: {who}"
     onclick={() => (open ? hide() : void show('first'))}
-    onkeydown={onChipKey}
+    onkeydown={(event) => menuButtonKey(event, (at) => void show(at))}
     {...data}
   >
     <Avatar class="account__initial" src={avatar} name={who} />
@@ -100,7 +74,7 @@
     <Icon name="chevron-down" />
   </button>
   {#if open}
-    <div class="account__menu" id="{uid}-menu" role="menu" aria-label="Account" tabindex="-1" bind:this={menu} onkeydown={onMenuKey}>
+    <div class="account__menu" id="{uid}-menu" role="menu" aria-label="Account" tabindex="-1" bind:this={menu} onkeydown={(event) => menuKey(event, menu, hide)}>
       <p class="account__who">
         <strong>{who}</strong>{#if detail}<span>{detail}</span>{/if}
       </p>

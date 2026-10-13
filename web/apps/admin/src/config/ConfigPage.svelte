@@ -9,7 +9,7 @@
   import PageLine from '../shell/PageLine.svelte';
   import '@kanade/ui/styles/screens/settings.scss';
   import type { ConfigView, Role, RoleProfileWrite } from '@kanade/api-types';
-  import { COLORWAYS, currentColorway, Icon, LiveRegion, LoadError, LoadingState, RowContent, SINGLE_PANE_QUERY, ThemeTiles, Toaster } from '@kanade/ui';
+  import { COLORWAYS, currentColorway, Icon, LiveRegion, LoadError, LoadingState, RowContent, SINGLE_PANE_QUERY, ThemeTiles, Toaster, watchMedia } from '@kanade/ui';
   import { tick } from 'svelte';
   import { SvelteMap, SvelteSet } from 'svelte/reactivity';
   import { directory } from '../names/directory.svelte';
@@ -170,13 +170,7 @@
   let toc: HTMLDivElement | undefined = $state();
   // Same breakpoint as _settings.scss: a sideways strip on phones, a column otherwise.
   let narrow = $state(false);
-  $effect(() => {
-    const query = window.matchMedia(SINGLE_PANE_QUERY);
-    const update = () => (narrow = query.matches);
-    update();
-    query.addEventListener('change', update);
-    return () => query.removeEventListener('change', update);
-  });
+  $effect(() => watchMedia(SINGLE_PANE_QUERY, (matches) => (narrow = matches)));
   function reveal(strip: HTMLElement, tab: HTMLElement) {
     if (strip.scrollWidth <= strip.clientWidth) return;
     const start = tab.getBoundingClientRect().left - strip.getBoundingClientRect().left + strip.scrollLeft;

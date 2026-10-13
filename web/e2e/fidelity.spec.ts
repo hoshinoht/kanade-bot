@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import type { EstimateJob, EstimateStarted } from '@kanade/api-types';
 import type { Locator, Page } from '@playwright/test';
 import { boardExists, composite, diff, markdown, MOCKUPS, renderBoard, settle, skeleton } from './fidelity-kit';
-import { ADMIN, expect, PINNED_NOW, PUBLIC, test, choose, csrf, openList, setPortal, signInPublic } from './support';
+import { ADMIN, expect, PINNED_NOW, PUBLIC, test, choose, csrf, openList, setPortal, signInPublic, useLook } from './support';
 
 // Layout fidelity against the M3E boards: `bun run fidelity [pair ...] [--keep]`
 // (scripts/fidelity.ts builds with KANADE_FIDELITY=1 so the data-fid tags
@@ -621,41 +621,31 @@ const carlingSheet = async (page: Page) => {
   await sheet.evaluate((el) => Promise.all(el.getAnimations({ subtree: true }).map((a) => a.finished)));
   return sheet;
 };
+/** A laptop pair and its phone board (`phone-<name>`, `B_Phone…`), the same unless `phone` says otherwise. */
+const withPhone = (pair: Pair, phone: Partial<Pair> = {}): Pair[] => [pair, { ...pair, name: `phone-${pair.name}`, board: pair.board.replace(/^B_/, 'B_Phone'), ...phone }];
+const noDrafts = async (page: Page) => {
+  await expect(page.getByRole('heading', { name: 'No open drafts' })).toBeVisible();
+  await expect(page.locator('[data-fid="empty-recent-row"]').first()).toBeVisible();
+};
 const DRAFT_PAIRS: Pair[] = [
   { name: 'drafts', board: 'B_Drafts', path: '/drafts?item=d-weekend', omit: DRAFTS_OMIT, setup: moreOps('d-weekend', 3), ready: draftShown('Weekend reshuffle') },
   { name: 'drafts-conflict', board: 'B_DraftsConflict', path: '/drafts?item=d-carling', omit: DRAFTS_OMIT, setup: conflictLikeBoard, ready: draftShown('Carling retime') },
-  {
-    name: 'drafts-empty',
-    board: 'B_DraftsEmpty',
-    path: '/drafts',
-    omit: DRAFTS_OMIT,
-    setup: noOpenDrafts,
-    ready: async (page) => {
-      await expect(page.getByRole('heading', { name: 'No open drafts' })).toBeVisible();
-      await expect(page.locator('[data-fid="empty-recent-row"]').first()).toBeVisible();
-    },
-  },
-  { name: 'drafts-loading', board: 'B_DraftsLoading', path: '/drafts', omit: DRAFTS_OMIT, setup: holdDrafts, ready: (page) => expect(page.getByText('Loading drafts…')).toBeVisible() },
-  { name: 'drafts-error', board: 'B_DraftsError', path: '/drafts', omit: DRAFTS_OMIT, setup: failDrafts, prepare: errorBoard, ready: (page) => expect(page.getByRole('button', { name: 'Try again' })).toBeVisible() },
+  ...withPhone({ name: 'drafts-empty', board: 'B_DraftsEmpty', path: '/drafts', omit: DRAFTS_OMIT, setup: noOpenDrafts, ready: noDrafts }, { omit: PHONE_DRAFTS_OMIT }),
+  ...withPhone(
+    { name: 'drafts-loading', board: 'B_DraftsLoading', path: '/drafts', omit: DRAFTS_OMIT, setup: holdDrafts, ready: (page) => expect(page.getByText('Loading drafts…')).toBeVisible() },
+    { omit: PHONE_DRAFTS_OMIT },
+  ),
+  ...withPhone(
+    { name: 'drafts-error', board: 'B_DraftsError', path: '/drafts', omit: DRAFTS_OMIT, setup: failDrafts, prepare: errorBoard, ready: (page) => expect(page.getByRole('button', { name: 'Try again' })).toBeVisible() },
+    { omit: PHONE_DRAFTS_OMIT },
+  ),
   { name: 'phone-drafts', board: 'B_PhoneDrafts', path: '/drafts', omit: PHONE_DRAFTS_OMIT, setup: thirdDraft, ready: draftsList },
   { name: 'phone-draft-conflict', board: 'B_PhoneDraftConflict', path: '/drafts?item=d-carling', omit: PHONE_DRAFTS_OMIT, setup: conflictLikeBoard, ready: draftShown('Carling retime') },
-  {
-    name: 'phone-drafts-empty',
-    board: 'B_PhoneDraftsEmpty',
-    path: '/drafts',
-    omit: PHONE_DRAFTS_OMIT,
-    setup: noOpenDrafts,
-    ready: async (page) => {
-      await expect(page.getByRole('heading', { name: 'No open drafts' })).toBeVisible();
-      await expect(page.locator('[data-fid="empty-recent-row"]').first()).toBeVisible();
-    },
-  },
-  { name: 'phone-drafts-loading', board: 'B_PhoneDraftsLoading', path: '/drafts', omit: PHONE_DRAFTS_OMIT, setup: holdDrafts, ready: (page) => expect(page.getByText('Loading drafts…')).toBeVisible() },
-  { name: 'phone-drafts-error', board: 'B_PhoneDraftsError', path: '/drafts', omit: PHONE_DRAFTS_OMIT, setup: failDrafts, prepare: errorBoard, ready: (page) => expect(page.getByRole('button', { name: 'Try again' })).toBeVisible() },
-  { name: 'inbox-edit', board: 'B_InboxEdit', path: '/inbox?tab=self_service&item=p-kalos-fixed', omit: INBOX_EDIT_OMIT, prepare: inboxEditBoard, ready: requestEdited },
-  { name: 'inbox-edit-conflict', board: 'B_InboxEditConflict', path: '/inbox?tab=self_service&item=p-kalos-fixed', omit: INBOX_EDIT_OMIT, prepare: inboxEditBoard, ready: requestRefused },
-  { name: 'phone-inbox-edit', board: 'B_PhoneInboxEdit', path: '/inbox?tab=self_service&item=p-kalos-fixed', omit: PHONE_INBOX_EDIT_OMIT, prepare: inboxEditBoard, ready: requestEdited },
-  { name: 'phone-inbox-edit-conflict', board: 'B_PhoneInboxEditConflict', path: '/inbox?tab=self_service&item=p-kalos-fixed', omit: PHONE_INBOX_EDIT_OMIT, prepare: inboxEditBoard, ready: requestRefused },
+  ...withPhone({ name: 'inbox-edit', board: 'B_InboxEdit', path: '/inbox?tab=self_service&item=p-kalos-fixed', omit: INBOX_EDIT_OMIT, prepare: inboxEditBoard, ready: requestEdited }, { omit: PHONE_INBOX_EDIT_OMIT }),
+  ...withPhone(
+    { name: 'inbox-edit-conflict', board: 'B_InboxEditConflict', path: '/inbox?tab=self_service&item=p-kalos-fixed', omit: INBOX_EDIT_OMIT, prepare: inboxEditBoard, ready: requestRefused },
+    { omit: PHONE_INBOX_EDIT_OMIT },
+  ),
   {
     name: 'run-stage',
     board: 'B_RunSheetStage',
@@ -861,16 +851,19 @@ const GRAPH_PAIRS: Pair[] = [
       await expect(page.getByText('Conflicts · 2')).toBeVisible();
     },
   },
-  { name: 'history-graph-list', board: 'B_HistoryGraphList', path: '/history?tab=graph&seq=38', omit: GRAPH_OMIT, setup: graphBoard, ready: graphList },
-  { name: 'history-graph-long', board: 'B_HistoryGraphLong', path: '/history?tab=graph', omit: GRAPH_OMIT, setup: graphBoard, ready: graphLong },
-  {
-    name: 'history-graph-empty',
-    board: 'B_HistoryGraphEmpty',
-    path: '/history?tab=graph',
-    omit: GRAPH_OMIT,
-    setup: graphEmpty,
-    ready: (page) => expect(page.getByRole('heading', { name: 'No drafts to draw yet' })).toBeVisible(),
-  },
+  ...withPhone({ name: 'history-graph-list', board: 'B_HistoryGraphList', path: '/history?tab=graph&seq=38', omit: GRAPH_OMIT, setup: graphBoard, ready: graphList }, { path: '/history?tab=graph', omit: PHONE_GRAPH_OMIT }),
+  ...withPhone({ name: 'history-graph-long', board: 'B_HistoryGraphLong', path: '/history?tab=graph', omit: GRAPH_OMIT, setup: graphBoard, ready: graphLong }, { omit: PHONE_GRAPH_OMIT }),
+  ...withPhone(
+    {
+      name: 'history-graph-empty',
+      board: 'B_HistoryGraphEmpty',
+      path: '/history?tab=graph',
+      omit: GRAPH_OMIT,
+      setup: graphEmpty,
+      ready: (page) => expect(page.getByRole('heading', { name: 'No drafts to draw yet' })).toBeVisible(),
+    },
+    { omit: PHONE_GRAPH_OMIT },
+  ),
   { name: 'phone-history-graph', board: 'B_PhoneHistoryGraph', path: '/history?tab=graph', omit: PHONE_GRAPH_OMIT, setup: graphBoard, ready: graphShown },
   {
     name: 'phone-history-graph-draft',
@@ -882,16 +875,6 @@ const GRAPH_PAIRS: Pair[] = [
       await expect(page.getByRole('dialog', { name: 'Weekend reshuffle' })).toContainText('Conflicts · 2');
       await settle(page);
     },
-  },
-  { name: 'phone-history-graph-list', board: 'B_PhoneHistoryGraphList', path: '/history?tab=graph', omit: PHONE_GRAPH_OMIT, setup: graphBoard, ready: graphList },
-  { name: 'phone-history-graph-long', board: 'B_PhoneHistoryGraphLong', path: '/history?tab=graph', omit: PHONE_GRAPH_OMIT, setup: graphBoard, ready: graphLong },
-  {
-    name: 'phone-history-graph-empty',
-    board: 'B_PhoneHistoryGraphEmpty',
-    path: '/history?tab=graph',
-    omit: PHONE_GRAPH_OMIT,
-    setup: graphEmpty,
-    ready: (page) => expect(page.getByRole('heading', { name: 'No drafts to draw yet' })).toBeVisible(),
   },
 ];
 
@@ -1044,63 +1027,38 @@ const readyShownOn = async (page: Page) => {
   // The phone board shows the Party list scrolled to its end (the rules line).
   if (page.viewportSize()!.width < 600) await sheet.locator('.ready__hint').evaluate((el) => el.scrollIntoView({ block: 'end' }));
 };
+/** Ready once what `shown` finds is visible. */
+const visible = (shown: (page: Page) => Locator) => (page: Page) => expect(shown(page)).toBeVisible();
+/** Clicks what `open` finds, then waits for what `shown` finds. */
+const opens = (open: (page: Page) => Locator, shown: (page: Page) => Locator) => async (page: Page) => {
+  await open(page).click();
+  await expect(shown(page)).toBeVisible();
+};
 
 const PAIRS: Pair[] = [
-  {
-    name: 'inbox-self',
-    board: 'B_InboxSelf',
-    path: '/inbox?tab=self_service&item=p-fa-request',
-    ready: (page) => expect(page.getByText('Changed since the member asked')).toBeVisible(),
-  },
+  { name: 'inbox-self', board: 'B_InboxSelf', path: '/inbox?tab=self_service&item=p-fa-request', ready: visible((page) => page.getByText('Changed since the member asked')) },
   {
     name: 'history',
     board: 'B_History',
     path: '/history',
-    ready: async (page) => {
-      await page.locator('[data-history]').first().click();
-      await expect(page.getByRole('complementary', { name: 'Change details' })).toBeVisible();
-    },
+    ready: opens((page) => page.locator('[data-history]').first(), (page) => page.getByRole('complementary', { name: 'Change details' })),
   },
-  {
-    name: 'history-ck',
-    board: 'B_HistoryCk',
-    path: '/history',
-    ready: async (page) => {
-      await page.getByRole('tab', { name: 'Checkpoints' }).click();
-      await expect(page.getByRole('table', { name: /Backups/ })).toBeVisible();
-    },
-  },
+  { name: 'history-ck', board: 'B_HistoryCk', path: '/history', ready: opens((page) => page.getByRole('tab', { name: 'Checkpoints' }), (page) => page.getByRole('table', { name: /Backups/ })) },
   {
     name: 'fixed',
     board: 'B_Fixed',
     path: '/fixed',
-    ready: async (page) => {
-      await page.getByRole('button', { name: /^Edit / }).first().click();
-      await expect(page.getByRole('complementary', { name: 'Weekly timing details' })).toBeVisible();
-    },
+    ready: opens((page) => page.getByRole('button', { name: /^Edit / }).first(), (page) => page.getByRole('complementary', { name: 'Weekly timing details' })),
   },
-  {
-    name: 'bosses',
-    board: 'B_Bosses',
-    path: '/bosses/MaleficStar/knowledge',
-    ready: (page) => expect(page.getByRole('heading', { level: 2, name: 'Radiant Malefic Star' })).toBeVisible(),
-  },
-  {
-    name: 'phone-inbox',
-    board: 'B_PhoneInbox',
-    path: '/inbox?tab=extractor&item=p-bm-move',
-    ready: (page) => expect(page.getByRole('heading', { level: 2, name: /Move — Black Mage/ })).toBeVisible(),
-  },
+  { name: 'bosses', board: 'B_Bosses', path: '/bosses/MaleficStar/knowledge', ready: visible((page) => page.getByRole('heading', { level: 2, name: 'Radiant Malefic Star' })) },
+  { name: 'phone-inbox', board: 'B_PhoneInbox', path: '/inbox?tab=extractor&item=p-bm-move', ready: visible((page) => page.getByRole('heading', { level: 2, name: /Move — Black Mage/ })) },
   {
     name: 'members',
     board: 'B_Members',
     path: '/members',
     // B_Members predates the roster module; B_RosterOff: with it off the sheet is exactly this one.
     setup: rosterOff,
-    ready: async (page) => {
-      await page.getByRole('button', { name: /^Mika/ }).click();
-      await expect(page.getByRole('complementary', { name: 'Member details' })).toBeVisible();
-    },
+    ready: opens((page) => page.getByRole('button', { name: /^Mika/ }), (page) => page.getByRole('complementary', { name: 'Member details' })),
   },
   // The character roster (KANADE_MOCKUPS=docs/research/2026-10-11-roster-mockups):
   // Mika's Characters tab with MikaBish's menu, the Edit dialog with the IGN
@@ -1131,9 +1089,7 @@ const PAIRS: Pair[] = [
     board: 'B_RosterEdit',
     path: '/members',
     omit: ROSTER_FRAME,
-    setup: async (page) => {
-      await chardataOff(page);
-    },
+    setup: chardataOff,
     prepare: editBoard('roster-dialog'),
     ready: async (page) => {
       const pane = await rosterTab(page, 'complementary', 'Member details');
@@ -1153,9 +1109,7 @@ const PAIRS: Pair[] = [
     path: '/members',
     omit: PHONE_ROSTER_FRAME,
     // The board draws the manual Class and Level (no NEXON lookup): module `character_data` off.
-    setup: async (page) => {
-      await chardataOff(page);
-    },
+    setup: chardataOff,
     prepare: editBoard(),
     ready: async (page) => {
       const sheet = await rosterTab(page, 'dialog', 'Mika');
@@ -1168,24 +1122,8 @@ const PAIRS: Pair[] = [
       await expect(add.getByText('Level is 1 to 300.')).toBeVisible();
     },
   },
-  {
-    name: 'roster-delete',
-    board: 'B_RosterDelete',
-    path: '/members',
-    omit: ROSTER_FRAME,
-    ready: async (page) => {
-      await rosterDelete(page, 'complementary', 'Member details');
-    },
-  },
-  {
-    name: 'phone-roster-delete',
-    board: 'B_PhoneRosterDelete',
-    path: '/members',
-    omit: PHONE_ROSTER_FRAME,
-    ready: async (page) => {
-      await rosterDelete(page, 'dialog', 'Mika');
-    },
-  },
+  { name: 'roster-delete', board: 'B_RosterDelete', path: '/members', omit: ROSTER_FRAME, ready: (page) => rosterDelete(page, 'complementary', 'Member details') },
+  { name: 'phone-roster-delete', board: 'B_PhoneRosterDelete', path: '/members', omit: PHONE_ROSTER_FRAME, ready: (page) => rosterDelete(page, 'dialog', 'Mika') },
   // The run-sheet character picker (B_RosterRunPick, B_PhoneRosterRunPick): HCarling + HStar
   // with Mika's picker open. The sheet around the party is hero-sheet's and hero-phone's.
   {
@@ -1219,87 +1157,33 @@ const PAIRS: Pair[] = [
     },
   },
   // Character data (KANADE_MOCKUPS=docs/research/2026-10-12-chardata-mockups): the strip,
-  // linked, asking to link, confirming an unlink, and with the estimate row.
-  {
-    name: 'chardata-linked',
-    board: 'B_CharLinked',
-    path: '/members',
-    omit: ROSTER_FRAME,
-    setup: scouterOff,
-    prepare: stripBoard(true),
-    ready: stripOpen('complementary', 'Member details', 0),
-  },
-  {
-    name: 'phone-chardata-linked',
-    board: 'B_PhoneCharLinked',
-    path: '/members',
-    omit: PHONE_ROSTER_FRAME,
-    setup: scouterOff,
-    prepare: stripBoard(false),
-    ready: stripOpen('dialog', 'Mika', 150),
-  },
-  {
-    name: 'chardata-link',
-    board: 'B_CharLink',
-    path: '/members',
-    omit: ROSTER_FRAME,
-    setup: async (page) => {
-      await scouterOff(page);
-      await unlinked(page);
-    },
-    prepare: stripBoard(true),
-    ready: stripOpen('complementary', 'Member details', 150, (strip) => strip.getByRole('button', { name: 'Link…' }).click()),
-  },
-  {
-    name: 'phone-chardata-link',
-    board: 'B_PhoneCharLink',
-    path: '/members',
-    omit: PHONE_ROSTER_FRAME,
-    setup: async (page) => {
-      await scouterOff(page);
-      await unlinked(page);
-    },
-    prepare: stripBoard(false),
-    ready: stripOpen('dialog', 'Mika', 150, (strip) => strip.getByRole('button', { name: 'Link…' }).click()),
-  },
-  {
-    name: 'chardata-unlink',
-    board: 'B_CharUnlink',
-    path: '/members',
-    omit: ROSTER_FRAME,
-    setup: scouterOff,
-    prepare: stripBoard(true),
-    ready: stripOpen('complementary', 'Member details', 230, (strip) => strip.getByRole('button', { name: 'Unlink…' }).click()),
-  },
-  {
-    name: 'phone-chardata-unlink',
-    board: 'B_PhoneCharUnlink',
-    path: '/members',
-    omit: PHONE_ROSTER_FRAME,
-    setup: scouterOff,
-    prepare: stripBoard(false),
-    ready: stripOpen('dialog', 'Mika', 260, (strip) => strip.getByRole('button', { name: 'Unlink…' }).click()),
-  },
-  {
-    name: 'chardata-estimate',
-    board: 'B_CharEstimate',
-    path: '/members',
-    omit: ROSTER_FRAME,
-    setup: lookedUp({ character_ids: ['ch-s3'] }),
-    prepare: stripBoard(true),
-    ready: stripOpen('complementary', 'Member details', 300, (strip) => expect(strip.locator('[data-fid="estimate-result"]')).toBeVisible()),
-  },
-  {
-    name: 'phone-chardata-estimate',
-    board: 'B_PhoneCharEstimate',
-    path: '/members',
-    omit: PHONE_ROSTER_FRAME,
-    setup: lookedUp({ character_ids: ['ch-s3'] }),
-    prepare: stripBoard(false),
-    ready: stripOpen('dialog', 'Mika', 520, (strip) => expect(strip.locator('[data-fid="estimate-result"]')).toBeVisible()),
-  },
+  // linked, asking to link, confirming an unlink, and with the estimate row (B_Char<board>,
+  // B_PhoneChar<board>), each scrolled by the board's laptop and phone offsets.
+  ...(
+    [
+      ['linked', 'Linked', scouterOff, 0, 150, undefined],
+      [
+        'link',
+        'Link',
+        async (page: Page) => {
+          await scouterOff(page);
+          await unlinked(page);
+        },
+        150,
+        150,
+        (strip: Locator) => strip.getByRole('button', { name: 'Link…' }).click(),
+      ],
+      ['unlink', 'Unlink', scouterOff, 230, 260, (strip: Locator) => strip.getByRole('button', { name: 'Unlink…' }).click()],
+      ['estimate', 'Estimate', lookedUp({ character_ids: ['ch-s3'] }), 300, 520, (strip: Locator) => expect(strip.locator('[data-fid="estimate-result"]')).toBeVisible()],
+    ] as const
+  ).flatMap(([variant, board, setup, scroll, phoneScroll, act]) =>
+    withPhone(
+      { name: `chardata-${variant}`, board: `B_Char${board}`, path: '/members', omit: ROSTER_FRAME, setup, prepare: stripBoard(true), ready: stripOpen('complementary', 'Member details', scroll, act) },
+      { omit: PHONE_ROSTER_FRAME, prepare: stripBoard(false), ready: stripOpen('dialog', 'Mika', phoneScroll, act) },
+    ),
+  ),
   // The run sheet's Estimate panel over HCarling + HStar (B_RosterRunPick's sheet, Ren (1) picked).
-  {
+  ...withPhone({
     name: 'chardata-estimate-run',
     board: 'B_CharEstimateRun',
     path: '/',
@@ -1313,42 +1197,9 @@ const PAIRS: Pair[] = [
     },
     prepare: runPickBoard,
     ready: estimateRun,
-  },
-  {
-    name: 'phone-chardata-estimate-run',
-    board: 'B_PhoneCharEstimateRun',
-    path: '/',
-    omit: STAGE_OMIT,
-    scope: ESTIMATE_RUN_SCOPE,
-    setup: async (page) => {
-      await renPicked(page);
-      await lookedUp({ run_id: 'r-carling' })(page);
-      await page.route('**/api/admin/runs/*/readiness', (route) => route.abort());
-    },
-    prepare: runPickBoard,
-    ready: estimateRun,
-  },
+  }),
   // Readiness on the Party tab (B_CharReady): Mika brings MikaBish as the board draws; no scouter (no Estimate panel).
-  {
-    name: 'chardata-ready',
-    board: 'B_CharReady',
-    path: '/',
-    omit: STAGE_OMIT,
-    scope: READY_SCOPE,
-    setup: readyBoard,
-    prepare: runPickBoard,
-    ready: readyShownOn,
-  },
-  {
-    name: 'phone-chardata-ready',
-    board: 'B_PhoneCharReady',
-    path: '/',
-    omit: STAGE_OMIT,
-    scope: READY_SCOPE,
-    setup: readyBoard,
-    prepare: runPickBoard,
-    ready: readyShownOn,
-  },
+  ...withPhone({ name: 'chardata-ready', board: 'B_CharReady', path: '/', omit: STAGE_OMIT, scope: READY_SCOPE, setup: readyBoard, prepare: runPickBoard, ready: readyShownOn }),
   // Config › Character data: all ok, problems, no key, key refused. The phone boards draw their
   // own Config frame (no phone Config board was approved before them): those pairs compare the
   // section's contents (PHONE_CFG_SCOPE), not the shared frame.
@@ -1363,12 +1214,7 @@ const PAIRS: Pair[] = [
       ready: healthShown,
     },
   ]),
-  {
-    name: 'inbox-extractor',
-    board: 'VarRail2',
-    path: '/inbox?tab=extractor&item=p-bm-move',
-    ready: (page) => expect(page.getByRole('heading', { level: 2, name: /Move — Black Mage/ })).toBeVisible(),
-  },
+  { name: 'inbox-extractor', board: 'VarRail2', path: '/inbox?tab=extractor&item=p-bm-move', ready: visible((page) => page.getByRole('heading', { level: 2, name: /Move — Black Mage/ })) },
   {
     name: 'cfg',
     board: 'B_Config',
@@ -1421,29 +1267,10 @@ const PAIRS: Pair[] = [
     board: 'B_WeekSel',
     path: '/',
     // The board shows today's first run selected in the side pane.
-    ready: async (page) => {
-      await page.locator('[data-run="r-carling"] .plan-card__open').click();
-      await expect(page.getByRole('complementary', { name: 'HCarling + HStar' })).toBeVisible();
-    },
+    ready: opens((page) => page.locator('[data-run="r-carling"] .plan-card__open'), (page) => page.getByRole('complementary', { name: 'HCarling + HStar' })),
   },
-  {
-    name: 'week-runs',
-    board: 'B_WeekRuns',
-    path: '/?week=next',
-    ready: async (page) => {
-      await page.getByRole('tab', { name: /^Runs/ }).click();
-      await expect(page.getByRole('table', { name: /Every run/ })).toBeVisible();
-    },
-  },
-  {
-    name: 'week-answers',
-    board: 'B_WeekAnswers',
-    path: '/?week=next',
-    ready: async (page) => {
-      await page.getByRole('tab', { name: /^Answers/ }).click();
-      await expect(page.getByRole('heading', { name: 'Still waiting' })).toBeVisible();
-    },
-  },
+  { name: 'week-runs', board: 'B_WeekRuns', path: '/?week=next', ready: opens((page) => page.getByRole('tab', { name: /^Runs/ }), (page) => page.getByRole('table', { name: /Every run/ })) },
+  { name: 'week-answers', board: 'B_WeekAnswers', path: '/?week=next', ready: opens((page) => page.getByRole('tab', { name: /^Answers/ }), (page) => page.getByRole('heading', { name: 'Still waiting' })) },
   {
     name: 'reminders',
     board: 'B_Reminders',
@@ -1495,13 +1322,8 @@ const PAIRS: Pair[] = [
       },
     }),
   ),
-  {
-    name: 'extract',
-    board: 'B_Extract',
-    // The board shows the newest call open on Chat read (the default tab).
-    path: '/extractions',
-    ready: (page) => expect(page.getByRole('list', { name: 'Messages read' }).getByRole('listitem').first()).toBeVisible(),
-  },
+  // The board shows the newest call open on Chat read (the default tab).
+  { name: 'extract', board: 'B_Extract', path: '/extractions', ready: visible((page) => page.getByRole('list', { name: 'Messages read' }).getByRole('listitem').first()) },
   {
     name: 'extract-prompt',
     board: 'B_ExtractPrompt',
@@ -1511,12 +1333,7 @@ const PAIRS: Pair[] = [
       await expect(page.getByRole('tabpanel', { name: 'Prompt' }).locator('pre')).toContainText('Messages:');
     },
   },
-  {
-    name: 'phone-week',
-    board: 'B_PhoneWeek',
-    path: '/',
-    ready: (page) => expect(page.locator('[data-run="r-carling"]')).toBeVisible(),
-  },
+  { name: 'phone-week', board: 'B_PhoneWeek', path: '/', ready: visible((page) => page.locator('[data-run="r-carling"]')) },
   ...(
     [
       ['cfg-pings', 'B_CfgPings', 'pings', 'Pings'],
@@ -1536,21 +1353,8 @@ const PAIRS: Pair[] = [
     ready: (page: Page) => expect(page.getByRole('heading', { level: 3, name: heading })).toBeVisible(),
   })),
   // c-when is the mock's masked turn: two rounds, one tool call and a stored Model view, as the boards show.
-  {
-    name: 'chat',
-    board: 'B_Chat',
-    path: '/chat/c-when',
-    ready: (page) => expect(page.getByRole('button', { name: 'Model view (masked)' })).toBeVisible(),
-  },
-  {
-    name: 'chat-trace',
-    board: 'B_ChatTrace',
-    path: '/chat/c-when',
-    ready: async (page) => {
-      await page.getByRole('tab', { name: /^Model trace/ }).click();
-      await expect(page.getByText('Round 2', { exact: true })).toBeVisible();
-    },
-  },
+  { name: 'chat', board: 'B_Chat', path: '/chat/c-when', ready: visible((page) => page.getByRole('button', { name: 'Model view (masked)' })) },
+  { name: 'chat-trace', board: 'B_ChatTrace', path: '/chat/c-when', ready: opens((page) => page.getByRole('tab', { name: /^Model trace/ }), (page) => page.getByText('Round 2', { exact: true })) },
   {
     name: 'inbox-empty',
     board: 'B_Empty',
@@ -1594,17 +1398,14 @@ const PAIRS: Pair[] = [
     board: 'B_RailMore800',
     path: '/history',
     scope: ['rail', 'rail-more', 'rail-more-menu'],
-    ready: async (page) => {
-      await page.locator('.navrail').getByRole('button', { name: 'More', exact: true }).click();
-      await expect(page.getByRole('menu', { name: 'More destinations' })).toBeVisible();
-    },
+    ready: opens((page) => page.locator('.navrail').getByRole('button', { name: 'More', exact: true }), (page) => page.getByRole('menu', { name: 'More destinations' })),
   },
   {
     name: 'rail-more-720',
     board: 'B_RailMore720',
     path: '/history',
     scope: ['rail', 'rail-more'],
-    ready: (page) => expect(page.locator('.navrail').getByRole('button', { name: 'More', exact: true })).toBeVisible(),
+    ready: visible((page) => page.locator('.navrail').getByRole('button', { name: 'More', exact: true })),
   },
   {
     name: 'rail-more-drawer',
@@ -1635,10 +1436,7 @@ const PAIRS: Pair[] = [
     board: 'HeroPhone',
     path: '/',
     setup: chardataOff,
-    ready: async (page) => {
-      await page.locator('[data-run="r-carling"] .plan-card__open').click();
-      await expect(page.getByRole('dialog', { name: 'HCarling + HStar' })).toBeVisible();
-    },
+    ready: opens((page) => page.locator('[data-run="r-carling"] .plan-card__open'), (page) => page.getByRole('dialog', { name: 'HCarling + HStar' })),
   },
   {
     name: 'hero-sheet',
@@ -1798,10 +1596,7 @@ test.describe('layout fidelity', () => {
 
       await page.setViewportSize(pair.viewport ?? { width: board.width, height: board.height });
       // The face the boards are drawn in: the admin boards in Nazuna, the portal's in Otonose.
-      await page.addInitScript((colorway) => {
-        localStorage.setItem('colorway', colorway);
-        localStorage.setItem('theme', 'light');
-      }, pair.app === 'public' ? 'marigold' : 'blossom');
+      await useLook(page, pair.app === 'public' ? 'marigold' : 'blossom');
       await pair.setup?.(page);
       await page.goto(`${pair.app === 'public' ? PUBLIC : ADMIN}${pair.path}${pair.path.includes('?') ? '&' : '?'}sw=off`);
       await pair.ready(page);

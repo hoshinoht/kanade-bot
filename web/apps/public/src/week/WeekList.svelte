@@ -7,8 +7,8 @@
   A row opens the same pane.
 -->
 <script lang="ts">
-  import type { MemberRun, MemberWeek, Participant } from '@kanade/api-types';
-  import { ANSWER_MARKS, AnswerChip, BossStack, longDate, runFullTitle, sortRuns, StatusMark } from '@kanade/ui';
+  import type { MemberRun, MemberWeek } from '@kanade/api-types';
+  import { ANSWER_MARKS, AnswerChip, BossStack, longDate, runFullTitle, sortRuns, StatusMark, twinName } from '@kanade/ui';
   import { yours } from '../member';
 
   let {
@@ -20,13 +20,6 @@
   }: { week: MemberWeek; runs: MemberRun[]; memberId: string; selected: string | null; onopen: (run: MemberRun) => void } = $props();
 
   const rows = $derived(sortRuns(runs));
-  // The member reads as "You"; twins read "Ren (2)": their place among same-named members, never the id.
-  const label = (all: Participant[], p: Participant): string | undefined => {
-    if (p.id === memberId) return 'You';
-    const twins = all.filter((o) => o.name === p.name);
-    return twins.length > 1 ? `${p.name} (${twins.indexOf(p) + 1})` : undefined;
-  };
-
   // The whole row opens the run; the row header's button is the keyboard way in.
   function pick(event: MouseEvent) {
     const row = (event.target as HTMLElement).closest<HTMLElement>('[data-row]');
@@ -84,7 +77,7 @@
             <td class="mono week-runs__on">{run.tally.on}/{run.tally.total}</td>
             <td>
               <span class="week-runs__party member-list__party">
-                {#each run.participants as p (p.id)}<AnswerChip participant={p} label={label(run.participants, p)} />{/each}
+                {#each run.participants as p (p.id)}<AnswerChip participant={p} label={p.id === memberId ? 'You' : twinName(run.participants, p)} />{/each}
               </span>
             </td>
             <td class="week-runs__you">

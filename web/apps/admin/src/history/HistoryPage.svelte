@@ -11,7 +11,7 @@
   import { createClient } from '@kanade/client';
   import { SvelteSet } from 'svelte/reactivity';
   import { onMount, tick } from 'svelte';
-  import { DatePicker, Icon, LoadError, LoadingState, Presence, RowContent, Select, serverClock, Toaster, TWO_PANE_QUERY, weekStartLabel, type SelectOption } from '@kanade/ui';
+  import { DatePicker, Icon, LoadError, LoadingState, Presence, RowContent, Select, serverClock, Toaster, TWO_PANE_QUERY, watchMedia, weekStartLabel, type SelectOption } from '@kanade/ui';
   import { live, Resource } from '../resource.svelte';
   import type { AdminWeek } from '../store.svelte';
   import { SURFACE_LABELS, actorName, describe, localAt, runTitles, weekDate } from './describe';
@@ -119,13 +119,7 @@
     selectOnDesktop = true;
     void load();
   });
-  $effect(() => {
-    const media = window.matchMedia(TWO_PANE_QUERY);
-    const update = () => (wide = media.matches);
-    update();
-    media.addEventListener('change', update);
-    return () => media.removeEventListener('change', update);
-  });
+  $effect(() => watchMedia(TWO_PANE_QUERY, (matches) => (wide = matches)));
   // History opens the newest change only for an initial/filtered desktop view.
   // An explicitly closed pane stays closed until the user selects another row.
   $effect(() => {

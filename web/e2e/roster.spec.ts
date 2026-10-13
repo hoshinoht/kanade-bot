@@ -1,6 +1,6 @@
 import { mkdirSync } from 'node:fs';
 import type { Page } from '@playwright/test';
-import { ADMIN, choose, expect, test } from './support';
+import { ADMIN, choose, expect, test, useLook } from './support';
 
 // The character roster (module `roster`; boards in docs/research/2026-10-11-roster-mockups):
 // the Members sheet's Characters tab over the mock's invented seed (Mika: MikaNL main,
@@ -204,10 +204,7 @@ for (const colorway of ['blossom', 'marigold']) {
   test(`roster capture: ${colorway}`, async ({ page }) => {
     test.skip(!process.env.KANADE_ROSTER_CAPTURES, 'set KANADE_ROSTER_CAPTURES=1 to write the review captures');
     mkdirSync(CAPTURES, { recursive: true });
-    await page.addInitScript((c) => {
-      localStorage.setItem('colorway', c);
-      localStorage.setItem('theme', 'light');
-    }, colorway);
+    await useLook(page, colorway);
     const shot = (name: string) => page.screenshot({ path: `${CAPTURES}/${colorway}-${name}.png`, animations: 'disabled' });
     const pane = await characters(page);
     await pane.getByRole('button', { name: 'More actions for MikaBish' }).click();

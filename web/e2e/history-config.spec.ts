@@ -1,14 +1,8 @@
 import type { Page } from '@playwright/test';
-import { ADMIN, choose, expect, test } from './support';
+import { choose, expect, go, test, toast } from './support';
 
 // A Config section save joins the History timeline as a view-only row with
 // its before/after (the mock records it like the server). Clock pinned.
-
-async function go(page: Page, path: string) {
-  await page.goto(`${ADMIN}${path}${path.includes('?') ? '&' : '?'}sw=off`);
-}
-
-const toast = (page: Page, text: string | RegExp) => page.getByRole('group', { name: 'Notification' }).filter({ hasText: text });
 
 async function saveQuietMode(page: Page) {
   await go(page, '/config?section=notifications');

@@ -1,15 +1,11 @@
 import AxeBuilder from '@axe-core/playwright';
 import type { Page } from '@playwright/test';
 import type { ChatTurn } from '@kanade/api-types';
-import { ADMIN, expect, settle, test, unconditional } from './support';
+import { expect, go, settle, test, unconditional } from './support';
 
 // Chat turn facts (persona, reply profile, per-round model/effort/route/latency,
 // calls grouped by round), the collapsed admin-only Model view of a masked turn,
 // and the Extractions identity-leak filter. Mock: `c-when` is the masked turn.
-
-async function go(page: Page, path: string) {
-  await page.goto(`${ADMIN}${path}${path.includes('?') ? '&' : '?'}sw=off`);
-}
 
 async function serious(page: Page, label: string) {
   await settle(page);

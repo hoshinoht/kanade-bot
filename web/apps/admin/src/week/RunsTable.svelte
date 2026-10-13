@@ -3,17 +3,11 @@
   44 px row card per run; a row opens the same run pane as the board.
 -->
 <script lang="ts">
-  import type { Participant, Run, Week } from '@kanade/api-types';
-  import { AnswerChip, Portrait, StatusMark, dayLabel, runFullTitle, sortRuns, DIFFICULTY_WORDS } from '@kanade/ui';
+  import type { Run, Week } from '@kanade/api-types';
+  import { AnswerChip, Portrait, StatusMark, dayLabel, runFullTitle, sortRuns, twinName, DIFFICULTY_WORDS } from '@kanade/ui';
 
   let { week, selected = null, onopen }: { week: Week; selected?: string | null; onopen: (run: Run) => void } = $props();
   const rows = $derived(sortRuns(week.runs));
-  // Twins read "Ren (2)": their place among same-named members, never the id.
-  const twin = (all: Participant[], p: Participant): string | undefined => {
-    const twins = all.filter((o) => o.name === p.name);
-    return twins.length > 1 ? `${p.name} (${twins.indexOf(p) + 1})` : undefined;
-  };
-
   // The whole row opens the run; the row header's button is the keyboard way in.
   function pick(event: MouseEvent) {
     const row = (event.target as HTMLElement).closest<HTMLElement>('[data-row]');
@@ -56,7 +50,7 @@
           <td class="mono week-runs__on">{run.tally.on}/{run.tally.total}</td>
           <td>
             <span class="week-runs__party">
-              {#each run.participants as p (p.id)}<AnswerChip participant={p} label={twin(run.participants, p)} />{/each}
+              {#each run.participants as p (p.id)}<AnswerChip participant={p} label={twinName(run.participants, p)} />{/each}
             </span>
           </td>
           <td class="week-runs__channel">{run.channel}</td>

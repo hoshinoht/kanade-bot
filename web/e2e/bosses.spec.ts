@@ -1,16 +1,12 @@
 import AxeBuilder from '@axe-core/playwright';
 import type { Page } from '@playwright/test';
 import { GUIDE_DOC, GUIDE_MISSIONS } from './guide-fixture';
-import { ADMIN, REAL_ART, expect, settle, test, unconditional } from './support';
+import { ADMIN, REAL_ART, expect, go, settle, test, unconditional, useLook } from './support';
 
 // Event bosses (knowledge documents with an `event`, outside the catalog: Kai,
 // Meilin in the tracked boss/knowledge): art like catalog rows and the
 // "Seasonal boss" label. The synthetic fixtures carry no event art, so the
 // image path is driven through the events read with fixture art.
-
-async function go(page: Page, path: string) {
-  await page.goto(`${ADMIN}${path}${path.includes('?') ? '&' : '?'}sw=off`);
-}
 
 const SEASON_3 = 'Seasonal boss · CW3';
 const SEASON_4 = 'Seasonal boss · CW4';
@@ -192,10 +188,7 @@ test('bosses: real catalog portraits and detail art load from the declared asset
 test('capture event bosses with real art', async ({ page }) => {
   test.skip(!REAL_ART, 'real art only');
   await page.setViewportSize({ width: 1280, height: 800 });
-  await page.addInitScript(() => {
-    localStorage.setItem('colorway', 'blossom');
-    localStorage.setItem('theme', 'light');
-  });
+  await useLook(page, 'blossom');
   const settle = () =>
     page.evaluate(async () => {
       await document.fonts.ready;

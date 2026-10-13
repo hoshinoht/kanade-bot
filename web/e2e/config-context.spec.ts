@@ -1,10 +1,9 @@
 import AxeBuilder from '@axe-core/playwright';
 import type { ConfigView } from '@kanade/api-types';
 import type { Page } from '@playwright/test';
-import { ADMIN, expect, settle, test, choose, unconditional } from './support';
+import { ADMIN, expect, settle, test, toast, choose, unconditional } from './support';
 
 const WARNING = 'Context past 16k may result in degraded performance on local models.';
-const toast = (page: Page, text: string | RegExp) => page.getByRole('group', { name: 'Notification' }).filter({ hasText: text });
 
 async function open(page: Page) {
   await page.goto(`${ADMIN}/config?section=models&sw=off`);

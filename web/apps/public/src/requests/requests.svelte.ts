@@ -4,6 +4,7 @@
 // shows its count and after every write; in memory for this tab only.
 import type { MemberRequest, MemberRequests } from '@kanade/api-types';
 import { ApiRequestError, type Client } from '@kanade/client';
+import { MemberList } from '../memberList.svelte';
 import type { RequestBody } from './form';
 
 /**
@@ -18,21 +19,12 @@ export type RequestOutcome =
   | { kind: 'refused'; words: string; code: string }
   | null;
 
-export class MemberRequestsList {
-  data = $state<MemberRequests | null>(null);
-  /** Why the last read failed; empty once one answers. */
-  error = $state('');
+export class MemberRequestsList extends MemberList<MemberRequests> {
   /** A send or withdraw is out. */
   busy = $state(false);
-  #client: Client;
-  #gone: (error: unknown) => boolean;
-  #loading: Promise<void> | null = null;
-  /** A hint landed while a read was out: read once more when it settles. */
-  #stale = false;
 
   constructor(client: Client, gone: (error: unknown) => boolean) {
-    this.#client = client;
-    this.#gone = gone;
+    super(client, gone, '/api/public/requests/mine', 'Your requests did not load.');
   }
 
   /** Waiting on the admins: the masthead's and the drawer's count. */
@@ -40,45 +32,13 @@ export class MemberRequestsList {
     return this.data ? this.data.requests.filter((r) => r.state === 'waiting').length : null;
   }
 
-  /** Read now; a call while a read runs joins it. */
-  load(): Promise<void> {
-    this.#loading ??= this.#reads().finally(() => {
-      this.#loading = null;
-    });
-    return this.#loading;
-  }
-
-  /** A hint said the list changed: a read already out may predate it, so one more follows that read. */
-  hinted(): Promise<void> {
-    if (this.#loading) this.#stale = true;
-    return this.load();
-  }
-
-  async #reads(): Promise<void> {
-    do {
-      this.#stale = false;
-      await this.#read();
-      // Gone (cleared) meanwhile: nothing more to read.
-    } while (this.#stale && this.data);
-  }
-
-  async #read(): Promise<void> {
-    try {
-      this.data = await this.#client.get<MemberRequests>('/api/public/requests/mine');
-      this.error = '';
-    } catch (error) {
-      if (this.#gone(error)) this.clear();
-      else this.error = error instanceof Error ? error.message : 'Your requests did not load.';
-    }
-  }
-
   /** Send one request; `key` repeats the same action (a retry after a fresh sign-in sends anew). */
   send(body: RequestBody, key?: string): Promise<RequestOutcome> {
-    return this.#write(() => this.#client.post<MemberRequest>('/api/public/requests', body, key ? { idempotencyKey: key } : {}));
+    return this.#write(() => this.client.post<MemberRequest>('/api/public/requests', body, key ? { idempotencyKey: key } : {}));
   }
 
   withdraw(id: string): Promise<RequestOutcome> {
-    return this.#write(() => this.#client.post<MemberRequest>(`/api/public/requests/${encodeURIComponent(id)}/withdraw`, {}));
+    return this.#write(() => this.client.post<MemberRequest>(`/api/public/requests/${encodeURIComponent(id)}/withdraw`, {}));
   }
 
   async #write(send: () => Promise<MemberRequest>): Promise<RequestOutcome> {
@@ -89,7 +49,7 @@ export class MemberRequestsList {
       await this.load();
       return { kind: 'done', request };
     } catch (error) {
-      if (this.#gone(error)) return null;
+      if (this.gone(error)) return null;
       if (error instanceof ApiRequestError && error.kind === 'reauth') return { kind: 'reauth' };
       const body = error instanceof ApiRequestError ? (error.body as (ApiRequestError['body'] & { limit?: string }) | null) : null;
       const words = error instanceof Error ? error.message : 'Try again.';
@@ -99,11 +59,5 @@ export class MemberRequestsList {
     } finally {
       this.busy = false;
     }
-  }
-
-  clear(): void {
-    this.data = null;
-    this.error = '';
-    this.#stale = false;
   }
 }

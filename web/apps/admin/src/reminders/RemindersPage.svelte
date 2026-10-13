@@ -12,7 +12,7 @@
   import PageLine from '../shell/PageLine.svelte';
   import { getChrome } from '../shell/chrome';
   import type { ReminderRow, Reminders } from '@kanade/api-types';
-  import { LoadError, LoadingState, Presence, TWO_PANE_QUERY } from '@kanade/ui';
+  import { LoadError, LoadingState, Presence, TWO_PANE_QUERY, watchMedia } from '@kanade/ui';
   import { artUrl } from '../shared/identity';
   import ReminderPane from './ReminderPane.svelte';
   import { Resource } from '../resource.svelte';
@@ -91,13 +91,7 @@
   // The card preview: a side pane from 900 px, a sheet below; focus goes back to the row.
   let openId = $state<string | null>(null);
   let wide = $state(false);
-  $effect(() => {
-    const query = window.matchMedia(TWO_PANE_QUERY);
-    const update = () => (wide = query.matches);
-    update();
-    query.addEventListener('change', update);
-    return () => query.removeEventListener('change', update);
-  });
+  $effect(() => watchMedia(TWO_PANE_QUERY, (matches) => (wide = matches)));
   const opened = $derived(openId ? (all.find((r) => r.id === openId) ?? null) : null);
   const pane = new Presence<ReminderRow>();
   $effect(() => pane.set(opened));

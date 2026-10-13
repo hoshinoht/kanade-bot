@@ -12,7 +12,7 @@
   from the start when the current page is one of them.
 -->
 <script lang="ts">
-  import { Icon, pulse } from '@kanade/ui';
+  import { focusMenuItem, Icon, menuButtonKey, menuKey, pulse } from '@kanade/ui';
   import { tick, untrack } from 'svelte';
   import { arrival } from '../resource.svelte';
   import { MORE, sumBadges } from '../routes';
@@ -45,44 +45,16 @@
 
   let button = $state<HTMLButtonElement>();
   let menu = $state<HTMLDivElement>();
-  const menuItems = () => [...(menu?.querySelectorAll<HTMLElement>('[role="menuitem"]') ?? [])];
 
   async function show(at: 'first' | 'last') {
     open = true;
     await tick();
-    const all = menuItems();
-    (at === 'first' ? all[0] : all[all.length - 1])?.focus();
+    focusMenuItem(menu, at);
   }
 
   function hide(refocus = true) {
     open = false;
     if (refocus) button?.focus();
-  }
-
-  function onButtonKey(event: KeyboardEvent) {
-    if (inline) return;
-    if (event.key === 'ArrowDown' || event.key === 'Enter' || event.key === ' ') {
-      event.preventDefault();
-      void show('first');
-    } else if (event.key === 'ArrowUp') {
-      event.preventDefault();
-      void show('last');
-    }
-  }
-
-  function onMenuKey(event: KeyboardEvent) {
-    const all = menuItems();
-    const at = all.indexOf(document.activeElement as HTMLElement);
-    const moves: Record<string, number> = { ArrowDown: at + 1, ArrowUp: at - 1, Home: 0, End: all.length - 1 };
-    if (event.key in moves) {
-      event.preventDefault();
-      all[(moves[event.key]! + all.length) % all.length]?.focus();
-    } else if (event.key === 'Escape') {
-      event.preventDefault();
-      hide();
-    } else if (event.key === 'Tab') {
-      hide(false);
-    }
   }
 
   // A click anywhere else closes the menu, as a menu does.
@@ -146,10 +118,10 @@
       aria-controls="{uid}-menu"
       aria-label={name === 'More' ? undefined : name}
       onclick={() => (open ? hide() : void show('first'))}
-      onkeydown={onButtonKey}>{@render face()}</button
+      onkeydown={(event) => menuButtonKey(event, (at) => void show(at))}>{@render face()}</button
     >
     {#if open}
-      <div class="navmore__menu" id="{uid}-menu" role="menu" aria-label="More destinations" tabindex="-1" data-fid="rail-more-menu" bind:this={menu} onkeydown={onMenuKey}>
+      <div class="navmore__menu" id="{uid}-menu" role="menu" aria-label="More destinations" tabindex="-1" data-fid="rail-more-menu" bind:this={menu} onkeydown={(event) => menuKey(event, menu, hide)}>
         <span class="cap navmore__cap" aria-hidden="true">More</span>
         {#each MORE as section (section.key)}
           <a

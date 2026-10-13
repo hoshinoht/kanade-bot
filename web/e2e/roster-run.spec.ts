@@ -1,6 +1,6 @@
 import { mkdirSync } from 'node:fs';
 import type { Locator, Page } from '@playwright/test';
-import { ADMIN, csrf, expect, settle, test } from './support';
+import { ADMIN, csrf, expect, settle, test, useLook } from './support';
 
 // Who each party member brings to a run (module `roster`; boards B_RosterRunPick and
 // B_PhoneRosterRunPick) over the mock's seed on HCarling + HStar (r-carling): Asahi
@@ -274,10 +274,7 @@ for (const colorway of ['blossom', 'marigold']) {
   test(`roster run capture: ${colorway}`, async ({ page }) => {
     test.skip(!process.env.KANADE_ROSTER_RUN_CAPTURES, 'set KANADE_ROSTER_RUN_CAPTURES=1 to write the review captures');
     mkdirSync(CAPTURES, { recursive: true });
-    await page.addInitScript((c) => {
-      localStorage.setItem('colorway', c);
-      localStorage.setItem('theme', 'light');
-    }, colorway);
+    await useLook(page, colorway);
     const shot = async (name: string) => {
       await settle(page);
       await page.screenshot({ path: `${CAPTURES}/${colorway}-${name}.png`, animations: 'disabled' });

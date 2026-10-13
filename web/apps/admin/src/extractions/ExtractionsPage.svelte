@@ -9,10 +9,11 @@
 <script lang="ts">
   import '@kanade/ui/styles/core/panes.scss';
   import '@kanade/ui/styles/screens/extract.scss';
-  import { Icon, LoadError, LoadingState, SINGLE_PANE_QUERY, type Toaster } from '@kanade/ui';
+  import { Icon, LoadError, LoadingState, SINGLE_PANE_QUERY, watchMedia, type Toaster } from '@kanade/ui';
   import type { Channel, Extractions } from '@kanade/api-types';
   import { tick, untrack } from 'svelte';
   import { activeCount, parseFilter, toSearch, type LogFilter } from '../logs/filters';
+  import { SearchBox } from '../logs/search.svelte';
   import LogFilters from '../logs/LogFilters.svelte';
   import Pager from '../pages/Pager.svelte';
   import { PAGE_SIZE, paged } from '../pages/paging';
@@ -64,23 +65,7 @@
     onsearch?.(withCall(toSearch(next), call));
   }
 
-  // svelte-ignore state_referenced_locally
-  let query = $state(filter.q);
-  $effect(() => {
-    const text = query;
-    if (text.trim() === filter.q.trim()) return;
-    const timer = setTimeout(() => apply({ ...filter, q: text }), 250);
-    return () => clearTimeout(timer);
-  });
-  // A q changed from outside the box (Clear, Back, a deep link) replaces what it shows.
-  // svelte-ignore state_referenced_locally
-  let seenQ = filter.q;
-  $effect(() => {
-    const q = filter.q;
-    if (q === seenQ) return;
-    seenQ = q;
-    if (q.trim() !== query.trim()) query = q;
-  });
+  const query = new SearchBox(() => filter.q, (q) => apply({ ...filter, q }));
 
   const rows = $derived(view?.rows ?? []);
   let page = $state(1);
@@ -98,13 +83,7 @@
   const filtered = $derived(activeCount(filter) > 0);
 
   let phone = $state(false);
-  $effect(() => {
-    const media = window.matchMedia(SINGLE_PANE_QUERY);
-    const update = () => (phone = media.matches);
-    update();
-    media.addEventListener('change', update);
-    return () => media.removeEventListener('change', update);
-  });
+  $effect(() => watchMedia(SINGLE_PANE_QUERY, (matches) => (phone = matches)));
   // Wide: a call is always open (the first one on the page until one is chosen).
   // That default stays put when a refresh adds calls above it.
   const firstOpen = pinnedFirst(() => extractions);
@@ -189,7 +168,7 @@
     <div class="extract-window__actions" data-fid="extract-actions">
       <div class="extract-window__search" data-fid="window-search" role="search">
         <label class="vh" for="{uid}-q">Search calls</label>
-        <input id="{uid}-q" type="search" bind:value={query} placeholder="message, id…" autocomplete="off" spellcheck="false" />
+        <input id="{uid}-q" type="search" bind:value={query.text} placeholder="message, id…" autocomplete="off" spellcheck="false" />
       </div>
       <div class="extract-window__filters" data-fid="extract-filters">
         <LogFilters {filter} facets={last?.facets ?? null} members={store.members} week={store.week} onchange={apply} />

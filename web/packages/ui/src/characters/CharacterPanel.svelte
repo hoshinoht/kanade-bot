@@ -16,6 +16,7 @@
   import Icon from '../components/Icon.svelte';
   import LoadError from '../components/LoadError.svelte';
   import LoadingState from '../components/LoadingState.svelte';
+  import { focusMenuItem, menuButtonKey, menuKey } from '../components/menu';
   import StateNote from '../components/StateNote.svelte';
   import StatusChip from '../components/StatusChip.svelte';
   import type { Toaster } from '../components/toaster.svelte';
@@ -181,46 +182,16 @@
 
   // Menu (APG menu button, as NavMore): ↓/Enter/Space open on the first item,
   // ↑ on the last; arrows wrap, Home/End jump, Escape returns to the button.
-  const items = () => [...(menu?.querySelectorAll<HTMLElement>('[role="menuitem"]') ?? [])];
-
   async function showMenu(id: string, at: 'first' | 'last') {
     menuFor = id;
     await tick();
-    const all = items();
-    (at === 'first' ? all[0] : all[all.length - 1])?.focus();
+    focusMenuItem(menu, at);
   }
 
   function hideMenu(refocus = true) {
     const id = menuFor;
     menuFor = null;
     if (refocus && id) void focusRow(id, 'more');
-  }
-
-  function onButtonKey(event: KeyboardEvent, id: string) {
-    if (event.key === 'ArrowDown' || event.key === 'Enter' || event.key === ' ') {
-      event.preventDefault();
-      void showMenu(id, 'first');
-    } else if (event.key === 'ArrowUp') {
-      event.preventDefault();
-      void showMenu(id, 'last');
-    }
-  }
-
-  function onMenuKey(event: KeyboardEvent) {
-    const all = items();
-    const at = all.indexOf(document.activeElement as HTMLElement);
-    const moves: Record<string, number> = { ArrowDown: at + 1, ArrowUp: at - 1, Home: 0, End: all.length - 1 };
-    if (event.key in moves) {
-      event.preventDefault();
-      all[(moves[event.key]! + all.length) % all.length]?.focus();
-    } else if (event.key === 'Escape') {
-      // The pane's own Escape (close the member) must not fire too.
-      event.preventDefault();
-      event.stopPropagation();
-      hideMenu();
-    } else if (event.key === 'Tab') {
-      hideMenu(false);
-    }
   }
 
   $effect(() => {
@@ -272,10 +243,23 @@
       aria-controls={open ? `${uid}-menu` : undefined}
       data-fid={tagged ? 'roster-more' : undefined}
       onclick={() => (open ? hideMenu() : void showMenu(c.id, 'first'))}
-      onkeydown={(event) => onButtonKey(event, c.id)}><Icon name="more-vertical" /></button
+      onkeydown={(event) => menuButtonKey(event, (at) => void showMenu(c.id, at))}><Icon name="more-vertical" /></button
     >
     {#if open}
-      <div class="rosterrow__menu" id="{uid}-menu" role="menu" aria-label={c.ign} tabindex="-1" data-fid="roster-menu" bind:this={menu} onkeydown={onMenuKey}>
+      <!-- The pane's own Escape (close the member) must not fire too. -->
+      <div
+        class="rosterrow__menu"
+        id="{uid}-menu"
+        role="menu"
+        aria-label={c.ign}
+        tabindex="-1"
+        data-fid="roster-menu"
+        bind:this={menu}
+        onkeydown={(event) => {
+          if (event.key === 'Escape') event.stopPropagation();
+          menuKey(event, menu, hideMenu);
+        }}
+      >
         {#if retired}
           <button type="button" role="menuitem" tabindex="-1" class="rosterrow__item" onclick={() => pick(() => void bringBack(c))}><Icon name="rotate-ccw" />Bring back</button>
         {:else}

@@ -12,3 +12,13 @@ export const PHONE_QUERY = '(max-width: 599px), (max-height: 500px)';
  */
 export const SINGLE_PANE_QUERY = '(width < 900px)';
 export const TWO_PANE_QUERY = '(width >= 900px)';
+
+/** Calls `on` with whether `query` matches now and on every change; returns the cleanup (an `$effect`'s return). */
+export function watchMedia(query: string, on: (matches: boolean) => void): () => void {
+  if (typeof matchMedia !== 'function') return () => {};
+  const list = matchMedia(query);
+  on(list.matches);
+  const change = (e: MediaQueryListEvent) => on(e.matches);
+  list.addEventListener('change', change);
+  return () => list.removeEventListener('change', change);
+}

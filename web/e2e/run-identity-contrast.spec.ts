@@ -2,7 +2,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import type { BrowserContext, Locator, Page } from '@playwright/test';
 import type { Week } from '@kanade/api-types';
 import { COLORWAYS } from '../packages/tokens/src/colorways';
-import { ADMIN, PUBLIC, REAL_ART, expect, settle, signInPublic, test, unconditional } from './support';
+import { ADMIN, PUBLIC, REAL_ART, expect, settle, signInPublic, test, unconditional, useLook } from './support';
 
 // Text contrast over the identity card's entry art, measured from pixels: every
 // text element's colour against the worst rendered background pixel inside its
@@ -172,13 +172,7 @@ test.describe('identity-card contrast over the art', () => {
     for (const surface of SURFACES) {
       test(`contrast ${surface.name} ${look.name}`, async ({ page }) => {
         await page.setViewportSize({ width: surface.width, height: surface.height });
-        await page.addInitScript(
-          ([c, t]) => {
-            localStorage.setItem('colorway', c!);
-            localStorage.setItem('theme', t!);
-          },
-          [look.colorway, look.theme],
-        );
+        await useLook(page, look.colorway, look.theme);
         const rows: string[] = [];
         const failures: string[] = [];
         for (const run of RUNS) {
@@ -209,13 +203,7 @@ test.describe('identity-card contrast over the art', () => {
     }
     // The member portal's run pane shares the identity card's styles (`$pane: member-pane`).
     test(`contrast portal pane ${look.name}`, async ({ page }) => {
-      await page.addInitScript(
-        ([c, t]) => {
-          localStorage.setItem('colorway', c!);
-          localStorage.setItem('theme', t!);
-        },
-        [look.colorway, look.theme],
-      );
+      await useLook(page, look.colorway, look.theme);
       await signInPublic(page);
       await page.goto(`${PUBLIC}/?sw=off`);
       await page.getByRole('button', { name: /, you are in$/ }).first().click();

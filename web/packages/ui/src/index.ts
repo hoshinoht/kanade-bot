@@ -1,6 +1,7 @@
 // Promoted from the admin app so the member portal shares them: portraits,
 // the account menu, the signed-in sessions list and its words.
 export { default as AccountMenu } from './components/AccountMenu.svelte';
+export { focusMenuItem, menuButtonKey, menuKey } from './components/menu';
 export { default as Avatar } from './components/Avatar.svelte';
 export { default as SessionList } from './components/SessionList.svelte';
 export { dayTime, deviceName, isHandheld, seenWords } from './account';
@@ -48,7 +49,7 @@ export { COUNTDOWN_MARKS, COUNTDOWN_SPAN, COUNTDOWN_STAGES, runCountdown, weekPr
 // A chat allowance in words (admin Limits and Account, the member Account).
 export { resetSpan, windowWords } from './allowance';
 export { initial } from './initial';
-export { PHONE_QUERY, SINGLE_PANE_QUERY, TWO_PANE_QUERY } from './media';
+export { PHONE_QUERY, SINGLE_PANE_QUERY, TWO_PANE_QUERY, watchMedia } from './media';
 export { CHECK_TONE, RUN_TONE, type Tone } from './tone';
 export {
   applyColorway,

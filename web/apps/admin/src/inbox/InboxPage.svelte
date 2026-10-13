@@ -14,7 +14,7 @@
   import '@kanade/ui/styles/screens/evidence.scss';
   import '@kanade/ui/styles/screens/inbox.scss';
   import type { ApproveRequest, InboxTab, OwnershipRequest, Proposal } from '@kanade/api-types';
-  import { Icon, LoadError, LoadingState, Modal, PendingLabel, SINGLE_PANE_QUERY, Toaster, enter } from '@kanade/ui';
+  import { Icon, LoadError, LoadingState, Modal, PendingLabel, SINGLE_PANE_QUERY, Toaster, enter, watchMedia } from '@kanade/ui';
   import { tick, untrack } from 'svelte';
   import { Resource, send } from '../resource.svelte';
   import type { AdminWeek } from '../store.svelte';
@@ -76,13 +76,7 @@
   const waiting = $derived((inbox.data?.length ?? 0) + (ownership.data?.length ?? 0));
 
   let phone = $state(false);
-  $effect(() => {
-    const query = window.matchMedia(SINGLE_PANE_QUERY);
-    const update = () => (phone = query.matches);
-    update();
-    query.addEventListener('change', update);
-    return () => query.removeEventListener('change', update);
-  });
+  $effect(() => watchMedia(SINGLE_PANE_QUERY, (matches) => (phone = matches)));
   // Wide screens always show a detail (the first item by default); phones
   // show the list until an item is picked.
   const chosen = $derived(items.find((p) => p.id === item) ?? (phone ? undefined : items[0]));

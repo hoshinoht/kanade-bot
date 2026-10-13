@@ -1,6 +1,6 @@
 import AxeBuilder from '@axe-core/playwright';
 import type { Locator, Page } from '@playwright/test';
-import { PUBLIC, choose, expect, settle, signInPublic, test } from './support';
+import { PUBLIC, choose, expect, settle, signInPublic, test, useLook } from './support';
 
 // The member's requests to the admins (member-writes contract Phase B,
 // boards RequestForm, RequestForm-Confirm, RequestForm-Limit, Requests,
@@ -290,10 +290,7 @@ for (const theme of ['light', 'dark'] as const) {
     test(`axe: Move, the request form, Confirm it's you and My requests, ${theme} ${size.width}`, async ({ page }) => {
       test.setTimeout(60_000);
       await page.setViewportSize(size);
-      await page.addInitScript((t) => {
-        localStorage.setItem('colorway', 'marigold');
-        localStorage.setItem('theme', t);
-      }, theme);
+      await useLook(page, 'marigold', theme);
       await signInPublic(page);
       await page.goto(`${PUBLIC}/runs/r-carling?move_to=${encodeURIComponent('2026-09-30T13:30:00Z')}&sw=off`);
       await expect(page.locator('.movepick__result')).toContainText('Wed 30 21:30');
