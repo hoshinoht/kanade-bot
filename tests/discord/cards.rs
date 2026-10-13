@@ -140,26 +140,17 @@ struct World {
     run: String,
 }
 
-fn desk(
+fn desk_with<T: DiscordTransport>(
     store: &Arc<MemoryScheduleStore>,
-    discord: &Arc<FakeDiscord>,
-    alerts: &Arc<AlertRecorder>,
-    ids: &Ids,
-) -> Desk {
-    desk_at(store, discord, alerts, ids, now())
-}
-
-fn desk_at(
-    store: &Arc<MemoryScheduleStore>,
-    discord: &Arc<FakeDiscord>,
+    transport: Arc<T>,
     alerts: &Arc<AlertRecorder>,
     ids: &Ids,
     at: DateTime<Utc>,
-) -> Desk {
+) -> CardDesk<MemoryScheduleStore, T, Ids, AlertRecorder> {
     CardDesk::new(
         DeskDeps {
             store: store.clone(),
-            transport: discord.clone(),
+            transport,
             ids: ids.clone(),
             clock: Arc::new(FixedClock(at)),
             directory: Arc::new(Roster),
@@ -195,7 +186,7 @@ impl World {
             })
             .await
             .expect("run");
-        let desk = desk(&store, &discord, &alerts, &ids);
+        let desk = desk_with(&store, discord.clone(), &alerts, &ids, now());
         Self {
             store,
             discord,
@@ -204,6 +195,22 @@ impl World {
             desk,
             run,
         }
+    }
+
+    /// Another desk on this world's store and fake Discord, clocked at `at`.
+    fn desk_at(&self, at: DateTime<Utc>) -> Desk {
+        desk_with(
+            &self.store,
+            self.discord.clone(),
+            &self.alerts,
+            &self.ids,
+            at,
+        )
+    }
+
+    /// A fresh desk, as after a restart.
+    fn restarted(&self) -> Desk {
+        self.desk_at(now())
     }
 
     /// A proposed move of the run and its card entry.
@@ -220,34 +227,78 @@ impl World {
             new_datetime: Some(to),
             ..ProposedChange::new(ChangeKind::Move)
         };
-        let proposed = service(&self.store, &self.ids)
+        let id = self.propose_change(&change, source, "x-1").await;
+        CardEntry {
+            summary: "moving to wed".into(),
+            day_ref: Some("wed".into()),
+            time_ref: Some("9:30pm".into()),
+            evidence_message_ids: vec!["101".into()],
+            ..entry(id, change, AmendmentKind::Move)
+        }
+    }
+
+    /// An RSVP proposal for `user` on the run and its bare card entry.
+    async fn propose_rsvp(
+        &self,
+        user: &str,
+        state: RsvpState,
+        source: ProposalSource,
+        source_id: &str,
+    ) -> CardEntry {
+        let change = ProposedChange {
+            run_id: Some(self.run.clone()),
+            channel_id: Some(CHANNEL.into()),
+            participants: vec![user.into()],
+            rsvp: Some(state),
+            ..ProposedChange::new(ChangeKind::Rsvp)
+        };
+        let id = self.propose_change(&change, source, source_id).await;
+        entry(id, change, AmendmentKind::Rsvp)
+    }
+
+    async fn propose_change(
+        &self,
+        change: &ProposedChange,
+        source: ProposalSource,
+        source_id: &str,
+    ) -> String {
+        service(&self.store, &self.ids)
             .propose(
                 ProposalRequest {
                     change: change.clone(),
                     source,
-                    source_id: "x-1".into(),
+                    source_id: source_id.into(),
                     supersede: Supersede::Keep,
                 },
                 &policy(),
                 &Roster,
             )
             .await
-            .expect("proposal");
-        CardEntry {
-            proposal_id: proposed.proposal.id,
-            change,
-            kind: AmendmentKind::Move,
-            run_id: Some(self.run.clone()),
-            summary: "moving to wed".into(),
-            is_question: false,
-            needs_answer: false,
-            confidence: 0.9,
-            also_mentioned: Vec::new(),
-            day_ref: Some("wed".into()),
-            time_ref: Some("9:30pm".into()),
-            evidence_message_ids: vec!["101".into()],
-            self_service: None,
-        }
+            .expect("proposal")
+            .proposal
+            .id
+    }
+
+    /// Proposes a move to `to`, posts its card and returns the proposal and
+    /// card message ids.
+    async fn posted(&self, to: DateTime<Utc>) -> (String, String) {
+        let entry = self.propose(to).await;
+        let id = entry.proposal_id.clone();
+        self.desk.post_card(&one(entry)).await;
+        let message = self.message_of(&id).await.expect("posted");
+        (id, message)
+    }
+
+    /// `user` adds `answer` on the card `message`.
+    async fn answer(&self, message: &str, user: &str, answer: RsvpAnswer) -> CardReaction {
+        self.desk.on_reaction(message, user, answer, true).await
+    }
+
+    async fn run_state(&self) -> kanade::domain::schedule::ScheduleSnapshot {
+        self.store
+            .load(&Scope::Run(self.run.clone()))
+            .await
+            .expect("run")
     }
 
     fn creates(&self) -> Vec<Call> {
@@ -306,15 +357,35 @@ fn card(entries: Vec<CardEntry>, superseded: Vec<String>) -> Card {
     }
 }
 
+fn one(entry: CardEntry) -> Card {
+    card(vec![entry], Vec::new())
+}
+
+/// A card entry for `change`; callers override the descriptive fields.
+fn entry(proposal_id: String, change: ProposedChange, kind: AmendmentKind) -> CardEntry {
+    CardEntry {
+        proposal_id,
+        run_id: change.run_id.clone(),
+        change,
+        kind,
+        summary: String::new(),
+        is_question: false,
+        needs_answer: false,
+        confidence: 0.9,
+        also_mentioned: Vec::new(),
+        day_ref: None,
+        time_ref: None,
+        evidence_message_ids: Vec::new(),
+        self_service: None,
+    }
+}
+
 #[tokio::test]
 async fn a_card_is_journalled_bound_and_mentions_nobody() {
     let world = World::new().await;
     let entry = world.propose(local(9, 2, 21, 30)).await;
     let id = entry.proposal_id.clone();
-    assert_eq!(
-        world.desk.post_card(&card(vec![entry], Vec::new())).await,
-        PostResult::Posted
-    );
+    assert_eq!(world.desk.post_card(&one(entry)).await, PostResult::Posted);
 
     let creates = world.creates();
     assert_eq!(creates.len(), 1);
@@ -359,12 +430,9 @@ async fn an_ambiguous_card_is_held_and_never_replayed() {
         },
     );
     let first = world.propose(local(9, 2, 21, 30)).await;
-    assert_eq!(
-        world.desk.post_card(&card(vec![first], Vec::new())).await,
-        PostResult::Posted
-    );
+    assert_eq!(world.desk.post_card(&one(first)).await, PostResult::Posted);
     let second = world.propose(local(9, 2, 22, 30)).await;
-    world.desk.post_card(&card(vec![second], Vec::new())).await;
+    world.desk.post_card(&one(second)).await;
     assert_eq!(
         world.creates().len(),
         2,
@@ -381,7 +449,7 @@ async fn a_refused_card_is_not_posted_and_rides_with_the_next_one() {
     let first = world.propose(local(9, 2, 21, 30)).await;
     let first_id = first.proposal_id.clone();
     assert_eq!(
-        world.desk.post_card(&card(vec![first], Vec::new())).await,
+        world.desk.post_card(&one(first)).await,
         PostResult::Pending,
         "saved and reposted later, so its tips stay spent"
     );
@@ -390,7 +458,7 @@ async fn a_refused_card_is_not_posted_and_rides_with_the_next_one() {
         "a refused send is alerted"
     );
     let second = world.propose(local(9, 2, 22, 30)).await;
-    world.desk.post_card(&card(vec![second], Vec::new())).await;
+    world.desk.post_card(&one(second)).await;
     assert_eq!(
         world.creates().len(),
         3,
@@ -402,16 +470,10 @@ async fn a_refused_card_is_not_posted_and_rides_with_the_next_one() {
 #[tokio::test]
 async fn a_participant_approves_and_the_card_says_so() {
     let world = World::new().await;
-    let entry = world.propose(local(9, 2, 21, 30)).await;
-    let id = entry.proposal_id.clone();
-    world.desk.post_card(&card(vec![entry], Vec::new())).await;
-    let message = world.message_of(&id).await.expect("posted");
+    let (id, message) = world.posted(local(9, 2, 21, 30)).await;
 
     assert_eq!(
-        world
-            .desk
-            .on_reaction(&message, STRANGER, RsvpAnswer::Yes, true)
-            .await,
+        world.answer(&message, STRANGER, RsvpAnswer::Yes).await,
         CardReaction::Ignored,
         "not theirs to answer: silence"
     );
@@ -424,10 +486,8 @@ async fn a_participant_approves_and_the_card_says_so() {
         CardReaction::Ignored,
         "removing a reaction does nothing"
     );
-    let CardReaction::Approved { approved, problems } = world
-        .desk
-        .on_reaction(&message, MY, RsvpAnswer::Yes, true)
-        .await
+    let CardReaction::Approved { approved, problems } =
+        world.answer(&message, MY, RsvpAnswer::Yes).await
     else {
         panic!("approved");
     };
@@ -454,24 +514,17 @@ async fn a_participant_approves_and_the_card_says_so() {
             .collect::<Vec<_>>(),
         approved[0].merge.notices
     );
-    let run = world
-        .store
-        .load(&Scope::Run(world.run.clone()))
-        .await
-        .expect("run")
-        .runs
-        .remove(0);
-    assert_eq!(run.datetime, local(9, 2, 21, 30));
+    assert_eq!(
+        world.run_state().await.runs[0].datetime,
+        local(9, 2, 21, 30)
+    );
     assert!(
         world
             .last_edit_content()
             .ends_with("\n✅ applied by Mylene")
     );
     assert_eq!(
-        world
-            .desk
-            .on_reaction(&message, MY, RsvpAnswer::Yes, true)
-            .await,
+        world.answer(&message, MY, RsvpAnswer::Yes).await,
         CardReaction::Ignored,
         "a repeated ✅ writes and posts nothing"
     );
@@ -481,15 +534,9 @@ async fn a_participant_approves_and_the_card_says_so() {
 #[tokio::test]
 async fn an_admin_rejects_and_the_card_says_so() {
     let world = World::new().await;
-    let entry = world.propose(local(9, 2, 21, 30)).await;
-    let id = entry.proposal_id.clone();
-    world.desk.post_card(&card(vec![entry], Vec::new())).await;
-    let message = world.message_of(&id).await.expect("posted");
+    let (id, message) = world.posted(local(9, 2, 21, 30)).await;
     assert_eq!(
-        world
-            .desk
-            .on_reaction(&message, ADMIN, RsvpAnswer::No, true)
-            .await,
+        world.answer(&message, ADMIN, RsvpAnswer::No).await,
         CardReaction::Rejected {
             proposal_ids: vec![id.clone()]
         }
@@ -505,10 +552,7 @@ async fn an_admin_rejects_and_the_card_says_so() {
         "extraction cards never start chat follow-ups"
     );
     assert_eq!(
-        world
-            .desk
-            .on_reaction(&message, ADMIN, RsvpAnswer::No, true)
-            .await,
+        world.answer(&message, ADMIN, RsvpAnswer::No).await,
         CardReaction::Ignored,
         "the closed card cannot follow up twice"
     );
@@ -521,13 +565,10 @@ async fn a_successfully_rejected_chat_card_hands_only_stored_facts_to_chat() {
         .propose_from(local(9, 2, 21, 30), ProposalSource::Chat)
         .await;
     let id = entry.proposal_id.clone();
-    world.desk.post_card(&card(vec![entry], Vec::new())).await;
+    world.desk.post_card(&one(entry)).await;
     let message = world.message_of(&id).await.expect("posted");
     assert!(matches!(
-        world
-            .desk
-            .on_reaction(&message, MY, RsvpAnswer::No, true)
-            .await,
+        world.answer(&message, MY, RsvpAnswer::No).await,
         CardReaction::Rejected { .. }
     ));
     let follow_up = world
@@ -545,43 +586,11 @@ async fn a_successfully_rejected_chat_card_hands_only_stored_facts_to_chat() {
 async fn an_approval_that_no_longer_applies_keeps_v4_wording() {
     let world = World::new().await;
     // A carded answer for Alvin (the chatbot cards these), checked again at ✅.
-    let change = ProposedChange {
-        run_id: Some(world.run.clone()),
-        channel_id: Some(CHANNEL.into()),
-        participants: vec![ALVIN.into()],
-        rsvp: Some(RsvpState::Yes),
-        ..ProposedChange::new(ChangeKind::Rsvp)
-    };
-    let proposed = service(&world.store, &world.ids)
-        .propose(
-            ProposalRequest {
-                change: change.clone(),
-                source: ProposalSource::Extraction,
-                source_id: "x-2".into(),
-                supersede: Supersede::Keep,
-            },
-            &policy(),
-            &Roster,
-        )
-        .await
-        .expect("proposal");
-    let id = proposed.proposal.id;
-    let entry = CardEntry {
-        proposal_id: id.clone(),
-        change,
-        kind: AmendmentKind::Rsvp,
-        run_id: Some(world.run.clone()),
-        summary: String::new(),
-        is_question: false,
-        needs_answer: false,
-        confidence: 0.9,
-        also_mentioned: Vec::new(),
-        day_ref: None,
-        time_ref: None,
-        evidence_message_ids: Vec::new(),
-        self_service: None,
-    };
-    world.desk.post_card(&card(vec![entry], Vec::new())).await;
+    let entry = world
+        .propose_rsvp(ALVIN, RsvpState::Yes, ProposalSource::Extraction, "x-2")
+        .await;
+    let id = entry.proposal_id.clone();
+    world.desk.post_card(&one(entry)).await;
     let message = world.message_of(&id).await.expect("posted");
     service(&world.store, &world.ids)
         .as_origin(Origin::for_tests())
@@ -590,10 +599,7 @@ async fn an_approval_that_no_longer_applies_keeps_v4_wording() {
         .expect("Alvin left by hand");
     let refusal = "that answer is for somebody who is no longer on the run";
     assert_eq!(
-        world
-            .desk
-            .on_reaction(&message, MY, RsvpAnswer::Yes, true)
-            .await,
+        world.answer(&message, MY, RsvpAnswer::Yes).await,
         CardReaction::Approved {
             approved: Vec::new(),
             problems: vec![refusal.into()],
@@ -612,7 +618,7 @@ async fn a_newer_card_marks_the_retired_one_superseded() {
     let world = World::new().await;
     let first = world.propose(local(9, 2, 21, 30)).await;
     let first_id = first.proposal_id.clone();
-    world.desk.post_card(&card(vec![first], Vec::new())).await;
+    world.desk.post_card(&one(first)).await;
     // The pipeline retires older proposals through the scheduler first.
     let retired = service(&world.store, &world.ids)
         .supersede_proposals(SupersedeScope {
@@ -639,12 +645,8 @@ async fn a_newer_card_marks_the_retired_one_superseded() {
 #[tokio::test]
 async fn a_restarted_desk_re_renders_a_card_from_its_stored_details() {
     let world = World::new().await;
-    let entry = world.propose(local(9, 2, 21, 30)).await;
-    let id = entry.proposal_id.clone();
-    world.desk.post_card(&card(vec![entry], Vec::new())).await;
-    let message = world.message_of(&id).await.expect("posted");
-    let restarted = desk(&world.store, &world.discord, &world.alerts, &world.ids);
-    assert!(restarted.refresh(&message).await);
+    let (_, message) = world.posted(local(9, 2, 21, 30)).await;
+    assert!(world.restarted().refresh(&message).await);
     let Some(Call::Edit { edit, .. }) = world.discord.calls().pop() else {
         panic!("an edit");
     };
@@ -666,11 +668,7 @@ async fn chat_answers_count_for_participants_only() {
         state: RsvpState::Yes,
     }];
     assert_eq!(world.desk.apply_answers(&answers).await, 1);
-    let state = world
-        .store
-        .load(&Scope::Run(world.run.clone()))
-        .await
-        .expect("run");
+    let state = world.run_state().await;
     let rsvps: BTreeMap<&str, (RsvpState, &str)> = state
         .rsvps
         .iter()
@@ -682,68 +680,34 @@ async fn chat_answers_count_for_participants_only() {
 
 #[tokio::test]
 async fn proposal_decline_is_not_a_candidate_but_extraction_decline_is() {
-    let proposal_world = World::new().await;
-    let change = ProposedChange {
-        run_id: Some(proposal_world.run.clone()),
-        channel_id: Some(CHANNEL.into()),
-        participants: vec![MY.into()],
-        rsvp: Some(RsvpState::No),
-        ..ProposedChange::new(ChangeKind::Rsvp)
-    };
-    let proposed = service(&proposal_world.store, &proposal_world.ids)
-        .propose(
-            ProposalRequest {
-                change: change.clone(),
-                source: ProposalSource::Chat,
-                source_id: "chat-no-1".into(),
-                supersede: Supersede::Keep,
-            },
-            &policy(),
-            &Roster,
-        )
-        .await
-        .expect("proposal");
-    let proposal_id = proposed.proposal.id;
+    let world = World::new().await;
     let entry = CardEntry {
-        proposal_id: proposal_id.clone(),
-        change,
-        kind: AmendmentKind::Rsvp,
-        run_id: Some(proposal_world.run.clone()),
         summary: "I can't make it".into(),
-        is_question: false,
-        needs_answer: false,
-        confidence: 0.9,
-        also_mentioned: Vec::new(),
-        day_ref: None,
-        time_ref: None,
         evidence_message_ids: vec!["101".into()],
-        self_service: None,
+        ..world
+            .propose_rsvp(MY, RsvpState::No, ProposalSource::Chat, "chat-no-1")
+            .await
     };
-    proposal_world
-        .desk
-        .post_card(&card(vec![entry], Vec::new()))
-        .await;
-    let message = proposal_world
+    let proposal_id = entry.proposal_id.clone();
+    world.desk.post_card(&one(entry)).await;
+    let message = world
         .message_of(&proposal_id)
         .await
         .expect("posted proposal");
     assert!(matches!(
-        proposal_world
-            .desk
-            .on_reaction(&message, MY, RsvpAnswer::Yes, true)
-            .await,
+        world.answer(&message, MY, RsvpAnswer::Yes).await,
         CardReaction::Approved { .. }
     ));
     assert!(
-        proposal_world
+        world
             .store
-            .decline_notice(&proposal_world.run, MY)
+            .decline_notice(&world.run, MY)
             .await
             .expect("decline notice")
             .is_none()
     );
     assert!(
-        proposal_world
+        world
             .store
             .pending_decline_notices(10)
             .await
@@ -751,37 +715,32 @@ async fn proposal_decline_is_not_a_candidate_but_extraction_decline_is() {
             .is_empty()
     );
     assert_eq!(
-        proposal_world.discord.count(Op::Create),
+        world.discord.count(Op::Create),
         1,
         "only the proposal card was posted"
     );
 
-    let extraction_world = World::new().await;
-    let outbox = CardOutbox(Arc::new(desk(
-        &extraction_world.store,
-        &extraction_world.discord,
-        &extraction_world.alerts,
-        &extraction_world.ids,
-    )));
+    let world = World::new().await;
+    let outbox = CardOutbox(Arc::new(world.restarted()));
     Outbox::answers(
         &outbox,
         vec![ChatAnswer {
             channel_id: "301".into(),
-            run_id: extraction_world.run.clone(),
+            run_id: world.run.clone(),
             user_ids: vec![ALVIN.into()],
             state: RsvpState::No,
         }],
     )
     .await;
-    let candidate = extraction_world
+    let candidate = world
         .store
-        .decline_notice(&extraction_world.run, ALVIN)
+        .decline_notice(&world.run, ALVIN)
         .await
         .expect("decline notice")
         .expect("extraction decline candidate");
     assert_eq!(candidate.channel_id.as_deref(), Some("301"));
     assert_eq!(
-        extraction_world
+        world
             .store
             .pending_decline_notices(10)
             .await
@@ -794,13 +753,7 @@ async fn proposal_decline_is_not_a_candidate_but_extraction_decline_is() {
 #[tokio::test]
 async fn the_outbox_posts_links_unpinged_and_alerts_backlog_drops() {
     let world = World::new().await;
-    let desk = Arc::new(desk(
-        &world.store,
-        &world.discord,
-        &world.alerts,
-        &world.ids,
-    ));
-    let outbox = CardOutbox(desk);
+    let outbox = CardOutbox(Arc::new(world.restarted()));
     let redirected = Redirected {
         channel_id: CHANNEL.into(),
         change: ProposedChange::new(ChangeKind::Move),
@@ -850,18 +803,15 @@ async fn a_released_card_posts_even_beside_a_held_one() {
     );
     let held = world.propose(local(9, 2, 21, 30)).await;
     let held_id = held.proposal_id.clone();
-    world.desk.post_card(&card(vec![held], Vec::new())).await;
+    world.desk.post_card(&one(held)).await;
     world
         .discord
         .script(Op::Create, Step::Reject(RejectionKind::MissingPermissions));
     let released = world.propose(local(9, 2, 22, 0)).await;
     let released_id = released.proposal_id.clone();
-    world
-        .desk
-        .post_card(&card(vec![released], Vec::new()))
-        .await;
+    world.desk.post_card(&one(released)).await;
     let fresh = world.propose(local(9, 2, 22, 30)).await;
-    world.desk.post_card(&card(vec![fresh], Vec::new())).await;
+    world.desk.post_card(&one(fresh)).await;
 
     assert!(world.message_of(&released_id).await.is_some(), "reposted");
     assert_eq!(world.message_of(&held_id).await, None, "held, never resent");
@@ -876,16 +826,10 @@ async fn a_stranded_card_past_its_ttl_is_not_reposted() {
         .script(Op::Create, Step::Reject(RejectionKind::MissingPermissions));
     let first = world.propose(local(9, 2, 21, 30)).await;
     let first_id = first.proposal_id.clone();
-    world.desk.post_card(&card(vec![first], Vec::new())).await;
-    let later = desk_at(
-        &world.store,
-        &world.discord,
-        &world.alerts,
-        &world.ids,
-        now() + chrono::TimeDelta::hours(25),
-    );
+    world.desk.post_card(&one(first)).await;
+    let later = world.desk_at(now() + chrono::TimeDelta::hours(25));
     let second = world.propose(local(9, 2, 22, 30)).await;
-    later.post_card(&card(vec![second], Vec::new())).await;
+    later.post_card(&one(second)).await;
     assert_eq!(world.creates().len(), 2, "only the new card");
     assert_eq!(world.message_of(&first_id).await, None);
 }
@@ -893,17 +837,8 @@ async fn a_stranded_card_past_its_ttl_is_not_reposted() {
 #[tokio::test]
 async fn a_strangers_reaction_on_a_past_ttl_card_changes_and_posts_nothing() {
     let world = World::new().await;
-    let entry = world.propose(local(9, 2, 21, 30)).await;
-    let id = entry.proposal_id.clone();
-    world.desk.post_card(&card(vec![entry], Vec::new())).await;
-    let message = world.message_of(&id).await.expect("posted");
-    let later = desk_at(
-        &world.store,
-        &world.discord,
-        &world.alerts,
-        &world.ids,
-        now() + chrono::TimeDelta::hours(25),
-    );
+    let (id, message) = world.posted(local(9, 2, 21, 30)).await;
+    let later = world.desk_at(now() + chrono::TimeDelta::hours(25));
     let calls = world.discord.calls().len();
     for answer in [RsvpAnswer::Yes, RsvpAnswer::No] {
         assert_eq!(
@@ -918,29 +853,21 @@ async fn a_strangers_reaction_on_a_past_ttl_card_changes_and_posts_nothing() {
 #[tokio::test]
 async fn a_hand_edited_run_leaves_the_card_out_of_date() {
     let world = World::new().await;
-    let entry = world.propose(local(9, 2, 21, 30)).await;
-    let id = entry.proposal_id.clone();
-    world.desk.post_card(&card(vec![entry], Vec::new())).await;
-    let message = world.message_of(&id).await.expect("posted");
+    let (id, message) = world.posted(local(9, 2, 21, 30)).await;
     service(&world.store, &world.ids)
         .as_origin(Origin::for_tests())
         .amend_run(&world.run, local(9, 1, 22, 0), &policy())
         .await
         .expect("moved by hand");
-    let reaction = world
-        .desk
-        .on_reaction(&message, MY, RsvpAnswer::Yes, true)
-        .await;
     assert!(matches!(
-        reaction,
+        world.answer(&message, MY, RsvpAnswer::Yes).await,
         CardReaction::Approved { ref approved, .. } if approved.is_empty()
     ));
-    let posted = world.creates().pop().expect("a notice");
-    let Call::Create {
+    let Some(Call::Create {
         message: notice, ..
-    } = posted
+    }) = world.creates().pop()
     else {
-        unreachable!()
+        panic!("a notice");
     };
     assert_eq!(
         notice.content.as_deref(),
@@ -956,10 +883,7 @@ async fn a_hand_edited_run_leaves_the_card_out_of_date() {
 #[tokio::test]
 async fn a_failure_members_must_not_see_is_alerted_not_posted() {
     let world = World::new().await;
-    let entry = world.propose(local(9, 2, 21, 30)).await;
-    let id = entry.proposal_id.clone();
-    world.desk.post_card(&card(vec![entry], Vec::new())).await;
-    let message = world.message_of(&id).await.expect("posted");
+    let (id, message) = world.posted(local(9, 2, 21, 30)).await;
     // The member's approval request id already names another change.
     service(&world.store, &world.ids)
         .as_origin(
@@ -971,10 +895,7 @@ async fn a_failure_members_must_not_see_is_alerted_not_posted() {
         .expect("unrelated change");
     let calls = world.discord.calls().len();
     assert_eq!(
-        world
-            .desk
-            .on_reaction(&message, MY, RsvpAnswer::Yes, true)
-            .await,
+        world.answer(&message, MY, RsvpAnswer::Yes).await,
         CardReaction::Ignored
     );
     assert_eq!(world.discord.calls().len(), calls, "nothing public");
@@ -987,10 +908,7 @@ async fn a_failure_members_must_not_see_is_alerted_not_posted() {
 #[tokio::test]
 async fn a_members_check_after_their_own_portal_edit_stays_silent() {
     let world = World::new().await;
-    let entry = world.propose(local(9, 2, 21, 30)).await;
-    let id = entry.proposal_id.clone();
-    world.desk.post_card(&card(vec![entry], Vec::new())).await;
-    let message = world.message_of(&id).await.expect("posted");
+    let (id, message) = world.posted(local(9, 2, 21, 30)).await;
     // The admin approves from the portal at another time; the card is not
     // refreshed (serve composition does that).
     let admin = Staff.approver(ADMIN);
@@ -1002,10 +920,7 @@ async fn a_members_check_after_their_own_portal_edit_stays_silent() {
     let before = world.store.load(&Scope::All).await.expect("state");
     let calls = world.discord.calls().len();
     assert_eq!(
-        world
-            .desk
-            .on_reaction(&message, ADMIN, RsvpAnswer::Yes, true)
-            .await,
+        world.answer(&message, ADMIN, RsvpAnswer::Yes).await,
         CardReaction::Ignored
     );
     assert_eq!(
@@ -1027,15 +942,10 @@ async fn a_members_check_after_their_own_portal_edit_stays_silent() {
 #[tokio::test]
 async fn the_portal_refresh_port_re_renders_a_committed_card_on_fake_discord() {
     let world = World::new().await;
-    let desk = Arc::new(desk(
-        &world.store,
-        &world.discord,
-        &world.alerts,
-        &world.ids,
-    ));
+    let desk = Arc::new(world.restarted());
     let entry = world.propose(local(9, 2, 21, 30)).await;
     let id = entry.proposal_id.clone();
-    desk.post_card(&card(vec![entry], Vec::new())).await;
+    desk.post_card(&one(entry)).await;
     let admin = Staff.approver(ADMIN);
     service(&world.store, &world.ids)
         .approve_proposal(&id, &admin, &policy(), &Roster)
@@ -1184,29 +1094,14 @@ async fn a_send_whose_journal_write_failed_still_counts_as_posted() {
     ] {
         let world = World::new().await;
         world.discord.script(Op::Create, step);
-        let desk = CardDesk::new(
-            DeskDeps {
-                store: world.store.clone(),
-                transport: Arc::new(LeaseLost {
-                    fake: world.discord.clone(),
-                    store: world.store.clone(),
-                }),
-                ids: world.ids.clone(),
-                clock: Arc::new(FixedClock(now())),
-                directory: Arc::new(Roster),
-                authority: Arc::new(Staff),
-                alerts: world.alerts.clone(),
-                decline_retraction: None,
-            },
-            CardSettings {
-                zone: zone(),
-                policy: policy(),
-                instance_id: "instance-1".into(),
-            },
-        );
+        let lease_lost = Arc::new(LeaseLost {
+            fake: world.discord.clone(),
+            store: world.store.clone(),
+        });
+        let desk = desk_with(&world.store, lease_lost, &world.alerts, &world.ids, now());
         let entry = world.propose(local(9, 2, 21, 30)).await;
         assert_eq!(
-            desk.post_card(&card(vec![entry], Vec::new())).await,
+            desk.post_card(&one(entry)).await,
             PostResult::Posted,
             "it may be visible, so its tip stays spent"
         );

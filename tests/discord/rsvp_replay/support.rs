@@ -3,7 +3,7 @@ use std::sync::{Arc, Mutex};
 use chrono::{DateTime, NaiveTime, TimeZone, Utc, Weekday};
 use kanade::bot::cards::{Authority, CardDesk, CardOutbox, CardSettings, DeskDeps};
 use kanade::bot::delivery::{AlertRecorder, FixedClock};
-use kanade::bot::rsvp_replay::RsvpReplay;
+use kanade::bot::rsvp_replay::{ReplayReport, RsvpReplay};
 use kanade::bot::transport::{FakeDiscord, MessageId};
 use kanade::domain::history::{Actor, ChangeMeta, Origin, Surface};
 use kanade::domain::ids::RandomIds;
@@ -14,10 +14,12 @@ use kanade::domain::notify::{
 };
 use kanade::domain::proposals::Approver;
 use kanade::domain::schedule::{
-    Change, ChangeSet, NewRun, Reminder, ReminderPolicy, RunSource, RunStatus, SchedulePolicy,
+    Change, ChangeSet, NewRun, Reminder, ReminderPolicy, RsvpState, RunSource, RunStatus,
+    SchedulePolicy,
 };
 use kanade::domain::scheduler::{ScheduleStore, SchedulerService};
 use kanade::infrastructure::store::MemoryScheduleStore;
+use twilight_model::channel::message::ReactionType;
 use twilight_model::id::Id;
 
 pub const CHANNEL: u64 = 300;
@@ -105,24 +107,93 @@ impl World {
     }
 
     pub async fn run(&self, users: &[u64], start: DateTime<Utc>, status: RunStatus) -> String {
-        SchedulerService::new(
-            Arc::clone(&self.store),
-            RandomIds,
-            FixedClock(self.clock.get()),
+        self.service_at(self.clock.get())
+            .as_origin(Origin::new(Actor::admin("seed"), Surface::AdminPortal))
+            .create_run(NewRun {
+                fixed_run_id: None,
+                channel_id: Some(CHANNEL.to_string()),
+                week_start: self.clock.get(),
+                datetime: start,
+                bosses: vec!["HFA".into()],
+                participants: users.iter().map(u64::to_string).collect(),
+                status,
+                source: RunSource::Amend,
+            })
+            .await
+            .unwrap()
+    }
+
+    /// A planned run starting `hours` after [`now`].
+    pub async fn planned(&self, users: &[u64], hours: i64) -> String {
+        self.run(
+            users,
+            now() + chrono::TimeDelta::hours(hours),
+            RunStatus::Planned,
         )
-        .as_origin(Origin::new(Actor::admin("seed"), Surface::AdminPortal))
-        .create_run(NewRun {
-            fixed_run_id: None,
-            channel_id: Some(CHANNEL.to_string()),
-            week_start: self.clock.get(),
-            datetime: start,
-            bosses: vec!["HFA".into()],
-            participants: users.iter().map(u64::to_string).collect(),
-            status,
-            source: RunSource::Amend,
-        })
         .await
-        .unwrap()
+    }
+
+    pub fn service_at(
+        &self,
+        at: DateTime<Utc>,
+    ) -> SchedulerService<Arc<MemoryScheduleStore>, RandomIds, FixedClock> {
+        SchedulerService::new(Arc::clone(&self.store), RandomIds, FixedClock(at))
+    }
+
+    /// `MEMBER` adds ✅ through the live Discord reaction path.
+    pub async fn member_reacts_yes(&self, run: &str) {
+        self.service_at(now())
+            .as_origin(Origin::new(
+                Actor::member(MEMBER.to_string()),
+                Surface::Discord,
+            ))
+            .apply_reaction(run, &MEMBER.to_string(), "✅", true)
+            .await
+            .unwrap();
+    }
+
+    /// An admin sets or clears `MEMBER`'s answer from the portal.
+    pub async fn portal_answer(&self, run: &str, answer: Option<RsvpState>) {
+        self.service_at(now())
+            .as_origin(Origin::new(Actor::admin("portal"), Surface::AdminPortal))
+            .portal_answer(run, &MEMBER.to_string(), answer)
+            .await
+            .unwrap();
+    }
+
+    /// One minute later, an admin moves the run to 30 hours after [`now`].
+    pub async fn move_run(&self, run: &str) {
+        self.clock.set(now() + chrono::TimeDelta::minutes(1));
+        self.service_at(self.clock.get())
+            .as_origin(Origin::new(Actor::admin("move"), Surface::AdminPortal))
+            .amend_run(run, now() + chrono::TimeDelta::hours(30), &policy())
+            .await
+            .unwrap();
+    }
+
+    /// Replace the reactors of `emoji` on `message`.
+    pub fn react(&self, message: u64, emoji: &str, users: &[u64]) {
+        self.fake.seed_reactions(
+            Id::new(message),
+            emoji,
+            ReactionType::Normal,
+            users.iter().copied().map(Id::new).collect(),
+        );
+    }
+
+    /// One full replay pass with no live events.
+    pub async fn replay_once(&self) -> ReplayReport {
+        self.replay().replay(Id::new(SELF), || true, &mut ()).await
+    }
+
+    /// Collects every run id the store reports as written.
+    pub fn observe_run_writes(&self) -> Arc<Mutex<Vec<String>>> {
+        let observed = Arc::new(Mutex::new(Vec::new()));
+        let capture = Arc::clone(&observed);
+        assert!(self.store.observe_run_writes(Arc::new(move |runs| {
+            capture.lock().unwrap().extend_from_slice(runs)
+        })));
+        observed
     }
 
     pub async fn card(&self, run: &str, message: u64) {

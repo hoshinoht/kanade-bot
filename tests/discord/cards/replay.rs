@@ -37,12 +37,7 @@ type Worker = Reactions<
 
 fn worker(world: &World, follow_up: &Arc<FollowUps>) -> Worker {
     Reactions {
-        desk: Arc::new(desk(
-            &world.store,
-            &world.discord,
-            &world.alerts,
-            &world.ids,
-        )),
+        desk: Arc::new(world.restarted()),
         rsvp: ReactionRouter::new(
             NoIndex,
             SchedulerService::new(
@@ -72,7 +67,7 @@ fn live_reaction(message: MessageId, user: &str, added: bool) -> RsvpReaction {
 async fn pending(world: &World, source: ProposalSource) -> (String, MessageId) {
     let entry = world.propose_from(local(9, 2, 21, 30), source).await;
     let id = entry.proposal_id.clone();
-    world.desk.post_card(&card(vec![entry], Vec::new())).await;
+    world.desk.post_card(&one(entry)).await;
     let message = Id::new(world.message_of(&id).await.unwrap().parse().unwrap());
     (id, message)
 }
@@ -95,8 +90,10 @@ async fn offline_no_rejects_extraction_and_chat_without_stale_follow_up() {
         let world = World::new().await;
         let (id, message) = pending(&world, source).await;
         seed(&world, message, "❌", &[MY]);
-        let restarted = desk(&world.store, &world.discord, &world.alerts, &world.ids);
-        let report = restarted.replay_reactions(Id::new(SELF), || true).await;
+        let report = world
+            .restarted()
+            .replay_reactions(Id::new(SELF), || true)
+            .await;
         assert_eq!(report.rejected, 1);
         assert_eq!(world.status(&id).await, DraftStatus::Rejected);
         assert!(world.last_edit_content().ends_with("❌ rejected by Mylene"));
@@ -115,13 +112,7 @@ async fn offline_yes_approves_extraction_and_chat_through_scheduler() {
         assert_eq!(world.status(&id).await, DraftStatus::Merged);
         assert!(world.last_edit_content().ends_with("✅ applied by Mylene"));
         assert_eq!(
-            world
-                .store
-                .load(&Scope::Run(world.run.clone()))
-                .await
-                .unwrap()
-                .runs[0]
-                .datetime,
+            world.run_state().await.runs[0].datetime,
             local(9, 2, 21, 30)
         );
         let repeated = world.desk.replay_reactions(Id::new(SELF), || true).await;
@@ -175,10 +166,7 @@ async fn offline_opposing_authorised_answers_keep_pending_with_persistent_refres
                 .await,
             CardReaction::Ignored
         );
-        world
-            .desk
-            .on_reaction(&message.to_string(), MY, RsvpAnswer::No, true)
-            .await;
+        world.answer(&message.to_string(), MY, RsvpAnswer::No).await;
         assert_eq!(world.status(&id).await, DraftStatus::Rejected);
         assert!(!world.last_edit_content().contains(OFFLINE_CONFLICT_NOTICE));
     }

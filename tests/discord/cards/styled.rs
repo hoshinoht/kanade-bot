@@ -52,7 +52,7 @@ pub(super) fn styled_desk(
     marks: DifficultyMarks,
 ) -> Desk {
     let redesign = Arc::clone(redesign);
-    desk(&world.store, &world.discord, &world.alerts, &world.ids).with_cards(CardKit {
+    world.restarted().with_cards(CardKit {
         catalog: Some(Arc::new(catalog())),
         style: Some(Arc::new(move || {
             if redesign.load(Ordering::SeqCst) {
@@ -77,10 +77,7 @@ async fn legacy_card(world: &World, marks: DifficultyMarks) -> (Desk, String, St
     let desk = styled_desk(world, &style, marks);
     let entry = world.propose(local(9, 2, 21, 30)).await;
     let id = entry.proposal_id.clone();
-    assert_eq!(
-        desk.post_card(&card(vec![entry], Vec::new())).await,
-        PostResult::Posted
-    );
+    assert_eq!(desk.post_card(&one(entry)).await, PostResult::Posted);
     style.store(true, Ordering::SeqCst);
     let message = world.message_of(&id).await.expect("posted");
     (desk, id, message)
@@ -213,7 +210,7 @@ async fn the_style_is_read_live_on_every_render() {
     let desk = styled_desk(&world, &style, DifficultyMarks::new());
     let entry = world.propose(local(9, 2, 21, 30)).await;
     let id = entry.proposal_id.clone();
-    desk.post_card(&card(vec![entry], Vec::new())).await;
+    desk.post_card(&one(entry)).await;
     let Some(Call::Create { message, .. }) = world.creates().pop() else {
         panic!("a post");
     };
@@ -260,7 +257,7 @@ async fn an_offline_replay_after_restart_keeps_the_redesigned_style() {
         &Arc::new(AtomicBool::new(false)),
         DifficultyMarks::new(),
     )
-    .post_card(&card(vec![entry], Vec::new()))
+    .post_card(&one(entry))
     .await;
     let message = world.message_of(&id).await.expect("posted");
     seed(&world, &message, "✅", MY);
