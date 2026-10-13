@@ -1,5 +1,6 @@
 //! Calls every endpoint the PWAs use and validates each response against the
 //! frozen contract in `docs/v5/api-schemas` (2xx: the endpoint's schema, else `ApiError`).
+//! A schema target is written `file#Def`, for `file.json#/$defs/Def`.
 
 use crate::{App, assets, mock, reports, routers};
 use axum::{
@@ -14,6 +15,7 @@ use tokio::sync::Mutex;
 use tower::ServiceExt;
 
 const BASE: &str = "https://kanade.invalid/api-schemas/";
+const NONE: &[(&str, &str)] = &[];
 
 fn root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..")
@@ -38,8 +40,11 @@ fn schemas() -> Vec<(String, Value)> {
     out
 }
 
-/// `target` is `file.json#/$defs/Name`.
+/// `target` is `file#Def`.
 fn validator(target: &str) -> Validator {
+    let (file, def) = target
+        .split_once('#')
+        .unwrap_or_else(|| panic!("{target:?}: not file#Def"));
     jsonschema::options()
         .with_resources(
             schemas()
@@ -48,7 +53,7 @@ fn validator(target: &str) -> Validator {
         )
         .build(&json!({
             "$schema": "https://json-schema.org/draft/2020-12/schema",
-            "$ref": format!("{BASE}{target}"),
+            "$ref": format!("{BASE}{file}.json#/$defs/{def}"),
         }))
         .unwrap_or_else(|e| panic!("{target}: {e}"))
 }
@@ -91,6 +96,11 @@ impl Harness {
         }
     }
 
+    fn router(&self, public: bool) -> Router {
+        let router = if public { &self.public } else { &self.admin };
+        router.clone()
+    }
+
     /// As the PWA sends it: with the session's CSRF token.
     async fn send(
         &self,
@@ -125,9 +135,8 @@ impl Harness {
             }
             None => Body::empty(),
         };
-        let router = if public { &self.public } else { &self.admin };
-        let res = router
-            .clone()
+        let res = self
+            .router(public)
             .oneshot(req.body(body).unwrap())
             .await
             .unwrap();
@@ -149,20 +158,47 @@ impl Harness {
         (status, headers, value)
     }
 
-    /// A guarded admin call answering `want` with the ApiError `code`.
-    async fn refused(
+    /// A mock control (`POST /__mock/...`) with the session's CSRF token.
+    async fn control(&self, public: bool, path: &str, body: Value) -> StatusCode {
+        self.send(public, "POST", path, Some(body)).await.0
+    }
+
+    /// The CSRF token after a (mock) sign-in, as the PWA reads it.
+    async fn session_token(&self) -> String {
+        let (_, headers, _) = self
+            .send_with(false, "GET", "/api/admin/session", None, NONE)
+            .await;
+        header_value(&headers, "x-kanade-csrf").to_owned()
+    }
+
+    /// Signs the mock admin in again with `method` and takes the new CSRF token.
+    async fn sign_in_admin(&mut self, method: &str) {
+        self.control(false, "/__mock/session", json!({ "method": method }))
+            .await;
+        self.csrf = self.session_token().await;
+    }
+
+    /// An admin call with the session's CSRF token answering `want` with the ApiError `code`.
+    async fn refused(&mut self, method: &str, path: &str, body: Value, want: (u16, &str)) {
+        let csrf = self.csrf.clone();
+        self.refused_with(method, path, body, &[("x-kanade-csrf", &csrf)], want)
+            .await;
+    }
+
+    /// [`Self::refused`] with exactly these headers.
+    async fn refused_with(
         &mut self,
         method: &str,
         path: &str,
         body: Value,
         headers: &[(&str, &str)],
-        want: (StatusCode, &str),
+        want: (u16, &str),
     ) {
         let (status, _, value) = self
             .send_with(false, method, path, Some(body), headers)
             .await;
         let label = format!("admin {method} {path} ({})", want.1);
-        if (status, value["error"].as_str()) != (want.0, Some(want.1)) {
+        if status != want.0 || value["error"].as_str() != Some(want.1) {
             self.failures.push(format!(
                 "{label}: wanted {} {}, got {status}: {value}",
                 want.0, want.1
@@ -178,7 +214,7 @@ impl Harness {
         let target = if status.is_success() {
             target
         } else {
-            "error.json#/$defs/ApiError"
+            "error#ApiError"
         };
         self.checked += 1;
         let errors: Vec<String> = validator(target)
@@ -193,45 +229,37 @@ impl Harness {
         }
     }
 
-    /// A portrait: `200` with an image type and the server's cache policy.
-    async fn image(&mut self, path: &str) {
+    /// An image (with this session `cookie`, if any): `200`, an image type and the `cache` policy.
+    async fn image(&mut self, public: bool, path: &str, cookie: &str, cache: &str) {
+        let mut req = Request::get(path);
+        if !cookie.is_empty() {
+            req = req.header(header::COOKIE, cookie);
+        }
         let res = self
-            .admin
-            .clone()
-            .oneshot(Request::get(path).body(Body::empty()).unwrap())
+            .router(public)
+            .oneshot(req.body(Body::empty()).unwrap())
             .await
             .unwrap();
         self.checked += 1;
-        let header = |name| {
-            res.headers()
-                .get(name)
-                .and_then(|v| v.to_str().ok())
-                .unwrap_or_default()
-                .to_owned()
-        };
-        let (kind, cache) = (header(header::CONTENT_TYPE), header(header::CACHE_CONTROL));
-        if res.status() != StatusCode::OK
-            || !kind.starts_with("image/")
-            || cache != "private, no-cache"
-        {
+        let kind = header_value(res.headers(), "content-type");
+        let got = header_value(res.headers(), "cache-control");
+        if res.status() != StatusCode::OK || !kind.starts_with("image/") || got != cache {
+            let origin = if public { "public" } else { "admin" };
+            let status = res.status();
             self.failures
-                .push(format!("admin GET {path}: {} {kind} {cache}", res.status()));
+                .push(format!("{origin} GET {path}: {status} {kind} {got}"));
         }
     }
 
-    /// A call that must succeed and match `target`.
-    async fn ok(&mut self, method: &str, path: &str, body: Option<Value>, target: &str) -> Value {
-        self.expect(false, method, path, body, StatusCode::OK, target)
-            .await
-    }
-
+    /// A call with the session's CSRF token that must answer `want`, checked
+    /// against `target` (`""` when only an error is wanted).
     async fn expect(
         &mut self,
         public: bool,
         method: &str,
         path: &str,
         body: Option<Value>,
-        want: StatusCode,
+        want: u16,
         target: &str,
     ) -> Value {
         let (status, value) = self.send(public, method, path, body).await;
@@ -246,29 +274,128 @@ impl Harness {
         self.check(&label, status, &value, target);
         value
     }
-}
 
-/// The CSRF token after a (mock) sign-in, as the PWA reads it.
-async fn session_token(h: &Harness) -> String {
-    let (_, headers, _) = h
-        .send_with(false, "GET", "/api/admin/session", None, &[])
-        .await;
-    headers
-        .get("x-kanade-csrf")
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or_default()
-        .to_owned()
+    /// An admin call that must succeed and match `target`.
+    async fn ok(&mut self, method: &str, path: &str, body: Option<Value>, target: &str) -> Value {
+        self.expect(false, method, path, body, 200, target).await
+    }
+
+    /// An admin read that must succeed and match `target`.
+    async fn get(&mut self, path: &str, target: &str) -> Value {
+        self.ok("GET", path, None, target).await
+    }
+
+    /// An admin call that must answer `want` with an ApiError.
+    async fn fails(&mut self, method: &str, path: &str, body: Option<Value>, want: u16) -> Value {
+        self.expect(false, method, path, body, want, "").await
+    }
+
+    /// `PATCH /api/admin/config` with `patch`; the new view.
+    async fn config(&mut self, patch: Value) -> Value {
+        self.ok(
+            "PATCH",
+            "/api/admin/config",
+            Some(patch),
+            "config#ConfigView",
+        )
+        .await
+    }
+
+    /// A public-origin call with these headers; `target` is checked on 2xx with a body.
+    async fn public(
+        &mut self,
+        method: &str,
+        path: &str,
+        headers: &[(&str, &str)],
+        want: u16,
+        target: &str,
+    ) -> (HeaderMap, Value) {
+        self.public_with(method, path, None, headers, want, target)
+            .await
+    }
+
+    /// [`Self::public`] with a JSON body.
+    async fn public_with(
+        &mut self,
+        method: &str,
+        path: &str,
+        body: Option<Value>,
+        headers: &[(&str, &str)],
+        want: u16,
+        target: &str,
+    ) -> (HeaderMap, Value) {
+        let (status, sent, value) = self.send_with(true, method, path, body, headers).await;
+        let label = format!("public {method} {path}");
+        if status != want {
+            self.failures
+                .push(format!("{label}: status {status}, wanted {want}: {value}"));
+        }
+        if !value.is_null() && !value.is_string() {
+            self.check(&label, status, &value, target);
+        }
+        (sent, value)
+    }
+
+    /// The mock member's session (`POST /__mock/public/sign-in`): its cookie and CSRF token.
+    async fn sign_in_public(&mut self) -> (String, String) {
+        let (headers, _) = self
+            .public("POST", "/__mock/public/sign-in", NONE, 204, "")
+            .await;
+        let token = header_value(&headers, "x-kanade-csrf").to_owned();
+        (session_cookie(&headers), token)
+    }
+
+    /// Records a failure unless `ok`, counted as one more check.
+    fn verify(&mut self, ok: bool, failure: impl FnOnce() -> String) {
+        self.checked += 1;
+        if !ok {
+            self.failures.push(failure());
+        }
+    }
+
+    fn finish(self) {
+        assert!(
+            self.failures.is_empty(),
+            "{} of {} responses broke the contract:\n{}",
+            self.failures.len(),
+            self.checked,
+            self.failures.join("\n")
+        );
+    }
 }
 
 fn s(value: &Value) -> &str {
     value.as_str().expect("string")
 }
 
+fn header_value<'a>(headers: &'a HeaderMap, name: &str) -> &'a str {
+    headers
+        .get(name)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or_default()
+}
+
+/// The `kanade_pub=<id>` pair a `Set-Cookie` sets (empty when it clears it).
+fn session_cookie(headers: &HeaderMap) -> String {
+    let line = header_value(headers, "set-cookie");
+    line.split(';').next().unwrap_or_default().to_owned()
+}
+
+/// A member write's headers: the session cookie, its token and `key`.
+fn signed<'a>(cookie: &'a str, token: &'a str, key: &'a str) -> [(&'a str, &'a str); 3] {
+    [
+        ("cookie", cookie),
+        ("x-kanade-csrf", token),
+        ("idempotency-key", key),
+    ]
+}
+
 #[test]
 fn every_schema_def_compiles() {
     for (name, schema) in schemas() {
+        let file = name.trim_end_matches(".json");
         for def in schema["$defs"].as_object().expect("$defs").keys() {
-            validator(&format!("{name}#/$defs/{def}"));
+            validator(&format!("{file}#{def}"));
         }
     }
 }
@@ -284,121 +411,54 @@ async fn every_pwa_endpoint_matches_the_frozen_contract() {
             "GET",
             "/api/identity",
             None,
-            StatusCode::OK,
-            "identity.json#/$defs/Identity",
+            200,
+            "identity#Identity",
         )
         .await;
-        h.expect(public, "GET", "/api/nope", None, StatusCode::NOT_FOUND, "")
-            .await;
+        h.expect(public, "GET", "/api/nope", None, 404, "").await;
     }
     h.expect(
         true,
         "GET",
         "/api/public/status",
         None,
-        StatusCode::OK,
-        "public.json#/$defs/PublicStatus",
+        200,
+        "public#PublicStatus",
     )
     .await;
-    h.expect(
-        true,
-        "GET",
-        "/api/admin/week",
-        None,
-        StatusCode::NOT_FOUND,
-        "",
-    )
-    .await;
+    h.expect(true, "GET", "/api/admin/week", None, 404, "")
+        .await;
 
     // Reads.
-    // Both weeks' runs; `week` ends as next week, whose runs are all still ahead.
+    // Both weeks; `week` ends as next week, whose runs are all still ahead.
     let mut week = Value::Null;
-    let mut runs: Vec<Value> = Vec::new();
     for q in ["", "?week=next"] {
-        let w = h
-            .ok(
-                "GET",
-                &format!("/api/admin/week{q}"),
-                None,
-                "week.json#/$defs/Week",
-            )
-            .await;
-        runs.extend(w["runs"].as_array().unwrap().iter().cloned());
-        week = w;
-        h.ok(
-            "GET",
-            &format!("/api/admin/stats{q}"),
-            None,
-            "week.json#/$defs/Stats",
-        )
-        .await;
+        week = h.get(&format!("/api/admin/week{q}"), "week#Week").await;
+        h.get(&format!("/api/admin/stats{q}"), "week#Stats").await;
     }
-    let summary = h
-        .ok(
-            "GET",
-            "/api/admin/summary",
-            None,
-            "week.json#/$defs/Summary",
-        )
-        .await;
+    let summary = h.get("/api/admin/summary", "week#Summary").await;
     assert_eq!(summary["quiet_mode"], false, "quiet mode starts off");
-    let members = h
-        .ok(
-            "GET",
-            "/api/admin/members",
-            None,
-            "members.json#/$defs/MemberRows",
-        )
-        .await;
-    h.ok(
-        "GET",
-        "/api/admin/personas",
-        None,
-        "members.json#/$defs/Personas",
-    )
-    .await;
-    h.ok(
-        "GET",
-        "/api/admin/channels",
-        None,
-        "common.json#/$defs/Channels",
-    )
-    .await;
-    h.ok("GET", "/api/admin/roles", None, "common.json#/$defs/Roles")
-        .await;
-    h.ok(
-        "GET",
-        "/api/admin/session",
-        None,
-        "identity.json#/$defs/Session",
-    )
-    .await;
-    let me = h
-        .ok("GET", "/api/admin/me", None, "identity.json#/$defs/Me")
-        .await;
+    let members = h.get("/api/admin/members", "members#MemberRows").await;
+    for (path, target) in [
+        ("/api/admin/personas", "members#Personas"),
+        ("/api/admin/channels", "common#Channels"),
+        ("/api/admin/roles", "common#Roles"),
+        ("/api/admin/session", "identity#Session"),
+    ] {
+        h.get(path, target).await;
+    }
+    let me = h.get("/api/admin/me", "identity#Me").await;
     assert_eq!(me["member"]["id"], "1001");
     // Asahi holds `staff`, whose role assignment (Terse) beats the saved Kanade.
     assert_eq!(me["member"]["reply_style"]["source"], "role");
     assert_eq!(me["member"]["reply_style"]["role_name"], "staff");
     assert_eq!(me["member"]["reply_style"]["saved"]["key"], "kanade");
-    let personas = h
-        .ok(
-            "GET",
-            "/api/admin/personas",
-            None,
-            "members.json#/$defs/Personas",
-        )
-        .await;
+    let personas = h.get("/api/admin/personas", "members#Personas").await;
     assert!(personas[0]["voice"].is_string());
 
     // Account → Sessions: list, end another, refuse this one, end the rest.
     let sessions = h
-        .ok(
-            "GET",
-            "/api/admin/me/sessions",
-            None,
-            "identity.json#/$defs/AccountSessions",
-        )
+        .get("/api/admin/me/sessions", "identity#AccountSessions")
         .await;
     let handle = |current: bool| {
         sessions["sessions"]
@@ -408,31 +468,15 @@ async fn every_pwa_endpoint_matches_the_frozen_contract() {
             .unwrap_or_default()
     };
     let (own, other) = (handle(true), handle(false));
-    let (status, _) = h
-        .send(
-            false,
-            "DELETE",
-            &format!("/api/admin/me/sessions/{other}"),
-            None,
-        )
-        .await;
+    let other = format!("/api/admin/me/sessions/{other}");
+    let (status, _) = h.send(false, "DELETE", &other, None).await;
     assert_eq!(status, StatusCode::NO_CONTENT);
-    h.expect(
-        false,
-        "DELETE",
-        &format!("/api/admin/me/sessions/{other}"),
-        None,
-        StatusCode::NOT_FOUND,
-        "",
-    )
-    .await;
-    h.expect(
-        false,
+    h.fails("DELETE", &other, None, 404).await;
+    h.fails(
         "DELETE",
         &format!("/api/admin/me/sessions/{own}"),
         None,
-        StatusCode::CONFLICT,
-        "",
+        409,
     )
     .await;
     let ended = h
@@ -440,33 +484,14 @@ async fn every_pwa_endpoint_matches_the_frozen_contract() {
             "POST",
             "/api/admin/me/sessions/sign-out-others",
             None,
-            "identity.json#/$defs/SessionsEnded",
+            "identity#SessionsEnded",
         )
         .await;
     assert_eq!(ended["ended"], 1);
-    let fixed = h
-        .ok(
-            "GET",
-            "/api/admin/fixed",
-            None,
-            "fixed.json#/$defs/FixedRows",
-        )
-        .await;
-    let bosses = h
-        .ok(
-            "GET",
-            "/api/admin/bosses",
-            None,
-            "bosses.json#/$defs/BossRows",
-        )
-        .await;
+    let fixed = h.get("/api/admin/fixed", "fixed#FixedRows").await;
+    let bosses = h.get("/api/admin/bosses", "bosses#BossRows").await;
     let events = h
-        .ok(
-            "GET",
-            "/api/admin/bosses/events",
-            None,
-            "bosses.json#/$defs/EventBosses",
-        )
+        .get("/api/admin/bosses/events", "bosses#EventBosses")
         .await;
     let keys = bosses
         .as_array()
@@ -476,14 +501,8 @@ async fn every_pwa_endpoint_matches_the_frozen_contract() {
         .map(|b| s(&b["key"]).to_owned());
     let mut knowledge = 0;
     for key in keys {
-        let (status, value) = h
-            .send(
-                false,
-                "GET",
-                &format!("/api/admin/bosses/{key}/knowledge"),
-                None,
-            )
-            .await;
+        let path = format!("/api/admin/bosses/{key}/knowledge");
+        let (status, value) = h.send(false, "GET", &path, None).await;
         // Bosses without a tracked document answer 404.
         if status == StatusCode::OK {
             knowledge += 1;
@@ -492,55 +511,30 @@ async fn every_pwa_endpoint_matches_the_frozen_contract() {
             &format!("GET knowledge {key}"),
             status,
             &value,
-            "bosses.json#/$defs/Knowledge",
+            "bosses#Knowledge",
         );
     }
     assert!(knowledge > 0, "no knowledge page validated");
-    let reminders = h
-        .ok(
-            "GET",
-            "/api/admin/reminders",
-            None,
-            "reminders.json#/$defs/Reminders",
-        )
-        .await;
+    let reminders = h.get("/api/admin/reminders", "reminders#Reminders").await;
+    let preview_path = |row: &Value| format!("/api/admin/reminders/{}/preview", s(&row["id"]));
     // Every row's card preview, queued and sent.
     for list in ["upcoming", "sent"] {
         for row in reminders[list].as_array().unwrap() {
-            let preview = h
-                .ok(
-                    "GET",
-                    &format!("/api/admin/reminders/{}/preview", s(&row["id"])),
-                    None,
-                    "reminders.json#/$defs/ReminderPreview",
-                )
-                .await;
-            assert_eq!(preview["reminder"]["id"], row["id"]);
+            let shown = h.get(&preview_path(row), "reminders#ReminderPreview").await;
+            assert_eq!(shown["reminder"]["id"], row["id"]);
         }
     }
     // The redesigned style: every preview still matches the schema, and a
     // morning card shows one embed per run with inline answer fields.
     let styled = h
-        .ok(
-            "PATCH",
-            "/api/admin/config",
-            Some(json!({ "notifications": { "message_style": "redesigned" } })),
-            "config.json#/$defs/ConfigView",
-        )
+        .config(json!({ "notifications": { "message_style": "redesigned" } }))
         .await;
     assert_eq!(styled["notifications"]["message_style"], "redesigned");
     let mut mornings = 0;
     for list in ["upcoming", "sent"] {
         for row in reminders[list].as_array().unwrap() {
-            let preview = h
-                .ok(
-                    "GET",
-                    &format!("/api/admin/reminders/{}/preview", s(&row["id"])),
-                    None,
-                    "reminders.json#/$defs/ReminderPreview",
-                )
-                .await;
-            let card = &preview["card"];
+            let shown = h.get(&preview_path(row), "reminders#ReminderPreview").await;
+            let card = &shown["card"];
             if row["kind"] == "morning" && !card.is_null() {
                 mornings += 1;
                 assert!(s(&card["content"]).contains("\n-# "), "{card}");
@@ -550,115 +544,62 @@ async fn every_pwa_endpoint_matches_the_frozen_contract() {
         }
     }
     assert!(mornings > 0, "no redesigned morning card validated");
-    h.expect(
-        false,
+    let config = "/api/admin/config";
+    h.fails(
         "PATCH",
-        "/api/admin/config",
+        config,
         Some(json!({ "notifications": { "message_style": "fancy" } })),
-        StatusCode::UNPROCESSABLE_ENTITY,
-        "error.json#/$defs/ApiError",
+        422,
     )
     .await;
-    h.ok(
-        "PATCH",
-        "/api/admin/config",
-        Some(json!({ "notifications": { "message_style": "classic" } })),
-        "config.json#/$defs/ConfigView",
-    )
-    .await;
+    h.config(json!({ "notifications": { "message_style": "classic" } }))
+        .await;
     let timed = h
-        .ok(
-            "PATCH",
-            "/api/admin/config",
-            Some(json!({ "notifications": { "header_generation_time": "03:30" } })),
-            "config.json#/$defs/ConfigView",
-        )
+        .config(json!({ "notifications": { "header_generation_time": "03:30" } }))
         .await;
     assert_eq!(timed["notifications"]["header_generation_time"], "03:30");
-    h.expect(
-        false,
+    h.fails(
         "PATCH",
-        "/api/admin/config",
+        config,
         Some(json!({ "notifications": { "header_generation_time": "25:00" } })),
-        StatusCode::UNPROCESSABLE_ENTITY,
-        "error.json#/$defs/ApiError",
+        422,
     )
     .await;
-    h.expect(
-        false,
-        "GET",
-        "/api/admin/reminders/nope/preview",
-        None,
-        StatusCode::NOT_FOUND,
-        "",
-    )
-    .await;
-    h.ok(
-        "GET",
-        "/api/admin/limits",
-        None,
-        "limits.json#/$defs/Limits",
-    )
-    .await;
-    let config = h
-        .ok(
-            "GET",
-            "/api/admin/config",
-            None,
-            "config.json#/$defs/ConfigView",
-        )
+    h.fails("GET", "/api/admin/reminders/nope/preview", None, 404)
         .await;
-    let digest = s(&config["persona"]["role_profiles_digest"]).to_owned();
+    h.get("/api/admin/limits", "limits#Limits").await;
+    let view = h.get(config, "config#ConfigView").await;
+    let digest = s(&view["persona"]["role_profiles_digest"]).to_owned();
     let updated = h
-        .ok(
-            "PATCH",
-            "/api/admin/config",
-            Some(json!({ "persona": {
-                "role_profiles": [
-                    { "role_id": "300003", "profile": "sparkly" },
-                    { "role_id": "300001", "profile": "terse" }
-                ],
-                "role_profiles_digest": digest
-            } })),
-            "config.json#/$defs/ConfigView",
-        )
+        .config(json!({ "persona": {
+            "role_profiles": [
+                { "role_id": "300003", "profile": "sparkly" },
+                { "role_id": "300001", "profile": "terse" }
+            ],
+            "role_profiles_digest": digest
+        } }))
         .await;
     assert_eq!(
         updated["persona"]["role_profiles"][0]["role_name"],
         "bossers"
     );
-    h.expect(
-        false,
+    h.fails(
         "PATCH",
-        "/api/admin/config",
+        config,
         Some(json!({ "persona": {
             "role_profiles": [],
             "role_profiles_digest": digest
         } })),
-        StatusCode::CONFLICT,
-        "",
+        409,
     )
     .await;
-    h.ok(
-        "GET",
-        "/api/admin/access",
-        None,
-        "config.json#/$defs/AccessReport",
-    )
-    .await;
-    h.ok(
-        "GET",
-        "/api/admin/history/checkpoints",
-        None,
-        "history.json#/$defs/Checkpoints",
-    )
-    .await;
+    h.get("/api/admin/access", "config#AccessReport").await;
+    h.get("/api/admin/history/checkpoints", "history#Checkpoints")
+        .await;
     for q in ["", "?realm=member&event=login_succeeded"] {
-        h.ok(
-            "GET",
+        h.get(
             &format!("/api/admin/history/sign-ins{q}"),
-            None,
-            "history.json#/$defs/SignInPage",
+            "history#SignInPage",
         )
         .await;
     }
@@ -666,39 +607,21 @@ async fn every_pwa_endpoint_matches_the_frozen_contract() {
     // Logs, including their detail pages and the filter refusal.
     for q in ["", "?outcome=failed,proposed"] {
         let x = h
-            .ok(
-                "GET",
+            .get(
                 &format!("/api/admin/extractions{q}"),
-                None,
-                "extractions.json#/$defs/Extractions",
+                "extractions#Extractions",
             )
             .await;
         for row in x["rows"].as_array().unwrap() {
-            h.ok(
-                "GET",
-                &format!("/api/admin/extractions/{}", s(&row["id"])),
-                None,
-                "extractions.json#/$defs/Extraction",
-            )
-            .await;
+            let path = format!("/api/admin/extractions/{}", s(&row["id"]));
+            h.get(&path, "extractions#Extraction").await;
         }
-        let c = h
-            .ok(
-                "GET",
-                &format!(
-                    "/api/admin/chat{}",
-                    q.replace("failed,proposed", "answered")
-                ),
-                None,
-                "chat.json#/$defs/Chat",
-            )
-            .await;
+        let q = q.replace("failed,proposed", "answered");
+        let c = h.get(&format!("/api/admin/chat{q}"), "chat#Chat").await;
         for row in c["rows"].as_array().unwrap() {
-            h.ok(
-                "GET",
+            h.get(
                 &format!("/api/admin/chat/{}", s(&row["id"])),
-                None,
-                "chat.json#/$defs/ChatTurn",
+                "chat#ChatTurn",
             )
             .await;
         }
@@ -709,21 +632,11 @@ async fn every_pwa_endpoint_matches_the_frozen_contract() {
         "?kind=nudge",
     ] {
         let r = h
-            .ok(
-                "GET",
-                &format!("/api/admin/rewrites{q}"),
-                None,
-                "rewrites.json#/$defs/Rewrites",
-            )
+            .get(&format!("/api/admin/rewrites{q}"), "rewrites#Rewrites")
             .await;
         for row in r["rows"].as_array().unwrap() {
-            h.ok(
-                "GET",
-                &format!("/api/admin/rewrites/{}", s(&row["id"])),
-                None,
-                "rewrites.json#/$defs/Rewrite",
-            )
-            .await;
+            let path = format!("/api/admin/rewrites/{}", s(&row["id"]));
+            h.get(&path, "rewrites#Rewrite").await;
         }
     }
     for bad in [
@@ -734,69 +647,29 @@ async fn every_pwa_endpoint_matches_the_frozen_contract() {
         "?stage=batch&stage=debug",
         "?q=%ZZ",
     ] {
-        h.expect(
-            false,
-            "GET",
-            &format!("/api/admin/rewrites{bad}"),
-            None,
-            StatusCode::UNPROCESSABLE_ENTITY,
-            "",
-        )
-        .await;
+        h.fails("GET", &format!("/api/admin/rewrites{bad}"), None, 422)
+            .await;
     }
-    h.expect(
-        false,
-        "GET",
-        "/api/admin/rewrites/rw-missing",
-        None,
-        StatusCode::NOT_FOUND,
-        "",
-    )
-    .await;
-    h.expect(
-        false,
-        "GET",
-        "/api/admin/extractions?outcome=bogus",
-        None,
-        StatusCode::UNPROCESSABLE_ENTITY,
-        "",
-    )
-    .await;
-    h.expect(
-        false,
-        "GET",
-        "/api/admin/chat?from=nope",
-        None,
-        StatusCode::UNPROCESSABLE_ENTITY,
-        "",
-    )
-    .await;
-    let targets = h
-        .ok(
-            "GET",
-            "/api/admin/rescan/targets",
-            None,
-            "common.json#/$defs/Channels",
-        )
-        .await;
+    for (path, want) in [
+        ("/api/admin/rewrites/rw-missing", 404),
+        ("/api/admin/extractions?outcome=bogus", 422),
+        ("/api/admin/chat?from=nope", 422),
+    ] {
+        h.fails("GET", path, None, want).await;
+    }
+    let targets = h.get("/api/admin/rescan/targets", "common#Channels").await;
     let job = h
         .ok(
             "POST",
             "/api/admin/rescan",
             Some(json!({ "channels": [targets[0]["id"]], "window": "week" })),
-            "extractions.json#/$defs/RescanJob",
+            "extractions#RescanJob",
         )
         .await;
     let job_path = format!("/api/admin/rescan/{}", s(&job["id"]));
-    h.ok("GET", &job_path, None, "extractions.json#/$defs/RescanJob")
+    h.get(&job_path, "extractions#RescanJob").await;
+    h.ok("DELETE", &job_path, None, "extractions#RescanJob")
         .await;
-    h.ok(
-        "DELETE",
-        &job_path,
-        None,
-        "extractions.json#/$defs/RescanJob",
-    )
-    .await;
 
     // Run edits.
     // A failed edit is already recorded; keep going from the last version.
@@ -816,30 +689,29 @@ async fn every_pwa_endpoint_matches_the_frozen_contract() {
         .clone();
     let run = &run;
     let id = s(&run["id"]);
+    let run_path = |action: &str| format!("/api/admin/runs/{id}/{action}");
     let moved = h
         .ok(
             "POST",
-            &format!("/api/admin/runs/{id}/move"),
+            &run_path("move"),
             Some(json!({ "day": run["day"], "time": "20:00", "version": v })),
-            "week.json#/$defs/MoveResult",
+            "week#MoveResult",
         )
         .await;
     v = version(&moved, v);
-    h.expect(
-        false,
+    h.fails(
         "POST",
-        &format!("/api/admin/runs/{id}/move"),
+        &run_path("move"),
         Some(json!({ "day": 0, "time": "20:00", "version": 0 })),
-        StatusCode::CONFLICT,
-        "",
+        409,
     )
     .await;
     let r = h
         .ok(
             "PATCH",
-            &format!("/api/admin/runs/{id}/status"),
+            &run_path("status"),
             Some(json!({ "status": "confirmed", "version": v })),
-            "week.json#/$defs/RunResult",
+            "week#RunResult",
         )
         .await;
     v = version(&r, v);
@@ -847,9 +719,9 @@ async fn every_pwa_endpoint_matches_the_frozen_contract() {
     let r = h
         .ok(
             "POST",
-            &format!("/api/admin/runs/{id}/rsvp"),
+            &run_path("rsvp"),
             Some(json!({ "member_id": member, "answer": "yes", "version": v })),
-            "week.json#/$defs/RunResult",
+            "week#RunResult",
         )
         .await;
     v = version(&r, v);
@@ -868,43 +740,26 @@ async fn every_pwa_endpoint_matches_the_frozen_contract() {
         .unwrap()
         .to_owned();
     for op in ["add", "remove"] {
+        let body = json!({ op: outsider, "version": v });
         let r = h
             .ok(
                 "PATCH",
-                &format!("/api/admin/runs/{id}/participants"),
-                Some(json!({ op: outsider, "version": v })),
-                "week.json#/$defs/RunResult",
+                &run_path("participants"),
+                Some(body),
+                "week#RunResult",
             )
             .await;
         v = version(&r, v);
     }
     // The move above amended it.
-    let r = h
-        .ok(
-            "POST",
-            &format!("/api/admin/runs/{id}/reset"),
-            Some(json!({ "version": v })),
-            "week.json#/$defs/RunResult",
-        )
+    let body = json!({ "version": v });
+    h.ok("POST", &run_path("reset"), Some(body), "week#RunResult")
         .await;
-    let _ = version(&r, v);
-    h.ok(
-        "POST",
-        &format!("/api/admin/runs/{id}/ping"),
-        Some(json!({})),
-        "common.json#/$defs/Message",
-    )
-    .await;
+    h.ok("POST", &run_path("ping"), Some(json!({})), "common#Message")
+        .await;
 
     // A planner swap changes both next-week rows under one version.
-    let swap_week = h
-        .ok(
-            "GET",
-            "/api/admin/week?week=next",
-            None,
-            "week.json#/$defs/Week",
-        )
-        .await;
+    let swap_week = h.get("/api/admin/week?week=next", "week#Week").await;
     let swap_runs: Vec<&Value> = swap_week["runs"]
         .as_array()
         .unwrap()
@@ -913,29 +768,15 @@ async fn every_pwa_endpoint_matches_the_frozen_contract() {
         .take(2)
         .collect();
     let swap_path = format!("/api/admin/runs/{}/swap", s(&swap_runs[0]["id"]));
-    h.ok(
-        "POST",
-        &swap_path,
-        Some(json!({
-            "with": s(&swap_runs[1]["id"]),
-            "version": swap_week["version"],
-        })),
-        "week.json#/$defs/SwapResult",
-    )
-    .await;
-    let csrf = h.csrf.clone();
-    h.refused(
-        "POST",
-        &swap_path,
-        json!({
-            "with": s(&swap_runs[1]["id"]),
-            "version": swap_week["version"],
-            "unexpected": true,
-        }),
-        &[("x-kanade-csrf", &csrf)],
-        (StatusCode::BAD_REQUEST, "invalid_body"),
-    )
-    .await;
+    let mut swap = json!({
+        "with": s(&swap_runs[1]["id"]),
+        "version": swap_week["version"],
+    });
+    h.ok("POST", &swap_path, Some(swap.clone()), "week#SwapResult")
+        .await;
+    swap["unexpected"] = json!(true);
+    h.refused("POST", &swap_path, swap, (400, "invalid_body"))
+        .await;
 
     // Members.
     let m = s(&members[0]["id"]).to_owned();
@@ -943,25 +784,19 @@ async fn every_pwa_endpoint_matches_the_frozen_contract() {
         "PATCH",
         &format!("/api/admin/members/{m}"),
         Some(json!({ "ping_level": "all", "persona": "" })),
-        "members.json#/$defs/MemberRow",
+        "members#MemberRow",
     )
     .await;
     h.ok(
         "POST",
         &format!("/api/admin/members/{m}/aliases"),
         Some(json!({ "alias": "contractalias" })),
-        "members.json#/$defs/MemberRow",
+        "members#MemberRow",
     )
     .await;
     for _ in 0..2 {
-        let row = h
-            .ok(
-                "DELETE",
-                &format!("/api/admin/members/{m}/aliases/%20ContractAlias"),
-                None,
-                "members.json#/$defs/MemberRow",
-            )
-            .await;
+        let path = format!("/api/admin/members/{m}/aliases/%20ContractAlias");
+        let row = h.ok("DELETE", &path, None, "members#MemberRow").await;
         assert!(
             !row["aliases"]
                 .as_array()
@@ -974,46 +809,26 @@ async fn every_pwa_endpoint_matches_the_frozen_contract() {
 
     // Roster characters (module roster): CRUD and the main rules, on Ren
     // #1013, who has no seeded characters.
-    let chars = "/api/admin/members/1013/characters".to_owned();
+    let chars = "/api/admin/members/1013/characters";
+    let created = "characters#CharacterCreated";
+    let body = json!({ "ign": "Wisteria", "role": "alt", "level": 260 });
     let first = h
-        .expect(
-            false,
-            "POST",
-            &chars,
-            Some(json!({ "ign": "Wisteria", "role": "alt", "level": 260 })),
-            StatusCode::CREATED,
-            "characters.json#/$defs/CharacterCreated",
-        )
+        .expect(false, "POST", chars, Some(body), 201, created)
         .await;
     assert_eq!(first["role"], "main", "the first character is the main");
     assert_eq!(first["link"], "pending", "a MapleSEA create asks to link");
+    let body = json!({ "ign": "Heather" });
     let second = h
-        .expect(
-            false,
-            "POST",
-            &chars,
-            Some(json!({ "ign": "Heather" })),
-            StatusCode::CREATED,
-            "characters.json#/$defs/CharacterCreated",
-        )
+        .expect(false, "POST", chars, Some(body), 201, created)
         .await;
-    let csrf = h.csrf.clone();
-    let marks = [("x-kanade-csrf", csrf.as_str())];
     let first_path = format!("/api/admin/characters/{}", s(&first["id"]));
-    h.refused(
-        "DELETE",
-        &first_path,
-        json!({}),
-        &marks,
-        (StatusCode::CONFLICT, "main_required"),
-    )
-    .await;
+    h.refused("DELETE", &first_path, json!({}), (409, "main_required"))
+        .await;
     h.refused(
         "POST",
-        &chars,
+        chars,
         json!({ "ign": "WISTERIA" }),
-        &marks,
-        (StatusCode::UNPROCESSABLE_ENTITY, "ign_taken"),
+        (422, "ign_taken"),
     )
     .await;
     let promoted = h
@@ -1021,29 +836,19 @@ async fn every_pwa_endpoint_matches_the_frozen_contract() {
             "PATCH",
             &format!("/api/admin/characters/{}", s(&second["id"])),
             Some(json!({ "version": 1, "role": "main" })),
-            "characters.json#/$defs/CharacterRow",
+            "characters#CharacterRow",
         )
         .await;
     assert_eq!(promoted["role"], "main");
-    let listed = h
-        .ok(
-            "GET",
-            &chars,
-            None,
-            "characters.json#/$defs/MemberCharacters",
-        )
-        .await;
+    let listed = h.get(chars, "characters#MemberCharacters").await;
     assert_eq!(listed["characters"][0]["role"], "alt", "the crown moved");
-    h.ok("DELETE", &first_path, None, "common.json#/$defs/Message")
-        .await;
+    h.ok("DELETE", &first_path, None, "common#Message").await;
 
     // Run character picks (module roster): the seeded boards on r-carling.
     let run_chars = h
-        .ok(
-            "GET",
+        .get(
             "/api/admin/runs/r-carling/characters",
-            None,
-            "characters.json#/$defs/RunCharacters",
+            "characters#RunCharacters",
         )
         .await;
     let ren = run_chars["slots"]
@@ -1053,77 +858,48 @@ async fn every_pwa_endpoint_matches_the_frozen_contract() {
         .find(|slot| slot["member_id"] == "1002")
         .unwrap();
     assert_eq!(ren["warnings"][0]["run_id"], "r-nstar");
+    let pick = |id: Value, version: u64| json!({ "character_id": id, "version": version });
+    let slot_row = "characters#RunCharacterSlot";
+    let slot = "/api/admin/runs/r-carling/characters/1003";
     let picked = h
-        .ok(
-            "PUT",
-            "/api/admin/runs/r-carling/characters/1003",
-            Some(json!({ "character_id": "ch-s2", "version": 0 })),
-            "characters.json#/$defs/RunCharacterSlot",
-        )
+        .ok("PUT", slot, Some(pick(json!("ch-s2"), 0)), slot_row)
         .await;
     assert_eq!(picked["picked"], "ch-s2");
-    h.refused(
-        "PUT",
-        "/api/admin/runs/r-carling/characters/1003",
-        json!({ "character_id": null, "version": 0 }),
-        &marks,
-        (StatusCode::CONFLICT, "stale"),
-    )
-    .await;
-    h.ok(
-        "PUT",
-        "/api/admin/runs/r-carling/characters/1003",
-        Some(json!({ "character_id": null, "version": 1 })),
-        "characters.json#/$defs/RunCharacterSlot",
-    )
-    .await;
+    h.refused("PUT", slot, pick(Value::Null, 0), (409, "stale"))
+        .await;
+    h.ok("PUT", slot, Some(pick(Value::Null, 1)), slot_row)
+        .await;
 
     // Run readiness (module character_data).
     let ready = h
-        .ok(
-            "GET",
+        .get(
             "/api/admin/runs/r-carling/readiness",
-            None,
-            "character_data.json#/$defs/RunReadiness",
+            "character_data#RunReadiness",
         )
         .await;
     assert_eq!(ready["nexon_data"], true);
 
     // Fixed readiness and timing picks (modules roster and character_data).
     let timing = h
-        .ok(
-            "GET",
+        .get(
             "/api/admin/fixed/f-carling/characters",
-            None,
-            "characters.json#/$defs/TimingCharacters",
+            "characters#TimingCharacters",
         )
         .await;
     assert_eq!(timing["fixed_run_id"], "f-carling");
+    let slot = "/api/admin/fixed/f-carling/characters/1003";
     let mika = h
-        .ok(
-            "PUT",
-            "/api/admin/fixed/f-carling/characters/1003",
-            Some(json!({ "character_id": "ch-s4", "version": 1 })),
-            "characters.json#/$defs/RunCharacterSlot",
-        )
+        .ok("PUT", slot, Some(pick(json!("ch-s4"), 1)), slot_row)
         .await;
     assert_eq!(
         (&mika["picked"], &mika["basis"]),
         (&json!("ch-s4"), &json!("timing_pick"))
     );
-    h.refused(
-        "PUT",
-        "/api/admin/fixed/f-carling/characters/1003",
-        json!({ "character_id": null, "version": 1 }),
-        &marks,
-        (StatusCode::CONFLICT, "stale"),
-    )
-    .await;
-    h.ok(
-        "GET",
+    h.refused("PUT", slot, pick(Value::Null, 1), (409, "stale"))
+        .await;
+    h.get(
         "/api/admin/fixed/f-carling/readiness",
-        None,
-        "character_data.json#/$defs/TimingReadiness",
+        "character_data#TimingReadiness",
     )
     .await;
     let preview = h
@@ -1131,7 +907,7 @@ async fn every_pwa_endpoint_matches_the_frozen_contract() {
             "POST",
             "/api/admin/fixed/readiness",
             Some(json!({ "bosses": ["HCarling"], "participants": ["1003", "1008"] })),
-            "character_data.json#/$defs/TimingReadiness",
+            "character_data#TimingReadiness",
         )
         .await;
     assert_eq!(preview["fixed_run_id"], Value::Null);
@@ -1162,7 +938,7 @@ async fn every_pwa_endpoint_matches_the_frozen_contract() {
         "POST",
         "/api/admin/validate/bosses",
         Some(json!({ "text": tokens.join(" ") })),
-        "fixed.json#/$defs/ValidateResult",
+        "fixed#ValidateResult",
     )
     .await;
     let created = h
@@ -1170,116 +946,76 @@ async fn every_pwa_endpoint_matches_the_frozen_contract() {
             "POST",
             "/api/admin/fixed",
             Some(body.clone()),
-            "fixed.json#/$defs/FixedRow",
+            "fixed#FixedRow",
         )
         .await;
     let fixed_path = format!("/api/admin/fixed/{}", s(&created["id"]));
-    let head = h
-        .ok("GET", "/api/admin/week", None, "week.json#/$defs/Week")
-        .await["version"]
+    let head = h.get("/api/admin/week", "week#Week").await["version"]
         .as_u64()
         .unwrap();
-    let csrf = h.csrf.clone();
-    let token = [("x-kanade-csrf", csrf.as_str())];
     let mut edit = body;
     edit["note"] = json!("contract");
     h.refused(
         "PATCH",
         &fixed_path,
         edit.clone(),
-        &token,
-        (StatusCode::UNPROCESSABLE_ENTITY, "version_required"),
+        (422, "version_required"),
     )
     .await;
     edit["version"] = json!(head - 1);
-    h.refused(
-        "PATCH",
-        &fixed_path,
-        edit.clone(),
-        &token,
-        (StatusCode::CONFLICT, "stale"),
-    )
-    .await;
+    h.refused("PATCH", &fixed_path, edit.clone(), (409, "stale"))
+        .await;
     edit["version"] = json!(head);
     // Owner: defaults to the first participant; a role-less member is refused.
     assert_eq!(created["owner_id"], json!(participants[0]));
     let mut unrostered = edit.clone();
     unrostered["owner_id"] = json!("1014");
-    h.refused(
-        "PATCH",
-        &fixed_path,
-        unrostered,
-        &token,
-        (StatusCode::UNPROCESSABLE_ENTITY, "invalid"),
-    )
-    .await;
+    h.refused("PATCH", &fixed_path, unrostered, (422, "invalid"))
+        .await;
     edit["owner_id"] = json!("1012");
     let edited = h
-        .ok(
-            "PATCH",
-            &fixed_path,
-            Some(edit),
-            "fixed.json#/$defs/FixedRow",
-        )
+        .ok("PATCH", &fixed_path, Some(edit), "fixed#FixedRow")
         .await;
     assert_eq!(
         (&edited["owner_id"], &edited["owner"]),
         (&json!("1012"), &json!("Minato"))
     );
-    h.ok(
-        "DELETE",
-        &fixed_path,
-        None,
-        "fixed.json#/$defs/FixedRetired",
-    )
-    .await;
+    h.ok("DELETE", &fixed_path, None, "fixed#FixedRetired")
+        .await;
 
     // Write guard: CSRF on every admin write, Idempotency-Key replays.
-    let (_, headers, _) = h
-        .send_with(false, "GET", "/api/admin/session", None, &[])
-        .await;
+    let csrf = h.csrf.clone();
     assert_eq!(
-        headers.get("x-kanade-csrf").and_then(|v| v.to_str().ok()),
-        Some(csrf.as_str()),
+        h.session_token().await,
+        csrf,
         "the session carries the CSRF token"
     );
-    let head = h
-        .ok(
-            "GET",
-            "/api/admin/week?week=next",
-            None,
-            "week.json#/$defs/Week",
-        )
-        .await["version"]
+    let head = h.get("/api/admin/week?week=next", "week#Week").await["version"]
         .as_u64()
         .unwrap();
-    let move_path = format!("/api/admin/runs/{id}/move");
+    let move_path = run_path("move");
     let move_body = json!({ "day": run["day"], "time": "21:10", "version": head });
-    let forbidden = (StatusCode::FORBIDDEN, "csrf");
-    h.refused("POST", &move_path, move_body.clone(), &[], forbidden)
-        .await;
-    h.refused(
-        "POST",
-        &move_path,
-        move_body.clone(),
+    let unmarked: [&[(&str, &str)]; 3] = [
+        NONE,
         &[("x-kanade-csrf", "forged")],
-        forbidden,
-    )
-    .await;
-    h.refused(
-        "POST",
-        &move_path,
-        move_body.clone(),
         &[("x-kanade-csrf", &csrf), ("sec-fetch-site", "cross-site")],
-        forbidden,
-    )
-    .await;
-    h.refused(
+    ];
+    for headers in unmarked {
+        h.refused_with(
+            "POST",
+            &move_path,
+            move_body.clone(),
+            headers,
+            (403, "csrf"),
+        )
+        .await;
+    }
+    h.refused_with(
         "POST",
         &move_path,
         move_body.clone(),
         &[("x-kanade-csrf", &csrf), ("idempotency-key", "no spaces")],
-        (StatusCode::BAD_REQUEST, "invalid_idempotency_key"),
+        (400, "invalid_idempotency_key"),
     )
     .await;
     let keyed = [
@@ -1289,36 +1025,24 @@ async fn every_pwa_endpoint_matches_the_frozen_contract() {
     let (first_status, _, first) = h
         .send_with(false, "POST", &move_path, Some(move_body.clone()), &keyed)
         .await;
-    h.check(
-        "keyed move",
-        first_status,
-        &first,
-        "week.json#/$defs/MoveResult",
-    );
+    h.check("keyed move", first_status, &first, "week#MoveResult");
     // The first attempt moved the version on; the retry replays instead of going stale.
     let (again_status, _, again) = h
         .send_with(false, "POST", &move_path, Some(move_body), &keyed)
         .await;
     assert_eq!((first_status, &first), (again_status, &again), "replayed");
-    h.refused(
+    h.refused_with(
         "POST",
         &move_path,
         json!({ "day": run["day"], "time": "21:20", "version": head + 1 }),
         &keyed,
-        (StatusCode::UNPROCESSABLE_ENTITY, "idempotency_mismatch"),
+        (422, "idempotency_mismatch"),
     )
     .await;
 
     // Inbox (A6): proposals from the extractor and the chatbot, member
     // requests of every type; the Discord-only rule, edits, codes, replays.
-    let inbox = h
-        .ok(
-            "GET",
-            "/api/admin/inbox",
-            None,
-            "inbox.json#/$defs/Proposals",
-        )
-        .await;
+    let inbox = h.get("/api/admin/inbox", "inbox#Proposals").await;
     let items = inbox.as_array().unwrap().clone();
     let item = |id: &str| {
         items
@@ -1362,14 +1086,7 @@ async fn every_pwa_endpoint_matches_the_frozen_contract() {
     );
 
     // Past: closed items, newest first, every outcome, paged by the last id.
-    let past = h
-        .ok(
-            "GET",
-            "/api/admin/inbox/past",
-            None,
-            "inbox.json#/$defs/PastPage",
-        )
-        .await;
+    let past = h.get("/api/admin/inbox/past", "inbox#PastPage").await;
     let closed = past["items"].as_array().unwrap().clone();
     assert_eq!(past["next_before"], Value::Null);
     for outcome in [
@@ -1386,130 +1103,75 @@ async fn every_pwa_endpoint_matches_the_frozen_contract() {
         assert!(closed.iter().any(|p| p["tab"] == tab), "{tab}");
     }
     let first = h
-        .ok(
-            "GET",
-            "/api/admin/inbox/past?limit=4",
-            None,
-            "inbox.json#/$defs/PastPage",
-        )
+        .get("/api/admin/inbox/past?limit=4", "inbox#PastPage")
         .await;
     let cursor = s(&first["next_before"]).to_owned();
     assert_eq!(first["items"][3]["id"], cursor.as_str());
     let second = h
-        .ok(
-            "GET",
+        .get(
             &format!("/api/admin/inbox/past?limit=4&before={cursor}"),
-            None,
-            "inbox.json#/$defs/PastPage",
+            "inbox#PastPage",
         )
         .await;
     assert_eq!(second["items"][0], closed[4]);
     for bad in ["?limit=0", "?limit=201", "?before=nope"] {
-        h.refused(
-            "GET",
-            &format!("/api/admin/inbox/past{bad}"),
-            json!({}),
-            &[],
-            (StatusCode::UNPROCESSABLE_ENTITY, "invalid_query"),
-        )
-        .await;
+        let path = format!("/api/admin/inbox/past{bad}");
+        h.refused_with("GET", &path, json!({}), NONE, (422, "invalid_query"))
+            .await;
     }
-    h.expect(
-        true,
-        "GET",
-        "/api/admin/inbox/past",
-        None,
-        StatusCode::NOT_FOUND,
-        "",
-    )
-    .await;
-    let csrf = h.csrf.clone();
-    let token = [("x-kanade-csrf", csrf.as_str())];
-    h.refused(
-        "POST",
-        "/api/admin/inbox/p-carling-link/approve",
-        json!({}),
-        &token,
-        (StatusCode::UNPROCESSABLE_ENTITY, "version_required"),
-    )
-    .await;
-    h.refused(
-        "POST",
-        "/api/admin/inbox/p-bm-move/approve",
-        json!({ "force": true }),
-        &token,
-        (StatusCode::UNPROCESSABLE_ENTITY, "force_unsupported"),
-    )
-    .await;
-    h.refused(
-        "POST",
-        "/api/admin/inbox/p-carling-link/approve",
-        json!({ "version": 1, "day": 1, "time": "21:00" }),
-        &token,
-        (StatusCode::UNPROCESSABLE_ENTITY, "edit_not_applicable"),
-    )
-    .await;
-    h.refused(
-        "POST",
-        "/api/admin/inbox/p-limbo-add/reject",
-        json!({ "reason": "why" }),
-        &token,
-        (StatusCode::UNPROCESSABLE_ENTITY, "reason_not_applicable"),
-    )
-    .await;
+    h.expect(true, "GET", "/api/admin/inbox/past", None, 404, "")
+        .await;
+    let decide = |id: &str, verdict: &str| format!("/api/admin/inbox/{id}/{verdict}");
+    for (id, verdict, body, code) in [
+        ("p-carling-link", "approve", json!({}), "version_required"),
+        (
+            "p-bm-move",
+            "approve",
+            json!({ "force": true }),
+            "force_unsupported",
+        ),
+        (
+            "p-carling-link",
+            "approve",
+            json!({ "version": 1, "day": 1, "time": "21:00" }),
+            "edit_not_applicable",
+        ),
+        (
+            "p-limbo-add",
+            "reject",
+            json!({ "reason": "why" }),
+            "reason_not_applicable",
+        ),
+    ] {
+        h.refused("POST", &decide(id, verdict), body, (422, code))
+            .await;
+    }
     // A token (or Tailscale) session cannot decide Kanade's proposals.
-    h.send(
-        false,
-        "POST",
-        "/__mock/session",
-        Some(json!({ "method": "token" })),
-    )
-    .await;
-    h.csrf = session_token(&h).await;
-    let csrf = h.csrf.clone();
+    h.sign_in_admin("token").await;
+    let bm_move = decide("p-bm-move", "approve");
     h.refused(
         "POST",
-        "/api/admin/inbox/p-bm-move/approve",
+        &bm_move,
         json!({}),
-        &[("x-kanade-csrf", csrf.as_str())],
-        (StatusCode::FORBIDDEN, "discord_session_required"),
+        (403, "discord_session_required"),
     )
     .await;
     // Every session decides member requests.
     let request = item("p-fa-request");
     h.ok(
         "POST",
-        "/api/admin/inbox/p-fa-request/reject",
+        &decide("p-fa-request", "reject"),
         Some(json!({ "version": request["version"], "reason": "Contract test." })),
-        "common.json#/$defs/Message",
+        "common#Message",
     )
     .await;
-    h.send(
-        false,
-        "POST",
-        "/__mock/session",
-        Some(json!({ "method": "discord" })),
-    )
-    .await;
-    h.csrf = session_token(&h).await;
+    h.sign_in_admin("discord").await;
     // Edit then approve: one approval at a corrected time; a repeat answers 200.
     let edit = json!({ "day": 6, "time": "22:30" });
     let first = h
-        .ok(
-            "POST",
-            "/api/admin/inbox/p-bm-move/approve",
-            Some(edit.clone()),
-            "common.json#/$defs/Message",
-        )
+        .ok("POST", &bm_move, Some(edit.clone()), "common#Message")
         .await;
-    let again = h
-        .ok(
-            "POST",
-            "/api/admin/inbox/p-bm-move/approve",
-            Some(edit),
-            "common.json#/$defs/Message",
-        )
-        .await;
+    let again = h.ok("POST", &bm_move, Some(edit), "common#Message").await;
     assert_eq!(first, again, "a replayed approval answers the first result");
     let fixed_change = item("p-kalos-fixed");
     let choices: serde_json::Map<String, Value> = fixed_change["choices"]
@@ -1529,75 +1191,60 @@ async fn every_pwa_endpoint_matches_the_frozen_contract() {
         "retime": [{"change": "0.day_time", "day": 5, "time": "22:00"}],
         "drop": ["0.party"],
     });
+    let kalos = decide("p-kalos-fixed", "approve");
     h.refused(
         "POST",
-        "/api/admin/inbox/p-kalos-fixed/approve",
+        &kalos,
         json!({ "version": fixed_change["version"], "choices": choices, "edit": {"drop": ["0.day_time", "0.party"]} }),
-        &[("x-kanade-csrf", &h.csrf.clone())],
-        (StatusCode::UNPROCESSABLE_ENTITY, "nothing_approved"),
+        (422, "nothing_approved"),
     )
     .await;
     let approved = h
         .ok(
             "POST",
-            "/api/admin/inbox/p-kalos-fixed/approve",
+            &kalos,
             Some(json!({ "version": fixed_change["version"], "choices": choices, "edit": edit })),
-            "common.json#/$defs/Message",
+            "common#Message",
         )
         .await;
     assert!(s(&approved["message"]).starts_with("Approved with changes"));
 
     // Drafts: list, detail, preview, writes, conflicts and merge.
-    let open = h
-        .ok(
-            "GET",
-            "/api/admin/drafts",
-            None,
-            "drafts.json#/$defs/DraftList",
-        )
-        .await;
+    let open = h.get("/api/admin/drafts", "drafts#DraftList").await;
     assert_eq!(open["drafts"].as_array().unwrap().len(), 2);
-    h.ok(
-        "GET",
-        "/api/admin/drafts?state=closed",
-        None,
-        "drafts.json#/$defs/DraftList",
-    )
-    .await;
+    h.get("/api/admin/drafts?state=closed", "drafts#DraftList")
+        .await;
     let graph = h
-        .ok(
-            "GET",
+        .get(
             "/api/admin/drafts/graph?from=1&to=1000",
-            None,
-            "drafts.json#/$defs/DraftGraph",
+            "drafts#DraftGraph",
         )
         .await;
     assert_eq!(graph["drafts"].as_array().unwrap().len(), 4);
-    h.refused(
+    h.refused_with(
         "GET",
         "/api/admin/drafts/graph?from=2&to=1",
         json!(null),
-        &[],
-        (StatusCode::UNPROCESSABLE_ENTITY, "invalid_query"),
+        NONE,
+        (422, "invalid_query"),
     )
     .await;
     // Presence: the boards' simulated admins, never the caller.
     h.send(false, "POST", "/__mock/presence/board", None).await;
+    let presence = "/api/admin/presence";
     let here = h
         .ok(
             "PUT",
-            "/api/admin/presence",
+            presence,
             Some(json!({"at": {"kind": "request", "id": "p-kalos-fixed"}, "mode": "editing", "seq": 1})),
-            "presence.json#/$defs/PresenceHere",
+            "presence#PresenceHere",
         )
         .await;
     assert_eq!(here["here"].as_array().unwrap().len(), 2);
     let run = h
-        .ok(
-            "GET",
+        .get(
             "/api/admin/presence?at=run%3Ar-carling",
-            None,
-            "presence.json#/$defs/PresenceList",
+            "presence#PresenceList",
         )
         .await;
     assert_eq!(run["here"][0]["admin"]["name"], "Ren");
@@ -1610,176 +1257,118 @@ async fn every_pwa_endpoint_matches_the_frozen_contract() {
         )
         .await;
     assert_eq!(left, StatusCode::NO_CONTENT);
-    let csrf = h.csrf.clone();
     h.refused(
         "PUT",
-        "/api/admin/presence",
+        presence,
         json!({"at": {"kind": "draft", "id": "d-weekend"}, "mode": "viewing", "seq": 1}),
-        &[("x-kanade-csrf", csrf.as_str())],
-        (StatusCode::BAD_REQUEST, "invalid_body"),
+        (400, "invalid_body"),
     )
     .await;
-    h.refused(
+    h.refused_with(
         "PUT",
-        "/api/admin/presence",
+        presence,
         json!({"at": {"kind": "run", "id": "r-carling"}, "mode": "viewing", "seq": 1}),
-        &[],
-        (StatusCode::FORBIDDEN, "csrf"),
+        NONE,
+        (403, "csrf"),
     )
     .await;
-    h.refused(
+    h.refused_with(
         "GET",
         "/api/admin/presence?at=run:",
         json!(null),
-        &[],
-        (StatusCode::UNPROCESSABLE_ENTITY, "invalid_query"),
+        NONE,
+        (422, "invalid_query"),
     )
     .await;
     // The seq is required on the check-in and on the leave.
     h.refused(
         "PUT",
-        "/api/admin/presence",
+        presence,
         json!({"at": {"kind": "run", "id": "r-carling"}, "mode": "viewing"}),
-        &[("x-kanade-csrf", csrf.as_str())],
-        (StatusCode::BAD_REQUEST, "invalid_body"),
+        (400, "invalid_body"),
     )
     .await;
     h.refused(
         "DELETE",
         "/api/admin/presence?at=run%3Ar-carling",
         json!(null),
-        &[("x-kanade-csrf", csrf.as_str())],
-        (StatusCode::UNPROCESSABLE_ENTITY, "invalid_query"),
+        (422, "invalid_query"),
     )
     .await;
     h.send(false, "DELETE", "/__mock/presence", None).await;
-    h.ok(
-        "GET",
-        "/api/admin/drafts/d-weekend",
-        None,
-        "drafts.json#/$defs/DraftDetail",
-    )
-    .await;
+    h.get("/api/admin/drafts/d-weekend", "drafts#DraftDetail")
+        .await;
+    let carling = "/api/admin/drafts/d-carling";
     let conflicted = h
-        .ok(
-            "GET",
-            "/api/admin/drafts/d-carling/preview",
-            None,
-            "drafts.json#/$defs/DraftPreview",
-        )
+        .get(&format!("{carling}/preview"), "drafts#DraftPreview")
         .await;
     assert_eq!(conflicted["conflicts"].as_array().unwrap().len(), 2);
     assert_eq!(conflicted["mergeable"], json!(false));
-    let csrf = [("x-kanade-csrf", h.csrf.clone())];
-    let csrf = [(csrf[0].0, csrf[0].1.as_str())];
+    let v4 = json!({"version": 4});
     h.refused(
         "POST",
-        "/api/admin/drafts/d-carling/merge",
-        json!({"version": 4}),
-        &csrf,
-        (StatusCode::CONFLICT, "base_moved"),
+        &format!("{carling}/merge"),
+        v4.clone(),
+        (409, "base_moved"),
     )
     .await;
-    h.refused(
-        "POST",
-        "/api/admin/drafts/d-carling/rebase",
-        json!({"version": 4}),
-        &csrf,
-        (StatusCode::CONFLICT, "conflicts"),
-    )
-    .await;
+    h.refused("POST", &format!("{carling}/rebase"), v4, (409, "conflicts"))
+        .await;
+    let draft = "drafts#DraftWritten";
     h.ok(
         "POST",
-        "/api/admin/drafts/d-carling/rebase",
+        &format!("{carling}/rebase"),
         Some(json!({"version": 4, "settle": {
             "both/run:r-carling/slot": "take",
             "removed/run:r-limbo": "keep",
         }})),
-        "drafts.json#/$defs/DraftWritten",
+        draft,
     )
     .await;
     let rebased = h
-        .ok(
-            "GET",
-            "/api/admin/drafts/d-carling/preview",
-            None,
-            "drafts.json#/$defs/DraftPreview",
-        )
+        .get(&format!("{carling}/preview"), "drafts#DraftPreview")
         .await;
     assert_eq!(rebased["mergeable"], json!(true));
+    let body = json!({"version": 5});
     let merged = h
-        .ok(
-            "POST",
-            "/api/admin/drafts/d-carling/merge",
-            Some(json!({"version": 5})),
-            "drafts.json#/$defs/DraftWritten",
-        )
+        .ok("POST", &format!("{carling}/merge"), Some(body), draft)
         .await;
     assert_eq!(merged["status"], json!("merged"));
     h.refused(
         "POST",
         "/api/admin/drafts/d-weekend/ops",
         json!({"version": 1, "op": {"kind": "reset", "run": "r-kalos"}}),
-        &csrf,
-        (StatusCode::CONFLICT, "stale"),
+        (409, "stale"),
     )
     .await;
+    let body = json!({"title": "Contract"});
     let created = h
-        .expect(
-            false,
-            "POST",
-            "/api/admin/drafts",
-            Some(json!({"title": "Contract"})),
-            StatusCode::CREATED,
-            "drafts.json#/$defs/DraftWritten",
-        )
+        .expect(false, "POST", "/api/admin/drafts", Some(body), 201, draft)
         .await;
-    let new = s(&created["id"]).to_owned();
+    let new = format!("/api/admin/drafts/{}", s(&created["id"]));
     h.ok(
         "POST",
-        &format!("/api/admin/drafts/{new}/ops"),
+        &format!("{new}/ops"),
         Some(json!({"version": 1, "op": {"kind": "status", "run": "r-kalos", "status": "confirmed"}})),
-        "drafts.json#/$defs/DraftWritten",
+        draft,
     )
     .await;
-    h.ok(
-        "PATCH",
-        &format!("/api/admin/drafts/{new}"),
-        Some(json!({"version": 2, "title": "Contract check"})),
-        "drafts.json#/$defs/DraftWritten",
-    )
-    .await;
-    h.ok(
-        "DELETE",
-        &format!("/api/admin/drafts/{new}/ops/0?version=3"),
-        None,
-        "drafts.json#/$defs/DraftWritten",
-    )
-    .await;
-    h.ok(
-        "DELETE",
-        &format!("/api/admin/drafts/{new}?version=4"),
-        None,
-        "drafts.json#/$defs/DraftWritten",
-    )
-    .await;
+    let body = json!({"version": 2, "title": "Contract check"});
+    h.ok("PATCH", &new, Some(body), draft).await;
+    h.ok("DELETE", &format!("{new}/ops/0?version=3"), None, draft)
+        .await;
+    h.ok("DELETE", &format!("{new}?version=4"), None, draft)
+        .await;
     h.ok(
         "POST",
-        "/api/admin/inbox/p-jupiter-chat/approve",
+        &decide("p-jupiter-chat", "approve"),
         Some(json!({})),
-        "common.json#/$defs/Message",
+        "common#Message",
     )
     .await;
 
     // Limits, config, digest, access.
-    let limits = h
-        .ok(
-            "GET",
-            "/api/admin/limits",
-            None,
-            "limits.json#/$defs/Limits",
-        )
-        .await;
+    let limits = h.get("/api/admin/limits", "limits#Limits").await;
     // A window with answers in it (staff are exempt, so never counted).
     let counted = limits["allowances"]
         .as_array()
@@ -1789,22 +1378,10 @@ async fn every_pwa_endpoint_matches_the_frozen_contract() {
         .unwrap();
     assert!(counted["resets_at"].as_str().is_some(), "{counted}");
     let who = s(&counted["member"]["id"]).to_owned();
-    h.ok(
-        "DELETE",
-        &format!("/api/admin/limits/windows/{who}"),
-        None,
-        "common.json#/$defs/Message",
-    )
-    .await;
+    let path = format!("/api/admin/limits/windows/{who}");
+    h.ok("DELETE", &path, None, "common#Message").await;
     // The clear is a `limits` row in History, in the settings stream's shape.
-    let cleared = h
-        .ok(
-            "GET",
-            "/api/admin/history",
-            None,
-            "history.json#/$defs/HistoryPage",
-        )
-        .await;
+    let cleared = h.get("/api/admin/history", "history#HistoryPage").await;
     assert!(
         cleared["settings"]
             .as_array()
@@ -1816,116 +1393,62 @@ async fn every_pwa_endpoint_matches_the_frozen_contract() {
     );
     // Portraits are images, never JSON or HTML.
     for path in [
-        "/api/admin/members/1001/avatar".to_owned(),
-        "/api/admin/members/1005/avatar".to_owned(),
-        "/api/admin/me/avatar".to_owned(),
+        "/api/admin/members/1001/avatar",
+        "/api/admin/members/1005/avatar",
+        "/api/admin/me/avatar",
     ] {
-        h.image(&path).await;
+        h.image(false, path, "", "private, no-cache").await;
     }
-    h.ok(
-        "PATCH",
-        "/api/admin/config",
-        Some(json!({ "notifications": { "quiet_mode": true } })),
-        "config.json#/$defs/ConfigView",
-    )
-    .await;
-    let quiet = h
-        .ok(
-            "GET",
-            "/api/admin/summary",
-            None,
-            "week.json#/$defs/Summary",
-        )
+    h.config(json!({ "notifications": { "quiet_mode": true } }))
         .await;
+    let quiet = h.get("/api/admin/summary", "week#Summary").await;
     assert_eq!(quiet["quiet_mode"], true, "the summary follows the config");
     let lengths = h
-        .ok(
-            "PATCH",
-            "/api/admin/config",
-            Some(json!({ "run_lengths": { "default_minutes": 20 } })),
-            "config.json#/$defs/ConfigView",
-        )
+        .config(json!({ "run_lengths": { "default_minutes": 20 } }))
         .await;
     assert_eq!(lengths["run_lengths"]["default_minutes"], 20);
     let profanity = h
-        .ok(
-            "PATCH",
-            "/api/admin/config",
-            Some(json!({ "profanity": { "extra_words": ["heck"], "check_replies": false } })),
-            "config.json#/$defs/ConfigView",
-        )
+        .config(json!({ "profanity": { "extra_words": ["heck"], "check_replies": false } }))
         .await;
     assert_eq!(profanity["profanity"]["extra_words"], json!(["heck"]));
-    h.expect(
-        false,
-        "PATCH",
-        "/api/admin/config",
-        Some(json!({ "models": { "pii_pseudonymise": false } })),
-        StatusCode::UNPROCESSABLE_ENTITY,
-        "",
-    )
-    .await;
+    let body = json!({ "models": { "pii_pseudonymise": false } });
+    h.fails("PATCH", config, Some(body), 422).await;
     h.ok(
         "POST",
         "/api/admin/config/profiles/reload",
         Some(json!({})),
-        "common.json#/$defs/ReloadResult",
+        "common#ReloadResult",
     )
     .await;
     h.ok(
         "POST",
         "/api/admin/digest",
         Some(json!({ "week": "this", "channel_id": null })),
-        "common.json#/$defs/Message",
+        "common#Message",
     )
     .await;
-    h.expect(
-        false,
-        "POST",
-        "/api/admin/headers/rewrite",
-        None,
-        StatusCode::ACCEPTED,
-        "common.json#/$defs/Message",
-    )
-    .await;
-    let running = h
-        .expect(
-            false,
-            "POST",
-            "/api/admin/headers/rewrite",
-            None,
-            StatusCode::CONFLICT,
-            "",
-        )
+    let rewrite = "/api/admin/headers/rewrite";
+    h.expect(false, "POST", rewrite, None, 202, "common#Message")
         .await;
+    let running = h.fails("POST", rewrite, None, 409).await;
     assert_eq!(running["error"], "rewrite_running");
     h.ok(
         "POST",
         "/api/admin/access/recheck",
         Some(json!({})),
-        "config.json#/$defs/AccessReport",
+        "config#AccessReport",
     )
     .await;
 
     // History: pages, each record, and the three rollback previews.
     let page = h
-        .ok(
-            "GET",
-            "/api/admin/history?limit=100",
-            None,
-            "history.json#/$defs/HistoryPage",
-        )
+        .get("/api/admin/history?limit=100", "history#HistoryPage")
         .await;
     let records = page["records"].as_array().unwrap().clone();
     assert!(!records.is_empty(), "the edits above wrote history");
     for record in &records {
-        h.ok(
-            "GET",
-            &format!("/api/admin/history/{}", record["seq"]),
-            None,
-            "history.json#/$defs/ChangeRecord",
-        )
-        .await;
+        let path = format!("/api/admin/history/{}", record["seq"]);
+        h.get(&path, "history#ChangeRecord").await;
     }
     let newest = &records[0];
     let week_key = s(&newest["weeks"][0]).to_owned();
@@ -1941,17 +1464,18 @@ async fn every_pwa_endpoint_matches_the_frozen_contract() {
             .any(|row| row["key"]["table"] == "reminders"),
         "reminder rows are recorded"
     );
+    let actor = format!(
+        "{}:{}",
+        s(&newest["actor"]["kind"]),
+        s(&newest["actor"]["id"])
+    );
     let filtered = h
-        .ok(
-            "GET",
+        .get(
             &format!(
-                "/api/admin/history?limit=2&week={}&actor={}:{}",
+                "/api/admin/history?limit=2&week={}&actor={actor}",
                 week_key.replace('+', "%2B"),
-                s(&newest["actor"]["kind"]),
-                s(&newest["actor"]["id"])
             ),
-            None,
-            "history.json#/$defs/HistoryPage",
+            "history#HistoryPage",
         )
         .await;
     assert!(
@@ -1960,11 +1484,9 @@ async fn every_pwa_endpoint_matches_the_frozen_contract() {
     );
     // A run's log: every record touching its row or RSVPs, newest first.
     let run_log = h
-        .ok(
-            "GET",
+        .get(
             &format!("/api/admin/history?run={id}&limit=2"),
-            None,
-            "history.json#/$defs/HistoryPage",
+            "history#HistoryPage",
         )
         .await;
     assert!(
@@ -1982,15 +1504,8 @@ async fn every_pwa_endpoint_matches_the_frozen_contract() {
         "{run_log}"
     );
     for bad in ["run=no-such-run", &format!("run={id}&actor=admin:token")] {
-        h.expect(
-            false,
-            "GET",
-            &format!("/api/admin/history?{bad}"),
-            None,
-            StatusCode::UNPROCESSABLE_ENTITY,
-            "",
-        )
-        .await;
+        h.fails("GET", &format!("/api/admin/history?{bad}"), None, 422)
+            .await;
     }
 
     // A strict revert of the first move conflicts with every later edit of
@@ -2008,151 +1523,78 @@ async fn every_pwa_endpoint_matches_the_frozen_contract() {
         })
         .expect("the run edits above")["seq"]
         .clone();
+    let plan = "history#RevertPlan";
+    let revert = "/api/admin/history/revert";
     let strict = h
         .ok(
             "POST",
-            "/api/admin/history/revert",
+            revert,
             Some(json!({ "seqs": [first_move], "preview": true })),
-            "history.json#/$defs/RevertPlan",
+            plan,
         )
         .await;
     assert_eq!(strict["outcome"], "conflicts", "{strict}");
     assert_eq!(strict["rows"], json!([]));
     assert_eq!(strict["reverts"], json!([first_move]));
     assert!(!strict["conflicts"].as_array().unwrap().is_empty());
-    h.ok(
-        "POST",
-        "/api/admin/history/revert",
-        Some(json!({ "seqs": [newest["seq"]], "preview": true })),
-        "history.json#/$defs/RevertPlan",
-    )
-    .await;
-    h.ok(
-        "POST",
-        "/api/admin/history/restore-week",
-        Some(json!({ "week": week_key, "revision": 0, "preview": true })),
-        "history.json#/$defs/RevertPlan",
-    )
-    .await;
-    let actor = format!(
-        "{}:{}",
-        s(&newest["actor"]["kind"]),
-        s(&newest["actor"]["id"])
-    );
-    h.ok(
-        "POST",
-        "/api/admin/history/revert-actor",
-        Some(json!({ "actor": actor, "since": "1970-01-01T00:00:00Z", "preview": true })),
-        "history.json#/$defs/RevertPlan",
-    )
-    .await;
-    h.ok(
-        "POST",
-        "/api/admin/history/revert",
-        Some(json!({ "seqs": [newest["seq"]] })),
-        "history.json#/$defs/RevertPlan",
-    )
-    .await;
-    h.expect(
-        false,
-        "GET",
-        "/api/admin/history/999999",
-        None,
-        StatusCode::NOT_FOUND,
-        "",
-    )
-    .await;
+    for (path, body) in [
+        (revert, json!({ "seqs": [newest["seq"]], "preview": true })),
+        (
+            "/api/admin/history/restore-week",
+            json!({ "week": week_key, "revision": 0, "preview": true }),
+        ),
+        (
+            "/api/admin/history/revert-actor",
+            json!({ "actor": actor, "since": "1970-01-01T00:00:00Z", "preview": true }),
+        ),
+        (revert, json!({ "seqs": [newest["seq"]] })),
+    ] {
+        h.ok("POST", path, Some(body), plan).await;
+    }
+    h.fails("GET", "/api/admin/history/999999", None, 404).await;
 
     // Closing the portal closes the public schedule.
-    h.ok(
-        "PATCH",
-        "/api/admin/config",
-        Some(json!({ "self_service": { "public_portal": false } })),
-        "config.json#/$defs/ConfigView",
-    )
-    .await;
+    h.config(json!({ "self_service": { "public_portal": false } }))
+        .await;
     let status = h
         .expect(
             true,
             "GET",
             "/api/public/status",
             None,
-            StatusCode::OK,
-            "public.json#/$defs/PublicStatus",
+            200,
+            "public#PublicStatus",
         )
         .await;
     assert_eq!(status["portal"], "closed");
-    h.expect(
-        true,
-        "GET",
-        "/api/public/session",
-        None,
-        StatusCode::SERVICE_UNAVAILABLE,
-        "",
-    )
-    .await;
+    h.expect(true, "GET", "/api/public/session", None, 503, "")
+        .await;
 
     // Sign-in and sessions: methods, token login, sign-out, 401 while signed out, Discord.
     let (status, _, methods) = h
-        .send_with(false, "GET", "/api/admin/auth/methods", None, &[])
+        .send_with(false, "GET", "/api/admin/auth/methods", None, NONE)
         .await;
     assert_eq!(status, StatusCode::OK);
     for key in ["discord", "tailscale", "token"] {
         assert!(methods[key].is_boolean(), "{key}: {methods}");
     }
-    let session = h
-        .ok(
-            "GET",
-            "/api/admin/session",
-            None,
-            "identity.json#/$defs/Session",
-        )
-        .await;
+    let session = h.get("/api/admin/session", "identity#Session").await;
     assert_eq!(session["method"], "discord");
-    h.refused(
-        "POST",
-        "/api/admin/auth/token",
-        json!({ "token": "wrong" }),
-        &[],
-        (StatusCode::UNAUTHORIZED, "unauthenticated"),
-    )
-    .await;
-    h.refused(
-        "POST",
-        "/api/admin/auth/token",
-        json!({ "tok": "x" }),
-        &[],
-        (StatusCode::BAD_REQUEST, "invalid_body"),
-    )
-    .await;
-    h.refused(
-        "POST",
-        "/api/admin/auth/logout",
-        json!({}),
-        &[],
-        (StatusCode::FORBIDDEN, "csrf"),
-    )
-    .await;
+    let token = "/api/admin/auth/token";
+    let logout = "/api/admin/auth/logout";
+    for (path, body, want) in [
+        (token, json!({ "token": "wrong" }), (401, "unauthenticated")),
+        (token, json!({ "tok": "x" }), (400, "invalid_body")),
+        (logout, json!({}), (403, "csrf")),
+    ] {
+        h.refused_with("POST", path, body, NONE, want).await;
+    }
     let csrf = h.csrf.clone();
     let (status, _, _) = h
-        .send_with(
-            false,
-            "POST",
-            "/api/admin/auth/logout",
-            None,
-            &[("x-kanade-csrf", &csrf)],
-        )
+        .send_with(false, "POST", logout, None, &[("x-kanade-csrf", &csrf)])
         .await;
     assert_eq!(status, StatusCode::NO_CONTENT);
-    h.expect(
-        false,
-        "GET",
-        "/api/admin/week",
-        None,
-        StatusCode::UNAUTHORIZED,
-        "",
-    )
-    .await;
+    h.fails("GET", "/api/admin/week", None, 401).await;
     // Signed out, the sign-in strip still answers: time, boss names and tally only.
     let tonight = h
         .expect(
@@ -2160,199 +1602,59 @@ async fn every_pwa_endpoint_matches_the_frozen_contract() {
             "GET",
             "/api/admin/auth/tonight",
             None,
-            StatusCode::OK,
-            "week.json#/$defs/Tonight",
+            200,
+            "week#Tonight",
         )
         .await;
     assert_eq!(
         tonight,
         json!({ "run": { "time": "22:00", "bosses": ["Carling", "Radiant Malefic Star"], "tally": { "on": 4, "total": 7 } } })
     );
-    let (status, headers, session) = h
-        .send_with(
-            false,
-            "POST",
-            "/api/admin/auth/token",
-            Some(json!({ "token": crate::auth::MOCK_TOKEN })),
-            &[],
-        )
-        .await;
+    let body = json!({ "token": crate::auth::MOCK_TOKEN });
+    let (status, headers, session) = h.send_with(false, "POST", token, Some(body), NONE).await;
     assert_eq!(status, StatusCode::OK);
-    h.check(
-        "token login",
-        status,
-        &session,
-        "identity.json#/$defs/Session",
-    );
+    h.check("token login", status, &session, "identity#Session");
     assert_eq!(session["method"], "token");
-    let fresh = headers
-        .get("x-kanade-csrf")
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or_default()
-        .to_owned();
+    let fresh = header_value(&headers, "x-kanade-csrf").to_owned();
     assert!(
         !fresh.is_empty() && fresh != csrf,
         "a sign-in issues a new CSRF token"
     );
     h.csrf = fresh;
-    h.ok("GET", "/api/admin/week", None, "week.json#/$defs/Week")
-        .await;
-    let me = h
-        .ok("GET", "/api/admin/me", None, "identity.json#/$defs/Me")
-        .await;
+    h.get("/api/admin/week", "week#Week").await;
+    let me = h.get("/api/admin/me", "identity#Me").await;
     assert_eq!(me["member"], Value::Null, "a token session stays neutral");
+    let start = |next: &str| format!("/api/admin/auth/discord/start?next={next}");
     let (status, headers, _) = h
-        .send_with(
-            false,
-            "GET",
-            "/api/admin/auth/discord/start?next=/inbox?tab=self_service",
-            None,
-            &[],
-        )
+        .send_with(false, "GET", &start("/inbox?tab=self_service"), None, NONE)
         .await;
     assert_eq!(status, StatusCode::SEE_OTHER);
-    let callback = headers[header::LOCATION].to_str().unwrap().to_owned();
-    let (status, _, page) = h.send_with(false, "GET", &callback, None, &[]).await;
+    let callback = header_value(&headers, "location").to_owned();
+    let (status, _, page) = h.send_with(false, "GET", &callback, None, NONE).await;
     assert_eq!(status, StatusCode::OK);
     assert!(
         page.as_str()
             .is_some_and(|p| p.contains("url=/inbox?tab=self_service")),
         "{page}"
     );
-    h.send(
-        false,
-        "POST",
-        "/__mock/discord",
-        Some(json!({ "error": "forbidden" })),
-    )
-    .await;
+    h.control(false, "/__mock/discord", json!({ "error": "forbidden" }))
+        .await;
     let (status, headers, _) = h
-        .send_with(
-            false,
-            "GET",
-            "/api/admin/auth/discord/start?next=//evil.example/",
-            None,
-            &[],
-        )
+        .send_with(false, "GET", &start("//evil.example/"), None, NONE)
         .await;
     assert_eq!(
-        (status, headers[header::LOCATION].to_str().unwrap()),
+        (status, header_value(&headers, "location")),
         (StatusCode::SEE_OTHER, "/?login_error=forbidden")
     );
 
-    assert!(
-        h.failures.is_empty(),
-        "{} of {} responses broke the contract:\n{}",
-        h.failures.len(),
-        h.checked,
-        h.failures.join("\n")
-    );
+    h.finish();
 }
 
-/// Public-origin calls for `public_member_routes_match_the_contract`, which
-/// walks the member auth routes (docs/notes/member-auth-contract.md §1–§3).
-impl Harness {
-    /// A public-origin call with these headers; `target` is checked on 2xx with a body.
-    async fn public(
-        &mut self,
-        method: &str,
-        path: &str,
-        headers: &[(&str, &str)],
-        want: StatusCode,
-        target: &str,
-    ) -> (HeaderMap, Value) {
-        self.public_with(method, path, None, headers, want, target)
-            .await
-    }
-
-    /// [`Self::public`] with a JSON body.
-    async fn public_with(
-        &mut self,
-        method: &str,
-        path: &str,
-        body: Option<Value>,
-        headers: &[(&str, &str)],
-        want: StatusCode,
-        target: &str,
-    ) -> (HeaderMap, Value) {
-        let (status, sent, value) = self.send_with(true, method, path, body, headers).await;
-        let label = format!("public {method} {path}");
-        if status != want {
-            self.failures
-                .push(format!("{label}: status {status}, wanted {want}: {value}"));
-        }
-        if !value.is_null() && !value.is_string() {
-            self.check(&label, status, &value, target);
-        }
-        (sent, value)
-    }
-
-    async fn public_image(&mut self, path: &str, cookie: &str) -> (StatusCode, String, String) {
-        let res = self
-            .public
-            .clone()
-            .oneshot(
-                Request::get(path)
-                    .header(header::COOKIE, cookie)
-                    .body(Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        let header = |name| {
-            res.headers()
-                .get(name)
-                .and_then(|v| v.to_str().ok())
-                .unwrap_or_default()
-                .to_owned()
-        };
-        (
-            res.status(),
-            header(header::CONTENT_TYPE),
-            header(header::CACHE_CONTROL),
-        )
-    }
-}
-
-fn header_value<'a>(headers: &'a HeaderMap, name: &str) -> &'a str {
-    headers
-        .get(name)
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or_default()
-}
-
-/// The `kanade_pub=<id>` pair a `Set-Cookie` sets (empty when it clears it).
-fn session_cookie(headers: &HeaderMap) -> String {
-    let line = header_value(headers, "set-cookie");
-    line.split(';').next().unwrap_or_default().to_owned()
-}
-
-/// A member write's headers: the session cookie, its token and `key`.
-fn signed<'a>(cookie: &'a str, token: &'a str, key: &'a str) -> [(&'a str, &'a str); 3] {
-    [
-        ("cookie", cookie),
-        ("x-kanade-csrf", token),
-        ("idempotency-key", key),
-    ]
-}
-
+/// Walks the member auth routes (docs/notes/member-auth-contract.md §1–§3).
 #[tokio::test]
 async fn public_member_routes_match_the_contract() {
     let mut h = Harness::new();
-    let none: &[(&str, &str)] = &[];
-
-    // Open and signed out: status, then 401 for every session route.
-    let (_, status) = h
-        .public(
-            "GET",
-            "/api/public/status",
-            none,
-            StatusCode::OK,
-            "public.json#/$defs/PublicStatus",
-        )
-        .await;
-    assert_eq!(status["portal"], "open");
-    for path in [
+    let session_routes = [
         "/api/public/session",
         "/api/public/sessions",
         "/api/public/week",
@@ -2362,21 +1664,32 @@ async fn public_member_routes_match_the_contract() {
         "/api/public/bosses/events",
         "/api/public/bosses/Carling/knowledge",
         "/art/entry/Carling",
-    ] {
-        h.public("GET", path, none, StatusCode::UNAUTHORIZED, "")
-            .await;
+    ];
+
+    // Open and signed out: status, then 401 for every session route.
+    let (_, status) = h
+        .public(
+            "GET",
+            "/api/public/status",
+            NONE,
+            200,
+            "public#PublicStatus",
+        )
+        .await;
+    assert_eq!(status["portal"], "open");
+    for path in session_routes {
+        h.public("GET", path, NONE, 401, "").await;
     }
     // Unmounted while open: the catch-all answers 404.
-    h.public("GET", "/api/public/nope", none, StatusCode::NOT_FOUND, "")
-        .await;
+    h.public("GET", "/api/public/nope", NONE, 404, "").await;
 
     // Discord sign-in: start → (no Discord) callback → landing with the cookie.
     let (headers, _) = h
         .public(
             "GET",
             "/api/public/auth/discord/start?next=/account",
-            none,
-            StatusCode::SEE_OTHER,
+            NONE,
+            303,
             "",
         )
         .await;
@@ -2387,7 +1700,7 @@ async fn public_member_routes_match_the_contract() {
     );
     let ua = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0 Safari/537.36";
     let (headers, page) = h
-        .public("GET", &callback, &[("user-agent", ua)], StatusCode::OK, "")
+        .public("GET", &callback, &[("user-agent", ua)], 200, "")
         .await;
     assert!(
         page.as_str().is_some_and(|p| p.contains("url=/account")),
@@ -2404,13 +1717,14 @@ async fn public_member_routes_match_the_contract() {
     );
 
     // Signed in: the session (token in the header only), the device list, the portrait.
+    let auth: &[(&str, &str)] = &[("cookie", &cookie)];
     let (headers, session) = h
         .public(
             "GET",
             "/api/public/session",
-            &[("cookie", &cookie)],
-            StatusCode::OK,
-            "public.json#/$defs/PublicSession",
+            auth,
+            200,
+            "public#PublicSession",
         )
         .await;
     let token = header_value(&headers, "x-kanade-csrf").to_owned();
@@ -2423,9 +1737,9 @@ async fn public_member_routes_match_the_contract() {
         .public(
             "GET",
             "/api/public/sessions",
-            &[("cookie", &cookie)],
-            StatusCode::OK,
-            "public.json#/$defs/PublicSessions",
+            auth,
+            200,
+            "public#PublicSessions",
         )
         .await;
     let rows = list["sessions"].as_array().unwrap().clone();
@@ -2433,172 +1747,101 @@ async fn public_member_routes_match_the_contract() {
     let mine = rows.iter().find(|r| r["current"] == true).unwrap();
     assert_eq!(mine["device"], "Chrome · macOS");
     let other = s(&rows.iter().find(|r| r["current"] == false).unwrap()["handle"]).to_owned();
-    let (status, kind, cache) = h
-        .public_image("/api/public/session/avatar?v=1", &cookie)
-        .await;
-    h.checked += 1;
-    if status != StatusCode::OK || !kind.starts_with("image/") || cache != "private, no-cache" {
-        h.failures
-            .push(format!("public avatar: {status} {kind} {cache}"));
-    }
+    let avatar = "/api/public/session/avatar?v=1";
+    h.image(true, avatar, &cookie, "private, no-cache").await;
 
     // Member reads (MemberWeek, MemberAllowance) against their schemas: own and
     // other runs, both weeks, then the art behind the session.
-    let auth: &[(&str, &str)] = &[("cookie", &cookie)];
     for (path, next) in [
         ("/api/public/week", false),
         ("/api/public/week?week=this", false),
         ("/api/public/week?week=next", true),
     ] {
-        let (_, week) = h
-            .public(
-                "GET",
-                path,
-                auth,
-                StatusCode::OK,
-                "public.json#/$defs/MemberWeek",
-            )
-            .await;
+        let (_, week) = h.public("GET", path, auth, 200, "public#MemberWeek").await;
         let runs = week["runs"].as_array().cloned().unwrap_or_default();
         let mine = runs.iter().filter(|r| r["mine"] == true).count();
-        h.checked += 1;
-        if mine == 0 || (!next && mine == runs.len()) {
-            h.failures.push(format!(
-                "public week {path}: {mine} of {} runs mine",
-                runs.len()
-            ));
-        }
+        h.verify(mine > 0 && (next || mine < runs.len()), || {
+            format!("public week {path}: {mine} of {} runs mine", runs.len())
+        });
     }
-    h.public(
-        "GET",
-        "/api/public/week?week=last",
-        auth,
-        StatusCode::UNPROCESSABLE_ENTITY,
-        "",
-    )
-    .await;
+    h.public("GET", "/api/public/week?week=last", auth, 422, "")
+        .await;
     h.public(
         "GET",
         "/api/public/me/allowance",
         auth,
-        StatusCode::OK,
-        "public.json#/$defs/MemberAllowance",
+        200,
+        "public#MemberAllowance",
     )
     .await;
     // Boss guides: the admin list and event bosses as they are; knowledge
     // without `path` or any bullet's `detail` (the schema refuses either).
-    h.public(
-        "GET",
-        "/api/public/bosses",
-        auth,
-        StatusCode::OK,
-        "bosses.json#/$defs/BossRows",
-    )
-    .await;
+    h.public("GET", "/api/public/bosses", auth, 200, "bosses#BossRows")
+        .await;
     let (_, events) = h
         .public(
             "GET",
             "/api/public/bosses/events",
             auth,
-            StatusCode::OK,
-            "bosses.json#/$defs/EventBosses",
+            200,
+            "bosses#EventBosses",
         )
         .await;
-    h.checked += 1;
-    if !events
+    let kai = events
         .as_array()
-        .is_some_and(|rows| rows.iter().any(|row| row["key"] == "Kai"))
-    {
-        h.failures.push(format!("public event bosses: {events}"));
-    }
+        .is_some_and(|rows| rows.iter().any(|row| row["key"] == "Kai"));
+    h.verify(kai, || format!("public event bosses: {events}"));
     for key in ["Carling", "MaleficStar", "Kai"] {
+        let path = format!("/api/public/bosses/{key}/knowledge");
         let (_, knowledge) = h
-            .public(
-                "GET",
-                &format!("/api/public/bosses/{key}/knowledge"),
-                auth,
-                StatusCode::OK,
-                "public.json#/$defs/PublicKnowledge",
-            )
+            .public("GET", &path, auth, 200, "public#PublicKnowledge")
             .await;
-        h.checked += 1;
-        let text = knowledge.to_string();
-        if text.contains("\"detail\"") || knowledge.get("path").is_some() {
-            h.failures
-                .push(format!("public knowledge {key} leaks path or detail"));
-        }
+        let leaks = knowledge.to_string().contains("\"detail\"") || knowledge.get("path").is_some();
+        h.verify(!leaks, || {
+            format!("public knowledge {key} leaks path or detail")
+        });
     }
-    h.public(
-        "GET",
-        "/api/public/bosses/Nobody/knowledge",
-        auth,
-        StatusCode::NOT_FOUND,
-        "",
+    h.public("GET", "/api/public/bosses/Nobody/knowledge", auth, 404, "")
+        .await;
+    // Behind the session, so per-user and revalidated on every use (as the server).
+    h.image(
+        true,
+        "/art/entry/Carling",
+        &cookie,
+        "private, max-age=86400",
     )
     .await;
-    // Behind the session, so per-user and revalidated on every use (as the server).
-    let (status, kind, cache) = h.public_image("/art/entry/Carling", &cookie).await;
-    h.checked += 1;
-    if status != StatusCode::OK || !kind.starts_with("image/") || cache != "private, max-age=86400"
-    {
-        h.failures
-            .push(format!("public art: {status} {kind} {cache}"));
-    }
 
     // Writes need the session's token: sign out one device, then the refusals.
     let end_other = format!("/api/public/sessions/{other}");
-    h.public(
-        "DELETE",
-        &end_other,
-        &[("cookie", &cookie)],
-        StatusCode::FORBIDDEN,
-        "",
-    )
-    .await;
+    h.public("DELETE", &end_other, auth, 403, "").await;
     let signed = [
         ("cookie", cookie.as_str()),
         ("x-kanade-csrf", token.as_str()),
     ];
-    h.public("DELETE", &end_other, &signed, StatusCode::NO_CONTENT, "")
-        .await;
-    h.public("DELETE", &end_other, &signed, StatusCode::NOT_FOUND, "")
-        .await;
+    h.public("DELETE", &end_other, &signed, 204, "").await;
+    h.public("DELETE", &end_other, &signed, 404, "").await;
     let end_mine = format!("/api/public/sessions/{}", s(&mine["handle"]));
-    let (_, refused) = h
-        .public("DELETE", &end_mine, &signed, StatusCode::CONFLICT, "")
-        .await;
+    let (_, refused) = h.public("DELETE", &end_mine, &signed, 409, "").await;
     assert_eq!(refused["error"], "current_session");
 
     // A rotation (client IP change): the request is served on the old id and
     // answers the new cookie and token; the old id is gone.
-    h.public(
-        "POST",
-        "/__mock/public/rotate",
-        none,
-        StatusCode::NO_CONTENT,
-        "",
-    )
-    .await;
+    h.public("POST", "/__mock/public/rotate", NONE, 204, "")
+        .await;
     let (headers, _) = h
         .public(
             "GET",
             "/api/public/sessions",
-            &[("cookie", &cookie)],
-            StatusCode::OK,
-            "public.json#/$defs/PublicSessions",
+            auth,
+            200,
+            "public#PublicSessions",
         )
         .await;
     let rotated = session_cookie(&headers);
     let fresh = header_value(&headers, "x-kanade-csrf").to_owned();
     assert!(rotated != cookie && !fresh.is_empty() && fresh != token);
-    h.public(
-        "GET",
-        "/api/public/session",
-        &[("cookie", &cookie)],
-        StatusCode::UNAUTHORIZED,
-        "",
-    )
-    .await;
+    h.public("GET", "/api/public/session", auth, 401, "").await;
 
     // Sign out everywhere ends every session, this one too, and clears the cookie.
     let (headers, ended) = h
@@ -2606,8 +1849,8 @@ async fn public_member_routes_match_the_contract() {
             "POST",
             "/api/public/sessions/end-all",
             &[("cookie", &rotated), ("x-kanade-csrf", &fresh)],
-            StatusCode::OK,
-            "identity.json#/$defs/SessionsEnded",
+            200,
+            "identity#SessionsEnded",
         )
         .await;
     assert_eq!(ended["ended"], 2);
@@ -2616,37 +1859,22 @@ async fn public_member_routes_match_the_contract() {
         "GET",
         "/api/public/sessions",
         &[("cookie", &rotated)],
-        StatusCode::UNAUTHORIZED,
+        401,
         "",
     )
     .await;
 
     // Sign out (the shortcut signs in without Discord): a live session needs its token.
-    let (headers, _) = h
-        .public(
-            "POST",
-            "/__mock/public/sign-in",
-            none,
-            StatusCode::NO_CONTENT,
-            "",
-        )
+    let (cookie, token) = h.sign_in_public().await;
+    let logout = "/api/public/auth/logout";
+    h.public("POST", logout, &[("cookie", &cookie)], 403, "")
         .await;
-    let cookie = session_cookie(&headers);
-    let token = header_value(&headers, "x-kanade-csrf").to_owned();
-    h.public(
-        "POST",
-        "/api/public/auth/logout",
-        &[("cookie", &cookie)],
-        StatusCode::FORBIDDEN,
-        "",
-    )
-    .await;
     let (headers, _) = h
         .public(
             "POST",
-            "/api/public/auth/logout",
+            logout,
             &[("cookie", &cookie), ("x-kanade-csrf", &token)],
-            StatusCode::NO_CONTENT,
+            204,
             "",
         )
         .await;
@@ -2655,7 +1883,7 @@ async fn public_member_routes_match_the_contract() {
         "GET",
         "/api/public/session",
         &[("cookie", &cookie)],
-        StatusCode::UNAUTHORIZED,
+        401,
         "",
     )
     .await;
@@ -2667,7 +1895,7 @@ async fn public_member_routes_match_the_contract() {
             "POST",
             "/__mock/public/discord",
             Some(json!({ "error": "not_eligible" })),
-            &[],
+            NONE,
         )
         .await;
     assert_eq!(status, StatusCode::NO_CONTENT);
@@ -2675,8 +1903,8 @@ async fn public_member_routes_match_the_contract() {
         .public(
             "GET",
             "/api/public/auth/discord/start?next=/",
-            none,
-            StatusCode::SEE_OTHER,
+            NONE,
+            303,
             "",
         )
         .await;
@@ -2688,71 +1916,39 @@ async fn public_member_routes_match_the_contract() {
 
     // Closed: status says so; session routes and unmounted paths answer
     // `closed`; sign-in goes back with `login_error=closed`; sign-out still works.
-    h.ok(
-        "PATCH",
-        "/api/admin/config",
-        Some(json!({ "self_service": { "public_portal": false } })),
-        "config.json#/$defs/ConfigView",
-    )
-    .await;
+    h.config(json!({ "self_service": { "public_portal": false } }))
+        .await;
     let (_, status) = h
         .public(
             "GET",
             "/api/public/status",
-            none,
-            StatusCode::OK,
-            "public.json#/$defs/PublicStatus",
+            NONE,
+            200,
+            "public#PublicStatus",
         )
         .await;
     assert_eq!(status["portal"], "closed");
-    for path in [
-        "/api/public/session",
-        "/api/public/sessions",
-        "/api/public/week",
-        "/api/public/events",
-        "/api/public/me/allowance",
-        "/api/public/bosses",
-        "/api/public/bosses/events",
-        "/api/public/bosses/Carling/knowledge",
-        "/art/entry/Carling",
-    ] {
-        let (_, refused) = h
-            .public("GET", path, none, StatusCode::SERVICE_UNAVAILABLE, "")
-            .await;
+    for path in session_routes {
+        let (_, refused) = h.public("GET", path, NONE, 503, "").await;
         assert_eq!(refused["error"], "closed", "{path}");
     }
     for path in [
         "/api/public/auth/discord/start?next=/",
         "/api/public/auth/discord/callback?next=/",
     ] {
-        let (headers, _) = h.public("GET", path, none, StatusCode::SEE_OTHER, "").await;
+        let (headers, _) = h.public("GET", path, NONE, 303, "").await;
         assert_eq!(header_value(&headers, "location"), "/?login_error=closed");
     }
-    h.public(
-        "POST",
-        "/api/public/auth/logout",
-        none,
-        StatusCode::NO_CONTENT,
-        "",
-    )
-    .await;
+    h.public("POST", logout, NONE, 204, "").await;
     // The admin routes stay absent from this origin.
-    h.public("GET", "/api/admin/week", none, StatusCode::NOT_FOUND, "")
-        .await;
+    h.public("GET", "/api/admin/week", NONE, 404, "").await;
 
-    assert!(
-        h.failures.is_empty(),
-        "{} of {} responses broke the contract:\n{}",
-        h.failures.len(),
-        h.checked,
-        h.failures.join("\n")
-    );
+    h.finish();
 }
 
 #[tokio::test]
 async fn public_member_ownership_matches_the_contract() {
     let mut h = Harness::new();
-    let none: &[(&str, &str)] = &[];
     let timings = "/api/public/timings";
     let ask = "/api/public/timings/f-jupiter/owner-requests";
     let hand_off = "/api/public/timings/f-carling/owner";
@@ -2763,42 +1959,19 @@ async fn public_member_ownership_matches_the_contract() {
         "/api/public/owner-requests/own-kalos/decline",
         "/api/public/owner-requests/own-kalos/withdraw",
     ];
-    h.public("GET", timings, none, StatusCode::UNAUTHORIZED, "")
-        .await;
+    h.public("GET", timings, NONE, 401, "").await;
     for path in writes {
-        h.public(
-            "POST",
-            path,
-            &[("idempotency-key", "k-0")],
-            StatusCode::UNAUTHORIZED,
-            "",
-        )
-        .await;
+        h.public("POST", path, &[("idempotency-key", "k-0")], 401, "")
+            .await;
     }
 
-    let (headers, _) = h
-        .public(
-            "POST",
-            "/__mock/public/sign-in",
-            none,
-            StatusCode::NO_CONTENT,
-            "",
-        )
-        .await;
-    let cookie = session_cookie(&headers);
-    let token = header_value(&headers, "x-kanade-csrf").to_owned();
+    let (cookie, token) = h.sign_in_public().await;
     let auth = [("cookie", cookie.as_str())];
 
     // The timings Asahi is on: her own Carling shows Mika's request; Ren's
     // Kalos does not show Tsubame's.
     let (_, listed) = h
-        .public(
-            "GET",
-            timings,
-            &auth,
-            StatusCode::OK,
-            "public.json#/$defs/MemberTimings",
-        )
+        .public("GET", timings, &auth, 200, "public#MemberTimings")
         .await;
     let find = |listed: &Value, id: &str| {
         listed["timings"]
@@ -2814,103 +1987,52 @@ async fn public_member_ownership_matches_the_contract() {
     assert_eq!(carling["requests"][0]["id"], "own-carling");
     assert_eq!(find(&listed, "f-kalos")["requests"], json!([]));
     // Unmounted methods on the new paths.
-    h.public("POST", timings, &auth, StatusCode::NOT_FOUND, "")
-        .await;
-    h.public("GET", hand_off, &auth, StatusCode::NOT_FOUND, "")
-        .await;
+    h.public("POST", timings, &auth, 404, "").await;
+    h.public("GET", hand_off, &auth, 404, "").await;
 
     // Writes need the token and a well-formed key.
     let k = |key: &'static str| signed(&cookie, &token, key);
     let ask_1 = k("ask-1");
     let no_token = [("cookie", cookie.as_str()), ("idempotency-key", "ask-1")];
-    h.public("POST", ask, &no_token, StatusCode::FORBIDDEN, "")
-        .await;
+    h.public("POST", ask, &no_token, 403, "").await;
     let no_key = [
         ("cookie", cookie.as_str()),
         ("x-kanade-csrf", token.as_str()),
     ];
-    let (_, refused) = h
-        .public("POST", ask, &no_key, StatusCode::BAD_REQUEST, "")
-        .await;
-    assert_eq!(refused["error"], "invalid_idempotency_key");
-    let bad_key = k("a b");
-    let (_, refused) = h
-        .public("POST", ask, &bad_key, StatusCode::BAD_REQUEST, "")
-        .await;
-    assert_eq!(refused["error"], "invalid_idempotency_key");
+    for headers in [&no_key[..], &k("a b")] {
+        let (_, refused) = h.public("POST", ask, headers, 400, "").await;
+        assert_eq!(refused["error"], "invalid_idempotency_key");
+    }
 
     // Ask: 201, the same key 200 with the same request, another key 409.
-    let (_, asked) = h
-        .public(
-            "POST",
-            ask,
-            &ask_1,
-            StatusCode::CREATED,
-            "public.json#/$defs/MemberOwnerRequest",
-        )
-        .await;
+    let request = "public#MemberOwnerRequest";
+    let (_, asked) = h.public("POST", ask, &ask_1, 201, request).await;
     assert_eq!(
         (&asked["status"], &asked["mine"]),
         (&json!("open"), &json!(true))
     );
-    let (_, again) = h
-        .public(
-            "POST",
-            ask,
-            &ask_1,
-            StatusCode::OK,
-            "public.json#/$defs/MemberOwnerRequest",
-        )
-        .await;
+    let (_, again) = h.public("POST", ask, &ask_1, 200, request).await;
     assert_eq!(again, asked);
+    let ask_on = |timing: &str| format!("/api/public/timings/{timing}/owner-requests");
+    let decide = |id: &str, verdict: &str| format!("/api/public/owner-requests/{id}/{verdict}");
     for (path, key, want, code) in [
-        (ask, "ask-2", StatusCode::CONFLICT, "already_asked"),
-        (
-            "/api/public/timings/f-kalos/owner-requests",
-            "ask-1",
-            StatusCode::UNPROCESSABLE_ENTITY,
-            "idempotency_mismatch",
-        ),
-        (
-            "/api/public/timings/f-baldrix/owner-requests",
-            "ask-3",
-            StatusCode::CONFLICT,
-            "already_owner",
-        ),
-        (
-            "/api/public/timings/f-limbo/owner-requests",
-            "ask-4",
-            StatusCode::CONFLICT,
-            "not_on_party",
-        ),
-        (
-            "/api/public/timings/f-none/owner-requests",
-            "ask-5",
-            StatusCode::NOT_FOUND,
-            "not_found",
-        ),
+        (ask.to_owned(), "ask-2", 409, "already_asked"),
+        (ask_on("f-kalos"), "ask-1", 422, "idempotency_mismatch"),
+        (ask_on("f-baldrix"), "ask-3", 409, "already_owner"),
+        (ask_on("f-limbo"), "ask-4", 409, "not_on_party"),
+        (ask_on("f-none"), "ask-5", 404, "not_found"),
         // Someone else's ask on a timing the caller doesn't own: the same 404
         // as an unknown id (no existence oracle).
+        (decide("own-kalos", "accept"), "acc-1", 404, "not_found"),
         (
-            "/api/public/owner-requests/own-kalos/accept",
-            "acc-1",
-            StatusCode::NOT_FOUND,
-            "not_found",
-        ),
-        (
-            "/api/public/owner-requests/own-carling/withdraw",
+            decide("own-carling", "withdraw"),
             "wd-1",
-            StatusCode::FORBIDDEN,
+            403,
             "not_requester",
         ),
-        (
-            "/api/public/owner-requests/nope/decline",
-            "dec-1",
-            StatusCode::NOT_FOUND,
-            "not_found",
-        ),
+        (decide("nope", "decline"), "dec-1", 404, "not_found"),
     ] {
-        let (_, refused) = h.public("POST", path, &k(key), want, "").await;
+        let (_, refused) = h.public("POST", &path, &k(key), want, "").await;
         assert_eq!(refused["error"], code, "{path}");
     }
 
@@ -2922,25 +2044,20 @@ async fn public_member_ownership_matches_the_contract() {
         json!({}),
     ] {
         let (_, refused) = h
-            .public_with(
-                "POST",
-                hand_off,
-                Some(body.clone()),
-                &k("h-0"),
-                StatusCode::UNPROCESSABLE_ENTITY,
-                "",
-            )
+            .public_with("POST", hand_off, Some(body.clone()), &k("h-0"), 422, "")
             .await;
         assert_eq!(refused["error"], "invalid_body", "{body}");
     }
+    let to = |id: &str| Some(json!({ "to": id }));
+    let timing = "public#MemberTiming";
     let (_, handed) = h
         .public_with(
             "POST",
             hand_off,
-            Some(json!({ "to": "100000000000001002" })),
+            to("100000000000001002"),
             &k("h-1"),
-            StatusCode::OK,
-            "public.json#/$defs/MemberTiming",
+            200,
+            timing,
         )
         .await;
     assert_eq!(handed["owner"]["id"], "100000000000001002");
@@ -2956,79 +2073,49 @@ async fn public_member_ownership_matches_the_contract() {
     h.public_with(
         "POST",
         hand_off,
-        Some(json!({ "to": "100000000000001002" })),
+        to("100000000000001002"),
         &k("h-1"),
-        StatusCode::OK,
-        "public.json#/$defs/MemberTiming",
+        200,
+        timing,
     )
     .await;
     let (_, refused) = h
         .public_with(
             "POST",
             hand_off,
-            Some(json!({ "to": "100000000000001003" })),
+            to("100000000000001003"),
             &k("h-2"),
-            StatusCode::FORBIDDEN,
+            403,
             "",
         )
         .await;
     assert_eq!(refused["error"], "not_owner");
 
     // Withdraw her own ask; a second time it is closed.
-    let withdraw = format!("/api/public/owner-requests/{}/withdraw", s(&asked["id"]));
-    let (_, withdrawn) = h
-        .public(
-            "POST",
-            &withdraw,
-            &k("wd-2"),
-            StatusCode::OK,
-            "public.json#/$defs/MemberOwnerRequest",
-        )
-        .await;
+    let withdraw = decide(s(&asked["id"]), "withdraw");
+    let (_, withdrawn) = h.public("POST", &withdraw, &k("wd-2"), 200, request).await;
     assert_eq!(withdrawn["status"], "withdrawn");
-    let (_, refused) = h
-        .public("POST", &withdraw, &k("wd-3"), StatusCode::CONFLICT, "")
-        .await;
+    let (_, refused) = h.public("POST", &withdraw, &k("wd-3"), 409, "").await;
     assert_eq!(refused["error"], "request_closed");
 
     // The Inbox shares the requests: Mika's is gone, Tsubame's stays.
     let open = h
-        .ok(
-            "GET",
-            "/api/admin/inbox/ownership",
-            None,
-            "inbox.json#/$defs/OwnershipRequests",
-        )
+        .get("/api/admin/inbox/ownership", "inbox#OwnershipRequests")
         .await;
     assert_eq!(open[0]["id"], "own-kalos");
     assert_eq!(open.as_array().unwrap().len(), 1);
 
     // Closed: every route answers `closed`.
-    h.ok(
-        "PATCH",
-        "/api/admin/config",
-        Some(json!({ "self_service": { "public_portal": false } })),
-        "config.json#/$defs/ConfigView",
-    )
-    .await;
-    let (_, refused) = h
-        .public("GET", timings, &auth, StatusCode::SERVICE_UNAVAILABLE, "")
+    h.config(json!({ "self_service": { "public_portal": false } }))
         .await;
+    let (_, refused) = h.public("GET", timings, &auth, 503, "").await;
     assert_eq!(refused["error"], "closed");
     for path in writes {
-        let (_, refused) = h
-            .public("POST", path, &k("k-9"), StatusCode::SERVICE_UNAVAILABLE, "")
-            .await;
+        let (_, refused) = h.public("POST", path, &k("k-9"), 503, "").await;
         assert_eq!(refused["error"], "closed", "{path}");
     }
 
-    assert!(
-        h.failures.is_empty(),
-        "{} of {} responses broke the contract:\n{}",
-        h.failures.len(),
-        h.checked,
-        h.failures.join("\n")
-    );
+    h.finish();
 }
 
 /// The member writes' routes (member-writes-contract): the session, the
@@ -3037,28 +2124,12 @@ async fn public_member_ownership_matches_the_contract() {
 /// lane's `public.json`; here only status and error codes are walked.
 #[tokio::test]
 async fn public_member_writes_follow_the_contract() {
-    let h = Harness::new();
-    let none: &[(&str, &str)] = &[];
+    let mut h = Harness::new();
     let answer = "/api/public/runs/r-carling/answer";
     let moved = "/api/public/runs/r-carling/move";
     let link = "/api/public/runs/r-carling";
     let submit = "/api/public/requests";
     let withdraw = "/api/public/requests/req-kalos-weekly/withdraw";
-    let call = |method: &'static str,
-                path: &'static str,
-                body: Option<Value>,
-                headers: Vec<(&'static str, String)>| {
-        let h = &h;
-        async move {
-            let pairs: Vec<(&str, &str)> = headers.iter().map(|(k, v)| (*k, v.as_str())).collect();
-            let (status, _, value) = h.send_with(true, method, path, body, &pairs).await;
-            (
-                status,
-                value["error"].as_str().unwrap_or_default().to_owned(),
-                value,
-            )
-        }
-    };
 
     // Signed out: 401 everywhere.
     for (method, path) in [
@@ -3069,214 +2140,132 @@ async fn public_member_writes_follow_the_contract() {
         ("POST", submit),
         ("POST", withdraw),
     ] {
-        let (status, _, _) = h.send_with(true, method, path, None, none).await;
+        let (status, _, _) = h.send_with(true, method, path, None, NONE).await;
         assert_eq!(status, StatusCode::UNAUTHORIZED, "{method} {path}");
     }
-    let (_, headers, _) = h
-        .send_with(true, "POST", "/__mock/public/sign-in", None, none)
-        .await;
-    let cookie = session_cookie(&headers);
-    let token = header_value(&headers, "x-kanade-csrf").to_owned();
-    let with = |key: &str| {
-        vec![
-            ("cookie", cookie.clone()),
-            ("x-kanade-csrf", token.clone()),
-            ("idempotency-key", key.to_owned()),
-        ]
+    let (cookie, token) = h.sign_in_public().await;
+    let h = &h;
+    // Status, error code and body of a member call with these headers.
+    let call = async |method: &str, path: &str, body: Option<Value>, headers: &[(&str, &str)]| {
+        let (status, _, value) = h.send_with(true, method, path, body, headers).await;
+        let code = value["error"].as_str().unwrap_or_default().to_owned();
+        (status.as_u16(), code, value)
     };
+    let read = [("cookie", cookie.as_str())];
+    let with = |key: &'static str| signed(&cookie, &token, key);
 
     // The link view needs only the session.
-    let (status, _, view) = call("GET", link, None, vec![("cookie", cookie.clone())]).await;
-    assert_eq!(
-        (status, view["week"].as_str()),
-        (StatusCode::OK, Some("current"))
-    );
-    let (status, code, _) = call(
-        "GET",
-        "/api/public/runs/nope",
-        None,
-        vec![("cookie", cookie.clone())],
-    )
-    .await;
-    assert_eq!(
-        (status, code.as_str()),
-        (StatusCode::NOT_FOUND, "not_found")
-    );
+    let (status, _, view) = call("GET", link, None, &read).await;
+    assert_eq!((status, view["week"].as_str()), (200, Some("current")));
+    let (status, code, _) = call("GET", "/api/public/runs/nope", None, &read).await;
+    assert_eq!((status, code.as_str()), (404, "not_found"));
 
     // Writes: no token 403, no key 400, a bad body 422.
     let body = json!({ "answer": "maybe", "version": 1 });
-    let (status, code, _) = call(
-        "PUT",
-        answer,
-        Some(body.clone()),
-        vec![("cookie", cookie.clone()), ("idempotency-key", "k".into())],
-    )
-    .await;
-    assert_eq!((status, code.as_str()), (StatusCode::FORBIDDEN, "csrf"));
-    let (status, code, _) = call(
-        "PUT",
-        answer,
-        Some(body.clone()),
-        vec![("cookie", cookie.clone()), ("x-kanade-csrf", token.clone())],
-    )
-    .await;
-    assert_eq!(
-        (status, code.as_str()),
-        (StatusCode::BAD_REQUEST, "invalid_idempotency_key")
-    );
-    let (status, code, _) = call(
-        "PUT",
-        answer,
-        Some(json!({ "answer": "maybe" })),
-        with("bad"),
-    )
-    .await;
-    assert_eq!(
-        (status, code.as_str()),
-        (StatusCode::UNPROCESSABLE_ENTITY, "invalid_body")
-    );
+    for (headers, want) in [
+        (
+            &[("cookie", cookie.as_str()), ("idempotency-key", "k")][..],
+            (403, "csrf"),
+        ),
+        (
+            &[
+                ("cookie", cookie.as_str()),
+                ("x-kanade-csrf", token.as_str()),
+            ][..],
+            (400, "invalid_idempotency_key"),
+        ),
+    ] {
+        let (status, code, _) = call("PUT", answer, Some(body.clone()), headers).await;
+        assert_eq!((status, code.as_str()), want);
+    }
+    let maybe = Some(json!({ "answer": "maybe" }));
+    let (status, code, _) = call("PUT", answer, maybe, &with("bad")).await;
+    assert_eq!((status, code.as_str()), (422, "invalid_body"));
 
     // The week's version, then an answer, its replay and a mismatched reuse of the key.
-    let (_, _, week) = call(
-        "GET",
-        "/api/public/week",
-        None,
-        vec![("cookie", cookie.clone())],
-    )
-    .await;
+    let (_, _, week) = call("GET", "/api/public/week", None, &read).await;
     let v = week["version"].as_u64().unwrap();
     let body = json!({ "answer": "maybe", "version": v });
-    let (status, _, first) = call("PUT", answer, Some(body.clone()), with("a-1")).await;
-    assert_eq!(status, StatusCode::OK);
-    let (status, _, again) = call("PUT", answer, Some(body), with("a-1")).await;
-    assert_eq!((status, &again), (StatusCode::OK, &first));
-    let (status, code, _) = call(
-        "PUT",
-        answer,
-        Some(json!({ "answer": "no", "version": v })),
-        with("a-1"),
-    )
-    .await;
-    assert_eq!(
-        (status, code.as_str()),
-        (StatusCode::UNPROCESSABLE_ENTITY, "idempotency_mismatch")
-    );
+    let (status, _, first) = call("PUT", answer, Some(body.clone()), &with("a-1")).await;
+    assert_eq!(status, 200);
+    let (status, _, again) = call("PUT", answer, Some(body), &with("a-1")).await;
+    assert_eq!((status, &again), (200, &first));
+    let no = Some(json!({ "answer": "no", "version": v }));
+    let (status, code, _) = call("PUT", answer, no, &with("a-1")).await;
+    assert_eq!((status, code.as_str()), (422, "idempotency_mismatch"));
     let v = first["version"].as_u64().unwrap();
-    let (status, code, _) = call(
-        "POST",
-        "/api/public/runs/r-kalos/move",
-        Some(json!({ "day": 6, "time": "21:00", "version": v })),
-        with("m-1"),
-    )
-    .await;
-    assert_eq!(
-        (status, code.as_str()),
-        (StatusCode::CONFLICT, "run_started")
-    );
-    let (status, _, moved_run) = call(
-        "POST",
-        moved,
-        Some(json!({ "day": 6, "time": "21:30", "version": v })),
-        with("m-2"),
-    )
-    .await;
+    let to = |time: &str| Some(json!({ "day": 6, "time": time, "version": v }));
+    let started = "/api/public/runs/r-kalos/move";
+    let (status, code, _) = call("POST", started, to("21:00"), &with("m-1")).await;
+    assert_eq!((status, code.as_str()), (409, "run_started"));
+    let (status, _, moved_run) = call("POST", moved, to("21:30"), &with("m-2")).await;
     assert_eq!(
         (status, moved_run["previous"]["time"].as_str()),
-        (StatusCode::OK, Some("22:00"))
+        (200, Some("22:00"))
     );
 
     // Requests: the list, a submit (201, then 200 on retry), the open limit with its `limit`.
-    let (status, _, mine) = call(
-        "GET",
-        "/api/public/requests/mine",
-        None,
-        vec![("cookie", cookie.clone())],
-    )
-    .await;
-    assert_eq!((status, mine["open"].as_u64()), (StatusCode::OK, Some(1)));
-    let leave = |run: &str| json!({ "kind": "leave", "run_id": run });
-    let (status, _, sent) = call("POST", submit, Some(leave("r-carling")), with("r-1")).await;
-    assert_eq!(
-        (status, sent["state"].as_str()),
-        (StatusCode::CREATED, Some("waiting"))
-    );
-    let (status, _, retried) = call("POST", submit, Some(leave("r-carling")), with("r-1")).await;
-    assert_eq!((status, &retried["id"]), (StatusCode::OK, &sent["id"]));
-    let (status, code, _) = call(
-        "POST",
-        submit,
-        Some(json!({ "kind": "leave", "run_id": "r-carling", "extra": 1 })),
-        with("r-2"),
-    )
-    .await;
-    assert_eq!(
-        (status, code.as_str()),
-        (StatusCode::UNPROCESSABLE_ENTITY, "invalid_body")
-    );
-    call("POST", submit, Some(leave("n-carling")), with("r-3")).await;
-    let (status, code, limited) = call("POST", submit, Some(leave("n-kalos")), with("r-4")).await;
+    let (status, _, mine) = call("GET", "/api/public/requests/mine", None, &read).await;
+    assert_eq!((status, mine["open"].as_u64()), (200, Some(1)));
+    let leave = |run: &str| Some(json!({ "kind": "leave", "run_id": run }));
+    let (status, _, sent) = call("POST", submit, leave("r-carling"), &with("r-1")).await;
+    assert_eq!((status, sent["state"].as_str()), (201, Some("waiting")));
+    let (status, _, retried) = call("POST", submit, leave("r-carling"), &with("r-1")).await;
+    assert_eq!((status, &retried["id"]), (200, &sent["id"]));
+    let extra = Some(json!({ "kind": "leave", "run_id": "r-carling", "extra": 1 }));
+    let (status, code, _) = call("POST", submit, extra, &with("r-2")).await;
+    assert_eq!((status, code.as_str()), (422, "invalid_body"));
+    call("POST", submit, leave("n-carling"), &with("r-3")).await;
+    let (status, code, limited) = call("POST", submit, leave("n-kalos"), &with("r-4")).await;
     assert_eq!(
         (status, code.as_str(), limited["limit"].as_str()),
-        (StatusCode::TOO_MANY_REQUESTS, "request_limit", Some("open"))
+        (429, "request_limit", Some("open"))
     );
 
     // A sign-in older than the fresh window: every write but a withdrawal asks for a new one.
-    h.send_with(true, "POST", "/__mock/public/unfresh", None, none)
+    h.send_with(true, "POST", "/__mock/public/unfresh", None, NONE)
         .await;
     for (method, path, body) in [
-        ("PUT", answer, json!({ "answer": "yes", "version": v })),
         (
-            "POST",
-            moved,
-            json!({ "day": 6, "time": "22:00", "version": v }),
+            "PUT",
+            answer,
+            Some(json!({ "answer": "yes", "version": v })),
         ),
+        ("POST", moved, to("22:00")),
         ("POST", submit, leave("r-jupiter")),
     ] {
-        let (status, code, _) = call(method, path, Some(body), with("fresh-1")).await;
-        assert_eq!(
-            (status, code.as_str()),
-            (StatusCode::UNAUTHORIZED, "reauth_required"),
-            "{path}"
-        );
+        let (status, code, _) = call(method, path, body, &with("fresh-1")).await;
+        assert_eq!((status, code.as_str()), (401, "reauth_required"), "{path}");
     }
-    let (status, _, withdrawn) = call("POST", withdraw, Some(json!({})), with("w-1")).await;
+    let (status, _, withdrawn) = call("POST", withdraw, Some(json!({})), &with("w-1")).await;
     assert_eq!(
         (status, withdrawn["state"].as_str()),
-        (StatusCode::OK, Some("withdrawn"))
+        (200, Some("withdrawn"))
     );
-    let (status, code, _) = call("POST", withdraw, Some(json!({})), with("w-2")).await;
-    assert_eq!(
-        (status, code.as_str()),
-        (StatusCode::CONFLICT, "request_closed")
-    );
+    let (status, code, _) = call("POST", withdraw, Some(json!({})), &with("w-2")).await;
+    assert_eq!((status, code.as_str()), (409, "request_closed"));
 
     // Closed: every route answers `closed`.
-    let csrf = h.csrf.clone();
-    h.send_with(
-        false,
-        "PATCH",
-        "/api/admin/config",
-        Some(json!({ "self_service": { "public_portal": false } })),
-        &[("x-kanade-csrf", &csrf)],
-    )
-    .await;
-    let (status, code, _) = call("GET", link, None, vec![("cookie", cookie.clone())]).await;
-    assert_eq!(
-        (status, code.as_str()),
-        (StatusCode::SERVICE_UNAVAILABLE, "closed")
-    );
+    let body = json!({ "self_service": { "public_portal": false } });
+    h.send(false, "PATCH", "/api/admin/config", Some(body))
+        .await;
+    let (status, code, _) = call("GET", link, None, &read).await;
+    assert_eq!((status, code.as_str()), (503, "closed"));
 }
 
 impl Harness {
-    /// `GET /api/admin/events` as `EventSource` sends it: the SSE text.
-    async fn events(&self, last: Option<u64>) -> String {
-        let mut req = Request::builder().uri("/api/admin/events");
+    /// An event stream as `EventSource` sends it: the SSE text after the
+    /// shared checks (`200`, `text/event-stream`, never cached).
+    async fn stream(&self, public: bool, path: &str, cookie: &str, last: Option<&str>) -> String {
+        let mut req = Request::get(path);
+        if !cookie.is_empty() {
+            req = req.header(header::COOKIE, cookie);
+        }
         if let Some(last) = last {
-            req = req.header("last-event-id", last.to_string());
+            req = req.header("last-event-id", last);
         }
         let res = self
-            .admin
-            .clone()
+            .router(public)
             .oneshot(req.body(Body::empty()).unwrap())
             .await
             .unwrap();
@@ -3286,23 +2275,44 @@ impl Harness {
             res.headers()[header::CACHE_CONTROL],
             "no-store, no-transform"
         );
+        if public {
+            // The stream never rotates the session (nor touches it).
+            assert!(res.headers().get(header::SET_COOKIE).is_none());
+        }
         let bytes = to_bytes(res.into_body(), usize::MAX).await.unwrap();
         String::from_utf8(bytes.to_vec()).unwrap()
     }
 
+    /// `GET /api/admin/events`: the SSE text.
+    async fn events(&self, last: Option<u64>) -> String {
+        let last = last.map(|n| n.to_string());
+        self.stream(false, "/api/admin/events", "", last.as_deref())
+            .await
+    }
+
     /// Each `data:` line's JSON (hints carry `topic` and `seq` only).
     async fn hints(&self, last: u64) -> Vec<Value> {
-        self.events(Some(last))
-            .await
-            .lines()
-            .filter_map(|line| line.strip_prefix("data: "))
-            .map(|data| serde_json::from_str::<Value>(data).unwrap())
+        data_lines(&self.events(Some(last)).await)
             .inspect(|hint| {
                 let keys: Vec<&String> = hint.as_object().unwrap().keys().collect();
                 assert_eq!(keys, ["seq", "topic"], "no data in a hint: {hint}");
             })
             .collect()
     }
+}
+
+fn data_lines(text: &str) -> impl Iterator<Item = Value> {
+    text.lines()
+        .filter_map(|line| line.strip_prefix("data: "))
+        .map(|data| serde_json::from_str::<Value>(data).unwrap())
+}
+
+fn find<'a>(rows: &'a Value, key: &str, value: &str) -> &'a Value {
+    rows.as_array()
+        .unwrap()
+        .iter()
+        .find(|row| row[key] == value)
+        .unwrap_or_else(|| panic!("no {key} {value}"))
 }
 
 #[tokio::test]
@@ -3314,15 +2324,13 @@ async fn events_hint_own_writes_and_arrivals_and_the_reads_change() {
         "{opening}"
     );
 
-    let week = h
-        .ok("GET", "/api/admin/week", None, "week.json#/$defs/Week")
-        .await;
+    let week = h.get("/api/admin/week", "week#Week").await;
     let version = week["version"].as_u64().unwrap();
     h.ok(
         "POST",
         "/api/admin/runs/r-limbo/move",
         Some(json!({ "day": 2, "time": "23:30", "version": version })),
-        "week.json#/$defs/MoveResult",
+        "week#MoveResult",
     )
     .await;
     assert_eq!(h.hints(0).await, [json!({ "seq": 1, "topic": "schedule" })]);
@@ -3336,49 +2344,20 @@ async fn events_hint_own_writes_and_arrivals_and_the_reads_change() {
         ("extraction", "extraction"),
         ("member", "members"),
     ] {
-        let (status, _) = h
-            .send(
-                false,
-                "POST",
-                "/__mock/arrive",
-                Some(json!({ "kind": kind })),
-            )
+        let status = h
+            .control(false, "/__mock/arrive", json!({ "kind": kind }))
             .await;
         assert_eq!(status, StatusCode::NO_CONTENT, "{kind}");
         let last = h.hints(0).await.last().cloned().unwrap();
         assert_eq!(last["topic"], topic, "{kind}");
     }
 
-    let week = h
-        .ok("GET", "/api/admin/week", None, "week.json#/$defs/Week")
-        .await;
-    let kalos = week["runs"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|r| r["id"] == "r-kalos")
-        .unwrap();
-    let ren = kalos["participants"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|p| p["id"] == "1005")
-        .unwrap();
+    let week = h.get("/api/admin/week", "week#Week").await;
+    let kalos = find(&week["runs"], "id", "r-kalos");
+    let ren = find(&kalos["participants"], "id", "1005");
     assert_eq!(ren["answer"], "yes", "the reaction landed");
-    let members = h
-        .ok(
-            "GET",
-            "/api/admin/members",
-            None,
-            "members.json#/$defs/MemberRows",
-        )
-        .await;
-    let mika = members
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|m| m["id"] == "1003")
-        .unwrap();
+    let members = h.get("/api/admin/members", "members#MemberRows").await;
+    let mika = find(&members, "id", "1003");
     assert!(
         mika["aliases"]
             .as_array()
@@ -3387,123 +2366,47 @@ async fn events_hint_own_writes_and_arrivals_and_the_reads_change() {
             .any(|a| a == "mikan"),
         "the roster sync landed: {mika}"
     );
-    let inbox = h
-        .ok(
-            "GET",
-            "/api/admin/inbox",
-            None,
-            "inbox.json#/$defs/Proposals",
-        )
-        .await;
-    assert!(
-        inbox
-            .as_array()
-            .unwrap()
-            .iter()
-            .any(|p| p["id"] == "p-arrived")
-    );
-    let chat = h
-        .ok("GET", "/api/admin/chat", None, "chat.json#/$defs/Chat")
-        .await;
+    let inbox = h.get("/api/admin/inbox", "inbox#Proposals").await;
+    find(&inbox, "id", "p-arrived");
+    let chat = h.get("/api/admin/chat", "chat#Chat").await;
     assert_eq!(chat["rows"][0]["id"], "c-arrived", "newest first");
-    h.ok(
-        "GET",
-        "/api/admin/chat/c-arrived",
-        None,
-        "chat.json#/$defs/ChatTurn",
-    )
-    .await;
+    h.get("/api/admin/chat/c-arrived", "chat#ChatTurn").await;
     let calls = h
-        .ok(
-            "GET",
-            "/api/admin/extractions",
-            None,
-            "extractions.json#/$defs/Extractions",
-        )
+        .get("/api/admin/extractions", "extractions#Extractions")
         .await;
     assert_eq!(calls["rows"][0]["id"], "x-arrived", "newest first");
-    h.ok(
-        "GET",
-        "/api/admin/extractions/x-arrived",
-        None,
-        "extractions.json#/$defs/Extraction",
-    )
-    .await;
-    assert!(h.failures.is_empty(), "{}", h.failures.join("\n"));
+    h.get("/api/admin/extractions/x-arrived", "extractions#Extraction")
+        .await;
+    h.finish();
 }
 
 #[tokio::test]
 async fn the_member_stream_sends_topics_only_from_its_control() {
     let mut h = Harness::new();
-    let (headers, _) = h
-        .public(
-            "POST",
-            "/__mock/public/sign-in",
-            &[],
-            StatusCode::NO_CONTENT,
-            "",
-        )
-        .await;
-    let cookie = session_cookie(&headers);
-    let router = h.public.clone();
-    let stream = |last: Option<&str>| {
-        let mut req = Request::get("/api/public/events").header(header::COOKIE, cookie.as_str());
-        if let Some(last) = last {
-            req = req.header("last-event-id", last);
-        }
-        let public = router.clone();
-        let req = req.body(Body::empty()).unwrap();
-        async move {
-            let res = public.oneshot(req).await.unwrap();
-            assert_eq!(res.status(), StatusCode::OK);
-            assert_eq!(res.headers()[header::CONTENT_TYPE], "text/event-stream");
-            assert_eq!(
-                res.headers()[header::CACHE_CONTROL],
-                "no-store, no-transform"
-            );
-            // The stream never rotates the session (nor touches it).
-            assert!(res.headers().get(header::SET_COOKIE).is_none());
-            let bytes = to_bytes(res.into_body(), usize::MAX).await.unwrap();
-            String::from_utf8(bytes.to_vec()).unwrap()
-        }
-    };
-    let opening = stream(None).await;
+    let (cookie, _) = h.sign_in_public().await;
+    let events = "/api/public/events";
+    let opening = h.stream(true, events, &cookie, None).await;
     assert!(
         opening.contains("event: ready\ndata: {\"boot\":\"mock-") && !opening.contains("seq"),
         "{opening}"
     );
     for topic in ["schedule", "mine", "allowance"] {
-        let (status, _) = h
-            .send(
-                true,
-                "POST",
-                "/__mock/public/hint",
-                Some(json!({ "topic": topic })),
-            )
+        let status = h
+            .control(true, "/__mock/public/hint", json!({ "topic": topic }))
             .await;
         assert_eq!(status, StatusCode::NO_CONTENT, "{topic}");
     }
-    let hints = stream(Some("0")).await;
-    let topics: Vec<Value> = hints
-        .lines()
-        .filter_map(|line| line.strip_prefix("data: "))
-        .map(|data| serde_json::from_str(data).unwrap())
-        .collect();
+    let hints = h.stream(true, events, &cookie, Some("0")).await;
     assert_eq!(
-        topics,
+        data_lines(&hints).collect::<Vec<_>>(),
         [
             json!({ "topic": "schedule" }),
             json!({ "topic": "mine" }),
             json!({ "topic": "allowance" })
         ]
     );
-    let (status, _) = h
-        .send(
-            true,
-            "POST",
-            "/__mock/public/hint",
-            Some(json!({ "topic": "chat" })),
-        )
+    let status = h
+        .control(true, "/__mock/public/hint", json!({ "topic": "chat" }))
         .await;
     assert_eq!(
         status,
@@ -3515,22 +2418,16 @@ async fn the_member_stream_sends_topics_only_from_its_control() {
     assert!(admin.contains("\"seq\":0}"), "{admin}");
 
     // A pending rotation waits for the next ordinary request, not the stream.
-    h.public(
-        "POST",
-        "/__mock/public/rotate",
-        &[],
-        StatusCode::NO_CONTENT,
-        "",
-    )
-    .await;
-    stream(None).await;
+    h.public("POST", "/__mock/public/rotate", NONE, 204, "")
+        .await;
+    h.stream(true, events, &cookie, None).await;
     let (headers, _) = h
         .public(
             "GET",
             "/api/public/sessions",
             &[("cookie", &cookie)],
-            StatusCode::OK,
-            "public.json#/$defs/PublicSessions",
+            200,
+            "public#PublicSessions",
         )
         .await;
     assert_ne!(session_cookie(&headers), cookie, "rotated here");
@@ -3545,7 +2442,7 @@ async fn admin_reads_revalidate_with_etags() {
         "/api/admin/inbox",
         "/api/admin/chat",
     ] {
-        let (status, headers, body) = h.send_with(false, "GET", path, None, &[]).await;
+        let (status, headers, body) = h.send_with(false, "GET", path, None, NONE).await;
         assert_eq!(status, StatusCode::OK, "{path}");
         let tag = headers[header::ETAG].to_str().unwrap().to_owned();
         let (status, again, empty) = h
@@ -3566,9 +2463,7 @@ async fn admin_reads_revalidate_with_etags() {
 async fn inbox_ownership_requests_match_the_contract() {
     let mut h = Harness::new();
     let list = "/api/admin/inbox/ownership";
-    let open = h
-        .ok("GET", list, None, "inbox.json#/$defs/OwnershipRequests")
-        .await;
+    let open = h.get(list, "inbox#OwnershipRequests").await;
     let ids: Vec<&str> = open
         .as_array()
         .unwrap()
@@ -3576,22 +2471,8 @@ async fn inbox_ownership_requests_match_the_contract() {
         .map(|r| s(&r["id"]))
         .collect();
     assert_eq!(ids, ["own-carling", "own-kalos"], "oldest first");
-    let summary = h
-        .ok(
-            "GET",
-            "/api/admin/summary",
-            None,
-            "week.json#/$defs/Summary",
-        )
-        .await;
-    let inbox = h
-        .ok(
-            "GET",
-            "/api/admin/inbox",
-            None,
-            "inbox.json#/$defs/Proposals",
-        )
-        .await;
+    let summary = h.get("/api/admin/summary", "week#Summary").await;
+    let inbox = h.get("/api/admin/inbox", "inbox#Proposals").await;
     assert_eq!(
         summary["inbox"].as_u64(),
         Some(inbox.as_array().unwrap().len() as u64 + 2),
@@ -3600,67 +2481,25 @@ async fn inbox_ownership_requests_match_the_contract() {
 
     // CSRF is required; an unknown id is 404.
     let accept = "/api/admin/inbox/ownership/own-kalos/accept";
-    h.refused(
-        "POST",
-        accept,
-        json!({}),
-        &[],
-        (StatusCode::FORBIDDEN, "csrf"),
-    )
-    .await;
-    let csrf = h.csrf.clone();
-    let token = [("x-kanade-csrf", csrf.as_str())];
-    for action in ["accept", "decline"] {
-        h.refused(
-            "POST",
-            &format!("/api/admin/inbox/ownership/nope/{action}"),
-            json!({}),
-            &token,
-            (StatusCode::NOT_FOUND, "not_found"),
-        )
+    h.refused_with("POST", accept, json!({}), NONE, (403, "csrf"))
         .await;
+    for action in ["accept", "decline"] {
+        let path = format!("/api/admin/inbox/ownership/nope/{action}");
+        h.refused("POST", &path, json!({}), (404, "not_found"))
+            .await;
     }
 
     // Any session decides, Discord or not: accept pins the requester.
-    h.send(
-        false,
-        "POST",
-        "/__mock/session",
-        Some(json!({ "method": "token" })),
-    )
-    .await;
-    h.csrf = session_token(&h).await;
+    h.sign_in_admin("token").await;
     let first = h
-        .ok(
-            "POST",
-            accept,
-            Some(json!({})),
-            "common.json#/$defs/Message",
-        )
+        .ok("POST", accept, Some(json!({})), "common#Message")
         .await;
     let again = h
-        .ok(
-            "POST",
-            accept,
-            Some(json!({})),
-            "common.json#/$defs/Message",
-        )
+        .ok("POST", accept, Some(json!({})), "common#Message")
         .await;
     assert_eq!(first, again, "a repeated accept answers the first result");
-    let fixed = h
-        .ok(
-            "GET",
-            "/api/admin/fixed",
-            None,
-            "fixed.json#/$defs/FixedRows",
-        )
-        .await;
-    let kalos = fixed
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|f| f["id"] == "f-kalos")
-        .unwrap();
+    let fixed = h.get("/api/admin/fixed", "fixed#FixedRows").await;
+    let kalos = find(&fixed, "id", "f-kalos");
     assert_eq!(
         (&kalos["owner_id"], &kalos["owner_pinned"]),
         (&json!("1005"), &json!(true))
@@ -3669,219 +2508,121 @@ async fn inbox_ownership_requests_match_the_contract() {
         "POST",
         "/api/admin/inbox/ownership/own-carling/decline",
         Some(json!({})),
-        "common.json#/$defs/Message",
+        "common#Message",
     )
     .await;
-    let csrf = h.csrf.clone();
     h.refused(
         "POST",
         "/api/admin/inbox/ownership/own-carling/accept",
         json!({}),
-        &[("x-kanade-csrf", csrf.as_str())],
-        (StatusCode::CONFLICT, "conflicts"),
+        (409, "conflicts"),
     )
     .await;
-    let left = h
-        .ok("GET", list, None, "inbox.json#/$defs/OwnershipRequests")
-        .await;
+    let left = h.get(list, "inbox#OwnershipRequests").await;
     assert_eq!(left, json!([]));
 
     // Signed out, the routes answer 401.
-    let (status, _, _) = h
-        .send_with(
-            false,
-            "POST",
-            "/api/admin/auth/logout",
-            None,
-            &[("x-kanade-csrf", &csrf)],
-        )
-        .await;
+    let (status, _) = h.send(false, "POST", "/api/admin/auth/logout", None).await;
     assert_eq!(status, StatusCode::NO_CONTENT);
-    h.expect(false, "GET", list, None, StatusCode::UNAUTHORIZED, "")
+    h.fails("GET", list, None, 401).await;
+    h.refused("POST", accept, json!({}), (401, "unauthenticated"))
         .await;
-    h.refused(
-        "POST",
-        accept,
-        json!({}),
-        &[("x-kanade-csrf", csrf.as_str())],
-        (StatusCode::UNAUTHORIZED, "unauthenticated"),
-    )
-    .await;
-    assert!(h.failures.is_empty(), "{}", h.failures.join("\n"));
+    h.finish();
 }
 
 #[tokio::test]
 async fn estimates_match_the_contract() {
     let mut h = Harness::new();
-    let job = "character_data.json#/$defs/EstimateJob";
-    let status = "character_data.json#/$defs/EstimateStatus";
+    let job = "character_data#EstimateJob";
+    let started = "character_data#EstimateStarted";
     let estimates = "/api/admin/estimates";
+    let job_path = |job: &Value| format!("{estimates}/{}", s(&job["job"]["id"]));
     // The seeded MikaNL lookup is found again.
     let seeded = h
-        .ok(
-            "GET",
+        .get(
             &format!("{estimates}?character_ids=ch-s2"),
-            None,
-            status,
+            "character_data#EstimateStatus",
         )
         .await;
     assert_eq!(seeded["job"]["state"], "done");
     // A run steps one character per read, then the total.
-    let started = h
-        .expect(
-            false,
-            "POST",
-            estimates,
-            Some(json!({ "run_id": "r-carling" })),
-            StatusCode::ACCEPTED,
-            "character_data.json#/$defs/EstimateStarted",
-        )
+    let body = json!({ "run_id": "r-carling" });
+    let first = h
+        .expect(false, "POST", estimates, Some(body), 202, started)
         .await;
-    let id = s(&started["job"]["id"]).to_owned();
-    h.refused(
-        "POST",
-        estimates,
-        json!({ "character_ids": ["ch-s3"] }),
-        &[],
-        (StatusCode::FORBIDDEN, "csrf"),
-    )
-    .await;
-    let csrf = h.csrf.clone();
-    let marks = [("x-kanade-csrf", csrf.as_str())];
+    let first = job_path(&first);
+    let s3 = json!({ "character_ids": ["ch-s3"] });
+    h.refused_with("POST", estimates, s3.clone(), NONE, (403, "csrf"))
+        .await;
     // A second lookup waits in line behind the running one.
     let queued = h
-        .expect(
-            false,
-            "POST",
-            estimates,
-            Some(json!({ "character_ids": ["ch-s3"] })),
-            StatusCode::ACCEPTED,
-            "character_data.json#/$defs/EstimateStarted",
-        )
+        .expect(false, "POST", estimates, Some(s3), 202, started)
         .await;
     assert_eq!(queued["job"]["state"], "queued");
     assert_eq!(queued["job"]["position"], 1);
     let mut last = Value::Null;
     for _ in 0..8 {
-        last = h.ok("GET", &format!("{estimates}/{id}"), None, job).await;
+        last = h.get(&first, job).await;
         if last["state"] != "running" {
             break;
         }
     }
     assert_eq!(last["state"], "done");
-    let next = h
-        .ok(
-            "GET",
-            &format!("{estimates}/{}", s(&queued["job"]["id"])),
-            None,
-            job,
-        )
-        .await;
+    let next = h.get(&job_path(&queued), job).await;
     assert_eq!(next["state"], "done", "it ran once the line moved");
     // The queued and assumed scenarios.
     for scenario in ["queued", "assumed"] {
-        h.send(
-            false,
-            "POST",
-            "/__mock/estimates",
-            Some(json!({ "scenario": scenario })),
-        )
-        .await;
-        let started = h
-            .expect(
-                false,
-                "POST",
-                estimates,
-                Some(json!({ "run_id": "r-carling", "refresh": true })),
-                StatusCode::ACCEPTED,
-                "character_data.json#/$defs/EstimateStarted",
-            )
+        h.control(false, "/__mock/estimates", json!({ "scenario": scenario }))
             .await;
-        let path = format!("{estimates}/{}", s(&started["job"]["id"]));
-        let mut read = started["job"].clone();
+        let body = json!({ "run_id": "r-carling", "refresh": true });
+        let begun = h
+            .expect(false, "POST", estimates, Some(body), 202, started)
+            .await;
+        let path = job_path(&begun);
+        let mut read = begun["job"].clone();
         while read["state"] != "done" {
-            read = h.ok("GET", &path, None, job).await;
+            read = h.get(&path, job).await;
         }
-        h.ok(
-            "GET",
+        h.get(
             "/api/admin/runs/r-carling/readiness",
-            None,
-            "character_data.json#/$defs/RunReadiness",
+            "character_data#RunReadiness",
         )
         .await;
     }
     // Every error state, the hold (running) and off.
     for scenario in ["busy", "critical_rate", "manual_check", "failed", "timeout"] {
-        h.send(
-            false,
-            "POST",
-            "/__mock/estimates",
-            Some(json!({ "scenario": scenario })),
-        )
-        .await;
-        let started = h
-            .expect(
-                false,
-                "POST",
-                estimates,
-                Some(json!({ "character_ids": ["ch-s3"], "refresh": true })),
-                StatusCode::ACCEPTED,
-                "character_data.json#/$defs/EstimateStarted",
-            )
+        h.control(false, "/__mock/estimates", json!({ "scenario": scenario }))
             .await;
-        let failed = h
-            .ok(
-                "GET",
-                &format!("{estimates}/{}", s(&started["job"]["id"])),
-                None,
-                job,
-            )
+        let body = json!({ "character_ids": ["ch-s3"], "refresh": true });
+        let begun = h
+            .expect(false, "POST", estimates, Some(body), 202, started)
             .await;
+        let failed = h.get(&job_path(&begun), job).await;
         assert_eq!(failed["state"], "failed", "{scenario}");
     }
     h.refused(
         "POST",
         estimates,
         json!({ "run_id": "r-carling", "preset": "00110" }),
-        &marks,
-        (StatusCode::BAD_REQUEST, "invalid_body"),
+        (400, "invalid_body"),
     )
     .await;
-    h.send(
-        false,
-        "POST",
-        "/__mock/estimates",
-        Some(json!({ "scenario": "off" })),
-    )
-    .await;
-    h.expect(
-        false,
-        "GET",
-        &format!("{estimates}/{id}"),
-        None,
-        StatusCode::NOT_FOUND,
-        "",
-    )
-    .await;
-    assert!(h.failures.is_empty(), "{}", h.failures.join("\n"));
+    h.control(false, "/__mock/estimates", json!({ "scenario": "off" }))
+        .await;
+    h.fails("GET", &first, None, 404).await;
+    h.finish();
 }
 
 #[tokio::test]
 async fn character_links_and_health_match_the_contract() {
     let mut h = Harness::new();
-    let link = "character_data.json#/$defs/CharacterLink";
-    let config = "config.json#/$defs/ConfigView";
+    let link = "character_data#CharacterLink";
+    let config = "config#ConfigView";
+    let link_path = |id: &str| format!("/api/admin/characters/{id}/link");
     // Every seeded state: linked, retired-linked, stale, pending, not linked, expired.
     let mut states = Vec::new();
     for id in ["ch-s1", "ch-s3", "ch-s4", "ch-s5", "ch-s7", "ch-s10"] {
-        let view = h
-            .ok(
-                "GET",
-                &format!("/api/admin/characters/{id}/link"),
-                None,
-                link,
-            )
-            .await;
+        let view = h.get(&link_path(id), link).await;
         states.push(view["state"].as_str().unwrap_or_default().to_owned());
     }
     assert_eq!(
@@ -3896,210 +2637,124 @@ async fn character_links_and_health_match_the_contract() {
         ]
     );
     // An admin request makes a pending link; Unlink withdraws it.
+    let body = json!({ "version": 0 });
     let pending = h
-        .expect(
-            false,
-            "POST",
-            "/api/admin/characters/ch-s7/link",
-            Some(json!({ "version": 0 })),
-            StatusCode::CREATED,
-            link,
-        )
+        .expect(false, "POST", &link_path("ch-s7"), Some(body), 201, link)
         .await;
     assert_eq!(pending["state"], "pending");
-    h.ok(
-        "DELETE",
-        "/api/admin/characters/ch-s7/link",
-        None,
-        "common.json#/$defs/Message",
-    )
-    .await;
+    h.ok("DELETE", &link_path("ch-s7"), None, "common#Message")
+        .await;
     // An admin Refresh is always allowed: expired and fresh alike.
     for id in ["ch-s10", "ch-s3"] {
-        let refreshed = h
-            .ok(
-                "POST",
-                &format!("/api/admin/characters/{id}/refresh"),
-                None,
-                link,
-            )
-            .await;
+        let path = format!("/api/admin/characters/{id}/refresh");
+        let refreshed = h.ok("POST", &path, None, link).await;
         assert_eq!(refreshed["state"], "linked", "{id}");
     }
     // Held calls refuse it.
-    h.send(
-        false,
-        "POST",
-        "/__mock/character-data",
-        Some(json!({ "health": "refused" })),
-    )
-    .await;
-    let csrf = h.csrf.clone();
-    let marks = [("x-kanade-csrf", csrf.as_str())];
+    let health = |health: &str| json!({ "health": health });
+    h.control(false, "/__mock/character-data", health("refused"))
+        .await;
     h.refused(
         "POST",
         "/api/admin/characters/ch-s3/refresh",
         json!({}),
-        &marks,
-        (StatusCode::SERVICE_UNAVAILABLE, "nexon_unavailable"),
+        (503, "nexon_unavailable"),
     )
     .await;
     // Every health the boards draw validates; setup (last) has no key.
-    for health in ["ok", "alert", "refused", "setup"] {
-        h.send(
-            false,
-            "POST",
-            "/__mock/character-data",
-            Some(json!({ "health": health })),
-        )
-        .await;
-        let view = h.ok("GET", "/api/admin/config", None, config).await;
-        assert!(view["character_data"].is_object(), "{health}");
+    for state in ["ok", "alert", "refused", "setup"] {
+        h.control(false, "/__mock/character-data", health(state))
+            .await;
+        let view = h.get("/api/admin/config", config).await;
+        assert!(view["character_data"].is_object(), "{state}");
     }
-    let none = h
-        .ok("GET", "/api/admin/characters/ch-s7/link", None, link)
-        .await;
+    let none = h.get(&link_path("ch-s7"), link).await;
     assert_eq!(none["state"], "not_connected");
     // Off: no health block, and the link routes answer the generic 404.
-    h.send(
-        false,
-        "POST",
-        "/__mock/modules",
-        Some(json!({ "character_data": false })),
-    )
-    .await;
-    let view = h.ok("GET", "/api/admin/config", None, config).await;
+    h.control(false, "/__mock/modules", json!({ "character_data": false }))
+        .await;
+    let view = h.get("/api/admin/config", config).await;
     assert!(view.get("character_data").is_none());
-    h.expect(
-        false,
-        "GET",
-        "/api/admin/characters/ch-s3/link",
-        None,
-        StatusCode::NOT_FOUND,
-        "",
-    )
-    .await;
-    assert!(h.failures.is_empty(), "{}", h.failures.join("\n"));
+    h.fails("GET", &link_path("ch-s3"), None, 404).await;
+    h.finish();
 }
 
 #[tokio::test]
 async fn character_lookup_matches_the_contract() {
     let mut h = Harness::new();
     let path = "/api/admin/characters/lookup";
-    let status = h
-        .ok("GET", path, None, "character_data.json#/$defs/LookupStatus")
-        .await;
+    let status = h.get(path, "character_data#LookupStatus").await;
     assert_eq!(status["connected"], true);
     let found = h
         .ok(
             "POST",
             path,
             Some(json!({ "ign": "Wisteria" })),
-            "character_data.json#/$defs/CharacterLookup",
+            "character_data#CharacterLookup",
         )
         .await;
     assert_eq!(found["name"], "Wisteria");
     assert_eq!(found["attribution"], "Data based on NEXON Open API");
-    let csrf = h.csrf.clone();
-    let marks = [("x-kanade-csrf", csrf.as_str())];
     for (body, want) in [
-        (
-            json!({ "ign": "NopeName" }),
-            (StatusCode::NOT_FOUND, "not_found"),
-        ),
-        (
-            json!({ "ign": "BusyName" }),
-            (StatusCode::SERVICE_UNAVAILABLE, "nexon_unavailable"),
-        ),
-        (
-            json!({ "ign": "OfflineAb" }),
-            (StatusCode::CONFLICT, "not_connected"),
-        ),
-        (
-            json!({ "ign": "WaitName" }),
-            (StatusCode::TOO_MANY_REQUESTS, "lookup_cooldown"),
-        ),
+        (json!({ "ign": "NopeName" }), (404, "not_found")),
+        (json!({ "ign": "BusyName" }), (503, "nexon_unavailable")),
+        (json!({ "ign": "OfflineAb" }), (409, "not_connected")),
+        (json!({ "ign": "WaitName" }), (429, "lookup_cooldown")),
         (
             json!({ "ign": "Wisteria", "world": "gms" }),
-            (StatusCode::UNPROCESSABLE_ENTITY, "region"),
+            (422, "region"),
         ),
-        (
-            json!({ "ign": "ab" }),
-            (StatusCode::UNPROCESSABLE_ENTITY, "invalid"),
-        ),
+        (json!({ "ign": "ab" }), (422, "invalid")),
     ] {
-        h.refused("POST", path, body, &marks, want).await;
+        h.refused("POST", path, body, want).await;
     }
     // A lookup keeps nothing: Mika's roster is as seeded.
     let mika = h
-        .ok(
-            "GET",
+        .get(
             "/api/admin/members/1003/characters",
-            None,
-            "characters.json#/$defs/MemberCharacters",
+            "characters#MemberCharacters",
         )
         .await;
     assert_eq!(mika["characters"].as_array().map(Vec::len), Some(4));
 
     // Another region keeps its manual values and asks no link.
+    let chars = "/api/admin/members/1013/characters";
+    let created = "characters#CharacterCreated";
+    let body = json!({ "ign": "Primrose", "world": "gms", "class": "Hero", "level": 250 });
     let other = h
-        .expect(
-            false,
-            "POST",
-            "/api/admin/members/1013/characters",
-            Some(json!({ "ign": "Primrose", "world": "gms", "class": "Hero", "level": 250 })),
-            StatusCode::CREATED,
-            "characters.json#/$defs/CharacterCreated",
-        )
+        .expect(false, "POST", chars, Some(body), 201, created)
         .await;
     assert_eq!(
         (&other["level"], &other["link"]),
         (&json!(250), &Value::Null)
     );
     let asked = h
-        .ok(
-            "GET",
+        .get(
             &format!("/api/admin/characters/{}/link", s(&other["id"])),
-            None,
-            "character_data.json#/$defs/CharacterLink",
+            "character_data#CharacterLink",
         )
         .await;
     assert_eq!(asked["state"], "not_linked");
 
     // Without a key: not connected, and a create asks nothing.
-    h.send(
+    h.control(
         false,
-        "POST",
         "/__mock/character-data",
-        Some(json!({ "health": "setup" })),
+        json!({ "health": "setup" }),
     )
     .await;
-    let status = h
-        .ok("GET", path, None, "character_data.json#/$defs/LookupStatus")
-        .await;
+    let status = h.get(path, "character_data#LookupStatus").await;
     assert_eq!(status["connected"], false);
+    let body = json!({ "ign": "Heather9" });
     let plain = h
-        .expect(
-            false,
-            "POST",
-            "/api/admin/members/1013/characters",
-            Some(json!({ "ign": "Heather9" })),
-            StatusCode::CREATED,
-            "characters.json#/$defs/CharacterCreated",
-        )
+        .expect(false, "POST", chars, Some(body), 201, created)
         .await;
     assert_eq!(plain["link"], Value::Null);
     // Off: the generic 404.
-    h.send(
-        false,
-        "POST",
-        "/__mock/modules",
-        Some(json!({ "character_data": false })),
-    )
-    .await;
-    h.expect(false, "GET", path, None, StatusCode::NOT_FOUND, "")
+    h.control(false, "/__mock/modules", json!({ "character_data": false }))
         .await;
-    assert!(h.failures.is_empty(), "{}", h.failures.join("\n"));
+    h.fails("GET", path, None, 404).await;
+    h.finish();
 }
 
 /// The member's own characters on the public origin: every route against
@@ -4108,38 +2763,27 @@ async fn character_lookup_matches_the_contract() {
 #[tokio::test]
 async fn public_member_characters_match_the_contract() {
     let mut h = Harness::new();
-    let none: &[(&str, &str)] = &[];
     let mine = "/api/public/me/characters";
-    h.public("GET", mine, none, StatusCode::UNAUTHORIZED, "")
-        .await;
-    let (_, headers, _) = h
-        .send_with(true, "POST", "/__mock/public/sign-in", None, none)
-        .await;
-    let cookie = session_cookie(&headers);
-    let token = header_value(&headers, "x-kanade-csrf").to_owned();
+    h.public("GET", mine, NONE, 401, "").await;
+    let (cookie, token) = h.sign_in_public().await;
     let read = [("cookie", cookie.as_str())];
     let marked = [
         ("cookie", cookie.as_str()),
         ("x-kanade-csrf", token.as_str()),
     ];
+    let key = |key: &'static str| signed(&cookie, &token, key);
     h.send_with(
         true,
         "POST",
         "/__mock/public/characters",
         Some(json!({ "roster": "board" })),
-        none,
+        NONE,
     )
     .await;
 
     // The roster, the request waiting first, the notice and Cancel.
     let (_, list) = h
-        .public(
-            "GET",
-            mine,
-            &read,
-            StatusCode::OK,
-            "public.json#/$defs/MyCharacters",
-        )
+        .public("GET", mine, &read, 200, "public#MyCharacters")
         .await;
     assert_eq!(list["characters"].as_array().unwrap().len(), 5);
     assert_eq!(list["pending"][0]["character_id"], "ch-b2");
@@ -4152,13 +2796,14 @@ async fn public_member_characters_match_the_contract() {
         states,
         ["linked", "pending", "stale", "expired", "not_linked"]
     );
+    let b2 = "/api/public/me/characters/ch-b2/link";
     let (_, notice) = h
         .public(
             "GET",
-            "/api/public/me/characters/ch-b2/link/notice",
+            &format!("{b2}/notice"),
             &read,
-            StatusCode::OK,
-            "public.json#/$defs/LinkNotice",
+            200,
+            "public#LinkNotice",
         )
         .await;
     assert_eq!(
@@ -4168,44 +2813,32 @@ async fn public_member_characters_match_the_contract() {
     let (_, kept) = h
         .public(
             "POST",
-            "/api/public/me/characters/ch-b2/link/cancel",
+            &format!("{b2}/cancel"),
             &marked,
-            StatusCode::OK,
-            "public.json#/$defs/LinkCancelled",
+            200,
+            "public#LinkCancelled",
         )
         .await;
     assert_eq!(kept["request_kept"], true);
     let (_, data) = h
-        .public(
-            "GET",
-            "/api/public/me/data",
-            &read,
-            StatusCode::OK,
-            "public.json#/$defs/MyData",
-        )
+        .public("GET", "/api/public/me/data", &read, 200, "public#MyData")
         .await;
     assert_eq!(data["entries"][0]["state"], "pending");
 
     // Link (consent on the portal), Unlink, Unlink all.
+    let notice = |n: u64| Some(json!({ "notice": n }));
     let (_, outdated) = h
-        .public_with(
-            "POST",
-            "/api/public/me/characters/ch-b2/link",
-            Some(json!({ "notice": 2 })),
-            &signed(&cookie, &token, "l-0"),
-            StatusCode::CONFLICT,
-            "",
-        )
+        .public_with("POST", b2, notice(2), &key("l-0"), 409, "")
         .await;
     assert_eq!(outdated["error"], "notice_changed");
     let (_, linked) = h
         .public_with(
             "POST",
-            "/api/public/me/characters/ch-b2/link",
-            Some(json!({ "notice": 1 })),
-            &signed(&cookie, &token, "l-1"),
-            StatusCode::OK,
-            "public.json#/$defs/LinkOutcome",
+            b2,
+            notice(1),
+            &key("l-1"),
+            200,
+            "public#LinkOutcome",
         )
         .await;
     assert_eq!(
@@ -4216,9 +2849,9 @@ async fn public_member_characters_match_the_contract() {
         .public(
             "DELETE",
             "/api/public/me/characters/ch-b1/link",
-            &signed(&cookie, &token, "u-1"),
-            StatusCode::OK,
-            "public.json#/$defs/Unlinked",
+            &key("u-1"),
+            200,
+            "public#Unlinked",
         )
         .await;
     assert_eq!(gone, json!({"unlinked": "AsahiKanna", "cards": 1}));
@@ -4226,55 +2859,36 @@ async fn public_member_characters_match_the_contract() {
         .public(
             "DELETE",
             "/api/public/me/characters/links",
-            &signed(&cookie, &token, "u-2"),
-            StatusCode::OK,
-            "public.json#/$defs/UnlinkedAll",
+            &key("u-2"),
+            200,
+            "public#UnlinkedAll",
         )
         .await;
     assert_eq!(all["unlinked"].as_array().unwrap().len(), 3);
 
     // Add, Edit, the lookup preview.
-    let add = json!({ "ign": "AsahiLumi" });
-    let (_, created) = h
-        .public_with(
-            "POST",
-            mine,
-            Some(add.clone()),
-            &signed(&cookie, &token, "a-1"),
-            StatusCode::CREATED,
-            "public.json#/$defs/MyCharacterCreated",
-        )
+    let add = Some(json!({ "ign": "AsahiLumi" }));
+    let created = "public#MyCharacterCreated";
+    let (_, first) = h
+        .public_with("POST", mine, add.clone(), &key("a-1"), 201, created)
         .await;
-    assert_eq!(created["linkable"], true);
+    assert_eq!(first["linkable"], true);
     let (_, again) = h
-        .public_with(
-            "POST",
-            mine,
-            Some(add),
-            &signed(&cookie, &token, "a-1"),
-            StatusCode::CREATED,
-            "public.json#/$defs/MyCharacterCreated",
-        )
+        .public_with("POST", mine, add, &key("a-1"), 201, created)
         .await;
-    assert_eq!(again, created);
+    assert_eq!(again, first);
+    let manual = Some(json!({ "ign": "AsahiGms", "world": "gms" }));
     let (_, manual) = h
-        .public_with(
-            "POST",
-            mine,
-            Some(json!({ "ign": "AsahiGms", "world": "gms" })),
-            &signed(&cookie, &token, "a-2"),
-            StatusCode::UNPROCESSABLE_ENTITY,
-            "",
-        )
+        .public_with("POST", mine, manual, &key("a-2"), 422, "")
         .await;
     assert_eq!(manual["error"], "class_level_required");
     h.public_with(
         "PATCH",
         "/api/public/me/characters/ch-b3",
         Some(json!({ "version": 1, "class": "Pathfinder" })),
-        &signed(&cookie, &token, "e-1"),
-        StatusCode::OK,
-        "characters.json#/$defs/CharacterRow",
+        &key("e-1"),
+        200,
+        "characters#CharacterRow",
     )
     .await;
     h.public_with(
@@ -4282,55 +2896,45 @@ async fn public_member_characters_match_the_contract() {
         "/api/public/me/characters/lookup",
         Some(json!({ "ign": "AsahiLumi" })),
         &marked,
-        StatusCode::OK,
-        "character_data.json#/$defs/CharacterLookup",
+        200,
+        "character_data#CharacterLookup",
     )
     .await;
 
     // A lookup of her own character, then the 30-minute limit.
+    let estimates = "/api/public/me/estimates";
     let (_, started) = h
         .public_with(
             "POST",
-            "/api/public/me/estimates",
+            estimates,
             Some(json!({ "character_id": "ch-b1" })),
             &marked,
-            StatusCode::ACCEPTED,
-            "character_data.json#/$defs/EstimateStarted",
+            202,
+            "character_data#EstimateStarted",
         )
         .await;
-    let job = format!("/api/public/me/estimates/{}", s(&started["job"]["id"]));
+    let job = format!("{estimates}/{}", s(&started["job"]["id"]));
     for _ in 0..3 {
-        h.public(
-            "GET",
-            &job,
-            &read,
-            StatusCode::OK,
-            "character_data.json#/$defs/EstimateJob",
-        )
-        .await;
+        h.public("GET", &job, &read, 200, "character_data#EstimateJob")
+            .await;
     }
     let (_, status) = h
         .public(
             "GET",
-            "/api/public/me/estimates?character_id=ch-b1",
+            &format!("{estimates}?character_id=ch-b1"),
             &read,
-            StatusCode::OK,
-            "character_data.json#/$defs/EstimateStatus",
+            200,
+            "character_data#EstimateStatus",
         )
         .await;
     assert_eq!(status["job"]["state"], "done");
+    let body = json!({ "character_id": "ch-b1", "refresh": true });
     let (code, _, limited) = h
-        .send_with(
-            true,
-            "POST",
-            "/api/public/me/estimates",
-            Some(json!({ "character_id": "ch-b1", "refresh": true })),
-            &marked,
-        )
+        .send_with(true, "POST", estimates, Some(body), &marked)
         .await;
     assert_eq!(code, StatusCode::TOO_MANY_REQUESTS);
     assert!(
-        validator("public.json#/$defs/MemberEstimateLimit").is_valid(&limited),
+        validator("public#MemberEstimateLimit").is_valid(&limited),
         "{limited}"
     );
 
@@ -4340,8 +2944,8 @@ async fn public_member_characters_match_the_contract() {
             "GET",
             "/api/public/runs/r-carling/characters",
             &read,
-            StatusCode::OK,
-            "public.json#/$defs/RunPartyCharacters",
+            200,
+            "public#RunPartyCharacters",
         )
         .await;
     let slots = party["slots"].as_array().unwrap();
@@ -4351,55 +2955,31 @@ async fn public_member_characters_match_the_contract() {
             |slot| slot["character"].is_null() || slot["character"]["level_source"] == "roster"
         )
     );
-    for (method, path) in [
-        ("GET", "/api/public/me/characters/ch-s3/link"),
-        ("GET", "/api/public/runs/nope/characters"),
-        ("GET", "/api/public/me/estimates/est-seed-1"),
+    for path in [
+        "/api/public/me/characters/ch-s3/link",
+        "/api/public/runs/nope/characters",
+        "/api/public/me/estimates/est-seed-1",
     ] {
-        h.public(method, path, &read, StatusCode::NOT_FOUND, "")
-            .await;
+        h.public("GET", path, &read, 404, "").await;
     }
     h.public_with(
         "PATCH",
         "/api/public/me/characters/ch-s3",
         Some(json!({ "version": 1, "retired": true })),
-        &signed(&cookie, &token, "e-2"),
-        StatusCode::NOT_FOUND,
+        &key("e-2"),
+        404,
         "",
     )
     .await;
 
     // Module off: the generic 404 before the session.
-    h.send(
-        false,
-        "POST",
-        "/__mock/modules",
-        Some(json!({ "character_data": false })),
-    )
-    .await;
-    h.public(
-        "GET",
-        "/api/public/me/data",
-        none,
-        StatusCode::NOT_FOUND,
-        "",
-    )
-    .await;
-    h.public(
-        "GET",
-        mine,
-        &read,
-        StatusCode::OK,
-        "public.json#/$defs/MyCharacters",
-    )
-    .await;
-    h.send(
-        false,
-        "POST",
-        "/__mock/modules",
-        Some(json!({ "roster": false })),
-    )
-    .await;
-    h.public("GET", mine, none, StatusCode::NOT_FOUND, "").await;
-    assert!(h.failures.is_empty(), "{}", h.failures.join("\n"));
+    h.control(false, "/__mock/modules", json!({ "character_data": false }))
+        .await;
+    h.public("GET", "/api/public/me/data", NONE, 404, "").await;
+    h.public("GET", mine, &read, 200, "public#MyCharacters")
+        .await;
+    h.control(false, "/__mock/modules", json!({ "roster": false }))
+        .await;
+    h.public("GET", mine, NONE, 404, "").await;
+    h.finish();
 }
