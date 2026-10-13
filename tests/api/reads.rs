@@ -60,7 +60,7 @@ use twilight_model::id::Id;
 use crate::{
     logs::fake::FakeRescans,
     schemas::assert_valid,
-    support::{ADMIN_HOST, Fixture, request, send, spawn},
+    support::{ADMIN_HOST, Fixture, find, get, request, send, spawn, strs},
 };
 
 pub type ConfigMaker = Box<dyn FnOnce(Arc<SqliteStore>) -> Arc<ConfigDesk> + Send>;
@@ -74,8 +74,15 @@ pub type CharacterDataMaker = Box<
         + Send,
 >;
 
-/// The less common parts of a [`Reads`] build.
-struct Extra {
+/// What a [`Reads`] build composes; the default is [`Reads::new`].
+struct Build {
+    /// Boss weeks reset Thursday at this time (KL).
+    reset: NaiveTime,
+    /// Discord and Tailscale sign-in through a trusted edge.
+    logins: bool,
+    config: Option<ConfigMaker>,
+    role_directory_connected: bool,
+    digest_delivery: bool,
     /// `KANADE_BACKUP_DIR` set (an empty directory).
     backup_dir: bool,
     model_limits: Option<kanade::api::state::ModelLimits>,
@@ -87,9 +94,14 @@ struct Extra {
     character_data: Option<CharacterDataMaker>,
 }
 
-impl Default for Extra {
+impl Default for Build {
     fn default() -> Self {
         Self {
+            reset: NaiveTime::MIN,
+            logins: false,
+            config: None,
+            role_directory_connected: true,
+            digest_delivery: true,
             backup_dir: true,
             model_limits: None,
             rescans: true,
@@ -436,18 +448,13 @@ async fn seed(store: &SqliteStore, reset: NaiveTime) {
         attendance: Vec::new(),
         status_pin: None,
     };
-    let reminder = |id: &str,
-                    run: &str,
-                    kind: &str,
-                    fire: DateTime<Utc>,
-                    sent: Option<DateTime<Utc>>,
-                    message: Option<&str>| Reminder {
+    let reminder = |id: &str, run: &str, kind: &str, fire: DateTime<Utc>| Reminder {
         id: id.into(),
         run_id: run.into(),
         kind: kind.into(),
         fire_at: fire,
-        sent_at: sent,
-        message_id: message.map(str::to_owned),
+        sent_at: None,
+        message_id: None,
     };
     let rsvp = |run: &str, user: &str, state: RsvpState| Rsvp {
         run_id: run.into(),
@@ -456,7 +463,7 @@ async fn seed(store: &SqliteStore, reset: NaiveTime) {
         source: RsvpSource::Reaction,
         at: utc(9, 28, 0, 0),
     };
-    let changes = vec![
+    let mut changes = vec![
         Change::PutFixedRun(fixed),
         // Tue 29 Sep 22:00 KL, amended roster (Cara out, Dan in).
         Change::PutRun(run(
@@ -504,47 +511,19 @@ async fn seed(store: &SqliteStore, reset: NaiveTime) {
         Change::PutRsvp(rsvp("r-kalos", "1001", RsvpState::Yes)),
         Change::PutRsvp(rsvp("r-kalos", "1002", RsvpState::No)),
         Change::PutRsvp(rsvp("r-star", "1001", RsvpState::Yes)),
-        Change::PutReminder(reminder(
-            "m-kalos-day",
-            "r-kalos",
-            "day_of",
-            utc(9, 29, 1, 0),
-            Some(utc(9, 29, 1, 0)),
-            Some("555"),
-        )),
-        Change::PutReminder(reminder(
-            "m-kalos-60",
-            "r-kalos",
-            "countdown_60",
-            utc(9, 29, 13, 0),
-            None,
-            None,
-        )),
-        Change::PutReminder(reminder(
-            "m-kalos-15",
-            "r-kalos",
-            "countdown_15",
-            utc(9, 29, 13, 45),
-            None,
-            None,
-        )),
-        Change::PutReminder(reminder(
-            "m-kalos-30",
-            "r-kalos",
-            "countdown_30",
-            utc(9, 29, 13, 30),
-            None,
-            None,
-        )),
-        Change::PutReminder(reminder(
-            "m-star-day",
-            "r-star",
-            "day_of",
-            utc(9, 26, 1, 0),
-            None,
-            None,
-        )),
     ];
+    let reminders = [
+        Reminder {
+            sent_at: Some(utc(9, 29, 1, 0)),
+            message_id: Some("555".into()),
+            ..reminder("m-kalos-day", "r-kalos", "day_of", utc(9, 29, 1, 0))
+        },
+        reminder("m-kalos-60", "r-kalos", "countdown_60", utc(9, 29, 13, 0)),
+        reminder("m-kalos-15", "r-kalos", "countdown_15", utc(9, 29, 13, 45)),
+        reminder("m-kalos-30", "r-kalos", "countdown_30", utc(9, 29, 13, 30)),
+        reminder("m-star-day", "r-star", "day_of", utc(9, 26, 1, 0)),
+    ];
+    changes.extend(reminders.map(Change::PutReminder));
     commit_as(store, "seed", utc(9, 28, 0, 0), changes).await;
 }
 
@@ -576,39 +555,23 @@ impl Reads {
     }
 
     pub async fn new() -> Self {
-        Self::with_reset(NaiveTime::MIN).await
+        Self::build(|_| ()).await
     }
 
     /// Boss weeks reset Thursday at `reset` (KL) instead of midnight.
     pub async fn with_reset(reset: NaiveTime) -> Self {
-        Self::build(reset, false, None, true, true, Extra::default()).await
+        Self::build(|b| b.reset = reset).await
     }
 
     pub async fn with_role_directory_connected(connected: bool) -> Self {
-        Self::build(
-            NaiveTime::MIN,
-            false,
-            None,
-            connected,
-            true,
-            Extra::default(),
-        )
-        .await
+        Self::build(|b| b.role_directory_connected = connected).await
     }
 
     /// With the config API over the seeded store.
     pub async fn with_config(
         make: impl FnOnce(Arc<SqliteStore>) -> Arc<ConfigDesk> + Send + 'static,
     ) -> Self {
-        Self::build(
-            NaiveTime::MIN,
-            false,
-            Some(Box::new(make)),
-            true,
-            true,
-            Extra::default(),
-        )
-        .await
+        Self::build(|b| b.config = Some(Box::new(make))).await
     }
 
     /// With the config API and live governor snapshots.
@@ -616,134 +579,71 @@ impl Reads {
         make: impl FnOnce(Arc<SqliteStore>) -> Arc<ConfigDesk> + Send + 'static,
         model_limits: kanade::api::state::ModelLimits,
     ) -> Self {
-        Self::build(
-            NaiveTime::MIN,
-            false,
-            Some(Box::new(make)),
-            true,
-            true,
-            Extra {
-                model_limits: Some(model_limits),
-                ..Extra::default()
-            },
-        )
+        Self::build(|b| {
+            b.config = Some(Box::new(make));
+            b.model_limits = Some(model_limits);
+        })
         .await
     }
 
     /// With live governor snapshots and no config desk.
     pub async fn with_model_limits(model_limits: kanade::api::state::ModelLimits) -> Self {
-        Self::build(
-            NaiveTime::MIN,
-            false,
-            None,
-            true,
-            true,
-            Extra {
-                model_limits: Some(model_limits),
-                ..Extra::default()
-            },
-        )
-        .await
+        Self::build(|b| b.model_limits = Some(model_limits)).await
     }
 
     pub async fn with_config_role_directory_connected(
         make: impl FnOnce(Arc<SqliteStore>) -> Arc<ConfigDesk> + Send + 'static,
         connected: bool,
     ) -> Self {
-        Self::build(
-            NaiveTime::MIN,
-            false,
-            Some(Box::new(make)),
-            connected,
-            true,
-            Extra::default(),
-        )
+        Self::build(|b| {
+            b.config = Some(Box::new(make));
+            b.role_directory_connected = connected;
+        })
         .await
     }
 
     pub async fn with_config_and_logins(
         make: impl FnOnce(Arc<SqliteStore>) -> Arc<ConfigDesk> + Send + 'static,
     ) -> Self {
-        Self::build(
-            NaiveTime::MIN,
-            true,
-            Some(Box::new(make)),
-            true,
-            true,
-            Extra::default(),
-        )
+        Self::build(|b| {
+            b.config = Some(Box::new(make));
+            b.logins = true;
+        })
         .await
     }
 
     /// Also Discord sign-in and Tailscale sign-in through a trusted edge
     /// (the test client, 127.0.0.1, carrying `EDGE_AUTH`).
     pub async fn with_logins() -> Self {
-        Self::build(NaiveTime::MIN, true, None, true, true, Extra::default()).await
+        Self::build(|b| b.logins = true).await
     }
 
     /// Sign-ins as [`Reads::with_logins`], over a role directory that may be down.
     pub async fn with_logins_role_directory_connected(connected: bool) -> Self {
-        Self::build(
-            NaiveTime::MIN,
-            true,
-            None,
-            connected,
-            true,
-            Extra::default(),
-        )
+        Self::build(|b| {
+            b.logins = true;
+            b.role_directory_connected = connected;
+        })
         .await
     }
 
     pub async fn without_digest_delivery() -> Self {
-        Self::build(NaiveTime::MIN, false, None, true, false, Extra::default()).await
+        Self::build(|b| b.digest_delivery = false).await
     }
 
     /// No rescan runner: serve without an extraction model.
     pub async fn without_rescans() -> Self {
-        Self::build(
-            NaiveTime::MIN,
-            false,
-            None,
-            true,
-            true,
-            Extra {
-                rescans: false,
-                ..Extra::default()
-            },
-        )
-        .await
+        Self::build(|b| b.rescans = false).await
     }
 
     /// No `KANADE_BACKUP_DIR`: checkpoints list no backups.
     pub async fn without_backup_dir() -> Self {
-        Self::build(
-            NaiveTime::MIN,
-            false,
-            None,
-            true,
-            true,
-            Extra {
-                backup_dir: false,
-                ..Extra::default()
-            },
-        )
-        .await
+        Self::build(|b| b.backup_dir = false).await
     }
 
     /// With the roster module on (`modules.roster`), as serve composes it.
     pub async fn with_characters() -> Self {
-        Self::build(
-            NaiveTime::MIN,
-            false,
-            None,
-            true,
-            true,
-            Extra {
-                characters: true,
-                ..Extra::default()
-            },
-        )
-        .await
+        Self::build(|b| b.characters = true).await
     }
 
     /// With the roster and character-data modules on (and the config API
@@ -752,36 +652,30 @@ impl Reads {
         config: Option<ConfigMaker>,
         make: CharacterDataMaker,
     ) -> Self {
-        Self::build(
-            NaiveTime::MIN,
-            false,
-            config,
-            true,
-            true,
-            Extra {
-                characters: true,
-                character_data: Some(make),
-                ..Extra::default()
-            },
-        )
+        Self::build(|b| {
+            b.config = config;
+            b.characters = true;
+            b.character_data = Some(make);
+        })
         .await
     }
 
-    async fn build(
-        reset: NaiveTime,
-        logins: bool,
-        config: Option<ConfigMaker>,
-        role_directory_connected: bool,
-        digest_delivery: bool,
-        extra: Extra,
-    ) -> Self {
-        let Extra {
+    /// A build from [`Build::default`] as `tune` adjusts it.
+    async fn build(tune: impl FnOnce(&mut Build)) -> Self {
+        let mut build = Build::default();
+        tune(&mut build);
+        let Build {
+            reset,
+            logins,
+            config,
+            role_directory_connected,
+            digest_delivery,
             backup_dir,
             model_limits,
             rescans: with_rescans,
             characters,
             character_data,
-        } = extra;
+        } = build;
         let dir = TempDir::new();
         let backup_dir = backup_dir.then(|| {
             let path = dir.0.join("backups");
@@ -926,23 +820,15 @@ impl Reads {
             ),
             catalog: Arc::new(catalog()),
             channels: Arc::new(ReadyGuild(
-                StaticChannels(vec![
-                    ChannelEntry {
-                        id: "kalos-four".into(),
-                        name: "#kalos-four".into(),
-                        watched: true,
-                    },
-                    ChannelEntry {
-                        id: "star".into(),
-                        name: "#star".into(),
-                        watched: false,
-                    },
-                    ChannelEntry {
-                        id: "limbo-trio".into(),
-                        name: "#limbo-trio".into(),
-                        watched: true,
-                    },
-                ]),
+                StaticChannels(
+                    [("kalos-four", true), ("star", false), ("limbo-trio", true)]
+                        .map(|(id, watched)| ChannelEntry {
+                            id: id.into(),
+                            name: format!("#{id}"),
+                            watched,
+                        })
+                        .into(),
+                ),
                 role_directory_connected,
             )),
             access,
@@ -1575,29 +1461,13 @@ async fn bosses_events_and_knowledge() {
     let events = reads
         .read("/api/admin/bosses/events", "bosses.json#/$defs/EventBosses")
         .await;
-    assert!(
-        events
-            .as_array()
-            .unwrap()
-            .iter()
-            .any(|event| event["key"] == "Kai")
-    );
+    assert!(strs(&events, "key").contains(&"Kai"));
 
-    let star = reads
-        .read(
-            "/api/admin/bosses/MaleficStar/knowledge",
-            "bosses.json#/$defs/Knowledge",
-        )
-        .await;
+    let star = knowledge(&reads, "MaleficStar").await;
     assert_eq!(star["name"], "Radiant Malefic Star");
     assert_eq!(star["path"], "boss/knowledge/maleficstar.yaml");
     assert_eq!(star["animated"], "/art/animated/MaleficStar");
-    let kalos = reads
-        .read(
-            "/api/admin/bosses/Kalos/knowledge",
-            "bosses.json#/$defs/Knowledge",
-        )
-        .await;
+    let kalos = knowledge(&reads, "Kalos").await;
     assert_eq!(kalos["in_use"], serde_json::json!(["x"]));
     assert_eq!(kalos["animated"], Value::Null, "absent animation is null");
     for path in [
@@ -1611,6 +1481,11 @@ async fn bosses_events_and_knowledge() {
             "{path}"
         );
     }
+}
+
+async fn knowledge(reads: &Reads, key: &str) -> Value {
+    let path = format!("/api/admin/bosses/{key}/knowledge");
+    reads.read(&path, "bosses.json#/$defs/Knowledge").await
 }
 
 /// An invented document whose `Destiny`/`Champion` difficulty runs a mission.
@@ -1642,58 +1517,36 @@ async fn knowledge_lists_the_missions_in_the_doc_series_in_order() {
         }
     }
     let write = |file: &str, text: &str| std::fs::write(dir.join(file), text).unwrap();
-    write(
-        "maleficstar.yaml",
-        &mission_doc("MaleficStar", "Destiny", "destiny-weapon", 2),
-    );
-    write(
-        "kalos.yaml",
-        &mission_doc("Kalos", "Destiny", "destiny-weapon", 1),
-    );
+    let destiny = |key, order| mission_doc(key, "Destiny", "destiny-weapon", order);
     // An event boss, tied on order with MaleficStar: key order breaks the tie.
-    write(
-        "starwyrm.yaml",
-        &format!(
-            "{}event: {{name: Wyrmfall Trials Season 9, availability: Invented.}}\n",
-            mission_doc("StarWyrm", "Destiny", "destiny-weapon", 2)
+    let event = "event: {name: Wyrmfall Trials Season 9, availability: Invented.}\n";
+    for (file, text) in [
+        ("maleficstar.yaml", destiny("MaleficStar", 2)),
+        ("kalos.yaml", destiny("Kalos", 1)),
+        ("starwyrm.yaml", destiny("StarWyrm", 2) + event),
+        (
+            "zenith.yaml",
+            mission_doc("Zenith", "Champion", "union-champion", 1),
         ),
-    );
-    write(
-        "zenith.yaml",
-        &mission_doc("Zenith", "Champion", "union-champion", 1),
-    );
-    write(
-        "quiet.yaml",
-        STAR_WYRM.replace("StarWyrm", "Quiet").as_str(),
-    );
-    // Siblings that never join a list: broken YAML and a misnamed file.
-    write("broken.yaml", "boss: [\n");
-    write(
-        "ghost.yaml",
-        &mission_doc("Phantom", "Destiny", "destiny-weapon", 1),
-    );
+        ("quiet.yaml", STAR_WYRM.replace("StarWyrm", "Quiet")),
+        // Siblings that never join a list: broken YAML and a misnamed file.
+        ("broken.yaml", "boss: [\n".to_owned()),
+        ("ghost.yaml", destiny("Phantom", 1)),
+    ] {
+        write(file, &text);
+    }
 
     let reads = &reads;
     let missions = |key: &'static str| async move {
-        let page = reads
-            .read(
-                &format!("/api/admin/bosses/{key}/knowledge"),
-                "bosses.json#/$defs/Knowledge",
-            )
-            .await;
-        page["missions"]
-            .as_array()
-            .unwrap()
+        let page = knowledge(reads, key).await;
+        crate::support::items(&page["missions"])
             .iter()
             .map(|stop| {
-                format!(
-                    "{} {} {} {} {}",
-                    stop["series"].as_str().unwrap(),
-                    stop["order"],
-                    stop["key"].as_str().unwrap(),
-                    stop["name"].as_str().unwrap(),
-                    stop["difficulty"].as_str().unwrap()
-                )
+                let text = |field: &str| stop[field].as_str().unwrap().to_owned();
+                let order = &stop["order"];
+                let (series, key) = (text("series"), text("key"));
+                let (name, difficulty) = (text("name"), text("difficulty"));
+                format!("{series} {order} {key} {name} {difficulty}")
             })
             .collect::<Vec<_>>()
     };
@@ -1717,24 +1570,14 @@ async fn event_bosses_carry_and_serve_their_art() {
     let events = reads
         .read("/api/admin/bosses/events", "bosses.json#/$defs/EventBosses")
         .await;
-    let wyrm = events
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|event| event["key"] == "StarWyrm")
-        .expect("the fixture event");
+    let wyrm = find(&events, "key", "StarWyrm");
     assert_eq!(wyrm["event"]["name"], "Wyrmfall Trials Season 9");
     assert_eq!(wyrm["portrait"], "/art/portraits/StarWyrm");
     assert_eq!(wyrm["portrait_sm"], "/art/icons/StarWyrm");
     assert_eq!(wyrm["art"], "/art/entry/StarWyrm");
     assert_eq!(wyrm["animated"], "/art/animated/StarWyrm");
     // Absent art stays null.
-    let kai = events
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|event| event["key"] == "Kai")
-        .expect("tracked event");
+    let kai = find(&events, "key", "Kai");
     assert_eq!(
         (
             &kai["portrait"],
@@ -1745,14 +1588,9 @@ async fn event_bosses_carry_and_serve_their_art() {
         (&Value::Null, &Value::Null, &Value::Null, &Value::Null)
     );
 
-    let knowledge = reads
-        .read(
-            "/api/admin/bosses/StarWyrm/knowledge",
-            "bosses.json#/$defs/Knowledge",
-        )
-        .await;
-    assert_eq!(knowledge["portrait"], "/art/portraits/StarWyrm");
-    assert_eq!(knowledge["animated"], "/art/animated/StarWyrm");
+    let doc = knowledge(&reads, "StarWyrm").await;
+    assert_eq!(doc["portrait"], "/art/portraits/StarWyrm");
+    assert_eq!(doc["animated"], "/art/animated/StarWyrm");
 
     for path in [
         "/art/portraits/StarWyrm",
@@ -1760,7 +1598,7 @@ async fn event_bosses_carry_and_serve_their_art() {
         "/art/entry/StarWyrm",
         "/art/animated/StarWyrm",
     ] {
-        let reply = request(reads.admin, "GET", ADMIN_HOST, path, &[]).await;
+        let reply = get(reads.admin, ADMIN_HOST, path).await;
         assert_eq!(reply.status, 200, "{path}");
         assert_eq!(reply.body, b"art", "{path}");
     }
@@ -1776,7 +1614,7 @@ async fn event_bosses_carry_and_serve_their_art() {
         "/art/portraits/Carling",
         "/art/entry/Carling",
     ] {
-        let reply = request(reads.admin, "GET", ADMIN_HOST, path, &[]).await;
+        let reply = get(reads.admin, ADMIN_HOST, path).await;
         assert_eq!(reply.status, 404, "{path}");
     }
 }
@@ -1804,14 +1642,7 @@ async fn every_read_needs_a_session_and_art_uses_catalog_keys() {
             "{path}"
         );
     }
-    let art = request(
-        reads.admin,
-        "GET",
-        ADMIN_HOST,
-        "/art/portraits/MaleficStar",
-        &[],
-    )
-    .await;
+    let art = get(reads.admin, ADMIN_HOST, "/art/portraits/MaleficStar").await;
     assert_eq!(art.status, 200);
     let animated = request(
         reads.admin,
@@ -1831,7 +1662,7 @@ async fn every_read_needs_a_session_and_art_uses_catalog_keys() {
         "/art/animated/maleficstar",
         "/art/animated/Lucid",
     ] {
-        let reply = request(reads.admin, "GET", ADMIN_HOST, path, &[]).await;
+        let reply = get(reads.admin, ADMIN_HOST, path).await;
         assert_eq!(reply.status, 404, "{path}: exact catalog keys only");
     }
 }
@@ -1888,24 +1719,18 @@ impl ChannelList for ReadyGuild {
     }
 
     fn roles(&self) -> Vec<RoleEntry> {
-        vec![
-            RoleEntry {
-                id: "700".into(),
-                name: "Officer".into(),
-                color: Some(0x0a0bff),
-            },
-            RoleEntry {
-                id: "701".into(),
-                name: "Bossing".into(),
-                color: None,
-            },
+        [
+            ("700", "Officer", Some(0x0a0bff)),
+            ("701", "Bossing", None),
             // A current managed role stays selectable just like any other role.
-            RoleEntry {
-                id: "702".into(),
-                name: "Integration".into(),
-                color: None,
-            },
+            ("702", "Integration", None),
         ]
+        .map(|(id, name, color)| RoleEntry {
+            id: id.into(),
+            name: name.into(),
+            color,
+        })
+        .into()
     }
 
     fn bot_user_id(&self) -> Option<String> {

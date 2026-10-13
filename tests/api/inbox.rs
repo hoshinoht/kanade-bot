@@ -9,8 +9,8 @@ use chrono::{DateTime, NaiveTime, TimeZone, Utc, Weekday};
 use kanade::{
     api::write::ApiClock,
     domain::{
-        drafts::{DraftEventKind, DraftStatus, DraftStore, ProposalSource},
-        history::{Actor, ChangeHistory, Origin, Surface},
+        drafts::{DraftEventKind, DraftStatus, DraftStore, LoadedDraft, ProposalSource},
+        history::{Actor, ChangeHistory, ChangeRecord, Origin, Surface},
         ids::RandomIds,
         members::{MemberStore, Roster},
         model_log::{ModelLogStore, WatchedMessage},
@@ -307,11 +307,8 @@ impl Inbox {
             ("X-Kanade-CSRF", session.1.as_str()),
         ];
         headers.extend_from_slice(extra);
-        let method = if path.ends_with("/participants") {
-            "PATCH"
-        } else {
-            "POST"
-        };
+        let patched = path.ends_with("/participants") || path.ends_with("/status");
+        let method = if patched { "PATCH" } else { "POST" };
         send(
             self.reads.admin,
             method,
@@ -333,6 +330,22 @@ impl Inbox {
 
     async fn token_call(&self, path: &str, body: Value, extra: &[(&str, &str)]) -> Reply {
         self.as_session(&self.token(), path, body, extra).await
+    }
+
+    /// A direct admin edit as the token session; asserts 200.
+    async fn edit(&self, path: &str, body: Value) {
+        let reply = self.token_call(path, body, &[]).await;
+        assert_eq!(reply.status, 200, "{path}: {}", reply.text());
+    }
+
+    /// The token session's refusal of `path`: `(status, code)`.
+    async fn token_refusal(&self, path: &str, body: Value) -> (u16, String) {
+        refused(&self.token_call(path, body, &[]).await)
+    }
+
+    /// The Discord admin's refusal of `path`: `(status, code)`.
+    async fn discord_refusal(&self, path: &str, body: Value) -> (u16, String) {
+        refused(&self.discord(path, body, &[]).await)
     }
 
     async fn list(&self) -> Vec<Value> {
@@ -360,6 +373,14 @@ impl Inbox {
 
     async fn head(&self) -> u64 {
         self.reads.store.history_head().await.unwrap().seq
+    }
+
+    async fn change(&self, seq: u64) -> ChangeRecord {
+        self.reads.store.load_change(seq).await.unwrap().unwrap()
+    }
+
+    async fn draft(&self, id: &str) -> LoadedDraft {
+        self.reads.store.load_draft(id).await.unwrap().unwrap()
     }
 }
 
@@ -681,31 +702,18 @@ async fn member_requests_are_decided_by_any_admin_session_with_every_refusal() {
         ),
         (json!({"version": v, "extra": 1}), code(400, "invalid_body")),
     ] {
-        let reply = inbox
-            .token_call(&approve(&ids.join), body.clone(), &[])
-            .await;
-        assert_eq!(refused(&reply), expected, "{body}");
+        let refusal = inbox.token_refusal(&approve(&ids.join), body.clone()).await;
+        assert_eq!(refusal, expected, "{body}");
     }
-    assert_eq!(
-        refused(
-            &inbox
-                .token_call(&approve("nope"), json!({"version": 1}), &[])
-                .await
-        ),
-        code(404, "not_found")
-    );
-    assert_eq!(
-        refused(
-            &inbox
-                .token_call(
-                    &approve(&ids.join),
-                    json!({"version": v}),
-                    &[("Idempotency-Key", "bad key")]
-                )
-                .await
-        ),
-        code(400, "invalid_idempotency_key")
-    );
+    let refusal = inbox
+        .token_refusal(&approve("nope"), json!({"version": 1}))
+        .await;
+    assert_eq!(refusal, code(404, "not_found"));
+    let bad_key = [("Idempotency-Key", "bad key")];
+    let reply = inbox
+        .token_call(&approve(&ids.join), json!({"version": v}), &bad_key)
+        .await;
+    assert_eq!(refused(&reply), code(400, "invalid_idempotency_key"));
     // CSRF is required.
     let no_csrf = inbox
         .reads
@@ -732,10 +740,10 @@ async fn member_requests_are_decided_by_any_admin_session_with_every_refusal() {
             code(422, "choices_not_applicable"),
         ),
     ] {
-        let reply = inbox
-            .token_call(&approve(&ids.change), body.clone(), &[])
+        let refusal = inbox
+            .token_refusal(&approve(&ids.change), body.clone())
             .await;
-        assert_eq!(refused(&reply), expected, "{body}");
+        assert_eq!(refusal, expected, "{body}");
     }
     // The token session approves; a retry with the same key answers the same.
     let key = [("Idempotency-Key", "approve-change-1")];
@@ -743,69 +751,34 @@ async fn member_requests_are_decided_by_any_admin_session_with_every_refusal() {
     let first = ok(&inbox
         .token_call(&approve(&ids.change), body.clone(), &key)
         .await);
-    let record = inbox
-        .reads
-        .store
-        .load_change(head + 1)
-        .await
-        .unwrap()
-        .unwrap();
+    let record = inbox.change(head + 1).await;
     assert_eq!(record.origin.actor, Actor::admin("token"));
     assert_eq!(record.origin.surface, Surface::RequestMerge);
     assert_eq!(
         ok(&inbox.token_call(&approve(&ids.change), body, &key).await),
         first
     );
-    assert_eq!(
-        refused(
-            &inbox
-                .token_call(
-                    &approve(&ids.change),
-                    json!({"version": cv, "choices": {"r-kalos": "update"}}),
-                    &key
-                )
-                .await
-        ),
-        code(422, "idempotency_mismatch")
-    );
+    let mismatch = json!({"version": cv, "choices": {"r-kalos": "update"}});
+    let reply = inbox
+        .token_call(&approve(&ids.change), mismatch, &key)
+        .await;
+    assert_eq!(refused(&reply), code(422, "idempotency_mismatch"));
     assert_eq!(inbox.head().await, head + 1);
     // Another admin finds it decided.
-    assert_eq!(
-        refused(
-            &inbox
-                .discord(
-                    &approve(&ids.change),
-                    json!({"version": cv, "choices": {"r-kalos": "keep"}}),
-                    &[]
-                )
-                .await
-        ),
-        code(409, "stale")
-    );
+    let decided = json!({"version": cv, "choices": {"r-kalos": "keep"}});
+    let refusal = inbox.discord_refusal(&approve(&ids.change), decided).await;
+    assert_eq!(refusal, code(409, "stale"));
 
     // Requester no longer authorised, twice over: lost the role; left the run.
     let unauthorised = inbox.item(&ids.unauthorised).await;
-    assert_eq!(
-        refused(
-            &inbox
-                .token_call(
-                    &approve(&ids.unauthorised),
-                    json!({"version": unauthorised["version"]}),
-                    &[]
-                )
-                .await
-        ),
-        code(409, "requester_unauthorised")
-    );
+    let body = json!({"version": unauthorised["version"]});
+    let refusal = inbox.token_refusal(&approve(&ids.unauthorised), body).await;
+    assert_eq!(refusal, code(409, "requester_unauthorised"));
     let week = inbox.reads.version().await;
-    let reply = inbox
-        .token_call(
-            "/api/admin/runs/n-kalos/participants",
-            json!({"remove": "1002", "version": week}),
-            &[],
-        )
+    let remove = json!({"remove": "1002", "version": week});
+    inbox
+        .edit("/api/admin/runs/n-kalos/participants", remove)
         .await;
-    assert_eq!(reply.status, 200, "{}", reply.text());
     let leave = inbox.item(&ids.leave).await;
     assert!(
         leave["flags"]
@@ -813,60 +786,30 @@ async fn member_requests_are_decided_by_any_admin_session_with_every_refusal() {
             .unwrap()
             .contains(&json!("requester_unauthorised"))
     );
-    assert_eq!(
-        refused(
-            &inbox
-                .token_call(
-                    &approve(&ids.leave),
-                    json!({"version": leave["version"]}),
-                    &[]
-                )
-                .await
-        ),
-        code(409, "requester_unauthorised")
-    );
+    let body = json!({"version": leave["version"]});
+    let refusal = inbox.token_refusal(&approve(&ids.leave), body).await;
+    assert_eq!(refusal, code(409, "requester_unauthorised"));
 
     let expired = inbox.item(&ids.expired_request).await;
-    assert_eq!(
-        refused(
-            &inbox
-                .token_call(
-                    &approve(&ids.expired_request),
-                    json!({"version": expired["version"]}),
-                    &[]
-                )
-                .await
-        ),
-        code(410, "expired")
-    );
-    let loaded = inbox
-        .reads
-        .store
-        .load_draft(&ids.expired_request)
-        .await
-        .unwrap()
-        .unwrap();
+    let body = json!({"version": expired["version"]});
+    let refusal = inbox
+        .token_refusal(&approve(&ids.expired_request), body)
+        .await;
+    assert_eq!(refusal, code(410, "expired"));
+    let loaded = inbox.draft(&ids.expired_request).await;
     assert_eq!(loaded.draft.status, DraftStatus::Expired);
 
     // Join: Finn is added directly first, so approving changes nothing.
     let week = inbox.reads.version().await;
-    let reply = inbox
-        .token_call(
-            "/api/admin/runs/r-kalos/participants",
-            json!({"add": "1007", "version": week}),
-            &[],
-        )
+    let add = json!({"add": "1007", "version": week});
+    inbox
+        .edit("/api/admin/runs/r-kalos/participants", add)
         .await;
-    assert_eq!(reply.status, 200, "{}", reply.text());
     assert_eq!(inbox.item(&ids.join).await["flags"], json!(["no_effect"]));
-    assert_eq!(
-        refused(
-            &inbox
-                .token_call(&approve(&ids.join), json!({"version": v}), &[])
-                .await
-        ),
-        code(409, "no_effect")
-    );
+    let refusal = inbox
+        .token_refusal(&approve(&ids.join), json!({"version": v}))
+        .await;
+    assert_eq!(refusal, code(409, "no_effect"));
 
     // Reject (the Discord admin): a reason is required; retries answer the same.
     let swap = inbox.item(&ids.swap).await;
@@ -887,8 +830,10 @@ async fn member_requests_are_decided_by_any_admin_session_with_every_refusal() {
             code(409, "stale"),
         ),
     ] {
-        let reply = inbox.discord(&reject(&ids.swap), body.clone(), &[]).await;
-        assert_eq!(refused(&reply), expected, "{body}");
+        let refusal = inbox
+            .discord_refusal(&reject(&ids.swap), body.clone())
+            .await;
+        assert_eq!(refusal, expected, "{body}");
     }
     let key = [("Idempotency-Key", "reject-swap-1")];
     let body = json!({"version": sv, "reason": "We need you this week."});
@@ -897,37 +842,13 @@ async fn member_requests_are_decided_by_any_admin_session_with_every_refusal() {
         ok(&inbox.discord(&reject(&ids.swap), body, &key).await),
         first
     );
-    assert_eq!(
-        refused(
-            &inbox
-                .discord(
-                    &reject(&ids.swap),
-                    json!({"version": sv, "reason": "Another reason."}),
-                    &key
-                )
-                .await
-        ),
-        code(422, "idempotency_mismatch")
-    );
-    assert_eq!(
-        refused(
-            &inbox
-                .token_call(
-                    &reject(&ids.swap),
-                    json!({"version": sv, "reason": "Me too."}),
-                    &[]
-                )
-                .await
-        ),
-        code(409, "stale")
-    );
-    let loaded = inbox
-        .reads
-        .store
-        .load_draft(&ids.swap)
-        .await
-        .unwrap()
-        .unwrap();
+    let another = json!({"version": sv, "reason": "Another reason."});
+    let reply = inbox.discord(&reject(&ids.swap), another, &key).await;
+    assert_eq!(refused(&reply), code(422, "idempotency_mismatch"));
+    let too = json!({"version": sv, "reason": "Me too."});
+    let refusal = inbox.token_refusal(&reject(&ids.swap), too).await;
+    assert_eq!(refusal, code(409, "stale"));
+    let loaded = inbox.draft(&ids.swap).await;
     assert_eq!(
         (
             loaded.draft.status,
@@ -972,10 +893,8 @@ async fn proposals_need_a_discord_session_and_answer_as_that_member() {
 
     // Token and Tailscale sessions: refused before anything else.
     for target in [&approve, &reject] {
-        assert_eq!(
-            refused(&inbox.token_call(target, json!({}), &[]).await),
-            code(403, "discord_session_required")
-        );
+        let refusal = inbox.token_refusal(target, json!({})).await;
+        assert_eq!(refusal, code(403, "discord_session_required"));
     }
     let tailscale = inbox.reads.tailscale_session().await;
     for target in [&approve, &reject] {
@@ -995,41 +914,26 @@ async fn proposals_need_a_discord_session_and_answer_as_that_member() {
         ),
         (json!({"force": true}), code(422, "force_unsupported")),
     ] {
-        assert_eq!(
-            refused(&inbox.discord(&approve, body.clone(), &[]).await),
-            expected,
-            "{body}"
-        );
+        let refusal = inbox.discord_refusal(&approve, body.clone()).await;
+        assert_eq!(refusal, expected, "{body}");
     }
     assert_eq!(inbox.head().await, head);
 
     // Past the TTL: approving is refused and closes it; rejecting closes it.
-    assert_eq!(
-        refused(
-            &inbox
-                .discord(&path(&ids.expired_chat, "approve"), json!({}), &[])
-                .await
-        ),
-        code(410, "expired")
-    );
+    let expired_approval = path(&ids.expired_chat, "approve");
+    let refusal = inbox.discord_refusal(&expired_approval, json!({})).await;
+    assert_eq!(refusal, code(410, "expired"));
     ok(&inbox
         .discord(&path(&ids.expired_extraction, "reject"), json!({}), &[])
         .await);
     for id in [&ids.expired_chat, &ids.expired_extraction] {
-        let loaded = inbox.reads.store.load_draft(id).await.unwrap().unwrap();
-        assert_eq!(loaded.draft.status, DraftStatus::Expired);
+        assert_eq!(inbox.draft(id).await.draft.status, DraftStatus::Expired);
     }
     assert!(inbox.reads.proposal_refreshes.lock().unwrap().is_empty());
 
     let key = [("Idempotency-Key", "approve-moved-1")];
     let first = ok(&inbox.discord(&approve, json!({"version": v}), &key).await);
-    let record = inbox
-        .reads
-        .store
-        .load_change(head + 1)
-        .await
-        .unwrap()
-        .unwrap();
+    let record = inbox.change(head + 1).await;
     assert_eq!(record.origin.actor, Actor::member("1003"));
     assert_eq!(record.origin.surface, Surface::ExtractionApproval);
     assert_eq!(
@@ -1047,20 +951,16 @@ async fn proposals_need_a_discord_session_and_answer_as_that_member() {
     assert_eq!(inbox.head().await, head + 1);
     assert_eq!(inbox.reads.proposal_refreshes.lock().unwrap().len(), 1);
     // The approval retired the other live proposal about r-kalos.
-    assert_eq!(
-        refused(
-            &inbox
-                .discord(&path(&ids.to_edit, "approve"), json!({}), &[])
-                .await
-        ),
-        code(409, "stale")
-    );
+    let refusal = inbox
+        .discord_refusal(&path(&ids.to_edit, "approve"), json!({}))
+        .await;
+    assert_eq!(refusal, code(409, "stale"));
 
     // Reject: no reason; the chat proposal closes as the Discord member.
-    assert_eq!(
-        refused(&inbox.discord(&reject, json!({"reason": "nope"}), &[]).await),
-        code(422, "reason_not_applicable")
-    );
+    let refusal = inbox
+        .discord_refusal(&reject, json!({"reason": "nope"}))
+        .await;
+    assert_eq!(refusal, code(422, "reason_not_applicable"));
     let key = [("Idempotency-Key", "reject-chat-1")];
     let first = ok(&inbox.discord(&reject, json!({"reason": ""}), &key).await);
     assert_eq!(
@@ -1070,72 +970,37 @@ async fn proposals_need_a_discord_session_and_answer_as_that_member() {
     );
     assert_eq!(ok(&inbox.discord(&reject, json!({}), &key).await), first);
     assert_eq!(inbox.reads.proposal_refreshes.lock().unwrap().len(), 2);
-    let loaded = inbox
-        .reads
-        .store
-        .load_draft(&ids.cancel_chat)
-        .await
-        .unwrap()
-        .unwrap();
+    let loaded = inbox.draft(&ids.cancel_chat).await;
     assert_eq!(loaded.draft.status, DraftStatus::Rejected);
     assert_eq!(loaded.draft.closed_by, Some(Actor::member("1003")));
-    assert_eq!(
-        refused(
-            &inbox
-                .discord(&path(&ids.cancel_chat, "approve"), json!({}), &[])
-                .await
-        ),
-        code(409, "stale")
-    );
+    let refusal = inbox
+        .discord_refusal(&path(&ids.cancel_chat, "approve"), json!({}))
+        .await;
+    assert_eq!(refusal, code(409, "stale"));
 
     // n-kalos moved elsewhere upstream: the proposed move conflicts...
     let week = inbox.reads.version().await;
-    let reply = inbox
-        .token_call(
-            "/api/admin/runs/n-kalos/move",
-            json!({"day": 5, "time": "23:00", "version": week}),
-            &[],
-        )
-        .await;
-    assert_eq!(reply.status, 200, "{}", reply.text());
+    let to = json!({"day": 5, "time": "23:00", "version": week});
+    inbox.edit("/api/admin/runs/n-kalos/move", to).await;
     assert_eq!(
         inbox.item(&ids.to_no_effect).await["flags"],
         json!(["conflict"])
     );
     let target = path(&ids.to_no_effect, "approve");
-    assert_eq!(
-        refused(&inbox.discord(&target, json!({}), &[]).await),
-        code(409, "conflicts")
-    );
+    let refusal = inbox.discord_refusal(&target, json!({})).await;
+    assert_eq!(refusal, code(409, "conflicts"));
     // Cancelled directly: the proposed cancel would change nothing.
-    let reply = send(
-        inbox.reads.admin,
-        "PATCH",
-        ADMIN_HOST,
-        "/api/admin/runs/n-kalos/status",
-        &[
-            ("Cookie", inbox.reads.cookie.as_str()),
-            ORIGIN,
-            ("X-Kanade-CSRF", inbox.reads.csrf.as_str()),
-        ],
-        Some(&json!({"status": "cancelled", "version": week + 1}).to_string()),
-    )
-    .await;
-    assert_eq!(reply.status, 200, "{}", reply.text());
+    let cancel = json!({"status": "cancelled", "version": week + 1});
+    inbox.edit("/api/admin/runs/n-kalos/status", cancel).await;
     let item = inbox.item(&ids.cancel_nkalos).await;
     assert_eq!(item["flags"], json!(["no_effect"]), "{:#}", item["preview"]);
-    assert_eq!(
-        refused(
-            &inbox
-                .discord(&path(&ids.cancel_nkalos, "approve"), json!({}), &[])
-                .await
-        ),
-        code(409, "no_effect")
-    );
-    assert_eq!(
-        refused(&inbox.discord(&path("nope", "reject"), json!({}), &[]).await),
-        code(404, "not_found")
-    );
+    let target = path(&ids.cancel_nkalos, "approve");
+    let refusal = inbox.discord_refusal(&target, json!({})).await;
+    assert_eq!(refusal, code(409, "no_effect"));
+    let refusal = inbox
+        .discord_refusal(&path("nope", "reject"), json!({}))
+        .await;
+    assert_eq!(refusal, code(404, "not_found"));
 }
 
 #[tokio::test]
@@ -1150,24 +1015,14 @@ async fn an_edited_approval_moves_to_the_admins_time_in_one_record() {
         (json!({"day": 6}), code(422, "invalid")),
         (json!({"time": "20:00"}), code(422, "invalid")),
     ] {
-        assert_eq!(
-            refused(&inbox.discord(&approve, body.clone(), &[]).await),
-            expected,
-            "{body}"
-        );
+        let refusal = inbox.discord_refusal(&approve, body.clone()).await;
+        assert_eq!(refusal, expected, "{body}");
     }
-    assert_eq!(
-        refused(
-            &inbox
-                .discord(
-                    &path(&ids.cancel_chat, "approve"),
-                    json!({"day": 6, "time": "20:00"}),
-                    &[]
-                )
-                .await
-        ),
-        code(422, "edit_not_applicable")
-    );
+    let edit = json!({"day": 6, "time": "20:00"});
+    let refusal = inbox
+        .discord_refusal(&path(&ids.cancel_chat, "approve"), edit)
+        .await;
+    assert_eq!(refusal, code(422, "edit_not_applicable"));
 
     // Wednesday (day 6 of the boss week starting Thu 24 Sep) at 20:00 KL.
     let key = [("Idempotency-Key", "edit-1")];
@@ -1186,13 +1041,7 @@ async fn an_edited_approval_moves_to_the_admins_time_in_one_record() {
         .find(|run| run.id == "r-kalos")
         .unwrap();
     assert_eq!(run.datetime, utc(9, 30, 12, 0));
-    let record = inbox
-        .reads
-        .store
-        .load_change(head + 1)
-        .await
-        .unwrap()
-        .unwrap();
+    let record = inbox.change(head + 1).await;
     assert_eq!(
         (record.origin.actor.clone(), record.origin.surface),
         (Actor::member("1003"), Surface::ExtractionApproval)
@@ -1213,14 +1062,9 @@ async fn an_edited_approval_moves_to_the_admins_time_in_one_record() {
 
     // The same edit again answers the first result; another edit is refused.
     assert_eq!(ok(&inbox.discord(&approve, body, &key).await), first);
-    assert_eq!(
-        refused(
-            &inbox
-                .discord(&approve, json!({"day": 6, "time": "19:00"}), &key)
-                .await
-        ),
-        code(422, "idempotency_mismatch")
-    );
+    let other = json!({"day": 6, "time": "19:00"});
+    let reply = inbox.discord(&approve, other, &key).await;
+    assert_eq!(refused(&reply), code(422, "idempotency_mismatch"));
     assert_eq!(inbox.head().await, head + 1);
 }
 
@@ -1228,27 +1072,14 @@ async fn an_edited_approval_moves_to_the_admins_time_in_one_record() {
 async fn an_edited_approval_still_blocks_on_conflicts() {
     let inbox = seeded().await;
     let week = inbox.reads.version().await;
-    let reply = inbox
-        .token_call(
-            "/api/admin/runs/r-kalos/move",
-            json!({"day": 5, "time": "23:00", "version": week}),
-            &[],
-        )
-        .await;
-    assert_eq!(reply.status, 200, "{}", reply.text());
+    let to = json!({"day": 5, "time": "23:00", "version": week});
+    inbox.edit("/api/admin/runs/r-kalos/move", to).await;
     let head = inbox.head().await;
-    assert_eq!(
-        refused(
-            &inbox
-                .discord(
-                    &path(&inbox.ids.moved, "approve"),
-                    json!({"day": 6, "time": "20:00"}),
-                    &[]
-                )
-                .await
-        ),
-        code(409, "conflicts")
-    );
+    let edit = json!({"day": 6, "time": "20:00"});
+    let refusal = inbox
+        .discord_refusal(&path(&inbox.ids.moved, "approve"), edit)
+        .await;
+    assert_eq!(refusal, code(409, "conflicts"));
     assert_eq!(inbox.head().await, head);
     // `moved` stays in the inbox, flagged.
     assert_eq!(
@@ -1306,12 +1137,9 @@ async fn request_decisions_enqueue_merge_and_requester_notices_with_the_decision
     );
 
     let lv = inbox.item(&ids.leave).await["version"].as_u64().unwrap();
+    let body = json!({"version": lv, "reason": "not this week"});
     ok(&inbox
-        .token_call(
-            &path(&ids.leave, "reject"),
-            json!({"version": lv, "reason": "not this week"}),
-            &[],
-        )
+        .token_call(&path(&ids.leave, "reject"), body, &[])
         .await);
     let rejected = draft_notices(store, &ids.leave).await;
     assert_eq!(
@@ -1320,17 +1148,12 @@ async fn request_decisions_enqueue_merge_and_requester_notices_with_the_decision
     );
 
     // Approving a request whose week passed closes it and enqueues "expired".
-    let ev = inbox.item(&ids.expired_request).await["version"]
-        .as_u64()
-        .unwrap();
-    let reply = inbox
-        .token_call(
-            &path(&ids.expired_request, "approve"),
-            json!({"version": ev}),
-            &[],
-        )
+    let expired = inbox.item(&ids.expired_request).await;
+    let body = json!({"version": expired["version"]});
+    let refusal = inbox
+        .token_refusal(&path(&ids.expired_request, "approve"), body)
         .await;
-    assert!(reply.status >= 400, "{}", reply.text());
+    assert_eq!(refusal, code(410, "expired"));
     let expired = draft_notices(store, &ids.expired_request).await;
     assert_eq!(
         expired.iter().map(decided).collect::<Vec<_>>(),
@@ -1351,13 +1174,7 @@ async fn proposal_approvals_enqueue_their_merge_notices() {
         let head = inbox.head().await;
         ok(&inbox.discord(&path(id, "approve"), body, &[]).await);
         let written = crate::outbox::written_by(&inbox.reads.store, head + 1).await;
-        let record = inbox
-            .reads
-            .store
-            .load_change(head + 1)
-            .await
-            .unwrap()
-            .unwrap();
+        let record = inbox.change(head + 1).await;
         assert!(!written.is_empty(), "{id}");
         assert_eq!(
             written
@@ -1372,6 +1189,7 @@ async fn proposal_approvals_enqueue_their_merge_notices() {
 
 #[tokio::test]
 async fn items_carry_a_one_line_consequence_from_the_preview() {
+    use ProposalSource::*;
     let inbox = seeded().await;
     let ids = &inbox.ids;
     let store = inbox.reads.store.clone();
@@ -1381,16 +1199,9 @@ async fn items_carry_a_one_line_consequence_from_the_preview() {
     // queued and move; the morning card was already sent and is not counted.
     let later = Some(utc(9, 29, 14, 0));
     let same_day = now
-        .propose(
-            ChangeKind::Move,
-            "r-kalos",
-            later,
-            ProposalSource::Extraction,
-        )
+        .propose(ChangeKind::Move, "r-kalos", later, Extraction)
         .await;
-    let cancel = now
-        .propose(ChangeKind::Cancel, "r-kalos", None, ProposalSource::Chat)
-        .await;
+    let cancel = now.propose(ChangeKind::Cancel, "r-kalos", None, Chat).await;
     let items = inbox.list().await;
     let of = |id: &str| items.iter().find(|item| item["id"] == id).unwrap()["consequence"].clone();
     assert_eq!(of(&same_day), "Party unchanged · 2 reminders will move");
@@ -1476,11 +1287,8 @@ async fn an_approval_with_changes_retimes_leaves_out_and_tells_the_member() {
             code(422, "not_retimable"),
         ),
     ] {
-        assert_eq!(
-            refused(&inbox.token_call(&approve, body.clone(), &[]).await),
-            expected,
-            "{body}"
-        );
+        let refusal = inbox.token_refusal(&approve, body.clone()).await;
+        assert_eq!(refusal, expected, "{body}");
     }
     assert_eq!(inbox.head().await, head, "refusals write nothing");
     assert_eq!(
@@ -1526,7 +1334,7 @@ async fn an_approval_with_changes_retimes_leaves_out_and_tells_the_member() {
         "{told:?}"
     );
     // The member's request keeps what they asked.
-    let loaded = store.load_draft(&id).await.unwrap().unwrap();
+    let loaded = inbox.draft(&id).await;
     assert_eq!(loaded.draft.status, DraftStatus::Merged);
     assert!(matches!(
         &loaded.ops[0].op,
@@ -1539,18 +1347,9 @@ async fn an_approval_with_changes_retimes_leaves_out_and_tells_the_member() {
     let nv = inbox.item(&next).await["version"].as_u64().unwrap();
     let mut member = service(store, utc(9, 29, 4, 0));
     member.withdraw_request("1001", &next, nv).await.unwrap();
-    assert_eq!(
-        refused(
-            &inbox
-                .token_call(
-                    &path(&next, "approve"),
-                    json!({"version": nv, "choices": {"r-kalos": "keep"}, "edit": edit}),
-                    &[],
-                )
-                .await
-        ),
-        code(409, "stale")
-    );
+    let body = json!({"version": nv, "choices": {"r-kalos": "keep"}, "edit": edit});
+    let refusal = inbox.token_refusal(&path(&next, "approve"), body).await;
+    assert_eq!(refusal, code(409, "stale"));
 }
 
 mod ownership;
