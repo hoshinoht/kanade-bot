@@ -24,7 +24,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 use super::clock::{iso_secs, now_secs};
-use super::{MoveError, Store};
+use super::{MoveError, Store, coded};
 
 pub const LABEL: &str = "Clear-time estimate";
 pub const NOTE: &str = "For planning only, not eligibility";
@@ -134,10 +134,6 @@ const CARDS: [(&str, f64, Option<f64>, &str, bool); 4] = [
     ("HStar", 64.5, Some(21.5), "3p Min Cut", true),
     ("HLimbo", 72.4, Some(72.4), "Party-able", false),
 ];
-
-fn coded(status: u16, code: &'static str, message: &str) -> MoveError {
-    MoveError::Coded(status, code, message.into())
-}
 
 fn round(value: f64) -> f64 {
     (value * 100.0).round() / 100.0

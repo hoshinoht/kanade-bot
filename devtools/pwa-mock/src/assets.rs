@@ -58,7 +58,9 @@ pub async fn art(
 ) -> Response {
     // The public origin serves the same art behind the member session.
     if app.public {
-        return crate::public::art(&app, &kind, &key, &request).await;
+        return crate::public::art(&app, &kind, &key, &request)
+            .await
+            .into_response();
     }
     serve_art(&app, &kind, &key, &request).await
 }

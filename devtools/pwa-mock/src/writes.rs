@@ -2,16 +2,14 @@
 //! need the session's `X-Kanade-CSRF` token, and an `Idempotency-Key` replays
 //! the first successful answer instead of applying the change twice.
 
-use crate::App;
+use crate::{App, api::error};
 use axum::{
-    Json,
     body::{Body, Bytes, to_bytes},
     extract::{Request, State},
     http::{HeaderMap, HeaderValue, Method, StatusCode, header},
     middleware::Next,
     response::{IntoResponse, Response},
 };
-use serde_json::json;
 use std::{
     collections::HashMap,
     sync::Mutex as StdMutex,
@@ -95,20 +93,8 @@ impl Writes {
 
     /// One matching token, and a browser that says same-origin when it says anything.
     fn allows(&self, headers: &HeaderMap) -> bool {
-        let site = headers
-            .get("sec-fetch-site")
-            .is_none_or(|v| v == "same-origin");
-        let mut values = headers.get_all(CSRF_HEADER).iter();
-        let token = match (values.next(), values.next()) {
-            (Some(value), None) => value.as_bytes() == self.token().as_bytes(),
-            _ => false,
-        };
-        site && token
+        crate::public::csrf_ok(headers, &self.token())
     }
-}
-
-fn refusal(status: StatusCode, code: &str, message: &str) -> Response {
-    (status, Json(json!({ "error": code, "message": message }))).into_response()
 }
 
 /// The request's key, or why it is refused (`400 invalid_idempotency_key`).
@@ -146,7 +132,7 @@ pub async fn guard(State(app): State<App>, req: Request, next: Next) -> Response
         return next.run(req).await;
     }
     if !app.writes.allows(req.headers()) {
-        return refusal(
+        return error(
             StatusCode::FORBIDDEN,
             "csrf",
             "The request did not come from this portal.",
@@ -156,12 +142,12 @@ pub async fn guard(State(app): State<App>, req: Request, next: Next) -> Response
         Ok(Some(key)) => key,
         Ok(None) => return next.run(req).await,
         Err(message) => {
-            return refusal(StatusCode::BAD_REQUEST, "invalid_idempotency_key", message);
+            return error(StatusCode::BAD_REQUEST, "invalid_idempotency_key", message);
         }
     };
     let (parts, body) = req.into_parts();
     let Ok(body) = to_bytes(body, BODY_LIMIT).await else {
-        return refusal(
+        return error(
             StatusCode::BAD_REQUEST,
             "invalid_body",
             "The request body is too large.",
@@ -182,7 +168,7 @@ pub async fn guard(State(app): State<App>, req: Request, next: Next) -> Response
         return if seen.fingerprint == fingerprint {
             seen.replay()
         } else {
-            refusal(
+            error(
                 StatusCode::UNPROCESSABLE_ENTITY,
                 "idempotency_mismatch",
                 "That Idempotency-Key was already used for a different request.",

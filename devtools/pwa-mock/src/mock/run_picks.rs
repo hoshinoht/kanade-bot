@@ -22,7 +22,7 @@ use serde_json::{Value, json};
 use super::characters::{Char, present};
 use super::clock::{iso_now, iso_secs, now_secs};
 use super::seed::Rec;
-use super::{MoveError, Store};
+use super::{MoveError, Store, coded};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Scope {
@@ -77,10 +77,6 @@ pub struct CharacterPick {
     character_id: Option<Option<String>>,
     #[serde(default)]
     version: Option<u64>,
-}
-
-fn coded(status: u16, code: &'static str, message: &str) -> MoveError {
-    MoveError::Coded(status, code, message.into())
 }
 
 pub(super) fn choice(c: &Char) -> Value {
@@ -301,7 +297,7 @@ impl Store {
             coded(
                 422,
                 "version_required",
-                &format!("Send the version the {loaded} characters were loaded at."),
+                format!("Send the version the {loaded} characters were loaded at."),
             )
         })?;
         let character = req
@@ -317,7 +313,7 @@ impl Store {
             return Err(coded(
                 409,
                 "stale",
-                &format!("This member's character on {on} changed since it was loaded."),
+                format!("This member's character on {on} changed since it was loaded."),
             ));
         }
         let here = |p: &Pick| p.scope == scope && p.target == target && p.member == member;

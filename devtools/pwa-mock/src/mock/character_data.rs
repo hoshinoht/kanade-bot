@@ -21,7 +21,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 use super::clock::{TZ_OFFSET_SECS, iso_date, iso_secs, now_secs};
-use super::{MoveError, Store};
+use super::{MoveError, Store, coded};
 
 pub const ATTRIBUTION: &str = "Data based on NEXON Open API";
 /// The public `/privacy` page (invented host).
@@ -181,10 +181,6 @@ impl LookupRequest {
     pub(super) fn msea(ign: String) -> Self {
         Self { ign, world: None }
     }
-}
-
-pub(super) fn coded(status: u16, code: &'static str, message: &str) -> MoveError {
-    MoveError::Coded(status, code, message.into())
 }
 
 /// The data a reader may show: kept at most 30 days, never stamped in the future.

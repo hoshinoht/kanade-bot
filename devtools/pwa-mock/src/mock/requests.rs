@@ -17,7 +17,7 @@ use super::member::MemberRun;
 use super::member_runs::{idempotency_mismatch, invalid_body};
 use super::portal::snowflake;
 use super::seed;
-use super::{MoveError, Store};
+use super::{MoveError, Store, coded};
 
 /// RequestLimits: undecided at once, and sent per rolling 24 h.
 pub const MAX_OPEN: usize = 3;
@@ -145,10 +145,6 @@ impl From<MoveError> for Refused {
 }
 
 const WEEKDAYS: [&str; 7] = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
-
-fn coded(status: u16, code: &'static str, message: &str) -> MoveError {
-    MoveError::Coded(status, code, message.into())
-}
 
 fn not_found() -> MoveError {
     coded(404, "not_found", "No such run or weekly timing.")

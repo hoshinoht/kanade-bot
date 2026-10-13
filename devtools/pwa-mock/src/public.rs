@@ -8,7 +8,7 @@
 
 use crate::{
     App,
-    api::{closed, error, outcome},
+    api::{Answer, Refusal, closed, error, outcome, outcome_with},
     auth::{landing, query_value, safe_next, see_other},
     mock::{
         MoveError,
@@ -75,7 +75,7 @@ fn unauthenticated() -> Response {
 }
 
 /// Same-origin when the browser says, and exactly one matching token.
-fn csrf_ok(headers: &HeaderMap, expected: &str) -> bool {
+pub(crate) fn csrf_ok(headers: &HeaderMap, expected: &str) -> bool {
     let site = headers
         .get("sec-fetch-site")
         .is_none_or(|v| v == "same-origin");
@@ -101,17 +101,17 @@ pub(crate) async fn member(
     app: &App,
     method: &Method,
     headers: &HeaderMap,
-) -> Result<Current, Box<Response>> {
+) -> Result<Current, Refusal> {
     let mut store = app.store.lock().await;
     if !store.public_portal() {
-        return Err(Box::new(closed()));
+        return Err(closed().into());
     }
-    let refused = || Box::new(unauthenticated());
+    let refused = || Refusal::from(unauthenticated());
     let id = cookie(headers).ok_or_else(refused)?;
     let (current, expected) = store.public_sessions().resolve(&id).ok_or_else(refused)?;
     let safe = matches!(*method, Method::GET | Method::HEAD);
     if !safe && !csrf_ok(headers, &expected) {
-        return Err(Box::new(carry(refused_csrf(), &current)));
+        return Err(carry(refused_csrf(), &current).into());
     }
     Ok(current)
 }
@@ -121,16 +121,40 @@ pub(crate) async fn member(
 /// holds each answer until a hint (or a quiet interval), so a rotated
 /// cookie would reach the browser only then, after the page had already
 /// sent the old one again.
-pub(crate) async fn member_quietly(app: &App, headers: &HeaderMap) -> Result<(), Box<Response>> {
+pub(crate) async fn member_quietly(app: &App, headers: &HeaderMap) -> Result<(), Refusal> {
     let mut store = app.store.lock().await;
     if !store.public_portal() {
-        return Err(Box::new(closed()));
+        return Err(closed().into());
     }
-    let id = cookie(headers).ok_or_else(|| Box::new(unauthenticated()))?;
+    let id = cookie(headers).ok_or_else(unauthenticated)?;
     match store.public_sessions().token(&id) {
         Some(_) => Ok(()),
-        None => Err(Box::new(unauthenticated())),
+        None => Err(unauthenticated().into()),
     }
+}
+
+pub(crate) fn invalid_body() -> Response {
+    error(
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "invalid_body",
+        "The request body is not valid.",
+    )
+}
+
+/// A member request's JSON body, or `422 invalid_body` (with any rotation).
+pub(crate) fn member_body<T>(
+    body: Result<Json<T>, JsonRejection>,
+    current: &Current,
+) -> Result<T, Refusal> {
+    match body {
+        Ok(Json(value)) => Ok(value),
+        Err(_) => Err(carry(invalid_body(), current).into()),
+    }
+}
+
+/// A signed-in read: `body` with any rotation.
+fn read<T: Serialize>(current: &Current, body: T) -> Answer {
+    Ok(carry(Json(body).into_response(), current))
 }
 
 /// "Firefox · Android" from a User-Agent, as the server labels devices; None when unrecognised.
@@ -230,11 +254,8 @@ pub async fn logout(State(app): State<App>, headers: HeaderMap) -> Response {
 }
 
 /// `GET /api/public/session` with the session's `X-Kanade-CSRF`.
-pub async fn session(State(app): State<App>, method: Method, headers: HeaderMap) -> Response {
-    let current = match member(&app, &method, &headers).await {
-        Ok(current) => current,
-        Err(refused) => return *refused,
-    };
+pub async fn session(State(app): State<App>, method: Method, headers: HeaderMap) -> Answer {
+    let current = member(&app, &method, &headers).await?;
     let body = app
         .store
         .lock()
@@ -245,23 +266,18 @@ pub async fn session(State(app): State<App>, method: Method, headers: HeaderMap)
     if let Ok(token) = HeaderValue::from_str(&current.csrf) {
         response.headers_mut().insert(CSRF_HEADER, token);
     }
-    response
+    Ok(response)
 }
 
-pub async fn avatar(State(app): State<App>, method: Method, headers: HeaderMap) -> Response {
-    match member(&app, &method, &headers).await {
-        Ok(current) => carry(crate::avatars::public_member(&headers), &current),
-        Err(refused) => *refused,
-    }
+pub async fn avatar(State(app): State<App>, method: Method, headers: HeaderMap) -> Answer {
+    let current = member(&app, &method, &headers).await?;
+    Ok(carry(crate::avatars::public_member(&headers), &current))
 }
 
-pub async fn sessions(State(app): State<App>, method: Method, headers: HeaderMap) -> Response {
-    let current = match member(&app, &method, &headers).await {
-        Ok(current) => current,
-        Err(refused) => return *refused,
-    };
+pub async fn sessions(State(app): State<App>, method: Method, headers: HeaderMap) -> Answer {
+    let current = member(&app, &method, &headers).await?;
     let body = app.store.lock().await.public_sessions().list(&current.id);
-    carry(Json(body).into_response(), &current)
+    read(&current, body)
 }
 
 pub async fn end_one(
@@ -269,11 +285,8 @@ pub async fn end_one(
     method: Method,
     headers: HeaderMap,
     Path(handle): Path<String>,
-) -> Response {
-    let current = match member(&app, &method, &headers).await {
-        Ok(current) => current,
-        Err(refused) => return *refused,
-    };
+) -> Answer {
+    let current = member(&app, &method, &headers).await?;
     let ended = app
         .store
         .lock()
@@ -284,16 +297,16 @@ pub async fn end_one(
         Ok(()) => StatusCode::NO_CONTENT.into_response(),
         Err(refused) => outcome::<()>(Err(refused)),
     };
-    carry(response, &current)
+    Ok(carry(response, &current))
 }
 
 /// Sign out everywhere: every session of the member, this one too.
-pub async fn end_all(State(app): State<App>, method: Method, headers: HeaderMap) -> Response {
-    if let Err(refused) = member(&app, &method, &headers).await {
-        return *refused;
-    }
+pub async fn end_all(State(app): State<App>, method: Method, headers: HeaderMap) -> Answer {
+    member(&app, &method, &headers).await?;
     let ended = app.store.lock().await.public_sessions().end_all();
-    clear_cookie(Json(json!({ "ended": ended })).into_response())
+    Ok(clear_cookie(
+        Json(json!({ "ended": ended })).into_response(),
+    ))
 }
 
 /// `GET /api/public/week?week=`: absent or `this` is this boss week, `next`
@@ -303,11 +316,8 @@ pub async fn week(
     method: Method,
     headers: HeaderMap,
     Query(q): Query<HashMap<String, String>>,
-) -> Response {
-    let current = match member(&app, &method, &headers).await {
-        Ok(current) => current,
-        Err(refused) => return *refused,
-    };
+) -> Answer {
+    let current = member(&app, &method, &headers).await?;
     let next = match q.get("week").map(String::as_str) {
         None | Some("this") => false,
         Some("next") => true,
@@ -317,44 +327,32 @@ pub async fn week(
                 "invalid_query",
                 "A query parameter is not valid.",
             );
-            return carry(refused, &current);
+            return Ok(carry(refused, &current));
         }
     };
     let body = app.store.lock().await.member_week(next);
-    carry(Json(body).into_response(), &current)
+    read(&current, body)
 }
 
 /// `GET /api/public/me/allowance`: the caller's own chat allowance only.
-pub async fn allowance(State(app): State<App>, method: Method, headers: HeaderMap) -> Response {
-    let current = match member(&app, &method, &headers).await {
-        Ok(current) => current,
-        Err(refused) => return *refused,
-    };
+pub async fn allowance(State(app): State<App>, method: Method, headers: HeaderMap) -> Answer {
+    let current = member(&app, &method, &headers).await?;
     let body = app.store.lock().await.member_allowance();
-    carry(Json(body).into_response(), &current)
+    read(&current, body)
 }
 
 /// `GET /api/public/bosses`: the admin list as it is (no operator-only field).
-pub async fn bosses(State(app): State<App>, method: Method, headers: HeaderMap) -> Response {
-    let current = match member(&app, &method, &headers).await {
-        Ok(current) => current,
-        Err(refused) => return *refused,
-    };
+pub async fn bosses(State(app): State<App>, method: Method, headers: HeaderMap) -> Answer {
+    let current = member(&app, &method, &headers).await?;
     let body = app.store.lock().await.boss_rows();
-    carry(Json(body).into_response(), &current)
+    read(&current, body)
 }
 
 /// `GET /api/public/bosses/events`: event bosses as the admin read lists them.
-pub async fn boss_events(State(app): State<App>, method: Method, headers: HeaderMap) -> Response {
-    let current = match member(&app, &method, &headers).await {
-        Ok(current) => current,
-        Err(refused) => return *refused,
-    };
+pub async fn boss_events(State(app): State<App>, method: Method, headers: HeaderMap) -> Answer {
+    let current = member(&app, &method, &headers).await?;
     let catalog = app.store.lock().await.catalog().clone();
-    carry(
-        Json(app.knowledge.events(&catalog)).into_response(),
-        &current,
-    )
+    read(&current, app.knowledge.events(&catalog))
 }
 
 /// `GET /api/public/bosses/{key}/knowledge`: `PublicKnowledge` (no `path`, no `detail`).
@@ -363,17 +361,14 @@ pub async fn boss_knowledge(
     method: Method,
     headers: HeaderMap,
     Path(key): Path<String>,
-) -> Response {
-    let current = match member(&app, &method, &headers).await {
-        Ok(current) => current,
-        Err(refused) => return *refused,
-    };
+) -> Answer {
+    let current = member(&app, &method, &headers).await?;
     let found = app.store.lock().await.knowledge_v2(&app.knowledge, &key);
     let response = match found {
         Ok(knowledge) => Json(PublicKnowledge::from(knowledge)).into_response(),
         Err(_) => crate::api::not_found().await,
     };
-    carry(response, &current)
+    Ok(carry(response, &current))
 }
 
 /// A member write as the server's `admit`: the session and its token, the
@@ -385,14 +380,14 @@ pub(crate) async fn admit(
     method: &Method,
     headers: &HeaderMap,
     fresh: bool,
-) -> Result<(Current, String), Box<Response>> {
+) -> Result<(Current, String), Refusal> {
     let current = member(app, method, headers).await?;
     let key = match crate::writes::key(headers) {
         Ok(Some(key)) => key,
         refused => {
             let message = refused.err().unwrap_or("Send an Idempotency-Key.");
             let refused = error(StatusCode::BAD_REQUEST, "invalid_idempotency_key", message);
-            return Err(Box::new(carry(refused, &current)));
+            return Err(carry(refused, &current).into());
         }
     };
     if fresh && !app.store.lock().await.public_sessions().fresh(&current.id) {
@@ -401,7 +396,7 @@ pub(crate) async fn admit(
             "reauth_required",
             "Sign in with Discord again to make this change.",
         );
-        return Err(Box::new(carry(refused, &current)));
+        return Err(carry(refused, &current).into());
     }
     Ok((current, key))
 }
@@ -413,26 +408,19 @@ pub(crate) fn written<T: Serialize>(
     current: &Current,
     status: StatusCode,
     result: Result<T, MoveError>,
-) -> Response {
+) -> Answer {
     if result.is_ok() {
         app.hints.emit("inbox");
         app.hints.emit("schedule");
     }
-    let mut response = outcome(result);
-    if response.status().is_success() {
-        *response.status_mut() = status;
-    }
-    carry(response, current)
+    Ok(carry(outcome_with(status, result), current))
 }
 
 /// `GET /api/public/timings`: the weekly timings the member is on.
-pub async fn timings(State(app): State<App>, method: Method, headers: HeaderMap) -> Response {
-    let current = match member(&app, &method, &headers).await {
-        Ok(current) => current,
-        Err(refused) => return *refused,
-    };
+pub async fn timings(State(app): State<App>, method: Method, headers: HeaderMap) -> Answer {
+    let current = member(&app, &method, &headers).await?;
     let body = app.store.lock().await.member_timings(MEMBER_SEED_ID);
-    carry(Json(body).into_response(), &current)
+    read(&current, body)
 }
 
 #[derive(Deserialize)]
@@ -454,21 +442,11 @@ pub async fn hand_off(
     headers: HeaderMap,
     Path(id): Path<String>,
     body: Result<Json<HandOff>, JsonRejection>,
-) -> Response {
-    let (current, key) = match admit(&app, &method, &headers, true).await {
-        Ok(admitted) => admitted,
-        Err(refused) => return *refused,
-    };
+) -> Answer {
+    let (current, key) = admit(&app, &method, &headers, true).await?;
     let to = match body {
         Ok(Json(HandOff { to })) if snowflake_shaped(&to) => to,
-        _ => {
-            let refused = error(
-                StatusCode::UNPROCESSABLE_ENTITY,
-                "invalid_body",
-                "The request body is not valid.",
-            );
-            return carry(refused, &current);
-        }
+        _ => return Err(carry(invalid_body(), &current).into()),
     };
     let result = app
         .store
@@ -485,11 +463,8 @@ pub async fn ask(
     method: Method,
     headers: HeaderMap,
     Path(id): Path<String>,
-) -> Response {
-    let (current, key) = match admit(&app, &method, &headers, false).await {
-        Ok(admitted) => admitted,
-        Err(refused) => return *refused,
-    };
+) -> Answer {
+    let (current, key) = admit(&app, &method, &headers, false).await?;
     let result = app.store.lock().await.member_ask(MEMBER_SEED_ID, &key, &id);
     let status = match result {
         Ok((true, _)) => StatusCode::CREATED,
@@ -498,17 +473,8 @@ pub async fn ask(
     written(&app, &current, status, result.map(|(_, request)| request))
 }
 
-async fn decide(
-    app: App,
-    method: Method,
-    headers: HeaderMap,
-    id: String,
-    accept: bool,
-) -> Response {
-    let (current, _) = match admit(&app, &method, &headers, accept).await {
-        Ok(admitted) => admitted,
-        Err(refused) => return *refused,
-    };
+async fn decide(app: App, method: Method, headers: HeaderMap, id: String, accept: bool) -> Answer {
+    let (current, _) = admit(&app, &method, &headers, accept).await?;
     let result = app
         .store
         .lock()
@@ -524,7 +490,7 @@ pub async fn accept(
     method: Method,
     headers: HeaderMap,
     Path(id): Path<String>,
-) -> Response {
+) -> Answer {
     decide(app, method, headers, id, true).await
 }
 
@@ -534,7 +500,7 @@ pub async fn decline(
     method: Method,
     headers: HeaderMap,
     Path(id): Path<String>,
-) -> Response {
+) -> Answer {
     decide(app, method, headers, id, false).await
 }
 
@@ -544,25 +510,18 @@ pub async fn withdraw(
     method: Method,
     headers: HeaderMap,
     Path(id): Path<String>,
-) -> Response {
-    let (current, _) = match admit(&app, &method, &headers, false).await {
-        Ok(admitted) => admitted,
-        Err(refused) => return *refused,
-    };
+) -> Answer {
+    let (current, _) = admit(&app, &method, &headers, false).await?;
     let result = app.store.lock().await.member_withdraw(MEMBER_SEED_ID, &id);
     written(&app, &current, StatusCode::OK, result)
 }
 
 /// `GET /art/{kind}/{key}` on the public origin: the admin listener's art,
 /// for a signed-in member while the portal is open (`closed` while closed).
-pub async fn art(app: &App, kind: &str, key: &str, headers: &HeaderMap) -> Response {
-    match member(app, &Method::GET, headers).await {
-        Ok(current) => carry(
-            crate::assets::serve_art(app, kind, key, headers).await,
-            &current,
-        ),
-        Err(refused) => *refused,
-    }
+pub async fn art(app: &App, kind: &str, key: &str, headers: &HeaderMap) -> Answer {
+    let current = member(app, &Method::GET, headers).await?;
+    let art = crate::assets::serve_art(app, kind, key, headers).await;
+    Ok(carry(art, &current))
 }
 
 /// Every other `/api/public/` path: `closed` while closed, else not mounted.
