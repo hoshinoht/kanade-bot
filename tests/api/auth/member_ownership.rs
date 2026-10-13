@@ -23,7 +23,7 @@ use super::member_support::{Browser, MemberHarness, Options, PUB_ORIGIN, discord
 use crate::{
     reads::Reads,
     schemas::assert_valid,
-    support::{PUBLIC_HOST, Reply, send},
+    support::{PUBLIC_HOST, Reply, send, strs},
 };
 
 const IP: &str = "198.51.100.10";
@@ -272,12 +272,7 @@ fn refused(reply: &Reply) -> (u16, String) {
 }
 
 fn ids(timing: &Value) -> Vec<&str> {
-    timing["requests"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|request| request["id"].as_str().unwrap())
-        .collect()
+    strs(&timing["requests"], "id")
 }
 
 #[tokio::test]

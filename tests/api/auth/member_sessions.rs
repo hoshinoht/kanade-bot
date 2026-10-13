@@ -23,7 +23,7 @@ use kanade::{
 };
 
 use super::member_support::{Browser, MIKAN, MemberHarness, PUB_ORIGIN, cookie, discord_user};
-use crate::support::{Fixture, PUBLIC_HOST, Reply, send, spawn_router};
+use crate::support::{Fixture, PUBLIC_HOST, Reply, find, send, spawn_router};
 
 const HOME: &str = "198.51.100.10";
 const MOBILE: &str = "203.0.113.77";
@@ -415,12 +415,7 @@ async fn ending_a_device_needs_this_origin_and_the_member_token() {
         )
         .await
         .json();
-    let handle = list["sessions"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|row| row["current"] == false)
-        .unwrap()["handle"]
+    let handle = find(&list["sessions"], "current", false)["handle"]
         .as_str()
         .unwrap()
         .to_owned();

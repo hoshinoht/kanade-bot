@@ -212,7 +212,11 @@ impl Reply {
 
 /// The entry of the JSON array `list` whose `field` equals `value`.
 #[track_caller]
-pub fn find<'a>(list: &'a serde_json::Value, field: &str, value: &str) -> &'a serde_json::Value {
+pub fn find<'a, V>(list: &'a serde_json::Value, field: &str, value: V) -> &'a serde_json::Value
+where
+    V: std::fmt::Display,
+    serde_json::Value: PartialEq<V>,
+{
     items(list)
         .iter()
         .find(|item| item[field] == value)

@@ -40,7 +40,7 @@ use crate::{
     auth::member_support::{Browser, PUB_ORIGIN},
     reads::{CharacterDataMaker, Reads},
     schemas::assert_valid,
-    support::{ADMIN_HOST, Reply, send},
+    support::{ADMIN_HOST, Reply, send, strs},
 };
 
 const MINE: &str = "/api/public/me/characters";
@@ -610,12 +610,7 @@ async fn members_add_edit_and_retire_only_their_own_characters() {
         )
         .await;
     let mine = chars.portal.read(&alice, MINE, MY_CHARACTERS).await;
-    let ids: Vec<&str> = mine["characters"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|row| row["id"].as_str().unwrap())
-        .collect();
+    let ids: Vec<&str> = strs(&mine["characters"], "id");
     assert!(!ids.contains(&bob.as_str()));
     assert_eq!(mine["pending"], json!([]), "Bob's request is his");
     for character in [bob.as_str(), "nobody"] {

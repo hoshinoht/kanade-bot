@@ -28,7 +28,7 @@ use serde_json::{Value, json};
 use crate::{
     reads::{EDGE_HEADERS, Reads},
     schemas::assert_valid,
-    support::{ADMIN_HOST, Reply, request, send},
+    support::{ADMIN_HOST, Reply, find, request, send, strs},
 };
 
 const ORIGIN: (&str, &str) = ("Origin", "https://kanade.test");
@@ -1540,12 +1540,7 @@ async fn an_approval_with_changes_retimes_leaves_out_and_tells_the_member() {
     let store = &inbox.reads.store;
     let id = timing_and_party(&inbox, "Saturdays suit everyone better.").await;
     let item = inbox.item(&id).await;
-    let requested: Vec<&str> = item["requested"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|change| change["id"].as_str().unwrap())
-        .collect();
+    let requested: Vec<&str> = strs(&item["requested"], "id");
     assert_eq!(requested, ["0.day_time", "0.party"]);
     assert_eq!(item["requested"][0]["asked"], json!("Sat 22:30"));
     assert_eq!(item["requested"][0]["now"], json!("Tue 22:00"));

@@ -13,7 +13,7 @@ use serde_json::{Value, json};
 use crate::{
     reads::Reads,
     schemas::assert_valid,
-    support::{ADMIN_HOST, Reply, send},
+    support::{ADMIN_HOST, Reply, find, send},
 };
 
 const ORIGIN: (&str, &str) = ("Origin", "https://kanade.test");
@@ -162,15 +162,7 @@ async fn planner_swap_is_atomic_replayable_and_revertible() {
     let before = reads
         .read("/api/admin/week?week=next", "week.json#/$defs/Week")
         .await;
-    let run = |id: &str| {
-        before["runs"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .find(|run| run["id"] == id)
-            .unwrap()
-            .clone()
-    };
+    let run = |id: &str| find(&before["runs"], "id", id).clone();
     let kalos = run("n-kalos");
     let own_time = run("n-star");
     let body = json!({"with": "n-star", "version": v});
@@ -238,12 +230,7 @@ async fn planner_swap_is_atomic_replayable_and_revertible() {
         .read("/api/admin/week?week=next", "week.json#/$defs/Week")
         .await;
     for original in [kalos, own_time] {
-        let current = restored["runs"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .find(|run| run["id"] == original["id"])
-            .unwrap();
+        let current = find(&restored["runs"], "id", original["id"].as_str().unwrap());
         assert_eq!(
             (current["day"].clone(), current["time"].clone()),
             (original["day"].clone(), original["time"].clone())
@@ -399,14 +386,7 @@ impl Reads {
         let fixed = self
             .read("/api/admin/fixed", "fixed.json#/$defs/FixedRows")
             .await;
-        let find = |rows: &Value, id: &str| {
-            rows.as_array()
-                .unwrap()
-                .iter()
-                .find(|row| row["id"] == id)
-                .unwrap()
-                .clone()
-        };
+        let find = |rows: &Value, id: &str| find(&rows, "id", id).clone();
         (find(&week["runs"], "r-kalos"), find(&fixed, "f-kalos"))
     }
 }

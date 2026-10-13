@@ -29,7 +29,7 @@ use serde_json::Value;
 use crate::{
     reads::Reads,
     schemas::assert_valid,
-    support::{ADMIN_HOST, Fixture, PUBLIC_HOST, public, request},
+    support::{ADMIN_HOST, Fixture, PUBLIC_HOST, find, public, request},
 };
 
 const SCHEMA: &str = "reminders.json#/$defs/ReminderPreview";
@@ -136,12 +136,7 @@ async fn reminders_carry_the_server_now_and_exact_fire_times() {
         .read("/api/admin/reminders", "reminders.json#/$defs/Reminders")
         .await;
     assert_eq!(list["generated_at"], "2026-09-29T04:00:00Z");
-    let row = list["upcoming"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|row| row["id"] == "m-kalos-15")
-        .unwrap();
+    let row = find(&list["upcoming"], "id", "m-kalos-15");
     assert_eq!(row["fire_at"], "2026-09-29T13:45:00Z");
     assert_eq!(row["at"], "Tue 29 Sep 21:45");
 }

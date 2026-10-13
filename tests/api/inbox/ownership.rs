@@ -55,13 +55,7 @@ async fn inbox_count(reads: &Reads) -> u64 {
 /// `(owner_id, owner_pinned)` of the seeded timing as `/api/admin/fixed` shows it.
 async fn owner(reads: &Reads) -> (String, bool) {
     let rows = get(reads, "/api/admin/fixed").await;
-    let row = rows
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|row| row["id"] == "f-kalos")
-        .unwrap()
-        .clone();
+    let row = find(&rows, "id", "f-kalos").clone();
     (
         row["owner_id"].as_str().unwrap().to_owned(),
         row["owner_pinned"].as_bool().unwrap(),

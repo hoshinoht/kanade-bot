@@ -8,7 +8,11 @@ use kanade::domain::scheduler::ScheduleStore;
 use serde_json::{Value, json};
 use sqlx::ConnectOptions;
 
-use crate::{reads::Reads, schemas::assert_valid, support::ADMIN_HOST, support::request};
+use crate::{
+    reads::Reads,
+    schemas::assert_valid,
+    support::{ADMIN_HOST, find, request},
+};
 
 const PAGE: &str = "history.json#/$defs/HistoryPage";
 const RECORD: &str = "history.json#/$defs/ChangeRecord";
@@ -30,13 +34,7 @@ impl Reads {
 
     async fn kalos(&self) -> Value {
         let week = self.read("/api/admin/week", "week.json#/$defs/Week").await;
-        week["runs"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .find(|run| run["id"] == "r-kalos")
-            .unwrap()
-            .clone()
+        find(&week["runs"], "id", "r-kalos").clone()
     }
 
     async fn plan(&self, path: &str, body: Value, extra: &[(&str, &str)]) -> Value {
