@@ -8,16 +8,14 @@ use kanade::domain::{
     notify::{
         DeliverySettings, DeliveryTarget, DispatchInput, DispatchPlan, due_reminders, plan_dispatch,
     },
-    schedule::{NewRun, RsvpSource, RsvpState, RunSource, RunStatus},
+    schedule::{RsvpSource, RsvpState},
     scheduler::{Clock, SchedulerError},
     time::isoformat,
 };
 use serde_json::{Value, json};
 
 use crate::{
-    common::{
-        self, Deviation, Service, assert_case, instant, run_ref, step_result, strings, text, utc,
-    },
+    common::{self, Deviation, Service, assert_case, instant, run_ref, step_result, text, utc},
     harness::{self, Journal, Outcome},
     invariants,
 };
@@ -182,24 +180,7 @@ async fn replay(case: &Value) -> Value {
     let mut steps = Vec::new();
     for step in input["steps"].as_array().expect("steps") {
         let result: Result<Value, SchedulerError> = match text(&step["op"]) {
-            "create_run" => {
-                let id = service
-                    .as_origin(kanade::domain::history::Origin::for_tests())
-                    .create_run(NewRun {
-                        fixed_run_id: None,
-                        channel_id: step["channel_id"].as_str().map(str::to_owned),
-                        week_start: utc(&step["week_start"]),
-                        datetime: utc(&step["at"]),
-                        bosses: strings(&step["bosses"]),
-                        participants: strings(&step["participants"]),
-                        status: RunStatus::parse(text(&step["status"])).unwrap(),
-                        source: RunSource::parse(text(&step["source"])).unwrap(),
-                    })
-                    .await
-                    .expect("create_run");
-                run_refs.insert(text(&step["run_key"]).to_owned(), id.clone());
-                Ok(json!(id))
-            }
+            "create_run" => Ok(harness::create_run(&mut service, step, &mut run_refs).await),
             "set_rsvp" => {
                 let run = run_ref(&run_refs, &step["run_key"]).to_owned();
                 let state = RsvpState::parse(text(&step["state"])).unwrap();

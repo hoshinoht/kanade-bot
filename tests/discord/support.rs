@@ -3,6 +3,7 @@
 
 use serde_json::{Value, json};
 use twilight_gateway::Event;
+use twilight_model::application::command::{Command, CommandType};
 use twilight_model::application::interaction::Interaction;
 use twilight_model::channel::message::Component;
 use twilight_model::channel::{Channel, Message};
@@ -203,6 +204,28 @@ pub fn debug_status(
         "debug",
         json!([{ "name": "status", "type": 1, "options": [] }]),
     )
+}
+
+/// A bare chat-input command definition named `name`.
+#[allow(deprecated)]
+pub fn plain_command(name: &str) -> Command {
+    Command {
+        application_id: None,
+        contexts: None,
+        default_member_permissions: None,
+        dm_permission: None,
+        description: "test".into(),
+        description_localizations: None,
+        guild_id: None,
+        id: None,
+        integration_types: None,
+        kind: CommandType::ChatInput,
+        name: name.into(),
+        name_localizations: None,
+        nsfw: None,
+        options: Vec::new(),
+        version: Id::new(1),
+    }
 }
 
 pub fn role_json(id: u64, permissions: u64) -> Value {

@@ -32,7 +32,9 @@ use kanade::infrastructure::character_data::{CharacterData, RequestOutcome, Rost
 use kanade::infrastructure::nexon::{ApiKey, NexonClient};
 use kanade::infrastructure::store::MemoryCharData;
 
-use super::super::support::{BOSSING_ROLE, message_json, parse, parse_message, user_json};
+use super::super::support::{
+    BOSSING_ROLE, message_json, parse, parse_message, user_json, v2_texts as texts,
+};
 use super::{ALICE, BOB, KALOS, Ports, Slash, focused, now, opt, sub};
 
 /// The bot's own user id (its posts are found by ref only when it wrote them).
@@ -185,20 +187,6 @@ async fn rig_with(connected: bool, character_module: bool) -> Rig {
 
 async fn rig() -> Rig {
     rig_with(true, true).await
-}
-
-/// Every text display, nested ones included.
-fn texts(components: &[Component]) -> Vec<String> {
-    let mut out = Vec::new();
-    for component in components {
-        match component {
-            Component::TextDisplay(display) => out.push(display.content.clone()),
-            Component::Container(container) => out.extend(texts(&container.components)),
-            Component::Section(section) => out.extend(texts(&section.components)),
-            _ => {}
-        }
-    }
-    out
 }
 
 /// Every button as `(label, custom id)`.

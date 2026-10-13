@@ -9,7 +9,7 @@ use kanade::domain::{
         DeliverySettings, DeliveryTarget, DigestAction, DigestPostInput, DigestSend, RecordReason,
         WeekReset, WeeklyDigest, plan_digest_post, plan_digest_tick, retire_digests_before,
     },
-    schedule::{NewFixedRun, NewRun, ReminderPolicy, RunSource, RunStatus},
+    schedule::{NewFixedRun, ReminderPolicy, RunStatus},
     scheduler::{Clock, SchedulerError},
     time::{isoformat, to_iso},
     weeks,
@@ -241,24 +241,7 @@ async fn replay(case: &Value) -> Value {
                 fixed_refs.insert(text(&step["fixed_key"]).to_owned(), id.clone());
                 Ok(json!(id))
             }
-            "create_run" => {
-                let id = service
-                    .as_origin(kanade::domain::history::Origin::for_tests())
-                    .create_run(NewRun {
-                        fixed_run_id: None,
-                        channel_id: step["channel_id"].as_str().map(str::to_owned),
-                        week_start: utc(&step["week_start"]),
-                        datetime: utc(&step["at"]),
-                        bosses: strings(&step["bosses"]),
-                        participants: strings(&step["participants"]),
-                        status: RunStatus::parse(text(&step["status"])).unwrap(),
-                        source: RunSource::parse(text(&step["source"])).unwrap(),
-                    })
-                    .await
-                    .expect("create_run");
-                run_refs.insert(text(&step["run_key"]).to_owned(), id.clone());
-                Ok(json!(id))
-            }
+            "create_run" => Ok(harness::create_run(&mut service, step, &mut run_refs).await),
             "set_status" => {
                 let run = run_ref(&run_refs, &step["run_key"]).to_owned();
                 let status = RunStatus::parse(text(&step["status"])).unwrap();

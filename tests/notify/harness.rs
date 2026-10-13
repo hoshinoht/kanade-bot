@@ -1,16 +1,18 @@
 //! Test stand-ins for what the notify core leaves to later slices: the roster,
 //! the delivery journal and the Discord transport.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use kanade::domain::{
+    history::Origin,
     ids::short_id,
     members::{Member, PingLevel, Roster},
     notify::{DeliveryTarget, DeliveryWarning, IntentContent, PlannedSend, SendDisposition},
+    schedule::{NewRun, RunSource, RunStatus},
 };
 use serde_json::{Value, json};
 
-use crate::common::{strings, text};
+use crate::common::{Service, strings, text, utc};
 
 /// v4's first stub message id.
 const FIRST_MESSAGE_ID: u64 = 700_000_000_000_000_001;
@@ -34,6 +36,30 @@ pub fn channels(input: &Value) -> BTreeSet<String> {
     strings(&input["available_channel_ids"])
         .into_iter()
         .collect()
+}
+
+/// The vectors' `create_run` step: the new run's id, kept under its `run_key`.
+pub async fn create_run(
+    service: &mut Service,
+    step: &Value,
+    run_refs: &mut BTreeMap<String, String>,
+) -> Value {
+    let id = service
+        .as_origin(Origin::for_tests())
+        .create_run(NewRun {
+            fixed_run_id: None,
+            channel_id: step["channel_id"].as_str().map(str::to_owned),
+            week_start: utc(&step["week_start"]),
+            datetime: utc(&step["at"]),
+            bosses: strings(&step["bosses"]),
+            participants: strings(&step["participants"]),
+            status: RunStatus::parse(text(&step["status"])).unwrap(),
+            source: RunSource::parse(text(&step["source"])).unwrap(),
+        })
+        .await
+        .expect("create_run");
+    run_refs.insert(text(&step["run_key"]).to_owned(), id.clone());
+    json!(id)
 }
 
 /// What executing one planned send did.
