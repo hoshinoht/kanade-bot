@@ -10,12 +10,12 @@ use kanade::domain::{
     },
     scheduler::{ScheduleStore, SchedulerService, Scope},
 };
-use kanade::infrastructure::store::MemoryScheduleStore;
+use kanade::infrastructure::store::SqliteStore;
 
 use crate::common::TestClock;
 use crate::support::{CountingIds, by_tests, hm};
 
-type Service = SchedulerService<MemoryScheduleStore, CountingIds, TestClock>;
+type Service = SchedulerService<SqliteStore, CountingIds, TestClock>;
 
 fn kl(y: i32, mo: u32, d: u32, h: u32, mi: u32) -> DateTime<FixedOffset> {
     FixedOffset::east_opt(8 * 3600)
@@ -32,9 +32,9 @@ fn policy(zone: Tz, ping: NaiveTime) -> ReminderPolicy {
     }
 }
 
-fn service(clock: &TestClock) -> Service {
+async fn service(clock: &TestClock) -> Service {
     SchedulerService::new(
-        MemoryScheduleStore::new(),
+        SqliteStore::open_temp().await,
         CountingIds::default(),
         clock.clone(),
     )
@@ -69,7 +69,7 @@ fn due(state: &ScheduleSnapshot, now: DateTime<Utc>) -> Vec<String> {
 #[tokio::test]
 async fn materialising_twice_yields_an_identical_snapshot() {
     let clock = TestClock::new(kl(2026, 8, 27, 1, 0));
-    let mut service = service(&clock);
+    let mut service = service(&clock).await;
     let policy = policy(Kuala_Lumpur, hm(9, 0));
     by_tests(&mut service)
         .add_fixed_run(weekly(Weekday::Mon, hm(21, 30), &["HFA"]))
@@ -133,7 +133,7 @@ async fn a_tick_free_restart_creates_no_due_reminders_for_past_slots() {
     // Cold start after every ping of Monday 21:30 passed: rows are born sent,
     // and a slot more than two hours past is not created at all.
     let clock = TestClock::new(late);
-    let mut cold = service(&clock);
+    let mut cold = service(&clock).await;
     by_tests(&mut cold)
         .add_fixed_run(weekly(Weekday::Mon, hm(21, 30), &["HFA"]))
         .await
@@ -163,7 +163,7 @@ async fn a_tick_free_restart_creates_no_due_reminders_for_past_slots() {
     // Materialised in the morning, then down without a tick until 21:20: the
     // restart adds nothing, and the backlog it finds is judged by staleness.
     let clock = TestClock::new(kl(2026, 8, 31, 8, 0));
-    let mut warm = service(&clock);
+    let mut warm = service(&clock).await;
     by_tests(&mut warm)
         .add_fixed_run(weekly(Weekday::Mon, hm(21, 30), &["HFA"]))
         .await
@@ -201,7 +201,7 @@ async fn a_tick_free_restart_creates_no_due_reminders_for_past_slots() {
 #[tokio::test]
 async fn cancelled_and_done_runs_keep_no_pending_reminders() {
     let clock = TestClock::new(kl(2026, 8, 27, 1, 0));
-    let mut service = service(&clock);
+    let mut service = service(&clock).await;
     let policy = policy(Kuala_Lumpur, hm(9, 0));
     let weeks = [kl(2026, 8, 27, 0, 0), kl(2026, 9, 3, 0, 0)];
     let retired = by_tests(&mut service)
@@ -313,7 +313,8 @@ async fn a_reset_inside_a_dst_gap_materialises_like_v4() {
     let (mut service, _clock) = crate::common::service(&json!({
         "clock": "2026-03-08T07:40:00+00:00",
         "uuid_sequence": ids,
-    }));
+    }))
+    .await;
     let policy = SchedulePolicy::new(
         ReminderPolicy {
             zone: New_York,

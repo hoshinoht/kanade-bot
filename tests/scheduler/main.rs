@@ -1,5 +1,5 @@
-//! The v5 scheduler service over the in-memory store: mutations, drafts,
-//! proposals, requests, attendance, store conformance and invariants.
+//! The v5 scheduler service over a temp SQLite store: mutations, drafts,
+//! proposals, requests, attendance and invariants.
 
 mod attendance_v5;
 mod draft_service;
@@ -17,10 +17,3 @@ mod support;
 // Pinned clock/ids and snapshots shared with other targets.
 #[path = "../common/mod.rs"]
 mod common;
-
-use kanade::infrastructure::store::{MemoryScheduleStore, conformance};
-
-#[tokio::test]
-async fn memory_store_passes_the_store_conformance_suite() {
-    conformance::run_suite(async || MemoryScheduleStore::new()).await;
-}

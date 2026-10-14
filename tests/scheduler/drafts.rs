@@ -19,7 +19,7 @@ use kanade::domain::{
     },
     scheduler::SchedulerService,
 };
-use kanade::infrastructure::store::MemoryScheduleStore;
+use kanade::infrastructure::store::SqliteStore;
 use serde_json::{Value, json};
 
 use crate::common::TestClock;
@@ -28,7 +28,7 @@ use crate::support::{
     owned, policy, rsvp, snapshot, swap, utc, weekly,
 };
 
-type Service = SchedulerService<MemoryScheduleStore, CountingIds, TestClock>;
+type Service = SchedulerService<SqliteStore, CountingIds, TestClock>;
 
 fn id(target: &Target) -> &str {
     match target {

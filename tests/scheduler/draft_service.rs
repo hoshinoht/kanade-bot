@@ -1,4 +1,4 @@
-//! Administrator drafts over the in-memory store: staging, preview,
+//! Administrator drafts over a temp SQLite store: staging, preview,
 //! rebase, merge, expiry and their errors. Nothing here touches the network,
 //! and previews never write.
 
@@ -26,7 +26,7 @@ use kanade::domain::scheduler::{
     Committed, DraftError, DraftResult, MergeOutcome, RecordedRequest, ScheduleStore,
     SchedulerService, Scope, StoreError,
 };
-use kanade::infrastructure::store::MemoryScheduleStore;
+use kanade::infrastructure::store::SqliteStore;
 
 use crate::common::TestClock;
 use crate::support::{
@@ -35,7 +35,7 @@ use crate::support::{
 };
 
 type Svc<S> = SchedulerService<S, RandomIds, TestClock>;
-type Service = Svc<MemoryScheduleStore>;
+type Service = Svc<SqliteStore>;
 
 async fn head_seq(service: &Service) -> u64 {
     service.store().history_head().await.unwrap().seq
@@ -464,9 +464,17 @@ async fn a_history_gap_is_refused() {
         .await
         .unwrap();
     let tip = f.service.store().history_head().await.unwrap();
-    f.service.store().tamper_change(tip.seq, |record| {
-        record.notices.push("forged".into());
-    });
+    f.service
+        .store()
+        .temp_dir()
+        .raw(&format!(
+            "DROP TRIGGER change_log_no_update;
+             UPDATE change_log SET body = replace(body, '\"notices\":[]', '\"notices\":[\"forged\"]')
+             WHERE seq = {};",
+            tip.seq
+        ))
+        .await
+        .expect("tamper");
     assert!(matches!(
         preview(&f.service, &id).await,
         Err(DraftError::HistoryGap(_))
@@ -867,7 +875,7 @@ async fn an_upstream_move_into_a_past_week_expires_the_draft_at_merge() {
 
 /// A store failing the first merge commit with a revision conflict.
 struct Racy<'a> {
-    inner: &'a MemoryScheduleStore,
+    inner: &'a SqliteStore,
     attempts: AtomicUsize,
     race: Race,
 }

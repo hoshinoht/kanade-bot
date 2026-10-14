@@ -17,12 +17,12 @@ use kanade::domain::scheduler::{
     Attributed, DeclineNoticeContext, ScheduleStore, SchedulerError, SchedulerService, Scope,
 };
 use kanade::domain::settings::RunLengths;
-use kanade::infrastructure::store::MemoryScheduleStore;
+use kanade::infrastructure::store::SqliteStore;
 
 use crate::common::{SeqIds, TestClock};
 use crate::support::by_tests;
 
-type Service = SchedulerService<MemoryScheduleStore, SeqIds, TestClock>;
+type Service = SchedulerService<SqliteStore, SeqIds, TestClock>;
 
 const ALICE: &str = "1001";
 const BOB: &str = "1002";
@@ -65,7 +65,7 @@ struct World {
 
 impl World {
     /// A handle for one mutation attributed to the tests.
-    fn op(&mut self) -> Attributed<'_, MemoryScheduleStore, SeqIds, TestClock> {
+    fn op(&mut self) -> Attributed<'_, SqliteStore, SeqIds, TestClock> {
         by_tests(&mut self.service)
     }
 }
@@ -79,7 +79,7 @@ fn ids() -> SeqIds {
 /// with the clock at `now`.
 async fn world(status: RunStatus, now: DateTime<Utc>) -> World {
     let clock = TestClock::new(utc(1, 0, 0).fixed_offset());
-    let mut service = SchedulerService::new(MemoryScheduleStore::new(), ids(), clock.clone())
+    let mut service = SchedulerService::new(SqliteStore::open_temp().await, ids(), clock.clone())
         .with_run_ends(RunEndsSource::fixed(RunLengths::default(), None, policy()));
     let fixed = by_tests(&mut service)
         .add_fixed_run(NewFixedRun {

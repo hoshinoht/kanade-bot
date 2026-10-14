@@ -1,4 +1,4 @@
-//! Member requests over the in-memory store: submit, limits, withdraw,
+//! Member requests over a temp SQLite store: submit, limits, withdraw,
 //! admin edit, approve (merge) and reject, expiry and requester notices.
 
 use std::collections::BTreeMap;
@@ -26,7 +26,7 @@ use kanade::domain::scheduler::{
     Approved, Committed, DraftError, MergeWarning, RecordedRequest, RequestError, RequestPreview,
     RequestResult, ScheduleStore, SchedulerService, Scope, SkipReason, StoreError,
 };
-use kanade::infrastructure::store::MemoryScheduleStore;
+use kanade::infrastructure::store::SqliteStore;
 
 use crate::common::TestClock;
 use crate::support::{
@@ -35,7 +35,7 @@ use crate::support::{
 };
 
 type Svc<S> = SchedulerService<S, RandomIds, TestClock>;
-type Service = Svc<MemoryScheduleStore>;
+type Service = Svc<SqliteStore>;
 
 struct Frozen(&'static str);
 
@@ -757,7 +757,7 @@ enum Twist {
 }
 
 struct Twisted<'a> {
-    inner: &'a MemoryScheduleStore,
+    inner: &'a SqliteStore,
     twist: Twist,
     fixed: String,
     requester: String,

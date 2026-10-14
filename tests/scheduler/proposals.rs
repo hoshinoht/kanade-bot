@@ -1,4 +1,4 @@
-//! Extractor and chatbot proposals over the in-memory store: who may
+//! Extractor and chatbot proposals over a temp SQLite store: who may
 //! approve, idempotent approval, supersede, up-front refusal, refusals at ✅
 //! when the schedule moved, attendance rules and TTL expiry.
 
@@ -21,12 +21,12 @@ use kanade::domain::scheduler::{
     DraftError, ProposalApproved, ProposalError, ProposalPreview, ProposalRequest, RequestError,
     SchedulerService, Supersede,
 };
-use kanade::infrastructure::store::MemoryScheduleStore;
+use kanade::infrastructure::store::SqliteStore;
 
 use crate::common::TestClock;
 use crate::support::{self, by_tests, snapshot, utc};
 
-type Service = SchedulerService<MemoryScheduleStore, RandomIds, TestClock>;
+type Service = SchedulerService<SqliteStore, RandomIds, TestClock>;
 
 struct Guild;
 
@@ -79,8 +79,9 @@ struct Fixture {
 async fn fixture(attendance: AttendancePolicy) -> Fixture {
     let clock = TestClock::new(kl(8, 27, 1, 0));
     let policy = policy(attendance);
-    let mut service = SchedulerService::new(MemoryScheduleStore::new(), RandomIds, clock.clone())
-        .with_attendance(attendance);
+    let mut service =
+        SchedulerService::new(SqliteStore::open_temp().await, RandomIds, clock.clone())
+            .with_attendance(attendance);
     let week = utc(kl(8, 27, 0, 0));
     let run = by_tests(&mut service)
         .create_run(NewRun {

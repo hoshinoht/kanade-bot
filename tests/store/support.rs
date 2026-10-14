@@ -1,7 +1,6 @@
 //! Fresh, self-removing temp directories and store fixtures.
 
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicUsize, Ordering};
 
 use chrono::{DateTime, NaiveTime, TimeZone, Utc, Weekday};
 use kanade::domain::schedule::{
@@ -65,30 +64,6 @@ pub const LATE_SCHEMA_DROPS: &str = "
     DROP TABLE roster_characters;
     ALTER TABLE fixed_runs DROP COLUMN owner_pinned;
 ";
-
-/// Fresh SQLite stores for a conformance suite: one database per store
-/// the suite asks for, all in one temp directory.
-pub struct FreshStores {
-    dir: TempDir,
-    next: AtomicUsize,
-    prefix: &'static str,
-}
-
-impl FreshStores {
-    pub fn new(prefix: &'static str) -> Self {
-        Self {
-            dir: TempDir::new(),
-            next: AtomicUsize::new(0),
-            prefix,
-        }
-    }
-
-    pub async fn open(&self) -> SqliteStore {
-        let n = self.next.fetch_add(1, Ordering::Relaxed);
-        let config = self.dir.config(&format!("{}-{n}", self.prefix));
-        SqliteStore::open(&config).await.expect("fresh store opens")
-    }
-}
 
 /// Entries of `dir` whose name marks a staging leftover.
 pub fn partials(dir: &Path) -> Vec<String> {

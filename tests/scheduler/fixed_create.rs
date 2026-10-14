@@ -7,18 +7,22 @@ use kanade::domain::history::{ChangeHistory, Origin, RowKey};
 use kanade::domain::ids::RandomIds;
 use kanade::domain::schedule::NewFixedRun;
 use kanade::domain::scheduler::{ScheduleStore, SchedulerError, SchedulerService, Scope};
-use kanade::infrastructure::store::MemoryScheduleStore;
+use kanade::infrastructure::store::SqliteStore;
 
 use crate::common::TestClock;
 use crate::support::{by_tests, hm, policy, weekly};
 
 /// On Sun 27 Sep 01:00 in Kuala Lumpur.
-fn service() -> SchedulerService<MemoryScheduleStore, RandomIds, TestClock> {
+async fn service() -> SchedulerService<SqliteStore, RandomIds, TestClock> {
     let now = FixedOffset::east_opt(8 * 3600)
         .unwrap()
         .with_ymd_and_hms(2026, 9, 27, 1, 0, 0)
         .unwrap();
-    SchedulerService::new(MemoryScheduleStore::new(), RandomIds, TestClock::new(now))
+    SchedulerService::new(
+        SqliteStore::open_temp().await,
+        RandomIds,
+        TestClock::new(now),
+    )
 }
 
 fn timing() -> NewFixedRun {
@@ -27,7 +31,7 @@ fn timing() -> NewFixedRun {
 
 #[tokio::test]
 async fn a_failed_create_leaves_neither_the_timing_nor_its_runs() {
-    let mut service = service();
+    let mut service = service().await;
     let head = service.store().history_head().await.unwrap();
     service.store().fail_commit_after(0);
     let refused = by_tests(&mut service)
@@ -43,7 +47,7 @@ async fn a_failed_create_leaves_neither_the_timing_nor_its_runs() {
 
 #[tokio::test]
 async fn a_create_writes_the_timing_and_its_runs_in_one_change_record() {
-    let mut service = service();
+    let mut service = service().await;
     let head = service.store().history_head().await.unwrap().seq;
     let fixed_id = service
         .as_origin(Origin::for_tests().with_request_id("create-1"))
@@ -92,7 +96,7 @@ async fn a_create_writes_the_timing_and_its_runs_in_one_change_record() {
 
 #[tokio::test]
 async fn a_key_a_plain_create_recorded_still_replays() {
-    let mut service = service();
+    let mut service = service().await;
     service
         .as_origin(Origin::for_tests().with_request_id("legacy"))
         .add_fixed_run(timing())

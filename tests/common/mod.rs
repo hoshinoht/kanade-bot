@@ -1,5 +1,5 @@
 //! Support shared by several test targets: pinned clock/id seams, a
-//! scheduler over the in-memory store, JSON field readers and structural
+//! scheduler over a temp SQLite store, JSON field readers and structural
 //! schedule checks. Each target uses a different subset.
 #![allow(dead_code)]
 
@@ -14,10 +14,10 @@ use kanade::domain::{
     time::{IsoDateTime, to_iso},
     weeks,
 };
-use kanade::infrastructure::store::MemoryScheduleStore;
+use kanade::infrastructure::store::SqliteStore;
 use serde_json::Value;
 
-pub type Service<S = MemoryScheduleStore> = SchedulerService<S, SeqIds, TestClock>;
+pub type Service<S = SqliteStore> = SchedulerService<S, SeqIds, TestClock>;
 
 /// A fixed UUID sequence; running out fails the test.
 /// Clones share one cursor so a test can draw ids the service did not.
@@ -69,14 +69,14 @@ impl Clock for TestClock {
     }
 }
 
-pub fn service(input: &Value) -> (Service, TestClock) {
-    let (service, clock, _) = service_with_ids(input);
+pub async fn service(input: &Value) -> (Service, TestClock) {
+    let (service, clock, _) = service_with_ids(input).await;
     (service, clock)
 }
 
 /// A scheduler at `input.clock` drawing ids from `input.uuid_sequence`.
-pub fn service_with_ids(input: &Value) -> (Service, TestClock, SeqIds) {
-    service_over(MemoryScheduleStore::new(), input)
+pub async fn service_with_ids(input: &Value) -> (Service, TestClock, SeqIds) {
+    service_over(SqliteStore::open_temp().await, input)
 }
 
 /// [`service_with_ids`] over `store`.

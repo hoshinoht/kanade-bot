@@ -19,7 +19,7 @@ use kanade::domain::schedule::{
     ScheduleError, SchedulePolicy, StatusChange,
 };
 use kanade::domain::scheduler::{DraftError, PickError, SchedulerError, SchedulerService};
-use kanade::infrastructure::store::MemoryScheduleStore;
+use kanade::infrastructure::store::SqliteStore;
 
 use crate::common::TestClock;
 use crate::support::{CountingIds, hm, snapshot, swap, weekly};
@@ -40,7 +40,7 @@ impl Directory for Guild {
     }
 }
 
-type Service = SchedulerService<MemoryScheduleStore, CountingIds, TestClock>;
+type Service = SchedulerService<SqliteStore, CountingIds, TestClock>;
 
 fn kl(month: u32, day: u32, hour: u32, minute: u32) -> DateTime<FixedOffset> {
     FixedOffset::east_opt(8 * 3600)
@@ -93,7 +93,7 @@ impl Fixture {
 async fn fixture_with(attendance: AttendancePolicy, party: &[&str]) -> Fixture {
     let clock = TestClock::new(kl(8, 27, 1, 0));
     let mut service = SchedulerService::new(
-        MemoryScheduleStore::new(),
+        SqliteStore::open_temp().await,
         CountingIds::default(),
         clock.clone(),
     )

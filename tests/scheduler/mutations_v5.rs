@@ -12,7 +12,7 @@ use kanade::domain::schedule::{
     ScheduleSnapshot, StatusChange,
 };
 use kanade::domain::scheduler::{SchedulerError, SchedulerResult, SchedulerService};
-use kanade::infrastructure::store::MemoryScheduleStore;
+use kanade::infrastructure::store::SqliteStore;
 
 use crate::common::{TestClock, assert_sound};
 use crate::support::{
@@ -20,7 +20,7 @@ use crate::support::{
     snapshot, utc, weekly,
 };
 
-type Service = SchedulerService<MemoryScheduleStore, CountingIds, TestClock>;
+type Service = SchedulerService<SqliteStore, CountingIds, TestClock>;
 
 /// [`one_timing`] with the 14 Sep run cancelled: runs by week are 31 Aug,
 /// 7 Sep (amended to Wed 9 Sep 21:00) and 14 Sep (cancelled).
@@ -117,8 +117,11 @@ fn per_run(entries: &[(&str, AmendedRunChoice)]) -> FixedEditChoices {
 #[tokio::test]
 async fn weekly_timing_add_and_remove_enqueue_notices_once_in_memory() {
     let clock = TestClock::new(kl(27, 1, 0));
-    let mut service =
-        SchedulerService::new(MemoryScheduleStore::new(), CountingIds::default(), clock);
+    let mut service = SchedulerService::new(
+        SqliteStore::open_temp().await,
+        CountingIds::default(),
+        clock,
+    );
     let timing = || weekly("222", Weekday::Mon, hm(21, 30), &["1001"]);
     let keyed = |key: &str| Origin::for_tests().with_request_id(key);
     let added = service

@@ -19,16 +19,15 @@ use kanade::domain::scheduler::{
     Committed, DraftError, ProposalError, ProposalRequest, RecordedRequest, ScheduleStore,
     SchedulerService, Scope, StoreError, Supersede,
 };
-use kanade::infrastructure::store::MemoryScheduleStore;
+use kanade::infrastructure::store::SqliteStore;
 
 use crate::common::TestClock;
 use crate::support;
 
-/// The memory store, with materialise commits and proposal listing
-/// failing while `broken` is set (a crash between merge and follow-ups).
-#[derive(Default)]
+/// A store with materialise commits and proposal listing failing while
+/// `broken` is set (a crash between merge and follow-ups).
 struct Flaky {
-    inner: MemoryScheduleStore,
+    inner: SqliteStore,
     broken: AtomicBool,
 }
 
@@ -225,7 +224,10 @@ fn weekly(time: u32) -> ProposedChange {
 #[tokio::test]
 async fn a_repeated_approval_finishes_follow_ups_a_crash_left_undone() {
     let policy = support::policy();
-    let store = Flaky::default();
+    let store = Flaky {
+        inner: SqliteStore::open_temp().await,
+        broken: AtomicBool::new(false),
+    };
     let clock = TestClock::new(kl(27, 1));
     let mut service = SchedulerService::new(StoreRef(&store), RandomIds, clock.clone());
     let mut ids = Vec::new();

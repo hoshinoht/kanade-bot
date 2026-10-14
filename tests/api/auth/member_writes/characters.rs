@@ -28,7 +28,7 @@ use kanade::{
     infrastructure::{
         character_data::{CharacterData, ConfirmOutcome},
         scouter::JobState,
-        store::MemoryCharData,
+        store::SqliteCharData,
     },
 };
 use serde_json::{Value, json};
@@ -162,7 +162,7 @@ async fn fake_nexon() -> SocketAddr {
 struct Chars {
     portal: Portal,
     service: Arc<CharacterData>,
-    file: Arc<MemoryCharData>,
+    file: Arc<SqliteCharData>,
     skew: Arc<Mutex<TimeDelta>>,
     scouter: Option<crate::estimates::Fake>,
 }
@@ -181,7 +181,7 @@ impl Chars {
             (None, None)
         };
         let slot = Arc::new(OnceLock::new());
-        let file = Arc::new(MemoryCharData::new());
+        let file = Arc::new(SqliteCharData::open_temp().await);
         let skew = Arc::new(Mutex::new(TimeDelta::zero()));
         let module = maker(
             Arc::clone(&file),

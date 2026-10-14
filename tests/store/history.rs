@@ -1,5 +1,5 @@
-//! Change-history integrity: the append-only triggers, tamper detection on
-//! both stores, and chain continuity across restarts.
+//! Change-history integrity: the append-only triggers, tamper detection and
+//! chain continuity across restarts.
 
 use std::collections::BTreeSet;
 
@@ -10,7 +10,7 @@ use kanade::domain::history::{
 use kanade::domain::schedule::{Change, ReminderPolicy};
 use kanade::domain::scheduler::{ScheduleStore, SchedulerError, Scope};
 use kanade::infrastructure::store::{
-    BackupManifest, MemoryScheduleStore, SqliteStore, SqliteStoreConfig, SqliteStoreError,
+    BackupManifest, SqliteStore, SqliteStoreConfig, SqliteStoreError,
 };
 
 use crate::support::{TempDir, commit, create, fixed, raw, seed, tamper};
@@ -40,18 +40,6 @@ async fn broken_after(config: &SqliteStoreConfig, sql: &str) -> BrokenLink {
     let broken = verify(&store).await.first_broken.expect("detected");
     store.close().await.expect("close");
     broken
-}
-
-#[tokio::test]
-async fn memory_tampering_is_detected() {
-    let store = MemoryScheduleStore::new();
-    history(&store, 3).await;
-    assert!(verify(&store).await.is_intact());
-    store.tamper_change(2, |record| {
-        record.origin.actor = kanade::domain::history::Actor::member("impostor");
-    });
-    let broken = verify(&store).await.first_broken.expect("detected");
-    assert_eq!(broken.seq, 2, "{}", broken.reason);
 }
 
 #[tokio::test]
@@ -211,14 +199,6 @@ async fn revert_seq<S: ScheduleStore + ChangeHistory>(
 
 #[tokio::test]
 async fn a_tampered_record_is_never_reverted() {
-    let memory = MemoryScheduleStore::new();
-    history(&memory, 3).await;
-    memory.tamper_change(2, |record| record.notices.push("forged".into()));
-    assert_eq!(
-        revert_seq(memory, 2).await,
-        Err(SchedulerError::History(HistoryRefusal::Tampered(2)))
-    );
-
     let dir = TempDir::new();
     let config = dir.config("tampered-revert");
     let store = SqliteStore::open(&config).await.expect("opens");

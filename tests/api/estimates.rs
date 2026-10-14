@@ -25,7 +25,7 @@ use axum::{
 use kanade::infrastructure::{
     character_data::{CharacterData, ConfirmOutcome},
     scouter::{MAX_QUEUED, TIMEOUT},
-    store::MemoryCharData,
+    store::SqliteCharData,
 };
 use serde_json::{Value, json};
 use tokio::sync::Notify;
@@ -296,7 +296,7 @@ async fn serve(
     timeout: Duration,
 ) -> (Reads, Arc<CharacterData>) {
     let slot = Arc::new(std::sync::OnceLock::new());
-    let file = Arc::new(MemoryCharData::new());
+    let file = Arc::new(SqliteCharData::open_temp().await);
     let scouter = scouter.map(|address| (address, timeout));
     let module = maker(file, nexon, scouter, Arc::default(), Arc::clone(&slot));
     let reads = Reads::with_character_data(Some(config()), module).await;

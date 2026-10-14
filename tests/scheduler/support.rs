@@ -15,7 +15,7 @@ use kanade::domain::schedule::{
     ScheduleSnapshot,
 };
 use kanade::domain::scheduler::{Attributed, Clock, ScheduleStore, SchedulerService, Scope};
-use kanade::infrastructure::store::MemoryScheduleStore;
+use kanade::infrastructure::store::SqliteStore;
 
 use crate::common::TestClock;
 
@@ -173,7 +173,7 @@ pub fn kalos_run(fixed: Option<Target>, week_start: DateTime<Utc>) -> DraftOp {
 /// Weekly Mon 21:30 in 222 (party 1001, 1002) with runs for 31 Aug, 7 Sep
 /// and 14 Sep; the 7 Sep run is amended to Wed 9 Sep 21:00.
 pub struct OneTiming {
-    pub service: SchedulerService<MemoryScheduleStore, CountingIds, TestClock>,
+    pub service: SchedulerService<SqliteStore, CountingIds, TestClock>,
     pub clock: TestClock,
     pub fixed: String,
     pub runs: [String; 3],
@@ -182,7 +182,7 @@ pub struct OneTiming {
 pub async fn one_timing() -> OneTiming {
     let clock = TestClock::new(kl(27, 1, 0));
     let mut service = SchedulerService::new(
-        MemoryScheduleStore::new(),
+        SqliteStore::open_temp().await,
         CountingIds::default(),
         clock.clone(),
     );
@@ -222,14 +222,14 @@ pub async fn one_timing() -> OneTiming {
 /// draws must never collide with stored rows, or the owner log renames the
 /// wrong rows.
 pub struct TwoTimings {
-    pub service: SchedulerService<MemoryScheduleStore, RandomIds, TestClock>,
+    pub service: SchedulerService<SqliteStore, RandomIds, TestClock>,
     pub fixed: [String; 2],
     pub runs: [[String; 3]; 2],
 }
 
 pub async fn two_timings() -> TwoTimings {
     let mut service = SchedulerService::new(
-        MemoryScheduleStore::new(),
+        SqliteStore::open_temp().await,
         RandomIds,
         TestClock::new(kl(27, 1, 0)),
     );
