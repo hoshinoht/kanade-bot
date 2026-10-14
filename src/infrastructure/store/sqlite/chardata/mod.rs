@@ -277,7 +277,7 @@ impl SqliteCharData {
             .map(snapshot)
             .transpose()
         })?;
-        // Checked on the decoded instants, as the memory store does.
+        // Freshness is checked against the decoded timestamps.
         Ok(found.filter(|snapshot| snapshot.is_fresh(now)))
     }
 

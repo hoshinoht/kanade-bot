@@ -164,8 +164,8 @@ impl Character {
         next.next_version(at, by)
     }
 
-    /// The shape both stores keep (SQLite by CHECK as well). Looser than
-    /// the input rules, so those can change without a migration.
+    /// The persisted shape, also enforced by SQLite CHECK constraints. Looser
+    /// than the input rules, so those can change without a migration.
     ///
     /// # Errors
     /// [`StoreError::Constraint`] naming the first bad field.

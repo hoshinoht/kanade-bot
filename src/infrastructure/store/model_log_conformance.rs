@@ -162,7 +162,7 @@ async fn reasoning_round_trips_with_independent_nulls_and_row_retention<S: Model
         assert_eq!(
             result.is_ok(),
             valid,
-            "reasoning counts have the same bound on both stores"
+            "reasoning counts follow the SQLite integer bound"
         );
         assert_eq!(
             store.load_extraction(&count_log.id).await.expect("load"),
@@ -177,7 +177,7 @@ async fn reasoning_round_trips_with_independent_nulls_and_row_retention<S: Model
         assert_eq!(
             result.is_ok(),
             valid,
-            "round counts have the same bound on both stores"
+            "round counts follow the SQLite integer bound"
         );
         assert_eq!(
             store.load_chat(&count_chat.id).await.expect("load"),

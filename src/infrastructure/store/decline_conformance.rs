@@ -1,4 +1,4 @@
-//! Decline-notice behaviour shared by SQLite and the in-memory store.
+//! Decline-notice behaviour exercised against the SQLite store.
 
 use chrono::{DateTime, TimeDelta, TimeZone, Utc};
 

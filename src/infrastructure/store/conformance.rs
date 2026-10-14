@@ -1,5 +1,5 @@
-//! The behaviour every [`ScheduleStore`] must show; a durable store runs the
-//! same [`run_suite`] as the in-memory one. Failures panic with the check name.
+//! The behaviour a [`ScheduleStore`] must show; the store conformance suite
+//! runs against SQLite. Failures panic with the check name.
 //!
 //! Checks that need delivery-journal state (an unproven-retired reminder
 //! never reopens) are in [`super::journal_conformance`].

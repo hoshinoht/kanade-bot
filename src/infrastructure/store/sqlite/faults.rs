@@ -1,6 +1,5 @@
-//! Test support: injected store failures and journal shortcuts. Each hook
-//! keeps the name and semantics of the memory store's, so a test only swaps
-//! the store type; a fault fails before anything is written.
+//! Test support: injected store failures and journal shortcuts. Each fault
+//! fails before anything is written.
 
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -48,7 +47,7 @@ fn injected(armed: bool, what: &str) -> Result<(), StoreError> {
 
 impl Faults {
     /// Every schedule commit (`commit`, `commit_with_decline_notices`),
-    /// replays included, as the memory store counts them.
+    /// including replays, consumes the configured failure count.
     pub(super) fn commit(&self) -> Result<(), StoreError> {
         let mut after = self
             .commit_after
@@ -210,7 +209,7 @@ impl SqliteStore {
     }
 
     async fn retire_bound_attempt(&self, attempt: &AttemptId) -> Result<(), JournalError> {
-        // The memory store records no instant; any real one will do.
+        // Test retirement needs only a timestamp for the recorded transition.
         let now = crate::api::auth::system_now();
         write_txn!(JournalError, journal::backend; self, tx,
             journal::release_and_retire(&mut tx, attempt, "test", "test retirement", now)

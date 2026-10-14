@@ -1,8 +1,7 @@
-//! Admin answers composed from several tables, each read as one snapshot:
-//! one read transaction on SQLite, one lock on the memory store. A write
-//! that lands while the answer is read is either wholly in it or wholly
-//! out, so one response never mixes revisions (History head, total and page
-//! with their settings saves; the Inbox count's proposals and requests).
+//! Admin answers composed from several tables are read in one SQLite
+//! transaction. A concurrent write is either wholly included or wholly
+//! excluded, so one response never mixes revisions (History head, total and
+//! page with their settings saves; the Inbox count's proposals and requests).
 
 use chrono::{DateTime, Utc};
 
