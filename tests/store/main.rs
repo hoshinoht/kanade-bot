@@ -1,0 +1,638 @@
+//! The SQLite store against the shared conformance suite, plus migrations,
+//! ownership, backup/restore and the scheduler's revision retry. Every test
+//! works in its own fresh temp directory.
+
+mod backup;
+mod chardata;
+mod drafts;
+mod failures;
+mod history;
+mod journal;
+mod migrate;
+mod model_logs;
+mod owner;
+mod retry;
+mod snapshots;
+mod support;
+
+use chrono::{NaiveTime, TimeZone, Utc, Weekday};
+use chrono_tz::Asia::Kuala_Lumpur;
+use kanade::domain::settings::{
+    RoleProfileAssignment, RuntimeSettings, Section, SettingsStore, keys, load_settings,
+    save_section,
+};
+use kanade::domain::{
+    history::{ChangeHistory, Origin, changed_fields},
+    ids::RandomIds,
+    notify::NoticeOutbox,
+    schedule::{NewRun, ReminderPolicy, RunSource, RunStatus, ScheduleError, SchedulePolicy},
+    scheduler::{Clock, ScheduleStore, SchedulerError, SchedulerService},
+};
+use kanade::infrastructure::store::{
+    MemoryCharData, MemoryScheduleStore, SqliteCharData, SqliteStore, attendance_conformance,
+    auth_audit_conformance, card_conformance, characters_conformance, chardata_conformance,
+    cherry_pick_conformance, conformance, decline_conformance, draft_conformance,
+    history_conformance, journal_conformance, members_conformance, model_log_conformance,
+    outbox_conformance, owner_request_conformance, picks_conformance, precondition_conformance,
+    proposal_conformance, replay_conformance, run_prompt_conformance, settings_conformance,
+    web_sessions_conformance,
+};
+
+use support::FreshStores;
+
+#[derive(Clone, Copy)]
+struct FixedClock(chrono::DateTime<Utc>);
+
+impl Clock for FixedClock {
+    fn now(&self) -> chrono::DateTime<Utc> {
+        self.0
+    }
+}
+
+fn swap_policy() -> SchedulePolicy {
+    SchedulePolicy::new(
+        ReminderPolicy {
+            zone: Kuala_Lumpur,
+            ping_time: NaiveTime::from_hms_opt(9, 0, 0).unwrap(),
+            countdowns: vec![60, 15],
+        },
+        Weekday::Thu,
+        NaiveTime::MIN,
+    )
+}
+
+async fn swap_conforms<S>(store: S) -> S
+where
+    S: ScheduleStore + ChangeHistory + NoticeOutbox,
+{
+    let at = |day, hour| {
+        Kuala_Lumpur
+            .with_ymd_and_hms(2026, 9, day, hour, 0, 0)
+            .unwrap()
+            .with_timezone(&Utc)
+    };
+    let policy = swap_policy();
+    let first_at = at(29, 20);
+    let second_at = at(30, 22);
+    let week_start = at(24, 0);
+    let mut service = SchedulerService::new(store, RandomIds, FixedClock(at(28, 12)));
+    let add = |datetime| NewRun {
+        fixed_run_id: None,
+        channel_id: Some("900".into()),
+        week_start,
+        datetime,
+        bosses: vec!["HFA".into()],
+        participants: vec!["1".into()],
+        status: RunStatus::Planned,
+        source: RunSource::Amend,
+    };
+    let first = service
+        .as_origin(Origin::for_tests())
+        .create_run(add(first_at))
+        .await
+        .unwrap();
+    let second = service
+        .as_origin(Origin::for_tests())
+        .create_run(add(second_at))
+        .await
+        .unwrap();
+    let head = service.store().history_head().await.unwrap().seq;
+    let origin = Origin::for_tests().with_request_id("swap-conformance");
+    let outcome = service
+        .as_origin(origin.clone())
+        .swap_run_slots(&first, &second, &policy)
+        .await
+        .unwrap();
+    assert_eq!(outcome.notices.len(), 2, "one move notice per run");
+    assert_eq!(outcome.value[0].run.datetime, second_at);
+    assert_eq!(outcome.value[1].run.datetime, first_at);
+    assert_eq!(service.store().history_head().await.unwrap().seq, head + 1);
+    let record = service
+        .store()
+        .load_change(head + 1)
+        .await
+        .unwrap()
+        .unwrap();
+    let fields = changed_fields(&record);
+    assert!(fields.contains(&(
+        kanade::domain::history::BlameTarget::Run(first.clone()),
+        "slot".into()
+    )));
+    assert!(fields.contains(&(
+        kanade::domain::history::BlameTarget::Run(second.clone()),
+        "slot".into()
+    )));
+    assert_eq!(service.store().outbox_notices().await.unwrap().len(), 2);
+    assert!(matches!(
+        service
+            .as_origin(origin)
+            .swap_run_slots(&first, &second, &policy)
+            .await,
+        Err(SchedulerError::AlreadyApplied { .. })
+    ));
+    assert_eq!(service.store().history_head().await.unwrap().seq, head + 1);
+    assert_eq!(service.store().outbox_notices().await.unwrap().len(), 2);
+    service.into_store()
+}
+
+async fn swap_respects_non_midnight_reset<S>(store: S) -> S
+where
+    S: ScheduleStore + ChangeHistory + NoticeOutbox,
+{
+    let at = |day, hour| {
+        Kuala_Lumpur
+            .with_ymd_and_hms(2026, 9, day, hour, 0, 0)
+            .unwrap()
+            .with_timezone(&Utc)
+    };
+    let mut policy = swap_policy();
+    policy.reset_time = NaiveTime::from_hms_opt(12, 0, 0).unwrap();
+    let week_start = at(24, 12);
+    let mut service = SchedulerService::new(store, RandomIds, FixedClock(at(24, 13)));
+    let add = |datetime, status| NewRun {
+        fixed_run_id: None,
+        channel_id: Some("900".into()),
+        week_start,
+        datetime,
+        bosses: vec!["HFA".into()],
+        participants: vec!["1".into()],
+        status,
+        source: RunSource::Amend,
+    };
+    let friday_morning = service
+        .as_origin(Origin::for_tests())
+        .create_run(add(at(25, 10), RunStatus::Otot))
+        .await
+        .unwrap();
+    let thursday_evening = service
+        .as_origin(Origin::for_tests())
+        .create_run(add(at(24, 20), RunStatus::Planned))
+        .await
+        .unwrap();
+    let head = service.store().history_head().await.unwrap().seq;
+    assert_eq!(
+        service
+            .as_origin(Origin::for_tests())
+            .swap_run_slots(&friday_morning, &thursday_evening, &policy)
+            .await
+            .unwrap_err(),
+        SchedulerError::Schedule(ScheduleError::SwapLeavesWeek)
+    );
+    assert_eq!(service.store().history_head().await.unwrap().seq, head);
+    assert!(service.store().outbox_notices().await.unwrap().is_empty());
+
+    let friday_afternoon = service
+        .as_origin(Origin::for_tests())
+        .create_run(add(at(25, 13), RunStatus::Planned))
+        .await
+        .unwrap();
+    let thursday_evening_safe = service
+        .as_origin(Origin::for_tests())
+        .create_run(add(at(24, 20), RunStatus::Planned))
+        .await
+        .unwrap();
+    let outcome = service
+        .as_origin(Origin::for_tests())
+        .swap_run_slots(&friday_afternoon, &thursday_evening_safe, &policy)
+        .await
+        .unwrap();
+    assert_eq!(outcome.value[0].run.datetime, at(24, 20));
+    assert_eq!(outcome.value[1].run.datetime, at(25, 13));
+    service.into_store()
+}
+
+#[tokio::test]
+async fn memory_slot_swap_conforms() {
+    let _ = swap_conforms(MemoryScheduleStore::new()).await;
+}
+
+#[tokio::test]
+async fn sqlite_slot_swap_conforms() {
+    let fresh = FreshStores::new("slot-swap");
+    let store = swap_conforms(fresh.open().await).await;
+    store.close().await.expect("store closes");
+}
+
+#[tokio::test]
+async fn memory_slot_swap_respects_non_midnight_reset() {
+    let _ = swap_respects_non_midnight_reset(MemoryScheduleStore::new()).await;
+}
+
+#[tokio::test]
+async fn sqlite_slot_swap_respects_non_midnight_reset() {
+    let fresh = FreshStores::new("slot-swap-non-midnight");
+    let store = swap_respects_non_midnight_reset(fresh.open().await).await;
+    store.close().await.expect("store closes");
+}
+
+#[tokio::test]
+async fn memory_members_conform() {
+    members_conformance::run_suite(async || MemoryScheduleStore::new()).await;
+}
+
+#[tokio::test]
+async fn memory_decline_notices_conform() {
+    decline_conformance::run_suite(async || MemoryScheduleStore::new()).await;
+}
+
+#[tokio::test]
+async fn sqlite_decline_notices_conform() {
+    let fresh = FreshStores::new("declines");
+    decline_conformance::run_suite(async || fresh.open().await).await;
+}
+
+#[tokio::test]
+async fn sqlite_members_conform() {
+    let fresh = FreshStores::new("members");
+    members_conformance::run_suite(async || fresh.open().await).await;
+}
+
+#[tokio::test]
+async fn memory_settings_conform() {
+    settings_conformance::run_suite(async || MemoryScheduleStore::new()).await;
+}
+
+#[tokio::test]
+async fn sqlite_settings_conform() {
+    let fresh = FreshStores::new("settings");
+    settings_conformance::run_suite(async || fresh.open().await).await;
+}
+
+#[tokio::test]
+async fn memory_replays_conform() {
+    replay_conformance::run_suite(async || MemoryScheduleStore::new()).await;
+}
+
+#[tokio::test]
+async fn sqlite_replays_conform() {
+    let fresh = FreshStores::new("replays");
+    replay_conformance::run_suite(async || fresh.open().await).await;
+}
+
+#[tokio::test]
+async fn memory_auth_audit_conforms() {
+    auth_audit_conformance::run_suite(async || MemoryScheduleStore::new()).await;
+}
+
+#[tokio::test]
+async fn sqlite_auth_audit_conforms() {
+    let fresh = FreshStores::new("audit");
+    auth_audit_conformance::run_suite(async || fresh.open().await).await;
+}
+
+#[tokio::test]
+async fn memory_owner_requests_conform() {
+    owner_request_conformance::run_suite(async || MemoryScheduleStore::new()).await;
+}
+
+#[tokio::test]
+async fn sqlite_owner_requests_conform() {
+    let fresh = FreshStores::new("owner-requests");
+    owner_request_conformance::run_suite(async || fresh.open().await).await;
+}
+
+#[tokio::test]
+async fn memory_run_prompts_conform() {
+    run_prompt_conformance::run_suite(async || MemoryScheduleStore::new()).await;
+}
+
+#[tokio::test]
+async fn sqlite_run_prompts_conform() {
+    let fresh = FreshStores::new("run-prompts");
+    run_prompt_conformance::run_suite(async || fresh.open().await).await;
+}
+
+#[tokio::test]
+async fn memory_characters_conform() {
+    characters_conformance::run_suite(async || MemoryScheduleStore::new()).await;
+}
+
+#[tokio::test]
+async fn sqlite_characters_conform() {
+    let fresh = FreshStores::new("characters");
+    characters_conformance::run_suite(async || fresh.open().await).await;
+}
+
+#[tokio::test]
+async fn memory_chardata_conforms() {
+    chardata_conformance::run_suite(async || MemoryCharData::new()).await;
+}
+
+#[tokio::test]
+async fn sqlite_chardata_conforms() {
+    let dir = support::TempDir::new();
+    let counter = std::sync::atomic::AtomicUsize::new(0);
+    chardata_conformance::run_suite(async || {
+        let n = counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        SqliteCharData::open(&dir.config(&format!("chardata-{n}")))
+            .await
+            .expect("fresh chardata file opens")
+    })
+    .await;
+}
+
+#[tokio::test]
+async fn memory_picks_conform() {
+    picks_conformance::run_suite(async || MemoryScheduleStore::new()).await;
+}
+
+#[tokio::test]
+async fn sqlite_picks_conform() {
+    let fresh = FreshStores::new("picks");
+    picks_conformance::run_suite(async || fresh.open().await).await;
+}
+
+/// A pick is stored, not recomputed: run and timing picks survive a
+/// reopen, and the character's delete after the reopen still drops both.
+#[tokio::test]
+async fn sqlite_picks_survive_reopen() {
+    use kanade::domain::characters::{
+        Character, CharacterChange, CharacterRecord, CharacterRole, CharacterStore, PickChange,
+        PickScope, PickWrite,
+    };
+    use kanade::domain::history::{Actor, Surface};
+
+    let dir = support::TempDir::new();
+    let config = dir.config("picks-reopen");
+    let at = Utc.with_ymd_and_hms(2026, 10, 12, 4, 0, 0).unwrap();
+    let record = CharacterRecord {
+        at,
+        actor: Actor::admin("token"),
+        surface: Surface::AdminPortal,
+    };
+    let store = SqliteStore::open(&config).await.expect("open store");
+    let lilac = Character {
+        id: "c-1".into(),
+        member_id: "1001".into(),
+        ign: "Lilac".into(),
+        world: "msea".into(),
+        class: None,
+        level: None,
+        role: CharacterRole::Main,
+        retired_at: None,
+        created_at: at,
+        updated_at: at,
+        updated_by: Actor::admin("token"),
+        version: 1,
+    };
+    store
+        .apply_character(CharacterChange::Create(lilac), record.clone())
+        .await
+        .expect("create");
+    let mut stored = Vec::new();
+    for (scope, target) in [(PickScope::Run, "r-1"), (PickScope::Timing, "f-1")] {
+        let picked = store
+            .apply_pick(
+                PickChange::Set {
+                    scope,
+                    target: target.into(),
+                    member_id: "1001".into(),
+                    character_id: "c-1".into(),
+                    version: 0,
+                },
+                record.clone(),
+            )
+            .await
+            .expect("pick");
+        let PickWrite::Picked(pick) = picked else {
+            panic!("picked: {picked:?}");
+        };
+        stored.push((scope, vec![target.to_owned()], pick));
+    }
+    store.close().await.expect("close store");
+
+    let reopened = SqliteStore::open(&config).await.expect("reopen store");
+    for (scope, targets, pick) in &stored {
+        assert_eq!(
+            reopened.picks(*scope, targets).await.unwrap(),
+            std::slice::from_ref(pick)
+        );
+    }
+    reopened
+        .apply_character(
+            CharacterChange::Delete {
+                id: "c-1".into(),
+                version: 1,
+            },
+            record,
+        )
+        .await
+        .expect("delete");
+    for (scope, targets, _) in &stored {
+        assert!(reopened.picks(*scope, targets).await.unwrap().is_empty());
+    }
+    reopened.close().await.expect("close reopened store");
+}
+
+#[tokio::test]
+async fn sqlite_profile_visibility_defaults_private_and_survives_reopen() {
+    let dir = support::TempDir::new();
+    let config = dir.config("profile-visibility");
+    let store = SqliteStore::open(&config).await.expect("fresh store opens");
+    assert!(
+        load_settings(&store, &RuntimeSettings::default())
+            .await
+            .expect("default settings")
+            .persona
+            .profile_visibility
+            .is_empty()
+    );
+    store
+        .put_settings_rows(vec![(
+            keys::PROFILE_VISIBILITY.to_owned(),
+            "bold,calm,bold".to_owned(),
+        )])
+        .await
+        .expect("save visibility");
+    store.close().await.expect("close store");
+
+    let reopened = SqliteStore::open(&config).await.expect("reopen store");
+    let settings = load_settings(&reopened, &RuntimeSettings::default())
+        .await
+        .expect("reopened settings");
+    assert_eq!(settings.persona.profile_visibility, ["bold", "calm"]);
+    reopened.close().await.expect("close reopened store");
+}
+
+#[tokio::test]
+async fn sqlite_role_profiles_preserve_order_across_reopen() {
+    let dir = support::TempDir::new();
+    let config = dir.config("role-profiles");
+    let store = SqliteStore::open(&config).await.expect("fresh store opens");
+    let mut persona = RuntimeSettings::default().persona;
+    persona.role_profiles = vec![
+        RoleProfileAssignment {
+            role_id: "700".into(),
+            profile: "quiet".into(),
+        },
+        RoleProfileAssignment {
+            role_id: "701".into(),
+            profile: "warm".into(),
+        },
+    ];
+    save_section(&store, &Section::Persona(persona.clone()))
+        .await
+        .expect("save assignments");
+    let rows = store.settings_rows().await.expect("stored rows");
+    assert_eq!(
+        rows.get(keys::ROLE_PROFILES).map(String::as_str),
+        Some(r#"[{"role_id":"700","profile":"quiet"},{"role_id":"701","profile":"warm"}]"#)
+    );
+    store.close().await.expect("close store");
+
+    let reopened = SqliteStore::open(&config).await.expect("reopen store");
+    let settings = load_settings(&reopened, &RuntimeSettings::default())
+        .await
+        .expect("reopened settings");
+    assert_eq!(settings.persona.role_profiles, persona.role_profiles);
+    reopened.close().await.expect("close reopened store");
+}
+
+#[tokio::test]
+async fn memory_outbox_conforms() {
+    outbox_conformance::run_suite(async || MemoryScheduleStore::new()).await;
+}
+
+#[tokio::test]
+async fn sqlite_outbox_conforms() {
+    let fresh = FreshStores::new("outbox");
+    outbox_conformance::run_suite(async || fresh.open().await).await;
+}
+
+#[tokio::test]
+async fn memory_web_sessions_conform() {
+    web_sessions_conformance::run_suite(async || MemoryScheduleStore::new()).await;
+}
+
+#[tokio::test]
+async fn sqlite_web_sessions_conform() {
+    let fresh = FreshStores::new("sessions");
+    web_sessions_conformance::run_suite(async || fresh.open().await).await;
+}
+
+#[tokio::test]
+async fn memory_model_logs_conform() {
+    model_log_conformance::run_suite(async || MemoryScheduleStore::new()).await;
+}
+
+#[tokio::test]
+async fn sqlite_model_logs_conform() {
+    let fresh = FreshStores::new("logs");
+    model_log_conformance::run_suite(async || fresh.open().await).await;
+}
+
+#[tokio::test]
+async fn memory_proposal_cards_conform() {
+    card_conformance::run_suite(async || MemoryScheduleStore::new()).await;
+}
+
+#[tokio::test]
+async fn sqlite_proposal_cards_conform() {
+    let fresh = FreshStores::new("cards");
+    card_conformance::run_suite(async || fresh.open().await).await;
+}
+
+#[tokio::test]
+async fn memory_proposals_conform() {
+    proposal_conformance::run_suite(async || MemoryScheduleStore::new()).await;
+}
+
+#[tokio::test]
+async fn sqlite_proposals_conform() {
+    let fresh = FreshStores::new("proposals");
+    proposal_conformance::run_suite(async || fresh.open().await).await;
+}
+
+#[tokio::test]
+async fn sqlite_store_conforms() {
+    let fresh = FreshStores::new("conform");
+    conformance::run_suite(async || fresh.open().await).await;
+}
+
+#[tokio::test]
+async fn memory_journal_conforms() {
+    journal_conformance::run_suite(async || MemoryScheduleStore::new()).await;
+}
+
+#[tokio::test]
+async fn sqlite_journal_conforms() {
+    let fresh = FreshStores::new("journal");
+    journal_conformance::run_suite(async || fresh.open().await).await;
+}
+
+#[tokio::test]
+async fn memory_drafts_conform() {
+    draft_conformance::run_suite(async || MemoryScheduleStore::new()).await;
+}
+
+#[tokio::test]
+async fn sqlite_drafts_conform() {
+    let fresh = FreshStores::new("drafts");
+    draft_conformance::run_suite(async || fresh.open().await).await;
+}
+
+#[tokio::test]
+async fn memory_attendance_conforms() {
+    attendance_conformance::run_suite(async || MemoryScheduleStore::new()).await;
+}
+
+#[tokio::test]
+async fn sqlite_attendance_conforms() {
+    let fresh = FreshStores::new("attendance");
+    attendance_conformance::run_suite(async || fresh.open().await).await;
+}
+
+#[tokio::test]
+async fn memory_cherry_picks_conform() {
+    cherry_pick_conformance::run_suite(async || MemoryScheduleStore::new()).await;
+}
+
+#[tokio::test]
+async fn sqlite_cherry_picks_conform() {
+    let fresh = FreshStores::new("picks");
+    cherry_pick_conformance::run_suite(async || fresh.open().await).await;
+}
+
+#[tokio::test]
+async fn memory_preconditions_conform() {
+    precondition_conformance::run_suite(async || MemoryScheduleStore::new()).await;
+}
+
+#[tokio::test]
+async fn sqlite_preconditions_conform() {
+    let fresh = FreshStores::new("preconditions");
+    precondition_conformance::run_suite(async || fresh.open().await).await;
+}
+
+#[tokio::test]
+async fn memory_history_conforms() {
+    history_conformance::run_suite(async || MemoryScheduleStore::new()).await;
+}
+
+#[tokio::test]
+async fn sqlite_history_conforms() {
+    let fresh = FreshStores::new("history");
+    history_conformance::run_suite(async || fresh.open().await).await;
+}
+
+#[tokio::test]
+async fn memory_write_hints_conform() {
+    kanade::infrastructure::store::hints_conformance::run_suite(
+        &MemoryScheduleStore::new(),
+        |store, observer| store.observe_writes(observer),
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn sqlite_write_hints_conform() {
+    let dir = support::TempDir::new();
+    let store = SqliteStore::open(&dir.config("hints"))
+        .await
+        .expect("fresh store opens");
+    kanade::infrastructure::store::hints_conformance::run_suite(&store, |store, observer| {
+        store.observe_writes(observer)
+    })
+    .await;
+    store.close().await.expect("store closes");
+}

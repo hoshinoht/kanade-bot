@@ -1,0 +1,1172 @@
+// The full run sheet (boards HeroSheet, HeroPhone): the pane's "larger view"
+// from 900 px and the sheet itself below. The modal is the one window (its
+// title bar holds the dots, title and close): the identity card (entry art,
+// clock, bosses, chips, Move) sits flush on its surface, then a strip of
+// Party / Answers / Cards / Changes tabs; only the selected panel scrolls.
+// The boards draw the card and a tabbed `.win` on the page's ground; inside a
+// modal that became a window in a window, so here they are sections of one.
+// Imported by RunSheet.svelte; the member portal reuses it with its own run
+// pane prefix (`$pane`, as `_week.scss`).
+
+@use "../core/mixins" as *;
+
+$pane: "week-pane" !default;
+// The member portal leaves out admin-only parts (staging into a draft).
+$admin: true !default;
+
+dialog.modal.runsheet {
+  max-width: none;
+  max-height: none;
+}
+
+dialog.runsheet .modal__panel {
+  height: 100%;
+  max-height: none;
+}
+
+dialog.runsheet .modal__body {
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+}
+
+// From 900 px: nearly the whole frame, as the board's page.
+dialog.modal.runsheet--wide {
+  width: min(1232px, calc(100% - 48px));
+  height: calc(100dvh - 24px);
+}
+
+// Below 900 px: a tall card over the page, and full screen in the phone frame
+// (spec "Side pane": they may stay full-screen sheets).
+dialog.modal.runsheet--narrow {
+  width: min(46rem, calc(100% - 1.6rem));
+  height: min(92dvh, 56rem);
+}
+
+@media (max-width: 599.98px), (max-height: 499.98px) {
+  dialog.modal.runsheet--narrow {
+    width: 100%;
+    height: 100dvh;
+    margin: 0;
+    inset: 0;
+  }
+
+  dialog.runsheet--narrow .modal__panel {
+    border: 0;
+    border-radius: 0;
+    padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+    background: var(--surface);
+  }
+}
+
+dialog.runsheet--narrow .modal__head {
+  min-height: 48px;
+}
+
+.runsheet__body {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+}
+
+/* ── the identity card ──────────────────────────────────────────────────── */
+
+/* The entry art (`_runs.scss` has the board card's) in the run pane's and the
+ * run sheet's identity card (RunSheet `.run__arts`): it lives inside that card
+ * only -- never under the Move picker or the party below it. It spans from the
+ * bosses rightwards to the card's edge, so it runs behind words; they keep
+ * their contrast from the card's own colour, laid as a soft-edged plate behind
+ * each text run (see "Words over the art" below), never from a text shadow
+ * (e2e/run-identity-contrast.spec.ts measures every word against the rendered
+ * pixels behind it, art included).
+ *
+ *  - Laptop sheet: from the bosses' column (under the icons, names and chips)
+ *    to the card's right edge; the clock column stays clean.
+ *  - Pane and phone sheet: from where the boss names start (past the
+ *    portraits, which line up with the clock) to the right edge, the card's
+ *    full height. The clock row is plated like any other words.
+ *
+ * One boss is one picture. Two or three are angled slices, the lead first (on
+ * the left, the order they are named in), meeting in soft seams; further
+ * bosses are their portraits only. Each slice is a skewed window with the
+ * picture counter-skewed inside it, so the seam is a slanted soft edge at any
+ * card height (a slanted gradient alone would tilt with the box's aspect).
+ *
+ * The veil's opacity and both fades sit on the whole group, not on each
+ * picture, so a seam is a crossfade rather than a lighter stripe where two
+ * washes overlap, and the left fade is one long ramp whatever the slices. */
+.run__arts {
+  /* TUNING KNOBS -- the slant, the seam's softness, the left fade's length
+     (a share of the group's width), the foot's fade. */
+  --slice-skew: -12deg;
+  --slice-seam: 32px;
+  --slice-bleed: 56px;
+  --arts-fade: 70%;
+  --arts-foot: 44px;
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  overflow: clip;
+  opacity: var(--art-veil);
+  /* The left edge eases in over a long ramp (slow at first, so no edge shows),
+     and the foot fades into the card, so nothing ends in a hard line. The two
+     masks multiply. A mask reads only alpha, which is why black is named here. */
+  $mask:
+    linear-gradient(
+      to right,
+      transparent,
+      rgb(0 0 0 / 0.12) calc(var(--arts-fade) * 0.35),
+      rgb(0 0 0 / 0.5) calc(var(--arts-fade) * 0.7),
+      #000 var(--arts-fade)
+    ),
+    linear-gradient(to bottom, #000 calc(100% - var(--arts-foot)), transparent);
+  -webkit-mask-image: $mask;
+  -webkit-mask-composite: source-in;
+  mask-image: $mask;
+  mask-composite: intersect;
+  pointer-events: none;
+}
+
+/* Laptop sheet: the card is a grid (clock | identity | actions) and the art
+   spans the identity and actions tracks. The last track's right and bottom
+   lines already land on the card's padding edges, the top one on its content
+   edge (measured; e2e/run-identity.spec.ts `confined` guards the group inside
+   the card). */
+.runsheet--wide .runsheet__hero {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  // Row 1 keeps the card's height; the notice line, when there is one, adds a row under it.
+  grid-template-rows: 1fr;
+  gap: 6px 28px;
+}
+
+.runsheet--wide .runsheet__hero > .run__arts {
+  grid-row: 1;
+  grid-column: 2 / -1;
+  top: -14px;
+}
+
+/* Pane and phone sheet: the card's padding, a portrait and its gap in from the
+   left (where the names start), full height. */
+.#{$pane}__art > .run__arts,
+.runsheet--narrow .runsheet__hero > .run__arts {
+  --slice-seam: 20px;
+  --arts-fade: 60%;
+  --arts-foot: 40px;
+  left: calc(14px + 30px + 8px);
+}
+
+.runsheet--narrow .runsheet__hero > .run__arts {
+  /* Faded out before the Move row, the last thing in the phone's card. */
+  --arts-foot: 96px;
+  left: calc(14px + 34px + 9px);
+}
+
+/* Every slice bleeds past the group's outer edges, where the skew would
+   otherwise leave an empty triangle at a corner; the group clips the bleed. */
+.run__slice {
+  position: absolute;
+  inset: 0 calc(-1 * var(--slice-bleed));
+  overflow: clip;
+  transform: skewX(var(--slice-skew));
+}
+
+/* Later slices start half a seam before their boundary and fade in across it,
+   over the slice before, which runs on to half a seam after it. */
+.run__slice + .run__slice {
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 var(--slice-seam));
+  mask-image: linear-gradient(to right, transparent, #000 var(--slice-seam));
+}
+
+/* Two: the lead takes 55%. Three: 40 / 30 / 30. */
+.run__arts--2 > .run__slice:nth-child(1) {
+  right: calc(45% - var(--slice-seam) / 2);
+}
+
+.run__arts--2 > .run__slice:nth-child(2) {
+  left: calc(55% - var(--slice-seam) / 2);
+}
+
+.run__arts--3 > .run__slice:nth-child(1) {
+  right: calc(60% - var(--slice-seam) / 2);
+}
+
+.run__arts--3 > .run__slice:nth-child(2) {
+  left: calc(40% - var(--slice-seam) / 2);
+  right: calc(30% - var(--slice-seam) / 2);
+}
+
+.run__arts--3 > .run__slice:nth-child(3) {
+  left: calc(70% - var(--slice-seam) / 2);
+}
+
+.run__art {
+  position: absolute;
+  /* Wider than its window, so the counter-skew still covers both corners. */
+  inset: 0 calc(-1 * var(--slice-bleed));
+  width: calc(100% + 2 * var(--slice-bleed));
+  height: 100%;
+  object-fit: cover;
+  object-position: center var(--art-crop-sheet);
+  transform: skewX(calc(-1 * var(--slice-skew)));
+}
+
+/* One boss: the whole picture, cropped from the right as the board's card. */
+.run__arts--1 .run__art {
+  object-position: right var(--art-crop-sheet);
+}
+
+/* Words over the art: each text run on its own soft-edged plate of the card's
+   surface, so any word reads as on the bare card while the art shows between
+   and around them. The plate is a solid background with a blurred spread of
+   the same colour and no padding, so nothing moves. Status, count and link
+   chips already sit on fills of their own; the outlined neutral chips get the
+   surface as theirs. */
+.runsheet__hero .boss,
+.runsheet__hero .chanmark,
+.runsheet__hero .id,
+.runsheet__hero .sheet__offnote,
+.runsheet__hero .sheet__notice,
+.runsheet--narrow .runsheet__when > :not(.runsheet__stripe),
+.#{$pane}__art .boss,
+.#{$pane}__art .chanmark,
+.#{$pane}__art .id,
+.#{$pane}__when > * {
+  border-radius: 10px;
+  background: var(--surface);
+  box-shadow: 0 0 6px 4px var(--surface);
+}
+
+.runsheet__chips .tone--neutral,
+.#{$pane}__chips .tone--neutral {
+  background: var(--surface);
+}
+
+.runsheet__hero {
+  position: relative;
+  isolation: isolate;
+  flex: none;
+  display: flex;
+  gap: 28px;
+  min-height: 196px;
+  padding: 14px 20px 14px 22px;
+  // Flush on the modal's surface: a rule, not a frame, parts it from the tabs.
+  border-bottom: 1.5px solid var(--line);
+  background: var(--surface);
+  overflow: clip;
+}
+
+.runsheet__hero p,
+.runsheet__hero ul {
+  margin: 0;
+}
+
+.runsheet__when {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 170px;
+  padding-top: 8px;
+}
+
+.runsheet__time {
+  font-size: var(--fs-hero);
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+// "own time" is words, not a reading: it keeps the window-title size.
+.runsheet--otot .runsheet__time {
+  font-size: var(--fs-lg);
+}
+
+.runsheet__day {
+  color: var(--ink);
+}
+
+.runsheet__stripe {
+  width: 44px;
+  height: 4px;
+  margin-top: 10px;
+  border-radius: 2px;
+  background: var(--off);
+}
+
+@each $status, $tone in $status-tones {
+  .runsheet--#{$status} .runsheet__stripe {
+    background: var(--#{$tone});
+  }
+}
+
+.runsheet__id {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  padding-top: 6px;
+}
+
+.runsheet__bosses {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 18px;
+  padding: 0;
+  list-style: none;
+}
+
+.runsheet__bosses li {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.runsheet__bosses .boss {
+  gap: 9px;
+  font-family: var(--display);
+  font-size: var(--fs-body-sm);
+  font-weight: 700;
+}
+
+.runsheet__bosses .portrait {
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+}
+
+// On the laptop sheet the name sits over its pill and level (board).
+.runsheet--wide .runsheet__bosses .boss {
+  display: grid;
+  grid-template-columns: auto auto 1fr;
+  align-items: center;
+  gap: 3px 6px;
+}
+
+.runsheet--wide .runsheet__bosses .portrait {
+  grid-row: 1 / span 2;
+  margin-right: 3px;
+}
+
+.runsheet--wide .runsheet__bosses .boss__name {
+  grid-column: 2 / -1;
+}
+
+.runsheet__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.runsheet__chips > * {
+  min-height: 28px;
+}
+
+.runsheet__answers {
+  max-width: 28rem;
+}
+
+// "View weekly timing" (pane and sheet): the run's source, a link pill among
+// the status chips, opaque so it reads over the art.
+.runlink {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 10px 0 8px;
+  border: 1.5px solid color-mix(in srgb, var(--accent) 45%, var(--line));
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--accent-text);
+  font-size: var(--fs-small);
+  font-weight: 600;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.runlink:hover {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, var(--surface));
+}
+
+.runlink .icon {
+  width: 14px;
+  height: 14px;
+}
+
+// Move, the other actions and the status on the right (board: column, ends aligned).
+.runsheet__side {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 10px;
+}
+
+.runsheet__movekey {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.runsheet__movekey .btn--primary {
+  gap: 8px;
+}
+
+.runsheet__acts {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.runsheet__acts .btn {
+  background: color-mix(in srgb, var(--surface) 94%, transparent);
+}
+
+// The status group alone: its "Status" label is for screen readers here.
+.runsheet__body .statusbar {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.runsheet__body .statusbar__label {
+  @include hide-visually;
+}
+
+.runsheet__body .seg--status .seg__btn {
+  min-height: 30px;
+  padding: 0 12px;
+}
+
+// Swap is a floating panel over the card's foot (its own surface and shadow).
+.runsheet__hero .swap {
+  position: absolute;
+  inset: auto 20px 8px auto;
+  z-index: 1;
+  max-width: 34rem;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+// The notice line (pick, status, move… with Undo) and the swap error take a row
+// of their own under the status group, never over it (the pane's order too).
+.runsheet--wide .runsheet__hero .sheet__notice,
+.runsheet--wide .runsheet__hero .run__error {
+  justify-content: flex-end;
+  text-align: end;
+}
+
+.runsheet__hero .sheet__notice:empty,
+.runsheet__hero .run__error:empty {
+  display: none;
+}
+
+/* ── the tabbed section (no title bar of its own) ───────────────────────── */
+
+.runsheet__win {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 220px;
+  overflow: clip;
+}
+
+// The tab strip: pill tabs on the surface (the pane's `.ptab`), ruled off from the panel.
+.runsheet__bar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 48px;
+  padding: 0 12px 0 16px;
+  border-bottom: 1.5px solid var(--line);
+}
+
+.runsheet__bar .tabs__tabs {
+  align-items: center;
+  gap: 4px;
+}
+
+.runsheet__bar .tabs__tab {
+  min-height: 34px;
+  padding: 0 14px;
+  border-radius: 17px;
+  color: var(--ink);
+}
+
+.runsheet__bar .tabs__tab:hover {
+  background: var(--row-hover);
+}
+
+.runsheet__bar .tabs__tab:focus-visible {
+  outline-color: var(--accent);
+  outline-offset: 0;
+}
+
+.runsheet__bar .tabs__tab[aria-selected="true"] {
+  background: var(--select);
+  color: var(--select-ink);
+}
+
+.runsheet__bar .tabs__count {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ink) 40%, transparent);
+}
+
+.runsheet__bar .tabs__tab[aria-selected="true"] .tabs__count {
+  background: var(--surface);
+  box-shadow: none;
+}
+
+.runsheet__panel {
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 14px 16px;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+.runsheet__panel--party {
+  display: flex;
+  gap: 16px;
+}
+
+.runsheet__party {
+  flex: 1 1 auto;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-auto-rows: 64px;
+  align-content: start;
+  gap: 8px;
+  @include list-reset;
+}
+
+.runsheet__aside {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 250px;
+  font-size: var(--fs-small);
+}
+
+.runsheet__aside p,
+.runsheet__panel--cards p {
+  margin: 0;
+}
+
+.runsheet__panel--cards {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* ── party slots (board `.slot`): one per member, the answer as a mark and a word ── */
+
+.slot {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 0 6px 0 12px;
+  border: 1.5px solid var(--line);
+  border-radius: 14px;
+  background: var(--raise);
+}
+
+// The head row only becomes a box when the slot also shows a character (below).
+.slot__head { display: contents; }
+
+.slot--yes {
+  border-color: color-mix(in srgb, var(--ok) 45%, var(--line));
+  background: color-mix(in srgb, var(--ok) 12%, var(--surface));
+}
+
+.slot--no {
+  border-color: color-mix(in srgb, var(--risk) 45%, var(--line));
+  background: color-mix(in srgb, var(--risk) 10%, var(--surface));
+}
+
+.slot--maybe {
+  border-color: color-mix(in srgb, var(--own) 45%, var(--line));
+  background: color-mix(in srgb, var(--own) 12%, var(--surface));
+}
+
+.slot--waiting,
+.slot--open {
+  border-style: dashed;
+}
+
+.slot--open {
+  background: transparent;
+  color: var(--dim-text);
+}
+
+.slot__mark {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  font-family: var(--mono);
+  font-size: var(--fs-small);
+  font-weight: 700;
+  box-sizing: border-box;
+}
+
+.slot--yes .slot__mark {
+  background: var(--ok-text);
+  color: var(--surface);
+}
+
+.slot--no .slot__mark {
+  background: var(--risk-text);
+  color: var(--surface);
+}
+
+.slot--maybe .slot__mark {
+  background: var(--own-text);
+  color: var(--surface);
+}
+
+.slot--waiting .slot__mark {
+  border: 1.5px dashed var(--warn-text);
+  color: var(--warn-text);
+}
+
+.slot--open .slot__mark {
+  border: 1.5px dashed var(--faint);
+  color: var(--dim-text);
+}
+
+.slot__text {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.slot__name {
+  @include ellipsis;
+  font-size: var(--fs-body-sm);
+}
+
+.slot__state {
+  font-size: var(--fs-mini);
+  color: var(--dim-text);
+}
+
+.slot__x {
+  flex: none;
+  min-width: 32px;
+  min-height: 32px;
+}
+
+.slot__add {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 32px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: var(--fs-body-sm);
+  font-weight: 600;
+}
+
+/* ── below 900 px: the phone's card and window (HeroPhone) ──────────────── */
+
+.runsheet--narrow .runsheet__hero {
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+  padding: 12px 14px;
+}
+
+.runsheet--narrow .runsheet__when {
+  flex-direction: row;
+  align-items: baseline;
+  gap: 10px;
+  min-width: 0;
+  padding: 0;
+}
+
+.runsheet--narrow .runsheet__time {
+  font-size: var(--fs-hero-narrow);
+}
+
+.runsheet--narrow .runsheet--otot .runsheet__time {
+  font-size: var(--fs-lg);
+}
+
+.runsheet--narrow .runsheet__stripe {
+  display: none;
+}
+
+.runsheet--narrow .runsheet__id {
+  display: contents;
+}
+
+.runsheet--narrow .runsheet__bosses {
+  flex-direction: column;
+  gap: 8px;
+}
+
+.runsheet--narrow .runsheet__bosses .portrait {
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+}
+
+.runsheet--narrow .runsheet__chips {
+  gap: 5px;
+}
+
+.runsheet--narrow .runsheet__chips > * {
+  min-height: 26px;
+}
+
+.runsheet__moverow .runsheet__movekey {
+  gap: 6px;
+}
+
+.runsheet__moverow .runsheet__movekey .btn--primary {
+  flex: 1 1 auto;
+}
+
+.runsheet__more-btn {
+  flex: none;
+  width: 44px;
+  padding: 0;
+  justify-content: center;
+}
+
+.runsheet__moverow {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.runsheet__moverow .runsheet__acts {
+  justify-content: flex-start;
+}
+
+.runsheet--narrow .runsheet__hero .swap {
+  position: static;
+  max-width: none;
+  box-shadow: none;
+}
+
+.runsheet--narrow .runsheet__bar {
+  padding: 0 6px 0 10px;
+}
+
+.runsheet--narrow .runsheet__bar .tabs__tab {
+  padding: 0 10px;
+}
+
+.runsheet--narrow .runsheet__panel {
+  padding: 10px;
+}
+
+.runsheet--narrow .runsheet__panel--party {
+  padding: 0;
+}
+
+.runsheet--narrow .runsheet__party {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px;
+}
+
+.runsheet--narrow .slot {
+  flex: none;
+  height: 46px;
+}
+
+.runsheet--narrow .slot__text {
+  flex-direction: row;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.runsheet--narrow .slot__state {
+  margin-left: auto;
+}
+
+.runsheet__foot {
+  flex: none;
+  padding: 8px 10px;
+  border-top: 1.5px solid var(--line);
+}
+
+.runsheet__foot .statusbar {
+  align-items: stretch;
+}
+
+.runsheet__foot .seg--status {
+  display: flex;
+  width: 100%;
+}
+
+// Equal segments across the foot (the same 10 px inset as the party above), each word centred in its segment.
+.runsheet__foot .seg--status .seg__btn {
+  flex: 1 1 0;
+  justify-content: center;
+  min-width: 0;
+  min-height: 38px;
+  padding: 0 4px;
+}
+
+/* ── the Move view (P_MovePhone; HeroSheet's window on a laptop) ────────── */
+
+.runsheet__movetitle {
+  flex: 1 1 auto;
+  margin: 0;
+  color: var(--ink);
+  font-family: var(--display);
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.runsheet__back {
+  gap: 4px;
+  min-height: 32px;
+  padding: 0 12px 0 8px;
+}
+
+.runsheet__panel--move {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 0;
+  overflow: hidden;
+}
+
+.runsheet__panel--move .movepick {
+  width: min(100%, 560px);
+}
+
+.runsheet--narrow .runsheet__move {
+  gap: 0;
+  padding: 0;
+  background: var(--surface);
+}
+
+.runsheet__moveid {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 6px 16px 6px 6px;
+  border-bottom: 1.5px solid var(--line);
+  background: var(--raise);
+}
+
+// The board's bar arrow: an icon-only back step, 44 px to touch.
+.runsheet__moveid .runsheet__back {
+  flex: none;
+  width: 44px;
+  min-height: 44px;
+  padding: 0;
+  justify-content: center;
+}
+
+.runsheet__moveid .runsheet__back .icon {
+  width: 20px;
+  height: 20px;
+}
+
+.runsheet__movetime {
+  flex: none;
+  font-size: 22px;
+  font-weight: 700;
+}
+
+.runsheet__movename {
+  min-width: 0;
+  @include ellipsis;
+  font-family: var(--display);
+  font-size: 14px;
+}
+
+.runsheet__moveparty {
+  flex: none;
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--dim-text);
+}
+
+.runsheet__move > .run__error {
+  margin: 0;
+  padding: 0 16px 8px;
+}
+
+.runsheet__move > .run__error:empty {
+  display: none;
+}
+
+.runsheet__moverow .runsheet__movekey .btn--primary {
+  justify-content: center;
+}
+
+/* ── add pickers (Select): quiet action pickers, not form fields ───────── */
+
+// The party's "+ add…" chip keeps its dashed outline; the slot's "Add someone…" stays a bare row.
+.ddw.ddw--field:has(> .chip__add) {
+  display: inline-flex;
+  width: auto;
+}
+
+.dd.dd.chip__add {
+  width: auto;
+  min-width: 0;
+  height: 26px;
+  padding: 0 6px 0 10px;
+  border: 1.5px dashed var(--line);
+  border-radius: 13px;
+  background: transparent;
+  box-shadow: none;
+  color: var(--dim-text);
+  font-family: var(--mono);
+  font-size: var(--fs-mini);
+}
+
+.dd.dd.slot__add {
+  min-width: 0;
+  height: 32px;
+  padding: 0 4px 0 0;
+  background: transparent;
+  box-shadow: none;
+  font-size: var(--fs-body-sm);
+}
+
+.dd.dd.slot__add .dd__value,
+.dd.dd.chip__add .dd__value {
+  color: inherit;
+  font-weight: 600;
+}
+
+.slot--open .ddw {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* ── staging into a draft (B_RunSheetStage*), admin only ──────────────────── */
+
+@if $admin {
+
+// The strip over the identity card: what the sheet's edits do now, Open draft and Stop staging.
+.runsheet__staging {
+  flex: none;
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px 8px 18px;
+  border-bottom: 1.5px solid var(--select-edge);
+  background: var(--select);
+  color: var(--select-ink);
+  font-size: var(--fs-small);
+}
+
+.runsheet__staging > .icon { flex: none; width: 16px; height: 16px; }
+.runsheet__stagingtext { flex: 1 1 14rem; min-width: 0; }
+.runsheet__stagingbtn { min-height: 34px; border-radius: 17px; background: var(--surface); color: var(--ink); }
+// In the pane the strip is a card of the body, not a band.
+.week-pane__body > .runsheet__staging { margin: 0; padding: 8px 10px 8px 12px; border: 0; border-radius: 16px; }
+
+// "In draft: …" under the clock: the run's last staged move.
+.runsheet__stagedwhen {
+  display: block;
+  color: var(--select-ink);
+  font-size: var(--fs-small);
+  line-height: 1.35;
+}
+
+// In the sheet's clock column it wraps within the column instead of widening it
+// (the column is the clock's width; the pane's line is a row and keeps its size).
+.runsheet__when > .runsheet__stagedwhen { contain: inline-size; }
+
+.runsheet__stage-open { gap: 6px; background: var(--select); border-color: var(--select-edge); color: var(--select-ink); }
+.runsheet__stage-open .icon,
+.runsheet__stage-btn .icon { width: 18px; height: 18px; }
+.runsheet__stage-btn { background: var(--select); border-color: var(--select-edge); color: var(--select-ink); }
+
+// A party change staged in the draft: a marked slot of its own.
+.slot--staged {
+  border-color: var(--accent);
+  background: var(--select);
+}
+
+.slot--staged .slot__mark { border: 1.5px solid var(--accent); color: var(--select-ink); }
+.slot--staged .slot__state { color: var(--select-ink); }
+
+// The picker: a popover by the actions on the wide sheet, a card in the pane.
+.runsheet__body:has(> .runsheet__stagepop) { position: relative; }
+
+.runsheet__stagepop {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  top: 200px;
+  right: 22px;
+  z-index: 3;
+  width: min(380px, calc(100% - 2rem));
+  padding: 16px;
+  border: 2px solid var(--win);
+  border-radius: 20px;
+  background: var(--surface);
+  box-shadow: 0 16px 32px -16px rgb(0 0 0 / 45%);
+}
+
+.runsheet__stagepop:focus { outline: none; }
+.runsheet__stagepop--pane { position: static; width: auto; box-shadow: none; }
+
+.stagepick { display: flex; flex-direction: column; gap: 12px; }
+.stagepick > * { margin: 0; }
+.stagepick__head { display: flex; flex-direction: column; gap: 4px; }
+.stagepick__head > * { margin: 0; }
+.stagepick__title { font-family: var(--display); font-size: var(--fs-lg); font-weight: 700; line-height: 1.2; }
+.stagepick__options { display: flex; flex-direction: column; gap: 3px; }
+
+.stagepick__option {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 6px;
+  background: var(--row);
+  box-shadow: inset 0 0 0 1.5px var(--line);
+  cursor: pointer;
+}
+
+.stagepick__option input[type="radio"] { flex: none; width: 18px; height: 18px; margin: 1px 0 0; accent-color: var(--accent); }
+.stagepick__option--on { border-radius: 18px; background: var(--select); box-shadow: inset 0 0 0 1.5px var(--select-edge); }
+// Cannot hold this run's change: dashed, quiet, with the reason in words.
+.stagepick__option--off { background: transparent; box-shadow: none; outline: 2px dashed var(--line); outline-offset: -2px; color: var(--dim-text); cursor: not-allowed; }
+// Name, scope line and flag at text height (B_RunSheetStage `.pick`), so four drafts fit beside the sheet.
+.stagepick__lines { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; min-width: 0; line-height: 1.3; }
+.stagepick__lines--grow { flex: 1 1 auto; align-items: stretch; gap: 6px; }
+.stagepick__meta { color: var(--dim-text); font-size: var(--fs-small); }
+.stagepick__option--on .stagepick__meta { color: var(--select-ink); }
+.stagepick__name { width: 100%; min-height: 36px; }
+.stagepick__note { color: var(--dim-text); font-size: var(--fs-small); line-height: 1.45; }
+.stagepick__acts { display: flex; justify-content: flex-end; gap: 8px; }
+.stagepick__acts .btn { min-height: 40px; border-radius: 20px; }
+.stagepick__go { gap: 6px; }
+.stagepick .field__error:empty { display: none; }
+
+// Phones (B_RunSheetStagePhone): a modal bottom sheet over the sheet; Cancel and Escape close it.
+dialog.modal.stagesheet {
+  width: 100%;
+  max-width: none;
+  margin: auto 0 0;
+}
+
+// The pane: Stage in draft… on its own row under the actions.
+.runsheet__stagerow { display: flex; }
+
+dialog.stagesheet[open] { display: flex; flex-direction: column; }
+dialog.stagesheet .modal__panel { border: 0; border-radius: 24px 24px 0 0; box-shadow: 0 -12px 28px -14px rgb(0 0 0 / 45%); }
+dialog.stagesheet .modal__head { @include hide-visually; }
+dialog.stagesheet .modal__body { padding: 14px 14px max(16px, env(safe-area-inset-bottom)); }
+dialog.stagesheet .stagepick__name { min-height: 44px; }
+dialog.stagesheet .stagepick__acts .btn { min-height: 48px; border-radius: 24px; }
+dialog.stagesheet .stagepick__go { flex: 1 1 auto; justify-content: center; }
+
+/* ── who each member brings (module roster; B_RosterRunPick, B_PhoneRosterRunPick) ── */
+
+// A member's slot with its character (`slot--chars`, the board's `.slot` over `.shead`): the
+// head row (mark, name and answer, ×), the chip row, then any clash lines; on phones the chip
+// joins the head row. A staged addition stays the one-row slot B_RunSheetStageActive draws.
+.runsheet__party--chars { grid-auto-rows: auto; }
+
+.slot--chars {
+  position: relative;
+  flex-direction: column;
+  align-items: normal;
+  justify-content: center;
+  gap: 8px;
+  min-height: 64px;
+  padding: 10px 12px;
+}
+
+.slot--chars > .slot__head { display: flex; align-items: center; gap: 10px; min-width: 0; }
+// The name over its answer at the board's line height, so the head row is the board's 32 px.
+.slot--chars .slot__text { line-height: 1.2; }
+// Rows fit the slot: a name, chip or clash line never widens the party (or the phone's sheet).
+.slot--chars > * { contain: inline-size; }
+// Laptop: the chip fills its row, as the board's does. The basis tag ("from timing", "main",
+// "only character") follows it there rather than joining the head: a quarter-width slot has
+// 201 px inside, and mark (26), a tag (73), × (32) and three 10 px gaps would leave the name
+// 40 px: "Tsubame" (59) and "Hotaru" (46) cut.
+.runsheet--wide .slotchar__btn { flex: 1 1 auto; min-width: 0; }
+.runsheet--wide .slotchar > .slot__basis { flex: none; align-self: center; margin-left: 8px; }
+
+// Text, not colour: where the slot's character comes from when the run did not pick it.
+.slot__basis {
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  padding: 0 7px;
+  border-radius: 10px;
+  background: var(--chip-fill);
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  white-space: nowrap;
+}
+
+// The character chip and "Pick character" (`.slotchar*`) are `_character-pick.scss`'s: the Fixed editor draws them too.
+.slotchar__none { color: var(--dim-text); font-size: var(--fs-mini); line-height: 1.4; }
+.slotchar__none a { color: var(--accent-text); }
+
+// The same character on another run of a shared boss this boss week: a note, never a block.
+.slot__warn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: color-mix(in srgb, var(--warn-text) 85%, var(--ink));
+  font-size: var(--fs-mini);
+  line-height: 1.3;
+}
+
+.slot__warn > .icon { flex: none; width: 14px; height: 14px; color: var(--warn-text); }
+
+.runsheet__charrules {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 6px;
+  padding: 12px 14px;
+  border: 1.5px dashed var(--line);
+  border-radius: 16px;
+  line-height: 1.45;
+}
+
+// The narrow sheet's slot: one head row (mark, name, answer, basis tag, chip, ×), clash lines under it.
+// The name sits over its answer here too, so the row keeps room for the chip and ×.
+.runsheet--narrow .slot--chars { height: auto; min-height: 52px; padding: 8px 10px; gap: 6px; }
+.runsheet--narrow .slot--chars > .slot__head { gap: 8px; }
+.runsheet--narrow .slot--chars > .slot__warn { padding-left: 34px; }
+.runsheet--narrow .slot--chars .slot__text { flex-direction: column; align-items: flex-start; gap: 1px; }
+.runsheet--narrow .slot--chars .slot__state { margin-left: 0; max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
+.runsheet--narrow .slot__basis { padding: 0 5px; letter-spacing: 0.02em; }
+.runsheet--narrow .slotchar__btn { min-height: 36px; padding: 0 10px 0 12px; }
+.runsheet--narrow .slotchar__pick { padding: 0 12px; }
+}

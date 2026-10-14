@@ -1,0 +1,86 @@
+use std::{future::Future, pin::Pin, time::Duration};
+
+use tokio::time::Instant;
+
+use super::{Capability, ChatRequest, CompletionResponse, ModelCapabilities};
+
+pub type CompletionFuture<'a> =
+    Pin<Box<dyn Future<Output = Result<CompletionResponse, ProviderFailure>> + Send + 'a>>;
+pub type CapabilityFuture<'a> =
+    Pin<Box<dyn Future<Output = Option<ModelCapabilities>> + Send + 'a>>;
+
+pub trait LlmProvider: Send + Sync {
+    fn complete(&self, request: &ChatRequest) -> CompletionFuture<'_>;
+
+    /// Effective capabilities for `model`, resolved once per runner call and
+    /// bounded by `deadline`; `None` sends requests unshaped.
+    fn capabilities<'a>(&'a self, _model: &'a str, _deadline: Instant) -> CapabilityFuture<'a> {
+        Box::pin(async { None })
+    }
+
+    /// Send `request`, already shaped for `capabilities`, with a body built from
+    /// exactly those capabilities.
+    fn complete_with(
+        &self,
+        request: &ChatRequest,
+        _capabilities: &ModelCapabilities,
+    ) -> CompletionFuture<'_> {
+        self.complete(request)
+    }
+
+    /// `complete_with`, tagged with a gateway log-correlation id (1–128 chars of
+    /// `[A-Za-z0-9_-]`); providers without such a header ignore it.
+    fn complete_tagged(
+        &self,
+        request: &ChatRequest,
+        capabilities: &ModelCapabilities,
+        _request_id: &str,
+    ) -> CompletionFuture<'_> {
+        self.complete_with(request, capabilities)
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ProviderFailureKind {
+    Transient,
+    Permanent,
+    Authentication,
+    InvalidOutput,
+    /// The gateway refused a field of this capability; the provider remembers the
+    /// downgrade and the runner reshapes and retries once.
+    CapabilityRejected(Capability),
+    /// Turned away by gateway admission before any work ran; never retried
+    /// directly, only requeued after `retry_after` plus jitter.
+    AdmissionRefused {
+        retry_after: Option<Duration>,
+    },
+    /// The gateway reports the backend down; opens the breaker at once, never
+    /// retried. `retry_after` (the gateway's own breaker cooldown) floors ours.
+    BackendUnavailable {
+        retry_after: Option<Duration>,
+    },
+    /// A plain upstream 429 naming `Retry-After`: transient, but the runner's
+    /// backoff waits at least `retry_after`.
+    RateLimited {
+        retry_after: Duration,
+    },
+    /// No complete answer (timeout, or the reply was lost after the request was
+    /// sent); work may still be running upstream.
+    UpstreamTimeout,
+}
+
+#[derive(Clone, PartialEq, Eq)]
+pub struct ProviderFailure {
+    pub kind: ProviderFailureKind,
+    pub reason_code: &'static str,
+}
+
+impl std::fmt::Debug for ProviderFailure {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("ProviderFailure")
+            .field("kind", &self.kind)
+            .field("has_reason_code", &true)
+            .finish()
+    }
+}

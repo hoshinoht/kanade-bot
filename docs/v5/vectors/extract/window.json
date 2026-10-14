@@ -1,0 +1,796 @@
+{
+  "cases": [
+    {
+      "case_id": "burst-grouping",
+      "expected": {
+        "steps": [
+          {
+            "value": {
+              "automated_window": "48h",
+              "burst_gap_seconds": 10800,
+              "default_window": "week",
+              "max_burst_messages": 12,
+              "windows": [
+                "week",
+                "2weeks",
+                "48h",
+                "24h"
+              ]
+            }
+          },
+          {
+            "value": [
+              [
+                "1",
+                "2",
+                "3"
+              ],
+              [
+                "4",
+                "5"
+              ],
+              [
+                "6",
+                "7"
+              ]
+            ]
+          },
+          {
+            "value": [
+              [
+                "1"
+              ],
+              [
+                "2"
+              ],
+              [
+                "3"
+              ],
+              [
+                "4",
+                "5"
+              ],
+              [
+                "6",
+                "7"
+              ]
+            ]
+          },
+          {
+            "value": []
+          },
+          {
+            "value": [
+              [
+                "1",
+                "2"
+              ]
+            ]
+          },
+          {
+            "value": [
+              [
+                "1"
+              ],
+              [
+                "2"
+              ]
+            ]
+          }
+        ]
+      },
+      "input": {
+        "reset_time": "00:00:00",
+        "reset_weekday": 3,
+        "steps": [
+          {
+            "op": "constants"
+          },
+          {
+            "gap_seconds": null,
+            "op": "group_bursts",
+            "rows": [
+              {
+                "created_at": "2026-08-30T11:50:00+08:00",
+                "id": "1"
+              },
+              {
+                "created_at": "2026-08-30T12:40:00+08:00",
+                "id": "2"
+              },
+              {
+                "created_at": "2026-08-30T13:15:00+08:00",
+                "id": "3"
+              },
+              {
+                "created_at": "2026-08-30T16:20:00+08:00",
+                "id": "4"
+              },
+              {
+                "created_at": "2026-08-30T16:21:00+08:00",
+                "id": "5"
+              },
+              {
+                "created_at": "2026-08-30T23:59:00+08:00",
+                "id": "6"
+              },
+              {
+                "created_at": "2026-08-30T16:00:00+00:00",
+                "id": "7"
+              }
+            ]
+          },
+          {
+            "gap_seconds": 900,
+            "op": "group_bursts",
+            "rows": [
+              {
+                "created_at": "2026-08-30T11:50:00+08:00",
+                "id": "1"
+              },
+              {
+                "created_at": "2026-08-30T12:40:00+08:00",
+                "id": "2"
+              },
+              {
+                "created_at": "2026-08-30T13:15:00+08:00",
+                "id": "3"
+              },
+              {
+                "created_at": "2026-08-30T16:20:00+08:00",
+                "id": "4"
+              },
+              {
+                "created_at": "2026-08-30T16:21:00+08:00",
+                "id": "5"
+              },
+              {
+                "created_at": "2026-08-30T23:59:00+08:00",
+                "id": "6"
+              },
+              {
+                "created_at": "2026-08-30T16:00:00+00:00",
+                "id": "7"
+              }
+            ]
+          },
+          {
+            "gap_seconds": null,
+            "op": "group_bursts",
+            "rows": []
+          },
+          {
+            "gap_seconds": null,
+            "op": "group_bursts",
+            "rows": [
+              {
+                "created_at": "2026-08-30T10:00:00+08:00",
+                "id": "1"
+              },
+              {
+                "created_at": "2026-08-30T13:00:00+08:00",
+                "id": "2"
+              }
+            ]
+          },
+          {
+            "gap_seconds": null,
+            "op": "group_bursts",
+            "rows": [
+              {
+                "created_at": "2026-08-30T10:00:00+08:00",
+                "id": "1"
+              },
+              {
+                "created_at": "2026-08-30T13:00:01+08:00",
+                "id": "2"
+              }
+            ]
+          }
+        ],
+        "timezone": "Asia/Kuala_Lumpur"
+      }
+    },
+    {
+      "case_id": "rescan-days-cap-and-longest-pause",
+      "expected": {
+        "steps": [
+          {
+            "value": [
+              [
+                "1",
+                "2",
+                "3",
+                "4",
+                "5",
+                "6"
+              ],
+              [
+                "7"
+              ]
+            ]
+          },
+          {
+            "value": [
+              [
+                "10",
+                "11",
+                "12",
+                "13",
+                "14",
+                "15"
+              ],
+              [
+                "20",
+                "21",
+                "22",
+                "23",
+                "24",
+                "25",
+                "26"
+              ]
+            ]
+          },
+          {
+            "value": [
+              [
+                "10",
+                "11",
+                "12"
+              ],
+              [
+                "13",
+                "14",
+                "15"
+              ],
+              [
+                "20",
+                "21",
+                "22"
+              ],
+              [
+                "23",
+                "24",
+                "25",
+                "26"
+              ]
+            ]
+          },
+          {
+            "value": []
+          },
+          {
+            "value": [
+              [
+                "10",
+                "11",
+                "12"
+              ],
+              [
+                "13",
+                "14",
+                "15"
+              ],
+              [
+                "20",
+                "21",
+                "22"
+              ],
+              [
+                "23",
+                "24",
+                "25",
+                "26"
+              ]
+            ]
+          },
+          {
+            "value": [
+              [
+                "40",
+                "41"
+              ],
+              [
+                "42"
+              ],
+              [
+                "43",
+                "44"
+              ]
+            ]
+          },
+          {
+            "value": [
+              [
+                "40"
+              ]
+            ]
+          },
+          {
+            "value": [
+              [
+                "40",
+                "41",
+                "42",
+                "43",
+                "44"
+              ]
+            ]
+          }
+        ]
+      },
+      "input": {
+        "reset_time": "00:00:00",
+        "reset_weekday": 3,
+        "steps": [
+          {
+            "cap": null,
+            "op": "group_for_rescan",
+            "rows": [
+              {
+                "created_at": "2026-08-30T11:50:00+08:00",
+                "id": "1"
+              },
+              {
+                "created_at": "2026-08-30T12:40:00+08:00",
+                "id": "2"
+              },
+              {
+                "created_at": "2026-08-30T13:15:00+08:00",
+                "id": "3"
+              },
+              {
+                "created_at": "2026-08-30T16:20:00+08:00",
+                "id": "4"
+              },
+              {
+                "created_at": "2026-08-30T16:21:00+08:00",
+                "id": "5"
+              },
+              {
+                "created_at": "2026-08-30T23:59:00+08:00",
+                "id": "6"
+              },
+              {
+                "created_at": "2026-08-30T16:00:00+00:00",
+                "id": "7"
+              }
+            ]
+          },
+          {
+            "cap": null,
+            "op": "group_for_rescan",
+            "rows": [
+              {
+                "created_at": "2026-08-30T20:00:00+08:00",
+                "id": "10"
+              },
+              {
+                "created_at": "2026-08-30T20:02:00+08:00",
+                "id": "11"
+              },
+              {
+                "created_at": "2026-08-30T20:04:00+08:00",
+                "id": "12"
+              },
+              {
+                "created_at": "2026-08-30T20:06:00+08:00",
+                "id": "13"
+              },
+              {
+                "created_at": "2026-08-30T20:08:00+08:00",
+                "id": "14"
+              },
+              {
+                "created_at": "2026-08-30T20:10:00+08:00",
+                "id": "15"
+              },
+              {
+                "created_at": "2026-08-30T21:30:00+08:00",
+                "id": "20"
+              },
+              {
+                "created_at": "2026-08-30T21:31:00+08:00",
+                "id": "21"
+              },
+              {
+                "created_at": "2026-08-30T21:32:00+08:00",
+                "id": "22"
+              },
+              {
+                "created_at": "2026-08-30T21:33:00+08:00",
+                "id": "23"
+              },
+              {
+                "created_at": "2026-08-30T21:34:00+08:00",
+                "id": "24"
+              },
+              {
+                "created_at": "2026-08-30T21:35:00+08:00",
+                "id": "25"
+              },
+              {
+                "created_at": "2026-08-30T21:36:00+08:00",
+                "id": "26"
+              }
+            ]
+          },
+          {
+            "cap": 4,
+            "op": "group_for_rescan",
+            "rows": [
+              {
+                "created_at": "2026-08-30T20:00:00+08:00",
+                "id": "10"
+              },
+              {
+                "created_at": "2026-08-30T20:02:00+08:00",
+                "id": "11"
+              },
+              {
+                "created_at": "2026-08-30T20:04:00+08:00",
+                "id": "12"
+              },
+              {
+                "created_at": "2026-08-30T20:06:00+08:00",
+                "id": "13"
+              },
+              {
+                "created_at": "2026-08-30T20:08:00+08:00",
+                "id": "14"
+              },
+              {
+                "created_at": "2026-08-30T20:10:00+08:00",
+                "id": "15"
+              },
+              {
+                "created_at": "2026-08-30T21:30:00+08:00",
+                "id": "20"
+              },
+              {
+                "created_at": "2026-08-30T21:31:00+08:00",
+                "id": "21"
+              },
+              {
+                "created_at": "2026-08-30T21:32:00+08:00",
+                "id": "22"
+              },
+              {
+                "created_at": "2026-08-30T21:33:00+08:00",
+                "id": "23"
+              },
+              {
+                "created_at": "2026-08-30T21:34:00+08:00",
+                "id": "24"
+              },
+              {
+                "created_at": "2026-08-30T21:35:00+08:00",
+                "id": "25"
+              },
+              {
+                "created_at": "2026-08-30T21:36:00+08:00",
+                "id": "26"
+              }
+            ]
+          },
+          {
+            "cap": null,
+            "op": "group_for_rescan",
+            "rows": []
+          },
+          {
+            "max_messages": 5,
+            "op": "split_until",
+            "rows": [
+              {
+                "created_at": "2026-08-30T20:00:00+08:00",
+                "id": "10"
+              },
+              {
+                "created_at": "2026-08-30T20:02:00+08:00",
+                "id": "11"
+              },
+              {
+                "created_at": "2026-08-30T20:04:00+08:00",
+                "id": "12"
+              },
+              {
+                "created_at": "2026-08-30T20:06:00+08:00",
+                "id": "13"
+              },
+              {
+                "created_at": "2026-08-30T20:08:00+08:00",
+                "id": "14"
+              },
+              {
+                "created_at": "2026-08-30T20:10:00+08:00",
+                "id": "15"
+              },
+              {
+                "created_at": "2026-08-30T21:30:00+08:00",
+                "id": "20"
+              },
+              {
+                "created_at": "2026-08-30T21:31:00+08:00",
+                "id": "21"
+              },
+              {
+                "created_at": "2026-08-30T21:32:00+08:00",
+                "id": "22"
+              },
+              {
+                "created_at": "2026-08-30T21:33:00+08:00",
+                "id": "23"
+              },
+              {
+                "created_at": "2026-08-30T21:34:00+08:00",
+                "id": "24"
+              },
+              {
+                "created_at": "2026-08-30T21:35:00+08:00",
+                "id": "25"
+              },
+              {
+                "created_at": "2026-08-30T21:36:00+08:00",
+                "id": "26"
+              }
+            ]
+          },
+          {
+            "max_messages": 2,
+            "op": "split_until",
+            "rows": [
+              {
+                "created_at": "2026-08-30T10:00:00+08:00",
+                "id": "40"
+              },
+              {
+                "created_at": "2026-08-30T10:05:00+08:00",
+                "id": "41"
+              },
+              {
+                "created_at": "2026-08-30T10:10:00+08:00",
+                "id": "42"
+              },
+              {
+                "created_at": "2026-08-30T10:15:00+08:00",
+                "id": "43"
+              },
+              {
+                "created_at": "2026-08-30T10:20:00+08:00",
+                "id": "44"
+              }
+            ]
+          },
+          {
+            "max_messages": 0,
+            "op": "split_until",
+            "rows": [
+              {
+                "created_at": "2026-08-30T10:00:00+08:00",
+                "id": "40"
+              }
+            ]
+          },
+          {
+            "max_messages": 5,
+            "op": "split_until",
+            "rows": [
+              {
+                "created_at": "2026-08-30T10:00:00+08:00",
+                "id": "40"
+              },
+              {
+                "created_at": "2026-08-30T10:05:00+08:00",
+                "id": "41"
+              },
+              {
+                "created_at": "2026-08-30T10:10:00+08:00",
+                "id": "42"
+              },
+              {
+                "created_at": "2026-08-30T10:15:00+08:00",
+                "id": "43"
+              },
+              {
+                "created_at": "2026-08-30T10:20:00+08:00",
+                "id": "44"
+              }
+            ]
+          }
+        ],
+        "timezone": "Asia/Kuala_Lumpur"
+      }
+    },
+    {
+      "case_id": "rescan-window-bounds",
+      "expected": {
+        "steps": [
+          {
+            "value": "week"
+          },
+          {
+            "value": "2weeks"
+          },
+          {
+            "value": "48h"
+          },
+          {
+            "value": "24h"
+          },
+          {
+            "value": "week"
+          },
+          {
+            "error": {
+              "message": "unknown window 'month'; expected one of week, 2weeks, 48h, 24h",
+              "type": "ValueError"
+            }
+          },
+          {
+            "value": "2026-09-01T10:00:00+08:00"
+          },
+          {
+            "value": "2026-08-31T10:00:00+08:00"
+          },
+          {
+            "value": "2026-08-27T00:00:00+08:00"
+          },
+          {
+            "value": "2026-08-20T00:00:00+08:00"
+          },
+          {
+            "value": "2026-09-03T00:00:00+08:00"
+          },
+          {
+            "value": "2026-08-27T00:00:00+08:00"
+          },
+          {
+            "error": {
+              "message": "unknown window 'fortnight'; expected one of week, 2weeks, 48h, 24h",
+              "type": "ValueError"
+            }
+          },
+          {
+            "value": "2026-08-27T00:00:00+08:00"
+          },
+          {
+            "value": true
+          },
+          {
+            "value": false
+          },
+          {
+            "value": false
+          },
+          {
+            "value": false
+          }
+        ]
+      },
+      "input": {
+        "reset_time": "00:00:00",
+        "reset_weekday": 3,
+        "steps": [
+          {
+            "automated": false,
+            "op": "clamp_window",
+            "window": "week"
+          },
+          {
+            "automated": false,
+            "op": "clamp_window",
+            "window": " 2WEEKS "
+          },
+          {
+            "automated": true,
+            "op": "clamp_window",
+            "window": "week"
+          },
+          {
+            "automated": true,
+            "op": "clamp_window",
+            "window": "24h"
+          },
+          {
+            "automated": false,
+            "op": "clamp_window",
+            "window": ""
+          },
+          {
+            "automated": false,
+            "error_type": "ValueError",
+            "op": "clamp_window",
+            "window": "month"
+          },
+          {
+            "now": "2026-09-02T10:00:00+08:00",
+            "op": "window_since",
+            "window": "24h"
+          },
+          {
+            "now": "2026-09-02T10:00:00+08:00",
+            "op": "window_since",
+            "window": "48h"
+          },
+          {
+            "now": "2026-09-02T10:00:00+08:00",
+            "op": "window_since",
+            "window": "week"
+          },
+          {
+            "now": "2026-09-02T10:00:00+08:00",
+            "op": "window_since",
+            "window": "2weeks"
+          },
+          {
+            "now": "2026-09-03T00:00:00+08:00",
+            "op": "window_since",
+            "window": "week"
+          },
+          {
+            "now": "2026-09-02T23:59:59+08:00",
+            "op": "window_since",
+            "window": "week"
+          },
+          {
+            "error_type": "ValueError",
+            "now": "2026-09-02T10:00:00+08:00",
+            "op": "window_since",
+            "window": "fortnight"
+          },
+          {
+            "op": "previous_week_start",
+            "this_week": "2026-09-03T00:00:00+08:00"
+          },
+          {
+            "automated": false,
+            "gated": 0,
+            "op": "should_widen",
+            "window": "week"
+          },
+          {
+            "automated": false,
+            "gated": 1,
+            "op": "should_widen",
+            "window": "week"
+          },
+          {
+            "automated": true,
+            "gated": 0,
+            "op": "should_widen",
+            "window": "week"
+          },
+          {
+            "automated": false,
+            "gated": 0,
+            "op": "should_widen",
+            "window": "48h"
+          }
+        ],
+        "timezone": "Asia/Kuala_Lumpur"
+      }
+    }
+  ],
+  "family": "window",
+  "provenance": {
+    "functions": [
+      "bot.extract.window.group_bursts",
+      "bot.extract.window.group_for_rescan",
+      "bot.extract.window.split_until",
+      "bot.extract.window.clamp_window",
+      "bot.extract.window.window_since",
+      "bot.extract.window.previous_week_start",
+      "bot.extract.window.should_widen"
+    ],
+    "inventory_surfaces": [
+      "extract.window-and-rescan-window"
+    ],
+    "oracle": "legacy/python bot.extract.window",
+    "source_tests": [
+      "tests/test_rescan_window.py",
+      "tests/test_extract_pipeline.py"
+    ]
+  },
+  "schema_version": "v5-extract-window-v1"
+}

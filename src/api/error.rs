@@ -1,0 +1,144 @@
+use axum::{
+    Json,
+    http::StatusCode,
+    response::{IntoResponse, Response},
+};
+use serde::Serialize;
+
+/// Wire error `{error, message}`: a stable code plus generic, value-free text.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ApiError {
+    pub status: StatusCode,
+    pub error: &'static str,
+    pub message: &'static str,
+}
+
+#[derive(Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(rename = "ApiError"))]
+pub(crate) struct Body {
+    error: &'static str,
+    message: &'static str,
+}
+
+impl ApiError {
+    pub const NOT_FOUND: Self = Self {
+        status: StatusCode::NOT_FOUND,
+        error: "not_found",
+        message: "No such endpoint on this origin.",
+    };
+    pub const METHOD_NOT_ALLOWED: Self = Self {
+        status: StatusCode::METHOD_NOT_ALLOWED,
+        error: "method_not_allowed",
+        message: "That method is not allowed here.",
+    };
+    pub const MISDIRECTED: Self = Self {
+        status: StatusCode::MISDIRECTED_REQUEST,
+        error: "misdirected",
+        message: "This origin does not serve that host.",
+    };
+    pub const PAYLOAD_TOO_LARGE: Self = Self {
+        status: StatusCode::PAYLOAD_TOO_LARGE,
+        error: "payload_too_large",
+        message: "The request body is too large.",
+    };
+    pub const TIMEOUT: Self = Self {
+        status: StatusCode::SERVICE_UNAVAILABLE,
+        error: "timeout",
+        message: "The request took too long.",
+    };
+    pub const UNAUTHENTICATED: Self = Self {
+        status: StatusCode::UNAUTHORIZED,
+        error: "unauthenticated",
+        message: "Sign in to continue.",
+    };
+    /// A write that needs a recent Discord round trip, after the member
+    /// session's fresh window (`MemberSession::require_fresh`).
+    pub const REAUTH_REQUIRED: Self = Self {
+        status: StatusCode::UNAUTHORIZED,
+        error: "reauth_required",
+        message: "Sign in with Discord again to make this change.",
+    };
+    /// A mutation without this origin's markers or the session's CSRF token.
+    pub const CSRF: Self = Self {
+        status: StatusCode::FORBIDDEN,
+        error: "csrf",
+        message: "The request did not come from this portal.",
+    };
+    /// Sign-in is not configured here, or the staff check cannot run right now.
+    pub const AUTH_UNAVAILABLE: Self = Self {
+        status: StatusCode::SERVICE_UNAVAILABLE,
+        error: "auth_unavailable",
+        message: "Sign-in is unavailable right now.",
+    };
+    pub const RATE_LIMITED: Self = Self {
+        status: StatusCode::TOO_MANY_REQUESTS,
+        error: "rate_limited",
+        message: "Too many attempts; try again shortly.",
+    };
+    /// The authenticated edge sent no usable `X-Forwarded-For`.
+    pub const BAD_FORWARDING: Self = Self {
+        status: StatusCode::BAD_REQUEST,
+        error: "bad_forwarding",
+        message: "The proxy did not identify the client.",
+    };
+    pub const INVALID_QUERY: Self = Self {
+        status: StatusCode::UNPROCESSABLE_ENTITY,
+        error: "invalid_query",
+        message: "A query parameter is not valid.",
+    };
+    pub const INVALID_BODY: Self = Self {
+        status: StatusCode::BAD_REQUEST,
+        error: "invalid_body",
+        message: "The request body is not valid.",
+    };
+    /// The admin event stream is at its connection cap; pages keep polling.
+    pub const TOO_MANY_STREAMS: Self = Self {
+        status: StatusCode::TOO_MANY_REQUESTS,
+        error: "too_many_streams",
+        message: "Too many live connections are open; this page will poll instead.",
+    };
+    pub const UNAVAILABLE: Self = Self {
+        status: StatusCode::SERVICE_UNAVAILABLE,
+        error: "unavailable",
+        message: "The service is unavailable right now.",
+    };
+    /// Public origin while the portal is closed: data and art answer this.
+    pub const CLOSED: Self = Self {
+        status: StatusCode::SERVICE_UNAVAILABLE,
+        error: "closed",
+        message: "The schedule is not public right now.",
+    };
+    /// A device-list handle naming the caller's own session.
+    pub const CURRENT_SESSION: Self = Self {
+        status: StatusCode::CONFLICT,
+        error: "current_session",
+        message: "This is the session you are using; sign out instead.",
+    };
+    /// A device-list handle no live session has.
+    pub const SESSION_ENDED: Self = Self {
+        status: StatusCode::NOT_FOUND,
+        error: "not_found",
+        message: "That session has already ended.",
+    };
+}
+
+impl IntoResponse for ApiError {
+    fn into_response(self) -> Response {
+        (
+            self.status,
+            Json(Body {
+                error: self.error,
+                message: self.message,
+            }),
+        )
+            .into_response()
+    }
+}
+
+pub async fn not_found() -> ApiError {
+    ApiError::NOT_FOUND
+}
+
+pub async fn method_not_allowed() -> ApiError {
+    ApiError::METHOD_NOT_ALLOWED
+}

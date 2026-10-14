@@ -1,0 +1,148 @@
+/* The showcase page's own layout only: it scrolls (the apps never do), and
+   each section is a core window. Colours come from the tokens, by class:
+   style attributes are refused by the CSP. */
+
+.showcase {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 1rem var(--gutter) 6rem;
+}
+
+.showcase__head h1 {
+  margin: 0;
+  font-family: var(--display);
+}
+
+.showcase__label {
+  margin: 0.5rem 0 0;
+  color: var(--ground-ink);
+  font-size: var(--fs-lg);
+}
+
+.showcase__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem;
+  margin-bottom: 0.8rem;
+}
+
+.showcase__swatches,
+.showcase__pairs {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(10rem, 1fr));
+  gap: 0.5rem;
+  margin: 0.8rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.showcase__swatches li {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: var(--fs-small);
+}
+
+.showcase__swatch {
+  flex: none;
+  width: 2rem;
+  height: 2rem;
+  border: 1.5px solid var(--line);
+  border-radius: var(--r-sm);
+}
+
+.showcase__swatch--ground { background: var(--ground); }
+.showcase__swatch--surface { background: var(--surface); }
+.showcase__swatch--raise { background: var(--raise); }
+.showcase__swatch--pane { background: var(--pane); }
+.showcase__swatch--row { background: var(--row); }
+.showcase__swatch--win { background: var(--win); }
+.showcase__swatch--accent-fill { background: var(--accent-fill); }
+.showcase__swatch--select { background: var(--select); }
+.showcase__swatch--seg-fill { background: var(--seg-fill); }
+.showcase__swatch--chip-fill { background: var(--chip-fill); }
+.showcase__swatch--line { background: var(--line); }
+.showcase__swatch--ok { background: var(--ok); }
+.showcase__swatch--warn { background: var(--warn); }
+.showcase__swatch--risk { background: var(--risk); }
+.showcase__swatch--own { background: var(--own); }
+.showcase__swatch--off { background: var(--off); }
+
+.showcase__pair {
+  padding: 0.5rem 0.7rem;
+  border: 1.5px solid var(--line);
+  border-radius: var(--r-sm);
+  font-size: var(--fs-small);
+  font-weight: 600;
+}
+
+.showcase__pair--ground-ink-on-ground { color: var(--ground-ink); background: var(--ground); }
+.showcase__pair--ink-on-surface { color: var(--ink); background: var(--surface); }
+.showcase__pair--dim-text-on-surface { color: var(--dim-text); background: var(--surface); }
+.showcase__pair--win-ink-on-win { color: var(--win-ink); background: var(--win); }
+.showcase__pair--accent-ink-on-accent-fill { color: var(--accent-ink); background: var(--accent-fill); }
+.showcase__pair--select-ink-on-select { color: var(--select-ink); background: var(--select); }
+.showcase__pair--accent-text-on-surface { color: var(--accent-text); background: var(--surface); }
+.showcase__pair--ok-text-on-surface { color: var(--ok-text); background: var(--surface); }
+.showcase__pair--warn-text-on-surface { color: var(--warn-text); background: var(--surface); }
+.showcase__pair--risk-text-on-surface { color: var(--risk-text); background: var(--surface); }
+
+.showcase__states {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+  gap: 0.8rem;
+  margin-top: 0.8rem;
+}
+
+/* A fixed frame is the viewport's height in the apps; here it is a stage. */
+.showcase__stage.frame {
+  height: 34rem;
+  border: 2px dashed var(--line);
+  border-radius: var(--r);
+}
+
+.showcase__stage--phone.frame {
+  width: min(390px, 100%);
+  height: 24rem;
+}
+
+.showcase__window {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.showcase__panes {
+  display: flex;
+  flex: 1 1 auto;
+  gap: 12px;
+  min-height: 0;
+}
+
+.showcase__panes > .list-pane {
+  flex: 0 0 16rem;
+}
+
+.showcase__panes > .thread-panel {
+  flex: 1 1 auto;
+  margin: 12px 0;
+}
+
+.showcase__option {
+  display: grid;
+  padding: 8px 12px;
+}
+
+.showcase__option[aria-selected="true"] {
+  background: var(--select);
+}
+
+.showcase__pageline-h {
+  margin: 0;
+  font-size: var(--fs-lg);
+}

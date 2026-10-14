@@ -1,0 +1,41 @@
+// The admin app's initial stylesheet: everything public uses plus the Week
+// page's partials. `core/` holds the generic primitives, `screens/` the
+// Kanade screens built on them (screens use only core and the tokens).
+// Page-only partials (panes, boss-grid, members, evidence, gate) are imported
+// by the lazily loaded pages that use them, via
+// `@kanade/ui/styles/{core,screens}/<name>.scss`. Order mirrors v4
+// portal.scss; core and screens interleave because the cascade depends on it.
+@use "core/base";
+@use "core/shell";
+@use "core/frame";
+@use "core/page-furniture";
+@use "core/forms";
+@use "core/buttons";
+@use "core/m3e-buttons"; // M3E pills; before the partials that refine them
+@use "core/chips-status";
+@use "core/progress"; // WavyProgress and AnswerBar (always on); before the partials that place them
+@use "screens/bosses";
+@use "screens/runs";
+@use "core/card-window";
+@use "core/tabs";
+@use "screens/board";
+@use "screens/week"; // the Week window (G3)
+@use "screens/week-rail"; // the phone's shape of the week (v4 partials/rail.html)
+@use "core/nav-rail"; // M3E rail frame (G1, G6)
+@use "core/topbar"; // M3E phone frame: top bar + drawer (G7)
+@use "core/page-line"; // M3E page line (G2)
+@use "core/m3e-primitives"; // Shared list, detail and decision-pane bases for every admin route.
+@use "core/state-note"; // StateNote (shared with the member portal)
+@use "core/avatar"; // Avatar portraits (shared with the member portal)
+@use "core/row-expansion";
+@use "screens/boss-stack"; // BossStack rows (Fixed); right after the row containment it sits in
+@use "core/stats-tables";
+@use "core/theme-tiles"; // colourway tiles: Config › Theme, Account › This browser
+@use "core/modal";
+@use "core/toast";
+@use "core/icons";
+@use "../nap/nap-theme";
+@use "core/motion";
+@use "core/arrival"; // live-update arrival marks and number ticks
+@use "core/loading"; // the loading standard's morphing shape (LoadingState, Experiment A)
+@use "screens/experiments"; // revertible design experiments (pwa-design-guidelines "Experiments")

@@ -1,0 +1,93 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "V5 scheduler mention-policy oracle vectors",
+  "type": "object",
+  "required": ["schema_version", "family", "provenance", "cases"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {"const": "v5-scheduler-mentions-v1"},
+    "family": {"const": "mentions"},
+    "provenance": {"$ref": "#/$defs/provenance"},
+    "cases": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/case"}}
+  },
+  "$defs": {
+    "id": {"type": "string", "minLength": 1},
+    "snowflake": {"type": "string", "pattern": "^[0-9]+$"},
+    "instant": {"type": "string", "format": "date-time"},
+    "level": {"enum": ["essential", "all", "off"]},
+    "kind": {"type": "string", "pattern": "^[a-z][a-z_]*$"},
+    "candidate": {"oneOf": [{"$ref": "#/$defs/snowflake"}, {"type": "integer", "minimum": 0}]},
+    "snowflakes": {"type": "array", "items": {"$ref": "#/$defs/snowflake"}},
+    "strings": {"type": "array", "items": {"$ref": "#/$defs/id"}},
+    "nullableSnowflakes": {"oneOf": [{"$ref": "#/$defs/snowflakes"}, {"type": "null"}]},
+    "provenance": {
+      "type": "object",
+      "required": ["oracle", "functions", "source_tests", "inventory_surfaces"],
+      "additionalProperties": false,
+      "properties": {
+        "oracle": {"type": "string", "minLength": 1},
+        "functions": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/id"}},
+        "source_tests": {"type": "array", "minItems": 1, "items": {"type": "string", "pattern": "^tests/test_[a-z0-9_]+\\.py::test_[A-Za-z0-9_]+$"}},
+        "inventory_surfaces": {"$ref": "#/$defs/strings"}
+      }
+    },
+    "member": {
+      "type": "object",
+      "required": ["user_id", "display_name", "nickname", "has_role", "ping_level"],
+      "additionalProperties": false,
+      "properties": {"user_id": {"$ref": "#/$defs/snowflake"}, "display_name": {"$ref": "#/$defs/id"}, "nickname": {"oneOf": [{"$ref": "#/$defs/id"}, {"type": "null"}]}, "has_role": {"type": "boolean"}, "ping_level": {"$ref": "#/$defs/level"}}
+    },
+    "replayCase": {
+      "type": "object",
+      "required": ["case_id", "input"],
+      "additionalProperties": false,
+      "properties": {"case_id": {"$ref": "#/$defs/id"}, "input": {"$ref": "#/$defs/input"}, "expected": {"$ref": "#/$defs/expected"}}
+    },
+    "case": {"allOf": [{"$ref": "#/$defs/replayCase"}, {"required": ["expected"]}]},
+    "input": {
+      "type": "object",
+      "required": ["clock", "timezone", "members", "steps"],
+      "additionalProperties": false,
+      "properties": {
+        "clock": {"$ref": "#/$defs/instant"},
+        "timezone": {"type": "string", "minLength": 1},
+        "members": {"type": "array", "items": {"$ref": "#/$defs/member"}},
+        "steps": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/step"}}
+      }
+    },
+    "step": {"oneOf": [
+      {"type": "object", "required": ["op"], "additionalProperties": false, "properties": {"op": {"const": "ping_kinds"}}},
+      {"type": "object", "required": ["op", "candidates", "kind"], "additionalProperties": false, "properties": {"op": {"const": "resolve_mentions"}, "candidates": {"type": "array", "items": {"$ref": "#/$defs/candidate"}}, "kind": {"$ref": "#/$defs/kind"}}},
+      {"type": "object", "required": ["op", "people", "kind", "candidates"], "additionalProperties": false, "properties": {"op": {"const": "audience"}, "people": {"$ref": "#/$defs/snowflakes"}, "kind": {"$ref": "#/$defs/kind"}, "candidates": {"$ref": "#/$defs/nullableSnowflakes"}}},
+      {"type": "object", "required": ["op", "level", "kind"], "additionalProperties": false, "properties": {"op": {"const": "wants_mention"}, "level": {"$ref": "#/$defs/level"}, "kind": {"$ref": "#/$defs/kind"}}},
+      {"type": "object", "required": ["op", "value"], "additionalProperties": false, "properties": {"op": {"const": "normalise_level"}, "value": {"type": ["string", "null"]}, "error_type": {"const": "ValueError"}}},
+      {"type": "object", "required": ["op", "user_id", "level"], "additionalProperties": false, "properties": {"op": {"const": "set_ping_level"}, "user_id": {"$ref": "#/$defs/snowflake"}, "level": {"type": "string"}, "error_type": {"enum": ["ValueError", "KeyError"]}}},
+      {"type": "object", "required": ["op", "participants", "rsvps"], "additionalProperties": false, "properties": {"op": {"const": "not_declined"}, "participants": {"$ref": "#/$defs/snowflakes"}, "rsvps": {"type": "array", "items": {"type": "array", "prefixItems": [{"$ref": "#/$defs/snowflake"}, {"enum": ["yes", "no", "maybe"]}], "minItems": 2, "maxItems": 2}}}},
+      {"type": "object", "required": ["op", "runs"], "additionalProperties": false, "properties": {"op": {"const": "everyone_on"}, "runs": {"type": "array", "items": {"$ref": "#/$defs/snowflakes"}}}},
+      {"type": "object", "required": ["op", "card_mentions", "mention_users", "quiet_mode"], "additionalProperties": false, "properties": {"op": {"const": "prepared_allow_list"}, "card_mentions": {"$ref": "#/$defs/snowflakes"}, "mention_users": {"$ref": "#/$defs/nullableSnowflakes"}, "quiet_mode": {"type": "boolean"}}}
+    ]},
+    "result_ping_kinds": {"type": "object", "required": ["essential", "informational"], "additionalProperties": false, "properties": {"essential": {"type": "array", "items": {"$ref": "#/$defs/kind"}}, "informational": {"type": "array", "items": {"$ref": "#/$defs/kind"}}}},
+    "result_resolve_mentions": {"$ref": "#/$defs/snowflakes"},
+    "result_audience": {"type": "object", "required": ["mentioned", "names"], "additionalProperties": false, "properties": {"mentioned": {"$ref": "#/$defs/snowflakes"}, "names": {"type": "array", "items": {"type": "array", "prefixItems": [{"$ref": "#/$defs/snowflake"}, {"$ref": "#/$defs/id"}], "minItems": 2, "maxItems": 2}}}},
+    "result_wants_mention": {"type": "boolean"},
+    "result_normalise_level": {"$ref": "#/$defs/level"},
+    "result_set_ping_level": {"$ref": "#/$defs/level"},
+    "result_not_declined": {"$ref": "#/$defs/snowflakes"},
+    "result_everyone_on": {"$ref": "#/$defs/snowflakes"},
+    "allowList": {"oneOf": [{"$ref": "#/$defs/snowflakes"}, {"type": "boolean"}]},
+    "result_prepared_allow_list": {"type": "object", "required": ["users", "roles", "everyone", "replied_user"], "additionalProperties": false, "properties": {"users": {"$ref": "#/$defs/allowList"}, "roles": {"$ref": "#/$defs/allowList"}, "everyone": {"type": "boolean"}, "replied_user": {"type": "boolean"}}},
+    "stepResult": {"oneOf": [
+      {"type": "object", "required": ["value"], "additionalProperties": false, "properties": {"value": {"anyOf": [
+        {"$ref": "#/$defs/result_ping_kinds"}, {"$ref": "#/$defs/result_resolve_mentions"}, {"$ref": "#/$defs/result_audience"},
+        {"$ref": "#/$defs/result_wants_mention"}, {"$ref": "#/$defs/result_normalise_level"}, {"$ref": "#/$defs/result_prepared_allow_list"}
+      ]}}},
+      {"type": "object", "required": ["error"], "additionalProperties": false, "properties": {"error": {"type": "object", "required": ["type", "message"], "additionalProperties": false, "properties": {"type": {"enum": ["ValueError", "KeyError"]}, "message": {"type": "string", "minLength": 1}}}}}
+    ]},
+    "expected": {"type": "object", "required": ["steps", "final_state"], "additionalProperties": false, "properties": {
+      "steps": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/stepResult"}},
+      "final_state": {"type": "object", "required": ["members"], "additionalProperties": false, "properties": {
+        "members": {"type": "array", "items": {"type": "object", "required": ["user_id", "ping_level", "known"], "additionalProperties": false, "properties": {"user_id": {"$ref": "#/$defs/snowflake"}, "ping_level": {"$ref": "#/$defs/level"}, "known": {"type": "boolean"}}}}
+      }}
+    }}
+  }
+}

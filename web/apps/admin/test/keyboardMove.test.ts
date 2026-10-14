@@ -1,0 +1,149 @@
+import { describe, expect, it } from 'vitest';
+import { IDLE, onKey, cancel, type LiftState, type MovableRun } from '../src/planner/keyboardMove';
+
+const DAYS = ['Thu 24', 'Fri 25', 'Sat 26', 'Sun 27', 'Mon 28', 'Tue 29', 'Wed 30'];
+const ctx = { dayLabel: (d: number) => DAYS[d]!, lastDay: 6 };
+const run: MovableRun = { id: 'r-carling', day: 5, time: '22:00', label: 'HCarling + HStar' };
+
+function press(state: LiftState, ...keys: string[]) {
+  let current = state;
+  let last = onKey(current, keys[0]!, run, ctx);
+  for (const key of keys) {
+    last = onKey(current, key, run, ctx);
+    current = last.state;
+  }
+  return last;
+}
+
+describe('keyboard move reducer', () => {
+  it('ignores arrows until the run is picked up', () => {
+    expect(onKey(IDLE, 'ArrowLeft', run, ctx)).toEqual({ state: IDLE, handled: false });
+  });
+
+  it('leaves Enter and Space to open the card while idle', () => {
+    for (const key of [' ', 'Enter']) expect(onKey(IDLE, key, run, ctx)).toEqual({ state: IDLE, handled: false });
+  });
+
+  it('picks up with M and explains the keys', () => {
+    for (const key of ['m', 'M']) {
+      const out = onKey(IDLE, key, run, ctx);
+      expect(out.state).toEqual({ kind: 'lifted', runId: 'r-carling', origin: { day: 5, time: '22:00' }, at: { day: 5, time: '22:00' } });
+      expect(out.announce).toMatch(/^Picked up HCarling \+ HStar, Tue 29, 22:00\. Left and right arrows/);
+    }
+  });
+
+  it('moves by day and by 30 minutes, announcing each step', () => {
+    const out = press(IDLE, 'm', 'ArrowRight');
+    expect(out.announce).toBe('HCarling + HStar: Wed 30, 22:00.');
+    const later = press(out.state, 'ArrowDown');
+    expect(later.announce).toBe('HCarling + HStar: Wed 30, 22:30.');
+    const earlier = press(later.state, 'ArrowUp', 'ArrowUp');
+    expect(earlier.announce).toBe('HCarling + HStar: Wed 30, 21:30.');
+  });
+
+  it('stops at the edges of the week and the day', () => {
+    const edge = press(IDLE, 'm', 'ArrowRight', 'ArrowRight');
+    expect(edge.state).toMatchObject({ at: { day: 6 } });
+    expect(edge.announce).toBe('Wed 30 is the last day of the boss week.');
+    const late = press(IDLE, 'm', 'ArrowDown', 'ArrowDown', 'ArrowDown', 'ArrowDown');
+    expect(late.state).toMatchObject({ at: { time: '23:30' } });
+    expect(late.announce).toBe('23:30 is as late as this day goes.');
+  });
+
+  it('commits a changed slot on drop and nothing when unchanged', () => {
+    const moved = press(IDLE, 'M', 'ArrowLeft', 'Enter');
+    expect(moved.commit).toEqual({ runId: 'r-carling', from: { day: 5, time: '22:00' }, to: { day: 4, time: '22:00' } });
+    expect(moved.state).toEqual(IDLE);
+    expect(moved.announce).toBe('Dropped HCarling + HStar on Mon 28, 22:00.');
+
+    const same = press(IDLE, 'm', 'ArrowLeft', 'ArrowRight', ' ');
+    expect(same.commit).toBeUndefined();
+    expect(same.announce).toBe('Dropped HCarling + HStar where it was. Nothing changed.');
+  });
+
+  it('cancels with Escape or by leaving the card, restoring the origin', () => {
+    const esc = press(IDLE, 'm', 'ArrowLeft', 'Escape');
+    expect(esc.state).toEqual(IDLE);
+    expect(esc.commit).toBeUndefined();
+    expect(esc.announce).toBe('Move cancelled. HCarling + HStar stays on Tue 29, 22:00.');
+
+    const lifted = press(IDLE, 'm', 'ArrowLeft').state;
+    expect(cancel(lifted, run, ctx).announce).toBe('Move cancelled. HCarling + HStar stays on Tue 29, 22:00.');
+    expect(cancel(IDLE, run, ctx).handled).toBe(false);
+  });
+
+  it('keeps own-time runs timeless', () => {
+    const own: MovableRun = { id: 'r-bellona', day: 4, time: null, label: 'NBellona' };
+    const lifted = onKey(IDLE, 'm', own, ctx).state;
+    const up = onKey(lifted, 'ArrowUp', own, ctx);
+    expect(up.announce).toBe('Own-time runs have no time to change.');
+    expect(onKey(lifted, 'ArrowRight', own, ctx).announce).toBe('NBellona: Tue 29, own time.');
+  });
+});
+
+describe('keyboard move: configured step and Shift jumps', () => {
+  const others = [
+    { id: 'hfa', day: 5, time: '20:00', minutes: 30 },
+    { id: 'xbm', day: 5, time: '23:30', minutes: 60 },
+  ];
+  const stepped = { ...ctx, step: 20, others: (d: number) => (d === 5 ? others : []) };
+  const carling: MovableRun = { ...run, minutes: 60 };
+
+  it('steps by the configured default and says so when picking up', () => {
+    const up = onKey(IDLE, 'm', carling, stepped);
+    expect(up.announce).toContain('change the time by 20 minutes');
+    expect(onKey(up.state, 'ArrowDown', carling, stepped).announce).toBe('HCarling + HStar: Tue 29, 22:20.');
+    expect(onKey(up.state, 'ArrowUp', carling, stepped).announce).toBe('HCarling + HStar: Tue 29, 21:40.');
+  });
+
+  it('Shift+Up jumps to just after the run before; Shift+Down to just before the next', () => {
+    const up = onKey(IDLE, 'm', carling, stepped);
+    expect(onKey(up.state, 'ArrowUp', carling, stepped, true).announce).toBe('HCarling + HStar: Tue 29, 20:30.');
+    expect(onKey(up.state, 'ArrowDown', carling, stepped, true).announce).toBe('HCarling + HStar: Tue 29, 22:30.');
+  });
+
+  it('Shift says when there is nothing to move next to', () => {
+    const lone = { ...stepped, others: () => [] };
+    const up = onKey(IDLE, 'm', carling, lone);
+    const out = onKey(up.state, 'ArrowUp', carling, lone, true);
+    expect(out.state).toEqual(up.state);
+    expect(out.announce).toBe('No run before 22:00 on Tue 29 to move next to.');
+  });
+});
+
+describe('keyboard move: S swaps with the run on the slot', () => {
+  const occupied = {
+    ...ctx,
+    occupant: (slot: { day: number; time: string | null }, movingId: string) =>
+      slot.day === 5 && slot.time === '23:30' && movingId !== 'r-bm' ? { id: 'r-bm', label: 'XBM' } : null,
+  };
+
+  it('says when a step lands on another run, and that S swaps', () => {
+    const up = onKey(IDLE, 'm', run, occupied);
+    expect(up.announce).toContain('on another run, S swaps the two');
+    let state = up.state;
+    for (const key of ['ArrowDown', 'ArrowDown']) state = onKey(state, key, run, occupied).state;
+    const out = onKey(state, 'ArrowDown', run, occupied);
+    expect(out.announce).toBe('HCarling + HStar: Tue 29, 23:30. XBM is here: S swaps with it, Enter drops beside it.');
+  });
+
+  it('S on another run swaps and ends the lift', () => {
+    let state = onKey(IDLE, 'm', run, occupied).state;
+    for (const key of ['ArrowDown', 'ArrowDown', 'ArrowDown']) state = onKey(state, key, run, occupied).state;
+    const out = onKey(state, 's', run, occupied);
+    expect(out).toMatchObject({ state: IDLE, handled: true, announce: 'Swapping HCarling + HStar with XBM.', swap: { runId: 'r-carling', withId: 'r-bm' } });
+    expect(out.commit).toBeUndefined();
+  });
+
+  it('S with nobody on the slot does nothing and says so', () => {
+    const up = onKey(IDLE, 'm', run, occupied);
+    const out = onKey(up.state, 'S', run, occupied);
+    expect(out.state).toEqual(up.state);
+    expect(out.swap).toBeUndefined();
+    expect(out.announce).toBe("Nothing to swap with on Tue 29, 22:00: move onto another run's slot first.");
+  });
+
+  it('S is not a key until the run is picked up', () => {
+    expect(onKey(IDLE, 's', run, occupied)).toEqual({ state: IDLE, handled: false });
+  });
+});

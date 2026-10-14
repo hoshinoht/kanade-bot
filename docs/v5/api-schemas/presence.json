@@ -1,0 +1,130 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kanade.invalid/api-schemas/presence.json",
+  "title": "Admin presence (who else has this open; in memory only, admins only)",
+  "$defs": {
+    "PresenceKind": {
+      "description": "The kind of page: an Inbox member request (Inbox detail and its editor) or a run (the run sheet).",
+      "enum": [
+        "request",
+        "run"
+      ]
+    },
+    "PresenceMode": {
+      "enum": [
+        "viewing",
+        "editing"
+      ]
+    },
+    "PresencePlace": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "id"
+      ],
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/PresenceKind"
+        },
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]{1,64}$",
+          "description": "The request's or run's id; an unknown id is accepted and simply matches nobody."
+        }
+      }
+    },
+    "PresenceCheckIn": {
+      "description": "PUT /api/admin/presence body.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "at",
+        "mode",
+        "seq"
+      ],
+      "properties": {
+        "at": {
+          "$ref": "#/$defs/PresencePlace"
+        },
+        "mode": {
+          "$ref": "#/$defs/PresenceMode"
+        },
+        "seq": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Orders one tab's calls: it grows with every check-in and leave (the leave sends it as `DELETE …&seq=`). A check-in no newer than the tab's leave is ignored for the 60 s lifetime, so one cut off in flight cannot bring the tab back."
+        }
+      }
+    },
+    "PresenceEntry": {
+      "description": "Another admin at the place, once per admin (editing if any of their tabs is); the caller is never listed.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "admin",
+        "mode",
+        "seen_s"
+      ],
+      "properties": {
+        "admin": {
+          "$ref": "common.json#/$defs/Member",
+          "description": "The admin's actor id (`discord:<id>`, `tailscale:<login>`, `token`) and the name their sign-in shows."
+        },
+        "mode": {
+          "$ref": "#/$defs/PresenceMode"
+        },
+        "seen_s": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 59,
+          "description": "Seconds since their latest check-in there."
+        }
+      }
+    },
+    "PresenceHere": {
+      "description": "PUT /api/admin/presence: the check-in's answer, with the cadence the client keeps.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "heartbeat_s",
+        "ttl_s",
+        "here"
+      ],
+      "properties": {
+        "heartbeat_s": {
+          "const": 15,
+          "description": "Check in this often while the page is visible."
+        },
+        "ttl_s": {
+          "const": 60,
+          "description": "An entry is gone this long after its last check-in."
+        },
+        "here": {
+          "type": "array",
+          "maxItems": 8,
+          "items": {
+            "$ref": "#/$defs/PresenceEntry"
+          }
+        }
+      }
+    },
+    "PresenceList": {
+      "description": "GET /api/admin/presence?at=<kind>:<id>: a read without checking in.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "here"
+      ],
+      "properties": {
+        "here": {
+          "type": "array",
+          "maxItems": 8,
+          "items": {
+            "$ref": "#/$defs/PresenceEntry"
+          }
+        }
+      }
+    }
+  }
+}

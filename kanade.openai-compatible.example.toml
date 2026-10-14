@@ -1,0 +1,66 @@
+# Models-only fragment for a plain OpenAI-compatible server.
+# Merge these tables into your private kanade.toml; this is not a complete
+# runtime configuration. The key file contains the bearer key, never this file.
+
+[models]
+base_url = "https://llm.example/v1"
+key_file = "/run/secrets/model_api_key"
+# Omit [[models.groups]] to use one shared gateway group for all model aliases.
+
+[models.extraction]
+model = "example-extract"
+reasoning = "off"
+
+[models.chat]
+model = "example-chat"
+reasoning = "inherit"
+
+[models.rewrite]
+model = "example-rewrite"
+reasoning = "inherit"
+
+# The plain model list has no Kanata capability metadata, so each alias runs
+# on the minimal profile (no response_format, tools, max_tokens, sampling or
+# reasoning fields) unless declared here. Kanata's published metadata always
+# wins over a declaration. Omitted fields stay off; declare only what the
+# server really accepts. A 400 whose error.param names response_format, a
+# sampling field or reasoning_effort drops that capability for the alias
+# until restart; other rejections fail the call. The chat role needs
+# function_tools = true. sampling_controls also sends max_tokens (the role's
+# reserve). reasoning_efforts lists the accepted levels (off, minimal, low,
+# medium, high, xhigh, max) and needs reasoning_control = true; a role level
+# outside it falls back to off when listed, else the lowest listed level.
+# context_tokens is the window; max_output_tokens (1-1048576, at most
+# context_tokens) caps each role's reserve. Trust zones are not declarable:
+# these routes count as external (raw member data leaves the homelab).
+[models.capabilities."example-extract"]
+structured_output = true
+sampling_controls = true
+context_tokens = 32768
+max_output_tokens = 4096
+
+[models.capabilities."example-chat"]
+function_tools = true
+sampling_controls = true
+reasoning_control = true
+reasoning_efforts = ["off", "low", "medium", "high"]
+context_tokens = 32768
+
+[models.capabilities."example-rewrite"]
+sampling_controls = true
+
+# Context windows and reserves budget each call. With context_tokens declared
+# the overrides below are optional; an override is capped at context_tokens.
+[models.context]
+cloud_default = 32768
+local_default = 32768
+overrides = { "example-extract" = 32768, "example-chat" = 32768, "example-rewrite" = 32768 }
+
+[models.context.extraction]
+reserve = 2500
+
+[models.context.chat]
+reserve = 1024
+
+[models.context.rewrite]
+reserve = 96

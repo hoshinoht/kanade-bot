@@ -1,90 +1,210 @@
+<div align="center">
+
 # Kanade
 
-A Discord bot that keeps a MapleStory group's weekly boss schedule and posts
-tagged reminders.
+**A Discord bot that runs a MapleStory group's weekly boss schedule.**
 
-You set baseline timings with `/fixed`, the bot materialises them into concrete
-runs each boss week, and it pings exactly the people on each run — a grouped
-morning message plus countdowns — with ✅/❌ reactions as the attendance record.
-On top of that it **reads the party's chat** with a local LLM and posts a card
-proposing the change it found; nothing reaches the schedule until someone reacts
-✅. A **mention-gated chatbot** answers scheduling questions in its own channel
-and drafts changes through the same cards. And it serves a **web portal and a
-`bossctl` CLI** on `127.0.0.1:8080`, reachable from your phone over Tailscale.
+*One Rust binary for one Discord server: the bot, the reminders, an admin portal and a member portal, deployed with Docker Compose.*
 
-![Ask the chatbot for a run and ratify the card it drafts](docs/images/chatbot-card.png)
+[![Version](https://img.shields.io/badge/version-1.0.0--beta.7-blue)](CHANGELOG.md)
+[![Rust](https://img.shields.io/badge/rust-1.98.1-orange)](rust-toolchain.toml)
+[![License](https://img.shields.io/badge/license-GPL--3.0--only-green)](LICENSE)
+[![CI](https://github.com/hoshinoht/kanade-bot/actions/workflows/ci.yml/badge.svg)](https://github.com/hoshinoht/kanade-bot/actions/workflows/ci.yml)
 
-## The portal
+[At a glance](#at-a-glance) · [Features](#features) · [Architecture](#architecture) · [Quick start](#quick-start) · [Security](#security) · [Development](#development) · [Coming from v4](#coming-from-v4) · [License](#license)
 
-The boss week as seven day columns, each boss wearing its own entry artwork,
-with the night that matters marked and the quiet days folded down to a spine.
-The board below follows this page: light readers get the daytime face,
-dark-mode readers the Twilight colourway.
+</div>
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/images/portal-week-dark.png">
-  <img src="docs/images/portal-week.png" alt="The boss week as a seven-column day board">
-</picture>
+> **The schedule belongs to the group: Kanade keeps it, posts it and reminds people, and nothing a model reads reaches it until a person approves.**
+> Character data and estimates are shown to help plan a party, never used to judge or block one.
 
-Clicking a card opens that run's sheet over the board — who is on it, who has
-answered, and every change you can make to it — and everything the bot can be
-told without a redeploy lives in one Settings window.
+> [!NOTE]
+> Beta: `1.0.0-beta.7`, running live for one guild. Settings, the HTTP API and the store may still change between betas; read [CHANGELOG.md](CHANGELOG.md) before upgrading.
 
-<p align="center">
-  <img src="docs/images/portal-run-sheet.png" width="49.5%" alt="A run's sheet open over the board">
-  <img src="docs/images/portal-settings.png" width="49.5%" alt="The Settings window, on its Theme panel">
-</p>
+## At a glance
 
-Limits answers "why is the bot slow?" — what has the model right now, what each
-budget has left, and who is waiting for it. Sign in with `ADMIN_TOKEN` once per
-device; five colourways with a light and an after-hours face each, picked in
-the browser and never sent to the bot.
+| | |
+|---|---|
+| **Binary** | `kanade`, Rust edition 2024, toolchain pinned to 1.98.1 |
+| **Commands** | `serve [--offline]`, `healthcheck`, `models check`, `import v4`, `backup`, `restore`, `portal`, `sessions`, `token rotate`, `ctl emojis` |
+| **Discord** | One gateway session for one configured guild; slash commands registered per guild, never globally |
+| **Storage** | SQLite with an owner lock (one process per store); the optional character data has its own file |
+| **Models** | Any OpenAI-compatible model gateway, with separate chat, extraction and rewrite roles |
+| **Web** | Two Svelte 5 PWAs served by the binary: the admin portal and the public member portal |
+| **Config** | `kanade.toml` for settings, `KANADE_*` variables override it, secrets only in files |
+| **Deploy** | Docker Compose; distroless non-root image in a read-only container |
 
-<p align="center">
-  <img src="docs/images/portal-limits.png" width="49.5%" alt="Capacity: the model, the budgets, and what is in flight">
-  <img src="docs/images/portal-login.png" width="49.5%" alt="The sign-in window">
-</p>
+## Features
 
-## What it does
+### Scheduling
 
-|                     |                                                                                                                                                                                      |
-| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **Membership**      | Anyone with the `BOSSING_ROLE` is a known bosser. The roster syncs from the role — no `/roster` upkeep.                                                                              |
-| **Baseline**        | `/fixed add` records a weekly timing (`HStar, HFA — Mon 21:30 — @a @b @c`). Many parties coexist; the bot has no concept of "the" party.                                             |
-| **Weekly runs**     | At each boss-week reset the baseline becomes concrete runs for the current and next week; finished runs drop out on their own.                                                       |
-| **Reminders**       | One grouped day-of message per party channel each morning, plus countdown pings at T-1h and T-15m. Reminder state lives in SQLite, so restarts never lose or replay a ping.          |
-| **RSVPs**           | ✅/❌ reactions on every reminder. All-✅ confirms the run; a ❌ marks it at-risk and tags the rest to reschedule.                                                                       |
-| **Changes**         | `/amend`, `/status`, `/swap`, `/rsvp` and friends; every change made outside Discord is announced in the run's home channel.                                                         |
-| **Chat extraction** | A local `gemma4:12b` reads the party channels and posts a ✅/❌ card for each change it finds. Nothing applies without a human ✅; unanswered cards expire.                            |
-| **Chatbot**         | Mention-gated, role-gated, rate-limited, in its own channel, with a persona. Read tools answer directly; write tools post the same ✅/❌ cards — it never writes to the schedule.      |
-| **Durable memory**  | Disabled by default. An administrator may enroll members one at a time after a successful notice DM; only typed presentation preferences are retained, and `/memory` provides member controls. |
-| **Portal & CLI**    | Week view, fixed-timing editor, proposal inbox, extraction log, chat analytics and config — one API inside the bot process, loopback only, tailnet via the bundled Caddy front door. |
+- **Weekly timings:** `/fixed` or the admin Fixed page records a party's weekly boss timing; the first participant owns it unless an admin pins an owner.
+- **Runs per boss week:** timings become concrete runs for the current and next boss week at the configured reset, and runs can be moved, swapped, cancelled or marked done.
+- **RSVPs:** members answer with reactions on the reminder and digest cards, `/rsvp`, or the member portal.
 
-## Quickstart
+### Discord delivery
 
-```sh
-# 1. Create the Discord application and copy your ids  ->  docs/setup.md
-cp .env.example .env && $EDITOR .env
+- **Reminder cards:** a day-of card at the configured ping time and countdown pings at configured minutes before each run, in a classic or redesigned message style.
+- **Weekly digest:** one digest per boss week in the post channel, edited in place as the schedule changes.
+- **Slash commands:** `/schedule`, `/fixed`, `/amend`, `/status`, `/swap`, `/rsvp`, `/pings`, `/style`, `/limits`, `/rescan`, admin-only `/say`, `/nick` and `/debug`, and `/character` with the character data module.
 
-# 2. Run it
-docker compose up --build
+### Chat and extraction
+
+- **Chatbot:** answers mentions and replies in the configured chat categories, for holders of the chat role, in the voice of a [persona](config/personas/README.md); schedule changes come back as proposal cards.
+- **Extraction:** reads the watched channels and turns schedule talk into proposal cards that a member approves or rejects; off until switched on in Config.
+- **Model gateway:** any OpenAI-compatible server, with per-role models, reasoning levels and capacity groups. The provider receives raw member names, IDs, message text and URLs; nothing is masked.
+
+### Admin portal
+
+- **Week board and run sheet:** a seven-day planner with drag and keyboard moves, and a full sheet per run for its party, answers, status and history.
+- **Inbox and drafts:** approve or edit extracted proposals and member requests; stage changes in a draft, settle conflicts and merge them as one change.
+- **History, Config and Limits:** a revertible change history with backup checkpoints, live settings, and the model permits, queue and chat allowances.
+
+### Public member portal
+
+- **Opt-in:** served only on its own listener with its own Discord application, and open only while the admin Config switch is on.
+- **Members' own view:** the boss week, their runs and answers, moves, requests and weekly timings, the boss guides, and their characters when the roster module is on.
+
+### Optional modules
+
+- **Roster:** each member's MapleSEA characters and which one they bring to a run (`modules.roster`).
+- **Character data:** NEXON Open API data for linked characters, after the member consents, in a separate SQLite file kept out of backups, logs and model prompts (`modules.character_data`).
+- **Scouter estimates:** clear-time estimates from a separate scouter sidecar that is not part of this repository; it is sent roster IGNs only (`character_data.scouter_url`).
+
+Full behaviour, settings and limits are in [docs/v5/runtime-bootstrap.md](docs/v5/runtime-bootstrap.md).
+
+## Architecture
+
+```mermaid
+flowchart LR
+  discord["Discord gateway and API"]
+  subgraph serve["kanade serve"]
+    bot["Discord bot<br/>commands, reactions, chat, extraction"]
+    tick["Scheduler and delivery tick<br/>reminders, digest, notices"]
+    adminl["Admin listener<br/>admin API"]
+    publicl["Public listener<br/>public API"]
+  end
+  store[("SQLite store")]
+  llm["OpenAI-compatible model gateway"]
+  adminapp["Admin portal PWA"]
+  memberapp["Member portal PWA"]
+  chardata[("Character-data file")]
+  nexon["NEXON Open API"]
+  scouter["Scouter sidecar"]
+
+  discord <--> bot
+  tick --> discord
+  bot --> llm
+  bot --> store
+  tick --> store
+  adminl --> store
+  publicl --> store
+  adminapp --> adminl
+  memberapp --> publicl
+  serve -. optional .-> chardata
+  serve -. optional .-> nexon
+  serve -. optional .-> scouter
 ```
 
-The must-set variables are `DISCORD_TOKEN`, `GUILD_ID`, `BOSSING_ROLE_ID`, and
-at least one of `CHAT_CHANNEL_IDS` / `CHAT_CATEGORY_IDS`. Everything else is
-documented inline in [`.env.example`](.env.example) and has sensible defaults.
+`kanade serve` is one process that owns the store; the admin and public routers are built separately, and the public one has no admin route. The dotted parts run only with the character data module. Details: [docs/v5/runtime-bootstrap.md](docs/v5/runtime-bootstrap.md).
 
-## Documentation
+## Quick start
 
-| Guide                                   | What is in it                                                                           |
-| --------------------------------------- | --------------------------------------------------------------------------------------- |
-| [Setup](docs/setup.md)                  | Discord developer portal, intents, invite permissions, `.env`, running, troubleshooting |
-| [Commands](docs/commands.md)            | Every slash command, how ids and boss tokens work, testing with `/debug`                |
-| [The chat extractor](docs/extractor.md) | How chat becomes proposal cards, rescans, tuning, exporting history                     |
-| [The chatbot](docs/chatbot.md)          | The persona chatbot: gates, tools, setup, voice tuning, tracing its decisions           |
-| [Chatbot memory policy](docs/chatbot-memory-policy.md) | Individual enrollment, notices, stored preferences, opt-out, deletion, and retention |
-| [Portal, CLI and API](docs/portal.md)   | The web portal, tailnet access, `bossctl`, the JSON API                                 |
-| [Development](docs/development.md)      | Tests, lint, and the module layout                                                      |
+**Requirements:** Docker with Compose, a Discord application with a bot token (Server Members and Message Content intents on, invited with the `bot` and `applications.commands` scopes), an OpenAI-compatible model gateway and its key. The [runbook's Quick start](deploy/README.md#quick-start) walks through the Discord setup and each step below.
 
-Release history is in [CHANGELOG.md](CHANGELOG.md). Licensed under the
-[MIT License](LICENSE).
+```sh
+# 1. Settings: copy the template and fill in its uncommented keys
+#    (runtime.timezone, discord.guild_id, discord.bossing_role_id, models.base_url).
+cp kanade.example.toml kanade.toml && $EDITOR kanade.toml
+
+# 2. Secrets: one line per file; on Linux, readable by uid 65532.
+SECRETS="$HOME/.config/kanade/v5/secrets" && mkdir -p "$SECRETS"
+#    discord_token, admin_token (openssl rand -base64 48), model_api_key
+
+# 3. Backups directory: Compose does not create it, and the bot refuses to start
+#    without it (on Linux, writable by uid 65532).
+mkdir -p "$HOME/.config/kanade/v5/backups"
+
+# 4. Build and start from deploy/, then wait for "healthy".
+cd deploy
+docker compose build
+docker compose up -d
+docker compose ps
+```
+
+The admin portal is then at `http://localhost:8080` on the host; sign in with the `admin_token`. A reverse proxy, Discord sign-in, the public portal and the other add-ons go in a git-ignored `deploy/compose.override.yaml` ([add-ons](deploy/README.md#add-ons)). The store lives in the `kanade_v5_data` volume and the optional character data in `kanade_v5_chardata`.
+
+**Next steps:**
+
+| Step | Guide |
+|---|---|
+| Add-ons, deploy updates, back up, restore, roll back | [deploy/README.md](deploy/README.md) |
+| Every setting and its `KANADE_*` variable | [kanade.example.toml](kanade.example.toml), [docs/v5/runtime-bootstrap.md](docs/v5/runtime-bootstrap.md) |
+| Commands, health, listeners and operator commands | [docs/v5/runtime-bootstrap.md](docs/v5/runtime-bootstrap.md) |
+| Point Kanade at another OpenAI-compatible server | [kanade.openai-compatible.example.toml](kanade.openai-compatible.example.toml) |
+| Write or select a persona | [config/personas/README.md](config/personas/README.md) |
+| Bring over v4 data | [docs/v5/v4-import.md](docs/v5/v4-import.md) |
+| What changed in each beta | [CHANGELOG.md](CHANGELOG.md) |
+
+## Security
+
+> [!IMPORTANT]
+> Admin routes are never mounted on the public listener: every `/api/admin/*` path and `/healthz` answers `404` there. Both listeners bind loopback only, or a private address with `KANADE_ALLOW_PRIVATE_BIND=1`; wildcard and public addresses are always refused.
+
+> [!WARNING]
+> Configured models receive raw member names, IDs, message text and URLs when present. There is no masking; a provider's retention policy does not limit what is sent. Roster and character data are never sent to models.
+
+> [!CAUTION]
+> Backups hold member data. Point `KANADE_BACKUP_RECIPIENTS_HOST_FILE` in `deploy/.env` (`backup.recipients_file` outside Compose) at age X25519 public keys and `kanade backup` writes encrypted snapshots ([runbook](deploy/README.md#encrypted-backups)); keep the private identity off the backup host. The character data file is never backed up.
+
+- **Loopback by default:** the base Compose file publishes only the admin portal, on the host's `127.0.0.1:8080`; the public listener is reached through the Cloudflare tunnel only, never a published port.
+- **Secrets in files:** tokens, client secrets and keys are read only from `*_file` paths; plain `KANADE_DISCORD_TOKEN`, `KANADE_ADMIN_TOKEN` and similar variables, and secret-looking keys in `kanade.toml`, stop startup.
+- **Bounded sessions:** admin sessions expire after 5 to 720 idle minutes and 1 to 168 hours; member sessions after 5 to 60 minutes and 1 to 24 hours.
+- **One guild:** events from other guilds and DMs are dropped, and commands are registered to the configured guild only.
+
+## Development
+
+```sh
+cargo fmt --check
+cargo clippy --all-targets --all-features -- -D warnings
+cargo test --locked --all-targets --all-features
+cargo build --locked --release
+
+cd web && bun install --frozen-lockfile && bun run lint && bun run check && bun run test && bun run build
+```
+
+The Rust suite is offline (fake Discord and model providers, temporary stores). `bun run e2e` in `web/` runs the browser suite against the dev mock in `devtools/pwa-mock` and needs an installed Chrome. `serve --offline` with `KANADE_TIMEZONE` set runs a health server with no store or Discord.
+
+<details><summary>Repository layout</summary>
+
+| Path | Contents |
+|---|---|
+| `src/runtime/` | Command dispatch, configuration, `serve`, backup and restore |
+| `src/cli/` | Command-line parsing and the admin API client for `portal` and `sessions` |
+| `src/bot/` | Discord commands, cards, delivery and the chat and extraction feeds |
+| `src/api/` | Admin and public HTTP routers, authentication and guards |
+| `src/domain/`, `src/extract/`, `src/chat/` | Scheduling rules, extraction rules, chat tools, prompts and personas |
+| `src/infrastructure/` | SQLite store, model client, character data store, NEXON and scouter clients |
+| `src/import/` | `kanade import v4` |
+| `tests/` | Integration suites, one directory per target |
+| `web/` | Bun workspace: `apps/admin`, `apps/public` and shared `packages/` |
+| `devtools/pwa-mock/` | Dev-only mock server for the web apps |
+| `deploy/` | Dockerfile, Compose stack and runbook |
+| `docs/v5/` | Setup guides, API schemas and test vectors |
+| `boss/` | Boss catalog (`bosses.yaml`) and boss knowledge |
+| `config/personas/` | Persona layout, the tracked fallback persona and templates |
+| `assets/emojis/`, `scripts/` | Difficulty pill images and maintenance scripts |
+
+</details>
+
+## Coming from v4
+
+v4 (Python, 4.9.0) is retired. Its code is kept at tag `v4.9.0` and on branch `v4`. Weekly timings and recent chat and extraction logs move to v5 with `kanade import v4 --from <snapshot>`, a dry run until `--apply`; see [docs/v5/v4-import.md](docs/v5/v4-import.md).
+
+## Non-goals
+
+Kanade serves one Discord server, not many. It does not change the schedule on a model's word, keep per-member chat memory, or mask data sent to models. It does not run the scouter sidecar, and it has no export command.
+
+## License
+
+Copyright (c) 2026 hoshinoht. The Rust release and its supporting code are licensed under the [GNU General Public License, version 3 only](LICENSE) (`GPL-3.0-only`), without warranty. The v4 Python tree, at tag `v4.9.0` in git history, retains its MIT license. Third-party components retain their own licenses; this change does not alter licenses granted for earlier releases.

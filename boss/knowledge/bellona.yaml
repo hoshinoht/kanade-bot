@@ -1,22 +1,165 @@
 boss: Bellona
-summary: 'Bellona rewards clean pattern execution: build into Insane mode, avoid getting hit there, and use the high-damage Insane window without giving her recovery.'
+summary: 'Bellona is not in MapleSEA yet (KMS 1.2.418, Aug 2026); this is a prep guide. She is a dodge check: red attacks take a life, a shared gauge flips her into Insane mode where she takes +30% damage and hurts herself, and surviving an Insane window un-hit gives a life back.'
+lead: 'A dodge check (KMS only so far): red attacks cost a life, and an Insane window survived un-hit gives one back.'
 core:
-- Bellona has a shared 0-1000 state gauge that changes over time; taking purple or red patterns delays the next Insane state, with red hits causing much larger gauge loss.
-- 'Insane is the important damage state: Bellona takes increased final damage and her attacks can deal self-damage.'
-- If you complete an Insane period without being hit, you can recover death count; getting hit during Insane can undo part of Bellona's self-damage benefit.
-- Her patterns are animation/tell driven. Normal and Hard remove much of the visible range guidance, and Hard executes patterns faster.
+- title: Red attacks cost a life
+  text: 'Red hits take 1 Death Count and cut the gauge hard; purple hits cut it a little.'
+  detail: 'Red (Annihilation) attacks remove 1 Death Count and cut the gauge sharply (200/400/600 on Easy/Normal/Hard, solo); purple attacks only cut it a little (80/80/160).'
+- title: Shared gauge
+  text: '0–1000, party-wide, moving about 31 per second: roughly 30s per state.'
+  detail: 'The 0-1000 gauge is shared by the party and moves about 31 per second, so with no hits each state lasts roughly 30 seconds.'
+- title: Insane mode
+  text: 'Red attacks only; each one hurts her, and she takes +30% damage.'
+  detail: 'In Insane the screen darkens, she only uses red attacks, damages herself with each one and takes 30% more final damage.'
+- title: Clean Insane, +1 life
+  text: 'Survive a whole window un-hit to regain a life (that player only). Any hit heals her.'
+  detail: Surviving an entire Insane window without being hit restores 1 Death Count for that player only; any hit on a player during Insane heals Bellona.
+- title: Sigils start Berserk
+  text: 'Three sigils trigger a three-weapon attack chain.'
+  detail: 'Insane drops sigils on the map; once three gather she runs a Berserk weapon sequence of three attacks from sword hilt, single axe, double axe and (Phase 2 only) whirlwind wand.'
+- title: Binds skip a state
+  text: 'Outside her rampage, a bind flips to the next state.'
+  detail: Outside her rampage state, binding her flips Normal and Insane straight to the next state. How the rampage state differs from Berserk is unclear in the sources.
+- title: Hidden markers
+  text: 'Normal and Hard hide most ranges; Hard is faster.'
+  detail: Normal and Hard hide most attack range markers; Hard also runs patterns faster.
+mechanics:
+- kind: zones
+  title: Two states
+  zones:
+  - {name: Normal, sub: regular patterns, tone: neutral}
+  - {name: Insane, sub: red only · she takes +30%, tone: red}
+  note: 'About 30s each with no hits.'
+- kind: ledger
+  title: Gauge and lives (solo values)
+  rows:
+  - {label: Red hit (Easy/Normal/Hard), value: −200/400/600, direction: down}
+  - {label: Purple hit (Easy/Normal/Hard), value: −80/80/160, direction: down}
+  - {label: Any red hit · lives, value: −1 Death Count, direction: down}
+  - {label: Clean Insane window · lives, value: +1 Death Count, direction: up}
 danger:
-- Red attacks are especially costly and can directly consume death count.
-- The common teleport is frequent; the practical response is to crouch as soon as Bellona disappears/reappears for the dangerous red teleport.
-- The Phase 1/2 horizontal-vertical-X sequence demands three different responses; the vertical portion must be dodged on timing rather than pre-dashed.
-- Berserk/Insane weapon sequences become the hardest part of the fight, especially the double-headed-axe sequence.
+- title: Double-axe Berserk
+  text: 'Hands fill the map (Phase 1 under 50%, all of Phase 2). Bind it or use invincibility.'
+  detail: The double-axe Berserk attack (Phase 1 below 50% HP, all of Phase 2) fills the map with hands; cut it with a bind or tank it with an invincibility.
+- title: Phase 2 below 50%
+  text: 'Pinball adds a final slam (up-jump); the border sequence adds a bottom-centre charge.'
+  detail: Phase 2 below 50% HP adds a final slam to the pinball charges (up-jump it) and a bottom-centre charge to the border sequence; both are fast and easy to miss.
+- title: Hits snowball
+  text: 'One hit invites panicked follow-ups; failed runs lose lives in a row.'
+  detail: One hit often leads to panicked follow-up hits; failed runs usually lose several lives in a row.
 tips:
-- Treat entering and surviving Insane cleanly as more important than forcing constant chip damage.
-- When learning, stop attacking during dangerous tells and solve the pattern first; add uptime after the movement is consistent.
-- Use current KMS pattern timing when practicing; Bellona received live-server pattern readability/timing adjustments after test-server versions.
+- title: Vanish? Crouch first
+  text: 'Upright somersault: crouch. Inverted: jump. In Insane, wait for the full red form.'
+  detail: When she vanishes (her most frequent move), crouch first. Somersault upright means crouch, inverted means jump; in Insane, wait for the red form to show fully.
+- title: Horizontal, vertical, X
+  text: 'Crouch, dash through on time (never early), stand still. Call Phase 2''s triple tell aloud.'
+  detail: 'Horizontal, vertical, X sequence: crouch, dash through on timing (do not pre-dash), stand still. In Phase 2 all three tells play first, so say them aloud.'
+- title: Bottom-centre charge
+  text: 'Up-jump. Axe raised: dash behind her. Axe to the side: stay crouched.'
+  detail: 'For the Phase 2 bottom-centre charge, up-jump, then react: axe raised means dash behind her, axe held to the side means stay crouched.'
+- title: Pinball
+  text: 'Default to the left side.'
+- title: Read sigils in binds
+  text: 'They show the next Berserk sequence.'
+  detail: During binds, read the sigils already on the map so you know the next Berserk sequence.
 notes:
-- Bellona mechanics here are based on current KMS live-server sources from August 2026.
+- title: Not in MapleSEA yet
+  text: 'Unreleased as of v254; facts are KMS ver. 1.2.418 (Aug 2026) and may change.'
+  detail: Not released in MapleSEA as of v254 (28 Sep 2026); her MapleSEA name and release date are unannounced. Facts are from KMS ver. 1.2.418 (27 Aug 2026) and may differ on release.
+- title: Entry and credit
+  text: 'Post-OVERDRIVE only. Level 280 and [Solatum] The Truth of Solatum; break the Ark after the kill.'
+  detail: 'She was released in KMS after OVERDRIVE, so only post-OVERDRIVE values exist (20-minute limit). Entry needs level 280 and the quest [Solatum] The Truth of Solatum; break the Ark of Solatum after the kill for clear credit.'
+- title: Spec unconfirmed
+  text: 'From a Namu Wiki summary and a pre-release estimate.'
+  detail: Recommended spec ranges come from a search summary of Namu Wiki and a pre-release estimate; unconfirmed.
+difficulties:
+- name: Easy
+  entry_level: 280
+  boss_level: 280
+  pdr_percent: 380
+  party_max: 3
+  force: {kind: sacred, value: 400}
+  hp:
+  - {phase: '1', value: 316t}
+  - {phase: '2', value: 463t}
+  - {phase: total, value: 779t}
+  recommended_spec: {kind: HEXA-converted stat, value: ≈ 45–51k, basis: 'KMS solo, Aug 2026', text: 'KMS solo minimum about 45-51k (Aug 2026, unconfirmed).'}
+  notes:
+  - 8 Death Count, 20 minute limit (KMS).
+- name: Normal
+  entry_level: 280
+  boss_level: 280
+  pdr_percent: 380
+  party_max: 3
+  force: {kind: sacred, value: 450}
+  hp:
+  - {phase: '1', value: 1.652q}
+  - {phase: '2', value: 2.47q}
+  - {phase: total, value: 4.122q}
+  recommended_spec: {kind: HEXA-converted stat, value: ≈ 89–97k, basis: 'KMS solo, Aug 2026', text: 'KMS solo minimum about 89-97k (Aug 2026, unconfirmed).'}
+  notes:
+  - 8 Death Count, 20 minute limit (KMS).
+- name: Hard
+  entry_level: 280
+  boss_level: 280
+  pdr_percent: 380
+  party_max: 3
+  force: {kind: sacred, value: 550}
+  hp:
+  - {phase: '1', value: 5.564q}
+  - {phase: '2', value: 8.152q}
+  - {phase: total, value: 13.716q}
+  recommended_spec:
+    kind: HEXA-converted stat
+    basis: KMS, Aug 2026
+    text: 'KMS trio about 98-107k, duo about 110-119k, solo about 126-132k (Aug 2026, unconfirmed).'
+    parties:
+    - {party: Trio, value: ≈ 98–107k}
+    - {party: Duo, value: ≈ 110–119k}
+    - {party: Solo, value: ≈ 126–132k}
+  notes:
+  - 5 Death Count, 20 minute limit (KMS).
+strategies:
+- name: Dodge first
+  when: First clears or below the minimum cut
+  risk: low
+  damage: high
+  payoff: Clean Insane windows come about once a minute and refund lives; slower clear
+  steps:
+  - Stop attacking during every tell; add damage only once dodges are consistent.
+  - Treat each Insane window as a no-hit check; a clean one refunds a life.
+  - After a hit, reset and focus on the next tell instead of chasing damage.
+- name: Share spare lives
+  when: Duo or trio where one member has spare Death Count
+  risk: medium
+  damage: medium
+  payoff: Teammates may refund lives more often (unconfirmed interpretation of the source)
+  steps:
+  - The gauge is shared but the Insane refund is personal; the member with spare lives may take a pattern on purpose so others can finish Insane clean.
+  - Hits during Insane heal Bellona, so only do this when a teammate is short on lives.
 sources:
-- https://maplestorywiki.net/w/Bellona/Monster
-- https://www.inven.co.kr/board/maple/5974/7072345
-- https://www.inven.co.kr/board/maple/2304/48169
+- url: https://orangemushroom.net/2026/08/28/kms-ver-1-2-418-maplestory-overdrive-the-cruel-executioner-bellona/
+  title: Orange Mushroom - KMS ver. 1.2.418 (Bellona)
+  author: Orange Mushroom
+  kind: guide
+  fetched: '2026-10-02'
+- url: https://www.maplesea.com/updates/view/v254_Events/
+  title: MapleSEA v254 events
+  author: Nexon SEA
+  kind: official
+  fetched: '2026-10-02'
+- url: https://maplestorywiki.net/w/Bellona/Monster
+  title: MapleStory Wiki - Bellona/Monster
+  author: MapleStory Wiki contributors
+  kind: wiki
+  fetched: '2026-10-02'
+- url: https://www.inven.co.kr/board/maple/5974/7072345
+  title: Inven - Bellona pattern summary
+  author: Inven community
+  kind: guide
+  fetched: '2026-10-02'
+- url: https://www.inven.co.kr/board/maple/2304/48169
+  title: Inven - Bellona gauge tips
+  author: Inven community
+  kind: guide
+  fetched: '2026-10-02'

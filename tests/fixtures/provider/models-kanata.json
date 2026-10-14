@@ -1,0 +1,82 @@
+{
+  "object": "list",
+  "data": [
+    {
+      "id": "sumi-structured",
+      "object": "model",
+      "owned_by": "kanata",
+      "kanata": {
+        "operations": ["chat"],
+        "structured_output": true,
+        "sampling_controls": true,
+        "reasoning_control": true,
+        "function_tools": true,
+        "streaming": true,
+        "input_audio": false,
+        "trust_zone": "private_network",
+        "reasoning_efforts": ["none", "minimal", "low", "medium", "high", "xhigh", "max"],
+        "context_tokens": 32768,
+        "max_output_tokens": 4096,
+        "admission": {
+          "max_in_flight": 4,
+          "max_queue": 16,
+          "queue_ms": 1000,
+          "adapter_max_in_flight": 2
+        },
+        "future_field": {"ignored": true}
+      }
+    },
+    {
+      "id": "codex-like",
+      "object": "model",
+      "kanata": {
+        "operations": ["chat"],
+        "structured_output": false,
+        "sampling_controls": false,
+        "reasoning_control": true,
+        "function_tools": true,
+        "streaming": false,
+        "trust_zone": "external",
+        "reasoning_efforts": ["low", "medium", "high"],
+        "context_tokens": null,
+        "admission": {
+          "max_in_flight": 8,
+          "max_queue": 32,
+          "queue_ms": 1000,
+          "adapter_max_in_flight": null
+        }
+      }
+    },
+    {
+      "id": "glm-cloud",
+      "object": "model",
+      "kanata": {
+        "structured_output": false,
+        "sampling_controls": true,
+        "reasoning_control": false,
+        "function_tools": true,
+        "trust_zone": "local"
+      }
+    },
+    {"id": "plain-alias", "object": "model"},
+    {"id": "codex-like", "kanata": {"structured_output": true}},
+    {"id": "bad-metadata", "kanata": "structured"},
+    {
+      "id": "odd-flags",
+      "kanata": {
+        "structured_output": "true",
+        "function_tools": 1,
+        "trust_zone": "moon",
+        "reasoning_efforts": "high",
+        "operations": [7, "chat"],
+        "context_tokens": -1,
+        "admission": {"max_in_flight": "4", "adapter_max_in_flight": 2}
+      }
+    },
+    {"id": 42},
+    {"id": ""},
+    {"name": "missing-id"},
+    "not-an-object",
+    null
+  ]
+}

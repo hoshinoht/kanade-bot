@@ -1,0 +1,68 @@
+// Ported from v4 portal/_stats-tables.scss (tables).
+
+.table-wrap {
+  overflow-x: auto;
+}
+
+table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: var(--fs-body-sm);
+}
+
+caption {
+  text-align: left;
+  font-size: var(--fs-small);
+  color: var(--dim);
+  padding: 0.5rem 0 0.3rem;
+}
+
+th {
+  text-align: left;
+  font-size: var(--fs-micro);
+  font-weight: 600;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: var(--faint);
+  padding: 0.6rem 0.75rem;
+  border-bottom: 2px solid var(--line);
+  white-space: nowrap;
+}
+
+// Row headers carry the human identity (HPK); they read as data, not as labels.
+tbody th {
+  font-size: var(--fs-body-sm);
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--ink);
+  white-space: normal;
+  border-bottom: 1px solid var(--line-soft);
+  vertical-align: top;
+}
+
+td {
+  padding: 0.6rem 0.75rem;
+  border-bottom: 1px solid var(--line-soft);
+  vertical-align: top;
+}
+
+td.num,
+th.num {
+  text-align: right;
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+}
+
+tbody tr:last-child td,
+tbody tr:last-child th {
+  border-bottom: 0;
+}
+
+// The cells carry the hover too: a cell with its own background (a sticky
+// header, a filled pill cell) otherwise left the highlight short of the row.
+tbody tr:hover,
+tbody tr:hover > td,
+tbody tr:hover > th {
+  background: var(--raise);
+}

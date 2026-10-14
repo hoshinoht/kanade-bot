@@ -1,0 +1,73 @@
+{
+  "cases": [
+    {
+      "case_id": "timeutil.to-iso.utc",
+      "expected": {
+        "value": "2026-09-09T04:00:00+00:00"
+      },
+      "input": {
+        "at": "2026-09-09T12:00:00+08:00"
+      },
+      "op": "to_iso"
+    },
+    {
+      "case_id": "timeutil.from-iso.naive",
+      "expected": {
+        "value": "2026-09-09T12:00:00+00:00"
+      },
+      "input": {
+        "value": "2026-09-09T12:00:00"
+      },
+      "op": "from_iso"
+    },
+    {
+      "case_id": "timeutil.from-iso.offset",
+      "expected": {
+        "value": "2026-09-09T04:00:00+00:00"
+      },
+      "input": {
+        "value": "2026-09-09T12:00:00+08:00"
+      },
+      "op": "from_iso"
+    },
+    {
+      "case_id": "timeutil.local-naive",
+      "expected": {
+        "value": "2026-09-09T12:00:00"
+      },
+      "input": {
+        "at": "2026-09-09T04:00:00+00:00",
+        "timezone": "Asia/Kuala_Lumpur"
+      },
+      "op": "local_naive"
+    },
+    {
+      "case_id": "timeutil.to-iso.naive-error",
+      "error_type": "ValueError",
+      "expected": {
+        "error": {
+          "message": "refusing to serialise a naive datetime",
+          "type": "ValueError"
+        }
+      },
+      "input": {
+        "at": "2026-09-09T12:00:00"
+      },
+      "op": "to_iso"
+    }
+  ],
+  "family": "timeutil",
+  "provenance": {
+    "functions": [
+      "to_iso",
+      "from_iso",
+      "local_naive"
+    ],
+    "inventory_surfaces": [
+      "domain.timeutil"
+    ],
+    "oracle": "legacy/python bot.domain.timeutil",
+    "source_tests": []
+  },
+  "schema_version": "v5-domain-v1"
+}

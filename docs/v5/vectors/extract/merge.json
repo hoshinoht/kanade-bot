@@ -1,0 +1,902 @@
+{
+  "cases": [
+    {
+      "case_id": "latest-explicit-value-wins",
+      "expected": {
+        "steps": [
+          {
+            "value": [
+              {
+                "bosses": [
+                  "HMaleficStar"
+                ],
+                "confidence": 0.9,
+                "day_ref": "wed",
+                "evidence_message_ids": [
+                  "1",
+                  "2",
+                  "3"
+                ],
+                "is_question": false,
+                "kind": "move",
+                "participants": [
+                  "11",
+                  "22"
+                ],
+                "rsvp": null,
+                "target_run_hint": null,
+                "time_ref": "9:45pm"
+              }
+            ]
+          },
+          {
+            "value": [
+              {
+                "bosses": [
+                  "HMaleficStar"
+                ],
+                "confidence": 0.9,
+                "day_ref": null,
+                "evidence_message_ids": [
+                  "9",
+                  "8"
+                ],
+                "is_question": false,
+                "kind": "move",
+                "participants": [],
+                "rsvp": null,
+                "target_run_hint": null,
+                "time_ref": "10pm"
+              }
+            ]
+          },
+          {
+            "value": []
+          }
+        ]
+      },
+      "input": {
+        "steps": [
+          {
+            "amendments": [
+              {
+                "bosses": [
+                  "HMaleficStar"
+                ],
+                "confidence": 0.9,
+                "day_ref": null,
+                "evidence_message_ids": [
+                  "2"
+                ],
+                "is_question": false,
+                "kind": "move",
+                "participants": [],
+                "rsvp": null,
+                "target_run_hint": null,
+                "time_ref": "9pm"
+              },
+              {
+                "bosses": [
+                  "HMaleficStar"
+                ],
+                "confidence": 0.6,
+                "day_ref": null,
+                "evidence_message_ids": [
+                  "3"
+                ],
+                "is_question": false,
+                "kind": "move",
+                "participants": [
+                  "22"
+                ],
+                "rsvp": null,
+                "target_run_hint": null,
+                "time_ref": "9:45pm"
+              },
+              {
+                "bosses": [
+                  "HMaleficStar"
+                ],
+                "confidence": 0.9,
+                "day_ref": "wed",
+                "evidence_message_ids": [
+                  "1"
+                ],
+                "is_question": true,
+                "kind": "move",
+                "participants": [
+                  "11"
+                ],
+                "rsvp": null,
+                "target_run_hint": null,
+                "time_ref": null
+              }
+            ],
+            "existing_bosses": [
+              [
+                "HMaleficStar",
+                "HFA"
+              ]
+            ],
+            "message_order": [
+              "1",
+              "2",
+              "3"
+            ],
+            "op": "merge"
+          },
+          {
+            "amendments": [
+              {
+                "bosses": [
+                  "HMaleficStar"
+                ],
+                "confidence": 0.9,
+                "day_ref": null,
+                "evidence_message_ids": [
+                  "9"
+                ],
+                "is_question": false,
+                "kind": "move",
+                "participants": [],
+                "rsvp": null,
+                "target_run_hint": null,
+                "time_ref": "9pm"
+              },
+              {
+                "bosses": [
+                  "HMaleficStar"
+                ],
+                "confidence": 0.9,
+                "day_ref": null,
+                "evidence_message_ids": [
+                  "8"
+                ],
+                "is_question": false,
+                "kind": "move",
+                "participants": [],
+                "rsvp": null,
+                "target_run_hint": null,
+                "time_ref": "10pm"
+              }
+            ],
+            "existing_bosses": [
+              [
+                "HMaleficStar"
+              ]
+            ],
+            "message_order": [],
+            "op": "merge"
+          },
+          {
+            "amendments": [],
+            "existing_bosses": [],
+            "message_order": [
+              "1"
+            ],
+            "op": "merge"
+          }
+        ]
+      }
+    },
+    {
+      "case_id": "rsvps-are-keyed-by-person",
+      "expected": {
+        "steps": [
+          {
+            "value": [
+              {
+                "bosses": [],
+                "confidence": 0.9,
+                "day_ref": null,
+                "evidence_message_ids": [
+                  "2"
+                ],
+                "is_question": false,
+                "kind": "rsvp",
+                "participants": [
+                  "22"
+                ],
+                "rsvp": "yes",
+                "target_run_hint": null,
+                "time_ref": null
+              },
+              {
+                "bosses": [],
+                "confidence": 0.9,
+                "day_ref": null,
+                "evidence_message_ids": [
+                  "1",
+                  "3"
+                ],
+                "is_question": false,
+                "kind": "rsvp",
+                "participants": [
+                  "11"
+                ],
+                "rsvp": "no",
+                "target_run_hint": null,
+                "time_ref": null
+              }
+            ]
+          }
+        ]
+      },
+      "input": {
+        "steps": [
+          {
+            "amendments": [
+              {
+                "bosses": [],
+                "confidence": 0.9,
+                "day_ref": null,
+                "evidence_message_ids": [
+                  "1"
+                ],
+                "is_question": false,
+                "kind": "rsvp",
+                "participants": [
+                  "11"
+                ],
+                "rsvp": "yes",
+                "target_run_hint": null,
+                "time_ref": null
+              },
+              {
+                "bosses": [],
+                "confidence": 0.9,
+                "day_ref": null,
+                "evidence_message_ids": [
+                  "2"
+                ],
+                "is_question": false,
+                "kind": "rsvp",
+                "participants": [
+                  "22"
+                ],
+                "rsvp": "yes",
+                "target_run_hint": null,
+                "time_ref": null
+              },
+              {
+                "bosses": [],
+                "confidence": 0.9,
+                "day_ref": null,
+                "evidence_message_ids": [
+                  "3"
+                ],
+                "is_question": false,
+                "kind": "rsvp",
+                "participants": [
+                  "11"
+                ],
+                "rsvp": "no",
+                "target_run_hint": null,
+                "time_ref": null
+              }
+            ],
+            "existing_bosses": [],
+            "message_order": [
+              "1",
+              "2",
+              "3"
+            ],
+            "op": "merge"
+          }
+        ]
+      }
+    },
+    {
+      "case_id": "time-changes-fold-into-the-add",
+      "expected": {
+        "steps": [
+          {
+            "value": [
+              {
+                "bosses": [
+                  "NMaleficStar",
+                  "NCarling"
+                ],
+                "confidence": 0.85,
+                "day_ref": "tonight",
+                "evidence_message_ids": [
+                  "401",
+                  "402",
+                  "403"
+                ],
+                "is_question": false,
+                "kind": "add",
+                "participants": [
+                  "11",
+                  "22"
+                ],
+                "rsvp": null,
+                "target_run_hint": null,
+                "time_ref": "9:45pm"
+              }
+            ]
+          },
+          {
+            "value": [
+              {
+                "bosses": [
+                  "NMaleficStar",
+                  "NCarling"
+                ],
+                "confidence": 0.7,
+                "day_ref": "tonight",
+                "evidence_message_ids": [
+                  "401"
+                ],
+                "is_question": true,
+                "kind": "add",
+                "participants": [
+                  "11"
+                ],
+                "rsvp": null,
+                "target_run_hint": null,
+                "time_ref": null
+              },
+              {
+                "bosses": [
+                  "NMaleficStar"
+                ],
+                "confidence": 0.9,
+                "day_ref": null,
+                "evidence_message_ids": [
+                  "402"
+                ],
+                "is_question": false,
+                "kind": "move",
+                "participants": [],
+                "rsvp": null,
+                "target_run_hint": null,
+                "time_ref": "9pm"
+              }
+            ]
+          },
+          {
+            "value": [
+              {
+                "bosses": [
+                  "NMaleficStar"
+                ],
+                "confidence": 0.9,
+                "day_ref": null,
+                "evidence_message_ids": [
+                  "400"
+                ],
+                "is_question": false,
+                "kind": "move",
+                "participants": [],
+                "rsvp": null,
+                "target_run_hint": null,
+                "time_ref": "9pm"
+              },
+              {
+                "bosses": [
+                  "NMaleficStar",
+                  "NCarling"
+                ],
+                "confidence": 0.7,
+                "day_ref": "tonight",
+                "evidence_message_ids": [
+                  "401"
+                ],
+                "is_question": true,
+                "kind": "add",
+                "participants": [
+                  "11"
+                ],
+                "rsvp": null,
+                "target_run_hint": null,
+                "time_ref": null
+              }
+            ]
+          },
+          {
+            "value": [
+              {
+                "bosses": [
+                  "NMaleficStar",
+                  "NCarling"
+                ],
+                "confidence": 0.7,
+                "day_ref": "tonight",
+                "evidence_message_ids": [
+                  "401"
+                ],
+                "is_question": true,
+                "kind": "add",
+                "participants": [
+                  "11"
+                ],
+                "rsvp": null,
+                "target_run_hint": null,
+                "time_ref": null
+              },
+              {
+                "bosses": [],
+                "confidence": 0.9,
+                "day_ref": null,
+                "evidence_message_ids": [
+                  "402"
+                ],
+                "is_question": false,
+                "kind": "move",
+                "participants": [],
+                "rsvp": null,
+                "target_run_hint": null,
+                "time_ref": "9pm"
+              }
+            ]
+          }
+        ]
+      },
+      "input": {
+        "steps": [
+          {
+            "amendments": [
+              {
+                "bosses": [
+                  "NMaleficStar",
+                  "NCarling"
+                ],
+                "confidence": 0.7,
+                "day_ref": "tonight",
+                "evidence_message_ids": [
+                  "401"
+                ],
+                "is_question": true,
+                "kind": "add",
+                "participants": [
+                  "11"
+                ],
+                "rsvp": null,
+                "target_run_hint": null,
+                "time_ref": null
+              },
+              {
+                "bosses": [
+                  "NMaleficStar"
+                ],
+                "confidence": 0.8,
+                "day_ref": null,
+                "evidence_message_ids": [
+                  "402"
+                ],
+                "is_question": false,
+                "kind": "move",
+                "participants": [
+                  "22"
+                ],
+                "rsvp": null,
+                "target_run_hint": null,
+                "time_ref": "9pm"
+              },
+              {
+                "bosses": [
+                  "NMaleficStar"
+                ],
+                "confidence": 0.85,
+                "day_ref": null,
+                "evidence_message_ids": [
+                  "403"
+                ],
+                "is_question": false,
+                "kind": "move",
+                "participants": [],
+                "rsvp": null,
+                "target_run_hint": null,
+                "time_ref": "9:45pm"
+              }
+            ],
+            "existing_bosses": [
+              [
+                "HMaleficStar",
+                "HFA"
+              ]
+            ],
+            "message_order": [
+              "401",
+              "402",
+              "403"
+            ],
+            "op": "merge"
+          },
+          {
+            "amendments": [
+              {
+                "bosses": [
+                  "NMaleficStar",
+                  "NCarling"
+                ],
+                "confidence": 0.7,
+                "day_ref": "tonight",
+                "evidence_message_ids": [
+                  "401"
+                ],
+                "is_question": true,
+                "kind": "add",
+                "participants": [
+                  "11"
+                ],
+                "rsvp": null,
+                "target_run_hint": null,
+                "time_ref": null
+              },
+              {
+                "bosses": [
+                  "NMaleficStar"
+                ],
+                "confidence": 0.9,
+                "day_ref": null,
+                "evidence_message_ids": [
+                  "402"
+                ],
+                "is_question": false,
+                "kind": "move",
+                "participants": [],
+                "rsvp": null,
+                "target_run_hint": null,
+                "time_ref": "9pm"
+              }
+            ],
+            "existing_bosses": [
+              [
+                "NMaleficStar"
+              ]
+            ],
+            "message_order": [
+              "401",
+              "402"
+            ],
+            "op": "merge"
+          },
+          {
+            "amendments": [
+              {
+                "bosses": [
+                  "NMaleficStar"
+                ],
+                "confidence": 0.9,
+                "day_ref": null,
+                "evidence_message_ids": [
+                  "400"
+                ],
+                "is_question": false,
+                "kind": "move",
+                "participants": [],
+                "rsvp": null,
+                "target_run_hint": null,
+                "time_ref": "9pm"
+              },
+              {
+                "bosses": [
+                  "NMaleficStar",
+                  "NCarling"
+                ],
+                "confidence": 0.7,
+                "day_ref": "tonight",
+                "evidence_message_ids": [
+                  "401"
+                ],
+                "is_question": true,
+                "kind": "add",
+                "participants": [
+                  "11"
+                ],
+                "rsvp": null,
+                "target_run_hint": null,
+                "time_ref": null
+              }
+            ],
+            "existing_bosses": [],
+            "message_order": [
+              "400",
+              "401"
+            ],
+            "op": "merge"
+          },
+          {
+            "amendments": [
+              {
+                "bosses": [
+                  "NMaleficStar",
+                  "NCarling"
+                ],
+                "confidence": 0.7,
+                "day_ref": "tonight",
+                "evidence_message_ids": [
+                  "401"
+                ],
+                "is_question": true,
+                "kind": "add",
+                "participants": [
+                  "11"
+                ],
+                "rsvp": null,
+                "target_run_hint": null,
+                "time_ref": null
+              },
+              {
+                "bosses": [],
+                "confidence": 0.9,
+                "day_ref": null,
+                "evidence_message_ids": [
+                  "402"
+                ],
+                "is_question": false,
+                "kind": "move",
+                "participants": [],
+                "rsvp": null,
+                "target_run_hint": null,
+                "time_ref": "9pm"
+              }
+            ],
+            "existing_bosses": [],
+            "message_order": [
+              "401",
+              "402"
+            ],
+            "op": "merge"
+          }
+        ]
+      }
+    },
+    {
+      "case_id": "one-time-carries-across-moves-to-the-same-day",
+      "expected": {
+        "steps": [
+          {
+            "value": [
+              {
+                "bosses": [
+                  "HMaleficStar",
+                  "HFA"
+                ],
+                "confidence": 0.9,
+                "day_ref": "wed",
+                "evidence_message_ids": [
+                  "1",
+                  "2"
+                ],
+                "is_question": false,
+                "kind": "move",
+                "participants": [],
+                "rsvp": null,
+                "target_run_hint": null,
+                "time_ref": "9:30pm"
+              },
+              {
+                "bosses": [
+                  "HCarling",
+                  "XKalos"
+                ],
+                "confidence": 0.9,
+                "day_ref": "wed",
+                "evidence_message_ids": [
+                  "1",
+                  "2"
+                ],
+                "is_question": false,
+                "kind": "move",
+                "participants": [],
+                "rsvp": null,
+                "target_run_hint": null,
+                "time_ref": "9:30pm"
+              }
+            ]
+          },
+          {
+            "value": [
+              {
+                "bosses": [
+                  "HMaleficStar"
+                ],
+                "confidence": 0.9,
+                "day_ref": "wed",
+                "evidence_message_ids": [
+                  "1"
+                ],
+                "is_question": false,
+                "kind": "move",
+                "participants": [],
+                "rsvp": null,
+                "target_run_hint": null,
+                "time_ref": "9pm"
+              },
+              {
+                "bosses": [
+                  "HCarling"
+                ],
+                "confidence": 0.9,
+                "day_ref": "wed",
+                "evidence_message_ids": [
+                  "2"
+                ],
+                "is_question": false,
+                "kind": "move",
+                "participants": [],
+                "rsvp": null,
+                "target_run_hint": null,
+                "time_ref": "10pm"
+              },
+              {
+                "bosses": [
+                  "XKalos"
+                ],
+                "confidence": 0.9,
+                "day_ref": "wed",
+                "evidence_message_ids": [
+                  "3"
+                ],
+                "is_question": false,
+                "kind": "move",
+                "participants": [],
+                "rsvp": null,
+                "target_run_hint": null,
+                "time_ref": null
+              }
+            ]
+          }
+        ]
+      },
+      "input": {
+        "steps": [
+          {
+            "amendments": [
+              {
+                "bosses": [
+                  "HMaleficStar",
+                  "HFA"
+                ],
+                "confidence": 0.9,
+                "day_ref": "wed",
+                "evidence_message_ids": [
+                  "1"
+                ],
+                "is_question": true,
+                "kind": "move",
+                "participants": [],
+                "rsvp": null,
+                "target_run_hint": null,
+                "time_ref": null
+              },
+              {
+                "bosses": [
+                  "HCarling",
+                  "XKalos"
+                ],
+                "confidence": 0.9,
+                "day_ref": "Wed",
+                "evidence_message_ids": [
+                  "1"
+                ],
+                "is_question": true,
+                "kind": "move",
+                "participants": [],
+                "rsvp": null,
+                "target_run_hint": null,
+                "time_ref": null
+              },
+              {
+                "bosses": [
+                  "HCarling",
+                  "XKalos"
+                ],
+                "confidence": 0.9,
+                "day_ref": "wed",
+                "evidence_message_ids": [
+                  "2"
+                ],
+                "is_question": false,
+                "kind": "move",
+                "participants": [],
+                "rsvp": null,
+                "target_run_hint": null,
+                "time_ref": "9:30pm"
+              }
+            ],
+            "existing_bosses": [
+              [
+                "HMaleficStar",
+                "HFA"
+              ],
+              [
+                "HCarling",
+                "XKalos"
+              ]
+            ],
+            "message_order": [
+              "1",
+              "2"
+            ],
+            "op": "merge"
+          },
+          {
+            "amendments": [
+              {
+                "bosses": [
+                  "HMaleficStar"
+                ],
+                "confidence": 0.9,
+                "day_ref": "wed",
+                "evidence_message_ids": [
+                  "1"
+                ],
+                "is_question": false,
+                "kind": "move",
+                "participants": [],
+                "rsvp": null,
+                "target_run_hint": null,
+                "time_ref": "9pm"
+              },
+              {
+                "bosses": [
+                  "HCarling"
+                ],
+                "confidence": 0.9,
+                "day_ref": "wed",
+                "evidence_message_ids": [
+                  "2"
+                ],
+                "is_question": false,
+                "kind": "move",
+                "participants": [],
+                "rsvp": null,
+                "target_run_hint": null,
+                "time_ref": "10pm"
+              },
+              {
+                "bosses": [
+                  "XKalos"
+                ],
+                "confidence": 0.9,
+                "day_ref": "wed",
+                "evidence_message_ids": [
+                  "3"
+                ],
+                "is_question": false,
+                "kind": "move",
+                "participants": [],
+                "rsvp": null,
+                "target_run_hint": null,
+                "time_ref": null
+              }
+            ],
+            "existing_bosses": [
+              [
+                "HMaleficStar"
+              ],
+              [
+                "HCarling",
+                "XKalos"
+              ]
+            ],
+            "message_order": [
+              "1",
+              "2",
+              "3"
+            ],
+            "op": "merge"
+          }
+        ]
+      }
+    }
+  ],
+  "family": "merge",
+  "provenance": {
+    "functions": [
+      "bot.extract.merge.merge"
+    ],
+    "inventory_surfaces": [
+      "extract.merge"
+    ],
+    "oracle": "legacy/python bot.extract.merge",
+    "source_tests": [
+      "tests/test_extract_merge.py"
+    ]
+  },
+  "schema_version": "v5-extract-merge-v1"
+}

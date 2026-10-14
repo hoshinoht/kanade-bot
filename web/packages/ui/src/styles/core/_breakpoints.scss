@@ -1,0 +1,7 @@
+// Shared breakpoints, variables only (no CSS output). Script twins:
+// SINGLE_PANE_QUERY / TWO_PANE_QUERY in media.ts; change both together.
+
+// List-detail screens (and the Week board and run pane) show one pane at a
+// time below 900 px, two from 900 px (user decision 2026-10-05).
+$single-pane: "(width < 900px)";
+$two-pane: "(width >= 900px)";

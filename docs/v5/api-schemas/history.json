@@ -1,0 +1,247 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kanade.invalid/api-schemas/history.json",
+  "title": "History (kanade.change.v1, docs/notes/history.md): pages, records, rollback plans, checkpoints, blame",
+  "$defs": {
+    "Actor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "id"],
+      "properties": {
+        "kind": { "$ref": "common.json#/$defs/ActorKind" },
+        "id": { "type": "string" }
+      }
+    },
+    "RowKey": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["table", "id"],
+          "properties": {
+            "table": { "enum": ["runs", "fixed_runs", "reminders"] },
+            "id": { "type": "string" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["table", "run_id", "user_id"],
+          "properties": {
+            "table": { "const": "rsvps" },
+            "run_id": { "type": "string" },
+            "user_id": { "type": "string" }
+          }
+        }
+      ]
+    },
+    "DomainRow": { "type": ["object", "null"], "description": "Full domain row; null = absent." },
+    "RowChange": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["key", "before", "after"],
+      "properties": {
+        "key": { "$ref": "#/$defs/RowKey" },
+        "before": { "$ref": "#/$defs/DomainRow" },
+        "after": { "$ref": "#/$defs/DomainRow" }
+      }
+    },
+    "ChangeRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["format", "seq", "id", "revision", "at", "actor", "surface", "request_id", "weeks", "rows", "notices", "refs", "prev_hash", "hash"],
+      "properties": {
+        "format": { "const": "kanade.change.v1" },
+        "seq": { "type": "integer", "minimum": 0 },
+        "id": { "type": "string" },
+        "revision": { "type": "integer", "minimum": 0 },
+        "at": { "type": "string" },
+        "actor": { "$ref": "#/$defs/Actor" },
+        "surface": { "$ref": "common.json#/$defs/Surface" },
+        "request_id": { "$ref": "common.json#/$defs/NullableString" },
+        "weeks": { "type": "array", "items": { "type": "string" } },
+        "rows": { "type": "array", "items": { "$ref": "#/$defs/RowChange" } },
+        "notices": { "type": "array", "items": { "type": "string" } },
+        "refs": { "type": "array", "items": { "$ref": "common.json#/$defs/Head" } },
+        "prev_hash": { "type": "string" },
+        "hash": { "type": "string" }
+      }
+    },
+    "HistoryPage": {
+      "description": "Newest first. With `run=<id>`: that run's change log (records changing its row or RSVPs); each record's `runs`/`rsvps` rows give the run's before and after.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["records", "head", "next_before", "total", "settings", "settings_total"],
+      "properties": {
+        "records": { "type": "array", "items": { "$ref": "#/$defs/ChangeRecord" } },
+        "head": { "$ref": "common.json#/$defs/Head" },
+        "next_before": { "type": ["integer", "null"], "minimum": 0 },
+        "total": { "type": "integer", "minimum": 0 },
+        "settings": {
+          "description": "Config section saves in this page's time window (at or after its oldest record, before the oldest record of the page `before` came from), newest first; empty with `run`.",
+          "type": "array",
+          "items": { "$ref": "#/$defs/SettingsChange" }
+        },
+        "settings_total": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "SettingsChange": {
+      "description": "A saved Config section: view-only, outside the hash chain, never revertible.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "at", "actor", "surface", "section", "revision", "week", "values"],
+      "properties": {
+        "id": { "type": "integer", "minimum": 1 },
+        "at": { "type": "string" },
+        "actor": { "$ref": "#/$defs/Actor" },
+        "surface": { "$ref": "common.json#/$defs/Surface" },
+        "section": { "type": "string", "minLength": 1 },
+        "revision": { "type": "integer", "minimum": 0 },
+        "week": { "type": "string" },
+        "values": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["key", "from", "to"],
+            "properties": {
+              "key": { "type": "string" },
+              "from": { "type": "string" },
+              "to": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+    "RevertPlan": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["outcome", "reverts", "rows", "conflicts", "skipped", "record"],
+      "properties": {
+        "outcome": { "enum": ["preview", "applied", "unchanged", "conflicts"] },
+        "reverts": { "type": "array", "items": { "type": "integer", "minimum": 0 } },
+        "rows": { "type": "array", "items": { "$ref": "#/$defs/RowChange" } },
+        "conflicts": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["seq", "key", "expected", "found"],
+            "properties": {
+              "seq": { "type": "integer", "minimum": 0 },
+              "key": { "$ref": "#/$defs/RowKey" },
+              "expected": {},
+              "found": {}
+            }
+          }
+        },
+        "skipped": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["key", "reason"],
+            "properties": {
+              "key": { "$ref": "#/$defs/RowKey" },
+              "reason": { "type": "string" }
+            }
+          }
+        },
+        "record": {
+          "anyOf": [{ "$ref": "#/$defs/ChangeRecord" }, { "type": "null" }]
+        }
+      }
+    },
+    "Checkpoints": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["verified", "backup_dir_configured", "backups"],
+      "properties": {
+        "verified": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["ok", "checked", "head", "first_broken"],
+          "properties": {
+            "ok": { "type": "boolean" },
+            "checked": { "type": "integer", "minimum": 0 },
+            "head": { "$ref": "common.json#/$defs/Head" },
+            "first_broken": {
+              "oneOf": [{ "type": "integer", "minimum": 0 }, { "type": "null" }],
+              "description": "The seq of the first record that breaks the chain; null while it is intact."
+            }
+          }
+        },
+        "backup_dir_configured": {
+          "type": "boolean",
+          "description": "`KANADE_BACKUP_DIR` is set; false means no directory, not no backups."
+        },
+        "backups": {
+          "type": "array",
+          "description": "Manifests in the backup directory beside an existing snapshot, newest first (at most 100); unreadable or foreign ones are skipped.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["file", "format", "created_at", "history_head", "revision", "schema_version", "anchored", "anchor"],
+            "properties": {
+              "file": { "type": "string" },
+              "format": { "const": "kanade.backup.v1" },
+              "created_at": { "type": "string" },
+              "history_head": { "$ref": "common.json#/$defs/Head" },
+              "revision": { "type": "integer", "minimum": 0 },
+              "schema_version": { "type": "integer", "minimum": 0 },
+              "anchored": { "type": "boolean", "description": "The chain still contains `history_head`." },
+              "anchor": {
+                "enum": ["matches", "older_schema", "mismatch"],
+                "description": "`mismatch`: the head is not in the chain (truncated or forked history); `older_schema`: anchored, but the backup's schema is older than the store's; otherwise `matches`."
+              }
+            }
+          }
+        }
+      }
+    },
+    "SignInPage": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "`GET /api/admin/history/sign-ins`: stored sign-in audit rows of both realms, newest first, 90 days.",
+      "required": ["rows", "next_before"],
+      "properties": {
+        "rows": {
+          "type": "array",
+          "maxItems": 200,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["seq", "at", "realm", "event", "actor", "name", "method", "reason", "request", "client", "device", "request_id"],
+            "properties": {
+              "seq": { "type": "integer", "minimum": 1 },
+              "at": { "type": "string" },
+              "realm": { "enum": ["admin", "member"] },
+              "event": {
+                "enum": ["login_succeeded", "login_refused", "break_glass_used", "session_ended", "session_rotated", "rate_limited", "revoke_failed", "write_refused"]
+              },
+              "actor": { "type": ["string", "null"] },
+              "name": { "type": ["string", "null"] },
+              "method": { "type": ["string", "null"] },
+              "reason": { "type": ["string", "null"] },
+              "request": {
+                "type": ["string", "null"],
+                "description": "Break-glass request line, or a refused member write's method and path."
+              },
+              "client": {
+                "type": ["string", "null"],
+                "description": "Admin rows: the client address. Member rows: only a keyed 64-hex tag of it."
+              },
+              "device": { "type": ["string", "null"] },
+              "request_id": { "type": "string" }
+            }
+          }
+        },
+        "next_before": {
+          "oneOf": [{ "type": "integer", "minimum": 1 }, { "type": "null" }],
+          "description": "Pass as `before` for older rows; null on the last page."
+        }
+      }
+    }
+  }
+}

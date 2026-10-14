@@ -1,17 +1,194 @@
 boss: Lotus
-summary: 'Extreme Lotus is a Purge Gauge fight: bait Lotus''s own tracking mechanics into him to drain Purge, break shields, and create safer damage windows.'
+summary: Extreme Lotus (party of up to 2) is an annihilation gauge fight (also called Purge Gauge). Bait Lotus's own arms and lasers into him to drain the gauge and break shields, and phase quickly before Annihilation Mode piles on extra patterns.
+lead: 'Bait Lotus''s own arms and lasers into him to drain your annihilation gauge and break his shields; phase fast before Annihilation Mode piles on.'
 core:
-- Each player has a personal Purge Gauge. It rises over time and from certain hits; when full, Purge Mode activates with extra patterns.
-- In Phase 3, Purge Mode is the default and the gauge must be drained by making specific map attacks hit Lotus.
-- Mechanical Arms and Tracking Lasers lower your Purge Gauge when they hit Lotus, so positioning them into the boss is an intended mechanic.
-- Phase 1's white shield reduces incoming damage by 90%; destroy it within 20 seconds or Lotus heals based on the shield left. Map mechanics can damage the shield.
+- title: Annihilation gauge
+  text: 'One per player; rises on its own in Phases 1-2 and from hits. Full means Annihilation Mode''s extra patterns.'
+  detail: 'Each player has their own annihilation gauge (also called Purge Gauge). In Phases 1-2 it rises on its own (2%/s and 2.7%/s on Extreme) and from hits; when full, you enter Annihilation Mode for 34 s with extra patterns.'
+- title: Lasers and arms
+  text: 'Hitting you raises your gauge; hitting Lotus lowers it. Extreme adds a large arm after every 10th small one.'
+  detail: 'Tracking lasers and Mechanical Arms raise your gauge if they hit you and lower it if they hit Lotus. On Extreme, a large arm follows every 10th small arm and is worth about -16 to -22% on Lotus.'
+- title: Per player
+  text: 'The gauge freezes while you are dead; in a duo, Annihilation patterns are per player.'
+  detail: The gauge does not move while you are dead, and Annihilation patterns are per player in a duo.
+phases:
+- name: Phase 1
+  tag: white shield
+  items:
+  - title: White shield
+    text: 'Every ~40 s: −90% damage for 20 s. Leftover shield heals Lotus, up to 20% max HP.'
+    detail: 'In Phase 1, a white shield cuts damage by 90% for 20 s, about every 40 s. Any shield left heals Lotus (up to 20% of max HP); lasers and arms aimed through Lotus strip it. Binding in Phase 1 stops only the shield pattern.'
+  - title: Strip it
+    text: 'Aim lasers and arms through Lotus; binding stops only the shield pattern.'
+  - title: Clear the shield
+    text: 'Extreme: one full arm set plus the large arm clears it; stand where you can drag them through Lotus.'
+  - title: Bombardment
+    text: 'Safe on the right in Phase 1; the firing cannon itself is safe.'
+  - title: Large arm
+    text: 'About 1 s warning on Extreme; hits 70% HP in Phase 1.'
+- name: Phase 3
+  tag: reversed gauge
+  items:
+  - title: Reversed gauge
+    text: 'Annihilation Mode is the default. Only map attacks on Lotus lower the gauge; empty it for Safe Mode.'
+    detail: 'In Phase 3 Annihilation Mode is the default and the gauge only falls when Lotus is hit by map attacks; emptying it gives 25 s of Safe Mode on Extreme.'
+  - title: Drain sources
+    text: 'Aim all three tracking lasers, the marked arms (above all the large arm) and missiles through Lotus.'
+  - title: Safe Mode burst
+    text: 'Burst in the 25 s Safe Mode, then drain again as soon as Annihilation resumes.'
+  - title: Darkness Aura
+    text: 'Stand on Lotus to dodge it, unless orange Gravity Restraint lasers bind you; then it deals 100%.'
+  - title: Bombardment corners
+    text: 'Top-left is the default; portals link the safe corners. On Extreme, bottom-right can knock you into the beam.'
+mechanics:
+- kind: ledger
+  title: Annihilation gauge · Extreme
+  rows:
+  - {label: Phase 1 passive, value: +2%/s, direction: down}
+  - {label: Phase 2 passive, value: +2.7%/s, direction: down}
+  - {label: Large arm hits Lotus, value: ≈ −16 to −22%, direction: up}
+  - {label: Full in Phases 1-2, value: 34 s Annihilation, direction: down}
+  - {label: Empty in Phase 3, value: 25 s Safe Mode, direction: up}
+  note: 'Phase 3 has no passive rise.'
+- kind: zones
+  title: Bombardment safe spots
+  zones:
+  - {name: Top-left, sub: Phases 2-3 · the default, tone: safe}
+  - {name: Right, sub: Phase 1, tone: safe}
+  - {name: Bottom-right, sub: Phases 2-3 · knockback risk, tone: yellow}
+  note: 'In Phase 3, portals link the two safe corners: use them to switch sides when the bombardment comes.'
 danger:
-- Purge Mode adds much denser map pressure; in Phase 3 you do not naturally leave it without draining the gauge.
-- Extreme's large Mechanical Arm hits for 70% HP in Phase 1 and 80% in Phases 2-3.
-- Purge Routine is a lethal laser sequence; respect the barrier/safe-side mechanic rather than trying to tank it.
+- title: Horizontal bombardment
+  text: 'Lethal beam; see Bombardment safe spots. The firing cannon itself is safe.'
+  detail: 'Horizontal bombardment (also called Purge Routine; SEA name unconfirmed) is a lethal beam: safe on the right in Phase 1, and top-left or bottom-right in Phases 2-3. The firing cannon itself is safe.'
+- title: Large arm
+  text: '~1 s warning on Extreme; 70% HP in Phase 1, 80% in Phases 2-3.'
+  detail: The large arm on Extreme gives about 1 s of warning and hits 70% HP in Phase 1 and 80% in Phases 2-3.
+- title: Darkness Aura
+  text: 'Phase 3: stand on Lotus to dodge it, unless orange Gravity Restraint lasers bind you; then it deals 100%.'
+  detail: 'Phase 3: Darkness Aura is dodged by standing on Lotus, except when you are bound by the orange Gravity Restraint lasers; then it deals 100% and cannot be avoided.'
+- title: Drill Push and Current Discharge
+  text: 'Drill Push into a corner hits twice. Current Discharge: 100% and a 2 s stun unless you leave the floor.'
+  detail: Drill Push into a corner gives two unavoidable hits; Current Discharge deals 100% plus a 2 s stun unless you leave the floor.
+- title: Bottom-right knockback
+  text: 'Extreme Phase 3 bottom-right can knock you into the beam.'
+  detail: Extreme bottom-right in Phase 3 risks being knocked into the bombardment beam.
 tips:
-- Aim tracking lasers and marked Mechanical Arms through Lotus whenever it is safe to do so.
-- In Phase 3, prioritize earning non-Purge windows instead of greeding damage through permanent map pressure.
-- When the Phase 1 shield appears, use both normal damage and boss-hit map mechanics to remove it quickly.
+- title: Clear the shield
+  text: 'Extreme: a full arm set plus the large arm clears it; drag them through Lotus.'
+  detail: On Extreme, one full arm set plus the large arm clears the Phase 1 shield; stand where you can drag them through Lotus.
+- title: Drill Push
+  text: 'Duck its rear spawn; never take it in a corner.'
+  detail: You can duck the rear spawn of Drill Push; never take it pinned in a corner.
+- title: Ring swap
+  text: 'Oz-ring swappers can swap under the shield; damage is cut 90% anyway.'
+  detail: Oz-ring swappers can swap while the shield is up, since damage is already cut by 90%.
+notes:
+- title: MapleSEA v244 changes
+  text: 'No Phase 3 ceiling cannon, less bombing and shorter drone fields since Aug 2025; older guides overstate them.'
+  detail: MapleSEA v244 (Aug 2025) removed the Phase 3 ceiling cannon, cut Extreme Phase 3 bombing by one shot and two locations, shortened drone fields and made bombardments rarer; older guides overstate those patterns.
+- title: Only Extreme tracked
+  text: 'Normal and Hard: level 210, 300% PDR, up to 6 players.'
+  detail: Only Extreme is tracked here; Normal and Hard are level 210 with 300% PDR and a party of up to 6.
+difficulties:
+- name: Extreme
+  entry_level: 190
+  boss_level: 285
+  pdr_percent: 380
+  party_max: 2
+  hp:
+  - {phase: '1', value: 543.3t}
+  - {phase: '2', value: 543.3t}
+  - {phase: '3', value: 724.4t}
+  recommended_spec:
+    kind: Combat power
+    basis: CMS reference
+    text: CMS lists 200M combat power solo or about 65M each in a duo as a rough reference. There is no Arcane or Authentic Force requirement.
+    parties:
+    - {party: Solo, value: 200M}
+    - {party: Duo (each), value: ≈ 65M}
+  notes:
+  - 5 lives, 30 minutes, 10 s potion cooldown; the clear is shared with Normal and Hard, once a week. Entry level 190 comes from the GMS guide (unconfirmed for SEA).
+  - HP is the KMS value before OVERDRIVE; each Phase 1 shield holds about 2.7t more.
+  - 'After OVERDRIVE (KMS Jul 2026, due in MapleSEA Oct-Nov 2026): HP about 368t / 368t / 491t (32.2% less; KMS calls Lotus Suu), 20-minute limit.'
+- name: Champion
+  entry_level: 260
+  party_max: 1
+  mission:
+    series: union-champion
+    order: 1
+    title: Rank B trial
+    needs: A Rank C champion (where every champion starts)
+    rules: [Solo, 20-minute limit, Practice Mode clears count]
+  notes:
+  - title: B insignia
+    text: '+20 All Stats and +1,000 Max HP/MP for every character. Hard Lotus (not Extreme; also called Suu) solo in Champion Mode.'
+    detail: 'Union Champion Rank B trial (Champion Evaluation Match): Hard Lotus (not Extreme; also called Suu) solo in Champion Mode within 20 minutes; every champion starts at Rank C. The B insignia gives every character +20 All Stats and +1,000 Max HP/MP.'
+  - title: Practice Mode
+    text: 'Clears count and add Hamcelot''s Protection: 25% less damage taken.'
+    detail: 'Practice Mode clears count and add Hamcelot''s Protection (25% less damage taken). After OVERDRIVE, KMS adds Hamcelot''s Trial (Final Damage -30%, -25% on Black Mage); not in MapleSEA yet.'
+strategies:
+- name: Standard duo
+  when: Two players, the group's usual setup
+  risk: medium
+  damage: high
+  payoff: Short Phases 1-2 and fewer Annihilation Mode cycles
+  steps:
+  - Phase 1 - stay central and let arms and lasers strip the shield rather than bursting into 90% damage reduction.
+  - Phases 1-2 - burst to phase before your gauge fills.
+  - Phase 2 - play top-left or bottom-right, which double as the bombardment safe zones.
+  - Phase 3 - default to top-left rather than bottom-right.
+- name: P3 gauge drain
+  when: Always in Phase 3
+  risk: low
+  damage: low
+  payoff: 25 s Safe Mode windows, the only breaks in Phase 3
+  steps:
+  - Aim all three tracking lasers, the marked arms (especially the large arm) and the missiles through Lotus.
+  - Burst during Safe Mode, then return to draining as soon as Annihilation Mode resumes.
 sources:
-- https://maplestorywiki.net/w/Lotus/Monster
+- url: https://docs.google.com/document/d/1ozaBBT0D7rZJr_KurQYNHLdKJU7PWw437bq5auyom5c/edit
+  title: MapleStory Complete Remastered Lotus Guide
+  author: iSIingGunz
+  kind: guide
+  fetched: '2026-10-02'
+- url: https://www.maplesea.com/updates/view/v244_Patch_Notes/
+  title: MapleSEA v244 Patch Notes
+  author: MapleStorySEA
+  kind: official
+  fetched: '2026-10-02'
+- url: https://www.maplesea.com/updates/view/v235_Patch_Notes/
+  title: MapleSEA v235 Lotus Remastered Patch Notes
+  author: MapleStorySEA
+  kind: official
+  fetched: '2026-10-02'
+- url: https://orangemushroom.net/2026/07/04/kms-ver-1-2-416-maplestory-overdrive-ruler-of-covenants-lethe/
+  title: KMS ver. 1.2.416 - MapleStory Overdrive
+  author: Orange Mushroom
+  kind: guide
+  fetched: '2026-10-02'
+- url: https://www.digitaltq.com/maplestory-lotus-remaster-guide
+  title: Lotus Remaster Guide
+  author: Aleph (DigitalTQ)
+  kind: guide
+  fetched: '2026-10-02'
+- url: https://mapletools.app/bosses/lotus
+  title: MapleTools - Lotus
+  author: MapleTools
+  kind: tool
+  fetched: '2026-10-02'
+- url: https://maplestorywiki.net/w/Lotus/Monster
+  title: MapleStory Wiki - Lotus/Monster
+  author: MapleStory Wiki contributors
+  kind: wiki
+  fetched: '2026-10-02'
+- url: https://www.maplesea.com/updates/view/v243_Patch_Notes/
+  title: MapleSEA v243 NEXT II patch notes (Union Champion)
+  author: Nexon SEA
+  kind: official
+  fetched: '2026-10-05'
+- url: https://maplestory.nexon.com/Guide/N23GameInformation/Articles/409
+  title: KMS official guide - Union Champion
+  author: Nexon Korea
+  kind: official
+  fetched: '2026-10-05'

@@ -1,0 +1,1551 @@
+{
+  "cases": [
+    {
+      "case_id": "boss-tokens-prefixes-words-and-fuzzy",
+      "expected": {
+        "steps": [
+          {
+            "value": [
+              {
+                "canonical": "NMaleficStar",
+                "difficulty": "n",
+                "fuzzy": false,
+                "short": "MaleficStar",
+                "token": "nstar"
+              },
+              {
+                "canonical": "NCarling",
+                "difficulty": "n",
+                "fuzzy": false,
+                "short": "Carling",
+                "token": "ncarl"
+              }
+            ]
+          },
+          {
+            "value": [
+              {
+                "canonical": "HMaleficStar",
+                "difficulty": "h",
+                "fuzzy": true,
+                "short": "MaleficStar",
+                "token": "hstarr"
+              }
+            ]
+          },
+          {
+            "value": [
+              {
+                "canonical": "NBaldrix",
+                "difficulty": "n",
+                "fuzzy": true,
+                "short": "Baldrix",
+                "token": "nbaldrx"
+              }
+            ]
+          },
+          {
+            "value": [
+              {
+                "canonical": "XKalos",
+                "difficulty": "x",
+                "fuzzy": false,
+                "short": "Kalos",
+                "token": "exkalos"
+              },
+              {
+                "canonical": "HMaleficStar",
+                "difficulty": "h",
+                "fuzzy": false,
+                "short": "MaleficStar",
+                "token": "hardstar"
+              }
+            ]
+          },
+          {
+            "value": [
+              {
+                "canonical": null,
+                "difficulty": null,
+                "fuzzy": false,
+                "short": "Limbo",
+                "token": "limbo"
+              },
+              {
+                "canonical": null,
+                "difficulty": null,
+                "fuzzy": false,
+                "short": "Carling",
+                "token": "carling"
+              }
+            ]
+          },
+          {
+            "value": [
+              {
+                "canonical": null,
+                "difficulty": "h",
+                "fuzzy": false,
+                "short": "Kalos",
+                "token": "hkalos"
+              }
+            ]
+          },
+          {
+            "value": []
+          },
+          {
+            "value": [
+              {
+                "canonical": "HMaleficStar",
+                "difficulty": "h",
+                "fuzzy": false,
+                "short": "MaleficStar",
+                "token": "hmaleficstar"
+              },
+              {
+                "canonical": "HFA",
+                "difficulty": "h",
+                "fuzzy": false,
+                "short": "FA",
+                "token": "hfa"
+              }
+            ]
+          },
+          {
+            "value": [
+              {
+                "canonical": "XKalos",
+                "difficulty": "x",
+                "fuzzy": false,
+                "short": "Kalos",
+                "token": "xkalos"
+              }
+            ]
+          },
+          {
+            "value": [
+              {
+                "canonical": "HMaleficStar",
+                "difficulty": "h",
+                "fuzzy": false,
+                "short": "MaleficStar",
+                "token": "hstar"
+              }
+            ]
+          },
+          {
+            "value": [
+              {
+                "canonical": null,
+                "difficulty": null,
+                "fuzzy": false,
+                "short": "FA",
+                "token": "fa"
+              },
+              {
+                "canonical": null,
+                "difficulty": null,
+                "fuzzy": false,
+                "short": "MaleficStar",
+                "token": "star"
+              },
+              {
+                "canonical": null,
+                "difficulty": null,
+                "fuzzy": false,
+                "short": "Baldrix",
+                "token": "bald"
+              }
+            ]
+          },
+          {
+            "value": [
+              {
+                "canonical": "NBaldrix",
+                "difficulty": "n",
+                "fuzzy": false,
+                "short": "Baldrix",
+                "token": "normbaldguy"
+              },
+              {
+                "canonical": "XFA",
+                "difficulty": "x",
+                "fuzzy": false,
+                "short": "FA",
+                "token": "extremefa"
+              }
+            ]
+          },
+          {
+            "value": []
+          },
+          {
+            "value": [
+              "NMaleficStar",
+              "HMaleficStar"
+            ]
+          },
+          {
+            "value": [
+              "CKalos",
+              "EKalos"
+            ]
+          }
+        ]
+      },
+      "input": {
+        "catalog": {
+          "bosses": [
+            {
+              "aliases": [
+                "star",
+                "mstar"
+              ],
+              "difficulties": [
+                "n",
+                "h"
+              ],
+              "full": "Malefic Star",
+              "short": "MaleficStar"
+            },
+            {
+              "aliases": [
+                "fa"
+              ],
+              "difficulties": [
+                "n",
+                "h",
+                "x"
+              ],
+              "full": "First Adversary",
+              "short": "FA"
+            },
+            {
+              "aliases": [
+                "carl",
+                "carling"
+              ],
+              "difficulties": [
+                "n",
+                "h",
+                "x"
+              ],
+              "full": "Chief Carling",
+              "short": "Carling"
+            },
+            {
+              "aliases": [
+                "kalos"
+              ],
+              "difficulties": [
+                "e",
+                "n",
+                "c",
+                "x"
+              ],
+              "full": "Kalos the Guardian",
+              "short": "Kalos"
+            },
+            {
+              "aliases": [
+                "bald",
+                "baldguy"
+              ],
+              "difficulties": [
+                "n",
+                "h"
+              ],
+              "full": "Baldrix",
+              "short": "Baldrix"
+            },
+            {
+              "aliases": [
+                "limbo"
+              ],
+              "difficulties": [
+                "n",
+                "h"
+              ],
+              "full": "Limbo",
+              "short": "Limbo"
+            }
+          ],
+          "difficulties": [
+            {
+              "label": "Easy",
+              "prefix": "e"
+            },
+            {
+              "label": "Normal",
+              "prefix": "n"
+            },
+            {
+              "label": "Hard",
+              "prefix": "h"
+            },
+            {
+              "label": "Chaos",
+              "prefix": "c"
+            },
+            {
+              "label": "Extreme",
+              "prefix": "x"
+            }
+          ]
+        },
+        "roster_ids": [
+          "11",
+          "22",
+          "33",
+          "44"
+        ],
+        "steps": [
+          {
+            "op": "find_bosses",
+            "text": "we doing our nstar and ncarl tonight?"
+          },
+          {
+            "op": "find_bosses",
+            "text": "hstarr later"
+          },
+          {
+            "op": "find_bosses",
+            "text": "nbaldrx 930"
+          },
+          {
+            "op": "find_bosses",
+            "text": "exkalos and hardstar"
+          },
+          {
+            "op": "find_bosses",
+            "text": "limbo or carling"
+          },
+          {
+            "op": "find_bosses",
+            "text": "hkalos anyone"
+          },
+          {
+            "op": "find_bosses",
+            "text": "start the run, clear chair"
+          },
+          {
+            "op": "find_bosses",
+            "text": "HMaleficStar + HFA"
+          },
+          {
+            "op": "find_bosses",
+            "text": "xkalos xkalos XKALOS"
+          },
+          {
+            "op": "find_bosses",
+            "text": "ch7 hstar"
+          },
+          {
+            "op": "find_bosses",
+            "text": "fa star bald"
+          },
+          {
+            "op": "find_bosses",
+            "text": "normbaldguy extremefa"
+          },
+          {
+            "op": "find_bosses",
+            "text": ""
+          },
+          {
+            "op": "canonical_bosses",
+            "text": "nstar hstar limbo hkalos nstar"
+          },
+          {
+            "op": "canonical_bosses",
+            "text": "chaoskalos easykalos"
+          }
+        ]
+      }
+    },
+    {
+      "case_id": "clock-expressions-and-masks",
+      "expected": {
+        "steps": [
+          {
+            "value": [
+              "9pm"
+            ]
+          },
+          {
+            "value": [
+              "9:30pm",
+              "9.30 pm"
+            ]
+          },
+          {
+            "value": [
+              "930"
+            ]
+          },
+          {
+            "value": [
+              "1030~11+pm"
+            ]
+          },
+          {
+            "value": [
+              "8~1130"
+            ]
+          },
+          {
+            "value": [
+              "9-10pm"
+            ]
+          },
+          {
+            "value": [
+              "at 11"
+            ]
+          },
+          {
+            "value": []
+          },
+          {
+            "value": []
+          },
+          {
+            "value": []
+          },
+          {
+            "value": []
+          },
+          {
+            "value": []
+          },
+          {
+            "value": [
+              "930"
+            ]
+          },
+          {
+            "value": []
+          },
+          {
+            "value": [
+              "12am",
+              "9+pm"
+            ]
+          },
+          {
+            "value": [
+              "21:30"
+            ]
+          },
+          {
+            "value": [
+              "1130pm"
+            ]
+          },
+          {
+            "value": [
+              "10pm",
+              "11pm"
+            ]
+          },
+          {
+            "value": [
+              "945"
+            ]
+          }
+        ]
+      },
+      "input": {
+        "catalog": {
+          "bosses": [
+            {
+              "aliases": [
+                "star",
+                "mstar"
+              ],
+              "difficulties": [
+                "n",
+                "h"
+              ],
+              "full": "Malefic Star",
+              "short": "MaleficStar"
+            },
+            {
+              "aliases": [
+                "fa"
+              ],
+              "difficulties": [
+                "n",
+                "h",
+                "x"
+              ],
+              "full": "First Adversary",
+              "short": "FA"
+            },
+            {
+              "aliases": [
+                "carl",
+                "carling"
+              ],
+              "difficulties": [
+                "n",
+                "h",
+                "x"
+              ],
+              "full": "Chief Carling",
+              "short": "Carling"
+            },
+            {
+              "aliases": [
+                "kalos"
+              ],
+              "difficulties": [
+                "e",
+                "n",
+                "c",
+                "x"
+              ],
+              "full": "Kalos the Guardian",
+              "short": "Kalos"
+            },
+            {
+              "aliases": [
+                "bald",
+                "baldguy"
+              ],
+              "difficulties": [
+                "n",
+                "h"
+              ],
+              "full": "Baldrix",
+              "short": "Baldrix"
+            },
+            {
+              "aliases": [
+                "limbo"
+              ],
+              "difficulties": [
+                "n",
+                "h"
+              ],
+              "full": "Limbo",
+              "short": "Limbo"
+            }
+          ],
+          "difficulties": [
+            {
+              "label": "Easy",
+              "prefix": "e"
+            },
+            {
+              "label": "Normal",
+              "prefix": "n"
+            },
+            {
+              "label": "Hard",
+              "prefix": "h"
+            },
+            {
+              "label": "Chaos",
+              "prefix": "c"
+            },
+            {
+              "label": "Extreme",
+              "prefix": "x"
+            }
+          ]
+        },
+        "roster_ids": [
+          "11",
+          "22",
+          "33",
+          "44"
+        ],
+        "steps": [
+          {
+            "op": "find_times",
+            "text": "9pm"
+          },
+          {
+            "op": "find_times",
+            "text": "9:30pm then 9.30 pm"
+          },
+          {
+            "op": "find_times",
+            "text": "930 ok"
+          },
+          {
+            "op": "find_times",
+            "text": "1030~11+pm"
+          },
+          {
+            "op": "find_times",
+            "text": "8~1130"
+          },
+          {
+            "op": "find_times",
+            "text": "9-10pm"
+          },
+          {
+            "op": "find_times",
+            "text": "at 11"
+          },
+          {
+            "op": "find_times",
+            "text": "lvl 290 now"
+          },
+          {
+            "op": "find_times",
+            "text": "since 2026"
+          },
+          {
+            "op": "find_times",
+            "text": "ring $200 each"
+          },
+          {
+            "op": "find_times",
+            "text": "cc9 later, ch7, c 3"
+          },
+          {
+            "op": "find_times",
+            "text": "call 91234567"
+          },
+          {
+            "op": "find_times",
+            "text": "<@123456789012345678> 930"
+          },
+          {
+            "op": "find_times",
+            "text": "see https://example.invalid/930 pls"
+          },
+          {
+            "op": "find_times",
+            "text": "12am or 9+pm"
+          },
+          {
+            "op": "find_times",
+            "text": "21:30 sharp"
+          },
+          {
+            "op": "find_times",
+            "text": "1130pm"
+          },
+          {
+            "op": "find_times",
+            "text": "10pm-11pm"
+          },
+          {
+            "op": "find_times",
+            "text": "<:pepe:123456789012345678> 945"
+          }
+        ]
+      }
+    },
+    {
+      "case_id": "day-words-and-mentions",
+      "expected": {
+        "steps": [
+          {
+            "value": [
+              "weds",
+              "thurs"
+            ]
+          },
+          {
+            "value": [
+              "tmr",
+              "tonight"
+            ]
+          },
+          {
+            "value": [
+              "mon",
+              "tuesday"
+            ]
+          },
+          {
+            "value": [
+              "today",
+              "ytd"
+            ]
+          },
+          {
+            "value": []
+          },
+          {
+            "value": [
+              "11",
+              "22"
+            ]
+          },
+          {
+            "value": [
+              "11",
+              "99"
+            ]
+          }
+        ]
+      },
+      "input": {
+        "catalog": {
+          "bosses": [
+            {
+              "aliases": [
+                "star",
+                "mstar"
+              ],
+              "difficulties": [
+                "n",
+                "h"
+              ],
+              "full": "Malefic Star",
+              "short": "MaleficStar"
+            },
+            {
+              "aliases": [
+                "fa"
+              ],
+              "difficulties": [
+                "n",
+                "h",
+                "x"
+              ],
+              "full": "First Adversary",
+              "short": "FA"
+            },
+            {
+              "aliases": [
+                "carl",
+                "carling"
+              ],
+              "difficulties": [
+                "n",
+                "h",
+                "x"
+              ],
+              "full": "Chief Carling",
+              "short": "Carling"
+            },
+            {
+              "aliases": [
+                "kalos"
+              ],
+              "difficulties": [
+                "e",
+                "n",
+                "c",
+                "x"
+              ],
+              "full": "Kalos the Guardian",
+              "short": "Kalos"
+            },
+            {
+              "aliases": [
+                "bald",
+                "baldguy"
+              ],
+              "difficulties": [
+                "n",
+                "h"
+              ],
+              "full": "Baldrix",
+              "short": "Baldrix"
+            },
+            {
+              "aliases": [
+                "limbo"
+              ],
+              "difficulties": [
+                "n",
+                "h"
+              ],
+              "full": "Limbo",
+              "short": "Limbo"
+            }
+          ],
+          "difficulties": [
+            {
+              "label": "Easy",
+              "prefix": "e"
+            },
+            {
+              "label": "Normal",
+              "prefix": "n"
+            },
+            {
+              "label": "Hard",
+              "prefix": "h"
+            },
+            {
+              "label": "Chaos",
+              "prefix": "c"
+            },
+            {
+              "label": "Extreme",
+              "prefix": "x"
+            }
+          ]
+        },
+        "roster_ids": [
+          "11",
+          "22",
+          "33",
+          "44"
+        ],
+        "steps": [
+          {
+            "op": "find_days",
+            "text": "weds or thurs"
+          },
+          {
+            "op": "find_days",
+            "text": "tmr tonight"
+          },
+          {
+            "op": "find_days",
+            "text": "Mon and tuesday"
+          },
+          {
+            "op": "find_days",
+            "text": "today ytd today"
+          },
+          {
+            "op": "find_days",
+            "text": "cc6 later"
+          },
+          {
+            "op": "find_mentions",
+            "roster_ids": [
+              "11",
+              "22",
+              "33",
+              "44"
+            ],
+            "text": "<@11> <@!22> <@99> <@11>"
+          },
+          {
+            "op": "find_mentions",
+            "roster_ids": [],
+            "text": "<@11> <@99>"
+          }
+        ]
+      }
+    },
+    {
+      "case_id": "explicit-rsvp-answers",
+      "expected": {
+        "steps": [
+          {
+            "value": "yes"
+          },
+          {
+            "value": "yes"
+          },
+          {
+            "value": "no"
+          },
+          {
+            "value": null
+          },
+          {
+            "value": null
+          },
+          {
+            "value": null
+          },
+          {
+            "value": "yes"
+          },
+          {
+            "value": "no"
+          },
+          {
+            "value": null
+          },
+          {
+            "value": "yes"
+          },
+          {
+            "value": null
+          },
+          {
+            "value": null
+          },
+          {
+            "value": null
+          }
+        ]
+      },
+      "input": {
+        "catalog": {
+          "bosses": [
+            {
+              "aliases": [
+                "star",
+                "mstar"
+              ],
+              "difficulties": [
+                "n",
+                "h"
+              ],
+              "full": "Malefic Star",
+              "short": "MaleficStar"
+            },
+            {
+              "aliases": [
+                "fa"
+              ],
+              "difficulties": [
+                "n",
+                "h",
+                "x"
+              ],
+              "full": "First Adversary",
+              "short": "FA"
+            },
+            {
+              "aliases": [
+                "carl",
+                "carling"
+              ],
+              "difficulties": [
+                "n",
+                "h",
+                "x"
+              ],
+              "full": "Chief Carling",
+              "short": "Carling"
+            },
+            {
+              "aliases": [
+                "kalos"
+              ],
+              "difficulties": [
+                "e",
+                "n",
+                "c",
+                "x"
+              ],
+              "full": "Kalos the Guardian",
+              "short": "Kalos"
+            },
+            {
+              "aliases": [
+                "bald",
+                "baldguy"
+              ],
+              "difficulties": [
+                "n",
+                "h"
+              ],
+              "full": "Baldrix",
+              "short": "Baldrix"
+            },
+            {
+              "aliases": [
+                "limbo"
+              ],
+              "difficulties": [
+                "n",
+                "h"
+              ],
+              "full": "Limbo",
+              "short": "Limbo"
+            }
+          ],
+          "difficulties": [
+            {
+              "label": "Easy",
+              "prefix": "e"
+            },
+            {
+              "label": "Normal",
+              "prefix": "n"
+            },
+            {
+              "label": "Hard",
+              "prefix": "h"
+            },
+            {
+              "label": "Chaos",
+              "prefix": "c"
+            },
+            {
+              "label": "Extreme",
+              "prefix": "x"
+            }
+          ]
+        },
+        "roster_ids": [
+          "11",
+          "22",
+          "33",
+          "44"
+        ],
+        "steps": [
+          {
+            "op": "explicit_rsvp",
+            "text": "Can"
+          },
+          {
+            "op": "explicit_rsvp",
+            "text": "ok"
+          },
+          {
+            "op": "explicit_rsvp",
+            "text": "kenot sry"
+          },
+          {
+            "op": "explicit_rsvp",
+            "text": "can?"
+          },
+          {
+            "op": "explicit_rsvp",
+            "text": "i can take"
+          },
+          {
+            "op": "explicit_rsvp",
+            "text": "can anot"
+          },
+          {
+            "op": "explicit_rsvp",
+            "text": "okay for wed"
+          },
+          {
+            "op": "explicit_rsvp",
+            "text": "yes no"
+          },
+          {
+            "op": "explicit_rsvp",
+            "text": "ok ok ok ok ok ok ok ok ok"
+          },
+          {
+            "op": "explicit_rsvp",
+            "text": "I ok"
+          },
+          {
+            "op": "explicit_rsvp",
+            "text": "not free"
+          },
+          {
+            "op": "explicit_rsvp",
+            "text": "can shift"
+          },
+          {
+            "op": "explicit_rsvp",
+            "text": ""
+          }
+        ]
+      }
+    },
+    {
+      "case_id": "evaluate-signals",
+      "expected": {
+        "steps": [
+          {
+            "value": {
+              "bosses": [],
+              "days": [],
+              "hit": false,
+              "mentions": [],
+              "reasons": "-",
+              "signals": [],
+              "strong": false,
+              "times": []
+            }
+          },
+          {
+            "value": {
+              "bosses": [],
+              "days": [],
+              "hit": true,
+              "mentions": [],
+              "reasons": "agree",
+              "signals": [
+                "agree"
+              ],
+              "strong": false,
+              "times": []
+            }
+          },
+          {
+            "value": {
+              "bosses": [],
+              "days": [
+                "tonight"
+              ],
+              "hit": true,
+              "mentions": [],
+              "reasons": "day,here,soon,time",
+              "signals": [
+                "day",
+                "here",
+                "soon",
+                "time"
+              ],
+              "strong": true,
+              "times": [
+                "9:30"
+              ]
+            }
+          },
+          {
+            "value": {
+              "bosses": [],
+              "days": [
+                "tue"
+              ],
+              "hit": true,
+              "mentions": [],
+              "reasons": "day,verb",
+              "signals": [
+                "day",
+                "verb"
+              ],
+              "strong": true,
+              "times": []
+            }
+          },
+          {
+            "value": {
+              "bosses": [],
+              "days": [],
+              "hit": true,
+              "mentions": [],
+              "reasons": "run,soon",
+              "signals": [
+                "run",
+                "soon"
+              ],
+              "strong": false,
+              "times": []
+            }
+          },
+          {
+            "value": {
+              "bosses": [
+                {
+                  "canonical": "HMaleficStar",
+                  "difficulty": "h",
+                  "fuzzy": false,
+                  "short": "MaleficStar",
+                  "token": "hstar"
+                }
+              ],
+              "days": [
+                "tmr"
+              ],
+              "hit": true,
+              "mentions": [
+                "11"
+              ],
+              "reasons": "boss,day,mention",
+              "signals": [
+                "boss",
+                "day",
+                "mention"
+              ],
+              "strong": true,
+              "times": []
+            }
+          },
+          {
+            "value": {
+              "bosses": [],
+              "days": [],
+              "hit": false,
+              "mentions": [],
+              "reasons": "-",
+              "signals": [],
+              "strong": false,
+              "times": []
+            }
+          },
+          {
+            "value": {
+              "bosses": [],
+              "days": [],
+              "hit": false,
+              "mentions": [],
+              "reasons": "-",
+              "signals": [],
+              "strong": false,
+              "times": []
+            }
+          }
+        ]
+      },
+      "input": {
+        "catalog": {
+          "bosses": [
+            {
+              "aliases": [
+                "star",
+                "mstar"
+              ],
+              "difficulties": [
+                "n",
+                "h"
+              ],
+              "full": "Malefic Star",
+              "short": "MaleficStar"
+            },
+            {
+              "aliases": [
+                "fa"
+              ],
+              "difficulties": [
+                "n",
+                "h",
+                "x"
+              ],
+              "full": "First Adversary",
+              "short": "FA"
+            },
+            {
+              "aliases": [
+                "carl",
+                "carling"
+              ],
+              "difficulties": [
+                "n",
+                "h",
+                "x"
+              ],
+              "full": "Chief Carling",
+              "short": "Carling"
+            },
+            {
+              "aliases": [
+                "kalos"
+              ],
+              "difficulties": [
+                "e",
+                "n",
+                "c",
+                "x"
+              ],
+              "full": "Kalos the Guardian",
+              "short": "Kalos"
+            },
+            {
+              "aliases": [
+                "bald",
+                "baldguy"
+              ],
+              "difficulties": [
+                "n",
+                "h"
+              ],
+              "full": "Baldrix",
+              "short": "Baldrix"
+            },
+            {
+              "aliases": [
+                "limbo"
+              ],
+              "difficulties": [
+                "n",
+                "h"
+              ],
+              "full": "Limbo",
+              "short": "Limbo"
+            }
+          ],
+          "difficulties": [
+            {
+              "label": "Easy",
+              "prefix": "e"
+            },
+            {
+              "label": "Normal",
+              "prefix": "n"
+            },
+            {
+              "label": "Hard",
+              "prefix": "h"
+            },
+            {
+              "label": "Chaos",
+              "prefix": "c"
+            },
+            {
+              "label": "Extreme",
+              "prefix": "x"
+            }
+          ]
+        },
+        "roster_ids": [
+          "11",
+          "22",
+          "33",
+          "44"
+        ],
+        "steps": [
+          {
+            "op": "evaluate",
+            "text": "lol that ring price is crazy"
+          },
+          {
+            "op": "evaluate",
+            "text": "ok"
+          },
+          {
+            "op": "evaluate",
+            "text": "@here 9:30 later tonight"
+          },
+          {
+            "op": "evaluate",
+            "text": "we lock in tue night as default?"
+          },
+          {
+            "op": "evaluate",
+            "text": "run later"
+          },
+          {
+            "op": "evaluate",
+            "text": "<@11> hstar tmr"
+          },
+          {
+            "op": "evaluate",
+            "text": "<@99> hi"
+          },
+          {
+            "op": "evaluate",
+            "text": "cc9 pls"
+          }
+        ]
+      }
+    },
+    {
+      "case_id": "burst-worth-a-call-and-urgency",
+      "expected": {
+        "steps": [
+          {
+            "value": false
+          },
+          {
+            "value": true
+          },
+          {
+            "value": false
+          },
+          {
+            "value": true
+          },
+          {
+            "value": false
+          },
+          {
+            "value": true
+          },
+          {
+            "value": true
+          },
+          {
+            "value": false
+          },
+          {
+            "value": false
+          },
+          {
+            "value": false
+          }
+        ]
+      },
+      "input": {
+        "catalog": {
+          "bosses": [
+            {
+              "aliases": [
+                "star",
+                "mstar"
+              ],
+              "difficulties": [
+                "n",
+                "h"
+              ],
+              "full": "Malefic Star",
+              "short": "MaleficStar"
+            },
+            {
+              "aliases": [
+                "fa"
+              ],
+              "difficulties": [
+                "n",
+                "h",
+                "x"
+              ],
+              "full": "First Adversary",
+              "short": "FA"
+            },
+            {
+              "aliases": [
+                "carl",
+                "carling"
+              ],
+              "difficulties": [
+                "n",
+                "h",
+                "x"
+              ],
+              "full": "Chief Carling",
+              "short": "Carling"
+            },
+            {
+              "aliases": [
+                "kalos"
+              ],
+              "difficulties": [
+                "e",
+                "n",
+                "c",
+                "x"
+              ],
+              "full": "Kalos the Guardian",
+              "short": "Kalos"
+            },
+            {
+              "aliases": [
+                "bald",
+                "baldguy"
+              ],
+              "difficulties": [
+                "n",
+                "h"
+              ],
+              "full": "Baldrix",
+              "short": "Baldrix"
+            },
+            {
+              "aliases": [
+                "limbo"
+              ],
+              "difficulties": [
+                "n",
+                "h"
+              ],
+              "full": "Limbo",
+              "short": "Limbo"
+            }
+          ],
+          "difficulties": [
+            {
+              "label": "Easy",
+              "prefix": "e"
+            },
+            {
+              "label": "Normal",
+              "prefix": "n"
+            },
+            {
+              "label": "Hard",
+              "prefix": "h"
+            },
+            {
+              "label": "Chaos",
+              "prefix": "c"
+            },
+            {
+              "label": "Extreme",
+              "prefix": "x"
+            }
+          ]
+        },
+        "roster_ids": [
+          "11",
+          "22",
+          "33",
+          "44"
+        ],
+        "steps": [
+          {
+            "context_is_scheduling": false,
+            "op": "should_extract",
+            "texts": [
+              "ok",
+              "Can"
+            ]
+          },
+          {
+            "context_is_scheduling": true,
+            "op": "should_extract",
+            "texts": [
+              "ok",
+              "Can"
+            ]
+          },
+          {
+            "context_is_scheduling": true,
+            "op": "should_extract",
+            "texts": [
+              "lol",
+              "hi"
+            ]
+          },
+          {
+            "context_is_scheduling": false,
+            "op": "should_extract",
+            "texts": [
+              "ok",
+              "hstar?"
+            ]
+          },
+          {
+            "context_is_scheduling": false,
+            "op": "should_extract",
+            "texts": [
+              "later"
+            ]
+          },
+          {
+            "op": "urgent",
+            "text": "@here 9:30 later tonight"
+          },
+          {
+            "op": "urgent",
+            "text": "<@22> hstar"
+          },
+          {
+            "op": "urgent",
+            "text": "@everyone hi"
+          },
+          {
+            "op": "urgent",
+            "text": "hstar 930"
+          },
+          {
+            "op": "urgent",
+            "text": "<@22> ok"
+          }
+        ]
+      }
+    }
+  ],
+  "family": "gate",
+  "provenance": {
+    "functions": [
+      "bot.extract.gate.find_bosses",
+      "bot.extract.gate.canonical_bosses",
+      "bot.extract.gate.find_times",
+      "bot.extract.gate.find_days",
+      "bot.extract.gate.find_mentions",
+      "bot.extract.gate.explicit_rsvp",
+      "bot.extract.gate.evaluate",
+      "bot.extract.gate.should_extract",
+      "bot.extract.pipeline.urgent"
+    ],
+    "inventory_surfaces": [
+      "extract.gate",
+      "extract.pipeline-and-backfill"
+    ],
+    "oracle": "legacy/python bot.extract.gate, bot.extract.pipeline.urgent",
+    "source_tests": [
+      "tests/test_extract_gate.py",
+      "tests/test_extract_pipeline.py"
+    ]
+  },
+  "schema_version": "v5-extract-gate-v1"
+}

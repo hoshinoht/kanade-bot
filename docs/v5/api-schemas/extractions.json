@@ -1,0 +1,194 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kanade.invalid/api-schemas/extractions.json",
+  "title": "Extraction log, call detail and rescan jobs",
+  "$defs": {
+    "ExtractionOutcome": {
+      "description": "`identity_leak`: the provider-boundary scanner refused the request (pseudonymization on; nothing was sent). `unknown`: a v4-imported call that maps to no other outcome (never a filter the PWA offers).",
+      "enum": ["proposed", "no_change", "failed", "turned_away", "content_blocked", "self_service_link", "identity_leak", "unknown"]
+    },
+    "ExtractionRow": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "short_id", "at", "model", "latency_ms", "messages", "changes", "channel", "channel_id", "error", "outcome"],
+      "properties": {
+        "reasoning_tokens": { "$ref": "#/$defs/TokenCount", "description": "Sum over reporting attempts; null when none reported. Additive, optional for older clients/fixtures." },
+        "id": { "type": "string" },
+        "short_id": { "type": "string" },
+        "at": { "type": "string" },
+        "model": { "type": "string" },
+        "latency_ms": { "type": ["integer", "null"], "minimum": 0 },
+        "messages": { "type": "integer", "minimum": 0 },
+        "changes": { "type": "integer", "minimum": 0 },
+        "channel": { "$ref": "common.json#/$defs/NullableString" },
+        "channel_id": { "type": "string" },
+        "error": { "$ref": "common.json#/$defs/NullableString" },
+        "outcome": { "$ref": "#/$defs/ExtractionOutcome" },
+        "prompt_tokens": { "$ref": "#/$defs/TokenCount", "description": "Provider-reported prompt tokens summed over the call's attempts that reported a pair; null when none did. Always sent by the server; optional so earlier fixtures stay valid." },
+        "completion_tokens": { "$ref": "#/$defs/TokenCount", "description": "As `prompt_tokens`, for completion tokens; the pair is all-or-nothing." }
+      }
+    },
+    "Extractions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["model", "rows", "total", "facets"],
+      "properties": {
+        "model": { "type": "string" },
+        "summary": {
+          "description": "Per model over the listed (filtered) calls. Always sent by the server; optional so earlier fixtures stay valid.",
+          "type": "array",
+          "items": { "$ref": "#/$defs/ExtractionSummary" }
+        },
+        "rows": { "type": "array", "items": { "$ref": "#/$defs/ExtractionRow" } },
+        "total": { "type": "integer", "minimum": 0 },
+        "facets": { "$ref": "common.json#/$defs/LogFacets" }
+      }
+    },
+    "Extraction": {
+      "description": "ExtractionRow without the `messages`/`changes` counts, plus the call itself.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id", "short_id", "at", "model", "latency_ms", "channel", "channel_id", "error", "outcome",
+        "prompt", "raw_response", "amendments", "messages"
+      ],
+      "properties": {
+        "reasoning_content": { "$ref": "common.json#/$defs/NullableString", "description": "Response-only text from attempts in order, joined with two newlines; at most 64 KiB including a visible truncation marker. Never sent in later requests." },
+        "reasoning_tokens": { "$ref": "#/$defs/TokenCount", "description": "Sum over attempts that reported reasoning tokens; null when none reported." },
+        "id": { "type": "string" },
+        "short_id": { "type": "string" },
+        "at": { "type": "string" },
+        "model": { "type": "string" },
+        "latency_ms": { "type": ["integer", "null"], "minimum": 0 },
+        "channel": { "$ref": "common.json#/$defs/NullableString" },
+        "channel_id": { "type": "string" },
+        "error": { "$ref": "common.json#/$defs/NullableString" },
+        "outcome": { "$ref": "#/$defs/ExtractionOutcome" },
+        "prompt_tokens": { "$ref": "#/$defs/TokenCount", "description": "Provider-reported prompt tokens summed over the call's attempts that reported a pair; null when none did. Always sent by the server; optional so earlier fixtures stay valid." },
+        "completion_tokens": { "$ref": "#/$defs/TokenCount", "description": "As `prompt_tokens`, for completion tokens; the pair is all-or-nothing." },
+        "prompt_estimate": { "$ref": "#/$defs/TokenCount", "description": "The local prompt estimate over the attempts that reported usage, else over every sent attempt; null when nothing was sent. Always sent by the server; optional so earlier fixtures stay valid." },
+        "context": {
+          "description": "The context the call was budgeted for (logged `guardrail.context`); null for calls logged without one. Always sent by the server; optional so earlier fixtures stay valid.",
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["window", "reserve", "source"],
+              "properties": {
+                "window": { "type": "integer", "minimum": 0 },
+                "reserve": { "type": "integer", "minimum": 0, "description": "The configured completion reserve the request asked for; sent as `max_tokens` only with sampling controls." },
+                "source": { "type": "string" },
+                "sent_max_tokens": { "oneOf": [{ "type": "null" }, { "type": "integer", "minimum": 0 }], "description": "The `max_tokens` the call's last request carried; null when none went out (a route without sampling controls), nothing was sent, or on older rows. Optional so earlier fixtures stay valid." }
+              }
+            }
+          ]
+        },
+        "prompt": { "type": "string" },
+        "raw_response": { "type": "string" },
+        "amendments": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["kind", "bosses", "when", "confidence", "status"],
+            "properties": {
+              "kind": { "type": "string" },
+              "bosses": { "type": "string" },
+              "when": { "type": "string" },
+              "confidence": { "type": "number" },
+              "status": { "type": "string" }
+            }
+          }
+        },
+        "messages": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "author", "at", "content"],
+            "properties": {
+              "id": { "type": "string" },
+              "author": { "type": "string" },
+              "author_id": { "type": "string", "description": "Always sent by the server; optional so earlier fixtures stay valid." },
+              "at": { "type": "string" },
+              "content": { "type": "string" }
+            }
+          }
+        },
+        "session_id": { "$ref": "common.json#/$defs/CorrelationId", "description": "The call session's gateway correlation stem (`kanade-extraction-…`); null when not recorded (older rows, v4 imports, calls that sent no tagged request). Additive, optional for older clients/fixtures." },
+        "request_ids": { "$ref": "common.json#/$defs/RequestIds", "description": "Every `x-request-id` the call sent, in order: `{session_id}-{n}`, answer and transient retries included. Empty when none was recorded. Additive, optional for older clients/fixtures." },
+        "refusals": {
+          "description": "A7, additive (the Rust server always sends it): changes the scheduler refused to stage for this call.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["change", "code", "message"],
+            "properties": {
+              "change": { "type": "string" },
+              "code": { "type": "string" },
+              "message": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+    "TokenCount": {
+      "description": "A provider-reported or estimated token count; null = not reported (older rows, v4 imports, failed or cut calls), never 0 for unknown.",
+      "type": ["integer", "null"],
+      "minimum": 0
+    },
+    "ExtractionSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["model", "count", "prompt_tokens", "completion_tokens", "reported", "est_ratio"],
+      "properties": {
+        "model": { "type": "string" },
+        "count": { "type": "integer", "minimum": 0 },
+        "prompt_tokens": { "$ref": "#/$defs/TokenCount", "description": "Sum over this model's calls that reported a pair; null when none did." },
+        "completion_tokens": { "$ref": "#/$defs/TokenCount" },
+        "reported": { "type": "integer", "minimum": 0, "description": "Calls that reported a usage pair." },
+        "est_ratio": {
+          "description": "Median of reported prompt tokens / prompt estimate over the calls with both (estimate > 0), rounded to two decimals (mean of the two middle values for an even count); null when none.",
+          "type": ["number", "null"],
+          "minimum": 0
+        }
+      }
+    },
+    "RescanJob": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "state", "window", "channels", "proposals"],
+      "properties": {
+        "id": { "type": "string" },
+        "state": { "enum": ["running", "done", "cancelled"] },
+        "window": {
+          "description": "`24h`/`48h`: a job the bot or `/rescan` started (never sent by the PWA).",
+          "enum": ["week", "since_reset", "two_weeks", "24h", "48h"]
+        },
+        "started_at": { "description": "Additive: when the runner took the job (UTC `Z`); null while it is queued.", "type": ["string", "null"], "format": "date-time" },
+        "messages": { "description": "Additive: the channels' `messages`, i.e. gated messages read so far.", "type": "integer", "minimum": 0 },
+        "messages_total": { "description": "Additive: `messages` plus, for each channel not yet read, its gated messages in the window as cached when the job started. A finished job's total is its `messages`. Null while a channel still to be read has no count (a queued job, or a count that failed).", "type": ["integer", "null"], "minimum": 0 },
+        "channels": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "name", "state", "messages"],
+            "properties": {
+              "id": { "type": "string" },
+              "name": { "type": "string" },
+              "state": { "enum": ["queued", "reading", "done"] },
+              "messages": { "description": "Gated messages this channel's read found (0 until it is `done`, and for a channel that could not be read).", "type": "integer", "minimum": 0 },
+              "unread": { "description": "A7, additive: messages never read (the model kept turning the rescan away).", "type": "integer", "minimum": 0 },
+              "errors": { "description": "A7, additive: fixed sentences, never backend text.", "type": "array", "items": { "type": "string" } }
+            }
+          }
+        },
+        "proposals": { "type": "integer", "minimum": 0 },
+        "unread": { "description": "A7, additive: the channels' unread messages.", "type": "integer", "minimum": 0 }
+      }
+    }
+  }
+}

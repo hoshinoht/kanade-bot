@@ -1,0 +1,29 @@
+// The member portal's placement of the shared Bosses window (`_boss-knowledge.scss`)
+// in the portal shell (boards Bosses, Guide*, PhoneBosses, PhoneGuide*).
+
+// The window takes the shell's remaining height, so only its panes scroll (as `.gate-card.window-fill`).
+.bosses-window.window-fill {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+// "Pick a boss" fills the detail, centred (board Bosses).
+.member-bosses__pick {
+  flex-direction: column;
+  gap: 12px;
+}
+
+.member-bosses__pick > .note {
+  margin: 0;
+  text-align: center;
+}
+
+// The phone guide's title bar carries "read-only" at its end (board PhoneGuide).
+.member-bosses__ro {
+  margin-left: auto;
+}
+
+// The phone frame has no page gutter to bleed into: the compact window keeps its place.
+.frame--phone .bosses-window--compact {
+  margin: 0;
+}

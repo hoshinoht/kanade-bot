@@ -1,0 +1,1483 @@
+{
+  "cases": [
+    {
+      "case_id": "when-text-never-invents",
+      "expected": {
+        "steps": [
+          {
+            "value": "**Wed 02 Sep 21:30**"
+          },
+          {
+            "value": "**Thu 03 Sep 00:05**"
+          },
+          {
+            "value": "**wed** — time **TBD**"
+          },
+          {
+            "value": "**9:30pm** — day **TBD**"
+          },
+          {
+            "value": "**sometime after boss** (couldn't read that as a date)"
+          },
+          {
+            "value": "**TBD**"
+          }
+        ]
+      },
+      "input": {
+        "steps": [
+          {
+            "op": "when_text",
+            "row": {
+              "also_mentioned": [],
+              "bosses": [],
+              "confidence": 0.9,
+              "day_ref": null,
+              "id": "f0f0f0f0-0000-4000-8000-000000000001",
+              "is_question": false,
+              "kind": "move",
+              "new_datetime": "2026-09-02T21:30:00+08:00",
+              "participants": [],
+              "payload": {},
+              "rsvp": null,
+              "run_id": null,
+              "summary": null,
+              "time_ref": null
+            }
+          },
+          {
+            "op": "when_text",
+            "row": {
+              "also_mentioned": [],
+              "bosses": [],
+              "confidence": 0.9,
+              "day_ref": null,
+              "id": "f0f0f0f0-0000-4000-8000-000000000001",
+              "is_question": false,
+              "kind": "move",
+              "new_datetime": "2026-09-02T16:05:00+00:00",
+              "participants": [],
+              "payload": {},
+              "rsvp": null,
+              "run_id": null,
+              "summary": null,
+              "time_ref": null
+            }
+          },
+          {
+            "op": "when_text",
+            "row": {
+              "also_mentioned": [],
+              "bosses": [],
+              "confidence": 0.9,
+              "day_ref": "wed",
+              "id": "f0f0f0f0-0000-4000-8000-000000000001",
+              "is_question": false,
+              "kind": "move",
+              "new_datetime": null,
+              "participants": [],
+              "payload": {},
+              "rsvp": null,
+              "run_id": null,
+              "summary": null,
+              "time_ref": null
+            }
+          },
+          {
+            "op": "when_text",
+            "row": {
+              "also_mentioned": [],
+              "bosses": [],
+              "confidence": 0.9,
+              "day_ref": null,
+              "id": "f0f0f0f0-0000-4000-8000-000000000001",
+              "is_question": false,
+              "kind": "move",
+              "new_datetime": null,
+              "participants": [],
+              "payload": {},
+              "rsvp": null,
+              "run_id": null,
+              "summary": null,
+              "time_ref": "9:30pm"
+            }
+          },
+          {
+            "op": "when_text",
+            "row": {
+              "also_mentioned": [],
+              "bosses": [],
+              "confidence": 0.9,
+              "day_ref": "sometime",
+              "id": "f0f0f0f0-0000-4000-8000-000000000001",
+              "is_question": false,
+              "kind": "move",
+              "new_datetime": null,
+              "participants": [],
+              "payload": {},
+              "rsvp": null,
+              "run_id": null,
+              "summary": null,
+              "time_ref": "after boss"
+            }
+          },
+          {
+            "op": "when_text",
+            "row": {
+              "also_mentioned": [],
+              "bosses": [],
+              "confidence": 0.9,
+              "day_ref": null,
+              "id": "f0f0f0f0-0000-4000-8000-000000000001",
+              "is_question": false,
+              "kind": "move",
+              "new_datetime": null,
+              "participants": [],
+              "payload": {},
+              "rsvp": null,
+              "run_id": null,
+              "summary": null,
+              "time_ref": null
+            }
+          }
+        ],
+        "timezone": "Asia/Kuala_Lumpur"
+      }
+    },
+    {
+      "case_id": "one-line-per-kind",
+      "expected": {
+        "steps": [
+          {
+            "value": [
+              "move · Hard MaleficStar + Hard FA · `#a1a1a1a1`",
+              "~~Mon 31 Aug 21:30~~ → **Wed 02 Sep 21:30**\n<@1>\n_moving to wed_\n(also mentioned: own time, cancel)"
+            ]
+          },
+          {
+            "value": [
+              "move · Hard MaleficStar + Hard FA · `#a1a1a1a1`",
+              "~~Mon 31 Aug 21:30~~ → **Wed 02 Sep 21:30**\n<@1>\n_moving to wed_\n(also mentioned: own time, cancel)"
+            ]
+          },
+          {
+            "value": [
+              "move · Hard Carling",
+              "**wed** — time **TBD**"
+            ]
+          },
+          {
+            "value": [
+              "new run · Normal MaleficStar",
+              "**tmr 930** (couldn't read that as a date)\n<@2>"
+            ]
+          },
+          {
+            "value": [
+              "split · Hard MaleficStar + Hard FA · `#a1a1a1a1`",
+              "**Tue 01 Sep 21:00**\n<@1> <@2> <@3>"
+            ]
+          },
+          {
+            "value": [
+              "cancel · Hard Carling + Extreme Kalos · `#b2b2b2b2`",
+              "**off this week**\n<@1> <@4>"
+            ]
+          },
+          {
+            "value": [
+              "own time · Hard Carling + Extreme Kalos · `#b2b2b2b2`",
+              "**own time** — stays on the schedule, no countdown pings\n<@1> <@4>"
+            ]
+          },
+          {
+            "value": [
+              "stand-in · Hard Carling + Extreme Kalos · `#b2b2b2b2`",
+              "<@4> out · Priya in"
+            ]
+          },
+          {
+            "value": [
+              "stand-in · Hard Carling + Extreme Kalos · `#b2b2b2b2`",
+              "<@4> **out this week**"
+            ]
+          },
+          {
+            "value": [
+              "answer · Hard MaleficStar + Hard FA · `#a1a1a1a1`",
+              "**not sure yet**\n<@3>"
+            ]
+          },
+          {
+            "value": [
+              "answer · Hard MaleficStar + Hard FA · `#a1a1a1a1`",
+              "**answered**\n<@3>"
+            ]
+          },
+          {
+            "value": [
+              "new weekly · Hard Limbo + Normal Baldrix",
+              "**every Tue 22:30** — recurring from now on, not a one-off; this week's run is added if that night is still ahead\n<@1>"
+            ]
+          },
+          {
+            "value": [
+              "new weekly · Hard Limbo",
+              "**tue** — time **TBD** — **and every week after** — recurring from now on, not a one-off; this week's run is added if that night is still ahead"
+            ]
+          },
+          {
+            "value": [
+              "change weekly · Normal Kalos",
+              "~~every Thu 21:00~~ → **every Fri 20:00** — the weekly timing itself, so every week from now on; this week's run moves with it\n<@1> <@2> → <@1> <@3>"
+            ]
+          },
+          {
+            "value": [
+              "change weekly · Normal Kalos",
+              "**every Thu 21:00** — the night is unchanged\n<@1>"
+            ]
+          },
+          {
+            "value": [
+              "remove weekly · Normal Kalos",
+              "**stop scheduling this every week** (Thu 21:00) — future weeks will not be scheduled, and this week's run is cancelled"
+            ]
+          },
+          {
+            "value": [
+              "new run · (no bosses)",
+              "**TBD**"
+            ]
+          }
+        ]
+      },
+      "input": {
+        "steps": [
+          {
+            "audience": null,
+            "op": "proposal_line",
+            "row": {
+              "also_mentioned": [
+                "otot",
+                "cancel"
+              ],
+              "bosses": [
+                "HMaleficStar"
+              ],
+              "confidence": 0.9,
+              "day_ref": null,
+              "id": "f0f0f0f0-0000-4000-8000-000000000001",
+              "is_question": false,
+              "kind": "move",
+              "new_datetime": "2026-09-02T21:30:00+08:00",
+              "participants": [
+                "1"
+              ],
+              "payload": {},
+              "rsvp": null,
+              "run_id": "a1a1a1a1-0000-4000-8000-000000000001",
+              "summary": "moving to wed",
+              "time_ref": null
+            },
+            "run": {
+              "bosses": [
+                "HMaleficStar",
+                "HFA"
+              ],
+              "channel_id": "900",
+              "datetime": "2026-08-31T21:30:00+08:00",
+              "id": "a1a1a1a1-0000-4000-8000-000000000001",
+              "participants": [
+                "1",
+                "2",
+                "3"
+              ],
+              "status": "planned",
+              "week_start": "2026-08-27T00:00:00+08:00"
+            }
+          },
+          {
+            "audience": {
+              "mentioned": [
+                "1",
+                "4"
+              ],
+              "names": {
+                "1": "Alvin",
+                "2": "kanon",
+                "3": "Priya",
+                "4": "Mei"
+              }
+            },
+            "op": "proposal_line",
+            "row": {
+              "also_mentioned": [
+                "otot",
+                "cancel"
+              ],
+              "bosses": [
+                "HMaleficStar"
+              ],
+              "confidence": 0.9,
+              "day_ref": null,
+              "id": "f0f0f0f0-0000-4000-8000-000000000001",
+              "is_question": false,
+              "kind": "move",
+              "new_datetime": "2026-09-02T21:30:00+08:00",
+              "participants": [
+                "1"
+              ],
+              "payload": {},
+              "rsvp": null,
+              "run_id": "a1a1a1a1-0000-4000-8000-000000000001",
+              "summary": "moving to wed",
+              "time_ref": null
+            },
+            "run": {
+              "bosses": [
+                "HMaleficStar",
+                "HFA"
+              ],
+              "channel_id": "900",
+              "datetime": "2026-08-31T21:30:00+08:00",
+              "id": "a1a1a1a1-0000-4000-8000-000000000001",
+              "participants": [
+                "1",
+                "2",
+                "3"
+              ],
+              "status": "planned",
+              "week_start": "2026-08-27T00:00:00+08:00"
+            }
+          },
+          {
+            "audience": null,
+            "op": "proposal_line",
+            "row": {
+              "also_mentioned": [],
+              "bosses": [
+                "HCarling"
+              ],
+              "confidence": 0.9,
+              "day_ref": "wed",
+              "id": "f0f0f0f0-0000-4000-8000-000000000001",
+              "is_question": false,
+              "kind": "move",
+              "new_datetime": null,
+              "participants": [],
+              "payload": {},
+              "rsvp": null,
+              "run_id": null,
+              "summary": null,
+              "time_ref": null
+            },
+            "run": null
+          },
+          {
+            "audience": null,
+            "op": "proposal_line",
+            "row": {
+              "also_mentioned": [],
+              "bosses": [
+                "NMaleficStar"
+              ],
+              "confidence": 0.9,
+              "day_ref": "tmr",
+              "id": "f0f0f0f0-0000-4000-8000-000000000001",
+              "is_question": true,
+              "kind": "add",
+              "new_datetime": null,
+              "participants": [
+                "2"
+              ],
+              "payload": {},
+              "rsvp": null,
+              "run_id": null,
+              "summary": null,
+              "time_ref": "930"
+            },
+            "run": null
+          },
+          {
+            "audience": null,
+            "op": "proposal_line",
+            "row": {
+              "also_mentioned": [],
+              "bosses": [
+                "HFA"
+              ],
+              "confidence": 0.9,
+              "day_ref": null,
+              "id": "f0f0f0f0-0000-4000-8000-000000000001",
+              "is_question": false,
+              "kind": "split",
+              "new_datetime": "2026-09-01T21:00:00+08:00",
+              "participants": [],
+              "payload": {},
+              "rsvp": null,
+              "run_id": "a1a1a1a1-0000-4000-8000-000000000001",
+              "summary": null,
+              "time_ref": null
+            },
+            "run": {
+              "bosses": [
+                "HMaleficStar",
+                "HFA"
+              ],
+              "channel_id": "900",
+              "datetime": "2026-08-31T21:30:00+08:00",
+              "id": "a1a1a1a1-0000-4000-8000-000000000001",
+              "participants": [
+                "1",
+                "2",
+                "3"
+              ],
+              "status": "planned",
+              "week_start": "2026-08-27T00:00:00+08:00"
+            }
+          },
+          {
+            "audience": null,
+            "op": "proposal_line",
+            "row": {
+              "also_mentioned": [],
+              "bosses": [],
+              "confidence": 0.9,
+              "day_ref": null,
+              "id": "f0f0f0f0-0000-4000-8000-000000000001",
+              "is_question": false,
+              "kind": "cancel",
+              "new_datetime": null,
+              "participants": [],
+              "payload": {},
+              "rsvp": null,
+              "run_id": "b2b2b2b2-0000-4000-8000-000000000002",
+              "summary": null,
+              "time_ref": null
+            },
+            "run": {
+              "bosses": [
+                "HCarling",
+                "XKalos"
+              ],
+              "channel_id": "900",
+              "datetime": "2026-09-01T22:00:00+08:00",
+              "id": "b2b2b2b2-0000-4000-8000-000000000002",
+              "participants": [
+                "1",
+                "4"
+              ],
+              "status": "planned",
+              "week_start": "2026-08-27T00:00:00+08:00"
+            }
+          },
+          {
+            "audience": {
+              "mentioned": [
+                "1",
+                "4"
+              ],
+              "names": {
+                "1": "Alvin",
+                "2": "kanon",
+                "3": "Priya",
+                "4": "Mei"
+              }
+            },
+            "op": "proposal_line",
+            "row": {
+              "also_mentioned": [],
+              "bosses": [],
+              "confidence": 0.9,
+              "day_ref": null,
+              "id": "f0f0f0f0-0000-4000-8000-000000000001",
+              "is_question": false,
+              "kind": "otot",
+              "new_datetime": null,
+              "participants": [],
+              "payload": {},
+              "rsvp": null,
+              "run_id": "b2b2b2b2-0000-4000-8000-000000000002",
+              "summary": null,
+              "time_ref": null
+            },
+            "run": {
+              "bosses": [
+                "HCarling",
+                "XKalos"
+              ],
+              "channel_id": "900",
+              "datetime": "2026-09-01T22:00:00+08:00",
+              "id": "b2b2b2b2-0000-4000-8000-000000000002",
+              "participants": [
+                "1",
+                "4"
+              ],
+              "status": "planned",
+              "week_start": "2026-08-27T00:00:00+08:00"
+            }
+          },
+          {
+            "audience": {
+              "mentioned": [
+                "1",
+                "4"
+              ],
+              "names": {
+                "1": "Alvin",
+                "2": "kanon",
+                "3": "Priya",
+                "4": "Mei"
+              }
+            },
+            "op": "proposal_line",
+            "row": {
+              "also_mentioned": [],
+              "bosses": [],
+              "confidence": 0.9,
+              "day_ref": null,
+              "id": "f0f0f0f0-0000-4000-8000-000000000001",
+              "is_question": false,
+              "kind": "sub",
+              "new_datetime": null,
+              "participants": [
+                "4"
+              ],
+              "payload": {
+                "add": [
+                  "3"
+                ],
+                "remove": [
+                  "4"
+                ]
+              },
+              "rsvp": null,
+              "run_id": "b2b2b2b2-0000-4000-8000-000000000002",
+              "summary": null,
+              "time_ref": null
+            },
+            "run": {
+              "bosses": [
+                "HCarling",
+                "XKalos"
+              ],
+              "channel_id": "900",
+              "datetime": "2026-09-01T22:00:00+08:00",
+              "id": "b2b2b2b2-0000-4000-8000-000000000002",
+              "participants": [
+                "1",
+                "4"
+              ],
+              "status": "planned",
+              "week_start": "2026-08-27T00:00:00+08:00"
+            }
+          },
+          {
+            "audience": null,
+            "op": "proposal_line",
+            "row": {
+              "also_mentioned": [],
+              "bosses": [],
+              "confidence": 0.9,
+              "day_ref": null,
+              "id": "f0f0f0f0-0000-4000-8000-000000000001",
+              "is_question": false,
+              "kind": "sub",
+              "new_datetime": null,
+              "participants": [
+                "4"
+              ],
+              "payload": {
+                "add": [],
+                "remove": []
+              },
+              "rsvp": null,
+              "run_id": "b2b2b2b2-0000-4000-8000-000000000002",
+              "summary": null,
+              "time_ref": null
+            },
+            "run": {
+              "bosses": [
+                "HCarling",
+                "XKalos"
+              ],
+              "channel_id": "900",
+              "datetime": "2026-09-01T22:00:00+08:00",
+              "id": "b2b2b2b2-0000-4000-8000-000000000002",
+              "participants": [
+                "1",
+                "4"
+              ],
+              "status": "planned",
+              "week_start": "2026-08-27T00:00:00+08:00"
+            }
+          },
+          {
+            "audience": null,
+            "op": "proposal_line",
+            "row": {
+              "also_mentioned": [],
+              "bosses": [],
+              "confidence": 0.9,
+              "day_ref": null,
+              "id": "f0f0f0f0-0000-4000-8000-000000000001",
+              "is_question": false,
+              "kind": "rsvp",
+              "new_datetime": null,
+              "participants": [
+                "3"
+              ],
+              "payload": {},
+              "rsvp": "maybe",
+              "run_id": "a1a1a1a1-0000-4000-8000-000000000001",
+              "summary": null,
+              "time_ref": null
+            },
+            "run": {
+              "bosses": [
+                "HMaleficStar",
+                "HFA"
+              ],
+              "channel_id": "900",
+              "datetime": "2026-08-31T21:30:00+08:00",
+              "id": "a1a1a1a1-0000-4000-8000-000000000001",
+              "participants": [
+                "1",
+                "2",
+                "3"
+              ],
+              "status": "planned",
+              "week_start": "2026-08-27T00:00:00+08:00"
+            }
+          },
+          {
+            "audience": null,
+            "op": "proposal_line",
+            "row": {
+              "also_mentioned": [],
+              "bosses": [],
+              "confidence": 0.9,
+              "day_ref": null,
+              "id": "f0f0f0f0-0000-4000-8000-000000000001",
+              "is_question": false,
+              "kind": "rsvp",
+              "new_datetime": null,
+              "participants": [
+                "3"
+              ],
+              "payload": {},
+              "rsvp": "later",
+              "run_id": "a1a1a1a1-0000-4000-8000-000000000001",
+              "summary": null,
+              "time_ref": null
+            },
+            "run": {
+              "bosses": [
+                "HMaleficStar",
+                "HFA"
+              ],
+              "channel_id": "900",
+              "datetime": "2026-08-31T21:30:00+08:00",
+              "id": "a1a1a1a1-0000-4000-8000-000000000001",
+              "participants": [
+                "1",
+                "2",
+                "3"
+              ],
+              "status": "planned",
+              "week_start": "2026-08-27T00:00:00+08:00"
+            }
+          },
+          {
+            "audience": null,
+            "op": "proposal_line",
+            "row": {
+              "also_mentioned": [],
+              "bosses": [
+                "HLimbo",
+                "NBaldrix"
+              ],
+              "confidence": 0.9,
+              "day_ref": null,
+              "id": "f0f0f0f0-0000-4000-8000-000000000001",
+              "is_question": false,
+              "kind": "fix",
+              "new_datetime": null,
+              "participants": [
+                "1"
+              ],
+              "payload": {
+                "time": "22:30",
+                "weekday": 1
+              },
+              "rsvp": null,
+              "run_id": null,
+              "summary": null,
+              "time_ref": null
+            },
+            "run": null
+          },
+          {
+            "audience": null,
+            "op": "proposal_line",
+            "row": {
+              "also_mentioned": [],
+              "bosses": [
+                "HLimbo"
+              ],
+              "confidence": 0.9,
+              "day_ref": "tue",
+              "id": "f0f0f0f0-0000-4000-8000-000000000001",
+              "is_question": false,
+              "kind": "fix",
+              "new_datetime": null,
+              "participants": [],
+              "payload": {},
+              "rsvp": null,
+              "run_id": null,
+              "summary": null,
+              "time_ref": null
+            },
+            "run": null
+          },
+          {
+            "audience": null,
+            "op": "proposal_line",
+            "row": {
+              "also_mentioned": [],
+              "bosses": [
+                "NKalos"
+              ],
+              "confidence": 0.9,
+              "day_ref": null,
+              "id": "f0f0f0f0-0000-4000-8000-000000000001",
+              "is_question": false,
+              "kind": "fix",
+              "new_datetime": null,
+              "participants": [
+                "1",
+                "2"
+              ],
+              "payload": {
+                "op": "edit",
+                "participants": [
+                  "1",
+                  "3"
+                ],
+                "time": "20:00",
+                "weekday": 4,
+                "weekly_when": "Thu 21:00"
+              },
+              "rsvp": null,
+              "run_id": null,
+              "summary": null,
+              "time_ref": null
+            },
+            "run": null
+          },
+          {
+            "audience": null,
+            "op": "proposal_line",
+            "row": {
+              "also_mentioned": [],
+              "bosses": [
+                "NKalos"
+              ],
+              "confidence": 0.9,
+              "day_ref": null,
+              "id": "f0f0f0f0-0000-4000-8000-000000000001",
+              "is_question": false,
+              "kind": "fix",
+              "new_datetime": null,
+              "participants": [
+                "1"
+              ],
+              "payload": {
+                "op": "edit",
+                "weekly_when": "Thu 21:00"
+              },
+              "rsvp": null,
+              "run_id": null,
+              "summary": null,
+              "time_ref": null
+            },
+            "run": null
+          },
+          {
+            "audience": null,
+            "op": "proposal_line",
+            "row": {
+              "also_mentioned": [],
+              "bosses": [
+                "NKalos"
+              ],
+              "confidence": 0.9,
+              "day_ref": null,
+              "id": "f0f0f0f0-0000-4000-8000-000000000001",
+              "is_question": false,
+              "kind": "fix",
+              "new_datetime": null,
+              "participants": [],
+              "payload": {
+                "op": "remove",
+                "weekly_when": "Thu 21:00"
+              },
+              "rsvp": null,
+              "run_id": null,
+              "summary": null,
+              "time_ref": null
+            },
+            "run": null
+          },
+          {
+            "audience": null,
+            "op": "proposal_line",
+            "row": {
+              "also_mentioned": [],
+              "bosses": [],
+              "confidence": 0.9,
+              "day_ref": null,
+              "id": "f0f0f0f0-0000-4000-8000-000000000001",
+              "is_question": false,
+              "kind": "add",
+              "new_datetime": null,
+              "participants": [],
+              "payload": {},
+              "rsvp": null,
+              "run_id": null,
+              "summary": null,
+              "time_ref": null
+            },
+            "run": null
+          }
+        ],
+        "timezone": "Asia/Kuala_Lumpur"
+      }
+    },
+    {
+      "case_id": "card-kinds-and-waiting-people",
+      "expected": {
+        "steps": [
+          {
+            "value": "fix"
+          },
+          {
+            "value": "proposal"
+          },
+          {
+            "value": "suggestion"
+          },
+          {
+            "value": "suggestion"
+          },
+          {
+            "value": "proposal"
+          },
+          {
+            "value": []
+          },
+          {
+            "value": [
+              "2",
+              "3"
+            ]
+          },
+          {
+            "value": [
+              "1",
+              "3",
+              "4"
+            ]
+          },
+          {
+            "value": {
+              "applied": "✅ applied by kanon",
+              "confirm_hint": "React ✅ to confirm, ❌ to reject, or use `/amend` to edit.",
+              "rejected": "❌ rejected by kanon",
+              "superseded": "↪ superseded by a newer card",
+              "tbd": "**TBD**"
+            }
+          }
+        ]
+      },
+      "input": {
+        "steps": [
+          {
+            "amendments": [
+              {
+                "also_mentioned": [],
+                "bosses": [],
+                "confidence": 0.9,
+                "day_ref": null,
+                "id": "f0f0f0f0-0000-4000-8000-000000000001",
+                "is_question": false,
+                "kind": "fix",
+                "new_datetime": null,
+                "participants": [],
+                "payload": {
+                  "weekday": 1
+                },
+                "rsvp": null,
+                "run_id": null,
+                "summary": null,
+                "time_ref": null
+              }
+            ],
+            "op": "card_kind"
+          },
+          {
+            "amendments": [
+              {
+                "also_mentioned": [
+                  "otot",
+                  "cancel"
+                ],
+                "bosses": [
+                  "HMaleficStar"
+                ],
+                "confidence": 0.9,
+                "day_ref": null,
+                "id": "f0f0f0f0-0000-4000-8000-000000000001",
+                "is_question": false,
+                "kind": "move",
+                "new_datetime": "2026-09-02T21:30:00+08:00",
+                "participants": [
+                  "1"
+                ],
+                "payload": {},
+                "rsvp": null,
+                "run_id": "a1a1a1a1-0000-4000-8000-000000000001",
+                "summary": "moving to wed",
+                "time_ref": null
+              }
+            ],
+            "op": "card_kind"
+          },
+          {
+            "amendments": [
+              {
+                "also_mentioned": [
+                  "otot",
+                  "cancel"
+                ],
+                "bosses": [
+                  "HMaleficStar"
+                ],
+                "confidence": 0.9,
+                "day_ref": null,
+                "id": "f0f0f0f0-0000-4000-8000-000000000001",
+                "is_question": false,
+                "kind": "move",
+                "new_datetime": "2026-09-02T21:30:00+08:00",
+                "participants": [
+                  "1"
+                ],
+                "payload": {},
+                "rsvp": null,
+                "run_id": "a1a1a1a1-0000-4000-8000-000000000001",
+                "summary": "moving to wed",
+                "time_ref": null
+              },
+              {
+                "also_mentioned": [],
+                "bosses": [],
+                "confidence": 0.9,
+                "day_ref": null,
+                "id": "f0f0f0f0-0000-4000-8000-000000000002",
+                "is_question": false,
+                "kind": "fix",
+                "new_datetime": null,
+                "participants": [],
+                "payload": {},
+                "rsvp": null,
+                "run_id": null,
+                "summary": null,
+                "time_ref": null
+              }
+            ],
+            "op": "card_kind"
+          },
+          {
+            "amendments": [
+              {
+                "also_mentioned": [],
+                "bosses": [],
+                "confidence": 0.9,
+                "day_ref": null,
+                "id": "f0f0f0f0-0000-4000-8000-000000000001",
+                "is_question": true,
+                "kind": "move",
+                "new_datetime": "2026-09-02T21:30:00+08:00",
+                "participants": [],
+                "payload": {},
+                "rsvp": null,
+                "run_id": null,
+                "summary": null,
+                "time_ref": null
+              }
+            ],
+            "op": "card_kind"
+          },
+          {
+            "amendments": [],
+            "op": "card_kind"
+          },
+          {
+            "amendments": [
+              {
+                "also_mentioned": [
+                  "otot",
+                  "cancel"
+                ],
+                "bosses": [
+                  "HMaleficStar"
+                ],
+                "confidence": 0.9,
+                "day_ref": null,
+                "id": "f0f0f0f0-0000-4000-8000-000000000001",
+                "is_question": false,
+                "kind": "move",
+                "new_datetime": "2026-09-02T21:30:00+08:00",
+                "participants": [
+                  "1"
+                ],
+                "payload": {},
+                "rsvp": null,
+                "run_id": "a1a1a1a1-0000-4000-8000-000000000001",
+                "summary": "moving to wed",
+                "time_ref": null
+              }
+            ],
+            "op": "unanswered",
+            "runs": [
+              {
+                "bosses": [
+                  "HMaleficStar",
+                  "HFA"
+                ],
+                "channel_id": "900",
+                "datetime": "2026-08-31T21:30:00+08:00",
+                "id": "a1a1a1a1-0000-4000-8000-000000000001",
+                "participants": [
+                  "1",
+                  "2",
+                  "3"
+                ],
+                "status": "planned",
+                "week_start": "2026-08-27T00:00:00+08:00"
+              }
+            ]
+          },
+          {
+            "amendments": [
+              {
+                "also_mentioned": [],
+                "bosses": [],
+                "confidence": 0.9,
+                "day_ref": "wed",
+                "id": "f0f0f0f0-0000-4000-8000-000000000001",
+                "is_question": false,
+                "kind": "move",
+                "new_datetime": null,
+                "participants": [
+                  "1"
+                ],
+                "payload": {},
+                "rsvp": null,
+                "run_id": "a1a1a1a1-0000-4000-8000-000000000001",
+                "summary": null,
+                "time_ref": null
+              }
+            ],
+            "op": "unanswered",
+            "runs": [
+              {
+                "bosses": [
+                  "HMaleficStar",
+                  "HFA"
+                ],
+                "channel_id": "900",
+                "datetime": "2026-08-31T21:30:00+08:00",
+                "id": "a1a1a1a1-0000-4000-8000-000000000001",
+                "participants": [
+                  "1",
+                  "2",
+                  "3"
+                ],
+                "status": "planned",
+                "week_start": "2026-08-27T00:00:00+08:00"
+              }
+            ]
+          },
+          {
+            "amendments": [
+              {
+                "also_mentioned": [],
+                "bosses": [],
+                "confidence": 0.9,
+                "day_ref": null,
+                "id": "f0f0f0f0-0000-4000-8000-000000000001",
+                "is_question": true,
+                "kind": "move",
+                "new_datetime": null,
+                "participants": [
+                  "2"
+                ],
+                "payload": {},
+                "rsvp": null,
+                "run_id": "a1a1a1a1-0000-4000-8000-000000000001",
+                "summary": null,
+                "time_ref": null
+              },
+              {
+                "also_mentioned": [],
+                "bosses": [],
+                "confidence": 0.9,
+                "day_ref": null,
+                "id": "f0f0f0f0-0000-4000-8000-000000000002",
+                "is_question": false,
+                "kind": "otot",
+                "new_datetime": null,
+                "participants": [],
+                "payload": {},
+                "rsvp": null,
+                "run_id": "b2b2b2b2-0000-4000-8000-000000000002",
+                "summary": null,
+                "time_ref": null
+              }
+            ],
+            "op": "unanswered",
+            "runs": [
+              {
+                "bosses": [
+                  "HMaleficStar",
+                  "HFA"
+                ],
+                "channel_id": "900",
+                "datetime": "2026-08-31T21:30:00+08:00",
+                "id": "a1a1a1a1-0000-4000-8000-000000000001",
+                "participants": [
+                  "1",
+                  "2",
+                  "3"
+                ],
+                "status": "planned",
+                "week_start": "2026-08-27T00:00:00+08:00"
+              },
+              {
+                "bosses": [
+                  "HCarling",
+                  "XKalos"
+                ],
+                "channel_id": "900",
+                "datetime": "2026-09-01T22:00:00+08:00",
+                "id": "b2b2b2b2-0000-4000-8000-000000000002",
+                "participants": [
+                  "1",
+                  "4"
+                ],
+                "status": "planned",
+                "week_start": "2026-08-27T00:00:00+08:00"
+              }
+            ]
+          },
+          {
+            "name": "kanon",
+            "op": "notices"
+          }
+        ],
+        "timezone": "Asia/Kuala_Lumpur"
+      }
+    },
+    {
+      "case_id": "one-card-per-burst",
+      "expected": {
+        "steps": [
+          {
+            "value": {
+              "colour": 16426522,
+              "content": "💡 Suggested amendment\n<@1> <@4> kanon",
+              "description": "Not yet answered: kanon Priya",
+              "fields": [
+                [
+                  "move · Hard MaleficStar + Hard FA · `#a1a1a1a1`",
+                  "~~Mon 31 Aug 21:30~~ → **Wed 02 Sep 21:30**\n<@1>\n_moving to wed_\n(also mentioned: own time, cancel)"
+                ],
+                [
+                  "own time · Hard Carling + Extreme Kalos · `#b2b2b2b2`",
+                  "**own time** — stays on the schedule, no countdown pings\n<@1> <@4>"
+                ],
+                [
+                  "new run · Normal MaleficStar",
+                  "**tmr** — time **TBD**\nkanon"
+                ]
+              ],
+              "footer": "React ✅ to confirm, ❌ to reject, or use `/amend` to edit.  (confidence 0.60)",
+              "mention_users": [
+                "1",
+                "4"
+              ],
+              "title": null
+            }
+          },
+          {
+            "value": {
+              "colour": 15418782,
+              "content": "📋 Proposed change\n<@1>",
+              "description": null,
+              "fields": [
+                [
+                  "move · Hard MaleficStar + Hard FA · `#a1a1a1a1`",
+                  "~~Mon 31 Aug 21:30~~ → **Wed 02 Sep 21:30**\n<@1>\n_moving to wed_\n(also mentioned: own time, cancel)"
+                ]
+              ],
+              "footer": "React ✅ to confirm, ❌ to reject, or use `/amend` to edit.",
+              "mention_users": [],
+              "title": null
+            }
+          },
+          {
+            "value": {
+              "colour": 10181046,
+              "content": "📌 New fixed timing",
+              "description": null,
+              "fields": [
+                [
+                  "new weekly · Hard Limbo",
+                  "**every Tue 22:30** — recurring from now on, not a one-off; this week's run is added if that night is still ahead"
+                ]
+              ],
+              "footer": "React ✅ to confirm, ❌ to reject, or use `/amend` to edit.  (confidence 0.90)",
+              "mention_users": [],
+              "title": null
+            }
+          }
+        ]
+      },
+      "input": {
+        "steps": [
+          {
+            "amendments": [
+              {
+                "also_mentioned": [
+                  "otot",
+                  "cancel"
+                ],
+                "bosses": [
+                  "HMaleficStar"
+                ],
+                "confidence": 0.9,
+                "day_ref": null,
+                "id": "f0f0f0f0-0000-4000-8000-000000000001",
+                "is_question": false,
+                "kind": "move",
+                "new_datetime": "2026-09-02T21:30:00+08:00",
+                "participants": [
+                  "1"
+                ],
+                "payload": {},
+                "rsvp": null,
+                "run_id": "a1a1a1a1-0000-4000-8000-000000000001",
+                "summary": "moving to wed",
+                "time_ref": null
+              },
+              {
+                "also_mentioned": [],
+                "bosses": [],
+                "confidence": 0.9,
+                "day_ref": null,
+                "id": "f0f0f0f0-0000-4000-8000-000000000002",
+                "is_question": false,
+                "kind": "otot",
+                "new_datetime": null,
+                "participants": [],
+                "payload": {},
+                "rsvp": null,
+                "run_id": "b2b2b2b2-0000-4000-8000-000000000002",
+                "summary": null,
+                "time_ref": null
+              },
+              {
+                "also_mentioned": [],
+                "bosses": [
+                  "NMaleficStar"
+                ],
+                "confidence": 0.6,
+                "day_ref": "tmr",
+                "id": "f0f0f0f0-0000-4000-8000-000000000003",
+                "is_question": true,
+                "kind": "add",
+                "new_datetime": null,
+                "participants": [
+                  "2"
+                ],
+                "payload": {},
+                "rsvp": null,
+                "run_id": null,
+                "summary": null,
+                "time_ref": null
+              }
+            ],
+            "audience": {
+              "mentioned": [
+                "1",
+                "4"
+              ],
+              "names": {
+                "1": "Alvin",
+                "2": "kanon",
+                "3": "Priya",
+                "4": "Mei"
+              }
+            },
+            "confidence": 0.6,
+            "op": "proposal_card",
+            "runs": [
+              {
+                "bosses": [
+                  "HMaleficStar",
+                  "HFA"
+                ],
+                "channel_id": "900",
+                "datetime": "2026-08-31T21:30:00+08:00",
+                "id": "a1a1a1a1-0000-4000-8000-000000000001",
+                "participants": [
+                  "1",
+                  "2",
+                  "3"
+                ],
+                "status": "planned",
+                "week_start": "2026-08-27T00:00:00+08:00"
+              },
+              {
+                "bosses": [
+                  "HCarling",
+                  "XKalos"
+                ],
+                "channel_id": "900",
+                "datetime": "2026-09-01T22:00:00+08:00",
+                "id": "b2b2b2b2-0000-4000-8000-000000000002",
+                "participants": [
+                  "1",
+                  "4"
+                ],
+                "status": "planned",
+                "week_start": "2026-08-27T00:00:00+08:00"
+              }
+            ],
+            "unanswered": [
+              "2",
+              "3"
+            ]
+          },
+          {
+            "amendments": [
+              {
+                "also_mentioned": [
+                  "otot",
+                  "cancel"
+                ],
+                "bosses": [
+                  "HMaleficStar"
+                ],
+                "confidence": 0.9,
+                "day_ref": null,
+                "id": "f0f0f0f0-0000-4000-8000-000000000001",
+                "is_question": false,
+                "kind": "move",
+                "new_datetime": "2026-09-02T21:30:00+08:00",
+                "participants": [
+                  "1"
+                ],
+                "payload": {},
+                "rsvp": null,
+                "run_id": "a1a1a1a1-0000-4000-8000-000000000001",
+                "summary": "moving to wed",
+                "time_ref": null
+              }
+            ],
+            "audience": null,
+            "confidence": null,
+            "op": "proposal_card",
+            "runs": [
+              {
+                "bosses": [
+                  "HMaleficStar",
+                  "HFA"
+                ],
+                "channel_id": "900",
+                "datetime": "2026-08-31T21:30:00+08:00",
+                "id": "a1a1a1a1-0000-4000-8000-000000000001",
+                "participants": [
+                  "1",
+                  "2",
+                  "3"
+                ],
+                "status": "planned",
+                "week_start": "2026-08-27T00:00:00+08:00"
+              }
+            ],
+            "unanswered": null
+          },
+          {
+            "amendments": [
+              {
+                "also_mentioned": [],
+                "bosses": [
+                  "HLimbo"
+                ],
+                "confidence": 0.9,
+                "day_ref": null,
+                "id": "f0f0f0f0-0000-4000-8000-000000000001",
+                "is_question": false,
+                "kind": "fix",
+                "new_datetime": null,
+                "participants": [],
+                "payload": {
+                  "time": "22:30",
+                  "weekday": 1
+                },
+                "rsvp": null,
+                "run_id": null,
+                "summary": null,
+                "time_ref": null
+              }
+            ],
+            "audience": {
+              "mentioned": [],
+              "names": {}
+            },
+            "confidence": 0.9,
+            "op": "proposal_card",
+            "runs": [],
+            "unanswered": []
+          }
+        ],
+        "timezone": "Asia/Kuala_Lumpur"
+      }
+    }
+  ],
+  "family": "cards",
+  "provenance": {
+    "functions": [
+      "bot.agent.formatting.when_text",
+      "bot.agent.formatting.proposal_line",
+      "bot.agent.formatting.card_kind",
+      "bot.agent.formatting.proposal_card",
+      "bot.agent.formatting.applied_notice",
+      "bot.agent.formatting.rejected_notice",
+      "bot.extract.pipeline.Pipeline._unanswered"
+    ],
+    "inventory_surfaces": [
+      "discord.reaction-rsvp-and-card-review",
+      "extract.commit.add"
+    ],
+    "oracle": "legacy/python bot.agent.formatting, bot.extract.pipeline.Pipeline._unanswered",
+    "source_tests": [
+      "tests/test_extract_cards.py",
+      "tests/test_extract_pipeline.py"
+    ]
+  },
+  "schema_version": "v5-extract-cards-v1"
+}

@@ -1,0 +1,320 @@
+// The member's characters on the portal (boards in
+// docs/research/2026-10-13-member-characters, "Member characters additions"):
+// the roster panel inside Account's sections, the NEXON notice and My data
+// dialogs, and the party's characters on a run. The roster panel, dialog,
+// strip and estimate rows are the admin's shared styles (`_members.scss`,
+// `_character-data.scss`, `_settings.scss`, loaded by the shared components).
+
+@use "../../../../packages/ui/src/styles/core/mixins" as *;
+
+// Account › Characters: the roster panel sits flush in its section.
+.account-sec .rosterpanel {
+  padding: 0;
+}
+
+.mychars-data__attrib {
+  color: var(--dim-text);
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+}
+
+/* ── The NEXON notice (Discord's v1 notice, as a dialog) ── */
+
+dialog.linknotice-dialog:not(.own-sheet) {
+  width: min(36rem, calc(100% - 1.6rem));
+}
+
+.linknotice {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  text-align: start;
+}
+
+.linknotice__lead {
+  margin: 0;
+  font-size: var(--fs-body-sm);
+  line-height: 1.45;
+}
+
+.linknotice__sec {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.linknotice__sec h3,
+.linknotice__sec p {
+  margin: 0;
+}
+
+.linknotice__sec p {
+  font-size: var(--fs-small);
+  line-height: 1.45;
+}
+
+.linknotice__small {
+  margin: 0;
+  color: var(--dim-text);
+  font-size: var(--fs-mini);
+  line-height: 1.45;
+}
+
+.linknotice__attrib {
+  margin: 0;
+  color: var(--dim-text);
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+}
+
+.linknotice__ver {
+  margin-right: auto;
+  color: var(--dim-text);
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+}
+
+// Link's outcome (copy.rs words) in place of the notice.
+.linknotice__told {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.linknotice__told-lead {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* ── My data (Discord's /character data, as a dialog) ── */
+
+dialog.mydata-dialog:not(.own-sheet) {
+  width: min(42rem, calc(100% - 1.6rem));
+}
+
+.mydata {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.mydata__list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  @include list-reset;
+}
+
+.mydata__entry {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 4px 10px;
+  align-items: start;
+  padding: 10px 12px;
+  border-radius: 4px;
+  background: var(--row);
+}
+
+.mydata__entry:first-child {
+  border-top-left-radius: 16px;
+  border-top-right-radius: 16px;
+}
+
+.mydata__entry:last-child {
+  border-bottom-left-radius: 16px;
+  border-bottom-right-radius: 16px;
+}
+
+.mydata__head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--fs-body-sm);
+  font-weight: 700;
+}
+
+.mydata__head .status-chip .icon {
+  width: 12px;
+  height: 12px;
+  margin-right: 4px;
+}
+
+.mydata__lines {
+  display: flex;
+  grid-column: 1;
+  flex-direction: column;
+  gap: 2px;
+  color: var(--dim-text);
+  font-size: var(--fs-mini);
+  line-height: 1.4;
+}
+
+.mydata__lines b {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.mydata__act {
+  display: flex;
+  grid-row: 1 / span 2;
+  grid-column: 2;
+  align-self: center;
+  gap: 6px;
+}
+
+.mydata__act .btn {
+  min-height: 36px;
+}
+
+.mydata--phone .mydata__entry {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.mydata--phone .mydata__act {
+  grid-row: auto;
+  grid-column: 1;
+}
+
+.mydata--phone .mydata__act .btn {
+  min-height: 44px;
+}
+
+.mydata__foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+  color: var(--dim-text);
+  font-size: var(--fs-mini);
+}
+
+/* ── A run's party characters: the pane's section, the phone's Party slots ── */
+
+.party-chars {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  @include list-reset;
+}
+
+.party-char {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px;
+  border-radius: 4px;
+  background: var(--row);
+}
+
+.party-char:first-child {
+  border-top-left-radius: 14px;
+  border-top-right-radius: 14px;
+}
+
+.party-char:last-child {
+  border-bottom-left-radius: 14px;
+  border-bottom-right-radius: 14px;
+}
+
+// You: outlined, not colour alone ("You" names the row too).
+.party-char--me {
+  box-shadow: inset 0 0 0 2px var(--accent-fill);
+}
+
+.party-char__top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.party-char__name {
+  font-size: var(--fs-small);
+  font-weight: 700;
+}
+
+.party-char__top .chip {
+  margin-left: auto;
+}
+
+.party-char__line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 6px;
+  color: var(--ink);
+  font-size: var(--fs-mini);
+}
+
+.party-char__line .mono {
+  font-weight: 700;
+}
+
+.party-char__src,
+.party-char__none {
+  color: var(--dim-text);
+}
+
+.party-char__none {
+  font-size: var(--fs-mini);
+}
+
+.party-char .ready__bosses {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  @include list-reset;
+}
+
+.party-char .ready__boss {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--fs-micro);
+}
+
+.party-char .ready__boss-name {
+  color: var(--dim-text);
+  font-family: var(--mono);
+}
+
+.party-chars__note {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 8px;
+  margin: 0;
+  color: var(--dim-text);
+  font-size: var(--fs-micro);
+  line-height: 1.4;
+}
+
+.party-chars__note b {
+  color: var(--ink);
+}
+
+.party-chars-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.member-slot--chars {
+  flex-wrap: wrap;
+  align-items: flex-start;
+  row-gap: 4px;
+}
+
+.member-slot__chars {
+  display: flex;
+  flex: 1 1 100%;
+  flex-direction: column;
+  gap: 4px;
+  box-sizing: border-box;
+  min-width: 0;
+  max-width: 100%;
+  padding-left: 40px;
+}
+
+.member-slot__chars .party-char__line {
+  gap: 0 5px;
+}

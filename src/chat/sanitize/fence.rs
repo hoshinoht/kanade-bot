@@ -1,0 +1,56 @@
+//! Fenced code blocks pass through reply shaping byte for byte (named v5
+//! difference `D-CODE-FENCES`: v4 collapsed their indentation).
+
+use std::ops::Range;
+
+const FENCE: &str = "```";
+
+/// Byte ranges of the paired ``` blocks, fences included. An unpaired fence
+/// is prose, as Discord renders it literally.
+pub(super) fn fenced(text: &str) -> Vec<Range<usize>> {
+    let fences: Vec<usize> = text.match_indices(FENCE).map(|(at, _)| at).collect();
+    fences
+        .as_chunks::<2>()
+        .0
+        .iter()
+        .map(|&[open, close]| open..close + FENCE.len())
+        .collect()
+}
+
+/// Apply `prose` to the text outside paired ``` fences; each fenced block,
+/// fences included, is kept verbatim.
+pub(super) fn map_prose(text: &str, prose: impl Fn(&str) -> String) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut last = 0;
+    for block in fenced(text) {
+        out.push_str(&prose(&text[last..block.start]));
+        out.push_str(&text[block.clone()]);
+        last = block.end;
+    }
+    out.push_str(&prose(&text[last..]));
+    out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::map_prose;
+
+    fn upper(text: &str) -> String {
+        text.to_uppercase()
+    }
+
+    #[test]
+    fn only_prose_outside_paired_fences_is_mapped() {
+        assert_eq!(
+            map_prose("a ```py\n  x``` b ```c``` d", upper),
+            "A ```py\n  x``` B ```c``` D"
+        );
+    }
+
+    #[test]
+    fn an_unpaired_fence_is_prose() {
+        assert_eq!(map_prose("a ```x``` b ```y", upper), "A ```x``` B ```Y");
+        assert_eq!(map_prose("plain", upper), "PLAIN");
+        assert_eq!(map_prose("", upper), "");
+    }
+}

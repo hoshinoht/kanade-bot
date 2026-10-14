@@ -1,0 +1,37 @@
+<!--
+  The member portal's masthead (board Mast): the bot's identity tile (its
+  avatar, or the initial) with its name over a mono by-line, then `nav`,
+  then `meta` at the end (signed out: the time zone; signed in: freshness,
+  zone and the account button). 60 px; phones use the top bar instead.
+-->
+<script lang="ts">
+  import type { Snippet } from 'svelte';
+  import { initial } from '../initial';
+
+  let {
+    name,
+    by = '',
+    avatar = null,
+    href = null,
+    meta,
+    nav,
+  }: { name: string; by?: string; avatar?: string | null; href?: string | null; meta?: Snippet; nav?: Snippet } = $props();
+</script>
+
+<header class="masthead" data-fid="mast">
+  <div class="masthead__inner">
+    <svelte:element this={href ? 'a' : 'p'} class="masthead__id" {href} data-fid="mast-id">
+      {#if avatar}
+        <img class="masthead__tile" src={avatar} alt="" width="32" height="32" />
+      {:else}
+        <span class="masthead__tile" aria-hidden="true">{initial(name)}</span>
+      {/if}
+      <span class="masthead__words">
+        <span class="masthead__name">{name}</span>
+        {#if by}<span class="masthead__by">{by}</span>{/if}
+      </span>
+    </svelte:element>
+    {@render nav?.()}
+    {#if meta}<div class="masthead__meta" data-fid="mast-meta">{@render meta()}</div>{/if}
+  </div>
+</header>

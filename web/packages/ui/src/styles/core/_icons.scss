@@ -1,0 +1,13 @@
+// Ported from v4 portal/_icons.scss: em-sized, currentColor-stroked Feather marks.
+
+.icon {
+  width: 1em;
+  height: 1em;
+  flex: none;
+  vertical-align: -0.135em;
+}
+
+td .icon {
+  width: 1.15em;
+  height: 1.15em;
+}

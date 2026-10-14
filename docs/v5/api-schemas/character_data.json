@@ -1,0 +1,476 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kanade.invalid/api-schemas/character_data.json",
+  "title": "Character data (module character_data): NEXON Open API data for linked roster characters",
+  "$defs": {
+    "CharacterLink": {
+      "description": "One roster character's link and its fresh Nexon data. The ocid is never sent.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["character_id", "state", "version", "connected", "requested_by", "requested_at", "consent_version", "consented_at", "linked_at", "notice_version", "data", "refresh", "attribution", "privacy_url"],
+      "properties": {
+        "character_id": { "type": "string" },
+        "state": {
+          "enum": ["not_connected", "not_linked", "pending", "linked", "stale", "expired"],
+          "description": "not_connected: no Nexon key is configured and no link exists; pending: an admin asked and the member has not confirmed (no call made); stale: the character could not be resolved or changed its name (link again); expired: linked, but the data passed its 30 days."
+        },
+        "version": { "type": "integer", "minimum": 0, "description": "The link version; send it back with a link request (0 while there is no link)." },
+        "connected": { "type": "boolean", "description": "A Nexon key is configured." },
+        "requested_by": { "oneOf": [{ "$ref": "history.json#/$defs/Actor" }, { "type": "null" }] },
+        "requested_at": { "$ref": "common.json#/$defs/NullableString" },
+        "consent_version": { "type": ["integer", "null"], "minimum": 1, "description": "The notice version the member confirmed." },
+        "consented_at": { "$ref": "common.json#/$defs/NullableString" },
+        "linked_at": { "$ref": "common.json#/$defs/NullableString" },
+        "consent_surface": { "enum": ["discord", "portal", null], "description": "Where the member consented: Discord's `/character link` or the public portal's Link; null while not consented and for consents given before it was recorded. Optional so earlier responses stay valid; the server always sends it." },
+        "notice_version": { "type": "integer", "minimum": 1, "description": "The current notice version." },
+        "data": { "oneOf": [{ "$ref": "#/$defs/CharacterFacts" }, { "type": "null" }], "description": "Fresh Nexon data; null without any (never expired or stamped in the future)." },
+        "refresh": { "$ref": "#/$defs/RefreshInfo" },
+        "attribution": { "const": "Data based on NEXON Open API" },
+        "privacy_url": { "$ref": "common.json#/$defs/NullableString", "description": "The public /privacy page; null without a public listener." }
+      }
+    },
+    "CharacterFacts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "world", "class", "level", "combat_power", "image_url", "as_of", "fetched_at", "expires_at"],
+      "properties": {
+        "name": { "type": ["string", "null"], "maxLength": 64 },
+        "world": { "type": ["string", "null"], "maxLength": 64 },
+        "class": { "type": ["string", "null"], "maxLength": 64 },
+        "level": { "type": ["integer", "null"], "minimum": 0 },
+        "combat_power": { "type": ["integer", "null"], "minimum": 0 },
+        "image_url": { "type": ["string", "null"], "pattern": "^https://", "description": "Hotlinked from Nexon, never re-hosted." },
+        "as_of": { "type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$", "description": "Singapore date: the response date, else the fetch day." },
+        "fetched_at": { "type": "string" },
+        "expires_at": { "type": "string", "description": "Deleted then unless refreshed (30 days)." }
+      }
+    },
+    "RefreshInfo": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["next_attempt_at", "last_error"],
+      "properties": {
+        "next_attempt_at": { "$ref": "common.json#/$defs/NullableString" },
+        "last_error": { "$ref": "common.json#/$defs/NullableString", "description": "The Open API error code (OPENAPI000NN) or reason (budget, maintenance, key_refused, unavailable, http_NNN) that stopped the last refresh." }
+      }
+    },
+    "LinkRequest": {
+      "description": "POST /api/admin/characters/{id}/link body.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version"],
+      "properties": {
+        "version": { "type": "integer", "minimum": 0, "description": "The link version as loaded (0 when not linked)." }
+      }
+    },
+    "LookupStatus": {
+      "description": "GET /api/admin/characters/lookup: whether the Add character lookup (and the link request a MapleSEA create makes) can be made.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["connected"],
+      "properties": {
+        "connected": { "type": "boolean", "description": "A Nexon key is configured." }
+      }
+    },
+    "CharacterLookupRequest": {
+      "description": "POST /api/admin/characters/lookup body: the IGN as typed (4-12 letters or digits) and its region (`msea` when absent; any other is 422 `region`).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ign"],
+      "properties": {
+        "ign": { "type": "string" },
+        "world": { "type": "string" }
+      }
+    },
+    "CharacterLookup": {
+      "description": "POST /api/admin/characters/lookup: what NEXON says about a typed MapleSEA IGN (`id` + `basic`, never `stat`), shown in the Add character dialog only. Nothing of it is stored (no roster field, nothing in the character-data file, no History row); the values are kept only after the member links the character. The ocid is never sent.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "world", "class", "level", "image_url", "as_of", "attribution"],
+      "properties": {
+        "name": { "type": ["string", "null"], "maxLength": 64 },
+        "world": { "type": ["string", "null"], "maxLength": 64 },
+        "class": { "type": ["string", "null"], "maxLength": 64 },
+        "level": { "type": ["integer", "null"], "minimum": 0 },
+        "image_url": { "type": ["string", "null"], "pattern": "^https://", "description": "Hotlinked from Nexon, never re-hosted." },
+        "as_of": { "type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$", "description": "Singapore date: the response date, else the lookup day." },
+        "attribution": { "const": "Data based on NEXON Open API" }
+      }
+    },
+    "RunReadiness": {
+      "description": "GET /api/admin/runs/{id}/readiness: each party slot (as GET .../characters resolves it) with its level and power, and its level against each boss of the run. Computed on read, never stored, never blocking. NEXON values only from an active link's unexpired data.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["run_id", "slots", "nexon_data", "attribution"],
+      "properties": {
+        "run_id": { "type": "string" },
+        "slots": { "type": "array", "items": { "$ref": "#/$defs/ReadinessSlot" }, "description": "In party order." },
+        "nexon_data": { "type": "boolean", "description": "Some slot shows a NEXON value: show the attribution." },
+        "attribution": { "const": "Data based on NEXON Open API" }
+      }
+    },
+    "TimingReadiness": {
+      "description": "GET /api/admin/fixed/{id}/readiness (the saved timing) and POST /api/admin/fixed/readiness (the Fixed editor's form as it stands; body `TimingPreview`), modules `roster` and `character_data`: each party slot as GET /api/admin/fixed/{id}/characters resolves it (picks only for members of the saved party), with the same values and verdicts as `RunReadiness`. Computed on read, never stored, never blocking.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["fixed_run_id", "slots", "nexon_data", "attribution"],
+      "properties": {
+        "fixed_run_id": { "$ref": "common.json#/$defs/NullableString", "description": "Null for a timing not added yet." },
+        "slots": { "type": "array", "items": { "$ref": "#/$defs/ReadinessSlot" }, "description": "In party order." },
+        "nexon_data": { "type": "boolean", "description": "Some slot shows a NEXON value: show the attribution." },
+        "attribution": { "const": "Data based on NEXON Open API" }
+      }
+    },
+    "TimingPreview": {
+      "description": "Request body of POST /api/admin/fixed/readiness: the editor's bosses (tokens; unknown ones are left out) and party (member ids) as they stand, and the timing they edit (absent or null for a new one; 404 `not_found` when it is gone). At most 64 of each (else 422 `invalid`).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["bosses", "participants"],
+      "properties": {
+        "fixed_run_id": { "type": ["string", "null"] },
+        "bosses": { "type": "array", "items": { "type": "string" }, "maxItems": 64 },
+        "participants": { "type": "array", "items": { "type": "string" }, "maxItems": 64 }
+      }
+    },
+    "ReadinessSlot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["member_id", "character", "basis", "candidates", "link", "level", "power", "bosses"],
+      "properties": {
+        "member_id": { "type": "string" },
+        "character": {
+          "description": "The character the member brings (as GET .../characters resolves it); null with none.",
+          "oneOf": [{ "$ref": "characters.json#/$defs/CharacterChoice" }, { "type": "null" }]
+        },
+        "basis": { "oneOf": [{ "$ref": "characters.json#/$defs/CharacterBasis" }, { "type": "null" }], "description": "Where `character` comes from; null with none." },
+        "candidates": { "type": "integer", "minimum": 0, "description": "How many active characters the member has (with no character: 0 reads as no characters, more as no main)." },
+        "link": { "enum": ["not_connected", "not_linked", "pending", "linked", "stale", "expired", null], "description": "The character's link as the strip shows it; null without a character." },
+        "level": {
+          "description": "Fresh NEXON level, else the manual roster level; null with neither.",
+          "oneOf": [{ "$ref": "#/$defs/ReadinessLevel" }, { "type": "null" }]
+        },
+        "power": {
+          "description": "NEXON combat power: shown, never judged. Null without usable data.",
+          "oneOf": [{ "$ref": "#/$defs/ReadinessPower" }, { "type": "null" }]
+        },
+        "bosses": { "type": "array", "items": { "$ref": "#/$defs/BossReadiness" }, "description": "One per boss of the run, in run order." }
+      }
+    },
+    "ReadinessLevel": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["value", "source", "as_of"],
+      "properties": {
+        "value": { "type": "integer", "minimum": 1 },
+        "source": { "enum": ["nexon", "manual"] },
+        "as_of": { "type": ["string", "null"], "format": "date", "description": "YYYY-MM-DD (Singapore): the NEXON response date, else its fetch day; null for a manual level." }
+      }
+    },
+    "ReadinessPower": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "value", "as_of"],
+      "properties": {
+        "kind": { "const": "nexon_cp" },
+        "value": { "type": "integer", "minimum": 0 },
+        "as_of": { "type": ["string", "null"], "format": "date" }
+      }
+    },
+    "BossReadiness": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["boss", "difficulty", "entry_level", "level", "scouter"],
+      "properties": {
+        "boss": { "type": "string", "description": "Catalog boss key." },
+        "difficulty": { "enum": ["e", "n", "h", "c", "x"] },
+        "entry_level": { "type": ["integer", "null"], "minimum": 1, "description": "From boss knowledge; null when it has none." },
+        "level": { "enum": ["ok", "under", "unknown"], "description": "ok at or above entry_level; unknown without a level or an entry_level." },
+        "scouter": {
+          "description": "The character's scouter reading for this boss from the estimates' 24-hour memory (readiness never looks one up); null without one, for a boss the scouter has no card for, or while estimates are off.",
+          "oneOf": [{ "$ref": "#/$defs/ScouterReading" }, { "type": "null" }]
+        }
+      }
+    },
+    "ScouterReading": {
+      "description": "Shown, never judged: a clear-time estimate, for planning only, not eligibility.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["percentage", "rating", "estimated_minutes", "fetched_at", "critical_rate_assumed", "critical_rate_actual"],
+      "properties": {
+        "percentage": { "type": "number", "minimum": 0, "description": "The character's share (effective_percentage), else the card's percentage." },
+        "rating": { "type": "string" },
+        "estimated_minutes": { "type": ["number", "null"], "minimum": 0 },
+        "fetched_at": { "type": "string", "description": "When kanade received it from the scouter." },
+        "critical_rate_assumed": { "type": "boolean", "description": "The scouter assumed a 100% critical rate (the character's is under it): label it Assumes 100% critical rate (actual N%)." },
+        "critical_rate_actual": { "type": ["number", "null"], "minimum": 0, "description": "The character's own critical rate with an assumed reading; null otherwise or when the scouter didn't say." }
+      }
+    },
+    "CharacterDataHealth": {
+      "description": "Config's module health block (informational, never part of /healthz).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["nexon", "backoff_until", "calls_24h", "budget", "last_batch", "links", "last_sweep", "posts", "scouter"],
+      "properties": {
+        "nexon": { "enum": ["no_key", "ok", "backoff", "key_refused"] },
+        "backoff_until": { "$ref": "common.json#/$defs/NullableString" },
+        "calls_24h": { "type": ["integer", "null"], "minimum": 0 },
+        "budget": { "type": "integer", "minimum": 1 },
+        "last_batch": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["at", "refreshed", "failed", "stopped"],
+              "properties": {
+                "at": { "type": "string" },
+                "refreshed": { "type": "integer", "minimum": 0 },
+                "failed": { "type": "integer", "minimum": 0 },
+                "stopped": { "$ref": "common.json#/$defs/NullableString" }
+              }
+            },
+            { "type": "null" }
+          ]
+        },
+        "links": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["pending", "active", "stale"],
+              "properties": {
+                "pending": { "type": "integer", "minimum": 0 },
+                "active": { "type": "integer", "minimum": 0 },
+                "stale": { "type": "integer", "minimum": 0 }
+              }
+            },
+            { "type": "null" }
+          ]
+        },
+        "last_sweep": { "$ref": "common.json#/$defs/NullableString" },
+        "posts": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["due", "unknown", "stuck", "overdue", "items"],
+              "properties": {
+                "due": { "type": "integer", "minimum": 0 },
+                "unknown": { "type": "integer", "minimum": 0 },
+                "stuck": { "type": "integer", "minimum": 0 },
+                "overdue": { "type": "integer", "minimum": 0 },
+                "items": {
+                  "description": "The share cards behind unknown, stuck and overdue, oldest first: ids and states only.",
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["reference", "state", "channel_id", "posted_at", "jump_url"],
+                    "properties": {
+                      "reference": { "type": "string", "pattern": "^[0-9a-f]{6}$" },
+                      "state": { "enum": ["unknown", "stuck", "overdue"] },
+                      "channel_id": { "type": "string" },
+                      "posted_at": { "type": "string" },
+                      "jump_url": { "$ref": "common.json#/$defs/NullableString" }
+                    }
+                  }
+                }
+              }
+            },
+            { "type": "null" }
+          ]
+        },
+        "scouter": { "$ref": "#/$defs/ScouterHealth" }
+      }
+    },
+    "ScouterHealth": {
+      "description": "Scouter estimates: off without KANADE_SCOUTER_URL; verification_required stays until a lookup succeeds again.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state", "url", "last_lookup_at", "last_error", "last_error_at"],
+      "properties": {
+        "state": { "enum": ["off", "ok", "unreachable", "verification_required"] },
+        "url": { "type": ["string", "null"], "pattern": "^http://", "description": "The sidecar's http://host[:port]; null while off." },
+        "last_lookup_at": { "$ref": "common.json#/$defs/NullableString" },
+        "last_error": { "$ref": "common.json#/$defs/NullableString", "description": "The scouter's error code (busy, upstream_rate_limited, critical_rate_setup_required, verification_required, upstream_blocked, lookup_failed, result_mismatch, extraction_failed, lookup_timeout, …) or timeout, unreachable, unreadable." },
+        "last_error_at": { "$ref": "common.json#/$defs/NullableString" }
+      }
+    },
+    "EstimateRequest": {
+      "description": "POST /api/admin/estimates body: exactly one of character_ids (1 to 6) or run_id; refresh skips the 24-hour memory (Look up again).",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "character_ids": { "type": "array", "minItems": 1, "maxItems": 6, "items": { "type": "string", "minLength": 1 } },
+        "run_id": { "type": "string", "minLength": 1 },
+        "refresh": { "type": "boolean" }
+      },
+      "oneOf": [{ "required": ["character_ids"] }, { "required": ["run_id"] }]
+    },
+    "EstimateStarted": {
+      "description": "202 answer to POST /api/admin/estimates.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["job"],
+      "properties": { "job": { "$ref": "#/$defs/EstimateJob" } }
+    },
+    "EstimateStatus": {
+      "description": "GET /api/admin/estimates?character_ids=|run_id=: that target's job (queued, running, or one retained per target for 24 hours; a new lookup of the same target replaces a finished one) and the job running now, whatever it looks up.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["job", "running"],
+      "properties": {
+        "job": { "oneOf": [{ "$ref": "#/$defs/EstimateJob" }, { "type": "null" }] },
+        "running": { "oneOf": [{ "$ref": "#/$defs/EstimateJob" }, { "type": "null" }] }
+      }
+    },
+    "EstimateJob": {
+      "description": "One scouter lookup (admin only), queued and looked up one at a time. The scouter is sent roster IGNs only, never a Nexon field.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "state", "position", "run_id", "character_ids", "started_by", "started_at", "finished_at", "characters", "missing", "progress", "fetched_at", "result", "error", "label", "note"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "state": { "enum": ["queued", "running", "done", "failed"], "description": "done once at least one character was found (failed members carry their own error); failed when nobody was." },
+        "position": { "type": ["integer", "null"], "minimum": 1, "description": "While queued: the lookups ahead of it, the running one included; null otherwise." },
+        "run_id": { "$ref": "common.json#/$defs/NullableString", "description": "A run's party; null for a character lookup." },
+        "character_ids": { "type": "array", "items": { "type": "string" }, "description": "The characters asked for (sorted); empty for a run." },
+        "started_by": { "$ref": "history.json#/$defs/Actor" },
+        "started_at": { "type": "string", "description": "When it was asked for." },
+        "finished_at": { "$ref": "common.json#/$defs/NullableString" },
+        "characters": {
+          "type": "array",
+          "maxItems": 6,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["character_id", "member_id", "ign", "outcome", "error"],
+            "properties": {
+              "character_id": { "type": "string" },
+              "member_id": { "type": "string" },
+              "ign": { "type": "string", "pattern": "^[A-Za-z0-9]{1,32}$", "description": "The roster IGN, as sent to the scouter." },
+              "outcome": { "enum": ["pending", "ok", "failed"], "description": "Recorded as each character finishes: ok is in result.members, failed has error. One character's failure never stops the others." },
+              "error": { "oneOf": [{ "$ref": "#/$defs/EstimateError" }, { "type": "null" }], "description": "Why this character has no result; null unless failed." }
+            }
+          }
+        },
+        "missing": {
+          "type": "array",
+          "description": "Party members not looked up: listed as missing, never 0%.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["member_id", "character_id", "reason"],
+            "properties": {
+              "member_id": { "type": "string" },
+              "character_id": { "$ref": "common.json#/$defs/NullableString" },
+              "reason": { "enum": ["no_characters", "no_character_picked", "other_region", "unsupported_ign"] }
+            }
+          }
+        },
+        "progress": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["done", "total", "current"],
+          "properties": {
+            "done": { "type": "integer", "minimum": 0 },
+            "total": { "type": "integer", "minimum": 1, "maximum": 6 },
+            "current": { "$ref": "common.json#/$defs/NullableString", "description": "The character being looked up now; null while queued, between characters, for the party total and once finished." }
+          }
+        },
+        "fetched_at": { "$ref": "common.json#/$defs/NullableString", "description": "When the result came from the scouter (a cached answer keeps its first time); null until done." },
+        "result": { "oneOf": [{ "$ref": "#/$defs/EstimateResult" }, { "type": "null" }], "description": "The characters found so far (while queued or running too) and, once done, the party total; null with nobody found." },
+        "error": { "oneOf": [{ "$ref": "#/$defs/EstimateError" }, { "type": "null" }], "description": "failed: why nobody was found (the first character's error). done: why the party total is missing although characters were found (character_id null)." },
+        "label": { "const": "Clear-time estimate" },
+        "note": { "const": "For planning only, not eligibility" }
+      }
+    },
+    "EstimateResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["cache_hit", "complete", "members", "combined"],
+      "properties": {
+        "cache_hit": { "type": "boolean", "description": "Answered from kanade's 24-hour memory (never persisted) without calling the scouter." },
+        "complete": { "type": "boolean", "description": "Done, no party member missing or failed, and every total complete." },
+        "members": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["character_id", "ign", "preset", "critical_rate_assumed", "critical_rate_actual", "bosses"],
+            "properties": {
+              "character_id": { "type": "string" },
+              "ign": { "type": "string" },
+              "preset": { "type": "string", "pattern": "^[0-9]{5}$" },
+              "critical_rate_assumed": { "type": "boolean", "description": "The character's critical rate is under 100% and the scouter assumed exactly 100%: label it Assumes 100% critical rate (actual N%) wherever its numbers show." },
+              "critical_rate_actual": { "type": ["number", "null"], "minimum": 0, "description": "The character's own critical rate with an assumed result; null otherwise or when the scouter didn't say." },
+              "bosses": {
+                "type": "array",
+                "description": "Catalog bosses only, in catalog order.",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["boss", "percentage", "effective_percentage", "estimated_minutes", "rating", "party"],
+                  "properties": {
+                    "boss": { "type": "string", "description": "Catalog token, e.g. HLimbo." },
+                    "percentage": { "type": "number" },
+                    "effective_percentage": { "type": ["number", "null"] },
+                    "estimated_minutes": { "type": ["number", "null"] },
+                    "rating": { "type": "string" },
+                    "party": { "type": "boolean" }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "combined": {
+          "description": "Party totals (a run's bosses, or every catalog boss for several characters); null for one character.",
+          "oneOf": [
+            {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["boss", "combined_percentage", "estimated_minutes", "technically_possible", "complete", "issues"],
+                "properties": {
+                  "boss": { "type": "string" },
+                  "combined_percentage": { "type": ["number", "null"] },
+                  "estimated_minutes": { "type": ["number", "null"] },
+                  "technically_possible": { "type": ["boolean", "null"] },
+                  "complete": { "type": "boolean" },
+                  "issues": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": ["character_id", "issue"],
+                      "properties": {
+                        "character_id": { "$ref": "common.json#/$defs/NullableString" },
+                        "issue": { "enum": ["missing_boss", "unknown_benchmark_players", "not_covered", "other"] }
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            { "type": "null" }
+          ]
+        }
+      }
+    },
+    "EstimateError": {
+      "description": "The drawn error states, per character or for the job. A 429 busy is asked again after its Retry-After within the job's deadline; busy here means it stayed busy past it (or the scouter was rate-limited).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "message", "status", "detail", "retry_after_seconds", "character_id"],
+      "properties": {
+        "code": { "enum": ["busy", "critical_rate", "manual_check", "failed"] },
+        "message": { "enum": ["The scouter is busy.", "Set up critical rate on the scouter first.", "Scouter needs a manual check.", "Lookup failed."] },
+        "status": { "type": ["integer", "null"], "description": "The scouter's HTTP status (429, 422, 503, 502, 504); null without an answer." },
+        "detail": { "type": "string", "description": "The scouter's error code, or timeout, unreachable, unreadable." },
+        "retry_after_seconds": { "type": ["integer", "null"], "minimum": 0, "description": "429 only: Retry-After." },
+        "character_id": { "$ref": "common.json#/$defs/NullableString", "description": "The character it is about, when known; null for a party total's own failure." }
+      }
+    }
+  }
+}

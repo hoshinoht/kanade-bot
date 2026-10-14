@@ -1,0 +1,441 @@
+{
+  "$defs": {
+    "case": {
+      "additionalProperties": false,
+      "properties": {
+        "case_id": {
+          "pattern": "^[a-z0-9][a-z0-9-]*$",
+          "type": "string"
+        },
+        "expected": {
+          "$ref": "#/$defs/expected"
+        },
+        "input": {
+          "$ref": "#/$defs/input"
+        }
+      },
+      "required": [
+        "case_id",
+        "input",
+        "expected"
+      ],
+      "type": "object"
+    },
+    "expected": {
+      "additionalProperties": false,
+      "properties": {
+        "steps": {
+          "items": {
+            "$ref": "#/$defs/outcome"
+          },
+          "minItems": 1,
+          "type": "array"
+        }
+      },
+      "required": [
+        "steps"
+      ],
+      "type": "object"
+    },
+    "input": {
+      "additionalProperties": false,
+      "properties": {
+        "steps": {
+          "items": {
+            "$ref": "#/$defs/step"
+          },
+          "minItems": 1,
+          "type": "array"
+        }
+      },
+      "required": [
+        "steps"
+      ],
+      "type": "object"
+    },
+    "outcome": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "value": {}
+          },
+          "required": [
+            "value"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "error": {
+              "additionalProperties": false,
+              "properties": {
+                "message": {
+                  "type": "string"
+                },
+                "type": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "message"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "error"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "outcome_in": {
+      "additionalProperties": false,
+      "properties": {
+        "error": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "name": {
+          "type": "string"
+        },
+        "ok": {
+          "type": "boolean"
+        },
+        "output": {
+          "type": "string"
+        },
+        "posted": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "name",
+        "ok",
+        "error",
+        "output",
+        "posted"
+      ],
+      "type": "object"
+    },
+    "replayCase": {
+      "additionalProperties": false,
+      "properties": {
+        "case_id": {
+          "pattern": "^[a-z0-9][a-z0-9-]*$",
+          "type": "string"
+        },
+        "input": {
+          "$ref": "#/$defs/input"
+        }
+      },
+      "required": [
+        "case_id",
+        "input"
+      ],
+      "type": "object"
+    },
+    "result_defuse_notes": {
+      "type": "string"
+    },
+    "result_ground_schedule_reply": {
+      "type": "string"
+    },
+    "result_looks_like_clarification": {
+      "type": "boolean"
+    },
+    "result_member_facing": {
+      "type": "string"
+    },
+    "result_schedule_defaults": {
+      "additionalProperties": false,
+      "properties": {
+        "force_all_channels": {
+          "type": "boolean"
+        },
+        "force_channel_scope": {
+          "type": "boolean"
+        },
+        "force_group_schedule": {
+          "type": "boolean"
+        },
+        "upcoming_only": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "force_all_channels",
+        "force_channel_scope",
+        "force_group_schedule",
+        "upcoming_only"
+      ],
+      "type": "object"
+    },
+    "result_shape_reply": {
+      "type": "string"
+    },
+    "result_strip_false_card_claim": {
+      "type": "string"
+    },
+    "result_tidy": {
+      "type": "string"
+    },
+    "step": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/step_defuse_notes"
+        },
+        {
+          "$ref": "#/$defs/step_member_facing"
+        },
+        {
+          "$ref": "#/$defs/step_strip_false_card_claim"
+        },
+        {
+          "$ref": "#/$defs/step_looks_like_clarification"
+        },
+        {
+          "$ref": "#/$defs/step_schedule_defaults"
+        },
+        {
+          "$ref": "#/$defs/step_tidy"
+        },
+        {
+          "$ref": "#/$defs/step_ground_schedule_reply"
+        },
+        {
+          "$ref": "#/$defs/step_shape_reply"
+        }
+      ]
+    },
+    "step_defuse_notes": {
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "const": "defuse_notes"
+        },
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "op",
+        "text"
+      ],
+      "type": "object"
+    },
+    "step_ground_schedule_reply": {
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "const": "ground_schedule_reply"
+        },
+        "outcomes": {
+          "items": {
+            "$ref": "#/$defs/outcome_in"
+          },
+          "type": "array"
+        },
+        "reply": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "op",
+        "reply",
+        "outcomes"
+      ],
+      "type": "object"
+    },
+    "step_looks_like_clarification": {
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "const": "looks_like_clarification"
+        },
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "op",
+        "text"
+      ],
+      "type": "object"
+    },
+    "step_member_facing": {
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "const": "member_facing"
+        },
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "op",
+        "text"
+      ],
+      "type": "object"
+    },
+    "step_schedule_defaults": {
+      "additionalProperties": false,
+      "properties": {
+        "bot_user_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "op": {
+          "const": "schedule_defaults"
+        },
+        "self_role_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "op",
+        "text",
+        "bot_user_id",
+        "self_role_id"
+      ],
+      "type": "object"
+    },
+    "step_shape_reply": {
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "const": "shape_reply"
+        },
+        "outcomes": {
+          "items": {
+            "$ref": "#/$defs/outcome_in"
+          },
+          "type": "array"
+        },
+        "reply": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "op",
+        "reply",
+        "outcomes"
+      ],
+      "type": "object"
+    },
+    "step_strip_false_card_claim": {
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "const": "strip_false_card_claim"
+        },
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "op",
+        "text"
+      ],
+      "type": "object"
+    },
+    "step_tidy": {
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "const": "tidy"
+        },
+        "protected": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "op",
+        "text",
+        "protected"
+      ],
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "cases": {
+      "items": {
+        "$ref": "#/$defs/case"
+      },
+      "minItems": 1,
+      "type": "array"
+    },
+    "family": {
+      "const": "sanitize"
+    },
+    "provenance": {
+      "additionalProperties": false,
+      "properties": {
+        "functions": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "inventory_surfaces": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "oracle": {
+          "type": "string"
+        },
+        "source_tests": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "oracle",
+        "functions",
+        "source_tests",
+        "inventory_surfaces"
+      ],
+      "type": "object"
+    },
+    "schema_version": {
+      "const": "v5-chat-sanitize-v1"
+    }
+  },
+  "required": [
+    "schema_version",
+    "family",
+    "provenance",
+    "cases"
+  ],
+  "title": "Kanade v5 chat vectors: sanitize",
+  "type": "object"
+}

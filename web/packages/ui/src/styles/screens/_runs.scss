@@ -1,0 +1,252 @@
+// Ported from v4 portal/_runs.scss (run card, entry-art veil, cards timeline,
+// status bar, answers editor, segmented buttons). v5 edits: text colours use
+// the --*-text contrast tokens; nothing is animated with inline delays.
+@use "../core/mixins" as *;
+
+/* ── a run's status, as the edge of its pane ───────────────────────────── */
+
+@each $status, $tone in $status-tones {
+  .run--#{$status} {
+    border-left-color: var(--#{$tone});
+  }
+}
+.run--cancelled,
+.run--done {
+  border-left-color: var(--faint);
+  border-style: dashed;
+  background: var(--raise);
+}
+
+/* ── the entry art, as a veil behind a run ──────────────────────────────────
+ *
+ * The splash MapleStory shows behind a boss's entry prompt, laid inside the
+ * card *behind its text*: cropped to the right of the frame, faded to a wash,
+ * and masked away before it reaches anything anybody has to read. Not a banner
+ * -- a banner is height, and a run card's height is the one thing the board
+ * cannot spend. Like the difficulty pills it is the game's picture rather than
+ * ours, so no colourway tints it.
+ *
+ * `z-index: -1` inside a card that isolates: above the card's own surface,
+ * below every word on it. Every card holding art says `isolation: isolate` for
+ * exactly that reason; without a stacking context of its own the layer would
+ * sink behind the cream instead.
+ *
+ * Absent means absent: a run with no artwork leaves its bosses' `art` empty and
+ * no element is written, so the card is the card it was before this existed.
+ * Which is every card on a fresh clone, the artwork being git-ignored. */
+
+/* The board's compact card: one picture, a corner wedge. */
+.runcard__art {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  /* An absolutely positioned <img> takes its own intrinsic size unless it is
+     told otherwise, so `inset` alone would leave it 778px wide. */
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  object-fit: cover;
+  object-position: right var(--art-crop-card);
+  opacity: var(--art-veil);
+  /* TUNING KNOB -- the wedge. The colour in a mask gradient is not paint, only
+     its alpha is read, which is why these are the one place on the page that
+     names black without meaning it. The prefixed line is not politeness: an
+     older engine gets the shape rather than none, and no mask at all would lay
+     the wash flat across every word on the card. */
+  -webkit-mask-image: linear-gradient(205deg, #000 12%, transparent 46%);
+  mask-image: linear-gradient(205deg, #000 12%, transparent 46%);
+  /* It is scenery. The card behind it is a link. */
+  pointer-events: none;
+}
+
+.run__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.3rem 0.6rem;
+  font-size: var(--fs-body-sm);
+  color: var(--dim);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* The status of a run is one choice out of five, so it reads as one control
+   rather than as four unrelated buttons. */
+.statusbar {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem 0.6rem;
+  margin-top: 0.6rem;
+  padding-top: 0.6rem;
+  border-top: 2px solid var(--line-soft);
+}
+
+.statusbar__label {
+  font-size: var(--fs-micro);
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+
+.statusbar__note {
+  font-size: var(--fs-small);
+  color: var(--risk-text);
+}
+
+.seg--status {
+  flex-wrap: nowrap;
+}
+
+/* ── the cards a run has produced ───────────────────────────────────────────
+ *
+ * A run's messages in the order the bot says them: morning, then the
+ * countdowns. Mono, because these are times -- the same rule the clock on the
+ * left follows -- and one line, because "did the morning ping go out?" is a
+ * glance, not a page. A posted card is a link out to the message itself; the
+ * two states that are *not* links are the two worth noticing.
+ */
+.run__cards {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.3rem 0.55rem;
+  margin-top: 0.45rem;
+  font-family: var(--mono);
+  font-size: var(--fs-mini);
+}
+
+.run__cards-label {
+  font-family: var(--body);
+  font-size: var(--fs-micro);
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+
+.cardlink {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.3rem;
+  white-space: nowrap;
+  color: var(--dim);
+}
+
+.cardlink__at {
+  font-variant-numeric: tabular-nums;
+  color: var(--faint);
+}
+
+.cardlink--posted {
+  color: var(--accent-text);
+  text-decoration: none;
+  border-bottom: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+}
+
+.cardlink--posted:hover {
+  border-bottom-color: var(--accent);
+}
+
+.cardlink__out {
+  font-size: var(--fs-micro);
+  color: var(--dim-text);
+}
+
+/* Nothing said yet: dashed, like the chip of somebody who has not answered. */
+.cardlink--queued {
+  color: var(--faint);
+  border-bottom: 1px dashed var(--line);
+}
+
+/* Fired into the void -- the host was asleep, or the run moved. Worth a colour
+   because it is the one state that explains a ping nobody remembers getting. */
+.cardlink--skipped {
+  color: var(--warn-text);
+}
+
+/* ── answers: one segmented control per person, the status bar's vocabulary ── */
+
+.answers__body {
+  display: grid;
+  gap: 0.35rem;
+  padding: 0.55rem 0 0.2rem;
+}
+
+.answers__hint {
+  font-size: var(--fs-small);
+  color: var(--dim);
+  margin: 0;
+}
+
+.answers__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.answers__who {
+  flex: 1 1 8rem;
+  font-size: var(--fs-small);
+  font-weight: 600;
+}
+
+.seg--answer .seg__btn {
+  font-size: var(--fs-mini);
+  padding: 0.22rem 0.55rem;
+  min-height: 30px;
+}
+
+.chanmark {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+}
+
+.chanmark__btn {
+  font: inherit;
+  font-size: var(--fs-body-sm);
+  line-height: 1;
+  padding: 0.1rem 0.25rem;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--faint);
+  cursor: pointer;
+}
+
+.chanmark__btn:hover {
+  color: var(--accent);
+  background: var(--raise);
+}
+
+.run__people {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.28rem;
+  margin-top: 0.45rem;
+}
+
+.boss__lv {
+  font-family: var(--mono);
+  font-size: var(--fs-mini);
+  color: var(--faint);
+}
+
+/* v4 _phone.scss: one column on a phone. */
+@media (max-width: 640px) {
+  .seg--status {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .seg--status .seg__btn {
+    flex: 1 1 auto;
+    min-width: 0;
+    padding-inline: 0.2rem;
+    font-size: var(--fs-micro);
+  }
+}

@@ -1,0 +1,962 @@
+{
+  "$defs": {
+    "caps": {
+      "additionalProperties": false,
+      "properties": {
+        "function_tools": {
+          "type": "boolean"
+        },
+        "reasoning_control": {
+          "type": "boolean"
+        },
+        "reasoning_efforts": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sampling_controls": {
+          "type": "boolean"
+        },
+        "structured_output": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "structured_output",
+        "sampling_controls",
+        "reasoning_control",
+        "function_tools",
+        "reasoning_efforts"
+      ],
+      "type": "object"
+    },
+    "case": {
+      "additionalProperties": false,
+      "properties": {
+        "case_id": {
+          "pattern": "^[a-z0-9][a-z0-9-]*$",
+          "type": "string"
+        },
+        "expected": {
+          "$ref": "#/$defs/expected"
+        },
+        "input": {
+          "$ref": "#/$defs/input"
+        }
+      },
+      "required": [
+        "case_id",
+        "input",
+        "expected"
+      ],
+      "type": "object"
+    },
+    "catalog": {
+      "additionalProperties": false,
+      "properties": {
+        "bosses": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "aliases": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "difficulties": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "full": {
+                "type": "string"
+              },
+              "short": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "short",
+              "full",
+              "aliases"
+            ],
+            "type": "object"
+          },
+          "minItems": 1,
+          "type": "array"
+        },
+        "difficulties": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "label": {
+                "type": "string"
+              },
+              "prefix": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "prefix",
+              "label"
+            ],
+            "type": "object"
+          },
+          "minItems": 1,
+          "type": "array"
+        }
+      },
+      "required": [
+        "difficulties",
+        "bosses"
+      ],
+      "type": "object"
+    },
+    "channel": {
+      "additionalProperties": false,
+      "properties": {
+        "category_id": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9]+$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "id": {
+          "pattern": "^[0-9]+$",
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "parent_id": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9]+$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "category_id",
+        "parent_id"
+      ],
+      "type": "object"
+    },
+    "expected": {
+      "additionalProperties": false,
+      "properties": {
+        "steps": {
+          "items": {
+            "$ref": "#/$defs/outcome"
+          },
+          "minItems": 1,
+          "type": "array"
+        }
+      },
+      "required": [
+        "steps"
+      ],
+      "type": "object"
+    },
+    "input": {
+      "additionalProperties": false,
+      "properties": {
+        "bot_user": {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "pattern": "^[0-9]+$",
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "name"
+          ],
+          "type": "object"
+        },
+        "caps": {
+          "$ref": "#/$defs/caps"
+        },
+        "catalog": {
+          "$ref": "#/$defs/catalog"
+        },
+        "channels": {
+          "items": {
+            "$ref": "#/$defs/channel"
+          },
+          "type": "array"
+        },
+        "clock": {
+          "format": "date-time",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?(Z|[+-]\\d{2}:\\d{2})$",
+          "type": "string"
+        },
+        "guides": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "reset_time": {
+          "type": "string"
+        },
+        "reset_weekday": {
+          "maximum": 6,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "self_role_id": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9]+$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "settings": {
+          "$ref": "#/$defs/settings"
+        },
+        "steps": {
+          "items": {
+            "$ref": "#/$defs/step"
+          },
+          "minItems": 1,
+          "type": "array"
+        },
+        "timezone": {
+          "type": "string"
+        },
+        "uuid_sequence": {
+          "items": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "world": {
+          "$ref": "#/$defs/world"
+        }
+      },
+      "required": [
+        "timezone",
+        "reset_weekday",
+        "reset_time",
+        "clock",
+        "catalog",
+        "settings",
+        "channels",
+        "bot_user",
+        "self_role_id",
+        "guides",
+        "world",
+        "uuid_sequence",
+        "caps",
+        "steps"
+      ],
+      "type": "object"
+    },
+    "message": {
+      "required": [
+        "role"
+      ],
+      "type": "object"
+    },
+    "outcome": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "value": {}
+          },
+          "required": [
+            "value"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "error": {
+              "additionalProperties": false,
+              "properties": {
+                "message": {
+                  "type": "string"
+                },
+                "type": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "message"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "error"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "replayCase": {
+      "additionalProperties": false,
+      "properties": {
+        "case_id": {
+          "pattern": "^[a-z0-9][a-z0-9-]*$",
+          "type": "string"
+        },
+        "input": {
+          "$ref": "#/$defs/input"
+        }
+      },
+      "required": [
+        "case_id",
+        "input"
+      ],
+      "type": "object"
+    },
+    "reply": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "completion": {}
+          },
+          "required": [
+            "completion"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "message": {
+              "type": "string"
+            },
+            "raise": {
+              "enum": [
+                "TimeoutError",
+                "ModelUnavailable",
+                "RuntimeError"
+              ]
+            }
+          },
+          "required": [
+            "raise",
+            "message"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "result_generate": {
+      "additionalProperties": false,
+      "properties": {
+        "completion_tokens": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "created": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "error": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "focus": {
+          "type": "string"
+        },
+        "model_rounds": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "content": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "requested_tools": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "round": {
+                "type": "integer"
+              },
+              "thinking": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "round",
+              "content",
+              "thinking",
+              "requested_tools"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "outcomes": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "arguments": {
+                "type": "object"
+              },
+              "created": {
+                "items": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "error": {
+                "anyOf": [
+                  {
+                    "enum": [
+                      "refused",
+                      "unknown tool",
+                      "failed"
+                    ]
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "name": {
+                "type": "string"
+              },
+              "ok": {
+                "type": "boolean"
+              },
+              "output": {
+                "type": "string"
+              },
+              "posted": {
+                "items": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "round": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "name",
+              "output",
+              "arguments",
+              "ok",
+              "error",
+              "created",
+              "posted",
+              "round"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "posted": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "prompt_tokens": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "reply": {
+          "type": "string"
+        },
+        "requests": {
+          "items": {
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "rounds": {
+          "type": "integer"
+        },
+        "tool_calls": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "unused_replies": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "reply",
+        "rounds",
+        "tool_calls",
+        "outcomes",
+        "error",
+        "model_rounds",
+        "prompt_tokens",
+        "completion_tokens",
+        "created",
+        "posted",
+        "focus",
+        "requests",
+        "unused_replies"
+      ],
+      "type": "object"
+    },
+    "settings": {
+      "additionalProperties": false,
+      "properties": {
+        "chat_pilot_category_ids": {
+          "type": "string"
+        },
+        "chat_pilot_channel_ids": {
+          "type": "string"
+        },
+        "chat_pilot_history_ttl_s": {
+          "type": "number"
+        },
+        "chat_pilot_model": {
+          "type": "string"
+        },
+        "chat_pilot_role_id": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9]+$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "chat_pilot_temperature": {
+          "type": "number"
+        },
+        "chat_pilot_think": {
+          "type": "string"
+        },
+        "chat_pilot_timeout": {
+          "type": "number"
+        },
+        "guild_id": {
+          "pattern": "^[0-9]+$",
+          "type": "string"
+        },
+        "model_context_tokens": {
+          "type": "integer"
+        },
+        "post_channel_id": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9]+$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "watched_channel_ids": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "guild_id",
+        "chat_pilot_role_id",
+        "chat_pilot_channel_ids",
+        "chat_pilot_category_ids",
+        "watched_channel_ids",
+        "post_channel_id",
+        "chat_pilot_model",
+        "model_context_tokens",
+        "chat_pilot_history_ttl_s",
+        "chat_pilot_timeout",
+        "chat_pilot_temperature",
+        "chat_pilot_think"
+      ],
+      "type": "object"
+    },
+    "step": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/step_generate"
+        }
+      ]
+    },
+    "step_generate": {
+      "additionalProperties": false,
+      "properties": {
+        "author_id": {
+          "pattern": "^[0-9]+$",
+          "type": "string"
+        },
+        "channel_id": {
+          "pattern": "^[0-9]+$",
+          "type": "string"
+        },
+        "conversation": {
+          "items": {
+            "$ref": "#/$defs/message"
+          },
+          "minItems": 1,
+          "type": "array"
+        },
+        "force_all_channels": {
+          "type": "boolean"
+        },
+        "force_channel_scope": {
+          "type": "boolean"
+        },
+        "force_group_schedule": {
+          "type": "boolean"
+        },
+        "is_admin": {
+          "type": "boolean"
+        },
+        "op": {
+          "const": "generate"
+        },
+        "read_only": {
+          "type": "boolean"
+        },
+        "replies": {
+          "items": {
+            "$ref": "#/$defs/reply"
+          },
+          "type": "array"
+        },
+        "upcoming_only": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "op",
+        "author_id",
+        "channel_id",
+        "conversation",
+        "replies"
+      ],
+      "type": "object"
+    },
+    "world": {
+      "additionalProperties": false,
+      "properties": {
+        "fixed": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "bosses": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "channel_id": {
+                "anyOf": [
+                  {
+                    "pattern": "^[0-9]+$",
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "owner_id": {
+                "pattern": "^[0-9]+$",
+                "type": "string"
+              },
+              "participants": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "time": {
+                "type": "string"
+              },
+              "weekday": {
+                "maximum": 6,
+                "minimum": 0,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "id",
+              "owner_id",
+              "bosses",
+              "weekday",
+              "time",
+              "participants",
+              "channel_id"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "members": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "display_name": {
+                "type": "string"
+              },
+              "has_role": {
+                "type": "boolean"
+              },
+              "nickname": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "user_id": {
+                "pattern": "^[0-9]+$",
+                "type": "string"
+              }
+            },
+            "required": [
+              "user_id",
+              "display_name",
+              "nickname",
+              "has_role"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "rsvps": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "run_id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "state": {
+                "enum": [
+                  "yes",
+                  "no"
+                ]
+              },
+              "user_id": {
+                "pattern": "^[0-9]+$",
+                "type": "string"
+              }
+            },
+            "required": [
+              "run_id",
+              "user_id",
+              "state"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "runs": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "at": {
+                "format": "date-time",
+                "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?(Z|[+-]\\d{2}:\\d{2})$",
+                "type": "string"
+              },
+              "bosses": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "channel_id": {
+                "anyOf": [
+                  {
+                    "pattern": "^[0-9]+$",
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "fixed_run_id": {
+                "anyOf": [
+                  {
+                    "format": "uuid",
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "participants": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "status": {
+                "enum": [
+                  "planned",
+                  "confirmed",
+                  "at_risk",
+                  "otot",
+                  "cancelled",
+                  "done"
+                ]
+              },
+              "week_start": {
+                "format": "date-time",
+                "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?(Z|[+-]\\d{2}:\\d{2})$",
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "week_start",
+              "bosses",
+              "at",
+              "participants",
+              "status",
+              "fixed_run_id",
+              "channel_id"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "members",
+        "fixed",
+        "runs",
+        "rsvps"
+      ],
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "cases": {
+      "items": {
+        "$ref": "#/$defs/case"
+      },
+      "minItems": 1,
+      "type": "array"
+    },
+    "family": {
+      "const": "loop"
+    },
+    "provenance": {
+      "additionalProperties": false,
+      "properties": {
+        "functions": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "inventory_surfaces": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "oracle": {
+          "type": "string"
+        },
+        "source_tests": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "oracle",
+        "functions",
+        "source_tests",
+        "inventory_surfaces"
+      ],
+      "type": "object"
+    },
+    "schema_version": {
+      "const": "v5-chat-loop-v1"
+    }
+  },
+  "required": [
+    "schema_version",
+    "family",
+    "provenance",
+    "cases"
+  ],
+  "title": "Kanade v5 chat vectors: loop",
+  "type": "object"
+}

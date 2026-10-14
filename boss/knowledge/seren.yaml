@@ -1,20 +1,317 @@
 boss: Seren
-summary: Avoid filling the Sun Gauge, preserve the Midnight segment, and use Midnight as the cleanest damage window.
+summary: Chosen Serene (also called Chosen Seren) is a Sun Gauge fight. Getting hit fills your gauge and a full gauge stuns you; in Phase 2 every stun also shrinks the party's Midnight segment, and losing Midnight entirely fails the run. Midnight is the safe burst window.
+lead: 'Hits fill your Sun Gauge and a full gauge stuns you; in Phase 2 every stun also shrinks Midnight, the party''s burst window.'
 core:
-- Getting hit fills your personal Sun Gauge; filling it locks you out of actions and healing for several seconds.
-- Phase 2 cycles through Noon, Sunset, Midnight, and Dawn.
-- Every Sun Gauge overflow in Phase 2 shrinks the party's Midnight segment; if Midnight disappears completely, the party fails regardless of remaining lives.
-- Midnight attacks do not add Sun Gauge and it is generally the best phase for burst damage.
+- title: Sun Gauge
+  text: 'Almost any hit fills it; full means a stun with no healing.'
+  detail: 'Getting hit by almost anything fills your personal Sun Gauge. When it fills you are stunned (8 s per the wiki, 5 s in older write-ups; status resistance shortens it) and cannot heal. The gauge resets when Phase 2 starts (SEA v246).'
+- title: Midnight shrinks
+  text: 'Every full gauge shrinks Midnight; it regrows by how many stayed uncursed. At zero the party fails, lives or not.'
+  detail: 'Phase 2 cycles Noon, Sunset, Midnight and Dawn on a clock. Each Sun''s Curse (full gauge) shrinks the Midnight segment; at each time change Midnight grows back in proportion to how many members stayed uncursed (SEA v244). If Midnight reaches zero, the whole party fails regardless of lives.'
+- title: Mithra's Power
+  text: 'Each segment ends with one safe spot; one miss gives the whole party a lethal hit and a full gauge.'
+  detail: 'At the end of every segment a transition check leaves one safe spot: the Mithra''s Power pattern (also called Ray of Light; the SEA name match is unconfirmed). Everyone must stand in it or the whole party takes a lethal hit and a full gauge.'
+phases:
+- name: Phase 1
+  tag: light pillars
+  items:
+  - title: Gauge reset
+    text: 'The Sun Gauge clears when Phase 2 starts (SEA v246).'
+  - title: Light pillars
+    text: 'Erupt almost instantly and keep spawning while she is bound; many players find Phase 1 the hardest.'
+  - title: Pillar spacing
+    text: 'Solo: stand between two pillar spawn points near Seren so she throws fewer sword auras; jump the slow one.'
+  - title: Burst out
+    text: 'Parties burst at once to get out of the pillar phase.'
+  - title: Extreme
+    text: 'The Phase 1 diagonal lasers fill the gauge faster.'
+- name: Noon
+  group: Phase 2
+  cycle: true
+  tag: gauge fills
+  tone: yellow
+  items:
+  - title: Shield heal
+    text: 'Dawn shield left at Noon heals Seren.'
+    detail: Any Dawn shield still up when Noon begins is healed back to Seren.
+  - title: Front laser
+    text: 'Crouch dodges the Noon front laser.'
+  - title: Stun on your terms
+    text: 'Near-full late in Noon? Take a cheap hit so the stun lands here, crouch as it ends, then potion.'
+  - title: Left side
+    text: 'Solo: play the left; the far right has an off-screen hazard and the middle catches crossing lasers.'
+  - title: Extreme
+    text: 'More sun rays.'
+- name: Sunset
+  group: Phase 2
+  cycle: true
+  tag: −80% healing · heavy hits
+  tone: red
+  items:
+  - title: Healing cut
+    text: 'Healing −80% and heavy hits; Decent Holy Fountain heals normally.'
+    detail: 'Sunset cuts healing from items and skills by 80% and hits very hard; Decent Holy Fountain still heals normally.'
+  - title: Triple slash
+    text: '200% HP on Hard/Extreme, 90% on Normal; crouch all three. Sword pillars deal 70-90%.'
+  - title: Arrive with room
+    text: 'A stun here usually kills, so don''t enter Sunset with a near-full gauge.'
+  - title: Off the wall
+    text: 'Don''t fight her pinned to a wall she faces; her charge lingers there.'
+- name: Midnight
+  group: Phase 2
+  cycle: true
+  tag: burst · no gauge
+  tone: safe
+  items:
+  - title: Burst window
+    text: 'Weak attacks that never fill the gauge.'
+    detail: 'Midnight attacks barely hurt and do not fill the gauge, so it is the main burst window.'
+  - title: Shrinks per curse
+    text: 'Each curse shrinks Midnight; it regrows at each time change by how many stayed uncursed. At zero the party fails.'
+  - title: Burst timing
+    text: 'Hold binds and the main burst for Midnight; start on the caller''s mark once everyone is in the Mithra''s Power safe spot.'
+  - title: Push before Dawn
+    text: 'Leftover Dawn shield heals back at Noon, so take as much HP here as you can.'
+  - title: Finish here
+    text: 'Strong solos and duos aim to kill her in Midnight; if she will survive, save i-frames or Ascent for Dawn.'
+- name: Dawn
+  group: Phase 2
+  cycle: true
+  tag: shield · deer · orbs
+  tone: blue
+  items:
+  - title: Shield
+    text: 'About 10% of her HP; grows over time and when players are hit.'
+    detail: 'Dawn gives Seren a shield (about 10% of her HP) that grows over time and when players are hit; any shield left at Noon is healed back.'
+  - title: Deer and orbs
+    text: 'Deer (Nerota''s Incarnation) chase you; blue orbs explode nearby.'
+    detail: Deer (Nerota's Incarnation) chase you, and blue Nerota's Power orbs explode near you.
+  - title: Bind removes deer
+    text: 'Binding Seren makes the deer vanish (SEA v251); orbs have about 90% less HP since.'
+  - title: Chain hits
+    text: 'Knockback, stuns, slows and orbs chain into more hits, and each feeds her shield.'
+  - title: Solo route
+    text: 'Fight away from orb spawns, kite the deer across, pass through her after her trap cast and clear orbs; a common personal target is under 5-10% healing.'
 danger:
-- 'At each time-of-day transition, Ray of Light is a party check: everyone must reach the single safe ray/spot or the failure hit is effectively lethal.'
-- Sunset has very high-damage sword patterns and heavily reduced potion recovery.
-- Dawn can rebuild Seren's white shield when players are hit, extending the fight.
+- title: Phase 1 pillars
+  text: 'Near-instant and still spawning while she is bound; many find Phase 1 hardest.'
+  detail: Phase 1 light pillars erupt almost instantly and keep spawning even while Seren is bound; many players find Phase 1 the hardest part.
+- title: Sunset slashes
+  text: 'Triple slash 200% HP on Hard/Extreme (Normal 90%); sword pillars 70-90%. Duck them.'
+  detail: Sunset's triple slash deals 200% HP on Hard and Extreme (90% on Normal) and its sword pillars deal 70-90%; duck the slashes rather than tanking them.
+- title: Stunned at Sunset
+  text: 'Usually fatal; don''t enter Sunset with a near-full gauge.'
+  detail: A stun during Sunset is very likely to kill you, so avoid entering Sunset with a nearly full gauge.
+- title: Dawn chains
+  text: 'Knockback, stuns, slows and orbs chain hits, and each feeds her shield.'
+  detail: Dawn stacks knockback, stuns, slows and orb hits; one hit often chains into several more and also feeds her shield.
+- title: Midnight drain
+  text: 'Repeated curses end the run with lives left.'
+  detail: Midnight shrinks every time any member is cursed; repeated curses can end the run with lives remaining.
 tips:
-- If your Sun Gauge is high, stop greeding damage and dodge; preserving Midnight is a party resource.
-- Coordinate the Ray of Light safe spot early because one player's failure can punish the whole party.
-- Plan major burst around Midnight when possible.
+- title: Crouch
+  text: 'Dodges her stab, rush, Noon front laser and Sunset slashes; shifts your hitbox forward.'
+  detail: Crouch is your key defensive input. It dodges her stab, rush, the Noon front laser and all three Sunset slashes, but it shifts your hitbox forward.
+- title: Bind at Dawn
+  text: 'Binding removes the deer (SEA v251); orbs have ~90% less HP since.'
+  detail: Bind Seren in Dawn to make the deer vanish (SEA v251); the orbs also have about 90% less HP since that patch, so clear them quickly.
+- title: Stun on your terms
+  text: 'Near-full late in Noon? Take a cheap hit so the stun lands in Noon, crouch out of it, potion.'
+  detail: If your gauge is nearly full late in Noon, step away from her stab and rush, take a cheap hit on purpose so the stun lands in Noon, hold crouch as it ends and potion straight away.
+- title: Call the safe spot
+  text: 'Call Mithra''s Power early; one lagging player fails it for all.'
+  detail: Call the Mithra's Power safe spot early every cycle; lag can make a late player fail it for everyone.
+- title: Sunset prep
+  text: 'Keep Decent Holy Fountain ready; avoid walls she faces, where her charge lingers.'
+  detail: Keep Decent Holy Fountain ready for Sunset, and do not fight her pinned against a wall she is facing, because her charge lingers there.
+- title: Hero's Will
+  text: 'Clear blindness or accuracy-down before bursting.'
+  detail: Use Hero's Will on blindness or accuracy-down before you burst.
 difficulty_notes:
-  x: Extreme keeps the same core day/night system but adds more Sun Gauge pressure, including passive gauge gain.
+  x:
+    title: Extreme
+    text: 'Faster gauge, more Noon sun rays, tougher deer. SEA v244 halved light of judgement''s gauge gain.'
+    detail: Extreme fills the gauge faster, including passively and from Phase 1 diagonal lasers, and has more Noon sun rays and tougher Dawn deer. SEA v244 halved the gauge gain from its light of judgement pattern.
+notes:
+- title: Destiny Resolve per clear
+  text: 'Hard 6 · Extreme 80, split among everyone who entered.'
+  detail: 'Destiny Weapon: each clear gives Adversary''s Resolve, split among everyone who entered: Hard 6, Extreme 80.'
+difficulties:
+- name: Normal
+  entry_level: 260
+  boss_level: 270
+  pdr_percent: 380
+  party_max: 6
+  force: {kind: sacred, value: 200}
+  hp:
+  - {phase: '1', value: 52.5t}
+  - {phase: '2', value: 155.4t}
+  recommended_spec: {kind: Authentic Force, text: 'Phase 1 needs 150 and Phase 2 needs 200 Authentic Force; 200/250 gives the full +25%. Authentic Symbol: Cernium Lv 11 adds +20% damage (SEA v251). CMS lists 50M combat power solo (about 5.4M each in a 6-party) as a rough reference.'}
+  notes:
+  - 8 lives in MapleSEA, 30 minutes, 10 s potion cooldown.
+  - HP is the KMS value before OVERDRIVE (wiki estimate); MapleSEA v227 cut Normal HP by about 14% and its level to 270.
+  - 'After OVERDRIVE (KMS Jul 2026, due in MapleSEA Oct-Nov 2026): HP about 35.6t / 105.5t (32.1% less), 20-minute limit.'
+- name: Hard
+  entry_level: 260
+  boss_level: 275
+  pdr_percent: 380
+  party_max: 6
+  force: {kind: sacred, value: 200}
+  hp:
+  - {phase: '1', value: 126t}
+  - {phase: '2', value: 357t}
+  recommended_spec: {kind: Authentic Force, text: 'Phase 1 needs 150 and Phase 2 needs 200 Authentic Force (250 for the full +25%). CMS lists 80M combat power solo (about 8.6M each in a 6-party) as a rough reference.'}
+  notes:
+  - 8 lives in MapleSEA, 30 minutes.
+  - 'After OVERDRIVE (KMS Jul 2026, due in MapleSEA Oct-Nov 2026): HP about 85.5t / 242.4t (32.1% less), 20-minute limit.'
+- name: Extreme
+  entry_level: 260
+  boss_level: 280
+  pdr_percent: 380
+  party_max: 6
+  force: {kind: sacred, value: 200}
+  hp:
+  - {phase: '1', value: 1.32q}
+  - {phase: '2', value: 5.16q}
+  recommended_spec:
+    kind: Combat power
+    basis: CMS reference
+    text: 'CMS lists 800M combat power solo (about 86M each in a 6-party) as a rough reference. Run 250 Authentic Force for the full +25%.'
+    parties:
+    - {party: Solo, value: 800M}
+    - {party: 6-party (each), value: ≈ 86M}
+  notes:
+  - 8 lives in MapleSEA, 30 minutes. Phase 1 is level 275 and Phase 2 level 280.
+  - 'After OVERDRIVE (KMS Jul 2026, due in MapleSEA Oct-Nov 2026): HP about 896t / 3.50q (32.1% less), 20-minute limit.'
+- name: Destiny
+  entry_level: 275
+  boss_level: 275
+  pdr_percent: 380
+  party_max: 1
+  force: {kind: sacred, value: 200}
+  mission:
+    series: destiny-weapon
+    order: 1
+    title: Battle, Chosen Serene
+    modifier: {text: -80% Final Damage, direction: down}
+    needs: 2,000 Adversary's Resolve
+    rules: [Solo, Practice Mode clears count, No Cross World]
+  notes:
+  - title: The first mission
+    text: 'Hard Serene solo in Destiny Mode (MapleSEA v244); Gatekeeper Kalos comes next.'
+    detail: 'Destiny Weapon mission "Battle, Chosen Serene" (MapleSEA v244): Hard Serene solo in Destiny Mode with Final Damage reduced by 80%. It is the first mission (Gatekeeper Kalos is next) and needs 2,000 Adversary''s Resolve.'
+  - title: Practice Mode
+    text: 'Practice clears count (MapleSEA v249), but not in Cross World. OVERDRIVE''s phase-specific practice will not count.'
+    detail: 'Practice Mode clears count (MapleSEA v249); not available in Cross World boss content. The phase-specific practice that OVERDRIVE adds will not count.'
+- name: Champion
+  entry_level: 260
+  boss_level: 275
+  party_max: 1
+  mission:
+    series: union-champion
+    order: 4
+    title: Rank SS trial
+    needs: A Rank S champion
+    rules: [Solo, 20-minute limit, Practice Mode clears count]
+  notes:
+  - title: SS insignia
+    text: '+3% Critical Damage for every character. Hard Serene solo in Champion Mode (Champion Evaluation Match).'
+    detail: 'Union Champion Rank SS trial (Champion Evaluation Match): Hard Serene solo in Champion Mode within 20 minutes, after the champion reaches Rank S. The SS insignia gives every character +3% Critical Damage.'
+  - title: Practice Mode
+    text: 'Clears count and add Hamcelot''s Protection: 25% less damage taken.'
+    detail: 'Practice Mode clears count and add Hamcelot''s Protection (25% less damage taken). After OVERDRIVE, KMS adds Hamcelot''s Trial (Final Damage -30%, -25% on Black Mage); not in MapleSEA yet.'
+strategies:
+- name: Burst at Midnight
+  when: Parties of 2-6, especially Normal and Hard with mixed damage; a learning default the party agrees before entry
+  risk: low
+  damage: medium
+  payoff: Safest burst window; protects the Midnight segment
+  steps:
+  - Burst immediately in Phase 1 to get out of the pillar phase.
+  - In Phase 2, hold binds and main burst for Midnight. The caller confirms the start once everyone is in the Mithra's Power safe spot (the exact pre-resolution timing is unverified).
+  - Push as much HP as possible before Dawn, because leftover Dawn shield is healed back at Noon.
+  - Everyone plays to avoid curses in Noon, Sunset and Dawn; clean segments regrow Midnight.
+- name: Finish before Dawn
+  when: Strong solo or duo that has shown it can take the remaining HP in one Midnight window
+  risk: medium
+  damage: high
+  payoff: Skips Dawn's shield and deer entirely
+  steps:
+  - Go into Phase 2 Midnight with every burst and bind and aim to finish her there.
+  - If she will clearly survive, save Genesis i-frames or Ascent skills to survive Dawn instead.
+- name: Dodge between attacks
+  when: Solo Normal or Hard
+  risk: medium
+  damage: medium
+  payoff: Very few gauge stuns while keeping DPS up
+  steps:
+  - Learn how many attacks fit between her stab and rush and crouch on cue.
+  - Phase 1 - stand between two pillar spawn points and stay near Seren so she throws fewer sword auras; jump over the slow one.
+  - Noon - the left side usually works; the far right has an off-screen hazard and the middle catches crossing lasers. Adjust to the pattern.
+  - Dawn - fight on one side away from orb spawns, kite the deer across, wait for her trap cast, then pass through her and clear orbs; binding her removes the deer (SEA v251). Healing under about 5-10% is one player's target, not a fixed threshold.
 sources:
-- https://mapletools.app/bosses/seren
-- https://maplestorywiki.net/w/Seren/Monster
+- url: https://www.maplesea.com/updates/view/v251_Content2/
+  title: MapleSEA v251 Content Updates Part 2
+  author: MapleStorySEA
+  kind: official
+  fetched: '2026-10-02'
+- url: https://www.maplesea.com/updates/view/v251_Content/
+  title: MapleSEA v251 Content Updates
+  author: MapleStorySEA
+  kind: official
+  fetched: '2026-10-02'
+- url: https://www.maplesea.com/updates/view/v244_Patch_Notes/
+  title: MapleSEA v244 Patch Notes
+  author: MapleStorySEA
+  kind: official
+  fetched: '2026-10-02'
+- url: https://www.maplesea.com/updates/view/v246_Patch1/
+  title: MapleSEA v246 Patch Notes
+  author: MapleStorySEA
+  kind: official
+  fetched: '2026-10-02'
+- url: https://www.maplesea.com/updates/view/v227_Patch_Notes/
+  title: MapleSEA v227 NEW AGE Patch Notes
+  author: MapleStorySEA
+  kind: official
+  fetched: '2026-10-02'
+- url: https://orangemushroom.net/2026/07/04/kms-ver-1-2-416-maplestory-overdrive-ruler-of-covenants-lethe/
+  title: KMS ver. 1.2.416 - MapleStory Overdrive
+  author: Orange Mushroom
+  kind: guide
+  fetched: '2026-10-02'
+- url: https://www.youtube.com/watch?v=20mLjzD5PtQ
+  title: CHOSEN SEREN Boss Guide, all difficulties (2026)
+  author: Rath GMS
+  kind: guide
+  fetched: '2026-10-02'
+- url: https://www.youtube.com/watch?v=vNL-9ek4wBw
+  title: Tips & Tricks for Soloing HARD Seren
+  author: chuaz
+  kind: guide
+  fetched: '2026-10-02'
+- url: https://mapletools.app/bosses/seren
+  title: MapleTools - Seren
+  author: MapleTools
+  kind: tool
+  fetched: '2026-10-02'
+- url: https://maplestorywiki.net/w/Seren/Monster
+  title: MapleStory Wiki - Seren/Monster
+  author: MapleStory Wiki contributors
+  kind: wiki
+  fetched: '2026-10-02'
+- url: https://www.maplesea.com/updates/view/v243_Patch_Notes/
+  title: MapleSEA v243 NEXT II patch notes (Union Champion)
+  author: Nexon SEA
+  kind: official
+  fetched: '2026-10-05'
+- url: https://maplestory.nexon.com/Guide/N23GameInformation/Articles/409
+  title: KMS official guide - Union Champion
+  author: Nexon Korea
+  kind: official
+  fetched: '2026-10-05'
+- url: https://maplestorywiki.net/w/Destiny_Weapon
+  title: MapleStory Wiki - Destiny Weapon
+  author: MapleStory Wiki contributors
+  kind: wiki
+  fetched: '2026-10-05'

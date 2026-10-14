@@ -1,0 +1,371 @@
+// M3E roster (mockup B_Members): table scan on the left, member editor in the
+// shared side pane.
+@use "../core/breakpoints" as *;
+// Secondary text on a tinted row (selected, or hovered) takes the text-grade
+// dim: plain --dim on --select or --row-hover falls under 4.5:1.
+.memberlist__row--active,
+.memberlist__row:hover {
+  --dim: var(--dim-text);
+}
+
+.members-window {
+  display: flex;
+  flex-direction: column;
+  overflow: clip;
+}
+
+.members-window__head { flex-wrap: nowrap; gap: 0.55rem; }
+.members-window__search { align-self: center; width: min(240px, 27vw); margin-left: auto; }
+.members-window__search input { width: 100%; min-width: 0; }
+.members-window__sort { display: flex; flex: none; align-self: center; }
+
+.members-window__body {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: clip;
+}
+
+.members-window__body > .flash,
+.members-window__body > .empty { margin: 1rem; }
+
+// One frame: the list region is a single pane surface; the column heads, rows
+// and pager sit on it without boxes of their own.
+.members-roster {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  background: var(--pane);
+}
+.members-roster__pager { flex: none; }
+
+.memberlist {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 0 10px 10px;
+  background: var(--pane);
+}
+
+.memberlist__columns,
+.memberlist__row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 70px 96px 100px;
+  gap: 10px;
+  align-items: center;
+}
+
+.memberlist__columns {
+  flex: none;
+  min-height: 32px;
+  padding: 0 22px;
+  color: var(--dim-text);
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.memberlist__row {
+  width: 100%;
+  min-height: 44px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 6px;
+  background: var(--row);
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.memberlist [role='listitem'] + [role='listitem'] { margin-top: 2px; }
+.memberlist__row:hover { background: var(--row-hover); box-shadow: inset 0 0 0 1.5px var(--line); }
+.memberlist__row--active,
+.memberlist__row--active:hover {
+  border-radius: 18px;
+  box-shadow: inset 0 0 0 1.5px var(--select-edge);
+  background: var(--select);
+}
+
+// The name and its aliases share one line (aliases ellipsise before the name);
+// the chip stays whole and drops below them when the column is too narrow.
+.memberlist__name { min-width: 0; display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 0.5rem; overflow: hidden; }
+.memberlist__who { display: flex; flex: 0 1 auto; align-items: baseline; gap: 0.5rem; min-width: 0; max-width: 100%; }
+.memberlist__name strong,
+.memberlist__name .id { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.memberlist__name strong { flex: none; max-width: 100%; font-size: var(--fs-small); font-weight: 700; }
+.memberlist__name .id { flex: 0 1 auto; color: var(--dim-text); font-family: var(--mono); font-size: var(--fs-mini); }
+.memberlist__name .chip { flex: none; align-self: center; white-space: nowrap; }
+.memberlist__identity { display: flex; flex-direction: column; gap: 3px; padding-block: 8px; font-size: var(--fs-small); }
+.memberlist__identity .id { color: var(--dim-text); font-family: var(--mono); font-size: var(--fs-mini); }
+.memberlist__identity .chip { align-self: flex-start; }
+.memberlist__stat { font-size: var(--fs-small); font-weight: 600; white-space: nowrap; }
+.memberlist__preference,
+.memberlist__style { overflow: hidden; font-size: var(--fs-small); text-overflow: ellipsis; white-space: nowrap; }
+.memberlist__style { color: var(--dim-text); font-size: var(--fs-mini); }
+
+/* ── the detail ───────────────────────────────────────────────────────────── */
+
+.membersheet__head {
+  display: flex;
+  flex: none;
+  gap: 12px;
+  align-items: center;
+  padding: 16px 16px 14px;
+  border-bottom: 1.5px solid var(--line);
+}
+.membersheet__who { display: flex; flex: 1 1 auto; flex-direction: column; gap: 0; min-width: 0; }
+.membersheet__who > * { margin: 0; }
+.membersheet__head h2 { font-family: var(--display); font-size: var(--fs-brand); line-height: 1.15; }
+.membersheet__handle { color: var(--dim-text); font-size: var(--fs-small); line-height: 1.3; }
+.membersheet__avatar { display: grid; flex: none; width: 52px; height: 52px; place-items: center; clip-path: polygon(50% 0%, 75% 7%, 93% 25%, 100% 50%, 93% 75%, 75% 93%, 50% 100%, 25% 93%, 7% 75%, 0% 50%, 7% 25%, 25% 7%); background: var(--win); color: var(--win-ink); font-family: var(--display); font-size: var(--fs-brand); font-weight: 800; }
+.membersheet__avatar--inline { width: 32px; height: 32px; font-size: var(--fs-small); }
+.membersheet__account { display: flex; align-items: center; gap: 8px; }
+
+/* List rows: a 28 px cookie portrait before the name. */
+.memberlist__lead { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.memberlist__lead > :last-child { flex: 1 1 auto; min-width: 0; }
+.memberlist__av { display: grid; flex: none; width: 28px; height: 28px; place-items: center; clip-path: polygon(50% 0%, 75% 7%, 93% 25%, 100% 50%, 93% 75%, 75% 93%, 50% 100%, 25% 93%, 7% 75%, 0% 50%, 7% 25%, 25% 7%); background: var(--win); color: var(--win-ink); font-family: var(--display); font-size: var(--fs-micro); font-weight: 800; }
+.memberlist__row--active .memberlist__lead { align-items: flex-start; }
+.memberlist__row--active .memberlist__av { margin-top: 8px; }
+// Phones give the name column every pixel (125% text included); the sheet
+// still shows the portrait.
+@media (max-width: 599px), (max-height: 500px) {
+  .memberlist__av { display: none; }
+}
+
+.membersheet__close.btn {
+  flex: none;
+  justify-content: center;
+  width: 32px;
+  min-width: 32px;
+  height: 32px;
+  min-height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--ink);
+}
+.membersheet__close.btn:hover { background: var(--row-hover); }
+
+.membersheet__content { display: flex; flex-direction: column; gap: 16px; padding: 14px 16px; }
+
+.membersheet__grid { display: grid; grid-template-columns: 128px minmax(0, 1fr); gap: 10px 12px; align-items: baseline; margin: 0; font-size: var(--fs-small); line-height: 1.3; }
+// Mono overlines in the phone dialog too (the side pane's come from the primitives).
+.membersheet__grid dt { color: var(--dim-text); font-family: var(--mono); font-size: var(--fs-micro); font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; }
+.membersheet__grid dd { min-width: 0; margin: 0; }
+.membersheet__count { font-size: var(--fs-lg); font-weight: 700; line-height: 1; }
+.membersheet__grid .note { font-size: var(--fs-mini); }
+.membersheet__section { display: flex; flex-direction: column; gap: 6px; }
+.membersheet__section > * { margin: 0; }
+.membersheet__section .note { font-size: var(--fs-small); line-height: 1.3; }
+.membersheet__section .field { margin: 0; }
+.membersheet__label { color: var(--dim-text); font-family: var(--mono); font-size: var(--fs-micro); font-weight: 600; letter-spacing: 0.12em; line-height: 1.3; text-transform: uppercase; }
+.membersheet__section .seg { display: inline-flex; align-self: flex-start; }
+.membersheet__section .seg .seg__btn { min-height: 34px; padding: 0 14px; }
+.membersheet__aliases { display: flex; flex-wrap: wrap; gap: 5px; }
+.membersheet__alias { display: inline-flex; align-items: center; gap: 4px; min-height: 26px; padding: 0 1px 0 10px; border-radius: 13px; background: var(--seg-fill); font-family: var(--mono); font-size: var(--fs-mini); font-weight: 500; }
+// The board's "×": a 24px round target inside the chip, 44px where the pointer is a finger.
+.membersheet__alias-remove { display: inline-grid; place-items: center; width: 24px; height: 24px; min-height: 0; padding: 0; border: 0; border-radius: 50%; background: transparent; color: var(--dim-text); font-size: 13px; cursor: pointer; }
+.membersheet__alias-remove:hover:not(:disabled) { background: var(--row-hover); color: var(--ink); }
+.membersheet__alias-remove:focus-visible { border-radius: 50%; outline-offset: 0; }
+.membersheet__alias-remove:disabled { cursor: default; opacity: 0.5; }
+@media (pointer: coarse) {
+  .membersheet__aliases { gap: 6px; }
+  .membersheet__alias { min-height: 44px; padding-left: 14px; border-radius: 22px; }
+  .membersheet__alias-remove { width: 44px; height: 44px; }
+}
+.membersheet__alias-form { display: flex; gap: 6px; margin: 0; }
+.membersheet__alias-form input { flex: 1 1 auto; min-width: 0; font-size: var(--fs-small); }
+
+.membersheet__runs { display: flex; flex-direction: column; gap: 2px; margin: 0; padding: 0; list-style: none; }
+.membersheet__run { display: flex; align-items: center; gap: 10px; min-height: 36px; padding: 0 12px; border-radius: 4px; background: var(--row); font-size: var(--fs-body); }
+.membersheet__run:first-child { border-top-left-radius: 14px; border-top-right-radius: 14px; }
+.membersheet__run:last-child { border-bottom-left-radius: 14px; border-bottom-right-radius: 14px; }
+.membersheet__run--past { color: var(--dim-text); }
+.membersheet__when { flex: none; font-weight: 600; }
+.membersheet__title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.membersheet__answer { margin-left: auto; font-size: var(--fs-mini); }
+.membersheet__answer--yes { color: var(--ok-text); }
+.membersheet__answer--waiting,
+.membersheet__answer--maybe { color: var(--warn-text); }
+.membersheet__answer--no { color: var(--dim-text); }
+.membersheet__notice { margin: 0; color: var(--ok-text); font-size: var(--fs-small); }
+.membersheet__notice:empty { margin-top: -16px; }
+
+/* ── Profile / Characters (module roster; B_RosterChars, B_PhoneRosterChars) ── */
+
+// The head, the tab strip and the panel: only the selected panel scrolls.
+.side-pane.membersheet--tabbed { overflow: clip; }
+.membersheet--tabbed .membersheet__head { padding-bottom: 12px; border-bottom: 0; }
+.membersheet__tabs { display: flex; flex: none; gap: 4px; padding: 0 16px 10px; border-bottom: 1.5px solid var(--line); }
+.membersheet__tabcount { display: inline-grid; min-width: 18px; height: 18px; place-items: center; padding: 0 5px; border-radius: 9px; box-shadow: inset 0 0 0 1.5px currentColor; font-weight: 600; }
+.membersheet__panel { flex: 1 1 auto; min-height: 0; overflow: auto; overscroll-behavior: contain; }
+.membersheet__panel:not([hidden]) { display: flex; flex-direction: column; }
+.membersheet__panel:focus-visible { outline-offset: -3px; }
+dialog.membersheet--tabbed .modal__body { display: flex; flex-direction: column; overflow: hidden; }
+dialog.membersheet--tabbed .membersheet__tabs { padding: 10px 12px; }
+dialog.membersheet--tabbed .membersheet__tabs .ptab { min-height: 40px; padding: 0 16px; border-radius: 20px; font-size: var(--fs-body-sm); }
+// The flush body's Profile panel brings back the dialog's inset (two classes beat the phone rule below).
+dialog.membersheet.membersheet--tabbed .membersheet__content { padding: 0.8rem 1rem 1rem; }
+
+.rosterpanel { display: flex; flex: 1 1 auto; flex-direction: column; gap: 12px; padding: 12px 16px; }
+.rosterpanel--phone { padding: 12px; }
+.rosterpanel__top { display: flex; align-items: center; gap: 8px; }
+.rosterpanel__summary { margin: 0; font-size: var(--fs-small); }
+.rosterpanel__top .rosterpanel__add { flex: none; margin-left: auto; }
+.rosterpanel--phone .rosterpanel__top .rosterpanel__add { min-height: 44px; padding: 0 16px; }
+.rosterpanel__retired { display: flex; flex-direction: column; gap: 6px; }
+.rosterpanel__retired > h3 { margin: 0; }
+.rosterpanel__note { margin: auto 0 0; color: var(--dim-text); font-size: var(--fs-mini); line-height: 1.4; }
+.rosterpanel__state { display: flex; flex: 1 1 auto; flex-direction: column; justify-content: center; }
+
+.rosterrows { display: flex; flex-direction: column; gap: 2px; margin: 0; padding: 0; list-style: none; }
+.rosterrow { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) auto 32px 32px; gap: 4px; align-items: center; min-height: 54px; padding: 6px 6px 6px 12px; border-radius: 4px; background: var(--row); }
+.rosterrow:first-child { border-top-left-radius: 16px; border-top-right-radius: 16px; }
+.rosterrow:last-child { border-bottom-left-radius: 16px; border-bottom-right-radius: 16px; }
+.rosterrow__id { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.rosterrow__ign { display: flex; align-items: center; gap: 6px; min-width: 0; font-size: var(--fs-body-sm); font-weight: 700; white-space: nowrap; }
+.rosterrow__meta { overflow: hidden; color: var(--dim-text); font-size: var(--fs-mini); text-overflow: ellipsis; white-space: nowrap; }
+.rosterrow__lvmeta { color: var(--ink); font-weight: 700; }
+.rosterrow__lvmeta,
+.rosterrow__lvsep { display: none; }
+.rosterrow__lv { padding-right: 6px; font-size: var(--fs-small); font-weight: 700; text-align: right; white-space: nowrap; }
+.rosterrow__lv small { color: var(--dim-text); font-size: var(--fs-micro); font-weight: 500; }
+// The main: a crown and the word, not colour alone.
+.rosterrow__crown { display: inline-flex; flex: none; align-items: center; gap: 4px; height: 20px; padding: 0 8px 0 6px; border-radius: 10px; background: var(--select); color: var(--select-ink); font-family: var(--mono); font-size: var(--fs-micro); font-weight: 700; letter-spacing: 0.04em; }
+.rosterrow__crown .icon { width: 13px; height: 13px; }
+.rosterrow__retag { display: inline-flex; flex: none; align-items: center; height: 20px; padding: 0 8px; border-radius: 10px; box-shadow: inset 0 0 0 1.5px var(--select-edge); color: var(--dim-text); font-family: var(--mono); font-size: var(--fs-micro); font-weight: 600; }
+// Retired: an outlined row with quieter text, in its own group.
+.rosterrow--retired { background: transparent; box-shadow: inset 0 0 0 1.5px var(--line); }
+.rosterrow--retired .rosterrow__ign { color: var(--dim-text); font-weight: 600; }
+.rosterrow--retired .rosterrow__lv { color: var(--dim-text); font-weight: 500; }
+.rosterrow__btn { display: inline-flex; width: 32px; height: 32px; align-items: center; justify-content: center; padding: 0; border: 0; border-radius: 16px; background: transparent; color: var(--ink); cursor: pointer; }
+.rosterrow__btn:hover { background: var(--row-hover); }
+.rosterrow__btn--on,
+.rosterrow__btn--on:hover { background: var(--select); color: var(--select-ink); }
+
+.rosterrow__menu { position: absolute; z-index: 5; top: 48px; right: 4px; display: flex; flex-direction: column; gap: 2px; min-width: 216px; max-width: 260px; padding: 6px; border: 1.5px solid var(--line); border-radius: 16px; background: var(--row); box-shadow: 0 14px 30px -14px rgb(0 0 0 / 40%); }
+.rosterrow__item { display: flex; align-items: center; gap: 10px; min-height: 40px; padding: 0 12px; border: 0; border-radius: 10px; background: transparent; color: var(--ink); font: inherit; font-size: var(--fs-small); font-weight: 600; text-align: left; white-space: nowrap; cursor: pointer; }
+.rosterrow__item:hover,
+.rosterrow__item:focus-visible { background: var(--row-hover); }
+.rosterrow__item--risk { color: var(--risk-text); }
+.rosterrow__item[aria-disabled='true'] { color: var(--dim-text); cursor: default; }
+.rosterrow__sep { height: 1.5px; margin: 4px 6px; background: var(--line); }
+.rosterrow__why { padding: 0 12px 6px 38px; color: var(--dim-text); font-size: var(--fs-mini); line-height: 1.35; }
+// The portal's menu says why there is no Delete, under the items' text rather than their icons.
+.rosterrow__why--flush { padding-left: 12px; }
+// A member's rows: the link state beside the IGN (the strip's chip, row-sized).
+.rosterrow__ign .status-chip { height: 20px; min-height: 20px; padding: 0 8px; font-size: var(--fs-micro); font-weight: 600; }
+.rosterrow__ign .status-chip .icon { width: 12px; height: 12px; margin-right: 4px; }
+
+// Phones: 44 px targets, the level on the second line.
+.rosterpanel--phone .rosterrow { grid-template-columns: minmax(0, 1fr) 44px 44px; min-height: 60px; }
+.rosterpanel--phone .rosterrow__lv,
+.rosterpanel--phone .rosterrow__updated { display: none; }
+.rosterpanel--phone .rosterrow__lvmeta,
+.rosterpanel--phone .rosterrow__lvsep { display: inline; }
+.rosterpanel--phone .rosterrow__btn { width: 44px; height: 44px; border-radius: 22px; }
+.rosterpanel--phone .rosterrow__item { min-height: 44px; }
+@media (pointer: coarse) {
+  .rosterrow__btn { width: 44px; height: 44px; border-radius: 22px; }
+  .rosterrow { grid-template-columns: minmax(0, 1fr) auto 44px 44px; }
+  .rosterpanel--phone .rosterrow { grid-template-columns: minmax(0, 1fr) 44px 44px; }
+}
+
+/* ── Add / Edit (B_RosterEdit, B_PhoneRosterEdit) and Delete (B_RosterDelete) ── */
+
+dialog.rosterdialog { width: min(600px, calc(100% - 1.6rem)); }
+.rosterform { display: flex; flex-direction: column; gap: 12px; margin: 0; }
+.rosterform__field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.rosterform__input { width: 100%; height: 40px; border-width: 1.5px; border-radius: 12px; background: var(--row); }
+.rosterform__input[aria-invalid='true'] { border-width: 2px; border-color: var(--risk); box-shadow: 0 0 0 3px color-mix(in srgb, var(--risk) 16%, var(--surface)); }
+.rosterform__pair { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; }
+.rosterform__levelrole { display: grid; grid-template-columns: 150px minmax(0, 1fr); gap: 12px; align-items: start; }
+.rosterform__role { align-self: flex-start; }
+.rosterform__role .seg__btn { min-height: 34px; padding: 0 16px; }
+.rosterform__role .seg__btn:disabled { cursor: default; opacity: 0.55; }
+.rosterform__hint { color: var(--dim-text); font-size: var(--fs-mini); line-height: 1.4; }
+.rosterform__error { display: flex; gap: 6px; align-items: flex-start; color: var(--risk-text); font-size: var(--fs-mini); line-height: 1.35; }
+.rosterform__error .icon { flex: none; width: 14px; height: 14px; margin-top: 1px; }
+.settings__box.rosterform__summary { align-items: center; }
+dialog.rosterdialog .modal__foot .btn,
+dialog.rosterconfirm .modal__foot .btn { min-height: 40px; }
+dialog.rosterdialog--sheet .modal__foot { padding: 10px 16px 18px; }
+.rosterform__summary:focus { outline: none; }
+.rosterform__summary:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+.rosterform__jump { padding: 0; border: 0; background: none; color: inherit; font: inherit; text-decoration: underline; cursor: pointer; }
+.rosterform__switch { display: flex; align-items: center; gap: 12px; padding: 8px 14px; border-radius: 16px; background: var(--row); box-shadow: inset 0 0 0 1.5px var(--line); }
+.rosterform__switch-text { display: flex; flex: 1 1 auto; flex-direction: column; gap: 2px; font-size: var(--fs-body-sm); }
+.rosterform__grow { flex: 1 1 auto; }
+// Add character with NEXON connected: IGN + Look up, then the shown-only card.
+.rosterform__ignrow { display: flex; gap: 8px; align-items: stretch; }
+.rosterform__ignrow .rosterform__input { flex: 1 1 auto; min-width: 0; }
+.rosterform__ignrow .btn { flex: none; min-height: 40px; }
+.rosterlookup { display: flex; flex-direction: column; gap: 4px; padding: 10px 14px; border-radius: 16px; background: var(--row); box-shadow: inset 0 0 0 1.5px var(--line); }
+.rosterlookup__head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.rosterlookup__value { font-size: var(--fs-body-sm); font-weight: 600; }
+.rosterlookup__sub { color: var(--dim-text); font-size: var(--fs-mini); line-height: 1.4; }
+.rosterform__note { display: flex; gap: 8px; align-items: flex-start; font-size: var(--fs-body-sm); line-height: 1.4; }
+.rosterform__note .icon { flex: none; width: 16px; height: 16px; margin-top: 2px; }
+dialog.rosterdialog .modal__foot,
+dialog.rosterconfirm .modal__foot { flex-wrap: nowrap; }
+
+// The phone's Add/Edit: a sheet from the bottom edge, 44-48 px targets.
+dialog.rosterdialog--sheet { width: 100%; max-width: none; margin: auto 0 0; }
+dialog.rosterdialog--sheet .modal__panel { border-width: 2px 0 0; border-radius: 28px 28px 0 0; padding-bottom: env(safe-area-inset-bottom); }
+dialog.rosterdialog--sheet .modal__body { padding: 4px 16px 12px; }
+dialog.rosterdialog--sheet .rosterform__input { height: 44px; }
+dialog.rosterdialog--sheet .rosterform__ignrow .btn { min-height: 44px; }
+dialog.rosterdialog--sheet .rosterform__pair { gap: 10px; }
+dialog.rosterdialog--sheet .rosterform__levelrole { grid-template-columns: 112px minmax(0, 1fr); gap: 10px; }
+dialog.rosterdialog--sheet .rosterform__role { display: flex; align-self: stretch; }
+dialog.rosterdialog--sheet .rosterform__role .seg__btn { flex: 1 1 0; min-height: 44px; }
+dialog.rosterdialog--sheet .modal__foot .btn { min-height: 48px; padding: 0 20px; }
+dialog.rosterdialog--sheet .modal__foot .btn--primary { flex: 1 1 auto; justify-content: center; }
+dialog.rosterdialog--sheet::backdrop { background: rgb(0 0 0 / 38%); }
+
+dialog.rosterconfirm { width: min(480px, calc(100% - 1.6rem)); }
+.rosterconfirm__body { display: flex; flex-direction: column; gap: 12px; }
+.rosterconfirm__body > p { margin: 0; }
+.rosterconfirm__object { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-radius: 16px; background: var(--row); box-shadow: inset 0 0 0 1.5px var(--line); }
+.rosterconfirm__who { display: flex; flex: 1 1 auto; flex-wrap: wrap; align-items: baseline; gap: 2px 10px; min-width: 0; }
+.rosterconfirm__who b { font-size: var(--fs-body); }
+.rosterconfirm__text { font-size: var(--fs-body-sm); line-height: 1.5; }
+.rosterconfirm__pair { display: flex; gap: 8px; }
+.rosterconfirm .rosterrow__lv { padding: 0; }
+// Phones: Retire instead on its own row above Cancel and Delete.
+dialog.rosterconfirm--phone .modal__foot { flex-direction: column; align-items: stretch; gap: 8px; }
+dialog.rosterconfirm--phone .rosterform__grow { display: none; }
+dialog.rosterconfirm--phone .rosterconfirm__retire { min-height: 44px; justify-content: center; }
+dialog.rosterconfirm--phone .rosterconfirm__pair .btn { flex: 1 1 0; min-height: 48px; justify-content: center; }
+dialog.rosterconfirm--phone .rosterconfirm__who { flex-direction: column; }
+
+@media #{$single-pane} {
+  // Full screen without the roster; with it, the plain narrow Modal (B_PhoneRosterChars).
+  dialog.modal--narrow.membersheet:not(.membersheet--tabbed) { width: 100vw; max-width: none; height: 100dvh; max-height: none; margin: 0; border-radius: 0; }
+  dialog.membersheet:not(.membersheet--tabbed) .modal__panel { min-height: 100dvh; }
+  dialog.membersheet .membersheet__content { padding: 0; }
+  .members-window__search { flex: 1 1 auto; width: auto; margin-left: 0; }
+  .members-window__search input { width: 100%; }
+  .members-window__head { flex-wrap: wrap; }
+  .members-window__body { overflow: auto; }
+  .members-roster { min-height: auto; }
+  .memberlist { overflow: visible; }
+}
+
+// Phones: no reply-style column, so the roster never scrolls sideways.
+@media (max-width: 599px) {
+  .memberlist__columns,
+  .memberlist__row { grid-template-columns: minmax(0, 1fr) 3.75rem 5.25rem; gap: 8px; }
+  .memberlist__columns { white-space: nowrap; }
+  .memberlist__columns > :nth-child(4),
+  .memberlist__style { display: none; }
+}

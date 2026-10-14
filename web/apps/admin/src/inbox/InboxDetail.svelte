@@ -1,0 +1,711 @@
+<!--
+  One inbox item (boards B_InboxSelf, B_PhoneInbox): the boss art and a line
+  of facts, the member's words, v4's evidence as a thread, the proposed change as a preview with
+  any conflicts (which always block), per-run choices for a weekly-timing
+  change, and the actions — Approve, Edit then approve (a move, new run or
+  split), Reject (with a reason for member requests).
+-->
+<script lang="ts">
+  import { tick } from 'svelte';
+  import type { ApproveRequest, Evidence, Proposal, RunStatus, Week } from '@kanade/api-types';
+  import { Avatar, BossTag, DayStrip, DecisionCard, Icon, liveRuns, LiveRegion, MovePicker, namesIn, PendingLabel, Portrait, RUN_TONE, STATUS_WORDS, StatusChip, ThreadPanel, TimeStepper, WavyProgress, type Slot } from '@kanade/ui';
+  import { directory } from '../names/directory.svelte';
+  import Mentions from '../names/Mentions.svelte';
+  import Name from '../names/Name.svelte';
+  import { memberAvatar } from '../shared/avatar';
+  import { discordLink } from '../shared/discordLink.svelte';
+  import { Presence } from '../presence/presence.svelte';
+  import PresenceButton from '../presence/PresenceButton.svelte';
+  import PresenceNote from '../presence/PresenceNote.svelte';
+  import '@kanade/ui/styles/screens/move-picker.scss';
+  import { editable, editText, editWeek, isoToday } from './edit';
+  import { proposalExpiry } from './expiry';
+  import { blocked, DISCORD_ONLY, isProposal, SOURCE_LABEL } from './flags';
+  import { approvesSomething, editBody, memberNote, requestEditable, retimed, slotOf, slotText, WEEKDAYS, type RequestEdit } from './requestEdit';
+
+  let {
+    p,
+    busy,
+    locked,
+    error,
+    onapprove,
+    onmove,
+    onreject,
+    bar = false,
+    now = '',
+    timeZone = 'Asia/Kuala_Lumpur',
+    week = null,
+    step = 30,
+    refusal = 0,
+    editAgain = 0,
+    changedFrom = null,
+    onediting,
+  }: {
+    p: Proposal;
+    busy: boolean;
+    /** This session was refused Kanade's proposals (not signed in with Discord). */
+    locked: boolean;
+    error: string;
+    onapprove: (body: ApproveRequest) => void;
+    /** "Edit, then approve": the picked slot as text ("wed 22:30"), parsed by the page. */
+    onmove: (text: string) => void;
+    onreject: () => void;
+    /** Narrow frames (below 900 px): the decision is the bottom action bar. */
+    bar?: boolean;
+    /** The server's clock (`Week.generated_at`) for the expiry bar; empty hides it. */
+    now?: string;
+    timeZone?: string;
+    /** The week on screen: dates, other runs and clashes for the edit picker when the proposal falls in it. */
+    week?: Week | null;
+    /** The edit picker's time step: Config → Run lengths default minutes. */
+    step?: number;
+    /** Bumps when an edited approval was refused (409): the editor closes and its edits are cleared. */
+    refusal?: number;
+    /** Bumps on the refusal toast's Edit again: the editor opens on the new version. */
+    editAgain?: number;
+    /** The request as it was when an edited approval was refused: its version and what each change asked. */
+    changedFrom?: { version: number; asked: Record<string, string> } | null;
+    /** Editing before approving started or stopped (the list row's chip). */
+    onediting?: (on: boolean) => void;
+  } = $props();
+  const uid = $props.id();
+
+  let editOpen = $state(false);
+  let picked = $state<Slot>();
+  let editBlocked = $state(true);
+  // Which action the shared `busy` belongs to, so only that button shows it.
+  let via = $state<'approve' | 'move' | 'edit'>('approve');
+  let choices = $state<Record<string, 'update' | 'keep'>>({});
+
+  // "Edit before approving" a member request (B_InboxEdit): day/time and leaving changes out.
+  const asked = $derived(p.requested ?? []);
+  let reqEditing = $state(false);
+  let reqEdit = $state<RequestEdit>({ retimed: {}, dropped: {} });
+  let reqButton = $state<HTMLButtonElement>();
+  let reqFirst = $state<HTMLElement>();
+  const member = $derived(p.self_service?.member.name ?? 'The member');
+  const subject = $derived(p.bosses.map((b) => b.token).join(' + '));
+  // The weekday strip runs in boss-week order from the reset day (Thursday first), as the Fixed editor's.
+  const resetDay = $derived(Math.max(0, WEEKDAYS.findIndex((d) => d.startsWith(week?.days[0]?.dow ?? 'Thu'))));
+  const weekdayStrip = $derived(WEEKDAYS.map((_, i) => (resetDay + i) % 7).map((value) => ({ value, dow: WEEKDAYS[value]!.slice(0, 3), label: WEEKDAYS[value]! })));
+  const PART: Record<string, string> = { day_time: 'Weekly timing', party: 'Party', channel: 'Channel' };
+  const partTitle = (part: string, text: string) => `${subject} · ${part === 'day_time' ? 'day and time' : part === 'channel' ? 'channel' : text}`;
+  /** The change the decision card leads with: a day/time still in, else the first change still in. */
+  const lead = $derived(asked.find((c) => c.retimable && !reqEdit.dropped[c.id]) ?? asked.find((c) => !reqEdit.dropped[c.id]) ?? null);
+  const leadSlot = $derived(lead ? slotOf(lead, reqEdit) : null);
+  const hhmm = (m: number) => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+  const minutes = (time: string) => Number(time.slice(0, 2)) * 60 + Number(time.slice(3, 5));
+
+  function setSlot(id: string, slot: { day: number; time: string }) {
+    reqEdit = { ...reqEdit, retimed: { ...reqEdit.retimed, [id]: slot } };
+  }
+  function toggleDrop(id: string) {
+    const dropped = { ...reqEdit.dropped };
+    if (dropped[id]) delete dropped[id];
+    else dropped[id] = true;
+    reqEdit = { ...reqEdit, dropped };
+  }
+  async function startReqEdit() {
+    reqEdit = { retimed: {}, dropped: {} };
+    reqEditing = true;
+    await tick();
+    (reqFirst?.querySelector<HTMLElement>('[role="radio"][tabindex="0"]') ?? reqFirst?.querySelector<HTMLElement>('button'))?.focus({ preventScroll: true });
+  }
+  $effect(() => {
+    onediting?.(reqEditing);
+    return () => onediting?.(false);
+  });
+  async function stopReqEdit() {
+    reqEditing = false;
+    reqEdit = { retimed: {}, dropped: {} };
+    await tick();
+    reqButton?.focus({ preventScroll: true });
+  }
+  // Who else has this member request open (B_PresenceInbox): editing while the editor is open. A hint only.
+  const presence = new Presence('request');
+  $effect(() => (p.self_service ? presence.watch(p.id) : undefined));
+  $effect(() => {
+    presence.mode = reqEditing ? 'editing' : 'viewing';
+  });
+  // A refused edited approval closes the editor and clears its edits; Edit again starts over.
+  // svelte-ignore state_referenced_locally
+  let seenRefusal = refusal;
+  // svelte-ignore state_referenced_locally
+  let seenAgain = editAgain;
+  $effect(() => {
+    if (refusal !== seenRefusal) {
+      seenRefusal = refusal;
+      reqEditing = false;
+      reqEdit = { retimed: {}, dropped: {} };
+    }
+    if (editAgain !== seenAgain) {
+      seenAgain = editAgain;
+      void startReqEdit();
+    }
+  });
+
+  function approveEdited() {
+    if (!approvesSomething(asked, reqEdit)) return;
+    const body: ApproveRequest = { version: p.version, edit: editBody(asked, reqEdit) };
+    if (p.choices !== null) body.choices = { ...choices };
+    via = 'edit';
+    onapprove(body);
+  }
+  const band = (c: number | null) => (c === null ? 'unknown' : c >= 0.8 ? 'high' : c >= 0.6 ? 'mid' : 'low');
+  const stop = $derived(blocked(p));
+  const reqEditable = $derived(requestEditable(p) && !stop);
+  const conflicted = $derived(p.preview.conflicts.length > 0);
+  const refused = $derived(locked && isProposal(p));
+  /** Wide Extractor items (VarRail2): header across, thread beside the decision card. */
+  const stacked = $derived(!bar && isProposal(p));
+  const expiry = $derived(proposalExpiry(p, now, timeZone));
+  const confText = $derived(p.confidence === null ? 'no score' : `${p.confidence.toFixed(2)} confident`);
+  /** The edit picker's boss week; null when the proposed time cannot be read. */
+  const editing = $derived(editOpen && editable(p) && !stop);
+  const editAt = $derived(editable(p) ? editWeek(p, week, week?.days[0]?.dow ?? week?.reset ?? 'Thu', isoToday(now, timeZone)) : null);
+  const editField = $derived(editAt ? liveRuns(editAt.runs) : []);
+  const editNames = $derived(namesIn(editAt?.runs ?? []));
+  /** The run being moved (its length and who plays), or the proposed party for a new run. */
+  const editSubject = $derived.by(() => {
+    const run = editField.find((r) => r.id === p.run_id);
+    const slot = editAt?.slot ?? { day: 0, time: null };
+    return run ?? { id: p.run_id ?? '', title: '', day: slot.day, time: slot.time, minutes: step, members: p.participants.map((m) => m.id) };
+  });
+  let editButton = $state<HTMLButtonElement>();
+  let toggleButton = $state<HTMLButtonElement>();
+
+  // Cancel edit or Escape: the picker closes and focus returns to what opened it.
+  async function closeEdit() {
+    editOpen = false;
+    await tick();
+    (bar ? toggleButton : editButton)?.focus({ preventScroll: true });
+  }
+  const pickedLabel = $derived.by(() => {
+    const day = picked && editAt?.days[picked.day];
+    return picked && day ? `${day.dow}${day.date ? ` ${day.date.slice(8, 10)}` : ''} ${picked.time ?? ''}`.trim() : '';
+  });
+  /** The reason Approve is held back, when it is: describes the actions. */
+  const whyId = $derived(refused || stop ? `${uid}-why` : undefined);
+
+  // What each change field is called on screen ("Would change · participants").
+  const FIELD: Record<string, string> = { slot: 'slot', participants: 'participants', day_time: 'weekly time', new_fixed: 'new weekly timing', new_run: 'new run' };
+  const fieldName = (field: string) => FIELD[field] ?? field.replaceAll('_', ' ');
+  /** A run status as its word and chip tone ("at_risk" → "At risk", risk); unknown values stay as sent. */
+  const CHIP_TONE = { success: 'ok', danger: 'risk', warning: 'warn', info: 'neutral', neutral: 'neutral' } as const;
+  function statusChip(value: string) {
+    const known = value in STATUS_WORDS ? (value as RunStatus) : null;
+    const word = known ? STATUS_WORDS[known] : value.replaceAll('_', ' ');
+    return { word: word.charAt(0).toUpperCase() + word.slice(1), tone: known ? CHIP_TONE[RUN_TONE[known]] : ('neutral' as const) };
+  }
+  /** A participants change as chips: kept, removed (struck) and added names, from the two lists. */
+  function roster(from: string, to: string) {
+    const list = (text: string) => text.split(',').map((n) => n.trim()).filter((n) => n && n !== '—');
+    const before = list(from);
+    const after = list(to);
+    return [
+      ...before.map((name) => ({ name, state: after.includes(name) ? 'kept' : 'removed' })),
+      ...after.filter((name) => !before.includes(name)).map((name) => ({ name, state: 'added' })),
+    ];
+  }
+
+  // The thread (B_PhoneInbox): the channel thread around the evidence, each
+  // message marked `used` when the proposal cites it; without one (member
+  // requests, older items, an empty thread) the evidence alone, all of it
+  // used. The server leaves deleted or pruned messages out of the thread, but
+  // the evidence still names them as missing: they are merged back in, used,
+  // so a cited message never silently disappears. The Used/All toggle shows
+  // when some messages are not used, and starts on Used (on All when none is).
+  type Message = Evidence & { used?: boolean };
+  const messages = $derived<Message[]>(p.thread?.length ? withGone(p.thread, p.evidence) : p.evidence);
+  const usedCount = $derived(messages.filter((m) => m.used !== false).length);
+  let showAllPicked = $state<boolean | null>(null);
+  const showAll = $derived(showAllPicked ?? usedCount === 0);
+  const shownMessages = $derived(showAll ? messages : messages.filter((m) => m.used !== false));
+  /** The thread's time span, "Mon 28 Sep 21:00–22:00" when it is one day. */
+  const span = $derived.by(() => {
+    const ats = messages.map((m) => m.at).filter(Boolean);
+    const [a, b] = [ats[0], ats.at(-1)];
+    if (!a || !b || a === b) return a ?? '';
+    const split = (at: string) => [at.slice(0, at.lastIndexOf(' ')), at.slice(at.lastIndexOf(' ') + 1)];
+    const [da, ta] = split(a);
+    const [db, tb] = split(b);
+    return da === db ? `${da} ${ta}–${tb}` : `${a} – ${b}`;
+  });
+  /** Where the conversation is in Discord: the first used message that still exists. */
+  const discordUrl = $derived(messages.find((m) => m.used !== false && m.url && !m.missing)?.url ?? null);
+  /** "Wed 30 Sep 23:30" as its date and its time, so the decision card can set the time under the date. */
+  const clock = (text: string) => /^(.+) (\d{1,2}:\d{2})$/.exec(text)?.slice(1, 3) as [string, string] | undefined;
+
+  const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  /** A sortable minute from a message's `at` ("Mon 28 Sep 21:00"), or null when it has no such date. */
+  function minuteOf(at: string): number | null {
+    const m = /(\d{1,2}) ([A-Z][a-z]{2})\w* (\d{1,2}):(\d{2})/.exec(at);
+    const month = m ? MONTHS.indexOf(m[2]!) : -1;
+    return m && month >= 0 ? ((month * 31 + Number(m[1])) * 24 + Number(m[3])) * 60 + Number(m[4]) : null;
+  }
+  const snowflake = (id: string) => (/^\d{15,20}$/.test(id) ? BigInt(id) : null);
+  /** Whether `a` was sent before `b`: by time, then by Discord id; unknown order is "no". */
+  function before(a: Message, b: Message): boolean {
+    const [x, y] = [minuteOf(a.at), minuteOf(b.at)];
+    if (x !== null && y !== null && x !== y) return x < y;
+    const [i, j] = [snowflake(a.id), snowflake(b.id)];
+    return i !== null && j !== null && i < j;
+  }
+  /** The thread plus the cited messages it lacks because they are gone, each in its place in time. */
+  function withGone(thread: Message[], evidence: Evidence[]): Message[] {
+    const out = [...thread];
+    for (const gone of evidence.filter((e) => e.missing && !thread.some((m) => m.id === e.id))) {
+      const line: Message = { ...gone, used: true };
+      const at = out.findIndex((m) => before(line, m));
+      out.splice(at < 0 ? out.length : at, 0, line);
+    }
+    return out;
+  }
+
+  function approveEdit() {
+    if (!picked || !editAt || editBlocked) return;
+    via = 'move';
+    onmove(editText(picked, editAt.days));
+  }
+
+  function approve() {
+    const body: ApproveRequest = { version: p.version };
+    // A timing change always names its choices, `{}` when no run is listed.
+    if (p.choices !== null) body.choices = { ...choices };
+    via = 'approve';
+    onapprove(body);
+  }
+</script>
+
+<!-- Two layouts share these parts. Self-service items and narrow frames
+     (B_InboxSelf, B_PhoneInbox): the item's column beside the decision pane.
+     Wide Extractor items (VarRail2): the header across the top, then the
+     thread panel beside a 300 px decision card that holds the change. -->
+{#snippet facts()}
+  <!-- The facts as running text: they wrap, each fact whole, and are never cut. -->
+  <p class="proposal__meta" data-fid="inbox-meta">
+    <span class="chip proposal__source">{SOURCE_LABEL[p.source]}</span>
+    {#if p.source !== 'self_service' && !stacked}
+      <span class="conf conf--{band(p.confidence)}">{confText}</span>
+    {/if}
+    <span class="proposal__fact proposal__fact--aside mono">#{p.short_id}</span>
+    <span class="proposal__fact proposal__fact--aside">read {p.read_at}</span>
+    {#if p.channel && !(stacked && messages.length)}<span class="proposal__fact">{p.channel}</span>{/if}
+    {#if p.card_url && !stacked}<a class="proposal__fact proposal__card" {...discordLink(p.card_url)}>See the card</a>{/if}
+  </p>
+{/snippet}
+
+{#snippet consequence()}
+  <!-- What approving does beyond the change itself (VarRail2), only when the API says. -->
+  {#if p.consequence}<p class="proposal__consequence" data-fid="decision-consequence">{p.consequence}</p>{/if}
+{/snippet}
+
+{#snippet would()}
+  <!-- What would change: one card (mockup `.scard`); in the wide Extractor decision card, its head. -->
+  <div class="proposal__would" data-fid="inbox-change">
+    <h3 class="cap proposal__cap">Would change{#if p.preview.changes.length === 1}<span class="proposal__capfield">· {fieldName(p.preview.changes[0]!.field)}</span>{/if}</h3>
+    {#if p.preview.changes.length}
+      <ul class="proposal__changes">
+        {#each p.preview.changes as change, i (i)}
+          <li>
+            {#if p.preview.changes.length > 1}<span class="proposal__field">{fieldName(change.field)}</span>{/if}
+            {#if change.field === 'participants'}
+              <span class="proposal__people">
+                {#each roster(change.from, change.to) as person, n (n)}
+                  {#if person.state === 'removed'}<del class="proposal__person proposal__person--out">{person.name}<span class="vh"> (leaves)</span></del>
+                  {:else if person.state === 'added'}<ins class="proposal__person proposal__person--in">{person.name}<span class="vh"> (joins)</span></ins>
+                  {:else}<span class="proposal__person">{person.name}</span>{/if}
+                {/each}
+              </span>
+            {:else if change.field === 'status'}
+              <!-- A status change as two chips in the run-status words, never the raw value. -->
+              <span class="proposal__status">
+                {#if change.from && change.from !== '—'}<del class="proposal__wasstatus"><StatusChip tone="neutral">{statusChip(change.from).word}</StatusChip></del> <span aria-hidden="true">→</span><span class="vh">to</span>{/if}
+                <StatusChip tone={statusChip(change.to).tone}>{statusChip(change.to).word}</StatusChip>
+              </span>
+            {:else}
+              <span class="proposal__slot">
+                {#if change.from && change.from !== '—'}<span class="mono was">{change.from}</span> <span aria-hidden="true">→</span><span class="vh">to</span>{/if}
+                <strong class="mono proposal__to">{#if clock(change.to)}<span class="proposal__todate">{clock(change.to)![0]}</span> {clock(change.to)![1]}{:else}{change.to}{/if}</strong>
+              </span>
+            {/if}
+          </li>
+        {/each}
+      </ul>
+    {:else}
+      <p class="note">
+        <strong class="mono">{p.when}</strong>
+        {#if p.participants.length}<span class="proposal__people">{#each p.participants as person (person.id)}<span class="proposal__person"><Name kind="member" id={person.id} name={person.name} /></span>{/each}</span>{/if}
+      </p>
+    {/if}
+    {#if p.preview.no_effect}<p class="note">Already in effect: approving would change nothing.</p>{/if}
+    {#if p.public_summary}<p class="note">The member sees: “{p.public_summary}”{#if p.expires_at && !expiry} · expires <span class="mono">{p.expires_at}</span>{/if}</p>{/if}
+    {#if expiry}
+      <!-- Drains toward expiry; the last fifth turns the warning colour and says so. -->
+      <div class="proposal__expiry" class:proposal__expiry--warn={expiry.warn} data-fid="inbox-expiry">
+        <p class="proposal__expirytext">Expires <span class="mono">{p.expires_at}</span> · {expiry.text}</p>
+        <WavyProgress
+          class="wavy--inline"
+          value={expiry.left}
+          max={expiry.span}
+          wavy={false}
+          tone={expiry.warn ? 'warn' : 'accent'}
+          label="Time left to decide"
+          text="{expiry.text}, expires {p.expires_at}"
+        />
+      </div>
+    {/if}
+    <!-- Outside the decision card the change card holds it, never bare text on the ground. -->
+    {#if !stacked}{@render consequence()}{/if}
+  </div>
+  {#if stacked}{@render consequence()}{/if}
+
+{/snippet}
+
+  {#snippet approveKey()}
+    {#if editing}
+      <!-- While editing, the key approves the picked slot and names it (P_MoveWidths). -->
+      <button class="btn btn--primary btn--key decision__approve" data-fid="decision-approve" type="button" disabled={busy || refused || editBlocked} aria-describedby={whyId} onclick={approveEdit}
+        ><Icon name="check" /><PendingLabel pending={busy && via === 'move'} label="Approving…">Approve · <span class="mono">{pickedLabel}</span></PendingLabel></button
+      >
+    {:else}
+      <button class="btn btn--primary btn--key decision__approve" data-fid="decision-approve" type="button" disabled={busy || Boolean(stop) || refused} aria-describedby={whyId} onclick={approve}
+        ><Icon name="check" /><PendingLabel pending={busy && via === 'approve'} label="Approving…">Approve</PendingLabel></button
+      >
+    {/if}
+  {/snippet}
+  {#snippet why()}
+    <!-- Only when Approve is held back (refused or blocked). -->
+    {#if whyId}
+      <p class="decision__why" data-fid="decision-note" id={whyId}>
+        {#if refused}{DISCORD_ONLY} Members' requests can still be decided here.
+        {:else}<strong>Can’t approve:</strong> {stop}{/if}
+      </p>
+    {/if}
+  {/snippet}
+  {#snippet editForm()}
+    {#if editable(p) && !stop && editAt}
+      <div id="{uid}-edit" class:proposal__edit--open={editOpen} class="proposal__edit">
+        {#if editOpen}
+          <MovePicker
+            fids={{ picker: 'move-picker', type: 'move-type', error: 'move-error', suggest: 'move-suggest', clash: 'move-clash', result: 'move-result', submit: 'move-submit' }}
+            days={editAt.days}
+            subject={editSubject}
+            own={editAt.own}
+            initial={editAt.slot}
+            field={editField}
+            names={editNames}
+            {step}
+            variant="card"
+            legend="Edit, then approve"
+            clashTail="Approving still works."
+            busy={busy || refused}
+            bind:value={picked}
+            bind:blocked={editBlocked}
+            autofocus
+            onsubmit={approveEdit}
+            oncancel={() => void closeEdit()}
+          />
+        {:else if !bar}
+          <button class="btn proposal__edit-open" type="button" bind:this={editButton} disabled={busy || refused} aria-describedby={whyId} onclick={() => (editOpen = true)}
+            ><Icon name="edit" />Edit, then approve</button
+          >
+        {/if}
+      </div>
+    {/if}
+  {/snippet}
+  {#snippet rejectKey()}
+    <!-- When Approve is blocked, Reject becomes the key action (risk fill). -->
+    <button class="btn btn--danger decision__reject" data-fid="decision-reject" class:btn--risk={Boolean(stop) && !refused} class:btn--key={Boolean(stop) && !refused} type="button" disabled={refused} aria-describedby={whyId} onclick={onreject}>Reject…</button>
+  {/snippet}
+
+  <!-- B_InboxEdit / B_InboxEditConflict: the request's changes, editable (day/time, Drop / Restore) or read-only. -->
+  {#snippet requested()}
+    <div class="proposal__would reqcard" data-fid="inbox-change" bind:this={reqFirst}>
+      <div class="reqcard__head">
+        <h3 class="cap proposal__cap">Requested changes · {asked.length}</h3>
+        {#if reqEditing}<span class="reqcard__editing"><Icon name="edit" />Editing · not saved</span>
+        {:else if changedFrom}<StatusChip tone="warn">version {p.version}</StatusChip>{/if}
+      </div>
+      {#if bar && lead}
+        <!-- Phones: the summary and consequence sit inside the change card. -->
+        <div class="reqcard__summary" data-fid="inbox-edit-summary">
+          <span class="reqcard__line">{#if lead.now}<span class="mono was">{lead.now}</span> <span aria-hidden="true">→</span><span class="vh">to</span>{/if}
+            <b class="mono">{leadSlot ? slotText(leadSlot) : lead.asked}</b></span
+          >
+          {#if p.consequence}<span class="proposal__consequence" data-fid="decision-consequence">{p.consequence}</span>{/if}
+        </div>
+      {/if}
+      {#if reqEditing}
+        {#each asked as c, i (c.id)}
+          {@const off = Boolean(reqEdit.dropped[c.id])}
+          {@const slot = slotOf(c, reqEdit)}
+          <div class="reqop" class:reqop--off={off} data-fid="inbox-edit-op">
+            <div class="reqop__head">
+              <span class="reqop__ord mono">{i + 1}</span>
+              <span class="reqop__kind">{PART[c.part] ?? p.kind_label}</span>
+              <b class="reqop__title">{#if off}<s>{partTitle(c.part, c.asked)}</s>{:else}{partTitle(c.part, c.asked)}{/if}</b>
+              {#if off}<StatusChip tone="risk">Dropped</StatusChip>{/if}
+              <button class="btn reqop__toggle" type="button" disabled={busy || (!off && asked.filter((a) => !reqEdit.dropped[a.id]).length === 1)} aria-label="{off ? 'Restore' : 'Drop'} change {i + 1}: {c.label}" onclick={() => toggleDrop(c.id)}>{off ? 'Restore' : 'Drop'}</button>
+            </div>
+            {#if c.retimable && !off && slot}
+              <p class="reqop__legend">{#if c.now}<span>Now <span class="mono was">{c.now}</span></span>{/if}<span><i class="reqop__asked" aria-hidden="true"></i>{member} asked <span class="mono">{c.asked}</span></span></p>
+              <div class="reqop__days" data-fid="inbox-edit-day">
+                <DayStrip days={weekdayStrip.map((d) => ({ ...d, from: d.value === c.day, label: `${d.label}${d.value === c.day ? ` (${member} asked)` : ''}` }))} value={slot.day} label="Day for change {i + 1}" compact onpick={(day) => setSlot(c.id, { day, time: slot.time })} />
+              </div>
+              <div class="reqop__time">
+                <div class="reqop__stepper" data-fid="inbox-edit-time" class:reqop__stepper--changed={retimed(c, reqEdit)}>
+                  <TimeStepper value={minutes(slot.time)} {step} label="Time for change {i + 1}" onchange={(m) => setSlot(c.id, { day: slot.day, time: hhmm(m) })} />
+                </div>
+                <span class="reqop__yours">Your edit: <b class="mono">{slotText(slot)}</b></span>
+                {#if retimed(c, reqEdit)}<button class="linklike reqop__reset" type="button" onclick={() => setSlot(c.id, { day: c.day ?? slot.day, time: c.time ?? slot.time })}>Use {c.asked}</button>{/if}
+              </div>
+            {/if}
+          </div>
+        {/each}
+      {:else}
+        <ol class="reqops">
+          {#each asked as c, i (c.id)}
+            {@const changed = changedFrom && changedFrom.asked[c.id] !== undefined && changedFrom.asked[c.id] !== c.asked}
+            <li class="reqop reqop--read" data-fid="inbox-edit-op">
+              <span class="reqop__ord mono">{i + 1}</span>
+              <span class="reqop__kind">{PART[c.part] ?? p.kind_label}</span>
+              <span class="reqop__text">
+                <b>{c.part === 'day_time' ? `${subject} · day and time` : subject}</b>
+                <span>{#if c.now && c.part !== 'party'}<span class="mono">{c.now}</span> → <b class="mono">{c.asked}</b>{:else if c.part === 'party'}{c.asked.replace(/^add /, 'adds ').replace(/^remove /, 'removes ')}{:else}{c.asked}{/if}{#if changed} <StatusChip tone="risk">changed in version {p.version}</StatusChip>{/if}</span>
+              </span>
+            </li>
+          {/each}
+        </ol>
+        {#if p.public_summary}<p class="note">The member sees: “{p.public_summary}”</p>{/if}
+      {/if}
+    </div>
+    {#if reqEditing}
+      <p class="reqnote" data-fid="inbox-edit-note"><Icon name="info" /><span>{memberNote(member, subject, asked, reqEdit)}</span></p>
+    {/if}
+  {/snippet}
+
+  <!-- The decision card for an editable request: what it would change, Approve (edited), Edit before approving. -->
+  {#snippet reqApprove()}
+    {#if reqEditing}
+      <button class="btn btn--primary btn--key decision__approve" data-fid="decision-approve" type="button" disabled={busy || !approvesSomething(asked, reqEdit)} onclick={approveEdited}
+        ><Icon name="check" /><PendingLabel pending={busy && via === 'edit'} label="Approving…">Approve edited</PendingLabel></button
+      >
+    {:else}
+      {@render approveKey()}
+    {/if}
+  {/snippet}
+  {#snippet reqDecision()}
+    {#if lead}
+      <div class="proposal__would reqwould">
+        <h3 class="cap proposal__cap">Would change · {lead.part === 'day_time' ? 'weekly timing' : (PART[lead.part] ?? 'request').toLowerCase()}</h3>
+        {#if lead.now}<span class="mono was">{lead.now}</span>{/if}
+        <strong class="mono proposal__to">{leadSlot ? slotText(leadSlot) : lead.asked}</strong>
+        {#if reqEditing && retimed(lead, reqEdit)}<p class="note">{member} asked <span class="mono">{lead.asked}</span> · edited by you</p>{/if}
+      </div>
+    {/if}
+    {#if p.consequence}<p class="proposal__consequence" data-fid="decision-consequence">{p.consequence}</p>{/if}
+    {@render presenceNote()}
+    {@render reqApprove()}
+    {@render why()}
+    {#if !reqEditing}
+      <button class="btn proposal__edit-open reqedit" data-fid="decision-edit" type="button" bind:this={reqButton} disabled={busy} onclick={() => void startReqEdit()}><Icon name="edit" />Edit before approving</button>
+    {/if}
+    <span class="decision__spacer" aria-hidden="true"></span>
+    {#if reqEditing}
+      <div class="decision__footrow" data-fid="decision-foot">
+        <button class="btn btn--ghost proposal__edit-cancel" data-fid="decision-cancel-edit" type="button" onclick={() => void stopReqEdit()}>Cancel edit</button>
+        {@render rejectKey()}
+      </div>
+    {:else}
+      {@render rejectKey()}
+      <p class="decision__foot" data-fid="decision-foot">Reject tells the member, with your reason.</p>
+    {/if}
+  {/snippet}
+  {#snippet presenceNote()}
+    {#if p.self_service && !bar}<PresenceNote list={presence.list} kind="request" variant="card" />{/if}
+  {/snippet}
+
+<article class="proposal" class:proposal--stacked={stacked} aria-labelledby="{uid}-title">
+  <!-- The item's column (header, then the thread panel). -->
+  <div class="proposal__main" data-fid="inbox-detail">
+  <header class="proposal__head" data-fid="inbox-head">
+    {#if p.bosses[0]}<span class="proposal__art" data-fid="inbox-avatar" aria-hidden="true"><Portrait boss={p.bosses[0]} size="md" /></span>{/if}
+    <div class="proposal__headtext">
+      <h2 class="proposal__title" data-fid="inbox-title" id="{uid}-title">
+        {p.kind_label} — {#each p.bosses as boss (boss.token)}<BossTag {boss} />{/each}
+      </h2>
+      {#if stacked}
+        <!-- What Kanade read; the facts go to the thread's foot (or stay here without a thread). -->
+        {#if p.summary}<p class="proposal__summary" data-fid="inbox-summary">{p.summary}</p>{/if}
+        {#if !messages.length}{@render facts()}{/if}
+      {:else}
+        {@render facts()}
+      {/if}
+    </div>
+    {#if stacked}
+      <!-- The confidence as the burst badge (VarRail2), in words for screen readers. -->
+      <span class="proposal__burst proposal__burst--{band(p.confidence)}" data-fid="inbox-conf"
+        ><span class="mono" aria-hidden="true">{p.confidence === null ? '–' : p.confidence.toFixed(2).replace(/^0/, '')}</span><span class="vh">{confText}</span></span
+      >
+    {/if}
+  </header>
+  {#if p.self_service}<PresenceButton list={presence.list} kind="request" variant={bar ? 'wide' : 'pill'} />{/if}
+  <LiveRegion message={presence.announcement} />
+
+  {#snippet panel()}
+  <ThreadPanel label="Proposal thread and changes">
+
+  {#if p.self_service}
+    <!-- The member's own words as a speech bubble (mockup `.bub2`). -->
+    <div class="proposal__bubble" data-fid="inbox-quote">
+      <p class="cap">Sent by <Name kind="member" id={p.self_service.member.id} name={p.self_service.member.name} /> <span class="vh">as a member request.</span></p>
+      {#if p.self_service.note}<p class="proposal__said">“{p.self_service.note}”</p>{/if}
+    </div>
+  {/if}
+
+  {#if !stacked}{#if reqEditable}{@render requested()}{:else}{@render would()}{/if}{/if}
+
+  {#if conflicted}
+    <div class="proposal__conflicts" data-fid="inbox-risk" role="group" aria-labelledby="{uid}-conflicts">
+      <h3 class="cap proposal__cap" id="{uid}-conflicts">{isProposal(p) ? 'Changed since it was read' : 'Changed since the member asked'}</h3>
+      {#each p.preview.conflicts as c, i (i)}
+        <p>{c.field}: it was based on <span class="mono">{c.expected}</span>, it is now <span class="mono">{c.found}</span>.</p>
+      {/each}
+    </div>
+  {/if}
+
+  {#if p.choices?.length}
+    <fieldset class="proposal__choices" data-fid="inbox-choices">
+      <legend class="cap">Runs of this weekly timing</legend>
+      {#each p.choices as choice (choice.run_id)}
+        <div class="proposal__choice" role="radiogroup" aria-label="{choice.label}, {choice.when}">
+          <span>{choice.label} · <span class="mono">{choice.when}</span>{#if choice.amended} <span class="tone tone--warning">amended</span>{/if}</span>
+          <label><input type="radio" name="{uid}-{choice.run_id}" value="update" bind:group={choices[choice.run_id]} /> Update to the new timing</label>
+          <label><input type="radio" name="{uid}-{choice.run_id}" value="keep" bind:group={choices[choice.run_id]} /> Keep as it is</label>
+        </div>
+      {/each}
+    </fieldset>
+  {/if}
+
+  {#if messages.length}
+    <section class="proposal__thread" data-fid="phone-thread" aria-labelledby="{uid}-thread">
+      <div class="proposal__threadhead" data-fid="phone-thread-bar">
+        <h3 class="proposal__threadtitle" id="{uid}-thread">Thread <span class="mono">· {messages.length} message{messages.length === 1 ? '' : 's'}</span></h3>
+        {#if stacked}
+          {#if p.channel}<span class="proposal__threadfact">{p.channel}</span>{/if}
+          {#if span}<span class="proposal__threadfact proposal__threadspan mono">{span}</span>{/if}
+        {/if}
+        {#if usedCount < messages.length}
+          <div class="seg" role="group" aria-label="Messages shown">
+            <button type="button" aria-pressed={!showAll} onclick={() => (showAllPicked = false)}>Used {usedCount}</button>
+            <button type="button" aria-pressed={showAll} onclick={() => (showAllPicked = true)}>All</button>
+          </div>
+        {/if}
+      </div>
+      <ul class="evidence" aria-label="Evidence">
+        {#each shownMessages as line (line.id)}
+          {@const who = line.author_id ? null : directory.label('member', '', line.author)}
+          <li class="msg" data-fid="phone-thread-msg" class:msg--used={line.used !== false} class:msg--gone={line.missing}>
+            <Avatar class="msg__av" src={line.author_id ? memberAvatar(line.author_id) : null} name={who ?? line.author} />
+            <div class="msg__body">
+              <p class="msg__line">
+                <span class="msg__who">{#if line.author_id}<Name kind="member" id={line.author_id} name={line.author} />{:else}{who}{/if}</span>
+                <!-- The time opens the message in Discord (no separate "open" link, as on the board). -->
+                {#if line.url && !line.missing}<a class="msg__at" {...discordLink(line.url)}>{line.at}<span class="vh"> (open in Discord)</span></a>
+                {:else}<span class="msg__at">{line.at}</span>{/if}
+                {#if line.used !== false}<span class="vh">(used)</span>{#if stacked}<span class="cap msg__used" aria-hidden="true">used</span>{/if}{/if}
+              </p>
+              {#if line.missing}<p class="msg__text">This message is no longer stored.</p>
+              {:else}<p class="msg__text"><Mentions text={line.content ?? ''} /></p>{/if}
+            </div>
+          </li>
+        {/each}
+      </ul>
+      {#if stacked}
+        <div class="proposal__threadfoot" data-fid="phone-thread-foot">
+          {@render facts()}
+          {#if discordUrl}<a class="proposal__discord" {...discordLink(discordUrl)}>Open in Discord</a>{/if}
+        </div>
+      {/if}
+    </section>
+  {/if}
+  </ThreadPanel>
+  {/snippet}
+
+  {#if stacked}
+    <div class="proposal__row">
+      {@render panel()}
+      <DecisionCard label="Decide this change" overline="">
+        {@render would()}
+        {#if editing}
+          {@render editForm()}
+          {@render approveKey()}
+          {@render why()}
+        {:else}
+          {@render approveKey()}
+          {@render why()}
+          {@render editForm()}
+        {/if}
+        <span class="decision__spacer" aria-hidden="true"></span>
+        <div class="decision__footrow" data-fid="decision-foot">
+          {#if editing}<button class="btn btn--ghost proposal__edit-cancel" type="button" onclick={() => void closeEdit()}>Cancel edit</button>
+          {:else if p.card_url}<a class="proposal__card" {...discordLink(p.card_url)}>See the card</a>{/if}
+          {@render rejectKey()}
+        </div>
+        <p class="field__error" id="{uid}-err" role="alert">{error}</p>
+      </DecisionCard>
+    </div>
+  {:else}
+    {@render panel()}
+  {/if}
+  </div>
+
+  {#if !stacked}
+  <DecisionCard label="Decide this change" overline={reqEditable && !bar ? '' : 'Decision'}>
+    {#if bar && reqEditable}
+      <!-- B_PhoneInboxEdit: the pencil (pressed while editing) toggles the editor; Approve edited approves it. -->
+      {@render why()}
+      <button
+        class="btn proposal__edit-toggle reqtoggle"
+        data-fid="decision-edit"
+        bind:this={reqButton}
+        type="button"
+        aria-label={reqEditing ? 'Stop editing' : 'Edit before approving'}
+        aria-pressed={reqEditing}
+        onclick={() => void (reqEditing ? stopReqEdit() : startReqEdit())}><Icon name="edit" /></button
+      >
+      {@render rejectKey()}
+      {@render reqApprove()}
+    {:else if bar}
+      {@render why()}
+      {@render editForm()}
+      {#if editable(p) && !stop && editAt}
+        <!-- The pencil opens the edit picker above the bar; Approve then approves the picked slot. -->
+        <button
+          class="btn proposal__edit-toggle"
+          bind:this={toggleButton}
+          type="button"
+          aria-label="Show the edit field"
+          aria-expanded={editOpen}
+          aria-controls="{uid}-edit"
+          onclick={() => (editOpen = !editOpen)}><Icon name="edit" /></button
+        >
+      {/if}
+      {@render rejectKey()}
+      {@render approveKey()}
+    {:else if reqEditable}
+      {@render reqDecision()}
+    {:else}
+      {@render presenceNote()}
+      {@render approveKey()}
+      {@render why()}
+      {@render editForm()}
+      <span class="decision__spacer" aria-hidden="true"></span>
+      {@render rejectKey()}
+      <p class="decision__foot" data-fid="decision-foot">{p.self_service ? 'Reject tells the member, with your reason.' : 'Reject marks the card in Discord as rejected.'}</p>
+    {/if}
+    <p class="field__error" id="{uid}-err" role="alert">{error}</p>
+  </DecisionCard>
+  {/if}
+</article>

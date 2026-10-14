@@ -1,0 +1,9 @@
+// BossStack (a row's bosses: overlapping portraits, names, difficulty pills).
+// Loaded straight after core/_row-expansion.scss, where it used to live.
+.boss-stack { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.boss-stack__portraits { display: flex; flex: none; isolation: isolate; }
+.boss-stack__portraits .portrait { width: 28px; height: 28px; border-width: 1.5px; border-radius: 8px; }
+.boss-stack__portraits .portrait + .portrait { margin-inline-start: -10px; }
+.boss-stack__names { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.boss-stack__pills { display: flex; flex: none; gap: 3px; }
+.boss-stack__pills .pill { padding: 0 5px; font-size: var(--fs-micro); letter-spacing: 0; }

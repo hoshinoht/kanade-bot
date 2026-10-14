@@ -1,0 +1,5 @@
+{
+  "schema_version": "v5-persona-v1",
+  "schema": "schema.json",
+  "vectors": ["persona.json"]
+}

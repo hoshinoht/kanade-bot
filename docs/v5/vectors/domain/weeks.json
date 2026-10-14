@@ -1,0 +1,186 @@
+{
+  "cases": [
+    {
+      "case_id": "weeks.reset.exact",
+      "expected": {
+        "value": "2026-08-27T00:00:00+08:00"
+      },
+      "input": {
+        "at": "2026-08-27T00:00:00+08:00",
+        "reset_time": "00:00:00",
+        "reset_weekday": 3,
+        "timezone": "Asia/Kuala_Lumpur"
+      },
+      "op": "week_start"
+    },
+    {
+      "case_id": "weeks.reset.precise-before",
+      "expected": {
+        "value": "2026-08-20T00:00:00+08:00"
+      },
+      "input": {
+        "at": "2026-08-26T23:59:59+08:00",
+        "reset_time": "00:00:00",
+        "reset_weekday": 3,
+        "timezone": "Asia/Kuala_Lumpur"
+      },
+      "op": "week_start"
+    },
+    {
+      "case_id": "weeks.reset.utc-input",
+      "expected": {
+        "value": "2026-08-27T00:00:00+08:00"
+      },
+      "input": {
+        "at": "2026-08-26T16:30:00+00:00",
+        "reset_time": "00:00:00",
+        "reset_weekday": 3,
+        "timezone": "Asia/Kuala_Lumpur"
+      },
+      "op": "week_start"
+    },
+    {
+      "case_id": "weeks.reset.late-before",
+      "expected": {
+        "value": "2026-08-20T12:00:00+08:00"
+      },
+      "input": {
+        "at": "2026-08-27T09:00:00+08:00",
+        "reset_time": "12:00:00",
+        "reset_weekday": 3,
+        "timezone": "Asia/Kuala_Lumpur"
+      },
+      "op": "week_start"
+    },
+    {
+      "case_id": "weeks.calendar.distinct-from-boss",
+      "expected": {
+        "value": {
+          "boss_start": "2026-09-03T00:00:00+08:00",
+          "end": "2026-09-14T00:00:00+08:00",
+          "start": "2026-09-07T00:00:00+08:00"
+        }
+      },
+      "input": {
+        "at": "2026-09-09T12:00:00+08:00",
+        "reset_time": "00:00:00",
+        "reset_weekday": 3,
+        "timezone": "Asia/Kuala_Lumpur"
+      },
+      "op": "calendar_week_bounds"
+    },
+    {
+      "case_id": "weeks.materialised.three",
+      "expected": {
+        "value": [
+          "2026-09-03T00:00:00+08:00",
+          "2026-09-10T00:00:00+08:00",
+          "2026-09-17T00:00:00+08:00"
+        ]
+      },
+      "input": {
+        "at": "2026-09-09T12:00:00+08:00",
+        "reset_time": "00:00:00",
+        "reset_weekday": 3,
+        "timezone": "Asia/Kuala_Lumpur"
+      },
+      "op": "materialised_week_starts"
+    },
+    {
+      "case_id": "weeks.slot.late-reset-forward",
+      "expected": {
+        "value": "2026-09-03T09:00:00+08:00"
+      },
+      "input": {
+        "time": "09:00:00",
+        "timezone": "Asia/Kuala_Lumpur",
+        "week_start": "2026-08-27T12:00:00+08:00",
+        "weekday": 3
+      },
+      "op": "slot_in_week"
+    },
+    {
+      "case_id": "weeks.dst.wall-clock-end",
+      "expected": {
+        "value": "2026-03-15T00:00:00-04:00"
+      },
+      "input": {
+        "timezone": "America/New_York",
+        "week_start": "2026-03-08T00:00:00-05:00"
+      },
+      "op": "week_end"
+    },
+    {
+      "case_id": "weeks.parse-weekday.alias",
+      "expected": {
+        "value": 2
+      },
+      "input": {
+        "value": "weds"
+      },
+      "op": "parse_weekday"
+    },
+    {
+      "case_id": "weeks.parse-weekday.invalid",
+      "error_type": "ValueError",
+      "expected": {
+        "error": {
+          "message": "unknown weekday 'caturday'; expected one of mon, tue, wed, thu, fri, sat, sun",
+          "type": "ValueError"
+        }
+      },
+      "input": {
+        "value": "caturday"
+      },
+      "op": "parse_weekday"
+    },
+    {
+      "case_id": "weeks.parse-hhmm.meridiem",
+      "expected": {
+        "value": "21:30:00"
+      },
+      "input": {
+        "value": "930pm"
+      },
+      "op": "parse_hhmm"
+    },
+    {
+      "case_id": "weeks.parse-hhmm.invalid",
+      "error_type": "ValueError",
+      "expected": {
+        "error": {
+          "message": "expected a time like 21:30, 2130 or 9:30pm, got '13pm'",
+          "type": "ValueError"
+        }
+      },
+      "input": {
+        "value": "13pm"
+      },
+      "op": "parse_hhmm"
+    }
+  ],
+  "family": "weeks",
+  "provenance": {
+    "functions": [
+      "week_start",
+      "week_end",
+      "calendar_week_start",
+      "calendar_week_end",
+      "materialised_week_starts",
+      "slot_in_week",
+      "parse_weekday",
+      "parse_hhmm"
+    ],
+    "inventory_surfaces": [
+      "domain.weeks"
+    ],
+    "oracle": "legacy/python bot.domain.weeks",
+    "source_tests": [
+      "tests/test_weeks.py::test_exactly_on_the_reset_starts_the_new_week",
+      "tests/test_weeks.py::test_calendar_weeks_start_on_monday_while_boss_weeks_keep_their_reset",
+      "tests/test_weeks.py::test_slot_before_a_late_reset_is_pushed_into_the_week",
+      "tests/test_weeks.py::test_parse_hhmm"
+    ]
+  },
+  "schema_version": "v5-domain-v1"
+}

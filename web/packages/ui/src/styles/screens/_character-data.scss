@@ -1,0 +1,617 @@
+// Character data (module `character_data`; boards in
+// docs/research/2026-10-12-chardata-mockups): the roster dialog's strip
+// (manual and NEXON values side by side, Link… / Unlink… / Refresh with
+// inline confirmations), the scouter's estimate row and the run sheet's
+// Estimate panel, and Config › Character data's health cards. Admin only:
+// imported by the admin components that draw them, never by the portal.
+@use "../core/breakpoints" as *;
+@use "../core/mixins" as *;
+
+// ── The strip (B_CharLinked, B_CharStates*) ──
+.chardata {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0;
+  padding: 12px 14px;
+  border-radius: 16px;
+  background: var(--row);
+  box-shadow: inset 0 0 0 1.5px var(--line);
+}
+
+.chardata__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+}
+
+.chardata__head .status-chip .icon,
+.estimate__chips .status-chip .icon {
+  width: 13px;
+  height: 13px;
+  margin-right: 4px;
+}
+
+.chardata__title {
+  margin: 0;
+}
+
+.chardata__grow {
+  flex: 1 1 auto;
+}
+
+.chardata__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.chardata__btn.btn {
+  min-height: 36px;
+  padding: 0 14px;
+  border-radius: 18px;
+}
+
+.chardata__btn .icon {
+  width: 16px;
+  height: 16px;
+}
+
+.chardata__btn.btn[aria-disabled='true'] {
+  border-style: dashed;
+  color: var(--dim-text);
+  cursor: default;
+}
+
+.chardata--sheet .chardata__btn.btn,
+.runsheet__estimate .chardata__btn.btn {
+  min-height: 44px;
+  padding: 0 16px;
+  border-radius: 22px;
+}
+
+.chardata__cols {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.chardata__col {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  padding: 8px 12px;
+  border-radius: 12px;
+  background: var(--chip-fill);
+}
+
+.chardata__col--nexon {
+  background: var(--surface);
+  box-shadow: inset 0 0 0 1.5px var(--line);
+}
+
+.chardata__col--none {
+  background: transparent;
+  box-shadow: inset 0 0 0 1.5px var(--line-soft);
+}
+
+.chardata__value {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 6px;
+  font-size: var(--fs-body-sm);
+  line-height: 1.35;
+  font-weight: 700;
+}
+
+.chardata__dot {
+  color: var(--dim-text);
+}
+
+.chardata__q {
+  font-size: var(--fs-small);
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.chardata__sub,
+.chardata__msg,
+.chardata__foot {
+  margin: 0;
+  color: var(--dim-text);
+  font-size: var(--fs-mini);
+  line-height: 1.35;
+}
+
+.chardata__msg .icon {
+  width: 13px;
+  height: 13px;
+  vertical-align: -2px;
+}
+
+.chardata__foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+}
+
+.chardata__attrib {
+  color: var(--dim-text);
+  font-family: var(--mono);
+  font-size: 11px;
+}
+
+.chardata__confirm {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: var(--chip-fill);
+  box-shadow: inset 0 0 0 1.5px var(--line);
+  font-size: var(--fs-small);
+  line-height: 1.45;
+}
+
+.chardata__confirm--risk {
+  background: color-mix(in srgb, var(--risk) 16%, var(--surface));
+  box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--risk) 35%, var(--surface));
+  color: var(--risk-text);
+}
+
+.chardata__confirm-title {
+  font-size: var(--fs-body-sm);
+}
+
+.chardata__confirm .chardata__actions {
+  justify-content: flex-end;
+}
+
+.chardata--sheet .chardata__confirm .btn--primary {
+  flex: 1 1 auto;
+  justify-content: center;
+}
+
+// ── Scouter estimates: the strip's row (B_CharEstimate, B_EstStates) and the run sheet's panel ──
+.estimate {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 10px;
+  border-top: 1.5px solid var(--line-soft);
+}
+
+.estimate-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border-radius: 16px;
+  background: var(--row);
+  box-shadow: inset 0 0 0 1.5px var(--line);
+}
+
+.estimate__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.estimate__label {
+  display: inline-flex;
+  align-self: flex-start;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--warn) 18%, var(--surface));
+  color: var(--warn-text);
+  font-size: var(--fs-mini);
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.estimate__label .icon {
+  width: 13px;
+  height: 13px;
+}
+
+.estimate__progress {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.estimate__progress-line {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: var(--fs-mini);
+}
+
+.settings__box.estimate__error {
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 12px;
+}
+
+.estimate__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--fs-mini);
+}
+
+.estimate__table thead th {
+  padding: 5px 6px;
+  border-bottom: 1.5px solid var(--line);
+  color: var(--dim-text);
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-align: left;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.estimate__table tbody :is(th, td) {
+  font-weight: 400;
+  text-align: left;
+  padding: 2px 6px;
+  line-height: 1.3;
+  border-bottom: 1px solid var(--line-soft);
+  white-space: nowrap;
+}
+
+.estimate__table .pill {
+  padding-block: 0;
+}
+
+.estimate__table .estimate__n {
+  font-family: var(--mono);
+  text-align: right;
+}
+
+.estimate__table tr.estimate__missing td {
+  color: var(--risk-text);
+}
+
+.estimate__table .estimate__who {
+  white-space: normal;
+}
+
+// A party member still waiting for their lookup, or one that failed (the
+// others fill in regardless); its line under the name says which.
+.estimate__table tr.estimate__pending :is(th, td) {
+  color: var(--dim-text);
+}
+
+.estimate__table tr.estimate__failed td {
+  color: var(--risk-text);
+}
+
+.estimate__who-note {
+  display: block;
+  color: var(--dim-text);
+  font-size: 11px;
+  line-height: 1.3;
+}
+
+.estimate__failed .estimate__who-note {
+  color: var(--risk-text);
+}
+
+// "Assumes 100% critical rate (actual 89%)": the result is a what-if, so it
+// is said beside the numbers in the label's warning tone.
+.estimate__assumed {
+  display: inline-flex;
+  align-self: flex-start;
+  align-items: center;
+  gap: 6px;
+  color: var(--warn-text);
+  font-size: var(--fs-mini);
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.estimate__assumed .icon {
+  width: 13px;
+  height: 13px;
+  flex: none;
+}
+
+.estimate__who-note.estimate__assumed {
+  display: flex;
+  font-size: 11px;
+}
+
+.estimate__boss {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.estimate__combined {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.estimate__combined--one {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.estimate__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+// The run sheet: with the panel the aside widens and the party takes three
+// columns (B_CharEstimateRun); the phone's Party list ends with it.
+.runsheet__aside:has(> .estimate-panel) {
+  width: 440px;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.runsheet__panel--party:has(> .runsheet__aside > .estimate-panel) .runsheet__party {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.runsheet__estimate {
+  flex-shrink: 0;
+  margin-top: 6px;
+  list-style: none;
+}
+
+// ── Config › Character data (B_CfgCharHealth*) ──
+.chardata-health {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+}
+
+.chardata-health__col {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+.chardata-health__card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  margin: 0;
+  padding: 14px 16px;
+  border-radius: 20px;
+  background: var(--row);
+  box-shadow: inset 0 0 0 1.5px var(--line);
+}
+
+.chardata-health__card--warn {
+  box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--warn) 60%, var(--surface));
+}
+
+.chardata-health__card--risk {
+  box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--risk) 40%, var(--surface));
+}
+
+.chardata-health__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.chardata-health__head .status-chip .icon {
+  width: 13px;
+  height: 13px;
+  margin-right: 4px;
+}
+
+.chardata-health__title {
+  margin: 0;
+  font-size: var(--fs-body);
+}
+
+.chardata-health__facts {
+  display: grid;
+  grid-template-columns: 120px minmax(0, 1fr);
+  gap: 7px 12px;
+  align-items: baseline;
+  margin: 0;
+  font-size: var(--fs-small);
+  line-height: 1.4;
+}
+
+.chardata-health__facts dt {
+  color: var(--dim-text);
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.chardata-health__facts dd {
+  min-width: 0;
+  margin: 0;
+}
+
+.chardata-health__budget {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.chardata-health__env dd {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+}
+
+.chardata-health__post {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--risk) 8%, var(--surface));
+  font-size: var(--fs-mini);
+  line-height: 1.4;
+}
+
+@media #{$single-pane} {
+  .chardata-health {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .chardata-health__col {
+    display: contents;
+  }
+
+  // Stacked: NEXON, Scouter, Sweeper, then the environment (B_PhoneCfgCharHealth).
+  .chardata-health__env {
+    order: 1;
+  }
+
+  .chardata-health__env .chardata-health__facts {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+// ── Run sheet readiness (B_CharReady, B_PhoneCharReady) ──
+.ready {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+// A wide Fixed editor (B_FixedReady): the values line, then the bosses on the same row, wrapping.
+.ready--row {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 14px;
+}
+
+.ready__line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 8px;
+}
+
+.ready__values {
+  font-family: var(--mono);
+  font-size: var(--fs-mini);
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.ready__source {
+  color: var(--dim-text);
+  font-size: 11.5px;
+  line-height: 1.3;
+}
+
+.ready__bosses {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  @include list-reset;
+}
+
+.ready__boss {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+}
+
+.ready__boss-name {
+  color: var(--dim-text);
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.ready .status-chip {
+  min-height: 20px;
+  padding: 0 7px;
+  font-size: 11px;
+}
+
+// The scouter's reading beside the level verdict: shown, never judged (no tone).
+.ready__scouter {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.ready__estimate {
+  margin: 0 0 8px;
+  color: var(--dim-text);
+  font-size: var(--fs-small);
+}
+
+
+.ready__note {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 4px 10px;
+  margin: 0 0 8px;
+  font-size: var(--fs-small);
+}
+
+
+.runsheet__readiness {
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
+  min-width: 0;
+}
+
+
+.runsheet--narrow .ready {
+  padding-left: 36px;
+}
+
+.runsheet--narrow .ready__note,
+.runsheet--narrow .ready__estimate,
+.runsheet--narrow .ready__hint {
+  flex-shrink: 0;
+  margin: 0;
+  padding: 0 2px 4px;
+  list-style: none;
+}
+
+// B_CharReady / B_CharEstimateRun: the party keeps its own height beside the aside.
+.runsheet__readiness .runsheet__party {
+  flex: none;
+}
+
+.runsheet__panel--party:has(> .runsheet__aside > .estimate-panel) > .runsheet__party {
+  align-self: flex-start;
+}
+
+.ready__rules {
+  align-items: flex-start;
+}
+
+.ready__note .chardata__attrib {
+  margin-left: auto;
+}

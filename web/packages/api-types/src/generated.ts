@@ -1,0 +1,2208 @@
+// Generated from the Rust API DTOs by src/api/ts_bindings.rs; do not edit.
+// Regenerate: KANADE_WRITE_TS=1 cargo test --all-features --lib ts_bindings
+
+import type { ActorKind, Answer, ChangeRecord, ChatOutcome, ChatRoute, ContextSource, Difficulty, DifficultyName, ExtractionOutcome, IdListSource, KnowledgeDoc, MessageStyle, MissionSeries, PingLevel, ProposalKind, Refusal, RewriteKind, RewriteStage, RewriteVerdict, RowKey, RunStatus, SelfServiceMode, SignInEvent, SignInMethod, SignInRealm, Surface } from './manual';
+
+/**
+ * `common.json#/$defs/Boss`.
+ */
+export type Boss = { token: string, key: string, name: string, difficulty: Difficulty, level: number | null, portrait: string | null, portrait_sm: string | null, art: string | null, 
+/**
+ * The looping MP4 (`/art/animated/{key}`) the PWAs play instead of
+ * `art`; null where the deployment has none. Discord never reads it.
+ */
+animated: string | null, hue: number, };
+
+/**
+ * `{id, name}` for members and channels.
+ */
+export type Member = { id: string, name: string, };
+
+/**
+ * `GET /api/admin/roles` row; `color` is `#rrggbb`, absent when uncoloured.
+ */
+export type Role = { id: string, name: string, color?: string, };
+
+export type PublicStatus = { portal: 'open' | 'closed', };
+
+export type PublicMember = { id: string, display: string, avatar: string, };
+
+export type PublicSession = { member: PublicMember, fresh_until: string, };
+
+export type PublicSessionRow = { handle: string, device: string | null, signed_in_at: string, last_seen_at: string, current: boolean, };
+
+export type PublicSessions = { sessions: Array<PublicSessionRow>, generated_at: string, };
+
+export type MemberRun = { id: string, day: number, time: string | null, minutes: number, status: RunStatus, bosses: Array<Boss>, tally: Tally, participants: Array<Participant>, party: string, channel: string, fixed_id: string | null, mine: boolean, can_edit: boolean, };
+
+export type MemberWeek = { starts: string, timezone: string, reset: string, days: Array<WeekDay>, runs: Array<MemberRun>, generated_at: string, version: number, };
+
+export type MemberAllowance = { allowance: Quota | null, used: number, resets_at: string | null, queue_position: number | null, bot_busy: boolean, generated_at: string, };
+
+export type MemberOwnerRequest = { id: string, requester: Member, created_at: string, expires_at: string, status: 'open' | 'accepted' | 'declined' | 'expired' | 'withdrawn' | 'superseded', mine: boolean, };
+
+export type MemberTiming = { id: string, bosses: Array<Boss>, weekday: number, time: string, party: Array<Member>, owner: Member, owner_pinned: boolean, you_own: boolean, requests: Array<MemberOwnerRequest>, };
+
+export type MemberTimings = { timings: Array<MemberTiming>, generated_at: string, };
+
+export type MemberRunResult = { run: MemberRun, version: number, };
+
+export type MemberMoveResult = { run: MemberRun, previous: MovePrevious, version: number, };
+
+export type MemberRemoved = { by: string, at: string, };
+
+export type MemberTimingSlot = { day: number, time: string, };
+
+export type MemberRunLink = { run: MemberRun, week: 'current' | 'next' | 'past' | 'later', week_starts: string, week_ends_at: string, started: boolean, removed: MemberRemoved | null, this_week: MemberRun | null, timing: MemberTimingSlot | null, generated_at: string, };
+
+export type MemberProposed = { day: number | null, time: string | null, channel: string | null, party: Array<Member> | null, };
+
+export type MemberRequest = { id: string, kind: 'join' | 'leave' | 'swap' | 'new_fixed' | 'change_fixed', state: 'waiting' | 'approved' | 'rejected' | 'withdrawn' | 'expired', summary: string, note: string | null, run: MemberRun | null, fixed_id: string | null, bosses: Array<Boss>, channel: string | null, with: Member | null, proposed: MemberProposed | null, sent_at: string, decided_at: string | null, decided_by: string | null, reason: string | null, expires_at: string | null, 
+/**
+ * Approved with an administrator's changes; `proposed` then shows what
+ * was approved.
+ */
+edited: boolean, 
+/**
+ * The changes the approval left out, in the member's words.
+ */
+not_approved: Array<string>, };
+
+export type MemberRequestOptions = { channels: Array<Member>, members: Array<Member>, };
+
+export type MemberRequests = { requests: Array<MemberRequest>, open: number, today: number, max_open: number, max_today: number, options: MemberRequestOptions, generated_at: string, };
+
+export type MemberRequestLimit = { error: 'request_limit', message: string, limit: 'open' | 'today', };
+
+export type MyCharacters = { characters: Array<CharacterRow>, links: { [key in string]: CharacterLink }, pending: Array<PendingLink>, character_data: boolean, connected: boolean, estimates: boolean, notice_version: number, privacy_url: string | null, };
+
+export type PendingLink = { character_id: string, ign: string, class: string | null, requested_by: SettingsActor, requested_by_name: string | null, requested_at: string, expires_at: string, };
+
+export type MyCharacterCreated = { linkable: boolean, id: string, member_id: string, ign: string, world: string, class: string | null, level: number | null, role: 'main' | 'alt', 
+/**
+ * When it was retired; `null` while active.
+ */
+retired_at: string | null, created_at: string, updated_at: string, 
+/**
+ * Who made the last write (the create, else the last edit).
+ */
+updated_by: SettingsActor, 
+/**
+ * Send it back as the `PATCH` precondition.
+ */
+version: number, };
+
+export type LinkNotice = { character_id: string, ign: string, version: number, title: string, lead: string, what: NoticeSection, why: NoticeSection, how_long: NoticeSection, who: NoticeSection, as_is: string, link_label: string, cancel_label: string, request: PendingLink | null, privacy_url: string | null, attribution: string, };
+
+export type NoticeSection = { heading: string, text: string, };
+
+export type LinkOutcome = { state: 'linked' | 'linked_later' | 'busy' | 'unavailable' | 'not_found' | 'other_region', link: CharacterLink | null, };
+
+export type LinkCancelled = { request_kept: boolean, requested_by_name: string | null, };
+
+export type Unlinked = { unlinked: string, cards: number, };
+
+export type UnlinkedAll = { unlinked: Array<string>, };
+
+export type MyData = { entries: Array<MyDataEntry>, notice_version: number, privacy_url: string | null, attribution: string, };
+
+export type MyDataEntry = { character_id: string, ign: string, state: 'pending' | 'linked' | 'stale' | 'expired' | 'not_linked', retired: boolean, data: CharacterFacts | null, requested_by: SettingsActor | null, requested_by_name: string | null, requested_at: string | null, request_expires_at: string | null, linked_at: string | null, notice: number | null, consented_at: string | null, consent_surface: 'discord' | 'portal' | null, cards: Array<SharedCard>, };
+
+export type SharedCard = { channel: string | null, posted_at: string, cleared_by: string, };
+
+export type MemberEstimateLimit = { error: 'member_limited', message: string, next_at: string, };
+
+export type RunPartyCharacters = { run_id: string, slots: Array<PartyCharacterSlot>, character_data: boolean, estimates: boolean, nexon_data: boolean, attribution: string, estimate_label: string, estimate_note: string, };
+
+export type PartyCharacterSlot = { member: PartyMember, you: boolean, character: PartyCharacter | null, scouter: Array<PartyEstimate> | null, };
+
+export type PartyMember = { id: string, name: string, };
+
+export type PartyCharacter = { ign: string, class: string | null, level: number | null, level_source: 'roster' | 'nexon', as_of: string | null, };
+
+export type PartyEstimate = { boss: string, difficulty: Difficulty, 
+/**
+ * The character's share (`effective_percentage`), else the card's
+ * percentage.
+ */
+percentage: number, rating: string, estimated_minutes: number | null, 
+/**
+ * When kanade received it from the scouter.
+ */
+fetched_at: string, 
+/**
+ * The scouter assumed a 100% critical rate for this character (theirs
+ * is under it): label it "Assumes 100% critical rate (actual N%)".
+ */
+critical_rate_assumed: boolean, 
+/**
+ * The character's own critical rate with an assumed reading; `null`
+ * otherwise, or when the scouter didn't say.
+ */
+critical_rate_actual: number | null, };
+
+export type ApiError = { error: string, message: string, };
+
+export type Identity = { name: string, 
+/**
+ * Carries `?v=<version>` so a refreshed image is a new URL.
+ */
+avatar: string, banner: string, cached: boolean, 
+/**
+ * Changes whenever the name or the cached art does.
+ */
+version: string, 
+/**
+ * Admin origin only, once the gateway is `READY`.
+ */
+bot_user_id: string | null, };
+
+export type Session = { display: string, 
+/**
+ * `discord`, `tailscale` or `token`: only Discord sessions may decide proposals.
+ */
+method: SignInMethod, 
+/**
+ * The character roster module (`modules.roster`) is on: the Members
+ * sheet shows Characters. Off, its routes answer `404`.
+ */
+roster: boolean, };
+
+export type SignInMethods = { discord: boolean, 
+/**
+ * This request carries an allow-listed identity from the authenticated edge.
+ */
+tailscale: boolean, token: boolean, };
+
+/**
+ * The reminder cards the PWA labels: the day-of card and two countdowns.
+ */
+export type CardKind = "morning" | "T-1h" | "T-15m";
+
+export type CardState = "posted" | "queued" | "skipped";
+
+/**
+ * This or next boss week.
+ */
+export type WeekKey = "this" | "next";
+
+export type WeekDay = { index: number, date: string, dow: string, is_reset: boolean, is_today: boolean, };
+
+export type Tally = { on: number, total: number, };
+
+export type Participant = { id: string, name: string, answer: Answer, };
+
+export type ReminderCard = { label: CardKind, state: CardState, at: string, url: string | null, };
+
+export type RosterChange = { out: Array<Member>, in: Array<Member>, };
+
+export type Run = { id: string, day: number, time: string | null, 
+/**
+ * Derived from every boss even when an own-time run has no start clock.
+ */
+minutes: number, status: RunStatus, bosses: Array<Boss>, tally: Tally, short_id: string, participants: Array<Participant>, party: string, channel_id: string, channel: string, cards: Array<ReminderCard>, fixed_id: string | null, amended: boolean, roster_change: RosterChange | null, };
+
+export type Week = { starts: string, timezone: string, reset: string, days: Array<WeekDay>, runs: Array<Run>, generated_at: string, version: number, };
+
+export type DayStat = { day: number, answered: number, waiting: number, };
+
+export type Stats = { per_day: Array<DayStat>, };
+
+export type NextRun = { run_id: string, bosses: string, when: string, countdown: string, on: number, total: number, };
+
+export type ModelBusy = { busy: boolean, holder: string | null, };
+
+export type Summary = { next: NextRun | null, unanswered: number, 
+/**
+ * Live proposals, submitted member requests and open ownership requests.
+ */
+inbox: number, 
+/**
+ * Listed members with the bossing role, as `/api/admin/members` counts them.
+ */
+members: number, 
+/**
+ * `/api/admin/reminders` `upcoming` rows over the same two weeks.
+ */
+reminders: number, model: ModelBusy, 
+/**
+ * Notifications `quiet_mode` as the running settings hold it (the shell's chip).
+ */
+quiet_mode: boolean, 
+/**
+ * Why Re-read would be refused right now: extraction switched off (the
+ * `409 extraction_off` sentence) or no extractor composed (the `503
+ * unavailable` sentence); `null` while re-reading can run.
+ */
+rescan_off: string | null, };
+
+/**
+ * The signed-out sign-in strip: no names, ids, answers, party, channel or version.
+ */
+export type TonightRun = { 
+/**
+ * Guild-local `HH:MM`.
+ */
+time: string, 
+/**
+ * Catalog display names.
+ */
+bosses: Array<string>, 
+/**
+ * The public week's aggregate (`on`/`total`).
+ */
+tally: Tally, };
+
+export type Tonight = { 
+/**
+ * The next live run when it starts later today in the guild zone, else `null`.
+ */
+run: TonightRun | null, };
+
+export type RunResult = { run: Run, version: number, };
+
+export type MovePrevious = { day: number, time: string | null, };
+
+export type MoveResult = { run: Run, previous: MovePrevious, version: number, };
+
+export type SwapResult = { runs: [Run, Run], version: number, };
+
+export type PingResult = { message: string, };
+
+export type MemberRow = { id: string, name: string, nickname: string | null, aliases: Array<string>, runs_this_week: number, ping_level: PingLevel, persona: string | null, persona_available: boolean, bossing: boolean, access: 'staff' | 'pilot' | 'none', };
+
+export type Persona = { key: string, name: string, 
+/**
+ * The profile's one-line voice; empty when it has none.
+ */
+voice: string, };
+
+export type CharacterRow = { id: string, member_id: string, ign: string, world: string, class: string | null, level: number | null, role: 'main' | 'alt', 
+/**
+ * When it was retired; `null` while active.
+ */
+retired_at: string | null, created_at: string, updated_at: string, 
+/**
+ * Who made the last write (the create, else the last edit).
+ */
+updated_by: SettingsActor, 
+/**
+ * Send it back as the `PATCH` precondition.
+ */
+version: number, };
+
+/**
+ * The create's answer: the row and, with module `character_data`, the
+ * member's link request the create asked for.
+ */
+export type CharacterCreated = { 
+/**
+ * `pending`: the member was asked to link it (a MapleSEA character
+ * with the module on and a Nexon key); `failed`: that request could
+ * not be made (the character is saved); `null`: none was asked.
+ */
+link: 'pending' | 'failed' | null, id: string, member_id: string, ign: string, world: string, class: string | null, level: number | null, role: 'main' | 'alt', 
+/**
+ * When it was retired; `null` while active.
+ */
+retired_at: string | null, created_at: string, updated_at: string, 
+/**
+ * Who made the last write (the create, else the last edit).
+ */
+updated_by: SettingsActor, 
+/**
+ * Send it back as the `PATCH` precondition.
+ */
+version: number, };
+
+export type MemberCharacters = { member_id: string, 
+/**
+ * Retired ones included, oldest first.
+ */
+characters: Array<CharacterRow>, };
+
+/**
+ * A party member's candidate: one of their active characters.
+ */
+export type CharacterChoice = { id: string, ign: string, world: string, class: string | null, level: number | null, role: 'main' | 'alt', };
+
+/**
+ * The same character on another run this boss week for a boss this run
+ * has too (the weekly clear limit). A warning only: saves go through.
+ */
+export type CharacterClash = { character_id: string, run_id: string, short_id: string, 
+/**
+ * Day index within the boss week (0 = reset day).
+ */
+day: number, 
+/**
+ * `null` for an own-time run.
+ */
+time: string | null, 
+/**
+ * The other run's bosses this run has too, any difficulty.
+ */
+bosses: Array<string>, 
+/**
+ * Why the character is on the other run.
+ */
+basis: 'run_pick' | 'timing_pick' | 'main' | 'only', };
+
+/**
+ * One party member's slot on a run or a weekly timing.
+ */
+export type RunCharacterSlot = { member_id: string, 
+/**
+ * Their active characters, oldest first; empty when they have none.
+ */
+candidates: Array<CharacterChoice>, 
+/**
+ * How many retired characters they have (never offered).
+ */
+retired: number, 
+/**
+ * This slot's own stored pick (the run's on a run, the timing's on a
+ * timing) while it names a candidate.
+ */
+picked: string | null, 
+/**
+ * When `picked` was picked; `null` without it.
+ */
+picked_at: string | null, 
+/**
+ * Who picked `picked`; `null` without it.
+ */
+picked_by: SettingsActor | null, 
+/**
+ * The character the member brings: on a run its pick, else its
+ * timing's pick, else their main, else their only active character;
+ * on a timing its pick, else the main, else the only one. `null` with
+ * none (no characters, or several and no main). Never stored.
+ */
+brings: string | null, 
+/**
+ * Where `brings` comes from; `null` with nothing brought.
+ */
+basis: 'run_pick' | 'timing_pick' | 'main' | 'only' | null, 
+/**
+ * Send it back with the pick: 0 while nothing is picked.
+ */
+version: number, 
+/**
+ * Other runs with the character brought here for a shared boss (always
+ * empty on a timing).
+ */
+warnings: Array<CharacterClash>, };
+
+export type RunCharacters = { run_id: string, 
+/**
+ * In party order.
+ */
+slots: Array<RunCharacterSlot>, };
+
+/**
+ * A weekly timing's party slots (modules `roster` and `character_data`).
+ */
+export type TimingCharacters = { fixed_run_id: string, 
+/**
+ * In party order (the saved party).
+ */
+slots: Array<RunCharacterSlot>, };
+
+export type CharacterLink = { character_id: string, 
+/**
+ * `not_connected`: no Nexon key is configured (and no link exists);
+ * `expired`: linked, but the data passed its 30 days.
+ */
+state: 'not_connected' | 'not_linked' | 'pending' | 'linked' | 'stale' | 'expired', 
+/**
+ * Send it back with a link request; 0 while there is no link.
+ */
+version: number, 
+/**
+ * A Nexon key is configured: links can be made.
+ */
+connected: boolean, requested_by: SettingsActor | null, requested_at: string | null, 
+/**
+ * The notice version the member confirmed.
+ */
+consent_version: number | null, consented_at: string | null, linked_at: string | null, 
+/**
+ * Where the member consented: `discord` (`/character link`) or
+ * `portal`; `null` while not consented and for consents given before
+ * it was recorded.
+ */
+consent_surface: 'discord' | 'portal' | null, 
+/**
+ * The current notice version.
+ */
+notice_version: number, 
+/**
+ * Fresh Nexon data; `null` without any.
+ */
+data: CharacterFacts | null, refresh: RefreshInfo, 
+/**
+ * Shown with the data: `Data based on NEXON Open API`.
+ */
+attribution: string, 
+/**
+ * The public `/privacy` page; `null` without a public listener.
+ */
+privacy_url: string | null, };
+
+export type CharacterFacts = { name: string | null, world: string | null, class: string | null, level: number | null, combat_power: number | null, 
+/**
+ * Hotlinked from Nexon, never re-hosted.
+ */
+image_url: string | null, 
+/**
+ * `YYYY-MM-DD` (Singapore): the response date, else the fetch day.
+ */
+as_of: string, fetched_at: string, 
+/**
+ * When the data is deleted unless refreshed.
+ */
+expires_at: string, };
+
+export type RefreshInfo = { next_attempt_at: string | null, 
+/**
+ * The Open API error code (or reason) that stopped the last refresh.
+ */
+last_error: string | null, };
+
+export type CharacterDataHealth = { nexon: 'no_key' | 'ok' | 'backoff' | 'key_refused', 
+/**
+ * Every call waits until then (maintenance).
+ */
+backoff_until: string | null, 
+/**
+ * Calls in the last 24 hours; `null` when the file could not be read.
+ */
+calls_24h: number | null, 
+/**
+ * The hard stop on calls per 24 hours.
+ */
+budget: number, last_batch: BatchHealth | null, links: LinkHealth | null, last_sweep: string | null, posts: PostHealth | null, scouter: ScouterHealthBlock, };
+
+export type BatchHealth = { at: string, refreshed: number, failed: number, 
+/**
+ * Why it stopped early, if it did.
+ */
+stopped: string | null, };
+
+export type LinkHealth = { pending: number, active: number, stale: number, };
+
+export type PostHealth = { due: number, unknown: number, stuck: number, overdue: number, 
+/**
+ * The posts behind `unknown`, `stuck` and `overdue`, oldest first.
+ */
+items: Array<PostIssueItem>, };
+
+/**
+ * A share card an admin should look at. No Nexon data: ids and states.
+ */
+export type PostIssueItem = { 
+/**
+ * The 6-hex ref in the card's footer.
+ */
+reference: string, state: 'unknown' | 'stuck' | 'overdue', channel_id: string, posted_at: string, 
+/**
+ * A Discord link to the message for a manual removal; `null` when
+ * its id or the guild is not known.
+ */
+jump_url: string | null, };
+
+/**
+ * The scouter (estimates): `off` without `KANADE_SCOUTER_URL`.
+ */
+export type ScouterHealthBlock = { state: 'off' | 'ok' | 'unreachable' | 'verification_required', 
+/**
+ * The sidecar's `http://host[:port]` (no secret); `null` while off.
+ */
+url: string | null, last_lookup_at: string | null, 
+/**
+ * The last error's code: the scouter's (`busy`,
+ * `verification_required`, `lookup_timeout`, …) or `timeout`,
+ * `unreachable`, `unreadable`.
+ */
+last_error: string | null, last_error_at: string | null, };
+
+/**
+ * `GET /api/admin/characters/lookup`: whether a lookup (and the link a
+ * MapleSEA create asks for) can be made.
+ */
+export type LookupStatus = { 
+/**
+ * A Nexon key is configured.
+ */
+connected: boolean, };
+
+/**
+ * `POST /api/admin/characters/lookup`: what NEXON says about a typed IGN,
+ * shown in the Add character dialog only. Nothing of it is stored.
+ */
+export type CharacterLookup = { name: string | null, world: string | null, class: string | null, level: number | null, 
+/**
+ * Hotlinked from Nexon, never re-hosted.
+ */
+image_url: string | null, 
+/**
+ * `YYYY-MM-DD` (Singapore): the response date, else the lookup day.
+ */
+as_of: string, 
+/**
+ * Shown with the values: `Data based on NEXON Open API`.
+ */
+attribution: string, };
+
+export type RunReadiness = { run_id: string, 
+/**
+ * The slots of `GET …/characters`, in party order.
+ */
+slots: Array<ReadinessSlot>, 
+/**
+ * Some slot shows a NEXON value: show the attribution.
+ */
+nexon_data: boolean, 
+/**
+ * `Data based on NEXON Open API`.
+ */
+attribution: string, };
+
+/**
+ * A weekly timing's readiness (modules `roster` and `character_data`), or
+ * a preview of one being edited.
+ */
+export type TimingReadiness = { 
+/**
+ * `null` for a timing not added yet.
+ */
+fixed_run_id: string | null, 
+/**
+ * One per party member, in party order.
+ */
+slots: Array<ReadinessSlot>, 
+/**
+ * Some slot shows a NEXON value: show the attribution.
+ */
+nexon_data: boolean, 
+/**
+ * `Data based on NEXON Open API`.
+ */
+attribution: string, };
+
+export type ReadinessSlot = { member_id: string, 
+/**
+ * The character the member brings (as `…/characters` resolves it);
+ * `null` with none.
+ */
+character: CharacterChoice | null, 
+/**
+ * Where `character` comes from; `null` with none.
+ */
+basis: 'run_pick' | 'timing_pick' | 'main' | 'only' | null, 
+/**
+ * How many active characters the member has (with no character: 0 is
+ * "no characters", more is "no main").
+ */
+candidates: number, 
+/**
+ * The character's link as the strip shows it; `null` without a
+ * character.
+ */
+link: 'not_connected' | 'not_linked' | 'pending' | 'linked' | 'stale' | 'expired' | null, 
+/**
+ * Fresh NEXON level, else the manual roster level; `null` with neither.
+ */
+level: ReadinessLevel | null, 
+/**
+ * `null` without usable data.
+ */
+power: ReadinessPower | null, 
+/**
+ * One per boss of the run, in run order.
+ */
+bosses: Array<BossReadiness>, };
+
+export type ReadinessLevel = { value: number, source: 'nexon' | 'manual', 
+/**
+ * `YYYY-MM-DD` (Singapore): the NEXON response date, else its fetch
+ * day; `null` for a manual level.
+ */
+as_of: string | null, };
+
+export type ReadinessPower = { kind: 'nexon_cp', value: number, as_of: string | null, };
+
+export type BossReadiness = { 
+/**
+ * Catalog boss key.
+ */
+boss: string, difficulty: Difficulty, 
+/**
+ * From boss knowledge; `null` when it has none.
+ */
+entry_level: number | null, level: 'ok' | 'under' | 'unknown', 
+/**
+ * The character's scouter reading for this boss from the
+ * estimates' 24-hour memory (never looked up here); `null` without
+ * one, or while estimates are off.
+ */
+scouter: ScouterReading | null, };
+
+/**
+ * Shown, never judged: "For planning only, not eligibility".
+ */
+export type ScouterReading = { 
+/**
+ * The character's share (`effective_percentage`), else the card's
+ * percentage.
+ */
+percentage: number, rating: string, estimated_minutes: number | null, 
+/**
+ * When kanade received it from the scouter.
+ */
+fetched_at: string, 
+/**
+ * The scouter assumed a 100% critical rate for this character (theirs
+ * is under it): label it "Assumes 100% critical rate (actual N%)".
+ */
+critical_rate_assumed: boolean, 
+/**
+ * The character's own critical rate with an assumed reading; `null`
+ * otherwise, or when the scouter didn't say.
+ */
+critical_rate_actual: number | null, };
+
+/**
+ * `GET /api/admin/estimates?character_ids=|run_id=`.
+ */
+export type EstimateStatus = { 
+/**
+ * The newest job for exactly this target (queued, running, or
+ * finished in the last 24 hours); `null` without one.
+ */
+job: EstimateJob | null, 
+/**
+ * The job running now, whatever it looks up (the others wait in line).
+ */
+running: EstimateJob | null, };
+
+/**
+ * `POST /api/admin/estimates` → `202`.
+ */
+export type EstimateStarted = { job: EstimateJob, };
+
+export type EstimateJob = { id: string, state: 'queued' | 'running' | 'done' | 'failed', 
+/**
+ * While `queued`: the lookups ahead of it, the running one included
+ * (1 or more); `null` otherwise.
+ */
+position: number | null, 
+/**
+ * A run's party; `null` for a character lookup.
+ */
+run_id: string | null, 
+/**
+ * The characters asked for; empty for a run.
+ */
+character_ids: Array<string>, started_by: SettingsActor, 
+/**
+ * When it was asked for.
+ */
+started_at: string, finished_at: string | null, 
+/**
+ * Who is looked up, in party order (roster IGNs), each with their
+ * outcome as it arrives.
+ */
+characters: Array<EstimateCharacter>, 
+/**
+ * Party members not looked up (listed as missing, never 0%).
+ */
+missing: Array<EstimateMissing>, progress: EstimateProgress, 
+/**
+ * When the result came from the scouter (a cached result keeps its
+ * first time); `null` until the job is done.
+ */
+fetched_at: string | null, 
+/**
+ * The characters found so far (while queued or running too) and,
+ * once done, the party total; `null` with none found.
+ */
+result: EstimateResult | null, 
+/**
+ * `failed`: why nobody was found. `done`: why the party total is
+ * missing although characters were found (`character_id` null).
+ */
+error: EstimateError | null, 
+/**
+ * `Clear-time estimate`.
+ */
+label: string, 
+/**
+ * `For planning only, not eligibility`.
+ */
+note: string, };
+
+export type EstimateCharacter = { character_id: string, member_id: string, ign: string, 
+/**
+ * `pending` until looked up; `ok` (in `result.members`) or `failed`
+ * (`error`). One character's failure never stops the others.
+ */
+outcome: 'pending' | 'ok' | 'failed', 
+/**
+ * Why this character has no result; `null` unless `failed`.
+ */
+error: EstimateError | null, };
+
+export type EstimateMissing = { member_id: string, 
+/**
+ * The character they bring, when there is one.
+ */
+character_id: string | null, reason: 'no_characters' | 'no_character_picked' | 'other_region' | 'unsupported_ign', };
+
+export type EstimateProgress = { 
+/**
+ * Characters finished so far, found or failed.
+ */
+done: number, total: number, 
+/**
+ * The character being looked up now; `null` while queued, between
+ * characters, for the party total and once finished.
+ */
+current: string | null, };
+
+export type EstimateResult = { 
+/**
+ * Answered from kanade's 24-hour memory without calling the scouter.
+ */
+cache_hit: boolean, 
+/**
+ * Done, no party member missing or failed, and every total complete.
+ */
+complete: boolean, 
+/**
+ * The characters found, in party order.
+ */
+members: Array<EstimateMember>, 
+/**
+ * The party totals over the characters found (a run's bosses, or
+ * every catalog boss for several characters); `null` for one
+ * character, until the job is done, or when the total failed.
+ */
+combined: Array<EstimateCombined> | null, };
+
+export type EstimateMember = { character_id: string, ign: string, 
+/**
+ * The preset the scouter read (`00010`).
+ */
+preset: string, 
+/**
+ * The character's critical rate is under 100% and the scouter
+ * assumed exactly 100%: label it "Assumes 100% critical rate (actual
+ * N%)" wherever its numbers show.
+ */
+critical_rate_assumed: boolean, 
+/**
+ * The character's own critical rate with an assumed result; `null`
+ * otherwise, or when the scouter didn't say.
+ */
+critical_rate_actual: number | null, 
+/**
+ * Catalog bosses only, in catalog order.
+ */
+bosses: Array<EstimateBoss>, };
+
+export type EstimateBoss = { 
+/**
+ * Catalog token, e.g. `HLimbo`.
+ */
+boss: string, 
+/**
+ * As the scouter shows it (a `[Party]` card's whole-party figure).
+ */
+percentage: number, 
+/**
+ * This character's share; `null` when the scouter can't tell.
+ */
+effective_percentage: number | null, estimated_minutes: number | null, rating: string, 
+/**
+ * A `[Party]` card.
+ */
+party: boolean, };
+
+export type EstimateCombined = { boss: string, 
+/**
+ * `null` unless every member found has a known share.
+ */
+combined_percentage: number | null, estimated_minutes: number | null, technically_possible: boolean | null, 
+/**
+ * `false` with a missing or failed member or an unknown share.
+ */
+complete: boolean, issues: Array<EstimateIssue>, };
+
+export type EstimateIssue = { 
+/**
+ * `null` for `not_covered`.
+ */
+character_id: string | null, 
+/**
+ * `missing_boss`: no card for this boss; `unknown_benchmark_players`:
+ * a `[Party]` card with an unknown party size; `not_covered`:
+ * the scouter has no card for this boss at all.
+ */
+issue: 'missing_boss' | 'unknown_benchmark_players' | 'not_covered' | 'other', };
+
+/**
+ * The drawn error states.
+ */
+export type EstimateError = { 
+/**
+ * `busy` (429 past the job's deadline, or a rate limit; retry after
+ * `retry_after_seconds`), `critical_rate` (422), `manual_check` (503),
+ * `failed` (502, 504, timeout, no connection).
+ */
+code: 'busy' | 'critical_rate' | 'manual_check' | 'failed', message: string, 
+/**
+ * The scouter's HTTP status; `null` without an answer.
+ */
+status: number | null, 
+/**
+ * The scouter's error code (`busy`, `upstream_rate_limited`,
+ * `lookup_timeout`, `result_mismatch`, …) or `timeout`, `unreachable`,
+ * `unreadable`.
+ */
+detail: string, retry_after_seconds: number | null, 
+/**
+ * The character it is about, when known.
+ */
+character_id: string | null, };
+
+export type FixedRunLink = { run_id: string, short_id: string, week: WeekKey, day: number, time: string | null, status: RunStatus, amended: boolean, };
+
+export type FixedRow = { id: string, short_id: string, weekday: number, weekday_name: string, time: string, bosses: Array<Boss>, participants: Array<Member>, channel_id: string, channel_name: string, channel_watched: boolean, 
+/**
+ * The effective owner ([`FixedRun::owner`]).
+ */
+owner: string, owner_id: string, 
+/**
+ * Staff pinned the owner; otherwise it follows the first participant.
+ */
+owner_pinned: boolean, note: string | null, runs: Array<FixedRunLink>, };
+
+export type ValidateResult = { bosses: Array<Boss>, };
+
+/**
+ * A reminder row's state: `due` is past its fire time but not yet posted.
+ */
+export type ReminderState = "queued" | "due" | "sent" | "stale";
+
+export type ReminderRow = { id: string, run_id: string, run_short_id: string, kind: CardKind, state: ReminderState, 
+/**
+ * The guild wall-clock label ("Tue 29 Sep 21:00").
+ */
+at: string, 
+/**
+ * The exact fire instant (ISO, UTC), for "In" on the server clock.
+ */
+fire_at: string, bosses: Array<Boss>, party: Array<string>, url: string | null, };
+
+export type Reminders = { upcoming: Array<ReminderRow>, sent: Array<ReminderRow>, 
+/**
+ * The server's now when this was read: relative times count from it,
+ * never from the browser's clock.
+ */
+generated_at: string, };
+
+/**
+ * One embed field of a previewed card.
+ */
+export type CardField = { name: string, value: string, 
+/**
+ * Shown side by side with the neighbouring inline fields.
+ */
+inline: boolean, };
+
+/**
+ * A reminder card as the bot posts it: the message text (mentions as
+ * `<@id>`), its first embed and any further ones (the redesigned day-of
+ * card has one per run). Art is a same-origin `/art/` URL.
+ */
+export type CardPreview = { content: string, 
+/**
+ * `#rrggbb`, the embed's colour bar.
+ */
+color: string, title: string | null, description: string | null, fields: Array<CardField>, footer: string | null, thumbnail: string | null, image: string | null, 
+/**
+ * The embeds after the first, in order.
+ */
+more_embeds: Array<EmbedPreview>, 
+/**
+ * The heading line stored for this card (posted or prepared to post);
+ * `false` while it is the seed line the bot may reword when it posts.
+ */
+heading_final: boolean, };
+
+/**
+ * A further embed of a previewed card.
+ */
+export type EmbedPreview = { 
+/**
+ * `#rrggbb`.
+ */
+color: string, title: string | null, description: string | null, fields: Array<CardField>, footer: string | null, thumbnail: string | null, image: string | null, };
+
+/**
+ * `GET /api/admin/reminders/{id}/preview`: the row and its card; `card` is
+ * null for a reminder that posts none (cancelled run, unknown kind), one
+ * retired without posting, and a card posted before records were kept.
+ */
+export type ReminderPreview = { reminder: ReminderRow, card: CardPreview | null, 
+/**
+ * The run has started (for a posted card, every run it names): it is no
+ * longer edited, so Discord keeps its last edit from before then.
+ */
+run_started: boolean, generated_at: string, };
+
+export type DifficultyOption = { letter: Difficulty, name: string, token: string, in_use: boolean, };
+
+export type BossRow = { key: string, name: string, level: number, hue: number, portrait: string | null, difficulties: Array<DifficultyOption>, };
+
+/**
+ * One boss's place in a mission series (Destiny Weapon, Union Champion).
+ */
+export type MissionStop = { series: MissionSeries, order: number, key: string, name: string, difficulty: DifficultyName, };
+
+export type Knowledge = { key: string, name: string, level: number | null, portrait: string | null, 
+/**
+ * The looping MP4 (`/art/animated/{key}`); null where the deployment has none.
+ */
+animated: string | null, hue: number, researched_as_of: string | null, path: string, in_use: Difficulty[], doc: KnowledgeDoc, 
+/**
+ * Every boss in the series of a mission this doc defines, sorted by
+ * series, `order` and key; empty when the doc has no mission.
+ */
+missions: Array<MissionStop>, };
+
+/**
+ * [`Knowledge`] as members read it (`GET /api/public/bosses/{key}/knowledge`):
+ * without the repository `path` (an operator's pointer for editing) and with
+ * every bullet's bot-only `detail` removed (public-portal-plan Q8).
+ */
+export type PublicKnowledge = { key: string, name: string, level: number | null, portrait: string | null, animated: string | null, hue: number, researched_as_of: string | null, in_use: Difficulty[], doc: KnowledgeDoc, missions: Array<MissionStop>, };
+
+export type EventBoss = { key: string, event: { name: string; availability: string }, summary: string, portrait: string | null, portrait_sm: string | null, art: string | null, animated: string | null, };
+
+export type InboxTab = "extractor" | "self_service";
+
+/**
+ * Kanade read it from party chat (`extraction`) or was asked in chat
+ * (`chat`); `self_service` is a member request.
+ */
+export type ProposalSource = "extraction" | "chat" | "self_service";
+
+/**
+ * Badges an inbox item can carry; each also blocks or qualifies an action.
+ */
+export type ProposalFlag = "conflict" | "expired" | "requester_frozen" | "requester_unauthorised" | "no_effect";
+
+export type Evidence = { id: string, author: string, 
+/**
+ * `None` when the message is gone.
+ */
+author_id: string | null, at: string, content: string | null, url: string | null, missing: boolean, };
+
+/**
+ * A message of the thread around a card's evidence; `used` when the card
+ * cites it.
+ */
+export type ThreadMessage = { used: boolean, id: string, author: string, 
+/**
+ * `None` when the message is gone.
+ */
+author_id: string | null, at: string, content: string | null, url: string | null, missing: boolean, };
+
+export type FieldChange = { field: string, from: string, to: string, };
+
+export type FieldConflict = { field: string, expected: string, found: string, };
+
+export type ProposalPreview = { no_effect: boolean, changes: Array<FieldChange>, conflicts: Array<FieldConflict>, };
+
+export type ProposalChoice = { run_id: string, label: string, when: string, amended: boolean, };
+
+export type ProposalSelfService = { member: Member, via: string, note: string | null, };
+
+/**
+ * One change a member request asks for, as an admin may retime it or leave
+ * it out when approving (`edit.retime[].change`, `edit.drop`).
+ */
+export type RequestedChange = { id: string, part: 'day_time' | 'party' | 'channel' | 'change', 
+/**
+ * The member's words for it, as a notice lists it when left out.
+ */
+label: string, 
+/**
+ * What the member asked, and what it is now (`None` for something new).
+ */
+asked: string, now: string | null, 
+/**
+ * A weekly day and time an admin may change; `day` 0 = Monday.
+ */
+retimable: boolean, day: number | null, time: string | null, };
+
+export type Proposal = { id: string, short_id: string, kind: ProposalKind, kind_label: string, source: ProposalSource, tab: InboxTab, version: number, flags: Array<ProposalFlag>, preview: ProposalPreview, 
+/**
+ * One line on what approving does (party, upcoming reminders); `None`
+ * with conflicts, no effect, or nothing to say.
+ */
+consequence: string | null, expires_at: string | null, choices: Array<ProposalChoice> | null, public_summary: string | null, bosses: Array<Boss>, run_id: string | null, from_when: string | null, when: string, participants: Array<Member>, confidence: number | null, is_question: boolean, channel: string | null, read_at: string, summary: string, evidence: Array<Evidence>, 
+/**
+ * The channel thread around `evidence`; `None` when there is none.
+ */
+thread: Array<ThreadMessage> | null, card_url: string | null, self_service: ProposalSelfService | null, 
+/**
+ * A member request's changes as an approval may edit them (`None` for
+ * proposals).
+ */
+requested: Array<RequestedChange> | null, };
+
+/**
+ * An open weekly-timing ownership request (Inbox Ownership tab): a party
+ * member asks to own the timing; staff accept or decline before it expires.
+ */
+export type OwnershipRequest = { id: string, short_id: string, fixed_id: string, fixed_short_id: string, bosses: Array<Boss>, 
+/**
+ * 0 = Monday, as `FixedRow`.
+ */
+weekday: number, weekday_name: string, time: string, requester: Member, 
+/**
+ * The timing's effective owner now ([`FixedRun::owner`]).
+ */
+owner: Member, channel: string | null, 
+/**
+ * RFC 3339 UTC instants.
+ */
+created_at: string, expires_at: string, };
+
+/**
+ * How a closed Inbox item ended: `approved` = merged, `superseded` =
+ * replaced by a newer proposal.
+ */
+export type PastOutcome = "approved" | "rejected" | "superseded" | "discarded" | "withdrawn" | "expired";
+
+/**
+ * Who closed it; `name` is ready to show (system actors read as Kanade).
+ */
+export type PastDecider = { kind: ActorKind, id: string, name: string, };
+
+export type PastItem = { id: string, short_id: string, kind: ProposalKind | 'change', kind_label: string, 
+/**
+ * `extractor` for proposals, `self_service` for member requests.
+ */
+tab: InboxTab, source: ProposalSource, 
+/**
+ * The extraction log or chat interaction that staged a proposal.
+ */
+source_id: string | null, summary: string, channel: string | null, 
+/**
+ * The member who asked (requests only).
+ */
+requester: Member | null, outcome: PastOutcome, decided_by: PastDecider | null, decided_at: string, reason: string | null, created_at: string, 
+/**
+ * The History record an approval wrote.
+ */
+history_seq: number | null, evidence: Array<Evidence>, card_url: string | null, };
+
+export type PastPage = { items: Array<PastItem>, 
+/**
+ * The `before` cursor of the next page; `None` on the last.
+ */
+next_before: string | null, };
+
+export type DraftRow = { id: string, short_id: string, 
+/**
+ * The admin's title, or one derived from the operations (`titled`
+ * false).
+ */
+title: string, titled: boolean, status: 'open' | 'merged' | 'discarded' | 'expired', 
+/**
+ * The precondition every write sends back.
+ */
+version: number, 
+/**
+ * The history record the draft is based on.
+ */
+base: number, 
+/**
+ * Based on the current head ("Up to date"); else "Base moved".
+ */
+up_to_date: boolean, scope: 'week' | 'weekly', 
+/**
+ * The boss week's first day (guild date) of a week-scoped draft.
+ */
+week: string | null, staged: number, author: PastDecider, created_at: string, updated_at: string, merged_seq: number | null, closed_by: PastDecider | null, close_reason: string | null, };
+
+/**
+ * `GET /api/admin/drafts?state=open|closed`: the admin's own drafts, most
+ * recently changed first, and the current history head.
+ */
+export type DraftList = { head: number, drafts: Array<DraftRow>, };
+
+/**
+ * One staged operation, in order. `run_id`/`fixed_id` name an existing
+ * row; `created_by` the earlier operation that creates the row it acts on.
+ */
+export type StagedOpRow = { ord: number, 
+/**
+ * The operation's codec kind (`amend_run`, `set_status`, ...).
+ */
+kind: string, summary: string, run_id: string | null, fixed_id: string | null, created_by: number | null, author: PastDecider, added_at: string, };
+
+/**
+ * `GET /api/admin/drafts/{id}`.
+ */
+export type DraftDetail = { ops: Array<StagedOpRow>, id: string, short_id: string, 
+/**
+ * The admin's title, or one derived from the operations (`titled`
+ * false).
+ */
+title: string, titled: boolean, status: 'open' | 'merged' | 'discarded' | 'expired', 
+/**
+ * The precondition every write sends back.
+ */
+version: number, 
+/**
+ * The history record the draft is based on.
+ */
+base: number, 
+/**
+ * Based on the current head ("Up to date"); else "Base moved".
+ */
+up_to_date: boolean, scope: 'week' | 'weekly', 
+/**
+ * The boss week's first day (guild date) of a week-scoped draft.
+ */
+week: string | null, staged: number, author: PastDecider, created_at: string, updated_at: string, merged_seq: number | null, closed_by: PastDecider | null, close_reason: string | null, };
+
+/**
+ * One lane of the History graph: the draft's row and when it closed.
+ */
+export type GraphDraft = { 
+/**
+ * When it merged, was discarded or expired (its closing event), to
+ * place the close between the changes around it; `None` while open.
+ */
+closed_at: string | null, id: string, short_id: string, 
+/**
+ * The admin's title, or one derived from the operations (`titled`
+ * false).
+ */
+title: string, titled: boolean, status: 'open' | 'merged' | 'discarded' | 'expired', 
+/**
+ * The precondition every write sends back.
+ */
+version: number, 
+/**
+ * The history record the draft is based on.
+ */
+base: number, 
+/**
+ * Based on the current head ("Up to date"); else "Base moved".
+ */
+up_to_date: boolean, scope: 'week' | 'weekly', 
+/**
+ * The boss week's first day (guild date) of a week-scoped draft.
+ */
+week: string | null, staged: number, author: PastDecider, created_at: string, updated_at: string, merged_seq: number | null, closed_by: PastDecider | null, close_reason: string | null, };
+
+/**
+ * `GET /api/admin/drafts/graph?from=&to=`: the admin's own drafts whose
+ * span (base to merge, close or head) touches History records
+ * `from..=to`, any status, most recently changed first, and the current
+ * head. Conflicts are not analysed here (open a draft's preview for them).
+ */
+export type DraftGraph = { head: number, drafts: Array<GraphDraft>, };
+
+/**
+ * The History record behind a conflict: the latest change after the
+ * draft's base that touched the conflicting row.
+ */
+export type ConflictRecord = { seq: number, actor: PastDecider, at: string, };
+
+/**
+ * One conflict the merge analysis reports, with the operations involved
+ * and the answers a rebase accepts for it (`keep` keeps the operations,
+ * reviving a cancelled or finished run; `take` drops them).
+ */
+export type DraftConflict = { 
+/**
+ * What a rebase names it by.
+ */
+key: string, kind: 'both_changed' | 'upstream_removed' | 'op_rejected' | 'choices_stale' | 'stale_weeks' | 'divergent', run_id: string | null, fixed_id: string | null, field: string | null, 
+/**
+ * Both changed: the value drafted on, the draft's and today's.
+ */
+base: string | null, yours: string | null, now: string | null, removal: 'deleted' | 'retired' | 'cancelled' | 'done' | 'left_run' | null, message: string, ops: Array<number>, settle: Array<'keep' | 'take'>, record: ConflictRecord | null, };
+
+/**
+ * `GET /api/admin/drafts/{id}/preview`: the rows a merge would write
+ * against the current schedule (History's diff rows), and the conflicts.
+ * Merge is offered only when `mergeable` (on the head and conflict-free).
+ */
+export type DraftPreviewView = { id: string, version: number, base: number, head: number, up_to_date: boolean, mergeable: boolean, rows: Array<RowChange>, conflicts: Array<DraftConflict>, 
+/**
+ * One line on what merging does; `None` with conflicts or nothing to say.
+ */
+consequence: string | null, };
+
+/**
+ * Every draft write's answer: the draft as it now stands (re-read it for
+ * the rest) and, for a merge, its History record.
+ */
+export type DraftWritten = { id: string, version: number, status: 'open' | 'merged' | 'discarded' | 'expired', seq: number | null, message: string, };
+
+export type ConfigView = { pings: Pings, watching: Watching, chatbot: Chatbot, notifications: Notifications, self_service: SelfServiceSettings, persona: PersonaSettings, models: ModelSettings, run_lengths: RunLengths, profanity: ProfanitySettings, manage_messages: ManageMessages, notices: Array<string>, env: Array<EnvRow>, 
+/**
+ * `null` when no digest is active or the journal could not be read.
+ */
+last_digest: LastDigest | null, 
+/**
+ * Module `character_data`'s health (informational, never part of
+ * `/healthz`); absent while the module is off.
+ */
+character_data?: CharacterDataHealth, };
+
+export type Pings = { day_of_ping_time: string, countdown_minutes: Array<number>, };
+
+export type Watching = { paused: boolean, extract_enabled: boolean, 
+/**
+ * Effective watched channel ids (saved row, else the env seed).
+ */
+channel_ids: Array<string>, 
+/**
+ * `saved` once an explicit list save stored the list, else `env`.
+ */
+channel_ids_source: IdListSource, category_ids: Array<string>, category_ids_source: IdListSource, };
+
+export type Rate = { count: number, window_s: number, };
+
+export type Chatbot = { enabled: boolean, configured: boolean, missing_env: Array<string>, member_rate: Rate, guild_rate: Rate, 
+/**
+ * Effective chat category ids (saved row, else the env seed).
+ */
+category_ids: Array<string>, category_ids_source: IdListSource, };
+
+export type Notifications = { quiet_mode: boolean, message_style: MessageStyle, 
+/**
+ * `HH:MM` in the guild's zone: when the daily reminder-header rewrite
+ * batch runs.
+ */
+header_generation_time: string, };
+
+export type SelfServiceSettings = { mode: SelfServiceMode, effective_mode: SelfServiceMode, public_portal: boolean, };
+
+export type PersonaEntry = { key: string, name: string, bundle: string, };
+
+export type ReplyProfile = { key: string, name: string, public: boolean, voice: string, prompt_summary: string, };
+
+export type RoleProfileView = { role_id: string, role_name: string | null, profile: string, };
+
+export type PersonaSettings = { active: string, personas: Array<PersonaEntry>, profiles: Array<ReplyProfile>, role_profiles: Array<RoleProfileView>, role_profiles_digest: string, };
+
+export type ModelSettings = { reachable: boolean, catalog: Array<ModelInfo>, roles: ModelRoles, groups: Array<CapacityGroup>, 
+/**
+ * `default` (the one `gateway` group) or `config` (`[[models.groups]]`).
+ */
+groups_source: 'default' | 'config', alias_limits: Array<AliasLimit>, key_limits: KeyLimits, capacity_check: Array<CapacityCheck>, pii_pseudonymise: boolean, context: ContextSettings, };
+
+export type ModelInfo = { id: string, trust_zone: 'homelab' | 'external' | 'unknown', leaves_homelab: boolean, function_tools: boolean, structured_output: boolean, sampling_controls: boolean, reasoning_control: boolean, reasoning_efforts: Array<string> | null, context_tokens?: number, max_output_tokens?: number, 
+/**
+ * False when the alias requires reasoning (a published list without `none`).
+ */
+off_allowed: boolean, admission: Admission | null, 
+/**
+ * Set on a listed `<base>:<level>` alias: the picker lists the base only.
+ */
+variant_of?: string, 
+/**
+ * The variant's baked-in level in the `reasoning` vocabulary (`:none` is `off`).
+ */
+fixed_effort?: string, };
+
+export type Admission = { max_in_flight: number, adapter_max_in_flight?: number, };
+
+export type ModelRoles = { extraction: RoleModel, chat: RoleModel, rewrite: RoleModel, };
+
+export type RoleModel = { alias: string, reasoning: string, 
+/**
+ * A stored variant alias: shown as "`variant_of` (fixed: `fixed_effort`)".
+ */
+variant_of?: string, fixed_effort?: string, 
+/**
+ * What the role's next session opens with; absent while unrouted.
+ */
+running?: RunningRole, context?: EffectiveContext, };
+
+/**
+ * The running alias and the level requests send (inherit and floors resolved).
+ */
+export type RunningRole = { alias: string, reasoning: string | null, };
+
+export type EffectiveContext = { window: number, reserve: number, prompt_budget: number, source: ContextSource, clamped_by_published: boolean, clamped_by_hard_cap: boolean, clamped_by_role_cap: boolean, local_warning: boolean, };
+
+export type ContextRole = { reserve: number, cap: number | null, };
+
+export type ContextSettings = { cloud_default: number, local_default: number, chat: ContextRole, extraction: ContextRole, rewrite: ContextRole, overrides: { [key in string]: number }, };
+
+export type CapacityGroup = { model: string, group: string, permits: number | null, 
+/**
+ * The group's permits held by calls in flight, from the governor's
+ * snapshot; `null` while model serving is not composed.
+ */
+in_use: number | null, };
+
+export type AliasLimit = { alias: string, max_in_flight: number, adapter_max_in_flight?: number, source: 'published' | 'declared', };
+
+export type KeyLimits = { 
+/**
+ * `None`: Kanata publishes no per-key limit.
+ */
+max_in_flight: number | null, shared: boolean, };
+
+export type CapacityCheck = { level: 'ok' | 'warning' | 'error', message: string, 
+/**
+ * The capacity group the check is about (`models.groups[].group`);
+ * `null` for checks that span groups.
+ */
+group: string | null, };
+
+export type RunLengths = { default_minutes: number, overrides: Array<RunLengthOverride>, };
+
+export type RunLengthOverride = { boss: string, difficulty: Difficulty, minutes: number, };
+
+/**
+ * The chat profanity guardrail. `builtin_words` is read-only: the code-owned
+ * list, each entry of which may be allowed again.
+ */
+export type ProfanitySettings = { extra_words: Array<string>, allowed_words: Array<string>, check_questions: boolean, check_replies: boolean, deflection_line: string, builtin_words: Array<string>, };
+
+export type ManageMessages = { missing: Array<string>, };
+
+export type EnvRow = { key: string, label: string, value: string, reason: string, 
+/**
+ * The raw value to paste into the deployment env for `key`; `null` when
+ * unset or when the row has no single env value. Never a secret.
+ */
+copy: string | null, };
+
+/**
+ * The most recent active weekly digest card.
+ */
+export type LastDigest = { 
+/**
+ * RFC 3339 in the guild's offset, whole seconds.
+ */
+posted_at: string, 
+/**
+ * Guild-local boss-week start date (`YYYY-MM-DD`).
+ */
+week_start: string, this_week: boolean, channel_id: string, channel_name: string | null, url: string | null, };
+
+export type AccessReport = { connected: boolean, 
+/**
+ * Guild-local, e.g. `Tue 29 Sep 12:00`.
+ */
+checked_at: string, rows: Array<AccessRow>, };
+
+export type AccessRow = { id: string, name: string, watched: boolean, digest: boolean, view: boolean, send: boolean, history: boolean, embed: boolean, react: boolean, manage_messages: boolean, };
+
+/**
+ * What the log filters can offer (all values seen, not only the filtered rows').
+ */
+export type LogFacets = { models: Array<string>, tools: Array<string>, outcomes: Array<string>, channels: Array<Member>, };
+
+/**
+ * Reported token usage over a set of logged requests: sums over those that
+ * reported a pair (null when none did), how many did, and the median of
+ * reported prompt tokens / local estimate (two decimals; null when none).
+ */
+export type UsageSummary = { prompt_tokens: number | null, completion_tokens: number | null, reported: number, est_ratio: number | null, };
+
+/**
+ * Per model over the listed (filtered) extraction calls.
+ */
+export type ExtractionSummary = { model: string, count: number, prompt_tokens: number | null, completion_tokens: number | null, reported: number, est_ratio: number | null, };
+
+export type ExtractionRow = { messages: number, changes: number, id: string, short_id: string, at: string, model: string, latency_ms: number | null, channel: string | null, channel_id: string, error: string | null, outcome: ExtractionOutcome, 
+/**
+ * Provider-reported tokens summed over the call's reporting attempts; null = not reported (never 0).
+ */
+prompt_tokens?: number | null, completion_tokens?: number | null, 
+/**
+ * Provider-reported reasoning tokens over reporting attempts; null = unknown.
+ */
+reasoning_tokens?: number | null, };
+
+/**
+ * Query params of `GET /api/admin/extractions`, all optional and
+ * combinable: `model`, `from`/`to` (guild-local YYYY-MM-DD), `outcome`
+ * (comma-separated, any of), `channel`, `member`, `q`. Unknown outcomes or
+ * malformed dates: 422 invalid_filter.
+ */
+export type Extractions = { model: string, 
+/**
+ * Per model over the filtered calls.
+ */
+summary: Array<ExtractionSummary>, rows: Array<ExtractionRow>, 
+/**
+ * Rows before filtering.
+ */
+total: number, facets: LogFacets, };
+
+export type Amendment = { kind: string, bosses: string, when: string, confidence: number, status: string, };
+
+export type ReadMessage = { id: string, author: string, author_id?: string, at: string, content: string, };
+
+/**
+ * The context the call was budgeted for.
+ */
+export type CallContext = { window: number, 
+/**
+ * The configured completion reserve the request asked for.
+ */
+reserve: number, source: string, 
+/**
+ * The `max_tokens` the last request carried; null when none went out
+ * (a route without sampling controls), nothing was sent, or on older rows.
+ */
+sent_max_tokens?: number | null, };
+
+/**
+ * A change the scheduler refused to stage for the call.
+ */
+export type ExtractionRefusal = { change: string, code: string, message: string, };
+
+export type Extraction = { prompt: string, raw_response: string, 
+/**
+ * Response-only text, capped at 64 KiB including a visible marker.
+ */
+reasoning_content?: string | null, 
+/**
+ * Local prompt estimate over the attempts that reported usage, else every sent attempt.
+ */
+prompt_estimate?: number | null, 
+/**
+ * Null when not logged whole.
+ */
+context?: CallContext | null, amendments: Array<Amendment>, messages: Array<ReadMessage>, refusals?: Array<ExtractionRefusal>, 
+/**
+ * The call session's gateway correlation stem; null when not recorded.
+ */
+session_id?: string | null, 
+/**
+ * Every `x-request-id` the call sent, in order (retries included);
+ * empty when none was recorded.
+ */
+request_ids?: Array<string>, id: string, short_id: string, at: string, model: string, latency_ms: number | null, channel: string | null, channel_id: string, error: string | null, outcome: ExtractionOutcome, 
+/**
+ * Provider-reported tokens summed over the call's reporting attempts; null = not reported (never 0).
+ */
+prompt_tokens?: number | null, completion_tokens?: number | null, 
+/**
+ * Provider-reported reasoning tokens over reporting attempts; null = unknown.
+ */
+reasoning_tokens?: number | null, };
+
+/**
+ * Every value the filters can offer (all rows, not only the filtered ones).
+ */
+export type RewriteFacets = { models: Array<string>, kinds: Array<string>, stages: Array<string>, verdicts: Array<string>, };
+
+/**
+ * Per model over the listed attempts: how many, how many were accepted,
+ * and their reported usage.
+ */
+export type RewriteSummary = { model: string, count: number, accepted: number, prompt_tokens: number | null, completion_tokens: number | null, reported: number, est_ratio: number | null, };
+
+export type RewriteRow = { id: string, short_id: string, at: string, kind: RewriteKind, stage: RewriteStage, 
+/**
+ * A card key, digest week, `/debug` command or nudge purpose.
+ */
+context: string | null, verdict: RewriteVerdict, 
+/**
+ * The gate rule that refused the line (`rejected` only).
+ */
+rule: string | null, 
+/**
+ * The specific failure: `budget_exceeded`, `busy`, `shutdown`, …
+ */
+code: string | null, latency_ms: number | null, 
+/**
+ * The alias the request named; null when nothing was sent.
+ */
+model: string | null, 
+/**
+ * Reasoning effort as sent.
+ */
+reasoning: string | null, 
+/**
+ * Provider-reported tokens; null = not reported (never 0).
+ */
+prompt_tokens: number | null, completion_tokens: number | null, reasoning_tokens: number | null, 
+/**
+ * The runner's token reservation the reported usage was checked against.
+ */
+reservation: number | null, 
+/**
+ * The call token budget the reservation exceeded when the runner refused
+ * it before sending; null otherwise.
+ */
+budget: number | null, 
+/**
+ * The seed line the model was asked to rewrite.
+ */
+seed: string, 
+/**
+ * The line used (accepted rewrite or seed), placeholders unfilled.
+ */
+line: string | null, };
+
+/**
+ * Query params of `GET /api/admin/rewrites`, all optional and combinable:
+ * `model`, `from`/`to` (guild-local YYYY-MM-DD), `kind`, `stage`,
+ * `verdict` (comma-separated, any of), `q`. Unknown values or malformed
+ * dates: 422 invalid_filter.
+ */
+export type Rewrites = { 
+/**
+ * Per model over the filtered attempts that reached one.
+ */
+summary: Array<RewriteSummary>, rows: Array<RewriteRow>, 
+/**
+ * Rows before filtering.
+ */
+total: number, facets: RewriteFacets, };
+
+export type Rewrite = { 
+/**
+ * The model's raw reply, capped at 8 KiB with a visible marker.
+ */
+reply: string | null, 
+/**
+ * Response-only reasoning text, capped at 64 KiB.
+ */
+reasoning_content: string | null, 
+/**
+ * `max_tokens` as sent; null when nothing was sent or the route has no
+ * sampling controls (the body omits it). Older rows hold the reserve.
+ */
+max_output_tokens: number | null, 
+/**
+ * The local prompt estimate: the reservation less the `max_tokens` sent;
+ * null when no `max_tokens` went out.
+ */
+prompt_estimate: number | null, request_id: string | null, 
+/**
+ * The messages the call was given under `[system]`/`[user]` labels,
+ * capped at 16 KiB; null when no call was attempted or on older rows.
+ */
+prompt: string | null, id: string, short_id: string, at: string, kind: RewriteKind, stage: RewriteStage, 
+/**
+ * A card key, digest week, `/debug` command or nudge purpose.
+ */
+context: string | null, verdict: RewriteVerdict, 
+/**
+ * The gate rule that refused the line (`rejected` only).
+ */
+rule: string | null, 
+/**
+ * The specific failure: `budget_exceeded`, `busy`, `shutdown`, …
+ */
+code: string | null, latency_ms: number | null, 
+/**
+ * The alias the request named; null when nothing was sent.
+ */
+model: string | null, 
+/**
+ * Reasoning effort as sent.
+ */
+reasoning: string | null, 
+/**
+ * Provider-reported tokens; null = not reported (never 0).
+ */
+prompt_tokens: number | null, completion_tokens: number | null, reasoning_tokens: number | null, 
+/**
+ * The runner's token reservation the reported usage was checked against.
+ */
+reservation: number | null, 
+/**
+ * The call token budget the reservation exceeded when the runner refused
+ * it before sending; null otherwise.
+ */
+budget: number | null, 
+/**
+ * The seed line the model was asked to rewrite.
+ */
+seed: string, 
+/**
+ * The line used (accepted rewrite or seed), placeholders unfilled.
+ */
+line: string | null, };
+
+export type JobState = "running" | "done" | "cancelled";
+
+export type ChannelState = "queued" | "reading" | "done";
+
+export type RescanChannel = { id: string, name: string, state: ChannelState, 
+/**
+ * The gated messages its read found (0 until `done`).
+ */
+messages: number, unread?: number, 
+/**
+ * Fixed sentences naming what went wrong, never the recorded text.
+ */
+errors?: Array<string>, };
+
+export type RescanJob = { id: string, state: JobState, window: 'week' | 'since_reset' | 'two_weeks', 
+/**
+ * When the runner took the job (UTC `Z`); null while queued.
+ */
+started_at?: string | null, channels: Array<RescanChannel>, 
+/**
+ * The channels' `messages`: gated messages read so far.
+ */
+messages?: number, 
+/**
+ * `messages` plus each unread channel's gated messages as cached when the job
+ * started; equals `messages` once the job ends. Null while a channel still to
+ * be read has no count. Progress = messages / messages_total.
+ */
+messages_total?: number | null, proposals: number, unread?: number, };
+
+export type ChatRow = { id: string, at: string, member: Member, 
+/**
+ * The full Discord id, even when `member.name` is a placeholder.
+ */
+member_id?: string | null, channel: string | null, channel_id: string, 
+/**
+ * The first round's alias ("—" when no model was called).
+ */
+model: string, 
+/**
+ * Model alias per request round.
+ */
+models: Array<string>, latency_ms: number, outcome: ChatOutcome, asked: string, tools_used: Array<string>, 
+/**
+ * Turn totals as logged (v4 imports may carry one); null = not reported.
+ */
+prompt_tokens?: number | null, completion_tokens?: number | null, 
+/**
+ * Sum of the rounds' reported reasoning counts; null = unknown.
+ */
+reasoning_tokens?: number | null, };
+
+/**
+ * Per model; usage fields come from this model's round rows, never the
+ * turn totals.
+ */
+export type ChatSummary = { model: string, count: number, answered: number, refused: number, errors: number, p50_ms: number, tool_calls: number, prompt_tokens: number | null, completion_tokens: number | null, reported: number, est_ratio: number | null, };
+
+/**
+ * Query params of `GET /api/admin/chat`, all optional and combinable:
+ * `model`, `from`/`to` (guild-local YYYY-MM-DD), `outcome` (comma-separated,
+ * any of), `channel`, `member`, `q`, `tool` and `min_ms`. Unknown outcomes or
+ * malformed dates: 422 invalid_filter.
+ */
+export type Chat = { 
+/**
+ * Per model, over the filtered rows.
+ */
+summary: Array<ChatSummary>, rows: Array<ChatRow>, total: number, facets: LogFacets, };
+
+export type ChatToolCall = { 
+/**
+ * The request round (1-based index into `rounds`) whose reply asked for it.
+ */
+round: number, name: string, arguments: string, result: string, 
+/**
+ * Wall time; null when unknown (0 is a real 0 ms).
+ */
+took_ms: number | null, outcome: string, };
+
+export type RoundGuardrail = { clean: boolean, content_filter: boolean, };
+
+export type ChatRoundFacts = { round: number, requested_tools: Array<string>, finish: string, 
+/**
+ * Alias the request named, as sent.
+ */
+model: string, 
+/**
+ * Reasoning effort as sent (after capability shaping); null when none went out.
+ */
+effort: string | null, route: ChatRoute | null, 
+/**
+ * null when unknown.
+ */
+latency_ms: number | null, 
+/**
+ * Provider-reported usage for this request (both or neither); null = not reported.
+ */
+prompt_tokens?: number | null, completion_tokens?: number | null, 
+/**
+ * The context budget's estimate, completion reserve excluded.
+ */
+prompt_estimate?: number | null, reasoning_content?: string | null, reasoning_tokens?: number | null, 
+/**
+ * Every `x-request-id` this round sent, in order (retries included);
+ * empty when none was recorded.
+ */
+request_ids?: Array<string>, guardrail: RoundGuardrail, };
+
+export type ChatCard = { kind: string, url: string, };
+
+export type MaskedRoundView = { round: number, clean: boolean, 
+/**
+ * The request messages exactly as sent (masked).
+ */
+request: { role: 'system' | 'user' | 'assistant' | 'tool'; [key: string]: unknown }[], 
+/**
+ * The model's reply before names were restored.
+ */
+reply: string | null, 
+/**
+ * Tool-call arguments before names were restored.
+ */
+tool_calls: { name: string; arguments: string }[], };
+
+export type TokenName = { token: string, name: string, };
+
+/**
+ * A pseudonymized turn as the model saw it (admin only).
+ */
+export type ModelView = { rounds: Array<MaskedRoundView>, 
+/**
+ * The decoded, finished reply members saw.
+ */
+reply: string, 
+/**
+ * Fake name → member display name; never user ids.
+ */
+mapping: Array<TokenName>, };
+
+/**
+ * A profanity guardrail hit (`guardrail.profanity`, outcome `profanity`).
+ */
+export type ProfanityDetail = { 
+/**
+ * The member's question (deflected, no model call) or the finished reply.
+ */
+side: 'question' | 'reply', 
+/**
+ * The deny-listed word that matched (the first hit).
+ */
+word: string, 
+/**
+ * The line sent instead; null when the reply's clean retry came back
+ * clean and was delivered.
+ */
+sent: string | null, };
+
+export type ChatTurn = { said: string, tools: Array<ChatToolCall>, rounds: Array<ChatRoundFacts>, cards: Array<ChatCard>, raw: string, 
+/**
+ * Persona bundle id; null when none answered (rate limited, imported).
+ */
+persona: string | null, 
+/**
+ * Reply profile id; null for the bundle default voice.
+ */
+profile: string | null, profile_source: 'saved' | 'role' | 'default' | null, 
+/**
+ * The turn's route (its last round's); null when no model ran.
+ */
+route: ChatRoute | null, error: string | null, 
+/**
+ * Stable code: timeout, malformed, content_blocked, identity_leak_blocked, rate_limited, …
+ */
+error_code: string | null, 
+/**
+ * The question session's gateway correlation stem; each request went
+ * out as `{session_id}-{n}`. Null when not recorded.
+ */
+session_id?: string | null, 
+/**
+ * content_filter, external_unmasked, pseudonymized, identity_leak_blocked {role, kinds, count}, …
+ */
+guardrail: Record<string, unknown>, 
+/**
+ * Pseudonymized, with a stored Model view.
+ */
+masked: boolean, 
+/**
+ * Null for passthrough and withheld turns.
+ */
+model_view: ModelView | null, 
+/**
+ * Set on `profanity` turns: which side hit, the word and the line sent.
+ */
+profanity?: ProfanityDetail | null, id: string, at: string, member: Member, 
+/**
+ * The full Discord id, even when `member.name` is a placeholder.
+ */
+member_id?: string | null, channel: string | null, channel_id: string, 
+/**
+ * The first round's alias ("—" when no model was called).
+ */
+model: string, 
+/**
+ * Model alias per request round.
+ */
+models: Array<string>, latency_ms: number, outcome: ChatOutcome, asked: string, tools_used: Array<string>, 
+/**
+ * Turn totals as logged (v4 imports may carry one); null = not reported.
+ */
+prompt_tokens?: number | null, completion_tokens?: number | null, 
+/**
+ * Sum of the rounds' reported reasoning counts; null = unknown.
+ */
+reasoning_tokens?: number | null, };
+
+export type Permits = { in_use: number, total: number, };
+
+export type QueuedCall = { position: number, kind: string, who: string, waiting_s: number, };
+
+export type RateLevel = { available: number, capacity: number, refill_per_min: number, };
+
+export type RetryLevel = { remaining: number, capacity: number, };
+
+export type Breaker = { state: 'closed' | 'half_open' | 'open', failures: number, since: string, 
+/**
+ * Set only while a probe is scheduled (open).
+ */
+retry_at?: string | null, };
+
+export type BackendGroup = { name: string, backend: string, models: Array<string>, permits: Permits, queue: Array<QueuedCall>, rate: RateLevel, retry: RetryLevel, breaker: Breaker, };
+
+export type AdmissionWindow = { window: string, 
+/**
+ * No refusal is recorded yet, so the list is always empty.
+ */
+refusals: Refusal[], };
+
+export type Quota = { count: number, per_s: number, };
+
+export type Allowance = { member: Member, staff: boolean, 
+/**
+ * Null for staff (no limit).
+ */
+allowance: Quota | null, used: number, override: boolean, 
+/**
+ * When the oldest counted answer leaves the window and `used` drops by
+ * one (ISO-8601 UTC, rounded up to the second); null for staff and an
+ * empty window.
+ */
+resets_at: string | null, };
+
+export type Limits = { groups: Array<BackendGroup>, admission: AdmissionWindow, allowances: Array<Allowance>, 
+/**
+ * The server's clock when the snapshot was taken (ISO-8601 UTC), as `Week.generated_at`.
+ */
+generated_at: string, };
+
+export type ReplyStyleRef = { key: string, 
+/**
+ * The profile's label; the key when its file is no longer readable.
+ */
+name: string, 
+/**
+ * Members may choose it (Config → Persona visibility).
+ */
+public: boolean, };
+
+/**
+ * The reply profile in effect and the member's own saved choice. A role
+ * assignment (first match in Config → Persona) beats the saved choice.
+ */
+export type ReplyStyle = { 
+/**
+ * What chat uses now; null is the persona's default voice.
+ */
+in_effect: ReplyStyleRef | null, source: 'role' | 'saved' | 'default', 
+/**
+ * The role whose assignment wins (source `role`), when the role
+ * directory can name it.
+ */
+role_name: string | null, 
+/**
+ * The member's saved choice; null is the default voice.
+ */
+saved: ReplyStyleRef | null, };
+
+export type MeMember = { id: string, name: string, access: 'staff' | 'pilot' | 'none', 
+/**
+ * Holds the bossing role (on the roster).
+ */
+bossing: boolean, 
+/**
+ * Current guild roles, highest first; ids the directory cannot name are
+ * left out. Null while the role directory is unavailable.
+ */
+roles: Array<Role> | null, 
+/**
+ * The member's row exactly as Limits shows it; null without chatbot access.
+ */
+allowance: Allowance | null, 
+/**
+ * How chat answers this member; null while no persona is loaded.
+ */
+reply_style: ReplyStyle | null, };
+
+export type Me = { display: string, method: SignInMethod, 
+/**
+ * The guild member behind a Discord sign-in; null for the admin token,
+ * Tailscale, and a Discord account with no member row.
+ */
+member: MeMember | null, 
+/**
+ * The server's clock when this was read (ISO-8601 UTC).
+ */
+server_time: string, 
+/**
+ * The server build (`Cargo.toml` version).
+ */
+version: string, };
+
+/**
+ * One live session of the caller's identity (same sign-in method and
+ * subject). `handle` names it for sign-out; ids and hashes never leave.
+ */
+export type AccountSession = { handle: string, method: SignInMethod, 
+/**
+ * "Firefox · macOS"; null when the browser was not recognised.
+ */
+device: string | null, signed_in_at: string, last_seen_at: string, 
+/**
+ * The session this request came with.
+ */
+current: boolean, };
+
+export type AccountSessions = { sessions: Array<AccountSession>, 
+/**
+ * The server's clock when this was read (ISO-8601 UTC).
+ */
+generated_at: string, };
+
+export type SessionsEnded = { ended: number, };
+
+/**
+ * `{seq, hash}`: a record in the chain.
+ */
+export type ChainHead = { seq: number, hash: string, };
+
+/**
+ * `GET /api/admin/history?week&actor&run&before&limit`, newest first. With
+ * `run=<id>` (alone; not with `week` or `actor`): the run's change log, each
+ * record changing its row or RSVPs; the run's before → after is in those
+ * `rows` (`runs` keyed by `id`, `rsvps` by `run_id`).
+ */
+export type HistoryPage = { records: ChangeRecord[], head: ChainHead, 
+/**
+ * Pass as `before` for the next (older) page; null on the last page.
+ */
+next_before: number | null, 
+/**
+ * Matching records (journal only; `settings_total` counts Config saves).
+ */
+total: number, 
+/**
+ * Config section saves in this page's time window, newest first: at or
+ * after the page's oldest record (no lower bound on the last page) and
+ * before the oldest record of the page `before` came from (no upper
+ * bound on the first page), so each save appears on exactly one page.
+ * Always empty with `run`.
+ */
+settings: Array<SettingsChangeRow>, 
+/**
+ * Config saves matching `week`/`actor` across all pages.
+ */
+settings_total: number, };
+
+/**
+ * `{kind, id}`, as a record names its actor.
+ */
+export type SettingsActor = { kind: ActorKind, id: string, };
+
+/**
+ * One stored settings row's text before and after the save.
+ */
+export type SettingRowDiff = { key: string, from: string, to: string, };
+
+/**
+ * A saved Config section: view-only, outside the hash chain, never
+ * revertible. Settings rows never hold a secret.
+ */
+export type SettingsChangeRow = { id: number, at: string, actor: SettingsActor, surface: Surface, 
+/**
+ * The saved section; the PWA links `/config?section=<section>`.
+ */
+section: string, 
+/**
+ * The settings revision the save published (counted per process run).
+ */
+revision: number, 
+/**
+ * The boss week containing `at`, named as records name weeks.
+ */
+week: string, 
+/**
+ * Changed rows, by key.
+ */
+values: Array<SettingRowDiff>, };
+
+export type RowChange = { key: RowKey, 
+/**
+ * Full domain row; null = absent.
+ */
+before: Record<string, unknown> | null, after: Record<string, unknown> | null, };
+
+export type RowConflict = { seq: number, key: RowKey, expected: unknown, found: unknown, };
+
+export type SkippedKey = { key: RowKey, reason: string, };
+
+export type PlanOutcome = "preview" | "applied" | "unchanged" | "conflicts";
+
+export type RevertPlan = { outcome: PlanOutcome, 
+/**
+ * The requested records (a refused week or actor rollback: the conflicting ones).
+ */
+reverts: Array<number>, 
+/**
+ * Empty when `outcome` is `conflicts`: a strict refusal plans nothing.
+ */
+rows: Array<RowChange>, conflicts: Array<RowConflict>, skipped: Array<SkippedKey>, record: ChangeRecord | null, };
+
+/**
+ * `matches`: the chain holds the backup's head; `older_schema`: it does,
+ * but the backup predates the store's schema; `mismatch`: the head is not
+ * in the chain (truncated or forked history).
+ */
+export type BackupAnchor = "matches" | "older_schema" | "mismatch";
+
+export type BackupRow = { file: string, format: 'kanade.backup.v1', created_at: string, history_head: ChainHead, revision: number, schema_version: number, 
+/**
+ * The chain still contains `history_head`.
+ */
+anchored: boolean, anchor: BackupAnchor, };
+
+export type Verified = { ok: boolean, checked: number, head: ChainHead, 
+/**
+ * The first record that breaks the chain; null while it is intact.
+ */
+first_broken: number | null, };
+
+export type Checkpoints = { verified: Verified, 
+/**
+ * `KANADE_BACKUP_DIR` is set: false means no directory, not no backups.
+ */
+backup_dir_configured: boolean, 
+/**
+ * Newest first (at most 100); re-read and re-checked on every request.
+ */
+backups: Array<BackupRow>, };
+
+/**
+ * One audited event, newest first.
+ */
+export type SignInRow = { seq: number, at: string, realm: SignInRealm, event: SignInEvent, 
+/**
+ * `discord:<id>`, `tailscale:<login>`, `token`, or a refused user's id.
+ */
+actor: string | null, 
+/**
+ * The roster name for a Discord actor, else a readable label; `null`
+ * when the row names nobody (a rate limit).
+ */
+name: string | null, method: string | null, reason: string | null, request: string | null, client: string | null, device: string | null, request_id: string, };
+
+export type SignInPage = { rows: Array<SignInRow>, 
+/**
+ * The `before` for the next (older) page; `null` on the last.
+ */
+next_before: number | null, };
+
+/**
+ * The kind of page a place is: an Inbox member request or a run sheet.
+ */
+export type PresenceKind = "request" | "run";
+
+/**
+ * What the admin is doing there.
+ */
+export type PresenceMode = "viewing" | "editing";
+
+/**
+ * A place as a check-in names it.
+ */
+export type PresencePlace = { kind: PresenceKind, id: string, };
+
+/**
+ * `PUT /api/admin/presence` body. `seq` orders one tab's calls: it grows
+ * with every check-in and leave, and a check-in no newer than the tab's
+ * leave (`DELETE …&seq=`) is ignored, so a late one cannot bring it back.
+ */
+export type PresenceCheckIn = { at: PresencePlace, mode: PresenceMode, seq: number, };
+
+/**
+ * Another admin at the place: `seen_s` is the seconds since their latest
+ * check-in there (an admin with several tabs is listed once, editing if
+ * any tab is).
+ */
+export type PresenceEntry = { admin: Member, mode: PresenceMode, seen_s: number, };
+
+/**
+ * `PUT /api/admin/presence`: who else is there, and the cadence the client
+ * keeps (check in every `heartbeat_s`; an entry is gone `ttl_s` after its
+ * last check-in).
+ */
+export type PresenceHere = { heartbeat_s: number, ttl_s: number, here: Array<PresenceEntry>, };
+
+/**
+ * `GET /api/admin/presence?at=<kind>:<id>`: who else is there, read without
+ * checking in.
+ */
+export type PresenceList = { here: Array<PresenceEntry>, };
+
+/**
+ * What kind of data changed.
+ */
+export type EventTopic = "schedule" | "inbox" | "chat" | "extraction" | "rewrite" | "delivery" | "settings" | "rescan" | "members" | "presence";
+
+/**
+ * The default (`message`) event: one hint. `seq` counts hints since the
+ * process started, so a gap tells the client it missed some.
+ */
+export type EventHint = { topic: EventTopic, seq: number, };
+
+/**
+ * The `ready` event that opens every stream: the last hint's `seq` (0 before
+ * any), so a reconnecting client knows whether it missed something, and the
+ * server process's `boot` id: a new one means a restart (perhaps after a
+ * restore), when versions may go down and the client takes what it reads.
+ */
+export type EventReady = { seq: number, boot: string, };
+
+/**
+ * What changed for the signed-in member (`GET /api/public/events`).
+ */
+export type MemberEventTopic = "schedule" | "mine" | "allowance";
+
+/**
+ * The member stream's default (`message`) event: one hint, topic only. No
+ * `seq`: it would count every write, other members' and admins' included.
+ */
+export type MemberEventHint = { topic: MemberEventTopic, };
+
+/**
+ * The `ready` event that opens every member stream: the server process's
+ * `boot` id only. Hints sent while a stream was down are not replayed, so
+ * the client re-reads after every `ready` but the first.
+ */
+export type MemberEventReady = { boot: string, };

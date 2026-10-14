@@ -1,0 +1,89 @@
+<!--
+  The nap illustration inlined so it follows the colourway (see nap/nap-theme.css).
+  Markup is nap/nap.svg minus its <style>: an inline <style> element is blocked by
+  style-src 'self', so those rules live in this component's extracted CSS instead.
+  A vitest drift guard keeps the two in step.
+-->
+<script lang="ts">
+  // Markup-only component; the script block gives svelte-check a typed module.
+</script>
+
+<div class="nap-art">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 360" role="img" aria-labelledby="nap-title nap-desc">
+<title id="nap-title">Kanade is taking a nap</title>
+<desc id="nap-desc">The boss-week wall calendar itself asleep: closed eyes and blush on its header, a nightcap drooping off its top corner, Zzz drifting up, a speech bubble saying "brb", and a small alarm clock tagged "later".</desc>
+<defs><filter id="nap-shadow" x="-8%" y="-8%" width="116%" height="120%"><feDropShadow class="nap-shadow" dx="0" dy="5" stdDeviation="5"/></filter></defs>
+<rect class="nap-bg" width="480" height="360"/>
+<circle class="nap-glow" cx="240" cy="196" r="172"/>
+<g id="nap-cal" transform="rotate(-3 240 190)">
+<g filter="url(#nap-shadow)">
+<rect class="nap-paper" x="48" y="62" width="384" height="252" rx="16"/>
+<path class="nap-chrome" d="M48,78 A16,16 0 0 1 64,62 H416 A16,16 0 0 1 432,78 V104 H48 Z"/>
+<rect class="nap-line" x="48" y="62" width="384" height="252" rx="16" fill="none" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+</g>
+<path class="nap-grid" d="M102.9,104V314M157.7,104V314M212.6,104V314M267.4,104V314M322.3,104V314M377.1,104V314M48,126H432M48,190H432M48,252H432" stroke-width="2"/>
+<text class="nap-text nap-chrome-ink" x="66" y="90" font-size="15" letter-spacing="1">BOSS WEEK</text>
+<rect class="nap-accent" x="296" y="73" width="80" height="20" rx="10"/>
+<text class="nap-text nap-accent-ink" x="336" y="87" text-anchor="middle" font-size="10">THU RESET</text>
+<text class="nap-text nap-ink-fill nap-dim" y="119" font-size="10" text-anchor="middle"><tspan x="75">M</tspan><tspan x="130">T</tspan><tspan x="185">W</tspan><tspan x="240">T</tspan><tspan x="295">F</tspan><tspan x="350">S</tspan><tspan x="405">S</tspan></text>
+<rect class="nap-sky" x="56" y="134" width="38" height="9" rx="4.5"/><rect class="nap-soft" x="111" y="134" width="38" height="9" rx="4.5"/>
+<rect class="nap-accent" x="221" y="134" width="38" height="9" rx="4.5"/><rect class="nap-soft" x="386" y="134" width="38" height="9" rx="4.5"/>
+<rect class="nap-sky" x="331" y="148" width="38" height="9" rx="4.5"/><rect class="nap-accent" x="386" y="198" width="38" height="9" rx="4.5"/>
+<rect class="nap-soft" x="331" y="212" width="38" height="9" rx="4.5"/><rect class="nap-sky" x="386" y="262" width="38" height="9" rx="4.5"/>
+<rect class="nap-soft" x="56" y="198" width="38" height="9" rx="4.5"/><rect class="nap-sky" x="166" y="262" width="38" height="9" rx="4.5"/><rect class="nap-soft" x="276" y="276" width="38" height="9" rx="4.5"/>
+<path class="nap-line" d="M132,64 C132,44 150,44 150,64 M330,64 C330,44 348,44 348,64" fill="none" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/><circle class="nap-bg nap-line" cx="141" cy="66" r="7" stroke-width="3"/><circle class="nap-bg nap-line" cx="339" cy="66" r="7" stroke-width="3"/>
+<path class="nap-face" d="M196,90 Q206,100 216,90 M264,90 Q274,100 284,90" stroke-width="3.5" stroke-linejoin="round" stroke-linecap="round"/>
+<ellipse class="nap-blush" cx="186" cy="97" rx="9" ry="5"/><ellipse class="nap-blush" cx="294" cy="97" rx="9" ry="5"/>
+<path class="nap-face" d="M234,96 Q240,101 246,96" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<g>
+<path class="nap-cap nap-line" d="M456.0,69.6 C441.2,42.6 453.5,61.2 450.0,140.0 L450.0,140.0 C482.5,58.8 438.8,-6.6 400.0,54.4 Z" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<rect class="nap-paper nap-line" x="-54" y="-12" width="108" height="24" rx="12" transform="translate(426 66) rotate(45)" stroke-width="3" stroke-linejoin="round"/>
+<circle id="nap-pom" class="nap-paper nap-line" cx="450" cy="140" r="11" stroke-width="3"/>
+</g>
+</g>
+<g transform="translate(26 16)">
+<path class="nap-paper nap-line" d="M0,10 A10,10 0 0 1 10,0 H92 A10,10 0 0 1 102,10 V46 A10,10 0 0 1 92,56 H76 L88,74 L62,56 H10 A10,10 0 0 1 0,46 Z" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<g class="nap-line" transform="translate(18 10) rotate(2) scale(0.92)" fill="none" stroke-width="6" stroke-linecap="round" stroke-linejoin="round">
+<path d="M6,2 V40 M6,22 C8,16 22,16 22,29 C22,42 8,42 6,36"/>
+<path d="M32,18 V40 M32,26 C33,20 40,17 45,20"/>
+<path d="M56,2 V40 M56,22 C58,16 72,16 72,29 C72,42 58,42 56,36"/>
+</g>
+</g>
+<g class="nap-line" fill="none" stroke-width="3.5" stroke-linejoin="round" stroke-linecap="round"><path id="nap-z1" class="nap-z" d="M330,156 h12 l-12,12 h12"/><path id="nap-z2" class="nap-z" d="M350,128 h16 l-16,16 h16"/><path id="nap-z3" class="nap-z" d="M372,96 h21 l-21,21 h21"/></g>
+<g transform="translate(400 300)">
+<circle class="nap-accent nap-line" cx="-17" cy="-17" r="7" stroke-width="2.2"/><circle class="nap-accent nap-line" cx="17" cy="-17" r="7" stroke-width="2.2"/>
+<path class="nap-line" d="M-12,21 l-5,9 M12,21 l5,9" fill="none" stroke-width="3" stroke-linecap="round"/>
+<circle class="nap-paper nap-line" r="24" stroke-width="3"/><circle class="nap-grid" r="18" fill="none" stroke-width="2"/>
+<path class="nap-line" d="M0,-14 v3 M14,0 h-3 M0,14 v-3 M-14,0 h3" fill="none" stroke-width="2.2" stroke-linecap="round"/><path class="nap-line" d="M0,0 L0,-11 M0,0 L9,4" fill="none" stroke-width="3" stroke-linecap="round"/><circle class="nap-ink-fill" r="2.4"/><g transform="translate(22 10) rotate(10)"><path class="nap-line" d="M-2,-2 l-8,-8" fill="none" stroke-width="2.2" stroke-linecap="round"/><rect class="nap-accent" x="-4" y="-9" width="38" height="18" rx="5"/><text class="nap-text nap-accent-ink" x="15" y="4" text-anchor="middle" font-size="11" font-style="italic">later</text></g></g>
+</svg>
+</div>
+
+<style>
+.nap-bg{fill:var(--nap-bg,#FBF4E6)}
+.nap-glow{fill:var(--nap-glow,#CDBDF2);opacity:.2}
+.nap-paper{fill:var(--nap-paper,#fff)}
+.nap-chrome{fill:var(--nap-chrome,#CDBDF2)}
+.nap-chrome-ink{fill:var(--nap-chrome-ink,#2A2C57)}
+.nap-face{fill:none;stroke:var(--nap-chrome-ink,#2A2C57)}
+.nap-blush{fill:var(--nap-blush,#F4A0A6);opacity:.7}
+.nap-grid{stroke:var(--nap-soft,#CDBDF2)}
+.nap-ink-fill{fill:var(--nap-ink,#2A2C57)}
+.nap-line{stroke:var(--nap-ink,#2A2C57)}
+.nap-accent{fill:var(--nap-accent,#F2913F)}
+.nap-accent-ink{fill:var(--nap-accent-ink,#fff)}
+.nap-soft{fill:var(--nap-soft,#CDBDF2)}
+.nap-sky{fill:var(--nap-sky,#A9D5F5)}
+.nap-cap{fill:var(--nap-cap,#CDBDF2)}
+.nap-dim{opacity:.55}
+.nap-text{font-family:var(--nap-font,ui-rounded,'SF Pro Rounded',system-ui,-apple-system,'Segoe UI',sans-serif);font-weight:800}
+.nap-shadow{flood-color:var(--nap-shadow,#2A2C57);flood-opacity:.14}
+@media (prefers-reduced-motion: no-preference){
+:where(:root:not([data-motion=reduce])) #nap-cal{animation:nap-breathe 4.6s ease-in-out infinite;transform-origin:240px 200px}
+:where(:root:not([data-motion=reduce])) #nap-pom{animation:nap-bob 4.6s ease-in-out infinite}
+:where(:root:not([data-motion=reduce])) .nap-z{animation:nap-drift 3.9s ease-out infinite;opacity:0}
+:where(:root:not([data-motion=reduce])) #nap-z2{animation-delay:1.3s}:where(:root:not([data-motion=reduce])) #nap-z3{animation-delay:2.6s}
+}
+@keyframes nap-breathe{0%,100%{transform:rotate(-3deg) scale(1)}50%{transform:rotate(-3deg) scale(1.012)}}
+@keyframes nap-bob{0%,100%{transform:translateY(0)}50%{transform:translateY(3px)}}
+@keyframes nap-drift{0%{opacity:0;transform:translateY(8px)}22%{opacity:1}100%{opacity:0;transform:translateY(-24px)}}
+</style>

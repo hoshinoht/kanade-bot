@@ -1,0 +1,149 @@
+//! `Idempotency-Key` replays for admin effects that are not scheduler commits
+//! (Limits, rescan, Config), stored in the SQLite store so they survive a
+//! restart. A key's identity is the SHA-256 of the normalized full request:
+//! the same key and identity replays the stored answer without reapplying,
+//! another identity is `422 idempotency_mismatch`, an expired key is new.
+//! Each desk holds one lock across lookup, effect and record, so a concurrent
+//! retry with the same key waits for the first request and replays it.
+
+use axum::{
+    Json,
+    http::{HeaderMap, StatusCode},
+    response::{IntoResponse, Response},
+};
+use chrono::{DateTime, Utc};
+use serde_json::Value;
+
+use super::{
+    context::unavailable,
+    write::{Refusal, origin},
+};
+use crate::{
+    api::{
+        auth::AdminSession,
+        auth::crypto::sha256_hex,
+        state::{ApiState, ReadStore},
+    },
+    infrastructure::store::replays::{ReplayScope, StoredReplay},
+};
+
+pub(crate) fn mismatch() -> Refusal {
+    Refusal::unprocessable(
+        "idempotency_mismatch",
+        "That Idempotency-Key was already used for a different request.",
+    )
+}
+
+/// One keyed request: its desk, sender, key and identity.
+pub(crate) struct Keyed {
+    scope: ReplayScope,
+    actor: String,
+    key: String,
+    request: String,
+}
+
+impl Keyed {
+    /// `request` is the normalized full request; only its digest is kept.
+    pub(super) fn new(
+        scope: ReplayScope,
+        session: &AdminSession,
+        key: String,
+        request: &str,
+    ) -> Self {
+        Self {
+            scope,
+            actor: format!("{}:{}", session.actor.kind(), session.actor.id()),
+            key,
+            request: sha256_hex(request.as_bytes()),
+        }
+    }
+
+    /// A member's portal write: actor `member:<id>`, its key under
+    /// `public:` so it never meets an admin's or a Discord request id.
+    pub(crate) fn member(scope: ReplayScope, user_id: &str, key: &str, request: &str) -> Self {
+        Self {
+            scope,
+            actor: format!("member:{user_id}"),
+            key: format!("public:{key}"),
+            request: sha256_hex(request.as_bytes()),
+        }
+    }
+
+    pub(super) fn actor(&self) -> &str {
+        &self.actor
+    }
+
+    pub(super) fn key(&self) -> &str {
+        &self.key
+    }
+
+    /// The stored answer to this request, if the key was used for it;
+    /// `idempotency_mismatch` when it was used for another.
+    pub(super) fn check(
+        &self,
+        found: Option<StoredReplay>,
+    ) -> Result<Option<StoredReplay>, Refusal> {
+        match found {
+            Some(found) if found.request != self.request => Err(mismatch()),
+            found => Ok(found),
+        }
+    }
+
+    /// [`Self::check`] against the API store.
+    pub(crate) async fn recall(
+        &self,
+        store: &dyn ReadStore,
+        now: DateTime<Utc>,
+    ) -> Result<Option<StoredReplay>, Refusal> {
+        let found = store
+            .replay(self.scope, self.actor.clone(), self.key.clone(), now)
+            .await
+            .map_err(unavailable)?;
+        self.check(found)
+    }
+
+    /// The row recording `body` (answered with `status`) for this request.
+    pub(crate) fn answered(
+        &self,
+        status: StatusCode,
+        body: &Value,
+        now: DateTime<Utc>,
+    ) -> StoredReplay {
+        StoredReplay::new(
+            self.scope,
+            self.actor.clone(),
+            self.key.clone(),
+            self.request.clone(),
+            status.as_u16(),
+            body.to_string(),
+            now,
+        )
+    }
+}
+
+/// The stored answer as it was sent: its status and JSON body.
+pub(crate) fn replayed(replay: &StoredReplay) -> Result<axum::response::Response, Refusal> {
+    let status = StatusCode::from_u16(replay.status).map_err(Refusal::unavailable)?;
+    let body: Value = serde_json::from_str(&replay.body).map_err(Refusal::unavailable)?;
+    Ok((status, Json(body)).into_response())
+}
+
+/// A `Config`-scope request's key, if any, and its stored answer when it
+/// already has one (`idempotency_mismatch` for another request under it).
+pub(super) async fn recall(
+    state: &ApiState,
+    session: &AdminSession,
+    headers: &HeaderMap,
+    request: &str,
+) -> Result<(Option<Keyed>, Option<Response>), Refusal> {
+    let Some(key) = origin(session, headers)?.request_id else {
+        return Ok((None, None));
+    };
+    let keyed = Keyed::new(ReplayScope::Config, session, key, request);
+    Ok(
+        match keyed.recall(state.store.as_ref(), state.now()).await? {
+            Some(found) => (None, Some(replayed(&found)?)),
+            None => (Some(keyed), None),
+        },
+    )
+}

@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kanade.invalid/api-schemas/members.json",
+  "title": "Members roster and reply-style personas",
+  "$defs": {
+    "MemberRow": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name", "nickname", "aliases", "runs_this_week", "ping_level", "persona", "persona_available", "bossing", "access"],
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "nickname": { "$ref": "common.json#/$defs/NullableString" },
+        "aliases": { "type": "array", "items": { "type": "string" } },
+        "runs_this_week": { "type": "integer", "minimum": 0 },
+        "ping_level": { "enum": ["essential", "all", "off"] },
+        "persona": { "$ref": "common.json#/$defs/NullableString" },
+        "persona_available": { "type": "boolean" },
+        "bossing": { "type": "boolean" },
+        "access": { "enum": ["staff", "pilot", "none"] }
+      }
+    },
+    "MemberRows": { "type": "array", "items": { "$ref": "#/$defs/MemberRow" } },
+    "Persona": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["key", "name", "voice"],
+      "properties": {
+        "key": { "type": "string" },
+        "name": { "type": "string" },
+        "voice": { "type": "string", "description": "The profile's one-line voice; empty when it has none." }
+      }
+    },
+    "Personas": { "type": "array", "items": { "$ref": "#/$defs/Persona" } }
+  }
+}

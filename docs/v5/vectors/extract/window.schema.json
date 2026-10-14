@@ -1,0 +1,494 @@
+{
+  "$defs": {
+    "case": {
+      "additionalProperties": false,
+      "properties": {
+        "case_id": {
+          "pattern": "^[a-z0-9][a-z0-9-]*$",
+          "type": "string"
+        },
+        "expected": {
+          "$ref": "#/$defs/expected"
+        },
+        "input": {
+          "$ref": "#/$defs/input"
+        }
+      },
+      "required": [
+        "case_id",
+        "input",
+        "expected"
+      ],
+      "type": "object"
+    },
+    "expected": {
+      "additionalProperties": false,
+      "properties": {
+        "steps": {
+          "items": {
+            "$ref": "#/$defs/outcome"
+          },
+          "minItems": 1,
+          "type": "array"
+        }
+      },
+      "required": [
+        "steps"
+      ],
+      "type": "object"
+    },
+    "input": {
+      "additionalProperties": false,
+      "properties": {
+        "reset_time": {
+          "type": "string"
+        },
+        "reset_weekday": {
+          "maximum": 6,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "steps": {
+          "items": {
+            "$ref": "#/$defs/step"
+          },
+          "minItems": 1,
+          "type": "array"
+        },
+        "timezone": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "timezone",
+        "reset_weekday",
+        "reset_time",
+        "steps"
+      ],
+      "type": "object"
+    },
+    "outcome": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "value": {}
+          },
+          "required": [
+            "value"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "error": {
+              "additionalProperties": false,
+              "properties": {
+                "message": {
+                  "type": "string"
+                },
+                "type": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "message"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "error"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "replayCase": {
+      "additionalProperties": false,
+      "properties": {
+        "case_id": {
+          "pattern": "^[a-z0-9][a-z0-9-]*$",
+          "type": "string"
+        },
+        "input": {
+          "$ref": "#/$defs/input"
+        }
+      },
+      "required": [
+        "case_id",
+        "input"
+      ],
+      "type": "object"
+    },
+    "result_clamp_window": {
+      "type": "string"
+    },
+    "result_constants": {
+      "additionalProperties": false,
+      "properties": {
+        "automated_window": {
+          "type": "string"
+        },
+        "burst_gap_seconds": {
+          "type": "integer"
+        },
+        "default_window": {
+          "type": "string"
+        },
+        "max_burst_messages": {
+          "type": "integer"
+        },
+        "windows": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "burst_gap_seconds",
+        "max_burst_messages",
+        "windows",
+        "default_window",
+        "automated_window"
+      ],
+      "type": "object"
+    },
+    "result_group_bursts": {
+      "items": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      },
+      "type": "array"
+    },
+    "result_group_for_rescan": {
+      "items": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      },
+      "type": "array"
+    },
+    "result_previous_week_start": {
+      "format": "date-time",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?(Z|[+-]\\d{2}:\\d{2})$",
+      "type": "string"
+    },
+    "result_should_widen": {
+      "type": "boolean"
+    },
+    "result_split_until": {
+      "items": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      },
+      "type": "array"
+    },
+    "result_window_since": {
+      "format": "date-time",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?(Z|[+-]\\d{2}:\\d{2})$",
+      "type": "string"
+    },
+    "row": {
+      "additionalProperties": false,
+      "properties": {
+        "created_at": {
+          "format": "date-time",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?(Z|[+-]\\d{2}:\\d{2})$",
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "created_at"
+      ],
+      "type": "object"
+    },
+    "step": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/step_constants"
+        },
+        {
+          "$ref": "#/$defs/step_group_bursts"
+        },
+        {
+          "$ref": "#/$defs/step_group_for_rescan"
+        },
+        {
+          "$ref": "#/$defs/step_split_until"
+        },
+        {
+          "$ref": "#/$defs/step_clamp_window"
+        },
+        {
+          "$ref": "#/$defs/step_window_since"
+        },
+        {
+          "$ref": "#/$defs/step_previous_week_start"
+        },
+        {
+          "$ref": "#/$defs/step_should_widen"
+        }
+      ]
+    },
+    "step_clamp_window": {
+      "additionalProperties": false,
+      "properties": {
+        "automated": {
+          "type": "boolean"
+        },
+        "error_type": {
+          "enum": [
+            "ValueError"
+          ]
+        },
+        "op": {
+          "const": "clamp_window"
+        },
+        "window": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "op",
+        "window",
+        "automated"
+      ],
+      "type": "object"
+    },
+    "step_constants": {
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "const": "constants"
+        }
+      },
+      "required": [
+        "op"
+      ],
+      "type": "object"
+    },
+    "step_group_bursts": {
+      "additionalProperties": false,
+      "properties": {
+        "gap_seconds": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "op": {
+          "const": "group_bursts"
+        },
+        "rows": {
+          "items": {
+            "$ref": "#/$defs/row"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "op",
+        "rows",
+        "gap_seconds"
+      ],
+      "type": "object"
+    },
+    "step_group_for_rescan": {
+      "additionalProperties": false,
+      "properties": {
+        "cap": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "op": {
+          "const": "group_for_rescan"
+        },
+        "rows": {
+          "items": {
+            "$ref": "#/$defs/row"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "op",
+        "rows",
+        "cap"
+      ],
+      "type": "object"
+    },
+    "step_previous_week_start": {
+      "additionalProperties": false,
+      "properties": {
+        "op": {
+          "const": "previous_week_start"
+        },
+        "this_week": {
+          "format": "date-time",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?(Z|[+-]\\d{2}:\\d{2})$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "op",
+        "this_week"
+      ],
+      "type": "object"
+    },
+    "step_should_widen": {
+      "additionalProperties": false,
+      "properties": {
+        "automated": {
+          "type": "boolean"
+        },
+        "gated": {
+          "type": "integer"
+        },
+        "op": {
+          "const": "should_widen"
+        },
+        "window": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "op",
+        "window",
+        "gated",
+        "automated"
+      ],
+      "type": "object"
+    },
+    "step_split_until": {
+      "additionalProperties": false,
+      "properties": {
+        "max_messages": {
+          "type": "integer"
+        },
+        "op": {
+          "const": "split_until"
+        },
+        "rows": {
+          "items": {
+            "$ref": "#/$defs/row"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "op",
+        "rows",
+        "max_messages"
+      ],
+      "type": "object"
+    },
+    "step_window_since": {
+      "additionalProperties": false,
+      "properties": {
+        "error_type": {
+          "enum": [
+            "ValueError"
+          ]
+        },
+        "now": {
+          "format": "date-time",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?(Z|[+-]\\d{2}:\\d{2})$",
+          "type": "string"
+        },
+        "op": {
+          "const": "window_since"
+        },
+        "window": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "op",
+        "window",
+        "now"
+      ],
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "cases": {
+      "items": {
+        "$ref": "#/$defs/case"
+      },
+      "minItems": 1,
+      "type": "array"
+    },
+    "family": {
+      "const": "window"
+    },
+    "provenance": {
+      "additionalProperties": false,
+      "properties": {
+        "functions": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "inventory_surfaces": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "oracle": {
+          "type": "string"
+        },
+        "source_tests": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "oracle",
+        "functions",
+        "source_tests",
+        "inventory_surfaces"
+      ],
+      "type": "object"
+    },
+    "schema_version": {
+      "const": "v5-extract-window-v1"
+    }
+  },
+  "required": [
+    "schema_version",
+    "family",
+    "provenance",
+    "cases"
+  ],
+  "title": "Kanade v5 extraction vectors: window",
+  "type": "object"
+}

@@ -1,0 +1,146 @@
+//! In-memory `MemberStore` mirroring the SQLite constraints (valid, unique aliases).
+
+use std::collections::BTreeMap;
+use std::sync::MutexGuard;
+
+use crate::domain::members::{
+    GatewayMember, MemberProfile, MemberStore, PortalEdit, is_valid_alias,
+};
+use crate::domain::scheduler::StoreError;
+
+pub(super) type MemberScheduleGuard<'a> = MutexGuard<'a, BTreeMap<String, MemberProfile>>;
+
+impl super::MemoryScheduleStore {
+    /// Edit an existing row; true (and a `Members` hint) when it exists.
+    fn edit_member(&self, user_id: &str, edit: impl FnOnce(&mut MemberProfile)) -> bool {
+        let found = self.members().get_mut(user_id).map(edit).is_some();
+        if found {
+            self.written
+                .notify(crate::infrastructure::store::Written::Members);
+        }
+        found
+    }
+}
+
+impl MemberStore for super::MemoryScheduleStore {
+    async fn list_members(&self) -> Result<Vec<MemberProfile>, StoreError> {
+        Ok(self.members().values().cloned().collect())
+    }
+
+    async fn load_member(&self, user_id: &str) -> Result<Option<MemberProfile>, StoreError> {
+        Ok(self.members().get(user_id).cloned())
+    }
+
+    async fn put_member(&self, profile: MemberProfile) -> Result<(), StoreError> {
+        let result = async {
+            let mut members = self.members();
+            let user_id = &profile.member.user_id;
+            let mut seen = std::collections::BTreeSet::new();
+            for alias in &profile.aliases {
+                let taken = members
+                    .values()
+                    .any(|other| other.member.user_id != *user_id && other.aliases.contains(alias));
+                if !is_valid_alias(alias) || taken || !seen.insert(alias) {
+                    return Err(StoreError::Constraint(format!("alias {alias:?} refused")));
+                }
+            }
+            members.insert(user_id.clone(), profile);
+            Ok(())
+        }
+        .await;
+        self.written
+            .after(crate::infrastructure::store::Written::Members, result)
+    }
+
+    async fn apply_gateway(&self, update: GatewayMember) -> Result<(), StoreError> {
+        let mut members = self.members();
+        let before = members.get(&update.user_id).cloned();
+        let profile = members.entry(update.user_id.clone()).or_default();
+        profile.member.user_id = update.user_id;
+        profile.member.display_name = update.display_name;
+        profile.member.nickname = update.nickname;
+        profile.member.has_role = update.has_role;
+        profile.member.is_bot = update.is_bot;
+        profile.roles = update.roles;
+        profile.is_guild_admin = update.is_guild_admin;
+        // As SQLite: an identical update writes nothing and hints nothing.
+        if before.as_ref() != Some(&*profile) {
+            drop(members);
+            self.written
+                .notify(crate::infrastructure::store::Written::Members);
+        }
+        Ok(())
+    }
+
+    async fn member_departed(&self, user_id: &str) -> Result<bool, StoreError> {
+        Ok(self.edit_member(user_id, |profile| {
+            profile.member.has_role = false;
+            profile.roles.clear();
+            profile.is_guild_admin = false;
+        }))
+    }
+
+    async fn clear_guild_admin(&self, user_id: &str) -> Result<bool, StoreError> {
+        Ok(self.edit_member(user_id, |profile| profile.is_guild_admin = false))
+    }
+
+    async fn apply_portal(
+        &self,
+        user_id: &str,
+        edit: PortalEdit,
+    ) -> Result<Option<MemberProfile>, StoreError> {
+        let result =
+            portal(&mut self.members(), user_id, edit).map(|edited| edited.map(|(_, after)| after));
+        self.written.after_if(
+            crate::infrastructure::store::Written::Members,
+            result,
+            Option::is_some,
+        )
+    }
+}
+
+/// One portal edit, checked before anything moves; the row before and after.
+pub(super) fn portal(
+    members: &mut BTreeMap<String, MemberProfile>,
+    user_id: &str,
+    edit: PortalEdit,
+) -> Result<Option<(MemberProfile, MemberProfile)>, StoreError> {
+    if !members.contains_key(user_id) {
+        return Ok(None);
+    }
+    if let Some(alias) = &edit.add_alias {
+        let taken = members
+            .values()
+            .any(|other| other.member.user_id != user_id && other.aliases.contains(alias));
+        if taken || !is_valid_alias(alias) {
+            return Err(StoreError::Constraint(format!("alias {alias:?} refused")));
+        }
+    }
+    let Some(profile) = members.get_mut(user_id) else {
+        return Ok(None);
+    };
+    let before = profile.clone();
+    if let Some(level) = edit.ping_level {
+        profile.member.ping_level = level;
+    }
+    if let Some(style) = edit.reply_style {
+        profile.reply_style = style;
+    }
+    if let Some(alias) = edit.add_alias
+        && !profile.aliases.contains(&alias)
+    {
+        profile.aliases.push(alias);
+    }
+    if let Some(alias) = edit.remove_alias {
+        profile.aliases.retain(|held| *held != alias);
+    }
+    Ok(Some((before, profile.clone())))
+}
+
+impl super::MemoryScheduleStore {
+    pub(super) fn members(&self) -> MemberScheduleGuard<'_> {
+        self.members
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+}

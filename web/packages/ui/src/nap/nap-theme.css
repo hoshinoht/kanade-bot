@@ -1,0 +1,26 @@
+/* Maps the nap illustration's --nap-* colours onto the portal theme tokens, so
+   the inlined nap (NapArt.svelte) follows the active colourway and light/dark
+   face. Loaded after the token stylesheet; an <img>-embedded nap.svg keeps its
+   own palette. */
+.nap-art {
+  --nap-bg: var(--ground);
+  --nap-glow: var(--surface);
+  --nap-paper: var(--surface);
+  --nap-chrome: var(--win);
+  --nap-chrome-ink: var(--win-ink);
+  --nap-blush: color-mix(in srgb, var(--risk) 55%, var(--win));
+  --nap-ink: var(--ink);
+  --nap-soft: var(--line);
+  --nap-sky: color-mix(in srgb, var(--own) 40%, var(--surface));
+  --nap-accent: var(--accent);
+  --nap-accent-ink: var(--accent-ink);
+  --nap-cap: color-mix(in srgb, var(--accent) 35%, var(--surface));
+  --nap-shadow: var(--win);
+  --nap-font: var(--display);
+}
+
+.nap-art svg {
+  display: block;
+  width: min(100%, 36rem);
+  height: auto;
+}

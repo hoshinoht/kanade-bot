@@ -1,0 +1,1146 @@
+{
+  "cases": [
+    {
+      "case_id": "boss-and-participant-scoring",
+      "expected": {
+        "steps": [
+          {
+            "value": {
+              "ambiguous": false,
+              "candidate_ids": [
+                "a1a1a1a1-0000-4000-8000-000000000001",
+                "b2b2b2b2-0000-4000-8000-000000000002"
+              ],
+              "matched": true,
+              "reason": "bosses 1, participants 1",
+              "reason_code": "",
+              "run_id": "a1a1a1a1-0000-4000-8000-000000000001"
+            }
+          },
+          {
+            "value": {
+              "ambiguous": false,
+              "candidate_ids": [
+                "a1a1a1a1-0000-4000-8000-000000000001",
+                "b2b2b2b2-0000-4000-8000-000000000002"
+              ],
+              "matched": true,
+              "reason": "bosses 1, participants 1",
+              "reason_code": "",
+              "run_id": "b2b2b2b2-0000-4000-8000-000000000002"
+            }
+          },
+          {
+            "value": {
+              "ambiguous": true,
+              "candidate_ids": [
+                "a1a1a1a1-0000-4000-8000-000000000001",
+                "b2b2b2b2-0000-4000-8000-000000000002"
+              ],
+              "matched": true,
+              "reason": "2 runs match equally well",
+              "reason_code": "",
+              "run_id": "a1a1a1a1-0000-4000-8000-000000000001"
+            }
+          },
+          {
+            "value": {
+              "ambiguous": false,
+              "candidate_ids": [
+                "a1a1a1a1-0000-4000-8000-000000000001",
+                "b2b2b2b2-0000-4000-8000-000000000002"
+              ],
+              "matched": false,
+              "reason": "no run here has those bosses",
+              "reason_code": "no-boss-overlap",
+              "run_id": null
+            }
+          },
+          {
+            "value": {
+              "ambiguous": false,
+              "candidate_ids": [
+                "a1a1a1a1-0000-4000-8000-000000000001",
+                "b2b2b2b2-0000-4000-8000-000000000002"
+              ],
+              "matched": true,
+              "reason": "bosses 0, participants 1",
+              "reason_code": "",
+              "run_id": "a1a1a1a1-0000-4000-8000-000000000001"
+            }
+          },
+          {
+            "value": {
+              "ambiguous": true,
+              "candidate_ids": [
+                "a1a1a1a1-0000-4000-8000-000000000001",
+                "b2b2b2b2-0000-4000-8000-000000000002"
+              ],
+              "matched": true,
+              "reason": "2 runs match equally well",
+              "reason_code": "",
+              "run_id": "a1a1a1a1-0000-4000-8000-000000000001"
+            }
+          },
+          {
+            "value": {
+              "ambiguous": false,
+              "candidate_ids": [
+                "a1a1a1a1-0000-4000-8000-000000000001"
+              ],
+              "matched": true,
+              "reason": "the only run in this channel",
+              "reason_code": "",
+              "run_id": "a1a1a1a1-0000-4000-8000-000000000001"
+            }
+          },
+          {
+            "value": {
+              "ambiguous": false,
+              "candidate_ids": [],
+              "matched": false,
+              "reason": "guild-wide, and nobody named matches",
+              "reason_code": "",
+              "run_id": null
+            }
+          },
+          {
+            "value": {
+              "ambiguous": false,
+              "candidate_ids": [
+                "c3c3c3c3-0000-4000-8000-000000000003"
+              ],
+              "matched": true,
+              "reason": "the only run in this channel",
+              "reason_code": "",
+              "run_id": "c3c3c3c3-0000-4000-8000-000000000003"
+            }
+          },
+          {
+            "value": {
+              "ambiguous": false,
+              "candidate_ids": [
+                "c3c3c3c3-0000-4000-8000-000000000003"
+              ],
+              "matched": true,
+              "reason": "bosses 1, participants 1 (guild-wide)",
+              "reason_code": "",
+              "run_id": "c3c3c3c3-0000-4000-8000-000000000003"
+            }
+          },
+          {
+            "value": {
+              "ambiguous": false,
+              "candidate_ids": [],
+              "matched": false,
+              "reason": "no runs to match against",
+              "reason_code": "",
+              "run_id": null
+            }
+          },
+          {
+            "value": {
+              "ambiguous": false,
+              "candidate_ids": [
+                "a1a1a1a1-0000-4000-8000-000000000001",
+                "b2b2b2b2-0000-4000-8000-000000000002"
+              ],
+              "matched": true,
+              "reason": "bosses 0, participants 1",
+              "reason_code": "",
+              "run_id": "b2b2b2b2-0000-4000-8000-000000000002"
+            }
+          }
+        ]
+      },
+      "input": {
+        "runs": [
+          {
+            "bosses": [
+              "HMaleficStar",
+              "HFA"
+            ],
+            "channel_id": "900",
+            "datetime": "2026-08-31T21:30:00+08:00",
+            "id": "a1a1a1a1-0000-4000-8000-000000000001",
+            "participants": [
+              "11",
+              "22",
+              "33"
+            ],
+            "status": "planned",
+            "week_start": "2026-08-27T00:00:00+08:00"
+          },
+          {
+            "bosses": [
+              "HCarling",
+              "XKalos"
+            ],
+            "channel_id": "900",
+            "datetime": "2026-09-01T22:00:00+08:00",
+            "id": "b2b2b2b2-0000-4000-8000-000000000002",
+            "participants": [
+              "11",
+              "22",
+              "44"
+            ],
+            "status": "planned",
+            "week_start": "2026-08-27T00:00:00+08:00"
+          },
+          {
+            "bosses": [
+              "NMaleficStar"
+            ],
+            "channel_id": "901",
+            "datetime": "2026-09-02T21:00:00+08:00",
+            "id": "c3c3c3c3-0000-4000-8000-000000000003",
+            "participants": [
+              "33",
+              "44"
+            ],
+            "status": "planned",
+            "week_start": "2026-08-27T00:00:00+08:00"
+          },
+          {
+            "bosses": [
+              "HMaleficStar",
+              "HFA"
+            ],
+            "channel_id": "900",
+            "datetime": "2026-09-07T21:30:00+08:00",
+            "id": "d4d4d4d4-0000-4000-8000-000000000004",
+            "participants": [
+              "11",
+              "22",
+              "33"
+            ],
+            "status": "planned",
+            "week_start": "2026-09-03T00:00:00+08:00"
+          },
+          {
+            "bosses": [
+              "NBaldrix"
+            ],
+            "channel_id": "900",
+            "datetime": "2026-08-30T21:00:00+08:00",
+            "id": "e5e5e5e5-0000-4000-8000-000000000005",
+            "participants": [
+              "11"
+            ],
+            "status": "cancelled",
+            "week_start": "2026-08-27T00:00:00+08:00"
+          }
+        ],
+        "steps": [
+          {
+            "amendment": {
+              "bosses": [
+                "HMaleficStar"
+              ],
+              "confidence": 0.9,
+              "day_ref": null,
+              "evidence_message_ids": [],
+              "is_question": false,
+              "kind": "move",
+              "participants": [],
+              "rsvp": null,
+              "target_run_hint": null,
+              "time_ref": null
+            },
+            "author_id": "33",
+            "channel_runs": [
+              "a1a1a1a1-0000-4000-8000-000000000001",
+              "b2b2b2b2-0000-4000-8000-000000000002",
+              "e5e5e5e5-0000-4000-8000-000000000005"
+            ],
+            "guild_runs": [],
+            "mentioned": [],
+            "op": "match_run"
+          },
+          {
+            "amendment": {
+              "bosses": [
+                "HCarling"
+              ],
+              "confidence": 0.9,
+              "day_ref": null,
+              "evidence_message_ids": [],
+              "is_question": false,
+              "kind": "move",
+              "participants": [],
+              "rsvp": null,
+              "target_run_hint": null,
+              "time_ref": null
+            },
+            "author_id": "11",
+            "channel_runs": [
+              "a1a1a1a1-0000-4000-8000-000000000001",
+              "b2b2b2b2-0000-4000-8000-000000000002",
+              "e5e5e5e5-0000-4000-8000-000000000005"
+            ],
+            "guild_runs": [],
+            "mentioned": [],
+            "op": "match_run"
+          },
+          {
+            "amendment": {
+              "bosses": [
+                "HMaleficStar",
+                "HCarling"
+              ],
+              "confidence": 0.9,
+              "day_ref": null,
+              "evidence_message_ids": [],
+              "is_question": false,
+              "kind": "move",
+              "participants": [],
+              "rsvp": null,
+              "target_run_hint": null,
+              "time_ref": null
+            },
+            "author_id": "11",
+            "channel_runs": [
+              "a1a1a1a1-0000-4000-8000-000000000001",
+              "b2b2b2b2-0000-4000-8000-000000000002",
+              "e5e5e5e5-0000-4000-8000-000000000005"
+            ],
+            "guild_runs": [],
+            "mentioned": [],
+            "op": "match_run"
+          },
+          {
+            "amendment": {
+              "bosses": [
+                "NBaldrix"
+              ],
+              "confidence": 0.9,
+              "day_ref": null,
+              "evidence_message_ids": [],
+              "is_question": false,
+              "kind": "move",
+              "participants": [],
+              "rsvp": null,
+              "target_run_hint": null,
+              "time_ref": null
+            },
+            "author_id": "11",
+            "channel_runs": [
+              "a1a1a1a1-0000-4000-8000-000000000001",
+              "b2b2b2b2-0000-4000-8000-000000000002",
+              "e5e5e5e5-0000-4000-8000-000000000005"
+            ],
+            "guild_runs": [],
+            "mentioned": [],
+            "op": "match_run"
+          },
+          {
+            "amendment": {
+              "bosses": [],
+              "confidence": 0.9,
+              "day_ref": "wed",
+              "evidence_message_ids": [],
+              "is_question": false,
+              "kind": "move",
+              "participants": [],
+              "rsvp": null,
+              "target_run_hint": null,
+              "time_ref": null
+            },
+            "author_id": "33",
+            "channel_runs": [
+              "a1a1a1a1-0000-4000-8000-000000000001",
+              "b2b2b2b2-0000-4000-8000-000000000002",
+              "e5e5e5e5-0000-4000-8000-000000000005"
+            ],
+            "guild_runs": [],
+            "mentioned": [],
+            "op": "match_run"
+          },
+          {
+            "amendment": {
+              "bosses": [],
+              "confidence": 0.9,
+              "day_ref": "wed",
+              "evidence_message_ids": [],
+              "is_question": false,
+              "kind": "move",
+              "participants": [],
+              "rsvp": null,
+              "target_run_hint": null,
+              "time_ref": null
+            },
+            "author_id": "11",
+            "channel_runs": [
+              "a1a1a1a1-0000-4000-8000-000000000001",
+              "b2b2b2b2-0000-4000-8000-000000000002",
+              "e5e5e5e5-0000-4000-8000-000000000005"
+            ],
+            "guild_runs": [],
+            "mentioned": [],
+            "op": "match_run"
+          },
+          {
+            "amendment": {
+              "bosses": [],
+              "confidence": 0.9,
+              "day_ref": "wed",
+              "evidence_message_ids": [],
+              "is_question": false,
+              "kind": "move",
+              "participants": [],
+              "rsvp": null,
+              "target_run_hint": null,
+              "time_ref": null
+            },
+            "author_id": "99",
+            "channel_runs": [
+              "a1a1a1a1-0000-4000-8000-000000000001"
+            ],
+            "guild_runs": [],
+            "mentioned": [],
+            "op": "match_run"
+          },
+          {
+            "amendment": {
+              "bosses": [],
+              "confidence": 0.9,
+              "day_ref": "wed",
+              "evidence_message_ids": [],
+              "is_question": false,
+              "kind": "move",
+              "participants": [],
+              "rsvp": null,
+              "target_run_hint": null,
+              "time_ref": null
+            },
+            "author_id": "99",
+            "channel_runs": [
+              "e5e5e5e5-0000-4000-8000-000000000005"
+            ],
+            "guild_runs": [
+              "c3c3c3c3-0000-4000-8000-000000000003"
+            ],
+            "mentioned": [],
+            "op": "match_run"
+          },
+          {
+            "amendment": {
+              "bosses": [],
+              "confidence": 0.9,
+              "day_ref": "wed",
+              "evidence_message_ids": [],
+              "is_question": false,
+              "kind": "move",
+              "participants": [],
+              "rsvp": null,
+              "target_run_hint": null,
+              "time_ref": null
+            },
+            "author_id": "44",
+            "channel_runs": [
+              "e5e5e5e5-0000-4000-8000-000000000005"
+            ],
+            "guild_runs": [
+              "c3c3c3c3-0000-4000-8000-000000000003"
+            ],
+            "mentioned": [],
+            "op": "match_run"
+          },
+          {
+            "amendment": {
+              "bosses": [
+                "NMaleficStar"
+              ],
+              "confidence": 0.9,
+              "day_ref": null,
+              "evidence_message_ids": [],
+              "is_question": false,
+              "kind": "cancel",
+              "participants": [],
+              "rsvp": null,
+              "target_run_hint": null,
+              "time_ref": null
+            },
+            "author_id": "44",
+            "channel_runs": [],
+            "guild_runs": [
+              "c3c3c3c3-0000-4000-8000-000000000003"
+            ],
+            "mentioned": [],
+            "op": "match_run"
+          },
+          {
+            "amendment": {
+              "bosses": [],
+              "confidence": 0.9,
+              "day_ref": null,
+              "evidence_message_ids": [],
+              "is_question": false,
+              "kind": "cancel",
+              "participants": [],
+              "rsvp": null,
+              "target_run_hint": null,
+              "time_ref": null
+            },
+            "author_id": "44",
+            "channel_runs": [],
+            "guild_runs": [],
+            "mentioned": [],
+            "op": "match_run"
+          },
+          {
+            "amendment": {
+              "bosses": [],
+              "confidence": 0.9,
+              "day_ref": null,
+              "evidence_message_ids": [],
+              "is_question": false,
+              "kind": "rsvp",
+              "participants": [
+                "44"
+              ],
+              "rsvp": null,
+              "target_run_hint": null,
+              "time_ref": null
+            },
+            "author_id": null,
+            "channel_runs": [
+              "a1a1a1a1-0000-4000-8000-000000000001",
+              "b2b2b2b2-0000-4000-8000-000000000002",
+              "e5e5e5e5-0000-4000-8000-000000000005"
+            ],
+            "guild_runs": [],
+            "mentioned": [
+              "44"
+            ],
+            "op": "match_run"
+          }
+        ],
+        "timezone": "Asia/Kuala_Lumpur"
+      }
+    },
+    {
+      "case_id": "model-hints-are-checked",
+      "expected": {
+        "steps": [
+          {
+            "value": {
+              "ambiguous": false,
+              "candidate_ids": [
+                "a1a1a1a1-0000-4000-8000-000000000001",
+                "b2b2b2b2-0000-4000-8000-000000000002"
+              ],
+              "matched": true,
+              "reason": "model pointed at #b2b2b2b2",
+              "reason_code": "",
+              "run_id": "b2b2b2b2-0000-4000-8000-000000000002"
+            }
+          },
+          {
+            "value": {
+              "ambiguous": false,
+              "candidate_ids": [
+                "a1a1a1a1-0000-4000-8000-000000000001",
+                "b2b2b2b2-0000-4000-8000-000000000002"
+              ],
+              "matched": true,
+              "reason": "model pointed at #b2b2b2b2",
+              "reason_code": "",
+              "run_id": "b2b2b2b2-0000-4000-8000-000000000002"
+            }
+          },
+          {
+            "value": {
+              "ambiguous": false,
+              "candidate_ids": [
+                "a1a1a1a1-0000-4000-8000-000000000001",
+                "b2b2b2b2-0000-4000-8000-000000000002"
+              ],
+              "matched": true,
+              "reason": "bosses 0, participants 1",
+              "reason_code": "",
+              "run_id": "a1a1a1a1-0000-4000-8000-000000000001"
+            }
+          },
+          {
+            "value": {
+              "ambiguous": false,
+              "candidate_ids": [
+                "a1a1a1a1-0000-4000-8000-000000000001",
+                "b2b2b2b2-0000-4000-8000-000000000002"
+              ],
+              "matched": true,
+              "reason": "bosses 1, participants 1",
+              "reason_code": "",
+              "run_id": "a1a1a1a1-0000-4000-8000-000000000001"
+            }
+          },
+          {
+            "value": {
+              "ambiguous": true,
+              "candidate_ids": [
+                "a1a1a1a1-0000-4000-8000-000000000001",
+                "b2b2b2b2-0000-4000-8000-000000000002"
+              ],
+              "matched": true,
+              "reason": "2 runs match equally well",
+              "reason_code": "",
+              "run_id": "a1a1a1a1-0000-4000-8000-000000000001"
+            }
+          },
+          {
+            "value": {
+              "ambiguous": true,
+              "candidate_ids": [
+                "a1a1a1a1-0000-4000-8000-000000000001",
+                "b2b2b2b2-0000-4000-8000-000000000002"
+              ],
+              "matched": true,
+              "reason": "2 runs match equally well",
+              "reason_code": "",
+              "run_id": "a1a1a1a1-0000-4000-8000-000000000001"
+            }
+          }
+        ]
+      },
+      "input": {
+        "runs": [
+          {
+            "bosses": [
+              "HMaleficStar",
+              "HFA"
+            ],
+            "channel_id": "900",
+            "datetime": "2026-08-31T21:30:00+08:00",
+            "id": "a1a1a1a1-0000-4000-8000-000000000001",
+            "participants": [
+              "11",
+              "22",
+              "33"
+            ],
+            "status": "planned",
+            "week_start": "2026-08-27T00:00:00+08:00"
+          },
+          {
+            "bosses": [
+              "HCarling",
+              "XKalos"
+            ],
+            "channel_id": "900",
+            "datetime": "2026-09-01T22:00:00+08:00",
+            "id": "b2b2b2b2-0000-4000-8000-000000000002",
+            "participants": [
+              "11",
+              "22",
+              "44"
+            ],
+            "status": "planned",
+            "week_start": "2026-08-27T00:00:00+08:00"
+          },
+          {
+            "bosses": [
+              "NMaleficStar"
+            ],
+            "channel_id": "901",
+            "datetime": "2026-09-02T21:00:00+08:00",
+            "id": "c3c3c3c3-0000-4000-8000-000000000003",
+            "participants": [
+              "33",
+              "44"
+            ],
+            "status": "planned",
+            "week_start": "2026-08-27T00:00:00+08:00"
+          },
+          {
+            "bosses": [
+              "HMaleficStar",
+              "HFA"
+            ],
+            "channel_id": "900",
+            "datetime": "2026-09-07T21:30:00+08:00",
+            "id": "d4d4d4d4-0000-4000-8000-000000000004",
+            "participants": [
+              "11",
+              "22",
+              "33"
+            ],
+            "status": "planned",
+            "week_start": "2026-09-03T00:00:00+08:00"
+          },
+          {
+            "bosses": [
+              "NBaldrix"
+            ],
+            "channel_id": "900",
+            "datetime": "2026-08-30T21:00:00+08:00",
+            "id": "e5e5e5e5-0000-4000-8000-000000000005",
+            "participants": [
+              "11"
+            ],
+            "status": "cancelled",
+            "week_start": "2026-08-27T00:00:00+08:00"
+          }
+        ],
+        "steps": [
+          {
+            "amendment": {
+              "bosses": [],
+              "confidence": 0.9,
+              "day_ref": null,
+              "evidence_message_ids": [],
+              "is_question": false,
+              "kind": "move",
+              "participants": [],
+              "rsvp": null,
+              "target_run_hint": "#b2b2",
+              "time_ref": null
+            },
+            "author_id": null,
+            "channel_runs": [
+              "a1a1a1a1-0000-4000-8000-000000000001",
+              "b2b2b2b2-0000-4000-8000-000000000002",
+              "e5e5e5e5-0000-4000-8000-000000000005"
+            ],
+            "guild_runs": [],
+            "mentioned": [],
+            "op": "match_run"
+          },
+          {
+            "amendment": {
+              "bosses": [],
+              "confidence": 0.9,
+              "day_ref": null,
+              "evidence_message_ids": [],
+              "is_question": false,
+              "kind": "move",
+              "participants": [],
+              "rsvp": null,
+              "target_run_hint": "b2b2b2b2",
+              "time_ref": null
+            },
+            "author_id": null,
+            "channel_runs": [
+              "a1a1a1a1-0000-4000-8000-000000000001",
+              "b2b2b2b2-0000-4000-8000-000000000002",
+              "e5e5e5e5-0000-4000-8000-000000000005"
+            ],
+            "guild_runs": [],
+            "mentioned": [],
+            "op": "match_run"
+          },
+          {
+            "amendment": {
+              "bosses": [],
+              "confidence": 0.9,
+              "day_ref": null,
+              "evidence_message_ids": [],
+              "is_question": false,
+              "kind": "move",
+              "participants": [],
+              "rsvp": null,
+              "target_run_hint": "#b2b",
+              "time_ref": null
+            },
+            "author_id": "33",
+            "channel_runs": [
+              "a1a1a1a1-0000-4000-8000-000000000001",
+              "b2b2b2b2-0000-4000-8000-000000000002",
+              "e5e5e5e5-0000-4000-8000-000000000005"
+            ],
+            "guild_runs": [],
+            "mentioned": [],
+            "op": "match_run"
+          },
+          {
+            "amendment": {
+              "bosses": [
+                "HFA"
+              ],
+              "confidence": 0.9,
+              "day_ref": null,
+              "evidence_message_ids": [],
+              "is_question": false,
+              "kind": "move",
+              "participants": [],
+              "rsvp": null,
+              "target_run_hint": "#b2b2b2",
+              "time_ref": null
+            },
+            "author_id": "33",
+            "channel_runs": [
+              "a1a1a1a1-0000-4000-8000-000000000001",
+              "b2b2b2b2-0000-4000-8000-000000000002",
+              "e5e5e5e5-0000-4000-8000-000000000005"
+            ],
+            "guild_runs": [],
+            "mentioned": [],
+            "op": "match_run"
+          },
+          {
+            "amendment": {
+              "bosses": [],
+              "confidence": 0.9,
+              "day_ref": null,
+              "evidence_message_ids": [],
+              "is_question": false,
+              "kind": "move",
+              "participants": [],
+              "rsvp": null,
+              "target_run_hint": "#e5e5e5",
+              "time_ref": null
+            },
+            "author_id": "11",
+            "channel_runs": [
+              "a1a1a1a1-0000-4000-8000-000000000001",
+              "b2b2b2b2-0000-4000-8000-000000000002",
+              "e5e5e5e5-0000-4000-8000-000000000005"
+            ],
+            "guild_runs": [],
+            "mentioned": [],
+            "op": "match_run"
+          },
+          {
+            "amendment": {
+              "bosses": [],
+              "confidence": 0.9,
+              "day_ref": null,
+              "evidence_message_ids": [],
+              "is_question": false,
+              "kind": "move",
+              "participants": [],
+              "rsvp": null,
+              "target_run_hint": "#ffff",
+              "time_ref": null
+            },
+            "author_id": "11",
+            "channel_runs": [
+              "a1a1a1a1-0000-4000-8000-000000000001",
+              "b2b2b2b2-0000-4000-8000-000000000002",
+              "e5e5e5e5-0000-4000-8000-000000000005"
+            ],
+            "guild_runs": [],
+            "mentioned": [],
+            "op": "match_run"
+          }
+        ],
+        "timezone": "Asia/Kuala_Lumpur"
+      }
+    },
+    {
+      "case_id": "spanning-reachability-and-kinds",
+      "expected": {
+        "steps": [
+          {
+            "value": [
+              "a1a1a1a1-0000-4000-8000-000000000001",
+              "b2b2b2b2-0000-4000-8000-000000000002"
+            ]
+          },
+          {
+            "value": [
+              "a1a1a1a1-0000-4000-8000-000000000001"
+            ]
+          },
+          {
+            "value": [
+              "a1a1a1a1-0000-4000-8000-000000000001",
+              "b2b2b2b2-0000-4000-8000-000000000002"
+            ]
+          },
+          {
+            "value": []
+          },
+          {
+            "value": [
+              "a1a1a1a1-0000-4000-8000-000000000001"
+            ]
+          },
+          {
+            "value": [
+              "a1a1a1a1-0000-4000-8000-000000000001",
+              "d4d4d4d4-0000-4000-8000-000000000004"
+            ]
+          },
+          {
+            "value": [
+              "a1a1a1a1-0000-4000-8000-000000000001",
+              "d4d4d4d4-0000-4000-8000-000000000004"
+            ]
+          },
+          {
+            "value": true
+          },
+          {
+            "value": false
+          },
+          {
+            "value": true
+          },
+          {
+            "value": true
+          },
+          {
+            "value": true
+          },
+          {
+            "value": true
+          },
+          {
+            "value": true
+          },
+          {
+            "value": false
+          }
+        ]
+      },
+      "input": {
+        "runs": [
+          {
+            "bosses": [
+              "HMaleficStar",
+              "HFA"
+            ],
+            "channel_id": "900",
+            "datetime": "2026-08-31T21:30:00+08:00",
+            "id": "a1a1a1a1-0000-4000-8000-000000000001",
+            "participants": [
+              "11",
+              "22",
+              "33"
+            ],
+            "status": "planned",
+            "week_start": "2026-08-27T00:00:00+08:00"
+          },
+          {
+            "bosses": [
+              "HCarling",
+              "XKalos"
+            ],
+            "channel_id": "900",
+            "datetime": "2026-09-01T22:00:00+08:00",
+            "id": "b2b2b2b2-0000-4000-8000-000000000002",
+            "participants": [
+              "11",
+              "22",
+              "44"
+            ],
+            "status": "planned",
+            "week_start": "2026-08-27T00:00:00+08:00"
+          },
+          {
+            "bosses": [
+              "NMaleficStar"
+            ],
+            "channel_id": "901",
+            "datetime": "2026-09-02T21:00:00+08:00",
+            "id": "c3c3c3c3-0000-4000-8000-000000000003",
+            "participants": [
+              "33",
+              "44"
+            ],
+            "status": "planned",
+            "week_start": "2026-08-27T00:00:00+08:00"
+          },
+          {
+            "bosses": [
+              "HMaleficStar",
+              "HFA"
+            ],
+            "channel_id": "900",
+            "datetime": "2026-09-07T21:30:00+08:00",
+            "id": "d4d4d4d4-0000-4000-8000-000000000004",
+            "participants": [
+              "11",
+              "22",
+              "33"
+            ],
+            "status": "planned",
+            "week_start": "2026-09-03T00:00:00+08:00"
+          },
+          {
+            "bosses": [
+              "NBaldrix"
+            ],
+            "channel_id": "900",
+            "datetime": "2026-08-30T21:00:00+08:00",
+            "id": "e5e5e5e5-0000-4000-8000-000000000005",
+            "participants": [
+              "11"
+            ],
+            "status": "cancelled",
+            "week_start": "2026-08-27T00:00:00+08:00"
+          }
+        ],
+        "steps": [
+          {
+            "amendment": {
+              "bosses": [
+                "HMaleficStar",
+                "HCarling"
+              ],
+              "confidence": 0.9,
+              "day_ref": null,
+              "evidence_message_ids": [],
+              "is_question": false,
+              "kind": "sub",
+              "participants": [],
+              "rsvp": null,
+              "target_run_hint": null,
+              "time_ref": null
+            },
+            "author_id": "11",
+            "channel_runs": [
+              "a1a1a1a1-0000-4000-8000-000000000001",
+              "b2b2b2b2-0000-4000-8000-000000000002",
+              "e5e5e5e5-0000-4000-8000-000000000005"
+            ],
+            "op": "runs_spanned"
+          },
+          {
+            "amendment": {
+              "bosses": [
+                "HMaleficStar",
+                "HCarling"
+              ],
+              "confidence": 0.9,
+              "day_ref": null,
+              "evidence_message_ids": [],
+              "is_question": false,
+              "kind": "sub",
+              "participants": [],
+              "rsvp": null,
+              "target_run_hint": null,
+              "time_ref": null
+            },
+            "author_id": "33",
+            "channel_runs": [
+              "a1a1a1a1-0000-4000-8000-000000000001",
+              "b2b2b2b2-0000-4000-8000-000000000002",
+              "e5e5e5e5-0000-4000-8000-000000000005"
+            ],
+            "op": "runs_spanned"
+          },
+          {
+            "amendment": {
+              "bosses": [
+                "HMaleficStar",
+                "HCarling"
+              ],
+              "confidence": 0.9,
+              "day_ref": null,
+              "evidence_message_ids": [],
+              "is_question": false,
+              "kind": "sub",
+              "participants": [],
+              "rsvp": null,
+              "target_run_hint": null,
+              "time_ref": null
+            },
+            "author_id": "99",
+            "channel_runs": [
+              "a1a1a1a1-0000-4000-8000-000000000001",
+              "b2b2b2b2-0000-4000-8000-000000000002",
+              "e5e5e5e5-0000-4000-8000-000000000005"
+            ],
+            "op": "runs_spanned"
+          },
+          {
+            "amendment": {
+              "bosses": [],
+              "confidence": 0.9,
+              "day_ref": null,
+              "evidence_message_ids": [],
+              "is_question": false,
+              "kind": "sub",
+              "participants": [],
+              "rsvp": null,
+              "target_run_hint": null,
+              "time_ref": null
+            },
+            "author_id": null,
+            "channel_runs": [
+              "a1a1a1a1-0000-4000-8000-000000000001",
+              "b2b2b2b2-0000-4000-8000-000000000002",
+              "e5e5e5e5-0000-4000-8000-000000000005"
+            ],
+            "op": "runs_spanned"
+          },
+          {
+            "day": "2026-09-02",
+            "op": "reachable",
+            "runs": [
+              "a1a1a1a1-0000-4000-8000-000000000001",
+              "d4d4d4d4-0000-4000-8000-000000000004"
+            ]
+          },
+          {
+            "day": "2026-09-03",
+            "op": "reachable",
+            "runs": [
+              "a1a1a1a1-0000-4000-8000-000000000001",
+              "d4d4d4d4-0000-4000-8000-000000000004"
+            ]
+          },
+          {
+            "day": null,
+            "op": "reachable",
+            "runs": [
+              "a1a1a1a1-0000-4000-8000-000000000001",
+              "d4d4d4d4-0000-4000-8000-000000000004"
+            ]
+          },
+          {
+            "kind": "move",
+            "op": "needs_run"
+          },
+          {
+            "kind": "add",
+            "op": "needs_run"
+          },
+          {
+            "kind": "cancel",
+            "op": "needs_run"
+          },
+          {
+            "kind": "split",
+            "op": "needs_run"
+          },
+          {
+            "kind": "otot",
+            "op": "needs_run"
+          },
+          {
+            "kind": "sub",
+            "op": "needs_run"
+          },
+          {
+            "kind": "rsvp",
+            "op": "needs_run"
+          },
+          {
+            "kind": "fix",
+            "op": "needs_run"
+          }
+        ],
+        "timezone": "Asia/Kuala_Lumpur"
+      }
+    }
+  ],
+  "family": "match",
+  "provenance": {
+    "functions": [
+      "bot.extract.match.match_run",
+      "bot.extract.match.runs_spanned",
+      "bot.extract.match.reachable",
+      "bot.extract.match.needs_run"
+    ],
+    "inventory_surfaces": [
+      "extract.match"
+    ],
+    "oracle": "legacy/python bot.extract.match",
+    "source_tests": [
+      "tests/test_extract_match.py"
+    ]
+  },
+  "schema_version": "v5-extract-match-v1"
+}

@@ -1,0 +1,1825 @@
+{
+  "cases": [
+    {
+      "case_id": "channel-prompt-bytes",
+      "expected": {
+        "steps": [
+          {
+            "value": "You read a MapleStory guild's boss-planning chat (Singapore/Malaysian English)\nand extract *schedule changes*. You are an extractor, not the scheduler: a human\nconfirms everything you output, so report only what the messages say and never\nfill a gap with a guess.\n\nRULES\n1. Evidence only. Every amendment must come from words in the messages. Never\n   infer that someone is free, never use \"usual\" days, silence or past runs.\n2. Never work out a date or a time. Copy the expression exactly as written into\n   `day_ref` / `time_ref`: \"weds\", \"tmr\", \"tonight\", \"9:30pm\", \"930\",\n   \"1030~11+pm\", \"at 11\". If a field was not stated, use null. Never invent one.\n3. ALWAYS fill `bosses` when the amendment is about a run. Use the canonical\n   names from the BOSSES table, with their difficulty letter: HMaleficStar, XKalos,\n   NBaldrix. List EXACTLY the bosses the messages name -- if they say \"the\n   hcarl\" and RUNS has HCarling + XKalos together, the amendment is about\n   HCarling only. If a message names a boss with no difficulty (\"limbo\",\n   \"carling\", \"baldguy\"), take the difficulty from the run in RUNS that has it.\n   Only when the messages name no boss at all (\"can change to wed?\", \"930\n   postpone to 11\") do you fall back to the bosses of the run they must mean.\n   Leave `bosses` empty for an `rsvp`, or when you cannot tell which run.\n4. \"I\", \"me\", \"my\", \"we\", \"us\", \"our\" mean the author of that message.\n   `participants` holds discord user ids (the digits inside <@...>), never names.\n   For an `rsvp`, `participants` is exactly the author of the answering message.\n5. A question is not a decision. \"can change to wed?\", \"This Sunday can anot?\",\n   \"wanna try trio ncarling?\", \"930 can postpone to 11 anot ah?\" -> `is_question:\n   true`, and you still emit the amendment. A later \"Can\", \"Ok\", \"ya\", \"I ok\",\n   \"okay for wed\" from someone else is a SEPARATE amendment of kind `rsvp`. If\n   that reply also settles missing schedule details, emit an updated change with\n   `is_question: false` too.\n6. One amendment per affected run. \"mon and tues cannot\" with two runs in\n   RUNS is two amendments, one per run, each with that run's own bosses.\n7. A reply belongs to the thing it replies to. When someone proposes a run and\n   the next messages give a time (\"9pm i reach kk early\", \"amend to 9:45pm\",\n   \"Wed i done with boss so 9:30pm onwards\"), that time is the `time_ref` of\n   THAT proposal -- do not attach it to a different run in RUNS. If the same\n   person also agrees to come, that is an extra `rsvp`.\n   If one proposal moves multiple runs to the same day, an unqualified follow-up\n   time for that day applies to every proposed run.\n8. Always emit an `rsvp` for a message that answers yes or no, even when\n   nothing else about the run changes and even when the answer cancels the\n   proposal (\"Today can ah?\" -> \"today kenot sry\" is one `rsvp` with rsvp=\"no\").\n9. `evidence_message_ids` lists the [msg_id] values you used, and only those.\n10. If the messages contain no schedule change, return `{\"amendments\": [],\n   \"summary\": \"...\"}`. Chat about gear, prices, ring fees, damage, bots,\n   piloting, map/channel numbers (\"cc9\", \"ch7\") or plain banter is NOT a\n   schedule change. Numbers like \"290\" (a level), \"$18\" (a price) and\n   \"91234567\" (a phone number) are not times.\n\nKINDS -- pick by asking \"is this boss already in RUNS?\"\n  move   a run IN RUNS changes day/time (\"amend to 9:45pm\", \"change to wed?\",\n         \"postpone to 11\", \"shift our hstar to weds\")\n  add    a run NOT in RUNS happens (\"we doing our nstar and ncarl tonight?\",\n         \"wanna try trio ncarling also?\"). Still `add` when no day or time was\n         given -- day_ref and time_ref are then null and is_question is true.\n  cancel a run is off this week (\"mon and tuesday suddenly got things on\",\n         \"we skip both runs this wk\", \"cannot make it this week\")\n  split  the party is divided: \"we do X and u 3 the Y\", \"u all do X, i duo Y\",\n         \"we take xkalos, you take nbaldrix\". Any message that gives two groups\n         of people different bosses is `split`, not `add` or `move`, even when\n         one of the bosses is new. List every boss involved, both groups.\n  otot   a run happens on people's own time, no reminders. The words are \"otot\",\n         \"own time\", \"we do ourselves\". Literal \"otot\" must be `otot`, never\n         `add`; \"we otot do the hcarl\" names HCarling only, not its whole run.\n  sub    someone is out and a stand-in is wanted (\"find temp for this week?\",\n         \"can someone cover for me\"). `participants` is the author asking\n         for cover -- \"for me\" means that message's author, never empty.\n         A bare request with no answer yet is a question (`is_question: true`).\n  rsvp   an answer about attending: \"Can\", \"Ok\", \"I ok\", \"ya\", \"confirm\",\n         \"kenot\", \"cannot\", \"cmi\", \"not free\". Set `rsvp` to yes/no/maybe\n         and `participants` to just that author's id.\n  fix    a *recurring* timing, not a one-off. The giveaway words are \"default\n         time\", \"lock in\", \"lockin\", \"as usual\", \"every tuesday\", \"our standing\n         time\": \"HLimbo+Nbaldrix we just lockin on Tue night 1030pm onwards as\n         default time?\" is `fix`. Those words beat `add` and `move` even when\n         the boss has no run yet. Put the recurring day in day_ref.\n\nEDGE CASES\n- With a Monday run and a Tuesday run, \"mon and tuesday got things on can change\n  to wed?\" affects both. If the reply is \"Wed ... 9:30pm onwards can run le\",\n  both moves use wed/9:30pm and are no longer questions; also emit that author's\n  RSVP.\n- If HCarling and XKalos share a run, \"we otot do the hcarl\" produces exactly one\n  `otot` amendment whose bosses are `[\"HCarling\"]`.\n- If an EARLIER MESSAGE asks about attending a run and the only NEW MESSAGE is\n  \"Can\", emit an `rsvp` with `rsvp: \"yes\"` for the new message's author.\n- \"930 can postpone to 11 anot\" is a `move` with `is_question: true`.\n- \"Today can ah?\" followed by \"today kenot sry\" produces an `rsvp` with\n  `rsvp: \"no\"` for the second author.\n\nWORKED EXAMPLE\nRUNS:  #a1  HMaleficStar + HFA  Mon 21:30  <@11>(A) <@22>(B)\n[1] [.. Sun] [A <@11>] mon cannot leh, can change to wed?\n[2] [.. Sun] [B <@22>] okay for wed\n[3] [.. Sun] [A <@11>] and we add our nstar tmr 930?\n->\n{\"amendments\":[\n {\"kind\":\"move\",\"bosses\":[\"HMaleficStar\",\"HFA\"],\"day_ref\":\"wed\",\"time_ref\":null,\n  \"participants\":[\"11\"],\"rsvp\":null,\"is_question\":true,\"confidence\":0.8,\n  \"evidence_message_ids\":[\"1\"],\"target_run_hint\":\"#a1\"},\n {\"kind\":\"rsvp\",\"bosses\":[],\"day_ref\":\"wed\",\"time_ref\":null,\"participants\":[\"22\"],\n  \"rsvp\":\"yes\",\"is_question\":false,\"confidence\":0.9,\"evidence_message_ids\":[\"2\"],\n  \"target_run_hint\":\"#a1\"},\n {\"kind\":\"add\",\"bosses\":[\"NMaleficStar\"],\"day_ref\":\"tmr\",\"time_ref\":\"930\",\n  \"participants\":[\"11\"],\"rsvp\":null,\"is_question\":true,\"confidence\":0.8,\n  \"evidence_message_ids\":[\"3\"],\"target_run_hint\":null}],\n \"summary\":\"HMaleficStar+HFA proposed for Wed, B agrees; NMaleficStar proposed for tomorrow 930\"}\n\n`confidence` is 0-1: 0.9 when someone stated the change plainly, 0.6-0.8 when it\nwas proposed and not yet agreed, below 0.5 when you are unsure it is scheduling\nat all. `target_run_hint` is the #id of the run from RUNS this is about, or null.\n"
+          },
+          {
+            "value": [
+              {
+                "content": "You read a MapleStory guild's boss-planning chat (Singapore/Malaysian English)\nand extract *schedule changes*. You are an extractor, not the scheduler: a human\nconfirms everything you output, so report only what the messages say and never\nfill a gap with a guess.\n\nRULES\n1. Evidence only. Every amendment must come from words in the messages. Never\n   infer that someone is free, never use \"usual\" days, silence or past runs.\n2. Never work out a date or a time. Copy the expression exactly as written into\n   `day_ref` / `time_ref`: \"weds\", \"tmr\", \"tonight\", \"9:30pm\", \"930\",\n   \"1030~11+pm\", \"at 11\". If a field was not stated, use null. Never invent one.\n3. ALWAYS fill `bosses` when the amendment is about a run. Use the canonical\n   names from the BOSSES table, with their difficulty letter: HMaleficStar, XKalos,\n   NBaldrix. List EXACTLY the bosses the messages name -- if they say \"the\n   hcarl\" and RUNS has HCarling + XKalos together, the amendment is about\n   HCarling only. If a message names a boss with no difficulty (\"limbo\",\n   \"carling\", \"baldguy\"), take the difficulty from the run in RUNS that has it.\n   Only when the messages name no boss at all (\"can change to wed?\", \"930\n   postpone to 11\") do you fall back to the bosses of the run they must mean.\n   Leave `bosses` empty for an `rsvp`, or when you cannot tell which run.\n4. \"I\", \"me\", \"my\", \"we\", \"us\", \"our\" mean the author of that message.\n   `participants` holds discord user ids (the digits inside <@...>), never names.\n   For an `rsvp`, `participants` is exactly the author of the answering message.\n5. A question is not a decision. \"can change to wed?\", \"This Sunday can anot?\",\n   \"wanna try trio ncarling?\", \"930 can postpone to 11 anot ah?\" -> `is_question:\n   true`, and you still emit the amendment. A later \"Can\", \"Ok\", \"ya\", \"I ok\",\n   \"okay for wed\" from someone else is a SEPARATE amendment of kind `rsvp`. If\n   that reply also settles missing schedule details, emit an updated change with\n   `is_question: false` too.\n6. One amendment per affected run. \"mon and tues cannot\" with two runs in\n   RUNS is two amendments, one per run, each with that run's own bosses.\n7. A reply belongs to the thing it replies to. When someone proposes a run and\n   the next messages give a time (\"9pm i reach kk early\", \"amend to 9:45pm\",\n   \"Wed i done with boss so 9:30pm onwards\"), that time is the `time_ref` of\n   THAT proposal -- do not attach it to a different run in RUNS. If the same\n   person also agrees to come, that is an extra `rsvp`.\n   If one proposal moves multiple runs to the same day, an unqualified follow-up\n   time for that day applies to every proposed run.\n8. Always emit an `rsvp` for a message that answers yes or no, even when\n   nothing else about the run changes and even when the answer cancels the\n   proposal (\"Today can ah?\" -> \"today kenot sry\" is one `rsvp` with rsvp=\"no\").\n9. `evidence_message_ids` lists the [msg_id] values you used, and only those.\n10. If the messages contain no schedule change, return `{\"amendments\": [],\n   \"summary\": \"...\"}`. Chat about gear, prices, ring fees, damage, bots,\n   piloting, map/channel numbers (\"cc9\", \"ch7\") or plain banter is NOT a\n   schedule change. Numbers like \"290\" (a level), \"$18\" (a price) and\n   \"91234567\" (a phone number) are not times.\n\nKINDS -- pick by asking \"is this boss already in RUNS?\"\n  move   a run IN RUNS changes day/time (\"amend to 9:45pm\", \"change to wed?\",\n         \"postpone to 11\", \"shift our hstar to weds\")\n  add    a run NOT in RUNS happens (\"we doing our nstar and ncarl tonight?\",\n         \"wanna try trio ncarling also?\"). Still `add` when no day or time was\n         given -- day_ref and time_ref are then null and is_question is true.\n  cancel a run is off this week (\"mon and tuesday suddenly got things on\",\n         \"we skip both runs this wk\", \"cannot make it this week\")\n  split  the party is divided: \"we do X and u 3 the Y\", \"u all do X, i duo Y\",\n         \"we take xkalos, you take nbaldrix\". Any message that gives two groups\n         of people different bosses is `split`, not `add` or `move`, even when\n         one of the bosses is new. List every boss involved, both groups.\n  otot   a run happens on people's own time, no reminders. The words are \"otot\",\n         \"own time\", \"we do ourselves\". Literal \"otot\" must be `otot`, never\n         `add`; \"we otot do the hcarl\" names HCarling only, not its whole run.\n  sub    someone is out and a stand-in is wanted (\"find temp for this week?\",\n         \"can someone cover for me\"). `participants` is the author asking\n         for cover -- \"for me\" means that message's author, never empty.\n         A bare request with no answer yet is a question (`is_question: true`).\n  rsvp   an answer about attending: \"Can\", \"Ok\", \"I ok\", \"ya\", \"confirm\",\n         \"kenot\", \"cannot\", \"cmi\", \"not free\". Set `rsvp` to yes/no/maybe\n         and `participants` to just that author's id.\n  fix    a *recurring* timing, not a one-off. The giveaway words are \"default\n         time\", \"lock in\", \"lockin\", \"as usual\", \"every tuesday\", \"our standing\n         time\": \"HLimbo+Nbaldrix we just lockin on Tue night 1030pm onwards as\n         default time?\" is `fix`. Those words beat `add` and `move` even when\n         the boss has no run yet. Put the recurring day in day_ref.\n\nEDGE CASES\n- With a Monday run and a Tuesday run, \"mon and tuesday got things on can change\n  to wed?\" affects both. If the reply is \"Wed ... 9:30pm onwards can run le\",\n  both moves use wed/9:30pm and are no longer questions; also emit that author's\n  RSVP.\n- If HCarling and XKalos share a run, \"we otot do the hcarl\" produces exactly one\n  `otot` amendment whose bosses are `[\"HCarling\"]`.\n- If an EARLIER MESSAGE asks about attending a run and the only NEW MESSAGE is\n  \"Can\", emit an `rsvp` with `rsvp: \"yes\"` for the new message's author.\n- \"930 can postpone to 11 anot\" is a `move` with `is_question: true`.\n- \"Today can ah?\" followed by \"today kenot sry\" produces an `rsvp` with\n  `rsvp: \"no\"` for the second author.\n\nWORKED EXAMPLE\nRUNS:  #a1  HMaleficStar + HFA  Mon 21:30  <@11>(A) <@22>(B)\n[1] [.. Sun] [A <@11>] mon cannot leh, can change to wed?\n[2] [.. Sun] [B <@22>] okay for wed\n[3] [.. Sun] [A <@11>] and we add our nstar tmr 930?\n->\n{\"amendments\":[\n {\"kind\":\"move\",\"bosses\":[\"HMaleficStar\",\"HFA\"],\"day_ref\":\"wed\",\"time_ref\":null,\n  \"participants\":[\"11\"],\"rsvp\":null,\"is_question\":true,\"confidence\":0.8,\n  \"evidence_message_ids\":[\"1\"],\"target_run_hint\":\"#a1\"},\n {\"kind\":\"rsvp\",\"bosses\":[],\"day_ref\":\"wed\",\"time_ref\":null,\"participants\":[\"22\"],\n  \"rsvp\":\"yes\",\"is_question\":false,\"confidence\":0.9,\"evidence_message_ids\":[\"2\"],\n  \"target_run_hint\":\"#a1\"},\n {\"kind\":\"add\",\"bosses\":[\"NMaleficStar\"],\"day_ref\":\"tmr\",\"time_ref\":\"930\",\n  \"participants\":[\"11\"],\"rsvp\":null,\"is_question\":true,\"confidence\":0.8,\n  \"evidence_message_ids\":[\"3\"],\"target_run_hint\":null}],\n \"summary\":\"HMaleficStar+HFA proposed for Wed, B agrees; NMaleficStar proposed for tomorrow 930\"}\n\n`confidence` is 0-1: 0.9 when someone stated the change plainly, 0.6-0.8 when it\nwas proposed and not yet agreed, below 0.5 when you are unsure it is scheduling\nat all. `target_run_hint` is the #id of the run from RUNS this is about, or null.\n",
+                "role": "system"
+              },
+              {
+                "content": "CHANNEL: #hstar-party\n\nNOW: 2026-08-30 13:07 Sun (Asia/Kuala_Lumpur)\n\nBOSSES (use these exact names):\n  NMaleficStar, HMaleficStar  = Malefic Star  (chat: star, mstar)\n  NFA, HFA, XFA  = First Adversary  (chat: fa)\n  NCarling, HCarling, XCarling  = Chief Carling  (chat: carl, carling)\n  EKalos, NKalos, CKalos, XKalos  = Kalos the Guardian  (chat: kalos)\n  NLimbo, HLimbo  = Limbo  (chat: limbo)\n\nROSTER:\n  <@11> = Alvin tan\n  <@22> = kanon\n  <@33> = Priya\n  <@44> = Mei\n\nRUNS scheduled in this channel:\n  #a1a1a1a1  HMaleficStar + HFA  2026-08-31 21:30 Mon  [planned]  <@11>(Alvin tan) <@22>(kanon)\n  #b2b2b2b2  HCarling + XKalos  own time  [otot]  <@11>(Alvin tan) <@22>(kanon) <@99>(?)\n\nFIXED weekly timings for this channel:\n  #f6f6f6f6  HLimbo  every Tue 22:30  <@11>(Alvin tan) <@44>(Mei)\n\nEARLIER MESSAGES (background - a NEW message below may be answering one of these, but do not extract an amendment whose only evidence is here):\n[398] [2026-08-30 12:40 Sun] [Priya <@33>] anyone free mon?\n\nNEW MESSAGES (extract from these):\n[401] [2026-08-30 13:01 Sun] [Alvin tan <@11>] mon cannot leh, can change to wed?\n[402] [2026-08-30 13:05 Sun] [kanon <@22>] okay for wed / <@44> u coming?\n[403] [2026-08-30 13:07 Sun] [Alvin tan <@11>] and we add our nstar tmr 930?\n\nReturn the amendments these NEW messages support. If there are none, return {\"amendments\": [], \"summary\": \"no schedule change\"}.",
+                "role": "user"
+              }
+            ]
+          },
+          {
+            "value": [
+              "11",
+              "22",
+              "33",
+              "44"
+            ]
+          },
+          {
+            "value": [
+              "Carling",
+              "FA",
+              "Kalos",
+              "Limbo",
+              "MaleficStar"
+            ]
+          }
+        ]
+      },
+      "input": {
+        "catalog": {
+          "bosses": [
+            {
+              "aliases": [
+                "star",
+                "mstar"
+              ],
+              "difficulties": [
+                "n",
+                "h"
+              ],
+              "full": "Malefic Star",
+              "short": "MaleficStar"
+            },
+            {
+              "aliases": [
+                "fa"
+              ],
+              "difficulties": [
+                "n",
+                "h",
+                "x"
+              ],
+              "full": "First Adversary",
+              "short": "FA"
+            },
+            {
+              "aliases": [
+                "carl",
+                "carling"
+              ],
+              "difficulties": [
+                "n",
+                "h",
+                "x"
+              ],
+              "full": "Chief Carling",
+              "short": "Carling"
+            },
+            {
+              "aliases": [
+                "kalos"
+              ],
+              "difficulties": [
+                "e",
+                "n",
+                "c",
+                "x"
+              ],
+              "full": "Kalos the Guardian",
+              "short": "Kalos"
+            },
+            {
+              "aliases": [
+                "bald",
+                "baldguy"
+              ],
+              "difficulties": [
+                "n",
+                "h"
+              ],
+              "full": "Baldrix",
+              "short": "Baldrix"
+            },
+            {
+              "aliases": [
+                "limbo"
+              ],
+              "difficulties": [
+                "n",
+                "h"
+              ],
+              "full": "Limbo",
+              "short": "Limbo"
+            }
+          ],
+          "difficulties": [
+            {
+              "label": "Easy",
+              "prefix": "e"
+            },
+            {
+              "label": "Normal",
+              "prefix": "n"
+            },
+            {
+              "label": "Hard",
+              "prefix": "h"
+            },
+            {
+              "label": "Chaos",
+              "prefix": "c"
+            },
+            {
+              "label": "Extreme",
+              "prefix": "x"
+            }
+          ]
+        },
+        "steps": [
+          {
+            "op": "system_prompt"
+          },
+          {
+            "context": {
+              "burst": [
+                {
+                  "author_id": "11",
+                  "author_name": "Alvin tan",
+                  "content": "mon cannot leh, can change to wed?",
+                  "created_at": "2026-08-30T13:01:00+08:00",
+                  "id": "401"
+                },
+                {
+                  "author_id": "22",
+                  "author_name": "kanon",
+                  "content": "okay for wed\n\n  <@44> u coming?  ",
+                  "created_at": "2026-08-30T13:05:00+08:00",
+                  "id": "402"
+                },
+                {
+                  "author_id": "11",
+                  "author_name": "Alvin tan",
+                  "content": "and we add our nstar tmr 930?",
+                  "created_at": "2026-08-30T13:07:00+08:00",
+                  "id": "403"
+                }
+              ],
+              "channel_name": "hstar-party",
+              "context": [
+                {
+                  "author_id": "33",
+                  "author_name": "Priya",
+                  "content": "anyone free mon?",
+                  "created_at": "2026-08-30T12:40:00+08:00",
+                  "id": "398"
+                }
+              ],
+              "fixed_runs": [
+                {
+                  "bosses": [
+                    "HLimbo"
+                  ],
+                  "channel_id": "900",
+                  "id": "f6f6f6f6-0000-4000-8000-000000000006",
+                  "participants": [
+                    "11",
+                    "44"
+                  ],
+                  "time": "22:30",
+                  "weekday": 1
+                }
+              ],
+              "guild_runs": [],
+              "roster": [
+                {
+                  "display_name": "Alvin tan",
+                  "nickname": null,
+                  "user_id": "11"
+                },
+                {
+                  "display_name": "kanon [AZUR]",
+                  "nickname": "kanon",
+                  "user_id": "22"
+                },
+                {
+                  "display_name": "Priya",
+                  "nickname": null,
+                  "user_id": "33"
+                },
+                {
+                  "display_name": "Mei",
+                  "nickname": null,
+                  "user_id": "44"
+                }
+              ],
+              "runs": [
+                {
+                  "bosses": [
+                    "HMaleficStar",
+                    "HFA"
+                  ],
+                  "channel_id": "900",
+                  "datetime": "2026-08-31T21:30:00+08:00",
+                  "id": "a1a1a1a1-0000-4000-8000-000000000001",
+                  "participants": [
+                    "11",
+                    "22"
+                  ],
+                  "status": "planned",
+                  "week_start": "2026-08-27T00:00:00+08:00"
+                },
+                {
+                  "bosses": [
+                    "HCarling",
+                    "XKalos"
+                  ],
+                  "channel_id": "900",
+                  "datetime": "2026-09-01T22:00:00+08:00",
+                  "id": "b2b2b2b2-0000-4000-8000-000000000002",
+                  "participants": [
+                    "11",
+                    "22",
+                    "99"
+                  ],
+                  "status": "otot",
+                  "week_start": "2026-08-27T00:00:00+08:00"
+                }
+              ]
+            },
+            "op": "build_messages"
+          },
+          {
+            "context": {
+              "burst": [
+                {
+                  "author_id": "11",
+                  "author_name": "Alvin tan",
+                  "content": "mon cannot leh, can change to wed?",
+                  "created_at": "2026-08-30T13:01:00+08:00",
+                  "id": "401"
+                },
+                {
+                  "author_id": "22",
+                  "author_name": "kanon",
+                  "content": "okay for wed\n\n  <@44> u coming?  ",
+                  "created_at": "2026-08-30T13:05:00+08:00",
+                  "id": "402"
+                },
+                {
+                  "author_id": "11",
+                  "author_name": "Alvin tan",
+                  "content": "and we add our nstar tmr 930?",
+                  "created_at": "2026-08-30T13:07:00+08:00",
+                  "id": "403"
+                }
+              ],
+              "channel_name": "hstar-party",
+              "context": [
+                {
+                  "author_id": "33",
+                  "author_name": "Priya",
+                  "content": "anyone free mon?",
+                  "created_at": "2026-08-30T12:40:00+08:00",
+                  "id": "398"
+                }
+              ],
+              "fixed_runs": [
+                {
+                  "bosses": [
+                    "HLimbo"
+                  ],
+                  "channel_id": "900",
+                  "id": "f6f6f6f6-0000-4000-8000-000000000006",
+                  "participants": [
+                    "11",
+                    "44"
+                  ],
+                  "time": "22:30",
+                  "weekday": 1
+                }
+              ],
+              "guild_runs": [],
+              "roster": [
+                {
+                  "display_name": "Alvin tan",
+                  "nickname": null,
+                  "user_id": "11"
+                },
+                {
+                  "display_name": "kanon [AZUR]",
+                  "nickname": "kanon",
+                  "user_id": "22"
+                },
+                {
+                  "display_name": "Priya",
+                  "nickname": null,
+                  "user_id": "33"
+                },
+                {
+                  "display_name": "Mei",
+                  "nickname": null,
+                  "user_id": "44"
+                }
+              ],
+              "runs": [
+                {
+                  "bosses": [
+                    "HMaleficStar",
+                    "HFA"
+                  ],
+                  "channel_id": "900",
+                  "datetime": "2026-08-31T21:30:00+08:00",
+                  "id": "a1a1a1a1-0000-4000-8000-000000000001",
+                  "participants": [
+                    "11",
+                    "22"
+                  ],
+                  "status": "planned",
+                  "week_start": "2026-08-27T00:00:00+08:00"
+                },
+                {
+                  "bosses": [
+                    "HCarling",
+                    "XKalos"
+                  ],
+                  "channel_id": "900",
+                  "datetime": "2026-09-01T22:00:00+08:00",
+                  "id": "b2b2b2b2-0000-4000-8000-000000000002",
+                  "participants": [
+                    "11",
+                    "22",
+                    "99"
+                  ],
+                  "status": "otot",
+                  "week_start": "2026-08-27T00:00:00+08:00"
+                }
+              ]
+            },
+            "op": "relevant_roster"
+          },
+          {
+            "context": {
+              "burst": [
+                {
+                  "author_id": "11",
+                  "author_name": "Alvin tan",
+                  "content": "mon cannot leh, can change to wed?",
+                  "created_at": "2026-08-30T13:01:00+08:00",
+                  "id": "401"
+                },
+                {
+                  "author_id": "22",
+                  "author_name": "kanon",
+                  "content": "okay for wed\n\n  <@44> u coming?  ",
+                  "created_at": "2026-08-30T13:05:00+08:00",
+                  "id": "402"
+                },
+                {
+                  "author_id": "11",
+                  "author_name": "Alvin tan",
+                  "content": "and we add our nstar tmr 930?",
+                  "created_at": "2026-08-30T13:07:00+08:00",
+                  "id": "403"
+                }
+              ],
+              "channel_name": "hstar-party",
+              "context": [
+                {
+                  "author_id": "33",
+                  "author_name": "Priya",
+                  "content": "anyone free mon?",
+                  "created_at": "2026-08-30T12:40:00+08:00",
+                  "id": "398"
+                }
+              ],
+              "fixed_runs": [
+                {
+                  "bosses": [
+                    "HLimbo"
+                  ],
+                  "channel_id": "900",
+                  "id": "f6f6f6f6-0000-4000-8000-000000000006",
+                  "participants": [
+                    "11",
+                    "44"
+                  ],
+                  "time": "22:30",
+                  "weekday": 1
+                }
+              ],
+              "guild_runs": [],
+              "roster": [
+                {
+                  "display_name": "Alvin tan",
+                  "nickname": null,
+                  "user_id": "11"
+                },
+                {
+                  "display_name": "kanon [AZUR]",
+                  "nickname": "kanon",
+                  "user_id": "22"
+                },
+                {
+                  "display_name": "Priya",
+                  "nickname": null,
+                  "user_id": "33"
+                },
+                {
+                  "display_name": "Mei",
+                  "nickname": null,
+                  "user_id": "44"
+                }
+              ],
+              "runs": [
+                {
+                  "bosses": [
+                    "HMaleficStar",
+                    "HFA"
+                  ],
+                  "channel_id": "900",
+                  "datetime": "2026-08-31T21:30:00+08:00",
+                  "id": "a1a1a1a1-0000-4000-8000-000000000001",
+                  "participants": [
+                    "11",
+                    "22"
+                  ],
+                  "status": "planned",
+                  "week_start": "2026-08-27T00:00:00+08:00"
+                },
+                {
+                  "bosses": [
+                    "HCarling",
+                    "XKalos"
+                  ],
+                  "channel_id": "900",
+                  "datetime": "2026-09-01T22:00:00+08:00",
+                  "id": "b2b2b2b2-0000-4000-8000-000000000002",
+                  "participants": [
+                    "11",
+                    "22",
+                    "99"
+                  ],
+                  "status": "otot",
+                  "week_start": "2026-08-27T00:00:00+08:00"
+                }
+              ]
+            },
+            "op": "named_bosses"
+          }
+        ],
+        "timezone": "Asia/Kuala_Lumpur"
+      }
+    },
+    {
+      "case_id": "guild-fallback-and-full-table",
+      "expected": {
+        "steps": [
+          {
+            "value": [
+              {
+                "content": "You read a MapleStory guild's boss-planning chat (Singapore/Malaysian English)\nand extract *schedule changes*. You are an extractor, not the scheduler: a human\nconfirms everything you output, so report only what the messages say and never\nfill a gap with a guess.\n\nRULES\n1. Evidence only. Every amendment must come from words in the messages. Never\n   infer that someone is free, never use \"usual\" days, silence or past runs.\n2. Never work out a date or a time. Copy the expression exactly as written into\n   `day_ref` / `time_ref`: \"weds\", \"tmr\", \"tonight\", \"9:30pm\", \"930\",\n   \"1030~11+pm\", \"at 11\". If a field was not stated, use null. Never invent one.\n3. ALWAYS fill `bosses` when the amendment is about a run. Use the canonical\n   names from the BOSSES table, with their difficulty letter: HMaleficStar, XKalos,\n   NBaldrix. List EXACTLY the bosses the messages name -- if they say \"the\n   hcarl\" and RUNS has HCarling + XKalos together, the amendment is about\n   HCarling only. If a message names a boss with no difficulty (\"limbo\",\n   \"carling\", \"baldguy\"), take the difficulty from the run in RUNS that has it.\n   Only when the messages name no boss at all (\"can change to wed?\", \"930\n   postpone to 11\") do you fall back to the bosses of the run they must mean.\n   Leave `bosses` empty for an `rsvp`, or when you cannot tell which run.\n4. \"I\", \"me\", \"my\", \"we\", \"us\", \"our\" mean the author of that message.\n   `participants` holds discord user ids (the digits inside <@...>), never names.\n   For an `rsvp`, `participants` is exactly the author of the answering message.\n5. A question is not a decision. \"can change to wed?\", \"This Sunday can anot?\",\n   \"wanna try trio ncarling?\", \"930 can postpone to 11 anot ah?\" -> `is_question:\n   true`, and you still emit the amendment. A later \"Can\", \"Ok\", \"ya\", \"I ok\",\n   \"okay for wed\" from someone else is a SEPARATE amendment of kind `rsvp`. If\n   that reply also settles missing schedule details, emit an updated change with\n   `is_question: false` too.\n6. One amendment per affected run. \"mon and tues cannot\" with two runs in\n   RUNS is two amendments, one per run, each with that run's own bosses.\n7. A reply belongs to the thing it replies to. When someone proposes a run and\n   the next messages give a time (\"9pm i reach kk early\", \"amend to 9:45pm\",\n   \"Wed i done with boss so 9:30pm onwards\"), that time is the `time_ref` of\n   THAT proposal -- do not attach it to a different run in RUNS. If the same\n   person also agrees to come, that is an extra `rsvp`.\n   If one proposal moves multiple runs to the same day, an unqualified follow-up\n   time for that day applies to every proposed run.\n8. Always emit an `rsvp` for a message that answers yes or no, even when\n   nothing else about the run changes and even when the answer cancels the\n   proposal (\"Today can ah?\" -> \"today kenot sry\" is one `rsvp` with rsvp=\"no\").\n9. `evidence_message_ids` lists the [msg_id] values you used, and only those.\n10. If the messages contain no schedule change, return `{\"amendments\": [],\n   \"summary\": \"...\"}`. Chat about gear, prices, ring fees, damage, bots,\n   piloting, map/channel numbers (\"cc9\", \"ch7\") or plain banter is NOT a\n   schedule change. Numbers like \"290\" (a level), \"$18\" (a price) and\n   \"91234567\" (a phone number) are not times.\n\nKINDS -- pick by asking \"is this boss already in RUNS?\"\n  move   a run IN RUNS changes day/time (\"amend to 9:45pm\", \"change to wed?\",\n         \"postpone to 11\", \"shift our hstar to weds\")\n  add    a run NOT in RUNS happens (\"we doing our nstar and ncarl tonight?\",\n         \"wanna try trio ncarling also?\"). Still `add` when no day or time was\n         given -- day_ref and time_ref are then null and is_question is true.\n  cancel a run is off this week (\"mon and tuesday suddenly got things on\",\n         \"we skip both runs this wk\", \"cannot make it this week\")\n  split  the party is divided: \"we do X and u 3 the Y\", \"u all do X, i duo Y\",\n         \"we take xkalos, you take nbaldrix\". Any message that gives two groups\n         of people different bosses is `split`, not `add` or `move`, even when\n         one of the bosses is new. List every boss involved, both groups.\n  otot   a run happens on people's own time, no reminders. The words are \"otot\",\n         \"own time\", \"we do ourselves\". Literal \"otot\" must be `otot`, never\n         `add`; \"we otot do the hcarl\" names HCarling only, not its whole run.\n  sub    someone is out and a stand-in is wanted (\"find temp for this week?\",\n         \"can someone cover for me\"). `participants` is the author asking\n         for cover -- \"for me\" means that message's author, never empty.\n         A bare request with no answer yet is a question (`is_question: true`).\n  rsvp   an answer about attending: \"Can\", \"Ok\", \"I ok\", \"ya\", \"confirm\",\n         \"kenot\", \"cannot\", \"cmi\", \"not free\". Set `rsvp` to yes/no/maybe\n         and `participants` to just that author's id.\n  fix    a *recurring* timing, not a one-off. The giveaway words are \"default\n         time\", \"lock in\", \"lockin\", \"as usual\", \"every tuesday\", \"our standing\n         time\": \"HLimbo+Nbaldrix we just lockin on Tue night 1030pm onwards as\n         default time?\" is `fix`. Those words beat `add` and `move` even when\n         the boss has no run yet. Put the recurring day in day_ref.\n\nEDGE CASES\n- With a Monday run and a Tuesday run, \"mon and tuesday got things on can change\n  to wed?\" affects both. If the reply is \"Wed ... 9:30pm onwards can run le\",\n  both moves use wed/9:30pm and are no longer questions; also emit that author's\n  RSVP.\n- If HCarling and XKalos share a run, \"we otot do the hcarl\" produces exactly one\n  `otot` amendment whose bosses are `[\"HCarling\"]`.\n- If an EARLIER MESSAGE asks about attending a run and the only NEW MESSAGE is\n  \"Can\", emit an `rsvp` with `rsvp: \"yes\"` for the new message's author.\n- \"930 can postpone to 11 anot\" is a `move` with `is_question: true`.\n- \"Today can ah?\" followed by \"today kenot sry\" produces an `rsvp` with\n  `rsvp: \"no\"` for the second author.\n\nWORKED EXAMPLE\nRUNS:  #a1  HMaleficStar + HFA  Mon 21:30  <@11>(A) <@22>(B)\n[1] [.. Sun] [A <@11>] mon cannot leh, can change to wed?\n[2] [.. Sun] [B <@22>] okay for wed\n[3] [.. Sun] [A <@11>] and we add our nstar tmr 930?\n->\n{\"amendments\":[\n {\"kind\":\"move\",\"bosses\":[\"HMaleficStar\",\"HFA\"],\"day_ref\":\"wed\",\"time_ref\":null,\n  \"participants\":[\"11\"],\"rsvp\":null,\"is_question\":true,\"confidence\":0.8,\n  \"evidence_message_ids\":[\"1\"],\"target_run_hint\":\"#a1\"},\n {\"kind\":\"rsvp\",\"bosses\":[],\"day_ref\":\"wed\",\"time_ref\":null,\"participants\":[\"22\"],\n  \"rsvp\":\"yes\",\"is_question\":false,\"confidence\":0.9,\"evidence_message_ids\":[\"2\"],\n  \"target_run_hint\":\"#a1\"},\n {\"kind\":\"add\",\"bosses\":[\"NMaleficStar\"],\"day_ref\":\"tmr\",\"time_ref\":\"930\",\n  \"participants\":[\"11\"],\"rsvp\":null,\"is_question\":true,\"confidence\":0.8,\n  \"evidence_message_ids\":[\"3\"],\"target_run_hint\":null}],\n \"summary\":\"HMaleficStar+HFA proposed for Wed, B agrees; NMaleficStar proposed for tomorrow 930\"}\n\n`confidence` is 0-1: 0.9 when someone stated the change plainly, 0.6-0.8 when it\nwas proposed and not yet agreed, below 0.5 when you are unsure it is scheduling\nat all. `target_run_hint` is the #id of the run from RUNS this is about, or null.\n",
+                "role": "system"
+              },
+              {
+                "content": "NOW: 2026-09-02 20:15 Wed (Asia/Kuala_Lumpur)\n\nBOSSES (use these exact names):\n  NMaleficStar, HMaleficStar  = Malefic Star  (chat: star, mstar)\n  NFA, HFA, XFA  = First Adversary  (chat: fa)\n  NCarling, HCarling, XCarling  = Chief Carling  (chat: carl, carling)\n  EKalos, NKalos, CKalos, XKalos  = Kalos the Guardian  (chat: kalos)\n  NBaldrix, HBaldrix  = Baldrix  (chat: bald, baldguy)\n  NLimbo, HLimbo  = Limbo  (chat: limbo)\n\nROSTER:\n  <@44> = Mei\n\nRUNS scheduled in the guild (this channel has no runs of its own):\n  #c3c3c3c3  NMaleficStar  2026-09-02 21:00 Wed  [planned]  <@33>(?) <@44>(Mei)\n\nFIXED weekly timings for this channel:\n  (none)\n\nNEW MESSAGES (extract from these):\n[501] [2026-09-02 20:15 Wed] [Mei <@44>] can we do ours at 9 instead\n\nReturn the amendments these NEW messages support. If there are none, return {\"amendments\": [], \"summary\": \"no schedule change\"}.",
+                "role": "user"
+              }
+            ]
+          },
+          {
+            "value": []
+          },
+          {
+            "value": [
+              {
+                "content": "You read a MapleStory guild's boss-planning chat (Singapore/Malaysian English)\nand extract *schedule changes*. You are an extractor, not the scheduler: a human\nconfirms everything you output, so report only what the messages say and never\nfill a gap with a guess.\n\nRULES\n1. Evidence only. Every amendment must come from words in the messages. Never\n   infer that someone is free, never use \"usual\" days, silence or past runs.\n2. Never work out a date or a time. Copy the expression exactly as written into\n   `day_ref` / `time_ref`: \"weds\", \"tmr\", \"tonight\", \"9:30pm\", \"930\",\n   \"1030~11+pm\", \"at 11\". If a field was not stated, use null. Never invent one.\n3. ALWAYS fill `bosses` when the amendment is about a run. Use the canonical\n   names from the BOSSES table, with their difficulty letter: HMaleficStar, XKalos,\n   NBaldrix. List EXACTLY the bosses the messages name -- if they say \"the\n   hcarl\" and RUNS has HCarling + XKalos together, the amendment is about\n   HCarling only. If a message names a boss with no difficulty (\"limbo\",\n   \"carling\", \"baldguy\"), take the difficulty from the run in RUNS that has it.\n   Only when the messages name no boss at all (\"can change to wed?\", \"930\n   postpone to 11\") do you fall back to the bosses of the run they must mean.\n   Leave `bosses` empty for an `rsvp`, or when you cannot tell which run.\n4. \"I\", \"me\", \"my\", \"we\", \"us\", \"our\" mean the author of that message.\n   `participants` holds discord user ids (the digits inside <@...>), never names.\n   For an `rsvp`, `participants` is exactly the author of the answering message.\n5. A question is not a decision. \"can change to wed?\", \"This Sunday can anot?\",\n   \"wanna try trio ncarling?\", \"930 can postpone to 11 anot ah?\" -> `is_question:\n   true`, and you still emit the amendment. A later \"Can\", \"Ok\", \"ya\", \"I ok\",\n   \"okay for wed\" from someone else is a SEPARATE amendment of kind `rsvp`. If\n   that reply also settles missing schedule details, emit an updated change with\n   `is_question: false` too.\n6. One amendment per affected run. \"mon and tues cannot\" with two runs in\n   RUNS is two amendments, one per run, each with that run's own bosses.\n7. A reply belongs to the thing it replies to. When someone proposes a run and\n   the next messages give a time (\"9pm i reach kk early\", \"amend to 9:45pm\",\n   \"Wed i done with boss so 9:30pm onwards\"), that time is the `time_ref` of\n   THAT proposal -- do not attach it to a different run in RUNS. If the same\n   person also agrees to come, that is an extra `rsvp`.\n   If one proposal moves multiple runs to the same day, an unqualified follow-up\n   time for that day applies to every proposed run.\n8. Always emit an `rsvp` for a message that answers yes or no, even when\n   nothing else about the run changes and even when the answer cancels the\n   proposal (\"Today can ah?\" -> \"today kenot sry\" is one `rsvp` with rsvp=\"no\").\n9. `evidence_message_ids` lists the [msg_id] values you used, and only those.\n10. If the messages contain no schedule change, return `{\"amendments\": [],\n   \"summary\": \"...\"}`. Chat about gear, prices, ring fees, damage, bots,\n   piloting, map/channel numbers (\"cc9\", \"ch7\") or plain banter is NOT a\n   schedule change. Numbers like \"290\" (a level), \"$18\" (a price) and\n   \"91234567\" (a phone number) are not times.\n\nKINDS -- pick by asking \"is this boss already in RUNS?\"\n  move   a run IN RUNS changes day/time (\"amend to 9:45pm\", \"change to wed?\",\n         \"postpone to 11\", \"shift our hstar to weds\")\n  add    a run NOT in RUNS happens (\"we doing our nstar and ncarl tonight?\",\n         \"wanna try trio ncarling also?\"). Still `add` when no day or time was\n         given -- day_ref and time_ref are then null and is_question is true.\n  cancel a run is off this week (\"mon and tuesday suddenly got things on\",\n         \"we skip both runs this wk\", \"cannot make it this week\")\n  split  the party is divided: \"we do X and u 3 the Y\", \"u all do X, i duo Y\",\n         \"we take xkalos, you take nbaldrix\". Any message that gives two groups\n         of people different bosses is `split`, not `add` or `move`, even when\n         one of the bosses is new. List every boss involved, both groups.\n  otot   a run happens on people's own time, no reminders. The words are \"otot\",\n         \"own time\", \"we do ourselves\". Literal \"otot\" must be `otot`, never\n         `add`; \"we otot do the hcarl\" names HCarling only, not its whole run.\n  sub    someone is out and a stand-in is wanted (\"find temp for this week?\",\n         \"can someone cover for me\"). `participants` is the author asking\n         for cover -- \"for me\" means that message's author, never empty.\n         A bare request with no answer yet is a question (`is_question: true`).\n  rsvp   an answer about attending: \"Can\", \"Ok\", \"I ok\", \"ya\", \"confirm\",\n         \"kenot\", \"cannot\", \"cmi\", \"not free\". Set `rsvp` to yes/no/maybe\n         and `participants` to just that author's id.\n  fix    a *recurring* timing, not a one-off. The giveaway words are \"default\n         time\", \"lock in\", \"lockin\", \"as usual\", \"every tuesday\", \"our standing\n         time\": \"HLimbo+Nbaldrix we just lockin on Tue night 1030pm onwards as\n         default time?\" is `fix`. Those words beat `add` and `move` even when\n         the boss has no run yet. Put the recurring day in day_ref.\n\nEDGE CASES\n- With a Monday run and a Tuesday run, \"mon and tuesday got things on can change\n  to wed?\" affects both. If the reply is \"Wed ... 9:30pm onwards can run le\",\n  both moves use wed/9:30pm and are no longer questions; also emit that author's\n  RSVP.\n- If HCarling and XKalos share a run, \"we otot do the hcarl\" produces exactly one\n  `otot` amendment whose bosses are `[\"HCarling\"]`.\n- If an EARLIER MESSAGE asks about attending a run and the only NEW MESSAGE is\n  \"Can\", emit an `rsvp` with `rsvp: \"yes\"` for the new message's author.\n- \"930 can postpone to 11 anot\" is a `move` with `is_question: true`.\n- \"Today can ah?\" followed by \"today kenot sry\" produces an `rsvp` with\n  `rsvp: \"no\"` for the second author.\n\nWORKED EXAMPLE\nRUNS:  #a1  HMaleficStar + HFA  Mon 21:30  <@11>(A) <@22>(B)\n[1] [.. Sun] [A <@11>] mon cannot leh, can change to wed?\n[2] [.. Sun] [B <@22>] okay for wed\n[3] [.. Sun] [A <@11>] and we add our nstar tmr 930?\n->\n{\"amendments\":[\n {\"kind\":\"move\",\"bosses\":[\"HMaleficStar\",\"HFA\"],\"day_ref\":\"wed\",\"time_ref\":null,\n  \"participants\":[\"11\"],\"rsvp\":null,\"is_question\":true,\"confidence\":0.8,\n  \"evidence_message_ids\":[\"1\"],\"target_run_hint\":\"#a1\"},\n {\"kind\":\"rsvp\",\"bosses\":[],\"day_ref\":\"wed\",\"time_ref\":null,\"participants\":[\"22\"],\n  \"rsvp\":\"yes\",\"is_question\":false,\"confidence\":0.9,\"evidence_message_ids\":[\"2\"],\n  \"target_run_hint\":\"#a1\"},\n {\"kind\":\"add\",\"bosses\":[\"NMaleficStar\"],\"day_ref\":\"tmr\",\"time_ref\":\"930\",\n  \"participants\":[\"11\"],\"rsvp\":null,\"is_question\":true,\"confidence\":0.8,\n  \"evidence_message_ids\":[\"3\"],\"target_run_hint\":null}],\n \"summary\":\"HMaleficStar+HFA proposed for Wed, B agrees; NMaleficStar proposed for tomorrow 930\"}\n\n`confidence` is 0-1: 0.9 when someone stated the change plainly, 0.6-0.8 when it\nwas proposed and not yet agreed, below 0.5 when you are unsure it is scheduling\nat all. `target_run_hint` is the #id of the run from RUNS this is about, or null.\n",
+                "role": "system"
+              },
+              {
+                "content": "CHANNEL: #lounge\n\nNOW: 2026-09-02 20:15 Wed (Asia/Kuala_Lumpur)\n\nBOSSES (use these exact names):\n  NMaleficStar, HMaleficStar  = Malefic Star  (chat: star, mstar)\n  NFA, HFA, XFA  = First Adversary  (chat: fa)\n  NCarling, HCarling, XCarling  = Chief Carling  (chat: carl, carling)\n  EKalos, NKalos, CKalos, XKalos  = Kalos the Guardian  (chat: kalos)\n  NBaldrix, HBaldrix  = Baldrix  (chat: bald, baldguy)\n  NLimbo, HLimbo  = Limbo  (chat: limbo)\n\nROSTER:\n  <@11> = Alvin tan\n  <@22> = kanon\n  <@33> = Priya\n  <@44> = Mei\n\nRUNS scheduled in the guild (this channel has no runs of its own):\n  (none)\n\nFIXED weekly timings for this channel:\n  (none)\n\nNEW MESSAGES (extract from these):\n[601] [2026-09-02 20:15 Wed] [user99 <@99>] lol that ring price\n\nReturn the amendments these NEW messages support. If there are none, return {\"amendments\": [], \"summary\": \"no schedule change\"}.",
+                "role": "user"
+              }
+            ]
+          },
+          {
+            "value": [
+              "11",
+              "22",
+              "33",
+              "44"
+            ]
+          },
+          {
+            "value": []
+          },
+          {
+            "value": [
+              {
+                "content": "You read a MapleStory guild's boss-planning chat (Singapore/Malaysian English)\nand extract *schedule changes*. You are an extractor, not the scheduler: a human\nconfirms everything you output, so report only what the messages say and never\nfill a gap with a guess.\n\nRULES\n1. Evidence only. Every amendment must come from words in the messages. Never\n   infer that someone is free, never use \"usual\" days, silence or past runs.\n2. Never work out a date or a time. Copy the expression exactly as written into\n   `day_ref` / `time_ref`: \"weds\", \"tmr\", \"tonight\", \"9:30pm\", \"930\",\n   \"1030~11+pm\", \"at 11\". If a field was not stated, use null. Never invent one.\n3. ALWAYS fill `bosses` when the amendment is about a run. Use the canonical\n   names from the BOSSES table, with their difficulty letter: HMaleficStar, XKalos,\n   NBaldrix. List EXACTLY the bosses the messages name -- if they say \"the\n   hcarl\" and RUNS has HCarling + XKalos together, the amendment is about\n   HCarling only. If a message names a boss with no difficulty (\"limbo\",\n   \"carling\", \"baldguy\"), take the difficulty from the run in RUNS that has it.\n   Only when the messages name no boss at all (\"can change to wed?\", \"930\n   postpone to 11\") do you fall back to the bosses of the run they must mean.\n   Leave `bosses` empty for an `rsvp`, or when you cannot tell which run.\n4. \"I\", \"me\", \"my\", \"we\", \"us\", \"our\" mean the author of that message.\n   `participants` holds discord user ids (the digits inside <@...>), never names.\n   For an `rsvp`, `participants` is exactly the author of the answering message.\n5. A question is not a decision. \"can change to wed?\", \"This Sunday can anot?\",\n   \"wanna try trio ncarling?\", \"930 can postpone to 11 anot ah?\" -> `is_question:\n   true`, and you still emit the amendment. A later \"Can\", \"Ok\", \"ya\", \"I ok\",\n   \"okay for wed\" from someone else is a SEPARATE amendment of kind `rsvp`. If\n   that reply also settles missing schedule details, emit an updated change with\n   `is_question: false` too.\n6. One amendment per affected run. \"mon and tues cannot\" with two runs in\n   RUNS is two amendments, one per run, each with that run's own bosses.\n7. A reply belongs to the thing it replies to. When someone proposes a run and\n   the next messages give a time (\"9pm i reach kk early\", \"amend to 9:45pm\",\n   \"Wed i done with boss so 9:30pm onwards\"), that time is the `time_ref` of\n   THAT proposal -- do not attach it to a different run in RUNS. If the same\n   person also agrees to come, that is an extra `rsvp`.\n   If one proposal moves multiple runs to the same day, an unqualified follow-up\n   time for that day applies to every proposed run.\n8. Always emit an `rsvp` for a message that answers yes or no, even when\n   nothing else about the run changes and even when the answer cancels the\n   proposal (\"Today can ah?\" -> \"today kenot sry\" is one `rsvp` with rsvp=\"no\").\n9. `evidence_message_ids` lists the [msg_id] values you used, and only those.\n10. If the messages contain no schedule change, return `{\"amendments\": [],\n   \"summary\": \"...\"}`. Chat about gear, prices, ring fees, damage, bots,\n   piloting, map/channel numbers (\"cc9\", \"ch7\") or plain banter is NOT a\n   schedule change. Numbers like \"290\" (a level), \"$18\" (a price) and\n   \"91234567\" (a phone number) are not times.\n\nKINDS -- pick by asking \"is this boss already in RUNS?\"\n  move   a run IN RUNS changes day/time (\"amend to 9:45pm\", \"change to wed?\",\n         \"postpone to 11\", \"shift our hstar to weds\")\n  add    a run NOT in RUNS happens (\"we doing our nstar and ncarl tonight?\",\n         \"wanna try trio ncarling also?\"). Still `add` when no day or time was\n         given -- day_ref and time_ref are then null and is_question is true.\n  cancel a run is off this week (\"mon and tuesday suddenly got things on\",\n         \"we skip both runs this wk\", \"cannot make it this week\")\n  split  the party is divided: \"we do X and u 3 the Y\", \"u all do X, i duo Y\",\n         \"we take xkalos, you take nbaldrix\". Any message that gives two groups\n         of people different bosses is `split`, not `add` or `move`, even when\n         one of the bosses is new. List every boss involved, both groups.\n  otot   a run happens on people's own time, no reminders. The words are \"otot\",\n         \"own time\", \"we do ourselves\". Literal \"otot\" must be `otot`, never\n         `add`; \"we otot do the hcarl\" names HCarling only, not its whole run.\n  sub    someone is out and a stand-in is wanted (\"find temp for this week?\",\n         \"can someone cover for me\"). `participants` is the author asking\n         for cover -- \"for me\" means that message's author, never empty.\n         A bare request with no answer yet is a question (`is_question: true`).\n  rsvp   an answer about attending: \"Can\", \"Ok\", \"I ok\", \"ya\", \"confirm\",\n         \"kenot\", \"cannot\", \"cmi\", \"not free\". Set `rsvp` to yes/no/maybe\n         and `participants` to just that author's id.\n  fix    a *recurring* timing, not a one-off. The giveaway words are \"default\n         time\", \"lock in\", \"lockin\", \"as usual\", \"every tuesday\", \"our standing\n         time\": \"HLimbo+Nbaldrix we just lockin on Tue night 1030pm onwards as\n         default time?\" is `fix`. Those words beat `add` and `move` even when\n         the boss has no run yet. Put the recurring day in day_ref.\n\nEDGE CASES\n- With a Monday run and a Tuesday run, \"mon and tuesday got things on can change\n  to wed?\" affects both. If the reply is \"Wed ... 9:30pm onwards can run le\",\n  both moves use wed/9:30pm and are no longer questions; also emit that author's\n  RSVP.\n- If HCarling and XKalos share a run, \"we otot do the hcarl\" produces exactly one\n  `otot` amendment whose bosses are `[\"HCarling\"]`.\n- If an EARLIER MESSAGE asks about attending a run and the only NEW MESSAGE is\n  \"Can\", emit an `rsvp` with `rsvp: \"yes\"` for the new message's author.\n- \"930 can postpone to 11 anot\" is a `move` with `is_question: true`.\n- \"Today can ah?\" followed by \"today kenot sry\" produces an `rsvp` with\n  `rsvp: \"no\"` for the second author.\n\nWORKED EXAMPLE\nRUNS:  #a1  HMaleficStar + HFA  Mon 21:30  <@11>(A) <@22>(B)\n[1] [.. Sun] [A <@11>] mon cannot leh, can change to wed?\n[2] [.. Sun] [B <@22>] okay for wed\n[3] [.. Sun] [A <@11>] and we add our nstar tmr 930?\n->\n{\"amendments\":[\n {\"kind\":\"move\",\"bosses\":[\"HMaleficStar\",\"HFA\"],\"day_ref\":\"wed\",\"time_ref\":null,\n  \"participants\":[\"11\"],\"rsvp\":null,\"is_question\":true,\"confidence\":0.8,\n  \"evidence_message_ids\":[\"1\"],\"target_run_hint\":\"#a1\"},\n {\"kind\":\"rsvp\",\"bosses\":[],\"day_ref\":\"wed\",\"time_ref\":null,\"participants\":[\"22\"],\n  \"rsvp\":\"yes\",\"is_question\":false,\"confidence\":0.9,\"evidence_message_ids\":[\"2\"],\n  \"target_run_hint\":\"#a1\"},\n {\"kind\":\"add\",\"bosses\":[\"NMaleficStar\"],\"day_ref\":\"tmr\",\"time_ref\":\"930\",\n  \"participants\":[\"11\"],\"rsvp\":null,\"is_question\":true,\"confidence\":0.8,\n  \"evidence_message_ids\":[\"3\"],\"target_run_hint\":null}],\n \"summary\":\"HMaleficStar+HFA proposed for Wed, B agrees; NMaleficStar proposed for tomorrow 930\"}\n\n`confidence` is 0-1: 0.9 when someone stated the change plainly, 0.6-0.8 when it\nwas proposed and not yet agreed, below 0.5 when you are unsure it is scheduling\nat all. `target_run_hint` is the #id of the run from RUNS this is about, or null.\n",
+                "role": "system"
+              },
+              {
+                "content": "NOW: 2026-09-02 20:15 Wed (Asia/Kuala_Lumpur)\n\nBOSSES (use these exact names):\n  NMaleficStar, HMaleficStar  = Malefic Star  (chat: star, mstar)\n  NFA, HFA, XFA  = First Adversary  (chat: fa)\n  NCarling, HCarling, XCarling  = Chief Carling  (chat: carl, carling)\n  EKalos, NKalos, CKalos, XKalos  = Kalos the Guardian  (chat: kalos)\n  NBaldrix, HBaldrix  = Baldrix  (chat: bald, baldguy)\n  NLimbo, HLimbo  = Limbo  (chat: limbo)\n\nROSTER:\n  (nobody on the roster)\n\nRUNS scheduled in the guild (this channel has no runs of its own):\n  (none)\n\nFIXED weekly timings for this channel:\n  (none)\n\nNEW MESSAGES (extract from these):\n[701] [2026-09-02 20:15 Wed] [user99 <@99>] hi\n\nReturn the amendments these NEW messages support. If there are none, return {\"amendments\": [], \"summary\": \"no schedule change\"}.",
+                "role": "user"
+              }
+            ]
+          }
+        ]
+      },
+      "input": {
+        "catalog": {
+          "bosses": [
+            {
+              "aliases": [
+                "star",
+                "mstar"
+              ],
+              "difficulties": [
+                "n",
+                "h"
+              ],
+              "full": "Malefic Star",
+              "short": "MaleficStar"
+            },
+            {
+              "aliases": [
+                "fa"
+              ],
+              "difficulties": [
+                "n",
+                "h",
+                "x"
+              ],
+              "full": "First Adversary",
+              "short": "FA"
+            },
+            {
+              "aliases": [
+                "carl",
+                "carling"
+              ],
+              "difficulties": [
+                "n",
+                "h",
+                "x"
+              ],
+              "full": "Chief Carling",
+              "short": "Carling"
+            },
+            {
+              "aliases": [
+                "kalos"
+              ],
+              "difficulties": [
+                "e",
+                "n",
+                "c",
+                "x"
+              ],
+              "full": "Kalos the Guardian",
+              "short": "Kalos"
+            },
+            {
+              "aliases": [
+                "bald",
+                "baldguy"
+              ],
+              "difficulties": [
+                "n",
+                "h"
+              ],
+              "full": "Baldrix",
+              "short": "Baldrix"
+            },
+            {
+              "aliases": [
+                "limbo"
+              ],
+              "difficulties": [
+                "n",
+                "h"
+              ],
+              "full": "Limbo",
+              "short": "Limbo"
+            }
+          ],
+          "difficulties": [
+            {
+              "label": "Easy",
+              "prefix": "e"
+            },
+            {
+              "label": "Normal",
+              "prefix": "n"
+            },
+            {
+              "label": "Hard",
+              "prefix": "h"
+            },
+            {
+              "label": "Chaos",
+              "prefix": "c"
+            },
+            {
+              "label": "Extreme",
+              "prefix": "x"
+            }
+          ]
+        },
+        "steps": [
+          {
+            "context": {
+              "burst": [
+                {
+                  "author_id": "44",
+                  "author_name": "Mei",
+                  "content": "can we do ours at 9 instead",
+                  "created_at": "2026-09-02T20:15:00+08:00",
+                  "id": "501"
+                }
+              ],
+              "channel_name": "",
+              "context": [],
+              "fixed_runs": [],
+              "guild_runs": [
+                {
+                  "bosses": [
+                    "NMaleficStar"
+                  ],
+                  "channel_id": "901",
+                  "datetime": "2026-09-02T21:00:00+08:00",
+                  "id": "c3c3c3c3-0000-4000-8000-000000000003",
+                  "participants": [
+                    "33",
+                    "44"
+                  ],
+                  "status": "planned",
+                  "week_start": "2026-08-27T00:00:00+08:00"
+                }
+              ],
+              "roster": [
+                {
+                  "display_name": "Alvin tan",
+                  "nickname": null,
+                  "user_id": "11"
+                },
+                {
+                  "display_name": "kanon [AZUR]",
+                  "nickname": "kanon",
+                  "user_id": "22"
+                },
+                {
+                  "display_name": "Priya",
+                  "nickname": null,
+                  "user_id": "33"
+                },
+                {
+                  "display_name": "Mei",
+                  "nickname": null,
+                  "user_id": "44"
+                }
+              ],
+              "runs": []
+            },
+            "op": "build_messages"
+          },
+          {
+            "context": {
+              "burst": [
+                {
+                  "author_id": "44",
+                  "author_name": "Mei",
+                  "content": "can we do ours at 9 instead",
+                  "created_at": "2026-09-02T20:15:00+08:00",
+                  "id": "501"
+                }
+              ],
+              "channel_name": "",
+              "context": [],
+              "fixed_runs": [],
+              "guild_runs": [
+                {
+                  "bosses": [
+                    "NMaleficStar"
+                  ],
+                  "channel_id": "901",
+                  "datetime": "2026-09-02T21:00:00+08:00",
+                  "id": "c3c3c3c3-0000-4000-8000-000000000003",
+                  "participants": [
+                    "33",
+                    "44"
+                  ],
+                  "status": "planned",
+                  "week_start": "2026-08-27T00:00:00+08:00"
+                }
+              ],
+              "roster": [
+                {
+                  "display_name": "Alvin tan",
+                  "nickname": null,
+                  "user_id": "11"
+                },
+                {
+                  "display_name": "kanon [AZUR]",
+                  "nickname": "kanon",
+                  "user_id": "22"
+                },
+                {
+                  "display_name": "Priya",
+                  "nickname": null,
+                  "user_id": "33"
+                },
+                {
+                  "display_name": "Mei",
+                  "nickname": null,
+                  "user_id": "44"
+                }
+              ],
+              "runs": []
+            },
+            "op": "named_bosses"
+          },
+          {
+            "context": {
+              "burst": [
+                {
+                  "author_id": "99",
+                  "author_name": "user99",
+                  "content": "lol that ring price",
+                  "created_at": "2026-09-02T20:15:00+08:00",
+                  "id": "601"
+                }
+              ],
+              "channel_name": "lounge",
+              "context": [],
+              "fixed_runs": [],
+              "guild_runs": [],
+              "roster": [
+                {
+                  "display_name": "Alvin tan",
+                  "nickname": null,
+                  "user_id": "11"
+                },
+                {
+                  "display_name": "kanon [AZUR]",
+                  "nickname": "kanon",
+                  "user_id": "22"
+                },
+                {
+                  "display_name": "Priya",
+                  "nickname": null,
+                  "user_id": "33"
+                },
+                {
+                  "display_name": "Mei",
+                  "nickname": null,
+                  "user_id": "44"
+                }
+              ],
+              "runs": []
+            },
+            "op": "build_messages"
+          },
+          {
+            "context": {
+              "burst": [
+                {
+                  "author_id": "99",
+                  "author_name": "user99",
+                  "content": "lol that ring price",
+                  "created_at": "2026-09-02T20:15:00+08:00",
+                  "id": "601"
+                }
+              ],
+              "channel_name": "lounge",
+              "context": [],
+              "fixed_runs": [],
+              "guild_runs": [],
+              "roster": [
+                {
+                  "display_name": "Alvin tan",
+                  "nickname": null,
+                  "user_id": "11"
+                },
+                {
+                  "display_name": "kanon [AZUR]",
+                  "nickname": "kanon",
+                  "user_id": "22"
+                },
+                {
+                  "display_name": "Priya",
+                  "nickname": null,
+                  "user_id": "33"
+                },
+                {
+                  "display_name": "Mei",
+                  "nickname": null,
+                  "user_id": "44"
+                }
+              ],
+              "runs": []
+            },
+            "op": "relevant_roster"
+          },
+          {
+            "context": {
+              "burst": [
+                {
+                  "author_id": "99",
+                  "author_name": "user99",
+                  "content": "lol that ring price",
+                  "created_at": "2026-09-02T20:15:00+08:00",
+                  "id": "601"
+                }
+              ],
+              "channel_name": "lounge",
+              "context": [],
+              "fixed_runs": [],
+              "guild_runs": [],
+              "roster": [
+                {
+                  "display_name": "Alvin tan",
+                  "nickname": null,
+                  "user_id": "11"
+                },
+                {
+                  "display_name": "kanon [AZUR]",
+                  "nickname": "kanon",
+                  "user_id": "22"
+                },
+                {
+                  "display_name": "Priya",
+                  "nickname": null,
+                  "user_id": "33"
+                },
+                {
+                  "display_name": "Mei",
+                  "nickname": null,
+                  "user_id": "44"
+                }
+              ],
+              "runs": []
+            },
+            "op": "named_bosses"
+          },
+          {
+            "context": {
+              "burst": [
+                {
+                  "author_id": "99",
+                  "author_name": "user99",
+                  "content": "hi",
+                  "created_at": "2026-09-02T20:15:00+08:00",
+                  "id": "701"
+                }
+              ],
+              "channel_name": "",
+              "context": [],
+              "fixed_runs": [],
+              "guild_runs": [],
+              "roster": [],
+              "runs": []
+            },
+            "op": "build_messages"
+          }
+        ],
+        "timezone": "Asia/Kuala_Lumpur"
+      }
+    },
+    {
+      "case_id": "structured-output-schema-and-request-body",
+      "expected": {
+        "steps": [
+          {
+            "value": {
+              "schema": {
+                "$defs": {
+                  "Amendment": {
+                    "additionalProperties": false,
+                    "description": "One proposed change, exactly as the model saw it in the conversation.",
+                    "properties": {
+                      "bosses": {
+                        "description": "canonical boss names from the boss table, e.g. HMaleficStar, XKalos",
+                        "items": {
+                          "type": "string"
+                        },
+                        "title": "Bosses",
+                        "type": "array"
+                      },
+                      "confidence": {
+                        "maximum": 1.0,
+                        "minimum": 0.0,
+                        "title": "Confidence",
+                        "type": "number"
+                      },
+                      "day_ref": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ],
+                        "description": "the day exactly as written: weds, tmr, tonight, 2026-09-02",
+                        "title": "Day Ref"
+                      },
+                      "evidence_message_ids": {
+                        "description": "the [msg_id]s this came from",
+                        "items": {
+                          "type": "string"
+                        },
+                        "title": "Evidence Message Ids",
+                        "type": "array"
+                      },
+                      "is_question": {
+                        "description": "true if this was asked, not decided",
+                        "title": "Is Question",
+                        "type": "boolean"
+                      },
+                      "kind": {
+                        "description": "what kind of change this is",
+                        "enum": [
+                          "move",
+                          "add",
+                          "cancel",
+                          "split",
+                          "otot",
+                          "sub",
+                          "rsvp",
+                          "fix"
+                        ],
+                        "title": "Kind",
+                        "type": "string"
+                      },
+                      "participants": {
+                        "description": "discord user ids of the people this is about",
+                        "items": {
+                          "type": "string"
+                        },
+                        "title": "Participants",
+                        "type": "array"
+                      },
+                      "rsvp": {
+                        "anyOf": [
+                          {
+                            "enum": [
+                              "yes",
+                              "no",
+                              "maybe"
+                            ],
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ],
+                        "description": "for kind=rsvp: yes, no or maybe",
+                        "title": "Rsvp"
+                      },
+                      "target_run_hint": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ],
+                        "description": "the short run id from the RUNS list, if one clearly matches",
+                        "title": "Target Run Hint"
+                      },
+                      "time_ref": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ],
+                        "description": "the time exactly as written: 9:30pm, 930, 1030~11+pm",
+                        "title": "Time Ref"
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "bosses",
+                      "day_ref",
+                      "time_ref",
+                      "participants",
+                      "rsvp",
+                      "is_question",
+                      "confidence",
+                      "evidence_message_ids",
+                      "target_run_hint"
+                    ],
+                    "title": "Amendment",
+                    "type": "object"
+                  }
+                },
+                "additionalProperties": false,
+                "description": "Everything the model found in one burst of messages.",
+                "properties": {
+                  "amendments": {
+                    "items": {
+                      "$ref": "#/$defs/Amendment"
+                    },
+                    "title": "Amendments",
+                    "type": "array"
+                  },
+                  "summary": {
+                    "description": "one line a human can read",
+                    "title": "Summary",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "amendments",
+                  "summary"
+                ],
+                "title": "Extraction",
+                "type": "object"
+              },
+              "text": "{\"$defs\":{\"Amendment\":{\"description\":\"One proposed change, exactly as the model saw it in the conversation.\",\"properties\":{\"kind\":{\"description\":\"what kind of change this is\",\"enum\":[\"move\",\"add\",\"cancel\",\"split\",\"otot\",\"sub\",\"rsvp\",\"fix\"],\"title\":\"Kind\",\"type\":\"string\"},\"bosses\":{\"description\":\"canonical boss names from the boss table, e.g. HMaleficStar, XKalos\",\"items\":{\"type\":\"string\"},\"title\":\"Bosses\",\"type\":\"array\"},\"day_ref\":{\"anyOf\":[{\"type\":\"string\"},{\"type\":\"null\"}],\"description\":\"the day exactly as written: weds, tmr, tonight, 2026-09-02\",\"title\":\"Day Ref\"},\"time_ref\":{\"anyOf\":[{\"type\":\"string\"},{\"type\":\"null\"}],\"description\":\"the time exactly as written: 9:30pm, 930, 1030~11+pm\",\"title\":\"Time Ref\"},\"participants\":{\"description\":\"discord user ids of the people this is about\",\"items\":{\"type\":\"string\"},\"title\":\"Participants\",\"type\":\"array\"},\"rsvp\":{\"anyOf\":[{\"enum\":[\"yes\",\"no\",\"maybe\"],\"type\":\"string\"},{\"type\":\"null\"}],\"description\":\"for kind=rsvp: yes, no or maybe\",\"title\":\"Rsvp\"},\"is_question\":{\"description\":\"true if this was asked, not decided\",\"title\":\"Is Question\",\"type\":\"boolean\"},\"confidence\":{\"maximum\":1.0,\"minimum\":0.0,\"title\":\"Confidence\",\"type\":\"number\"},\"evidence_message_ids\":{\"description\":\"the [msg_id]s this came from\",\"items\":{\"type\":\"string\"},\"title\":\"Evidence Message Ids\",\"type\":\"array\"},\"target_run_hint\":{\"anyOf\":[{\"type\":\"string\"},{\"type\":\"null\"}],\"description\":\"the short run id from the RUNS list, if one clearly matches\",\"title\":\"Target Run Hint\"}},\"required\":[\"kind\",\"bosses\",\"day_ref\",\"time_ref\",\"participants\",\"rsvp\",\"is_question\",\"confidence\",\"evidence_message_ids\",\"target_run_hint\"],\"title\":\"Amendment\",\"type\":\"object\",\"additionalProperties\":false}},\"description\":\"Everything the model found in one burst of messages.\",\"properties\":{\"amendments\":{\"items\":{\"$ref\":\"#/$defs/Amendment\"},\"title\":\"Amendments\",\"type\":\"array\"},\"summary\":{\"description\":\"one line a human can read\",\"title\":\"Summary\",\"type\":\"string\"}},\"title\":\"Extraction\",\"type\":\"object\",\"required\":[\"amendments\",\"summary\"],\"additionalProperties\":false}"
+            }
+          },
+          {
+            "value": "OUTPUT FORMAT\nAnswer with exactly one JSON object and nothing else: no prose, no markdown. It must validate against this JSON Schema:\n{\"$defs\":{\"Amendment\":{\"description\":\"One proposed change, exactly as the model saw it in the conversation.\",\"properties\":{\"kind\":{\"description\":\"what kind of change this is\",\"enum\":[\"move\",\"add\",\"cancel\",\"split\",\"otot\",\"sub\",\"rsvp\",\"fix\"],\"title\":\"Kind\",\"type\":\"string\"},\"bosses\":{\"description\":\"canonical boss names from the boss table, e.g. HMaleficStar, XKalos\",\"items\":{\"type\":\"string\"},\"title\":\"Bosses\",\"type\":\"array\"},\"day_ref\":{\"anyOf\":[{\"type\":\"string\"},{\"type\":\"null\"}],\"description\":\"the day exactly as written: weds, tmr, tonight, 2026-09-02\",\"title\":\"Day Ref\"},\"time_ref\":{\"anyOf\":[{\"type\":\"string\"},{\"type\":\"null\"}],\"description\":\"the time exactly as written: 9:30pm, 930, 1030~11+pm\",\"title\":\"Time Ref\"},\"participants\":{\"description\":\"discord user ids of the people this is about\",\"items\":{\"type\":\"string\"},\"title\":\"Participants\",\"type\":\"array\"},\"rsvp\":{\"anyOf\":[{\"enum\":[\"yes\",\"no\",\"maybe\"],\"type\":\"string\"},{\"type\":\"null\"}],\"description\":\"for kind=rsvp: yes, no or maybe\",\"title\":\"Rsvp\"},\"is_question\":{\"description\":\"true if this was asked, not decided\",\"title\":\"Is Question\",\"type\":\"boolean\"},\"confidence\":{\"maximum\":1.0,\"minimum\":0.0,\"title\":\"Confidence\",\"type\":\"number\"},\"evidence_message_ids\":{\"description\":\"the [msg_id]s this came from\",\"items\":{\"type\":\"string\"},\"title\":\"Evidence Message Ids\",\"type\":\"array\"},\"target_run_hint\":{\"anyOf\":[{\"type\":\"string\"},{\"type\":\"null\"}],\"description\":\"the short run id from the RUNS list, if one clearly matches\",\"title\":\"Target Run Hint\"}},\"required\":[\"kind\",\"bosses\",\"day_ref\",\"time_ref\",\"participants\",\"rsvp\",\"is_question\",\"confidence\",\"evidence_message_ids\",\"target_run_hint\"],\"title\":\"Amendment\",\"type\":\"object\",\"additionalProperties\":false}},\"description\":\"Everything the model found in one burst of messages.\",\"properties\":{\"amendments\":{\"items\":{\"$ref\":\"#/$defs/Amendment\"},\"title\":\"Amendments\",\"type\":\"array\"},\"summary\":{\"description\":\"one line a human can read\",\"title\":\"Summary\",\"type\":\"string\"}},\"title\":\"Extraction\",\"type\":\"object\",\"required\":[\"amendments\",\"summary\"],\"additionalProperties\":false}"
+          },
+          {
+            "value": {
+              "messages": [
+                {
+                  "content": "sys",
+                  "role": "system"
+                },
+                {
+                  "content": "[1] hi",
+                  "role": "user"
+                }
+              ],
+              "model": "extractor",
+              "reasoning_effort": "low",
+              "response_format": {
+                "json_schema": {
+                  "name": "extraction",
+                  "schema": {
+                    "$defs": {
+                      "Amendment": {
+                        "additionalProperties": false,
+                        "description": "One proposed change, exactly as the model saw it in the conversation.",
+                        "properties": {
+                          "bosses": {
+                            "description": "canonical boss names from the boss table, e.g. HMaleficStar, XKalos",
+                            "items": {
+                              "type": "string"
+                            },
+                            "title": "Bosses",
+                            "type": "array"
+                          },
+                          "confidence": {
+                            "maximum": 1.0,
+                            "minimum": 0.0,
+                            "title": "Confidence",
+                            "type": "number"
+                          },
+                          "day_ref": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "description": "the day exactly as written: weds, tmr, tonight, 2026-09-02",
+                            "title": "Day Ref"
+                          },
+                          "evidence_message_ids": {
+                            "description": "the [msg_id]s this came from",
+                            "items": {
+                              "type": "string"
+                            },
+                            "title": "Evidence Message Ids",
+                            "type": "array"
+                          },
+                          "is_question": {
+                            "description": "true if this was asked, not decided",
+                            "title": "Is Question",
+                            "type": "boolean"
+                          },
+                          "kind": {
+                            "description": "what kind of change this is",
+                            "enum": [
+                              "move",
+                              "add",
+                              "cancel",
+                              "split",
+                              "otot",
+                              "sub",
+                              "rsvp",
+                              "fix"
+                            ],
+                            "title": "Kind",
+                            "type": "string"
+                          },
+                          "participants": {
+                            "description": "discord user ids of the people this is about",
+                            "items": {
+                              "type": "string"
+                            },
+                            "title": "Participants",
+                            "type": "array"
+                          },
+                          "rsvp": {
+                            "anyOf": [
+                              {
+                                "enum": [
+                                  "yes",
+                                  "no",
+                                  "maybe"
+                                ],
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "description": "for kind=rsvp: yes, no or maybe",
+                            "title": "Rsvp"
+                          },
+                          "target_run_hint": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "description": "the short run id from the RUNS list, if one clearly matches",
+                            "title": "Target Run Hint"
+                          },
+                          "time_ref": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "description": "the time exactly as written: 9:30pm, 930, 1030~11+pm",
+                            "title": "Time Ref"
+                          }
+                        },
+                        "required": [
+                          "kind",
+                          "bosses",
+                          "day_ref",
+                          "time_ref",
+                          "participants",
+                          "rsvp",
+                          "is_question",
+                          "confidence",
+                          "evidence_message_ids",
+                          "target_run_hint"
+                        ],
+                        "title": "Amendment",
+                        "type": "object"
+                      }
+                    },
+                    "additionalProperties": false,
+                    "description": "Everything the model found in one burst of messages.",
+                    "properties": {
+                      "amendments": {
+                        "items": {
+                          "$ref": "#/$defs/Amendment"
+                        },
+                        "title": "Amendments",
+                        "type": "array"
+                      },
+                      "summary": {
+                        "description": "one line a human can read",
+                        "title": "Summary",
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "amendments",
+                      "summary"
+                    ],
+                    "title": "Extraction",
+                    "type": "object"
+                  },
+                  "strict": true
+                },
+                "type": "json_schema"
+              },
+              "seed": 0,
+              "temperature": 0
+            }
+          },
+          {
+            "value": {
+              "messages": [
+                {
+                  "content": "sys",
+                  "role": "system"
+                },
+                {
+                  "content": "[1] hi",
+                  "role": "user"
+                }
+              ],
+              "model": "extractor",
+              "response_format": {
+                "json_schema": {
+                  "name": "extraction",
+                  "schema": {
+                    "$defs": {
+                      "Amendment": {
+                        "additionalProperties": false,
+                        "description": "One proposed change, exactly as the model saw it in the conversation.",
+                        "properties": {
+                          "bosses": {
+                            "description": "canonical boss names from the boss table, e.g. HMaleficStar, XKalos",
+                            "items": {
+                              "type": "string"
+                            },
+                            "title": "Bosses",
+                            "type": "array"
+                          },
+                          "confidence": {
+                            "maximum": 1.0,
+                            "minimum": 0.0,
+                            "title": "Confidence",
+                            "type": "number"
+                          },
+                          "day_ref": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "description": "the day exactly as written: weds, tmr, tonight, 2026-09-02",
+                            "title": "Day Ref"
+                          },
+                          "evidence_message_ids": {
+                            "description": "the [msg_id]s this came from",
+                            "items": {
+                              "type": "string"
+                            },
+                            "title": "Evidence Message Ids",
+                            "type": "array"
+                          },
+                          "is_question": {
+                            "description": "true if this was asked, not decided",
+                            "title": "Is Question",
+                            "type": "boolean"
+                          },
+                          "kind": {
+                            "description": "what kind of change this is",
+                            "enum": [
+                              "move",
+                              "add",
+                              "cancel",
+                              "split",
+                              "otot",
+                              "sub",
+                              "rsvp",
+                              "fix"
+                            ],
+                            "title": "Kind",
+                            "type": "string"
+                          },
+                          "participants": {
+                            "description": "discord user ids of the people this is about",
+                            "items": {
+                              "type": "string"
+                            },
+                            "title": "Participants",
+                            "type": "array"
+                          },
+                          "rsvp": {
+                            "anyOf": [
+                              {
+                                "enum": [
+                                  "yes",
+                                  "no",
+                                  "maybe"
+                                ],
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "description": "for kind=rsvp: yes, no or maybe",
+                            "title": "Rsvp"
+                          },
+                          "target_run_hint": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "description": "the short run id from the RUNS list, if one clearly matches",
+                            "title": "Target Run Hint"
+                          },
+                          "time_ref": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ],
+                            "description": "the time exactly as written: 9:30pm, 930, 1030~11+pm",
+                            "title": "Time Ref"
+                          }
+                        },
+                        "required": [
+                          "kind",
+                          "bosses",
+                          "day_ref",
+                          "time_ref",
+                          "participants",
+                          "rsvp",
+                          "is_question",
+                          "confidence",
+                          "evidence_message_ids",
+                          "target_run_hint"
+                        ],
+                        "title": "Amendment",
+                        "type": "object"
+                      }
+                    },
+                    "additionalProperties": false,
+                    "description": "Everything the model found in one burst of messages.",
+                    "properties": {
+                      "amendments": {
+                        "items": {
+                          "$ref": "#/$defs/Amendment"
+                        },
+                        "title": "Amendments",
+                        "type": "array"
+                      },
+                      "summary": {
+                        "description": "one line a human can read",
+                        "title": "Summary",
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "amendments",
+                      "summary"
+                    ],
+                    "title": "Extraction",
+                    "type": "object"
+                  },
+                  "strict": true
+                },
+                "type": "json_schema"
+              },
+              "seed": 0,
+              "temperature": 0
+            }
+          },
+          {
+            "value": {
+              "messages": [
+                {
+                  "content": "sys\n\nOUTPUT FORMAT\nAnswer with exactly one JSON object and nothing else: no prose, no markdown. It must validate against this JSON Schema:\n{\"$defs\":{\"Amendment\":{\"description\":\"One proposed change, exactly as the model saw it in the conversation.\",\"properties\":{\"kind\":{\"description\":\"what kind of change this is\",\"enum\":[\"move\",\"add\",\"cancel\",\"split\",\"otot\",\"sub\",\"rsvp\",\"fix\"],\"title\":\"Kind\",\"type\":\"string\"},\"bosses\":{\"description\":\"canonical boss names from the boss table, e.g. HMaleficStar, XKalos\",\"items\":{\"type\":\"string\"},\"title\":\"Bosses\",\"type\":\"array\"},\"day_ref\":{\"anyOf\":[{\"type\":\"string\"},{\"type\":\"null\"}],\"description\":\"the day exactly as written: weds, tmr, tonight, 2026-09-02\",\"title\":\"Day Ref\"},\"time_ref\":{\"anyOf\":[{\"type\":\"string\"},{\"type\":\"null\"}],\"description\":\"the time exactly as written: 9:30pm, 930, 1030~11+pm\",\"title\":\"Time Ref\"},\"participants\":{\"description\":\"discord user ids of the people this is about\",\"items\":{\"type\":\"string\"},\"title\":\"Participants\",\"type\":\"array\"},\"rsvp\":{\"anyOf\":[{\"enum\":[\"yes\",\"no\",\"maybe\"],\"type\":\"string\"},{\"type\":\"null\"}],\"description\":\"for kind=rsvp: yes, no or maybe\",\"title\":\"Rsvp\"},\"is_question\":{\"description\":\"true if this was asked, not decided\",\"title\":\"Is Question\",\"type\":\"boolean\"},\"confidence\":{\"maximum\":1.0,\"minimum\":0.0,\"title\":\"Confidence\",\"type\":\"number\"},\"evidence_message_ids\":{\"description\":\"the [msg_id]s this came from\",\"items\":{\"type\":\"string\"},\"title\":\"Evidence Message Ids\",\"type\":\"array\"},\"target_run_hint\":{\"anyOf\":[{\"type\":\"string\"},{\"type\":\"null\"}],\"description\":\"the short run id from the RUNS list, if one clearly matches\",\"title\":\"Target Run Hint\"}},\"required\":[\"kind\",\"bosses\",\"day_ref\",\"time_ref\",\"participants\",\"rsvp\",\"is_question\",\"confidence\",\"evidence_message_ids\",\"target_run_hint\"],\"title\":\"Amendment\",\"type\":\"object\",\"additionalProperties\":false}},\"description\":\"Everything the model found in one burst of messages.\",\"properties\":{\"amendments\":{\"items\":{\"$ref\":\"#/$defs/Amendment\"},\"title\":\"Amendments\",\"type\":\"array\"},\"summary\":{\"description\":\"one line a human can read\",\"title\":\"Summary\",\"type\":\"string\"}},\"title\":\"Extraction\",\"type\":\"object\",\"required\":[\"amendments\",\"summary\"],\"additionalProperties\":false}",
+                  "role": "system"
+                },
+                {
+                  "content": "[1] hi",
+                  "role": "user"
+                }
+              ],
+              "model": "extractor"
+            }
+          },
+          {
+            "value": {
+              "messages": [
+                {
+                  "content": "OUTPUT FORMAT\nAnswer with exactly one JSON object and nothing else: no prose, no markdown. It must validate against this JSON Schema:\n{\"$defs\":{\"Amendment\":{\"description\":\"One proposed change, exactly as the model saw it in the conversation.\",\"properties\":{\"kind\":{\"description\":\"what kind of change this is\",\"enum\":[\"move\",\"add\",\"cancel\",\"split\",\"otot\",\"sub\",\"rsvp\",\"fix\"],\"title\":\"Kind\",\"type\":\"string\"},\"bosses\":{\"description\":\"canonical boss names from the boss table, e.g. HMaleficStar, XKalos\",\"items\":{\"type\":\"string\"},\"title\":\"Bosses\",\"type\":\"array\"},\"day_ref\":{\"anyOf\":[{\"type\":\"string\"},{\"type\":\"null\"}],\"description\":\"the day exactly as written: weds, tmr, tonight, 2026-09-02\",\"title\":\"Day Ref\"},\"time_ref\":{\"anyOf\":[{\"type\":\"string\"},{\"type\":\"null\"}],\"description\":\"the time exactly as written: 9:30pm, 930, 1030~11+pm\",\"title\":\"Time Ref\"},\"participants\":{\"description\":\"discord user ids of the people this is about\",\"items\":{\"type\":\"string\"},\"title\":\"Participants\",\"type\":\"array\"},\"rsvp\":{\"anyOf\":[{\"enum\":[\"yes\",\"no\",\"maybe\"],\"type\":\"string\"},{\"type\":\"null\"}],\"description\":\"for kind=rsvp: yes, no or maybe\",\"title\":\"Rsvp\"},\"is_question\":{\"description\":\"true if this was asked, not decided\",\"title\":\"Is Question\",\"type\":\"boolean\"},\"confidence\":{\"maximum\":1.0,\"minimum\":0.0,\"title\":\"Confidence\",\"type\":\"number\"},\"evidence_message_ids\":{\"description\":\"the [msg_id]s this came from\",\"items\":{\"type\":\"string\"},\"title\":\"Evidence Message Ids\",\"type\":\"array\"},\"target_run_hint\":{\"anyOf\":[{\"type\":\"string\"},{\"type\":\"null\"}],\"description\":\"the short run id from the RUNS list, if one clearly matches\",\"title\":\"Target Run Hint\"}},\"required\":[\"kind\",\"bosses\",\"day_ref\",\"time_ref\",\"participants\",\"rsvp\",\"is_question\",\"confidence\",\"evidence_message_ids\",\"target_run_hint\"],\"title\":\"Amendment\",\"type\":\"object\",\"additionalProperties\":false}},\"description\":\"Everything the model found in one burst of messages.\",\"properties\":{\"amendments\":{\"items\":{\"$ref\":\"#/$defs/Amendment\"},\"title\":\"Amendments\",\"type\":\"array\"},\"summary\":{\"description\":\"one line a human can read\",\"title\":\"Summary\",\"type\":\"string\"}},\"title\":\"Extraction\",\"type\":\"object\",\"required\":[\"amendments\",\"summary\"],\"additionalProperties\":false}",
+                  "role": "system"
+                },
+                {
+                  "content": "[1] hi",
+                  "role": "user"
+                }
+              ],
+              "model": "extractor",
+              "seed": 0,
+              "temperature": 0
+            }
+          }
+        ]
+      },
+      "input": {
+        "catalog": {
+          "bosses": [
+            {
+              "aliases": [
+                "star",
+                "mstar"
+              ],
+              "difficulties": [
+                "n",
+                "h"
+              ],
+              "full": "Malefic Star",
+              "short": "MaleficStar"
+            },
+            {
+              "aliases": [
+                "fa"
+              ],
+              "difficulties": [
+                "n",
+                "h",
+                "x"
+              ],
+              "full": "First Adversary",
+              "short": "FA"
+            },
+            {
+              "aliases": [
+                "carl",
+                "carling"
+              ],
+              "difficulties": [
+                "n",
+                "h",
+                "x"
+              ],
+              "full": "Chief Carling",
+              "short": "Carling"
+            },
+            {
+              "aliases": [
+                "kalos"
+              ],
+              "difficulties": [
+                "e",
+                "n",
+                "c",
+                "x"
+              ],
+              "full": "Kalos the Guardian",
+              "short": "Kalos"
+            },
+            {
+              "aliases": [
+                "bald",
+                "baldguy"
+              ],
+              "difficulties": [
+                "n",
+                "h"
+              ],
+              "full": "Baldrix",
+              "short": "Baldrix"
+            },
+            {
+              "aliases": [
+                "limbo"
+              ],
+              "difficulties": [
+                "n",
+                "h"
+              ],
+              "full": "Limbo",
+              "short": "Limbo"
+            }
+          ],
+          "difficulties": [
+            {
+              "label": "Easy",
+              "prefix": "e"
+            },
+            {
+              "label": "Normal",
+              "prefix": "n"
+            },
+            {
+              "label": "Hard",
+              "prefix": "h"
+            },
+            {
+              "label": "Chaos",
+              "prefix": "c"
+            },
+            {
+              "label": "Extreme",
+              "prefix": "x"
+            }
+          ]
+        },
+        "steps": [
+          {
+            "op": "json_schema"
+          },
+          {
+            "op": "json_instruction"
+          },
+          {
+            "caps": {
+              "reasoning_control": true,
+              "reasoning_efforts": null,
+              "sampling_controls": true,
+              "structured_output": true
+            },
+            "messages": [
+              {
+                "content": "sys",
+                "role": "system"
+              },
+              {
+                "content": "[1] hi",
+                "role": "user"
+              }
+            ],
+            "model": "extractor",
+            "op": "extraction_body",
+            "reasoning_effort": "low"
+          },
+          {
+            "caps": {
+              "reasoning_control": true,
+              "reasoning_efforts": [
+                "medium",
+                "high"
+              ],
+              "sampling_controls": true,
+              "structured_output": true
+            },
+            "messages": [
+              {
+                "content": "sys",
+                "role": "system"
+              },
+              {
+                "content": "[1] hi",
+                "role": "user"
+              }
+            ],
+            "model": "extractor",
+            "op": "extraction_body",
+            "reasoning_effort": "low"
+          },
+          {
+            "caps": {
+              "reasoning_control": false,
+              "reasoning_efforts": null,
+              "sampling_controls": false,
+              "structured_output": false
+            },
+            "messages": [
+              {
+                "content": "sys",
+                "role": "system"
+              },
+              {
+                "content": "[1] hi",
+                "role": "user"
+              }
+            ],
+            "model": "extractor",
+            "op": "extraction_body",
+            "reasoning_effort": "low"
+          },
+          {
+            "caps": {
+              "reasoning_control": true,
+              "reasoning_efforts": null,
+              "sampling_controls": true,
+              "structured_output": false
+            },
+            "messages": [
+              {
+                "content": "[1] hi",
+                "role": "user"
+              }
+            ],
+            "model": "extractor",
+            "op": "extraction_body",
+            "reasoning_effort": ""
+          }
+        ],
+        "timezone": "Asia/Kuala_Lumpur"
+      }
+    },
+    {
+      "case_id": "token-budget-estimates",
+      "expected": {
+        "steps": [
+          {
+            "value": 0
+          },
+          {
+            "value": 3
+          },
+          {
+            "value": 21
+          },
+          {
+            "value": 3
+          },
+          {
+            "value": 5692
+          },
+          {
+            "value": 2500
+          },
+          {
+            "value": 787
+          }
+        ]
+      },
+      "input": {
+        "catalog": {
+          "bosses": [
+            {
+              "aliases": [
+                "star",
+                "mstar"
+              ],
+              "difficulties": [
+                "n",
+                "h"
+              ],
+              "full": "Malefic Star",
+              "short": "MaleficStar"
+            },
+            {
+              "aliases": [
+                "fa"
+              ],
+              "difficulties": [
+                "n",
+                "h",
+                "x"
+              ],
+              "full": "First Adversary",
+              "short": "FA"
+            },
+            {
+              "aliases": [
+                "carl",
+                "carling"
+              ],
+              "difficulties": [
+                "n",
+                "h",
+                "x"
+              ],
+              "full": "Chief Carling",
+              "short": "Carling"
+            },
+            {
+              "aliases": [
+                "kalos"
+              ],
+              "difficulties": [
+                "e",
+                "n",
+                "c",
+                "x"
+              ],
+              "full": "Kalos the Guardian",
+              "short": "Kalos"
+            },
+            {
+              "aliases": [
+                "bald",
+                "baldguy"
+              ],
+              "difficulties": [
+                "n",
+                "h"
+              ],
+              "full": "Baldrix",
+              "short": "Baldrix"
+            },
+            {
+              "aliases": [
+                "limbo"
+              ],
+              "difficulties": [
+                "n",
+                "h"
+              ],
+              "full": "Limbo",
+              "short": "Limbo"
+            }
+          ],
+          "difficulties": [
+            {
+              "label": "Easy",
+              "prefix": "e"
+            },
+            {
+              "label": "Normal",
+              "prefix": "n"
+            },
+            {
+              "label": "Hard",
+              "prefix": "h"
+            },
+            {
+              "label": "Chaos",
+              "prefix": "c"
+            },
+            {
+              "label": "Extreme",
+              "prefix": "x"
+            }
+          ]
+        },
+        "steps": [
+          {
+            "op": "estimate_tokens",
+            "text": ""
+          },
+          {
+            "op": "estimate_tokens",
+            "text": "hello world"
+          },
+          {
+            "op": "estimate_tokens",
+            "text": "[123456789012345678] <@1234> 99999 ok"
+          },
+          {
+            "messages": [
+              {
+                "content": "sys",
+                "role": "system"
+              },
+              {
+                "content": "[1] hi",
+                "role": "user"
+              }
+            ],
+            "op": "estimate_messages"
+          },
+          {
+            "num_ctx": 8192,
+            "op": "prompt_budget"
+          },
+          {
+            "num_ctx": 3000,
+            "op": "prompt_budget"
+          },
+          {
+            "op": "json_instruction_tokens"
+          }
+        ],
+        "timezone": "Asia/Kuala_Lumpur"
+      }
+    }
+  ],
+  "family": "prompt",
+  "provenance": {
+    "functions": [
+      "bot.extract.prompt.SYSTEM_PROMPT",
+      "bot.extract.prompt.build_messages",
+      "bot.extract.prompt.relevant_roster",
+      "bot.extract.prompt.named_bosses",
+      "bot.extract.prompt.estimate_tokens",
+      "bot.extract.prompt.estimate_messages",
+      "bot.extract.prompt.prompt_budget",
+      "bot.extract.schema.json_schema",
+      "bot.extract.llm.json_instruction",
+      "bot.extract.llm.json_instruction_tokens",
+      "bot.extract.llm.extraction_body"
+    ],
+    "inventory_surfaces": [
+      "extract.prompt-and-budget",
+      "extract.schema",
+      "extract.kanata-gateway-adapter"
+    ],
+    "oracle": "legacy/python bot.extract.prompt, bot.extract.schema, bot.extract.llm",
+    "source_tests": [
+      "tests/test_extract_pipeline.py",
+      "tests/test_extract_schema.py",
+      "tests/test_extract_llm.py"
+    ]
+  },
+  "schema_version": "v5-extract-prompt-v1"
+}

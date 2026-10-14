@@ -1,0 +1,486 @@
+use std::{collections::BTreeMap, path::Path};
+
+use super::{keys::KEYS, merge, resolve};
+use crate::runtime::config::{ModelSettings, RuntimeConfig, ServeConfig, SettingSeeds};
+
+const EXAMPLE: &str = include_str!("../../../../kanade.example.toml");
+const OPENAI_COMPATIBLE: &str = include_str!("../../../../kanade.openai-compatible.example.toml");
+const COMPOSE: &str = include_str!("../../../../deploy/compose.yaml");
+
+fn env(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
+    pairs
+        .iter()
+        .map(|(key, value)| ((*key).to_owned(), (*value).to_owned()))
+        .collect()
+}
+
+fn error(text: &str) -> String {
+    merge(text, BTreeMap::new()).unwrap_err().to_string()
+}
+
+/// The bot's `environment:` in deploy/compose.yaml as Compose passes it with
+/// no `.env` and no override: `${VAR:-default}` is the default and
+/// `${VAR:+value}` is empty.
+fn compose_environment() -> BTreeMap<String, String> {
+    #[derive(serde::Deserialize)]
+    struct Compose {
+        services: BTreeMap<String, Service>,
+    }
+    #[derive(serde::Deserialize)]
+    struct Service {
+        #[serde(default)]
+        environment: BTreeMap<String, String>,
+    }
+    let compose: Compose = serde_saphyr::from_str(COMPOSE).unwrap();
+    compose.services["bot"]
+        .environment
+        .iter()
+        .map(|(key, value)| {
+            let value = match value
+                .strip_prefix("${")
+                .and_then(|rest| rest.strip_suffix('}'))
+            {
+                Some(expression) => match expression.split_once(":-") {
+                    Some((_, default)) => default.to_owned(),
+                    None => {
+                        assert!(expression.contains(":+"), "{key}: {value}");
+                        String::new()
+                    }
+                },
+                None => value.clone(),
+            };
+            assert!(!value.contains('$'), "{key}: unsupported interpolation");
+            (key.clone(), value)
+        })
+        .collect()
+}
+
+/// The example plus `environment` from the base Compose file.
+fn compose_env(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
+    let mut values = compose_environment();
+    values.extend(env(pairs));
+    values
+}
+
+/// A first start: the example file under the base deploy/compose.yaml, with
+/// no override and no `.env`, is a complete live config with every add-on off.
+#[test]
+fn the_example_file_starts_under_the_base_compose_file() {
+    let resolved = merge(EXAMPLE, compose_environment()).unwrap();
+    let config = ServeConfig::from_mapping(&resolved.values).unwrap();
+    assert_eq!(config.runtime.timezone, chrono_tz::Asia::Kuala_Lumpur);
+    assert_eq!(config.guild.guild_id, 123456789012345678);
+    assert_eq!(config.guild.bossing_role_id, 223456789012345678);
+    assert!(config.discord.gateway);
+    assert!(
+        config.runtime.admin_auth.discord.is_none(),
+        "admin Discord sign-in is an add-on"
+    );
+    assert!(config.runtime.admin_auth.token_file.is_some());
+    assert_eq!(config.runtime.http.admin_host, None, "localhost names only");
+    assert_eq!(config.runtime.http.trusted_proxy, None);
+    assert_eq!(
+        config.runtime.admin_bind,
+        "172.23.0.10:8080".parse().unwrap()
+    );
+    assert_eq!(config.runtime.public_bind, None);
+    assert!(config.runtime.public_auth.discord.is_none());
+    assert_eq!(
+        config.models.base_url.as_deref(),
+        Some("https://kanata.example/v1")
+    );
+    assert_eq!(config.store.db_path, Path::new("/data/db/kanade.sqlite"));
+    assert_eq!(
+        config.files.catalog_file,
+        Path::new("/app/boss/bosses.yaml")
+    );
+    assert_eq!(config.backup_recipients_file, None);
+    assert_eq!(config.character_data, None);
+    assert_eq!(config.seeds, SettingSeeds::default());
+}
+
+#[test]
+fn the_openai_compatible_fragment_declares_its_role_aliases() {
+    let resolved = merge(OPENAI_COMPATIBLE, BTreeMap::new()).unwrap();
+    let models = ModelSettings::from_mapping(&resolved.values).unwrap();
+    let roles = [
+        models.extract_model.as_deref(),
+        models.chat_model.as_deref(),
+        models.rewrite_model.as_deref(),
+    ];
+    let declared: Vec<_> = models.capabilities.keys().map(String::as_str).collect();
+    assert_eq!(
+        declared,
+        ["example-chat", "example-extract", "example-rewrite"]
+    );
+    assert!(
+        roles
+            .iter()
+            .all(|alias| alias.is_some_and(|alias| declared.contains(&alias)))
+    );
+    assert!(models.capabilities["example-chat"].function_tools);
+    assert!(models.capabilities["example-extract"].structured_output);
+}
+
+/// Every key is documented: uncommenting the example's keys covers the table.
+#[test]
+fn the_example_file_documents_every_key() {
+    let uncommented: String = EXAMPLE
+        .lines()
+        .map(|line| {
+            let rest = line.strip_prefix("# ").unwrap_or(line);
+            let is_key = rest.split_once(" = ").is_some_and(|(name, _)| {
+                name.bytes()
+                    .all(|byte| byte.is_ascii_lowercase() || byte == b'_')
+            });
+            if is_key { rest } else { line }
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    let resolved = merge(&uncommented, BTreeMap::new()).unwrap();
+    for (key, env, _) in KEYS {
+        assert!(
+            resolved.values.contains_key(*env),
+            "{key} is not documented"
+        );
+    }
+}
+
+#[test]
+fn a_non_empty_environment_variable_overrides_one_key() {
+    let resolved = merge(
+        EXAMPLE,
+        compose_env(&[
+            ("KANADE_GUILD_ID", "999999999999999999"),
+            // Compose passes blank variables as empty: the file still applies.
+            ("KANADE_BOSSING_ROLE_ID", ""),
+            ("KANADE_UNRELATED", "kept"),
+        ]),
+    )
+    .unwrap();
+    let config = ServeConfig::from_mapping(&resolved.values).unwrap();
+    assert_eq!(config.guild.guild_id, 999999999999999999);
+    assert_eq!(config.guild.bossing_role_id, 223456789012345678);
+    assert_eq!(resolved.values["KANADE_UNRELATED"], "kept");
+    assert_eq!(config.runtime.timezone, chrono_tz::Asia::Kuala_Lumpur);
+}
+
+#[test]
+fn retired_privacy_toml_keys_are_rejected_by_presence_before_environment_merge() {
+    for (path, value) in [
+        ("models.pseudonymize", "true"),
+        ("models.pseudonymize", "false"),
+        ("models.allow_external_unmasked", "true"),
+        ("models.allow_external_unmasked", "false"),
+    ] {
+        let key = path.strip_prefix("models.").unwrap();
+        let message = error(&format!("[models]\n{key} = {value}\n"));
+        assert_eq!(
+            message,
+            format!("kanade.toml key `{path}` is retired; remove it")
+        );
+        assert!(!message.contains(value));
+    }
+
+    let together = merge(
+        "[models]\npseudonymize = true\nallow_external_unmasked = false\n",
+        BTreeMap::new(),
+    )
+    .unwrap_err()
+    .to_string();
+    assert!(together.contains("kanade.toml key `models."));
+    assert!(together.contains("is retired; remove it"));
+    assert!(!together.contains("true") && !together.contains("false"));
+
+    let mixed_sources = merge(
+        "[models]\npseudonymize = false\n",
+        env(&[("KANADE_ALLOW_EXTERNAL_UNMASKED", "1")]),
+    )
+    .unwrap_err()
+    .to_string();
+    assert!(mixed_sources.contains("models.pseudonymize"));
+    assert!(!mixed_sources.contains("false") && !mixed_sources.contains("1"));
+}
+
+#[test]
+fn unknown_keys_and_bad_types_name_the_key_only() {
+    assert_eq!(
+        error("[discord]\nguild = \"sentinel-value\"\n"),
+        "kanade.toml has an unknown key `discord.guild`"
+    );
+    assert_eq!(
+        error("[nope]\nx = 1\n"),
+        "kanade.toml has an unknown key `nope`"
+    );
+    assert_eq!(
+        error("timezone = \"UTC\"\n"),
+        "kanade.toml has an unknown key `timezone`"
+    );
+    assert_eq!(
+        error("[runtime]\ntick_seconds = \"sentinel-value\"\n"),
+        "kanade.toml `runtime.tick_seconds` must be a non-negative integer"
+    );
+    assert_eq!(
+        error("[discord]\ngateway = 1\n"),
+        "kanade.toml `discord.gateway` must be true or false"
+    );
+    assert_eq!(
+        error("[settings]\nchat_category_ids = [1, true]\n"),
+        "kanade.toml `settings.chat_category_ids` must be a list of snowflake strings or integers"
+    );
+    assert_eq!(
+        error("models = 3\n"),
+        "kanade.toml `models` must be a table"
+    );
+    let syntax = error("[runtime]\ntimezone = sentinel-value\n");
+    assert_eq!(syntax, "kanade.toml is not valid TOML (line 2)");
+
+    // Values that parse but fail the typed rules name the variable and the key.
+    let resolved = merge(
+        "[runtime]\ntimezone = \"Not/AZone-sentinel\"\n",
+        BTreeMap::new(),
+    )
+    .unwrap();
+    let error = resolved.annotate(RuntimeConfig::from_mapping(&resolved.values).unwrap_err());
+    assert_eq!(
+        error.to_string(),
+        "KANADE_TIMEZONE must be a valid IANA timezone (kanade.toml `runtime.timezone`)"
+    );
+    assert!(!error.to_string().contains("sentinel"));
+}
+
+#[test]
+fn secret_looking_keys_are_refused_and_file_keys_accepted() {
+    for (text, key) in [
+        ("[discord]\ntoken = \"sentinel-value\"\n", "discord.token"),
+        ("[models]\nkey = \"sentinel-value\"\n", "models.key"),
+        ("[models]\napi_key = \"sentinel-value\"\n", "models.api_key"),
+        (
+            "[admin]\ndiscord_client_secret = \"sentinel-value\"\n",
+            "admin.discord_client_secret",
+        ),
+        ("[store]\npassword = \"sentinel-value\"\n", "store.password"),
+        (
+            "[[models.groups]]\nname = \"a\"\npermits = 1\naliases = [\"a\"]\ntoken = \"sentinel-value\"\n",
+            "models.groups[0].token",
+        ),
+    ] {
+        let message = error(text);
+        assert_eq!(
+            message,
+            format!(
+                "kanade.toml `{key}` looks like a secret; put it in a file and name that file with a `*_file` key"
+            )
+        );
+        assert!(!message.contains("sentinel"));
+    }
+    let resolved = merge(
+        "[discord]\ntoken_file = \"/run/secrets/t\"\n[models]\nkey_file = \"/run/secrets/k\"\n\
+         [admin]\ndiscord_client_secret_file = \"/run/secrets/c\"\nedge_secret_file = \"/run/secrets/e\"\n",
+        BTreeMap::new(),
+    )
+    .unwrap();
+    assert_eq!(
+        resolved.values["KANADE_DISCORD_TOKEN_FILE"],
+        "/run/secrets/t"
+    );
+    assert_eq!(resolved.values["KANADE_MODEL_KEY_FILE"], "/run/secrets/k");
+    assert_eq!(
+        resolved.values["KANADE_ADMIN_DISCORD_CLIENT_SECRET_FILE"],
+        "/run/secrets/c"
+    );
+    assert_eq!(resolved.values["KANADE_EDGE_SECRET_FILE"], "/run/secrets/e");
+}
+
+#[test]
+fn environment_only_configuration_is_unchanged() {
+    let environment = env(&[
+        ("KANADE_TIMEZONE", "Asia/Kuala_Lumpur"),
+        ("KANADE_CONFIG", ""),
+        ("KANADE_MODEL_PERMITS", "3"),
+    ]);
+    let resolved = resolve(environment.clone()).unwrap();
+    assert_eq!(resolved.values, environment);
+    let error = crate::runtime::error::Error::Configuration("KANADE_TIMEZONE is required".into());
+    assert_eq!(
+        resolved.annotate(error).to_string(),
+        "KANADE_TIMEZONE is required"
+    );
+}
+
+#[test]
+fn the_config_file_is_read_from_kanade_config() {
+    let path = std::env::temp_dir().join(format!("kanade-toml-{}", uuid::Uuid::new_v4()));
+    std::fs::write(&path, "[runtime]\ntimezone = \"UTC\"\n").unwrap();
+    let resolved = resolve(env(&[("KANADE_CONFIG", path.to_str().unwrap())])).unwrap();
+    assert_eq!(resolved.values["KANADE_TIMEZONE"], "UTC");
+    std::fs::remove_file(&path).unwrap();
+    assert_eq!(
+        resolve(env(&[("KANADE_CONFIG", path.to_str().unwrap())]))
+            .unwrap_err()
+            .to_string(),
+        "KANADE_CONFIG could not be read"
+    );
+}
+
+#[test]
+fn groups_feed_the_model_settings() {
+    let text = "[models]\nbase_url = \"https://gw.example/v1\"\n\
+                [[models.groups]]\nname = \"local\"\npermits = 3\naliases = [\"a\", \"b\"]\n\
+                [[models.groups]]\nname = \"cloud\"\npermits = 1\naliases = [\"c\"]\n";
+    let resolved = merge(text, BTreeMap::new()).unwrap();
+    let models = ModelSettings::from_mapping(&resolved.values).unwrap();
+    let shape: Vec<_> = models
+        .groups
+        .iter()
+        .map(|group| (group.name.as_str(), group.permits, group.aliases.len()))
+        .collect();
+    assert_eq!(shape, [("local", 3, 2), ("cloud", 1, 1)]);
+
+    assert_eq!(
+        error("[[models.groups]]\nname = \"a\"\npermits = 1\n"),
+        "kanade.toml `models.groups[0]` needs `aliases`"
+    );
+    assert_eq!(
+        error("[[models.groups]]\nname = \"a\"\npermits = 1\naliases = [\"a\"]\nburst = 2\n"),
+        "kanade.toml has an unknown key `models.groups[0].burst`"
+    );
+    let resolved = merge(
+        "[models]\nbase_url = \"https://gw.example/v1\"\npermits = 2\n\
+         [[models.groups]]\nname = \"a\"\npermits = 1\naliases = [\"a\"]\n",
+        BTreeMap::new(),
+    )
+    .unwrap();
+    let error = resolved.annotate(ModelSettings::from_mapping(&resolved.values).unwrap_err());
+    assert_eq!(
+        error.to_string(),
+        "KANADE_MODEL_PERMITS and KANADE_MODEL_GROUPS are exclusive; set permits per group \
+         (kanade.toml `models.permits`)"
+    );
+}
+
+#[test]
+fn capability_declarations_feed_the_model_settings() {
+    use crate::infrastructure::llm::{Effort, ModelCapabilities};
+
+    let base = "[models]\nbase_url = \"https://llm.example/v1\"\n";
+    let models = |tables: &str| {
+        let resolved = merge(&format!("{base}{tables}"), BTreeMap::new()).unwrap();
+        ModelSettings::from_mapping(&resolved.values)
+            .map_err(|error| resolved.annotate(error).to_string())
+    };
+    let settings = models(
+        "[models.capabilities.\"plain/chat\"]\nfunction_tools = true\nstructured_output = true\n\
+         reasoning_control = true\nreasoning_efforts = [\"off\", \"medium\"]\n\
+         context_tokens = 32768\nmax_output_tokens = 2048\n\
+         [models.capabilities.\"plain/extract\"]\nstructured_output = true\n",
+    )
+    .unwrap();
+    assert_eq!(
+        settings.capabilities,
+        BTreeMap::from([
+            (
+                "plain/chat".to_owned(),
+                ModelCapabilities {
+                    function_tools: true,
+                    structured_output: true,
+                    reasoning_control: true,
+                    reasoning_efforts: Some(vec![Effort::Off, Effort::Medium]),
+                    context_tokens: Some(32_768),
+                    max_output_tokens: Some(2048),
+                    ..ModelCapabilities::minimal()
+                }
+            ),
+            (
+                "plain/extract".to_owned(),
+                ModelCapabilities {
+                    structured_output: true,
+                    ..ModelCapabilities::minimal()
+                }
+            ),
+        ])
+    );
+    assert!(models("").unwrap().capabilities.is_empty());
+
+    // Unknown fields and bad values refuse, pointing at the TOML key.
+    assert_eq!(
+        models("[models.capabilities.m]\nstreaming = true\n").unwrap_err(),
+        "KANADE_MODEL_CAPABILITIES `m` has an unknown field `streaming`; declare \
+         structured_output, function_tools, sampling_controls, reasoning_control, \
+         reasoning_efforts, context_tokens or max_output_tokens (kanade.toml `models.capabilities`)"
+    );
+    assert_eq!(
+        models("[models.capabilities.m]\nfunction_tools = \"sentinel-value\"\n").unwrap_err(),
+        "KANADE_MODEL_CAPABILITIES `m`.function_tools must be true or false \
+         (kanade.toml `models.capabilities`)"
+    );
+    assert_eq!(
+        models("[models.capabilities.m]\nmax_output_tokens = 0\n").unwrap_err(),
+        "KANADE_MODEL_CAPABILITIES `m`.max_output_tokens must be a token count from 1 to 1048576 \
+         (kanade.toml `models.capabilities`)"
+    );
+    assert_eq!(
+        models("[models.capabilities]\nm = 3\n").unwrap_err(),
+        "KANADE_MODEL_CAPABILITIES `m` must be a table of capability fields \
+         (kanade.toml `models.capabilities`)"
+    );
+    assert_eq!(
+        error("[models]\ncapabilities = 3\n"),
+        "kanade.toml `models.capabilities` must be a table of model alias tables"
+    );
+    // Declarations need a model gateway, like every other model key.
+    let resolved = merge(
+        "[models.capabilities.m]\nfunction_tools = true\n",
+        BTreeMap::new(),
+    )
+    .unwrap();
+    assert_eq!(
+        resolved
+            .annotate(ModelSettings::from_mapping(&resolved.values).unwrap_err())
+            .to_string(),
+        "KANADE_MODEL_CAPABILITIES requires KANADE_MODEL_BASE_URL (kanade.toml `models.capabilities`)"
+    );
+}
+
+#[test]
+fn the_debug_test_channel_is_an_optional_snowflake() {
+    // The last active `[discord]` line.
+    const ROLE: &str = "bossing_role_id = \"223456789012345678\"";
+    let channel = |line: &str| {
+        let text = EXAMPLE.replace(ROLE, &format!("{ROLE}\n{line}"));
+        let resolved = merge(&text, compose_environment())?;
+        ServeConfig::from_mapping(&resolved.values).map(|config| config.guild.test_channel_id)
+    };
+    assert_eq!(channel("").unwrap(), None);
+    assert_eq!(
+        channel("test_channel = \"523456789012345678\"").unwrap(),
+        Some(523456789012345678)
+    );
+    assert_eq!(
+        channel("test_channel = 523456789012345678").unwrap(),
+        Some(523456789012345678)
+    );
+    assert_eq!(
+        channel("test_channel = \"#bot-tests\"")
+            .unwrap_err()
+            .to_string(),
+        "KANADE_TEST_CHANNEL_ID must be a Discord snowflake"
+    );
+    assert_eq!(
+        channel("test_channel = true").unwrap_err().to_string(),
+        "kanade.toml `discord.test_channel` must be a snowflake string or integer"
+    );
+    // The environment overrides the file, like every key.
+    let resolved = merge(
+        &EXAMPLE.replace(ROLE, &format!("{ROLE}\ntest_channel = \"5\"")),
+        compose_env(&[("KANADE_TEST_CHANNEL_ID", "6")]),
+    )
+    .unwrap();
+    assert_eq!(
+        ServeConfig::from_mapping(&resolved.values)
+            .unwrap()
+            .guild
+            .test_channel_id,
+        Some(6)
+    );
+}

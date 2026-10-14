@@ -1,0 +1,438 @@
+import { tick } from 'svelte';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { EventTopic, Run, Stats, Week } from '@kanade/api-types';
+import type { LiveEvents } from '@kanade/client';
+import { AdminWeek, FALLBACK_POLL_MS } from '../src/store.svelte';
+
+const run = (id: string, day: number): Run => ({
+  id,
+  day,
+  time: '21:00',
+  status: 'planned',
+  short_id: 'abc',
+  bosses: [
+    { token: 'HFA', key: 'FA', name: 'The First Adversary', difficulty: 'h', level: 270, portrait: null, portrait_sm: null, art: null, animated: null, hue: 0 },
+  ],
+  tally: { on: 0, total: 0 },
+  participants: [],
+  party: 'p',
+  channel: '#p',
+  cards: [],
+  fixed_id: null,
+  amended: false,
+  roster_change: null,
+});
+
+const week = (version: number, day = 0): Week => ({
+  starts: '2026-09-24',
+  timezone: 'Asia/Kuala_Lumpur',
+  reset: 'Thu 00:00',
+  days: [],
+  runs: [run('r1', day)],
+  generated_at: `2026-09-24T12:0${version}:00Z`, // minutes apart: the Live chip shows HH:MM
+  version,
+});
+const stats: Stats = { per_day: [] };
+
+/** Serves the given weeks in order to successive GET /api/admin/week calls. */
+function serve(...weeks: Week[]) {
+  const queue = [...weeks];
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (url: string) => {
+      const path = url.split('?')[0]!;
+      const body = path.endsWith('/stats')
+        ? stats
+        : path.endsWith('/summary')
+          ? { next: null, unanswered: 0, inbox: 0, model: { busy: false, holder: null } }
+          : path.endsWith('/week')
+            ? queue.shift()
+            : [];
+      return new Response(JSON.stringify(body), { status: 200 });
+    }),
+  );
+}
+
+afterEach(() => vi.unstubAllGlobals());
+
+describe('AdminWeek snapshots', () => {
+  it('ignores a snapshot older than the week it holds', async () => {
+    const store = new AdminWeek();
+    serve(week(3, 2), week(2, 5));
+    await store.refresh();
+    expect(store.week?.version).toBe(3);
+    await store.refresh();
+    expect(store.week?.version).toBe(3);
+    expect(store.week?.runs[0]?.day).toBe(2);
+    expect(store.fresh).toBe('live');
+  });
+
+  it('buffers the newest snapshot while holding and applies it on release', async () => {
+    const store = new AdminWeek();
+    serve(week(1), week(2, 3), week(4, 6), week(3, 1));
+    await store.refresh();
+    const shownAt = store.updated;
+    store.holding = true;
+    await store.refresh();
+    await store.refresh();
+    await store.refresh(); // version 3 arrives after 4 and must not replace it in the buffer
+    expect(store.week?.version).toBe(1);
+    expect(store.updated).toBe(shownAt);
+    store.holding = false;
+    expect(store.week?.version).toBe(4);
+    expect(store.week?.runs[0]?.day).toBe(6);
+    expect(store.updated).not.toBe(shownAt);
+  });
+});
+
+describe('AdminWeek: a drop during a held drag', () => {
+  it('is sent against the week the drag began on, not a newer poll buffered meanwhile', async () => {
+    const weeks = [week(1), week(5, 4)];
+    const sent: { version: number }[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string, init?: RequestInit) => {
+        const path = url.split('?')[0]!;
+        if (init?.method === 'POST' && path.endsWith('/move')) {
+          sent.push(JSON.parse(String(init.body)) as { version: number });
+          return new Response(JSON.stringify({ error: 'stale', message: 'The week changed since it was loaded.' }), { status: 409 });
+        }
+        const body = path.endsWith('/stats') ? stats : path.endsWith('/week') ? (weeks.shift() ?? week(5, 4)) : [];
+        return new Response(JSON.stringify(body), { status: 200 });
+      }),
+    );
+    const store = new AdminWeek();
+    await store.refresh();
+    store.holding = true;
+    await store.refresh(); // another admin's change arrives mid-drag: buffered
+    expect(store.week?.version).toBe(1);
+    // The planner starts the move first, then releases the hold.
+    const moving = store.move('r1', { day: 3, time: '21:00' });
+    store.holding = false;
+    expect(store.week?.version).toBe(1);
+    const outcome = await moving;
+    expect(sent).toEqual([expect.objectContaining({ version: 1 })]);
+    expect(outcome).toEqual({ ok: false, message: "Couldn't move HFA: The week changed since it was loaded." });
+    // The buffered week then applies (the conflict also re-reads it).
+    await store.refresh();
+    expect(store.week?.version).toBe(5);
+  });
+});
+
+describe('AdminWeek: the FLIP hook', () => {
+  it('runs before each own change lands (optimistic, then confirmed), never for a poll', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string, init?: RequestInit) => {
+        const path = url.split('?')[0]!;
+        if (init?.method === 'POST') return new Response(JSON.stringify({ run: run('r1', 3), version: 2 }), { status: 200 });
+        const body = path.endsWith('/stats') ? stats : path.endsWith('/week') ? week(1) : [];
+        return new Response(JSON.stringify(body), { status: 200 });
+      }),
+    );
+    const store = new AdminWeek();
+    const seen: (number | undefined)[] = [];
+    store.beforeChange = () => seen.push(store.week?.runs[0]?.day);
+    await store.refresh();
+    expect(seen).toEqual([]);
+    const moving = store.move('r1', { day: 3, time: '21:00' });
+    // Measured on the board as it was, before the optimistic move.
+    expect(seen).toEqual([0]);
+    await moving;
+    expect(seen).toEqual([0, 3]);
+    await store.refresh();
+    expect(seen).toEqual([0, 3]);
+  });
+});
+
+describe('AdminWeek: the FLIP window', () => {
+  it('a buffered poll is not applied until the rollback has been measured, so it never glides as our move', async () => {
+    const other = (day: number): Run => ({ ...run('r2', day), time: '23:00' });
+    const v1: Week = { ...week(1), runs: [run('r1', 0), other(3)] };
+    const v5: Week = { ...week(5), runs: [run('r1', 0), other(6)] };
+    const weeks = [v1, v5];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string, init?: RequestInit) => {
+        const path = url.split('?')[0]!;
+        if (init?.method === 'POST') return new Response(JSON.stringify({ error: 'stale', message: 'The week changed since it was loaded.' }), { status: 409 });
+        const body = path.endsWith('/stats') ? stats : path.endsWith('/week') ? (weeks.shift() ?? v5) : [];
+        return new Response(JSON.stringify(body), { status: 200 });
+      }),
+    );
+    const store = new AdminWeek();
+    await store.refresh();
+    store.holding = true;
+    await store.refresh(); // another admin moved r2: buffered
+    // What the board's FLIP sees when it measures "after" (one tick after each own change).
+    const measured: Promise<number | undefined>[] = [];
+    store.beforeChange = () => measured.push(tick().then(() => store.week?.runs.find((r) => r.id === 'r2')?.day));
+    const moving = store.move('r1', { day: 2, time: '21:00' });
+    store.holding = false;
+    expect(await moving).toMatchObject({ ok: false });
+    // Optimistic move and its rollback were both measured before the buffered week landed.
+    expect(await Promise.all(measured)).toEqual([3, 3]);
+    // Then the buffered week applies, outside any FLIP window.
+    expect(store.week?.version).toBe(5);
+    expect(store.week?.runs.find((r) => r.id === 'r2')?.day).toBe(6);
+  });
+});
+
+describe('AdminWeek: swaps', () => {
+  const r2 = (day = 3, time = '23:30'): Run => ({ ...run('r2', day), time });
+  const pair = (version: number): Week => ({ ...week(version), runs: [run('r1', 0), r2()] });
+
+  function serveSwap(answer: (body: { with: string; version: number }, path: string) => Response) {
+    const posts: { path: string; body: { with: string; version: number } }[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string, init?: RequestInit) => {
+        const path = url.split('?')[0]!;
+        if (init?.method === 'POST') {
+          const body = JSON.parse(String(init.body)) as { with: string; version: number };
+          posts.push({ path, body });
+          return answer(body, path);
+        }
+        const reply = path.endsWith('/stats') ? stats : path.endsWith('/week') ? pair(1) : [];
+        return new Response(JSON.stringify(reply), { status: 200 });
+      }),
+    );
+    return posts;
+  }
+
+  const slots = (store: AdminWeek) => store.week?.runs.map((r) => `${r.id} ${r.day} ${r.time}`);
+
+  it('moves both cards at once, keeps the server’s result, and undo swaps them back in one step', async () => {
+    let version = 1;
+    const posts = serveSwap(() => {
+      version += 1;
+      // Odd answers swap them, even ones put them back (primary first each time).
+      const swapped = version % 2 === 0;
+      const runs = swapped ? [{ ...run('r1', 3), time: '23:30' }, r2(0, '21:00')] : [run('r1', 0), r2()];
+      return new Response(JSON.stringify({ runs, version }), { status: 200 });
+    });
+    const store = new AdminWeek();
+    await store.refresh();
+    const pending = store.swap('r1', 'r2');
+    // Optimistic: both cards, in one change.
+    expect(slots(store)).toEqual(['r1 3 23:30', 'r2 0 21:00']);
+    expect(await pending).toMatchObject({ ok: true, message: expect.stringMatching(/^Swapped HFA to .+, HFA to .+\.$/) });
+    expect(store.week?.version).toBe(2);
+    expect(store.lastMove).toEqual({ kind: 'swap', revision: 1, runId: 'r1', withId: 'r2' });
+    expect(posts).toEqual([{ path: '/api/admin/runs/r1/swap', body: { with: 'r2', version: 1 } }]);
+
+    const undone = await store.undo();
+    expect(undone).toMatchObject({ ok: true, message: expect.stringMatching(/^Swap undone: /) });
+    expect(slots(store)).toEqual(['r1 0 21:00', 'r2 3 23:30']);
+    expect(posts[1]).toEqual({ path: '/api/admin/runs/r1/swap', body: { with: 'r2', version: 2 } });
+    expect(store.lastMove).toBeNull();
+  });
+
+  it('own-time: only the days change on screen, clocks kept', async () => {
+    serveSwap(() => new Response(JSON.stringify({ error: 'invalid', message: 'nope' }), { status: 422 }));
+    const store = new AdminWeek();
+    await store.refresh();
+    store.week = { ...store.week!, runs: [run('r1', 0), { ...r2(), status: 'otot', time: null }] };
+    const pending = store.swap('r1', 'r2');
+    expect(slots(store)).toEqual(['r1 3 21:00', 'r2 0 null']);
+    await pending;
+  });
+
+  it('a conflict puts both cards back and says why; nothing to undo', async () => {
+    serveSwap(() => new Response(JSON.stringify({ error: 'stale', message: 'The week changed since it was loaded.' }), { status: 409 }));
+    const store = new AdminWeek();
+    await store.refresh();
+    const outcome = await store.swap('r1', 'r2');
+    expect(outcome).toEqual({ ok: false, message: "Couldn't swap HFA with HFA: The week changed since it was loaded." });
+    expect(slots(store)).toEqual(['r1 0 21:00', 'r2 3 23:30']);
+    expect(store.lastMove).toBeNull();
+  });
+
+  it('a refusal (the swap would leave the boss week) rolls both back with the server’s words', async () => {
+    serveSwap(() => new Response(JSON.stringify({ error: 'invalid', message: 'that slot swap would move a run outside its boss week' }), { status: 422 }));
+    const store = new AdminWeek();
+    await store.refresh();
+    const outcome = await store.swap('r1', 'r2');
+    expect(outcome).toEqual({ ok: false, message: "Couldn't swap HFA with HFA: that slot swap would move a run outside its boss week" });
+    expect(slots(store)).toEqual(['r1 0 21:00', 'r2 3 23:30']);
+  });
+
+  it('serializes a later move while a swap is pending, so its 409 rollback cannot clobber another write', async () => {
+    let rejectSwap: ((value: Response) => void) | undefined;
+    const posts: string[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url: string, init?: RequestInit) => {
+        const path = url.split('?')[0]!;
+        if (init?.method === 'POST' && path.endsWith('/swap')) {
+          posts.push('swap');
+          return new Promise<Response>((resolve) => (rejectSwap = resolve));
+        }
+        if (init?.method === 'POST') posts.push('move');
+        const reply = path.endsWith('/stats') ? stats : path.endsWith('/week') ? pair(1) : [];
+        return Promise.resolve(new Response(JSON.stringify(reply), { status: 200 }));
+      }),
+    );
+    const store = new AdminWeek();
+    await store.refresh();
+    const pending = store.swap('r1', 'r2');
+    expect(store.mutating).toBe(true);
+    await expect(store.move('r1', { day: 2, time: '20:00' })).resolves.toEqual({ ok: false, message: 'Saving the last change…' });
+    expect(posts).toEqual(['swap']);
+    rejectSwap!(new Response(JSON.stringify({ error: 'stale', message: 'changed' }), { status: 409 }));
+    await expect(pending).resolves.toMatchObject({ ok: false });
+    expect(store.mutating).toBe(false);
+    expect(slots(store)).toEqual(['r1 0 21:00', 'r2 3 23:30']);
+  });
+});
+
+/** A hint stream the test drives: health and hints by hand. */
+function liveStream() {
+  const subscribers = new Set<{ topics: readonly EventTopic[]; wake: () => void }>();
+  const listeners = new Set<(healthy: boolean) => void>();
+  let healthy = false;
+  let epoch = 0;
+  const events: LiveEvents = {
+    get epoch() {
+      return epoch;
+    },
+    subscribe(topics, wake) {
+      const entry = { topics, wake };
+      subscribers.add(entry);
+      return () => subscribers.delete(entry);
+    },
+    get healthy() {
+      return healthy;
+    },
+    onHealth(listener) {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+  };
+  return {
+    events,
+    restart: () => (epoch += 1),
+    setHealthy(next: boolean) {
+      healthy = next;
+      listeners.forEach((l) => l(next));
+    },
+    fire: (topic: EventTopic) => [...subscribers].filter((s) => s.topics.includes(topic)).forEach((s) => s.wake()),
+    subscribers: () => subscribers.size,
+  };
+}
+
+describe('AdminWeek: live hints and the polling fallback', () => {
+  /** Counts week reads; each read is one version newer. */
+  function countWeeks() {
+    let reads = 0;
+    vi.stubGlobal('window', { addEventListener() {}, removeEventListener() {} });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        const path = url.split('?')[0]!;
+        if (path === '/api/admin/week') reads++;
+        const body = path.endsWith('/stats')
+          ? stats
+          : path.endsWith('/summary')
+            ? { next: null, unanswered: 0, inbox: 0, model: { busy: false, holder: null } }
+            : path === '/api/admin/week'
+              ? week(reads)
+              : path.startsWith('/api/admin/config') || path.startsWith('/api/identity') || path.endsWith('/session') || path.endsWith('/me')
+                ? null
+                : [];
+        return new Response(JSON.stringify(body), { status: 200 });
+      }),
+    );
+    return () => reads;
+  }
+
+  afterEach(() => vi.useRealTimers());
+
+  it('polls at 15 s without the stream, slows to the fallback while it is open, and re-reads on a hint', async () => {
+    vi.useFakeTimers();
+    const reads = countWeeks();
+    const live = liveStream();
+    const store = new AdminWeek(live.events);
+    const stop = store.start();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(reads()).toBe(1);
+    await vi.advanceTimersByTimeAsync(15_000);
+    expect(reads()).toBe(2);
+
+    live.setHealthy(true);
+    await vi.advanceTimersByTimeAsync(FALLBACK_POLL_MS - 1);
+    expect(reads()).toBe(2);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(reads()).toBe(3);
+
+    live.fire('chat');
+    await vi.advanceTimersByTimeAsync(0);
+    expect(reads()).toBe(3);
+    for (const topic of ['schedule', 'inbox', 'delivery', 'settings'] as const) live.fire(topic);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(reads()).toBe(4);
+    expect(store.week?.version).toBe(4);
+
+    // The stream dropped: the normal cadence resumes.
+    live.setHealthy(false);
+    await vi.advanceTimersByTimeAsync(15_000);
+    expect(reads()).toBe(5);
+    stop();
+    expect(live.subscribers()).toBe(0);
+  });
+
+  it('a hint during a drag is buffered like a poll and lands on release', async () => {
+    countWeeks();
+    const live = liveStream();
+    const store = new AdminWeek(live.events);
+    const stop = store.start();
+    await vi.waitFor(() => expect(store.week?.version).toBe(1));
+    store.holding = true;
+    live.fire('schedule');
+    await store.refresh(); // joins the read the hint started
+    expect(store.week?.version).toBe(1);
+    store.holding = false;
+    expect(store.week?.version).toBe(2);
+    stop();
+  });
+});
+
+describe('AdminWeek: arrivals and restarts', () => {
+  it('a week from elsewhere calls the arrival hook with the runs it adds; own refreshes and writes never do', async () => {
+    const two: Week = { ...week(2), runs: [run('r1', 3), run('r2', 4)] };
+    const three: Week = { ...week(3), runs: [run('r1', 5), run('r2', 4)] };
+    const four: Week = { ...week(4), runs: [run('r1', 6), run('r2', 4)] };
+    serve(week(1), two, three, four);
+    // Well past any write earlier tests made (those would read as this page's echo).
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(Date.now() + 60_000);
+    vi.stubGlobal('window', { addEventListener() {}, removeEventListener() {} });
+    const live = liveStream();
+    const store = new AdminWeek(live.events);
+    const arrivals: string[][] = [];
+    store.beforeArrival = (added) => arrivals.push(added);
+    const stop = store.start(); // first load
+    await vi.waitFor(() => expect(store.week?.version).toBe(1));
+    live.fire('schedule'); // another admin: r2 added, r1 moved
+    await store.refresh(); // joins the hinted read
+    expect(store.week?.version).toBe(2);
+    await store.refresh(); // asked for: version 3 lands quietly
+    expect(store.week?.version).toBe(3);
+    expect(arrivals).toEqual([['r2']]);
+    stop();
+    vi.useRealTimers();
+  });
+
+  it('after a server restart a lower version replaces the week (a restore)', async () => {
+    serve(week(7, 2), week(3, 5), week(3, 5));
+    const live = liveStream();
+    const store = new AdminWeek(live.events);
+    await store.refresh();
+    await store.refresh();
+    expect(store.week?.version).toBe(7);
+    live.restart();
+    await store.refresh();
+    expect(store.week?.version).toBe(3);
+    expect(store.week?.runs[0]?.day).toBe(5);
+  });
+});

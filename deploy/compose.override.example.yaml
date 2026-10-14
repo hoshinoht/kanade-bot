@@ -1,0 +1,42 @@
+# Host-specific add-ons to compose.yaml. Copy to compose.override.yaml
+# (git-ignored): Compose merges it into every command run from deploy/.
+# Keep only the parts you use. Every name and address here is a placeholder.
+# Runbook: deploy/README.md "Add-ons".
+services:
+  bot:
+    environment:
+      # Reverse proxy: the admin listener moves to the bot's address on the
+      # proxy's network, answers only this host name, and trusts forwarding
+      # headers only from the proxy's address there.
+      KANADE_ADMIN_BIND: 10.89.0.10:8080
+      KANADE_HEALTHCHECK_URL: http://10.89.0.10:8080/healthz
+      KANADE_ADMIN_HOST: kanade.example.com
+      KANADE_TRUSTED_PROXY: 10.89.0.2
+      # Admin Discord sign-in (needs the reverse proxy for https): kanade.toml
+      # sets admin.discord_client_id and admin.discord_redirect_uri.
+      KANADE_ADMIN_DISCORD_CLIENT_SECRET_FILE: /run/secrets/kanade_discord_client_secret
+    secrets:
+      - kanade_discord_client_secret
+      # Member sign-in on the public portal (kanade.toml [public]
+      # discord_client_secret_file = "/run/secrets/public_discord_client_secret").
+      - public_discord_client_secret
+    networks:
+      proxy:
+        ipv4_address: 10.89.0.10
+        # The name the proxy forwards to (kanade:8080).
+        aliases: [kanade]
+    # The admin listener no longer binds the admin network, so the loopback
+    # port would lead nowhere.
+    ports: !reset []
+
+networks:
+  # The reverse proxy's network, created by the proxy's own stack.
+  proxy:
+    name: my_proxy_network
+    external: true
+
+secrets:
+  kanade_discord_client_secret:
+    file: ${KANADE_SECRETS_DIR:-${HOME}/.config/kanade/v5/secrets}/discord_client_secret
+  public_discord_client_secret:
+    file: ${KANADE_SECRETS_DIR:-${HOME}/.config/kanade/v5/secrets}/public_discord_client_secret

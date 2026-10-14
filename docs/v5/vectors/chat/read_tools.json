@@ -1,0 +1,4369 @@
+{
+  "cases": [
+    {
+      "case_id": "schedule-weeks-and-days",
+      "expected": {
+        "steps": [
+          {
+            "value": {
+              "arguments": {},
+              "created": [],
+              "error": null,
+              "name": "get_schedule",
+              "ok": true,
+              "output": "**4 runs this week · All channels**\n\n`[b2b2b2b2]` **Extreme Kalos**\n*Tue 08 Sep · 23:00* · `planned` · `0/2 yes` · <#901> · *already happened*\n\n`[a1a1a1a1]` **Hard MaleficStar + Hard FA**\n*Wed 09 Sep · 21:30* · `planned` · `1/2 yes` · <#900>\n\n`[e5e5e5e5]` **Hard Baldrix**\n*Fri 11 Sep · 21:00* · `planned` · `0/1 yes` · <#700>\n\n`[c3c3c3c3]` **Hard Carling**\n*Sat 12 Sep · 20:00* · `confirmed` · `0/2 yes` · <#702>",
+              "posted": []
+            }
+          },
+          {
+            "value": {
+              "arguments": {
+                "week": "next"
+              },
+              "created": [],
+              "error": null,
+              "name": "get_schedule",
+              "ok": true,
+              "output": "Nothing is scheduled for next week.",
+              "posted": []
+            }
+          },
+          {
+            "value": {
+              "arguments": {
+                "week": "this_boss"
+              },
+              "created": [],
+              "error": null,
+              "name": "get_schedule",
+              "ok": true,
+              "output": "**2 runs this boss week · All channels**\n\n`[b2b2b2b2]` **Extreme Kalos**\n*Tue 08 Sep · 23:00* · `planned` · `0/2 yes` · <#901> · *already happened*\n\n`[a1a1a1a1]` **Hard MaleficStar + Hard FA**\n*Wed 09 Sep · 21:30* · `planned` · `1/2 yes` · <#900>",
+              "posted": []
+            }
+          },
+          {
+            "value": {
+              "arguments": {
+                "week": "next_boss"
+              },
+              "created": [],
+              "error": null,
+              "name": "get_schedule",
+              "ok": true,
+              "output": "**2 runs next boss week · All channels**\n\n`[e5e5e5e5]` **Hard Baldrix**\n*Fri 11 Sep · 21:00* · `planned` · `0/1 yes` · <#700>\n\n`[c3c3c3c3]` **Hard Carling**\n*Sat 12 Sep · 20:00* · `confirmed` · `0/2 yes` · <#702>",
+              "posted": []
+            }
+          },
+          {
+            "value": {
+              "arguments": {
+                "week": "this",
+                "week_basis": "boss"
+              },
+              "created": [],
+              "error": null,
+              "name": "get_schedule",
+              "ok": true,
+              "output": "**2 runs this boss week · All channels**\n\n`[b2b2b2b2]` **Extreme Kalos**\n*Tue 08 Sep · 23:00* · `planned` · `0/2 yes` · <#901> · *already happened*\n\n`[a1a1a1a1]` **Hard MaleficStar + Hard FA**\n*Wed 09 Sep · 21:30* · `planned` · `1/2 yes` · <#900>",
+              "posted": []
+            }
+          },
+          {
+            "value": {
+              "arguments": {
+                "day": "fri",
+                "week": "auto"
+              },
+              "created": [],
+              "error": null,
+              "name": "get_schedule",
+              "ok": true,
+              "output": "**1 run Fri 11 Sep · All channels**\n\n`[e5e5e5e5]` **Hard Baldrix**\n*Fri 11 Sep · 21:00* · `planned` · `0/1 yes` · <#700>",
+              "posted": []
+            }
+          },
+          {
+            "value": {
+              "arguments": {
+                "day": "tomorrow",
+                "week": "auto"
+              },
+              "created": [],
+              "error": null,
+              "name": "get_schedule",
+              "ok": true,
+              "output": "Nothing is scheduled on Thu 10 Sep.",
+              "posted": []
+            }
+          },
+          {
+            "value": {
+              "arguments": {
+                "day": "tonight",
+                "week": "auto"
+              },
+              "created": [],
+              "error": null,
+              "name": "get_schedule",
+              "ok": true,
+              "output": "**1 run Wed 09 Sep · All channels**\n\n`[a1a1a1a1]` **Hard MaleficStar + Hard FA**\n*Wed 09 Sep · 21:30* · `planned` · `1/2 yes` · <#900>",
+              "posted": []
+            }
+          },
+          {
+            "value": {
+              "arguments": {
+                "day": "tuesday",
+                "week": "this"
+              },
+              "created": [],
+              "error": null,
+              "name": "get_schedule",
+              "ok": true,
+              "output": "**1 run Tue 08 Sep · All channels**\n\n`[b2b2b2b2]` **Extreme Kalos**\n*Tue 08 Sep · 23:00* · `planned` · `0/2 yes` · <#901> · *already happened*\n\n*Every run listed has already happened — nothing upcoming is left on Tue 08 Sep.*",
+              "posted": []
+            }
+          },
+          {
+            "value": {
+              "arguments": {
+                "day": "next",
+                "week": "next"
+              },
+              "created": [],
+              "error": null,
+              "name": "get_schedule",
+              "ok": true,
+              "output": "Nothing is scheduled for next week.",
+              "posted": []
+            }
+          },
+          {
+            "value": {
+              "arguments": {
+                "day": "sat",
+                "week": "this_boss"
+              },
+              "created": [],
+              "error": null,
+              "name": "get_schedule",
+              "ok": true,
+              "output": "Nothing is scheduled on Sat 05 Sep.",
+              "posted": []
+            }
+          },
+          {
+            "value": {
+              "arguments": {
+                "week": "later"
+              },
+              "created": [],
+              "error": "refused",
+              "name": "get_schedule",
+              "ok": false,
+              "output": "Ask whether they mean this week, next week, or a specific day.",
+              "posted": []
+            }
+          },
+          {
+            "value": {
+              "arguments": {
+                "week": "this",
+                "week_basis": "lunar"
+              },
+              "created": [],
+              "error": "refused",
+              "name": "get_schedule",
+              "ok": false,
+              "output": "Ask whether they mean a calendar week or a boss week.",
+              "posted": []
+            }
+          },
+          {
+            "value": {
+              "arguments": {
+                "day": "someday"
+              },
+              "created": [],
+              "error": "refused",
+              "name": "get_schedule",
+              "ok": false,
+              "output": "day must be omitted for a whole week, or be today, tonight, tomorrow, or one weekday.",
+              "posted": []
+            }
+          },
+          {
+            "value": {
+              "arguments": {
+                "day": "   "
+              },
+              "created": [],
+              "error": null,
+              "name": "get_schedule",
+              "ok": true,
+              "output": "**4 runs this week · All channels**\n\n`[b2b2b2b2]` **Extreme Kalos**\n*Tue 08 Sep · 23:00* · `planned` · `0/2 yes` · <#901> · *already happened*\n\n`[a1a1a1a1]` **Hard MaleficStar + Hard FA**\n*Wed 09 Sep · 21:30* · `planned` · `1/2 yes` · <#900>\n\n`[e5e5e5e5]` **Hard Baldrix**\n*Fri 11 Sep · 21:00* · `planned` · `0/1 yes` · <#700>\n\n`[c3c3c3c3]` **Hard Carling**\n*Sat 12 Sep · 20:00* · `confirmed` · `0/2 yes` · <#702>",
+              "posted": []
+            }
+          }
+        ]
+      },
+      "input": {
+        "bot_user": {
+          "id": "5000",
+          "name": "Kanade"
+        },
+        "catalog": {
+          "bosses": [
+            {
+              "aliases": [
+                "star",
+                "mstar"
+              ],
+              "difficulties": [
+                "n",
+                "h"
+              ],
+              "full": "Malefic Star",
+              "short": "MaleficStar"
+            },
+            {
+              "aliases": [
+                "fa"
+              ],
+              "difficulties": [
+                "n",
+                "h",
+                "x"
+              ],
+              "full": "First Adversary",
+              "short": "FA"
+            },
+            {
+              "aliases": [
+                "carl",
+                "carling"
+              ],
+              "difficulties": [
+                "n",
+                "h",
+                "x"
+              ],
+              "full": "Chief Carling",
+              "short": "Carling"
+            },
+            {
+              "aliases": [
+                "kalos"
+              ],
+              "difficulties": [
+                "e",
+                "n",
+                "c",
+                "x"
+              ],
+              "full": "Kalos the Guardian",
+              "short": "Kalos"
+            },
+            {
+              "aliases": [
+                "bald",
+                "baldguy"
+              ],
+              "difficulties": [
+                "n",
+                "h"
+              ],
+              "full": "Baldrix",
+              "short": "Baldrix"
+            },
+            {
+              "aliases": [
+                "limbo"
+              ],
+              "difficulties": [
+                "n",
+                "h"
+              ],
+              "full": "Limbo",
+              "short": "Limbo"
+            }
+          ],
+          "difficulties": [
+            {
+              "label": "Easy",
+              "prefix": "e"
+            },
+            {
+              "label": "Normal",
+              "prefix": "n"
+            },
+            {
+              "label": "Hard",
+              "prefix": "h"
+            },
+            {
+              "label": "Chaos",
+              "prefix": "c"
+            },
+            {
+              "label": "Extreme",
+              "prefix": "x"
+            }
+          ]
+        },
+        "channels": [
+          {
+            "category_id": null,
+            "id": "700",
+            "name": "ask-the-bot",
+            "parent_id": null
+          },
+          {
+            "category_id": null,
+            "id": "701",
+            "name": "general",
+            "parent_id": null
+          },
+          {
+            "category_id": "800",
+            "id": "702",
+            "name": "bot-chatter",
+            "parent_id": null
+          },
+          {
+            "category_id": "801",
+            "id": "703",
+            "name": "somewhere-else",
+            "parent_id": null
+          },
+          {
+            "category_id": null,
+            "id": "704",
+            "name": "a-thread",
+            "parent_id": "700"
+          },
+          {
+            "category_id": null,
+            "id": "900",
+            "name": "party-star",
+            "parent_id": null
+          },
+          {
+            "category_id": null,
+            "id": "901",
+            "name": "party-kalos",
+            "parent_id": null
+          }
+        ],
+        "clock": "2026-09-09T12:00:00+08:00",
+        "guides": [
+          "MaleficStar",
+          "Kalos"
+        ],
+        "reset_time": "00:00",
+        "reset_weekday": 3,
+        "self_role_id": "5001",
+        "settings": {
+          "chat_pilot_category_ids": "800",
+          "chat_pilot_channel_ids": "700",
+          "chat_pilot_history_ttl_s": 2700.0,
+          "chat_pilot_model": "synthetic-chat",
+          "chat_pilot_role_id": "6000",
+          "chat_pilot_temperature": 0.7,
+          "chat_pilot_think": "low",
+          "chat_pilot_timeout": 60.0,
+          "guild_id": "1000",
+          "model_context_tokens": 16384,
+          "post_channel_id": null,
+          "watched_channel_ids": "900,901"
+        },
+        "steps": [
+          {
+            "arguments": {},
+            "author_id": "11",
+            "channel_id": "700",
+            "op": "run",
+            "tool": "get_schedule"
+          },
+          {
+            "arguments": {
+              "week": "next"
+            },
+            "author_id": "11",
+            "channel_id": "700",
+            "op": "run",
+            "tool": "get_schedule"
+          },
+          {
+            "arguments": {
+              "week": "this_boss"
+            },
+            "author_id": "11",
+            "channel_id": "700",
+            "op": "run",
+            "tool": "get_schedule"
+          },
+          {
+            "arguments": {
+              "week": "next_boss"
+            },
+            "author_id": "11",
+            "channel_id": "700",
+            "op": "run",
+            "tool": "get_schedule"
+          },
+          {
+            "arguments": {
+              "week": "this",
+              "week_basis": "boss"
+            },
+            "author_id": "11",
+            "channel_id": "700",
+            "op": "run",
+            "tool": "get_schedule"
+          },
+          {
+            "arguments": {
+              "day": "fri",
+              "week": "auto"
+            },
+            "author_id": "11",
+            "channel_id": "700",
+            "op": "run",
+            "tool": "get_schedule"
+          },
+          {
+            "arguments": {
+              "day": "tomorrow",
+              "week": "auto"
+            },
+            "author_id": "11",
+            "channel_id": "700",
+            "op": "run",
+            "tool": "get_schedule"
+          },
+          {
+            "arguments": {
+              "day": "tonight",
+              "week": "auto"
+            },
+            "author_id": "11",
+            "channel_id": "700",
+            "op": "run",
+            "tool": "get_schedule"
+          },
+          {
+            "arguments": {
+              "day": "tuesday",
+              "week": "this"
+            },
+            "author_id": "11",
+            "channel_id": "700",
+            "op": "run",
+            "tool": "get_schedule"
+          },
+          {
+            "arguments": {
+              "day": "next",
+              "week": "next"
+            },
+            "author_id": "11",
+            "channel_id": "700",
+            "op": "run",
+            "tool": "get_schedule"
+          },
+          {
+            "arguments": {
+              "day": "sat",
+              "week": "this_boss"
+            },
+            "author_id": "11",
+            "channel_id": "700",
+            "op": "run",
+            "tool": "get_schedule"
+          },
+          {
+            "arguments": {
+              "week": "later"
+            },
+            "author_id": "11",
+            "channel_id": "700",
+            "op": "run",
+            "tool": "get_schedule"
+          },
+          {
+            "arguments": {
+              "week": "this",
+              "week_basis": "lunar"
+            },
+            "author_id": "11",
+            "channel_id": "700",
+            "op": "run",
+            "tool": "get_schedule"
+          },
+          {
+            "arguments": {
+              "day": "someday"
+            },
+            "author_id": "11",
+            "channel_id": "700",
+            "op": "run",
+            "tool": "get_schedule"
+          },
+          {
+            "arguments": {
+              "day": "   "
+            },
+            "author_id": "11",
+            "channel_id": "700",
+            "op": "run",
+            "tool": "get_schedule"
+          }
+        ],
+        "timezone": "Asia/Kuala_Lumpur",
+        "uuid_sequence": [
+          "a0000001-0000-4000-8009-000000000001",
+          "a0000002-0000-4000-8009-000000000002",
+          "a0000003-0000-4000-8009-000000000003",
+          "a0000004-0000-4000-8009-000000000004",
+          "a0000005-0000-4000-8009-000000000005",
+          "a0000006-0000-4000-8009-000000000006",
+          "a0000007-0000-4000-8009-000000000007",
+          "a0000008-0000-4000-8009-000000000008",
+          "a0000009-0000-4000-8009-000000000009",
+          "a0000010-0000-4000-8009-000000000010",
+          "a0000011-0000-4000-8009-000000000011",
+          "a0000012-0000-4000-8009-000000000012",
+          "a0000013-0000-4000-8009-000000000013",
+          "a0000014-0000-4000-8009-000000000014",
+          "a0000015-0000-4000-8009-000000000015",
+          "a0000016-0000-4000-8009-000000000016",
+          "a0000017-0000-4000-8009-000000000017",
+          "a0000018-0000-4000-8009-000000000018",
+          "a0000019-0000-4000-8009-000000000019",
+          "a0000020-0000-4000-8009-000000000020",
+          "a0000021-0000-4000-8009-000000000021",
+          "a0000022-0000-4000-8009-000000000022",
+          "a0000023-0000-4000-8009-000000000023",
+          "a0000024-0000-4000-8009-000000000024",
+          "a0000025-0000-4000-8009-000000000025",
+          "a0000026-0000-4000-8009-000000000026",
+          "a0000027-0000-4000-8009-000000000027",
+          "a0000028-0000-4000-8009-000000000028",
+          "a0000029-0000-4000-8009-000000000029",
+          "a0000030-0000-4000-8009-000000000030",
+          "a0000031-0000-4000-8009-000000000031",
+          "a0000032-0000-4000-8009-000000000032",
+          "a0000033-0000-4000-8009-000000000033",
+          "a0000034-0000-4000-8009-000000000034",
+          "a0000035-0000-4000-8009-000000000035",
+          "a0000036-0000-4000-8009-000000000036",
+          "a0000037-0000-4000-8009-000000000037",
+          "a0000038-0000-4000-8009-000000000038",
+          "a0000039-0000-4000-8009-000000000039",
+          "a0000040-0000-4000-8009-000000000040"
+        ],
+        "world": {
+          "fixed": [
+            {
+              "bosses": [
+                "HMaleficStar",
+                "HFA"
+              ],
+              "channel_id": "900",
+              "id": "f1f1f1f1-0000-4000-8000-000000000001",
+              "owner_id": "11",
+              "participants": [
+                "11",
+                "22"
+              ],
+              "time": "21:30",
+              "weekday": 2
+            },
+            {
+              "bosses": [
+                "XKalos"
+              ],
+              "channel_id": "901",
+              "id": "f2f2f2f2-0000-4000-8000-000000000002",
+              "owner_id": "22",
+              "participants": [
+                "22",
+                "33"
+              ],
+              "time": "23:00",
+              "weekday": 1
+            },
+            {
+              "bosses": [
+                "HBaldrix"
+              ],
+              "channel_id": "700",
+              "id": "f3f3f3f3-0000-4000-8000-000000000003",
+              "owner_id": "44",
+              "participants": [
+                "11"
+              ],
+              "time": "21:00",
+              "weekday": 4
+            }
+          ],
+          "members": [
+            {
+              "display_name": "Alvin tan",
+              "has_role": true,
+              "nickname": null,
+              "user_id": "11"
+            },
+            {
+              "display_name": "kanon [AZUR]",
+              "has_role": true,
+              "nickname": "kanon",
+              "user_id": "22"
+            },
+            {
+              "display_name": "Priya",
+              "has_role": true,
+              "nickname": null,
+              "user_id": "33"
+            },
+            {
+              "display_name": "Mei",
+              "has_role": true,
+              "nickname": null,
+              "user_id": "44"
+            },
+            {
+              "display_name": "NotABosser",
+              "has_role": false,
+              "nickname": null,
+              "user_id": "99"
+            }
+          ],
+          "rsvps": [
+            {
+              "run_id": "a1a1a1a1-0000-4000-8000-000000000001",
+              "state": "yes",
+              "user_id": "11"
+            },
+            {
+              "run_id": "c3c3c3c3-0000-4000-8000-000000000003",
+              "state": "no",
+              "user_id": "33"
+            }
+          ],
+          "runs": [
+            {
+              "at": "2026-09-09T21:30:00+08:00",
+              "bosses": [
+                "HMaleficStar",
+                "HFA"
+              ],
+              "channel_id": "900",
+              "fixed_run_id": "f1f1f1f1-0000-4000-8000-000000000001",
+              "id": "a1a1a1a1-0000-4000-8000-000000000001",
+              "participants": [
+                "11",
+                "22"
+              ],
+              "status": "planned",
+              "week_start": "2026-09-03T00:00:00+08:00"
+            },
+            {
+              "at": "2026-09-08T23:00:00+08:00",
+              "bosses": [
+                "XKalos"
+              ],
+              "channel_id": "901",
+              "fixed_run_id": "f2f2f2f2-0000-4000-8000-000000000002",
+              "id": "b2b2b2b2-0000-4000-8000-000000000002",
+              "participants": [
+                "22",
+                "33"
+              ],
+              "status": "planned",
+              "week_start": "2026-09-03T00:00:00+08:00"
+            },
+            {
+              "at": "2026-09-12T20:00:00+08:00",
+              "bosses": [
+                "HCarling"
+              ],
+              "channel_id": "702",
+              "fixed_run_id": null,
+              "id": "c3c3c3c3-0000-4000-8000-000000000003",
+              "participants": [
+                "33",
+                "44"
+              ],
+              "status": "confirmed",
+              "week_start": "2026-09-10T00:00:00+08:00"
+            },
+            {
+              "at": "2026-09-09T22:00:00+08:00",
+              "bosses": [
+                "NLimbo"
+              ],
+              "channel_id": "900",
+              "fixed_run_id": null,
+              "id": "d4d4d4d4-0000-4000-8000-000000000004",
+              "participants": [
+                "11",
+                "44"
+              ],
+              "status": "cancelled",
+              "week_start": "2026-09-03T00:00:00+08:00"
+            },
+            {
+              "at": "2026-09-11T21:00:00+08:00",
+              "bosses": [
+                "HBaldrix"
+              ],
+              "channel_id": "700",
+              "fixed_run_id": "f3f3f3f3-0000-4000-8000-000000000003",
+              "id": "e5e5e5e5-0000-4000-8000-000000000005",
+              "participants": [
+                "11"
+              ],
+              "status": "planned",
+              "week_start": "2026-09-10T00:00:00+08:00"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "case_id": "schedule-scope-and-people",
+      "expected": {
+        "steps": [
+          {
+            "value": {
+              "arguments": {
+                "scope": "channel"
+              },
+              "created": [],
+              "error": null,
+              "name": "get_schedule",
+              "ok": true,
+              "output": "**1 run this week · This channel**\n\n`[e5e5e5e5]` **Hard Baldrix**\n*Fri 11 Sep · 21:00* · `planned` · `0/1 yes`",
+              "posted": []
+            }
+          },
+          {
+            "value": {
+              "arguments": {
+                "scope": "channel"
+              },
+              "created": [],
+              "error": null,
+              "name": "get_schedule",
+              "ok": true,
+              "output": "No runs are scheduled in this channel for this week. The group has 4 runs in other channels this week. If the original question did not explicitly limit the channel, check all channels before answering; otherwise ask whether they want to see those runs too.",
+              "posted": []
+            }
+          },
+          {
+            "value": {
+              "arguments": {
+                "scope": "everywhere"
+              },
+              "created": [],
+              "error": "refused",
+              "name": "get_schedule",
+              "ok": false,
+              "output": "scope must be 'all' or 'channel' (got 'everywhere'). Ask whether they want this channel or all channels.",
+              "posted": []
+            }
+          },
+          {
+            "value": {
+              "arguments": {
+                "participant": "me"
+              },
+              "created": [],
+              "error": null,
+              "name": "get_schedule",
+              "ok": true,
+              "output": "**Your 2 runs this week · All channels**\n\n`[b2b2b2b2]` **Extreme Kalos**\n*Tue 08 Sep · 23:00* · `planned` · `0/2 yes` · <#901> · *already happened*\n\n`[a1a1a1a1]` **Hard MaleficStar + Hard FA**\n*Wed 09 Sep · 21:30* · `planned` · `1/2 yes` · <#900>",
+              "posted": []
+            }
+          },
+          {
+            "value": {
+              "arguments": {
+                "participant": "kanon"
+              },
+              "created": [],
+              "error": null,
+              "name": "get_schedule",
+              "ok": true,
+              "output": "**kanon's 2 runs this week · All channels**\n\n`[b2b2b2b2]` **Extreme Kalos**\n*Tue 08 Sep · 23:00* · `planned` · `0/2 yes` · <#901> · *already happened*\n\n`[a1a1a1a1]` **Hard MaleficStar + Hard FA**\n*Wed 09 Sep · 21:30* · `planned` · `1/2 yes` · <#900>",
+              "posted": []
+            }
+          },
+          {
+            "value": {
+              "arguments": {
+                "participant": "Priya",
+                "scope": "channel"
+              },
+              "created": [],
+              "error": null,
+              "name": "get_schedule",
+              "ok": true,
+              "output": "Priya is not on any runs in this channel for this week. Priya is on 2 runs in other channels for this week. If the original question did not explicitly limit the channel, check all channels before answering; otherwise ask whether they want to see those runs too.",
+              "posted": []
+            }
+          },
+          {
+            "value": {
+              "arguments": {
+                "participant": "Mei",
+                "scope": "channel",
+                "week": "next_boss"
+              },
+              "created": [],
+              "error": null,
+              "name": "get_schedule",
+              "ok": true,
+              "output": "Mei is not on any runs in this channel for next boss week. Mei is on 1 run in another channel for next boss week. If the original question did not explicitly limit the channel, check all channels before answering; otherwise ask whether they want to see those runs too.",
+              "posted": []
+            }
+          },
+          {
+            "value": {
+              "arguments": {
+                "participant": "<@5000>"
+              },
+              "created": [],
+              "error": null,
+              "name": "get_schedule",
+              "ok": true,
+              "output": "**Your 2 runs this week · All channels**\n\n`[b2b2b2b2]` **Extreme Kalos**\n*Tue 08 Sep · 23:00* · `planned` · `0/2 yes` · <#901> · *already happened*\n\n`[c3c3c3c3]` **Hard Carling**\n*Sat 12 Sep · 20:00* · `confirmed` · `0/2 yes` · <#702>",
+              "posted": []
+            }
+          },
+          {
+            "value": {
+              "arguments": {
+                "participant": "Zed"
+              },
+              "created": [],
+              "error": "refused",
+              "name": "get_schedule",
+              "ok": false,
+              "output": "Nobody on the roster matches Zed. Ask whose schedule they want; if they mean their own, ask them to say so.",
+              "posted": []
+            }
+          },
+          {
+            "value": {
+              "arguments": {
+                "participant": "Mei",
+                "week": "next"
+              },
+              "created": [],
+              "error": null,
+              "name": "get_schedule",
+              "ok": true,
+              "output": "Mei is not on any runs for next week.",
+              "posted": []
+            }
+          },
+          {
+            "value": {
+              "arguments": {
+                "scope": "all"
+              },
+              "created": [],
+              "error": null,
+              "name": "get_schedule",
+              "ok": true,
+              "output": "**1 run this week · This channel**\n\n`[e5e5e5e5]` **Hard Baldrix**\n*Fri 11 Sep · 21:00* · `planned` · `0/1 yes`",
+              "posted": []
+            }
+          },
+          {
+            "value": {
+              "arguments": {
+                "scope": "channel"
+              },
+              "created": [],
+              "error": null,
+              "name": "get_schedule",
+              "ok": true,
+              "output": "**4 runs this week · All channels**\n\n`[b2b2b2b2]` **Extreme Kalos**\n*Tue 08 Sep · 23:00* · `planned` · `0/2 yes` · <#901> · *already happened*\n\n`[a1a1a1a1]` **Hard MaleficStar + Hard FA**\n*Wed 09 Sep · 21:30* · `planned` · `1/2 yes` · <#900>\n\n`[e5e5e5e5]` **Hard Baldrix**\n*Fri 11 Sep · 21:00* · `planned` · `0/1 yes` · <#700>\n\n`[c3c3c3c3]` **Hard Carling**\n*Sat 12 Sep · 20:00* · `confirmed` · `0/2 yes` · <#702>",
+              "posted": []
+            }
+          },
+          {
+            "value": {
+              "arguments": {
+                "participant": "kanon"
+              },
+              "created": [],
+              "error": null,
+              "name": "get_schedule",
+              "ok": true,
+              "output": "**4 runs this week · All channels**\n\n`[b2b2b2b2]` **Extreme Kalos**\n*Tue 08 Sep · 23:00* · `planned` · `0/2 yes` · <#901> · *already happened*\n\n`[a1a1a1a1]` **Hard MaleficStar + Hard FA**\n*Wed 09 Sep · 21:30* · `planned` · `1/2 yes` · <#900>\n\n`[e5e5e5e5]` **Hard Baldrix**\n*Fri 11 Sep · 21:00* · `planned` · `0/1 yes` · <#700>\n\n`[c3c3c3c3]` **Hard Carling**\n*Sat 12 Sep · 20:00* · `confirmed` · `0/2 yes` · <#702>",
+              "posted": []
+            }
+          },
+          {
+            "value": {
+              "arguments": {},
+              "created": [],
+              "error": null,
+              "name": "get_schedule",
+              "ok": true,
+              "output": "**3 runs left this week · All channels**\n\n`[a1a1a1a1]` **Hard MaleficStar + Hard FA**\n*Wed 09 Sep · 21:30* · `planned` · `1/2 yes` · <#900>\n\n`[e5e5e5e5]` **Hard Baldrix**\n*Fri 11 Sep · 21:00* · `planned` · `0/1 yes` · <#700>\n\n`[c3c3c3c3]` **Hard Carling**\n*Sat 12 Sep · 20:00* · `confirmed` · `0/2 yes` · <#702>",
+              "posted": []
+            }
+          },
+          {
+            "value": {
+              "arguments": {
+                "scope": "channel"
+              },
+              "created": [],
+              "error": null,
+              "name": "get_schedule",
+              "ok": true,
+              "output": "**No upcoming runs in this channel in this week.** The group has 3 upcoming runs in other channels.",
+              "posted": []
+            }
+          },
+          {
+            "value": {
+              "arguments": {
+                "day": "tue",
+                "participant": "me"
+              },
+              "created": [],
+              "error": null,
+              "name": "get_schedule",
+              "ok": true,
+              "output": "**No upcoming runs for you on Tue 08 Sep.** Your matching scheduled runs are already done.",
+              "posted": []
+            }
+          }
+        ]
+      },
+      "input": {
+        "bot_user": {
+          "id": "5000",
+          "name": "Kanade"
+        },
+        "catalog": {
+          "bosses": [
+            {
+              "aliases": [
+                "star",
+                "mstar"
+              ],
+              "difficulties": [
+                "n",
+                "h"
+              ],
+              "full": "Malefic Star",
+              "short": "MaleficStar"
+            },
+            {
+              "aliases": [
+                "fa"
+              ],
+              "difficulties": [
+                "n",
+                "h",
+                "x"
+              ],
+              "full": "First Adversary",
+              "short": "FA"
+            },
+            {
+              "aliases": [
+                "carl",
+                "carling"
+              ],
+              "difficulties": [
+                "n",
+                "h",
+                "x"
+              ],
+              "full": "Chief Carling",
+              "short": "Carling"
+            },
+            {
+              "aliases": [
+                "kalos"
+              ],
+              "difficulties": [
+                "e",
+                "n",
+                "c",
+                "x"
+              ],
+              "full": "Kalos the Guardian",
+              "short": "Kalos"
+            },
+            {
+              "aliases": [
+                "bald",
+                "baldguy"
+              ],
+              "difficulties": [
+                "n",
+                "h"
+              ],
+              "full": "Baldrix",
+              "short": "Baldrix"
+            },
+            {
+              "aliases": [
+                "limbo"
+              ],
+              "difficulties": [
+                "n",
+                "h"
+              ],
+              "full": "Limbo",
+              "short": "Limbo"
+            }
+          ],
+          "difficulties": [
+            {
+              "label": "Easy",
+              "prefix": "e"
+            },
+            {
+              "label": "Normal",
+              "prefix": "n"
+            },
+            {
+              "label": "Hard",
+              "prefix": "h"
+            },
+            {
+              "label": "Chaos",
+              "prefix": "c"
+            },
+            {
+              "label": "Extreme",
+              "prefix": "x"
+            }
+          ]
+        },
+        "channels": [
+          {
+            "category_id": null,
+            "id": "700",
+            "name": "ask-the-bot",
+            "parent_id": null
+          },
+          {
+            "category_id": null,
+            "id": "701",
+            "name": "general",
+            "parent_id": null
+          },
+          {
+            "category_id": "800",
+            "id": "702",
+            "name": "bot-chatter",
+            "parent_id": null
+          },
+          {
+            "category_id": "801",
+            "id": "703",
+            "name": "somewhere-else",
+            "parent_id": null
+          },
+          {
+            "category_id": null,
+            "id": "704",
+            "name": "a-thread",
+            "parent_id": "700"
+          },
+          {
+            "category_id": null,
+            "id": "900",
+            "name": "party-star",
+            "parent_id": null
+          },
+          {
+            "category_id": null,
+            "id": "901",
+            "name": "party-kalos",
+            "parent_id": null
+          }
+        ],
+        "clock": "2026-09-09T12:00:00+08:00",
+        "guides": [
+          "MaleficStar",
+          "Kalos"
+        ],
+        "reset_time": "00:00",
+        "reset_weekday": 3,
+        "self_role_id": "5001",
+        "settings": {
+          "chat_pilot_category_ids": "800",
+          "chat_pilot_channel_ids": "700",
+          "chat_pilot_history_ttl_s": 2700.0,
+          "chat_pilot_model": "synthetic-chat",
+          "chat_pilot_role_id": "6000",
+          "chat_pilot_temperature": 0.7,
+          "chat_pilot_think": "low",
+          "chat_pilot_timeout": 60.0,
+          "guild_id": "1000",
+          "model_context_tokens": 16384,
+          "post_channel_id": null,
+          "watched_channel_ids": "900,901"
+        },
+        "steps": [
+          {
+            "arguments": {
+              "scope": "channel"
+            },
+            "author_id": "11",
+            "channel_id": "700",
+            "op": "run",
+            "tool": "get_schedule"
+          },
+          {
+            "arguments": {
+              "scope": "channel"
+            },
+            "author_id": "11",
+            "channel_id": "701",
+            "op": "run",
+            "tool": "get_schedule"
+          },
+          {
+            "arguments": {
+              "scope": "everywhere"
+            },
+            "author_id": "11",
+            "channel_id": "700",
+            "op": "run",
+            "tool": "get_schedule"
+          },
+          {
+            "arguments": {
+              "participant": "me"
+            },
+            "author_id": "22",
+            "channel_id": "700",
+            "op": "run",
+            "tool": "get_schedule"
+          },
+          {
+            "arguments": {
+              "participant": "kanon"
+            },
+            "author_id": "11",
+            "channel_id": "700",
+            "op": "run",
+            "tool": "get_schedule"
+          },
+          {
+            "arguments": {
+              "participant": "Priya",
+              "scope": "channel"
+            },
+            "author_id": "11",
+            "channel_id": "700",
+            "op": "run",
+            "tool": "get_schedule"
+          },
+          {
+            "arguments": {
+              "participant": "Mei",
+              "scope": "channel",
+              "week": "next_boss"
+            },
+            "author_id": "11",
+            "channel_id": "700",
+            "op": "run",
+            "tool": "get_schedule"
+          },
+          {
+            "arguments": {
+              "participant": "<@5000>"
+            },
+            "author_id": "33",
+            "channel_id": "700",
+            "op": "run",
+            "tool": "get_schedule"
+          },
+          {
+            "arguments": {
+              "participant": "Zed"
+            },
+            "author_id": "11",
+            "channel_id": "700",
+            "op": "run",
+            "tool": "get_schedule"
+          },
+          {
+            "arguments": {
+              "participant": "Mei",
+              "week": "next"
+            },
+            "author_id": "11",
+            "channel_id": "700",
+            "op": "run",
+            "tool": "get_schedule"
+          },
+          {
+            "arguments": {
+              "scope": "all"
+            },
+            "author_id": "11",
+            "channel_id": "700",
+            "force_channel_scope": true,
+            "op": "run",
+            "tool": "get_schedule"
+          },
+          {
+            "arguments": {
+              "scope": "channel"
+            },
+            "author_id": "11",
+            "channel_id": "700",
+            "force_all_channels": true,
+            "op": "run",
+            "tool": "get_schedule"
+          },
+          {
+            "arguments": {
+              "participant": "kanon"
+            },
+            "author_id": "11",
+            "channel_id": "700",
+            "force_group_schedule": true,
+            "op": "run",
+            "tool": "get_schedule"
+          },
+          {
+            "arguments": {},
+            "author_id": "11",
+            "channel_id": "700",
+            "op": "run",
+            "tool": "get_schedule",
+            "upcoming_only": true
+          },
+          {
+            "arguments": {
+              "scope": "channel"
+            },
+            "author_id": "11",
+            "channel_id": "701",
+            "op": "run",
+            "tool": "get_schedule",
+            "upcoming_only": true
+          },
+          {
+            "arguments": {
+              "day": "tue",
+              "participant": "me"
+            },
+            "author_id": "22",
+            "channel_id": "700",
+            "op": "run",
+            "tool": "get_schedule",
+            "upcoming_only": true
+          }
+        ],
+        "timezone": "Asia/Kuala_Lumpur",
+        "uuid_sequence": [
+          "a0000001-0000-4000-8009-000000000001",
+          "a0000002-0000-4000-8009-000000000002",
+          "a0000003-0000-4000-8009-000000000003",
+          "a0000004-0000-4000-8009-000000000004",
+          "a0000005-0000-4000-8009-000000000005",
+          "a0000006-0000-4000-8009-000000000006",
+          "a0000007-0000-4000-8009-000000000007",
+          "a0000008-0000-4000-8009-000000000008",
+          "a0000009-0000-4000-8009-000000000009",
+          "a0000010-0000-4000-8009-000000000010",
+          "a0000011-0000-4000-8009-000000000011",
+          "a0000012-0000-4000-8009-000000000012",
+          "a0000013-0000-4000-8009-000000000013",
+          "a0000014-0000-4000-8009-000000000014",
+          "a0000015-0000-4000-8009-000000000015",
+          "a0000016-0000-4000-8009-000000000016",
+          "a0000017-0000-4000-8009-000000000017",
+          "a0000018-0000-4000-8009-000000000018",
+          "a0000019-0000-4000-8009-000000000019",
+          "a0000020-0000-4000-8009-000000000020",
+          "a0000021-0000-4000-8009-000000000021",
+          "a0000022-0000-4000-8009-000000000022",
+          "a0000023-0000-4000-8009-000000000023",
+          "a0000024-0000-4000-8009-000000000024",
+          "a0000025-0000-4000-8009-000000000025",
+          "a0000026-0000-4000-8009-000000000026",
+          "a0000027-0000-4000-8009-000000000027",
+          "a0000028-0000-4000-8009-000000000028",
+          "a0000029-0000-4000-8009-000000000029",
+          "a0000030-0000-4000-8009-000000000030",
+          "a0000031-0000-4000-8009-000000000031",
+          "a0000032-0000-4000-8009-000000000032",
+          "a0000033-0000-4000-8009-000000000033",
+          "a0000034-0000-4000-8009-000000000034",
+          "a0000035-0000-4000-8009-000000000035",
+          "a0000036-0000-4000-8009-000000000036",
+          "a0000037-0000-4000-8009-000000000037",
+          "a0000038-0000-4000-8009-000000000038",
+          "a0000039-0000-4000-8009-000000000039",
+          "a0000040-0000-4000-8009-000000000040"
+        ],
+        "world": {
+          "fixed": [
+            {
+              "bosses": [
+                "HMaleficStar",
+                "HFA"
+              ],
+              "channel_id": "900",
+              "id": "f1f1f1f1-0000-4000-8000-000000000001",
+              "owner_id": "11",
+              "participants": [
+                "11",
+                "22"
+              ],
+              "time": "21:30",
+              "weekday": 2
+            },
+            {
+              "bosses": [
+                "XKalos"
+              ],
+              "channel_id": "901",
+              "id": "f2f2f2f2-0000-4000-8000-000000000002",
+              "owner_id": "22",
+              "participants": [
+                "22",
+                "33"
+              ],
+              "time": "23:00",
+              "weekday": 1
+            },
+            {
+              "bosses": [
+                "HBaldrix"
+              ],
+              "channel_id": "700",
+              "id": "f3f3f3f3-0000-4000-8000-000000000003",
+              "owner_id": "44",
+              "participants": [
+                "11"
+              ],
+              "time": "21:00",
+              "weekday": 4
+            }
+          ],
+          "members": [
+            {
+              "display_name": "Alvin tan",
+              "has_role": true,
+              "nickname": null,
+              "user_id": "11"
+            },
+            {
+              "display_name": "kanon [AZUR]",
+              "has_role": true,
+              "nickname": "kanon",
+              "user_id": "22"
+            },
+            {
+              "display_name": "Priya",
+              "has_role": true,
+              "nickname": null,
+              "user_id": "33"
+            },
+            {
+              "display_name": "Mei",
+              "has_role": true,
+              "nickname": null,
+              "user_id": "44"
+            },
+            {
+              "display_name": "NotABosser",
+              "has_role": false,
+              "nickname": null,
+              "user_id": "99"
+            }
+          ],
+          "rsvps": [
+            {
+              "run_id": "a1a1a1a1-0000-4000-8000-000000000001",
+              "state": "yes",
+              "user_id": "11"
+            },
+            {
+              "run_id": "c3c3c3c3-0000-4000-8000-000000000003",
+              "state": "no",
+              "user_id": "33"
+            }
+          ],
+          "runs": [
+            {
+              "at": "2026-09-09T21:30:00+08:00",
+              "bosses": [
+                "HMaleficStar",
+                "HFA"
+              ],
+              "channel_id": "900",
+              "fixed_run_id": "f1f1f1f1-0000-4000-8000-000000000001",
+              "id": "a1a1a1a1-0000-4000-8000-000000000001",
+              "participants": [
+                "11",
+                "22"
+              ],
+              "status": "planned",
+              "week_start": "2026-09-03T00:00:00+08:00"
+            },
+            {
+              "at": "2026-09-08T23:00:00+08:00",
+              "bosses": [
+                "XKalos"
+              ],
+              "channel_id": "901",
+              "fixed_run_id": "f2f2f2f2-0000-4000-8000-000000000002",
+              "id": "b2b2b2b2-0000-4000-8000-000000000002",
+              "participants": [
+                "22",
+                "33"
+              ],
+              "status": "planned",
+              "week_start": "2026-09-03T00:00:00+08:00"
+            },
+            {
+              "at": "2026-09-12T20:00:00+08:00",
+              "bosses": [
+                "HCarling"
+              ],
+              "channel_id": "702",
+              "fixed_run_id": null,
+              "id": "c3c3c3c3-0000-4000-8000-000000000003",
+              "participants": [
+                "33",
+                "44"
+              ],
+              "status": "confirmed",
+              "week_start": "2026-09-10T00:00:00+08:00"
+            },
+            {
+              "at": "2026-09-09T22:00:00+08:00",
+              "bosses": [
+                "NLimbo"
+              ],
+              "channel_id": "900",
+              "fixed_run_id": null,
+              "id": "d4d4d4d4-0000-4000-8000-000000000004",
+              "participants": [
+                "11",
+                "44"
+              ],
+              "status": "cancelled",
+              "week_start": "2026-09-03T00:00:00+08:00"
+            },
+            {
+              "at": "2026-09-11T21:00:00+08:00",
+              "bosses": [
+                "HBaldrix"
+              ],
+              "channel_id": "700",
+              "fixed_run_id": "f3f3f3f3-0000-4000-8000-000000000003",
+              "id": "e5e5e5e5-0000-4000-8000-000000000005",
+              "participants": [
+                "11"
+              ],
+              "status": "planned",
+              "week_start": "2026-09-10T00:00:00+08:00"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "case_id": "schedule-after-the-week",
+      "expected": {
+        "steps": [
+          {
+            "value": "2026-09-13T23:30:00+08:00"
+          },
+          {
+            "value": {
+              "arguments": {},
+              "created": [],
+              "error": null,
+              "name": "get_schedule",
+              "ok": true,
+              "output": "**4 runs this week · All channels**\n\n`[b2b2b2b2]` **Extreme Kalos**\n*Tue 08 Sep · 23:00* · `planned` · `0/2 yes` · <#901> · *already happened*\n\n`[a1a1a1a1]` **Hard MaleficStar + Hard FA**\n*Wed 09 Sep · 21:30* · `planned` · `1/2 yes` · <#900> · *already happened*\n\n`[e5e5e5e5]` **Hard Baldrix**\n*Fri 11 Sep · 21:00* · `planned` · `0/1 yes` · <#700> · *already happened*\n\n`[c3c3c3c3]` **Hard Carling**\n*Sat 12 Sep · 20:00* · `confirmed` · `0/2 yes` · <#702> · *already happened*\n\n*Every run listed has already happened — nothing upcoming is left in this week.*",
+              "posted": []
+            }
+          },
+          {
+            "value": {
+              "arguments": {},
+              "created": [],
+              "error": null,
+              "name": "get_schedule",
+              "ok": true,
+              "output": "**No runs left this week · All channels**\n\nEverything scheduled in this period is already done.",
+              "posted": []
+            }
+          },
+          {
+            "value": {
+              "arguments": {
+                "participant": "me",
+                "scope": "channel"
+              },
+              "created": [],
+              "error": null,
+              "name": "get_schedule",
+              "ok": true,
+              "output": "**No upcoming runs for you in this channel in this week.** Your matching scheduled runs are already done.",
+              "posted": []
+            }
+          }
+        ]
+      },
+      "input": {
+        "bot_user": {
+          "id": "5000",
+          "name": "Kanade"
+        },
+        "catalog": {
+          "bosses": [
+            {
+              "aliases": [
+                "star",
+                "mstar"
+              ],
+              "difficulties": [
+                "n",
+                "h"
+              ],
+              "full": "Malefic Star",
+              "short": "MaleficStar"
+            },
+            {
+              "aliases": [
+                "fa"
+              ],
+              "difficulties": [
+                "n",
+                "h",
+                "x"
+              ],
+              "full": "First Adversary",
+              "short": "FA"
+            },
+            {
+              "aliases": [
+                "carl",
+                "carling"
+              ],
+              "difficulties": [
+                "n",
+                "h",
+                "x"
+              ],
+              "full": "Chief Carling",
+              "short": "Carling"
+            },
+            {
+              "aliases": [
+                "kalos"
+              ],
+              "difficulties": [
+                "e",
+                "n",
+                "c",
+                "x"
+              ],
+              "full": "Kalos the Guardian",
+              "short": "Kalos"
+            },
+            {
+              "aliases": [
+                "bald",
+                "baldguy"
+              ],
+              "difficulties": [
+                "n",
+                "h"
+              ],
+              "full": "Baldrix",
+              "short": "Baldrix"
+            },
+            {
+              "aliases": [
+                "limbo"
+              ],
+              "difficulties": [
+                "n",
+                "h"
+              ],
+              "full": "Limbo",
+              "short": "Limbo"
+            }
+          ],
+          "difficulties": [
+            {
+              "label": "Easy",
+              "prefix": "e"
+            },
+            {
+              "label": "Normal",
+              "prefix": "n"
+            },
+            {
+              "label": "Hard",
+              "prefix": "h"
+            },
+            {
+              "label": "Chaos",
+              "prefix": "c"
+            },
+            {
+              "label": "Extreme",
+              "prefix": "x"
+            }
+          ]
+        },
+        "channels": [
+          {
+            "category_id": null,
+            "id": "700",
+            "name": "ask-the-bot",
+            "parent_id": null
+          },
+          {
+            "category_id": null,
+            "id": "701",
+            "name": "general",
+            "parent_id": null
+          },
+          {
+            "category_id": "800",
+            "id": "702",
+            "name": "bot-chatter",
+            "parent_id": null
+          },
+          {
+            "category_id": "801",
+            "id": "703",
+            "name": "somewhere-else",
+            "parent_id": null
+          },
+          {
+            "category_id": null,
+            "id": "704",
+            "name": "a-thread",
+            "parent_id": "700"
+          },
+          {
+            "category_id": null,
+            "id": "900",
+            "name": "party-star",
+            "parent_id": null
+          },
+          {
+            "category_id": null,
+            "id": "901",
+            "name": "party-kalos",
+            "parent_id": null
+          }
+        ],
+        "clock": "2026-09-09T12:00:00+08:00",
+        "guides": [
+          "MaleficStar",
+          "Kalos"
+        ],
+        "reset_time": "00:00",
+        "reset_weekday": 3,
+        "self_role_id": "5001",
+        "settings": {
+          "chat_pilot_category_ids": "800",
+          "chat_pilot_channel_ids": "700",
+          "chat_pilot_history_ttl_s": 2700.0,
+          "chat_pilot_model": "synthetic-chat",
+          "chat_pilot_role_id": "6000",
+          "chat_pilot_temperature": 0.7,
+          "chat_pilot_think": "low",
+          "chat_pilot_timeout": 60.0,
+          "guild_id": "1000",
+          "model_context_tokens": 16384,
+          "post_channel_id": null,
+          "watched_channel_ids": "900,901"
+        },
+        "steps": [
+          {
+            "clock": "2026-09-13T23:30:00+08:00",
+            "op": "set_clock"
+          },
+          {
+            "arguments": {},
+            "author_id": "11",
+            "channel_id": "700",
+            "op": "run",
+            "tool": "get_schedule"
+          },
+          {
+            "arguments": {},
+            "author_id": "11",
+            "channel_id": "700",
+            "op": "run",
+            "tool": "get_schedule",
+            "upcoming_only": true
+          },
+          {
+            "arguments": {
+              "participant": "me",
+              "scope": "channel"
+            },
+            "author_id": "11",
+            "channel_id": "700",
+            "op": "run",
+            "tool": "get_schedule",
+            "upcoming_only": true
+          }
+        ],
+        "timezone": "Asia/Kuala_Lumpur",
+        "uuid_sequence": [
+          "a0000001-0000-4000-8009-000000000001",
+          "a0000002-0000-4000-8009-000000000002",
+          "a0000003-0000-4000-8009-000000000003",
+          "a0000004-0000-4000-8009-000000000004",
+          "a0000005-0000-4000-8009-000000000005",
+          "a0000006-0000-4000-8009-000000000006",
+          "a0000007-0000-4000-8009-000000000007",
+          "a0000008-0000-4000-8009-000000000008",
+          "a0000009-0000-4000-8009-000000000009",
+          "a0000010-0000-4000-8009-000000000010",
+          "a0000011-0000-4000-8009-000000000011",
+          "a0000012-0000-4000-8009-000000000012",
+          "a0000013-0000-4000-8009-000000000013",
+          "a0000014-0000-4000-8009-000000000014",
+          "a0000015-0000-4000-8009-000000000015",
+          "a0000016-0000-4000-8009-000000000016",
+          "a0000017-0000-4000-8009-000000000017",
+          "a0000018-0000-4000-8009-000000000018",
+          "a0000019-0000-4000-8009-000000000019",
+          "a0000020-0000-4000-8009-000000000020",
+          "a0000021-0000-4000-8009-000000000021",
+          "a0000022-0000-4000-8009-000000000022",
+          "a0000023-0000-4000-8009-000000000023",
+          "a0000024-0000-4000-8009-000000000024",
+          "a0000025-0000-4000-8009-000000000025",
+          "a0000026-0000-4000-8009-000000000026",
+          "a0000027-0000-4000-8009-000000000027",
+          "a0000028-0000-4000-8009-000000000028",
+          "a0000029-0000-4000-8009-000000000029",
+          "a0000030-0000-4000-8009-000000000030",
+          "a0000031-0000-4000-8009-000000000031",
+          "a0000032-0000-4000-8009-000000000032",
+          "a0000033-0000-4000-8009-000000000033",
+          "a0000034-0000-4000-8009-000000000034",
+          "a0000035-0000-4000-8009-000000000035",
+          "a0000036-0000-4000-8009-000000000036",
+          "a0000037-0000-4000-8009-000000000037",
+          "a0000038-0000-4000-8009-000000000038",
+          "a0000039-0000-4000-8009-000000000039",
+          "a0000040-0000-4000-8009-000000000040"
+        ],
+        "world": {
+          "fixed": [
+            {
+              "bosses": [
+                "HMaleficStar",
+                "HFA"
+              ],
+              "channel_id": "900",
+              "id": "f1f1f1f1-0000-4000-8000-000000000001",
+              "owner_id": "11",
+              "participants": [
+                "11",
+                "22"
+              ],
+              "time": "21:30",
+              "weekday": 2
+            },
+            {
+              "bosses": [
+                "XKalos"
+              ],
+              "channel_id": "901",
+              "id": "f2f2f2f2-0000-4000-8000-000000000002",
+              "owner_id": "22",
+              "participants": [
+                "22",
+                "33"
+              ],
+              "time": "23:00",
+              "weekday": 1
+            },
+            {
+              "bosses": [
+                "HBaldrix"
+              ],
+              "channel_id": "700",
+              "id": "f3f3f3f3-0000-4000-8000-000000000003",
+              "owner_id": "44",
+              "participants": [
+                "11"
+              ],
+              "time": "21:00",
+              "weekday": 4
+            }
+          ],
+          "members": [
+            {
+              "display_name": "Alvin tan",
+              "has_role": true,
+              "nickname": null,
+              "user_id": "11"
+            },
+            {
+              "display_name": "kanon [AZUR]",
+              "has_role": true,
+              "nickname": "kanon",
+              "user_id": "22"
+            },
+            {
+              "display_name": "Priya",
+              "has_role": true,
+              "nickname": null,
+              "user_id": "33"
+            },
+            {
+              "display_name": "Mei",
+              "has_role": true,
+              "nickname": null,
+              "user_id": "44"
+            },
+            {
+              "display_name": "NotABosser",
+              "has_role": false,
+              "nickname": null,
+              "user_id": "99"
+            }
+          ],
+          "rsvps": [
+            {
+              "run_id": "a1a1a1a1-0000-4000-8000-000000000001",
+              "state": "yes",
+              "user_id": "11"
+            },
+            {
+              "run_id": "c3c3c3c3-0000-4000-8000-000000000003",
+              "state": "no",
+              "user_id": "33"
+            }
+          ],
+          "runs": [
+            {
+              "at": "2026-09-09T21:30:00+08:00",
+              "bosses": [
+                "HMaleficStar",
+                "HFA"
+              ],
+              "channel_id": "900",
+              "fixed_run_id": "f1f1f1f1-0000-4000-8000-000000000001",
+              "id": "a1a1a1a1-0000-4000-8000-000000000001",
+              "participants": [
+                "11",
+                "22"
+              ],
+              "status": "planned",
+              "week_start": "2026-09-03T00:00:00+08:00"
+            },
+            {
+              "at": "2026-09-08T23:00:00+08:00",
+              "bosses": [
+                "XKalos"
+              ],
+              "channel_id": "901",
+              "fixed_run_id": "f2f2f2f2-0000-4000-8000-000000000002",
+              "id": "b2b2b2b2-0000-4000-8000-000000000002",
+              "participants": [
+                "22",
+                "33"
+              ],
+              "status": "planned",
+              "week_start": "2026-09-03T00:00:00+08:00"
+            },
+            {
+              "at": "2026-09-12T20:00:00+08:00",
+              "bosses": [
+                "HCarling"
+              ],
+              "channel_id": "702",
+              "fixed_run_id": null,
+              "id": "c3c3c3c3-0000-4000-8000-000000000003",
+              "participants": [
+                "33",
+                "44"
+              ],
+              "status": "confirmed",
+              "week_start": "2026-09-10T00:00:00+08:00"
+            },
+            {
+              "at": "2026-09-09T22:00:00+08:00",
+              "bosses": [
+                "NLimbo"
+              ],
+              "channel_id": "900",
+              "fixed_run_id": null,
+              "id": "d4d4d4d4-0000-4000-8000-000000000004",
+              "participants": [
+                "11",
+                "44"
+              ],
+              "status": "cancelled",
+              "week_start": "2026-09-03T00:00:00+08:00"
+            },
+            {
+              "at": "2026-09-11T21:00:00+08:00",
+              "bosses": [
+                "HBaldrix"
+              ],
+              "channel_id": "700",
+              "fixed_run_id": "f3f3f3f3-0000-4000-8000-000000000003",
+              "id": "e5e5e5e5-0000-4000-8000-000000000005",
+              "participants": [
+                "11"
+              ],
+              "status": "planned",
+              "week_start": "2026-09-10T00:00:00+08:00"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "case_id": "run-lookup",
+      "expected": {
+        "steps": [
+          {
+            "value": {
+              "arguments": {
+                "query": "hstar"
+              },
+              "created": [],
+              "error": null,
+              "name": "get_run",
+              "ok": true,
+              "output": "**Run `[a1a1a1a1]`**\n\n**Hard MaleficStar + Hard FA** · *Wed 09 Sep 21:30* · `planned`\nOn it: Alvin tan (`yes`), kanon (`no answer`).",
+              "posted": []
+            }
+          },
+          {
+            "value": {
+              "arguments": {
+                "query": "a1a1a1a1"
+              },
+              "created": [],
+              "error": null,
+              "name": "get_run",
+              "ok": true,
+              "output": "**Run `[a1a1a1a1]`**\n\n**Hard MaleficStar + Hard FA** · *Wed 09 Sep 21:30* · `planned`\nOn it: Alvin tan (`yes`), kanon (`no answer`).",
+              "posted": []
+            }
+          },
+          {
+            "value": {
+              "arguments": {
+                "query": "hstar wednesday"
+              },
+              "created": [],
+              "error": null,
+              "name": "get_run",
+              "ok": true,
+              "output": "**Run `[a1a1a1a1]`**\n\n**Hard MaleficStar + Hard FA** · *Wed 09 Sep 21:30* · `planned`\nOn it: Alvin tan (`yes`), kanon (`no answer`).",
+              "posted": []
+            }
+          },
+          {
+            "value": {
+              "arguments": {
+                "query": "star fri"
+              },
+              "created": [],
+              "error": "refused",
+              "name": "get_run",
+              "ok": false,
+              "output": "No run matches `star fri`. That boss is on\n\n`[a1a1a1a1]` **Hard MaleficStar + Hard FA**\n*Wed 09 Sep · 21:30* · `planned` · `1/2 yes`",
+              "posted": []
+            }
+          },
+          {
+            "value": {
+              "arguments": {
+                "query": "friday"
+              },
+              "created": [],
+              "error": null,
+              "name": "get_run",
+              "ok": true,
+              "output": "**Run `[e5e5e5e5]`**\n\n**Hard Baldrix** · *Fri 11 Sep 21:00* · `planned`\nOn it: Alvin tan (`no answer`).",
+              "posted": []
+            }
+          },
+          {
+            "value": {
+              "arguments": {
+                "query": "tonight"
+              },
+              "created": [],
+              "error": null,
+              "name": "get_run",
+              "ok": true,
+              "output": "**Run `[a1a1a1a1]`**\n\n**Hard MaleficStar + Hard FA** · *Wed 09 Sep 21:30* · `planned`\nOn it: Alvin tan (`yes`), kanon (`no answer`).",
+              "posted": []
+            }
+          },
+          {
+            "value": {
+              "arguments": {
+                "query": "kalos"
+              },
+              "created": [],
+              "error": null,
+              "name": "get_run",
+              "ok": true,
+              "output": "**Run `[b2b2b2b2]`**\n\n**Extreme Kalos** · *Tue 08 Sep 23:00* · `planned`\nOn it: kanon (`no answer`), Priya (`no answer`).",
+              "posted": []
+            }
+          },
+          {
+            "value": {
+              "arguments": {
+                "query": "limbo"
+              },
+              "created": [],
+              "error": "refused",
+              "name": "get_run",
+              "ok": false,
+              "output": "No run matches `limbo`. Check what is scheduled, then ask them which one they mean. Do not guess.",
+              "posted": []
+            }
+          },
+          {
+            "value": {
+              "arguments": {
+                "query": "hstar hbaldrix"
+              },
+              "created": [],
+              "error": "refused",
+              "name": "get_run",
+              "ok": false,
+              "output": "`hstar hbaldrix` matches more than one run. Ask which one:\n\n`[a1a1a1a1]` **Hard MaleficStar + Hard FA**\n*Wed 09 Sep · 21:30* · `planned` · `1/2 yes`\n\n`[e5e5e5e5]` **Hard Baldrix**\n*Fri 11 Sep · 21:00* · `planned` · `0/1 yes`",
+              "posted": []
+            }
+          },
+          {
+            "value": {
+              "arguments": {
+                "query": "wednesday friday"
+              },
+              "created": [],
+              "error": "refused",
+              "name": "get_run",
+              "ok": false,
+              "output": "`wednesday friday` names more than one day. Ask them which one they mean; do not guess.",
+              "posted": []
+            }
+          },
+          {
+            "value": {
+              "arguments": {
+                "query": "gibberish"
+              },
+              "created": [],
+              "error": "refused",
+              "name": "get_run",
+              "ok": false,
+              "output": "No run matches `gibberish`. Check what is scheduled, then ask them which one they mean. Do not guess.",
+              "posted": []
+            }
+          },
+          {
+            "value": {
+              "arguments": {
+                "query": ""
+              },
+              "created": [],
+              "error": "refused",
+              "name": "get_run",
+              "ok": false,
+              "output": "Ask them which run they mean -- a boss and a day, like 'hstar wednesday'.",
+              "posted": []
+            }
+          },
+          {
+            "value": {
+              "arguments": {},
+              "created": [],
+              "error": "refused",
+              "name": "get_run",
+              "ok": false,
+              "output": "Ask them which run they mean -- a boss and a day, like 'hstar wednesday'.",
+              "posted": []
+            }
+          }
+        ]
+      },
+      "input": {
+        "bot_user": {
+          "id": "5000",
+          "name": "Kanade"
+        },
+        "catalog": {
+          "bosses": [
+            {
+              "aliases": [
+                "star",
+                "mstar"
+              ],
+              "difficulties": [
+                "n",
+                "h"
+              ],
+              "full": "Malefic Star",
+              "short": "MaleficStar"
+            },
+            {
+              "aliases": [
+                "fa"
+              ],
+              "difficulties": [
+                "n",
+                "h",
+                "x"
+              ],
+              "full": "First Adversary",
+              "short": "FA"
+            },
+            {
+              "aliases": [
+                "carl",
+                "carling"
+              ],
+              "difficulties": [
+                "n",
+                "h",
+                "x"
+              ],
+              "full": "Chief Carling",
+              "short": "Carling"
+            },
+            {
+              "aliases": [
+                "kalos"
+              ],
+              "difficulties": [
+                "e",
+                "n",
+                "c",
+                "x"
+              ],
+              "full": "Kalos the Guardian",
+              "short": "Kalos"
+            },
+            {
+              "aliases": [
+                "bald",
+                "baldguy"
+              ],
+              "difficulties": [
+                "n",
+                "h"
+              ],
+              "full": "Baldrix",
+              "short": "Baldrix"
+            },
+            {
+              "aliases": [
+                "limbo"
+              ],
+              "difficulties": [
+                "n",
+                "h"
+              ],
+              "full": "Limbo",
+              "short": "Limbo"
+            }
+          ],
+          "difficulties": [
+            {
+              "label": "Easy",
+              "prefix": "e"
+            },
+            {
+              "label": "Normal",
+              "prefix": "n"
+            },
+            {
+              "label": "Hard",
+              "prefix": "h"
+            },
+            {
+              "label": "Chaos",
+              "prefix": "c"
+            },
+            {
+              "label": "Extreme",
+              "prefix": "x"
+            }
+          ]
+        },
+        "channels": [
+          {
+            "category_id": null,
+            "id": "700",
+            "name": "ask-the-bot",
+            "parent_id": null
+          },
+          {
+            "category_id": null,
+            "id": "701",
+            "name": "general",
+            "parent_id": null
+          },
+          {
+            "category_id": "800",
+            "id": "702",
+            "name": "bot-chatter",
+            "parent_id": null
+          },
+          {
+            "category_id": "801",
+            "id": "703",
+            "name": "somewhere-else",
+            "parent_id": null
+          },
+          {
+            "category_id": null,
+            "id": "704",
+            "name": "a-thread",
+            "parent_id": "700"
+          },
+          {
+            "category_id": null,
+            "id": "900",
+            "name": "party-star",
+            "parent_id": null
+          },
+          {
+            "category_id": null,
+            "id": "901",
+            "name": "party-kalos",
+            "parent_id": null
+          }
+        ],
+        "clock": "2026-09-09T12:00:00+08:00",
+        "guides": [
+          "MaleficStar",
+          "Kalos"
+        ],
+        "reset_time": "00:00",
+        "reset_weekday": 3,
+        "self_role_id": "5001",
+        "settings": {
+          "chat_pilot_category_ids": "800",
+          "chat_pilot_channel_ids": "700",
+          "chat_pilot_history_ttl_s": 2700.0,
+          "chat_pilot_model": "synthetic-chat",
+          "chat_pilot_role_id": "6000",
+          "chat_pilot_temperature": 0.7,
+          "chat_pilot_think": "low",
+          "chat_pilot_timeout": 60.0,
+          "guild_id": "1000",
+          "model_context_tokens": 16384,
+          "post_channel_id": null,
+          "watched_channel_ids": "900,901"
+        },
+        "steps": [
+          {
+            "arguments": {
+              "query": "hstar"
+            },
+            "author_id": "11",
+            "channel_id": "700",
+            "op": "run",
+            "tool": "get_run"
+          },
+          {
+            "arguments": {
+              "query": "a1a1a1a1"
+            },
+            "author_id": "11",
+            "channel_id": "700",
+            "op": "run",
+            "tool": "get_run"
+          },
+          {
+            "arguments": {
+              "query": "hstar wednesday"
+            },
+            "author_id": "11",
+            "channel_id": "700",
+            "op": "run",
+            "tool": "get_run"
+          },
+          {
+            "arguments": {
+              "query": "star fri"
+            },
+            "author_id": "11",
+            "channel_id": "700",
+            "op": "run",
+            "tool": "get_run"
+          },
+          {
+            "arguments": {
+              "query": "friday"
+            },
+            "author_id": "11",
+            "channel_id": "700",
+            "op": "run",
+            "tool": "get_run"
+          },
+          {
+            "arguments": {
+              "query": "tonight"
+            },
+            "author_id": "11",
+            "channel_id": "700",
+            "op": "run",
+            "tool": "get_run"
+          },
+          {
+            "arguments": {
+              "query": "kalos"
+            },
+            "author_id": "11",
+            "channel_id": "700",
+            "op": "run",
+            "tool": "get_run"
+          },
+          {
+            "arguments": {
+              "query": "limbo"
+            },
+            "author_id": "11",
+            "channel_id": "700",
+            "op": "run",
+            "tool": "get_run"
+          },
+          {
+            "arguments": {
+              "query": "hstar hbaldrix"
+            },
+            "author_id": "11",
+            "channel_id": "700",
+            "op": "run",
+            "tool": "get_run"
+          },
+          {
+            "arguments": {
+              "query": "wednesday friday"
+            },
+            "author_id": "11",
+            "channel_id": "700",
+            "op": "run",
+            "tool": "get_run"
+          },
+          {
+            "arguments": {
+              "query": "gibberish"
+            },
+            "author_id": "11",
+            "channel_id": "700",
+            "op": "run",
+            "tool": "get_run"
+          },
+          {
+            "arguments": {
+              "query": ""
+            },
+            "author_id": "11",
+            "channel_id": "700",
+            "op": "run",
+            "tool": "get_run"
+          },
+          {
+            "arguments": {},
+            "author_id": "11",
+            "channel_id": "700",
+            "op": "run",
+            "tool": "get_run"
+          }
+        ],
+        "timezone": "Asia/Kuala_Lumpur",
+        "uuid_sequence": [
+          "a0000001-0000-4000-8009-000000000001",
+          "a0000002-0000-4000-8009-000000000002",
+          "a0000003-0000-4000-8009-000000000003",
+          "a0000004-0000-4000-8009-000000000004",
+          "a0000005-0000-4000-8009-000000000005",
+          "a0000006-0000-4000-8009-000000000006",
+          "a0000007-0000-4000-8009-000000000007",
+          "a0000008-0000-4000-8009-000000000008",
+          "a0000009-0000-4000-8009-000000000009",
+          "a0000010-0000-4000-8009-000000000010",
+          "a0000011-0000-4000-8009-000000000011",
+          "a0000012-0000-4000-8009-000000000012",
+          "a0000013-0000-4000-8009-000000000013",
+          "a0000014-0000-4000-8009-000000000014",
+          "a0000015-0000-4000-8009-000000000015",
+          "a0000016-0000-4000-8009-000000000016",
+          "a0000017-0000-4000-8009-000000000017",
+          "a0000018-0000-4000-8009-000000000018",
+          "a0000019-0000-4000-8009-000000000019",
+          "a0000020-0000-4000-8009-000000000020",
+          "a0000021-0000-4000-8009-000000000021",
+          "a0000022-0000-4000-8009-000000000022",
+          "a0000023-0000-4000-8009-000000000023",
+          "a0000024-0000-4000-8009-000000000024",
+          "a0000025-0000-4000-8009-000000000025",
+          "a0000026-0000-4000-8009-000000000026",
+          "a0000027-0000-4000-8009-000000000027",
+          "a0000028-0000-4000-8009-000000000028",
+          "a0000029-0000-4000-8009-000000000029",
+          "a0000030-0000-4000-8009-000000000030",
+          "a0000031-0000-4000-8009-000000000031",
+          "a0000032-0000-4000-8009-000000000032",
+          "a0000033-0000-4000-8009-000000000033",
+          "a0000034-0000-4000-8009-000000000034",
+          "a0000035-0000-4000-8009-000000000035",
+          "a0000036-0000-4000-8009-000000000036",
+          "a0000037-0000-4000-8009-000000000037",
+          "a0000038-0000-4000-8009-000000000038",
+          "a0000039-0000-4000-8009-000000000039",
+          "a0000040-0000-4000-8009-000000000040"
+        ],
+        "world": {
+          "fixed": [
+            {
+              "bosses": [
+                "HMaleficStar",
+                "HFA"
+              ],
+              "channel_id": "900",
+              "id": "f1f1f1f1-0000-4000-8000-000000000001",
+              "owner_id": "11",
+              "participants": [
+                "11",
+                "22"
+              ],
+              "time": "21:30",
+              "weekday": 2
+            },
+            {
+              "bosses": [
+                "XKalos"
+              ],
+              "channel_id": "901",
+              "id": "f2f2f2f2-0000-4000-8000-000000000002",
+              "owner_id": "22",
+              "participants": [
+                "22",
+                "33"
+              ],
+              "time": "23:00",
+              "weekday": 1
+            },
+            {
+              "bosses": [
+                "HBaldrix"
+              ],
+              "channel_id": "700",
+              "id": "f3f3f3f3-0000-4000-8000-000000000003",
+              "owner_id": "44",
+              "participants": [
+                "11"
+              ],
+              "time": "21:00",
+              "weekday": 4
+            }
+          ],
+          "members": [
+            {
+              "display_name": "Alvin tan",
+              "has_role": true,
+              "nickname": null,
+              "user_id": "11"
+            },
+            {
+              "display_name": "kanon [AZUR]",
+              "has_role": true,
+              "nickname": "kanon",
+              "user_id": "22"
+            },
+            {
+              "display_name": "Priya",
+              "has_role": true,
+              "nickname": null,
+              "user_id": "33"
+            },
+            {
+              "display_name": "Mei",
+              "has_role": true,
+              "nickname": null,
+              "user_id": "44"
+            },
+            {
+              "display_name": "NotABosser",
+              "has_role": false,
+              "nickname": null,
+              "user_id": "99"
+            }
+          ],
+          "rsvps": [
+            {
+              "run_id": "a1a1a1a1-0000-4000-8000-000000000001",
+              "state": "yes",
+              "user_id": "11"
+            },
+            {
+              "run_id": "c3c3c3c3-0000-4000-8000-000000000003",
+              "state": "no",
+              "user_id": "33"
+            }
+          ],
+          "runs": [
+            {
+              "at": "2026-09-09T21:30:00+08:00",
+              "bosses": [
+                "HMaleficStar",
+                "HFA"
+              ],
+              "channel_id": "900",
+              "fixed_run_id": "f1f1f1f1-0000-4000-8000-000000000001",
+              "id": "a1a1a1a1-0000-4000-8000-000000000001",
+              "participants": [
+                "11",
+                "22"
+              ],
+              "status": "planned",
+              "week_start": "2026-09-03T00:00:00+08:00"
+            },
+            {
+              "at": "2026-09-08T23:00:00+08:00",
+              "bosses": [
+                "XKalos"
+              ],
+              "channel_id": "901",
+              "fixed_run_id": "f2f2f2f2-0000-4000-8000-000000000002",
+              "id": "b2b2b2b2-0000-4000-8000-000000000002",
+              "participants": [
+                "22",
+                "33"
+              ],
+              "status": "planned",
+              "week_start": "2026-09-03T00:00:00+08:00"
+            },
+            {
+              "at": "2026-09-12T20:00:00+08:00",
+              "bosses": [
+                "HCarling"
+              ],
+              "channel_id": "702",
+              "fixed_run_id": null,
+              "id": "c3c3c3c3-0000-4000-8000-000000000003",
+              "participants": [
+                "33",
+                "44"
+              ],
+              "status": "confirmed",
+              "week_start": "2026-09-10T00:00:00+08:00"
+            },
+            {
+              "at": "2026-09-09T22:00:00+08:00",
+              "bosses": [
+                "NLimbo"
+              ],
+              "channel_id": "900",
+              "fixed_run_id": null,
+              "id": "d4d4d4d4-0000-4000-8000-000000000004",
+              "participants": [
+                "11",
+                "44"
+              ],
+              "status": "cancelled",
+              "week_start": "2026-09-03T00:00:00+08:00"
+            },
+            {
+              "at": "2026-09-11T21:00:00+08:00",
+              "bosses": [
+                "HBaldrix"
+              ],
+              "channel_id": "700",
+              "fixed_run_id": "f3f3f3f3-0000-4000-8000-000000000003",
+              "id": "e5e5e5e5-0000-4000-8000-000000000005",
+              "participants": [
+                "11"
+              ],
+              "status": "planned",
+              "week_start": "2026-09-10T00:00:00+08:00"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "case_id": "catalogue-weekly-pending",
+      "expected": {
+        "steps": [
+          {
+            "value": {
+              "arguments": {},
+              "created": [],
+              "error": null,
+              "name": "list_bosses",
+              "ok": true,
+              "output": "**Bosses this guild runs**\n\n**Baldrix** (Baldrix, lv `None`): `NBaldrix` = Normal Baldrix, `HBaldrix` = Hard Baldrix\n**Carling** (Chief Carling, lv `None`): `NCarling` = Normal Carling, `HCarling` = Hard Carling, `XCarling` = Extreme Carling\n**FA** (First Adversary, lv `None`): `NFA` = Normal FA, `HFA` = Hard FA, `XFA` = Extreme FA\n**Kalos** (Kalos the Guardian, lv `None`): `EKalos` = Easy Kalos, `NKalos` = Normal Kalos, `CKalos` = Chaos Kalos, `XKalos` = Extreme Kalos\n**Limbo** (Limbo, lv `None`): `NLimbo` = Normal Limbo, `HLimbo` = Hard Limbo\n**MaleficStar** (Malefic Star, lv `None`): `NMaleficStar` = Normal MaleficStar, `HMaleficStar` = Hard MaleficStar",
+              "posted": []
+            }
+          },
+          {
+            "value": {
+              "arguments": {},
+              "created": [],
+              "error": null,
+              "name": "list_fixed",
+              "ok": true,
+              "output": "**Weekly timings**\n\n[f2f2f2f2] every Tue 23:00 Extreme Kalos with kanon, Priya\n[f1f1f1f1] every Wed 21:30 Hard MaleficStar + Hard FA with Alvin tan, kanon\n[f3f3f3f3] every Fri 21:00 Hard Baldrix with Alvin tan",
+              "posted": []
+            }
+          },
+          {
+            "value": {
+              "arguments": {},
+              "created": [],
+              "error": null,
+              "name": "get_pending",
+              "ok": true,
+              "output": "There are no proposal cards waiting.",
+              "posted": []
+            }
+          }
+        ]
+      },
+      "input": {
+        "bot_user": {
+          "id": "5000",
+          "name": "Kanade"
+        },
+        "catalog": {
+          "bosses": [
+            {
+              "aliases": [
+                "star",
+                "mstar"
+              ],
+              "difficulties": [
+                "n",
+                "h"
+              ],
+              "full": "Malefic Star",
+              "short": "MaleficStar"
+            },
+            {
+              "aliases": [
+                "fa"
+              ],
+              "difficulties": [
+                "n",
+                "h",
+                "x"
+              ],
+              "full": "First Adversary",
+              "short": "FA"
+            },
+            {
+              "aliases": [
+                "carl",
+                "carling"
+              ],
+              "difficulties": [
+                "n",
+                "h",
+                "x"
+              ],
+              "full": "Chief Carling",
+              "short": "Carling"
+            },
+            {
+              "aliases": [
+                "kalos"
+              ],
+              "difficulties": [
+                "e",
+                "n",
+                "c",
+                "x"
+              ],
+              "full": "Kalos the Guardian",
+              "short": "Kalos"
+            },
+            {
+              "aliases": [
+                "bald",
+                "baldguy"
+              ],
+              "difficulties": [
+                "n",
+                "h"
+              ],
+              "full": "Baldrix",
+              "short": "Baldrix"
+            },
+            {
+              "aliases": [
+                "limbo"
+              ],
+              "difficulties": [
+                "n",
+                "h"
+              ],
+              "full": "Limbo",
+              "short": "Limbo"
+            }
+          ],
+          "difficulties": [
+            {
+              "label": "Easy",
+              "prefix": "e"
+            },
+            {
+              "label": "Normal",
+              "prefix": "n"
+            },
+            {
+              "label": "Hard",
+              "prefix": "h"
+            },
+            {
+              "label": "Chaos",
+              "prefix": "c"
+            },
+            {
+              "label": "Extreme",
+              "prefix": "x"
+            }
+          ]
+        },
+        "channels": [
+          {
+            "category_id": null,
+            "id": "700",
+            "name": "ask-the-bot",
+            "parent_id": null
+          },
+          {
+            "category_id": null,
+            "id": "701",
+            "name": "general",
+            "parent_id": null
+          },
+          {
+            "category_id": "800",
+            "id": "702",
+            "name": "bot-chatter",
+            "parent_id": null
+          },
+          {
+            "category_id": "801",
+            "id": "703",
+            "name": "somewhere-else",
+            "parent_id": null
+          },
+          {
+            "category_id": null,
+            "id": "704",
+            "name": "a-thread",
+            "parent_id": "700"
+          },
+          {
+            "category_id": null,
+            "id": "900",
+            "name": "party-star",
+            "parent_id": null
+          },
+          {
+            "category_id": null,
+            "id": "901",
+            "name": "party-kalos",
+            "parent_id": null
+          }
+        ],
+        "clock": "2026-09-09T12:00:00+08:00",
+        "guides": [
+          "MaleficStar",
+          "Kalos"
+        ],
+        "reset_time": "00:00",
+        "reset_weekday": 3,
+        "self_role_id": "5001",
+        "settings": {
+          "chat_pilot_category_ids": "800",
+          "chat_pilot_channel_ids": "700",
+          "chat_pilot_history_ttl_s": 2700.0,
+          "chat_pilot_model": "synthetic-chat",
+          "chat_pilot_role_id": "6000",
+          "chat_pilot_temperature": 0.7,
+          "chat_pilot_think": "low",
+          "chat_pilot_timeout": 60.0,
+          "guild_id": "1000",
+          "model_context_tokens": 16384,
+          "post_channel_id": null,
+          "watched_channel_ids": "900,901"
+        },
+        "steps": [
+          {
+            "arguments": {},
+            "author_id": "11",
+            "channel_id": "700",
+            "op": "run",
+            "tool": "list_bosses"
+          },
+          {
+            "arguments": {},
+            "author_id": "11",
+            "channel_id": "700",
+            "op": "run",
+            "tool": "list_fixed"
+          },
+          {
+            "arguments": {},
+            "author_id": "11",
+            "channel_id": "700",
+            "op": "run",
+            "tool": "get_pending"
+          }
+        ],
+        "timezone": "Asia/Kuala_Lumpur",
+        "uuid_sequence": [
+          "a0000001-0000-4000-8009-000000000001",
+          "a0000002-0000-4000-8009-000000000002",
+          "a0000003-0000-4000-8009-000000000003",
+          "a0000004-0000-4000-8009-000000000004",
+          "a0000005-0000-4000-8009-000000000005",
+          "a0000006-0000-4000-8009-000000000006",
+          "a0000007-0000-4000-8009-000000000007",
+          "a0000008-0000-4000-8009-000000000008",
+          "a0000009-0000-4000-8009-000000000009",
+          "a0000010-0000-4000-8009-000000000010",
+          "a0000011-0000-4000-8009-000000000011",
+          "a0000012-0000-4000-8009-000000000012",
+          "a0000013-0000-4000-8009-000000000013",
+          "a0000014-0000-4000-8009-000000000014",
+          "a0000015-0000-4000-8009-000000000015",
+          "a0000016-0000-4000-8009-000000000016",
+          "a0000017-0000-4000-8009-000000000017",
+          "a0000018-0000-4000-8009-000000000018",
+          "a0000019-0000-4000-8009-000000000019",
+          "a0000020-0000-4000-8009-000000000020",
+          "a0000021-0000-4000-8009-000000000021",
+          "a0000022-0000-4000-8009-000000000022",
+          "a0000023-0000-4000-8009-000000000023",
+          "a0000024-0000-4000-8009-000000000024",
+          "a0000025-0000-4000-8009-000000000025",
+          "a0000026-0000-4000-8009-000000000026",
+          "a0000027-0000-4000-8009-000000000027",
+          "a0000028-0000-4000-8009-000000000028",
+          "a0000029-0000-4000-8009-000000000029",
+          "a0000030-0000-4000-8009-000000000030",
+          "a0000031-0000-4000-8009-000000000031",
+          "a0000032-0000-4000-8009-000000000032",
+          "a0000033-0000-4000-8009-000000000033",
+          "a0000034-0000-4000-8009-000000000034",
+          "a0000035-0000-4000-8009-000000000035",
+          "a0000036-0000-4000-8009-000000000036",
+          "a0000037-0000-4000-8009-000000000037",
+          "a0000038-0000-4000-8009-000000000038",
+          "a0000039-0000-4000-8009-000000000039",
+          "a0000040-0000-4000-8009-000000000040"
+        ],
+        "world": {
+          "fixed": [
+            {
+              "bosses": [
+                "HMaleficStar",
+                "HFA"
+              ],
+              "channel_id": "900",
+              "id": "f1f1f1f1-0000-4000-8000-000000000001",
+              "owner_id": "11",
+              "participants": [
+                "11",
+                "22"
+              ],
+              "time": "21:30",
+              "weekday": 2
+            },
+            {
+              "bosses": [
+                "XKalos"
+              ],
+              "channel_id": "901",
+              "id": "f2f2f2f2-0000-4000-8000-000000000002",
+              "owner_id": "22",
+              "participants": [
+                "22",
+                "33"
+              ],
+              "time": "23:00",
+              "weekday": 1
+            },
+            {
+              "bosses": [
+                "HBaldrix"
+              ],
+              "channel_id": "700",
+              "id": "f3f3f3f3-0000-4000-8000-000000000003",
+              "owner_id": "44",
+              "participants": [
+                "11"
+              ],
+              "time": "21:00",
+              "weekday": 4
+            }
+          ],
+          "members": [
+            {
+              "display_name": "Alvin tan",
+              "has_role": true,
+              "nickname": null,
+              "user_id": "11"
+            },
+            {
+              "display_name": "kanon [AZUR]",
+              "has_role": true,
+              "nickname": "kanon",
+              "user_id": "22"
+            },
+            {
+              "display_name": "Priya",
+              "has_role": true,
+              "nickname": null,
+              "user_id": "33"
+            },
+            {
+              "display_name": "Mei",
+              "has_role": true,
+              "nickname": null,
+              "user_id": "44"
+            },
+            {
+              "display_name": "NotABosser",
+              "has_role": false,
+              "nickname": null,
+              "user_id": "99"
+            }
+          ],
+          "rsvps": [
+            {
+              "run_id": "a1a1a1a1-0000-4000-8000-000000000001",
+              "state": "yes",
+              "user_id": "11"
+            },
+            {
+              "run_id": "c3c3c3c3-0000-4000-8000-000000000003",
+              "state": "no",
+              "user_id": "33"
+            }
+          ],
+          "runs": [
+            {
+              "at": "2026-09-09T21:30:00+08:00",
+              "bosses": [
+                "HMaleficStar",
+                "HFA"
+              ],
+              "channel_id": "900",
+              "fixed_run_id": "f1f1f1f1-0000-4000-8000-000000000001",
+              "id": "a1a1a1a1-0000-4000-8000-000000000001",
+              "participants": [
+                "11",
+                "22"
+              ],
+              "status": "planned",
+              "week_start": "2026-09-03T00:00:00+08:00"
+            },
+            {
+              "at": "2026-09-08T23:00:00+08:00",
+              "bosses": [
+                "XKalos"
+              ],
+              "channel_id": "901",
+              "fixed_run_id": "f2f2f2f2-0000-4000-8000-000000000002",
+              "id": "b2b2b2b2-0000-4000-8000-000000000002",
+              "participants": [
+                "22",
+                "33"
+              ],
+              "status": "planned",
+              "week_start": "2026-09-03T00:00:00+08:00"
+            },
+            {
+              "at": "2026-09-12T20:00:00+08:00",
+              "bosses": [
+                "HCarling"
+              ],
+              "channel_id": "702",
+              "fixed_run_id": null,
+              "id": "c3c3c3c3-0000-4000-8000-000000000003",
+              "participants": [
+                "33",
+                "44"
+              ],
+              "status": "confirmed",
+              "week_start": "2026-09-10T00:00:00+08:00"
+            },
+            {
+              "at": "2026-09-09T22:00:00+08:00",
+              "bosses": [
+                "NLimbo"
+              ],
+              "channel_id": "900",
+              "fixed_run_id": null,
+              "id": "d4d4d4d4-0000-4000-8000-000000000004",
+              "participants": [
+                "11",
+                "44"
+              ],
+              "status": "cancelled",
+              "week_start": "2026-09-03T00:00:00+08:00"
+            },
+            {
+              "at": "2026-09-11T21:00:00+08:00",
+              "bosses": [
+                "HBaldrix"
+              ],
+              "channel_id": "700",
+              "fixed_run_id": "f3f3f3f3-0000-4000-8000-000000000003",
+              "id": "e5e5e5e5-0000-4000-8000-000000000005",
+              "participants": [
+                "11"
+              ],
+              "status": "planned",
+              "week_start": "2026-09-10T00:00:00+08:00"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "case_id": "boss-strategy",
+      "expected": {
+        "steps": [
+          {
+            "value": {
+              "arguments": {
+                "boss": "hstar"
+              },
+              "created": [],
+              "error": null,
+              "name": "get_boss_strategy",
+              "ok": true,
+              "output": "<guide MaleficStar difficulty=h>",
+              "posted": []
+            }
+          },
+          {
+            "value": {
+              "arguments": {
+                "boss": "MaleficStar",
+                "difficulty": "hard"
+              },
+              "created": [],
+              "error": null,
+              "name": "get_boss_strategy",
+              "ok": true,
+              "output": "<guide MaleficStar difficulty=h>",
+              "posted": []
+            }
+          },
+          {
+            "value": {
+              "arguments": {
+                "boss": "kalos"
+              },
+              "created": [],
+              "error": null,
+              "name": "get_boss_strategy",
+              "ok": true,
+              "output": "<guide Kalos difficulty=None>",
+              "posted": []
+            }
+          },
+          {
+            "value": {
+              "arguments": {
+                "boss": "kalos",
+                "difficulty": "x"
+              },
+              "created": [],
+              "error": null,
+              "name": "get_boss_strategy",
+              "ok": true,
+              "output": "<guide Kalos difficulty=x>",
+              "posted": []
+            }
+          },
+          {
+            "value": {
+              "arguments": {
+                "boss": "hstar",
+                "difficulty": "normal"
+              },
+              "created": [],
+              "error": "refused",
+              "name": "get_boss_strategy",
+              "ok": false,
+              "output": "conflicting difficulties: Hard and Normal",
+              "posted": []
+            }
+          },
+          {
+            "value": {
+              "arguments": {
+                "boss": "kalos",
+                "difficulty": "hard"
+              },
+              "created": [],
+              "error": "refused",
+              "name": "get_boss_strategy",
+              "ok": false,
+              "output": "Kalos the Guardian has no Hard difficulty - available forms are EKalos, NKalos, CKalos, XKalos.",
+              "posted": []
+            }
+          },
+          {
+            "value": {
+              "arguments": {
+                "boss": "kalos",
+                "difficulty": "weird"
+              },
+              "created": [],
+              "error": "refused",
+              "name": "get_boss_strategy",
+              "ok": false,
+              "output": "Unknown difficulty `weird`. Use one of: Easy, Normal, Hard, Chaos, Extreme.",
+              "posted": []
+            }
+          },
+          {
+            "value": {
+              "arguments": {
+                "boss": "kalos",
+                "difficulty": " "
+              },
+              "created": [],
+              "error": null,
+              "name": "get_boss_strategy",
+              "ok": true,
+              "output": "<guide Kalos difficulty=None>",
+              "posted": []
+            }
+          },
+          {
+            "value": {
+              "arguments": {
+                "boss": "carling"
+              },
+              "created": [],
+              "error": "refused",
+              "name": "get_boss_strategy",
+              "ok": false,
+              "output": "No checked-in strategy guide is available for Chief Carling.",
+              "posted": []
+            }
+          },
+          {
+            "value": {
+              "arguments": {
+                "boss": "lotus"
+              },
+              "created": [],
+              "error": "refused",
+              "name": "get_boss_strategy",
+              "ok": false,
+              "output": "no boss found in `lotus`",
+              "posted": []
+            }
+          },
+          {
+            "value": {
+              "arguments": {
+                "boss": ""
+              },
+              "created": [],
+              "error": "refused",
+              "name": "get_boss_strategy",
+              "ok": false,
+              "output": "Ask which boss they want strategy for.",
+              "posted": []
+            }
+          },
+          {
+            "value": {
+              "arguments": {
+                "boss": 7
+              },
+              "created": [],
+              "error": "refused",
+              "name": "get_boss_strategy",
+              "ok": false,
+              "output": "Ask which boss they want strategy for.",
+              "posted": []
+            }
+          }
+        ]
+      },
+      "input": {
+        "bot_user": {
+          "id": "5000",
+          "name": "Kanade"
+        },
+        "catalog": {
+          "bosses": [
+            {
+              "aliases": [
+                "star",
+                "mstar"
+              ],
+              "difficulties": [
+                "n",
+                "h"
+              ],
+              "full": "Malefic Star",
+              "short": "MaleficStar"
+            },
+            {
+              "aliases": [
+                "fa"
+              ],
+              "difficulties": [
+                "n",
+                "h",
+                "x"
+              ],
+              "full": "First Adversary",
+              "short": "FA"
+            },
+            {
+              "aliases": [
+                "carl",
+                "carling"
+              ],
+              "difficulties": [
+                "n",
+                "h",
+                "x"
+              ],
+              "full": "Chief Carling",
+              "short": "Carling"
+            },
+            {
+              "aliases": [
+                "kalos"
+              ],
+              "difficulties": [
+                "e",
+                "n",
+                "c",
+                "x"
+              ],
+              "full": "Kalos the Guardian",
+              "short": "Kalos"
+            },
+            {
+              "aliases": [
+                "bald",
+                "baldguy"
+              ],
+              "difficulties": [
+                "n",
+                "h"
+              ],
+              "full": "Baldrix",
+              "short": "Baldrix"
+            },
+            {
+              "aliases": [
+                "limbo"
+              ],
+              "difficulties": [
+                "n",
+                "h"
+              ],
+              "full": "Limbo",
+              "short": "Limbo"
+            }
+          ],
+          "difficulties": [
+            {
+              "label": "Easy",
+              "prefix": "e"
+            },
+            {
+              "label": "Normal",
+              "prefix": "n"
+            },
+            {
+              "label": "Hard",
+              "prefix": "h"
+            },
+            {
+              "label": "Chaos",
+              "prefix": "c"
+            },
+            {
+              "label": "Extreme",
+              "prefix": "x"
+            }
+          ]
+        },
+        "channels": [
+          {
+            "category_id": null,
+            "id": "700",
+            "name": "ask-the-bot",
+            "parent_id": null
+          },
+          {
+            "category_id": null,
+            "id": "701",
+            "name": "general",
+            "parent_id": null
+          },
+          {
+            "category_id": "800",
+            "id": "702",
+            "name": "bot-chatter",
+            "parent_id": null
+          },
+          {
+            "category_id": "801",
+            "id": "703",
+            "name": "somewhere-else",
+            "parent_id": null
+          },
+          {
+            "category_id": null,
+            "id": "704",
+            "name": "a-thread",
+            "parent_id": "700"
+          },
+          {
+            "category_id": null,
+            "id": "900",
+            "name": "party-star",
+            "parent_id": null
+          },
+          {
+            "category_id": null,
+            "id": "901",
+            "name": "party-kalos",
+            "parent_id": null
+          }
+        ],
+        "clock": "2026-09-09T12:00:00+08:00",
+        "guides": [
+          "MaleficStar",
+          "Kalos"
+        ],
+        "reset_time": "00:00",
+        "reset_weekday": 3,
+        "self_role_id": "5001",
+        "settings": {
+          "chat_pilot_category_ids": "800",
+          "chat_pilot_channel_ids": "700",
+          "chat_pilot_history_ttl_s": 2700.0,
+          "chat_pilot_model": "synthetic-chat",
+          "chat_pilot_role_id": "6000",
+          "chat_pilot_temperature": 0.7,
+          "chat_pilot_think": "low",
+          "chat_pilot_timeout": 60.0,
+          "guild_id": "1000",
+          "model_context_tokens": 16384,
+          "post_channel_id": null,
+          "watched_channel_ids": "900,901"
+        },
+        "steps": [
+          {
+            "arguments": {
+              "boss": "hstar"
+            },
+            "author_id": "11",
+            "channel_id": "700",
+            "op": "run",
+            "tool": "get_boss_strategy"
+          },
+          {
+            "arguments": {
+              "boss": "MaleficStar",
+              "difficulty": "hard"
+            },
+            "author_id": "11",
+            "channel_id": "700",
+            "op": "run",
+            "tool": "get_boss_strategy"
+          },
+          {
+            "arguments": {
+              "boss": "kalos"
+            },
+            "author_id": "11",
+            "channel_id": "700",
+            "op": "run",
+            "tool": "get_boss_strategy"
+          },
+          {
+            "arguments": {
+              "boss": "kalos",
+              "difficulty": "x"
+            },
+            "author_id": "11",
+            "channel_id": "700",
+            "op": "run",
+            "tool": "get_boss_strategy"
+          },
+          {
+            "arguments": {
+              "boss": "hstar",
+              "difficulty": "normal"
+            },
+            "author_id": "11",
+            "channel_id": "700",
+            "op": "run",
+            "tool": "get_boss_strategy"
+          },
+          {
+            "arguments": {
+              "boss": "kalos",
+              "difficulty": "hard"
+            },
+            "author_id": "11",
+            "channel_id": "700",
+            "op": "run",
+            "tool": "get_boss_strategy"
+          },
+          {
+            "arguments": {
+              "boss": "kalos",
+              "difficulty": "weird"
+            },
+            "author_id": "11",
+            "channel_id": "700",
+            "op": "run",
+            "tool": "get_boss_strategy"
+          },
+          {
+            "arguments": {
+              "boss": "kalos",
+              "difficulty": " "
+            },
+            "author_id": "11",
+            "channel_id": "700",
+            "op": "run",
+            "tool": "get_boss_strategy"
+          },
+          {
+            "arguments": {
+              "boss": "carling"
+            },
+            "author_id": "11",
+            "channel_id": "700",
+            "op": "run",
+            "tool": "get_boss_strategy"
+          },
+          {
+            "arguments": {
+              "boss": "lotus"
+            },
+            "author_id": "11",
+            "channel_id": "700",
+            "op": "run",
+            "tool": "get_boss_strategy"
+          },
+          {
+            "arguments": {
+              "boss": ""
+            },
+            "author_id": "11",
+            "channel_id": "700",
+            "op": "run",
+            "tool": "get_boss_strategy"
+          },
+          {
+            "arguments": {
+              "boss": 7
+            },
+            "author_id": "11",
+            "channel_id": "700",
+            "op": "run",
+            "tool": "get_boss_strategy"
+          }
+        ],
+        "timezone": "Asia/Kuala_Lumpur",
+        "uuid_sequence": [
+          "a0000001-0000-4000-8009-000000000001",
+          "a0000002-0000-4000-8009-000000000002",
+          "a0000003-0000-4000-8009-000000000003",
+          "a0000004-0000-4000-8009-000000000004",
+          "a0000005-0000-4000-8009-000000000005",
+          "a0000006-0000-4000-8009-000000000006",
+          "a0000007-0000-4000-8009-000000000007",
+          "a0000008-0000-4000-8009-000000000008",
+          "a0000009-0000-4000-8009-000000000009",
+          "a0000010-0000-4000-8009-000000000010",
+          "a0000011-0000-4000-8009-000000000011",
+          "a0000012-0000-4000-8009-000000000012",
+          "a0000013-0000-4000-8009-000000000013",
+          "a0000014-0000-4000-8009-000000000014",
+          "a0000015-0000-4000-8009-000000000015",
+          "a0000016-0000-4000-8009-000000000016",
+          "a0000017-0000-4000-8009-000000000017",
+          "a0000018-0000-4000-8009-000000000018",
+          "a0000019-0000-4000-8009-000000000019",
+          "a0000020-0000-4000-8009-000000000020",
+          "a0000021-0000-4000-8009-000000000021",
+          "a0000022-0000-4000-8009-000000000022",
+          "a0000023-0000-4000-8009-000000000023",
+          "a0000024-0000-4000-8009-000000000024",
+          "a0000025-0000-4000-8009-000000000025",
+          "a0000026-0000-4000-8009-000000000026",
+          "a0000027-0000-4000-8009-000000000027",
+          "a0000028-0000-4000-8009-000000000028",
+          "a0000029-0000-4000-8009-000000000029",
+          "a0000030-0000-4000-8009-000000000030",
+          "a0000031-0000-4000-8009-000000000031",
+          "a0000032-0000-4000-8009-000000000032",
+          "a0000033-0000-4000-8009-000000000033",
+          "a0000034-0000-4000-8009-000000000034",
+          "a0000035-0000-4000-8009-000000000035",
+          "a0000036-0000-4000-8009-000000000036",
+          "a0000037-0000-4000-8009-000000000037",
+          "a0000038-0000-4000-8009-000000000038",
+          "a0000039-0000-4000-8009-000000000039",
+          "a0000040-0000-4000-8009-000000000040"
+        ],
+        "world": {
+          "fixed": [
+            {
+              "bosses": [
+                "HMaleficStar",
+                "HFA"
+              ],
+              "channel_id": "900",
+              "id": "f1f1f1f1-0000-4000-8000-000000000001",
+              "owner_id": "11",
+              "participants": [
+                "11",
+                "22"
+              ],
+              "time": "21:30",
+              "weekday": 2
+            },
+            {
+              "bosses": [
+                "XKalos"
+              ],
+              "channel_id": "901",
+              "id": "f2f2f2f2-0000-4000-8000-000000000002",
+              "owner_id": "22",
+              "participants": [
+                "22",
+                "33"
+              ],
+              "time": "23:00",
+              "weekday": 1
+            },
+            {
+              "bosses": [
+                "HBaldrix"
+              ],
+              "channel_id": "700",
+              "id": "f3f3f3f3-0000-4000-8000-000000000003",
+              "owner_id": "44",
+              "participants": [
+                "11"
+              ],
+              "time": "21:00",
+              "weekday": 4
+            }
+          ],
+          "members": [
+            {
+              "display_name": "Alvin tan",
+              "has_role": true,
+              "nickname": null,
+              "user_id": "11"
+            },
+            {
+              "display_name": "kanon [AZUR]",
+              "has_role": true,
+              "nickname": "kanon",
+              "user_id": "22"
+            },
+            {
+              "display_name": "Priya",
+              "has_role": true,
+              "nickname": null,
+              "user_id": "33"
+            },
+            {
+              "display_name": "Mei",
+              "has_role": true,
+              "nickname": null,
+              "user_id": "44"
+            },
+            {
+              "display_name": "NotABosser",
+              "has_role": false,
+              "nickname": null,
+              "user_id": "99"
+            }
+          ],
+          "rsvps": [
+            {
+              "run_id": "a1a1a1a1-0000-4000-8000-000000000001",
+              "state": "yes",
+              "user_id": "11"
+            },
+            {
+              "run_id": "c3c3c3c3-0000-4000-8000-000000000003",
+              "state": "no",
+              "user_id": "33"
+            }
+          ],
+          "runs": [
+            {
+              "at": "2026-09-09T21:30:00+08:00",
+              "bosses": [
+                "HMaleficStar",
+                "HFA"
+              ],
+              "channel_id": "900",
+              "fixed_run_id": "f1f1f1f1-0000-4000-8000-000000000001",
+              "id": "a1a1a1a1-0000-4000-8000-000000000001",
+              "participants": [
+                "11",
+                "22"
+              ],
+              "status": "planned",
+              "week_start": "2026-09-03T00:00:00+08:00"
+            },
+            {
+              "at": "2026-09-08T23:00:00+08:00",
+              "bosses": [
+                "XKalos"
+              ],
+              "channel_id": "901",
+              "fixed_run_id": "f2f2f2f2-0000-4000-8000-000000000002",
+              "id": "b2b2b2b2-0000-4000-8000-000000000002",
+              "participants": [
+                "22",
+                "33"
+              ],
+              "status": "planned",
+              "week_start": "2026-09-03T00:00:00+08:00"
+            },
+            {
+              "at": "2026-09-12T20:00:00+08:00",
+              "bosses": [
+                "HCarling"
+              ],
+              "channel_id": "702",
+              "fixed_run_id": null,
+              "id": "c3c3c3c3-0000-4000-8000-000000000003",
+              "participants": [
+                "33",
+                "44"
+              ],
+              "status": "confirmed",
+              "week_start": "2026-09-10T00:00:00+08:00"
+            },
+            {
+              "at": "2026-09-09T22:00:00+08:00",
+              "bosses": [
+                "NLimbo"
+              ],
+              "channel_id": "900",
+              "fixed_run_id": null,
+              "id": "d4d4d4d4-0000-4000-8000-000000000004",
+              "participants": [
+                "11",
+                "44"
+              ],
+              "status": "cancelled",
+              "week_start": "2026-09-03T00:00:00+08:00"
+            },
+            {
+              "at": "2026-09-11T21:00:00+08:00",
+              "bosses": [
+                "HBaldrix"
+              ],
+              "channel_id": "700",
+              "fixed_run_id": "f3f3f3f3-0000-4000-8000-000000000003",
+              "id": "e5e5e5e5-0000-4000-8000-000000000005",
+              "participants": [
+                "11"
+              ],
+              "status": "planned",
+              "week_start": "2026-09-10T00:00:00+08:00"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "case_id": "dispatch-boundary",
+      "expected": {
+        "steps": [
+          {
+            "value": {
+              "arguments": {
+                "run_query": "hstar"
+              },
+              "created": [],
+              "error": "unknown tool",
+              "name": "delete_run",
+              "ok": false,
+              "output": "There is no tool called delete_run. The tools you have are: get_schedule, get_run, list_bosses, get_boss_strategy, get_pending, list_fixed, propose_move, propose_add, propose_cancel, propose_remove_fixed, propose_change_fixed, propose_rsvp. Use one of those when it can answer the request.",
+              "posted": []
+            }
+          },
+          {
+            "value": {
+              "arguments": {},
+              "created": [],
+              "error": "unknown tool",
+              "name": "",
+              "ok": false,
+              "output": "There is no tool called . The tools you have are: get_schedule, get_run, list_bosses, get_boss_strategy, get_pending, list_fixed, propose_move, propose_add, propose_cancel, propose_remove_fixed, propose_change_fixed, propose_rsvp. Use one of those when it can answer the request.",
+              "posted": []
+            }
+          },
+          {
+            "value": {
+              "arguments": {
+                "boss": "hlimbo",
+                "when": "sat 21:00"
+              },
+              "created": [],
+              "error": "refused",
+              "name": "propose_add",
+              "ok": false,
+              "output": "You cannot post a card in this message. Ask them in words what it should be instead, and stop there -- their answer comes back to you as a normal message and you can post the card then.",
+              "posted": []
+            }
+          },
+          {
+            "value": {
+              "arguments": {
+                "run_query": "hstar"
+              },
+              "created": [],
+              "error": "refused",
+              "name": "propose_cancel",
+              "ok": false,
+              "output": "You cannot post a card in this message. Ask them in words what it should be instead, and stop there -- their answer comes back to you as a normal message and you can post the card then.",
+              "posted": []
+            }
+          },
+          {
+            "value": {
+              "arguments": {},
+              "created": [],
+              "error": null,
+              "name": "get_schedule",
+              "ok": true,
+              "output": "**4 runs this week · All channels**\n\n`[b2b2b2b2]` **Extreme Kalos**\n*Tue 08 Sep · 23:00* · `planned` · `0/2 yes` · <#901> · *already happened*\n\n`[a1a1a1a1]` **Hard MaleficStar + Hard FA**\n*Wed 09 Sep · 21:30* · `planned` · `1/2 yes` · <#900>\n\n`[e5e5e5e5]` **Hard Baldrix**\n*Fri 11 Sep · 21:00* · `planned` · `0/1 yes` · <#700>\n\n`[c3c3c3c3]` **Hard Carling**\n*Sat 12 Sep · 20:00* · `confirmed` · `0/2 yes` · <#702>",
+              "posted": []
+            }
+          },
+          {
+            "value": {
+              "arguments": {
+                "query": "hbaldrix"
+              },
+              "created": [],
+              "error": null,
+              "name": "get_run",
+              "ok": true,
+              "output": "**Run `[e5e5e5e5]`**\n\n**Hard Baldrix** · *Fri 11 Sep 21:00* · `planned`\nOn it: Alvin tan (`no answer`).",
+              "posted": []
+            }
+          },
+          {
+            "value": {
+              "arguments": {},
+              "created": [],
+              "error": "refused",
+              "name": "get_run",
+              "ok": false,
+              "output": "Ask them which run they mean -- a boss and a day, like 'hstar wednesday'.",
+              "posted": []
+            }
+          },
+          {
+            "value": {
+              "arguments": {},
+              "created": [],
+              "error": "refused",
+              "name": "get_run",
+              "ok": false,
+              "output": "Ask them which run they mean -- a boss and a day, like 'hstar wednesday'.",
+              "posted": []
+            }
+          },
+          {
+            "value": {
+              "arguments": {},
+              "created": [],
+              "error": "refused",
+              "name": "get_run",
+              "ok": false,
+              "output": "Ask them which run they mean -- a boss and a day, like 'hstar wednesday'.",
+              "posted": []
+            }
+          },
+          {
+            "value": {
+              "arguments": {},
+              "created": [],
+              "error": "refused",
+              "name": "get_run",
+              "ok": false,
+              "output": "Ask them which run they mean -- a boss and a day, like 'hstar wednesday'.",
+              "posted": []
+            }
+          },
+          {
+            "value": {
+              "arguments": {
+                "ignored": "extra arguments are ignored"
+              },
+              "created": [],
+              "error": null,
+              "name": "list_fixed",
+              "ok": true,
+              "output": "**Weekly timings**\n\n[f2f2f2f2] every Tue 23:00 Extreme Kalos with kanon, Priya\n[f1f1f1f1] every Wed 21:30 Hard MaleficStar + Hard FA with Alvin tan, kanon\n[f3f3f3f3] every Fri 21:00 Hard Baldrix with Alvin tan",
+              "posted": []
+            }
+          }
+        ]
+      },
+      "input": {
+        "bot_user": {
+          "id": "5000",
+          "name": "Kanade"
+        },
+        "catalog": {
+          "bosses": [
+            {
+              "aliases": [
+                "star",
+                "mstar"
+              ],
+              "difficulties": [
+                "n",
+                "h"
+              ],
+              "full": "Malefic Star",
+              "short": "MaleficStar"
+            },
+            {
+              "aliases": [
+                "fa"
+              ],
+              "difficulties": [
+                "n",
+                "h",
+                "x"
+              ],
+              "full": "First Adversary",
+              "short": "FA"
+            },
+            {
+              "aliases": [
+                "carl",
+                "carling"
+              ],
+              "difficulties": [
+                "n",
+                "h",
+                "x"
+              ],
+              "full": "Chief Carling",
+              "short": "Carling"
+            },
+            {
+              "aliases": [
+                "kalos"
+              ],
+              "difficulties": [
+                "e",
+                "n",
+                "c",
+                "x"
+              ],
+              "full": "Kalos the Guardian",
+              "short": "Kalos"
+            },
+            {
+              "aliases": [
+                "bald",
+                "baldguy"
+              ],
+              "difficulties": [
+                "n",
+                "h"
+              ],
+              "full": "Baldrix",
+              "short": "Baldrix"
+            },
+            {
+              "aliases": [
+                "limbo"
+              ],
+              "difficulties": [
+                "n",
+                "h"
+              ],
+              "full": "Limbo",
+              "short": "Limbo"
+            }
+          ],
+          "difficulties": [
+            {
+              "label": "Easy",
+              "prefix": "e"
+            },
+            {
+              "label": "Normal",
+              "prefix": "n"
+            },
+            {
+              "label": "Hard",
+              "prefix": "h"
+            },
+            {
+              "label": "Chaos",
+              "prefix": "c"
+            },
+            {
+              "label": "Extreme",
+              "prefix": "x"
+            }
+          ]
+        },
+        "channels": [
+          {
+            "category_id": null,
+            "id": "700",
+            "name": "ask-the-bot",
+            "parent_id": null
+          },
+          {
+            "category_id": null,
+            "id": "701",
+            "name": "general",
+            "parent_id": null
+          },
+          {
+            "category_id": "800",
+            "id": "702",
+            "name": "bot-chatter",
+            "parent_id": null
+          },
+          {
+            "category_id": "801",
+            "id": "703",
+            "name": "somewhere-else",
+            "parent_id": null
+          },
+          {
+            "category_id": null,
+            "id": "704",
+            "name": "a-thread",
+            "parent_id": "700"
+          },
+          {
+            "category_id": null,
+            "id": "900",
+            "name": "party-star",
+            "parent_id": null
+          },
+          {
+            "category_id": null,
+            "id": "901",
+            "name": "party-kalos",
+            "parent_id": null
+          }
+        ],
+        "clock": "2026-09-09T12:00:00+08:00",
+        "guides": [
+          "MaleficStar",
+          "Kalos"
+        ],
+        "reset_time": "00:00",
+        "reset_weekday": 3,
+        "self_role_id": "5001",
+        "settings": {
+          "chat_pilot_category_ids": "800",
+          "chat_pilot_channel_ids": "700",
+          "chat_pilot_history_ttl_s": 2700.0,
+          "chat_pilot_model": "synthetic-chat",
+          "chat_pilot_role_id": "6000",
+          "chat_pilot_temperature": 0.7,
+          "chat_pilot_think": "low",
+          "chat_pilot_timeout": 60.0,
+          "guild_id": "1000",
+          "model_context_tokens": 16384,
+          "post_channel_id": null,
+          "watched_channel_ids": "900,901"
+        },
+        "steps": [
+          {
+            "arguments": {
+              "run_query": "hstar"
+            },
+            "author_id": "11",
+            "channel_id": "700",
+            "op": "run",
+            "tool": "delete_run"
+          },
+          {
+            "arguments": {},
+            "author_id": "11",
+            "channel_id": "700",
+            "op": "run",
+            "tool": ""
+          },
+          {
+            "arguments": {
+              "boss": "hlimbo",
+              "when": "sat 21:00"
+            },
+            "author_id": "11",
+            "channel_id": "700",
+            "op": "run",
+            "read_only": true,
+            "tool": "propose_add"
+          },
+          {
+            "arguments": {
+              "run_query": "hstar"
+            },
+            "author_id": "11",
+            "channel_id": "700",
+            "op": "run",
+            "read_only": true,
+            "tool": "propose_cancel"
+          },
+          {
+            "arguments": {},
+            "author_id": "11",
+            "channel_id": "700",
+            "op": "run",
+            "read_only": true,
+            "tool": "get_schedule"
+          },
+          {
+            "arguments": "{\"query\": \"hbaldrix\"}",
+            "author_id": "11",
+            "channel_id": "700",
+            "op": "run",
+            "tool": "get_run"
+          },
+          {
+            "arguments": "{not json",
+            "author_id": "11",
+            "channel_id": "700",
+            "op": "run",
+            "tool": "get_run"
+          },
+          {
+            "arguments": "[\"hstar\"]",
+            "author_id": "11",
+            "channel_id": "700",
+            "op": "run",
+            "tool": "get_run"
+          },
+          {
+            "arguments": [
+              "hstar"
+            ],
+            "author_id": "11",
+            "channel_id": "700",
+            "op": "run",
+            "tool": "get_run"
+          },
+          {
+            "arguments": null,
+            "author_id": "11",
+            "channel_id": "700",
+            "op": "run",
+            "tool": "get_run"
+          },
+          {
+            "arguments": {
+              "ignored": "extra arguments are ignored"
+            },
+            "author_id": "11",
+            "channel_id": "700",
+            "op": "run",
+            "tool": "list_fixed"
+          }
+        ],
+        "timezone": "Asia/Kuala_Lumpur",
+        "uuid_sequence": [
+          "a0000001-0000-4000-8009-000000000001",
+          "a0000002-0000-4000-8009-000000000002",
+          "a0000003-0000-4000-8009-000000000003",
+          "a0000004-0000-4000-8009-000000000004",
+          "a0000005-0000-4000-8009-000000000005",
+          "a0000006-0000-4000-8009-000000000006",
+          "a0000007-0000-4000-8009-000000000007",
+          "a0000008-0000-4000-8009-000000000008",
+          "a0000009-0000-4000-8009-000000000009",
+          "a0000010-0000-4000-8009-000000000010",
+          "a0000011-0000-4000-8009-000000000011",
+          "a0000012-0000-4000-8009-000000000012",
+          "a0000013-0000-4000-8009-000000000013",
+          "a0000014-0000-4000-8009-000000000014",
+          "a0000015-0000-4000-8009-000000000015",
+          "a0000016-0000-4000-8009-000000000016",
+          "a0000017-0000-4000-8009-000000000017",
+          "a0000018-0000-4000-8009-000000000018",
+          "a0000019-0000-4000-8009-000000000019",
+          "a0000020-0000-4000-8009-000000000020",
+          "a0000021-0000-4000-8009-000000000021",
+          "a0000022-0000-4000-8009-000000000022",
+          "a0000023-0000-4000-8009-000000000023",
+          "a0000024-0000-4000-8009-000000000024",
+          "a0000025-0000-4000-8009-000000000025",
+          "a0000026-0000-4000-8009-000000000026",
+          "a0000027-0000-4000-8009-000000000027",
+          "a0000028-0000-4000-8009-000000000028",
+          "a0000029-0000-4000-8009-000000000029",
+          "a0000030-0000-4000-8009-000000000030",
+          "a0000031-0000-4000-8009-000000000031",
+          "a0000032-0000-4000-8009-000000000032",
+          "a0000033-0000-4000-8009-000000000033",
+          "a0000034-0000-4000-8009-000000000034",
+          "a0000035-0000-4000-8009-000000000035",
+          "a0000036-0000-4000-8009-000000000036",
+          "a0000037-0000-4000-8009-000000000037",
+          "a0000038-0000-4000-8009-000000000038",
+          "a0000039-0000-4000-8009-000000000039",
+          "a0000040-0000-4000-8009-000000000040"
+        ],
+        "world": {
+          "fixed": [
+            {
+              "bosses": [
+                "HMaleficStar",
+                "HFA"
+              ],
+              "channel_id": "900",
+              "id": "f1f1f1f1-0000-4000-8000-000000000001",
+              "owner_id": "11",
+              "participants": [
+                "11",
+                "22"
+              ],
+              "time": "21:30",
+              "weekday": 2
+            },
+            {
+              "bosses": [
+                "XKalos"
+              ],
+              "channel_id": "901",
+              "id": "f2f2f2f2-0000-4000-8000-000000000002",
+              "owner_id": "22",
+              "participants": [
+                "22",
+                "33"
+              ],
+              "time": "23:00",
+              "weekday": 1
+            },
+            {
+              "bosses": [
+                "HBaldrix"
+              ],
+              "channel_id": "700",
+              "id": "f3f3f3f3-0000-4000-8000-000000000003",
+              "owner_id": "44",
+              "participants": [
+                "11"
+              ],
+              "time": "21:00",
+              "weekday": 4
+            }
+          ],
+          "members": [
+            {
+              "display_name": "Alvin tan",
+              "has_role": true,
+              "nickname": null,
+              "user_id": "11"
+            },
+            {
+              "display_name": "kanon [AZUR]",
+              "has_role": true,
+              "nickname": "kanon",
+              "user_id": "22"
+            },
+            {
+              "display_name": "Priya",
+              "has_role": true,
+              "nickname": null,
+              "user_id": "33"
+            },
+            {
+              "display_name": "Mei",
+              "has_role": true,
+              "nickname": null,
+              "user_id": "44"
+            },
+            {
+              "display_name": "NotABosser",
+              "has_role": false,
+              "nickname": null,
+              "user_id": "99"
+            }
+          ],
+          "rsvps": [
+            {
+              "run_id": "a1a1a1a1-0000-4000-8000-000000000001",
+              "state": "yes",
+              "user_id": "11"
+            },
+            {
+              "run_id": "c3c3c3c3-0000-4000-8000-000000000003",
+              "state": "no",
+              "user_id": "33"
+            }
+          ],
+          "runs": [
+            {
+              "at": "2026-09-09T21:30:00+08:00",
+              "bosses": [
+                "HMaleficStar",
+                "HFA"
+              ],
+              "channel_id": "900",
+              "fixed_run_id": "f1f1f1f1-0000-4000-8000-000000000001",
+              "id": "a1a1a1a1-0000-4000-8000-000000000001",
+              "participants": [
+                "11",
+                "22"
+              ],
+              "status": "planned",
+              "week_start": "2026-09-03T00:00:00+08:00"
+            },
+            {
+              "at": "2026-09-08T23:00:00+08:00",
+              "bosses": [
+                "XKalos"
+              ],
+              "channel_id": "901",
+              "fixed_run_id": "f2f2f2f2-0000-4000-8000-000000000002",
+              "id": "b2b2b2b2-0000-4000-8000-000000000002",
+              "participants": [
+                "22",
+                "33"
+              ],
+              "status": "planned",
+              "week_start": "2026-09-03T00:00:00+08:00"
+            },
+            {
+              "at": "2026-09-12T20:00:00+08:00",
+              "bosses": [
+                "HCarling"
+              ],
+              "channel_id": "702",
+              "fixed_run_id": null,
+              "id": "c3c3c3c3-0000-4000-8000-000000000003",
+              "participants": [
+                "33",
+                "44"
+              ],
+              "status": "confirmed",
+              "week_start": "2026-09-10T00:00:00+08:00"
+            },
+            {
+              "at": "2026-09-09T22:00:00+08:00",
+              "bosses": [
+                "NLimbo"
+              ],
+              "channel_id": "900",
+              "fixed_run_id": null,
+              "id": "d4d4d4d4-0000-4000-8000-000000000004",
+              "participants": [
+                "11",
+                "44"
+              ],
+              "status": "cancelled",
+              "week_start": "2026-09-03T00:00:00+08:00"
+            },
+            {
+              "at": "2026-09-11T21:00:00+08:00",
+              "bosses": [
+                "HBaldrix"
+              ],
+              "channel_id": "700",
+              "fixed_run_id": "f3f3f3f3-0000-4000-8000-000000000003",
+              "id": "e5e5e5e5-0000-4000-8000-000000000005",
+              "participants": [
+                "11"
+              ],
+              "status": "planned",
+              "week_start": "2026-09-10T00:00:00+08:00"
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "family": "read_tools",
+  "provenance": {
+    "functions": [
+      "bot.chat.tools.dispatching.run",
+      "bot.chat.tools.get_schedule.handle",
+      "bot.chat.tools.get_run.handle",
+      "bot.chat.tools.list_bosses.handle",
+      "bot.chat.tools.list_fixed.handle",
+      "bot.chat.tools.get_pending.handle",
+      "bot.chat.tools.get_boss_strategy.handle",
+      "bot.chat.tools.resolution.resolve_run",
+      "bot.chat.tools.rendering.run_line",
+      "bot.chat.tools.rendering.run_detail"
+    ],
+    "inventory_surfaces": [],
+    "oracle": "legacy/python bot.chat.tools (read handlers and dispatch)",
+    "source_tests": [
+      "tests/test_chat_tools.py",
+      "tests/test_chat_scope.py",
+      "tests/test_chat_strategy.py",
+      "tests/test_chat_injection.py",
+      "tests/test_chat_followup.py"
+    ]
+  },
+  "schema_version": "v5-chat-read-tools-v1"
+}

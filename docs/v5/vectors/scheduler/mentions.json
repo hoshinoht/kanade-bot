@@ -1,0 +1,1114 @@
+{
+  "cases": [
+    {
+      "case_id": "levels-by-kind-and-unknown-kind",
+      "expected": {
+        "final_state": {
+          "members": [
+            {
+              "known": true,
+              "ping_level": "essential",
+              "user_id": "1"
+            },
+            {
+              "known": true,
+              "ping_level": "all",
+              "user_id": "2"
+            },
+            {
+              "known": true,
+              "ping_level": "off",
+              "user_id": "3"
+            }
+          ]
+        },
+        "steps": [
+          {
+            "value": {
+              "essential": [
+                "countdown",
+                "day_of",
+                "decline",
+                "proposal"
+              ],
+              "informational": [
+                "amend",
+                "digest",
+                "fixed",
+                "rescan",
+                "retract",
+                "status",
+                "swap",
+                "test"
+              ]
+            }
+          },
+          {
+            "value": [
+              "1",
+              "2"
+            ]
+          },
+          {
+            "value": [
+              "1",
+              "2"
+            ]
+          },
+          {
+            "value": [
+              "1",
+              "2"
+            ]
+          },
+          {
+            "value": [
+              "1",
+              "2"
+            ]
+          },
+          {
+            "value": [
+              "2"
+            ]
+          },
+          {
+            "value": [
+              "2"
+            ]
+          },
+          {
+            "value": [
+              "2"
+            ]
+          },
+          {
+            "value": [
+              "2"
+            ]
+          },
+          {
+            "value": [
+              "2"
+            ]
+          },
+          {
+            "value": [
+              "2"
+            ]
+          },
+          {
+            "value": [
+              "2"
+            ]
+          },
+          {
+            "value": [
+              "2"
+            ]
+          },
+          {
+            "value": [
+              "2"
+            ]
+          },
+          {
+            "value": false
+          },
+          {
+            "value": false
+          },
+          {
+            "value": false
+          },
+          {
+            "value": true
+          },
+          {
+            "value": false
+          },
+          {
+            "value": false
+          },
+          {
+            "value": true
+          },
+          {
+            "value": true
+          },
+          {
+            "value": true
+          }
+        ]
+      },
+      "input": {
+        "clock": "2026-08-27T01:00:00+08:00",
+        "members": [
+          {
+            "display_name": "Alvin tan",
+            "has_role": true,
+            "nickname": null,
+            "ping_level": "essential",
+            "user_id": "1"
+          },
+          {
+            "display_name": "kanon [AZUR]",
+            "has_role": true,
+            "nickname": "kanon",
+            "ping_level": "all",
+            "user_id": "2"
+          },
+          {
+            "display_name": "Priya",
+            "has_role": true,
+            "nickname": null,
+            "ping_level": "off",
+            "user_id": "3"
+          }
+        ],
+        "steps": [
+          {
+            "op": "ping_kinds"
+          },
+          {
+            "candidates": [
+              "1",
+              "2",
+              "3"
+            ],
+            "kind": "day_of",
+            "op": "resolve_mentions"
+          },
+          {
+            "candidates": [
+              "1",
+              "2",
+              "3"
+            ],
+            "kind": "countdown",
+            "op": "resolve_mentions"
+          },
+          {
+            "candidates": [
+              "1",
+              "2",
+              "3"
+            ],
+            "kind": "proposal",
+            "op": "resolve_mentions"
+          },
+          {
+            "candidates": [
+              "1",
+              "2",
+              "3"
+            ],
+            "kind": "decline",
+            "op": "resolve_mentions"
+          },
+          {
+            "candidates": [
+              "1",
+              "2",
+              "3"
+            ],
+            "kind": "amend",
+            "op": "resolve_mentions"
+          },
+          {
+            "candidates": [
+              "1",
+              "2",
+              "3"
+            ],
+            "kind": "status",
+            "op": "resolve_mentions"
+          },
+          {
+            "candidates": [
+              "1",
+              "2",
+              "3"
+            ],
+            "kind": "swap",
+            "op": "resolve_mentions"
+          },
+          {
+            "candidates": [
+              "1",
+              "2",
+              "3"
+            ],
+            "kind": "fixed",
+            "op": "resolve_mentions"
+          },
+          {
+            "candidates": [
+              "1",
+              "2",
+              "3"
+            ],
+            "kind": "digest",
+            "op": "resolve_mentions"
+          },
+          {
+            "candidates": [
+              "1",
+              "2",
+              "3"
+            ],
+            "kind": "retract",
+            "op": "resolve_mentions"
+          },
+          {
+            "candidates": [
+              "1",
+              "2",
+              "3"
+            ],
+            "kind": "rescan",
+            "op": "resolve_mentions"
+          },
+          {
+            "candidates": [
+              "1",
+              "2",
+              "3"
+            ],
+            "kind": "test",
+            "op": "resolve_mentions"
+          },
+          {
+            "candidates": [
+              "1",
+              "2",
+              "3"
+            ],
+            "kind": "nonsense",
+            "op": "resolve_mentions"
+          },
+          {
+            "kind": "day_of",
+            "level": "off",
+            "op": "wants_mention"
+          },
+          {
+            "kind": "swap",
+            "level": "off",
+            "op": "wants_mention"
+          },
+          {
+            "kind": "nonsense",
+            "level": "off",
+            "op": "wants_mention"
+          },
+          {
+            "kind": "day_of",
+            "level": "essential",
+            "op": "wants_mention"
+          },
+          {
+            "kind": "swap",
+            "level": "essential",
+            "op": "wants_mention"
+          },
+          {
+            "kind": "nonsense",
+            "level": "essential",
+            "op": "wants_mention"
+          },
+          {
+            "kind": "day_of",
+            "level": "all",
+            "op": "wants_mention"
+          },
+          {
+            "kind": "swap",
+            "level": "all",
+            "op": "wants_mention"
+          },
+          {
+            "kind": "nonsense",
+            "level": "all",
+            "op": "wants_mention"
+          }
+        ],
+        "timezone": "Asia/Kuala_Lumpur"
+      }
+    },
+    {
+      "case_id": "order-dedup-and-unknown-members",
+      "expected": {
+        "final_state": {
+          "members": [
+            {
+              "known": true,
+              "ping_level": "essential",
+              "user_id": "1"
+            },
+            {
+              "known": true,
+              "ping_level": "all",
+              "user_id": "2"
+            },
+            {
+              "known": true,
+              "ping_level": "off",
+              "user_id": "3"
+            }
+          ]
+        },
+        "steps": [
+          {
+            "value": [
+              "2",
+              "1"
+            ]
+          },
+          {
+            "value": [
+              "404",
+              "1"
+            ]
+          },
+          {
+            "value": [
+              "2"
+            ]
+          },
+          {
+            "value": []
+          }
+        ]
+      },
+      "input": {
+        "clock": "2026-08-27T01:00:00+08:00",
+        "members": [
+          {
+            "display_name": "Alvin tan",
+            "has_role": true,
+            "nickname": null,
+            "ping_level": "essential",
+            "user_id": "1"
+          },
+          {
+            "display_name": "kanon [AZUR]",
+            "has_role": true,
+            "nickname": "kanon",
+            "ping_level": "all",
+            "user_id": "2"
+          },
+          {
+            "display_name": "Priya",
+            "has_role": true,
+            "nickname": null,
+            "ping_level": "off",
+            "user_id": "3"
+          }
+        ],
+        "steps": [
+          {
+            "candidates": [
+              "2",
+              "1",
+              "2",
+              1
+            ],
+            "kind": "day_of",
+            "op": "resolve_mentions"
+          },
+          {
+            "candidates": [
+              "404",
+              "1"
+            ],
+            "kind": "day_of",
+            "op": "resolve_mentions"
+          },
+          {
+            "candidates": [
+              "404",
+              "2"
+            ],
+            "kind": "amend",
+            "op": "resolve_mentions"
+          },
+          {
+            "candidates": [],
+            "kind": "countdown",
+            "op": "resolve_mentions"
+          }
+        ],
+        "timezone": "Asia/Kuala_Lumpur"
+      }
+    },
+    {
+      "case_id": "audiences-per-post-kind",
+      "expected": {
+        "final_state": {
+          "members": [
+            {
+              "known": true,
+              "ping_level": "essential",
+              "user_id": "1"
+            },
+            {
+              "known": true,
+              "ping_level": "all",
+              "user_id": "2"
+            },
+            {
+              "known": true,
+              "ping_level": "off",
+              "user_id": "3"
+            }
+          ]
+        },
+        "steps": [
+          {
+            "value": {
+              "mentioned": [
+                "2"
+              ],
+              "names": [
+                [
+                  "1",
+                  "Alvin tan"
+                ],
+                [
+                  "2",
+                  "kanon"
+                ],
+                [
+                  "3",
+                  "Priya"
+                ]
+              ]
+            }
+          },
+          {
+            "value": {
+              "mentioned": [
+                "2"
+              ],
+              "names": [
+                [
+                  "2",
+                  "kanon"
+                ]
+              ]
+            }
+          },
+          {
+            "value": {
+              "mentioned": [],
+              "names": []
+            }
+          },
+          {
+            "value": {
+              "mentioned": [
+                "2"
+              ],
+              "names": [
+                [
+                  "1",
+                  "Alvin tan"
+                ],
+                [
+                  "2",
+                  "kanon"
+                ],
+                [
+                  "3",
+                  "Priya"
+                ]
+              ]
+            }
+          },
+          {
+            "value": [
+              "1",
+              "2"
+            ]
+          },
+          {
+            "value": {
+              "mentioned": [
+                "1",
+                "2"
+              ],
+              "names": [
+                [
+                  "1",
+                  "Alvin tan"
+                ],
+                [
+                  "2",
+                  "kanon"
+                ],
+                [
+                  "3",
+                  "Priya"
+                ]
+              ]
+            }
+          },
+          {
+            "value": [
+              "2",
+              "1",
+              "3",
+              "404"
+            ]
+          },
+          {
+            "value": {
+              "mentioned": [
+                "2",
+                "1",
+                "404"
+              ],
+              "names": [
+                [
+                  "2",
+                  "kanon"
+                ],
+                [
+                  "1",
+                  "Alvin tan"
+                ],
+                [
+                  "3",
+                  "Priya"
+                ]
+              ]
+            }
+          },
+          {
+            "value": {
+              "mentioned": [
+                "2"
+              ],
+              "names": [
+                [
+                  "1",
+                  "Alvin tan"
+                ],
+                [
+                  "3",
+                  "Priya"
+                ],
+                [
+                  "2",
+                  "kanon"
+                ]
+              ]
+            }
+          },
+          {
+            "value": {
+              "mentioned": [
+                "2"
+              ],
+              "names": [
+                [
+                  "2",
+                  "kanon"
+                ],
+                [
+                  "3",
+                  "Priya"
+                ]
+              ]
+            }
+          },
+          {
+            "value": {
+              "mentioned": [
+                "2"
+              ],
+              "names": [
+                [
+                  "1",
+                  "Alvin tan"
+                ],
+                [
+                  "2",
+                  "kanon"
+                ],
+                [
+                  "3",
+                  "Priya"
+                ]
+              ]
+            }
+          }
+        ]
+      },
+      "input": {
+        "clock": "2026-08-27T01:00:00+08:00",
+        "members": [
+          {
+            "display_name": "Alvin tan",
+            "has_role": true,
+            "nickname": null,
+            "ping_level": "essential",
+            "user_id": "1"
+          },
+          {
+            "display_name": "kanon [AZUR]",
+            "has_role": true,
+            "nickname": "kanon",
+            "ping_level": "all",
+            "user_id": "2"
+          },
+          {
+            "display_name": "Priya",
+            "has_role": true,
+            "nickname": null,
+            "ping_level": "off",
+            "user_id": "3"
+          }
+        ],
+        "steps": [
+          {
+            "candidates": null,
+            "kind": "amend",
+            "op": "audience",
+            "people": [
+              "1",
+              "2",
+              "3"
+            ]
+          },
+          {
+            "candidates": null,
+            "kind": "swap",
+            "op": "audience",
+            "people": [
+              "2"
+            ]
+          },
+          {
+            "candidates": null,
+            "kind": "swap",
+            "op": "audience",
+            "people": [
+              "404"
+            ]
+          },
+          {
+            "candidates": [
+              "2",
+              "3"
+            ],
+            "kind": "countdown",
+            "op": "audience",
+            "people": [
+              "1",
+              "2",
+              "3"
+            ]
+          },
+          {
+            "op": "not_declined",
+            "participants": [
+              "1",
+              "2",
+              "3"
+            ],
+            "rsvps": [
+              [
+                "1",
+                "yes"
+              ],
+              [
+                "2",
+                "maybe"
+              ],
+              [
+                "3",
+                "no"
+              ]
+            ]
+          },
+          {
+            "candidates": [
+              "1",
+              "2"
+            ],
+            "kind": "countdown",
+            "op": "audience",
+            "people": [
+              "1",
+              "2",
+              "3"
+            ]
+          },
+          {
+            "op": "everyone_on",
+            "runs": [
+              [
+                "2"
+              ],
+              [
+                "1",
+                "2",
+                "3"
+              ],
+              [
+                "3",
+                "404"
+              ]
+            ]
+          },
+          {
+            "candidates": null,
+            "kind": "day_of",
+            "op": "audience",
+            "people": [
+              "2",
+              "1",
+              "3",
+              "404"
+            ]
+          },
+          {
+            "candidates": null,
+            "kind": "swap",
+            "op": "audience",
+            "people": [
+              "1",
+              "3",
+              "2"
+            ]
+          },
+          {
+            "candidates": null,
+            "kind": "decline",
+            "op": "audience",
+            "people": [
+              "2",
+              "3"
+            ]
+          },
+          {
+            "candidates": null,
+            "kind": "digest",
+            "op": "audience",
+            "people": [
+              "1",
+              "2",
+              "3"
+            ]
+          }
+        ],
+        "timezone": "Asia/Kuala_Lumpur"
+      }
+    },
+    {
+      "case_id": "allow-list-gate-and-digest-empty-list",
+      "expected": {
+        "final_state": {
+          "members": [
+            {
+              "known": true,
+              "ping_level": "essential",
+              "user_id": "1"
+            },
+            {
+              "known": true,
+              "ping_level": "all",
+              "user_id": "2"
+            },
+            {
+              "known": true,
+              "ping_level": "off",
+              "user_id": "3"
+            }
+          ]
+        },
+        "steps": [
+          {
+            "value": {
+              "everyone": false,
+              "replied_user": true,
+              "roles": false,
+              "users": [
+                "1",
+                "2"
+              ]
+            }
+          },
+          {
+            "value": {
+              "everyone": false,
+              "replied_user": true,
+              "roles": false,
+              "users": []
+            }
+          },
+          {
+            "value": {
+              "everyone": false,
+              "replied_user": true,
+              "roles": false,
+              "users": [
+                "2"
+              ]
+            }
+          },
+          {
+            "value": {
+              "everyone": false,
+              "replied_user": false,
+              "roles": false,
+              "users": false
+            }
+          }
+        ]
+      },
+      "input": {
+        "clock": "2026-08-27T01:00:00+08:00",
+        "members": [
+          {
+            "display_name": "Alvin tan",
+            "has_role": true,
+            "nickname": null,
+            "ping_level": "essential",
+            "user_id": "1"
+          },
+          {
+            "display_name": "kanon [AZUR]",
+            "has_role": true,
+            "nickname": "kanon",
+            "ping_level": "all",
+            "user_id": "2"
+          },
+          {
+            "display_name": "Priya",
+            "has_role": true,
+            "nickname": null,
+            "ping_level": "off",
+            "user_id": "3"
+          }
+        ],
+        "steps": [
+          {
+            "card_mentions": [
+              "1",
+              "2"
+            ],
+            "mention_users": null,
+            "op": "prepared_allow_list",
+            "quiet_mode": false
+          },
+          {
+            "card_mentions": [
+              "1",
+              "2"
+            ],
+            "mention_users": [],
+            "op": "prepared_allow_list",
+            "quiet_mode": false
+          },
+          {
+            "card_mentions": [
+              "1",
+              "2"
+            ],
+            "mention_users": [
+              "2"
+            ],
+            "op": "prepared_allow_list",
+            "quiet_mode": false
+          },
+          {
+            "card_mentions": [
+              "1",
+              "2"
+            ],
+            "mention_users": null,
+            "op": "prepared_allow_list",
+            "quiet_mode": true
+          }
+        ],
+        "timezone": "Asia/Kuala_Lumpur"
+      }
+    },
+    {
+      "case_id": "level-changes-and-refusals",
+      "expected": {
+        "final_state": {
+          "members": [
+            {
+              "known": true,
+              "ping_level": "all",
+              "user_id": "1"
+            },
+            {
+              "known": true,
+              "ping_level": "all",
+              "user_id": "2"
+            },
+            {
+              "known": true,
+              "ping_level": "off",
+              "user_id": "3"
+            },
+            {
+              "known": false,
+              "ping_level": "essential",
+              "user_id": "404"
+            }
+          ]
+        },
+        "steps": [
+          {
+            "value": "off"
+          },
+          {
+            "error": {
+              "message": "ping level must be one of essential, all, off, not `loud`",
+              "type": "ValueError"
+            }
+          },
+          {
+            "error": {
+              "message": "ping level must be one of essential, all, off, not `None`",
+              "type": "ValueError"
+            }
+          },
+          {
+            "value": "all"
+          },
+          {
+            "value": [
+              "1",
+              "2"
+            ]
+          },
+          {
+            "error": {
+              "message": "ping level must be one of essential, all, off, not 'loud'",
+              "type": "ValueError"
+            }
+          },
+          {
+            "error": {
+              "message": "'404'",
+              "type": "KeyError"
+            }
+          }
+        ]
+      },
+      "input": {
+        "clock": "2026-08-27T01:00:00+08:00",
+        "members": [
+          {
+            "display_name": "Alvin tan",
+            "has_role": true,
+            "nickname": null,
+            "ping_level": "essential",
+            "user_id": "1"
+          },
+          {
+            "display_name": "kanon [AZUR]",
+            "has_role": true,
+            "nickname": "kanon",
+            "ping_level": "all",
+            "user_id": "2"
+          },
+          {
+            "display_name": "Priya",
+            "has_role": true,
+            "nickname": null,
+            "ping_level": "off",
+            "user_id": "3"
+          }
+        ],
+        "steps": [
+          {
+            "op": "normalise_level",
+            "value": " OFF "
+          },
+          {
+            "error_type": "ValueError",
+            "op": "normalise_level",
+            "value": "loud"
+          },
+          {
+            "error_type": "ValueError",
+            "op": "normalise_level",
+            "value": null
+          },
+          {
+            "level": "all",
+            "op": "set_ping_level",
+            "user_id": "1"
+          },
+          {
+            "candidates": [
+              "1",
+              "2",
+              "3"
+            ],
+            "kind": "swap",
+            "op": "resolve_mentions"
+          },
+          {
+            "error_type": "ValueError",
+            "level": "loud",
+            "op": "set_ping_level",
+            "user_id": "1"
+          },
+          {
+            "error_type": "KeyError",
+            "level": "off",
+            "op": "set_ping_level",
+            "user_id": "404"
+          }
+        ],
+        "timezone": "Asia/Kuala_Lumpur"
+      }
+    }
+  ],
+  "family": "mentions",
+  "provenance": {
+    "functions": [
+      "bot.agent.pings.resolve_mentions",
+      "bot.agent.pings.audience",
+      "bot.agent.pings.wants_mention",
+      "bot.agent.pings.normalise_level",
+      "bot.agent.formatting.not_declined",
+      "bot.agent.formatting.everyone_on",
+      "bot.agent.client.BossBot._prepared",
+      "bot.infrastructure.db.Repo.set_ping_level"
+    ],
+    "inventory_surfaces": [
+      "mention policy",
+      "ping levels"
+    ],
+    "oracle": "legacy/python bot.agent.pings, bot.agent.formatting, BossBot._prepared",
+    "source_tests": [
+      "tests/test_pings.py::test_an_essential_post_mentions_everyone_but_the_opted_out",
+      "tests/test_pings.py::test_an_informational_post_only_mentions_the_people_who_asked",
+      "tests/test_pings.py::test_off_is_never_mentioned_by_anything",
+      "tests/test_pings.py::test_the_default_level_is_essential",
+      "tests/test_pings.py::test_somebody_the_roster_has_never_seen_still_gets_their_reminders",
+      "tests/test_pings.py::test_the_resolver_keeps_order_and_drops_duplicates",
+      "tests/test_pings.py::test_an_unknown_kind_is_treated_as_informational",
+      "tests/test_pings.py::test_an_invented_level_is_refused",
+      "tests/test_pings.py::test_setting_the_level_of_somebody_who_is_not_on_the_roster",
+      "tests/test_pings.py::test_an_audience_mentions_the_resolved_and_names_the_rest",
+      "tests/test_pings.py::test_a_nickname_wins_over_the_display_name",
+      "tests/test_pings.py::test_a_countdown_only_pings_the_people_who_have_not_answered",
+      "tests/test_pings.py::test_a_decline_still_summons_the_rest_of_the_run",
+      "tests/test_qol.py::test_a_countdown_goes_to_the_whole_party_bar_the_decliners",
+      "tests/test_digest.py::test_the_digest_names_people_rather_than_mentioning_them",
+      "tests/test_swap.py::test_the_channel_is_told_who_is_in_and_out"
+    ]
+  },
+  "schema_version": "v5-scheduler-mentions-v1"
+}
