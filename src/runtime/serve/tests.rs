@@ -605,3 +605,204 @@ async fn startup_warns_when_a_routed_reserve_fills_its_effective_window() {
         "extraction context reserve 2500 is not smaller than tiny-local's effective window 2048; its prompts cannot fit"
     );
 }
+
+/// One `GET` over loopback: the status, lower-cased headers and body.
+async fn get(
+    address: std::net::SocketAddr,
+    path: &str,
+    cookie: Option<&str>,
+) -> (u16, BTreeMap<String, String>, String) {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let cookie = cookie.map_or_else(String::new, |cookie| format!("Cookie: {cookie}\r\n"));
+    let request =
+        format!("GET {path} HTTP/1.1\r\nHost: kanade.test\r\nConnection: close\r\n{cookie}\r\n");
+    let mut stream = tokio::net::TcpStream::connect(address).await.unwrap();
+    stream.write_all(request.as_bytes()).await.unwrap();
+    let mut text = String::new();
+    stream.read_to_string(&mut text).await.unwrap();
+    let (head, body) = text.split_once("\r\n\r\n").unwrap();
+    let mut lines = head.split("\r\n");
+    let status = lines.next().unwrap().split(' ').nth(1).unwrap();
+    let headers = lines
+        .filter_map(|line| line.split_once(':'))
+        .map(|(name, value)| (name.to_ascii_lowercase(), value.trim().to_owned()))
+        .collect();
+    (status.parse().unwrap(), headers, body.to_owned())
+}
+
+#[tokio::test]
+async fn compose_for_tests_serves_on_the_injected_clock_and_a_fake_discord() {
+    use chrono::TimeZone;
+
+    use crate::{
+        api::{auth::fake::FakeDiscord, listeners, write::ApiClock},
+        domain::{
+            history::{Actor, Origin, Surface},
+            ids::RandomIds,
+            schedule::{NewRun, RunSource, RunStatus, utc_instant},
+            scheduler::SchedulerService,
+        },
+    };
+
+    // Admin sign-in builds its HTTPS client before the fake replaces it.
+    let _ = crate::runtime::tls::install_ring_provider();
+    let temp = Temp::new();
+    let secret = temp.0.join("token").display().to_string();
+    let config = temp.config(&[
+        ("KANADE_ADMIN_HOST", "kanade.test"),
+        ("KANADE_ADMIN_DISCORD_CLIENT_ID", "424242"),
+        ("KANADE_ADMIN_DISCORD_CLIENT_SECRET_FILE", &secret),
+        (
+            "KANADE_ADMIN_DISCORD_REDIRECT_URI",
+            "https://kanade.test/api/admin/auth/discord/callback",
+        ),
+    ]);
+    let store = store::open(&config.store).await.unwrap();
+    // Wednesday 10:00 in Kuala Lumpur, years before the wall clock.
+    let now = chrono::Utc.with_ymd_and_hms(2020, 1, 15, 2, 0, 0).unwrap();
+    let discord = Arc::new(FakeDiscord::default());
+    let composed = api::compose_for_tests(
+        &config,
+        store.clone(),
+        api::Overrides {
+            clock: Arc::new(move || now),
+            discord: Some(discord.clone()),
+            authorize_url: Some("http://127.0.0.1:9/oauth2/authorize".into()),
+            model_limits: Some(Arc::new(|_| Vec::new())),
+            nexon: None,
+        },
+    )
+    .await
+    .unwrap();
+    assert!(composed.character_data.is_none(), "the module is off");
+    let admin = composed.composition.admin;
+    assert!(admin.state.model_limits.is_some());
+
+    // A run at 20:00 tonight as the injected clock reads it.
+    let at = now + chrono::TimeDelta::hours(10);
+    let week_start = utc_instant(&admin.state.policy.week_of(&at).unwrap()).unwrap();
+    SchedulerService::new(
+        store.clone(),
+        RandomIds,
+        ApiClock(admin.state.clock.clone()),
+    )
+    .as_origin(Origin::new(Actor::system("test"), Surface::Cli))
+    .create_run(NewRun {
+        fixed_run_id: None,
+        channel_id: None,
+        week_start,
+        datetime: at,
+        bosses: vec!["HSeren".into()],
+        participants: Vec::new(),
+        status: RunStatus::Planned,
+        source: RunSource::Amend,
+    })
+    .await
+    .unwrap();
+
+    let mut site = listeners::Site::admin(&config.runtime.http);
+    site.auth = Some(Arc::clone(&admin.auth));
+    site.state = Some(Arc::clone(&admin.state));
+    site.health = Some(Arc::clone(&admin.health));
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    site.listener_ip = Some(address.ip());
+    let router = listeners::router(site);
+    let server = tokio::spawn(async move {
+        let _ = axum::serve(
+            listener,
+            router.into_make_service_with_connect_info::<std::net::SocketAddr>(),
+        )
+        .await;
+    });
+
+    let (status, _, body) = get(address, "/api/admin/auth/tonight", None).await;
+    assert_eq!(status, 200, "{body}");
+    let tonight: serde_json::Value = serde_json::from_str(&body).unwrap();
+    assert_eq!(tonight["run"]["time"], "20:00", "{body}");
+
+    // Sign-in goes to the fake page, and the callback's exchange to the fake.
+    let (status, headers, _) = get(address, "/api/admin/auth/discord/start", None).await;
+    assert_eq!(status, 303);
+    let location = &headers["location"];
+    assert!(
+        location.starts_with("http://127.0.0.1:9/oauth2/authorize?"),
+        "{location}"
+    );
+    let state = location
+        .split(['?', '&'])
+        .find_map(|pair| pair.strip_prefix("state="))
+        .unwrap();
+    let cookie = headers["set-cookie"].split(';').next().unwrap();
+    let callback = format!("/api/admin/auth/discord/callback?code=unknown&state={state}");
+    get(address, &callback, Some(cookie)).await;
+    assert_eq!(discord.exchanges(), 1);
+
+    server.abort();
+    let _ = server.await;
+    drop(admin);
+    store::close(store, Duration::ZERO).await;
+}
+
+#[tokio::test]
+async fn compose_for_tests_points_character_data_at_a_loopback_nexon() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    use crate::{domain::history::Actor, infrastructure::character_data::LookupOutcome};
+
+    // A NEXON that knows no name: every call answers an empty body.
+    let calls = Arc::new(AtomicUsize::new(0));
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let counted = Arc::clone(&calls);
+    let app = axum::Router::new().fallback(move || {
+        counted.fetch_add(1, Ordering::SeqCst);
+        async { axum::Json(serde_json::json!({})) }
+    });
+    let server = tokio::spawn(async move {
+        let _ = axum::serve(listener, app).await;
+    });
+
+    let temp = Temp::new();
+    let key = temp.0.join("token").display().to_string();
+    let chardata = temp.0.join("chardata/chardata.sqlite3");
+    let config = temp.config(&[
+        ("KANADE_MODULE_ROSTER", "1"),
+        ("KANADE_MODULE_CHARACTER_DATA", "1"),
+        (
+            "KANADE_CHARACTER_DATA_DB_PATH",
+            &chardata.display().to_string(),
+        ),
+        ("KANADE_NEXON_API_KEY_FILE", &key),
+    ]);
+    let store = store::open(&config.store).await.unwrap();
+    let composed = api::compose_for_tests(
+        &config,
+        store.clone(),
+        api::Overrides {
+            clock: Arc::new(auth::system_now),
+            discord: None,
+            authorize_url: None,
+            model_limits: None,
+            nexon: Some(address),
+        },
+    )
+    .await
+    .unwrap();
+    let module = composed.composition.admin.state.character_data.clone();
+    let module = module.expect("attached to the API");
+    assert!(module.connected());
+    let outcome = module.look_up(&Actor::system("test"), "Wisteria").await;
+    assert_eq!(outcome.unwrap(), LookupOutcome::NotFound);
+    assert_eq!(calls.load(Ordering::SeqCst), 1, "the fake answered `id`");
+
+    drop(module);
+    let api::TestComposition {
+        composition,
+        character_data,
+    } = composed;
+    drop(composition);
+    character_data.unwrap().stop(Duration::ZERO).await;
+    server.abort();
+    store::close(store, Duration::ZERO).await;
+}

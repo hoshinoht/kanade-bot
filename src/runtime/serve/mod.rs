@@ -37,6 +37,8 @@ use crate::{
     },
 };
 
+#[cfg(any(test, feature = "test-support"))]
+pub use character_data::Module as CharacterDataModule;
 use discord::{GatewayTransport, LateTransport, Wiring};
 use health::LiveHealth;
 

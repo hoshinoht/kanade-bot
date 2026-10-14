@@ -123,6 +123,13 @@ impl MemberAuth {
         self
     }
 
+    /// Test support: the configured Discord login (if any) through `map`,
+    /// e.g. onto a fake Discord.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn map_discord(&mut self, map: impl FnOnce(DiscordLogin) -> DiscordLogin) {
+        self.discord = self.discord.take().map(map);
+    }
+
     pub fn with_policy(mut self, policy: MemberPolicy) -> Self {
         self.policy = policy;
         self

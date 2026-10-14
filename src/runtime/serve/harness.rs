@@ -73,6 +73,7 @@ where
         prepared.cache.clone(),
         health,
         models,
+        Arc::new(crate::api::auth::system_now),
     )
     .await;
     let mut composition = match composed {
