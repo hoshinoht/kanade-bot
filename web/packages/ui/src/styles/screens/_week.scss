@@ -20,15 +20,6 @@ $pane: "week-pane" !default;
     flex: 1 1 auto;
     min-height: 0;
   }
-
-  .week-surface {
-    overflow: auto;
-    overscroll-behavior: contain;
-  }
-
-  .week-surface:focus-visible {
-    outline-offset: -3px;
-  }
 }
 
 .week-window {

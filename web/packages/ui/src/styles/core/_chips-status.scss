@@ -64,17 +64,10 @@
 // Semantic state pills (ui/src/tone.ts): success / warning / danger / info /
 // neutral. One colour story for every state pill — Inbox flags, log outcomes,
 // planner status, Config verdicts — and the same tokens as the .status words.
-// Named .tone so the boss-difficulty .pill palette stays its own.
+// Named .tone so the boss-difficulty .pill palette stays its own. The pill
+// itself is the M3E tonal chip (_m3e-primitives.scss).
 .tone {
-  display: inline-flex;
-  align-items: center;
   gap: 0.28rem;
-  font-size: var(--fs-small);
-  font-weight: 600;
-  padding: 0.08rem 0.5rem;
-  border-radius: 999px;
-  border: 2px solid var(--line);
-  white-space: nowrap;
 }
 
 .tone--success {

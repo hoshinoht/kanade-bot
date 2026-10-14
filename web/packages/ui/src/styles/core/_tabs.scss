@@ -63,13 +63,9 @@
   outline-color: var(--accent);
 }
 
+// The count's ring and size: _m3e-primitives.scss.
 .tabs__count {
   font-family: var(--mono);
-  font-size: var(--fs-micro);
-  font-weight: 500;
-  padding: 0.05rem 0.35rem;
-  border-radius: 999px;
-  background: color-mix(in srgb, currentcolor 22%, transparent);
 }
 
 .tabs__panel {

@@ -1,12 +1,10 @@
-// Ported from v4 portal/_buttons.scss. Height floor added for WCAG 2.5.8 targets.
+// Ported from v4 portal/_buttons.scss; the pill shape and the key action's
+// fill are in _m3e-buttons.scss.
 
 .btn {
   font: inherit;
   font-size: var(--fs-small);
   font-weight: 600;
-  min-height: 2rem;
-  padding: 0.32rem 0.7rem;
-  border-radius: var(--r-sm);
   border: 2px solid var(--line);
   background: var(--surface);
   color: var(--ink);
@@ -21,18 +19,6 @@
 .btn:hover {
   border-color: color-mix(in srgb, var(--accent) 50%, var(--line));
   color: var(--accent-text);
-}
-
-.btn--primary {
-  background: var(--win);
-  border-color: var(--win);
-  color: var(--win-ink);
-}
-
-.btn--primary:hover {
-  background: color-mix(in srgb, var(--win) 88%, var(--ink));
-  border-color: color-mix(in srgb, var(--win) 88%, var(--ink));
-  color: var(--win-ink);
 }
 
 .btn--danger:hover {
