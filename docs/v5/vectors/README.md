@@ -2,7 +2,7 @@
 
 Frozen v4 behaviour as language-neutral JSON. The v4 generators
 (`scripts/v5_vectors` in the Python tree) are gone with v4 itself; they remain
-in git history up to `487c4ed`. The vectors are never regenerated: the Rust
+in git history up to `fc07c48`. The vectors are never regenerated: the Rust
 suite replays them as they are.
 
 `domain/` is the first producer-side subset of the v5 freeze. It captures pure

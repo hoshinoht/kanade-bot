@@ -3,7 +3,7 @@
 This producer-side slice records stateful v4 scheduler behavior through a real
 in-memory `Repo`: materialisation, matching one-off adoption, fixed-run edit and
 retirement, reminder rows, and RSVP reactions. The generator
-(`scripts/v5_vectors/scheduler` in the v4 tree, git history up to `487c4ed`)
+(`scripts/v5_vectors/scheduler` in the v4 tree, git history up to `fc07c48`)
 is gone with v4, so these files are frozen.
 
 Each case serializes its aware clock, timezone/reset configuration, deterministic

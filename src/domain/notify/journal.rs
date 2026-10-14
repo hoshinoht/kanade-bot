@@ -537,7 +537,7 @@ mod tests {
     }
 
     /// Hashes printed by running v4 `DeliveryJournal._dedupe_key` itself
-    /// (the v4 tree, git history up to `487c4ed`), not re-derived.
+    /// (the v4 tree, git history up to `fc07c48`), not re-derived.
     #[test]
     fn dedupe_keys_match_v4() {
         let reminders = [

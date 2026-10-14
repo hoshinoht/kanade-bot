@@ -2,7 +2,7 @@
 
 Frozen outputs of the v4 `bot.chat` oracle (gate, tools, pilot loop and
 context assembly), for the Rust chat port. The generator
-(`scripts/v5_vectors/chat` in the v4 tree, git history up to `487c4ed`) wrote
+(`scripts/v5_vectors/chat` in the v4 tree, git history up to `fc07c48`) wrote
 every `<family>.json`, its `<family>.schema.json` and `index.json`; it is gone
 with v4, so these files are frozen. Never hand-edit them. This README is the
 only hand-written file here.

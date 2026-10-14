@@ -2,7 +2,7 @@
 
 Oracle captures of the v4 prompt assembly, for the later v5 prompt-format step.
 The generator (`scripts/v5_vectors/persona` in the v4 tree, git history up to
-`487c4ed`) is gone with v4, so these files are frozen.
+`fc07c48`) is gone with v4, so these files are frozen.
 
 Inputs were public only: the tracked v4 Kanade templates
 (`config/personas/personas/kanade/{identity.md,default.md,staging.yaml}` in the

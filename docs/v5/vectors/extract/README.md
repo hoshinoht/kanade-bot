@@ -2,7 +2,7 @@
 
 Frozen outputs of the v4 `bot.extract` oracle (plus the card formatting it
 uses), for the Rust extraction port. The generator
-(`scripts/v5_vectors/extract` in the v4 tree, git history up to `487c4ed`)
+(`scripts/v5_vectors/extract` in the v4 tree, git history up to `fc07c48`)
 wrote every `<family>.json`, its `<family>.schema.json` and `index.json`; it
 is gone with v4, so these files are frozen. Never hand-edit any of them. This
 README is the only hand-written file here, apart from the v5 set below.

@@ -2,7 +2,7 @@
 
 Kanade's v4 portal design tokens as SCSS custom properties, for both v5 PWAs.
 `src/_tokens.scss` is a value-for-value port of the v4 portal's
-`bot/api/static/portal/_tokens.scss` (git history up to `487c4ed`; its hex
+`bot/api/static/portal/_tokens.scss` (git history up to `fc07c48`; its hex
 values diff clean against that source); `src/_contrast.scss` holds the only
 deliberate changes.
 

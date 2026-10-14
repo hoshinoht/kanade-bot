@@ -471,7 +471,7 @@ any keys from the retired `../.env.v5` into `kanade.toml`, and remove the
 v4 stop guard from its `[discord]` table (the startup error names the key:
 an unknown key refuses startup).
 
-Images up to 2a92944 kept the character-data file in the volume root
+Images up to cd7acd6 kept the character-data file in the volume root
 (`/chardata/chardata.sqlite`). Before the first `up` of a newer image, with
 the bot stopped, move it (and any hot journal) into `db/` inside the volume,
 or the module starts with an empty file and every link is lost:
