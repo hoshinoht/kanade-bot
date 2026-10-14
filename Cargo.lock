@@ -1576,6 +1576,7 @@ dependencies = [
  "serde-saphyr",
  "serde_json",
  "sqlx",
+ "thiserror 2.0.21",
  "tokio",
  "tokio-rustls",
  "toml 1.1.6+spec-1.1.0",

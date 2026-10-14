@@ -190,9 +190,11 @@ pub struct Submission {
 }
 
 /// Which request limit refused a submission.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, thiserror::Error)]
 pub enum RequestLimit {
+    #[error("at most {max} requests may wait for a decision")]
     Pending { count: u64, max: u64 },
+    #[error("at most {max} requests per day")]
     Rate { count: u64, max: u64 },
 }
 

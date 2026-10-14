@@ -326,27 +326,18 @@ pub enum AttendanceActor {
 }
 
 /// Why an attendance record was refused.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
 pub enum AttendanceRefusal {
     /// Attendance is recorded at or after marking the run done.
+    #[error("attendance is recorded once the run is done")]
     NotDone,
     /// A member may confirm only their own attendance.
+    #[error("members may confirm only their own attendance")]
     OthersNotAllowed,
     /// A member not on the run.
+    #[error("{0} is not on the run")]
     NotOnRun(String),
 }
-
-impl fmt::Display for AttendanceRefusal {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::NotDone => f.write_str("attendance is recorded once the run is done"),
-            Self::OthersNotAllowed => f.write_str("members may confirm only their own attendance"),
-            Self::NotOnRun(user) => write!(f, "{user} is not on the run"),
-        }
-    }
-}
-
-impl std::error::Error for AttendanceRefusal {}
 
 /// The roster pre-ticked for one-tap correction: everyone not declined.
 pub fn prefill(states: &[(String, AnswerState)]) -> BTreeSet<String> {

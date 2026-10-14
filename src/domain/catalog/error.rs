@@ -1,10 +1,9 @@
-use std::fmt;
-
 /// A message-only error whose `Display` is the message.
 macro_rules! message_error {
     ($(#[$meta:meta])* $name:ident) => {
         $(#[$meta])*
-        #[derive(Clone, Debug, PartialEq, Eq)]
+        #[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
+        #[error("{message}")]
         pub struct $name {
             message: String,
         }
@@ -20,14 +19,6 @@ macro_rules! message_error {
                 &self.message
             }
         }
-
-        impl fmt::Display for $name {
-            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                f.write_str(&self.message)
-            }
-        }
-
-        impl std::error::Error for $name {}
     };
 }
 

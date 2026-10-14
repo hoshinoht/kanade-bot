@@ -1,21 +1,40 @@
-use std::{fmt, io};
+use std::io;
 
 /// Operator-safe persona failure: never carries paths or persona text.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
 pub enum PersonaError {
+    #[error("persona or profile ID is not a safe slug")]
     UnsafeId,
+    #[error("persona alias is not a safe bare token")]
     UnsafeAlias,
+    #[error("persona file is missing")]
     Missing,
+    #[error("persona path must not be a symlink")]
     Symlink,
+    #[error("persona path is not a regular file")]
     NotRegular,
+    #[error("persona path escapes the persona directory")]
     Escape,
+    #[error("persona file exceeds the size limit")]
     TooLarge,
+    #[error("persona file must have exactly one hard link")]
     Linked,
+    #[error("persona profiles directory has too many profile files")]
     TooManyProfiles,
+    #[error("persona file is not valid UTF-8")]
     InvalidUtf8,
+    #[error("persona file is unreadable ({0})")]
     Io(io::ErrorKind),
+    #[error("{}", match .0 {
+        YamlIssue::DuplicateKey => "persona YAML repeats a key",
+        YamlIssue::UnknownField => "persona YAML has an unknown key",
+        YamlIssue::MissingField => "persona YAML is missing a required key",
+        YamlIssue::Other => "persona YAML is invalid",
+    })]
     Yaml(YamlIssue),
+    #[error("persona file is invalid: {0}")]
     Invalid(&'static str),
+    #[error("persona is not in the catalog")]
     NotInCatalog,
 }
 
@@ -42,29 +61,3 @@ impl YamlIssue {
         }
     }
 }
-
-impl fmt::Display for PersonaError {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str(match self {
-            Self::UnsafeId => "persona or profile ID is not a safe slug",
-            Self::UnsafeAlias => "persona alias is not a safe bare token",
-            Self::Missing => "persona file is missing",
-            Self::Symlink => "persona path must not be a symlink",
-            Self::NotRegular => "persona path is not a regular file",
-            Self::Escape => "persona path escapes the persona directory",
-            Self::TooLarge => "persona file exceeds the size limit",
-            Self::Linked => "persona file must have exactly one hard link",
-            Self::TooManyProfiles => "persona profiles directory has too many profile files",
-            Self::InvalidUtf8 => "persona file is not valid UTF-8",
-            Self::Io(kind) => return write!(formatter, "persona file is unreadable ({kind})"),
-            Self::Yaml(YamlIssue::DuplicateKey) => "persona YAML repeats a key",
-            Self::Yaml(YamlIssue::UnknownField) => "persona YAML has an unknown key",
-            Self::Yaml(YamlIssue::MissingField) => "persona YAML is missing a required key",
-            Self::Yaml(YamlIssue::Other) => "persona YAML is invalid",
-            Self::Invalid(reason) => return write!(formatter, "persona file is invalid: {reason}"),
-            Self::NotInCatalog => "persona is not in the catalog",
-        })
-    }
-}
-
-impl std::error::Error for PersonaError {}

@@ -38,16 +38,9 @@ pub fn sha256_hex(bytes: &[u8]) -> String {
 }
 
 /// A stored record that cannot be read back.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
+#[error("unreadable change record: {0}")]
 pub struct RecordError(pub String);
-
-impl fmt::Display for RecordError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "unreadable change record: {}", self.0)
-    }
-}
-
-impl std::error::Error for RecordError {}
 
 fn bad(detail: impl fmt::Display) -> RecordError {
     RecordError(detail.to_string())

@@ -3,8 +3,6 @@
 //! are drafts of kind `request`; the administrator draft methods refuse
 //! them and these methods refuse administrator drafts.
 
-use std::fmt;
-
 use chrono::{DateTime, Utc};
 
 use super::drafts::{
@@ -30,21 +28,27 @@ use crate::domain::schedule::{
 };
 
 /// Why a request action did not apply; nothing was written.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
 pub enum RequestError {
+    #[error("{0}")]
     Refused(RequestRefusal),
     /// A draft-level refusal: stale version, conflicts, replay failure,
     /// store failure, idempotency...
+    #[error("{0}")]
     Draft(DraftError),
     /// Over the pending cap or the rolling submission limit.
+    #[error("{0}")]
     Limited(RequestLimit),
     /// An administrator draft; use the draft methods.
+    #[error("that is an administrator draft, not a request")]
     AdminDraft,
     /// The request's boss week passed; it is now closed as expired and the
     /// requester notice is returned.
+    #[error("the request's boss week has passed")]
     Expired(Box<Notice>),
     /// Approving would change nothing: the request is already in effect.
     /// Nothing was written and its status is unchanged (reject it).
+    #[error("the request is already in effect")]
     NoEffect,
 }
 
@@ -71,26 +75,6 @@ impl From<crate::domain::schedule::ScheduleError> for RequestError {
         Self::Draft(error.into())
     }
 }
-
-impl fmt::Display for RequestError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Refused(refusal) => refusal.fmt(f),
-            Self::Draft(error) => error.fmt(f),
-            Self::Limited(RequestLimit::Pending { max, .. }) => {
-                write!(f, "at most {max} requests may wait for a decision")
-            }
-            Self::Limited(RequestLimit::Rate { max, .. }) => {
-                write!(f, "at most {max} requests per day")
-            }
-            Self::AdminDraft => f.write_str("that is an administrator draft, not a request"),
-            Self::Expired(_) => f.write_str("the request's boss week has passed"),
-            Self::NoEffect => f.write_str("the request is already in effect"),
-        }
-    }
-}
-
-impl std::error::Error for RequestError {}
 
 pub type RequestResult<T> = Result<T, RequestError>;
 

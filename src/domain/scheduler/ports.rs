@@ -1,6 +1,5 @@
 //! What the scheduler needs from the outside: a store, an id source and a clock.
 
-use std::fmt;
 use std::future::Future;
 
 use chrono::{DateTime, Utc};
@@ -30,50 +29,33 @@ pub enum Scope {
 }
 
 /// Persistence failures.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
 pub enum StoreError {
     /// A commit would break a table invariant; nothing was written.
+    #[error("schedule constraint violated: {0}")]
     Constraint(String),
     /// Another commit landed after the snapshot was read; nothing was written.
+    #[error("schedule changed concurrently: planned at revision {expected}, store is at {found}")]
     Conflict { expected: u64, found: u64 },
     /// The actor's request id was already recorded (as change `seq`) for a
     /// different request; nothing was written.
+    #[error("request id already used by change {seq} for a different request")]
     IdempotencyMismatch { seq: u64 },
     /// A stored change record does not parse or match its hash: the history
     /// after the read base cannot be trusted.
+    #[error("{0}")]
     HistoryGap(HistoryGap),
     /// A declared field changed since the caller saw it (or its row is
     /// gone); nothing was written.
+    #[error("{} field(s) changed since they were read", .0.len())]
     StaleEdit(Vec<StaleField>),
     /// The commit's preconditions are malformed; nothing was written.
+    #[error("{0}")]
     Precondition(PreconditionError),
     /// The backend failed; nothing is known to have been written.
+    #[error("schedule store failed: {0}")]
     Backend(String),
 }
-
-impl fmt::Display for StoreError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Constraint(detail) => write!(f, "schedule constraint violated: {detail}"),
-            Self::IdempotencyMismatch { seq } => write!(
-                f,
-                "request id already used by change {seq} for a different request"
-            ),
-            Self::Conflict { expected, found } => write!(
-                f,
-                "schedule changed concurrently: planned at revision {expected}, store is at {found}"
-            ),
-            Self::HistoryGap(gap) => gap.fmt(f),
-            Self::StaleEdit(fields) => {
-                write!(f, "{} field(s) changed since they were read", fields.len())
-            }
-            Self::Precondition(error) => error.fmt(f),
-            Self::Backend(detail) => write!(f, "schedule store failed: {detail}"),
-        }
-    }
-}
-
-impl std::error::Error for StoreError {}
 
 /// The record a commit appended, or (`replayed`) the earlier record of the
 /// same actor's request id, in which case nothing was applied.

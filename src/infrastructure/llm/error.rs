@@ -47,7 +47,7 @@ impl ErrorCode {
     }
 }
 
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq, thiserror::Error)]
 pub struct LlmError {
     pub code: ErrorCode,
     pub digest: u64,
@@ -122,8 +122,6 @@ impl fmt::Debug for LlmError {
             .finish()
     }
 }
-
-impl std::error::Error for LlmError {}
 
 fn digest(value: &str) -> u64 {
     value.bytes().fold(0xcbf29ce484222325, |hash, byte| {

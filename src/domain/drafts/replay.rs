@@ -51,40 +51,25 @@ impl IdGenerator for PreviewIds {
 /// What staging a `DraftOp` must check before it is accepted (and what
 /// replay re-checks): every `Target` is well-formed, and the service's own
 /// checks will run against the snapshot it stages on.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
 pub enum StagedError {
     /// A target starting with [`PREVIEW_ID_PREFIX`]: a preview id is not a
     /// stored row.
+    #[error("a preview id is not a stored row")]
     PreviewTarget,
     /// A staged run may only join a weekly timing that exists now; the plain
     /// service mutation keeps v4's unchecked insert.
+    #[error("no fixed run `{0}`")]
     MissingTiming(String),
     /// A staged run's `week_start` must be its slot's boss week.
+    #[error("the run's week {week_start} is not its slot's boss week {slot_week}")]
     WeekMismatch {
         week_start: DateTime<Utc>,
         slot_week: DateTime<Utc>,
     },
+    #[error("{0}")]
     Schedule(ScheduleError),
 }
-
-impl std::fmt::Display for StagedError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::PreviewTarget => write!(f, "a preview id is not a stored row"),
-            Self::MissingTiming(id) => write!(f, "no fixed run `{id}`"),
-            Self::WeekMismatch {
-                week_start,
-                slot_week,
-            } => write!(
-                f,
-                "the run's week {week_start} is not its slot's boss week {slot_week}"
-            ),
-            Self::Schedule(error) => error.fmt(f),
-        }
-    }
-}
-
-impl std::error::Error for StagedError {}
 
 impl From<StagedError> for ReplayError {
     fn from(error: StagedError) -> Self {

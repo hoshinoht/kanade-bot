@@ -96,34 +96,21 @@ pub enum DraftOp {
 }
 
 /// Why an operation could not be replayed.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
 pub enum ReplayError {
     /// The scheduling rules refused it, or the operation names a preview id
     /// (not a stored row).
+    #[error("{0}")]
     Schedule(ScheduleError),
     /// It names a row created by an operation that created nothing.
+    #[error("operation {0} created nothing")]
     UnresolvedTarget(usize),
     /// A staged run's `week_start` is not the boss week of its slot.
+    #[error("the run's week {week_start} is not its slot's boss week {slot_week}")]
     WeekMismatch {
         week_start: DateTime<Utc>,
         slot_week: DateTime<Utc>,
     },
-}
-
-impl std::fmt::Display for ReplayError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Schedule(error) => error.fmt(f),
-            Self::UnresolvedTarget(ord) => write!(f, "operation {ord} created nothing"),
-            Self::WeekMismatch {
-                week_start,
-                slot_week,
-            } => write!(
-                f,
-                "the run's week {week_start} is not its slot's boss week {slot_week}"
-            ),
-        }
-    }
 }
 
 impl From<ScheduleError> for ReplayError {

@@ -73,41 +73,33 @@ pub enum Charge {
     Refunded,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
 pub enum SessionFailure {
     /// The governor turned the call away; nothing was sent.
+    #[error("{0}")]
     Refused(Refused),
     /// The session's request cap is spent (a question keeps one for its clean retry).
+    #[error("model request cap reached")]
     RequestsExhausted,
     /// Ended by a chat timeout, a lost permit, or an extraction session's single call.
+    #[error("model session has ended")]
     Ended,
     /// Not a question session, or its clean retry is already used.
+    #[error("clean retry unavailable")]
     CleanRetryUnavailable,
     /// Not an extraction session, no answer to retry yet, or the retry is used.
+    #[error("answer retry unavailable")]
     AnswerRetryUnavailable,
+    #[error("{0}")]
     Model(LlmError),
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
+#[error("{failure}")]
 pub struct SessionError {
     pub failure: SessionFailure,
     pub charge: Charge,
 }
-
-impl fmt::Display for SessionError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match &self.failure {
-            SessionFailure::Refused(refused) => refused.fmt(f),
-            SessionFailure::RequestsExhausted => f.write_str("model request cap reached"),
-            SessionFailure::Ended => f.write_str("model session has ended"),
-            SessionFailure::CleanRetryUnavailable => f.write_str("clean retry unavailable"),
-            SessionFailure::AnswerRetryUnavailable => f.write_str("answer retry unavailable"),
-            SessionFailure::Model(error) => error.fmt(f),
-        }
-    }
-}
-
-impl std::error::Error for SessionError {}
 
 impl SessionError {
     /// Fixing it needs an operator or a code change (role unset or ungrouped,

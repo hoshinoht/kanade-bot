@@ -5,7 +5,6 @@
 //! the changes it overrides).
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::fmt;
 
 use chrono::{DateTime, Utc};
 
@@ -23,31 +22,32 @@ use crate::domain::schedule::{
 };
 
 /// Why a pick did not apply; nothing was written.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
 pub enum PickError {
+    #[error("{0}")]
     Refused(PickRefusal),
     /// Strict mode: the target no longer holds the picked `before` values.
+    #[error("the pick has {} conflicts", .0.len())]
     Conflicts(Vec<PickConflict>),
     /// Force mode: the conflicts now differ from the ones reviewed (the
     /// preview's `force` expectations); preview again.
-    PickStale {
-        reviewed: Expect,
-        current: Expect,
-    },
+    #[error("the conflicts changed since they were reviewed; preview again")]
+    PickStale { reviewed: Expect, current: Expect },
     /// The picked record is unknown, the genesis record or tampered.
+    #[error("{0}")]
     History(HistoryRefusal),
     /// The target already holds every picked value.
+    #[error("the pick changes nothing")]
     NoEffect,
     /// A scheduling rule refused a step.
+    #[error("{0}")]
     Schedule(ScheduleError),
+    #[error("{0}")]
     Store(StoreError),
-    AlreadyApplied {
-        seq: u64,
-        revision: u64,
-    },
-    IdempotencyMismatch {
-        seq: u64,
-    },
+    #[error("pick already applied as change {seq} (revision {revision})")]
+    AlreadyApplied { seq: u64, revision: u64 },
+    #[error("request id already used by change {seq} for a different request")]
+    IdempotencyMismatch { seq: u64 },
 }
 
 impl From<StoreError> for PickError {
@@ -70,32 +70,6 @@ impl From<PickRefusal> for PickError {
         Self::Refused(refusal)
     }
 }
-
-impl fmt::Display for PickError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Refused(refusal) => refusal.fmt(f),
-            Self::Conflicts(conflicts) => write!(f, "the pick has {} conflicts", conflicts.len()),
-            Self::PickStale { .. } => {
-                f.write_str("the conflicts changed since they were reviewed; preview again")
-            }
-            Self::History(refusal) => refusal.fmt(f),
-            Self::NoEffect => f.write_str("the pick changes nothing"),
-            Self::Schedule(error) => error.fmt(f),
-            Self::Store(error) => error.fmt(f),
-            Self::AlreadyApplied { seq, revision } => write!(
-                f,
-                "pick already applied as change {seq} (revision {revision})"
-            ),
-            Self::IdempotencyMismatch { seq } => write!(
-                f,
-                "request id already used by change {seq} for a different request"
-            ),
-        }
-    }
-}
-
-impl std::error::Error for PickError {}
 
 pub type PickResult<T> = Result<T, PickError>;
 

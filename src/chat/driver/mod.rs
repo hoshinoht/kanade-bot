@@ -102,23 +102,14 @@ impl DriverConfig {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub enum DriverError {
+    #[error("{0}")]
     Config(String),
     /// Withheld ids could not be reloaded; nothing may be admitted.
+    #[error("chat log unreadable: {0}")]
     Store(StoreError),
 }
-
-impl std::fmt::Display for DriverError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Config(reason) => f.write_str(reason),
-            Self::Store(error) => write!(f, "chat log unreadable: {error}"),
-        }
-    }
-}
-
-impl std::error::Error for DriverError {}
 
 /// Keycap for a 1-based queue position (🔟 from ten on).
 pub fn position_reaction(position: usize) -> &'static str {

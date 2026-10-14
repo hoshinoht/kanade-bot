@@ -131,30 +131,19 @@ impl fmt::Debug for ModelSetup {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub enum SetupError {
+    #[error("{0}")]
     Http(HttpConfigError),
+    #[error("model CA file must be a readable PEM bundle or DER certificate")]
     CaFile,
+    #[error("extraction reasoning cannot inherit")]
     ExtractionInherits,
+    #[error("{0}")]
     Governor(ConfigError),
+    #[error("model client: {0:?}")]
     Client(LlmError),
 }
-
-impl fmt::Display for SetupError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Http(error) => error.fmt(f),
-            Self::CaFile => {
-                f.write_str("model CA file must be a readable PEM bundle or DER certificate")
-            }
-            Self::ExtractionInherits => f.write_str("extraction reasoning cannot inherit"),
-            Self::Governor(error) => error.fmt(f),
-            Self::Client(error) => write!(f, "model client: {error:?}"),
-        }
-    }
-}
-
-impl std::error::Error for SetupError {}
 
 #[derive(Debug)]
 pub enum Models {

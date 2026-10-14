@@ -37,7 +37,6 @@ mod snapshots;
 mod web_sessions;
 pub(super) mod writer;
 
-use std::fmt;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -72,58 +71,54 @@ pub struct SqliteStoreConfig {
 }
 
 /// Opening, migrating, owning or copying a store failed.
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub enum SqliteStoreError {
     /// Another owner, in this process or another, holds the database inode.
-    Owned {
-        db_path: PathBuf,
-    },
+    #[error("database {} is already owned by another writer", .db_path.display())]
+    Owned { db_path: PathBuf },
     /// A configured path is not safe to own a database through.
-    UnsafePath {
-        path: PathBuf,
-        reason: &'static str,
-    },
+    #[error("refusing unsafe store path {}: {reason}", .path.display())]
+    UnsafePath { path: PathBuf, reason: &'static str },
     /// The configured path no longer names the owned database file, so
     /// writes were refused.
-    IdentityChanged {
-        db_path: PathBuf,
-    },
+    #[error(
+        "database {} was moved or replaced after opening; writes are refused",
+        .db_path.display()
+    )]
+    IdentityChanged { db_path: PathBuf },
+    #[error("{}: {source}", .path.display())]
     Io {
         path: PathBuf,
         source: std::io::Error,
     },
-    Database(sqlx::Error),
+    #[error("sqlite: {0}")]
+    Database(#[from] sqlx::Error),
     /// An applied migration no longer matches the embedded one.
-    ChecksumMismatch {
-        version: i64,
-    },
+    #[error("migration {version} was applied with different content")]
+    ChecksumMismatch { version: i64 },
     /// The database was migrated by a newer build.
-    FutureVersion {
-        found: i64,
-        known: i64,
-    },
+    #[error("database schema version {found} is newer than this build ({known})")]
+    FutureVersion { found: i64, known: i64 },
     /// Applied versions are not a contiguous prefix of the known migrations.
-    MigrationGap {
-        version: i64,
-    },
+    #[error("applied migrations skip or reorder version {version}")]
+    MigrationGap { version: i64 },
     /// A backup or restore would overwrite an existing file.
-    Exists {
-        path: PathBuf,
-    },
+    #[error("refusing to overwrite {}", .path.display())]
+    Exists { path: PathBuf },
     /// The history no longer contains an externally kept anchor record: it
     /// was truncated or rewritten behind it.
-    AnchorMissing {
-        anchor: ChangeRef,
-    },
+    #[error(
+        "change history no longer contains anchored change {} ({})",
+        .anchor.seq,
+        .anchor.hash
+    )]
+    AnchorMissing { anchor: ChangeRef },
     /// A backup failed validation before restore; nothing was published.
-    InvalidBackup {
-        path: PathBuf,
-        detail: String,
-    },
+    #[error("backup {} is unusable: {detail}", .path.display())]
+    InvalidBackup { path: PathBuf, detail: String },
     /// SQLite takes backup paths as UTF-8 text.
-    NonUtf8Path {
-        path: PathBuf,
-    },
+    #[error("path is not UTF-8: {}", .path.display())]
+    NonUtf8Path { path: PathBuf },
 }
 
 impl SqliteStoreError {
@@ -131,64 +126,6 @@ impl SqliteStoreError {
         move |source| Self::Io {
             path: path.to_owned(),
             source,
-        }
-    }
-}
-
-impl From<sqlx::Error> for SqliteStoreError {
-    fn from(error: sqlx::Error) -> Self {
-        Self::Database(error)
-    }
-}
-
-impl fmt::Display for SqliteStoreError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Owned { db_path } => write!(
-                f,
-                "database {} is already owned by another writer",
-                db_path.display()
-            ),
-            Self::UnsafePath { path, reason } => {
-                write!(f, "refusing unsafe store path {}: {reason}", path.display())
-            }
-            Self::IdentityChanged { db_path } => write!(
-                f,
-                "database {} was moved or replaced after opening; writes are refused",
-                db_path.display()
-            ),
-            Self::Io { path, source } => write!(f, "{}: {source}", path.display()),
-            Self::Database(error) => write!(f, "sqlite: {error}"),
-            Self::ChecksumMismatch { version } => {
-                write!(f, "migration {version} was applied with different content")
-            }
-            Self::FutureVersion { found, known } => write!(
-                f,
-                "database schema version {found} is newer than this build ({known})"
-            ),
-            Self::MigrationGap { version } => {
-                write!(f, "applied migrations skip or reorder version {version}")
-            }
-            Self::Exists { path } => write!(f, "refusing to overwrite {}", path.display()),
-            Self::AnchorMissing { anchor } => write!(
-                f,
-                "change history no longer contains anchored change {} ({})",
-                anchor.seq, anchor.hash
-            ),
-            Self::InvalidBackup { path, detail } => {
-                write!(f, "backup {} is unusable: {detail}", path.display())
-            }
-            Self::NonUtf8Path { path } => write!(f, "path is not UTF-8: {}", path.display()),
-        }
-    }
-}
-
-impl std::error::Error for SqliteStoreError {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        match self {
-            Self::Io { source, .. } => Some(source),
-            Self::Database(error) => Some(error),
-            _ => None,
         }
     }
 }

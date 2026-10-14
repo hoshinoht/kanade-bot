@@ -16,7 +16,6 @@
 //! and marks it done only when answered or at its cutoff
 //! (`run_prompts.rs`).
 
-use std::fmt;
 use std::sync::Arc;
 #[cfg(any(test, feature = "test-support"))]
 use std::{future::Future, pin::Pin};
@@ -111,24 +110,15 @@ impl DeliveryConfig {
 }
 
 /// A tick step failed; later steps of that tick did not run.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
 pub enum DeliveryError {
+    #[error("{0}")]
     Journal(JournalError),
+    #[error("{0}")]
     Scheduler(SchedulerError),
+    #[error("{0}")]
     Date(DateOutOfRange),
 }
-
-impl fmt::Display for DeliveryError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Journal(error) => error.fmt(f),
-            Self::Scheduler(error) => error.fmt(f),
-            Self::Date(error) => error.fmt(f),
-        }
-    }
-}
-
-impl std::error::Error for DeliveryError {}
 
 impl From<JournalError> for DeliveryError {
     fn from(error: JournalError) -> Self {

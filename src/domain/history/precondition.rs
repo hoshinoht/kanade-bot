@@ -7,7 +7,6 @@
 //! of the same row changing since is not a conflict (field-level merge).
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::fmt;
 
 use chrono::{DateTime, Utc};
 
@@ -203,60 +202,29 @@ pub fn validate_fields(fields: &[Precondition]) -> Result<(), PreconditionError>
 }
 
 /// A declared precondition the edit could not be applied under.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
 pub enum PreconditionError {
-    UnknownField {
-        target: BlameTarget,
-        field: String,
-    },
-    DuplicateField {
-        target: BlameTarget,
-        field: String,
-    },
+    #[error("{} has no field `{field}`", .target.kind())]
+    UnknownField { target: BlameTarget, field: String },
+    #[error("{} field `{field}` is declared twice", .target.kind())]
+    DuplicateField { target: BlameTarget, field: String },
     /// The target never existed (no row and no recorded change).
-    UnknownTarget {
-        target: BlameTarget,
-    },
+    #[error("no {} `{}`", .target.kind(), .target.id())]
+    UnknownTarget { target: BlameTarget },
     /// Only administrators may override newer changes.
+    #[error("only administrators may override changes")]
     OverrideNotAdmin,
     /// An override names a change the caller did not declare seeing.
-    OverrideNotSeen {
-        seq: u64,
-    },
+    #[error("change {seq} is overridden but not declared as seen")]
+    OverrideNotSeen { seq: u64 },
     /// An override names a change whose declared field the edit does not
     /// change.
-    OverrideUnchanged {
-        seq: u64,
-    },
+    #[error("change {seq} is overridden but its field is not changed")]
+    OverrideUnchanged { seq: u64 },
     /// An override names no recorded change (or the wrong hash).
-    UnknownOverride {
-        seq: u64,
-    },
+    #[error("no recorded change {seq} to override")]
+    UnknownOverride { seq: u64 },
 }
-
-impl fmt::Display for PreconditionError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::UnknownField { target, field } => {
-                write!(f, "{} has no field `{field}`", target.kind())
-            }
-            Self::DuplicateField { target, field } => {
-                write!(f, "{} field `{field}` is declared twice", target.kind())
-            }
-            Self::UnknownTarget { target } => write!(f, "no {} `{}`", target.kind(), target.id()),
-            Self::OverrideNotAdmin => f.write_str("only administrators may override changes"),
-            Self::OverrideNotSeen { seq } => {
-                write!(f, "change {seq} is overridden but not declared as seen")
-            }
-            Self::OverrideUnchanged { seq } => {
-                write!(f, "change {seq} is overridden but its field is not changed")
-            }
-            Self::UnknownOverride { seq } => write!(f, "no recorded change {seq} to override"),
-        }
-    }
-}
-
-impl std::error::Error for PreconditionError {}
 
 /// The last change that set a field, as a store reads it.
 #[derive(Clone, Debug, PartialEq, Eq)]

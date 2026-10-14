@@ -1,5 +1,3 @@
-use std::fmt;
-
 use chrono::{DateTime, Datelike, FixedOffset, NaiveTime, TimeDelta, Weekday};
 use chrono_tz::Tz;
 
@@ -18,29 +16,15 @@ pub const AUTOMATED_WINDOW: &str = "48h";
 /// Fixed-length windows; `week`/`2weeks` are boss weeks, not 168/336 hours.
 const HOUR_WINDOWS: [(&str, i64); 2] = [("24h", 24), ("48h", 48)];
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
 pub enum WindowError {
     /// Python `ValueError`, keeping the window as given.
+    #[error("unknown window {}; expected one of {}", repr(.window), WINDOWS.join(", "))]
     Unknown { window: String },
     /// Python `OverflowError`.
+    #[error("{}", DateOutOfRange)]
     OutOfRange,
 }
-
-impl fmt::Display for WindowError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Unknown { window } => write!(
-                f,
-                "unknown window {}; expected one of {}",
-                repr(window),
-                WINDOWS.join(", ")
-            ),
-            Self::OutOfRange => DateOutOfRange.fmt(f),
-        }
-    }
-}
-
-impl std::error::Error for WindowError {}
 
 impl From<DateOutOfRange> for WindowError {
     fn from(_: DateOutOfRange) -> Self {

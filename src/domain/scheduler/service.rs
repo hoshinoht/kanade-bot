@@ -34,32 +34,33 @@ use crate::domain::time::AwareDateTime;
 mod fixed_patch;
 
 /// A rule refusal or a store failure.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
 pub enum SchedulerError {
+    #[error("{0}")]
     Schedule(ScheduleError),
+    #[error("{0}")]
     Store(StoreError),
     /// The actor's request id was already recorded: the change applied
     /// before, as record `seq` at store `revision`, and is not applied again.
-    AlreadyApplied {
-        seq: u64,
-        revision: u64,
-    },
+    #[error("request already applied as change {seq} (revision {revision})")]
+    AlreadyApplied { seq: u64, revision: u64 },
     /// A revert named records that are unknown, tampered or empty.
+    #[error("{0}")]
     History(HistoryRefusal),
     /// The actor's request id was already used, by change `seq`, for a
     /// different request; nothing was applied.
-    IdempotencyMismatch {
-        seq: u64,
-    },
+    #[error("request id already used by change {seq} for a different request")]
+    IdempotencyMismatch { seq: u64 },
     /// Declared fields changed since the caller saw them; nothing was
     /// applied. Keep theirs, or (administrators) resubmit overriding them.
-    StaleEdit {
-        conflicts: Vec<StaleField>,
-    },
+    #[error("{} field(s) changed since they were read", .conflicts.len())]
+    StaleEdit { conflicts: Vec<StaleField> },
     /// The edit's preconditions are malformed or not allowed.
+    #[error("{0}")]
     Precondition(PreconditionError),
     /// The actor may not make this change (a rule the service itself
     /// checks; other role checks belong to the API).
+    #[error("{0}")]
     Forbidden(String),
 }
 
@@ -74,33 +75,6 @@ impl From<StoreError> for SchedulerError {
         Self::Store(error)
     }
 }
-
-impl fmt::Display for SchedulerError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Schedule(error) => error.fmt(f),
-            Self::Store(error) => error.fmt(f),
-            Self::AlreadyApplied { seq, revision } => write!(
-                f,
-                "request already applied as change {seq} (revision {revision})"
-            ),
-            Self::History(refusal) => refusal.fmt(f),
-            Self::IdempotencyMismatch { seq } => write!(
-                f,
-                "request id already used by change {seq} for a different request"
-            ),
-            Self::StaleEdit { conflicts } => write!(
-                f,
-                "{} field(s) changed since they were read",
-                conflicts.len()
-            ),
-            Self::Precondition(error) => error.fmt(f),
-            Self::Forbidden(reason) => f.write_str(reason),
-        }
-    }
-}
-
-impl std::error::Error for SchedulerError {}
 
 pub type SchedulerResult<T> = Result<T, SchedulerError>;
 
