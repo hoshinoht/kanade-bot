@@ -16,35 +16,15 @@ pub const AUDIT_PRUNE_BATCH: i64 = 500;
 /// The longest page a list returns.
 pub const AUDIT_PAGE_MAX: u32 = 200;
 
-macro_rules! text_enum {
-    ($(#[$meta:meta])* $name:ident { $($variant:ident => $text:literal),+ $(,)? }) => {
-        $(#[$meta])*
-        #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-        pub enum $name { $($variant),+ }
-
-        impl $name {
-            pub const ALL: &[Self] = &[$(Self::$variant),+];
-
-            pub fn as_str(self) -> &'static str {
-                match self { $(Self::$variant => $text),+ }
-            }
-
-            pub fn parse(text: &str) -> Option<Self> {
-                Self::ALL.iter().copied().find(|value| value.as_str() == text)
-            }
-        }
-    };
-}
-
-text_enum!(
+crate::domain::spelled! {
     /// Which sign-in realm a row belongs to.
     AuditRealm {
         Admin => "admin",
         Member => "member",
     }
-);
+}
 
-text_enum!(
+crate::domain::spelled! {
     /// The audited event.
     AuditKind {
         LoginSucceeded => "login_succeeded",
@@ -56,7 +36,7 @@ text_enum!(
         RevokeFailed => "revoke_failed",
         WriteRefused => "write_refused",
     }
-);
+}
 
 /// One audited event. `seq` is assigned by the store (ignored on append).
 #[derive(Clone, Debug, PartialEq, Eq)]

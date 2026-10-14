@@ -5,35 +5,9 @@ use chrono::{DateTime, NaiveTime, Utc, Weekday};
 
 use super::error::ScheduleError;
 
-macro_rules! text_enum {
-    ($(#[$meta:meta])* $name:ident, $error:ident, { $($variant:ident => $text:literal),+ $(,)? }) => {
-        $(#[$meta])*
-        #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
-        pub enum $name { $($variant),+ }
-
-        impl $name {
-            pub const ALL: &[Self] = &[$(Self::$variant),+];
-
-            /// The stored v4 spelling.
-            pub fn as_str(self) -> &'static str {
-                match self { $(Self::$variant => $text),+ }
-            }
-
-            /// # Errors
-            #[doc = concat!("[`ScheduleError::", stringify!($error), "`] for any other text.")]
-            pub fn parse(value: &str) -> Result<Self, ScheduleError> {
-                match value {
-                    $($text => Ok(Self::$variant),)+
-                    _ => Err(ScheduleError::$error(value.to_owned())),
-                }
-            }
-        }
-    };
-}
-
-text_enum!(
+spelled! {
     /// A run's lifecycle state.
-    RunStatus, UnknownRunStatus, {
+    RunStatus else ScheduleError::UnknownRunStatus {
         Planned => "planned",
         Confirmed => "confirmed",
         AtRisk => "at_risk",
@@ -41,34 +15,34 @@ text_enum!(
         Done => "done",
         Cancelled => "cancelled",
     }
-);
+}
 
-text_enum!(
+spelled! {
     /// Whether a run was produced by a weekly timing or an amendment.
-    RunSource, UnknownRunSource, {
+    RunSource else ScheduleError::UnknownRunSource {
         Fixed => "fixed",
         Amend => "amend",
     }
-);
+}
 
-text_enum!(
+spelled! {
     /// One member's answer for a run.
-    RsvpState, UnknownRsvpState, {
+    RsvpState else ScheduleError::UnknownRsvpState {
         Yes => "yes",
         No => "no",
         Maybe => "maybe",
     }
-);
+}
 
-text_enum!(
+spelled! {
     /// Where an RSVP came from; v4's set, so export maps 1:1 (portal/API
     /// answers are recorded as `chat`, as v4 does).
-    RsvpSource, UnknownRsvpSource, {
+    RsvpSource else ScheduleError::UnknownRsvpSource {
         Reaction => "reaction",
         Chat => "chat",
         Slash => "slash",
     }
-);
+}
 
 impl RunStatus {
     /// Still to come: `mark_done` retires these once their slot has passed.
