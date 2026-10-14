@@ -225,6 +225,7 @@ impl Harness {
             )
             .await;
         assert_eq!(reply.status, 200, "{}", reply.text());
+        crate::schemas::assert_valid("identity.json#/$defs/Session", "token login", &reply.json());
         (
             reply.cookie(wire::SESSION_COOKIE).unwrap(),
             reply.header("x-kanade-csrf").unwrap().to_owned(),

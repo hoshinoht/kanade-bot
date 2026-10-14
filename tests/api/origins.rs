@@ -252,6 +252,7 @@ async fn closed_public_portal_serves_status_identity_and_shell_only() {
     let status = get(public, PUBLIC_HOST, "/api/public/status").await;
     assert_eq!(status.status, 200);
     assert_eq!(status.json(), serde_json::json!({"portal": "closed"}));
+    crate::schemas::assert_valid("public.json#/$defs/PublicStatus", "status", &status.json());
 
     for path in [
         "/api/public/week",

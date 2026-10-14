@@ -342,6 +342,7 @@ async fn art_is_served_to_signed_in_members_and_unchanged_on_admin() {
     assert_eq!(art.header("cache-control"), Some("private, max-age=86400"));
     // The public site now holds the live state; the bot's id still stays admin-only.
     let identity = portal.get(None, "/api/identity").await.json();
+    crate::schemas::assert_valid("identity.json#/$defs/Identity", "identity", &identity);
     assert_eq!(identity["bot_user_id"], Value::Null);
     let admin_identity = request(portal.reads.admin, "GET", ADMIN_HOST, "/api/identity", &[]).await;
     assert_eq!(admin_identity.json()["bot_user_id"], "42");
