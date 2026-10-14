@@ -1,6 +1,6 @@
 //! Proposal card text (v4 `bot.agent.formatting`: `when_text`,
 //! `proposal_line`, `card_kind`, `proposal_card`, the card notices, and
-//! `Pipeline._unanswered`). Pure; frozen in `docs/v5/vectors/extract/cards.json`.
+//! `Pipeline._unanswered`). Pure.
 
 use std::collections::BTreeMap;
 

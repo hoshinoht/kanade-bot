@@ -46,7 +46,7 @@ use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 
 use crate::common::TestClock;
-use crate::support;
+use crate::support::fixture_catalog;
 
 pub const CHANNEL: &str = "900";
 pub const OTHER: &str = "901";
@@ -85,7 +85,7 @@ pub fn local(month: u32, day: u32, hour: u32, minute: u32) -> DateTime<Utc> {
         .with_timezone(&Utc)
 }
 
-/// Sunday 30 Aug 2026 13:07, as the plan vectors.
+/// Sunday 30 Aug 2026 13:07.
 pub fn now() -> DateTime<Utc> {
     local(8, 30, 13, 7)
 }
@@ -149,8 +149,7 @@ pub struct FakeGuild {
 
 impl FakeGuild {
     fn new() -> Self {
-        let raw = support::load("plan.json");
-        let bosses = support::catalog(&raw["cases"][0]["input"]["catalog"]);
+        let bosses = fixture_catalog();
         Self {
             members: vec![
                 // Names that are not English words, so the leak finder

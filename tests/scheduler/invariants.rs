@@ -1,4 +1,4 @@
-//! Properties beyond the vectors: idempotence, restart safety, stale bounds and
+//! Scheduler properties: idempotence, restart safety, stale bounds and
 //! the v5 day-of clamp.
 
 use chrono::{DateTime, FixedOffset, NaiveTime, TimeDelta, TimeZone, Utc, Weekday};

@@ -1,5 +1,0 @@
-{
-  "schema_version": "v5-domain-v1",
-  "schema": "schema.json",
-  "vectors": ["weeks.json", "timeutil.json", "ids.json", "bosses.json"]
-}

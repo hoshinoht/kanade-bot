@@ -229,8 +229,13 @@ fn codec_samples() -> Vec<DraftOp> {
     ]
 }
 
+/// The pinned `kanade.draft_op.v1` strings, cross-checked with Python's
+/// `json.dumps(value, ensure_ascii=False, separators=(",", ":"), sort_keys=True)`.
+/// Never regenerate it to make a failing test pass: a change to the encoder's
+/// output is a new format version. Print the encoder's output with
+/// `KANADE_PRINT_GOLDEN=1 cargo test --all-features --test scheduler codec_matches -- --nocapture`.
 fn golden_path() -> std::path::PathBuf {
-    std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("docs/v5/vectors/drafts/draft_ops.json")
+    std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/drafts/draft_ops.json")
 }
 
 #[test]

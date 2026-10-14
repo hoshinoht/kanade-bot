@@ -1,98 +1,64 @@
-//! `authority.json` and `participants.json`: the authority boundary and the
-//! party/boss validation shared by the proposal tools.
+//! The authority boundary and the party validation shared by the proposal
+//! tools, on the synthetic chat world.
 
 use kanade::chat::authority::{Asker, Subject, require_authority};
-use kanade::chat::tools::read::participants::{
-    is_true, new_party, validate_bosses, validate_participants,
-};
-use serde_json::{Value, json};
+use kanade::chat::tools::read::participants::validate_participants;
+use serde_json::json;
 
-use crate::common::text;
-use crate::support::{check_family, error, unknown_op, value};
+use crate::support::world_input;
 use crate::world::World;
 
-async fn authority(case: Value) -> Vec<Value> {
-    let input = &case["input"];
-    let world = World::new(input).await;
+#[tokio::test]
+async fn only_the_party_or_an_admin_may_change_a_run_from_its_channel() {
+    let world = World::new(&world_input()).await;
     let snapshot = world.snapshot().await;
-    let mut out = Vec::new();
-    for step in input["steps"].as_array().expect("steps") {
-        assert_eq!(
-            text(&step["op"]),
-            "require_authority",
-            "unknown authority op"
-        );
+    let run = |id: &str| Subject::Run(snapshot.runs.iter().find(|run| run.id == id).unwrap());
+    let check = |author_id: &str, channel_id: &str, is_admin: bool, subject| {
         let asker = Asker {
-            author_id: text(&step["author_id"]),
-            channel_id: text(&step["channel_id"]),
-            is_admin: step["is_admin"].as_bool().expect("is_admin"),
+            author_id,
+            channel_id,
+            is_admin,
             channels: &world.channels,
             pilot: &world.pilot,
         };
-        let subject = match (step.get("run_id"), step.get("fixed_id")) {
-            (Some(run), _) => Subject::Run(
-                snapshot
-                    .runs
-                    .iter()
-                    .find(|row| row.id == text(run))
-                    .expect("run"),
-            ),
-            (_, Some(fixed)) => Subject::Fixed(
-                snapshot
-                    .fixed_runs
-                    .iter()
-                    .find(|row| row.id == text(fixed))
-                    .expect("fixed"),
-            ),
-            _ => panic!("require_authority names nothing"),
-        };
-        out.push(match require_authority(asker, subject, &snapshot) {
-            Ok(()) => value(json!({ "allowed": true })),
-            Err(refusal) => error("ToolError", refusal.0),
-        });
-    }
-    out
+        require_authority(asker, subject, &snapshot).map_err(|refusal| refusal.0)
+    };
+    let star = "a1a1a1a1-0000-4000-8000-000000000001";
+    assert_eq!(check("11", "900", false, run(star)), Ok(()));
+    assert_eq!(
+        check("33", "700", false, run(star)),
+        Err("They are not on run a1a1a1a1 and do not own the weekly timing behind it, so it is not theirs to change. Say that only the people on a run -- or the owner of the weekly timing it comes from -- can propose a change to it, and that putting somebody on a run is not something you can do. Do not name anybody on it.".into())
+    );
+    assert_eq!(check("33", "701", true, run(star)), Ok(()));
+    let elsewhere = "c3c3c3c3-0000-4000-8000-000000000003";
+    assert_eq!(
+        check("33", "700", false, run(elsewhere)),
+        Err("That run lives in <#702>, and changes to it are proposed from its own channel. Tell them which channel it lives in and to ask there. Say nothing else about it.".into())
+    );
+    assert_eq!(check("33", "702", false, run(elsewhere)), Ok(()));
 }
 
-async fn participants(case: Value) -> Vec<Value> {
-    let input = &case["input"];
-    let world = World::new(input).await;
+#[tokio::test]
+async fn a_party_defaults_to_the_asker_and_reads_names_and_mentions() {
+    let world = World::new(&world_input()).await;
     let snapshot = world.snapshot().await;
     let tools = world.tool_world(&snapshot);
-    let mut out = Vec::new();
-    for step in input["steps"].as_array().expect("steps") {
-        let context = |step: &Value| {
-            world.context(&json!({"author_id": step["author_id"], "channel_id": "700"}))
-        };
-        let result = match text(&step["op"]) {
-            "validate_participants" => {
-                validate_participants(&tools, &context(step), step.get("text"))
-                    .map(|ids| json!(ids))
-            }
-            "new_party" => {
-                new_party(&tools, &context(step), step.get("value")).map(|ids| json!(ids))
-            }
-            "validate_bosses" => validate_bosses(&tools, text(&step["text"])).map(|ids| json!(ids)),
-            "is_true" => Ok(json!(is_true(step.get("value")))),
-            other => unknown_op("participants", other),
-        };
-        out.push(match result {
-            Ok(result) => value(result),
-            Err(refusal) => error("ToolError", refusal.0),
-        });
-    }
-    out
-}
-
-#[tokio::test]
-async fn the_authority_family_replays_exactly() {
-    assert_eq!(check_family("authority", &[], authority).await, (3, 24));
-}
-
-#[tokio::test]
-async fn the_participants_family_replays_exactly() {
+    let ctx = world.context(&json!({"author_id": "11", "channel_id": "700"}));
+    let party = |text: serde_json::Value| {
+        validate_participants(&tools, &ctx, Some(&text)).map_err(|refusal| refusal.0)
+    };
+    assert_eq!(party(json!("")), Ok(vec!["11".to_owned()]));
     assert_eq!(
-        check_family("participants", &[], participants).await,
-        (6, 66)
+        party(json!("me and kanon")),
+        Ok(vec!["11".into(), "22".into()])
     );
+    assert_eq!(
+        party(json!("me, kanon & Priya please")),
+        Ok(vec!["11".into(), "22".into(), "33".into()])
+    );
+    assert_eq!(
+        party(json!(["me", "kanon"])),
+        Ok(vec!["11".into(), "22".into()])
+    );
+    assert_eq!(party(json!("<@!33>")), Ok(vec!["33".into()]));
 }

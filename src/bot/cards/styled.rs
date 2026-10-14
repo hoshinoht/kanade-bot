@@ -2,8 +2,7 @@
 //! question in the content, one field group per change (From / To / Party
 //! inline), who has not answered as subtext, and the run ids, confidence and
 //! how to answer in the footer. An outcome recolours the card and adds a
-//! subtext line. Classic cards stay in `format.rs`, byte-exact. Frozen in
-//! `docs/v5/vectors/extract/cards_redesigned.json`.
+//! subtext line. Classic cards stay in `format.rs`, byte-exact.
 
 use std::collections::BTreeMap;
 

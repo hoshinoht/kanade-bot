@@ -196,7 +196,7 @@ impl RowValue {
                     "note": row.note,
                 });
                 // v5 keys appear only when set, so every v4-shaped row (and
-                // the golden vector) encodes byte for byte as before.
+                // the golden records) encodes byte for byte as before.
                 if let Value::Object(map) = &mut value {
                     if row.attendance_default != AttendanceDefault::OptIn {
                         map.insert(
@@ -746,10 +746,14 @@ mod tests {
         [genesis, record]
     }
 
+    /// `tests/fixtures/history/golden.json` pins the stored `kanade.change.v1`
+    /// bodies and SHA-256 hashes, cross-checked with Python's `json.dumps`
+    /// (sorted keys, compact, non-ASCII kept) and `hashlib.sha256`. Never
+    /// regenerate it to make this pass: an encoder change is a new format.
     #[test]
     fn golden_records_match_the_pinned_vector() {
         let vector: Value =
-            serde_json::from_str(include_str!("../../../docs/v5/vectors/history/golden.json"))
+            serde_json::from_str(include_str!("../../../tests/fixtures/history/golden.json"))
                 .expect("vector");
         let pinned = vector["records"].as_array().expect("records");
         let records = golden_records();

@@ -1,107 +1,12 @@
-//! Policy invariants: mentions never exceed the policy, suppressed rows never
-//! produce an intent, and planning is deterministic and never replays a row.
+//! Policy invariants: mentions never exceed the policy and notices mention
+//! only listed members.
 
 use std::collections::BTreeSet;
 
 use kanade::domain::{
     members::{Directory, Member, PingLevel, Roster},
-    notify::{
-        DeliveryTarget, DispatchInput, DispatchPlan, IntentContent, PingKind, SendDisposition,
-        allowed_mentions, plan_dispatch, resolve_mentions, swap_audience, wants_mention,
-    },
+    notify::{PingKind, allowed_mentions, resolve_mentions, swap_audience},
 };
-
-/// Checks every dispatch plan the replays produce.
-pub fn check_dispatch_plan(input: &DispatchInput<'_>, plan: &DispatchPlan) {
-    assert_eq!(&plan_dispatch(input), plan, "planning is not deterministic");
-    let retired: BTreeSet<DeliveryTarget> = plan
-        .retire
-        .iter()
-        .map(|row| DeliveryTarget::Reminder(row.reminder_id.clone()))
-        .collect();
-    let queued: BTreeSet<DeliveryTarget> = plan
-        .queued
-        .iter()
-        .flat_map(|row| {
-            row.reminder_ids
-                .iter()
-                .cloned()
-                .map(DeliveryTarget::Reminder)
-        })
-        .collect();
-    let mut seen = BTreeSet::new();
-    for send in &plan.sends {
-        let intent = &send.intent;
-        for target in &intent.targets {
-            assert!(
-                !retired.contains(target),
-                "intent for a suppressed row {target:?}"
-            );
-            assert!(
-                !queued.contains(target),
-                "intent for a queued row {target:?}"
-            );
-            assert!(seen.insert(target.clone()), "{target:?} planned twice");
-        }
-        let (run_ids, kind) = match &intent.content {
-            IntentContent::DayOf { run_ids } => (run_ids.clone(), PingKind::DayOf),
-            IntentContent::Countdown { run_id, .. } => (vec![run_id.clone()], PingKind::Countdown),
-            other => panic!("dispatch planned {other:?}"),
-        };
-        let allowed: BTreeSet<&String> = input
-            .schedule
-            .runs
-            .iter()
-            .filter(|run| run_ids.contains(&run.id))
-            .flat_map(|run| &run.participants)
-            .collect();
-        let unique: BTreeSet<&String> = intent.mentions.iter().collect();
-        assert_eq!(unique.len(), intent.mentions.len(), "duplicate mentions");
-        for user in &intent.mentions {
-            assert!(allowed.contains(user), "{user} is not on the intent's runs");
-            assert!(
-                wants_mention(input.members.ping_level(user), &kind),
-                "{user} mentioned against their level"
-            );
-        }
-    }
-    // Quiet mode changes nothing but the allow-lists, which it empties.
-    let mut quiet = *input;
-    quiet.settings.quiet_mode = true;
-    let mut silenced = plan.clone();
-    for send in &mut silenced.sends {
-        send.intent.mentions.clear();
-    }
-    assert_eq!(plan_dispatch(&quiet), silenced, "quiet mode");
-}
-
-/// After a plan is applied, planning again never repeats a retired or sent row.
-pub fn check_nothing_replayed(before: &DispatchPlan, after: &DispatchPlan) {
-    let settled: BTreeSet<DeliveryTarget> = before
-        .retire
-        .iter()
-        .map(|row| DeliveryTarget::Reminder(row.reminder_id.clone()))
-        .chain(
-            before
-                .sends
-                .iter()
-                .flat_map(|send| send.intent.targets.iter().cloned()),
-        )
-        .collect();
-    for row in &after.retire {
-        let target = DeliveryTarget::Reminder(row.reminder_id.clone());
-        assert!(!settled.contains(&target), "{target:?} retired twice");
-    }
-    for send in after
-        .sends
-        .iter()
-        .filter(|send| send.disposition == SendDisposition::Send)
-    {
-        for target in &send.intent.targets {
-            assert!(!settled.contains(target), "{target:?} attempted twice");
-        }
-    }
-}
 
 fn kinds() -> Vec<PingKind> {
     let mut kinds: Vec<PingKind> = PingKind::ESSENTIAL

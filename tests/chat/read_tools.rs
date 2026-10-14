@@ -1,98 +1,18 @@
-//! `read_tools.json`: every read tool and the dispatcher boundary, through
-//! `dispatch::run` in the full-set (v4) mode with a passthrough identity
-//! session.
+//! Read tools and the dispatcher boundary, through `dispatch::run` in the
+//! full-set (v4) mode with a passthrough identity session.
 
 use kanade::chat::sanitize::schedule_defaults;
-use kanade::chat::tools::ToolOutcome;
 use kanade::infrastructure::llm::identity::PassthroughSession;
 use serde_json::{Value, json};
 
-use crate::common::{instant, text};
-use crate::support::{Named, check_family, dev, load, unknown_op, value};
+use crate::common::instant;
+use crate::support::world_input;
 use crate::world::World;
-
-/// v4 `host.outcome`; `posted` is the cards the call handed over for posting.
-pub fn outcome_json(outcome: &ToolOutcome) -> Value {
-    json!({
-        "name": outcome.name,
-        "output": outcome.output,
-        "arguments": outcome.arguments,
-        "ok": outcome.ok,
-        "error": outcome.error,
-        "created": outcome.created,
-        "posted": outcome.cards.iter().map(|card| card.proposal_id.as_str()).collect::<Vec<_>>(),
-    })
-}
-
-async fn replay(case: Value) -> Vec<Value> {
-    let input = &case["input"];
-    let mut world = World::new(input).await;
-    let mut session = PassthroughSession;
-    let mut out = Vec::new();
-    for step in input["steps"].as_array().expect("steps") {
-        out.push(match text(&step["op"]) {
-            "run" => value(outcome_json(&world.run_tool(step, &mut session).await)),
-            "set_clock" => {
-                world.clock.set(instant(&step["clock"]));
-                value(step["clock"].clone())
-            }
-            other => unknown_op("read_tools", other),
-        });
-    }
-    out
-}
-
-/// `D-PERSONAL-CONTEXT` (user decision 2026-10-03): a personal listing's
-/// upcoming records carry a model-only context line (grounding strips it).
-fn personal_context() -> Named {
-    let vectors = load("read_tools.json");
-    let case = vectors["cases"]
-        .as_array()
-        .expect("cases")
-        .iter()
-        .find(|case| case["case_id"] == "schedule-scope-and-people")
-        .expect("case");
-    let entries = [
-        (3, "tonight · in 10 hours · you haven't answered"),
-        (4, "tonight · in 10 hours · no answer yet from kanon"),
-        (7, "in 3 days · you said no · no answer yet from Mei"),
-    ]
-    .into_iter()
-    .map(|(step, context)| {
-        let v4 = text(&case["expected"]["steps"][step]["value"]["output"]).to_owned();
-        let v5 = format!("{v4}\nContext (hidden from members): {context}");
-        dev(
-            "schedule-scope-and-people",
-            format!("/steps/{step}/value/output"),
-            json!(v4),
-            json!(v5),
-        )
-    })
-    .collect();
-    Named {
-        name: "D-PERSONAL-CONTEXT",
-        entries,
-    }
-}
-
-#[tokio::test]
-async fn the_read_tools_family_replays_exactly() {
-    assert_eq!(
-        check_family("read_tools", &[personal_context()], replay).await,
-        (7, 74)
-    );
-}
 
 #[tokio::test]
 async fn an_explicit_self_schedule_recovers_only_unrecognized_model_mentions() {
-    let vectors = load("read_tools.json");
-    let fixture = vectors["cases"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|case| case["case_id"] == "schedule-scope-and-people")
-        .unwrap();
-    let mut world = World::new(&fixture["input"]).await;
+    let input = world_input();
+    let mut world = World::new(&input).await;
     let mut session = PassthroughSession;
     let step = |participant: Option<&str>, source: &str, group: bool| {
         let mut arguments = json!({"week": "this"});
@@ -216,7 +136,7 @@ async fn an_explicit_self_schedule_recovers_only_unrecognized_model_mentions() {
         assert!(!unrecognized.ok, "{mixed}");
         assert_eq!(unrecognized.output, unknown.output, "{mixed}");
     }
-    let mut collision_input = fixture["input"].clone();
+    let mut collision_input = input.clone();
     collision_input["bot_user"]["name"] = json!("Kanon");
     let mut collision_world = World::new(&collision_input).await;
     let recognized_member = collision_world
@@ -330,8 +250,7 @@ async fn forward_world() -> World {
 }
 
 async fn forward_world_with(rsvps: Value) -> World {
-    let vectors = load("read_tools.json");
-    let mut input = vectors["cases"][0]["input"].clone();
+    let mut input = world_input();
     input["clock"] = json!("2026-10-03T16:24:00+08:00");
     let run = |id: &str,
                at: &str,

@@ -6,8 +6,7 @@
 //! instants, `merge` folds a burst's amendments, and `matching` picks the run
 //! each one is about. `prompt` builds the request, `schema` validates and
 //! retries the answer, and `plan` turns it into kept and dropped changes.
-//! Frozen in `docs/v5/vectors/extract`. Those modules do no I/O and read no
-//! clock.
+//! Those modules do no I/O and read no clock.
 //!
 //! `pipeline` (debounced live bursts), `backlog` (late messages, drained at a
 //! fixed rate) and `rescan` (queued re-reads of a window) drive them through

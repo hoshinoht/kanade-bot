@@ -55,7 +55,6 @@ jobs:
               - kanade.openai-compatible.example.toml
               - boss/**
               - config/personas/**
-              - docs/v5/vectors/**
               # The lib test checks the generated API types against the DTOs.
               - web/packages/api-types/**
               # The store suite pins the character-data volume there.

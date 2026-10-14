@@ -18,7 +18,7 @@ use kanade::infrastructure::llm::{FakeAction, FakeProvider, Message};
 
 use crate::looping::{Ports, said, settings};
 use crate::model::{Scripted, capabilities, client, wants};
-use crate::support::load;
+use crate::support::world_input;
 use crate::wire::kanade;
 use crate::world::World;
 
@@ -51,7 +51,7 @@ async fn ask_scripted(
     offer: ToolOffer,
     ports: &Ports,
 ) -> Asked {
-    let input = load("loop.json")["cases"][0]["input"].clone();
+    let input = world_input();
     let mut world = World::new(&input).await;
     let provider = Arc::new(Scripted {
         fake: FakeProvider::new(actions),

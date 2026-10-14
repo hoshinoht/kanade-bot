@@ -18,7 +18,7 @@ use serde_json::json;
 
 use crate::looping::{Ports, said, settings};
 use crate::model::{Scripted, capabilities, client, wants};
-use crate::support::load;
+use crate::support::world_input;
 use crate::wire::kanade;
 use crate::world::World;
 
@@ -40,14 +40,14 @@ async fn run(actions: Vec<FakeAction>, guard: &ProfanityGuard, clean_retry: bool
 /// Cards fail to post when `PORTS_FAIL` is set by the caller's edit.
 const PORTS_FAIL: &str = "__ports_fail";
 
-/// `edit` adjusts the vector input (its world) before the question.
+/// `edit` adjusts the world fixture before the question.
 async fn run_in(
     actions: Vec<FakeAction>,
     guard: &ProfanityGuard,
     clean_retry: bool,
     edit: impl FnOnce(&mut serde_json::Value),
 ) -> Run {
-    let mut input = load("loop.json")["cases"][0]["input"].clone();
+    let mut input = world_input();
     edit(&mut input);
     let ports = Ports {
         fail: input.get(PORTS_FAIL).is_some(),

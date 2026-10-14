@@ -1,4 +1,4 @@
-/// v4 `prompt.SYSTEM_PROMPT`, byte for byte (frozen in the `prompt` vectors).
+/// v4 `prompt.SYSTEM_PROMPT`, byte for byte.
 pub const SYSTEM_PROMPT: &str = r##"You read a MapleStory guild's boss-planning chat (Singapore/Malaysian English)
 and extract *schedule changes*. You are an extractor, not the scheduler: a human
 confirms everything you output, so report only what the messages say and never

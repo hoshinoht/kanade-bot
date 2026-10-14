@@ -30,7 +30,7 @@ use serde_json::json;
 
 use crate::looping::{Ports, settings};
 use crate::model::{Scripted, capabilities, client};
-use crate::support::load;
+use crate::support::world_input;
 use crate::wire::kanade;
 use crate::world::{Channels, World, pilot};
 
@@ -56,7 +56,7 @@ impl ReplyPort for Replies {
 }
 
 fn gate_input() -> (Channels, PilotSettings) {
-    let input = &load("gate.json")["cases"][0]["input"];
+    let input = world_input();
     (Channels::new(&input["channels"]), pilot(&input["settings"]))
 }
 
@@ -431,7 +431,7 @@ fn answered(reply: &str) -> Generation {
 }
 
 async fn world() -> World {
-    World::new(&load("read_tools.json")["cases"][0]["input"]).await
+    World::new(&world_input()).await
 }
 
 #[tokio::test]
@@ -682,7 +682,7 @@ async fn filtered_then(
     after: Vec<FakeAction>,
     message_id: &str,
 ) -> (Generation, usize, Concluded) {
-    let input = load("loop.json")["cases"][0]["input"].clone();
+    let input = world_input();
     let mut world = World::new(&input).await;
     let provider = Arc::new(Scripted {
         fake: FakeProvider::new(std::iter::once(filtered()).chain(after)),

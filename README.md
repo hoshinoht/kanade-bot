@@ -188,7 +188,7 @@ The Rust suite is offline (fake Discord and model providers, temporary stores). 
 | `web/` | Bun workspace: `apps/admin`, `apps/public` and shared `packages/` |
 | `devtools/pwa-mock/` | Dev-only mock server for the web apps |
 | `deploy/` | Dockerfile, Compose stack and runbook |
-| `docs/v5/` | Setup guides, API schemas and test vectors |
+| `docs/v5/` | Setup guides and API schemas |
 | `boss/` | Boss catalog (`bosses.yaml`) and boss knowledge |
 | `config/personas/` | Persona layout, the tracked fallback persona and templates |
 | `assets/emojis/`, `scripts/` | Difficulty pill images and maintenance scripts |

@@ -21,7 +21,7 @@ use serde_json::{Value, json};
 
 use crate::looping::{Ports, said, settings};
 use crate::model::{Scripted, capabilities, client};
-use crate::support::load;
+use crate::support::world_input;
 use crate::world::World;
 
 const BOT: &str = "5000";
@@ -46,10 +46,10 @@ fn run(id: &str, bosses: &[&str], at: &str, channel: &str, party: &[&str]) -> Va
     })
 }
 
-/// The loop vector's settings and catalog over the V02 world: Tue 13 Oct
+/// The world fixture's settings and catalog over the V02 world: Tue 13 Oct
 /// 15:30, boss weeks from Thursday.
 fn input() -> Value {
-    let mut input = load("loop.json")["cases"][0]["input"].clone();
+    let mut input = world_input();
     input["clock"] = json!("2026-10-13T15:30:00+08:00");
     input["timezone"] = json!("Asia/Singapore");
     input["reset_weekday"] = json!(3);

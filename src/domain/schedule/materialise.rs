@@ -24,7 +24,7 @@ use crate::domain::weeks::{slot_in_week, week_end};
 ///
 /// A slot already over is not created: past its end
 /// ([`RunEnds`](crate::domain::completion::RunEnds)), or under
-/// v4 rules (no run ends, the vector replays) 2 h after its start. A timing
+/// v4 rules (no run ends) 2 h after its start. A timing
 /// whose week already holds exactly one matching standalone run adopts it in
 /// place instead; adopted runs are not in the returned ids of newly created
 /// runs.

@@ -94,7 +94,7 @@ pub struct SchedulerService<S, I, C> {
     /// guild's `SchedulePolicy.attendance` (v4-compatible by default).
     pub(super) attendance: AttendancePolicy,
     /// v5: when runs end, read once per operation; `None` keeps v4's rules
-    /// (nothing frozen, slots past 2 h after their start: the vector replays).
+    /// (nothing frozen, slots past 2 h after their start).
     pub(super) run_ends: Option<RunEndsSource>,
 }
 

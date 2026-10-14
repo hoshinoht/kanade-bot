@@ -362,4 +362,43 @@ mod tests {
         assert_eq!(star.full(), "Star");
         assert_eq!(star.difficulties(), ["n", "h"]);
     }
+
+    #[test]
+    fn tokens_parse_through_aliases_and_errors_name_the_valid_forms() {
+        let named = |short: &str, full: &str, prefixes: [&str; 2], aliases: [&str; 2]| BossSpec {
+            full: Some(full.into()),
+            difficulties: Some(prefixes.map(String::from).to_vec()),
+            aliases: aliases.map(String::from).to_vec(),
+            ..boss(short)
+        };
+        let mut spec = catalog(vec![
+            named("Star", "Radiant Star", ["n", "h"], ["star", "rstar"]),
+            named(
+                "Kalos",
+                "Gatekeeper Kalos",
+                ["n", "x"],
+                ["kalos", "gatekeeper kalos"],
+            ),
+        ]);
+        spec.difficulties.push(difficulty("x", "Extreme"));
+        let table = BossTable::from_spec(&spec).unwrap();
+        let token = |text: &str| table.parse_token(text).map_err(|error| error.to_string());
+        assert_eq!(token("h-rstar"), Ok("HStar".into()));
+        assert_eq!(token("XKalos"), Ok("XKalos".into()));
+        assert_eq!(
+            token("kalos"),
+            Err("`kalos` is missing a difficulty prefix (n/h/x) - try NKalos, XKalos".into())
+        );
+        assert_eq!(
+            token("hkalos"),
+            Err("Gatekeeper Kalos has no Hard difficulty - did you mean NKalos, XKalos?".into())
+        );
+        assert_eq!(token("hzzz"), Err("unknown boss `hzzz`".into()));
+        assert_eq!(
+            table
+                .parse("Hard Radiant Star, Extreme Gatekeeper Kalos, hard star")
+                .unwrap(),
+            ["HStar", "XKalos"]
+        );
+    }
 }

@@ -1,4 +1,4 @@
-//! The v5 question loop beyond v4's vectors: dynamic tool rounds and
+//! The v5 question loop beyond v4's behaviour: dynamic tool rounds and
 //! `request_tools`, card delivery failure, the clean retry on a content
 //! filter, identity encoding across rounds, and the chat-log row.
 
@@ -26,7 +26,7 @@ use serde_json::{Value, json};
 use crate::looping::{Ports, V4_TOOL_ROUNDS, said, settings};
 use crate::model::{Scripted, capabilities, client};
 use crate::slow_store::SlowStore;
-use crate::support::load;
+use crate::support::world_input;
 use crate::wire::kanade;
 use crate::world::World;
 
@@ -94,7 +94,7 @@ async fn run_routed(
     ports: &impl kanade::chat::answer::ChatPorts,
     route: impl FnOnce(&Governor),
 ) -> Run {
-    let input = load("loop.json")["cases"][0]["input"].clone();
+    let input = world_input();
     let mut world = World::new(&input).await;
     let provider = Arc::new(Scripted {
         fake: FakeProvider::new(actions),
@@ -653,7 +653,7 @@ async fn external_chat_rounds_tools_and_clean_retry_send_raw_synthetic_data() {
 async fn an_external_pre_admission_refusal_does_not_claim_disclosure() {
     use kanade::infrastructure::llm::governor::{Refused, Role, SessionError, SessionFailure};
 
-    let input = load("loop.json")["cases"][0]["input"].clone();
+    let input = world_input();
     let mut world = World::new(&input).await;
     let provider = Arc::new(Scripted {
         fake: FakeProvider::new([]),
@@ -1098,7 +1098,7 @@ async fn a_logged_call_keeps_its_result_and_wall_time_through_the_store_and_the_
 #[tokio::test(start_paused = true)]
 async fn a_deadline_during_staging_still_reports_and_supersedes_the_proposal() {
     const HSTAR: &str = "a1a1a1a1-0000-4000-8000-000000000001";
-    let input = load("loop.json")["cases"][0]["input"].clone();
+    let input = world_input();
     let mut world = World::new(&input).await;
     let timeout = settings(&input, 8).timeout;
 

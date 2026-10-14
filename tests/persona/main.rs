@@ -4,12 +4,8 @@ mod fallback;
 mod layout;
 mod loader;
 mod nudges;
-mod oracle;
+mod prompt_cases;
 mod resolution;
 mod schema;
 mod staging;
 mod support;
-mod vectors;
-
-#[path = "../common/mod.rs"]
-mod common;

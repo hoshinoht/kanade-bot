@@ -1,4 +1,4 @@
-//! Fixtures shared by the hand-written (non-vector) scheduler tests: a Kuala
+//! Fixtures shared by the hand-written scheduler tests: a Kuala
 //! Lumpur guild (members 1001–1004 watching channels 222 and 333) with its
 //! policy, readable ids, draft-operation builders and the weekly-timing
 //! schedules most tests start from.

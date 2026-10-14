@@ -16,7 +16,7 @@ use kanade::{
 use serde_json::Value;
 
 use crate::{
-    oracle::{cases, expected, turn},
+    prompt_cases::{cases, compile_case, expected, turn},
     support::{Fixture, bundle, catalog, pid, prof, profile, tracked},
 };
 
@@ -72,7 +72,7 @@ fn kanade() -> kanade::chat::persona::Bundle {
     parse_bundle(&tracked("bundles/kanade.yaml"), &pid("kanade")).unwrap()
 }
 
-fn oracle_case(id: &str) -> Value {
+fn prompt_case(id: &str) -> Value {
     cases()
         .into_iter()
         .find(|case| case["case_id"] == id)
@@ -110,7 +110,7 @@ fn tracked_kanade_compiles_to_its_components() {
             .prompt()
             .ends_with(prompts::BOSS_KNOWLEDGE_POLICY.trim())
     );
-    let turn = turn(&oracle_case("bundle-default-with-focus")["input"]);
+    let turn = turn(&prompt_case("bundle-default-with-focus")["input"]);
     assert!(compiled.system_prompt(&turn).starts_with(compiled.prompt()));
     assert_eq!(compiled, CompiledPersona::compile(&kanade(), None));
 }
@@ -224,7 +224,7 @@ fn provenance_and_persona_text_stay_out_of_model_messages_and_logs() {
     assert_eq!(bundle_file.basename, "alpha.yaml");
     assert_eq!(profile_file.basename, "zeta-marker.yaml");
 
-    let turn = turn(&oracle_case("bundle-default-with-focus")["input"]);
+    let turn = turn(&prompt_case("bundle-default-with-focus")["input"]);
     let messages = compiled.messages(
         &turn,
         [Message::User {
@@ -272,9 +272,9 @@ fn tool_round() -> Vec<Message> {
 
 #[test]
 fn the_voice_reminder_is_the_final_user_message_after_tool_results() {
-    let case = oracle_case("profile-voice-examples-partial-staging");
+    let case = prompt_case("profile-voice-examples-partial-staging");
     let expected = expected(&case);
-    let (compiled, _) = crate::oracle::compile_case(&case);
+    let (compiled, _) = compile_case(&case);
     let turn = turn(&case["input"]);
     let messages = compiled.messages(&turn, tool_round());
     assert_eq!(messages.len(), 5);
@@ -298,9 +298,9 @@ fn the_voice_reminder_is_the_final_user_message_after_tool_results() {
 async fn fake_provider_captures_the_compiled_request() {
     use kanade::infrastructure::llm::{ChatRequest, FakeProvider, LlmProvider};
 
-    let case = oracle_case("bundle-default-with-focus");
+    let case = prompt_case("bundle-default-with-focus");
     let expected = expected(&case);
-    let (compiled, _) = crate::oracle::compile_case(&case);
+    let (compiled, _) = compile_case(&case);
     let request = ChatRequest {
         model: "synthetic-model".into(),
         messages: compiled.messages(&turn(&case["input"]), tool_round()),
@@ -328,7 +328,7 @@ async fn fake_provider_captures_the_compiled_request() {
 const STRICT_BROKEN: &str = "  guide_named: '{boss} alpha guide'";
 
 #[test]
-fn trusted_fallback_compiles_to_the_oracle_kanade_prompt() {
+fn trusted_fallback_compiles_to_the_pinned_kanade_prompt() {
     let fixture = Fixture::new();
     fixture.write(
         "catalog.yaml",
@@ -348,7 +348,7 @@ fn trusted_fallback_compiles_to_the_oracle_kanade_prompt() {
         snapshot.provenance().source,
         Some(SelectionSource::TrackedFallback)
     );
-    let case = oracle_case("bundle-default-with-focus");
+    let case = prompt_case("bundle-default-with-focus");
     let expected = expected(&case);
     let selectable = BTreeSet::new();
     let query = ProfileQuery {
@@ -392,7 +392,7 @@ fn failed_reload_retains_the_compiled_prompt() {
         saved_selection: None,
         selectable: &selectable,
     };
-    let turn = turn(&oracle_case("bundle-default-with-focus")["input"]);
+    let turn = turn(&prompt_case("bundle-default-with-focus")["input"]);
     let before = store.pin().resolve(&query).unwrap().compile();
     let mut persisted = false;
     let result = store.reload(&root, &pid("beta"), |_| {

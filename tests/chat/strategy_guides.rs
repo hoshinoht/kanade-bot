@@ -15,7 +15,7 @@ use kanade::domain::schedule::ScheduleSnapshot;
 use kanade::infrastructure::files::{KnowledgeDir, load_catalog, load_knowledge_dir};
 use serde_json::{Map, Value, json};
 
-use crate::support::load;
+use crate::support::world_input;
 use crate::world::World;
 
 const META: &str = "schema_version: 2\nresearched_as_of: '2031-04-05'\n";
@@ -169,8 +169,7 @@ async fn strategy_with(extra: &[(&str, &str)], args: Value) -> Result<String, St
         knowledge: &knowledge,
         catalog: &catalog,
     };
-    let vectors = load("read_tools.json");
-    let world = World::new(&vectors["cases"][0]["input"]).await;
+    let world = World::new(&world_input()).await;
     let snapshot = ScheduleSnapshot::default();
     let tools = kanade::chat::tools::read::ToolWorld {
         catalog: &catalog,
@@ -205,8 +204,7 @@ async fn d_seasonal_list_appends_tracked_guides_after_the_unchanged_catalog_bloc
         knowledge: &knowledge,
         catalog: &catalog,
     };
-    let vectors = load("read_tools.json");
-    let world = World::new(&vectors["cases"][0]["input"]).await;
+    let world = World::new(&world_input()).await;
     let snapshot = ScheduleSnapshot::default();
     let catalog_world = kanade::chat::tools::read::ToolWorld {
         catalog: &catalog,
@@ -231,8 +229,7 @@ async fn d_seasonal_list_appends_tracked_guides_after_the_unchanged_catalog_bloc
 
 #[tokio::test]
 async fn list_bosses_omits_the_seasonal_section_without_event_guides() {
-    let vectors = load("read_tools.json");
-    let world = World::new(&vectors["cases"][0]["input"]).await;
+    let world = World::new(&world_input()).await;
     let snapshot = ScheduleSnapshot::default();
     let listing = list_bosses(&world.tool_world(&snapshot));
 

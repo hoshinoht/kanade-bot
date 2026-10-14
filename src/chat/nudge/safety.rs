@@ -408,7 +408,7 @@ impl WordFilter {
     /// with precise exceptions for words members really use: [`EXACT_ONLY`]
     /// entries match only exactly, [`RUN_STRICT`] entries need their letter
     /// runs, and [`SAFE_FORMS`] never hit. [`Self::denied`] keeps the nudge
-    /// vectors' reading.
+    /// rewrite's reading.
     pub fn denied_strict(&self, line: &str) -> Option<Hit<'_>> {
         let raw = leet(&without_numbers(line), false);
         raw.split(|c: char| !c.is_alphabetic())

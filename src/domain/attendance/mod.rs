@@ -34,7 +34,7 @@ pub struct AttendancePolicy {
 impl AttendancePolicy {
     pub const DEFAULT_UNKNOWN_WINDOW: TimeDelta = TimeDelta::hours(12);
 
-    /// v4 behaviour, for replaying frozen vectors.
+    /// v4 behaviour.
     pub const V4_COMPAT: Self = Self {
         mode: AttendanceMode::V4Compat,
         unknown_window: Self::DEFAULT_UNKNOWN_WINDOW,

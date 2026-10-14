@@ -13,7 +13,7 @@ use kanade::domain::drafts::ProposalStore;
 use kanade::infrastructure::llm::identity::PassthroughSession;
 use serde_json::{Value, json};
 
-use crate::support::load;
+use crate::support::world_input;
 use crate::world::World;
 
 fn picked(text: &str, intent: Option<Intent>, card: Option<CardContext>) -> BTreeSet<Bundle> {
@@ -175,8 +175,7 @@ fn round_caps_follow_the_user_decision() {
 }
 
 async fn world() -> World {
-    let file = load("read_tools.json");
-    World::new(&file["cases"][0]["input"]).await
+    World::new(&world_input()).await
 }
 
 async fn proposals(world: &World) -> usize {

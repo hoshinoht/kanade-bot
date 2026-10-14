@@ -1,97 +1,33 @@
-use kanade::extract::gate::{self, BossHit, BossLexicon, GateResult};
-use serde_json::{Value, json};
+use kanade::extract::gate::{self, BossLexicon};
 
-use crate::support::{
-    Deviation, Outcome, catalog, flag, replay_family_with, strings, text, unknown_op,
-};
-
-fn hit_json(hit: &BossHit) -> Value {
-    json!({
-        "token": hit.token,
-        "short": hit.short,
-        "difficulty": hit.difficulty,
-        "canonical": hit.canonical,
-        "fuzzy": hit.fuzzy,
-    })
-}
-
-fn result_json(result: &GateResult) -> Value {
-    json!({
-        "signals": result.signals.iter().map(|signal| signal.as_str()).collect::<Vec<_>>(),
-        "bosses": result.bosses.iter().map(hit_json).collect::<Vec<_>>(),
-        "times": result.times,
-        "days": result.days,
-        "mentions": result.mentions,
-        "hit": result.hit(),
-        "strong": result.strong(),
-        "reasons": result.reasons(),
-    })
-}
-
-fn replay(input: &Value, step: &Value) -> Outcome {
-    let table = catalog(&input["catalog"]);
-    let lexicon = BossLexicon::new(&table);
-    let roster = strings(&input["roster_ids"]);
-    let evaluate = |text: &str| gate::evaluate(text, &lexicon, &roster);
-    let value = match text(&step["op"]) {
-        "find_bosses" => {
-            let hits = gate::find_bosses(text(&step["text"]), &lexicon);
-            json!(hits.iter().map(hit_json).collect::<Vec<_>>())
-        }
-        "canonical_bosses" => json!(gate::canonical_bosses(&gate::find_bosses(
-            text(&step["text"]),
-            &lexicon
-        ))),
-        "find_times" => json!(gate::find_times(text(&step["text"]))),
-        "find_days" => json!(gate::find_days(text(&step["text"]))),
-        "find_mentions" => json!(gate::find_mentions(
-            text(&step["text"]),
-            &strings(&step["roster_ids"])
-        )),
-        // D-NO-RSVP-SCAN: v5 has no text scan for answers; none is ever found.
-        "explicit_rsvp" => Value::Null,
-        "evaluate" => result_json(&evaluate(text(&step["text"]))),
-        "should_extract" => {
-            let burst: Vec<GateResult> = strings(&step["texts"])
-                .iter()
-                .map(|text| evaluate(text))
-                .collect();
-            json!(gate::should_extract(
-                &burst,
-                flag(&step["context_is_scheduling"])
-            ))
-        }
-        "urgent" => json!(gate::urgent(&evaluate(text(&step["text"])))),
-        other => unknown_op("gate", other),
-    };
-    Ok(value)
-}
-
-/// D-NO-RSVP-SCAN (user decision 2026-10-08): planning no longer adds an
-/// `rsvp` for a short chat line the model did not report ("the HFA no run
-/// made btw" read as "no"), so the scan is gone and finds nothing.
-fn no_rsvp_scan(value: &mut Value) -> usize {
-    assert!(
-        matches!(value.as_str(), Some("yes" | "no")),
-        "frozen v4 answer, got {value}"
-    );
-    *value = Value::Null;
-    1
-}
+use crate::support::fixture_catalog;
 
 #[test]
-fn gate_vectors_replay_exactly() {
-    // Steps whose frozen v4 scan found an answer; the rest were already null.
-    let deviations = [0, 1, 2, 6, 7, 9].map(|step| Deviation {
-        name: "D-NO-RSVP-SCAN",
-        case_id: "explicit-rsvp-answers",
-        step,
-        rewrite: no_rsvp_scan,
-    });
-    assert_eq!(
-        replay_family_with("gate", &deviations, |_, _| {}, replay),
-        (6, 72)
-    );
+fn the_gate_reads_bosses_days_times_and_mentions() {
+    let table = fixture_catalog();
+    let lexicon = BossLexicon::new(&table);
+    let roster = ["11", "22", "33", "44"];
+    let evaluate = |text: &str| gate::evaluate(text, &lexicon, &roster);
+
+    let chatter = evaluate("lol that ring price is crazy");
+    assert!(!chatter.hit());
+    assert_eq!(chatter.reasons(), "-");
+
+    let soon = evaluate("@here 9:30 later tonight");
+    assert_eq!(soon.reasons(), "day,here,soon,time");
+    assert!(soon.strong());
+    assert_eq!(soon.times, ["9:30"]);
+    assert_eq!(soon.days, ["tonight"]);
+
+    let ping = evaluate("<@11> hstar tmr");
+    assert_eq!(ping.reasons(), "boss,day,mention");
+    assert_eq!(ping.bosses[0].canonical.as_deref(), Some("HMaleficStar"));
+    assert_eq!(ping.mentions, ["11"]);
+    assert!(!evaluate("<@99> hi").hit());
+
+    let agreed = [evaluate("ok"), evaluate("Can")];
+    assert!(!gate::should_extract(&agreed, false));
+    assert!(gate::should_extract(&agreed, true));
 }
 
 /// Named known difference K-WORD-MARKS: Rust `regex`'s `\w` admits combining

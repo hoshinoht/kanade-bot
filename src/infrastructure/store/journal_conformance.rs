@@ -961,7 +961,7 @@ async fn older_digests_are_retired_and_kept<S: ScheduleStore + DeliveryJournal>(
     assert_eq!(
         retired,
         [("7001", Some(at(3))), ("7002", Some(at(5)))],
-        "an earlier retirement is kept, as the v4 vector"
+        "an earlier retirement is kept, as in v4"
     );
     assert_eq!(
         state(store, &old).await,

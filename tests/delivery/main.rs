@@ -1,6 +1,6 @@
 //! The delivery executor and scheduler tick over the real journal (memory
-//! and SQLite stores) and the fake Discord: vector replays plus the
-//! exactly-once / no-replay scenarios.
+//! and SQLite stores) and the fake Discord: the exactly-once / no-replay
+//! scenarios.
 
 mod support;
 
@@ -10,9 +10,7 @@ mod checkpoints;
 mod debug;
 mod debug_tools;
 mod declines;
-mod digest_replay;
 mod digest_v2;
-mod dispatch_replay;
 mod drafts;
 mod failures;
 mod intercept;
@@ -28,6 +26,6 @@ mod rewrite_log;
 mod run_prompts;
 mod scenarios;
 
-// Vector loading, pinned clock/ids and snapshots shared with other targets.
+// Pinned clock/ids and snapshots shared with other targets.
 #[path = "../common/mod.rs"]
 mod common;
