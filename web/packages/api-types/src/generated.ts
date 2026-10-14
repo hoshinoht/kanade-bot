@@ -202,7 +202,11 @@ export type Run = { id: string, day: number, time: string | null,
  */
 minutes: number, status: RunStatus, bosses: Array<Boss>, tally: Tally, short_id: string, participants: Array<Participant>, party: string, channel_id: string, channel: string, cards: Array<ReminderCard>, fixed_id: string | null, amended: boolean, roster_change: RosterChange | null, };
 
-export type Week = { starts: string, timezone: string, reset: string, days: Array<WeekDay>, runs: Array<Run>, generated_at: string, version: number, };
+export type Week = { starts: string, timezone: string, reset: string, days: Array<WeekDay>, runs: Array<Run>, 
+/**
+ * Answered and waiting places per day of the week.
+ */
+stats: Stats, generated_at: string, version: number, };
 
 export type DayStat = { day: number, answered: number, waiting: number, };
 
@@ -1422,15 +1426,14 @@ export type LogFacets = { models: Array<string>, tools: Array<string>, outcomes:
 
 /**
  * Reported token usage over a set of logged requests: sums over those that
- * reported a pair (null when none did), how many did, and the median of
- * reported prompt tokens / local estimate (two decimals; null when none).
+ * reported a pair (null when none did) and how many did.
  */
-export type UsageSummary = { prompt_tokens: number | null, completion_tokens: number | null, reported: number, est_ratio: number | null, };
+export type UsageSummary = { prompt_tokens: number | null, completion_tokens: number | null, reported: number, };
 
 /**
  * Per model over the listed (filtered) extraction calls.
  */
-export type ExtractionSummary = { model: string, count: number, prompt_tokens: number | null, completion_tokens: number | null, reported: number, est_ratio: number | null, };
+export type ExtractionSummary = { model: string, count: number, prompt_tokens: number | null, completion_tokens: number | null, reported: number, };
 
 export type ExtractionRow = { messages: number, changes: number, id: string, short_id: string, at: string, model: string, latency_ms: number | null, channel: string | null, channel_id: string, error: string | null, outcome: ExtractionOutcome, 
 /**
@@ -1521,7 +1524,7 @@ export type RewriteFacets = { models: Array<string>, kinds: Array<string>, stage
  * Per model over the listed attempts: how many, how many were accepted,
  * and their reported usage.
  */
-export type RewriteSummary = { model: string, count: number, accepted: number, prompt_tokens: number | null, completion_tokens: number | null, reported: number, est_ratio: number | null, };
+export type RewriteSummary = { model: string, count: number, accepted: number, prompt_tokens: number | null, completion_tokens: number | null, reported: number, };
 
 export type RewriteRow = { id: string, short_id: string, at: string, kind: RewriteKind, stage: RewriteStage, 
 /**
@@ -1704,7 +1707,7 @@ reasoning_tokens?: number | null, };
  * Per model; usage fields come from this model's round rows, never the
  * turn totals.
  */
-export type ChatSummary = { model: string, count: number, answered: number, refused: number, errors: number, p50_ms: number, tool_calls: number, prompt_tokens: number | null, completion_tokens: number | null, reported: number, est_ratio: number | null, };
+export type ChatSummary = { model: string, count: number, answered: number, refused: number, errors: number, p50_ms: number, tool_calls: number, prompt_tokens: number | null, completion_tokens: number | null, reported: number, };
 
 /**
  * Query params of `GET /api/admin/chat`, all optional and combinable:

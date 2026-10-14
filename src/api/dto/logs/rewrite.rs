@@ -173,11 +173,7 @@ pub fn rewrite_summary(rows: &[RewriteLog]) -> Vec<RewriteSummary> {
                 .collect();
             let mut usage = UsageTally::default();
             for log in &mine {
-                usage.add(
-                    log.prompt_tokens,
-                    log.completion_tokens,
-                    prompt_estimate(log),
-                );
+                usage.add(log.prompt_tokens, log.completion_tokens);
             }
             RewriteSummary {
                 model: model.to_owned(),

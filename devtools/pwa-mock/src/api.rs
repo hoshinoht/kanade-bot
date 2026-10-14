@@ -131,10 +131,6 @@ pub async fn week(State(app): State<App>, Query(q): Query<WeekQuery>) -> Respons
     Json(app.store.lock().await.week(q.next())).into_response()
 }
 
-pub async fn stats(State(app): State<App>, Query(q): Query<WeekQuery>) -> Response {
-    Json(app.store.lock().await.stats(q.next())).into_response()
-}
-
 pub async fn summary(State(app): State<App>) -> Response {
     Json(app.store.lock().await.summary()).into_response()
 }
@@ -770,17 +766,6 @@ pub async fn history(State(app): State<App>, Query(q): Query<HistoryQuery>) -> R
         limit,
     ))
     .into_response()
-}
-
-pub async fn history_record(State(app): State<App>, Path(seq): Path<u64>) -> Response {
-    outcome(
-        app.store
-            .lock()
-            .await
-            .record(seq)
-            .filter(|r| r.seq > 0)
-            .ok_or(MoveError::NotFound),
-    )
 }
 
 #[derive(Deserialize)]

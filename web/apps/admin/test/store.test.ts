@@ -1,6 +1,6 @@
 import { tick } from 'svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { EventTopic, Run, Stats, Week } from '@kanade/api-types';
+import type { EventTopic, Run, Week } from '@kanade/api-types';
 import type { LiveEvents } from '@kanade/client';
 import { AdminWeek, FALLBACK_POLL_MS } from '../src/store.svelte';
 
@@ -29,10 +29,10 @@ const week = (version: number, day = 0): Week => ({
   reset: 'Thu 00:00',
   days: [],
   runs: [run('r1', day)],
+  stats: { per_day: [] },
   generated_at: `2026-09-24T12:0${version}:00Z`, // minutes apart: the Live chip shows HH:MM
   version,
 });
-const stats: Stats = { per_day: [] };
 
 /** Serves the given weeks in order to successive GET /api/admin/week calls. */
 function serve(...weeks: Week[]) {
@@ -41,13 +41,11 @@ function serve(...weeks: Week[]) {
     'fetch',
     vi.fn(async (url: string) => {
       const path = url.split('?')[0]!;
-      const body = path.endsWith('/stats')
-        ? stats
-        : path.endsWith('/summary')
-          ? { next: null, unanswered: 0, inbox: 0, model: { busy: false, holder: null } }
-          : path.endsWith('/week')
-            ? queue.shift()
-            : [];
+      const body = path.endsWith('/summary')
+        ? { next: null, unanswered: 0, inbox: 0, model: { busy: false, holder: null } }
+        : path.endsWith('/week')
+          ? queue.shift()
+          : [];
       return new Response(JSON.stringify(body), { status: 200 });
     }),
   );
@@ -97,7 +95,7 @@ describe('AdminWeek: a drop during a held drag', () => {
           sent.push(JSON.parse(String(init.body)) as { version: number });
           return new Response(JSON.stringify({ error: 'stale', message: 'The week changed since it was loaded.' }), { status: 409 });
         }
-        const body = path.endsWith('/stats') ? stats : path.endsWith('/week') ? (weeks.shift() ?? week(5, 4)) : [];
+        const body = path.endsWith('/week') ? (weeks.shift() ?? week(5, 4)) : [];
         return new Response(JSON.stringify(body), { status: 200 });
       }),
     );
@@ -126,7 +124,7 @@ describe('AdminWeek: the FLIP hook', () => {
       vi.fn(async (url: string, init?: RequestInit) => {
         const path = url.split('?')[0]!;
         if (init?.method === 'POST') return new Response(JSON.stringify({ run: run('r1', 3), version: 2 }), { status: 200 });
-        const body = path.endsWith('/stats') ? stats : path.endsWith('/week') ? week(1) : [];
+        const body = path.endsWith('/week') ? week(1) : [];
         return new Response(JSON.stringify(body), { status: 200 });
       }),
     );
@@ -156,7 +154,7 @@ describe('AdminWeek: the FLIP window', () => {
       vi.fn(async (url: string, init?: RequestInit) => {
         const path = url.split('?')[0]!;
         if (init?.method === 'POST') return new Response(JSON.stringify({ error: 'stale', message: 'The week changed since it was loaded.' }), { status: 409 });
-        const body = path.endsWith('/stats') ? stats : path.endsWith('/week') ? (weeks.shift() ?? v5) : [];
+        const body = path.endsWith('/week') ? (weeks.shift() ?? v5) : [];
         return new Response(JSON.stringify(body), { status: 200 });
       }),
     );
@@ -193,7 +191,7 @@ describe('AdminWeek: swaps', () => {
           posts.push({ path, body });
           return answer(body, path);
         }
-        const reply = path.endsWith('/stats') ? stats : path.endsWith('/week') ? pair(1) : [];
+        const reply = path.endsWith('/week') ? pair(1) : [];
         return new Response(JSON.stringify(reply), { status: 200 });
       }),
     );
@@ -269,7 +267,7 @@ describe('AdminWeek: swaps', () => {
           return new Promise<Response>((resolve) => (rejectSwap = resolve));
         }
         if (init?.method === 'POST') posts.push('move');
-        const reply = path.endsWith('/stats') ? stats : path.endsWith('/week') ? pair(1) : [];
+        const reply = path.endsWith('/week') ? pair(1) : [];
         return Promise.resolve(new Response(JSON.stringify(reply), { status: 200 }));
       }),
     );
@@ -331,15 +329,13 @@ describe('AdminWeek: live hints and the polling fallback', () => {
       vi.fn(async (url: string) => {
         const path = url.split('?')[0]!;
         if (path === '/api/admin/week') reads++;
-        const body = path.endsWith('/stats')
-          ? stats
-          : path.endsWith('/summary')
-            ? { next: null, unanswered: 0, inbox: 0, model: { busy: false, holder: null } }
-            : path === '/api/admin/week'
-              ? week(reads)
-              : path.startsWith('/api/admin/config') || path.startsWith('/api/identity') || path.endsWith('/session') || path.endsWith('/me')
-                ? null
-                : [];
+        const body = path.endsWith('/summary')
+          ? { next: null, unanswered: 0, inbox: 0, model: { busy: false, holder: null } }
+          : path === '/api/admin/week'
+            ? week(reads)
+            : path.startsWith('/api/admin/config') || path.startsWith('/api/identity') || path.endsWith('/session') || path.endsWith('/me')
+              ? null
+              : [];
         return new Response(JSON.stringify(body), { status: 200 });
       }),
     );

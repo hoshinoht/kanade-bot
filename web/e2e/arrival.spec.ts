@@ -291,14 +291,14 @@ test("a hint's re-reads revalidate: unchanged reads answer 304", async ({ page }
   const statuses: string[] = [];
   page.on('response', (r) => {
     const path = new URL(r.url()).pathname;
-    if (['/api/admin/week', '/api/admin/stats', '/api/admin/summary'].includes(path)) statuses.push(`${path} ${r.status()}`);
+    if (['/api/admin/week', '/api/admin/summary'].includes(path)) statuses.push(`${path} ${r.status()}`);
   });
   const sentTag = page.waitForRequest((r) => r.url().includes('/api/admin/week') && Boolean(r.headers()['if-none-match']));
-  // An inbox change: the summary differs, the week and stats do not.
+  // An inbox change: the summary differs, the week (and its stats) does not.
   await arrive(page, 'proposal');
   await sentTag;
-  await expect.poll(() => statuses.length, { timeout: 6_000 }).toBeGreaterThanOrEqual(3);
-  expect(statuses).toEqual(expect.arrayContaining(['/api/admin/week 304', '/api/admin/stats 304', '/api/admin/summary 200']));
+  await expect.poll(() => statuses.length, { timeout: 6_000 }).toBeGreaterThanOrEqual(2);
+  expect(statuses).toEqual(expect.arrayContaining(['/api/admin/week 304', '/api/admin/summary 200']));
   const nav = page.locator('.navrail').getByRole('navigation', { name: 'Sections' });
   await expect(nav.getByRole('link', { name: 'Inbox 12 waiting', exact: true })).toBeVisible();
 });

@@ -1,5 +1,5 @@
-//! Admin reads (A3): week, stats, summary, fixed timings, reminders, members,
-//! channels, personas, bosses, event bosses and knowledge. Every handler takes
+//! Admin reads (A3): week (with its stats), summary, fixed timings, reminders,
+//! members, channels, personas, bosses, event bosses and knowledge. Every handler takes
 //! [`AdminSession`]; reads go through the shared store's reader connections.
 
 use std::sync::Arc;
@@ -23,7 +23,6 @@ use crate::api::{
 pub fn routes() -> Router<Arc<Site>> {
     Router::new()
         .route("/api/admin/week", get(week))
-        .route("/api/admin/stats", get(stats))
         .route("/api/admin/summary", get(summary))
         .route("/api/admin/fixed", get(fixed))
         .route("/api/admin/reminders", get(reminders))
@@ -59,17 +58,6 @@ async fn week(State(site): State<Arc<Site>>, _: AdminSession, uri: Uri) -> Reply
         &run_lengths,
     ))
     .into_response())
-}
-
-async fn stats(State(site): State<Arc<Site>>, _: AdminSession, uri: Uri) -> Reply {
-    let state = state(&site)?;
-    let next = next_week(&uri)?;
-    let now = state.now();
-    let [this, following] = frames(state, now)?;
-    let frame = if next { following } else { this };
-    let snapshot = weeks(state, vec![frame.start]).await?;
-    let ctx = context(&site, state, roster(&[]), now);
-    Ok(Json(dto::week::stats(&ctx, &snapshot, &frame)).into_response())
 }
 
 async fn summary(State(site): State<Arc<Site>>, _: AdminSession) -> Reply {

@@ -144,9 +144,6 @@
           "type": "integer",
           "minimum": 0,
           "description": "This model's round rows that reported a usage pair."
-        },
-        "est_ratio": {
-          "$ref": "#/$defs/EstimateRatio"
         }
       }
     },
@@ -599,14 +596,6 @@
       "description": "A provider-reported or estimated token count; null = not reported (older rows, v4 imports, failed or cut calls), never 0 for unknown.",
       "type": [
         "integer",
-        "null"
-      ],
-      "minimum": 0
-    },
-    "EstimateRatio": {
-      "description": "Median of reported prompt tokens / local prompt estimate over the requests that have both (estimate > 0), rounded to two decimals; the mean of the two middle values for an even count; null when none.",
-      "type": [
-        "number",
         "null"
       ],
       "minimum": 0

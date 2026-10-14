@@ -11,7 +11,6 @@ use sqlx::ConnectOptions;
 use crate::{reads::Reads, schemas::assert_valid, support::find};
 
 const PAGE: &str = "history.json#/$defs/HistoryPage";
-const RECORD: &str = "history.json#/$defs/ChangeRecord";
 const PLAN: &str = "history.json#/$defs/RevertPlan";
 const THIS_WEEK: &str = "2026-09-23T16:00:00+00:00";
 const REVERT: &str = "/api/admin/history/revert";
@@ -44,6 +43,14 @@ impl Reads {
     /// A history page: `/api/admin/history{query}`.
     async fn history(&self, query: &str) -> Value {
         self.read(&format!("/api/admin/history{query}"), PAGE).await
+    }
+
+    /// One record as the History list carries it: the page just older than
+    /// `seq + 1`, one record long.
+    async fn record(&self, seq: u64) -> Value {
+        let page = self.history(&format!("?before={}&limit=1", seq + 1)).await;
+        assert_eq!(seqs(&page), [seq]);
+        page["records"][0].clone()
     }
 
     async fn checkpoints(&self) -> Value {
@@ -111,7 +118,7 @@ async fn pages_newest_first_with_filters_totals_and_records() {
     );
     let stored = reads.store.load_change(4).await.unwrap().unwrap();
     assert_eq!(newest["hash"], stored.hash.as_str());
-    let one = reads.read("/api/admin/history/4", RECORD).await;
+    let one = reads.record(4).await;
     assert_eq!(&one, newest);
 
     // Filters: actor, week (either form), both.
@@ -154,15 +161,6 @@ async fn pages_newest_first_with_filters_totals_and_records() {
             "{bad}"
         );
     }
-    for missing in ["0", "99", "abc"] {
-        assert_eq!(
-            reads
-                .status(&format!("/api/admin/history/{missing}"), true)
-                .await,
-            (404, "not_found".into()),
-            "{missing}"
-        );
-    }
 }
 
 /// Config saves are not in the chain, so they page by time: each sits on the
@@ -180,9 +178,7 @@ async fn config_saves_interleave_by_time_and_appear_on_exactly_one_page() {
     let at = |seq: u64| {
         let reads = &reads;
         async move {
-            let record = reads
-                .read(&format!("/api/admin/history/{seq}"), RECORD)
-                .await;
+            let record = reads.record(seq).await;
             DateTime::parse_from_rfc3339(record["at"].as_str().unwrap())
                 .unwrap()
                 .with_timezone(&Utc)
@@ -703,7 +699,7 @@ async fn strict_reverts_report_conflicts_and_force_overrides_them() {
 #[tokio::test]
 async fn week_restores_and_actor_reverts_preview_then_apply() {
     let reads = Reads::new().await;
-    let seed = reads.read("/api/admin/history/1", RECORD).await;
+    let seed = reads.record(1).await;
     let revision = seed["revision"].as_u64().unwrap();
     reads.move_kalos(6, "21:00").await;
     reads.move_kalos(4, "20:00").await;
@@ -791,12 +787,10 @@ async fn seqs_beyond_the_store_range_get_contract_codes() {
         reads.status(path, true).await,
         (422, "invalid_query".into())
     );
-    let path = "/api/admin/history/9223372036854775808";
-    assert_eq!(reads.status(path, true).await, (404, "not_found".into()));
     let body = json!({"seqs": [9223372036854775808_u64]});
     let refusal = reads.refused("POST", REVERT, body).await;
     assert_eq!(refusal, (422, "invalid".into()));
-    // i64::MAX itself is in range: an older-than cursor, and a missing record.
+    // i64::MAX itself is in range as an older-than cursor.
     let page = reads.history("?before=9223372036854775807").await;
     assert_eq!(seqs(&page), [1]);
 }
@@ -879,9 +873,7 @@ async fn strict_conflicts_list_all_selected_records() {
 #[tokio::test]
 async fn forced_week_restore_answers_the_record_rows() {
     let reads = Reads::new().await;
-    let revision = reads.read("/api/admin/history/1", RECORD).await["revision"]
-        .as_u64()
-        .unwrap();
+    let revision = reads.record(1).await["revision"].as_u64().unwrap();
     for (member, answer) in [("1004", "yes"), ("1001", "clear")] {
         let v = reads.version().await;
         reads

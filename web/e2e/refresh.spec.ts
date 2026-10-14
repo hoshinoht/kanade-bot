@@ -8,15 +8,13 @@ import { ADMIN, expect, test, unconditional } from './support';
 /** Each poll's week reads as newer, as on a live server. */
 async function livelyWeek(page: Page) {
   let n = 0;
-  await page.route(/\/api\/admin\/(week|stats)(\?|$)/, async (route) => {
+  await page.route(/\/api\/admin\/week(\?|$)/, async (route) => {
     const res = await route.fetch(unconditional(route));
     const body = await res.json();
     n++;
-    if (body.version !== undefined) {
-      body.version += n;
-      body.generated_at = `2026-09-29T04:${String(n).padStart(2, '0')}:00Z`;
-    }
-    if (body.per_day) body.per_day[0].answered += n;
+    body.version += n;
+    body.generated_at = `2026-09-29T04:${String(n).padStart(2, '0')}:00Z`;
+    body.stats.per_day[0].answered += n;
     await route.fulfill({ response: res, json: body });
   });
 }

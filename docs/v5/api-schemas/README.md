@@ -73,7 +73,6 @@ Pointers are `<file>#/$defs/<Name>`.
 | `POST /api/admin/me/sessions/sign-out-others` | `identity.json#/$defs/SessionsEnded` |
 | `GET /api/admin/auth/tonight` (no session) | `week.json#/$defs/Tonight` |
 | `GET /api/admin/week?week=` | `week.json#/$defs/Week` |
-| `GET /api/admin/stats?week=` | `week.json#/$defs/Stats` |
 | `GET /api/admin/summary` | `week.json#/$defs/Summary` |
 | `POST /api/admin/runs/{id}/move` | `week.json#/$defs/MoveResult` |
 | `POST /api/admin/runs/{id}/swap` | `week.json#/$defs/SwapResult` |
@@ -147,7 +146,6 @@ Pointers are `<file>#/$defs/<Name>`.
 | `POST /api/admin/headers/rewrite` | `202` `common.json#/$defs/Message` (the run continues in the background; `200` when nothing posted this boss week has a header; 409 `ApiError` `rewrite_running`/`rewrite_off`) |
 | `GET /api/admin/access`, `POST /api/admin/access/recheck` | `config.json#/$defs/AccessReport` |
 | `GET /api/admin/history?week=&actor=&run=&before=&limit=` | `history.json#/$defs/HistoryPage` |
-| `GET /api/admin/history/{seq}` | `history.json#/$defs/ChangeRecord` |
 | `POST /api/admin/history/revert`, `/restore-week`, `/revert-actor` | `history.json#/$defs/RevertPlan` |
 | `GET /api/admin/history/checkpoints` | `history.json#/$defs/Checkpoints` |
 | `PUT /api/admin/presence` | body `presence.json#/$defs/PresenceCheckIn` (`{at: {kind: request\|run, id}, mode: viewing\|editing, seq}`); `presence.json#/$defs/PresenceHere` (the other admins there; the caller is never listed). Admin origin only, in memory only (never stored; empty after a restart; at most 64 places × 8 tabs, an entry gone 60 s after its last check-in). `seq` grows with each of a tab's calls: a check-in older than the tab's latest, or no newer than its leave, is answered but changes nothing. CSRF like every admin write, no Idempotency-Key; never extends the session's idle window; 400 `invalid_body` for an unknown kind, an id outside `[A-Za-z0-9_-]{1,64}` or a missing `seq` |

@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://kanade.invalid/api-schemas/week.json",
-  "title": "Week board: the admin projection, run edits, stats, summary and the sign-in strip",
+  "title": "Week board: the admin projection with its stats, run edits, summary and the sign-in strip",
   "$defs": {
     "LocalTime": { "type": "string", "pattern": "^([01]\\d|2[0-3]):[0-5]\\d$" },
     "RunTime": { "anyOf": [{ "$ref": "#/$defs/LocalTime" }, { "type": "null" }] },
@@ -69,13 +69,14 @@
     "Week": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["starts", "timezone", "reset", "days", "runs", "generated_at", "version"],
+      "required": ["starts", "timezone", "reset", "days", "runs", "stats", "generated_at", "version"],
       "properties": {
         "starts": { "type": "string" },
         "timezone": { "type": "string" },
         "reset": { "type": "string" },
         "days": { "type": "array", "items": { "$ref": "common.json#/$defs/WeekDay" } },
         "runs": { "type": "array", "items": { "$ref": "#/$defs/Run" } },
+        "stats": { "$ref": "#/$defs/Stats", "description": "Answered and waiting places per day of the week." },
         "generated_at": { "type": "string" },
         "version": { "type": "integer", "minimum": 0 }
       }

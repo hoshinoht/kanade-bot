@@ -469,6 +469,7 @@ impl Store {
                 .filter(|r| r.next_week == next)
                 .map(|r| self.dto(r))
                 .collect(),
+            stats: self.stats(next),
             generated_at: iso_now(),
             version: self.version,
         }
@@ -479,7 +480,7 @@ impl Store {
         &mut self.portal
     }
 
-    pub fn stats(&self, next: bool) -> Stats {
+    fn stats(&self, next: bool) -> Stats {
         let per_day = (0..7u8)
             .map(|day| {
                 let people = self

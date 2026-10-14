@@ -395,7 +395,7 @@ impl Store {
                 let mine: Vec<&&Attempt> = listed.iter().filter(|a| a.model == Some(*m)).collect();
                 let mut row = usage_summary(
                     mine.iter()
-                        .map(|a| (a.usage.map(|u| u.0), a.usage.map(|u| u.1), a.estimate())),
+                        .map(|a| (a.usage.map(|u| u.0), a.usage.map(|u| u.1))),
                 );
                 row.insert("model".into(), json!(m));
                 row.insert("count".into(), json!(mine.len()));

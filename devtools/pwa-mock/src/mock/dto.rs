@@ -91,6 +91,7 @@ pub struct Week {
     pub reset: &'static str,
     pub days: Vec<WeekDay>,
     pub runs: Vec<Run>,
+    pub stats: Stats,
     pub generated_at: String,
     pub version: u64,
 }

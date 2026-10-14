@@ -26,36 +26,22 @@ struct Call {
     estimate: Option<u32>,
 }
 
-/// Reported usage over logged requests `(prompt, completion, estimate)`, as
-/// the server sums it: totals over those with a pair (`null` when none),
-/// how many, and the median reported/estimate ratio to two decimals.
+/// Reported usage over logged requests `(prompt, completion)`, as the server
+/// sums it: totals over those with a pair (`null` when none) and how many.
 pub(super) fn usage_summary(
-    items: impl IntoIterator<Item = (Option<u32>, Option<u32>, Option<u32>)>,
+    items: impl IntoIterator<Item = (Option<u32>, Option<u32>)>,
 ) -> serde_json::Map<String, Value> {
     let (mut prompt, mut completion, mut reported) = (None::<u64>, None::<u64>, 0usize);
-    let mut ratios: Vec<f64> = Vec::new();
-    for (p, c, e) in items {
+    for (p, c) in items {
         let (Some(p), Some(c)) = (p, c) else { continue };
         prompt = Some(prompt.unwrap_or(0) + u64::from(p));
         completion = Some(completion.unwrap_or(0) + u64::from(c));
         reported += 1;
-        if let Some(e) = e.filter(|e| *e > 0) {
-            ratios.push(f64::from(p) / f64::from(e));
-        }
     }
-    ratios.sort_by(f64::total_cmp);
-    let mid = ratios.len() / 2;
-    let ratio = match ratios.len() {
-        0 => None,
-        n if n % 2 == 1 => Some(ratios[mid]),
-        _ => Some(f64::midpoint(ratios[mid - 1], ratios[mid])),
-    }
-    .map(|r| (r * 100.0).round() / 100.0);
     let mut out = serde_json::Map::new();
     out.insert("prompt_tokens".into(), json!(prompt));
     out.insert("completion_tokens".into(), json!(completion));
     out.insert("reported".into(), json!(reported));
-    out.insert("est_ratio".into(), json!(ratio));
     out
 }
 
@@ -304,7 +290,7 @@ impl Store {
                 let mine: Vec<&&Call> = listed.iter().filter(|c| c.model == *m).collect();
                 let mut row = usage_summary(
                     mine.iter()
-                        .map(|c| (c.usage.map(|u| u.0), c.usage.map(|u| u.1), c.estimate)),
+                        .map(|c| (c.usage.map(|u| u.0), c.usage.map(|u| u.1))),
                 );
                 row.insert("model".into(), json!(m));
                 row.insert("count".into(), json!(mine.len()));
@@ -729,7 +715,7 @@ mod tests {
         assert_eq!(
             proposed["summary"],
             serde_json::json!([{"model": "kanata/extract", "count": 3, "prompt_tokens": 3830,
-                "completion_tokens": 136, "reported": 2, "est_ratio": 1.07}])
+                "completion_tokens": 136, "reported": 2}])
         );
         let limbo = s.extraction("x-limbo").ok().unwrap();
         assert!(limbo["prompt_tokens"].is_null() && limbo["completion_tokens"].is_null());

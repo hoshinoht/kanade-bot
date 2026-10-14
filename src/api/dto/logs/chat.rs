@@ -529,11 +529,7 @@ pub fn chat_summary(rows: &[ChatInteraction]) -> Vec<ChatSummary> {
                 .flat_map(|chat| &chat.rounds)
                 .filter(|round| round.model == model)
             {
-                usage.add(
-                    round.prompt_tokens,
-                    round.completion_tokens,
-                    round.prompt_estimate,
-                );
+                usage.add(round.prompt_tokens, round.completion_tokens);
             }
             ChatSummary {
                 model: model.to_owned(),

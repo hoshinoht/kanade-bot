@@ -129,9 +129,9 @@ async fn rewrites_list_newest_first_with_total_facets_and_summary() {
         all["summary"],
         json!([
             {"model": "kanata/other", "count": 1, "accepted": 0, "prompt_tokens": 200,
-             "completion_tokens": 8, "reported": 1, "est_ratio": 1.05},
+             "completion_tokens": 8, "reported": 1},
             {"model": "kanata/rewrite", "count": 2, "accepted": 1, "prompt_tokens": 500,
-             "completion_tokens": 120, "reported": 2, "est_ratio": 1.31},
+             "completion_tokens": 120, "reported": 2},
         ])
     );
 }

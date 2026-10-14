@@ -94,30 +94,26 @@ pub struct LogFacets {
 }
 
 /// Reported token usage over a set of logged requests: sums over those that
-/// reported a pair (null when none did), how many did, and the median of
-/// reported prompt tokens / local estimate (two decimals; null when none).
+/// reported a pair (null when none did) and how many did.
 #[derive(Serialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
 pub struct UsageSummary {
     pub prompt_tokens: Option<u64>,
     pub completion_tokens: Option<u64>,
     pub reported: usize,
-    pub est_ratio: Option<f64>,
 }
 
 /// Accumulates a [`UsageSummary`]: sums over the requests that reported a
-/// pair (`None` when none did, never 0), and the prompt/estimate ratios of
-/// those that also have a non-zero estimate.
+/// pair (`None` when none did, never 0).
 #[derive(Default)]
 struct UsageTally {
     prompt_tokens: Option<u64>,
     completion_tokens: Option<u64>,
     reported: usize,
-    ratios: Vec<f64>,
 }
 
 impl UsageTally {
-    fn add(&mut self, prompt: Option<u64>, completion: Option<u64>, estimate: Option<u64>) {
+    fn add(&mut self, prompt: Option<u64>, completion: Option<u64>) {
         let (Some(prompt), Some(completion)) = (prompt, completion) else {
             return;
         };
@@ -127,22 +123,6 @@ impl UsageTally {
         sum(&mut self.prompt_tokens, prompt);
         sum(&mut self.completion_tokens, completion);
         self.reported += 1;
-        if let Some(estimate) = estimate.filter(|estimate| *estimate > 0) {
-            self.ratios.push(prompt as f64 / estimate as f64);
-        }
-    }
-
-    /// The median ratio, rounded to two decimals.
-    fn est_ratio(&self) -> Option<f64> {
-        let mut ratios = self.ratios.clone();
-        ratios.sort_by(f64::total_cmp);
-        let middle = ratios.len() / 2;
-        let median = match ratios.len() {
-            0 => return None,
-            n if n % 2 == 1 => ratios[middle],
-            _ => f64::midpoint(ratios[middle - 1], ratios[middle]),
-        };
-        Some((median * 100.0).round() / 100.0)
     }
 
     fn summary(&self) -> UsageSummary {
@@ -150,7 +130,6 @@ impl UsageTally {
             prompt_tokens: self.prompt_tokens,
             completion_tokens: self.completion_tokens,
             reported: self.reported,
-            est_ratio: self.est_ratio(),
         }
     }
 }

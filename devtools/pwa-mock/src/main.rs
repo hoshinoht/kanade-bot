@@ -183,7 +183,6 @@ fn routers(app: App, web: &std::path::Path) -> (Router, Router) {
     // Authorization boundary by origin: the public origin has no admin routes at all.
     let admin_api = Router::new()
         .route("/api/admin/week", get(api::week))
-        .route("/api/admin/stats", get(api::stats))
         .route("/api/admin/summary", get(api::summary))
         .route("/api/admin/members", get(api::members))
         .route("/api/admin/members/{id}", patch(api::patch_member))
@@ -304,7 +303,6 @@ fn routers(app: App, web: &std::path::Path) -> (Router, Router) {
         .route("/api/admin/history/revert", post(api::revert))
         .route("/api/admin/history/restore-week", post(api::restore_week))
         .route("/api/admin/history/revert-actor", post(api::revert_actor))
-        .route("/api/admin/history/{seq}", get(api::history_record))
         .route("/api/admin/reminders", get(api::reminders))
         .route(
             "/api/admin/reminders/{id}/preview",

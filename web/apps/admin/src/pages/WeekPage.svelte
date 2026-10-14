@@ -73,9 +73,10 @@
   // matching runs (past ones too), and its per-day counts recomputed from them
   // the way the server counts (any answer is answered, none is waiting).
   const owed = $derived(owedByMember(sortRuns(matching), runTitle));
+  const stats = $derived(store.week?.stats ?? null);
   const answerStats = $derived.by(() => {
-    if (!store.stats || !filtered) return store.stats;
-    const per_day = store.stats.per_day.map((d) => ({ day: d.day, answered: 0, waiting: 0 }));
+    if (!stats || !filtered) return stats;
+    const per_day = stats.per_day.map((d) => ({ day: d.day, answered: 0, waiting: 0 }));
     for (const run of matching) {
       const stat = per_day.find((d) => d.day === run.day);
       if (!stat) continue;
@@ -86,7 +87,7 @@
     }
     return { per_day };
   });
-  const waiting = $derived(store.stats ? store.stats.per_day.reduce((n, d) => n + d.waiting, 0) : null);
+  const waiting = $derived(stats ? stats.per_day.reduce((n, d) => n + d.waiting, 0) : null);
   // The channel filter offers only the shown week's party channels (not every
   // guild channel), named as the runs name them, else the directory, else the id.
   const partyChannels = $derived.by(() => {

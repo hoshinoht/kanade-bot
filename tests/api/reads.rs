@@ -1147,9 +1147,8 @@ async fn week_projects_runs_answers_cards_and_the_history_version() {
 #[tokio::test]
 async fn stats_summary_and_reminders() {
     let reads = Reads::new().await;
-    let stats = reads
-        .read("/api/admin/stats", "week.json#/$defs/Stats")
-        .await;
+    let week = reads.read("/api/admin/week", "week.json#/$defs/Week").await;
+    let stats = &week["stats"];
     assert_eq!(
         stats["per_day"][5],
         json!({"day": 5, "answered": 2, "waiting": 1})
@@ -1523,7 +1522,6 @@ async fn every_read_needs_a_session_and_art_uses_catalog_keys() {
     let reads = Reads::new().await;
     for path in [
         "/api/admin/week",
-        "/api/admin/stats",
         "/api/admin/summary",
         "/api/admin/fixed",
         "/api/admin/reminders",

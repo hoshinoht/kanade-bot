@@ -75,9 +75,9 @@ async fn extractions_list_every_call_with_total_facets_and_the_current_model() {
         all["summary"],
         json!([
             {"model": "kanata/extract", "count": 2, "prompt_tokens": 1500,
-             "completion_tokens": 60, "reported": 1, "est_ratio": 1.25},
+             "completion_tokens": 60, "reported": 1},
             {"model": "kanata/legacy", "count": 1, "prompt_tokens": null,
-             "completion_tokens": null, "reported": 0, "est_ratio": null},
+             "completion_tokens": null, "reported": 0},
         ])
     );
 
@@ -86,7 +86,7 @@ async fn extractions_list_every_call_with_total_facets_and_the_current_model() {
     assert_eq!(
         filtered["summary"],
         json!([{"model": "kanata/legacy", "count": 1, "prompt_tokens": null,
-                "completion_tokens": null, "reported": 0, "est_ratio": null}]),
+                "completion_tokens": null, "reported": 0}]),
         "the summary follows the filter"
     );
 }

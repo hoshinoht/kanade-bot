@@ -427,7 +427,10 @@ impl Store {
                         .iter()
                         .enumerate()
                         .filter(|(_, model)| *model == m)
-                        .map(|(i, _)| round_usage(t, i))
+                        .map(|(i, _)| {
+                            let (prompt, completion, _) = round_usage(t, i);
+                            (prompt, completion)
+                        })
                 }));
                 let mut summary = json!({
                     "model": m, "count": mine.len(),
@@ -695,6 +698,5 @@ mod tests {
             .clone();
         assert!(summary["prompt_tokens"].is_null());
         assert_eq!(summary["reported"], 0);
-        assert!(summary["est_ratio"].is_null());
     }
 }

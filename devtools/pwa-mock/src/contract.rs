@@ -434,7 +434,6 @@ async fn every_pwa_endpoint_matches_the_frozen_contract() {
     let mut week = Value::Null;
     for q in ["", "?week=next"] {
         week = h.get(&format!("/api/admin/week{q}"), "week#Week").await;
-        h.get(&format!("/api/admin/stats{q}"), "week#Stats").await;
     }
     let summary = h.get("/api/admin/summary", "week#Summary").await;
     assert_eq!(summary["quiet_mode"], false, "quiet mode starts off");
@@ -1440,16 +1439,12 @@ async fn every_pwa_endpoint_matches_the_frozen_contract() {
     )
     .await;
 
-    // History: pages, each record, and the three rollback previews.
+    // History: pages and the three rollback previews.
     let page = h
         .get("/api/admin/history?limit=100", "history#HistoryPage")
         .await;
     let records = page["records"].as_array().unwrap().clone();
     assert!(!records.is_empty(), "the edits above wrote history");
-    for record in &records {
-        let path = format!("/api/admin/history/{}", record["seq"]);
-        h.get(&path, "history#ChangeRecord").await;
-    }
     let newest = &records[0];
     let week_key = s(&newest["weeks"][0]).to_owned();
     // Records name weeks by the instant they start, as the server does.
@@ -1551,7 +1546,6 @@ async fn every_pwa_endpoint_matches_the_frozen_contract() {
     ] {
         h.ok("POST", path, Some(body), plan).await;
     }
-    h.fails("GET", "/api/admin/history/999999", None, 404).await;
 
     // Closing the portal closes the public schedule.
     h.config(json!({ "self_service": { "public_portal": false } }))

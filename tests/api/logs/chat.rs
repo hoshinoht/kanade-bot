@@ -71,14 +71,13 @@ async fn chat_lists_every_row_newest_first_with_total_facets_and_summary() {
     assert_eq!(
         all["summary"],
         json!([
-            // Round rows with a pair: c-answer round 1 (1200/1000) and
-            // c-timeout (900/1000); median of 1.2 and 0.9.
+            // Round rows with a pair: c-answer round 1 (1200) and c-timeout (900).
             {"model": "kanata/chat", "count": 2, "answered": 1, "refused": 0, "errors": 1,
              "p50_ms": 4000, "tool_calls": 1, "prompt_tokens": 2100, "completion_tokens": 40,
-             "reported": 2, "est_ratio": 1.05},
+             "reported": 2},
             {"model": "kanata/chat-cloud", "count": 1, "answered": 0, "refused": 0, "errors": 0,
              "p50_ms": 0, "tool_calls": 1, "prompt_tokens": 500, "completion_tokens": 20,
-             "reported": 1, "est_ratio": 1.25},
+             "reported": 1},
         ])
     );
 
@@ -92,18 +91,16 @@ async fn chat_lists_every_row_newest_first_with_total_facets_and_summary() {
 }
 
 /// Summary usage comes from each model's own round rows: unreported rounds
-/// leave null sums (never 0), turn totals are never used, and the ratio is
-/// the median over rounds with both a pair and a non-zero estimate.
+/// leave null sums (never 0) and turn totals are never used.
 #[test]
 fn chat_summary_usage_sums_round_rows_per_model() {
     use kanade::api::dto::logs::chat_summary;
     use kanade::domain::model_log::ChatOutcome;
 
-    let round = |model: &str, pair: Option<(u64, u64)>, estimate: Option<u64>| {
+    let round = |model: &str, pair: Option<(u64, u64)>| {
         let mut round = super::round(model, &[], json!([]), None);
         round.prompt_tokens = pair.map(|pair| pair.0);
         round.completion_tokens = pair.map(|pair| pair.1);
-        round.prompt_estimate = estimate;
         round
     };
     let mut mixed = super::chat(
@@ -116,26 +113,20 @@ fn chat_summary_usage_sums_round_rows_per_model() {
         ChatOutcome::Answered,
         Some(10),
         vec![
-            round("a", Some((100, 1)), Some(100)),
-            round("a", Some((300, 3)), Some(100)),
-            round("a", Some((200, 2)), Some(100)),
-            round("a", Some((50, 5)), None),
-            round("b", None, Some(70)),
+            round("a", Some((100, 1))),
+            round("a", Some((300, 3))),
+            round("a", Some((200, 2))),
+            round("a", Some((50, 5))),
+            round("b", None),
         ],
     );
     // Turn totals that disagree with the rounds are ignored by the summary.
     (mixed.prompt_tokens, mixed.completion_tokens) = (Some(1), Some(1));
     let summary = serde_json::to_value(chat_summary(&[mixed])).unwrap();
-    let shown = [
-        "model",
-        "prompt_tokens",
-        "completion_tokens",
-        "reported",
-        "est_ratio",
-    ];
+    let shown = ["model", "prompt_tokens", "completion_tokens", "reported"];
     assert_eq!(
         columns(&summary, &shown),
-        json!([["a", 650, 11, 4, 2.0], ["b", null, null, 0, null]])
+        json!([["a", 650, 11, 4], ["b", null, null, 0]])
     );
 }
 
