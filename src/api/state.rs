@@ -29,6 +29,7 @@ use crate::{
             DraftEvent, DraftKind, DraftStatus, DraftStore, LoadedDraft, ProposalInfo,
             ProposalStore, StoredDraft, StoredProposal,
         },
+        forward_boxed,
         history::{
             Actor, BlameIndex, BlameTarget, ChangeFilter, ChangeHistory, ChangeQuery, ChangeRecord,
             ChangeRef, HeldReminders, HistoryVerification, JournalHeld, changed_fields,
@@ -365,20 +366,32 @@ where
         Box::pin(async move { self.load(&scope).await })
     }
 
-    fn head(&self) -> ReadFuture<'_, ChangeRef> {
-        Box::pin(self.history_head())
-    }
-
-    fn members(&self) -> ReadFuture<'_, Vec<MemberProfile>> {
-        Box::pin(self.list_members())
+    forward_boxed! {
+        fn head(&self) -> ReadFuture<'_, ChangeRef> = Self::history_head;
+        fn members(&self) -> ReadFuture<'_, Vec<MemberProfile>> = Self::list_members;
+        fn inbox_count(&self) -> ReadFuture<'_, u64> = SnapshotReads::inbox_count;
+        fn history_view(&self, query: HistoryViewQuery) -> ReadFuture<'_, HistoryView> =
+            SnapshotReads::history_view;
+        fn verify_history(&self) -> ReadFuture<'_, HistoryVerification> =
+            ChangeHistory::verify_history;
+        fn extraction_log_facets(&self) -> ReadFuture<'_, LogFacets> = Self::extraction_facets;
+        fn chat_log_facets(&self) -> ReadFuture<'_, LogFacets> = Self::chat_facets;
+        fn rewrite_log_facets(&self) -> ReadFuture<'_, RewriteFacets> = Self::rewrite_facets;
+        fn settings_changes(
+            &self,
+            query: SettingsChangeQuery,
+        ) -> ReadFuture<'_, Vec<SettingsChange>> = SettingsStore::settings_changes;
+        fn put_replay(&self, replay: StoredReplay) -> ReadFuture<'_, ()> = ReplayStore::put_replay;
+        fn create_owner_request(&self, request: OwnerRequest) -> ReadFuture<'_, ()> =
+            OwnerRequestStore::create_owner_request;
+        fn open_owner_requests(&self) -> ReadFuture<'_, Vec<OwnerRequest>> =
+            OwnerRequestStore::open_owner_requests;
+        fn unsettled_owner_requests(&self) -> ReadFuture<'_, Vec<OwnerRequest>> =
+            OwnerRequestStore::unsettled_owner_requests;
     }
 
     fn member(&self, user_id: String) -> ReadFuture<'_, Option<MemberProfile>> {
         Box::pin(async move { self.load_member(&user_id).await })
-    }
-
-    fn inbox_count(&self) -> ReadFuture<'_, u64> {
-        Box::pin(SnapshotReads::inbox_count(self))
     }
 
     fn live_proposals(&self) -> ReadFuture<'_, Vec<StoredProposal>> {
@@ -592,16 +605,8 @@ where
         })
     }
 
-    fn history_view(&self, query: HistoryViewQuery) -> ReadFuture<'_, HistoryView> {
-        Box::pin(SnapshotReads::history_view(self, query))
-    }
-
     fn change(&self, seq: u64) -> ReadFuture<'_, Option<ChangeRecord>> {
         Box::pin(async move { Ok(self.load_change(seq).await?.filter(|record| record.seq > 0)) })
-    }
-
-    fn verify_history(&self) -> ReadFuture<'_, HistoryVerification> {
-        Box::pin(ChangeHistory::verify_history(self))
     }
 
     fn contains_anchor(&self, anchor: ChangeRef) -> ReadFuture<'_, bool> {
@@ -624,20 +629,12 @@ where
         Box::pin(async move { self.messages_by_ids(&ids).await })
     }
 
-    fn extraction_log_facets(&self) -> ReadFuture<'_, LogFacets> {
-        Box::pin(self.extraction_facets())
-    }
-
     fn chat_logs(&self, filter: ChatFilter) -> ReadFuture<'_, LogPage<ChatInteraction>> {
         Box::pin(async move { self.list_chats(&filter).await })
     }
 
     fn chat_log(&self, id: String) -> ReadFuture<'_, Option<ChatInteraction>> {
         Box::pin(async move { self.load_chat(&id).await })
-    }
-
-    fn chat_log_facets(&self) -> ReadFuture<'_, LogFacets> {
-        Box::pin(self.chat_facets())
     }
 
     fn masked_chat(&self, id: String) -> ReadFuture<'_, Option<MaskedTurn>> {
@@ -652,10 +649,6 @@ where
         Box::pin(async move { self.load_rewrite(&id).await })
     }
 
-    fn rewrite_log_facets(&self) -> ReadFuture<'_, RewriteFacets> {
-        Box::pin(self.rewrite_facets())
-    }
-
     fn digests(&self) -> ReadFuture<'_, Vec<WeeklyDigest>> {
         Box::pin(async move {
             self.load_digests()
@@ -663,10 +656,6 @@ where
                 .map(|log| log.digests)
                 .map_err(|error| StoreError::Backend(error.to_string()))
         })
-    }
-
-    fn settings_changes(&self, query: SettingsChangeQuery) -> ReadFuture<'_, Vec<SettingsChange>> {
-        Box::pin(SettingsStore::settings_changes(self, query))
     }
 
     fn record_settings_change(
@@ -698,10 +687,6 @@ where
         Box::pin(async move { ReplayStore::replay(self, scope, &actor, &key, now).await })
     }
 
-    fn put_replay(&self, replay: StoredReplay) -> ReadFuture<'_, ()> {
-        Box::pin(ReplayStore::put_replay(self, replay))
-    }
-
     fn card_record(&self, dedupe_key: String) -> ReadFuture<'_, Option<CardRecord>> {
         Box::pin(async move { ReminderCardStore::card_record(self, &dedupe_key).await })
     }
@@ -714,16 +699,8 @@ where
         Box::pin(async move { AuthAuditStore::audit_page(self, &filter).await })
     }
 
-    fn create_owner_request(&self, request: OwnerRequest) -> ReadFuture<'_, ()> {
-        Box::pin(OwnerRequestStore::create_owner_request(self, request))
-    }
-
     fn owner_request(&self, id: String) -> ReadFuture<'_, Option<OwnerRequest>> {
         Box::pin(async move { OwnerRequestStore::owner_request(self, &id).await })
-    }
-
-    fn open_owner_requests(&self) -> ReadFuture<'_, Vec<OwnerRequest>> {
-        Box::pin(OwnerRequestStore::open_owner_requests(self))
     }
 
     fn close_owner_request(
@@ -747,10 +724,6 @@ where
         Box::pin(async move {
             OwnerRequestStore::set_owner_request_message(self, &id, &channel_id, &message_id).await
         })
-    }
-
-    fn unsettled_owner_requests(&self) -> ReadFuture<'_, Vec<OwnerRequest>> {
-        Box::pin(OwnerRequestStore::unsettled_owner_requests(self))
     }
 
     fn settle_owner_request_message(&self, id: String) -> ReadFuture<'_, ()> {

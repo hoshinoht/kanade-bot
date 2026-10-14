@@ -5,6 +5,7 @@
 
 #[macro_use]
 mod forward;
+pub(crate) use forward::forward_boxed;
 #[macro_use]
 mod spelled;
 pub(crate) use spelled::spelled;

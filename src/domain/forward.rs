@@ -29,3 +29,19 @@ macro_rules! forward_store {
         )+
     };
 }
+
+/// `forward_boxed!`: trait methods whose boxed future (`Pin<Box<dyn
+/// Future>>` alias) only boxes another method's future, written as
+/// `fn name(&self, args..) -> Fut<'_, T> = Self::inner;` (or
+/// `= Trait::inner;` where the names clash); the arguments pass through.
+macro_rules! forward_boxed {
+    ($(fn $method:ident(&self $(, $arg:ident: $ty:ty)* $(,)?) -> $ret:ty = $target:path;)+) => {
+        $(
+            fn $method(&self $(, $arg: $ty)*) -> $ret {
+                Box::pin($target(self $(, $arg)*))
+            }
+        )+
+    };
+}
+
+pub(crate) use forward_boxed;

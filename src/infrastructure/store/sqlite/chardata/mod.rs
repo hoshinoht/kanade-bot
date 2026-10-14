@@ -460,64 +460,29 @@ impl SqliteCharData {
 }
 
 impl CharDataStore for SqliteCharData {
-    fn link(&self, character_id: String) -> StoreFuture<'_, Option<Link>> {
-        Box::pin(self.link_row(character_id))
-    }
-
-    fn links(&self) -> StoreFuture<'_, Vec<Link>> {
-        Box::pin(self.link_rows())
-    }
-
-    fn put_link(&self, link: Link, expected: u32) -> StoreFuture<'_, LinkPut> {
-        Box::pin(self.write_link(link, expected))
-    }
-
-    fn unlink(&self, character_id: String, at: DateTime<Utc>) -> StoreFuture<'_, Option<Link>> {
-        Box::pin(self.delete_link(character_id, at))
-    }
-
-    fn snapshot(
-        &self,
-        character_id: String,
-        now: DateTime<Utc>,
-    ) -> StoreFuture<'_, Option<Snapshot>> {
-        Box::pin(self.fresh_snapshot(character_id, now))
-    }
-
-    fn put_snapshot(&self, snapshot: Snapshot) -> StoreFuture<'_, bool> {
-        Box::pin(self.write_snapshot(snapshot))
-    }
-
-    fn sweep_snapshots(&self, now: DateTime<Utc>) -> StoreFuture<'_, u64> {
-        Box::pin(self.sweep(now))
-    }
-
-    fn refresh_states(&self) -> StoreFuture<'_, Vec<RefreshState>> {
-        Box::pin(self.refresh_rows())
-    }
-
-    fn put_refresh_state(&self, state: RefreshState) -> StoreFuture<'_, bool> {
-        Box::pin(self.write_refresh(state))
-    }
-
-    fn reserve_call(&self, at: DateTime<Utc>, cap: u32) -> StoreFuture<'_, bool> {
-        Box::pin(self.reserve(at, cap))
-    }
-
-    fn calls_since(&self, since: DateTime<Utc>) -> StoreFuture<'_, u32> {
-        Box::pin(self.count_calls(since))
-    }
-
-    fn prune_calls(&self, before: DateTime<Utc>) -> StoreFuture<'_, u64> {
-        Box::pin(self.drop_calls(before))
-    }
-
-    fn create_post(&self, post: Post) -> StoreFuture<'_, bool> {
-        Box::pin(self.insert_post(post))
-    }
-
-    fn posts(&self) -> StoreFuture<'_, Vec<Post>> {
-        Box::pin(self.post_rows())
+    crate::domain::forward_boxed! {
+        fn link(&self, character_id: String) -> StoreFuture<'_, Option<Link>> = Self::link_row;
+        fn links(&self) -> StoreFuture<'_, Vec<Link>> = Self::link_rows;
+        fn put_link(&self, link: Link, expected: u32) -> StoreFuture<'_, LinkPut> =
+            Self::write_link;
+        fn unlink(&self, character_id: String, at: DateTime<Utc>) -> StoreFuture<'_, Option<Link>> =
+            Self::delete_link;
+        fn snapshot(
+            &self,
+            character_id: String,
+            now: DateTime<Utc>,
+        ) -> StoreFuture<'_, Option<Snapshot>> = Self::fresh_snapshot;
+        fn put_snapshot(&self, snapshot: Snapshot) -> StoreFuture<'_, bool> = Self::write_snapshot;
+        fn sweep_snapshots(&self, now: DateTime<Utc>) -> StoreFuture<'_, u64> = Self::sweep;
+        fn refresh_states(&self) -> StoreFuture<'_, Vec<RefreshState>> = Self::refresh_rows;
+        fn put_refresh_state(&self, state: RefreshState) -> StoreFuture<'_, bool> =
+            Self::write_refresh;
+        fn reserve_call(&self, at: DateTime<Utc>, cap: u32) -> StoreFuture<'_, bool> =
+            Self::reserve;
+        fn calls_since(&self, since: DateTime<Utc>) -> StoreFuture<'_, u32> = Self::count_calls;
+        fn prune_calls(&self, before: DateTime<Utc>) -> StoreFuture<'_, u64> = Self::drop_calls;
+        fn create_post(&self, post: Post) -> StoreFuture<'_, bool> = Self::insert_post;
+        fn posts(&self) -> StoreFuture<'_, Vec<Post>> = Self::post_rows;
     }
 
     fn set_post_message(&self, reference: String, message_id: String) -> StoreFuture<'_, bool> {
