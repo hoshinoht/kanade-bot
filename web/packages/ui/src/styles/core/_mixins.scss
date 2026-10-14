@@ -2,6 +2,10 @@
 // screen partial can @use this without duplicating rules. A screen that needs
 // a primitive on its own element includes it here instead of re-declaring it.
 
+// A live run status and the signal colour token it wears (`--warn`, `--ok`,
+// `--risk`, `--own`, and their `-text` variants); cancelled and done are quiet.
+$status-tones: (planned: warn, confirmed: ok, at_risk: risk, otot: own);
+
 // Visually hidden, still in the accessibility tree (the `.vh` class's rules).
 @mixin hide-visually {
   position: absolute;

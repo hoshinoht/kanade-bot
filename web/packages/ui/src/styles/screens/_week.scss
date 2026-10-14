@@ -476,10 +476,9 @@ a.week-foot__item:hover,
   }
 }
 
-.week-window .runcard--planned { --stripe: var(--warn); }
-.week-window .runcard--confirmed { --stripe: var(--ok); }
-.week-window .runcard--at_risk { --stripe: var(--risk); }
-.week-window .runcard--otot { --stripe: var(--own); }
+@each $status, $tone in $status-tones {
+  .week-window .runcard--#{$status} { --stripe: var(--#{$tone}); }
+}
 .week-window .runcard--done,
 .week-window .runcard--cancelled { --stripe: var(--faint); }
 

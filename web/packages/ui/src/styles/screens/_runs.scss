@@ -1,20 +1,14 @@
 // Ported from v4 portal/_runs.scss (run card, entry-art veil, cards timeline,
 // status bar, answers editor, segmented buttons). v5 edits: text colours use
 // the --*-text contrast tokens; nothing is animated with inline delays.
+@use "../core/mixins" as *;
 
 /* ── a run's status, as the edge of its pane ───────────────────────────── */
 
-.run--planned {
-  border-left-color: var(--warn);
-}
-.run--confirmed {
-  border-left-color: var(--ok);
-}
-.run--at_risk {
-  border-left-color: var(--risk);
-}
-.run--otot {
-  border-left-color: var(--own);
+@each $status, $tone in $status-tones {
+  .run--#{$status} {
+    border-left-color: var(--#{$tone});
+  }
 }
 .run--cancelled,
 .run--done {
