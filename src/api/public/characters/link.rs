@@ -67,27 +67,15 @@ use crate::{
 type Reply = Result<Response, Refusal>;
 
 fn retired() -> Refusal {
-    Refusal::new(
-        StatusCode::CONFLICT,
-        "retired",
-        "A retired character can't be linked.",
-    )
+    Refusal::conflict("retired", "A retired character can't be linked.")
 }
 
 fn region() -> Refusal {
-    Refusal::new(
-        StatusCode::UNPROCESSABLE_ENTITY,
-        "region",
-        "Only MapleSEA characters can be linked.",
-    )
+    Refusal::unprocessable("region", "Only MapleSEA characters can be linked.")
 }
 
 fn not_linked() -> Refusal {
-    Refusal::new(
-        StatusCode::NOT_FOUND,
-        "not_linked",
-        "That character is not linked.",
-    )
+    Refusal::not_found("not_linked", "That character is not linked.")
 }
 
 /// The caller's own character `id` and the module.
@@ -190,8 +178,7 @@ pub(super) async fn notice(
     let view = module.status(&id).await.map_err(Refusal::unavailable)?;
     let request = match &view.link {
         Some(found) if found.status == LinkStatus::Active => {
-            return Err(Refusal::new(
-                StatusCode::CONFLICT,
+            return Err(Refusal::conflict(
                 "already_linked",
                 "That character is already linked.",
             ));
@@ -307,14 +294,12 @@ pub(super) async fn confirm(
         ConfirmOutcome::Busy => Ok(outcome("busy", None)),
         ConfirmOutcome::Unavailable(_) => Ok(outcome("unavailable", None)),
         ConfirmOutcome::NotConnected => Err(not_connected()),
-        ConfirmOutcome::NoticeOutdated => Err(Refusal::new(
-            StatusCode::CONFLICT,
+        ConfirmOutcome::NoticeOutdated => Err(Refusal::conflict(
             "notice_changed",
             "The notice changed: read it again before linking.",
         )),
         ConfirmOutcome::NotEligible => Err(ApiError::NOT_FOUND.into()),
-        ConfirmOutcome::Conflict => Err(Refusal::new(
-            StatusCode::CONFLICT,
+        ConfirmOutcome::Conflict => Err(Refusal::conflict(
             "stale",
             "The link changed meanwhile: try again.",
         )),
@@ -465,7 +450,7 @@ pub(super) async fn unlink_all(
         .is_err()
     {
         // A retry finds nothing left and answers an empty list.
-        crate::runtime::logging::event("WARN", "idempotency_replay_unrecorded", json!({}));
+        crate::runtime::logging::log!(warn, "idempotency_replay_unrecorded");
     }
     Ok(Json(body).into_response())
 }

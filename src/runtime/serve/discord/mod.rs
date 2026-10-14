@@ -22,7 +22,6 @@ use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
 
-use serde_json::json;
 use tokio::sync::{mpsc, oneshot, watch};
 use tokio::task::JoinHandle;
 use twilight_model::id::Id;
@@ -729,11 +728,7 @@ fn settings_changes(composition: &Composition) -> watch::Receiver<SettingsChange
 }
 
 fn gateway_error(error: GatewayError) {
-    logging::event(
-        "WARN",
-        "gateway_receive_failed",
-        json!({"error": format!("{error:?}")}),
-    );
+    logging::log!(warn, "gateway_receive_failed", error = format!("{error:?}"));
 }
 
 impl Discord {
@@ -817,18 +812,14 @@ impl Discord {
                         {
                             *exit = Some(Err(()));
                         } else {
-                            logging::event("WARN", "gateway_aborted", json!({}));
+                            logging::log!(warn, "gateway_aborted");
                         }
                     }
                 }
             }
             if !steps.contains(&"gateway_closed") {
                 steps.push("gateway_closed");
-                logging::event(
-                    "INFO",
-                    "gateway_closed",
-                    json!({"exit": format!("{:?}", exit)}),
-                );
+                logging::log!(info, "gateway_closed", exit = format!("{:?}", exit));
             }
             // No message can reach chat or extraction any more; their cards
             // and replies go out before the workers stop.
@@ -842,7 +833,7 @@ impl Discord {
                 if end.is_some_and(|end| tokio::time::Instant::now() >= end) {
                     clock.cut("chat");
                 }
-                logging::event("INFO", "chat_stopped", json!({}));
+                logging::log!(info, "chat_stopped");
                 steps.push("chat_stopped");
             }
             extraction.stop(clock).await;
@@ -887,10 +878,11 @@ impl Discord {
     async fn closed_for_good(&mut self) {
         self.connection.closed();
         if let Some(Ok(RunExit::Closed { reason })) = self.exit {
-            logging::event(
-                "ERROR",
+            logging::log!(
+                error,
                 "gateway_closed_for_good",
-                json!({"code": reason.code(), "message": reason.to_string()}),
+                code = reason.code(),
+                message = reason.to_string(),
             );
         }
         self.stop().await;

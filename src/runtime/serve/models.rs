@@ -80,16 +80,15 @@ pub fn seed_roles(
     {
         settings.models.context = context.clone();
         if !models.context_clamped.is_empty() {
-            logging::event(
-                "WARN",
+            logging::log!(
+                warn,
                 "model_context_clamped",
-                json!({
-                    "fields": models.context_clamped
-                        .iter()
-                        .map(|path| format!("models.context.{path}"))
-                        .collect::<Vec<_>>(),
-                    "max": MAX_CONTEXT_TOKENS,
-                }),
+                fields = models
+                    .context_clamped
+                    .iter()
+                    .map(|path| format!("models.context.{path}"))
+                    .collect::<Vec<_>>(),
+                max = MAX_CONTEXT_TOKENS,
             );
         }
     }
@@ -124,7 +123,7 @@ pub fn start(
     context: ContextSettings,
 ) -> ModelTasks {
     let Some(stack) = stack else {
-        logging::event("INFO", "models_disabled", json!({}));
+        logging::log!(info, "models_disabled");
         return ModelTasks::default();
     };
     let refresh = stack.spawn_catalog_refresh();

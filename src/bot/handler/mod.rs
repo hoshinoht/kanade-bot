@@ -160,7 +160,7 @@ impl<T: DiscordTransport + 'static> Fanout<T> {
             for task in pending {
                 let _ = task.await;
             }
-            logging::event("WARN", "gateway_tasks_aborted", json!({"tasks": count}));
+            logging::log!(warn, "gateway_tasks_aborted", tasks = count);
         }
     }
 
@@ -181,12 +181,12 @@ impl<T: DiscordTransport + 'static> Fanout<T> {
             let outcome = transport.register_guild_commands(guild, &commands).await;
             let names: Vec<String> = commands.into_iter().map(|command| command.name).collect();
             if outcome.is_delivered() {
-                logging::event("INFO", "commands_registered", json!({"commands": names}));
+                logging::log!(info, "commands_registered", commands = names);
             } else {
-                logging::event(
-                    "WARN",
+                logging::log!(
+                    warn,
                     "commands_register_failed",
-                    json!({"outcome": format!("{outcome:?}")}),
+                    outcome = format!("{outcome:?}"),
                 );
             }
         });
@@ -211,7 +211,7 @@ impl<T: DiscordTransport + 'static> Fanout<T> {
         let dispatcher = match &self.dispatcher {
             Some(dispatcher) if self.is_ours(&interaction) => Arc::clone(dispatcher),
             _ => {
-                logging::event("INFO", "interaction_ignored", json!({}));
+                logging::log!(info, "interaction_ignored");
                 return;
             }
         };
@@ -267,7 +267,7 @@ impl<T: DiscordTransport + 'static> EventHandler for Fanout<T> {
                     self.dispatcher = Some((self.commands)(Some(name)));
                 }
                 self.sync_pending = true;
-                logging::event("INFO", "gateway_ready", json!({}));
+                logging::log!(info, "gateway_ready");
             }
             BotEvent::GuildAvailable {
                 owner_id,
@@ -288,7 +288,7 @@ impl<T: DiscordTransport + 'static> EventHandler for Fanout<T> {
                         });
                     }
                     self.guild_ready.send_replace(true);
-                    logging::event("INFO", "guild_available", json!({}));
+                    logging::log!(info, "guild_available");
                 } else {
                     let _ = self.roster.send(RosterJob::GuildAvailable {
                         owner_id,

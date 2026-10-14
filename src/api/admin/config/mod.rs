@@ -77,8 +77,7 @@ fn desk(state: &ApiState) -> Result<&ConfigDesk, Refusal> {
 }
 
 fn role_profiles_conflict() -> Refusal {
-    Refusal::new(
-        StatusCode::CONFLICT,
+    Refusal::conflict(
         "conflict",
         "Reply profile assignments changed. Reload Config before saving again.",
     )
@@ -176,11 +175,7 @@ async fn last_digest(
         Ok(digests) => digests,
         // Store error text may carry paths, so only the event is logged.
         Err(_) => {
-            crate::runtime::logging::event(
-                "WARN",
-                "config_digest_unreadable",
-                serde_json::json!({}),
-            );
+            crate::runtime::logging::log!(warn, "config_digest_unreadable");
             return None;
         }
     };
@@ -372,11 +367,7 @@ async fn update(
             }
             let ungrouped = models::ungrouped(&current.models, &next, &desk.facts.model_groups);
             if !ungrouped.is_empty() {
-                return Err(Refusal::new(
-                    StatusCode::UNPROCESSABLE_ENTITY,
-                    "ungrouped",
-                    ungrouped.join(" "),
-                ));
+                return Err(Refusal::unprocessable("ungrouped", ungrouped.join(" ")));
             }
             let declared = !desk.facts.model_groups.is_empty();
             let before = models::capacity(
@@ -395,11 +386,7 @@ async fn update(
             );
             let errors = models::new_errors(&before, &after);
             if !errors.is_empty() {
-                return Err(Refusal::new(
-                    StatusCode::UNPROCESSABLE_ENTITY,
-                    "capacity",
-                    errors.join(" "),
-                ));
+                return Err(Refusal::unprocessable("capacity", errors.join(" ")));
             }
             catalog = Some(read);
             Section::Models(next)
@@ -497,7 +484,7 @@ async fn update(
         && desk.store.put_replay(replay).await.is_err()
     {
         // Store error text may carry paths, so only the event is logged.
-        crate::runtime::logging::event("WARN", "idempotency_replay_unrecorded", json!({}));
+        crate::runtime::logging::log!(warn, "idempotency_replay_unrecorded");
     }
     drop(current);
     let catalog = match catalog {

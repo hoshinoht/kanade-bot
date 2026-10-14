@@ -12,7 +12,6 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
-use serde_json::json;
 use tokio::sync::watch;
 use tokio::task::JoinHandle;
 use twilight_model::user::CurrentUser;
@@ -82,11 +81,7 @@ fn file(hash: ImageHash) -> String {
 }
 
 fn failed(kind: &'static str, reason: &'static str) {
-    logging::event(
-        "WARN",
-        "identity_refresh_failed",
-        json!({"kind": kind, "reason": reason}),
-    );
+    logging::log!(warn, "identity_refresh_failed", kind, reason);
 }
 
 /// One refresh: guild avatar else user avatar (none: the monogram), and the
@@ -128,10 +123,11 @@ pub async fn refresh(source: &impl IdentitySource, cache: &GuildCache, dir: &Pat
             failed(stem, "write");
         }
     }
-    logging::event(
-        "INFO",
+    logging::log!(
+        info,
         "identity_cached",
-        json!({"avatar": files::cached(dir, "avatar"), "banner": files::cached(dir, "banner")}),
+        avatar = files::cached(dir, "avatar"),
+        banner = files::cached(dir, "banner"),
     );
 }
 

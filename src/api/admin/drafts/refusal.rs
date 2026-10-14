@@ -10,20 +10,18 @@ use crate::{
 };
 
 pub fn not_found() -> Refusal {
-    Refusal::new(S::NOT_FOUND, "not_found", "You have no draft with that id.")
+    Refusal::not_found("not_found", "You have no draft with that id.")
 }
 
 pub fn version_required() -> Refusal {
-    Refusal::new(
-        S::UNPROCESSABLE_ENTITY,
+    Refusal::unprocessable(
         "version_required",
         "Name the draft version you edited (`version`).",
     )
 }
 
 fn stale() -> Refusal {
-    Refusal::new(
-        S::CONFLICT,
+    Refusal::conflict(
         "stale",
         "The draft changed or was closed since you loaded it; reload it.",
     )
@@ -47,42 +45,33 @@ pub fn draft(error: DraftError, doing: Doing) -> Refusal {
         // Callers answer an exact merge retry as the first result.
         DraftError::AlreadyApplied { .. } => stale(),
         DraftError::IdempotencyMismatch { .. } | DraftError::RequestMismatch { .. } => {
-            Refusal::new(
-                S::UNPROCESSABLE_ENTITY,
+            Refusal::unprocessable(
                 "idempotency_mismatch",
                 "That Idempotency-Key was already used for a different request.",
             )
         }
-        DraftError::Conflicts(conflicts) => Refusal::new(
-            S::CONFLICT,
+        DraftError::Conflicts(conflicts) => Refusal::conflict(
             "conflicts",
             format!(
                 "The draft has {} unsettled conflict(s) with the schedule; open its preview.",
                 conflicts.len()
             ),
         ),
-        DraftError::BaseMoved { .. } => Refusal::new(S::CONFLICT, "base_moved", message),
+        DraftError::BaseMoved { .. } => Refusal::conflict("base_moved", message),
         DraftError::ReplayFailed { .. } if doing == Doing::Staging => {
-            Refusal::new(S::UNPROCESSABLE_ENTITY, "op_refused", message)
+            Refusal::unprocessable("op_refused", message)
         }
-        DraftError::ReplayFailed { .. } => Refusal::new(S::CONFLICT, "conflicts", message),
-        DraftError::EditRefused(_) => Refusal::new(S::UNPROCESSABLE_ENTITY, "op_needed", message),
+        DraftError::ReplayFailed { .. } => Refusal::conflict("conflicts", message),
+        DraftError::EditRefused(_) => Refusal::unprocessable("op_needed", message),
         DraftError::ProposalOnlyOp(_) => Refusal::invalid(message),
-        DraftError::Empty => Refusal::new(
-            S::UNPROCESSABLE_ENTITY,
-            "empty",
-            "Stage a change before merging.",
-        ),
-        DraftError::NoEffect => Refusal::new(
-            S::CONFLICT,
+        DraftError::Empty => Refusal::unprocessable("empty", "Stage a change before merging."),
+        DraftError::NoEffect => Refusal::conflict(
             "no_effect",
             "The schedule is already like that; nothing would change.",
         ),
-        DraftError::InvalidTitle => Refusal::new(
-            S::UNPROCESSABLE_ENTITY,
-            "invalid_title",
-            "A draft title is 1 to 200 characters.",
-        ),
+        DraftError::InvalidTitle => {
+            Refusal::unprocessable("invalid_title", "A draft title is 1 to 200 characters.")
+        }
         DraftError::Expired => Refusal::new(
             S::GONE,
             "expired",

@@ -79,11 +79,7 @@ fn roster(state: &ApiState) -> Result<&Arc<dyn CharacterRoster>, Refusal> {
 }
 
 fn not_found() -> Refusal {
-    Refusal::new(
-        StatusCode::NOT_FOUND,
-        "not_found",
-        "That character is not on the roster.",
-    )
+    Refusal::not_found("not_found", "That character is not on the roster.")
 }
 
 /// What one character is to the scouter: an IGN to look up, or why not.
@@ -98,13 +94,10 @@ pub(crate) fn lookup_name(character: &Character) -> Result<RosterIgn, MissingRea
 /// [`lookup_name`] for a character asked for by id: why not is a `422`.
 pub(crate) fn estimate_ign(character: &Character) -> Result<RosterIgn, Refusal> {
     lookup_name(character).map_err(|reason| match reason {
-        MissingReason::OtherRegion => Refusal::new(
-            StatusCode::UNPROCESSABLE_ENTITY,
-            "region",
-            "Estimates cover MapleSEA characters only.",
-        ),
-        _ => Refusal::new(
-            StatusCode::UNPROCESSABLE_ENTITY,
+        MissingReason::OtherRegion => {
+            Refusal::unprocessable("region", "Estimates cover MapleSEA characters only.")
+        }
+        _ => Refusal::unprocessable(
             "unsupported_ign",
             "This IGN can't be looked up for an estimate.",
         ),
@@ -196,15 +189,13 @@ async fn run_party(
         }
     }
     if subjects.is_empty() {
-        return Err(Refusal::new(
-            StatusCode::UNPROCESSABLE_ENTITY,
+        return Err(Refusal::unprocessable(
             "nothing_to_look_up",
             "No one in this party has a character to look up.",
         ));
     }
     if subjects.len() > MAX_BATCH {
-        return Err(Refusal::new(
-            StatusCode::UNPROCESSABLE_ENTITY,
+        return Err(Refusal::unprocessable(
             "too_many",
             format!("An estimate looks up at most {MAX_BATCH} characters at once."),
         ));
@@ -265,8 +256,7 @@ async fn start(
             }),
         )
             .into_response()),
-        Start::Full => Err(Refusal::new(
-            StatusCode::TOO_MANY_REQUESTS,
+        Start::Full => Err(Refusal::too_many(
             "estimate_queue_full",
             format!("{MAX_QUEUED} lookups are waiting already. Try again in a few minutes."),
         )),
@@ -331,8 +321,7 @@ async fn read(
 ) -> Reply {
     let state = state(&site)?;
     let found = scouter.estimates()?.job(&id).ok_or_else(|| {
-        Refusal::new(
-            StatusCode::NOT_FOUND,
+        Refusal::not_found(
             "not_found",
             "That lookup is gone: results are kept for 24 hours.",
         )

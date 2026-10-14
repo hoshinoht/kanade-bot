@@ -643,33 +643,33 @@ impl Shared {
 
 /// Codes and counts only: never an IGN or a result.
 fn log(outcome: &Result<Found, Failure>, characters: usize, failed: usize) {
-    let (level, fields) = match outcome {
-        Ok(found) => (
+    match outcome {
+        Ok(found) => crate::runtime::logging::log!(
             if failed > 0 || found.total_failure.is_some() {
                 "WARN"
             } else {
                 "INFO"
             },
-            serde_json::json!({
-                "state": "done",
-                "characters": characters,
-                "failed": failed,
-                "total_failed": found.total_failure.as_ref().map(|failure| failure.kind.as_str()),
-                "cache_hit": found.cache_hit,
-            }),
+            "estimate_finished",
+            state = "done",
+            characters,
+            failed,
+            total_failed = found
+                .total_failure
+                .as_ref()
+                .map(|failure| failure.kind.as_str()),
+            cache_hit = found.cache_hit,
         ),
-        Err(failure) => (
-            "WARN",
-            serde_json::json!({
-                "state": "failed",
-                "characters": characters,
-                "code": failure.kind.as_str(),
-                "detail": failure.detail,
-                "status": failure.status,
-            }),
+        Err(failure) => crate::runtime::logging::log!(
+            warn,
+            "estimate_finished",
+            state = "failed",
+            characters,
+            code = failure.kind.as_str(),
+            detail = failure.detail,
+            status = failure.status,
         ),
-    };
-    crate::runtime::logging::event(level, "estimate_finished", fields);
+    }
 }
 
 /// The scouter sidecar's lookups, shared by the admin API.

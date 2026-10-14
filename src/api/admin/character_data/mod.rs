@@ -71,27 +71,15 @@ impl FromRequestParts<Arc<Site>> for Module {
 }
 
 fn not_found() -> Refusal {
-    Refusal::new(
-        StatusCode::NOT_FOUND,
-        "not_found",
-        "That character is not on the roster.",
-    )
+    Refusal::not_found("not_found", "That character is not on the roster.")
 }
 
 pub(crate) fn not_connected() -> Refusal {
-    Refusal::new(
-        StatusCode::CONFLICT,
-        "not_connected",
-        "Character data isn't connected yet.",
-    )
+    Refusal::conflict("not_connected", "Character data isn't connected yet.")
 }
 
 fn not_linked() -> Refusal {
-    Refusal::new(
-        StatusCode::CONFLICT,
-        "not_linked",
-        "That character is not linked.",
-    )
+    Refusal::conflict("not_linked", "That character is not linked.")
 }
 
 /// The roster character must exist (its link may not).
@@ -142,8 +130,7 @@ async fn request(
     let Json(body) = body.map_err(bad_body)?;
     let state = state(&site)?;
     let version = body.version.ok_or_else(|| {
-        Refusal::new(
-            StatusCode::UNPROCESSABLE_ENTITY,
+        Refusal::unprocessable(
             "version_required",
             "Send the link version as loaded (0 when not linked).",
         )
@@ -183,23 +170,19 @@ async fn request(
         }
         RequestOutcome::NotConnected => Err(not_connected()),
         RequestOutcome::Missing => Err(not_found()),
-        RequestOutcome::Retired => Err(Refusal::new(
-            StatusCode::CONFLICT,
+        RequestOutcome::Retired => Err(Refusal::conflict(
             "retired",
             "A retired character can't be linked.",
         )),
-        RequestOutcome::Region => Err(Refusal::new(
-            StatusCode::UNPROCESSABLE_ENTITY,
+        RequestOutcome::Region => Err(Refusal::unprocessable(
             "region",
             "Only MapleSEA characters can be linked.",
         )),
-        RequestOutcome::AlreadyLinked(_) => Err(Refusal::new(
-            StatusCode::CONFLICT,
+        RequestOutcome::AlreadyLinked(_) => Err(Refusal::conflict(
             "already_linked",
             "That character is already linked or waiting for its member.",
         )),
-        RequestOutcome::Stale(_) => Err(Refusal::new(
-            StatusCode::CONFLICT,
+        RequestOutcome::Stale(_) => Err(Refusal::conflict(
             "stale",
             "The link changed since it was loaded.",
         )),
@@ -235,8 +218,7 @@ async fn unlink(
         .map_err(Refusal::unavailable)?
     {
         Some(_) => Ok(Json(body).into_response()),
-        None => Err(Refusal::new(
-            StatusCode::NOT_FOUND,
+        None => Err(Refusal::not_found(
             "not_linked",
             "That character is not linked.",
         )),

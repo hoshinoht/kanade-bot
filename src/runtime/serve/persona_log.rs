@@ -33,13 +33,11 @@ fn emit(provenance: &Provenance, profiles: Option<&ProfileSet>) {
         })
         .collect();
     let Some(effective) = &provenance.effective else {
-        logging::event(
-            "ERROR",
+        logging::log!(
+            error,
             "persona_unavailable",
-            json!({
-                "configured": provenance.configured.as_ref().map(ToString::to_string),
-                "issues": issues,
-            }),
+            configured = provenance.configured.as_ref().map(ToString::to_string),
+            issues,
         );
         return;
     };
@@ -57,20 +55,21 @@ fn emit(provenance: &Provenance, profiles: Option<&ProfileSet>) {
         || !issues.is_empty()
         || !unreadable.is_empty()
         || provenance.profiles_issue.is_some();
-    logging::event(
+    logging::log!(
         if warn { "WARN" } else { "INFO" },
         "persona_selected",
-        json!({
-            "configured": provenance.configured.as_ref().map(ToString::to_string),
-            "effective": effective.to_string(),
-            "source": provenance.source.map(source),
-            "bundle_file": provenance.bundle.as_ref().map(|bundle| bundle.basename.clone()),
-            "profiles": profile_ids.len(),
-            "profile_ids": profile_ids,
-            "unreadable_profiles": unreadable,
-            "profiles_issue": provenance.profiles_issue.as_ref().map(ToString::to_string),
-            "issues": issues,
-        }),
+        configured = provenance.configured.as_ref().map(ToString::to_string),
+        effective = effective.to_string(),
+        source = provenance.source.map(source),
+        bundle_file = provenance
+            .bundle
+            .as_ref()
+            .map(|bundle| bundle.basename.clone()),
+        profiles = profile_ids.len(),
+        profile_ids,
+        unreadable_profiles = unreadable,
+        profiles_issue = provenance.profiles_issue.as_ref().map(ToString::to_string),
+        issues,
     );
 }
 

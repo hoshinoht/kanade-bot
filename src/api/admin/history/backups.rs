@@ -14,7 +14,6 @@ use std::{
 };
 
 use chrono::{DateTime, Utc};
-use serde_json::json;
 
 use crate::{
     api::dto::{
@@ -47,7 +46,7 @@ enum Skip {
 }
 
 fn dir_unreadable() {
-    logging::event("WARN", "backup_dir_unreadable", json!({}));
+    logging::log!(warn, "backup_dir_unreadable");
 }
 
 /// [`scan`] on the blocking pool; a failed scan task lists nothing.
@@ -94,10 +93,12 @@ pub(super) fn scan(dir: &Path) -> Vec<Found> {
     }
     if unreadable > 0 || missing > 0 || truncated {
         // Counts only: names and error text may carry paths.
-        logging::event(
-            "WARN",
+        logging::log!(
+            warn,
             "backup_manifests_skipped",
-            json!({"unreadable": unreadable, "missing_snapshot": missing, "truncated": truncated}),
+            unreadable,
+            missing_snapshot = missing,
+            truncated,
         );
     }
     found.sort_by(|a, b| {
@@ -163,6 +164,8 @@ pub(super) fn row(backup: &Found, anchored: bool, store_schema: i64) -> BackupRo
 
 #[cfg(test)]
 mod tests {
+    use serde_json::json;
+
     use super::*;
 
     #[test]

@@ -6,7 +6,6 @@
 
 use std::sync::Arc;
 
-use serde_json::json;
 use twilight_model::application::command::Command;
 use twilight_model::channel::message::Embed;
 use twilight_model::channel::message::embed::{EmbedField, EmbedFooter};
@@ -183,14 +182,12 @@ impl ScheduleCommand {
             if within_budget(&components) {
                 return Ok(InteractionReply::v2(components, false));
             }
-            logging::event(
-                "WARN",
+            logging::log!(
+                warn,
                 "schedule_v2_over_budget",
-                json!({
-                    "components": component_count(&components),
-                    "chars": text_chars(&components),
-                    "fallback": "embed",
-                }),
+                components = component_count(&components),
+                chars = text_chars(&components),
+                fallback = "embed",
             );
             let embed = schedule_embed(&view, &name);
             return Ok(InteractionReply::public("").with_embed(embed));

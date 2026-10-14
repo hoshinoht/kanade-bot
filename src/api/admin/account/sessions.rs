@@ -35,13 +35,8 @@ fn auth(site: &Site) -> Result<&AdminAuth, ApiError> {
 
 fn refusal(error: EndError) -> Refusal {
     match error {
-        EndError::NotFound => Refusal::new(
-            StatusCode::NOT_FOUND,
-            "not_found",
-            "That session has already ended.",
-        ),
-        EndError::Current => Refusal::new(
-            StatusCode::CONFLICT,
+        EndError::NotFound => Refusal::not_found("not_found", "That session has already ended."),
+        EndError::Current => Refusal::conflict(
             "current_session",
             "This is the session you are using; sign out instead.",
         ),

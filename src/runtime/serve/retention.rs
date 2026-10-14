@@ -12,7 +12,6 @@
 
 use std::{sync::Arc, time::Duration};
 
-use serde_json::json;
 use tokio::{sync::watch, task::JoinHandle};
 
 use crate::{
@@ -95,24 +94,22 @@ fn report(
     let cutoff =
         retention_cutoff(now, DEFAULT_LOG_RETENTION).and_then(|cutoff| to_iso(&cutoff).ok());
     match outcome {
-        Ok(Ok(counts)) => logging::event(
-            "INFO",
+        Ok(Ok(counts)) => logging::log!(
+            info,
             "model_logs_pruned",
-            json!({
-                "cutoff": cutoff,
-                "extractions": counts.extractions,
-                "chats": counts.chats,
-                "messages": counts.messages,
-                "notices": counts.notices,
-                "rewrites": counts.rewrites,
-            }),
+            cutoff,
+            extractions = counts.extractions,
+            chats = counts.chats,
+            messages = counts.messages,
+            notices = counts.notices,
+            rewrites = counts.rewrites,
         ),
         // Store error text may carry paths.
-        Ok(Err(_)) => logging::event("WARN", "model_logs_prune_failed", json!({})),
-        Err(_) => logging::event(
-            "WARN",
+        Ok(Err(_)) => logging::log!(warn, "model_logs_prune_failed"),
+        Err(_) => logging::log!(
+            warn,
             "model_logs_prune_cut",
-            json!({"limit_seconds": RUN_LIMIT.as_secs()}),
+            limit_seconds = RUN_LIMIT.as_secs(),
         ),
     }
 }
@@ -121,21 +118,19 @@ fn report_checkpoint(
     outcome: Result<Result<WalCheckpoint, StoreError>, tokio::time::error::Elapsed>,
 ) {
     match outcome {
-        Ok(Ok(done)) => logging::event(
-            "INFO",
+        Ok(Ok(done)) => logging::log!(
+            info,
             "wal_checkpointed",
-            json!({
-                "busy": done.busy,
-                "log": done.log,
-                "checkpointed": done.checkpointed,
-            }),
+            busy = done.busy,
+            log = done.log,
+            checkpointed = done.checkpointed,
         ),
         // Store error text may carry paths.
-        Ok(Err(_)) => logging::event("WARN", "wal_checkpoint_failed", json!({})),
-        Err(_) => logging::event(
-            "WARN",
+        Ok(Err(_)) => logging::log!(warn, "wal_checkpoint_failed"),
+        Err(_) => logging::log!(
+            warn,
             "wal_checkpoint_cut",
-            json!({"limit_seconds": RUN_LIMIT.as_secs()}),
+            limit_seconds = RUN_LIMIT.as_secs(),
         ),
     }
 }

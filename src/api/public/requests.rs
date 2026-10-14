@@ -80,24 +80,21 @@ impl IntoResponse for Refused {
 }
 
 fn not_found() -> Refusal {
-    Refusal::new(
-        StatusCode::NOT_FOUND,
+    Refusal::not_found(
         "not_found",
         "There is no such request, run or weekly timing for you.",
     )
 }
 
 fn closed() -> Refusal {
-    Refusal::new(
-        StatusCode::CONFLICT,
+    Refusal::conflict(
         "request_closed",
         "That request is no longer waiting for a decision.",
     )
 }
 
 fn no_effect() -> Refusal {
-    Refusal::new(
-        StatusCode::CONFLICT,
+    Refusal::conflict(
         "no_effect",
         "That request could not apply to the schedule as it is now.",
     )
@@ -115,19 +112,13 @@ fn refusal(error: RequestError) -> Refused {
     let plain = match error {
         RequestError::Refused(refused) => match refused {
             RequestRefusal::RequesterUnauthorised | RequestRefusal::UnknownSubject => not_found(),
-            RequestRefusal::AlreadyInParty => Refusal::new(
-                StatusCode::CONFLICT,
-                "already_in_party",
-                refused.to_string(),
-            ),
-            RequestRefusal::FieldNotAllowed => Refusal::new(
-                StatusCode::UNPROCESSABLE_ENTITY,
-                "field_not_allowed",
-                refused.to_string(),
-            ),
-            RequestRefusal::Frozen => {
-                Refusal::new(StatusCode::FORBIDDEN, "forbidden", refused.to_string())
+            RequestRefusal::AlreadyInParty => {
+                Refusal::conflict("already_in_party", refused.to_string())
             }
+            RequestRefusal::FieldNotAllowed => {
+                Refusal::unprocessable("field_not_allowed", refused.to_string())
+            }
+            RequestRefusal::Frozen => Refusal::forbidden("forbidden", refused.to_string()),
             _ => invalid_body(),
         },
         RequestError::Limited(RequestLimit::Pending { max, .. }) => {
@@ -143,8 +134,7 @@ fn refusal(error: RequestError) -> Refused {
             );
         }
         RequestError::Draft(error) => match error {
-            DraftError::RequestMismatch { .. } => Refusal::new(
-                StatusCode::UNPROCESSABLE_ENTITY,
+            DraftError::RequestMismatch { .. } => Refusal::unprocessable(
                 "idempotency_mismatch",
                 "That Idempotency-Key was already used for a different request.",
             ),

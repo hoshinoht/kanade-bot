@@ -7,8 +7,6 @@ use std::sync::Arc;
 use chrono::{DateTime, Utc};
 use twilight_model::id::{Id, marker::ChannelMarker};
 
-use serde_json::json;
-
 use super::convert::{extractable, incoming};
 use crate::bot::guild_cache::GuildCache;
 use crate::bot::ids::{id_text, parse_id};
@@ -101,10 +99,11 @@ impl<T: DiscordTransport> History for DiscordHistory<T> {
             match self.read(thread, channel, since).await {
                 Ok(more) => messages.extend(more),
                 Err(kind) => {
-                    logging::event(
-                        "WARN",
+                    logging::log!(
+                        warn,
                         "thread_history_skipped",
-                        json!({"thread_id": id_text(thread), "kind": kind}),
+                        thread_id = id_text(thread),
+                        kind,
                     );
                     skipped.push(format!(
                         "thread {} skipped: its history could not be read ({kind})",
@@ -121,6 +120,7 @@ impl<T: DiscordTransport> History for DiscordHistory<T> {
 #[cfg(test)]
 mod tests {
     use chrono::TimeZone;
+    use serde_json::json;
 
     use super::*;
 

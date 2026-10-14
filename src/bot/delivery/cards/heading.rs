@@ -6,7 +6,6 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use serde_json::json;
 use tokio::sync::watch;
 
 use crate::chat::nudge::{
@@ -470,15 +469,13 @@ impl HeadingRewrite {
         let trial = self
             .trial_until(HeaderKind::DayOf, None, deadline, &origin, stop)
             .await;
-        logging::event(
-            "INFO",
+        logging::log!(
+            info,
             "day_of_heading",
-            json!({
-                "stage": stage.as_str(),
-                "source": trial.source().as_str(),
-                "reason": trial.verdict.reason(),
-                "detail": trial.code(),
-            }),
+            stage = stage.as_str(),
+            source = trial.source().as_str(),
+            reason = trial.verdict.reason(),
+            detail = trial.code(),
         );
         Chosen {
             line: trial.line.replace(DAY, day),
@@ -503,16 +500,14 @@ impl HeadingRewrite {
         let trial = self
             .trial_until(HeaderKind::Phrase(kind), catalog, deadline, &origin, stop)
             .await;
-        logging::event(
-            "INFO",
+        logging::log!(
+            info,
             "reminder_header_phrase",
-            json!({
-                "stage": stage.as_str(),
-                "kind": kind.as_str(),
-                "source": trial.source().as_str(),
-                "reason": trial.verdict.reason(),
-                "detail": trial.code(),
-            }),
+            stage = stage.as_str(),
+            kind = kind.as_str(),
+            source = trial.source().as_str(),
+            reason = trial.verdict.reason(),
+            detail = trial.code(),
         );
         Chosen {
             source: trial.source(),
@@ -530,15 +525,23 @@ impl HeadingRewrite {
         } else {
             "not_ready"
         };
-        let mut fields = json!({"stage": "send", "source": "seed", "reason": reason});
-        let event = match kind {
-            None => "day_of_heading",
-            Some(kind) => {
-                fields["kind"] = kind.as_str().into();
-                "reminder_header_phrase"
-            }
-        };
-        logging::event("INFO", event, fields);
+        match kind {
+            None => logging::log!(
+                info,
+                "day_of_heading",
+                stage = "send",
+                source = "seed",
+                reason
+            ),
+            Some(kind) => logging::log!(
+                info,
+                "reminder_header_phrase",
+                stage = "send",
+                source = "seed",
+                reason,
+                kind = kind.as_str(),
+            ),
+        }
     }
 
     /// One rewrite of `kind`'s seed through its gate, never slower than

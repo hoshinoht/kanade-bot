@@ -288,11 +288,7 @@ impl AvatarCache {
                 Some(portrait)
             }
             Err(reason) => {
-                crate::runtime::logging::event(
-                    "WARN",
-                    "avatar_fetch_failed",
-                    serde_json::json!({"reason": reason}),
-                );
+                crate::runtime::logging::log!(warn, "avatar_fetch_failed", reason);
                 let mut failed = self.failures();
                 if failed.len() >= MAX_FAILURES {
                     failed.clear();

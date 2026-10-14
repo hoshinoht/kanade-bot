@@ -152,13 +152,7 @@ async fn row(
         .into_iter()
         .find(|row| row.id == fixed_id)
         .map(|row| Json(row).into_response())
-        .ok_or_else(|| {
-            Refusal::new(
-                StatusCode::NOT_FOUND,
-                "not_found",
-                "That weekly timing no longer exists.",
-            )
-        })
+        .ok_or_else(|| Refusal::not_found("not_found", "That weekly timing no longer exists."))
 }
 
 /// The change already recorded for this request's `Idempotency-Key`, if any.
@@ -280,8 +274,7 @@ pub async fn update(
         None
     } else {
         Some(request.version.ok_or_else(|| {
-            Refusal::new(
-                StatusCode::UNPROCESSABLE_ENTITY,
+            Refusal::unprocessable(
                 "version_required",
                 "Send the week version the timing was loaded at.",
             )
@@ -341,11 +334,7 @@ pub async fn update(
         return refusal_replay
             .recover(
                 &mut ctx,
-                Refusal::new(
-                    StatusCode::NOT_FOUND,
-                    "not_found",
-                    "That weekly timing no longer exists.",
-                ),
+                Refusal::not_found("not_found", "That weekly timing no longer exists."),
             )
             .await;
     };
@@ -501,8 +490,7 @@ pub async fn retire(
         .any(|fixed| fixed.id == fixed_id);
     let cancelled = match state.writer.retire_fixed(origin, &fixed_id, &ctx).await {
         Ok(_) if !exists => {
-            return Err(Refusal::new(
-                StatusCode::NOT_FOUND,
+            return Err(Refusal::not_found(
                 "not_found",
                 "That weekly timing no longer exists.",
             ));

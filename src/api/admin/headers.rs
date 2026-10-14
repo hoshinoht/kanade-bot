@@ -79,14 +79,10 @@ async fn rewrite(
             .into_response());
         }
         ManualStart::Running => {
-            return Err(Refusal::new(
-                StatusCode::CONFLICT,
-                "rewrite_running",
-                RUNNING,
-            ));
+            return Err(Refusal::conflict("rewrite_running", RUNNING));
         }
         ManualStart::Disabled => {
-            return Err(Refusal::new(StatusCode::CONFLICT, "rewrite_off", DISABLED));
+            return Err(Refusal::conflict("rewrite_off", DISABLED));
         }
         ManualStart::Unavailable => return Err(ApiError::UNAVAILABLE.into()),
     };

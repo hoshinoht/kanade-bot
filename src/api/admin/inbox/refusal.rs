@@ -15,23 +15,18 @@ use crate::{
 };
 
 pub fn not_found() -> Refusal {
-    Refusal::new(
-        S::NOT_FOUND,
-        "not_found",
-        "Nothing in the inbox has that id.",
-    )
+    Refusal::not_found("not_found", "Nothing in the inbox has that id.")
 }
 
 pub fn stale() -> Refusal {
-    Refusal::new(
-        S::CONFLICT,
+    Refusal::conflict(
         "stale",
         "It changed or was decided since you opened it; review it again.",
     )
 }
 
 pub fn conflicts(message: impl Into<String>) -> Refusal {
-    Refusal::new(S::CONFLICT, "conflicts", message)
+    Refusal::conflict("conflicts", message)
 }
 
 pub fn expired() -> Refusal {
@@ -43,20 +38,18 @@ pub fn expired() -> Refusal {
 }
 
 pub fn no_effect() -> Refusal {
-    Refusal::new(
-        S::CONFLICT,
+    Refusal::conflict(
         "no_effect",
         "It is already like that; nothing would change. Reject it instead.",
     )
 }
 
 pub fn unprocessable(code: &'static str, message: impl Into<String>) -> Refusal {
-    Refusal::new(S::UNPROCESSABLE_ENTITY, code, message)
+    Refusal::unprocessable(code, message)
 }
 
 pub fn discord_session_required() -> Refusal {
-    Refusal::new(
-        S::FORBIDDEN,
+    Refusal::forbidden(
         "discord_session_required",
         "Sign in with Discord to approve or reject Kanade's proposals.",
     )
@@ -114,8 +107,7 @@ pub fn draft(error: DraftError) -> Refusal {
 }
 
 fn requester_unauthorised() -> Refusal {
-    Refusal::new(
-        S::CONFLICT,
+    Refusal::conflict(
         "requester_unauthorised",
         "The member may no longer have this approved; reject it.",
     )
@@ -124,9 +116,7 @@ fn requester_unauthorised() -> Refusal {
 pub fn request(error: RequestError) -> Refusal {
     match error {
         RequestError::Refused(refusal) => match refusal {
-            RequestRefusal::NotAdmin => {
-                Refusal::new(S::FORBIDDEN, "forbidden", refusal.to_string())
-            }
+            RequestRefusal::NotAdmin => Refusal::forbidden("forbidden", refusal.to_string()),
             RequestRefusal::RequesterUnauthorised => requester_unauthorised(),
             RequestRefusal::UnknownSubject => conflicts("That run or weekly run no longer exists."),
             RequestRefusal::ChoicesRequired => {
@@ -147,9 +137,7 @@ pub fn request(error: RequestError) -> Refusal {
             | RequestRefusal::AlreadyInParty => Refusal::invalid(refusal.to_string()),
         },
         RequestError::Draft(error) => draft(error),
-        RequestError::Limited(_) => {
-            Refusal::new(S::TOO_MANY_REQUESTS, "request_limit", "Too many requests.")
-        }
+        RequestError::Limited(_) => Refusal::too_many("request_limit", "Too many requests."),
         RequestError::AdminDraft => not_found(),
         RequestError::Expired(_) => expired(),
         RequestError::NoEffect => no_effect(),
@@ -161,11 +149,9 @@ pub fn proposal(error: ProposalError) -> Refusal {
         // v4's words, written for members.
         ProposalError::Refused(refusal) => conflicts(refusal.to_string()),
         ProposalError::NoEffect => no_effect(),
-        ProposalError::Unauthorised => Refusal::new(
-            S::FORBIDDEN,
-            "forbidden",
-            "That proposal is not yours to answer.",
-        ),
+        ProposalError::Unauthorised => {
+            Refusal::forbidden("forbidden", "That proposal is not yours to answer.")
+        }
         ProposalError::NotAProposal => not_found(),
         ProposalError::Expired => expired(),
         ProposalError::EditNotApplicable => edit_not_applicable(),

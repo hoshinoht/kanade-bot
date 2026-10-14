@@ -15,7 +15,6 @@ use std::sync::{Arc, Mutex, PoisonError};
 
 use chrono::{DateTime, Utc};
 use chrono_tz::Tz;
-use serde_json::json;
 use twilight_model::channel::message::embed::{EmbedField, EmbedFooter};
 use twilight_model::channel::message::{Component, Embed};
 
@@ -830,10 +829,11 @@ where
     ) -> Outcome<()> {
         if layout == Layout::V2 && card.components.is_empty() {
             if self.cards.v2.formats.first_note(&id_text(message)) {
-                logging::event(
-                    "WARN",
+                logging::log!(
+                    warn,
                     "proposal_card_v2_over_budget",
-                    json!({"message_id": id_text(message), "left": "as posted"}),
+                    message_id = id_text(message),
+                    left = "as posted",
                 );
             }
             return Outcome::DefinitelyRejected(RejectionKind::Invalid);

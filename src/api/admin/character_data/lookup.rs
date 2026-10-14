@@ -67,8 +67,7 @@ async fn look_up(
     let world = parse_world(body.world.as_deref().unwrap_or(DEFAULT_WORLD))
         .map_err(|error| Refusal::invalid(error.to_string()))?;
     if world != LINK_REGION {
-        return Err(Refusal::new(
-            StatusCode::UNPROCESSABLE_ENTITY,
+        return Err(Refusal::unprocessable(
             "region",
             "Only MapleSEA characters can be looked up.",
         ));
@@ -85,14 +84,12 @@ async fn look_up(
 pub(crate) fn answer(outcome: LookupOutcome) -> Reply {
     match outcome {
         LookupOutcome::Found(found) => Ok(Json(lookup(found)).into_response()),
-        LookupOutcome::NotFound => Err(Refusal::new(
-            StatusCode::NOT_FOUND,
+        LookupOutcome::NotFound => Err(Refusal::not_found(
             "not_found",
             "NEXON has no MapleSEA character by that name.",
         )),
         LookupOutcome::NotConnected => Err(not_connected()),
-        LookupOutcome::TooSoon => Err(Refusal::new(
-            StatusCode::TOO_MANY_REQUESTS,
+        LookupOutcome::TooSoon => Err(Refusal::too_many(
             "lookup_cooldown",
             "Wait a few seconds before looking up again.",
         )),

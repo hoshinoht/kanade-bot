@@ -23,7 +23,7 @@ use std::sync::Arc;
 use axum::{
     Json, Router,
     extract::{FromRequestParts, Path as UrlPath, State},
-    http::{StatusCode, request::Parts},
+    http::request::Parts,
     response::{IntoResponse, Response},
     routing::{get, patch, put},
 };
@@ -75,11 +75,7 @@ impl FromRequestParts<Arc<Site>> for Roster {
 }
 
 fn member_not_found() -> Refusal {
-    Refusal::new(
-        StatusCode::NOT_FOUND,
-        "not_found",
-        "That member is not on the roster.",
-    )
+    Refusal::not_found("not_found", "That member is not on the roster.")
 }
 
 /// Characters belong to members the bot has seen (departed ones included).

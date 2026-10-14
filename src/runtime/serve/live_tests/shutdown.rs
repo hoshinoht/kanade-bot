@@ -121,7 +121,7 @@ impl Timeline {
 
 /// A point of the test's own, in the log sequence.
 fn mark(event: &'static str) {
-    logging::event("INFO", event, json!({}));
+    logging::log!(info, event);
 }
 
 fn logged(event: &str) -> Vec<Value> {

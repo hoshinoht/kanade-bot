@@ -20,7 +20,6 @@ use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use chrono::{DateTime, Utc};
-use serde_json::json;
 use tokio::sync::{Notify, watch};
 
 use super::card_records::digest_phrase_key;
@@ -212,11 +211,7 @@ where
         } else {
             match self.plan((self.refresh.now)()).await {
                 None => {
-                    logging::event(
-                        "WARN",
-                        "manual_rewrite_failed",
-                        json!({"operation": "plan"}),
-                    );
+                    logging::log!(warn, "manual_rewrite_failed", operation = "plan");
                     ManualStart::Unavailable
                 }
                 Some(targets) if targets.is_empty() => ManualStart::Nothing,
@@ -235,7 +230,7 @@ where
                         ManualStart::Unavailable
                     } else {
                         self.wake.notify_one();
-                        logging::event("INFO", "manual_rewrite_started", json!({"headers": count}));
+                        logging::log!(info, "manual_rewrite_started", headers = count);
                         return ManualStart::Started(count);
                     }
                 }
@@ -264,16 +259,14 @@ where
                 continue;
             };
             let report = self.execute(&job, &stop).await;
-            logging::event(
-                "INFO",
+            logging::log!(
+                info,
                 "manual_rewrite_done",
-                json!({
-                    "accepted": report.accepted,
-                    "rejected": report.rejected,
-                    "failed": report.failed,
-                    "unedited": report.unedited,
-                    "stopped": report.stopped,
-                }),
+                accepted = report.accepted,
+                rejected = report.rejected,
+                failed = report.failed,
+                unedited = report.unedited,
+                stopped = report.stopped,
             );
             if !report.stopped
                 && let Some(channel) = job.request.report_to.as_deref().and_then(parse_id)
@@ -293,11 +286,7 @@ where
                     .await
                     .is_delivered()
                 {
-                    logging::event(
-                        "WARN",
-                        "manual_rewrite_failed",
-                        json!({"operation": "summary"}),
-                    );
+                    logging::log!(warn, "manual_rewrite_failed", operation = "summary");
                 }
             }
             self.busy.store(false, Ordering::Release);
@@ -446,11 +435,7 @@ where
                 .await
                 .is_err()
             {
-                logging::event(
-                    "WARN",
-                    "manual_rewrite_failed",
-                    json!({"operation": "write"}),
-                );
+                logging::log!(warn, "manual_rewrite_failed", operation = "write");
                 report.failed += 1;
                 continue;
             }

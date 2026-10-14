@@ -76,7 +76,7 @@ fn refused(error: RescanError) -> Refusal {
         RescanError::Window(_) => {
             Refusal::invalid("Pick a window: this boss week, since reset or two weeks.")
         }
-        RescanError::Off => Refusal::new(StatusCode::CONFLICT, "extraction_off", RESCAN_OFF),
+        RescanError::Off => Refusal::conflict("extraction_off", RESCAN_OFF),
         RescanError::Closed | RescanError::Store(_) => ApiError::UNAVAILABLE.into(),
     }
 }

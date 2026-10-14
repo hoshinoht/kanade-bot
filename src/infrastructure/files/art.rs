@@ -7,8 +7,6 @@ use std::fs;
 use std::io::Read;
 use std::path::PathBuf;
 
-use serde_json::json;
-
 use crate::bot::delivery::cards::{ArtFile, ArtKind, ArtSource, MAX_ART_BYTES};
 use crate::runtime::logging;
 
@@ -49,10 +47,12 @@ fn kind_name(kind: ArtKind) -> &'static str {
 }
 
 fn skipped(kind: ArtKind, basename: &str, reason: &str) {
-    logging::event(
-        "WARN",
+    logging::log!(
+        warn,
         "card_art_skipped",
-        json!({"kind": kind_name(kind), "boss": basename, "reason": reason}),
+        kind = kind_name(kind),
+        boss = basename,
+        reason,
     );
 }
 

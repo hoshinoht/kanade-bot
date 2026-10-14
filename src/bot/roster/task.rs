@@ -7,7 +7,6 @@ use std::future::Future;
 use std::sync::Arc;
 use std::time::Duration;
 
-use serde_json::json;
 use tokio::sync::{mpsc, watch};
 use tokio::time::{Instant, sleep_until};
 use twilight_model::id::{Id, marker::UserMarker};
@@ -308,10 +307,11 @@ impl<K: RosterSink, T: DiscordTransport> RosterTask<K, T> {
             match fetch_members(&*self.transport, self.scope.guild_id, || *stop.borrow()).await {
                 Ok(fetched) => fetched,
                 Err(error) => {
-                    logging::event(
-                        "WARN",
+                    logging::log!(
+                        warn,
                         "roster_reconcile_failed",
-                        json!({"read": error.read, "outcome": error.outcome}),
+                        read = error.read,
+                        outcome = error.outcome,
                     );
                     return false;
                 }
@@ -352,15 +352,13 @@ impl<K: RosterSink, T: DiscordTransport> RosterTask<K, T> {
         if !complete {
             return false;
         }
-        logging::event(
-            "INFO",
+        logging::log!(
+            info,
             "roster_reconciled",
-            json!({
-                "members": report.members,
-                "seen": report.seen,
-                "left": report.left,
-                "sessions_ended": report.sessions_ended,
-            }),
+            members = report.members,
+            seen = report.seen,
+            left = report.left,
+            sessions_ended = report.sessions_ended,
         );
         true
     }
@@ -378,11 +376,7 @@ fn failed(step: &'static str, error: &StoreError) {
         StoreError::Constraint(_) => "constraint",
         _ => "backend",
     };
-    logging::event(
-        "WARN",
-        "roster_write_failed",
-        json!({"step": step, "kind": kind}),
-    );
+    logging::log!(warn, "roster_write_failed", step, kind);
 }
 
 #[cfg(test)]

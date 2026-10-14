@@ -9,7 +9,6 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex, OnceLock, PoisonError, Weak};
 
 use chrono::{DateTime, Utc};
-use serde_json::json;
 use tokio::sync::Mutex as AsyncMutex;
 
 use super::cards::{
@@ -61,7 +60,7 @@ pub async fn prepare<S: ReminderCardStore>(
         Ok(Some(record)) => return Some(record),
         Ok(None) => {}
         Err(_) => {
-            logging::event("WARN", "card_record_failed", json!({"operation": "read"}));
+            logging::log!(warn, "card_record_failed", operation = "read");
             if !matches!(&intent.content, IntentContent::DayOf { .. }) {
                 return None;
             }
@@ -71,7 +70,7 @@ pub async fn prepare<S: ReminderCardStore>(
     match store.save_card_record(key.as_str(), &record, now).await {
         Ok(stored) => Some(stored),
         Err(_) => {
-            logging::event("WARN", "card_record_failed", json!({"operation": "write"}));
+            logging::log!(warn, "card_record_failed", operation = "write");
             (record.kind == DAY_OF_KIND).then_some(record)
         }
     }
@@ -133,7 +132,7 @@ pub async fn prepare_digest<S: DigestPhraseStore>(
         Ok(Some(phrase)) => return Some(phrase),
         Ok(None) => {}
         Err(_) => {
-            logging::event("WARN", "digest_phrase_failed", json!({"operation": "read"}));
+            logging::log!(warn, "digest_phrase_failed", operation = "read");
             return None;
         }
     }
@@ -144,11 +143,7 @@ pub async fn prepare_digest<S: DigestPhraseStore>(
     match store.save_digest_phrase(&key, phrase, now).await {
         Ok(stored) => Some(stored),
         Err(_) => {
-            logging::event(
-                "WARN",
-                "digest_phrase_failed",
-                json!({"operation": "write"}),
-            );
+            logging::log!(warn, "digest_phrase_failed", operation = "write");
             None
         }
     }

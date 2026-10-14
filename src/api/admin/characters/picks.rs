@@ -34,8 +34,7 @@ fn on(scope: PickScope) -> &'static str {
 }
 
 pub(super) fn stale(scope: PickScope) -> Refusal {
-    Refusal::new(
-        StatusCode::CONFLICT,
+    Refusal::conflict(
         "stale",
         format!(
             "This member's character on {} changed since it was loaded.",
@@ -45,24 +44,18 @@ pub(super) fn stale(scope: PickScope) -> Refusal {
 }
 
 fn character_not_found() -> Refusal {
-    Refusal::new(
-        StatusCode::NOT_FOUND,
-        "not_found",
-        "That character is not on the roster.",
-    )
+    Refusal::not_found("not_found", "That character is not on the roster.")
 }
 
 fn not_theirs() -> Refusal {
-    Refusal::new(
-        StatusCode::UNPROCESSABLE_ENTITY,
+    Refusal::unprocessable(
         "not_their_character",
         "That character belongs to another member.",
     )
 }
 
 fn retired() -> Refusal {
-    Refusal::new(
-        StatusCode::UNPROCESSABLE_ENTITY,
+    Refusal::unprocessable(
         "character_retired",
         "That character is retired: bring it back on the member's Characters tab first.",
     )
@@ -95,8 +88,7 @@ impl CharacterPick {
     /// The character (`None` clears) and the version, both required.
     pub(super) fn parts(self, loaded: &str) -> Result<(Option<String>, u32), Refusal> {
         let version = self.version.ok_or_else(|| {
-            Refusal::new(
-                StatusCode::UNPROCESSABLE_ENTITY,
+            Refusal::unprocessable(
                 "version_required",
                 format!("Send the version the {loaded} characters were loaded at."),
             )

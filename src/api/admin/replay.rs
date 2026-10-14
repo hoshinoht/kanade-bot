@@ -28,8 +28,7 @@ use crate::{
 };
 
 pub(crate) fn mismatch() -> Refusal {
-    Refusal::new(
-        StatusCode::UNPROCESSABLE_ENTITY,
+    Refusal::unprocessable(
         "idempotency_mismatch",
         "That Idempotency-Key was already used for a different request.",
     )
