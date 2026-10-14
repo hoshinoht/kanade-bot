@@ -69,7 +69,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@1.98.1
+        uses: dtolnay/rust-toolchain@1.120.0
       - name: Format
         run: cargo fmt --check
       - name: Lint
@@ -104,7 +104,7 @@ jobs:
         with:
           bun-version: 1.4.0
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@1.98.1
+        uses: dtolnay/rust-toolchain@1.120.0
       - name: Build Rust server
         run: cargo build --locked --release
       - name: Build Rust E2E fixture
@@ -142,7 +142,7 @@ jobs:
         with:
           bun-version: 1.4.0
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@1.98.1
+        uses: dtolnay/rust-toolchain@1.120.0
         with:
           components: clippy, rustfmt
 
