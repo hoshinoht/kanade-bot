@@ -1,5 +1,3 @@
-use std::fmt;
-
 use chrono::{NaiveTime, Weekday};
 
 use crate::domain::pytext::{decimal, is_digit, is_space, repr, strip};
@@ -18,50 +16,35 @@ const WEEKDAYS: [Weekday; 7] = [
 ];
 
 /// Weekday and clock-time input errors, with v4's `ValueError` messages.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
 pub enum WeekParseError {
     /// The text names no weekday; `value` is the input as given.
+    #[error(
+        "unknown weekday {}; expected one of mon, tue, wed, thu, fri, sat, sun",
+        repr(.value)
+    )]
     UnknownWeekday { value: String },
     /// A numeric weekday outside 0..=6, in decimal without leading zeros.
+    #[error("weekday out of range: {value}")]
     WeekdayOutOfRange { value: String },
     /// The text is not a clock time; `value` is the input as given.
+    #[error("expected a time like 21:30, 2130 or 9:30pm, got {}", repr(.value))]
     InvalidTime { value: String },
     /// All digits but not all decimal (e.g. `²`); `literal` is the stripped,
     /// lowercased text v4 handed to `int()`.
+    // CPython formats the literal with `%.200R`: its repr cut to 200 characters.
+    #[error(
+        "invalid literal for int() with base 10: {}",
+        repr(.literal).chars().take(200).collect::<String>()
+    )]
     InvalidIntLiteral { literal: String },
     /// A decimal index longer than CPython's `int()` digit limit.
+    #[error(
+        "Exceeds the limit ({INT_MAX_STR_DIGITS} digits) for integer string conversion: \
+         value has {digits} digits; use sys.set_int_max_str_digits() to increase the limit"
+    )]
     IntTooLong { digits: usize },
 }
-
-impl fmt::Display for WeekParseError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::UnknownWeekday { value } => write!(
-                f,
-                "unknown weekday {}; expected one of mon, tue, wed, thu, fri, sat, sun",
-                repr(value)
-            ),
-            Self::WeekdayOutOfRange { value } => write!(f, "weekday out of range: {value}"),
-            Self::InvalidTime { value } => write!(
-                f,
-                "expected a time like 21:30, 2130 or 9:30pm, got {}",
-                repr(value)
-            ),
-            // CPython formats the literal with `%.200R`: its repr cut to 200 characters.
-            Self::InvalidIntLiteral { literal } => {
-                let shown: String = repr(literal).chars().take(200).collect();
-                write!(f, "invalid literal for int() with base 10: {shown}")
-            }
-            Self::IntTooLong { digits } => write!(
-                f,
-                "Exceeds the limit ({INT_MAX_STR_DIGITS} digits) for integer string conversion: \
-                 value has {digits} digits; use sys.set_int_max_str_digits() to increase the limit"
-            ),
-        }
-    }
-}
-
-impl std::error::Error for WeekParseError {}
 
 /// A Monday-zero weekday index, as v4 stores it.
 ///

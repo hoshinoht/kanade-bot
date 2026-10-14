@@ -8,7 +8,6 @@
 //! Every lease first checks that the configured path still names the owned
 //! database inode, so no write lands in a moved or replaced file.
 
-use std::fmt;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -20,19 +19,12 @@ use super::owner::DbIdentity;
 use super::{SqliteStoreError, connect};
 
 /// Why no write connection was handed out.
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub(crate) enum LeaseError {
+    #[error("{0}")]
     Identity(SqliteStoreError),
+    #[error("{0}")]
     Connect(sqlx::Error),
-}
-
-impl fmt::Display for LeaseError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Identity(error) => error.fmt(f),
-            Self::Connect(error) => error.fmt(f),
-        }
-    }
 }
 
 pub(super) struct Writer {

@@ -154,20 +154,24 @@ impl fmt::Debug for ModelRound {
 
 /// Why a question produced no answer. C3 turns these into member-facing
 /// lines; the loop only reports them.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, thiserror::Error)]
 pub enum AnswerFailure {
     /// Every round asked for tools.
+    #[error("the model kept calling tools")]
     KeptCallingTools,
+    #[error("ContextBudgetError: {0}")]
     ContextBudget(ContextBudgetError),
     /// The question's deadline passed (v4 `no answer within Ns`).
-    Timeout {
-        seconds: u64,
-    },
+    #[error("no answer within {seconds}s")]
+    Timeout { seconds: u64 },
     /// The provider's content filter blocked the answer, clean retry included.
+    #[error("the provider's content filter blocked the answer")]
     ContentBlocked,
     /// No usable answer (malformed or empty), clean retry included.
+    #[error("the model gave no usable answer")]
     Malformed,
     /// The governed session failed or turned the question away.
+    #[error("{0}")]
     Session(SessionError),
 }
 
@@ -190,19 +194,6 @@ impl AnswerFailure {
             Self::Session(error) => error.charge,
             Self::ContextBudget(_) => Charge::Refunded,
             _ => Charge::Charged,
-        }
-    }
-}
-
-impl fmt::Display for AnswerFailure {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::KeptCallingTools => f.write_str("the model kept calling tools"),
-            Self::ContextBudget(error) => write!(f, "ContextBudgetError: {error}"),
-            Self::Timeout { seconds } => write!(f, "no answer within {seconds}s"),
-            Self::ContentBlocked => f.write_str("the provider's content filter blocked the answer"),
-            Self::Malformed => f.write_str("the model gave no usable answer"),
-            Self::Session(error) => error.fmt(f),
         }
     }
 }

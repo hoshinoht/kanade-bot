@@ -4,7 +4,6 @@
 //! opposite reaction, and decline/retraction notices. [`ReactionRouter`]
 //! returns each run's [`ReactionResult`] so those follow-ups can be driven.
 
-use std::fmt;
 use std::future::Future;
 
 use chrono::{DateTime, Utc};
@@ -183,22 +182,13 @@ where
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
 pub enum RouteError {
+    #[error("card lookup failed: {}", .0.0)]
     Lookup(LookupError),
+    #[error("{0}")]
     Scheduler(SchedulerError),
 }
-
-impl fmt::Display for RouteError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Lookup(LookupError(detail)) => write!(f, "card lookup failed: {detail}"),
-            Self::Scheduler(error) => error.fmt(f),
-        }
-    }
-}
-
-impl std::error::Error for RouteError {}
 
 /// Routes RSVP reactions through the card index to the scheduler.
 pub struct ReactionRouter<I, S> {

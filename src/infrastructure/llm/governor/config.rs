@@ -1,6 +1,5 @@
 use std::{
     collections::{BTreeMap, BTreeSet},
-    fmt,
     time::Duration,
 };
 
@@ -96,49 +95,33 @@ pub struct RoleRoute {
     pub effort: Option<Effort>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
 pub enum ConfigError {
+    #[error("a backend group has an empty name")]
     EmptyGroupName,
+    #[error("backend group {0:?} is listed twice")]
     DuplicateGroup(String),
+    #[error(
+        "backend group {group:?}: permits {value} is not a whole number from 1 to {MAX_PERMITS}"
+    )]
     Permits { group: String, value: u32 },
+    #[error(
+        "backend group {group:?}: requests per minute {value} is not from 1 to {MAX_REQUESTS_PER_MIN}"
+    )]
     RequestsPerMin { group: String, value: u32 },
+    #[error("backend group {group:?}: burst {value} is not from 1 to {MAX_BURST}")]
     Burst { group: String, value: u32 },
+    #[error("backend group {group:?} has no aliases")]
     NoAliases { group: String },
+    #[error("backend group {group:?} has an empty alias")]
     EmptyAlias { group: String },
+    #[error("alias {alias:?} is listed more than once")]
     DuplicateAlias { alias: String },
+    #[error("role {} has no alias", .role.as_str())]
     EmptyRoleAlias { role: Role },
+    #[error("governor policy field {0} is out of range")]
     Policy(&'static str),
 }
-
-impl fmt::Display for ConfigError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::EmptyGroupName => f.write_str("a backend group has an empty name"),
-            Self::DuplicateGroup(name) => write!(f, "backend group {name:?} is listed twice"),
-            Self::Permits { group, value } => write!(
-                f,
-                "backend group {group:?}: permits {value} is not a whole number from 1 to {MAX_PERMITS}"
-            ),
-            Self::RequestsPerMin { group, value } => write!(
-                f,
-                "backend group {group:?}: requests per minute {value} is not from 1 to {MAX_REQUESTS_PER_MIN}"
-            ),
-            Self::Burst { group, value } => write!(
-                f,
-                "backend group {group:?}: burst {value} is not from 1 to {MAX_BURST}"
-            ),
-            Self::NoAliases { group } => write!(f, "backend group {group:?} has no aliases"),
-            Self::EmptyAlias { group } => write!(f, "backend group {group:?} has an empty alias"),
-            Self::DuplicateAlias { alias } => {
-                write!(f, "alias {alias:?} is listed more than once")
-            }
-            Self::EmptyRoleAlias { role } => write!(f, "role {} has no alias", role.as_str()),
-            Self::Policy(field) => write!(f, "governor policy field {field} is out of range"),
-        }
-    }
-}
-
-impl std::error::Error for ConfigError {}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ConfigWarning {

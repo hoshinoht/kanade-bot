@@ -9,8 +9,6 @@
 
 mod edit;
 
-use std::fmt;
-
 pub use edit::{ChangeId, Part, RequestEdit, asked_time, changes, describe, retimable};
 
 use chrono::TimeDelta;
@@ -124,53 +122,46 @@ impl RequestSpec {
 }
 
 /// Why a request action was refused.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
 pub enum RequestRefusal {
     /// Not a guild member with the bossing role, not on the subject, or
     /// not the request's author.
+    #[error("the requester may not make this request")]
     RequesterUnauthorised,
     /// Only administrators decide requests.
+    #[error("only administrators decide requests")]
     NotAdmin,
+    #[error("the member is frozen")]
     Frozen,
+    #[error("no such run or weekly run")]
     UnknownSubject,
     /// A `change_fixed` request may change only day, time, party or channel.
+    #[error("a change request may change only day, time, party or channel")]
     FieldNotAllowed,
     /// A `change_fixed` approval must carry per-run choices (or `UpdateAll`).
+    #[error("approving a change needs a choice for each moved run")]
     ChoicesRequired,
     /// Choices only apply to `change_fixed`.
+    #[error("choices apply only to change requests")]
     ChoicesNotApplicable,
     /// A join or swap would add someone already on the run or timing.
+    #[error("that member is already on it")]
     AlreadyInParty,
     /// A rejection needs a reason.
+    #[error("a rejection needs a reason")]
     ReasonRequired,
     /// A reason over 500 characters or with control characters.
+    #[error("a reason is at most 500 characters without control characters")]
     ReasonInvalid,
     /// An approval's edit names a change the request does not ask for.
+    #[error("the request does not ask for that change")]
     UnknownChange,
     /// An approval's edit gives a new time to a change without one.
+    #[error("only a weekly day and time can be changed")]
     NotRetimable,
     /// An approval's edit leaves out every change (reject it instead).
+    #[error("every change was left out; reject the request instead")]
     NothingApproved,
-}
-
-impl fmt::Display for RequestRefusal {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(match self {
-            Self::RequesterUnauthorised => "the requester may not make this request",
-            Self::NotAdmin => "only administrators decide requests",
-            Self::Frozen => "the member is frozen",
-            Self::UnknownSubject => "no such run or weekly run",
-            Self::FieldNotAllowed => "a change request may change only day, time, party or channel",
-            Self::ChoicesRequired => "approving a change needs a choice for each moved run",
-            Self::ChoicesNotApplicable => "choices apply only to change requests",
-            Self::AlreadyInParty => "that member is already on it",
-            Self::ReasonRequired => "a rejection needs a reason",
-            Self::ReasonInvalid => "a reason is at most 500 characters without control characters",
-            Self::UnknownChange => "the request does not ask for that change",
-            Self::NotRetimable => "only a weekly day and time can be changed",
-            Self::NothingApproved => "every change was left out; reject the request instead",
-        })
-    }
 }
 
 fn on_roster(directory: &(dyn Directory + Sync), user_id: &str) -> bool {

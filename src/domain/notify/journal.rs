@@ -291,33 +291,24 @@ pub struct Recovery {
 }
 
 /// Journal refusals and failures; nothing was written.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
 pub enum JournalError {
     /// The lease is not live, or the store is not OPEN.
+    #[error("delivery lease is not live")]
     LeaseNotLive,
     /// A native target is gone, already sent, active, or retired unproven.
+    #[error("delivery target unavailable: {0}")]
     TargetUnavailable(String),
     /// The attempt or its native rows are not in the expected state.
+    #[error("delivery state changed: {0}")]
     StateChanged(String),
     /// A target cannot be keyed (e.g. a week outside v4's years), or a
     /// resolution actor/reason is empty or too long.
+    #[error("invalid delivery input: {0}")]
     InvalidInput(String),
+    #[error("delivery journal failed: {0}")]
     Backend(String),
 }
-
-impl fmt::Display for JournalError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::LeaseNotLive => f.write_str("delivery lease is not live"),
-            Self::TargetUnavailable(detail) => write!(f, "delivery target unavailable: {detail}"),
-            Self::StateChanged(detail) => write!(f, "delivery state changed: {detail}"),
-            Self::InvalidInput(detail) => write!(f, "invalid delivery input: {detail}"),
-            Self::Backend(detail) => write!(f, "delivery journal failed: {detail}"),
-        }
-    }
-}
-
-impl std::error::Error for JournalError {}
 
 impl From<DateOutOfRange> for JournalError {
     fn from(error: DateOutOfRange) -> Self {

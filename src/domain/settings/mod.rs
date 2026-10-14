@@ -12,7 +12,6 @@ pub mod keys;
 mod model;
 
 use std::collections::BTreeMap;
-use std::fmt;
 
 pub use audit::{RowDiff, SettingsChange, SettingsChangeQuery, diff_rows};
 pub use codec::{IdList, Section};
@@ -61,10 +60,12 @@ pub trait SettingsStore {
     ) -> impl Future<Output = Result<Vec<SettingsChange>, StoreError>> + Send;
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
 pub enum SettingsError {
+    #[error("{0}")]
     Store(StoreError),
     /// A stored (or about-to-be-stored) value does not decode.
+    #[error("setting `{key}` has an unreadable value {value:?}: {reason}")]
     Malformed {
         key: &'static str,
         value: String,
@@ -72,30 +73,9 @@ pub enum SettingsError {
     },
     /// The section would not read back as written (e.g. unsorted countdowns
     /// or an alias with surrounding spaces); nothing was written.
-    Unrepresentable {
-        section: &'static str,
-    },
+    #[error("settings section `{section}` is not in stored form (it would read back differently)")]
+    Unrepresentable { section: &'static str },
 }
-
-impl fmt::Display for SettingsError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Store(error) => error.fmt(f),
-            Self::Malformed { key, value, reason } => {
-                write!(
-                    f,
-                    "setting `{key}` has an unreadable value {value:?}: {reason}"
-                )
-            }
-            Self::Unrepresentable { section } => write!(
-                f,
-                "settings section `{section}` is not in stored form (it would read back differently)"
-            ),
-        }
-    }
-}
-
-impl std::error::Error for SettingsError {}
 
 impl From<StoreError> for SettingsError {
     fn from(error: StoreError) -> Self {

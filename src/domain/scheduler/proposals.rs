@@ -5,7 +5,6 @@
 //! draft merge, so there is no second write path.
 
 use std::collections::BTreeSet;
-use std::fmt;
 
 use chrono::{DateTime, Utc};
 
@@ -35,22 +34,30 @@ use crate::domain::time::to_iso;
 
 /// Why a proposal action did not apply; nothing was written (except closing
 /// a proposal found expired).
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
 pub enum ProposalError {
     /// The change cannot apply (at propose), or no longer applies (at ✅).
+    #[error("{0}")]
     Refused(Refusal),
     /// Applying it now would change nothing.
+    #[error("that is already the case")]
     NoEffect,
     /// The member may not approve or reject it.
+    #[error("that proposal is not yours to answer")]
     Unauthorised,
     /// The draft is not a proposal.
+    #[error("that is not a proposal")]
     NotAProposal,
     /// Past its TTL or its boss week; it is closed as expired.
+    #[error("that proposal has expired")]
     Expired,
     /// An edited approval of a change with no single time to edit.
+    #[error("that change has no time to edit")]
     EditNotApplicable,
     /// An edited approval to a time in a boss week that has passed.
+    #[error("that time is in a boss week that has passed")]
     EditInPast,
+    #[error("{0}")]
     Draft(DraftError),
 }
 
@@ -81,23 +88,6 @@ impl From<Refusal> for ProposalError {
         Self::Refused(refusal)
     }
 }
-
-impl fmt::Display for ProposalError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Refused(refusal) => refusal.fmt(f),
-            Self::NoEffect => f.write_str("that is already the case"),
-            Self::Unauthorised => f.write_str("that proposal is not yours to answer"),
-            Self::NotAProposal => f.write_str("that is not a proposal"),
-            Self::Expired => f.write_str("that proposal has expired"),
-            Self::EditNotApplicable => f.write_str("that change has no time to edit"),
-            Self::EditInPast => f.write_str("that time is in a boss week that has passed"),
-            Self::Draft(error) => error.fmt(f),
-        }
-    }
-}
-
-impl std::error::Error for ProposalError {}
 
 pub type ProposalResult<T> = Result<T, ProposalError>;
 

@@ -1,7 +1,5 @@
 //! A roster character and the input rules the admin API applies to it.
 
-use std::fmt;
-
 use chrono::{DateTime, Utc};
 
 use crate::domain::history::Actor;
@@ -224,28 +222,19 @@ pub fn ign_key(ign: &str) -> String {
 }
 
 /// A field the input rules refuse.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, thiserror::Error)]
 pub enum CharacterInvalid {
+    #[error("An IGN is 4-12 letters or digits.")]
     Ign,
+    #[error("A world is 1-16 lowercase letters, digits or '-'.")]
     World,
+    #[error("A class is at most 32 characters.")]
     Class,
+    #[error("A level is 1-300.")]
     Level,
+    #[error("A role is main or alt.")]
     Role,
 }
-
-impl fmt::Display for CharacterInvalid {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(match self {
-            Self::Ign => "An IGN is 4-12 letters or digits.",
-            Self::World => "A world is 1-16 lowercase letters, digits or '-'.",
-            Self::Class => "A class is at most 32 characters.",
-            Self::Level => "A level is 1-300.",
-            Self::Role => "A role is main or alt.",
-        })
-    }
-}
-
-impl std::error::Error for CharacterInvalid {}
 
 /// An IGN as typed: trimmed, 4-12 ASCII letters or digits, case kept.
 pub fn parse_ign(text: &str) -> Result<String, CharacterInvalid> {

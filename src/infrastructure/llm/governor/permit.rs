@@ -8,47 +8,34 @@ use super::{
     pool::{CallKind, Priority, QueueKey},
 };
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, thiserror::Error)]
 pub enum Refused {
+    #[error("role is not configured")]
     UnknownRole,
     /// The role's alias is in no backend group.
+    #[error("role's model is in no backend group")]
     Ungrouped,
     /// Pre-screening must stay on local routes.
+    #[error("pre-screen may not use an external route")]
     ExternalForbidden,
     /// Rewrite and pre-screen calls may only use `try_acquire`.
+    #[error("this call kind may not queue")]
     MustNotWait,
     /// No free permit right now (`try_acquire`).
+    #[error("no free model permit")]
     Busy,
     /// Still queued when the wait ran out.
+    #[error("timed out waiting for a model permit")]
     Timeout,
     /// Breaker open (`retry_at` is the probe time) or a probe is in flight.
-    Unavailable {
-        retry_at: Option<Instant>,
-    },
+    #[error("model unavailable")]
+    Unavailable { retry_at: Option<Instant> },
     /// The rate ceiling would need `wait`, longer than the caller allowed.
-    RateLimited {
-        wait: Duration,
-    },
+    #[error("model request rate ceiling reached")]
+    RateLimited { wait: Duration },
+    #[error("retry budget exhausted")]
     RetryBudgetExhausted,
 }
-
-impl fmt::Display for Refused {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(match self {
-            Self::UnknownRole => "role is not configured",
-            Self::Ungrouped => "role's model is in no backend group",
-            Self::ExternalForbidden => "pre-screen may not use an external route",
-            Self::MustNotWait => "this call kind may not queue",
-            Self::Busy => "no free model permit",
-            Self::Timeout => "timed out waiting for a model permit",
-            Self::Unavailable { .. } => "model unavailable",
-            Self::RateLimited { .. } => "model request rate ceiling reached",
-            Self::RetryBudgetExhausted => "retry budget exhausted",
-        })
-    }
-}
-
-impl std::error::Error for Refused {}
 
 impl Refused {
     /// Configuration or caller errors that no amount of waiting clears; the

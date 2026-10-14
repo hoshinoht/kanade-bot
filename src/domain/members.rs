@@ -3,7 +3,6 @@
 //! want to be pinged, and which channels the bot watches.
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::fmt;
 use std::future::Future;
 
 use crate::domain::ids::short_id;
@@ -55,31 +54,16 @@ pub fn normalise_level(value: Option<&str>) -> Result<PingLevel, PingError> {
 }
 
 /// Ping-level refusals, with v4's exact messages.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
 pub enum PingError {
     /// v4 `ValueError`; holds the already-quoted offending value.
+    #[error("ping level must be one of {}, not {}", levels_text(), .0)]
     InvalidLevel(String),
     /// v4 `KeyError`: a level set for somebody not on the roster.
+    // `str(KeyError(uid))` is the key's repr.
+    #[error("{}", pytext::repr(.0))]
     UnknownMember(String),
 }
-
-impl fmt::Display for PingError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::InvalidLevel(shown) => {
-                write!(
-                    f,
-                    "ping level must be one of {}, not {shown}",
-                    levels_text()
-                )
-            }
-            // `str(KeyError(uid))` is the key's repr.
-            Self::UnknownMember(user_id) => f.write_str(&pytext::repr(user_id)),
-        }
-    }
-}
-
-impl std::error::Error for PingError {}
 
 /// One roster entry (v4 `members` row). The default is what v4 assumes for
 /// somebody it has never seen: no role, not a bot, `essential`.

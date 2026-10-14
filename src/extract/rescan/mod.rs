@@ -7,7 +7,6 @@
 mod jobs;
 mod read;
 
-use std::fmt;
 use std::future::Future;
 
 use chrono::{DateTime, Utc};
@@ -88,30 +87,21 @@ pub struct RescanRequest {
     pub unprocessed_only: bool,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
 pub enum RescanError {
+    #[error("no channels to rescan")]
     NoChannels,
+    #[error("{0}")]
     Window(WindowError),
     /// The worker is shutting down.
+    #[error("rescans are shutting down")]
     Closed,
     /// Watching is paused or the extractor is switched off.
+    #[error("extraction is switched off")]
     Off,
+    #[error("{0}")]
     Store(StoreError),
 }
-
-impl fmt::Display for RescanError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::NoChannels => f.write_str("no channels to rescan"),
-            Self::Window(error) => error.fmt(f),
-            Self::Closed => f.write_str("rescans are shutting down"),
-            Self::Off => f.write_str("extraction is switched off"),
-            Self::Store(error) => error.fmt(f),
-        }
-    }
-}
-
-impl std::error::Error for RescanError {}
 
 impl From<StoreError> for RescanError {
     fn from(error: StoreError) -> Self {

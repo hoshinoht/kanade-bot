@@ -104,27 +104,20 @@ impl ChangePage {
 }
 
 /// Why a rollback refused the records it was given.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
 pub enum HistoryRefusal {
     /// No record has this position (or it is the genesis record).
+    #[error("no change {0} to revert")]
     UnknownChange(u64),
     /// The record no longer matches its hash.
+    #[error("change {0} does not match its hash")]
     Tampered(u64),
     /// The selection matched no change.
+    #[error("no change matches; nothing to revert")]
     NothingToRevert,
     /// No checkpoint has this name.
+    #[error("no checkpoint named {0:?}")]
     UnknownCheckpoint(String),
-}
-
-impl std::fmt::Display for HistoryRefusal {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::UnknownChange(seq) => write!(f, "no change {seq} to revert"),
-            Self::Tampered(seq) => write!(f, "change {seq} does not match its hash"),
-            Self::NothingToRevert => f.write_str("no change matches; nothing to revert"),
-            Self::UnknownCheckpoint(name) => write!(f, "no checkpoint named {name:?}"),
-        }
-    }
 }
 
 /// Where the chain first fails.

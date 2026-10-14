@@ -12,35 +12,26 @@ pub use request::{OWNER_REQUEST_TTL, OwnerRequest, OwnerRequestStatus, OwnerRequ
 use crate::domain::schedule::FixedRun;
 
 /// Why an ownership action was refused, in the words members see.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
 pub enum OwnershipRefusal {
     /// Only the owner (or staff) may hand off or decide.
+    #[error("Only the timing's owner or an admin can do that.")]
     NotOwner,
     /// Ownership moves only between party members.
+    #[error("Ownership only moves between members of the party.")]
     NotOnParty,
     /// The receiver or requester already owns it.
+    #[error("They already own this timing.")]
     AlreadyOwner,
     /// The request was decided, withdrawn or superseded.
+    #[error("That request has already been decided.")]
     Closed,
+    #[error("That request has expired.")]
     Expired,
     /// Only the member who asked may withdraw.
+    #[error("Only the member who asked can withdraw it.")]
     NotRequester,
 }
-
-impl std::fmt::Display for OwnershipRefusal {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(match self {
-            Self::NotOwner => "Only the timing's owner or an admin can do that.",
-            Self::NotOnParty => "Ownership only moves between members of the party.",
-            Self::AlreadyOwner => "They already own this timing.",
-            Self::Closed => "That request has already been decided.",
-            Self::Expired => "That request has expired.",
-            Self::NotRequester => "Only the member who asked can withdraw it.",
-        })
-    }
-}
-
-impl std::error::Error for OwnershipRefusal {}
 
 fn on_party(fixed: &FixedRun, user: &str) -> bool {
     fixed.participants.iter().any(|id| id == user)

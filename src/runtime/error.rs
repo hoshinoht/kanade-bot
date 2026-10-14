@@ -1,10 +1,12 @@
-use std::fmt;
-
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub enum Error {
+    #[error("{0}")]
     Configuration(String),
+    #[error("{0}")]
     Unavailable(String),
+    #[error("{0}")]
     Usage(String),
+    #[error("{0}")]
     Startup(String),
 }
 
@@ -30,16 +32,3 @@ impl Error {
         matches!(self, Self::Unavailable(_))
     }
 }
-
-impl fmt::Display for Error {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Configuration(message)
-            | Self::Unavailable(message)
-            | Self::Usage(message)
-            | Self::Startup(message) => formatter.write_str(message),
-        }
-    }
-}
-
-impl std::error::Error for Error {}

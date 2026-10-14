@@ -1,7 +1,6 @@
 //! Extraction tuning (v4 `EXTRACT_*` settings) and the startup check for a
 //! reasoning effort the extraction model does not publish.
 
-use std::fmt;
 use std::time::Duration;
 
 use chrono::{NaiveTime, TimeDelta, Weekday};
@@ -132,24 +131,12 @@ impl PipelineConfig {
 /// The configured extraction effort is one the model does not publish, so
 /// every call would be refused before sending (`D-SHAPING`: refused, never
 /// silently dropped).
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
+#[error("extraction reasoning {} is not published by {alias}", .effort.as_str())]
 pub struct UnpublishedEffort {
     pub alias: String,
     pub effort: Effort,
 }
-
-impl fmt::Display for UnpublishedEffort {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "extraction reasoning {} is not published by {}",
-            self.effort.as_str(),
-            self.alias
-        )
-    }
-}
-
-impl std::error::Error for UnpublishedEffort {}
 
 /// Startup/config-change check mirroring the runner's shaping rule: an effort
 /// other than `off` on a model with reasoning control and a published list

@@ -1,4 +1,4 @@
-use std::fmt::{self, Write};
+use std::fmt::Write;
 
 use chrono::{DateTime, Datelike, FixedOffset, NaiveDateTime, Offset, TimeZone, Timelike, Utc};
 use chrono_tz::Tz;
@@ -7,15 +7,19 @@ use super::zoned::{AwareDateTime, DateOutOfRange};
 use crate::domain::pytext::repr;
 
 /// ISO-8601 conversion failures, with v4's messages.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
 pub enum IsoError {
     /// A naive datetime reached a serialiser that stores UTC instants.
+    #[error("refusing to serialise a naive datetime")]
     Naive,
     /// The text is not an ISO datetime accepted by `datetime.fromisoformat`.
+    #[error("Invalid isoformat string: {}", repr(.value))]
     Invalid { value: String },
     /// A well-formed field is out of range, e.g. `hour must be in 0..23`.
+    #[error("{message}")]
     OutOfRange { message: String },
     /// The UTC instant leaves years 1..=9999 (Python `OverflowError`).
+    #[error("{0}")]
     Overflow(DateOutOfRange),
 }
 
@@ -24,19 +28,6 @@ impl From<DateOutOfRange> for IsoError {
         Self::Overflow(error)
     }
 }
-
-impl fmt::Display for IsoError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Naive => f.write_str("refusing to serialise a naive datetime"),
-            Self::Invalid { value } => write!(f, "Invalid isoformat string: {}", repr(value)),
-            Self::OutOfRange { message } => f.write_str(message),
-            Self::Overflow(error) => error.fmt(f),
-        }
-    }
-}
-
-impl std::error::Error for IsoError {}
 
 /// A datetime parsed from ISO text, which may lack an offset.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

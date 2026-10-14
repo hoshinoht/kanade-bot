@@ -8,34 +8,25 @@ use super::super::ModelCapabilities;
 const MAX_TIMEOUT: Duration = Duration::from_secs(300);
 const MAX_BODY_BYTES: usize = 1_048_576;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, thiserror::Error)]
 pub enum HttpConfigError {
+    #[error("model endpoint URL is invalid")]
     InvalidBaseUrl,
     /// Plain `http` to a host other than loopback, `localhost` or `host.docker.internal`.
+    #[error("plain http is allowed only for loopback model endpoints")]
     InsecureHttp,
+    #[error("model endpoint key is empty or not header-safe")]
     InvalidBearerKey,
     /// `runtime::tls::install_ring_provider` has not run.
+    #[error("no process TLS crypto provider is installed")]
     CryptoProviderMissing,
+    #[error("model endpoint trust roots are invalid")]
     InvalidTrustRoots,
+    #[error("model endpoint timeout is out of range")]
     InvalidTimeout,
+    #[error("model endpoint body limits are out of range")]
     InvalidLimits,
 }
-
-impl fmt::Display for HttpConfigError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(match self {
-            Self::InvalidBaseUrl => "model endpoint URL is invalid",
-            Self::InsecureHttp => "plain http is allowed only for loopback model endpoints",
-            Self::InvalidBearerKey => "model endpoint key is empty or not header-safe",
-            Self::CryptoProviderMissing => "no process TLS crypto provider is installed",
-            Self::InvalidTrustRoots => "model endpoint trust roots are invalid",
-            Self::InvalidTimeout => "model endpoint timeout is out of range",
-            Self::InvalidLimits => "model endpoint body limits are out of range",
-        })
-    }
-}
-
-impl std::error::Error for HttpConfigError {}
 
 /// Bearer key bytes loaded by the caller (from a file, never an env value).
 pub struct BearerKey(Box<[u8]>);

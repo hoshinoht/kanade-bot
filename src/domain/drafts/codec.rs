@@ -21,16 +21,9 @@ use crate::domain::time::{from_iso, to_iso};
 pub const DRAFT_OP_FORMAT: &str = "kanade.draft_op.v1";
 
 /// A stored operation that cannot be read, or one that cannot be written.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
+#[error("draft operation codec: {0}")]
 pub struct CodecError(pub String);
-
-impl fmt::Display for CodecError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "draft operation codec: {}", self.0)
-    }
-}
-
-impl std::error::Error for CodecError {}
 
 fn bad(detail: impl fmt::Display) -> CodecError {
     CodecError(detail.to_string())

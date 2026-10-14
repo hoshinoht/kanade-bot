@@ -15,7 +15,6 @@ mod read;
 mod report;
 
 use std::collections::BTreeMap;
-use std::fmt;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -45,28 +44,19 @@ pub struct Options {
     pub refresh_logs: bool,
 }
 
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub enum ImportError {
     /// The snapshot is missing, unreadable or not a v4 database.
+    #[error("{0}")]
     Source(String),
+    #[error("{0}")]
     Catalog(String),
     /// The v5 store could not be opened, read or written.
+    #[error("{0}")]
     Store(String),
+    #[error("{0}")]
     Refused(String),
 }
-
-impl fmt::Display for ImportError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Source(message)
-            | Self::Catalog(message)
-            | Self::Store(message)
-            | Self::Refused(message) => f.write_str(message),
-        }
-    }
-}
-
-impl std::error::Error for ImportError {}
 
 /// Wall clock without chrono's `clock` feature.
 pub fn system_now() -> DateTime<Utc> {

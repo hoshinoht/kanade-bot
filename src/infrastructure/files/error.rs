@@ -1,7 +1,8 @@
-use std::{fmt, path::Path};
+use std::path::Path;
 
 /// A refused file: its path and the problem, never its content.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
+#[error("{file}: {problem}")]
 pub struct LoadError {
     pub file: String,
     pub problem: String,
@@ -15,11 +16,3 @@ impl LoadError {
         }
     }
 }
-
-impl fmt::Display for LoadError {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(formatter, "{}: {}", self.file, self.problem)
-    }
-}
-
-impl std::error::Error for LoadError {}

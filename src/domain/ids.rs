@@ -4,8 +4,6 @@
 //! guessed. Chat shows the first eight hex characters (`#a1b2c3d4`), and every id
 //! argument accepts any unique prefix of at least [`MIN_PREFIX`] characters.
 
-use std::fmt;
-
 use uuid::Uuid;
 
 use super::pytext::strip;
@@ -32,37 +30,21 @@ impl IdGenerator for RandomIds {
 }
 
 /// Id-resolution failures, with v4's messages.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
 pub enum IdError {
     /// Fewer than [`MIN_PREFIX`] hex characters were given.
+    #[error("`{text}` is too short - give at least {MIN_PREFIX} characters")]
     TooShort { text: String },
     /// No candidate starts with the prefix.
+    #[error("nothing matches `{text}`")]
     NotFound { text: String },
     /// More than one candidate starts with the prefix.
+    #[error("`{text}` matches {} rows", .candidates.len())]
     Ambiguous {
         text: String,
         candidates: Vec<String>,
     },
 }
-
-impl fmt::Display for IdError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::TooShort { text } => {
-                write!(
-                    f,
-                    "`{text}` is too short - give at least {MIN_PREFIX} characters"
-                )
-            }
-            Self::NotFound { text } => write!(f, "nothing matches `{text}`"),
-            Self::Ambiguous { text, candidates } => {
-                write!(f, "`{text}` matches {} rows", candidates.len())
-            }
-        }
-    }
-}
-
-impl std::error::Error for IdError {}
 
 /// Lowercase hex used for comparison, with whitespace, leading `#` and dashes removed.
 pub fn canonical(value: &str) -> String {

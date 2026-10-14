@@ -6,31 +6,22 @@ use super::record::{ChangeRecord, ChangeRef, RowKey, RowValue};
 use crate::domain::schedule::ScheduleSnapshot;
 
 /// Why a record list cannot rewind a snapshot to its base.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
 pub enum HistoryGap {
     /// Record `expected` is missing: another record (`found`) or nothing
     /// came in its place before the head.
+    #[error("change #{expected} is missing")]
     Missing { expected: u64, found: Option<u64> },
     /// Record `seq` does not link to the one before it (or to the base).
+    #[error("change #{seq} does not follow its predecessor")]
     BrokenLink { seq: u64 },
     /// Record `seq`'s stored hash is not the hash of its content.
+    #[error("change #{seq} does not match its hash")]
     Tampered { seq: u64 },
     /// The head is not in the chain from the base.
+    #[error("change #{} is not on this history", .head.seq)]
     HeadMismatch { head: ChangeRef },
 }
-
-impl std::fmt::Display for HistoryGap {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Missing { expected, .. } => write!(f, "change #{expected} is missing"),
-            Self::BrokenLink { seq } => write!(f, "change #{seq} does not follow its predecessor"),
-            Self::Tampered { seq } => write!(f, "change #{seq} does not match its hash"),
-            Self::HeadMismatch { head } => write!(f, "change #{} is not on this history", head.seq),
-        }
-    }
-}
-
-impl std::error::Error for HistoryGap {}
 
 /// Check that `records` are exactly the chain after `base` up to at least
 /// `head`: consecutive seqs from `base.seq + 1`, each linking to the one

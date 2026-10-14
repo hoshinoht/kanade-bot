@@ -151,16 +151,9 @@ pub fn is_link_id(id: &str) -> bool {
             .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
+#[error("public origin must be https://<host> with no path, query or credentials")]
 pub struct InvalidOrigin;
-
-impl std::fmt::Display for InvalidOrigin {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("public origin must be https://<host> with no path, query or credentials")
-    }
-}
-
-impl std::error::Error for InvalidOrigin {}
 
 /// The public portal's routes (`member-writes-contract.md`):
 /// `{origin}/runs/{run_id}?move_to=<UTC RFC 3339>` (the Move page) and

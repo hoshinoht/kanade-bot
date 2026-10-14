@@ -2,8 +2,6 @@
 //! result content is elided, until the whole request plus the completion
 //! reserve fits the model context.
 
-use std::fmt;
-
 use serde_json::{Value, json};
 
 use super::runs;
@@ -11,7 +9,10 @@ use crate::extract::prompt::estimate_tokens;
 use crate::infrastructure::llm::Message;
 
 /// The protected current turn alone does not fit the model context.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, thiserror::Error)]
+#[error(
+    "chat request estimate {estimate} exceeds context budget {budget} with completion reserve {reserve}"
+)]
 pub struct ContextBudgetError {
     /// The whole request's estimate, completion reserve included.
     pub estimate: usize,
@@ -20,18 +21,6 @@ pub struct ContextBudgetError {
     /// The route's resolved completion reserve.
     pub reserve: usize,
 }
-
-impl fmt::Display for ContextBudgetError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "chat request estimate {} exceeds context budget {} with completion reserve {}",
-            self.estimate, self.budget, self.reserve
-        )
-    }
-}
-
-impl std::error::Error for ContextBudgetError {}
 
 /// Keeps an older assistant tool call paired with its tool response after the
 /// response has been removed from the usable context.

@@ -9,8 +9,6 @@ pub mod propose;
 pub mod read;
 pub mod schemas;
 
-use std::fmt;
-
 use chrono::{DateTime, Utc};
 use serde_json::{Map, Value};
 
@@ -41,7 +39,8 @@ pub const LOOKUP_FAILED: &str =
     "That lookup failed. Say you could not complete that request just now.";
 
 /// A refusal the model may read and should say something about.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
+#[error("{0}")]
 pub struct ToolError(pub String);
 
 impl ToolError {
@@ -49,14 +48,6 @@ impl ToolError {
         Self(message.into())
     }
 }
-
-impl fmt::Display for ToolError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.0)
-    }
-}
-
-impl std::error::Error for ToolError {}
 
 pub type ToolResult<T> = Result<T, ToolError>;
 

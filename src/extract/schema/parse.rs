@@ -11,7 +11,7 @@ use crate::domain::pytext::strip;
 /// sends back in the retry; only the envelope is portable (the JSON decoder
 /// detail is `serde_json`'s, and validation errors list `loc`/`type` pairs
 /// rather than pydantic's prose).
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, thiserror::Error)]
 pub enum ParseError {
     Empty,
     NotJson(String),
@@ -47,8 +47,6 @@ impl fmt::Display for ParseError {
         }
     }
 }
-
-impl std::error::Error for ParseError {}
 
 /// v4's `\A```(?:json)?[ \t]*\n(?P<body>(?:(?!```).)*?)\n?```\Z`: one fence
 /// around the whole (stripped) answer, whose only ``` is the closing one.

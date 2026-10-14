@@ -90,49 +90,30 @@ pub struct PickPlan {
 }
 
 /// Why a record cannot be picked into that week.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
 pub enum PickRefusal {
     /// Undo it with a revert instead.
+    #[error("a rollback cannot be picked; revert instead")]
     Rollback,
     /// Merges are reviewed multi-operation changes: pick their parts or
     /// draft again.
+    #[error("a merge cannot be picked")]
     Merge,
     /// The target week is the record's own week (use a revert or an edit).
+    #[error("the change is already in that boss week")]
     SameWeek,
     /// The target boss week has passed.
+    #[error("that boss week has passed")]
     WeekPassed,
     /// The weekly timing has no run in the target week.
-    NoTargetRun {
-        fixed_run_id: String,
-    },
+    #[error("weekly run {fixed_run_id} has no run in that boss week")]
+    NoTargetRun { fixed_run_id: String },
     /// The target run is done or cancelled (strict and force alike).
-    TargetFinished {
-        status: RunStatus,
-    },
-    UnsupportedPick {
-        reason: String,
-    },
+    #[error("the target run is {}", .status.as_str())]
+    TargetFinished { status: RunStatus },
+    #[error("cannot pick {reason}")]
+    UnsupportedPick { reason: String },
 }
-
-impl fmt::Display for PickRefusal {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Rollback => f.write_str("a rollback cannot be picked; revert instead"),
-            Self::Merge => f.write_str("a merge cannot be picked"),
-            Self::SameWeek => f.write_str("the change is already in that boss week"),
-            Self::WeekPassed => f.write_str("that boss week has passed"),
-            Self::NoTargetRun { fixed_run_id } => {
-                write!(f, "weekly run {fixed_run_id} has no run in that boss week")
-            }
-            Self::TargetFinished { status } => {
-                write!(f, "the target run is {}", status.as_str())
-            }
-            Self::UnsupportedPick { reason } => write!(f, "cannot pick {reason}"),
-        }
-    }
-}
-
-impl std::error::Error for PickRefusal {}
 
 fn unsupported(reason: &str) -> PickRefusal {
     PickRefusal::UnsupportedPick {

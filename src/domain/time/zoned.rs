@@ -1,4 +1,3 @@
-use std::fmt;
 use std::hash::{Hash, Hasher};
 
 use chrono::{DateTime, Datelike, FixedOffset, MappedLocalTime, NaiveDateTime, Offset, TimeZone};
@@ -7,16 +6,9 @@ use chrono_tz::Tz;
 use super::iso::isoformat;
 
 /// A result outside v4's representable years 1..=9999 (Python `OverflowError`).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, thiserror::Error)]
+#[error("date value out of range")]
 pub struct DateOutOfRange;
-
-impl fmt::Display for DateOutOfRange {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("date value out of range")
-    }
-}
-
-impl std::error::Error for DateOutOfRange {}
 
 /// A wall-clock datetime attached to a named zone, as v4's `ZoneInfo` datetimes.
 ///

@@ -7,7 +7,6 @@
 //! its event in one transaction. Previews and staging checks write nothing.
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::fmt;
 use std::sync::Arc;
 
 use chrono::{DateTime, Utc};
@@ -33,84 +32,80 @@ use crate::domain::schedule::{
 
 /// A draft refused an edit: the operation is unknown, or removing it would
 /// leave a later operation pointing at an operation that creates nothing.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
 pub enum EditRefusal {
+    #[error("the draft has no operation {ord}")]
     UnknownOp { ord: usize },
+    #[error("operation {used_by} needs the row operation {removed} creates")]
     DanglingTarget { removed: usize, used_by: usize },
 }
 
-impl fmt::Display for EditRefusal {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::UnknownOp { ord } => write!(f, "the draft has no operation {ord}"),
-            Self::DanglingTarget { removed, used_by } => write!(
-                f,
-                "operation {used_by} needs the row operation {removed} creates"
-            ),
-        }
-    }
-}
-
 /// Why a draft operation did not apply.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
 pub enum DraftError {
+    #[error("{0}")]
     Schedule(ScheduleError),
+    #[error("{0}")]
     Store(StoreError),
     /// No draft has this id.
+    #[error("no draft `{0}`")]
     UnknownDraft(String),
     /// The draft is closed or at another version; nothing was written.
+    #[error("the draft is {status} at version {version}")]
     Stale {
         status: DraftStatus,
         version: u64,
         merged_seq: Option<u64>,
     },
     /// Another merge already closed the draft, as change `seq`.
-    AlreadyMerged {
-        seq: u64,
-    },
+    #[error("the draft already merged as change {seq}")]
+    AlreadyMerged { seq: u64 },
     /// The merge request id was already recorded, as change `seq`.
-    AlreadyApplied {
-        seq: u64,
-        revision: u64,
-    },
+    #[error("merge already applied as change {seq} (revision {revision})")]
+    AlreadyApplied { seq: u64, revision: u64 },
     /// The merge request id was already used for a different merge.
-    IdempotencyMismatch {
-        seq: u64,
-    },
+    #[error("merge request id already used by change {seq} for a different merge")]
+    IdempotencyMismatch { seq: u64 },
     /// The records after the draft's base do not chain from it.
+    #[error("{0}")]
     HistoryGap(HistoryGap),
     /// The merge (or rebase) cannot apply as it stands; nothing was written.
+    #[error("the draft has {} conflicts", .0.len())]
     Conflicts(Vec<MergeConflict>),
     /// A staged operation no longer replays.
-    ReplayFailed {
-        ord: usize,
-        error: ReplayError,
-    },
+    #[error("operation {ord} cannot apply: {error}")]
+    ReplayFailed { ord: usize, error: ReplayError },
     /// An edit would break created-target references.
+    #[error("{0}")]
     EditRefused(EditRefusal),
     /// A merge with no staged operations.
+    #[error("the draft stages no operations")]
     Empty,
     /// The merge replay changed no rows.
+    #[error("the merge changed no rows")]
     NoEffect,
     /// A title outside 1..=200 characters.
+    #[error("a draft title is 1 to 200 characters")]
     InvalidTitle,
     /// The create request id was already used for another draft.
-    RequestMismatch {
-        draft_id: String,
-    },
+    #[error("create request id already used for draft {draft_id}")]
+    RequestMismatch { draft_id: String },
     /// Member requests merge through the request path (S3), not here.
+    #[error("member requests merge through approval, not here")]
     RequestDraft,
     /// The draft's boss week has passed; it is closed as expired.
+    #[error("the draft's boss week has passed")]
     Expired,
     /// A request's requester may no longer have it merged.
+    #[error("the requester may not make this request")]
     RequesterUnauthorised,
     /// The operation (its codec kind) exists only for proposals.
+    #[error("`{0}` is staged only by extractor and chat proposals")]
     ProposalOnlyOp(&'static str),
     /// The draft is not based on the current history head (`head`): rebase
     /// it before merging.
-    BaseMoved {
-        head: u64,
-    },
+    #[error("the schedule moved to change {head}; rebase the draft first")]
+    BaseMoved { head: u64 },
 }
 
 impl From<ScheduleError> for DraftError {
@@ -142,56 +137,6 @@ impl From<Rejected> for DraftError {
         }
     }
 }
-
-impl fmt::Display for DraftError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Schedule(error) => error.fmt(f),
-            Self::Store(error) => error.fmt(f),
-            Self::UnknownDraft(id) => write!(f, "no draft `{id}`"),
-            Self::Stale {
-                status, version, ..
-            } => {
-                write!(f, "the draft is {status} at version {version}")
-            }
-            Self::AlreadyMerged { seq } => write!(f, "the draft already merged as change {seq}"),
-            Self::AlreadyApplied { seq, revision } => write!(
-                f,
-                "merge already applied as change {seq} (revision {revision})"
-            ),
-            Self::IdempotencyMismatch { seq } => write!(
-                f,
-                "merge request id already used by change {seq} for a different merge"
-            ),
-            Self::HistoryGap(gap) => gap.fmt(f),
-            Self::Conflicts(conflicts) => {
-                write!(f, "the draft has {} conflicts", conflicts.len())
-            }
-            Self::ReplayFailed { ord, error } => write!(f, "operation {ord} cannot apply: {error}"),
-            Self::EditRefused(refusal) => refusal.fmt(f),
-            Self::Empty => f.write_str("the draft stages no operations"),
-            Self::NoEffect => f.write_str("the merge changed no rows"),
-            Self::InvalidTitle => f.write_str("a draft title is 1 to 200 characters"),
-            Self::RequestMismatch { draft_id } => {
-                write!(f, "create request id already used for draft {draft_id}")
-            }
-            Self::RequestDraft => f.write_str("member requests merge through approval, not here"),
-            Self::Expired => f.write_str("the draft's boss week has passed"),
-            Self::RequesterUnauthorised => f.write_str("the requester may not make this request"),
-            Self::ProposalOnlyOp(kind) => {
-                write!(f, "`{kind}` is staged only by extractor and chat proposals")
-            }
-            Self::BaseMoved { head } => {
-                write!(
-                    f,
-                    "the schedule moved to change {head}; rebase the draft first"
-                )
-            }
-        }
-    }
-}
-
-impl std::error::Error for DraftError {}
 
 pub type DraftResult<T> = Result<T, DraftError>;
 

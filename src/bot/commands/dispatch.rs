@@ -111,16 +111,9 @@ pub enum Disposition {
 pub type Handled = Option<(Disposition, Outcome<()>)>;
 
 /// A second command with the same top-level name.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
+#[error("command /{0} registered twice")]
 pub struct DuplicateCommand(pub String);
-
-impl fmt::Display for DuplicateCommand {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "command /{} registered twice", self.0)
-    }
-}
-
-impl std::error::Error for DuplicateCommand {}
 
 pub struct Dispatcher {
     policy: AccessPolicy,

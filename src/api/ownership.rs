@@ -14,14 +14,20 @@ use crate::domain::ownership::{
 use crate::domain::schedule::{FixedRun, ScheduleError};
 use crate::domain::scheduler::{SchedulerError, Scope, StoreError};
 
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub enum OwnershipError {
+    #[error("{0}")]
     Refused(OwnershipRefusal),
+    #[error("No such weekly timing.")]
     UnknownTiming,
+    #[error("No such ownership request.")]
     UnknownRequest,
     /// The member already has an open request on this timing.
+    #[error("You already asked to own this timing.")]
     AlreadyAsked,
+    #[error("{0}")]
     Scheduler(SchedulerError),
+    #[error("The schedule is unavailable; try again.")]
     Store(StoreError),
 }
 
@@ -34,19 +40,6 @@ impl From<OwnershipRefusal> for OwnershipError {
 impl From<StoreError> for OwnershipError {
     fn from(error: StoreError) -> Self {
         Self::Store(error)
-    }
-}
-
-impl std::fmt::Display for OwnershipError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Refused(refusal) => refusal.fmt(f),
-            Self::UnknownTiming => f.write_str("No such weekly timing."),
-            Self::UnknownRequest => f.write_str("No such ownership request."),
-            Self::AlreadyAsked => f.write_str("You already asked to own this timing."),
-            Self::Scheduler(error) => error.fmt(f),
-            Self::Store(_) => f.write_str("The schedule is unavailable; try again."),
-        }
     }
 }
 
