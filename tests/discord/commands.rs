@@ -549,13 +549,7 @@ async fn refused_deferring_commands_answer_directly() {
 #[tokio::test(start_paused = true)]
 async fn unacknowledged_deferral_does_not_run_the_command() {
     let fake = FakeDiscord::new();
-    fake.script(
-        Op::Defer,
-        Step::Ambiguous {
-            kind: AmbiguousKind::Timeout,
-            applied: false,
-        },
-    );
+    fake.script(Op::Defer, crate::support::timed_out(false));
     let handled = slow_dispatcher()
         .handle(&fake, guild(), &slow(&[BOSSING_ROLE]), None)
         .await;

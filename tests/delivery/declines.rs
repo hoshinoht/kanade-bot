@@ -3,7 +3,7 @@
 use chrono::Duration;
 use kanade::bot::mentions::allow_users;
 use kanade::bot::transport::{
-    AmbiguousKind, Call, FakeDiscord, MessageId, Op, Outcome, RejectionKind, Step,
+    AmbiguousKind, Call, FakeDiscord, MessageId, Op, Outcome, RejectionKind,
 };
 use kanade::domain::history::{ChangeHistory, ChangeMeta, Origin};
 use kanade::domain::ids::RandomIds;
@@ -18,6 +18,10 @@ use crate::intercept::Intercept;
 use crate::redesign::notices::styled;
 use crate::scenarios::{HOME, delivery, now, week, world};
 use crate::support::{Store, on_both_stores};
+
+fn later() -> chrono::DateTime<chrono::Utc> {
+    now() + Duration::minutes(1)
+}
 
 async fn seed<S: Store>(store: &S) -> (String, String) {
     let run_id = "decline-run".to_owned();
@@ -201,17 +205,13 @@ async fn decline_notice_follows_the_live_message_style() {
 async fn ambiguous_never_reposts<S: Store>(store: &S) {
     let world = world();
     seed(store).await;
-    world.fake.script(
-        Op::Create,
-        Step::Ambiguous {
-            kind: AmbiguousKind::Timeout,
-            applied: true,
-        },
-    );
+    world
+        .fake
+        .script(Op::Create, crate::support::timed_out(true));
     let mut delivery = delivery(store, &world, &world.fake);
     delivery.drain_decline_notices(now()).await.expect("first");
     delivery
-        .drain_decline_notices(now() + Duration::minutes(1))
+        .drain_decline_notices(later())
         .await
         .expect("replay");
     assert_eq!(world.fake.count(Op::Create), 1);
@@ -238,7 +238,7 @@ async fn confirmed_retraction_retires_exact_binding<S: Store>(store: &S) {
     assert!(!notice.retract_pending);
     assert_eq!(world.fake.count(Op::Delete), 1);
     delivery
-        .drain_decline_notices(now() + Duration::minutes(1))
+        .drain_decline_notices(later())
         .await
         .expect("replay");
     assert_eq!(
@@ -332,7 +332,7 @@ async fn unsent_race_resolves_without_repost<S: Store>(store: &S) {
     let notice = notice(store, &run, &user).await;
     assert!(!notice.retract_pending, "the proven-unsent race resolved");
     delivery
-        .drain_decline_notices(now() + Duration::minutes(1))
+        .drain_decline_notices(later())
         .await
         .expect("replay");
     assert_eq!(world.fake.count(Op::Create), 1, "no replacement post");
@@ -364,13 +364,9 @@ async fn bind_then_ambiguous_delete_race<S: Store>(store: &S) {
     let world = world();
     let (run, user) = seed(store).await;
     for _ in 0..2 {
-        world.fake.script(
-            Op::Delete,
-            Step::Ambiguous {
-                kind: AmbiguousKind::Timeout,
-                applied: false,
-            },
-        );
+        world
+            .fake
+            .script(Op::Delete, crate::support::timed_out(false));
     }
     let transport = retracted_mid_send(&world.fake, store, &run, &user, None);
     let mut delivery = delivery(store, &world, &transport);
@@ -378,7 +374,7 @@ async fn bind_then_ambiguous_delete_race<S: Store>(store: &S) {
     assert_eq!(report.retracted, 0);
     assert_eq!(world.fake.count(Op::Delete), 2, "one identical retry");
     delivery
-        .drain_decline_notices(now() + Duration::minutes(1))
+        .drain_decline_notices(later())
         .await
         .expect("replay");
     assert_eq!(
@@ -402,7 +398,7 @@ async fn ambiguous_send_race<S: Store>(store: &S) {
     delivery.drain_decline_notices(now()).await.expect("race");
     assert!(notice(store, &run, &user).await.retract_pending);
     delivery
-        .drain_decline_notices(now() + Duration::minutes(1))
+        .drain_decline_notices(later())
         .await
         .expect("replay");
     assert_eq!(
@@ -419,10 +415,7 @@ async fn in_flight_retraction_after_an_ambiguous_create_never_reposts() {
 
 async fn cooldown_survives_recovery<S: Store>(store: &S) {
     let (run, user) = seed(store).await;
-    store
-        .recover_on_start(now() + Duration::minutes(1))
-        .await
-        .expect("recover");
+    store.recover_on_start(later()).await.expect("recover");
     assert!(
         store
             .decline_notice_on_cooldown(&run, &user, now() + Duration::hours(5))
@@ -455,12 +448,9 @@ async fn recovery_drains_unbound_and_bound_pending_once<S: Store>(store: &S) {
         .mark_decline_retract_pending(&run, &user)
         .await
         .expect("mark bound");
-    store
-        .recover_on_start(now() + Duration::minutes(1))
-        .await
-        .expect("recover");
+    store.recover_on_start(later()).await.expect("recover");
     delivery
-        .drain_decline_notices(now() + Duration::minutes(1))
+        .drain_decline_notices(later())
         .await
         .expect("recovery tick");
     delivery
@@ -499,7 +489,7 @@ async fn shutdown_deadline_cancels_the_actual_decline_drain<S: Store>(store: &S)
         .await
         .expect("recover");
     delivery
-        .drain_decline_notices(now() + Duration::minutes(1))
+        .drain_decline_notices(later())
         .await
         .expect("replay");
     assert_eq!(

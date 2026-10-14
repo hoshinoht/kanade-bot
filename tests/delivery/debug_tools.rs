@@ -12,13 +12,13 @@ use kanade::bot::commands::{
     DebugCards, HeaderNote, HeaderRequest, HeaderTrialKind, HeaderTrials, PingRequest, SampleRun,
     TestKind, TestPosted, TestReport, TestSubject,
 };
-use kanade::bot::delivery::cards::{CardKit, DigestPhraseStore, HeadingRewrite, ReminderCardStore};
+use kanade::bot::delivery::cards::{CardKit, ReminderCardStore};
 use kanade::bot::delivery::{
     CardRefresh, DebugCardStore, DebugDesk, FixedClock, SAMPLE_RUN_ID, StoreRef, TEST_PREFIX,
 };
 use kanade::bot::events::{ReactionRouter, RsvpAnswer, RsvpReaction};
 use kanade::bot::transport::{Call, FakeDiscord, Outcome};
-use kanade::chat::nudge::{NudgeRewriter, RewriteFailure, RewritePrompt, SharedRewriter};
+use kanade::chat::nudge::{NudgeRewriter, RewriteFailure, RewritePrompt};
 use kanade::domain::ids::RandomIds;
 use kanade::domain::notify::{ActiveClaims, DedupeKey, DeliveryJournal, DeliveryTarget};
 use kanade::domain::schedule::{RunStatus, ScheduleSnapshot};
@@ -27,9 +27,7 @@ use kanade::domain::settings::MessageStyle;
 use kanade::infrastructure::store::MemoryScheduleStore;
 use twilight_model::id::Id;
 
-use crate::cards::{
-    Script, Scripted, allowed, created, kit, persona, refresher, rewriting, tonight, world,
-};
+use crate::cards::{Script, Scripted, allowed, created, kit, refresher, rewriting, tonight, world};
 use crate::debug::{desk, on_both_arcs, star};
 use crate::scenarios::{self, HOME, POST, now, week};
 use crate::support::{self, Store, seed_digest};
@@ -345,13 +343,7 @@ async fn style_and_header_overrides_touch_no_setting_or_record() {
         Some("Waku waku!"),
         "the phrase under the title: {texts:?}"
     );
-    assert_eq!(
-        store
-            .digest_phrase(&record_key(DeliveryTarget::Digest(week())))
-            .await
-            .expect("read"),
-        None
-    );
+    assert_eq!(support::week_phrase(&*store, week()).await, None);
     let amend = phrases
         .ping(PingRequest {
             rewrite: true,
@@ -590,18 +582,10 @@ impl NudgeRewriter for Steps {
 }
 
 fn stepping(steps: Vec<Step>) -> CardKit {
-    CardKit {
-        heading: HeadingRewrite {
-            rewriter: Some(SharedRewriter(Arc::new(Steps(Mutex::new(steps.into()))))),
-            persona: Some(persona()),
-            words: None,
-            log: None,
-        },
-        ..kit(None)
-    }
+    rewriting(&Arc::new(Steps(Mutex::new(steps.into()))))
 }
 
-fn header(kind: HeaderTrialKind, tries: u8) -> HeaderRequest {
+pub(crate) fn header(kind: HeaderTrialKind, tries: u8) -> HeaderRequest {
     HeaderRequest {
         kind,
         tries,
@@ -739,13 +723,7 @@ async fn header_trials_post_each_verdict_and_store_nothing() {
                 .is_empty()
         );
     }
-    assert_eq!(
-        store
-            .digest_phrase(&record_key(DeliveryTarget::Digest(week())))
-            .await
-            .expect("read"),
-        None
-    );
+    assert_eq!(support::week_phrase(&*store, week()).await, None);
 
     // No rewriter configured: nothing is tried or posted.
     let posts = created(&fake).len();

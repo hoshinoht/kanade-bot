@@ -236,6 +236,7 @@ async fn create_delivers_with_explicit_allow_list_on_the_wire() {
         json!({ "parse": [], "users": ["1001"] }),
         "content mentions cannot widen the list"
     );
+    assert!(body.get("message_reference").is_none(), "a plain post");
 }
 
 #[tokio::test]
@@ -266,105 +267,72 @@ async fn attachments_go_multipart_with_the_payload_and_files() {
     );
 }
 
+/// Every create failure is classified from one answer and never retried.
 #[tokio::test]
-async fn missing_permissions_is_definite() {
-    let (outcome, stub) = create(vec![json_reply(
-        403,
-        json!({ "code": 50013, "message": "Missing Permissions" }),
-    )])
-    .await;
-    assert_eq!(
-        outcome,
-        Outcome::DefinitelyRejected(RejectionKind::MissingPermissions)
-    );
-    assert_eq!(stub.seen().len(), 1, "never retried");
+async fn create_failures_are_classified_and_not_retried() {
+    let error =
+        |status, code, message| json_reply(status, json!({ "code": code, "message": message }));
+    for (label, reply, expected) in [
+        (
+            "missing permissions",
+            error(403, 50013, "Missing Permissions"),
+            Outcome::DefinitelyRejected(RejectionKind::MissingPermissions),
+        ),
+        (
+            "unknown channel",
+            error(404, 10003, "Unknown Channel"),
+            Outcome::DefinitelyRejected(RejectionKind::UnknownChannel),
+        ),
+        (
+            "other client error",
+            error(400, 50035, "Invalid Form Body"),
+            Outcome::DefinitelyRejected(RejectionKind::Http {
+                status: 400,
+                code: Some(50035),
+            }),
+        ),
+        (
+            "server error",
+            error(500, 0, "oops"),
+            Outcome::Ambiguous(AmbiguousKind::ServerError { status: 500 }),
+        ),
+        (
+            "non-JSON error body",
+            raw_reply(502, "<html>bad gateway</html>"),
+            Outcome::Ambiguous(AmbiguousKind::UnreadableResponse),
+        ),
+        (
+            "dropped after write",
+            Reply::Drop,
+            Outcome::Ambiguous(AmbiguousKind::Connection),
+        ),
+        (
+            "delivered, unreadable id",
+            raw_reply(200, "{\"no_id\":1}"),
+            Outcome::Ambiguous(AmbiguousKind::UnreadableResponse),
+        ),
+    ] {
+        let (outcome, stub) = create(vec![reply]).await;
+        assert_eq!(outcome, expected, "{label}");
+        assert_eq!(stub.seen().len(), 1, "{label}: never retried");
+    }
 }
 
 #[tokio::test]
-async fn unknown_channel_is_definite() {
-    let (outcome, _) = create(vec![json_reply(
-        404,
-        json!({ "code": 10003, "message": "Unknown Channel" }),
-    )])
-    .await;
-    assert_eq!(
-        outcome,
-        Outcome::DefinitelyRejected(RejectionKind::UnknownChannel)
-    );
-}
-
-#[tokio::test]
-async fn other_client_errors_are_definite() {
-    let (outcome, _) = create(vec![json_reply(
-        400,
-        json!({ "code": 50035, "message": "Invalid Form Body" }),
-    )])
-    .await;
-    assert_eq!(
-        outcome,
-        Outcome::DefinitelyRejected(RejectionKind::Http {
-            status: 400,
-            code: Some(50035)
-        })
-    );
-}
-
-#[tokio::test]
-async fn server_errors_are_ambiguous_and_not_retried() {
-    let (outcome, stub) = create(vec![json_reply(
-        500,
-        json!({ "code": 0, "message": "oops" }),
-    )])
-    .await;
-    assert_eq!(
-        outcome,
-        Outcome::Ambiguous(AmbiguousKind::ServerError { status: 500 })
-    );
-    assert_eq!(stub.seen().len(), 1);
-}
-
-#[tokio::test]
-async fn non_json_error_body_is_ambiguous() {
-    let (outcome, _) = create(vec![raw_reply(502, "<html>bad gateway</html>")]).await;
-    assert_eq!(
-        outcome,
-        Outcome::Ambiguous(AmbiguousKind::UnreadableResponse)
-    );
-}
-
-#[tokio::test]
-async fn dropped_connection_after_write_is_ambiguous_and_not_retried() {
-    let (outcome, stub) = create(vec![Reply::Drop]).await;
-    assert_eq!(outcome, Outcome::Ambiguous(AmbiguousKind::Connection));
-    assert_eq!(stub.seen().len(), 1, "the written request is not replayed");
-}
-
-#[tokio::test]
-async fn delivered_but_unreadable_id_is_ambiguous() {
-    let (outcome, _) = create(vec![raw_reply(200, "{\"no_id\":1}")]).await;
-    assert_eq!(
-        outcome,
-        Outcome::Ambiguous(AmbiguousKind::UnreadableResponse)
-    );
-}
-
-#[tokio::test]
-async fn attempt_timeout_is_ambiguous() {
-    let (stub, addr) = Stub::start(vec![Reply::Stall]).await;
-    let outcome = transport(addr, Duration::from_millis(200), Duration::from_secs(10))
-        .create_message(Id::new(CHANNEL), &post())
-        .await;
-    assert_eq!(outcome, Outcome::Ambiguous(AmbiguousKind::Timeout));
-    assert_eq!(stub.seen().len(), 1);
-}
-
-#[tokio::test]
-async fn overall_deadline_is_ambiguous() {
-    let (_, addr) = Stub::start(vec![Reply::Stall]).await;
-    let outcome = transport(addr, Duration::from_secs(10), Duration::from_millis(200))
-        .create_message(Id::new(CHANNEL), &post())
-        .await;
-    assert_eq!(outcome, Outcome::Ambiguous(AmbiguousKind::Timeout));
+async fn attempt_timeout_and_overall_deadline_are_ambiguous() {
+    let (short, long) = (Duration::from_millis(200), Duration::from_secs(10));
+    for (label, attempt, deadline) in [("attempt", short, long), ("deadline", long, short)] {
+        let (stub, addr) = Stub::start(vec![Reply::Stall]).await;
+        let outcome = transport(addr, attempt, deadline)
+            .create_message(Id::new(CHANNEL), &post())
+            .await;
+        assert_eq!(
+            outcome,
+            Outcome::Ambiguous(AmbiguousKind::Timeout),
+            "{label}"
+        );
+        assert_eq!(stub.seen().len(), 1, "{label}");
+    }
 }
 
 fn rate_limited() -> Reply {
@@ -623,14 +591,6 @@ async fn a_reply_references_its_target_without_failing_or_pinging() {
         json!({ "parse": [], "users": ["1001"] }),
         "the replied author is not pinged unless listed"
     );
-}
-
-#[tokio::test]
-async fn a_plain_post_has_no_message_reference() {
-    let (outcome, stub) = create(vec![json_reply(200, json!({ "id": "91" }))]).await;
-    assert!(outcome.is_delivered());
-    let body: Value = serde_json::from_slice(&stub.seen()[0].body).unwrap();
-    assert!(body.get("message_reference").is_none());
 }
 
 #[tokio::test]

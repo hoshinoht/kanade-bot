@@ -1,7 +1,5 @@
 use kanade::bot::delivery::AdminAlert;
-use kanade::bot::transport::{
-    AmbiguousKind, Call, DiscordTransport, Op, Outcome, RejectionKind, Step,
-};
+use kanade::bot::transport::{Call, DiscordTransport, Op, Outcome, RejectionKind, Step};
 use kanade::domain::schedule::RsvpState;
 use twilight_model::channel::message::ReactionType;
 use twilight_model::id::Id;
@@ -44,23 +42,17 @@ async fn moved_run(world: &World, member_answered_first: bool) -> String {
 }
 
 #[tokio::test]
-async fn row_6_same_card_conflict_skips_only_conflicting_user_on_grouped_runs() {
-    assert_conflict_skips_only_member(false).await;
-}
-
-#[tokio::test]
-async fn row_7_cross_card_conflict_skips_user_but_grouped_sibling_applies() {
-    assert_conflict_skips_only_member(true).await;
+async fn rows_6_7_a_conflict_on_one_card_or_across_cards_skips_only_that_user() {
+    for cross_card in [false, true] {
+        assert_conflict_skips_only_member(cross_card).await;
+    }
 }
 
 #[tokio::test]
 async fn rows_11_to_13_card_failures_and_two_page_cap_skip_without_guessing() {
     for step in [
         Some(Step::Reject(RejectionKind::MissingAccess)),
-        Some(Step::Ambiguous {
-            kind: AmbiguousKind::Timeout,
-            applied: false,
-        }),
+        Some(crate::support::timed_out(false)),
         None,
     ] {
         let world = World::new();
@@ -97,10 +89,7 @@ async fn rows_11_to_13_incomplete_reads_skip_bad_runs_continue_and_throttle_perm
         Step::Succeed,
         Step::Reject(RejectionKind::MissingAccess),
         Step::Reject(RejectionKind::MissingPermissions),
-        Step::Ambiguous {
-            kind: AmbiguousKind::Timeout,
-            applied: false,
-        },
+        crate::support::timed_out(false),
     ] {
         world.fake.script(Op::ReactionUsers, step);
     }
@@ -171,15 +160,6 @@ async fn rows_11_to_13_incomplete_reads_skip_bad_runs_continue_and_throttle_perm
 }
 
 #[tokio::test]
-async fn deleted_old_card_does_not_create_an_answer() {
-    let world = World::new();
-    let (run, message) = world.carded_run().await;
-    world.fake.delete_message(Id::new(CHANNEL), message).await;
-    assert_eq!(world.replay_once().await.applied, 0);
-    assert!(world.snapshot(&run).await.rsvps.is_empty());
-}
-
-#[tokio::test]
 async fn row_15_grouped_card_reads_once_and_applies_each_run() {
     let world = World::new();
     let first = world.planned(&[MEMBER], 24).await;
@@ -223,27 +203,23 @@ async fn row_15_row_16_grouped_card_does_not_apply_a_nonparticipant() {
     );
 }
 
+/// Row 17: a participant who lost the role still applies; row 18: so does
+/// one who left the guild. Neither is looked up.
 #[tokio::test]
-async fn row_17_participating_member_is_not_filtered_for_role_loss() {
-    let world = World::new();
-    let (run, message) = world.carded_run().await;
-    world.react(message.get(), "✅", &[MEMBER]);
-    assert_eq!(world.replay_once().await.applied, 1);
-    let answer = &world.snapshot(&run).await.rsvps[0];
-    assert_eq!(answer.user_id, MEMBER.to_string());
-    assert_eq!(answer.state, RsvpState::Yes);
-    assert_eq!(world.fake.count(Op::ListMembers), 0);
-}
-
-#[tokio::test]
-async fn row_18_departed_member_who_remains_a_participant_still_applies() {
-    let world = World::new();
-    let (run, message) = world.carded_run().await;
-    world.fake.seed_members(Id::new(999), Vec::new());
-    world.react(message.get(), "✅", &[MEMBER]);
-    assert_eq!(world.replay_once().await.applied, 1);
-    assert_eq!(world.snapshot(&run).await.rsvps[0].state, RsvpState::Yes);
-    assert_eq!(world.fake.count(Op::ListMembers), 0);
+async fn rows_17_18_a_participant_is_not_filtered_for_role_loss_or_departure() {
+    for departed in [false, true] {
+        let world = World::new();
+        let (run, message) = world.carded_run().await;
+        if departed {
+            world.fake.seed_members(Id::new(999), Vec::new());
+        }
+        world.react(message.get(), "✅", &[MEMBER]);
+        assert_eq!(world.replay_once().await.applied, 1, "departed {departed}");
+        let answer = &world.snapshot(&run).await.rsvps[0];
+        assert_eq!(answer.user_id, MEMBER.to_string());
+        assert_eq!(answer.state, RsvpState::Yes);
+        assert_eq!(world.fake.count(Op::ListMembers), 0);
+    }
 }
 
 #[tokio::test]

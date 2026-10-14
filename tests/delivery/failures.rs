@@ -6,7 +6,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use chrono::TimeDelta;
 use kanade::bot::delivery::{ALERT_WINDOW, AdminAlert, AlertThrottle, DigestOutcome, SendOutcome};
-use kanade::bot::transport::{AmbiguousKind, Op, Outcome, RejectionKind, Step};
+use kanade::bot::transport::{Op, Outcome, RejectionKind, Step};
 use kanade::domain::ids::RandomIds;
 use kanade::domain::notify::{AttemptState, DeliveryTarget, EffectKind};
 
@@ -15,21 +15,14 @@ use crate::scenarios::{
     HOME, delivery, due_countdown, due_countdown_at, now, post_then_die, reminder_row,
     seed_replaceable, tick_times, world,
 };
-use crate::support::{self, Store, on_both_stores, with_lease};
-
-fn ambiguous() -> Step {
-    Step::Ambiguous {
-        kind: AmbiguousKind::Timeout,
-        applied: true,
-    }
-}
+use crate::support::{self, Store, on_both_stores, timed_out, with_lease};
 
 async fn cap_counts_claims_only<S: Store>(store: &S) {
     let world = world();
     due_countdown_at(store, HOME, 180).await;
     due_countdown_at(store, HOME, 120).await;
-    world.fake.script(Op::Create, ambiguous());
-    world.fake.script(Op::Create, ambiguous());
+    world.fake.script(Op::Create, timed_out(true));
+    world.fake.script(Op::Create, timed_out(true));
     let mut delivery = delivery(store, &world, &world.fake);
     delivery.dispatch_reminders(now()).await.expect("dispatch");
     let (_, fresh) = due_countdown_at(store, HOME, 60).await;
@@ -268,13 +261,9 @@ async fn failed_reactions_still_count_as_bound() {
 async fn throttled<S: Store>(store: &S) {
     let world = world();
     seed_replaceable(store, &world).await;
-    world.fake.set_default(
-        Op::Delete,
-        Some(Step::Ambiguous {
-            kind: AmbiguousKind::Timeout,
-            applied: false,
-        }),
-    );
+    world
+        .fake
+        .set_default(Op::Delete, Some(crate::support::timed_out(false)));
     let mut delivery = delivery(store, &world, &world.fake);
     for at in tick_times() {
         delivery.post_week_digest(at).await.expect("digest");

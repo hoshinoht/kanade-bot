@@ -3,7 +3,7 @@
 //! and on SQLite (a real close and reopen).
 
 use kanade::bot::delivery::SendOutcome;
-use kanade::bot::transport::{AmbiguousKind, Op, RejectionKind, Step};
+use kanade::bot::transport::{Op, RejectionKind, Step};
 use kanade::domain::history::Origin;
 use kanade::domain::ids::RandomIds;
 use kanade::domain::notify::{
@@ -233,13 +233,9 @@ async fn a_sqlite_claim_survives_the_restart_that_orphans_its_lease() {
 async fn ambiguous_is_never_resent<S: Store>(store: &S) {
     let world = world();
     cancel_with_notice(store, "cancel-1").await.expect("cancel");
-    world.fake.script(
-        Op::Create,
-        Step::Ambiguous {
-            kind: AmbiguousKind::Timeout,
-            applied: true,
-        },
-    );
+    world
+        .fake
+        .script(Op::Create, crate::support::timed_out(true));
     let mut delivery = delivery(store, &world, &world.fake);
     let report = delivery.tick_at(now()).await.expect("tick");
     assert_eq!(report.notices.sends[0].send.outcome, SendOutcome::Uncertain);

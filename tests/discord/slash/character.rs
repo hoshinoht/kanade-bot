@@ -21,7 +21,7 @@ use twilight_model::id::Id;
 
 use kanade::bot::chardata::DiscordPosts;
 use kanade::bot::commands::CharacterParts;
-use kanade::bot::transport::{AmbiguousKind, Call, InteractionReply, Op, RejectionKind, Step};
+use kanade::bot::transport::{Call, InteractionReply, Op, RejectionKind, Step};
 use kanade::domain::characters::{
     Character, CharacterChange, CharacterRecord, CharacterRole, CharacterStore,
 };
@@ -33,7 +33,7 @@ use kanade::infrastructure::nexon::{ApiKey, NexonClient};
 use kanade::infrastructure::store::MemoryCharData;
 
 use super::super::support::{
-    BOSSING_ROLE, message_json, parse, parse_message, user_json, v2_texts as texts,
+    BOSSING_ROLE, message_json, parse, parse_message, user_json, v2_buttons, v2_texts as texts,
 };
 use super::{ALICE, BOB, KALOS, Ports, Slash, focused, now, opt, sub};
 
@@ -108,6 +108,19 @@ fn character(id: &str, ign: &str, world: &str, class: &str, role: CharacterRole)
     }
 }
 
+async fn seed_character(store: &kanade::infrastructure::store::SqliteStore, row: Character) {
+    let record = CharacterRecord {
+        at: now(),
+        actor: Actor::admin("seed"),
+        surface: Surface::AdminPortal,
+    };
+    let written = store
+        .apply_character(CharacterChange::Create(row), record)
+        .await
+        .unwrap();
+    assert!(written.applied(), "{written:?}");
+}
+
 async fn rig_with(connected: bool, character_module: bool) -> Rig {
     let (address, nexon) = fake_nexon().await;
     let file = Arc::new(MemoryCharData::new());
@@ -153,19 +166,7 @@ async fn rig_with(connected: bool, character_module: bool) -> Rig {
         character(NL, "MikaNL", "msea", "Night Lord", CharacterRole::Alt),
         character(KMS, "MikaKms", "kms", "Hero", CharacterRole::Alt),
     ] {
-        let written = slash
-            .store
-            .apply_character(
-                CharacterChange::Create(row),
-                CharacterRecord {
-                    at: now(),
-                    actor: Actor::admin("seed"),
-                    surface: Surface::AdminPortal,
-                },
-            )
-            .await
-            .unwrap();
-        assert!(written.applied(), "{written:?}");
+        seed_character(&slash.store, row).await;
     }
     let service = slot.get().cloned().unwrap_or_else(|| {
         Arc::new(CharacterData::new(
@@ -187,23 +188,6 @@ async fn rig_with(connected: bool, character_module: bool) -> Rig {
 
 async fn rig() -> Rig {
     rig_with(true, true).await
-}
-
-/// Every button as `(label, custom id)`.
-fn buttons(components: &[Component]) -> Vec<(String, String)> {
-    let mut out = Vec::new();
-    for component in components {
-        match component {
-            Component::Button(button) => out.push((
-                button.label.clone().unwrap_or_default(),
-                button.custom_id.clone().unwrap_or_default(),
-            )),
-            Component::ActionRow(row) => out.extend(buttons(&row.components)),
-            Component::Container(container) => out.extend(buttons(&container.components)),
-            _ => {}
-        }
-    }
-    out
 }
 
 /// A reply's words: its text displays, else its content.
@@ -250,15 +234,14 @@ impl Rig {
 
     /// Bob (an admin signed in with Discord) asks to link MikaBish.
     async fn request(&self) {
+        self.request_for(BISH).await;
+    }
+
+    async fn request_for(&self, id: &str) {
+        let bob = Actor::admin(format!("discord:{BOB}"));
         let outcome = self
             .service
-            .request_link(
-                BISH,
-                0,
-                &Actor::admin(format!("discord:{BOB}")),
-                Surface::AdminPortal,
-                |_| None,
-            )
+            .request_link(id, 0, &bob, Surface::AdminPortal, |_| None)
             .await
             .unwrap();
         assert!(
@@ -267,12 +250,20 @@ impl Rig {
         );
     }
 
+    /// `user`'s `/character <leaf>` picker for an empty query.
+    async fn choices(&self, user: u64, leaf: &str) -> Vec<(String, String)> {
+        let options = sub(leaf, json!([focused("character", "")]));
+        self.slash
+            .suggest(user, &[BOSSING_ROLE], "character", options)
+            .await
+    }
+
     /// `/character link character:MikaBish`; the notice's Link custom id.
     async fn notice(&self) -> (InteractionReply, String) {
         let reply = self.run("link", json!([opt("character", BISH)])).await;
-        let link = buttons(&reply.components)
+        let link = v2_buttons(&reply.components)
             .into_iter()
-            .find(|(label, _)| label.starts_with("Link"))
+            .find(|(label, ..)| label.starts_with("Link"))
             .expect("a Link button")
             .1;
         (reply, link)
@@ -405,15 +396,7 @@ async fn the_command_is_absent_while_the_module_is_off() {
 async fn the_picker_lists_requests_first_and_only_msea_characters() {
     let rig = rig().await;
     rig.request().await;
-    let choices = rig
-        .slash
-        .suggest(
-            ALICE,
-            &[BOSSING_ROLE],
-            "character",
-            sub("link", json!([focused("character", "")])),
-        )
-        .await;
+    let choices = rig.choices(ALICE, "link").await;
     assert_eq!(
         choices,
         [
@@ -425,15 +408,7 @@ async fn the_picker_lists_requests_first_and_only_msea_characters() {
         ]
     );
     // Someone else's characters are never offered.
-    let theirs = rig
-        .slash
-        .suggest(
-            BOB,
-            &[BOSSING_ROLE],
-            "character",
-            sub("link", json!([focused("character", "")])),
-        )
-        .await;
+    let theirs = rig.choices(BOB, "link").await;
     assert!(theirs.is_empty(), "{theirs:?}");
 }
 
@@ -461,13 +436,18 @@ async fn the_notice_is_version_one_as_drawn_and_calls_nothing() {
     assert_eq!(NOTICE_VERSION, 1);
     let issued = now().timestamp();
     assert_eq!(
-        buttons(&reply.components),
+        v2_buttons(&reply.components),
         [
             (
                 "Link MikaBish".to_owned(),
-                format!("chardata:link:1:{issued}:{BISH}")
+                format!("chardata:link:1:{issued}:{BISH}"),
+                false
             ),
-            ("Cancel".to_owned(), format!("chardata:cancel:{BISH}")),
+            (
+                "Cancel".to_owned(),
+                format!("chardata:cancel:{BISH}"),
+                false
+            ),
         ]
     );
     assert_eq!(link, format!("chardata:link:1:{issued}:{BISH}"));
@@ -475,10 +455,7 @@ async fn the_notice_is_version_one_as_drawn_and_calls_nothing() {
     assert_eq!(rig.status(BISH).await, Some(LinkStatus::Pending));
 
     // Without a request, the first line is only the promise.
-    let (plain, _) = {
-        let reply = rig.run("link", json!([opt("character", "mikanl")])).await;
-        (reply, ())
-    };
+    let plain = rig.run("link", json!([opt("character", "mikanl")])).await;
     assert_eq!(words(&plain)[1], "Nothing is fetched until you press Link.");
     assert_eq!(
         words(&plain)[0],
@@ -552,22 +529,21 @@ async fn cancel_keeps_the_request_and_an_old_notice_expires() {
     let reply = rig.press(&format!("chardata:cancel:{NL}")).await;
     assert_eq!(words(&reply), ["Nothing was linked."]);
 
-    let issued = (now() - TimeDelta::minutes(16)).timestamp();
-    let reply = rig.press(&format!("chardata:link:1:{issued}:{BISH}")).await;
-    assert_eq!(
-        words(&reply),
-        ["This notice expired. Run /character link again."]
-    );
-    assert_eq!(rig.status(BISH).await, Some(LinkStatus::Pending));
-    // A notice "issued" in the future (past the 60 s skew) is refused too:
-    // it would otherwise stay valid for as long as it claims.
-    let issued = (now() + TimeDelta::minutes(2)).timestamp();
-    let reply = rig.press(&format!("chardata:link:1:{issued}:{BISH}")).await;
-    assert_eq!(
-        words(&reply),
-        ["This notice expired. Run /character link again."]
-    );
-    assert_eq!(rig.status(BISH).await, Some(LinkStatus::Pending));
+    // An old notice expires; one "issued" in the future (past the 60 s
+    // skew) is refused too: it would otherwise stay valid for as long as it
+    // claims.
+    for issued in [
+        now() - TimeDelta::minutes(16),
+        now() + TimeDelta::minutes(2),
+    ] {
+        let issued = issued.timestamp();
+        let reply = rig.press(&format!("chardata:link:1:{issued}:{BISH}")).await;
+        assert_eq!(
+            words(&reply),
+            ["This notice expired. Run /character link again."]
+        );
+        assert_eq!(rig.status(BISH).await, Some(LinkStatus::Pending));
+    }
     assert_eq!(rig.nexon.calls.load(Ordering::SeqCst), 0);
 }
 
@@ -580,35 +556,12 @@ async fn data_shows_every_entry_across_messages() {
     let igns: Vec<String> = (1..=35).map(|n| format!("MikaAlt{n:02}")).collect();
     for (n, ign) in igns.iter().enumerate() {
         let id = format!("c-alt-{n:02}");
-        let written = rig
-            .slash
-            .store
-            .apply_character(
-                CharacterChange::Create(character(&id, ign, "msea", "Bishop", CharacterRole::Alt)),
-                CharacterRecord {
-                    at: now(),
-                    actor: Actor::admin("seed"),
-                    surface: Surface::AdminPortal,
-                },
-            )
-            .await
-            .unwrap();
-        assert!(written.applied());
-        let outcome = rig
-            .service
-            .request_link(
-                &id,
-                0,
-                &Actor::admin(format!("discord:{BOB}")),
-                Surface::AdminPortal,
-                |_| None,
-            )
-            .await
-            .unwrap();
-        assert!(
-            matches!(outcome, RequestOutcome::Requested(_)),
-            "{outcome:?}"
-        );
+        seed_character(
+            &rig.slash.store,
+            character(&id, ign, "msea", "Bishop", CharacterRole::Alt),
+        )
+        .await;
+        rig.request_for(&id).await;
     }
     let before = rig.slash.discord.calls().len();
     rig.run("data", json!([])).await;
@@ -704,15 +657,7 @@ async fn data_shows_everything_kept_and_unlink_all_clears_it() {
         ]
     );
     assert!(!shown.join("\n").contains(OCID), "the ocid is never shown");
-    let choices = rig
-        .slash
-        .suggest(
-            ALICE,
-            &[BOSSING_ROLE],
-            "character",
-            sub("unlink", json!([focused("character", "")])),
-        )
-        .await;
+    let choices = rig.choices(ALICE, "unlink").await;
     assert_eq!(
         choices,
         [
@@ -792,13 +737,9 @@ async fn share_posts_a_tracked_card_and_unlink_strips_it_at_once() {
 async fn an_ambiguous_create_is_found_again_by_its_ref() {
     let rig = rig().await;
     rig.link().await;
-    rig.slash.discord.script(
-        Op::Create,
-        Step::Ambiguous {
-            kind: AmbiguousKind::Timeout,
-            applied: true,
-        },
-    );
+    rig.slash
+        .discord
+        .script(Op::Create, crate::support::timed_out(true));
     let hold = rig.slash.discord.hold(Op::ChannelMessages);
     let seed = async {
         hold.entered().await;
@@ -820,13 +761,9 @@ async fn an_ambiguous_create_is_found_again_by_its_ref() {
     assert_eq!(rig.slash.discord.count(Op::Create), 1, "never sent twice");
 
     // Not found after two reads: unknown, for an admin.
-    rig.slash.discord.script(
-        Op::Create,
-        Step::Ambiguous {
-            kind: AmbiguousKind::Timeout,
-            applied: false,
-        },
-    );
+    rig.slash
+        .discord
+        .script(Op::Create, crate::support::timed_out(false));
     let reply = rig.run("share", json!([opt("character", BISH)])).await;
     assert_eq!(
         reply.content,
@@ -935,13 +872,9 @@ async fn strips_finish_on_404_delete_on_403_and_stick_when_both_are_refused() {
 async fn an_unconfirmed_strip_is_tried_again_in_5_minutes_then_hourly() {
     let rig = rig().await;
     due_post(&rig, "bbbbb1", 6_001, true).await;
-    rig.slash.discord.set_default(
-        Op::Edit,
-        Some(Step::Ambiguous {
-            kind: AmbiguousKind::Timeout,
-            applied: false,
-        }),
-    );
+    rig.slash
+        .discord
+        .set_default(Op::Edit, Some(crate::support::timed_out(false)));
     rig.service.strip_posts().await;
     assert_eq!(
         rig.service.next_strip_retry(),

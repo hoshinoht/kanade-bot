@@ -7,13 +7,13 @@ use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use kanade::bot::commands::{
-    DebugCards, HeaderRequest, HeaderTrialKind, HeaderTrials, PingRequest, TestKind,
-};
-use kanade::bot::delivery::cards::{CardKit, HeadingRewrite, ReminderCardStore};
+use kanade::bot::commands::{DebugCards, HeaderTrialKind, HeaderTrials, PingRequest, TestKind};
+use kanade::bot::delivery::DebugDesk;
+use kanade::bot::delivery::cards::{CardKit, ReminderCardStore};
+use kanade::bot::transport::FakeDiscord;
 use kanade::chat::nudge::{
     NudgeRewriter, RewriteDetail, RewriteFailure, RewriteOutcome, RewritePrompt, SharedRewriteSink,
-    SharedRewriter, StoreRewriteSink,
+    StoreRewriteSink,
 };
 use kanade::domain::model_log::{
     LogPage, RewriteFacets, RewriteFilter, RewriteKind, RewriteLog, RewriteLogStore, RewriteStage,
@@ -21,8 +21,9 @@ use kanade::domain::model_log::{
 use kanade::domain::scheduler::StoreError;
 use kanade::infrastructure::store::MemoryScheduleStore;
 
-use crate::cards::{before_due, created, kit, persona, pregen, seed_day_of, world};
+use crate::cards::{before_due, created, pregen, rewriting, seed_day_of, world};
 use crate::debug::{desk, star};
+use crate::debug_tools::header;
 use crate::scenarios::{HOME, now};
 
 /// Scripted detailed outcomes; the last repeats.
@@ -108,16 +109,39 @@ fn sink(logs: &Arc<MemoryScheduleStore>) -> SharedRewriteSink {
     Arc::new(StoreRewriteSink::new(Arc::clone(logs), Arc::new(now)))
 }
 
-fn logging(rewriter: Arc<Coded>, log: SharedRewriteSink) -> CardKit {
-    CardKit {
-        heading: HeadingRewrite {
-            rewriter: Some(SharedRewriter(rewriter)),
-            persona: Some(persona()),
-            words: None,
-            log: Some(log),
-        },
-        ..kit(None)
-    }
+fn logging(outcomes: Vec<RewriteOutcome>, log: SharedRewriteSink) -> CardKit {
+    let mut kit = rewriting(&Coded::new(outcomes));
+    kit.heading.log = Some(log);
+    kit
+}
+
+/// A `/debug` desk over the Malefic Star run whose rewrites answer
+/// `outcomes`: the desk, the fake, the log store and the run id.
+async fn debug_rig(
+    outcomes: Vec<RewriteOutcome>,
+) -> (
+    DebugDesk<MemoryScheduleStore, FakeDiscord>,
+    Arc<FakeDiscord>,
+    Arc<MemoryScheduleStore>,
+    String,
+) {
+    let store = Arc::new(MemoryScheduleStore::new());
+    let logs = Arc::new(MemoryScheduleStore::new());
+    let fake = Arc::new(crate::support::fake());
+    let run_id = star(&*store).await;
+    let kit = logging(outcomes, sink(&logs));
+    let desk = desk(&store, &fake, &world(), kit, &[HOME], None);
+    (desk, fake, logs, run_id)
+}
+
+/// The full stored row, with the prompt as sent.
+async fn sent_prompt(logs: &MemoryScheduleStore, row: &RewriteLog) -> String {
+    logs.load_rewrite(&row.id)
+        .await
+        .expect("load")
+        .expect("row")
+        .prompt
+        .expect("the sent prompt")
 }
 
 async fn rows(logs: &MemoryScheduleStore) -> Vec<RewriteLog> {
@@ -163,10 +187,7 @@ async fn a_pregen_pass_logs_one_row_per_rewrite_under_its_card_key() {
     let logs = Arc::new(MemoryScheduleStore::new());
     let world = world();
     seed_day_of(&*store).await;
-    let kit = logging(
-        Coded::new(vec![reply("Rise and shine, it's {day}!")]),
-        sink(&logs),
-    );
+    let kit = logging(vec![reply("Rise and shine, it's {day}!")], sink(&logs));
     let report = pregen(&store, &world, &kit, before_due()).pass().await;
     assert_eq!(report.stored, 1);
     let rows = rows(&logs).await;
@@ -194,13 +215,7 @@ async fn a_pregen_pass_logs_one_row_per_rewrite_under_its_card_key() {
     assert_eq!(row.at, now());
     // Pages leave the prompt out; the detail read has it, as sent.
     assert_eq!(row.prompt, None);
-    let prompt = logs
-        .load_rewrite(&row.id)
-        .await
-        .expect("load")
-        .expect("row")
-        .prompt
-        .expect("the sent prompt");
+    let prompt = sent_prompt(&logs, row).await;
     assert!(
         prompt.starts_with("[system]\nRewrite the one reminder header line"),
         "{prompt}"
@@ -217,7 +232,7 @@ async fn a_pregen_over_budget_logs_its_code_and_usage_and_stores_nothing() {
     let logs = Arc::new(MemoryScheduleStore::new());
     let world = world();
     seed_day_of(&*store).await;
-    let kit = logging(Coded::new(vec![over_budget()]), sink(&logs));
+    let kit = logging(vec![over_budget()], sink(&logs));
     let report = pregen(&store, &world, &kit, before_due()).pass().await;
     assert_eq!((report.stored, report.failed), (0, 1));
     let rows = rows(&logs).await;
@@ -248,7 +263,7 @@ async fn a_failing_log_changes_no_outcome() {
         let store = Arc::new(MemoryScheduleStore::new());
         seed_day_of(&*store).await;
         let mut kit = logging(
-            Coded::new(vec![reply("Rise and shine, it's {day}!")]),
+            vec![reply("Rise and shine, it's {day}!")],
             sink(&Arc::new(MemoryScheduleStore::new())),
         );
         kit.heading.log = log;
@@ -260,27 +275,9 @@ async fn a_failing_log_changes_no_outcome() {
     assert_eq!(outcomes[1].0.stored, 1, "stored though its row is not");
 }
 
-fn header(kind: HeaderTrialKind, tries: u8) -> HeaderRequest {
-    HeaderRequest {
-        kind,
-        tries,
-        channel: None,
-        invoked_in: Some(HOME.into()),
-    }
-}
-
 #[tokio::test(start_paused = true)]
 async fn debug_header_logs_each_try_and_reports_its_code() {
-    let store = Arc::new(MemoryScheduleStore::new());
-    let logs = Arc::new(MemoryScheduleStore::new());
-    let world = world();
-    let fake = Arc::new(crate::support::fake());
-    star(&*store).await;
-    let kit = logging(
-        Coded::new(vec![reply("Waku waku!"), over_budget()]),
-        sink(&logs),
-    );
-    let desk = desk(&store, &fake, &world, kit, &[HOME], None);
+    let (desk, fake, logs, _) = debug_rig(vec![reply("Waku waku!"), over_budget()]).await;
     assert_eq!(
         desk.headers(header(HeaderTrialKind::Countdown, 2)).await,
         Ok(HeaderTrials::Posted {
@@ -333,13 +330,7 @@ async fn debug_header_logs_each_try_and_reports_its_code() {
 
 #[tokio::test(start_paused = true)]
 async fn debug_ping_with_a_rewrite_logs_one_row_and_says_why_it_failed() {
-    let store = Arc::new(MemoryScheduleStore::new());
-    let logs = Arc::new(MemoryScheduleStore::new());
-    let world = world();
-    let fake = Arc::new(crate::support::fake());
-    let run_id = star(&*store).await;
-    let kit = logging(Coded::new(vec![over_budget()]), sink(&logs));
-    let desk = desk(&store, &fake, &world, kit, &[HOME], None);
+    let (desk, _, logs, run_id) = debug_rig(vec![over_budget()]).await;
     let report = desk
         .ping(PingRequest {
             rewrite: true,
@@ -360,13 +351,7 @@ async fn debug_ping_with_a_rewrite_logs_one_row_and_says_why_it_failed() {
         rows[0].context.as_deref(),
         Some(format!("/debug ping day_of · run {run_id}").as_str())
     );
-    let prompt = logs
-        .load_rewrite(&rows[0].id)
-        .await
-        .expect("load")
-        .expect("row")
-        .prompt
-        .expect("the sent prompt");
+    let prompt = sent_prompt(&logs, &rows[0]).await;
     assert!(
         prompt.ends_with("[user]\nLine to rewrite: Today — {day}"),
         "{prompt}"
@@ -381,16 +366,7 @@ async fn debug_ping_with_a_rewrite_logs_one_row_and_says_why_it_failed() {
 
 #[tokio::test(start_paused = true)]
 async fn both_budget_cases_are_logged_apart() {
-    let store = Arc::new(MemoryScheduleStore::new());
-    let logs = Arc::new(MemoryScheduleStore::new());
-    let world = world();
-    let fake = Arc::new(crate::support::fake());
-    star(&*store).await;
-    let kit = logging(
-        Coded::new(vec![over_budget(), over_call_budget()]),
-        sink(&logs),
-    );
-    let desk = desk(&store, &fake, &world, kit, &[HOME], None);
+    let (desk, _, logs, _) = debug_rig(vec![over_budget(), over_call_budget()]).await;
     desk.headers(header(HeaderTrialKind::DayOf, 2))
         .await
         .expect("trials");

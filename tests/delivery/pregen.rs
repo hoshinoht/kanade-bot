@@ -9,42 +9,32 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use chrono::{DateTime, NaiveTime, TimeDelta, TimeZone, Utc};
-use kanade::bot::delivery::cards::{
-    CardKit, CardRecord, DigestPhraseStore, HeadingRewrite, ReminderCardStore,
-};
+use kanade::bot::delivery::cards::{CardKit, CardRecord, ReminderCardStore};
 use kanade::bot::delivery::{
     HEADER_HORIZON, HeaderPregen, MAX_ATTEMPTS_PER_KEY, MAX_BUSY_RETRIES, MAX_CATCHUP_PER_TICK,
     PREGEN_DEADLINE, PregenReport, SEEN_HORIZON,
 };
 use kanade::chat::nudge::{
     NudgeRewriter, RewriteAttempt, RewriteDetail, RewriteFailure, RewriteOutcome, RewritePrompt,
-    RewriteSink, SharedRewriter, StoreRewriteSink,
+    RewriteSink, StoreRewriteSink,
 };
 use kanade::domain::history::Origin;
 use kanade::domain::ids::RandomIds;
 use kanade::domain::model_log::{RewriteFilter, RewriteLogStore, RewriteStage};
 use kanade::domain::notify::{DedupeKey, DeliveryTarget};
-use kanade::domain::schedule::RunStatus;
 use kanade::infrastructure::store::MemoryScheduleStore;
 use tokio::sync::watch;
 
 use crate::cards::{
-    Script, Scripted, before_due, created, kit, pregen, redesigned, rewriting, run, seed_day_of,
+    Script, Scripted, before_due, created, kalos, kit, pregen, redesigned, rewriting, seed_day_of,
     shows_phrase, world,
 };
 use crate::scenarios::{self, now, previous_week, week};
-use crate::support::{self, mark_digest_week, seed_digest};
+use crate::support::{self, mark_digest_week, seed_digest, week_phrase};
 
 /// A Kalos countdown firing at `at`; returns its record key.
 async fn countdown_at(store: &MemoryScheduleStore, at: DateTime<Utc>) -> String {
-    let id = run(
-        store,
-        &["XKalos"],
-        &["1001"],
-        at + TimeDelta::minutes(15),
-        RunStatus::Planned,
-    )
-    .await;
+    let id = kalos(store, &["1001"], at + TimeDelta::minutes(15)).await;
     let mut ids = RandomIds;
     let reminder = support::service(store, &mut ids, now())
         .as_origin(Origin::for_tests())
@@ -130,20 +120,38 @@ fn logged(rewriter: &Arc<Scripted>, logs: &Arc<MemoryScheduleStore>) -> CardKit 
     cards
 }
 
+async fn logged_rows(logs: &MemoryScheduleStore) -> Vec<kanade::domain::model_log::RewriteLog> {
+    logs.list_rewrites(&RewriteFilter {
+        limit: 100,
+        ..RewriteFilter::default()
+    })
+    .await
+    .expect("list")
+    .items
+}
+
 async fn stages(logs: &MemoryScheduleStore) -> Vec<(String, RewriteStage)> {
-    let mut rows: Vec<_> = logs
-        .list_rewrites(&RewriteFilter {
-            limit: 100,
-            ..RewriteFilter::default()
-        })
+    let mut rows: Vec<_> = logged_rows(logs)
         .await
-        .expect("list")
-        .items
         .into_iter()
         .map(|row| (row.context.unwrap_or_default(), row.stage))
         .collect();
     rows.sort();
     rows
+}
+
+/// Runs `worker` until its first pass is a second into a rewrite, then
+/// stops it and waits for it to end.
+async fn stop_mid_rewrite(worker: &HeaderPregen<MemoryScheduleStore>) {
+    let (stop, stopped) = watch::channel(false);
+    let running = worker.run(stopped);
+    tokio::pin!(running);
+    tokio::select! {
+        () = &mut running => panic!("the worker ended on its own"),
+        () = tokio::time::sleep(Duration::from_secs(1)) => {}
+    }
+    stop.send_replace(true);
+    running.await;
 }
 
 #[test]
@@ -324,13 +332,7 @@ async fn a_busy_permit_retries_on_later_ticks_without_spending_attempts() {
         busy: MAX_ATTEMPTS_PER_KEY as usize + 1,
         calls: AtomicUsize::new(0),
     });
-    let cards = CardKit {
-        heading: HeadingRewrite {
-            rewriter: Some(SharedRewriter(busy.clone())),
-            ..rewriting(&Scripted::new(Script::Fail)).heading
-        },
-        ..redesigned(kit(None))
-    };
+    let cards = redesigned(rewriting(&busy));
     let rig = Rig::new(&store, &cards, kl(10, 21, 0), clock(21, 0));
     let first = rig.worker.pass().await;
     assert_eq!((first.batch, first.failed), (true, 1));
@@ -428,16 +430,8 @@ async fn a_running_worker_stops_mid_rewrite() {
     let key = countdown_at(&store, now() + TimeDelta::hours(1)).await;
     let rewriter = Scripted::new(Script::Hang);
     let worker = pregen(&store, &world, &phrasing(&rewriter), now());
-    let (stop, stopped) = watch::channel(false);
-    let running = worker.run(stopped);
-    tokio::pin!(running);
-    tokio::select! {
-        () = &mut running => panic!("the worker ended on its own"),
-        () = tokio::time::sleep(std::time::Duration::from_secs(1)) => {}
-    }
-    assert_eq!(rewriter.calls(), 1, "the first pass is mid-rewrite");
-    stop.send_replace(true);
-    running.await;
+    stop_mid_rewrite(&worker).await;
+    assert_eq!(rewriter.calls(), 1, "the first pass was mid-rewrite");
     assert_eq!(heading(&store, &key).await, None);
 }
 
@@ -451,24 +445,9 @@ async fn a_rewrite_cut_by_the_worker_stop_is_logged_as_shutdown() {
     let key = countdown_at(&store, now() + TimeDelta::hours(1)).await;
     let rewriter = Scripted::new(Script::Hang);
     let worker = pregen(&store, &world, &logged(&rewriter, &logs), now());
-    let (stop, stopped) = watch::channel(false);
-    let running = worker.run(stopped);
-    tokio::pin!(running);
-    tokio::select! {
-        () = &mut running => panic!("the worker ended on its own"),
-        () = tokio::time::sleep(Duration::from_secs(1)) => {}
-    }
-    stop.send_replace(true);
-    running.await;
+    stop_mid_rewrite(&worker).await;
     assert_eq!(heading(&store, &key).await, None, "nothing stored");
-    let rows = logs
-        .list_rewrites(&RewriteFilter {
-            limit: 10,
-            ..RewriteFilter::default()
-        })
-        .await
-        .expect("list")
-        .items;
+    let rows = logged_rows(&logs).await;
     let cut: Vec<_> = rows
         .iter()
         .map(|row| {
@@ -526,14 +505,7 @@ async fn a_failure_finished_before_the_stop_still_counts() {
     }));
     let worker = pregen(&store, &world, &cards, now());
     worker.run(stopped).await;
-    let rows = logs
-        .list_rewrites(&RewriteFilter {
-            limit: 10,
-            ..RewriteFilter::default()
-        })
-        .await
-        .expect("list")
-        .items;
+    let rows = logged_rows(&logs).await;
     assert_eq!(rows.len(), 1);
     assert_ne!(rows[0].code.as_deref(), Some("shutdown"), "{:?}", rows[0]);
     assert_eq!(heading(&store, &key).await, None);
@@ -576,7 +548,6 @@ async fn before_its_first_batch_a_process_catches_up_only_until_the_batch_time()
 #[tokio::test]
 async fn the_digest_phrase_is_pregenerated_only_for_an_unposted_coming_week() {
     let before_reset = week() - TimeDelta::minutes(1);
-    let digest_key = DedupeKey::native(&[DeliveryTarget::Digest(week())]).expect("digest key");
 
     // Too early: the reset is beyond the horizon.
     let store = Arc::new(MemoryScheduleStore::new());
@@ -593,10 +564,7 @@ async fn the_digest_phrase_is_pregenerated_only_for_an_unposted_coming_week() {
         1
     );
     assert_eq!(
-        store
-            .digest_phrase(digest_key.as_str())
-            .await
-            .expect("phrase"),
+        week_phrase(&*store, week()).await,
         Some("Waku waku!".into())
     );
 
@@ -614,13 +582,7 @@ async fn the_digest_phrase_is_pregenerated_only_for_an_unposted_coming_week() {
                 ..PregenReport::default()
             }
         );
-        assert_eq!(
-            store
-                .digest_phrase(digest_key.as_str())
-                .await
-                .expect("phrase"),
-            None
-        );
+        assert_eq!(week_phrase(&*store, week()).await, None);
     }
     assert_eq!(rewriter.calls(), 1);
 }
@@ -646,20 +608,14 @@ async fn under_the_classic_style_only_day_of_headings_are_pregenerated() {
     assert_eq!(heading(&countdowns, &countdown).await, None);
     let digests = Arc::new(MemoryScheduleStore::new());
     let before_reset = week() - TimeDelta::minutes(1);
-    let digest_key = DedupeKey::native(&[DeliveryTarget::Digest(week())]).expect("digest key");
+
     assert_eq!(
         pregen(&digests, &world, &classic, before_reset)
             .pass()
             .await,
         idle
     );
-    assert_eq!(
-        digests
-            .digest_phrase(digest_key.as_str())
-            .await
-            .expect("phrase"),
-        None
-    );
+    assert_eq!(week_phrase(&*digests, week()).await, None);
     assert_eq!(rewriter.calls(), 0, "classic shows neither phrase");
 
     // The same cards once the style is redesigned: both phrases.

@@ -325,3 +325,10 @@ impl World {
             .unwrap()
     }
 }
+
+/// How many answers one more pass of `replay` (no live events) applies.
+pub async fn applied(
+    replay: &mut RsvpReplay<MemoryScheduleStore, FakeDiscord, AlertRecorder>,
+) -> usize {
+    replay.replay(Id::new(SELF), || true, &mut ()).await.applied
+}

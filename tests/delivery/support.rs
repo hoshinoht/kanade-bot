@@ -123,6 +123,14 @@ macro_rules! on_both_stores {
 }
 pub(crate) use on_both_stores;
 
+/// A send that timed out, after Discord did (`applied`) or did not apply it.
+pub fn timed_out(applied: bool) -> kanade::bot::transport::Step {
+    kanade::bot::transport::Step::Ambiguous {
+        kind: kanade::bot::transport::AmbiguousKind::Timeout,
+        applied,
+    }
+}
+
 pub fn fake() -> FakeDiscord {
     FakeDiscord::with_first_message_id(FIRST_MESSAGE_ID)
 }
@@ -164,6 +172,16 @@ pub async fn mark_digest_week<S: Store>(store: &S, week: DateTime<Utc>, now: Dat
             .expect("digest marker");
     })
     .await;
+}
+
+/// The stored digest phrase for the boss week starting at `week`.
+pub async fn week_phrase(
+    store: &impl kanade::bot::delivery::cards::DigestPhraseStore,
+    week: DateTime<Utc>,
+) -> Option<String> {
+    let key = kanade::domain::notify::DedupeKey::native(&[DeliveryTarget::Digest(week)])
+        .expect("digest key");
+    store.digest_phrase(key.as_str()).await.expect("phrase")
 }
 
 /// A digest intent for `week` in `channel` (for seeding cards).

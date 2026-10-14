@@ -203,10 +203,7 @@ async fn offline_deleted_message_is_skipped_and_other_cards_still_reject() {
 async fn offline_incomplete_opposite_read_never_approves_and_pass_continues() {
     for step in [
         Step::Reject(RejectionKind::MissingAccess),
-        Step::Ambiguous {
-            kind: AmbiguousKind::Timeout,
-            applied: false,
-        },
+        crate::support::timed_out(false),
     ] {
         let world = World::new().await;
         let (first, message) = pending(&world, ProposalSource::Chat).await;

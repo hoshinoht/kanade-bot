@@ -228,6 +228,14 @@ pub fn plain_command(name: &str) -> Command {
     }
 }
 
+/// A send that timed out, after Discord did (`applied`) or did not apply it.
+pub fn timed_out(applied: bool) -> kanade::bot::transport::Step {
+    kanade::bot::transport::Step::Ambiguous {
+        kind: kanade::bot::transport::AmbiguousKind::Timeout,
+        applied,
+    }
+}
+
 /// A plain post of `text` that may ping only Alice.
 pub fn outgoing(text: &str) -> kanade::bot::transport::OutgoingMessage {
     kanade::bot::transport::OutgoingMessage {

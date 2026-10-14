@@ -9,9 +9,7 @@ use kanade::bot::delivery::{
     FixedClock, SendOutcome, StoreRef,
 };
 use kanade::bot::events::{ReactionRouter, RsvpAnswer, RsvpReaction};
-use kanade::bot::transport::{
-    AmbiguousKind, Call, DiscordTransport, FakeDiscord, Op, RejectionKind, Step,
-};
+use kanade::bot::transport::{Call, DiscordTransport, FakeDiscord, Op, RejectionKind, Step};
 use kanade::domain::ids::RandomIds;
 use kanade::domain::members::{Member, PingLevel, Roster};
 use kanade::domain::notify::{AttemptState, EffectKind};
@@ -166,13 +164,9 @@ pub(crate) fn tick_times() -> [DateTime<Utc>; 3] {
 async fn ambiguous_send_is_sent_once<S: Store>(store: &S) {
     let world = world();
     let (_, reminder) = due_countdown(store, HOME).await;
-    world.fake.script(
-        Op::Create,
-        Step::Ambiguous {
-            kind: AmbiguousKind::Timeout,
-            applied: true,
-        },
-    );
+    world
+        .fake
+        .script(Op::Create, crate::support::timed_out(true));
     let mut delivery = delivery(store, &world, &world.fake);
     let mut outcomes = Vec::new();
     for at in tick_times() {
@@ -468,13 +462,9 @@ async fn requested_digest_runs_through_delivery_and_keeps_the_monotone_week() {
 async fn ambiguous_deletion_suppresses<S: Store>(store: &S) {
     let world = world();
     seed_replaceable(store, &world).await;
-    world.fake.script(
-        Op::Delete,
-        Step::Ambiguous {
-            kind: AmbiguousKind::Timeout,
-            applied: false,
-        },
-    );
+    world
+        .fake
+        .script(Op::Delete, crate::support::timed_out(false));
     let mut delivery = delivery(store, &world, &world.fake);
     let report = delivery.post_week_digest(now()).await.expect("digest");
     assert!(matches!(
@@ -491,13 +481,9 @@ async fn ambiguous_deletion_suppresses<S: Store>(store: &S) {
     ));
 
     // An ambiguous deletion that did land is confirmed by a fetch.
-    world.fake.script(
-        Op::Delete,
-        Step::Ambiguous {
-            kind: AmbiguousKind::Timeout,
-            applied: true,
-        },
-    );
+    world
+        .fake
+        .script(Op::Delete, crate::support::timed_out(true));
     let report = delivery.post_week_digest(now()).await.expect("digest");
     assert!(report.message_id().is_some());
     assert_eq!(world.fake.count(Op::Presence), 2);

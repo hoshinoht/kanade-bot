@@ -12,7 +12,7 @@ use kanade::domain::scheduler::Scope;
 use twilight_model::channel::message::Component;
 
 use crate::scenarios::{HOME, config, delivery, now, week, world};
-use crate::support::{self, Store, on_both_stores};
+use crate::support::{self, Store, on_both_stores, v2_texts as texts};
 
 /// A run that started an hour before `now()`: ends 30 minutes before it, so
 /// its prompt is due at `now()`; its cutoff is local midnight, 16:00Z.
@@ -46,16 +46,17 @@ fn reset() -> DateTime<Utc> {
     week() + TimeDelta::days(7)
 }
 
-fn texts(components: &[Component]) -> Vec<String> {
-    let mut out = Vec::new();
-    for component in components {
-        match component {
-            Component::TextDisplay(text) => out.push(text.content.clone()),
-            Component::Container(container) => out.extend(texts(&container.components)),
-            _ => {}
-        }
-    }
-    out
+fn later() -> DateTime<Utc> {
+    now() + TimeDelta::minutes(1)
+}
+
+async fn set_status<S: Store>(store: &S, id: &str, status: RunStatus) {
+    let mut ids = RandomIds;
+    support::service(store, &mut ids, now())
+        .as_origin(Origin::for_tests())
+        .set_run_status(id, status)
+        .await
+        .expect("status");
 }
 
 fn buttons(components: &[Component]) -> Vec<String> {
@@ -150,7 +151,7 @@ async fn once_across_restart_and_replay<S: Store>(store: &S) {
     first.tick_at(now()).await.expect("replayed tick");
     let mut restarted = delivery(store, &world, &world.fake);
     restarted
-        .tick_at(now() + TimeDelta::minutes(1))
+        .tick_at(later())
         .await
         .expect("tick after a restart");
     assert_eq!(prompts(&world.fake.calls()).len(), 1, "posted exactly once");
@@ -193,10 +194,7 @@ async fn pressed_edits_without_a_notice<S: Store>(store: &S) {
         next: None,
     };
     assert!(store.close_run_prompt(id.clone(), 0, close).await.unwrap());
-    let report = delivery
-        .tick_at(now() + TimeDelta::minutes(1))
-        .await
-        .expect("tick");
+    let report = delivery.tick_at(later()).await.expect("tick");
     assert_eq!(report.prompts.settled, [format!("{id}:0")]);
     let edits = edits(&world.fake.calls());
     let [(text, left)] = &edits[..] else {
@@ -361,10 +359,7 @@ async fn moved_run_replans<S: Store>(store: &S) {
         .amend_run(&id, moved_to, &config().policy)
         .await
         .expect("move");
-    let report = delivery
-        .tick_at(now() + TimeDelta::minutes(1))
-        .await
-        .expect("tick");
+    let report = delivery.tick_at(later()).await.expect("tick");
     assert_eq!(report.prompts.closed, [format!("{id}:0")]);
     assert_eq!(report.prompts.opened, [format!("{id}:1")]);
     let edits = edits(&world.fake.calls());
@@ -403,10 +398,7 @@ async fn lost_settle_is_finished<S: Store + ChangeHistory>(store: &S) {
     delivery.tick_at(now()).await.expect("tick");
     claimed(store, &id, PromptOutcome::DidntHappen, "1002").await;
     let head = store.history_head().await.unwrap().seq;
-    delivery
-        .tick_at(now() + TimeDelta::minutes(1))
-        .await
-        .expect("tick");
+    delivery.tick_at(later()).await.expect("tick");
     assert_eq!(status(store, &id).await, RunStatus::Cancelled);
     let record = store.load_change(head + 1).await.unwrap().unwrap();
     assert_eq!(record.origin.actor, Actor::member("1002"));
@@ -431,16 +423,8 @@ async fn lost_close_is_closed<S: Store>(store: &S) {
     let id = run(store, RunStatus::Planned, started()).await;
     let mut delivery = delivery(store, &world, &world.fake);
     delivery.tick_at(now()).await.expect("tick");
-    let mut ids = RandomIds;
-    support::service(store, &mut ids, now())
-        .as_origin(Origin::for_tests())
-        .set_run_status(&id, RunStatus::Done)
-        .await
-        .expect("done");
-    let report = delivery
-        .tick_at(now() + TimeDelta::minutes(1))
-        .await
-        .expect("tick");
+    set_status(store, &id, RunStatus::Done).await;
+    let report = delivery.tick_at(later()).await.expect("tick");
     assert_eq!(report.prompts.closed, [format!("{id}:0")]);
     let edits = edits(&world.fake.calls());
     assert_eq!(edits[0].1, Vec::<String>::new(), "buttons removed");
@@ -548,17 +532,9 @@ async fn reopened_run_is_asked_again<S: Store>(store: &S) {
     let id = run(store, RunStatus::Planned, started()).await;
     let mut delivery = delivery(store, &world, &world.fake);
     delivery.tick_at(now()).await.expect("tick");
-    let mut ids = RandomIds;
     for status in [RunStatus::Cancelled, RunStatus::Planned] {
-        support::service(store, &mut ids, now())
-            .as_origin(Origin::for_tests())
-            .set_run_status(&id, status)
-            .await
-            .expect("status");
-        delivery
-            .tick_at(now() + TimeDelta::minutes(1))
-            .await
-            .expect("tick");
+        set_status(store, &id, status).await;
+        delivery.tick_at(later()).await.expect("tick");
     }
     assert_eq!(prompts(&world.fake.calls()).len(), 2, "asked again");
     assert!(store.run_prompt(id, 1).await.unwrap().unwrap().is_open());

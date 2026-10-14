@@ -3,7 +3,7 @@
 //! send, edited to the decision without buttons, and expired after 24 hours.
 
 use chrono::{NaiveTime, Weekday};
-use kanade::bot::transport::{AmbiguousKind, Call, Op, Step};
+use kanade::bot::transport::{Call, Op};
 use kanade::domain::history::Origin;
 use kanade::domain::ids::RandomIds;
 use kanade::domain::ownership::{OwnerRequest, OwnerRequestStatus, OwnerRequestStore};
@@ -179,13 +179,9 @@ async fn ambiguous_post_is_never_resent<S: Store + OwnerRequestStore>(store: &S)
         .await
         .expect("tick");
     ask(store, fixed_id, 1).await;
-    world.fake.script(
-        Op::Create,
-        Step::Ambiguous {
-            kind: AmbiguousKind::Timeout,
-            applied: true,
-        },
-    );
+    world
+        .fake
+        .script(Op::Create, crate::support::timed_out(true));
     for minutes in [0, 1, 2] {
         let report = delivery
             .tick_at(now() + chrono::Duration::minutes(minutes))
