@@ -9,22 +9,12 @@ use crate::{
 
 use super::CatalogSnapshot;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum ContextSource {
-    Override,
-    Catalog,
-    CloudDefault,
-    LocalDefault,
-}
-
-impl ContextSource {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Override => "override",
-            Self::Catalog => "catalog",
-            Self::CloudDefault => "cloud_default",
-            Self::LocalDefault => "local_default",
-        }
+crate::domain::spelled! {
+    ContextSource {
+        Override => "override",
+        Catalog => "catalog",
+        CloudDefault => "cloud_default",
+        LocalDefault => "local_default",
     }
 }
 

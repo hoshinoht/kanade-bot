@@ -66,13 +66,14 @@ pub struct MemberRunLink {
     pub generated_at: String,
 }
 
-/// A run's boss week relative to now.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum RunWeek {
-    Current,
-    Next,
-    Past,
-    Later,
+crate::domain::spelled! {
+    /// A run's boss week relative to now.
+    RunWeek {
+        Current => "current",
+        Next => "next",
+        Past => "past",
+        Later => "later",
+    }
 }
 
 impl RunWeek {
@@ -86,15 +87,6 @@ impl RunWeek {
             Self::Past
         } else {
             Self::Later
-        }
-    }
-
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Current => "current",
-            Self::Next => "next",
-            Self::Past => "past",
-            Self::Later => "later",
         }
     }
 

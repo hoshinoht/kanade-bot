@@ -29,29 +29,19 @@ pub const REPLAY_TTL: TimeDelta = TimeDelta::hours(24);
 /// The longest stored body: notices or a job id, never a whole view.
 pub const MAX_BODY: usize = 16 * 1024;
 
-/// Keys are scoped per desk: the same key reused across a desk's routes (a
-/// digest key sent to a window clear) is a different request, not a new one.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub enum ReplayScope {
-    /// Limits window clear, manual digest, manual header rewrite.
-    Limits,
-    /// Rescan submit and cancel.
-    Rescan,
-    /// Config PATCH, admin member edits and admin character writes.
-    Config,
-    /// Admin draft writes (create, rename, stage, remove, rebase, discard,
-    /// merge); migration 0038.
-    Drafts,
-}
-
-impl ReplayScope {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Limits => "limits",
-            Self::Rescan => "rescan",
-            Self::Config => "config",
-            Self::Drafts => "drafts",
-        }
+crate::domain::spelled! {
+    /// Keys are scoped per desk: the same key reused across a desk's routes (a
+    /// digest key sent to a window clear) is a different request, not a new one.
+    ReplayScope {
+        /// Limits window clear, manual digest, manual header rewrite.
+        Limits => "limits",
+        /// Rescan submit and cancel.
+        Rescan => "rescan",
+        /// Config PATCH, admin member edits and admin character writes.
+        Config => "config",
+        /// Admin draft writes (create, rename, stage, remove, rebase, discard,
+        /// merge); migration 0038.
+        Drafts => "drafts",
     }
 }
 

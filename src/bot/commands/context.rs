@@ -99,40 +99,15 @@ pub trait ChatAllowance: Send + Sync {
     fn snapshot(&self) -> AllowanceSnapshot;
 }
 
-/// Which test message `/debug ping` posts (v4's kinds plus `digest`).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum TestKind {
-    DayOf,
-    Countdown60,
-    Countdown15,
-    Amend,
-    Decline,
-    Digest,
-}
-
-impl TestKind {
-    pub const ALL: [Self; 6] = [
-        Self::DayOf,
-        Self::Countdown60,
-        Self::Countdown15,
-        Self::Amend,
-        Self::Decline,
-        Self::Digest,
-    ];
-
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::DayOf => "day_of",
-            Self::Countdown60 => "countdown_60",
-            Self::Countdown15 => "countdown_15",
-            Self::Amend => "amend",
-            Self::Decline => "decline",
-            Self::Digest => "digest",
-        }
-    }
-
-    pub fn parse(text: &str) -> Option<Self> {
-        Self::ALL.into_iter().find(|kind| kind.as_str() == text)
+crate::domain::spelled! {
+    /// Which test message `/debug ping` posts (v4's kinds plus `digest`).
+    TestKind {
+        DayOf => "day_of",
+        Countdown60 => "countdown_60",
+        Countdown15 => "countdown_15",
+        Amend => "amend",
+        Decline => "decline",
+        Digest => "digest",
     }
 }
 

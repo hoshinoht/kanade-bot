@@ -269,29 +269,15 @@ impl MessageStyle {
     }
 }
 
-/// Mirrors `extract::redirect::SelfServiceMode` (the domain cannot depend on
-/// `extract`); the stored text is the same.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum SelfServiceMode {
-    #[default]
-    CardsAndLink,
-    LinkFirst,
-    CardsOnly,
-}
-
-impl SelfServiceMode {
-    pub const ALL: [Self; 3] = [Self::CardsAndLink, Self::LinkFirst, Self::CardsOnly];
-
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::CardsAndLink => "cards_and_link",
-            Self::LinkFirst => "link_first",
-            Self::CardsOnly => "cards_only",
-        }
-    }
-
-    pub fn parse(value: &str) -> Option<Self> {
-        Self::ALL.into_iter().find(|mode| mode.as_str() == value)
+spelled! {
+    /// Mirrors `extract::redirect::SelfServiceMode` (the domain cannot depend on
+    /// `extract`); the stored text is the same.
+    #[derive(Default)]
+    SelfServiceMode {
+        #[default]
+        CardsAndLink => "cards_and_link",
+        LinkFirst => "link_first",
+        CardsOnly => "cards_only",
     }
 }
 

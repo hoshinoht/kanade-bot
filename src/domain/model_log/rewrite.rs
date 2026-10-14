@@ -13,68 +13,29 @@ use super::reasoning::REASONING_CAP;
 use super::records::is_correlation_id;
 use crate::domain::scheduler::StoreError;
 
-/// Which line a rewrite was for.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub enum RewriteKind {
-    DayOf,
-    Countdown,
-    Digest,
-    Nudge,
-}
-
-impl RewriteKind {
-    pub const ALL: [Self; 4] = [Self::DayOf, Self::Countdown, Self::Digest, Self::Nudge];
-
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::DayOf => "day_of",
-            Self::Countdown => "countdown",
-            Self::Digest => "digest",
-            Self::Nudge => "nudge",
-        }
-    }
-
-    pub fn parse(text: &str) -> Option<Self> {
-        Self::ALL.into_iter().find(|kind| kind.as_str() == text)
+spelled! {
+    /// Which line a rewrite was for.
+    RewriteKind {
+        DayOf => "day_of",
+        Countdown => "countdown",
+        Digest => "digest",
+        Nudge => "nudge",
     }
 }
 
-/// Where the rewrite ran.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub enum RewriteStage {
-    /// The daily reminder-header batch (and its retries).
-    Batch,
-    /// A reminder header the last batch had not seen (a run added or moved since).
-    Catchup,
-    /// `/debug header` and `/debug ping header:rewrite`.
-    Debug,
-    /// A chat self-service nudge.
-    Nudge,
-    /// An admin's manual rewrite of the current boss week's posted headers.
-    Manual,
-}
-
-impl RewriteStage {
-    pub const ALL: [Self; 5] = [
-        Self::Batch,
-        Self::Catchup,
-        Self::Debug,
-        Self::Nudge,
-        Self::Manual,
-    ];
-
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Batch => "batch",
-            Self::Catchup => "catchup",
-            Self::Debug => "debug",
-            Self::Nudge => "nudge",
-            Self::Manual => "manual",
-        }
-    }
-
-    pub fn parse(text: &str) -> Option<Self> {
-        Self::ALL.into_iter().find(|stage| stage.as_str() == text)
+spelled! {
+    /// Where the rewrite ran.
+    RewriteStage {
+        /// The daily reminder-header batch (and its retries).
+        Batch => "batch",
+        /// A reminder header the last batch had not seen (a run added or moved since).
+        Catchup => "catchup",
+        /// `/debug header` and `/debug ping header:rewrite`.
+        Debug => "debug",
+        /// A chat self-service nudge.
+        Nudge => "nudge",
+        /// An admin's manual rewrite of the current boss week's posted headers.
+        Manual => "manual",
     }
 }
 
@@ -308,10 +269,10 @@ mod tests {
 
     #[test]
     fn kinds_and_stages_round_trip() {
-        for kind in RewriteKind::ALL {
+        for &kind in RewriteKind::ALL {
             assert_eq!(RewriteKind::parse(kind.as_str()), Some(kind));
         }
-        for stage in RewriteStage::ALL {
+        for &stage in RewriteStage::ALL {
             assert_eq!(RewriteStage::parse(stage.as_str()), Some(stage));
         }
         assert_eq!(RewriteKind::parse("send"), None);

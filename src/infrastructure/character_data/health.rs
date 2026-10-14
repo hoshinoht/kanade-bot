@@ -7,23 +7,13 @@ use super::CharacterData;
 use crate::domain::chardata::{CALL_WINDOW, DAILY_CALLS, LinkStatus, PostState};
 use crate::infrastructure::scouter::ScouterHealth;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum NexonState {
-    NoKey,
-    Ok,
-    /// Maintenance hold until [`Health::backoff_until`].
-    Backoff,
-    KeyRefused,
-}
-
-impl NexonState {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::NoKey => "no_key",
-            Self::Ok => "ok",
-            Self::Backoff => "backoff",
-            Self::KeyRefused => "key_refused",
-        }
+crate::domain::spelled! {
+    NexonState {
+        NoKey => "no_key",
+        Ok => "ok",
+        /// Maintenance hold until [`Health::backoff_until`].
+        Backoff => "backoff",
+        KeyRefused => "key_refused",
     }
 }
 

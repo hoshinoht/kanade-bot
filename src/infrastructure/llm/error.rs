@@ -1,49 +1,29 @@
 use std::fmt;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum ErrorCode {
-    RequestInvalid,
-    BudgetExceeded,
-    DeadlineExceeded,
-    ProviderPermanent,
-    ProviderAuthentication,
-    InvalidOutput,
-    ModelMismatch,
-    /// Cut off by length or an unknown finish reason.
-    Incomplete,
-    /// The provider's content filter blocked the reply (user decision: kept apart
-    /// from a length cut-off). Permanent for that request; the backend is healthy.
-    ContentFiltered,
-    /// The model's capabilities cannot honour a requested feature; nothing was sent.
-    UnsupportedCapability,
-    /// Gateway admission turned the request away (no work ran).
-    AdmissionRefused,
-    BackendUnavailable,
-    /// Upstream or transport timeout; the backend may still be working.
-    UpstreamTimeout,
-    /// The gateway key has expired (Kanata `key_expired`); rotate it.
-    KeyExpired,
-}
-
-impl ErrorCode {
-    /// A stable snake-case name for logs and transcripts.
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::RequestInvalid => "request_invalid",
-            Self::BudgetExceeded => "budget_exceeded",
-            Self::DeadlineExceeded => "deadline_exceeded",
-            Self::ProviderPermanent => "provider_permanent",
-            Self::ProviderAuthentication => "provider_authentication",
-            Self::InvalidOutput => "invalid_output",
-            Self::ModelMismatch => "model_mismatch",
-            Self::Incomplete => "incomplete",
-            Self::ContentFiltered => "content_filtered",
-            Self::UnsupportedCapability => "unsupported_capability",
-            Self::AdmissionRefused => "admission_refused",
-            Self::BackendUnavailable => "backend_unavailable",
-            Self::UpstreamTimeout => "upstream_timeout",
-            Self::KeyExpired => "key_expired",
-        }
+crate::domain::spelled! {
+    /// `as_str`: a stable snake-case name for logs and transcripts.
+    ErrorCode {
+        RequestInvalid => "request_invalid",
+        BudgetExceeded => "budget_exceeded",
+        DeadlineExceeded => "deadline_exceeded",
+        ProviderPermanent => "provider_permanent",
+        ProviderAuthentication => "provider_authentication",
+        InvalidOutput => "invalid_output",
+        ModelMismatch => "model_mismatch",
+        /// Cut off by length or an unknown finish reason.
+        Incomplete => "incomplete",
+        /// The provider's content filter blocked the reply (user decision: kept apart
+        /// from a length cut-off). Permanent for that request; the backend is healthy.
+        ContentFiltered => "content_filtered",
+        /// The model's capabilities cannot honour a requested feature; nothing was sent.
+        UnsupportedCapability => "unsupported_capability",
+        /// Gateway admission turned the request away (no work ran).
+        AdmissionRefused => "admission_refused",
+        BackendUnavailable => "backend_unavailable",
+        /// Upstream or transport timeout; the backend may still be working.
+        UpstreamTimeout => "upstream_timeout",
+        /// The gateway key has expired (Kanata `key_expired`); rotate it.
+        KeyExpired => "key_expired",
     }
 }
 

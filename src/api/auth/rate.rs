@@ -12,23 +12,13 @@ use std::{
 
 use chrono::{DateTime, TimeDelta, Utc};
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum Route {
-    DiscordStart,
-    DiscordCallback,
-    TokenLogin,
-    /// Charged only when a bearer token is wrong.
-    BearerFailure,
-}
-
-impl Route {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::DiscordStart => "discord_start",
-            Self::DiscordCallback => "discord_callback",
-            Self::TokenLogin => "token_login",
-            Self::BearerFailure => "bearer_failure",
-        }
+crate::domain::spelled! {
+    Route {
+        DiscordStart => "discord_start",
+        DiscordCallback => "discord_callback",
+        TokenLogin => "token_login",
+        /// Charged only when a bearer token is wrong.
+        BearerFailure => "bearer_failure",
     }
 }
 

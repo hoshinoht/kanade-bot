@@ -7,20 +7,11 @@ use super::{
     jitter::{Random, unit},
 };
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum BreakerState {
-    Closed,
-    HalfOpen,
-    Open,
-}
-
-impl BreakerState {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Closed => "closed",
-            Self::HalfOpen => "half_open",
-            Self::Open => "open",
-        }
+crate::domain::spelled! {
+    BreakerState {
+        Closed => "closed",
+        HalfOpen => "half_open",
+        Open => "open",
     }
 }
 

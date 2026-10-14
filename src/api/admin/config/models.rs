@@ -20,11 +20,12 @@ use crate::{
 /// Matches the model stack's one backend group (`setup::build`).
 pub const GROUP: &str = "gateway";
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Role {
-    Extraction,
-    Chat,
-    Rewrite,
+crate::domain::spelled! {
+    Role {
+        Extraction => "extraction",
+        Chat => "chat",
+        Rewrite => "rewrite",
+    }
 }
 
 /// A role whose local route runs past the warning threshold.
@@ -120,16 +121,6 @@ pub fn validate_context(
 }
 
 impl Role {
-    const ALL: [Self; 3] = [Self::Extraction, Self::Chat, Self::Rewrite];
-
-    fn name(self) -> &'static str {
-        match self {
-            Self::Extraction => "extraction",
-            Self::Chat => "chat",
-            Self::Rewrite => "rewrite",
-        }
-    }
-
     fn of(self, models: &Models) -> &RoleModel {
         match self {
             Self::Extraction => &models.extraction,
@@ -235,10 +226,8 @@ pub fn apply_roles(
     let mut next = current.clone();
     let mut asked = BTreeSet::new();
     for (key, body) in roles {
-        let role = Role::ALL
-            .into_iter()
-            .find(|role| role.name() == key)
-            .ok_or_else(|| PatchError::unknown(format!("models.roles.{key}")))?;
+        let role =
+            Role::parse(key).ok_or_else(|| PatchError::unknown(format!("models.roles.{key}")))?;
         let path = format!("models.roles.{key}");
         for (field, value) in object(body, &path)? {
             let slot = role.of_mut(&mut next);
@@ -277,7 +266,7 @@ pub fn apply_roles(
                         ));
                     }
                     slot.reasoning = level;
-                    asked.insert(role.name());
+                    asked.insert(role.as_str());
                 }
                 other => return Err(PatchError::unknown(format!("{path}.{other}"))),
             }
@@ -289,7 +278,7 @@ pub fn apply_roles(
     // it (never a 422, the app sends every role on each save). First, so
     // inheritors see extraction's fixed level.
     let mut fixed = BTreeSet::new();
-    for role in Role::ALL {
+    for &role in Role::ALL {
         let Some(alias) = role.of(&next).alias.clone() else {
             continue;
         };
@@ -299,27 +288,27 @@ pub fn apply_roles(
         else {
             continue;
         };
-        fixed.insert(role.name());
+        fixed.insert(role.as_str());
         let slot = role.of_mut(&mut next);
         if slot.reasoning == level {
             continue;
         }
         let was = slot.reasoning;
         slot.reasoning = level;
-        notices.push(if asked.contains(role.name()) {
+        notices.push(if asked.contains(role.as_str()) {
             let requested = match was {
                 Reasoning::Inherit => "inherit".to_owned(),
                 other => other.as_str().to_owned(),
             };
             format!(
                 "{} reasoning is fixed at {} by {alias}; the requested {requested} is ignored.",
-                role.name(),
+                role.as_str(),
                 level.as_str()
             )
         } else {
             format!(
                 "{} reasoning set to {}: {alias} fixes it.",
-                role.name(),
+                role.as_str(),
                 level.as_str()
             )
         });
@@ -327,11 +316,11 @@ pub fn apply_roles(
 
     // Checked after every role is applied: inheritance resolves against the
     // final extraction level and each role's final alias.
-    for role in Role::ALL {
+    for &role in Role::ALL {
         let Some(alias) = role.of(&next).alias.clone() else {
             continue;
         };
-        if fixed.contains(role.name()) {
+        if fixed.contains(role.as_str()) {
             continue;
         }
         let model = find(catalog, &alias);
@@ -340,23 +329,23 @@ pub fn apply_roles(
             continue;
         }
         let requires = model.is_some_and(|model| !model.off_allowed());
-        if asked.contains(role.name()) {
+        if asked.contains(role.as_str()) {
             let inherits = role.of(&next).reasoning == Reasoning::Inherit;
             return Err(PatchError::invalid(match (model, inherits) {
                 (Some(model), true) if requires && level == Reasoning::Off => format!(
                     "{} inherits off from extraction, but {alias} requires reasoning: pick {}.",
-                    role.name(),
+                    role.as_str(),
                     required_levels(model)
                 ),
                 (Some(model), true) if requires => format!(
                     "{} inherits {} from extraction, which {alias} does not publish; pick {}.",
-                    role.name(),
+                    role.as_str(),
                     level.as_str(),
                     required_levels(model)
                 ),
                 (_, true) => format!(
                     "{} inherits {} from extraction, which {alias} does not publish; pick a level or turn reasoning off.",
-                    role.name(),
+                    role.as_str(),
                     level.as_str()
                 ),
                 (Some(model), false) if level == Reasoning::Off => format!(
@@ -375,13 +364,13 @@ pub fn apply_roles(
         notices.push(if level == Reasoning::Off {
             format!(
                 "{} reasoning set to {}: {alias} requires reasoning.",
-                role.name(),
+                role.as_str(),
                 reset.as_str()
             )
         } else {
             format!(
                 "{} reasoning reset to {}: {alias} does not publish {}.",
-                role.name(),
+                role.as_str(),
                 reset.as_str(),
                 level.as_str()
             )
@@ -399,7 +388,7 @@ pub fn ungrouped(current: &Models, next: &Models, declared: &[CapacityGroup]) ->
         return Vec::new();
     }
     Role::ALL
-        .into_iter()
+        .iter()
         .filter_map(|role| {
             let alias = role.of(next).alias.as_ref()?;
             let changed = role.of(current).alias.as_ref() != Some(alias);
@@ -407,7 +396,7 @@ pub fn ungrouped(current: &Models, next: &Models, declared: &[CapacityGroup]) ->
             (changed && !grouped).then(|| {
                 format!(
                     "The {} model {alias} is in no capacity group; add it to [[models.groups]] in kanade.toml and restart, or pick a grouped model.",
-                    role.name()
+                    role.as_str()
                 )
             })
         })
@@ -434,7 +423,7 @@ pub fn awaiting_restart(
             (role.of(before).alias.as_ref() != Some(alias)).then(|| {
                 format!(
                     "The {} model had none when the bot started: restart to start {feature} with {alias}.",
-                    role.name()
+                    role.as_str()
                 )
             })
         })
@@ -443,7 +432,7 @@ pub fn awaiting_restart(
 
 fn distinct_aliases(models: &Models) -> Vec<String> {
     let aliases: BTreeSet<&String> = Role::ALL
-        .into_iter()
+        .iter()
         .filter_map(|role| role.of(models).alias.as_ref())
         .collect();
     aliases.into_iter().cloned().collect()
@@ -486,7 +475,7 @@ pub fn capacity(
     };
     let mut out = Vec::new();
     if declared {
-        for role in Role::ALL {
+        for &role in Role::ALL {
             let Some(alias) = role.of(models).alias.as_ref() else {
                 continue;
             };
@@ -495,7 +484,7 @@ pub fn capacity(
                     "warning",
                     format!(
                         "The {} model {alias} is in no capacity group; its calls are refused.",
-                        role.name()
+                        role.as_str()
                     ),
                     None,
                 ));

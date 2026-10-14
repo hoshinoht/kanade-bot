@@ -53,28 +53,18 @@ pub struct Subject {
     pub ign: RosterIgn,
 }
 
-/// Why a party member is not looked up. They are listed as missing, never
-/// counted as 0%.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum MissingReason {
-    /// No active character on the roster.
-    NoCharacters,
-    /// Several active characters and none picked for the run.
-    NoCharacterPicked,
-    /// The character is not on MapleSEA (the scouter covers only it).
-    OtherRegion,
-    /// The roster IGN is outside the scouter's rule.
-    UnsupportedIgn,
-}
-
-impl MissingReason {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::NoCharacters => "no_characters",
-            Self::NoCharacterPicked => "no_character_picked",
-            Self::OtherRegion => "other_region",
-            Self::UnsupportedIgn => "unsupported_ign",
-        }
+crate::domain::spelled! {
+    /// Why a party member is not looked up. They are listed as missing, never
+    /// counted as 0%.
+    MissingReason {
+        /// No active character on the roster.
+        NoCharacters => "no_characters",
+        /// Several active characters and none picked for the run.
+        NoCharacterPicked => "no_character_picked",
+        /// The character is not on MapleSEA (the scouter covers only it).
+        OtherRegion => "other_region",
+        /// The roster IGN is outside the scouter's rule.
+        UnsupportedIgn => "unsupported_ign",
     }
 }
 
@@ -143,28 +133,18 @@ pub struct Found {
     pub cache_hit: bool,
 }
 
-/// The drawn error states.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum FailureKind {
-    /// 429: the scouter stayed busy past the job's deadline, or was
-    /// rate-limited.
-    Busy,
-    /// 422: critical rate under 100% and no assumed result.
-    CriticalRate,
-    /// 503: the scouter asked for a verification.
-    ManualCheck,
-    /// 502, 504, the client timeout, no connection, an unreadable answer.
-    Failed,
-}
-
-impl FailureKind {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Busy => "busy",
-            Self::CriticalRate => "critical_rate",
-            Self::ManualCheck => "manual_check",
-            Self::Failed => "failed",
-        }
+crate::domain::spelled! {
+    /// The drawn error states.
+    FailureKind {
+        /// 429: the scouter stayed busy past the job's deadline, or was
+        /// rate-limited.
+        Busy => "busy",
+        /// 422: critical rate under 100% and no assumed result.
+        CriticalRate => "critical_rate",
+        /// 503: the scouter asked for a verification.
+        ManualCheck => "manual_check",
+        /// 502, 504, the client timeout, no connection, an unreadable answer.
+        Failed => "failed",
     }
 }
 
@@ -219,22 +199,12 @@ impl Failure {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum JobState {
-    Queued,
-    Running,
-    Done,
-    Failed,
-}
-
-impl JobState {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Queued => "queued",
-            Self::Running => "running",
-            Self::Done => "done",
-            Self::Failed => "failed",
-        }
+crate::domain::spelled! {
+    JobState {
+        Queued => "queued",
+        Running => "running",
+        Done => "done",
+        Failed => "failed",
     }
 }
 
@@ -291,26 +261,16 @@ pub enum Start {
     Full,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum ScouterState {
-    /// No `KANADE_SCOUTER_URL`: estimates are off.
-    Off,
-    Ok,
-    /// The last call or probe got no connection (or no scouter answer).
-    Unreachable,
-    /// The scouter answered 503 `verification_required`; it stays until a
-    /// lookup succeeds again.
-    VerificationRequired,
-}
-
-impl ScouterState {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Off => "off",
-            Self::Ok => "ok",
-            Self::Unreachable => "unreachable",
-            Self::VerificationRequired => "verification_required",
-        }
+crate::domain::spelled! {
+    ScouterState {
+        /// No `KANADE_SCOUTER_URL`: estimates are off.
+        Off => "off",
+        Ok => "ok",
+        /// The last call or probe got no connection (or no scouter answer).
+        Unreachable => "unreachable",
+        /// The scouter answered 503 `verification_required`; it stays until a
+        /// lookup succeeds again.
+        VerificationRequired => "verification_required",
     }
 }
 

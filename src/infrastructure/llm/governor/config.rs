@@ -15,20 +15,11 @@ const MAX_RETRY_FLOOR: u32 = 10;
 const MAX_COOLDOWN: Duration = Duration::from_secs(3_600);
 const MAX_WINDOW: Duration = Duration::from_secs(3_600);
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub enum Role {
-    Extraction,
-    Chat,
-    Rewrite,
-}
-
-impl Role {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Extraction => "extraction",
-            Self::Chat => "chat",
-            Self::Rewrite => "rewrite",
-        }
+crate::domain::spelled! {
+    Role {
+        Extraction => "extraction",
+        Chat => "chat",
+        Rewrite => "rewrite",
     }
 }
 

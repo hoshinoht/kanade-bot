@@ -472,7 +472,7 @@ async fn samples_store_nothing<S: Store + DebugCardStore + 'static>(store: Arc<S
         no: vec!["1003".into()],
         status: RunStatus::Confirmed,
     };
-    for kind in TestKind::ALL {
+    for &kind in TestKind::ALL {
         let request = PingRequest {
             invoked_in: Some(SANDBOX.into()),
             ..ping(TestSubject::Sample(sample.clone()), kind)

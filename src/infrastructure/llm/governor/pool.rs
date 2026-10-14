@@ -15,30 +15,20 @@ pub enum Priority {
     FollowUp,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum CallKind {
-    Chat,
-    Extraction,
-    Rescan,
-    FollowUp,
-    /// Never queues: `try_acquire` only.
-    Rewrite,
-    /// Never queues: `try_acquire` only, and never on an external route.
-    PreScreen,
+crate::domain::spelled! {
+    CallKind {
+        Chat => "chat",
+        Extraction => "extraction",
+        Rescan => "rescan",
+        FollowUp => "follow_up",
+        /// Never queues: `try_acquire` only.
+        Rewrite => "rewrite",
+        /// Never queues: `try_acquire` only, and never on an external route.
+        PreScreen => "pre_screen",
+    }
 }
 
 impl CallKind {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Chat => "chat",
-            Self::Extraction => "extraction",
-            Self::Rescan => "rescan",
-            Self::FollowUp => "follow_up",
-            Self::Rewrite => "rewrite",
-            Self::PreScreen => "pre_screen",
-        }
-    }
-
     pub fn may_wait(self) -> bool {
         !matches!(self, Self::Rewrite | Self::PreScreen)
     }

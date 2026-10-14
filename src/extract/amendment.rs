@@ -1,45 +1,16 @@
 use crate::domain::schedule::RsvpState;
 
-/// What an amendment changes, in the order the v4 prompt lists them.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub enum AmendmentKind {
-    Move,
-    Add,
-    Cancel,
-    Split,
-    Otot,
-    Sub,
-    Rsvp,
-    Fix,
-}
-
-impl AmendmentKind {
-    pub const ALL: [Self; 8] = [
-        Self::Move,
-        Self::Add,
-        Self::Cancel,
-        Self::Split,
-        Self::Otot,
-        Self::Sub,
-        Self::Rsvp,
-        Self::Fix,
-    ];
-
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Move => "move",
-            Self::Add => "add",
-            Self::Cancel => "cancel",
-            Self::Split => "split",
-            Self::Otot => "otot",
-            Self::Sub => "sub",
-            Self::Rsvp => "rsvp",
-            Self::Fix => "fix",
-        }
-    }
-
-    pub fn parse(value: &str) -> Option<Self> {
-        Self::ALL.into_iter().find(|kind| kind.as_str() == value)
+crate::domain::spelled! {
+    /// What an amendment changes, in the order the v4 prompt lists them.
+    AmendmentKind {
+        Move => "move",
+        Add => "add",
+        Cancel => "cancel",
+        Split => "split",
+        Otot => "otot",
+        Sub => "sub",
+        Rsvp => "rsvp",
+        Fix => "fix",
     }
 }
 

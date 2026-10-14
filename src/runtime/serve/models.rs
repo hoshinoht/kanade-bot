@@ -20,21 +20,12 @@ use crate::{
     runtime::{config::ModelSettings, logging},
 };
 
-/// Where a role's reasoning setting came from (`model_role.source`).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Source {
-    Stored,
-    Env,
-    Default,
-}
-
-impl Source {
-    fn as_str(self) -> &'static str {
-        match self {
-            Self::Stored => "stored",
-            Self::Env => "env",
-            Self::Default => "default",
-        }
+crate::domain::spelled! {
+    /// Where a role's reasoning setting came from (`model_role.source`).
+    Source {
+        Stored => "stored",
+        Env => "env",
+        Default => "default",
     }
 }
 

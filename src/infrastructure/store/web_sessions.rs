@@ -32,30 +32,12 @@ impl SessionOrigin {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum LoginMethod {
-    Discord,
-    Tailscale,
-    /// Break-glass `ADMIN_TOKEN`.
-    Token,
-}
-
-impl LoginMethod {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Discord => "discord",
-            Self::Tailscale => "tailscale",
-            Self::Token => "token",
-        }
-    }
-
-    pub fn parse(value: &str) -> Option<Self> {
-        match value {
-            "discord" => Some(Self::Discord),
-            "tailscale" => Some(Self::Tailscale),
-            "token" => Some(Self::Token),
-            _ => None,
-        }
+crate::domain::spelled! {
+    LoginMethod {
+        Discord => "discord",
+        Tailscale => "tailscale",
+        /// Break-glass `ADMIN_TOKEN`.
+        Token => "token",
     }
 }
 

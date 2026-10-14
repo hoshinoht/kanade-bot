@@ -6,23 +6,24 @@ mod text;
 
 use serde_json::Value;
 
-/// Every tool the model may call, in v4's canonical order, then v5's
-/// `request_tools`.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub enum ToolName {
-    GetSchedule,
-    GetRun,
-    ListBosses,
-    GetBossStrategy,
-    GetPending,
-    ListFixed,
-    ProposeMove,
-    ProposeAdd,
-    ProposeCancel,
-    ProposeRemoveFixed,
-    ProposeChangeFixed,
-    ProposeRsvp,
-    RequestTools,
+crate::domain::spelled! {
+    /// Every tool the model may call, in v4's canonical order, then v5's
+    /// `request_tools`.
+    ToolName {
+        GetSchedule => "get_schedule",
+        GetRun => "get_run",
+        ListBosses => "list_bosses",
+        GetBossStrategy => "get_boss_strategy",
+        GetPending => "get_pending",
+        ListFixed => "list_fixed",
+        ProposeMove => "propose_move",
+        ProposeAdd => "propose_add",
+        ProposeCancel => "propose_cancel",
+        ProposeRemoveFixed => "propose_remove_fixed",
+        ProposeChangeFixed => "propose_change_fixed",
+        ProposeRsvp => "propose_rsvp",
+        RequestTools => "request_tools",
+    }
 }
 
 impl ToolName {
@@ -41,31 +42,6 @@ impl ToolName {
         Self::ProposeChangeFixed,
         Self::ProposeRsvp,
     ];
-
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::GetSchedule => "get_schedule",
-            Self::GetRun => "get_run",
-            Self::ListBosses => "list_bosses",
-            Self::GetBossStrategy => "get_boss_strategy",
-            Self::GetPending => "get_pending",
-            Self::ListFixed => "list_fixed",
-            Self::ProposeMove => "propose_move",
-            Self::ProposeAdd => "propose_add",
-            Self::ProposeCancel => "propose_cancel",
-            Self::ProposeRemoveFixed => "propose_remove_fixed",
-            Self::ProposeChangeFixed => "propose_change_fixed",
-            Self::ProposeRsvp => "propose_rsvp",
-            Self::RequestTools => "request_tools",
-        }
-    }
-
-    pub fn parse(name: &str) -> Option<Self> {
-        Self::V4
-            .into_iter()
-            .chain([Self::RequestTools])
-            .find(|tool| tool.as_str() == name)
-    }
 
     /// A card-posting (`propose_*`) tool.
     pub fn is_write(self) -> bool {

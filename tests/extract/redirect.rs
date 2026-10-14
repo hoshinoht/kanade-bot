@@ -228,7 +228,7 @@ fn classification_table() {
 
 #[test]
 fn modes_parse_and_closed_portal_forces_cards_only() {
-    for mode in SelfServiceMode::ALL {
+    for &mode in SelfServiceMode::ALL {
         assert_eq!(SelfServiceMode::parse(mode.as_str()), Some(mode));
         assert_eq!(effective_mode(mode, false), SelfServiceMode::CardsOnly);
         assert_eq!(effective_mode(mode, true), mode);
@@ -273,7 +273,7 @@ fn a_self_service_move_gets_its_link_by_mode() {
     assert!(!first.keep_card);
     assert_eq!(first.link.as_ref(), Some(&link));
 
-    for configured in SelfServiceMode::ALL {
+    for &configured in SelfServiceMode::ALL {
         let closed = plan(&facts, effective_mode(configured, false), &links());
         assert!(closed.keep_card);
         assert_eq!(closed.link, None);
@@ -339,7 +339,7 @@ fn weekly_timing_changes_keep_their_card_and_link_the_request_form() {
 fn other_cases_never_get_a_link_or_lose_their_card() {
     let theirs = run(&[OTHER]);
     let change = move_to(utc(9, 27, 20));
-    for mode in SelfServiceMode::ALL {
+    for &mode in SelfServiceMode::ALL {
         let mut unclear = facts(&change, Some(&theirs));
         let redirect = plan(&unclear, mode, &links());
         assert_eq!(redirect.case, RedirectCase::NeedsApproval);

@@ -18,35 +18,22 @@ pub use scan::{find_days, find_mentions, find_times};
 
 use super::text::pattern;
 
-/// One gate signal; variants are in name order so sets sort like v4's reasons.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub enum Signal {
-    Agree,
-    Boss,
-    Day,
-    Here,
-    Mention,
-    Run,
-    Soon,
-    Time,
-    Verb,
+crate::domain::spelled! {
+    /// One gate signal; variants are in name order so sets sort like v4's reasons.
+    Signal {
+        Agree => "agree",
+        Boss => "boss",
+        Day => "day",
+        Here => "here",
+        Mention => "mention",
+        Run => "run",
+        Soon => "soon",
+        Time => "time",
+        Verb => "verb",
+    }
 }
 
 impl Signal {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Agree => "agree",
-            Self::Boss => "boss",
-            Self::Day => "day",
-            Self::Here => "here",
-            Self::Mention => "mention",
-            Self::Run => "run",
-            Self::Soon => "soon",
-            Self::Time => "time",
-            Self::Verb => "verb",
-        }
-    }
-
     /// Enough on its own to run an extraction.
     pub fn is_strong(self) -> bool {
         matches!(
