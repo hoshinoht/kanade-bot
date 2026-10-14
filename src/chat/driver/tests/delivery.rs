@@ -662,7 +662,7 @@ async fn t28_shed_and_limited_questions_never_get_a_placeholder() {
     let held = Arc::new(Notify::new());
     let mut fake = Fake::new(vec![Step::Held(Arc::clone(&held), "a"), Step::Reply("b")]);
     fake.member_rate = (1, 300.0);
-    let rig = rig_with(fake, config, &MemoryScheduleStore::new()).await;
+    let rig = rig_with(fake, config, &SqliteStore::open_temp().await).await;
     assert!(rig.driver.offer(asked("1001", "11", CHANNEL, &[ROLE])));
     assert!(rig.driver.offer(asked("1002", "12", CHANNEL, &[ROLE])));
     assert!(rig.driver.offer(asked("1003", "13", CHANNEL, &[ROLE])));

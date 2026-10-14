@@ -768,7 +768,7 @@ async fn a_rewrite_row_records_max_tokens_only_when_the_route_sends_it() {
     use kanade::chat::nudge::StoreRewriteSink;
     use kanade::domain::model_log::{RewriteFilter, RewriteLogStore};
     use kanade::infrastructure::llm::ModelCapabilities;
-    use kanade::infrastructure::store::MemoryScheduleStore;
+    use kanade::infrastructure::store::SqliteStore;
 
     let mut rows = Vec::new();
     for sampling_controls in [false, true] {
@@ -777,7 +777,7 @@ async fn a_rewrite_row_records_max_tokens_only_when_the_route_sends_it() {
             sampling_controls,
             ..ModelCapabilities::minimal()
         });
-        let logs = Arc::new(MemoryScheduleStore::new());
+        let logs = Arc::new(SqliteStore::open_temp().await);
         let rewriter = GovernedRewriter::new(client).with_reserve(Arc::new(|_: &str| 80));
         Nudger::new(Arc::new(Fixed), rewriter)
             .with_log(Arc::new(StoreRewriteSink::new(

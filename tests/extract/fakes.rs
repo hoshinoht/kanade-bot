@@ -1,7 +1,7 @@
 //! Pipeline-level fakes: a pinned wall clock, counted ids, a guild, the real
-//! scheduler proposal service over the memory or a temp SQLite store, an
-//! outbox recorder, a history source and a `FakeProvider` behind a real
-//! governor (wrapped in [`Model`] for gates and injected panics).
+//! scheduler proposal service over a temp SQLite store, an outbox recorder,
+//! a history source and a `FakeProvider` behind a real governor (wrapped in
+//! [`Model`] for gates and injected panics).
 
 use std::collections::{BTreeMap, HashSet};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -15,7 +15,7 @@ use chrono::{DateTime, NaiveTime, TimeZone, Utc, Weekday};
 use chrono_tz::Tz;
 use kanade::bot::delivery::StoreRef;
 use kanade::domain::catalog::BossTable;
-use kanade::domain::drafts::{DraftStore, ProposalStore, StoredProposal};
+use kanade::domain::drafts::{ProposalStore, StoredProposal};
 use kanade::domain::history::Origin;
 use kanade::domain::ids::IdGenerator;
 use kanade::domain::members::{self, Directory};
@@ -23,8 +23,8 @@ use kanade::domain::model_log::{ExtractionFilter, ExtractionLog, ModelLogStore};
 use kanade::domain::proposals::Approver;
 use kanade::domain::schedule::{NewRun, ReminderPolicy, RunSource, RunStatus, SchedulePolicy};
 use kanade::domain::scheduler::{
-    ProposalApproved, ProposalError, ProposalRequest, ProposalResult, Proposed, ScheduleStore,
-    SchedulerService, SupersedeScope,
+    ProposalApproved, ProposalError, ProposalRequest, ProposalResult, Proposed, SchedulerService,
+    SupersedeScope,
 };
 use kanade::extract::pipeline::{
     AuthorKind, BacklogDrop, Card, ChatAnswer, Deps, Extractor, Guild, IncomingMessage, LeadIns,
@@ -41,7 +41,7 @@ use kanade::infrastructure::llm::{
     CapabilityFuture, ChatRequest, CompletionFuture, CompletionResponse, ExecutionLimits,
     FakeAction, FakeProvider, FinishReason, LlmProvider, ModelCapabilities, RetryPolicy, Usage,
 };
-use kanade::infrastructure::store::{MemoryScheduleStore, SqliteStore};
+use kanade::infrastructure::store::SqliteStore;
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 
@@ -57,28 +57,9 @@ pub const PRIYA: &str = "114200000000000033";
 pub const KANON: &str = "114200000000000044";
 pub const STRANGER: &str = "114200000000000099";
 
-pub type Service<'a, S = MemoryScheduleStore> = SchedulerService<StoreRef<'a, S>, Ids, TestClock>;
-pub type Core<S = MemoryScheduleStore> = Extractor<S, Model, Scheduler<S>, Recorder>;
-pub type Jobs = Rescans<MemoryScheduleStore, Model, Scheduler, Recorder, FakeHistory>;
-
-/// A store a [`WorldOn`] runs over: the memory store or a temp SQLite store.
-pub trait WorldStore:
-    ScheduleStore + DraftStore + ProposalStore + ModelLogStore + Send + Sync + 'static
-{
-    fn fresh() -> impl Future<Output = Self>;
-}
-
-impl WorldStore for MemoryScheduleStore {
-    async fn fresh() -> Self {
-        Self::new()
-    }
-}
-
-impl WorldStore for SqliteStore {
-    async fn fresh() -> Self {
-        Self::open_temp().await
-    }
-}
+pub type Service<'a> = SchedulerService<StoreRef<'a, SqliteStore>, Ids, TestClock>;
+pub type Core = Extractor<SqliteStore, Model, Scheduler, Recorder>;
+pub type Jobs = Rescans<SqliteStore, Model, Scheduler, Recorder, FakeHistory>;
 
 /// Rescan jobs over `extractor`, backfilling from `history`.
 pub fn rescans(extractor: &Arc<Core>, history: FakeHistory) -> Arc<Jobs> {
@@ -234,8 +215,8 @@ impl Directory for Roster {
 }
 
 /// The scheduler's real proposal service, one short-lived service per call.
-pub struct Scheduler<S = MemoryScheduleStore> {
-    pub store: Arc<S>,
+pub struct Scheduler {
+    pub store: Arc<SqliteStore>,
     pub clock: TestClock,
     pub ids: Ids,
     pub directory: Roster,
@@ -243,8 +224,8 @@ pub struct Scheduler<S = MemoryScheduleStore> {
     pub refuse: AtomicBool,
 }
 
-impl<S: WorldStore> Scheduler<S> {
-    pub fn service(&self) -> Service<'_, S> {
+impl Scheduler {
+    pub fn service(&self) -> Service<'_> {
         SchedulerService::new(StoreRef(&*self.store), self.ids.clone(), self.clock.clone())
     }
 
@@ -261,7 +242,7 @@ impl<S: WorldStore> Scheduler<S> {
     }
 }
 
-impl<S: WorldStore> Proposer for Scheduler<S> {
+impl Proposer for Scheduler {
     async fn supersede(&self, scope: SupersedeScope<'_>) -> ProposalResult<Vec<String>> {
         self.service().supersede_proposals(scope).await
     }
@@ -553,25 +534,22 @@ pub fn client(actions: Vec<FakeAction>, grouped: bool) -> (Arc<Model>, Arc<Model
     (provider, Arc::new(client))
 }
 
-/// The world over the memory store.
-pub type World = WorldOn<MemoryScheduleStore>;
-
-pub struct WorldOn<S> {
-    pub store: Arc<S>,
+pub struct World {
+    pub store: Arc<SqliteStore>,
     pub provider: Arc<FakeProvider>,
     /// The hooks around `provider`.
     pub model: Arc<Model>,
     pub client: Arc<ModelClient<Model>>,
     pub outbox: Arc<Recorder>,
     pub guild: Arc<FakeGuild>,
-    pub scheduler: Arc<Scheduler<S>>,
-    pub extractor: Arc<Core<S>>,
+    pub scheduler: Arc<Scheduler>,
+    pub extractor: Arc<Core>,
     /// Mon 21:30 HMaleficStar+HFA (MY, Alvin, Priya), Tue 22:00
     /// HCarling+XKalos (MY, Alvin, kanon), both in channel 900.
     pub runs: [String; 2],
 }
 
-impl<S: WorldStore> WorldOn<S> {
+impl World {
     pub async fn new(actions: Vec<FakeAction>) -> Self {
         Self::build(actions, |_| {}, true, false, None).await
     }
@@ -606,7 +584,7 @@ impl<S: WorldStore> WorldOn<S> {
         self_service: bool,
         live: Option<LiveContext>,
     ) -> Self {
-        let store = Arc::new(S::fresh().await);
+        let store = Arc::new(SqliteStore::open_temp().await);
         let clock = TestClock::new(now().fixed_offset());
         let guild = Arc::new(FakeGuild::new());
         let scheduler = Arc::new(Scheduler {
@@ -698,28 +676,6 @@ impl<S: WorldStore> WorldOn<S> {
         let (sender, events) = mpsc::channel(1_024);
         let pipeline = Pipeline::new(self.extractor.clone());
         (sender, tokio::spawn(pipeline.run(events)))
-    }
-
-    /// This world's guild and outbox over a SQLite model-log store, whose
-    /// writes really suspend (the memory store never yields).
-    pub fn over_sqlite(
-        &self,
-        store: Arc<SqliteStore>,
-    ) -> Arc<Extractor<SqliteStore, Model, Scheduler<S>, Recorder>> {
-        let (_, client) = client(Vec::new(), true);
-        Arc::new(Extractor::new(
-            Deps {
-                store,
-                client,
-                guild: self.guild.clone(),
-                proposer: self.scheduler.clone(),
-                outbox: self.outbox.clone(),
-                clock: Arc::new(TestClock::new(now().fixed_offset())),
-                ids: Box::new(Ids::new(0x5a1)),
-                self_service: None,
-            },
-            config(),
-        ))
     }
 
     /// Extraction log rows, oldest first.

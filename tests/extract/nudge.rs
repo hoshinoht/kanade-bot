@@ -29,7 +29,7 @@ use kanade::infrastructure::llm::governor::{
     CallKind, Governor, GovernorConfig, GovernorPolicy, GroupConfig, Outcome, Random, Role,
     RoleConfig, XorShift,
 };
-use kanade::infrastructure::store::MemoryScheduleStore;
+use kanade::infrastructure::store::SqliteStore;
 use tokio::time::Instant;
 
 const CHANNEL: &str = "900000000000000001";
@@ -909,7 +909,7 @@ fn utc(day: u32, hour: u32) -> DateTime<Utc> {
 
 #[tokio::test(start_paused = true)]
 async fn one_tip_per_member_per_boss_week_even_when_claims_race() {
-    let store = MemoryScheduleStore::new();
+    let store = SqliteStore::open_temp().await;
     let governor = governor();
     let fake = GovernedFake::new(
         governor,
@@ -952,7 +952,7 @@ fn reset() -> WeekReset {
 
 #[tokio::test(start_paused = true)]
 async fn the_tip_week_follows_the_configured_reset() {
-    let store = MemoryScheduleStore::new();
+    let store = SqliteStore::open_temp().await;
     let nudger = Nudger::new(Arc::new(Fixed(0)), NoRewrite);
     let persona = persona(SEEDS);
     let facts = facts(NudgeMood::Playful);
@@ -993,7 +993,7 @@ async fn each_lead_in_logs_one_member_free_rewrite_row() {
     use kanade::chat::nudge::StoreRewriteSink;
     use kanade::domain::model_log::{RewriteFilter, RewriteKind, RewriteLogStore, RewriteStage};
 
-    let logs = Arc::new(MemoryScheduleStore::new());
+    let logs = Arc::new(SqliteStore::open_temp().await);
     let at = utc(20, 12);
     let fake = GovernedFake::new(
         governor(),

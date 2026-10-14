@@ -15,7 +15,7 @@ use crate::domain::history::{Actor, Surface};
 use crate::domain::members::MemberStore;
 use crate::infrastructure::store::chardata_conformance::{active, snapshot};
 use crate::infrastructure::store::members_conformance::gateway;
-use crate::infrastructure::store::{MemoryCharData, MemoryScheduleStore};
+use crate::infrastructure::store::{SqliteCharData, SqliteStore};
 
 fn at(day: u32, hour: u32) -> DateTime<Utc> {
     Utc.with_ymd_and_hms(2026, 10, day, hour, 0, 0).unwrap()
@@ -23,7 +23,7 @@ fn at(day: u32, hour: u32) -> DateTime<Utc> {
 
 struct Rig {
     service: Arc<CharacterData>,
-    file: Arc<MemoryCharData>,
+    file: Arc<SqliteCharData>,
     now: Arc<Mutex<DateTime<Utc>>>,
 }
 
@@ -52,13 +52,13 @@ async fn rig() -> Rig {
 
 /// The same, with the scouter at `scouter` when given.
 async fn rig_with(scouter: Option<std::net::SocketAddr>) -> Rig {
-    let file = Arc::new(MemoryCharData::new());
+    let file = Arc::new(SqliteCharData::open_temp().await);
     let now = Arc::new(Mutex::new(at(11, 0)));
     let clock: Clock = {
         let now = Arc::clone(&now);
         Arc::new(move || *now.lock().unwrap())
     };
-    let roster = Arc::new(MemoryScheduleStore::new());
+    let roster = Arc::new(SqliteStore::open_temp().await);
     roster
         .apply_gateway(gateway("1001", "Alice", &["10"]))
         .await

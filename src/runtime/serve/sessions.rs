@@ -69,7 +69,7 @@ mod tests {
     use crate::{
         api::auth::member::StoreEligibility,
         infrastructure::store::{
-            MemoryScheduleStore,
+            SqliteStore,
             web_sessions::{LoginMethod, WebSession, WebSessionStore},
         },
     };
@@ -99,11 +99,11 @@ mod tests {
         }
     }
 
-    /// The memory store with an idle and an expired public session, a live
-    /// one, and an admin row past both, read by a member realm whose clock
-    /// reads `at(minute)`.
-    async fn realm(minute: Arc<AtomicI64>) -> (Arc<MemoryScheduleStore>, Arc<MemberAuth>) {
-        let store = Arc::new(MemoryScheduleStore::new());
+    /// A temp store with an idle and an expired public session, a live one,
+    /// and an admin row past both, read by a member realm whose clock reads
+    /// `at(minute)`.
+    async fn realm(minute: Arc<AtomicI64>) -> (Arc<SqliteStore>, Arc<MemberAuth>) {
+        let store = Arc::new(SqliteStore::open_temp().await);
         for row in [
             session("a", SessionOrigin::Public, 0, 480),
             session("b", SessionOrigin::Public, 50, 60),
@@ -121,7 +121,7 @@ mod tests {
         (store, Arc::new(member))
     }
 
-    async fn live(store: &MemoryScheduleStore, id: &str) -> bool {
+    async fn live(store: &SqliteStore, id: &str) -> bool {
         store
             .load_session(&format!("{id:0>64}"))
             .await

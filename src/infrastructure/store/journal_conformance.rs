@@ -1343,9 +1343,8 @@ async fn test_cards_are_per_operation_registered_and_cleared<
     );
 }
 
-/// The SQLite store's journal shortcuts (`sqlite/faults.rs`) over a real
-/// binding, as the memory store's `test_map_card_run` and
-/// `test_retire_bound_attempt` act.
+/// The SQLite store's journal shortcuts `test_map_card_run` and
+/// `test_retire_bound_attempt` (`sqlite/faults.rs`) over a real binding.
 #[cfg(test)]
 mod sqlite_shortcuts {
     use twilight_model::id::Id;

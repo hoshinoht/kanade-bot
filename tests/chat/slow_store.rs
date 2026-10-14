@@ -14,15 +14,15 @@ use kanade::domain::drafts::{
 use kanade::domain::history::{Actor, ChangeMeta, ChangeRecord, ChangeRef};
 use kanade::domain::schedule::{ChangeSet, ScheduleSnapshot};
 use kanade::domain::scheduler::{Committed, RecordedRequest, ScheduleStore, Scope, StoreError};
-use kanade::infrastructure::store::MemoryScheduleStore;
+use kanade::infrastructure::store::SqliteStore;
 
-pub struct SlowStore<'a, S = MemoryScheduleStore> {
-    pub inner: &'a S,
+pub struct SlowStore<'a> {
+    pub inner: &'a SqliteStore,
     /// How long `create_proposal` stalls after its commit.
     pub stall: Duration,
 }
 
-impl<S: ScheduleStore + Sync> ScheduleStore for SlowStore<'_, S> {
+impl ScheduleStore for SlowStore<'_> {
     fn load(
         &self,
         scope: &Scope,
@@ -48,7 +48,7 @@ impl<S: ScheduleStore + Sync> ScheduleStore for SlowStore<'_, S> {
     }
 }
 
-impl<S: DraftStore + Sync> DraftStore for SlowStore<'_, S> {
+impl DraftStore for SlowStore<'_> {
     fn snapshot_with_head(
         &self,
     ) -> impl Future<Output = Result<(ScheduleSnapshot, ChangeRef), StoreError>> + Send {
@@ -135,7 +135,7 @@ impl<S: DraftStore + Sync> DraftStore for SlowStore<'_, S> {
     }
 }
 
-impl<S: ProposalStore + Sync> ProposalStore for SlowStore<'_, S> {
+impl ProposalStore for SlowStore<'_> {
     async fn create_proposal_or_existing(
         &self,
         new: NewProposal,

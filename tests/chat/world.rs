@@ -16,7 +16,6 @@ use kanade::chat::tools::read::resolve::Heard;
 use kanade::chat::tools::read::{GuideError, StrategyGuides, ToolWorld};
 use kanade::chat::tools::{ToolContext, ToolOutcome};
 use kanade::domain::catalog::{BossReference, BossSpec, BossTable, CatalogSpec, DifficultySpec};
-use kanade::domain::drafts::ProposalStore;
 use kanade::domain::members::{Directory, Member};
 use kanade::domain::schedule::{
     Change, ChangeSet, FixedRun, ReminderPolicy, Rsvp, RsvpSource, RsvpState, Run, RunSource,
@@ -24,8 +23,8 @@ use kanade::domain::schedule::{
 };
 use kanade::domain::scheduler::{Clock, ScheduleStore, Scope};
 use kanade::infrastructure::llm::identity::PassthroughSession;
+use kanade::infrastructure::store::SqliteStore;
 use kanade::infrastructure::store::conformance::meta;
-use kanade::infrastructure::store::{MemoryScheduleStore, SqliteStore};
 use serde_json::{Value, json};
 
 use crate::common::{self, SeqIds, TestClock, clock_time, strings, text, utc, weekday, zone};
@@ -151,28 +150,8 @@ pub fn catalog(raw: &Value) -> BossTable {
     .expect("fixture catalog is valid")
 }
 
-/// A store a [`WorldOn`] runs over: the memory store or a temp SQLite store.
-pub trait WorldStore: ScheduleStore + ProposalStore + Send + Sync + 'static {
-    fn fresh() -> impl Future<Output = Self>;
-}
-
-impl WorldStore for MemoryScheduleStore {
-    async fn fresh() -> Self {
-        Self::new()
-    }
-}
-
-impl WorldStore for SqliteStore {
-    async fn fresh() -> Self {
-        Self::open_temp().await
-    }
-}
-
-/// The world over the memory store.
-pub type World = WorldOn<MemoryScheduleStore>;
-
-pub struct WorldOn<S> {
-    pub service: common::Service<S>,
+pub struct World {
+    pub service: common::Service<SqliteStore>,
     pub clock: TestClock,
     pub ids: SeqIds,
     pub policy: SchedulePolicy,
@@ -185,9 +164,9 @@ pub struct WorldOn<S> {
     input: Value,
 }
 
-impl<S: WorldStore> WorldOn<S> {
+impl World {
     pub async fn new(input: &Value) -> Self {
-        let (service, clock, ids) = common::service_over(S::fresh().await, input);
+        let (service, clock, ids) = common::service_over(SqliteStore::open_temp().await, input);
         let zone = zone(input);
         let policy = SchedulePolicy::new(
             ReminderPolicy {
@@ -352,7 +331,9 @@ impl<S: WorldStore> WorldOn<S> {
     }
 
     /// The loop's static guild view and the scheduler it proposes through.
-    pub fn question_parts(&mut self) -> (GuildView<'_>, Proposer<'_, S, SeqIds, TestClock>) {
+    pub fn question_parts(
+        &mut self,
+    ) -> (GuildView<'_>, Proposer<'_, SqliteStore, SeqIds, TestClock>) {
         let Self {
             service,
             policy,

@@ -28,7 +28,7 @@ use crate::domain::catalog::BossTable;
 use crate::domain::members::{Directory, Member, Roster};
 use crate::domain::model_log::{ChatInteraction, ChatOutcome};
 use crate::infrastructure::llm::Message;
-use crate::infrastructure::store::MemoryScheduleStore;
+use crate::infrastructure::store::SqliteStore;
 
 const GUILD: &str = "900";
 const ROLE: &str = "10";
@@ -432,7 +432,7 @@ struct Rig {
     clock: Clock,
 }
 
-async fn rig_with(fake: Fake, config: DriverConfig, log: &MemoryScheduleStore) -> Rig {
+async fn rig_with(fake: Fake, config: DriverConfig, log: &SqliteStore) -> Rig {
     let fake = Arc::new(fake);
     let surface = Recorder::default();
     let clock: Clock = Arc::new(Mutex::new(10.0));
@@ -455,7 +455,7 @@ async fn rig_with(fake: Fake, config: DriverConfig, log: &MemoryScheduleStore) -
 }
 
 async fn configured(steps: Vec<Step>, config: DriverConfig) -> Rig {
-    rig_with(Fake::new(steps), config, &MemoryScheduleStore::new()).await
+    rig_with(Fake::new(steps), config, &SqliteStore::open_temp().await).await
 }
 
 async fn rig(steps: Vec<Step>) -> Rig {
@@ -739,7 +739,12 @@ async fn a_refused_reservation_never_frees_a_running_one() {
 async fn a_spent_allowance_reacts_says_so_once_and_logs_rate_limited() {
     let mut fake = Fake::new(vec![Step::Reply("one")]);
     fake.member_rate = (1, 300.0);
-    let rig = rig_with(fake, DriverConfig::default(), &MemoryScheduleStore::new()).await;
+    let rig = rig_with(
+        fake,
+        DriverConfig::default(),
+        &SqliteStore::open_temp().await,
+    )
+    .await;
     assert!(rig.driver.offer(asked("1001", "11", CHANNEL, &[ROLE])));
     rig.settle().await;
     assert!(rig.driver.offer(asked("1002", "11", CHANNEL, &[ROLE])));
@@ -799,7 +804,7 @@ fn withheld_row(message_id: &str) -> ChatInteraction {
 
 #[tokio::test]
 async fn withheld_questions_are_reloaded_before_the_first_admission() {
-    let log = MemoryScheduleStore::new();
+    let log = SqliteStore::open_temp().await;
     log.record_chat(withheld_row("700")).await.unwrap();
     let rig = rig_with(
         Fake::new(vec![Step::Reply("ok")]),
@@ -838,7 +843,7 @@ async fn the_question_timeout_must_stay_below_the_clean_retry_window() {
         too_long,
         Arc::new(Fake::new(Vec::new())),
         Recorder::default(),
-        &MemoryScheduleStore::new(),
+        &SqliteStore::open_temp().await,
         Arc::new(|| 0.0),
     )
     .await;
@@ -884,7 +889,12 @@ async fn shutdown_cuts_running_questions_refunds_and_concludes_them() {
 async fn a_zero_member_allowance_ignores_members_silently_but_not_staff_or_overrides() {
     let mut fake = Fake::new(vec![Step::Reply("Hello staff."), Step::Reply("Hi.")]);
     fake.member_rate = (0, 300.0);
-    let rig = rig_with(fake, DriverConfig::default(), &MemoryScheduleStore::new()).await;
+    let rig = rig_with(
+        fake,
+        DriverConfig::default(),
+        &SqliteStore::open_temp().await,
+    )
+    .await;
     for id in ["1001", "1002"] {
         assert!(!rig.driver.offer(asked(id, "11", CHANNEL, &[ROLE])));
     }

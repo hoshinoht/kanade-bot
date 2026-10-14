@@ -25,7 +25,7 @@ use kanade::domain::model_log::ModelLogStore;
 use kanade::domain::model_log::{AllowanceOverride, ChatOutcome};
 use kanade::infrastructure::llm::governor::{Charge, Refused, SessionError, SessionFailure};
 use kanade::infrastructure::llm::{FakeAction, FakeProvider};
-use kanade::infrastructure::store::MemoryScheduleStore;
+use kanade::infrastructure::store::SqliteStore;
 use serde_json::json;
 
 use crate::looping::{Ports, conversation, settings};
@@ -743,7 +743,7 @@ async fn a_filtered_round_whose_clean_retry_is_malformed_stays_withheld() {
 #[tokio::test]
 async fn withheld_questions_survive_a_restart() {
     let world = world().await;
-    let store = MemoryScheduleStore::new();
+    let store = SqliteStore::open_temp().await;
     let mut before = new_pilot();
     let explicit = message("8500", "22", "something explicit", None);
     let blocked = Generation::failed(AnswerFailure::ContentBlocked);
@@ -885,7 +885,7 @@ async fn a_replaced_reply_drops_its_exchange_and_a_recovered_one_keeps_it() {
 #[tokio::test]
 async fn excluded_questions_survive_a_restart() {
     let world = world().await;
-    let store = MemoryScheduleStore::new();
+    let store = SqliteStore::open_temp().await;
     let mut before = new_pilot();
     let rude = message("8800", "22", "this fucking bot", None);
     let deflected = line_guard().deflect("fuck".into());
