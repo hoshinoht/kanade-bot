@@ -8,6 +8,7 @@
 
 @use "../core/easing" as *;
 @use "../core/breakpoints" as *;
+@use "../core/mixins" as *;
 
 $admin: true !default;
 $pane: "week-pane" !default;
@@ -544,9 +545,7 @@ a.week-foot__item:hover,
   }
 
   .plan-card__party--line {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    @include ellipsis;
   }
 
   // Selected (B_WeekSel): a 2 px accent border, 14 px corners and a select halo.
@@ -691,9 +690,7 @@ a.week-foot__item:hover,
 .week-glance__rows {
   display: grid;
   gap: 3px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
+  @include list-reset;
 }
 
 // The next run's party, one row a member: the name, then the answer in words.
@@ -715,9 +712,7 @@ a.week-foot__item:hover,
 
 .week-glance__name {
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  @include ellipsis;
   font-weight: 600;
 }
 
@@ -1313,9 +1308,7 @@ a.week-foot__item:hover,
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 6px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
+  @include list-reset;
 }
 
 .week-answers__member {
@@ -1344,11 +1337,9 @@ a.week-foot__item:hover,
 }
 
 .week-answers__runs {
-  overflow: hidden;
+  @include ellipsis;
   color: var(--dim-text);
   font-size: var(--fs-mini);
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .week-answers__member .week-count {

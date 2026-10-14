@@ -3,6 +3,8 @@
 // B_Limits while the route is not mounted). One window: title-bar tabs and the
 // Config pill, one scrolling panel on the pane surface, a 34 px footer.
 
+@use "../core/mixins" as *;
+
 .limits-window {
   display: flex;
   flex-direction: column;
@@ -338,9 +340,7 @@
   display: flex;
   flex-direction: column;
   gap: 2px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
+  @include list-reset;
 }
 
 .limits-waiting__row {
@@ -360,9 +360,7 @@
 }
 
 .limits-waiting__who {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  @include ellipsis;
 }
 
 .limits-pos {
@@ -631,10 +629,8 @@
 
 .limits-prow__lead {
   min-width: 0;
-  overflow: hidden;
+  @include ellipsis;
   font-size: var(--fs-body-sm);
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .limits-prow__count {

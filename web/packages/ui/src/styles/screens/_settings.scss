@@ -134,9 +134,7 @@
 
 .settings__label {
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  @include ellipsis;
 }
 .settings__scan { display: flex; gap: 8px; min-width: 0; }
 .settings__expanded { display: flex; flex-direction: column; gap: 4px; padding-block: 8px; }
@@ -469,9 +467,7 @@
   display: flex;
   flex-wrap: wrap;
   gap: 4px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
+  @include list-reset;
 }
 
 .capchip {
@@ -577,9 +573,7 @@
 .settings__checks {
   display: grid;
   gap: 0.25rem;
-  margin: 0;
-  padding: 0;
-  list-style: none;
+  @include list-reset;
   font-size: var(--fs-small);
 }
 
@@ -719,9 +713,7 @@
 
 .savebar__summary > span:last-child {
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  @include ellipsis;
 }
 
 .savebar__dot {

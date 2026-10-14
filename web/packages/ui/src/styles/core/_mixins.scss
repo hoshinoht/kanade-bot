@@ -15,6 +15,20 @@
   border: 0;
 }
 
+// A list used for structure: no bullets, no indent of its own.
+@mixin list-reset {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+// One line, cut with an ellipsis.
+@mixin ellipsis {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 // The three dots every window's title bar wears (the mockups' 8 px dots, 4
 // apart): one ::before plus two box-shadows. `$after` is the gap before the
 // bar's content.

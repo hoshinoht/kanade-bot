@@ -60,9 +60,7 @@
 
 .masthead__name,
 .masthead__by {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  @include ellipsis;
 }
 
 .masthead__name {

@@ -4,6 +4,7 @@
 // header and its pill tabs never do. Narrow screens show one at a time.
 @use "../core/breakpoints" as *;
 @use "../core/motion-query" as *;
+@use "../core/mixins" as *;
 
 .chat {
   display: flex;
@@ -187,11 +188,9 @@
 .chat-row__q {
   flex: 1 1 auto;
   min-width: 0;
-  overflow: hidden;
+  @include ellipsis;
   font-size: var(--fs-body-sm);
   font-weight: 600;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .chat-row__took {
@@ -510,9 +509,7 @@
 .modelview__calls {
   display: grid;
   gap: 0.5rem;
-  margin: 0;
-  padding: 0;
-  list-style: none;
+  @include list-reset;
 }
 
 .modelview__messages li,
@@ -627,10 +624,8 @@
 }
 
 .chat-tool__args {
-  overflow: hidden;
+  @include ellipsis;
   color: var(--dim-text);
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .chat-tool__expand {
@@ -667,9 +662,7 @@
 
 .chat-trace__one,
 .chat-trace__cell {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  @include ellipsis;
 }
 
 .chat-trace__preview {
@@ -695,11 +688,9 @@
 }
 
 .chat-trace__round th {
-  overflow: hidden;
+  @include ellipsis;
   background: var(--raise);
   font-weight: 600;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 /* Produced and Raw. */

@@ -5,6 +5,7 @@
 // Chat read beside a 250 px outcome card, Prompt and Raw in a code viewer.
 // The list, the thread and the code body each scroll on their own.
 @use "../core/breakpoints" as *;
+@use "../core/mixins" as *;
 
 .extract-window {
   display: flex;
@@ -75,9 +76,7 @@
 
 .extract-window__filters .logfilters__chip {
   max-width: 14rem;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  @include ellipsis;
 }
 
 .extract-window__filters .logfilters__panel {
@@ -238,18 +237,14 @@
   flex: 1 0 auto;
   min-width: 0;
   max-width: 45%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  @include ellipsis;
 }
 
 .extract-row__facts {
   flex: 0 1 auto;
   min-width: 0;
   margin-left: auto;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  @include ellipsis;
 }
 
 // ── the chosen call ──

@@ -133,9 +133,7 @@
 // its context ellipsizes before anything else gives.
 .pageline .pageline__context {
   flex: 0 1 auto;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  @include ellipsis;
 }
 
 .pageline .eyebrow a,
