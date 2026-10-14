@@ -4,7 +4,6 @@
 
 use std::{sync::Arc, time::Duration};
 
-use serde_json::json;
 use tokio::{sync::watch, task::JoinHandle};
 
 use crate::{
@@ -39,9 +38,9 @@ impl SessionPrune {
             loop {
                 match prune(&member).await {
                     Ok(0) => {}
-                    Ok(count) => logging::event("INFO", "sessions_pruned", json!({"count": count})),
+                    Ok(count) => logging::log!(info, "sessions_pruned", count),
                     // Store error text may carry paths.
-                    Err(_) => logging::event("WARN", "sessions_prune_failed", json!({})),
+                    Err(_) => logging::log!(warn, "sessions_prune_failed"),
                 }
                 tokio::select! {
                     () = tokio::time::sleep(every) => {}

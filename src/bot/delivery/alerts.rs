@@ -171,11 +171,7 @@ pub struct LogAlerts;
 
 impl AlertSink for LogAlerts {
     fn alert(&self, alert: AdminAlert) {
-        crate::runtime::logging::event(
-            "WARN",
-            "admin_alert",
-            serde_json::json!({"key": alert.key()}),
-        );
+        crate::runtime::logging::log!(warn, "admin_alert", key = alert.key());
     }
 }
 

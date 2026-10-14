@@ -160,20 +160,12 @@ fn remove_stale_partials(dir: &Path) {
         match fs::remove_dir_all(entry.path()) {
             Ok(()) => removed.push(name.to_owned()),
             // Error text carries the path; the name alone identifies it.
-            Err(_) => crate::runtime::logging::event(
-                "WARN",
-                "backup_partial_not_removed",
-                serde_json::json!({"dir": name}),
-            ),
+            Err(_) => crate::runtime::logging::log!(warn, "backup_partial_not_removed", dir = name),
         }
     }
     if !removed.is_empty() {
         removed.sort();
-        crate::runtime::logging::event(
-            "INFO",
-            "backup_partials_removed",
-            serde_json::json!({"dirs": removed}),
-        );
+        crate::runtime::logging::log!(info, "backup_partials_removed", dirs = removed);
     }
 }
 

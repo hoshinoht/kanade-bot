@@ -4,7 +4,6 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use serde_json::json;
 use tokio::sync::watch;
 
 use super::status::ExtractionStatus;
@@ -94,20 +93,12 @@ impl Startup {
             },
         }
         if !self.status.enabled() {
-            logging::event(
-                "INFO",
-                "startup_rescan_skipped",
-                json!({"reason": "disabled"}),
-            );
+            logging::log!(info, "startup_rescan_skipped", reason = "disabled");
             return;
         }
         let channels = GuildChannels::watched(&*self.cache);
         if channels.is_empty() {
-            logging::event(
-                "INFO",
-                "startup_rescan_skipped",
-                json!({"reason": "no_channels"}),
-            );
+            logging::log!(info, "startup_rescan_skipped", reason = "no_channels");
             return;
         }
         let count = channels.len();
@@ -120,22 +111,23 @@ impl Startup {
             unprocessed_only: true,
         };
         match self.runner.submit(request).await {
-            Ok(view) => logging::event(
-                "INFO",
+            Ok(view) => logging::log!(
+                info,
                 "startup_rescan_queued",
-                json!({"job": view.job.id, "channels": count}),
+                job = view.job.id,
+                channels = count,
             ),
             // Store text can carry paths; the kind is enough.
-            Err(error) => logging::event(
-                "WARN",
+            Err(error) => logging::log!(
+                warn,
                 "startup_rescan_failed",
-                json!({"kind": match error {
+                kind = match error {
                     RescanError::NoChannels => "no_channels",
                     RescanError::Window(_) => "window",
                     RescanError::Closed => "closed",
                     RescanError::Off => "off",
                     RescanError::Store(_) => "store",
-                }}),
+                },
             ),
         }
     }

@@ -290,7 +290,7 @@ pub async fn create(
             .is_err()
     {
         // A retry finds the link on file and answers `pending` (resume_link).
-        crate::runtime::logging::event("WARN", "idempotency_replay_unrecorded", json!({}));
+        crate::runtime::logging::log!(warn, "idempotency_replay_unrecorded");
     }
     Ok((StatusCode::CREATED, Json(body)).into_response())
 }
@@ -375,7 +375,7 @@ async fn ask_link(
             Some("pending")
         }
         _ => {
-            crate::runtime::logging::event("WARN", "chardata_create_link_failed", json!({}));
+            crate::runtime::logging::log!(warn, "chardata_create_link_failed");
             Some("failed")
         }
     }

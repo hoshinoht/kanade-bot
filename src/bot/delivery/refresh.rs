@@ -15,7 +15,6 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, LazyLock, Mutex, PoisonError, Weak};
 
 use chrono::{DateTime, Utc};
-use serde_json::json;
 use tokio::sync::{Mutex as AsyncMutex, Notify, watch};
 
 use super::card_records;
@@ -88,7 +87,7 @@ impl RefreshQueue {
             }
         }
         if dropped > 0 {
-            logging::event("WARN", "card_refresh_dropped", json!({"runs": dropped}));
+            logging::log!(warn, "card_refresh_dropped", runs = dropped);
         }
         self.wake.notify_one();
     }
@@ -240,7 +239,7 @@ where
         let phrase = match self.store.digest_phrase(&key).await {
             Ok(phrase) => phrase,
             Err(_) => {
-                logging::event("WARN", "digest_phrase_failed", json!({"operation": "read"}));
+                logging::log!(warn, "digest_phrase_failed", operation = "read");
                 return false;
             }
         };
@@ -278,14 +277,12 @@ where
     /// A live V2 digest that renders as an embed now stays as posted.
     fn left_as_posted(&self, digest: &WeeklyDigest) {
         if self.cards.v2.formats.first_note(&digest.message_id) {
-            logging::event(
-                "INFO",
+            logging::log!(
+                info,
                 "digest_v2_left_as_posted",
-                json!({
-                    "week_start": digest.week_start.timestamp(),
-                    "style": self.cards.style().as_str(),
-                    "until": "next week's digest",
-                }),
+                week_start = digest.week_start.timestamp(),
+                style = self.cards.style().as_str(),
+                until = "next week's digest",
             );
         }
     }

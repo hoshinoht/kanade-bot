@@ -14,7 +14,6 @@
 use std::collections::BTreeSet;
 
 use chrono::{DateTime, TimeDelta, Utc};
-use serde_json::json;
 use twilight_model::channel::message::Component;
 use twilight_model::channel::message::component::ButtonStyle;
 
@@ -135,10 +134,11 @@ fn v2_or_nothing(
         .formats
         .first_note(&format!("digest-budget:{}", week_start.timestamp()))
     {
-        logging::event(
-            "WARN",
+        logging::log!(
+            warn,
             "digest_v2_over_budget",
-            json!({"week_start": week_start.timestamp(), "fallback": "embed"}),
+            week_start = week_start.timestamp(),
+            fallback = "embed",
         );
     }
     Vec::new()

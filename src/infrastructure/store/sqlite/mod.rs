@@ -425,11 +425,7 @@ impl SqliteStore {
         })
         .await;
         if drained.is_err() {
-            crate::runtime::logging::event(
-                "WARN",
-                "store_readers_not_drained",
-                serde_json::json!({ "open": readers.size() }),
-            );
+            crate::runtime::logging::log!(warn, "store_readers_not_drained", open = readers.size());
         }
         let closed = writer.shutdown().await;
         (closed.map_err(Into::into), owner)

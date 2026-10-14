@@ -9,7 +9,6 @@ use std::sync::Arc;
 
 use chrono::{DateTime, Utc};
 use chrono_tz::Tz;
-use serde_json::json;
 use tokio::sync::watch;
 use tokio::task::JoinHandle;
 use tokio::time::Instant;
@@ -84,11 +83,7 @@ impl StrategyGuides for LiveStrategyGuides<'_> {
         let unreadable = |error: String| {
             // The model is told the guide is unreadable; the operator sees why
             // (a tracked repo path and parse problem, never file content).
-            logging::event(
-                "WARN",
-                "chat_guide_unreadable",
-                json!({"boss": reference.short, "error": error}),
-            );
+            logging::log!(warn, "chat_guide_unreadable", boss = reference.short, error,);
             GuideError::Unreadable
         };
         let (document, researched) = self
@@ -252,7 +247,7 @@ impl<T: GatewayTransport> Answerer for ServeAnswerer<T> {
         let members = match self.store.list_members().await {
             Ok(members) => members,
             Err(_) => {
-                logging::event("WARN", "chat_members_unreadable", json!({}));
+                logging::log!(warn, "chat_members_unreadable");
                 Vec::new()
             }
         };
@@ -324,7 +319,7 @@ impl<T: GatewayTransport> Answerer for ServeAnswerer<T> {
             .await
             .unwrap_or_else(|_| {
                 // The question still goes ahead: its tools read the schedule.
-                logging::event("WARN", "chat_run_context_unreadable", json!({}));
+                logging::log!(warn, "chat_run_context_unreadable");
                 RunContext::default()
             });
         Some(Prepared {
@@ -421,7 +416,7 @@ impl<T: GatewayTransport> Answerer for ServeAnswerer<T> {
 
     async fn record(&self, row: ChatInteraction) {
         if self.store.record_chat(row).await.is_err() {
-            logging::event("WARN", "chat_log_failed", json!({}));
+            logging::log!(warn, "chat_log_failed");
         }
     }
 
@@ -433,14 +428,12 @@ impl<T: GatewayTransport> Answerer for ServeAnswerer<T> {
     }
 
     fn storm(&self, alert: &StormAlert) {
-        logging::event(
-            "WARN",
+        logging::log!(
+            warn,
             "admin_alert",
-            json!({
-                "kind": "clean_retry_storm",
-                "retries": alert.retries,
-                "window_s": alert.window_s,
-            }),
+            kind = "clean_retry_storm",
+            retries = alert.retries,
+            window_s = alert.window_s,
         );
     }
 }

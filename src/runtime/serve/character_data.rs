@@ -105,13 +105,11 @@ pub(super) async fn start(
         ));
     };
     state.character_data = Some(Arc::clone(&service));
-    logging::event(
-        "INFO",
+    logging::log!(
+        info,
         "character_data_started",
-        serde_json::json!({
-            "connected": service.connected(),
-            "estimates": service.estimates().is_some(),
-        }),
+        connected = service.connected(),
+        estimates = service.estimates().is_some(),
     );
     Ok(Some(Module {
         file,
@@ -177,10 +175,10 @@ async fn close(mut file: Arc<SqliteCharData>, wait: Duration) {
         match Arc::try_unwrap(file) {
             Ok(owned) => {
                 let closed = owned.close().await.is_ok();
-                logging::event(
+                logging::log!(
                     if closed { "INFO" } else { "WARN" },
                     "character_data_closed",
-                    serde_json::json!({ "closed": closed }),
+                    closed,
                 );
                 return;
             }
@@ -189,11 +187,7 @@ async fn close(mut file: Arc<SqliteCharData>, wait: Duration) {
                 tokio::time::sleep(Duration::from_millis(20)).await;
             }
             Err(_) => {
-                logging::event(
-                    "WARN",
-                    "character_data_closed",
-                    serde_json::json!({ "closed": false }),
-                );
+                logging::log!(warn, "character_data_closed", closed = false);
                 return;
             }
         }

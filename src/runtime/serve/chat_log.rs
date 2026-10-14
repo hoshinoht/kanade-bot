@@ -1,8 +1,6 @@
 //! Chat lifecycle log lines ([`ChatEvent`] → JSON). Never question or reply
 //! text, never member ids.
 
-use serde_json::json;
-
 use crate::{
     chat::{driver::ChatEvent, persona::ProfileSource},
     runtime::logging,
@@ -31,26 +29,20 @@ pub(super) fn observe(event: &ChatEvent<'_>, readiness: impl FnOnce() -> Readine
             interaction_id,
             thread,
             position,
-        } => logging::event(
-            "INFO",
+        } => logging::log!(
+            info,
             "chat_admitted",
-            json!({
-                "interaction_id": interaction_id,
-                "channel": if *thread { "thread" } else { "channel" },
-                "position": position,
-            }),
+            interaction_id,
+            channel = if *thread { "thread" } else { "channel" },
+            position,
         ),
         ChatEvent::Ignored { reason } => {
-            logging::event("INFO", "chat_ignored", json!({"reason": reason}));
+            logging::log!(info, "chat_ignored", reason);
         }
         ChatEvent::Cancelled {
             interaction_id,
             reason,
-        } => logging::event(
-            "INFO",
-            "chat_cancelled",
-            json!({"interaction_id": interaction_id, "reason": reason}),
-        ),
+        } => logging::log!(info, "chat_cancelled", interaction_id, reason),
         ChatEvent::Finished {
             interaction,
             generation,
@@ -60,35 +52,33 @@ pub(super) fn observe(event: &ChatEvent<'_>, readiness: impl FnOnce() -> Readine
         } => {
             let failed = generation.failure.is_some();
             let (source, saved_unavailable) = profile_source(persona.profile_source);
-            logging::event(
+            logging::log!(
                 if failed { "WARN" } else { "INFO" },
                 if failed {
                     "chat_failed"
                 } else {
                     "chat_answered"
                 },
-                json!({
-                    "interaction_id": interaction.id,
-                    "outcome": interaction.outcome.as_str(),
-                    "persona": persona.bundle.to_string(),
-                    "profile": persona.profile.as_ref().map(ToString::to_string),
-                    "profile_source": source,
-                    "saved_style_unavailable": saved_unavailable,
-                    "model": model,
-                    "reasoning": reasoning.map(|effort| effort.as_str()),
-                    "route": generation.route(),
-                    "rounds": generation.rounds,
-                    "tools": generation.tool_calls,
-                    "latency_ms": interaction.latency_ms,
-                    "model_ms": generation.model_ms,
-                    "tools_ms": generation.tools_ms,
-                    "clean_retry": generation.clean_retry,
-                    "withheld": interaction.withheld,
-                    // The gateway's own log keys: correlation ids only. The
-                    // session's full list, so a failed request is named too.
-                    "session_id": interaction.session_id,
-                    "request_ids": generation.request_ids,
-                }),
+                interaction_id = interaction.id,
+                outcome = interaction.outcome.as_str(),
+                persona = persona.bundle.to_string(),
+                profile = persona.profile.as_ref().map(ToString::to_string),
+                profile_source = source,
+                saved_style_unavailable = saved_unavailable,
+                model,
+                reasoning = reasoning.map(|effort| effort.as_str()),
+                route = generation.route(),
+                rounds = generation.rounds,
+                tools = generation.tool_calls,
+                latency_ms = interaction.latency_ms,
+                model_ms = generation.model_ms,
+                tools_ms = generation.tools_ms,
+                clean_retry = generation.clean_retry,
+                withheld = interaction.withheld,
+                // The gateway's own log keys: correlation ids only. The
+                // session's full list, so a failed request is named too.
+                session_id = interaction.session_id,
+                request_ids = generation.request_ids,
             );
         }
         ChatEvent::SetupChanged { enabled, ready } => {
@@ -102,10 +92,12 @@ pub(super) fn observe(event: &ChatEvent<'_>, readiness: impl FnOnce() -> Readine
                     not_ready.push("no_persona");
                 }
             }
-            logging::event(
+            logging::log!(
                 if *enabled && !ready { "WARN" } else { "INFO" },
                 "chat_setup_changed",
-                json!({"enabled": enabled, "ready": ready, "not_ready": not_ready}),
+                enabled,
+                ready,
+                not_ready,
             );
         }
     }

@@ -77,6 +77,30 @@ pub fn event(level: &'static str, event: &'static str, fields: serde_json::Value
     emit(&line);
 }
 
+/// `log!(warn, "name", field, key = value, ...)` is one [`event`] line with
+/// `json!({"field": field, "key": value, ...})`. `info`, `warn` and `error`
+/// spell the level; any other first argument is the level expression. Field
+/// order is moot: `serde_json` (no `preserve_order`) sorts the keys.
+macro_rules! log {
+    (info, $($rest:tt)+) => { $crate::runtime::logging::log!(@emit "INFO", $($rest)+) };
+    (warn, $($rest:tt)+) => { $crate::runtime::logging::log!(@emit "WARN", $($rest)+) };
+    (error, $($rest:tt)+) => { $crate::runtime::logging::log!(@emit "ERROR", $($rest)+) };
+    (@emit $level:expr, $event:expr $(, $field:ident $(= $value:expr)?)* $(,)?) => {
+        $crate::runtime::logging::event(
+            $level,
+            $event,
+            ::serde_json::json!({
+                $(stringify!($field): $crate::runtime::logging::log!(@value $field $(= $value)?)),*
+            }),
+        )
+    };
+    (@value $field:ident) => { $field };
+    (@value $field:ident = $value:expr) => { $value };
+    ($level:expr, $($rest:tt)+) => { $crate::runtime::logging::log!(@emit $level, $($rest)+) };
+}
+
+pub(crate) use log;
+
 #[cfg(test)]
 thread_local! {
     static CAPTURED: std::cell::RefCell<Option<Vec<serde_json::Value>>> =
@@ -110,5 +134,48 @@ fn emit(event: &impl Serialize) {
     }
     if let Ok(value) = serde_json::to_string(event) {
         eprintln!("{value}");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::{capture, captured, event};
+
+    #[test]
+    fn log_macro_lines_match_event() {
+        let cache_hit = true;
+        let kind = "store";
+        capture();
+        log!(
+            warn,
+            "estimate_finished",
+            cache_hit,
+            detail = kind,
+            nested = json!({"ids": [1, 2], "inner": {"ok": null}}),
+        );
+        event(
+            "WARN",
+            "estimate_finished",
+            json!({"cache_hit": cache_hit, "detail": kind, "nested": {"ids": [1, 2], "inner": {"ok": null}}}),
+        );
+        log!(info, "tick_stopped");
+        event("INFO", "tick_stopped", json!({}));
+        log!(
+            if cache_hit { "ERROR" } else { "INFO" },
+            "tick_failed",
+            kind
+        );
+        event("ERROR", "tick_failed", json!({"kind": kind}));
+        let lines: Vec<String> = captured().iter().map(ToString::to_string).collect();
+        assert_eq!(lines.len(), 6);
+        for pair in lines.chunks(2) {
+            assert_eq!(pair[0], pair[1]);
+        }
+        assert_eq!(
+            lines[0],
+            r#"{"cache_hit":true,"detail":"store","event":"estimate_finished","level":"WARN","nested":{"ids":[1,2],"inner":{"ok":null}}}"#
+        );
     }
 }

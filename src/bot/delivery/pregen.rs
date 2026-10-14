@@ -32,7 +32,6 @@ use std::time::Duration;
 
 use chrono::{DateTime, NaiveDate, NaiveTime, TimeDelta, TimeZone, Utc};
 use chrono_tz::Tz;
-use serde_json::json;
 use tokio::sync::watch;
 use tokio::time::MissedTickBehavior;
 
@@ -258,7 +257,7 @@ where
         let now = (self.now)();
         let batch = self.batch_due(now);
         let Some(candidates) = self.candidates(now, now + SEEN_HORIZON).await else {
-            logging::event("WARN", "header_pregen_failed", json!({"operation": "plan"}));
+            logging::log!(warn, "header_pregen_failed", operation = "plan");
             return report;
         };
         let due: Vec<&Candidate> = candidates
@@ -580,11 +579,7 @@ where
             Ok(true) => Done::Stored,
             Ok(false) => Done::Lost,
             Err(_) => {
-                logging::event(
-                    "WARN",
-                    "header_pregen_failed",
-                    json!({"operation": "write"}),
-                );
+                logging::log!(warn, "header_pregen_failed", operation = "write");
                 Done::Failed { busy: false }
             }
         }

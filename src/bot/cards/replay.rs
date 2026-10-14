@@ -4,7 +4,6 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::future::Future;
 use std::sync::PoisonError;
 
-use serde_json::json;
 use twilight_model::id::{Id, marker::UserMarker};
 
 use super::react::{CHANGED_SINCE_CARD, OUT_OF_DATE_NOTICE};
@@ -229,10 +228,11 @@ where
                             changed_note = true;
                             if reported_conflicts.insert(card.proposal_id.clone()) {
                                 report.conflicts += 1;
-                                logging::event(
-                                    "WARN",
+                                logging::log!(
+                                    warn,
                                     "proposal_replay_conflict",
-                                    json!({"message_id": message, "proposal_id": card.proposal_id}),
+                                    message_id = message,
+                                    proposal_id = card.proposal_id,
                                 );
                             }
                         } else {
@@ -282,10 +282,16 @@ where
                         }
                         _ => "ignored",
                     };
-                    logging::event(
-                        "INFO",
+                    logging::log!(
+                        info,
                         "proposal_replay_answer",
-                        json!({"message_id": message, "proposal_ids": cards.iter().map(|card| &card.proposal_id).collect::<Vec<_>>(), "answer": format!("{answer:?}"), "result": result}),
+                        message_id = message,
+                        proposal_ids = cards
+                            .iter()
+                            .map(|card| &card.proposal_id)
+                            .collect::<Vec<_>>(),
+                        answer = format!("{answer:?}"),
+                        result,
                     );
                 }
                 let extra: &[&str] = if stale { &[OUT_OF_DATE_NOTICE] } else { &[] };
@@ -310,29 +316,30 @@ fn live_retry(message: &str, retry: usize, report: &mut ReplayReport) {
 }
 
 fn finished(report: &ReplayReport) {
-    logging::event(
+    logging::log!(
         if report.aborted { "WARN" } else { "INFO" },
         if report.aborted {
             "proposal_replay_aborted"
         } else {
             "proposal_replay_complete"
         },
-        json!({"messages": report.messages, "approved": report.approved, "rejected": report.rejected, "conflicts": report.conflicts, "skipped": report.skipped}),
+        messages = report.messages,
+        approved = report.approved,
+        rejected = report.rejected,
+        conflicts = report.conflicts,
+        skipped = report.skipped,
     );
 }
 
 fn skipped(message: Option<&str>, reason: &str) {
-    logging::event(
-        "WARN",
+    logging::log!(
+        warn,
         "proposal_replay_skipped",
-        json!({"message_id": message, "reason": reason}),
+        message_id = message,
+        reason
     );
 }
 
 fn v2_ignored(message: &str) {
-    logging::event(
-        "INFO",
-        "proposal_replay_v2_card",
-        json!({"message_id": message}),
-    );
+    logging::log!(info, "proposal_replay_v2_card", message_id = message);
 }

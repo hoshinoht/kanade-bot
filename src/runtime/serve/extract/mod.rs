@@ -24,7 +24,6 @@ use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Duration;
 
-use serde_json::json;
 use tokio::sync::{mpsc, watch};
 use tokio::task::JoinHandle;
 
@@ -202,10 +201,11 @@ pub fn start<T: GatewayTransport>(mut inputs: Inputs<T>) -> Extraction {
         .filter(|stack| stack.has_role(Role::Extraction))
     else {
         extraction.settings = follow_with(None, changes);
-        logging::event(
-            "INFO",
+        logging::log!(
+            info,
             "extraction_unavailable",
-            json!({"reason": "no extraction model", "enabled": inputs.status.enabled()}),
+            reason = "no extraction model",
+            enabled = inputs.status.enabled(),
         );
         return extraction;
     };
@@ -296,8 +296,8 @@ pub fn start<T: GatewayTransport>(mut inputs: Inputs<T>) -> Extraction {
     extraction.worker = Some(tokio::spawn(async move {
         match worker.recover().await {
             Ok(0) => {}
-            Ok(jobs) => logging::event("INFO", "rescans_interrupted", json!({"jobs": jobs})),
-            Err(_) => logging::event("WARN", "rescans_recover_failed", json!({})),
+            Ok(jobs) => logging::log!(info, "rescans_interrupted", jobs),
+            Err(_) => logging::log!(warn, "rescans_recover_failed"),
         }
         worker.run().await;
     }));
@@ -352,7 +352,7 @@ async fn follow(
         cache.set_watch(watch_list(&settings));
         let on = switched_on(&settings);
         if status.set_enabled(on) != on {
-            logging::event("INFO", "extraction_switched", json!({"enabled": on}));
+            logging::log!(info, "extraction_switched", enabled = on);
             if !on && let Some(switched_off) = &switched_off {
                 switched_off().await;
             }
@@ -396,7 +396,7 @@ impl Extraction {
         if let Some(cancel) = cancel {
             cancel();
         }
-        logging::event("WARN", "extraction_calls_cancelled", json!({}));
+        logging::log!(warn, "extraction_calls_cancelled");
         if clock
             .bounded("extraction_cancel", CANCEL_GRACE, settle(&mut running))
             .await
@@ -405,11 +405,7 @@ impl Extraction {
             for task in &running {
                 task.abort();
             }
-            logging::event(
-                "WARN",
-                "extraction_aborted",
-                json!({"tasks": running.len()}),
-            );
+            logging::log!(warn, "extraction_aborted", tasks = running.len());
             settle(&mut running).await;
         }
     }

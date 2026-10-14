@@ -7,7 +7,6 @@
 use std::collections::BTreeSet;
 use std::sync::Arc;
 
-use serde_json::json;
 use tokio::sync::{mpsc, oneshot, watch};
 
 use crate::api::auth::Clock;
@@ -133,7 +132,7 @@ where
                     crate::bot::events::RouteError::Lookup(_) => "lookup",
                     crate::bot::events::RouteError::Scheduler(_) => "scheduler",
                 };
-                logging::event("WARN", "rsvp_failed", json!({"kind": kind}));
+                logging::log!(warn, "rsvp_failed", kind);
                 Reacted::Failed
             }
         }

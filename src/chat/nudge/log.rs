@@ -6,7 +6,6 @@
 use std::{future::Future, pin::Pin, sync::Arc, time::Duration};
 
 use chrono::{DateTime, Utc};
-use serde_json::json;
 
 use super::prompt::RewritePrompt;
 use super::rewrite::{RewriteDetail, RewriteFailure};
@@ -144,7 +143,7 @@ impl<S: RewriteLogStore + Send + Sync> RewriteSink for StoreRewriteSink<S> {
                 Ok(Err(_)) => "backend",
                 Err(_) => "timeout",
             };
-            logging::event("WARN", "rewrite_log_failed", json!({"error": failure}));
+            logging::log!(warn, "rewrite_log_failed", error = failure);
         })
     }
 }

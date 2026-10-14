@@ -6,8 +6,6 @@
 
 use std::sync::Arc;
 
-use serde_json::json;
-
 use crate::bot::ids::{id_text, parse_id};
 use crate::bot::mentions;
 use crate::bot::transport::{
@@ -20,7 +18,7 @@ pub struct DiscordSurface<T>(pub Arc<T>);
 
 fn failed<T>(event: &'static str, outcome: &Outcome<T>) {
     if let Some(label) = outcome.failure_label() {
-        logging::event("WARN", event, json!({"outcome": label}));
+        logging::log!(warn, event, outcome = label);
     }
 }
 

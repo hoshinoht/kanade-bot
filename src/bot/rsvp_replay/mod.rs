@@ -7,7 +7,6 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use chrono::{DateTime, TimeDelta, Utc};
-use serde_json::json;
 use twilight_model::id::{
     Id,
     marker::{ChannelMarker, MessageMarker, UserMarker},
@@ -273,7 +272,7 @@ where
 
     fn aborted(&self, mut report: ReplayReport, started: Instant, reason: &str) -> ReplayReport {
         report.aborted = true;
-        logging::event("WARN", "rsvp_replay_aborted", json!({"reason": reason}));
+        logging::log!(warn, "rsvp_replay_aborted", reason);
         finished(&report, started);
         report
     }
@@ -416,10 +415,11 @@ where
             let remote = plan::remote(cards, user);
             if remote == plan::RemoteDecision::Conflict {
                 input.report.conflicts += 1;
-                logging::event(
-                    "WARN",
+                logging::log!(
+                    warn,
                     "rsvp_replay_conflict",
-                    json!({"run_id": prepared.run.id, "user_id": user}),
+                    run_id = prepared.run.id,
+                    user_id = user,
                 );
                 continue;
             }
@@ -529,10 +529,12 @@ where
             {
                 Ok(result) if result.applied => {
                     input.report.applied += 1;
-                    logging::event(
-                        "INFO",
+                    logging::log!(
+                        info,
                         "rsvp_replay_applied",
-                        json!({"run_id": prepared.run.id, "user_id": user, "added": added}),
+                        run_id = prepared.run.id,
+                        user_id = user,
+                        added,
                     );
                 }
                 Err(SchedulerError::StaleEdit { .. }) => {
@@ -601,29 +603,26 @@ fn eligible(run: &Run, now: DateTime<Utc>) -> bool {
 }
 
 fn skipped(run_id: &str, reason: &str) {
-    logging::event(
-        "INFO",
-        "rsvp_replay_skipped",
-        json!({"run_id": run_id, "reason": reason}),
-    );
+    logging::log!(info, "rsvp_replay_skipped", run_id, reason);
 }
 
 fn skipped_card(run_id: &str, message_id: &str, reason: &str) {
-    logging::event(
-        "WARN",
-        "rsvp_replay_skipped",
-        json!({"run_id": run_id, "message_id": message_id, "reason": reason}),
-    );
+    logging::log!(warn, "rsvp_replay_skipped", run_id, message_id, reason);
 }
 
 fn finished(report: &ReplayReport, started: Instant) {
-    logging::event(
+    logging::log!(
         if report.aborted { "WARN" } else { "INFO" },
         if report.aborted {
             "rsvp_replay_aborted"
         } else {
             "rsvp_replay_complete"
         },
-        json!({"messages": report.messages, "applied": report.applied, "skipped": report.skipped, "conflicts": report.conflicts, "requests": report.requests, "duration_ms": started.elapsed().as_millis()}),
+        messages = report.messages,
+        applied = report.applied,
+        skipped = report.skipped,
+        conflicts = report.conflicts,
+        requests = report.requests,
+        duration_ms = started.elapsed().as_millis(),
     );
 }

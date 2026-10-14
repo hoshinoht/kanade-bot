@@ -48,7 +48,6 @@ const CLOSE_WAIT: Duration = Duration::from_secs(5);
 pub mod budget {
     use std::{sync::Arc, time::Duration};
 
-    use serde_json::json;
     use tokio::{sync::watch, time::Instant};
 
     use crate::{infrastructure::store::SqliteStore, runtime::logging};
@@ -164,10 +163,11 @@ pub mod budget {
         /// One structured line per phase the deadline cut.
         pub fn cut(&self, phase: &'static str) {
             let elapsed = self.elapsed().unwrap_or_default();
-            logging::event(
-                "WARN",
+            logging::log!(
+                warn,
                 "shutdown_deadline_cut",
-                json!({"phase": phase, "elapsed_ms": elapsed.as_millis() as u64}),
+                phase,
+                elapsed_ms = elapsed.as_millis() as u64,
             );
         }
 
@@ -180,7 +180,7 @@ pub mod budget {
             let cutoff = async {
                 self.expired().await;
                 store.refuse_reads();
-                logging::event("WARN", "store_reads_refused", json!({}));
+                logging::log!(warn, "store_reads_refused");
                 std::future::pending::<()>().await;
             };
             tokio::select! {

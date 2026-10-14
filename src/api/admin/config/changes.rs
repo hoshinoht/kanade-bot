@@ -30,17 +30,15 @@ pub(super) fn settings_changed(
 ) {
     let values = diff(before, after);
     let keys: Vec<&String> = values.keys().collect();
-    logging::event(
-        "INFO",
+    logging::log!(
+        info,
         "settings_changed",
-        json!({
-            "revision": revision,
-            "section": section,
-            "keys": keys,
-            "values": values,
-            "actor": actor,
-            "surface": "admin_portal",
-        }),
+        revision,
+        section,
+        keys,
+        values,
+        actor,
+        surface = "admin_portal",
     );
 }
 
@@ -48,17 +46,15 @@ pub(super) fn settings_changed(
 /// threshold (the save itself is never blocked).
 pub(super) fn local_context_warnings(warnings: &[LocalContextWarning]) {
     for warning in warnings {
-        logging::event(
-            "WARN",
+        logging::log!(
+            warn,
             "model_warning",
-            json!({
-                "kind": "local_context",
-                "role": warning.role,
-                "alias": warning.alias,
-                "window": warning.window,
-                "message": LOCAL_CONTEXT_WARNING,
-                "surface": "admin_portal",
-            }),
+            kind = "local_context",
+            role = warning.role,
+            alias = warning.alias,
+            window = warning.window,
+            message = LOCAL_CONTEXT_WARNING,
+            surface = "admin_portal",
         );
     }
 }
@@ -76,20 +72,18 @@ fn running(running: Option<&RunningRole>) -> Value {
 /// session of that role opens with `to`.
 pub(super) fn models_applied(swaps: &[RoleSwap]) {
     for swap in swaps {
-        logging::event(
-            "INFO",
+        logging::log!(
+            info,
             "model_role_switched",
-            json!({
-                "role": swap.role.as_str(),
-                "from": running(swap.before.as_ref()),
-                "to": running(swap.after.as_ref()),
-            }),
+            role = swap.role.as_str(),
+            from = running(swap.before.as_ref()),
+            to = running(swap.after.as_ref()),
         );
     }
 }
 
 pub(super) fn models_apply_failed(error: &str) {
-    logging::event("WARN", "model_roles_not_applied", json!({"error": error}));
+    logging::log!(warn, "model_roles_not_applied", error);
 }
 
 fn profile_count(snapshot: &PersonaSnapshot) -> usize {
@@ -107,14 +101,12 @@ fn effective(snapshot: &PersonaSnapshot) -> Option<String> {
 }
 
 pub(super) fn persona_switched(from: &PersonaSnapshot, to: &PersonaSnapshot) {
-    logging::event(
-        "INFO",
+    logging::log!(
+        info,
         "persona_switched",
-        json!({
-            "from": effective(from),
-            "to": effective(to),
-            "profiles": profile_count(to),
-        }),
+        from = effective(from),
+        to = effective(to),
+        profiles = profile_count(to),
     );
 }
 
@@ -127,14 +119,12 @@ pub(super) fn personas_reloaded(snapshot: &PersonaSnapshot) {
             .map(|issue| json!({"file": issue.basename, "error": issue.error.to_string()}))
             .collect()
     });
-    logging::event(
+    logging::log!(
         if issues.is_empty() { "INFO" } else { "WARN" },
         "personas_reloaded",
-        json!({
-            "persona": effective(snapshot),
-            "profiles": profile_count(snapshot),
-            "issues": issues,
-        }),
+        persona = effective(snapshot),
+        profiles = profile_count(snapshot),
+        issues,
     );
 }
 

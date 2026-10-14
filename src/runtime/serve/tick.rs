@@ -12,7 +12,6 @@ use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::sync::{Arc, Mutex, PoisonError, RwLock};
 use std::time::Duration;
 
-use serde_json::json;
 use tokio::sync::watch;
 use tokio::time::{Instant, MissedTickBehavior};
 
@@ -161,17 +160,13 @@ pub async fn difficulty_marks<T: DiscordTransport>(transport: &T) -> DifficultyM
                 .map(|(_, name)| *name)
                 .collect();
             let level = if missing.is_empty() { "INFO" } else { "WARN" };
-            logging::event(level, "difficulty_marks", json!({"missing": missing}));
+            logging::log!(level, "difficulty_marks", missing);
             return marks;
         }
         Ok(failed) => failed.failure_label().unwrap_or_default(),
         Err(_) => "timeout".to_owned(),
     };
-    logging::event(
-        "WARN",
-        "difficulty_marks_unavailable",
-        json!({"reason": reason}),
-    );
+    logging::log!(warn, "difficulty_marks_unavailable", reason);
     DifficultyMarks::default()
 }
 
@@ -223,10 +218,11 @@ pub fn card_kit(
         Some(CompiledPersona::compile(&active.bundle.value, None))
     });
     let art = boss_dir.map(|dir| Arc::new(BossArt::new(dir)) as Arc<dyn ArtSource>);
-    logging::event(
-        "INFO",
+    logging::log!(
+        info,
         "cards_ready",
-        json!({"art": art.is_some(), "heading_rewrite": rewriter.is_some()}),
+        art = art.is_some(),
+        heading_rewrite = rewriter.is_some(),
     );
     CardKit {
         catalog: Some(catalog),
@@ -337,7 +333,7 @@ impl<T: DiscordTransport> TickLoop<T> {
             }
         }
         self.status.set(STOPPED);
-        logging::event("INFO", "tick_stopped", json!({}));
+        logging::log!(info, "tick_stopped");
     }
 
     /// Settings and members edited through the portal take effect on the
@@ -369,13 +365,11 @@ impl<T: DiscordTransport> TickLoop<T> {
 pub async fn recover(store: &SqliteStore, now: DateTime<Utc>) -> Result<(), Error> {
     match store.recover_on_start(now).await {
         Ok(recovery) => {
-            logging::event(
-                "INFO",
+            logging::log!(
+                info,
                 "delivery_recovered",
-                json!({
-                    "indeterminate": recovery.indeterminate.len(),
-                    "orphaned_leases": recovery.orphaned_leases,
-                }),
+                indeterminate = recovery.indeterminate.len(),
+                orphaned_leases = recovery.orphaned_leases,
             );
             Ok(())
         }
@@ -393,7 +387,7 @@ fn tick_failed(step: &'static str, error: &DeliveryError) {
         DeliveryError::Scheduler(_) => "scheduler",
         DeliveryError::Date(_) => "date",
     };
-    logging::event("WARN", "tick_failed", json!({"step": step, "kind": kind}));
+    logging::log!(warn, "tick_failed", step, kind);
 }
 
 fn log_report(report: &TickReport) {
@@ -405,16 +399,14 @@ fn log_report(report: &TickReport) {
     {
         return;
     }
-    logging::event(
-        "INFO",
+    logging::log!(
+        info,
         "tick",
-        json!({
-            "materialised": report.materialised.len(),
-            "done": report.done.len(),
-            "sends": sends,
-            "prompts": report.prompts.posted.len(),
-            "deferred": report.dispatch.deferred,
-        }),
+        materialised = report.materialised.len(),
+        done = report.done.len(),
+        sends,
+        prompts = report.prompts.posted.len(),
+        deferred = report.dispatch.deferred,
     );
 }
 
