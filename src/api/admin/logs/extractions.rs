@@ -9,7 +9,7 @@ use axum::{
     response::IntoResponse,
 };
 
-use super::{Directory, Reply, filter, state};
+use super::{Directory, Reply, every, filter, state};
 use crate::api::admin::write::Refusal;
 use crate::{
     api::{
@@ -19,27 +19,8 @@ use crate::{
         listeners::Site,
         state::ApiState,
     },
-    domain::model_log::{ExtractionFilter, ExtractionLog},
+    domain::model_log::ExtractionFilter,
 };
-
-async fn every(
-    state: &ApiState,
-    mut filter: ExtractionFilter,
-) -> Result<Vec<ExtractionLog>, Refusal> {
-    let mut rows = Vec::new();
-    loop {
-        let page = state
-            .store
-            .extraction_logs(filter.clone())
-            .await
-            .map_err(Refusal::unavailable)?;
-        rows.extend(page.items);
-        match page.next {
-            Some(cursor) => filter.cursor = Some(cursor),
-            None => return Ok(rows),
-        }
-    }
-}
 
 /// The newest call's alias until runtime settings name the configured one.
 async fn current_model(state: &ApiState) -> Result<String, Refusal> {
@@ -67,7 +48,13 @@ pub async fn list(State(site): State<Arc<Site>>, _: AdminSession, uri: Uri) -> R
         .extraction_log_facets()
         .await
         .map_err(Refusal::unavailable)?;
-    let rows = every(state, filter).await?;
+    let rows = every(filter.cursor.clone(), |cursor| {
+        state.store.extraction_logs(ExtractionFilter {
+            cursor,
+            ..filter.clone()
+        })
+    })
+    .await?;
     let model = current_model(state).await?;
     let directory = Directory::load(state).await?;
     let names = directory.names();

@@ -11,13 +11,13 @@ use std::sync::Arc;
 
 use axum::{
     Json, Router,
-    extract::{FromRequestParts, State, rejection::JsonRejection},
+    extract::{FromRequestParts, State},
     http::{StatusCode, Uri, request::Parts},
     response::{IntoResponse, Response},
     routing::get,
 };
 
-use super::context::state;
+use super::{context::state, write::Body};
 use crate::api::{
     auth::{AdminSession, crypto, wire},
     dto::{
@@ -85,9 +85,8 @@ fn visitor<'a>(session: &'a AdminSession, tab: &'a str) -> Visitor<'a> {
 async fn check_in(
     State(site): State<Arc<Site>>,
     Quiet(session): Quiet,
-    body: Result<Json<CheckIn>, JsonRejection>,
+    Body(body): Body<CheckIn>,
 ) -> Result<Response, ApiError> {
-    let Json(body) = body.map_err(|_| ApiError::INVALID_BODY)?;
     let state = state(&site)?;
     let place = Place::new(body.at.kind, &body.at.id).ok_or(ApiError::INVALID_BODY)?;
     let tab = tab(&session);

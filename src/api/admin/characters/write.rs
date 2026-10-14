@@ -7,7 +7,7 @@ use std::sync::Arc;
 
 use axum::{
     Json,
-    extract::{Path as UrlPath, State, rejection::JsonRejection},
+    extract::{Path as UrlPath, State},
     http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
 };
@@ -20,7 +20,7 @@ use crate::{
     api::{
         admin::{
             replay::{Keyed, mismatch, recall, replayed},
-            write::{Refusal, bad_body, origin, state},
+            write::{Body, Refusal, origin, state},
         },
         auth::AdminSession,
         dto::characters::{CharacterCreated, row},
@@ -224,9 +224,8 @@ pub async fn create(
     session: AdminSession,
     UrlPath(member_id): UrlPath<String>,
     headers: HeaderMap,
-    body: Result<Json<CharacterCreate>, JsonRejection>,
+    Body(body): Body<CharacterCreate>,
 ) -> Reply {
-    let Json(body) = body.map_err(bad_body)?;
     let state = state(&site)?;
     let fields = body.parse()?;
     let request = fields.request(&member_id);
@@ -468,9 +467,8 @@ pub async fn update(
     session: AdminSession,
     UrlPath(id): UrlPath<String>,
     headers: HeaderMap,
-    body: Result<Json<CharacterPatch>, JsonRejection>,
+    Body(body): Body<CharacterPatch>,
 ) -> Reply {
-    let Json(body) = body.map_err(bad_body)?;
     let state = state(&site)?;
     let (version, edit) = body.parse()?;
     let request = patch_request(&id, version, &edit);

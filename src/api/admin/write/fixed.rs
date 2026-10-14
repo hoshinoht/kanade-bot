@@ -5,7 +5,7 @@ use std::{collections::BTreeMap, sync::Arc};
 
 use axum::{
     Json,
-    extract::{Path as UrlPath, State, rejection::JsonRejection},
+    extract::{Path as UrlPath, State},
     http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
 };
@@ -13,8 +13,9 @@ use chrono::{NaiveTime, Weekday};
 use serde::{Deserialize, Serialize};
 
 use super::{
-    bad_body, origin,
+    Body, origin,
     precondition::{Explicit, OverrideRef, SeenField, expectations},
+    recorded,
     refusal::{Refusal, scheduler},
     state, write_context,
 };
@@ -155,18 +156,6 @@ async fn row(
         .ok_or_else(|| Refusal::not_found("not_found", "That weekly timing no longer exists."))
 }
 
-/// The change already recorded for this request's `Idempotency-Key`, if any.
-async fn recorded(state: &ApiState, origin: &Origin) -> Result<Option<ChangeRecord>, Refusal> {
-    let Some(request_id) = origin.request_id.clone() else {
-        return Ok(None);
-    };
-    state
-        .store
-        .recorded_change(origin.actor.clone(), request_id)
-        .await
-        .map_err(Refusal::unavailable)
-}
-
 /// A replay is checked against the roster as the first attempt saw it, not
 /// as it is now: a member who has since lost the bossing role, or a channel
 /// no longer watched, must not turn a replay into a 422. The scheduler still
@@ -207,9 +196,8 @@ pub async fn create(
     State(site): State<Arc<Site>>,
     session: AdminSession,
     headers: HeaderMap,
-    body: Result<Json<FixedRequest>, JsonRejection>,
+    Body(request): Body<FixedRequest>,
 ) -> Reply {
-    let Json(request) = body.map_err(bad_body)?;
     let state = state(&site)?;
     let origin = origin(&session, &headers)?;
     let first = recorded(state, &origin).await?;
@@ -260,9 +248,8 @@ pub async fn update(
     session: AdminSession,
     headers: HeaderMap,
     UrlPath(fixed_id): UrlPath<String>,
-    body: Result<Json<FixedRequest>, JsonRejection>,
+    Body(request): Body<FixedRequest>,
 ) -> Reply {
-    let Json(request) = body.map_err(bad_body)?;
     let state = state(&site)?;
     let origin = origin(&session, &headers)?;
     let first = recorded(state, &origin).await?.is_some();
@@ -518,9 +505,8 @@ pub(crate) struct ValidateResult {
 pub async fn validate_bosses(
     State(site): State<Arc<Site>>,
     _: AdminSession,
-    body: Result<Json<ValidateRequest>, JsonRejection>,
+    Body(request): Body<ValidateRequest>,
 ) -> Reply {
-    let Json(request) = body.map_err(bad_body)?;
     let state = state(&site)?;
     let tokens = state
         .catalog

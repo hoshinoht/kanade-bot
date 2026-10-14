@@ -9,7 +9,7 @@ use std::{collections::BTreeMap, sync::Arc};
 
 use axum::{
     Json,
-    extract::{Path as UrlPath, State, rejection::JsonRejection},
+    extract::{Path as UrlPath, State},
     http::{HeaderMap, StatusCode, Uri},
     response::{IntoResponse, Response},
 };
@@ -18,7 +18,7 @@ use super::{
     super::{
         context::{context, roster},
         replay::{Keyed, replayed},
-        write::{Refusal, bad_body, idempotency_key, state, write_context},
+        write::{Body, Refusal, idempotency_key, state, write_context},
     },
     body::{AddOpBody, CreateBody, MergeBody, RebaseBody, RetitleBody, settle, version_param},
     read::own,
@@ -124,9 +124,8 @@ pub async fn create(
     State(site): State<Arc<Site>>,
     session: AdminSession,
     headers: HeaderMap,
-    body: Result<Json<CreateBody>, JsonRejection>,
+    Body(body): Body<CreateBody>,
 ) -> Reply {
-    let Json(body) = body.map_err(bad_body)?;
     let state = state(&site)?;
     let title = match body.title.as_deref().map(str::trim) {
         None | Some("") => UNTITLED.to_owned(),
@@ -151,9 +150,8 @@ pub async fn retitle(
     session: AdminSession,
     headers: HeaderMap,
     UrlPath(id): UrlPath<String>,
-    body: Result<Json<RetitleBody>, JsonRejection>,
+    Body(body): Body<RetitleBody>,
 ) -> Reply {
-    let Json(body) = body.map_err(bad_body)?;
     let state = state(&site)?;
     let version = body.version.ok_or_else(version_required)?;
     own(state, &session, &id).await?;
@@ -195,9 +193,8 @@ pub async fn add_op(
     session: AdminSession,
     headers: HeaderMap,
     UrlPath(id): UrlPath<String>,
-    body: Result<Json<AddOpBody>, JsonRejection>,
+    Body(body): Body<AddOpBody>,
 ) -> Reply {
-    let Json(body) = body.map_err(bad_body)?;
     let state = state(&site)?;
     let version = body.version.ok_or_else(version_required)?;
     own(state, &session, &id).await?;
@@ -252,9 +249,8 @@ pub async fn rebase(
     session: AdminSession,
     headers: HeaderMap,
     UrlPath(id): UrlPath<String>,
-    body: Result<Json<RebaseBody>, JsonRejection>,
+    Body(body): Body<RebaseBody>,
 ) -> Reply {
-    let Json(body) = body.map_err(bad_body)?;
     let state = state(&site)?;
     let version = body.version.ok_or_else(version_required)?;
     let settle: BTreeMap<_, _> = settle(&body.settle)?;
@@ -288,9 +284,8 @@ pub async fn merge(
     session: AdminSession,
     headers: HeaderMap,
     UrlPath(id): UrlPath<String>,
-    body: Result<Json<MergeBody>, JsonRejection>,
+    Body(body): Body<MergeBody>,
 ) -> Reply {
-    let Json(body) = body.map_err(bad_body)?;
     let state = state(&site)?;
     let version = body.version.ok_or_else(version_required)?;
     own(state, &session, &id).await?;

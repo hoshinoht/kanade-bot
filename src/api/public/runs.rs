@@ -23,8 +23,8 @@ use crate::{
         admin::{
             context::{context, frames, roster, run_ends, unavailable, weeks},
             write::{
-                Answer, Explicit, Previous, Refusal, SlotError, load_run, put_answer, reloaded,
-                run_not_found, scheduler, slot, state, write_run,
+                Answer, Explicit, Previous, Refusal, SlotError, load_run, put_answer, recorded,
+                reloaded, run_not_found, scheduler, slot, state, write_run,
             },
         },
         auth::{audit::AuditContext, member::MemberSession},
@@ -43,7 +43,7 @@ use crate::{
     },
     domain::{
         completion::RunEnds,
-        history::{Actor, ChangeFilter, ChangeRecord, MAX_PAGE, Origin, RowKey, RowValue},
+        history::{Actor, ChangeFilter, ChangeRecord, MAX_PAGE, RowKey, RowValue},
         members::MemberProfile,
         schedule::{
             MemberRunRefusal, RsvpState, Run, ScheduleError, ScheduleSnapshot, utc_instant,
@@ -179,18 +179,6 @@ pub(super) async fn answer(
     .await?;
     let (run, version) = after(&site, state, &run_id, &profiles, me).await?;
     Ok(Json(MemberRunResult { run, version }))
-}
-
-/// The change the origin's key recorded, if any (a retry).
-async fn recorded(state: &ApiState, origin: &Origin) -> Result<Option<ChangeRecord>, Refusal> {
-    let Some(request_id) = origin.request_id.clone() else {
-        return Ok(None);
-    };
-    state
-        .store
-        .recorded_change(origin.actor.clone(), request_id)
-        .await
-        .map_err(|error| unavailable(error).into())
 }
 
 /// Where the run was before `record` moved it: a retry answers what the

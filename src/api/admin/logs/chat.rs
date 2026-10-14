@@ -9,7 +9,7 @@ use axum::{
     response::IntoResponse,
 };
 
-use super::{Directory, Reply, filter, state};
+use super::{Directory, Reply, every, filter, state};
 use crate::api::admin::write::Refusal;
 use crate::{
     api::{
@@ -17,26 +17,9 @@ use crate::{
         dto::logs::{Chat, chat_row, chat_summary, chat_turn, created_proposals},
         error::ApiError,
         listeners::Site,
-        state::ApiState,
     },
     domain::model_log::{ChatFilter, ChatInteraction},
 };
-
-async fn every(state: &ApiState, mut filter: ChatFilter) -> Result<Vec<ChatInteraction>, Refusal> {
-    let mut rows = Vec::new();
-    loop {
-        let page = state
-            .store
-            .chat_logs(filter.clone())
-            .await
-            .map_err(Refusal::unavailable)?;
-        rows.extend(page.items);
-        match page.next {
-            Some(cursor) => filter.cursor = Some(cursor),
-            None => return Ok(rows),
-        }
-    }
-}
 
 /// A withheld question must not be found by its text either: those rows
 /// match `q` on the reply alone (the store searches both).
@@ -59,11 +42,16 @@ pub async fn list(State(site): State<Arc<Site>>, _: AdminSession, uri: Uri) -> R
         .chat_log_facets()
         .await
         .map_err(Refusal::unavailable)?;
-    let rows: Vec<ChatInteraction> = every(state, filter)
-        .await?
-        .into_iter()
-        .filter(|chat| searchable(chat, q.as_deref()))
-        .collect();
+    let rows: Vec<ChatInteraction> = every(filter.cursor.clone(), |cursor| {
+        state.store.chat_logs(ChatFilter {
+            cursor,
+            ..filter.clone()
+        })
+    })
+    .await?
+    .into_iter()
+    .filter(|chat| searchable(chat, q.as_deref()))
+    .collect();
     let directory = Directory::load(state).await?;
     let names = directory.names();
     Ok(Json(Chat {

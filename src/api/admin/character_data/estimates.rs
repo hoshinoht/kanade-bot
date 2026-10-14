@@ -10,7 +10,7 @@ use std::sync::Arc;
 
 use axum::{
     Json, Router,
-    extract::{FromRequestParts, Path as UrlPath, State, rejection::JsonRejection},
+    extract::{FromRequestParts, Path as UrlPath, State},
     http::{StatusCode, Uri, request::Parts},
     response::{IntoResponse, Response},
     routing::get,
@@ -19,7 +19,7 @@ use serde::Deserialize;
 
 use super::super::{
     characters::party,
-    write::{Refusal, bad_body, state},
+    write::{Body, Refusal, state},
 };
 use crate::{
     api::{
@@ -231,9 +231,8 @@ async fn start(
     scouter: Scouter,
     State(site): State<Arc<Site>>,
     session: AdminSession,
-    body: Result<Json<EstimateRequest>, JsonRejection>,
+    Body(body): Body<EstimateRequest>,
 ) -> Reply {
-    let Json(body) = body.map_err(bad_body)?;
     let state = state(&site)?;
     let estimates = scouter.estimates()?;
     let roster = roster(state)?;
