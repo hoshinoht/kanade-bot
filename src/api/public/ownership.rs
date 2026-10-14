@@ -62,11 +62,9 @@ fn refusal(error: OwnershipError) -> Refusal {
             Refusal::new(status, code, refused.to_string())
         }
         OwnershipError::UnknownTiming | OwnershipError::UnknownRequest => {
-            Refusal::new(S::NOT_FOUND, "not_found", error.to_string())
+            Refusal::not_found("not_found", error.to_string())
         }
-        OwnershipError::AlreadyAsked => {
-            Refusal::new(S::CONFLICT, "already_asked", error.to_string())
-        }
+        OwnershipError::AlreadyAsked => Refusal::conflict("already_asked", error.to_string()),
         OwnershipError::Scheduler(error) => scheduler(error),
         OwnershipError::Store(_) => ApiError::UNAVAILABLE.into(),
     }
@@ -197,8 +195,7 @@ async fn asked(
         Some(found) if found.requester == member && found.fixed_run_id == fixed_id => {
             Ok(Some(found))
         }
-        Some(_) => Err(Refusal::new(
-            StatusCode::UNPROCESSABLE_ENTITY,
+        Some(_) => Err(Refusal::unprocessable(
             "idempotency_mismatch",
             "That Idempotency-Key was already used for a different request.",
         )),

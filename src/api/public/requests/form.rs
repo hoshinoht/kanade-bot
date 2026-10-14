@@ -4,7 +4,6 @@
 
 use std::collections::BTreeSet;
 
-use axum::http::StatusCode;
 use serde::Deserialize;
 
 use super::super::write::invalid_body;
@@ -52,8 +51,7 @@ pub(super) struct Checked {
 }
 
 fn not_allowed() -> Refusal {
-    Refusal::new(
-        StatusCode::UNPROCESSABLE_ENTITY,
+    Refusal::unprocessable(
         "field_not_allowed",
         "That field does not apply to this kind of request.",
     )

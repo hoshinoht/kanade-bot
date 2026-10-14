@@ -155,8 +155,7 @@ pub(super) async fn start(
         }
         Start::Full => {
             member.rate().settle_estimate(me, None);
-            Err(Refusal::new(
-                StatusCode::TOO_MANY_REQUESTS,
+            Err(Refusal::too_many(
                 "estimate_queue_full",
                 format!("{MAX_QUEUED} lookups are waiting already. Try again in a few minutes."),
             ))

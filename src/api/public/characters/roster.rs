@@ -52,18 +52,14 @@ type Reply = Result<Response, Refusal>;
 /// routes' codes, and the generic `404` for a row gone meanwhile.
 fn refused(written: CharacterWrite) -> Refusal {
     match written {
-        CharacterWrite::Stale(_) => Refusal::new(
-            StatusCode::CONFLICT,
-            "stale",
-            "The character changed since it was loaded.",
-        ),
-        CharacterWrite::IgnTaken => Refusal::new(
-            StatusCode::UNPROCESSABLE_ENTITY,
+        CharacterWrite::Stale(_) => {
+            Refusal::conflict("stale", "The character changed since it was loaded.")
+        }
+        CharacterWrite::IgnTaken => Refusal::unprocessable(
             "ign_taken",
             "That IGN is already on the roster in that world.",
         ),
-        CharacterWrite::MainRequired => Refusal::new(
-            StatusCode::CONFLICT,
+        CharacterWrite::MainRequired => Refusal::conflict(
             "main_required",
             "Your main stays while you have other active characters: make another character your main first.",
         ),
@@ -189,8 +185,7 @@ pub(super) async fn create(
             .as_ref()
             .is_some_and(|module| module.connected());
     if !linkable && (fields.class.is_none() || fields.level.is_none()) {
-        return Err(Refusal::new(
-            StatusCode::UNPROCESSABLE_ENTITY,
+        return Err(Refusal::unprocessable(
             "class_level_required",
             "Give the class and level: NEXON can't be asked for this character.",
         ));

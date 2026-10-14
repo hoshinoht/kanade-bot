@@ -4,7 +4,6 @@
 //! and values the section cannot take `422 invalid`. Values are normalised
 //! to stored form here, so `save_section` never sees an unrepresentable one.
 
-use axum::http::StatusCode;
 use chrono::NaiveTime;
 use std::collections::BTreeSet;
 
@@ -40,16 +39,14 @@ impl PatchError {
     }
 
     pub fn unknown(path: impl AsRef<str>) -> Self {
-        Self(Refusal::new(
-            StatusCode::UNPROCESSABLE_ENTITY,
+        Self(Refusal::unprocessable(
             "unknown_field",
             format!("Unknown setting: {}.", path.as_ref()),
         ))
     }
 
     pub fn read_only(path: impl AsRef<str>, why: &str) -> Self {
-        Self(Refusal::new(
-            StatusCode::UNPROCESSABLE_ENTITY,
+        Self(Refusal::unprocessable(
             "read_only",
             format!("{} cannot be changed here: {why}", path.as_ref()),
         ))

@@ -13,7 +13,7 @@ use std::{collections::BTreeMap, sync::Arc};
 use axum::{
     Json,
     extract::{FromRequestParts, Path as UrlPath, State, rejection::JsonRejection},
-    http::{HeaderMap, StatusCode, request::Parts},
+    http::{HeaderMap, request::Parts},
     response::IntoResponse,
 };
 use serde_json::json;
@@ -63,11 +63,7 @@ impl FromRequestParts<Arc<Site>> for Both {
 }
 
 fn timing_not_found() -> Refusal {
-    Refusal::new(
-        StatusCode::NOT_FOUND,
-        "not_found",
-        "That weekly timing no longer exists.",
-    )
+    Refusal::not_found("not_found", "That weekly timing no longer exists.")
 }
 
 /// What a timing's slots are computed from: every weekly timing (the one
@@ -187,8 +183,7 @@ pub async fn pick(
     let mut timing = Timing::load(state, roster.as_ref(), Some(&fixed_id), None).await?;
     let fixed = timing.fixed.clone().ok_or_else(timing_not_found)?;
     if !fixed.participants.contains(&member_id) {
-        return Err(Refusal::new(
-            StatusCode::UNPROCESSABLE_ENTITY,
+        return Err(Refusal::unprocessable(
             "not_on_timing",
             "That member is not in this timing's party.",
         ));

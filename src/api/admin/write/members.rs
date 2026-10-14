@@ -54,11 +54,7 @@ async fn reply(state: &ApiState, profile: &MemberProfile) -> Reply {
 }
 
 fn not_found() -> Refusal {
-    Refusal::new(
-        StatusCode::NOT_FOUND,
-        "not_found",
-        "That member is not on the roster.",
-    )
+    Refusal::not_found("not_found", "That member is not on the roster.")
 }
 
 /// One edit, keyed by `request` (the normalized full request) when the
@@ -100,8 +96,7 @@ async fn apply(
         Ok(PortalWrite::Missing) => Err(not_found()),
         Ok(PortalWrite::KeyTaken) => Err(mismatch()),
         // The only constraint a portal edit can hit: the alias is held.
-        Err(StoreError::Constraint(_)) => Err(Refusal::new(
-            StatusCode::UNPROCESSABLE_ENTITY,
+        Err(StoreError::Constraint(_)) => Err(Refusal::unprocessable(
             "alias_taken",
             "That alias already names someone.",
         )),

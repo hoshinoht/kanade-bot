@@ -77,8 +77,7 @@ fn desk(state: &ApiState) -> Result<&ConfigDesk, Refusal> {
 }
 
 fn role_profiles_conflict() -> Refusal {
-    Refusal::new(
-        StatusCode::CONFLICT,
+    Refusal::conflict(
         "conflict",
         "Reply profile assignments changed. Reload Config before saving again.",
     )
@@ -368,11 +367,7 @@ async fn update(
             }
             let ungrouped = models::ungrouped(&current.models, &next, &desk.facts.model_groups);
             if !ungrouped.is_empty() {
-                return Err(Refusal::new(
-                    StatusCode::UNPROCESSABLE_ENTITY,
-                    "ungrouped",
-                    ungrouped.join(" "),
-                ));
+                return Err(Refusal::unprocessable("ungrouped", ungrouped.join(" ")));
             }
             let declared = !desk.facts.model_groups.is_empty();
             let before = models::capacity(
@@ -391,11 +386,7 @@ async fn update(
             );
             let errors = models::new_errors(&before, &after);
             if !errors.is_empty() {
-                return Err(Refusal::new(
-                    StatusCode::UNPROCESSABLE_ENTITY,
-                    "capacity",
-                    errors.join(" "),
-                ));
+                return Err(Refusal::unprocessable("capacity", errors.join(" ")));
             }
             catalog = Some(read);
             Section::Models(next)

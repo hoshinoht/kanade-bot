@@ -33,16 +33,32 @@ impl Refusal {
         }
     }
 
+    pub fn not_found(error: &'static str, message: impl Into<String>) -> Self {
+        Self::new(StatusCode::NOT_FOUND, error, message)
+    }
+
+    pub fn conflict(error: &'static str, message: impl Into<String>) -> Self {
+        Self::new(StatusCode::CONFLICT, error, message)
+    }
+
+    pub fn unprocessable(error: &'static str, message: impl Into<String>) -> Self {
+        Self::new(StatusCode::UNPROCESSABLE_ENTITY, error, message)
+    }
+
+    pub fn forbidden(error: &'static str, message: impl Into<String>) -> Self {
+        Self::new(StatusCode::FORBIDDEN, error, message)
+    }
+
+    pub fn too_many(error: &'static str, message: impl Into<String>) -> Self {
+        Self::new(StatusCode::TOO_MANY_REQUESTS, error, message)
+    }
+
     pub fn invalid(message: impl Into<String>) -> Self {
-        Self::new(StatusCode::UNPROCESSABLE_ENTITY, "invalid", message)
+        Self::unprocessable("invalid", message)
     }
 
     pub fn stale() -> Self {
-        Self::new(
-            StatusCode::CONFLICT,
-            "stale",
-            "The week changed since it was loaded.",
-        )
+        Self::conflict("stale", "The week changed since it was loaded.")
     }
 
     /// `503 unavailable` for a backend error, whose text never leaves.
@@ -79,21 +95,17 @@ impl IntoResponse for Refusal {
 /// The status/code table for scheduler errors (`AlreadyApplied` is handled
 /// by the caller: it answers the current state as the first result).
 pub fn scheduler(error: SchedulerError) -> Refusal {
-    use StatusCode as S;
     match error {
-        SchedulerError::AlreadyApplied { .. } => Refusal::new(
-            S::CONFLICT,
-            "already_applied",
-            "That request was already applied.",
-        ),
-        SchedulerError::IdempotencyMismatch { .. } => Refusal::new(
-            S::UNPROCESSABLE_ENTITY,
+        SchedulerError::AlreadyApplied { .. } => {
+            Refusal::conflict("already_applied", "That request was already applied.")
+        }
+        SchedulerError::IdempotencyMismatch { .. } => Refusal::unprocessable(
             "idempotency_mismatch",
             "That Idempotency-Key was already used for a different request.",
         ),
         SchedulerError::StaleEdit { .. } => Refusal::stale(),
         SchedulerError::Precondition(error) => precondition(&error),
-        SchedulerError::Forbidden(reason) => Refusal::new(S::FORBIDDEN, "forbidden", reason),
+        SchedulerError::Forbidden(reason) => Refusal::forbidden("forbidden", reason),
         SchedulerError::History(refusal) => Refusal::invalid(refusal.to_string()),
         SchedulerError::Schedule(error) => schedule(error),
         SchedulerError::Store(error) => store(&error),
@@ -108,17 +120,13 @@ fn precondition(error: &PreconditionError) -> Refusal {
         PreconditionError::OverrideUnchanged { .. } => "override_unchanged",
         PreconditionError::UnknownOverride { .. } => "unknown_override",
         PreconditionError::UnknownTarget { .. } => {
-            return Refusal::new(StatusCode::NOT_FOUND, "unknown_target", error.to_string());
+            return Refusal::not_found("unknown_target", error.to_string());
         }
         PreconditionError::OverrideNotAdmin => {
-            return Refusal::new(
-                StatusCode::FORBIDDEN,
-                "override_forbidden",
-                error.to_string(),
-            );
+            return Refusal::forbidden("override_forbidden", error.to_string());
         }
     };
-    Refusal::new(StatusCode::UNPROCESSABLE_ENTITY, code, error.to_string())
+    Refusal::unprocessable(code, error.to_string())
 }
 
 fn schedule(error: ScheduleError) -> Refusal {
@@ -126,28 +134,22 @@ fn schedule(error: ScheduleError) -> Refusal {
     let message = error.to_string();
     match error {
         ScheduleError::UnknownRun(_) => {
-            Refusal::new(S::NOT_FOUND, "not_found", "That run no longer exists.")
+            Refusal::not_found("not_found", "That run no longer exists.")
         }
-        ScheduleError::UnknownFixedRun(_) => Refusal::new(
-            S::NOT_FOUND,
-            "not_found",
-            "That weekly timing no longer exists.",
-        ),
+        ScheduleError::UnknownFixedRun(_) => {
+            Refusal::not_found("not_found", "That weekly timing no longer exists.")
+        }
         ScheduleError::RunMoveConflict | ScheduleError::MoveConflict { .. } => {
-            Refusal::new(S::CONFLICT, "move_conflict", message)
+            Refusal::conflict("move_conflict", message)
         }
-        ScheduleError::MissingChoice(_) => {
-            Refusal::new(S::UNPROCESSABLE_ENTITY, "choices_required", message)
-        }
+        ScheduleError::MissingChoice(_) => Refusal::unprocessable("choices_required", message),
         ScheduleError::UnexpectedChoice(_) => {
-            Refusal::new(S::UNPROCESSABLE_ENTITY, "choices_not_applicable", message)
+            Refusal::unprocessable("choices_not_applicable", message)
         }
-        ScheduleError::NothingToChange => {
-            Refusal::new(S::UNPROCESSABLE_ENTITY, "nothing_to_change", message)
-        }
-        ScheduleError::NotOnRun(_) => Refusal::new(S::UNPROCESSABLE_ENTITY, "not_on_run", message),
+        ScheduleError::NothingToChange => Refusal::unprocessable("nothing_to_change", message),
+        ScheduleError::NotOnRun(_) => Refusal::unprocessable("not_on_run", message),
         // A live run past its end is frozen until it is settled.
-        ScheduleError::RunEnded { .. } => Refusal::new(S::CONFLICT, "run_ended", message),
+        ScheduleError::RunEnded { .. } => Refusal::conflict("run_ended", message),
         // Only the public origin's own-run writes are refused this way.
         ScheduleError::MemberRun(refusal) => {
             let (status, code) = match refusal {
@@ -169,8 +171,7 @@ fn schedule(error: ScheduleError) -> Refusal {
 fn store(error: &StoreError) -> Refusal {
     match error {
         // Revision races outlasted the retries: the same edit may simply be retried.
-        StoreError::Conflict { .. } => Refusal::new(
-            StatusCode::CONFLICT,
+        StoreError::Conflict { .. } => Refusal::conflict(
             "busy",
             "Another change landed at the same moment; try again.",
         ),

@@ -4,7 +4,7 @@
 //! whole milliseconds, or a Chat-only filter on Extractions. Empty values
 //! mean "not set" (the mock's rule).
 
-use axum::http::{StatusCode, Uri};
+use axum::http::Uri;
 use chrono::{DateTime, Days, NaiveDate, NaiveTime, TimeZone, Utc};
 use chrono_tz::Tz;
 
@@ -24,7 +24,7 @@ const REWRITE_KEYS: [&str; 7] = ["model", "from", "to", "kind", "stage", "verdic
 const SIGN_IN_KEYS: [&str; 6] = ["realm", "event", "actor", "from", "to", "before"];
 
 pub fn invalid(message: impl Into<String>) -> Refusal {
-    Refusal::new(StatusCode::UNPROCESSABLE_ENTITY, "invalid_filter", message)
+    Refusal::unprocessable("invalid_filter", message)
 }
 
 /// `[from, to)` instants, each optional.

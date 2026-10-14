@@ -45,11 +45,7 @@ impl Previous {
 
 /// The one answer for a run that is not there (or not the caller's to see).
 pub fn run_not_found() -> Refusal {
-    Refusal::new(
-        axum::http::StatusCode::NOT_FOUND,
-        "not_found",
-        "That run no longer exists.",
-    )
+    Refusal::not_found("not_found", "That run no longer exists.")
 }
 
 /// The run's snapshot (its reminders and answers); a missing run is a plain

@@ -13,7 +13,7 @@ use std::{collections::BTreeMap, sync::Arc};
 use axum::{
     Json,
     extract::{Path as UrlPath, State, rejection::JsonRejection},
-    http::{HeaderMap, StatusCode},
+    http::HeaderMap,
     response::IntoResponse,
 };
 use serde_json::json;
@@ -188,11 +188,10 @@ pub async fn pick(
     let now = state.now();
     let run = run_of(state, &run_id).await?;
     if run_ends(state).await.frozen(&run, now) {
-        return Err(Refusal::new(StatusCode::CONFLICT, "run_ended", RUN_ENDED));
+        return Err(Refusal::conflict("run_ended", RUN_ENDED));
     }
     if !run.participants.contains(&member_id) {
-        return Err(Refusal::new(
-            StatusCode::UNPROCESSABLE_ENTITY,
+        return Err(Refusal::unprocessable(
             "not_on_run",
             "That member is not in this run's party.",
         ));

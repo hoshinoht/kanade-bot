@@ -40,11 +40,7 @@ pub(super) fn snowflake(text: &str) -> bool {
 }
 
 pub(super) fn invalid_body() -> Refusal {
-    Refusal::new(
-        StatusCode::UNPROCESSABLE_ENTITY,
-        "invalid_body",
-        "The request body is not valid.",
-    )
+    Refusal::unprocessable("invalid_body", "The request body is not valid.")
 }
 
 pub(super) fn path_id(path: Result<UrlPath<String>, PathRejection>) -> Result<String, Refusal> {

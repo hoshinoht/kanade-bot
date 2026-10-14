@@ -44,32 +44,22 @@ use crate::{
 };
 
 fn not_found() -> Refusal {
-    Refusal::new(
-        StatusCode::NOT_FOUND,
-        "not_found",
-        "That character is not on the roster.",
-    )
+    Refusal::not_found("not_found", "That character is not on the roster.")
 }
 
 fn stale() -> Refusal {
-    Refusal::new(
-        StatusCode::CONFLICT,
-        "stale",
-        "The character changed since it was loaded.",
-    )
+    Refusal::conflict("stale", "The character changed since it was loaded.")
 }
 
 /// The answer to a write that did not go through.
 fn refused(written: CharacterWrite) -> Refusal {
     match written {
         CharacterWrite::Stale(_) => stale(),
-        CharacterWrite::IgnTaken => Refusal::new(
-            StatusCode::UNPROCESSABLE_ENTITY,
+        CharacterWrite::IgnTaken => Refusal::unprocessable(
             "ign_taken",
             "That IGN is already on the roster in that world.",
         ),
-        CharacterWrite::MainRequired => Refusal::new(
-            StatusCode::CONFLICT,
+        CharacterWrite::MainRequired => Refusal::conflict(
             "main_required",
             "A member with other active characters keeps a main: make another character the main first.",
         ),
@@ -416,8 +406,7 @@ impl CharacterPatch {
     /// field in this order; the first bad one refuses.
     pub(crate) fn parse(self) -> Result<(u32, CharacterEdit), Refusal> {
         let version = self.version.ok_or_else(|| {
-            Refusal::new(
-                StatusCode::UNPROCESSABLE_ENTITY,
+            Refusal::unprocessable(
                 "version_required",
                 "Send the version the character was loaded at.",
             )
