@@ -7,6 +7,14 @@ on:
     branches: [master]
   push:
     branches: [master]
+  # The browser e2e (~30 min) runs only from here, with `e2e` ticked; run the
+  # full local check (`bun run e2e`) before merging UI work instead.
+  workflow_dispatch:
+    inputs:
+      e2e:
+        description: Run the Playwright end-to-end suites (about 30 minutes)
+        type: boolean
+        default: false
 
 # A new push to a branch makes the run in flight pointless.
 concurrency:
@@ -130,7 +138,7 @@ jobs:
   # The Svelte PWAs (web/) and their dev-only mock server (devtools/pwa-mock).
   web:
     needs: changes
-    if: needs.changes.outputs.web == 'true'
+    if: needs.changes.outputs.web == 'true' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -177,6 +185,7 @@ jobs:
         run: cargo test --locked
       # Built ahead so Playwright's webServer start stays well inside its timeout.
       - name: Mock server build
+        if: ${{ inputs.e2e }}
         working-directory: devtools/pwa-mock
         run: cargo build --locked --release
 
@@ -184,6 +193,7 @@ jobs:
       # no browser download, no secrets. Boss art is the committed synthetic fixture set.
       - name: End-to-end
         id: e2e
+        if: ${{ inputs.e2e }}
         working-directory: web
         run: bun run e2e --project=main
       # Frame-timing checks run alone, on one worker and one mock, after the rest
