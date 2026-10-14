@@ -102,34 +102,6 @@ dialog.modal::backdrop {
   padding: 0.8rem 1rem 1rem;
 }
 
-.sheet__grid {
-  display: grid;
-  grid-template-columns: auto 1fr;
-  gap: 0.35rem 0.8rem;
-  align-items: baseline;
-  margin: 0;
-}
-
-.sheet__grid dt {
-  font-size: var(--fs-small);
-  font-weight: 600;
-  color: var(--dim);
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  white-space: nowrap;
-}
-
-.sheet__grid dd {
-  margin: 0;
-  min-width: 0;
-}
-
-.sheet__section {
-  margin-top: 0.9rem;
-  padding-top: 0.7rem;
-  border-top: 1px solid var(--line-soft);
-}
-
 @media (max-width: 640px) {
   dialog.modal,
   dialog.modal--narrow {

@@ -151,18 +151,6 @@
   }
 }
 
-.brand {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  margin: 0;
-  font-family: var(--display);
-  font-weight: 700;
-  font-size: var(--fs-brand);
-  color: var(--ink);
-  text-decoration: none;
-}
-
 // The bot's avatar (same-origin /identity/avatar, a generated stand-in when
 // nothing is cached), or its initial when no identity has loaded.
 .brand__avatar {
@@ -178,10 +166,6 @@
   font-family: var(--display);
   font-weight: 800;
   font-size: var(--fs-small);
-}
-
-a.brand {
-  text-decoration: none;
 }
 
 img.brand__avatar {

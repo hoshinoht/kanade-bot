@@ -203,12 +203,6 @@
   color: var(--ink);
 }
 
-.chip__id {
-  font-family: var(--mono);
-  font-size: var(--fs-micro);
-  font-weight: 400;
-}
-
 // v4 _buttons.scss: a checkbox inside a chip is how a party is picked.
 .chip:has(input) {
   cursor: pointer;

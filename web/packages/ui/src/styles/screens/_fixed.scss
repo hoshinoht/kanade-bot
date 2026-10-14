@@ -161,7 +161,6 @@
 .fixedsheet__more .boss-check { flex: 1 0 100%; }
 .choice { margin: 0.6rem 0; padding: 0.5rem 0.7rem; border: 2px solid var(--line-soft); border-radius: var(--r-sm); }
 .choice__opt { display: flex; align-items: center; gap: 0.4rem; min-height: 2rem; }
-.field--grow { flex: 1 1 10rem; }
 
 @media #{$single-pane} {
   dialog.modal--narrow.fixedsheet { width: 100vw; max-width: none; height: 100dvh; max-height: none; margin: 0; border-radius: 0; }

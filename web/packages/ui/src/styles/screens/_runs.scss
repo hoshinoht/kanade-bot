@@ -2,68 +2,7 @@
 // status bar, answers editor, segmented buttons). v5 edits: text colours use
 // the --*-text contrast tokens; nothing is animated with inline delays.
 
-/* ── day sections and run rows ──────────────────────────────────────────── */
-
-.day {
-  margin-top: 1.6rem;
-  scroll-margin-top: 7rem;
-}
-
-/* Its own small plaque: the day name and its count sit on the ground, and
-   `--faint` on a saturated ground is not a colour anybody can read. */
-.day__head {
-  display: flex;
-  align-items: baseline;
-  gap: 0.75rem;
-  margin-bottom: 0.55rem;
-  padding: 0.3rem 0.8rem;
-  background: var(--surface);
-  border: 2px solid var(--line);
-  border-radius: var(--r-sm);
-}
-
-.day__name {
-  font-size: var(--fs-small);
-  font-weight: 600;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-}
-
-.day__count {
-  font-family: var(--mono);
-  font-size: var(--fs-mini);
-  color: var(--faint);
-}
-
-.day__head::after {
-  content: "";
-  flex: 1;
-  height: 2px;
-  background: var(--line-soft);
-}
-
-.runs {
-  display: grid;
-  gap: 0.5rem;
-}
-
-.run {
-  display: grid;
-  grid-template-columns: 5.5rem minmax(0, 1fr);
-  gap: 0.4rem 1rem;
-  align-items: start;
-  background: var(--surface);
-  border: 2px solid var(--line);
-  border-left: 5px solid var(--off);
-  border-radius: var(--r);
-  padding: 0.8rem 0.9rem;
-  box-shadow: var(--shadow);
-  /* Both for the entry-art veil below: something for it to be absolute
-     against, and a stacking context of the card's own, without which its
-     negative layer would sink behind this background and vanish. */
-  position: relative;
-  isolation: isolate;
-}
+/* ── a run's status, as the edge of its pane ───────────────────────────── */
 
 .run--planned {
   border-left-color: var(--warn);
@@ -126,51 +65,6 @@
   pointer-events: none;
 }
 
-.run__time {
-  font-family: var(--mono);
-  font-size: var(--fs-clock);
-  font-weight: 500;
-  font-variant-numeric: tabular-nums;
-  letter-spacing: -0.02em;
-  line-height: 1.1;
-}
-
-/* "own time" is words, not a clock reading, so it drops out of the big
-   tabular-figure treatment rather than wrapping inside it. */
-.run--otot .run__time {
-  font-size: var(--fs-lg);
-  font-weight: 600;
-  letter-spacing: 0;
-  padding-top: 0.35rem;
-}
-
-.run__time small {
-  display: block;
-  font-family: var(--body);
-  font-size: var(--fs-micro);
-  font-weight: 600;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--faint);
-  margin-top: 0.15rem;
-}
-
-.run > * {
-  min-width: 0;
-}
-
-.run__bosses {
-  font-family: var(--display);
-  font-size: var(--fs-lg);
-  font-weight: 700;
-  margin: 0 0 0.3rem;
-}
-
-.run__answerbar {
-  max-inline-size: 22rem;
-  margin-top: 0.5rem;
-}
-
 .run__meta {
   display: flex;
   flex-wrap: wrap;
@@ -180,29 +74,6 @@
   color: var(--dim);
   min-width: 0;
   overflow-wrap: anywhere;
-}
-
-// The actions get their own row under the details: as a third column they
-// widened with every button (Move, Swap, Preview ping, Reset to fixed) and
-// squeezed the details into a sliver.
-.run__actions {
-  grid-column: 2 / -1;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.3rem;
-  justify-content: flex-start;
-  min-width: 0;
-}
-
-.run__actions form {
-  display: flex;
-  gap: 0.3rem;
-  min-width: 0;
-}
-
-.run__actions input {
-  min-width: 0;
-  max-width: 7.5rem;
 }
 
 /* The status of a run is one choice out of five, so it reads as one control
@@ -302,39 +173,7 @@
   color: var(--warn-text);
 }
 
-/* ── answers, folded away ──────────────────────────────────────────────────
- *
- * Correcting somebody's ✅ is a rare, deliberate act, so it hides behind a
- * disclosure rather than putting three buttons per person on every row. Open,
- * it borrows the status bar's segmented control: one vocabulary for "pick one
- * of these states", used twice.
- */
-.answers {
-  grid-column: 1 / -1;
-  margin-top: 0.4rem;
-}
-
-.answers__summary {
-  font-size: var(--fs-mini);
-  padding: 0.18rem 0.5rem;
-  min-height: 0;
-}
-
-/* What says it opens. `summary.btn` has already taken the user agent's own
-   marker away, so the chevron is one of the drawings from
-   `partials/icons.html`, and it turns a quarter clockwise when the panel is
-   open; the reduced-motion block at the foot of this file takes that turn's
-   duration to nothing along with every other transition. A summary that read as
-   one stray word is now a control with a disclosure on it. */
-.answers__summary .icon {
-  color: var(--faint);
-  transition: transform 0.14s ease;
-}
-
-.answers[open] > .answers__summary .icon {
-  color: var(--accent);
-  transform: rotate(90deg);
-}
+/* ── answers: one segmented control per person, the status bar's vocabulary ── */
 
 .answers__body {
   display: grid;
@@ -405,31 +244,6 @@
 
 /* v4 _phone.scss: one column on a phone. */
 @media (max-width: 640px) {
-  .run {
-    grid-template-columns: 1fr;
-    padding: 0.75rem;
-  }
-
-  .run__time {
-    font-size: var(--fs-clock-narrow);
-    display: flex;
-    align-items: baseline;
-    gap: 0.5rem;
-  }
-
-  .run--otot .run__time {
-    font-size: var(--fs-lg);
-  }
-
-  .run__time small {
-    margin-top: 0;
-  }
-
-  .run__actions {
-    grid-column: 1 / -1;
-    justify-content: flex-start;
-  }
-
   .seg--status {
     width: 100%;
     min-width: 0;

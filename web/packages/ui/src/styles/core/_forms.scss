@@ -190,13 +190,7 @@ input[aria-invalid="true"] {
   background: var(--raise);
 }
 
-.seg__btn--on,
-.seg__btn[aria-pressed="true"] {
-  background: var(--accent-fill);
-  color: var(--accent-ink);
-}
-
-.seg__btn--on:hover,
+.seg__btn[aria-pressed="true"],
 .seg__btn[aria-pressed="true"]:hover {
   background: var(--accent-fill);
   color: var(--accent-ink);
