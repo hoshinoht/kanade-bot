@@ -35,13 +35,13 @@ use kanade::domain::schedule::{
 use kanade::domain::scheduler::StoreError;
 use kanade::domain::settings::MessageStyle;
 use kanade::infrastructure::files::BossArt;
-use kanade::infrastructure::store::MemoryScheduleStore;
+use kanade::infrastructure::store::SqliteStore;
 use tokio::sync::Notify;
 use twilight_model::channel::message::Embed;
 use twilight_model::id::Id;
 
 use crate::scenarios::{self, HOME, World, now, previous_week, week};
-use crate::support::{self, Store, TempDir, mark_digest_week, on_both_stores};
+use crate::support::{self, Store, TempDir, mark_digest_week};
 
 pub(crate) const STAR_COLOUR: u32 = 0xF8DD4A;
 
@@ -355,7 +355,7 @@ async fn day_of_card_labels_waiting_members<S: Store>(store: &S) {
 
 #[tokio::test]
 async fn day_of_card_labels_waiting_even_in_v4_compat() {
-    on_both_stores!(day_of_card_labels_waiting_members);
+    day_of_card_labels_waiting_members(&SqliteStore::open_temp().await).await;
 }
 
 async fn day_of_waiting_matches_answers<S: Store>(store: &S, second_yes: bool, quiet: bool) {
@@ -406,8 +406,8 @@ async fn day_of_waiting_matches_answers<S: Store>(store: &S, second_yes: bool, q
 
 #[tokio::test]
 async fn day_of_tally_names_only_the_waiting_member() {
-    on_both_stores!(day_of_waiting_matches_answers, true, false);
-    on_both_stores!(day_of_waiting_matches_answers, false, true);
+    day_of_waiting_matches_answers(&SqliteStore::open_temp().await, true, false).await;
+    day_of_waiting_matches_answers(&SqliteStore::open_temp().await, false, true).await;
 }
 
 /// A countdown for a fresh Kalos run 14 minutes out with `answers`.
@@ -504,7 +504,7 @@ async fn countdown_states_match_v4<S: Store>(store: &S) {
 
 #[tokio::test]
 async fn countdown_cards_pin_pending_out_and_all_set() {
-    on_both_stores!(countdown_states_match_v4);
+    countdown_states_match_v4(&SqliteStore::open_temp().await).await;
 }
 
 async fn digest_matches_v4<S: Store>(store: &S) {
@@ -570,12 +570,12 @@ async fn digest_matches_v4<S: Store>(store: &S) {
 
 #[tokio::test]
 async fn digest_card_pins_v4_summary_and_days() {
-    on_both_stores!(digest_matches_v4);
+    digest_matches_v4(&SqliteStore::open_temp().await).await;
 }
 
 #[tokio::test]
 async fn a_legacy_digest_replacement_keeps_the_fixed_phrase_on_delete_failure() {
-    let store = Arc::new(MemoryScheduleStore::new());
+    let store = Arc::new(SqliteStore::open_temp().await);
     let world = world();
     let fake = Arc::new(support::fake());
     fake.seed_message(Id::new(HOME.parse().unwrap()), Id::new(7001));
@@ -654,7 +654,7 @@ async fn missing_art_posts_without_pictures<S: Store>(store: &S) {
 
 #[tokio::test]
 async fn missing_or_unreadable_art_never_fails_the_send() {
-    on_both_stores!(missing_art_posts_without_pictures);
+    missing_art_posts_without_pictures(&SqliteStore::open_temp().await).await;
 }
 
 async fn quiet_cards_tag_nobody<S: Store>(store: &S) {
@@ -678,11 +678,10 @@ async fn quiet_cards_tag_nobody<S: Store>(store: &S) {
 
 #[tokio::test]
 async fn quiet_mode_cards_carry_no_mention_tags() {
-    on_both_stores!(quiet_cards_tag_nobody);
+    quiet_cards_tag_nobody(&SqliteStore::open_temp().await).await;
 }
 
-// Persona header rewrites, pre-generated before the send (memory store:
-// paused time needs no real I/O).
+// Persona header rewrites, pre-generated before the send.
 
 #[derive(Clone)]
 pub(crate) enum Script {
@@ -797,7 +796,7 @@ where
 /// The morning card after one pre-generation pass, the pass's report and
 /// how long it took.
 async fn morning(kit: CardKit) -> (Option<String>, PregenReport, Duration) {
-    let store = Arc::new(MemoryScheduleStore::new());
+    let store = Arc::new(SqliteStore::open_temp().await);
     let world = world();
     seed_day_of(&*store).await;
     let started = tokio::time::Instant::now();
@@ -919,7 +918,7 @@ async fn heading_rewrites_follow_the_live_profanity_list() {
 
 /// The Kalos countdown 14 minutes out, posted after one pre-generation pass.
 async fn pregenerated_countdown(kit: CardKit) -> OutgoingMessage {
-    let store = Arc::new(MemoryScheduleStore::new());
+    let store = Arc::new(SqliteStore::open_temp().await);
     let world = world();
     kalos_countdown(&*store, &["1001", "1002"]).await;
     pregen(&store, &world, &kit, before_due()).pass().await;
@@ -1037,7 +1036,7 @@ async fn header_rewrites_send_the_bundle_header_prompt_not_its_nudge_prompt() {
 
 #[tokio::test]
 async fn digest_header_rewrite_has_only_persona_and_seed_and_refresh_keeps_facts_owned() {
-    let store = Arc::new(MemoryScheduleStore::new());
+    let store = Arc::new(SqliteStore::open_temp().await);
     let world = world();
     let fake = Arc::new(support::fake());
     let run_id = kalos(&*store, &["1001"], tonight()).await;
@@ -1103,7 +1102,7 @@ async fn digest_header_rewrite_has_only_persona_and_seed_and_refresh_keeps_facts
 #[tokio::test]
 async fn countdown_phrase_record_failures_stop_before_claim_then_retry() {
     for fail_write in [false, true] {
-        let store = MemoryScheduleStore::new();
+        let store = SqliteStore::open_temp().await;
         let world = world();
         kalos_countdown(&store, &["1001"]).await;
         if fail_write {
@@ -1139,7 +1138,7 @@ async fn countdown_phrase_record_failures_stop_before_claim_then_retry() {
     }
 
     for fail_write in [false, true] {
-        let store = MemoryScheduleStore::new();
+        let store = SqliteStore::open_temp().await;
         let world = world();
         kalos(&store, &["1001"], tonight()).await;
         mark_digest_week(&store, previous_week(), now()).await;
@@ -1177,7 +1176,7 @@ async fn countdown_phrase_record_failures_stop_before_claim_then_retry() {
 
 #[tokio::test]
 async fn day_of_record_store_errors_still_send_with_the_seed_heading() {
-    let store = MemoryScheduleStore::new();
+    let store = SqliteStore::open_temp().await;
     let read_world = world();
     seed_day_of(&store).await;
     let fresh_rewriter = Scripted::new(Script::Reply("Fresh dawn — {day}!"));
@@ -1194,7 +1193,7 @@ async fn day_of_record_store_errors_still_send_with_the_seed_heading() {
     assert_eq!(posts[0].content.as_deref(), Some(DAY_OF_CONTENT));
     assert_eq!(fresh_rewriter.calls(), 0, "a send never calls the model");
 
-    let existing = MemoryScheduleStore::new();
+    let existing = SqliteStore::open_temp().await;
     let existing_world = world();
     seed_day_of(&existing).await;
     existing_world
@@ -1218,7 +1217,7 @@ async fn day_of_record_store_errors_still_send_with_the_seed_heading() {
         "existing day-of record errors still attempt delivery"
     );
 
-    let failed_write = MemoryScheduleStore::new();
+    let failed_write = SqliteStore::open_temp().await;
     let failed_write_world = world();
     seed_day_of(&failed_write).await;
     failed_write.fail_next_card_record_write();
@@ -1290,7 +1289,7 @@ where
 }
 
 /// A Kalos countdown 14 minutes out and its record key.
-async fn countdown_key(store: &MemoryScheduleStore) -> (String, String) {
+async fn countdown_key(store: &SqliteStore) -> (String, String) {
     let run_id = kalos_countdown(store, &["1001"]).await;
     let reminder = support::snapshot(store)
         .await
@@ -1304,7 +1303,7 @@ async fn countdown_key(store: &MemoryScheduleStore) -> (String, String) {
 
 #[tokio::test]
 async fn a_send_during_a_pregeneration_uses_the_seed_which_then_wins() {
-    let store = Arc::new(MemoryScheduleStore::new());
+    let store = Arc::new(SqliteStore::open_temp().await);
     let world = world();
     let fake = Arc::new(support::fake());
     let (run_id, key) = countdown_key(&store).await;
@@ -1357,7 +1356,7 @@ async fn a_send_during_a_pregeneration_uses_the_seed_which_then_wins() {
 
 #[tokio::test]
 async fn a_card_posted_without_its_record_during_a_pregeneration_keeps_the_seed() {
-    let store = Arc::new(MemoryScheduleStore::new());
+    let store = Arc::new(SqliteStore::open_temp().await);
     let world = world();
     let fake = Arc::new(support::fake());
     let (star, _) = seed_day_of(&*store).await;
@@ -1406,7 +1405,7 @@ async fn a_card_posted_without_its_record_during_a_pregeneration_keeps_the_seed(
 
 #[tokio::test]
 async fn a_digest_posted_during_a_pregeneration_keeps_the_seed() {
-    let store = Arc::new(MemoryScheduleStore::new());
+    let store = Arc::new(SqliteStore::open_temp().await);
     let world = world();
     kalos(&*store, &["1001"], tonight()).await;
     mark_digest_week(&*store, previous_week(), now()).await;
@@ -1434,7 +1433,7 @@ async fn a_digest_posted_during_a_pregeneration_keeps_the_seed() {
 
 #[tokio::test]
 async fn a_cancelled_pregeneration_stores_nothing_and_a_later_pass_retries() {
-    let store = Arc::new(MemoryScheduleStore::new());
+    let store = Arc::new(SqliteStore::open_temp().await);
     let world = world();
     let (_, key) = countdown_key(&store).await;
     let rewriter = GateRewriter::new();
@@ -1542,7 +1541,7 @@ async fn countdown_phrase_survives_not_sent_restart_and_refresh_without_rewrite(
 #[tokio::test]
 async fn retries_and_reaction_edits_reuse_the_stored_heading() {
     let art = art_dir();
-    let store = Arc::new(MemoryScheduleStore::new());
+    let store = Arc::new(SqliteStore::open_temp().await);
     let world = world();
     let fake = Arc::new(support::fake());
     let (star, _) = seed_day_of(&*store).await;
@@ -1645,7 +1644,7 @@ impl ArtSource for Counting {
 
 #[tokio::test]
 async fn art_is_resolved_once_per_picture_and_never_for_suppressed_sends() {
-    let store = MemoryScheduleStore::new();
+    let store = SqliteStore::open_temp().await;
     let world = world();
     let art = Arc::new(Counting::default());
     let cards = CardKit {
@@ -1728,7 +1727,7 @@ pub(crate) fn refresher<S>(
 /// edits the reminder card and the week's digest, then stops on request.
 #[tokio::test]
 async fn store_writes_drive_the_refresh_task_for_cards_and_the_digest() {
-    let store = Arc::new(MemoryScheduleStore::new());
+    let store = Arc::new(SqliteStore::open_temp().await);
     let world = world();
     let fake = Arc::new(support::fake());
     let (star, _) = seed_day_of(&*store).await;
@@ -1970,13 +1969,7 @@ async fn observer_contract<S: Store + DraftStore + ChangeHistory>(store: &S, see
 
 #[tokio::test]
 async fn both_stores_report_committed_run_writes_once() {
-    let memory = MemoryScheduleStore::new();
-    let (seen, observer) = recorder();
-    assert!(memory.observe_run_writes(observer));
-    observer_contract(&memory, &seen).await;
-
-    let dir = TempDir::new();
-    let sqlite = dir.open().await;
+    let sqlite = SqliteStore::open_temp().await;
     let (seen, observer) = recorder();
     assert!(sqlite.observe_run_writes(observer));
     assert!(

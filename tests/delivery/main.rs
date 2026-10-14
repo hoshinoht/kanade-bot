@@ -1,5 +1,5 @@
-//! The delivery executor and scheduler tick over the real journal (memory
-//! and SQLite stores) and the fake Discord: the exactly-once / no-replay
+//! The delivery executor and scheduler tick over the real journal (the
+//! SQLite store) and the fake Discord: the exactly-once / no-replay
 //! scenarios.
 
 mod support;

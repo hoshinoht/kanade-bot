@@ -19,7 +19,7 @@ use kanade::domain::model_log::{
     LogPage, RewriteFacets, RewriteFilter, RewriteKind, RewriteLog, RewriteLogStore, RewriteStage,
 };
 use kanade::domain::scheduler::StoreError;
-use kanade::infrastructure::store::MemoryScheduleStore;
+use kanade::infrastructure::store::SqliteStore;
 
 use crate::cards::{before_due, created, pregen, rewriting, seed_day_of, world};
 use crate::debug::{desk, star};
@@ -105,7 +105,7 @@ fn over_call_budget() -> RewriteOutcome {
     }
 }
 
-fn sink(logs: &Arc<MemoryScheduleStore>) -> SharedRewriteSink {
+fn sink(logs: &Arc<SqliteStore>) -> SharedRewriteSink {
     Arc::new(StoreRewriteSink::new(Arc::clone(logs), Arc::new(now)))
 }
 
@@ -120,13 +120,13 @@ fn logging(outcomes: Vec<RewriteOutcome>, log: SharedRewriteSink) -> CardKit {
 async fn debug_rig(
     outcomes: Vec<RewriteOutcome>,
 ) -> (
-    DebugDesk<MemoryScheduleStore, FakeDiscord>,
+    DebugDesk<SqliteStore, FakeDiscord>,
     Arc<FakeDiscord>,
-    Arc<MemoryScheduleStore>,
+    Arc<SqliteStore>,
     String,
 ) {
-    let store = Arc::new(MemoryScheduleStore::new());
-    let logs = Arc::new(MemoryScheduleStore::new());
+    let store = Arc::new(SqliteStore::open_temp().await);
+    let logs = Arc::new(SqliteStore::open_temp().await);
     let fake = Arc::new(crate::support::fake());
     let run_id = star(&*store).await;
     let kit = logging(outcomes, sink(&logs));
@@ -135,7 +135,7 @@ async fn debug_rig(
 }
 
 /// The full stored row, with the prompt as sent.
-async fn sent_prompt(logs: &MemoryScheduleStore, row: &RewriteLog) -> String {
+async fn sent_prompt(logs: &SqliteStore, row: &RewriteLog) -> String {
     logs.load_rewrite(&row.id)
         .await
         .expect("load")
@@ -144,7 +144,7 @@ async fn sent_prompt(logs: &MemoryScheduleStore, row: &RewriteLog) -> String {
         .expect("the sent prompt")
 }
 
-async fn rows(logs: &MemoryScheduleStore) -> Vec<RewriteLog> {
+async fn rows(logs: &SqliteStore) -> Vec<RewriteLog> {
     let mut rows = logs
         .list_rewrites(&RewriteFilter {
             limit: 50,
@@ -183,8 +183,8 @@ impl RewriteLogStore for Broken {
 
 #[tokio::test(start_paused = true)]
 async fn a_pregen_pass_logs_one_row_per_rewrite_under_its_card_key() {
-    let store = Arc::new(MemoryScheduleStore::new());
-    let logs = Arc::new(MemoryScheduleStore::new());
+    let store = Arc::new(SqliteStore::open_temp().await);
+    let logs = Arc::new(SqliteStore::open_temp().await);
     let world = world();
     seed_day_of(&*store).await;
     let kit = logging(vec![reply("Rise and shine, it's {day}!")], sink(&logs));
@@ -228,8 +228,8 @@ async fn a_pregen_pass_logs_one_row_per_rewrite_under_its_card_key() {
 
 #[tokio::test(start_paused = true)]
 async fn a_pregen_over_budget_logs_its_code_and_usage_and_stores_nothing() {
-    let store = Arc::new(MemoryScheduleStore::new());
-    let logs = Arc::new(MemoryScheduleStore::new());
+    let store = Arc::new(SqliteStore::open_temp().await);
+    let logs = Arc::new(SqliteStore::open_temp().await);
     let world = world();
     seed_day_of(&*store).await;
     let kit = logging(vec![over_budget()], sink(&logs));
@@ -260,11 +260,11 @@ async fn a_failing_log_changes_no_outcome() {
         Arc::new(StoreRewriteSink::new(Arc::new(Broken), Arc::new(now)));
     let mut outcomes = Vec::new();
     for log in [None, Some(broken)] {
-        let store = Arc::new(MemoryScheduleStore::new());
+        let store = Arc::new(SqliteStore::open_temp().await);
         seed_day_of(&*store).await;
         let mut kit = logging(
             vec![reply("Rise and shine, it's {day}!")],
-            sink(&Arc::new(MemoryScheduleStore::new())),
+            sink(&Arc::new(SqliteStore::open_temp().await)),
         );
         kit.heading.log = log;
         let started = tokio::time::Instant::now();

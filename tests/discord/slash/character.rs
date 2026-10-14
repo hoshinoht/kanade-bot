@@ -1,5 +1,5 @@
 //! `/character link|unlink|data|share` (module `character_data`) through the
-//! real dispatcher, `FakeDiscord`, the temp SQLite roster, an in-memory
+//! real dispatcher, `FakeDiscord`, the temp SQLite roster, a temp SQLite
 //! character-data file and a fake Open API on loopback with invented
 //! fixtures. Texts are the approved copy boards' (D_LinkPick, D_LinkNotice,
 //! D_LinkReplies, D_Data, D_Share, D_ShareStripped). The service clock is
@@ -30,7 +30,7 @@ use kanade::domain::history::{Actor, Surface};
 use kanade::domain::settings::{SettingsChangeQuery, SettingsStore};
 use kanade::infrastructure::character_data::{CharacterData, RequestOutcome, RosterSide, Timing};
 use kanade::infrastructure::nexon::{ApiKey, NexonClient};
-use kanade::infrastructure::store::MemoryCharData;
+use kanade::infrastructure::store::SqliteCharData;
 
 use super::super::support::{
     BOSSING_ROLE, message_json, parse, parse_message, user_json, v2_buttons, v2_texts as texts,
@@ -86,7 +86,7 @@ async fn fake_nexon() -> (SocketAddr, Arc<FakeNexon>) {
 struct Rig {
     slash: Slash,
     service: Arc<CharacterData>,
-    file: Arc<MemoryCharData>,
+    file: Arc<SqliteCharData>,
     nexon: Arc<FakeNexon>,
     clock: Arc<Mutex<DateTime<Utc>>>,
 }
@@ -123,7 +123,7 @@ async fn seed_character(store: &kanade::infrastructure::store::SqliteStore, row:
 
 async fn rig_with(connected: bool, character_module: bool) -> Rig {
     let (address, nexon) = fake_nexon().await;
-    let file = Arc::new(MemoryCharData::new());
+    let file = Arc::new(SqliteCharData::open_temp().await);
     let clock = Arc::new(Mutex::new(now()));
     let slot: Arc<OnceLock<Arc<CharacterData>>> = Arc::new(OnceLock::new());
     let maker = {

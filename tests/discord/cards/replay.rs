@@ -27,12 +27,12 @@ impl RejectionFollowUp for FollowUps {
 }
 
 type Worker = Reactions<
-    MemoryScheduleStore,
+    SqliteStore,
     FakeDiscord,
     Ids,
     AlertRecorder,
     NoIndex,
-    SchedulerService<Arc<MemoryScheduleStore>, Ids, FixedClock>,
+    SchedulerService<Arc<SqliteStore>, Ids, FixedClock>,
 >;
 
 fn worker(world: &World, follow_up: &Arc<FollowUps>) -> Worker {

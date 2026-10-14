@@ -24,11 +24,11 @@ use kanade::domain::notify::{ActiveClaims, DedupeKey, DeliveryJournal, DeliveryT
 use kanade::domain::schedule::{RunStatus, ScheduleSnapshot};
 use kanade::domain::scheduler::SchedulerService;
 use kanade::domain::settings::MessageStyle;
-use kanade::infrastructure::store::MemoryScheduleStore;
+use kanade::infrastructure::store::SqliteStore;
 use twilight_model::id::Id;
 
 use crate::cards::{Script, Scripted, allowed, created, kit, refresher, rewriting, tonight, world};
-use crate::debug::{desk, on_both_arcs, star};
+use crate::debug::{desk, star};
 use crate::scenarios::{self, HOME, POST, now, week};
 use crate::support::{self, Store, seed_digest};
 
@@ -198,12 +198,12 @@ async fn sandbox_posts_are_display_only<S: Store + DebugCardStore + 'static>(sto
 
 #[tokio::test]
 async fn a_test_card_outside_the_home_channel_is_display_only() {
-    on_both_arcs!(sandbox_posts_are_display_only);
+    sandbox_posts_are_display_only(Arc::new(SqliteStore::open_temp().await)).await;
 }
 
 #[tokio::test]
 async fn the_test_channel_is_the_default_target() {
-    let store = Arc::new(MemoryScheduleStore::new());
+    let store = Arc::new(SqliteStore::open_temp().await);
     let world = world();
     let fake = Arc::new(support::fake());
     let run_id = star(&*store).await;
@@ -253,7 +253,7 @@ async fn the_test_channel_is_the_default_target() {
 
 #[tokio::test(start_paused = true)]
 async fn style_and_header_overrides_touch_no_setting_or_record() {
-    let store = Arc::new(MemoryScheduleStore::new());
+    let store = Arc::new(SqliteStore::open_temp().await);
     let world = world();
     let fake = Arc::new(support::fake());
     let run_id = star(&*store).await;
@@ -385,11 +385,11 @@ async fn style_and_header_overrides_touch_no_setting_or_record() {
 }
 
 fn desk_with(
-    store: &Arc<MemoryScheduleStore>,
+    store: &Arc<SqliteStore>,
     fake: &Arc<FakeDiscord>,
     world: &scenarios::World,
     cards: CardKit,
-) -> DebugDesk<MemoryScheduleStore, FakeDiscord> {
+) -> DebugDesk<SqliteStore, FakeDiscord> {
     desk(store, fake, world, cards, &[HOME], None)
 }
 
@@ -446,7 +446,7 @@ async fn the_week_digest_is_a_test_copy<S: Store + DebugCardStore + 'static>(sto
 
 #[tokio::test]
 async fn the_digest_kind_posts_a_test_copy_and_leaves_the_real_digest() {
-    on_both_arcs!(the_week_digest_is_a_test_copy);
+    the_week_digest_is_a_test_copy(Arc::new(SqliteStore::open_temp().await)).await;
 }
 
 async fn samples_store_nothing<S: Store + DebugCardStore + 'static>(store: Arc<S>) {
@@ -551,7 +551,7 @@ async fn samples_store_nothing<S: Store + DebugCardStore + 'static>(store: Arc<S
 
 #[tokio::test]
 async fn sample_runs_render_from_options_and_store_nothing() {
-    on_both_arcs!(samples_store_nothing);
+    samples_store_nothing(Arc::new(SqliteStore::open_temp().await)).await;
 }
 
 /// One scripted rewrite: a reply after a delay, a failure, or no answer.
@@ -596,7 +596,7 @@ pub(crate) fn header(kind: HeaderTrialKind, tries: u8) -> HeaderRequest {
 
 #[tokio::test(start_paused = true)]
 async fn header_trials_post_each_verdict_and_store_nothing() {
-    let store = Arc::new(MemoryScheduleStore::new());
+    let store = Arc::new(SqliteStore::open_temp().await);
     let world = world();
     let fake = Arc::new(support::fake());
     star(&*store).await;

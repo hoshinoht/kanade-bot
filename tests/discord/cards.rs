@@ -1,4 +1,4 @@
-//! Proposal cards end to end on the fake transport and the memory store:
+//! Proposal cards end to end on the fake transport and a temp SQLite store:
 //! journalled posting (claim → send → bind; ambiguous sends held, never
 //! replayed; refused sends reposted with the next card), ✅/❌ through the
 //! scheduler's approval rules, card refreshes and chat answers; the
@@ -45,7 +45,7 @@ use kanade::extract::pipeline::{
     BacklogDrop, Card, CardEntry, ChatAnswer, Outbox, PostResult, Redirected, SelfServiceTip,
 };
 use kanade::extract::redirect::RedirectLink;
-use kanade::infrastructure::store::MemoryScheduleStore;
+use kanade::infrastructure::store::SqliteStore;
 use twilight_model::application::command::Command;
 use twilight_model::id::{Id, marker::GuildMarker};
 
@@ -129,10 +129,10 @@ impl Authority for Staff {
     }
 }
 
-type Desk = CardDesk<MemoryScheduleStore, FakeDiscord, Ids, AlertRecorder>;
+type Desk = CardDesk<SqliteStore, FakeDiscord, Ids, AlertRecorder>;
 
 struct World {
-    store: Arc<MemoryScheduleStore>,
+    store: Arc<SqliteStore>,
     discord: Arc<FakeDiscord>,
     alerts: Arc<AlertRecorder>,
     ids: Ids,
@@ -141,12 +141,12 @@ struct World {
 }
 
 fn desk_with<T: DiscordTransport>(
-    store: &Arc<MemoryScheduleStore>,
+    store: &Arc<SqliteStore>,
     transport: Arc<T>,
     alerts: &Arc<AlertRecorder>,
     ids: &Ids,
     at: DateTime<Utc>,
-) -> CardDesk<MemoryScheduleStore, T, Ids, AlertRecorder> {
+) -> CardDesk<SqliteStore, T, Ids, AlertRecorder> {
     CardDesk::new(
         DeskDeps {
             store: store.clone(),
@@ -168,7 +168,7 @@ fn desk_with<T: DiscordTransport>(
 
 impl World {
     async fn new() -> Self {
-        let store = Arc::new(MemoryScheduleStore::new());
+        let store = Arc::new(SqliteStore::open_temp().await);
         let discord = Arc::new(FakeDiscord::new());
         let alerts = Arc::new(AlertRecorder::new());
         let ids = Ids::default();
@@ -347,9 +347,9 @@ impl World {
 }
 
 fn service<'a>(
-    store: &'a Arc<MemoryScheduleStore>,
+    store: &'a Arc<SqliteStore>,
     ids: &Ids,
-) -> SchedulerService<StoreRef<'a, MemoryScheduleStore>, Ids, FixedClock> {
+) -> SchedulerService<StoreRef<'a, SqliteStore>, Ids, FixedClock> {
     SchedulerService::new(StoreRef(&**store), ids.clone(), FixedClock(now()))
 }
 
@@ -960,7 +960,7 @@ async fn the_portal_refresh_port_re_renders_a_committed_card_on_fake_discord() {
 /// recovery racing the send), so the journal write after the send fails.
 struct LeaseLost {
     fake: Arc<FakeDiscord>,
-    store: Arc<MemoryScheduleStore>,
+    store: Arc<SqliteStore>,
 }
 
 impl DiscordTransport for LeaseLost {

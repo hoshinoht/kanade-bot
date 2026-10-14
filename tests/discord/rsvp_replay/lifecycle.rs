@@ -7,7 +7,7 @@ use super::support::*;
 
 #[tokio::test]
 async fn row_8e_portal_clear_stays_cleared_and_replay_is_idempotent() {
-    let world = World::new();
+    let world = World::new().await;
     let (run, message) = world.carded_run().await;
     world.member_reacts_yes(&run).await;
     world.portal_answer(&run, None).await;
@@ -21,7 +21,7 @@ async fn row_8e_portal_clear_stays_cleared_and_replay_is_idempotent() {
 
 #[tokio::test]
 async fn replayed_yes_has_one_history_write_and_does_not_retract_a_decline() {
-    let world = World::new();
+    let world = World::new().await;
     let (run, message) = world.carded_run().await;
     world
         .service_at(now())
@@ -77,7 +77,7 @@ async fn replayed_yes_has_one_history_write_and_does_not_retract_a_decline() {
 
 #[tokio::test]
 async fn row_13_replay_queues_one_refresh_and_never_creates_decline_notice() {
-    let world = World::new();
+    let world = World::new().await;
     let (run, message) = world.carded_run().await;
     let observed = world.observe_run_writes();
     world.react(message.get(), "❌", &[MEMBER]);

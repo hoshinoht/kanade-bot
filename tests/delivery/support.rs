@@ -84,23 +84,6 @@ impl TempDir {
     pub async fn open(&self) -> SqliteStore {
         SqliteStore::open(&self.config()).await.expect("open store")
     }
-
-    /// Run `sql` on the store's database behind its back.
-    pub async fn raw(&self, sql: &str) {
-        use sqlx::sqlite::SqliteConnectOptions;
-        use sqlx::{ConnectOptions, Connection};
-
-        let mut conn = SqliteConnectOptions::new()
-            .filename(self.config().db_path)
-            .connect()
-            .await
-            .expect("raw connection");
-        sqlx::raw_sql(sql)
-            .execute(&mut conn)
-            .await
-            .expect("raw sql");
-        conn.close().await.expect("close");
-    }
 }
 
 impl Drop for TempDir {
@@ -108,20 +91,6 @@ impl Drop for TempDir {
         let _ = std::fs::remove_dir_all(&self.0);
     }
 }
-
-/// Run `$f(&store, args..)` against a fresh memory store, then a fresh
-/// SQLite store in a temp directory.
-macro_rules! on_both_stores {
-    ($f:path $(, $arg:expr)* $(,)?) => {{
-        let memory = kanade::infrastructure::store::MemoryScheduleStore::new();
-        $f(&memory $(, $arg)*).await;
-        let dir = $crate::support::TempDir::new();
-        let sqlite = dir.open().await;
-        $f(&sqlite $(, $arg)*).await;
-        sqlite.close().await.expect("close store");
-    }};
-}
-pub(crate) use on_both_stores;
 
 /// A send that timed out, after Discord did (`applied`) or did not apply it.
 pub fn timed_out(applied: bool) -> kanade::bot::transport::Step {

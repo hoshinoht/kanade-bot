@@ -1,6 +1,6 @@
 //! Failure paths: the per-tick cap, per-send error isolation, bind and
 //! replacement refusals, cancelled ticks, reaction failures and alert
-//! throttling, each on the memory and SQLite stores.
+//! throttling, on the SQLite store.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -9,13 +9,14 @@ use kanade::bot::delivery::{ALERT_WINDOW, AdminAlert, AlertThrottle, DigestOutco
 use kanade::bot::transport::{Op, Outcome, RejectionKind, Step};
 use kanade::domain::ids::RandomIds;
 use kanade::domain::notify::{AttemptState, DeliveryTarget, EffectKind};
+use kanade::infrastructure::store::SqliteStore;
 
 use crate::intercept::Intercept;
 use crate::scenarios::{
     HOME, delivery, due_countdown, due_countdown_at, now, post_then_die, reminder_row,
     seed_replaceable, tick_times, world,
 };
-use crate::support::{self, Store, on_both_stores, timed_out, with_lease};
+use crate::support::{self, Store, timed_out, with_lease};
 
 async fn cap_counts_claims_only<S: Store>(store: &S) {
     let world = world();
@@ -46,7 +47,7 @@ async fn cap_counts_claims_only<S: Store>(store: &S) {
 
 #[tokio::test]
 async fn held_sends_do_not_use_the_per_tick_cap() {
-    on_both_stores!(cap_counts_claims_only);
+    cap_counts_claims_only(&SqliteStore::open_temp().await).await;
 }
 
 async fn failure_is_isolated<S: Store>(store: &S) {
@@ -115,7 +116,7 @@ async fn failure_is_isolated<S: Store>(store: &S) {
 
 #[tokio::test]
 async fn one_failed_send_is_alerted_and_the_tick_continues() {
-    on_both_stores!(failure_is_isolated);
+    failure_is_isolated(&SqliteStore::open_temp().await).await;
 }
 
 async fn bind_failure<S: Store>(store: &S) {
@@ -149,7 +150,7 @@ async fn bind_failure<S: Store>(store: &S) {
 
 #[tokio::test]
 async fn bind_failure_is_indeterminate_and_never_resent() {
-    on_both_stores!(bind_failure);
+    bind_failure(&SqliteStore::open_temp().await).await;
 }
 
 async fn invalid_channel<S: Store>(store: &S) {
@@ -176,7 +177,7 @@ async fn invalid_channel<S: Store>(store: &S) {
 
 #[tokio::test]
 async fn invalid_channel_id_is_retired_as_rejected() {
-    on_both_stores!(invalid_channel);
+    invalid_channel(&SqliteStore::open_temp().await).await;
 }
 
 async fn replacement_refused<S: Store>(store: &S) {
@@ -211,7 +212,7 @@ async fn replacement_refused<S: Store>(store: &S) {
 
 #[tokio::test]
 async fn refused_replacement_retirement_suppresses_the_post() {
-    on_both_stores!(replacement_refused);
+    replacement_refused(&SqliteStore::open_temp().await).await;
 }
 
 async fn after_cancelled_tick<S: Store>(store: &S) {
@@ -229,7 +230,7 @@ async fn after_cancelled_tick<S: Store>(store: &S) {
 
 #[tokio::test]
 async fn a_tick_after_a_cancelled_one_does_not_resend() {
-    on_both_stores!(after_cancelled_tick);
+    after_cancelled_tick(&SqliteStore::open_temp().await).await;
 }
 
 async fn reaction_failure<S: Store>(store: &S) {
@@ -255,7 +256,7 @@ async fn reaction_failure<S: Store>(store: &S) {
 
 #[tokio::test]
 async fn failed_reactions_still_count_as_bound() {
-    on_both_stores!(reaction_failure);
+    reaction_failure(&SqliteStore::open_temp().await).await;
 }
 
 async fn throttled<S: Store>(store: &S) {
@@ -278,7 +279,7 @@ async fn throttled<S: Store>(store: &S) {
 
 #[tokio::test]
 async fn repeated_alerts_are_throttled_per_window() {
-    on_both_stores!(throttled);
+    throttled(&SqliteStore::open_temp().await).await;
 }
 
 #[test]

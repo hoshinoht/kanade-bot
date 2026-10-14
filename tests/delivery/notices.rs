@@ -1,6 +1,6 @@
 //! The notice outbox drained by the tick, crash window by crash window, on
-//! the memory store (a "restart" is `recover_on_start` on the same store)
-//! and on SQLite (a real close and reopen).
+//! the SQLite store (a "restart" is `recover_on_start` on the same store, or
+//! a real close and reopen).
 
 use kanade::bot::delivery::SendOutcome;
 use kanade::bot::transport::{Op, RejectionKind, Step};
@@ -11,9 +11,10 @@ use kanade::domain::notify::{
 };
 use kanade::domain::schedule::{NewRun, RunSource, RunStatus, StatusChange};
 use kanade::domain::scheduler::SchedulerError;
+use kanade::infrastructure::store::SqliteStore;
 
 use crate::scenarios::{HOME, POST, World, config, delivery, now, week, world};
-use crate::support::{self, INSTANCE, Store, TempDir, on_both_stores};
+use crate::support::{self, INSTANCE, Store, TempDir};
 
 /// A run in `HOME`, then its cancellation with a channel notice (one outbox
 /// row). `request_id` makes the cancellation idempotent.
@@ -128,7 +129,7 @@ async fn committed_then_crashed_posts_once<S: Store>(store: &S) {
 
 #[tokio::test]
 async fn a_notice_committed_before_a_crash_is_posted_exactly_once() {
-    on_both_stores!(committed_then_crashed_posts_once);
+    committed_then_crashed_posts_once(&SqliteStore::open_temp().await).await;
 }
 
 #[tokio::test]
@@ -188,12 +189,12 @@ async fn claimed_bound_then_crashed<S: Store>(store: &S) {
 
 #[tokio::test]
 async fn a_claim_that_crashed_before_draining_is_indeterminate_and_never_resent() {
-    on_both_stores!(claimed_unsent_then_crashed);
+    claimed_unsent_then_crashed(&SqliteStore::open_temp().await).await;
 }
 
 #[tokio::test]
 async fn a_delivered_notice_that_crashed_before_draining_is_not_resent() {
-    on_both_stores!(claimed_bound_then_crashed);
+    claimed_bound_then_crashed(&SqliteStore::open_temp().await).await;
 }
 
 #[tokio::test]
@@ -253,7 +254,7 @@ async fn ambiguous_is_never_resent<S: Store>(store: &S) {
 
 #[tokio::test]
 async fn an_ambiguous_notice_is_never_resent() {
-    on_both_stores!(ambiguous_is_never_resent);
+    ambiguous_is_never_resent(&SqliteStore::open_temp().await).await;
 }
 
 async fn unsent_is_retried_once<S: Store>(store: &S) {
@@ -288,7 +289,7 @@ async fn unsent_is_retried_once<S: Store>(store: &S) {
 
 #[tokio::test]
 async fn a_notice_proven_unsent_is_claimed_again() {
-    on_both_stores!(unsent_is_retried_once);
+    unsent_is_retried_once(&SqliteStore::open_temp().await).await;
 }
 
 async fn rejected_is_not_retried<S: Store>(store: &S) {
@@ -313,7 +314,7 @@ async fn rejected_is_not_retried<S: Store>(store: &S) {
 
 #[tokio::test]
 async fn a_rejected_notice_is_not_retried() {
-    on_both_stores!(rejected_is_not_retried);
+    rejected_is_not_retried(&SqliteStore::open_temp().await).await;
 }
 
 async fn replay_enqueues_nothing<S: Store>(store: &S) {
@@ -328,7 +329,7 @@ async fn replay_enqueues_nothing<S: Store>(store: &S) {
 
 #[tokio::test]
 async fn an_already_applied_retry_adds_no_outbox_rows() {
-    on_both_stores!(replay_enqueues_nothing);
+    replay_enqueues_nothing(&SqliteStore::open_temp().await).await;
 }
 
 async fn unroutable_waits<S: Store>(store: &S) {
@@ -346,5 +347,5 @@ async fn unroutable_waits<S: Store>(store: &S) {
 
 #[tokio::test]
 async fn a_notice_with_nowhere_to_post_stays_pending() {
-    on_both_stores!(unroutable_waits);
+    unroutable_waits(&SqliteStore::open_temp().await).await;
 }

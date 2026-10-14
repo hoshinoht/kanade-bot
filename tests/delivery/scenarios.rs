@@ -1,4 +1,4 @@
-//! Exactly-once / no-replay scenarios, each on the memory and SQLite stores.
+//! Exactly-once / no-replay scenarios on the SQLite store.
 
 use std::collections::BTreeSet;
 use std::time::Duration;
@@ -17,11 +17,11 @@ use kanade::domain::schedule::{
     NewRun, ReminderPolicy, RsvpState, RunSource, RunStatus, SchedulePolicy,
 };
 use kanade::domain::scheduler::SchedulerService;
-use kanade::infrastructure::store::MemoryScheduleStore;
+use kanade::infrastructure::store::SqliteStore;
 use twilight_model::id::Id;
 
 use crate::intercept::Intercept;
-use crate::support::{self, Store, TempDir, mark_digest_week, on_both_stores, seed_digest};
+use crate::support::{self, Store, TempDir, mark_digest_week, seed_digest};
 
 pub(crate) const HOME: &str = "222";
 pub(crate) const POST: &str = "555";
@@ -187,7 +187,7 @@ async fn ambiguous_send_is_sent_once<S: Store>(store: &S) {
 
 #[tokio::test]
 async fn ambiguous_send_is_one_transport_call_across_three_ticks() {
-    on_both_stores!(ambiguous_send_is_sent_once);
+    ambiguous_send_is_sent_once(&SqliteStore::open_temp().await).await;
 }
 
 async fn unsent_is_retried<S: Store>(store: &S, kind: RejectionKind) {
@@ -212,8 +212,8 @@ async fn unsent_is_retried<S: Store>(store: &S, kind: RejectionKind) {
 
 #[tokio::test]
 async fn not_sent_and_rate_limited_are_retried_next_tick_exactly_once() {
-    on_both_stores!(unsent_is_retried, RejectionKind::NotSent);
-    on_both_stores!(unsent_is_retried, RejectionKind::RateLimited);
+    unsent_is_retried(&SqliteStore::open_temp().await, RejectionKind::NotSent).await;
+    unsent_is_retried(&SqliteStore::open_temp().await, RejectionKind::RateLimited).await;
 }
 
 async fn rejected_is_retired<S: Store>(store: &S) {
@@ -241,7 +241,7 @@ async fn rejected_is_retired<S: Store>(store: &S) {
 
 #[tokio::test]
 async fn definite_rejection_is_retired_with_an_alert() {
-    on_both_stores!(rejected_is_retired);
+    rejected_is_retired(&SqliteStore::open_temp().await).await;
 }
 
 /// Returns the reminder id; Discord has the message, the journal an intent.
@@ -288,10 +288,6 @@ async fn after_restart<S: Store>(store: &S, reminder: &str) {
 
 #[tokio::test]
 async fn crash_between_delivery_and_bind_is_never_resent() {
-    let memory = MemoryScheduleStore::new();
-    let reminder = post_then_die(&memory, &world()).await;
-    after_restart(&memory, &reminder).await;
-
     let dir = TempDir::new();
     let sqlite = dir.open().await;
     let reminder = post_then_die(&sqlite, &world()).await;
@@ -352,7 +348,7 @@ async fn fallback_binds_and_maps_reactions<S: Store>(store: &S) {
 
 #[tokio::test]
 async fn fallback_channel_is_bound_and_its_card_maps_reactions() {
-    on_both_stores!(fallback_binds_and_maps_reactions);
+    fallback_binds_and_maps_reactions(&SqliteStore::open_temp().await).await;
 }
 
 async fn bounded<S: Store>(store: &S) {
@@ -370,7 +366,7 @@ async fn bounded<S: Store>(store: &S) {
 
 #[tokio::test]
 async fn work_per_tick_is_bounded() {
-    on_both_stores!(bounded);
+    bounded(&SqliteStore::open_temp().await).await;
 }
 
 async fn quiet<S: Store>(store: &S) {
@@ -398,7 +394,7 @@ async fn quiet<S: Store>(store: &S) {
 
 #[tokio::test]
 async fn quiet_mode_posts_mention_nobody() {
-    on_both_stores!(quiet);
+    quiet(&SqliteStore::open_temp().await).await;
 }
 
 /// A card for this week exists; the marker says last week was the last post.
@@ -432,7 +428,7 @@ async fn replacement_after_confirmed_deletion<S: Store>(store: &S) {
 
 #[tokio::test]
 async fn digest_is_replaced_only_after_confirmed_deletion() {
-    on_both_stores!(replacement_after_confirmed_deletion);
+    replacement_after_confirmed_deletion(&SqliteStore::open_temp().await).await;
 }
 
 async fn requested_digest_uses_the_journal_and_never_moves_back<S: Store>(store: &S) {
@@ -456,7 +452,7 @@ async fn requested_digest_uses_the_journal_and_never_moves_back<S: Store>(store:
 
 #[tokio::test]
 async fn requested_digest_runs_through_delivery_and_keeps_the_monotone_week() {
-    on_both_stores!(requested_digest_uses_the_journal_and_never_moves_back);
+    requested_digest_uses_the_journal_and_never_moves_back(&SqliteStore::open_temp().await).await;
 }
 
 async fn ambiguous_deletion_suppresses<S: Store>(store: &S) {
@@ -491,7 +487,7 @@ async fn ambiguous_deletion_suppresses<S: Store>(store: &S) {
 
 #[tokio::test]
 async fn ambiguous_digest_deletion_suppresses_the_replacement() {
-    on_both_stores!(ambiguous_deletion_suppresses);
+    ambiguous_deletion_suppresses(&SqliteStore::open_temp().await).await;
 }
 
 async fn rollback<S: Store>(store: &S) {
@@ -518,5 +514,5 @@ async fn rollback<S: Store>(store: &S) {
 
 #[tokio::test]
 async fn clock_rollback_posts_nothing() {
-    on_both_stores!(rollback);
+    rollback(&SqliteStore::open_temp().await).await;
 }

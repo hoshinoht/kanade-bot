@@ -13,7 +13,7 @@ use kanade::domain::members::{Member, Roster};
 use kanade::domain::notify::DeclineNoticeStore;
 use kanade::domain::schedule::{NewRun, RsvpState, RunSource, RunStatus};
 use kanade::domain::scheduler::{Clock, SchedulerService};
-use kanade::infrastructure::store::MemoryScheduleStore;
+use kanade::infrastructure::store::SqliteStore;
 
 use super::support::*;
 
@@ -137,12 +137,12 @@ impl CardIndex for Cards {
     }
 }
 
-type Service = SchedulerService<MemoryScheduleStore, RandomIds, FixedClock>;
+type Service = SchedulerService<SqliteStore, RandomIds, FixedClock>;
 
 async fn service_with_run(participants: &[u64]) -> (Service, String) {
     let week = Utc.with_ymd_and_hms(2026, 9, 24, 0, 0, 0).unwrap();
     let mut service = SchedulerService::new(
-        MemoryScheduleStore::new(),
+        SqliteStore::open_temp().await,
         RandomIds,
         FixedClock(Utc.with_ymd_and_hms(2026, 9, 25, 12, 0, 0).unwrap()),
     );

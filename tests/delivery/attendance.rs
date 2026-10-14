@@ -1,4 +1,4 @@
-//! v5 attendance through the tick on both stores: the unknown-window
+//! v5 attendance through the tick on the SQLite store: the unknown-window
 //! recount, morning mentions of unknown members only, and tallies on cards
 //! and the digest; the same schedule in v4-compat mode renders and pings as
 //! v4.
@@ -10,9 +10,10 @@ use kanade::domain::attendance::AttendancePolicy;
 use kanade::domain::history::{Actor, Origin, Surface};
 use kanade::domain::ids::RandomIds;
 use kanade::domain::schedule::{EMOJI_YES, NewFixedRun, RunStatus};
+use kanade::infrastructure::store::SqliteStore;
 
 use crate::scenarios::{HOME, config, now, previous_week, world};
-use crate::support::{Store, mark_digest_week, on_both_stores, service, snapshot};
+use crate::support::{Store, mark_digest_week, service, snapshot};
 
 /// Sat 12 Sep 21:00 in Kuala Lumpur.
 fn start() -> DateTime<Utc> {
@@ -218,10 +219,10 @@ async fn v4_compat_tick_is_unchanged<S: Store>(store: &S) {
 
 #[tokio::test]
 async fn v5_attendance_through_the_tick() {
-    on_both_stores!(v5_tick_recounts_pings_unknowns_and_shows_tallies);
+    v5_tick_recounts_pings_unknowns_and_shows_tallies(&SqliteStore::open_temp().await).await;
 }
 
 #[tokio::test]
 async fn v4_compat_attendance_through_the_tick() {
-    on_both_stores!(v4_compat_tick_is_unchanged);
+    v4_compat_tick_is_unchanged(&SqliteStore::open_temp().await).await;
 }

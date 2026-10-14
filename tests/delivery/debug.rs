@@ -20,7 +20,7 @@ use kanade::domain::ids::{RandomIds, short_id};
 use kanade::domain::notify::DeliveryJournal;
 use kanade::domain::schedule::{RsvpState, RunStatus};
 use kanade::domain::scheduler::SchedulerService;
-use kanade::infrastructure::store::MemoryScheduleStore;
+use kanade::infrastructure::store::SqliteStore;
 use twilight_model::id::Id;
 
 use crate::cards::{
@@ -55,26 +55,6 @@ pub(crate) fn desk<S: Store + DebugCardStore + 'static>(
         throttle: AlertThrottle::new(),
     }
 }
-
-/// Run `$f(Arc<store>)` on a fresh memory store, then a fresh SQLite store.
-macro_rules! on_both_arcs {
-    ($f:path) => {{
-        $f(Arc::new(
-            kanade::infrastructure::store::MemoryScheduleStore::new(),
-        ))
-        .await;
-        let dir = $crate::support::TempDir::new();
-        let sqlite = Arc::new(dir.open().await);
-        $f(Arc::clone(&sqlite)).await;
-        Arc::try_unwrap(sqlite)
-            .ok()
-            .expect("sole owner")
-            .close()
-            .await
-            .expect("close store");
-    }};
-}
-pub(crate) use on_both_arcs;
 
 async fn ping<S: Store + DebugCardStore + 'static>(
     desk: &DebugDesk<S, FakeDiscord>,
@@ -239,7 +219,7 @@ async fn every_kind_posts_the_real_message_prefixed<S: Store + DebugCardStore + 
 
 #[tokio::test]
 async fn ping_posts_each_kind_prefixed_bound_and_with_art() {
-    on_both_arcs!(every_kind_posts_the_real_message_prefixed);
+    every_kind_posts_the_real_message_prefixed(Arc::new(SqliteStore::open_temp().await)).await;
 }
 
 async fn reactions_and_refresh_follow_the_run<S: Store + DebugCardStore + 'static>(store: Arc<S>) {
@@ -331,7 +311,7 @@ fn scenarios_clock() -> kanade::bot::delivery::FixedClock {
 
 #[tokio::test]
 async fn reactions_on_test_cards_drive_rsvps_and_card_tests_refresh() {
-    on_both_arcs!(reactions_and_refresh_follow_the_run);
+    reactions_and_refresh_follow_the_run(Arc::new(SqliteStore::open_temp().await)).await;
 }
 
 async fn clear_deletes_and_releases<S: Store + DebugCardStore + 'static>(store: Arc<S>) {
@@ -378,12 +358,12 @@ async fn clear_deletes_and_releases<S: Store + DebugCardStore + 'static>(store: 
 
 #[tokio::test]
 async fn clear_test_deletes_the_channels_test_cards_and_releases_them() {
-    on_both_arcs!(clear_deletes_and_releases);
+    clear_deletes_and_releases(Arc::new(SqliteStore::open_temp().await)).await;
 }
 
 #[tokio::test]
 async fn an_unreachable_home_falls_back_to_the_post_channel_or_refuses() {
-    let store = Arc::new(MemoryScheduleStore::new());
+    let store = Arc::new(SqliteStore::open_temp().await);
     let world = world();
     let fake = Arc::new(support::fake());
     let run_id = star(&*store).await;
@@ -433,12 +413,12 @@ async fn the_real_reminder_still_posts<S: Store + DebugCardStore + 'static>(stor
 
 #[tokio::test]
 async fn a_bound_test_card_never_holds_the_runs_real_reminder() {
-    on_both_arcs!(the_real_reminder_still_posts);
+    the_real_reminder_still_posts(Arc::new(SqliteStore::open_temp().await)).await;
 }
 
 #[tokio::test]
 async fn quiet_plain_test_texts_carry_v4s_quiet_line() {
-    let store = Arc::new(MemoryScheduleStore::new());
+    let store = Arc::new(SqliteStore::open_temp().await);
     let world = world();
     let fake = Arc::new(support::fake());
     let run_id = star(&*store).await;
@@ -478,7 +458,7 @@ async fn quiet_plain_test_texts_carry_v4s_quiet_line() {
 /// reply says to check the channel, never a generic failure.
 #[tokio::test]
 async fn a_post_the_journal_could_not_record_is_unconfirmed() {
-    let store = Arc::new(MemoryScheduleStore::new());
+    let store = Arc::new(SqliteStore::open_temp().await);
     let world = world();
     let fake: &'static FakeDiscord = Box::leak(Box::new(support::fake()));
     let run_id = star(&*store).await;

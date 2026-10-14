@@ -5,7 +5,7 @@ use super::support::*;
 
 #[tokio::test]
 async fn row_1_add_is_attributed_to_member_discord_with_replay_request() {
-    let world = World::new();
+    let world = World::new().await;
     let (run, message) = world.carded_run().await;
     world.react(message.get(), "✅", &[MEMBER]);
     assert_eq!(world.replay_once().await.applied, 1);
@@ -33,7 +33,7 @@ async fn row_1_add_is_attributed_to_member_discord_with_replay_request() {
 /// it to the card's current reaction.
 #[tokio::test]
 async fn row_2_replay_switches_yes_to_no_and_no_to_yes() {
-    let world = World::new();
+    let world = World::new().await;
     let (run, message) = world.carded_run().await;
     let mut replay = world.replay();
     for (state, emoji, other) in [
@@ -50,7 +50,7 @@ async fn row_2_replay_switches_yes_to_no_and_no_to_yes() {
 
 #[tokio::test]
 async fn row_4_add_then_remove_leaves_no_answer_to_replay() {
-    let world = World::new();
+    let world = World::new().await;
     let (run, _) = world.carded_run().await;
     let head = world.store.history_head().await.unwrap().seq;
     assert_eq!(world.replay_once().await.applied, 0);
@@ -60,7 +60,7 @@ async fn row_4_add_then_remove_leaves_no_answer_to_replay() {
 
 #[tokio::test]
 async fn row_5_remove_then_readd_same_emoji_is_a_history_noop() {
-    let world = World::new();
+    let world = World::new().await;
     let (run, message) = world.carded_run().await;
     world.member_reacts_yes(&run).await;
     world.react(message.get(), "✅", &[MEMBER]);

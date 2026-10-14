@@ -13,7 +13,7 @@ use kanade::bot::delivery::cards::redesign::{MY_RUNS, OPEN_PORTAL};
 use kanade::bot::transport::{Call, FakeDiscord, MessageId, Op, Outcome, RejectionKind};
 use kanade::domain::schedule::RunStatus;
 use kanade::domain::settings::MessageStyle;
-use kanade::infrastructure::store::MemoryScheduleStore;
+use kanade::infrastructure::store::SqliteStore;
 use twilight_model::channel::message::Component;
 use twilight_model::channel::message::component::ButtonStyle;
 
@@ -37,7 +37,7 @@ fn switchable(redesign: &Arc<AtomicBool>) -> CardKit {
 }
 
 struct Week {
-    store: Arc<MemoryScheduleStore>,
+    store: Arc<SqliteStore>,
     fake: Arc<FakeDiscord>,
     world: scenarios::World,
     runs: Vec<String>,
@@ -47,7 +47,7 @@ impl Week {
     /// `count` Kalos runs tonight, a minute apart, and last week's digest
     /// marked done so this week's is due.
     async fn new(count: i64) -> Self {
-        let store = Arc::new(MemoryScheduleStore::new());
+        let store = Arc::new(SqliteStore::open_temp().await);
         let mut runs = Vec::new();
         for n in 0..count {
             let at = tonight() + TimeDelta::minutes(n);

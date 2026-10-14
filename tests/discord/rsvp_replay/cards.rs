@@ -9,14 +9,14 @@ use super::support::*;
 /// `MEMBER` reacts ✅ and ❌ (on one card, or across two cards of the same
 /// run) while `OTHER` answers ✅ on a card grouped with a second run.
 async fn assert_conflict_skips_only_member(cross_card: bool) {
-    let world = World::new();
+    let world = World::new().await;
     let first = world.planned(&[MEMBER, OTHER], 24).await;
     let second = world.planned(&[OTHER], 25).await;
     world.card(&first, 400).await;
     if cross_card {
         world.card(&first, 401).await;
     }
-    world.store.test_map_card_run("400", &second);
+    world.store.test_map_card_run("400", &second).await;
     world.react(400, "✅", &[MEMBER, OTHER]);
     world.react(if cross_card { 401 } else { 400 }, "❌", &[MEMBER]);
     let report = world.replay_once().await;
@@ -55,7 +55,7 @@ async fn rows_11_to_13_card_failures_and_two_page_cap_skip_without_guessing() {
         Some(crate::support::timed_out(false)),
         None,
     ] {
-        let world = World::new();
+        let world = World::new().await;
         let (run, message) = world.carded_run().await;
         if let Some(step) = step {
             world.fake.script(Op::ReactionUsers, step);
@@ -74,7 +74,7 @@ async fn rows_11_to_13_card_failures_and_two_page_cap_skip_without_guessing() {
 
 #[tokio::test]
 async fn rows_11_to_13_incomplete_reads_skip_bad_runs_continue_and_throttle_permissions() {
-    let world = World::new();
+    let world = World::new().await;
     let mut runs = Vec::new();
     for index in 0..7 {
         let run = world.planned(&[MEMBER], 24 + index).await;
@@ -161,11 +161,11 @@ async fn rows_11_to_13_incomplete_reads_skip_bad_runs_continue_and_throttle_perm
 
 #[tokio::test]
 async fn row_15_grouped_card_reads_once_and_applies_each_run() {
-    let world = World::new();
+    let world = World::new().await;
     let first = world.planned(&[MEMBER], 24).await;
     let second = world.planned(&[MEMBER], 25).await;
     world.card(&first, 400).await;
-    world.store.test_map_card_run("400", &second);
+    world.store.test_map_card_run("400", &second).await;
     world.react(400, "✅", &[MEMBER]);
     let observed = world.observe_run_writes();
     let report = world.replay_once().await;
@@ -185,11 +185,11 @@ async fn row_15_grouped_card_reads_once_and_applies_each_run() {
 
 #[tokio::test]
 async fn row_15_row_16_grouped_card_does_not_apply_a_nonparticipant() {
-    let world = World::new();
+    let world = World::new().await;
     let participating = world.planned(&[MEMBER], 24).await;
     let swapped_off = world.planned(&[OTHER], 25).await;
     world.card(&participating, 400).await;
-    world.store.test_map_card_run("400", &swapped_off);
+    world.store.test_map_card_run("400", &swapped_off).await;
     world.react(400, "✅", &[MEMBER]);
     let report = world.replay_once().await;
     assert_eq!((report.messages, report.applied), (1, 1));
@@ -208,7 +208,7 @@ async fn row_15_row_16_grouped_card_does_not_apply_a_nonparticipant() {
 #[tokio::test]
 async fn rows_17_18_a_participant_is_not_filtered_for_role_loss_or_departure() {
     for departed in [false, true] {
-        let world = World::new();
+        let world = World::new().await;
         let (run, message) = world.carded_run().await;
         if departed {
             world.fake.seed_members(Id::new(999), Vec::new());
@@ -224,7 +224,7 @@ async fn rows_17_18_a_participant_is_not_filtered_for_role_loss_or_departure() {
 
 #[tokio::test]
 async fn rows_21_21b_21c_moved_old_cards_are_guard_only_not_add_evidence() {
-    let world = World::new();
+    let world = World::new().await;
     let run = moved_run(&world, false).await;
     world.member_reacts_yes(&run).await;
     world.react(400, "✅", &[MEMBER, SELF]);
@@ -232,7 +232,7 @@ async fn rows_21_21b_21c_moved_old_cards_are_guard_only_not_add_evidence() {
     assert_eq!(world.replay_once().await.applied, 0);
     assert_eq!(world.snapshot(&run).await.rsvps[0].state, RsvpState::Yes);
 
-    let world = World::new();
+    let world = World::new().await;
     moved_run(&world, false).await;
     world
         .fake
@@ -244,7 +244,7 @@ async fn rows_21_21b_21c_moved_old_cards_are_guard_only_not_add_evidence() {
 
 #[tokio::test]
 async fn row_21_moved_old_card_only_add_is_not_evidence() {
-    let world = World::new();
+    let world = World::new().await;
     let run = moved_run(&world, false).await;
     world.react(400, "✅", &[MEMBER, SELF]);
     world.react(401, "✅", &[SELF]);
@@ -254,7 +254,7 @@ async fn row_21_moved_old_card_only_add_is_not_evidence() {
 
 #[tokio::test]
 async fn row_21c_deleted_moved_card_blocks_guarded_removal() {
-    let world = World::new();
+    let world = World::new().await;
     let run = moved_run(&world, true).await;
     world
         .fake
@@ -267,10 +267,10 @@ async fn row_21c_deleted_moved_card_blocks_guarded_removal() {
 
 #[tokio::test]
 async fn row_22b_retired_but_present_card_blocks_a_guarded_clear() {
-    let world = World::new();
+    let world = World::new().await;
     let run = world.planned(&[MEMBER], 24).await;
     let (_lease, attempt) = world.card_attempt(&run, 400).await;
-    world.store.test_retire_bound_attempt(&attempt);
+    world.store.test_retire_bound_attempt(&attempt).await;
     world.card(&run, 401).await;
     world.member_reacts_yes(&run).await;
     world.react(400, "✅", &[MEMBER, SELF]);
