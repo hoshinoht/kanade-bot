@@ -1,10 +1,12 @@
 //! The outside world the server talks to. Discord's authorization page is a
 //! browser page, so it lives on the harness's own origins; the scouter, the
 //! NEXON Open API and the model gateway are only called by the server, so
-//! each is a loopback server on an ephemeral port.
+//! each is a loopback server on an ephemeral port. The gateway's guild cache
+//! is [`guild::Guild`], installed in each composition.
 
 pub mod discord;
 mod gateway;
+pub mod guild;
 mod nexon;
 mod scouter;
 

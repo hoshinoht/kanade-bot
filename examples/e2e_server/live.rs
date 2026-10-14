@@ -41,7 +41,7 @@ use kanade::{
 };
 use tokio::net::{TcpListener, TcpStream};
 
-use crate::{Fail, LOOPBACK, seed};
+use crate::{Fail, LOOPBACK, fakes::guild::Guild, seed};
 
 /// As serve: how long closing waits for requests still holding the store.
 const CLOSE_WAIT: Duration = Duration::from_secs(5);
@@ -100,7 +100,8 @@ impl World {
         })
     }
 
-    /// Compose over the store at `path`, as serve composes at startup.
+    /// Compose over the store at `path` (and module `character_data`'s file
+    /// beside it), as serve composes at startup.
     pub async fn open(&self, path: PathBuf) -> Result<Generation, Fail> {
         let store = SqliteStore::open(&SqliteStoreConfig {
             db_path: path.clone(),
@@ -110,6 +111,9 @@ impl World {
         let store = Arc::new(store);
         let mut config = self.config.clone();
         config.store.db_path = path.clone();
+        if let Some(settings) = &mut config.character_data {
+            settings.db_path = chardata(&path);
+        }
         let overrides = Overrides {
             clock: Arc::clone(&self.clock),
             discord: Some(self.discord.clone()),
@@ -119,14 +123,25 @@ impl World {
         };
         match compose_for_tests(&config, store.clone(), overrides).await {
             Ok(TestComposition {
-                composition,
+                mut composition,
                 character_data,
-            }) => Ok(Generation {
-                path,
-                store,
-                composition,
-                character_data,
-            }),
+            }) => {
+                // The gateway's guild cache as the seeded guild shows it.
+                let installed = Arc::get_mut(&mut composition.admin.state)
+                    .map(|state| state.channels = Arc::new(Guild))
+                    .is_some();
+                let generation = Generation {
+                    path,
+                    store,
+                    composition,
+                    character_data,
+                };
+                if !installed {
+                    let _ = generation.close().await;
+                    return Err("the composed state is already shared".into());
+                }
+                Ok(generation)
+            }
             Err(error) => {
                 if let Err(close) = close_store(store).await {
                     eprintln!("e2e_server: {close}");
@@ -147,11 +162,20 @@ impl World {
             Err(error) => Err(error),
         };
         generation.close().await?;
-        // A WAL left beside it would be missing from every copy.
-        if wal(path).exists() {
+        // A WAL left beside either file would be missing from every copy.
+        if wal(path).exists() || wal(&chardata(path)).exists() {
             return Err("the template store left a WAL behind".into());
         }
         seeded
+    }
+
+    /// Copy the template's files to a generation at `to`.
+    pub fn copy_template(&self, from: &Path, to: &Path) -> io::Result<()> {
+        std::fs::copy(from, to)?;
+        if self.config.character_data.is_some() {
+            std::fs::copy(chardata(from), chardata(to))?;
+        }
+        Ok(())
     }
 
     pub fn routes(&self, live: &LiveAdmin) -> Routes {
@@ -263,7 +287,11 @@ impl Generation {
     pub async fn retire(self) {
         match self.close().await {
             Ok(path) => {
-                for file in [path.clone(), wal(&path), sibling(&path, "-shm")] {
+                let chardata = chardata(&path);
+                for file in [&path, &chardata]
+                    .into_iter()
+                    .flat_map(|file| [file.clone(), wal(file), sibling(file, "-shm")])
+                {
                     match std::fs::remove_file(&file) {
                         Err(error) if error.kind() != io::ErrorKind::NotFound => {
                             eprintln!("e2e_server: could not remove {}: {error}", file.display());
@@ -300,4 +328,9 @@ fn sibling(path: &Path, suffix: &str) -> PathBuf {
 
 fn wal(path: &Path) -> PathBuf {
     sibling(path, "-wal")
+}
+
+/// Module `character_data`'s file for the store at `path`.
+fn chardata(path: &Path) -> PathBuf {
+    path.with_extension("chardata.sqlite3")
 }

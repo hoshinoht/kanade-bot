@@ -101,7 +101,13 @@ impl Root {
         let base = fs::canonicalize(env::temp_dir())?;
         let root = Self(base.join(format!("kanade-e2e-{}", uuid::Uuid::new_v4().simple())));
         private_dir(&root.0)?;
-        for dir in ["db", "locks", "Personas", "Personas/bundles"] {
+        for dir in [
+            "db",
+            "locks",
+            "Personas",
+            "Personas/bundles",
+            "Personas/profiles",
+        ] {
             private_dir(&root.0.join(dir))?;
         }
         Ok(root)
@@ -146,9 +152,10 @@ fn config(
         &root.join("discord_client_secret"),
         "e2e-fake-client-secret",
     )?;
-    fs::copy(
-        repo.join("config/personas/bundles/kanade.yaml"),
-        root.join("Personas/bundles/kanade.yaml"),
+    secret(&root.join("nexon_key"), "e2e-fake-nexon-key")?;
+    seed::persona_files(
+        &root.join("Personas"),
+        &repo.join("config/personas/bundles/kanade.yaml"),
     )?;
     let admin = format!("127.0.0.1:{}", args.admin_port);
     let public = format!("127.0.0.1:{}", args.public_port);
@@ -186,8 +193,18 @@ fn config(
             format!("https://{public}/api/public/auth/discord/callback"),
         ),
         ("KANADE_GUILD_ID", "900".to_owned()),
-        ("KANADE_BOSSING_ROLE_ID", "10".to_owned()),
-        ("KANADE_ADMIN_ROLE_ID", "20".to_owned()),
+        // The mock's guild roles (`seed::ROLES`): staff, bossers, pilots.
+        ("KANADE_BOSSING_ROLE_ID", seed::BOSSING_ROLE.to_owned()),
+        ("KANADE_ADMIN_ROLE_ID", seed::STAFF_ROLE.to_owned()),
+        ("KANADE_CHAT_PILOT_ROLE_ID", seed::PILOT_ROLE.to_owned()),
+        ("KANADE_CHAT_CATEGORY_IDS", "410000000000000001".to_owned()),
+        ("KANADE_MODULE_ROSTER", "1".to_owned()),
+        ("KANADE_MODULE_CHARACTER_DATA", "1".to_owned()),
+        (
+            "KANADE_CHARACTER_DATA_DB_PATH",
+            path("db/template.chardata.sqlite3"),
+        ),
+        ("KANADE_NEXON_API_KEY_FILE", path("nexon_key")),
         ("KANADE_DB_PATH", path("db/template.sqlite3")),
         ("KANADE_OWNER_LOCK_DIR", path("locks")),
         ("KANADE_WEB_DIR", args.web_dir.display().to_string()),

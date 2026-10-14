@@ -3,8 +3,9 @@
 //! once for the user the cookie [`USER_COOKIE`] names on `127.0.0.1` (cookies
 //! ignore ports): `eligible` (default; "Mikan"), `partner` ("Yuzu", on
 //! Mikan's weekly timing), `ineligible` (no bossing role), `bot` (a bot
-//! account) or `deny` (cancelled at Discord). The code exchange and the user
-//! read then go to the shared [`FakeDiscord`].
+//! account), a seeded member's id (`1001` for Asahi, see [`crate::seed`]) or
+//! `deny` (cancelled at Discord). The code exchange and the user read then
+//! go to the shared [`FakeDiscord`].
 
 use std::sync::Arc;
 
@@ -33,7 +34,18 @@ const PARTNER: &str = "100000000000000004";
 pub const MEMBERS: [(&str, bool); 3] =
     [("eligible", true), ("partner", true), ("ineligible", false)];
 
+/// The user a choice signs in as; a seeded member's id (`1001`, Asahi)
+/// signs in as that member.
 pub fn user(choice: &str) -> DiscordUser {
+    if let Some(name) = crate::seed::member_name(choice) {
+        return DiscordUser {
+            id: choice.into(),
+            username: name.to_lowercase(),
+            global_name: Some(name.into()),
+            bot: false,
+            avatar: None,
+        };
+    }
     let (id, name, bot) = match choice {
         "ineligible" => (INELIGIBLE, "Plain", false),
         "partner" => (PARTNER, "Yuzu", false),

@@ -156,7 +156,7 @@ impl Shared {
         self.clock.set(self.start);
         slot.serial += 1;
         let path = self.db_dir.join(format!("live-{}.sqlite3", slot.serial));
-        std::fs::copy(&self.template, &path)?;
+        self.world.copy_template(&self.template, &path)?;
         let fresh = match self.world.open(path.clone()).await {
             Ok(fresh) => fresh,
             Err(error) => {
