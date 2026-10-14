@@ -17,7 +17,11 @@ use kanade::{
 use serde_json::{Value, json};
 
 use super::{ALICE, BOB, DAN, Portal, keys, refused, run, this_week, utc};
-use crate::{reads::Reads, schemas::assert_valid, support::Reply};
+use crate::{
+    reads::Reads,
+    schemas::assert_valid,
+    support::{Reply, fields},
+};
 
 const RUN_KEYS: [&str; 13] = [
     "bosses",
@@ -174,22 +178,15 @@ impl Portal {
 #[tokio::test]
 async fn members_answer_their_own_runs_through_the_admin_path() {
     let portal = portal().await;
-    let (alice, bob, dan) = (
-        portal.sign_in(ALICE).await,
-        portal.sign_in(BOB).await,
-        portal.sign_in(DAN).await,
-    );
+    let [alice, bob, dan] = portal.harness.sign_ins([ALICE, BOB, DAN]).await;
     let v0 = portal.version().await;
     let maybe = json!({"answer": "maybe", "version": v0});
     let reply = portal.answer(&dan, "r-kalos", "a-1", &maybe).await;
     let first = checked(&reply, "public.json#/$defs/MemberRunResult", &RESULT_KEYS);
     assert_eq!(answer_of(&first["run"], DAN), "maybe");
     assert_eq!(
-        (
-            first["run"]["mine"].clone(),
-            first["run"]["can_edit"].clone()
-        ),
-        (json!(true), json!(true))
+        fields(&first["run"], &["mine", "can_edit"]),
+        json!([true, true])
     );
     let head = portal.head().await;
     assert_eq!(
@@ -265,21 +262,14 @@ async fn members_answer_their_own_runs_through_the_admin_path() {
 #[tokio::test]
 async fn members_move_their_own_runs_within_this_boss_week() {
     let portal = portal().await;
-    let (alice, bob, dan) = (
-        portal.sign_in(ALICE).await,
-        portal.sign_in(BOB).await,
-        portal.sign_in(DAN).await,
-    );
+    let [alice, bob, dan] = portal.harness.sign_ins([ALICE, BOB, DAN]).await;
     let v0 = portal.version().await;
     // Tue 22:00 → Wed 21:00 (day 6).
     let to_wed = json!({"day": 6, "time": "21:00", "version": v0});
     let reply = portal.move_run(&dan, "r-kalos", "m-1", &to_wed).await;
     let first = checked(&reply, "public.json#/$defs/MemberMoveResult", &MOVE_KEYS);
     assert_eq!(first["previous"], json!({"day": 5, "time": "22:00"}));
-    assert_eq!(
-        (first["run"]["day"].clone(), first["run"]["time"].clone()),
-        (json!(6), json!("21:00"))
-    );
+    assert_eq!(fields(&first["run"], &["day", "time"]), json!([6, "21:00"]));
     let head = portal.head().await;
     assert_eq!(
         (head.origin.actor.clone(), head.origin.surface),
@@ -371,42 +361,26 @@ async fn a_move_never_leaves_the_boss_week() {
 #[tokio::test]
 async fn run_links_show_the_week_the_slot_and_who_took_you_off() {
     let portal = portal().await;
-    let (alice, bob, dan) = (
-        portal.sign_in(ALICE).await,
-        portal.sign_in(BOB).await,
-        portal.sign_in(DAN).await,
-    );
+    let [alice, bob, dan] = portal.harness.sign_ins([ALICE, BOB, DAN]).await;
     let link = portal.link(&bob, "r-kalos").await;
+    let shown = [
+        "week",
+        "week_starts",
+        "week_ends_at",
+        "started",
+        "removed",
+        "this_week",
+        "timing",
+    ];
     assert_eq!(
-        (
-            link["week"].clone(),
-            link["week_starts"].clone(),
-            link["week_ends_at"].clone(),
-            link["started"].clone(),
-            link["removed"].clone(),
-            link["this_week"].clone(),
-            link["timing"].clone(),
-        ),
-        (
-            json!("current"),
-            json!("2026-09-24"),
-            json!("2026-09-30T16:00:00Z"),
-            json!(false),
-            Value::Null,
-            Value::Null,
-            json!({"day": 1, "time": "22:00"}),
-        )
+        fields(&link, &shown),
+        json!(["current", "2026-09-24", "2026-09-30T16:00:00Z", false, null, null, {"day": 1, "time": "22:00"}])
     );
     assert_eq!(link["run"]["mine"], true);
     let next = portal.link(&bob, "n-star").await;
     assert_eq!(
-        (
-            next["week"].clone(),
-            next["timing"].clone(),
-            next["run"]["mine"].clone(),
-            next["run"]["can_edit"].clone()
-        ),
-        (json!("next"), Value::Null, json!(false), json!(false))
+        fields(&next, &["week", "timing", "run/mine", "run/can_edit"]),
+        json!(["next", null, false, false])
     );
     let started = portal.link(&alice, "r-early").await;
     assert_eq!(started["started"], true);
@@ -428,8 +402,8 @@ async fn run_links_show_the_week_the_slot_and_who_took_you_off() {
         json!({"by": "an admin", "at": "2026-09-29T04:00:00Z"})
     );
     assert_eq!(
-        (gone["run"]["mine"].clone(), gone["run"]["can_edit"].clone()),
-        (json!(false), json!(false))
+        fields(&gone["run"], &["mine", "can_edit"]),
+        json!([false, false])
     );
     let late = json!({"answer": "yes", "version": v});
     let reply = portal.answer(&bob, "r-kalos", "late-1", &late).await;
@@ -437,21 +411,10 @@ async fn run_links_show_the_week_the_slot_and_who_took_you_off() {
 
     // Last week's run: its party sees it, with this week's run of the timing.
     let past = portal.link(&alice, "p-kalos").await;
+    let shown = ["week", "started", "run/can_edit", "this_week/id", "timing"];
     assert_eq!(
-        (
-            past["week"].clone(),
-            past["started"].clone(),
-            past["run"]["can_edit"].clone(),
-            past["this_week"]["id"].clone(),
-            past["timing"].clone(),
-        ),
-        (
-            json!("past"),
-            json!(true),
-            json!(false),
-            json!("r-kalos"),
-            json!({"day": 1, "time": "22:00"}),
-        )
+        fields(&past, &shown),
+        json!(["past", true, false, "r-kalos", {"day": 1, "time": "22:00"}])
     );
     assert_eq!(keys(&past["this_week"]), RUN_KEYS.into());
     assert_eq!(portal.link(&bob, "p-kalos").await["week"], "past");

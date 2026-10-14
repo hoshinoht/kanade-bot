@@ -23,20 +23,19 @@ use axum::{
     routing::get,
 };
 use kanade::infrastructure::{
-    character_data::{CharacterData, ConfirmOutcome, RosterSide, Timing},
-    nexon::{ApiKey, NexonClient},
-    scouter::{Estimates, MAX_QUEUED, ScouterClient, TIMEOUT},
+    character_data::{CharacterData, ConfirmOutcome},
+    scouter::{MAX_QUEUED, TIMEOUT},
     store::MemoryCharData,
 };
 use serde_json::{Value, json};
 use tokio::sync::Notify;
 
 use crate::{
-    character_data::{config, confirm},
+    character_data::{config, confirm, maker},
     readiness::slot as ready_slot,
-    reads::{CharacterDataMaker, Reads},
+    reads::Reads,
     schemas::assert_valid,
-    support::{items, spawn_router, strs},
+    support::{fields, items, spawn_router, strs},
 };
 
 const JOB: &str = "character_data.json#/$defs/EstimateJob";
@@ -297,27 +296,9 @@ async fn serve(
     timeout: Duration,
 ) -> (Reads, Arc<CharacterData>) {
     let slot = Arc::new(std::sync::OnceLock::new());
-    let handed = Arc::clone(&slot);
-    let module: CharacterDataMaker = Box::new(move |store, clock| {
-        let mut service = CharacterData::new(
-            Arc::new(MemoryCharData::new()),
-            store as Arc<dyn RosterSide>,
-            nexon.map(|address| NexonClient::plain(address, ApiKey::new("invented-key"))),
-            Arc::clone(&clock),
-            Timing {
-                spacing: Duration::from_millis(1),
-                rate_limit_unit: Duration::from_millis(1),
-            },
-        );
-        if let Some(address) = scouter {
-            let url = format!("http://{address}");
-            let client = ScouterClient::new(&url).unwrap().with_timeout(timeout);
-            service = service.with_estimates(Estimates::new(client, url, clock));
-        }
-        let service = Arc::new(service);
-        let _ = handed.set(Arc::clone(&service));
-        service
-    });
+    let file = Arc::new(MemoryCharData::new());
+    let scouter = scouter.map(|address| (address, timeout));
+    let module = maker(file, nexon, scouter, Arc::default(), Arc::clone(&slot));
     let reads = Reads::with_character_data(Some(config()), module).await;
     (reads, slot.get().unwrap().clone())
 }
@@ -462,15 +443,12 @@ async fn one_character_is_one_ign_lookup_with_a_pinned_request() {
     );
     let mika = &result["members"][0];
     assert_eq!(
-        (&mika["character_id"], &mika["ign"], &mika["preset"]),
-        (&json!(id), &json!("MikaBish"), &json!("00010"))
+        fields(mika, &["character_id", "ign", "preset"]),
+        json!([id, "MikaBish", "00010"])
     );
     assert_eq!(
-        (
-            &mika["critical_rate_assumed"],
-            &mika["critical_rate_actual"]
-        ),
-        (&json!(false), &Value::Null),
+        fields(mika, &["critical_rate_assumed", "critical_rate_actual"]),
+        json!([false, null]),
         "the normal page"
     );
     assert_eq!(
@@ -791,17 +769,13 @@ async fn a_party_member_failure_never_stops_the_others() {
     assert_eq!(done["state"], "done", "{done}");
     assert_eq!(done["error"], Value::Null, "the total itself came back");
     assert_eq!(
-        (
-            &done["characters"][0]["outcome"],
-            &done["characters"][0]["error"]
-        ),
-        (&json!("ok"), &Value::Null)
+        fields(&done, &["characters/0/outcome", "characters/0/error"]),
+        json!(["ok", null])
     );
     let failed = &done["characters"][1];
-    assert_eq!(failed["outcome"], "failed");
     assert_eq!(
-        (&failed["error"]["code"], &failed["error"]["character_id"]),
-        (&json!("critical_rate"), &json!(crit))
+        fields(failed, &["outcome", "error/code", "error/character_id"]),
+        json!(["failed", "critical_rate", crit])
     );
     assert_eq!(done["progress"]["done"], 2);
     let result = &done["result"];
@@ -866,22 +840,15 @@ async fn party_results_fill_in_as_each_character_finishes() {
         json!({"done": 1, "total": 2, "current": gate})
     );
     assert_eq!(
-        (
-            &partial["characters"][0]["outcome"],
-            &partial["characters"][1]["outcome"]
-        ),
-        (&json!("ok"), &json!("pending"))
+        fields(&partial, &["characters/0/outcome", "characters/1/outcome"]),
+        json!(["ok", "pending"])
     );
     let result = &partial["result"];
     assert_eq!(result["members"][0]["character_id"], mika);
     assert_eq!(result["members"].as_array().unwrap().len(), 1);
     assert_eq!(
-        (
-            &result["combined"],
-            &result["complete"],
-            &result["cache_hit"]
-        ),
-        (&Value::Null, &json!(false), &json!(false))
+        fields(result, &["combined", "complete", "cache_hit"]),
+        json!([null, false, false])
     );
     assert_eq!(partial["fetched_at"], Value::Null, "until it is done");
     // Readiness already shows MikaBish's reading.
@@ -1055,11 +1022,8 @@ async fn an_assumed_critical_rate_is_labelled_in_the_result_and_readiness() {
     let done = look_up(&reads, json!({"character_ids": [id]})).await;
     let member = &done["result"]["members"][0];
     assert_eq!(
-        (
-            &member["critical_rate_assumed"],
-            &member["critical_rate_actual"]
-        ),
-        (&json!(true), &json!(89.0))
+        fields(member, &["critical_rate_assumed", "critical_rate_actual"]),
+        json!([true, 89.0])
     );
     assert_eq!(done["note"], "For planning only, not eligibility");
     // Readiness carries the same label for each of the character's bosses.
@@ -1135,12 +1099,8 @@ async fn health_says_unreachable_when_nothing_listens() {
     let id = character(&reads, "1001", "MikaBish").await;
     let failed = look_up(&reads, json!({"character_ids": [id]})).await;
     assert_eq!(
-        (
-            &failed["error"]["code"],
-            &failed["error"]["detail"],
-            &failed["error"]["status"]
-        ),
-        (&json!("failed"), &json!("unreachable"), &Value::Null)
+        fields(&failed, &["error/code", "error/detail", "error/status"]),
+        json!(["failed", "unreachable", null])
     );
 }
 

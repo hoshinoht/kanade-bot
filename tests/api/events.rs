@@ -4,23 +4,18 @@
 
 use std::{net::SocketAddr, sync::Arc, time::Duration};
 
-use chrono::{NaiveTime, TimeDelta, TimeZone, Utc, Weekday};
+use chrono::{TimeDelta, TimeZone, Utc};
 use kanade::{
-    api::{
-        server::{LiveAdmin, serve},
-        write::ApiClock,
-    },
+    api::server::{LiveAdmin, serve},
     domain::{
         drafts::ProposalSource,
-        ids::RandomIds,
-        members::{MemberStore, Roster},
+        members::MemberStore,
         notify::{
             Claim, DeliveryJournal, DeliveryTarget, EffectKind, IntentContent, NotificationIntent,
             Receipt,
         },
         proposals::{ChangeKind, ProposedChange},
-        schedule::{ReminderPolicy, SchedulePolicy},
-        scheduler::{ProposalRequest, SchedulerService, Supersede},
+        scheduler::{ProposalRequest, Supersede},
     },
     runtime::{
         application::{HealthFuture, HealthProbe, OfflineApplication},
@@ -35,7 +30,7 @@ use tokio::{
 };
 
 use crate::{
-    reads::{EVENTS, Reads},
+    reads::{EVENTS, Reads, policy, roster, scheduler},
     support::{ADMIN_HOST, Fixture, get, public, request},
 };
 
@@ -278,40 +273,22 @@ async fn hints_come_from_the_commit_seams_with_topic_and_seq_only() {
 
     // Inbox: the extractor's proposal path.
     let at = Utc.with_ymd_and_hms(2026, 9, 29, 3, 0, 0).unwrap();
-    let mut roster = Roster::new();
-    for profile in reads.store.list_members().await.unwrap() {
-        roster.upsert(profile.member);
-    }
-    let policy = SchedulePolicy::new(
-        ReminderPolicy {
-            zone: chrono_tz::Asia::Kuala_Lumpur,
-            ping_time: NaiveTime::from_hms_opt(9, 0, 0).unwrap(),
-            countdowns: vec![60, 15],
+    let directory = roster(&reads.store).await;
+    let request = ProposalRequest {
+        change: ProposedChange {
+            run_id: Some("r-star".into()),
+            channel_id: Some("kalos-four".into()),
+            ..ProposedChange::new(ChangeKind::Cancel)
         },
-        Weekday::Thu,
-        NaiveTime::MIN,
-    );
-    SchedulerService::new(
-        reads.store.clone(),
-        RandomIds,
-        ApiClock(Arc::new(move || at)),
-    )
-    .propose(
-        ProposalRequest {
-            change: ProposedChange {
-                run_id: Some("r-star".into()),
-                channel_id: Some("kalos-four".into()),
-                ..ProposedChange::new(ChangeKind::Cancel)
-            },
-            source: ProposalSource::Extraction,
-            source_id: "log-1".into(),
-            supersede: Supersede::Keep,
-        },
-        &policy,
-        &roster,
-    )
-    .await
-    .unwrap();
+        source: ProposalSource::Extraction,
+        source_id: "log-1".into(),
+        supersede: Supersede::Keep,
+    };
+    let mut service = scheduler(&reads.store, at);
+    service
+        .propose(request, &policy(), &directory)
+        .await
+        .unwrap();
     assert_eq!(stream.hint().await["topic"], "inbox");
 
     // Delivery: the tick binds a posted card.

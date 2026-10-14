@@ -13,7 +13,7 @@ use serde_json::{Value, json};
 use crate::{
     reads::Reads,
     schemas::assert_valid,
-    support::{ADMIN_HOST, Reply, find, send},
+    support::{ADMIN_HOST, Reply, fields, find, send},
 };
 
 const ORIGIN: (&str, &str) = ("Origin", "https://kanade.test");
@@ -1103,15 +1103,9 @@ impl Reads {
 #[tokio::test]
 async fn timing_owner_is_set_changed_validated_and_blamed() {
     let reads = Reads::new().await;
+    let owner = ["owner_id", "owner", "owner_pinned"];
     let (_, row) = reads.rows().await;
-    assert_eq!(
-        (
-            row["owner_id"].clone(),
-            row["owner"].clone(),
-            row["owner_pinned"].clone()
-        ),
-        ("1001".into(), "Alice".into(), false.into())
-    );
+    assert_eq!(fields(&row, &owner), json!(["1001", "Alice", false]));
 
     // Create without an owner: unpinned, the first participant owns it.
     let plain = json!({
@@ -1120,8 +1114,8 @@ async fn timing_owner_is_set_changed_validated_and_blamed() {
     });
     let created = reads.ok("POST", FIXED, plain, FIXED_ROW).await;
     assert_eq!(
-        (created["owner_id"].clone(), created["owner_pinned"].clone()),
-        ("1002".into(), false.into())
+        fields(&created, &["owner_id", "owner_pinned"]),
+        json!(["1002", false])
     );
 
     // Create: an owner outside the party is pinned.
@@ -1131,14 +1125,7 @@ async fn timing_owner_is_set_changed_validated_and_blamed() {
     });
     assert_valid("fixed.json#/$defs/FixedRequest", "create", &create);
     let created = reads.ok("POST", FIXED, create.clone(), FIXED_ROW).await;
-    assert_eq!(
-        (
-            created["owner_id"].clone(),
-            created["owner"].clone(),
-            created["owner_pinned"].clone()
-        ),
-        ("1004".into(), "Dan".into(), true.into())
-    );
+    assert_eq!(fields(&created, &owner), json!(["1004", "Dan", true]));
 
     // Unknown, role-less, bot and malformed owners are refused, nothing written.
     reads.drop_cara().await;
@@ -1182,10 +1169,8 @@ async fn timing_owner_is_set_changed_validated_and_blamed() {
     );
     let form = timing(v, "22:00", "bring elixirs");
     let row = reads.ok("PATCH", F_KALOS, form, FIXED_ROW).await;
-    assert_eq!(
-        (row["owner_id"].clone(), row["note"].clone()),
-        ("1002".into(), "bring elixirs".into())
-    );
+    let shown = ["owner_id", "note"];
+    assert_eq!(fields(&row, &shown), json!(["1002", "bring elixirs"]));
 
     // A since-demoted current owner (outside the party) never blocks an
     // edit of other fields.
@@ -1196,10 +1181,7 @@ async fn timing_owner_is_set_changed_validated_and_blamed() {
     let mut form = timing(reads.version().await, "22:00", "bring pots");
     form["owner_id"] = "1004".into();
     let row = reads.ok("PATCH", F_KALOS, form, FIXED_ROW).await;
-    assert_eq!(
-        (row["owner_id"].clone(), row["note"].clone()),
-        ("1004".into(), "bring pots".into())
-    );
+    assert_eq!(fields(&row, &shown), json!(["1004", "bring pots"]));
 
     // `""` unpins: the owner is the first participant again, blamed as `owner`.
     let v = reads.version().await;
@@ -1207,8 +1189,8 @@ async fn timing_owner_is_set_changed_validated_and_blamed() {
     form["owner_id"] = "".into();
     let row = reads.ok("PATCH", F_KALOS, form, FIXED_ROW).await;
     assert_eq!(
-        (row["owner_id"].clone(), row["owner_pinned"].clone()),
-        ("1001".into(), false.into())
+        fields(&row, &["owner_id", "owner_pinned"]),
+        json!(["1001", false])
     );
     let record = reads.store.load_change(v + 1).await.unwrap().unwrap();
     assert_eq!(

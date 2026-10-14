@@ -413,6 +413,15 @@ impl MemberHarness {
         self.sign_in_from(user, "198.51.100.10").await
     }
 
+    /// Members `ids` (each named "Member") signed in, in order.
+    pub async fn sign_ins<const N: usize>(&self, ids: [u64; N]) -> [Browser; N] {
+        let mut browsers = Vec::with_capacity(N);
+        for id in ids {
+            browsers.push(self.sign_in(discord_user(id, "Member")).await);
+        }
+        browsers.try_into().unwrap()
+    }
+
     /// The member's public session rows, superseded ids included.
     pub async fn rows(&self, id: u64) -> Vec<WebSession> {
         self.sessions

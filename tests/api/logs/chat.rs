@@ -1,7 +1,10 @@
 use serde_json::json;
 
 use super::{ERROR, Logs, ids};
-use crate::schemas::assert_valid;
+use crate::{
+    schemas::assert_valid,
+    support::{columns, fields},
+};
 
 const CHAT: &str = "chat.json#/$defs/Chat";
 const TURN: &str = "chat.json#/$defs/ChatTurn";
@@ -59,20 +62,9 @@ async fn chat_lists_every_row_newest_first_with_total_facets_and_summary() {
         })
     );
     // Counts only: a withheld turn shows them; turn totals pass through as logged.
-    assert_eq!(
-        (
-            &all["rows"][2]["prompt_tokens"],
-            &all["rows"][2]["completion_tokens"]
-        ),
-        (&json!(500), &json!(20))
-    );
-    assert_eq!(
-        (
-            &all["rows"][3]["prompt_tokens"],
-            &all["rows"][3]["completion_tokens"]
-        ),
-        (&json!(10), &json!(null))
-    );
+    let tokens = ["prompt_tokens", "completion_tokens"];
+    assert_eq!(fields(&all["rows"][2], &tokens), json!([500, 20]));
+    assert_eq!(fields(&all["rows"][3], &tokens), json!([10, null]));
     // A rate-limited question ran no model.
     assert_eq!(all["rows"][3]["model"], "—");
     assert_eq!(all["rows"][3]["latency_ms"], 0);
@@ -134,26 +126,16 @@ fn chat_summary_usage_sums_round_rows_per_model() {
     // Turn totals that disagree with the rounds are ignored by the summary.
     (mixed.prompt_tokens, mixed.completion_tokens) = (Some(1), Some(1));
     let summary = serde_json::to_value(chat_summary(&[mixed])).unwrap();
-    let usage: Vec<_> = summary
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|model| {
-            (
-                model["model"].clone(),
-                model["prompt_tokens"].clone(),
-                model["completion_tokens"].clone(),
-                model["reported"].clone(),
-                model["est_ratio"].clone(),
-            )
-        })
-        .collect();
+    let shown = [
+        "model",
+        "prompt_tokens",
+        "completion_tokens",
+        "reported",
+        "est_ratio",
+    ];
     assert_eq!(
-        usage,
-        [
-            (json!("a"), json!(650), json!(11), json!(4), json!(2.0)),
-            (json!("b"), json!(null), json!(null), json!(0), json!(null)),
-        ]
+        columns(&summary, &shown),
+        json!([["a", 650, 11, 4, 2.0], ["b", null, null, 0, null]])
     );
 }
 
@@ -337,19 +319,9 @@ fn an_imported_v4_turn_shows_its_output_and_ms() {
     };
     let turn = chat_turn(&names, &row, &[], None, None);
     assert_valid(TURN, "v4 turn", &turn);
-    let shown: Vec<_> = turn["tools"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|tool| (tool["result"].clone(), tool["took_ms"].clone()))
-        .collect();
     assert_eq!(
-        shown,
-        [
-            (json!("Kalos strategy"), json!(12)),
-            (json!("x"), json!(null)),
-            (json!(""), json!(null)),
-        ]
+        columns(&turn["tools"], &["result", "took_ms"]),
+        json!([["Kalos strategy", 12], ["x", null], ["", null]])
     );
 
     row.withheld = true;
@@ -444,13 +416,8 @@ async fn a_masked_turn_shows_its_model_view_with_names_never_ids() {
     assert_eq!(shown["rounds"][0]["request"], view.rounds[0].request);
     assert_eq!(shown["rounds"][0]["tool_calls"], view.rounds[0].tool_calls);
     assert_eq!(shown["rounds"][1]["reply"], "Haruka, Sora is on Kalos.");
-    assert_eq!(
-        (
-            shown["rounds"][1]["round"].clone(),
-            shown["rounds"][1]["clean"].clone()
-        ),
-        (json!(2), json!(true))
-    );
+    let retry = fields(&shown["rounds"][1], &["round", "clean"]);
+    assert_eq!(retry, json!([2, true]));
     assert_eq!(
         shown["mapping"],
         json!([

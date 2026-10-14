@@ -19,7 +19,6 @@ use axum::{
 };
 use chrono::TimeDelta;
 use kanade::{
-    api::auth::Clock,
     bot::chardata::copy::notice_text,
     domain::{
         chardata::{ConsentSurface, NOTICE_VERSION},
@@ -27,9 +26,8 @@ use kanade::{
         settings::{SettingsChangeQuery, SettingsStore},
     },
     infrastructure::{
-        character_data::{CharacterData, ConfirmOutcome, RosterSide, Timing},
-        nexon::{ApiKey, NexonClient},
-        scouter::{Estimates, JobState, ScouterClient},
+        character_data::{CharacterData, ConfirmOutcome},
+        scouter::JobState,
         store::MemoryCharData,
     },
 };
@@ -38,9 +36,10 @@ use serde_json::{Value, json};
 use super::{ALICE, BOB, CARA, Portal, refused};
 use crate::{
     auth::member_support::{Browser, PUB_ORIGIN},
-    reads::{CharacterDataMaker, Reads},
+    character_data::maker,
+    reads::Reads,
     schemas::assert_valid,
-    support::{ADMIN_HOST, Reply, request, spawn_router, strs},
+    support::{ADMIN_HOST, Reply, fields, find, request, spawn_router, strs},
 };
 
 const MINE: &str = "/api/public/me/characters";
@@ -158,40 +157,6 @@ async fn fake_nexon() -> SocketAddr {
     spawn_router(app).await
 }
 
-/// The module, its clock moved by `skew` (the lookup spacing), with the
-/// Open API at `nexon` and the scouter at `scouter` when given.
-fn module(
-    nexon: Option<SocketAddr>,
-    scouter: Option<SocketAddr>,
-    file: Arc<MemoryCharData>,
-    slot: Arc<OnceLock<Arc<CharacterData>>>,
-    skew: Arc<Mutex<TimeDelta>>,
-) -> CharacterDataMaker {
-    Box::new(move |store, clock| {
-        let clock: Clock = Arc::new(move || clock() + *skew.lock().unwrap());
-        let mut service = CharacterData::new(
-            file,
-            store as Arc<dyn RosterSide>,
-            nexon.map(|address| NexonClient::plain(address, ApiKey::new("invented-key"))),
-            Arc::clone(&clock),
-            Timing {
-                spacing: Duration::from_millis(1),
-                rate_limit_unit: Duration::from_millis(1),
-            },
-        );
-        if let Some(address) = scouter {
-            let url = format!("http://{address}");
-            let client = ScouterClient::new(&url)
-                .unwrap()
-                .with_timeout(Duration::from_millis(400));
-            service = service.with_estimates(Estimates::new(client, url, clock));
-        }
-        let service = Arc::new(service);
-        slot.set(Arc::clone(&service)).ok().unwrap();
-        service
-    })
-}
-
 /// The portal over both modules: NEXON connected when `nexon`, the scouter
 /// on when `scouter`.
 struct Chars {
@@ -211,24 +176,21 @@ impl Chars {
         };
         let (address, fake) = if scouter {
             let (address, fake) = crate::estimates::fake_scouter().await;
-            (Some(address), Some(fake))
+            (Some((address, Duration::from_millis(400))), Some(fake))
         } else {
             (None, None)
         };
         let slot = Arc::new(OnceLock::new());
         let file = Arc::new(MemoryCharData::new());
         let skew = Arc::new(Mutex::new(TimeDelta::zero()));
-        let reads = Reads::with_character_data(
-            None,
-            module(
-                nexon,
-                address,
-                Arc::clone(&file),
-                Arc::clone(&slot),
-                Arc::clone(&skew),
-            ),
-        )
-        .await;
+        let module = maker(
+            Arc::clone(&file),
+            nexon,
+            address,
+            Arc::clone(&skew),
+            Arc::clone(&slot),
+        );
+        let reads = Reads::with_character_data(None, module).await;
         Self {
             portal: Portal::over(reads).await,
             service: slot.get().unwrap().clone(),
@@ -404,13 +366,8 @@ async fn every_route_is_the_generic_404_while_its_module_is_off() {
     }
     let mine = portal.read(&alice, MINE, MY_CHARACTERS).await;
     assert_eq!(
-        (
-            &mine["character_data"],
-            &mine["connected"],
-            &mine["links"],
-            &mine["pending"]
-        ),
-        (&json!(false), &json!(false), &json!({}), &json!([]))
+        fields(&mine, &["character_data", "connected", "links", "pending"]),
+        json!([false, false, {}, []])
     );
     // Closed, the portal answers `closed` first.
     portal.harness.set_open(false);
@@ -430,12 +387,8 @@ async fn every_route_is_the_generic_404_while_its_module_is_off() {
     generic(&start, "POST estimates");
     let mine = chars.portal.read(&alice, MINE, MY_CHARACTERS).await;
     assert_eq!(
-        (
-            &mine["character_data"],
-            &mine["connected"],
-            &mine["estimates"]
-        ),
-        (&json!(true), &json!(true), &json!(false))
+        fields(&mine, &["character_data", "connected", "estimates"]),
+        json!([true, true, false])
     );
 }
 
@@ -759,11 +712,8 @@ async fn the_notice_link_cancel_unlink_and_my_data_follow_discord() {
     let pending = mine["pending"].as_array().unwrap();
     assert_eq!(pending.len(), 1);
     assert_eq!(
-        (
-            &pending[0]["character_id"],
-            &pending[0]["requested_by"]["kind"]
-        ),
-        (&json!(dk), &json!("admin"))
+        fields(&pending[0], &["character_id", "requested_by/kind"]),
+        json!([dk, "admin"])
     );
     assert_eq!(mine["links"][&dk]["state"], "pending");
 
@@ -789,16 +739,8 @@ async fn the_notice_link_cancel_unlink_and_my_data_follow_discord() {
         );
     }
     assert_eq!(
-        (
-            &asked["as_is"],
-            &asked["link_label"],
-            &asked["cancel_label"]
-        ),
-        (
-            &json!(words.as_is),
-            &json!("Link AsahiDK"),
-            &json!("Cancel")
-        )
+        fields(&asked, &["as_is", "link_label", "cancel_label"]),
+        json!([words.as_is, "Link AsahiDK", "Cancel"])
     );
     assert_eq!(asked["request"]["character_id"], dk);
     let own = chars.portal.read(&alice, &notice(&kanna), NOTICE).await;
@@ -859,32 +801,16 @@ async fn the_notice_link_cancel_unlink_and_my_data_follow_discord() {
 
     // My data: the link with its consent, and what is not linked.
     let data = chars.portal.read(&alice, DATA, MY_DATA).await;
-    let entries = data["entries"].as_array().unwrap();
-    let entry = |id: &str| {
-        entries
-            .iter()
-            .find(|entry| entry["character_id"] == id)
-            .unwrap_or_else(|| panic!("{id} in My data: {entries:?}"))
-    };
+    let entry = |id: &str| find(&data["entries"], "character_id", id);
     let linked = entry(&dk);
     assert_eq!(
-        (
-            &linked["state"],
-            &linked["notice"],
-            &linked["consent_surface"]
-        ),
-        (&json!("linked"), &json!(1), &json!("portal"))
+        fields(linked, &["state", "notice", "consent_surface"]),
+        json!(["linked", 1, "portal"])
     );
     assert_eq!(linked["data"]["level"], 271);
     assert_eq!(entry(&kanna)["state"], "not_linked");
     // Nothing waits, so the active main (AsahiDK, the first added) leads.
-    assert_eq!(
-        entries
-            .iter()
-            .map(|entry| entry["character_id"].clone())
-            .collect::<Vec<_>>(),
-        [json!(dk), json!(kanna)]
-    );
+    assert_eq!(strs(&data["entries"], "character_id"), [&dk, &kanna]);
 
     // Unlink: no fresh sign-in, the data goes at once.
     chars.portal.harness.advance(TimeDelta::minutes(16));
@@ -1088,12 +1014,8 @@ async fn the_party_sees_roster_levels_and_estimates_never_another_members_nexon_
         })
     );
     assert_eq!(
-        (
-            &slots[2]["you"],
-            &slots[2]["character"],
-            &slots[2]["scouter"]
-        ),
-        (&json!(false), &Value::Null, &Value::Null)
+        fields(&slots[2], &["you", "character", "scouter"]),
+        json!([false, null, null])
     );
     assert_eq!(party["nexon_data"], true);
     // No combat power anywhere, nor link state.
@@ -1104,21 +1026,9 @@ async fn the_party_sees_roster_levels_and_estimates_never_another_members_nexon_
 
     // Bob sees his own NEXON level and Alice's roster level.
     let party = chars.portal.read(&bob, PARTY, PARTY_VIEW).await;
-    let slots = party["slots"].as_array().unwrap();
-    assert_eq!(
-        (
-            &slots[0]["character"]["level"],
-            &slots[0]["character"]["level_source"]
-        ),
-        (&json!(250), &json!("roster"))
-    );
-    assert_eq!(
-        (
-            &slots[1]["character"]["level"],
-            &slots[1]["character"]["level_source"]
-        ),
-        (&json!(271), &json!("nexon"))
-    );
+    let level = |slot: &Value| fields(&slot["character"], &["level", "level_source"]);
+    assert_eq!(level(&party["slots"][0]), json!([250, "roster"]));
+    assert_eq!(level(&party["slots"][1]), json!([271, "nexon"]));
 
     // Cached scouter readings per boss, never looked up here.
     let reads = chars.reads();

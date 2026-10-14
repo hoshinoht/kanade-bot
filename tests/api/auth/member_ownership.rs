@@ -235,12 +235,7 @@ fn ids(timing: &Value) -> Vec<&str> {
 #[tokio::test]
 async fn timings_show_the_party_their_ownership_and_only_their_own_requests() {
     let portal = Portal::new().await;
-    let (aki, ben, cho, dee) = (
-        portal.sign_in(AKI).await,
-        portal.sign_in(BEN).await,
-        portal.sign_in(CHO).await,
-        portal.sign_in(DEE).await,
-    );
+    let [aki, ben, cho, dee] = portal.harness.sign_ins([AKI, BEN, CHO, DEE]).await;
 
     let mine = portal.own(&aki).await.expect("Aki is on it");
     assert_eq!(
@@ -392,12 +387,7 @@ async fn the_owner_hands_off_at_once_and_only_within_the_party() {
 #[tokio::test]
 async fn an_ask_replays_by_key_and_the_owner_accepts_it() {
     let portal = Portal::new().await;
-    let (aki, ben, cho, dee) = (
-        portal.sign_in(AKI).await,
-        portal.sign_in(BEN).await,
-        portal.sign_in(CHO).await,
-        portal.sign_in(DEE).await,
-    );
+    let [aki, ben, cho, dee] = portal.harness.sign_ins([AKI, BEN, CHO, DEE]).await;
     let first = portal.ask(&ben, "ben-1").await;
     let replay = portal.post(&ben, &ask_path(FIXED), "ben-1", None).await;
     assert_eq!(replay.status, 200, "{}", replay.text());
@@ -467,11 +457,7 @@ async fn an_ask_replays_by_key_and_the_owner_accepts_it() {
 #[tokio::test]
 async fn decline_and_withdraw_belong_to_the_owner_and_the_requester() {
     let portal = Portal::new().await;
-    let (aki, ben, cho) = (
-        portal.sign_in(AKI).await,
-        portal.sign_in(BEN).await,
-        portal.sign_in(CHO).await,
-    );
+    let [aki, ben, cho] = portal.harness.sign_ins([AKI, BEN, CHO]).await;
     // Asking, declining and withdrawing need no fresh sign-in; accepting does.
     portal.harness.advance(TimeDelta::minutes(16));
     let asked = portal.ask(&ben, "ben-1").await;
@@ -635,12 +621,7 @@ async fn member_writes_are_rate_limited_per_member() {
 #[tokio::test]
 async fn naming_the_current_owner_neither_replays_nor_cancels_asks() {
     let portal = Portal::new().await;
-    let (aki, ben, cho, dee) = (
-        portal.sign_in(AKI).await,
-        portal.sign_in(BEN).await,
-        portal.sign_in(CHO).await,
-        portal.sign_in(DEE).await,
-    );
+    let [aki, ben, cho, dee] = portal.harness.sign_ins([AKI, BEN, CHO, DEE]).await;
     let reply = portal.hand_off(&aki, "h-1", BEN).await;
     assert_eq!(reply.status, 200, "{}", reply.text());
     portal.harness.advance(TimeDelta::minutes(1));
@@ -677,12 +658,7 @@ async fn naming_the_current_owner_neither_replays_nor_cancels_asks() {
 #[tokio::test]
 async fn a_stranger_cannot_finish_an_ask_whose_requester_already_owns_it() {
     let portal = Portal::new().await;
-    let (aki, ben, cho, dee) = (
-        portal.sign_in(AKI).await,
-        portal.sign_in(BEN).await,
-        portal.sign_in(CHO).await,
-        portal.sign_in(DEE).await,
-    );
+    let [aki, ben, cho, dee] = portal.harness.sign_ins([AKI, BEN, CHO, DEE]).await;
     let bens = portal.ask(&ben, "ben-1").await;
     let chos = portal.ask(&cho, "cho-1").await;
     let (ben_id, cho_id) = (bens["id"].as_str().unwrap(), chos["id"].as_str().unwrap());
@@ -983,11 +959,7 @@ async fn an_accept_racing_a_withdraw_still_reports_the_new_owner() {
         domain::ownership::{OwnerRequestStatus, OwnerRequestStore},
     };
     let portal = Portal::new().await;
-    let (aki, ben, cho) = (
-        portal.sign_in(AKI).await,
-        portal.sign_in(BEN).await,
-        portal.sign_in(CHO).await,
-    );
+    let [aki, ben, cho] = portal.harness.sign_ins([AKI, BEN, CHO]).await;
     let bens = portal.ask(&ben, "ben-1").await;
     let chos = portal.ask(&cho, "cho-1").await;
     let (ben_id, cho_id) = (

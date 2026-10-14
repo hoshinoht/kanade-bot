@@ -9,7 +9,10 @@ use kanade::{
 use serde_json::json;
 
 use super::{ERROR, Logs, extraction as log_row, ids, utc};
-use crate::{schemas::assert_valid, support::find};
+use crate::{
+    schemas::assert_valid,
+    support::{fields, find},
+};
 
 const EXTRACTIONS: &str = "extractions.json#/$defs/Extractions";
 const EXTRACTION: &str = "extractions.json#/$defs/Extraction";
@@ -146,14 +149,8 @@ async fn extraction_detail_carries_the_call_its_proposals_and_refusals() {
     );
     assert_eq!(detail["raw_response"], r#"{"amendments": []}"#);
     assert_eq!(detail["latency_ms"], 12_000);
-    assert_eq!(
-        (
-            &detail["prompt_tokens"],
-            &detail["completion_tokens"],
-            &detail["prompt_estimate"]
-        ),
-        (&json!(1500), &json!(60), &json!(1200))
-    );
+    let usage = ["prompt_tokens", "completion_tokens", "prompt_estimate"];
+    assert_eq!(fields(&detail, &usage), json!([1500, 60, 1200]));
     assert_eq!(
         detail["context"],
         json!({"window": 8192, "reserve": 2500, "source": "local_default", "sent_max_tokens": 2500})
@@ -180,20 +177,21 @@ async fn extraction_detail_carries_the_call_its_proposals_and_refusals() {
 
     let failed = logs.get("/api/admin/extractions/x-fail").await.json();
     assert_valid(EXTRACTION, "failed", &failed);
-    assert_eq!(failed["reasoning_content"], json!(null));
-    assert_eq!(failed["reasoning_tokens"], json!(null));
-    assert_eq!(failed["session_id"], json!(null));
-    assert_eq!(failed["request_ids"], json!([]));
-    assert_eq!(failed["refusals"], json!([]));
-    assert_eq!(failed["messages"], json!([]));
+    let shown = [
+        "reasoning_content",
+        "reasoning_tokens",
+        "session_id",
+        "request_ids",
+        "refusals",
+        "messages",
+        "prompt_tokens",
+        "completion_tokens",
+        "prompt_estimate",
+        "context",
+    ];
     assert_eq!(
-        (
-            &failed["prompt_tokens"],
-            &failed["completion_tokens"],
-            &failed["prompt_estimate"],
-            &failed["context"]
-        ),
-        (&json!(null), &json!(null), &json!(800), &json!(null)),
+        fields(&failed, &shown),
+        json!([null, null, null, [], [], [], null, null, 800, null]),
         "an estimate alone, and no logged context"
     );
 

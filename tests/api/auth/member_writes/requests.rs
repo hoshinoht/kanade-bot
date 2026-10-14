@@ -1,24 +1,20 @@
 //! The member's own requests: submit, list and withdraw, the limits, and an
 //! admin's decision in the Inbox reaching the requester's list.
 
-use std::sync::Arc;
-
-use chrono::{NaiveTime, TimeDelta, Weekday};
-use kanade::{
-    api::write::ApiClock,
-    domain::{
-        drafts::DraftStore,
-        ids::RandomIds,
-        members::{MemberStore, Roster},
-        requests::{NoFreezes, RequestSpec, Subject},
-        schedule::{Change, ReminderPolicy, RunStatus, SchedulePolicy},
-        scheduler::SchedulerService,
-    },
+use chrono::TimeDelta;
+use kanade::domain::{
+    drafts::DraftStore,
+    requests::{NoFreezes, RequestSpec, Subject},
+    schedule::{Change, RunStatus},
 };
 use serde_json::{Value, json};
 
 use super::{ALICE, BOB, CARA, DAN, Portal, keys, refused, run, utc};
-use crate::{schemas::assert_valid, support::Reply};
+use crate::{
+    reads::{policy, roster, scheduler},
+    schemas::assert_valid,
+    support::{Reply, fields},
+};
 
 const MINE: &str = "/api/public/requests/mine";
 const SUBMIT: &str = "/api/public/requests";
@@ -201,16 +197,8 @@ async fn members_send_list_and_withdraw_their_own_requests() {
     }
     let withdrawn = request(&portal.withdraw(&alice, &sent_id, "w-2").await, 200);
     assert_eq!(
-        (
-            withdrawn["state"].clone(),
-            withdrawn["decided_by"].clone(),
-            withdrawn["decided_at"].clone()
-        ),
-        (
-            json!("withdrawn"),
-            json!("Alice"),
-            json!("2026-09-29T04:00:00Z")
-        )
+        fields(&withdrawn, &["state", "decided_by", "decided_at"]),
+        json!(["withdrawn", "Alice", "2026-09-29T04:00:00Z"])
     );
     let again = request(&portal.withdraw(&alice, &sent_id, "w-3").await, 200);
     assert_eq!(again, withdrawn, "withdrawing again answers it as it is");
@@ -239,12 +227,7 @@ async fn members_send_list_and_withdraw_their_own_requests() {
 async fn every_request_kind_and_its_refusals() {
     let portal = Portal::new().await;
     portal.seed(vec![last_week_run()]).await;
-    let (alice, bob, cara, dan) = (
-        portal.sign_in(ALICE).await,
-        portal.sign_in(BOB).await,
-        portal.sign_in(CARA).await,
-        portal.sign_in(DAN).await,
-    );
+    let [alice, bob, cara, dan] = portal.harness.sign_ins([ALICE, BOB, CARA, DAN]).await;
     let swap = json!({"kind": "swap", "run_id": "n-kalos", "with": "1004"});
     let swapped = request(&portal.submit(&bob, "s-1", &swap).await, 201);
     assert_eq!(swapped["with"], json!({"id": "1004", "name": "Dan"}));
@@ -254,22 +237,12 @@ async fn every_request_kind_and_its_refusals() {
         json!({"kind": "change_fixed", "fixed_id": "f-kalos", "party": ["1001", "1002", "1004"]});
     let changed = request(&portal.submit(&bob, "c-1", &change).await, 201);
     assert_eq!(
-        (
-            changed["fixed_id"].clone(),
-            changed["run"].clone(),
-            changed["channel"].clone(),
-            changed["proposed"].clone()
-        ),
-        (
-            json!("f-kalos"),
-            Value::Null,
-            json!("#kalos-four"),
-            json!({"day": null, "time": null, "channel": null, "party": [
-                {"id": "1001", "name": "Alice"},
-                {"id": "1002", "name": "Bobby"},
-                {"id": "1004", "name": "Dan"},
-            ]}),
-        )
+        fields(&changed, &["fixed_id", "run", "channel", "proposed"]),
+        json!(["f-kalos", null, "#kalos-four", {"day": null, "time": null, "channel": null, "party": [
+            {"id": "1001", "name": "Alice"},
+            {"id": "1002", "name": "Bobby"},
+            {"id": "1004", "name": "Dan"},
+        ]}])
     );
 
     let new = json!({
@@ -286,18 +259,8 @@ async fn every_request_kind_and_its_refusals() {
         "the requester leads the party"
     );
     assert_eq!(
-        (
-            created["kind"].clone(),
-            created["fixed_id"].clone(),
-            created["bosses"][0]["token"].clone(),
-            created["note"].clone()
-        ),
-        (
-            json!("new_fixed"),
-            Value::Null,
-            json!("XKalos"),
-            json!("Friday Kalos?")
-        )
+        fields(&created, &["kind", "fixed_id", "bosses/0/token", "note"]),
+        json!(["new_fixed", null, "XKalos", "Friday Kalos?"])
     );
 
     // The Tuesday timing's dry run cannot apply Alice leaving it (its party
@@ -459,18 +422,8 @@ async fn an_admin_approval_reaches_the_requester() {
     let mine = portal.mine(&alice).await;
     let approved = &mine["requests"][0];
     assert_eq!(
-        (
-            approved["state"].clone(),
-            approved["decided_by"].clone(),
-            approved["decided_at"].clone(),
-            approved["run"]["mine"].clone()
-        ),
-        (
-            json!("approved"),
-            json!("an admin"),
-            json!("2026-09-29T04:00:00Z"),
-            json!(true)
-        ),
+        fields(approved, &["state", "decided_by", "decided_at", "run/mine"]),
+        json!(["approved", "an admin", "2026-09-29T04:00:00Z", true]),
         "Alice is on the run now"
     );
     assert_eq!(counts(&mine), (0, 1));
@@ -483,29 +436,16 @@ async fn a_request_whose_boss_week_passed_shows_expired() {
     let portal = Portal::new().await;
     portal.seed(vec![last_week_run()]).await;
     let store = portal.reads.store.clone();
-    let mut directory = Roster::new();
-    for profile in store.list_members().await.unwrap() {
-        directory.upsert(profile.member);
-    }
-    let policy = SchedulePolicy::new(
-        ReminderPolicy {
-            zone: chrono_tz::Asia::Kuala_Lumpur,
-            ping_time: NaiveTime::from_hms_opt(9, 0, 0).unwrap(),
-            countdowns: vec![60, 15],
-        },
-        Weekday::Thu,
-        NaiveTime::MIN,
-    );
+    let directory = roster(&store).await;
     // Sent last week, before the reset.
-    let at = utc(9, 19, 4, 0);
-    let mut past = SchedulerService::new(store.clone(), RandomIds, ApiClock(Arc::new(move || at)));
+    let mut past = scheduler(&store, utc(9, 19, 4, 0));
     let old = past
         .submit_request(
             "1004",
             "let me in",
             RequestSpec::Join(Subject::Run("p-old".into())),
             None,
-            &policy,
+            &policy(),
             &directory,
             &NoFreezes,
         )
@@ -515,23 +455,24 @@ async fn a_request_whose_boss_week_passed_shows_expired() {
     let dan = portal.sign_in(DAN).await;
     let mine = portal.mine(&dan).await;
     let expired = &mine["requests"][0];
+    let shown = [
+        "id",
+        "state",
+        "expires_at",
+        "run/id",
+        "run/can_edit",
+        "decided_at",
+    ];
     assert_eq!(
-        (
-            expired["id"].clone(),
-            expired["state"].clone(),
-            expired["expires_at"].clone(),
-            expired["run"]["id"].clone(),
-            expired["run"]["can_edit"].clone(),
-            expired["decided_at"].clone()
-        ),
-        (
-            json!(old.id),
-            json!("expired"),
-            json!("2026-09-23T16:00:00Z"),
-            json!("p-old"),
-            json!(false),
-            Value::Null
-        )
+        fields(expired, &shown),
+        json!([
+            old.id,
+            "expired",
+            "2026-09-23T16:00:00Z",
+            "p-old",
+            false,
+            null
+        ])
     );
     let reply = portal.withdraw(&dan, &old.id, "w-1").await;
     assert_eq!(refused(&reply), (409, "request_closed".into()));

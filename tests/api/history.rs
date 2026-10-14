@@ -572,7 +572,7 @@ async fn checkpoints_list_encrypted_backups_from_their_plaintext_manifest() {
 
 #[tokio::test]
 async fn checkpoints_say_when_no_backup_dir_is_configured() {
-    let reads = Reads::without_backup_dir().await;
+    let reads = Reads::build(|b| b.backup_dir = false).await;
     let checkpoints = reads.checkpoints().await;
     assert_eq!(checkpoints["backup_dir_configured"], false);
     assert_eq!(checkpoints["backups"], json!([]));

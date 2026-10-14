@@ -18,7 +18,7 @@ use crate::{
     readiness::{On, character, on, slot},
     reads::Reads,
     run_characters::{assert_pick_refusals, pick, picked, retire},
-    support::strs,
+    support::{fields, strs},
 };
 
 const TIMING: &str = "characters.json#/$defs/TimingCharacters";
@@ -266,12 +266,8 @@ async fn timing_readiness_reads_the_saved_timing_or_the_form() {
     assert_eq!(strs(&ready["slots"], "member_id"), ["1001", "1002", "1003"]);
     let alice = slot(&ready, "1001");
     assert_eq!(
-        (
-            &alice["character"]["ign"],
-            &alice["basis"],
-            &alice["candidates"]
-        ),
-        (&json!("Wisteria"), &json!("timing_pick"), &json!(2))
+        fields(alice, &["character/ign", "basis", "candidates"]),
+        json!(["Wisteria", "timing_pick", 2])
     );
     assert_eq!(
         alice["bosses"],
@@ -279,8 +275,8 @@ async fn timing_readiness_reads_the_saved_timing_or_the_form() {
     );
     let bob = slot(&ready, "1002");
     assert_eq!(
-        (&bob["character"], &bob["basis"], &bob["candidates"]),
-        (&Value::Null, &Value::Null, &json!(0))
+        fields(bob, &["character", "basis", "candidates"]),
+        json!([null, null, 0])
     );
     assert_eq!(bob["bosses"][0]["level"], "unknown");
 
