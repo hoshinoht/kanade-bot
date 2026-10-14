@@ -450,7 +450,7 @@ impl AttendanceHistory for SqliteStore {
         member: &str,
         per_timing: usize,
     ) -> Result<Vec<PastRun>, StoreError> {
-        let mut conn = self.readers.acquire().await.map_err(store_error)?;
+        let mut conn = self.reader().await.map_err(store_error)?;
         rows::member_history(&mut conn, member, per_timing).await
     }
 }
@@ -461,7 +461,7 @@ impl ScheduleStore for SqliteStore {
         actor: &Actor,
         request_id: &str,
     ) -> Result<Option<RecordedRequest>, StoreError> {
-        let mut conn = self.readers.acquire().await.map_err(store_error)?;
+        let mut conn = self.reader().await.map_err(store_error)?;
         history::recorded_request(&mut conn, actor, request_id).await
     }
 

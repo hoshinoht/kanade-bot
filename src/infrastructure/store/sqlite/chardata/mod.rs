@@ -31,8 +31,12 @@ use rows::{LINK_COLUMNS, POST_COLUMNS, SNAPSHOT_COLUMNS, at, link, post, snapsho
 /// The owning handle on the character-data file. Call [`Self::close`].
 pub struct SqliteCharData {
     writer: Writer,
-    // Declared last: SQLite handles drop before ownership is released.
+    // After the connection: it drops before ownership is released.
     _owner: StoreOwner,
+    /// Test support: the directory of an `open_temp` file, removed only
+    /// once ownership is released.
+    #[cfg(any(test, feature = "test-support"))]
+    pub(super) temp_dir: Option<super::TempStoreDir>,
 }
 
 impl SqliteCharData {
@@ -46,6 +50,8 @@ impl SqliteCharData {
         let abandoned = Arc::new(AtomicBool::new(false));
         let _abandon_on_drop = AbandonOnDrop(Arc::clone(&abandoned));
         let task = tokio::spawn(async move {
+            #[cfg(any(test, feature = "test-support"))]
+            let _hold = super::hold::ClockHold::new();
             let owner = StoreOwner::acquire(&config)?;
             owner.identity().verify()?;
             let mut conn = connect::chardata(&config.db_path).await?;
@@ -61,6 +67,8 @@ impl SqliteCharData {
                     connect::Profile::CharData,
                 ),
                 _owner: owner,
+                #[cfg(any(test, feature = "test-support"))]
+                temp_dir: None,
             };
             if abandoned.load(Ordering::SeqCst) {
                 let _ = store.close().await;
@@ -83,8 +91,19 @@ impl SqliteCharData {
     /// # Errors
     /// Closing failed; ownership is released regardless.
     pub async fn close(self) -> Result<(), SqliteStoreError> {
-        let Self { writer, _owner } = self;
-        writer.shutdown().await.map_err(Into::into)
+        let Self {
+            writer,
+            _owner,
+            #[cfg(any(test, feature = "test-support"))]
+            temp_dir,
+        } = self;
+        #[cfg(any(test, feature = "test-support"))]
+        let _hold = super::hold::ClockHold::new();
+        let closed = writer.shutdown().await;
+        drop(_owner);
+        #[cfg(any(test, feature = "test-support"))]
+        drop(temp_dir);
+        closed.map_err(Into::into)
     }
 
     async fn writer_lease(&self) -> Result<WriterLease<'_>, LeaseError> {

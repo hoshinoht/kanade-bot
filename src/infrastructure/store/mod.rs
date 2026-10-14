@@ -67,6 +67,8 @@ pub mod web_sessions_conformance;
 #[cfg(any(test, feature = "test-support"))]
 pub use memory::{MemoryCharData, MemoryScheduleStore};
 pub use observer::{RunObserver, WriteObserver, Written};
+#[cfg(any(test, feature = "test-support"))]
+pub use sqlite::TempStoreDir;
 pub use sqlite::{
     BackupManifest, Seal, SqliteCharData, SqliteStore, SqliteStoreConfig, SqliteStoreError,
     SwapOwnership,

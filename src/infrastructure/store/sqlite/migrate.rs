@@ -195,6 +195,17 @@ pub(super) fn checksum(sql: &str) -> String {
         .collect()
 }
 
+/// One hash over every embedded migration's version and checksum: names
+/// the migrated template temp stores copy (test support).
+#[cfg(any(test, feature = "test-support"))]
+pub(super) fn ledger_hash() -> String {
+    let ledger: String = MIGRATIONS
+        .iter()
+        .map(|migration| format!("{}:{}\n", migration.version, checksum(migration.sql)))
+        .collect();
+    checksum(&ledger)
+}
+
 /// Check an applied ledger against the embedded migrations; returns how many
 /// are applied.
 pub(super) async fn verify(conn: &mut SqliteConnection) -> Result<usize, SqliteStoreError> {

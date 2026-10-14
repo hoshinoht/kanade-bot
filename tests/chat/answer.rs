@@ -21,6 +21,7 @@ use kanade::domain::scheduler::Clock;
 use kanade::domain::scheduler::{ProposalRequest, SchedulerService, Supersede};
 use kanade::infrastructure::llm::governor::{DEFAULT_TOOL_ROUNDS, Governor, Role};
 use kanade::infrastructure::llm::{ChatRequest, Effort, FakeAction, FakeProvider, Message};
+use kanade::infrastructure::store::SqliteStore;
 use serde_json::{Value, json};
 
 use crate::looping::{Ports, V4_TOOL_ROUNDS, said, settings};
@@ -28,7 +29,9 @@ use crate::model::{Scripted, capabilities, client};
 use crate::slow_store::SlowStore;
 use crate::support::world_input;
 use crate::wire::kanade;
-use crate::world::World;
+use crate::world::WorldOn;
+
+type World = WorldOn<SqliteStore>;
 
 const MODEL: &str = "synthetic-chat";
 

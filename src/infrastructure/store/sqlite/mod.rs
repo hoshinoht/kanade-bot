@@ -17,6 +17,8 @@ mod debug_cards;
 mod decline_notices;
 mod drafts;
 mod history;
+#[cfg(any(test, feature = "test-support"))]
+mod hold;
 mod journal;
 mod maintenance;
 mod members;
@@ -34,6 +36,8 @@ mod run_prompts;
 mod schedule;
 mod settings;
 mod snapshots;
+#[cfg(any(test, feature = "test-support"))]
+mod temp;
 mod web_sessions;
 pub(super) mod writer;
 
@@ -48,12 +52,43 @@ pub use chardata::SqliteCharData;
 use owner::StoreOwner;
 #[cfg(any(test, feature = "test-support"))]
 pub use snapshots::ReadPause;
+#[cfg(any(test, feature = "test-support"))]
+pub use temp::TempStoreDir;
 
 use crate::domain::history::{ChangeHistory, ChangeRef};
 use writer::Writer;
 
 /// How long [`SqliteStore::close`] waits for readers handed back late.
 const READER_DRAIN: std::time::Duration = std::time::Duration::from_secs(5);
+
+/// A pooled read connection from [`SqliteStore::reader`].
+pub(super) struct Reader {
+    conn: sqlx::pool::PoolConnection<sqlx::Sqlite>,
+    /// After `conn`: the clock goes only once the connection is handed back.
+    #[cfg(any(test, feature = "test-support"))]
+    _hold: hold::ClockHold,
+}
+
+impl Reader {
+    /// Close the connection instead of returning it to the pool.
+    pub(super) fn close_on_drop(&mut self) {
+        self.conn.close_on_drop();
+    }
+}
+
+impl std::ops::Deref for Reader {
+    type Target = sqlx::SqliteConnection;
+
+    fn deref(&self) -> &Self::Target {
+        &self.conn
+    }
+}
+
+impl std::ops::DerefMut for Reader {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.conn
+    }
+}
 
 /// Where the database lives and where its owner lock is taken.
 ///
@@ -148,8 +183,12 @@ pub struct SqliteStore {
     /// Test support: a pause the next composed read takes.
     #[cfg(any(test, feature = "test-support"))]
     read_pause: snapshots::PauseSlot,
-    // Declared last: SQLite handles drop before ownership is released.
+    // After the SQLite handles: they drop before ownership is released.
     owner: StoreOwner,
+    /// Test support: the directory of an `open_temp` store. Declared after
+    /// `owner`, so it is removed only once ownership is released.
+    #[cfg(any(test, feature = "test-support"))]
+    temp_dir: Option<TempStoreDir>,
 }
 
 struct UnclosedWarning {
@@ -190,10 +229,16 @@ impl SqliteStore {
         self.writer.lease().await
     }
 
-    pub(super) async fn reader(
-        &self,
-    ) -> Result<sqlx::pool::PoolConnection<sqlx::Sqlite>, sqlx::Error> {
-        self.readers.acquire().await
+    /// A read connection. Every read goes through here, never the pool,
+    /// so test support can hold a paused clock still while it waits on one.
+    pub(super) async fn reader(&self) -> Result<Reader, sqlx::Error> {
+        #[cfg(any(test, feature = "test-support"))]
+        let hold = hold::ClockHold::new();
+        Ok(Reader {
+            conn: self.readers.acquire().await?,
+            #[cfg(any(test, feature = "test-support"))]
+            _hold: hold,
+        })
     }
 
     /// From now on every read fails at once (`PoolClosed`, a backend error),
@@ -282,6 +327,8 @@ impl SqliteStore {
         owner: StoreOwner,
         db_path: &Path,
     ) -> Result<Self, (SqliteStoreError, StoreOwner)> {
+        #[cfg(any(test, feature = "test-support"))]
+        let _hold = hold::ClockHold::new();
         if let Err(error) = owner.identity().verify() {
             return Err((error, owner));
         }
@@ -316,6 +363,8 @@ impl SqliteStore {
                 db_path: db_path.to_owned(),
             },
             owner,
+            #[cfg(any(test, feature = "test-support"))]
+            temp_dir: None,
         })
     }
 
@@ -325,8 +374,19 @@ impl SqliteStore {
     /// # Errors
     /// Closing the write connection failed; ownership is released regardless.
     pub async fn close(self) -> Result<(), SqliteStoreError> {
-        let (closed, owner) = self.close_connections().await;
+        #[cfg(any(test, feature = "test-support"))]
+        let (store, temp_dir) = {
+            let mut store = self;
+            let temp_dir = store.temp_dir.take();
+            (store, temp_dir)
+        };
+        #[cfg(not(any(test, feature = "test-support")))]
+        let store = self;
+        let (closed, owner) = store.close_connections().await;
         drop(owner);
+        // The lock file lives in it: removed only after ownership is released.
+        #[cfg(any(test, feature = "test-support"))]
+        drop(temp_dir);
         closed
     }
 
@@ -340,6 +400,8 @@ impl SqliteStore {
             owner,
             ..
         } = self;
+        #[cfg(any(test, feature = "test-support"))]
+        let _hold = hold::ClockHold::new();
         unclosed.armed = false;
         // A reader handed back while the pool closes (SQLx 0.8 pings it
         // first, after its closed check) lands in the idle queue after
@@ -374,7 +436,7 @@ impl SqliteStore {
     /// The read failed.
     pub async fn schema_version(&self) -> Result<i64, SqliteStoreError> {
         let version = sqlx::query_scalar("SELECT schema_version FROM store_meta WHERE id = 1")
-            .fetch_one(&self.readers)
+            .fetch_one(&mut *self.reader().await?)
             .await?;
         Ok(version)
     }
@@ -385,7 +447,7 @@ impl SqliteStore {
     /// The check failed to run.
     pub async fn foreign_key_violations(&self) -> Result<usize, SqliteStoreError> {
         let rows = sqlx::query("PRAGMA foreign_key_check")
-            .fetch_all(&self.readers)
+            .fetch_all(&mut *self.reader().await?)
             .await?;
         Ok(rows.len())
     }

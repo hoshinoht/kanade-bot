@@ -14,11 +14,14 @@ use kanade::extract::pipeline::{
     AuthorKind, CallContext, LiveContext, MessageEvent, check_reasoning_effort, extraction_outcome,
 };
 use kanade::infrastructure::llm::{Effort, FakeAction, ModelCapabilities};
+use kanade::infrastructure::store::SqliteStore;
 
 use crate::fakes::{
-    ALIAS, ALVIN, CHANNEL, KANON, MY, OTHER, PRIYA, STRANGER, World, after, filtered, local,
+    ALIAS, ALVIN, CHANNEL, KANON, MY, OTHER, PRIYA, STRANGER, WorldOn, after, filtered, local,
     message, nothing, replayed, reply,
 };
+
+type World = WorldOn<SqliteStore>;
 
 fn moved(time: &str, evidence: &str) -> FakeAction {
     reply(&format!(

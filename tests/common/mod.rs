@@ -17,7 +17,7 @@ use kanade::domain::{
 use kanade::infrastructure::store::MemoryScheduleStore;
 use serde_json::Value;
 
-pub type Service = SchedulerService<MemoryScheduleStore, SeqIds, TestClock>;
+pub type Service<S = MemoryScheduleStore> = SchedulerService<S, SeqIds, TestClock>;
 
 /// A fixed UUID sequence; running out fails the test.
 /// Clones share one cursor so a test can draw ids the service did not.
@@ -76,9 +76,14 @@ pub fn service(input: &Value) -> (Service, TestClock) {
 
 /// A scheduler at `input.clock` drawing ids from `input.uuid_sequence`.
 pub fn service_with_ids(input: &Value) -> (Service, TestClock, SeqIds) {
+    service_over(MemoryScheduleStore::new(), input)
+}
+
+/// [`service_with_ids`] over `store`.
+pub fn service_over<S: ScheduleStore>(store: S, input: &Value) -> (Service<S>, TestClock, SeqIds) {
     let clock = TestClock::new(instant(&input["clock"]));
     let ids = SeqIds::new(&input["uuid_sequence"]);
-    let service = SchedulerService::new(MemoryScheduleStore::new(), ids.clone(), clock.clone());
+    let service = SchedulerService::new(store, ids.clone(), clock.clone());
     (service, clock, ids)
 }
 
@@ -143,7 +148,7 @@ pub fn iso(at: DateTime<Utc>) -> String {
     to_iso(&at).expect("in range")
 }
 
-pub async fn snapshot(service: &Service) -> ScheduleSnapshot {
+pub async fn snapshot<S: ScheduleStore>(service: &Service<S>) -> ScheduleSnapshot {
     service.store().load(&Scope::All).await.expect("load")
 }
 
