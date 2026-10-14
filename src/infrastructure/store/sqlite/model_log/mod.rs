@@ -10,7 +10,6 @@ mod messages;
 #[cfg(test)]
 mod plans;
 mod prune;
-mod refresh;
 mod rewrites;
 
 use chrono::{DateTime, Utc};

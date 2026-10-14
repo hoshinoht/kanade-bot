@@ -9,6 +9,9 @@ _In development_
 ### Changes
 - Estimates are now labelled “Estimate” on the portals and in Discord.
 
+### Removed
+- Removed the one-off `kanade import v4` command; v4 data already imported stays readable.
+
 ## 1.0.0-beta.7
 
 _13 Oct 2026_

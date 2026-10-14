@@ -185,7 +185,7 @@ async fn chat_filters_each_and_combined() {
         ),
         ("?outcome=answered&channel=star", &[]),
         ("?q=%20summarise%20", &["c-timeout"]),
-        // Parses; no v4-imported row here.
+        // Parses; no legacy row in this fixture.
         ("?outcome=unknown", &[]),
     ];
     for (query, expected) in cases {

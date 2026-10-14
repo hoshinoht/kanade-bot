@@ -760,8 +760,7 @@ to the redesigned cards' and the admin preview's difficulty marks; a
 missing pill or a failed list keeps the written label
 (`difficulty_marks`/`difficulty_marks_unavailable`). Restart serve after
 uploading.
-`import v4` is the one-off testing import from a v4 snapshot
-(`v4-import.md`). `backup [--name FILE]` is the deploy-time snapshot:
+`backup [--name FILE]` is the deploy-time snapshot:
 it needs only `KANADE_DB_PATH`, `KANADE_OWNER_LOCK_DIR` and
 `KANADE_BACKUP_DIR`, refuses when no store exists (it never creates one) and,
 through the owner lock, while serve owns the store (exit `69`, "stop the bot
@@ -784,7 +783,7 @@ refuses an existing `--out`, fails before writing on a wrong identity and
 removes a partial output when the input is damaged or truncated. Key and
 recipient errors name the line number, never its content. The files are
 standard age, so `age -d -i` also opens them. `serve --offline` wires no
-scheduler, persistence, Discord, import, admin API or mutation route.
+scheduler, persistence, Discord, admin API or mutation route.
 
 `restore --from PATH [--identity FILE] [--apply]` replaces the store with a
 `kanade backup` snapshot while serve is stopped; it is a dry run unless

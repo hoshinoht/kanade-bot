@@ -26,7 +26,7 @@
 | | |
 |---|---|
 | **Binary** | `kanade`, Rust edition 2024, toolchain pinned to 1.98.1 |
-| **Commands** | `serve [--offline]`, `healthcheck`, `models check`, `import v4`, `backup`, `restore`, `portal`, `sessions`, `token rotate`, `ctl emojis` |
+| **Commands** | `serve [--offline]`, `healthcheck`, `models check`, `backup`, `restore`, `portal`, `sessions`, `token rotate`, `ctl emojis` |
 | **Discord** | One gateway session for one configured guild; slash commands registered per guild, never globally |
 | **Storage** | SQLite with an owner lock (one process per store); the optional character data has its own file |
 | **Models** | Any OpenAI-compatible model gateway, with separate chat, extraction and rewrite roles |
@@ -143,7 +143,6 @@ The admin portal is then at `http://localhost:8080` on the host; sign in with th
 | Commands, health, listeners and operator commands | [docs/v5/runtime-bootstrap.md](docs/v5/runtime-bootstrap.md) |
 | Point Kanade at another OpenAI-compatible server | [kanade.openai-compatible.example.toml](kanade.openai-compatible.example.toml) |
 | Write or select a persona | [config/personas/README.md](config/personas/README.md) |
-| Bring over v4 data | [docs/v5/v4-import.md](docs/v5/v4-import.md) |
 | What changed in each beta | [CHANGELOG.md](CHANGELOG.md) |
 
 ## Security
@@ -185,7 +184,6 @@ The Rust suite is offline (fake Discord and model providers, temporary stores). 
 | `src/api/` | Admin and public HTTP routers, authentication and guards |
 | `src/domain/`, `src/extract/`, `src/chat/` | Scheduling rules, extraction rules, chat tools, prompts and personas |
 | `src/infrastructure/` | SQLite store, model client, character data store, NEXON and scouter clients |
-| `src/import/` | `kanade import v4` |
 | `tests/` | Integration suites, one directory per target |
 | `web/` | Bun workspace: `apps/admin`, `apps/public` and shared `packages/` |
 | `devtools/pwa-mock/` | Dev-only mock server for the web apps |
@@ -199,7 +197,7 @@ The Rust suite is offline (fake Discord and model providers, temporary stores). 
 
 ## Coming from v4
 
-v4 (Python, 4.9.0) is retired. Its code is kept at tag `v4.9.0` and on branch `v4`. Weekly timings and recent chat and extraction logs move to v5 with `kanade import v4 --from <snapshot>`, a dry run until `--apply`; see [docs/v5/v4-import.md](docs/v5/v4-import.md).
+v4 (Python, 4.9.0) is retired. Its code remains at tag `v4.9.0` and on branch `v4`.
 
 ## Non-goals
 

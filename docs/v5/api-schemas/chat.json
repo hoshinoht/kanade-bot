@@ -4,7 +4,7 @@
   "title": "Chatbot log and turn detail",
   "$defs": {
     "ChatOutcome": {
-      "description": "`unknown`: a v4-imported question that maps to no other outcome. `profanity`: the profanity guardrail deflected the question or retried or replaced the reply (see ChatTurn.profanity).",
+      "description": "`unknown`: a legacy question that maps to no other outcome. `profanity`: the profanity guardrail deflected the question or retried or replaced the reply (see ChatTurn.profanity).",
       "enum": [
         "answered",
         "refused",
@@ -88,7 +88,7 @@
         },
         "completion_tokens": {
           "$ref": "#/$defs/TokenCount",
-          "description": "As `prompt_tokens`, for completion tokens. v4-imported turns may carry one of the two."
+          "description": "As `prompt_tokens`, for completion tokens. Legacy turns may carry one of the two."
         }
       }
     },
@@ -264,7 +264,7 @@
         },
         "completion_tokens": {
           "$ref": "#/$defs/TokenCount",
-          "description": "As `prompt_tokens`, for completion tokens. v4-imported turns may carry one of the two."
+          "description": "As `prompt_tokens`, for completion tokens. Legacy turns may carry one of the two."
         },
         "said": {
           "type": "string"

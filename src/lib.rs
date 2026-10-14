@@ -4,6 +4,5 @@ pub mod chat;
 pub mod cli;
 pub mod domain;
 pub mod extract;
-pub mod import;
 pub mod infrastructure;
 pub mod runtime;

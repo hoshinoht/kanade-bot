@@ -180,7 +180,7 @@ Pointers are `<file>#/$defs/<Name>`.
   `Extraction.refusals` (`[{change, code, message}]`), `RescanJob.unread`
   and per-channel `unread`/`errors`, `RescanJob.window` adds `24h`/`48h`
   (bot-started jobs); `ExtractionOutcome` and `chat.json` `ChatOutcome` add
-  `unknown` (v4-imported rows). Later, also optional: `RescanJob.started_at`,
+  `unknown` (legacy rows). Later, also optional: `RescanJob.started_at`,
   `messages` and `messages_total` (the Re-read card's progress line).
 - Serve composition: `identity.json` `Session.method` (`discord` |
   `tailscale` | `token`), sent on `GET /api/admin/session` and every sign-in

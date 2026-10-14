@@ -12,8 +12,7 @@ root's file.
   `http://localhost:8080`.
 - [Add-ons](#add-ons): a reverse proxy, admin Discord sign-in, the public
   portal, encrypted backups, character data, scouter estimates.
-- [Operations](#operations): deploy an update, back up, restore, roll back,
-  import v4 data.
+- [Operations](#operations): deploy an update, back up, restore and roll back.
 - [Reference](#reference): the image, host inputs and hardening.
 
 ## Quick start
@@ -625,35 +624,6 @@ Before upgrading again, `git checkout HEAD -- compose.yaml` and remove the
 guard.
 
 Never run `down -v` unless the store may be discarded.
-
-### Import v4 data
-
-`kanade import v4` copies v4's weekly fixed runs and recent chat/extraction
-logs into the v5 store (details: `docs/v5/v4-import.md`). It reads an online
-backup of the v4 database, never the live file, and takes the v5 store lock,
-so the bot must be stopped.
-
-```sh
-# 1. A v4 database snapshot, e.g. from v4's data volume or a kept copy.
-cp <v4-backup>.sqlite /tmp/v4-snapshot.sqlite
-# 2. Stop v5, dry-run, then apply with the snapshot mounted read-only.
-docker compose stop bot
-docker compose run --rm --no-deps \
-  -v /tmp/v4-snapshot.sqlite:/import/v4.sqlite:ro \
-  bot import v4 --from /import/v4.sqlite
-docker compose run --rm --no-deps \
-  -v /tmp/v4-snapshot.sqlite:/import/v4.sqlite:ro \
-  bot import v4 --from /import/v4.sqlite --apply
-docker compose start bot
-```
-
-The dry run prints counts and skip reasons only; `--apply` is safe to repeat
-(it adds nothing the second time). `--since YYYY-MM-DD` narrows the logs
-below the 90-day retention. The owner lock directory (`/data/run`) must
-already exist, as it must for `serve`. To rewrite logs imported by an older
-mapping, run the same two commands with `--refresh-logs` added (dry run,
-then `--refresh-logs --apply`); it replaces only `v4-` chat and extraction
-logs.
 
 ### Operator commands
 

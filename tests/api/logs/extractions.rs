@@ -253,6 +253,6 @@ async fn store_text_in_a_logged_failure_never_reaches_the_portal() {
     assert!(!detail.text().contains("/private"), "{}", detail.text());
     assert_eq!(detail.json()["error"], CALL_FAILED);
 
-    // v4-imported rows keep their `unknown` outcome, and it filters.
+    // Legacy rows keep their `unknown` outcome, and it filters.
     assert_eq!(ids(&list(&logs, "?outcome=unknown").await), ["x-v4"]);
 }
