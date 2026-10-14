@@ -10,7 +10,7 @@ pub mod guild;
 mod nexon;
 mod scouter;
 
-use std::{io, net::SocketAddr};
+use std::{io, net::SocketAddr, sync::Arc};
 
 use axum::Router;
 use tokio::{net::TcpListener, task::JoinHandle};
@@ -20,6 +20,8 @@ pub struct Fakes {
     pub scouter: SocketAddr,
     pub nexon: SocketAddr,
     pub gateway: SocketAddr,
+    /// The model gateway's completions.
+    pub model: Arc<gateway::Activity>,
     tasks: Vec<JoinHandle<()>>,
 }
 
@@ -33,10 +35,12 @@ impl Drop for Fakes {
 
 pub async fn start() -> io::Result<Fakes> {
     let mut tasks = Vec::with_capacity(3);
+    let model = Arc::new(gateway::Activity::default());
     Ok(Fakes {
         scouter: spawn(scouter::router(), &mut tasks).await?,
         nexon: spawn(nexon::router(), &mut tasks).await?,
-        gateway: spawn(gateway::router(), &mut tasks).await?,
+        gateway: spawn(gateway::router(Arc::clone(&model)), &mut tasks).await?,
+        model,
         tasks,
     })
 }

@@ -60,8 +60,8 @@ test('admin board: a lead boss with a clip plays it over the still poster; reduc
 test('admin run pane: portraits, levels, split artwork, monogram fallback', async ({ page }) => {
   await page.goto(`${ADMIN}/?sw=off`);
   await page.locator('[data-run="r-carling"] .plan-card__open').click();
-  const sheet = page.getByRole('complementary', { name: 'HCarling + HStar' });
-  // Two bosses: two angled slices in the identity card, the lead first; HStar has a clip.
+  const sheet = page.getByRole('complementary', { name: 'HCarling + HMaleficStar' });
+  // Two bosses: two angled slices in the identity card, the lead first; MaleficStar has a clip.
   await expect(sheet.locator('.week-pane__art .run__slice:nth-child(1) img.run__art')).toHaveAttribute('src', '/art/entry/Carling');
   const clip = sheet.locator('.week-pane__art .run__slice:nth-child(2) video.run__art');
   await expect(clip).toHaveAttribute('src', '/art/animated/MaleficStar');
@@ -84,8 +84,8 @@ test('admin run pane: portraits, levels, split artwork, monogram fallback', asyn
   const jupiter = page.getByRole('complementary', { name: 'HJupiter' });
   const mono = jupiter.locator('.portrait--mono');
   await expect(mono).toHaveText('Ju');
-  // The hue arrives through CSSOM, not a style attribute.
-  expect(await mono.evaluate((el) => (el as HTMLElement).style.getPropertyValue('--mono-hue'))).toBe('170');
+  // The hue arrives through CSSOM, not a style attribute (the real catalog's hue for Jupiter).
+  expect(await mono.evaluate((el) => (el as HTMLElement).style.getPropertyValue('--mono-hue'))).toBe('171');
   await expect(jupiter.locator('img')).toHaveCount(0);
 });
 

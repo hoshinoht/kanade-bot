@@ -8,11 +8,11 @@ use kanade::domain::notify::{
     NotificationIntent, Receipt,
 };
 
-use super::Seed;
+use super::{Seed, ids::BOSS_SCHEDULE};
 use crate::Fail;
 
 /// The channel the digest is posted in.
-const DIGEST_CHANNEL: &str = "boss-schedule";
+const DIGEST_CHANNEL: &str = BOSS_SCHEDULE;
 
 /// Claim `intent` under a lease of its own and bind it as posted at `at`
 /// as `message_id` in its channel; `record_week` raises the digest marker.

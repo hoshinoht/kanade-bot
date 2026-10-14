@@ -29,3 +29,17 @@ pub const PARTNER: &str = "100000000000000004";
 pub const STRANGER: &str = "114948601234567890";
 /// The bot's own user (`fakes::guild`).
 pub const BOT: &str = "1543532497948909578";
+
+/// The guild's text channels (`members::CHANNELS`). Real channel ids are
+/// snowflakes too (`KANADE_WATCH_CHANNEL_IDS` takes nothing else); each is
+/// `12` then the channel's place in the mock's list, zero-padded to 18 digits.
+pub const BALDRIX_CREW: &str = "120000000000000001";
+pub const KALOS_FOUR: &str = "120000000000000002";
+pub const LIMBO_TRIO: &str = "120000000000000003";
+pub const FA_NIGHT: &str = "120000000000000004";
+pub const JUPITER_TRIO: &str = "120000000000000005";
+pub const BELLONA_OTOT: &str = "120000000000000006";
+pub const HSTAR_PARTY: &str = "120000000000000007";
+pub const BM_TRIO: &str = "120000000000000008";
+pub const SEREN_TRIO: &str = "120000000000000009";
+pub const BOSS_SCHEDULE: &str = "120000000000000010";

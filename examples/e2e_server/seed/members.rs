@@ -22,15 +22,18 @@ pub const ROLES: [(&str, &str, Option<u32>); 3] = [
 /// A guild text channel and what the bot may do there.
 pub struct Channel {
     pub id: &'static str,
+    /// Its name, without the `#`.
+    pub name: &'static str,
     /// The extractor reads it.
     pub watched: bool,
     pub send: bool,
     pub manage: bool,
 }
 
-const fn party(id: &'static str) -> Channel {
+const fn party(id: &'static str, name: &'static str) -> Channel {
     Channel {
         id,
+        name,
         watched: true,
         send: true,
         manage: true,
@@ -39,28 +42,46 @@ const fn party(id: &'static str) -> Channel {
 
 /// The party channels, then the digest channel.
 pub const CHANNELS: [Channel; 10] = [
-    party("baldrix-crew"),
-    party("kalos-four"),
-    party("limbo-trio"),
-    party("fa-night"),
-    party("jupiter-trio"),
-    party("bellona-otot"),
-    party("hstar-party"),
+    party(BALDRIX_CREW, "baldrix-crew"),
+    party(KALOS_FOUR, "kalos-four"),
+    party(LIMBO_TRIO, "limbo-trio"),
+    party(FA_NIGHT, "fa-night"),
+    party(JUPITER_TRIO, "jupiter-trio"),
+    party(BELLONA_OTOT, "bellona-otot"),
+    party(HSTAR_PARTY, "hstar-party"),
     Channel {
         watched: false,
         send: false,
         manage: false,
-        ..party("bm-trio")
+        ..party(BM_TRIO, "bm-trio")
     },
     Channel {
         manage: false,
-        ..party("seren-trio")
+        ..party(SEREN_TRIO, "seren-trio")
     },
     Channel {
         watched: false,
-        ..party("boss-schedule")
+        ..party(BOSS_SCHEDULE, "boss-schedule")
     },
 ];
+
+/// A seeded channel's name (`#` included), else its id.
+pub fn channel_name(id: &str) -> String {
+    CHANNELS
+        .iter()
+        .find(|channel| channel.id == id)
+        .map_or_else(|| id.to_owned(), |channel| format!("#{}", channel.name))
+}
+
+/// The watched channels' ids, as `KANADE_WATCH_CHANNEL_IDS` lists them.
+pub fn watched_ids() -> String {
+    CHANNELS
+        .iter()
+        .filter(|channel| channel.watched)
+        .map(|channel| channel.id)
+        .collect::<Vec<_>>()
+        .join(",")
+}
 
 /// Chatbot access from Discord roles.
 #[derive(Clone, Copy, PartialEq, Eq)]

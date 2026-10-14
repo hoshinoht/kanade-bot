@@ -61,9 +61,10 @@ test('desktop: the masthead opens Bosses, a row opens its guide, every tab shows
   const events = page.getByRole('list', { name: 'Event bosses' });
   await expect(events.getByRole('listitem').filter({ hasText: 'Kai' }).locator('.status-chip')).toHaveText('Seasonal boss · CW3');
 
-  await page.getByRole('link', { name: 'Carling', exact: true }).click();
+  // The real catalog names Carling "Karling" (boss/bosses.yaml); its key stays Carling.
+  await page.getByRole('link', { name: 'Karling', exact: true }).click();
   await expect(page).toHaveURL(`${PUBLIC}/bosses/Carling`);
-  await expect(page.getByRole('heading', { level: 2, name: /^Carling/ })).toBeVisible();
+  await expect(page.getByRole('heading', { level: 2, name: /^Karling/ })).toBeVisible();
   await expect(page.getByText('Boss guide', { exact: true })).toBeVisible();
   // No repository path and no weekly-timings aside: the aside is "On this page" only.
   await expect(page.locator('.knowledge-hero__meta')).not.toContainText('boss/knowledge');
@@ -97,11 +98,11 @@ test('phone: the drawer opens Bosses, a guide fills the frame with a back step, 
   await expect(page.getByRole('navigation', { name: 'Boss catalog' })).toBeVisible();
   await expect(page.locator('.knowledge-detail')).toBeHidden();
 
-  await page.getByRole('link', { name: 'Carling', exact: true }).click();
+  await page.getByRole('link', { name: 'Karling', exact: true }).click();
   await expect(page).toHaveURL(`${PUBLIC}/bosses/Carling`);
   await expect(page.getByRole('navigation', { name: 'Boss catalog' })).toBeHidden();
   const back = page.getByRole('button', { name: 'Back to the catalog (Bosses)' });
-  await expect(back).toHaveText('Carling');
+  await expect(back).toHaveText('Karling');
   await expect(page.getByRole('heading', { level: 2, name: 'Boss guide' })).toBeVisible();
   await everyTab(page);
   expect(await serious(page)).toEqual([]);

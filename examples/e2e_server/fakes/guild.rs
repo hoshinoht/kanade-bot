@@ -18,7 +18,7 @@ impl ChannelList for Guild {
             .iter()
             .map(|channel| ChannelEntry {
                 id: channel.id.into(),
-                name: format!("#{}", channel.id),
+                name: format!("#{}", channel.name),
                 watched: channel.watched,
             })
             .collect()

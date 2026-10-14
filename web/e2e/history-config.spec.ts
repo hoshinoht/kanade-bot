@@ -43,14 +43,14 @@ test('history: a saved Config section is a view-only row with its before and aft
   await expect(viewer).toBeHidden();
   await expect(trigger).toBeFocused();
 
-  // Who applies to Config saves too. The harness admin is the break-glass token session.
+  // Who applies to Config saves too. The seed's character saves are Asahi's as well, so only her Notifications save is counted.
   await choose(page.getByRole('combobox', { name: 'Who' }), 'member:100000000000001005');
   await expect(page.locator('.history-row--config')).toHaveCount(0);
-  await choose(page.getByRole('combobox', { name: 'Who' }), 'admin:token');
-  await expect(page.locator('.history-row--config')).toHaveCount(1);
+  await choose(page.getByRole('combobox', { name: 'Who' }), 'admin:discord:100000000000001001');
+  await expect(row).toHaveCount(1);
 
   // The link opens the section it saved.
-  await page.locator('.history-row--config').click();
+  await row.click();
   await pane.getByRole('link', { name: 'Open Notifications in Config' }).click();
   await expect(page).toHaveURL(/\/config\?section=notifications/);
   await expect(page.getByRole('switch', { name: /^Quiet mode/ })).toHaveAttribute('aria-checked', 'true');

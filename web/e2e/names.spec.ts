@@ -67,7 +67,7 @@ test('chat turn: mention tokens render as copyable names', async ({ page }) => {
   await asked.getByRole('button', { name: '@Yuzu' }).click();
   expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('100000000000001004');
   await asked.getByRole('button', { name: '#fa-night' }).click();
-  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('fa-night');
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('120000000000000004');
   await expect(page.locator('.chat-turn__head').getByRole('button', { name: 'Yuzu' })).toBeVisible();
 });
 

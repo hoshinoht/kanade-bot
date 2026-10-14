@@ -5,8 +5,10 @@
 //!   clock back at its start; answers `{now}`.
 //! - `POST /__e2e/clock` `{at}` (RFC 3339) or `{advance_s}`: the instant the
 //!   writer, the API and module `character_data` read; answers `{now}`.
-//! - `GET /__e2e/whoami`: `{server, now, origin, admin_cookie: {name, value}}`,
-//!   the break-glass admin session every template copy holds.
+//! - `GET /__e2e/whoami`: `{server, now, origin, admin_cookie: {name, value},
+//!   break_glass: {cookie: {name, value}, token}}`: Asahi's Discord admin
+//!   session every template copy holds (the admin every spec browses as),
+//!   and the break-glass token with the token session the template holds.
 //! - `POST`/`GET`/`DELETE /__e2e/reports`: the CSP report sink, shared by both
 //!   origins; every enforced policy gets `report-uri /__e2e/reports`.
 //! - `GET /__e2e/discord/oauth2/authorize`: the fake Discord page.
@@ -35,7 +37,7 @@ use serde_json::{Value, json};
 use crate::{
     Fail,
     fakes::discord,
-    live::{Generation, Routes, World},
+    live::{AdminSessions, Generation, Routes, World},
 };
 
 pub const SERVER: &str = "kanade-e2e-server";
@@ -96,7 +98,9 @@ pub struct Shared {
     template: std::path::PathBuf,
     clock: SharedClock,
     start: DateTime<Utc>,
-    admin_cookie: (String, String),
+    admins: AdminSessions,
+    /// The break-glass admin token.
+    token: String,
     /// `None` once closed.
     routes: RwLock<Option<Routes>>,
     /// Held across a whole reset, so resets never interleave.
@@ -113,7 +117,8 @@ pub struct Start {
     pub db_dir: std::path::PathBuf,
     pub template: std::path::PathBuf,
     pub clock: SharedClock,
-    pub admin_cookie: (String, String),
+    pub admins: AdminSessions,
+    pub token: String,
     pub page: Arc<discord::Page>,
 }
 
@@ -125,7 +130,8 @@ impl Shared {
             db_dir,
             template,
             clock,
-            admin_cookie,
+            admins,
+            token,
             page,
         } = start;
         let showcase = world.showcase();
@@ -135,7 +141,8 @@ impl Shared {
             template,
             start: clock.now(),
             clock,
-            admin_cookie,
+            admins,
+            token,
             routes: RwLock::new(None),
             generation: tokio::sync::Mutex::new(Slot {
                 serial: 0,
@@ -157,7 +164,7 @@ impl Shared {
         slot.serial += 1;
         let path = self.db_dir.join(format!("live-{}.sqlite3", slot.serial));
         self.world.copy_template(&self.template, &path)?;
-        let fresh = match self.world.open(path.clone()).await {
+        let fresh = match self.world.open(path.clone(), true).await {
             Ok(fresh) => fresh,
             Err(error) => {
                 let _ = std::fs::remove_file(&path);
@@ -260,7 +267,7 @@ fn now_body(at: DateTime<Utc>) -> Json<Value> {
 
 async fn whoami(State(side): State<Side>) -> Json<Value> {
     let shared = &side.shared;
-    let (name, value) = &shared.admin_cookie;
+    let cookie = |(name, value): &(String, String)| json!({ "name": name, "value": value });
     Json(json!({
         "server": SERVER,
         "now": iso(shared.clock.now()),
@@ -268,7 +275,8 @@ async fn whoami(State(side): State<Side>) -> Json<Value> {
             Origin::Admin => "admin",
             Origin::Public => "public",
         },
-        "admin_cookie": { "name": name, "value": value },
+        "admin_cookie": cookie(&shared.admins.discord),
+        "break_glass": { "cookie": cookie(&shared.admins.token), "token": shared.token },
     }))
 }
 

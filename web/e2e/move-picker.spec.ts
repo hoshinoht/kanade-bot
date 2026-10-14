@@ -1,6 +1,6 @@
 import AxeBuilder from '@axe-core/playwright';
 import type { Page } from '@playwright/test';
-import { ADMIN, expect, settle, signInAdminAsAsahi, test } from './support';
+import { ADMIN, expect, settle, test } from './support';
 
 // The Move picker (boards P_MoveStates, Main, P_MoveWidths, P_MovePhone):
 // keyboard, accessible names and state, the clash warning and reduced motion,
@@ -179,8 +179,6 @@ test('axe: the run pane picker and the Inbox edit picker', async ({ page }) => {
   await expect(run.getByRole('alert').filter({ hasText: 'has passed' })).toBeVisible();
   expect(await axe(page, '.week-pane')).toEqual([]);
 
-  // Kanade's proposals are approved by a Discord admin, not the break-glass token.
-  await signInAdminAsAsahi(page);
   await page.goto(`${ADMIN}/inbox?tab=extractor&item=p-bm-move&sw=off`);
   const detail = page.locator('.inbox__detail');
   await detail.getByRole('button', { name: 'Edit, then approve' }).click();

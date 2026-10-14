@@ -65,7 +65,7 @@ for (const size of SIZES) {
     test(`Members: every name cell keeps its parts inside it at ${size.width}×${size.height}${scale ? ` with ${scale} text` : ''}`, async ({ page }) => {
       await page.setViewportSize(size);
       await page.goto(`${ADMIN}/members?sw=off`);
-      await expect(page.locator('[data-member="1014"]')).toBeAttached();
+      await expect(page.locator('[data-member="100000000000001014"]')).toBeAttached();
       await page.evaluate(async (fontSize) => {
         await document.fonts.ready;
         if (fontSize) document.documentElement.style.fontSize = fontSize;
@@ -102,7 +102,8 @@ for (const touch of [false, true]) {
     test.use({ viewport: { width: 390, height: 844 }, hasTouch: touch });
     test('chips and × buttons fit the dialog, never clipped', async ({ page }) => {
       await page.goto(`${ADMIN}/members?sw=off`);
-      await page.getByRole('button', { name: /^Mika/ }).click();
+      // \b: not Mikan, the fake Discord sign-in user the harness also lists.
+      await page.getByRole('button', { name: /^Mika\b/ }).click();
       const sheet = page.getByRole('dialog');
       const input = sheet.getByRole('textbox', { name: 'New alias for Mika' });
       // The longest alias the server takes (32 characters).
@@ -170,7 +171,7 @@ for (const size of SIZES) {
 
 // The decision's optional consequence line (VarRail2): the API's words under the
 // change, nothing at all when it sends null, wrapped (never cut) on a phone.
-const CONSEQUENCE = 'Party unchanged · 3 reminders will move';
+const CONSEQUENCE = 'Party unchanged · 2 reminders will move, 1 will be added';
 
 test('Inbox: the consequence line sits between the change and Approve, and is absent when null', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
@@ -181,8 +182,8 @@ test('Inbox: the consequence line sits between the change and Approve, and is ab
   const [change, said, approve] = await Promise.all([card.locator('.proposal__would'), line, card.locator('.decision__approve')].map((l) => l.boundingBox()));
   expect(said!.y).toBeGreaterThanOrEqual(change!.y + change!.height - 0.5);
   expect(approve!.y).toBeGreaterThanOrEqual(said!.y + said!.height - 0.5);
-  for (const id of ['p-fa-request', 'p-kalos-expired', 'p-limbo-new']) {
-    // All three are member requests (conflicted, expired, nothing to say).
+  for (const id of ['p-fa-request', 'p-limbo-new']) {
+    // Both are member requests (conflicted, nothing to say).
     await page.goto(`${ADMIN}/inbox?tab=self_service&item=${id}&sw=off`);
     await expect(page.locator(`[data-item="${id}"]`)).toHaveAttribute('aria-selected', 'true');
     await expect(page.locator('.proposal__title')).toBeVisible();

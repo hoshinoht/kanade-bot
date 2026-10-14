@@ -58,4 +58,16 @@ export const PORTED: readonly string[] = [
   'a11y.spec.ts',
   'clipping.spec.ts',
   'config-layout.spec.ts',
+  // Batch 5.
+  'art.spec.ts',
+  'bosses.spec.ts',
+  'config-channels.spec.ts',
+  'config-elements.spec.ts',
+  'experiments.spec.ts',
+  'motion.spec.ts',
+  'phone-fit.spec.ts',
+  'profanity.spec.ts',
+  'public-bosses.spec.ts',
+  'reduce-motion.spec.ts',
+  'sheet.spec.ts',
 ];

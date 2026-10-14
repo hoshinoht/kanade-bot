@@ -3,7 +3,12 @@ import { ADMIN, expect, test } from './support';
 // The chat profanity guardrail (user decision 2026-10-05): Config → Profanity
 // saves its lists and line with the bar and its two checks at once; Chat
 // filters profanity turns and names the side, the word and the line sent.
-// Words are the mock's invented placeholders (blarg, drat, frak, gorram, smeg, zounds).
+// Words named here are the mock's invented placeholders (blarg, drat, frak, smeg): the seed
+// saves drat, frak and smeg as extra words. The real built-in list is real profanity, so a
+// built-in word is only ever read off the page, never written here.
+
+/** The seed's extra words (examples/e2e_server/seed/settings.rs). */
+const EXTRA = ['drat', 'frak', 'smeg'];
 
 const LINE = "Ochitsuite! Let's keep it clean in here. Ask me again nicely and I'll help.";
 
@@ -23,22 +28,26 @@ test('Config Profanity: words and the line save whole; refusals stay inline; the
   await add.fill('Heck');
   await add.press('Enter');
   const extra = panel.getByRole('list', { name: 'Extra blocked words' });
-  await expect(extra.getByRole('listitem')).toHaveText(['heck×']);
-  await add.fill('drat');
+  await expect(extra.getByRole('listitem')).toHaveText([...EXTRA, 'heck'].map((w) => `${w}×`));
+  const find = panel.getByRole('combobox', { name: 'Find a built-in word to allow again' });
+  const builtins = panel.getByRole('listbox', { name: 'Built-in words' });
+  await expect(builtins).toBeHidden();
+  await find.fill('a');
+  const builtin = (await builtins.getByRole('option').first().textContent())!.trim();
+  await find.fill('');
+  await add.fill(builtin);
   await add.press('Enter');
-  await expect(panel.getByRole('alert')).toHaveText('“drat” is already on the built-in list.');
+  await expect(panel.getByRole('alert')).toHaveText(`“${builtin}” is already on the built-in list.`);
   await expect(add).toHaveAttribute('aria-invalid', 'true');
   await add.fill('');
 
   // A built-in word allowed again: found by typing, picked with Enter; the whole list is never shown.
-  const find = panel.getByRole('combobox', { name: 'Find a built-in word to allow again' });
-  await expect(panel.getByRole('listbox', { name: 'Built-in words' })).toBeHidden();
-  await find.fill('me');
-  await expect(panel.getByRole('listbox', { name: 'Built-in words' }).getByRole('option')).toHaveText(['smeg']);
+  await find.fill(builtin);
+  await expect(builtins.getByRole('option').first()).toHaveText(builtin);
   await expect(find).toHaveAttribute('aria-activedescendant', /.+/);
   await find.press('Enter');
   await expect(find).toHaveValue('');
-  await expect(panel.getByRole('list', { name: 'Built-in words allowed again' }).getByRole('listitem')).toHaveText(['smeg×']);
+  await expect(panel.getByRole('list', { name: 'Built-in words allowed again' }).getByRole('listitem')).toHaveText([`${builtin}×`]);
   await expect(page.locator('.savebar__summary')).toContainText('2 unsaved changes');
 
   // The server refuses a line that uses a listed word: inline, the edits kept.
@@ -47,14 +56,14 @@ test('Config Profanity: words and the line save whole; refusals stay inline; the
   await expect(panel.getByRole('alert')).toContainText('frak');
   await expect(line).toHaveAttribute('aria-invalid', 'true');
   await expect(line).toHaveValue('Oi, no frak talk here.');
-  await expect(extra.getByRole('listitem')).toHaveCount(1);
+  await expect(extra.getByRole('listitem')).toHaveCount(EXTRA.length + 1);
 
   // Saved for real: one section, the lists whole and the line trimmed.
   await line.fill('  Oi, keep it clean in here.  ');
   const sent = page.waitForRequest((r) => r.method() === 'PATCH' && r.url().endsWith('/api/admin/config'));
   await panel.getByRole('button', { name: 'Save profanity' }).click();
   expect((await sent).postDataJSON()).toEqual({
-    profanity: { extra_words: ['heck'], allowed_words: ['smeg'], deflection_line: 'Oi, keep it clean in here.' },
+    profanity: { extra_words: [...EXTRA, 'heck'], allowed_words: [builtin], deflection_line: 'Oi, keep it clean in here.' },
   });
   await expect(page.getByText('Profanity words saved; the next question uses them.')).toBeVisible();
   await expect(panel.getByRole('alert')).toHaveCount(0);
@@ -62,7 +71,7 @@ test('Config Profanity: words and the line save whole; refusals stay inline; the
   await expect(page.locator('.savebar__summary')).toContainText('All changes saved');
 
   // Removing a chip keeps focus in the list's way in.
-  await panel.getByRole('button', { name: 'Remove smeg' }).click();
+  await panel.getByRole('button', { name: `Remove ${builtin}` }).click();
   await expect(find).toBeFocused();
 
   // A switch applies at once: turning one off asks first, then offers Undo.
@@ -72,12 +81,12 @@ test('Config Profanity: words and the line save whole; refusals stay inline; the
   await expect(panel.getByRole('switch', { name: 'Check replies' })).toHaveAttribute('aria-checked', 'false');
   await expect(page.getByText('No longer checking replies.')).toBeVisible();
   const config = await (await page.request.get(`${ADMIN}/api/admin/config`)).json();
-  expect(config.profanity).toMatchObject({ check_questions: true, check_replies: false, extra_words: ['heck'], allowed_words: ['smeg'] });
+  expect(config.profanity).toMatchObject({ check_questions: true, check_replies: false, extra_words: [...EXTRA, 'heck'], allowed_words: [builtin] });
 
   // The contents list summarises the section; a reload shows what was saved (the removed chip was never saved).
   await expect(page.getByRole('tab', { name: /Profanity/ })).toContainText('questions');
   await page.reload();
-  await expect(panel.getByRole('list', { name: 'Built-in words allowed again' }).getByRole('listitem')).toHaveText(['smeg×']);
+  await expect(panel.getByRole('list', { name: 'Built-in words allowed again' }).getByRole('listitem')).toHaveText([`${builtin}×`]);
 });
 
 test('Chat: the profanity filter lists the three hits; each turn names its side, word and what was sent', async ({ page }) => {

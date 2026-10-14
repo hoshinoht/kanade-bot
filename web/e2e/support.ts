@@ -59,15 +59,6 @@ export async function signInPublic(page: Page): Promise<void> {
 }
 
 /**
- * The harness's admin is the template's break-glass token session; this
- * replaces it with Asahi's Discord session, as the mock's admin always is
- * (approving Kanade's proposals needs a Discord admin). A no-op on the mock.
- */
-export async function signInAdminAsAsahi(page: Page): Promise<void> {
-  if (HARNESS) await discordSignIn(page, ADMIN, 'admin');
-}
-
-/**
  * The real server's session cookies are `__Host-` (Secure). Chrome sends
  * Secure cookies to http://127.0.0.1, but Playwright's API requests send them
  * over http only to `localhost`, and the harness origins are 127.0.0.1. So on
@@ -146,8 +137,8 @@ async function serverReports(): Promise<unknown[]> {
 
 /**
  * Fails loudly unless both origins are this worker's server on the suite's
- * pinned clock. On the harness, answers the break-glass admin session cookie
- * every template copy holds.
+ * pinned clock. On the harness, answers Asahi's Discord admin session cookie
+ * every template copy holds (whoami's `break_glass` has the token session too).
  */
 async function verifyServer(): Promise<{ name: string; value: string } | undefined> {
   let cookie: { name: string; value: string } | undefined;
@@ -261,7 +252,8 @@ export const test = base.extend<{ cspControl: boolean; csp: Sink }>({
       const admin = await verifyServer();
       await resetWeek();
       await Promise.all(REPORT_SINKS.map((url) => fetch(url, { method: 'DELETE' })));
-      // The harness's break-glass admin session, as a browser that signed in holds it (the mock needs none).
+      // The harness's admin session (Asahi's Discord sign-in, as the mock's admin always is), as a browser that
+      // signed in holds it (the mock needs none).
       // `__Host-` cookies are Secure and host-only; cookies ignore ports, so both origins send it.
       if (admin) {
         await context.addCookies([{ ...admin, domain: '127.0.0.1', path: '/', secure: true, httpOnly: true, sameSite: 'Strict' }]);

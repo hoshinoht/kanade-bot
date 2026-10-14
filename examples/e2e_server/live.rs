@@ -16,7 +16,7 @@ use axum::{
     Router,
     http::{
         StatusCode,
-        header::{CONTENT_TYPE, HOST, SET_COOKIE},
+        header::{CONTENT_TYPE, COOKIE, HOST, LOCATION, SET_COOKIE},
     },
     routing::{MethodRouter, any_service},
 };
@@ -26,7 +26,11 @@ use hyper_util::rt::TokioIo;
 use kanade::{
     api::{
         assets,
-        auth::{Clock, fake::FakeDiscord},
+        auth::{
+            Clock, crypto,
+            fake::FakeDiscord,
+            wire::{self, query_pairs, query_value},
+        },
         listeners::{Site, router},
         server::LiveAdmin,
     },
@@ -41,10 +45,18 @@ use kanade::{
 };
 use tokio::net::{TcpListener, TcpStream};
 
-use crate::{Fail, LOOPBACK, fakes::guild::Guild, seed};
+use crate::{
+    Fail, LOOPBACK,
+    bot::Bot,
+    fakes::{discord, gateway, guild::Guild},
+    seed,
+};
 
 /// As serve: how long closing waits for requests still holding the store.
 const CLOSE_WAIT: Duration = Duration::from_secs(5);
+/// How long the template's Discord side must make no model call before its
+/// startup work (the day's header batch) counts as done.
+const SETTLE: Duration = Duration::from_millis(1_500);
 
 pub struct World {
     config: ServeConfig,
@@ -55,6 +67,7 @@ pub struct World {
     discord: Arc<FakeDiscord>,
     authorize_url: String,
     nexon: SocketAddr,
+    model: Arc<gateway::Activity>,
 }
 
 /// What each origin forwards to: the real listeners' routers.
@@ -68,6 +81,7 @@ pub struct Generation {
     store: Arc<SqliteStore>,
     composition: Composition,
     character_data: Option<CharacterDataModule>,
+    bot: Option<Bot>,
 }
 
 impl World {
@@ -77,6 +91,7 @@ impl World {
         discord: Arc<FakeDiscord>,
         authorize_url: String,
         nexon: SocketAddr,
+        model: Arc<gateway::Activity>,
     ) -> Result<Self, Fail> {
         let http = &config.runtime.http;
         let mut admin = Site::admin(http);
@@ -97,12 +112,14 @@ impl World {
             discord,
             authorize_url,
             nexon,
+            model,
         })
     }
 
     /// Compose over the store at `path` (and module `character_data`'s file
-    /// beside it), as serve composes at startup.
-    pub async fn open(&self, path: PathBuf) -> Result<Generation, Fail> {
+    /// beside it), as serve composes at startup, then start serve's Discord
+    /// side when `bot`.
+    pub async fn open(&self, path: PathBuf, bot: bool) -> Result<Generation, Fail> {
         let store = SqliteStore::open(&SqliteStoreConfig {
             db_path: path.clone(),
             owner_lock_dir: self.config.store.owner_lock_dir.clone(),
@@ -119,7 +136,7 @@ impl World {
             discord: Some(self.discord.clone()),
             authorize_url: Some(self.authorize_url.clone()),
             // The governor the Limits page shows, canned (`fakes::gateway`).
-            model_limits: Some(Arc::new(crate::fakes::gateway::limits)),
+            model_limits: Some(Arc::new(gateway::limits)),
             nexon: Some(self.nexon),
         };
         match compose_for_tests(&config, store.clone(), overrides).await {
@@ -136,12 +153,16 @@ impl World {
                     store,
                     composition,
                     character_data,
+                    bot: None,
                 };
                 if !installed {
                     let _ = generation.close().await;
                     return Err("the composed state is already shared".into());
                 }
-                Ok(generation)
+                if !bot {
+                    return Ok(generation);
+                }
+                generation.with_bot(config, Arc::clone(&self.clock)).await
             }
             Err(error) => {
                 if let Err(close) = close_store(store).await {
@@ -152,22 +173,29 @@ impl World {
         }
     }
 
-    /// Compose over a fresh store at `path`, seed it, sign the admin in and
-    /// keep it closed as the template. Returns the admin session cookie
-    /// (`name`, `value`) every copy holds.
-    pub async fn template(&self, path: &Path, token: &str) -> Result<(String, String), Fail> {
-        let generation = self.open(path.to_owned()).await?;
+    /// Compose over a fresh store at `path`, seed it, sign the admins in and
+    /// keep it closed as the template. Returns the admin sessions every copy
+    /// holds.
+    pub async fn template(&self, path: &Path, token: &str) -> Result<AdminSessions, Fail> {
+        let generation = self.open(path.to_owned(), false).await?;
         let live = generation.live();
         let seeded = match seed::template(generation.store.clone(), &live.state).await {
-            Ok(()) => self.sign_in_admin(live, token).await,
+            Ok(()) => self.sign_in_admins(live, token).await,
             Err(error) => Err(error),
         };
+        generation.close().await?;
+        let admins = seeded?;
+        // Serve's Discord side once over the seeded store, so what it does
+        // at startup (journal recovery, the day's header batch) is in every
+        // copy and a generation's own start finds nothing left to do.
+        let generation = self.open(path.to_owned(), true).await?;
+        self.model.settled(SETTLE).await;
         generation.close().await?;
         // A WAL left beside either file would be missing from every copy.
         if wal(path).exists() || wal(&chardata(path)).exists() {
             return Err("the template store left a WAL behind".into());
         }
-        seeded
+        Ok(admins)
     }
 
     /// Copy the template's files to a generation at `to`.
@@ -210,9 +238,10 @@ impl World {
         site
     }
 
-    /// The real break-glass token login, through the admin router on a
-    /// throwaway loopback listener.
-    async fn sign_in_admin(&self, live: &LiveAdmin, token: &str) -> Result<(String, String), Fail> {
+    /// The real sign-ins, through the admin router on a throwaway loopback
+    /// listener: the break-glass token login, then Asahi's Discord login
+    /// (the start, the fake Discord's approval, the callback).
+    async fn sign_in_admins(&self, live: &LiveAdmin, token: &str) -> Result<AdminSessions, Fail> {
         let host = self
             .config
             .runtime
@@ -231,28 +260,67 @@ impl World {
             .await;
         });
         let signed_in = async {
-            let tcp = TcpStream::connect(address).await?;
-            let (mut sender, connection) =
-                hyper::client::conn::http1::handshake(TokioIo::new(tcp)).await?;
-            tokio::spawn(connection);
             let body = serde_json::to_vec(&serde_json::json!({ "token": token }))?;
             let request = Request::post("/api/admin/auth/token")
-                .header(HOST, host)
+                .header(HOST, &host)
                 .header("sec-fetch-site", "same-origin")
                 .header(CONTENT_TYPE, "application/json")
                 .body(Full::new(Bytes::from(body)))?;
-            let response = sender.send_request(request).await?;
+            let response = send(address, request).await?;
             if response.status() != StatusCode::OK {
                 return Err(format!("token sign-in answered {}", response.status()).into());
             }
-            let cookie = response
-                .headers()
-                .get(SET_COOKIE)
-                .and_then(|value| value.to_str().ok())
-                .and_then(|value| value.split(';').next())
-                .and_then(|pair| pair.split_once('='))
+            let token_session = set_cookies(&response)
+                .into_iter()
+                .next()
                 .ok_or("token sign-in set no cookie")?;
-            Ok::<_, Fail>((cookie.0.to_owned(), cookie.1.to_owned()))
+
+            let request = Request::get("/api/admin/auth/discord/start")
+                .header(HOST, &host)
+                .body(Full::default())?;
+            let start = send(address, request).await?;
+            let location = start
+                .headers()
+                .get(LOCATION)
+                .and_then(|value| value.to_str().ok())
+                .ok_or_else(|| format!("Discord sign-in start answered {}", start.status()))?;
+            let pairs = query_pairs(location.split_once('?').map(|(_, query)| query));
+            let (Some(state), Some(challenge)) = (
+                query_value(&pairs, "state"),
+                query_value(&pairs, "code_challenge"),
+            ) else {
+                return Err(format!("Discord sign-in start sent {location}").into());
+            };
+            let code = crypto::random_token().ok_or("no system randomness")?;
+            self.discord
+                .approve(&code, &challenge, discord::user(seed::ids::ASAHI));
+            let cookies = set_cookies(&start)
+                .into_iter()
+                .map(|(name, value)| format!("{name}={value}"))
+                .collect::<Vec<_>>()
+                .join("; ");
+            let request = Request::get(format!(
+                "/api/admin/auth/discord/callback?{}",
+                wire::form(&[("code", &code), ("state", &state)])
+            ))
+            .header(HOST, &host)
+            .header(COOKIE, cookies)
+            .body(Full::default())?;
+            let callback = send(address, request).await?;
+            let discord_session = set_cookies(&callback)
+                .into_iter()
+                .find(|(name, value)| *name == token_session.0 && !value.is_empty())
+                .ok_or_else(|| {
+                    format!(
+                        "Discord sign-in answered {} without a session ({:?})",
+                        callback.status(),
+                        callback.headers().get(LOCATION)
+                    )
+                })?;
+            Ok::<_, Fail>(AdminSessions {
+                discord: discord_session,
+                token: token_session,
+            })
         }
         .await;
         server.abort();
@@ -261,19 +329,89 @@ impl World {
     }
 }
 
+/// A cookie: name, value.
+pub type Cookie = (String, String);
+
+/// The admin sessions every template copy holds.
+pub struct AdminSessions {
+    /// Asahi's Discord session: the admin every spec browses as, as on the
+    /// mock (approving Kanade's proposals needs a Discord admin).
+    pub discord: Cookie,
+    /// The break-glass token session.
+    pub token: Cookie,
+}
+
+/// One request on a fresh connection to `address`.
+async fn send(
+    address: SocketAddr,
+    request: Request<Full<Bytes>>,
+) -> Result<hyper::Response<hyper::body::Incoming>, Fail> {
+    let tcp = TcpStream::connect(address).await?;
+    let (mut sender, connection) = hyper::client::conn::http1::handshake(TokioIo::new(tcp)).await?;
+    tokio::spawn(connection);
+    Ok(sender.send_request(request).await?)
+}
+
+/// The `name=value` of each cookie a response sets.
+fn set_cookies<B>(response: &hyper::Response<B>) -> Vec<Cookie> {
+    response
+        .headers()
+        .get_all(SET_COOKIE)
+        .iter()
+        .filter_map(|value| value.to_str().ok())
+        .filter_map(|value| value.split(';').next())
+        .filter_map(|pair| pair.split_once('='))
+        .map(|(name, value)| (name.trim().to_owned(), value.trim().to_owned()))
+        .collect()
+}
+
 impl Generation {
     pub fn live(&self) -> &LiveAdmin {
         &self.composition.admin
     }
 
-    /// Ends its event streams, stops what it runs and closes its store.
+    /// Starts serve's Discord side over this generation's composition.
+    async fn with_bot(self, config: ServeConfig, clock: Clock) -> Result<Self, Fail> {
+        let Self {
+            path,
+            store,
+            composition,
+            character_data,
+            bot: _,
+        } = self;
+        match Bot::start(config, Arc::clone(&store), composition, clock).await {
+            Ok((composition, bot)) => Ok(Self {
+                path,
+                store,
+                composition,
+                character_data,
+                bot: Some(bot),
+            }),
+            Err(error) => {
+                if let Some(module) = character_data {
+                    module.stop(CLOSE_WAIT).await;
+                }
+                if let Err(close) = close_store(store).await {
+                    eprintln!("e2e_server: {close}");
+                }
+                Err(error)
+            }
+        }
+    }
+
+    /// Stops its Discord side, ends its event streams, stops what else it
+    /// runs and closes its store.
     pub async fn close(self) -> Result<PathBuf, Fail> {
         let Self {
             path,
             store,
             composition,
             character_data,
+            bot,
         } = self;
+        if let Some(bot) = bot {
+            bot.stop().await;
+        }
         // Open streams hold the store until they end.
         composition.admin.state.events.close();
         drop(composition);

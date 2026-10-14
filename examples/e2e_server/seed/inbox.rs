@@ -98,7 +98,7 @@ const LIVE: [Proposal; 2] = [
             (MINATO, "ty, will ask kanade", 126, false),
         ],
         read_at: 126,
-        ..proposal("p-bm-move", ChangeKind::Move, "bm-trio")
+        ..proposal("p-bm-move", ChangeKind::Move, BM_TRIO)
     },
     Proposal {
         source_id: "x-limbo",
@@ -114,7 +114,7 @@ const LIVE: [Proposal; 2] = [
             (NAGI, "maybe, will check", 124, false),
         ],
         read_at: 124,
-        ..proposal("p-limbo-add", ChangeKind::Add, "limbo-trio")
+        ..proposal("p-limbo-add", ChangeKind::Add, LIMBO_TRIO)
     },
 ];
 
@@ -132,7 +132,7 @@ const KALOS: Proposal = Proposal {
         (MIKA, "", 46, true),
     ],
     read_at: 47,
-    ..proposal(KALOS_MOVE, ChangeKind::Move, "kalos-four")
+    ..proposal(KALOS_MOVE, ChangeKind::Move, KALOS_FOUR)
 };
 
 /// Closed proposals for the Past tab (hours on [`Seed::hour`]'s clock).
@@ -146,7 +146,7 @@ const PAST: [Proposal; 3] = [
         summary: "Mika asks the chatbot for a Saturday Lotus run",
         thread: &[(MIKA, "can we add a lotus run sat?", 37, true)],
         read_at: 38,
-        ..proposal("c-lotus-add", ChangeKind::Add, "hstar-party")
+        ..proposal("c-lotus-add", ChangeKind::Add, HSTAR_PARTY)
     },
     Proposal {
         source_id: "x-limbo-early",
@@ -156,7 +156,7 @@ const PAST: [Proposal; 3] = [
         summary: "Hinata suggests Limbo at 21:00",
         thread: &[(HINATA, "limbo 9pm?", 33, true)],
         read_at: 34,
-        ..proposal("c-limbo-move", ChangeKind::Move, "limbo-trio")
+        ..proposal("c-limbo-move", ChangeKind::Move, LIMBO_TRIO)
     },
     Proposal {
         source_id: "x-seren-early",
@@ -165,7 +165,7 @@ const PAST: [Proposal; 3] = [
         summary: "Seren might be off this week",
         read_at: 10,
         card_posted: false,
-        ..proposal("c-seren-cancel", ChangeKind::Cancel, "seren-trio")
+        ..proposal("c-seren-cancel", ChangeKind::Cancel, SEREN_TRIO)
     },
 ];
 
@@ -469,7 +469,7 @@ pub async fn past(seed: &Seed<'_>) -> Result<(), Fail> {
                 &["HMaleficStar"],
                 Weekday::Sat,
                 "21:00",
-                "hstar-party",
+                HSTAR_PARTY,
                 &[YUZU],
             )?,
             at: week(4),
@@ -562,7 +562,7 @@ async fn requests(seed: &Seed<'_>) -> Result<(), Fail> {
                 &["NLimbo"],
                 Weekday::Sun,
                 "21:00",
-                "limbo-trio",
+                LIMBO_TRIO,
                 &[MIKA, NAGI],
             )?,
             at: seed.hour(114),
@@ -587,7 +587,7 @@ async fn mine(seed: &Seed<'_>) -> Result<(), Fail> {
                 &["HJupiter"],
                 Weekday::Mon,
                 "21:00",
-                "jupiter-trio",
+                JUPITER_TRIO,
                 &[ASAHI, SORA],
             )?,
             at: hours(120),
@@ -632,8 +632,8 @@ async fn mine(seed: &Seed<'_>) -> Result<(), Fail> {
 /// Tsubame wants Kalos (pinned to Ren).
 async fn ownership(seed: &Seed<'_>) -> Result<(), Fail> {
     for (id, timing, channel, requester, hours) in [
-        ("own-carling", "f-carling", "hstar-party", MIKA, 20),
-        ("own-kalos", "f-kalos", "kalos-four", TSUBAME, 5),
+        ("own-carling", "f-carling", HSTAR_PARTY, MIKA, 20),
+        ("own-kalos", "f-kalos", KALOS_FOUR, TSUBAME, 5),
     ] {
         seed.store
             .create_owner_request(OwnerRequest::open(
@@ -652,10 +652,9 @@ async fn ownership(seed: &Seed<'_>) -> Result<(), Fail> {
 type DraftPlan = (&'static str, &'static str, i64, Vec<(i64, DraftOp)>);
 
 /// Two open administrator drafts. Drafts are their author's own, so they
-/// are the template's break-glass admin's (the mock's are Asahi's: it signs
-/// the template in with Discord).
+/// are Asahi's, the admin the template signs in with Discord (as the mock).
 async fn drafts(seed: &Seed<'_>) -> Result<(), Fail> {
-    let me = "token";
+    let me = &format!("discord:{ASAHI}");
     let directory = seed.directory().await?;
     // The mock's drafts count hours from the boss week's start.
     let at = |hours: i64| seed.week + Duration::hours(hours);

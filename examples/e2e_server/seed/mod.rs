@@ -38,7 +38,9 @@ use kanade::{
 
 use crate::Fail;
 
-pub use members::{BOSSING_ROLE, CHANNELS, PILOT_ROLE, ROLES, STAFF_ROLE, member_name};
+pub use members::{
+    BOSSING_ROLE, CHANNELS, PILOT_ROLE, ROLES, STAFF_ROLE, member_name, watched_ids,
+};
 pub use settings::persona_files;
 
 /// How far into its boss week (Thu 00:00 KL) the pinned instant is.

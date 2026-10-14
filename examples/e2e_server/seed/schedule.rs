@@ -34,7 +34,7 @@ const TIMINGS: [Timing; 8] = [
         time: "21:30",
         bosses: &["NBaldrix"],
         party: &[ASAHI, REN, MIKA, YUZU],
-        channel: "baldrix-crew",
+        channel: BALDRIX_CREW,
         owner: ASAHI,
     },
     // Runs at 22:00 this week: an amended run.
@@ -44,7 +44,7 @@ const TIMINGS: [Timing; 8] = [
         time: "21:30",
         bosses: &["XKalos"],
         party: &[ASAHI, REN, TSUBAME, HINATA],
-        channel: "kalos-four",
+        channel: KALOS_FOUR,
         owner: REN,
     },
     Timing {
@@ -53,7 +53,7 @@ const TIMINGS: [Timing; 8] = [
         time: "23:30",
         bosses: &["HLimbo"],
         party: &[MIKA, NAGI, SORA],
-        channel: "limbo-trio",
+        channel: LIMBO_TRIO,
         owner: MIKA,
     },
     Timing {
@@ -62,7 +62,7 @@ const TIMINGS: [Timing; 8] = [
         time: "20:00",
         bosses: &["HFA"],
         party: &[KAITO, YUZU, RIN, HOTARU],
-        channel: "fa-night",
+        channel: FA_NIGHT,
         owner: KAITO,
     },
     Timing {
@@ -71,7 +71,7 @@ const TIMINGS: [Timing; 8] = [
         time: "21:00",
         bosses: &["HJupiter"],
         party: &[MINATO, ASAHI, SORA],
-        channel: "jupiter-trio",
+        channel: JUPITER_TRIO,
         owner: MINATO,
     },
     Timing {
@@ -80,7 +80,7 @@ const TIMINGS: [Timing; 8] = [
         time: "22:00",
         bosses: &["HCarling", "HMaleficStar"],
         party: &[ASAHI, REN, MIKA, YUZU, TSUBAME, HOTARU],
-        channel: "hstar-party",
+        channel: HSTAR_PARTY,
         owner: ASAHI,
     },
     Timing {
@@ -89,7 +89,7 @@ const TIMINGS: [Timing; 8] = [
         time: "23:30",
         bosses: &["XBM"],
         party: &[MINATO, KAITO, SORA],
-        channel: "bm-trio",
+        channel: BM_TRIO,
         owner: MINATO,
     },
     Timing {
@@ -98,7 +98,7 @@ const TIMINGS: [Timing; 8] = [
         time: "21:00",
         bosses: &["HSeren"],
         party: &[RIN, NAGI, HINATA],
-        channel: "seren-trio",
+        channel: SEREN_TRIO,
         owner: RIN,
     },
 ];
@@ -134,7 +134,7 @@ const RUNS: [Plan; 14] = [
         status: RunStatus::Done,
         bosses: &["XKalos"],
         party: &[(ASAHI, Y), (REN, Y), (TSUBAME, Y), (HINATA, Y)],
-        channel: "kalos-four",
+        channel: KALOS_FOUR,
         timing: Some("f-kalos"),
     },
     Plan {
@@ -145,7 +145,7 @@ const RUNS: [Plan; 14] = [
         status: RunStatus::Confirmed,
         bosses: &["NBaldrix"],
         party: &[(ASAHI, Y), (REN, Y), (MIKA, Y), (YUZU, Y)],
-        channel: "baldrix-crew",
+        channel: BALDRIX_CREW,
         timing: Some("f-baldrix"),
     },
     Plan {
@@ -156,7 +156,7 @@ const RUNS: [Plan; 14] = [
         status: RunStatus::Planned,
         bosses: &["XKalos"],
         party: &[(ASAHI, Y), (REN, Y), (TSUBAME, W), (HINATA, Y)],
-        channel: "kalos-four",
+        channel: KALOS_FOUR,
         timing: Some("f-kalos"),
     },
     Plan {
@@ -167,7 +167,7 @@ const RUNS: [Plan; 14] = [
         status: RunStatus::Planned,
         bosses: &["HLimbo"],
         party: &[(MIKA, Y), (NAGI, Y), (SORA, W)],
-        channel: "limbo-trio",
+        channel: LIMBO_TRIO,
         timing: Some("f-limbo"),
     },
     // Star again this boss week, from chat: Ren's RenShade is on both.
@@ -179,7 +179,7 @@ const RUNS: [Plan; 14] = [
         status: RunStatus::Done,
         bosses: &["NMaleficStar"],
         party: &[(REN, Y), (MINATO, Y)],
-        channel: "hstar-party",
+        channel: HSTAR_PARTY,
         timing: None,
     },
     Plan {
@@ -190,7 +190,7 @@ const RUNS: [Plan; 14] = [
         status: RunStatus::Planned,
         bosses: &["HFA"],
         party: &[(KAITO, Y), (YUZU, Y), (RIN, Y), (HOTARU, W)],
-        channel: "fa-night",
+        channel: FA_NIGHT,
         timing: Some("f-fa"),
     },
     Plan {
@@ -201,7 +201,7 @@ const RUNS: [Plan; 14] = [
         status: RunStatus::Confirmed,
         bosses: &["HJupiter"],
         party: &[(MINATO, Y), (ASAHI, Y), (SORA, Y)],
-        channel: "jupiter-trio",
+        channel: JUPITER_TRIO,
         timing: Some("f-jupiter"),
     },
     // Added from chat, not from a weekly timing.
@@ -213,7 +213,7 @@ const RUNS: [Plan; 14] = [
         status: RunStatus::Otot,
         bosses: &["NBellona"],
         party: &[(NAGI, Y), (HINATA, Y), (RIN, M), (KAITO, W)],
-        channel: "bellona-otot",
+        channel: BELLONA_OTOT,
         timing: None,
     },
     Plan {
@@ -231,7 +231,7 @@ const RUNS: [Plan; 14] = [
             (TSUBAME, W),
             (HOTARU, W),
         ],
-        channel: "hstar-party",
+        channel: HSTAR_PARTY,
         timing: Some("f-carling"),
     },
     Plan {
@@ -242,7 +242,7 @@ const RUNS: [Plan; 14] = [
         status: RunStatus::Planned,
         bosses: &["XBM"],
         party: &[(MINATO, Y), (KAITO, Y), (SORA, W)],
-        channel: "bm-trio",
+        channel: BM_TRIO,
         timing: Some("f-bm"),
     },
     Plan {
@@ -253,7 +253,7 @@ const RUNS: [Plan; 14] = [
         status: RunStatus::Planned,
         bosses: &["HSeren"],
         party: &[(RIN, N), (NAGI, N), (HINATA, W)],
-        channel: "seren-trio",
+        channel: SEREN_TRIO,
         timing: Some("f-seren"),
     },
     Plan {
@@ -264,7 +264,7 @@ const RUNS: [Plan; 14] = [
         status: RunStatus::Planned,
         bosses: &["XKalos"],
         party: &[(ASAHI, W), (REN, W), (TSUBAME, W), (HINATA, W)],
-        channel: "kalos-four",
+        channel: KALOS_FOUR,
         timing: Some("f-kalos"),
     },
     Plan {
@@ -275,7 +275,7 @@ const RUNS: [Plan; 14] = [
         status: RunStatus::Planned,
         bosses: &["HFA"],
         party: &[(KAITO, W), (YUZU, W), (RIN, W), (HOTARU, W)],
-        channel: "fa-night",
+        channel: FA_NIGHT,
         timing: Some("f-fa"),
     },
     Plan {
@@ -293,7 +293,7 @@ const RUNS: [Plan; 14] = [
             (TSUBAME, W),
             (HOTARU, W),
         ],
-        channel: "hstar-party",
+        channel: HSTAR_PARTY,
         timing: Some("f-carling"),
     },
 ];

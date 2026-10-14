@@ -5,11 +5,16 @@ use std::{fs, io, path::Path};
 
 use chrono::NaiveTime;
 use kanade::domain::settings::{
-    Chatbot, Persona, Pings, RoleProfileAssignment, Section, SelfService, save_section,
+    Chatbot, Persona, Pings, Profanity, RoleProfileAssignment, Section, SelfService, save_section,
 };
 
 use super::{Seed, members::STAFF_ROLE};
 use crate::Fail;
+
+/// The mock's invented placeholder words (its stand-in built-in list), as
+/// extra words: the real built-in list is real profanity, which the specs
+/// never name.
+const EXTRA_WORDS: [&str; 3] = ["drat", "frak", "smeg"];
 
 /// The persona catalog: id, label.
 const BUNDLES: [(&str, &str); 3] = [
@@ -109,6 +114,10 @@ pub async fn seed(seed: &Seed<'_>) -> Result<(), Fail> {
                     profile: "default".into(),
                 },
             ],
+        }),
+        Section::Profanity(Profanity {
+            extra_words: EXTRA_WORDS.map(str::to_owned).to_vec(),
+            ..Profanity::default()
         }),
     ];
     for section in &sections {

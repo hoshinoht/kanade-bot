@@ -8,7 +8,9 @@
 use std::{fs, path::Path};
 
 use chrono::{DateTime, Datelike, Timelike, Utc};
-use kanade::{domain::history::ChangeHistory, infrastructure::store::sqlite::BACKUP_MANIFEST_FORMAT};
+use kanade::{
+    domain::history::ChangeHistory, infrastructure::store::sqlite::BACKUP_MANIFEST_FORMAT,
+};
 use serde_json::json;
 
 use super::{ScheduleStore, Scope, Seed};
@@ -27,7 +29,12 @@ pub async fn seed(seed: &Seed<'_>) -> Result<(), Fail> {
         (seed.ago(3 * 3600), "8c30b19", head.hash.as_str(), schema),
         // A head from a forked history: plausible, never in this chain.
         (seed.ago(26 * 3600), "a59bc67", forked.as_str(), schema),
-        (seed.ago(50 * 3600), "630803c", head.hash.as_str(), schema - 1),
+        (
+            seed.ago(50 * 3600),
+            "630803c",
+            head.hash.as_str(),
+            schema - 1,
+        ),
     ] {
         let file = format!("kanade-{}-pre-{sha}.sqlite", stamp(taken));
         let manifest = json!({
@@ -38,7 +45,11 @@ pub async fn seed(seed: &Seed<'_>) -> Result<(), Fail> {
             "created_at": iso(taken),
         });
         write(dir, &file, b"placeholder snapshot")?;
-        write(dir, &format!("{file}.manifest.json"), manifest.to_string().as_bytes())?;
+        write(
+            dir,
+            &format!("{file}.manifest.json"),
+            manifest.to_string().as_bytes(),
+        )?;
     }
     Ok(())
 }
@@ -46,7 +57,14 @@ pub async fn seed(seed: &Seed<'_>) -> Result<(), Fail> {
 /// `YYYYMMDD-HHMM` in UTC, as the deploy runbook names snapshots (chrono's
 /// `format` is not compiled in).
 fn stamp(at: DateTime<Utc>) -> String {
-    format!("{:04}{:02}{:02}-{:02}{:02}", at.year(), at.month(), at.day(), at.hour(), at.minute())
+    format!(
+        "{:04}{:02}{:02}-{:02}{:02}",
+        at.year(),
+        at.month(),
+        at.day(),
+        at.hour(),
+        at.minute()
+    )
 }
 
 fn write(dir: &Path, name: &str, bytes: &[u8]) -> Result<(), Fail> {

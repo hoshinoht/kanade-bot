@@ -1,6 +1,7 @@
 //! The browser e2e server (`web/playwright.harness.config.ts`): the real
 //! `kanade` admin and public routers, composed as `serve` composes them
-//! (`compose_for_tests`: no Discord gateway) over a temporary SQLite store,
+//! (`compose_for_tests`, then serve's Discord side over a fake transport and
+//! a gateway that never connects: [`bot`]) over a temporary SQLite store,
 //! with the harness routes of [`controls`] in front.
 //!
 //! `--admin-port A --public-port P --web-dir PATH [--now RFC3339]` serves
@@ -10,6 +11,7 @@
 //! environment and no private file; everything it writes lives under a 0700
 //! directory in the temp dir, removed on exit.
 
+mod bot;
 mod controls;
 mod fakes;
 mod live;
@@ -199,6 +201,8 @@ fn config(
         ("KANADE_ADMIN_ROLE_ID", seed::STAFF_ROLE.to_owned()),
         ("KANADE_CHAT_PILOT_ROLE_ID", seed::PILOT_ROLE.to_owned()),
         ("KANADE_CHAT_CATEGORY_IDS", "410000000000000001".to_owned()),
+        // The seeded guild's watched channels (`seed::CHANNELS`).
+        ("KANADE_WATCH_CHANNEL_IDS", seed::watched_ids()),
         ("KANADE_MODULE_ROSTER", "1".to_owned()),
         ("KANADE_MODULE_CHARACTER_DATA", "1".to_owned()),
         (
@@ -278,17 +282,19 @@ async fn main() -> Result<(), Fail> {
         discord,
         format!("{admin}{}", fakes::discord::PATH),
         fakes.nexon,
+        Arc::clone(&fakes.model),
     )?;
     let db_dir = root.0.join("db");
     let template = db_dir.join("template.sqlite3");
-    let admin_cookie = world.template(&template, &token).await?;
+    let admins = world.template(&template, &token).await?;
     let shared = Arc::new(
         Shared::start(Start {
             world,
             db_dir,
             template,
             clock,
-            admin_cookie,
+            admins,
+            token,
             page,
         })
         .await?,
