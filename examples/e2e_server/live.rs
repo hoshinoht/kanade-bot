@@ -1,0 +1,303 @@
+//! The served world: one config, and generations of the real composition
+//! (`compose_for_tests`, serve's wiring without the gateway) each over its
+//! own store file. A generation is a copy of the template, so a reset is a
+//! restart, and a file per generation means a request still holding the
+//! old store never sees the new one change under it.
+
+use std::{
+    io,
+    net::SocketAddr,
+    path::{Path, PathBuf},
+    sync::Arc,
+    time::{Duration, Instant},
+};
+
+use axum::{
+    Router,
+    http::{
+        StatusCode,
+        header::{CONTENT_TYPE, HOST, SET_COOKIE},
+    },
+    routing::{MethodRouter, any_service},
+};
+use http_body_util::Full;
+use hyper::{Request, body::Bytes};
+use hyper_util::rt::TokioIo;
+use kanade::{
+    api::{
+        assets,
+        auth::{Clock, fake::FakeDiscord},
+        listeners::{Site, router},
+        server::LiveAdmin,
+    },
+    infrastructure::store::{SqliteStore, SqliteStoreConfig},
+    runtime::{
+        config::ServeConfig,
+        serve::{
+            CharacterDataModule,
+            api::{Composition, Overrides, TestComposition, compose_for_tests},
+        },
+    },
+};
+use tokio::net::{TcpListener, TcpStream};
+
+use crate::{Fail, LOOPBACK, seed};
+
+/// As serve: how long closing waits for requests still holding the store.
+const CLOSE_WAIT: Duration = Duration::from_secs(5);
+
+pub struct World {
+    config: ServeConfig,
+    /// Both listeners' policy before a generation fills in its live parts.
+    admin: Site,
+    public: Site,
+    clock: Clock,
+    discord: Arc<FakeDiscord>,
+    authorize_url: String,
+    nexon: SocketAddr,
+}
+
+/// What each origin forwards to: the real listeners' routers.
+pub struct Routes {
+    pub admin: MethodRouter,
+    pub public: MethodRouter,
+}
+
+pub struct Generation {
+    path: PathBuf,
+    store: Arc<SqliteStore>,
+    composition: Composition,
+    character_data: Option<CharacterDataModule>,
+}
+
+impl World {
+    pub fn new(
+        config: ServeConfig,
+        clock: Clock,
+        discord: Arc<FakeDiscord>,
+        authorize_url: String,
+        nexon: SocketAddr,
+    ) -> Result<Self, Fail> {
+        let http = &config.runtime.http;
+        let mut admin = Site::admin(http);
+        admin.listener_ip = Some(LOOPBACK);
+        let mut public = Site::public(http).ok_or("no public host")?;
+        public.listener_ip = Some(LOOPBACK);
+        public.public_origin = config
+            .runtime
+            .public_auth
+            .discord
+            .as_ref()
+            .and_then(|discord| assets::origin_of(&discord.redirect_uri));
+        Ok(Self {
+            config,
+            admin,
+            public,
+            clock,
+            discord,
+            authorize_url,
+            nexon,
+        })
+    }
+
+    /// Compose over the store at `path`, as serve composes at startup.
+    pub async fn open(&self, path: PathBuf) -> Result<Generation, Fail> {
+        let store = SqliteStore::open(&SqliteStoreConfig {
+            db_path: path.clone(),
+            owner_lock_dir: self.config.store.owner_lock_dir.clone(),
+        })
+        .await?;
+        let store = Arc::new(store);
+        let mut config = self.config.clone();
+        config.store.db_path = path.clone();
+        let overrides = Overrides {
+            clock: Arc::clone(&self.clock),
+            discord: Some(self.discord.clone()),
+            authorize_url: Some(self.authorize_url.clone()),
+            model_limits: None,
+            nexon: Some(self.nexon),
+        };
+        match compose_for_tests(&config, store.clone(), overrides).await {
+            Ok(TestComposition {
+                composition,
+                character_data,
+            }) => Ok(Generation {
+                path,
+                store,
+                composition,
+                character_data,
+            }),
+            Err(error) => {
+                if let Err(close) = close_store(store).await {
+                    eprintln!("e2e_server: {close}");
+                }
+                Err(error.into())
+            }
+        }
+    }
+
+    /// Compose over a fresh store at `path`, seed it, sign the admin in and
+    /// keep it closed as the template. Returns the admin session cookie
+    /// (`name`, `value`) every copy holds.
+    pub async fn template(&self, path: &Path, token: &str) -> Result<(String, String), Fail> {
+        let generation = self.open(path.to_owned()).await?;
+        let live = generation.live();
+        let seeded = match seed::template(generation.store.clone(), &live.state).await {
+            Ok(()) => self.sign_in_admin(live, token).await,
+            Err(error) => Err(error),
+        };
+        generation.close().await?;
+        // A WAL left beside it would be missing from every copy.
+        if wal(path).exists() {
+            return Err("the template store left a WAL behind".into());
+        }
+        seeded
+    }
+
+    pub fn routes(&self, live: &LiveAdmin) -> Routes {
+        Routes {
+            admin: any_service(router(self.admin_site(live))),
+            public: any_service(router(self.public_site(live))),
+        }
+    }
+
+    /// The core primitives showcase (`bun run showcase`), as the admin
+    /// listener serves its app: its own files under the production headers.
+    pub fn showcase(&self) -> Router {
+        let mut site = self.admin.clone();
+        site.app_dir = site.app_dir.map(|dist| dist.join("__showcase"));
+        router(site)
+    }
+
+    fn admin_site(&self, live: &LiveAdmin) -> Site {
+        let mut site = self.admin.clone();
+        site.auth = Some(Arc::clone(&live.auth));
+        site.state = Some(Arc::clone(&live.state));
+        site.health = Some(Arc::clone(&live.health));
+        site
+    }
+
+    fn public_site(&self, live: &LiveAdmin) -> Site {
+        let mut site = self.public.clone();
+        site.bot = Some(Arc::clone(&live.state.channels));
+        site.member = live.member.clone();
+        site.state = Some(Arc::clone(&live.state));
+        site
+    }
+
+    /// The real break-glass token login, through the admin router on a
+    /// throwaway loopback listener.
+    async fn sign_in_admin(&self, live: &LiveAdmin, token: &str) -> Result<(String, String), Fail> {
+        let host = self
+            .config
+            .runtime
+            .http
+            .admin_host
+            .clone()
+            .ok_or("no admin host")?;
+        let listener = TcpListener::bind((LOOPBACK, 0)).await?;
+        let address = listener.local_addr()?;
+        let app = router(self.admin_site(live));
+        let server = tokio::spawn(async move {
+            let _ = axum::serve(
+                listener,
+                app.into_make_service_with_connect_info::<SocketAddr>(),
+            )
+            .await;
+        });
+        let signed_in = async {
+            let tcp = TcpStream::connect(address).await?;
+            let (mut sender, connection) =
+                hyper::client::conn::http1::handshake(TokioIo::new(tcp)).await?;
+            tokio::spawn(connection);
+            let body = serde_json::to_vec(&serde_json::json!({ "token": token }))?;
+            let request = Request::post("/api/admin/auth/token")
+                .header(HOST, host)
+                .header("sec-fetch-site", "same-origin")
+                .header(CONTENT_TYPE, "application/json")
+                .body(Full::new(Bytes::from(body)))?;
+            let response = sender.send_request(request).await?;
+            if response.status() != StatusCode::OK {
+                return Err(format!("token sign-in answered {}", response.status()).into());
+            }
+            let cookie = response
+                .headers()
+                .get(SET_COOKIE)
+                .and_then(|value| value.to_str().ok())
+                .and_then(|value| value.split(';').next())
+                .and_then(|pair| pair.split_once('='))
+                .ok_or("token sign-in set no cookie")?;
+            Ok::<_, Fail>((cookie.0.to_owned(), cookie.1.to_owned()))
+        }
+        .await;
+        server.abort();
+        let _ = server.await;
+        signed_in
+    }
+}
+
+impl Generation {
+    pub fn live(&self) -> &LiveAdmin {
+        &self.composition.admin
+    }
+
+    /// Ends its event streams, stops what it runs and closes its store.
+    pub async fn close(self) -> Result<PathBuf, Fail> {
+        let Self {
+            path,
+            store,
+            composition,
+            character_data,
+        } = self;
+        // Open streams hold the store until they end.
+        composition.admin.state.events.close();
+        drop(composition);
+        if let Some(module) = character_data {
+            module.stop(CLOSE_WAIT).await;
+        }
+        close_store(store).await?;
+        Ok(path)
+    }
+
+    /// [`Self::close`], then delete its files.
+    pub async fn retire(self) {
+        match self.close().await {
+            Ok(path) => {
+                for file in [path.clone(), wal(&path), sibling(&path, "-shm")] {
+                    match std::fs::remove_file(&file) {
+                        Err(error) if error.kind() != io::ErrorKind::NotFound => {
+                            eprintln!("e2e_server: could not remove {}: {error}", file.display());
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            Err(error) => eprintln!("e2e_server: a retired store did not close: {error}"),
+        }
+    }
+}
+
+/// Waits up to [`CLOSE_WAIT`] for the last other holder, as serve's close does.
+async fn close_store(mut store: Arc<SqliteStore>) -> Result<(), Fail> {
+    let deadline = Instant::now() + CLOSE_WAIT;
+    loop {
+        match Arc::try_unwrap(store) {
+            Ok(owned) => return Ok(owned.close().await?),
+            Err(shared) if Instant::now() < deadline => {
+                store = shared;
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
+            Err(_) => return Err("the store is still in use".into()),
+        }
+    }
+}
+
+fn sibling(path: &Path, suffix: &str) -> PathBuf {
+    let mut name = path.as_os_str().to_owned();
+    name.push(suffix);
+    name.into()
+}
+
+fn wal(path: &Path) -> PathBuf {
+    sibling(path, "-wal")
+}

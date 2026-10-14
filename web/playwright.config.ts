@@ -27,8 +27,8 @@ const MOTION = /(^|[\\/])motion\.spec\.ts$/;
 
 export default defineConfig({
   testDir: './e2e',
-  // The Rust contract suite has its own live server, serial store and config.
-  testIgnore: '**/rust/**',
+  // The Rust smoke suite and the harness suite have their own servers and configs.
+  testIgnore: ['**/rust/**', '**/harness/**'],
   outputDir: './e2e/.results',
   fullyParallel: false,
   workers,
@@ -45,7 +45,7 @@ export default defineConfig({
   // of competing with itself for CPU. CI runs the two projects as separate
   // steps (ci.yml), so there motion also has the machine to itself.
   projects: [
-    { name: 'main', testIgnore: [MOTION, '**/rust/**'] },
+    { name: 'main', testIgnore: [MOTION, '**/rust/**', '**/harness/**'] },
     { name: 'motion', testMatch: MOTION, workers: 1 },
   ],
   // Servers start one after another (Playwright awaits each before the next),

@@ -1,0 +1,339 @@
+//! The harness routes on both origins, ahead of the real routers (which
+//! refuse every `/__*` path):
+//!
+//! - `POST /__e2e/reset`: a restart over a fresh copy of the template, the
+//!   clock back at its start; answers `{now}`.
+//! - `POST /__e2e/clock` `{at}` (RFC 3339) or `{advance_s}`: the instant the
+//!   writer, the API and module `character_data` read; answers `{now}`.
+//! - `GET /__e2e/whoami`: `{server, now, origin, admin_cookie: {name, value}}`,
+//!   the break-glass admin session every template copy holds.
+//! - `POST`/`GET`/`DELETE /__e2e/reports`: the CSP report sink, shared by both
+//!   origins; every enforced policy gets `report-uri /__e2e/reports`.
+//! - `GET /__e2e/discord/oauth2/authorize`: the fake Discord page.
+//! - Admin only: `/__showcase/*`, the core primitives showcase.
+
+use std::sync::{
+    Arc, Mutex, PoisonError, RwLock,
+    atomic::{AtomicI64, Ordering},
+};
+
+use axum::{
+    Json, Router,
+    body::Bytes,
+    extract::{Request, State, rejection::JsonRejection},
+    handler::Handler,
+    http::{HeaderValue, StatusCode, header::CONTENT_SECURITY_POLICY},
+    middleware::map_response_with_state,
+    response::{IntoResponse, Response},
+    routing::{MethodRouter, get, post},
+};
+use chrono::{DateTime, Datelike, TimeDelta, Timelike, Utc};
+use kanade::api::{auth::Clock, guard::headers::CSP, listeners::Origin};
+use serde::Deserialize;
+use serde_json::{Value, json};
+
+use crate::{
+    Fail,
+    fakes::discord,
+    live::{Generation, Routes, World},
+};
+
+pub const SERVER: &str = "kanade-e2e-server";
+const REPORTS: &str = "/__e2e/reports";
+/// As the mock: enough for any one test's violations.
+const MAX_REPORTS: usize = 500;
+
+/// The one instant every generation's clock reads: still until set.
+#[derive(Clone)]
+pub struct SharedClock(Arc<AtomicI64>);
+
+impl SharedClock {
+    pub fn new(at: DateTime<Utc>) -> Self {
+        Self(Arc::new(AtomicI64::new(at.timestamp_micros())))
+    }
+
+    pub fn now(&self) -> DateTime<Utc> {
+        DateTime::from_timestamp_micros(self.0.load(Ordering::SeqCst))
+            .unwrap_or(DateTime::UNIX_EPOCH)
+    }
+
+    fn set(&self, at: DateTime<Utc>) {
+        self.0.store(at.timestamp_micros(), Ordering::SeqCst);
+    }
+
+    pub fn clock(&self) -> Clock {
+        let this = self.clone();
+        Arc::new(move || this.now())
+    }
+}
+
+/// `2026-09-29T04:00:00Z`, with microseconds only when there are any.
+pub fn iso(at: DateTime<Utc>) -> String {
+    let mut text = format!(
+        "{:04}-{:02}-{:02}T{:02}:{:02}:{:02}",
+        at.year(),
+        at.month(),
+        at.day(),
+        at.hour(),
+        at.minute(),
+        at.second()
+    );
+    match at.timestamp_subsec_micros() {
+        0 => text.push('Z'),
+        micros => text.push_str(&format!(".{micros:06}Z")),
+    }
+    text
+}
+
+struct Slot {
+    serial: u64,
+    live: Option<Generation>,
+}
+
+pub struct Shared {
+    world: World,
+    db_dir: std::path::PathBuf,
+    template: std::path::PathBuf,
+    clock: SharedClock,
+    start: DateTime<Utc>,
+    admin_cookie: (String, String),
+    /// `None` once closed.
+    routes: RwLock<Option<Routes>>,
+    /// Held across a whole reset, so resets never interleave.
+    generation: tokio::sync::Mutex<Slot>,
+    reports: Mutex<Vec<Value>>,
+    page: Arc<discord::Page>,
+    showcase: Router,
+    /// The production policy with the report sink.
+    csp: HeaderValue,
+}
+
+pub struct Start {
+    pub world: World,
+    pub db_dir: std::path::PathBuf,
+    pub template: std::path::PathBuf,
+    pub clock: SharedClock,
+    pub admin_cookie: (String, String),
+    pub page: Arc<discord::Page>,
+}
+
+impl Shared {
+    /// Serves the first copy of the template.
+    pub async fn start(start: Start) -> Result<Self, Fail> {
+        let Start {
+            world,
+            db_dir,
+            template,
+            clock,
+            admin_cookie,
+            page,
+        } = start;
+        let showcase = world.showcase();
+        let shared = Self {
+            world,
+            db_dir,
+            template,
+            start: clock.now(),
+            clock,
+            admin_cookie,
+            routes: RwLock::new(None),
+            generation: tokio::sync::Mutex::new(Slot {
+                serial: 0,
+                live: None,
+            }),
+            reports: Mutex::default(),
+            page,
+            showcase,
+            csp: HeaderValue::try_from(format!("{CSP}; report-uri {REPORTS}"))?,
+        };
+        shared.reset().await?;
+        Ok(shared)
+    }
+
+    /// Composes over a fresh copy, swaps it in, then retires the old one.
+    pub async fn reset(&self) -> Result<(), Fail> {
+        let mut slot = self.generation.lock().await;
+        self.clock.set(self.start);
+        slot.serial += 1;
+        let path = self.db_dir.join(format!("live-{}.sqlite3", slot.serial));
+        std::fs::copy(&self.template, &path)?;
+        let fresh = match self.world.open(path.clone()).await {
+            Ok(fresh) => fresh,
+            Err(error) => {
+                let _ = std::fs::remove_file(&path);
+                return Err(error);
+            }
+        };
+        *self.routes.write().unwrap_or_else(PoisonError::into_inner) =
+            Some(self.world.routes(fresh.live()));
+        if let Some(old) = slot.live.replace(fresh) {
+            old.retire().await;
+        }
+        Ok(())
+    }
+
+    /// Ends the live generation's event streams (before a graceful drain).
+    pub async fn end_streams(&self) {
+        if let Some(live) = &self.generation.lock().await.live {
+            live.live().state.events.close();
+        }
+    }
+
+    /// Stops serving and retires the live generation.
+    pub async fn close(&self) {
+        self.routes
+            .write()
+            .unwrap_or_else(PoisonError::into_inner)
+            .take();
+        if let Some(live) = self.generation.lock().await.live.take() {
+            live.retire().await;
+        }
+    }
+
+    fn route(&self, origin: Origin) -> Option<MethodRouter> {
+        let routes = self.routes.read().unwrap_or_else(PoisonError::into_inner);
+        routes.as_ref().map(|routes| match origin {
+            Origin::Admin => routes.admin.clone(),
+            Origin::Public => routes.public.clone(),
+        })
+    }
+
+    fn reports(&self) -> std::sync::MutexGuard<'_, Vec<Value>> {
+        self.reports.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+}
+
+#[derive(Clone)]
+struct Side {
+    shared: Arc<Shared>,
+    origin: Origin,
+}
+
+/// One origin's listener: the controls, then the live real router.
+pub fn router(shared: &Arc<Shared>, origin: Origin) -> Router {
+    let side = Side {
+        shared: Arc::clone(shared),
+        origin,
+    };
+    let mut app = Router::new()
+        .route("/__e2e/whoami", get(whoami))
+        .route("/__e2e/reset", post(reset))
+        .route("/__e2e/clock", post(set_clock))
+        .route(REPORTS, get(list).post(receive).delete(clear))
+        .merge(discord::routes(Arc::clone(&shared.page)))
+        .fallback(forward);
+    if origin == Origin::Admin {
+        app = app.nest_service("/__showcase", shared.showcase.clone());
+    }
+    app.with_state(side.clone())
+        .layer(map_response_with_state(side, report_uri))
+}
+
+async fn forward(State(side): State<Side>, request: Request) -> Response {
+    match side.shared.route(side.origin) {
+        Some(route) => route.call(request, ()).await,
+        None => StatusCode::SERVICE_UNAVAILABLE.into_response(),
+    }
+}
+
+async fn report_uri(State(side): State<Side>, mut response: Response) -> Response {
+    let headers = response.headers_mut();
+    let Some(policy) = headers.get(CONTENT_SECURITY_POLICY) else {
+        return response;
+    };
+    let reporting = if policy == CSP {
+        Some(side.shared.csp.clone())
+    } else {
+        policy.to_str().ok().and_then(|policy| {
+            HeaderValue::try_from(format!("{policy}; report-uri {REPORTS}")).ok()
+        })
+    };
+    if let Some(reporting) = reporting {
+        headers.insert(CONTENT_SECURITY_POLICY, reporting);
+    }
+    response
+}
+
+fn now_body(at: DateTime<Utc>) -> Json<Value> {
+    Json(json!({ "now": iso(at) }))
+}
+
+async fn whoami(State(side): State<Side>) -> Json<Value> {
+    let shared = &side.shared;
+    let (name, value) = &shared.admin_cookie;
+    Json(json!({
+        "server": SERVER,
+        "now": iso(shared.clock.now()),
+        "origin": match side.origin {
+            Origin::Admin => "admin",
+            Origin::Public => "public",
+        },
+        "admin_cookie": { "name": name, "value": value },
+    }))
+}
+
+async fn reset(State(side): State<Side>) -> Response {
+    match side.shared.reset().await {
+        Ok(()) => now_body(side.shared.clock.now()).into_response(),
+        Err(error) => (StatusCode::INTERNAL_SERVER_ERROR, error.to_string()).into_response(),
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ClockChange {
+    at: Option<String>,
+    advance_s: Option<i64>,
+}
+
+async fn set_clock(
+    State(side): State<Side>,
+    body: Result<Json<ClockChange>, JsonRejection>,
+) -> Response {
+    let Ok(Json(change)) = body else {
+        return StatusCode::BAD_REQUEST.into_response();
+    };
+    let clock = &side.shared.clock;
+    let at = match (change.at, change.advance_s) {
+        (Some(at), None) => DateTime::parse_from_rfc3339(&at)
+            .ok()
+            .map(|at| at.with_timezone(&Utc)),
+        (None, Some(seconds)) => {
+            TimeDelta::try_seconds(seconds).and_then(|delta| clock.now().checked_add_signed(delta))
+        }
+        _ => None,
+    };
+    let Some(at) = at else {
+        return StatusCode::UNPROCESSABLE_ENTITY.into_response();
+    };
+    clock.set(at);
+    now_body(at).into_response()
+}
+
+/// `report-uri` bodies (`application/csp-report`) or Reporting API arrays.
+async fn receive(State(side): State<Side>, body: Bytes) -> StatusCode {
+    let Ok(value) = serde_json::from_slice::<Value>(&body) else {
+        return StatusCode::BAD_REQUEST;
+    };
+    let items = match value {
+        Value::Array(items) => items,
+        other => vec![other],
+    };
+    let mut reports = side.shared.reports();
+    for item in items {
+        eprintln!("csp-report {item}");
+        if reports.len() < MAX_REPORTS {
+            reports.push(item);
+        }
+    }
+    StatusCode::NO_CONTENT
+}
+
+async fn list(State(side): State<Side>) -> Json<Vec<Value>> {
+    Json(side.shared.reports().clone())
+}
+
+async fn clear(State(side): State<Side>) -> StatusCode {
+    side.shared.reports().clear();
+    StatusCode::NO_CONTENT
+}

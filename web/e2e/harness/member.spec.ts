@@ -1,12 +1,12 @@
 import type { BrowserContext, Page } from '@playwright/test';
-import { MEMBER, expect, test } from './support';
+import { PUBLIC as MEMBER, expect, test } from './support';
 
-// The fixture's fake Discord approves at once; this cookie picks who signs in.
+// The harness's fake Discord approves at once; this cookie picks who signs in.
 async function asDiscordUser(context: BrowserContext, who: 'eligible' | 'ineligible' | 'bot' | 'deny'): Promise<void> {
   await context.addCookies([{ name: 'kanade_fake_discord', value: who, domain: '127.0.0.1', path: '/' }]);
 }
 
-// Unfiltered: `cookies(url)` hides Secure cookies from an http:// URL, and the fixture serves http.
+// Unfiltered: `cookies(url)` hides Secure cookies from an http:// URL, and the harness serves http.
 async function sessionCookie(context: BrowserContext): Promise<string | undefined> {
   return (await context.cookies()).find((cookie) => cookie.name === '__Host-kanade_pub')?.value;
 }
