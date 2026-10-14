@@ -37,6 +37,9 @@ pub struct SqliteCharData {
     /// once ownership is released.
     #[cfg(any(test, feature = "test-support"))]
     pub(super) temp_dir: Option<super::TempStoreDir>,
+    /// Test support: armed failures (`faults.rs`).
+    #[cfg(any(test, feature = "test-support"))]
+    pub(super) faults: super::faults::CharDataFaults,
 }
 
 impl SqliteCharData {
@@ -69,6 +72,8 @@ impl SqliteCharData {
                 _owner: owner,
                 #[cfg(any(test, feature = "test-support"))]
                 temp_dir: None,
+                #[cfg(any(test, feature = "test-support"))]
+                faults: Default::default(),
             };
             if abandoned.load(Ordering::SeqCst) {
                 let _ = store.close().await;
@@ -96,6 +101,7 @@ impl SqliteCharData {
             _owner,
             #[cfg(any(test, feature = "test-support"))]
             temp_dir,
+            ..
         } = self;
         #[cfg(any(test, feature = "test-support"))]
         let _hold = super::hold::ClockHold::new();
@@ -146,6 +152,8 @@ impl SqliteCharData {
     }
 
     async fn write_link(&self, new: Link, expected: u32) -> Result<LinkPut, StoreError> {
+        #[cfg(any(test, feature = "test-support"))]
+        self.faults.put_link()?;
         new.check()?;
         if new.version != expected + 1 {
             return Err(StoreError::Constraint("link takes the next version".into()));
@@ -219,6 +227,8 @@ impl SqliteCharData {
         character_id: String,
         now: DateTime<Utc>,
     ) -> Result<Option<Link>, StoreError> {
+        #[cfg(any(test, feature = "test-support"))]
+        self.faults.unlink()?;
         let now = instant(&now)?;
         write_txn!(self, tx, async {
             let stored = sqlx::query(&format!(

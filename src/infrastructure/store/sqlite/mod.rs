@@ -16,6 +16,8 @@ mod connect;
 mod debug_cards;
 mod decline_notices;
 mod drafts;
+#[cfg(any(test, feature = "test-support"))]
+mod faults;
 mod history;
 #[cfg(any(test, feature = "test-support"))]
 mod hold;
@@ -183,6 +185,9 @@ pub struct SqliteStore {
     /// Test support: a pause the next composed read takes.
     #[cfg(any(test, feature = "test-support"))]
     read_pause: snapshots::PauseSlot,
+    /// Test support: armed failures (`faults.rs`).
+    #[cfg(any(test, feature = "test-support"))]
+    faults: faults::Faults,
     // After the SQLite handles: they drop before ownership is released.
     owner: StoreOwner,
     /// Test support: the directory of an `open_temp` store. Declared after
@@ -358,6 +363,8 @@ impl SqliteStore {
             written: Default::default(),
             #[cfg(any(test, feature = "test-support"))]
             read_pause: Default::default(),
+            #[cfg(any(test, feature = "test-support"))]
+            faults: Default::default(),
             unclosed: UnclosedWarning {
                 armed: true,
                 db_path: db_path.to_owned(),

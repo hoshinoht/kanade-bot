@@ -418,6 +418,8 @@ impl SqliteStore {
         candidates: &[crate::domain::notify::DeclineNotice],
         retractions: &[(String, String)],
     ) -> Result<Option<Committed>, StoreError> {
+        #[cfg(any(test, feature = "test-support"))]
+        self.faults.commit()?;
         let mut lease = self
             .writer_lease()
             .await

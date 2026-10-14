@@ -1342,3 +1342,45 @@ async fn test_cards_are_per_operation_registered_and_cleared<
         "a cleared card is no longer refreshed"
     );
 }
+
+/// The SQLite store's journal shortcuts (`sqlite/faults.rs`) over a real
+/// binding, as the memory store's `test_map_card_run` and
+/// `test_retire_bound_attempt` act.
+#[cfg(test)]
+mod sqlite_shortcuts {
+    use twilight_model::id::Id;
+
+    use super::*;
+    use crate::infrastructure::store::SqliteStore;
+
+    #[tokio::test]
+    async fn a_run_maps_onto_a_posted_card_and_a_bound_attempt_retires() {
+        let store = SqliteStore::open_temp().await;
+        seed(&store).await;
+        let lease = lease(&store).await;
+        let attempt = fresh(&store, &lease, &intent(&["m-1"], HOME)).await;
+        bound(&store, &lease, &attempt, HOME, "5001", 8).await;
+        store.test_map_card_run("5001", "r-2").await;
+        store.test_map_card_run("5001", "r-2").await;
+        let runs = store.runs_for_message(Id::new(5001)).await.expect("lookup");
+        assert_eq!(runs, ["r-1", "r-2"], "mapped once");
+
+        store.test_retire_bound_attempt(&attempt).await;
+        let retired = store
+            .load_attempt(&attempt)
+            .await
+            .expect("load")
+            .expect("attempt");
+        assert_eq!(retired.state, AttemptState::Retired);
+        assert_eq!(retired.resolved_by.as_deref(), Some("test"));
+        assert_eq!(retired.resolution_reason, "test retirement");
+        store.close().await.expect("close");
+    }
+
+    #[tokio::test]
+    #[should_panic(expected = "no bound delivery attempt posted message 9999")]
+    async fn mapping_needs_a_posted_card() {
+        let store = SqliteStore::open_temp().await;
+        store.test_map_card_run("9999", "r-1").await;
+    }
+}

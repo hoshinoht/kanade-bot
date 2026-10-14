@@ -27,7 +27,7 @@ use crate::domain::notify::{
 use crate::domain::time::{from_iso, to_iso};
 use crate::infrastructure::store::Written;
 
-fn backend(error: sqlx::Error) -> JournalError {
+pub(super) fn backend(error: sqlx::Error) -> JournalError {
     JournalError::Backend(error.to_string())
 }
 
@@ -229,7 +229,7 @@ async fn suppress_natives(
 }
 
 /// Release every target and retire the attempt with `actor` and `reason`.
-async fn release_and_retire(
+pub(super) async fn release_and_retire(
     tx: &mut SqliteConnection,
     attempt: &AttemptId,
     actor: &str,
