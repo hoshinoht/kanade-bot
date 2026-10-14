@@ -1,9 +1,0 @@
-# Dependabot: weekly version bumps for the CI actions. Cargo and npm are not
-# listed; security alerts and one-click security fixes are enabled in the repo
-# settings and do not depend on this file.
-version: 2
-updates:
-  - package-ecosystem: "github-actions"
-    directory: "/"
-    schedule:
-      interval: "weekly"
