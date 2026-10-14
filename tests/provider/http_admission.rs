@@ -60,85 +60,67 @@ async fn classify(
         .kind
 }
 
+/// Kanata's admission codes are admission refusals only with their own
+/// status, with a seconds `Retry-After`; `upstream_unavailable` opens the
+/// backend only with the gateway's cooldown; timeouts, rate limits and
+/// generic statuses keep their kinds.
 #[tokio::test]
-async fn kanata_admission_codes_are_admission_refusals() {
-    for (status, code) in [
-        (429, "gateway_queue_full"),
-        (429, "gateway_key_busy"),
-        (429, "gateway_key_rate_limited"),
-        (503, "gateway_busy"),
-    ] {
-        assert_eq!(
-            classify(status, Some(code), Some("3")).await,
-            ProviderFailureKind::AdmissionRefused {
-                retry_after: Some(Duration::from_secs(3))
-            },
-            "{status} {code}"
-        );
-    }
-    assert_eq!(
-        classify(429, Some("gateway_queue_full"), None).await,
-        ProviderFailureKind::AdmissionRefused { retry_after: None }
-    );
-    assert_eq!(
-        classify(
-            503,
-            Some("gateway_busy"),
-            Some("Wed, 21 Oct 2026 07:28:00 GMT")
-        )
-        .await,
-        ProviderFailureKind::AdmissionRefused { retry_after: None },
-        "HTTP-date Retry-After is ignored"
-    );
-    assert_eq!(
-        classify(503, Some("gateway_busy"), Some("999999999999")).await,
-        ProviderFailureKind::AdmissionRefused {
-            retry_after: Some(Duration::from_secs(3_600))
-        },
-        "Retry-After is capped"
-    );
-    assert_eq!(
-        classify(503, Some("server_draining"), None).await,
-        ProviderFailureKind::AdmissionRefused { retry_after: None },
-        "draining is a short requeue, not a backend failure"
-    );
-}
-
-#[tokio::test]
-async fn admission_codes_count_only_with_their_own_status() {
-    for (status, code, kind) in [
-        (503, "gateway_queue_full", ProviderFailureKind::Transient),
-        (503, "gateway_key_busy", ProviderFailureKind::Transient),
+async fn gateway_replies_are_classified_by_status_code_and_retry_after() {
+    use ProviderFailureKind::*;
+    let refused = |secs: Option<u64>| AdmissionRefused {
+        retry_after: secs.map(Duration::from_secs),
+    };
+    let down = |secs| BackendUnavailable {
+        retry_after: Some(Duration::from_secs(secs)),
+    };
+    let limited = RateLimited {
+        retry_after: Duration::from_secs(5),
+    };
+    let (queue_full, busy) = (Some("gateway_queue_full"), Some("gateway_busy"));
+    let unavailable = Some("upstream_unavailable");
+    let cases = [
+        (429, queue_full, Some("3"), refused(Some(3))),
+        (429, Some("gateway_key_busy"), Some("3"), refused(Some(3))),
+        (
+            429,
+            Some("gateway_key_rate_limited"),
+            Some("3"),
+            refused(Some(3)),
+        ),
+        (503, busy, Some("3"), refused(Some(3))),
+        (429, queue_full, None, refused(None)),
+        // An HTTP-date Retry-After is ignored; a huge one is capped.
         (
             503,
-            "gateway_key_rate_limited",
-            ProviderFailureKind::Transient,
+            busy,
+            Some("Wed, 21 Oct 2026 07:28:00 GMT"),
+            refused(None),
         ),
-        (429, "gateway_busy", ProviderFailureKind::Transient),
-        (429, "server_draining", ProviderFailureKind::Transient),
-        (502, "upstream_unavailable", ProviderFailureKind::Transient),
-    ] {
-        assert_eq!(
-            classify(status, Some(code), None).await,
-            kind,
-            "{status} {code}"
-        );
+        (503, busy, Some("999999999999"), refused(Some(3_600))),
+        // Draining is a short requeue, not a backend failure.
+        (503, Some("server_draining"), None, refused(None)),
+        // Admission codes count only with their own status.
+        (503, queue_full, None, Transient),
+        (503, Some("gateway_key_busy"), None, Transient),
+        (503, Some("gateway_key_rate_limited"), None, Transient),
+        (429, busy, None, Transient),
+        (429, Some("server_draining"), None, Transient),
+        (400, queue_full, Some("5"), Permanent),
+        (502, unavailable, None, Transient),
+        (503, unavailable, Some("30"), down(30)),
+        (503, unavailable, Some("5"), down(5)),
+        // Adapter down without Kanata's breaker counts toward our threshold.
+        (503, unavailable, None, Transient),
+        (504, Some("upstream_timeout"), Some("5"), UpstreamTimeout),
+        (504, None, Some("5"), UpstreamTimeout),
+        (429, Some("rate_limit_exceeded"), Some("5"), limited),
+        (429, None, Some("5"), limited),
+        (503, None, Some("5"), Transient),
+    ];
+    for (status, code, retry_after, kind) in cases {
+        let case = format!("{status} {code:?} {retry_after:?}");
+        assert_eq!(classify(status, code, retry_after).await, kind, "{case}");
     }
-}
-
-#[tokio::test]
-async fn upstream_unavailable_opens_only_with_the_gateways_cooldown() {
-    assert_eq!(
-        classify(503, Some("upstream_unavailable"), Some("30")).await,
-        ProviderFailureKind::BackendUnavailable {
-            retry_after: Some(Duration::from_secs(30))
-        }
-    );
-    assert_eq!(
-        classify(503, Some("upstream_unavailable"), None).await,
-        ProviderFailureKind::Transient,
-        "adapter down without Kanata's breaker counts toward our threshold"
-    );
 }
 
 #[tokio::test]
@@ -161,52 +143,6 @@ async fn an_expired_key_is_reported_distinctly() {
         .await
         .unwrap_err();
     assert_eq!(error.code, ErrorCode::ProviderAuthentication);
-}
-
-#[tokio::test]
-async fn backend_down_timeouts_and_generic_statuses_are_classified() {
-    for (status, code, kind) in [
-        (
-            503,
-            Some("upstream_unavailable"),
-            ProviderFailureKind::BackendUnavailable {
-                retry_after: Some(Duration::from_secs(5)),
-            },
-        ),
-        (
-            504,
-            Some("upstream_timeout"),
-            ProviderFailureKind::UpstreamTimeout,
-        ),
-        (504, None, ProviderFailureKind::UpstreamTimeout),
-        (
-            429,
-            Some("rate_limit_exceeded"),
-            ProviderFailureKind::RateLimited {
-                retry_after: Duration::from_secs(5),
-            },
-        ),
-        (
-            429,
-            None,
-            ProviderFailureKind::RateLimited {
-                retry_after: Duration::from_secs(5),
-            },
-        ),
-        (503, None, ProviderFailureKind::Transient),
-        // Admission codes count only on 429/503.
-        (
-            400,
-            Some("gateway_queue_full"),
-            ProviderFailureKind::Permanent,
-        ),
-    ] {
-        assert_eq!(
-            classify(status, code, Some("5")).await,
-            kind,
-            "{status} {code:?}"
-        );
-    }
 }
 
 #[tokio::test]

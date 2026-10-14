@@ -19,6 +19,11 @@ fn effective(snapshot: &PersonaSnapshot) -> Option<(String, SelectionSource)> {
     ))
 }
 
+/// The persona `id` chosen through `source`.
+fn chosen(id: &str, source: SelectionSource) -> Option<(String, SelectionSource)> {
+    Some((id.into(), source))
+}
+
 fn with_catalog() -> Fixture {
     let fixture = Fixture::new();
     fixture.write(
@@ -41,20 +46,15 @@ fn startup_fallback_matrix() {
     let startup = |fixture: &Fixture, configured: Option<&str>| {
         PersonaSnapshot::startup(&fixture.root(), configured.map(pid).as_ref())
     };
+    let picks = |fixture: &Fixture, configured| effective(&startup(fixture, configured));
 
     let fixture = with_catalog();
-    assert_eq!(
-        effective(&startup(&fixture, Some("beta"))),
-        Some(("beta".into(), Configured))
-    );
-    assert_eq!(
-        effective(&startup(&fixture, None)),
-        Some(("alpha".into(), CatalogDefault))
-    );
+    assert_eq!(picks(&fixture, Some("beta")), chosen("beta", Configured));
+    assert_eq!(picks(&fixture, None), chosen("alpha", CatalogDefault));
     // Unknown IDs and aliases are not resolved at runtime.
     for configured in ["gamma", "sakuna"] {
         let snapshot = startup(&fixture, Some(configured));
-        assert_eq!(effective(&snapshot), Some(("alpha".into(), CatalogDefault)));
+        assert_eq!(effective(&snapshot), chosen("alpha", CatalogDefault));
         assert_eq!(snapshot.provenance().configured, Some(pid(configured)));
         assert_eq!(
             snapshot.provenance().issues[0].error,
@@ -64,16 +64,13 @@ fn startup_fallback_matrix() {
 
     fixture.write("bundles/beta.yaml", BROKEN);
     assert_eq!(
-        effective(&startup(&fixture, Some("beta"))),
-        Some(("alpha".into(), CatalogDefault))
+        picks(&fixture, Some("beta")),
+        chosen("alpha", CatalogDefault)
     );
 
     fixture.write("bundles/alpha.yaml", BROKEN);
     let snapshot = startup(&fixture, Some("beta"));
-    assert_eq!(
-        effective(&snapshot),
-        Some(("kanade".into(), TrackedFallback))
-    );
+    assert_eq!(effective(&snapshot), chosen("kanade", TrackedFallback));
     let candidates = snapshot
         .provenance()
         .issues
@@ -84,27 +81,24 @@ fn startup_fallback_matrix() {
 
     // Configured equals default: it is tried once, then the tracked fallback.
     assert_eq!(
-        effective(&startup(&fixture, Some("alpha"))),
-        Some(("kanade".into(), TrackedFallback))
+        picks(&fixture, Some("alpha")),
+        chosen("kanade", TrackedFallback)
     );
     // Kanade listed in the catalog and selected directly is a configured selection.
     assert_eq!(
-        effective(&startup(&fixture, Some("kanade"))),
-        Some(("kanade".into(), Configured))
+        picks(&fixture, Some("kanade")),
+        chosen("kanade", Configured)
     );
 
     fixture.write("catalog.yaml", "schema_version: 1\nschema_version: 1\n");
     let snapshot = startup(&fixture, Some("beta"));
-    assert_eq!(
-        effective(&snapshot),
-        Some(("kanade".into(), TrackedFallback))
-    );
+    assert_eq!(effective(&snapshot), chosen("kanade", TrackedFallback));
     assert_eq!(snapshot.provenance().issues[0].candidate, None);
 
     fixture.remove("catalog.yaml");
     assert_eq!(
-        effective(&startup(&fixture, Some("beta"))),
-        Some(("kanade".into(), TrackedFallback))
+        picks(&fixture, Some("beta")),
+        chosen("kanade", TrackedFallback)
     );
 }
 

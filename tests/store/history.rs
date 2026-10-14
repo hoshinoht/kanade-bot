@@ -4,13 +4,13 @@
 use std::collections::BTreeSet;
 
 use kanade::domain::history::{
-    ChangeFilter, ChangeHistory, ChangeQuery, CheckedChange, HistoryRefusal, RevertMode,
-    RevertOutcome, RowKey,
+    BrokenLink, ChangeFilter, ChangeHistory, ChangeQuery, CheckedChange, HistoryRefusal,
+    RevertMode, RevertOutcome, RowKey,
 };
 use kanade::domain::schedule::{Change, ReminderPolicy};
 use kanade::domain::scheduler::{ScheduleStore, SchedulerError, Scope};
 use kanade::infrastructure::store::{
-    BackupManifest, MemoryScheduleStore, SqliteStore, SqliteStoreError,
+    BackupManifest, MemoryScheduleStore, SqliteStore, SqliteStoreConfig, SqliteStoreError,
 };
 
 use crate::support::{TempDir, commit, create, fixed, raw, seed, tamper};
@@ -25,6 +25,21 @@ async fn history<S: ScheduleStore>(store: &S, extra: usize) {
     for n in 0..extra {
         commit(store, vec![Change::PutFixedRun(fixed(&format!("f-{n}")))]).await;
     }
+}
+
+/// Drops the triggers that keep history rows from being deleted.
+const UNGUARD_DELETES: &str = "DROP TRIGGER change_log_weeks_no_delete;
+    DROP TRIGGER change_log_no_delete;
+    DROP TRIGGER change_fields_no_delete;";
+
+/// Runs `sql` on the closed store, reopens it and returns the first record
+/// verification finds broken.
+async fn broken_after(config: &SqliteStoreConfig, sql: &str) -> BrokenLink {
+    tamper(config, sql).await;
+    let store = SqliteStore::open(config).await.expect("reopens");
+    let broken = verify(&store).await.first_broken.expect("detected");
+    store.close().await.expect("close");
+    broken
 }
 
 #[tokio::test]
@@ -64,54 +79,34 @@ async fn sqlite_history_is_append_only_and_tampering_is_detected() {
     }
 
     // An attacker who drops the triggers is still detected.
-    tamper(
+    let broken = broken_after(
         &config,
         "DROP TRIGGER change_log_no_update;
          UPDATE change_log SET actor_id = 'impostor' WHERE seq = 2;",
     )
     .await;
-    let store = SqliteStore::open(&config).await.expect("reopens");
-    let broken = verify(&store)
-        .await
-        .first_broken
-        .expect("column edit detected");
-    assert_eq!(broken.seq, 2, "{}", broken.reason);
-    store.close().await.expect("close");
-
-    tamper(
+    assert_eq!(broken.seq, 2, "column edit: {}", broken.reason);
+    let broken = broken_after(
         &config,
         "UPDATE change_log SET actor_id = (SELECT json_extract(body, '$.actor.id')) WHERE seq = 2;
          UPDATE change_log SET body = replace(body, '\"kind\":\"admin\"', '\"kind\":\"system\"'),
                                actor_kind = 'system' WHERE seq = 3;",
     )
     .await;
-    let store = SqliteStore::open(&config).await.expect("reopens");
-    let broken = verify(&store)
-        .await
-        .first_broken
-        .expect("body edit detected");
-    assert_eq!(broken.seq, 3, "{}", broken.reason);
+    assert_eq!(broken.seq, 3, "body edit: {}", broken.reason);
     assert!(broken.reason.contains("hash"), "{}", broken.reason);
-    store.close().await.expect("close");
-
-    tamper(
+    let broken = broken_after(
         &config,
-        "DROP TRIGGER change_log_weeks_no_delete;
-         DROP TRIGGER change_log_no_delete;
-         DROP TRIGGER change_fields_no_delete;
-         DELETE FROM change_log_weeks WHERE seq >= 3;
-         DELETE FROM change_fields WHERE seq >= 3;
-         DELETE FROM change_log WHERE seq >= 3;
-         DELETE FROM change_log_weeks WHERE seq = 1;",
+        &format!(
+            "{UNGUARD_DELETES}
+             DELETE FROM change_log_weeks WHERE seq >= 3;
+             DELETE FROM change_fields WHERE seq >= 3;
+             DELETE FROM change_log WHERE seq >= 3;
+             DELETE FROM change_log_weeks WHERE seq = 1;"
+        ),
     )
     .await;
-    let store = SqliteStore::open(&config).await.expect("reopens");
-    let broken = verify(&store)
-        .await
-        .first_broken
-        .expect("week index edit detected");
-    assert_eq!(broken.seq, 1, "{}", broken.reason);
-    store.close().await.expect("close");
+    assert_eq!(broken.seq, 1, "week index edit: {}", broken.reason);
 }
 
 #[tokio::test]
@@ -121,20 +116,17 @@ async fn a_removed_record_breaks_the_chain() {
     let store = SqliteStore::open(&config).await.expect("opens");
     history(&store, 3).await;
     store.close().await.expect("close");
-    tamper(
+    let broken = broken_after(
         &config,
-        "DROP TRIGGER change_log_weeks_no_delete;
-         DROP TRIGGER change_log_no_delete;
-         DROP TRIGGER change_fields_no_delete;
-         DELETE FROM change_log_weeks WHERE seq = 2;
-         DELETE FROM change_fields WHERE seq = 2;
-         DELETE FROM change_log WHERE seq = 2;",
+        &format!(
+            "{UNGUARD_DELETES}
+             DELETE FROM change_log_weeks WHERE seq = 2;
+             DELETE FROM change_fields WHERE seq = 2;
+             DELETE FROM change_log WHERE seq = 2;"
+        ),
     )
     .await;
-    let store = SqliteStore::open(&config).await.expect("reopens");
-    let broken = verify(&store).await.first_broken.expect("gap detected");
-    assert_eq!(broken.seq, 3, "{}", broken.reason);
-    store.close().await.expect("close");
+    assert_eq!(broken.seq, 3, "gap: {}", broken.reason);
 }
 
 #[tokio::test]
@@ -204,11 +196,7 @@ async fn revert_seq<S: ScheduleStore + ChangeHistory>(
     store: S,
     seq: u64,
 ) -> Result<RevertOutcome, SchedulerError> {
-    let policy = ReminderPolicy {
-        zone: chrono_tz::UTC,
-        ping_time: chrono::NaiveTime::from_hms_opt(9, 0, 0).expect("valid time"),
-        countdowns: vec![60],
-    };
+    let policy = schedule_policy().reminders;
     service(store)
         .revert_changes(
             "root",
@@ -377,9 +365,7 @@ async fn backups_anchor_the_history_and_truncation_is_detected() {
     tamper(
         &config,
         &format!(
-            "DROP TRIGGER change_log_weeks_no_delete;
-             DROP TRIGGER change_log_no_delete;
-             DROP TRIGGER change_fields_no_delete;
+            "{UNGUARD_DELETES}
              DELETE FROM change_log_weeks WHERE seq >= {seq};
              DELETE FROM change_fields WHERE seq >= {seq};
              DELETE FROM change_log WHERE seq >= {seq};",
@@ -461,26 +447,43 @@ async fn rows_from_before_the_history_blame_as_unknown() {
     assert!(timing.lines.iter().all(|line| line.last.is_none()));
 }
 
+/// Leaves history and the checkpoint `pinned` in the store at `config`.
+async fn pinned_checkpoint(config: &SqliteStoreConfig) {
+    let store = SqliteStore::open(config).await.expect("opens");
+    history(&store, 2).await;
+    let (at, policy) = (crate::support::at(26, 16), schedule_policy());
+    let owner = service(store);
+    let created = owner.create_checkpoint("root", "pinned", at, &policy);
+    created.await.expect("checkpoint");
+}
+
+/// After `sql` forges the checkpoint, verification and a restore refuse it.
+async fn assert_forged_checkpoint_refused(config: &SqliteStoreConfig, sql: &str) {
+    use kanade::domain::history::Checkpoints;
+    let broken = broken_after(config, sql).await;
+    assert!(broken.reason.contains("checkpoint"), "{}", broken.reason);
+    let store = SqliteStore::open(config).await.expect("reopens");
+    let checkpoint = store.load_checkpoint("pinned").await.expect("load");
+    let head = checkpoint.expect("exists").head.seq;
+    let refused = service(store)
+        .restore_to_checkpoint(
+            "root",
+            None,
+            "pinned",
+            RevertMode::Strict,
+            &schedule_policy().reminders,
+            &BTreeSet::new(),
+        )
+        .await;
+    let tampered = HistoryRefusal::Tampered(head);
+    assert_eq!(refused, Err(SchedulerError::History(tampered)));
+}
+
 #[tokio::test]
 async fn blame_index_and_checkpoints_are_tamper_evident() {
-    use kanade::domain::history::Checkpoints;
-
     let dir = TempDir::new();
     let config = dir.config("index");
-    let store = SqliteStore::open(&config).await.expect("opens");
-    history(&store, 2).await;
-    let owner = service(store);
-    owner
-        .create_checkpoint(
-            "root",
-            "pinned",
-            crate::support::at(26, 16),
-            &schedule_policy(),
-        )
-        .await
-        .expect("checkpoint");
-    drop(owner);
-
+    pinned_checkpoint(&config).await;
     for statement in [
         "UPDATE checkpoints SET name = 'moved'",
         "DELETE FROM checkpoints",
@@ -491,8 +494,7 @@ async fn blame_index_and_checkpoints_are_tamper_evident() {
             "{statement}: {refused}"
         );
     }
-
-    tamper(
+    assert_forged_checkpoint_refused(
         &config,
         "DROP TRIGGER checkpoints_no_update;
          UPDATE checkpoints
@@ -500,50 +502,13 @@ async fn blame_index_and_checkpoints_are_tamper_evident() {
           WHERE name = 'pinned';",
     )
     .await;
-    let store = SqliteStore::open(&config).await.expect("reopens");
-    let broken = verify(&store)
-        .await
-        .first_broken
-        .expect("checkpoint edit detected");
-    assert!(broken.reason.contains("checkpoint"), "{}", broken.reason);
-    let checkpoint = store
-        .load_checkpoint("pinned")
-        .await
-        .expect("load")
-        .expect("exists");
-    let policy = ReminderPolicy {
-        zone: chrono_tz::UTC,
-        ping_time: chrono::NaiveTime::from_hms_opt(9, 0, 0).expect("valid time"),
-        countdowns: vec![60],
-    };
-    let refused = service(store)
-        .restore_to_checkpoint(
-            "root",
-            None,
-            "pinned",
-            RevertMode::Strict,
-            &policy,
-            &BTreeSet::new(),
-        )
-        .await;
-    assert_eq!(
-        refused,
-        Err(SchedulerError::History(HistoryRefusal::Tampered(
-            checkpoint.head.seq
-        )))
-    );
 
-    tamper(
+    let broken = broken_after(
         &config,
         "DROP TRIGGER change_fields_no_delete;
          DELETE FROM change_fields WHERE seq = 1;",
     )
     .await;
-    let store = SqliteStore::open(&config).await.expect("reopens");
-    let broken = verify(&store)
-        .await
-        .first_broken
-        .expect("index edit detected");
     assert_eq!(broken.seq, 1, "{}", broken.reason);
     assert!(broken.reason.contains("blame index"), "{}", broken.reason);
 }
@@ -648,51 +613,13 @@ async fn upgrading_to_the_blame_index_backfills_earlier_records() {
 
 #[tokio::test]
 async fn a_checkpoint_with_a_forged_revision_is_refused() {
-    use kanade::domain::history::Checkpoints;
-
     let dir = TempDir::new();
     let config = dir.config("revision");
-    let store = SqliteStore::open(&config).await.expect("opens");
-    history(&store, 2).await;
-    let owner = service(store);
-    owner
-        .create_checkpoint(
-            "root",
-            "pinned",
-            crate::support::at(26, 16),
-            &schedule_policy(),
-        )
-        .await
-        .expect("checkpoint");
-    drop(owner);
-    tamper(
+    pinned_checkpoint(&config).await;
+    assert_forged_checkpoint_refused(
         &config,
         "DROP TRIGGER checkpoints_no_update;
          UPDATE checkpoints SET revision = 0 WHERE name = 'pinned';",
     )
     .await;
-    let store = SqliteStore::open(&config).await.expect("reopens");
-    let broken = verify(&store).await.first_broken.expect("detected");
-    assert!(broken.reason.contains("checkpoint"), "{}", broken.reason);
-    let checkpoint = store
-        .load_checkpoint("pinned")
-        .await
-        .expect("load")
-        .expect("exists");
-    let refused = service(store)
-        .restore_to_checkpoint(
-            "root",
-            None,
-            "pinned",
-            RevertMode::Strict,
-            &schedule_policy().reminders,
-            &BTreeSet::new(),
-        )
-        .await;
-    assert_eq!(
-        refused,
-        Err(SchedulerError::History(HistoryRefusal::Tampered(
-            checkpoint.head.seq
-        )))
-    );
 }

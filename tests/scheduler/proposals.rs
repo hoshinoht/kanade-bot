@@ -8,7 +8,7 @@ use kanade::domain::drafts::{
     DraftEventKind, DraftOp, DraftStatus, DraftStore, LoadedDraft, ProposalSource, ProposalStore,
     RequestLimit, Target,
 };
-use kanade::domain::history::{Actor, ChangeHistory, ChangeRecord, Origin, Surface};
+use kanade::domain::history::{Actor, ChangeHistory, ChangeRecord, Surface};
 use kanade::domain::ids::RandomIds;
 use kanade::domain::members::{Directory, Member};
 use kanade::domain::proposals::{Approver, ChangeKind, ProposedChange, Refusal};
@@ -24,7 +24,7 @@ use kanade::domain::scheduler::{
 use kanade::infrastructure::store::MemoryScheduleStore;
 
 use crate::common::TestClock;
-use crate::support::{self, snapshot, utc};
+use crate::support::{self, by_tests, snapshot, utc};
 
 type Service = SchedulerService<MemoryScheduleStore, RandomIds, TestClock>;
 
@@ -82,8 +82,7 @@ async fn fixture(attendance: AttendancePolicy) -> Fixture {
     let mut service = SchedulerService::new(MemoryScheduleStore::new(), RandomIds, clock.clone())
         .with_attendance(attendance);
     let week = utc(kl(8, 27, 0, 0));
-    let run = service
-        .as_origin(Origin::for_tests())
+    let run = by_tests(&mut service)
         .create_run(NewRun {
             fixed_run_id: None,
             channel_id: Some("222".into()),
@@ -96,8 +95,7 @@ async fn fixture(attendance: AttendancePolicy) -> Fixture {
         })
         .await
         .unwrap();
-    let fixed = service
-        .as_origin(Origin::for_tests())
+    let fixed = by_tests(&mut service)
         .add_fixed_run(NewFixedRun {
             // Staff pinned 1004, who is not on the party (user decision 2026-10-09).
             owner_pinned: true,
@@ -111,8 +109,7 @@ async fn fixture(attendance: AttendancePolicy) -> Fixture {
         })
         .await
         .unwrap();
-    service
-        .as_origin(Origin::for_tests())
+    by_tests(&mut service)
         .materialise_weeks(&policy)
         .await
         .unwrap();
@@ -218,8 +215,7 @@ impl Fixture {
 
     /// Another writer moves `run` outside the proposal.
     async fn amend(&mut self, run: &str, to: DateTime<FixedOffset>) {
-        self.service
-            .as_origin(Origin::for_tests())
+        by_tests(&mut self.service)
             .amend_run(run, utc(to), &self.policy)
             .await
             .unwrap();
@@ -228,8 +224,7 @@ impl Fixture {
     /// Another writer swaps `out` for `into` on `run`.
     async fn swap(&mut self, run: &str, out: &str, into: &str) {
         let (out, into) = ([out.to_owned()], [into.to_owned()]);
-        self.service
-            .as_origin(Origin::for_tests())
+        by_tests(&mut self.service)
             .swap_participants(run, &out, &into, false, &Guild)
             .await
             .unwrap();
@@ -445,9 +440,7 @@ async fn proposed_answers_recount_but_never_end_a_pin_or_move_a_started_run() {
     );
 
     // Frozen once started: an answer applied after the start changes no status.
-    let tonight = f
-        .service
-        .as_origin(Origin::for_tests())
+    let tonight = by_tests(&mut f.service)
         .create_run(NewRun {
             fixed_run_id: None,
             channel_id: Some("222".into()),
@@ -576,8 +569,7 @@ async fn proposals_leave_member_request_limits_alone() {
 impl Fixture {
     /// A member's ✅/❌ reaction: the answer and the recount it triggers.
     async fn react(&mut self, run: &str, user: &str, emoji: &str) {
-        self.service
-            .as_origin(Origin::for_tests())
+        by_tests(&mut self.service)
             .apply_reaction(run, user, emoji, true)
             .await
             .unwrap();
@@ -589,8 +581,7 @@ impl Fixture {
             announce: false,
             via_portal: true,
         };
-        self.service
-            .as_origin(Origin::for_tests())
+        by_tests(&mut self.service)
             .set_status(run, change, &self.policy.reminders)
             .await
             .unwrap();

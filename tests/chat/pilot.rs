@@ -10,9 +10,9 @@ use kanade::chat::answer::{
     AnswerDeps, AnswerFailure, Generation, ProfanityGuard, ProfanityHit, ProfanitySide, Question,
     answer,
 };
-use kanade::chat::context::{QuestionMessage, Reference, WITHHELD, build_turns};
+use kanade::chat::context::{ChatTurn, QuestionMessage, Reference, WITHHELD, build_turns};
 use kanade::chat::gate::{
-    Author, ChannelInfo, IncomingMessage, PilotSettings, RATE_LIMITED, Summons, decide,
+    Author, ChannelInfo, ChatDecision, IncomingMessage, RATE_LIMITED, Summons, decide,
 };
 use kanade::chat::pilot::{
     Admission, CONTENT_BLOCKED_REPLY, ChatPilot, Concluded, Finished, GuardLimits, LogFacts,
@@ -24,11 +24,11 @@ use kanade::chat::tools::{ToolContext, ToolName};
 use kanade::domain::model_log::ModelLogStore;
 use kanade::domain::model_log::{AllowanceOverride, ChatOutcome};
 use kanade::infrastructure::llm::governor::{Charge, Refused, SessionError, SessionFailure};
-use kanade::infrastructure::llm::{FakeAction, FakeProvider, Message};
+use kanade::infrastructure::llm::{FakeAction, FakeProvider};
 use kanade::infrastructure::store::MemoryScheduleStore;
 use serde_json::json;
 
-use crate::looping::{Ports, settings};
+use crate::looping::{Ports, conversation, settings};
 use crate::model::{Scripted, capabilities, client};
 use crate::support::world_input;
 use crate::wire::kanade;
@@ -55,15 +55,13 @@ impl ReplyPort for Replies {
     }
 }
 
-fn gate_input() -> (Channels, PilotSettings) {
+/// The gate's decision on member 11's summons in channel 700 at `now`.
+fn decide_at(chat: &mut ChatPilot, now: f64) -> ChatDecision {
     let input = world_input();
-    (Channels::new(&input["channels"]), pilot(&input["settings"]))
-}
-
-fn asked_by(member: &str) -> IncomingMessage {
-    IncomingMessage {
+    let (channels, settings) = (Channels::new(&input["channels"]), pilot(&input["settings"]));
+    let asked = IncomingMessage {
         author: Some(Author {
-            id: member.into(),
+            id: "11".into(),
             bot: false,
             roles: vec!["6000".into()],
         }),
@@ -71,21 +69,21 @@ fn asked_by(member: &str) -> IncomingMessage {
         channel: Some(ChannelInfo::bare("700")),
         mentions: vec![BOT.into()],
         role_mentions: Vec::new(),
-    }
-}
-
-fn summons() -> Summons<'static> {
-    Summons {
+    };
+    let summons = Summons {
         bot_user_id: Some(BOT),
         self_role_id: None,
         replied_author_id: None,
         enabled: true,
         is_admin: false,
-    }
-}
-
-fn ctx(member: &str) -> ToolContext {
-    ctx_for(member, "8100")
+    };
+    decide(
+        &asked,
+        &settings,
+        &channels,
+        summons,
+        chat.allowance.budgets(now),
+    )
 }
 
 fn ctx_for(member: &str, message_id: &str) -> ToolContext {
@@ -116,7 +114,6 @@ fn new_pilot() -> ChatPilot {
 
 #[test]
 fn overrides_refunds_and_one_limited_reply_per_episode() {
-    let (channels, settings) = gate_input();
     let mut pilot = new_pilot();
     let override_row = AllowanceOverride {
         member_id: "11".into(),
@@ -127,31 +124,19 @@ fn overrides_refunds_and_one_limited_reply_per_episode() {
     pilot
         .allowance
         .apply((4, 300.0), (12, 900.0), &[override_row]);
-    let first = decide(
-        &asked_by("11"),
-        &settings,
-        &channels,
-        summons(),
-        pilot.allowance.budgets(10.0),
-    );
-    assert!(first.act);
-    let second = decide(
-        &asked_by("11"),
-        &settings,
-        &channels,
-        summons(),
-        pilot.allowance.budgets(20.0),
-    );
+    assert!(decide_at(&mut pilot, 10.0).act);
+    let second = decide_at(&mut pilot, 20.0);
     assert_eq!((second.reason, second.retry_after_s), (RATE_LIMITED, 50.0));
 
-    let (reply, row) = pilot.limited(&ctx("11"), "again?", &second, facts("limited-1"), 20.0);
+    let ctx = ctx_for("11", "8100");
+    let (reply, row) = pilot.limited(&ctx, "again?", &second, facts("limited-1"), 20.0);
     assert_eq!(
         reply.as_deref(),
         Some("That's your 1 answer for now — ask me again in about 50s."),
         "their own override, not the default"
     );
     assert_eq!(row.outcome, ChatOutcome::RateLimited);
-    let (again, row) = pilot.limited(&ctx("11"), "again?", &second, facts("limited-2"), 25.0);
+    let (again, row) = pilot.limited(&ctx, "again?", &second, facts("limited-2"), 25.0);
     assert_eq!(again, None, "said once per episode");
     assert_eq!(
         (row.outcome, row.reply.as_str()),
@@ -171,16 +156,7 @@ fn overrides_refunds_and_one_limited_reply_per_episode() {
         (view.allowance.members[0].used, view.allowance.pool.used),
         (0, 0)
     );
-    assert!(
-        decide(
-            &asked_by("11"),
-            &settings,
-            &channels,
-            summons(),
-            pilot.allowance.budgets(21.0)
-        )
-        .act
-    );
+    assert!(decide_at(&mut pilot, 21.0).act);
 }
 
 #[test]
@@ -196,14 +172,12 @@ fn one_answer_per_channel_with_a_bounded_fair_queue() {
     );
     let traffic = &mut pilot.traffic;
     let at = |now: f64| (now, Some(now));
+    let queued = |position| Admission::Queued { position };
     assert_eq!(traffic.admit("700", "m1", "11", at(0.0)), Admission::Answer);
-    assert_eq!(
-        traffic.admit("700", "m2", "22", at(1.0)),
-        Admission::Queued { position: 1 }
-    );
+    assert_eq!(traffic.admit("700", "m2", "22", at(1.0)), queued(1));
     assert_eq!(
         traffic.admit("700", "m3", "33", (2.0, None)),
-        Admission::Queued { position: 2 },
+        queued(2),
         "an admin spends no allowance"
     );
     assert_eq!(
@@ -212,10 +186,7 @@ fn one_answer_per_channel_with_a_bounded_fair_queue() {
         "channel bound"
     );
     assert_eq!(traffic.admit("702", "n1", "11", at(3.0)), Admission::Answer);
-    assert_eq!(
-        traffic.admit("702", "n2", "22", at(4.0)),
-        Admission::Queued { position: 1 }
-    );
+    assert_eq!(traffic.admit("702", "n2", "22", at(4.0)), queued(1));
     assert_eq!(
         traffic.admit("702", "n3", "33", at(5.0)),
         Admission::Busy,
@@ -239,10 +210,7 @@ fn one_answer_per_channel_with_a_bounded_fair_queue() {
         traffic.admit("700", "m5", "44", at(10.0)),
         Admission::Answer
     );
-    assert_eq!(
-        traffic.admit("700", "m6", "55", at(11.0)),
-        Admission::Queued { position: 1 }
-    );
+    assert_eq!(traffic.admit("700", "m6", "55", at(11.0)), queued(1));
 
     // Finishing gives up stale waiters first, so a question that outwaited
     // its bound is never handed over.
@@ -261,10 +229,7 @@ fn one_answer_per_channel_with_a_bounded_fair_queue() {
         traffic.admit("700", "m5", "44", at(72.0)),
         Admission::Answer
     );
-    assert_eq!(
-        traffic.admit("702", "n4", "22", at(72.0)),
-        Admission::Queued { position: 1 }
-    );
+    assert_eq!(traffic.admit("702", "n4", "22", at(72.0)), queued(1));
 
     // Waiting past the bound gives up (busy reaction and refund upstream).
     let dropped = traffic.expire(140.0);
@@ -330,38 +295,37 @@ fn concurrent_questions_from_one_member_reserve_one_clean_retry() {
 #[tokio::test]
 async fn a_refused_question_never_releases_anothers_reservation() {
     let world = world().await;
-    let persona = kanade();
     let mut pilot = new_pilot();
     let a_reserved = pilot.reserve_clean_retry("11", 0.0);
     let b_reserved = pilot.reserve_clean_retry("11", 0.5);
     assert!(a_reserved && !b_reserved);
-    let conclude = async |pilot: &mut ChatPilot, id: &str, reserved, generation, now| {
-        pilot
-            .conclude(
-                Finished {
-                    message: &message(id, "11", "hmm", None),
-                    channel_id: "700",
-                    ctx: &ctx_for("11", id),
-                    generation: &generation,
-                    persona: &persona,
-                    directory: &world.guild,
-                    log: facts(&format!("chat-{id}")),
-                    spent_at: None,
-                    reserved,
-                    now,
-                },
-                &Replies::default(),
-            )
-            .await
+    let b = message("b", "11", "hmm", None);
+    let spent = Spent {
+        at: None,
+        reserved: b_reserved,
     };
-    conclude(&mut pilot, "b", b_reserved, answered("B."), 1.0).await;
+    conclude_paid(
+        &mut pilot,
+        &world,
+        &b,
+        &answered("B."),
+        1.0,
+        spent,
+        &ReplyTo,
+    )
+    .await;
     assert_eq!(pilot.limits(1.0).clean_retry.pending, 1, "A still holds it");
     assert!(!pilot.reserve_clean_retry("11", 2.0), "C is still refused");
     let sent = Generation {
         clean_retry: true,
         ..answered("A.")
     };
-    conclude(&mut pilot, "a", a_reserved, sent, 3.0).await;
+    let a = message("a", "11", "hmm", None);
+    let spent = Spent {
+        at: None,
+        reserved: a_reserved,
+    };
+    conclude_paid(&mut pilot, &world, &a, &sent, 3.0, spent, &ReplyTo).await;
     let view = pilot.limits(3.0).clean_retry;
     assert_eq!((view.pending, view.recent), (0, 1));
     assert!(!pilot.reserve_clean_retry("11", 602.0), "inside 600 s");
@@ -434,32 +398,108 @@ async fn world() -> World {
     World::new(&world_input()).await
 }
 
+/// The turns `message` in channel 700 is answered with at `now`.
+fn turns(
+    chat: &mut ChatPilot,
+    world: &World,
+    message: &QuestionMessage,
+    now: f64,
+) -> Vec<ChatTurn> {
+    build_turns(
+        &mut chat.conversations,
+        message,
+        "700",
+        now,
+        BOT,
+        None,
+        &world.guild,
+    )
+}
+
+fn texts(turns: &[ChatTurn]) -> Vec<String> {
+    turns.iter().map(|t| t.prompt_text().to_owned()).collect()
+}
+
+/// What a concluded question spent: when its allowance slot was taken
+/// (refunded on a turned-away answer) and whether it held the clean retry.
+#[derive(Clone, Copy, Default)]
+struct Spent {
+    at: Option<f64>,
+    reserved: bool,
+}
+
+/// An allowance slot taken at 1 s, no clean retry held.
+const SPENT: Spent = Spent {
+    at: Some(1.0),
+    reserved: false,
+};
+
+/// Concludes `question` on `chat` in channel 700 at `now`, as its author.
+async fn conclude_paid(
+    chat: &mut ChatPilot,
+    world: &World,
+    question: &QuestionMessage,
+    generation: &Generation,
+    now: f64,
+    spent: Spent,
+    replies: &impl ReplyPort,
+) -> Concluded {
+    chat.conclude(
+        Finished {
+            message: question,
+            channel_id: "700",
+            ctx: &ctx_for(&question.author_id, &question.id),
+            generation,
+            persona: &kanade(),
+            directory: &world.guild,
+            log: facts(&format!("chat-{}", question.id)),
+            spent_at: spent.at,
+            reserved: spent.reserved,
+            now,
+        },
+        replies,
+    )
+    .await
+}
+
+/// [`conclude_paid`] spending nothing, replying through [`ReplyTo`].
+async fn conclude_on(
+    chat: &mut ChatPilot,
+    world: &World,
+    question: &QuestionMessage,
+    generation: &Generation,
+    now: f64,
+) -> Concluded {
+    conclude_paid(
+        chat,
+        world,
+        question,
+        generation,
+        now,
+        Spent::default(),
+        &ReplyTo,
+    )
+    .await
+}
+
 #[tokio::test]
 async fn an_answer_is_remembered_anchored_and_focused() {
     let world = world().await;
-    let persona = kanade();
     let mut pilot = new_pilot();
     let replies = Replies::default();
     let question = message("8100", "11", "what's on?", None);
     let mut generation = answered("Nothing much!");
     generation.focus = Some("move Hard Baldrix to Sat 12 Sep 21:00 — Alvin tan".into());
-    let concluded = pilot
-        .conclude(
-            Finished {
-                message: &question,
-                channel_id: "700",
-                ctx: &ctx("11"),
-                generation: &generation,
-                persona: &persona,
-                directory: &world.guild,
-                log: facts("chat-1"),
-                spent_at: Some(1.0),
-                reserved: false,
-                now: 5.0,
-            },
-            &replies,
-        )
-        .await;
+    let concluded = conclude_paid(
+        &mut pilot,
+        &world,
+        &question,
+        &generation,
+        5.0,
+        SPENT,
+        &replies,
+    )
+    .await;
     assert_eq!(concluded.posted_id.as_deref(), Some("reply-1"));
     assert_eq!(
         replies.0.lock().unwrap()[0],
@@ -488,15 +528,7 @@ async fn an_answer_is_remembered_anchored_and_focused() {
         message_id: Some("reply-1".into()),
         resolved: None,
     });
-    let turns = build_turns(
-        &mut pilot.conversations,
-        &later,
-        "700",
-        5.0 + 2700.0,
-        BOT,
-        None,
-        &world.guild,
-    );
+    let turns = turns(&mut pilot, &world, &later, 5.0 + 2700.0);
     assert_eq!(
         turns.iter().map(|t| t.content.as_str()).collect::<Vec<_>>(),
         ["Alvin tan: what's on?", "Nothing much!", "kanon: and then?"]
@@ -506,26 +538,9 @@ async fn an_answer_is_remembered_anchored_and_focused() {
 #[tokio::test]
 async fn remembered_questions_strip_leading_own_mentions_only() {
     let world = world().await;
-    let persona = kanade();
     let mut pilot = new_pilot();
     let question = message("8110", "11", "<@&5001>, what are my runs <@22>?", None);
-    let concluded = pilot
-        .conclude(
-            Finished {
-                message: &question,
-                channel_id: "700",
-                ctx: &ctx_for("11", "8110"),
-                generation: &answered("Checking."),
-                persona: &persona,
-                directory: &world.guild,
-                log: facts("chat-mention-history"),
-                spent_at: None,
-                reserved: false,
-                now: 5.0,
-            },
-            &Replies::default(),
-        )
-        .await;
+    let concluded = conclude_on(&mut pilot, &world, &question, &answered("Checking."), 5.0).await;
     assert_eq!(
         pilot.conversations.history("700", 6.0)[0].content,
         "Alvin tan: what are my runs <@22>?"
@@ -542,32 +557,18 @@ async fn remembered_questions_strip_leading_own_mentions_only() {
 #[tokio::test]
 async fn blocked_content_is_withheld_from_every_later_context() {
     let world = world().await;
-    let persona = kanade();
     let mut pilot = new_pilot();
-    let replies = Replies::default();
     let explicit = message("8200", "22", "something explicit", None);
     let blocked = Generation {
         failure: Some(AnswerFailure::ContentBlocked),
         clean_retry: true,
         ..Generation::default()
     };
-    let concluded = pilot
-        .conclude(
-            Finished {
-                message: &explicit,
-                channel_id: "700",
-                ctx: &ctx("22"),
-                generation: &blocked,
-                persona: &persona,
-                directory: &world.guild,
-                log: facts("chat-a"),
-                spent_at: Some(1.0),
-                reserved: false,
-                now: 5.0,
-            },
-            &replies,
-        )
-        .await;
+    let replies = Replies::default();
+    let concluded = conclude_paid(
+        &mut pilot, &world, &explicit, &blocked, 5.0, SPENT, &replies,
+    )
+    .await;
     assert_eq!(
         concluded.reply, CONTENT_BLOCKED_REPLY,
         "the tracked bundle has no line of its own"
@@ -591,40 +592,18 @@ async fn blocked_content_is_withheld_from_every_later_context() {
         "what's on?",
         Some(("8200", "22", "something explicit")),
     );
-    let turns = build_turns(
-        &mut pilot.conversations,
-        &b,
-        "700",
-        6.0,
-        BOT,
-        None,
-        &world.guild,
-    );
-    let texts: Vec<&str> = turns.iter().map(|t| t.prompt_text()).collect();
-    assert_eq!(texts, [WITHHELD, WITHHELD, "Priya: what's on?"]);
+    let texts_b = texts(&turns(&mut pilot, &world, &b, 6.0));
+    assert_eq!(texts_b, [WITHHELD, WITHHELD, "Priya: what's on?"]);
     assert!(
-        !texts
+        !texts_b
             .iter()
             .any(|t| t.contains("explicit") || t.contains(CONTENT_BLOCKED_REPLY))
     );
     // Replying to the bot's line never re-anchors the exchange.
-    let reply_to_bot = message(
-        "8202",
-        "33",
-        "why?",
-        Some(("reply-1", BOT, CONTENT_BLOCKED_REPLY)),
-    );
-    let turns = build_turns(
-        &mut pilot.conversations,
-        &reply_to_bot,
-        "700",
-        6.0 + 2700.0,
-        BOT,
-        None,
-        &world.guild,
-    );
+    let parent = Some(("reply-1", BOT, CONTENT_BLOCKED_REPLY));
+    let reply_to_bot = message("8202", "33", "why?", parent);
     assert_eq!(
-        turns.iter().map(|t| t.prompt_text()).collect::<Vec<_>>(),
+        texts(&turns(&mut pilot, &world, &reply_to_bot, 6.0 + 2700.0)),
         [WITHHELD, "Priya: why?"]
     );
 }
@@ -632,39 +611,24 @@ async fn blocked_content_is_withheld_from_every_later_context() {
 #[tokio::test]
 async fn other_failures_say_v4s_line_and_turned_away_questions_are_refunded() {
     let world = world().await;
-    let persona = kanade();
     let mut pilot = new_pilot();
-    let (channels, settings) = gate_input();
-    let decision = decide(
-        &asked_by("11"),
-        &settings,
-        &channels,
-        summons(),
-        pilot.allowance.budgets(1.0),
-    );
-    assert!(decision.act);
+    assert!(decide_at(&mut pilot, 1.0).act);
     let turned_away = Generation::failed(AnswerFailure::Session(SessionError {
         failure: SessionFailure::Refused(Refused::Timeout),
         charge: Charge::Refunded,
     }));
     let question = message("8300", "11", "what's on?", None);
-    let concluded = pilot
-        .conclude(
-            Finished {
-                message: &question,
-                channel_id: "700",
-                ctx: &ctx("11"),
-                generation: &turned_away,
-                persona: &persona,
-                directory: &world.guild,
-                log: facts("chat-t"),
-                spent_at: Some(1.0),
-                reserved: false,
-                now: 2.0,
-            },
-            &Replies::default(),
-        )
-        .await;
+    let replies = Replies::default();
+    let concluded = conclude_paid(
+        &mut pilot,
+        &world,
+        &question,
+        &turned_away,
+        2.0,
+        SPENT,
+        &replies,
+    )
+    .await;
     assert_eq!(concluded.reply, FAILURE_REPLY);
     assert_eq!(concluded.interaction.outcome, ChatOutcome::TurnedAway);
     assert_eq!(pilot.limits(2.0).allowance.pool.used, 0, "refunded");
@@ -678,7 +642,7 @@ fn filtered() -> FakeAction {
 /// A filtered first round, then `after` for the clean retry, concluded:
 /// the generation, the requests sent and what `conclude` did.
 async fn filtered_then(
-    pilot: &mut ChatPilot,
+    chat: &mut ChatPilot,
     after: Vec<FakeAction>,
     message_id: &str,
 ) -> (Generation, usize, Concluded) {
@@ -691,9 +655,8 @@ async fn filtered_then(
     let (_governor, client) = client(Some(MODEL), provider.clone());
     let ask = ctx_for("11", message_id);
     let mut settings = settings(&input, 8);
-    let reserved = pilot.reserve_clean_retry("11", 1.0);
+    let reserved = chat.reserve_clean_retry("11", 1.0);
     settings.clean_retry = reserved;
-    let persona = kanade();
     let deps = AnswerDeps {
         client: &client,
         route: None,
@@ -702,39 +665,17 @@ async fn filtered_then(
         let (guild, mut proposer) = world.question_parts();
         let question = Question {
             ctx: &ask,
-            conversation: vec![
-                Message::System {
-                    content: "SYSTEM".into(),
-                },
-                Message::User {
-                    content: "Alvin tan: hmm".into(),
-                },
-            ],
+            conversation: conversation("Alvin tan: hmm".into()),
             profanity: None,
-            reminder: persona.voice_reminder(),
+            reminder: kanade().voice_reminder(),
             offer: ToolOffer::full_set(false),
             settings,
         };
         answer(&deps, question, &guild, &mut proposer, &Ports::default()).await
     };
     let question = message(message_id, "11", "hmm", None);
-    let concluded = pilot
-        .conclude(
-            Finished {
-                message: &question,
-                channel_id: "700",
-                ctx: &ask,
-                generation: &generation,
-                persona: &persona,
-                directory: &world.guild,
-                log: facts(&format!("chat-{message_id}")),
-                spent_at: None,
-                reserved,
-                now: 2.0,
-            },
-            &Replies::default(),
-        )
-        .await;
+    let spent = Spent { at: None, reserved };
+    let concluded = conclude_paid(chat, &world, &question, &generation, 2.0, spent, &ReplyTo).await;
     (generation, provider.fake.requests().len(), concluded)
 }
 
@@ -806,109 +747,30 @@ async fn withheld_questions_survive_a_restart() {
     let mut before = new_pilot();
     let explicit = message("8500", "22", "something explicit", None);
     let blocked = Generation::failed(AnswerFailure::ContentBlocked);
-    let concluded = before
-        .conclude(
-            Finished {
-                message: &explicit,
-                channel_id: "700",
-                ctx: &ctx_for("22", "8500"),
-                generation: &blocked,
-                persona: &kanade(),
-                directory: &world.guild,
-                log: facts("chat-w"),
-                spent_at: None,
-                reserved: false,
-                now: 1.0,
-            },
-            &Replies::default(),
-        )
-        .await;
+    let concluded = conclude_on(&mut before, &world, &explicit, &blocked, 1.0).await;
     store.record_chat(concluded.interaction).await.unwrap();
-    let mut answered_row = before
-        .conclude(
-            Finished {
-                message: &message("8501", "22", "fine question", None),
-                channel_id: "700",
-                ctx: &ctx_for("22", "8501"),
-                generation: &answered("Sure."),
-                persona: &kanade(),
-                directory: &world.guild,
-                log: facts("chat-x"),
-                spent_at: None,
-                reserved: false,
-                now: 2.0,
-            },
-            &Replies::default(),
-        )
+    let fine = message("8501", "22", "fine question", None);
+    let mut answered_row = conclude_on(&mut before, &world, &fine, &answered("Sure."), 2.0)
         .await
         .interaction;
     answered_row.at += chrono::TimeDelta::seconds(1);
     store.record_chat(answered_row).await.unwrap();
 
-    let reply = message(
-        "8502",
-        "33",
-        "what did they say?",
-        Some(("8500", "22", "something explicit")),
-    );
+    let parent = Some(("8500", "22", "something explicit"));
+    let reply = message("8502", "33", "what did they say?", parent);
     let mut restarted = new_pilot();
-    let leaked = build_turns(
-        &mut restarted.conversations,
-        &reply,
-        "700",
-        3.0,
-        BOT,
-        None,
-        &world.guild,
-    );
     assert_eq!(
-        leaked[0].prompt_text(),
+        turns(&mut restarted, &world, &reply, 3.0)[0].prompt_text(),
         "kanon: something explicit",
         "without the reload the parent comes back"
     );
     let mut restarted = new_pilot();
     assert_eq!(restarted.reload_withheld(&store).await.unwrap(), 1);
     assert!(!restarted.conversations.is_withheld("8501"));
-    let turns = build_turns(
-        &mut restarted.conversations,
-        &reply,
-        "700",
-        3.0,
-        BOT,
-        None,
-        &world.guild,
-    );
     assert_eq!(
-        turns.iter().map(|t| t.prompt_text()).collect::<Vec<_>>(),
+        texts(&turns(&mut restarted, &world, &reply, 3.0)),
         [WITHHELD, "Priya: what did they say?"]
     );
-}
-
-/// Concludes one question on `pilot` in channel 700 at `now`.
-async fn conclude_on(
-    pilot: &mut ChatPilot,
-    world: &World,
-    question: &QuestionMessage,
-    generation: &Generation,
-    now: f64,
-) -> Concluded {
-    pilot
-        .conclude(
-            Finished {
-                message: question,
-                channel_id: "700",
-                ctx: &ctx_for(&question.author_id, &question.id),
-                generation,
-                persona: &kanade(),
-                directory: &world.guild,
-                log: facts(&format!("chat-{}", question.id)),
-                spent_at: None,
-                reserved: false,
-                now,
-            },
-            &ReplyTo,
-        )
-        .await
 }
 
 /// Posts the answer as `reply-to-<question id>`: unique per question.
@@ -925,10 +787,6 @@ impl ReplyPort for ReplyTo {
     }
 }
 
-fn texts(turns: &[kanade::chat::context::ChatTurn]) -> Vec<String> {
-    turns.iter().map(|t| t.prompt_text().to_owned()).collect()
-}
-
 const LINE: &str = "Language, please!";
 
 fn line_guard() -> ProfanityGuard {
@@ -936,6 +794,19 @@ fn line_guard() -> ProfanityGuard {
         deflection_line: LINE.into(),
         ..kanade::domain::settings::Profanity::default()
     })
+}
+
+/// A reply whose profanity check caught `shit`; `sent` is what replaced it.
+fn caught_reply(reply: &str, sent: Option<&str>) -> Generation {
+    Generation {
+        reply: reply.into(),
+        profanity: Some(ProfanityHit {
+            side: ProfanitySide::Reply,
+            word: "shit".into(),
+            sent: sent.map(Into::into),
+        }),
+        ..Generation::default()
+    }
 }
 
 /// A deflected question and the line sent for it never enter later context:
@@ -959,30 +830,16 @@ async fn a_deflected_question_and_its_line_stay_out_of_context() {
     let posted = concluded.posted_id.expect("posted");
 
     let next = message("8601", "33", "what's on?", None);
-    let turns = build_turns(
-        &mut pilot.conversations,
-        &next,
-        "700",
-        2.0,
-        BOT,
-        None,
-        &world.guild,
+    assert_eq!(
+        texts(&turns(&mut pilot, &world, &next, 2.0)),
+        ["Priya: what's on?"]
     );
-    assert_eq!(texts(&turns), ["Priya: what's on?"]);
     for (parent, author, text) in [
         ("8600", "22", rude.content.as_str()),
         (posted.as_str(), BOT, LINE),
     ] {
         let reply = message("8602", "33", "huh?", Some((parent, author, text)));
-        let turns = build_turns(
-            &mut pilot.conversations,
-            &reply,
-            "700",
-            2.0,
-            BOT,
-            None,
-            &world.guild,
-        );
+        let turns = turns(&mut pilot, &world, &reply, 2.0);
         assert_eq!(texts(&turns), ["Priya: huh?"], "reply to {parent}");
     }
 }
@@ -995,40 +852,19 @@ async fn a_replaced_reply_drops_its_exchange_and_a_recovered_one_keeps_it() {
     let world = world().await;
     let mut pilot = new_pilot();
     let replaced = Generation {
-        reply: LINE.into(),
-        profanity: Some(ProfanityHit {
-            side: ProfanitySide::Reply,
-            word: "shit".into(),
-            sent: Some(LINE.into()),
-        }),
         clean_retry: true,
-        ..Generation::default()
+        ..caught_reply(LINE, Some(LINE))
     };
     let asked = message("8700", "22", "when is kalos?", None);
     conclude_on(&mut pilot, &world, &asked, &replaced, 1.0).await;
     let recovered = Generation {
-        reply: "Lotus is at nine.".into(),
-        profanity: Some(ProfanityHit {
-            side: ProfanitySide::Reply,
-            word: "shit".into(),
-            sent: None,
-        }),
         clean_retry: true,
-        ..Generation::default()
+        ..caught_reply("Lotus is at nine.", None)
     };
     let asked = message("8701", "22", "when is lotus?", None);
     conclude_on(&mut pilot, &world, &asked, &recovered, 2.0).await;
     let next = message("8702", "33", "and after?", None);
-    let turns = build_turns(
-        &mut pilot.conversations,
-        &next,
-        "700",
-        3.0,
-        BOT,
-        None,
-        &world.guild,
-    );
-    let texts = texts(&turns);
+    let texts = texts(&turns(&mut pilot, &world, &next, 3.0));
     assert_eq!(
         texts,
         [
@@ -1052,28 +888,15 @@ async fn excluded_questions_survive_a_restart() {
     let store = MemoryScheduleStore::new();
     let mut before = new_pilot();
     let rude = message("8800", "22", "this fucking bot", None);
-    let concluded = conclude_on(
-        &mut before,
-        &world,
-        &rude,
-        &line_guard().deflect("fuck".into()),
-        1.0,
-    )
-    .await;
+    let deflected = line_guard().deflect("fuck".into());
+    let concluded = conclude_on(&mut before, &world, &rude, &deflected, 1.0).await;
     store.record_chat(concluded.interaction).await.unwrap();
+    let asked = message("8801", "22", "when is lotus?", None);
     let mut recovered = conclude_on(
         &mut before,
         &world,
-        &message("8801", "22", "when is lotus?", None),
-        &Generation {
-            reply: "Nine.".into(),
-            profanity: Some(ProfanityHit {
-                side: ProfanitySide::Reply,
-                word: "shit".into(),
-                sent: None,
-            }),
-            ..Generation::default()
-        },
+        &asked,
+        &caught_reply("Nine.", None),
         2.0,
     )
     .await
@@ -1093,14 +916,8 @@ async fn excluded_questions_survive_a_restart() {
         !restarted.conversations.is_excluded("8801"),
         "recovered stays"
     );
-    let turns = build_turns(
-        &mut restarted.conversations,
-        &reply,
-        "700",
-        3.0,
-        BOT,
-        None,
-        &world.guild,
+    assert_eq!(
+        texts(&turns(&mut restarted, &world, &reply, 3.0)),
+        ["Priya: what?"]
     );
-    assert_eq!(texts(&turns), ["Priya: what?"]);
 }

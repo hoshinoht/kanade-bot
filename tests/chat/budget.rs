@@ -14,9 +14,9 @@ use kanade::chat::tools::ToolContext;
 use kanade::chat::tools::bundles::{Bundle, ToolOffer};
 use kanade::domain::model_log::ChatOutcome;
 use kanade::domain::scheduler::Clock;
-use kanade::infrastructure::llm::{FakeAction, FakeProvider, Message};
+use kanade::infrastructure::llm::{FakeAction, FakeProvider};
 
-use crate::looping::{Ports, said, settings};
+use crate::looping::{Ports, conversation, said, settings};
 use crate::model::{Scripted, capabilities, client, wants};
 use crate::support::world_input;
 use crate::wire::kanade;
@@ -66,14 +66,7 @@ async fn ask_scripted(
         let (guild, mut proposer) = world.question_parts();
         let question = Question {
             ctx: &ctx,
-            conversation: vec![
-                Message::System {
-                    content: "SYSTEM".into(),
-                },
-                Message::User {
-                    content: format!("Alvin tan: {QUESTION}"),
-                },
-            ],
+            conversation: conversation(format!("Alvin tan: {QUESTION}")),
             profanity: None,
             reminder: kanade().voice_reminder(),
             offer,

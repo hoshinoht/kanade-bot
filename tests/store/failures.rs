@@ -7,7 +7,7 @@ use kanade::domain::schedule::{Change, ChangeSet};
 use kanade::domain::scheduler::{ScheduleStore, Scope, StoreError};
 use kanade::infrastructure::store::SqliteStore;
 
-use crate::support::{TempDir, commit, create, fixed, seed, tamper};
+use crate::support::{TempDir, commit, connect, create, fixed, seed, tamper};
 
 #[tokio::test]
 async fn unreadable_rows_are_a_typed_backend_error() {
@@ -149,19 +149,14 @@ async fn cancelled_commits_land_whole_or_not_at_all() {
 
 #[tokio::test]
 async fn a_busy_begin_is_returned_and_the_next_commit_reconnects() {
-    use sqlx::sqlite::SqliteConnectOptions;
-    use sqlx::{ConnectOptions, Connection};
+    use sqlx::Connection;
 
     let dir = TempDir::new();
     let config = dir.config("busy-begin");
     let store = SqliteStore::open(&config).await.expect("opens");
     seed(&store).await;
     let before = store.load(&Scope::All).await.expect("load");
-    let mut holder = SqliteConnectOptions::new()
-        .filename(&config.db_path)
-        .connect()
-        .await
-        .expect("raw connection");
+    let mut holder = connect(&config, false).await;
     sqlx::raw_sql("BEGIN IMMEDIATE")
         .execute(&mut holder)
         .await

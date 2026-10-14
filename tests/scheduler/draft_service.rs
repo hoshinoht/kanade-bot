@@ -30,8 +30,8 @@ use kanade::infrastructure::store::MemoryScheduleStore;
 
 use crate::common::TestClock;
 use crate::support::{
-    AnyChannel, Guild, TwoTimings as Fixture, amend, existing, hm, kalos_run, kl, now, policy,
-    rsvp, snapshot, swap, two_timings as fixture, utc, weekly,
+    AnyChannel, Guild, TwoTimings as Fixture, amend, by_tests, existing, hm, kalos_run, kl, now,
+    policy, rsvp, snapshot, swap, two_timings as fixture, utc, weekly,
 };
 
 type Svc<S> = SchedulerService<S, RandomIds, TestClock>;
@@ -136,11 +136,9 @@ async fn merge(service: &mut Service, id: &str, version: u64) -> DraftResult<Mer
 
 /// Another writer moves `run` outside the draft.
 async fn upstream_amend(service: &mut Service, run: &str, to: DateTime<FixedOffset>) {
-    service
-        .as_origin(Origin::for_tests())
-        .amend_run(run, utc(to), &policy())
-        .await
-        .unwrap();
+    let policy = policy();
+    let amended = by_tests(service).amend_run(run, utc(to), &policy);
+    amended.await.unwrap();
 }
 
 async fn stage(service: &mut Service, ops: &[DraftOp]) -> String {
@@ -461,8 +459,7 @@ async fn a_second_merger_gets_already_merged_and_a_retry_replays() {
 async fn a_history_gap_is_refused() {
     let mut f = fixture().await;
     let id = stage(&mut f.service, &[amend(&f.runs[0][0], kl(1, 20, 0))]).await;
-    f.service
-        .as_origin(Origin::for_tests())
+    by_tests(&mut f.service)
         .set_rsvp(&f.runs[1][2], "1001", RsvpState::No, RsvpSource::Chat)
         .await
         .unwrap();
@@ -580,8 +577,7 @@ async fn a_settling_rebase_keeps_the_edits_and_lands_on_the_head() {
         announce: false,
         via_portal: false,
     };
-    f.service
-        .as_origin(Origin::for_tests())
+    by_tests(&mut f.service)
         .set_status(&f.runs[1][0], cancel, &policy.reminders)
         .await
         .unwrap();

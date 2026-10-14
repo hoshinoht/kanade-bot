@@ -57,10 +57,7 @@ fn mode(path: &Path) -> u32 {
 #[tokio::test]
 async fn backups_and_restored_files_are_private() {
     let dir = TempDir::new();
-    let store = SqliteStore::open(&dir.config("private"))
-        .await
-        .expect("opens");
-    seed(&store).await;
+    let store = seeded(&dir, "private").await;
     let copy = dir.path().join("private-copy.sqlite3");
     store.backup(&copy).await.expect("backup");
     assert_eq!(mode(&copy), 0o600);
@@ -76,14 +73,34 @@ async fn backups_and_restored_files_are_private() {
 #[tokio::test]
 async fn a_cancelled_backup_leaves_nothing_behind() {
     let dir = TempDir::new();
-    let store = SqliteStore::open(&dir.config("cancel"))
-        .await
-        .expect("opens");
-    seed(&store).await;
+    let store = seeded(&dir, "cancel").await;
     let copy = dir.path().join("cancelled.sqlite3");
     let attempt = tokio::time::timeout(Duration::ZERO, store.backup(&copy)).await;
     assert!(attempt.is_err(), "the backup was cancelled mid-copy");
     // The copy finishes in the background, then its staging is removed.
+    staging_drains(&dir).await;
+    assert!(!copy.exists(), "an abandoned backup is not published");
+    store.close().await.expect("close");
+}
+
+/// A seeded store `name` in `dir`.
+async fn seeded(dir: &TempDir, name: &str) -> SqliteStore {
+    let store = SqliteStore::open(&dir.config(name)).await.expect("opens");
+    seed(&store).await;
+    store
+}
+
+/// A backup of a seeded store, the store closed.
+async fn source_copy(dir: &TempDir) -> PathBuf {
+    let store = seeded(dir, "source").await;
+    let copy = dir.path().join("source-copy.sqlite3");
+    store.backup(&copy).await.expect("backup");
+    store.close().await.expect("close");
+    copy
+}
+
+/// Waits for an abandoned copy to finish and remove its staging.
+async fn staging_drains(dir: &TempDir) {
     for _ in 0..500 {
         if partials(dir.path()).is_empty() {
             break;
@@ -91,8 +108,6 @@ async fn a_cancelled_backup_leaves_nothing_behind() {
         tokio::time::sleep(Duration::from_millis(10)).await;
     }
     assert!(partials(dir.path()).is_empty(), "staging is removed");
-    assert!(!copy.exists(), "an abandoned backup is not published");
-    store.close().await.expect("close");
 }
 
 /// Every file name under `dir`, recursively (staging directories included).
@@ -118,10 +133,7 @@ fn out_dir(dir: &TempDir) -> PathBuf {
 #[tokio::test]
 async fn a_sealed_backup_publishes_only_the_sealed_file() {
     let dir = TempDir::new();
-    let store = SqliteStore::open(&dir.config("sealed"))
-        .await
-        .expect("opens");
-    seed(&store).await;
+    let store = seeded(&dir, "sealed").await;
     let out = out_dir(&dir);
     let dest = out.join("snap.sqlite.age");
     // A stand-in seal: reverses the bytes, so it is not the plaintext.
@@ -150,10 +162,7 @@ async fn a_sealed_backup_publishes_only_the_sealed_file() {
 #[tokio::test]
 async fn a_failed_seal_leaves_no_plaintext_and_publishes_nothing() {
     let dir = TempDir::new();
-    let store = SqliteStore::open(&dir.config("unsealed"))
-        .await
-        .expect("opens");
-    seed(&store).await;
+    let store = seeded(&dir, "unsealed").await;
     let out = out_dir(&dir);
     let dest = out.join("snap.sqlite.age");
     // Writes part of the output, then fails mid-stream.
@@ -188,13 +197,7 @@ async fn refused_restore(dir: &TempDir, backup: &Path, name: &str) -> SqliteStor
 #[tokio::test]
 async fn restore_refuses_stray_journal_files_and_keeps_them() {
     let dir = TempDir::new();
-    let store = SqliteStore::open(&dir.config("source"))
-        .await
-        .expect("opens");
-    seed(&store).await;
-    let copy = dir.path().join("source-copy.sqlite3");
-    store.backup(&copy).await.expect("backup");
-    store.close().await.expect("close");
+    let copy = source_copy(&dir).await;
     for suffix in ["-wal", "-shm", "-journal"] {
         let name = format!("stray{suffix}");
         let stray = PathBuf::from(format!("{}{suffix}", dir.config(&name).db_path.display()));
@@ -379,25 +382,12 @@ async fn backup_while_a_writer_commits_is_a_consistent_revision() {
 #[tokio::test]
 async fn a_cancelled_restore_leaves_nothing_behind() {
     let dir = TempDir::new();
-    let store = SqliteStore::open(&dir.config("source"))
-        .await
-        .expect("opens");
-    seed(&store).await;
-    let copy = dir.path().join("source-copy.sqlite3");
-    store.backup(&copy).await.expect("backup");
-    store.close().await.expect("close");
-
+    let copy = source_copy(&dir).await;
     let config = dir.config("cancelled");
     let attempt = tokio::time::timeout(Duration::ZERO, SqliteStore::restore(&copy, &config)).await;
     assert!(attempt.is_err(), "the restore was cancelled");
     // The task finishes on its own, then removes its staging.
-    for _ in 0..500 {
-        if partials(dir.path()).is_empty() {
-            break;
-        }
-        tokio::time::sleep(Duration::from_millis(10)).await;
-    }
-    assert!(partials(dir.path()).is_empty(), "staging is removed");
+    staging_drains(&dir).await;
     assert!(
         !config.db_path.exists(),
         "an abandoned restore publishes nothing"

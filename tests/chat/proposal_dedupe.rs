@@ -18,12 +18,12 @@ use kanade::domain::proposals::{
     Approver, CardDetails, ChangeKind, ProposalCardStore, ProposedChange,
 };
 use kanade::domain::scheduler::{Clock, ProposalRequest, SchedulerService, Supersede};
+use kanade::infrastructure::llm::FakeAction;
 use kanade::infrastructure::llm::identity::PassthroughSession;
-use kanade::infrastructure::llm::{FakeAction, Message};
 use serde_json::{Value, json};
 
 use crate::common::utc;
-use crate::looping::{Ports, said};
+use crate::looping::{Ports, conversation, said};
 use crate::model::{Scripted, client, tool_model, wants};
 use crate::slow_store::SlowStore;
 use crate::world::World;
@@ -364,14 +364,7 @@ fn move_model() -> Arc<Scripted> {
 fn question(ctx: &ToolContext) -> Question<'_> {
     Question {
         ctx,
-        conversation: vec![
-            Message::System {
-                content: "SYSTEM".into(),
-            },
-            Message::User {
-                content: "Invented Mira: move my run to Monday at 22:00".into(),
-            },
-        ],
+        conversation: conversation("Invented Mira: move my run to Monday at 22:00".into()),
         profanity: None,
         reminder: "Keep the tool facts exact.".into(),
         offer: ToolOffer::full_set(false),

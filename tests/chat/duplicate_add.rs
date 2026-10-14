@@ -7,10 +7,10 @@
 use kanade::chat::answer::Generation;
 use kanade::chat::tools::REFUSED;
 use kanade::domain::proposals::ChangeKind;
-use kanade::infrastructure::llm::{FakeAction, Message};
+use kanade::infrastructure::llm::FakeAction;
 use serde_json::{Value, json};
 
-use crate::looping::{Ports, ask_full_set, said};
+use crate::looping::{Ports, ask_full_set, conversation, said};
 use crate::model::calls;
 use crate::world::{World, member, sgt_run};
 
@@ -97,14 +97,9 @@ fn party_add(boss: &str, when: &str) -> Value {
 /// Aster answers tonight's Carling reminder: "10pm we xkalos first".
 async fn ask(world: &mut World, call: Value) -> (Generation, Ports) {
     let ctx = world.context(&json!({"author_id": ASTER, "channel_id": HOME}));
-    let conversation = vec![
-        Message::System {
-            content: "SYSTEM".into(),
-        },
-        Message::User {
-            content: format!("Aster: 10pm we xkalos first <@{BRAMBLE}> <@{COBALT}> <@{DUNE}>"),
-        },
-    ];
+    let conversation = conversation(format!(
+        "Aster: 10pm we xkalos first <@{BRAMBLE}> <@{COBALT}> <@{DUNE}>"
+    ));
     let actions = vec![add(call), FakeAction::Response(said(MODEL, "Noted."))];
     let (generation, ports, _) =
         ask_full_set(world, &ctx, MODEL, conversation, actions, 32768).await;

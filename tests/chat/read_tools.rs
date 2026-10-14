@@ -1,7 +1,13 @@
 //! Read tools and the dispatcher boundary, through `dispatch::run` in the
 //! full-set (v4) mode with a passthrough identity session.
 
+use std::path::Path;
+
 use kanade::chat::sanitize::schedule_defaults;
+use kanade::chat::tools::ToolOutcome;
+use kanade::chat::tools::read::render_guide;
+use kanade::domain::catalog::BossReference;
+use kanade::infrastructure::files::{load_catalog, load_knowledge_dir};
 use kanade::infrastructure::llm::identity::PassthroughSession;
 use serde_json::{Value, json};
 
@@ -9,45 +15,39 @@ use crate::common::instant;
 use crate::support::world_input;
 use crate::world::World;
 
+/// Member 22's `get_schedule` for this week in 700, asked as `source`:
+/// `participant` as the model filled it, `group` forcing a group listing.
+async fn schedule_for(
+    world: &mut World,
+    participant: Option<&str>,
+    source: &str,
+    group: bool,
+) -> ToolOutcome {
+    let mut arguments = json!({"week": "this"});
+    if let Some(participant) = participant {
+        arguments["participant"] = json!(participant);
+    }
+    let step = json!({
+        "op": "run", "tool": "get_schedule", "author_id": "22", "channel_id": "700",
+        "arguments": arguments,
+        "self_schedule_requested": schedule_defaults(source, Some("999"), None).self_schedule_requested,
+        "force_group_schedule": group,
+    });
+    world.run_tool(&step, &mut PassthroughSession).await
+}
+
 #[tokio::test]
 async fn an_explicit_self_schedule_recovers_only_unrecognized_model_mentions() {
     let input = world_input();
     let mut world = World::new(&input).await;
-    let mut session = PassthroughSession;
-    let step = |participant: Option<&str>, source: &str, group: bool| {
-        let mut arguments = json!({"week": "this"});
-        if let Some(participant) = participant {
-            arguments["participant"] = json!(participant);
-        }
-        json!({
-            "op": "run", "tool": "get_schedule", "author_id": "22", "channel_id": "700",
-            "arguments": arguments,
-            "self_schedule_requested": schedule_defaults(source, Some("999"), None).self_schedule_requested,
-            "force_group_schedule": group,
-        })
-    };
-    let me = world
-        .run_tool(
-            &step(Some("me"), "what's for me today?", false),
-            &mut session,
-        )
-        .await;
+    let w = &mut world;
+    let me = schedule_for(w, Some("me"), "what's for me today?", false).await;
     assert!(me.ok);
-    let invented = world
-        .run_tool(
-            &step(Some("<@123>"), "<@999> what's for me today?", false),
-            &mut session,
-        )
-        .await;
+    let invented = schedule_for(w, Some("<@123>"), "<@999> what's for me today?", false).await;
     assert!(invented.ok);
     assert_eq!(invented.output, me.output);
     for bot_name in ["@Kanade", "kanade", "@kAnAdE"] {
-        let copied_bot = world
-            .run_tool(
-                &step(Some(bot_name), "<@999> whats for me today?", false),
-                &mut session,
-            )
-            .await;
+        let copied_bot = schedule_for(w, Some(bot_name), "<@999> whats for me today?", false).await;
         assert!(copied_bot.ok, "{bot_name}");
         assert_eq!(copied_bot.output, me.output, "{bot_name}");
     }
@@ -58,63 +58,31 @@ async fn an_explicit_self_schedule_recovers_only_unrecognized_model_mentions() {
         "what's on my schedule today?",
         "show me my schedule tomorrow",
     ] {
-        let omitted = world
-            .run_tool(&step(None, self_only, false), &mut session)
-            .await;
+        let omitted = schedule_for(w, None, self_only, false).await;
         assert_eq!(omitted.output, me.output, "{self_only}");
-        let unrecognized = world
-            .run_tool(&step(Some("<@123>"), self_only, false), &mut session)
-            .await;
+        let unrecognized = schedule_for(w, Some("<@123>"), self_only, false).await;
         assert_eq!(unrecognized.output, me.output, "{self_only}");
     }
 
-    let unknown = world
-        .run_tool(
-            &step(Some("<@123>"), "what's for Kanon today?", false),
-            &mut session,
-        )
-        .await;
+    let unknown = schedule_for(w, Some("<@123>"), "what's for Kanon today?", false).await;
     assert!(!unknown.ok);
     assert_eq!(
         unknown.output,
         "That does not identify one person on the roster. Ask who they mean."
     );
     for unsafe_name in ["@Kanade", "@Kanade and Kanon", "@NotTheBot"] {
-        let not_self = world
-            .run_tool(
-                &step(Some(unsafe_name), "what's for Kanon today?", false),
-                &mut session,
-            )
-            .await;
+        let not_self = schedule_for(w, Some(unsafe_name), "what's for Kanon today?", false).await;
         assert!(!not_self.ok, "{unsafe_name}");
     }
-    let mixed_participant = world
-        .run_tool(
-            &step(Some("@Kanade and Kanon"), "what's for me today?", false),
-            &mut session,
-        )
-        .await;
+    let mixed_participant =
+        schedule_for(w, Some("@Kanade and Kanon"), "what's for me today?", false).await;
     assert!(!mixed_participant.ok);
-    let other = world
-        .run_tool(
-            &step(Some("kanon"), "what's for me today?", false),
-            &mut session,
-        )
-        .await;
-    let other_without_self = world
-        .run_tool(
-            &step(Some("kanon"), "what's for Kanon today?", false),
-            &mut session,
-        )
-        .await;
+    let other = schedule_for(w, Some("kanon"), "what's for me today?", false).await;
+    let other_without_self = schedule_for(w, Some("kanon"), "what's for Kanon today?", false).await;
     assert!(other.ok);
     assert_eq!(other.output, other_without_self.output);
-    let group = world
-        .run_tool(&step(None, "what's for me today?", true), &mut session)
-        .await;
-    let all = world
-        .run_tool(&step(None, "what's on today?", false), &mut session)
-        .await;
+    let group = schedule_for(w, None, "what's for me today?", true).await;
+    let all = schedule_for(w, None, "what's on today?", false).await;
     assert_eq!(group.output, all.output);
     for mixed in [
         "what's for me and Kanon today?",
@@ -126,39 +94,44 @@ async fn an_explicit_self_schedule_recovers_only_unrecognized_model_mentions() {
         "my schedule everyone today?",
         "what's for me + Kanon today?",
     ] {
-        let missing = world
-            .run_tool(&step(None, mixed, false), &mut session)
-            .await;
+        let missing = schedule_for(w, None, mixed, false).await;
         assert_eq!(missing.output, all.output, "{mixed}");
-        let unrecognized = world
-            .run_tool(&step(Some("<@123>"), mixed, false), &mut session)
-            .await;
+        let unrecognized = schedule_for(w, Some("<@123>"), mixed, false).await;
         assert!(!unrecognized.ok, "{mixed}");
         assert_eq!(unrecognized.output, unknown.output, "{mixed}");
     }
     let mut collision_input = input.clone();
     collision_input["bot_user"]["name"] = json!("Kanon");
     let mut collision_world = World::new(&collision_input).await;
-    let recognized_member = collision_world
-        .run_tool(
-            &step(Some("@Kanon"), "what's for me today?", false),
-            &mut session,
-        )
-        .await;
+    let recognized_member = schedule_for(
+        &mut collision_world,
+        Some("@Kanon"),
+        "what's for me today?",
+        false,
+    )
+    .await;
     assert!(recognized_member.ok);
     assert_eq!(recognized_member.output, other.output);
+}
+
+/// The live guide of `short` (at `difficulty`) over the tracked catalog and
+/// knowledge, or `None` when the boss has no tracked document.
+fn guide(short: &str, difficulty: Option<&str>) -> Option<String> {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let catalog = load_catalog(&root.join("boss/bosses.yaml")).expect("shipped catalog");
+    let knowledge = load_knowledge_dir(&root.join("boss/knowledge")).expect("knowledge");
+    let (document, researched) = knowledge.guide_source(short).expect("readable")?;
+    let reference = BossReference {
+        short: short.into(),
+        difficulty: difficulty.map(str::to_owned),
+    };
+    Some(render_guide(&document, &researched, &catalog, &reference).expect("guide"))
 }
 
 /// Every tracked knowledge document renders for the bot, whole and per
 /// difficulty letter, so a content edit can never leave a boss unreadable.
 #[test]
 fn every_tracked_guide_renders_for_every_difficulty() {
-    use std::path::Path;
-
-    use kanade::chat::tools::read::render_guide;
-    use kanade::domain::catalog::BossReference;
-    use kanade::infrastructure::files::{load_catalog, load_knowledge_dir};
-
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let catalog = load_catalog(&root.join("boss/bosses.yaml")).expect("shipped catalog");
     let knowledge = load_knowledge_dir(&root.join("boss/knowledge")).expect("knowledge");
@@ -183,29 +156,8 @@ fn every_tracked_guide_renders_for_every_difficulty() {
 /// letter-keyed `difficulty_notes` under their difficulty, never sources.
 #[test]
 fn strategy_guides_render_tracked_knowledge_in_the_v4_shape() {
-    use std::path::Path;
-
-    use kanade::chat::tools::read::render_guide;
-    use kanade::domain::catalog::BossReference;
-    use kanade::infrastructure::files::{load_catalog, load_knowledge_dir};
-
-    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let catalog = load_catalog(&root.join("boss/bosses.yaml")).expect("shipped catalog");
-    let knowledge = load_knowledge_dir(&root.join("boss/knowledge")).expect("knowledge");
-    let guide = |short: &str, difficulty: Option<&str>| {
-        let (document, researched) = knowledge
-            .guide_source(short)
-            .expect("readable")
-            .expect("tracked document");
-        let reference = BossReference {
-            short: short.into(),
-            difficulty: difficulty.map(str::to_owned),
-        };
-        render_guide(&document, &researched, &catalog, &reference).expect("guide")
-    };
-
     // Structural only: the tracked prose is rewritten as research moves.
-    let seren = guide("Seren", None);
+    let seren = guide("Seren", None).expect("tracked");
     assert!(seren.starts_with("# Chosen Seren (Seren)\n"), "{seren}");
     for section in ["## Core\n- ", "## Danger\n- ", "## Tips\n- "] {
         assert!(seren.contains(&format!("\n\n{section}")), "{seren}");
@@ -216,13 +168,13 @@ fn strategy_guides_render_tracked_knowledge_in_the_v4_shape() {
         !seren.contains("## Sources") && !seren.contains("https://"),
         "{seren}"
     );
-    let seren_hard = guide("Seren", Some("h"));
+    let seren_hard = guide("Seren", Some("h")).expect("tracked");
     assert!(
         !seren_hard.contains("\n### Extreme\n") && !seren_hard.contains("\n### Normal\n"),
         "{seren_hard}"
     );
 
-    let hard = guide("MaleficStar", Some("h"));
+    let hard = guide("MaleficStar", Some("h")).expect("tracked");
     assert!(hard.contains("### Hard\n- Entry level: 280\n"), "{hard}");
     for fact in [
         "- PDR: 380%\n",
@@ -233,12 +185,7 @@ fn strategy_guides_render_tracked_knowledge_in_the_v4_shape() {
         assert!(hard.contains(fact), "{fact}: {hard}");
     }
     assert!(!hard.contains("### Normal"), "{hard}");
-    assert!(
-        knowledge
-            .guide_source("NotABoss")
-            .expect("no read")
-            .is_none()
-    );
+    assert!(guide("NotABoss", None).is_none());
 }
 
 /// D-AUTO-FORWARD fixture (invented): Sat 3 Oct 2026 16:24 Kuala Lumpur, boss
@@ -252,99 +199,92 @@ async fn forward_world() -> World {
 async fn forward_world_with(rsvps: Value) -> World {
     let mut input = world_input();
     input["clock"] = json!("2026-10-03T16:24:00+08:00");
-    let run = |id: &str,
-               at: &str,
-               week: &str,
-               bosses: &[&str],
-               who: &[&str],
-               channel: &str,
-               status: &str| {
-        json!({
-            "id": id, "at": at, "week_start": week, "bosses": bosses, "participants": who,
-            "channel_id": channel, "status": status, "fixed_run_id": null,
+    let weeks = ["2026-09-24", "2026-10-01", "2026-10-08"];
+    // Id stem, start, boss week, bosses, party, channel, status; the n-th
+    // row's id is `<stem×4>-0000-4000-8000-00000000000n`.
+    let runs = [
+        (
+            "d1",
+            "2026-09-29T21:00",
+            0,
+            "HMaleficStar",
+            "11",
+            "900",
+            "done",
+        ),
+        ("d3", "2026-09-30T21:00", 0, "HCarling", "44", "702", "done"),
+        (
+            "d2",
+            "2026-10-02T21:00",
+            1,
+            "XKalos",
+            "11 22",
+            "901",
+            "planned",
+        ),
+        (
+            "0a",
+            "2026-10-03T20:00",
+            1,
+            "HCarling",
+            "33",
+            "702",
+            "planned",
+        ),
+        (
+            "c1",
+            "2026-10-04T20:00",
+            1,
+            "HBaldrix",
+            "11",
+            "900",
+            "cancelled",
+        ),
+        (
+            "e1",
+            "2026-10-05T21:00",
+            1,
+            "HMaleficStar HFA",
+            "11 22",
+            "900",
+            "planned",
+        ),
+        (
+            "e2",
+            "2026-10-06T22:00",
+            1,
+            "HBaldrix",
+            "11",
+            "700",
+            "planned",
+        ),
+        (
+            "e3",
+            "2026-10-09T21:00",
+            2,
+            "XKalos",
+            "11 33",
+            "901",
+            "planned",
+        ),
+    ];
+    let runs: Vec<Value> = runs
+        .iter()
+        .enumerate()
+        .map(|(n, (stem, at, week, bosses, who, channel, status))| {
+            json!({
+                "id": format!("{}-0000-4000-8000-{:012}", stem.repeat(4), n + 1),
+                "at": format!("{at}:00+08:00"),
+                "week_start": format!("{}T00:00:00+08:00", weeks[*week]),
+                "bosses": bosses.split(' ').collect::<Vec<_>>(),
+                "participants": who.split(' ').collect::<Vec<_>>(),
+                "channel_id": channel, "status": status, "fixed_run_id": null,
+            })
         })
-    };
-    let (previous, current, next) = (
-        "2026-09-24T00:00:00+08:00",
-        "2026-10-01T00:00:00+08:00",
-        "2026-10-08T00:00:00+08:00",
-    );
+        .collect();
     input["world"]["fixed"] = json!([]);
     input["world"]["rsvps"] = rsvps;
-    input["world"]["runs"] = json!([
-        run(
-            "d1d1d1d1-0000-4000-8000-000000000001",
-            "2026-09-29T21:00:00+08:00",
-            previous,
-            &["HMaleficStar"],
-            &["11"],
-            "900",
-            "done"
-        ),
-        run(
-            "d3d3d3d3-0000-4000-8000-000000000003",
-            "2026-09-30T21:00:00+08:00",
-            previous,
-            &["HCarling"],
-            &["44"],
-            "702",
-            "done"
-        ),
-        run(
-            "d2d2d2d2-0000-4000-8000-000000000002",
-            "2026-10-02T21:00:00+08:00",
-            current,
-            &["XKalos"],
-            &["11", "22"],
-            "901",
-            "planned"
-        ),
-        run(
-            "0a0a0a0a-0000-4000-8000-000000000004",
-            "2026-10-03T20:00:00+08:00",
-            current,
-            &["HCarling"],
-            &["33"],
-            "702",
-            "planned"
-        ),
-        run(
-            "c1c1c1c1-0000-4000-8000-000000000005",
-            "2026-10-04T20:00:00+08:00",
-            current,
-            &["HBaldrix"],
-            &["11"],
-            "900",
-            "cancelled"
-        ),
-        run(
-            "e1e1e1e1-0000-4000-8000-000000000006",
-            "2026-10-05T21:00:00+08:00",
-            current,
-            &["HMaleficStar", "HFA"],
-            &["11", "22"],
-            "900",
-            "planned"
-        ),
-        run(
-            "e2e2e2e2-0000-4000-8000-000000000007",
-            "2026-10-06T22:00:00+08:00",
-            current,
-            &["HBaldrix"],
-            &["11"],
-            "700",
-            "planned"
-        ),
-        run(
-            "e3e3e3e3-0000-4000-8000-000000000008",
-            "2026-10-09T21:00:00+08:00",
-            next,
-            &["XKalos"],
-            &["11", "33"],
-            "901",
-            "planned"
-        ),
-    ]);
+    input["world"]["runs"] = json!(runs);
     World::new(&input).await
 }
 
@@ -506,36 +446,25 @@ async fn auto_without_a_day_reads_what_is_left_of_this_boss_week() {
     );
 
     // Everything in reach is over: done this boss week, then nothing at all.
-    world
-        .clock
-        .set(instant(&json!("2026-10-10T12:00:00+08:00")));
-    let mut run = async |arguments: Value| {
-        let step = schedule_step("22", "700", arguments, "when is my next run");
-        world.run_tool(&step, &mut session).await.output
-    };
-    assert_eq!(
-        run(group.clone()).await,
-        "**No runs left this boss week · All channels**\n\nEverything scheduled this boss week is already done."
-    );
-    assert_eq!(
-        run(done.clone()).await,
-        "**No upcoming runs for you this boss week.** Your matching scheduled runs are already done."
-    );
-    world
-        .clock
-        .set(instant(&json!("2026-10-20T12:00:00+08:00")));
-    let mut run = async |arguments: Value| {
-        let step = schedule_step("22", "700", arguments, "when is my next run");
-        world.run_tool(&step, &mut session).await.output
-    };
-    assert_eq!(
-        run(group).await,
-        "**No upcoming runs this boss week · All channels.**"
-    );
-    assert_eq!(
-        run(done).await,
-        "**No upcoming runs for you this boss week.**"
-    );
+    for (clock, group_says, done_says) in [
+        (
+            "2026-10-10T12:00:00+08:00",
+            "**No runs left this boss week · All channels**\n\nEverything scheduled this boss week is already done.",
+            "**No upcoming runs for you this boss week.** Your matching scheduled runs are already done.",
+        ),
+        (
+            "2026-10-20T12:00:00+08:00",
+            "**No upcoming runs this boss week · All channels.**",
+            "**No upcoming runs for you this boss week.**",
+        ),
+    ] {
+        world.clock.set(instant(&json!(clock)));
+        for (arguments, says) in [(&group, group_says), (&done, done_says)] {
+            let step = schedule_step("22", "700", arguments.clone(), "when is my next run");
+            let output = world.run_tool(&step, &mut session).await.output;
+            assert_eq!(output, says, "{clock}");
+        }
+    }
 }
 
 /// D-PERSONAL-CONTEXT (user decision 2026-10-03): the context vocabulary is

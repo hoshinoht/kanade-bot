@@ -8,7 +8,8 @@ use kanade::chat::tools::bundles::{
     Bundle, CardContext, DEFAULT_TOOL_ROUNDS, Intent, Signals, TOOL_ROUNDS, ToolOffer,
     V4_MAX_TOOL_ROUNDS, select,
 };
-use kanade::chat::tools::{READ_ONLY_TURN, REFUSED, ToolName, UNKNOWN};
+use kanade::chat::tools::dispatch::Dispatched;
+use kanade::chat::tools::{READ_ONLY_TURN, REFUSED, ToolContext, ToolName, UNKNOWN};
 use kanade::domain::drafts::ProposalStore;
 use kanade::infrastructure::llm::identity::PassthroughSession;
 use serde_json::{Value, json};
@@ -16,60 +17,52 @@ use serde_json::{Value, json};
 use crate::support::world_input;
 use crate::world::World;
 
-fn picked(text: &str, intent: Option<Intent>, card: Option<CardContext>) -> BTreeSet<Bundle> {
-    select(Signals { text, intent, card })
-}
-
 #[test]
 fn routing_picks_bundles_per_intent_and_errs_toward_including() {
     use Bundle::*;
-    assert!(picked("what's on tonight?", None, None).is_empty());
-    assert!(picked("who is on hstar", Some(Intent::Read), None).is_empty());
-    assert_eq!(
-        picked("can we move hstar to friday", None, None),
-        [RunWrites].into()
+    let (run, weekly) = (Some(CardContext::Run), Some(CardContext::Weekly));
+    type Case = (
+        &'static str,
+        Option<Intent>,
+        Option<CardContext>,
+        &'static [Bundle],
     );
-    assert_eq!(
-        picked("i can't make it tonight", None, None),
-        [RunWrites].into()
-    );
-    assert_eq!(
-        picked("change the weekly kalos to thursday", None, None),
-        [FixedWrites].into()
-    );
-    assert_eq!(
-        picked("how do we dodge the phase 2 lasers", None, None),
-        [Strategy].into()
-    );
-    assert_eq!(
-        picked("hi", Some(Intent::Strategy), None),
-        [Strategy].into()
-    );
-    assert_eq!(
-        picked("hi", Some(Intent::RunChange), None),
-        [RunWrites].into()
-    );
-    assert_eq!(
-        picked("hi", Some(Intent::WeeklyChange), None),
-        [FixedWrites].into()
-    );
-    assert_eq!(
-        picked("hi", Some(Intent::Unclear), None),
-        [Strategy, RunWrites, FixedWrites].into()
-    );
-    // A label never removes what the rules found.
-    assert_eq!(
-        picked("cancel tonight", Some(Intent::Read), None),
-        [RunWrites].into()
-    );
-    assert_eq!(
-        picked("ok", None, Some(CardContext::Run)),
-        [RunWrites].into()
-    );
-    assert_eq!(
-        picked("ok", None, Some(CardContext::Weekly)),
-        [FixedWrites].into()
-    );
+    let cases: [Case; 13] = [
+        ("what's on tonight?", None, None, &[]),
+        ("who is on hstar", Some(Intent::Read), None, &[]),
+        ("can we move hstar to friday", None, None, &[RunWrites]),
+        ("i can't make it tonight", None, None, &[RunWrites]),
+        (
+            "change the weekly kalos to thursday",
+            None,
+            None,
+            &[FixedWrites],
+        ),
+        (
+            "how do we dodge the phase 2 lasers",
+            None,
+            None,
+            &[Strategy],
+        ),
+        ("hi", Some(Intent::Strategy), None, &[Strategy]),
+        ("hi", Some(Intent::RunChange), None, &[RunWrites]),
+        ("hi", Some(Intent::WeeklyChange), None, &[FixedWrites]),
+        (
+            "hi",
+            Some(Intent::Unclear),
+            None,
+            &[Strategy, RunWrites, FixedWrites],
+        ),
+        // A label never removes what the rules found.
+        ("cancel tonight", Some(Intent::Read), None, &[RunWrites]),
+        ("ok", None, run, &[RunWrites]),
+        ("ok", None, weekly, &[FixedWrites]),
+    ];
+    for (text, intent, card, expected) in cases {
+        let picked = select(Signals { text, intent, card });
+        let expected: BTreeSet<Bundle> = expected.iter().copied().collect();
+        assert_eq!(picked, expected, "{text} {intent:?} {card:?}");
+    }
 }
 
 #[test]
@@ -188,17 +181,31 @@ async fn proposals(world: &World) -> usize {
         .len()
 }
 
+/// `tool(arguments)` dispatched for `ctx` under `offer`.
+async fn call(
+    world: &mut World,
+    ctx: &ToolContext,
+    offer: &mut ToolOffer,
+    tool: &str,
+    arguments: Value,
+) -> Dispatched {
+    let mut session = PassthroughSession;
+    world
+        .dispatch(ctx, offer, &mut session, tool, &arguments)
+        .await
+}
+
+/// The `request_tools` refusal for an unknown or misshaped bundle.
+const NO_SUCH_BUNDLE: &str = "Call request_tools with {\"bundle\": \"strategy\"}; bundle must be one of: strategy, run_changes, weekly_changes.";
+
 #[tokio::test]
 async fn unoffered_tools_are_refused_until_requested_and_requests_are_once() {
     let mut world = world().await;
-    let mut session = PassthroughSession;
     let mut offer = ToolOffer::dynamic([], false);
     let (tool, cancel) = ("propose_cancel", json!({"run_query": "hstar"}));
     let ctx = world.context(&json!({"author_id": "22", "channel_id": "700"}));
 
-    let refused = world
-        .dispatch(&ctx, &mut offer, &mut session, tool, &cancel)
-        .await;
+    let refused = call(&mut world, &ctx, &mut offer, tool, cancel.clone()).await;
     assert_eq!(refused.outcome.error, Some(REFUSED));
     assert!(
         refused.outcome.output.starts_with("propose_cancel is not available for this message. If they asked for that, call request_tools with bundle 'run_changes' first."),
@@ -211,15 +218,8 @@ async fn unoffered_tools_are_refused_until_requested_and_requests_are_once() {
         "an unoffered call is never executed"
     );
 
-    let asked = world
-        .dispatch(
-            &ctx,
-            &mut offer,
-            &mut session,
-            "request_tools",
-            &json!({"bundle": "run_changes"}),
-        )
-        .await;
+    let bundle = json!({"bundle": "run_changes"});
+    let asked = call(&mut world, &ctx, &mut offer, "request_tools", bundle).await;
     assert!(asked.outcome.ok, "{}", asked.outcome.output);
     assert_eq!(
         asked.requested,
@@ -231,33 +231,22 @@ async fn unoffered_tools_are_refused_until_requested_and_requests_are_once() {
     offer.begin_round();
     assert!(offer.offers(ToolName::ProposeCancel));
 
-    let again = world
-        .dispatch(
-            &ctx,
-            &mut offer,
-            &mut session,
-            "request_tools",
-            &json!({"bundle": "strategy"}),
-        )
-        .await;
+    let bundle = json!({"bundle": "strategy"});
+    let again = call(&mut world, &ctx, &mut offer, "request_tools", bundle).await;
     assert_eq!(
         (again.outcome.error, again.requested),
         (Some(REFUSED), None)
     );
     assert!(!offer.offers(ToolName::GetBossStrategy));
 
-    let posted = world
-        .dispatch(&ctx, &mut offer, &mut session, tool, &cancel)
-        .await;
+    let posted = call(&mut world, &ctx, &mut offer, tool, cancel.clone()).await;
     assert!(posted.outcome.ok, "{}", posted.outcome.output);
     assert_eq!(posted.outcome.cards.len(), 1);
     assert_eq!(proposals(&world).await, 1);
 
     // Offered or not, authority is still the dispatcher's.
     let outsider = world.context(&json!({"author_id": "33", "channel_id": "700"}));
-    let denied = world
-        .dispatch(&outsider, &mut offer, &mut session, tool, &cancel)
-        .await;
+    let denied = call(&mut world, &outsider, &mut offer, tool, cancel).await;
     assert_eq!(denied.outcome.error, Some(REFUSED));
     assert!(
         denied
@@ -271,87 +260,44 @@ async fn unoffered_tools_are_refused_until_requested_and_requests_are_once() {
 #[tokio::test]
 async fn read_only_turns_refuse_writes_and_write_bundles() {
     let mut world = world().await;
-    let mut session = PassthroughSession;
     let mut offer = ToolOffer::dynamic([Bundle::RunWrites], true);
     let ctx = world.context(&json!({"author_id": "11", "channel_id": "700", "read_only": true}));
-    let asked = world
-        .dispatch(
-            &ctx,
-            &mut offer,
-            &mut session,
-            "request_tools",
-            &json!({"bundle": "run_changes"}),
-        )
-        .await;
+    let w = &mut world;
+    let bundle = json!({"bundle": "run_changes"});
+    let asked = call(w, &ctx, &mut offer, "request_tools", bundle).await;
     assert_eq!(asked.outcome.output, READ_ONLY_TURN);
-    let write = world
-        .dispatch(
-            &ctx,
-            &mut offer,
-            &mut session,
-            "propose_cancel",
-            &json!({"run_query": "hstar"}),
-        )
-        .await;
+    let hstar = json!({"run_query": "hstar"});
+    let write = call(w, &ctx, &mut offer, "propose_cancel", hstar).await;
     assert_eq!(
         (write.outcome.output.as_str(), write.outcome.error),
         (READ_ONLY_TURN, Some(REFUSED))
     );
-    let bad = world
-        .dispatch(
-            &ctx,
-            &mut offer,
-            &mut session,
-            "request_tools",
-            &json!({"bundle": "everything"}),
-        )
-        .await;
-    assert_eq!(
-        bad.outcome.output,
-        "Call request_tools with {\"bundle\": \"strategy\"}; bundle must be one of: strategy, run_changes, weekly_changes."
-    );
+    let everything = json!({"bundle": "everything"});
+    let bad = call(w, &ctx, &mut offer, "request_tools", everything).await;
+    assert_eq!(bad.outcome.output, NO_SUCH_BUNDLE);
     assert_eq!(proposals(&world).await, 0);
 }
 
 #[tokio::test]
 async fn a_misshaped_request_is_told_the_argument_name_and_can_retry() {
     let mut world = world().await;
-    let mut session = PassthroughSession;
     let mut offer = ToolOffer::dynamic([], false);
     let ctx = world.context(&json!({"author_id": "11", "channel_id": "700"}));
     // The bundle name sent as a key instead of the `bundle` argument.
-    let wrong = world
-        .dispatch(
-            &ctx,
-            &mut offer,
-            &mut session,
-            "request_tools",
-            &json!({"strategy": true}),
-        )
-        .await;
+    let misshaped = json!({"strategy": true});
+    let wrong = call(&mut world, &ctx, &mut offer, "request_tools", misshaped).await;
     assert_eq!(
         (
             wrong.outcome.output.as_str(),
             wrong.outcome.error,
             wrong.requested
         ),
-        (
-            "Call request_tools with {\"bundle\": \"strategy\"}; bundle must be one of: strategy, run_changes, weekly_changes.",
-            Some(REFUSED),
-            None
-        )
+        (NO_SUCH_BUNDLE, Some(REFUSED), None)
     );
     // A refused shape does not spend the one request per question.
     assert!(!offer.requested());
-    let fixed = world
-        .dispatch(
-            &ctx,
-            &mut offer,
-            &mut session,
-            "request_tools",
-            &json!({"bundle": "strategy"}),
-        )
-        .await;
+    let bundle = json!({"bundle": "strategy"});
+    let fixed = call(&mut world, &ctx, &mut offer, "request_tools", bundle).await;
     assert!(fixed.outcome.ok, "{}", fixed.outcome.output);
     assert_eq!(fixed.requested, Some(Bundle::Strategy));
 }
@@ -359,27 +305,17 @@ async fn a_misshaped_request_is_told_the_argument_name_and_can_retry() {
 #[tokio::test]
 async fn unknown_tools_list_what_was_offered_and_full_set_has_no_hatch() {
     let mut world = world().await;
-    let mut session = PassthroughSession;
     let ctx = world.context(&json!({"author_id": "11", "channel_id": "700"}));
     let mut dynamic = ToolOffer::dynamic([], false);
-    let unknown = world
-        .dispatch(&ctx, &mut dynamic, &mut session, "delete_run", &json!({}))
-        .await;
+    let unknown = call(&mut world, &ctx, &mut dynamic, "delete_run", json!({})).await;
     assert_eq!(unknown.outcome.error, Some(UNKNOWN));
     assert_eq!(
         unknown.outcome.output,
         "There is no tool called delete_run. The tools you have are: get_schedule, get_run, list_bosses, get_pending, list_fixed, request_tools. Use one of those when it can answer the request."
     );
     let mut full = ToolOffer::full_set(false);
-    let hatch = world
-        .dispatch(
-            &ctx,
-            &mut full,
-            &mut session,
-            "request_tools",
-            &json!({"bundle": "strategy"}),
-        )
-        .await;
+    let bundle = json!({"bundle": "strategy"});
+    let hatch = call(&mut world, &ctx, &mut full, "request_tools", bundle).await;
     assert_eq!(
         hatch.outcome.error,
         Some(UNKNOWN),

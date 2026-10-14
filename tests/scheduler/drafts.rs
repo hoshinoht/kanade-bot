@@ -11,7 +11,7 @@ use kanade::domain::{
     },
     history::{
         ChangeFilter, ChangeHistory, ChangeQuery, ChangeRecord, ChangeRef, HistoryGap, MAX_PAGE,
-        Origin, rewind,
+        rewind,
     },
     schedule::{
         AmendedRunChoice, FixedEdit, FixedEditChoices, FixedEditRequest, FixedField, NewFixedRun,
@@ -24,8 +24,8 @@ use serde_json::{Value, json};
 
 use crate::common::TestClock;
 use crate::support::{
-    CountingIds, Guild, amend, existing, hm, kalos_run, kl, now, one_timing as fixture, owned,
-    policy, rsvp, snapshot, swap, utc, weekly,
+    CountingIds, Guild, amend, by_tests, existing, hm, kalos_run, kl, now, one_timing as fixture,
+    owned, policy, rsvp, snapshot, swap, utc, weekly,
 };
 
 type Service = SchedulerService<MemoryScheduleStore, CountingIds, TestClock>;
@@ -40,7 +40,7 @@ fn id(target: &Target) -> &str {
 /// Commit one operation through the service, as another member would.
 async fn commit(service: &mut Service, op: &DraftOp) {
     let policy = policy();
-    let origin = service.as_origin(Origin::for_tests());
+    let origin = by_tests(service);
     let committed = match op {
         DraftOp::AddFixedRun(new) => origin.add_fixed_run(new.clone()).await.map(drop),
         DraftOp::ApplyFixedEdit {
@@ -949,8 +949,7 @@ async fn a_retirement_staged_before_a_reset_goes_stale() {
     // After the next reset the fourth week is materialised with a live run.
     let later = kl(3, 1, 0);
     f.clock.set(later);
-    f.service
-        .as_origin(Origin::for_tests())
+    by_tests(&mut f.service)
         .materialise_weeks(&policy())
         .await
         .unwrap();
@@ -1010,8 +1009,7 @@ async fn edit_fixed_run_skips_absent_timings_and_empty_edits_before_reading_week
     let note = [FixedField::Note];
     let reminders = policy().reminders;
     let mut edit = async |fixed: &str, changed: &[FixedField]| {
-        f.service
-            .as_origin(Origin::for_tests())
+        by_tests(&mut f.service)
             .edit_fixed_run(fixed, Default::default(), changed, &[edge], &reminders)
             .await
     };

@@ -13,10 +13,10 @@ use kanade::chat::nudge::{WordFilter, builtin_words};
 use kanade::chat::tools::bundles::ToolOffer;
 use kanade::domain::model_log::ChatOutcome;
 use kanade::domain::settings::{DEFAULT_DEFLECTION_LINE, Profanity};
-use kanade::infrastructure::llm::{ChatRequest, FakeAction, FakeProvider, Message};
+use kanade::infrastructure::llm::{ChatRequest, FakeAction, FakeProvider};
 use serde_json::json;
 
-use crate::looping::{Ports, said, settings};
+use crate::looping::{Ports, conversation, said, settings};
 use crate::model::{Scripted, capabilities, client, wants};
 use crate::support::world_input;
 use crate::wire::kanade;
@@ -70,14 +70,7 @@ async fn run_in(
         let (guild, mut proposer) = world.question_parts();
         let question = Question {
             ctx: &ctx,
-            conversation: vec![
-                Message::System {
-                    content: "SYSTEM".into(),
-                },
-                Message::User {
-                    content: "Invented Mira: what's on tonight?".into(),
-                },
-            ],
+            conversation: conversation("Invented Mira: what's on tonight?".into()),
             profanity: Some(guard),
             reminder: kanade().voice_reminder(),
             offer: ToolOffer::full_set(false),

@@ -10,7 +10,7 @@ use kanade::domain::scheduler::{ScheduleStore, SchedulerError, SchedulerService,
 use kanade::infrastructure::store::MemoryScheduleStore;
 
 use crate::common::TestClock;
-use crate::support::{hm, policy, weekly};
+use crate::support::{by_tests, hm, policy, weekly};
 
 /// On Sun 27 Sep 01:00 in Kuala Lumpur.
 fn service() -> SchedulerService<MemoryScheduleStore, RandomIds, TestClock> {
@@ -30,8 +30,7 @@ async fn a_failed_create_leaves_neither_the_timing_nor_its_runs() {
     let mut service = service();
     let head = service.store().history_head().await.unwrap();
     service.store().fail_commit_after(0);
-    let refused = service
-        .as_origin(Origin::for_tests())
+    let refused = by_tests(&mut service)
         .add_fixed_run_materialised(timing(), &policy())
         .await;
     assert!(refused.is_err(), "{refused:?}");

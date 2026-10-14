@@ -12,12 +12,19 @@ use kanade::infrastructure::store::{SqliteStore, SqliteStoreConfig};
 use sqlx::sqlite::SqliteConnectOptions;
 use sqlx::{ConnectOptions, Connection};
 
+/// A plain connection to the database at `config`, bypassing the store.
+pub async fn connect(config: &SqliteStoreConfig, read_only: bool) -> sqlx::SqliteConnection {
+    let options = SqliteConnectOptions::new().filename(&config.db_path);
+    options
+        .read_only(read_only)
+        .connect()
+        .await
+        .expect("raw connection")
+}
+
 /// Run `sql` on the database with a plain connection.
 pub async fn raw(config: &SqliteStoreConfig, sql: &str) -> Result<(), sqlx::Error> {
-    let mut conn = SqliteConnectOptions::new()
-        .filename(&config.db_path)
-        .connect()
-        .await?;
+    let mut conn = connect(config, false).await;
     let result = sqlx::raw_sql(sql).execute(&mut conn).await.map(|_| ());
     conn.close().await?;
     result

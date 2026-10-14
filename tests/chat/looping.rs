@@ -113,6 +113,16 @@ pub async fn ask_full_set(
     (generation, ports, provider)
 }
 
+/// The placeholder system prompt, then the member's `line`.
+pub fn conversation(line: String) -> Vec<Message> {
+    vec![
+        Message::System {
+            content: "SYSTEM".into(),
+        },
+        Message::User { content: line },
+    ]
+}
+
 /// A plain answer in words.
 pub fn said(model: &str, content: &str) -> CompletionResponse {
     CompletionResponse {
