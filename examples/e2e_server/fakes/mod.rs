@@ -5,7 +5,7 @@
 //! is [`guild::Guild`], installed in each composition.
 
 pub mod discord;
-mod gateway;
+pub mod gateway;
 pub mod guild;
 mod nexon;
 mod scouter;

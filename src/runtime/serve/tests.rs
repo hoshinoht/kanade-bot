@@ -656,6 +656,15 @@ async fn compose_for_tests_serves_on_the_injected_clock_and_a_fake_discord() {
             "KANADE_ADMIN_DISCORD_REDIRECT_URI",
             "https://kanade.test/api/admin/auth/discord/callback",
         ),
+        ("KANADE_PUBLIC_BIND", "127.0.0.1:0"),
+        ("KANADE_PUBLIC_HOST", "portal.kanade.test"),
+        ("KANADE_CLOUDFLARED_PEER", "127.0.0.1"),
+        ("KANADE_PUBLIC_DISCORD_CLIENT_ID", "424243"),
+        ("KANADE_PUBLIC_DISCORD_CLIENT_SECRET_FILE", &secret),
+        (
+            "KANADE_PUBLIC_DISCORD_REDIRECT_URI",
+            "https://portal.kanade.test/api/public/auth/discord/callback",
+        ),
     ]);
     let store = store::open(&config.store).await.unwrap();
     // Wednesday 10:00 in Kuala Lumpur, years before the wall clock.
@@ -677,6 +686,14 @@ async fn compose_for_tests_serves_on_the_injected_clock_and_a_fake_discord() {
     assert!(composed.character_data.is_none(), "the module is off");
     let admin = composed.composition.admin;
     assert!(admin.state.model_limits.is_some());
+    // Both realms stamp and age their sessions (a member's `fresh_until`
+    // among them) on the injected clock, not the wall clock.
+    assert_eq!(admin.auth.now(), now);
+    let member = admin
+        .member
+        .as_ref()
+        .expect("the public realm is configured");
+    assert_eq!(member.now(), now);
 
     // A run at 20:00 tonight as the injected clock reads it.
     let at = now + chrono::TimeDelta::hours(10);

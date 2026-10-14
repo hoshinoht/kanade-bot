@@ -3,7 +3,8 @@
 //! once for the user the cookie [`USER_COOKIE`] names on `127.0.0.1` (cookies
 //! ignore ports): `eligible` (default; "Mikan"), `partner` ("Yuzu", on
 //! Mikan's weekly timing), `ineligible` (no bossing role), `bot` (a bot
-//! account), a seeded member's id (`1001` for Asahi, see [`crate::seed`]) or
+//! account), a seeded member's snowflake ([`crate::seed::ids`];
+//! `100000000000001001` for Asahi) or
 //! `deny` (cancelled at Discord). The code exchange and the user read then
 //! go to the shared [`FakeDiscord`].
 
@@ -23,18 +24,16 @@ use kanade::api::auth::{
     wire::{self, query_pairs, query_value},
 };
 
+use crate::seed::ids::{BOTTY as BOT, MIKAN as ELIGIBLE, PARTNER, PLAIN as INELIGIBLE};
+
 pub const PATH: &str = "/__e2e/discord/oauth2/authorize";
 pub const USER_COOKIE: &str = "kanade_fake_discord";
-const ELIGIBLE: &str = "100000000000000001";
-const INELIGIBLE: &str = "100000000000000002";
-const BOT: &str = "100000000000000003";
-const PARTNER: &str = "100000000000000004";
 
 /// The users that are guild members, and whether each has the bossing role.
 pub const MEMBERS: [(&str, bool); 3] =
     [("eligible", true), ("partner", true), ("ineligible", false)];
 
-/// The user a choice signs in as; a seeded member's id (`1001`, Asahi)
+/// The user a choice signs in as; a seeded member's snowflake (Asahi's)
 /// signs in as that member.
 pub fn user(choice: &str) -> DiscordUser {
     if let Some(name) = crate::seed::member_name(choice) {

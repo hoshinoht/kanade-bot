@@ -14,7 +14,7 @@ use kanade::domain::{
     },
 };
 
-use super::{Seed, hhmm, minute_of};
+use super::{Seed, hhmm, ids::*, minute_of};
 use crate::{Fail, fakes::discord};
 
 struct Timing {
@@ -33,9 +33,9 @@ const TIMINGS: [Timing; 8] = [
         weekday: Weekday::Thu,
         time: "21:30",
         bosses: &["NBaldrix"],
-        party: &["1001", "1002", "1003", "1004"],
+        party: &[ASAHI, REN, MIKA, YUZU],
         channel: "baldrix-crew",
-        owner: "1001",
+        owner: ASAHI,
     },
     // Runs at 22:00 this week: an amended run.
     Timing {
@@ -43,63 +43,63 @@ const TIMINGS: [Timing; 8] = [
         weekday: Weekday::Fri,
         time: "21:30",
         bosses: &["XKalos"],
-        party: &["1001", "1002", "1005", "1006"],
+        party: &[ASAHI, REN, TSUBAME, HINATA],
         channel: "kalos-four",
-        owner: "1002",
+        owner: REN,
     },
     Timing {
         id: "f-limbo",
         weekday: Weekday::Fri,
         time: "23:30",
         bosses: &["HLimbo"],
-        party: &["1003", "1007", "1008"],
+        party: &[MIKA, NAGI, SORA],
         channel: "limbo-trio",
-        owner: "1003",
+        owner: MIKA,
     },
     Timing {
         id: "f-fa",
         weekday: Weekday::Mon,
         time: "20:00",
         bosses: &["HFA"],
-        party: &["1009", "1004", "1010", "1011"],
+        party: &[KAITO, YUZU, RIN, HOTARU],
         channel: "fa-night",
-        owner: "1009",
+        owner: KAITO,
     },
     Timing {
         id: "f-jupiter",
         weekday: Weekday::Mon,
         time: "21:00",
         bosses: &["HJupiter"],
-        party: &["1012", "1001", "1008"],
+        party: &[MINATO, ASAHI, SORA],
         channel: "jupiter-trio",
-        owner: "1012",
+        owner: MINATO,
     },
     Timing {
         id: "f-carling",
         weekday: Weekday::Tue,
         time: "22:00",
         bosses: &["HCarling", "HMaleficStar"],
-        party: &["1001", "1002", "1003", "1004", "1005", "1011"],
+        party: &[ASAHI, REN, MIKA, YUZU, TSUBAME, HOTARU],
         channel: "hstar-party",
-        owner: "1001",
+        owner: ASAHI,
     },
     Timing {
         id: "f-bm",
         weekday: Weekday::Tue,
         time: "23:30",
         bosses: &["XBM"],
-        party: &["1012", "1009", "1008"],
+        party: &[MINATO, KAITO, SORA],
         channel: "bm-trio",
-        owner: "1012",
+        owner: MINATO,
     },
     Timing {
         id: "f-seren",
         weekday: Weekday::Wed,
         time: "21:00",
         bosses: &["HSeren"],
-        party: &["1010", "1007", "1006"],
+        party: &[RIN, NAGI, HINATA],
         channel: "seren-trio",
-        owner: "1010",
+        owner: RIN,
     },
 ];
 
@@ -133,7 +133,7 @@ const RUNS: [Plan; 14] = [
         time: Some("22:00"),
         status: RunStatus::Done,
         bosses: &["XKalos"],
-        party: &[("1001", Y), ("1002", Y), ("1005", Y), ("1006", Y)],
+        party: &[(ASAHI, Y), (REN, Y), (TSUBAME, Y), (HINATA, Y)],
         channel: "kalos-four",
         timing: Some("f-kalos"),
     },
@@ -144,7 +144,7 @@ const RUNS: [Plan; 14] = [
         time: Some("21:30"),
         status: RunStatus::Confirmed,
         bosses: &["NBaldrix"],
-        party: &[("1001", Y), ("1002", Y), ("1003", Y), ("1004", Y)],
+        party: &[(ASAHI, Y), (REN, Y), (MIKA, Y), (YUZU, Y)],
         channel: "baldrix-crew",
         timing: Some("f-baldrix"),
     },
@@ -155,7 +155,7 @@ const RUNS: [Plan; 14] = [
         time: Some("21:30"),
         status: RunStatus::Planned,
         bosses: &["XKalos"],
-        party: &[("1001", Y), ("1002", Y), ("1005", W), ("1006", Y)],
+        party: &[(ASAHI, Y), (REN, Y), (TSUBAME, W), (HINATA, Y)],
         channel: "kalos-four",
         timing: Some("f-kalos"),
     },
@@ -166,7 +166,7 @@ const RUNS: [Plan; 14] = [
         time: Some("23:30"),
         status: RunStatus::Planned,
         bosses: &["HLimbo"],
-        party: &[("1003", Y), ("1007", Y), ("1008", W)],
+        party: &[(MIKA, Y), (NAGI, Y), (SORA, W)],
         channel: "limbo-trio",
         timing: Some("f-limbo"),
     },
@@ -178,7 +178,7 @@ const RUNS: [Plan; 14] = [
         time: Some("21:00"),
         status: RunStatus::Done,
         bosses: &["NMaleficStar"],
-        party: &[("1002", Y), ("1012", Y)],
+        party: &[(REN, Y), (MINATO, Y)],
         channel: "hstar-party",
         timing: None,
     },
@@ -189,7 +189,7 @@ const RUNS: [Plan; 14] = [
         time: Some("20:00"),
         status: RunStatus::Planned,
         bosses: &["HFA"],
-        party: &[("1009", Y), ("1004", Y), ("1010", Y), ("1011", W)],
+        party: &[(KAITO, Y), (YUZU, Y), (RIN, Y), (HOTARU, W)],
         channel: "fa-night",
         timing: Some("f-fa"),
     },
@@ -200,7 +200,7 @@ const RUNS: [Plan; 14] = [
         time: Some("21:00"),
         status: RunStatus::Confirmed,
         bosses: &["HJupiter"],
-        party: &[("1012", Y), ("1001", Y), ("1008", Y)],
+        party: &[(MINATO, Y), (ASAHI, Y), (SORA, Y)],
         channel: "jupiter-trio",
         timing: Some("f-jupiter"),
     },
@@ -212,7 +212,7 @@ const RUNS: [Plan; 14] = [
         time: None,
         status: RunStatus::Otot,
         bosses: &["NBellona"],
-        party: &[("1007", Y), ("1006", Y), ("1010", M), ("1009", W)],
+        party: &[(NAGI, Y), (HINATA, Y), (RIN, M), (KAITO, W)],
         channel: "bellona-otot",
         timing: None,
     },
@@ -224,12 +224,12 @@ const RUNS: [Plan; 14] = [
         status: RunStatus::Planned,
         bosses: &["HCarling", "HMaleficStar"],
         party: &[
-            ("1001", Y),
-            ("1002", Y),
-            ("1003", Y),
-            ("1004", Y),
-            ("1005", W),
-            ("1011", W),
+            (ASAHI, Y),
+            (REN, Y),
+            (MIKA, Y),
+            (YUZU, Y),
+            (TSUBAME, W),
+            (HOTARU, W),
         ],
         channel: "hstar-party",
         timing: Some("f-carling"),
@@ -241,7 +241,7 @@ const RUNS: [Plan; 14] = [
         time: Some("23:30"),
         status: RunStatus::Planned,
         bosses: &["XBM"],
-        party: &[("1012", Y), ("1009", Y), ("1008", W)],
+        party: &[(MINATO, Y), (KAITO, Y), (SORA, W)],
         channel: "bm-trio",
         timing: Some("f-bm"),
     },
@@ -252,7 +252,7 @@ const RUNS: [Plan; 14] = [
         time: Some("21:00"),
         status: RunStatus::Planned,
         bosses: &["HSeren"],
-        party: &[("1010", N), ("1007", N), ("1006", W)],
+        party: &[(RIN, N), (NAGI, N), (HINATA, W)],
         channel: "seren-trio",
         timing: Some("f-seren"),
     },
@@ -263,7 +263,7 @@ const RUNS: [Plan; 14] = [
         time: Some("21:30"),
         status: RunStatus::Planned,
         bosses: &["XKalos"],
-        party: &[("1001", W), ("1002", W), ("1005", W), ("1006", W)],
+        party: &[(ASAHI, W), (REN, W), (TSUBAME, W), (HINATA, W)],
         channel: "kalos-four",
         timing: Some("f-kalos"),
     },
@@ -274,7 +274,7 @@ const RUNS: [Plan; 14] = [
         time: Some("20:00"),
         status: RunStatus::Planned,
         bosses: &["HFA"],
-        party: &[("1009", W), ("1004", W), ("1010", W), ("1011", W)],
+        party: &[(KAITO, W), (YUZU, W), (RIN, W), (HOTARU, W)],
         channel: "fa-night",
         timing: Some("f-fa"),
     },
@@ -286,12 +286,12 @@ const RUNS: [Plan; 14] = [
         status: RunStatus::Planned,
         bosses: &["HCarling", "HMaleficStar"],
         party: &[
-            ("1001", W),
-            ("1002", W),
-            ("1003", W),
-            ("1004", W),
-            ("1005", W),
-            ("1011", W),
+            (ASAHI, W),
+            (REN, W),
+            (MIKA, W),
+            (YUZU, W),
+            (TSUBAME, W),
+            (HOTARU, W),
         ],
         channel: "hstar-party",
         timing: Some("f-carling"),
@@ -457,6 +457,9 @@ pub async fn seed(seed: &Seed<'_>) -> Result<(), Fail> {
     )
     .await?;
 
+    // Proposals and requests closed before the week's first change.
+    super::inbox::past(seed).await?;
+
     let token = || Actor::admin("token");
     let member = Actor::member;
     seed.commit(
@@ -468,42 +471,31 @@ pub async fn seed(seed: &Seed<'_>) -> Result<(), Fail> {
     )
     .await?;
     seed.commit(
-        member("1005"),
+        member(TSUBAME),
         Surface::Discord,
         hour(36),
         vec![
             seed.edited("r-kalos", |run| run.status = RunStatus::AtRisk)?,
-            seed.rsvp("r-kalos", "1005", RsvpState::No, hour(36)),
+            seed.rsvp("r-kalos", TSUBAME, RsvpState::No, hour(36)),
         ],
         Vec::new(),
     )
     .await?;
-    // Asahi (staff) approved it after signing in with Discord.
-    let moved = seed.at(0, 1, Some("22:00"))?;
-    seed.commit(
-        Actor::admin("discord:1001"),
-        Surface::ExtractionApproval,
-        hour(41),
-        vec![seed.edited("r-kalos", |run| {
-            run.status = RunStatus::AtRisk;
-            run.datetime = moved;
-            run.source = RunSource::Amend;
-        })?],
-        Vec::new(),
-    )
-    .await?;
+    // The extractor proposed Kalos at 22:00; Asahi (staff, signed in with
+    // Discord) approved it from the Inbox.
+    super::inbox::kalos_move(seed).await?;
     seed.commit(
         token(),
         Surface::AdminPortal,
         hour(58),
         vec![seed.edited("r-carling", |run| {
-            run.participants.push("1013".into());
+            run.participants.push(REN2.into());
             run.source = RunSource::Amend;
         })?],
         Vec::new(),
     )
     .await?;
-    for (at, user) in [(61, "1011"), (62, "1013")] {
+    for (at, user) in [(61, HOTARU), (62, REN2)] {
         seed.commit(
             member(user),
             Surface::Discord,
@@ -514,7 +506,7 @@ pub async fn seed(seed: &Seed<'_>) -> Result<(), Fail> {
         .await?;
     }
     seed.commit(
-        member("1010"),
+        member(RIN),
         Surface::Discord,
         hour(80),
         vec![seed.edited("r-seren", |run| run.status = RunStatus::Cancelled)?],

@@ -118,7 +118,8 @@ impl World {
             clock: Arc::clone(&self.clock),
             discord: Some(self.discord.clone()),
             authorize_url: Some(self.authorize_url.clone()),
-            model_limits: None,
+            // The governor the Limits page shows, canned (`fakes::gateway`).
+            model_limits: Some(Arc::new(crate::fakes::gateway::limits)),
             nexon: Some(self.nexon),
         };
         match compose_for_tests(&config, store.clone(), overrides).await {

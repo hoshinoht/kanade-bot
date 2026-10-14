@@ -12,7 +12,7 @@ use kanade::domain::{
     history::{Actor, Surface},
 };
 
-use super::Seed;
+use super::{Seed, ids::*};
 use crate::Fail;
 
 const DAY: i64 = 86_400;
@@ -33,24 +33,24 @@ type Row = (
 /// the real roster keeps one active main per member, so their first
 /// characters are the mains here.
 const CHARACTERS: [Row; 13] = [
-    ("1003", "MikaHero", "Hero", Some(260), false, 46, true),
-    ("1003", "MikaNL", "Night Lord", Some(286), true, 2, false),
-    ("1003", "MikaBish", "Bishop", Some(281), false, 2, false),
-    ("1003", "Mikadere", "Lara", Some(266), false, 21, false),
-    ("1001", "AsahiDK", "Dark Knight", Some(284), true, 5, false),
-    ("1001", "AsahiMech", "Mechanic", Some(262), false, 12, false),
-    ("1002", "RenShade", "Shade", Some(279), true, 3, false),
-    ("1004", "YuzuPala", "Paladin", Some(270), true, 9, false),
-    ("1005", "TsubaKain", "Kain", Some(255), true, 14, false),
-    ("1011", "Hotaru7", "Adele", Some(275), true, 6, false),
-    ("1008", "SoraPF", "Pathfinder", Some(279), true, 4, false),
-    ("1008", "SoraLumi", "Luminous", Some(285), false, 4, false),
-    ("1009", "KaitoLyn", "Lynn", None, true, 1, false),
+    (MIKA, "MikaHero", "Hero", Some(260), false, 46, true),
+    (MIKA, "MikaNL", "Night Lord", Some(286), true, 2, false),
+    (MIKA, "MikaBish", "Bishop", Some(281), false, 2, false),
+    (MIKA, "Mikadere", "Lara", Some(266), false, 21, false),
+    (ASAHI, "AsahiDK", "Dark Knight", Some(284), true, 5, false),
+    (ASAHI, "AsahiMech", "Mechanic", Some(262), false, 12, false),
+    (REN, "RenShade", "Shade", Some(279), true, 3, false),
+    (YUZU, "YuzuPala", "Paladin", Some(270), true, 9, false),
+    (TSUBAME, "TsubaKain", "Kain", Some(255), true, 14, false),
+    (HOTARU, "Hotaru7", "Adele", Some(275), true, 6, false),
+    (SORA, "SoraPF", "Pathfinder", Some(279), true, 4, false),
+    (SORA, "SoraLumi", "Luminous", Some(285), false, 4, false),
+    (KAITO, "KaitoLyn", "Lynn", None, true, 1, false),
 ];
 
 /// The admin every seeded roster write is attributed to (Asahi, Discord).
 fn asahi() -> Actor {
-    Actor::admin("discord:1001")
+    Actor::admin(format!("discord:{ASAHI}"))
 }
 
 /// NEXON's view of a linked character: name, class, level, combat power,
@@ -114,44 +114,44 @@ const fn data(
 const LINKS: [Linked; 7] = [
     linked(
         "ch-s1",
-        "1003",
+        MIKA,
         "MikaHero",
         56,
         data("MikaHero", "Hero", 261, 22_913_402, BATCH + 10 * DAY),
     ),
     linked(
         "ch-s2",
-        "1003",
+        MIKA,
         "MikaNL",
         30,
         data("MikaNL", "Night Lord", 287, 52_640_118, DAY),
     ),
     linked(
         "ch-s3",
-        "1003",
+        MIKA,
         "MikaBish",
         8,
         data("MikaBish", "Bishop", 283, 48_204_551, BATCH),
     ),
     Linked {
         status: LinkStatus::Stale,
-        ..linked("ch-s4", "1003", "Mikadere", 20, None)
+        ..linked("ch-s4", MIKA, "Mikadere", 20, None)
     },
     linked(
         "ch-s8",
-        "1004",
+        YUZU,
         "YuzuPala",
         9,
         data("YuzuPala", "Paladin", 276, 52_104_311, BATCH),
     ),
     linked(
         "ch-s9",
-        "1005",
+        TSUBAME,
         "TsubaKain",
         14,
         data("TsubaKain", "Kain", 281, 38_412_906, BATCH),
     ),
-    linked("ch-s10", "1011", "Hotaru7", 40, None),
+    linked("ch-s10", HOTARU, "Hotaru7", 40, None),
 ];
 
 pub async fn seed(seed: &Seed<'_>) -> Result<(), Fail> {
@@ -206,8 +206,8 @@ async fn roster(seed: &Seed<'_>) -> Result<(), Fail> {
 /// timing is MikaBish, so its runs bring her from the timing.
 async fn picks(seed: &Seed<'_>) -> Result<(), Fail> {
     let picks = [
-        (PickScope::Run, "r-carling", "1001", "ch-s5", 2 * DAY),
-        (PickScope::Timing, "f-carling", "1003", "ch-s3", DAY),
+        (PickScope::Run, "r-carling", ASAHI, "ch-s5", 2 * DAY),
+        (PickScope::Timing, "f-carling", MIKA, "ch-s3", DAY),
     ];
     for (scope, target, member, character, ago) in picks {
         let record = CharacterRecord {
@@ -250,7 +250,7 @@ async fn links(
         store,
         Link {
             character_id: "ch-s5".into(),
-            member_id: "1001".into(),
+            member_id: ASAHI.into(),
             ign_key: "asahidk".into(),
             region: "msea".into(),
             status: LinkStatus::Pending,

@@ -7,7 +7,7 @@ use kanade::api::state::{ChannelEntry, ChannelGrants, ChannelList, RoleEntry};
 use crate::seed;
 
 /// The bot's Discord user id and name, as the mock's gateway reports them.
-const BOT_USER_ID: &str = "1543532497948909578";
+const BOT_USER_ID: &str = seed::ids::BOT;
 const BOT_NAME: &str = "YuukiSakuna";
 
 pub struct Guild;

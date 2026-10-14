@@ -11,8 +11,13 @@
 //! the pinned instant is into its own.
 
 mod characters;
+pub mod ids;
+mod inbox;
+mod logs;
 mod members;
+mod notify;
 mod schedule;
+mod sessions;
 mod settings;
 
 use std::sync::Arc;
@@ -22,8 +27,10 @@ use kanade::{
     api::state::ApiState,
     domain::{
         history::{Actor, ChangeHistory, ChangeMeta, ChangeRef, Origin, Surface},
+        ids::{IdGenerator, RandomIds},
+        members::{MemberStore, Roster},
         schedule::{Change, ChangeSet, utc_instant},
-        scheduler::{ScheduleStore, Scope},
+        scheduler::{Clock, ScheduleStore, SchedulerService, Scope},
     },
     infrastructure::store::SqliteStore,
 };
@@ -35,6 +42,30 @@ pub use settings::persona_files;
 
 /// How far into its boss week (Thu 00:00 KL) the pinned instant is.
 const INTO_WEEK: Duration = Duration::hours(5 * 24 + 12);
+
+/// Discord's epoch in Unix milliseconds.
+const DISCORD_EPOCH_MS: i64 = 1_420_070_400_000;
+
+/// The scheduler's clock standing at one seeded instant.
+struct At(DateTime<Utc>);
+
+impl Clock for At {
+    fn now(&self) -> DateTime<Utc> {
+        self.0
+    }
+}
+
+/// The ids a seeded write gives its new rows, in order (the mock's ids);
+/// random ones past the list.
+struct Ids(std::vec::IntoIter<String>);
+
+impl IdGenerator for Ids {
+    fn new_id(&mut self) -> String {
+        self.0.next().unwrap_or_else(|| RandomIds.new_id())
+    }
+}
+
+type Scheduler = SchedulerService<Arc<SqliteStore>, Ids, At>;
 
 pub struct Seed<'a> {
     store: Arc<SqliteStore>,
@@ -68,6 +99,39 @@ impl Seed<'_> {
     /// `seconds` before the seed's now.
     fn ago(&self, seconds: i64) -> DateTime<Utc> {
         self.now - Duration::seconds(seconds)
+    }
+
+    /// `hours` past 8 h before this boss week's start: the clock the mock's
+    /// logs and inbox count in (`Store::hour_minute`).
+    fn hour(&self, hours: i64) -> DateTime<Utc> {
+        self.week + Duration::hours(hours - 8)
+    }
+
+    /// A Discord snowflake for a message posted at `at`; `n` keeps messages
+    /// of the same millisecond apart.
+    fn snowflake(at: DateTime<Utc>, n: u64) -> String {
+        let since = u64::try_from(at.timestamp_millis() - DISCORD_EPOCH_MS).unwrap_or(0);
+        ((since << 22) | (n & 0x3f_ffff)).to_string()
+    }
+
+    /// The scheduler as the API's writer composes it, on a clock standing at
+    /// `at`, giving new rows `ids`.
+    fn scheduler(&self, at: DateTime<Utc>, ids: &[&str]) -> Scheduler {
+        let ids: Vec<String> = ids.iter().map(|id| (*id).to_owned()).collect();
+        SchedulerService::new(self.store.clone(), Ids(ids.into_iter()), At(at))
+            .with_run_ends(self.state.run_ends_source())
+    }
+
+    /// What writes validate against: the members and the watched channels.
+    async fn directory(&self) -> Result<Roster, Fail> {
+        let mut roster = Roster::new();
+        for profile in self.store.list_members().await? {
+            roster.upsert(profile.member);
+        }
+        for channel in CHANNELS.iter().filter(|channel| channel.watched) {
+            roster.watch(channel.id);
+        }
+        Ok(roster)
     }
 
     /// Commit `changes` as `actor` on `surface` at `at`; the new head.
@@ -110,5 +174,9 @@ pub async fn template(store: Arc<SqliteStore>, state: &ApiState) -> Result<(), F
     members::seed(&seed).await?;
     schedule::seed(&seed).await?;
     characters::seed(&seed).await?;
+    logs::seed(&seed).await?;
+    inbox::seed(&seed).await?;
+    sessions::seed(&seed).await?;
+    notify::seed(&seed).await?;
     Ok(())
 }

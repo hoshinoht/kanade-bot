@@ -4,7 +4,7 @@
 
 use kanade::domain::members::{Member, MemberProfile, MemberStore, PingLevel};
 
-use super::Seed;
+use super::{Seed, ids::*};
 use crate::{Fail, fakes::discord};
 
 pub const STAFF_ROLE: &str = "300001";
@@ -100,44 +100,44 @@ const MEMBERS: [Row; 14] = [
     Row {
         access: Access::Staff,
         persona: Some("kanade"),
-        ..m("1001", "Asahi", &["asa", "asahi"])
+        ..m(ASAHI, "Asahi", &["asa", "asahi"])
     },
     Row {
         access: Access::Pilot,
-        ..m("1002", "Ren", &["ren"])
+        ..m(REN, "Ren", &["ren"])
     },
     Row {
         ping: PingLevel::All,
-        ..m("1003", "Mika", &["mika", "mk"])
+        ..m(MIKA, "Mika", &["mika", "mk"])
     },
-    m("1004", "Yuzu", &["yuzu"]),
+    m(YUZU, "Yuzu", &["yuzu"]),
     Row {
         ping: PingLevel::Off,
-        ..m("1005", "Tsubame", &["tsu", "tsubame"])
+        ..m(TSUBAME, "Tsubame", &["tsu", "tsubame"])
     },
-    m("1006", "Hinata", &["hina"]),
+    m(HINATA, "Hinata", &["hina"]),
     Row {
         persona: Some("terse"),
         access: Access::Pilot,
-        ..m("1007", "Nagi", &["nagi"])
+        ..m(NAGI, "Nagi", &["nagi"])
     },
-    m("1008", "Sora", &["sora"]),
-    m("1009", "Kaito", &["kai", "kaito"]),
+    m(SORA, "Sora", &["sora"]),
+    m(KAITO, "Kaito", &["kai", "kaito"]),
     // A reply style the persona catalog no longer offers.
     Row {
         persona: Some("sparkly"),
         access: Access::Pilot,
-        ..m("1010", "Rin", &["rin"])
+        ..m(RIN, "Rin", &["rin"])
     },
-    m("1011", "Hotaru", &["hota", "hotaru"]),
-    m("1012", "Minato", &["mina"]),
+    m(HOTARU, "Hotaru", &["hota", "hotaru"]),
+    m(MINATO, "Minato", &["mina"]),
     // A second, different member who also goes by "Ren".
-    m("1013", "Ren", &["ren2"]),
+    m(REN2, "Ren", &["ren2"]),
     // Chatbot access without the bossing role: listed, never on a run.
     Row {
         bossing: false,
         access: Access::Pilot,
-        ..m("1014", "Kohane", &[])
+        ..m(KOHANE, "Kohane", &[])
     },
 ];
 

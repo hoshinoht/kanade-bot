@@ -153,9 +153,9 @@ pub async fn compose(
     .await
 }
 
-/// [`compose`] on `clock` (the writer's and the API's); a `shared` model
-/// stack (built once by the caller from the same config) replaces building
-/// one, and its listing and refresh stay the caller's.
+/// [`compose`] on `clock` (the writer's, the API's and both sign-in realms'
+/// sessions); a `shared` model stack (built once by the caller from the same
+/// config) replaces building one, and its listing and refresh stay the caller's.
 pub(super) async fn compose_with(
     config: &ServeConfig,
     store: Arc<SqliteStore>,
@@ -208,7 +208,8 @@ pub(super) async fn compose_with(
     );
     let auth: AdminAuth =
         auth::from_settings(&config.runtime.admin_auth, store.clone(), Arc::new(staff))?
-            .with_audit(Arc::new(StoreAudit::new(store.clone())));
+            .with_audit(Arc::new(StoreAudit::new(store.clone())))
+            .with_clock(clock.clone());
     // One portrait cache for both origins.
     let avatars = Arc::new(AvatarCache::discord(
         config.runtime.http.identity_dir.as_deref(),
@@ -232,7 +233,9 @@ pub(super) async fn compose_with(
         }),
     });
     let member = match config.runtime.public_bind {
-        Some(_) => Some(Arc::new(member_realm(config, &store, &desk, &avatars)?)),
+        Some(_) => Some(Arc::new(
+            member_realm(config, &store, &desk, &avatars)?.with_clock(clock.clone()),
+        )),
         None => None,
     };
 
@@ -309,7 +312,8 @@ pub(super) async fn compose_with(
 /// outside world.
 #[cfg(any(test, feature = "test-support"))]
 pub struct Overrides {
-    /// The wall clock of the writer, the API and module `character_data`.
+    /// The wall clock of the writer, the API, both sign-in realms and module
+    /// `character_data`.
     pub clock: Clock,
     /// The Discord API behind both sign-in realms the config sets up.
     pub discord: Option<Arc<dyn crate::api::auth::discord::DiscordApi>>,
