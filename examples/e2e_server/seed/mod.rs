@@ -10,6 +10,7 @@
 //! on a live clock: [`Seed::now`] is as far into the current boss week as
 //! the pinned instant is into its own.
 
+pub mod auth_extra;
 mod backups;
 mod characters;
 pub mod ids;

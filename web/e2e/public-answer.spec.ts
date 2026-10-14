@@ -2,8 +2,8 @@ import type { Page } from '@playwright/test';
 import { ADMIN, PUBLIC, csrf, expect, signInPublic, test } from './support';
 
 // The member's answer on their own run (member-writes contract Phase A,
-// boards Week-RunMine, ConfirmAnswer, PhoneRun) against the mock's member
-// (Asahi, 1001) on HCarling + HStar (Tue 29 22:00, In): shown at once,
+// boards Week-RunMine, ConfirmAnswer, PhoneRun) as the real server's member
+// (Asahi) on HCarling + HMaleficStar (Tue 29 22:00, In): shown at once,
 // rolled back when refused, kept across the fresh sign-in, and a stale week
 // rolls back with what changed. Every test ends with zero CSP/TT reports.
 
@@ -11,7 +11,8 @@ test.describe.configure({ mode: 'parallel' });
 
 const ASAHI = '100000000000001001';
 const toast = (page: Page) => page.getByRole('group', { name: 'Notification' });
-const pane = (page: Page) => page.getByRole('complementary', { name: /^Your run · .*Carling/ });
+// The pane is named with the bosses' display names (the real catalog's Karling).
+const pane = (page: Page) => page.getByRole('complementary', { name: /^Your run · .*Karling/ });
 const answers = (page: Page) => pane(page).getByRole('group', { name: /^Your answer/ });
 const choice = (page: Page, name: 'In' | 'Maybe' | 'Out') => answers(page).getByRole('button', { name: new RegExp(`^${name}`) });
 
@@ -43,12 +44,12 @@ test('an answer shows at once, then saves; the tally follows', async ({ page }) 
   release();
   await expect(answers(page)).toHaveAttribute('aria-busy', 'false');
   await expect(answers(page)).toHaveAccessibleName('Your answer: Maybe');
-  expect(await saved(page)).toBe('maybe');
+  await expect.poll(() => saved(page)).toBe('maybe');
   // Out puts the live run at risk, as the admin's RSVP does.
   await choice(page, 'Out').click();
   await expect(answers(page)).toHaveAccessibleName('Your answer: Out');
   await expect(pane(page)).toContainText('at risk');
-  expect(await saved(page)).toBe('no');
+  await expect.poll(() => saved(page)).toBe('no');
 });
 
 test('a refused answer rolls back and the toast says why', async ({ page }) => {
@@ -64,9 +65,8 @@ test('a refused answer rolls back and the toast says why', async ({ page }) => {
 });
 
 test("an answer older than the fresh window: Confirm it's you, back with the choice kept, one more press saves", async ({ page }) => {
-  // Aged before the page reads the session and devices, so both carry the same sign-in time.
-  await signInPublic(page);
-  expect((await page.request.post(`${PUBLIC}/__mock/public/unfresh`)).ok()).toBe(true);
+  // Signed in before the fresh window, so the session and devices reads carry the same sign-in time.
+  await signInPublic(page, { stale: true });
   await page.goto(`${PUBLIC}/?run=r-carling&sw=off`);
   await expect(choice(page, 'In')).toHaveAttribute('aria-pressed', 'true');
   await choice(page, 'Maybe').click();
@@ -74,7 +74,7 @@ test("an answer older than the fresh window: Confirm it's you, back with the cho
   await expect(confirm).toBeVisible();
   await expect(confirm).toContainText('Changing your answer needs a Discord sign-in from the last 15 minutes.');
   await expect(confirm).toContainText(
-    "Not saved yet: Maybe for HCarling + HStar, Tue 29 Sep 22:00. After signing in you're back on this run with Maybe picked; press it once more to save.",
+    "Not saved yet: Maybe for HCarling + HMaleficStar, Tue 29 Sep 22:00. After signing in you're back on this run with Maybe picked; press it once more to save.",
   );
   // Nothing was saved, and the press is rolled back behind the dialog.
   await expect(choice(page, 'In')).toHaveAttribute('aria-pressed', 'true');
@@ -90,22 +90,28 @@ test("an answer older than the fresh window: Confirm it's you, back with the cho
   await choice(page, 'Maybe').click();
   await expect(answers(page)).toHaveAccessibleName('Your answer: Maybe');
   await expect(pane(page).getByRole('status')).toHaveCount(0);
-  expect(await saved(page)).toBe('maybe');
+  // The press shows at once; the real write lands a moment later.
+  await expect(answers(page)).toHaveAttribute('aria-busy', 'false');
+  await expect.poll(() => saved(page)).toBe('maybe');
 });
 
 test('a stale answer rolls back to what the server has and says what changed', async ({ page }) => {
+  // The real server pushes a change hint the moment the admin writes, and the
+  // page would re-read before the press; with the stream held the page stays
+  // on the week it read, the case this test is about.
+  await page.route('**/api/public/events', () => {});
   await open(page);
   // An admin marks Asahi out after the page read the week (the admin RSVP takes yes, no or clear).
   const week = (await (await page.request.get(`${ADMIN}/api/admin/week`)).json()) as { version: number };
-  // The admin API names members by the mock's short ids.
-  const changed = await page.request.post(`${ADMIN}/api/admin/runs/r-carling/rsvp`, { headers: await csrf(page.request), data: { member_id: '1001', answer: 'no', version: week.version } });
+  // The admin API names members by their Discord ids.
+  const changed = await page.request.post(`${ADMIN}/api/admin/runs/r-carling/rsvp`, { headers: await csrf(page.request), data: { member_id: ASAHI, answer: 'no', version: week.version } });
   expect(changed.ok()).toBe(true);
   await choice(page, 'Maybe').click();
   await expect(
-    toast(page).filter({ hasText: 'HCarling + HStar changed meanwhile: your answer is now Out, it is now at risk. Your answer (Maybe) was not saved.' }),
+    toast(page).filter({ hasText: 'HCarling + HMaleficStar changed meanwhile: your answer is now Out, it is now at risk. Your answer (Maybe) was not saved.' }),
   ).toBeVisible();
   await expect(answers(page)).toHaveAccessibleName('Your answer: Out');
-  expect(await saved(page)).toBe('no');
+  await expect.poll(() => saved(page)).toBe('no');
 });
 
 test('someone else’s run has no answer or move, only the ask to join', async ({ page }) => {
@@ -120,7 +126,7 @@ test('someone else’s run has no answer or move, only the ask to join', async (
   // The server refuses it too.
   const session = await page.request.get(`${PUBLIC}/api/public/session`);
   const refused = await page.request.put(`${PUBLIC}/api/public/runs/r-limbo/answer`, {
-    headers: { 'X-Kanade-CSRF': session.headers()['x-kanade-csrf'] ?? '', 'Idempotency-Key': 'e2e-other-answer' },
+    headers: { 'X-Kanade-CSRF': session.headers()['x-kanade-csrf'] ?? '', 'Idempotency-Key': 'e2e-other-answer', Origin: PUBLIC },
     data: { answer: 'yes', version: 0 },
   });
   expect(refused.status()).toBe(403);
@@ -135,5 +141,5 @@ test('phone: the run sheet answers with 44 px choices', async ({ page }) => {
   for (const button of await group.getByRole('button').all()) expect(Math.round((await button.boundingBox())!.height)).toBeGreaterThanOrEqual(44);
   await group.getByRole('button', { name: /^Maybe/ }).click();
   await expect(group).toHaveAccessibleName('Your answer: Maybe');
-  expect(await saved(page)).toBe('maybe');
+  await expect.poll(() => saved(page)).toBe('maybe');
 });

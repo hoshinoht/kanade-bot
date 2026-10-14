@@ -48,6 +48,11 @@ pub const LOOPBACK: IpAddr = IpAddr::V4(Ipv4Addr::LOCALHOST);
 const DEFAULT_NOW: &str = "2026-09-29T04:00:00Z";
 /// How long the listeners may drain on shutdown.
 const DRAIN: Duration = Duration::from_secs(5);
+/// The admin edge's shared secret (`X-Kanade-Edge-Auth`): whoami hands it
+/// to the specs, which act as the edge for a Tailscale sign-in.
+pub const EDGE_SECRET: &str = "e2e-edge-secret-shared-with-the-browser-tests";
+/// The one Tailscale login the admin allows (the mock's Tailscale admin).
+pub const TAILSCALE_LOGIN: &str = "ops@example.test";
 
 struct Args {
     admin_port: u16,
@@ -156,6 +161,7 @@ fn config(
         "e2e-fake-client-secret",
     )?;
     secret(&root.join("nexon_key"), "e2e-fake-nexon-key")?;
+    secret(&root.join("edge_secret"), EDGE_SECRET)?;
     seed::persona_files(
         &root.join("Personas"),
         &repo.join("config/personas/bundles/kanade.yaml"),
@@ -173,6 +179,15 @@ fn config(
         ("KANADE_DISCORD_GATEWAY", "0".to_owned()),
         ("KANADE_DISCORD_TOKEN_FILE", path("discord_token")),
         ("KANADE_ADMIN_TOKEN_FILE", path("admin_token")),
+        // Tailscale sign-in behind an edge. Serve refuses a loopback edge, so
+        // the config names a private one and `live::World` trusts the
+        // browser's loopback peer instead, still only with the edge secret.
+        ("KANADE_TRUSTED_PROXY", "10.0.0.2".to_owned()),
+        ("KANADE_EDGE_SECRET_FILE", path("edge_secret")),
+        ("KANADE_ADMIN_TAILSCALE_LOGINS", TAILSCALE_LOGIN.to_owned()),
+        // The member realm's longest idle limit, as the mock's portal keeps
+        // Asahi's 40-minutes-idle iPhone session live.
+        ("KANADE_PUBLIC_SESSION_IDLE_MINUTES", "60".to_owned()),
         // The template's admin session must outlast a full suite run; both
         // stay within serve's caps.
         ("KANADE_ADMIN_SESSION_IDLE_MINUTES", "720".to_owned()),

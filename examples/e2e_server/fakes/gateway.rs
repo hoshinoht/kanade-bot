@@ -198,45 +198,104 @@ async fn complete(
     }))
 }
 
-/// The one capacity group at `now`: its permit taken, a rescan and an
-/// extraction burst queued behind it, the breaker closed for ten hours.
-pub fn limits(now: DateTime<Utc>) -> Vec<GroupSnapshot> {
+/// The governor's groups at `now`. By default the one `gateway` group: its
+/// permit taken, a rescan and an extraction burst queued behind it, the
+/// breaker closed for ten hours. With `three` (`/__e2e/limits`), the mock's
+/// declared cloud, local and legacy groups side by side: full and queueing,
+/// half-open, open (mock `limits::groups`).
+pub fn limits(now: DateTime<Utc>, three: bool) -> Vec<GroupSnapshot> {
     let queued = |position, kind, who: &str, waiting_s| QueuedCall {
         position,
         kind,
         who: who.into(),
         waiting_s,
     };
-    vec![GroupSnapshot {
-        name: "gateway".into(),
-        backend: "Kanata".into(),
-        models: ["kanata/extract", "kanata/chat", "kanata/rewrite-small"]
-            .map(str::to_owned)
-            .to_vec(),
-        permits: PermitUsage {
-            in_use: 1,
-            total: 1,
-        },
-        queue: vec![
+    let breaker = |state, failures, minutes: i64, retry_at| BreakerView {
+        state,
+        failures,
+        since: now - Duration::minutes(minutes),
+        retry_at,
+    };
+    let group =
+        |name: &str, models: &[&str], (in_use, total), queue, rate, retry, breaker| GroupSnapshot {
+            name: name.into(),
+            backend: "Kanata".into(),
+            models: models.iter().map(|model| (*model).to_owned()).collect(),
+            permits: PermitUsage { in_use, total },
+            queue,
+            holders: Vec::new(),
+            rate,
+            retry,
+            breaker,
+            counters: Counters::default(),
+        };
+    let busy_queue = || {
+        vec![
             queued(1, CallKind::Rescan, "admin token", 42),
             queued(2, CallKind::Extraction, "#hstar-party burst", 8),
-        ],
-        holders: Vec::new(),
-        rate: RateLevel {
-            available: 9,
-            capacity: 12,
-            refill_per_min: 2,
-        },
-        retry: RetryLevel {
-            remaining: 5,
-            capacity: 5,
-        },
-        breaker: BreakerView {
-            state: BreakerState::Closed,
-            failures: 0,
-            since: now - Duration::hours(10),
-            retry_at: None,
-        },
-        counters: Counters::default(),
-    }]
+        ]
+    };
+    let busy_rate = RateLevel {
+        available: 9,
+        capacity: 12,
+        refill_per_min: 2,
+    };
+    let full_retry = RetryLevel {
+        remaining: 5,
+        capacity: 5,
+    };
+    if !three {
+        return vec![group(
+            "gateway",
+            &["kanata/extract", "kanata/chat", "kanata/rewrite-small"],
+            (1, 1),
+            busy_queue(),
+            busy_rate,
+            full_retry,
+            breaker(BreakerState::Closed, 0, 600, None),
+        )];
+    }
+    vec![
+        group(
+            "cloud",
+            &["kanata/chat-cloud", "kanata/rewrite-cloud"],
+            (2, 2),
+            busy_queue(),
+            busy_rate,
+            full_retry,
+            breaker(BreakerState::Closed, 0, 600, None),
+        ),
+        group(
+            "local",
+            &["kanata/chat"],
+            (2, 4),
+            Vec::new(),
+            RateLevel {
+                available: 1,
+                capacity: 20,
+                refill_per_min: 4,
+            },
+            RetryLevel {
+                remaining: 2,
+                capacity: 5,
+            },
+            breaker(BreakerState::HalfOpen, 3, 4, None),
+        ),
+        group(
+            "legacy",
+            &["kanata/legacy"],
+            (0, 2),
+            Vec::new(),
+            RateLevel {
+                available: 6,
+                capacity: 6,
+                refill_per_min: 1,
+            },
+            RetryLevel {
+                remaining: 0,
+                capacity: 3,
+            },
+            breaker(BreakerState::Open, 5, 12, Some(now + Duration::minutes(3))),
+        ),
+    ]
 }

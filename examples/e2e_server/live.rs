@@ -8,7 +8,10 @@ use std::{
     io,
     net::SocketAddr,
     path::{Path, PathBuf},
-    sync::Arc,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
     time::{Duration, Instant},
 };
 
@@ -16,7 +19,7 @@ use axum::{
     Router,
     http::{
         StatusCode,
-        header::{CONTENT_TYPE, COOKIE, HOST, LOCATION, SET_COOKIE},
+        header::{CONTENT_TYPE, COOKIE, HOST, LOCATION, SET_COOKIE, USER_AGENT},
     },
     routing::{MethodRouter, any_service},
 };
@@ -27,7 +30,7 @@ use kanade::{
     api::{
         assets,
         auth::{
-            Clock, crypto,
+            self, Clock, crypto,
             fake::FakeDiscord,
             wire::{self, query_pairs, query_value},
         },
@@ -57,6 +60,9 @@ const CLOSE_WAIT: Duration = Duration::from_secs(5);
 /// How long the template's Discord side must make no model call before its
 /// startup work (the day's header batch) counts as done.
 const SETTLE: Duration = Duration::from_millis(1_500);
+/// The browser the template's Discord admin signed in with: the e2e
+/// browser's own kind, so its Account lists "Chrome · macOS" as this one.
+const BROWSER: &str = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36";
 
 pub struct World {
     config: ServeConfig,
@@ -68,6 +74,17 @@ pub struct World {
     authorize_url: String,
     nexon: SocketAddr,
     model: Arc<gateway::Activity>,
+    /// The Limits page's canned governor shows three groups, not one
+    /// (`/__e2e/limits`); every generation reads it live.
+    pub three_groups: Arc<AtomicBool>,
+}
+
+/// The optional modules a generation composes with (serve reads them once
+/// at startup, so a change is a restart: `/__e2e/modules`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Modules {
+    pub roster: bool,
+    pub character_data: bool,
 }
 
 /// What each origin forwards to: the real listeners' routers.
@@ -96,6 +113,17 @@ impl World {
         let http = &config.runtime.http;
         let mut admin = Site::admin(http);
         admin.listener_ip = Some(LOOPBACK);
+        // The browser is the admin's trusted edge too (serve refuses a
+        // loopback edge in config, so the config names another one): its
+        // `Tailscale-*` headers count only with the edge secret, as behind
+        // a real edge.
+        admin.trusted_peer = Some(LOOPBACK);
+        admin.edge_secret = http
+            .edge_secret_file
+            .as_deref()
+            .map(auth::edge_secret)
+            .transpose()?
+            .map(Arc::new);
         let mut public = Site::public(http).ok_or("no public host")?;
         public.listener_ip = Some(LOOPBACK);
         public.public_origin = config
@@ -113,13 +141,27 @@ impl World {
             authorize_url,
             nexon,
             model,
+            three_groups: Arc::default(),
         })
     }
 
+    /// The modules the config turns on.
+    pub fn modules(&self) -> Modules {
+        Modules {
+            roster: self.config.modules.roster,
+            character_data: self.config.modules.character_data,
+        }
+    }
+
     /// Compose over the store at `path` (and module `character_data`'s file
-    /// beside it), as serve composes at startup, then start serve's Discord
-    /// side when `bot`.
-    pub async fn open(&self, path: PathBuf, bot: bool) -> Result<Generation, Fail> {
+    /// beside it) with `modules`, as serve composes at startup, then start
+    /// serve's Discord side when `bot`.
+    pub async fn open(
+        &self,
+        path: PathBuf,
+        bot: bool,
+        modules: Modules,
+    ) -> Result<Generation, Fail> {
         let store = SqliteStore::open(&SqliteStoreConfig {
             db_path: path.clone(),
             owner_lock_dir: self.config.store.owner_lock_dir.clone(),
@@ -128,6 +170,11 @@ impl World {
         let store = Arc::new(store);
         let mut config = self.config.clone();
         config.store.db_path = path.clone();
+        config.modules.roster = modules.roster;
+        config.modules.character_data = modules.character_data;
+        if !modules.character_data {
+            config.character_data = None;
+        }
         if let Some(settings) = &mut config.character_data {
             settings.db_path = chardata(&path);
         }
@@ -136,7 +183,10 @@ impl World {
             discord: Some(self.discord.clone()),
             authorize_url: Some(self.authorize_url.clone()),
             // The governor the Limits page shows, canned (`fakes::gateway`).
-            model_limits: Some(Arc::new(gateway::limits)),
+            model_limits: Some({
+                let three = Arc::clone(&self.three_groups);
+                Arc::new(move |now| gateway::limits(now, three.load(Ordering::SeqCst)))
+            }),
             nexon: Some(self.nexon),
         };
         match compose_for_tests(&config, store.clone(), overrides).await {
@@ -177,10 +227,13 @@ impl World {
     /// keep it closed as the template. Returns the admin sessions every copy
     /// holds.
     pub async fn template(&self, path: &Path, token: &str) -> Result<AdminSessions, Fail> {
-        let generation = self.open(path.to_owned(), false).await?;
+        let generation = self.open(path.to_owned(), false, self.modules()).await?;
         let live = generation.live();
         let seeded = match seed::template(generation.store.clone(), &live.state).await {
-            Ok(()) => self.sign_in_admins(live, token).await,
+            Ok(()) => match seed::auth_extra::seed(&generation.store, (live.state.clock)()).await {
+                Ok(()) => self.sign_in_admins(live, token).await,
+                Err(error) => Err(error),
+            },
             Err(error) => Err(error),
         };
         generation.close().await?;
@@ -188,7 +241,7 @@ impl World {
         // Serve's Discord side once over the seeded store, so what it does
         // at startup (journal recovery, the day's header batch) is in every
         // copy and a generation's own start finds nothing left to do.
-        let generation = self.open(path.to_owned(), true).await?;
+        let generation = self.open(path.to_owned(), true, self.modules()).await?;
         self.model.settled(SETTLE).await;
         generation.close().await?;
         // A WAL left beside either file would be missing from every copy.
@@ -277,6 +330,7 @@ impl World {
 
             let request = Request::get("/api/admin/auth/discord/start")
                 .header(HOST, &host)
+                .header(USER_AGENT, BROWSER)
                 .body(Full::default())?;
             let start = send(address, request).await?;
             let location = start
@@ -304,6 +358,7 @@ impl World {
                 wire::form(&[("code", &code), ("state", &state)])
             ))
             .header(HOST, &host)
+            .header(USER_AGENT, BROWSER)
             .header(COOKIE, cookies)
             .body(Full::default())?;
             let callback = send(address, request).await?;
@@ -368,6 +423,10 @@ fn set_cookies<B>(response: &hyper::Response<B>) -> Vec<Cookie> {
 impl Generation {
     pub fn live(&self) -> &LiveAdmin {
         &self.composition.admin
+    }
+
+    pub fn store(&self) -> &Arc<SqliteStore> {
+        &self.store
     }
 
     /// Starts serve's Discord side over this generation's composition.

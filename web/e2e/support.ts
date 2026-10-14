@@ -27,7 +27,22 @@ export const REAL_ART = process.env.KANADE_REAL_ART === '1';
  * done and cancelled runs (v4); the public portal opens signed out on Sign in. */
 export const HEADING = { admin: '7 runs', public: 'Sign in to see the boss week' } as const;
 /** The member a public sign-in becomes on either server, and the admin the mock always is: the seed's Asahi. */
-const ASAHI_SNOWFLAKE = '100000000000001001';
+export const ASAHI_SNOWFLAKE = '100000000000001001';
+
+/** The harness's fake Discord page (`examples/e2e_server/fakes/discord.rs`). */
+const FAKE_DISCORD_PATH = '/__e2e/discord';
+
+/**
+ * Harness only: who this browser is at Discord, for the fake Discord page: a
+ * seeded member's snowflake (Asahi by default), or one of the page's own
+ * choices: `eligible` (Mikan: a bosser, not staff), `ineligible` (Plain: in
+ * the guild without the bossing role), `deny` (cancelled at Discord). The
+ * cookie is scoped to the fake page's path, so neither origin's own cookies
+ * (`context.cookies(origin)`) ever list it.
+ */
+export async function useDiscordAccount(context: BrowserContext, account: string = ASAHI_SNOWFLAKE): Promise<void> {
+  await context.addCookies([{ name: 'kanade_fake_discord', value: account, domain: '127.0.0.1', path: FAKE_DISCORD_PATH }]);
+}
 
 /**
  * The harness's Discord sign-in for `origin`: its fake Discord page approves
@@ -35,8 +50,8 @@ const ASAHI_SNOWFLAKE = '100000000000001001';
  * shares the context's cookie jar; the redirects are followed one hop at a
  * time so each hop sends the cookies the last one set (see `sendSecureCookies`).
  */
-async function discordSignIn(page: Page, origin: string, realm: 'admin' | 'public'): Promise<void> {
-  await page.context().addCookies([{ name: 'kanade_fake_discord', value: ASAHI_SNOWFLAKE, domain: '127.0.0.1', path: '/' }]);
+async function discordSignIn(page: Page, origin: string, realm: 'admin' | 'public', account = ASAHI_SNOWFLAKE): Promise<void> {
+  await useDiscordAccount(page.context(), account);
   let url = `${origin}/api/${realm}/auth/discord/start`;
   for (let hop = 0; hop < 5; hop++) {
     const location = (await page.request.get(url, { maxRedirects: 0 })).headers()['location'];
@@ -47,15 +62,104 @@ async function discordSignIn(page: Page, origin: string, realm: 'admin' | 'publi
   expect((await page.request.get(`${origin}/api/${realm}/session`)).status(), `the ${realm} session after sign-in`).toBe(200);
 }
 
+/** Harness only: moves the server clock by `seconds` (`/__e2e/clock`). */
+async function moveClock(seconds: number): Promise<void> {
+  const moved = await fetch(`${ADMIN}/__e2e/clock`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ advance_s: seconds }) });
+  expect(moved.status, 'the clock change').toBe(200);
+}
+
+/** How far back a stale sign-in happens: past the portal's 15 minute fresh-write window. */
+const STALE_S = 35 * 60;
+
 /**
  * Signs this page's browser context in on the public origin as Asahi: the
  * mock's `/__mock/public/sign-in` sets the cookie without Discord, the
- * harness runs the real Discord flow.
+ * harness runs the real Discord flow. `stale` makes it a sign-in older than
+ * the fresh-write window: the harness signs in with the server clock 35
+ * minutes back, then puts it back, so every later read (session and devices
+ * alike) dates it the same; the mock ages the session it set.
  */
-export async function signInPublic(page: Page): Promise<void> {
-  if (HARNESS) return discordSignIn(page, PUBLIC, 'public');
+export async function signInPublic(page: Page, options: { stale?: boolean } = {}): Promise<void> {
+  if (HARNESS) {
+    if (!options.stale) return discordSignIn(page, PUBLIC, 'public');
+    await moveClock(-STALE_S);
+    try {
+      await discordSignIn(page, PUBLIC, 'public');
+    } finally {
+      await moveClock(STALE_S);
+    }
+    return;
+  }
   const response = await page.request.post(`${PUBLIC}/__mock/public/sign-in`);
   expect(response.status()).toBe(204);
+  if (options.stale) expect((await page.request.post(`${PUBLIC}/__mock/public/unfresh`)).ok()).toBe(true);
+}
+
+/** Harness only: `/__e2e/whoami` on the admin origin. */
+async function whoami(): Promise<unknown> {
+  return (await fetch(`${ADMIN}/__e2e/whoami`)).json();
+}
+
+/** Harness only: the break-glass admin token (`KANADE_ADMIN_TOKEN_FILE`). */
+export async function adminToken(): Promise<string> {
+  const token = field(field(await whoami(), 'break_glass'), 'token');
+  if (typeof token !== 'string') throw new Error('whoami has no break-glass token');
+  return token;
+}
+
+/**
+ * Harness only: signs this context in on the admin origin, replacing its
+ * session: `discord` through the fake Discord page as `account` (a staff
+ * member: Asahi), `token` with the break-glass token, `tailscale` as the
+ * allowed Tailscale login through the trusted edge. The edge stamps every
+ * request with its secret and the Tailscale identity, so from then on the
+ * whole context sends them too (a Tailscale session needs them on each request).
+ */
+export async function signInAdmin(page: Page, method: 'discord' | 'token' | 'tailscale', account = ASAHI_SNOWFLAKE): Promise<void> {
+  if (method === 'discord') return discordSignIn(page, ADMIN, 'admin', account);
+  let response: APIResponse;
+  if (method === 'token') {
+    response = await page.request.post(`${ADMIN}/api/admin/auth/token`, { headers: { Origin: ADMIN }, data: { token: await adminToken() } });
+  } else {
+    const tailscale = field(await whoami(), 'tailscale');
+    const edge = {
+      'X-Kanade-Edge-Auth': String(field(tailscale, 'edge_secret')),
+      'X-Forwarded-For': '100.64.0.9',
+      'Tailscale-User-Login': String(field(tailscale, 'login')),
+    };
+    await page.context().setExtraHTTPHeaders(edge);
+    response = await page.request.post(`${ADMIN}/api/admin/auth/tailscale`, { headers: { Origin: ADMIN, ...edge } });
+  }
+  expect(response.status(), `the ${method} sign-in (${await response.text()})`).toBe(200);
+}
+
+/** The real admin sign-out of this context's session (`POST /api/admin/auth/logout`). */
+export async function signOutAdmin(page: Page): Promise<void> {
+  const response = await page.request.post(`${ADMIN}/api/admin/auth/logout`, { headers: await csrf(page.request) });
+  expect(response.ok(), `the sign-out (${response.status()})`).toBe(true);
+}
+
+/** Harness only: the browser forgets its sessions (both origins' cookies), as if signed out behind the page's back. */
+export async function dropSessions(context: BrowserContext): Promise<void> {
+  await context.clearCookies();
+}
+
+/** Harness only: the server ends every member-portal session (expired, or signed out elsewhere). */
+export async function endMemberSessions(): Promise<void> {
+  const ended = await fetch(`${ADMIN}/__e2e/public/end`, { method: 'POST' });
+  expect(ended.status, await ended.text()).toBe(200);
+}
+
+/** Harness only: restarts the server with these optional modules (serve reads them once, at startup). */
+export async function setModules(modules: { roster?: boolean; character_data?: boolean }): Promise<void> {
+  const set = await fetch(`${ADMIN}/__e2e/modules`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(modules) });
+  expect(set.status, await set.text()).toBe(200);
+}
+
+/** Harness only: the canned governor groups Limits shows (`three`: cloud, local, legacy; `default`: one gateway group). */
+export async function setLimitGroups(groups: 'three' | 'default'): Promise<void> {
+  const set = await fetch(`${ADMIN}/__e2e/limits`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ groups }) });
+  expect(set.status).toBe(204);
 }
 
 /**

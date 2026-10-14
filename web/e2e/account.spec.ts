@@ -1,12 +1,21 @@
 import AxeBuilder from '@axe-core/playwright';
 import type { Page } from '@playwright/test';
-import { ADMIN, expect, settle, test } from './support';
+import { ADMIN, ASAHI_SNOWFLAKE, expect, settle, signInAdmin, test, unconditional } from './support';
+
+/** A metered chat allowance row (Limits' shape) for `/api/admin/me`, counted from the server's own `server_time`. */
+interface Metered {
+  count: number;
+  per_s: number;
+  used: number;
+  override: boolean;
+  resets_in_s: number;
+}
 
 // Account (boards AdminAccount / AdminPhone, direction B): one window with
 // Profile / Sessions / This browser tabs beside a fixed identity pane. The
-// mock's Discord session is Asahi (staff, on the roster, saved style Kanade;
-// the staff role sets Terse in Config › Persona); token and Tailscale
-// sessions are neutral. The fixture resets the mock per test.
+// server's admin session is Asahi's Discord sign-in (staff, on the roster,
+// saved style Kanade; the staff role sets Terse in Config › Persona); token
+// and Tailscale sessions are neutral. The fixture resets the server per test.
 
 async function axe(page: Page, label: string) {
   await settle(page);
@@ -32,7 +41,7 @@ test('a Discord session opens its account from the menu: identity, access, roles
   const you = page.getByRole('complementary', { name: 'You' });
   await expect(you.getByRole('heading', { name: 'Asahi' })).toBeVisible();
   await expect(you).toContainText('signed in with Discord');
-  await expect(you.locator('dd').first()).toHaveText('1001');
+  await expect(you.locator('dd').first()).toHaveText(ASAHI_SNOWFLAKE);
   await expect(you).toContainText('Tue 29 Sep 12:00');
   await expect(you.getByRole('button', { name: 'Sign out' })).toBeVisible();
 
@@ -49,8 +58,8 @@ test('a Discord session opens its account from the menu: identity, access, roles
   await expect(profile).toContainText('In effect');
   await expect(profile).toContainText('set by your staff role');
   await expect(profile).toContainText('Your saved style: Kanade');
-  await expect(profile.getByRole('link', { name: /Open my member profile/ })).toHaveAttribute('href', '/members?open=1001');
-  await expect(profile.getByRole('link', { name: /See my changes/ })).toHaveAttribute('href', '/history?actor=admin%3Adiscord%3A1001');
+  await expect(profile.getByRole('link', { name: /Open my member profile/ })).toHaveAttribute('href', `/members?open=${ASAHI_SNOWFLAKE}`);
+  await expect(profile.getByRole('link', { name: /See my changes/ })).toHaveAttribute('href', `/history?actor=admin%3Adiscord%3A${ASAHI_SNOWFLAKE}`);
 
   await profile.getByRole('button', { name: 'Recheck my access' }).click();
   await expect(profile).toContainText('Checked just now: Staff');
@@ -79,11 +88,11 @@ test('the account links open my member sheet and History filtered to me', async 
   await page.setViewportSize({ width: 1280, height: 800 });
   await page.goto(`${ADMIN}/account?sw=off`);
   await panel(page).getByRole('link', { name: /Open my member profile/ }).click();
-  await expect(page).toHaveURL(`${ADMIN}/members?open=1001`);
+  await expect(page).toHaveURL(`${ADMIN}/members?open=${ASAHI_SNOWFLAKE}`);
   await expect(page.locator('.side-pane, dialog[open]').first()).toContainText('Asahi');
   await page.goto(`${ADMIN}/account?sw=off`);
   await panel(page).getByRole('link', { name: /See my changes/ }).click();
-  await expect(page).toHaveURL(/\/history\?actor=admin%3Adiscord%3A1001$/);
+  await expect(page).toHaveURL(new RegExp(`/history\\?actor=admin%3Adiscord%3A${ASAHI_SNOWFLAKE}$`));
   await expect(page.getByRole('combobox', { name: 'Who' })).not.toContainText('everyone');
 });
 
@@ -187,10 +196,29 @@ test('this browser: look, Reduce motion, Discord links, Experiments and the shor
 });
 
 test('a metered member sees when the oldest answer frees up, on the server clock, and a due reset re-reads', async ({ page }) => {
-  // A browser clock days away from the mock's, paused so only runFor moves it.
+  // A browser clock days away from the server's, paused so only runFor moves it.
   await page.clock.install({ time: new Date('2026-10-02T21:13:00Z') });
   await page.clock.pauseAt(new Date('2026-10-02T21:13:01Z'));
-  await page.request.post(`${ADMIN}/__mock/session`, { data: { method: 'discord', user: '1010' } });
+  // An admin session is always staff on the real server, and staff are
+  // exempt from chatbot budgets, so no real session reaches a metered
+  // Account: the server's own answer gets a metered row in Limits' shape.
+  // Rin's own 20 per 6 h, seven used; then Ren on the guild's 4 per 5 min.
+  let metered: Metered = { count: 20, per_s: 21_600, used: 7, override: true, resets_in_s: 5 * 3600 + 12 * 60 };
+  await page.route(`${ADMIN}/api/admin/me`, async (route) => {
+    const response = await route.fetch(unconditional(route));
+    const me = (await response.json()) as { server_time: string; member: Record<string, unknown> & { id: string; name: string } };
+    const resets = new Date(Date.parse(me.server_time) + metered.resets_in_s * 1000).toISOString().replace('.000Z', 'Z');
+    me.member.access = 'pilot';
+    me.member.allowance = {
+      member: { id: me.member.id, name: me.member.name },
+      staff: false,
+      allowance: { count: metered.count, per_s: metered.per_s },
+      used: metered.used,
+      override: metered.override,
+      resets_at: resets,
+    };
+    await route.fulfill({ response, json: me });
+  });
   await page.setViewportSize({ width: 1280, height: 800 });
   await page.goto(`${ADMIN}/account?sw=off`);
   const allowance = panel(page).getByRole('region', { name: 'Chat allowance' });
@@ -199,7 +227,7 @@ test('a metered member sees when the oldest answer frees up, on the server clock
   await expect(allowance).toContainText('Your own allowance (overridden)');
 
   // Ren: the guild's 5 min window, oldest answer freeing up in 2 m 12 s.
-  await page.request.post(`${ADMIN}/__mock/session`, { data: { method: 'discord', user: '1002' } });
+  metered = { count: 4, per_s: 300, used: 2, override: false, resets_in_s: 132 };
   let reads = 0;
   page.on('request', (request) => {
     if (new URL(request.url()).pathname === '/api/admin/me') reads += 1;
@@ -226,7 +254,7 @@ for (const [method, how, name] of [
   ['tailscale', 'signed in with Tailscale', 'ops@example.test'],
 ] as const) {
   test(`a ${method} session is neutral: not a Discord member, still its own sessions`, async ({ page }) => {
-    await page.request.post(`${ADMIN}/__mock/session`, { data: { method } });
+    await signInAdmin(page, method);
     await page.setViewportSize({ width: 1280, height: 800 });
     await page.goto(`${ADMIN}/account?sw=off`);
     await expect(page.locator('.pageline__context')).toHaveText(`${name} · ${how}`);

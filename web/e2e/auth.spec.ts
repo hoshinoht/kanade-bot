@@ -1,15 +1,21 @@
 import type { Page } from '@playwright/test';
-import { ADMIN, expect, test } from './support';
+import { ADMIN, adminToken, dropSessions, expect, signInAdmin, test, useDiscordAccount } from './support';
 
-// Sign-in against the mock's copy of the server's auth routes: methods,
-// break-glass token, the Discord browser flow and its login_error codes,
-// 401 → sign in → back, method-based proposal controls, sign-out.
+// Sign-in against the real server's auth routes: methods, break-glass
+// token, the Discord browser flow (the harness's fake Discord page) and its
+// login_error codes, 401 → sign in → back, method-based proposal controls,
+// sign-out.
 
-/** The mock's break-glass token (devtools/pwa-mock `auth::MOCK_TOKEN`). */
-const TOKEN = 'kanade-mock-token';
+/** The server's break-glass token (whoami's `break_glass`). */
+let TOKEN = '';
+test.beforeAll(async () => {
+  TOKEN = await adminToken();
+});
 
+/** Signed out behind the page's back; this browser is Asahi (staff) at Discord. */
 async function signOutBehind(page: Page) {
-  expect((await page.request.post(`${ADMIN}/__mock/session`, { data: { method: 'none' } })).status()).toBe(204);
+  await dropSessions(page.context());
+  await useDiscordAccount(page.context());
 }
 
 test('signed out, a page sends you to sign in and back; a wrong token is refused inline', async ({ page }) => {
@@ -34,7 +40,7 @@ test('signed out, a page sends you to sign in and back; a wrong token is refused
   await field.fill(TOKEN);
   await page.getByRole('button', { name: 'Sign in with the token' }).click();
   await expect(page).toHaveURL(`${ADMIN}/fixed?sw=off`);
-  await expect(page.getByRole('heading', { level: 1 })).toHaveText('8 weekly timings');
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('9 weekly timings');
   await expect(page.locator('.account__name')).toHaveText('Break-glass token');
   await expect(page.getByText("Can't reach Kanade")).toHaveCount(0);
 });
@@ -77,8 +83,9 @@ test('Discord: each login_error comes back as a clear message on the sign-in pag
     await expect(page).toHaveURL(new RegExp(`/login\\?login_error=${code}`));
     await expect(page.getByRole('alert').filter({ hasText: words })).toBeVisible();
   }
-  // Through the flow itself: the server refuses the account as not staff.
-  await page.request.post(`${ADMIN}/__mock/discord`, { data: { error: 'forbidden' } });
+  // Through the flow itself: the server refuses the account as not staff
+  // (Plain is in the guild with no staff grant).
+  await useDiscordAccount(page.context(), 'ineligible');
   await page.getByRole('link', { name: 'Sign in with Discord' }).click();
   await expect(page).toHaveURL(/\/login\?login_error=forbidden/);
   await expect(page.getByRole('alert').filter({ hasText: "Your Discord account isn't recognised as a Kanade admin." })).toBeVisible();
@@ -91,12 +98,13 @@ test('the session method decides the proposal controls up front', async ({ page 
   await page.getByLabel('Admin token').fill(TOKEN);
   await page.getByRole('button', { name: 'Sign in with the token' }).click();
   const detail = page.locator('.inbox__detail');
-  await expect(detail.getByRole('heading', { level: 2 })).toContainText('Black Mage');
+  // The real queue opens on its first item, Kanade's new Limbo run.
+  await expect(detail.getByRole('heading', { level: 2 })).toContainText('Limbo');
   await expect(detail.getByRole('button', { name: 'Approve', exact: true })).toBeDisabled();
   await expect(detail).toContainText("Sign in with Discord to approve or reject Kanade's proposals.");
 
   // A Discord session decides them.
-  await page.request.post(`${ADMIN}/__mock/session`, { data: { method: 'discord' } });
+  await signInAdmin(page, 'discord');
   await page.goto(`${ADMIN}/inbox?sw=off`);
   await expect(detail.getByRole('button', { name: 'Approve', exact: true })).toBeEnabled();
 });
@@ -122,7 +130,7 @@ test("signed out, the sign-in page shows tonight's run without anyone's name", a
   await signOutBehind(page);
   await page.goto(`${ADMIN}/login?sw=off`);
   const strip = page.locator('.gate__tonight');
-  await expect(strip).toHaveText(/^\s*Tonight\s*22:00\s*Carling \+ Radiant Malefic Star\s*answered yes: 4\/7\s*$/);
+  await expect(strip).toHaveText(/^\s*Tonight\s*22:00\s*Karling \+ Radiant Malefic Star\s*answered yes: 4\/7\s*$/);
   const body = (await page.locator('.gate__body').innerText()).toLowerCase();
   for (const name of names) expect(body).not.toContain(name.toLowerCase());
   await expect(page.locator('.gate__body')).not.toContainText('#');

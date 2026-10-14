@@ -83,4 +83,9 @@ export const PORTED: readonly string[] = [
   'run-identity.spec.ts',
   'shell.spec.ts',
   'timings.spec.ts',
+  // Lane SpecPortP3.
+  'account.spec.ts',
+  'auth.spec.ts',
+  'masthead.spec.ts',
+  'public-answer.spec.ts',
 ];
