@@ -29,6 +29,35 @@ fn hash(fill: char) -> String {
     fill.to_string().repeat(64)
 }
 
+async fn load<S: WebSessionStore>(store: &S, id_hash: &str) -> Option<WebSession> {
+    store.load_session(id_hash).await.expect("load")
+}
+
+async fn prune<S: WebSessionStore>(
+    store: &S,
+    origin: SessionOrigin,
+    now: DateTime<Utc>,
+    idle_cutoff: DateTime<Utc>,
+) -> u64 {
+    let pruned = store.prune_sessions(origin, now, idle_cutoff).await;
+    pruned.expect("prune")
+}
+
+async fn rotate<S: WebSessionStore>(store: &S, new: &WebSession, old: &str, at: i64) -> bool {
+    let rotated = store.rotate_session(new, old, self::at(at)).await;
+    rotated.expect("rotate")
+}
+
+async fn listed<S: WebSessionStore>(
+    store: &S,
+    origin: SessionOrigin,
+    subject: &str,
+) -> Vec<String> {
+    let rows = store.subject_sessions(origin, LoginMethod::Discord, subject);
+    let rows = rows.await.expect("list");
+    rows.into_iter().map(|session| session.id_hash).collect()
+}
+
 pub fn session(fill: char, method: LoginMethod, subject: &str) -> WebSession {
     WebSession {
         id_hash: hash(fill),
@@ -53,7 +82,7 @@ async fn sessions_round_trip_and_rotate<S: WebSessionStore>(store: S) {
     first.device = Some("Firefox · macOS".into());
     store.put_session(&first, None).await.expect("put");
     assert_eq!(
-        store.load_session(&first.id_hash).await.expect("load"),
+        load(&store, &first.id_hash).await,
         Some(first.clone()),
         "round trip"
     );
@@ -64,18 +93,9 @@ async fn sessions_round_trip_and_rotate<S: WebSessionStore>(store: S) {
         .put_session(&rotated, Some(&first.id_hash))
         .await
         .expect("rotate");
-    assert_eq!(
-        store.load_session(&first.id_hash).await.expect("load"),
-        None
-    );
-    assert!(
-        store
-            .load_session(&rotated.id_hash)
-            .await
-            .expect("load")
-            .is_some()
-    );
-    assert_eq!(store.load_session(&hash('c')).await.expect("load"), None);
+    assert_eq!(load(&store, &first.id_hash).await, None);
+    assert!(load(&store, &rotated.id_hash).await.is_some());
+    assert_eq!(load(&store, &hash('c')).await, None);
 }
 
 async fn touch_delete_and_revoke_by_identity<S: WebSessionStore>(store: S) {
@@ -90,46 +110,27 @@ async fn touch_delete_and_revoke_by_identity<S: WebSessionStore>(store: S) {
             .await
             .expect("put");
     }
-    assert!(
-        store
-            .touch_session(&hash('a'), at(5), at(4))
-            .await
-            .expect("touch")
-    );
-    let touched = store.load_session(&hash('a')).await.expect("load").unwrap();
+    let touch = async |fill, seen, checked| {
+        let id_hash = hash(fill);
+        let touched = store.touch_session(&id_hash, at(seen), at(checked));
+        touched.await.expect("touch")
+    };
+    assert!(touch('a', 5, 4).await);
+    let touched = load(&store, &hash('a')).await.unwrap();
     assert_eq!((touched.last_seen_at, touched.checked_at), (at(5), at(4)));
-    assert!(
-        store
-            .touch_session(&hash('a'), at(3), at(6))
-            .await
-            .expect("older touch")
-    );
-    let touched = store.load_session(&hash('a')).await.expect("load").unwrap();
+    assert!(touch('a', 3, 6).await, "an older touch");
+    let touched = load(&store, &hash('a')).await.unwrap();
     assert_eq!((touched.last_seen_at, touched.checked_at), (at(5), at(6)));
-    assert!(
-        !store
-            .touch_session(&hash('e'), at(5), at(5))
-            .await
-            .expect("touch")
-    );
+    assert!(!touch('e', 5, 5).await);
 
-    let listed: Vec<String> = store
-        .subject_sessions(SessionOrigin::Admin, LoginMethod::Discord, "100")
-        .await
-        .expect("list")
-        .into_iter()
-        .map(|session| session.id_hash)
-        .collect();
     assert_eq!(
-        listed,
+        listed(&store, SessionOrigin::Admin, "100").await,
         [hash('a'), hash('b')],
         "one identity's sessions, oldest first"
     );
     assert!(
-        store
-            .subject_sessions(SessionOrigin::Public, LoginMethod::Discord, "100")
+        listed(&store, SessionOrigin::Public, "100")
             .await
-            .expect("list")
             .is_empty(),
         "never another origin's"
     );
@@ -142,21 +143,9 @@ async fn touch_delete_and_revoke_by_identity<S: WebSessionStore>(store: S) {
         2,
         "only that identity's sessions"
     );
-    assert_eq!(store.load_session(&hash('b')).await.expect("load"), None);
-    assert!(
-        store
-            .load_session(&hash('c'))
-            .await
-            .expect("load")
-            .is_some()
-    );
-    assert!(
-        store
-            .load_session(&hash('d'))
-            .await
-            .expect("load")
-            .is_some()
-    );
+    assert_eq!(load(&store, &hash('b')).await, None);
+    assert!(load(&store, &hash('c')).await.is_some());
+    assert!(load(&store, &hash('d')).await.is_some());
 
     assert!(store.delete_session(&hash('c')).await.expect("delete"));
     assert!(!store.delete_session(&hash('c')).await.expect("delete"));
@@ -173,20 +162,11 @@ async fn prune_removes_absolute_and_idle_expiries<S: WebSessionStore>(store: S) 
         store.put_session(session, None).await.expect("put");
     }
     assert_eq!(
-        store
-            .prune_sessions(SessionOrigin::Admin, at(10), at(5))
-            .await
-            .expect("prune"),
+        prune(&store, SessionOrigin::Admin, at(10), at(5)).await,
         2,
         "expiry at the instant and idle at or before the cutoff are pruned"
     );
-    assert!(
-        store
-            .load_session(&hash('c'))
-            .await
-            .expect("load")
-            .is_some()
-    );
+    assert!(load(&store, &hash('c')).await.is_some());
 }
 
 async fn prune_keeps_the_other_origin<S: WebSessionStore>(store: S) {
@@ -199,47 +179,23 @@ async fn prune_keeps_the_other_origin<S: WebSessionStore>(store: S) {
         store.put_session(session, None).await.expect("put");
     }
     assert_eq!(
-        store
-            .prune_sessions(SessionOrigin::Admin, at(10), at(5))
-            .await
-            .expect("admin prune"),
+        prune(&store, SessionOrigin::Admin, at(10), at(5)).await,
         1,
         "an admin prune never touches public rows"
     );
-    assert_eq!(
-        store.load_session(&admin.id_hash).await.expect("load"),
-        None
-    );
-    assert!(
-        store
-            .load_session(&public.id_hash)
-            .await
-            .expect("load")
-            .is_some()
-    );
+    assert_eq!(load(&store, &admin.id_hash).await, None);
+    assert!(load(&store, &public.id_hash).await.is_some());
 
     let mut admin = session('c', LoginMethod::Discord, "100");
     admin.last_seen_at = at(3);
     store.put_session(&admin, None).await.expect("put");
     assert_eq!(
-        store
-            .prune_sessions(SessionOrigin::Public, at(10), at(5))
-            .await
-            .expect("public prune"),
+        prune(&store, SessionOrigin::Public, at(10), at(5)).await,
         1,
         "a public prune never touches admin rows"
     );
-    assert_eq!(
-        store.load_session(&public.id_hash).await.expect("load"),
-        None
-    );
-    assert!(
-        store
-            .load_session(&admin.id_hash)
-            .await
-            .expect("load")
-            .is_some()
-    );
+    assert_eq!(load(&store, &public.id_hash).await, None);
+    assert!(load(&store, &admin.id_hash).await.is_some());
 }
 
 async fn replace_never_crosses_origins<S: WebSessionStore>(store: S) {
@@ -268,7 +224,7 @@ async fn replace_never_crosses_origins<S: WebSessionStore>(store: S) {
         ("the admin insert still lands", &new_admin),
     ] {
         assert_eq!(
-            store.load_session(&kept.id_hash).await.expect("load"),
+            load(&store, &kept.id_hash).await,
             Some(kept.clone()),
             "{case}"
         );
@@ -280,10 +236,7 @@ async fn replace_never_crosses_origins<S: WebSessionStore>(store: S) {
         "replacing another origin's id with itself is still a duplicate",
         store.put_session(&colliding, Some(&admin.id_hash)).await,
     );
-    assert_eq!(
-        store.load_session(&admin.id_hash).await.expect("load"),
-        Some(admin)
-    );
+    assert_eq!(load(&store, &admin.id_hash).await, Some(admin));
 }
 
 async fn rotation_keeps_the_old_id_for_its_grace<S: WebSessionStore>(store: S) {
@@ -304,7 +257,7 @@ async fn rotation_keeps_the_old_id_for_its_grace<S: WebSessionStore>(store: S) {
         store.rotate_session(&old, &old.id_hash, at(10)).await,
     );
     assert_eq!(
-        store.load_session(&old.id_hash).await.expect("load"),
+        load(&store, &old.id_hash).await,
         Some(old.clone()),
         "a refused rotation writes nothing"
     );
@@ -317,39 +270,16 @@ async fn rotation_keeps_the_old_id_for_its_grace<S: WebSessionStore>(store: S) {
             row
         }),
     ] {
-        assert!(
-            !store
-                .rotate_session(&other, &old.id_hash, at(10))
-                .await
-                .expect("rotate"),
-            "{case}"
-        );
-        assert_eq!(
-            store.load_session(&other.id_hash).await.expect("load"),
-            None,
-            "{case} writes nothing"
-        );
+        assert!(!rotate(&store, &other, &old.id_hash, 10).await, "{case}");
+        let written = load(&store, &other.id_hash).await;
+        assert_eq!(written, None, "{case} writes nothing");
     }
-    assert!(
-        !store
-            .rotate_session(&new, &hash('d'), at(10))
-            .await
-            .expect("rotate"),
-        "an unknown id"
-    );
+    assert!(!rotate(&store, &new, &hash('d'), 10).await, "an unknown id");
 
-    assert!(
-        store
-            .rotate_session(&new, &old.id_hash, at(10))
-            .await
-            .expect("rotate")
-    );
+    assert!(rotate(&store, &new, &old.id_hash, 10).await);
+    assert_eq!(load(&store, &new.id_hash).await, Some(new.clone()));
     assert_eq!(
-        store.load_session(&new.id_hash).await.expect("load"),
-        Some(new.clone())
-    );
-    assert_eq!(
-        store.load_session(&old.id_hash).await.expect("load"),
+        load(&store, &old.id_hash).await,
         None,
         "a superseded id is never a live session"
     );
@@ -357,27 +287,22 @@ async fn rotation_keeps_the_old_id_for_its_grace<S: WebSessionStore>(store: S) {
         superseded_until: Some(at(10)),
         ..old.clone()
     };
+    let grace = async |id_hash, minute| {
+        let row = store.load_superseded(id_hash, at(minute)).await;
+        row.expect("load")
+    };
     assert_eq!(
-        store
-            .load_superseded(&old.id_hash, at(9))
-            .await
-            .expect("load"),
+        grace(&old.id_hash, 9).await,
         Some(superseded),
         "readable within its grace"
     );
     assert_eq!(
-        store
-            .load_superseded(&old.id_hash, at(10))
-            .await
-            .expect("load"),
+        grace(&old.id_hash, 10).await,
         None,
         "the grace ends at superseded_until"
     );
     assert_eq!(
-        store
-            .load_superseded(&new.id_hash, at(9))
-            .await
-            .expect("load"),
+        grace(&new.id_hash, 9).await,
         None,
         "a live id is not superseded"
     );
@@ -389,56 +314,31 @@ async fn rotation_keeps_the_old_id_for_its_grace<S: WebSessionStore>(store: S) {
         "a superseded id is never touched"
     );
     assert!(
-        !store
-            .rotate_session(&public('c', "100"), &old.id_hash, at(20))
-            .await
-            .expect("rotate"),
+        !rotate(&store, &public('c', "100"), &old.id_hash, 20).await,
         "a superseded id never rotates again"
     );
-    let live: Vec<String> = store
-        .subject_sessions(SessionOrigin::Public, LoginMethod::Discord, "100")
-        .await
-        .expect("list")
-        .into_iter()
-        .map(|session| session.id_hash)
-        .collect();
     assert_eq!(
-        live,
+        listed(&store, SessionOrigin::Public, "100").await,
         [new.id_hash.clone()],
         "the session cap counts live ids"
     );
 
     assert_eq!(
-        store
-            .prune_sessions(SessionOrigin::Public, at(9), at(-1))
-            .await
-            .expect("prune"),
+        prune(&store, SessionOrigin::Public, at(9), at(-1)).await,
         0,
         "kept while its grace lasts"
     );
     assert_eq!(
-        store
-            .prune_sessions(SessionOrigin::Admin, at(10), at(-1))
-            .await
-            .expect("prune"),
+        prune(&store, SessionOrigin::Admin, at(10), at(-1)).await,
         0,
         "never by the other origin's prune"
     );
     assert_eq!(
-        store
-            .prune_sessions(SessionOrigin::Public, at(10), at(-1))
-            .await
-            .expect("prune"),
+        prune(&store, SessionOrigin::Public, at(10), at(-1)).await,
         1,
         "pruned once its grace is over"
     );
-    assert!(
-        store
-            .load_session(&new.id_hash)
-            .await
-            .expect("load")
-            .is_some()
-    );
+    assert!(load(&store, &new.id_hash).await.is_some());
     assert!(!store.delete_session(&old.id_hash).await.expect("delete"));
 }
 
@@ -514,15 +414,7 @@ async fn capped_put_holds_the_cap_per_identity<S: WebSessionStore>(store: S) {
         row.created_at = at(minute);
         row
     };
-    let live = async |store: &S| -> Vec<String> {
-        store
-            .subject_sessions(SessionOrigin::Public, LoginMethod::Discord, "100")
-            .await
-            .expect("list")
-            .into_iter()
-            .map(|row| row.id_hash)
-            .collect()
-    };
+    let live = async |store: &S| listed(store, SessionOrigin::Public, "100").await;
     let admin = session('4', LoginMethod::Discord, "100");
     let other_subject = public('5', "200", 0);
     let mut other_method = public('6', "100", 0);
@@ -541,19 +433,15 @@ async fn capped_put_holds_the_cap_per_identity<S: WebSessionStore>(store: S) {
         store.put_session(row, None).await.expect("put");
     }
     // A rotated-out id is not a live session and does not count.
-    assert!(
-        store
-            .rotate_session(&public('8', "100", 3), &hash('3'), at(10))
-            .await
-            .expect("rotate")
-    );
+    assert!(rotate(&store, &public('8', "100", 3), &hash('3'), 10).await);
 
     let capped = |fill: char, minute: i64| public(fill, "100", minute);
+    let put = async |row: &WebSession, replaces: Option<&str>, minute| {
+        let put = store.put_capped_session(row, replaces, 3, at(minute), at(-1));
+        put.await
+    };
     assert_eq!(
-        store
-            .put_capped_session(&capped('9', 5), None, 3, at(5), at(-1))
-            .await
-            .expect("capped put"),
+        put(&capped('9', 5), None, 5).await.expect("capped put"),
         1,
         "the oldest live session beyond max - 1 ends"
     );
@@ -567,14 +455,13 @@ async fn capped_put_holds_the_cap_per_identity<S: WebSessionStore>(store: S) {
         "a superseded id in its grace is kept"
     );
     assert_eq!(
-        store.load_session(&hash('7')).await.expect("load"),
+        load(&store, &hash('7')).await,
         None,
         "the origin is pruned in the same write"
     );
 
     assert_eq!(
-        store
-            .put_capped_session(&capped('a', 6), Some(&hash('8')), 3, at(6), at(-1))
+        put(&capped('a', 6), Some(&hash('8')), 6)
             .await
             .expect("capped put"),
         0,
@@ -583,8 +470,7 @@ async fn capped_put_holds_the_cap_per_identity<S: WebSessionStore>(store: S) {
     assert_eq!(live(&store).await, [hash('2'), hash('9'), hash('a')]);
 
     assert_eq!(
-        store
-            .put_capped_session(&capped('b', 7), Some(&admin.id_hash), 3, at(7), at(-1))
+        put(&capped('b', 7), Some(&admin.id_hash), 7)
             .await
             .expect("capped put"),
         1,
@@ -592,20 +478,10 @@ async fn capped_put_holds_the_cap_per_identity<S: WebSessionStore>(store: S) {
     );
     assert_eq!(live(&store).await, [hash('9'), hash('a'), hash('b')]);
 
-    refused_for(
-        "duplicate id hash",
-        store
-            .put_capped_session(&capped('b', 8), None, 3, at(8), at(-1))
-            .await,
-    );
+    refused_for("duplicate id hash", put(&capped('b', 8), None, 8).await);
     let mut superseded = capped('c', 8);
     superseded.superseded_until = Some(at(10));
-    refused_for(
-        "starts superseded",
-        store
-            .put_capped_session(&superseded, None, 3, at(8), at(-1))
-            .await,
-    );
+    refused_for("starts superseded", put(&superseded, None, 8).await);
     assert_eq!(
         live(&store).await,
         [hash('9'), hash('a'), hash('b')],
@@ -618,7 +494,7 @@ async fn capped_put_holds_the_cap_per_identity<S: WebSessionStore>(store: S) {
         ("another method", &other_method),
     ] {
         assert_eq!(
-            store.load_session(&kept.id_hash).await.expect("load"),
+            load(&store, &kept.id_hash).await,
             Some(kept.clone()),
             "{case}"
         );

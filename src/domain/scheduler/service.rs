@@ -2043,92 +2043,16 @@ mod digest_pins {
         }
     }
 
-    /// The request digests every attributed operation produced before the
-    /// `apply_op` refactor, from the same argument tuples.
-    pub(super) fn legacy() -> Vec<(&'static str, String)> {
-        let run_id = "r-1";
-        let scope = Scope::Weeks(vec![at()]);
-        let patch = FixedRunPatch {
-            note: Some("n".into()),
-            ..FixedRunPatch::default()
-        };
-        let changed = [FixedField::Note];
-        let remove = ["2".to_owned()];
-        let add = ["3".to_owned()];
-        let change = StatusChange {
-            status: RunStatus::Cancelled,
-            announce: true,
-            via_portal: false,
-        };
-        let request = FixedEditRequest {
-            fixed_id: "f-1".into(),
-            edit: FixedEdit {
-                note: Some("x".into()),
-                ..FixedEdit::default()
-            },
-            choices: FixedEditChoices::PerRun(BTreeMap::from([(
-                "r-1".to_owned(),
-                AmendedRunChoice::KeepForThisWeek,
-            )])),
-        };
-        vec![
-            ("add_fixed_run", digest("add_fixed_run", &new_fixed())),
-            ("create_run", digest("create_run", &new_run())),
-            ("materialise_week", digest("materialise_week", &scope)),
-            (
-                "set_run_status",
-                digest("set_run_status", &(run_id, RunStatus::Done)),
-            ),
-            (
-                "set_rsvp",
-                digest(
-                    "set_rsvp",
-                    &(run_id, "u-1", RsvpState::Yes, RsvpSource::Chat),
-                ),
-            ),
-            (
-                "apply_reaction",
-                digest("apply_reaction", &(run_id, "u-1", "\u{2705}", true)),
-            ),
-            (
-                "edit_fixed_run",
-                digest("edit_fixed_run", &("f-1", &patch, &changed[..], &scope)),
-            ),
-            (
-                "retire_fixed_run",
-                digest("retire_fixed_run", &("f-1", &scope)),
-            ),
-            (
-                "ensure_reminders",
-                digest("ensure_reminders", &(run_id, true)),
-            ),
-            (
-                "add_reminder",
-                digest("add_reminder", &(run_id, "day_of", at(), Some(at()))),
-            ),
-            (
-                "mark_reminder_sent",
-                digest("mark_reminder_sent", &("m-1", Some("5001"))),
-            ),
-            (
-                "reschedule_unposted_reminder",
-                digest("reschedule_unposted_reminder", &("m-1", at())),
-            ),
-            ("reconcile_day_of", digest("reconcile_day_of", &())),
-            ("mark_done", digest("mark_done", &())),
-            ("materialise_weeks", digest("materialise_weeks", &())),
-            ("set_status", digest("set_status", &(run_id, change))),
-            ("amend_run", digest("amend_run", &(run_id, at()))),
-            (
-                "swap_participants",
-                digest("swap_participants", &(run_id, &remove[..], &add[..], true)),
-            ),
-            ("apply_fixed_edit", digest("apply_fixed_edit", &request)),
-            ("reset_to_fixed", digest("reset_to_fixed", &run_id)),
-        ]
+    fn reminders() -> ReminderPolicy {
+        ReminderPolicy {
+            zone: chrono_tz::UTC,
+            ping_time: NaiveTime::from_hms_opt(9, 0, 0).unwrap(),
+            countdowns: vec![60],
+        }
     }
 
-    /// Captured from the service before `apply_op` existed.
+    /// Captured from the service before `apply_op` existed (from the same
+    /// argument tuples it hashed).
     const PINS: &[(&str, &str)] = &[
         (
             "add_fixed_run",
@@ -2212,15 +2136,6 @@ mod digest_pins {
         ),
     ];
 
-    #[test]
-    fn legacy_argument_tuples_match_the_pins() {
-        let legacy = legacy();
-        assert_eq!(legacy.len(), PINS.len());
-        for ((kind, digest), (pinned_kind, pinned)) in legacy.iter().zip(PINS) {
-            assert_eq!((*kind, digest.as_str()), (*pinned_kind, *pinned));
-        }
-    }
-
     /// An edit with expectations, pinned; declaration order is irrelevant.
     #[test]
     fn expectation_digests_are_pinned_and_order_free() {
@@ -2252,11 +2167,7 @@ mod digest_pins {
     fn op_digests_are_byte_identical_to_the_pre_refactor_ones() {
         use crate::domain::members::Roster;
 
-        let reminders = ReminderPolicy {
-            zone: chrono_tz::UTC,
-            ping_time: NaiveTime::from_hms_opt(9, 0, 0).unwrap(),
-            countdowns: vec![60],
-        };
+        let reminders = reminders();
         let schedule = SchedulePolicy::new(reminders.clone(), Weekday::Wed, NaiveTime::MIN);
         let roster = Roster::new();
         let week = WeekStart::new(&at(), chrono_tz::UTC).unwrap();
@@ -2436,12 +2347,7 @@ mod digest_pins {
     /// recorded before it existed still replay.
     #[test]
     fn the_materialising_create_digests_as_the_plain_create() {
-        let reminders = ReminderPolicy {
-            zone: chrono_tz::UTC,
-            ping_time: NaiveTime::from_hms_opt(9, 0, 0).unwrap(),
-            countdowns: vec![60],
-        };
-        let schedule = SchedulePolicy::new(reminders, Weekday::Wed, NaiveTime::MIN);
+        let schedule = SchedulePolicy::new(reminders(), Weekday::Wed, NaiveTime::MIN);
         let combined = Op::AddFixedRunMaterialised {
             new: new_fixed(),
             policy: &schedule,

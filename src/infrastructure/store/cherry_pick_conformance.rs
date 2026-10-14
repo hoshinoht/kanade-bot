@@ -116,6 +116,13 @@ async fn head<S: ScheduleStore + ChangeHistory>(service: &Service<S>) -> ChangeR
     service.store().history_head().await.expect("head")
 }
 
+/// The admin moves `run` to `to`.
+async fn move_run<S: ScheduleStore>(service: &mut Service<S>, run: &str, to: DateTime<Utc>) {
+    let policy = policy();
+    let moved = service.as_origin(admin()).amend_run(run, to, &policy);
+    moved.await.expect("amend");
+}
+
 /// `root` picks change `seq` into the boss week of `target` under `mode`.
 async fn pick<S: ScheduleStore + ChangeHistory + BlameIndex>(
     service: &mut Service<S>,
@@ -159,11 +166,7 @@ async fn a_slot_maps_to_the_same_local_time_across_spring_forward<
 ) {
     let (mut service, _fixed, runs) = fixture(store).await;
     // 20:00 GMT on 21 Mar moves to 21:00 GMT.
-    service
-        .as_origin(admin())
-        .amend_run(&runs[0], utc(3, 21, 21, 0), &policy())
-        .await
-        .expect("dst: source move");
+    move_run(&mut service, &runs[0], utc(3, 21, 21, 0)).await;
     let picked = head(&service).await;
     assert_eq!(
         datetime(&service, &runs[2]).await,
@@ -215,18 +218,10 @@ async fn strict_refuses_conflicts_and_force_is_bound_to_the_review<
     store: S,
 ) {
     let (mut service, _fixed, runs) = fixture(store).await;
-    service
-        .as_origin(admin())
-        .amend_run(&runs[0], utc(3, 21, 21, 0), &policy())
-        .await
-        .expect("conflict: source move");
+    move_run(&mut service, &runs[0], utc(3, 21, 21, 0)).await;
     let picked = head(&service).await;
     // The target was moved meanwhile: its slot is not the picked `before`.
-    service
-        .as_origin(admin())
-        .amend_run(&runs[1], utc(3, 28, 18, 0), &policy())
-        .await
-        .expect("conflict: target move");
+    move_run(&mut service, &runs[1], utc(3, 28, 18, 0)).await;
     let result = pick(&mut service, None, picked.seq, week(1), PickMode::Strict).await;
     let Err(PickError::Conflicts(conflicts)) = result else {
         panic!("conflict: expected Conflicts, got {result:?}");
@@ -239,11 +234,7 @@ async fn strict_refuses_conflicts_and_force_is_bound_to_the_review<
         .expect("conflict: preview")
         .force;
     // The target moves again after the review: the force is stale.
-    service
-        .as_origin(admin())
-        .amend_run(&runs[1], utc(3, 28, 17, 0), &policy())
-        .await
-        .expect("conflict: moved again");
+    move_run(&mut service, &runs[1], utc(3, 28, 17, 0)).await;
     let theirs = head(&service).await;
     let result = pick(
         &mut service,
@@ -368,11 +359,7 @@ async fn timings_and_one_off_runs_are_unsupported<
         })
         .await
         .expect("one-off");
-    service
-        .as_origin(admin())
-        .amend_run(&one_off, utc(3, 20, 21, 0), &policy())
-        .await
-        .expect("one-off move");
+    move_run(&mut service, &one_off, utc(3, 20, 21, 0)).await;
     let moved = head(&service).await;
     let result = pick(&mut service, None, moved.seq, week(1), PickMode::Strict).await;
     assert!(
@@ -473,11 +460,7 @@ async fn picks_are_idempotent_per_request_id<
     store: S,
 ) {
     let (mut service, _fixed, runs) = fixture(store).await;
-    service
-        .as_origin(admin())
-        .amend_run(&runs[0], utc(3, 21, 21, 0), &policy())
-        .await
-        .expect("idempotent: source move");
+    move_run(&mut service, &runs[0], utc(3, 21, 21, 0)).await;
     let picked = head(&service).await;
     let first = pick(
         &mut service,
@@ -571,11 +554,7 @@ async fn weeks_without_a_target_run_and_bad_weeks_are_refused<
     store: S,
 ) {
     let (mut service, fixed, runs) = fixture(store).await;
-    service
-        .as_origin(admin())
-        .amend_run(&runs[0], utc(3, 21, 21, 0), &policy())
-        .await
-        .expect("weeks: source move");
+    move_run(&mut service, &runs[0], utc(3, 21, 21, 0)).await;
     let picked = head(&service).await;
     let aim = |target: DateTime<Utc>| (picked.seq, target);
     for (target, check) in [
@@ -609,11 +588,7 @@ async fn previews_write_nothing<S: ScheduleStore + ChangeHistory + BlameIndex + 
     store: S,
 ) {
     let (mut service, _fixed, runs) = fixture(store).await;
-    service
-        .as_origin(admin())
-        .amend_run(&runs[0], utc(3, 21, 21, 0), &policy())
-        .await
-        .expect("preview: source move");
+    move_run(&mut service, &runs[0], utc(3, 21, 21, 0)).await;
     let picked = head(&service).await;
     let preview = service
         .preview_cherry_pick(picked.seq, week(2), &policy(), &roster())
@@ -697,11 +672,7 @@ async fn finished_and_otot_targets<
     store: S,
 ) {
     let (mut service, _fixed, runs) = fixture(store).await;
-    service
-        .as_origin(admin())
-        .amend_run(&runs[0], utc(3, 21, 21, 0), &policy())
-        .await
-        .expect("finished: source move");
+    move_run(&mut service, &runs[0], utc(3, 21, 21, 0)).await;
     let moved = head(&service).await;
     let set = |status: RunStatus| StatusChange {
         status,
@@ -960,11 +931,7 @@ async fn a_shifted_source_slot_is_not_a_conflict<
     let (source, target) = (run_in(1), run_in(2));
     assert_eq!(target.datetime, utc(4, 5, 0, 30), "shifted: 01:30 BST");
     // 04:00 BST on 29 Mar.
-    service
-        .as_origin(admin())
-        .amend_run(&source.id, utc(3, 29, 3, 0), &policy())
-        .await
-        .expect("shifted: source move");
+    move_run(&mut service, &source.id, utc(3, 29, 3, 0)).await;
     let moved = head(&service).await;
     pick(&mut service, None, moved.seq, week(2), PickMode::Strict)
         .await
@@ -1139,17 +1106,9 @@ async fn conflicted<S: ScheduleStore + ChangeHistory + BlameIndex>(
     store: S,
 ) -> (S, [String; 3], ChangeRef) {
     let (mut service, _fixed, runs) = fixture(store).await;
-    service
-        .as_origin(admin())
-        .amend_run(&runs[0], utc(3, 21, 21, 0), &policy())
-        .await
-        .expect("race: source move");
+    move_run(&mut service, &runs[0], utc(3, 21, 21, 0)).await;
     let picked = head(&service).await;
-    service
-        .as_origin(admin())
-        .amend_run(&runs[1], utc(3, 28, 18, 0), &policy())
-        .await
-        .expect("race: target move");
+    move_run(&mut service, &runs[1], utc(3, 28, 18, 0)).await;
     (service.into_store(), runs, picked)
 }
 

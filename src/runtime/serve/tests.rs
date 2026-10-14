@@ -282,12 +282,18 @@ async fn model_gateway(listing: serde_json::Value) -> String {
 
 /// The model report lines only.
 async fn compose_and_report(config: &ServeConfig) -> Vec<serde_json::Value> {
-    let mut lines = compose_lines(config).await;
+    let (_, mut lines) = compose_context(config).await;
     lines.retain(|line| !line["event"].as_str().unwrap_or("").starts_with("persona_"));
     lines
 }
 
-async fn compose_lines(config: &ServeConfig) -> Vec<serde_json::Value> {
+/// The composed context settings and every line logged while composing.
+async fn compose_context(
+    config: &ServeConfig,
+) -> (
+    crate::domain::settings::ContextSettings,
+    Vec<serde_json::Value>,
+) {
     let store = store::open(&config.store).await.unwrap();
     let health = LiveHealth::new(store.clone());
     crate::runtime::logging::capture();
@@ -301,15 +307,16 @@ async fn compose_lines(config: &ServeConfig) -> Vec<serde_json::Value> {
     .unwrap();
     composition.model_tasks.report_done().await;
     let lines = crate::runtime::logging::captured();
+    let context = composition.settings.models.context.clone();
     drop(composition);
     store::close(store, Duration::ZERO).await;
-    lines
+    (context, lines)
 }
 
 #[tokio::test]
 async fn compose_logs_the_persona_selection() {
     let temp = Temp::new();
-    let lines = compose_lines(&temp.config(&[])).await;
+    let (_, lines) = compose_context(&temp.config(&[])).await;
     let persona = lines
         .iter()
         .find(|line| line["event"] == "persona_selected" || line["event"] == "persona_unavailable")
@@ -464,32 +471,6 @@ async fn compose_logs_a_degraded_listing_and_disabled_models() {
         lines,
         [serde_json::json!({"level": "INFO", "event": "models_disabled"})]
     );
-}
-
-/// The composed context settings and every line logged while composing.
-async fn compose_context(
-    config: &ServeConfig,
-) -> (
-    crate::domain::settings::ContextSettings,
-    Vec<serde_json::Value>,
-) {
-    let store = store::open(&config.store).await.unwrap();
-    let health = LiveHealth::new(store.clone());
-    crate::runtime::logging::capture();
-    let mut composition = api::compose(
-        config,
-        store.clone(),
-        Arc::new(StaticChannels(Vec::new())),
-        health,
-    )
-    .await
-    .unwrap();
-    composition.model_tasks.report_done().await;
-    let lines = crate::runtime::logging::captured();
-    let context = composition.settings.models.context.clone();
-    drop(composition);
-    store::close(store, Duration::ZERO).await;
-    (context, lines)
 }
 
 #[tokio::test]
