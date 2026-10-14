@@ -45,3 +45,62 @@
     12px 0 0 currentcolor,
     24px 0 0 currentcolor;
 }
+
+// M3E row tables (Week › Runs, Limits, Reminders): each row a card 2 px from
+// the next, under sticky mono column heads on the pane.
+@mixin row-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0 2px;
+  font-size: var(--fs-body-sm);
+}
+
+@mixin row-table-head {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 8px 10px;
+  border: 0;
+  background: var(--pane);
+  color: var(--dim-text);
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-align: left;
+  text-transform: uppercase;
+  box-shadow: none;
+}
+
+// Every cell on the row's middle line.
+@mixin row-table-cell {
+  height: 44px;
+  padding: 0 10px;
+  border: 0;
+  background: var(--row);
+  font-weight: inherit;
+  text-align: left;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+// The open row (on the row's own selector): the selection fill, its edge
+// drawn round the row's rounder ends.
+@mixin row-table-active {
+  > *,
+  &:hover > * {
+    background: var(--select);
+    box-shadow: inset 0 1.5px 0 var(--select-edge), inset 0 -1.5px 0 var(--select-edge);
+    --dim: var(--dim-text);
+  }
+
+  > :first-child {
+    border-radius: 18px 0 0 18px;
+    box-shadow: inset 1.5px 1.5px 0 var(--select-edge), inset 0 -1.5px 0 var(--select-edge);
+  }
+
+  > :last-child {
+    border-radius: 0 18px 18px 0;
+    box-shadow: inset -1.5px 1.5px 0 var(--select-edge), inset 0 -1.5px 0 var(--select-edge);
+  }
+}
