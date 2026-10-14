@@ -36,6 +36,8 @@
  * ever *defined* in there -- a token missing from a dark block falls back to
  * something real rather than to nothing.
  */
+@use "sass:list";
+@use "sass:map";
 
 :root {
   color-scheme: light dark;
@@ -409,15 +411,14 @@
  * override is a preference like the colourway -- stored in this browser, read
  * by `@kanade/ui/theme-boot.js` into `data-theme` before first paint.
  *
- * That takes two rules for one night face, and they are written out twice
- * below. The alternative is resolving the media query in JavaScript and
- * stamping `data-theme` always, which would mean a browser with the script off
- * had no way to be dark at all -- exactly the degradation this portal refuses
- * everywhere else. So: this block, guarded with `:not([data-theme="light"])`
- * so an explicit light beats a dark device, and its twin below for an explicit
- * dark on a light device.
- *
- *      >>> THE TWO DARK BLOCKS ARE COPIES. CHANGE ONE, CHANGE THE OTHER. <<<
+ * That takes two rules for one night face: the values are written once below
+ * (`night` and `$night-faces`) and emitted under both selectors. The
+ * alternative is resolving the media query in JavaScript and stamping
+ * `data-theme` always, which would mean a browser with the script off had no
+ * way to be dark at all -- exactly the degradation this portal refuses
+ * everywhere else. So: the media query, guarded with
+ * `:not([data-theme="light"])` so an explicit light beats a dark device, and
+ * its twin after it for an explicit dark on a light device.
  *
  * Specificity, which is what makes the three states resolve in the right
  * order: light `:root` and `[data-colorway]` are (0,1,0); a dark default,
@@ -425,259 +426,11 @@
  * The two dark spellings tie with each other and carry the same values, so the
  * tie never shows.
  *
- * Only overrides live in here. `:root` carries marigold's night face and the
- * two shared signal colours; each colourway then restates its own eleven, so
+ * Only overrides live in here. `night` carries marigold's night face and the
+ * shared signal colours; each colourway then restates its own eleven, so
  * every one of them is fully described in both faces. */
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
-    --ground: #232735;
-    --surface: #303648;
-    --ink: #ece4cd;
-    --dim: #b0ab97;
-    --line: #454b60;
-    --win: #4f5871;
-    --win-ink: #ece4cd;
-    /* Gold takes over at night: the ground it had to stand out from is gone. */
-    --accent: #e9c25e;
-    --accent-ink: #2a2410;
-    --ok: #7cc79f;
-    --risk: #ef8b8b;
 
-    --warn: #e2a44f;
-    --own: #8ab8e6;
-
-    --pill-e-bg: #aeb3bd;
-    --pill-e-fg: #16181d;
-    --pill-n-bg: #3aa7c9;
-    --pill-n-fg: #06222b;
-    --pill-h-bg: #e8579a;
-    --pill-h-fg: #2b0716;
-    --pill-c-bg: #0e0d12;
-    --pill-c-fg: #f5b452;
-    --pill-x-bg: #0e0d12;
-    --pill-x-fg: #ff7050;
-    --pill-champion-bg: #f08a3c;
-    --pill-champion-fg: #2b1204;
-    --pill-destiny-bg: #0e0d12;
-    --pill-destiny-fg: #ffffff;
-    --pill-destiny-edge: #8c8796;
-
-    --guide-red: #4d2629;
-    --guide-red-ink: #ffcdc8;
-    --guide-yellow: #473b18;
-    --guide-yellow-ink: #f5dc94;
-    --guide-green: #1f3e31;
-    --guide-green-ink: #b7e7cb;
-    --guide-blue: #1d3746;
-    --guide-blue-ink: #b9ddf0;
-    --guide-neutral: #3c4152;
-    --guide-neutral-ink: #ece4cd;
-    --guide-risk: #e4857b;
-    --guide-risk-ink: #2b0b08;
-    --guide-safe: #2b5242;
-    --guide-safe-ink: #d4f3e1;
-
-    --mono-s: 32%;
-    --mono-l: 24%;
-    --mono-ink-s: 65%;
-    --mono-ink-l: 78%;
-    --mono-line-s: 28%;
-    --mono-line-l: 34%;
-
-    --shadow: 0 2px 0 rgb(0 0 0 / 32%), 0 16px 30px -24px rgb(0 0 0 / 85%);
-    --row-lift: color-mix(in srgb, var(--ink) 10%, var(--surface));
-  }
-
-  :root:not([data-theme="light"])[data-colorway="blossom"] {
-    --ground: #322629;
-    --surface: #423236;
-    --ink: #f0e3e2;
-    --dim: #b09aa0;
-    --line: #5a464c;
-    --win: #7d5f66;
-    --win-ink: #f0e3e2;
-    --accent: #f29db4;
-    --accent-ink: #401f2a;
-    --ok: #8cccab;
-    --risk: #ee8f85;
-  }
-
-  :root:not([data-theme="light"])[data-colorway="periwinkle"] {
-    --ground: #262c3a;
-    --surface: #343d4e;
-    --ink: #e7ebf2;
-    --dim: #9aa3b5;
-    --line: #465063;
-    --win: #5d6981;
-    --win-ink: #e7ebf2;
-    --accent: #a8bcf0;
-    --accent-ink: #1c2438;
-    --ok: #83c8a8;
-    --risk: #ef8f93;
-  }
-
-  :root:not([data-theme="light"])[data-colorway="twilight"] {
-    --ground: #2a2436;
-    --surface: #383045;
-    --ink: #eae4f0;
-    --dim: #a49bb3;
-    --line: #4c4260;
-    --win: #5b4f73;
-    --win-ink: #eae4f0;
-    --accent: #b9a4ec;
-    --accent-ink: #241a3a;
-    --ok: #86c9a8;
-    --risk: #ef8b95;
-  }
-
-  :root:not([data-theme="light"])[data-colorway="hoshino"] {
-    --ground: #171a22;
-    --surface: #2a2d35;
-    --ink: #ffffff;
-    --dim: #aaacb7;
-    --line: #484a54;
-    --win: #383b44;
-    --win-ink: #e6e9f2;
-    --accent: #ffb8d1;
-    --accent-ink: #171a22;
-    --ok: #9be6b5;
-    --risk: #ff8f9a;
-  }
-
-  :root:not([data-theme="light"])[data-colorway="mika"] {
-    --ground: #1f1a24;
-    --surface: #2e2834;
-    --ink: #f1e6ee;
-    --dim: #b3a1ae;
-    --line: #4a3f50;
-    --win: #3f4370;
-    --win-ink: #f1e6ee;
-    --accent: #f3c75f;
-    --accent-ink: #2c2208;
-    --ok: #8fdcab;
-    --risk: #ff8e9e;
-  }
-
-  :root:not([data-theme="light"])[data-colorway="seia"] {
-    --ground: #1c1a1f;
-    --surface: #2c2a31;
-    --ink: #f2ece0;
-    --dim: #b8ae9e;
-    --line: #48443f;
-    --win: #514a42;
-    --win-ink: #f2ece0;
-    --accent: #f6c39f;
-    --accent-ink: #2e2510;
-    --ok: #8fd6a6;
-    --risk: #ff9098;
-  }
-
-  :root:not([data-theme="light"])[data-colorway="hina"] {
-    --ground: #141217;
-    --surface: #232029;
-    --ink: #ece9f1;
-    --dim: #ada6b9;
-    --line: #3d3846;
-    --win: #3a3242;
-    --win-ink: #ece9f1;
-    --accent: #d9a6ec;
-    --accent-ink: #2a1233;
-    --ok: #8fd6a6;
-    --risk: #ff8a8f;
-  }
-
-  :root:not([data-theme="light"])[data-colorway="aris"] {
-    --ground: #111419;
-    --surface: #1e232b;
-    --ink: #e8eef4;
-    --dim: #a7b2bf;
-    --line: #36404c;
-    --win: #2e3742;
-    --win-ink: #e8eef4;
-    --accent: #6fd0f5;
-    --accent-ink: #04222f;
-    --ok: #8fd6a6;
-    --risk: #ff9098;
-  }
-
-  :root:not([data-theme="light"])[data-colorway="catppuccin"] {
-    --ground: #11111b;
-    --surface: #1e1e2e;
-    --ink: #cdd6f4;
-    --dim: #9399b2;
-    --line: #313244;
-    --win: #181825;
-    --win-ink: #cdd6f4;
-    --accent: #cba6f7;
-    --accent-ink: #11111b;
-    --ok: #a6e3a1;
-    --risk: #f38ba8;
-  }
-
-  :root:not([data-theme="light"])[data-colorway="tokyonight"] {
-    --ground: #0c0e14;
-    --surface: #1a1b26;
-    --ink: #c0caf5;
-    --dim: #888eb0;
-    --line: #3b4261;
-    --win: #292e42;
-    --win-ink: #c0caf5;
-    --accent: #7aa2f7;
-    --accent-ink: #16161e;
-    --ok: #9ece6a;
-    --risk: #f7768e;
-  }
-
-  :root:not([data-theme="light"])[data-colorway="github"] {
-    --ground: #010409;
-    --surface: #0d1117;
-    --ink: #f0f6fc;
-    --dim: #9198a1;
-    --line: #3d444d;
-    --win: #151b23;
-    --win-ink: #f0f6fc;
-    --accent: #4493f8;
-    --accent-ink: #0d1117;
-    --ok: #3fb950;
-    --risk: #f85149;
-  }
-
-  :root:not([data-theme="light"])[data-colorway="dynamic"] {
-    --ground: var(--dyn-ground-d, #232735);
-    --surface: var(--dyn-surface-d, #303648);
-    --ink: var(--dyn-ink-d, #ece4cd);
-    --dim: var(--dyn-dim-d, #b4ae9a);
-    --line: var(--dyn-line-d, #454b60);
-    --win: var(--dyn-win-d, #4f5871);
-    --win-ink: var(--dyn-win-ink-d, #ece4cd);
-    --accent: var(--dyn-accent-d, #e9c25e);
-    --accent-ink: var(--dyn-accent-ink-d, #2a2410);
-    --ok: var(--dyn-ok-d, #7cc79f);
-    --risk: var(--dyn-risk-d, #ef8b8b);
-  }
-}
-
-/* ── the same night, asked for rather than inherited ─────────────────────────
- *
- *      >>> COPIES OF THE BLOCK ABOVE. CHANGE ONE, CHANGE THE OTHER. <<<
- *
- * Everything below this line is the same eleven-plus tokens as the media query
- * carries, under the selector that means "this reader said dark" rather than
- * "this device says dark". Nothing new is introduced here; if a token needs a
- * different value at night, it needs it in both places. */
-
-/* Said light: nothing to override -- the light values are already on `:root`
-   and the media query above has excluded itself. Only the browser's own
-   furniture still has to be told. */
-:root[data-theme="light"] {
-  color-scheme: light;
-}
-
-:root[data-theme="dark"] {
-  /* Scrollbars, form controls and the canvas behind the page, which otherwise
-     stay light on a light device and give the window a white halo. */
-  color-scheme: dark;
-
+@mixin night {
   --ground: #232735;
   --surface: #303648;
   --ink: #ece4cd;
@@ -685,6 +438,7 @@
   --line: #454b60;
   --win: #4f5871;
   --win-ink: #ece4cd;
+  /* Gold takes over at night: the ground it had to stand out from is gone. */
   --accent: #e9c25e;
   --accent-ink: #2a2410;
   --ok: #7cc79f;
@@ -735,171 +489,69 @@
   --row-lift: color-mix(in srgb, var(--ink) 10%, var(--surface));
 }
 
-:root[data-theme="dark"][data-colorway="blossom"] {
-  --ground: #322629;
-  --surface: #423236;
-  --ink: #f0e3e2;
-  --dim: #b09aa0;
-  --line: #5a464c;
-  --win: #7d5f66;
-  --win-ink: #f0e3e2;
-  --accent: #f29db4;
-  --accent-ink: #401f2a;
-  --ok: #8cccab;
-  --risk: #ee8f85;
+/* Each colourway's night face: its eleven anchors, in `$anchors` order. */
+$anchors: ground, surface, ink, dim, line, win, win-ink, accent, accent-ink, ok, risk;
+$night-faces: (
+  blossom: #322629 #423236 #f0e3e2 #b09aa0 #5a464c #7d5f66 #f0e3e2 #f29db4 #401f2a #8cccab #ee8f85,
+  periwinkle: #262c3a #343d4e #e7ebf2 #9aa3b5 #465063 #5d6981 #e7ebf2 #a8bcf0 #1c2438 #83c8a8 #ef8f93,
+  twilight: #2a2436 #383045 #eae4f0 #a49bb3 #4c4260 #5b4f73 #eae4f0 #b9a4ec #241a3a #86c9a8 #ef8b95,
+  hoshino: #171a22 #2a2d35 #ffffff #aaacb7 #484a54 #383b44 #e6e9f2 #ffb8d1 #171a22 #9be6b5 #ff8f9a,
+  mika: #1f1a24 #2e2834 #f1e6ee #b3a1ae #4a3f50 #3f4370 #f1e6ee #f3c75f #2c2208 #8fdcab #ff8e9e,
+  seia: #1c1a1f #2c2a31 #f2ece0 #b8ae9e #48443f #514a42 #f2ece0 #f6c39f #2e2510 #8fd6a6 #ff9098,
+  hina: #141217 #232029 #ece9f1 #ada6b9 #3d3846 #3a3242 #ece9f1 #d9a6ec #2a1233 #8fd6a6 #ff8a8f,
+  aris: #111419 #1e232b #e8eef4 #a7b2bf #36404c #2e3742 #e8eef4 #6fd0f5 #04222f #8fd6a6 #ff9098,
+  catppuccin: #11111b #1e1e2e #cdd6f4 #9399b2 #313244 #181825 #cdd6f4 #cba6f7 #11111b #a6e3a1 #f38ba8,
+  tokyonight: #0c0e14 #1a1b26 #c0caf5 #888eb0 #3b4261 #292e42 #c0caf5 #7aa2f7 #16161e #9ece6a #f7768e,
+  github: #010409 #0d1117 #f0f6fc #9198a1 #3d444d #151b23 #f0f6fc #4493f8 #0d1117 #3fb950 #f85149,
+  // Dynamic: the `--dyn-*-d` properties, with these as the fallback.
+  dynamic: #232735 #303648 #ece4cd #b4ae9a #454b60 #4f5871 #ece4cd #e9c25e #2a2410 #7cc79f #ef8b8b,
+);
+
+@mixin night-face($way) {
+  $values: map.get($night-faces, $way);
+  @for $i from 1 through list.length($anchors) {
+    $anchor: list.nth($anchors, $i);
+    @if $way == dynamic {
+      --#{$anchor}: var(--dyn-#{$anchor}-d, #{list.nth($values, $i)});
+    } @else {
+      --#{$anchor}: #{list.nth($values, $i)};
+    }
+  }
 }
 
-:root[data-theme="dark"][data-colorway="periwinkle"] {
-  --ground: #262c3a;
-  --surface: #343d4e;
-  --ink: #e7ebf2;
-  --dim: #9aa3b5;
-  --line: #465063;
-  --win: #5d6981;
-  --win-ink: #e7ebf2;
-  --accent: #a8bcf0;
-  --accent-ink: #1c2438;
-  --ok: #83c8a8;
-  --risk: #ef8f93;
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    @include night;
+  }
+
+  @each $way, $_ in $night-faces {
+    :root:not([data-theme="light"])[data-colorway="#{$way}"] {
+      @include night-face($way);
+    }
+  }
 }
 
-:root[data-theme="dark"][data-colorway="twilight"] {
-  --ground: #2a2436;
-  --surface: #383045;
-  --ink: #eae4f0;
-  --dim: #a49bb3;
-  --line: #4c4260;
-  --win: #5b4f73;
-  --win-ink: #eae4f0;
-  --accent: #b9a4ec;
-  --accent-ink: #241a3a;
-  --ok: #86c9a8;
-  --risk: #ef8b95;
+/* ── the same night, asked for rather than inherited ─────────────────────────
+ *
+ * The same tokens as the media query carries, under the selector that means
+ * "this reader said dark" rather than "this device says dark". */
+
+/* Said light: nothing to override -- the light values are already on `:root`
+   and the media query above has excluded itself. Only the browser's own
+   furniture still has to be told. */
+:root[data-theme="light"] {
+  color-scheme: light;
 }
 
-:root[data-theme="dark"][data-colorway="hoshino"] {
-  --ground: #171a22;
-  --surface: #2a2d35;
-  --ink: #ffffff;
-  --dim: #aaacb7;
-  --line: #484a54;
-  --win: #383b44;
-  --win-ink: #e6e9f2;
-  --accent: #ffb8d1;
-  --accent-ink: #171a22;
-  --ok: #9be6b5;
-  --risk: #ff8f9a;
+:root[data-theme="dark"] {
+  /* Scrollbars, form controls and the canvas behind the page, which otherwise
+     stay light on a light device and give the window a white halo. */
+  color-scheme: dark;
+  @include night;
 }
 
-:root[data-theme="dark"][data-colorway="mika"] {
-  --ground: #1f1a24;
-  --surface: #2e2834;
-  --ink: #f1e6ee;
-  --dim: #b3a1ae;
-  --line: #4a3f50;
-  --win: #3f4370;
-  --win-ink: #f1e6ee;
-  --accent: #f3c75f;
-  --accent-ink: #2c2208;
-  --ok: #8fdcab;
-  --risk: #ff8e9e;
+@each $way, $_ in $night-faces {
+  :root[data-theme="dark"][data-colorway="#{$way}"] {
+    @include night-face($way);
+  }
 }
-
-:root[data-theme="dark"][data-colorway="seia"] {
-  --ground: #1c1a1f;
-  --surface: #2c2a31;
-  --ink: #f2ece0;
-  --dim: #b8ae9e;
-  --line: #48443f;
-  --win: #514a42;
-  --win-ink: #f2ece0;
-  --accent: #f6c39f;
-  --accent-ink: #2e2510;
-  --ok: #8fd6a6;
-  --risk: #ff9098;
-}
-
-:root[data-theme="dark"][data-colorway="hina"] {
-  --ground: #141217;
-  --surface: #232029;
-  --ink: #ece9f1;
-  --dim: #ada6b9;
-  --line: #3d3846;
-  --win: #3a3242;
-  --win-ink: #ece9f1;
-  --accent: #d9a6ec;
-  --accent-ink: #2a1233;
-  --ok: #8fd6a6;
-  --risk: #ff8a8f;
-}
-
-:root[data-theme="dark"][data-colorway="aris"] {
-  --ground: #111419;
-  --surface: #1e232b;
-  --ink: #e8eef4;
-  --dim: #a7b2bf;
-  --line: #36404c;
-  --win: #2e3742;
-  --win-ink: #e8eef4;
-  --accent: #6fd0f5;
-  --accent-ink: #04222f;
-  --ok: #8fd6a6;
-  --risk: #ff9098;
-}
-
-:root[data-theme="dark"][data-colorway="catppuccin"] {
-  --ground: #11111b;
-  --surface: #1e1e2e;
-  --ink: #cdd6f4;
-  --dim: #9399b2;
-  --line: #313244;
-  --win: #181825;
-  --win-ink: #cdd6f4;
-  --accent: #cba6f7;
-  --accent-ink: #11111b;
-  --ok: #a6e3a1;
-  --risk: #f38ba8;
-}
-
-:root[data-theme="dark"][data-colorway="tokyonight"] {
-  --ground: #0c0e14;
-  --surface: #1a1b26;
-  --ink: #c0caf5;
-  --dim: #888eb0;
-  --line: #3b4261;
-  --win: #292e42;
-  --win-ink: #c0caf5;
-  --accent: #7aa2f7;
-  --accent-ink: #16161e;
-  --ok: #9ece6a;
-  --risk: #f7768e;
-}
-
-:root[data-theme="dark"][data-colorway="github"] {
-  --ground: #010409;
-  --surface: #0d1117;
-  --ink: #f0f6fc;
-  --dim: #9198a1;
-  --line: #3d444d;
-  --win: #151b23;
-  --win-ink: #f0f6fc;
-  --accent: #4493f8;
-  --accent-ink: #0d1117;
-  --ok: #3fb950;
-  --risk: #f85149;
-}
-
-:root[data-theme="dark"][data-colorway="dynamic"] {
-  --ground: var(--dyn-ground-d, #232735);
-  --surface: var(--dyn-surface-d, #303648);
-  --ink: var(--dyn-ink-d, #ece4cd);
-  --dim: var(--dyn-dim-d, #b4ae9a);
-  --line: var(--dyn-line-d, #454b60);
-  --win: var(--dyn-win-d, #4f5871);
-  --win-ink: var(--dyn-win-ink-d, #ece4cd);
-  --accent: var(--dyn-accent-d, #e9c25e);
-  --accent-ink: var(--dyn-accent-ink-d, #2a2410);
-  --ok: var(--dyn-ok-d, #7cc79f);
-  --risk: var(--dyn-risk-d, #ef8b8b);
-}
-

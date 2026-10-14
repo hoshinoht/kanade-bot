@@ -2,6 +2,8 @@
 // "Filters (n)" popover; one day-grouped table on the pane surface, 44 px
 // row cards; a 30 px footer. Only the table region scrolls.
 
+@use "../core/mixins" as *;
+
 .reminders-window {
   display: flex;
   flex-direction: column;
@@ -83,28 +85,12 @@
 }
 
 .reminders-table {
-  width: 100%;
-  border-collapse: separate;
-  border-spacing: 0 2px;
-  font-size: var(--fs-body-sm);
+  @include row-table;
 }
 
 .reminders-table th[scope="col"] {
-  position: sticky;
-  top: 0;
-  z-index: 1;
-  padding: 8px 10px;
-  border: 0;
-  background: var(--pane);
-  color: var(--dim-text);
-  font-family: var(--mono);
-  font-size: var(--fs-micro);
-  font-weight: 600;
+  @include row-table-head;
   line-height: 1.2;
-  letter-spacing: 0.1em;
-  text-align: left;
-  text-transform: uppercase;
-  box-shadow: none;
 }
 
 // A day's label row (mockup `tr.grp`): on the pane, no card.
@@ -129,14 +115,7 @@
 
 .reminder > td,
 .reminder > th {
-  height: 44px;
-  padding: 0 10px;
-  border: 0;
-  background: var(--row);
-  font-weight: inherit;
-  text-align: left;
-  vertical-align: middle;
-  white-space: nowrap;
+  @include row-table-cell;
 }
 
 .reminder > :first-child { border-radius: 6px 0 0 6px; }
@@ -149,21 +128,8 @@
 }
 
 // The open preview's row: the selection fill and edge (as Week's runs table).
-.reminder--active > *,
-.reminder--active:hover > * {
-  background: var(--select);
-  box-shadow: inset 0 1.5px 0 var(--select-edge), inset 0 -1.5px 0 var(--select-edge);
-  --dim: var(--dim-text);
-}
-
-.reminder--active > :first-child {
-  border-radius: 18px 0 0 18px;
-  box-shadow: inset 1.5px 1.5px 0 var(--select-edge), inset 0 -1.5px 0 var(--select-edge);
-}
-
-.reminder--active > :last-child {
-  border-radius: 0 18px 18px 0;
-  box-shadow: inset -1.5px 1.5px 0 var(--select-edge), inset 0 -1.5px 0 var(--select-edge);
+.reminder--active {
+  @include row-table-active;
 }
 
 .reminder__open {

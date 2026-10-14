@@ -2,6 +2,10 @@
 // screen partial can @use this without duplicating rules. A screen that needs
 // a primitive on its own element includes it here instead of re-declaring it.
 
+// A live run status and the signal colour token it wears (`--warn`, `--ok`,
+// `--risk`, `--own`, and their `-text` variants); cancelled and done are quiet.
+$status-tones: (planned: warn, confirmed: ok, at_risk: risk, otot: own);
+
 // Visually hidden, still in the accessibility tree (the `.vh` class's rules).
 @mixin hide-visually {
   position: absolute;
@@ -13,6 +17,20 @@
   clip-path: inset(50%);
   white-space: nowrap;
   border: 0;
+}
+
+// A list used for structure: no bullets, no indent of its own.
+@mixin list-reset {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+// One line, cut with an ellipsis.
+@mixin ellipsis {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 // The three dots every window's title bar wears (the mockups' 8 px dots, 4
@@ -30,4 +48,89 @@
   box-shadow:
     12px 0 0 currentcolor,
     24px 0 0 currentcolor;
+}
+
+// A pill tab inside a pane (mockup `.ptab`: the run pane, Extractions, Config).
+@mixin pill-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 30px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 15px;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: var(--fs-small);
+  font-weight: 600;
+  cursor: pointer;
+
+  &:hover {
+    background: var(--row-hover);
+  }
+
+  &[aria-selected="true"] {
+    background: var(--select);
+    color: var(--select-ink);
+  }
+}
+
+// M3E row tables (Week › Runs, Limits, Reminders): each row a card 2 px from
+// the next, under sticky mono column heads on the pane.
+@mixin row-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0 2px;
+  font-size: var(--fs-body-sm);
+}
+
+@mixin row-table-head {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 8px 10px;
+  border: 0;
+  background: var(--pane);
+  color: var(--dim-text);
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-align: left;
+  text-transform: uppercase;
+  box-shadow: none;
+}
+
+// Every cell on the row's middle line.
+@mixin row-table-cell {
+  height: 44px;
+  padding: 0 10px;
+  border: 0;
+  background: var(--row);
+  font-weight: inherit;
+  text-align: left;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+// The open row (on the row's own selector): the selection fill, its edge
+// drawn round the row's rounder ends.
+@mixin row-table-active {
+  > *,
+  &:hover > * {
+    background: var(--select);
+    box-shadow: inset 0 1.5px 0 var(--select-edge), inset 0 -1.5px 0 var(--select-edge);
+    --dim: var(--dim-text);
+  }
+
+  > :first-child {
+    border-radius: 18px 0 0 18px;
+    box-shadow: inset 1.5px 1.5px 0 var(--select-edge), inset 0 -1.5px 0 var(--select-edge);
+  }
+
+  > :last-child {
+    border-radius: 0 18px 18px 0;
+    box-shadow: inset -1.5px 1.5px 0 var(--select-edge), inset 0 -1.5px 0 var(--select-edge);
+  }
 }

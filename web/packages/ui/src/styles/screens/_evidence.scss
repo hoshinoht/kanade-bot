@@ -9,25 +9,6 @@
   border-left: 3px solid var(--line);
 }
 
-.evidence__line {
-  font-size: var(--fs-body-sm);
-}
-
-.evidence__who {
-  font-weight: 600;
-}
-
-.evidence__at {
-  font-family: var(--mono);
-  font-size: var(--fs-mini);
-  color: var(--faint);
-  margin-left: 0.4rem;
-}
-
-.evidence__text {
-  color: var(--dim-text);
-}
-
 .conf {
   font-family: var(--mono);
   font-size: var(--fs-small);
@@ -64,39 +45,4 @@ pre {
   white-space: pre-wrap;
   word-break: break-word;
   margin: 0;
-}
-
-// v4 _stats-tables.scss: the qualifying rows under a stat tile's figure.
-.stat__unit {
-  display: block;
-  font-family: var(--body);
-  font-size: var(--fs-small);
-  font-weight: 400;
-  letter-spacing: 0;
-  color: var(--dim-text);
-}
-
-.stat__rows {
-  margin: 0.4rem 0 0;
-  display: grid;
-  gap: 0.2rem;
-  font-size: var(--fs-body-sm);
-}
-
-.stat__rows > div {
-  display: flex;
-  justify-content: space-between;
-  gap: 0.6rem;
-  border-top: 2px solid var(--line-soft);
-  padding-top: 0.2rem;
-}
-
-.stat__rows dt {
-  color: var(--dim-text);
-}
-
-.stat__rows dd {
-  margin: 0;
-  text-align: right;
-  font-variant-numeric: tabular-nums;
 }

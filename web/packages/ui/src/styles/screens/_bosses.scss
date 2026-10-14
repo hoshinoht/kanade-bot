@@ -1,5 +1,7 @@
 // Ported from v4 portal/_bosses.scss.
 
+@use "../core/mixins" as *;
+
 .boss {
   display: inline-flex;
   align-items: center;
@@ -57,11 +59,9 @@
 }
 
 .bosslist {
-  list-style: none;
+  @include list-reset;
   display: grid;
   gap: 0.25rem;
-  margin: 0;
-  padding: 0;
 }
 
 // The game's difficulty colours; no colourway touches them.

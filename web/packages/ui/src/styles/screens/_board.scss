@@ -4,6 +4,7 @@
 // 900px the board stacks days vertically inside the scrolling panel, under
 // the week rail (`_week-rail.scss`, sticky there; v4 body-scrolled both).
 @use "../core/breakpoints" as *;
+@use "../core/mixins" as *;
 
 .board {
   display: flex;
@@ -166,17 +167,10 @@ button.runcard:hover,
   border-color: color-mix(in srgb, var(--accent) 45%, var(--line));
 }
 
-.runcard--planned {
-  border-left-color: var(--warn);
-}
-.runcard--confirmed {
-  border-left-color: var(--ok);
-}
-.runcard--at_risk {
-  border-left-color: var(--risk);
-}
-.runcard--otot {
-  border-left-color: var(--own);
+@each $status, $tone in $status-tones {
+  .runcard--#{$status} {
+    border-left-color: var(--#{$tone});
+  }
 }
 // v4 faded finished runs to 62% opacity, below 4.5:1; v5 quiets them with a
 // dashed frame and the recessed face instead, keeping text at full contrast.

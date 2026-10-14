@@ -215,18 +215,6 @@
   line-height: 1.25;
 }
 
-// Who Discord signed in (Not eligible).
-.gate__who-line {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 8px 12px;
-  border-radius: 14px;
-  background: var(--pane);
-  color: var(--ink);
-  font-size: var(--fs-body-sm);
-}
-
 .gate__actions {
   display: flex;
   gap: 8px;

@@ -112,7 +112,7 @@ dialog.runsheet--narrow .modal__head {
   /* The left edge eases in over a long ramp (slow at first, so no edge shows),
      and the foot fades into the card, so nothing ends in a hard line. The two
      masks multiply. A mask reads only alpha, which is why black is named here. */
-  -webkit-mask-image:
+  $mask:
     linear-gradient(
       to right,
       transparent,
@@ -121,16 +121,9 @@ dialog.runsheet--narrow .modal__head {
       #000 var(--arts-fade)
     ),
     linear-gradient(to bottom, #000 calc(100% - var(--arts-foot)), transparent);
+  -webkit-mask-image: $mask;
   -webkit-mask-composite: source-in;
-  mask-image:
-    linear-gradient(
-      to right,
-      transparent,
-      rgb(0 0 0 / 0.12) calc(var(--arts-fade) * 0.35),
-      rgb(0 0 0 / 0.5) calc(var(--arts-fade) * 0.7),
-      #000 var(--arts-fade)
-    ),
-    linear-gradient(to bottom, #000 calc(100% - var(--arts-foot)), transparent);
+  mask-image: $mask;
   mask-composite: intersect;
   pointer-events: none;
 }
@@ -302,20 +295,10 @@ dialog.runsheet--narrow .modal__head {
   background: var(--off);
 }
 
-.runsheet--planned .runsheet__stripe {
-  background: var(--warn);
-}
-
-.runsheet--confirmed .runsheet__stripe {
-  background: var(--ok);
-}
-
-.runsheet--at_risk .runsheet__stripe {
-  background: var(--risk);
-}
-
-.runsheet--otot .runsheet__stripe {
-  background: var(--own);
+@each $status, $tone in $status-tones {
+  .runsheet--#{$status} .runsheet__stripe {
+    background: var(--#{$tone});
+  }
 }
 
 .runsheet__id {
@@ -562,9 +545,7 @@ dialog.runsheet--narrow .modal__head {
   grid-auto-rows: 64px;
   align-content: start;
   gap: 8px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
+  @include list-reset;
 }
 
 .runsheet__aside {
@@ -676,10 +657,8 @@ dialog.runsheet--narrow .modal__head {
 }
 
 .slot__name {
-  overflow: hidden;
+  @include ellipsis;
   font-size: var(--fs-body-sm);
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .slot__state {
@@ -918,11 +897,9 @@ dialog.runsheet--narrow .modal__head {
 
 .runsheet__movename {
   min-width: 0;
-  overflow: hidden;
+  @include ellipsis;
   font-family: var(--display);
   font-size: 14px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .runsheet__moveparty {

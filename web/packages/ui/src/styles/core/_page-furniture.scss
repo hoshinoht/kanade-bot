@@ -98,9 +98,7 @@ h1 {
     display: block;
     margin-top: 0.4rem;
     padding: 0.3rem 0.7rem;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    @include ellipsis;
   }
 
   .footnote > span + span::before {

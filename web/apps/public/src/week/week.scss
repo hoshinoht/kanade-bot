@@ -4,6 +4,8 @@
 // _run-sheet.scss, _move-picker.scss). Own runs get the full card; other
 // runs fade by shape and tint, never opacity, so every word keeps ≥ 4.5:1.
 
+@use "../../../../packages/ui/src/styles/core/mixins" as *;
+
 /* ── masthead tabs (board Mast) ─────────────────────────────────────── */
 
 .masthead__nav {
@@ -154,10 +156,8 @@
 }
 
 .member-card__party {
-  overflow: hidden;
+  @include ellipsis;
   font-size: var(--fs-small);
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .member-card__answers {
@@ -499,10 +499,8 @@ a.week-glance__fact {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  margin: 0;
-  padding: 0;
+  @include list-reset;
   font-size: var(--fs-small);
-  list-style: none;
 }
 
 .member-checks li {
@@ -645,9 +643,7 @@ a.week-glance__fact {
   display: flex;
   flex-wrap: wrap;
   gap: 4px 10px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
+  @include list-reset;
 }
 
 .member-hero__chips {
@@ -675,9 +671,7 @@ a.week-glance__fact {
   display: flex;
   flex-direction: column;
   gap: 3px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
+  @include list-reset;
 }
 
 .member-slot {

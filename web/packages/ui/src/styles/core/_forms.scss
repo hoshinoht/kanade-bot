@@ -10,16 +10,12 @@
   min-width: 0;
 }
 
+// Overline type: _m3e-primitives.scss (`.cap`).
 .field > span,
 .field > legend,
 .label {
   display: block;
   padding: 0;
-  font-size: var(--fs-micro);
-  font-weight: 600;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--faint);
 }
 
 .field + .field {
@@ -68,33 +64,17 @@ input[aria-invalid="true"] {
   margin-top: 0;
 }
 
+// The connected group's shape and fills: _m3e-primitives.scss.
 .seg {
   display: inline-flex;
-  border: 2px solid var(--line);
-  border-radius: var(--r-sm);
-  overflow: hidden;
-  background: var(--surface);
 }
 
 .seg a {
   padding: 0.4rem 0.75rem;
   font-size: var(--fs-small);
   font-weight: 600;
-  color: var(--dim);
   text-decoration: none;
-  border-right: 2px solid var(--line);
 }
-
-.seg a:last-child {
-  border-right: 0;
-}
-
-.seg a[aria-current="page"],
-.seg a[aria-current="true"] {
-  background: var(--accent-fill);
-  color: var(--accent-ink);
-}
-
 // Segment buttons (Week view switch, answer group, guide difficulty): shared
 // by both apps, so the base lives here, not in the admin-only Week head.
 .seg button {
@@ -102,27 +82,11 @@ input[aria-invalid="true"] {
   align-items: center;
   gap: 0.35rem;
   padding: 0.4rem 0.75rem;
-  border: 0;
-  border-right: 2px solid var(--line);
-  background: transparent;
   font: inherit;
   font-size: var(--fs-small);
   font-weight: 600;
-  color: var(--dim);
   cursor: pointer;
 }
-
-.seg button:last-child {
-  border-right: 0;
-}
-
-// Selected: filled and bold, not colour alone.
-.seg button[aria-selected="true"] {
-  background: var(--accent-fill);
-  color: var(--accent-ink);
-  font-weight: 700;
-}
-
 // v4 filter bar (live-filtering in v5, so no submit button).
 .filters {
   display: flex;
@@ -190,13 +154,7 @@ input[aria-invalid="true"] {
   background: var(--raise);
 }
 
-.seg__btn--on,
-.seg__btn[aria-pressed="true"] {
-  background: var(--accent-fill);
-  color: var(--accent-ink);
-}
-
-.seg__btn--on:hover,
+.seg__btn[aria-pressed="true"],
 .seg__btn[aria-pressed="true"]:hover {
   background: var(--accent-fill);
   color: var(--accent-ink);

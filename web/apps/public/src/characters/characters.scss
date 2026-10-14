@@ -5,6 +5,8 @@
 // strip and estimate rows are the admin's shared styles (`_members.scss`,
 // `_character-data.scss`, `_settings.scss`, loaded by the shared components).
 
+@use "../../../../packages/ui/src/styles/core/mixins" as *;
+
 // Account › Characters: the roster panel sits flush in its section.
 .account-sec .rosterpanel {
   padding: 0;
@@ -101,9 +103,7 @@ dialog.mydata-dialog:not(.own-sheet) {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
+  @include list-reset;
 }
 
 .mydata__entry {
@@ -195,9 +195,7 @@ dialog.mydata-dialog:not(.own-sheet) {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
+  @include list-reset;
 }
 
 .party-char {
@@ -265,9 +263,7 @@ dialog.mydata-dialog:not(.own-sheet) {
   display: flex;
   flex-wrap: wrap;
   gap: 4px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
+  @include list-reset;
 }
 
 .party-char .ready__boss {

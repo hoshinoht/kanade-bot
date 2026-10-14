@@ -3,6 +3,8 @@
 // B_Limits while the route is not mounted). One window: title-bar tabs and the
 // Config pill, one scrolling panel on the pane surface, a 34 px footer.
 
+@use "../core/mixins" as *;
+
 .limits-window {
   display: flex;
   flex-direction: column;
@@ -338,9 +340,7 @@
   display: flex;
   flex-direction: column;
   gap: 2px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
+  @include list-reset;
 }
 
 .limits-waiting__row {
@@ -360,9 +360,7 @@
 }
 
 .limits-waiting__who {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  @include ellipsis;
 }
 
 .limits-pos {
@@ -428,27 +426,11 @@
 /* ── the tab tables (B_LimitsQueue, B_LimitsAdmission, B_LimitsAllowances) ── */
 
 .limits-table {
-  width: 100%;
-  border-collapse: separate;
-  border-spacing: 0 2px;
-  font-size: var(--fs-body-sm);
+  @include row-table;
 }
 
 .limits-table th[scope="col"] {
-  position: sticky;
-  top: 0;
-  z-index: 1;
-  padding: 8px 10px;
-  border: 0;
-  background: var(--pane);
-  color: var(--dim-text);
-  font-family: var(--mono);
-  font-size: var(--fs-micro);
-  font-weight: 600;
-  letter-spacing: 0.1em;
-  text-align: left;
-  text-transform: uppercase;
-  box-shadow: none;
+  @include row-table-head;
 }
 
 // A group's label row: on the pane, no card.
@@ -475,14 +457,7 @@
 
 .limits-table__row > td,
 .limits-table__row > th {
-  height: 44px;
-  padding: 0 10px;
-  border: 0;
-  background: var(--row);
-  font-weight: inherit;
-  text-align: left;
-  vertical-align: middle;
-  white-space: nowrap;
+  @include row-table-cell;
 }
 
 .limits-table__row > :first-child { border-radius: 6px 0 0 6px; }
@@ -631,10 +606,8 @@
 
 .limits-prow__lead {
   min-width: 0;
-  overflow: hidden;
+  @include ellipsis;
   font-size: var(--fs-body-sm);
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .limits-prow__count {

@@ -3,6 +3,7 @@
 // above a body-scrolled list, so it is compact; finished runs' pips use the
 // faint token instead of 50% opacity; the reset day is an accent edge.
 @use "../core/breakpoints" as *;
+@use "../core/mixins" as *;
 
 .rail {
   display: none;
@@ -104,17 +105,10 @@
     background: var(--off);
   }
 
-  .pip-dot--planned {
-    background: var(--warn);
-  }
-  .pip-dot--confirmed {
-    background: var(--ok);
-  }
-  .pip-dot--at_risk {
-    background: var(--risk);
-  }
-  .pip-dot--otot {
-    background: var(--own);
+  @each $status, $tone in $status-tones {
+    .pip-dot--#{$status} {
+      background: var(--#{$tone});
+    }
   }
   .pip-dot--cancelled,
   .pip-dot--done {

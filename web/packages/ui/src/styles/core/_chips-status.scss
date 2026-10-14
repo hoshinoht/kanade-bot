@@ -1,4 +1,5 @@
 // Ported from v4 portal/_chips-status.scss.
+@use "mixins" as *;
 
 .chip {
   display: inline-flex;
@@ -64,17 +65,10 @@
 // Semantic state pills (ui/src/tone.ts): success / warning / danger / info /
 // neutral. One colour story for every state pill — Inbox flags, log outcomes,
 // planner status, Config verdicts — and the same tokens as the .status words.
-// Named .tone so the boss-difficulty .pill palette stays its own.
+// Named .tone so the boss-difficulty .pill palette stays its own. The pill
+// itself is the M3E tonal chip (_m3e-primitives.scss).
 .tone {
-  display: inline-flex;
-  align-items: center;
   gap: 0.28rem;
-  font-size: var(--fs-small);
-  font-weight: 600;
-  padding: 0.08rem 0.5rem;
-  border-radius: 999px;
-  border: 2px solid var(--line);
-  white-space: nowrap;
 }
 
 .tone--success {
@@ -120,17 +114,10 @@
   text-transform: uppercase;
 }
 
-.status--planned {
-  color: var(--warn-text);
-}
-.status--confirmed {
-  color: var(--ok-text);
-}
-.status--at_risk {
-  color: var(--risk-text);
-}
-.status--otot {
-  color: var(--own-text);
+@each $status, $tone in $status-tones {
+  .status--#{$status} {
+    color: var(--#{$tone}-text);
+  }
 }
 .status--cancelled,
 .status--done,
@@ -201,12 +188,6 @@
   align-items: center;
   gap: 0.3rem;
   color: var(--ink);
-}
-
-.chip__id {
-  font-family: var(--mono);
-  font-size: var(--fs-micro);
-  font-weight: 400;
 }
 
 // v4 _buttons.scss: a checkbox inside a chip is how a party is picked.
