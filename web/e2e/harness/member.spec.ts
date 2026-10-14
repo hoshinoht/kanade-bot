@@ -1,5 +1,5 @@
 import type { BrowserContext, Page } from '@playwright/test';
-import { PUBLIC as MEMBER, expect, test } from './support';
+import { PUBLIC as MEMBER, expect, test } from '../support';
 
 // The harness's fake Discord approves at once; this cookie picks who signs in.
 async function asDiscordUser(context: BrowserContext, who: 'eligible' | 'ineligible' | 'bot' | 'deny'): Promise<void> {

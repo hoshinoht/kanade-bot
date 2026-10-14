@@ -19,7 +19,7 @@ async function openWeek(page: Page) {
 test('hover grows a card in flow: it stays put, the card below moves down and back; a click opens the pane, not the grow', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
   await openWeek(page);
-  // HCarling + HStar has XBM under it in the Tue column.
+  // HCarling + HMaleficStar has XBM under it in the Tue column.
   const card = page.locator('[data-run="r-carling"]');
   const face = card.locator('.plan-card__open');
   const rest = await box(page, '[data-run="r-carling"]');
@@ -50,7 +50,7 @@ test('hover grows a card in flow: it stays put, the card below moves down and ba
   await face.hover();
   await expect(card).toHaveClass(/plan-card--grown/);
   await face.click();
-  await expect(page.getByRole('complementary', { name: 'HCarling + HStar' })).toBeVisible();
+  await expect(page.getByRole('complementary', { name: 'HCarling + HMaleficStar' })).toBeVisible();
   await expect(card).not.toHaveClass(/plan-card--grown/);
   await expect(card).toHaveClass(/plan-card--selected/);
   await expect(card.locator('.row-content__compact')).toBeVisible();
@@ -106,7 +106,7 @@ test('a click opening the modal sheet leaves the card at rest behind it', async 
   await page.goto(`${ADMIN}/?sw=off`);
   const card = page.locator('[data-run="r-carling"]');
   await card.locator('.plan-card__open').click();
-  await expect(page.getByRole('dialog', { name: 'HCarling + HStar' })).toBeVisible();
+  await expect(page.getByRole('dialog', { name: 'HCarling + HMaleficStar' })).toBeVisible();
   await expect(card).not.toHaveClass(/plan-card--grown/);
 });
 
@@ -141,7 +141,7 @@ test.describe('touch', () => {
     await openWeek(page);
     const card = page.locator('[data-run="r-carling"]');
     await card.locator('.plan-card__open').tap();
-    await expect(page.getByRole('complementary', { name: 'HCarling + HStar' }).or(page.getByRole('dialog', { name: 'HCarling + HStar' }))).toBeVisible();
+    await expect(page.getByRole('complementary', { name: 'HCarling + HMaleficStar' }).or(page.getByRole('dialog', { name: 'HCarling + HMaleficStar' }))).toBeVisible();
     await expect(card).not.toHaveClass(/plan-card--grown/);
   });
 });
@@ -349,7 +349,7 @@ test('clicking the open run again closes its pane; another run switches it', asy
   // Another run still switches the pane instead of closing it.
   await card.locator('.plan-card__open').click();
   await page.locator('[data-run="r-carling"] .plan-card__open').click();
-  await expect(page.getByRole('complementary', { name: 'HCarling + HStar' })).toBeVisible();
+  await expect(page.getByRole('complementary', { name: 'HCarling + HMaleficStar' })).toBeVisible();
   await page.locator('[data-run="r-carling"] .plan-card__open').click();
   await expect(page.locator('aside.week-pane')).toHaveCount(0);
 });

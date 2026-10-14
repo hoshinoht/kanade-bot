@@ -23,18 +23,21 @@ test('admin: grouped nav has every v4 section as a real route', async ({ page })
 
   await nav.getByRole('link', { name: 'History' }).click();
   await expect(page).toHaveURL(`${ADMIN}/history`);
-  await expect(page.getByRole('heading', { level: 1 })).toHaveText('9 changes');
+  // 10 records plus the seed's 15 character Config saves (the real character writes record them).
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('25 changes');
   await expect(page).toHaveTitle(/^History — /);
   await expect(page.locator('#main')).toBeFocused();
   await expect(nav.getByRole('link', { name: 'History' })).toHaveAttribute('aria-current', 'page');
 
+  // Real seed counts: Mikan's weekly timing and the two sign-in users (bossers) for e2e/harness/member.spec;
+  // the real inbox lists only the 9 proposals and requests its scheduler accepts.
   for (const [label, heading] of [
     ['Drafts', '2 open'],
-    ['Fixed', '8 weekly timings'],
+    ['Fixed', '9 weekly timings'],
     ['Bosses', /^11 bosses/],
-    ['Members', '13 bossers'],
+    ['Members', '15 bossers'],
     ['Reminders', /queued · \d+ sent$/],
-    ['Inbox', '11 changes waiting'],
+    ['Inbox', '9 changes waiting'],
     ['Extractions', '34 model calls'],
     ['Chat', '16 interactions'],
     ['Rewrites', '8 rewrites'],
@@ -80,14 +83,14 @@ test('admin: this week / next week toggle, filters, the glance pane and the foot
   await expect(page.getByRole('heading', { level: 1 })).toHaveText(HEADING.admin);
   // From 1200 px the at-a-glance pane sits beside the board (WeekRail1).
   const glance = page.getByRole('complementary', { name: 'At a glance' });
-  // Pinned clock: Tue 29 Sep 12:00, so the next run is tonight's HCarling + HStar.
+  // Pinned clock: Tue 29 Sep 12:00, so the next run is tonight's HCarling + HMaleficStar.
   await expect(glance).toContainText('10 h');
   await expect(glance.locator('.week-glance__time')).toHaveText('22:00');
   await expect(glance.getByRole('heading', { name: /^Party/ })).toBeVisible();
   await expect(glance.getByRole('link', { name: /Inbox/ })).toHaveAttribute('href', '/inbox');
   await expect(glance.getByRole('link', { name: /Model/ })).toContainText('busy');
   await glance.getByRole('button', { name: 'Open sheet' }).click();
-  await expect(page.getByRole('complementary', { name: 'HCarling + HStar' })).toBeVisible();
+  await expect(page.getByRole('complementary', { name: 'HCarling + HMaleficStar' })).toBeVisible();
   await page.keyboard.press('Escape');
   await expect(glance).toBeVisible();
 
@@ -126,14 +129,16 @@ test('admin: this week / next week toggle, filters, the glance pane and the foot
   await expect(page.locator('[data-run="r-baldrix"]')).toHaveCount(0);
 });
 
-test('admin: login window wears the identity and signs in with Discord', async ({ page }) => {
+test('admin: login window wears the identity and signs in with Discord', async ({ page, context }) => {
+  // The fake Discord signs in the member this cookie names: Asahi holds the staff role.
+  await context.addCookies([{ name: 'kanade_fake_discord', value: '100000000000001001', domain: '127.0.0.1', path: '/' }]);
   await page.goto(`${ADMIN}/login?sw=off`);
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('YuukiSakuna');
   await expect(page.getByRole('link', { name: 'powered by kanade' })).toBeVisible();
   for (const img of await page.locator('.gate img').all()) {
     expect(await img.evaluate((el: HTMLImageElement) => el.complete && el.naturalWidth > 0)).toBe(true);
   }
-  // The mock stands in for Discord: start → callback → a landing page that returns to `next`.
+  // The harness's fake Discord page approves at once: start → Discord → callback → `next`.
   await page.getByRole('link', { name: 'Sign in with Discord' }).click();
   await expect(page).toHaveURL(`${ADMIN}/`);
   await expect(page.locator('.brand__name')).toHaveText('YuukiSakuna');
@@ -141,7 +146,15 @@ test('admin: login window wears the identity and signs in with Discord', async (
 
 test('identity: nothing cached falls back to generated art, never a 404', async ({ page }) => {
   const identity = await (await page.request.get(`${ADMIN}/api/identity`)).json();
-  expect(identity).toEqual({ name: 'YuukiSakuna', avatar: '/identity/avatar', banner: '/identity/banner', cached: false, bot_user_id: '1543532497948909578' });
+  // The real art URLs carry the identity's version; the paths are the same.
+  expect(identity).toEqual({
+    name: 'YuukiSakuna',
+    avatar: expect.stringMatching(/^\/identity\/avatar(\?v=\w+)?$/),
+    banner: expect.stringMatching(/^\/identity\/banner(\?v=\w+)?$/),
+    cached: false,
+    bot_user_id: '1543532497948909578',
+    version: expect.any(String),
+  });
   for (const path of ['/identity/avatar', '/identity/banner']) {
     const response = await page.request.get(`${ADMIN}${path}`);
     expect(response.status()).toBe(200);

@@ -39,7 +39,8 @@ test('Past loads only when its tab opens, newest closed first, every outcome in 
     await expect(options.nth(n)).toContainText(i.summary);
     await expect(options.nth(n)).toContainText(i.kind_label);
   }
-  for (const label of ['Approved', 'Rejected', 'Superseded', 'Discarded', 'Withdrawn', 'Expired']) {
+  // No `Discarded`: the mock's c-bellona-otot (own time for a run already own time) has no effect, so the real scheduler refuses it.
+  for (const label of ['Approved', 'Rejected', 'Superseded', 'Withdrawn', 'Expired']) {
     await expect(pastList(page).locator('.status-chip', { hasText: label }).first()).toBeVisible();
   }
   // Wide: the newest is open beside the list.

@@ -103,6 +103,7 @@ impl Root {
         private_dir(&root.0)?;
         for dir in [
             "db",
+            "backups",
             "locks",
             "Personas",
             "Personas/bundles",
@@ -206,6 +207,8 @@ fn config(
         ),
         ("KANADE_NEXON_API_KEY_FILE", path("nexon_key")),
         ("KANADE_DB_PATH", path("db/template.sqlite3")),
+        // History → Checkpoints lists the manifests `seed::backups` writes.
+        ("KANADE_BACKUP_DIR", path("backups")),
         ("KANADE_OWNER_LOCK_DIR", path("locks")),
         ("KANADE_WEB_DIR", args.web_dir.display().to_string()),
         (

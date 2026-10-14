@@ -162,8 +162,8 @@ const SURFACES = [
 ] as const;
 const RUNS = [
   { id: 'r-bm', title: 'XBM', bosses: 1 },
-  { id: 'r-carling', title: 'HCarling + HStar', bosses: 2 },
-  { id: 'r-carling', title: 'HCarling + HStar + XKalos + XBM', bosses: 4 },
+  { id: 'r-carling', title: 'HCarling + HMaleficStar', bosses: 2 },
+  { id: 'r-carling', title: 'HCarling + HMaleficStar + XKalos + XBM', bosses: 4 },
 ] as const;
 
 test.describe('identity-card contrast over the art', () => {

@@ -1,4 +1,5 @@
 import { defineConfig } from '@playwright/test';
+import { MOTION, PORTED } from './e2e/ported';
 
 // Uses the installed Google Chrome (channel 'chrome'); no browser downloads.
 // Workers run in parallel, each against its own pwa-mock: the mock holds the
@@ -22,13 +23,15 @@ if (!Number.isInteger(workers) || workers < 1 || workers > MAX_WORKERS)
   throw new Error(`KANADE_E2E_WORKERS must be 1..${MAX_WORKERS} (one mock port pair per worker), got ${process.env.KANADE_E2E_WORKERS}`);
 const base = Number(process.env.KANADE_E2E_PORT_BASE ?? '4373') + (real ? 10 : 0);
 process.env.KANADE_E2E_ORIGIN_BASE = String(base);
-// Exactly motion.spec.ts (not reduce-motion.spec.ts).
-const MOTION = /(^|[\\/])motion\.spec\.ts$/;
+// support.ts drives the mock (the harness config sets `harness`).
+process.env.KANADE_E2E_TARGET = 'mock';
+// Not here: the Rust smoke suite and the harness suite (its own specs plus
+// the ported ones) have their own servers and configs.
+const OTHER_SUITES = ['**/rust/**', '**/harness/**', ...PORTED.map((file) => `e2e/${file}`)];
 
 export default defineConfig({
   testDir: './e2e',
-  // The Rust smoke suite and the harness suite have their own servers and configs.
-  testIgnore: ['**/rust/**', '**/harness/**'],
+  testIgnore: OTHER_SUITES,
   outputDir: './e2e/.results',
   fullyParallel: false,
   workers,
@@ -45,8 +48,8 @@ export default defineConfig({
   // of competing with itself for CPU. CI runs the two projects as separate
   // steps (ci.yml), so there motion also has the machine to itself.
   projects: [
-    { name: 'main', testIgnore: [MOTION, '**/rust/**', '**/harness/**'] },
-    { name: 'motion', testMatch: MOTION, workers: 1 },
+    { name: 'main', testIgnore: [MOTION, ...OTHER_SUITES] },
+    { name: 'motion', testMatch: MOTION, testIgnore: OTHER_SUITES, workers: 1 },
   ],
   // Servers start one after another (Playwright awaits each before the next),
   // so the first `cargo run` builds the release mock and the rest only start it.

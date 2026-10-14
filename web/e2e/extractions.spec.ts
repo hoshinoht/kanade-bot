@@ -62,14 +62,14 @@ test('extractions: copy the call’s transcript as Markdown or JSON, names not i
   await detail.getByRole('button', { name: 'Copy transcript' }).click();
   await expect(page.getByText('Transcript copied as Markdown.')).toBeVisible();
   const md = await page.evaluate(() => navigator.clipboard.readText());
-  expect(md).toMatch(/^# Extraction x-bm \(#e1f2a3b4\)/);
+  expect(md).toMatch(/^# Extraction x-bm \(#xbm\)/);
   expect(md).toContain('- Channel: #bm-trio');
   expect(md).toMatch(/\] Minato: tue cannot, wed same time ok\?\n\[[^\]]+\] Kaito: wed ok for me\n/);
-  expect(md).toContain('- move · XBM · Wed 23:30 · confidence 0.86 · proposed');
+  expect(md).toContain('- move · XBM · Wed 30 Sep 23:30 · confidence 0.86 · proposed');
   expect(md).toContain('- Request ids: kanade-extraction-1a2b3c4d-3-1');
   expect(md).toContain('The messages agree on Wednesday at the existing time.');
   expect(md).toContain('## Prompt as sent');
-  expect(md).not.toMatch(/\b10(09|12)\b/);
+  expect(md).not.toMatch(/\b1000000000000010(09|12)\b/);
 
   await choose(detail.getByRole('combobox', { name: 'Transcript format' }), 'json');
   await detail.getByRole('button', { name: 'Copy transcript' }).click();

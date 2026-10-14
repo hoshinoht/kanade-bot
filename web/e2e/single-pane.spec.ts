@@ -93,7 +93,7 @@ const SCREENS: Screen[] = [
       await page.goto(`${ADMIN}/?sw=off`);
       await page.locator('[data-run="r-carling"] .plan-card__open').click();
     },
-    panes: (page, two) => sidePane(page, two, 'HCarling + HStar', 'HCarling + HStar'),
+    panes: (page, two) => sidePane(page, two, 'HCarling + HMaleficStar', 'HCarling + HMaleficStar'),
   },
 ];
 

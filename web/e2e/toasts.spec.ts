@@ -8,12 +8,13 @@ test('toasts: two at most, the newest on top', async ({ page, context }) => {
   await page.goto(`${ADMIN}/config?section=env&sw=off`);
   const panel = page.locator('.settings__panel:not([hidden])');
   const live = page.locator('.toast:not(.is-leaving)');
-  for (const key of ['KANADE_BOSS_WEEK_RESET_WEEKDAY', 'KANADE_POST_CHANNEL_ID', 'KANADE_TIMEZONE']) {
+  // KANADE_POST_CHANNEL_ID is unset on the harness (it takes a snowflake; the seed's channels are names), so no copy button.
+  for (const key of ['KANADE_BOSS_WEEK_RESET_WEEKDAY', 'KANADE_CHAT_PILOT_ROLE_ID', 'KANADE_TIMEZONE']) {
     await panel.getByRole('button', { name: `Copy ${key}` }).click();
     await expect(live.first()).toContainText(`Copied ${key}.`);
   }
   await expect(live).toHaveCount(2);
-  await expect(live).toHaveText([/Copied KANADE_TIMEZONE\./, /Copied KANADE_POST_CHANNEL_ID\./]);
+  await expect(live).toHaveText([/Copied KANADE_TIMEZONE\./, /Copied KANADE_CHAT_PILOT_ROLE_ID\./]);
   // Newest on top on screen as well as in reading order.
   const [top, below] = await Promise.all([live.nth(0).boundingBox(), live.nth(1).boundingBox()]);
   expect(top!.y).toBeLessThan(below!.y);

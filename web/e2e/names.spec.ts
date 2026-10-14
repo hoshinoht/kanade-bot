@@ -38,10 +38,10 @@ test('chat log: names, never ids, and a click copies the id', async ({ page }) =
   await when.click();
   const head = page.locator('.chat-turn__head');
   const ren = head.getByRole('button', { name: 'Ren', exact: true });
-  await expect(ren).toHaveAttribute('title', 'Member ID 1002 — click to copy');
+  await expect(ren).toHaveAttribute('title', 'Member ID 100000000000001002 — click to copy');
   // The expanded edge of the hit area still copies the same ID.
   await ren.click({ position: { x: 1, y: 1 } });
-  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('1002');
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('100000000000001002');
   await expect(page.getByRole('status').filter({ hasText: 'Copied the member ID of Ren.' })).toBeAttached();
 
   await ren.focus();
@@ -50,7 +50,7 @@ test('chat log: names, never ids, and a click copies the id', async ({ page }) =
   await expect(ren).toBeFocused();
   await expect(ren).toHaveCSS('outline-style', 'solid');
   await page.keyboard.press('Space');
-  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('1002');
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('100000000000001002');
 
   // An unknown one still copies its id.
   await stranger.click();
@@ -65,7 +65,7 @@ test('chat turn: mention tokens render as copyable names', async ({ page }) => {
   const asked = page.locator('.chat-bubble', { hasText: 'What they asked' }).locator('p');
   await expect(asked).toHaveText('@YuukiSakuna who is in #fa-night tonight, is @Yuzu in?');
   await asked.getByRole('button', { name: '@Yuzu' }).click();
-  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('1004');
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('100000000000001004');
   await asked.getByRole('button', { name: '#fa-night' }).click();
   expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('fa-night');
   await expect(page.locator('.chat-turn__head').getByRole('button', { name: 'Yuzu' })).toBeVisible();
@@ -78,16 +78,16 @@ test('run sheet, history and member sheet name people without their ids', async 
   await sheet.getByRole('tab', { name: /^Answers/ }).click();
   const tsubame = sheet.locator('.answers__who').getByRole('button', { name: 'Tsubame' });
   await tsubame.click();
-  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('1005');
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('100000000000001005');
   await page.keyboard.press('Escape');
 
   await page.goto(`${ADMIN}/members?sw=off`);
   await page.getByRole('button', { name: /^Tsubame/ }).first().click();
   // Wide screens show the member in a side pane, not a dialog (M3E G4).
   const member = page.getByRole('complementary', { name: 'Member details' });
-  await expect(member).not.toContainText('1005');
+  await expect(member).not.toContainText('100000000000001005');
   await member.getByRole('button', { name: 'Tsubame' }).first().click();
-  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('1005');
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('100000000000001005');
 });
 
 test('roles, the bot and message authors resolve from the server\'s ids', async ({ page }) => {
@@ -103,10 +103,11 @@ test('roles, the bot and message authors resolve from the server\'s ids', async 
   await asked.getByRole('button', { name: '@YuukiSakuna' }).click();
   expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('1543532497948909578');
 
-  // Evidence authors are names that copy their ids.
+  // Evidence authors are names that copy their ids (Minato's move proposal: the real queue opens on another item).
   await page.goto(`${ADMIN}/inbox?sw=off`);
+  await page.locator('[data-item="p-bm-move"]').click();
   const evidence = page.locator('.inbox__detail').getByLabel('Evidence');
   await evidence.getByRole('button', { name: 'Minato' }).click();
-  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('1012');
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('100000000000001012');
 });
 

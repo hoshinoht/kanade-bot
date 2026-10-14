@@ -1,4 +1,5 @@
 import { defineConfig } from '@playwright/test';
+import { MOTION, PORTED } from './e2e/ported';
 
 // Specs against the real kanade API: `examples/e2e_server` (built with
 // `--features test-support`), the real routers composed as `serve` composes
@@ -17,9 +18,14 @@ if (!Number.isInteger(workers) || workers < 1 || workers > MAX_WORKERS)
 const base = Number(process.env.KANADE_E2E_PORT_BASE ?? '4373');
 if (!Number.isInteger(base) || base < 1 || base > 65_506) throw new Error(`KANADE_E2E_PORT_BASE must be a valid port base, got ${process.env.KANADE_E2E_PORT_BASE}`);
 process.env.KANADE_E2E_HARNESS_BASE = String(base + 20);
+// support.ts drives the e2e server (the mock config sets `mock`).
+process.env.KANADE_E2E_TARGET = 'harness';
+// The harness's own specs, plus the ones moved off the mock (`e2e/ported.ts`).
+const SPECS = ['**/harness/**/*.spec.ts', ...PORTED.map((file) => `e2e/${file}`)];
 
 export default defineConfig({
-  testDir: './e2e/harness',
+  testDir: './e2e',
+  testMatch: SPECS,
   outputDir: './e2e/.results/harness',
   fullyParallel: false,
   workers,
@@ -30,6 +36,11 @@ export default defineConfig({
     trace: 'retain-on-failure',
     viewport: { width: 1280, height: 800 },
   },
+  // As the mock config: motion.spec.ts measures frame rates, so it runs alone on one worker.
+  projects: [
+    { name: 'main', testMatch: SPECS, testIgnore: MOTION },
+    { name: 'motion', testMatch: PORTED.some((file) => MOTION.test(file)) ? MOTION : [], workers: 1 },
+  ],
   webServer: Array.from({ length: workers }, (_, i) => {
     const adminPort = base + 20 + 2 * i;
     const publicPort = adminPort + 1;

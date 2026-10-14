@@ -1,6 +1,6 @@
 import AxeBuilder from '@axe-core/playwright';
 import type { Page } from '@playwright/test';
-import { ADMIN, expect, settle, test } from './support';
+import { ADMIN, expect, settle, signInAdminAsAsahi, test } from './support';
 
 // The Move picker (boards P_MoveStates, Main, P_MoveWidths, P_MovePhone):
 // keyboard, accessible names and state, the clash warning and reduced motion,
@@ -93,7 +93,7 @@ test('Escape clears the typed field, then undoes the pick, then closes the pane'
 });
 
 test('suggestions come from the picked day, and a clash warns in words without blocking', async ({ page }) => {
-  const run = await pane(page, '/?week=next', 'n-carling', 'HCarling + HStar');
+  const run = await pane(page, '/?week=next', 'n-carling', 'HCarling + HMaleficStar');
   // Next week: no day is past or today.
   await expect(run.getByRole('radio', { name: /past/ })).toHaveCount(0);
   await run.getByRole('radio', { name: /^Mon 05/ }).click();
@@ -114,7 +114,7 @@ test('suggestions come from the picked day, and a clash warns in words without b
 
 test('reduced motion: no morph, the clash box fades in over 120 ms', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
-  const run = await pane(page, '/?week=next', 'n-carling', 'HCarling + HStar');
+  const run = await pane(page, '/?week=next', 'n-carling', 'HCarling + HMaleficStar');
   await run.getByRole('radio', { name: /^Mon 05/ }).click();
   await run.getByRole('textbox', { name: 'Type a day and time' }).fill('20:00');
   const motion = await run.evaluate((el) => {
@@ -127,7 +127,7 @@ test('reduced motion: no morph, the clash box fades in over 120 ms', async ({ pa
 });
 
 test('own-time runs keep the day strip; the time waits for "Set a time"', async ({ page }) => {
-  const run = await pane(page, '/?week=next', 'n-carling', 'HCarling + HStar');
+  const run = await pane(page, '/?week=next', 'n-carling', 'HCarling + HMaleficStar');
   await run.getByRole('button', { name: 'Own time' }).click();
   const time = run.getByRole('spinbutton', { name: 'Time' });
   await expect(time).toHaveAttribute('aria-disabled', 'true');
@@ -179,6 +179,8 @@ test('axe: the run pane picker and the Inbox edit picker', async ({ page }) => {
   await expect(run.getByRole('alert').filter({ hasText: 'has passed' })).toBeVisible();
   expect(await axe(page, '.week-pane')).toEqual([]);
 
+  // Kanade's proposals are approved by a Discord admin, not the break-glass token.
+  await signInAdminAsAsahi(page);
   await page.goto(`${ADMIN}/inbox?tab=extractor&item=p-bm-move&sw=off`);
   const detail = page.locator('.inbox__detail');
   await detail.getByRole('button', { name: 'Edit, then approve' }).click();

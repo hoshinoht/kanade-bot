@@ -10,6 +10,7 @@
 //! on a live clock: [`Seed::now`] is as far into the current boss week as
 //! the pinned instant is into its own.
 
+mod backups;
 mod characters;
 pub mod ids;
 mod inbox;
@@ -178,5 +179,7 @@ pub async fn template(store: Arc<SqliteStore>, state: &ApiState) -> Result<(), F
     inbox::seed(&seed).await?;
     sessions::seed(&seed).await?;
     notify::seed(&seed).await?;
+    // Last: the manifests name the finished seed's history head.
+    backups::seed(&seed).await?;
     Ok(())
 }
