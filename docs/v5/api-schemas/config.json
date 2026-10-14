@@ -229,13 +229,14 @@
     "ReplyProfile": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["key", "name", "public", "voice", "prompt_summary"],
+      "required": ["key", "name", "public", "voice", "prompt_summary", "prompt"],
       "properties": {
         "key": { "type": "string" },
         "name": { "type": "string" },
         "public": { "type": "boolean" },
         "voice": { "type": "string" },
-        "prompt_summary": { "type": "string" }
+        "prompt_summary": { "type": "string", "description": "The prompt's first non-empty line, cut to 140 characters: the list's preview." },
+        "prompt": { "type": "string", "description": "The whole prompt, as the profile file holds it." }
       }
     },
     "ConfigView": {

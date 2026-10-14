@@ -298,26 +298,6 @@ const RUNS: [Plan; 14] = [
     },
 ];
 
-/// The mock's message ids: the run's mock short id and the card's local minute.
-fn short_id(run: &str) -> &'static str {
-    match run {
-        "r-baldrix" => "1b2c3d4e",
-        "r-kalos" => "5a6b7c8d",
-        "r-limbo" => "9e0f1a2b",
-        "r-fa" => "3c4d5e6f",
-        "r-jupiter" => "7a8b9c0d",
-        "r-bellona" => "1e2f3a4b",
-        "r-carling" => "630b3544",
-        "r-nstar" => "4d5e6f7a",
-        "r-bm" => "5c6d7e8f",
-        "r-seren" => "9a0b1c2d",
-        "n-kalos" => "a1b2c3d4",
-        "n-fa" => "e5f6a7b8",
-        "n-carling" => "c9d0e1f2",
-        _ => "0c1d2e3f",
-    }
-}
-
 fn ids(list: &[&str]) -> Vec<String> {
     list.iter().map(|id| (*id).to_owned()).collect()
 }
@@ -344,9 +324,10 @@ impl Seed<'_> {
     }
 
     /// The mock's cards (`Store::cards`): the 09:00 morning card, and for a
-    /// timed run its T-1h and T-15m countdowns; due ones were posted, except
-    /// Baldrix's T-1h, retired without posting. Seren, cancelled below, has
-    /// none.
+    /// timed run its T-1h and T-15m countdowns. All go in unsent:
+    /// `notify::seed` posts the due ones through the delivery journal, as
+    /// the tick would have. Baldrix's T-1h was retired without posting.
+    /// Seren, cancelled below, has none.
     fn cards(&self, plan: &Plan, time: Option<&str>) -> Result<Vec<Reminder>, Fail> {
         if plan.id == "r-seren" {
             return Ok(Vec::new());
@@ -362,15 +343,14 @@ impl Seed<'_> {
             .into_iter()
             .map(|(kind, label, minute)| {
                 let fire_at = midnight + Duration::minutes(minute);
-                let due = fire_at <= self.now;
-                let skipped = plan.id == "r-baldrix" && label == "T-1h";
+                let retired = plan.id == "r-baldrix" && label == "T-1h" && fire_at <= self.now;
                 Reminder {
                     id: format!("{}-{label}", plan.id),
                     run_id: plan.id.into(),
                     kind,
                     fire_at,
-                    sent_at: due.then_some(fire_at),
-                    message_id: (due && !skipped).then(|| format!("{}{minute}", short_id(plan.id))),
+                    sent_at: retired.then_some(fire_at),
+                    message_id: None,
                 }
             })
             .collect())

@@ -10,6 +10,10 @@ pub trait ChatView: Send + Sync {
     fn limits(&self) -> LimitsView;
     /// Clears the in-memory answer allowance for one member.
     fn reset_allowance(&self, member_id: &str);
+    /// Test support: spends one answer from the member's window and the
+    /// pool; `false` when either is full.
+    #[cfg(any(test, feature = "test-support"))]
+    fn spend_allowance(&self, member_id: &str) -> bool;
     /// `disabled`, `idle`, `busy` or `degraded`.
     fn status(&self) -> &'static str;
 }
@@ -51,6 +55,13 @@ impl ChatHandle {
         };
         view.reset_allowance(member_id);
         true
+    }
+
+    /// Test support: one answer in the member's live window; `None` before
+    /// the driver starts, `Some(false)` when the window or pool is full.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn spend_allowance(&self, member_id: &str) -> Option<bool> {
+        self.0.get().map(|view| view.spend_allowance(member_id))
     }
 
     pub fn status(&self) -> &'static str {

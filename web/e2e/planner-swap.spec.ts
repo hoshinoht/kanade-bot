@@ -7,7 +7,15 @@ import { ADMIN, csrf, expect, test, choose, optionLabels } from './support';
 // S during a keyboard lift swaps with the run on that slot; the run sheet has
 // "Swap timing with…". One server change, both cards together, one-step undo.
 // Seed: Mon HFA 20:00 (r-fa), own-time NBellona (r-bellona); Tue HCarling +
-// HStar 22:00 (r-carling), XBM 23:30 (r-bm).
+// HMaleficStar 22:00 (r-carling), XBM 23:30 (r-bm). The server clock stands at
+// Mon 28 12:00 (guild time), before Monday's runs: at the pinned Tuesday they
+// have ended and the server refuses to move them.
+
+const MONDAY = '2026-09-28T04:00:00Z';
+
+test.beforeEach(async ({ request }) => {
+  expect((await request.post(`${ADMIN}/__e2e/clock`, { data: { at: MONDAY } })).ok()).toBe(true);
+});
 
 async function openAdmin(page: Page) {
   await page.goto(`${ADMIN}/?sw=off`);
@@ -104,7 +112,7 @@ test('a later move retires the earlier swap toast undo; its own undo only revert
 test('pointer: own-time swaps exchange days only, worded as such', async ({ page }) => {
   await openAdmin(page);
   await pointerDrag(page, 'r-bellona', await onCard(page, 'r-carling'), async () => {
-    await expect(page.locator('.dnd-ghost--on')).toContainText('Swap days with HCarling + HStar: Mon 28 ⇄ Tue 29, times kept');
+    await expect(page.locator('.dnd-ghost--on')).toContainText('Swap days with HCarling + HMaleficStar: Mon 28 ⇄ Tue 29, times kept');
   });
   await expect(page.getByText(/^Swapped NBellona to Tue 29/)).toBeVisible();
   expect((await slots(page, 'r-bellona', 'r-carling')).runs).toEqual([
@@ -153,13 +161,13 @@ test('keyboard: S on another run’s slot swaps; S with nobody there says so', a
   await page.keyboard.press('m');
   await page.keyboard.press('s');
   await expect(page.locator('[aria-live="assertive"]')).toContainText("Nothing to swap with on Mon 28, 20:00: move onto another run's slot first.");
-  // Tue 20:00, then down four half-hours onto HCarling + HStar at 22:00.
+  // Tue 20:00, then down four half-hours onto HCarling + HMaleficStar at 22:00.
   await page.keyboard.press('ArrowRight');
   for (let i = 0; i < 4; i++) await page.keyboard.press('ArrowDown');
-  await expect(page.locator('[aria-live="assertive"]')).toContainText('HFA: Tue 29, 22:00. HCarling + HStar is here: S swaps with it');
-  await expect(page.locator('section.board__col[data-day="5"] .plan-preview')).toContainText('S: Swap with HCarling + HStar: Mon 28 20:00 ⇄ Tue 29 22:00');
+  await expect(page.locator('[aria-live="assertive"]')).toContainText('HFA: Tue 29, 22:00. HCarling + HMaleficStar is here: S swaps with it');
+  await expect(page.locator('section.board__col[data-day="5"] .plan-preview')).toContainText('S: Swap with HCarling + HMaleficStar: Mon 28 20:00 ⇄ Tue 29 22:00');
   await page.keyboard.press('s');
-  await expect(page.getByText('Swapped HFA to Tue 29 22:00, HCarling + HStar to Mon 28 20:00.')).toBeVisible();
+  await expect(page.getByText('Swapped HFA to Tue 29 22:00, HCarling + HMaleficStar to Mon 28 20:00.')).toBeVisible();
   expect((await slots(page, 'r-fa', 'r-carling')).runs).toEqual([
     { id: 'r-fa', day: 5, time: '22:00' },
     { id: 'r-carling', day: 4, time: '20:00' },
@@ -204,7 +212,9 @@ test('a change by someone else during the drag: the swap conflicts and both card
     if (r.method() === 'POST' && r.url().endsWith('/api/admin/runs/r-fa/swap')) sent.push(r.postDataJSON() as { with: string; version: number });
   });
   await pointerDrag(page, 'r-fa', await onCard(page, 'r-bm'), async () => {
-    const moved = await request.post(`${ADMIN}/api/admin/runs/r-limbo/move`, { headers: await csrf(request), data: { day: 1, time: '23:45', version: start } });
+    // Another admin moves XBM itself (the server checks the fields a swap touches, so a change
+    // to an unrelated run would not conflict).
+    const moved = await request.post(`${ADMIN}/api/admin/runs/r-bm/move`, { headers: await csrf(request), data: { day: 5, time: '23:45', version: start } });
     expect(moved.ok()).toBe(true);
     const polled = page.waitForResponse((r) => r.url().includes('/api/admin/week') && r.request().method() === 'GET');
     await page.evaluate(() => window.dispatchEvent(new Event('online')));
@@ -216,16 +226,16 @@ test('a change by someone else during the drag: the swap conflicts and both card
   // Both cards back where they were, and the other admin's change shows.
   await expect(page.locator('section.board__col[data-day="4"] [data-run="r-fa"]')).toBeVisible();
   await expect(page.locator('section.board__col[data-day="5"] [data-run="r-bm"]')).toBeVisible();
-  await expect(page.locator('[data-run="r-limbo"]')).toContainText('23:45');
+  await expect(page.locator('[data-run="r-bm"]')).toContainText('23:45');
   expect((await slots(page, 'r-fa', 'r-bm')).runs).toEqual([
     { id: 'r-fa', day: 4, time: '20:00' },
-    { id: 'r-bm', day: 5, time: '23:30' },
+    { id: 'r-bm', day: 5, time: '23:45' },
   ]);
 });
 
 test('a swap the server refuses (it would leave the boss week) says why and puts both back', async ({ page }) => {
   await openAdmin(page);
-  // The mock's week starts at midnight, so the backend's refusal is played here.
+  // No seeded swap would leave the boss week, so the backend's refusal is played here.
   await page.route('**/api/admin/runs/r-fa/swap', (route) =>
     route.fulfill({ status: 422, json: { error: 'invalid', message: 'that slot swap would move a run outside its boss week' } }),
   );

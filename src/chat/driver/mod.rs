@@ -567,6 +567,14 @@ impl<A: Answerer, S: Surface> ChatDriver<A, S> {
         self.state().pilot.allowance.forget(member_id);
     }
 
+    /// Test support: one answer in the member's window now, as if they had
+    /// been answered; `false` when their window or the pool is full.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn spend_allowance(&self, member_id: &str) -> bool {
+        let now = self.now();
+        self.state().pilot.allowance.spend(member_id, now)
+    }
+
     /// `disabled`, `idle`, `busy` or `degraded` (enabled but unable to
     /// answer, or clean retries suspended by the storm guard).
     pub fn status(&self) -> &'static str {
@@ -597,6 +605,11 @@ impl<A: Answerer, S: Surface> ChatView for ChatDriver<A, S> {
 
     fn reset_allowance(&self, member_id: &str) {
         ChatDriver::reset_allowance(self, member_id);
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    fn spend_allowance(&self, member_id: &str) -> bool {
+        ChatDriver::spend_allowance(self, member_id)
     }
 
     fn status(&self) -> &'static str {

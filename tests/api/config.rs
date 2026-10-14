@@ -689,6 +689,11 @@ async fn get_shows_settings_models_personas_and_env_facts() {
         "missing is private"
     );
     assert_eq!(persona["profiles"][0]["prompt_summary"], "# Reply profile");
+    let prompt = persona["profiles"][0]["prompt"].as_str().unwrap();
+    assert!(
+        prompt.starts_with("# Reply profile\n") && prompt.trim().lines().count() > 1,
+        "the whole prompt, not its summary line: {prompt:?}"
+    );
     assert_eq!(persona["role_profiles"], json!([]));
     assert!(
         persona["role_profiles_digest"]

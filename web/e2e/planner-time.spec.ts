@@ -5,9 +5,17 @@ import { ADMIN, csrf, expect, test, choose } from './support';
 // Workplan step planner-time-drops (user decisions 2026-10-01): a pointer drop
 // sets the time from the runs around it (Config → Run lengths), the keyboard
 // steps by the configured default, and a drop that double-books somebody
-// warns (icon + words) but still saves. Seed, under the pinned clock: Tue has
-// HCarling + HStar 22:00 (two bosses, 60 min) and XBM 23:30; Mon has HFA
-// 20:00 and HJupiter 21:00; every boss takes the 30-minute default.
+// warns (icon + words) but still saves. Seed: Tue has HCarling + HMaleficStar
+// 22:00 (two bosses, 60 min) and XBM 23:30; Mon has HFA 20:00 and HJupiter
+// 21:00; every boss takes the 30-minute default. The server clock stands at
+// Mon 28 12:00 (guild time), before Monday's runs: at the pinned Tuesday they
+// have ended and the server refuses to move them.
+
+const MONDAY = '2026-09-28T04:00:00Z';
+
+test.beforeEach(async ({ request }) => {
+  expect((await request.post(`${ADMIN}/__e2e/clock`, { data: { at: MONDAY } })).ok()).toBe(true);
+});
 
 const column = (page: Page, dow: string) => page.locator('section.board__col').filter({ has: page.locator(`h2 .board__dow:text-is("${dow}")`) });
 
@@ -119,8 +127,9 @@ test('a change by someone else during the drag is not overwritten: the drop conf
     if (r.method() === 'POST' && r.url().endsWith('/api/admin/runs/r-fa/move')) sent.push(r.postDataJSON() as { version: number });
   });
   await pointerDrag(page, 'r-fa', await above(page, 'r-bm'), async () => {
-    // Another admin moves HLimbo while the card is held; the page polls and buffers it.
-    const moved = await request.post(`${ADMIN}/api/admin/runs/r-limbo/move`, { headers: await csrf(request), data: { day: 1, time: '23:45', version: start } });
+    // Another admin moves HFA itself while the card is held (the server checks the fields a move
+    // touches, so a change to another run would not conflict); the page polls and buffers it.
+    const moved = await request.post(`${ADMIN}/api/admin/runs/r-fa/move`, { headers: await csrf(request), data: { day: 4, time: '20:30', version: start } });
     expect(moved.ok()).toBe(true);
     const polled = page.waitForResponse((r) => r.url().includes('/api/admin/week') && r.request().method() === 'GET');
     await page.evaluate(() => window.dispatchEvent(new Event('online')));
@@ -130,9 +139,9 @@ test('a change by someone else during the drag is not overwritten: the drop conf
   // Sent against the week the drag began on, so the server refuses it.
   await expect(page.getByText(/^Couldn't move HFA/)).toBeVisible();
   expect(sent).toEqual([expect.objectContaining({ version: start })]);
-  expect((await weekRun(page, 'r-fa')).run).toMatchObject({ day: 4, time: '20:00' });
+  expect((await weekRun(page, 'r-fa')).run).toMatchObject({ day: 4, time: '20:30' });
   // The other admin's change is on the board afterwards.
-  await expect(page.locator('[data-run="r-limbo"]')).toContainText('23:45');
+  await expect(page.locator('[data-run="r-fa"]')).toContainText('20:30');
 });
 
 test('the keyboard drop conflicts the same way after a change made during the lift', async ({ page, request }) => {
@@ -141,7 +150,7 @@ test('the keyboard drop conflicts the same way after a change made during the li
   await page.locator('[data-handle="r-fa"]').focus();
   await page.keyboard.press('m');
   await page.keyboard.press('ArrowRight');
-  const moved = await request.post(`${ADMIN}/api/admin/runs/r-limbo/move`, { headers: await csrf(request), data: { day: 1, time: '23:45', version: start } });
+  const moved = await request.post(`${ADMIN}/api/admin/runs/r-fa/move`, { headers: await csrf(request), data: { day: 4, time: '20:30', version: start } });
   expect(moved.ok()).toBe(true);
   const polled = page.waitForResponse((r) => r.url().includes('/api/admin/week') && r.request().method() === 'GET');
   await page.evaluate(() => window.dispatchEvent(new Event('online')));
@@ -220,7 +229,7 @@ test('Config Run lengths: overrides from the catalog save whole; bad values are 
   await panel.getByRole('button', { name: 'Add an override' }).click();
   const boss = panel.getByRole('combobox', { name: 'Boss', exact: true }).last();
   await expect(boss).toBeFocused();
-  await choose(boss, { label: 'Carling' });
+  await choose(boss, { label: 'Karling' });
   await panel.getByRole('spinbutton', { name: 'Minutes' }).last().fill('600');
   await panel.getByRole('button', { name: 'Save run lengths' }).click();
   await expect(panel.getByRole('alert')).toHaveText('Override 2: a run length is 5–480 whole minutes.');
@@ -252,7 +261,7 @@ test('Config Run lengths: overrides from the catalog save whole; bad values are 
   await expect(panel.getByRole('alert')).toHaveCount(0);
 
   // Remove returns focus to "Add an override".
-  await panel.getByRole('button', { name: /^Remove the Carling override/ }).click();
+  await panel.getByRole('button', { name: /^Remove the Karling override/ }).click();
   await expect(panel.getByRole('button', { name: 'Add an override' })).toBeFocused();
   await expect(panel.getByRole('combobox', { name: 'Boss', exact: true })).toHaveCount(1);
 });

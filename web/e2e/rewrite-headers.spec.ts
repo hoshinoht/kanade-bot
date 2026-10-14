@@ -2,7 +2,9 @@ import { ADMIN, expect, test } from './support';
 
 // Config → Notifications: "Rewrite this week's headers" asks first, starts the
 // manual run (the server answers at once) and shows a second trigger's refusal
-// while that run is still going.
+// while that run is still going. In the classic style only day-of headers are
+// rewritten: this week's posted ones naming a run still ahead are Tuesday's
+// two morning cards (HCarling + HMaleficStar's and XBM's).
 
 test("rewrite this week's headers: confirms, starts, refuses while running", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
@@ -21,7 +23,7 @@ test("rewrite this week's headers: confirms, starts, refuses while running", asy
   await trigger.click();
   await dialog.getByRole('button', { name: 'Rewrite headers' }).click();
   expect((await posted).status()).toBe(202);
-  await expect(page.getByRole('group', { name: 'Notification' }).filter({ hasText: 'Rewriting 4 header(s); see the Rewrites log.' })).toBeVisible();
+  await expect(page.getByRole('group', { name: 'Notification' }).filter({ hasText: 'Rewriting 2 header(s); see the Rewrites log.' })).toBeVisible();
   await expect(card.getByRole('alert')).toHaveCount(0);
 
   // The run is still going: a second trigger is refused inline.

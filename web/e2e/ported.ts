@@ -70,4 +70,17 @@ export const PORTED: readonly string[] = [
   'public-bosses.spec.ts',
   'reduce-motion.spec.ts',
   'sheet.spec.ts',
+  // Lane SpecPortP2.
+  'avatars.spec.ts',
+  'flows.spec.ts',
+  'planner-swap.spec.ts',
+  'planner-time.spec.ts',
+  'profiles.spec.ts',
+  'reminders.spec.ts',
+  'rewrite-headers.spec.ts',
+  'row-expansion-capture.spec.ts',
+  'row-expansion.spec.ts',
+  'run-identity.spec.ts',
+  'shell.spec.ts',
+  'timings.spec.ts',
 ];

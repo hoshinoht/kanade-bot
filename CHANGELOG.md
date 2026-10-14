@@ -13,6 +13,7 @@ _In development_
 - Fixed Config never showing the "Manage Messages missing" warning when the bot lacks Manage Messages in a channel it uses.
 - Fixed phones cutting off a member's runs in the Week's Answers view and the Reminders count running past the window edge.
 - Fixed low-contrast "still a question" chips on the selected Inbox item in the Sumire dark and Catppuccin light colourways.
+- Fixed Config › Persona showing only a reply profile's first line when you open its whole prompt.
 
 ### Removed
 - Removed the one-off `kanade import v4` command; v4 data already imported stays readable.

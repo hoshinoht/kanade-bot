@@ -349,6 +349,11 @@ impl ChatView for FakeChat {
         self.resets.lock().unwrap().push(member_id.to_owned());
     }
 
+    fn spend_allowance(&self, member_id: &str) -> bool {
+        let now = *self.now.lock().unwrap();
+        self.pilot.lock().unwrap().allowance.spend(member_id, now)
+    }
+
     fn status(&self) -> &'static str {
         "idle"
     }

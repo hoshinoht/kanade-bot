@@ -9,6 +9,12 @@
 //!   break_glass: {cookie: {name, value}, token}}`: Asahi's Discord admin
 //!   session every template copy holds (the admin every spec browses as),
 //!   and the break-glass token with the token session the template holds.
+//! - `POST /__e2e/chat-allowance` `{member, answers}`: spends that many
+//!   answers from the member's live chat window (and the guild pool), as if
+//!   the chatbot had answered them, so Limits has a window to reset;
+//!   204, 409 when the window or pool fills first, 503 before chat starts.
+//!   The chat driver counts in monotonic time, so the answers age with the
+//!   wall clock, not `/__e2e/clock`.
 //! - `POST`/`GET`/`DELETE /__e2e/reports`: the CSP report sink, shared by both
 //!   origins; every enforced policy gets `report-uri /__e2e/reports`.
 //! - `GET /__e2e/discord/oauth2/authorize`: the fake Discord page.
@@ -186,6 +192,19 @@ impl Shared {
         }
     }
 
+    /// Spends `answers` from the live chat driver's window for `member`;
+    /// `None` while chat is not running, `Some(false)` once one did not fit.
+    async fn spend_chat(&self, member: &str, answers: usize) -> Option<bool> {
+        let slot = self.generation.lock().await;
+        let chat = slot.live.as_ref()?.live().state.chat.clone()?;
+        for _ in 0..answers {
+            if !chat.spend_allowance(member)? {
+                return Some(false);
+            }
+        }
+        Some(true)
+    }
+
     /// Stops serving and retires the live generation.
     pub async fn close(&self) {
         self.routes
@@ -226,6 +245,7 @@ pub fn router(shared: &Arc<Shared>, origin: Origin) -> Router {
         .route("/__e2e/whoami", get(whoami))
         .route("/__e2e/reset", post(reset))
         .route("/__e2e/clock", post(set_clock))
+        .route("/__e2e/chat-allowance", post(spend_chat))
         .route(REPORTS, get(list).post(receive).delete(clear))
         .merge(discord::routes(Arc::clone(&shared.page)))
         .fallback(forward);
@@ -284,6 +304,27 @@ async fn reset(State(side): State<Side>) -> Response {
     match side.shared.reset().await {
         Ok(()) => now_body(side.shared.clock.now()).into_response(),
         Err(error) => (StatusCode::INTERNAL_SERVER_ERROR, error.to_string()).into_response(),
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ChatSpend {
+    member: String,
+    answers: usize,
+}
+
+async fn spend_chat(
+    State(side): State<Side>,
+    body: Result<Json<ChatSpend>, JsonRejection>,
+) -> Response {
+    let Ok(Json(spend)) = body else {
+        return StatusCode::BAD_REQUEST.into_response();
+    };
+    match side.shared.spend_chat(&spend.member, spend.answers).await {
+        None => StatusCode::SERVICE_UNAVAILABLE.into_response(),
+        Some(false) => (StatusCode::CONFLICT, "the window or the pool is full").into_response(),
+        Some(true) => StatusCode::NO_CONTENT.into_response(),
     }
 }
 

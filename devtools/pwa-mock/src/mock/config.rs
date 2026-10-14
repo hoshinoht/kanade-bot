@@ -808,9 +808,9 @@ impl Store {
             "persona": {
                 "active": c.persona,
                 "personas": PERSONAS.iter().map(|(key, name, bundle)| json!({ "key": key, "name": name, "bundle": bundle })).collect::<Vec<_>>(),
-                "profiles": PROFILES.iter().map(|(key, name, _, voice, summary)| json!({
+                "profiles": PROFILES.iter().map(|(key, name, _, voice, prompt)| json!({
                     "key": key, "name": name, "public": profile_visible(c, key),
-                    "voice": voice, "prompt_summary": summary,
+                    "voice": voice, "prompt_summary": prompt, "prompt": prompt,
                 })).collect::<Vec<_>>(),
                 "role_profiles": c.role_profiles.iter().map(|assignment| json!({
                     "role_id": assignment.role_id,

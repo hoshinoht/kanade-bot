@@ -9,7 +9,7 @@ import { ADMIN, CAPTURE_VIEWPORTS, REAL_ART, expect, settle, test, unconditional
 
 const OUT = REAL_ART ? 'e2e/.captures/real' : 'e2e/.captures/synthetic';
 
-/** r-carling (HCarling + HStar) with Kalos and Black Mage added: four bosses, all with art. */
+/** r-carling (HCarling + HMaleficStar) with Kalos and Black Mage added: four bosses, all with art. */
 async function fourBosses(page: Page) {
   await page.route(`${ADMIN}/api/admin/week*`, async (route) => {
     const response = await route.fetch(unconditional(route));
@@ -35,7 +35,7 @@ async function confined(card: Locator) {
   expect(result).toEqual({ inside: true, clip: 'clip', strays: 0 });
 }
 
-/** Each slice's source: the still, or the clip where the boss has one (HStar in the fixtures). */
+/** Each slice's source: the still, or the clip where the boss has one (Radiant Malefic Star in the fixtures). */
 async function srcs(card: Locator) {
   return card.locator('.run__arts .run__art').evaluateAll((arts) => arts.map((a) => a.getAttribute('src')));
 }
@@ -63,7 +63,7 @@ test('run pane: one picture, two slices, and three slices for four bosses, all i
   expect(cardBottom).toBeLessThanOrEqual(pickTop + 0.5);
   await page.keyboard.press('Escape');
 
-  pane = await openPane(page, 'r-carling', 'HCarling + HStar');
+  pane = await openPane(page, 'r-carling', 'HCarling + HMaleficStar');
   card = pane.locator('.week-pane__art');
   await expect(card.locator('.run__arts--2 .run__slice')).toHaveCount(2);
   expect(await srcs(card)).toEqual(['/art/entry/Carling', '/art/animated/MaleficStar']);
@@ -73,7 +73,7 @@ test('run pane: one picture, two slices, and three slices for four bosses, all i
   await page.unrouteAll();
   await fourBosses(page);
   await page.reload();
-  pane = await openPane(page, 'r-carling', 'HCarling + HStar + XKalos + XBM');
+  pane = await openPane(page, 'r-carling', 'HCarling + HMaleficStar + XKalos + XBM');
   card = pane.locator('.week-pane__art');
   // At most three slices, lead first in run order; the fourth boss is a portrait only.
   await expect(card.locator('.run__arts--3 .run__slice')).toHaveCount(3);
@@ -83,7 +83,7 @@ test('run pane: one picture, two slices, and three slices for four bosses, all i
 
   // The larger view keeps the same art inside its identity card.
   await pane.getByRole('button', { name: 'Open in a larger view' }).click();
-  const sheet = page.getByRole('dialog', { name: 'HCarling + HStar + XKalos + XBM' });
+  const sheet = page.getByRole('dialog', { name: 'HCarling + HMaleficStar + XKalos + XBM' });
   const hero = sheet.locator('.runsheet__hero');
   await expect(hero.locator('.run__arts--3 .run__slice')).toHaveCount(3);
   await confined(hero);
@@ -99,8 +99,8 @@ for (const vp of [
     await page.setViewportSize({ width: vp.width, height: vp.height });
     await page.goto(`${ADMIN}/?sw=off`);
     await page.locator('[data-run="r-carling"] .plan-card__open').click();
-    if (vp.name === 'wide') await page.getByRole('complementary', { name: 'HCarling + HStar' }).getByRole('button', { name: 'Open in a larger view' }).click();
-    const sheet = page.getByRole('dialog', { name: 'HCarling + HStar' });
+    if (vp.name === 'wide') await page.getByRole('complementary', { name: 'HCarling + HMaleficStar' }).getByRole('button', { name: 'Open in a larger view' }).click();
+    const sheet = page.getByRole('dialog', { name: 'HCarling + HMaleficStar' });
     await expect(sheet.getByRole('tab', { name: /^Party/ })).toBeVisible();
     const found = await sheet.evaluate((dialog) => {
       const hero = dialog.querySelector('.runsheet__hero')!;
@@ -135,7 +135,7 @@ test('the identity art never hides under reduced motion and stays CSP-clean on t
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(`${ADMIN}/?sw=off`);
   await page.locator('[data-run="r-carling"] .plan-card__open').click();
-  const sheet = page.getByRole('dialog', { name: 'HCarling + HStar' });
+  const sheet = page.getByRole('dialog', { name: 'HCarling + HMaleficStar' });
   const hero = sheet.locator('.runsheet__hero');
   await expect(hero.locator('.run__arts--2 .run__slice')).toHaveCount(2);
   await confined(hero);
@@ -146,13 +146,13 @@ test('the identity art never hides under reduced motion and stays CSP-clean on t
 test('"View weekly timing" opens the timing in the Fixed editor without a reload', async ({ page }) => {
   await page.goto(`${ADMIN}/?sw=off`);
   await page.evaluate(() => ((window as unknown as { __same: boolean }).__same = true));
-  const pane = await openPane(page, 'r-carling', 'HCarling + HStar');
+  const pane = await openPane(page, 'r-carling', 'HCarling + HMaleficStar');
   const link = pane.getByRole('link', { name: 'View weekly timing' });
   await expect(link).toHaveAttribute('href', '/fixed?open=f-carling');
   await link.click();
   await expect(page.getByRole('complementary', { name: 'Weekly timing details' })).toBeVisible();
   await expect(page).toHaveURL(/\/fixed$/);
-  await expect(page.getByRole('complementary', { name: 'HCarling + HStar' })).toHaveCount(0);
+  await expect(page.getByRole('complementary', { name: 'HCarling + HMaleficStar' })).toHaveCount(0);
   expect(await page.evaluate(() => (window as unknown as { __same?: boolean }).__same)).toBe(true);
 
   // A run that came from no weekly timing has no link.
@@ -175,7 +175,8 @@ test('"View weekly timing" from the phone sheet closes the sheet and opens the e
 
 test('fixed editor: the time is a stepper that still takes typing, and Enter saves', async ({ page }) => {
   await page.goto(`${ADMIN}/fixed?sw=off`);
-  await page.getByRole('button', { name: 'Edit Tuesday 23:30 — XBM' }).click();
+  // A timing in a watched channel: the server refuses to save one whose runs would never be pinged (XBM's #bm-trio).
+  await page.getByRole('button', { name: 'Edit Friday 23:30 — HLimbo' }).click();
   const editor = page.getByRole('complementary', { name: 'Weekly timing details' });
   const time = editor.getByRole('spinbutton', { name: 'Time' });
   await expect(time).toHaveValue('23:30');
@@ -198,7 +199,7 @@ test('fixed editor: the time is a stepper that still takes typing, and Enter sav
   await expect(time).toHaveAttribute('aria-valuetext', '22:45');
   await time.press('Enter');
   await expect(editor).toBeHidden();
-  await expect(page.getByRole('group', { name: 'Notification' }).filter({ hasText: 'Saved Tuesday 22:45 — XBM.' })).toBeVisible();
+  await expect(page.getByRole('group', { name: 'Notification' }).filter({ hasText: 'Saved Friday 22:45 — HLimbo.' })).toBeVisible();
 });
 
 test('fixed editor: a new timing starts empty, steps from 21:00, and an empty time is still refused by the server', async ({ page }) => {
@@ -229,7 +230,10 @@ test.describe('captures', () => {
         await useLook(page, look.colorway, look.theme);
         const tag = `${vp.name}-${look.name}`;
         const shot = async (name: string) => {
-          await page.evaluate(() => Promise.all([...document.images].map((i) => i.decode().catch(() => {}))));
+          // Only the pictures on screen: a lazy image off screen never loads, so its decode() never settles.
+          await page.evaluate(() =>
+            Promise.all([...document.images].filter((i) => i.getBoundingClientRect().top < innerHeight && i.checkVisibility()).map((i) => i.decode().catch(() => {}))),
+          );
           await settle(page);
           await page.screenshot({ path: `${OUT}/run-identity-${name}-${tag}.png`, animations: 'disabled' });
         };
@@ -237,7 +241,7 @@ test.describe('captures', () => {
         await page.goto(`${ADMIN}/?sw=off`);
         for (const [id, name, label] of [
           ['r-bm', 'XBM', '1boss'],
-          ['r-carling', 'HCarling + HStar + XKalos + XBM', '4boss'],
+          ['r-carling', 'HCarling + HMaleficStar + XKalos + XBM', '4boss'],
         ] as const) {
           await page.locator(`[data-run="${id}"] .plan-card__open`).click();
           const surface = page.getByRole(vp.name === 'wide' ? 'complementary' : 'dialog', { name });
@@ -256,12 +260,12 @@ test.describe('captures', () => {
         await page.unrouteAll();
         await page.reload();
         await page.locator('[data-run="r-carling"] .plan-card__open').click();
-        const two = page.getByRole(vp.name === 'wide' ? 'complementary' : 'dialog', { name: 'HCarling + HStar' });
+        const two = page.getByRole(vp.name === 'wide' ? 'complementary' : 'dialog', { name: 'HCarling + HMaleficStar' });
         await expect(two).toBeVisible();
         await shot('pane-2boss');
         if (vp.name === 'wide') {
           await two.getByRole('button', { name: 'Open in a larger view' }).click();
-          await expect(page.getByRole('dialog', { name: 'HCarling + HStar' })).toBeVisible();
+          await expect(page.getByRole('dialog', { name: 'HCarling + HMaleficStar' })).toBeVisible();
           await shot('sheet-2boss');
         }
 

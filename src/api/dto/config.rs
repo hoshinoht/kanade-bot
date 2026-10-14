@@ -192,7 +192,10 @@ pub struct ReplyProfile {
     pub name: String,
     pub public: bool,
     pub voice: String,
+    /// The prompt's first non-empty line, cut short: the list's preview.
     pub prompt_summary: String,
+    /// The whole prompt, as the profile file holds it.
+    pub prompt: String,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -652,6 +655,7 @@ pub fn persona(
                 public: selectable.contains(&profile.id),
                 voice: profile.voice.clone().unwrap_or_default(),
                 prompt_summary: summary(&profile.prompt),
+                prompt: profile.prompt.clone(),
             }
         }));
     }

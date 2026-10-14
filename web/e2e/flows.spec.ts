@@ -1,8 +1,12 @@
-import type { Page } from '@playwright/test';
+import type { Locator, Page } from '@playwright/test';
 import { ADMIN, HEADING, csrf, expect, test } from './support';
 
 // Every test here also asserts, via the auto `csp` fixture, zero CSP or
 // Trusted Types violations: console, DOM events and server reports.
+// At the pinned Tue 29 12:00 the runs before today have ended and the server
+// refuses to move them, so the moves here take Tuesday's open runs forward.
+
+const CARLING = 'HCarling + HMaleficStar';
 
 const column = (page: Page, dow: string) => page.locator('section.board__col').filter({ has: page.locator(`h2 .board__dow:text-is("${dow}")`) });
 
@@ -17,7 +21,7 @@ test('admin: the run pane opens from a card and restores focus on Escape', async
   const open = page.locator('[data-run="r-carling"] .plan-card__open');
   await open.focus();
   await page.keyboard.press('Enter');
-  const dialog = page.getByRole('complementary', { name: 'HCarling + HStar' });
+  const dialog = page.getByRole('complementary', { name: CARLING });
   await expect(dialog).toBeVisible();
   await expect(dialog.getByText('Radiant Malefic Star')).toBeVisible();
   await page.keyboard.press('Escape');
@@ -92,25 +96,25 @@ test('admin: keyboard-only move with announcements, then undo from the toast', a
   await expect(card).toHaveAttribute('aria-keyshortcuts', 'M');
   await card.focus();
   await page.keyboard.press('m');
-  await expect(live).toContainText('Picked up HCarling + HStar, Tue 29, 22:00');
+  await expect(live).toContainText(`Picked up ${CARLING}, Tue 29, 22:00`);
   await expect(page.locator('[data-run="r-carling"]')).toHaveClass(/plan-card--lifted/);
-  await page.keyboard.press('ArrowLeft');
-  await expect(live).toContainText('HCarling + HStar: Mon 28, 22:00.');
+  await page.keyboard.press('ArrowRight');
+  await expect(live).toContainText(`${CARLING}: Wed 30, 22:00.`);
   await page.keyboard.press('ArrowDown');
-  await expect(live).toContainText('Mon 28, 22:30.');
+  await expect(live).toContainText('Wed 30, 22:30.');
   await page.keyboard.press('Enter');
-  await expect(live).toContainText('Dropped HCarling + HStar on Mon 28, 22:30.');
+  await expect(live).toContainText(`Dropped ${CARLING} on Wed 30, 22:30.`);
   // The drop key does not also open the sheet.
   await expect(page.getByRole('dialog')).toBeHidden();
 
-  await expect(column(page, 'Mon').locator('[data-run="r-carling"]')).toContainText('22:30');
+  await expect(column(page, 'Wed').locator('[data-run="r-carling"]')).toContainText('22:30');
   await expect(page.locator('[data-handle="r-carling"]')).toBeFocused();
-  const toast = page.getByRole('group', { name: 'Notification' }).filter({ hasText: 'Moved HCarling + HStar' });
+  const toast = page.getByRole('group', { name: 'Notification' }).filter({ hasText: `Moved ${CARLING}` });
   await expect(toast).toBeVisible();
 
   await toast.getByRole('button', { name: 'Undo' }).click();
   await expect(column(page, 'Tue').locator('[data-run="r-carling"]')).toContainText('22:00');
-  await expect(page.getByText('Move undone: HCarling + HStar')).toBeVisible();
+  await expect(page.getByText(`Move undone: ${CARLING}`)).toBeVisible();
   // The toast (and its focused button) is gone; focus lands on the moved card's handle.
   await expect(page.locator('[data-handle="r-carling"]')).toBeFocused();
 
@@ -138,14 +142,26 @@ async function showWeekEnd(page: Page) {
   await expect(page.locator('.board.scroll-more-end')).toHaveCount(0);
 }
 
-async function dragTo(page: Page, from: { x: number; y: number; width: number; height: number }, to: { x: number; y: number; width: number }) {
+/**
+ * Drags toward `target` (a day column), then keeps aiming at its middle until it
+ * says it is the drop target: moves are applied on the next frame, and the board
+ * can scroll a little under the pointer, which misses the narrow empty Wed strip.
+ */
+async function dragTo(page: Page, from: { x: number; y: number; width: number; height: number }, target: Locator) {
+  const to = (await target.boundingBox())!;
   for (let i = 1; i <= 12; i++) {
     await page.mouse.move(
       from.x + from.width / 2 + ((to.x + to.width / 2 - from.x - from.width / 2) * i) / 12,
       from.y + from.height / 2 + ((to.y + 120 - from.y - from.height / 2) * i) / 12,
     );
   }
-  await page.mouse.move(to.x + to.width / 2 + 1, to.y + 121);
+  await expect
+    .poll(async () => {
+      const now = (await target.boundingBox())!;
+      await page.mouse.move(now.x + now.width / 2 + 1, now.y + 121);
+      return target.getAttribute('class');
+    })
+    .toMatch(/board__col--target/);
 }
 
 test('admin: pointer drag of a whole card to another day, Ctrl/Cmd+Z undoes', async ({ page }) => {
@@ -155,26 +171,23 @@ test('admin: pointer drag of a whole card to another day, Ctrl/Cmd+Z undoes', as
   await page.waitForTimeout(3000);
   await expect(page.locator('.board:not([data-hydrated])')).toBeVisible();
   await showWeekEnd(page);
-  const card = page.locator('[data-run="r-fa"]');
+  const card = page.locator('[data-run="r-carling"]');
   const target = column(page, 'Wed');
   const from = (await card.boundingBox())!;
-  const to = (await target.boundingBox())!;
   await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2);
   await expect(page.locator('.board[data-hydrated]')).toBeVisible();
   await page.mouse.down();
-  await dragTo(page, from, to);
-  await expect(page.locator('.dnd-ghost--on')).toContainText('HFA');
-  // Moves are applied on the next frame: drop only once the column says so.
-  await expect(target).toHaveClass(/board__col--target/);
+  await dragTo(page, from, target);
+  await expect(page.locator('.dnd-ghost--on')).toContainText('HCarling');
   await page.mouse.up();
-  await expect(target.locator('[data-run="r-fa"]')).toBeVisible();
-  await expect(page.getByText('Moved HFA to Wed 30 20:00.')).toBeVisible();
+  await expect(target.locator('[data-run="r-carling"]')).toBeVisible();
+  await expect(page.getByText(`Moved ${CARLING} to Wed 30 22:00.`)).toBeVisible();
   // The drop does not also open the sheet.
   await expect(page.getByRole('dialog')).toBeHidden();
 
   await page.locator('main').click({ position: { x: 5, y: 5 } });
   await page.keyboard.press('ControlOrMeta+z');
-  await expect(column(page, 'Mon').locator('[data-run="r-fa"]')).toBeVisible();
+  await expect(column(page, 'Tue').locator('[data-run="r-carling"]')).toBeVisible();
 });
 
 test('admin: the very first press drags even before the engine hydrates', async ({ page }) => {
@@ -188,22 +201,19 @@ test('admin: the very first press drags even before the engine hydrates', async 
   });
   await openAdmin(page);
   await showWeekEnd(page);
-  const card = page.locator('[data-run="r-fa"]');
+  const card = page.locator('[data-run="r-carling"]');
   const target = column(page, 'Wed');
   const from = (await card.boundingBox())!;
-  const to = (await target.boundingBox())!;
   // Pointer-over is dispatched on the board before the press, like touch.
   await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2);
   await page.mouse.down();
   await expect(page.locator('.board:not([data-hydrated])')).toBeVisible();
   release();
   await expect(page.locator('.board[data-hydrated]')).toBeVisible();
-  await dragTo(page, from, to);
-  await expect(page.locator('.dnd-ghost--on')).toContainText('HFA');
-  // Moves are applied on the next frame: drop only once the column says so.
-  await expect(target).toHaveClass(/board__col--target/);
+  await dragTo(page, from, target);
+  await expect(page.locator('.dnd-ghost--on')).toContainText('HCarling');
   await page.mouse.up();
-  await expect(target.locator('[data-run="r-fa"]')).toBeVisible();
+  await expect(target.locator('[data-run="r-carling"]')).toBeVisible();
 });
 
 test('admin: a click on a card opens it; it does not start a drag', async ({ page }) => {
@@ -228,7 +238,7 @@ test.describe('touch', () => {
     const touch = (type: string, x?: number, y?: number) =>
       cdp.send('Input.dispatchTouchEvent', { type, touchPoints: x === undefined ? [] : [{ x, y: y! }] });
     await showWeekEnd(page);
-    const from = (await page.locator('[data-run="r-fa"]').boundingBox())!;
+    const from = (await page.locator('[data-run="r-carling"]').boundingBox())!;
     const target = column(page, 'Wed');
     const to = (await target.boundingBox())!;
     const [x0, y0] = [from.x + from.width / 2, from.y + from.height / 2];
@@ -239,23 +249,27 @@ test.describe('touch', () => {
     await touch('touchMove', to.x + to.width / 2 + 1, to.y + 121);
     await expect(target).toHaveClass(/board__col--target/);
     await touch('touchEnd');
-    await expect(target.locator('[data-run="r-fa"]')).toBeVisible();
+    await expect(target.locator('[data-run="r-carling"]')).toBeVisible();
     await expect(page.getByRole('dialog')).toBeHidden();
   });
 });
 
 test('admin: a rejected move rolls back and says why', async ({ page }) => {
+  // A tab that missed the other admin's change (no live hint), so its move meets the conflict.
+  await page.route(`${ADMIN}/api/admin/events`, (route) => route.abort());
   await openAdmin(page);
-  // Make the page's week version stale by moving through the API behind its back.
+  // Make the page's copy of HCarling stale by moving it through the API behind its back (the
+  // server checks the fields a move touches, so a change to another run would not conflict).
   const { version } = (await (await page.request.get(`${ADMIN}/api/admin/week`)).json()) as { version: number };
-  await page.request.post(`${ADMIN}/api/admin/runs/r-bm/move`, { headers: await csrf(page.request), data: { day: 6, time: '23:30', version } });
-  const handle = page.locator('[data-handle="r-limbo"]');
+  const moved = await page.request.post(`${ADMIN}/api/admin/runs/r-carling/move`, { headers: await csrf(page.request), data: { day: 5, time: '22:30', version } });
+  expect(moved.ok()).toBe(true);
+  const handle = page.locator('[data-handle="r-carling"]');
   await handle.focus();
   await page.keyboard.press('m');
   await page.keyboard.press('ArrowRight');
   await page.keyboard.press('Space');
-  await expect(page.getByText(/Couldn't move HLimbo: The week changed since it was loaded\./)).toBeVisible();
-  await expect(column(page, 'Fri').locator('[data-run="r-limbo"]')).toBeVisible();
+  await expect(page.getByText(new RegExp(`Couldn't move ${CARLING.replace('+', '\\+')}: The week changed since it was loaded\\.`))).toBeVisible();
+  await expect(column(page, 'Tue').locator('[data-run="r-carling"]')).toBeVisible();
 });
 
 test('admin: a lazy chunk that fails after a deploy offers a reload', async ({ page }) => {
@@ -270,11 +284,11 @@ test('admin: a lazy chunk that fails after a deploy offers a reload', async ({ p
 test('admin: duplicate display names each render, keyed by member id', async ({ page }) => {
   await openAdmin(page);
   await page.locator('[data-run="r-carling"] .plan-card__open').click();
-  const dialog = page.getByRole('complementary', { name: 'HCarling + HStar' });
+  const dialog = page.getByRole('complementary', { name: CARLING });
   await expect(dialog.locator('.run__people .chip', { hasText: 'Ren' })).toHaveCount(2);
   await page.keyboard.press('Escape');
   await page.getByRole('tab', { name: /Runs/ }).click();
-  const row = page.getByRole('row').filter({ has: page.getByRole('rowheader', { name: /Carling/ }) });
+  const row = page.getByRole('row').filter({ has: page.getByRole('rowheader', { name: /Karling/ }) });
   await expect(row.locator('.chip', { hasText: 'Ren' })).toHaveCount(2);
 });
 

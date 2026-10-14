@@ -1306,7 +1306,15 @@ export type SelfServiceSettings = { mode: SelfServiceMode, effective_mode: SelfS
 
 export type PersonaEntry = { key: string, name: string, bundle: string, };
 
-export type ReplyProfile = { key: string, name: string, public: boolean, voice: string, prompt_summary: string, };
+export type ReplyProfile = { key: string, name: string, public: boolean, voice: string, 
+/**
+ * The prompt's first non-empty line, cut short: the list's preview.
+ */
+prompt_summary: string, 
+/**
+ * The whole prompt, as the profile file holds it.
+ */
+prompt: string, };
 
 export type RoleProfileView = { role_id: string, role_name: string | null, profile: string, };
 

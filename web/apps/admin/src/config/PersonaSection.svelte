@@ -374,7 +374,7 @@
   {/snippet}
 </SettingsPanel>
 
-<TextModal bind:open={promptOpen} title={promptOf ? `${promptOf.name}: prompt` : 'Prompt'} eyebrow="Reply profile" text={promptOf ? plainLines(promptOf.prompt_summary) : ''} {toaster} copied="Prompt copied." />
+<TextModal bind:open={promptOpen} title={promptOf ? `${promptOf.name}: prompt` : 'Prompt'} eyebrow="Reply profile" text={promptOf ? plainLines(promptOf.prompt) : ''} {toaster} copied="Prompt copied." />
 
 <Modal bind:open={personaOpen} title="Switch to {next?.name ?? active}?" eyebrow="Active persona" narrow>
   <p>Identity, default behaviour and staging change together.</p>
