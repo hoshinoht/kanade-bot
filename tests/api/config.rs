@@ -599,7 +599,8 @@ async fn get_shows_settings_models_personas_and_env_facts() {
         view["chatbot"]["missing_env"],
         json!(["KANADE_CHAT_CATEGORY_IDS"])
     );
-    assert_eq!(view["manage_messages"], json!({"missing": []}));
+    // The guild's limbo-trio is watched but may not tidy messages.
+    assert_eq!(view["manage_messages"], json!({"missing": ["#limbo-trio"]}));
 
     let models = &view["models"];
     assert_eq!(models["reachable"], true);
@@ -1869,6 +1870,11 @@ async fn access_reports_watched_and_digest_channels() {
             ]
         );
     }
+    // Config's risk chip lists the same channels the report flags.
+    assert_eq!(
+        config.get().await["manage_messages"],
+        json!({"missing": ["#limbo-trio"]})
+    );
 }
 
 #[tokio::test]

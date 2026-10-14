@@ -54,4 +54,8 @@ export const PORTED: readonly string[] = [
   'run-identity-contrast.spec.ts',
   'states.spec.ts',
   'week-hover.spec.ts',
+  // Batch 5: each found a real bug, now fixed.
+  'a11y.spec.ts',
+  'clipping.spec.ts',
+  'config-layout.spec.ts',
 ];

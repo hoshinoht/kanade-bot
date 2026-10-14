@@ -118,12 +118,13 @@ test("config: the access problem is a risk chip on the page line that opens Chan
   await page.setViewportSize({ width: 1280, height: 800 });
   await page.goto(`${ADMIN}/config?sw=off`);
   await expect(page.locator(".settings__banner, .flash")).toHaveCount(0);
+  // The seed's #seren-trio is watched without Manage Messages (bm-trio is not watched).
   const chip = page
     .locator(".pageline")
-    .getByRole("link", { name: /Manage Messages missing in 2 channels/ });
+    .getByRole("link", { name: /Manage Messages missing in 1 channel\b/ });
   await expect(chip).toBeVisible();
   await expect(page.getByRole("tab", { name: /Channel access/ })).toContainText(
-    "⚠ 2",
+    "⚠ 1",
   );
   await chip.click();
   await expect(page).toHaveURL(/section=access/);

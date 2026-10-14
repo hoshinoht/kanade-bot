@@ -1,6 +1,6 @@
 import type { Page } from '@playwright/test';
 import { SCREENS, SIZES, screenUrl } from './frames';
-import { ADMIN, PUBLIC, expect, settle, signInPublic, test } from './support';
+import { ADMIN, PUBLIC, expect, settle, signInAdminAsAsahi, signInPublic, test } from './support';
 import { auditText, type Finding } from './text-audit';
 
 // General text-clipping check (docs/notes/design/verification.md "Measuring text
@@ -134,6 +134,8 @@ interface Screen {
   url: string;
   /** Opens the state after the page has loaded (a tab, a row). */
   open?: (page: Page) => Promise<void>;
+  /** Runs once before the first frame (a sign-in). */
+  before?: (page: Page) => Promise<void>;
 }
 
 const STATES: Screen[] = [
@@ -167,6 +169,8 @@ const STATES: Screen[] = [
   {
     name: 'admin/account (reply style picker)',
     url: screenUrl(ADMIN, '/account'),
+    // The reply style picker is a Discord admin's (the harness admin is break-glass).
+    before: signInAdminAsAsahi,
     open: async (page) => {
       await page.locator('.account-window__panel button[aria-haspopup="dialog"]').click();
       await expect(page.getByRole('dialog', { name: 'Reply style' }).getByRole('radio').first()).toBeVisible();
@@ -240,6 +244,7 @@ for (const screen of STATES) {
   test(`text clipping: ${screen.name}`, async ({ page }) => {
     test.setTimeout(90_000);
     const failures: string[] = [];
+    await screen.before?.(page);
     for (const size of SIZES) {
       const at = sizeName(size);
       await page.setViewportSize(size);

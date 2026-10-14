@@ -51,7 +51,7 @@ for (const [colorway, theme] of CONTRAST_LOOKS) {
     await expect(page.locator('[data-run="r-carling"]')).toBeVisible();
     await contrast('admin planner');
     await page.locator('[data-run="r-carling"] .plan-card__open').click();
-    await expect(page.getByRole('complementary', { name: 'HCarling + HStar' })).toBeVisible();
+    await expect(page.getByRole('complementary', { name: 'HCarling + HMaleficStar' })).toBeVisible();
     await contrast('admin run pane');
     await page.keyboard.press('Escape');
     await page.getByRole('link', { name: 'Config' }).click();
@@ -61,13 +61,15 @@ for (const [colorway, theme] of CONTRAST_LOOKS) {
     await expect(page.getByRole('listbox', { name: 'Extractor items' })).toBeVisible();
     await contrast('admin inbox extractor');
     await page.goto(`${ADMIN}/history?sw=off`);
-    await expect(page.locator('.history-row--active .history-tag--revert')).toHaveText('reverts #8');
-    await page.locator('[data-history="8"]').click();
+    // The real chain's rollback is #10 (reverting #9); the newest row is a seeded character Config save.
+    await page.locator('[data-history="10"]').click();
+    await expect(page.locator('.history-row--active .history-tag--revert')).toHaveText('reverts #9');
+    await page.locator('[data-history="9"]').click();
     await expect(page.getByRole('complementary', { name: 'Change details' })).toBeVisible();
     await contrast('admin history');
     await page.getByRole('link', { name: 'Bosses' }).click();
     await expect(page.locator('.bossrow').first()).toBeVisible();
-    await page.getByRole('link', { name: 'Carling' }).click();
+    await page.getByRole('link', { name: 'Karling' }).click();
     await expect(page.getByRole('tablist', { name: 'Guide sections' })).toBeVisible();
     await contrast('admin knowledge');
     await page.getByRole('link', { name: 'Members' }).click();
@@ -99,7 +101,7 @@ const WALK: { name: string; walk: (page: Page) => Promise<void> }[] = [
       await expect(page.locator('[data-run="r-carling"]')).toBeVisible();
       await serious(page, 'admin planner');
       await page.locator('[data-run="r-carling"] .plan-card__open').click();
-      await expect(page.getByRole('complementary', { name: 'HCarling + HStar' })).toBeVisible();
+      await expect(page.getByRole('complementary', { name: 'HCarling + HMaleficStar' })).toBeVisible();
       await serious(page, 'admin run pane');
       await page.keyboard.press('Escape');
       await page.keyboard.press('ControlOrMeta+k');
@@ -175,7 +177,8 @@ const WALK: { name: string; walk: (page: Page) => Promise<void> }[] = [
       await expect(page.locator('.inbox__detail .past__sentence')).toBeVisible();
       await serious(page, 'admin inbox past');
       await page.getByRole('link', { name: 'Extractions' }).click();
-      await page.getByRole('button', { name: 'Re-read channels' }).click();
+      // The harness runs no rescan, so Re-read stays off; the disabled control is still scanned.
+      await expect(page.getByRole('button', { name: 'Re-read channels' })).toBeVisible();
       await serious(page, 'admin extractions');
       await page.goto(`${ADMIN}/extractions/x-kalos?sw=off`);
       await expect(page.getByRole('tab', { name: /Changes/ })).toBeVisible();
@@ -204,11 +207,13 @@ const WALK: { name: string; walk: (page: Page) => Promise<void> }[] = [
     name: 'admin history, fixed, bosses, members and reminders',
     walk: async (page) => {
       await page.goto(`${ADMIN}/history?sw=off`);
-      await expect(page.locator('.history-row--active .history-tag--revert')).toHaveText('reverts #8');
-      await page.locator('[data-history="8"]').click();
+      // The real chain's rollback is #10 (reverting #9); the newest row is a seeded character Config save.
+      await page.locator('[data-history="10"]').click();
+      await expect(page.locator('.history-row--active .history-tag--revert')).toHaveText('reverts #9');
+      await page.locator('[data-history="9"]').click();
       await serious(page, 'admin history');
       await page.getByRole('complementary', { name: 'Change details' }).getByRole('button', { name: 'Revert…' }).click();
-      await expect(page.getByRole('dialog', { name: 'Revert #8?' })).toBeVisible();
+      await expect(page.getByRole('dialog', { name: 'Revert #9?' })).toBeVisible();
       await serious(page, 'admin revert dialog');
       await page.keyboard.press('Escape');
       await page.getByRole('tab', { name: 'Checkpoints' }).click();
@@ -227,7 +232,7 @@ const WALK: { name: string; walk: (page: Page) => Promise<void> }[] = [
       await page.getByRole('link', { name: 'Bosses' }).click();
       await expect(page.locator('.bossrow').first()).toBeVisible();
       await serious(page, 'admin bosses');
-      await page.getByRole('link', { name: 'Carling' }).click();
+      await page.getByRole('link', { name: 'Karling' }).click();
       await expect(page.getByRole('tablist', { name: 'Guide sections' })).toBeVisible();
       await serious(page, 'admin knowledge');
       await page.getByRole('link', { name: 'Members' }).click();

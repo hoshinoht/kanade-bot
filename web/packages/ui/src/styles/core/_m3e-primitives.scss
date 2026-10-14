@@ -294,7 +294,9 @@
 .status-chip--ok { background: color-mix(in srgb, var(--ok) 10%, var(--surface)); color: var(--ok-text); }
 .status-chip--risk { background: color-mix(in srgb, var(--risk) 10%, var(--surface)); color: var(--risk-text); }
 // Waiting states (expired, already in effect) are outlined, as the mockups' `.ans.wait`.
-.status-chip--warn { background: transparent; box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--warn) 40%, var(--surface)); color: color-mix(in srgb, var(--warn-text) 85%, var(--ink)); }
+// No fill, so the text sits on whatever row is under it (a selected list row
+// too): 80% keeps 4.5:1 there in every face (85% gave 4.47, periwinkle dark).
+.status-chip--warn { background: transparent; box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--warn) 40%, var(--surface)); color: color-mix(in srgb, var(--warn-text) 80%, var(--ink)); }
 
 // A settled state stays quieter by shape (an outline, no fill), not by opacity.
 .tone--neutral {

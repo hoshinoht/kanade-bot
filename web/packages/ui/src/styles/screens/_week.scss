@@ -1269,8 +1269,10 @@ a.week-foot__item:hover,
   font-weight: 700;
 }
 
+// Wraps rather than ellipsising: the row's title names only the member, so a cut
+// run list would hide which runs they still owe.
 .week-answers__runs {
-  @include ellipsis;
+  min-width: 0;
   color: var(--dim-text);
   font-size: var(--fs-mini);
 }
@@ -1292,6 +1294,11 @@ a.week-foot__item:hover,
 
   .week-answers__members {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  // A run list that wraps keeps clear of the row's rounded edge.
+  .week-answers__member {
+    padding-block: 6px;
   }
 
   .week-answers__bars {

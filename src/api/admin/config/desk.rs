@@ -520,6 +520,7 @@ impl ConfigDesk {
             run_lengths: dto::run_lengths(&settings.run_lengths),
             profanity: dto::profanity(&settings.profanity),
             manage_messages: ManageMessages {
+                // Filled from the gateway cache by the handler.
                 missing: Vec::new(),
             },
             notices,

@@ -14,7 +14,7 @@ use crate::api::{
     admin::write::state,
     auth::AdminSession,
     listeners::Site,
-    state::{ApiState, ChannelGrants},
+    state::{ApiState, ChannelGrants, ChannelList},
 };
 
 #[derive(Debug, Serialize)]
@@ -87,16 +87,27 @@ async fn report(state: &ApiState) -> AccessReport {
         Some(desk) => desk.settings().await.posting.channel_id,
         None => None,
     };
-    let rows = channels
+    let rows = rows(channels.as_ref(), digest.as_deref());
+    AccessReport {
+        connected: true,
+        checked_at,
+        rows,
+    }
+}
+
+/// Every watched channel plus the digest channel, unknown permissions read as
+/// allowed. The caller checks the guild is loaded.
+fn rows(channels: &dyn ChannelList, digest: Option<&str>) -> Vec<AccessRow> {
+    channels
         .channels()
         .into_iter()
-        .filter(|channel| channel.watched || digest.as_deref() == Some(channel.id.as_str()))
+        .filter(|channel| channel.watched || digest == Some(channel.id.as_str()))
         .map(|channel| {
             let grants = channels
                 .grants(&channel.id)
                 .unwrap_or(ChannelGrants::UNKNOWN);
             AccessRow {
-                digest: digest.as_deref() == Some(channel.id.as_str()),
+                digest: digest == Some(channel.id.as_str()),
                 id: channel.id,
                 name: channel.name,
                 watched: channel.watched,
@@ -108,10 +119,18 @@ async fn report(state: &ApiState) -> AccessReport {
                 manage_messages: grants.manage_messages,
             }
         })
-        .collect();
-    AccessReport {
-        connected: true,
-        checked_at,
-        rows,
+        .collect()
+}
+
+/// The names of the report's channels without Manage Messages, for Config's
+/// risk chip; none while the guild is not loaded, as the report shows none.
+pub(super) fn missing_manage(channels: &dyn ChannelList, digest: Option<&str>) -> Vec<String> {
+    if !channels.connected() {
+        return Vec::new();
     }
+    rows(channels, digest)
+        .into_iter()
+        .filter(|row| !row.manage_messages)
+        .map(|row| row.name)
+        .collect()
 }
