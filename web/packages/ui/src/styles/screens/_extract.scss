@@ -305,28 +305,7 @@
 }
 
 .extract-tab {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  min-height: 30px;
-  padding: 0 12px;
-  border: 0;
-  border-radius: 15px;
-  background: transparent;
-  color: var(--ink);
-  font: inherit;
-  font-size: var(--fs-small);
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.extract-tab:hover {
-  background: var(--row-hover);
-}
-
-.extract-tab[aria-selected="true"] {
-  background: var(--select);
-  color: var(--select-ink);
+  @include pill-tab;
 }
 
 .extract-tab__count {

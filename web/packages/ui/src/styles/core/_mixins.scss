@@ -50,6 +50,32 @@ $status-tones: (planned: warn, confirmed: ok, at_risk: risk, otot: own);
     24px 0 0 currentcolor;
 }
 
+// A pill tab inside a pane (mockup `.ptab`: the run pane, Extractions, Config).
+@mixin pill-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 30px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 15px;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: var(--fs-small);
+  font-weight: 600;
+  cursor: pointer;
+
+  &:hover {
+    background: var(--row-hover);
+  }
+
+  &[aria-selected="true"] {
+    background: var(--select);
+    color: var(--select-ink);
+  }
+}
+
 // M3E row tables (Week › Runs, Limits, Reminders): each row a card 2 px from
 // the next, under sticky mono column heads on the pane.
 @mixin row-table {
