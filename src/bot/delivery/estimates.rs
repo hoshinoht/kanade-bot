@@ -232,15 +232,27 @@ pub async fn chart_for(
     Some(chart)
 }
 
-/// `chart` drawn and encoded off the runtime, within [`CHART_DEADLINE`].
+/// One render at a time: a render that outlives its deadline keeps its
+/// permit until it really ends, so timed-out work can never pile up.
+static RENDER: tokio::sync::Semaphore = tokio::sync::Semaphore::const_new(1);
+
+/// `chart` drawn and encoded off the runtime, within [`CHART_DEADLINE`]
+/// (waiting for the render slot included).
 pub async fn draw(chart: Chart) -> Result<Upload, &'static str> {
     let description = chart::alt(&chart);
-    let job = tokio::task::spawn_blocking(move || chart::png(&chart::svg(&chart)));
-    let bytes = match tokio::time::timeout(CHART_DEADLINE, job).await {
+    let render = async {
+        let permit = RENDER.acquire().await.map_err(|_| "busy")?;
+        tokio::task::spawn_blocking(move || {
+            let _held = permit;
+            chart::png(&chart::svg(&chart))
+        })
+        .await
+        .map_err(|_| "panic")?
+        .map_err(|_| "render")
+    };
+    let bytes = match tokio::time::timeout(CHART_DEADLINE, render).await {
         Err(_) => return Err("timeout"),
-        Ok(Err(_)) => return Err("panic"),
-        Ok(Ok(Err(_))) => return Err("render"),
-        Ok(Ok(Ok(bytes))) => bytes,
+        Ok(result) => result?,
     };
     if bytes.len() > MAX_CHART_BYTES {
         return Err("too_large");
