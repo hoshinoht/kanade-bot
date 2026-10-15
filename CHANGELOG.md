@@ -24,6 +24,7 @@ _In development_
 - Fixed Fixed timings asking Keep or Update on saves that keep the day and time, or about runs changed only in their party, which made the save fail; it now asks only about runs the new day or time would move.
 - Fixed the bot skipping that day's morning card when it starts after the ping time; a due card for a run still ahead now posts, up to 12 hours late.
 - Fixed four security issues in the bot's TLS library (RUSTSEC-2026-0346 to 0349) by updating it.
+- Fixed the bot proposing to move runs earlier when a message moved them "after 0930 17th": dates like "17th" or "17/10" now count, "0930" is morning, and runs already after (or before) a stated time get no proposal.
 
 ### Removed
 - Removed the one-off `kanade import v4` command; v4 data already imported stays readable.

@@ -7,7 +7,7 @@ use super::{Payload, Planned};
 use crate::domain::completion::RunEnds;
 use crate::domain::schedule::{RUN_DONE_AFTER, Run, RunStatus};
 use crate::domain::time::{DateOutOfRange, ZonedDateTime};
-use crate::extract::resolve::Resolved;
+use crate::extract::resolve::{Bound, Resolved, Side};
 use crate::extract::{Amendment, AmendmentKind};
 
 /// How far into the past a proposed time may point: live chat routinely
@@ -105,13 +105,13 @@ fn at(
     day: NaiveDate,
     clock: NaiveTime,
     zone: Tz,
-    assumed_pm: bool,
+    from: &Resolved,
 ) -> Result<Resolved, DateOutOfRange> {
     Ok(Resolved {
         day: Some(day),
         clock: Some(clock),
         at: Some(ZonedDateTime::new(day.and_time(clock), zone)?),
-        assumed_pm,
+        ..*from
     })
 }
 
@@ -127,7 +127,7 @@ pub fn inherit_from_run(entry: &Planned<'_>, zone: Tz) -> Result<Resolved, DateO
     };
     let local = run.datetime.with_timezone(&zone).naive_local();
     match (resolved.day, resolved.clock) {
-        (Some(day), None) => at(day, local.time(), zone, resolved.assumed_pm),
+        (Some(day), None) => at(day, local.time(), zone, &resolved),
         // Once a clock parsed the day is always set; the empty `day_ref` is
         // what says no day was given.
         (_, Some(clock))
@@ -138,9 +138,46 @@ pub fn inherit_from_run(entry: &Planned<'_>, zone: Tz) -> Result<Resolved, DateO
                 .unwrap_or_default()
                 .is_empty() =>
         {
-            at(local.date(), clock, zone, resolved.assumed_pm)
+            at(local.date(), clock, zone, &resolved)
         }
         _ => Ok(resolved),
+    }
+}
+
+/// D-EXTRACT-BOUND: a `move` said as "after"/"before" a day or time bounds
+/// its run rather than naming the run's new slot. Other kinds keep v4's
+/// target reading.
+pub(super) fn move_bound(kind: AmendmentKind, resolved: &Resolved) -> Option<Bound> {
+    resolved.bound.filter(|_| kind == AmendmentKind::Move)
+}
+
+/// `run` already sits on the bound's side: at or after it for "after",
+/// strictly before it for "before", on the wall clock. A day-only bound
+/// starts at that day's midnight; a time-only bound applies on the run's
+/// own day.
+pub(super) fn within_bound(run: &Run, bound: Bound, zone: Tz) -> bool {
+    let local = run.datetime.with_timezone(&zone).naive_local();
+    let edge = bound
+        .day
+        .unwrap_or(local.date())
+        .and_time(bound.clock.unwrap_or(NaiveTime::MIN));
+    match bound.side {
+        Side::After => local >= edge,
+        Side::Before => local < edge,
+    }
+}
+
+/// Where a run on the wrong side of `bound` moves: time TBD, on the bound's
+/// day when that day can satisfy it ("before" a bare day starts at its
+/// midnight, so no time that day is before it).
+pub(super) fn outside_bound(bound: Bound) -> Resolved {
+    let day = bound.day.filter(|_| {
+        bound.side == Side::After || bound.clock.is_some_and(|clock| clock > NaiveTime::MIN)
+    });
+    Resolved {
+        day,
+        bound: Some(bound),
+        ..Resolved::default()
     }
 }
 

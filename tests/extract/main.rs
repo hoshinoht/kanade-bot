@@ -3,8 +3,9 @@
 //! drive it, `claims` races them for one admission per message version.
 //! `redirect` and `nudge` cover the v5 self-service redirect and its persona
 //! nudges; `self_service` wires them through the governed rewrite and the
-//! pipeline.
+//! pipeline. `bounds` covers "after"/"before" moves and day-of-month dates.
 
+mod bounds;
 mod claims;
 mod fakes;
 mod gate;
