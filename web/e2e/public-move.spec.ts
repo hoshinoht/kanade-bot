@@ -1,19 +1,25 @@
 import type { Page } from '@playwright/test';
-import { ADMIN, PUBLIC, csrf, expect, settle, signInPublic, test } from './support';
+import { ADMIN, PUBLIC, csrf, expect, setClock, settle, signInPublic, test } from './support';
 
 // The member's Move of their own run (member-writes contract Phase A,
 // boards Week-RunMine, Move, Move-NotIn, Move-WeekOver, PhoneMove*) against
-// the mock's member (Asahi): HCarling + HStar (Tue 29 22:00) is the one run
-// of hers this boss week that has not started (the clock is Tue 29 12:00,
-// the week ends Wed 30 23:59). Every test ends with zero CSP/TT reports.
+// the seed's member (Asahi): HCarling + HMaleficStar (Tue 29 22:00) is the
+// one run of hers this boss week that has not started (the clock is Tue 29
+// 12:00, the week ends Wed 30 23:59). Every test ends with zero CSP/TT reports.
 
 test.describe.configure({ mode: 'parallel' });
 
 /** A Discord link's slot: Wed 30 Sep 21:30 in the guild's time (GMT+8). */
 const MOVE_TO = '2026-09-30T13:30:00Z';
 const toast = (page: Page) => page.getByRole('group', { name: 'Notification' });
-const pane = (page: Page) => page.getByRole('complementary', { name: /^Your run · .*Carling/ });
-const form = (page: Page) => page.getByRole('region', { name: 'Move HCarling + HStar' });
+const pane = (page: Page) => page.getByRole('complementary', { name: /^Your run · .*Karling/ });
+const form = (page: Page) => page.getByRole('region', { name: 'Move HCarling + HMaleficStar' });
+
+/** An admin (Ren) takes Asahi off `run` through the scheduler (`/__e2e/public/remove`). */
+async function removeAsahi(page: Page, run: string): Promise<void> {
+  const removed = await page.request.post(`${PUBLIC}/__e2e/public/remove`, { data: { run } });
+  expect(removed.status(), await removed.text()).toBe(204);
+}
 
 /** The run's slot as the server holds it now. */
 async function slot(page: Page, run = 'r-carling'): Promise<{ day: number; time: string | null }> {
@@ -36,27 +42,29 @@ async function link(page: Page, run: string, moveTo = MOVE_TO): Promise<void> {
 test('the run pane moves this week only: pick Wednesday, Move, the toast and the new slot', async ({ page }) => {
   await signInPublic(page);
   await page.goto(`${PUBLIC}/?run=r-carling&sw=off`);
-  const move = pane(page).getByRole('region', { name: 'Move HCarling + HStar' });
+  const move = pane(page).getByRole('region', { name: 'Move HCarling + HMaleficStar' });
   await expect(move).toContainText('this week only, your weekly timing stays the same');
   // The run's own slot cannot be "moved to".
   await expect(move.getByRole('button', { name: 'Move', exact: true })).toBeDisabled();
   await move.getByRole('radio', { name: /^Wed 30/ }).click();
   await expect(move.locator('[data-fid="move-result"], .movepick__result')).toContainText('Wed 30 22:00');
   await move.getByRole('button', { name: 'Move', exact: true }).click();
-  await expect(toast(page).filter({ hasText: 'Moved HCarling + HStar to Wed 30 22:00. The party is told on Discord.' })).toBeVisible();
+  await expect(toast(page).filter({ hasText: 'Moved HCarling + HMaleficStar to Wed 30 22:00. The party is told on Discord.' })).toBeVisible();
   expect(await slot(page)).toEqual({ day: 6, time: '22:00' });
   // The pane follows the run to its new day.
   await expect(pane(page)).toContainText('WED 30', { ignoreCase: true });
 });
 
 test('a clash with your own run blocks the move; a teammate’s clash only warns', async ({ page }) => {
+  // Monday noon: HJupiter and HFA (Monday evening) are still ahead, so an admin can move them.
+  await setClock('2026-09-28T04:00:00Z');
   await signInPublic(page);
-  // HJupiter (Asahi's) to Wed 30 21:00: moving HCarling + HStar onto it would double-book her.
+  // HJupiter (Asahi's) to Wed 30 21:00: moving HCarling + HMaleficStar onto it would double-book her.
   await adminMove(page, 'r-jupiter', 6, '21:00');
-  // HFA (Kaito, Yuzu, Rin, Hotaru) to Wed 30 20:00: Yuzu and Hotaru play HCarling + HStar too.
+  // HFA (Kaito, Yuzu, Rin, Hotaru) to Wed 30 20:00: Yuzu and Hotaru play HCarling + HMaleficStar too.
   await adminMove(page, 'r-fa', 6, '20:00');
   await page.goto(`${PUBLIC}/?run=r-carling&sw=off`);
-  const move = pane(page).getByRole('region', { name: 'Move HCarling + HStar' });
+  const move = pane(page).getByRole('region', { name: 'Move HCarling + HMaleficStar' });
   const typed = move.getByRole('textbox', { name: 'Type a day and time' });
   await typed.fill('wed 21:00');
   await typed.press('Enter');
@@ -74,7 +82,7 @@ test('a clash with your own run blocks the move; a teammate’s clash only warns
 test('a Discord link opens the Move page with its slot picked; Move it lands on the Week with a toast', async ({ page }) => {
   await signInPublic(page);
   await link(page, 'r-carling');
-  await expect(page.getByRole('heading', { level: 1 })).toHaveText('Move HCarling + HStar to Wednesday 21:30?');
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('Move HCarling + HMaleficStar to Wednesday 21:30?');
   const checks = page.getByRole('list', { name: 'Checks' });
   await expect(checks).toContainText('Inside this boss week (ends Wed 30 Sep 23:59)');
   await expect(checks).toContainText('No clash with your other runs');
@@ -82,19 +90,21 @@ test('a Discord link opens the Move page with its slot picked; Move it lands on 
   await expect(form(page).locator('.movepick__result')).toContainText('Wed 30 21:30');
   await page.getByRole('button', { name: 'Move it' }).click();
   await expect(page).toHaveURL(`${PUBLIC}/?run=r-carling`);
-  await expect(toast(page).filter({ hasText: 'Moved HCarling + HStar to Wed 30 21:30. The party is told on Discord.' })).toBeVisible();
+  await expect(toast(page).filter({ hasText: 'Moved HCarling + HMaleficStar to Wed 30 21:30. The party is told on Discord.' })).toBeVisible();
   await expect(pane(page)).toContainText('21:30');
   expect(await slot(page)).toEqual({ day: 6, time: '21:30' });
 });
 
 test('a stale move keeps the pick in the form and says what changed', async ({ page }) => {
+  // No member stream: its hint would re-read the week before Move it, so nothing would be stale.
+  await page.route(`${PUBLIC}/api/public/events`, (route) => route.abort());
   await signInPublic(page);
   await link(page, 'r-carling');
   await expect(page.getByRole('button', { name: 'Move it' })).toBeEnabled();
   // An admin moves it after the page read the week.
   await adminMove(page, 'r-carling', 5, '23:00');
   await page.getByRole('button', { name: 'Move it' }).click();
-  await expect(toast(page).filter({ hasText: 'HCarling + HStar changed meanwhile: it moved to Tue 29 23:00. Nothing was moved; your pick (Wed 30 21:30) is still in the form.' })).toBeVisible();
+  await expect(toast(page).filter({ hasText: 'HCarling + HMaleficStar changed meanwhile: it moved to Tue 29 23:00. Nothing was moved; your pick (Wed 30 21:30) is still in the form.' })).toBeVisible();
   await expect(form(page).locator('.movepick__result')).toContainText('Wed 30 21:30');
   expect(await slot(page)).toEqual({ day: 5, time: '23:00' });
   // The pick still moves it, against the week as it is now.
@@ -104,14 +114,13 @@ test('a stale move keeps the pick in the form and says what changed', async ({ p
 });
 
 test("a move older than the fresh window: Confirm it's you, back on the Move page with the slot, Move it again", async ({ page }) => {
-  await signInPublic(page);
-  // Aged before the page reads the session and devices, so both carry the same sign-in time.
-  expect((await page.request.post(`${PUBLIC}/__mock/public/unfresh`)).ok()).toBe(true);
+  // Signed in before the fresh window, so the session and devices carry the same sign-in time.
+  await signInPublic(page, { stale: true });
   await link(page, 'r-carling');
   await page.getByRole('button', { name: 'Move it' }).click();
   const confirm = page.getByRole('dialog', { name: "Confirm it's you" });
   await expect(confirm).toContainText('Moving a run needs a Discord sign-in from the last 15 minutes.');
-  await expect(confirm).toContainText("Not saved yet: HCarling + HStar to Wed 30 21:30. After signing in you're back on its Move page with that time picked; press Move it once more.");
+  await expect(confirm).toContainText("Not saved yet: HCarling + HMaleficStar to Wed 30 21:30. After signing in you're back on its Move page with that time picked; press Move it once more.");
   await confirm.getByRole('link', { name: 'Sign in again' }).click();
   await expect(page).toHaveURL(`${PUBLIC}/runs/r-carling?move_to=${encodeURIComponent(MOVE_TO)}`);
   await expect(form(page).locator('.movepick__result')).toContainText('Wed 30 21:30');
@@ -122,11 +131,13 @@ test("a move older than the fresh window: Confirm it's you, back on the Move pag
 
 test('taken off the run since the link: who did it, nothing to move, Ask to join', async ({ page }) => {
   await signInPublic(page);
-  expect((await page.request.post(`${PUBLIC}/__mock/public/remove`, { data: { run: 'r-carling' } })).ok()).toBe(true);
+  await removeAsahi(page, 'r-carling');
   await link(page, 'r-carling');
   const notice = page.locator('.move-page__notice');
-  await expect(notice).toContainText("You're no longer in this party. Ren removed you from HCarling + HStar on Tue 29 Sep, so you can't move it. The run is unchanged.");
-  await expect(page.getByRole('heading', { level: 1 }).locator('s')).toHaveText('Move HCarling + HStar to Wednesday 21:30?');
+  // Members are never told which admin did it (`dto::public::actor_label`); the page starts
+  // the sentence with the label as sent ("an admin": reported as a copy bug, loc3-p6).
+  await expect(notice).toContainText("You're no longer in this party. an admin removed you from HCarling + HMaleficStar on Tue 29 Sep, so you can't move it. The run is unchanged.");
+  await expect(page.getByRole('heading', { level: 1 }).locator('s')).toHaveText('Move HCarling + HMaleficStar to Wednesday 21:30?');
   await expect(page.getByRole('button', { name: /^Move/ })).toHaveCount(0);
   await expect(page.getByRole('link', { name: 'Ask to join…' })).toHaveAttribute('href', '/requests/new?run=r-carling');
   await expect(page.getByRole('link', { name: 'Open the run' })).toHaveAttribute('href', '/?run=r-carling');
@@ -148,8 +159,9 @@ test("last week's link: the week is over, this week's run and your weekly timing
 });
 
 test('the boss week reset with the link open: the run reads as past, nothing moves', async ({ page }) => {
+  // The boss week reset (Thu 1 Oct 00:05 guild time) before the link is opened.
+  await setClock('2026-09-30T16:05:00Z');
   await signInPublic(page);
-  expect((await page.request.post(`${PUBLIC}/__mock/public/end-week`)).ok()).toBe(true);
   await link(page, 'r-carling');
   await expect(page.locator('.move-page__notice')).toContainText('That boss week is over.');
   await expect(page.getByRole('button', { name: /^Move/ })).toHaveCount(0);
@@ -198,7 +210,7 @@ test('phone: the Move bar stays at the bottom while the choices scroll, with 44 
 test('phone: a stale link keeps its way on in the bottom bar', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await signInPublic(page);
-  expect((await page.request.post(`${PUBLIC}/__mock/public/remove`, { data: { run: 'r-carling' } })).ok()).toBe(true);
+  await removeAsahi(page, 'r-carling');
   await link(page, 'r-carling');
   const foot = page.locator('.move-page__foot');
   await expect(foot.getByRole('link', { name: 'Ask to join…' })).toBeVisible();

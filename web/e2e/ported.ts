@@ -96,4 +96,12 @@ export const PORTED: readonly string[] = [
   'public-characters.spec.ts',
   'roster-run.spec.ts',
   'roster.spec.ts',
+  // Lane SpecPortP6.
+  'arrival.spec.ts',
+  'drafts.spec.ts',
+  'history-graph.spec.ts',
+  'live-updates.spec.ts',
+  'presence.spec.ts',
+  'public-live.spec.ts',
+  'public-move.spec.ts',
 ];

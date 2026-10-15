@@ -19,6 +19,7 @@ mod logs;
 mod members;
 mod notify;
 mod p5;
+pub mod p6;
 mod schedule;
 mod sessions;
 mod settings;

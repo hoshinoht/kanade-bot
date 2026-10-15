@@ -1,14 +1,18 @@
 import type { Page } from '@playwright/test';
 import type { Week } from '@kanade/api-types';
-import { ADMIN, PUBLIC, csrf, expect, signInPublic, test } from './support';
+import { ADMIN, PUBLIC, csrf, expect, signInPublic, streamOpen, test, trackStreams } from './support';
 
-// Arrival motion (live updates stage 2): a change from elsewhere, hinted by the
-// mock's event stream (`POST /__mock/arrive`), glides the Week cards it moved
-// (FLIP), marks new rows once (`data-new`) and pulses changed counts
-// (`data-tick`). The admin's own writes never do; reduced motion moves nothing.
+// Arrival motion (live updates stage 2): a change from elsewhere (`POST
+// /__e2e/arrive`, a real write by another admin or the extractor, hinted by
+// the event stream as any write is) glides the Week cards it moved (FLIP),
+// marks new rows once (`data-new`) and pulses changed counts (`data-tick`).
+// The admin's own writes never do; reduced motion moves nothing. The moved
+// run is XBM (Tue 23:30 → Wed 21:00): the mock's HLimbo has ended by the
+// pinned clock, and the real scheduler refuses moving it.
 
 /** Records Web Animations (target, first transform) and every `data-new`/`data-tick` mark set on the page. */
 async function record(page: Page) {
+  await trackStreams(page);
   await page.addInitScript(() => {
     const w = window as unknown as { __animated: { target: string; from: string }[]; __marks: { mark: string; what: string }[] };
     w.__animated = [];
@@ -33,28 +37,28 @@ const animated = (page: Page) => page.evaluate(() => (window as unknown as { __a
 const marks = (page: Page) => page.evaluate(() => (window as unknown as { __marks: { mark: string; what: string }[] }).__marks);
 
 async function arrive(page: Page, kind: 'move' | 'run' | 'proposal') {
-  const reply = await page.request.post(`${ADMIN}/__mock/arrive`, { data: { kind } });
-  expect(reply.status()).toBe(204);
+  const reply = await page.request.post(`${ADMIN}/__e2e/arrive`, { data: { kind } });
+  expect(reply.status(), await reply.text()).toBe(204);
 }
 
-/** The event stream is open, so the next change is hinted. */
+/** The event stream is open, so the next change is hinted (`record` tracks it). */
 async function streaming(page: Page) {
-  await expect.poll(() => page.evaluate(() => performance.getEntriesByType('resource').some((e) => e.name.includes('/api/admin/events')))).toBe(true);
+  await streamOpen(page, '/api/admin/events');
 }
 
 test('Week: a run another admin moved glides to its new day', async ({ page }) => {
   await record(page);
   await page.setViewportSize({ width: 1280, height: 800 });
   await page.goto(`${ADMIN}/?sw=off`);
-  const limbo = page.locator('[data-run="r-limbo"]');
-  await expect(limbo).toBeVisible();
+  const bm = page.locator('[data-run="r-bm"]');
+  await expect(bm).toBeVisible();
   await streaming(page);
-  const from = await limbo.boundingBox();
+  const from = await bm.boundingBox();
   await arrive(page, 'move');
-  await expect.poll(async () => (await animated(page)).filter((a) => a.target === 'r-limbo' && a.from.startsWith('translate')).length, { timeout: 6_000 }).toBe(1);
-  await expect(limbo).toContainText('21:00');
+  await expect.poll(async () => (await animated(page)).filter((a) => a.target === 'r-bm' && a.from.startsWith('translate')).length, { timeout: 6_000 }).toBe(1);
+  await expect(bm).toContainText('21:00');
   // The glide starts at the old place (FLIP), so wait for it to land.
-  await expect.poll(async () => (await limbo.boundingBox())!.x).not.toBe(from!.x);
+  await expect.poll(async () => (await bm.boundingBox())!.x).not.toBe(from!.x);
 });
 
 test('Week: a run another admin added keeps its mark for the whole tint, not just the settle', async ({ page }) => {
@@ -108,26 +112,30 @@ test("the admin's own decision neither marks rows nor pulses the badge", async (
   await page.getByRole('button', { name: 'Reject…' }).click();
   await page.getByRole('dialog').getByRole('button', { name: 'Reject change' }).click();
   const nav = page.locator('.navrail').getByRole('navigation', { name: 'Sections' });
-  await expect(nav.getByRole('link', { name: 'Inbox 10 waiting', exact: true })).toBeVisible();
+  await expect(nav.getByRole('link', { name: 'Inbox 8 waiting', exact: true })).toBeVisible();
   // Past the hint's re-read: still nothing marked.
   await page.waitForTimeout(1_500);
   expect(await marks(page)).toEqual([]);
 });
 
-// The member portal: a member hint (`GET /api/public/events`; the mock sends
-// one on `POST /__mock/public/hint`) re-reads the week at once, and without
-// one the week arrives with the timed read. Either read that changed the week
-// is an arrival (the admin store's semantics); the member's own Refresh is not.
+// The member portal: a member hint (`GET /api/public/events`) re-reads the
+// week at once, and without one the week arrives with the timed read. Either
+// read that changed the week is an arrival (the admin store's semantics); the
+// member's own Refresh is not. The real stream hints every change as it is
+// written, so the changes themselves are the hints here.
 
-/** The member stream hints `topic` (the mock's stand-in for a change elsewhere). */
-async function hint(page: Page, topic: 'schedule' | 'mine' | 'allowance') {
-  const reply = await page.request.post(`${PUBLIC}/__mock/public/hint`, { data: { topic } });
-  expect(reply.status()).toBe(204);
+/** The week reads the page makes from now on. */
+function weekReads(page: Page): string[] {
+  const seen: string[] = [];
+  page.on('response', (r) => {
+    if (r.url().endsWith('/api/public/week?week=next')) seen.push(r.url());
+  });
+  return seen;
 }
 
-/** The member stream is open, so the next hint reaches the page. */
+/** The member stream is open, so the next change reaches the page. */
 async function memberStreaming(page: Page) {
-  await expect.poll(() => page.evaluate(() => performance.getEntriesByType('resource').some((e) => e.name.includes('/api/public/events')))).toBe(true);
+  await streamOpen(page, '/api/public/events');
 }
 
 /** Runs the portal's timed week read now: hiding and showing the page resumes the paused poller. */
@@ -157,20 +165,19 @@ test.describe('member portal', () => {
     await openPortal(page);
     await arrive(page, 'move');
     await timedRead(page);
-    await expect.poll(async () => (await animated(page)).filter((a) => a.target === 'r-limbo' && a.from.startsWith('translate')).length).toBe(1);
-    await expect(page.locator('[data-run="r-limbo"]')).toContainText('21:00');
+    await expect.poll(async () => (await animated(page)).filter((a) => a.target === 'r-bm' && a.from.startsWith('translate')).length).toBe(1);
+    await expect(page.locator('[data-run="r-bm"]')).toContainText('21:00');
   });
 
   test('a schedule hint re-reads the week at once: a moved run glides, an added one is marked', async ({ page }) => {
     await openPortal(page);
     await memberStreaming(page);
+    const read = page.waitForResponse((r) => r.url().endsWith('/api/public/week?week=next'));
     await arrive(page, 'move');
     await arrive(page, 'run');
-    const read = page.waitForResponse((r) => r.url().endsWith('/api/public/week?week=next'));
-    await hint(page, 'schedule');
     await read;
-    await expect.poll(async () => (await animated(page)).filter((a) => a.target === 'r-limbo' && a.from.startsWith('translate')).length, { timeout: 6_000 }).toBe(1);
-    await expect(page.locator('[data-run="r-limbo"]')).toContainText('21:00');
+    await expect.poll(async () => (await animated(page)).filter((a) => a.target === 'r-bm' && a.from.startsWith('translate')).length, { timeout: 6_000 }).toBe(1);
+    await expect(page.locator('[data-run="r-bm"]')).toContainText('21:00');
     const card = page.locator('.member-board [data-run="r-arrived"]');
     await expect(card).toHaveAttribute('data-new', '');
     await expect(card).not.toHaveAttribute('data-new', '', { timeout: 3_000 });
@@ -181,15 +188,14 @@ test.describe('member portal', () => {
     await signInPublic(page);
     await page.setViewportSize({ width: 1280, height: 800 });
     await page.goto(`${PUBLIC}/?run=r-carling&sw=off`);
-    const answers = page.getByRole('complementary', { name: /^Your run · .*Carling/ }).getByRole('group', { name: /^Your answer/ });
+    const answers = page.getByRole('complementary', { name: /^Your run · .*Karling/ }).getByRole('group', { name: /^Your answer/ });
     await expect(answers.getByRole('button', { name: /^In/ })).toHaveAttribute('aria-pressed', 'true');
     await memberStreaming(page);
+    const reads = weekReads(page);
     await answers.getByRole('button', { name: /^Maybe/ }).click();
     await expect(answers).toHaveAccessibleName('Your answer: Maybe');
-    // The server hints the change back to its own author.
-    const read = page.waitForResponse((r) => r.url().endsWith('/api/public/week?week=next'));
-    await hint(page, 'mine');
-    await read;
+    // The server hints the change back to its own author: the stream re-reads the week.
+    await expect.poll(() => reads.length).toBeGreaterThan(0);
     await page.waitForTimeout(400); // "nothing starts" needs real time to pass
     // The pane slid in when the run opened; no card glides.
     expect((await animated(page)).filter((a) => a.target.startsWith('r-') && a.from.startsWith('translate'))).toEqual([]);
@@ -216,11 +222,13 @@ test.describe('member portal', () => {
   });
 
   test("the member's own Refresh neither glides, marks nor pulses", async ({ page }) => {
+    // No stream: the real one would bring both changes before the Refresh.
+    await page.route(`${PUBLIC}/api/public/events`, (route) => route.abort());
     await openPortal(page);
     await arrive(page, 'move');
     await arrive(page, 'run');
     await page.getByRole('button', { name: 'Refresh the week' }).click();
-    await expect(page.locator('[data-run="r-limbo"]')).toContainText('21:00');
+    await expect(page.locator('[data-run="r-bm"]')).toContainText('21:00');
     await expect(page.locator('[data-run="r-arrived"]')).toHaveCount(1);
     await page.waitForTimeout(400); // "nothing starts" needs real time to pass
     expect((await animated(page)).filter((a) => a.from.startsWith('translate'))).toEqual([]);
@@ -235,10 +243,10 @@ test.describe('reduced motion', () => {
     await record(page);
     await page.setViewportSize({ width: 1280, height: 800 });
     await page.goto(`${ADMIN}/?sw=off`);
-    await expect(page.locator('[data-run="r-limbo"]')).toBeVisible();
+    await expect(page.locator('[data-run="r-bm"]')).toBeVisible();
     await streaming(page);
     await arrive(page, 'move');
-    await expect(page.locator('[data-run="r-limbo"]')).toContainText('21:00', { timeout: 6_000 });
+    await expect(page.locator('[data-run="r-bm"]')).toContainText('21:00', { timeout: 6_000 });
     expect((await animated(page)).filter((a) => a.from.startsWith('translate'))).toEqual([]);
 
     await page.goto(`${ADMIN}/inbox?sw=off`);
@@ -270,21 +278,21 @@ test.describe('reduced motion', () => {
   test('member portal: a hinted read moves nothing, and a new run only fades its colour', async ({ page }) => {
     await openPortal(page);
     await memberStreaming(page);
+    const read = page.waitForResponse((r) => r.url().endsWith('/api/public/week?week=next'));
     await arrive(page, 'move');
     await arrive(page, 'run');
-    const read = page.waitForResponse((r) => r.url().endsWith('/api/public/week?week=next'));
-    await hint(page, 'schedule');
     await read;
     const card = page.locator('.member-board [data-run="r-arrived"]');
     await expect(card).toHaveAttribute('data-new', '');
     // The colour fade follows the short settle.
     await expect.poll(() => card.evaluate((el) => getComputedStyle(el).animationName)).toBe('arrive-tint');
-    await expect(page.locator('[data-run="r-limbo"]')).toContainText('21:00');
+    await expect(page.locator('[data-run="r-bm"]')).toContainText('21:00');
     expect((await animated(page)).filter((a) => a.from.startsWith('translate'))).toEqual([]);
   });
 });
 
 test("a hint's re-reads revalidate: unchanged reads answer 304", async ({ page }) => {
+  await trackStreams(page);
   await page.goto(`${ADMIN}/?sw=off`);
   await expect(page.locator('[data-run="r-kalos"]')).toBeVisible();
   await streaming(page);
@@ -300,5 +308,5 @@ test("a hint's re-reads revalidate: unchanged reads answer 304", async ({ page }
   await expect.poll(() => statuses.length, { timeout: 6_000 }).toBeGreaterThanOrEqual(2);
   expect(statuses).toEqual(expect.arrayContaining(['/api/admin/week 304', '/api/admin/summary 200']));
   const nav = page.locator('.navrail').getByRole('navigation', { name: 'Sections' });
-  await expect(nav.getByRole('link', { name: 'Inbox 12 waiting', exact: true })).toBeVisible();
+  await expect(nav.getByRole('link', { name: 'Inbox 10 waiting', exact: true })).toBeVisible();
 });

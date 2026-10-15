@@ -2,13 +2,18 @@ import type { Locator, Page } from '@playwright/test';
 import { ADMIN, csrf, expect, test } from './support';
 
 // History graph (boards docs/research/2026-10-12-graph-presence-mockups). `POST
-// /__mock/graph/board` grows History to head #39 and seeds the boards' drafts:
-// Weekend reshuffle (on #36, 2 conflicts), Bellona clean-up (#38, 1), Kalos to
-// Saturdays (#34, weekly timings, none), Tuesday Kalos (#31 → merged #33),
-// Scratch (#32, discarded) and an expired draft from #12.
+// /__e2e/graph/board` grows History from the seed's head (#10) to #39 and
+// gives the boards' drafts their lanes through the drafts service: Weekend
+// reshuffle (rebased onto #36, 2 conflicts), Bellona clean-up (#38, 1), Kalos
+// to Saturdays (#34, weekly timings, none), Tuesday Kalos (#31 → merged #33),
+// Scratch (#32, discarded) and an untitled draft from #12 (discarded between
+// #24 and #25: a real draft expires only when its boss week ends). The store
+// keeps every draft, so the seed's Carling retime (`d-carling`) plays Bellona
+// clean-up.
 
 async function board(page: Page) {
-  expect((await page.request.post(`${ADMIN}/__mock/graph/board`)).status()).toBe(204);
+  const made = await page.request.post(`${ADMIN}/__e2e/graph/board`);
+  expect(made.status(), await made.text()).toBe(204);
 }
 
 async function graph(page: Page, query = '') {
@@ -31,8 +36,8 @@ test('history graph: tab, roving rows, arrows into drafts, Enter opens, Escape c
   await expect(page.locator('tr[tabindex="0"]')).toHaveCount(1);
   await row(page, 't-d-weekend').focus();
   await page.keyboard.press('ArrowDown');
-  expect(await focused(page)).toBe('t-d-bellona');
-  await expect(page.locator('tr[tabindex="0"]')).toHaveAttribute('data-row', 't-d-bellona');
+  expect(await focused(page)).toBe('t-d-carling');
+  await expect(page.locator('tr[tabindex="0"]')).toHaveAttribute('data-row', 't-d-carling');
   await page.keyboard.press('End');
   expect(await focused(page)).toBe('more');
   await page.keyboard.press('Home');
@@ -57,14 +62,14 @@ test('history graph: tab, roving rows, arrows into drafts, Enter opens, Escape c
   await page.keyboard.press('Enter');
   const draft = page.getByRole('complementary', { name: 'Draft Bellona clean-up' });
   await expect(draft).toBeVisible();
-  await expect(draft.getByRole('link', { name: 'Open draft' })).toHaveAttribute('href', '/drafts?item=d-bellona');
+  await expect(draft.getByRole('link', { name: 'Open draft' })).toHaveAttribute('href', '/drafts?item=d-carling');
   // Opening it counts its conflicts: the tip now says so (base moved until then).
   await expect(draft).toContainText('Conflicts · 1');
-  await expect(row(page, 't-d-bellona')).toContainText('1 conflict');
+  await expect(row(page, 't-d-carling')).toContainText('1 conflict');
   await expect(row(page, 't-d-weekend')).toContainText('Base moved');
   await page.keyboard.press('Escape');
   await expect(draft).toBeHidden();
-  expect(await focused(page)).toBe('t-d-bellona');
+  expect(await focused(page)).toBe('t-d-carling');
 });
 
 test('history graph: every branch the lanes draw is said in the row; List shows the same words', async ({ page }) => {
@@ -148,6 +153,9 @@ test('history graph: no drafts to draw yet', async ({ page }) => {
 });
 
 test('history graph: Drafts links to the draft in the graph', async ({ page }) => {
+  // The drafts boards' Carling retime, three records behind with two conflicts.
+  const made = await page.request.post(`${ADMIN}/__e2e/drafts/board`);
+  expect(made.status(), await made.text()).toBe(204);
   await page.goto(`${ADMIN}/drafts?item=d-carling&sw=off`);
   await expect(page.getByRole('link', { name: 'See them in History' })).toHaveAttribute('href', '/history?tab=graph&draft=d-carling');
   await page.goto(`${ADMIN}/history?tab=graph&draft=d-carling&sw=off`);
@@ -163,7 +171,7 @@ test('history: an answer reads "→ on for <run>" in the Graph, the Timeline and
   const who = week.runs.find((r) => r.id === 'r-carling')!.participants.find((p) => p.answer !== 'yes')!;
   const answered = await page.request.post(`${ADMIN}/api/admin/runs/r-carling/rsvp`, { headers: await csrf(page.request), data: { member_id: who.id, answer: 'yes', version: week.version } });
   expect(answered.ok()).toBe(true);
-  const line = new RegExp(`${who.name}(?: \\(\\d\\))? → on for HCarling \\+ HStar`);
+  const line = new RegExp(`${who.name}(?: \\(\\d\\))? → on for HCarling \\+ HMaleficStar`);
   await graph(page);
   const head = row(page, 'r40');
   await expect(head.locator('.gx__l2')).toHaveText(line);

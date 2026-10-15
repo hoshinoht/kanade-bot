@@ -272,6 +272,12 @@ impl Shared {
         Some(true)
     }
 
+    /// The live generation, held so no reset or restart swaps it meanwhile.
+    pub async fn live(&self) -> Option<tokio::sync::MappedMutexGuard<'_, Generation>> {
+        tokio::sync::MutexGuard::try_map(self.generation.lock().await, |slot| slot.live.as_mut())
+            .ok()
+    }
+
     /// Stops serving and retires the live generation.
     pub async fn close(&self) {
         self.routes
@@ -319,6 +325,7 @@ pub fn router(shared: &Arc<Shared>, origin: Origin) -> Router {
         .route(REPORTS, get(list).post(receive).delete(clear))
         .merge(discord::routes(Arc::clone(&shared.page)))
         .merge(p5::routes())
+        .merge(crate::controls_p6::routes(shared))
         .fallback(forward);
     if origin == Origin::Admin {
         app = app.nest_service("/__showcase", shared.showcase.clone());

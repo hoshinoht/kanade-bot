@@ -1,18 +1,30 @@
 import type { Page } from '@playwright/test';
-import { ADMIN, choose, csrf, expect, test } from './support';
+import { ADMIN, choose, csrf, expect, setClock, test } from './support';
 
-// Drafts (boards docs/research/2026-10-11-drafts-mockups) over the mock's seed:
-// "Weekend reshuffle" (up to date, 2 staged on XKalos), "Carling retime" (base 3
-// behind: a both-changed slot on HCarling + HStar and NLimbo cancelled since),
-// and closed "Tuesday Kalos" (merged) and "Scratch" (discarded). Inbox request
+// Drafts (boards docs/research/2026-10-11-drafts-mockups) over the seed:
+// "Weekend reshuffle" (2 staged on XBM) and "Carling retime" (1 staged on
+// HCarling + HMaleficStar). `POST /__e2e/drafts/board` brings the boards'
+// state through the drafts service: closed "Scratch" (discarded) and
+// "Tuesday Kalos" (merged as #11, the record after the seed's head),
+// "Carling retime" three records behind (Ren moved HCarling + HMaleficStar
+// and cancelled next week's HFA, which it re-parties and confirms) and
+// "Weekend reshuffle" rebased onto the head (version 4). Inbox request
 // editing uses `p-kalos-fixed` (Tsubame: XKalos Fri 21:30 → Sat 22:30, + Yuzu).
 
 const toast = (page: Page, text: string | RegExp) => page.locator('.toast:not(.is-leaving)').filter({ hasText: text });
+
+async function board(page: Page) {
+  const made = await page.request.post(`${ADMIN}/__e2e/drafts/board`);
+  expect(made.status(), await made.text()).toBe(204);
+}
 
 async function drafts(page: Page, query = '') {
   await page.goto(`${ADMIN}/drafts${query}${query ? '&' : '?'}sw=off`);
   await expect(page.getByRole('listbox', { name: /drafts$/ })).toBeVisible();
 }
+
+/** Tsubame's request in the Inbox list (Asahi's own `req-kalos-weekly` is a weekly timing change too). */
+const kalosOption = (page: Page) => page.getByRole('option', { name: /^Weekly timing change — XKalos Tsubame/ });
 
 async function showWeekEnd(page: Page) {
   await page.locator('.board').evaluate((board) => (board.scrollLeft = board.scrollWidth));
@@ -24,7 +36,7 @@ async function openCarlingStagePicker(page: Page) {
   await expect(page.locator('[data-run="r-carling"]')).toBeVisible();
   await showWeekEnd(page);
   await page.locator('[data-run="r-carling"] .plan-card__open').click();
-  const pane = page.getByRole('complementary', { name: 'HCarling + HStar' });
+  const pane = page.getByRole('complementary', { name: 'HCarling + HMaleficStar' });
   await pane.getByRole('button', { name: 'Stage in draft…' }).click();
   const picker = pane.getByRole('dialog', { name: 'Stage in draft' });
   await expect(picker.getByRole('radio', { name: /Weekend reshuffle/ })).toBeChecked();
@@ -36,7 +48,7 @@ async function stageWeekendSwap(page: Page) {
   await picker.getByRole('button', { name: 'Start staging' }).click();
   await expect(pane.getByText('Staging into Weekend reshuffle')).toBeVisible();
   await pane.getByRole('button', { name: 'Stage swap timing with…' }).click();
-  const swap = pane.getByRole('group', { name: /Swap HCarling \+ HStar's timing/ });
+  const swap = pane.getByRole('group', { name: /Swap HCarling \+ HMaleficStar's timing/ });
   await choose(pane.getByRole('combobox', { name: 'Swap with' }), { label: 'Tue 29 23:30 · XBM' });
   return { pane, swap };
 }
@@ -72,6 +84,7 @@ async function refuseSecondStagedMove(page: Page, refuseRemoval = false) {
   return { posts, removals };
 }
 test('drafts: the list, a draft and its preview, and the closed tab', async ({ page }) => {
+  await board(page);
   await drafts(page);
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('2 open');
   const list = page.getByRole('listbox', { name: 'Open drafts' });
@@ -96,13 +109,14 @@ test('drafts: the list, a draft and its preview, and the closed tab', async ({ p
   await page.getByRole('tab', { name: 'Closed' }).click();
   const closed = page.getByRole('listbox', { name: 'Closed drafts' });
   await expect(closed.getByRole('option')).toHaveCount(2);
-  await expect(closed.getByRole('option').first()).toContainText('merged as #3');
-  await expect(page.getByText('Closed: merged as #3')).toBeVisible();
+  await expect(closed.getByRole('option').first()).toContainText('merged as #11');
+  await expect(page.getByText('Closed: merged as #11')).toBeVisible();
   // A closed draft takes no changes.
   await expect(page.getByRole('button', { name: /^Remove change/ })).toHaveCount(0);
 });
 
 test('drafts: conflicts → rebase (take one, keep one) → merge', async ({ page }) => {
+  await board(page);
   await drafts(page, '?item=d-carling');
   await expect(page.getByText('The schedule moved since you started.')).toBeVisible();
   const pane = page.getByRole('complementary', { name: 'Conflicts and merge' });
@@ -120,14 +134,15 @@ test('drafts: conflicts → rebase (take one, keep one) → merge', async ({ pag
   await pane.getByRole('button', { name: 'Revive the run' }).click();
   await expect(pane.getByText('2 conflicts · both settled')).toBeVisible();
   await rebase.click();
-  await expect(toast(page, 'Draft rebased; your changes are kept.')).toBeVisible();
+  // The server's one message for a saved draft write (`admin/drafts/write.rs`).
+  await expect(toast(page, 'Draft saved; nothing is live until it is merged.')).toBeVisible();
   // On the head and conflict-free: the preview pane, and Merge.
   const preview = page.getByRole('complementary', { name: 'Preview and merge' });
   await expect(preview).toBeVisible();
-  // Take dropped the slot change; keep revived NLimbo ahead of its two changes.
+  // Take dropped the slot change; keep revived next week's HFA (back to planned) ahead of its two changes.
   const ops = page.getByRole('list', { name: 'Staged changes' }).getByRole('listitem');
   await expect(ops).toHaveCount(3);
-  await expect(ops.first()).toContainText('Revive r-limbo');
+  await expect(ops.first()).toContainText('Set HFA Mon 05 Oct 20:00 to planned');
   await expect(page.getByRole('listbox', { name: 'Open drafts' }).getByRole('option', { name: /Carling retime/ })).toContainText('Up to date');
   await preview.getByRole('button', { name: /^Merge 3 changes/ }).click();
   await expect(toast(page, /^Draft merged as change #\d+\./)).toBeVisible();
@@ -169,10 +184,11 @@ test('drafts: remove a change, rename, discard, new draft', async ({ page }) => 
 });
 
 test('drafts: an empty Open tab shows the note and the recently closed', async ({ page }) => {
+  await board(page);
   await page.route('**/api/admin/drafts?state=open', (route) => route.fulfill({ json: { head: 9, drafts: [] } }));
   await page.goto(`${ADMIN}/drafts?sw=off`);
   await expect(page.getByRole('heading', { name: 'No open drafts' })).toBeVisible();
-  await expect(page.getByRole('link', { name: /Tuesday Kalos/ })).toContainText('merged as #3');
+  await expect(page.getByRole('link', { name: /Tuesday Kalos/ })).toContainText('merged as #11');
 });
 
 test('drafts: a failed read says so and retries', async ({ page }) => {
@@ -190,7 +206,7 @@ test('drafts: a failed read says so and retries', async ({ page }) => {
 test('drafts: staging from the run sheet persists across sheets until Stop staging', async ({ page }) => {
   await page.goto(`${ADMIN}/?sw=off`);
   await page.locator('[data-run="r-carling"] .plan-card__open').click();
-  let pane = page.getByRole('complementary', { name: 'HCarling + HStar' });
+  let pane = page.getByRole('complementary', { name: 'HCarling + HMaleficStar' });
   await pane.getByRole('button', { name: 'Stage in draft…' }).click();
   const picker = pane.getByRole('dialog', { name: 'Stage in draft' });
   // This boss week's open drafts, then New draft with a name.
@@ -203,13 +219,13 @@ test('drafts: staging from the run sheet persists across sheets until Stop stagi
   // Status is staged, not live: the run keeps its status on the board.
   await expect(pane.getByRole('group', { name: 'Stage status' })).toBeVisible();
   await pane.getByRole('button', { name: 'Confirmed' }).click();
-  await expect(pane.getByText(/^Staged HCarling \+ HStar as confirmed in Wednesday shuffle/)).toBeVisible();
+  await expect(pane.getByText(/^Staged HCarling \+ HMaleficStar as confirmed in Wednesday shuffle/)).toBeVisible();
   await expect(pane.getByText(/In draft: 1 change to this run/)).toBeVisible();
   const live = await page.request.get(`${ADMIN}/api/admin/week`);
   expect((await live.json()).runs.find((r: { id: string }) => r.id === 'r-carling').status).toBe('planned');
 
   // Closing the sheet keeps staging: another run's sheet shows the strip too.
-  await pane.getByRole('button', { name: 'Close HCarling + HStar' }).click();
+  await pane.getByRole('button', { name: 'Close HCarling + HMaleficStar' }).click();
   await page.locator('[data-run="r-bm"] .plan-card__open').click();
   pane = page.getByRole('complementary', { name: 'XBM' });
   await expect(pane.getByText('Staging into Wednesday shuffle')).toBeVisible();
@@ -253,8 +269,8 @@ test('drafts: a refused second staged swap op rolls the first op back', async ({
   expect(intercepted.removals).toEqual(['/api/admin/drafts/d-weekend/ops/2?version=4']);
   const response = await page.request.get(`${ADMIN}/api/admin/drafts/d-weekend`);
   const detail = (await response.json()) as { ops: { run_id: string | null }[] };
-  expect(detail.ops).toHaveLength(2);
-  expect(detail.ops.some(({ run_id }) => run_id === 'r-carling' || run_id === 'r-bm')).toBe(false);
+  // The seeded two (both on XBM) are all that is left: the swap's own change was rolled back.
+  expect(detail.ops.map(({ run_id }) => run_id)).toEqual(['r-bm', 'r-bm']);
   await expect(pane.getByRole('alert')).toContainText(/^Couldn't stage a swap/);
 });
 
@@ -280,7 +296,7 @@ test('drafts: the phone stages from a bottom sheet', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(`${ADMIN}/?sw=off`);
   await page.locator('[data-run="r-carling"] .plan-card__open').click();
-  const sheet = page.getByRole('dialog', { name: 'HCarling + HStar' });
+  const sheet = page.getByRole('dialog', { name: 'HCarling + HMaleficStar' });
   await sheet.getByRole('button', { name: 'Stage in draft…' }).click();
   const picker = page.getByRole('dialog', { name: 'Stage in draft' });
   await picker.getByRole('button', { name: 'Start staging' }).click();
@@ -289,7 +305,12 @@ test('drafts: the phone stages from a bottom sheet', async ({ page }) => {
   await expect(sheet.getByRole('button', { name: /^Stage a move of/ })).toBeFocused();
 });
 
+/**
+ * Tsubame's request, on Fri 25 12:00 guild time: XKalos (Fri 22:00, amended) has not
+ * happened yet, so approving offers Keep or Update for it (an ended run is never a choice).
+ */
 async function kalosRequest(page: Page) {
+  await setClock('2026-09-25T04:00:00Z');
   await page.goto(`${ADMIN}/inbox?tab=self_service&item=p-kalos-fixed&sw=off`);
   await expect(page.getByRole('heading', { level: 2, name: /Weekly timing change/ })).toBeVisible();
 }
@@ -309,7 +330,7 @@ test('inbox: edit a request before approving (day/time, drop) and approve edited
   await expect(page.getByText(/XKalos weekly moves to Sat 22:00\. The party change was not approved\./)).toBeVisible();
   // The last change in cannot be dropped: that would be a rejection.
   await expect(page.getByRole('button', { name: 'Drop change 1: the day and time change' })).toBeDisabled();
-  await expect(page.getByRole('option', { name: /Weekly timing change — XKalos/ })).toContainText('editing');
+  await expect(kalosOption(page)).toContainText('editing');
   await page.getByRole('radio', { name: 'Keep as it is' }).check();
   await page.getByRole('button', { name: 'Approve edited' }).click();
   await expect(toast(page, /^Approved with changes/)).toBeVisible();
@@ -318,19 +339,24 @@ test('inbox: edit a request before approving (day/time, drop) and approve edited
   expect(JSON.stringify(kalos)).toContain('22:00');
 });
 
-test('inbox: an edited approval refused after the member changed it reloads read-only with Edit again', async ({ page }) => {
+test('inbox: an edited approval refused after the request changed reloads read-only with Edit again', async ({ page }) => {
   await kalosRequest(page);
   await page.getByRole('button', { name: 'Edit before approving' }).click();
   await page.getByRole('button', { name: 'Drop change 2: the party change' }).click();
-  expect((await page.request.post(`${ADMIN}/__mock/inbox/kalos-v4`)).status()).toBe(204);
+  // Another admin edits it to Sunday meanwhile (requesters never edit on the real server).
+  const changed = await page.request.post(`${ADMIN}/__e2e/inbox/kalos-v4`);
+  expect(changed.status(), await changed.text()).toBe(200);
+  const body: unknown = await changed.json();
+  const version = String(body !== null && typeof body === 'object' && 'version' in body ? body.version : undefined);
+  expect(version, 'the request version after the edit').toMatch(/^\d+$/);
   await page.getByRole('radio', { name: 'Keep as it is' }).check();
   await page.getByRole('button', { name: 'Approve edited' }).click();
   const refused = toast(page, 'Couldn’t approve your edit.');
-  await expect(refused).toContainText('Tsubame changed this request (now version 4), so your edits were cleared.');
-  // Persistent (an error), the editor closed, the request at version 4 and flagged.
+  await expect(refused).toContainText(`Tsubame changed this request (now version ${version}), so your edits were cleared.`);
+  // Persistent (an error), the editor closed, the request at its new version and flagged.
   await expect(page.getByText('Editing · not saved')).toHaveCount(0);
-  await expect(page.getByText('changed in version 4')).toBeVisible();
-  await expect(page.getByRole('option', { name: /Weekly timing change — XKalos/ })).toContainText('updated · version 4');
+  await expect(page.getByText(`changed in version ${version}`)).toBeVisible();
+  await expect(kalosOption(page)).toContainText(`updated · version ${version}`);
   await expect(page.getByRole('button', { name: 'Approve', exact: true })).toBeVisible();
   await refused.getByRole('button', { name: 'Edit again' }).click();
   await expect(page.getByText('Editing · not saved')).toBeVisible();

@@ -497,3 +497,42 @@ export function unconditional(route: Route): { headers: Record<string, string> }
   delete headers['if-none-match'];
   return { headers };
 }
+
+/** Harness only: the server clock stands at `at` (RFC 3339) until moved again or reset (`/__e2e/clock`). */
+export async function setClock(at: string): Promise<void> {
+  const set = await fetch(`${ADMIN}/__e2e/clock`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ at }) });
+  expect(set.status, await set.text()).toBe(200);
+}
+
+/**
+ * Records every EventSource the page opens (call before `goto`), so
+ * `streamOpen` can tell when one is up: the real server holds a stream open,
+ * so it never finishes and never reaches the resource timeline.
+ */
+export async function trackStreams(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    const Native = window.EventSource;
+    const opened: EventSource[] = [];
+    Object.defineProperty(window, '__e2eStreams', { value: opened });
+    window.EventSource = class extends Native {
+      constructor(url: string | URL, init?: EventSourceInit) {
+        super(url, init);
+        opened.push(this);
+      }
+    } as typeof EventSource;
+  });
+}
+
+/** Waits until one of the page's event streams on `path` is open (`trackStreams` first). */
+export async function streamOpen(page: Page, path: string): Promise<void> {
+  const open = (p: string) => {
+    const streams: unknown = Reflect.get(window, '__e2eStreams');
+    return Array.isArray(streams) && streams.some((s) => s instanceof EventSource && s.readyState === EventSource.OPEN && new URL(s.url).pathname === p);
+  };
+  await expect.poll(() => page.evaluate(open, path), { message: `an open ${path} stream` }).toBe(true);
+}
+
+/** Harness only: signs this context in on the public origin as `account` (a seeded member's snowflake) through the fake Discord page. */
+export async function signInPublicAs(page: Page, account: string): Promise<void> {
+  await discordSignIn(page, PUBLIC, 'public', account);
+}

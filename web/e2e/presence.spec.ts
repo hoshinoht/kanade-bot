@@ -1,21 +1,25 @@
 import type { Page, Request } from '@playwright/test';
-import { ADMIN, expect, settle, test } from './support';
+import { ADMIN, expect, settle, streamOpen, test, trackStreams } from './support';
 
 // Admin presence (boards docs/research/2026-10-12-graph-presence-mockups B_Presence*).
-// The mock has one admin (this page); the other admins are simulated:
-// `POST /__mock/presence` puts one at a place (aging in real time unless held),
-// `/__mock/presence/board` seeds the boards (Ren editing request p-kalos-fixed
-// with Kaito viewing it 40 s ago, Ren editing run r-carling; held).
+// The browser is one admin (Asahi); the other admins are simulated on the
+// server's own presence board: `POST /__e2e/presence` puts one at a place
+// (aging in real time unless held), `/__e2e/presence/board` seeds the boards
+// (Ren editing request p-kalos-fixed with Kaito viewing it 40 s ago, Ren
+// editing run r-carling; held). Admins are named by their Discord actor ids.
 
 const REQUEST = '/inbox?tab=self_service&item=p-kalos-fixed';
 const PRESENCE = '/api/admin/presence';
+const REN = 'discord:100000000000001002';
+const MIKA = 'discord:100000000000001003';
+const KAITO = 'discord:100000000000001009';
 
 async function board(page: Page) {
-  expect((await page.request.post(`${ADMIN}/__mock/presence/board`)).status()).toBe(204);
+  expect((await page.request.post(`${ADMIN}/__e2e/presence/board`)).status()).toBe(204);
 }
 
 async function arrive(page: Page, who: { at: string; id: string; name: string; editing?: boolean; seen_s?: number; held?: boolean; leave?: boolean }) {
-  expect((await page.request.post(`${ADMIN}/__mock/presence`, { data: who })).status()).toBe(204);
+  expect((await page.request.post(`${ADMIN}/__e2e/presence`, { data: who })).status()).toBe(204);
 }
 
 /**
@@ -46,14 +50,14 @@ async function inbox(page: Page) {
   await expect(page.getByRole('heading', { level: 2, name: /Weekly timing change/ })).toBeVisible();
 }
 
-/** HCarling + HStar in the full sheet (the pane's larger view on a laptop, the sheet on a phone). */
+/** HCarling + HMaleficStar in the full sheet (the pane's larger view on a laptop, the sheet on a phone). */
 async function carlingSheet(page: Page) {
   await page.goto(`${ADMIN}/?sw=off`);
   await page.locator('[data-run="r-carling"] .plan-card__open').click();
   if (page.viewportSize()!.width >= 900) {
-    await page.getByRole('complementary', { name: 'HCarling + HStar' }).getByRole('button', { name: 'Open in a larger view' }).click();
+    await page.getByRole('complementary', { name: 'HCarling + HMaleficStar' }).getByRole('button', { name: 'Open in a larger view' }).click();
   }
-  const sheet = page.getByRole('dialog', { name: 'HCarling + HStar' });
+  const sheet = page.getByRole('dialog', { name: 'HCarling + HMaleficStar' });
   await expect(sheet).toBeVisible();
   return sheet;
 }
@@ -92,19 +96,21 @@ test('presence: Inbox request shows who else is here, as words, and never locks'
 });
 
 test('presence: a second admin arriving shows at once, and starting to edit is announced once', async ({ page }) => {
+  await trackStreams(page);
   await inbox(page);
   await page.getByRole('button', { name: /Edit before approving/ }).click();
   await expect(page.locator('[data-fid="presence"], .presence__btn')).toHaveCount(0);
   // Kaito opens the request: the presence hint re-reads without waiting for a check-in.
-  await arrive(page, { at: 'request:p-kalos-fixed', id: 'discord:1009', name: 'Kaito' });
+  await streamOpen(page, '/api/admin/events');
+  await arrive(page, { at: 'request:p-kalos-fixed', id: KAITO, name: 'Kaito' });
   await expect(page.getByRole('button', { name: 'Other admins here: Kaito, viewing' })).toBeVisible();
   await expect(page.locator('.presence-note')).toHaveCount(0);
   // Ren starts editing what this page edits: one polite announcement, and the note.
-  await arrive(page, { at: 'request:p-kalos-fixed', id: 'discord:1002', name: 'Ren', editing: true });
+  await arrive(page, { at: 'request:p-kalos-fixed', id: REN, name: 'Ren', editing: true });
   await expect(page.getByRole('status').filter({ hasText: 'Ren started editing this request' })).toHaveCount(1);
   await expect(page.locator('.presence-note')).toContainText('Ren is editing this too.');
   // Ren leaves.
-  await arrive(page, { at: 'request:p-kalos-fixed', id: 'discord:1002', name: 'Ren', leave: true });
+  await arrive(page, { at: 'request:p-kalos-fixed', id: REN, name: 'Ren', leave: true });
   await expect(page.getByRole('button', { name: 'Other admins here: Kaito, viewing' })).toBeVisible();
 });
 
@@ -149,9 +155,12 @@ test('presence: phone rows carry the note (Inbox and run sheet)', async ({ page 
 
 test('presence: checks in every 15 s while visible, stops while hidden, fades and drops by its age', async ({ page }) => {
   await page.clock.install();
+  // No event stream: the server hints this page's own arrival, and that re-read would
+  // restart Mika's age from the server's real clock rather than age it on the page's.
+  await page.route(`${ADMIN}/api/admin/events`, (route) => route.abort());
   const seen = calls(page);
   // Mika viewing, last seen 55 s ago (aging): gone at 60 s without a check-in.
-  await arrive(page, { at: 'request:p-kalos-fixed', id: 'discord:1003', name: 'Mika', seen_s: 55 });
+  await arrive(page, { at: 'request:p-kalos-fixed', id: MIKA, name: 'Mika', seen_s: 55 });
   await inbox(page);
   const mika = page.getByRole('button', { name: /^Other admins here: Mika, viewing, last seen 50 seconds ago/ });
   await expect(mika).toBeVisible();

@@ -13,6 +13,7 @@
 
 mod bot;
 mod controls;
+mod controls_p6;
 mod fakes;
 mod live;
 mod seed;
