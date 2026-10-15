@@ -5,9 +5,9 @@
 //! the generic `404` before the session is checked, as an unmounted path
 //! does. Writes take the session's CSRF token, replay an `Idempotency-Key`
 //! (scope `config`) and record History rows (section `characters`, key
-//! `link.<id>`, status words only). An admin request is `pending` and calls
-//! nothing until the member confirms in Discord; the refresh shares the
-//! batch's 24-hour cap and daily budget.
+//! `link.<id>`, status words only). An admin's link is active at once and
+//! fetches (no member confirmation); it and the refresh share the batch's
+//! 24-hour cap and daily budget.
 
 pub(crate) mod estimates;
 mod lookup;
@@ -37,7 +37,7 @@ use crate::{
         state::ApiState,
     },
     domain::chardata::UnlinkReason,
-    infrastructure::character_data::{CharacterData, LinkView, RefreshOutcome, RequestOutcome},
+    infrastructure::character_data::{AdminLinkOutcome, CharacterData, RefreshOutcome},
 };
 
 pub fn routes() -> Router<Arc<Site>> {
@@ -118,7 +118,8 @@ pub struct LinkRequest {
     version: Option<u32>,
 }
 
-/// `POST`: ask the member to link (pending; no Nexon call).
+/// `POST`: link now (active at once, no member confirmation), then the
+/// first fetch; answers the link as it stands after it.
 async fn request(
     Module(module): Module,
     State(site): State<Arc<Site>>,
@@ -140,52 +141,50 @@ async fn request(
         return Ok(answer);
     }
     let origin = session.origin();
-    let now = state.now();
-    let mut answer = None;
-    let outcome = module
-        .request_link(&id, version, &origin.actor, origin.surface, |new| {
-            let body = json!(link(
-                &id,
-                &LinkView {
-                    connected: true,
-                    link: Some(new.clone()),
-                    snapshot: None,
-                    refresh: None,
-                    now,
-                },
-                module.privacy_url(),
-            ));
-            let replay = keyed
-                .as_ref()
-                .map(|keyed| keyed.answered(StatusCode::CREATED, &body, now));
-            answer = Some(body);
-            replay
-        })
+    match module
+        .admin_link(&id, version, &origin.actor, origin.surface)
         .await
-        .map_err(Refusal::unavailable)?;
-    match outcome {
-        RequestOutcome::Requested(_) => {
-            Ok((StatusCode::CREATED, Json(answer.unwrap_or(Value::Null))).into_response())
+        .map_err(Refusal::unavailable)?
+    {
+        AdminLinkOutcome::Linked(..) => {}
+        AdminLinkOutcome::NotConnected => return Err(not_connected()),
+        AdminLinkOutcome::Missing => return Err(not_found()),
+        AdminLinkOutcome::Retired => {
+            return Err(Refusal::conflict(
+                "retired",
+                "A retired character can't be linked.",
+            ));
         }
-        RequestOutcome::NotConnected => Err(not_connected()),
-        RequestOutcome::Missing => Err(not_found()),
-        RequestOutcome::Retired => Err(Refusal::conflict(
-            "retired",
-            "A retired character can't be linked.",
-        )),
-        RequestOutcome::Region => Err(Refusal::unprocessable(
-            "region",
-            "Only MapleSEA characters can be linked.",
-        )),
-        RequestOutcome::AlreadyLinked(_) => Err(Refusal::conflict(
-            "already_linked",
-            "That character is already linked or waiting for its member.",
-        )),
-        RequestOutcome::Stale(_) => Err(Refusal::conflict(
-            "stale",
-            "The link changed since it was loaded.",
-        )),
+        AdminLinkOutcome::Region => {
+            return Err(Refusal::unprocessable(
+                "region",
+                "Only MapleSEA characters can be linked.",
+            ));
+        }
+        AdminLinkOutcome::AlreadyLinked(_) => {
+            return Err(Refusal::conflict(
+                "already_linked",
+                "That character is already linked or waiting for its member.",
+            ));
+        }
+        AdminLinkOutcome::Stale(_) => {
+            return Err(Refusal::conflict(
+                "stale",
+                "The link changed since it was loaded.",
+            ));
+        }
     }
+    // As Refresh: the answer is known only after the fetch, so a keyed
+    // request stores it then (a retry before that finds the link on file).
+    let body = view(&module, &id).await?;
+    if let Some(keyed) = keyed {
+        state
+            .store
+            .put_replay(keyed.answered(StatusCode::CREATED, &body, state.now()))
+            .await
+            .map_err(Refusal::unavailable)?;
+    }
+    Ok((StatusCode::CREATED, Json(body)).into_response())
 }
 
 /// `DELETE`: unlink now; the data is deleted in the same write.

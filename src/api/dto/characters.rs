@@ -43,17 +43,19 @@ pub struct MemberCharacters {
     pub characters: Vec<CharacterRow>,
 }
 
-/// The create's answer: the row and, with module `character_data`, the
-/// member's link request the create asked for.
+/// The create's answer: the row (as it stands after the link's first fetch,
+/// which copies NEXON's class and level into it) and, with module
+/// `character_data`, the link the create made.
 #[derive(Serialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
 pub struct CharacterCreated {
     #[serde(flatten)]
     pub row: CharacterRow,
-    /// `pending`: the member was asked to link it (a MapleSEA character
-    /// with the module on and a Nexon key); `failed`: that request could
-    /// not be made (the character is saved); `null`: none was asked.
-    #[cfg_attr(test, ts(type = "'pending' | 'failed' | null"))]
+    /// `linked`: linked at once for its member (a MapleSEA character with
+    /// the module on and a Nexon key), its first fetch run; `failed`: the
+    /// link could not be made (the character is saved); `null`: none was
+    /// made.
+    #[cfg_attr(test, ts(type = "'linked' | 'failed' | null"))]
     pub link: Option<&'static str>,
 }
 

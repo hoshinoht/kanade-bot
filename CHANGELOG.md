@@ -6,8 +6,14 @@ What changed in each Kanade release, newest first. Upgrading across several rele
 
 _In development_
 
+### New features
+- A linked character's roster class and level now take NEXON's values on every refresh, recorded in History as NEXON, and stay on the roster after an unlink or once the NEXON data expires, so other members see the current level.
+
 ### Changes
 - Estimates are now labelled “Estimate” on the portals and in Discord.
+- An admin's Link… (and Add character for a MapleSEA character) now links it at once and fetches its NEXON data, without waiting for the member to confirm; link requests still waiting from before become active on the first start.
+- The admin app, the member portal and Discord now say that unlinking keeps the class and level on the roster, and "Waiting for you" now only shows links waiting for the member to confirm the notice.
+- The NEXON link notice and the Privacy page now say that a linked character's class and level are copied to the roster, stay after an unlink and are seen by guild members; members who linked a character themselves are asked to confirm the new notice before it refreshes again, while characters an admin linked stay linked.
 
 ### Fixes
 - Fixed Config never showing the "Manage Messages missing" warning when the bot lacks Manage Messages in a channel it uses.

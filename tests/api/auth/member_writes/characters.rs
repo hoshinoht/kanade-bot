@@ -21,15 +21,11 @@ use chrono::TimeDelta;
 use kanade::{
     bot::chardata::copy::notice_text,
     domain::{
-        chardata::{ConsentSurface, NOTICE_VERSION},
+        chardata::{CharDataStore, ConsentSurface, Link, LinkPut, LinkStatus, NOTICE_VERSION},
         history::{Actor, Surface},
         settings::{SettingsChangeQuery, SettingsStore},
     },
-    infrastructure::{
-        character_data::{CharacterData, ConfirmOutcome},
-        scouter::JobState,
-        store::SqliteCharData,
-    },
+    infrastructure::{character_data::CharacterData, scouter::JobState, store::SqliteCharData},
 };
 use serde_json::{Value, json};
 
@@ -204,13 +200,46 @@ impl Chars {
         &self.portal.reads
     }
 
-    /// An admin adds a character for `member` (a pending link request for
-    /// a MapleSEA one while NEXON is connected): its id.
+    /// An admin adds a character for `member` (linked at once, with its
+    /// first fetch, for a MapleSEA one while NEXON is connected): its id.
     async fn admin_add(&self, member: u64, body: Value) -> String {
         let path = format!("/api/admin/members/{member}/characters");
         let reply = self.reads().call("POST", &path, body, &[]).await;
         assert_eq!(reply.status, 201, "{}", reply.text());
         id(&reply.json())
+    }
+
+    /// `id` (`ign`, Alice's) waits for her to confirm: the sweeper's re-pend
+    /// after a new notice, the one pending flow left.
+    async fn waiting(&self, id: &str, ign: &str) {
+        let pending = Link {
+            character_id: id.into(),
+            member_id: ALICE.to_string(),
+            ign_key: ign.to_ascii_lowercase(),
+            region: "msea".into(),
+            status: LinkStatus::Pending,
+            requested_by: Actor::system("chardata"),
+            requested_at: self.service.now(),
+            consent_version: None,
+            consented_at: None,
+            linked_at: None,
+            consent_surface: None,
+            version: 1,
+        };
+        assert_eq!(
+            self.file.put_link(pending, 0).await.unwrap(),
+            LinkPut::Written
+        );
+    }
+
+    /// `member`'s roster row `id`, as the admin reads it.
+    async fn roster_row(&self, member: u64, id: &str) -> Value {
+        let path = format!("/api/admin/members/{member}/characters");
+        let rows = self
+            .reads()
+            .read(&path, "characters.json#/$defs/MemberCharacters")
+            .await;
+        find(&rows["characters"], "id", id).clone()
     }
 
     async fn add(&self, browser: &Browser, key: &str, body: Value) -> Reply {
@@ -516,7 +545,7 @@ async fn members_add_edit_and_retire_only_their_own_characters() {
     let mine = chars.portal.read(&alice, MINE, MY_CHARACTERS).await;
     let ids: Vec<&str> = strs(&mine["characters"], "id");
     assert!(!ids.contains(&bob.as_str()));
-    assert_eq!(mine["pending"], json!([]), "Bob's request is his");
+    assert_eq!(mine["pending"], json!([]), "Bob's link is his");
     for character in [bob.as_str(), "nobody"] {
         for (method, path, body) in [
             (
@@ -548,15 +577,12 @@ async fn members_add_edit_and_retire_only_their_own_characters() {
             assert_eq!(reply.json()["message"], "No such endpoint on this origin.");
         }
     }
-    let theirs = chars
-        .reads()
-        .read(
-            "/api/admin/members/1002/characters",
-            "characters.json#/$defs/MemberCharacters",
-        )
-        .await;
-    assert_eq!(theirs["characters"][0]["version"], 1, "untouched");
-    assert_eq!(theirs["characters"][0]["retired_at"], Value::Null);
+    let theirs = chars.roster_row(BOB, &bob).await;
+    assert_eq!(
+        fields(&theirs, &["version", "updated_by/kind", "retired_at"]),
+        json!([2, "system", null]),
+        "untouched by Alice: version 2 is NEXON's copy"
+    );
     assert_eq!(
         chars
             .service
@@ -567,7 +593,7 @@ async fn members_add_edit_and_retire_only_their_own_characters() {
             .unwrap()
             .member_id,
         "1002",
-        "Bob's pending request is still there"
+        "Bob's link is still there"
     );
 }
 
@@ -703,29 +729,49 @@ async fn character_writes_share_the_member_write_bucket() {
 async fn the_notice_link_cancel_unlink_and_my_data_follow_discord() {
     let chars = Chars::new(true, false).await;
     let alice = chars.portal.sign_in(ALICE).await;
-    // An admin asks to link AsahiDK; Alice adds AsahiKanna herself.
+    // An admin adds AsahiDK: linked at once, no notice for Alice, and its
+    // class and level copied into the roster.
     let dk = chars.admin_add(ALICE, json!({"ign": "AsahiDK"})).await;
+    let admin_linked = chars.portal.read(&alice, &link(&dk), LINK).await;
+    assert_eq!(
+        fields(
+            &admin_linked,
+            &[
+                "state",
+                "consent_version",
+                "consent_surface",
+                "requested_by/kind",
+                "data/level"
+            ]
+        ),
+        json!(["linked", null, null, "admin", 271])
+    );
+    assert_eq!(
+        fields(&chars.roster_row(1001, &dk).await, &["class", "level"]),
+        json!(["Bishop", 271])
+    );
+    let already = chars.portal.get(Some(&alice), &notice(&dk)).await;
+    assert_eq!(refused(&already), (409, "already_linked".into()));
+    // Alice adds AsahiKanna herself; it waits for her.
     let kanna = id(&chars
         .added(&alice, "a-1", json!({"ign": "AsahiKanna"}))
         .await);
+    chars.waiting(&kanna, "AsahiKanna").await;
     let mine = chars.portal.read(&alice, MINE, MY_CHARACTERS).await;
     let pending = mine["pending"].as_array().unwrap();
     assert_eq!(pending.len(), 1);
     assert_eq!(
         fields(&pending[0], &["character_id", "requested_by/kind"]),
-        json!([dk, "admin"])
+        json!([kanna, "system"])
     );
-    assert_eq!(mine["links"][&dk]["state"], "pending");
+    assert_eq!(mine["links"][&kanna]["state"], "pending");
 
-    // The notice is v1 word for word, led by the admin's request.
-    let asked = chars.portal.read(&alice, &notice(&dk), NOTICE).await;
-    let words = notice_text("AsahiDK", Some(None));
+    // The notice is v1 word for word.
+    let asked = chars.portal.read(&alice, &notice(&kanna), NOTICE).await;
+    let words = notice_text("AsahiKanna");
     assert_eq!(asked["version"], NOTICE_VERSION);
     assert_eq!(asked["title"], words.title);
-    assert_eq!(
-        asked["lead"],
-        "An admin asked to link AsahiDK (MapleSEA). Nothing is fetched until you press Link."
-    );
+    assert_eq!(asked["lead"], "Nothing is fetched until you press Link.");
     for (key, part) in [
         ("what", &words.what),
         ("why", &words.why),
@@ -740,49 +786,42 @@ async fn the_notice_link_cancel_unlink_and_my_data_follow_discord() {
     }
     assert_eq!(
         fields(&asked, &["as_is", "link_label", "cancel_label"]),
-        json!([words.as_is, "Link AsahiDK", "Cancel"])
+        json!([words.as_is, "Link AsahiKanna", "Cancel"])
     );
-    assert_eq!(asked["request"]["character_id"], dk);
-    let own = chars.portal.read(&alice, &notice(&kanna), NOTICE).await;
-    assert_eq!(own["lead"], "Nothing is fetched until you press Link.");
-    assert_eq!(own["request"], Value::Null);
+    assert_eq!(asked["request"]["character_id"], kanna);
 
-    // Cancel changes nothing: the admin's request stays.
-    let kept = chars.cancelled(&alice, &dk).await;
+    // Cancel changes nothing: the waiting link stays.
+    let kept = chars.cancelled(&alice, &kanna).await;
     assert_eq!(
         kept,
         json!({"request_kept": true, "requested_by_name": null})
     );
-    let none = chars.cancelled(&alice, &kanna).await;
+    let none = chars.cancelled(&alice, &dk).await;
     assert_eq!(none["request_kept"], false);
     assert_eq!(
-        chars.portal.read(&alice, &link(&dk), LINK).await["state"],
-        "pending"
-    );
-    assert_eq!(
         chars.portal.read(&alice, &link(&kanna), LINK).await["state"],
-        "not_linked"
+        "pending"
     );
 
     // Link: another notice version is refused; v1 records the consent on
     // the portal and fetches at once.
-    let outdated = chars.link(&alice, &dk, "l-0", NOTICE_VERSION + 1).await;
+    let outdated = chars.link(&alice, &kanna, "l-0", NOTICE_VERSION + 1).await;
     assert_eq!(refused(&outdated), (409, "notice_changed".into()));
-    let linked = chars.linked(&alice, &dk, "l-1").await;
+    let linked = chars.linked(&alice, &kanna, "l-1").await;
     assert_eq!(linked["state"], "linked");
     assert_eq!(linked["link"]["state"], "linked");
     assert_eq!(linked["link"]["consent_surface"], "portal");
     assert_eq!(linked["link"]["consent_version"], NOTICE_VERSION);
     assert_eq!(linked["link"]["data"]["level"], 271);
-    let stored = chars.service.status(&dk).await.unwrap().link.unwrap();
+    let stored = chars.service.status(&kanna).await.unwrap().link.unwrap();
     assert_eq!(stored.consent_surface, Some(ConsentSurface::Portal));
     assert_eq!(stored.consent_version, Some(NOTICE_VERSION));
     assert_eq!(
         stored.requested_by.kind(),
-        "admin",
-        "the request was answered"
+        "system",
+        "the waiting link was answered"
     );
-    let already = chars.portal.get(Some(&alice), &notice(&dk)).await;
+    let already = chars.portal.get(Some(&alice), &notice(&kanna)).await;
     assert_eq!(refused(&already), (409, "already_linked".into()));
     let changes = chars
         .reads()
@@ -795,30 +834,41 @@ async fn the_notice_link_cancel_unlink_and_my_data_follow_discord() {
         .unwrap();
     let consent = changes
         .iter()
-        .find(|change| change.values.contains_key(&format!("link.{dk}")))
+        .find(|change| change.values.contains_key(&format!("link.{kanna}")))
         .expect("the consent's History row");
     assert_eq!(consent.surface, Surface::PublicPortal);
 
-    // My data: the link with its consent, and what is not linked.
+    // My data: an admin's link names no consent, the member's its own.
     let data = chars.portal.read(&alice, DATA, MY_DATA).await;
     let entry = |id: &str| find(&data["entries"], "character_id", id);
-    let linked = entry(&dk);
     assert_eq!(
-        fields(linked, &["state", "notice", "consent_surface"]),
-        json!(["linked", 1, "portal"])
+        fields(
+            entry(&dk),
+            &["state", "notice", "consented_at", "consent_surface"]
+        ),
+        json!(["linked", null, null, null])
     );
-    assert_eq!(linked["data"]["level"], 271);
-    assert_eq!(entry(&kanna)["state"], "not_linked");
+    assert_eq!(
+        fields(entry(&kanna), &["state", "notice", "consent_surface"]),
+        json!(["linked", NOTICE_VERSION, "portal"])
+    );
+    assert_eq!(entry(&kanna)["data"]["level"], 271);
     // Nothing waits, so the active main (AsahiDK, the first added) leads.
     assert_eq!(strs(&data["entries"], "character_id"), [&dk, &kanna]);
 
-    // Unlink: no fresh sign-in, the data goes at once.
+    // Unlink: no fresh sign-in, the data goes at once; the roster keeps
+    // the copied class and level.
     chars.portal.harness.advance(TimeDelta::minutes(16));
     assert!(chars.service.data(&dk).await.unwrap().is_some());
     let gone = answer(&chars.unlink(&alice, &dk, "u-1").await, 200, UNLINKED);
     assert_eq!(gone, json!({"unlinked": "AsahiDK", "cards": 0}));
     assert_eq!(chars.service.data(&dk).await.unwrap(), None);
     assert_eq!(chars.service.status(&dk).await.unwrap().link, None);
+    assert_eq!(
+        fields(&chars.roster_row(1001, &dk).await, &["class", "level"]),
+        json!(["Bishop", 271]),
+        "kept after the unlink"
+    );
     assert_eq!(
         chars.portal.read(&alice, &link(&dk), LINK).await["state"],
         "not_linked"
@@ -833,7 +883,6 @@ async fn the_notice_link_cancel_unlink_and_my_data_follow_discord() {
 
     // Unlink all.
     let alice = chars.portal.sign_in(ALICE).await;
-    chars.linked(&alice, &kanna, "l-2").await;
     // A failed unlink answers 503 and records nothing under the key: the
     // same key retried later removes what is left.
     chars.file.fail_unlinks(true);
@@ -981,13 +1030,10 @@ async fn the_party_sees_roster_levels_and_estimates_never_another_members_nexon_
     let kanna = chars.admin_add(ALICE, kanna).await;
     let knight = json!({"ign": "BobKnight", "class": "Hero", "level": 260});
     let knight = chars.admin_add(BOB, knight).await;
-    for (member, character) in [("1001", &kanna), ("1002", &knight)] {
-        let outcome = chars
-            .service
-            .confirm_link(member, character, NOTICE_VERSION, ConsentSurface::Discord)
-            .await
-            .unwrap();
-        assert!(matches!(outcome, ConfirmOutcome::Linked(..)), "{outcome:?}");
+    // Both linked at once by the admin, NEXON's class and level copied.
+    for character in [&kanna, &knight] {
+        let link = chars.service.status(character).await.unwrap().link.unwrap();
+        assert_eq!(link.status, LinkStatus::Active);
     }
     let alice = chars.portal.sign_in(ALICE).await;
     let bob = chars.portal.sign_in(BOB).await;
@@ -1000,16 +1046,17 @@ async fn the_party_sees_roster_levels_and_estimates_never_another_members_nexon_
         json!({
             "member": {"id": "1001", "name": "Alice"},
             "you": true,
-            "character": {"ign": "AsahiKanna", "class": "Kanna", "level": 271, "level_source": "nexon", "as_of": "2026-09-28"},
+            "character": {"ign": "AsahiKanna", "class": "Bishop", "level": 271, "level_source": "nexon", "as_of": "2026-09-28"},
             "scouter": [],
         })
     );
+    // Other members see the roster level, which holds NEXON's copy.
     assert_eq!(
         slots[1],
         json!({
             "member": {"id": "1002", "name": "Bobby"},
             "you": false,
-            "character": {"ign": "BobKnight", "class": "Hero", "level": 260, "level_source": "roster", "as_of": null},
+            "character": {"ign": "BobKnight", "class": "Bishop", "level": 271, "level_source": "roster", "as_of": null},
             "scouter": [],
         })
     );
@@ -1027,7 +1074,7 @@ async fn the_party_sees_roster_levels_and_estimates_never_another_members_nexon_
     // Bob sees his own NEXON level and Alice's roster level.
     let party = chars.portal.read(&bob, PARTY, PARTY_VIEW).await;
     let level = |slot: &Value| fields(&slot["character"], &["level", "level_source"]);
-    assert_eq!(level(&party["slots"][0]), json!([250, "roster"]));
+    assert_eq!(level(&party["slots"][0]), json!([271, "roster"]));
     assert_eq!(level(&party["slots"][1]), json!([271, "nexon"]));
 
     // Cached scouter readings per boss, never looked up here.

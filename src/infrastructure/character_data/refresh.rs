@@ -1,7 +1,8 @@
 //! Fetching a linked character (`id` when the ocid is missing or 29 days
-//! old, then `basic` + `stat`; a stored name in another letter case corrects
-//! the roster IGN, see `ign_case`), the admin's on-demand refresh (sharing
-//! the 24-hour cap) and the daily batch and retry passes.
+//! old, then `basic` + `stat`; a stored fetch copies NEXON's class, level
+//! and IGN case into the roster row, see `roster_sync`), the admin's
+//! on-demand refresh (sharing the 24-hour cap) and the daily batch and
+//! retry passes.
 
 use chrono::{DateTime, Utc};
 use serde_json::json;
@@ -173,7 +174,7 @@ impl CharacterData {
             Err(failed) => return self.failed(&id, failed).await,
         };
         let snapshot = facts(&id, ocid, ocid_at, basic, combat_power, self.now());
-        let name = snapshot.character_name.clone();
+        let roster = super::roster_sync::synced(link, character, &snapshot);
         if !self.store.put_snapshot(snapshot).await? {
             return Ok(FetchState::Unlinked);
         }
@@ -184,8 +185,8 @@ impl CharacterData {
                 last_error_code: None,
             })
             .await?;
-        if let Some(name) = name {
-            self.match_ign_case(link, character, &name).await;
+        if let Some(after) = roster {
+            self.sync_roster(character, after).await;
         }
         Ok(FetchState::Stored)
     }
@@ -346,16 +347,8 @@ impl CharacterData {
                 Ok(FetchState::Stored) => report.refreshed += 1,
                 Ok(FetchState::Failed { code, .. }) => {
                     report.failed += 1;
-                    // A second 429, a spent budget or a process hold ends it.
-                    let stop = if batch.rate_limited >= 2 {
-                        Some("OPENAPI00007".to_owned())
-                    } else if code == "budget" {
-                        Some(code)
-                    } else {
-                        self.held(self.now()).map(|held| held.label())
-                    };
-                    if stop.is_some() {
-                        report.stopped = stop;
+                    if let Some(stop) = self.batch_stop(&batch, code) {
+                        report.stopped = Some(stop);
                         break;
                     }
                 }
@@ -364,5 +357,17 @@ impl CharacterData {
             }
         }
         report
+    }
+
+    /// Why a batch stops after a fetch failed with `code`: a second 429, a
+    /// spent budget or a process hold; `None` goes on.
+    pub(super) fn batch_stop(&self, batch: &Batch, code: String) -> Option<String> {
+        if batch.rate_limited >= 2 {
+            Some("OPENAPI00007".to_owned())
+        } else if code == "budget" {
+            Some(code)
+        } else {
+            self.held(self.now()).map(|held| held.label())
+        }
     }
 }

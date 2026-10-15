@@ -83,10 +83,17 @@ pub(crate) async fn assert_pick_refusals(
     assert_eq!(no_csrf.error(), (403, "csrf".into()));
 }
 
-/// Retires `character` (at version 1).
+/// Retires `character` at its current version (an admin's create may have
+/// linked it, and the first fetch copied NEXON's class and level in).
 pub(crate) async fn retire(reads: &Reads, character: &str) {
+    let version =
+        kanade::domain::characters::CharacterStore::character(reads.store.as_ref(), character)
+            .await
+            .unwrap()
+            .expect("on the roster")
+            .version;
     let path = format!("/api/admin/characters/{character}");
-    let body = json!({"version": 1, "retired": true});
+    let body = json!({"version": version, "retired": true});
     reads.ok("PATCH", &path, body, ROW).await;
 }
 

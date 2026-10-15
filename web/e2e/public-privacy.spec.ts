@@ -30,7 +30,7 @@ async function expectPrivacy(page: Page) {
   await expect(list).toContainText('The guild admins on Discord.');
   await expect(page.getByRole('link', { name: 'developer privacy policy' })).toHaveAttribute('href', 'https://m.nexon.com/terms/1000');
   await expect(page.getByText('Data based on NEXON Open API', { exact: true })).toBeVisible();
-  await expect(page.getByText('Notice 1 · 12 Oct 2026')).toBeVisible();
+  await expect(page.getByText('Notice 2 · 15 Oct 2026')).toBeVisible();
   await expect(page).toHaveTitle('Privacy · Kanade');
 }
 

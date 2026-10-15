@@ -1,12 +1,13 @@
-//! `/character unlink` (no confirm: deletes at once and queues the shared
-//! cards for stripping), `/character data` (everything kept, with dates)
-//! and `/character share` (a public card the bot posts itself, its `posts`
-//! row written first).
+//! `/character unlink` (no confirm: deletes the NEXON data at once, the
+//! roster keeps its copied class and level, and queues the shared cards for
+//! stripping), `/character data` (everything kept, with dates) and
+//! `/character share` (a public card the bot posts itself, its `posts` row
+//! written first).
 
 use super::super::dispatch::CommandError;
 use super::super::invocation::Invocation;
 use super::super::options::Args;
-use super::{CharacterCommand, admin_request, reply, resolve, store_failed};
+use super::{CharacterCommand, reply, resolve, store_failed};
 use crate::bot::chardata::{Sent, copy};
 use crate::bot::ids::id_text;
 use crate::bot::transport::{DiscordTransport, InteractionReply, RejectionKind};
@@ -69,17 +70,9 @@ impl<T: DiscordTransport> CharacterCommand<T> {
         if characters.iter().all(|entry| entry.link.is_none()) {
             return reply(copy::NOTHING_KEPT);
         }
-        let mut requesters = Vec::with_capacity(characters.len());
-        for entry in &characters {
-            requesters.push(match &entry.link {
-                Some(link) if admin_request(&link.link) => self.requester(&link.link).await,
-                _ => None,
-            });
-        }
         let entries: Vec<copy::DataEntry<'_>> = characters
             .iter()
-            .zip(&requesters)
-            .filter_map(|(entry, requester)| {
+            .filter_map(|entry| {
                 let ign = entry.character.ign.as_str();
                 Some(match &entry.link {
                     Some(link) => match link.link.status {
@@ -87,7 +80,11 @@ impl<T: DiscordTransport> CharacterCommand<T> {
                             ign,
                             snapshot: link.snapshot.as_ref(),
                             linked_at: link.link.linked_at,
-                            notice: link.link.consent_version,
+                            // An admin's link carries no consent of the member's.
+                            notice: link
+                                .link
+                                .consent_version
+                                .filter(|_| !link.link.admin_linked()),
                             cards: link
                                 .posts
                                 .iter()
@@ -97,7 +94,6 @@ impl<T: DiscordTransport> CharacterCommand<T> {
                         },
                         LinkStatus::Pending => copy::DataEntry::Pending {
                             ign,
-                            requester: requester.as_deref(),
                             requested_at: link.link.requested_at,
                         },
                         LinkStatus::Stale => copy::DataEntry::Stale { ign },

@@ -219,7 +219,8 @@ test('phone: the navigation drawer traps focus, closes every way, and gives focu
   await drawer.getByRole('link', { name: 'History' }).click();
   await expect(page).toHaveURL(`${ADMIN}/history`);
   await expect(drawer).toBeHidden();
-  await expect(page.getByRole('heading', { level: 1 })).toHaveText('25 changes');
+  // 25 seeded records plus the startup pass's 4 copies of NEXON's class and level.
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('29 changes');
   await expect(page.locator('#main')).toBeFocused();
   await expect(page.locator('.topbar__title')).toHaveText('History');
   expect(await scrolls(page)).toBeLessThanOrEqual(0);

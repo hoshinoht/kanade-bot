@@ -1,12 +1,12 @@
 <!--
   The NEXON notice for one of the member's own characters (boards
-  M_LinkNotice, M_PhoneLinkNotice, M_LinkOutcomes): notice v1 word for word
-  as `/character link` sends it (the server's `LinkNotice`): the lead (the
-  admin's request named when one waits), What Kanade fetches, Why, How long,
-  Who sees it, the "as is" line with the Privacy notice, the attribution, and
-  Link {IGN} / Cancel. Link needs a fresh sign-in (nothing is linked without
-  it); its outcome, in copy.rs words, replaces the notice. Cancel keeps an
-  admin's request and says so. A bottom sheet in the phone frame.
+  M_LinkNotice, M_PhoneLinkNotice, M_LinkOutcomes): the current notice word for word
+  as `/character link` sends it (the server's `LinkNotice`): the lead, What
+  Kanade fetches, Why, How long, Who sees it, the "as is" line with the
+  Privacy notice, the attribution, and Link {IGN} / Cancel. Link needs a
+  fresh sign-in (nothing is linked without it); its outcome, in copy.rs
+  words, replaces the notice. Cancel keeps a link waiting for the member
+  and says so. A bottom sheet in the phone frame.
 -->
 <script lang="ts">
   import type { CharacterRow, LinkNotice, LinkOutcome } from '@kanade/api-types';
@@ -70,7 +70,7 @@
           icon: 'check',
           lead: `Linked ${ign}`,
           facts,
-          text: 'Refreshed daily, kept 30 days at most. See all of it in My data; remove it with Unlink.',
+          text: 'Refreshed daily, kept 30 days at most; its class and level are copied to your roster character. See all of it in My data; remove it with Unlink.',
           attribution: result.link?.attribution,
         };
       }
@@ -122,8 +122,7 @@
     const result = await store.cancel(character.id);
     busy = '';
     if (result.ok && result.value.request_kept) {
-      const whose = result.value.requested_by_name ? `${result.value.requested_by_name}’s` : 'An admin’s';
-      told = { warn: false, icon: 'info', lead: 'Nothing was linked.', text: `${whose} request for ${character.ign} is still waiting; Review and link when you’re ready.` };
+      told = { warn: false, icon: 'info', lead: 'Nothing was linked.', text: `${character.ign} is still waiting for you; Review and link when you’re ready.` };
       return;
     }
     close();

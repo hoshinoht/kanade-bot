@@ -1,9 +1,10 @@
 //! Module `character_data` over the seeded store of `reads.rs` and a fake
 //! Open API on loopback with invented fixtures: off, every route is the
 //! generic 404 and Config has no health block; on, the link status, the
-//! admin request (pending, no call), the member's confirmation, the refresh
-//! cap, unlink and the roster hooks, with History rows of status words only
-//! and nothing written to the change history.
+//! admin's link (active at once, with its first fetch and the roster's copy
+//! of NEXON's class and level), the refresh cap, unlink and the roster
+//! hooks, with History rows of status words only and nothing written to
+//! the change history.
 
 use std::{
     net::SocketAddr,
@@ -277,26 +278,65 @@ async fn without_a_key_links_are_refused_and_health_says_no_key() {
     assert_eq!(health.status, 200);
 }
 
+/// User decision 2026-10-13: an admin's link (a MapleSEA create, or
+/// Link…) is active at once with no member confirmation, fetches, and
+/// copies NEXON's class and level into the roster, which keeps them after
+/// an unlink.
 #[tokio::test]
-async fn an_admin_request_is_pending_until_the_member_confirms() {
+async fn an_admin_link_is_active_at_once_and_fetches() {
     let (address, calls) = fake_nexon().await;
     let (reads, service) = on(address, Some(config())).await;
-    // A MapleSEA create asks the member at once: pending, nothing called.
-    let answer = created(&reads, json!({"ign": IGN})).await;
-    assert_eq!(answer["link"], "pending");
-    let id = answer["id"].as_str().unwrap().to_owned();
     let head = kanade::api::state::ReadStore::head(reads.store.as_ref())
         .await
         .unwrap();
-    let asked = reads.read(&link(&id), LINK).await;
+    // A MapleSEA create links at once; its answer is the row after the
+    // first fetch copied NEXON's class and level.
+    let answer = created(&reads, json!({"ign": IGN})).await;
     assert_eq!(
-        fields(&asked, &["state", "version", "requested_by/kind"]),
-        json!(["pending", 1, "admin"])
+        fields(&answer, &["link", "class", "level", "version"]),
+        json!(["linked", "Bishop", 271, 2])
     );
-    assert_eq!(calls.load(Ordering::SeqCst), 0, "a create calls nothing");
-    // Withdrawn, so the explicit request below starts from no link.
-    let withdrawn = reads.call("DELETE", &link(&id), json!(null), &[]).await;
-    assert_eq!(withdrawn.status, 200, "{}", withdrawn.text());
+    assert_eq!(
+        answer["updated_by"],
+        json!({"kind": "system", "id": "nexon"})
+    );
+    assert_eq!(calls.load(Ordering::SeqCst), 3, "id + basic + stat");
+    let id = answer["id"].as_str().unwrap().to_owned();
+    let linked = reads.read(&link(&id), LINK).await;
+    assert_eq!(
+        fields(
+            &linked,
+            &[
+                "state",
+                "version",
+                "requested_by/kind",
+                "consent_version",
+                "consented_at",
+                "consent_surface"
+            ]
+        ),
+        json!(["linked", 1, "admin", null, null, null])
+    );
+    assert_eq!(linked["data"]["name"], IGN);
+    assert_eq!(linked["data"]["combat_power"], 27_182_818);
+    assert_eq!(linked["data"]["as_of"], "2026-09-28");
+    assert!(!linked.to_string().contains(OCID), "the ocid is never sent");
+    let config = reads.read("/api/admin/config", CONFIG).await;
+    assert_eq!(config["character_data"]["links"]["active"], 1);
+    assert_eq!(config["character_data"]["calls_24h"], 3);
+    // The member is not asked: their confirmation finds it linked.
+    assert_eq!(
+        confirm(&service, "1001", &id).await,
+        ConfirmOutcome::AlreadyLinked
+    );
+    // Unlinked, so Link… below starts from no link; the roster keeps the
+    // copied class and level.
+    let unlinked = reads.call("DELETE", &link(&id), json!(null), &[]).await;
+    assert_eq!(unlinked.status, 200, "{}", unlinked.text());
+    assert_eq!(
+        fields(&alice_row(&reads, &id).await, &["class", "level"]),
+        json!(["Bishop", 271])
+    );
 
     let status = reads.read(&link(&id), LINK).await;
     assert_eq!(
@@ -313,21 +353,22 @@ async fn an_admin_request_is_pending_until_the_member_confirms() {
     let missing = reads.call("POST", &link(&id), json!({}), &[]).await;
     assert_eq!(missing.api_error(), "version_required");
 
-    // Keyed: a retry replays the first answer.
+    // Link…, keyed: active with data at once; a retry replays the answer.
     let key = [("Idempotency-Key", "link-1")];
-    let pending = reads
+    let linked = reads
         .call("POST", &link(&id), json!({"version": 0}), &key)
         .await;
-    let pending = pending.expect(201, LINK);
+    let linked = linked.expect(201, LINK);
     assert_eq!(
-        (&pending["state"], &pending["version"]),
-        (&json!("pending"), &json!(1))
+        fields(&linked, &["state", "version", "data/level"]),
+        json!(["linked", 1, 271])
     );
+    assert_eq!(calls.load(Ordering::SeqCst), 6, "a first fetch again");
     let again = reads
         .call("POST", &link(&id), json!({"version": 0}), &key)
         .await;
-    assert_eq!((again.status, again.json()), (201, pending.clone()));
-    assert_eq!(calls.load(Ordering::SeqCst), 0, "pending calls nothing");
+    assert_eq!((again.status, again.json()), (201, linked.clone()));
+    assert_eq!(calls.load(Ordering::SeqCst), 6, "a replay calls nothing");
     let taken = reads
         .call("POST", &link(&id), json!({"version": 1}), &[])
         .await;
@@ -337,26 +378,10 @@ async fn an_admin_request_is_pending_until_the_member_confirms() {
         .await;
     assert_eq!(stale.error(), (409, "stale".into()));
 
-    // The member confirms (S3's /character link): active with data.
-    let ConfirmOutcome::Linked(..) = confirm(&service, "1001", &id).await else {
-        panic!("not linked");
-    };
-    assert_eq!(calls.load(Ordering::SeqCst), 3);
-    let linked = reads.read(&link(&id), LINK).await;
-    assert_eq!(linked["state"], "linked");
-    assert_eq!(linked["data"]["name"], IGN);
-    assert_eq!(linked["data"]["combat_power"], 27_182_818);
-    assert_eq!(linked["data"]["as_of"], "2026-09-28");
-    assert_eq!(linked["consent_version"], NOTICE_VERSION);
-    assert!(!linked.to_string().contains(OCID), "the ocid is never sent");
-    let config = reads.read("/api/admin/config", CONFIG).await;
-    assert_eq!(config["character_data"]["links"]["active"], 1);
-    assert_eq!(config["character_data"]["calls_24h"], 3);
-
     // An admin refresh may run at any time; only the budget counts it.
     let refreshed = reads.call("POST", &refresh(&id), json!(null), &[]).await;
     refreshed.expect(200, LINK);
-    assert_eq!(calls.load(Ordering::SeqCst), 5, "basic and stat again");
+    assert_eq!(calls.load(Ordering::SeqCst), 8, "basic and stat again");
 
     // Unlink: gone at once.
     let unlinked = reads.call("DELETE", &link(&id), json!(null), &[]).await;
@@ -366,6 +391,10 @@ async fn an_admin_request_is_pending_until_the_member_confirms() {
     assert_eq!(gone.error(), (404, "not_linked".into()));
     let unlinked_refresh = reads.call("POST", &refresh(&id), json!(null), &[]).await;
     assert_eq!(unlinked_refresh.api_error(), "not_linked");
+    assert_eq!(
+        fields(&alice_row(&reads, &id).await, &["class", "level"]),
+        json!(["Bishop", 271])
+    );
 
     let rows: Vec<(String, String)> = link_rows(&reads)
         .await
@@ -375,15 +404,15 @@ async fn an_admin_request_is_pending_until_the_member_confirms() {
     assert_eq!(
         rows,
         [
-            // The create's request and its withdrawal, then Link….
-            ("unlinked".into(), "pending".into()),
-            ("pending".into(), "unlinked".into()),
-            ("unlinked".into(), "pending".into()),
-            ("pending".into(), "linked".into()),
+            // The create's link and its unlink, then Link… and Unlink.
+            ("unlinked".into(), "linked".into()),
+            ("linked".into(), "unlinked".into()),
+            ("unlinked".into(), "linked".into()),
             ("linked".into(), "unlinked".into()),
         ]
     );
-    // No Nexon field in History, and the change history did not move.
+    // No Nexon field in a link's History row, and the change history did
+    // not move.
     for change in reads
         .store
         .settings_changes(SettingsChangeQuery::default())
@@ -400,23 +429,31 @@ async fn an_admin_request_is_pending_until_the_member_confirms() {
     let after = kanade::api::state::ReadStore::head(reads.store.as_ref())
         .await
         .unwrap();
-    // The roster create is outside the chain too: nothing moved it.
+    // Roster writes are outside the chain too: nothing moved it.
     assert_eq!(head, after, "nothing in the change history");
+}
+
+/// Alice's roster row `id`, as the admin reads it.
+async fn alice_row(reads: &Reads, id: &str) -> Value {
+    let rows = reads
+        .read(ALICE, "characters.json#/$defs/MemberCharacters")
+        .await;
+    crate::support::find(&rows["characters"], "id", id).clone()
 }
 
 #[tokio::test]
 async fn roster_deletes_and_ign_edits_unlink() {
     let (address, _) = fake_nexon().await;
-    let (reads, service) = on(address, None).await;
+    let (reads, _) = on(address, None).await;
+    // Created and linked at once: version 2 holds NEXON's copy.
     let id = character(&reads, IGN).await;
-    confirm(&service, "1001", &id).await;
     // A class edit keeps the link; an IGN edit removes it.
     let path = format!("/api/admin/characters/{id}");
     let edited = reads
         .call(
             "PATCH",
             &path,
-            json!({"version": 1, "class": "Bishop"}),
+            json!({"version": 2, "class": "Cleric"}),
             &[],
         )
         .await;
@@ -426,7 +463,7 @@ async fn roster_deletes_and_ign_edits_unlink() {
         .call(
             "PATCH",
             &path,
-            json!({"version": 2, "ign": "Lavender"}),
+            json!({"version": 3, "ign": "Lavender"}),
             &[],
         )
         .await;
@@ -434,7 +471,7 @@ async fn roster_deletes_and_ign_edits_unlink() {
     assert_eq!(reads.read(&link(&id), LINK).await["state"], "not_linked");
 
     let other = character(&reads, "Heather9").await;
-    confirm(&service, "1001", &other).await;
+    assert_eq!(reads.read(&link(&other), LINK).await["state"], "stale");
     let path = format!("/api/admin/characters/{other}");
     let deleted = reads.call("DELETE", &path, Value::Null, &[]).await;
     assert_eq!(deleted.status, 200, "{}", deleted.text());
@@ -551,11 +588,11 @@ async fn a_lookup_shows_nexon_data_once_and_stores_nothing() {
 }
 
 #[tokio::test]
-async fn a_create_asks_only_for_maplesea_and_keeps_manual_values_elsewhere() {
+async fn a_create_links_only_maplesea_and_keeps_manual_values_elsewhere() {
     let (address, calls) = fake_nexon().await;
     let (reads, _) = on(address, Some(config())).await;
 
-    // Another region: the manual class and level stay; no link is asked.
+    // Another region: the manual class and level stay; no link is made.
     let other = created(
         &reads,
         json!({"ign": "Primrose", "world": "gms", "class": "Hero", "level": 250}),
@@ -568,27 +605,27 @@ async fn a_create_asks_only_for_maplesea_and_keeps_manual_values_elsewhere() {
     let id = other["id"].as_str().unwrap();
     assert_eq!(reads.read(&link(id), LINK).await["state"], "not_linked");
 
-    // MapleSEA without class or level: pending; a keyed retry replays it
-    // and asks nothing twice.
+    // MapleSEA without class or level: linked, NEXON's filled in; a keyed
+    // retry replays it and links nothing twice.
     let key = [("Idempotency-Key", "create-link-1")];
     let body = json!({"ign": IGN});
     let first = reads.call("POST", ALICE, body.clone(), &key).await;
     let first = first.expect(201, CREATED);
     assert_eq!(
         (&first["class"], &first["level"], &first["link"]),
-        (&Value::Null, &Value::Null, &json!("pending"))
+        (&json!("Bishop"), &json!(271), &json!("linked"))
     );
     let again = reads.call("POST", ALICE, body, &key).await;
     assert_eq!((again.status, again.json()), (201, first.clone()));
     let rows = link_rows(&reads).await;
-    assert_eq!(rows.len(), 1, "one request: {rows:?}");
-    assert_eq!(calls.load(Ordering::SeqCst), 0, "pending calls nothing");
+    assert_eq!(rows.len(), 1, "one link: {rows:?}");
+    assert_eq!(calls.load(Ordering::SeqCst), 3, "one first fetch");
     let id = first["id"].as_str().unwrap();
-    assert_eq!(reads.read(&link(id), LINK).await["state"], "pending");
+    assert_eq!(reads.read(&link(id), LINK).await["state"], "linked");
 
     // A crash after the roster commit leaves the replay at `link: null`.
-    // The retry resumes: with the request on file it answers `pending`
-    // and asks nothing; with none on file it asks once now.
+    // The retry resumes: with the link on file it answers `linked` and
+    // links nothing; with none on file it links once now.
     use kanade::api::state::ReadStore;
     use kanade::infrastructure::store::replays::ReplayScope;
     let crashed = |reads: &Reads| {
@@ -616,17 +653,17 @@ async fn a_create_asks_only_for_maplesea_and_keeps_manual_values_elsewhere() {
     crashed(&reads).await;
     let resumed = reads.call("POST", ALICE, retry.clone(), &key).await;
     assert_eq!((resumed.status, resumed.json()), (201, first.clone()));
-    assert_eq!(link_rows(&reads).await.len(), 1, "not asked again");
+    assert_eq!(link_rows(&reads).await.len(), 1, "not linked again");
     crashed(&reads).await;
-    let withdrawn = reads.call("DELETE", &link(id), json!(null), &[]).await;
-    assert_eq!(withdrawn.status, 200, "{}", withdrawn.text());
-    let asked = reads.call("POST", ALICE, retry, &key).await;
+    let unlinked = reads.call("DELETE", &link(id), json!(null), &[]).await;
+    assert_eq!(unlinked.status, 200, "{}", unlinked.text());
+    let linked = reads.call("POST", ALICE, retry, &key).await;
     assert_eq!(
-        (asked.status, asked.json()["link"].clone()),
-        (201, json!("pending"))
+        (linked.status, linked.json()["link"].clone()),
+        (201, json!("linked"))
     );
-    assert_eq!(reads.read(&link(id), LINK).await["state"], "pending");
-    assert_eq!(calls.load(Ordering::SeqCst), 0, "still no NEXON call");
+    assert_eq!(reads.read(&link(id), LINK).await["state"], "linked");
+    assert_eq!(calls.load(Ordering::SeqCst), 6, "linked once more");
     // The listed row is the plain CharacterRow.
     let listed = reads
         .read(ALICE, "characters.json#/$defs/MemberCharacters")

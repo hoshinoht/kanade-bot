@@ -1,8 +1,10 @@
-//! Link operations. An admin request is `pending` and calls nothing; only
-//! the member's confirmation (with the current notice) makes it active and
-//! fetches. An unlink deletes the link and its data in one write, makes its
-//! posts due and wakes the sweeper. Every change appends a History row with
-//! the status words and the actor.
+//! Link operations. An admin's link is active at once, with no member
+//! confirmation (user decision 2026-10-13), and fetches; a member's own
+//! link records their consent to the current notice, then fetches. An
+//! unlink deletes the link and its data in one write (the roster keeps the
+//! class and level copied from NEXON), makes its posts due and wakes the
+//! sweeper. Every change appends a History row with the status words and
+//! the actor.
 
 use chrono::{DateTime, Utc};
 use serde_json::json;
@@ -32,18 +34,18 @@ pub struct LinkView {
     pub now: DateTime<Utc>,
 }
 
-/// An admin link request.
+/// An admin's link.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub enum RequestOutcome {
-    /// Now pending (no call made).
-    Requested(Link),
+pub enum AdminLinkOutcome {
+    /// Active; how the first fetch went.
+    Linked(Box<Link>, FetchState),
     NotConnected,
     /// No such roster character.
     Missing,
     Retired,
     /// Not a MapleSEA character.
     Region,
-    /// Already pending or linked.
+    /// Already linked, or waiting for its member to confirm a new notice.
     AlreadyLinked(Link),
     /// The link is at another version than the one sent (`None`: none).
     Stale(Option<Link>),
@@ -126,11 +128,10 @@ impl CharacterData {
         if let Some(character) = &character
             && same_identity(&link, character)
         {
-            // Confirmed under an older notice: pending until the member
-            // confirms again, whether or not the sweep's re-pend landed.
-            let link = if link.status != LinkStatus::Pending
-                && link.consent_version != Some(NOTICE_VERSION)
-            {
+            // Confirmed by its member under an older notice: pending until
+            // they confirm again, whether or not the sweep's re-pend landed.
+            // An admin's link is never re-asked.
+            let link = if link.needs_reconsent() {
                 Link {
                     status: LinkStatus::Pending,
                     consent_version: None,
@@ -194,39 +195,41 @@ impl CharacterData {
         }
     }
 
-    /// An admin asks to link `character_id` (expected link version
-    /// `expected`, 0 for none). Pending only: no Nexon call until the
-    /// member confirms. `replay` builds a keyed request's stored answer
-    /// from the new link, written with the History row.
-    pub async fn request_link(
+    /// An admin links `character_id` (expected link version `expected`, 0
+    /// for none) for its member: active at once, with no confirmation, then
+    /// `id` + `basic` + `stat` run (a refused or spent call leaves it to the
+    /// retry or the daily batch, as any refresh). The link records the
+    /// notice in force and when, with no consent surface (the member gave
+    /// none) and the admin as its requester. A stale link is linked again.
+    pub async fn admin_link(
         &self,
         character_id: &str,
         expected: u32,
         actor: &Actor,
         surface: Surface,
-        replay: impl FnOnce(&Link) -> Option<StoredReplay> + Send,
-    ) -> Result<RequestOutcome, StoreError> {
+    ) -> Result<AdminLinkOutcome, StoreError> {
         if !self.connected() {
-            return Ok(RequestOutcome::NotConnected);
+            return Ok(AdminLinkOutcome::NotConnected);
         }
+        let _slot = self.limiter.character(character_id).await;
         let Some(character) = self.roster.character(character_id.to_owned()).await? else {
-            return Ok(RequestOutcome::Missing);
+            return Ok(AdminLinkOutcome::Missing);
         };
         if !character.is_active() {
-            return Ok(RequestOutcome::Retired);
+            return Ok(AdminLinkOutcome::Retired);
         }
         if character.world != LINK_REGION {
-            return Ok(RequestOutcome::Region);
+            return Ok(AdminLinkOutcome::Region);
         }
         // A link left over from another identity is removed first.
         let current = self.current_link(character_id).await?.map(|(link, _)| link);
         if current.as_ref().map_or(0, |link| link.version) != expected {
-            return Ok(RequestOutcome::Stale(current));
+            return Ok(AdminLinkOutcome::Stale(current));
         }
         if let Some(link) = &current
             && link.status != LinkStatus::Stale
         {
-            return Ok(RequestOutcome::AlreadyLinked(link.clone()));
+            return Ok(AdminLinkOutcome::AlreadyLinked(link.clone()));
         }
         let now = self.now();
         let link = Link {
@@ -241,30 +244,117 @@ impl CharacterData {
             consented_at: None,
             linked_at: None,
             consent_surface: None,
-            version: expected + 1,
+            version: expected,
         };
+        let link = admin_active(link, now);
         match self.store.put_link(link.clone(), expected).await? {
             LinkPut::Written => {}
-            LinkPut::Stale(stored) => return Ok(RequestOutcome::Stale(stored)),
+            LinkPut::Stale(stored) => return Ok(AdminLinkOutcome::Stale(stored)),
         }
         let before = current.map(|link| link.status);
         self.audit(
             character_id,
             before,
-            Some(LinkStatus::Pending),
+            Some(LinkStatus::Active),
             actor,
             surface,
-            replay(&link),
+            None,
         )
         .await?;
-        log("INFO", "chardata_link_requested", json!({}));
-        Ok(RequestOutcome::Requested(link))
+        log("INFO", "chardata_admin_linked", json!({}));
+        let fetched = self.fetch(&link, &character, None).await?;
+        Ok(AdminLinkOutcome::Linked(Box::new(link), fetched))
+    }
+
+    /// Once at startup: admin requests left pending from before admin
+    /// links went active at once become active, by the sweeper (History
+    /// `pending` → `linked`), and fetch under the batch's stops. Only a
+    /// request on an active MapleSEA character that still matches it; a
+    /// member's own link waiting for a new notice is never touched, and
+    /// once activated there is nothing left to do, so the pass is
+    /// idempotent. Returns how many links became active.
+    pub async fn activate_requests(&self) -> u64 {
+        if !self.connected() {
+            return 0;
+        }
+        let links = match self.store.links().await {
+            Ok(links) => links,
+            Err(error) => {
+                log(
+                    "WARN",
+                    "chardata_activation_failed",
+                    json!({ "error": super::sweep::error_kind(&error) }),
+                );
+                return 0;
+            }
+        };
+        let actor = Actor::system(super::SWEEPER);
+        let mut activated = Vec::new();
+        for link in links.iter().filter(|link| is_admin_request(link)) {
+            let id = &link.character_id;
+            let _slot = self.limiter.character(id).await;
+            let (Ok(Some((link, true))), Ok(Some(character))) = (
+                self.current_link(id).await,
+                self.roster.character(id.clone()).await,
+            ) else {
+                continue;
+            };
+            if !is_admin_request(&link) {
+                continue;
+            }
+            let active = admin_active(link.clone(), self.now());
+            if !matches!(
+                self.store.put_link(active.clone(), link.version).await,
+                Ok(LinkPut::Written)
+            ) {
+                continue;
+            }
+            if let Err(error) = self
+                .audit(
+                    id,
+                    Some(LinkStatus::Pending),
+                    Some(LinkStatus::Active),
+                    &actor,
+                    Surface::DeliveryTick,
+                    None,
+                )
+                .await
+            {
+                log(
+                    "WARN",
+                    "chardata_activation_unrecorded",
+                    json!({ "character": id, "error": super::sweep::error_kind(&error) }),
+                );
+            }
+            activated.push((active, character));
+        }
+        let mut batch = super::calls::Batch::default();
+        let mut fetched = 0;
+        for (link, character) in &activated {
+            let _slot = self.limiter.character(&link.character_id).await;
+            match self.fetch(link, character, Some(&mut batch)).await {
+                Ok(FetchState::Stored) => fetched += 1,
+                Ok(FetchState::Failed { code, .. }) => {
+                    if self.batch_stop(&batch, code).is_some() {
+                        break;
+                    }
+                }
+                _ => {}
+            }
+        }
+        log(
+            "INFO",
+            "chardata_requests_activated",
+            json!({ "activated": activated.len(), "fetched": fetched }),
+        );
+        u64::try_from(activated.len()).unwrap_or(u64::MAX)
     }
 
     /// The member `member_id` confirms notice `notice_version` for one of
-    /// their characters on `surface`: a pending request (or, with none,
-    /// their own active character directly) becomes active with the consent
-    /// (and where it was given) recorded, then `id` + `basic` + `stat` run.
+    /// their characters on `surface`: their character (unlinked, stale, or
+    /// waiting for them to confirm a new notice) becomes active with the
+    /// consent (and where it was given) recorded, then `id` + `basic` +
+    /// `stat` run.
     /// Discord's `/character link` and the portal's Link call this.
     pub async fn confirm_link(
         &self,
@@ -405,5 +495,25 @@ impl CharacterData {
         {
             log("WARN", "chardata_roster_unlink_failed", json!({}));
         }
+    }
+}
+
+/// An admin's request still waiting from before admin links went active at
+/// once (a member's own link waiting for a new notice is the sweeper's).
+fn is_admin_request(link: &Link) -> bool {
+    link.status == LinkStatus::Pending && link.requested_by.kind() == "admin"
+}
+
+/// `link` made active by an admin at `at`, as its next version: the notice
+/// in force and when, with no consent surface (the member gave none).
+fn admin_active(link: Link, at: DateTime<Utc>) -> Link {
+    Link {
+        status: LinkStatus::Active,
+        consent_version: Some(NOTICE_VERSION),
+        consented_at: Some(at),
+        linked_at: Some(at),
+        consent_surface: None,
+        version: link.version + 1,
+        ..link
     }
 }

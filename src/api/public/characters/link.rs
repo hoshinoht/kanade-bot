@@ -2,8 +2,9 @@
 //! lookup preview (never stored), a character's link, the notice (v1, the
 //! words `/character link` shows), Link (consent, surface `portal`, then
 //! the first fetch: the same path as Discord's Link), Cancel (changes
-//! nothing; an admin's request stays), Unlink (no confirm: the data is
-//! deleted at once and share cards are stripped), Unlink all, and My data.
+//! nothing; a link waiting for the member stays), Unlink (no confirm: the
+//! NEXON data is deleted at once, the roster keeps its copied class and
+//! level, and share cards are stripped), Unlink all, and My data.
 
 use std::sync::Arc;
 
@@ -36,7 +37,7 @@ use crate::{
             rate::MEMBER_LOOKUP_ROUTE,
         },
         dto::{
-            character_data::{CharacterLink, facts, link, link_state},
+            character_data::{CharacterLink, consent, facts, link, link_state},
             history::SettingsActor,
             iso_instant,
             public::{
@@ -157,7 +158,7 @@ fn section(part: NoticePart) -> NoticeSection {
 
 /// `GET /api/public/me/characters/{id}/link/notice` → `LinkNotice`: the
 /// notice for one of the caller's active MapleSEA characters that is not
-/// linked, with the admin's request when one waits.
+/// linked, with the link waiting for them when there is one.
 pub(super) async fn notice(
     State(site): State<Arc<Site>>,
     session: MemberSession,
@@ -183,20 +184,13 @@ pub(super) async fn notice(
                 "That character is already linked.",
             ));
         }
-        Some(found)
-            if found.status == LinkStatus::Pending && found.requested_by.kind() == "admin" =>
-        {
+        Some(found) if found.status == LinkStatus::Pending => {
             let profiles = state.store.members().await.map_err(Refusal::unavailable)?;
             Some(pending(&character, found, &profiles))
         }
         _ => None,
     };
-    let text = notice_text(
-        &character.ign,
-        request
-            .as_ref()
-            .map(|request| request.requested_by_name.as_deref()),
-    );
+    let text = notice_text(&character.ign);
     Ok(Json(LinkNotice {
         character_id: id,
         ign: character.ign,
@@ -307,8 +301,8 @@ pub(super) async fn confirm(
 }
 
 /// `POST /api/public/me/characters/{id}/link/cancel` → `LinkCancelled`:
-/// nothing changes; an admin's request stays waiting (no request of the
-/// member's own is made).
+/// nothing changes; a link waiting for the member stays waiting (no link
+/// of the member's own is made).
 pub(super) async fn cancel(
     State(site): State<Arc<Site>>,
     session: MemberSession,
@@ -318,9 +312,9 @@ pub(super) async fn cancel(
     let state = state(&site)?;
     let (_, module) = mine(state, &session, &id).await?;
     let view = module.status(&id).await.map_err(Refusal::unavailable)?;
-    let request = view.link.filter(|found| {
-        found.status == LinkStatus::Pending && found.requested_by.kind() == "admin"
-    });
+    let request = view
+        .link
+        .filter(|found| found.status == LinkStatus::Pending);
     let requested_by_name = match &request {
         Some(found) => requester(
             found,
@@ -536,8 +530,10 @@ pub(super) async fn data(State(site): State<Arc<Site>>, session: MemberSession) 
                 requested_at: pending.then(|| iso_instant(found.requested_at)),
                 request_expires_at: pending.then(|| iso_instant(found.requested_at + PENDING_TTL)),
                 linked_at: found.linked_at.map(iso_instant),
-                notice: found.consent_version,
-                consented_at: found.consented_at.map(iso_instant),
+                notice: consent(Some(found)).and_then(|found| found.consent_version),
+                consented_at: consent(Some(found))
+                    .and_then(|found| found.consented_at)
+                    .map(iso_instant),
                 consent_surface: found.consent_surface.map(ConsentSurface::as_str),
                 cards: kept
                     .posts

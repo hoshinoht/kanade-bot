@@ -2,8 +2,9 @@
 //! character each party member brings (as the admin's `…/characters`
 //! resolves it) with its IGN, class and roster level, and each one's cached
 //! scouter reading per boss of the run (never looked up here). NEXON
-//! data shows only on the caller's own slot: notice v1 names admins and
-//! share-card channels as who sees it, never the party. No combat power,
+//! data shows only on the caller's own slot: the notice names admins and
+//! share-card channels as who sees it, never the party (others see the
+//! roster level, which holds NEXON's copied level). No combat power,
 //! no verdicts. Anyone not on the run gets the generic `404`.
 
 use std::sync::Arc;

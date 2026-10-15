@@ -94,11 +94,6 @@ fn channel(channel_id: &str) -> String {
     format!("<#{channel_id}>")
 }
 
-/// `**Asahi**`, or "An admin" when the requester has no name here.
-fn who(requester: Option<&str>) -> String {
-    requester.map_or_else(|| "An admin".to_owned(), bold)
-}
-
 fn privacy(url: Option<&str>) -> String {
     url.map(|url| format!(" [Privacy notice]({url})"))
         .unwrap_or_default()
@@ -112,15 +107,6 @@ fn footer(extra: Option<&str>) -> Component {
 }
 
 // ── /character link ──
-
-/// The autocomplete label of a pending request.
-pub fn pick_pending(ign: &str, class: Option<&str>, requester: Option<&str>) -> String {
-    let by = requester.unwrap_or("an admin");
-    match class {
-        Some(class) => format!("{ign} · {class} · requested by {by} · waiting for you"),
-        None => format!("{ign} · requested by {by} · waiting for you"),
-    }
-}
 
 /// The autocomplete label of another character, with its state
 /// (`not linked`, `linked`, `stale, link again`).
@@ -160,21 +146,6 @@ pub fn not_found(ign: &str) -> String {
     )
 }
 
-/// Cancel with a pending admin request (`requester`: its admin's name).
-pub fn cancelled(ign: &str, pending: bool, requester: Option<&str>) -> String {
-    if !pending {
-        return NOTHING_LINKED.to_owned();
-    }
-    let whose = requester.map_or_else(
-        || "An admin’s".to_owned(),
-        |name| format!("{}’s", plain(name)),
-    );
-    format!(
-        "Nothing was linked. {whose} request for {} is still waiting; run `/character link` when you’re ready.",
-        bold(ign)
-    )
-}
-
 pub fn linked_later(ign: &str) -> String {
     format!(
         "Linked {}. NEXON didn’t answer just now, so nothing is kept yet; Kanade tries again later.",
@@ -182,30 +153,24 @@ pub fn linked_later(ign: &str) -> String {
     )
 }
 
+/// The notice's lead, under its title.
+const NOTICE_LEAD: &str = "Nothing is fetched until you press Link.";
+
 /// The ephemeral notice (version [`NOTICE_VERSION`]) with Link / Cancel.
-/// `request`: an admin's pending request, with its admin's name if known.
 pub fn notice(
     ign: &str,
-    request: Option<Option<&str>>,
     privacy_url: Option<&str>,
     link_id: String,
     cancel_id: String,
 ) -> Vec<Component> {
-    debug_assert_eq!(NOTICE_VERSION, 1, "a new notice needs new copy");
+    debug_assert_eq!(NOTICE_VERSION, 2, "a new notice needs new copy");
     let name = plain(ign);
-    let lead = match request {
-        Some(requester) => format!(
-            "{} asked to link **{name}** (MapleSEA). Nothing is fetched until you press Link.",
-            who(requester)
-        ),
-        None => "Nothing is fetched until you press Link.".to_owned(),
-    };
     vec![
         container(
             BLOSSOM,
             vec![
                 text(format!("### Link {name} to its NEXON Open API data?")),
-                text(lead),
+                text(NOTICE_LEAD),
                 text(format!(
                     "**What Kanade fetches**\nName, world, class, level, combat power and the character image link, for {name} only."
                 )),
@@ -213,10 +178,10 @@ pub fn notice(
                     "**Why**\nSo guild admins can check boss readiness (level and combat power) when they plan runs.",
                 ),
                 text(
-                    "**How long**\nRefreshed once a day and kept 30 days at most. `/character unlink` deletes it at once.",
+                    "**How long**\nRefreshed once a day and kept 30 days at most. `/character unlink` deletes it at once; the class and level copied to your roster character stay.",
                 ),
                 text(
-                    "**Who sees it**\nGuild admins in Kanade’s admin app, and the channel when you post a `/character share` card. It is never shared with anyone else and never sent to chat models.",
+                    "**Who sees it**\nGuild admins in Kanade’s admin app, and the channel when you post a `/character share` card. Its class and level are copied to your roster character, which guild members see. It is never shared with anyone else and never sent to chat models.",
                 ),
                 text(format!(
                     "-# The data is shown as is and may be out of date. Kanade is not affiliated with or endorsed by NEXON.{}",
@@ -271,7 +236,7 @@ pub fn linked(ign: &str, snapshot: &Snapshot) -> Vec<Component> {
     );
     let mut body = with_image(facts, snapshot);
     body.push(text(
-        "-# Refreshed daily, kept 30 days at most. See all of it with `/character data`; remove it with `/character unlink`.",
+        "-# Refreshed daily, kept 30 days at most; its class and level are copied to your roster character. See all of it with `/character data`; remove it with `/character unlink`.",
     ));
     body.push(footer(None));
     vec![container(BLOSSOM, body)]
@@ -293,7 +258,7 @@ pub enum DataEntry<'a> {
     },
     Pending {
         ign: &'a str,
-        requester: Option<&'a str>,
+        /// Since when it waits.
         requested_at: DateTime<Utc>,
     },
     Stale {
@@ -384,14 +349,9 @@ impl DataEntry<'_> {
                 }
                 lines.join("\n")
             }
-            Self::Pending {
-                ign,
-                requester,
-                requested_at,
-            } => format!(
-                "**{} · pending**\nRequested by {} {}. Nothing is fetched until you confirm with `/character link`.",
+            Self::Pending { ign, requested_at } => format!(
+                "**{} · waiting for you**\nWaiting since {}. Nothing is fetched until you confirm with `/character link`.",
                 plain(ign),
-                requester.map_or_else(|| "an admin".to_owned(), plain),
                 stamp(*requested_at, 'D')
             ),
             Self::Stale { ign } => format!(
@@ -417,7 +377,9 @@ pub fn data(entries: &[DataEntry<'_>], privacy_url: Option<&str>) -> Vec<Compone
     ));
     let mut pages: Vec<Vec<Component>> = vec![vec![
         text("### What Kanade keeps for you"),
-        text("Linked characters, from the NEXON Open API. Nothing else from NEXON is kept."),
+        text(
+            "Linked characters, from the NEXON Open API; their class and level are also copied to your roster characters, where they stay. Nothing else from NEXON is kept.",
+        ),
     ]];
     // How many components a page holds before its first entry.
     let mut head = 2;
@@ -454,13 +416,13 @@ pub fn data(entries: &[DataEntry<'_>], privacy_url: Option<&str>) -> Vec<Compone
 pub fn unlinked(ign: &str, cards: &[&str]) -> String {
     match cards_line(cards) {
         None => format!(
-            "Unlinked {}. Its NEXON data is deleted. Your roster character is unchanged.",
+            "Unlinked {}. Its NEXON data is deleted; your roster character keeps its class and level.",
             bold(ign)
         ),
         Some(line) => {
             let verb = if cards.len() == 1 { "reads" } else { "read" };
             format!(
-                "Unlinked {}. Its NEXON data is deleted, and your {line} now {verb} “Character data removed”. Your roster character is unchanged.",
+                "Unlinked {}. Its NEXON data is deleted, and your {line} now {verb} “Character data removed”. Your roster character keeps its class and level.",
                 bold(ign)
             )
         }
@@ -473,7 +435,9 @@ pub fn unlinked_all(igns: &[&str]) -> String {
         .map(|ign| bold(ign))
         .collect::<Vec<_>>()
         .join(", ");
-    format!("Unlinked everything left: {names}. Nothing from NEXON is kept for you now.")
+    format!(
+        "Unlinked everything left: {names}. Nothing from NEXON is kept for you now; your roster characters keep their class and level."
+    )
 }
 
 pub fn not_linked(ign: &str) -> String {
@@ -570,19 +534,12 @@ pub struct NoticeText {
     pub cancel_label: &'static str,
 }
 
-/// [`NoticeText`] for `ign`; `request` as for [`notice`].
-pub fn notice_text(ign: &str, request: Option<Option<&str>>) -> NoticeText {
-    debug_assert_eq!(NOTICE_VERSION, 1, "a new notice needs new copy");
-    let lead = match request {
-        Some(requester) => format!(
-            "{} asked to link {ign} (MapleSEA). Nothing is fetched until you press Link.",
-            requester.unwrap_or("An admin")
-        ),
-        None => "Nothing is fetched until you press Link.".to_owned(),
-    };
+/// [`NoticeText`] for `ign`.
+pub fn notice_text(ign: &str) -> NoticeText {
+    debug_assert_eq!(NOTICE_VERSION, 2, "a new notice needs new copy");
     NoticeText {
         title: format!("Link {ign} to its NEXON Open API data?"),
-        lead,
+        lead: NOTICE_LEAD.to_owned(),
         what: NoticePart {
             heading: "What Kanade fetches",
             text: format!(
@@ -596,12 +553,12 @@ pub fn notice_text(ign: &str, request: Option<Option<&str>>) -> NoticeText {
         },
         how_long: NoticePart {
             heading: "How long",
-            text: "Refreshed once a day and kept 30 days at most. /character unlink deletes it at once."
+            text: "Refreshed once a day and kept 30 days at most. /character unlink deletes it at once; the class and level copied to your roster character stay."
                 .to_owned(),
         },
         who: NoticePart {
             heading: "Who sees it",
-            text: "Guild admins in Kanade’s admin app, and the channel when you post a /character share card. It is never shared with anyone else and never sent to chat models."
+            text: "Guild admins in Kanade’s admin app, and the channel when you post a /character share card. Its class and level are copied to your roster character, which guild members see. It is never shared with anyone else and never sent to chat models."
                 .to_owned(),
         },
         as_is: "The data is shown as is and may be out of date. Kanade is not affiliated with or endorsed by NEXON.",
@@ -647,7 +604,7 @@ mod tests {
         assert_eq!(plain("a*b_c"), "a\\*b\\_c");
         assert_eq!(
             unlinked_all(&["MikaBish", "Mikadere"]),
-            "Unlinked everything left: **MikaBish**, **Mikadere**. Nothing from NEXON is kept for you now."
+            "Unlinked everything left: **MikaBish**, **Mikadere**. Nothing from NEXON is kept for you now; your roster characters keep their class and level."
         );
     }
 
@@ -681,27 +638,24 @@ mod tests {
     /// The portal's notice is the Discord notice word for word.
     #[test]
     fn the_portal_notice_is_the_discord_notice() {
-        for request in [None, Some(None), Some(Some("Ren"))] {
-            let portal = notice_text("AsahiDK", request);
-            let discord = bare_texts(&notice(
-                "AsahiDK",
-                request,
-                Some("https://pub.example/privacy"),
-                "l".into(),
-                "c".into(),
-            ));
-            let mut expected = vec![portal.title.clone(), portal.lead.clone()];
-            for part in [&portal.what, &portal.why, &portal.how_long, &portal.who] {
-                expected.push(format!("{} {}", part.heading, part.text));
-            }
-            expected.push(format!(
-                "{} [Privacy notice](https://pub.example/privacy)",
-                portal.as_is
-            ));
-            expected.push(ATTRIBUTION.to_owned());
-            expected.push(portal.link_label.clone());
-            expected.push(portal.cancel_label.to_owned());
-            assert_eq!(discord, expected, "{request:?}");
+        let portal = notice_text("AsahiDK");
+        let discord = bare_texts(&notice(
+            "AsahiDK",
+            Some("https://pub.example/privacy"),
+            "l".into(),
+            "c".into(),
+        ));
+        let mut expected = vec![portal.title.clone(), portal.lead.clone()];
+        for part in [&portal.what, &portal.why, &portal.how_long, &portal.who] {
+            expected.push(format!("{} {}", part.heading, part.text));
         }
+        expected.push(format!(
+            "{} [Privacy notice](https://pub.example/privacy)",
+            portal.as_is
+        ));
+        expected.push(ATTRIBUTION.to_owned());
+        expected.push(portal.link_label.clone());
+        expected.push(portal.cancel_label.to_owned());
+        assert_eq!(discord, expected);
     }
 }

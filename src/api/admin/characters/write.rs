@@ -38,7 +38,7 @@ use crate::{
         ids::{IdGenerator, RandomIds},
     },
     infrastructure::{
-        character_data::RequestOutcome,
+        character_data::AdminLinkOutcome,
         store::replays::{KeyedWrite, ReplayScope, StoredReplay},
     },
 };
@@ -246,13 +246,7 @@ pub async fn create(
     let others = member_characters(roster.as_ref(), &member_id).await?;
     let now = state.now();
     let character = fields.character(member_id, &others, now, session.origin().actor);
-    let created = |link| {
-        json!(CharacterCreated {
-            row: row(&character),
-            link,
-        })
-    };
-    let body = created(None);
+    let body = created(&character, None);
     let replay = keyed
         .as_ref()
         .map(|keyed| keyed.answered(StatusCode::CREATED, &body, now));
@@ -270,7 +264,7 @@ pub async fn create(
     let Some(link) = ask_link(state, &session, &character).await else {
         return Ok((StatusCode::CREATED, Json(body)).into_response());
     };
-    let body = created(Some(link));
+    let body = created(&linked_row(roster.as_ref(), character).await, Some(link));
     if let Some(keyed) = keyed
         && state
             .store
@@ -278,24 +272,43 @@ pub async fn create(
             .await
             .is_err()
     {
-        // A retry finds the link on file and answers `pending` (resume_link).
+        // A retry finds the link on file and answers `linked` (resume_link).
         crate::runtime::logging::log!(warn, "idempotency_replay_unrecorded");
     }
     Ok((StatusCode::CREATED, Json(body)).into_response())
 }
 
+fn created(character: &Character, link: Option<&'static str>) -> Value {
+    json!(CharacterCreated {
+        row: row(character),
+        link,
+    })
+}
+
+/// `character` as stored after its link's first fetch, which may have
+/// copied NEXON's class and level into it (a failed read answers the row
+/// as created; its next load shows the rest).
+async fn linked_row(roster: &dyn CharacterRoster, character: Character) -> Character {
+    roster
+        .character(character.id.clone())
+        .await
+        .ok()
+        .flatten()
+        .unwrap_or(character)
+}
+
 /// A keyed create's stored answer, with its link outcome resumed: the
 /// replay is first stored with `link: null` inside the roster write, so a
-/// crash (or a failed replay update) before the link request leaves it
-/// unanswered. A link already on file means the request was made
-/// (`pending`); none means it is asked now, once, and the replay updated.
+/// crash (or a failed replay update) before the link leaves it unanswered.
+/// A link already on file means it was made (`linked`); none means it is
+/// made now, once, and the replay updated.
 async fn resume_link(
     state: &ApiState,
     session: &AdminSession,
     keyed: &Keyed,
     found: StoredReplay,
 ) -> Reply {
-    let mut body: Value = serde_json::from_str(&found.body).map_err(Refusal::unavailable)?;
+    let body: Value = serde_json::from_str(&found.body).map_err(Refusal::unavailable)?;
     let unanswered = found.status == StatusCode::CREATED.as_u16()
         && body.get("link").is_some_and(Value::is_null)
         && body["world"] == LINK_REGION
@@ -303,11 +316,10 @@ async fn resume_link(
             .character_data
             .as_ref()
             .is_some_and(|module| module.connected());
-    let roster = state.characters.as_ref();
     let id = body["id"].as_str().unwrap_or_default().to_owned();
-    let character = match (unanswered, roster) {
-        (true, Some(roster)) => roster.character(id.clone()).await.ok().flatten(),
-        _ => None,
+    let (roster, character) = match (unanswered, state.characters.as_ref()) {
+        (true, Some(roster)) => (roster, roster.character(id.clone()).await.ok().flatten()),
+        _ => return replayed(&found),
     };
     let Some(character) = character else {
         return replayed(&found);
@@ -317,12 +329,13 @@ async fn resume_link(
         .status(&id)
         .await
         .is_ok_and(|view| view.link.is_some());
-    let link = if made {
-        Some("pending")
+    let (character, link) = if made {
+        (character, Some("linked"))
     } else {
-        ask_link(state, session, &character).await
+        let link = ask_link(state, session, &character).await;
+        (linked_row(roster.as_ref(), character).await, link)
     };
-    body["link"] = json!(link);
+    let body = created(&character, link);
     let now = state.now();
     let _ = state
         .store
@@ -331,11 +344,11 @@ async fn resume_link(
     Ok((StatusCode::CREATED, Json(body)).into_response())
 }
 
-/// With module `character_data` connected, a new MapleSEA character's
-/// member is asked to link it at once: the same pending request as Link…
-/// (no Nexon call until they confirm in Discord; History row, 14-day
-/// expiry). The character-data file is not the roster's, so this follows
-/// the committed create: `failed` when the request did not go through.
+/// With module `character_data` connected, a new MapleSEA character is
+/// linked at once for its member, as Link… does (no member confirmation;
+/// History row), and its first fetch runs. The character-data file is not
+/// the roster's, so this follows the committed create: `failed` when the
+/// link did not go through.
 async fn ask_link(
     state: &ApiState,
     session: &AdminSession,
@@ -350,18 +363,18 @@ async fn ask_link(
     }
     let origin = session.origin();
     match module
-        .request_link(&character.id, 0, &origin.actor, origin.surface, |_| None)
+        .admin_link(&character.id, 0, &origin.actor, origin.surface)
         .await
     {
-        Ok(RequestOutcome::Requested(_)) => Some("pending"),
+        Ok(AdminLinkOutcome::Linked(..)) => Some("linked"),
         // Lost a race with a concurrent retry (stale / already linked): the
-        // request on file is the answer, so every retry agrees.
+        // link on file is the answer, so every retry agrees.
         _ if module
             .status(&character.id)
             .await
             .is_ok_and(|view| view.link.is_some()) =>
         {
-            Some("pending")
+            Some("linked")
         }
         _ => {
             crate::runtime::logging::log!(warn, "chardata_create_link_failed");

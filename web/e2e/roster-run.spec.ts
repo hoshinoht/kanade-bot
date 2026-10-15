@@ -56,7 +56,8 @@ test('roster run: pick from the popover by keyboard, any active character (no le
   await sheet.getByRole('button', { name: `Mika's character on ${T}: MikaBish, from timing. Change` }).click();
   const picker = sheet.getByRole('dialog', { name: `Mika's character for ${T}` });
   const options = picker.getByRole('option');
-  await expect(options).toHaveText([/^\s*MikaNL main Night Lord Lv\. 286$/, /^\s*MikaBish Bishop/, /^\s*Mikadere Lara Lv\. 266$/]);
+  // MikaNL is at NEXON's 287: the startup pass copied it over the seeded 286.
+  await expect(options).toHaveText([/^\s*MikaNL main Night Lord Lv\. 287$/, /^\s*MikaBish Bishop/, /^\s*Mikadere Lara Lv\. 266$/]);
   // Mikadere (Lv. 266, under HMaleficStar's 280 entry) is offered like the others.
   await expect(options.nth(2)).not.toHaveAttribute('aria-disabled', 'true');
   await expect(options.nth(1)).toBeFocused();
@@ -216,7 +217,8 @@ test('roster run: the phone picks from a bottom sheet, 44 px rows', async ({ pag
   await page.setViewportSize({ width: 390, height: 844 });
   const sheet = await carling(page);
   const pick = sheet.getByRole('button', { name: /^Mika's character on HCarling/ });
-  await expect(pick).toHaveText('MikaBish281');
+  // The startup pass copied MikaBish's NEXON level (283) into the roster.
+  await expect(pick).toHaveText('MikaBish283');
   await expect(slot(sheet, 'Mika').locator('.slot__basis')).toHaveText('from timing');
   await pick.click();
   const picker = page.getByRole('dialog', { name: "Mika's character" });

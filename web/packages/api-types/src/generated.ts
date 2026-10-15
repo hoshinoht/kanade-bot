@@ -296,16 +296,18 @@ updated_by: SettingsActor,
 version: number, };
 
 /**
- * The create's answer: the row and, with module `character_data`, the
- * member's link request the create asked for.
+ * The create's answer: the row (as it stands after the link's first fetch,
+ * which copies NEXON's class and level into it) and, with module
+ * `character_data`, the link the create made.
  */
 export type CharacterCreated = { 
 /**
- * `pending`: the member was asked to link it (a MapleSEA character
- * with the module on and a Nexon key); `failed`: that request could
- * not be made (the character is saved); `null`: none was asked.
+ * `linked`: linked at once for its member (a MapleSEA character with
+ * the module on and a Nexon key), its first fetch run; `failed`: the
+ * link could not be made (the character is saved); `null`: none was
+ * made.
  */
-link: 'pending' | 'failed' | null, id: string, member_id: string, ign: string, world: string, class: string | null, level: number | null, role: 'main' | 'alt', 
+link: 'linked' | 'failed' | null, id: string, member_id: string, ign: string, world: string, class: string | null, level: number | null, role: 'main' | 'alt', 
 /**
  * When it was retired; `null` while active.
  */
@@ -426,9 +428,15 @@ version: number,
 /**
  * A Nexon key is configured: links can be made.
  */
-connected: boolean, requested_by: SettingsActor | null, requested_at: string | null, 
+connected: boolean, 
 /**
- * The notice version the member confirmed.
+ * Who made the link: the admin who linked it (at once, no member
+ * confirmation), else the member.
+ */
+requested_by: SettingsActor | null, requested_at: string | null, 
+/**
+ * The notice version the member confirmed; `null` for an admin's link
+ * (the member confirmed none).
  */
 consent_version: number | null, consented_at: string | null, linked_at: string | null, 
 /**

@@ -2,7 +2,7 @@
   `/privacy` (boards P_Privacy, P_PhonePrivacy): what Kanade keeps when a
   member links a character to its NEXON Open API data. Public: shown signed
   out, signed in or closed, and it reads nothing. The `/character link`
-  notice (version 1) links here; its words change only with a new notice.
+  notice (version 2) links here; its words change only with a new notice.
 -->
 <script lang="ts">
   import type { Identity } from '@kanade/api-types';
@@ -12,7 +12,7 @@
   let { identity, zone, phone }: { identity: Identity | null; zone: string; phone: boolean } = $props();
 
   const ATTRIBUTION = 'Data based on NEXON Open API';
-  const NOTICE = 'Notice 1 · 12 Oct 2026';
+  const NOTICE = 'Notice 2 · 15 Oct 2026';
   const NEXON_PRIVACY = 'https://m.nexon.com/terms/1000';
 </script>
 
@@ -22,23 +22,27 @@
   <dl class="privacy__list" data-fid="privacy-list">
     <dt>What is fetched</dt>
     <dd>
-      Name, world, class, level, combat power and the character image link, from the NEXON Open API. Only for a character you link with <span class="mono"
+      Name, world, class, level, combat power and the character image link, from the NEXON Open API: for a character you link with <span class="mono"
         >/character link</span
-      >, and only after you press Link. An admin can ask you to link; nothing is fetched until you confirm.
+      >, once you press Link, or one a guild admin links for you. Each fetch also copies its class and level to your roster character.
     </dd>
     <dt>Why</dt>
     <dd>Boss readiness: guild admins compare level and combat power with each boss when they plan runs.</dd>
     <dt>How long</dt>
-    <dd>Refreshed once a day. Each item is deleted 30 days after it was fetched; a shared card is cleared after 29 days.</dd>
+    <dd>
+      Refreshed once a day. Each item is deleted 30 days after it was fetched; a shared card is cleared after 29 days. The class and level copied to your roster
+      character stay there as roster data.
+    </dd>
     <dt>Who sees it</dt>
     <dd>
       Guild admins in Kanade’s admin app, and a channel when you post a <span class="mono">/character share</span> card there. It is never shared with anyone else,
-      never sent to chat models, and never in backups or exports.
+      never sent to chat models, and never in backups or exports. The class and level copied to your roster character are roster data: guild members see them, as
+      they see the rest of the roster.
     </dd>
     <dt>Your controls</dt>
     <dd>
       <span class="mono">/character data</span> shows everything kept about you. <span class="mono">/character unlink</span> deletes it at once and clears your shared
-      cards; leaving the server does the same.
+      cards; leaving the server does the same. The class and level on your roster character stay; an admin can change them.
     </dd>
     <dt>Estimates</dt>
     <dd>

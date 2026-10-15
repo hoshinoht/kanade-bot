@@ -2,9 +2,10 @@
 //! real dispatcher, `FakeDiscord`, the temp SQLite roster, a temp SQLite
 //! character-data file and a fake Open API on loopback with invented
 //! fixtures. Texts are the approved copy boards' (D_LinkPick, D_LinkNotice,
-//! D_LinkReplies, D_Data, D_Share, D_ShareStripped). The service clock is
-//! the test's, so a share card's day 29, day 30 and a request's day 14 can
-//! be reached.
+//! D_LinkReplies, D_Data, D_Share, D_ShareStripped), updated for admin
+//! links that are active at once and the roster's copy of NEXON's class and
+//! level (user decisions 2026-10-13). The service clock is the test's, so a
+//! share card's day 29, day 30 and a waiting link's day 14 can be reached.
 
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -25,10 +26,14 @@ use kanade::bot::transport::{Call, InteractionReply, Op, RejectionKind, Step};
 use kanade::domain::characters::{
     Character, CharacterChange, CharacterRecord, CharacterRole, CharacterStore,
 };
-use kanade::domain::chardata::{CharDataStore, LinkStatus, NOTICE_VERSION, Post, PostState};
+use kanade::domain::chardata::{
+    CharDataStore, Link, LinkPut, LinkStatus, NOTICE_VERSION, Post, PostState,
+};
 use kanade::domain::history::{Actor, Surface};
 use kanade::domain::settings::{SettingsChangeQuery, SettingsStore};
-use kanade::infrastructure::character_data::{CharacterData, RequestOutcome, RosterSide, Timing};
+use kanade::infrastructure::character_data::{
+    AdminLinkOutcome, CharacterData, FetchState, RosterSide, Timing,
+};
 use kanade::infrastructure::nexon::{ApiKey, NexonClient};
 use kanade::infrastructure::store::SqliteCharData;
 
@@ -232,21 +237,34 @@ impl Rig {
         self.slash.send(&interaction).await.1
     }
 
-    /// Bob (an admin signed in with Discord) asks to link MikaBish.
-    async fn request(&self) {
-        self.request_for(BISH).await;
+    /// MikaBish waits for Alice to confirm (the sweeper's re-pend after a
+    /// new notice: the one pending flow left).
+    async fn waiting(&self) {
+        self.waiting_for(BISH).await;
     }
 
-    async fn request_for(&self, id: &str) {
-        let bob = Actor::admin(format!("discord:{BOB}"));
-        let outcome = self
-            .service
-            .request_link(id, 0, &bob, Surface::AdminPortal, |_| None)
+    async fn waiting_for(&self, id: &str) {
+        let character = CharacterStore::character(&*self.slash.store, id)
             .await
+            .unwrap()
             .unwrap();
-        assert!(
-            matches!(outcome, RequestOutcome::Requested(_)),
-            "{outcome:?}"
+        let pending = Link {
+            character_id: id.into(),
+            member_id: character.member_id.clone(),
+            ign_key: character.ign_key(),
+            region: "msea".into(),
+            status: LinkStatus::Pending,
+            requested_by: Actor::system("chardata"),
+            requested_at: now(),
+            consent_version: None,
+            consented_at: None,
+            linked_at: None,
+            consent_surface: None,
+            version: 1,
+        };
+        assert_eq!(
+            self.file.put_link(pending, 0).await.unwrap(),
+            LinkPut::Written
         );
     }
 
@@ -341,7 +359,8 @@ impl Rig {
 
 const STUB: &str = "Character data removed (expired or unlinked).";
 
-/// History and settings rows hold no Nexon field.
+/// History and settings rows hold no Nexon field but the class and level
+/// copied into the roster row (its own History row, by `system:nexon`).
 async fn nexon_free(rig: &Rig) {
     let rows = rig
         .slash
@@ -350,14 +369,7 @@ async fn nexon_free(rig: &Rig) {
         .await
         .unwrap();
     let text = format!("{rows:?}");
-    for fixture in [
-        OCID,
-        "Aquila",
-        "48203114",
-        "48,203,114",
-        "invented-s3",
-        "283",
-    ] {
+    for fixture in [OCID, "Aquila", "48203114", "48,203,114", "invented-s3"] {
         assert!(!text.contains(fixture), "{fixture} reached History: {text}");
     }
 }
@@ -393,18 +405,18 @@ async fn the_command_is_absent_while_the_module_is_off() {
 }
 
 #[tokio::test]
-async fn the_picker_lists_requests_first_and_only_msea_characters() {
+async fn the_picker_lists_waiting_links_first_and_only_msea_characters() {
     let rig = rig().await;
-    rig.request().await;
+    rig.waiting_for(NL).await;
     let choices = rig.choices(ALICE, "link").await;
     assert_eq!(
         choices,
         [
             (
-                "MikaBish · Bishop · requested by Bobby · waiting for you".to_owned(),
-                BISH.to_owned()
+                "MikaNL · Night Lord · waiting for you".to_owned(),
+                NL.to_owned()
             ),
-            ("MikaNL · Night Lord · not linked".to_owned(), NL.to_owned()),
+            ("MikaBish · Bishop · not linked".to_owned(), BISH.to_owned()),
         ]
     );
     // Someone else's characters are never offered.
@@ -415,32 +427,32 @@ async fn the_picker_lists_requests_first_and_only_msea_characters() {
 #[tokio::test]
 async fn the_notice_is_version_one_as_drawn_and_calls_nothing() {
     let rig = rig().await;
-    rig.request().await;
+    rig.waiting().await;
     let (reply, link) = rig.notice().await;
     assert!(reply.ephemeral);
     assert_eq!(
         words(&reply),
         [
             "### Link MikaBish to its NEXON Open API data?",
-            "**Bobby** asked to link **MikaBish** (MapleSEA). Nothing is fetched until you press Link.",
+            "Nothing is fetched until you press Link.",
             "**What Kanade fetches**\nName, world, class, level, combat power and the character image link, for MikaBish only.",
             "**Why**\nSo guild admins can check boss readiness (level and combat power) when they plan runs.",
-            "**How long**\nRefreshed once a day and kept 30 days at most. `/character unlink` deletes it at once.",
-            "**Who sees it**\nGuild admins in Kanade’s admin app, and the channel when you post a `/character share` card. It is never shared with anyone else and never sent to chat models.",
+            "**How long**\nRefreshed once a day and kept 30 days at most. `/character unlink` deletes it at once; the class and level copied to your roster character stay.",
+            "**Who sees it**\nGuild admins in Kanade’s admin app, and the channel when you post a `/character share` card. Its class and level are copied to your roster character, which guild members see. It is never shared with anyone else and never sent to chat models.",
             &format!(
                 "-# The data is shown as is and may be out of date. Kanade is not affiliated with or endorsed by NEXON. [Privacy notice]({PRIVACY})"
             ),
             &format!("-# {ATTR}"),
         ]
     );
-    assert_eq!(NOTICE_VERSION, 1);
+    assert_eq!(NOTICE_VERSION, 2);
     let issued = now().timestamp();
     assert_eq!(
         v2_buttons(&reply.components),
         [
             (
                 "Link MikaBish".to_owned(),
-                format!("chardata:link:1:{issued}:{BISH}"),
+                format!("chardata:link:2:{issued}:{BISH}"),
                 false
             ),
             (
@@ -450,11 +462,10 @@ async fn the_notice_is_version_one_as_drawn_and_calls_nothing() {
             ),
         ]
     );
-    assert_eq!(link, format!("chardata:link:1:{issued}:{BISH}"));
+    assert_eq!(link, format!("chardata:link:2:{issued}:{BISH}"));
     assert_eq!(rig.nexon.calls.load(Ordering::SeqCst), 0);
     assert_eq!(rig.status(BISH).await, Some(LinkStatus::Pending));
 
-    // Without a request, the first line is only the promise.
     let plain = rig.run("link", json!([opt("character", "mikanl")])).await;
     assert_eq!(words(&plain)[1], "Nothing is fetched until you press Link.");
     assert_eq!(
@@ -464,9 +475,9 @@ async fn the_notice_is_version_one_as_drawn_and_calls_nothing() {
 }
 
 #[tokio::test]
-async fn link_makes_the_pending_request_active_with_the_first_fetch() {
+async fn link_makes_a_waiting_link_active_with_the_first_fetch() {
     let rig = rig().await;
-    rig.request().await;
+    rig.waiting().await;
     let (_, link) = rig.notice().await;
     let reply = rig.press(&link).await;
     assert_eq!(
@@ -475,7 +486,7 @@ async fn link_makes_the_pending_request_active_with_the_first_fetch() {
             "-# Linked · MikaBish",
             "**Class** Bishop · **Level** 283 · **Combat power** 48,203,114",
             "**World** Aquila · **As of** 28 Sep 2026 (SGT)",
-            "-# Refreshed daily, kept 30 days at most. See all of it with `/character data`; remove it with `/character unlink`.",
+            "-# Refreshed daily, kept 30 days at most; its class and level are copied to your roster character. See all of it with `/character data`; remove it with `/character unlink`.",
             &format!("-# {ATTR}"),
         ]
     );
@@ -496,14 +507,16 @@ async fn link_makes_the_pending_request_active_with_the_first_fetch() {
     assert_eq!(stored.consent_version, Some(NOTICE_VERSION));
     assert_eq!(
         rig.history().await,
-        [
-            (
-                "unlinked".into(),
-                "pending".into(),
-                format!("admin:discord:{BOB}")
-            ),
-            ("pending".into(), "linked".into(), format!("member:{ALICE}")),
-        ]
+        [("pending".into(), "linked".into(), format!("member:{ALICE}"))]
+    );
+    let row = CharacterStore::character(&*rig.slash.store, BISH)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        (row.level, row.updated_by),
+        (Some(283), Actor::system("nexon")),
+        "NEXON's level is copied into the roster"
     );
     nexon_free(&rig).await;
     // A second notice for it says so.
@@ -515,20 +528,14 @@ async fn link_makes_the_pending_request_active_with_the_first_fetch() {
 }
 
 #[tokio::test]
-async fn cancel_keeps_the_request_and_an_old_notice_expires() {
+async fn cancel_changes_nothing_and_an_old_notice_expires() {
     let rig = rig().await;
-    rig.request().await;
+    rig.waiting().await;
     let reply = rig.press(&format!("chardata:cancel:{BISH}")).await;
-    assert_eq!(
-        words(&reply),
-        [
-            "Nothing was linked. Bobby’s request for **MikaBish** is still waiting; run `/character link` when you’re ready."
-        ]
-    );
+    assert_eq!(words(&reply), ["Nothing was linked."]);
     assert_eq!(rig.status(BISH).await, Some(LinkStatus::Pending));
     let reply = rig.press(&format!("chardata:cancel:{NL}")).await;
     assert_eq!(words(&reply), ["Nothing was linked."]);
-
     // An old notice expires; one "issued" in the future (past the 60 s
     // skew) is refused too: it would otherwise stay valid for as long as it
     // claims.
@@ -537,7 +544,7 @@ async fn cancel_keeps_the_request_and_an_old_notice_expires() {
         now() + TimeDelta::minutes(2),
     ] {
         let issued = issued.timestamp();
-        let reply = rig.press(&format!("chardata:link:1:{issued}:{BISH}")).await;
+        let reply = rig.press(&format!("chardata:link:2:{issued}:{BISH}")).await;
         assert_eq!(
             words(&reply),
             ["This notice expired. Run /character link again."]
@@ -561,7 +568,7 @@ async fn data_shows_every_entry_across_messages() {
             character(&id, ign, "msea", "Bishop", CharacterRole::Alt),
         )
         .await;
-        rig.request_for(&id).await;
+        rig.waiting_for(&id).await;
     }
     let before = rig.slash.discord.calls().len();
     rig.run("data", json!([])).await;
@@ -583,7 +590,7 @@ async fn data_shows_every_entry_across_messages() {
     let all = messages.concat().join("\n");
     for ign in &igns {
         assert!(
-            all.contains(&format!("**{ign} · pending**")),
+            all.contains(&format!("**{ign} · waiting for you**")),
             "{ign} missing"
         );
     }
@@ -646,10 +653,10 @@ async fn data_shows_everything_kept_and_unlink_all_clears_it() {
         shown,
         [
             "### What Kanade keeps for you".to_owned(),
-            "Linked characters, from the NEXON Open API. Nothing else from NEXON is kept."
+            "Linked characters, from the NEXON Open API; their class and level are also copied to your roster characters, where they stay. Nothing else from NEXON is kept."
                 .to_owned(),
             format!(
-                "**MikaBish · linked**\nBishop · Lv. 283 · CP 48,203,114 · Aquila\nAs of 28 Sep 2026 (SGT) · fetched <t:{fetched}:f> · deleted by <t:{expires}:D> unless refreshed\nLinked <t:{fetched}:f>, notice 1"
+                "**MikaBish · linked**\nBishop · Lv. 283 · CP 48,203,114 · Aquila\nAs of 28 Sep 2026 (SGT) · fetched <t:{fetched}:f> · deleted by <t:{expires}:D> unless refreshed\nLinked <t:{fetched}:f>, notice 2"
             ),
             "**MikaNL · not linked**\nNothing fetched or kept.".to_owned(),
             format!("-# Remove one or all with `/character unlink`. [Privacy notice]({PRIVACY})"),
@@ -668,11 +675,50 @@ async fn data_shows_everything_kept_and_unlink_all_clears_it() {
     let reply = rig.run("unlink", json!([opt("character", "all")])).await;
     assert_eq!(
         reply.content,
-        "Unlinked everything left: **MikaBish**. Nothing from NEXON is kept for you now."
+        "Unlinked everything left: **MikaBish**. Nothing from NEXON is kept for you now; your roster characters keep their class and level."
     );
     assert_eq!(rig.status(BISH).await, None);
     let reply = rig.run("data", json!([])).await;
     assert_eq!(reply.content, "Nothing from NEXON is kept for you.");
+}
+
+/// An admin's link is active at once with no member confirmation; the
+/// member's view names no notice for it, and `/character link` says it is
+/// linked already.
+#[tokio::test]
+async fn an_admin_link_is_active_at_once_without_a_notice() {
+    let rig = rig().await;
+    let bob = Actor::admin(format!("discord:{BOB}"));
+    let outcome = rig
+        .service
+        .admin_link(BISH, 0, &bob, Surface::AdminPortal)
+        .await
+        .unwrap();
+    assert!(
+        matches!(outcome, AdminLinkOutcome::Linked(_, FetchState::Stored)),
+        "{outcome:?}"
+    );
+    assert_eq!(rig.status(BISH).await, Some(LinkStatus::Active));
+    let again = rig.run("link", json!([opt("character", BISH)])).await;
+    assert_eq!(
+        again.content,
+        "**MikaBish** is already linked. See it with `/character data`."
+    );
+    let shown = words(&rig.run("data", json!([])).await);
+    let fetched = now().timestamp();
+    assert!(
+        shown[2].ends_with(&format!("unless refreshed\nLinked <t:{fetched}:f>")),
+        "{shown:?}"
+    );
+    assert_eq!(
+        rig.history().await,
+        [(
+            "unlinked".into(),
+            "linked".into(),
+            format!("admin:discord:{BOB}")
+        )]
+    );
+    nexon_free(&rig).await;
 }
 
 #[tokio::test]
@@ -712,7 +758,7 @@ async fn share_posts_a_tracked_card_and_unlink_strips_it_at_once() {
     assert_eq!(
         reply.content,
         format!(
-            "Unlinked **MikaBish**. Its NEXON data is deleted, and your 1 shared card in <#{KALOS}> now reads “Character data removed”. Your roster character is unchanged."
+            "Unlinked **MikaBish**. Its NEXON data is deleted, and your 1 shared card in <#{KALOS}> now reads “Character data removed”. Your roster character keeps its class and level."
         )
     );
     assert_eq!(rig.status(BISH).await, None);
@@ -926,9 +972,9 @@ async fn a_card_turns_into_the_stub_on_day_29_and_shows_overdue_on_day_30() {
 }
 
 #[tokio::test]
-async fn a_pending_request_expires_after_14_days() {
+async fn a_waiting_link_expires_after_14_days() {
     let rig = rig().await;
-    rig.request().await;
+    rig.waiting().await;
     rig.set_now(now() + TimeDelta::days(14) - TimeDelta::minutes(1));
     rig.service.sweep().await;
     assert_eq!(rig.status(BISH).await, Some(LinkStatus::Pending));
@@ -938,18 +984,11 @@ async fn a_pending_request_expires_after_14_days() {
     assert_eq!(rig.status(BISH).await, None);
     assert_eq!(
         rig.history().await,
-        [
-            (
-                "unlinked".into(),
-                "pending".into(),
-                format!("admin:discord:{BOB}")
-            ),
-            (
-                "pending".into(),
-                "unlinked".into(),
-                "system:chardata".into()
-            ),
-        ]
+        [(
+            "pending".into(),
+            "unlinked".into(),
+            "system:chardata".into()
+        )]
     );
     assert_eq!(rig.nexon.calls.load(Ordering::SeqCst), 0);
 }

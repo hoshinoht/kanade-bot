@@ -43,12 +43,13 @@ async function openEdit(page: Page, ign: string): Promise<Locator> {
   return dialog;
 }
 
-test('Characters tab: the request waiting first, the roster with link chips, NEXON data', async ({ page }) => {
+test('Characters tab: the link waiting for you first, the roster with link chips, NEXON data', async ({ page }) => {
   const tab = await openTab(page);
   await expect(page.getByRole('tab', { name: /^Characters/ })).toHaveText('Characters4');
   const waiting = tab.getByRole('region', { name: 'Waiting for you' });
   await expect(waiting).toContainText('AsahiDK · Dark Knight');
-  await expect(waiting).toContainText('Ren asked on 29 Sep to link it to its NEXON Open API data. The request lapses 13 Oct.');
+  await expect(waiting).toContainText('Waiting since 29 Sep for you to confirm the NEXON notice. It lapses 13 Oct.');
+  await expect(waiting).not.toContainText('asked');
   await expect(waiting.getByRole('button', { name: 'Review and link…' })).toBeVisible();
   await expect(tab.locator('.rosterpanel__summary')).toHaveText(/4\s*active\s*·\s*1\s*retired/);
   for (const [ign, chip] of [
@@ -112,7 +113,7 @@ test('Add: Look up shows NEXON once, never kept; then the notice opens, and Link
   await expect(notice).toContainText('Nothing is fetched until you press Link.');
   await notice.getByRole('button', { name: 'Link AsahiLumi' }).click();
   await expect(notice.getByRole('status')).toContainText('Linked AsahiLumi');
-  await expect(notice.getByRole('status')).toContainText('See all of it in My data; remove it with Unlink.');
+  await expect(notice.getByRole('status')).toContainText('its class and level are copied to your roster character. See all of it in My data; remove it with Unlink.');
   await notice.getByRole('button', { name: 'Done' }).click();
   await expect(row(page, 'AsahiLumi').locator('.status-chip')).toHaveText('linked');
 });
@@ -128,20 +129,21 @@ test('Add without NEXON connected asks class and level by hand', async ({ page }
   await expect(row(page, 'AsahiMech').locator('.status-chip')).toHaveText('not connected');
 });
 
-test('the notice: v1 word for word; Cancel keeps the admin’s request', async ({ page }) => {
+test('the notice: v1 word for word; Cancel keeps the waiting link', async ({ page }) => {
   const tab = await openTab(page);
   await tab.getByRole('button', { name: 'Review and link…' }).click();
   const notice = page.getByRole('dialog', { name: 'Link AsahiDK to its NEXON Open API data?' });
-  await expect(notice).toContainText('Ren asked to link AsahiDK (MapleSEA). Nothing is fetched until you press Link.');
+  await expect(notice.locator('.linknotice__lead')).toHaveText('Nothing is fetched until you press Link.');
   for (const heading of ['What Kanade fetches', 'Why', 'How long', 'Who sees it']) await expect(notice.getByRole('heading', { name: heading })).toBeVisible();
-  await expect(notice).toContainText('Refreshed once a day and kept 30 days at most. /character unlink deletes it at once.');
+  await expect(notice).toContainText('Refreshed once a day and kept 30 days at most. /character unlink deletes it at once; the class and level copied to your roster character stay.');
+  await expect(notice).toContainText('Its class and level are copied to your roster character, which guild members see.');
   await expect(notice).toContainText('Kanade is not affiliated with or endorsed by NEXON.');
   await expect(notice.getByRole('link', { name: 'Privacy notice' })).toBeVisible();
   await expect(notice).toContainText(ATTRIBUTION);
-  await expect(notice).toContainText('notice 1');
+  await expect(notice).toContainText('notice 2');
   await notice.getByRole('button', { name: 'Cancel' }).click();
   await expect(notice.getByRole('status')).toContainText('Nothing was linked.');
-  await expect(notice.getByRole('status')).toContainText('Ren’s request for AsahiDK is still waiting');
+  await expect(notice.getByRole('status')).toContainText('AsahiDK is still waiting for you; Review and link when you’re ready.');
   await notice.getByRole('button', { name: 'Done' }).click();
   await expect(row(page, 'AsahiDK').locator('.status-chip')).toHaveText('waiting for you');
 });
@@ -212,22 +214,26 @@ test('Edit: the linked strip has no Refresh; Unlink deletes at once with copy.rs
   const strip = dialog.getByRole('region', { name: 'Character data' });
   await expect(strip.locator('.chardata__head .status-chip')).toHaveText('linked');
   await expect(strip).toContainText('Lv. 286Kanna·CP 51.4M');
-  await expect(strip).toContainText('with the daily batch. Unlink deletes it now; your roster character stays.');
-  await expect(strip.locator('.chardata__foot')).toContainText('Linked 19 Sep by you (notice 1) · refreshed daily');
+  await expect(strip).toContainText('with the daily batch. Unlink deletes it now; your roster character keeps its class and level.');
+  await expect(strip.locator('.chardata__foot')).toContainText('Linked 19 Sep by you (notice 2) · refreshed daily');
   await expect(strip.getByRole('button', { name: 'Refresh' })).toHaveCount(0);
   await expect(dialog.getByRole('button', { name: /Delete/ })).toHaveCount(0);
   await strip.getByRole('button', { name: 'Unlink' }).click();
-  await expect(toast(page).filter({ hasText: 'Unlinked AsahiKanna. Its NEXON data is deleted, and your 1 shared card now reads “Character data removed”.' })).toBeVisible();
+  await expect(
+    toast(page).filter({ hasText: 'Unlinked AsahiKanna. Its NEXON data is deleted, and your 1 shared card now reads “Character data removed”. Your roster character keeps its class and level.' }),
+  ).toBeVisible();
   await expect(strip.locator('.chardata__head .status-chip')).toHaveText('not linked');
   await strip.getByRole('button', { name: 'Link…' }).click();
   await expect(page.getByRole('dialog', { name: 'Link AsahiKanna to its NEXON Open API data?' })).toBeVisible();
 });
 
-test('the strip in its other states: pending, stale, expired', async ({ page }) => {
+test('the strip in its other states: waiting, stale, expired', async ({ page }) => {
   await openTab(page);
   let strip = (await openEdit(page, 'AsahiDK')).getByRole('region', { name: 'Character data' });
   await expect(strip).toContainText('Waiting for you to link it');
-  await expect(strip).toContainText('by Ren · nothing fetched yet');
+  await expect(strip).toContainText('Since 29 Sep');
+  await expect(strip).toContainText('nothing fetched yet');
+  await expect(strip).toContainText('Cancel there keeps it waiting; it lapses 13 Oct.');
   await expect(strip.getByRole('button', { name: 'Review and link…' })).toBeVisible();
   await page.keyboard.press('Escape');
   strip = (await openEdit(page, 'AsahiPath')).getByRole('region', { name: 'Character data' });
@@ -238,19 +244,20 @@ test('the strip in its other states: pending, stale, expired', async ({ page }) 
   await expect(strip).toContainText('Kanade tries again with the next daily batch');
 });
 
-test('My data: everything kept, the request first; Unlink and Unlink all', async ({ page }) => {
+test('My data: everything kept, the waiting link first; Unlink and Unlink all', async ({ page }) => {
   const tab = await openTab(page);
   await tab.getByRole('button', { name: 'My data…' }).click();
   const dialog = page.getByRole('dialog', { name: 'What Kanade keeps for you' });
   const entries = dialog.locator('.mydata__entry');
   await expect(entries.first()).toContainText('AsahiDK');
-  await expect(entries.first()).toContainText('Requested by Ren 29 Sep. Nothing is fetched until you confirm.');
+  await expect(entries.first()).toContainText('waiting for you');
+  await expect(entries.first()).toContainText('Waiting since 29 Sep. Nothing is fetched until you confirm.');
   const kanna = entries.filter({ hasText: 'AsahiKanna' });
   await expect(kanna).toContainText('Kanna · Lv. 286 · CP 51,400,000');
-  await expect(kanna).toContainText('notice 1 · 1 shared card in #hstar-party');
+  await expect(kanna).toContainText('notice 2 · 1 shared card in #hstar-party');
   await expect(dialog).toContainText(ATTRIBUTION);
   await dialog.getByRole('button', { name: 'Unlink AsahiBlaze' }).click();
-  await expect(toast(page).filter({ hasText: 'Unlinked AsahiBlaze. Its NEXON data is deleted. Your roster character is unchanged.' })).toBeVisible();
+  await expect(toast(page).filter({ hasText: 'Unlinked AsahiBlaze. Its NEXON data is deleted; your roster character keeps its class and level.' })).toBeVisible();
   await dialog.getByRole('button', { name: 'Unlink all' }).click();
   await expect(toast(page).filter({ hasText: /^Unlinked everything left: / })).toBeVisible();
   await expect(dialog.getByRole('button', { name: /^Unlink/ })).toHaveCount(0);

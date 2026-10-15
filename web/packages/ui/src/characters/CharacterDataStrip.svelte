@@ -1,18 +1,19 @@
 <!--
   The Edit character dialog's strip (module `character_data`; boards
   B_CharLinked, B_CharLink, B_CharUnlink, B_CharStates*, phone twins; the
-  portal's M_CharEdit, M_CharStates2): the manual roster values beside
-  NEXON's (never copied over), the link state and its actions. The
-  attribution shows wherever NEXON data does. Module off: the link route
-  answers the generic 404 and nothing is drawn. A scouter estimate row
-  follows while estimates are on.
+  portal's M_CharEdit, M_CharStates2): the roster values beside NEXON's
+  (each fetch copies NEXON's class and level into the roster, which keeps
+  them), the link state and its actions. The attribution shows wherever
+  NEXON data does. Module off: the link route answers the generic 404 and
+  nothing is drawn. A scouter estimate row follows while estimates are on.
 
-  Admin: Link… (a pending request the member confirms in Discord), Unlink…
-  (deletes the NEXON data now) and Refresh (always allowed; the shared call
-  budget limits it), each confirmed inline rather than in a second dialog.
-  Member (their own character): Link…, Review and link… or Link again… open
-  the NEXON notice (the host's), Unlink deletes at once with no confirm, as in
-  Discord, and there is no Refresh.
+  Admin: Link… (active at once with its first fetch; the member is not
+  asked), Unlink… (deletes the NEXON data now) and Refresh (always allowed;
+  the shared call budget limits it), each confirmed inline rather than in a
+  second dialog. Member (their own character): Link…, Review and link… (a
+  link waiting for them) or Link again… open the NEXON notice (the host's),
+  Unlink deletes at once with no confirm, as in Discord, and there is no
+  Refresh.
 -->
 <script lang="ts">
   import { tick } from 'svelte';
@@ -55,18 +56,20 @@
   const tag = $derived(phase ? STRIP_TAGS[phase] : null);
   const data = $derived(link?.data ?? null);
   const retired = $derived(character.retired_at !== null);
-  const requester = $derived(link?.requested_by ? kit.actor(link.requested_by) : '');
   const lapses = $derived(link?.requested_at ? dayMonth(new Date(Date.parse(link.requested_at) + PENDING_DAYS * 86_400_000).toISOString(), timeZone) : '');
+  // An admin's link carries no consent of the member's (no notice version).
+  const adminLinked = $derived(link?.state !== 'pending' && link?.consent_version === null && link?.requested_by?.kind === 'admin');
   // What Unlink deletes, in words: " (Lv. 283 · CP 48.2M, as of 29 Sep 2026)".
   const unlinkWhat = $derived.by(() => {
     if (!data) return '';
     const values = [data.level !== null ? `Lv. ${data.level}` : '', data.combat_power !== null ? `CP ${combatPower(data.combat_power)}` : ''].filter(Boolean).join(' · ');
     return ` (${values ? `${values}, ` : ''}as of ${asOfDate(data.as_of)})`;
   });
-  // "Linked 21 Sep by Mika (notice 1) · refreshed daily · …": who confirmed it, and what happens next.
+  // "Linked 21 Sep by Mika (notice 1) · refreshed daily · …": who made it, and what happens next.
   const linkedNote = $derived.by(() => {
     if (!link?.linked_at) return '';
-    const parts = [`Linked ${dayMonth(link.linked_at, timeZone)} by ${memberName}${link.consent_version !== null ? ` (notice ${link.consent_version})` : ''}`];
+    const by = adminLinked && link.requested_by ? kit.actor(link.requested_by) : memberName;
+    const parts = [`Linked ${dayMonth(link.linked_at, timeZone)} by ${by}${link.consent_version !== null ? ` (notice ${link.consent_version})` : ''}`];
     if (phase === 'linked') parts.push('refreshed daily', 'deleted 30 days after the last refresh');
     else if (phase === 'paused' && data) parts.push(`last refresh ${dayTime(data.fetched_at, timeZone)}`);
     else if (phase === 'stale') parts.push('it never retries on its own');
@@ -99,7 +102,7 @@
     problem = '';
     confirm = kind;
     await tick();
-    // Request link takes focus; a risk confirmation starts on Cancel.
+    // Link takes focus; a risk confirmation starts on Cancel.
     strip?.querySelector<HTMLElement>(kind === 'link' ? '[data-confirm-go]' : '[data-confirm-cancel]')?.focus();
   }
 
@@ -125,12 +128,12 @@
     else
       said =
         action === 'link'
-          ? `Asked ${memberName} to link ${character.ign}. Nothing is fetched until they confirm.`
+          ? `Linked ${character.ign}.${result.ok && (result.value as { data?: unknown }).data ? ' Its NEXON data is in.' : ' NEXON didn’t answer just now; Kanade tries again later.'}`
           : action === 'unlink'
             ? `Unlinked ${character.ign}: its NEXON data is deleted.`
             : `Refreshed ${character.ign} from NEXON.`;
     await tick();
-    // The next action of the new state (Unlink… after a request, Link… after an unlink), else the heading.
+    // The next action of the new state (Refresh after a link, Link… after an unlink), else the heading.
     (strip?.querySelector<HTMLElement>('[data-action]:not([aria-disabled="true"])') ?? strip?.querySelector<HTMLElement>(`#${uid}-h`))?.focus();
   }
 </script>
@@ -149,7 +152,7 @@
   >
 {/snippet}
 
-<!-- The member's Link opens the host's notice (Review and link… for an admin's request, Link again… once stale). -->
+<!-- The member's Link opens the host's notice (Review and link… for a link waiting for them, Link again… once stale). -->
 {#snippet memberLink(label: string, primary: boolean)}
   <button
     type="button"
@@ -221,29 +224,29 @@
 {#snippet confirmBox()}
   {#if confirm === 'link'}
     <div class="chardata__confirm" role="group" aria-labelledby="{uid}-ch" data-fid="chardata-confirm">
-      <b class="chardata__confirm-title" id="{uid}-ch">Ask {memberName} to link {character.ign}?</b>
+      <b class="chardata__confirm-title" id="{uid}-ch">Link {character.ign} now?</b>
       <span
-        >Nothing is fetched until {memberName} confirms with <span class="mono">/character link</span> in Discord. {memberName} then sees what is kept (name, world, class,
-        level, combat power, image link), that it is kept 30 days at most, and how to unlink.</span
+        >Kanade fetches its NEXON data now (name, world, class, level, combat power, image link) and refreshes it daily; it is kept 30 days at most.
+        {memberName} isn’t asked first. Its class and level are copied to the roster and stay after an unlink.</span
       >
-      <span class="chardata__sub">Kanade doesn’t message {memberName} about it; tell them in Discord.</span>
+      <span class="chardata__sub">Kanade doesn’t message {memberName} about it; {memberName} sees it in <span class="mono">/character data</span>.</span>
       <div class="chardata__actions">
         <button type="button" class="btn chardata__btn" data-confirm-cancel onclick={() => void close('link')}>Cancel</button>
         <button type="button" class="btn btn--primary chardata__btn" data-confirm-go data-fid="chardata-request" disabled={busy === 'link'} onclick={() => void run('link')}
-          ><Icon name="link" />Request link</button
+          ><Icon name="link" />Link</button
         >
       </div>
     </div>
   {:else if confirm === 'unlink'}
     <div class="chardata__confirm chardata__confirm--risk" role="group" aria-labelledby="{uid}-ch" data-fid="chardata-confirm">
       {#if phase === 'pending'}
-        <b class="chardata__confirm-title" id="{uid}-ch">Withdraw the request for {character.ign}?</b>
+        <b class="chardata__confirm-title" id="{uid}-ch">Withdraw {character.ign}’s waiting link?</b>
         <span>Nothing was fetched, so nothing is deleted. {memberName}’s <span class="mono">/character link</span> no longer lists it.</span>
       {:else}
         <b class="chardata__confirm-title" id="{uid}-ch">Unlink {character.ign}?</b>
         <span
-          >Deletes the NEXON data kept for {character.ign} now{unlinkWhat}. Any card {memberName} shared in Discord is edited to “Character data removed”. The roster character stays as
-          it is.</span
+          >Deletes the NEXON data kept for {character.ign} now{unlinkWhat}. Any card {memberName} shared in Discord is edited to “Character data removed”. The roster keeps
+          the class and level copied from NEXON.</span
         >
         <span>No Undo: to bring it back, {memberName} links again with <span class="mono">/character link</span>.</span>
       {/if}
@@ -269,7 +272,7 @@
     <p class="chardata__msg" id="{uid}-why">{linkOff || 'Link shows the NEXON notice first; nothing is fetched until you press Link there.'}</p>
   {:else if phase === 'pending'}
     <p class="chardata__msg" id="{uid}-why">
-      {linkOff || `Review and link shows the NEXON notice. Cancel there keeps ${requester ? `${requester}’s` : 'the'} request${lapses ? `; it lapses ${lapses}` : ''}.`}
+      {linkOff || `Review and link shows the NEXON notice. Cancel there keeps it waiting${lapses ? `; it lapses ${lapses}` : ''}.`}
     </p>
   {:else if phase === 'stale'}
     <p class="chardata__msg" id="{uid}-why">
@@ -283,7 +286,7 @@
     <p class="chardata__msg">The last refresh failed ({link.refresh.last_error}); these values are as of {asOfDate(data.as_of)}.</p>
   {:else if phase === 'linked' && data}
     <p class="chardata__sub">
-      Refreshed <span class="mono">{dayTime(data.fetched_at, timeZone)}</span> with the daily batch. Unlink deletes it now; your roster character stays.
+      Refreshed <span class="mono">{dayTime(data.fetched_at, timeZone)}</span> with the daily batch. Unlink deletes it now; your roster character keeps its class and level.
     </p>
   {/if}
 {/snippet}
@@ -298,10 +301,10 @@
       An operator sets the key in the environment and restarts Kanade.{#if kit.configHref}&nbsp;Status: <a href={kit.configHref}>Config › Character data</a>.{/if}
     </p>
   {:else if phase === 'not_linked'}
-    <p class="chardata__msg" id="{uid}-why">{linkOff || `Link… asks ${memberName} to confirm in Discord. Nothing is fetched until they do.`}</p>
+    <p class="chardata__msg" id="{uid}-why">{linkOff || `Link… links it now and fetches its NEXON data; ${memberName} isn’t asked first.`}</p>
   {:else if phase === 'pending'}
     <p class="chardata__msg">
-      Kanade doesn’t message {memberName}; tell them in Discord. Their <span class="mono">/character link</span> lists this request first. Unlink withdraws it.
+      Waiting for {memberName} to confirm the NEXON notice with <span class="mono">/character link</span>; nothing is fetched until then. Unlink withdraws it.
     </p>
   {:else if phase === 'stale'}
     <p class="chardata__msg">
@@ -333,9 +336,9 @@
     </div>
     <div class="chardata__cols">
       <div class="chardata__col" data-fid="chardata-manual">
-        <span class="cap">Manual · roster</span>
+        <span class="cap">Roster</span>
         <span class="chardata__value">{#if character.level !== null}<span class="mono">Lv. {character.level}</span>{/if}{character.class ?? ''}</span>
-        <span class="chardata__sub">manual, updated {dayMonth(character.updated_at, timeZone)} by {updatedBy}</span>
+        <span class="chardata__sub">updated {dayMonth(character.updated_at, timeZone)} by {updatedBy}</span>
       </div>
       {#if data}
         <div class="chardata__col chardata__col--nexon" data-fid="chardata-nexon">
@@ -359,7 +362,7 @@
       {:else if phase === 'pending'}
         {@render nexonNone(
           member ? 'Waiting for you to link it' : `Waiting for ${memberName} to confirm with /character link`,
-          `Asked ${link.requested_at ? dayTime(link.requested_at, timeZone) : ''}${requester ? ` by ${requester}` : ''} · nothing fetched yet`,
+          `Since ${link.requested_at ? dayTime(link.requested_at, timeZone) : ''} · nothing fetched yet`,
         )}
       {:else if phase === 'stale'}
         {@render nexonNone('No current data', `NEXON no longer finds ${character.ign} under that name (renamed?), so nothing is shown.`)}
@@ -382,8 +385,8 @@
           {#if member && phase === 'not_linked'}MapleSEA characters only.
           {:else if member && phase === 'pending'}Nothing is fetched until you press Link.
           {:else if phase === 'not_connected'}Nothing from NEXON is kept for {character.ign}.
-          {:else if phase === 'not_linked'}{memberName} can also link it alone with <span class="mono">/character link</span>.
-          {:else if phase === 'pending' && link.requested_at}The request lapses {lapses} unless
+          {:else if phase === 'not_linked'}{memberName} can also link it with <span class="mono">/character link</span>.
+          {:else if phase === 'pending' && link.requested_at}It lapses {lapses} unless
             {memberName} links it first.
           {:else if link.linked_at}{linkedNote}
           {/if}
