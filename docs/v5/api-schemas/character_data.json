@@ -195,9 +195,10 @@
       "description": "Shown, never judged: a clear-time estimate, for planning only, not eligibility.",
       "type": "object",
       "additionalProperties": false,
-      "required": ["percentage", "rating", "estimated_minutes", "fetched_at", "critical_rate_assumed", "critical_rate_actual"],
+      "required": ["percentage", "effective_percentage", "rating", "estimated_minutes", "fetched_at", "critical_rate_assumed", "critical_rate_actual"],
       "properties": {
         "percentage": { "type": "number", "minimum": 0, "description": "The character's share (effective_percentage), else the card's percentage." },
+        "effective_percentage": { "type": ["number", "null"], "minimum": 0, "description": "The character's own share only; null when the scouter can't tell. Shares of a party total use this, never `percentage`, which may be a party card's whole-party figure." },
         "rating": { "type": "string" },
         "estimated_minutes": { "type": ["number", "null"], "minimum": 0 },
         "fetched_at": { "type": "string", "description": "When kanade received it from the scouter." },

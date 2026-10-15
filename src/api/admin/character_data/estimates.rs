@@ -29,7 +29,7 @@ use crate::{
         listeners::Site,
         state::{ApiState, CharacterRoster},
     },
-    domain::characters::{Character, DEFAULT_WORLD},
+    domain::characters::Character,
     infrastructure::{
         character_data::CharacterData,
         scouter::{
@@ -82,18 +82,9 @@ fn not_found() -> Refusal {
     Refusal::not_found("not_found", "That character is not on the roster.")
 }
 
-/// What one character is to the scouter: an IGN to look up, or why not.
-/// Readiness reads the cache under the same IGN.
-pub(crate) fn lookup_name(character: &Character) -> Result<RosterIgn, MissingReason> {
-    if character.world != DEFAULT_WORLD {
-        return Err(MissingReason::OtherRegion);
-    }
-    RosterIgn::of(character).ok_or(MissingReason::UnsupportedIgn)
-}
-
-/// [`lookup_name`] for a character asked for by id: why not is a `422`.
+/// [`RosterIgn::lookup`] for a character asked for by id: why not is a `422`.
 pub(crate) fn estimate_ign(character: &Character) -> Result<RosterIgn, Refusal> {
-    lookup_name(character).map_err(|reason| match reason {
+    RosterIgn::lookup(character).map_err(|reason| match reason {
         MissingReason::OtherRegion => {
             Refusal::unprocessable("region", "Estimates cover MapleSEA characters only.")
         }
@@ -172,7 +163,7 @@ async fn run_party(
             });
             continue;
         };
-        match lookup_name(character) {
+        match RosterIgn::lookup(character) {
             Ok(ign) => push(
                 &mut subjects,
                 Subject {

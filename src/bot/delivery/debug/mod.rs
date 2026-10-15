@@ -39,6 +39,7 @@ use super::alerts::{AlertThrottle, LogAlerts};
 use super::cards::{
     self, CardContext, CardKit, HeaderKind, PhraseKind, TrialOrigin, Verdict, fetch_art,
 };
+use super::estimates::attach_chart;
 use super::executor::{Executor, SendOutcome};
 use super::notice_text::QUIET_NOTE;
 use super::pregen::PREGEN_DEADLINE;
@@ -412,7 +413,9 @@ where
                 .ok_or_else(|| format!("no {} card", kind.as_str()))?;
             let card = card.prefixed(TEST_PREFIX);
             let pictures = fetch_art(self.cards.art.as_ref(), &card, true).await;
-            return Ok(card.message(mentioned, &pictures));
+            let mut message = card.message(mentioned, &pictures);
+            attach_chart(&mut message, &content, &ctx, &self.cards, (self.now)()).await;
+            return Ok(message);
         }
         let run = shown.run.ok_or("no run to render")?;
         let text = if kind == TestKind::Decline {

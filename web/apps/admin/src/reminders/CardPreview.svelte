@@ -1,10 +1,11 @@
 <!--
   A reminder card drawn as Discord shows it (O9): the bot's name and avatar,
   the message text (mentions named, never pinged; `-#` lines as subtext),
-  then each embed with its colour bar, title, description, fields (inline
-  ones side by side), its boss portrait top right, the day-of entry art below
-  and the footer. Discord timestamps are drawn in the guild zone, relative
-  ones from the server's clock. Read only.
+  the "Who carries" estimate image a redesigned run card attaches (with its
+  description as alt text), then each embed with its colour bar, title,
+  description, fields (inline ones side by side), its boss portrait top
+  right, the day-of entry art below and the footer. Discord timestamps are
+  drawn in the guild zone, relative ones from the server's clock. Read only.
 -->
 <script lang="ts">
   import type { CardPreview, EmbedPreview } from '@kanade/api-types';
@@ -44,6 +45,9 @@
   <div class="dcard__message">
     <p class="dcard__author"><strong>{bot}</strong> <span class="dcard__app">APP</span> <span class="dcard__time">{at}</span></p>
     <p class="dcard__content">{@render text(card.content)}</p>
+    {#if card.estimate}
+      <img class="dcard__attachment" src={card.estimate.url} alt={card.estimate.alt} width={card.estimate.width} height={card.estimate.height} data-fid="reminder-estimate" />
+    {/if}
     {#each embeds as embed, e (e)}
       <div class="dcard__embed" {@attach bar(embed.color)} data-fid="reminder-embed">
         <div class="dcard__body">

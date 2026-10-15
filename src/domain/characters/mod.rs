@@ -6,6 +6,7 @@
 //! module (pinned below).
 
 mod character;
+mod party;
 mod picks;
 mod port;
 
@@ -14,6 +15,7 @@ pub use character::{
     MAX_CLASS_CHARS, MAX_WORLD_CHARS, ign_key, new_role, parse_class, parse_ign, parse_level,
     parse_role, parse_world,
 };
+pub use party::{PartyReads, PartyRoster};
 pub use picks::{
     Basis, Clash, PartySlot, Pick, PickChange, PickScope, PickWrite, PlannedPick, StoredPicks,
     party_slots, pick_version, plan_pick, timing_slots,

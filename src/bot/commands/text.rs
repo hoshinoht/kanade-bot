@@ -10,7 +10,7 @@ use crate::domain::ids::short_id;
 use crate::domain::schedule::{FixedRun, RsvpState, Run, RunStatus};
 
 pub const WEEKDAY_NAMES: [&str; 7] = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
-const MONTH_NAMES: [&str; 12] = [
+pub const MONTH_NAMES: [&str; 12] = [
     "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
 ];
 

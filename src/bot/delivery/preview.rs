@@ -6,13 +6,18 @@
 //!   (`plan_dispatch`, at the reminder's fire time) with the stored record's
 //!   heading when one exists, else the seed line ([`reminder_intent`]).
 //!
-//! Both end in `cards::build`, as `render` and the refresh edit do.
+//! Both end in `cards::build`, as `render` and the refresh edit do. The
+//! estimate chart a new post attaches comes from the tick's own
+//! [`super::chart_for`] ([`reminder_chart`]): roster and estimates-memory
+//! reads and CPU only.
 
 use std::collections::BTreeSet;
 
 use chrono::{DateTime, Utc};
 
+use super::cards::chart::Chart;
 use super::cards::{self, Card, CardContext, PostedCard};
+use super::estimates::{PartyEstimates, chart_for, shows_files};
 use super::refresh::{posted_content, posted_mentions};
 use crate::domain::members::Directory;
 use crate::domain::notify::{
@@ -100,4 +105,20 @@ pub fn reminder_card(
     heading: Option<&str>,
 ) -> Option<Card> {
     cards::build(content, ctx, heading, mentions)
+}
+
+/// The chart a new post of `card` (built from `content`) attaches, as the
+/// tick decides it (`attach_chart`): `None` for a card with nowhere to
+/// show a file and wherever [`chart_for`] draws none.
+pub async fn reminder_chart(
+    card: &Card,
+    content: &IntentContent,
+    ctx: &CardContext<'_>,
+    port: &dyn PartyEstimates,
+    now: DateTime<Utc>,
+) -> Option<Chart> {
+    if !shows_files(Some(&card.content), &card.components) {
+        return None;
+    }
+    chart_for(content, ctx, port, now).await
 }

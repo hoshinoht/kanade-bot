@@ -8,7 +8,7 @@
 //! keyed replay in one transaction; a live run past its end refuses it
 //! (`409 run_ended`), as every other run write does.
 
-use std::{collections::BTreeMap, sync::Arc};
+use std::sync::Arc;
 
 use axum::{
     Json,
@@ -37,9 +37,7 @@ use crate::{
         state::{ApiState, CharacterRoster},
     },
     domain::{
-        characters::{
-            Character, PartySlot, Pick, PickScope, StoredPicks, party_slots, pick_version,
-        },
+        characters::{PartyRoster, PartySlot, PickScope, pick_version},
         members::Roster as Members,
         schedule::{FixedRun, RUN_ENDED, Run},
     },
@@ -69,13 +67,11 @@ pub async fn party(
 }
 
 /// What a run's slots are computed from: the runs of its boss week, every
-/// weekly timing, the party's characters, and the stored picks on those
-/// runs and on their timings.
+/// weekly timing, and the party's characters and picks.
 struct Week {
     runs: Vec<Run>,
     timings: Vec<FixedRun>,
-    characters: BTreeMap<String, Vec<Character>>,
-    picks: Vec<Pick>,
+    party: PartyRoster,
 }
 
 impl Week {
@@ -89,51 +85,19 @@ impl Week {
         // The run as just read, whatever the week read saw.
         runs.retain(|other| other.id != run.id);
         runs.push(run.clone());
-        let mut characters = BTreeMap::new();
-        for member in &run.participants {
-            let rows = roster
-                .member_characters(member.clone())
-                .await
-                .map_err(Refusal::unavailable)?;
-            characters.insert(member.clone(), rows);
-        }
-        let mut picks = roster
-            .picks(
-                PickScope::Run,
-                runs.iter().map(|run| run.id.clone()).collect(),
-            )
+        let party = PartyRoster::load(roster, run, &runs)
             .await
             .map_err(Refusal::unavailable)?;
-        let mut fixed: Vec<String> = runs
-            .iter()
-            .filter_map(|run| run.fixed_run_id.clone())
-            .collect();
-        fixed.sort();
-        fixed.dedup();
-        if !fixed.is_empty() {
-            picks.extend(
-                roster
-                    .picks(PickScope::Timing, fixed)
-                    .await
-                    .map_err(Refusal::unavailable)?,
-            );
-        }
         Ok(Self {
             runs,
             timings: snapshot.fixed_runs,
-            characters,
-            picks,
+            party,
         })
     }
 
     fn slots(&self, state: &ApiState, run: &Run) -> Vec<PartySlot> {
-        party_slots(
-            run,
-            &self.runs,
-            &self.characters,
-            &StoredPicks::new(&self.picks, &self.timings),
-            &state.catalog,
-        )
+        self.party
+            .slots(run, &self.runs, &self.timings, &state.catalog)
     }
 
     /// `run`'s slots as the API answers them, in party order.
@@ -205,13 +169,13 @@ pub async fn pick(
         at: now,
         actor: &record.actor,
     };
-    if pick_version(write.current(&week.picks)) != version {
+    if pick_version(write.current(&week.party.picks)) != version {
         return Err(stale(PickScope::Run));
     }
     if let Some(character_id) = &character_id {
         named(roster.as_ref(), character_id, &member_id).await?;
     }
-    let change = write.plan(&mut week.picks, character_id);
+    let change = write.plan(&mut week.party.picks, character_id);
     let answer = week.answer(&site, state, &run);
     let slot = answer
         .slots

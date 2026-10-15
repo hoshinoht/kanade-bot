@@ -14,6 +14,7 @@
   import { RunPartyView, type MemberCharacters } from '../characters/characters.svelte';
   import PartyCharLine from '../characters/PartyCharLine.svelte';
   import PartyNote from '../characters/PartyNote.svelte';
+  import PartyShare from '../characters/PartyShare.svelte';
   import { countdownWords, yours, youFirst } from '../member';
   import type { Route } from '../route.svelte';
   import type { WeekKey } from '../weeks.svelte';
@@ -114,6 +115,7 @@
     {#if party?.data}
       <div class="party-chars-list" data-fid="week-party-chars">
         <PartyNote party={party.data} />
+        <PartyShare party={party.data} {run} />
         {@render list(false)}
       </div>
     {:else}

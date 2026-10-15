@@ -11,6 +11,7 @@ mod model;
 mod port;
 mod readiness;
 mod rules;
+mod shares;
 
 pub use model::{
     ATTRIBUTION, CALL_WINDOW, ConsentSurface, DAILY_CALLS, FUTURE_SKEW, LINK_REGION, Link,
@@ -28,6 +29,7 @@ pub use rules::{
     RATE_LIMIT_TRIES, UnlinkReason, has_departed, link_change, next_batch, orphan, pending_expired,
     rate_limit_delay, same_identity,
 };
+pub use shares::{Carrier, PartyShares, split};
 
 #[cfg(test)]
 mod tests {

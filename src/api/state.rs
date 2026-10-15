@@ -22,8 +22,8 @@ use crate::{
     domain::{
         catalog::BossTable,
         characters::{
-            Character, CharacterChange, CharacterRecord, CharacterStore, CharacterWrite, Pick,
-            PickChange, PickScope, PickWrite,
+            Character, CharacterChange, CharacterRecord, CharacterStore, CharacterWrite,
+            PartyReads, Pick, PickChange, PickScope, PickWrite,
         },
         drafts::{
             DraftEvent, DraftKind, DraftStatus, DraftStore, LoadedDraft, ProposalInfo,
@@ -322,6 +322,23 @@ impl<T: CharacterStore + ReplayStore + Send + Sync> CharacterRoster for T {
                     .map(KeyedWrite::Applied),
             }
         })
+    }
+}
+
+impl PartyReads for dyn CharacterRoster + '_ {
+    fn member_characters(
+        &self,
+        member_id: &str,
+    ) -> impl Future<Output = Result<Vec<Character>, StoreError>> + Send {
+        CharacterRoster::member_characters(self, member_id.to_owned())
+    }
+
+    fn picks(
+        &self,
+        scope: PickScope,
+        targets: &[String],
+    ) -> impl Future<Output = Result<Vec<Pick>, StoreError>> + Send {
+        CharacterRoster::picks(self, scope, targets.to_vec())
     }
 }
 

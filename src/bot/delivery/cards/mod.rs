@@ -8,6 +8,7 @@
 //! stays the fallback and the admin preview's rendering.
 
 mod art;
+pub mod chart;
 mod common;
 mod countdown;
 mod day_of;
@@ -128,6 +129,9 @@ pub struct CardKit {
     /// v5: the live run lengths, read per digest re-render so a run past its
     /// end counts as ended; `None` keeps v4's counts.
     pub run_lengths: Option<crate::domain::completion::RunLengthsNow>,
+    /// The cached estimates behind the redesigned run cards' share chart;
+    /// `None` (module `character_data` or its estimates off) posts none.
+    pub estimates: Option<Arc<dyn crate::bot::delivery::PartyEstimates>>,
 }
 
 impl CardKit {
@@ -160,6 +164,7 @@ impl std::fmt::Debug for CardKit {
             .field("heading", &self.heading)
             .field("style", &self.style())
             .field("marks", &self.marks)
+            .field("estimates", &self.estimates.is_some())
             .finish()
     }
 }
@@ -314,6 +319,7 @@ impl Card {
                 uploads.push(Upload {
                     filename: picture.attachment.clone(),
                     bytes: picture.bytes.clone()?,
+                    description: None,
                 });
             }
             Some(picture.attachment.clone())

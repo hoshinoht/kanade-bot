@@ -47,7 +47,8 @@
     <dt>Estimates</dt>
     <dd>
       Admins can ask a separate scouter service for a clear-time estimate, and you can for your own characters. It receives the IGN on the roster and nothing from NEXON; the answer
-      is kept in memory for 24 hours. Admins see every estimate; you see your own, and those of your party on runs you are on.
+      is kept in memory for 24 hours. Admins see every estimate; you see your own, and those of your party on runs you are on. Reminder cards show the party members’ IGNs
+      and each one’s share of the estimate to everyone in the card’s channel.
     </dd>
     <dt>As is</dt>
     <dd>

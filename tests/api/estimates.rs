@@ -1032,6 +1032,7 @@ async fn an_assumed_critical_rate_is_labelled_in_the_result_and_readiness() {
         ready_slot(&ready, "1001")["bosses"][0]["scouter"],
         json!({
             "percentage": 9.0,
+            "effective_percentage": 9.0,
             "rating": "6p Min Cut",
             "estimated_minutes": 3000.0 / 9.0,
             "fetched_at": "2026-09-29T04:00:00Z",
@@ -1175,7 +1176,7 @@ async fn readiness_shows_cached_scouter_readings_per_boss_and_never_looks_up() {
     let alice = ready_slot(&mixed, "1001");
     assert_eq!(
         alice["bosses"][0]["scouter"],
-        json!({"percentage": 9.0, "rating": "6p Min Cut", "estimated_minutes": 3000.0 / 9.0, "fetched_at": "2026-09-29T04:00:00Z", "critical_rate_assumed": false, "critical_rate_actual": null})
+        json!({"percentage": 9.0, "effective_percentage": 9.0, "rating": "6p Min Cut", "estimated_minutes": 3000.0 / 9.0, "fetched_at": "2026-09-29T04:00:00Z", "critical_rate_assumed": false, "critical_rate_actual": null})
     );
     assert_eq!(alice["power"], Value::Null);
     let bob = ready_slot(&mixed, "1002");
@@ -1207,4 +1208,84 @@ async fn readiness_shows_cached_scouter_readings_per_boss_and_never_looks_up() {
         status(&reads, "run_id=r-kalos").await["running"],
         Value::Null
     );
+}
+
+const PREVIEW: &str = "reminders.json#/$defs/ReminderPreview";
+
+/// The admin `GET` of `path`: the raw reply (the PNG is no JSON).
+async fn raw_get(reads: &Reads, path: &str) -> crate::support::Reply {
+    crate::support::request(
+        reads.admin,
+        "GET",
+        crate::support::ADMIN_HOST,
+        path,
+        &[("Cookie", &reads.cookie)],
+    )
+    .await
+}
+
+/// The reminder preview carries the redesigned countdown's "Who carries"
+/// image (`m-kalos-15`, `r-kalos` 22:00 XKalos), drawn at its own route by
+/// the delivery chart code from the estimates cached now, never a lookup.
+/// Classic cards, estimates off and unknown reminders have none.
+#[tokio::test]
+async fn the_reminder_preview_shows_the_estimate_image_from_cached_readings() {
+    const CARD: &str = "/api/admin/reminders/m-kalos-15/preview";
+    const PNG: &str = "/api/admin/reminders/m-kalos-15/estimate.png";
+    let redesigned = json!({"notifications": {"message_style": "redesigned"}});
+    let (address, fake) = fake_scouter().await;
+    let reads = on(Some(address)).await;
+
+    // Classic (the default): no image and no PNG.
+    let classic = reads.read(CARD, PREVIEW).await;
+    assert_eq!(classic["card"]["estimate"], Value::Null);
+    assert_eq!(
+        raw_get(&reads, PNG).await.error(),
+        (404, "not_found".into())
+    );
+
+    let saved = reads.call("PATCH", "/api/admin/config", redesigned.clone(), &[]);
+    assert_eq!(saved.await.status, 200);
+    // Nobody has a character yet: drawn as "no estimate yet".
+    let none = reads.read(CARD, PREVIEW).await;
+    assert_eq!(
+        fields(&none["card"]["estimate"], &["url", "alt", "width"]),
+        json!([
+            PNG,
+            "22:00 XKalos: XKalos no estimate yet. As of Tue 29 Sep 12:00.",
+            560
+        ])
+    );
+
+    // Alice brings MikaBish, looked up alone; Bob and Dan bring nobody.
+    let mika = character(&reads, "1001", "MikaBish").await;
+    look_up(&reads, json!({"character_ids": [mika]})).await;
+    let lookups = fake.lookups().len();
+    let preview = reads.read(CARD, PREVIEW).await;
+    let image = &preview["card"]["estimate"];
+    assert_eq!(
+        image["alt"],
+        "22:00 XKalos: XKalos 9.0%, MikaBish 100%; 2 with no estimate. As of Tue 29 Sep 12:00."
+    );
+    assert!(image["height"].as_u64().unwrap() > 0);
+    let png = raw_get(&reads, PNG).await;
+    assert_eq!(png.status, 200, "{}", png.text());
+    assert_eq!(png.header("content-type"), Some("image/png"));
+    assert_eq!(png.header("cache-control"), Some("no-store"));
+    assert!(png.body.starts_with(b"\x89PNG\r\n\x1a\n"));
+    assert_eq!(fake.lookups().len(), lookups, "cached readings only");
+
+    // Admin only, and an unknown reminder has no image.
+    assert_eq!(reads.status(PNG, false).await.0, 401);
+    let unknown = raw_get(&reads, "/api/admin/reminders/nope/estimate.png").await;
+    assert_eq!(unknown.error(), (404, "not_found".into()));
+
+    // Estimates off (no scouter URL): the card stays, without the image.
+    let off = on(None).await;
+    let saved = off.call("PATCH", "/api/admin/config", redesigned, &[]);
+    assert_eq!(saved.await.status, 200);
+    let preview = off.read(CARD, PREVIEW).await;
+    assert!(preview["card"]["content"].is_string());
+    assert_eq!(preview["card"]["estimate"], Value::Null);
+    assert_eq!(raw_get(&off, PNG).await.error(), (404, "not_found".into()));
 }

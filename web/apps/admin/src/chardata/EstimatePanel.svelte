@@ -5,7 +5,10 @@
   Each member's row fills in as their lookup finishes; one that fails says why
   in its row and never stops the others. Per boss of the run: the combined
   minutes and % over the members found, "technically possible", "not
-  complete". Members without a character are listed as missing, never 0%.
+  complete"; once done, Who carries (`ShareChart`, boards in
+  docs/research/2026-10-15-estimate-share-chart) between the totals and the
+  table, whose rows carry each member's numbered colour. Members without a
+  character are listed as missing, never 0%.
   Labelled as the scouter's and as planning only, and "Assumes 100% critical
   rate (actual N%)" for a member the scouter assumed it for. No scouter URL:
   no panel.
@@ -25,7 +28,10 @@
     Icon,
     minutes,
     percent,
+    ShareChart,
     StatusChip,
+    whoColour,
+    type ShareMember,
   } from '@kanade/ui';
   import '@kanade/ui/styles/screens/character-data.scss';
   import { joinNames, MISSING_REASONS } from './format';
@@ -70,6 +76,23 @@
   const failed = $derived(job?.characters.filter((c) => c.outcome === 'failed') ?? []);
   const memberOf = (c: EstimateCharacter) => result?.members.find((m) => m.character_id === c.character_id) ?? null;
   const assumedNames = $derived(result?.members.filter((m) => m.critical_rate_assumed).map((m) => m.ign) ?? []);
+  // Who carries, once done: party order (the table's rows), each looked-up character numbered by its row.
+  const shareMembers = $derived.by((): ShareMember[] => {
+    if (!job || !done || !result) return [];
+    const found: ShareMember[] = job.characters.map((c, i) => {
+      const member = memberOf(c);
+      return {
+        id: c.member_id,
+        name: name(c.member_id),
+        ign: c.ign,
+        n: i + 1,
+        effective: Object.fromEntries(member?.bosses.map((b) => [b.boss, b.effective_percentage]) ?? []),
+        assumed: member?.critical_rate_assumed ?? false,
+      };
+    });
+    return [...found, ...job.missing.map((gap) => ({ id: gap.member_id, name: name(gap.member_id), ign: null, n: null, effective: {}, assumed: false }))];
+  });
+  const shareBosses = $derived(bosses.map((boss) => ({ token: boss.token, title: `${boss.name} ${DIFFICULTY_WORDS[boss.difficulty]}` })));
 
   // Before a lookup: who brings a character, and who will be listed as missing.
   const bringing = $derived(slots?.slots.filter((s) => s.brings) ?? []);
@@ -190,6 +213,9 @@
           {/each}
         </div>
       {/if}
+      {#if shareMembers.length}
+        <ShareChart bosses={shareBosses} members={shareMembers} fids={{ missing: 'estimate-share-missing' }} data-fid="estimate-share" />
+      {/if}
       <table class="estimate__table" data-fid="estimate-members">
         <caption class="vh">Effective % per member</caption>
         <thead>
@@ -199,13 +225,19 @@
           </tr>
         </thead>
         <tbody>
-          {#each job.characters as c (c.character_id)}
+          {#each job.characters as c, i (c.character_id)}
             {@const member = memberOf(c)}
             {#if member}
               {@const assumed = assumedCrit(member)}
               <tr>
                 <th scope="row" class="estimate__who"
-                  ><b>{name(c.member_id)}</b> <span class="chardata__sub">{member.ign}</span>{#if assumed}<span class="estimate__who-note estimate__assumed"
+                  >{#if shareMembers.length}<span
+                      class="share__sw share--who-{whoColour(i + 1)}"
+                      class:share__sw--assumed={member.critical_rate_assumed}
+                      aria-hidden="true">{i + 1}</span
+                    >{/if}<b>{name(c.member_id)}</b> <span class="chardata__sub">{member.ign}</span>{#if assumed}<span
+                      class="estimate__who-note estimate__assumed"
+                      data-fid="estimate-assumed"
                       ><Icon name="alert-triangle" />{assumed}</span
                     >{/if}</th
                 >
@@ -217,7 +249,9 @@
               {@const words = estimateErrorText(c.error, c.ign)}
               <tr class="estimate__failed">
                 <th scope="row" class="estimate__who"
-                  ><b>{name(c.member_id)}</b> <span class="chardata__sub">{c.ign}</span><span class="estimate__who-note" title={words.text}
+                  >{#if shareMembers.length}<span class="share__sw share__sw--none" aria-hidden="true"></span>{/if}<b>{name(c.member_id)}</b> <span class="chardata__sub"
+                    >{c.ign}</span
+                  ><span class="estimate__who-note" title={words.text}
                     >failed · {words.lead}<span class="vh"> {words.text}</span></span
                   ></th
                 >
@@ -236,7 +270,10 @@
           {/each}
           {#each job.missing as gap (gap.member_id)}
             <tr class="estimate__missing" data-fid="estimate-missing">
-              <th scope="row" class="estimate__who"><b>{name(gap.member_id)}</b> <span>missing · {MISSING_REASONS[gap.reason]}</span></th>
+              <th scope="row" class="estimate__who"
+                >{#if shareMembers.length}<span class="share__sw share__sw--none" aria-hidden="true"></span>{/if}<b>{name(gap.member_id)}</b>
+                <span>missing · {MISSING_REASONS[gap.reason]}</span></th
+              >
               {#each bosses as boss (boss.token)}<td class="estimate__n">—</td>{/each}
             </tr>
           {/each}

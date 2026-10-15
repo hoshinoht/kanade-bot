@@ -1,0 +1,249 @@
+// The estimate share chart, "Who carries" (`ShareChart.svelte`; boards in
+// docs/research/2026-10-15-estimate-share-chart): one 100% bar per boss, a
+// part per member in their `--who-N` colour with its number, the portal's
+// key and the notes; plus the members table's numbered swatch. Loaded by the
+// chart itself, so the admin run sheet and the portal run pane both get it.
+
+@for $n from 1 through 6 {
+  .share--who-#{$n} {
+    --who: var(--who-#{$n});
+    --who-ink: var(--who-#{$n}-ink);
+  }
+}
+
+.share {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 8px 10px 10px;
+  border-radius: 12px;
+  background: var(--chip-fill);
+}
+
+.share__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 8px;
+}
+
+.share__title {
+  font-family: var(--display);
+  font-size: var(--fs-small);
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.share__sub {
+  color: var(--dim-text);
+  font-size: var(--fs-mini);
+  line-height: 1.35;
+}
+
+.share__rows {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.share__row {
+  display: grid;
+  grid-template-columns: 74px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+}
+
+.share__row--one {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.share__boss {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.2;
+  color: var(--ink);
+
+  abbr {
+    overflow: hidden;
+    text-decoration: none;
+    text-overflow: ellipsis;
+  }
+
+  .mono {
+    color: var(--dim-text);
+    font-weight: 600;
+  }
+}
+
+.share__bar {
+  display: flex;
+  gap: 2px;
+  height: 30px;
+  border-radius: 8px;
+  overflow: clip;
+}
+
+// Nobody has an estimate for this boss: a dashed empty bar, never 0% parts.
+.share__bar--none {
+  align-items: center;
+  justify-content: center;
+  border: 1.5px dashed var(--dim-text);
+  color: var(--dim-text);
+  font-size: var(--fs-mini);
+}
+
+.share__seg {
+  container-type: inline-size;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  min-width: 0;
+  border-radius: 3px;
+  // Light faces bound every part with a 1 px ink edge (`--who-edge`): three
+  // fills are under 3:1 against the row; dark faces need none.
+  box-shadow: inset 0 0 0 1px var(--who-edge);
+  background: var(--who);
+  color: var(--who-ink);
+  font-family: var(--mono);
+  font-size: 11.5px;
+  line-height: 1;
+  white-space: nowrap;
+  overflow: clip;
+
+  &:first-child {
+    border-start-start-radius: 8px;
+    border-end-start-radius: 8px;
+  }
+
+  &:last-child {
+    border-start-end-radius: 8px;
+    border-end-end-radius: 8px;
+  }
+}
+
+.share__seg--assumed {
+  container-name: assumed;
+  background-image: repeating-linear-gradient(135deg, transparent 0 4px, color-mix(in srgb, var(--who-ink) 30%, transparent) 4px 6px);
+}
+
+// The part's own width decides its label: "1·28%", then "1", then nothing
+// (its title and the bar's accessible name still say it).
+@container (max-width: 44px) {
+  .share__pct {
+    display: none;
+  }
+}
+
+@container assumed (max-width: 54px) {
+  .share__pct {
+    display: none;
+  }
+}
+
+@container (max-width: 12px) {
+  .share__n {
+    display: none;
+  }
+}
+
+.share__n {
+  font-weight: 800;
+}
+
+.share__n + .share__pct::before {
+  content: "·";
+  margin-right: 2px;
+  opacity: 0.7;
+}
+
+.share__pct {
+  font-weight: 600;
+}
+
+.share__sw {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 18px;
+  height: 18px;
+  margin-right: 6px;
+  border-radius: 6px;
+  background: var(--who);
+  color: var(--who-ink);
+  font: 800 11px/1 var(--mono);
+  vertical-align: -3px;
+}
+
+.share__sw--assumed {
+  background-image: repeating-linear-gradient(135deg, transparent 0 3px, color-mix(in srgb, var(--who-ink) 30%, transparent) 3px 5px);
+}
+
+.share__sw--none {
+  background: transparent;
+  box-shadow: inset 0 0 0 1.5px var(--dim-text);
+}
+
+.share__notes {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  color: var(--dim-text);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.share__note {
+  display: flex;
+  align-items: center;
+
+  .share__sw {
+    width: 12px;
+    height: 12px;
+    margin-right: 6px;
+    border-radius: 4px;
+  }
+}
+
+.share__hatch {
+  display: inline-block;
+  flex: none;
+  width: 12px;
+  height: 12px;
+  margin-right: 6px;
+  border-radius: 4px;
+  background: var(--dim-text) repeating-linear-gradient(135deg, transparent 0 3px, var(--chip-fill) 3px 5px);
+}
+
+// The portal's key (no members table there): number, colour, name.
+.share__keys {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  color: var(--ink);
+  font-size: var(--fs-mini);
+  font-weight: 600;
+  line-height: 1.35;
+
+  li {
+    display: flex;
+    align-items: center;
+  }
+
+  .share__sw {
+    width: 16px;
+    height: 16px;
+    margin-right: 5px;
+    border-radius: 5px;
+    font-size: 10px;
+  }
+}

@@ -112,7 +112,7 @@ export type SharedCard = { channel: string | null, posted_at: string, cleared_by
 
 export type MemberEstimateLimit = { error: 'member_limited', message: string, next_at: string, };
 
-export type RunPartyCharacters = { run_id: string, slots: Array<PartyCharacterSlot>, character_data: boolean, estimates: boolean, nexon_data: boolean, attribution: string, estimate_label: string, estimate_note: string, };
+export type RunPartyCharacters = { run_id: string, slots: Array<PartyCharacterSlot>, character_data: boolean, estimates: boolean, totals: PartyTotals | null, nexon_data: boolean, attribution: string, estimate_label: string, estimate_note: string, };
 
 export type PartyCharacterSlot = { member: PartyMember, you: boolean, character: PartyCharacter | null, scouter: Array<PartyEstimate> | null, };
 
@@ -125,7 +125,12 @@ export type PartyEstimate = { boss: string, difficulty: Difficulty,
  * The character's share (`effective_percentage`), else the card's
  * percentage.
  */
-percentage: number, rating: string, estimated_minutes: number | null, 
+percentage: number, 
+/**
+ * The character's own share only; `null` when the scouter can't
+ * tell (shares of a party total count only this, never `percentage`).
+ */
+effective_percentage: number | null, rating: string, estimated_minutes: number | null, 
 /**
  * When kanade received it from the scouter.
  */
@@ -140,6 +145,10 @@ critical_rate_assumed: boolean,
  * otherwise, or when the scouter didn't say.
  */
 critical_rate_actual: number | null, };
+
+export type PartyTotals = { fetched_at: string, bosses: Array<PartyTotal>, };
+
+export type PartyTotal = { boss: string, difficulty: Difficulty, combined_percentage: number | null, estimated_minutes: number | null, technically_possible: boolean | null, complete: boolean, };
 
 export type ApiError = { error: string, message: string, };
 
@@ -669,7 +678,12 @@ export type ScouterReading = {
  * The character's share (`effective_percentage`), else the card's
  * percentage.
  */
-percentage: number, rating: string, estimated_minutes: number | null, 
+percentage: number, 
+/**
+ * The character's own share only; `null` when the scouter can't
+ * tell (shares of a party total count only this, never `percentage`).
+ */
+effective_percentage: number | null, rating: string, estimated_minutes: number | null, 
 /**
  * When kanade received it from the scouter.
  */
@@ -941,10 +955,17 @@ inline: boolean, };
 
 /**
  * A reminder card as the bot posts it: the message text (mentions as
- * `<@id>`), its first embed and any further ones (the redesigned day-of
- * card has one per run). Art is a same-origin `/art/` URL.
+ * `<@id>`), the estimate image beneath it, its first embed and any
+ * further ones (the redesigned day-of card has one per run). Art is a
+ * same-origin `/art/` URL.
  */
 export type CardPreview = { content: string, 
+/**
+ * The "Who carries" image a new post attaches between the text and
+ * the embeds; `None` for classic cards, other kinds and while the
+ * roster or cached estimates are off.
+ */
+estimate: EstimateImage | null, 
 /**
  * `#rrggbb`, the embed's colour bar.
  */
@@ -967,6 +988,24 @@ export type EmbedPreview = {
  * `#rrggbb`.
  */
 color: string, title: string | null, description: string | null, fields: Array<CardField>, footer: string | null, thumbnail: string | null, image: string | null, };
+
+/**
+ * The estimate share chart of a previewed card, drawn from the estimates
+ * cached now by the delivery code that posts it.
+ */
+export type EstimateImage = { 
+/**
+ * The PNG: `GET /api/admin/reminders/{id}/estimate.png` (same origin).
+ */
+url: string, 
+/**
+ * The attachment's description: the same facts by IGN.
+ */
+alt: string, 
+/**
+ * CSS px; the PNG has twice as many pixels each way.
+ */
+width: number, height: number, };
 
 /**
  * `GET /api/admin/reminders/{id}/preview`: the row and its card; `card` is

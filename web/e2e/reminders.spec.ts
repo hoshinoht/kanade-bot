@@ -225,6 +225,16 @@ test('reminders: the redesigned message style previews one embed per run with in
   const card = page.locator('aside.side-pane--reminder').getByRole('article', { name: 'The card as posted in Discord' });
   await expect(card.locator('.dcard__content .dcard__line--sub')).toBeVisible();
   await expect(card.locator('.dcard__embed').first().locator('.dcard__title')).toBeVisible();
+  // The "Who carries" image sits under the text and above the embeds, as Discord shows the
+  // attachment, with its description as alt text; the PNG itself loads.
+  const estimate = card.locator('img.dcard__attachment');
+  await expect(estimate).toHaveAttribute('alt', /\. As of \w{3} \d{1,2} \w{3} \d{2}:\d{2}\.$/);
+  await expect(estimate).toHaveAttribute('src', /^\/api\/admin\/reminders\/[^/]+\/estimate\.png$/);
+  await expect.poll(() => estimate.evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth)).toBe(1120);
+  const [text, image, embed] = await Promise.all(
+    [card.locator('.dcard__content'), estimate, card.locator('.dcard__embed').first()].map(async (el) => (await el.boundingBox())!.y),
+  );
+  expect(text < image && image < embed).toBe(true);
   const inline = card.locator('.dcard__embed').first().locator('.dcard__field--inline');
   await expect(inline).toHaveCount(3);
   // In / Waiting / Out sit side by side.

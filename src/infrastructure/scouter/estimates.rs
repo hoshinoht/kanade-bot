@@ -855,6 +855,15 @@ impl Estimates {
             .map(|(member, fetched_at)| (member.clone(), fetched_at))
     }
 
+    /// The party total (scouter boss key → total) of the last whole-party
+    /// lookup of exactly `igns`, still in memory. Never starts a lookup.
+    pub fn cached_party(&self, igns: &[RosterIgn]) -> Option<BTreeMap<String, Combined>> {
+        self.shared
+            .inner()
+            .cached(&set_key(igns.iter()), true, Instant::now())
+            .and_then(|cached| cached.estimate.combined.clone())
+    }
+
     /// The running job, whatever it looks up.
     pub fn running(&self) -> Option<Job> {
         let inner = self.shared.inner();
@@ -997,6 +1006,48 @@ mod tests {
         assert!(estimates.cached(&ren).is_some());
         tokio::time::advance(Duration::from_secs(1)).await;
         assert_eq!(estimates.cached(&ren), None, "expired");
+        assert!(estimates.running().is_none(), "reading starts nothing");
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_party_total_is_read_by_its_exact_ign_set_and_shares_use_effective_only() {
+        let estimates = estimates(Arc::new(Mutex::new(at(4))));
+        let (ren, mika) = (ign("RenShade"), ign("MikaBish"));
+        let total = Combined {
+            combined_percentage: Some(112.4),
+            estimated_minutes: Some(26.7),
+            technically_possible: Some(true),
+            complete: true,
+            issues: BTreeMap::new(),
+        };
+        let mut party = member("MikaBish", 52.0);
+        party
+            .bosses
+            .get_mut("hard_limbo")
+            .unwrap()
+            .effective_percentage = None;
+        estimates.shared.inner().keep(
+            set_key([&mika, &ren].into_iter()),
+            Estimate {
+                members: vec![member("RenShade", 60.4), party.clone()],
+                combined: Some(BTreeMap::from([("hard_limbo".into(), total.clone())])),
+            },
+            at(4),
+            Instant::now(),
+        );
+        assert_eq!(
+            estimates.cached_party(&[ign("renshade"), mika.clone()]),
+            Some(BTreeMap::from([("hard_limbo".into(), total)])),
+            "any order and case"
+        );
+        assert_eq!(estimates.cached_party(&[ren]), None, "a different set");
+        assert_eq!(member("RenShade", 60.4).effective("HLimbo"), Some(60.4));
+        assert_eq!(
+            party.effective("HLimbo"),
+            None,
+            "never the card's whole-party percentage"
+        );
+        assert_eq!(member("RenShade", 60.4).effective("NLimbo"), None);
         assert!(estimates.running().is_none(), "reading starts nothing");
     }
 

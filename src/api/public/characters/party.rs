@@ -1,7 +1,8 @@
 //! `GET /api/public/runs/{id}/characters`: on a run the caller is on, the
 //! character each party member brings (as the admin's `…/characters`
 //! resolves it) with its IGN, class and roster level, and each one's cached
-//! scouter reading per boss of the run (never looked up here). NEXON
+//! scouter reading per boss of the run (never looked up here), plus the
+//! party totals of the run's newest finished lookup. NEXON
 //! data shows only on the caller's own slot: the notice names admins and
 //! share-card channels as who sees it, never the party (others see the
 //! roster level, which holds NEXON's copied level). No combat power,
@@ -19,7 +20,6 @@ use super::roster;
 use crate::{
     api::{
         admin::{
-            character_data::estimates::lookup_name,
             characters::party,
             context::{context, roster as directory},
             write::{Refusal, run_not_found, state},
@@ -27,16 +27,21 @@ use crate::{
         auth::member::MemberSession,
         dto::{
             self, Art,
-            estimates::{LABEL, NOTE},
+            estimates::{LABEL, NOTE, run_totals},
             public::{
-                PartyCharacter, PartyCharacterSlot, PartyEstimate, PartyMember, RunPartyCharacters,
+                PartyCharacter, PartyCharacterSlot, PartyEstimate, PartyMember, PartyTotal,
+                PartyTotals, RunPartyCharacters,
             },
             readiness::reading,
         },
         listeners::Site,
         public::write::path_id,
     },
-    domain::chardata::{ATTRIBUTION, Requirement, date_text},
+    domain::{
+        catalog::BossTable,
+        chardata::{ATTRIBUTION, Requirement, date_text},
+    },
+    infrastructure::scouter::{Estimates, RosterIgn, Target},
 };
 
 pub(super) async fn read(
@@ -107,7 +112,7 @@ pub(super) async fn read(
             None => None,
         };
         let scouter = estimates.zip(brought).map(|(estimates, character)| {
-            lookup_name(character)
+            RosterIgn::lookup(character)
                 .ok()
                 .and_then(|ign| estimates.cached(&ign))
                 .map(|(member, fetched_at)| {
@@ -134,15 +139,50 @@ pub(super) async fn read(
             scouter,
         });
     }
+    let totals =
+        estimates.and_then(|estimates| party_totals(estimates, &run.id, &bosses, &state.catalog));
     Ok(Json(RunPartyCharacters {
         run_id: run.id,
         slots: out,
         character_data: module.is_some(),
         estimates: estimates.is_some(),
+        totals,
         nexon_data,
         attribution: ATTRIBUTION,
         estimate_label: LABEL,
         estimate_note: NOTE,
     })
     .into_response())
+}
+
+/// The totals of the run's newest lookup once it is done (what the admin's
+/// Estimate panel shows), for the run's bosses as they are now; never
+/// starts one.
+fn party_totals(
+    estimates: &Estimates,
+    run_id: &str,
+    bosses: &[Requirement],
+    catalog: &BossTable,
+) -> Option<PartyTotals> {
+    let job = estimates.latest(&Target::Run {
+        run_id: run_id.to_owned(),
+        bosses: Vec::new(),
+    })?;
+    let (fetched_at, rows) = run_totals(&job, catalog)?;
+    let bosses = bosses
+        .iter()
+        .filter_map(|boss| {
+            let token = format!("{}{}", boss.difficulty.to_ascii_uppercase(), boss.boss);
+            let row = rows.iter().find(|row| row.boss == token)?;
+            Some(PartyTotal {
+                boss: boss.boss.clone(),
+                difficulty: boss.difficulty.clone(),
+                combined_percentage: row.combined_percentage,
+                estimated_minutes: row.estimated_minutes,
+                technically_possible: row.technically_possible,
+                complete: row.complete,
+            })
+        })
+        .collect();
+    Some(PartyTotals { fetched_at, bosses })
 }

@@ -1065,6 +1065,7 @@ async fn the_party_sees_roster_levels_and_estimates_never_another_members_nexon_
         json!([false, null, null])
     );
     assert_eq!(party["nexon_data"], true);
+    assert_eq!(party["totals"], Value::Null, "no lookup of the run yet");
     // No combat power anywhere, nor link state.
     let text = party.to_string();
     for word in ["27182818", "combat", "linked", "consent", "pending"] {
@@ -1088,7 +1089,25 @@ async fn the_party_sees_roster_levels_and_estimates_never_another_members_nexon_
         let estimates = slot["scouter"].as_array().unwrap();
         assert!(!estimates.is_empty(), "{slot}");
         assert!(estimates.iter().all(|estimate| estimate["boss"] == "Kalos"));
+        // The character's own share, apart from the card's party figure.
+        assert_eq!(
+            fields(&estimates[0], &["percentage", "effective_percentage"]),
+            json!([9.0, 9.0])
+        );
     }
+    // The run lookup's party total: the third member brings no character.
+    assert_eq!(
+        party["totals"]["bosses"],
+        json!([{
+            "boss": "Kalos",
+            "difficulty": "x",
+            "combined_percentage": 18.0,
+            "estimated_minutes": 3000.0 / 18.0,
+            "technically_possible": false,
+            "complete": false,
+        }])
+    );
+    assert!(party["totals"]["fetched_at"].is_string());
     assert_eq!(chars.scouter.as_ref().unwrap().targets().len(), seen);
 
     // Not on the run: the same 404 as a run that does not exist.

@@ -243,6 +243,8 @@ pub fn card_kit(
         run_lengths: Some(Arc::new(move || {
             lengths.borrow().settings.run_lengths.clone()
         })),
+        // Set by the Discord side while both modules are on.
+        estimates: None,
     }
 }
 

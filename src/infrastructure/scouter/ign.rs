@@ -1,6 +1,7 @@
 //! The only name the scouter is ever sent.
 
-use crate::domain::characters::Character;
+use super::MissingReason;
+use crate::domain::characters::{Character, DEFAULT_WORLD};
 
 /// A roster character's IGN, as an admin entered it on the roster, within
 /// the scouter's rule (1-32 letters or digits; roster IGNs are ASCII).
@@ -16,6 +17,15 @@ impl RosterIgn {
         let ign = character.ign.as_str();
         ((1..=32).contains(&ign.len()) && ign.bytes().all(|byte| byte.is_ascii_alphanumeric()))
             .then(|| Self(ign.to_owned()))
+    }
+
+    /// What `character` is to the scouter: an IGN to look up, or why not.
+    /// Lookups and every cached read use the same rule.
+    pub fn lookup(character: &Character) -> Result<Self, MissingReason> {
+        if character.world != DEFAULT_WORLD {
+            return Err(MissingReason::OtherRegion);
+        }
+        Self::of(character).ok_or(MissingReason::UnsupportedIgn)
     }
 
     pub fn as_str(&self) -> &str {
