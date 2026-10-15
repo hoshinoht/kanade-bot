@@ -864,6 +864,22 @@ impl Estimates {
             .and_then(|cached| cached.estimate.combined.clone())
     }
 
+    /// Whether a queued or running job looks up any of `igns`: their
+    /// readings are still coming in, so what is cached is only part of
+    /// the answer. Never starts a lookup.
+    pub fn looking_up(&self, igns: &[RosterIgn]) -> bool {
+        self.shared
+            .inner()
+            .jobs
+            .iter()
+            .filter(|kept| kept.until.is_none())
+            .flat_map(|kept| &kept.job.subjects)
+            .any(|subject| {
+                igns.iter()
+                    .any(|ign| ign.as_str().eq_ignore_ascii_case(subject.ign.as_str()))
+            })
+    }
+
     /// The running job, whatever it looks up.
     pub fn running(&self) -> Option<Job> {
         let inner = self.shared.inner();
