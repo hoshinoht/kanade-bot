@@ -4,12 +4,14 @@
 //! a gateway that never connects: [`bot`]) over a temporary SQLite store,
 //! with the harness routes of [`controls`] in front.
 //!
-//! `--admin-port A --public-port P --web-dir PATH [--now RFC3339]` serves
-//! `127.0.0.1:A` and `127.0.0.1:P` until SIGINT/SIGTERM, on a clock that
-//! stands still at `--now` (default `2026-09-29T04:00:00Z`, Tue 12:00 in the
-//! guild's Kuala Lumpur) until `/__e2e/clock` moves it. It reads no
-//! environment and no private file; everything it writes lives under a 0700
-//! directory in the temp dir, removed on exit.
+//! `--admin-port A --public-port P --web-dir PATH [--now RFC3339] [--boss-dir
+//! PATH]` serves `127.0.0.1:A` and `127.0.0.1:P` until SIGINT/SIGTERM, on a
+//! clock that stands still at `--now` (default `2026-09-29T04:00:00Z`, Tue
+//! 12:00 in the guild's Kuala Lumpur) until `/__e2e/clock` moves it, with boss
+//! art from `--boss-dir` (default the placeholder `web/e2e/fixtures/boss`;
+//! `KANADE_REAL_ART=1` reviews point it at the private repo-root `boss/`). It
+//! reads no environment; everything it writes lives under a 0700 directory in
+//! the temp dir, removed on exit.
 
 mod bot;
 mod controls;
@@ -60,10 +62,12 @@ struct Args {
     public_port: u16,
     web_dir: PathBuf,
     now: DateTime<Utc>,
+    boss_dir: Option<PathBuf>,
 }
 
 fn parse(mut values: impl Iterator<Item = String>) -> Result<Args, Fail> {
-    let (mut admin_port, mut public_port, mut web_dir, mut now) = (None, None, None, None);
+    let (mut admin_port, mut public_port, mut web_dir, mut now, mut boss_dir) =
+        (None, None, None, None, None);
     while let Some(flag) = values.next() {
         let value = values.next().ok_or_else(|| format!("missing {flag}"))?;
         let slot = match flag.as_str() {
@@ -71,6 +75,7 @@ fn parse(mut values: impl Iterator<Item = String>) -> Result<Args, Fail> {
             "--public-port" => &mut public_port,
             "--web-dir" => &mut web_dir,
             "--now" => &mut now,
+            "--boss-dir" => &mut boss_dir,
             _ => return Err(format!("unknown argument {flag}").into()),
         };
         if slot.replace(value).is_some() {
@@ -97,6 +102,7 @@ fn parse(mut values: impl Iterator<Item = String>) -> Result<Args, Fail> {
         public_port,
         web_dir: fs::canonicalize(web_dir.ok_or("missing --web-dir")?)?,
         now,
+        boss_dir: boss_dir.map(fs::canonicalize).transpose()?,
     })
 }
 
@@ -238,7 +244,11 @@ fn config(
         ("KANADE_WEB_DIR", args.web_dir.display().to_string()),
         (
             "KANADE_BOSS_DIR",
-            args.web_dir.join("e2e/fixtures/boss").display().to_string(),
+            args.boss_dir
+                .clone()
+                .unwrap_or_else(|| args.web_dir.join("e2e/fixtures/boss"))
+                .display()
+                .to_string(),
         ),
         (
             "KANADE_CATALOG_FILE",

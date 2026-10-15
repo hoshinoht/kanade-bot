@@ -1,3 +1,5 @@
+import { realpathSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import { defineConfig } from '@playwright/test';
 import { MOTION, PORTED } from './e2e/ported';
 
@@ -11,6 +13,11 @@ import { MOTION, PORTED } from './e2e/ported';
 // config (base+50..). Servers start one after another, so the first
 // `cargo run` builds the release example and the rest only start it.
 export const PINNED_NOW = '2026-09-29T04:00:00Z';
+// As the mock config: `KANADE_REAL_ART=1` serves the local, git-ignored
+// repo-root boss/ art (visual review and fidelity only), else the fixtures.
+// The server serves no file through a symlink out of its art root, and a
+// worktree links boss/portraits in from the main checkout: point at the real dir.
+const BOSS_DIR = process.env.KANADE_REAL_ART === '1' ? ` --boss-dir ${dirname(realpathSync(join(import.meta.dirname, '..', 'boss', 'portraits')))}` : '';
 const MAX_WORKERS = 5;
 const workers = Number(process.env.KANADE_E2E_WORKERS ?? '4');
 if (!Number.isInteger(workers) || workers < 1 || workers > MAX_WORKERS)
@@ -45,7 +52,7 @@ export default defineConfig({
     const adminPort = base + 20 + 2 * i;
     const publicPort = adminPort + 1;
     return {
-      command: `cargo run --quiet --locked --offline --release --example e2e_server --features test-support -- --admin-port ${adminPort} --public-port ${publicPort} --web-dir web --now ${PINNED_NOW}`,
+      command: `cargo run --quiet --locked --offline --release --example e2e_server --features test-support -- --admin-port ${adminPort} --public-port ${publicPort} --web-dir web --now ${PINNED_NOW}${BOSS_DIR}`,
       cwd: '..',
       url: `http://127.0.0.1:${adminPort}/__e2e/whoami`,
       // Never drive a stray server: the fixture also checks `/__e2e/whoami`.

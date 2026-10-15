@@ -110,4 +110,6 @@ export const PORTED: readonly string[] = [
   'public-portal.spec.ts',
   'public-requests.spec.ts',
   'screens.spec.ts',
+  // Lane Fidelity.
+  'fidelity.spec.ts',
 ];
