@@ -1,17 +1,19 @@
-//! The browser e2e server (`web/playwright.harness.config.ts`): the real
-//! `kanade` admin and public routers, composed as `serve` composes them
-//! (`compose_for_tests`, then serve's Discord side over a fake transport and
-//! a gateway that never connects: [`bot`]) over a temporary SQLite store,
-//! with the harness routes of [`controls`] in front.
+//! The browser e2e server (`web/playwright.config.ts`) and the local dev
+//! server (`bun run serve:dev` in `web/`): the real `kanade` admin and
+//! public routers, composed as `serve` composes them (`compose_for_tests`,
+//! then serve's Discord side over a fake transport and a gateway that never
+//! connects: [`bot`]) over a temporary SQLite store, with the harness routes
+//! of [`controls`] in front.
 //!
 //! `--admin-port A --public-port P --web-dir PATH [--now RFC3339] [--boss-dir
-//! PATH]` serves `127.0.0.1:A` and `127.0.0.1:P` until SIGINT/SIGTERM, on a
-//! clock that stands still at `--now` (default `2026-09-29T04:00:00Z`, Tue
-//! 12:00 in the guild's Kuala Lumpur) until `/__e2e/clock` moves it, with boss
-//! art from `--boss-dir` (default the placeholder `web/e2e/fixtures/boss`;
-//! `KANADE_REAL_ART=1` reviews point it at the private repo-root `boss/`). It
-//! reads no environment; everything it writes lives under a 0700 directory in
-//! the temp dir, removed on exit.
+//! PATH]` serves `127.0.0.1:A` and `127.0.0.1:P` until SIGINT/SIGTERM. With
+//! `--now` (e2e: `2026-09-29T04:00:00Z`, Tue 12:00 in the guild's Kuala
+//! Lumpur) the clock stands still there until `/__e2e/clock` moves it;
+//! without it the clock is live (the seed is relative to the current boss
+//! week). Boss art comes from `--boss-dir` (default the placeholder
+//! `web/e2e/fixtures/boss`; `KANADE_REAL_ART=1` reviews point it at the
+//! private repo-root `boss/`). It reads no environment; everything it writes
+//! lives under a 0700 directory in the temp dir, removed on exit.
 
 mod bot;
 mod controls;
@@ -48,7 +50,6 @@ use controls::{Shared, SharedClock, Start};
 
 pub type Fail = Box<dyn Error + Send + Sync>;
 pub const LOOPBACK: IpAddr = IpAddr::V4(Ipv4Addr::LOCALHOST);
-const DEFAULT_NOW: &str = "2026-09-29T04:00:00Z";
 /// How long the listeners may drain on shutdown.
 const DRAIN: Duration = Duration::from_secs(5);
 /// The admin edge's shared secret (`X-Kanade-Edge-Auth`): whoami hands it
@@ -61,7 +62,8 @@ struct Args {
     admin_port: u16,
     public_port: u16,
     web_dir: PathBuf,
-    now: DateTime<Utc>,
+    /// `None`: the live clock.
+    now: Option<DateTime<Utc>>,
     boss_dir: Option<PathBuf>,
 }
 
@@ -94,9 +96,13 @@ fn parse(mut values: impl Iterator<Item = String>) -> Result<Args, Fail> {
     if admin_port == public_port {
         return Err("--admin-port and --public-port must differ".into());
     }
-    let now = DateTime::parse_from_rfc3339(now.as_deref().unwrap_or(DEFAULT_NOW))
-        .map_err(|_| "--now must be an RFC 3339 instant")?
-        .with_timezone(&Utc);
+    let now = now
+        .map(|now| {
+            DateTime::parse_from_rfc3339(&now)
+                .map(|now| now.with_timezone(&Utc))
+                .map_err(|_| "--now must be an RFC 3339 instant")
+        })
+        .transpose()?;
     Ok(Args {
         admin_port,
         public_port,
@@ -306,7 +312,7 @@ async fn main() -> Result<(), Fail> {
             ),
         ],
     });
-    let clock = SharedClock::new(args.now);
+    let clock = args.now.map_or_else(SharedClock::live, SharedClock::pinned);
     let world = live::World::new(
         config,
         clock.clock(),

@@ -1,39 +1,30 @@
 import { expect, test as base, type APIRequestContext, type APIResponse, type BrowserContext, type Locator, type Page, type Route } from '@playwright/test';
 
 /**
- * Which server this run drives: the real-API e2e server
- * (`playwright.harness.config.ts`, the specs listed in `ported.ts` plus
- * `harness/`) or the dev mock (`playwright.config.ts`, the rest). Each config
- * sets `KANADE_E2E_TARGET` before any worker starts.
- */
-export const HARNESS = process.env.KANADE_E2E_TARGET === 'harness';
-
-/**
- * This worker's own server (see the port schemes in the two configs): admin on
- * base + 2 × parallel index, public one above. Workers set
+ * This worker's own e2e server (see the port scheme in playwright.config.ts):
+ * admin on base + 2 × parallel index, public one above. Workers set
  * TEST_PARALLEL_INDEX before any test file loads.
  */
 function origins(): { admin: string; public: string } {
-  const base = HARNESS ? (process.env.KANADE_E2E_HARNESS_BASE ?? '4393') : (process.env.KANADE_E2E_ORIGIN_BASE ?? '4373');
-  const port = Number(base) + 2 * Number(process.env.TEST_PARALLEL_INDEX ?? '0');
+  const port = Number(process.env.KANADE_E2E_ORIGIN_BASE ?? '4373') + 2 * Number(process.env.TEST_PARALLEL_INDEX ?? '0');
   return { admin: `http://127.0.0.1:${port}`, public: `http://127.0.0.1:${port + 1}` };
 }
 export const ADMIN = origins().admin;
 export const PUBLIC = origins().public;
-/** Must match both configs; the fixture refuses a server pinned elsewhere. */
+/** Must match playwright.config.ts; every reset checks the server clock is back at it. */
 export const PINNED_NOW = '2026-09-29T04:00:00Z';
 export const REAL_ART = process.env.KANADE_REAL_ART === '1';
 /** First-load page headings under the pinned clock: admin's week hides its
  * done and cancelled runs (v4); the public portal opens signed out on Sign in. */
 export const HEADING = { admin: '7 runs', public: 'Sign in to see the boss week' } as const;
-/** The member a public sign-in becomes on either server, and the admin the mock always is: the seed's Asahi. */
+/** The member a public sign-in becomes, and the admin every spec browses as: the seed's Asahi. */
 export const ASAHI_SNOWFLAKE = '100000000000001001';
 
 /** The harness's fake Discord page (`examples/e2e_server/fakes/discord.rs`). */
 const FAKE_DISCORD_PATH = '/__e2e/discord';
 
 /**
- * Harness only: who this browser is at Discord, for the fake Discord page: a
+ * Who this browser is at Discord, for the fake Discord page: a
  * seeded member's snowflake (Asahi by default), or one of the page's own
  * choices: `eligible` (Mikan: a bosser, not staff), `ineligible` (Plain: in
  * the guild without the bossing role), `deny` (cancelled at Discord). The
@@ -62,7 +53,7 @@ async function discordSignIn(page: Page, origin: string, realm: 'admin' | 'publi
   expect((await page.request.get(`${origin}/api/${realm}/session`)).status(), `the ${realm} session after sign-in`).toBe(200);
 }
 
-/** Harness only: moves the server clock by `seconds` (`/__e2e/clock`). */
+/** Moves the server clock by `seconds` (`/__e2e/clock`). */
 async function moveClock(seconds: number): Promise<void> {
   const moved = await fetch(`${ADMIN}/__e2e/clock`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ advance_s: seconds }) });
   expect(moved.status, 'the clock change').toBe(200);
@@ -72,35 +63,28 @@ async function moveClock(seconds: number): Promise<void> {
 const STALE_S = 35 * 60;
 
 /**
- * Signs this page's browser context in on the public origin as Asahi: the
- * mock's `/__mock/public/sign-in` sets the cookie without Discord, the
- * harness runs the real Discord flow. `stale` makes it a sign-in older than
- * the fresh-write window: the harness signs in with the server clock 35
- * minutes back, then puts it back, so every later read (session and devices
- * alike) dates it the same; the mock ages the session it set.
+ * Signs this page's browser context in on the public origin as Asahi through
+ * the real Discord flow. `stale` makes it a sign-in older than the
+ * fresh-write window: the server clock goes 35 minutes back for the sign-in,
+ * then forward again, so every later read (session and devices alike) dates
+ * it the same.
  */
 export async function signInPublic(page: Page, options: { stale?: boolean } = {}): Promise<void> {
-  if (HARNESS) {
-    if (!options.stale) return discordSignIn(page, PUBLIC, 'public');
-    await moveClock(-STALE_S);
-    try {
-      await discordSignIn(page, PUBLIC, 'public');
-    } finally {
-      await moveClock(STALE_S);
-    }
-    return;
+  if (!options.stale) return discordSignIn(page, PUBLIC, 'public');
+  await moveClock(-STALE_S);
+  try {
+    await discordSignIn(page, PUBLIC, 'public');
+  } finally {
+    await moveClock(STALE_S);
   }
-  const response = await page.request.post(`${PUBLIC}/__mock/public/sign-in`);
-  expect(response.status()).toBe(204);
-  if (options.stale) expect((await page.request.post(`${PUBLIC}/__mock/public/unfresh`)).ok()).toBe(true);
 }
 
-/** Harness only: `/__e2e/whoami` on the admin origin. */
+/** `/__e2e/whoami` on the admin origin. */
 async function whoami(): Promise<unknown> {
   return (await fetch(`${ADMIN}/__e2e/whoami`)).json();
 }
 
-/** Harness only: the break-glass admin token (`KANADE_ADMIN_TOKEN_FILE`). */
+/** The break-glass admin token (`KANADE_ADMIN_TOKEN_FILE`). */
 export async function adminToken(): Promise<string> {
   const token = field(field(await whoami(), 'break_glass'), 'token');
   if (typeof token !== 'string') throw new Error('whoami has no break-glass token');
@@ -108,7 +92,7 @@ export async function adminToken(): Promise<string> {
 }
 
 /**
- * Harness only: signs this context in on the admin origin, replacing its
+ * Signs this context in on the admin origin, replacing its
  * session: `discord` through the fake Discord page as `account` (a staff
  * member: Asahi), `token` with the break-glass token, `tailscale` as the
  * allowed Tailscale login through the trusted edge. The edge stamps every
@@ -139,37 +123,37 @@ export async function signOutAdmin(page: Page): Promise<void> {
   expect(response.ok(), `the sign-out (${response.status()})`).toBe(true);
 }
 
-/** Harness only: the browser forgets its sessions (both origins' cookies), as if signed out behind the page's back. */
+/** The browser forgets its sessions (both origins' cookies), as if signed out behind the page's back. */
 export async function dropSessions(context: BrowserContext): Promise<void> {
   await context.clearCookies();
 }
 
-/** Harness only: the server ends every member-portal session (expired, or signed out elsewhere). */
+/** The server ends every member-portal session (expired, or signed out elsewhere). */
 export async function endMemberSessions(): Promise<void> {
   const ended = await fetch(`${ADMIN}/__e2e/public/end`, { method: 'POST' });
   expect(ended.status, await ended.text()).toBe(200);
 }
 
-/** Harness only: restarts the server with these optional modules (serve reads them once, at startup). */
+/** Restarts the server with these optional modules (serve reads them once, at startup). */
 export async function setModules(modules: { roster?: boolean; character_data?: boolean }): Promise<void> {
   const set = await fetch(`${ADMIN}/__e2e/modules`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(modules) });
   expect(set.status, await set.text()).toBe(200);
 }
 
-/** Harness only: the canned governor groups Limits shows (`three`: cloud, local, legacy; `default`: one gateway group). */
+/** The canned governor groups Limits shows (`three`: cloud, local, legacy; `default`: one gateway group). */
 export async function setLimitGroups(groups: 'three' | 'default'): Promise<void> {
   const set = await fetch(`${ADMIN}/__e2e/limits`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ groups }) });
   expect(set.status).toBe(204);
 }
 
-/** Harness only: a lane control that answers 204 (`examples/e2e_server/controls_p5.rs`). */
+/** A harness control that answers 204 (`examples/e2e_server/controls_p5.rs`). */
 async function control(path: string, body: unknown): Promise<void> {
   const set = await fetch(`${ADMIN}${path}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
   expect(set.status, `${path} ${JSON.stringify(body)}: ${await set.text()}`).toBe(204);
 }
 
 /**
- * Harness only: what later scouter lookups do (`ok`, `paced`: each slower than the page's poll,
+ * What later scouter lookups do (`ok`, `paced`: each slower than the page's poll,
  * `assumed`: `ign`'s result assumes 100% critical rate, `hold`, or the next single lookup fails:
  * `busy`, `critical_rate`, `manual_check`, `failed`, `timeout`), `queued` (two other members'
  * lookups wait, then finish one by one once a lookup is queued behind them) or `off` (a restart
@@ -180,19 +164,19 @@ export async function setEstimates(scenario: string, ign?: string): Promise<void
 }
 
 /**
- * Harness only: Config's character-data health through real calls on a restart (`ok`, `alert`,
+ * Config's character-data health through real calls on a restart (`ok`, `alert`,
  * `refused`, `setup`: no NEXON key and no scouter URL), or `budget`: the day's NEXON calls spent.
  */
 export async function setCharacterData(health: 'ok' | 'alert' | 'refused' | 'setup' | 'budget'): Promise<void> {
   await control('/__e2e/character-data', { health });
 }
 
-/** Harness only: Asahi's own characters as the member boards draw them (`board`, ids `ch-b1`…`ch-b5`), or none. */
+/** Asahi's own characters as the member boards draw them (`board`, ids `ch-b1`…`ch-b5`), or none. */
 export async function setMemberCharacters(roster: 'board' | 'empty'): Promise<void> {
   await control('/__e2e/public/characters', { roster });
 }
 
-/** Harness only: moves the server clock on by `seconds` (it stands still otherwise). */
+/** Moves the server clock on by `seconds` (it stands still otherwise). */
 export async function advanceClock(seconds: number): Promise<void> {
   await moveClock(seconds);
 }
@@ -200,8 +184,8 @@ export async function advanceClock(seconds: number): Promise<void> {
 /**
  * The real server's session cookies are `__Host-` (Secure). Chrome sends
  * Secure cookies to http://127.0.0.1, but Playwright's API requests send them
- * over http only to `localhost`, and the harness origins are 127.0.0.1. So on
- * the harness, every `context.request` (= `page.request`) call carries the
+ * over http only to `localhost`, and the e2e origins are 127.0.0.1. So
+ * every `context.request` (= `page.request`) call carries the
  * context's 127.0.0.1 cookies itself; Playwright still stores the Set-Cookie
  * answers. An explicit `Cookie` header from the caller wins.
  */
@@ -266,20 +250,20 @@ function field(body: unknown, key: string): unknown {
   return body !== null && typeof body === 'object' ? Reflect.get(body, key) : undefined;
 }
 
-/** The CSP report sinks: the harness keeps one for both origins, the mock one per origin. */
-const REPORT_SINKS = HARNESS ? [`${ADMIN}/__e2e/reports`] : [ADMIN, PUBLIC].map((o) => `${o}/__mock/reports`);
+/** The CSP report sink the server keeps for both origins. */
+const REPORTS = `${ADMIN}/__e2e/reports`;
 
 async function serverReports(): Promise<unknown[]> {
-  const lists = await Promise.all(REPORT_SINKS.map(async (url) => (await (await fetch(url)).json()) as unknown[]));
-  return lists.flat();
+  return (await (await fetch(REPORTS)).json()) as unknown[];
 }
 
 /**
- * Fails loudly unless both origins are this worker's server on the suite's
- * pinned clock. On the harness, answers Asahi's Discord admin session cookie
- * every template copy holds (whoami's `break_glass` has the token session too).
+ * Fails loudly unless both origins are this worker's e2e server. Answers
+ * Asahi's Discord admin session cookie every template copy holds (whoami's
+ * `break_glass` has the token session too). The clock is checked after the
+ * reset, which puts it back.
  */
-async function verifyServer(): Promise<{ name: string; value: string } | undefined> {
+async function verifyServer(): Promise<{ name: string; value: string }> {
   let cookie: { name: string; value: string } | undefined;
   for (const [origin, kind] of [
     [ADMIN, 'admin'],
@@ -287,27 +271,21 @@ async function verifyServer(): Promise<{ name: string; value: string } | undefin
   ] as const) {
     let who: unknown;
     try {
-      who = await (await fetch(`${origin}/${HARNESS ? '__e2e' : '__mock'}/whoami`)).json();
+      who = await (await fetch(`${origin}/__e2e/whoami`)).json();
     } catch {
       /* reported below */
     }
-    const ours = HARNESS ? field(who, 'server') === 'kanade-e2e-server' : field(who, 'mock') === 'kanade-pwa-mock';
-    if (!ours || field(who, 'origin') !== kind)
-      throw new Error(
-        `${origin} is not the e2e ${HARNESS ? 'server' : 'mock'} (${JSON.stringify(who)}); expected its ${kind} origin. ` +
-          'Is something else on the e2e ports?',
-      );
-    // The harness clock moves only on request, and a reset puts it back: checked after the reset.
-    if (!HARNESS && field(who, 'now') !== PINNED_NOW) throw new Error(`${origin} is a pwa-mock pinned at ${JSON.stringify(field(who, 'now'))}, not ${PINNED_NOW}`);
+    if (field(who, 'server') !== 'kanade-e2e-server' || field(who, 'origin') !== kind)
+      throw new Error(`${origin} is not the e2e server (${JSON.stringify(who)}); expected its ${kind} origin. Is something else on the e2e ports?`);
     const admin = field(who, 'admin_cookie');
     const name = field(admin, 'name');
     const value = field(admin, 'value');
-    if (HARNESS && kind === 'admin') {
+    if (kind === 'admin') {
       if (typeof name !== 'string' || typeof value !== 'string') throw new Error(`${origin}/__e2e/whoami has no admin_cookie (${JSON.stringify(who)})`);
       cookie = { name, value };
     }
   }
-  return cookie;
+  return cookie!;
 }
 
 /**
@@ -320,12 +298,8 @@ export async function csrf(request: APIRequestContext): Promise<Record<string, s
   return { 'X-Kanade-CSRF': session.headers()['x-kanade-csrf'] ?? '', Origin: ADMIN };
 }
 
-/** Puts the server back at the seed: the harness restarts over a fresh template copy (its clock back at the pinned instant). */
+/** Puts the server back at the seed: a restart over a fresh template copy, its clock back at the pinned instant. */
 export async function resetWeek(): Promise<void> {
-  if (!HARNESS) {
-    await fetch(`${ADMIN}/api/admin/reset`, { method: 'POST' });
-    return;
-  }
   const reset = await fetch(`${ADMIN}/__e2e/reset`, { method: 'POST' });
   const body: unknown = reset.status === 200 ? await reset.json() : await reset.text();
   expect(reset.status, JSON.stringify(body)).toBe(200);
@@ -383,21 +357,18 @@ export async function settle(page: Page, timeout = 2_000): Promise<void> {
 export const test = base.extend<{ cspControl: boolean; csp: Sink }>({
   /** Positive control: a test that deliberately violates the policy sets this. */
   cspControl: [false, { option: true }],
-  // On the harness a spec's own `request` is the context's, so it carries the admin session the
-  // fixture adds (the real API refuses an anonymous admin call; the mock allowed one).
-  request: async ({ request, context }, use) => use(HARNESS ? context.request : request),
+  // A spec's own `request` is the context's, so it carries the admin session the fixture adds
+  // (the real API refuses an anonymous admin call).
+  request: async ({ context }, use) => use(context.request),
   csp: [
     async ({ page, context, cspControl }, use) => {
       const admin = await verifyServer();
       await resetWeek();
-      await Promise.all(REPORT_SINKS.map((url) => fetch(url, { method: 'DELETE' })));
-      // The harness's admin session (Asahi's Discord sign-in, as the mock's admin always is), as a browser that
-      // signed in holds it (the mock needs none).
+      await fetch(REPORTS, { method: 'DELETE' });
+      // The server's admin session (Asahi's Discord sign-in), as a browser that signed in holds it.
       // `__Host-` cookies are Secure and host-only; cookies ignore ports, so both origins send it.
-      if (admin) {
-        await context.addCookies([{ ...admin, domain: '127.0.0.1', path: '/', secure: true, httpOnly: true, sameSite: 'Strict' }]);
-        sendSecureCookies(context);
-      }
+      await context.addCookies([{ ...admin, domain: '127.0.0.1', path: '/', secure: true, httpOnly: true, sameSite: 'Strict' }]);
+      sendSecureCookies(context);
       const sink: Sink = { violations: [], console: [], seen: false };
       await watch(page, sink);
       await use(sink);
@@ -498,7 +469,7 @@ export function unconditional(route: Route): { headers: Record<string, string> }
   return { headers };
 }
 
-/** Harness only: the server clock stands at `at` (RFC 3339) until moved again or reset (`/__e2e/clock`). */
+/** The server clock stands at `at` (RFC 3339) until moved again or reset (`/__e2e/clock`). */
 export async function setClock(at: string): Promise<void> {
   const set = await fetch(`${ADMIN}/__e2e/clock`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ at }) });
   expect(set.status, await set.text()).toBe(200);
@@ -532,7 +503,7 @@ export async function streamOpen(page: Page, path: string): Promise<void> {
   await expect.poll(() => page.evaluate(open, path), { message: `an open ${path} stream` }).toBe(true);
 }
 
-/** Harness only: signs this context in on the public origin as `account` (a seeded member's snowflake) through the fake Discord page. */
+/** Signs this context in on the public origin as `account` (a seeded member's snowflake) through the fake Discord page. */
 export async function signInPublicAs(page: Page, account: string): Promise<void> {
   await discordSignIn(page, PUBLIC, 'public', account);
 }

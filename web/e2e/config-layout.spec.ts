@@ -108,7 +108,7 @@ test("config: search filters the contents, keeps one tab stop and leaves the ope
   await search.fill("zzz");
   await expect(page.getByText("No settings match “zzz”.")).toBeVisible();
   await search.fill("");
-  // 15 sections, plus Character data while module `character_data` is on (the mock's default).
+  // 15 sections, plus Character data while module `character_data` is on (the seed's default).
   await expect(visible).toHaveCount(16);
 });
 

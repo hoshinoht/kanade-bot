@@ -27,10 +27,10 @@
     ToastRegion,
     WavyProgress,
   } from '@kanade/ui';
-  import PageLine from '../../../web/apps/admin/src/shell/PageLine.svelte';
-  import Rail from '../../../web/apps/admin/src/shell/Rail.svelte';
-  import TopBar from '../../../web/apps/admin/src/shell/TopBar.svelte';
-  import { setChrome } from '../../../web/apps/admin/src/shell/chrome';
+  import PageLine from '../apps/admin/src/shell/PageLine.svelte';
+  import Rail from '../apps/admin/src/shell/Rail.svelte';
+  import TopBar from '../apps/admin/src/shell/TopBar.svelte';
+  import { setChrome } from '../apps/admin/src/shell/chrome';
 
   // Token swatches: fills with the ink that sits on them.
   const SWATCHES = ['ground', 'surface', 'raise', 'pane', 'row', 'win', 'accent-fill', 'select', 'seg-fill', 'chip-fill', 'line', 'ok', 'warn', 'risk', 'own', 'off'];
@@ -70,7 +70,7 @@
 <main class="showcase">
   <header class="showcase__head">
     <h1>Core primitives</h1>
-    <p class="note">Dev-only (pwa-mock). Change the colourway below; every section restyles.</p>
+    <p class="note">Dev-only (e2e server). Change the colourway below; every section restyles.</p>
   </header>
 
   <section class="card" aria-labelledby="sc-tokens">

@@ -3,7 +3,7 @@ import type { Page } from '@playwright/test';
 import { COLORWAYS } from '../packages/tokens/src/colorways';
 import { ADMIN, HEADING, PUBLIC, expect, settle, setPortal, signInPublic, test, choose, useLook } from './support';
 
-// Every test is independent (the fixture resets the mock), so the looks spread across workers.
+// Every test is independent (the fixture resets the server), so the looks spread across workers.
 test.describe.configure({ mode: 'parallel' });
 
 async function serious(page: Page, label: string, rules?: string[]) {
@@ -81,7 +81,7 @@ for (const [colorway, theme] of CONTRAST_LOOKS) {
 
 // The full walk for the default colourway, in four parts per face so they
 // spread across workers (one walk of forty-odd scans outran its budget on CI).
-// Each part starts from a fresh page and mock.
+// Each part starts from a fresh page and a reset server.
 const WALK: { name: string; walk: (page: Page) => Promise<void> }[] = [
   {
     name: 'public portal and admin week',

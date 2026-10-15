@@ -2,10 +2,11 @@
 //! refuse every `/__*` path):
 //!
 //! - `POST /__e2e/reset`: a restart over a fresh copy of the template, the
-//!   clock back at its start, the modules and Limits groups at their
-//!   defaults; answers `{now}`.
+//!   clock back at its start (a live clock back to real time), the modules
+//!   and Limits groups at their defaults; answers `{now}`.
 //! - `POST /__e2e/clock` `{at}` (RFC 3339) or `{advance_s}`: the instant the
-//!   writer, the API and module `character_data` read; answers `{now}`.
+//!   writer, the API and module `character_data` read (a live clock keeps
+//!   running from there); answers `{now}`.
 //! - `GET /__e2e/whoami`: `{server, now, origin, admin_cookie: {name, value},
 //!   break_glass: {cookie: {name, value}, token}, tailscale: {login,
 //!   edge_secret}}`: Asahi's Discord admin session every template copy holds
@@ -50,7 +51,11 @@ use axum::{
 };
 use chrono::{DateTime, Datelike, TimeDelta, Timelike, Utc};
 use kanade::{
-    api::{auth::Clock, guard::headers::CSP, listeners::Origin},
+    api::{
+        auth::{Clock, system_now},
+        guard::headers::CSP,
+        listeners::Origin,
+    },
     domain::members::MemberStore,
     infrastructure::store::web_sessions::{LoginMethod, SessionOrigin, WebSessionStore},
 };
@@ -73,22 +78,54 @@ const REPORTS: &str = "/__e2e/reports";
 /// As the mock: enough for any one test's violations.
 const MAX_REPORTS: usize = 500;
 
-/// The one instant every generation's clock reads: still until set.
+/// The one clock every generation reads: pinned (an instant that moves only
+/// when set) or live (the wall clock, shifted by whatever `set` moved it).
 #[derive(Clone)]
-pub struct SharedClock(Arc<AtomicI64>);
+pub struct SharedClock {
+    live: bool,
+    /// Pinned: the instant; live: the shift from the wall clock. Microseconds.
+    micros: Arc<AtomicI64>,
+    /// `micros` at startup, which a reset restores.
+    start: i64,
+}
 
 impl SharedClock {
-    pub fn new(at: DateTime<Utc>) -> Self {
-        Self(Arc::new(AtomicI64::new(at.timestamp_micros())))
+    pub fn pinned(at: DateTime<Utc>) -> Self {
+        Self::with(false, at.timestamp_micros())
+    }
+
+    pub fn live() -> Self {
+        Self::with(true, 0)
+    }
+
+    fn with(live: bool, start: i64) -> Self {
+        Self {
+            live,
+            micros: Arc::new(AtomicI64::new(start)),
+            start,
+        }
     }
 
     pub fn now(&self) -> DateTime<Utc> {
-        DateTime::from_timestamp_micros(self.0.load(Ordering::SeqCst))
-            .unwrap_or(DateTime::UNIX_EPOCH)
+        let micros = self.micros.load(Ordering::SeqCst);
+        if self.live {
+            system_now() + TimeDelta::microseconds(micros)
+        } else {
+            DateTime::from_timestamp_micros(micros).unwrap_or(DateTime::UNIX_EPOCH)
+        }
     }
 
     fn set(&self, at: DateTime<Utc>) {
-        self.0.store(at.timestamp_micros(), Ordering::SeqCst);
+        let micros = if self.live {
+            (at - system_now()).num_microseconds().unwrap_or(0)
+        } else {
+            at.timestamp_micros()
+        };
+        self.micros.store(micros, Ordering::SeqCst);
+    }
+
+    fn reset(&self) {
+        self.micros.store(self.start, Ordering::SeqCst);
     }
 
     pub fn clock(&self) -> Clock {
@@ -127,7 +164,6 @@ pub struct Shared {
     db_dir: std::path::PathBuf,
     template: std::path::PathBuf,
     clock: SharedClock,
-    start: DateTime<Utc>,
     admins: AdminSessions,
     /// The break-glass admin token.
     token: String,
@@ -170,7 +206,6 @@ impl Shared {
             world,
             db_dir,
             template,
-            start: clock.now(),
             clock,
             admins,
             token,
@@ -192,7 +227,7 @@ impl Shared {
     /// Composes over a fresh copy, swaps it in, then retires the old one.
     pub async fn reset(&self) -> Result<(), Fail> {
         let mut slot = self.generation.lock().await;
-        self.clock.set(self.start);
+        self.clock.reset();
         self.world.three_groups.store(false, Ordering::SeqCst);
         p5::reset(&self.world);
         slot.serial += 1;

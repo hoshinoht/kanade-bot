@@ -26,7 +26,7 @@ import {
 // into e2e/.captures/real/ for the user's visual review.
 const OUT = REAL_ART ? 'e2e/.captures/real' : 'e2e/.captures/synthetic';
 
-// Each capture is independent (own files, fresh mock), and this file is the
+// Each capture is independent (own files, reset server), and this file is the
 // suite's longest: spread its tests across workers.
 test.describe.configure({ mode: 'parallel' });
 
@@ -378,8 +378,8 @@ test('capture planner swap', async ({ page }) => {
   }
 });
 
-// Live Limits (B_LimitsLive and its tab boards) for review: the mock's three
-// seeded groups and its default one gateway group, every tab at 1280×800 and
+// Live Limits (B_LimitsLive and its tab boards) for review: the three canned
+// groups and the default one gateway group, every tab at 1280×800 and
 // Backends + Admission on a phone, in blossom light and twilight dark.
 for (const groups of ['three', 'default'] as const) {
   test(`capture live Limits set (${groups})`, async ({ page }) => {

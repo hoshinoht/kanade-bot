@@ -18,8 +18,8 @@ register every file as an in-memory resource under its `$id`.
 - Successful admin JSON `GET`s (outside `/api/admin/auth/`) carry a strong
   `ETag`; `If-None-Match` naming it answers `304` with no body and the same
   headers.
-- `devtools/pwa-mock` validates every endpoint below against these files
-  (`src/contract.rs`); the Rust API slices validate against the same files.
+- The Rust API suite (`tests/api`, through `tests/api/schemas.rs`) validates
+  the real responses of the endpoints below against these files.
 
 ## Endpoint → schema
 

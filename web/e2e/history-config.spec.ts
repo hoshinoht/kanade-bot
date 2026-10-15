@@ -2,7 +2,7 @@ import type { Page } from '@playwright/test';
 import { choose, expect, go, test, toast } from './support';
 
 // A Config section save joins the History timeline as a view-only row with
-// its before/after (the mock records it like the server). Clock pinned.
+// its before/after. Clock pinned.
 
 async function saveQuietMode(page: Page) {
   await go(page, '/config?section=notifications');

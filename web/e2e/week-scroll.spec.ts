@@ -16,7 +16,7 @@ test('Week: busy columns keep their floor and the board fades the edge with more
   for (const w of widths) expect(w).toBeGreaterThanOrEqual(229.5);
 
   const overflow = await board.evaluate((el) => el.scrollWidth - el.clientWidth);
-  expect(overflow, 'the mock week is busy enough to scroll at 1000 px').toBeGreaterThan(1);
+  expect(overflow, 'the seeded week is busy enough to scroll at 1000 px').toBeGreaterThan(1);
   await expect(board).toHaveClass(/scroll-more-end/);
   await expect(board).not.toHaveClass(/scroll-more-start/);
   await board.evaluate((el) => el.scrollTo({ left: el.scrollWidth }));
@@ -27,7 +27,7 @@ test('Week: busy columns keep their floor and the board fades the edge with more
 test('Week: a reset day head keeps the run count apart from the reset mark', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto(`${ADMIN}/?week=next&sw=off`);
-  // The mock's reset day is empty, so mark a busy head as the reset day.
+  // The seeded reset day is empty, so mark a busy head as the reset day.
   const head = page.locator('.week-window .board__head:has(.board__count)').first();
   await expect(head).toBeVisible();
   const gap = await head.evaluate((h) => {

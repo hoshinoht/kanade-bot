@@ -3,7 +3,7 @@ import type { Boss, Week } from '@kanade/api-types';
 import { ADMIN, unconditional } from './support';
 
 /**
- * A busy week: the mock's week plus a 1-, 2- and 3-boss run on every day
+ * A busy week: the seeded week plus a 1-, 2- and 3-boss run on every day
  * (`busy-<day>-<count>`), which squeezes populated columns to their minimum.
  */
 export async function busyWeek(page: Page) {

@@ -90,7 +90,7 @@ test('re-read: the channels multi-select, a running job card that finishes, and 
   await go.click();
   const card = panel(page).getByRole('region', { name: 'Re-reading 2 channels' });
   await expect(card).toBeVisible();
-  // Messages read of the job's total, and the start in guild time (the mock's pinned noon).
+  // Messages read of the job's total, and the start in guild time (the pinned noon).
   await expect(card.locator('.rescan__pct')).toHaveText(/^\d{1,3}%$/);
   await expect(card.locator('.rescan__status')).toHaveText(/^\d+ of \d+ messages · started 12:00$/);
   await expect(card.getByRole('button', { name: 'Cancel' })).toBeVisible();

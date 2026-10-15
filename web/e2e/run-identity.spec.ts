@@ -185,7 +185,7 @@ test('fixed editor: the time is a stepper that still takes typing, and Enter sav
   await expect(time).toBeFocused();
   await expect(time).toHaveCSS('box-shadow', 'none');
   await expect(editor.locator('.fixedsheet__time .timestep')).not.toHaveCSS('box-shadow', 'none');
-  // The step is Config → Run lengths (the mock's default, as the Move picker shows it).
+  // The step is Config → Run lengths (the seed's default, as the Move picker shows it).
   const step = Number((await editor.getByRole('button', { name: /minutes later$/ }).getAttribute('aria-label'))!.split(' ')[0]);
   await time.press('ArrowDown');
   const down = 23 * 60 + 30 - step;

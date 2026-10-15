@@ -4,7 +4,7 @@ import { ADMIN, expect, PINNED_NOW, settle, test, choose, optionLabels, uncondit
 
 type Row = { id: string; party: string[]; kind: string; at: string };
 
-/** A live-sized queue: the mock's rows repeated to 33, one with a big party. */
+/** A live-sized queue: the seeded rows repeated to 33, one with a big party. */
 async function longQueue(page: Page) {
   await page.route(/\/api\/admin\/reminders$/, async (route) => {
     const res = await route.fetch(unconditional(route));

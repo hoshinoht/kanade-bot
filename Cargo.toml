@@ -45,7 +45,7 @@ name = "rust_e2e_fixture"
 path = "examples/rust_e2e_fixture.rs"
 required-features = ["test-support"]
 
-# The browser e2e server (web/playwright.harness.config.ts); never shipped.
+# The browser e2e server (web/playwright.config.ts, `bun run serve:dev`); never shipped.
 [[example]]
 name = "e2e_server"
 path = "examples/e2e_server/main.rs"

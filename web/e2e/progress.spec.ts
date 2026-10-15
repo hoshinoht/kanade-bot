@@ -134,7 +134,7 @@ test('Config: each capacity group shows its permits against what Kanata admits, 
   await page.getByRole('tab', { name: 'Capacity' }).click();
   const bar = page.getByRole('progressbar', { name: 'gateway permits of what Kanata admits' });
   await expect(bar).toBeVisible();
-  // The mock's gateway group has a call in flight: its full bar waves.
+  // The seeded gateway group has a call in flight: its full bar waves.
   await expect(bar).toHaveAttribute('aria-valuetext', /^\d+ of the \d+ Kanata admits, \d+ in flight$/);
   await expect(bar).not.toHaveClass(/wavy--flat/);
   await isWaving(bar);

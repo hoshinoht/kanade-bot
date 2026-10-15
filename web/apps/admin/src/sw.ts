@@ -27,7 +27,7 @@ function bypass(url: URL): boolean {
   return (
     url.origin !== sw.location.origin ||
     url.pathname.startsWith('/api/') ||
-    url.pathname.startsWith('/__mock/') ||
+    url.pathname.startsWith('/__e2e/') ||
     url.pathname.startsWith('/art/animated/') ||
     url.pathname === '/csp-report'
   );

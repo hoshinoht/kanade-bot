@@ -27,7 +27,7 @@ import {
 } from '@kanade/ui';
 import { createdLinkNote, healthNote, joinNames, levelChip, readinessLine, scouterAt } from '../src/chardata/format';
 
-// Wholly invented data, as the mock seeds it.
+// Wholly invented data, as the e2e seed has it.
 const row = (retired: boolean): CharacterRow => ({
   id: 'ch-s3',
   member_id: '1003',

@@ -620,7 +620,7 @@ async fn rsvp_participants_reset_and_ping() {
     let message = "common.json#/$defs/Message";
     let ping = reads.ok("POST", "/api/admin/runs/r-kalos/ping", json!({}), message);
     let ping = ping.await;
-    // The pwa-mock mirrors this wording; the run sheet shows it verbatim.
+    // The run sheet shows this wording verbatim.
     let message = ping["message"].as_str().unwrap();
     assert!(
         message.starts_with("Preview (not posted): the morning card for ")

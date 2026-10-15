@@ -1,6 +1,6 @@
 import { ADMIN, expect, test } from './support';
 
-// History → Checkpoints with backups (B_HistoryCk, O3): the mock lists three
+// History → Checkpoints with backups (B_HistoryCk, O3): the seed lists three
 // manifests, one for each anchor state the server reports, newest first.
 
 test('history checkpoints: the verified chain and the backups that anchor it', async ({ page }) => {

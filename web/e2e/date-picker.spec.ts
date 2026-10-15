@@ -3,7 +3,7 @@ import type { Page } from '@playwright/test';
 import { ADMIN, expect, settle, test, choose } from './support';
 
 // The date picker (boards P_Dates, P_DatesSpec, P_DatesPhone): Chat and
-// Extractions' From–To range and History's "Since". The mock's clock is Tue
+// Extractions' From–To range and History's "Since". The pinned clock is Tue
 // 29 Sep 2026 12:00 in Kuala Lumpur, so today is the 29th and the boss week
 // started Thu 24 Sep; later days are disabled.
 

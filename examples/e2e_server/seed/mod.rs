@@ -1,9 +1,9 @@
-//! What the template store holds: the dev mock's seeded guild
-//! (`devtools/pwa-mock/src/mock/seed.rs` and the seeded state of its domain
-//! modules) with the mock's ids, names and times, written through the real
-//! store APIs, plus the fake Discord sign-in users `e2e/harness/member.spec`
-//! reads. Written over the composed state, so every later generation
-//! (composed afresh from a copy) reads it as a restarted server would.
+//! What the template store holds: the retired dev mock's seeded guild (last
+//! in the tree at commit 05bda3d0) with the mock's ids, names and times,
+//! written through the real store APIs, plus the fake Discord sign-in users
+//! `e2e/harness/member.spec` reads. Written over the composed state, so every
+//! later generation (composed afresh from a copy) reads it as a restarted
+//! server would.
 //!
 //! Times are relative to this boss week, so the seed reads the same at the
 //! pinned instant (`2026-09-29T04:00:00Z`, Tue 12:00 in Kuala Lumpur) and

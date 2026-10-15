@@ -732,7 +732,7 @@ test('members: fixed frame keeps roster and wide detail as the only scroll owner
       documentScroll: document.scrollingElement!.scrollHeight > innerHeight,
       listOverflow: getComputedStyle(list).overflowY,
       paneOverflow: getComputedStyle(pane).overflowY,
-      // With the roster module on (the mock's default) the head and tabs stay; the tab's panel scrolls.
+      // With the roster module on (the seed's default) the head and tabs stay; the tab's panel scrolls.
       panelOverflow: getComputedStyle(pane.querySelector<HTMLElement>('.membersheet__panel')!).overflowY,
       windowHeight: document.querySelector<HTMLElement>('.members-window')!.getBoundingClientRect().height,
       paneLeft: paneBox.left,

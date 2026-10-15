@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""Diff the API paths the PWA calls and the pwa-mock serves against the
-routes the Rust `serve` mounts (`src/api`).
+"""Diff the API paths the PWA calls against the routes the Rust `serve`
+mounts (`src/api`).
 
 Dependency-free and source-only: it parses `.route("…", get(…).post(…))`
 calls and the string/template literals under `web/apps` and `web/packages`
@@ -19,23 +19,12 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 
-# (method, path) the mock serves that Rust deliberately does not.
-MOCK_ONLY = {
-    ("POST", "/api/admin/reset"): "pwa-mock e2e control, not an admin route",
-    ("POST", "/csp-report"): "pwa-mock dev-only CSP report sink",
-}
 # Paths the web apps call that Rust deliberately does not serve.
 WEB_ONLY: dict[str, str] = {}
-# (method, path) contracted but not mounted yet. The web and mock may use
-# them first; once Rust mounts one, its entry must go. (The member realm's
+# (method, path) contracted but not mounted yet. The web may use them
+# first; once Rust mounts one, its entry must go. (The member realm's
 # routes, docs/notes/member-auth-contract.md, are all mounted.)
 PLANNED: dict[tuple[str, str], str] = {}
-# (method, path) Rust serves that the mock does not need.
-RUST_ONLY = {
-    ("GET", "/healthz"): "container health probe",
-}
-# Prefixes that are dev tooling, never product routes.
-MOCK_CONTROL_PREFIXES = ("/__mock/",)
 
 METHOD = re.compile(r"\b(get|post|patch|put|delete|any)\(")
 PARAM = re.compile(r"\{[^}*]+\}")
@@ -136,11 +125,6 @@ def matches(web: str, served: str) -> bool:
 
 def main() -> int:
     rust = axum_routes(sorted((ROOT / "src/api").rglob("*.rs")))
-    mock = {
-        route
-        for route in axum_routes([ROOT / "devtools/pwa-mock/src/main.rs"])
-        if not route[1].startswith(MOCK_CONTROL_PREFIXES)
-    }
     web = web_paths()
     rust_paths = {path for _, path in rust}
     planned = {(method, PARAM.sub("{}", path)): why for (method, path), why in PLANNED.items()}
@@ -161,18 +145,8 @@ def main() -> int:
         else:
             callers = ", ".join(sorted(web[path]))
             problems.append(f"web calls {path} but Rust serves no such route ({callers})")
-    for method, path in sorted(mock - rust - planned.keys()):
-        if (method, path) in MOCK_ONLY:
-            notes.append(f"mock {method} {path}  ({MOCK_ONLY[(method, path)]})")
-        else:
-            problems.append(f"mock serves {method} {path} but Rust does not")
-    for method, path in sorted(rust - mock):
-        if (method, path) in RUST_ONLY:
-            notes.append(f"rust {method} {path}  ({RUST_ONLY[(method, path)]})")
-        else:
-            problems.append(f"Rust serves {method} {path} but the pwa-mock does not")
 
-    print(f"{len(rust)} Rust routes, {len(mock)} mock routes, {len(web)} web paths")
+    print(f"{len(rust)} Rust routes, {len(web)} web paths")
     for line in notes:
         print(f"documented: {line}")
     for line in problems:

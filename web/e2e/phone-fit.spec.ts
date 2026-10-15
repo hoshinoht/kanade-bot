@@ -54,7 +54,7 @@ for (const size of [...SIZES, { width: 1280, height: 800 }]) {
         checked += tags > 1 ? 1 : 0;
       }
     }
-    // The pwa-mock's multi-boss member request must be among them.
+    // The seed's multi-boss member request must be among them.
     expect(checked).toBeGreaterThan(0);
   });
 }

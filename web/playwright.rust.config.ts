@@ -1,8 +1,8 @@
 import { defineConfig } from '@playwright/test';
 
-// Rust E2E owns one live store. Keep its ports above the mock (base..+19) and
-// the harness (base+20..+29): base 5073 therefore serves the admin and public
-// apps on 5123 and 5124.
+// Rust E2E owns one live store. Keep its ports above the browser suite's
+// (base..+9, playwright.config.ts): base 5073 therefore serves the admin and
+// public apps on 5123 and 5124.
 const base = Number(process.env.KANADE_E2E_PORT_BASE ?? '4373');
 if (!Number.isInteger(base) || base < 1 || base > 65_482) throw new Error(`KANADE_E2E_PORT_BASE must be a valid port base, got ${process.env.KANADE_E2E_PORT_BASE}`);
 const adminPort = base + 50;

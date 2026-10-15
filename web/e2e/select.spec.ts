@@ -262,7 +262,7 @@ test('phones: a real, transparent native select sits under each pill', async ({ 
 
 test('a coarse pointer on a wide screen also gets the native picker', async ({ browser, context: signedIn }) => {
   const context = await browser.newContext({ viewport: { width: 1280, height: 800 }, hasTouch: true, isMobile: false });
-  // The fixture's admin session (the harness's cookie; the mock needs none).
+  // The fixture's admin session cookie.
   await context.addCookies(await signedIn.cookies());
   const page = await context.newPage();
   const filters = await reminderFilters(page);

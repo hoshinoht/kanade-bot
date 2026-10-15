@@ -404,7 +404,7 @@ test('page line: unboxed on the ground, the count a bold mono numeral, Live HH:M
   }
 });
 
-// Live data has more models than the mock: two more in the summary.
+// Live data has more models than the seed: two more in the summary.
 async function fourModels(page: Page) {
   await page.route(/\/api\/admin\/chat(\?.*)?$/, async (route) => {
     const response = await route.fetch(unconditional(route));

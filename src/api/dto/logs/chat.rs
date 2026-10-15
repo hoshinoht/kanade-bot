@@ -500,7 +500,7 @@ pub fn chat_turn(
     serde_json::to_value(turn(names, chat, cards, guild_id, masked)).expect("ChatTurn is JSON")
 }
 
-/// Per model over the listed rows (as the mock): `errors` are `error` and
+/// Per model over the listed rows: `errors` are `error` and
 /// `timeout`, `p50_ms` the median latency of answered questions. Token usage
 /// comes from the model's own round rows, never the turn totals.
 pub fn chat_summary(rows: &[ChatInteraction]) -> Vec<ChatSummary> {

@@ -14,7 +14,7 @@ async function serious(page: Page, label: string) {
   expect(bad.map((v) => `${label}: ${v.id} (${v.impact}) ${v.nodes.map((n) => n.target.join(' ')).join(', ')}`)).toEqual([]);
 }
 
-/** Serves the mock's turn with `patch` applied: states the mock does not seed. */
+/** Serves the seeded turn with `patch` applied: states the seed does not hold. */
 async function patchTurn(page: Page, id: string, patch: (turn: ChatTurn) => void) {
   await page.route(`**/api/admin/chat/${id}`, async (route) => {
     const response = await route.fetch(unconditional(route));

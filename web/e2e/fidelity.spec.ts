@@ -31,9 +31,9 @@ import {
 // survive, runs this spec, then rebuilds clean). Writes, per pair, under the
 // git-ignored e2e/.captures/fidelity/: report.md, report.json, composite.png
 // (board left, app right, findings outlined), board.json and app.json.
-// It reports; it never fails on findings. It drives the real-API e2e server
-// (`playwright.harness.config.ts`): the seed keeps the mock's ids, names and
-// times, and the boards' states come from its `/__e2e/` controls.
+// It reports; it never fails on findings. It drives the real-API e2e server:
+// the seed keeps the retired dev mock's ids, names and times, and the boards'
+// states come from its `/__e2e/` controls.
 const ENABLED = process.env.KANADE_FIDELITY === '1';
 const ONLY = (process.env.KANADE_FIDELITY_ONLY ?? '').split(',').filter(Boolean);
 const OUT = join(import.meta.dirname, '.captures', 'fidelity');

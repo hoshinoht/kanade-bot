@@ -1,5 +1,4 @@
-//! Module `character_data`'s controls (the mock's `/__mock/estimates`,
-//! `/__mock/character-data` and `/__mock/public/characters`), each driving
+//! Module `character_data`'s controls, each driving
 //! the real module: the fake scouter and NEXON answer as asked
 //! ([`crate::fakes::chardata`]), the real service calls them, and a change
 //! of key or scouter URL is a restart, as serve reads both once at startup.

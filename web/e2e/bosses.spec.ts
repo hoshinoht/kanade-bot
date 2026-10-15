@@ -745,7 +745,7 @@ test.describe('boss guide', () => {
   });
 
   test('a Union Champion track labels ranks by letter and shows only the tracked ranks', async ({ page }) => {
-    // Tracked documents (the mock fills `missions`): Lotus B, Black Mage S, Seren SS, Kalos SSS; rank A is not tracked.
+    // Tracked documents: Lotus B, Black Mage S, Seren SS, Kalos SSS; rank A is not tracked.
     await go(page, '/bosses/Seren/knowledge?difficulty=Champion');
     const card = page.locator('.guide-mission');
     await expect(card.locator('.cap').first()).toHaveText('Union Champion mission · Rank SS');

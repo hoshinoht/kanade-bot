@@ -172,7 +172,7 @@ cargo build --locked --release
 cd web && bun install --frozen-lockfile && bun run lint && bun run check && bun run test && bun run build
 ```
 
-The Rust suite is offline (fake Discord and model providers, temporary stores). `bun run e2e` in `web/` runs the browser suite against the dev mock in `devtools/pwa-mock` and needs an installed Chrome. `serve --offline` with `KANADE_TIMEZONE` set runs a health server with no store or Discord.
+The Rust suite is offline (fake Discord and model providers, temporary stores). In `web/`, `bun run serve:dev` serves the built apps on `127.0.0.1:4173` (admin) and `:4174` (public) from the e2e server in [`examples/e2e_server`](examples/e2e_server/README.md): the real API over a seeded temporary store with fake Discord, NEXON, scouter and model providers. `bun run e2e` runs the browser suite against the same server, one per worker, and needs an installed Chrome; `bun run e2e:rust` is the smoke test against the real `kanade serve`. `serve --offline` with `KANADE_TIMEZONE` set runs a health server with no store or Discord.
 
 <details><summary>Repository layout</summary>
 
@@ -186,7 +186,7 @@ The Rust suite is offline (fake Discord and model providers, temporary stores). 
 | `src/infrastructure/` | SQLite store, model client, character data store, NEXON and scouter clients |
 | `tests/` | Integration suites, one directory per target |
 | `web/` | Bun workspace: `apps/admin`, `apps/public` and shared `packages/` |
-| `devtools/pwa-mock/` | Dev-only mock server for the web apps |
+| `examples/e2e_server/` | Dev and browser e2e server for the web apps (`--features test-support`, never shipped) |
 | `deploy/` | Dockerfile, Compose stack and runbook |
 | `docs/v5/` | Setup guides and API schemas |
 | `boss/` | Boss catalog (`bosses.yaml`) and boss knowledge |

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { check, matches, wordProblem, wordsOf } from '../src/config/profanity';
 
-// Invented placeholder words, as in the pwa-mock.
+// Invented placeholder words, as in the e2e seed.
 const saved = { builtin_words: ['blarg', 'drat', 'frak', 'gorram', 'smeg', 'zounds'] };
 const draft = (over: Partial<Parameters<typeof check>[0]> = {}) => ({ extra_words: [], allowed_words: [], deflection_line: 'Keep it clean.', ...over });
 

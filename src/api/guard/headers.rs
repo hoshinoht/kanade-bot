@@ -1,5 +1,5 @@
-//! Security and caching headers on every response, matching `devtools/pwa-mock`
-//! minus its dev-only `report-uri` sink; HSTS only on the public origin.
+//! Security and caching headers on every response (no `report-uri`: only the
+//! browser e2e server adds one); HSTS only on the public origin.
 
 use std::sync::Arc;
 

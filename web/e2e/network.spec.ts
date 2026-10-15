@@ -22,7 +22,7 @@ for (const [app, origin] of [
       entry.n += 1;
       entry.kb = (Number(entry.kb) + r.bytes / 1024).toFixed(1);
     }
-    console.log(`${app} first load (on the wire, uncompressed by the mock server):`, JSON.stringify(byType));
+    console.log(`${app} first load (on the wire):`, JSON.stringify(byType));
     console.log(`${app} fonts:`, seen.filter((r) => r.type === 'font').map((r) => r.url.split('/').pop()).join(', '));
   });
 }

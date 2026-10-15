@@ -66,7 +66,7 @@ const ADMIN_PATHS: [&str; 55] = [
     "/api/admin/history/1/cherry-pick",
     "/api/admin/requests/q1/approve",
     "/__test/whoami",
-    "/__mock/reports",
+    "/__e2e/reports",
     "/healthz",
 ];
 

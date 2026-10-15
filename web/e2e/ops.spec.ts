@@ -3,7 +3,7 @@ import { ADMIN, csrf, expect, go, signInAdmin, test, toast, choose, expectValue,
 
 // Knowledge (tracked boss/knowledge, schema v2), Inbox, Extractions + rescan,
 // Chat, Limits, History (revert / restore / by member / checkpoints) and the
-// run pane's change log. Mock clock pinned (playwright.config.ts).
+// run pane's change log. Server clock pinned (playwright.config.ts).
 
 test('knowledge: opens on the difficulty the guild runs, switches, credits sources', async ({ page }) => {
   await go(page, '/bosses/MaleficStar/knowledge');
@@ -664,7 +664,7 @@ test('history: restore a week to a point, revert a member, and a run’s change 
 
 // The Config sections, one test each so they spread across workers (as one
 // test they outran the default budget on CI). Every test opens Config afresh
-// on a reset mock.
+// on a reset server.
 test.describe('config sections save', () => {
   test.describe.configure({ mode: 'parallel' });
 
