@@ -111,6 +111,7 @@ fn put(settings: &mut RuntimeSettings, section: Section) {
         Section::Models(value) => settings.models = value,
         Section::RunLengths(value) => settings.run_lengths = value,
         Section::Profanity(value) => settings.profanity = value,
+        Section::CharacterData(value) => settings.character_data = value,
         Section::Schedule(value) => settings.schedule = value,
         Section::Posting(value) => settings.posting = value,
         Section::IdList(list, ids) => *list.get_mut(settings) = ids,
@@ -150,6 +151,7 @@ async fn answer(
         view.character_data = Some(crate::api::dto::character_data::health(
             &service.health().await,
             state.guild_id.as_deref(),
+            settings.character_data,
         ));
     }
     Ok(Json(view).into_response())
@@ -344,6 +346,9 @@ async fn update(
             &state.catalog,
         )?),
         "profanity" => Section::Profanity(patch::profanity(&current.profanity, fields)?),
+        "character_data" => {
+            Section::CharacterData(patch::character_data(&current.character_data, fields)?)
+        }
         _ => {
             if desk.models.is_none() {
                 return Err(models_unreachable(
@@ -508,6 +513,7 @@ fn name_of(section: &str) -> &'static str {
         "persona" => "persona",
         "run_lengths" => "run_lengths",
         "profanity" => "profanity",
+        "character_data" => "character_data",
         _ => "models",
     }
 }

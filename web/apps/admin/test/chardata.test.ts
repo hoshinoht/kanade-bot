@@ -70,6 +70,7 @@ const health = (over: Partial<CharacterDataHealth>): CharacterDataHealth => ({
   last_sweep: null,
   posts: { due: 0, unknown: 0, stuck: 0, overdue: 0, items: [] },
   scouter: { state: 'ok', url: 'http://scouter:8091', last_lookup_at: null, last_error: null, last_error_at: null },
+  estimate_days: 7,
   ...over,
 });
 

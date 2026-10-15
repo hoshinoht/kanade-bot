@@ -16,10 +16,11 @@ use crate::{
         persona::ProfileId,
     },
     domain::settings::{
-        Chatbot, ContextSettings, IdList, MAX_DEFLECTION_CHARS, MAX_PROFANITY_WORDS,
-        MAX_ROLE_PROFILE_ASSIGNMENTS, MessageStyle, Notifications, OVERRIDE_RUN_MINUTES,
-        PROFANITY_WORD_CHARS, Persona, Pings, Profanity, RUN_MINUTES, Rate, RoleProfileAssignment,
-        RunLengthOverride, RunLengths, SelfService, SelfServiceMode, Watching, is_profanity_word,
+        CharacterData, Chatbot, ContextSettings, ESTIMATE_DAYS, IdList, MAX_DEFLECTION_CHARS,
+        MAX_PROFANITY_WORDS, MAX_ROLE_PROFILE_ASSIGNMENTS, MessageStyle, Notifications,
+        OVERRIDE_RUN_MINUTES, PROFANITY_WORD_CHARS, Persona, Pings, Profanity, RUN_MINUTES, Rate,
+        RoleProfileAssignment, RunLengthOverride, RunLengths, SelfService, SelfServiceMode,
+        Watching, is_profanity_word,
     },
 };
 
@@ -84,7 +85,12 @@ fn read_only(section: &str, key: &str) -> Option<&'static str> {
             "reachable" | "catalog" | "groups_source" | "alias_limits" | "capacity_check",
         )
         | ("persona", "personas" | "profiles" | "role_profiles_digest")
-        | ("profanity", "builtin_words") => Some(DERIVED),
+        | ("profanity", "builtin_words")
+        | (
+            "character_data",
+            "nexon" | "backoff_until" | "calls_24h" | "budget" | "last_batch" | "links"
+            | "last_sweep" | "posts" | "scouter",
+        ) => Some(DERIVED),
         ("models", "key_limits" | "pii_pseudonymise") => Some(DEPLOYMENT),
         ("models", "groups") => Some(GROUPS),
         _ => None,
@@ -106,7 +112,7 @@ pub fn section(body: &Value) -> Result<(&str, &Map<String, Value>), PatchError> 
     };
     match name.as_str() {
         "pings" | "watching" | "chatbot" | "notifications" | "self_service" | "persona"
-        | "models" | "run_lengths" | "profanity" => {}
+        | "models" | "run_lengths" | "profanity" | "character_data" => {}
         "manage_messages" | "env" | "notices" => {
             return Err(PatchError::read_only(name, DEPLOYMENT));
         }
@@ -146,6 +152,7 @@ pub fn section(body: &Value) -> Result<(&str, &Map<String, Value>), PatchError> 
                         | "check_replies"
                         | "deflection_line"
                 )
+                | ("character_data", "estimate_days")
         ) || (name == "persona"
             && key == "role_profiles_digest"
             && body.contains_key("role_profiles"));
@@ -548,6 +555,27 @@ pub fn self_service(
     }
     if let Some(value) = body.get("public_portal") {
         next.public_portal = flag(value, "self_service.public_portal")?;
+    }
+    Ok(next)
+}
+
+pub fn character_data(
+    current: &CharacterData,
+    body: &Map<String, Value>,
+) -> Result<CharacterData, PatchError> {
+    let mut next = *current;
+    if let Some(value) = body.get("estimate_days") {
+        next.estimate_days = value
+            .as_u64()
+            .and_then(|days| u32::try_from(days).ok())
+            .filter(|days| ESTIMATE_DAYS.contains(days))
+            .ok_or_else(|| {
+                PatchError::invalid(format!(
+                    "Estimates refresh every {} to {} days.",
+                    ESTIMATE_DAYS.start(),
+                    ESTIMATE_DAYS.end()
+                ))
+            })?;
     }
     Ok(next)
 }

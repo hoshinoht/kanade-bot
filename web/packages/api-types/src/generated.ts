@@ -503,7 +503,13 @@ calls_24h: number | null,
 /**
  * The hard stop on calls per 24 hours.
  */
-budget: number, last_batch: BatchHealth | null, links: LinkHealth | null, last_sweep: string | null, posts: PostHealth | null, scouter: ScouterHealthBlock, };
+budget: number, last_batch: BatchHealth | null, links: LinkHealth | null, last_sweep: string | null, posts: PostHealth | null, scouter: ScouterHealthBlock, 
+/**
+ * The saved `v5.estimate_days` (1 to 30, default 7): an estimate this
+ * many days old is stale. The block's one writable field (PATCH
+ * `character_data.estimate_days`).
+ */
+estimate_days: number, };
 
 export type BatchHealth = { at: string, refreshed: number, failed: number, 
 /**
@@ -1323,7 +1329,7 @@ export type ConfigView = { pings: Pings, watching: Watching, chatbot: Chatbot, n
 last_digest: LastDigest | null, 
 /**
  * Module `character_data`'s health (informational, never part of
- * `/healthz`); absent while the module is off.
+ * `/healthz`) and its `estimate_days` setting; absent while the module is off.
  */
 character_data?: CharacterDataHealth, };
 

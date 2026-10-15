@@ -8,9 +8,9 @@ use super::fixtures::refused_for;
 use crate::domain::attendance::AttendanceMode;
 use crate::domain::history::{Actor, Surface};
 use crate::domain::settings::{
-    IdList, MessageStyle, Reasoning, RuntimeSettings, Section, SelfServiceMode, SettingsChange,
-    SettingsChangeQuery, SettingsError, SettingsStore, diff_rows, keys, load_settings,
-    save_section, save_section_recorded,
+    CharacterData, IdList, MessageStyle, Reasoning, RuntimeSettings, Section, SelfServiceMode,
+    SettingsChange, SettingsChangeQuery, SettingsError, SettingsStore, diff_rows, keys,
+    load_settings, save_section, save_section_recorded,
 };
 
 pub async fn run_suite<S: SettingsStore>(make: impl AsyncFn() -> S) {
@@ -25,6 +25,46 @@ pub async fn run_suite<S: SettingsStore>(make: impl AsyncFn() -> S) {
     refused_recorded_saves_record_nothing(make().await).await;
     rowless_records_leave_the_settings_alone(make().await).await;
     message_style_is_stored_as_text(make().await).await;
+    estimate_days_are_stored_as_whole_days(make().await).await;
+}
+
+/// `v5.estimate_days` reads 7 when unset, round-trips as decimal text and
+/// refuses a stored row outside 1 to 30.
+async fn estimate_days_are_stored_as_whole_days<S: SettingsStore>(store: S) {
+    let seed = RuntimeSettings::default();
+    let unset = load_settings(&store, &seed).await.expect("load");
+    assert_eq!(unset.character_data.estimate_days, 7);
+    let section = Section::CharacterData(CharacterData { estimate_days: 30 });
+    save_section(&store, &section).await.expect("save");
+    let rows = store.settings_rows().await.expect("rows");
+    assert_eq!(
+        rows.get(keys::ESTIMATE_DAYS).map(String::as_str),
+        Some("30")
+    );
+    let loaded = load_settings(&store, &seed).await.expect("load");
+    assert_eq!(loaded.character_data.estimate_days, 30);
+    let refused = save_section(
+        &store,
+        &Section::CharacterData(CharacterData { estimate_days: 0 }),
+    )
+    .await;
+    assert!(matches!(
+        refused,
+        Err(SettingsError::Malformed { key, .. }) if key == keys::ESTIMATE_DAYS
+    ));
+    let rows = store.settings_rows().await.expect("rows");
+    assert_eq!(
+        rows.get(keys::ESTIMATE_DAYS).map(String::as_str),
+        Some("30")
+    );
+    store
+        .put_settings_rows(raw(&[(keys::ESTIMATE_DAYS, "31")]))
+        .await
+        .expect("raw row");
+    assert!(matches!(
+        load_settings(&store, &seed).await,
+        Err(SettingsError::Malformed { key, .. }) if key == keys::ESTIMATE_DAYS
+    ));
 }
 
 /// `v5.message_style` reads `classic` when unset, round-trips as text and

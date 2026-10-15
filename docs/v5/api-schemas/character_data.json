@@ -207,10 +207,10 @@
       }
     },
     "CharacterDataHealth": {
-      "description": "Config's module health block (informational, never part of /healthz).",
+      "description": "Config's module block: health (informational, never part of /healthz) plus the estimate_days setting.",
       "type": "object",
       "additionalProperties": false,
-      "required": ["nexon", "backoff_until", "calls_24h", "budget", "last_batch", "links", "last_sweep", "posts", "scouter"],
+      "required": ["nexon", "backoff_until", "calls_24h", "budget", "last_batch", "links", "last_sweep", "posts", "scouter", "estimate_days"],
       "properties": {
         "nexon": { "enum": ["no_key", "ok", "backoff", "key_refused"] },
         "backoff_until": { "$ref": "common.json#/$defs/NullableString" },
@@ -280,7 +280,8 @@
             { "type": "null" }
           ]
         },
-        "scouter": { "$ref": "#/$defs/ScouterHealth" }
+        "scouter": { "$ref": "#/$defs/ScouterHealth" },
+        "estimate_days": { "type": "integer", "minimum": 1, "maximum": 30, "description": "The saved v5.estimate_days (default 7): an estimate this many days old or older is stale. The block's one writable field: PATCH character_data.estimate_days (whole days 1 to 30, else 422 invalid; every other key of the block is 422 read_only); an effective save adds a History settings row, section character_data." }
       }
     },
     "ScouterHealth": {

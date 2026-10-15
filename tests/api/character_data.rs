@@ -24,7 +24,7 @@ use kanade::{
     },
     domain::{
         chardata::NOTICE_VERSION,
-        settings::{RuntimeSettings, SettingsChangeQuery, SettingsStore},
+        settings::{RuntimeSettings, SettingsChangeQuery, SettingsStore, keys},
     },
     infrastructure::{
         character_data::{CharacterData, ConfirmOutcome, RosterSide, Timing},
@@ -244,6 +244,69 @@ async fn config_has_no_health_block_while_off() {
     let reads = Reads::with_config(|store| config()(store)).await;
     let view = reads.read("/api/admin/config", CONFIG).await;
     assert!(view.get("character_data").is_none());
+}
+
+/// `estimate_days` (default 7) shows in Config's module block, saves
+/// through PATCH `character_data` with one History row, is published on
+/// the settings channel, and refuses anything but whole days 1 to 30.
+#[tokio::test]
+async fn estimate_days_save_live_with_one_history_row_and_refuse_bad_values() {
+    const PATH: &str = "/api/admin/config";
+    let slot = Arc::new(OnceLock::new());
+    let desk_slot = Arc::clone(&slot);
+    let make: ConfigMaker = Box::new(move |store| {
+        let desk = config()(store);
+        desk_slot.set(Arc::clone(&desk)).ok().unwrap();
+        desk
+    });
+    let reads = Reads::with_character_data(Some(make), module(None, Arc::default()).await).await;
+    let desk: Arc<ConfigDesk> = Arc::clone(slot.get().unwrap());
+    let view = reads.read(PATH, CONFIG).await;
+    assert_eq!(view["character_data"]["estimate_days"], 7);
+    let history = async || {
+        let query = SettingsChangeQuery::default();
+        reads.store.settings_changes(query).await.unwrap()
+    };
+    let before = history().await.len();
+    let patch = async |body: Value| reads.call("PATCH", PATH, body, &[]).await;
+
+    let mut changes = desk.subscribe();
+    let body = json!({"character_data": {"estimate_days": 10}});
+    let saved = patch(body.clone()).await.expect(200, CONFIG);
+    assert_eq!(saved["character_data"]["estimate_days"], 10);
+    let published = changes.borrow_and_update().settings.clone();
+    assert_eq!(published.character_data.estimate_days, 10, "published live");
+    let rows = reads.store.settings_rows().await.unwrap();
+    assert_eq!(rows[keys::ESTIMATE_DAYS], "10");
+    let recorded = history().await;
+    assert_eq!(recorded.len(), before + 1);
+    assert_eq!(recorded[0].section, "character_data");
+    let values: Vec<_> = recorded[0].values.keys().collect();
+    assert_eq!(values, [keys::ESTIMATE_DAYS], "only its row");
+    let row = &recorded[0].values[keys::ESTIMATE_DAYS];
+    assert_eq!((row.from.as_str(), row.to.as_str()), ("7", "10"));
+    // The same value again changes and records nothing.
+    patch(body).await.expect(200, CONFIG);
+    assert_eq!(history().await.len(), before + 1, "a no-op records nothing");
+
+    for bad in [json!(0), json!(31), json!(7.5), json!("7"), json!(null)] {
+        let refused = patch(json!({"character_data": {"estimate_days": bad}})).await;
+        assert_eq!(refused.error(), (422, "invalid".into()), "{bad}");
+        assert_eq!(
+            refused.json()["message"],
+            "Estimates refresh every 1 to 30 days."
+        );
+    }
+    let read_only = patch(json!({"character_data": {"budget": 5}})).await;
+    assert_eq!(read_only.error(), (422, "read_only".into()));
+    let unknown = patch(json!({"character_data": {"days": 5}})).await;
+    assert_eq!(unknown.error(), (422, "unknown_field".into()));
+    let view = reads.read(PATH, CONFIG).await;
+    assert_eq!(
+        view["character_data"]["estimate_days"], 10,
+        "refusals keep it"
+    );
+    assert_eq!(history().await.len(), before + 1);
 }
 
 #[tokio::test]

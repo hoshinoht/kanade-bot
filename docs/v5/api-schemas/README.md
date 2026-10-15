@@ -318,3 +318,8 @@ Pointers are `<file>#/$defs/<Name>`.
   null, never the party card's figure `percentage` falls back to;
   `public.json` `RunPartyCharacters.totals` (`PartyTotals`, `PartyTotal`):
   the run's newest finished party lookup per boss, or null.
+- Estimate refresh setting (2026-10-15): `character_data.json`
+  `CharacterDataHealth.estimate_days` (`v5.estimate_days`, 1 to 30, default
+  7: when an estimate counts as stale), writable through
+  `PATCH /api/admin/config` section `character_data`; the block's other
+  keys are `422 read_only`.
