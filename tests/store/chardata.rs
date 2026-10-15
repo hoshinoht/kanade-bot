@@ -1,13 +1,18 @@
 //! The character-data file itself: private and owned like the main store,
 //! its own checksummed ledger, a rollback journal deleted after each write
-//! (never WAL), the call budget surviving a reopen, and an unlink leaving no
-//! byte of the invented data in the file. Invented data only.
+//! (never WAL), the call budget surviving a reopen, an unlink leaving no
+//! byte of the invented data in the file, and older files migrating with
+//! their rows intact. Invented data only.
 
 use std::os::unix::fs::PermissionsExt;
 
 use chrono::TimeDelta;
-use kanade::domain::chardata::{CharDataStore, ConsentSurface, DAILY_CALLS};
-use kanade::infrastructure::store::chardata_conformance::{active, at, snapshot};
+use kanade::domain::chardata::{
+    CharDataStore, ConsentSurface, DAILY_CALLS, ESTIMATE_TTL, Post, RefreshState,
+};
+use kanade::infrastructure::store::chardata_conformance::{
+    active, at, member_estimate, party_estimate, snapshot,
+};
 use kanade::infrastructure::store::{SqliteCharData, SqliteStoreError};
 use sqlx::{ConnectOptions, Connection, sqlite::SqliteConnectOptions};
 
@@ -53,7 +58,7 @@ async fn the_file_is_private_owned_and_never_wal() {
         .fetch_all(&mut conn)
         .await
         .unwrap();
-    assert_eq!(ledger, [1, 2]);
+    assert_eq!(ledger, [1, 2, 3]);
     conn.close().await.unwrap();
 }
 
@@ -85,14 +90,14 @@ async fn a_changed_or_newer_ledger_refuses_to_open() {
         .await
         .unwrap();
     let mut conn = raw(&other.db_path).await;
-    sqlx::query("INSERT INTO chardata_migrations VALUES (3, 'x', 'then')")
+    sqlx::query("INSERT INTO chardata_migrations VALUES (4, 'x', 'then')")
         .execute(&mut conn)
         .await
         .unwrap();
     conn.close().await.unwrap();
     assert!(matches!(
         SqliteCharData::open(&other).await,
-        Err(SqliteStoreError::FutureVersion { found: 3, known: 2 })
+        Err(SqliteStoreError::FutureVersion { found: 4, known: 3 })
     ));
 }
 
@@ -110,13 +115,13 @@ async fn a_version_one_file_reads_its_links_without_a_surface() {
         .await
         .unwrap();
     let mut conn = raw(&config.db_path).await;
-    for sql in [
+    for sql in DOWN_TO_TWO.iter().chain(&[
         "DELETE FROM chardata_migrations WHERE version = 2",
         "ALTER TABLE links DROP COLUMN consent_surface",
         "INSERT INTO links VALUES ('c1', '1001', 'wisteria', 'msea', 'active', 'member', '1001',
             '2026-09-01T00:00:00+00:00', 1, '2026-09-01T00:00:00+00:00',
             '2026-09-01T00:00:00+00:00', 1)",
-    ] {
+    ]) {
         sqlx::query(sql).execute(&mut conn).await.unwrap();
     }
     conn.close().await.unwrap();
@@ -141,6 +146,142 @@ async fn a_version_one_file_reads_its_links_without_a_surface() {
     .await;
     assert!(refused.is_err(), "a pending link never carries a surface");
     conn.close().await.unwrap();
+}
+
+/// Takes a current file back to version 2 (drops the `0003` tables).
+const DOWN_TO_TWO: [&str; 4] = [
+    "DROP TABLE estimate_party_members",
+    "DROP TABLE estimate_parties",
+    "DROP TABLE estimate_members",
+    "DELETE FROM chardata_migrations WHERE version = 3",
+];
+
+async fn ledger(conn: &mut sqlx::SqliteConnection) -> Vec<i64> {
+    sqlx::query_scalar("SELECT version FROM chardata_migrations ORDER BY version")
+        .fetch_all(conn)
+        .await
+        .unwrap()
+}
+
+async fn estimate_tables(conn: &mut sqlx::SqliteConnection) -> Vec<String> {
+    sqlx::query_scalar(
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name LIKE 'estimate_%'
+         ORDER BY name",
+    )
+    .fetch_all(conn)
+    .await
+    .unwrap()
+}
+
+/// A version 2 file holding links, snapshots, refresh state, posts and
+/// calls migrates to 3 on open: every row reads back as written, the
+/// estimate tables come up empty and working, and the file passes
+/// `integrity_check` and `foreign_key_check`.
+#[tokio::test]
+async fn a_version_two_file_migrates_to_three_with_its_rows() {
+    let dir = TempDir::new();
+    let config = dir.config("chardata");
+    let store = SqliteCharData::open(&config).await.unwrap();
+    let data = snapshot("c1", at(2, 0));
+    let state = RefreshState {
+        character_id: "c1".into(),
+        next_attempt_at: Some(at(3, 0)),
+        last_error_code: Some("OPENAPI00009".into()),
+    };
+    let post = Post::new("a1b2c3".into(), "900".into(), "c1".into(), at(2, 0));
+    store.put_link(active("c1"), 0).await.unwrap();
+    assert!(store.put_snapshot(data.clone()).await.unwrap());
+    assert!(store.put_refresh_state(state.clone()).await.unwrap());
+    assert!(store.create_post(post.clone()).await.unwrap());
+    assert!(store.reserve_call(at(2, 0), DAILY_CALLS).await.unwrap());
+    store.close().await.unwrap();
+    let mut conn = raw(&config.db_path).await;
+    for sql in DOWN_TO_TWO {
+        sqlx::query(sql).execute(&mut conn).await.unwrap();
+    }
+    assert_eq!(ledger(&mut conn).await, [1, 2]);
+    assert!(estimate_tables(&mut conn).await.is_empty());
+    conn.close().await.unwrap();
+
+    let store = SqliteCharData::open(&config).await.unwrap();
+    assert_eq!(store.links().await.unwrap(), [active("c1")]);
+    assert_eq!(
+        store.snapshot("c1".into(), at(3, 0)).await.unwrap(),
+        Some(data)
+    );
+    assert_eq!(store.refresh_states().await.unwrap(), [state]);
+    assert_eq!(store.posts().await.unwrap(), [post]);
+    assert_eq!(store.calls_since(at(1, 0)).await.unwrap(), 1);
+    let now = at(3, 0);
+    assert!(store.estimates(now, 10).await.unwrap().members.is_empty());
+    let estimate = member_estimate("c1", "Wisteria", at(2, 0));
+    store.put_member_estimate(estimate.clone()).await.unwrap();
+    assert_eq!(store.estimates(now, 10).await.unwrap().members, [estimate]);
+    store.close().await.unwrap();
+
+    let mut conn = raw(&config.db_path).await;
+    assert_eq!(ledger(&mut conn).await, [1, 2, 3]);
+    assert_eq!(
+        estimate_tables(&mut conn).await,
+        [
+            "estimate_members",
+            "estimate_parties",
+            "estimate_party_members"
+        ]
+    );
+    let integrity: String = sqlx::query_scalar("PRAGMA integrity_check")
+        .fetch_one(&mut conn)
+        .await
+        .unwrap();
+    assert_eq!(integrity, "ok");
+    let broken = sqlx::query("PRAGMA foreign_key_check")
+        .fetch_all(&mut conn)
+        .await
+        .unwrap();
+    assert!(broken.is_empty(), "foreign keys hold");
+    conn.close().await.unwrap();
+}
+
+/// A party total's member rows go with it, whether a character's
+/// estimates are deleted or the total is swept.
+#[tokio::test]
+async fn party_members_go_with_their_totals() {
+    let dir = TempDir::new();
+    let config = dir.config("chardata");
+    let members = async || {
+        let mut conn = raw(&config.db_path).await;
+        let rows: Vec<(String, String)> = sqlx::query_as(
+            "SELECT set_key, character_id FROM estimate_party_members
+             ORDER BY set_key, character_id",
+        )
+        .fetch_all(&mut conn)
+        .await
+        .unwrap();
+        conn.close().await.unwrap();
+        rows
+    };
+    let store = SqliteCharData::open(&config).await.unwrap();
+    for characters in [["c1", "c2"], ["c2", "c3"]] {
+        store
+            .put_party_estimate(party_estimate(&characters, at(2, 0)))
+            .await
+            .unwrap();
+    }
+    store.delete_estimates("c1".into()).await.unwrap();
+    store.close().await.unwrap();
+    let pair = |set: &str, id: &str| (set.to_owned(), id.to_owned());
+    assert_eq!(members().await, [pair("c2,c3", "c2"), pair("c2,c3", "c3")]);
+
+    let store = SqliteCharData::open(&config).await.unwrap();
+    assert_eq!(
+        store
+            .sweep_estimates(at(2, 0) + ESTIMATE_TTL)
+            .await
+            .unwrap(),
+        1
+    );
+    store.close().await.unwrap();
+    assert!(members().await.is_empty());
 }
 
 #[tokio::test]
@@ -210,7 +351,8 @@ async fn a_backup_holds_no_character_data() {
     let mut conn = raw(&copy).await;
     let tables: Vec<String> = sqlx::query_scalar(
         "SELECT name FROM sqlite_master WHERE type = 'table'
-         AND name IN ('links', 'snapshots', 'refresh_state', 'posts', 'calls', 'chardata_migrations')",
+         AND name IN ('links', 'snapshots', 'refresh_state', 'posts', 'calls', 'chardata_migrations',
+             'estimate_members', 'estimate_parties', 'estimate_party_members')",
     )
     .fetch_all(&mut conn)
     .await

@@ -7,12 +7,17 @@
 //! into the roster row are roster data from then on. Chat and extraction
 //! never import this module (pinned below).
 
+mod estimate;
 mod model;
 mod port;
 mod readiness;
 mod rules;
 mod shares;
 
+pub use estimate::{
+    DeletedEstimates, ESTIMATE_TTL, MemberEstimate, PartyEstimate, StoredCard, StoredCombined,
+    StoredEstimates, StoredMember, estimate_kept,
+};
 pub use model::{
     ATTRIBUTION, CALL_WINDOW, ConsentSurface, DAILY_CALLS, FUTURE_SKEW, LINK_REGION, Link,
     LinkStatus, MAX_TEXT_CHARS, MAX_URL_CHARS, NOTICE_VERSION, OCID_RENEW_AFTER, PENDING_TTL, Post,

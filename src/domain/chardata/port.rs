@@ -5,6 +5,7 @@ use std::pin::Pin;
 
 use chrono::{DateTime, Utc};
 
+use super::estimate::{DeletedEstimates, MemberEstimate, PartyEstimate, StoredEstimates};
 use super::model::{Link, Post, PostState, RefreshState, Snapshot};
 use crate::domain::scheduler::StoreError;
 
@@ -70,4 +71,21 @@ pub trait CharDataStore: Send + Sync {
     fn set_post_state(&self, reference: String, state: PostState) -> StoreFuture<'_, bool>;
     /// Forget a post whose stripping was confirmed.
     fn delete_post(&self, reference: String) -> StoreFuture<'_, bool>;
+
+    /// The newest `limit` character results and the newest `limit` party
+    /// totals kept at `now` ([`super::estimate_kept`]), each newest first.
+    fn estimates(&self, now: DateTime<Utc>, limit: u32) -> StoreFuture<'_, StoredEstimates>;
+    /// Insert or replace the character's result.
+    /// [`StoreError::Constraint`] for a row that fails [`MemberEstimate::check`].
+    fn put_member_estimate(&self, estimate: MemberEstimate) -> StoreFuture<'_, ()>;
+    /// Insert or replace the total for the estimate's IGN set, with the
+    /// characters it includes.
+    /// [`StoreError::Constraint`] for a row that fails [`PartyEstimate::check`].
+    fn put_party_estimate(&self, estimate: PartyEstimate) -> StoreFuture<'_, ()>;
+    /// Delete the character's result and every party total including them,
+    /// in one write; what went.
+    fn delete_estimates(&self, character_id: String) -> StoreFuture<'_, DeletedEstimates>;
+    /// Delete results and totals no longer kept at `now`
+    /// ([`super::estimate_kept`]); how many.
+    fn sweep_estimates(&self, now: DateTime<Utc>) -> StoreFuture<'_, u64>;
 }

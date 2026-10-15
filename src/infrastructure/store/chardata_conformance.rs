@@ -2,14 +2,20 @@
 //! written pending or stale dropping its data, unlink deleting the link,
 //! snapshot and refresh state together and making posts due at once,
 //! snapshots only for active links and never read expired or stamped in the
-//! future, the rolling call budget, and tracked posts. Invented data only.
+//! future, the rolling call budget, tracked posts, and scouter estimates
+//! (newest first, replaced per character and IGN set, deleted per character
+//! with every party total naming them, kept at most 30 days and never read
+//! or kept stamped in the future). Invented data only.
+
+use std::collections::BTreeMap;
 
 use chrono::{DateTime, TimeDelta, TimeZone, Utc};
 
 use super::fixtures::{refused, refused_for};
 use crate::domain::chardata::{
-    CharDataStore, ConsentSurface, Link, LinkPut, LinkStatus, NOTICE_VERSION, Post, PostState,
-    RefreshState, STRIP_AFTER, Snapshot,
+    CharDataStore, ConsentSurface, DeletedEstimates, ESTIMATE_TTL, Link, LinkPut, LinkStatus,
+    MemberEstimate, NOTICE_VERSION, PartyEstimate, Post, PostState, RefreshState, STRIP_AFTER,
+    Snapshot, StoredCard, StoredCombined, StoredEstimates, StoredMember, estimate_kept,
 };
 use crate::domain::history::Actor;
 
@@ -21,6 +27,10 @@ pub async fn run_suite<S: CharDataStore>(make: impl AsyncFn() -> S) {
     the_call_budget_rolls_over_24_hours(make().await).await;
     posts_are_tracked_once(make().await).await;
     malformed_rows_are_refused(make().await).await;
+    estimates_load_newest_first_and_are_replaced(make().await).await;
+    deleting_a_character_drops_every_total_naming_them(make().await).await;
+    estimates_are_kept_30_days_and_never_from_the_future(make().await).await;
+    malformed_estimates_are_refused(make().await).await;
 }
 
 pub fn at(day: u32, hour: u32) -> DateTime<Utc> {
@@ -307,4 +317,220 @@ async fn malformed_rows_are_refused<S: CharDataStore>(store: S) {
     refused(store.put_snapshot(wrong_expiry).await);
     let bad_ref = Post::new("XYZ".into(), "900".into(), "c1".into(), at(2, 0));
     refused(store.create_post(bad_ref).await);
+}
+
+/// An invented scouter result for `ign` (character `character`) fetched at
+/// `fetched`.
+pub fn member_estimate(character: &str, ign: &str, fetched: DateTime<Utc>) -> MemberEstimate {
+    let card = StoredCard {
+        percentage: 112.5,
+        rating: "comfortable".into(),
+        party: false,
+        effective_percentage: Some(37.5),
+        estimated_minutes: Some(14.25),
+    };
+    MemberEstimate {
+        character_id: character.into(),
+        ign_key: ign.to_ascii_lowercase(),
+        result: StoredMember {
+            ign: ign.into(),
+            preset: "00010".into(),
+            critical_rate_assumed: true,
+            critical_rate_actual: Some(87.5),
+            source: Some("manual_input".into()),
+            bosses: BTreeMap::from([("hard_limbo".into(), card)]),
+        },
+        fetched_at: fetched,
+    }
+}
+
+/// An invented party total for `characters` (ascending), its set key
+/// their ids joined.
+pub fn party_estimate(characters: &[&str], fetched: DateTime<Utc>) -> PartyEstimate {
+    let total = StoredCombined {
+        combined_percentage: Some(96.0),
+        estimated_minutes: None,
+        technically_possible: Some(true),
+        complete: false,
+        issues: BTreeMap::from([("wisteria".into(), "missing_boss".into())]),
+    };
+    PartyEstimate {
+        set_key: characters.join(","),
+        character_ids: characters.iter().map(|&id| id.into()).collect(),
+        combined: BTreeMap::from([("hard_limbo".into(), total)]),
+        fetched_at: fetched,
+    }
+}
+
+async fn estimates_load_newest_first_and_are_replaced<S: CharDataStore>(store: S) {
+    let now = at(10, 0);
+    assert_eq!(
+        store.estimates(now, 10).await.unwrap(),
+        StoredEstimates::default()
+    );
+    let old = member_estimate("c1", "Wisteria", at(2, 0));
+    let mid = member_estimate("c2", "Lilac", at(3, 0));
+    let new = member_estimate("c3", "Rowan", at(4, 0));
+    for estimate in [&mid, &old, &new] {
+        store.put_member_estimate(estimate.clone()).await.unwrap();
+    }
+    let first = party_estimate(&["c1", "c2"], at(3, 0));
+    let second = party_estimate(&["c2", "c3"], at(4, 0));
+    store.put_party_estimate(first.clone()).await.unwrap();
+    store.put_party_estimate(second.clone()).await.unwrap();
+    let loaded = store.estimates(now, 2).await.unwrap();
+    assert_eq!(loaded.members, [new.clone(), mid.clone()], "the newest two");
+    assert_eq!(loaded.parties, [second.clone(), first.clone()]);
+
+    // A new lookup replaces the character's result, under a new IGN too.
+    let renamed = member_estimate("c1", "Wisterial", at(5, 0));
+    store.put_member_estimate(renamed.clone()).await.unwrap();
+    assert_eq!(
+        store.estimates(now, 10).await.unwrap().members,
+        [renamed, new, mid]
+    );
+    // A new total for the same set replaces its characters too.
+    let regrouped = PartyEstimate {
+        set_key: first.set_key.clone(),
+        ..party_estimate(&["c1", "c4"], at(5, 0))
+    };
+    store.put_party_estimate(regrouped.clone()).await.unwrap();
+    assert_eq!(
+        store.estimates(now, 10).await.unwrap().parties,
+        [regrouped.clone(), second.clone()]
+    );
+    assert_eq!(
+        store.delete_estimates("c2".into()).await.unwrap(),
+        DeletedEstimates {
+            ign_key: Some("lilac".into()),
+            set_keys: vec![second.set_key],
+        },
+        "the regrouped total no longer names c2"
+    );
+    assert_eq!(store.estimates(now, 10).await.unwrap().parties, [regrouped]);
+}
+
+async fn deleting_a_character_drops_every_total_naming_them<S: CharDataStore>(store: S) {
+    let now = at(10, 0);
+    let kept = member_estimate("c2", "Lilac", at(2, 0));
+    store
+        .put_member_estimate(member_estimate("c1", "Wisteria", at(2, 0)))
+        .await
+        .unwrap();
+    store.put_member_estimate(kept.clone()).await.unwrap();
+    for characters in [["c1", "c2"], ["c1", "c3"], ["c2", "c3"]] {
+        store
+            .put_party_estimate(party_estimate(&characters, at(2, 0)))
+            .await
+            .unwrap();
+    }
+    assert_eq!(
+        store.delete_estimates("c1".into()).await.unwrap(),
+        DeletedEstimates {
+            ign_key: Some("wisteria".into()),
+            set_keys: vec!["c1,c2".into(), "c1,c3".into()],
+        }
+    );
+    let loaded = store.estimates(now, 10).await.unwrap();
+    assert_eq!(loaded.members, [kept]);
+    assert_eq!(loaded.parties, [party_estimate(&["c2", "c3"], at(2, 0))]);
+    assert_eq!(
+        store.delete_estimates("c1".into()).await.unwrap(),
+        DeletedEstimates::default(),
+        "nothing left"
+    );
+    // A character with a party total but no result of their own.
+    assert_eq!(
+        store.delete_estimates("c3".into()).await.unwrap(),
+        DeletedEstimates {
+            ign_key: None,
+            set_keys: vec!["c2,c3".into()],
+        }
+    );
+    assert!(store.estimates(now, 10).await.unwrap().parties.is_empty());
+}
+
+async fn estimates_are_kept_30_days_and_never_from_the_future<S: CharDataStore>(store: S) {
+    let fetched = at(2, 0);
+    let member = member_estimate("c1", "Wisteria", fetched);
+    let party = party_estimate(&["c1", "c2"], fetched);
+    let put = async || {
+        store.put_member_estimate(member.clone()).await.unwrap();
+        store.put_party_estimate(party.clone()).await.unwrap();
+    };
+    let count = async |now: DateTime<Utc>| {
+        let loaded = store.estimates(now, 10).await.unwrap();
+        loaded.members.len() + loaded.parties.len()
+    };
+    put().await;
+    let expiry = fetched + ESTIMATE_TTL;
+    let last = expiry - TimeDelta::seconds(1);
+    assert!(estimate_kept(fetched, last) && !estimate_kept(fetched, expiry));
+    assert_eq!(count(last).await, 2);
+    assert_eq!(count(expiry).await, 0, "refused before the sweeper runs");
+    // Stamped in the future (the wall clock stepped back two days)...
+    let back = fetched - TimeDelta::days(2);
+    assert_eq!(count(back).await, 0);
+    // ...but kept inside the skew.
+    let close = fetched - TimeDelta::minutes(4);
+    assert_eq!(count(close).await, 2);
+    assert_eq!(store.sweep_estimates(close).await.unwrap(), 0);
+    assert_eq!(store.sweep_estimates(back).await.unwrap(), 2);
+    assert_eq!(count(fetched).await, 0);
+
+    put().await;
+    assert_eq!(store.sweep_estimates(last).await.unwrap(), 0);
+    assert_eq!(store.sweep_estimates(expiry).await.unwrap(), 2, "30 days");
+    assert_eq!(count(fetched).await, 0);
+    // A party swept away leaves nothing for a later delete to find.
+    assert_eq!(
+        store.delete_estimates("c2".into()).await.unwrap(),
+        DeletedEstimates::default()
+    );
+}
+
+async fn malformed_estimates_are_refused<S: CharDataStore>(store: S) {
+    let member = member_estimate("c1", "Wisteria", at(2, 0));
+    refused(
+        store
+            .put_member_estimate(MemberEstimate {
+                character_id: String::new(),
+                ..member.clone()
+            })
+            .await,
+    );
+    refused(
+        store
+            .put_member_estimate(MemberEstimate {
+                ign_key: String::new(),
+                ..member
+            })
+            .await,
+    );
+    let party = party_estimate(&["c1", "c2"], at(2, 0));
+    for (check, ids) in [
+        ("no characters", vec![]),
+        ("unsorted", vec!["c2", "c1"]),
+        ("repeated", vec!["c1", "c1"]),
+        ("empty id", vec!["", "c1"]),
+    ] {
+        let bad = PartyEstimate {
+            character_ids: ids.into_iter().map(String::from).collect(),
+            ..party.clone()
+        };
+        refused_for(check, store.put_party_estimate(bad).await);
+    }
+    refused(
+        store
+            .put_party_estimate(PartyEstimate {
+                set_key: String::new(),
+                ..party
+            })
+            .await,
+    );
+    assert_eq!(
+        store.estimates(at(3, 0), 10).await.unwrap(),
+        StoredEstimates::default(),
+        "nothing was written"
+    );
 }
