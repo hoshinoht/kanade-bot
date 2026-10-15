@@ -28,7 +28,7 @@ pub(crate) mod write;
 #[cfg(test)]
 pub(crate) use {
     auth::{Methods, SessionView},
-    write::{Message, MoveResult, Previous, RunResult, SwapResult, ValidateResult},
+    write::{FixedChoices, Message, MoveResult, Previous, RunResult, SwapResult, ValidateResult},
 };
 
 use std::sync::Arc;

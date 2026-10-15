@@ -893,6 +893,11 @@ owner: string, owner_id: string,
  */
 owner_pinned: boolean, note: string | null, runs: Array<FixedRunLink>, };
 
+/**
+ * The runs the save takes a decision for (none: send no `decisions`).
+ */
+export type FixedChoices = { runs: Array<FixedRunLink>, };
+
 export type ValidateResult = { bosses: Array<Boss>, };
 
 /**

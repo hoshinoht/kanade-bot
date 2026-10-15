@@ -963,6 +963,86 @@ async fn an_ended_amended_run_is_not_offered_as_a_timing_choice() {
     );
 }
 
+/// The editor asks update or keep only about the runs the save lists. It
+/// asked about every amended run, so a save keeping the day and time, or one
+/// with a run changed only in its roster, was refused `choices_not_applicable`.
+#[tokio::test]
+async fn timing_choices_are_the_runs_the_save_takes_decisions_for() {
+    let reads = Reads::new().await;
+    let path = "/api/admin/fixed/f-kalos/choices";
+    let listed = async |body: Value| -> Vec<String> {
+        assert_valid("fixed.json#/$defs/FixedChoicesRequest", "choices", &body);
+        let choices = reads.ok("POST", path, body, "fixed.json#/$defs/FixedChoices");
+        let runs = choices.await["runs"].as_array().unwrap().clone();
+        runs.iter()
+            .map(|run| run["run_id"].as_str().unwrap().to_owned())
+            .collect()
+    };
+    // f-kalos: Tue 22:00. r-kalos moves off it; n-kalos changes only its roster.
+    let v = reads.version().await;
+    let body = json!({"day": 5, "time": "23:00", "version": v});
+    reads.ok("POST", MOVE_KALOS, body, MOVE_RESULT).await;
+    let add = json!({"add": "1004", "version": reads.version().await});
+    let roster = "/api/admin/runs/n-kalos/participants";
+    reads.ok("PATCH", roster, add, RUN_RESULT).await;
+    let (_, row) = reads.rows().await;
+    let amended: Vec<_> = row["runs"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|run| (run["run_id"].clone(), run["amended"].clone()))
+        .collect();
+    assert_eq!(
+        amended,
+        [
+            ("r-kalos".into(), true.into()),
+            ("n-kalos".into(), true.into())
+        ]
+    );
+
+    let unchanged = listed(json!({"weekday": 1, "time": "22:00"})).await;
+    assert!(
+        unchanged.is_empty(),
+        "day and time unchanged: {unchanged:?}"
+    );
+    let moved = listed(json!({"weekday": 1, "time": "21:30"})).await;
+    assert_eq!(moved, ["r-kalos"], "not the roster-only run");
+    assert_eq!(
+        reads
+            .refused("POST", path, json!({"weekday": 1, "time": "9:30"}))
+            .await,
+        (422, "invalid".into())
+    );
+    let gone = "/api/admin/fixed/f-gone/choices";
+    assert_eq!(
+        reads
+            .refused("POST", gone, json!({"weekday": 1, "time": "21:30"}))
+            .await,
+        (404, "not_found".into())
+    );
+
+    // What the editor then sends: no decisions for a note-only save, and one
+    // per listed run for the time change.
+    let note = timing(reads.version().await, "22:00", "bring pots");
+    reads.ok("PATCH", F_KALOS, note, FIXED_ROW).await;
+    let mut moved = timing(reads.version().await, "21:30", "bring pots");
+    moved["decisions"] = json!({"r-kalos": "keep"});
+    let row = reads.ok("PATCH", F_KALOS, moved, FIXED_ROW).await;
+    let times: Vec<_> = row["runs"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|run| (run["run_id"].clone(), run["time"].clone()))
+        .collect();
+    assert_eq!(
+        times,
+        [
+            ("r-kalos".into(), "23:00".into()),
+            ("n-kalos".into(), "21:30".into())
+        ]
+    );
+}
+
 #[tokio::test]
 async fn member_edits_and_aliases() {
     let reads = Reads::new().await;

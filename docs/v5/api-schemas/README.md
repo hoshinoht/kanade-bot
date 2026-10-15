@@ -110,6 +110,7 @@ Pointers are `<file>#/$defs/<Name>`.
 | `GET /api/admin/roles` | `common.json#/$defs/Roles` |
 | `GET /api/admin/fixed` | `fixed.json#/$defs/FixedRows` |
 | `POST /api/admin/fixed`, `PATCH /api/admin/fixed/{id}` | `fixed.json#/$defs/FixedRow` (request body `FixedRequest`; PATCH requires `version`) |
+| `POST /api/admin/fixed/{id}/choices` | `fixed.json#/$defs/FixedChoices` (body `FixedChoicesRequest`; the runs a PATCH to that day and time takes an `update`/`keep` decision for, as the PATCH decides them; the editor asks only about these and sends no `decisions` when it is empty; CSRF; nothing written; 404 `not_found` for a timing that is gone, 422 `invalid` for a bad day or time) |
 | `DELETE /api/admin/fixed/{id}` | `fixed.json#/$defs/FixedRetired` |
 | `POST /api/admin/validate/bosses` | `fixed.json#/$defs/ValidateResult` |
 | `GET /api/admin/bosses` | `bosses.json#/$defs/BossRows` |

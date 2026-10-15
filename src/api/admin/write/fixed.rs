@@ -40,8 +40,12 @@ use crate::{
     },
 };
 
+mod choices;
 mod replay;
 
+#[cfg(test)]
+pub(crate) use choices::FixedChoices;
+pub use choices::choices;
 use replay::{FixedPatchIdentity, RefusalReplay};
 
 type Reply = Result<Response, Refusal>;
@@ -84,19 +88,25 @@ struct Checked {
     owner_id: Option<String>,
 }
 
+/// The form's weekday (0 = Monday) and `HH:MM` time.
+fn slot(weekday: u8, time: &str) -> Result<(Weekday, NaiveTime), Refusal> {
+    let weekday = crate::domain::weeks::weekday_from_index(i64::from(weekday))
+        .ok()
+        .filter(|_| weekday <= 6)
+        .ok_or_else(|| Refusal::invalid("Pick a weekday."))?;
+    let time = (time.len() == 5)
+        .then(|| NaiveTime::parse_from_str(time, "%H:%M").ok())
+        .flatten()
+        .ok_or_else(|| Refusal::invalid("Times are HH:MM, 00:00 to 23:59."))?;
+    Ok((weekday, time))
+}
+
 fn checked(
     state: &ApiState,
     request: &FixedRequest,
     directory: &Roster,
 ) -> Result<Checked, Refusal> {
-    let weekday = crate::domain::weeks::weekday_from_index(i64::from(request.weekday))
-        .ok()
-        .filter(|_| request.weekday <= 6)
-        .ok_or_else(|| Refusal::invalid("Pick a weekday."))?;
-    let time = (request.time.len() == 5)
-        .then(|| NaiveTime::parse_from_str(&request.time, "%H:%M").ok())
-        .flatten()
-        .ok_or_else(|| Refusal::invalid("Times are HH:MM, 00:00 to 23:59."))?;
+    let (weekday, time) = slot(request.weekday, &request.time)?;
     let bosses = state
         .catalog
         .parse(&request.bosses)

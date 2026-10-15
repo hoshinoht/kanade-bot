@@ -14,6 +14,7 @@ mod digest_v2;
 mod drafts;
 mod failures;
 mod intercept;
+mod late_start;
 mod manual;
 mod moves;
 mod notices;

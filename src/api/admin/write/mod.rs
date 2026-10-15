@@ -13,7 +13,7 @@ mod runs;
 
 #[cfg(test)]
 pub(crate) use {
-    fixed::ValidateResult,
+    fixed::{FixedChoices, ValidateResult},
     runs::{Message, MoveResult, RunResult, SwapResult},
 };
 
@@ -64,6 +64,7 @@ pub fn routes() -> Router<Arc<Site>> {
             "/api/admin/fixed/{id}",
             patch(fixed::update).delete(fixed::retire),
         )
+        .route("/api/admin/fixed/{id}/choices", post(fixed::choices))
         .route("/api/admin/validate/bosses", post(fixed::validate_bosses))
         .route("/api/admin/members/{id}", patch(members::update))
         .route("/api/admin/members/{id}/aliases", post(members::add_alias))
