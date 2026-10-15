@@ -955,10 +955,17 @@ inline: boolean, };
 
 /**
  * A reminder card as the bot posts it: the message text (mentions as
- * `<@id>`), its first embed and any further ones (the redesigned day-of
- * card has one per run). Art is a same-origin `/art/` URL.
+ * `<@id>`), the estimate image beneath it, its first embed and any
+ * further ones (the redesigned day-of card has one per run). Art is a
+ * same-origin `/art/` URL.
  */
 export type CardPreview = { content: string, 
+/**
+ * The "Who carries" image a new post attaches between the text and
+ * the embeds; `None` for classic cards, other kinds and while the
+ * roster or cached estimates are off.
+ */
+estimate: EstimateImage | null, 
 /**
  * `#rrggbb`, the embed's colour bar.
  */
@@ -981,6 +988,24 @@ export type EmbedPreview = {
  * `#rrggbb`.
  */
 color: string, title: string | null, description: string | null, fields: Array<CardField>, footer: string | null, thumbnail: string | null, image: string | null, };
+
+/**
+ * The estimate share chart of a previewed card, drawn from the estimates
+ * cached now by the delivery code that posts it.
+ */
+export type EstimateImage = { 
+/**
+ * The PNG: `GET /api/admin/reminders/{id}/estimate.png` (same origin).
+ */
+url: string, 
+/**
+ * The attachment's description: the same facts by IGN.
+ */
+alt: string, 
+/**
+ * CSS px; the PNG has twice as many pixels each way.
+ */
+width: number, height: number, };
 
 /**
  * `GET /api/admin/reminders/{id}/preview`: the row and its card; `card` is

@@ -43,9 +43,13 @@
     "CardPreview": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["content", "color", "title", "description", "fields", "footer", "thumbnail", "image", "more_embeds", "heading_final"],
+      "required": ["content", "estimate", "color", "title", "description", "fields", "footer", "thumbnail", "image", "more_embeds", "heading_final"],
       "properties": {
         "content": { "type": "string" },
+        "estimate": {
+          "oneOf": [{ "$ref": "#/$defs/EstimateImage" }, { "type": "null" }],
+          "description": "The \"Who carries\" image a new post attaches between the text and the embeds (redesigned day-of and countdown cards). null: classic style, another kind, or the roster or cached estimates off."
+        },
         "color": { "type": "string", "pattern": "^#[0-9a-f]{6}$" },
         "title": { "$ref": "common.json#/$defs/NullableString" },
         "description": { "$ref": "common.json#/$defs/NullableString" },
@@ -60,6 +64,17 @@
           "description": "The embeds after the first (the redesigned day-of card has one per run)."
         },
         "heading_final": { "type": "boolean" }
+      }
+    },
+    "EstimateImage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["url", "alt", "width", "height"],
+      "properties": {
+        "url": { "type": "string", "pattern": "^/api/admin/reminders/[^/]+/estimate\\.png$" },
+        "alt": { "type": "string", "minLength": 1, "maxLength": 1024, "description": "The attachment's description: the same facts by IGN." },
+        "width": { "type": "integer", "minimum": 1, "description": "CSS px; the PNG is drawn at 2x." },
+        "height": { "type": "integer", "minimum": 1 }
       }
     },
     "EmbedPreview": {

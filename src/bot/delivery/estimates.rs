@@ -13,13 +13,14 @@ use std::time::Duration;
 
 use chrono::{DateTime, Datelike, Utc};
 use chrono_tz::Tz;
+use twilight_model::channel::message::Component;
 
 use super::cards::chart::{self, Chart, ChartRun};
 use super::cards::{CardContext, CardKit, card_runs};
 use crate::bot::commands::text::{MONTH_NAMES, local_time, weekday_name};
-use crate::bot::transport::{OutgoingMessage, Upload};
+use crate::bot::transport::{OutgoingMessage, Upload, legacy_rows};
 use crate::domain::catalog::BossTable;
-use crate::domain::characters::{CharacterStore, PartyRoster, PartySlot};
+use crate::domain::characters::{PartyReads, PartyRoster, PartySlot};
 use crate::domain::chardata::{Carrier, PartyShares};
 use crate::domain::notify::IntentContent;
 use crate::domain::schedule::{Run, RunStatus, ScheduleSnapshot};
@@ -59,19 +60,20 @@ pub trait PartyEstimates: Send + Sync {
 }
 
 /// The serve port: the roster store and module `character_data`'s
-/// estimates memory (only built while both are on).
-pub struct CachedEstimates<S> {
+/// estimates memory (only built while both are on). The admin preview
+/// reads the same through its roster port.
+pub struct CachedEstimates<S: ?Sized> {
     store: Arc<S>,
     module: Arc<CharacterData>,
 }
 
-impl<S> CachedEstimates<S> {
+impl<S: ?Sized> CachedEstimates<S> {
     pub fn new(store: Arc<S>, module: Arc<CharacterData>) -> Self {
         Self { store, module }
     }
 }
 
-impl<S: CharacterStore + Send + Sync + 'static> PartyEstimates for CachedEstimates<S> {
+impl<S: PartyReads + Send + Sync + ?Sized + 'static> PartyEstimates for CachedEstimates<S> {
     fn run<'a>(
         &'a self,
         run: &'a Run,
@@ -185,18 +187,17 @@ fn skipped(reason: &str) {
 }
 
 /// The chart for a card's runs: redesigned day-of and countdown cards
-/// only, while the port is set. `None` without one or when a party can't
-/// be read; nobody having an estimate still draws ("no estimate yet").
+/// only. `None` otherwise or when a party can't be read; nobody having an
+/// estimate still draws ("no estimate yet").
 pub async fn chart_for(
     content: &IntentContent,
     ctx: &CardContext<'_>,
-    kit: &CardKit,
+    port: &dyn PartyEstimates,
     now: DateTime<Utc>,
 ) -> Option<Chart> {
     if ctx.style != MessageStyle::Redesigned {
         return None;
     }
-    let port = kit.estimates.as_ref()?;
     let catalog = ctx.catalog?;
     let runs: Vec<&Run> = match content {
         IntentContent::DayOf { run_ids } => card_runs(ctx, run_ids),
@@ -251,7 +252,16 @@ pub async fn draw(chart: Chart) -> Result<Upload, &'static str> {
     })
 }
 
-/// Add the chart to `message`, a new post of `content` (never an edit).
+/// Whether a post of `content` and `components` can show a file: text
+/// with no components or only legacy button rows (the redesigned cards'
+/// "Open in portal" link); a V2 layout or an empty render has nowhere to.
+pub(super) fn shows_files(content: Option<&str>, components: &[Component]) -> bool {
+    let text = content.is_some_and(|text| !text.is_empty());
+    (text && components.is_empty()) || legacy_rows(content, components)
+}
+
+/// Add the chart to `message`, a new post of `content` (never an edit),
+/// while `kit` has the estimates port.
 pub async fn attach_chart(
     message: &mut OutgoingMessage,
     content: &IntentContent,
@@ -259,11 +269,13 @@ pub async fn attach_chart(
     kit: &CardKit,
     now: DateTime<Utc>,
 ) {
-    // A V2 layout or an empty render has nowhere to show a file.
-    if !message.components.is_empty() || message.content.as_deref().is_none_or(str::is_empty) {
+    if !shows_files(message.content.as_deref(), &message.components) {
         return;
     }
-    let Some(chart) = chart_for(content, ctx, kit, now).await else {
+    let Some(port) = kit.estimates.as_deref() else {
+        return;
+    };
+    let Some(chart) = chart_for(content, ctx, port, now).await else {
         return;
     };
     if message.attachments.len() >= MAX_ATTACHMENTS {

@@ -12,12 +12,12 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use chrono::{TimeDelta, TimeZone, Utc};
 use kanade::bot::delivery::cards::chart::{self, Chart, ChartRun, SCALE};
-use kanade::bot::delivery::cards::{CardKit, V2Kit};
+use kanade::bot::delivery::cards::{self, CardArt, CardContext, CardKit, V2Kit, redesign};
 use kanade::bot::delivery::{
     EstimateFuture, MAX_ATTACHMENTS, PartyEstimates, RunEstimate, attach_chart, chart_for,
     read_estimates,
 };
-use kanade::bot::transport::{OutgoingMessage, Upload};
+use kanade::bot::transport::{OutgoingMessage, Upload, legacy_rows};
 use kanade::domain::catalog::BossTable;
 use kanade::domain::characters::{Basis, Character, CharacterRole, PartySlot};
 use kanade::domain::chardata::{Carrier, PartyShares};
@@ -501,7 +501,7 @@ async fn redesigned_day_of_and_countdown_posts_carry_the_chart() {
     let kit = charted(CardKit::default());
     let at = Utc.with_ymd_and_hms(2026, 9, 9, 1, 0, 0).unwrap();
 
-    let both = chart_for(&day_of(&[KALOS, MALEFIC]), &ctx, &kit, at)
+    let both = chart_for(&day_of(&[KALOS, MALEFIC]), &ctx, &*port(), at)
         .await
         .expect("a chart");
     // Time order, as the card; the as-of is the oldest reading, guild time.
@@ -526,16 +526,13 @@ async fn redesigned_day_of_and_countdown_posts_carry_the_chart() {
     // Nobody with a reading still draws "no estimate yet".
     let mut none = kalos();
     none.party.carriers = blank(&none.party.carriers);
-    let empty = CardKit {
-        estimates: Some(Arc::new(Fixed(vec![(
-            KALOS.into(),
-            RunEstimate {
-                oldest: None,
-                ..estimate(none)
-            },
-        )]))),
-        ..CardKit::default()
-    };
+    let empty = Fixed(vec![(
+        KALOS.into(),
+        RunEstimate {
+            oldest: None,
+            ..estimate(none)
+        },
+    )]);
     let chart = chart_for(&countdown(KALOS), &ctx, &empty, at)
         .await
         .unwrap();
@@ -558,7 +555,7 @@ async fn redesigned_day_of_and_countdown_posts_carry_the_chart() {
         ..ctx
     };
     assert!(
-        chart_for(&countdown(KALOS), &ctx_portal, &portal, at)
+        chart_for(&countdown(KALOS), &ctx_portal, &*port(), at)
             .await
             .unwrap()
             .portal
@@ -608,14 +605,9 @@ async fn classic_cards_unset_ports_and_failures_post_without_it() {
     attach_chart(&mut message, &day_of(&[KALOS]), &ctx, &failing, at).await;
     assert!(!attached(&message), "unreadable party");
     assert!(
-        chart_for(
-            &day_of(&[KALOS, MALEFIC]),
-            &ctx,
-            &charted(CardKit::default()),
-            at
-        )
-        .await
-        .is_some()
+        chart_for(&day_of(&[KALOS, MALEFIC]), &ctx, &*port(), at)
+            .await
+            .is_some()
     );
     attach_chart(
         &mut message,
@@ -655,11 +647,67 @@ async fn classic_cards_unset_ports_and_failures_post_without_it() {
 
     // Kinds without runs never chart.
     let digest = kanade::domain::notify::IntentContent::Plain;
+    assert!(chart_for(&digest, &ctx, &*port(), at).await.is_none());
+}
+
+/// While the public portal is open the run cards post with the legacy
+/// "Open in portal" row under their text: the chart is still attached
+/// (Discord shows files beside link rows), and its overflow line points
+/// at the portal. A V2 layout still has nowhere to show it.
+#[tokio::test]
+async fn an_open_portal_post_carries_the_chart_beside_its_link_row() {
+    let (schedule, roster, table) = (week(), members(), catalog());
+    let at = Utc.with_ymd_and_hms(2026, 9, 9, 1, 0, 0).unwrap();
+    let portal = V2Kit {
+        portal: Some("https://portal.example".into()),
+        portal_open: Some(Arc::new(|| true)),
+        ..V2Kit::default()
+    };
+    let ctx = CardContext {
+        v2: Some(&portal),
+        ..redesigned_v5(&schedule, &roster, &table)
+    };
+    // Nine bosses: the ninth bar is counted on the overflow line.
+    let bosses: Vec<String> = (1..=9).map(|n| format!("HBoss{n}")).collect();
+    let busy = RunEstimate {
+        party: PartyShares {
+            bosses: bosses.clone(),
+            carriers: vec![carrier("AsahiDK", false, &[30.0; 9])],
+            missing: 0,
+        },
+        minutes: vec![None; 9],
+        oldest: None,
+    };
+    let port = Fixed(vec![(KALOS.into(), busy)]);
+    let kit = CardKit {
+        estimates: Some(Arc::new(Fixed(port.0.clone()))),
+        v2: portal.clone(),
+        ..CardKit::default()
+    };
+    let content = countdown(KALOS);
+    let card = cards::build(&content, &ctx, None, &[]).expect("a card");
+    let mut message = card.message(&[], &CardArt::default());
     assert!(
-        chart_for(&digest, &ctx, &charted(CardKit::default()), at)
-            .await
-            .is_none()
+        !message.components.is_empty()
+            && legacy_rows(message.content.as_deref(), &message.components),
+        "the Open in portal row: {:?}",
+        message.components
     );
+    attach_chart(&mut message, &content, &ctx, &kit, at).await;
+    let upload = png_upload(&message).expect("the chart beside the link row");
+    assert!(upload.bytes.starts_with(b"\x89PNG\r\n\x1a\n"));
+    let chart = chart_for(&content, &ctx, &port, at).await.expect("a chart");
+    assert!(chart.portal);
+    let drawn = chart::svg(&chart).svg;
+    assert!(drawn.contains("+1 more boss in the portal"), "{drawn}");
+
+    // A V2 layout (no text, components only): left off as before.
+    let mut v2 = OutgoingMessage::v2(
+        vec![redesign::container(0, vec![redesign::text("📅 **Today**")])],
+        kanade::bot::mentions::none(),
+    );
+    attach_chart(&mut v2, &content, &ctx, &kit, at).await;
+    assert!(png_upload(&v2).is_none(), "a V2 layout shows no file");
 }
 
 /// Through the tick: the post carries the chart once; a refresh edit

@@ -403,6 +403,16 @@ td.reminders-table__run a {
 .dcard__time { color: var(--dim-text); font-size: var(--fs-mini); }
 .dcard__content { margin-top: 2px; }
 
+/* A plain attachment (the estimate image): under the text, above the embeds, at most Discord's 550 px. */
+.dcard__attachment {
+  display: block;
+  width: 100%;
+  max-width: 550px;
+  height: auto;
+  margin-top: 6px;
+  border-radius: 8px;
+}
+
 .dcard__embed {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;

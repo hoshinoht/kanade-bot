@@ -197,6 +197,7 @@ fn bindings() -> String {
         .add::<reminders::CardField>()
         .add::<reminders::CardPreview>()
         .add::<reminders::EmbedPreview>()
+        .add::<reminders::EstimateImage>()
         .add::<reminders::ReminderPreview>()
         .add::<bosses::DifficultyOption>()
         .add::<bosses::BossRow>()
