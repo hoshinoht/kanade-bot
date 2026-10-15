@@ -4,10 +4,12 @@
 //! directory), attach the service to the admin API and run the joined
 //! `CharacterData` task. Off, none of this runs and no file is created.
 //!
-//! The task sweeps at startup (that first sweep also corrects roster IGNs
-//! whose stored NEXON name differs in case) and then every [`SWEEP_EVERY`]
-//! (and whenever an unlink wakes it), runs the daily batch at 04:00
-//! Singapore time and retries characters whose retry time has come.
+//! The task sweeps at startup (after that first sweep, admin requests left
+//! pending become active and fetch, and roster rows take the class, level
+//! and IGN case their fresh NEXON data holds) and then every
+//! [`SWEEP_EVERY`] (and whenever an unlink wakes it), runs the daily batch
+//! at 04:00 Singapore time and retries characters whose retry time has
+//! come.
 //! Periods run on tokio's monotonic clock; the batch time and every cutoff
 //! come from the injected wall clock, so a wall-clock step never stops the
 //! sweeper. Stopping cancels a run in progress and joins the task before
@@ -225,9 +227,10 @@ impl Task {
         let joined = Arc::clone(&service);
         let task = tokio::spawn(async move {
             let mut next_sweep = tokio::time::Instant::now();
-            // The startup sweep also corrects roster IGNs whose stored
-            // NEXON name differs in case (links made before that rule).
-            let mut cases_matched = false;
+            // After the startup sweep (which drops lapsed requests), once:
+            // admin requests left pending become active and fetch, then
+            // roster rows take what fresh snapshots already hold.
+            let mut started = false;
             // The batch still owed, kept across wakes: whichever timer wakes
             // the loop, a wall clock at or past it runs the batch once. It
             // only moves earlier (a wall-clock step back) or, after the
@@ -259,9 +262,10 @@ impl Task {
                         () = tokio::time::sleep_until(next_sweep) => {
                             next_sweep = tokio::time::Instant::now() + sweep_every;
                             service.sweep().await;
-                            if !cases_matched {
-                                service.match_ign_cases().await;
-                                cases_matched = true;
+                            if !started {
+                                service.activate_requests().await;
+                                service.sync_rosters().await;
+                                started = true;
                             }
                         }
                         () = service.woken() => {

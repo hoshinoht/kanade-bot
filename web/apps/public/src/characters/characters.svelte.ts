@@ -38,14 +38,16 @@ export const thousands = (value: number) => new Intl.NumberFormat('en-US').forma
 
 /** copy.rs `unlinked`: what Unlink deleted, and the shared cards it cleared (the answer counts them, without their channels). */
 export function unlinkedWords(done: Unlinked): string {
-  if (!done.cards) return `Unlinked ${done.unlinked}. Its NEXON data is deleted. Your roster character is unchanged.`;
+  if (!done.cards) return `Unlinked ${done.unlinked}. Its NEXON data is deleted; your roster character keeps its class and level.`;
   const cards = done.cards === 1 ? '1 shared card now reads' : `${done.cards} shared cards now read`;
-  return `Unlinked ${done.unlinked}. Its NEXON data is deleted, and your ${cards} “Character data removed”. Your roster character is unchanged.`;
+  return `Unlinked ${done.unlinked}. Its NEXON data is deleted, and your ${cards} “Character data removed”. Your roster character keeps its class and level.`;
 }
 
 /** copy.rs `unlinked_all`. */
 export function unlinkedAllWords(done: UnlinkedAll): string {
-  return done.unlinked.length ? `Unlinked everything left: ${done.unlinked.join(', ')}. Nothing from NEXON is kept for you now.` : 'Nothing from NEXON is kept for you.';
+  return done.unlinked.length
+    ? `Unlinked everything left: ${done.unlinked.join(', ')}. Nothing from NEXON is kept for you now; your roster characters keep their class and level.`
+    : 'Nothing from NEXON is kept for you.';
 }
 
 export class MemberCharacters {

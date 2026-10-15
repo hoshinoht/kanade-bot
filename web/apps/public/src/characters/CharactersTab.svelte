@@ -2,7 +2,8 @@
   Account › Characters (module `roster`; boards M_Chars, M_CharsMenu,
   M_CharStates, M_PhoneChars, M_PhoneCharStates): the member's own roster as
   the admins see it, with their NEXON consent. "Waiting for you" comes first
-  (an admin's link request, Review and link…), then Your characters (the
+  (a link waiting for the member to confirm the notice, Review and link…),
+  then Your characters (the
   admin roster panel, member wording: no Delete, a link chip on each row),
   then NEXON data (My data…, the Privacy notice, the attribution). With no
   characters only the roster's empty note shows; with `character_data` off,
@@ -45,11 +46,12 @@
   const data = $derived(store.data);
   const rows = $derived(data?.characters ?? null);
   const pending = $derived(data?.pending ?? []);
-  // The admins who asked, by actor id, to name them ("Asked … by Ren").
-  const askers = $derived(new Map(pending.map((p) => [p.requested_by.id, p.requested_by_name])));
+  // An admin who linked one, by actor id, to name them ("Linked … by Ren").
+  const linkers = $derived(new Map(pending.map((p) => [p.requested_by.id, p.requested_by_name])));
   // The NEXON attribution, as every link carries it (shown wherever NEXON data is spoken of).
   const attribution = $derived(Object.values(data?.links ?? {})[0]?.attribution ?? null);
-  const name = (who: SettingsActor) => (who.kind === 'member' ? 'you' : (askers.get(who.id) ?? 'an admin'));
+  const name = (who: SettingsActor) =>
+    who.kind === 'member' ? 'you' : who.kind === 'system' ? (who.id === 'nexon' ? 'NEXON' : 'Kanade') : (linkers.get(who.id) ?? 'an admin');
   /** A link or unlink changed what the strip shows: a new kit re-reads it. */
   let generation = $state(0);
 
@@ -149,7 +151,7 @@
     <section class="account-sec mychars-pending" aria-labelledby="mc-wait" data-fid="mychars-pending">
       <div class="account-sec__head">
         <h3 class="cap" id="mc-wait">Waiting for you</h3>
-        {#if !phone}<span class="account-sec__end account-sec__note">An admin asked; nothing is fetched until you link</span>{/if}
+        {#if !phone}<span class="account-sec__end account-sec__note">Nothing is fetched until you link</span>{/if}
       </div>
       <ul class="account-grp">
         {#each pending as request, i (request.character_id)}
@@ -160,8 +162,8 @@
               <span class="account-row__text">
                 <span class="account-row__title"><span class="mono">{request.ign}</span>{#if request.class}{` · ${request.class}`}{/if}</span>
                 <span class="account-row__sub"
-                  >{request.requested_by_name ?? 'An admin'} asked on <span class="mono">{dayMonth(request.requested_at, timeZone)}</span> to link it to its NEXON Open API data.
-                  The request lapses <span class="mono">{dayMonth(request.expires_at, timeZone)}</span>.</span
+                  >Waiting since <span class="mono">{dayMonth(request.requested_at, timeZone)}</span> for you to confirm the NEXON notice. It lapses
+                  <span class="mono">{dayMonth(request.expires_at, timeZone)}</span>.</span
                 >
               </span>
             {/snippet}
@@ -208,7 +210,7 @@
           <span class="account-row__text">
             <span class="account-row__title">What Kanade keeps for you</span>
             <span class="account-row__sub"
-              >Everything kept, per character, with dates. Unlink deletes it at once.
+              >Everything kept, per character, with dates. Unlink deletes it at once; your roster characters keep their class and level.
               {#if data.privacy_url}<a href={data.privacy_url} target="_blank" rel="noreferrer" data-fid="mychars-privacy">Privacy notice</a>{/if}</span
             >
           </span>

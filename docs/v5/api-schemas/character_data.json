@@ -12,14 +12,14 @@
         "character_id": { "type": "string" },
         "state": {
           "enum": ["not_connected", "not_linked", "pending", "linked", "stale", "expired"],
-          "description": "not_connected: no Nexon key is configured and no link exists; pending: an admin asked and the member has not confirmed (no call made); stale: the character could not be resolved or changed its name (link again); expired: linked, but the data passed its 30 days."
+          "description": "not_connected: no Nexon key is configured and no link exists; pending: waiting for the member to confirm the current notice (no call made; admins' links are active at once); stale: the character could not be resolved or changed its name (link again); expired: linked, but the data passed its 30 days."
         },
         "version": { "type": "integer", "minimum": 0, "description": "The link version; send it back with a link request (0 while there is no link)." },
         "connected": { "type": "boolean", "description": "A Nexon key is configured." },
-        "requested_by": { "oneOf": [{ "$ref": "history.json#/$defs/Actor" }, { "type": "null" }] },
+        "requested_by": { "oneOf": [{ "$ref": "history.json#/$defs/Actor" }, { "type": "null" }], "description": "Who made the link: the admin who linked it (active at once, no member confirmation), the member, or the sweeper for a link waiting for a new notice." },
         "requested_at": { "$ref": "common.json#/$defs/NullableString" },
-        "consent_version": { "type": ["integer", "null"], "minimum": 1, "description": "The notice version the member confirmed." },
-        "consented_at": { "$ref": "common.json#/$defs/NullableString" },
+        "consent_version": { "type": ["integer", "null"], "minimum": 1, "description": "The notice version the member confirmed; null while not confirmed and for an admin's link (the member confirmed none)." },
+        "consented_at": { "$ref": "common.json#/$defs/NullableString", "description": "When the member confirmed; null as consent_version is." },
         "linked_at": { "$ref": "common.json#/$defs/NullableString" },
         "consent_surface": { "enum": ["discord", "portal", null], "description": "Where the member consented: Discord's `/character link` or the public portal's Link; null while not consented and for consents given before it was recorded. Optional so earlier responses stay valid; the server always sends it." },
         "notice_version": { "type": "integer", "minimum": 1, "description": "The current notice version." },
@@ -55,7 +55,7 @@
       }
     },
     "LinkRequest": {
-      "description": "POST /api/admin/characters/{id}/link body.",
+      "description": "POST /api/admin/characters/{id}/link body. The link is active at once with no member confirmation and its first fetch runs (copying NEXON's class and level into the roster row); `201` answers the CharacterLink after it, which a keyed retry replays. `409 already_linked` while linked or waiting for its member; a stale link is linked again.",
       "type": "object",
       "additionalProperties": false,
       "required": ["version"],
@@ -64,7 +64,7 @@
       }
     },
     "LookupStatus": {
-      "description": "GET /api/admin/characters/lookup: whether the Add character lookup (and the link request a MapleSEA create makes) can be made.",
+      "description": "GET /api/admin/characters/lookup: whether the Add character lookup (and the link a MapleSEA create makes) can be made.",
       "type": "object",
       "additionalProperties": false,
       "required": ["connected"],

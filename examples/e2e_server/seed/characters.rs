@@ -110,7 +110,8 @@ const fn data(
 
 /// MikaBish, MikaNL, YuzuPala and TsubaKain linked, MikaHero linked but
 /// retired, Mikadere stale, Hotaru7 linked with its data past 30 days (gone,
-/// so it reads `expired`), AsahiDK pending (below), the rest not linked.
+/// so it reads `expired`), AsahiDK waiting for Asahi (below), the rest not
+/// linked.
 const LINKS: [Linked; 7] = [
     linked(
         "ch-s1",
@@ -245,7 +246,8 @@ async fn links(
     seed: &Seed<'_>,
     store: &dyn kanade::domain::chardata::CharDataStore,
 ) -> Result<(), Fail> {
-    // AsahiDK: an admin asked 20 minutes ago; Asahi has not confirmed.
+    // AsahiDK: waiting 20 minutes for Asahi to confirm (the sweeper's
+    // re-pend after a new notice; admins' links are active at once).
     put_link(
         store,
         Link {
@@ -254,7 +256,7 @@ async fn links(
             ign_key: "asahidk".into(),
             region: "msea".into(),
             status: LinkStatus::Pending,
-            requested_by: asahi(),
+            requested_by: Actor::system("chardata"),
             requested_at: seed.ago(20 * 60),
             consent_version: None,
             consented_at: None,

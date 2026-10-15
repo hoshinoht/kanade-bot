@@ -106,8 +106,8 @@ export function healthNote(h: CharacterDataHealth): { text: string; flagged: num
 }
 
 /** The Add toast's link part from the create's `link`. */
-export function createdLinkNote(link: 'pending' | 'failed' | null, member: string): string {
-  if (link === 'pending') return ` Asked ${member} to link it: they confirm with /character link in Discord.`;
-  if (link === 'failed') return ' The link request didn’t go through: use Link… in Edit to ask again.';
+export function createdLinkNote(link: 'linked' | 'failed' | null, member: string): string {
+  if (link === 'linked') return ` Linked it for ${member}: NEXON’s class and level fill in with its data.`;
+  if (link === 'failed') return ' The link didn’t go through: use Link… in Edit to try again.';
   return '';
 }

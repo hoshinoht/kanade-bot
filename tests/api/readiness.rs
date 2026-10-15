@@ -76,10 +76,11 @@ async fn readiness_judges_each_slot_per_boss_and_writes_nothing() {
         service,
         skew,
     } = on().await;
-    // Alice: linked (NEXON Lv. 271, CP 27,182,818); her manual level is 260.
-    // The create already asked her to link it (pending).
+    // Alice: linked (NEXON Lv. 271, CP 27,182,818) by the admin's create,
+    // which also copied NEXON's level over her manual 260.
     let alice = character(&reads, "1001", "Wisteria", 260).await;
-    let ConfirmOutcome::Linked(..) = confirm(&service, "1001", &alice).await else {
+    // Created by the admin: linked at once.
+    let ConfirmOutcome::AlreadyLinked = confirm(&service, "1001", &alice).await else {
         panic!("not linked");
     };
     // Bob: two characters, nothing picked, so his main (the first). Dan:
@@ -138,10 +139,11 @@ async fn readiness_judges_each_slot_per_boss_and_writes_nothing() {
 
     let manual = slot(&ready, "1004");
     assert_eq!(manual["character"]["id"], dan.as_str());
-    // The create asked Dan to link it; until he confirms, manual values.
+    // The create linked Dan's at once, but the fake NEXON knows only
+    // Wisteria: stale, so manual values.
     assert_eq!(
         (&manual["basis"], &manual["link"]),
-        (&json!("main"), &json!("pending"))
+        (&json!("main"), &json!("stale"))
     );
     assert_eq!(
         manual["level"],
@@ -181,7 +183,8 @@ async fn readiness_judges_each_slot_per_boss_and_writes_nothing() {
         head
     );
 
-    // Past 30 days the NEXON data is gone: manual level, no power.
+    // Past 30 days the NEXON data is gone: the roster level (which kept
+    // NEXON's copied 271), no power.
     *skew.lock().unwrap() = TimeDelta::days(31);
     let expired = reads.read(KALOS, READY).await;
     assert_eq!(expired["nexon_data"], false);
@@ -189,10 +192,10 @@ async fn readiness_judges_each_slot_per_boss_and_writes_nothing() {
     assert_eq!(alice_slot["link"], "expired");
     assert_eq!(
         alice_slot["level"],
-        json!({"value": 260, "source": "manual", "as_of": null})
+        json!({"value": 271, "source": "manual", "as_of": null})
     );
     assert_eq!(alice_slot["power"], Value::Null);
-    assert_eq!(alice_slot["bosses"][0]["level"], "under");
+    assert_eq!(alice_slot["bosses"][0]["level"], "ok");
     let text = expired.to_string();
     assert!(!text.contains(&NEXON_CP.to_string()), "{text}");
     assert!(!text.contains("\"nexon\""), "{text}");

@@ -25,7 +25,7 @@ use crate::bot::chardata::{DiscordPosts, copy};
 use crate::bot::ids::id_text;
 use crate::bot::transport::{DiscordTransport, InteractionReply};
 use crate::domain::characters::ign_key;
-use crate::domain::chardata::{Link, LinkStatus};
+use crate::domain::chardata::LinkStatus;
 use crate::infrastructure::character_data::{CharacterData, MemberCharacter};
 
 /// The notice's buttons, as internal subcommands.
@@ -75,29 +75,6 @@ impl<T> CharacterCommand<T> {
             .await
             .map_err(store_failed)
     }
-
-    /// The name of the admin who asked for a pending link, when it was a
-    /// Discord-signed-in admin with a member row; `None` otherwise.
-    async fn requester(&self, link: &Link) -> Option<String> {
-        let user = link.requested_by.id().strip_prefix("discord:")?;
-        if link.requested_by.kind() != "admin" {
-            return None;
-        }
-        let profiles = self.ctx.profiles().await.ok()?;
-        let profile = profiles
-            .into_iter()
-            .find(|profile| profile.member.user_id == user)?;
-        profile
-            .member
-            .nickname
-            .or(profile.member.display_name)
-            .filter(|name| !name.trim().is_empty())
-    }
-}
-
-/// An admin's request waiting for the member.
-fn admin_request(link: &Link) -> bool {
-    link.status == LinkStatus::Pending && link.requested_by.kind() == "admin"
 }
 
 /// The character `typed` names: an autocomplete value (its id), else its
@@ -183,9 +160,9 @@ impl<T: DiscordTransport + 'static> SlashCommand for CharacterCommand<T> {
 }
 
 impl<T> CharacterCommand<T> {
-    /// The `character:` choices of `link` (pending requests first, then the
-    /// rest with their state), `unlink` (linked, stale and pending, then
-    /// All) and `share` (linked ones).
+    /// The `character:` choices of `link` (those waiting for the member
+    /// first, then the rest, each with its state), `unlink` (linked, stale
+    /// and pending, then All) and `share` (linked ones).
     async fn choices(
         &self,
         invocation: &Invocation,
@@ -215,28 +192,20 @@ impl<T> CharacterCommand<T> {
         let mut out = Vec::new();
         match invocation.path.get(1).map(String::as_str) {
             Some("link") => {
-                let (mut requested, mut others) = (Vec::new(), Vec::new());
-                for entry in matching.filter(|entry| entry.linkable()) {
-                    match &entry.link {
-                        Some(link) if admin_request(&link.link) => {
-                            let name = self.requester(&link.link).await;
-                            requested.push(choice(
-                                &copy::pick_pending(
-                                    &entry.character.ign,
-                                    entry.character.class.as_deref(),
-                                    name.as_deref(),
-                                ),
-                                entry.character.id.clone(),
-                            ));
-                        }
-                        _ => others.push(choice(
-                            &label(entry, state(entry)),
-                            entry.character.id.clone(),
-                        )),
-                    }
-                }
-                out.extend(requested);
-                out.extend(others);
+                let (mut waiting, mut others): (Vec<_>, Vec<_>) = matching
+                    .filter(|entry| entry.linkable())
+                    .partition(|entry| {
+                        entry
+                            .link
+                            .as_ref()
+                            .is_some_and(|link| link.link.status == LinkStatus::Pending)
+                    });
+                waiting.append(&mut others);
+                out.extend(
+                    waiting.into_iter().map(|entry| {
+                        choice(&label(entry, state(entry)), entry.character.id.clone())
+                    }),
+                );
             }
             Some("unlink") => {
                 let linked: Vec<_> = characters

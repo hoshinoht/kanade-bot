@@ -9,9 +9,9 @@
   Adding a MapleSEA character while NEXON is connected (module
   `character_data` with a key) asks no class or level: Look up (or Enter in
   the IGN) asks NEXON once and shows what it says, never stored (NEXON terms
-  count copied values as NEXON data). For an admin, saving also asks the
-  member to link it, from which class and level come once they confirm in
-  Discord; for a member adding their own (the portal, M_CharsAdd) the NEXON
+  count copied values as NEXON data). For an admin, saving also links it at
+  once for the member, and its first fetch copies NEXON's class and level
+  into the roster; for a member adding their own (the portal, M_CharsAdd) the NEXON
   notice opens next. Other regions, or no module or key, keep the manual
   fields; editing is unchanged. Members have no Delete, and a write the
   portal refuses for want of a fresh sign-in closes this for "Confirm it's
@@ -141,7 +141,7 @@
     }
   });
 
-  // A MapleSEA add with NEXON connected: no manual class or level; Look up and the member's link instead.
+  // A MapleSEA add with NEXON connected: no manual class or level; Look up and the link instead.
   const nexon = $derived(!character && world === DEFAULT_REGION && connected === true);
 
   function forget() {
@@ -401,7 +401,7 @@
       <span class="rosterlookup__value" data-fid="roster-lookup-values">{lookupLine(shown.found) || 'No class or level from NEXON'}</span>
       <span class="rosterlookup__sub">{shown.found.name ?? shown.ign} · as of {asOfDate(shown.found.as_of)} (SGT)</span>
       <span class="rosterlookup__sub">{shown.found.attribution}</span>
-      <span class="rosterlookup__sub"><b>{member ? 'Shown only; kept only once you link it.' : 'Shown only; saved after the member confirms in Discord.'}</b></span>
+      <span class="rosterlookup__sub"><b>{member ? 'Shown only; kept only once you link it.' : 'Shown only; Add links it and fills in the class and level.'}</b></span>
     {:else if shown.state === 'miss'}
       <span class="rosterlookup__value">{shown.lead}</span>
       <span class="rosterlookup__sub">{shown.text}</span>
@@ -459,8 +459,8 @@
       <p class="rosterform__note" id="{uid}-link-note" data-fid="roster-link-note">
         <Icon name="link" /><span
           >{#if member}Next, Kanade shows you the NEXON notice for {ign.trim() || 'it'}. Nothing from NEXON is kept unless you press Link there; class and level then come
-            from that link.{:else}Adding asks {memberName} to link {ign.trim() || 'it'}: nothing from NEXON is kept until {memberName} confirms with
-            <span class="mono">/character link</span> in Discord, and class and level then come from that link. Kanade doesn’t message {memberName}; tell them.{/if}</span
+            from that link.{:else}Adding links {ign.trim() || 'it'} for {memberName} at once: Kanade fetches its NEXON data, and its class and level are copied to the
+            roster and stay after an unlink. Kanade doesn’t message {memberName}; they see it in <span class="mono">/character data</span>.{/if}</span
         >
       </p>
     {:else}

@@ -8,9 +8,11 @@ use crate::domain::history::{Actor, Surface};
 use crate::domain::scheduler::StoreError;
 
 /// The `/character link` notice version a consent records. Bumping it
-/// sends every active or stale link back to `pending` until its member
-/// confirms the new notice.
-pub const NOTICE_VERSION: u32 = 1;
+/// sends every member-consented active or stale link back to `pending`
+/// until its member confirms the new notice; an admin's link stays (user
+/// decision 2026-10-15). Version 2 (15 Oct 2026): the class and level
+/// copied to the roster stay after an unlink, and guild members see them.
+pub const NOTICE_VERSION: u32 = 2;
 /// Shown with every piece of Nexon data (NEXON Open API terms).
 pub const ATTRIBUTION: &str = "Data based on NEXON Open API";
 /// The only region a link may name (the MapleSEA Open API).
@@ -36,7 +38,7 @@ pub const STRIP_AFTER: TimeDelta = TimeDelta::days(29);
 /// long after its first failure, then every [`STRIP_RETRY_AGAIN`].
 pub const STRIP_RETRY_FIRST: TimeDelta = TimeDelta::minutes(5);
 pub const STRIP_RETRY_AGAIN: TimeDelta = TimeDelta::hours(1);
-/// An admin's link request the member has not confirmed by then is removed.
+/// A pending link its member has not confirmed by then is removed.
 pub const PENDING_TTL: TimeDelta = TimeDelta::days(14);
 /// Bounds on stored Nexon text (names, classes, worlds) and image URLs.
 pub const MAX_TEXT_CHARS: usize = 64;
@@ -44,7 +46,7 @@ pub const MAX_URL_CHARS: usize = 1024;
 
 spelled! {
     LinkStatus {
-        /// Requested (by an admin) but not confirmed by the member: no calls.
+        /// Waiting for its member to confirm (a new notice): no calls.
         Pending => "pending",
         Active => "active",
         /// The character could not be resolved or changed its name: the member
@@ -115,13 +117,14 @@ pub struct Link {
     pub status: LinkStatus,
     pub requested_by: Actor,
     pub requested_at: DateTime<Utc>,
-    /// The notice version the member confirmed; `None` while pending.
+    /// The notice version the member confirmed (in force, for an admin's
+    /// link); `None` while pending.
     pub consent_version: Option<u32>,
     pub consented_at: Option<DateTime<Utc>>,
     /// When it first became active.
     pub linked_at: Option<DateTime<Utc>>,
-    /// Where the consent was given; `None` while pending and on links
-    /// consented before it was recorded.
+    /// Where the consent was given; `None` while pending, for an admin's
+    /// link, and on links consented before it was recorded.
     pub consent_surface: Option<ConsentSurface>,
     /// 1 on create, +1 on every status change.
     pub version: u32,
@@ -161,6 +164,22 @@ impl Link {
         self.status = status;
         self.version += 1;
         self
+    }
+
+    /// Linked by an admin for its member (user decision 2026-10-13): no
+    /// consent of the member's is recorded, only the notice in force.
+    pub fn admin_linked(&self) -> bool {
+        self.status != LinkStatus::Pending
+            && self.consent_surface.is_none()
+            && self.requested_by.kind() == "admin"
+    }
+
+    /// Consented by its member under an older notice: read as pending until
+    /// they confirm the current one. An admin's link is never re-asked.
+    pub fn needs_reconsent(&self) -> bool {
+        self.status != LinkStatus::Pending
+            && self.consent_version != Some(NOTICE_VERSION)
+            && !self.admin_linked()
     }
 }
 

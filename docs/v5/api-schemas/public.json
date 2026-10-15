@@ -407,12 +407,12 @@
     "MyCharacters": {
       "type": "object",
       "additionalProperties": false,
-      "description": "GET /api/public/me/characters (module `roster`): the caller's own roster rows (active and retired, as the admin's `MemberCharacters` lists them), each one's link by character id and the admins' link requests waiting for them, oldest first. Without module `character_data`, `links` is empty and `pending` too. `Cache-Control: no-store`.",
+      "description": "GET /api/public/me/characters (module `roster`): the caller's own roster rows (active and retired, as the admin's `MemberCharacters` lists them), each one's link by character id and the links waiting for them to confirm, oldest first. Without module `character_data`, `links` is empty and `pending` too. `Cache-Control: no-store`.",
       "required": ["characters", "links", "pending", "character_data", "connected", "estimates", "notice_version", "privacy_url"],
       "properties": {
         "characters": { "type": "array", "items": { "$ref": "characters.json#/$defs/CharacterRow" } },
         "links": { "type": "object", "additionalProperties": { "$ref": "character_data.json#/$defs/CharacterLink" }, "description": "Keyed by character id; every character has one while module `character_data` is on." },
-        "pending": { "type": "array", "items": { "$ref": "#/$defs/PendingLink" }, "description": "\"Waiting for you\": the links an admin asked for and the member has not confirmed." },
+        "pending": { "type": "array", "items": { "$ref": "#/$defs/PendingLink" }, "description": "\"Waiting for you\": the member's links waiting for them to confirm the current notice (admins' links are active at once)." },
         "character_data": { "type": "boolean", "description": "Module `character_data` is on (links, notice, My data)." },
         "connected": { "type": "boolean", "description": "A NEXON key is configured: Add looks up, links can be made, class and level may be left out for MapleSEA." },
         "estimates": { "type": "boolean", "description": "Scouter lookups are on (`KANADE_SCOUTER_URL`)." },
@@ -423,14 +423,14 @@
     "PendingLink": {
       "type": "object",
       "additionalProperties": false,
-      "description": "A link request waiting for the member: who asked and when it lapses (14 days).",
+      "description": "A link waiting for the member to confirm: who put it there (the sweeper after a new notice) and when it lapses (14 days).",
       "required": ["character_id", "ign", "class", "requested_by", "requested_by_name", "requested_at", "expires_at"],
       "properties": {
         "character_id": { "type": "string" },
         "ign": { "type": "string" },
         "class": { "$ref": "common.json#/$defs/NullableString", "description": "The roster class." },
         "requested_by": { "$ref": "history.json#/$defs/Actor" },
-        "requested_by_name": { "$ref": "common.json#/$defs/NullableString", "description": "The asking admin's member name when they signed in with Discord; null otherwise (\"An admin\")." },
+        "requested_by_name": { "$ref": "common.json#/$defs/NullableString", "description": "An admin requester's member name when they signed in with Discord (requests left from before admins' links went active at once); null otherwise." },
         "requested_at": { "type": "string" },
         "expires_at": { "type": "string" }
       }
@@ -500,7 +500,7 @@
     "LinkNotice": {
       "type": "object",
       "additionalProperties": false,
-      "description": "GET /api/public/me/characters/{id}/link/notice: the `/character link` notice (version `version`) word for word as plain text, for one of the caller's active MapleSEA characters that is not linked; `request` names the admin's request when one waits. 404 for another member's character, 409 `not_connected`/`retired`/`already_linked`, 422 `region`.",
+      "description": "GET /api/public/me/characters/{id}/link/notice: the `/character link` notice (version `version`) word for word as plain text, for one of the caller's active MapleSEA characters that is not linked; `request` is the link waiting for them, when there is one. 404 for another member's character, 409 `not_connected`/`retired`/`already_linked`, 422 `region`.",
       "required": ["character_id", "ign", "version", "title", "lead", "what", "why", "how_long", "who", "as_is", "link_label", "cancel_label", "request", "privacy_url", "attribution"],
       "properties": {
         "character_id": { "type": "string" },
@@ -540,7 +540,7 @@
     "LinkCancelled": {
       "type": "object",
       "additionalProperties": false,
-      "description": "POST /api/public/me/characters/{id}/link/cancel: nothing changes; an admin's request stays waiting.",
+      "description": "POST /api/public/me/characters/{id}/link/cancel: nothing changes; a link waiting for the member stays waiting (`request_kept`).",
       "required": ["request_kept", "requested_by_name"],
       "properties": {
         "request_kept": { "type": "boolean" },
@@ -590,9 +590,9 @@
         "requested_at": { "$ref": "common.json#/$defs/NullableString" },
         "request_expires_at": { "$ref": "common.json#/$defs/NullableString" },
         "linked_at": { "$ref": "common.json#/$defs/NullableString" },
-        "notice": { "type": ["integer", "null"], "minimum": 1, "description": "The notice version consented to." },
-        "consented_at": { "$ref": "common.json#/$defs/NullableString" },
-        "consent_surface": { "enum": ["discord", "portal", null], "description": "Where the consent was given; null while pending and for consents before it was recorded." },
+        "notice": { "type": ["integer", "null"], "minimum": 1, "description": "The notice version the member consented to; null while pending and for an admin's link." },
+        "consented_at": { "$ref": "common.json#/$defs/NullableString", "description": "Null as `notice` is." },
+        "consent_surface": { "enum": ["discord", "portal", null], "description": "Where the consent was given; null while pending, for an admin's link and for consents before it was recorded." },
         "cards": { "type": "array", "items": { "$ref": "#/$defs/SharedCard" } }
       }
     },

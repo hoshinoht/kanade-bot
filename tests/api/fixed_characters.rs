@@ -269,9 +269,11 @@ async fn timing_readiness_reads_the_saved_timing_or_the_form() {
         fields(alice, &["character/ign", "basis", "candidates"]),
         json!(["Wisteria", "timing_pick", 2])
     );
+    // The admin's create linked Wisteria at once: NEXON's Lv. 271 over the
+    // manual 260.
     assert_eq!(
         alice["bosses"],
-        json!([{"boss": "Kalos", "difficulty": "x", "entry_level": 265, "level": "under", "scouter": null}])
+        json!([{"boss": "Kalos", "difficulty": "x", "entry_level": 265, "level": "ok", "scouter": null}])
     );
     let bob = slot(&ready, "1002");
     assert_eq!(

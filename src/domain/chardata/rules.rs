@@ -7,7 +7,7 @@ use std::collections::BTreeMap;
 use chrono::{DateTime, NaiveTime, TimeDelta, Utc};
 use chrono_tz::Asia::Singapore;
 
-use super::model::{LINK_REGION, Link, LinkStatus, NOTICE_VERSION, Snapshot};
+use super::model::{LINK_REGION, Link, LinkStatus, Snapshot};
 use crate::domain::characters::{CHARACTERS_SECTION, Character, ign_key};
 use crate::domain::history::{Actor, Surface};
 use crate::domain::members::MemberProfile;
@@ -41,7 +41,7 @@ spelled! {
         MemberDeparted => "member_departed",
         /// Retired and its data has expired.
         RetiredExpired => "retired_expired",
-        /// An admin's request the member did not confirm within
+        /// A pending link the member did not confirm within
         /// [`super::PENDING_TTL`].
         PendingExpired => "pending_expired",
         /// The member's confirmation found no such character in the Open API:
@@ -90,7 +90,7 @@ pub fn orphan(
     if !character.is_active() && fresh.is_none() {
         return Orphan::Unlink(UnlinkReason::RetiredExpired);
     }
-    if link.status != LinkStatus::Pending && link.consent_version != Some(NOTICE_VERSION) {
+    if link.needs_reconsent() {
         return Orphan::Reconsent;
     }
     Orphan::Keep
@@ -205,6 +205,7 @@ mod tests {
 
     use super::*;
     use crate::domain::characters::CharacterRole;
+    use crate::domain::chardata::NOTICE_VERSION;
     use crate::domain::members::{Member, PingLevel};
 
     fn at(day: u32, hour: u32) -> DateTime<Utc> {

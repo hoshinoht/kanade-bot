@@ -4,7 +4,7 @@ import { ADMIN, PUBLIC, csrf, expect, resetWeek, setCharacterData, setEstimates,
 
 // Character data (module `character_data`; boards in docs/research/2026-10-12-chardata-mockups)
 // over the e2e server's seed: MikaBish (ch-s3) linked by today's 04:01 batch, MikaHero
-// linked but retired, Mikadere stale, Hotaru7 expired, YuzuPala and TsubaKain linked, AsahiDK pending, the rest not linked;
+// linked but retired, Mikadere stale, Hotaru7 expired, YuzuPala and TsubaKain linked, AsahiDK waiting for Asahi, the rest not linked;
 // estimates on, answered by the fake scouter (`setEstimates` picks how). `setModules({character_data})` turns the module
 // off, `setCharacterData(health)` drives Config's health through real calls (and `setup`: no key, no scouter).
 
@@ -30,11 +30,12 @@ const health = (_page: Page, value: 'ok' | 'alert' | 'refused' | 'setup') => set
 const CARLING = 'HCarling + HMaleficStar';
 const MIKA = '100000000000001003';
 
-test('chardata strip: linked shows manual and NEXON side by side, attributed, Refresh waits a day', async ({ page }) => {
+test('chardata strip: linked shows the roster and NEXON side by side, attributed, Refresh waits a day', async ({ page }) => {
   const strip = stripOf(await openEdit(page, 'MikaBish'));
   await expect(strip.locator('.chardata__head .status-chip')).toHaveText('linked');
-  await expect(strip.locator('.chardata__cols > :first-child')).toContainText('Lv. 281Bishop');
-  await expect(strip.locator('.chardata__cols > :first-child')).toContainText('manual, updated');
+  // The startup pass copied NEXON's level (283) into the roster row.
+  await expect(strip.locator('.chardata__cols > :first-child')).toContainText('Lv. 283Bishop');
+  await expect(strip.locator('.chardata__cols > :first-child')).toContainText('updated');
   await expect(strip.locator('.chardata__cols > :nth-child(2)')).toContainText('Lv. 283Bishop·CP 48.2M');
   await expect(strip.locator('.chardata__cols > :nth-child(2)')).toContainText('as of 29 Sep 2026 (SGT)');
   await expect(strip.getByText(ATTRIBUTION, { exact: true })).toBeVisible();
@@ -43,17 +44,18 @@ test('chardata strip: linked shows manual and NEXON side by side, attributed, Re
   await expect(strip).toContainText('Refreshed 29 Sep 04:01. Refresh asks NEXON now');
   // The real server links the public origin's own /privacy page.
   await expect(strip.getByRole('link', { name: 'Privacy' })).toHaveAttribute('href', `${PUBLIC.replace(/^http:/, 'https:')}/privacy`);
-  await expect(strip.locator('.chardata__foot')).toContainText('Linked 21 Sep by Mika (notice 1) · refreshed daily');
-  // No "Use these": nothing copies NEXON values into the roster.
+  await expect(strip.locator('.chardata__foot')).toContainText('Linked 21 Sep by Mika (notice 2) · refreshed daily');
+  // No "Use these": the fetch itself copies NEXON's class and level into the roster.
   await expect(strip.getByRole('button', { name: /use these/i })).toHaveCount(0);
 });
 
-test('chardata strip: Unlink… confirms inline from Cancel and deletes; Link… asks the member', async ({ page }) => {
+test('chardata strip: Unlink… confirms inline from Cancel and deletes; Link… links at once and copies into the roster', async ({ page }) => {
   const dialog = await openEdit(page, 'MikaBish');
   const strip = stripOf(dialog);
   await strip.getByRole('button', { name: 'Unlink…' }).click();
   const confirm = strip.getByRole('group', { name: 'Unlink MikaBish?' });
   await expect(confirm).toContainText('Deletes the NEXON data kept for MikaBish now (Lv. 283 · CP 48.2M, as of 29 Sep 2026)');
+  await expect(confirm).toContainText('The roster keeps the class and level copied from NEXON.');
   await expect(confirm).toContainText('No Undo');
   await expect(confirm.getByRole('button', { name: 'Cancel' })).toBeFocused();
   await confirm.getByRole('button', { name: 'Cancel' }).click();
@@ -63,20 +65,24 @@ test('chardata strip: Unlink… confirms inline from Cancel and deletes; Link…
   await expect(strip.locator('.chardata__head .status-chip')).toHaveText('not linked');
   await expect(strip.getByText(ATTRIBUTION)).toHaveCount(0);
   await expect(strip.getByRole('button', { name: 'Link…' })).toBeFocused();
+  await expect(strip).toContainText('Link… links it now and fetches its NEXON data; Mika isn’t asked first.');
 
   await strip.getByRole('button', { name: 'Link…' }).click();
-  const ask = strip.getByRole('group', { name: 'Ask Mika to link MikaBish?' });
-  await expect(ask).toContainText('Nothing is fetched until Mika confirms with /character link');
-  await expect(ask).toContainText('Kanade doesn’t message Mika');
-  await expect(ask.getByRole('button', { name: 'Request link' })).toBeFocused();
-  await ask.getByRole('button', { name: 'Request link' }).click();
-  await expect(strip.locator('.chardata__head .status-chip')).toHaveText('pending');
-  await expect(strip).toContainText('Waiting for Mika to confirm with /character link');
-  await expect(strip).toContainText('The request lapses 13 Oct unless Mika links it first.');
-  // Unlink withdraws a pending request.
-  await strip.getByRole('button', { name: 'Unlink…' }).click();
-  await strip.getByRole('group', { name: 'Withdraw the request for MikaBish?' }).getByRole('button', { name: 'Withdraw' }).click();
-  await expect(strip.locator('.chardata__head .status-chip')).toHaveText('not linked');
+  const ask = strip.getByRole('group', { name: 'Link MikaBish now?' });
+  await expect(ask).toContainText('Kanade fetches its NEXON data now');
+  await expect(ask).toContainText('Mika isn’t asked first. Its class and level are copied to the roster and stay after an unlink.');
+  await expect(ask.getByRole('button', { name: 'Link', exact: true })).toBeFocused();
+  await ask.getByRole('button', { name: 'Link', exact: true }).click();
+  // Active at once with the fake NEXON's data (MikaBish: Bishop, Lv. 278), no member confirmation.
+  await expect(strip.locator('.chardata__head .status-chip')).toHaveText('linked');
+  await expect(strip.locator('.chardata__cols > :nth-child(2)')).toContainText('Lv. 278Bishop');
+  await expect(strip.getByRole('status').filter({ hasText: 'Linked MikaBish. Its NEXON data is in.' })).toHaveCount(1);
+  // Linked by the admin (no "(notice 2)": the member confirmed nothing).
+  await expect(strip.locator('.chardata__foot')).toContainText(/Linked 29 Sep by (?!Mika)[^(·]+ · refreshed daily/);
+  // The roster row took NEXON's level, by system:nexon.
+  const list = await (await page.request.get(`${ADMIN}/api/admin/members/${MIKA}/characters`)).json();
+  const row = list.characters.find((c: { ign: string }) => c.ign === 'MikaBish');
+  expect([row.class, row.level, row.updated_by]).toEqual(['Bishop', 278, { kind: 'system', id: 'nexon' }]);
 });
 
 test('chardata strip: stale, expired (Refresh tries now) and pending', async ({ page }) => {
@@ -87,7 +93,9 @@ test('chardata strip: stale, expired (Refresh tries now) and pending', async ({ 
 
   strip = stripOf(await openEdit(page, 'AsahiDK', /^Asahi/));
   await expect(strip.locator('.chardata__head .status-chip')).toHaveText('pending');
-  await expect(strip).toContainText('Asked 29 Sep 11:40 by Asahi · nothing fetched yet');
+  await expect(strip).toContainText('Waiting for Asahi to confirm with /character link');
+  await expect(strip).toContainText('Since 29 Sep 11:40 · nothing fetched yet');
+  await expect(strip).toContainText('Waiting for Asahi to confirm the NEXON notice with /character link; nothing is fetched until then.');
 
   strip = stripOf(await openEdit(page, 'Hotaru7', /^Hotaru/));
   await expect(strip.locator('.chardata__head .status-chip')).toHaveText('expired');
@@ -451,8 +459,8 @@ test('chardata capture', async ({ page }) => {
     await s.getByRole('button', { name: 'Unlink', exact: true }).click();
     await s.getByRole('button', { name: 'Link…' }).click();
     await shot(`${P}CharLink`, s.locator('.chardata__confirm'));
-    await s.getByRole('button', { name: 'Request link' }).click();
-    await shot(`${phone ? 'B_PhoneCharStates2' : 'B_CharStates'}-pending`, s);
+    await s.getByRole('button', { name: 'Link', exact: true }).click();
+    await shot(`${phone ? 'B_PhoneCharStates2' : 'B_CharStates'}-linked-at-once`, s);
     await reset();
     await page.request.delete(`${ADMIN}/api/admin/characters/ch-s3/link`, { headers: await csrf(page.request) });
     s = await strip('MikaBish');

@@ -104,11 +104,14 @@ test('roster: the server’s refusals land on their fields and keep the input', 
   await expect(ign).toHaveValue('hotaru7');
 
   // Someone saves it meanwhile: 409 stale, the edits stay and the next Save wins.
+  // The write must change the row (a same-value PATCH keeps its version), so
+  // it moves the current level on by one.
   await ign.fill('MikaBishop');
   await edit.getByRole('textbox', { name: 'Level' }).fill('282');
   const list = await page.request.get(`${ADMIN}/api/admin/members/${MIKA}/characters`);
   const bish = (await list.json()).characters.find((c: { ign: string }) => c.ign === 'MikaBish');
-  expect((await page.request.patch(`${ADMIN}/api/admin/characters/${bish.id}`, { data: { version: bish.version, level: 283 }, headers: await csrf(page.request) })).ok()).toBe(true);
+  const meanwhile = { version: bish.version, level: bish.level + 1 };
+  expect((await page.request.patch(`${ADMIN}/api/admin/characters/${bish.id}`, { data: meanwhile, headers: await csrf(page.request) })).ok()).toBe(true);
   await edit.getByRole('button', { name: 'Save' }).click();
   await expect(edit.getByRole('alert')).toContainText('changed while you were editing it');
   await expect(ign).toHaveValue('MikaBishop');

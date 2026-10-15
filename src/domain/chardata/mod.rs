@@ -1,9 +1,11 @@
 //! Character data (module `character_data`, behind `modules.character_data`,
 //! which needs `modules.roster`): NEXON Open API data linked to roster
-//! characters by opt-in. Links are kanade's; snapshots are Nexon's, kept
-//! at most 30 days, deleted at once on unlink, never in the change history,
-//! settings audit values, logs, backups or a model prompt. Chat and
-//! extraction never import this module (pinned below).
+//! characters (by an admin at once, or by the member's consent). Links are
+//! kanade's; snapshots are Nexon's, kept at most 30 days, deleted at once
+//! on unlink, never in the change history, settings audit values, logs,
+//! backups or a model prompt. The class, level and IGN case a fetch copies
+//! into the roster row are roster data from then on. Chat and extraction
+//! never import this module (pinned below).
 
 mod model;
 mod port;

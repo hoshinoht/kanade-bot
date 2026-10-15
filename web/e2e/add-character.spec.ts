@@ -11,7 +11,7 @@ import { ADMIN, advanceClock, choose, expect, setCharacterData, settle, test } f
 const MIKA = '100000000000001003';
 
 const ATTRIBUTION = 'Data based on NEXON Open API';
-const SHOWN_ONLY = 'Shown only; saved after the member confirms in Discord.';
+const SHOWN_ONLY = 'Shown only; Add links it and fills in the class and level.';
 
 async function openAdd(page: Page): Promise<Locator> {
   await page.goto(`${ADMIN}/members?sw=off`);
@@ -33,7 +33,7 @@ test('add character: MapleSEA asks no class or level; Look up shows NEXON, shown
   const add = await openAdd(page);
   await expect(add.getByRole('combobox', { name: 'Class' })).toHaveCount(0);
   await expect(add.getByRole('textbox', { name: 'Level' })).toHaveCount(0);
-  await expect(add.getByText('Kanade doesn’t message Mika; tell them.')).toBeVisible();
+  await expect(add.getByText('Kanade doesn’t message Mika; they see it in /character data.')).toBeVisible();
   const ign = add.getByRole('textbox', { name: 'IGN' });
   await ign.fill('MikaKain');
   // Enter looks up (it does not save).
@@ -51,18 +51,19 @@ test('add character: MapleSEA asks no class or level; Look up shows NEXON, shown
   await expect(card(add)).toHaveCount(0);
   await ign.fill('MikaKain');
 
-  // Saving sends no class or level and asks Mika to link it.
+  // Saving sends no class or level and links it at once for Mika.
   const posted = page.waitForRequest((r) => r.url().endsWith(`/api/admin/members/${MIKA}/characters`) && r.method() === 'POST');
   await add.getByRole('button', { name: 'Add character' }).click();
   const body = (await posted).postDataJSON();
   expect(body).toEqual({ ign: 'MikaKain', world: 'msea', role: 'alt' });
   await expect(add).toBeHidden();
-  await expect(page.locator('.toast:not(.is-leaving)').filter({ hasText: 'Added MikaKain. Asked Mika to link it' })).toBeVisible();
+  await expect(page.locator('.toast:not(.is-leaving)').filter({ hasText: 'Added MikaKain. Linked it for Mika' })).toBeVisible();
+  // The first fetch copied the fake NEXON's class and level (MikaKain: Kain, Lv. 278) into the roster.
   const list = await (await page.request.get(`${ADMIN}/api/admin/members/${MIKA}/characters`)).json();
   const row = list.characters.find((c: { ign: string }) => c.ign === 'MikaKain');
-  expect([row.class, row.level]).toEqual([null, null]);
+  expect([row.class, row.level]).toEqual(['Kain', 278]);
   const link = await (await page.request.get(`${ADMIN}/api/admin/characters/${row.id}/link`)).json();
-  expect(link.state).toBe('pending');
+  expect([link.state, link.consent_version, link.requested_by.kind]).toEqual(['linked', null, 'admin']);
 });
 
 test('add character: not found, held and not connected show inline', async ({ page }) => {

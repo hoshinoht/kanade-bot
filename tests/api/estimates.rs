@@ -1048,7 +1048,8 @@ async fn scouter_requests_never_carry_nexon_fields() {
     let (reads, service) = serve(Some(address), Some(nexon), CLIENT_TIMEOUT).await;
     // The create already asked the member to link it (pending).
     let id = character(&reads, "1001", "MikaBish").await;
-    let ConfirmOutcome::Linked(..) = confirm(&service, "1001", &id).await else {
+    // Created by the admin: linked at once.
+    let ConfirmOutcome::AlreadyLinked = confirm(&service, "1001", &id).await else {
         panic!("not linked");
     };
     let linked = reads
@@ -1148,7 +1149,7 @@ async fn readiness_shows_cached_scouter_readings_per_boss_and_never_looks_up() {
     // nobody. A MapleSEA create already asks for the link.
     let ren = character(&reads, "1001", "RenShade").await;
     let mika = character(&reads, "1002", "MikaBish").await;
-    let ConfirmOutcome::Linked(..) = confirm(&service, "1002", &mika).await else {
+    let ConfirmOutcome::AlreadyLinked = confirm(&service, "1002", &mika).await else {
         panic!("not linked");
     };
     let nexon_cp = json!({"kind": "nexon_cp", "value": 48_213_377, "as_of": "2026-09-28"});

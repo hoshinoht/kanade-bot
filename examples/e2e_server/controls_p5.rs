@@ -19,7 +19,7 @@
 //! - `POST /__e2e/public/characters` `{roster: "board" | "empty"}`: Asahi's
 //!   own characters as the member boards draw them, written through the
 //!   roster and character-data stores (`board`: AsahiKanna linked main with
-//!   one share card, AsahiDK pending on Ren's request, AsahiPath stale,
+//!   one share card, AsahiDK waiting for Asahi to confirm, AsahiPath stale,
 //!   AsahiBlaze expired, AsahiMech retired, ids `ch-b1`…`ch-b5`), or none.
 //!   204.
 //!
@@ -60,7 +60,7 @@ use crate::{
     Fail,
     fakes::chardata::{Nexon, Scenario, Setup},
     live::World,
-    seed::ids::{ASAHI, HSTAR_PARTY, KAITO, REN, SORA},
+    seed::ids::{ASAHI, HSTAR_PARTY, KAITO, SORA},
 };
 
 /// How long `alert` waits for its scouter lookup.
@@ -450,8 +450,9 @@ async fn put(links: &dyn CharDataStore, link: Link, expected: u32) -> Result<(),
     }
 }
 
-/// AsahiKanna linked with data and a share card, AsahiDK asked for by Ren
-/// today, AsahiPath stale, AsahiBlaze linked past its data's 30 days.
+/// AsahiKanna linked with data and a share card, AsahiDK waiting for Asahi
+/// since today (the sweeper's re-pend), AsahiPath stale, AsahiBlaze linked
+/// past its data's 30 days.
 async fn board_links(links: &dyn CharDataStore, now: DateTime<Utc>) -> Result<(), Fail> {
     let pending = |id: &str, ign: &str, by: Actor, at: DateTime<Utc>| Link {
         character_id: id.into(),
@@ -467,8 +468,8 @@ async fn board_links(links: &dyn CharDataStore, now: DateTime<Utc>) -> Result<()
         consent_surface: None,
         version: 1,
     };
-    let ren = Actor::admin(format!("discord:{REN}"));
-    put(links, pending("ch-b2", "AsahiDK", ren, now), 0).await?;
+    let sweeper = Actor::system("chardata");
+    put(links, pending("ch-b2", "AsahiDK", sweeper, now), 0).await?;
     for (id, ign, status, days) in [
         ("ch-b1", "AsahiKanna", LinkStatus::Active, 10),
         ("ch-b3", "AsahiPath", LinkStatus::Stale, 20),

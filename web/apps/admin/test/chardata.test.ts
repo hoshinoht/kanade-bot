@@ -226,8 +226,8 @@ describe('the Add character lookup', () => {
     expect(lookupMiss(null, 'Wisteria', 'The server did not answer.')).toEqual({ miss: 'failed', lead: 'Lookup failed.', text: 'The server did not answer.' });
   });
 
-  it('tells the toast whether the member was asked to link', () => {
-    expect(createdLinkNote('pending', 'Mika')).toBe(' Asked Mika to link it: they confirm with /character link in Discord.');
+  it('tells the toast whether the character was linked', () => {
+    expect(createdLinkNote('linked', 'Mika')).toBe(' Linked it for Mika: NEXON’s class and level fill in with its data.');
     expect(createdLinkNote('failed', 'Mika')).toContain('use Link… in Edit');
     expect(createdLinkNote(null, 'Mika')).toBe('');
   });

@@ -62,14 +62,14 @@
     expired: { tone: 'risk', icon: 'clock' },
     not_linked: { tone: 'neutral', icon: 'link' },
   };
-  const STATE_WORDS: Record<MyDataEntry['state'], string> = { pending: 'pending', linked: 'linked', stale: 'stale', expired: 'expired', not_linked: 'not linked' };
+  const STATE_WORDS: Record<MyDataEntry['state'], string> = { pending: 'waiting for you', linked: 'linked', stale: 'stale', expired: 'expired', not_linked: 'not linked' };
 
   /** copy.rs `DataEntry::render`, line by line. */
   function lines(entry: MyDataEntry): { strong?: boolean; text: string }[] {
     const out: { strong?: boolean; text: string }[] = [];
     if (entry.state === 'pending') {
-      const at = entry.requested_at ? ` ${dayMonth(entry.requested_at, timeZone)}` : '';
-      return [{ text: `Requested by ${entry.requested_by_name ?? 'an admin'}${at}. Nothing is fetched until you confirm.` }];
+      const at = entry.requested_at ? `Waiting since ${dayMonth(entry.requested_at, timeZone)}. ` : '';
+      return [{ text: `${at}Nothing is fetched until you confirm.` }];
     }
     if (entry.state === 'stale') return [{ text: 'No current data: NEXON no longer finds it under that name. Link it again.' }];
     if (entry.state === 'not_linked') return [{ text: 'Nothing fetched or kept.' }];
@@ -185,7 +185,7 @@
         </p>
       {/if}
       <div class="mydata__foot">
-        <span>Unlink deletes that character’s NEXON data at once; shared cards then read “Character data removed”. Your roster characters stay.</span>
+        <span>Unlink deletes that character’s NEXON data at once; shared cards then read “Character data removed”. Your roster characters keep their class and level.</span>
         {#if data.privacy_url}<a href={data.privacy_url} target="_blank" rel="noreferrer" data-fid="mydata-privacy">Privacy notice</a>{/if}
       </div>
       <p class="linknotice__attrib" data-fid="mydata-attrib">{data.attribution}</p>

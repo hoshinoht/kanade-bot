@@ -1,23 +1,23 @@
-//! The character-data service (module `character_data`): link requests and
-//! confirmations, unlink, refreshes and the admin's unstored lookup through
-//! the Open API under the shared limiter, budget and backoffs, and the
-//! sweeper. One instance per process,
+//! The character-data service (module `character_data`): admin links
+//! (active at once), member confirmations, unlink, refreshes and the
+//! admin's unstored lookup through the Open API under the shared limiter,
+//! budget and backoffs, and the sweeper. One instance per process,
 //! shared by the admin API, the `CharacterData` task and (S3) Discord.
 //!
 //! Logs carry error codes, counts and reasons only: never an IGN, a Nexon
 //! field or an ocid. History rows (section `characters`, key
-//! `link.<character>`) carry the status word and the actor only; a roster
-//! IGN's case correction (`ign_case`) is the roster's own `character.<id>`
-//! row by [`NEXON_ACTOR`].
+//! `link.<character>`) carry the status word and the actor only; the
+//! roster's copy of NEXON's class, level and IGN case (`roster_sync`) is the
+//! roster's own `character.<id>` row by [`NEXON_ACTOR`].
 
 mod calls;
 mod health;
-mod ign_case;
 mod link;
 mod lookup;
 mod member;
 mod posts;
 mod refresh;
+mod roster_sync;
 mod sweep;
 #[cfg(test)]
 mod tests;
@@ -30,7 +30,7 @@ use chrono::{DateTime, Utc};
 use tokio::sync::Notify;
 
 pub use health::{BatchReport, Health, LinkCounts, NexonState, PostCounts};
-pub use link::{ConfirmOutcome, LinkView, RequestOutcome};
+pub use link::{AdminLinkOutcome, ConfirmOutcome, LinkView};
 pub use lookup::{Found, LOOKUP_SPACING, LookupOutcome};
 pub use member::{MemberCharacter, MemberLink};
 pub use posts::{DeskFuture, Located, PostDesk, PostIssue, StripReport, Stripped, Tracked};
@@ -46,7 +46,7 @@ use crate::domain::settings::{SettingsChange, SettingsChangeQuery, SettingsStore
 use crate::infrastructure::nexon::{Limiter, NexonClient, SPACING};
 use crate::infrastructure::scouter::Estimates;
 use crate::infrastructure::store::replays::{ReplayStore, StoredReplay};
-pub use ign_case::NEXON_ACTOR;
+pub use roster_sync::NEXON_ACTOR;
 pub use sweep::{SWEEPER, SweepReport};
 
 /// The injected aware wall clock (cutoffs and stamps).
@@ -54,7 +54,7 @@ pub type Clock = Arc<dyn Fn() -> DateTime<Utc> + Send + Sync>;
 
 /// What the service reads from and writes to the main store: roster
 /// characters, member rows, the History row of a link change and the
-/// roster IGN's case correction.
+/// roster's copy of NEXON's facts.
 pub trait RosterSide: Send + Sync {
     fn character(&self, id: String) -> StoreFuture<'_, Option<Character>>;
     fn member(&self, user_id: String) -> StoreFuture<'_, Option<MemberProfile>>;

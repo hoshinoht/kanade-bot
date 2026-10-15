@@ -6,7 +6,8 @@ use serde::Serialize;
 
 use super::{history::SettingsActor, iso_instant};
 use crate::domain::chardata::{
-    ATTRIBUTION, ConsentSurface, LinkStatus, NOTICE_VERSION, SNAPSHOT_TTL, Snapshot, date_text,
+    ATTRIBUTION, ConsentSurface, Link, LinkStatus, NOTICE_VERSION, SNAPSHOT_TTL, Snapshot,
+    date_text,
 };
 use crate::infrastructure::character_data::{Found, Health, LinkView};
 
@@ -25,9 +26,12 @@ pub struct CharacterLink {
     pub version: u32,
     /// A Nexon key is configured: links can be made.
     pub connected: bool,
+    /// Who made the link: the admin who linked it (at once, no member
+    /// confirmation), else the member.
     pub requested_by: Option<SettingsActor>,
     pub requested_at: Option<String>,
-    /// The notice version the member confirmed.
+    /// The notice version the member confirmed; `null` for an admin's link
+    /// (the member confirmed none).
     pub consent_version: Option<u32>,
     pub consented_at: Option<String>,
     pub linked_at: Option<String>,
@@ -116,8 +120,10 @@ pub fn link(character_id: &str, view: &LinkView, privacy_url: Option<&str>) -> C
             id: link.requested_by.id().to_owned(),
         }),
         requested_at: link.map(|link| iso_instant(link.requested_at)),
-        consent_version: link.and_then(|link| link.consent_version),
-        consented_at: link.and_then(|link| link.consented_at).map(iso_instant),
+        consent_version: consent(link).and_then(|link| link.consent_version),
+        consented_at: consent(link)
+            .and_then(|link| link.consented_at)
+            .map(iso_instant),
         linked_at: link.and_then(|link| link.linked_at).map(iso_instant),
         consent_surface: link
             .and_then(|link| link.consent_surface)
@@ -137,6 +143,11 @@ pub fn link(character_id: &str, view: &LinkView, privacy_url: Option<&str>) -> C
         attribution: ATTRIBUTION,
         privacy_url: privacy_url.map(str::to_owned),
     }
+}
+
+/// `link` when its member consented to it (not an admin's link).
+pub fn consent(link: Option<&Link>) -> Option<&Link> {
+    link.filter(|link| !link.admin_linked())
 }
 
 /// `GET /api/admin/characters/lookup`: whether a lookup (and the link a

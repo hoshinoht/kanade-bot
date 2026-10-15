@@ -1,8 +1,9 @@
 //! The service against a fake Open API on loopback (axum) with wholly
-//! invented fixtures: pending requests that call nothing, confirmation,
+//! invented fixtures: admin links (active at once) and member confirmation,
 //! every error code's backoff, ocid re-resolution, empty answers, the
-//! budget, unlink, the orphan pass, and that no Nexon field reaches a log
-//! line or a History row.
+//! budget, unlink, the orphan pass, the roster's copy of NEXON's facts, the
+//! startup passes, and that no Nexon field reaches a log line or a link's
+//! History row.
 
 use std::collections::{HashMap, VecDeque};
 use std::sync::{Arc, Mutex};
@@ -349,52 +350,105 @@ fn nexon_free(text: &str) {
     }
 }
 
+/// User decision 2026-10-13: an admin's link is active at once, with no
+/// member confirmation, and fetches.
 #[tokio::test]
-async fn an_admin_request_waits_for_the_member_and_calls_nothing() {
+async fn an_admin_link_is_active_at_once_and_fetches() {
     crate::runtime::logging::capture();
     let rig = rig().await;
     let admin = Actor::admin("token");
-    let outcome = rig
-        .service
-        .request_link("c1", 0, &admin, Surface::AdminPortal, |_| None)
-        .await
-        .unwrap();
-    let RequestOutcome::Requested(link) = outcome else {
-        panic!("{outcome:?}");
+    let admin_link = async |id: &str, version: u32| {
+        rig.service
+            .admin_link(id, version, &admin, Surface::AdminPortal)
+            .await
+            .unwrap()
     };
-    assert_eq!(link.status, LinkStatus::Pending);
-    assert_eq!(link.consent_version, None);
-    assert!(rig.fake.calls().is_empty(), "no Nexon call while pending");
-    assert!(matches!(
-        rig.service
-            .request_link("c1", 1, &admin, Surface::AdminPortal, |_| None)
-            .await
-            .unwrap(),
-        RequestOutcome::AlreadyLinked(_)
-    ));
-    assert!(matches!(
-        rig.service
-            .request_link("c2", 3, &admin, Surface::AdminPortal, |_| None)
-            .await
-            .unwrap(),
-        RequestOutcome::Stale(None)
-    ));
+    let AdminLinkOutcome::Linked(link, fetched) = admin_link("c1", 0).await else {
+        panic!("not linked");
+    };
+    assert_eq!(fetched, FetchState::Stored);
+    assert_eq!(link.status, LinkStatus::Active);
+    assert_eq!(link.requested_by, admin);
     assert_eq!(
-        rig.service
-            .request_link("c3", 0, &admin, Surface::AdminPortal, |_| None)
-            .await
-            .unwrap(),
-        RequestOutcome::Region
+        (link.consent_version, link.consented_at, link.linked_at),
+        (Some(NOTICE_VERSION), Some(at(11, 0)), Some(at(11, 0))),
+        "the notice in force, and when"
     );
+    assert_eq!(link.consent_surface, None, "the member gave no consent");
+    assert!(link.admin_linked());
+    assert_eq!(rig.link("c1").await, Some((*link).clone()));
+    assert_eq!(rig.fake.calls(), ["id", "basic", "stat"]);
+    assert!(
+        rig.fake
+            .calls
+            .lock()
+            .unwrap()
+            .iter()
+            .all(|(_, key)| key.as_deref() == Some(KEY))
+    );
+    let view = rig.service.view("c1").await.unwrap();
+    let data = view.snapshot.unwrap();
+    assert_eq!(data.ocid, OCID);
+    assert_eq!(data.character_name.as_deref(), Some(IGN));
+    assert_eq!(data.level, Some(271));
+    assert_eq!(data.combat_power, Some(31_415_926));
     assert_eq!(
-        rig.service
-            .request_link("c9", 0, &admin, Surface::AdminPortal, |_| None)
-            .await
-            .unwrap(),
-        RequestOutcome::Missing
+        data.data_date,
+        chrono::NaiveDate::from_ymd_opt(2026, 10, 11)
+    );
+    assert_eq!(data.expires_at, at(11, 0) + TimeDelta::days(30));
+    let row = roster_row(&rig, "c1").await;
+    assert_eq!(
+        (row.level, &row.updated_by),
+        (Some(271), &Actor::system(NEXON_ACTOR)),
+        "NEXON's level is copied into the roster"
     );
 
-    // Only the member, with the current notice, makes it active.
+    // Linked or not, it is the admin's call; the member is not asked.
+    assert!(matches!(
+        admin_link("c1", link.version).await,
+        AdminLinkOutcome::AlreadyLinked(_)
+    ));
+    assert_eq!(rig.confirm().await, ConfirmOutcome::AlreadyLinked);
+    assert!(matches!(
+        admin_link("c2", 3).await,
+        AdminLinkOutcome::Stale(None)
+    ));
+    assert_eq!(admin_link("c3", 0).await, AdminLinkOutcome::Region);
+    assert_eq!(admin_link("c9", 0).await, AdminLinkOutcome::Missing);
+    assert_eq!(rig.fake.calls().len(), 3, "no call for a refused link");
+
+    assert_eq!(
+        rig.history().await,
+        [(
+            "link.c1".into(),
+            "unlinked".into(),
+            "linked".into(),
+            "admin:token".into()
+        )]
+    );
+    // No Nexon field in a link's History row (the roster's own rows carry
+    // roster values) or in any log line.
+    for change in rig
+        .roster
+        .settings_changes(SettingsChangeQuery::default())
+        .await
+        .unwrap()
+        .into_iter()
+        .filter(|change| change.values.keys().all(|key| key.starts_with("link.")))
+    {
+        nexon_free(&format!("{change:?}"));
+    }
+    for line in crate::runtime::logging::captured() {
+        nexon_free(&line.to_string());
+    }
+}
+
+/// A member's own link is unchanged: their consent to the current notice
+/// (and where they gave it) is recorded, then the first fetch runs.
+#[tokio::test]
+async fn a_member_confirms_their_own_link() {
+    let rig = rig().await;
     assert_eq!(
         rig.service
             .confirm_link("1002", "c1", NOTICE_VERSION, ConsentSurface::Discord)
@@ -417,61 +471,19 @@ async fn an_admin_request_waits_for_the_member_and_calls_nothing() {
     assert_eq!(linked.consent_version, Some(NOTICE_VERSION));
     assert_eq!(linked.consented_at, Some(at(11, 0)));
     assert_eq!(linked.consent_surface, Some(ConsentSurface::Discord));
-    assert_eq!(linked.requested_by, admin, "the request stays the admin's");
+    assert_eq!(linked.requested_by, Actor::member("1001"));
+    assert!(!linked.admin_linked());
     assert_eq!(rig.fake.calls(), ["id", "basic", "stat"]);
-    assert!(
-        rig.fake
-            .calls
-            .lock()
-            .unwrap()
-            .iter()
-            .all(|(_, key)| key.as_deref() == Some(KEY))
-    );
-    let view = rig.service.view("c1").await.unwrap();
-    let data = view.snapshot.unwrap();
-    assert_eq!(data.ocid, OCID);
-    assert_eq!(data.character_name.as_deref(), Some(IGN));
-    assert_eq!(data.level, Some(271));
-    assert_eq!(data.combat_power, Some(31_415_926));
-    assert_eq!(
-        data.data_date,
-        chrono::NaiveDate::from_ymd_opt(2026, 10, 11)
-    );
-    assert_eq!(data.expires_at, at(11, 0) + TimeDelta::days(30));
     assert_eq!(rig.confirm().await, ConfirmOutcome::AlreadyLinked);
-
     assert_eq!(
         rig.history().await,
-        [
-            (
-                "link.c1".into(),
-                "unlinked".into(),
-                "pending".into(),
-                "admin:token".into()
-            ),
-            (
-                "link.c1".into(),
-                "pending".into(),
-                "linked".into(),
-                "member:1001".into()
-            ),
-        ]
+        [(
+            "link.c1".into(),
+            "unlinked".into(),
+            "linked".into(),
+            "member:1001".into()
+        )]
     );
-    // No Nexon field in a link's History row (the roster's own rows carry
-    // the admin-entered IGN) or in any log line.
-    for change in rig
-        .roster
-        .settings_changes(SettingsChangeQuery::default())
-        .await
-        .unwrap()
-        .into_iter()
-        .filter(|change| change.values.keys().all(|key| key.starts_with("link.")))
-    {
-        nexon_free(&format!("{change:?}"));
-    }
-    for line in crate::runtime::logging::captured() {
-        nexon_free(&line.to_string());
-    }
 }
 
 #[tokio::test]
@@ -479,16 +491,10 @@ async fn without_a_key_links_are_refused() {
     let rig = rig_with(false).await;
     assert_eq!(
         rig.service
-            .request_link(
-                "c1",
-                0,
-                &Actor::admin("token"),
-                Surface::AdminPortal,
-                |_| None
-            )
+            .admin_link("c1", 0, &Actor::admin("token"), Surface::AdminPortal)
             .await
             .unwrap(),
-        RequestOutcome::NotConnected
+        AdminLinkOutcome::NotConnected
     );
     assert_eq!(rig.confirm().await, ConfirmOutcome::NotConnected);
     assert_eq!(
@@ -698,23 +704,18 @@ async fn a_changed_ocid_is_resolved_again_once_then_the_link_is_stale() {
     assert_eq!(rig.fake.calls()[before..], ["basic", "id", "basic"]);
     assert_eq!(rig.link("c1").await.unwrap().status, LinkStatus::Stale);
     assert_eq!(rig.service.view("c1").await.unwrap().snapshot, None);
-    // An admin may ask again: pending, no call.
+    // An admin links it again: active at once, and it fetches.
     let calls = rig.fake.calls().len();
     let version = rig.link("c1").await.unwrap().version;
     assert!(matches!(
         rig.service
-            .request_link(
-                "c1",
-                version,
-                &Actor::admin("token"),
-                Surface::AdminPortal,
-                |_| None
-            )
+            .admin_link("c1", version, &Actor::admin("token"), Surface::AdminPortal)
             .await
             .unwrap(),
-        RequestOutcome::Requested(_)
+        AdminLinkOutcome::Linked(_, FetchState::Stored)
     ));
-    assert_eq!(rig.fake.calls().len(), calls);
+    assert_eq!(rig.fake.calls()[calls..], ["id", "basic", "stat"]);
+    assert_eq!(rig.link("c1").await.unwrap().status, LinkStatus::Active);
 }
 
 #[tokio::test]
@@ -1214,7 +1215,7 @@ async fn roster_row(rig: &Rig, id: &str) -> crate::domain::characters::Character
         .unwrap()
 }
 
-/// The History rows of NEXON's case corrections.
+/// The History rows of roster writes whose values come from NEXON.
 async fn nexon_rows(rig: &Rig) -> Vec<crate::domain::settings::SettingsChange> {
     rig.roster
         .settings_changes(SettingsChangeQuery {
@@ -1225,13 +1226,56 @@ async fn nexon_rows(rig: &Rig) -> Vec<crate::domain::settings::SettingsChange> {
         .unwrap()
 }
 
-/// A fetch whose name differs from the roster IGN in case only (link
-/// confirm, then an admin refresh) gives the roster NEXON's spelling with
-/// one History row each, keeps the link and calls nothing more.
+/// An admin's edit of the roster row `id` at 11:01.
+async fn edit(
+    rig: &Rig,
+    id: &str,
+    change: impl FnOnce(&mut crate::domain::characters::Character),
+) -> crate::domain::characters::Character {
+    let current = roster_row(rig, id).await;
+    let mut after = current.clone();
+    change(&mut after);
+    let after = after.next_version(at(11, 1), &Actor::admin("token"));
+    let written = rig
+        .roster
+        .apply_character(
+            CharacterChange::Update {
+                version: current.version,
+                after: after.clone(),
+            },
+            CharacterRecord {
+                at: at(11, 1),
+                actor: Actor::admin("token"),
+                surface: Surface::AdminPortal,
+            },
+        )
+        .await
+        .unwrap();
+    assert!(matches!(written, CharacterWrite::Updated(_)), "{written:?}");
+    after
+}
+
+/// NEXON's `basic` answer with `class` and `level`.
+fn basic_with(class: Option<&str>, level: Option<u32>) -> String {
+    let mut body: serde_json::Value = serde_json::from_str(&basic(IGN)).unwrap();
+    body["character_class"] = serde_json::json!(class);
+    body["character_level"] = serde_json::json!(level);
+    body.to_string()
+}
+
+/// User decision 2026-10-13 ("copy and keep"): a stored fetch writes
+/// NEXON's class and level into the roster row, with NEXON's spelling when
+/// the names differ only in case, in one write and one History row by
+/// `system:nexon`; the link stays. A refresh with nothing new writes
+/// nothing; a manual edit is overwritten by the next fetch.
 #[tokio::test]
-async fn a_case_only_name_takes_nexons_spelling_and_keeps_the_link() {
+async fn a_fetch_copies_class_level_and_ign_case_into_the_roster() {
     let rig = rig().await;
-    rename(&rig, "c1", "wisteria").await;
+    edit(&rig, "c1", |row| {
+        row.ign = "wisteria".into();
+        row.class = Some("Cleric".into());
+    })
+    .await;
     let ConfirmOutcome::Linked(link, fetched) = rig.confirm().await else {
         panic!()
     };
@@ -1239,39 +1283,64 @@ async fn a_case_only_name_takes_nexons_spelling_and_keeps_the_link() {
     let link = Some(*link);
     let row = roster_row(&rig, "c1").await;
     assert_eq!(
-        (row.ign.as_str(), row.version, &row.updated_by),
-        (IGN, 3, &Actor::system(NEXON_ACTOR))
+        (
+            row.ign.as_str(),
+            row.class.as_deref(),
+            row.level,
+            row.version,
+            &row.updated_by
+        ),
+        (
+            IGN,
+            Some("Bishop"),
+            Some(271),
+            3,
+            &Actor::system(NEXON_ACTOR)
+        )
     );
     assert_eq!(rig.link("c1").await, link, "link kept");
-    assert!(rig.service.data("c1").await.unwrap().is_some());
-    assert_eq!(rig.fake.calls(), ["id", "basic", "stat"]);
+    assert_eq!(
+        rig.fake.calls(),
+        ["id", "basic", "stat"],
+        "no call of its own"
+    );
     let rows = nexon_rows(&rig).await;
     assert_eq!(rows.len(), 1);
     assert_eq!(
         (rows[0].section.as_str(), rows[0].surface),
         ("characters", Surface::DeliveryTick)
     );
-    let diff = &rows[0].values["character.c1"];
     assert_eq!(rows[0].values.len(), 1);
-    assert!(diff.from.contains(r#""ign":"wisteria""#), "{diff:?}");
-    assert!(diff.to.contains(r#""ign":"Wisteria""#), "{diff:?}");
-    // Only the IGN changes: every other field is the roster's own.
-    assert_eq!(
-        diff.from.replace("wisteria", "Wisteria"),
-        diff.to,
-        "nothing else copied"
-    );
+    let diff = &rows[0].values["character.c1"];
+    for before in [
+        r#""ign":"wisteria""#,
+        r#""class":"Cleric""#,
+        r#""level":250"#,
+    ] {
+        assert!(diff.from.contains(before), "{diff:?}");
+    }
+    for after in [
+        r#""ign":"Wisteria""#,
+        r#""class":"Bishop""#,
+        r#""level":271"#,
+    ] {
+        assert!(diff.to.contains(after), "{diff:?}");
+    }
 
-    // Already NEXON's spelling: a refresh writes nothing.
+    // Nothing new: a refresh writes nothing.
     assert_eq!(
         rig.service.refresh_now("c1").await.unwrap(),
         RefreshOutcome::Done(FetchState::Stored)
     );
     assert_eq!(nexon_rows(&rig).await.len(), 1);
 
-    // An admin's case-only edit keeps the link; the next refresh puts
-    // NEXON's spelling back.
-    let edited = rename(&rig, "c1", "WISTERIA").await;
+    // An admin's manual level and case-only edit keep the link; the next
+    // fetch puts NEXON's values back.
+    let edited = edit(&rig, "c1", |row| {
+        row.ign = "WISTERIA".into();
+        row.level = Some(200);
+    })
+    .await;
     rig.service
         .roster_changed(
             "c1",
@@ -1285,14 +1354,90 @@ async fn a_case_only_name_takes_nexons_spelling_and_keeps_the_link() {
         rig.service.refresh_now("c1").await.unwrap(),
         RefreshOutcome::Done(FetchState::Stored)
     );
-    assert_eq!(roster_row(&rig, "c1").await.ign, IGN);
+    let row = roster_row(&rig, "c1").await;
+    assert_eq!((row.ign.as_str(), row.level), (IGN, Some(271)));
     assert_eq!(nexon_rows(&rig).await.len(), 2);
     assert_eq!(rig.link("c1").await, link);
 }
 
+/// What NEXON did not answer, or what the roster rules refuse, leaves the
+/// roster's own value.
+#[tokio::test]
+async fn values_nexon_lacks_or_the_roster_refuses_are_not_copied() {
+    let long = "C".repeat(33);
+    for (class, level, expected) in [
+        (None, None, (Some("Bishop"), Some(250))),
+        (Some(long.as_str()), Some(0), (Some("Bishop"), Some(250))),
+        (Some("Cleric"), Some(301), (Some("Cleric"), Some(250))),
+        (None, Some(260), (Some("Bishop"), Some(260))),
+    ] {
+        let rig = rig().await;
+        rig.fake.queue("basic", [(200, basic_with(class, level))]);
+        assert!(matches!(
+            rig.confirm().await,
+            ConfirmOutcome::Linked(_, FetchState::Stored)
+        ));
+        let row = roster_row(&rig, "c1").await;
+        assert_eq!(
+            (row.class.as_deref(), row.level),
+            expected,
+            "{class:?} {level:?}"
+        );
+        let written = usize::from(expected != (Some("Bishop"), Some(250)));
+        assert_eq!(nexon_rows(&rig).await.len(), written, "{class:?} {level:?}");
+    }
+}
+
+/// The copied class and level are roster data: they stay after an unlink,
+/// after the NEXON data expires, and after the sweep removes a retired
+/// character's expired link.
+#[tokio::test]
+async fn copied_values_stay_after_unlink_and_expiry() {
+    let copied = |row: crate::domain::characters::Character| (row.class, row.level);
+    let expected = (Some("Bishop".to_owned()), Some(271));
+
+    let rig = rig().await;
+    rig.confirm().await;
+    rig.service
+        .unlink(
+            "c1",
+            &Actor::member("1001"),
+            Surface::Discord,
+            crate::domain::chardata::UnlinkReason::Requested,
+            None,
+        )
+        .await
+        .unwrap();
+    assert_eq!(rig.link("c1").await, None);
+    assert_eq!(copied(roster_row(&rig, "c1").await), expected, "unlinked");
+
+    let rig = rig_with(true).await;
+    rig.confirm().await;
+    rig.set_now(at(11, 0) + TimeDelta::days(31));
+    assert_eq!(rig.service.data("c1").await.unwrap(), None, "expired");
+    rig.service.sweep().await;
+    assert_eq!(copied(roster_row(&rig, "c1").await), expected, "expired");
+
+    let rig = rig_with(true).await;
+    rig.fake.queue("basic", [(200, basic("Heather"))]);
+    rig.service
+        .confirm_link("1001", "c2", NOTICE_VERSION, ConsentSurface::Discord)
+        .await
+        .unwrap();
+    edit(&rig, "c2", |row| row.retired_at = Some(at(11, 1))).await;
+    rig.set_now(at(11, 0) + TimeDelta::days(31));
+    assert_eq!(rig.service.sweep().await.unlinked, 1);
+    assert_eq!(rig.link("c2").await, None);
+    assert_eq!(
+        copied(roster_row(&rig, "c2").await),
+        expected,
+        "retired and swept"
+    );
+}
+
 /// Another name makes the link stale and leaves the roster as it is.
 #[tokio::test]
-async fn a_different_name_goes_stale_and_changes_no_ign() {
+async fn a_different_name_goes_stale_and_copies_nothing() {
     let rig = rig().await;
     rename(&rig, "c1", "wisteria").await;
     rig.fake.queue("basic", [(200, basic("Wisterias"))]);
@@ -1301,67 +1446,63 @@ async fn a_different_name_goes_stale_and_changes_no_ign() {
     };
     assert_eq!(fetched, FetchState::Stale);
     let row = roster_row(&rig, "c1").await;
-    assert_eq!((row.ign.as_str(), row.version), ("wisteria", 2));
-    assert!(nexon_rows(&rig).await.is_empty());
-    assert_eq!(rig.service.match_ign_cases().await, 0);
-}
-
-/// A roster write between the fetch's read and the correction (another
-/// version) wins: nothing is written.
-#[tokio::test]
-async fn a_roster_edit_since_the_fetch_read_skips_the_correction() {
-    let rig = rig().await;
-    rig.confirm().await;
-    let link = rig.link("c1").await.unwrap();
-    let seen = rename(&rig, "c1", "wisteria").await;
-    let after = crate::domain::characters::Character {
-        class: Some("Cleric".into()),
-        ..seen.clone()
-    }
-    .next_version(at(11, 2), &Actor::admin("token"));
-    rig.roster
-        .apply_character(
-            CharacterChange::Update {
-                version: seen.version,
-                after,
-            },
-            CharacterRecord {
-                at: at(11, 2),
-                actor: Actor::admin("token"),
-                surface: Surface::AdminPortal,
-            },
-        )
-        .await
-        .unwrap();
-    assert!(!rig.service.match_ign_case(&link, &seen, IGN).await);
-    let row = roster_row(&rig, "c1").await;
     assert_eq!(
-        (row.ign.as_str(), row.class.as_deref(), row.version),
-        ("wisteria", Some("Cleric"), 3)
+        (row.ign.as_str(), row.level, row.version),
+        ("wisteria", Some(250), 2)
     );
     assert!(nexon_rows(&rig).await.is_empty());
+    assert_eq!(rig.service.sync_rosters().await, 0);
 }
 
-/// Startup: an active link whose stored name already differs in case is
-/// corrected once, without a Nexon call; a second pass does nothing.
+/// A roster write between the fetch's read and the copy (another version)
+/// wins: nothing is written.
 #[tokio::test]
-async fn the_startup_pass_corrects_stored_names_once() {
+async fn a_roster_edit_since_the_fetch_read_skips_the_copy() {
     let rig = rig().await;
     rig.confirm().await;
     let link = rig.link("c1").await.unwrap();
-    rename(&rig, "c1", "WISTERIA").await;
+    let snapshot = rig.service.data("c1").await.unwrap().unwrap();
+    let seen = edit(&rig, "c1", |row| row.level = Some(200)).await;
+    edit(&rig, "c1", |row| row.class = Some("Cleric".into())).await;
+    let after = super::roster_sync::synced(&link, &seen, &snapshot).expect("a level to copy");
+    assert!(!rig.service.sync_roster(&seen, after).await);
+    let row = roster_row(&rig, "c1").await;
+    assert_eq!(
+        (row.class.as_deref(), row.level, row.version),
+        (Some("Cleric"), Some(200), 4)
+    );
+    assert_eq!(nexon_rows(&rig).await.len(), 1, "only the confirm's copy");
+}
+
+/// Startup: an active link whose fresh snapshot holds what the roster row
+/// lacks is copied once, without a Nexon call; a second pass does nothing.
+#[tokio::test]
+async fn the_startup_pass_copies_stored_data_once() {
+    let rig = rig().await;
+    rig.confirm().await;
+    let link = rig.link("c1").await.unwrap();
+    edit(&rig, "c1", |row| {
+        row.ign = "WISTERIA".into();
+        row.level = Some(200);
+        row.class = None;
+    })
+    .await;
     let calls = rig.fake.calls().len();
-    assert_eq!(rig.service.match_ign_cases().await, 1);
-    assert_eq!(roster_row(&rig, "c1").await.ign, IGN);
-    assert_eq!(nexon_rows(&rig).await.len(), 1);
+    assert_eq!(rig.service.sync_rosters().await, 1);
+    let row = roster_row(&rig, "c1").await;
+    assert_eq!(
+        (row.ign.as_str(), row.class.as_deref(), row.level),
+        (IGN, Some("Bishop"), Some(271))
+    );
+    assert_eq!(nexon_rows(&rig).await.len(), 2);
     assert_eq!(rig.link("c1").await, Some(link));
-    assert_eq!(rig.service.match_ign_cases().await, 0, "idempotent");
-    assert_eq!(nexon_rows(&rig).await.len(), 1);
+    assert_eq!(rig.service.sync_rosters().await, 0, "idempotent");
+    assert_eq!(nexon_rows(&rig).await.len(), 2);
     assert_eq!(rig.fake.calls().len(), calls, "no Nexon call");
 }
 
 /// Expired data, stale and pending links (an older notice included) are
-/// never corrected.
+/// never copied.
 #[tokio::test]
 async fn the_startup_pass_leaves_expired_stale_and_pending_links_alone() {
     for case in ["expired", "stale", "pending", "older_notice"] {
@@ -1389,9 +1530,141 @@ async fn the_startup_pass_leaves_expired_stale_and_pending_links_alone() {
             }
             _ => rig.older_notice("c1").await,
         }
-        rename(&rig, "c1", "WISTERIA").await;
-        assert_eq!(rig.service.match_ign_cases().await, 0, "{case}");
-        assert_eq!(roster_row(&rig, "c1").await.ign, "WISTERIA", "{case}");
-        assert!(nexon_rows(&rig).await.is_empty(), "{case}");
+        edit(&rig, "c1", |row| {
+            row.ign = "WISTERIA".into();
+            row.level = Some(200);
+        })
+        .await;
+        assert_eq!(rig.service.sync_rosters().await, 0, "{case}");
+        let row = roster_row(&rig, "c1").await;
+        assert_eq!(
+            (row.ign.as_str(), row.level),
+            ("WISTERIA", Some(200)),
+            "{case}"
+        );
+        assert_eq!(
+            nexon_rows(&rig).await.len(),
+            1,
+            "{case}: the confirm's copy only"
+        );
     }
+}
+
+/// A pending link on file for `id`, requested by `by` at 10:00.
+async fn put_pending(rig: &Rig, id: &str, by: Actor) {
+    let character = roster_row(rig, id).await;
+    let pending = Link {
+        character_id: id.into(),
+        member_id: character.member_id.clone(),
+        ign_key: character.ign_key(),
+        region: "msea".into(),
+        status: LinkStatus::Pending,
+        requested_by: by,
+        requested_at: at(10, 0),
+        consent_version: None,
+        consented_at: None,
+        linked_at: None,
+        consent_surface: None,
+        version: 1,
+    };
+    assert_eq!(
+        rig.file.put_link(pending, 0).await.unwrap(),
+        crate::domain::chardata::LinkPut::Written
+    );
+}
+
+/// Startup (user decision 2026-10-13): admin requests left pending become
+/// active once, by the sweeper, and fetch (copying into the roster); a
+/// member's own link waiting for a new notice is left alone, and a second
+/// pass does nothing.
+#[tokio::test]
+async fn the_startup_pass_activates_admin_requests_once() {
+    let rig = rig().await;
+    let admin = Actor::admin("discord:2001");
+    put_pending(&rig, "c1", admin.clone()).await;
+    put_pending(&rig, "c2", Actor::system(SWEEPER)).await;
+    assert_eq!(rig.service.activate_requests().await, 1);
+    let link = rig.link("c1").await.unwrap();
+    assert_eq!(link.status, LinkStatus::Active);
+    assert_eq!(
+        (&link.requested_by, link.requested_at),
+        (&admin, at(10, 0)),
+        "still the admin's request"
+    );
+    assert_eq!(
+        (link.consent_version, link.linked_at, link.consent_surface),
+        (Some(NOTICE_VERSION), Some(at(11, 0)), None)
+    );
+    assert!(link.admin_linked());
+    assert_eq!(rig.fake.calls(), ["id", "basic", "stat"]);
+    assert!(rig.service.data("c1").await.unwrap().is_some());
+    assert_eq!(roster_row(&rig, "c1").await.level, Some(271));
+    assert_eq!(
+        rig.link("c2").await.unwrap().status,
+        LinkStatus::Pending,
+        "waits for its member"
+    );
+    assert_eq!(
+        rig.history().await,
+        [(
+            "link.c1".into(),
+            "pending".into(),
+            "linked".into(),
+            "system:chardata".into()
+        )]
+    );
+
+    assert_eq!(rig.service.activate_requests().await, 0, "idempotent");
+    assert_eq!(rig.fake.calls().len(), 3);
+    assert_eq!(rig.history().await.len(), 1);
+
+    // Without a key nothing is activated; a retired character's request
+    // waits for the sweep.
+    let rig = rig_with(false).await;
+    put_pending(&rig, "c1", admin.clone()).await;
+    assert_eq!(rig.service.activate_requests().await, 0);
+    assert_eq!(rig.link("c1").await.unwrap().status, LinkStatus::Pending);
+    let rig = rig_with(true).await;
+    put_pending(&rig, "c2", admin).await;
+    edit(&rig, "c2", |row| row.retired_at = Some(at(11, 1))).await;
+    assert_eq!(rig.service.activate_requests().await, 0);
+    assert_eq!(rig.link("c2").await.unwrap().status, LinkStatus::Pending);
+    assert!(rig.fake.calls().is_empty());
+}
+
+/// User decision 2026-10-15: a notice bump re-asks only member-consented
+/// links; an admin's link made under the older notice stays active with
+/// its data.
+#[tokio::test]
+async fn a_notice_bump_re_asks_members_never_an_admins_link() {
+    let rig = rig().await;
+    let admin = Actor::admin("token");
+    let linked = rig
+        .service
+        .admin_link("c1", 0, &admin, Surface::AdminPortal)
+        .await
+        .unwrap();
+    assert!(matches!(linked, AdminLinkOutcome::Linked(..)));
+    rig.service
+        .confirm_link("1001", "c2", NOTICE_VERSION, ConsentSurface::Discord)
+        .await
+        .unwrap();
+    rig.older_notice("c1").await;
+    rig.older_notice("c2").await;
+    let view = rig.service.view("c1").await.unwrap();
+    assert_eq!(view.link.unwrap().status, LinkStatus::Active, "admin's");
+    assert!(view.snapshot.is_some(), "its data still served");
+    assert_eq!(
+        rig.service.view("c2").await.unwrap().link.unwrap().status,
+        LinkStatus::Pending,
+        "the member's reads as pending at once"
+    );
+    assert_eq!(rig.service.sweep().await.reconsent, 1);
+    assert_eq!(rig.link("c1").await.unwrap().status, LinkStatus::Active);
+    assert_eq!(rig.link("c2").await.unwrap().status, LinkStatus::Pending);
+    assert_eq!(
+        rig.service.refresh_now("c1").await.unwrap(),
+        RefreshOutcome::Done(FetchState::Stored),
+        "still refreshed"
+    );
 }
