@@ -20,7 +20,6 @@ use super::roster;
 use crate::{
     api::{
         admin::{
-            character_data::estimates::lookup_name,
             characters::party,
             context::{context, roster as directory},
             write::{Refusal, run_not_found, state},
@@ -42,7 +41,7 @@ use crate::{
         catalog::BossTable,
         chardata::{ATTRIBUTION, Requirement, date_text},
     },
-    infrastructure::scouter::{Estimates, Target},
+    infrastructure::scouter::{Estimates, RosterIgn, Target},
 };
 
 pub(super) async fn read(
@@ -113,7 +112,7 @@ pub(super) async fn read(
             None => None,
         };
         let scouter = estimates.zip(brought).map(|(estimates, character)| {
-            lookup_name(character)
+            RosterIgn::lookup(character)
                 .ok()
                 .and_then(|ign| estimates.cached(&ign))
                 .map(|(member, fetched_at)| {

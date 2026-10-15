@@ -380,7 +380,12 @@ impl TwilightTransport {
             .iter()
             .zip(0_u64..)
             .map(|(upload, id)| {
-                Attachment::from_bytes(upload.filename.clone(), upload.bytes.to_vec(), id)
+                let mut file =
+                    Attachment::from_bytes(upload.filename.clone(), upload.bytes.to_vec(), id);
+                if let Some(description) = &upload.description {
+                    file.description(description.clone());
+                }
+                file
             })
             .collect();
         if !files.is_empty() {

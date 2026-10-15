@@ -1,0 +1,714 @@
+//! The estimate share chart: the SVG pinned against stored copies of the
+//! approved board's fixtures, the PNG decoded for size and palette, and the
+//! image on redesigned day-of and countdown posts (never classic, never on
+//! an edit, left off when anything fails).
+//!
+//! `KANADE_WRITE_CHART=1` rewrites the stored SVGs; `KANADE_CHART_PNG_DIR`
+//! also writes the rendered PNGs there for a visual check.
+
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
+
+use chrono::{TimeDelta, TimeZone, Utc};
+use kanade::bot::delivery::cards::chart::{self, Chart, ChartRun, SCALE};
+use kanade::bot::delivery::cards::{CardKit, V2Kit};
+use kanade::bot::delivery::{
+    EstimateFuture, MAX_ATTACHMENTS, PartyEstimates, RunEstimate, attach_chart, chart_for,
+    read_estimates,
+};
+use kanade::bot::transport::{OutgoingMessage, Upload};
+use kanade::domain::catalog::BossTable;
+use kanade::domain::characters::{Basis, Character, CharacterRole, PartySlot};
+use kanade::domain::chardata::{Carrier, PartyShares};
+use kanade::domain::history::Actor;
+use kanade::domain::schedule::{Run, ScheduleSnapshot};
+use kanade::infrastructure::scouter::{Card, Member};
+use kanade::infrastructure::store::SqliteStore;
+use resvg::tiny_skia::Pixmap;
+
+use super::{KALOS, MALEFIC, countdown, day_of, members, redesigned_v5, week};
+use crate::cards::{
+    answer, art_dir, catalog, created, edits, kit, redesigned, refresher, seed_day_of, world,
+};
+use crate::scenarios::{self, now};
+use crate::support;
+
+fn carrier(ign: &str, crit: bool, effective: &[f64]) -> Carrier {
+    Carrier {
+        ign: ign.into(),
+        crit_assumed: crit,
+        effective: effective.iter().copied().map(Some).collect(),
+    }
+}
+
+fn blank(carriers: &[Carrier]) -> Vec<Carrier> {
+    carriers
+        .iter()
+        .map(|carrier| Carrier {
+            effective: vec![None; carrier.effective.len()],
+            ..carrier.clone()
+        })
+        .collect()
+}
+
+fn run(
+    time: &str,
+    bosses: &[&str],
+    carriers: Vec<Carrier>,
+    missing: usize,
+    minutes: &[f64],
+) -> ChartRun {
+    ChartRun {
+        time: time.into(),
+        party: PartyShares {
+            bosses: bosses.iter().map(|boss| (*boss).to_owned()).collect(),
+            carriers,
+            missing,
+        },
+        minutes: minutes.iter().copied().map(Some).collect(),
+    }
+}
+
+/// The board's Kalos run (the user's screenshot numbers, invented IGNs).
+fn kalos() -> ChartRun {
+    run(
+        "21:30",
+        &["XKalos"],
+        vec![
+            carrier("AsahiDK", false, &[38.8]),
+            carrier("RenShade", true, &[35.8]),
+            carrier("MikaNL", false, &[25.3]),
+            carrier("TsubaKain", true, &[23.7]),
+            carrier("SoraPF", false, &[16.8]),
+        ],
+        0,
+        &[21.4],
+    )
+}
+
+/// The board's Karling + Star run: five carriers, two with no character.
+fn carling() -> ChartRun {
+    run(
+        "22:00",
+        &["HCarling", "HMaleficStar"],
+        vec![
+            carrier("AsahiDK", false, &[34.0, 41.0]),
+            carrier("RenShade", false, &[22.5, 28.0]),
+            carrier("MikaBish", true, &[18.0, 21.5]),
+            carrier("YuzuPala", false, &[20.5, 24.0]),
+            carrier("TsubaKain", false, &[17.0, 16.0]),
+        ],
+        2,
+        &[26.8, 22.9],
+    )
+}
+
+/// `carling`'s party at other bosses, each figure scaled.
+fn scaled(
+    time: &str,
+    bosses: [&str; 2],
+    factors: [(usize, f64); 2],
+    minutes: [f64; 2],
+) -> ChartRun {
+    let base = carling();
+    let carriers = base
+        .party
+        .carriers
+        .iter()
+        .map(|carrier| Carrier {
+            effective: factors
+                .iter()
+                .map(|(from, factor)| carrier.effective[*from].map(|value| value * factor))
+                .collect(),
+            ..carrier.clone()
+        })
+        .collect();
+    run(time, &bosses, carriers, 2, &minutes)
+}
+
+const AS_OF: &str = "Tue 29 Sep 08:41";
+
+/// The board's PNGs: (file stem, chart).
+fn fixtures() -> Vec<(&'static str, Chart)> {
+    let chart = |runs: Vec<ChartRun>, as_of: &str| Chart {
+        runs,
+        as_of: as_of.into(),
+        portal: true,
+    };
+    let mut jupiter = kalos();
+    jupiter.time = "23:59".into();
+    jupiter.party.bosses = vec!["HJupiter".into()];
+    let mut none_kalos = kalos();
+    none_kalos.party.carriers = blank(&none_kalos.party.carriers);
+    let mut none_carling = carling();
+    none_carling.party.carriers = blank(&none_carling.party.carriers);
+    vec![
+        ("estimate-share-A-kalos", chart(vec![kalos()], AS_OF)),
+        (
+            "estimate-share-A-tue29",
+            chart(vec![kalos(), carling()], AS_OF),
+        ),
+        (
+            "estimate-share-A-busy",
+            chart(
+                vec![
+                    kalos(),
+                    carling(),
+                    scaled(
+                        "22:30",
+                        ["HLimbo", "HBaldrix"],
+                        [(0, 0.93), (1, 0.77)],
+                        [28.9, 29.6],
+                    ),
+                    scaled(
+                        "23:30",
+                        ["XBM", "HSeren"],
+                        [(0, 0.857), (0, 1.348)],
+                        [31.3, 19.9],
+                    ),
+                    jupiter,
+                ],
+                AS_OF,
+            ),
+        ),
+        (
+            "estimate-share-A-none",
+            chart(vec![none_kalos, none_carling], "Thu 1 Oct 09:00"),
+        ),
+    ]
+}
+
+fn golden(stem: &str) -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/delivery/redesign/chart")
+        .join(format!("{stem}.svg"))
+}
+
+/// The pixel at CSS px (`x`, `y`) as `#rrggbb`.
+fn colour(png: &Pixmap, x: u32, y: u32) -> String {
+    let pixel = png.pixel(x * SCALE, y * SCALE).expect("inside the image");
+    format!(
+        "#{:02x}{:02x}{:02x}",
+        pixel.red(),
+        pixel.green(),
+        pixel.blue()
+    )
+}
+
+#[test]
+fn the_board_fixtures_draw_as_stored_and_decode_at_twice_the_size() {
+    let out = std::env::var_os("KANADE_CHART_PNG_DIR").map(PathBuf::from);
+    for (stem, fixture) in fixtures() {
+        let drawn = chart::svg(&fixture);
+        assert_eq!(chart::svg(&fixture), drawn, "{stem}: deterministic");
+        if std::env::var_os("KANADE_WRITE_CHART").is_some() {
+            std::fs::create_dir_all(golden(stem).parent().unwrap()).unwrap();
+            std::fs::write(golden(stem), &drawn.svg).unwrap();
+        }
+        let stored = std::fs::read_to_string(golden(stem)).expect("stored svg");
+        assert_eq!(drawn.svg, stored, "{stem}");
+
+        let bytes = chart::png(&drawn).expect("renders");
+        assert_eq!(
+            chart::png(&drawn).unwrap(),
+            bytes,
+            "{stem}: same bytes twice"
+        );
+        let png = Pixmap::decode_png(&bytes).expect("a PNG");
+        assert_eq!(
+            (png.width(), png.height()),
+            (drawn.width * SCALE, drawn.height * SCALE),
+            "{stem}"
+        );
+        assert_eq!(png.width(), 1120);
+        assert_eq!(colour(&png, 2, 2), "#2b2d31", "{stem}: opaque dark ground");
+        if let Some(dir) = &out {
+            std::fs::create_dir_all(dir).unwrap();
+            std::fs::write(dir.join(format!("{stem}.png")), &bytes).unwrap();
+        }
+    }
+    let kalos = chart::svg(&fixtures()[0].1);
+    // The board's heights.
+    assert_eq!(kalos.height, 160);
+    assert_eq!(chart::svg(&fixtures()[1].1).height, 334);
+    assert_eq!(chart::svg(&fixtures()[2].1).height, 800);
+    assert_eq!(chart::svg(&fixtures()[3].1).height, 226);
+    // Member colours at the parts' left edges (party order), on the bar
+    // at y 38–66: AsahiDK blue, MikaNL green; RenShade is hatched.
+    let png = Pixmap::decode_png(&chart::png(&kalos).unwrap()).unwrap();
+    assert_eq!(colour(&png, 112, 42), "#3a9ad9");
+    assert_eq!(colour(&png, 343, 42), "#14b386");
+}
+
+#[test]
+fn the_svg_says_what_the_board_says() {
+    let drawn: Vec<String> = fixtures()
+        .iter()
+        .map(|(_, fixture)| chart::svg(fixture).svg)
+        .collect();
+    let [one, tue29, busy, none] = drawn.as_slice() else {
+        panic!("four fixtures");
+    };
+    for part in [
+        "1·28%",
+        "2·25%*",
+        "3·18%",
+        "4·17%*",
+        "5·12%",
+        "140.4% · 21.4m",
+    ] {
+        assert!(one.contains(part), "{part}");
+    }
+    assert!(one.contains("as of Tue 29 Sep 08:41 · * assumes 100% critical rate"));
+    assert!(!one.contains("with no estimate"));
+    assert!(tue29.contains("22:00 · HCarling + HMaleficStar"));
+    assert!(tue29.contains("2 with no estimate (not 0%, not in the total)"));
+    assert!(busy.contains("23:59 · HJupiter"), "eight bars fit");
+    assert!(!busy.contains(" more boss"));
+    // A ninth bar and the runs after it are counted, not drawn.
+    let mut over = fixtures().swap_remove(2).1;
+    over.runs.push(kalos());
+    over.runs.push(carling());
+    let drawn = chart::svg(&over).svg;
+    assert!(drawn.contains("+3 more bosses in the portal"), "{drawn}");
+    over.portal = false;
+    assert!(chart::svg(&over).svg.contains("+3 more bosses</text>"));
+    over.runs.truncate(6);
+    assert!(chart::svg(&over).svg.contains(">+1 more boss</text>"));
+    assert_eq!(none.matches("no estimate yet").count(), 3);
+    assert!(
+        !none.contains("with no estimate"),
+        "no legend without a figure"
+    );
+    assert!(
+        none.contains("as of Thu 1 Oct 09:00</text>"),
+        "no crit note"
+    );
+    // IGNs only, escaped.
+    let odd = Chart {
+        runs: vec![run(
+            "21:30",
+            &["XKalos"],
+            vec![carrier("A<b&", false, &[1.0])],
+            0,
+            &[],
+        )],
+        as_of: AS_OF.into(),
+        portal: false,
+    };
+    assert!(chart::svg(&odd).svg.contains("A&lt;b&amp;"));
+    assert!(chart::png(&chart::svg(&odd)).is_ok());
+}
+
+#[test]
+fn the_alt_text_carries_the_same_facts_by_ign() {
+    let fixtures = fixtures();
+    assert_eq!(
+        chart::alt(&fixtures[0].1),
+        "21:30 XKalos: XKalos 140.4%, AsahiDK 28%, RenShade 25% (assumed crit), MikaNL 18%, \
+         TsubaKain 17% (assumed crit), SoraPF 12%. As of Tue 29 Sep 08:41."
+    );
+    assert!(chart::alt(&fixtures[1].1).contains("; 2 with no estimate. As of"));
+    assert_eq!(
+        chart::alt(&fixtures[3].1),
+        "21:30 XKalos: XKalos no estimate yet. 22:00 HCarling + HMaleficStar: HCarling no \
+         estimate yet; HMaleficStar no estimate yet. As of Thu 1 Oct 09:00."
+    );
+}
+
+fn character(member: &str, ign: &str, world: &str) -> Character {
+    let at = Utc.with_ymd_and_hms(2026, 9, 1, 0, 0, 0).unwrap();
+    Character {
+        id: format!("ch-{member}"),
+        member_id: member.into(),
+        ign: ign.into(),
+        world: world.into(),
+        class: None,
+        level: None,
+        role: CharacterRole::Main,
+        retired_at: None,
+        created_at: at,
+        updated_at: at,
+        updated_by: Actor::system("test"),
+        version: 1,
+    }
+}
+
+fn slot(member: &str, brings: Option<Character>) -> PartySlot {
+    PartySlot {
+        member_id: member.into(),
+        brings: brings
+            .as_ref()
+            .map(|character| (character.id.clone(), Basis::Main)),
+        candidates: brings.into_iter().collect(),
+        retired: 0,
+        pick: None,
+        version: 0,
+        clashes: Vec::new(),
+    }
+}
+
+fn reading(ign: &str, effective: Option<f64>, percentage: f64, crit: bool) -> Member {
+    Member {
+        ign: ign.into(),
+        preset: "00010".into(),
+        critical_rate_assumed: crit,
+        critical_rate_actual: crit.then_some(84.0),
+        source: None,
+        bosses: [(
+            "extreme_kalos".to_owned(),
+            Card {
+                percentage,
+                rating: "Party-able".into(),
+                party: false,
+                effective_percentage: effective,
+                estimated_minutes: None,
+            },
+        )]
+        .into(),
+    }
+}
+
+/// The party is read from the slots and the estimates memory only: no
+/// character or an IGN the scouter can't take is missing; a character
+/// with nothing cached keeps their number without a figure; a card's
+/// whole-party percentage never stands in for a missing effective one.
+#[test]
+fn a_run_reads_its_party_from_slots_and_the_estimates_memory() {
+    let schedule = week();
+    let kalos = schedule.runs.iter().find(|run| run.id == KALOS).unwrap();
+    let mut run = kalos.clone();
+    run.bosses = vec!["XKalos".into()];
+    let fetched = |hour| Utc.with_ymd_and_hms(2026, 9, 9, hour, 0, 0).unwrap();
+    let slots = [
+        slot("1001", Some(character("1001", "AsahiDK", "msea"))),
+        slot("1002", None),
+        slot("1003", Some(character("1003", "RenShade", "msea"))),
+        slot("1004", Some(character("1004", "Overseas", "gms"))),
+        slot("1005", Some(character("1005", "MikaNL", "msea"))),
+        slot("1006", Some(character("1006", "SoraPF", "msea"))),
+    ];
+    let party_asked = AtomicUsize::new(0);
+    let estimate = read_estimates(
+        &run,
+        &slots,
+        |ign| match ign.as_str() {
+            "AsahiDK" => Some((reading("AsahiDK", Some(38.8), 140.5, false), fetched(8))),
+            "RenShade" => Some((reading("RenShade", Some(35.8), 140.5, true), fetched(6))),
+            "MikaNL" => Some((reading("MikaNL", None, 140.5, false), fetched(7))),
+            _ => None,
+        },
+        |_| {
+            party_asked.fetch_add(1, Ordering::SeqCst);
+            None
+        },
+    );
+    assert_eq!(
+        estimate.party,
+        PartyShares {
+            bosses: vec!["XKalos".into()],
+            carriers: vec![
+                carrier("AsahiDK", false, &[38.8]),
+                carrier("RenShade", true, &[35.8]),
+                Carrier {
+                    effective: vec![None],
+                    ..carrier("MikaNL", false, &[])
+                },
+                Carrier {
+                    effective: vec![None],
+                    ..carrier("SoraPF", false, &[])
+                },
+            ],
+            missing: 2,
+        }
+    );
+    assert_eq!(estimate.oldest, Some(fetched(6)));
+    assert_eq!(estimate.minutes, vec![None]);
+    assert_eq!(
+        party_asked.load(Ordering::SeqCst),
+        0,
+        "a party total only for a whole party"
+    );
+    assert_eq!(estimate.party.no_estimate(), 4);
+}
+
+/// A port answering fixed estimates per run id; `None` for any other run.
+struct Fixed(Vec<(String, RunEstimate)>);
+
+impl PartyEstimates for Fixed {
+    fn run<'a>(
+        &'a self,
+        run: &'a Run,
+        _: &'a ScheduleSnapshot,
+        _: &'a BossTable,
+    ) -> EstimateFuture<'a> {
+        let found = self
+            .0
+            .iter()
+            .find(|(id, _)| *id == run.id)
+            .map(|(_, estimate)| estimate.clone());
+        Box::pin(async move { found })
+    }
+}
+
+fn estimate(time: ChartRun) -> RunEstimate {
+    RunEstimate {
+        party: time.party,
+        minutes: time.minutes,
+        oldest: Some(Utc.with_ymd_and_hms(2026, 9, 9, 0, 41, 0).unwrap()),
+    }
+}
+
+fn port() -> Arc<dyn PartyEstimates> {
+    let mut star = carling();
+    star.party.bosses = vec!["HMaleficStar".into(), "HKalos".into()];
+    Arc::new(Fixed(vec![
+        (KALOS.into(), estimate(kalos())),
+        (MALEFIC.into(), estimate(star)),
+    ]))
+}
+
+fn charted(kit: CardKit) -> CardKit {
+    CardKit {
+        estimates: Some(port()),
+        ..kit
+    }
+}
+
+fn post() -> OutgoingMessage {
+    OutgoingMessage {
+        content: Some("📅 **Today**".into()),
+        embeds: Vec::new(),
+        allowed_mentions: kanade::bot::mentions::none(),
+        reply_to: None,
+        attachments: Vec::new(),
+        components: Vec::new(),
+    }
+}
+
+fn png_upload(message: &OutgoingMessage) -> Option<&Upload> {
+    message
+        .attachments
+        .iter()
+        .find(|upload| upload.filename == chart::FILENAME)
+}
+
+#[tokio::test]
+async fn redesigned_day_of_and_countdown_posts_carry_the_chart() {
+    let (schedule, roster, table) = (week(), members(), catalog());
+    let ctx = redesigned_v5(&schedule, &roster, &table);
+    let kit = charted(CardKit::default());
+    let at = Utc.with_ymd_and_hms(2026, 9, 9, 1, 0, 0).unwrap();
+
+    let both = chart_for(&day_of(&[KALOS, MALEFIC]), &ctx, &kit, at)
+        .await
+        .expect("a chart");
+    // Time order, as the card; the as-of is the oldest reading, guild time.
+    assert_eq!(both.runs.len(), 2);
+    assert_eq!(both.runs[1].party.bosses, ["XKalos"]);
+    assert_eq!(both.as_of, "Wed 9 Sep 08:41");
+    assert!(!both.portal, "no portal link without one");
+
+    let mut message = post();
+    attach_chart(&mut message, &countdown(KALOS), &ctx, &kit, at).await;
+    let upload = png_upload(&message).expect("the chart");
+    assert!(upload.bytes.starts_with(b"\x89PNG\r\n\x1a\n"));
+    assert!(
+        upload
+            .description
+            .as_deref()
+            .is_some_and(|alt| alt.contains("XKalos 140.4%, AsahiDK 28%")),
+        "{:?}",
+        upload.description
+    );
+
+    // Nobody with a reading still draws "no estimate yet".
+    let mut none = kalos();
+    none.party.carriers = blank(&none.party.carriers);
+    let empty = CardKit {
+        estimates: Some(Arc::new(Fixed(vec![(
+            KALOS.into(),
+            RunEstimate {
+                oldest: None,
+                ..estimate(none)
+            },
+        )]))),
+        ..CardKit::default()
+    };
+    let chart = chart_for(&countdown(KALOS), &ctx, &empty, at)
+        .await
+        .unwrap();
+    assert_eq!(
+        chart.as_of, "Wed 9 Sep 09:00",
+        "post time without a reading"
+    );
+    assert!(chart::svg(&chart).svg.contains("no estimate yet"));
+
+    let portal = CardKit {
+        v2: V2Kit {
+            portal: Some("https://portal.example".into()),
+            portal_open: Some(Arc::new(|| true)),
+            ..V2Kit::default()
+        },
+        ..kit.clone()
+    };
+    let ctx_portal = kanade::bot::delivery::cards::CardContext {
+        v2: Some(&portal.v2),
+        ..ctx
+    };
+    assert!(
+        chart_for(&countdown(KALOS), &ctx_portal, &portal, at)
+            .await
+            .unwrap()
+            .portal
+    );
+}
+
+#[tokio::test]
+async fn classic_cards_unset_ports_and_failures_post_without_it() {
+    let (schedule, roster, table) = (week(), members(), catalog());
+    let ctx = redesigned_v5(&schedule, &roster, &table);
+    let at = Utc.with_ymd_and_hms(2026, 9, 9, 1, 0, 0).unwrap();
+    let attached = |message: &OutgoingMessage| png_upload(message).is_some();
+
+    let classic = super::context(
+        &schedule,
+        &roster,
+        &table,
+        kanade::domain::attendance::AttendancePolicy::V5,
+        false,
+    );
+    let mut message = post();
+    attach_chart(
+        &mut message,
+        &day_of(&[KALOS]),
+        &classic,
+        &charted(CardKit::default()),
+        at,
+    )
+    .await;
+    assert!(!attached(&message), "classic stays as it is");
+
+    attach_chart(
+        &mut message,
+        &day_of(&[KALOS]),
+        &ctx,
+        &CardKit::default(),
+        at,
+    )
+    .await;
+    assert!(!attached(&message), "estimates off");
+
+    // A party that can't be read (the port's failure) leaves it off.
+    let failing = CardKit {
+        estimates: Some(Arc::new(Fixed(Vec::new()))),
+        ..CardKit::default()
+    };
+    attach_chart(&mut message, &day_of(&[KALOS]), &ctx, &failing, at).await;
+    assert!(!attached(&message), "unreadable party");
+    assert!(
+        chart_for(
+            &day_of(&[KALOS, MALEFIC]),
+            &ctx,
+            &charted(CardKit::default()),
+            at
+        )
+        .await
+        .is_some()
+    );
+    attach_chart(
+        &mut message,
+        &day_of(&[KALOS, "gone"]),
+        &ctx,
+        &CardKit {
+            estimates: Some(Arc::new(Fixed(vec![(KALOS.into(), estimate(kalos()))]))),
+            ..CardKit::default()
+        },
+        at,
+    )
+    .await;
+    assert!(
+        attached(&message),
+        "a missing run is skipped as the card skips it"
+    );
+
+    // Discord's ten files: full, and the chart is left off.
+    let mut full = post();
+    full.attachments = (0..MAX_ATTACHMENTS)
+        .map(|index| Upload {
+            filename: format!("art-{index}.png"),
+            bytes: Arc::from(&b"art"[..]),
+            description: None,
+        })
+        .collect();
+    attach_chart(
+        &mut full,
+        &day_of(&[KALOS]),
+        &ctx,
+        &charted(CardKit::default()),
+        at,
+    )
+    .await;
+    assert_eq!(full.attachments.len(), MAX_ATTACHMENTS);
+    assert!(!attached(&full));
+
+    // Kinds without runs never chart.
+    let digest = kanade::domain::notify::IntentContent::Plain;
+    assert!(
+        chart_for(&digest, &ctx, &charted(CardKit::default()), at)
+            .await
+            .is_none()
+    );
+}
+
+/// Through the tick: the post carries the chart once; a refresh edit
+/// re-renders the card without uploading (the posted image stays).
+#[tokio::test]
+async fn the_tick_posts_the_chart_and_refresh_never_uploads() {
+    let art = art_dir();
+    let store = Arc::new(SqliteStore::open_temp().await);
+    let world = world();
+    let fake = Arc::new(support::fake());
+    let (star, kalos_run) = seed_day_of(&*store).await;
+    let cards = CardKit {
+        estimates: Some(Arc::new(Fixed(vec![
+            (star.clone(), estimate(carling())),
+            (kalos_run.clone(), estimate(kalos())),
+        ]))),
+        ..redesigned(kit(Some(&art)))
+    };
+    let mut delivery = scenarios::delivery(&*store, &world, &*fake).with_cards(cards.clone());
+    delivery.dispatch_reminders(now()).await.expect("dispatch");
+    let posts = created(&fake);
+    let [post] = posts.as_slice() else {
+        panic!("one post: {posts:?}");
+    };
+    let names: Vec<&str> = post
+        .attachments
+        .iter()
+        .map(|upload| upload.filename.as_str())
+        .collect();
+    assert_eq!(
+        names,
+        [
+            "MaleficStar.png",
+            "image-MaleficStar.png",
+            "Kalos.webp",
+            "estimate.png"
+        ],
+        "the art first, the chart a plain file no embed names"
+    );
+    assert!(post.embeds.iter().all(|embed| {
+        serde_json::to_string(embed)
+            .unwrap()
+            .find("estimate.png")
+            .is_none()
+    }));
+
+    answer(&*store, &star, "1002", true, now() + TimeDelta::minutes(1)).await;
+    let refresh = refresher(&store, &fake, &world, cards);
+    assert_eq!(refresh.refresh(std::slice::from_ref(&star)).await, 1);
+    assert_eq!(edits(&fake).len(), 1, "edited in place");
+    assert_eq!(created(&fake).len(), 1, "nothing posted again");
+}

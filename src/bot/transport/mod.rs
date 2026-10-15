@@ -117,10 +117,12 @@ impl OutgoingMessage {
 
 /// One uploaded file. Filenames are ASCII alphanumerics, `.`, `-` and `_`
 /// (Discord's rule; Twilight refuses others unsent as `Invalid`).
+/// `description` is its alt text.
 #[derive(Clone, PartialEq, Eq)]
 pub struct Upload {
     pub filename: String,
     pub bytes: Arc<[u8]>,
+    pub description: Option<String>,
 }
 
 impl fmt::Debug for Upload {
@@ -128,6 +130,7 @@ impl fmt::Debug for Upload {
         f.debug_struct("Upload")
             .field("filename", &self.filename)
             .field("bytes", &self.bytes.len())
+            .field("description", &self.description)
             .finish()
     }
 }

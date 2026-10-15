@@ -23,6 +23,9 @@ serde_json = "=1.0.151"
 jsonschema = { version = "=0.40.0", default-features = false }
 libc = { version = "=0.2.189", default-features = false }
 regex = { version = "=1.13.1", default-features = false, features = ["std", "unicode-case", "unicode-perl"] }
+# The reminder cards' estimate share chart: SVG → PNG with bundled fonts only
+# (no system fonts, mmap, svgz or raster-image decoders).
+resvg = { version = "=0.48.1", default-features = false, features = ["text"] }
 ring = { version = "=0.17.14", default-features = false }
 serde-saphyr = { version = "=1.3.0", default-features = false, features = ["deserialize"] }
 sqlx = { version = "=0.8.6", default-features = false, features = ["sqlite", "runtime-tokio"] }

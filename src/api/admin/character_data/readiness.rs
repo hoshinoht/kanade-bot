@@ -28,7 +28,6 @@ use super::{
         write::{Body, Refusal, state},
     },
     Module, Reply,
-    estimates::lookup_name,
 };
 use crate::{
     api::{
@@ -44,7 +43,7 @@ use crate::{
         characters::PartySlot,
         chardata::{Requirement, Subject, readiness},
     },
-    infrastructure::character_data::CharacterData,
+    infrastructure::{character_data::CharacterData, scouter::RosterIgn},
 };
 
 pub fn routes() -> Router<Arc<Site>> {
@@ -109,7 +108,7 @@ async fn answers(
                 };
                 let scouter = module
                     .estimates()
-                    .zip(lookup_name(character).ok())
+                    .zip(RosterIgn::lookup(character).ok())
                     .and_then(|(estimates, ign)| estimates.cached(&ign));
                 (
                     Some(link_state(&view)),

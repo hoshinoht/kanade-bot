@@ -7,6 +7,8 @@ use std::collections::BTreeMap;
 
 use serde::Deserialize;
 
+use super::scouter_keys;
+
 /// One character: the `ign=` answer, or one of a batch's `members`.
 #[derive(Clone, Debug, Deserialize, PartialEq)]
 pub struct Member {
@@ -32,6 +34,14 @@ impl Member {
     /// "what if" result never shows as the normal benchmark.
     pub fn crit_assumed(&self) -> bool {
         self.critical_rate_assumed || self.source.as_deref() == Some("manual_input")
+    }
+
+    /// The character's own share for catalog `token` (its card's
+    /// `effective_percentage`, never the card's whole-party figure).
+    pub fn effective(&self, token: &str) -> Option<f64> {
+        scouter_keys(token)
+            .find_map(|key| self.bosses.get(key))
+            .and_then(|card| card.effective_percentage)
     }
 }
 

@@ -14,8 +14,8 @@ use twilight_model::id::Id;
 
 use kanade::bot::transport::{
     AmbiguousKind, DiscordTransport, HistoryPage, InteractionRef, InteractionReply, MAX_SENDS,
-    Outcome, OutgoingMessage, Presence, RejectionKind, SILENT, TransportConfig, TwilightTransport,
-    Upload,
+    MessageEdit, Outcome, OutgoingMessage, Presence, RejectionKind, SILENT, TransportConfig,
+    TwilightTransport, Upload,
 };
 use twilight_model::channel::message::MessageFlags;
 
@@ -243,10 +243,18 @@ async fn create_delivers_with_explicit_allow_list_on_the_wire() {
 async fn attachments_go_multipart_with_the_payload_and_files() {
     let (stub, addr) = Stub::start(vec![json_reply(200, json!({ "id": "7" }))]).await;
     let message = OutgoingMessage {
-        attachments: vec![Upload {
-            filename: "MaleficStar.png".into(),
-            bytes: Arc::from(&b"star-bytes"[..]),
-        }],
+        attachments: vec![
+            Upload {
+                filename: "MaleficStar.png".into(),
+                bytes: Arc::from(&b"star-bytes"[..]),
+                description: None,
+            },
+            Upload {
+                filename: "estimate.png".into(),
+                bytes: Arc::from(&b"chart-bytes"[..]),
+                description: Some("21:30 XKalos: XKalos 140.4%".into()),
+            },
+        ],
         ..post()
     };
     let outcome = quick(addr).create_message(Id::new(CHANNEL), &message).await;
@@ -264,6 +272,40 @@ async fn attachments_go_multipart_with_the_payload_and_files() {
     assert!(
         body.contains(r#""allowed_mentions":{"parse":[],"users":["1001"]}"#),
         "the allow-list travels in payload_json: {body}"
+    );
+    assert!(body.contains("filename=\"estimate.png\""), "{body}");
+    assert!(
+        body.contains(r#""description":"21:30 XKalos: XKalos 140.4%""#),
+        "the chart's alt text travels in payload_json: {body}"
+    );
+}
+
+/// A card edit never names attachments: Discord keeps every posted file
+/// (the estimate chart and the boss art) only while the field is absent.
+#[tokio::test]
+async fn an_edit_sends_no_attachments_field() {
+    let (stub, addr) = Stub::start(vec![json_reply(200, json!({ "id": "7" }))]).await;
+    let edit = MessageEdit {
+        content: Some("📅 **Tonight**".into()),
+        embeds: Some(Vec::new()),
+        allowed_mentions: kanade::bot::mentions::none(),
+        components: Some(Vec::new()),
+    };
+    let outcome = quick(addr)
+        .edit_message(Id::new(CHANNEL), Id::new(7), &edit)
+        .await;
+    assert_eq!(outcome, Outcome::Delivered(()));
+    let seen = stub.seen();
+    assert!(seen[0].request_line.starts_with("PATCH "), "{:?}", seen[0]);
+    let body: Value = serde_json::from_slice(&seen[0].body).unwrap();
+    assert_eq!(body["content"], "📅 **Tonight**");
+    assert!(body.get("attachments").is_none(), "{body}");
+    assert!(
+        !seen[0]
+            .headers
+            .to_ascii_lowercase()
+            .contains("multipart/form-data"),
+        "nothing uploaded"
     );
 }
 

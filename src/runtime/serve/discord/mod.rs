@@ -54,8 +54,8 @@ use crate::{
         chardata::DiscordPosts,
         commands::CharacterParts,
         delivery::{
-            CardRefresh, Delivery, DigestOutcome, HeaderPregen, LogAlerts, ManualRequest,
-            ManualRewrite, RefreshQueue, cards::CardKit,
+            CachedEstimates, CardRefresh, Delivery, DigestOutcome, HeaderPregen, LogAlerts,
+            ManualRequest, ManualRewrite, PartyEstimates, RefreshQueue, cards::CardKit,
         },
         events::{GuildScope, ReactionRouter, Router},
         gateway::{ConnectionStatus, EventSource, GatewayError, Live, RunExit, run_live},
@@ -309,6 +309,16 @@ where
         .and(config.runtime.http.public_host.as_deref())
         .map(|host| format!("https://{host}"));
     kit.v2.portal = portal.clone();
+    // The redesigned run cards' share chart reads the roster and the
+    // estimates memory, so it needs both modules and a scouter URL.
+    let state = &composition.admin.state;
+    kit.estimates = state
+        .character_data
+        .clone()
+        .filter(|module| state.characters.is_some() && module.estimates().is_some())
+        .map(|module| {
+            Arc::new(CachedEstimates::new(Arc::clone(&store), module)) as Arc<dyn PartyEstimates>
+        });
     let privacy_url = super::character_data::privacy_url(config);
     let cards = stop_aware::cards(kit, shutdown.clone());
     // One desk for extraction cards, chat cards and the reaction worker's

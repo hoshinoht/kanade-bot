@@ -2,6 +2,7 @@
 //! day-of, countdown and digest cards over one fixed boss week, and change
 //! notices in both styles.
 
+mod chart;
 mod classic;
 mod live;
 pub(crate) mod notices;
