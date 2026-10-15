@@ -31,8 +31,8 @@ pub use readiness::{
 };
 pub use rules::{
     BATCH_TIME, Failure, MAINTENANCE_AGAIN, MAINTENANCE_FIRST, Orphan, PREPARING_RETRY,
-    RATE_LIMIT_TRIES, UnlinkReason, has_departed, link_change, next_batch, orphan, pending_expired,
-    rate_limit_delay, same_identity,
+    RATE_LIMIT_TRIES, UnlinkReason, estimates_orphaned, has_departed, link_change, next_batch,
+    orphan, pending_expired, rate_limit_delay, same_identity,
 };
 pub use shares::{Carrier, PartyShares, split};
 

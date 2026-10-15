@@ -1,8 +1,11 @@
 //! Module `character_data` in serve: read the optional Nexon key (a set
 //! but unreadable file refuses startup), open the separate character-data
 //! file (its directory created 0700, owned under the main store's lock
-//! directory), attach the service to the admin API and run the joined
-//! `CharacterData` task. Off, none of this runs and no file is created.
+//! directory), load the scouter's stored estimates (with a scouter URL; they
+//! are written through to the file from then on and answer lookups for the
+//! live `estimate_days`), attach the service to the admin API and run the
+//! joined `CharacterData` task. Off, none of this runs and no file is
+//! created.
 //!
 //! The task sweeps at startup (after that first sweep, admin requests left
 //! pending become active and fetch, and roster rows take the class, level
@@ -105,6 +108,22 @@ pub(super) async fn start_with(
         Timing::default(),
     );
     if let Some(estimates) = scouter {
+        // The saved `estimate_days`: the startup value, then each Config save.
+        let saved = super::context::changes_or(
+            composition
+                .admin
+                .state
+                .config
+                .as_ref()
+                .map(|desk| desk.subscribe()),
+            &composition.settings,
+        );
+        let estimates = estimates
+            .with_store(Arc::clone(&file) as Arc<dyn CharDataStore>)
+            .with_fresh_days(Arc::new(move || {
+                saved.borrow().settings.character_data.estimate_days
+            }));
+        estimates.load().await;
         service = service.with_estimates(estimates);
     }
     if let Some(url) = privacy_url(config) {

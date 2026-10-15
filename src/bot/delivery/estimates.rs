@@ -125,7 +125,7 @@ fn settled_estimate(run: &Run, slots: &[PartySlot], estimates: &Estimates) -> Op
         run,
         slots,
         |ign| estimates.cached(ign),
-        |igns| estimates.cached_party(igns),
+        |igns| estimates.cached_party(igns).map(|(total, _)| total),
     ))
 }
 

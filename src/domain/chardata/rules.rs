@@ -1,6 +1,6 @@
-//! Pure rules: when a link no longer matches its roster character, how a
-//! Nexon error code backs off, when the daily batch runs and the History
-//! row of a link change.
+//! Pure rules: when a link (or a character's stored estimates) no longer
+//! matches its roster character, how a Nexon error code backs off, when the
+//! daily batch runs and the History row of a link change.
 
 use std::collections::BTreeMap;
 
@@ -8,7 +8,7 @@ use chrono::{DateTime, NaiveTime, TimeDelta, Utc};
 use chrono_tz::Asia::Singapore;
 
 use super::model::{LINK_REGION, Link, LinkStatus, Snapshot};
-use crate::domain::characters::{CHARACTERS_SECTION, Character, ign_key};
+use crate::domain::characters::{CHARACTERS_SECTION, Character, DEFAULT_WORLD, ign_key};
 use crate::domain::history::{Actor, Surface};
 use crate::domain::members::MemberProfile;
 use crate::domain::settings::{RowDiff, SettingsChange};
@@ -94,6 +94,29 @@ pub fn orphan(
         return Orphan::Reconsent;
     }
     Orphan::Keep
+}
+
+/// The sweep over one character's stored estimates: its own result and
+/// each party total naming it, given by the IGN set each is held under (a
+/// result's set is its IGN key). They go when the character is gone or
+/// retired, is no longer on MapleSEA, its member left (as [`orphan`]
+/// judges), or its roster IGN is missing from one of the sets (renamed).
+/// A NEXON link plays no part: estimates come from the roster IGN.
+pub fn estimates_orphaned(
+    set_keys: &[String],
+    character: Option<&Character>,
+    member: Option<&MemberProfile>,
+) -> bool {
+    let Some(character) = character else {
+        return true;
+    };
+    let key = character.ign_key();
+    !character.is_active()
+        || character.world != DEFAULT_WORLD
+        || member.is_none_or(has_departed)
+        || set_keys
+            .iter()
+            .any(|set| !set.split(',').any(|ign| ign == key))
 }
 
 /// How a failed Nexon call is treated (feasibility note §3).
@@ -335,6 +358,44 @@ mod tests {
             orphan(&pending, Some(&row), Some(&here), None),
             Orphan::Keep
         );
+    }
+
+    #[test]
+    fn estimates_orphan_rules() {
+        let (row, here) = (character(), member(true));
+        let held = |sets: &[&str]| -> Vec<String> { sets.iter().map(|&set| set.into()).collect() };
+        let own = held(&["wisteria", "heather,wisteria"]);
+        assert!(!estimates_orphaned(&own, Some(&row), Some(&here)));
+        let cased = Character {
+            ign: "WISTERIA".into(),
+            ..character()
+        };
+        assert!(
+            !estimates_orphaned(&own, Some(&cased), Some(&here)),
+            "letter case alone is the same IGN"
+        );
+        assert!(estimates_orphaned(&own, None, Some(&here)), "gone");
+        let retired = Character {
+            retired_at: Some(at(2, 0)),
+            ..character()
+        };
+        assert!(estimates_orphaned(&own, Some(&retired), Some(&here)));
+        let elsewhere = Character {
+            world: "kms".into(),
+            ..character()
+        };
+        assert!(estimates_orphaned(&own, Some(&elsewhere), Some(&here)));
+        let renamed = Character {
+            ign: "Lavender".into(),
+            ..character()
+        };
+        assert!(estimates_orphaned(&own, Some(&renamed), Some(&here)));
+        assert!(
+            estimates_orphaned(&held(&["heather,lavender"]), Some(&row), Some(&here)),
+            "a party total from before a rename"
+        );
+        assert!(estimates_orphaned(&own, Some(&row), Some(&member(false))));
+        assert!(estimates_orphaned(&own, Some(&row), None), "no member row");
     }
 
     #[test]

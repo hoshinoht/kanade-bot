@@ -1,18 +1,31 @@
-//! Lookup jobs and their in-memory cache. Jobs wait in one FIFO queue (at
-//! most [`MAX_QUEUED`]) drained by one worker, because the sidecar is one
+//! Lookup jobs and their results. Jobs wait in one FIFO queue (at most
+//! [`MAX_QUEUED`]) drained by one worker, because the sidecar is one
 //! browser; a request for a target already queued or running gets that job.
-//! The cache keeps results 24 hours, keyed by the sorted set of IGNs, lost
-//! on restart and never written anywhere. Finished jobs are kept 24 hours
-//! too, one per target (a new lookup of the same characters or run replaces
-//! the old job), so an admin who closed the page finds the result (or the
-//! error) when they come back. Memory is bounded by [`MAX_JOBS`] targets
-//! and [`MAX_CACHED`] IGN sets; only past those is the oldest dropped
-//! early. The worker is cancelled and joined on shutdown
-//! ([`Estimates::stop`]).
+//!
+//! Results are kept in memory up to [`CACHE_TTL`] (the character-data
+//! file's 30 days): each character's under their roster IGN, each whole
+//! party's total under its sorted IGN set. With a file
+//! ([`Estimates::with_store`]) every result is written through as it
+//! arrives (keyed by the character, with the IGN key it was looked up
+//! under) and the newest [`MAX_CACHED`] of each kind are loaded at startup
+//! ([`Estimates::load`]); a failed write only logs, memory keeps the
+//! result. Only a result younger than the saved `estimate_days`
+//! ([`Estimates::with_fresh_days`]) answers a lookup at once; an older one
+//! is looked up again. The synchronous readers ([`Estimates::cached`],
+//! [`Estimates::cached_party`]) get a result of any age with its fetch
+//! time. The sweeper drops what it deletes from the file
+//! ([`Estimates::forget`], [`Estimates::sweep`]).
+//!
+//! Finished jobs are kept [`JOB_TTL`], one per target (a new lookup of the
+//! same characters or run replaces the old job), so an admin who closed the
+//! page finds the result (or the error) when they come back. Memory is
+//! bounded by [`MAX_JOBS`] targets and [`MAX_CACHED`] results of each kind;
+//! only past those is the oldest dropped early. The worker is cancelled and
+//! joined on shutdown ([`Estimates::stop`]).
 //!
 //! A job looks up each character on its own (`ign=`) and records each
 //! outcome as it arrives: one character's failure never stops the others,
-//! and every success is cached under its IGN. A party then asks once as
+//! and every success is kept under its IGN. A party then asks once as
 //! `igns=` with the characters that succeeded, for the scouter's party
 //! total, which its own short cache answers without rendering again; the
 //! total is complete only when every character succeeded. A `429 busy` is
@@ -24,26 +37,42 @@ use std::{
     time::Duration,
 };
 
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, TimeDelta, Utc};
 use tokio::{task::JoinHandle, time::Instant};
 
 use super::{
     LookupError, RosterIgn, ScouterClient,
     wire::{Combined, Member},
 };
-use crate::{domain::history::Actor, infrastructure::character_data::Clock};
+use crate::{
+    domain::{
+        chardata::{CharDataStore, ESTIMATE_TTL, MemberEstimate, PartyEstimate, estimate_kept},
+        history::Actor,
+        scheduler::StoreError,
+        settings::DEFAULT_ESTIMATE_DAYS,
+    },
+    infrastructure::character_data::{Clock, error_kind},
+};
 
-/// How long a result is kept in memory.
-pub const CACHE_TTL: Duration = Duration::from_secs(24 * 60 * 60);
+/// How long a result is kept in memory: the character-data file's
+/// [`ESTIMATE_TTL`].
+pub const CACHE_TTL: Duration = Duration::from_secs(30 * 24 * 60 * 60);
+/// How long a finished job is kept.
+pub const JOB_TTL: Duration = Duration::from_secs(24 * 60 * 60);
 /// Retained jobs (one per target); past this the oldest finished one goes
 /// before its 24 hours.
 pub const MAX_JOBS: usize = 512;
-/// Cached IGN sets; past this the oldest goes before its 24 hours.
+/// Results held per kind (characters, party totals), and how many of each
+/// a restart loads; past this the oldest goes before its 30 days.
 pub const MAX_CACHED: usize = 1024;
 /// Jobs waiting behind the running one; past this a new target is refused.
 pub const MAX_QUEUED: usize = 16;
 /// Health probes `GET /healthz` at most this often.
 const PROBE_EVERY: Duration = Duration::from_secs(60);
+
+/// Days a result answers a lookup at once (the saved `estimate_days`),
+/// read at every lookup so a Config save applies at once.
+pub type FreshDays = Arc<dyn Fn() -> u32 + Send + Sync>;
 
 /// A roster character to look up.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -110,14 +139,6 @@ pub struct JobRequest {
     pub refresh: bool,
 }
 
-/// A cached result: each member, and the party total for a party lookup.
-#[derive(Clone, Debug, PartialEq)]
-struct Estimate {
-    members: Vec<Member>,
-    /// Scouter boss key → total; `None` for one character.
-    combined: Option<BTreeMap<String, Combined>>,
-}
-
 /// A finished job with at least one character found (their results are
 /// the job's `results`).
 #[derive(Clone, Debug, PartialEq)]
@@ -127,7 +148,8 @@ pub struct Found {
     pub combined: Option<BTreeMap<String, Combined>>,
     /// The party total's own failure, after characters succeeded.
     pub total_failure: Option<Failure>,
-    /// When kanade received it from the sidecar.
+    /// When kanade received it from the sidecar (answered from memory: the
+    /// oldest result it used).
     pub fetched_at: DateTime<Utc>,
     /// Answered from kanade's cache without calling the sidecar.
     pub cache_hit: bool,
@@ -294,10 +316,49 @@ impl ScouterHealth {
     }
 }
 
-struct Cached {
+/// A result in memory.
+struct Held<T> {
+    /// Dropped then (monotonic, so a wall-clock step never keeps it).
     until: Instant,
     fetched_at: DateTime<Utc>,
-    estimate: Estimate,
+    /// The roster characters it is about: one for a character's result,
+    /// ascending and distinct for a party total.
+    characters: Vec<String>,
+    value: T,
+}
+
+/// The monotonic end of a result fetched at `fetched_at`, seen at wall
+/// clock `now` and monotonic `instant`: what is left of its 30 days.
+fn held_until(fetched_at: DateTime<Utc>, now: DateTime<Utc>, instant: Instant) -> Instant {
+    let left = (fetched_at + ESTIMATE_TTL - now)
+        .to_std()
+        .unwrap_or(Duration::ZERO);
+    instant + left.min(CACHE_TTL)
+}
+
+/// Insert `held` under `key`, dropping the oldest first when full.
+fn hold<T>(map: &mut HashMap<String, Held<T>>, key: String, held: Held<T>) {
+    if map.len() >= MAX_CACHED
+        && !map.contains_key(&key)
+        && let Some(oldest) = map
+            .iter()
+            .min_by_key(|(_, held)| held.until)
+            .map(|(key, _)| key.clone())
+    {
+        map.remove(&oldest);
+    }
+    map.insert(key, held);
+}
+
+/// The ascending, distinct characters of `subjects`.
+fn characters(subjects: &[Subject]) -> Vec<String> {
+    let mut ids: Vec<String> = subjects
+        .iter()
+        .map(|subject| subject.character_id.clone())
+        .collect();
+    ids.sort_unstable();
+    ids.dedup();
+    ids
 }
 
 struct Kept {
@@ -324,13 +385,17 @@ struct Inner {
     /// worker takes the next one as it finishes a job.
     queue: VecDeque<String>,
     running: Option<String>,
-    cache: HashMap<String, Cached>,
+    /// IGN key → the character's newest result.
+    members: HashMap<String, Held<Member>>,
+    /// Sorted IGN set → the party's newest total.
+    parties: HashMap<String, Held<BTreeMap<String, Combined>>>,
     seen: Seen,
 }
 
 impl Inner {
     fn prune(&mut self, now: Instant) {
-        self.cache.retain(|_, cached| cached.until > now);
+        self.members.retain(|_, held| held.until > now);
+        self.parties.retain(|_, held| held.until > now);
         self.jobs
             .retain(|kept| kept.until.is_none_or(|until| until > now));
         while self.jobs.len() > MAX_JOBS {
@@ -341,42 +406,90 @@ impl Inner {
         }
     }
 
-    fn cached(&self, key: &str, party: bool, now: Instant) -> Option<&Cached> {
-        self.cache
-            .get(key)
-            .filter(|cached| cached.until > now && (!party || cached.estimate.combined.is_some()))
+    /// `ign`'s newest result still in memory, of any age.
+    fn member(&self, ign: &RosterIgn, now: Instant) -> Option<&Held<Member>> {
+        self.members.get(&ign.key()).filter(|held| held.until > now)
     }
 
-    /// `ign`'s newest result still in memory, and when it was fetched.
-    fn member(&self, ign: &RosterIgn, now: Instant) -> Option<(&Member, DateTime<Utc>)> {
-        let cached = self.cached(&ign.key(), false, now)?;
-        cached
-            .estimate
-            .members
-            .iter()
-            .find(|member| member.ign.eq_ignore_ascii_case(ign.as_str()))
-            .map(|member| (member, cached.fetched_at))
+    /// The newest total of exactly the IGN set `key`, of any age.
+    fn party(&self, key: &str, now: Instant) -> Option<&Held<BTreeMap<String, Combined>>> {
+        self.parties.get(key).filter(|held| held.until > now)
     }
 
-    fn keep(&mut self, key: String, estimate: Estimate, fetched_at: DateTime<Utc>, now: Instant) {
-        if self.cache.len() >= MAX_CACHED
-            && !self.cache.contains_key(&key)
-            && let Some(oldest) = self
-                .cache
-                .iter()
-                .min_by_key(|(_, cached)| cached.until)
-                .map(|(key, _)| key.clone())
-        {
-            self.cache.remove(&oldest);
+    fn keep_member(
+        &mut self,
+        ign_key: String,
+        character_id: String,
+        member: Member,
+        fetched_at: DateTime<Utc>,
+        until: Instant,
+    ) {
+        let held = Held {
+            until,
+            fetched_at,
+            characters: vec![character_id],
+            value: member,
+        };
+        hold(&mut self.members, ign_key, held);
+    }
+
+    fn keep_party(
+        &mut self,
+        set_key: String,
+        characters: Vec<String>,
+        combined: BTreeMap<String, Combined>,
+        fetched_at: DateTime<Utc>,
+        until: Instant,
+    ) {
+        let held = Held {
+            until,
+            fetched_at,
+            characters,
+            value: combined,
+        };
+        hold(&mut self.parties, set_key, held);
+    }
+
+    /// What memory answers for a lookup of `subjects` at once: each one's
+    /// result (and the total, for a party), every one about these very
+    /// characters and `fresh`; `None` unless all are.
+    fn answer(
+        &self,
+        subjects: &[Subject],
+        party: bool,
+        now: Instant,
+        fresh: impl Fn(DateTime<Utc>) -> bool,
+    ) -> Option<(Vec<Option<MemberOutcome>>, Found)> {
+        let mut oldest: Option<DateTime<Utc>> = None;
+        let mut seen = |at: DateTime<Utc>| oldest = Some(oldest.map_or(at, |was| was.min(at)));
+        let mut results = Vec::with_capacity(subjects.len());
+        for subject in subjects {
+            let held = self.member(&subject.ign, now).filter(|held| {
+                held.characters.as_slice() == std::slice::from_ref(&subject.character_id)
+                    && fresh(held.fetched_at)
+            })?;
+            seen(held.fetched_at);
+            results.push(Some(Ok(held.value.clone())));
         }
-        self.cache.insert(
-            key,
-            Cached {
-                until: now + CACHE_TTL,
-                fetched_at,
-                estimate,
+        let combined = if party {
+            let ids = characters(subjects);
+            let held = self
+                .party(&set_key(subjects.iter().map(|subject| &subject.ign)), now)
+                .filter(|held| held.characters == ids && fresh(held.fetched_at))?;
+            seen(held.fetched_at);
+            Some(held.value.clone())
+        } else {
+            None
+        };
+        Some((
+            results,
+            Found {
+                combined,
+                total_failure: None,
+                fetched_at: oldest?,
+                cache_hit: true,
             },
-        );
+        ))
     }
 
     fn job_mut(&mut self, id: &str) -> Option<&mut Job> {
@@ -416,6 +529,9 @@ struct Shared {
     client: ScouterClient,
     url: String,
     clock: Clock,
+    /// The character-data file results are written through to.
+    store: Option<Arc<dyn CharDataStore>>,
+    fresh_days: FreshDays,
     inner: Mutex<Inner>,
 }
 
@@ -426,6 +542,12 @@ impl Shared {
 
     fn now(&self) -> DateTime<Utc> {
         (self.clock)()
+    }
+
+    /// A result fetched at `fetched_at` may answer a lookup at `now`: it is
+    /// younger than the saved `estimate_days`.
+    fn fresh(&self, fetched_at: DateTime<Utc>, now: DateTime<Utc>) -> bool {
+        now - fetched_at < TimeDelta::days(i64::from((self.fresh_days)()))
     }
 
     /// Notes what a sidecar call says about its health.
@@ -485,46 +607,95 @@ impl Shared {
         }
     }
 
-    fn keep_single(&self, member: Member) {
-        let key = member.ign.to_ascii_lowercase();
-        let now = self.now();
-        self.inner().keep(
-            key,
-            Estimate {
-                members: vec![member],
-                combined: None,
-            },
-            now,
-            Instant::now(),
+    /// Keep `subject`'s new result in memory, then write it through.
+    async fn keep_member(&self, subject: &Subject, member: &Member) {
+        let fetched_at = self.now();
+        self.inner().keep_member(
+            subject.ign.key(),
+            subject.character_id.clone(),
+            member.clone(),
+            fetched_at,
+            Instant::now() + CACHE_TTL,
         );
+        let Some(store) = &self.store else {
+            return;
+        };
+        let estimate = MemberEstimate {
+            character_id: subject.character_id.clone(),
+            ign_key: subject.ign.key(),
+            result: member.into(),
+            fetched_at,
+        };
+        if let Err(error) = store.put_member_estimate(estimate).await {
+            unsaved("member", &error);
+        }
+    }
+
+    /// Keep the whole party's new total in memory, then write it through.
+    async fn keep_party(
+        &self,
+        subjects: &[Subject],
+        combined: &BTreeMap<String, Combined>,
+        fetched_at: DateTime<Utc>,
+    ) {
+        let key = set_key(subjects.iter().map(|subject| &subject.ign));
+        let ids = characters(subjects);
+        self.inner().keep_party(
+            key.clone(),
+            ids.clone(),
+            combined.clone(),
+            fetched_at,
+            Instant::now() + CACHE_TTL,
+        );
+        let Some(store) = &self.store else {
+            return;
+        };
+        let estimate = PartyEstimate {
+            set_key: key,
+            character_ids: ids,
+            combined: combined
+                .iter()
+                .map(|(key, total)| (key.clone(), total.into()))
+                .collect(),
+            fetched_at,
+        };
+        if let Err(error) = store.put_party_estimate(estimate).await {
+            unsaved("party", &error);
+        }
     }
 
     /// Job `id`'s lookups; `None` when the job is gone.
     async fn run(&self, id: &str) -> Option<Result<Found, Failure>> {
-        let (igns, party, refresh) = {
+        let (subjects, party, refresh) = {
             let inner = self.inner();
             let kept = inner.jobs.iter().find(|kept| kept.job.id == id)?;
-            let igns: Vec<RosterIgn> = kept
-                .job
-                .subjects
-                .iter()
-                .map(|subject| subject.ign.clone())
-                .collect();
-            (igns, kept.job.target.party(), kept.refresh)
+            (
+                kept.job.subjects.clone(),
+                kept.job.target.party(),
+                kept.refresh,
+            )
         };
+        let igns: Vec<RosterIgn> = subjects.iter().map(|subject| subject.ign.clone()).collect();
         // Each call the job makes adds the client's timeout to its budget;
         // a busy wait spends from the same budget.
         let calls = u32::try_from(igns.len() + usize::from(party)).unwrap_or(u32::MAX);
         let deadline = Instant::now() + self.client.timeout().saturating_mul(calls);
         let mut found = Vec::with_capacity(igns.len());
         let mut first_failure = None;
-        for (at, ign) in igns.iter().enumerate() {
-            // Found meanwhile (another job, or before this one was queued).
+        for (at, subject) in subjects.iter().enumerate() {
+            // Found meanwhile (another job, or before this one was queued),
+            // and still fresh.
             let cached = (!refresh)
                 .then(|| {
+                    let now = self.now();
                     self.inner()
-                        .member(ign, Instant::now())
-                        .map(|(member, _)| member.clone())
+                        .member(&subject.ign, Instant::now())
+                        .filter(|held| {
+                            held.characters.as_slice()
+                                == std::slice::from_ref(&subject.character_id)
+                                && self.fresh(held.fetched_at, now)
+                        })
+                        .map(|held| held.value.clone())
                 })
                 .flatten();
             let outcome = match cached {
@@ -532,16 +703,16 @@ impl Shared {
                 None => {
                     self.edit(id, |job| job.current = Some(at));
                     let result = self
-                        .call(deadline, |within| self.client.single(ign, within))
+                        .call(deadline, |within| self.client.single(&subject.ign, within))
                         .await;
                     if let Ok(member) = &result {
-                        self.keep_single(member.clone());
+                        self.keep_member(subject, member).await;
                     }
                     result.map_err(|error| Failure::of(&error, &igns, Some(at)))
                 }
             };
             match &outcome {
-                Ok(_) => found.push(ign.clone()),
+                Ok(_) => found.push(subject.ign.clone()),
                 Err(failure) => {
                     first_failure.get_or_insert_with(|| failure.clone());
                 }
@@ -556,12 +727,21 @@ impl Shared {
         if found.is_empty() {
             return first_failure.map(Err);
         }
+        let fetched_at = self.now();
         let (combined, total_failure) = if party {
             let result = self
                 .call(deadline, |within| self.client.batch(&found, within))
                 .await;
             match result {
-                Ok(batch) => (Some(batch.combined), None),
+                Ok(batch) => {
+                    // A whole party, every character found, is kept under
+                    // its IGN set.
+                    if first_failure.is_none() {
+                        self.keep_party(&subjects, &batch.combined, fetched_at)
+                            .await;
+                    }
+                    (Some(batch.combined), None)
+                }
                 Err(error) => (None, Some(Failure::of(&error, &igns, None))),
             }
         } else {
@@ -570,7 +750,7 @@ impl Shared {
         Some(Ok(Found {
             combined,
             total_failure,
-            fetched_at: self.now(),
+            fetched_at,
             cache_hit: false,
         }))
     }
@@ -591,35 +771,8 @@ impl Shared {
                 .filter(|result| matches!(result, Some(Err(_))))
                 .count();
             log(&outcome, job.subjects.len(), failed);
-            // A whole party, total included, is kept under its IGN set.
-            let whole = match &outcome {
-                Ok(Found {
-                    combined: Some(combined),
-                    ..
-                }) if failed == 0 => job
-                    .results
-                    .iter()
-                    .map(|result| match result {
-                        Some(Ok(member)) => Some(member.clone()),
-                        _ => None,
-                    })
-                    .collect::<Option<Vec<Member>>>()
-                    .map(|members| {
-                        (
-                            set_key(job.subjects.iter().map(|subject| &subject.ign)),
-                            Estimate {
-                                members,
-                                combined: Some(combined.clone()),
-                            },
-                        )
-                    }),
-                _ => None,
-            };
-            if let Some((key, estimate)) = whole {
-                inner.keep(key, estimate, now, instant);
-            }
             let kept = &mut inner.jobs[at];
-            kept.until = Some(instant + CACHE_TTL);
+            kept.until = Some(instant + JOB_TTL);
             kept.job.current = None;
             kept.job.finished_at = Some(now);
             kept.job.outcome = Some(outcome);
@@ -639,6 +792,11 @@ impl Shared {
             }
         }
     }
+}
+
+/// A result kept in memory that the file did not take.
+fn unsaved(kind: &'static str, error: &StoreError) {
+    crate::runtime::logging::log!(warn, "estimate_unsaved", kind, error = error_kind(error));
 }
 
 /// Codes and counts only: never an IGN or a result.
@@ -698,22 +856,103 @@ impl Drop for Estimates {
 }
 
 impl Estimates {
-    /// `url` is shown in health (it holds no secret).
+    /// `url` is shown in health (it holds no secret). Without
+    /// [`Self::with_store`] results live in memory only; without
+    /// [`Self::with_fresh_days`] they answer lookups for the default
+    /// `estimate_days`.
     pub fn new(client: ScouterClient, url: String, clock: Clock) -> Self {
         Self {
             shared: Arc::new(Shared {
                 client,
                 url,
                 clock,
+                store: None,
+                fresh_days: Arc::new(|| DEFAULT_ESTIMATE_DAYS),
                 inner: Mutex::default(),
             }),
             task: Mutex::default(),
         }
     }
 
-    /// Queue a job (or answer it from the cache at once); the target's own
-    /// queued or running job is answered instead of a second one. Spawns
-    /// the worker on the current tokio runtime when none runs.
+    /// Set up before any job starts, while nothing else holds the state.
+    fn configure(&mut self) -> &mut Shared {
+        Arc::get_mut(&mut self.shared).expect("configured before any job starts")
+    }
+
+    /// Write every result through to the character-data file.
+    #[must_use]
+    pub fn with_store(mut self, store: Arc<dyn CharDataStore>) -> Self {
+        self.configure().store = Some(store);
+        self
+    }
+
+    /// Read the saved `estimate_days` from `days` at every lookup.
+    #[must_use]
+    pub fn with_fresh_days(mut self, days: FreshDays) -> Self {
+        self.configure().fresh_days = days;
+        self
+    }
+
+    /// Load the file's newest [`MAX_CACHED`] results and totals still kept
+    /// into memory (serve, at startup, before any lookup). A failed read
+    /// starts with nothing loaded. Logs `estimates_loaded`.
+    pub async fn load(&self) {
+        let Some(store) = &self.shared.store else {
+            return;
+        };
+        let now = self.shared.now();
+        let limit = u32::try_from(MAX_CACHED).unwrap_or(u32::MAX);
+        let stored = match store.estimates(now, limit).await {
+            Ok(stored) => stored,
+            Err(error) => {
+                crate::runtime::logging::log!(
+                    warn,
+                    "estimates_loaded",
+                    members = 0,
+                    parties = 0,
+                    error = error_kind(&error),
+                );
+                return;
+            }
+        };
+        let (members, parties) = (stored.members.len(), stored.parties.len());
+        let instant = Instant::now();
+        let mut inner = self.shared.inner();
+        // Oldest first: the newest of a key wins, and past MAX_CACHED the
+        // oldest goes.
+        for row in stored.members.into_iter().rev() {
+            let until = held_until(row.fetched_at, now, instant);
+            inner.keep_member(
+                row.ign_key,
+                row.character_id,
+                row.result.into(),
+                row.fetched_at,
+                until,
+            );
+        }
+        for row in stored.parties.into_iter().rev() {
+            let until = held_until(row.fetched_at, now, instant);
+            let combined = row
+                .combined
+                .into_iter()
+                .map(|(key, total)| (key, total.into()))
+                .collect();
+            inner.keep_party(
+                row.set_key,
+                row.character_ids,
+                combined,
+                row.fetched_at,
+                until,
+            );
+        }
+        drop(inner);
+        crate::runtime::logging::log!(info, "estimates_loaded", members, parties);
+    }
+
+    /// Queue a job (or answer it from memory at once while every result it
+    /// needs is fresh); the target's own queued or running job is answered
+    /// instead of a second one. Spawns the worker on the current tokio
+    /// runtime when none runs.
     pub fn start(&self, request: JobRequest) -> Start {
         let now = self.shared.now();
         let instant = Instant::now();
@@ -727,33 +966,13 @@ impl Estimates {
         {
             return Start::Joined(inner.snapshot(active));
         }
-        let key = set_key(request.subjects.iter().map(|subject| &subject.ign));
         let hit = (!request.refresh)
-            .then(|| inner.cached(&key, party, instant))
-            .flatten()
-            .and_then(|cached| {
-                let results = request
-                    .subjects
-                    .iter()
-                    .map(|subject| {
-                        cached
-                            .estimate
-                            .members
-                            .iter()
-                            .find(|member| member.ign.eq_ignore_ascii_case(subject.ign.as_str()))
-                            .map(|member| Some(Ok(member.clone())))
-                    })
-                    .collect::<Option<Vec<_>>>()?;
-                Some((
-                    results,
-                    Found {
-                        combined: cached.estimate.combined.clone(),
-                        total_failure: None,
-                        fetched_at: cached.fetched_at,
-                        cache_hit: true,
-                    },
-                ))
-            });
+            .then(|| {
+                inner.answer(&request.subjects, party, instant, |fetched_at| {
+                    self.shared.fresh(fetched_at, now)
+                })
+            })
+            .flatten();
         if hit.is_none() && inner.queue.len() >= MAX_QUEUED {
             return Start::Full;
         }
@@ -781,7 +1000,7 @@ impl Estimates {
             job.outcome = Some(outcome);
             inner.jobs.push_back(Kept {
                 job: job.clone(),
-                until: Some(instant + CACHE_TTL),
+                until: Some(instant + JOB_TTL),
                 refresh: false,
             });
             inner.prune(instant);
@@ -843,25 +1062,29 @@ impl Estimates {
             .map(|kept| inner.snapshot(kept))
     }
 
-    /// `ign`'s newest successful result still in memory, from a lookup of
-    /// that character alone or of a party that included them (each
-    /// character is kept under their own IGN as they are found, so this
-    /// entry is always the newest), and when it was fetched. Never starts
-    /// a lookup.
+    /// `ign`'s newest successful result still in memory, of any age, from a
+    /// lookup of that character alone or of a party that included them
+    /// (each character is kept under their own IGN as they are found, so
+    /// this entry is always the newest), and when it was fetched. Never
+    /// starts a lookup.
     pub fn cached(&self, ign: &RosterIgn) -> Option<(Member, DateTime<Utc>)> {
         self.shared
             .inner()
             .member(ign, Instant::now())
-            .map(|(member, fetched_at)| (member.clone(), fetched_at))
+            .map(|held| (held.value.clone(), held.fetched_at))
     }
 
     /// The party total (scouter boss key → total) of the last whole-party
-    /// lookup of exactly `igns`, still in memory. Never starts a lookup.
-    pub fn cached_party(&self, igns: &[RosterIgn]) -> Option<BTreeMap<String, Combined>> {
+    /// lookup of exactly `igns` still in memory, of any age, and when it
+    /// was fetched. Never starts a lookup.
+    pub fn cached_party(
+        &self,
+        igns: &[RosterIgn],
+    ) -> Option<(BTreeMap<String, Combined>, DateTime<Utc>)> {
         self.shared
             .inner()
-            .cached(&set_key(igns.iter()), true, Instant::now())
-            .and_then(|cached| cached.estimate.combined.clone())
+            .party(&set_key(igns.iter()), Instant::now())
+            .map(|held| (held.value.clone(), held.fetched_at))
     }
 
     /// Whether a queued or running job looks up any of `igns`: their
@@ -878,6 +1101,46 @@ impl Estimates {
                 igns.iter()
                     .any(|ign| ign.as_str().eq_ignore_ascii_case(subject.ign.as_str()))
             })
+    }
+
+    /// Every character a result or total in memory is about, with the IGN
+    /// set it is held under (a character's own result: their IGN key), for
+    /// the sweeper.
+    pub fn held(&self) -> Vec<(String, String)> {
+        let inner = self.shared.inner();
+        let members = inner
+            .members
+            .iter()
+            .map(|(key, held)| (key, &held.characters));
+        let parties = inner
+            .parties
+            .iter()
+            .map(|(key, held)| (key, &held.characters));
+        members
+            .chain(parties)
+            .flat_map(|(key, ids)| ids.iter().map(|id| (id.clone(), key.clone())))
+            .collect()
+    }
+
+    /// Drop every result and total about `character_id` (the sweeper
+    /// deleted them from the file).
+    pub fn forget(&self, character_id: &str) {
+        let mut inner = self.shared.inner();
+        let about = |ids: &Vec<String>| ids.iter().any(|id| id == character_id);
+        inner.members.retain(|_, held| !about(&held.characters));
+        inner.parties.retain(|_, held| !about(&held.characters));
+    }
+
+    /// Drop what is no longer kept at wall-clock `now` (30 days old, or
+    /// stamped ahead), as the sweeper does in the file.
+    pub fn sweep(&self, now: DateTime<Utc>) {
+        let mut inner = self.shared.inner();
+        inner
+            .members
+            .retain(|_, held| estimate_kept(held.fetched_at, now));
+        inner
+            .parties
+            .retain(|_, held| estimate_kept(held.fetched_at, now));
     }
 
     /// The running job, whatever it looks up.
@@ -926,215 +1189,4 @@ impl Estimates {
 }
 
 #[cfg(test)]
-mod tests {
-    use std::sync::atomic::{AtomicUsize, Ordering};
-
-    use chrono::TimeZone;
-
-    use super::*;
-    use crate::{
-        domain::characters::{Character, CharacterRole},
-        infrastructure::scouter::Card,
-    };
-
-    fn at(hour: u32) -> DateTime<Utc> {
-        Utc.with_ymd_and_hms(2026, 9, 29, hour, 0, 0).unwrap()
-    }
-
-    /// Invented roster IGN.
-    fn ign(name: &str) -> RosterIgn {
-        RosterIgn::of(&Character {
-            id: "ch-1".into(),
-            member_id: "1001".into(),
-            ign: name.into(),
-            world: "msea".into(),
-            class: None,
-            level: None,
-            role: CharacterRole::Main,
-            retired_at: None,
-            created_at: at(0),
-            updated_at: at(0),
-            updated_by: Actor::system("test"),
-            version: 1,
-        })
-        .unwrap()
-    }
-
-    /// Invented answer: one Limbo card worth `percentage`.
-    fn member(ign: &str, percentage: f64) -> Member {
-        Member {
-            ign: ign.into(),
-            preset: "00010".into(),
-            critical_rate_assumed: false,
-            critical_rate_actual: None,
-            source: None,
-            bosses: BTreeMap::from([(
-                "hard_limbo".to_owned(),
-                Card {
-                    percentage,
-                    rating: "Party-able".into(),
-                    party: false,
-                    effective_percentage: Some(percentage),
-                    estimated_minutes: Some(3_000.0 / percentage),
-                },
-            )]),
-        }
-    }
-
-    /// The sidecar is never called: results are put in memory directly.
-    fn estimates(now: Arc<Mutex<DateTime<Utc>>>) -> Estimates {
-        let url = "http://127.0.0.1:9".to_owned();
-        Estimates::new(
-            ScouterClient::new(&url).unwrap(),
-            url,
-            Arc::new(move || *now.lock().unwrap_or_else(PoisonError::into_inner)),
-        )
-    }
-
-    fn busy(seconds: u32) -> LookupError {
-        LookupError::Refused {
-            status: 429,
-            code: "busy".into(),
-            ign: None,
-            retry_after: Some(seconds),
-        }
-    }
-
-    #[tokio::test(start_paused = true)]
-    async fn a_cached_reading_is_the_newest_and_gone_after_24_hours() {
-        let now = Arc::new(Mutex::new(at(4)));
-        let estimates = estimates(Arc::clone(&now));
-        let ren = ign("RenShade");
-        assert_eq!(estimates.cached(&ren), None, "nothing looked up yet");
-
-        estimates.shared.keep_single(member("renshade", 40.0));
-        *now.lock().unwrap_or_else(PoisonError::into_inner) = at(6);
-        tokio::time::advance(Duration::from_secs(2 * 3_600)).await;
-        estimates.shared.keep_single(member("RENSHADE", 72.4));
-        let (newest, fetched_at) = estimates.cached(&ren).unwrap();
-        assert_eq!(
-            (newest.bosses["hard_limbo"].percentage, fetched_at),
-            (72.4, at(6))
-        );
-        assert_eq!(estimates.cached(&ign("MikaBish")), None);
-
-        tokio::time::advance(CACHE_TTL - Duration::from_secs(1)).await;
-        assert!(estimates.cached(&ren).is_some());
-        tokio::time::advance(Duration::from_secs(1)).await;
-        assert_eq!(estimates.cached(&ren), None, "expired");
-        assert!(estimates.running().is_none(), "reading starts nothing");
-    }
-
-    #[tokio::test(start_paused = true)]
-    async fn a_party_total_is_read_by_its_exact_ign_set_and_shares_use_effective_only() {
-        let estimates = estimates(Arc::new(Mutex::new(at(4))));
-        let (ren, mika) = (ign("RenShade"), ign("MikaBish"));
-        let total = Combined {
-            combined_percentage: Some(112.4),
-            estimated_minutes: Some(26.7),
-            technically_possible: Some(true),
-            complete: true,
-            issues: BTreeMap::new(),
-        };
-        let mut party = member("MikaBish", 52.0);
-        party
-            .bosses
-            .get_mut("hard_limbo")
-            .unwrap()
-            .effective_percentage = None;
-        estimates.shared.inner().keep(
-            set_key([&mika, &ren].into_iter()),
-            Estimate {
-                members: vec![member("RenShade", 60.4), party.clone()],
-                combined: Some(BTreeMap::from([("hard_limbo".into(), total.clone())])),
-            },
-            at(4),
-            Instant::now(),
-        );
-        assert_eq!(
-            estimates.cached_party(&[ign("renshade"), mika.clone()]),
-            Some(BTreeMap::from([("hard_limbo".into(), total)])),
-            "any order and case"
-        );
-        assert_eq!(estimates.cached_party(&[ren]), None, "a different set");
-        assert_eq!(member("RenShade", 60.4).effective("HLimbo"), Some(60.4));
-        assert_eq!(
-            party.effective("HLimbo"),
-            None,
-            "never the card's whole-party percentage"
-        );
-        assert_eq!(member("RenShade", 60.4).effective("NLimbo"), None);
-        assert!(estimates.running().is_none(), "reading starts nothing");
-    }
-
-    /// `429 busy` is asked again after its Retry-After while the wait ends
-    /// before the deadline; past it, the busy answer stands.
-    #[tokio::test(start_paused = true)]
-    async fn busy_is_retried_after_retry_after_within_the_deadline() {
-        let estimates = estimates(Arc::new(Mutex::new(at(4))));
-        let shared = &estimates.shared;
-        let calls = AtomicUsize::new(0);
-        let begun = Instant::now();
-        let deadline = begun + Duration::from_secs(30);
-        let answer = shared
-            .call(deadline, |within| {
-                let call = calls.fetch_add(1, Ordering::SeqCst);
-                let left = deadline.saturating_duration_since(Instant::now());
-                async move {
-                    assert_eq!(within, left, "each try gets the time left");
-                    if call < 2 { Err(busy(8)) } else { Ok(call) }
-                }
-            })
-            .await;
-        assert_eq!(answer, Ok(2), "the third try answers");
-        assert_eq!(
-            begun.elapsed(),
-            Duration::from_secs(16),
-            "8 s after each busy"
-        );
-
-        // A wait that would end past the deadline is not taken.
-        calls.store(0, Ordering::SeqCst);
-        let begun = Instant::now();
-        let answer = shared
-            .call(begun + Duration::from_secs(10), |_| {
-                calls.fetch_add(1, Ordering::SeqCst);
-                async { Err::<usize, _>(busy(8)) }
-            })
-            .await;
-        assert_eq!(answer, Err(busy(8)));
-        assert_eq!(
-            calls.load(Ordering::SeqCst),
-            2,
-            "one retry fits, the next doesn't"
-        );
-        assert_eq!(begun.elapsed(), Duration::from_secs(8));
-
-        // Other refusals, a rate limit included, are never retried.
-        calls.store(0, Ordering::SeqCst);
-        let limited = LookupError::Refused {
-            status: 429,
-            code: "upstream_rate_limited".into(),
-            ign: None,
-            retry_after: Some(1),
-        };
-        let answer = shared
-            .call(Instant::now() + Duration::from_secs(60), |_| {
-                calls.fetch_add(1, Ordering::SeqCst);
-                let limited = limited.clone();
-                async move { Err::<usize, _>(limited) }
-            })
-            .await;
-        assert_eq!(answer, Err(limited));
-        assert_eq!(calls.load(Ordering::SeqCst), 1);
-        assert_eq!(
-            shared
-                .inner()
-                .seen
-                .last_error
-                .as_ref()
-                .map(|(code, _)| code.as_str()),
-            Some("upstream_rate_limited")
-        );
-    }
-}
+mod tests;

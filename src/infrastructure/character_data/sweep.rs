@@ -1,14 +1,17 @@
 //! The sweeper (hourly and on every unlink): expired and future-stamped
-//! snapshots, the orphan pass (with pending requests past 14 days), due
-//! posts stripped through the Discord side, then call records older than
-//! the window.
+//! snapshots, the orphan pass (with pending requests past 14 days), scouter
+//! estimates (expired, future-stamped or orphaned, in the file and in
+//! memory), due posts stripped through the Discord side, then call records
+//! older than the window.
+
+use std::collections::BTreeMap;
 
 use chrono::{DateTime, Utc};
 use serde_json::json;
 
 use super::{CharacterData, StripReport, log};
 use crate::domain::chardata::{
-    CALL_WINDOW, LinkStatus, Orphan, UnlinkReason, orphan, pending_expired,
+    CALL_WINDOW, LinkStatus, Orphan, UnlinkReason, estimates_orphaned, orphan, pending_expired,
 };
 use crate::domain::history::{Actor, Surface};
 use crate::domain::scheduler::StoreError;
@@ -23,6 +26,11 @@ pub struct SweepReport {
     pub expired: u64,
     pub posts: StripReport,
     pub calls: Option<u64>,
+    /// Estimates deleted at 30 days or stamped in the future.
+    pub estimates_expired: Option<u64>,
+    /// Characters whose estimates were deleted: gone, retired, off
+    /// MapleSEA, renamed, or their member left.
+    pub estimates_dropped: u64,
 }
 
 /// The sweeper's History actor.
@@ -36,6 +44,7 @@ impl CharacterData {
             ..SweepReport::default()
         };
         self.orphans(now, &mut report).await;
+        self.estimates_sweep(now, &mut report).await;
         // After the orphan pass, so the posts of what it unlinked go now.
         report.posts = self.strip_posts().await;
         report.calls = self.store.prune_calls(now - CALL_WINDOW).await.ok();
@@ -53,6 +62,8 @@ impl CharacterData {
                 "stuck": report.posts.stuck,
                 "unknown": report.posts.unknown,
                 "calls": report.calls,
+                "estimates": report.estimates_expired,
+                "estimates_dropped": report.estimates_dropped,
             }),
         );
         report
@@ -165,10 +176,64 @@ impl CharacterData {
             }
         }
     }
+
+    /// Stored estimates past 30 days or stamped ahead, then every
+    /// character's whose roster row no longer holds them
+    /// ([`estimates_orphaned`]), each with the party totals naming them;
+    /// memory drops the same, results only it holds (an unsaved write)
+    /// included. A NEXON unlink keeps them: they come from the roster IGN.
+    async fn estimates_sweep(&self, now: DateTime<Utc>, report: &mut SweepReport) {
+        report.estimates_expired = self.store.sweep_estimates(now).await.ok();
+        let memory = self.estimates();
+        if let Some(memory) = memory {
+            memory.sweep(now);
+        }
+        // Character → the IGN set each of their results is held under.
+        let mut held: BTreeMap<String, Vec<String>> = BTreeMap::new();
+        if let Ok(stored) = self.store.estimates(now, u32::MAX).await {
+            for row in stored.members {
+                held.entry(row.character_id).or_default().push(row.ign_key);
+            }
+            for row in stored.parties {
+                for id in row.character_ids {
+                    held.entry(id).or_default().push(row.set_key.clone());
+                }
+            }
+        }
+        for (id, key) in memory.map(|memory| memory.held()).unwrap_or_default() {
+            held.entry(id).or_default().push(key);
+        }
+        for (id, sets) in held {
+            let Ok(character) = self.roster.character(id.clone()).await else {
+                continue;
+            };
+            let member = match &character {
+                Some(character) => match self.roster.member(character.member_id.clone()).await {
+                    Ok(member) => member,
+                    Err(_) => continue,
+                },
+                None => None,
+            };
+            if !estimates_orphaned(&sets, character.as_ref(), member.as_ref()) {
+                continue;
+            }
+            if let Some(memory) = memory {
+                memory.forget(&id);
+            }
+            match self.store.delete_estimates(id.clone()).await {
+                Ok(_) => report.estimates_dropped += 1,
+                Err(error) => log(
+                    "WARN",
+                    "chardata_estimates_undeleted",
+                    json!({ "character": id, "error": error_kind(&error) }),
+                ),
+            }
+        }
+    }
 }
 
 /// A store error's class for logs (its text may carry paths).
-pub(super) fn error_kind(error: &StoreError) -> &'static str {
+pub(crate) fn error_kind(error: &StoreError) -> &'static str {
     match error {
         StoreError::Constraint(_) => "constraint",
         StoreError::Conflict { .. } => "conflict",

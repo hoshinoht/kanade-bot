@@ -47,6 +47,7 @@ use crate::infrastructure::nexon::{Limiter, NexonClient, SPACING};
 use crate::infrastructure::scouter::Estimates;
 use crate::infrastructure::store::replays::{ReplayStore, StoredReplay};
 pub use roster_sync::NEXON_ACTOR;
+pub(crate) use sweep::error_kind;
 pub use sweep::{SWEEPER, SweepReport};
 
 /// The injected aware wall clock (cutoffs and stamps).

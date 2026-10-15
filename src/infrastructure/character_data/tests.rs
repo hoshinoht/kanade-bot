@@ -2,10 +2,10 @@
 //! invented fixtures: admin links (active at once) and member confirmation,
 //! every error code's backoff, ocid re-resolution, empty answers, the
 //! budget, unlink, the orphan pass, the roster's copy of NEXON's facts, the
-//! startup passes, and that no Nexon field reaches a log line or a link's
-//! History row.
+//! startup passes, the sweep of scouter estimates, and that no Nexon field
+//! reaches a log line or a link's History row.
 
-use std::collections::{HashMap, VecDeque};
+use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -20,11 +20,13 @@ use chrono::{DateTime, TimeDelta, TimeZone, Utc};
 use super::*;
 use crate::domain::characters::{CharacterChange, CharacterRecord, CharacterRole, CharacterWrite};
 use crate::domain::chardata::{
-    CharDataStore, ConsentSurface, DAILY_CALLS, Link, LinkStatus, NOTICE_VERSION, Post,
+    CharDataStore, ConsentSurface, DAILY_CALLS, Link, LinkStatus, MemberEstimate, NOTICE_VERSION,
+    PartyEstimate, Post, StoredMember,
 };
 use crate::domain::history::{Actor, Surface};
 use crate::domain::settings::SettingsChangeQuery;
 use crate::infrastructure::nexon::{ApiKey, KEY_HEADER};
+use crate::infrastructure::scouter::{RosterIgn, ScouterClient};
 use crate::infrastructure::store::members_conformance::gateway;
 use crate::infrastructure::store::{SqliteCharData, SqliteStore};
 
@@ -1667,4 +1669,250 @@ async fn a_notice_bump_re_asks_members_never_an_admins_link() {
         RefreshOutcome::Done(FetchState::Stored),
         "still refreshed"
     );
+}
+
+/// An invented scouter result for `ign`.
+fn scouted(ign: &str) -> StoredMember {
+    StoredMember {
+        ign: ign.into(),
+        preset: "00010".into(),
+        critical_rate_assumed: false,
+        critical_rate_actual: None,
+        source: None,
+        bosses: BTreeMap::new(),
+    }
+}
+
+/// The roster IGN `name`, as the scouter is sent it.
+fn scouter_ign(name: &str) -> RosterIgn {
+    RosterIgn::of(&crate::domain::characters::Character {
+        id: "c0".into(),
+        member_id: "1001".into(),
+        ign: name.into(),
+        world: "msea".into(),
+        class: None,
+        level: None,
+        role: CharacterRole::Main,
+        retired_at: None,
+        created_at: at(1, 0),
+        updated_at: at(1, 0),
+        updated_by: Actor::admin("token"),
+        version: 1,
+    })
+    .unwrap()
+}
+
+/// `rig`'s file with results for c1 (Wisteria) and c2 (Heather) and their
+/// party total, all fetched at `fetched_at`, and a service whose estimates
+/// loaded them (nothing listens at the scouter).
+async fn estimating(rig: &Rig, fetched_at: DateTime<Utc>) -> Arc<CharacterData> {
+    for (id, ign) in [("c1", IGN), ("c2", "Heather")] {
+        let estimate = MemberEstimate {
+            character_id: id.into(),
+            ign_key: ign.to_ascii_lowercase(),
+            result: scouted(ign),
+            fetched_at,
+        };
+        rig.file.put_member_estimate(estimate).await.unwrap();
+    }
+    let party = PartyEstimate {
+        set_key: "heather,wisteria".into(),
+        character_ids: vec!["c1".into(), "c2".into()],
+        combined: BTreeMap::new(),
+        fetched_at,
+    };
+    rig.file.put_party_estimate(party).await.unwrap();
+    let clock: Clock = {
+        let now = Arc::clone(&rig.now);
+        Arc::new(move || *now.lock().unwrap())
+    };
+    let url = "http://127.0.0.1:9".to_owned();
+    let estimates = Estimates::new(ScouterClient::new(&url).unwrap(), url, Arc::clone(&clock))
+        .with_store(Arc::clone(&rig.file) as Arc<dyn CharDataStore>);
+    estimates.load().await;
+    let service = CharacterData::new(
+        Arc::clone(&rig.file) as Arc<dyn CharDataStore>,
+        Arc::clone(&rig.flaky) as Arc<dyn RosterSide>,
+        None,
+        clock,
+        Timing::default(),
+    );
+    Arc::new(service.with_estimates(estimates))
+}
+
+/// Whether character `id`'s result is in the file (read as of 11:00), and
+/// whether memory holds one under `ign`.
+async fn held(service: &CharacterData, id: &str, ign: &str) -> (bool, bool) {
+    let stored = service
+        .store()
+        .estimates(at(11, 0), u32::MAX)
+        .await
+        .unwrap();
+    let memory = service.estimates().unwrap();
+    (
+        stored.members.iter().any(|row| row.character_id == id),
+        memory.cached(&scouter_ign(ign)).is_some(),
+    )
+}
+
+/// Whether c1 and c2's party total is in the file and in memory.
+async fn party_held(service: &CharacterData) -> (bool, bool) {
+    let stored = service
+        .store()
+        .estimates(at(11, 0), u32::MAX)
+        .await
+        .unwrap();
+    let memory = service.estimates().unwrap();
+    (
+        !stored.parties.is_empty(),
+        memory
+            .cached_party(&[scouter_ign(IGN), scouter_ign("Heather")])
+            .is_some(),
+    )
+}
+
+/// A deleted roster character's estimates, and every party total naming
+/// them, leave the file and memory at the next sweep; others stay.
+#[tokio::test]
+async fn the_sweep_drops_a_deleted_characters_estimates() {
+    let rig = rig().await;
+    let service = estimating(&rig, at(11, 0)).await;
+    assert_eq!(held(&service, "c2", "Heather").await, (true, true));
+    assert_eq!(party_held(&service).await, (true, true));
+    let written = rig
+        .roster
+        .apply_character(
+            CharacterChange::Delete {
+                id: "c2".into(),
+                version: 1,
+            },
+            CharacterRecord {
+                at: at(11, 1),
+                actor: Actor::admin("token"),
+                surface: Surface::AdminPortal,
+            },
+        )
+        .await
+        .unwrap();
+    assert!(matches!(written, CharacterWrite::Deleted(_)), "{written:?}");
+    assert_eq!(service.sweep().await.estimates_dropped, 1);
+    assert_eq!(held(&service, "c2", "Heather").await, (false, false));
+    assert_eq!(
+        party_held(&service).await,
+        (false, false),
+        "with the totals"
+    );
+    assert_eq!(held(&service, "c1", IGN).await, (true, true), "others stay");
+}
+
+#[tokio::test]
+async fn the_sweep_drops_a_retired_characters_estimates() {
+    let rig = rig().await;
+    let service = estimating(&rig, at(11, 0)).await;
+    edit(&rig, "c2", |row| row.retired_at = Some(at(11, 1))).await;
+    assert_eq!(service.sweep().await.estimates_dropped, 1);
+    assert_eq!(held(&service, "c2", "Heather").await, (false, false));
+    assert_eq!(party_held(&service).await, (false, false));
+    assert_eq!(held(&service, "c1", IGN).await, (true, true));
+}
+
+/// Off MapleSEA, the scouter's IGN is another character's.
+#[tokio::test]
+async fn the_sweep_drops_estimates_when_the_world_changes() {
+    let rig = rig().await;
+    let service = estimating(&rig, at(11, 0)).await;
+    edit(&rig, "c2", |row| row.world = "kms".into()).await;
+    assert_eq!(service.sweep().await.estimates_dropped, 1);
+    assert_eq!(held(&service, "c2", "Heather").await, (false, false));
+    assert_eq!(party_held(&service).await, (false, false));
+    assert_eq!(held(&service, "c1", IGN).await, (true, true));
+}
+
+/// A renamed character's results were read under the old IGN.
+#[tokio::test]
+async fn the_sweep_drops_estimates_when_the_ign_changes() {
+    let rig = rig().await;
+    let service = estimating(&rig, at(11, 0)).await;
+    edit(&rig, "c2", |row| row.ign = "HEATHER".into()).await;
+    assert_eq!(
+        service.sweep().await.estimates_dropped,
+        0,
+        "letter case alone is the same IGN"
+    );
+    rename(&rig, "c2", "Lavender").await;
+    assert_eq!(service.sweep().await.estimates_dropped, 1);
+    assert_eq!(held(&service, "c2", "Heather").await, (false, false));
+    assert_eq!(party_held(&service).await, (false, false));
+    assert_eq!(held(&service, "c1", IGN).await, (true, true));
+}
+
+#[tokio::test]
+async fn the_sweep_drops_estimates_when_the_member_leaves() {
+    let rig = rig().await;
+    let service = estimating(&rig, at(11, 0)).await;
+    assert!(rig.roster.member_departed("1001").await.unwrap());
+    assert_eq!(service.sweep().await.estimates_dropped, 2);
+    assert_eq!(held(&service, "c1", IGN).await, (false, false));
+    assert_eq!(held(&service, "c2", "Heather").await, (false, false));
+    assert_eq!(party_held(&service).await, (false, false));
+}
+
+/// Nothing is kept past 30 days, in the file or in memory.
+#[tokio::test]
+async fn the_sweep_drops_estimates_after_30_days() {
+    let rig = rig().await;
+    let fetched_at = at(11, 0) - TimeDelta::hours(1);
+    let service = estimating(&rig, fetched_at).await;
+    rig.set_now(fetched_at + TimeDelta::days(30) - TimeDelta::seconds(1));
+    assert_eq!(service.sweep().await.estimates_expired, Some(0));
+    assert_eq!(held(&service, "c1", IGN).await, (true, true));
+    rig.set_now(fetched_at + TimeDelta::days(30));
+    let report = service.sweep().await;
+    assert_eq!(
+        (report.estimates_expired, report.estimates_dropped),
+        (Some(3), 0)
+    );
+    assert_eq!(held(&service, "c1", IGN).await, (false, false));
+    assert_eq!(held(&service, "c2", "Heather").await, (false, false));
+    assert_eq!(party_held(&service).await, (false, false));
+}
+
+/// A wall clock stepped back leaves results stamped in the future: they
+/// go, so a stalled clock never keeps them.
+#[tokio::test]
+async fn the_sweep_drops_future_stamped_estimates() {
+    let rig = rig().await;
+    let service = estimating(&rig, at(11, 0)).await;
+    rig.set_now(at(9, 0));
+    assert_eq!(service.sweep().await.estimates_expired, Some(3));
+    assert_eq!(held(&service, "c1", IGN).await, (false, false));
+    assert_eq!(held(&service, "c2", "Heather").await, (false, false));
+    assert_eq!(party_held(&service).await, (false, false));
+}
+
+/// Estimates come from the roster IGN, not NEXON data: an unlink keeps
+/// them.
+#[tokio::test]
+async fn a_nexon_unlink_keeps_estimates() {
+    let rig = rig().await;
+    rig.confirm().await;
+    let service = estimating(&rig, at(11, 0)).await;
+    let removed = service
+        .unlink(
+            "c1",
+            &Actor::admin("token"),
+            Surface::AdminPortal,
+            crate::domain::chardata::UnlinkReason::Requested,
+            None,
+        )
+        .await
+        .unwrap();
+    assert!(removed.is_some());
+    let report = service.sweep().await;
+    assert_eq!(
+        (report.estimates_expired, report.estimates_dropped),
+        (Some(0), 0)
+    );
+    assert_eq!(held(&service, "c1", IGN).await, (true, true));
+    assert_eq!(party_held(&service).await, (true, true));
 }

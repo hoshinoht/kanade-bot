@@ -1,13 +1,16 @@
 //! The parts of the scouter's `GET /v1/bosses` answers kanade reads;
 //! every other field is ignored. Boss keys are the sidecar's
 //! `<difficulty>_<boss>` card keys (`hard_limbo`), mapped to catalog tokens
-//! by [`super::keys`] on the way out.
+//! by [`super::keys`] on the way out. Results are stored in the
+//! character-data file in kanade's own shape (`domain::chardata`), never
+//! as the sidecar's JSON.
 
 use std::collections::BTreeMap;
 
 use serde::Deserialize;
 
 use super::scouter_keys;
+use crate::domain::chardata::{StoredCard, StoredCombined, StoredMember};
 
 /// One character: the `ign=` answer, or one of a batch's `members`.
 #[derive(Clone, Debug, Deserialize, PartialEq)]
@@ -85,4 +88,80 @@ pub(super) struct ErrorField {
     pub code: String,
     #[serde(default)]
     pub ign: Option<String>,
+}
+
+impl From<&Member> for StoredMember {
+    fn from(member: &Member) -> Self {
+        Self {
+            ign: member.ign.clone(),
+            preset: member.preset.clone(),
+            critical_rate_assumed: member.critical_rate_assumed,
+            critical_rate_actual: member.critical_rate_actual,
+            source: member.source.clone(),
+            bosses: member
+                .bosses
+                .iter()
+                .map(|(key, card)| {
+                    let stored = StoredCard {
+                        percentage: card.percentage,
+                        rating: card.rating.clone(),
+                        party: card.party,
+                        effective_percentage: card.effective_percentage,
+                        estimated_minutes: card.estimated_minutes,
+                    };
+                    (key.clone(), stored)
+                })
+                .collect(),
+        }
+    }
+}
+
+impl From<StoredMember> for Member {
+    fn from(stored: StoredMember) -> Self {
+        Self {
+            ign: stored.ign,
+            preset: stored.preset,
+            critical_rate_assumed: stored.critical_rate_assumed,
+            critical_rate_actual: stored.critical_rate_actual,
+            source: stored.source,
+            bosses: stored
+                .bosses
+                .into_iter()
+                .map(|(key, card)| {
+                    let card = Card {
+                        percentage: card.percentage,
+                        rating: card.rating,
+                        party: card.party,
+                        effective_percentage: card.effective_percentage,
+                        estimated_minutes: card.estimated_minutes,
+                    };
+                    (key, card)
+                })
+                .collect(),
+        }
+    }
+}
+
+impl From<&Combined> for StoredCombined {
+    fn from(total: &Combined) -> Self {
+        Self {
+            combined_percentage: total.combined_percentage,
+            estimated_minutes: total.estimated_minutes,
+            technically_possible: total.technically_possible,
+            complete: total.complete,
+            issues: total.issues.clone(),
+        }
+    }
+}
+
+impl From<StoredCombined> for Combined {
+    fn from(stored: StoredCombined) -> Self {
+        Self {
+            combined_percentage: stored.combined_percentage,
+            estimated_minutes: stored.estimated_minutes,
+            technically_possible: stored.technically_possible,
+            complete: stored.complete,
+            issues: stored.issues,
+        }
+    }
 }
