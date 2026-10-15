@@ -1289,3 +1289,40 @@ async fn the_reminder_preview_shows_the_estimate_image_from_cached_readings() {
     assert_eq!(preview["card"]["estimate"], Value::Null);
     assert_eq!(raw_get(&off, PNG).await.error(), (404, "not_found".into()));
 }
+
+/// The live report: a card drawn while the party's lookup had found only
+/// its first members showed the rest as "no estimate". While a lookup of
+/// anyone in the party is queued or running the image is left off; once
+/// it finishes the image has every member.
+#[tokio::test]
+async fn the_reminder_preview_has_no_estimate_image_while_its_party_is_looked_up() {
+    const CARD: &str = "/api/admin/reminders/m-kalos-15/preview";
+    const PNG: &str = "/api/admin/reminders/m-kalos-15/estimate.png";
+    let (address, fake) = fake_scouter().await;
+    let reads = on_gated(address).await;
+    let redesigned = json!({"notifications": {"message_style": "redesigned"}});
+    let saved = reads.call("PATCH", "/api/admin/config", redesigned, &[]);
+    assert_eq!(saved.await.status, 200);
+    character(&reads, "1001", "MikaBish").await;
+    let gate = character(&reads, "1002", "GateAa").await;
+
+    // MikaBish is found and cached; GateAa's lookup is still running.
+    let job = post(&reads, json!({"run_id": "r-kalos"})).await;
+    read_until(&reads, &job, |read| read["progress"]["current"] == gate).await;
+    let running = reads.read(CARD, PREVIEW).await;
+    assert!(running["card"]["content"].is_string(), "the card stays");
+    assert_eq!(running["card"]["estimate"], Value::Null);
+    assert_eq!(
+        raw_get(&reads, PNG).await.error(),
+        (404, "not_found".into())
+    );
+
+    fake.gate.notify_one();
+    assert_eq!(settled(&reads, &job).await["state"], "done");
+    let done = reads.read(CARD, PREVIEW).await;
+    assert_eq!(
+        done["card"]["estimate"]["alt"],
+        "22:00 XKalos: XKalos 18.0%, MikaBish 50%, GateAa 50%; 1 with no estimate. As of Tue 29 Sep 12:00."
+    );
+    assert_eq!(raw_get(&reads, PNG).await.status, 200);
+}

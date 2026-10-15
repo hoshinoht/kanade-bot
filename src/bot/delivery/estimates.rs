@@ -2,9 +2,12 @@
 //! run's party from the roster (as the admin and portal character reads
 //! resolve it) and each member's cached scouter estimate, drawn once as a
 //! plain `estimate.png` attachment when the card is posted. Cached only: a
-//! card never starts a lookup. Edits never upload, so the posted image stays
-//! as it was ("as of" its readings). Anything that fails leaves the image
-//! off and the card posts as it would have; it is logged, never alerted.
+//! card never starts a lookup, and while a lookup of anyone in its runs'
+//! parties is queued or running it posts without the image (a half-filled
+//! memory would draw members as "no estimate"). Edits never upload, so the
+//! posted image stays as it was ("as of" its readings). Anything that fails
+//! leaves the image off and the card posts as it would have; it is logged,
+//! never alerted.
 
 use std::collections::BTreeMap;
 use std::pin::Pin;
@@ -26,7 +29,7 @@ use crate::domain::notify::IntentContent;
 use crate::domain::schedule::{Run, RunStatus, ScheduleSnapshot};
 use crate::domain::settings::MessageStyle;
 use crate::infrastructure::character_data::CharacterData;
-use crate::infrastructure::scouter::{Combined, Member, RosterIgn, scouter_keys};
+use crate::infrastructure::scouter::{Combined, Estimates, Member, RosterIgn, scouter_keys};
 use crate::runtime::logging;
 
 /// How long drawing may take before the card posts without it.
@@ -48,8 +51,9 @@ pub struct RunEstimate {
 
 pub type EstimateFuture<'a> = Pin<Box<dyn Future<Output = Option<RunEstimate>> + Send + 'a>>;
 
-/// Each run's cached estimates; `None` when the party can't be read (the
-/// card then posts without the image).
+/// Each run's cached estimates; `None` when the party can't be read or a
+/// lookup of its party is still running (the card then posts without the
+/// image).
 pub trait PartyEstimates: Send + Sync {
     fn run<'a>(
         &'a self,
@@ -96,14 +100,33 @@ impl<S: PartyReads + Send + Sync + ?Sized + 'static> PartyEstimates for CachedEs
                 }
             };
             let slots = roster.slots(run, &week, &schedule.fixed_runs, catalog);
-            Some(read_estimates(
-                run,
-                &slots,
-                |ign| estimates.cached(ign),
-                |igns| estimates.cached_party(igns),
-            ))
+            settled_estimate(run, &slots, estimates)
         })
     }
+}
+
+/// The IGN `slot`'s member is looked up under, when they bring a
+/// character the scouter can take.
+fn brought_ign(slot: &PartySlot) -> Option<RosterIgn> {
+    slot.brought()
+        .and_then(|(character, _)| RosterIgn::lookup(character).ok())
+}
+
+/// `run`'s cached estimates, unless a lookup of anyone in its party is
+/// queued or running: then the memory holds only part of the answer and
+/// the chart is left off (logged) rather than drawn with members missing.
+fn settled_estimate(run: &Run, slots: &[PartySlot], estimates: &Estimates) -> Option<RunEstimate> {
+    let igns: Vec<RosterIgn> = slots.iter().filter_map(brought_ign).collect();
+    if estimates.looking_up(&igns) {
+        skipped("lookup_running");
+        return None;
+    }
+    Some(read_estimates(
+        run,
+        slots,
+        |ign| estimates.cached(ign),
+        |igns| estimates.cached_party(igns),
+    ))
 }
 
 /// `run`'s slots read against the estimates memory: a member bringing a
@@ -122,10 +145,7 @@ pub fn read_estimates(
     let mut igns: Vec<RosterIgn> = Vec::new();
     let mut oldest: Option<DateTime<Utc>> = None;
     for slot in slots {
-        let Some(ign) = slot
-            .brought()
-            .and_then(|(character, _)| RosterIgn::lookup(character).ok())
-        else {
+        let Some(ign) = brought_ign(slot) else {
             party.missing += 1;
             continue;
         };
@@ -297,5 +317,103 @@ pub async fn attach_chart(
     match draw(chart).await {
         Ok(upload) => message.attachments.push(upload),
         Err(reason) => skipped(reason),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use chrono::TimeZone;
+
+    use super::*;
+    use crate::domain::characters::{Basis, Character, CharacterRole};
+    use crate::domain::history::Actor;
+    use crate::domain::schedule::RunSource;
+    use crate::infrastructure::scouter::{JobRequest, ScouterClient, Start, Subject, Target};
+
+    fn at() -> DateTime<Utc> {
+        Utc.with_ymd_and_hms(2026, 9, 29, 4, 0, 0).unwrap()
+    }
+
+    /// Invented party member `member` bringing their main `ign`.
+    fn slot(member: &str, ign: &str) -> PartySlot {
+        let character = Character {
+            id: format!("ch-{member}"),
+            member_id: member.into(),
+            ign: ign.into(),
+            world: "msea".into(),
+            class: None,
+            level: None,
+            role: CharacterRole::Main,
+            retired_at: None,
+            created_at: at(),
+            updated_at: at(),
+            updated_by: Actor::system("test"),
+            version: 1,
+        };
+        PartySlot {
+            member_id: member.into(),
+            brings: Some((character.id.clone(), Basis::Main)),
+            candidates: vec![character],
+            retired: 0,
+            pick: None,
+            version: 1,
+            clashes: Vec::new(),
+        }
+    }
+
+    fn run() -> Run {
+        Run {
+            id: "r-kalos".into(),
+            fixed_run_id: None,
+            channel_id: None,
+            week_start: at(),
+            datetime: at(),
+            bosses: vec!["XKalos".into()],
+            participants: vec!["1001".into(), "1002".into()],
+            status: RunStatus::Planned,
+            source: RunSource::Fixed,
+            attendance: Vec::new(),
+            status_pin: None,
+        }
+    }
+
+    /// The live report: a card drawn while the party's lookup had found
+    /// only its first members drew the rest as "no estimate". While any
+    /// member's lookup is queued or running there is no chart at all.
+    #[tokio::test]
+    async fn a_party_with_a_lookup_still_running_has_no_chart() {
+        logging::capture();
+        // Nothing listens there; the job is read before its worker ever runs.
+        let url = "http://127.0.0.1:9".to_owned();
+        let estimates = Estimates::new(ScouterClient::new(&url).unwrap(), url, Arc::new(at));
+        let run = run();
+        let slots = [slot("1001", "MikaBish"), slot("1002", "RenShade")];
+        let started = estimates.start(JobRequest {
+            target: Target::Run {
+                run_id: run.id.clone(),
+                bosses: run.bosses.clone(),
+            },
+            subjects: vec![Subject {
+                character_id: "ch-1002".into(),
+                member_id: "1002".into(),
+                // Matched as the scouter matches IGNs: whatever the case.
+                ign: brought_ign(&slot("1002", "RENSHADE")).unwrap(),
+            }],
+            missing: Vec::new(),
+            started_by: Actor::system("test"),
+            refresh: false,
+        });
+        assert!(matches!(started, Start::Started(_)));
+
+        assert_eq!(settled_estimate(&run, &slots, &estimates), None);
+        let lines = logging::captured();
+        assert_eq!(lines.len(), 1, "{lines:?}");
+        assert_eq!(lines[0]["event"], "estimate_chart_skipped");
+        assert_eq!(lines[0]["reason"], "lookup_running");
+
+        // A party nobody is looking up draws from what is cached.
+        let other = settled_estimate(&run, &slots[..1], &estimates).expect("a chart");
+        assert_eq!(other.party.carriers.len(), 1);
+        assert_eq!(logging::captured().len(), 1, "nothing more logged");
     }
 }
