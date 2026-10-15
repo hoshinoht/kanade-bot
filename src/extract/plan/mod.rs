@@ -23,7 +23,7 @@ use crate::extract::matching::{
     runs_spanned,
 };
 use crate::extract::merge::merge;
-use crate::extract::resolve::{Resolved, resolve};
+use crate::extract::resolve::{Resolved, Side, resolve};
 use crate::extract::schema::Extraction;
 use crate::extract::{Amendment, AmendmentKind};
 
@@ -211,8 +211,15 @@ pub fn plan_burst<'a>(
         } else {
             None
         };
-        // Apply the same bound to local, guild-wide and spanning matches.
-        let here = reachable(inputs.channel_runs, resolved.day, zone, evidence_week);
+        // Apply the same bound to local, guild-wide and spanning matches. A
+        // run past an "after" bound is never moved back, so any is reachable.
+        let bound = rules::move_bound(amendment.kind, &resolved);
+        let reach_day = match bound {
+            Some(bound) if bound.side == Side::After => None,
+            Some(bound) => bound.day,
+            None => resolved.day,
+        };
+        let here = reachable(inputs.channel_runs, reach_day, zone, evidence_week);
         // Week filtering must not turn a channel with live runs into an empty
         // channel eligible for guild-wide matching.
         let guild_here = if anchored
@@ -223,7 +230,7 @@ pub fn plan_burst<'a>(
         {
             Vec::new()
         } else {
-            reachable(inputs.guild_runs, resolved.day, zone, evidence_week)
+            reachable(inputs.guild_runs, reach_day, zone, evidence_week)
         };
         let spanned = if refusal.is_none() && splits_across_runs(amendment.kind) {
             runs_spanned(amendment, &here, author)
@@ -278,6 +285,8 @@ pub fn plan_burst<'a>(
                 && result.reason_code == NO_BOSS_OVERLAP
                 && matches!(amendment.kind, AmendmentKind::Move | AmendmentKind::Split)
                 && resolved.at.is_some()
+                // A bound is no agreed slot for a new night.
+                && bound.is_none()
                 // A named day, not a bare time: "amend to 9:45" is no new night.
                 && amendment.day_ref.as_deref().is_some_and(|day| !day.is_empty())
                 && !shares_a_boss(&proposed, &amendment)
@@ -328,13 +337,23 @@ pub fn plan_burst<'a>(
             }
             // Before the staleness and no-op checks, which judge the instant a
             // half-stated move only has once the run fills in the rest.
-            entry.resolved = inherit_from_run(&entry, zone)?;
+            let bound = rules::move_bound(entry.kind(), &entry.resolved);
+            match (bound, entry.run) {
+                (Some(bound), Some(run)) if rules::within_bound(run, bound, zone) => {
+                    entry.match_reason = "already within the stated bound".to_owned();
+                    plan.dropped.push(entry);
+                    continue;
+                }
+                (Some(bound), _) => entry.resolved = rules::outside_bound(bound),
+                (None, _) => entry.resolved = inherit_from_run(&entry, zone)?,
+            }
             if already_passed(&entry, inputs.now, zone, inputs.run_ends) {
                 entry.match_reason = "already passed".to_owned();
                 plan.dropped.push(entry);
                 continue;
             }
-            if is_no_op(&entry, zone) {
+            // A bounded move's target has no slot yet to compare.
+            if bound.is_none() && is_no_op(&entry, zone) {
                 entry.match_reason = "already scheduled".to_owned();
                 plan.dropped.push(entry);
                 continue;

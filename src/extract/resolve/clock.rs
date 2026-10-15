@@ -7,7 +7,8 @@ use crate::domain::pytext::strip;
 use crate::extract::text::{SPACE, int, pattern, split_tail};
 
 /// Bare hours at or below this are read as pm: this guild's runs are evening
-/// runs, so `930`, `10` and `at 11` mean 21:30, 22:00 and 23:00.
+/// runs, so `930`, `10` and `at 11` mean 21:30, 22:00 and 23:00. A four-digit
+/// time with a leading zero (`0930`, `09:30`) is 24-hour and keeps its hour.
 pub const PM_CUTOFF: u32 = 11;
 
 /// v4's `\b(a\.?m\.?|p\.?m\.?)\b|(?<=\d)\s*(am|pm)\b`. `regex` has no
@@ -57,8 +58,9 @@ fn meridiem_of<'t>(found: &Captures<'t>) -> Option<&'t str> {
     found.get(1).or_else(|| found.get(3)).map(|m| m.as_str())
 }
 
-/// `9:30pm` -> `(21:30, false)`, `930` -> `(21:30, true)`; `None` for anything
-/// that is not a clock time (`night`, `later`, `after boss`).
+/// `9:30pm` -> `(21:30, false)`, `930` -> `(21:30, true)`, `0930` ->
+/// `(09:30, false)`; `None` for anything that is not a clock time (`night`,
+/// `later`, `after boss`).
 pub fn parse_clock(time_ref: Option<&str>) -> Option<(NaiveTime, bool)> {
     let text = strip(time_ref?).to_lowercase();
     if text.is_empty() {
@@ -89,19 +91,32 @@ pub fn parse_clock(time_ref: Option<&str>) -> Option<(NaiveTime, bool)> {
         return None;
     }
 
-    let (hour, minute) = if let Some(found) = HHMM.captures(core) {
-        (int(&found[1])?, int(&found[2])?)
+    // A leading zero on a two-digit hour is 24-hour notation, never pm.
+    let (hour, minute, twenty_four) = if let Some(found) = HHMM.captures(core) {
+        let hour = &found[1];
+        (
+            int(hour)?,
+            int(&found[2])?,
+            hour.len() == 2 && hour.starts_with('0'),
+        )
     } else if let Some(found) = COMPACT.captures(core) {
         let (hour, minute) = split_tail(&found[1], 2);
-        (int(hour)?, int(minute)?)
+        (
+            int(hour)?,
+            int(minute)?,
+            hour.len() == 2 && hour.starts_with('0'),
+        )
     } else {
         let found = HOUR.captures(core)?;
-        (int(&found[1])?, 0)
+        (int(&found[1])?, 0, false)
     };
     if minute > 59 || hour > 23 {
         return None;
     }
-    let (hour, assumed) = apply_meridiem(hour, meridiem);
+    let (hour, assumed) = match meridiem {
+        None if twenty_four => (hour, false),
+        _ => apply_meridiem(hour, meridiem),
+    };
     if hour > 23 {
         return None;
     }
@@ -122,5 +137,24 @@ mod tests {
         assert_eq!(clock("9 pm"), Some(("21:00:00".into(), false)));
         assert_eq!(clock("11\u{1f}am"), Some(("11:00:00".into(), false)));
         assert_eq!(clock("７pm"), Some(("19:00:00".into(), false)));
+    }
+
+    #[test]
+    fn a_leading_zero_four_digit_time_is_24_hour() {
+        assert_eq!(clock("0930"), Some(("09:30:00".into(), false)));
+        assert_eq!(clock("after 0930"), Some(("09:30:00".into(), false)));
+        assert_eq!(clock("0800"), Some(("08:00:00".into(), false)));
+        assert_eq!(clock("09:30"), Some(("09:30:00".into(), false)));
+        assert_eq!(clock("0030"), Some(("00:30:00".into(), false)));
+        // A stated meridiem still applies.
+        assert_eq!(clock("0930pm"), Some(("21:30:00".into(), false)));
+    }
+
+    #[test]
+    fn compact_digits_without_a_leading_zero_keep_the_pm_reading() {
+        assert_eq!(clock("930"), Some(("21:30:00".into(), true)));
+        assert_eq!(clock("9:30"), Some(("21:30:00".into(), true)));
+        assert_eq!(clock("1030"), Some(("22:30:00".into(), true)));
+        assert_eq!(clock("2300"), Some(("23:00:00".into(), false)));
     }
 }

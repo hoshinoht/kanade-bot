@@ -3,11 +3,12 @@
 //! v4 asked `dateparser` first and fell back to the extractor's resolver;
 //! v5 has no general date parser, so the guild's own forms go through the
 //! extractor's resolver directly: a bare clock time (today, or tomorrow once
-//! past, pm assumed as v4), or `<day words> <clock>` including ISO dates:
-//! a separator clock (`09:00`) reads literally as `dateparser` did, compact
-//! digits and bare hours keep the pm reading (v4 respelled `930` → 21:30
-//! first; its day-of-month misreading of `sat 10` is not kept). Free-text dates
-//! only `dateparser` read (`12 september 9pm`, `in 2 hours`) and
+//! past, pm assumed as v4), or `<day words> <clock>` including ISO and
+//! day-of-month dates (`12 september 9pm`): a separator clock (`09:00`) reads
+//! literally as `dateparser` did, a leading-zero four-digit time (`0930`) is
+//! 24-hour, other compact digits and bare hours keep the pm reading (v4
+//! respelled `930` → 21:30 first; its day-of-month misreading of `sat 10` is
+//! not kept). Free-text dates only `dateparser` read (`in 2 hours`) and
 //! unrecognised day words are refused with v4's own message (known
 //! difference K-WHEN-SUBSET).
 
@@ -136,7 +137,6 @@ mod tests {
     fn the_guilds_own_forms_match_the_v4_oracle() {
         for (text, v4) in [
             ("wed 930", "Wed 09 Sep 21:30"),
-            ("wed 0930", "Wed 09 Sep 21:30"),
             ("tmr 1030", "Thu 10 Sep 22:30"),
             ("tomorrow 1200", "Thu 10 Sep 00:00"),
             ("tmr 2300", "Thu 10 Sep 23:00"),
@@ -157,6 +157,15 @@ mod tests {
         assert_eq!(read("yesterday 21:00").unwrap(), "Tue 08 Sep 21:00");
     }
 
+    /// Two forms leave the v4 oracle: a leading-zero time is 24-hour (v4 read
+    /// `wed 0930` as 21:30), and a day-of-month date before the clock now
+    /// reads (only v4's `dateparser` read `12 september 9pm`; v5 refused it).
+    #[test]
+    fn leading_zero_times_and_month_dates_read_as_written() {
+        assert_eq!(read("wed 0930").unwrap(), "Wed 16 Sep 09:30");
+        assert_eq!(read("12 september 9pm").unwrap(), "Sat 12 Sep 21:00");
+    }
+
     /// v4's `dateparser` read a bare hour after a weekday as a day of the
     /// month (`sat 10` → Fri 09 Oct 00:00, `wed 9` → Thu 09 Sep 00:00); v5
     /// keeps the weekday and reads the hour as the compact digits are read.
@@ -168,13 +177,7 @@ mod tests {
 
     #[test]
     fn dateparser_only_forms_are_refused_with_v4s_words() {
-        for text in [
-            "whenever",
-            "",
-            "12 september",
-            "in 2 hours",
-            "12 september 9pm",
-        ] {
+        for text in ["whenever", "", "12 september", "in 2 hours"] {
             assert_eq!(read(text), Err(unreadable(text)), "{text}");
         }
         assert!(
