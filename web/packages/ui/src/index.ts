@@ -107,6 +107,8 @@ export type { Outcome } from './outcome';
 // Members sheet and the portal's Account › Characters, with the routes and wording each app passes.
 export { default as CharacterPanel } from './characters/CharacterPanel.svelte';
 export { default as EstimateProgress } from './characters/EstimateProgress.svelte';
+export { default as ShareChart } from './characters/ShareChart.svelte';
+export { shareBar, shareNotes, whoColour, wholeShares, type ShareBar, type ShareMember, type SharePart } from './characters/shares';
 export {
   activeJob,
   CharacterLinkView,

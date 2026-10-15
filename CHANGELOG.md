@@ -8,6 +8,7 @@ _In development_
 
 ### New features
 - A linked character's roster class and level now take NEXON's values on every refresh, recorded in History as NEXON, and stay on the roster after an unlink or once the NEXON data expires, so other members see the current level.
+- Added "Who carries", a bar per boss showing each member's share of the party's estimate, to the run sheet's Clear-time estimate panel and the member portal's run Party · characters, where the run's total (minutes, %, technically possible) now shows too.
 
 ### Changes
 - Estimates are now labelled “Estimate” on the portals and in Discord.

@@ -2,8 +2,9 @@
 // docs/research/2026-10-12-chardata-mockups): the roster dialog's strip
 // (manual and NEXON values side by side, Link… / Unlink… / Refresh with
 // inline confirmations), the scouter's estimate row and the run sheet's
-// Estimate panel, and Config › Character data's health cards. Admin only:
-// imported by the admin components that draw them, never by the portal.
+// Estimate panel, and Config › Character data's health cards. Imported by
+// the components that draw them: the shared strip, the admin's, and the
+// portal's run total (`PartyShare.svelte`, the panel's totals columns).
 @use "../core/breakpoints" as *;
 @use "../core/mixins" as *;
 

@@ -383,6 +383,28 @@ fn totals(
     }
 }
 
+/// No party member missing and none failed.
+fn party_whole(job: &Job) -> bool {
+    job.missing.is_empty()
+        && !job
+            .results
+            .iter()
+            .any(|result| matches!(result, Some(Err(_))))
+}
+
+/// A finished run lookup's party totals per run boss, and when they came
+/// from the scouter; `None` until it is done, or when the total failed.
+pub fn run_totals(job: &Job, catalog: &BossTable) -> Option<(String, Vec<EstimateCombined>)> {
+    let Some(Ok(found)) = &job.outcome else {
+        return None;
+    };
+    let combined = found.combined.as_ref()?;
+    Some((
+        iso_instant(found.fetched_at),
+        totals(job, combined, party_whole(job), catalog),
+    ))
+}
+
 /// The characters found so far and, once done, the party total; `None`
 /// with nobody found.
 fn result(job: &Job, found: Option<&Found>, catalog: &BossTable) -> Option<EstimateResult> {
@@ -398,11 +420,7 @@ fn result(job: &Job, found: Option<&Found>, catalog: &BossTable) -> Option<Estim
     if members.is_empty() {
         return None;
     }
-    let failed = job
-        .results
-        .iter()
-        .any(|result| matches!(result, Some(Err(_))));
-    let party_whole = job.missing.is_empty() && !failed;
+    let party_whole = party_whole(job);
     let combined = found
         .and_then(|found| found.combined.as_ref())
         .map(|combined| totals(job, combined, party_whole, catalog));

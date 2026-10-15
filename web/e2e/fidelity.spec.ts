@@ -48,6 +48,8 @@ interface Pair {
   setup?: (page: Page) => Promise<void>;
   /** Where the board is a strip of the frame (Mast): open the app at this size, measured against the board's frame. */
   viewport?: { width: number; height: number };
+  /** The board's face, where it is drawn dark. */
+  theme?: 'dark';
   /** Opens the state the board shows and waits for it. */
   ready: (page: Page) => Promise<void>;
   /** Compare only these regions: the board's subject is part of the frame (the rail), the rest draws another page. */
@@ -1128,6 +1130,96 @@ const opens = (open: (page: Page) => Locator, shown: (page: Page) => Locator) =>
   await expect(shown(page)).toBeVisible();
 };
 
+// Estimate share chart, "Who carries" (KANADE_MOCKUPS=docs/research/2026-10-15-estimate-share-chart):
+// the boards redraw the as-built run sheet (r-kalos one boss, r-carling two) and the portal run
+// pane around the panel after an admin's finished party lookup, so the admin pairs compare the
+// Estimate panel the aside (laptop) or Party list (phone) is scrolled to, and the portal pairs
+// Party · characters scrolled into view. The board's party-slot readings are patched, not built.
+const SHARE_SCOPE = [
+  'sheet-aside',
+  'estimate-panel',
+  'estimate-label',
+  'estimate-disclaimer',
+  'estimate-run',
+  'estimate-combined',
+  'estimate-share',
+  'estimate-share-missing',
+  'estimate-members',
+  'estimate-missing',
+  'estimate-assumed',
+  'estimate-issues',
+];
+/** `run`'s full sheet with its finished lookup, the panel scrolled to the top of its box as the boards leave it. */
+const sharePanel = (run: string, title: string) => async (page: Page) => {
+  await page.locator(`[data-run="${run}"] .plan-card__open`).click();
+  if (page.viewportSize()!.width >= 900) await page.getByRole('complementary', { name: title }).getByRole('button', { name: 'Open in a larger view' }).click();
+  const sheet = page.getByRole('dialog', { name: title });
+  await expect(sheet.locator('[data-fid="estimate-share"]')).toBeVisible();
+  await sheet.evaluate((el) => Promise.all(el.getAnimations({ subtree: true }).map((a) => a.finished)));
+  await sheet.locator('[data-fid="estimate-panel"]').evaluate((panel) => {
+    for (let box = panel.parentElement; box; box = box.parentElement)
+      if (box.scrollHeight > box.clientHeight && getComputedStyle(box).overflowY !== 'visible')
+        box.scrollTop = panel.getBoundingClientRect().top - box.getBoundingClientRect().top + box.scrollTop - 8;
+  });
+};
+/** The run's finished lookup, one member's critical rate assumed as the boards draw (Ren on Kalos, Mika on Carling + Star). */
+const shareLookedUp = (run: string) => async (page: Page) => {
+  await setEstimates('assumed', run === 'r-kalos' ? 'RenShade' : 'MikaBish');
+  const headers = await csrf(page.request);
+  const { job } = await (await page.request.post(`${ADMIN}/api/admin/estimates`, { headers, data: { run_id: run } })).json();
+  await expect.poll(async () => (await (await page.request.get(`${ADMIN}/api/admin/estimates/${job.id}`)).json()).state, { timeout: 30_000 }).toBe('done');
+};
+/** The portal boards tag only the pane and Party · characters (the rest is the as-built week the mc-* pairs compare). */
+const SHARE_PORTAL_SCOPE = [
+  'week-pane',
+  'week-party-chars',
+  'party-chars-note',
+  'estimate-combined',
+  'estimate-share',
+  'estimate-share-keys',
+  'estimate-share-missing',
+  'party-char-row',
+  'party-char-line',
+  'party-char-estimate',
+];
+const SHARE_PAIRS: Pair[] = [
+  ...(
+    [
+      ['share', 'B_RunShareA', 'r-kalos', 'XKalos', undefined],
+      ['share-dark', 'B_RunShareDark', 'r-kalos', 'XKalos', 'dark'],
+      ['share-multi', 'B_RunShareMultiA', 'r-carling', 'HCarling + HMaleficStar', undefined],
+      ['share-multi-dark', 'B_RunShareMultiDark', 'r-carling', 'HCarling + HMaleficStar', 'dark'],
+      ['phone-share', 'B_PhoneRunShareA', 'r-kalos', 'XKalos', undefined],
+      ['phone-share-dark', 'B_PhoneRunShareDark', 'r-kalos', 'XKalos', 'dark'],
+      ['phone-share-multi', 'B_PhoneRunShareMulti', 'r-carling', 'HCarling + HMaleficStar', undefined],
+    ] as const
+  ).map(([name, board, run, title, theme]): Pair => ({ name, board, path: '/', theme, scope: SHARE_SCOPE, setup: shareLookedUp(run), ready: sharePanel(run, title) })),
+  ...(
+    [
+      ['mc-share', 'M_RunShare', 'r-kalos', undefined],
+      ['mc-share-multi', 'M_RunShareMulti', 'r-carling', 'dark'],
+      ['mc-phone-share', 'M_PhoneRunShare', 'r-carling', undefined],
+    ] as const
+  ).map(
+    ([name, board, run, theme]): Pair => ({
+      name,
+      board,
+      app: 'public',
+      path: `/?run=${run}`,
+      theme,
+      scope: SHARE_PORTAL_SCOPE,
+      setup: async (page) => {
+        await boardRoster(page);
+        await shareLookedUp(run)(page);
+      },
+      ready: async (page) => {
+        await expect(page.locator('[data-fid="estimate-share"]')).toBeVisible();
+        await runParty(page);
+      },
+    }),
+  ),
+];
+
 const PAIRS: Pair[] = [
   { name: 'inbox-self', board: 'B_InboxSelf', path: '/inbox?tab=self_service&item=p-fa-request', ready: visible((page) => page.getByText('Changed since the member asked')) },
   {
@@ -1693,7 +1785,7 @@ const PAIRS: Pair[] = [
 test.describe('layout fidelity', () => {
   test.skip(!ENABLED, 'run with `bun run fidelity` (needs a KANADE_FIDELITY=1 build)');
 
-  for (const pair of [...PAIRS, ...DRAFT_PAIRS, ...GRAPH_PAIRS, ...PRESENCE_PAIRS, ...PUBLIC_PAIRS, ...MEMBER_CHAR_PAIRS].filter((p) => !ONLY.length || ONLY.includes(p.name))) {
+  for (const pair of [...PAIRS, ...DRAFT_PAIRS, ...GRAPH_PAIRS, ...PRESENCE_PAIRS, ...PUBLIC_PAIRS, ...MEMBER_CHAR_PAIRS, ...SHARE_PAIRS].filter((p) => !ONLY.length || ONLY.includes(p.name))) {
     test(pair.name, async ({ page, browser }) => {
       test.skip(!boardExists(pair.board), `no board ${pair.board}.dc.html under ${MOCKUPS}`);
       const dir = join(OUT, pair.name);
@@ -1708,8 +1800,8 @@ test.describe('layout fidelity', () => {
       await board.page.close();
 
       await page.setViewportSize(pair.viewport ?? { width: board.width, height: board.height });
-      // The face the boards are drawn in: the admin boards in Nazuna, the portal's in Otonose.
-      await useLook(page, pair.app === 'public' ? 'marigold' : 'blossom');
+      // The face the boards are drawn in: the admin boards in Nazuna, the portal's in Otonose (dark where the board is).
+      await useLook(page, pair.app === 'public' ? 'marigold' : 'blossom', pair.theme ?? 'light');
       await pair.setup?.(page);
       await page.goto(`${pair.app === 'public' ? PUBLIC : ADMIN}${pair.path}${pair.path.includes('?') ? '&' : '?'}sw=off`);
       await pair.ready(page);

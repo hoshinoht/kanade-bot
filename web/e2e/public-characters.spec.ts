@@ -355,6 +355,46 @@ test('run Party · characters on a phone: each slot gains its character line', a
   await expect(page.locator('.party-chars__note')).toContainText('Clear-time estimate');
 });
 
+/** An admin looks the run's party up, as the portal's cached readings and run total need. */
+async function lookedUpRun(page: Page, run: string) {
+  const headers = await csrf(page.request);
+  const { job } = await (await page.request.post(`${ADMIN}/api/admin/estimates`, { headers, data: { run_id: run } })).json();
+  await expect.poll(async () => (await (await page.request.get(`${ADMIN}/api/admin/estimates/${job.id}`)).json()).state, { timeout: 30_000 }).toBe('done');
+}
+
+test('run Party · characters: the run total, then Who carries with its key, then the members', async ({ page }) => {
+  await signInPublic(page);
+  await roster(page);
+  const before = (await (await page.request.get(`${PUBLIC}/api/public/runs/r-carling/characters`)).json()) as { totals: unknown };
+  expect(before.totals).toBeNull();
+  await lookedUpRun(page, 'r-carling');
+  await page.goto(`${PUBLIC}/?run=r-carling&sw=off`);
+  const section = page.getByRole('region', { name: 'Party · characters' });
+  const total = section.locator('.estimate__combined');
+  await expect(total.locator('.chardata__col')).toHaveCount(2);
+  await expect(total).toContainText('Karling');
+  await expect(total).toContainText(/\d+(\.\d)? min ?· \d+\.\d%/);
+  await expect(total).toContainText('technically possible');
+  // Below the note: total, chart, then the members; no swatch on a member row.
+  const order = await section.evaluate((el) => [...el.children].map((child) => child.className.split(' ')[0]));
+  expect(order.slice(order.indexOf('party-chars__note'))).toEqual(['party-chars__note', 'estimate__combined', 'share', 'party-chars']);
+  await expect(section.locator('.party-char .share__sw')).toHaveCount(0);
+  const chart = section.locator('figure.share');
+  const bars = chart.getByRole('img');
+  await expect(bars).toHaveCount(2);
+  for (const bar of await bars.all()) {
+    const shares = (await bar.locator('.share__seg').evaluateAll((els) => els.map((el) => el.getAttribute('title') ?? ''))).map((t) => Number(/· (\d+)% of/.exec(t)![1]));
+    expect(shares.reduce((a, b) => a + b, 0)).toBe(100);
+  }
+  // The key: party order, "You" for the signed-in member, the same numbers as the parts.
+  const keys = chart.getByRole('list', { name: 'Who is which number' }).getByRole('listitem');
+  const parts = await bars.first().locator('.share__n').allTextContents();
+  expect(await keys.locator('.share__sw').allTextContents()).toEqual(parts);
+  await expect(keys.filter({ hasText: 'You' })).toHaveCount(1);
+  // Ren (2) brings no character: counted, never a 0% part (the portal names members as the party list does).
+  await expect(chart.locator('.share__note').last()).toHaveText('1 with no estimate: Ren (not in the total, never 0%)');
+});
+
 test('other members’ characters, lookups and runs are the generic 404', async ({ page }) => {
   await signInPublic(page);
   await roster(page);

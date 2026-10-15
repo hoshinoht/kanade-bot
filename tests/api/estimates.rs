@@ -1032,6 +1032,7 @@ async fn an_assumed_critical_rate_is_labelled_in_the_result_and_readiness() {
         ready_slot(&ready, "1001")["bosses"][0]["scouter"],
         json!({
             "percentage": 9.0,
+            "effective_percentage": 9.0,
             "rating": "6p Min Cut",
             "estimated_minutes": 3000.0 / 9.0,
             "fetched_at": "2026-09-29T04:00:00Z",
@@ -1175,7 +1176,7 @@ async fn readiness_shows_cached_scouter_readings_per_boss_and_never_looks_up() {
     let alice = ready_slot(&mixed, "1001");
     assert_eq!(
         alice["bosses"][0]["scouter"],
-        json!({"percentage": 9.0, "rating": "6p Min Cut", "estimated_minutes": 3000.0 / 9.0, "fetched_at": "2026-09-29T04:00:00Z", "critical_rate_assumed": false, "critical_rate_actual": null})
+        json!({"percentage": 9.0, "effective_percentage": 9.0, "rating": "6p Min Cut", "estimated_minutes": 3000.0 / 9.0, "fetched_at": "2026-09-29T04:00:00Z", "critical_rate_assumed": false, "critical_rate_actual": null})
     );
     assert_eq!(alice["power"], Value::Null);
     let bob = ready_slot(&mixed, "1002");

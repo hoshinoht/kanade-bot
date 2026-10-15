@@ -240,6 +240,26 @@ test('chardata estimate panel: party lookup with totals, missing members and the
   await expect(panel.locator('.estimate__missing')).toHaveText([/Ren \(2\) missing · no characters on the roster/]);
   await expect(panel.locator('p.chardata__foot')).toContainText('Ren (2) has no character (missing, never 0%).');
   await expect(panel.locator('.estimate__head + .chardata__sub')).toContainText('kept 24 h in memory');
+  // Who carries: between the totals and the table, one 100% bar per boss in party order, each part
+  // numbered as its table row; the member with no character is counted, never a 0% part.
+  const chart = panel.locator('figure.share');
+  await expect(chart).toBeVisible();
+  expect(await chart.evaluate((el) => el.previousElementSibling?.classList.contains('estimate__combined') && el.nextElementSibling?.tagName === 'TABLE')).toBe(true);
+  const bars = chart.getByRole('img');
+  await expect(bars).toHaveCount(2);
+  await expect(bars.first()).toHaveAttribute('aria-label', /^HCarling shares: .+%; 1 with no estimate$/);
+  const rows = await members.locator('tbody tr:not(.estimate__missing)').count();
+  for (const bar of await bars.all()) {
+    const parts = bar.locator('.share__seg');
+    await expect(parts).toHaveCount(rows);
+    expect(await parts.locator('.share__n').allTextContents()).toEqual(Array.from({ length: rows }, (_, i) => String(i + 1)));
+    const shares = (await parts.evaluateAll((els) => els.map((el) => el.getAttribute('title') ?? ''))).map((t) => Number(/· (\d+)% of/.exec(t)![1]));
+    expect(shares.reduce((a, b) => a + b, 0)).toBe(100);
+  }
+  await expect(chart.locator('.share__note')).toHaveText(['1 with no estimate: Ren (2) (not in the total, never 0%)']);
+  // The table's rows carry the same numbers; the missing row a hollow swatch.
+  await expect(members.locator('tbody tr:not(.estimate__missing) .share__sw')).toHaveText(Array.from({ length: rows }, (_, i) => String(i + 1)));
+  await expect(members.locator('.estimate__missing .share__sw--none')).toHaveCount(1);
 });
 
 test('chardata estimate panel: queued behind another lookup, a member that fails, and off', async ({ page }) => {
@@ -267,6 +287,12 @@ test('chardata estimate panel: queued behind another lookup, a member that fails
   await expect(panel.locator('p.chardata__foot')).toContainText('couldn’t be looked up: the totals leave them out.');
   await expect(panel.locator('.estimate__error')).toHaveCount(0);
   await expect(panel.getByRole('button', { name: 'Try again' })).toBeVisible();
+  // The failed member keeps their number in the table but has no part, and is counted.
+  const failedNumber = (await panel.locator('tbody tr').evaluateAll((rows) => rows.findIndex((row) => row.classList.contains('estimate__failed')))) + 1;
+  await expect(failed.locator('.share__sw--none')).toHaveCount(1);
+  const parts = panel.locator('figure.share .share__seg .share__n');
+  expect(await parts.allTextContents()).not.toContain(String(failedNumber));
+  await expect(panel.locator('figure.share .share__note').last()).toHaveText(/^2 with no estimate: .+ and Ren \(2\) \(not in the total, never 0%\)$/);
 
   await resetWeek();
   await estimates(page, 'off');
@@ -285,6 +311,9 @@ test('chardata estimate panel: members fill in as each finishes, and readiness f
   await expect(found).toHaveCount(1, { timeout: 10_000 });
   await expect(panel.locator('.estimate__pending').first()).toBeVisible();
   await expect(panel.locator('.estimate__progress')).toBeVisible();
+  // No chart and no colours until the lookup is done.
+  await expect(panel.locator('figure.share')).toHaveCount(0);
+  await expect(panel.locator('.share__sw')).toHaveCount(0);
   // Readiness is read again for that member, before the lookup ends.
   await expect(sheet.locator('.ready__scouter').first()).toBeVisible();
   await expect(panel.locator('.estimate__pending').first()).toBeVisible();
@@ -301,6 +330,12 @@ test('chardata estimate: an assumed critical rate is labelled in the panel, the 
   await expect(panel.locator('.estimate__assumed')).toHaveText(['Assumes 100% critical rate (actual 89%)']);
   await expect(panel.locator('p.chardata__foot')).toContainText('at an assumed 100% critical rate.');
   await expect(panel.locator('.estimate__head + .chardata__sub')).toContainText('For planning only, not eligibility.');
+  // Who carries hatches and stars MikaBish's parts and names her in its note.
+  const hatched = panel.locator('figure.share .share__seg--assumed');
+  await expect(hatched).toHaveCount(2);
+  await expect(hatched.locator('.share__pct').first()).toHaveText(/^\d+%\*$/);
+  await expect(panel.locator('figure.share .share__note').first()).toHaveText('* MikaBish at an assumed 100% critical rate');
+  await expect(panel.locator('.estimate__who .share__sw--assumed')).toHaveCount(1);
   const chip = sheet.locator('.ready__scouter', { hasText: 'crit assumed' }).first();
   await expect(chip).toHaveText(/^Estimate \d+%( · ~\d+ min)? · crit assumed/);
   await expect(chip).toHaveAttribute('title', /Assumes 100% critical rate \(actual 89%\)$/);

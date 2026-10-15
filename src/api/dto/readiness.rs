@@ -121,6 +121,9 @@ pub struct ScouterReading {
     /// The character's share (`effective_percentage`), else the card's
     /// percentage.
     pub percentage: f64,
+    /// The character's own share only; `null` when the scouter can't
+    /// tell (shares of a party total count only this, never `percentage`).
+    pub effective_percentage: Option<f64>,
     pub rating: String,
     pub estimated_minutes: Option<f64>,
     /// When kanade received it from the scouter.
@@ -144,6 +147,7 @@ pub fn reading(
     let assumed = member.crit_assumed();
     Some(ScouterReading {
         percentage: card.effective_percentage.unwrap_or(card.percentage),
+        effective_percentage: card.effective_percentage,
         rating: card.rating.clone(),
         estimated_minutes: card.estimated_minutes,
         fetched_at: iso_instant(fetched_at),

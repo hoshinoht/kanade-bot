@@ -143,6 +143,24 @@
   --guide-safe: #cfe6d9;
   --guide-safe-ink: #1f5e44;
 
+  /* Estimate share chart: one colour per party member by their row in the
+     members table (Okabe–Ito, yellow left out), each with its number on
+     top. Fixed like the pills: no colourway moves them. */
+  --who-1: #0072b2;
+  --who-1-ink: #ffffff;
+  --who-2: #e69f00;
+  --who-2-ink: #2a1d00;
+  --who-3: #009e73;
+  --who-3-ink: #00241a;
+  --who-4: #cc79a7;
+  --who-4-ink: #2b0f20;
+  --who-5: #56b4e9;
+  --who-5-ink: #0b2638;
+  --who-6: #d55e00;
+  --who-6-ink: #2b1300;
+  /* Light faces bound each part with 1 px of ink (three fills are under 3:1 against the row). */
+  --who-edge: var(--ink);
+
   /* The boss monogram's tint, as numbers rather than colours: the hue is set
      per boss on the element (`--mono-hue`), and only the saturation and
      lightness change between the two faces. */
@@ -477,6 +495,20 @@
   --guide-risk-ink: #2b0b08;
   --guide-safe: #2b5242;
   --guide-safe-ink: #d4f3e1;
+
+  --who-1: #3a9ad9;
+  --who-1-ink: #00182b;
+  --who-2: #e69f00;
+  --who-2-ink: #2a1d00;
+  --who-3: #14b386;
+  --who-3-ink: #00241a;
+  --who-4: #d98bb6;
+  --who-4-ink: #2b0f20;
+  --who-5: #7cc6f0;
+  --who-5-ink: #0b2638;
+  --who-6: #e36d14;
+  --who-6-ink: #2b1300;
+  --who-edge: transparent;
 
   --mono-s: 32%;
   --mono-l: 24%;

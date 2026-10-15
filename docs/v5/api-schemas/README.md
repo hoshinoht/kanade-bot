@@ -312,3 +312,9 @@ Pointers are `<file>#/$defs/<Name>`.
   `MyDataEntry.notice`/`consented_at` are null for an admin's link;
   `PendingLink` and `LinkNotice.request` now name a link waiting for the
   member to confirm a new notice (no field changes).
+- Estimate shares (2026-10-15): `character_data.json`
+  `ScouterReading.effective_percentage` (and `public.json`
+  `PartyEstimate.effective_percentage`): the character's own share or
+  null, never the party card's figure `percentage` falls back to;
+  `public.json` `RunPartyCharacters.totals` (`PartyTotals`, `PartyTotal`):
+  the run's newest finished party lookup per boss, or null.

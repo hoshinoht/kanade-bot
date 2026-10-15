@@ -92,6 +92,7 @@ describe('run readiness', () => {
   const boss = (level: BossReadiness['level'], scouter: ScouterReading | null = null): BossReadiness => ({ boss: 'Carling', difficulty: 'h', entry_level: 275, level, scouter });
   const reading = (over: Partial<ScouterReading> = {}): ScouterReading => ({
     percentage: 164.2,
+    effective_percentage: 164.2,
     rating: '2p Min Cut',
     estimated_minutes: 18.3,
     fetched_at: '2026-09-29T02:10:00Z',
