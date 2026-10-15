@@ -17,7 +17,7 @@ use axum::{
 use chrono::{DateTime, TimeDelta, TimeZone, Utc};
 
 use super::*;
-use crate::domain::characters::{CharacterChange, CharacterRecord, CharacterRole};
+use crate::domain::characters::{CharacterChange, CharacterRecord, CharacterRole, CharacterWrite};
 use crate::domain::chardata::{
     CharDataStore, ConsentSurface, DAILY_CALLS, Link, LinkStatus, NOTICE_VERSION, Post,
 };
@@ -927,6 +927,89 @@ async fn rename(rig: &Rig, id: &str, ign: &str) -> crate::domain::characters::Ch
         .await
         .unwrap();
     after
+}
+
+/// User decision: a retired character keeps its NEXON data until it expires
+/// (refresh paused), so the strip can say when it will be deleted; then it
+/// reads as gone and the sweep removes the link.
+#[tokio::test]
+async fn a_retired_character_keeps_its_data_until_it_expires() {
+    let rig = rig().await;
+    // c2 "Heather", an alt (a main cannot be retired while it is the main).
+    rig.fake.queue("basic", [(200, basic("Heather"))]);
+    let ConfirmOutcome::Linked(_, FetchState::Stored) = rig
+        .service
+        .confirm_link(
+            "1001",
+            "c2",
+            NOTICE_VERSION,
+            crate::domain::chardata::ConsentSurface::Discord,
+        )
+        .await
+        .unwrap()
+    else {
+        panic!("c2 linked with data");
+    };
+    let current = roster_row(&rig, "c2").await;
+    let mut retired = current.clone();
+    retired.retired_at = Some(at(11, 1));
+    let retired = retired.next_version(at(11, 1), &Actor::admin("token"));
+    let written = rig
+        .roster
+        .apply_character(
+            CharacterChange::Update {
+                version: current.version,
+                after: retired.clone(),
+            },
+            CharacterRecord {
+                at: at(11, 1),
+                actor: Actor::admin("token"),
+                surface: Surface::AdminPortal,
+            },
+        )
+        .await
+        .unwrap();
+    assert!(matches!(written, CharacterWrite::Updated(_)), "{written:?}");
+    rig.service
+        .roster_changed(
+            "c2",
+            Some(&retired),
+            &Actor::admin("token"),
+            Surface::AdminPortal,
+        )
+        .await;
+
+    let view = rig.service.view("c2").await.unwrap();
+    assert_eq!(
+        view.link.unwrap().status,
+        LinkStatus::Active,
+        "still linked"
+    );
+    let snapshot = view.snapshot.expect("kept while retired");
+    assert_eq!(snapshot.character_name.as_deref(), Some("Heather"));
+    assert_eq!(
+        rig.service.data("c2").await.unwrap().as_ref(),
+        Some(&snapshot)
+    );
+    assert_eq!(
+        rig.service.status("c2").await.unwrap().snapshot.as_ref(),
+        Some(&snapshot)
+    );
+    assert_eq!(rig.service.sweep().await.unlinked, 0, "kept while fresh");
+
+    rig.set_now(snapshot.expires_at);
+    assert_eq!(
+        rig.service.view("c2").await.unwrap().snapshot,
+        None,
+        "expired"
+    );
+    assert_eq!(rig.service.data("c2").await.unwrap(), None);
+    assert_eq!(
+        rig.service.sweep().await.unlinked,
+        1,
+        "retired with expired data"
+    );
+    assert_eq!(rig.link("c2").await, None);
 }
 
 /// An IGN edit whose post-commit unlink fails: reads fail closed (no data,

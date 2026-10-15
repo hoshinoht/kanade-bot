@@ -204,7 +204,7 @@ export type ProposalKind = 'move' | 'add' | 'cancel' | 'split' | 'otot' | 'sub' 
  * `POST /api/admin/inbox/{id}/approve`. Requests need `version` (and, for
  * `change_fixed`, `choices`, `{}` when none are listed) and may carry an
  * `edit` (new weekly day/time per change, changes left out; 409 `stale`
- * when the member changed the request meanwhile); proposals take an
+ * when the request changed meanwhile: another admin's edit); proposals take an
  * optional `version` and, for a move, new run or split, an edit: `day`
  * (0–6) in the boss week of the proposed time and `time` `HH:MM`.
  * Conflicts always block; there is no `force`.

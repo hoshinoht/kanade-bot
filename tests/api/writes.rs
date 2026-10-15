@@ -2,16 +2,18 @@
 //! Tue 29 Sep 12:00 KL; `r-kalos` is Tue 22:00 this week, amended off its
 //! weekly timing `f-kalos`). Every response is validated against A0.
 
+use chrono::{TimeZone, Utc};
 use kanade::domain::{
     history::{BlameTarget, ChangeHistory, ChangeMeta, Origin, Surface, changed_fields},
     members::MemberStore,
     notify::{DeclineNotice, DeclineNoticeStore, NoticeOutbox},
     schedule::{Change, ChangeSet, Rsvp, RsvpSource, RsvpState},
+    scheduler::{ScheduleStore, Scope},
 };
 use serde_json::{Value, json};
 
 use crate::{
-    reads::Reads,
+    reads::{Reads, commit_as},
     schemas::assert_valid,
     support::{ADMIN_HOST, Reply, fields, find, send},
 };
@@ -899,6 +901,66 @@ async fn weekly_timings_create_edit_with_decisions_and_retire() {
     assert_eq!(valid.await["bosses"].as_array().unwrap().len(), 2);
     let refusal = reads.refused("POST", path, json!({"text": "kalos"})).await;
     assert_eq!(refusal.1, "invalid");
+}
+
+/// An amended run that has already ended is frozen: a day/time edit leaves
+/// it alone, so the timing's read must not offer it as a Keep/Update choice
+/// (it did, and the save the editor then sent was `choices_not_applicable`).
+#[tokio::test]
+async fn an_ended_amended_run_is_not_offered_as_a_timing_choice() {
+    let reads = Reads::build(|b| b.run_ends = true).await;
+    let snapshot = reads.store.load(&Scope::All).await.unwrap();
+    let mut early = snapshot
+        .runs
+        .iter()
+        .find(|run| run.id == "r-kalos")
+        .unwrap()
+        .clone();
+    // Tue 09:00 KL, off its 22:00 timing and over by the pinned 12:00.
+    early.datetime = Utc.with_ymd_and_hms(2026, 9, 29, 1, 0, 0).unwrap();
+    let at = Utc.with_ymd_and_hms(2026, 9, 29, 3, 0, 0).unwrap();
+    commit_as(&reads.store, "test", at, vec![Change::PutRun(early)]).await;
+
+    let amended = |row: &Value| -> Vec<(String, String, bool)> {
+        row["runs"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|run| {
+                (
+                    run["run_id"].as_str().unwrap().to_owned(),
+                    run["time"].as_str().unwrap().to_owned(),
+                    run["amended"].as_bool().unwrap(),
+                )
+            })
+            .collect()
+    };
+    let (_, row) = reads.rows().await;
+    assert_eq!(
+        amended(&row),
+        [
+            ("r-kalos".into(), "09:00".into(), false),
+            ("n-kalos".into(), "22:00".into(), false)
+        ],
+        "the ended run is not offered"
+    );
+
+    // What the editor sends with nothing to ask: no decisions. Cara has lost
+    // the bossing role, so the party drops her (a change the ended run skips).
+    let mut edit = json!({
+        "weekday": 1, "time": "21:30", "bosses": "xkalos", "participants": ["1001", "1002"],
+        "channel_id": "kalos-four", "note": "bring pots"
+    });
+    edit["version"] = reads.version().await.into();
+    let row = reads.ok("PATCH", F_KALOS, edit, FIXED_ROW).await;
+    assert_eq!(
+        amended(&row),
+        [
+            ("r-kalos".into(), "09:00".into(), false),
+            ("n-kalos".into(), "21:30".into(), false)
+        ],
+        "the ended run keeps its slot; next week's follows the timing"
+    );
 }
 
 #[tokio::test]

@@ -12,7 +12,9 @@ use axum::{
     routing::get,
 };
 
-use super::context::{context, frames, next_week, roster, run_lengths, state, unavailable, weeks};
+use super::context::{
+    context, frames, next_week, roster, run_ends, run_lengths, state, unavailable, weeks,
+};
 use crate::api::{
     auth::AdminSession,
     dto::{self, Art, Named},
@@ -102,7 +104,14 @@ async fn fixed(State(site): State<Arc<Site>>, _: AdminSession) -> Reply {
     let snapshot = weeks(state, vec![this.start, next.start]).await?;
     let profiles = state.store.members().await.map_err(unavailable)?;
     let ctx = context(&site, state, roster(&profiles), now);
-    Ok(Json(dto::fixed::rows(&ctx, &snapshot, [this.start, next.start])).into_response())
+    let ends = run_ends(state).await;
+    Ok(Json(dto::fixed::rows(
+        &ctx,
+        &snapshot,
+        [this.start, next.start],
+        &ends,
+    ))
+    .into_response())
 }
 
 async fn reminders(State(site): State<Arc<Site>>, _: AdminSession) -> Reply {

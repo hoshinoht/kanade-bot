@@ -14,6 +14,13 @@ _In development_
 - Fixed phones cutting off a member's runs in the Week's Answers view and the Reminders count running past the window edge.
 - Fixed low-contrast "still a question" chips on the selected Inbox item in the Sumire dark and Catppuccin light colourways.
 - Fixed Config › Persona showing only a reply profile's first line when you open its whole prompt.
+- Fixed Fixed timings asking Keep or Update for a run that had already ended this week, which then made the save fail.
+- Fixed Config › Models resetting a "Same as extraction" role to Off when its model requires reasoning; it now takes the model's lowest level, so the save goes through.
+- Fixed History listing every reminder card of a moved run instead of one "reminders re-placed" line.
+- Fixed a retired character's NEXON data disappearing at once; it now stays, with its deletion date, until it expires.
+- Fixed the member portal's Move page starting a sentence with a lowercase "an admin".
+- Fixed the Inbox toast for a refused edited approval blaming the member, when another admin had changed the request.
+- Fixed screen readers reading the tick on picked party members in the Fixed timing editor as part of the name.
 
 ### Removed
 - Removed the one-off `kanade import v4` command; v4 data already imported stays readable.

@@ -38,7 +38,7 @@
               "day": { "type": "integer", "minimum": 0, "maximum": 6 },
               "time": { "$ref": "week.json#/$defs/RunTime" },
               "status": { "$ref": "common.json#/$defs/RunStatus" },
-              "amended": { "type": "boolean" }
+              "amended": { "type": "boolean", "description": "Off its weekly timing this week (day, time or roster) and not yet ended; an ended run is frozen, so a timing edit never asks about it." }
             }
           }
         }

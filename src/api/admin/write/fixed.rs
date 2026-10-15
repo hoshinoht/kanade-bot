@@ -21,7 +21,7 @@ use super::{
 };
 use crate::{
     api::{
-        admin::context::{context, frames, roster, weeks},
+        admin::context::{context, frames, roster, run_ends, weeks},
         auth::AdminSession,
         dto::{self, Art},
         error::ApiError,
@@ -149,7 +149,8 @@ async fn row(
     let [this, next] = frames(state, now).map_err(Refusal::from)?;
     let snapshot = weeks(state, vec![this.start, next.start]).await?;
     let ctx = context(site, state, roster(profiles), now);
-    dto::fixed::rows(&ctx, &snapshot, [this.start, next.start])
+    let ends = run_ends(state).await;
+    dto::fixed::rows(&ctx, &snapshot, [this.start, next.start], &ends)
         .into_iter()
         .find(|row| row.id == fixed_id)
         .map(|row| Json(row).into_response())

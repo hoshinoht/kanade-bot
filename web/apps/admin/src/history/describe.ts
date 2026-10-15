@@ -184,25 +184,33 @@ export function describe(record: ChangeRecord, names: Names, timeZone: string, r
     if (row.key.table === 'runs') titles.set(row.key.id, title(row.after ?? row.before));
   }
   const ctx: Ctx = { names, timeZone, runTitle: (id) => titles.get(id) ?? runTitle?.(id) ?? 'a run' };
-  // A move re-places its reminders: one line on the run, not one per card.
-  const followers = new Map<string, number>();
-  for (const row of record.rows) {
+  // A move re-places its reminders: one line on the run, not one per card. The scheduler
+  // withdraws the old rows and writes new ones (a rebuild), so a withdrawal, a new row and an
+  // in-place change all fold; counted per card kind. A delivery's send is its own line, and a
+  // run that did not move (cancelled, say) keeps a line per card.
+  const moved = new Set<string>();
+  for (const { key, before, after } of record.rows) {
+    if (key.table === 'runs' && before && after && (!same(before.datetime, after.datetime) || (before.status === 'otot') !== (after.status === 'otot'))) moved.add(key.id);
+  }
+  const folds = (row: RowChange) => {
     const run = str((row.after ?? row.before)?.run_id);
-    if (row.key.table === 'reminders' && titles.has(run) && row.before && row.after && !(!row.before.sent_at && row.after.sent_at)) {
-      followers.set(run, (followers.get(run) ?? 0) + 1);
-    }
+    return moved.has(run) && !(row.before && row.after && !row.before.sent_at && row.after.sent_at);
+  };
+  const followers = new Map<string, Set<string>>();
+  for (const row of record.rows) {
+    if (row.key.table !== 'reminders' || !folds(row)) continue;
+    const card = row.after ?? row.before;
+    const run = str(card?.run_id);
+    followers.set(run, (followers.get(run) ?? new Set()).add(str(card?.kind)));
   }
   return collapse(record.rows.flatMap((row) => {
     switch (row.key.table) {
       case 'runs':
-        return runLines(row, ctx, followers.get(row.key.id) ?? 0);
+        return runLines(row, ctx, followers.get(row.key.id)?.size ?? 0);
       case 'rsvps':
         return [rsvpLine(row, ctx)];
-      case 'reminders': {
-        const run = str((row.after ?? row.before)?.run_id);
-        const folded = followers.has(run) && row.before && row.after && !(!row.before.sent_at && row.after.sent_at);
-        return folded ? [] : [reminderLine(row, ctx)];
-      }
+      case 'reminders':
+        return folds(row) ? [] : [reminderLine(row, ctx)];
       default:
         return fixedLines(row);
     }

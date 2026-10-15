@@ -41,6 +41,7 @@ use kanade::{
     domain::{
         attendance::AttendanceDefault,
         catalog::{BossSpec, BossTable, CatalogSpec, DifficultySpec, GuideSpec},
+        completion::RunEndsSource,
         history::{Actor, ChangeMeta, Origin, Surface},
         ids::RandomIds,
         members::{Member, MemberProfile, MemberStore, PingLevel, Roster},
@@ -51,6 +52,7 @@ use kanade::{
         },
         scheduler::SchedulerService,
         scheduler::{ScheduleStore, Scope},
+        settings::RunLengths,
     },
     infrastructure::store::{SqliteStore, SqliteStoreConfig},
 };
@@ -92,6 +94,9 @@ pub(crate) struct Build {
     pub(crate) characters: bool,
     /// Module `character_data` switched on.
     pub(crate) character_data: Option<CharacterDataMaker>,
+    /// The writer freezes ended runs (serve's `RunEnds` from the default
+    /// run lengths); `false` keeps v4 rules, where nothing ends.
+    pub(crate) run_ends: bool,
 }
 
 impl Default for Build {
@@ -107,6 +112,7 @@ impl Default for Build {
             rescans: true,
             characters: false,
             character_data: None,
+            run_ends: false,
         }
     }
 }
@@ -656,6 +662,7 @@ impl Reads {
             rescans: with_rescans,
             characters,
             character_data,
+            run_ends,
         } = build;
         let dir = TempDir::new();
         let backup_dir = backup_dir.then(|| {
@@ -723,7 +730,15 @@ impl Reads {
                     SECOND_TAILSCALE_ADMIN.to_owned(),
                 ]);
         }
-        let writer = Arc::new(SchedulerWriter::new(scheduler(&store, pinned)));
+        let mut service = scheduler(&store, pinned);
+        if run_ends {
+            service = service.with_run_ends(RunEndsSource::fixed(
+                RunLengths::default(),
+                Some(Arc::new(catalog())),
+                policy_resetting(reset),
+            ));
+        }
+        let writer = Arc::new(SchedulerWriter::new(service));
         let rescans = FakeRescans::new(pinned);
         let proposal_refreshes = Arc::new(Mutex::new(Vec::new()));
         let proposal_refresh: ProposalCardRefresh = {

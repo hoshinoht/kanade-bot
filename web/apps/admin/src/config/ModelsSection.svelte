@@ -17,6 +17,7 @@
     keyLine,
     modelOptions,
     reasoningChoices,
+    resetLevel,
     resetStrandedInheritors,
     ROLES,
     rowCheckText,
@@ -87,7 +88,7 @@
     const resolved = current === '' ? roles.extraction.reasoning : current;
     // As the server: `off` where allowed, else the lowest published level.
     const next = info(alias);
-    if (!isReasoningValid(next, resolved)) roles[role].reasoning = next?.off_allowed === false ? (next.reasoning_efforts?.[0] ?? 'off') : 'off';
+    if (!isReasoningValid(next, resolved)) roles[role].reasoning = resetLevel(next);
     noteResets();
   }
 
@@ -100,9 +101,17 @@
   // there must not leave a role inheriting a level its model does not publish.
   function noteResets() {
     const reset = resetStrandedInheritors(roles, models.catalog);
-    if (!reset.length) resetNote = '';
-    else
-      resetNote = `${reset.map((r) => ROLES.find((x) => x.id === r)!.name).join(' and ')} reasoning reset to Off: ${roles.extraction.reasoning} is not published for ${reset.map((r) => roles[r].alias).join(' / ')}.`;
+    const extraction = roles.extraction.reasoning;
+    // One sentence per level reset to (a model requiring reasoning takes its lowest level, not Off).
+    const levels = [...new Set(reset.map((r) => roles[r].reasoning))];
+    resetNote = levels
+      .map((level) => {
+        const named = reset.filter((r) => roles[r].reasoning === level);
+        const aliases = named.map((r) => roles[r].alias).join(' / ');
+        const why = extraction === 'off' ? `${aliases} requires reasoning` : `${extraction} is not published for ${aliases}`;
+        return `${named.map((r) => ROLES.find((x) => x.id === r)!.name).join(' and ')} reasoning reset to ${level[0]!.toUpperCase() + level.slice(1)}: ${why}.`;
+      })
+      .join(' ');
   }
 
   async function saveRoles(event: SubmitEvent) {
