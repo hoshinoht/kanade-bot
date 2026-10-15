@@ -23,6 +23,7 @@ _In development_
 - Fixed screen readers reading the tick on picked party members in the Fixed timing editor as part of the name.
 - Fixed Fixed timings asking Keep or Update on saves that keep the day and time, or about runs changed only in their party, which made the save fail; it now asks only about runs the new day or time would move.
 - Fixed the bot skipping that day's morning card when it starts after the ping time; a due card for a run still ahead now posts, up to 12 hours late.
+- Fixed four security issues in the bot's TLS library (RUSTSEC-2026-0346 to 0349) by updating it.
 
 ### Removed
 - Removed the one-off `kanade import v4` command; v4 data already imported stays readable.
