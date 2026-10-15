@@ -231,8 +231,21 @@ test.describe('captures', () => {
         const tag = `${vp.name}-${look.name}`;
         const shot = async (name: string) => {
           // Only the pictures on screen: a lazy image off screen never loads, so its decode() never settles.
+          // "On screen" is what an IntersectionObserver reports, not the bounding box: the box ignores a
+          // scroller's clip (the Fixed list's last row sits below its scroller's bottom edge yet inside
+          // the viewport), and Chrome starts a lazy load only for an image that intersects through every clip.
           await page.evaluate(() =>
-            Promise.all([...document.images].filter((i) => i.getBoundingClientRect().top < innerHeight && i.checkVisibility()).map((i) => i.decode().catch(() => {}))),
+            Promise.all(
+              [...document.images].map(async (img) => {
+                const seen = Promise.withResolvers<boolean>();
+                const observer = new IntersectionObserver(([entry]) => {
+                  observer.disconnect();
+                  seen.resolve(entry.isIntersecting);
+                });
+                observer.observe(img);
+                if ((await seen.promise) && img.checkVisibility()) await img.decode().catch(() => {});
+              }),
+            ),
           );
           await settle(page);
           await page.screenshot({ path: `${OUT}/run-identity-${name}-${tag}.png`, animations: 'disabled' });
