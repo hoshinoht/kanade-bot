@@ -202,13 +202,21 @@ mod tests {
         assert_eq!(pruned[0]["extractions"], 1);
         assert_eq!(pruned[0]["cutoff"], to_iso(&at(-90)).unwrap());
 
-        // Each run checkpoints right after its prune.
-        let order: Vec<_> = logging::captured()
+        // Each run checkpoints right after its prune; stop may cut the last
+        // run between the two, leaving one trailing prune.
+        let mut order: Vec<_> = logging::captured()
             .into_iter()
             .filter_map(|line| line["event"].as_str().map(str::to_owned))
             .filter(|event| event == "model_logs_pruned" || event == "wal_checkpointed")
             .collect();
-        assert!(order.len() >= 4, "{order:?}");
+        if order.len() % 2 == 1 {
+            assert_eq!(
+                order.pop().as_deref(),
+                Some("model_logs_pruned"),
+                "{order:?}"
+            );
+        }
+        assert!(order.len() >= 2, "{order:?}");
         for pair in order.chunks(2) {
             assert_eq!(pair, ["model_logs_pruned", "wal_checkpointed"], "{order:?}");
         }
