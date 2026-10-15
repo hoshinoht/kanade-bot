@@ -1,17 +1,20 @@
 import { mkdirSync } from 'node:fs';
 import type { Page } from '@playwright/test';
-import { ADMIN, choose, expect, test, useLook } from './support';
+import { ADMIN, choose, csrf, expect, setModules, test, useLook } from './support';
 
 // The character roster (module `roster`; boards in docs/research/2026-10-11-roster-mockups):
-// the Members sheet's Characters tab over the mock's invented seed (Mika: MikaNL main,
-// MikaBish, Mikadere, MikaHero retired; Hotaru: Hotaru7; Ren #1013: none).
+// the Members sheet's Characters tab over the e2e server's seed (Mika: MikaNL main,
+// MikaBish, Mikadere, MikaHero retired; Hotaru: Hotaru7; Ren (2): none).
+
+/** Mika's snowflake (the seed's member ids are Discord ids). */
+const MIKA = '100000000000001003';
 
 const toast = (page: Page, text: string | RegExp) => page.locator('.toast:not(.is-leaving)').filter({ hasText: text });
 
 // The roster module alone: with module `character_data` off the Add dialog keeps the manual
 // Class and Level (MapleSEA adds with NEXON connected are `add-character.spec.ts`).
-test.beforeEach(async ({ page }) => {
-  await page.request.post(`${ADMIN}/__mock/modules`, { data: { character_data: false } });
+test.beforeEach(async () => {
+  await setModules({ character_data: false });
 });
 
 async function characters(page: Page, who: RegExp = /^Mika/) {
@@ -103,10 +106,9 @@ test('roster: the server’s refusals land on their fields and keep the input', 
   // Someone saves it meanwhile: 409 stale, the edits stay and the next Save wins.
   await ign.fill('MikaBishop');
   await edit.getByRole('textbox', { name: 'Level' }).fill('282');
-  const list = await page.request.get(`${ADMIN}/api/admin/members/1003/characters`);
+  const list = await page.request.get(`${ADMIN}/api/admin/members/${MIKA}/characters`);
   const bish = (await list.json()).characters.find((c: { ign: string }) => c.ign === 'MikaBish');
-  const csrf = (await page.request.get(`${ADMIN}/api/admin/session`)).headers()['x-kanade-csrf']!;
-  expect((await page.request.patch(`${ADMIN}/api/admin/characters/${bish.id}`, { data: { version: bish.version, level: 283 }, headers: { 'x-kanade-csrf': csrf } })).ok()).toBe(true);
+  expect((await page.request.patch(`${ADMIN}/api/admin/characters/${bish.id}`, { data: { version: bish.version, level: 283 }, headers: await csrf(page.request) })).ok()).toBe(true);
   await edit.getByRole('button', { name: 'Save' }).click();
   await expect(edit.getByRole('alert')).toContainText('changed while you were editing it');
   await expect(ign).toHaveValue('MikaBishop');
@@ -134,10 +136,9 @@ test('roster: delete is confirmed from Cancel, offers Retire instead, and refuse
   // MikaBish becomes the main elsewhere while its confirmation is open: the server refuses.
   await more(page, 'MikaBish', 'Delete…');
   confirm = page.getByRole('alertdialog', { name: 'Delete MikaBish?' });
-  const list = await page.request.get(`${ADMIN}/api/admin/members/1003/characters`);
+  const list = await page.request.get(`${ADMIN}/api/admin/members/${MIKA}/characters`);
   const bish = (await list.json()).characters.find((c: { ign: string }) => c.ign === 'MikaBish');
-  const csrf = (await page.request.get(`${ADMIN}/api/admin/session`)).headers()['x-kanade-csrf']!;
-  await page.request.patch(`${ADMIN}/api/admin/characters/${bish.id}`, { data: { version: bish.version, role: 'main' }, headers: { 'x-kanade-csrf': csrf } });
+  await page.request.patch(`${ADMIN}/api/admin/characters/${bish.id}`, { data: { version: bish.version, role: 'main' }, headers: await csrf(page.request) });
   await confirm.getByRole('button', { name: 'Delete' }).click();
   await expect(confirm.getByRole('alert')).toContainText("MikaBish is Mika's main now");
   await confirm.getByRole('button', { name: 'Cancel' }).click();
@@ -157,19 +158,19 @@ test('roster: a member with no characters gets the empty state, and the first on
 });
 
 test('roster: a failed read shows Try again and the Profile tab still works', async ({ page }) => {
-  await page.route('**/api/admin/members/1003/characters', (route) => route.fulfill({ status: 503, json: { error: 'unavailable', message: 'The server did not answer.' } }));
+  await page.route(`**/api/admin/members/${MIKA}/characters`, (route) => route.fulfill({ status: 503, json: { error: 'unavailable', message: 'The server did not answer.' } }));
   const pane = await characters(page);
   await expect(pane.getByRole('heading', { name: 'Couldn’t load characters' })).toBeVisible();
   await expect(pane.getByRole('button', { name: 'Try again' })).toBeVisible();
 });
 
 test('roster: module off, no tab and no character requests', async ({ page }) => {
-  await page.request.post(`${ADMIN}/__mock/modules`, { data: { roster: false } });
+  await setModules({ roster: false });
   const asked: string[] = [];
   // API requests only: the shared `characters` module may load as a script chunk of that name.
   page.on('request', (r) => /\/api\/admin\/.*characters/.test(r.url()) && asked.push(r.url()));
   await page.goto(`${ADMIN}/members?sw=off`);
-  await page.getByRole('button', { name: /^Mika/ }).click();
+  await page.getByRole('button', { name: /^Mika\b/ }).click();
   const pane = page.getByRole('complementary', { name: 'Member details' });
   await expect(pane.getByText('Chat aliases')).toBeVisible();
   await expect(pane.getByRole('tablist')).toHaveCount(0);
@@ -180,7 +181,7 @@ test('roster: module off, no tab and no character requests', async ({ page }) =>
 test('roster: phone sheet, 44 px targets and Add as a bottom sheet over it', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(`${ADMIN}/members?sw=off`);
-  await page.getByRole('button', { name: /^Mika/ }).click();
+  await page.getByRole('button', { name: /^Mika\b/ }).click();
   const sheet = page.getByRole('dialog', { name: 'Mika', exact: true });
   await sheet.getByRole('tab', { name: /^Characters/ }).click();
   const edit = sheet.getByRole('button', { name: 'Edit MikaNL' });
@@ -231,7 +232,7 @@ for (const colorway of ['blossom', 'marigold']) {
 
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto(`${ADMIN}/members?sw=off`);
-    await page.getByRole('button', { name: /^Mika/ }).click();
+    await page.getByRole('button', { name: /^Mika\b/ }).click();
     const sheet = page.getByRole('dialog', { name: 'Mika', exact: true });
     await sheet.getByRole('tab', { name: /^Characters/ }).click();
     await shot('phone-1-characters');

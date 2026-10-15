@@ -298,6 +298,7 @@ async fn main() -> Result<(), Fail> {
         format!("{admin}{}", fakes::discord::PATH),
         fakes.nexon,
         Arc::clone(&fakes.model),
+        Arc::clone(&fakes.chardata),
     )?;
     let db_dir = root.0.join("db");
     let template = db_dir.join("template.sqlite3");

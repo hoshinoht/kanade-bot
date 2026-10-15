@@ -1,15 +1,22 @@
 import { mkdirSync } from 'node:fs';
 import type { Locator, Page } from '@playwright/test';
-import { ADMIN, csrf, expect, settle, test } from './support';
+import { ADMIN, csrf, expect, resetWeek, setModules, settle, test } from './support';
 
 // The Fixed editor's Characters tab (modules `roster` and `character_data`; boards
 // docs/research/2026-10-13-fixed-readiness): who each member brings to a weekly timing and
-// their readiness, over the mock's seed. Tuesday 22:00 HCarling + HStar (f-carling): Mika
+// their readiness, over the e2e server's seed. Tuesday 22:00 HCarling + HMaleficStar (f-carling): Mika
 // picked MikaBish for the timing (main MikaNL), Asahi brings his main AsahiDK (of two),
 // Ren (1), Yuzu, Tsubame and Hotaru their mains. Tuesday 23:30 XBM (f-bm): Minato has no
-// characters, Kaito one alt (only character), Sora two and no main.
+// characters, Kaito one (his main), Sora two (main SoraPF): the real roster keeps a main
+// whenever a member has characters, so no one is left with "no main".
 
-const CARLING = 'Tuesday 22:00 — HCarling + HStar';
+const CARLING = 'Tuesday 22:00 — HCarling + HMaleficStar';
+/** The seed's member snowflakes. */
+const ASAHI = '100000000000001001';
+const MIKA = '100000000000001003';
+const SORA = '100000000000001008';
+const MINATO = '100000000000001012';
+const REN2 = '100000000000001013';
 const BM = 'Tuesday 23:30 — XBM';
 
 /** The editor (pane, or the phone's Modal) of `title`, on its Characters tab. */
@@ -47,13 +54,13 @@ test('fixed ready: the main is the default; a pick overrides it for the timing a
   await expect(mika.locator('.fixedready__basis')).toHaveText('picked for this timing');
   await expect(mika).toContainText('main is MikaNL');
   // Per boss of the timing, against its entry level.
-  await expect(editor.locator('.fixedready__hint').filter({ hasText: 'Per boss of the timing' })).toContainText('HCarling Lv. 275, HStar Lv. 280');
+  await expect(editor.locator('.fixedready__hint').filter({ hasText: 'Per boss of the timing' })).toContainText('HCarling Lv. 275, HMaleficStar Lv. 280');
 
   const chip = asahi.getByRole('button', { name: "Asahi's character for this timing: AsahiDK, change" });
   await chip.click();
   const picker = editor.getByRole('dialog', { name: `Asahi's character for ${CARLING}` });
   const options = picker.getByRole('option');
-  await expect(options).toHaveText([/AsahiDK\s*main\s*Dark Knight · the default/, /AsahiMech\s*Mechanic · under HStar’s Lv\. 280/]);
+  await expect(options).toHaveText([/AsahiDK\s*main\s*Dark Knight · the default/, /AsahiMech\s*Mechanic · under HMaleficStar’s Lv\. 280/]);
   // Under an entry level: tinted, still offered (readiness never blocks a pick).
   await expect(options.nth(1)).not.toHaveAttribute('aria-disabled', 'true');
   await expect(picker).toContainText('Saves at once. Runs made from this timing use it unless the run has its own pick. Choosing AsahiDK goes back to the main.');
@@ -66,14 +73,14 @@ test('fixed ready: the main is the default; a pick overrides it for the timing a
   await expect(asahi.locator('.fixedready__basis')).toHaveText('picked for this timing');
   await expect(asahi).toContainText('main is AsahiDK');
   await expect(asahi.getByRole('group', { name: 'Readiness of AsahiMech' })).toContainText('under Lv. 280');
-  expect(await timingSlot(page, 'f-carling', '1001')).toMatchObject({ picked: 'ch-s6', basis: 'timing_pick', version: 1 });
+  expect(await timingSlot(page, 'f-carling', ASAHI)).toMatchObject({ picked: 'ch-s6', basis: 'timing_pick', version: 1 });
   // Saved at once: the form has nothing to save, and Cancel leaves the pick.
   await expect(asahi.getByRole('button', { name: /AsahiMech, change$/ })).toBeFocused();
 
   await status(editor).getByRole('button', { name: 'Undo' }).click();
   await expect(asahi.locator('.fixedready__basis')).toHaveText('main');
   await expect(status(editor)).toContainText('Asahi is back on AsahiDK (main).');
-  expect(await timingSlot(page, 'f-carling', '1001')).toMatchObject({ picked: null, brings: 'ch-s5', basis: 'main' });
+  expect(await timingSlot(page, 'f-carling', ASAHI)).toMatchObject({ picked: null, brings: 'ch-s5', basis: 'main' });
 
   // Choosing the main again clears a pick: Mika goes back to MikaNL.
   await mika.getByRole('button', { name: /MikaBish, change$/ }).click();
@@ -83,7 +90,7 @@ test('fixed ready: the main is the default; a pick overrides it for the timing a
   await expect(mikaPicker).toContainText('1 retired character not offered.');
   await mikaPicker.getByRole('option', { name: /MikaNL/ }).click();
   await expect(status(editor)).toContainText('Mika is back on MikaNL (main).');
-  expect(await timingSlot(page, 'f-carling', '1003')).toMatchObject({ picked: null, basis: 'main' });
+  expect(await timingSlot(page, 'f-carling', MIKA)).toMatchObject({ picked: null, basis: 'main' });
 });
 
 test('fixed ready: a stale pick (409) shows whose pick is saved now', async ({ page }) => {
@@ -93,7 +100,7 @@ test('fixed ready: a stale pick (409) shows whose pick is saved now', async ({ p
   const picker = editor.getByRole('dialog', { name: `Asahi's character for ${CARLING}` });
   await expect(picker.getByRole('option').first()).toBeFocused();
   // Another admin picks AsahiMech meanwhile.
-  const other = await page.request.put(`${ADMIN}/api/admin/fixed/f-carling/characters/1001`, {
+  const other = await page.request.put(`${ADMIN}/api/admin/fixed/f-carling/characters/${ASAHI}`, {
     headers: await csrf(page.request),
     data: { character_id: 'ch-s6', version: 0 },
   });
@@ -103,35 +110,33 @@ test('fixed ready: a stale pick (409) shows whose pick is saved now', async ({ p
   await expect(line).toHaveText(/changed Asahi's pick a moment ago, so yours wasn't saved\. Showing theirs: AsahiMech \(picked for this timing\)\. Pick again to change it\./);
   await expect(line.getByRole('button', { name: 'Undo' })).toHaveCount(0);
   await expect(asahi.getByRole('button', { name: /AsahiMech, change$/ })).toBeVisible();
-  expect((await timingSlot(page, 'f-carling', '1001')).version).toBe(1);
+  expect((await timingSlot(page, 'f-carling', ASAHI)).version).toBe(1);
 });
 
-test('fixed ready: several characters and no main bring nothing until picked; no characters links to Members', async ({ page }) => {
+test('fixed ready: the main is brought until a pick overrides it; no characters links to Members', async ({ page }) => {
   const editor = await characters(page, BM);
   const sora = row(editor, 'Sora');
-  await expect(sora.locator('.fixedready__basis')).toHaveText('no main');
+  await expect(sora.locator('.fixedready__basis')).toHaveText('main');
   await expect(sora).toContainText('2 characters');
-  await expect(sora).toContainText('Readiness shows once a character is picked. Set a main on Members to make one the default everywhere.');
-  await expect(sora.getByRole('group')).toHaveCount(0);
+  await expect(sora.getByRole('group', { name: 'Readiness of SoraPF' })).toBeVisible();
 
   const minato = row(editor, 'Minato');
   await expect(minato.locator('.fixedready__basis')).toHaveText('no characters');
   await expect(minato.getByRole('button')).toHaveCount(0);
-  await expect(minato.getByRole('link', { name: 'Minato has no characters yet: add them on Members' })).toHaveAttribute('href', '/members?open=1012');
+  await expect(minato.getByRole('link', { name: 'Minato has no characters yet: add them on Members' })).toHaveAttribute('href', `/members?open=${MINATO}`);
 
   const kaito = row(editor, 'Kaito');
-  await expect(kaito.locator('.fixedready__basis')).toHaveText('only character');
+  await expect(kaito.locator('.fixedready__basis')).toHaveText('main');
   await expect(kaito.getByRole('group', { name: 'Readiness of KaitoLyn' })).toContainText('Lv unknown');
 
-  await sora.getByRole('button', { name: "Pick Sora's character for this timing: 2 to choose from" }).click();
+  await sora.getByRole('button', { name: "Sora's character for this timing: SoraPF, change" }).click();
   const picker = editor.getByRole('dialog', { name: `Sora's character for ${BM}` });
-  await expect(picker).toContainText('Sora has no main, so nothing is brought until you pick. This pick is for this timing only.');
-  await expect(picker.getByRole('option', { selected: true })).toHaveCount(0);
+  await expect(picker.getByRole('option', { selected: true })).toHaveCount(1);
   await picker.getByRole('option', { name: /SoraLumi/ }).click();
   await expect(status(editor)).toContainText('Sora brings SoraLumi to this timing.');
   await expect(sora.locator('.fixedready__basis')).toHaveText('picked for this timing');
   await expect(sora.getByRole('group', { name: 'Readiness of SoraLumi' })).toBeVisible();
-  expect(await timingSlot(page, 'f-bm', '1008')).toMatchObject({ picked: 'ch-s12', basis: 'timing_pick' });
+  expect(await timingSlot(page, 'f-bm', SORA)).toMatchObject({ picked: 'ch-s12', basis: 'timing_pick' });
 });
 
 test('fixed ready: a scouter reading replaces CP, once labelled', async ({ page }) => {
@@ -149,14 +154,14 @@ test('fixed ready: a scouter reading replaces CP, once labelled', async ({ page 
 
 test('fixed ready: either module off draws today’s editor and asks nothing', async ({ page }) => {
   for (const off of [{ roster: false }, { character_data: false }]) {
-    await page.request.post(`${ADMIN}/api/admin/reset`);
-    await page.request.post(`${ADMIN}/__mock/modules`, { data: off });
+    await resetWeek();
+    await setModules(off);
     const asked: string[] = [];
     page.on('request', (r) => /\/api\/admin\/fixed\/.*(characters|readiness)/.test(r.url()) && asked.push(r.url()));
     await page.goto(`${ADMIN}/fixed?sw=off`);
     await page.getByRole('button', { name: `Edit ${CARLING}` }).click();
     const editor = page.getByRole('complementary', { name: 'Weekly timing details' });
-    await expect(editor.getByRole('checkbox', { name: 'Hard Carling' })).toBeChecked();
+    await expect(editor.getByRole('checkbox', { name: 'Hard Karling' })).toBeChecked();
     await expect(editor.getByRole('tablist')).toHaveCount(0);
     await expect(editor.locator('.fixedready')).toHaveCount(0);
     expect((await editor.boundingBox())!.width).toBeLessThanOrEqual(421);
@@ -171,9 +176,9 @@ test('fixed ready: a new timing previews readiness from the form, picks closed u
   await page.getByRole('button', { name: 'Add a weekly timing' }).click();
   const editor = page.getByRole('complementary', { name: 'Weekly timing details' });
   // The difficulty pill is the label of a visually hidden checkbox.
-  await editor.getByRole('group', { name: 'Carling difficulties' }).getByText('HARD').click();
-  await expect(editor.getByRole('checkbox', { name: 'Hard Carling' })).toBeChecked();
-  await editor.getByRole('checkbox', { name: 'Mika' }).check();
+  await editor.getByRole('group', { name: 'Karling difficulties' }).getByText('HARD').click();
+  await expect(editor.getByRole('checkbox', { name: 'Hard Karling' })).toBeChecked();
+  await editor.getByRole('checkbox', { name: 'Mika', exact: true }).check();
   await editor.getByRole('button', { name: /^Show \d+ more members?$/ }).click();
   await editor.getByRole('checkbox', { name: 'Ren (2)' }).check();
   const previews: unknown[] = [];
@@ -190,7 +195,7 @@ test('fixed ready: a new timing previews readiness from the form, picks closed u
   // One boss: its verdict is not named.
   await expect(mika.getByRole('group', { name: 'Readiness of MikaNL' }).getByRole('listitem')).toHaveText([/^\s*Lv ok/]);
   await expect(row(editor, 'Ren (2)').locator('.fixedready__basis')).toHaveText('no characters');
-  expect(previews.at(-1)).toEqual({ fixed_run_id: null, bosses: ['HCarling'], participants: ['1003', '1013'] });
+  expect(previews.at(-1)).toEqual({ fixed_run_id: null, bosses: ['HCarling'], participants: [MIKA, REN2] });
   // Nothing new to save: the timing's own Add stays the one write.
   await expect(editor.getByRole('button', { name: 'Add timing' })).toBeEnabled();
 });
@@ -238,14 +243,14 @@ test('fixed ready: runs made from the timing read its pick live, tagged "from ti
   await page.goto(`${ADMIN}/?sw=off`);
   await page.locator('.board').evaluate((board) => (board.scrollLeft = board.scrollWidth));
   await page.locator('[data-run="r-carling"] .plan-card__open').click();
-  await page.getByRole('complementary', { name: 'HCarling + HStar' }).getByRole('button', { name: 'Open in a larger view' }).click();
-  const sheet = page.getByRole('dialog', { name: 'HCarling + HStar' });
+  await page.getByRole('complementary', { name: 'HCarling + HMaleficStar' }).getByRole('button', { name: 'Open in a larger view' }).click();
+  const sheet = page.getByRole('dialog', { name: 'HCarling + HMaleficStar' });
   const mika = sheet.locator('.slot').filter({ has: page.locator('.slot__name', { hasText: /^Mika$/ }) });
-  await expect(mika.getByRole('button', { name: "Mika's character on HCarling + HStar: Mikadere, from timing. Change" })).toBeVisible();
+  await expect(mika.getByRole('button', { name: "Mika's character on HCarling + HMaleficStar: Mikadere, from timing. Change" })).toBeVisible();
   await expect(mika.locator('.slot__basis')).toHaveText('from timing');
   // Asahi's own run pick still wins over the default.
   const asahi = sheet.locator('.slot').filter({ has: page.locator('.slot__name', { hasText: /^Asahi$/ }) });
-  await expect(asahi.getByRole('button', { name: "Asahi's character on HCarling + HStar: AsahiDK. Change" })).toBeVisible();
+  await expect(asahi.getByRole('button', { name: "Asahi's character on HCarling + HMaleficStar: AsahiDK. Change" })).toBeVisible();
   await expect(asahi.locator('.slot__basis')).toHaveCount(0);
   const tsubame = sheet.locator('.slot').filter({ has: page.locator('.slot__name', { hasText: /^Tsubame$/ }) });
   await expect(tsubame.locator('.slot__basis')).toHaveText('main');
@@ -281,7 +286,7 @@ test('fixed ready captures', async ({ page }) => {
     await settle(page);
     await page.screenshot({ path: `${CAPTURES}/${name}.png`, animations: 'disabled' });
   };
-  const reset = () => page.request.post(`${ADMIN}/api/admin/reset`);
+  const reset = resetWeek;
   const lookUp = async () => {
     const { job } = await (await page.request.post(`${ADMIN}/api/admin/estimates`, { headers: await csrf(page.request), data: { run_id: 'r-carling' } })).json();
     await expect.poll(async () => (await (await page.request.get(`${ADMIN}/api/admin/estimates/${job.id}`)).json()).state).toBe('done');
@@ -306,8 +311,8 @@ test('fixed ready captures', async ({ page }) => {
     await page.goto(`${ADMIN}/fixed?sw=off`);
     await page.getByRole('button', { name: 'Add a weekly timing' }).click();
     editor = prefix === 'B_' ? page.getByRole('complementary', { name: 'Weekly timing details' }) : page.getByRole('dialog', { name: 'Add a weekly timing' });
-    await editor.getByRole('group', { name: 'Carling difficulties' }).getByText('HARD').click();
-    await editor.getByRole('checkbox', { name: 'Mika' }).check();
+    await editor.getByRole('group', { name: 'Karling difficulties' }).getByText('HARD').click();
+    await editor.getByRole('checkbox', { name: 'Mika', exact: true }).check();
     await editor.getByRole('button', { name: /^Show \d+ more members?$/ }).click();
     await editor.getByRole('checkbox', { name: 'Ren (2)' }).check();
     await editor.getByRole('tab', { name: /^Characters/ }).click();
@@ -327,7 +332,7 @@ test('fixed ready captures', async ({ page }) => {
     await expect(status(editor)).toContainText('Undo');
     await shot(`${prefix}FixedReadyStates-pick-saved`);
     await row(editor, 'Asahi').getByRole('button', { name: /AsahiMech, change$/ }).click();
-    await page.request.put(`${ADMIN}/api/admin/fixed/f-carling/characters/1001`, { headers: await csrf(page.request), data: { character_id: null, version: 1 } });
+    await page.request.put(`${ADMIN}/api/admin/fixed/f-carling/characters/${ASAHI}`, { headers: await csrf(page.request), data: { character_id: null, version: 1 } });
     if (prefix === 'B_') await editor.getByRole('option', { name: /AsahiDK/ }).click();
     else {
       await page.getByRole('radio', { name: /AsahiDK/ }).check();
@@ -361,15 +366,15 @@ test('fixed ready captures', async ({ page }) => {
     await page.goto(`${ADMIN}/?sw=off`);
     if (prefix === 'B_') await page.locator('.board').evaluate((board) => (board.scrollLeft = board.scrollWidth));
     await page.locator('[data-run="r-carling"] .plan-card__open').click();
-    if (prefix === 'B_') await page.getByRole('complementary', { name: 'HCarling + HStar' }).getByRole('button', { name: 'Open in a larger view' }).click();
-    const sheet = page.getByRole('dialog', { name: 'HCarling + HStar' });
+    if (prefix === 'B_') await page.getByRole('complementary', { name: 'HCarling + HMaleficStar' }).getByRole('button', { name: 'Open in a larger view' }).click();
+    const sheet = page.getByRole('dialog', { name: 'HCarling + HMaleficStar' });
     await expect(sheet.locator('.slot__basis').filter({ hasText: 'from timing' })).toBeVisible();
     await sheet.locator('.slot__basis').filter({ hasText: 'from timing' }).scrollIntoViewIfNeeded();
     await shot(`${prefix}FixedReadyStates2-run-sheet`);
 
     // Module off: today's editor.
     await reset();
-    await page.request.post(`${ADMIN}/__mock/modules`, { data: { character_data: false } });
+    await setModules({ character_data: false });
     await page.goto(`${ADMIN}/fixed?sw=off`);
     await page.getByRole('button', { name: `Edit ${CARLING}` }).click();
     await shot(prefix === 'B_' ? 'B_FixedReadyOff' : 'B_PhoneFixedReadyStates-module-off');

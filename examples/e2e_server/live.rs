@@ -51,7 +51,7 @@ use tokio::net::{TcpListener, TcpStream};
 use crate::{
     Fail, LOOPBACK,
     bot::Bot,
-    fakes::{discord, gateway, guild::Guild},
+    fakes::{chardata, discord, gateway, guild::Guild},
     seed,
 };
 
@@ -77,6 +77,9 @@ pub struct World {
     /// The Limits page's canned governor shows three groups, not one
     /// (`/__e2e/limits`); every generation reads it live.
     pub three_groups: Arc<AtomicBool>,
+    /// The scouter's and NEXON's answers, and whether a generation has a
+    /// key and a scouter URL at all (`controls_p5`).
+    pub chardata: Arc<chardata::Modes>,
 }
 
 /// The optional modules a generation composes with (serve reads them once
@@ -109,6 +112,7 @@ impl World {
         authorize_url: String,
         nexon: SocketAddr,
         model: Arc<gateway::Activity>,
+        chardata: Arc<chardata::Modes>,
     ) -> Result<Self, Fail> {
         let http = &config.runtime.http;
         let mut admin = Site::admin(http);
@@ -142,6 +146,7 @@ impl World {
             nexon,
             model,
             three_groups: Arc::default(),
+            chardata,
         })
     }
 
@@ -177,6 +182,13 @@ impl World {
         }
         if let Some(settings) = &mut config.character_data {
             settings.db_path = chardata(&path);
+            let setup = self.chardata.setup();
+            if setup.no_key {
+                settings.nexon_key_file = None;
+            }
+            if setup.no_scouter {
+                settings.scouter_url = None;
+            }
         }
         let overrides = Overrides {
             clock: Arc::clone(&self.clock),

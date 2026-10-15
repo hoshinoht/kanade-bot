@@ -44,7 +44,7 @@ use axum::{
     extract::{Request, State, rejection::JsonRejection},
     handler::Handler,
     http::{HeaderValue, StatusCode, header::CONTENT_SECURITY_POLICY},
-    middleware::map_response_with_state,
+    middleware::{from_fn_with_state, map_response_with_state},
     response::{IntoResponse, Response},
     routing::{MethodRouter, get, post},
 };
@@ -62,6 +62,11 @@ use crate::{
     fakes::discord,
     live::{AdminSessions, Generation, Modules, Routes, World},
 };
+
+/// Module `character_data`'s controls (`/__e2e/estimates`,
+/// `/__e2e/character-data`, `/__e2e/public/characters`).
+#[path = "controls_p5.rs"]
+mod p5;
 
 pub const SERVER: &str = "kanade-e2e-server";
 const REPORTS: &str = "/__e2e/reports";
@@ -189,6 +194,7 @@ impl Shared {
         let mut slot = self.generation.lock().await;
         self.clock.set(self.start);
         self.world.three_groups.store(false, Ordering::SeqCst);
+        p5::reset(&self.world);
         slot.serial += 1;
         let path = self.db_dir.join(format!("live-{}.sqlite3", slot.serial));
         self.world.copy_template(&self.template, &path)?;
@@ -312,11 +318,13 @@ pub fn router(shared: &Arc<Shared>, origin: Origin) -> Router {
         .route("/__e2e/public/end", post(end_member_sessions))
         .route(REPORTS, get(list).post(receive).delete(clear))
         .merge(discord::routes(Arc::clone(&shared.page)))
+        .merge(p5::routes())
         .fallback(forward);
     if origin == Origin::Admin {
         app = app.nest_service("/__showcase", shared.showcase.clone());
     }
     app.with_state(side.clone())
+        .layer(from_fn_with_state(side.clone(), p5::observe))
         .layer(map_response_with_state(side, report_uri))
 }
 

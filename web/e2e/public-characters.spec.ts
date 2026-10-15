@@ -1,14 +1,16 @@
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Locator, Page } from '@playwright/test';
-import { ADMIN, PUBLIC, expect, settle, signInPublic, test } from './support';
+import { ADMIN, PUBLIC, csrf, expect, setCharacterData, setEstimates, setMemberCharacters, setModules, settle, signInPublic, test } from './support';
 
 // The member's own characters on the portal (module `roster`; boards in
-// docs/research/2026-10-13-member-characters) over the mock's member Asahi:
-// `POST /__mock/public/characters {"roster": "board"}` draws her characters as
-// the boards do (AsahiKanna linked main with one share card, AsahiDK pending
-// on Ren's request, AsahiPath stale, AsahiBlaze expired, AsahiMech retired),
-// `"empty"` gives her none. Every test ends with zero CSP/TT reports.
+// docs/research/2026-10-13-member-characters) over the seed's member Asahi:
+// `setMemberCharacters('board')` writes her characters as the boards draw them
+// (AsahiKanna linked main with one share card, AsahiDK pending on Ren's
+// request, AsahiPath stale, AsahiBlaze expired, AsahiMech retired; ids
+// `ch-b1`…`ch-b5`), `'empty'` gives her none. Every test ends with zero CSP/TT reports.
+
+const ASAHI = '100000000000001001';
 
 test.describe.configure({ mode: 'parallel' });
 
@@ -17,12 +19,12 @@ const toast = (page: Page) => page.getByRole('group', { name: 'Notification' });
 const panel = (page: Page) => page.getByRole('tabpanel', { name: /^Characters/ });
 const row = (page: Page, ign: string) => panel(page).locator('.rosterrow').filter({ hasText: ign });
 
-async function roster(page: Page, scenario: 'board' | 'empty' = 'board') {
-  expect((await page.request.post(`${PUBLIC}/__mock/public/characters`, { data: { roster: scenario } })).status()).toBe(204);
+async function roster(_page: Page, scenario: 'board' | 'empty' = 'board') {
+  await setMemberCharacters(scenario);
 }
 
-async function modules(page: Page, data: Record<string, boolean>) {
-  expect((await page.request.post(`${ADMIN}/__mock/modules`, { data })).ok()).toBe(true);
+async function modules(_page: Page, data: { roster?: boolean; character_data?: boolean }) {
+  await setModules(data);
 }
 
 /** Signed in, with the boards' characters, on Account › Characters. */
@@ -116,7 +118,7 @@ test('Add: Look up shows NEXON once, never kept; then the notice opens, and Link
 });
 
 test('Add without NEXON connected asks class and level by hand', async ({ page }) => {
-  await page.request.post(`${ADMIN}/__mock/character-data`, { data: { health: 'setup' } });
+  await setCharacterData('setup');
   await openTab(page);
   await panel(page).getByRole('button', { name: 'Add character' }).click();
   const dialog = page.getByRole('dialog', { name: 'Add character' });
@@ -146,11 +148,14 @@ test('the notice: v1 word for word; Cancel keeps the admin’s request', async (
 
 test('Link outcomes: busy, not found and data later, in copy.rs words', async ({ page }) => {
   await openTab(page);
+  // The real busy answer is the day's spent NEXON budget, which refuses every link after it,
+  // so Busy comes last, once the budget is spent.
   for (const [ign, words] of [
-    ['BusyKnight', 'Kanade has used today’s NEXON lookups.'],
     ['NopeKnight', 'NEXON couldn’t find NopeKnight in MapleSEA.'],
     ['LaterKnight', 'NEXON didn’t answer just now, so nothing is kept yet'],
+    ['BusyKnight', 'Kanade has used today’s NEXON lookups.'],
   ]) {
+    if (ign === 'BusyKnight') await setCharacterData('budget');
     await panel(page).getByRole('button', { name: 'Add character' }).click();
     const dialog = page.getByRole('dialog', { name: 'Add character' });
     await dialog.getByLabel('IGN').fill(ign);
@@ -164,10 +169,9 @@ test('Link outcomes: busy, not found and data later, in copy.rs words', async ({
 });
 
 test('fresh sign-in: Add and Link open Confirm it’s you, which comes back with the flow open', async ({ page }) => {
-  await signInPublic(page);
+  // Signed in before the fresh-write window; never sign in again after it.
+  await signInPublic(page, { stale: true });
   await roster(page);
-  // Unfresh before the page loads; never sign in again after it.
-  expect((await page.request.post(`${PUBLIC}/__mock/public/unfresh`)).ok()).toBe(true);
   await page.goto(`${PUBLIC}/account?tab=characters&sw=off`);
   await panel(page).getByRole('button', { name: 'Add character' }).click();
   const dialog = page.getByRole('dialog', { name: 'Add character' });
@@ -292,7 +296,7 @@ test('my scouter lookup: result, then the 30-minute limit names the next time', 
 });
 
 test('my scouter lookup: queued behind the others’ lookups', async ({ page }) => {
-  await page.request.post(`${ADMIN}/__mock/estimates`, { data: { scenario: 'queued' } });
+  await setEstimates('queued');
   await openTab(page);
   const row = (await openEdit(page, 'AsahiPath')).locator('.estimate');
   await row.getByRole('button', { name: 'Look up' }).click();
@@ -302,13 +306,13 @@ test('my scouter lookup: queued behind the others’ lookups', async ({ page }) 
 });
 
 test('my scouter lookup: a failure doesn’t count toward the 30 minutes', async ({ page }) => {
-  await page.request.post(`${ADMIN}/__mock/estimates`, { data: { scenario: 'timeout' } });
+  await setEstimates('timeout');
   await openTab(page);
   const row = (await openEdit(page, 'AsahiBlaze')).locator('.estimate');
   await row.getByRole('button', { name: 'Look up' }).click();
   await expect(row.getByRole('alert')).toContainText('Nothing was kept, and this try doesn’t count toward your 30 minutes.', { timeout: 20_000 });
   // Not counted: the next start is allowed at once.
-  await page.request.post(`${ADMIN}/__mock/estimates`, { data: { scenario: 'ok' } });
+  await setEstimates('ok');
   await row.getByRole('button', { name: 'Try again' }).click();
   await expect(row.getByRole('table')).toBeVisible({ timeout: 20_000 });
 });
@@ -352,8 +356,10 @@ test('other members’ characters, lookups and runs are the generic 404', async 
     expect((await page.request.get(`${PUBLIC}${path}`)).status(), path).toBe(404);
   const mine = (await (await page.request.get(`${PUBLIC}/api/public/me/characters`)).json()) as { characters: { id: string }[] };
   expect(mine.characters.map((c) => c.id)).not.toContain('ch-s3');
-  // A run Asahi is not on (Mika's Kalos) has no party characters for her.
-  await page.request.post(`${PUBLIC}/__mock/public/remove`, { data: { run: 'r-carling' } });
+  // Once Asahi is off r-carling (an admin takes her off), it has no party characters for her.
+  const { version } = (await (await page.request.get(`${ADMIN}/api/admin/week`)).json()) as { version: number };
+  const removed = await page.request.patch(`${ADMIN}/api/admin/runs/r-carling/participants`, { headers: await csrf(page.request), data: { remove: ASAHI, version } });
+  expect(removed.ok(), await removed.text()).toBe(true);
   expect((await page.request.get(`${PUBLIC}/api/public/runs/r-carling/characters`)).status()).toBe(404);
   await page.goto(`${PUBLIC}/?run=r-carling&sw=off`);
   await expect(page.getByRole('complementary', { name: /^View only/ })).toBeVisible();
@@ -412,8 +418,8 @@ const lookedUp = (ign: string, button = /^Look up/) => async (page: Page) => {
   await row.getByRole('button', { name: button }).click();
   await expect(row.locator('table, [role="alert"], .estimate__progress').first()).toBeVisible({ timeout: 20_000 });
 };
-const scenario = (name: string) => async (page: Page) => {
-  await page.request.post(`${ADMIN}/__mock/estimates`, { data: { scenario: name } });
+const scenario = (name: string) => async () => {
+  await setEstimates(name, name === 'assumed' ? 'AsahiKanna' : undefined);
 };
 const addAndLink = (ign: string) => async (page: Page) => {
   await panel(page).getByRole('button', { name: 'Add character' }).click();
@@ -431,7 +437,7 @@ const review = async (page: Page) => {
   await expect(page.locator('.linknotice')).toBeVisible();
 };
 const unfreshFirst = async (page: Page) => {
-  expect((await page.request.post(`${PUBLIC}/__mock/public/unfresh`)).ok()).toBe(true);
+  await signInPublic(page, { stale: true });
 };
 const SHOTS: Shot[] = [
   { file: 'M_Chars' },
@@ -457,7 +463,7 @@ const SHOTS: Shot[] = [
       await expect(page.getByRole('dialog', { name: "Confirm it's you" })).toBeVisible();
     } },
   { file: 'M_CharStates-empty', setup: async (page) => roster(page, 'empty'), path: '/account?tab=characters' },
-  { file: 'M_CharStates-not-connected', setup: async (page) => void (await page.request.post(`${ADMIN}/__mock/character-data`, { data: { health: 'setup' } })), act: async (page) => void (await panel(page).getByRole('button', { name: 'Add character' }).click()) },
+  { file: 'M_CharStates-not-connected', setup: async () => setCharacterData('setup'), act: async (page) => void (await panel(page).getByRole('button', { name: 'Add character' }).click()) },
   { file: 'M_CharStates-module-off', setup: async (page) => modules(page, { roster: false }), path: '/account?tab=characters' },
   { file: 'M_CharStates-after-a-write', act: async (page) => {
       await menuOf('AsahiPath')(page);
@@ -468,7 +474,7 @@ const SHOTS: Shot[] = [
   { file: 'M_CharStates2-stale', act: editOf('AsahiPath') },
   { file: 'M_CharStates2-expired', act: editOf('AsahiBlaze') },
   { file: 'M_CharStates2-not-linked-retired', act: editOf('AsahiMech') },
-  { file: 'M_CharStates2-not-connected', setup: async (page) => void (await page.request.post(`${ADMIN}/__mock/character-data`, { data: { health: 'setup' } })), act: editOf('AsahiMech') },
+  { file: 'M_CharStates2-not-connected', setup: async () => setCharacterData('setup'), act: editOf('AsahiMech') },
   { file: 'M_LinkOutcomes-linked', act: addAndLink('AsahiLumi') },
   { file: 'M_LinkOutcomes-cancel', act: async (page) => {
       await review(page);

@@ -18,6 +18,7 @@ mod inbox;
 mod logs;
 mod members;
 mod notify;
+mod p5;
 mod schedule;
 mod sessions;
 mod settings;
@@ -178,6 +179,7 @@ pub async fn template(store: Arc<SqliteStore>, state: &ApiState) -> Result<(), F
     members::seed(&seed).await?;
     schedule::seed(&seed).await?;
     characters::seed(&seed).await?;
+    p5::seed(&seed).await?;
     logs::seed(&seed).await?;
     inbox::seed(&seed).await?;
     sessions::seed(&seed).await?;

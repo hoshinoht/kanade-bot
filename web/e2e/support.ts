@@ -162,6 +162,41 @@ export async function setLimitGroups(groups: 'three' | 'default'): Promise<void>
   expect(set.status).toBe(204);
 }
 
+/** Harness only: a lane control that answers 204 (`examples/e2e_server/controls_p5.rs`). */
+async function control(path: string, body: unknown): Promise<void> {
+  const set = await fetch(`${ADMIN}${path}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+  expect(set.status, `${path} ${JSON.stringify(body)}: ${await set.text()}`).toBe(204);
+}
+
+/**
+ * Harness only: what later scouter lookups do (`ok`, `paced`: each slower than the page's poll,
+ * `assumed`: `ign`'s result assumes 100% critical rate, `hold`, or the next single lookup fails:
+ * `busy`, `critical_rate`, `manual_check`, `failed`, `timeout`), `queued` (two other members'
+ * lookups wait, then finish one by one once a lookup is queued behind them) or `off` (a restart
+ * without the scouter URL).
+ */
+export async function setEstimates(scenario: string, ign?: string): Promise<void> {
+  await control('/__e2e/estimates', { scenario, ...(ign && { ign }) });
+}
+
+/**
+ * Harness only: Config's character-data health through real calls on a restart (`ok`, `alert`,
+ * `refused`, `setup`: no NEXON key and no scouter URL), or `budget`: the day's NEXON calls spent.
+ */
+export async function setCharacterData(health: 'ok' | 'alert' | 'refused' | 'setup' | 'budget'): Promise<void> {
+  await control('/__e2e/character-data', { health });
+}
+
+/** Harness only: Asahi's own characters as the member boards draw them (`board`, ids `ch-b1`…`ch-b5`), or none. */
+export async function setMemberCharacters(roster: 'board' | 'empty'): Promise<void> {
+  await control('/__e2e/public/characters', { roster });
+}
+
+/** Harness only: moves the server clock on by `seconds` (it stands still otherwise). */
+export async function advanceClock(seconds: number): Promise<void> {
+  await moveClock(seconds);
+}
+
 /**
  * The real server's session cookies are `__Host-` (Secure). Chrome sends
  * Secure cookies to http://127.0.0.1, but Playwright's API requests send them

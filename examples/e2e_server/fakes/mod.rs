@@ -4,11 +4,10 @@
 //! each is a loopback server on an ephemeral port. The gateway's guild cache
 //! is [`guild::Guild`], installed in each composition.
 
+pub mod chardata;
 pub mod discord;
 pub mod gateway;
 pub mod guild;
-mod nexon;
-mod scouter;
 
 use std::{io, net::SocketAddr, sync::Arc};
 
@@ -22,6 +21,8 @@ pub struct Fakes {
     pub gateway: SocketAddr,
     /// The model gateway's completions.
     pub model: Arc<gateway::Activity>,
+    /// How the scouter and NEXON answer (`controls_p5`).
+    pub chardata: Arc<chardata::Modes>,
     tasks: Vec<JoinHandle<()>>,
 }
 
@@ -36,11 +37,13 @@ impl Drop for Fakes {
 pub async fn start() -> io::Result<Fakes> {
     let mut tasks = Vec::with_capacity(3);
     let model = Arc::new(gateway::Activity::default());
+    let chardata = Arc::new(chardata::Modes::default());
     Ok(Fakes {
-        scouter: spawn(scouter::router(), &mut tasks).await?,
-        nexon: spawn(nexon::router(), &mut tasks).await?,
+        scouter: spawn(chardata::scouter(Arc::clone(&chardata)), &mut tasks).await?,
+        nexon: spawn(chardata::nexon(Arc::clone(&chardata)), &mut tasks).await?,
         gateway: spawn(gateway::router(Arc::clone(&model)), &mut tasks).await?,
         model,
+        chardata,
         tasks,
     })
 }

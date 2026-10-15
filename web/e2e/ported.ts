@@ -88,4 +88,12 @@ export const PORTED: readonly string[] = [
   'auth.spec.ts',
   'masthead.spec.ts',
   'public-answer.spec.ts',
+  // Lane SpecPortP5.
+  'add-character.spec.ts',
+  'chardata.spec.ts',
+  'fixed-ready.spec.ts',
+  'limits.spec.ts',
+  'public-characters.spec.ts',
+  'roster-run.spec.ts',
+  'roster.spec.ts',
 ];
