@@ -219,6 +219,11 @@ fn config(
         ("KANADE_CHAT_CATEGORY_IDS", "410000000000000001".to_owned()),
         // The seeded guild's watched channels (`seed::CHANNELS`).
         ("KANADE_WATCH_CHANNEL_IDS", seed::watched_ids()),
+        // The mock's digest channel (Config › Channel access marks it).
+        (
+            "KANADE_POST_CHANNEL_ID",
+            seed::ids::BOSS_SCHEDULE.to_owned(),
+        ),
         ("KANADE_MODULE_ROSTER", "1".to_owned()),
         ("KANADE_MODULE_CHARACTER_DATA", "1".to_owned()),
         (

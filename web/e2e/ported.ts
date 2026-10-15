@@ -104,4 +104,10 @@ export const PORTED: readonly string[] = [
   'presence.spec.ts',
   'public-live.spec.ts',
   'public-move.spec.ts',
+  // Lane SpecPortP4.
+  'capture.spec.ts',
+  'ops.spec.ts',
+  'public-portal.spec.ts',
+  'public-requests.spec.ts',
+  'screens.spec.ts',
 ];

@@ -2,7 +2,23 @@ import type { Page } from '@playwright/test';
 import { busyWeek } from './busy-week';
 // Fonts and on-screen images decoded (lazy ones off-screen never decode), as the fidelity boards wait.
 import { settle } from './fidelity-kit';
-import { ADMIN, CAPTURE_VIEWPORTS, LOOKS, PUBLIC, REAL_ART, expect, settle as settleMotion, setPortal, signInPublic, test, choose, expectValue, useLook } from './support';
+import {
+  ADMIN,
+  CAPTURE_VIEWPORTS,
+  LOOKS,
+  PUBLIC,
+  REAL_ART,
+  endMemberSessions,
+  expect,
+  settle as settleMotion,
+  setLimitGroups,
+  setPortal,
+  signInPublic,
+  test,
+  choose,
+  expectValue,
+  useLook,
+} from './support';
 
 // Reference captures for the v4 comparison, both git-ignored. Default: the
 // synthetic placeholder art (fixtures, not the game's art) into
@@ -42,7 +58,7 @@ for (const vp of CAPTURE_VIEWPORTS) {
 
       await page.locator('[data-run="r-carling"] .plan-card__open').click();
       // Wide screens open the run in the Week window's side pane (gate G4).
-      await expect(page.getByRole(vp.name === 'wide' ? 'complementary' : 'dialog', { name: 'HCarling + HStar' })).toBeVisible();
+      await expect(page.getByRole(vp.name === 'wide' ? 'complementary' : 'dialog', { name: 'HCarling + HMaleficStar' })).toBeVisible();
       await shot(page, `admin-sheet-${tag}`);
       await page.keyboard.press('Escape');
 
@@ -85,13 +101,13 @@ for (const vp of CAPTURE_VIEWPORTS) {
       }
 
       await page.goto(`${ADMIN}/history?sw=off`);
-       await page.locator('[data-history="2"]').click();
-       await page.getByRole(vp.name === 'wide' ? 'complementary' : 'dialog', { name: vp.name === 'wide' ? 'Change details' : 'Change #2' }).getByRole('button', { name: 'Revert…' }).click();
-      await expect(page.getByRole('dialog', { name: 'Revert #2?' }).getByRole('alert')).toBeVisible();
+       await page.locator('[data-history="3"]').click();
+       await page.getByRole(vp.name === 'wide' ? 'complementary' : 'dialog', { name: vp.name === 'wide' ? 'Change details' : 'Change #3' }).getByRole('button', { name: 'Revert…' }).click();
+      await expect(page.getByRole('dialog', { name: 'Revert #3?' }).getByRole('alert')).toBeVisible();
       await shot(page, `admin-history-revert-${tag}`);
       await page.keyboard.press('Escape');
       await page.getByRole('button', { name: 'Show raw JSON' }).click();
-      await expect(page.getByRole('dialog', { name: 'Change #2 raw JSON' })).toBeVisible();
+      await expect(page.getByRole('dialog', { name: 'Change #3 raw JSON' })).toBeVisible();
       await shot(page, `admin-history-raw-${tag}`);
 
       await page.goto(`${ADMIN}/fixed?sw=off`);
@@ -134,7 +150,7 @@ for (const vp of CAPTURE_VIEWPORTS) {
       await shot(page, `public-account-${tag}`);
 
       // The session ends on the server; the next request finds out.
-      await page.request.post(`${PUBLIC}/__mock/public/end`);
+      await endMemberSessions();
       await page.getByRole('button', { name: /^Sign out Safari · iPhone/ }).click();
       await expect(page.getByRole('heading', { name: "You've been signed out" })).toBeVisible();
       await shot(page, `public-ended-${tag}`);
@@ -296,8 +312,12 @@ test('capture batch 6 layout set', async ({ page }) => {
 // Planner time drops (workplan step planner-time-drops): mid-drag with the
 // drop indicator and a clash, the clash on the cards after the drop, and the
 // Config → Run lengths section.
-test('capture planner time drops and run lengths', async ({ page }) => {
+test('capture planner time drops and run lengths', async ({ page, request }) => {
   test.setTimeout(120_000);
+  // As planner-time.spec: the server clock at Mon 28 12:00 (guild time), before Monday's
+  // runs, so HFA can still move (at the pinned Tuesday it has ended); the seed puts Kaito
+  // on both HFA and XBM, so the drop past XBM clashes.
+  expect((await request.post(`${ADMIN}/__e2e/clock`, { data: { at: '2026-09-28T04:00:00Z' } })).ok()).toBe(true);
   await useLook(page, 'marigold');
   await page.goto(`${ADMIN}/?sw=off`);
   await expect(page.locator('.board[data-hydrated]')).toBeVisible();
@@ -364,7 +384,7 @@ test('capture planner swap', async ({ page }) => {
 for (const groups of ['three', 'default'] as const) {
   test(`capture live Limits set (${groups})`, async ({ page }) => {
     test.setTimeout(120_000);
-    await page.request.post(`${ADMIN}/__mock/limits`, { data: { groups } });
+    await setLimitGroups(groups);
     for (const look of LOOKS.filter((l) => l.name === 'blossom-light' || l.name === 'twilight-dark')) {
       for (const [w, h, tabs] of [
         [1280, 800, ['Backends', 'Queue', 'Admission', 'Allowances']],

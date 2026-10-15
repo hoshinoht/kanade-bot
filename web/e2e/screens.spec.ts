@@ -1,12 +1,12 @@
 import type { Page } from '@playwright/test';
-import { ADMIN, csrf, expect, go, test, toast, choose, expectValue, optionLabels, unconditional, useLook } from './support';
+import { ADMIN, csrf, expect, go, setModules, signInAdmin, signOutAdmin, test, toast, choose, expectValue, optionLabels, unconditional, useLook } from './support';
 
 // Fixed, Bosses, Members, Reminders and the run sheet's weekly-timing tools,
-// against the mock pinned to Tue 29 Sep 2026 12:00 (playwright.config.ts).
+// against the real server pinned to Tue 29 Sep 2026 12:00 (the e2e harness).
 
 test('fixed: table, bosscheck, add a timing, and its runs reach the board', async ({ page }) => {
   await go(page, '/fixed');
-  await expect(page.getByRole('heading', { level: 1 })).toHaveText('8 weekly timings');
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('9 weekly timings');
   const bmRow = page.getByRole('row', { name: /Black Mage/ });
   await expect(bmRow.getByText('not watched')).toBeVisible();
   await expect(page.getByRole('row', { name: /Gatekeeper Kalos/ }).getByText('1 run amended')).toBeVisible();
@@ -14,7 +14,7 @@ test('fixed: table, bosscheck, add a timing, and its runs reach the board', asyn
   await page.getByRole('button', { name: 'Add a weekly timing' }).click();
   const editor = page.getByRole('complementary', { name: 'Weekly timing details' });
   await editor.getByRole('textbox', { name: '…or type them' }).fill('hstar, cfoo');
-  await expect(editor.getByRole('status').filter({ hasText: 'is not a boss' })).toBeVisible();
+  await expect(editor.getByRole('status').filter({ hasText: 'unknown boss `cfoo`' })).toBeVisible();
   await editor.getByRole('textbox', { name: '…or type them' }).fill('');
   // The pill's input is visually hidden (v4 pill-toggle); a pointer presses the pill itself.
   await editor.locator('.bossrow', { hasText: 'Limbo' }).locator('label', { hasText: 'HARD' }).click();
@@ -26,12 +26,12 @@ test('fixed: table, bosscheck, add a timing, and its runs reach the board', asyn
   await expect(editor.getByRole('radio', { name: 'Wednesday' })).toHaveAttribute('aria-checked', 'true');
   await editor.getByLabel('Time').fill('20:30');
   await choose(editor.getByLabel('Home channel'), { label: '#limbo-trio' });
-  await editor.getByRole('checkbox', { name: 'Mika' }).check();
+  await editor.getByRole('checkbox', { name: 'Mika', exact: true }).check();
   await editor.getByRole('checkbox', { name: 'Nagi' }).check();
   await editor.getByRole('button', { name: 'Add timing' }).click();
   await expect(editor).toBeHidden();
   await expect(toast(page, 'Added Wednesday 20:30 — HLimbo')).toBeVisible();
-  await expect(page.getByRole('heading', { level: 1 })).toHaveText('9 weekly timings');
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('10 weekly timings');
 
   await page.getByRole('link', { name: 'Week' }).click();
   const wed = page.locator('section.board__col').filter({ has: page.locator('h2 .board__dow:text-is("Wed")') });
@@ -39,13 +39,16 @@ test('fixed: table, bosscheck, add a timing, and its runs reach the board', asyn
 });
 
 test('fixed: editing a timing with an amended run asks update or keep', async ({ page }) => {
+  // XKalos's amended run (Fri 25 22:00) has ended by the pinned Tuesday, and an edit never
+  // moves an ended run: the server clock goes back to Fri 25 12:00 (guild time), before it.
+  expect((await page.request.post(`${ADMIN}/__e2e/clock`, { data: { at: '2026-09-25T04:00:00Z' } })).ok()).toBe(true);
   await go(page, '/fixed');
   await page.getByRole('button', { name: 'Edit Friday 21:30 — XKalos' }).click();
   const editor = page.getByRole('complementary', { name: 'Weekly timing details' });
   await expect(editor.getByRole('checkbox', { name: 'Extreme Gatekeeper Kalos' })).toBeChecked();
   await editor.getByLabel('Time').fill('21:00');
   await editor.getByRole('button', { name: 'Save…' }).click();
-  const choice = editor.getByRole('group', { name: /^#5a6b7c8d · Fri 25 22:00/ });
+  const choice = editor.getByRole('group', { name: /^#rkalos · Fri 25 22:00/ });
   await expect(choice.getByRole('radio', { name: "Keep this week's change" })).toBeChecked();
   await choice.getByRole('radio', { name: 'Update to the new timing' }).check();
   await editor.getByRole('button', { name: 'Save changes' }).click();
@@ -57,11 +60,11 @@ test('fixed: editing a timing with an amended run asks update or keep', async ({
 
 type FixedApiRow = { id: string; weekday: number; time: string; bosses: { token: string }[]; participants: { id: string }[]; channel_id: string; note: string | null };
 
-/** Another admin edits XBM's timing through the API, as the server would see it. */
+/** Another admin edits HJupiter's timing through the API, as the server would see it. */
 async function editXbmBehind(page: Page, change: Partial<{ note: string; time: string }>) {
   const { version } = (await (await page.request.get(`${ADMIN}/api/admin/week`)).json()) as { version: number };
   const rows = (await (await page.request.get(`${ADMIN}/api/admin/fixed`)).json()) as FixedApiRow[];
-  const bm = rows.find((r) => r.bosses.some((b) => b.token === 'XBM'))!;
+  const bm = rows.find((r) => r.bosses.some((b) => b.token === 'HJupiter'))!;
   const response = await page.request.patch(`${ADMIN}/api/admin/fixed/${encodeURIComponent(bm.id)}`, {
     headers: await csrf(page.request),
     data: {
@@ -81,16 +84,17 @@ async function editXbmBehind(page: Page, change: Partial<{ note: string; time: s
 
 test('fixed: an edit sends the version it was loaded at; conflicts are per field, as on the server', async ({ page }) => {
   await go(page, '/fixed');
-  const editButton = page.getByRole('button', { name: 'Edit Tuesday 23:30 — XBM' });
+  const editButton = page.getByRole('button', { name: 'Edit Monday 21:00 — HJupiter' });
   const editor = page.getByRole('complementary', { name: 'Weekly timing details' });
   await editButton.click();
   await editor.getByLabel('Note').fill('Bring potions');
-  // A change to another run moves the week version but touches none of this timing's fields.
+  // A change to another run moves the week version but touches none of this timing's fields
+  // (tonight's Carling: the runs before today have ended, which the server refuses to move).
   const week = (await (await page.request.get(`${ADMIN}/api/admin/week`)).json()) as { version: number; runs: { id: string; day: number }[] };
-  const limbo = week.runs.find((r) => r.id === 'r-limbo')!;
-  const moved = await page.request.post(`${ADMIN}/api/admin/runs/r-limbo/move`, {
+  const carling = week.runs.find((r) => r.id === 'r-carling')!;
+  const moved = await page.request.post(`${ADMIN}/api/admin/runs/r-carling/move`, {
     headers: await csrf(page.request),
-    data: { day: limbo.day, time: '23:45', version: week.version },
+    data: { day: carling.day, time: '23:45', version: week.version },
   });
   expect(moved.ok()).toBe(true);
 
@@ -101,7 +105,7 @@ test('fixed: an edit sends the version it was loaded at; conflicts are per field
   const headers = await patch.allHeaders();
   expect(headers['x-kanade-csrf']).toBeTruthy();
   expect(headers['idempotency-key']).toMatch(/^[A-Za-z0-9._:-]{1,128}$/);
-  await expect(toast(page, 'Saved Tuesday 23:30 — XBM.')).toBeVisible();
+  await expect(toast(page, 'Saved Monday 21:00 — HJupiter.')).toBeVisible();
 
   // Another admin changes this timing's note while the form is open: the
   // form would resend the old note, so the save is refused, not a revert.
@@ -115,7 +119,7 @@ test('fixed: an edit sends the version it was loaded at; conflicts are per field
 
   await editor.getByRole('button', { name: 'Cancel' }).click();
   // The 409 re-reads the list; reopen only once the other admin's note is on screen.
-  await expect(page.getByRole('row', { name: /Black Mage/ })).toContainText('Starts late');
+  await expect(page.getByRole('row', { name: /Jupiter/ })).toContainText('Starts late');
   await editButton.click();
   await expect(editor.getByLabel('Note')).toHaveValue('Starts late');
   await editor.getByLabel('Note').fill('Starts late; bring snacks');
@@ -123,12 +127,12 @@ test('fixed: an edit sends the version it was loaded at; conflicts are per field
   const saved = page.waitForResponse((r) => r.request().method() === 'PATCH' && r.url().includes('/api/admin/fixed/'));
   await editor.getByRole('button', { name: 'Save changes' }).click();
   expect((await saved).ok()).toBe(true);
-  await expect(toast(page, 'Saved Tuesday 23:30 — XBM.').last()).toBeVisible();
+  await expect(toast(page, 'Saved Monday 21:00 — HJupiter.').last()).toBeVisible();
 });
 
 test('fixed: a 409 busy keeps the form valid to retry, without the out-of-date advice', async ({ page }) => {
   await go(page, '/fixed');
-  await page.getByRole('button', { name: 'Edit Tuesday 23:30 — XBM' }).click();
+  await page.getByRole('button', { name: 'Edit Monday 21:00 — HJupiter' }).click();
   const editor = page.getByRole('complementary', { name: 'Weekly timing details' });
   await editor.getByLabel('Note').fill('Bring potions');
   await page.route('**/api/admin/fixed/*', (route) =>
@@ -140,7 +144,7 @@ test('fixed: a 409 busy keeps the form valid to retry, without the out-of-date a
   await expect(editor.getByRole('alert')).toHaveText('Another change landed at the same moment; try again.');
   await page.unroute('**/api/admin/fixed/*');
   await editor.getByRole('button', { name: 'Save changes' }).click();
-  await expect(toast(page, 'Saved Tuesday 23:30 — XBM.')).toBeVisible();
+  await expect(toast(page, 'Saved Monday 21:00 — HJupiter.')).toBeVisible();
 });
 
 // User decision 2026-10-09: the first in the party owns a timing unless an
@@ -148,7 +152,7 @@ test('fixed: a 409 busy keeps the form valid to retry, without the out-of-date a
 test('fixed: the owner defaults to the first in the party, a pick pins it, Default unpins', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
   await go(page, '/fixed');
-  const editButton = page.getByRole('button', { name: 'Edit Tuesday 23:30 — XBM' });
+  const editButton = page.getByRole('button', { name: 'Edit Monday 21:00 — HJupiter' });
   const editor = page.getByRole('complementary', { name: 'Weekly timing details' });
   await editButton.click();
   const owner = editor.getByLabel('Owner');
@@ -160,33 +164,33 @@ test('fixed: the owner defaults to the first in the party, a pick pins it, Defau
   expect(tops).toHaveLength(3);
   expect(tops[0]).toBeLessThan(tops[1]!);
   expect(tops[1]).toBe(tops[2]);
-  await expect(editor.getByRole('radio', { name: 'Tuesday' })).toHaveAttribute('aria-checked', 'true');
+  await expect(editor.getByRole('radio', { name: 'Monday' })).toHaveAttribute('aria-checked', 'true');
 
   await choose(owner, { label: 'Kaito' });
   let sent = page.waitForRequest((r) => r.method() === 'PATCH' && r.url().includes('/api/admin/fixed/'));
   await editor.getByRole('button', { name: 'Save changes' }).click();
-  expect((await sent).postDataJSON()).toMatchObject({ owner_id: '1009' });
-  const firstSaved = toast(page, 'Saved Tuesday 23:30 — XBM.');
+  expect((await sent).postDataJSON()).toMatchObject({ owner_id: '100000000000001009' });
+  const firstSaved = toast(page, 'Saved Monday 21:00 — HJupiter.');
   await expect(firstSaved).toBeVisible();
   // The second save toasts the same words; a slow run reaches it inside this toast's 6 s,
   // so dismiss it first and the one checked below can only be the second save's.
   await firstSaved.getByRole('button', { name: 'Dismiss' }).click();
   await expect(firstSaved).toHaveCount(0);
-  const xbm = async () => ((await (await page.request.get(`${ADMIN}/api/admin/fixed`)).json()) as { owner_id: string; owner: string; owner_pinned: boolean; bosses: { token: string }[] }[]).find((r) => r.bosses.some((b) => b.token === 'XBM'));
-  expect(await xbm()).toMatchObject({ owner_id: '1009', owner: 'Kaito', owner_pinned: true });
-  // The list's search reads the owner: Kaito now finds XBM.
+  const xbm = async () => ((await (await page.request.get(`${ADMIN}/api/admin/fixed`)).json()) as { owner_id: string; owner: string; owner_pinned: boolean; bosses: { token: string }[] }[]).find((r) => r.bosses.some((b) => b.token === 'HJupiter'));
+  expect(await xbm()).toMatchObject({ owner_id: '100000000000001009', owner: 'Kaito', owner_pinned: true });
+  // The list's search reads the owner: Kaito now finds HJupiter.
   await page.getByRole('searchbox', { name: 'Search weekly timings' }).fill('kaito');
-  await expect(page.getByRole('row', { name: /Black Mage/ })).toBeVisible();
+  await expect(page.getByRole('row', { name: /Jupiter/ })).toBeVisible();
   await page.getByRole('searchbox', { name: 'Search weekly timings' }).fill('');
   await editButton.click();
-  await expectValue(owner, '1009');
+  await expectValue(owner, '100000000000001009');
 
   await choose(owner, { label: /^Default: first in party/ });
   sent = page.waitForRequest((r) => r.method() === 'PATCH' && r.url().includes('/api/admin/fixed/'));
   await editor.getByRole('button', { name: 'Save changes' }).click();
   expect((await sent).postDataJSON()).toMatchObject({ owner_id: '' });
-  await expect(toast(page, 'Saved Tuesday 23:30 — XBM.')).toBeVisible();
-  expect(await xbm()).toMatchObject({ owner_id: '1012', owner: 'Minato', owner_pinned: false });
+  await expect(toast(page, 'Saved Monday 21:00 — HJupiter.')).toBeVisible();
+  expect(await xbm()).toMatchObject({ owner_id: '100000000000001012', owner: 'Minato', owner_pinned: false });
 });
 
 test('fixed: a new timing defaults to the first party member; a picked owner stays put', async ({ page }) => {
@@ -197,25 +201,28 @@ test('fixed: a new timing defaults to the first party member; a picked owner sta
   const owner = editor.getByLabel('Owner');
   // Even signed in with Discord, the admin does not own what they create.
   await expect(owner.locator('.dd__value')).toHaveText('Default: first in party');
-  await editor.getByRole('checkbox', { name: 'Mika' }).check();
+  await editor.getByRole('checkbox', { name: 'Mika', exact: true }).check();
   await editor.getByRole('checkbox', { name: 'Nagi' }).check();
   await expect(owner.locator('.dd__value')).toHaveText('Default: first in party (Mika)');
-  // Picked by hand, it stays put while the party changes.
-  await choose(owner, { label: 'Yuzu' });
-  await editor.getByRole('checkbox', { name: 'Mika' }).uncheck();
-  await expectValue(owner, '1004');
+  // Picked by hand, it stays put while the party changes. The roster has two Yuzus
+  // (the labels say "Yuzu (1)"/"Yuzu (2)"), so pick the seed's member by id.
+  await choose(owner, '100000000000001004');
+  // A picked chip's CSS "✓" (`_fixed.scss`) joins its accessible name, and "Mikan"
+  // rules out a substring match.
+  await editor.getByRole('checkbox', { name: /^(✓ )?Mika$/ }).uncheck();
+  await expectValue(owner, '100000000000001004');
   await editor.locator('.bossrow', { hasText: 'Limbo' }).locator('label', { hasText: 'HARD' }).click();
   await editor.getByLabel('Time').fill('19:15');
   const sent = page.waitForRequest((r) => r.method() === 'POST' && r.url().endsWith('/api/admin/fixed'));
   await editor.getByRole('button', { name: 'Add timing' }).click();
-  expect((await sent).postDataJSON()).toMatchObject({ owner_id: '1004', participants: ['1007'] });
+  expect((await sent).postDataJSON()).toMatchObject({ owner_id: '100000000000001004', participants: ['100000000000001007'] });
   await expect(toast(page, /Added .* 19:15 — HLimbo/)).toBeVisible();
 });
 
 test('fixed: an owner refusal (422) reads out on the Owner field and keeps the form', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
   await go(page, '/fixed');
-  await page.getByRole('button', { name: 'Edit Tuesday 23:30 — XBM' }).click();
+  await page.getByRole('button', { name: 'Edit Monday 21:00 — HJupiter' }).click();
   const editor = page.getByRole('complementary', { name: 'Weekly timing details' });
   await choose(editor.getByLabel('Owner'), { label: 'Rin' });
   await page.route('**/api/admin/fixed/*', (route) =>
@@ -228,20 +235,21 @@ test('fixed: an owner refusal (422) reads out on the Owner field and keeps the f
   await expect(owner).toHaveAttribute('aria-invalid', 'true');
   await expect(owner).toHaveAccessibleDescription('Pick an owner from the roster.');
   await expect(owner).toBeFocused();
-  await expectValue(owner, '1010');
+  await expectValue(owner, '100000000000001010');
   await page.unroute('**/api/admin/fixed/*');
   // Picking again clears the refusal; the save goes through.
   await choose(owner, { label: 'Kaito' });
   await expect(owner).not.toHaveAttribute('aria-invalid', 'true');
   await editor.getByRole('button', { name: 'Save changes' }).click();
-  await expect(toast(page, 'Saved Tuesday 23:30 — XBM.')).toBeVisible();
+  await expect(toast(page, 'Saved Monday 21:00 — HJupiter.')).toBeVisible();
 });
 
 test('admin writes: a refused CSRF token is refreshed once and the same action retried', async ({ page }) => {
   await go(page, '/fixed');
-  await expect(page.getByRole('heading', { level: 1 })).toHaveText('8 weekly timings');
-  // Stand-in for signing in again elsewhere: the token the page holds stops working.
-  await page.request.post(`${ADMIN}/__mock/csrf/rotate`);
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('9 weekly timings');
+  // Signed out and in again behind the page's back: the token the page holds belongs to the ended session.
+  await signOutAdmin(page);
+  await signInAdmin(page, 'token');
   const writes: { status: number; key: string | undefined }[] = [];
   page.on('response', async (response) => {
     const request = response.request();
@@ -262,12 +270,12 @@ test('fixed: retiring names its consequence and cancels upcoming runs', async ({
   const confirm = page.getByRole('dialog', { name: 'Retire Tuesday 23:30 — XBM?' });
   await expect(confirm).toContainText('1 upcoming run is cancelled');
   await confirm.getByRole('button', { name: 'Keep it' }).click();
-  await expect(page.getByRole('heading', { level: 1 })).toHaveText('8 weekly timings');
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('9 weekly timings');
   await page.getByRole('button', { name: 'Edit Tuesday 23:30 — XBM' }).click();
   await page.getByRole('complementary', { name: 'Weekly timing details' }).getByRole('button', { name: 'Retire…' }).click();
   await page.getByRole('button', { name: 'Retire timing' }).click();
   await expect(toast(page, 'Retired Tuesday 23:30 — XBM; 1 upcoming run cancelled.')).toBeVisible();
-  await expect(page.getByRole('heading', { level: 1 })).toHaveText('7 weekly timings');
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('8 weekly timings');
 });
 
 test('fixed: wide editor is aligned beside the list, returns focus, and becomes a phone sheet', async ({ page }) => {
@@ -384,7 +392,13 @@ test('history: wide Close and Escape leave the detail closed and return to its r
   await page.setViewportSize({ width: 1280, height: 800 });
   await go(page, '/history');
   const pane = page.getByRole('complementary', { name: 'Change details' });
-  const newest = page.locator('[data-history="9"]');
+  // Wide, the newest change opens by default; the timeline groups rows by week, so
+  // it need not be the first row: Close returns to whichever row it is.
+  const open = page.locator('.history-row[aria-current="true"]');
+  await expect(open).toHaveCount(1);
+  const seqs = await page.locator('.history-row').evaluateAll((rows) => rows.map((r) => Number((r as HTMLElement).dataset.history)));
+  expect(Number(await open.getAttribute('data-history'))).toBe(Math.max(...seqs));
+  const newest = page.locator(`.history-row[data-history="${await open.getAttribute('data-history')}"][data-history-week="${await open.getAttribute('data-history-week')}"]`);
   await pane.getByRole('button', { name: 'Close change details' }).click();
   await expect(pane).toBeHidden();
   await expect(newest).toBeFocused();
@@ -534,7 +548,7 @@ test('fixed: Add and Retire restore focus, while Escape leaves the editor behind
 test('run sheet: this-week roster line and reset to fixed', async ({ page }) => {
   await go(page, '/');
   await page.locator('[data-run="r-carling"] .plan-card__open').click();
-  const sheet = page.getByRole('complementary', { name: 'HCarling + HStar' });
+  const sheet = page.getByRole('complementary', { name: 'HCarling + HMaleficStar' });
   // B_WeekSel: one line, "This week: +Ren · cards …".
   await expect(sheet.locator('.week-pane__week')).toContainText(/^\s*This week: \+Ren\s*·\s*cards\s+morning/);
   // An amended run shows every action (Swap, Preview ping, Reset to fixed) on one row of pills.
@@ -542,7 +556,7 @@ test('run sheet: this-week roster line and reset to fixed', async ({ page }) => 
   expect(tops).toHaveLength(3);
   expect(new Set(tops).size).toBe(1);
   await sheet.getByRole('button', { name: 'Reset to fixed' }).click();
-  await expect(sheet.locator('.sheet__notice')).toContainText('HCarling + HStar is back on its weekly timing.');
+  await expect(sheet.locator('.sheet__notice')).toContainText('HCarling + HMaleficStar is back on its weekly timing.');
   await expect(sheet.getByText(/this week:/i)).toHaveCount(0);
   await expect(sheet.getByRole('button', { name: 'Reset to fixed' })).toHaveCount(0);
   await expect(sheet.locator('.run__people .chip', { hasText: 'Ren' })).toHaveCount(1);
@@ -568,10 +582,10 @@ test('bosses: the in-game list, ticked by timings, with knowledge pages', async 
 
 test('members: roster side pane edits for pings, reply style and aliases', async ({ page }) => {
   await go(page, '/members');
-  await expect(page.getByRole('heading', { level: 1 })).toHaveText('13 bossers');
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('15 bossers');
   // Two members share "Ren": told apart by place, never by id.
   await expect(page.getByRole('button', { name: /^Ren \(2\)/ })).toBeVisible();
-  await expect(page.getByRole('list', { name: 'Members' })).not.toContainText('1013');
+  await expect(page.getByRole('list', { name: 'Members' })).not.toContainText('100000000000001013');
   await expect(page.getByRole('button', { name: /^Kohane/ })).toContainText('chat only');
   await page.getByRole('searchbox', { name: 'Search members' }).fill('tsu');
   await expect(page.getByRole('list', { name: 'Members' }).getByRole('button')).toHaveCount(1);
@@ -591,7 +605,7 @@ test('members: roster side pane edits for pings, reply style and aliases', async
   await expect(sheet.locator('.membersheet__aliases')).toContainText('swallow');
   await sheet.getByRole('textbox', { name: 'New alias for Tsubame' }).fill('mika');
   await sheet.getByRole('button', { name: 'Add' }).click();
-  await expect(notice).toHaveText('“mika” already names someone.');
+  await expect(notice).toHaveText('That alias already names someone.');
   await expect(sheet.getByRole('textbox', { name: 'New alias for Tsubame' })).toHaveValue('mika');
 
   await page.keyboard.press('Escape');
@@ -605,7 +619,7 @@ test('members: roster side pane edits for pings, reply style and aliases', async
 
 test('members: an alias chip’s × removes it from the sheet and the roster, by keyboard, focus following', async ({ page }) => {
   await go(page, '/members');
-  const row = page.locator('[data-member="1003"]');
+  const row = page.locator('[data-member="100000000000001003"]');
   await expect(row).toContainText('mika · mk');
   await row.click();
   const sheet = page.getByRole('complementary', { name: 'Member details' });
@@ -670,7 +684,7 @@ test('members: "Sort: runs" orders by runs this week, A–Z between equals, and 
 
 test('members: phone uses a full-screen sheet and restores the roster row', async ({ page }) => {
   // B_Members, the roster module off; with it on, the next test (B_PhoneRosterChars).
-  await page.request.post(`${ADMIN}/__mock/modules`, { data: { roster: false } });
+  await setModules({ roster: false });
   await page.setViewportSize({ width: 390, height: 844 });
   await go(page, '/members');
   const row = page.getByRole('button', { name: /^Asahi/ });
@@ -755,10 +769,10 @@ test('reminders: queued, due, sent and stale, all runs or one', async ({ page })
   await expect(rows).not.toHaveCount(0);
   for (const row of await rows.all()) await expect(row).toContainText('XBM');
   await page.getByRole('searchbox', { name: 'Search reminders' }).fill('');
-  await queued.getByRole('link', { name: '#630b3544' }).first().click();
+  await queued.getByRole('link', { name: '#rcarling' }).first().click();
   await expect(page).toHaveURL(`${ADMIN}/reminders?run=r-carling`);
-  await expect(page.getByText('run #630b3544')).toBeVisible();
-  for (const row of await rows.all()) await expect(row).toContainText('#630b3544');
+  await expect(page.getByText('run #rcarling')).toBeVisible();
+  for (const row of await rows.all()) await expect(row).toContainText('#rcarling');
   await page.getByRole('link', { name: 'Show every run' }).click();
   await expect(page).toHaveURL(`${ADMIN}/reminders`);
 });
@@ -840,7 +854,8 @@ test('history: filter dropdowns read label and value, and the change pane has no
   await expect(week.locator('.dd__label')).toHaveText('Week');
   await expect(week.locator('.dd__value')).toHaveText('every week');
   await expect(week).toHaveCSS('height', '32px');
-  await page.locator('.history-row').nth(1).click();
+  // A schedule change (the newest rows are seeded Config saves, whose pane is a settings record).
+  await page.locator('.history-row:not(.history-row--config)').first().click();
   const pane = page.getByRole('complementary', { name: 'Change details' });
   await expect(pane).toBeVisible();
   await expect(pane.locator('.cap').first()).toContainText(/^Change #/);
@@ -997,12 +1012,14 @@ test('history sign-ins: /audit opens the log, members show a tag, filters narrow
   await expect(page.getByRole('tab', { name: 'Sign-ins' })).toHaveAttribute('aria-selected', 'true');
   const table = page.getByRole('table', { name: /Sign-in events/ });
   const rows = table.locator('tbody tr');
-  await expect(rows).toHaveCount(8);
-  await expect(rows.first()).toContainText('Session ended');
+  // The seeded eight, then the template's own break-glass and Discord sign-ins (newest).
+  await expect(rows).toHaveCount(11);
+  await expect(rows.first()).toContainText('Signed in');
   const member = rows.filter({ hasText: 'Mikan' }).filter({ hasText: 'Signed in' });
   await expect(member).toContainText('tag 5f2c9a1d');
   await expect(member).toContainText('Members');
-  await expect(rows.filter({ hasText: 'Hoshino' }).filter({ hasText: 'Signed in' })).toContainText('100.64.0.7');
+  // An admin off the roster (the seed's Hoshino) is named by Discord id (`dto::sign_ins::row`); admins show the address.
+  await expect(rows.filter({ hasText: 'Discord 100000000000002001' }).filter({ hasText: 'Signed in' })).toContainText('100.64.0.7');
   await expect(page.getByRole('search', { name: 'Filter the history' })).toBeHidden();
 
   await choose(page.getByRole('combobox', { name: 'Portal' }), { label: 'Members' });
