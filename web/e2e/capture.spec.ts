@@ -116,9 +116,9 @@ for (const vp of CAPTURE_VIEWPORTS) {
       await expect(fixedEditor).toBeVisible();
       await shot(page, `admin-fixed-editor-${tag}`);
       await fixedEditor.getByLabel('Time').fill('21:00');
-      await fixedEditor.getByRole('button', { name: 'Save…' }).click();
-      await expect(fixedEditor.getByRole('radio', { name: 'Update to the new timing' })).toBeVisible();
-      await shot(page, `admin-fixed-choice-${tag}`);
+      await fixedEditor.getByRole('button', { name: 'Save changes' }).click();
+      await expect(page.locator('.toast:not(.is-leaving)').filter({ hasText: 'Saved Friday 21:00 — XKalos.' })).toBeVisible();
+      await shot(page, `admin-fixed-saved-${tag}`);
 
       await page.goto(`${ADMIN}/members?sw=off`);
       await page.getByRole('button', { name: /^Asahi/ }).click();

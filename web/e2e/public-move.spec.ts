@@ -134,9 +134,8 @@ test('taken off the run since the link: who did it, nothing to move, Ask to join
   await removeAsahi(page, 'r-carling');
   await link(page, 'r-carling');
   const notice = page.locator('.move-page__notice');
-  // Members are never told which admin did it (`dto::public::actor_label`); the page starts
-  // the sentence with the label as sent ("an admin": reported as a copy bug, loc3-p6).
-  await expect(notice).toContainText("You're no longer in this party. an admin removed you from HCarling + HMaleficStar on Tue 29 Sep, so you can't move it. The run is unchanged.");
+  // Members are never told which admin did it (`dto::public::actor_label`).
+  await expect(notice).toContainText("You're no longer in this party. An admin removed you from HCarling + HMaleficStar on Tue 29 Sep, so you can't move it. The run is unchanged.");
   await expect(page.getByRole('heading', { level: 1 }).locator('s')).toHaveText('Move HCarling + HMaleficStar to Wednesday 21:30?');
   await expect(page.getByRole('button', { name: /^Move/ })).toHaveCount(0);
   await expect(page.getByRole('link', { name: 'Ask to join…' })).toHaveAttribute('href', '/requests/new?run=r-carling');

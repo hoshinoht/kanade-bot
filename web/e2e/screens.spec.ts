@@ -9,7 +9,7 @@ test('fixed: table, bosscheck, add a timing, and its runs reach the board', asyn
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('9 weekly timings');
   const bmRow = page.getByRole('row', { name: /Black Mage/ });
   await expect(bmRow.getByText('not watched')).toBeVisible();
-  await expect(page.getByRole('row', { name: /Gatekeeper Kalos/ }).getByText('1 run amended')).toBeVisible();
+  await expect(page.getByRole('row', { name: /Gatekeeper Kalos/ }).getByText(/run amended/)).toHaveCount(0);
 
   await page.getByRole('button', { name: 'Add a weekly timing' }).click();
   const editor = page.getByRole('complementary', { name: 'Weekly timing details' });
@@ -207,9 +207,8 @@ test('fixed: a new timing defaults to the first party member; a picked owner sta
   // Picked by hand, it stays put while the party changes. The roster has two Yuzus
   // (the labels say "Yuzu (1)"/"Yuzu (2)"), so pick the seed's member by id.
   await choose(owner, '100000000000001004');
-  // A picked chip's CSS "✓" (`_fixed.scss`) joins its accessible name, and "Mikan"
-  // rules out a substring match.
-  await editor.getByRole('checkbox', { name: /^(✓ )?Mika$/ }).uncheck();
+  // The checkmark is visual only, so the picked member keeps the accessible name "Mika".
+  await editor.getByRole('checkbox', { name: 'Mika', exact: true }).uncheck();
   await expectValue(owner, '100000000000001004');
   await editor.locator('.bossrow', { hasText: 'Limbo' }).locator('label', { hasText: 'HARD' }).click();
   await editor.getByLabel('Time').fill('19:15');

@@ -99,9 +99,7 @@ test('chardata strip: stale, expired (Refresh tries now) and pending', async ({ 
   await expect(strip.getByRole('status').filter({ hasText: 'Refreshed Hotaru7 from NEXON.' })).toHaveCount(1);
 });
 
-// The real strip read (`CharacterData::view`) keeps a retired character's data from every reader, so
-// MikaHero (retired, data fetched 19 Sep) reads `expired`, never the board's paused state.
-test.fixme('chardata strip: retired (paused) keeps its data until it would expire', async ({ page }) => {
+test('chardata strip: retired (paused) keeps its data until it would expire', async ({ page }) => {
   const strip = stripOf(await openEdit(page, 'MikaHero'));
   await expect(strip.locator('.chardata__head .status-chip')).toHaveText('refresh paused');
   await expect(strip).toContainText('deleted 19 Oct unless it is brought back');

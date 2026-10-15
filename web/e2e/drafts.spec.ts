@@ -352,7 +352,7 @@ test('inbox: an edited approval refused after the request changed reloads read-o
   await page.getByRole('radio', { name: 'Keep as it is' }).check();
   await page.getByRole('button', { name: 'Approve edited' }).click();
   const refused = toast(page, 'Couldn’t approve your edit.');
-  await expect(refused).toContainText(`Tsubame changed this request (now version ${version}), so your edits were cleared.`);
+  await expect(refused).toContainText(`This request was changed meanwhile (now version ${version}), so your edits were cleared.`);
   // Persistent (an error), the editor closed, the request at its new version and flagged.
   await expect(page.getByText('Editing · not saved')).toHaveCount(0);
   await expect(page.getByText(`changed in version ${version}`)).toBeVisible();

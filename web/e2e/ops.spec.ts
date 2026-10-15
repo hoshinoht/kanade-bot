@@ -557,14 +557,10 @@ test('history: seeded timeline, strict revert, conflicts and force', async ({ pa
   await expect(backupTags).toHaveCount(2);
   for (const tag of await backupTags.all()) await expect(tag).toContainText('backup');
   await expect(page.locator('[data-history="4"] .history-tag--backup')).toHaveCount(0);
-  // Records carry reminder rows. REAL BUG candidate (loc3-p4, reported): the History
-  // folds a move's re-placed cards only when a reminder row is updated in place
-  // (`history/describe.ts`), but the real scheduler withdraws the old cards and sets new
-  // ones (new ids), so a real move lists every card instead of "2 reminders re-placed".
+  // The scheduler rebuilds moved reminders as new rows; History folds them onto the run.
   const moved = page.getByRole('listitem').filter({ hasText: '#4' }).first();
   await expect(moved).toContainText('XKalos: Fri 25 21:30 → Fri 25 22:00');
-  await expect(moved).toContainText('T-1h card for XKalos set for Fri 25 21:00');
-  await expect(moved).toContainText('T-1h card for XKalos withdrawn');
+  await expect(moved).toContainText('XKalos: 3 reminders re-placed');
   // A member actor reads as the member's name.
   await expect(moved.locator('strong').first()).toHaveText('Asahi');
   await choose(page.getByLabel('Who'), { label: 'Admin (token)' });
@@ -584,7 +580,7 @@ test('history: seeded timeline, strict revert, conflicts and force', async ({ pa
   // undone, its reminders follow the slot, and Tsubame's answer goes.
   await expect(dialog.getByRole('heading', { name: 'Would change', exact: true })).toHaveCount(0);
   await expect(dialog.getByRole('heading', { name: 'Forcing it would change' })).toBeVisible();
-  await expect(dialog.locator('.plan li')).toHaveText(['XKalos: Fri 25 22:00 → Fri 25 21:30', 'T-15m card for XKalos set for Fri 25 21:15', 'Tsubame → no answer for XKalos (was out)']);
+  await expect(dialog.locator('.plan li')).toHaveText(['XKalos: Fri 25 22:00 → Fri 25 21:30', 'XKalos: 1 reminder re-placed', 'Tsubame → no answer for XKalos (was out)']);
   await expect(dialog.getByRole('button', { name: 'Force revert' })).toBeDisabled();
   await dialog.getByRole('checkbox', { name: /Force it/ }).check();
   await dialog.getByRole('button', { name: 'Force revert' }).click();
@@ -813,10 +809,8 @@ test.describe('config sections save', () => {
     await expect(panel.getByText(/publishes no trust zone/)).toBeVisible();
     await choose(models.nth(2), 'kanata/rewrite-small');
 
-    // Reasoning offers only the model's published efforts: the small rewrite
-    // model publishes none. The seed's rewrite role inherits extraction's
-    // effort, so its picker keeps that choice beside Off.
-    expect(await optionLabels(reasonings.nth(2))).toEqual(['Same as extraction', 'Off']);
+    // The seed's extraction effort is High, so the no-reasoning rewrite model cannot inherit it.
+    expect(await optionLabels(reasonings.nth(2))).toEqual(['Off']);
     // `null` efforts: Kanata restricts nothing, so every level is offered.
     await choose(models.nth(2), 'kanata/legacy');
     expect(await optionLabels(reasonings.nth(2))).toEqual(['Same as extraction', 'Off', 'Minimal', 'Low', 'Medium', 'High', 'Xhigh', 'Max']);
@@ -832,8 +826,7 @@ test.describe('config sections save', () => {
     expect(chatChoices.slice(0, 2)).toEqual(['Low', 'Medium']);
     await choose(models.first(), 'kanata/extract');
     await choose(reasonings.first(), 'medium');
-    // REAL BUG (loc3-p4): the high step reset chat to Off, which kanata/chat refuses
-    // (`resetStrandedInheritors`); medium fits again, so chat inherits it once more.
+    // High resets chat to its lowest published level; Medium then fits for inheritance again.
     await choose(reasonings.nth(1), '');
     // Chat needs tools: the tool-less model is offered disabled, with why.
     await expect(optionIn(await openList(models.nth(1)), 'kanata/rewrite-small')).toHaveAttribute('aria-disabled', 'true');
@@ -1076,26 +1069,24 @@ test('config on a phone: the section strip scrolls itself, never the frame', asy
   expect(window.height).toBeGreaterThan(300);
 });
 
-test('models: extraction to High resets an inheriting chat to Off, saved and resynced', async ({ page }) => {
-  // REAL BUG (loc3-p4, reported): `resetStrandedInheritors` (config/capacity.ts) resets a
-  // stranded inheritor to Off even when its model requires reasoning (kanata/chat
-  // publishes low/medium without `none`), so the form shows "off (not listed)", the
-  // alert "kanata/chat requires reasoning", and Save never goes through. `pick` already
-  // falls back to the lowest published level; this test waits on that fix.
-  test.fixme(true, 'REAL BUG: an inheriting role reset to Off on a model that requires reasoning');
+test('models: extraction to High resets inheritors to legal levels, saved and resynced', async ({ page }) => {
+  // Chat requires reasoning and publishes Low first; Rewrite has no reasoning control.
   await go(page, '/config?section=models');
   const panel = page.locator('.settings__panel:not([hidden])');
   const reasonings = panel.getByRole('combobox', { name: /^Reasoning/ });
+  const resetNote = panel.getByRole('status').filter({ hasText: 'reasoning reset to' });
   // Seed: chat and rewrite both inherit extraction's effort.
   await expectValue(reasonings.nth(1), '');
   await choose(reasonings.first(), 'high');
-  await expect(panel.getByRole('status').filter({ hasText: 'Chat and Rewrite reasoning reset to Off' })).toBeVisible();
-  await expectValue(reasonings.nth(1), 'off');
+  await expect(resetNote).toContainText('Chat reasoning reset to Low');
+  await expect(resetNote).toContainText('Rewrite reasoning reset to Off');
+  await expectValue(reasonings.nth(1), 'low');
+  await expectValue(reasonings.nth(2), 'off');
   // A later change that resets nothing clears the note.
   await choose(reasonings.first(), 'low');
-  await expect(panel.getByText(/reasoning reset to Off/)).toHaveCount(0);
+  await expect(panel.getByText(/reasoning reset to/)).toHaveCount(0);
   await choose(reasonings.first(), 'high');
-  await expect(panel.getByText(/reasoning reset to Off/)).toHaveCount(0);
+  await expect(panel.getByText(/reasoning reset to/)).toHaveCount(0);
   await panel.getByRole('button', { name: 'Save models' }).click();
   await expect(toast(page, /Models saved; the next question uses them\./)).toBeVisible();
 
@@ -1110,7 +1101,8 @@ test('models: extraction to High resets an inheriting chat to Off, saved and res
     expect(legal, `${role} resolves to ${resolved}`).toBe(true);
   }
   // The dropdown shows a real, selected option, never a blank box.
-  await expect(reasonings.nth(1).locator('.dd__value')).toHaveText('Off');
+  await expect(reasonings.nth(1).locator('.dd__value')).toHaveText('Low');
+  await expect(reasonings.nth(2).locator('.dd__value')).toHaveText('Off');
 
   // The server refuses an explicit inherit that would resolve illegally.
   const refused = await page.request.patch(`${ADMIN}/api/admin/config`, { headers: await csrf(page.request), data: { models: { roles: { chat: { reasoning: '' } } } } });
