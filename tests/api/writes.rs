@@ -2,18 +2,20 @@
 //! Tue 29 Sep 12:00 KL; `r-kalos` is Tue 22:00 this week, amended off its
 //! weekly timing `f-kalos`). Every response is validated against A0.
 
+use chrono::{TimeZone, Utc};
 use kanade::domain::{
     history::{BlameTarget, ChangeHistory, ChangeMeta, Origin, Surface, changed_fields},
     members::MemberStore,
     notify::{DeclineNotice, DeclineNoticeStore, NoticeOutbox},
     schedule::{Change, ChangeSet, Rsvp, RsvpSource, RsvpState},
+    scheduler::{ScheduleStore, Scope},
 };
 use serde_json::{Value, json};
 
 use crate::{
-    reads::Reads,
+    reads::{Reads, commit_as},
     schemas::assert_valid,
-    support::{ADMIN_HOST, Reply, find, send},
+    support::{ADMIN_HOST, Reply, fields, find, send},
 };
 
 const ORIGIN: (&str, &str) = ("Origin", "https://kanade.test");
@@ -618,7 +620,7 @@ async fn rsvp_participants_reset_and_ping() {
     let message = "common.json#/$defs/Message";
     let ping = reads.ok("POST", "/api/admin/runs/r-kalos/ping", json!({}), message);
     let ping = ping.await;
-    // The pwa-mock mirrors this wording; the run sheet shows it verbatim.
+    // The run sheet shows this wording verbatim.
     let message = ping["message"].as_str().unwrap();
     assert!(
         message.starts_with("Preview (not posted): the morning card for ")
@@ -901,6 +903,146 @@ async fn weekly_timings_create_edit_with_decisions_and_retire() {
     assert_eq!(refusal.1, "invalid");
 }
 
+/// An amended run that has already ended is frozen: a day/time edit leaves
+/// it alone, so the timing's read must not offer it as a Keep/Update choice
+/// (it did, and the save the editor then sent was `choices_not_applicable`).
+#[tokio::test]
+async fn an_ended_amended_run_is_not_offered_as_a_timing_choice() {
+    let reads = Reads::build(|b| b.run_ends = true).await;
+    let snapshot = reads.store.load(&Scope::All).await.unwrap();
+    let mut early = snapshot
+        .runs
+        .iter()
+        .find(|run| run.id == "r-kalos")
+        .unwrap()
+        .clone();
+    // Tue 09:00 KL, off its 22:00 timing and over by the pinned 12:00.
+    early.datetime = Utc.with_ymd_and_hms(2026, 9, 29, 1, 0, 0).unwrap();
+    let at = Utc.with_ymd_and_hms(2026, 9, 29, 3, 0, 0).unwrap();
+    commit_as(&reads.store, "test", at, vec![Change::PutRun(early)]).await;
+
+    let amended = |row: &Value| -> Vec<(String, String, bool)> {
+        row["runs"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|run| {
+                (
+                    run["run_id"].as_str().unwrap().to_owned(),
+                    run["time"].as_str().unwrap().to_owned(),
+                    run["amended"].as_bool().unwrap(),
+                )
+            })
+            .collect()
+    };
+    let (_, row) = reads.rows().await;
+    assert_eq!(
+        amended(&row),
+        [
+            ("r-kalos".into(), "09:00".into(), false),
+            ("n-kalos".into(), "22:00".into(), false)
+        ],
+        "the ended run is not offered"
+    );
+
+    // What the editor sends with nothing to ask: no decisions. Cara has lost
+    // the bossing role, so the party drops her (a change the ended run skips).
+    let mut edit = json!({
+        "weekday": 1, "time": "21:30", "bosses": "xkalos", "participants": ["1001", "1002"],
+        "channel_id": "kalos-four", "note": "bring pots"
+    });
+    edit["version"] = reads.version().await.into();
+    let row = reads.ok("PATCH", F_KALOS, edit, FIXED_ROW).await;
+    assert_eq!(
+        amended(&row),
+        [
+            ("r-kalos".into(), "09:00".into(), false),
+            ("n-kalos".into(), "21:30".into(), false)
+        ],
+        "the ended run keeps its slot; next week's follows the timing"
+    );
+}
+
+/// The editor asks update or keep only about the runs the save lists. It
+/// asked about every amended run, so a save keeping the day and time, or one
+/// with a run changed only in its roster, was refused `choices_not_applicable`.
+#[tokio::test]
+async fn timing_choices_are_the_runs_the_save_takes_decisions_for() {
+    let reads = Reads::new().await;
+    let path = "/api/admin/fixed/f-kalos/choices";
+    let listed = async |body: Value| -> Vec<String> {
+        assert_valid("fixed.json#/$defs/FixedChoicesRequest", "choices", &body);
+        let choices = reads.ok("POST", path, body, "fixed.json#/$defs/FixedChoices");
+        let runs = choices.await["runs"].as_array().unwrap().clone();
+        runs.iter()
+            .map(|run| run["run_id"].as_str().unwrap().to_owned())
+            .collect()
+    };
+    // f-kalos: Tue 22:00. r-kalos moves off it; n-kalos changes only its roster.
+    let v = reads.version().await;
+    let body = json!({"day": 5, "time": "23:00", "version": v});
+    reads.ok("POST", MOVE_KALOS, body, MOVE_RESULT).await;
+    let add = json!({"add": "1004", "version": reads.version().await});
+    let roster = "/api/admin/runs/n-kalos/participants";
+    reads.ok("PATCH", roster, add, RUN_RESULT).await;
+    let (_, row) = reads.rows().await;
+    let amended: Vec<_> = row["runs"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|run| (run["run_id"].clone(), run["amended"].clone()))
+        .collect();
+    assert_eq!(
+        amended,
+        [
+            ("r-kalos".into(), true.into()),
+            ("n-kalos".into(), true.into())
+        ]
+    );
+
+    let unchanged = listed(json!({"weekday": 1, "time": "22:00"})).await;
+    assert!(
+        unchanged.is_empty(),
+        "day and time unchanged: {unchanged:?}"
+    );
+    let moved = listed(json!({"weekday": 1, "time": "21:30"})).await;
+    assert_eq!(moved, ["r-kalos"], "not the roster-only run");
+    assert_eq!(
+        reads
+            .refused("POST", path, json!({"weekday": 1, "time": "9:30"}))
+            .await,
+        (422, "invalid".into())
+    );
+    let gone = "/api/admin/fixed/f-gone/choices";
+    assert_eq!(
+        reads
+            .refused("POST", gone, json!({"weekday": 1, "time": "21:30"}))
+            .await,
+        (404, "not_found".into())
+    );
+
+    // What the editor then sends: no decisions for a note-only save, and one
+    // per listed run for the time change.
+    let note = timing(reads.version().await, "22:00", "bring pots");
+    reads.ok("PATCH", F_KALOS, note, FIXED_ROW).await;
+    let mut moved = timing(reads.version().await, "21:30", "bring pots");
+    moved["decisions"] = json!({"r-kalos": "keep"});
+    let row = reads.ok("PATCH", F_KALOS, moved, FIXED_ROW).await;
+    let times: Vec<_> = row["runs"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|run| (run["run_id"].clone(), run["time"].clone()))
+        .collect();
+    assert_eq!(
+        times,
+        [
+            ("r-kalos".into(), "23:00".into()),
+            ("n-kalos".into(), "21:30".into())
+        ]
+    );
+}
+
 #[tokio::test]
 async fn member_edits_and_aliases() {
     let reads = Reads::new().await;
@@ -1103,15 +1245,9 @@ impl Reads {
 #[tokio::test]
 async fn timing_owner_is_set_changed_validated_and_blamed() {
     let reads = Reads::new().await;
+    let owner = ["owner_id", "owner", "owner_pinned"];
     let (_, row) = reads.rows().await;
-    assert_eq!(
-        (
-            row["owner_id"].clone(),
-            row["owner"].clone(),
-            row["owner_pinned"].clone()
-        ),
-        ("1001".into(), "Alice".into(), false.into())
-    );
+    assert_eq!(fields(&row, &owner), json!(["1001", "Alice", false]));
 
     // Create without an owner: unpinned, the first participant owns it.
     let plain = json!({
@@ -1120,8 +1256,8 @@ async fn timing_owner_is_set_changed_validated_and_blamed() {
     });
     let created = reads.ok("POST", FIXED, plain, FIXED_ROW).await;
     assert_eq!(
-        (created["owner_id"].clone(), created["owner_pinned"].clone()),
-        ("1002".into(), false.into())
+        fields(&created, &["owner_id", "owner_pinned"]),
+        json!(["1002", false])
     );
 
     // Create: an owner outside the party is pinned.
@@ -1131,14 +1267,7 @@ async fn timing_owner_is_set_changed_validated_and_blamed() {
     });
     assert_valid("fixed.json#/$defs/FixedRequest", "create", &create);
     let created = reads.ok("POST", FIXED, create.clone(), FIXED_ROW).await;
-    assert_eq!(
-        (
-            created["owner_id"].clone(),
-            created["owner"].clone(),
-            created["owner_pinned"].clone()
-        ),
-        ("1004".into(), "Dan".into(), true.into())
-    );
+    assert_eq!(fields(&created, &owner), json!(["1004", "Dan", true]));
 
     // Unknown, role-less, bot and malformed owners are refused, nothing written.
     reads.drop_cara().await;
@@ -1182,10 +1311,8 @@ async fn timing_owner_is_set_changed_validated_and_blamed() {
     );
     let form = timing(v, "22:00", "bring elixirs");
     let row = reads.ok("PATCH", F_KALOS, form, FIXED_ROW).await;
-    assert_eq!(
-        (row["owner_id"].clone(), row["note"].clone()),
-        ("1002".into(), "bring elixirs".into())
-    );
+    let shown = ["owner_id", "note"];
+    assert_eq!(fields(&row, &shown), json!(["1002", "bring elixirs"]));
 
     // A since-demoted current owner (outside the party) never blocks an
     // edit of other fields.
@@ -1196,10 +1323,7 @@ async fn timing_owner_is_set_changed_validated_and_blamed() {
     let mut form = timing(reads.version().await, "22:00", "bring pots");
     form["owner_id"] = "1004".into();
     let row = reads.ok("PATCH", F_KALOS, form, FIXED_ROW).await;
-    assert_eq!(
-        (row["owner_id"].clone(), row["note"].clone()),
-        ("1004".into(), "bring pots".into())
-    );
+    assert_eq!(fields(&row, &shown), json!(["1004", "bring pots"]));
 
     // `""` unpins: the owner is the first participant again, blamed as `owner`.
     let v = reads.version().await;
@@ -1207,8 +1331,8 @@ async fn timing_owner_is_set_changed_validated_and_blamed() {
     form["owner_id"] = "".into();
     let row = reads.ok("PATCH", F_KALOS, form, FIXED_ROW).await;
     assert_eq!(
-        (row["owner_id"].clone(), row["owner_pinned"].clone()),
-        ("1001".into(), false.into())
+        fields(&row, &["owner_id", "owner_pinned"]),
+        json!(["1001", false])
     );
     let record = reads.store.load_change(v + 1).await.unwrap().unwrap();
     assert_eq!(

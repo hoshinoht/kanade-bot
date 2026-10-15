@@ -18,7 +18,7 @@ use kanade::infrastructure::llm::{
 
 use crate::looping::{Ports, said, settings};
 use crate::model::{Scripted, capabilities};
-use crate::support::load;
+use crate::support::world_input;
 use crate::wire::kanade;
 use crate::world::World;
 
@@ -52,7 +52,7 @@ fn governor() -> Arc<Governor> {
 }
 
 async fn ask(governor: Arc<Governor>, route: Option<&RoleRoute>) -> (Generation, Vec<ChatRequest>) {
-    let input = load("loop.json")["cases"][0]["input"].clone();
+    let input = world_input();
     let mut world = World::new(&input).await;
     let provider = Arc::new(Scripted {
         fake: FakeProvider::new([

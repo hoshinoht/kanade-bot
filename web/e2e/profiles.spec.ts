@@ -1,11 +1,11 @@
 import type { Locator, Page } from '@playwright/test';
 import { ADMIN, PUBLIC, csrf, expect, test, choose, expectValue, optionLabels, unconditional } from './support';
 
-type Profile = { key: string; name: string; public: boolean; voice: string; prompt_summary: string };
+type Profile = { key: string; name: string; public: boolean; voice: string; prompt_summary: string; prompt: string };
 type ConfigResponse = { persona: { profiles: Profile[] } };
 type VisibilityPatch = { persona: { visibility: { key: string; public: boolean }[] } };
 
-/** A long catalog: the mock's four profiles plus 20 numbered ones. */
+/** A long catalog: the seed's four profiles plus 20 numbered ones. */
 async function manyProfiles(page: Page, patches?: VisibilityPatch[]) {
   let latest: ConfigResponse | null = null;
   await page.route(/\/api\/admin\/config$/, async (route) => {
@@ -28,7 +28,8 @@ async function manyProfiles(page: Page, patches?: VisibilityPatch[]) {
     for (let i = 1; i <= 20; i++) {
       const key = `extra-${i}`;
       if (keys.has(key)) continue;
-      body.persona.profiles.push({ key, name: `Extra ${String(i).padStart(2, '0')}`, public: i % 2 === 0, voice: 'Numbered', prompt_summary: `Filler prompt number ${i}.` });
+      const prompt = `Filler prompt number ${i}.`;
+      body.persona.profiles.push({ key, name: `Extra ${String(i).padStart(2, '0')}`, public: i % 2 === 0, voice: 'Numbered', prompt_summary: prompt, prompt });
     }
     latest = structuredClone(body);
     await route.fulfill({ response: res, json: body });
@@ -401,7 +402,7 @@ test('role profiles: a second admin conflict preserves the draft until explicit 
 
   await choose(rows.nth(0).getByRole('combobox', { name: 'Reply profile' }), 'kanade');
   await page.getByRole('button', { name: 'Save role overrides' }).click();
-  await expect(page.getByRole('alert').filter({ hasText: 'Role assignments changed since they were loaded' })).toContainText('Role assignments changed since they were loaded');
+  await expect(page.getByRole('alert').filter({ hasText: 'Reply profile assignments changed' })).toHaveText('Reply profile assignments changed. Reload Config before saving again.');
   await expect(page.getByRole('status').filter({ hasText: 'Your draft is still here.' })).toBeVisible();
   await expectValue(rows.nth(0).getByRole('combobox', { name: 'Reply profile' }), 'kanade');
   await expect(page.getByRole('button', { name: 'Save role overrides' })).toBeDisabled();

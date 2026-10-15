@@ -12,7 +12,7 @@ use std::{collections::BTreeMap, sync::Arc};
 
 use axum::{
     Json,
-    extract::{Path as UrlPath, State, rejection::JsonRejection},
+    extract::{Path as UrlPath, State},
     http::HeaderMap,
     response::IntoResponse,
 };
@@ -28,7 +28,7 @@ use crate::{
     api::{
         admin::{
             context::{context, run_ends, weeks},
-            write::{Refusal, bad_body, load_run, state},
+            write::{Body, Refusal, load_run, state},
         },
         auth::AdminSession,
         dto::characters::{RunCharacters, run_slot},
@@ -172,9 +172,8 @@ pub async fn pick(
     session: AdminSession,
     UrlPath((run_id, member_id)): UrlPath<(String, String)>,
     headers: HeaderMap,
-    body: Result<Json<CharacterPick>, JsonRejection>,
+    Body(body): Body<CharacterPick>,
 ) -> Reply {
-    let Json(body) = body.map_err(bad_body)?;
     let state = state(&site)?;
     let (character_id, version) = body.parts("run's")?;
     let request = format!(

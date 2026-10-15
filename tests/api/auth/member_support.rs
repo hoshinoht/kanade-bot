@@ -1,5 +1,5 @@
 //! Member (public origin) sign-in harness: the real public router with the
-//! member realm over the memory store (sessions optionally on SQLite), fake
+//! member realm over a temp SQLite store (sessions optionally on a second), fake
 //! Discord, the store-backed eligibility gate (overridable, with a one-shot
 //! hook after a check), a live portal switch and a pinned clock; optionally
 //! the read state the member reads use. The admin listener runs beside it
@@ -35,14 +35,13 @@ use kanade::{
     bot::commands::AccessPolicy,
     domain::members::{GatewayMember, MemberStore},
     infrastructure::store::{
-        MemoryScheduleStore, SqliteStore, SqliteStoreConfig,
+        SqliteStore,
         web_sessions::{LoginMethod, SessionOrigin, WebSession, WebSessionStore},
     },
 };
 use twilight_model::id::Id;
 
 use super::TOKEN;
-use crate::reads::TempDir;
 use crate::support::{self, ADMIN_HOST, Fixture, PUBLIC_HOST, Reply, send};
 
 pub const PUBLIC_CLIENT_ID: &str = "5151";
@@ -57,7 +56,7 @@ type Race = Pin<Box<dyn Future<Output = ()> + Send>>;
 
 /// The store-backed gate, overridable to answer one fixed result; counts checks.
 pub struct TestGate {
-    store: StoreEligibility<Arc<MemoryScheduleStore>>,
+    store: StoreEligibility<Arc<SqliteStore>>,
     fixed: Mutex<Option<Eligibility>>,
     checks: AtomicU32,
     race: Mutex<Option<Race>>,
@@ -104,7 +103,7 @@ pub struct Options {
     pub limits: Option<fn(kanade::api::auth::rate::Route) -> Limits>,
     /// The public application is configured.
     pub discord: bool,
-    /// Sessions on a fresh SQLite store instead of the memory store.
+    /// Sessions on a second SQLite store instead of `store`.
     pub sqlite: bool,
     /// The read state of the member reads (`None`: they answer `unavailable`).
     pub state: Option<Arc<ApiState>>,
@@ -130,7 +129,7 @@ pub struct MemberHarness {
     pub admin: SocketAddr,
     pub discord: Arc<FakeDiscord>,
     pub audit: Arc<RecordingAudit>,
-    pub store: Arc<MemoryScheduleStore>,
+    pub store: Arc<SqliteStore>,
     /// The member realm's session store (`store` unless built with `sqlite`).
     pub sessions: Arc<dyn WebSessionStore>,
     pub gate: Arc<TestGate>,
@@ -139,7 +138,6 @@ pub struct MemberHarness {
     open: Arc<AtomicBool>,
     clock: Arc<Mutex<DateTime<Utc>>>,
     _fixture: Fixture,
-    _dir: Option<TempDir>,
 }
 
 /// A signed-in browser: its session cookie value and CSRF token.
@@ -181,7 +179,7 @@ impl MemberHarness {
         if let Some(dir) = options.boss_dir {
             http.boss_dir = Some(dir);
         }
-        let store = Arc::new(MemoryScheduleStore::new());
+        let store = Arc::new(SqliteStore::open_temp().await);
         let discord = Arc::new(FakeDiscord::default());
         let audit = Arc::new(RecordingAudit::default());
         let clock = Arc::new(Mutex::new(
@@ -194,17 +192,10 @@ impl MemberHarness {
             checks: AtomicU32::new(0),
             race: Mutex::new(None),
         });
-        let (sessions, dir): (Arc<dyn WebSessionStore>, _) = if options.sqlite {
-            let dir = TempDir::new();
-            let sqlite = SqliteStore::open(&SqliteStoreConfig {
-                db_path: dir.0.join("kanade.sqlite3"),
-                owner_lock_dir: dir.0.join("locks"),
-            })
-            .await
-            .unwrap();
-            (Arc::new(sqlite), Some(dir))
+        let sessions: Arc<dyn WebSessionStore> = if options.sqlite {
+            Arc::new(SqliteStore::open_temp().await)
         } else {
-            (store.clone(), None)
+            store.clone()
         };
         let now = clock.clone();
         let switch = open.clone();
@@ -273,7 +264,6 @@ impl MemberHarness {
             open,
             clock,
             _fixture: fixture,
-            _dir: dir,
         };
         harness.roster(MIKAN, true).await;
         harness.roster(NOROLE, false).await;
@@ -411,6 +401,15 @@ impl MemberHarness {
 
     pub async fn sign_in(&self, user: DiscordUser) -> Browser {
         self.sign_in_from(user, "198.51.100.10").await
+    }
+
+    /// Members `ids` (each named "Member") signed in, in order.
+    pub async fn sign_ins<const N: usize>(&self, ids: [u64; N]) -> [Browser; N] {
+        let mut browsers = Vec::with_capacity(N);
+        for id in ids {
+            browsers.push(self.sign_in(discord_user(id, "Member")).await);
+        }
+        browsers.try_into().unwrap()
     }
 
     /// The member's public session rows, superseded ids included.

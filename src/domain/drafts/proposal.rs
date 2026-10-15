@@ -153,7 +153,7 @@ forward_store!(ProposalStore for [arc] {
     fn expire_proposals(&self, now: DateTime<Utc>, actor: &Actor) -> Result<Vec<String>, StoreError>;
 });
 
-/// Refusals both stores apply before writing; returns `expires_at`.
+/// Refusals applied before SQLite writes; returns `expires_at`.
 pub fn check_new(new: &NewProposal) -> Result<DateTime<Utc>, StoreError> {
     if !matches!(new.author, Actor::System { .. }) {
         return Err(StoreError::Constraint(

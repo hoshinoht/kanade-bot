@@ -108,7 +108,7 @@ pub struct BurstInputs<'i, 'a> {
     /// Canonicalises model boss names when given.
     pub boss_table: Option<&'i BossTable>,
     /// v5: a matched run past its end is already over; `None` keeps v4's
-    /// 2 h after its start (the vector replays).
+    /// 2 h after its start.
     pub run_ends: Option<&'i crate::domain::completion::RunEnds>,
 }
 

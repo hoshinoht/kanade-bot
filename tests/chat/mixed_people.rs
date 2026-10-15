@@ -19,9 +19,9 @@ use kanade::infrastructure::llm::governor::DEFAULT_TOOL_ROUNDS;
 use kanade::infrastructure::llm::{ChatRequest, FakeAction, FakeProvider, Message};
 use serde_json::{Value, json};
 
-use crate::looping::{Ports, said, settings};
+use crate::looping::{Ports, conversation, said, settings};
 use crate::model::{Scripted, capabilities, client};
-use crate::support::load;
+use crate::support::world_input;
 use crate::world::World;
 
 const BOT: &str = "5000";
@@ -46,10 +46,10 @@ fn run(id: &str, bosses: &[&str], at: &str, channel: &str, party: &[&str]) -> Va
     })
 }
 
-/// The loop vector's settings and catalog over the V02 world: Tue 13 Oct
+/// The world fixture's settings and catalog over the V02 world: Tue 13 Oct
 /// 15:30, boss weeks from Thursday.
 fn input() -> Value {
-    let mut input = load("loop.json")["cases"][0]["input"].clone();
+    let mut input = world_input();
     input["clock"] = json!("2026-10-13T15:30:00+08:00");
     input["timezone"] = json!("Asia/Singapore");
     input["reset_weekday"] = json!(3);
@@ -129,14 +129,7 @@ async fn ask(asker: &str, content: &str, rounds: u8, actions: Vec<FakeAction>) -
         let (guild, mut proposer) = world.question_parts();
         let question = Question {
             ctx: &ctx,
-            conversation: vec![
-                Message::System {
-                    content: "SYSTEM".into(),
-                },
-                Message::User {
-                    content: format!("Aster: {content}"),
-                },
-            ],
+            conversation: conversation(format!("Aster: {content}")),
             reminder: "Stay in voice.".into(),
             offer: ChatPilot::route(content, None, ctx.read_only),
             settings: settings(&input, rounds),
@@ -392,79 +385,50 @@ async fn a_mixed_question_answered_without_a_read_is_left_alone() {
     assert!(asked.generation.outcomes.is_empty());
 }
 
-/// C06: the trusted self-only recovery is untouched.
+/// C06: the trusted self-only recovery is untouched; C07: a third-person-only
+/// question reads only that person; C09: an unrecognised mention is still
+/// refused and asked about, the asker's runs never substituted.
 #[tokio::test]
-async fn a_self_only_question_keeps_its_one_read() {
-    let content = "<@5000> when is the next run for me?";
-    let asked = ask(
-        ASTER,
-        content,
-        DEFAULT_TOOL_ROUNDS,
-        vec![
-            wants(&[(
-                "get_schedule",
-                json!({"week": "auto", "participant": "Aster"}),
-            )]),
-            words("Tonight, Carling at 21:30."),
-        ],
-    )
-    .await;
-    assert!(asked.ctx.schedule_people.is_empty());
-    assert!(asked.ctx.self_schedule_requested);
-    assert_eq!(asked.requests.len(), 2);
-    let reads = reads(&asked.generation);
-    assert_eq!(reads.len(), 1);
-    assert!(reads[0].2.starts_with("**Your next run"), "{reads:?}");
-}
-
-/// C07: a third-person-only question reads only that person.
-#[tokio::test]
-async fn a_third_person_question_keeps_its_one_read() {
-    let content = "<@5000> what runs does Cobalt have this week?";
-    let asked = ask(
-        ASTER,
-        content,
-        DEFAULT_TOOL_ROUNDS,
-        vec![
-            wants(&[(
-                "get_schedule",
-                json!({"week": "this", "participant": "Cobalt"}),
-            )]),
-            words("Cobalt has two runs on Wednesday."),
-        ],
-    )
-    .await;
-    assert!(asked.ctx.schedule_people.is_empty());
-    assert_eq!(asked.requests.len(), 2);
-    let reads = reads(&asked.generation);
-    assert_eq!(reads.len(), 1);
-    assert!(reads[0].2.starts_with("**Cobalt's 2 runs"), "{reads:?}");
-}
-
-/// C09: an unrecognised mention is still refused and asked about; the
-/// asker's runs are never substituted.
-#[tokio::test]
-async fn an_unrecognised_mention_is_still_asked_about() {
-    let content = "<@5000> what's on for <@100000000000000999> this week?";
-    let asked = ask(
-        ASTER,
-        content,
-        DEFAULT_TOOL_ROUNDS,
-        vec![
-            wants(&[(
-                "get_schedule",
-                json!({"week": "this", "participant": "<@100000000000000999>"}),
-            )]),
-            words("That mention isn't on the roster. Who do you mean?"),
-        ],
-    )
-    .await;
-    assert!(asked.ctx.schedule_people.is_empty());
-    assert_eq!(asked.requests.len(), 2);
-    let reads = reads(&asked.generation);
-    assert_eq!(reads.len(), 1);
-    assert!(!reads[0].1, "refused: {reads:?}");
-    assert!(asked.generation.reply.ends_with("Who do you mean?"));
+async fn questions_not_naming_others_with_the_asker_keep_their_one_read() {
+    let stranger = "<@100000000000000999>";
+    let cases = [
+        (
+            "C06",
+            "<@5000> when is the next run for me?".to_owned(),
+            json!({"week": "auto", "participant": "Aster"}),
+            "Tonight, Carling at 21:30.",
+            (true, true, "**Your next run"),
+        ),
+        (
+            "C07",
+            "<@5000> what runs does Cobalt have this week?".to_owned(),
+            json!({"week": "this", "participant": "Cobalt"}),
+            "Cobalt has two runs on Wednesday.",
+            (false, true, "**Cobalt's 2 runs"),
+        ),
+        (
+            "C09",
+            format!("<@5000> what's on for {stranger} this week?"),
+            json!({"week": "this", "participant": stranger}),
+            "That mention isn't on the roster. Who do you mean?",
+            (false, false, ""),
+        ),
+    ];
+    for (case, content, arguments, answer, (self_only, read_ok, listing)) in cases {
+        let actions = vec![wants(&[("get_schedule", arguments)]), words(answer)];
+        let asked = ask(ASTER, &content, DEFAULT_TOOL_ROUNDS, actions).await;
+        assert!(asked.ctx.schedule_people.is_empty(), "{case}");
+        assert_eq!(asked.ctx.self_schedule_requested, self_only, "{case}");
+        assert_eq!(asked.requests.len(), 2, "{case}");
+        let reads = reads(&asked.generation);
+        assert_eq!(reads.len(), 1, "{case}");
+        assert_eq!(reads[0].1, read_ok, "{case}: {reads:?}");
+        assert!(reads[0].2.starts_with(listing), "{case}: {reads:?}");
+        if !read_ok {
+            let reply = &asked.generation.reply;
+            assert!(reply.ends_with("Who do you mean?"), "{case}: {reply}");
+        }
+    }
 }
 
 #[tokio::test]

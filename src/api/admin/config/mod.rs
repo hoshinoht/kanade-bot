@@ -142,6 +142,10 @@ async fn answer(
         &saved,
     );
     fill_in_use(state, &mut view.models.groups);
+    view.manage_messages.missing = access::missing_manage(
+        state.channels.as_ref(),
+        settings.posting.channel_id.as_deref(),
+    );
     if let Some(service) = &state.character_data {
         view.character_data = Some(crate::api::dto::character_data::health(
             &service.health().await,

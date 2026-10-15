@@ -49,6 +49,8 @@ async fn phrase_in(
 
 impl ReminderCardStore for SqliteStore {
     async fn card_record(&self, dedupe_key: &str) -> Result<Option<CardRecord>, StoreError> {
+        #[cfg(any(test, feature = "test-support"))]
+        self.faults.card_record_read()?;
         read_txn!(self, tx, record_in(&mut tx, dedupe_key))
     }
 
@@ -58,6 +60,8 @@ impl ReminderCardStore for SqliteStore {
         record: &CardRecord,
         at: DateTime<Utc>,
     ) -> Result<CardRecord, StoreError> {
+        #[cfg(any(test, feature = "test-support"))]
+        self.faults.card_record_write()?;
         let at = instant(&at)?;
         write_txn!(self, tx, async {
             sqlx::query(
@@ -149,6 +153,8 @@ impl ReminderCardStore for SqliteStore {
 
 impl DigestPhraseStore for SqliteStore {
     async fn digest_phrase(&self, dedupe_key: &str) -> Result<Option<String>, StoreError> {
+        #[cfg(any(test, feature = "test-support"))]
+        self.faults.digest_phrase_read()?;
         read_txn!(self, tx, phrase_in(&mut tx, dedupe_key))
     }
 
@@ -158,6 +164,8 @@ impl DigestPhraseStore for SqliteStore {
         phrase: &str,
         at: DateTime<Utc>,
     ) -> Result<String, StoreError> {
+        #[cfg(any(test, feature = "test-support"))]
+        self.faults.digest_phrase_write()?;
         let at = instant(&at)?;
         write_txn!(self, tx, async {
             sqlx::query(

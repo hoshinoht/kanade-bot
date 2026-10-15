@@ -374,7 +374,7 @@ async fn a_rescan_while_extraction_is_off_says_how_to_switch_it_on() {
 #[tokio::test]
 async fn without_an_extractor_the_summary_and_the_refusal_share_one_reason() {
     let logs = Logs {
-        reads: crate::reads::Reads::without_rescans().await,
+        reads: crate::reads::Reads::build(|b| b.rescans = false).await,
         proposal: String::new(),
     };
     let summary = logs.get("/api/admin/summary").await;

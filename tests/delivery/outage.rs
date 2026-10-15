@@ -15,11 +15,12 @@ use kanade::domain::history::Origin;
 use kanade::domain::ids::RandomIds;
 use kanade::domain::schedule::{NewRun, RunSource, RunStatus, StatusChange};
 use kanade::domain::time::from_iso;
+use kanade::infrastructure::store::SqliteStore;
 use tokio::sync::{Mutex, oneshot};
 
 use crate::intercept::Intercept;
 use crate::scenarios::{self, HOME, POST};
-use crate::support::{self, Store, mark_digest_week, on_both_stores, seed_digest};
+use crate::support::{self, Store, mark_digest_week, seed_digest};
 
 async fn pending_notice<S: Store>(store: &S, now: DateTime<Utc>) {
     let config = scenarios::config();
@@ -147,7 +148,7 @@ async fn pause_then_recover<S: Store>(store: &S) {
 
 #[tokio::test]
 async fn paused_claims_resume_normally_on_memory_and_sqlite() {
-    on_both_stores!(pause_then_recover);
+    pause_then_recover(&SqliteStore::open_temp().await).await;
 }
 
 async fn notice_admission_rechecks_after_render<S: Store>(store: &S) {
@@ -170,7 +171,7 @@ async fn notice_admission_rechecks_after_render<S: Store>(store: &S) {
 
 #[tokio::test]
 async fn closing_at_the_notice_admission_boundary_prevents_the_claim() {
-    on_both_stores!(notice_admission_rechecks_after_render);
+    notice_admission_rechecks_after_render(&SqliteStore::open_temp().await).await;
 }
 
 /// A one-time pause point: the first [`Barrier::pass`] reports entry, then
@@ -262,7 +263,8 @@ async fn admitted_notice_claim_and_drain_settle_after_close_on_store<S: Store>(s
 
 #[tokio::test]
 async fn admitted_notice_claim_and_drain_settle_after_close() {
-    on_both_stores!(admitted_notice_claim_and_drain_settle_after_close_on_store);
+    admitted_notice_claim_and_drain_settle_after_close_on_store(&SqliteStore::open_temp().await)
+        .await;
 }
 
 async fn stale_notice_admission_rechecks_before_retirement<S: Store>(store: &S) {
@@ -283,7 +285,7 @@ async fn stale_notice_admission_rechecks_before_retirement<S: Store>(store: &S) 
 
 #[tokio::test]
 async fn closing_at_stale_notice_retirement_leaves_it_pending() {
-    on_both_stores!(stale_notice_admission_rechecks_before_retirement);
+    stale_notice_admission_rechecks_before_retirement(&SqliteStore::open_temp().await).await;
 }
 
 async fn reminder_admission_rechecks_after_planning<S: Store>(store: &S) {
@@ -310,7 +312,7 @@ async fn reminder_admission_rechecks_after_planning<S: Store>(store: &S) {
 
 #[tokio::test]
 async fn closing_at_the_reminder_admission_boundary_prevents_the_claim() {
-    on_both_stores!(reminder_admission_rechecks_after_planning);
+    reminder_admission_rechecks_after_planning(&SqliteStore::open_temp().await).await;
 }
 
 async fn stale_reminder_admission_rechecks_before_retirement<S: Store>(store: &S) {
@@ -336,7 +338,7 @@ async fn stale_reminder_admission_rechecks_before_retirement<S: Store>(store: &S
 
 #[tokio::test]
 async fn closing_at_stale_reminder_retirement_leaves_it_pending() {
-    on_both_stores!(stale_reminder_admission_rechecks_before_retirement);
+    stale_reminder_admission_rechecks_before_retirement(&SqliteStore::open_temp().await).await;
 }
 
 async fn digest_claim_rechecks_after_planning<S: Store>(store: &S) {
@@ -365,7 +367,7 @@ async fn digest_claim_rechecks_after_planning<S: Store>(store: &S) {
 
 #[tokio::test]
 async fn closing_at_the_digest_claim_boundary_prevents_the_claim() {
-    on_both_stores!(digest_claim_rechecks_after_planning);
+    digest_claim_rechecks_after_planning(&SqliteStore::open_temp().await).await;
 }
 
 async fn digest_delete_rechecks_at_the_remote_boundary<S: Store>(store: &S) {
@@ -396,7 +398,7 @@ async fn digest_delete_rechecks_at_the_remote_boundary<S: Store>(store: &S) {
 
 #[tokio::test]
 async fn closing_at_the_digest_delete_boundary_preserves_the_old_card() {
-    on_both_stores!(digest_delete_rechecks_at_the_remote_boundary);
+    digest_delete_rechecks_at_the_remote_boundary(&SqliteStore::open_temp().await).await;
 }
 
 async fn admitted_digest_delete_settles_then_defers_create<S: Store>(store: &S) {
@@ -451,7 +453,7 @@ async fn admitted_digest_delete_settles_then_defers_create<S: Store>(store: &S) 
 
 #[tokio::test]
 async fn admitted_digest_delete_settles_but_close_denies_replacement_create() {
-    on_both_stores!(admitted_digest_delete_settles_then_defers_create);
+    admitted_digest_delete_settles_then_defers_create(&SqliteStore::open_temp().await).await;
 }
 
 async fn confirmed_digest_delete_needs_a_fresh_create_admission<S: Store>(store: &S) {
@@ -482,7 +484,7 @@ async fn confirmed_digest_delete_needs_a_fresh_create_admission<S: Store>(store:
 
 #[tokio::test]
 async fn replacement_create_is_separately_admitted_after_confirmed_delete() {
-    on_both_stores!(confirmed_digest_delete_needs_a_fresh_create_admission);
+    confirmed_digest_delete_needs_a_fresh_create_admission(&SqliteStore::open_temp().await).await;
 }
 
 async fn stale_work_waits_until_recovery<S: Store>(store: &S) {
@@ -548,7 +550,7 @@ async fn stale_countdown<S: Store>(store: &S, now: DateTime<Utc>) -> String {
 
 #[tokio::test]
 async fn pending_due_work_uses_existing_staleness_rules_after_recovery() {
-    on_both_stores!(stale_work_waits_until_recovery);
+    stale_work_waits_until_recovery(&SqliteStore::open_temp().await).await;
 }
 
 async fn ambiguous_in_flight_send_is_not_replayed<S: Store>(store: &S) {
@@ -599,5 +601,5 @@ async fn ambiguous_in_flight_send_is_not_replayed<S: Store>(store: &S) {
 
 #[tokio::test]
 async fn a_hanging_send_stays_indeterminate_across_disconnect() {
-    on_both_stores!(ambiguous_in_flight_send_is_not_replayed);
+    ambiguous_in_flight_send_is_not_replayed(&SqliteStore::open_temp().await).await;
 }

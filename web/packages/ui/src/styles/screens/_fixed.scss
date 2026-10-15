@@ -142,7 +142,8 @@
 .fixedsheet__content .run__people .chip input { position: absolute; width: 1px; height: 1px; opacity: 0; }
 .fixedsheet__content .run__people .chip:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
 .fixedsheet__content .run__people .chip:has(input:checked) { border-radius: 15px; background: var(--accent-fill); box-shadow: none; color: var(--accent-ink); font-weight: 600; }
-.fixedsheet__content .run__people .chip:has(input:checked)::before { content: "✓"; margin-right: 0.25rem; }
+// Alt text "": the tick is decoration, never part of the checkbox's name.
+.fixedsheet__content .run__people .chip:has(input:checked)::before { content: "✓" / ""; margin-right: 0.25rem; }
 // "+n" (mockup's last `.pick`): the rest of the roster, one press away.
 .fixedsheet__content .run__people .fixedsheet__more-party { font-family: var(--mono); cursor: pointer; }
 .fixedsheet__content .run__people .fixedsheet__more-party:hover { background: var(--row-hover); }

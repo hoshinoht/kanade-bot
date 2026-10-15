@@ -12,15 +12,15 @@ use kanade::domain::schedule::{
     ScheduleSnapshot, StatusChange,
 };
 use kanade::domain::scheduler::{SchedulerError, SchedulerResult, SchedulerService};
-use kanade::infrastructure::store::MemoryScheduleStore;
+use kanade::infrastructure::store::SqliteStore;
 
 use crate::common::{TestClock, assert_sound};
 use crate::support::{
-    CountingIds, Guild, OneTiming as Fixture, hm, kl, one_timing, owned, policy, snapshot, utc,
-    weekly,
+    CountingIds, Guild, OneTiming as Fixture, by_tests, hm, kl, one_timing, owned, policy,
+    snapshot, utc, weekly,
 };
 
-type Service = SchedulerService<MemoryScheduleStore, CountingIds, TestClock>;
+type Service = SchedulerService<SqliteStore, CountingIds, TestClock>;
 
 /// [`one_timing`] with the 14 Sep run cancelled: runs by week are 31 Aug,
 /// 7 Sep (amended to Wed 9 Sep 21:00) and 14 Sep (cancelled).
@@ -36,19 +36,15 @@ async fn set_status(service: &mut Service, run: &str, status: RunStatus, announc
         announce,
         via_portal: true,
     };
-    service
-        .as_origin(Origin::for_tests())
+    by_tests(service)
         .set_status(run, change, &policy().reminders)
         .await
         .unwrap();
 }
 
 async fn react(service: &mut Service, run: &str, user: &str, emoji: &str) {
-    service
-        .as_origin(Origin::for_tests())
-        .apply_reaction(run, user, emoji, true)
-        .await
-        .unwrap();
+    let reacted = by_tests(service).apply_reaction(run, user, emoji, true);
+    reacted.await.unwrap();
 }
 
 async fn apply_edit(
@@ -62,28 +58,21 @@ async fn apply_edit(
         edit,
         choices,
     };
-    service
-        .as_origin(Origin::for_tests())
+    by_tests(service)
         .apply_fixed_edit(&request, &Guild, &policy())
         .await
 }
 
 async fn reset(service: &mut Service, run: &str) -> SchedulerResult<Outcome<RunState>> {
-    service
-        .as_origin(Origin::for_tests())
-        .reset_to_fixed(run, &policy())
-        .await
+    by_tests(service).reset_to_fixed(run, &policy()).await
 }
 
 /// Mark the run's morning card as posted with `message`.
 async fn send_day_of(service: &mut Service, run: &str, message: &str) -> Reminder {
     let rows = service.reminders(run).await.unwrap();
     let day_of = rows.into_iter().find(|row| row.kind == "day_of").unwrap();
-    service
-        .as_origin(Origin::for_tests())
-        .mark_reminder_sent(&day_of.id, Some(message))
-        .await
-        .unwrap();
+    let sent = by_tests(service).mark_reminder_sent(&day_of.id, Some(message));
+    sent.await.unwrap();
     day_of
 }
 
@@ -128,8 +117,11 @@ fn per_run(entries: &[(&str, AmendedRunChoice)]) -> FixedEditChoices {
 #[tokio::test]
 async fn weekly_timing_add_and_remove_enqueue_notices_once_in_memory() {
     let clock = TestClock::new(kl(27, 1, 0));
-    let mut service =
-        SchedulerService::new(MemoryScheduleStore::new(), CountingIds::default(), clock);
+    let mut service = SchedulerService::new(
+        SqliteStore::open_temp().await,
+        CountingIds::default(),
+        clock,
+    );
     let timing = || weekly("222", Weekday::Mon, hm(21, 30), &["1001"]);
     let keyed = |key: &str| Origin::for_tests().with_request_id(key);
     let added = service
@@ -243,8 +235,7 @@ async fn keeping_an_amended_run_leaves_its_slot_and_pings_while_others_follow() 
 
     // Later weeks follow the new slot once they materialise.
     f.clock.set(kl(10, 1, 0));
-    f.service
-        .as_origin(Origin::for_tests())
+    by_tests(&mut f.service)
         .materialise_weeks(&policy())
         .await
         .unwrap();
@@ -266,9 +257,7 @@ async fn updating_an_amended_run_matches_the_v4_default() {
     apply_edit(&mut chosen.service, &chosen.fixed, time_edit(22, 0), update)
         .await
         .unwrap();
-    default
-        .service
-        .as_origin(Origin::for_tests())
+    by_tests(&mut default.service)
         .update_fixed(&default.fixed, time_edit(22, 0), &Guild, &policy())
         .await
         .unwrap();
@@ -326,8 +315,7 @@ async fn choices_must_name_exactly_the_affected_runs() {
 async fn reset_restores_the_weekly_slot_party_and_channel() {
     let mut f = fixture().await;
     let run = &f.runs[1];
-    f.service
-        .as_origin(Origin::for_tests())
+    by_tests(&mut f.service)
         .swap_participants(run, &owned(&["1002"]), &owned(&["1003"]), true, &Guild)
         .await
         .unwrap();
@@ -381,9 +369,7 @@ async fn reset_restores_the_weekly_slot_party_and_channel() {
 #[tokio::test]
 async fn reset_refuses_one_offs_retired_timings_and_finished_runs() {
     let mut f = fixture().await;
-    let one_off = f
-        .service
-        .as_origin(Origin::for_tests())
+    let one_off = by_tests(&mut f.service)
         .create_run(NewRun {
             fixed_run_id: None,
             channel_id: Some("333".into()),
@@ -428,8 +414,7 @@ async fn reset_refuses_one_offs_retired_timings_and_finished_runs() {
     );
     // Retire only the first week's timing: the amended run keeps a dangling link.
     let first_week = [kl(27, 0, 0)];
-    f.service
-        .as_origin(Origin::for_tests())
+    by_tests(&mut f.service)
         .retire_fixed_run(&f.fixed, &first_week, &policy().reminders)
         .await
         .unwrap();
@@ -461,8 +446,7 @@ async fn a_fixed_edit_removing_the_lone_decliner_recomputes_status_like_swap() {
             participants: Some(owned(&line_up)),
             ..FixedEdit::default()
         };
-        f.service
-            .as_origin(Origin::for_tests())
+        by_tests(&mut f.service)
             .update_fixed(&f.fixed, edit, &Guild, &policy())
             .await
             .unwrap();

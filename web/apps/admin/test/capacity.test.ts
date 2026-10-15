@@ -78,6 +78,24 @@ describe('reasoning', () => {
     local.chat.reasoning = '';
     expect(resetStrandedInheritors(local, catalog)).toEqual([]);
   });
+
+  it('resets an inheritor whose model requires reasoning to its lowest level, never Off', () => {
+    // As kanata/chat: no `none` in its list, so Off is refused.
+    const requires = { ...catalog[1]!, id: 'r', reasoning_efforts: ['high', 'medium', 'xhigh'], off_allowed: false } as ModelInfo;
+    const required = [...catalog, requires, { ...catalog[1]!, id: 'free', reasoning_efforts: ['max', 'minimal'], off_allowed: false }] as ModelInfo[];
+    expect(isReasoningValid(requires, 'off')).toBe(false);
+    const local = structuredClone({ ...roles, chat: { alias: 'r', reasoning: '' }, rewrite: { alias: 'free', reasoning: '' } });
+    local.extraction.reasoning = 'max';
+    expect(resetStrandedInheritors(local, required)).toEqual(['chat']);
+    expect(local.chat.reasoning).toBe('medium');
+    // Extraction off strands both: each takes its own lowest level.
+    local.chat.reasoning = '';
+    local.extraction.reasoning = 'off';
+    expect(resetStrandedInheritors(local, required)).toEqual(['chat', 'rewrite']);
+    expect([local.chat.reasoning, local.rewrite.reasoning]).toEqual(['medium', 'minimal']);
+    // The level it lands on is one the picker offers, so the save is not blocked.
+    expect(reasoningChoices('chat', requires, 'off', local.chat.reasoning).map((c) => c.value)).toEqual(['high', 'medium', 'xhigh']);
+  });
 });
 
 describe('model picker', () => {

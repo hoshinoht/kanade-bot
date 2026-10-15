@@ -135,36 +135,6 @@ fn public_listener_starts_only_when_configured_and_is_closed() {
 }
 
 #[test]
-fn renamed_bind_variable_is_refused() {
-    let _serial = serial();
-    let output = Command::new(binary())
-        .args(["serve", "--offline"])
-        .env("KANADE_TIMEZONE", "Asia/Kuala_Lumpur")
-        .env("KANADE_BIND", "127.0.0.1:0")
-        .output()
-        .unwrap();
-    assert!(!output.status.success());
-    let stderr = String::from_utf8(output.stderr).unwrap();
-    assert!(stderr.contains("KANADE_BIND was renamed to KANADE_ADMIN_BIND"));
-}
-
-#[test]
-fn plain_discord_token_is_refused_without_echoing_it() {
-    let _serial = serial();
-    let output = Command::new(binary())
-        .args(["serve", "--offline"])
-        .env("KANADE_TIMEZONE", "Asia/Kuala_Lumpur")
-        .env("KANADE_ADMIN_BIND", "127.0.0.1:0")
-        .env("DISCORD_TOKEN", "plain-token-value")
-        .output()
-        .unwrap();
-    assert!(!output.status.success());
-    let stderr = String::from_utf8(output.stderr).unwrap();
-    assert!(stderr.contains("DISCORD_TOKEN is not read; use KANADE_DISCORD_TOKEN_FILE"));
-    assert!(!stderr.contains("plain-token-value"));
-}
-
-#[test]
 fn healthcheck_fails_when_no_loopback_server_is_available() {
     let _serial = serial();
     let port = unused_loopback_port();
@@ -179,64 +149,37 @@ fn healthcheck_fails_when_no_loopback_server_is_available() {
     assert!(!status.success());
 }
 
-#[test]
-fn invalid_configuration_fails_without_echoing_values() {
-    let _serial = serial();
-    let output = Command::new(binary())
+/// `serve --offline` that must be refused with 78 (`EX_CONFIG`): its stderr.
+/// `env` applies over a KL timezone and a loopback admin bind; `toml`, when
+/// given, is the kanade.toml it reads.
+fn refused_serve(env: &[(&str, &str)], toml: Option<&str>) -> String {
+    let mut command = Command::new(binary());
+    command
         .args(["serve", "--offline"])
-        .env("KANADE_TIMEZONE", "not-a-timezone")
-        .env("KANADE_ADMIN_BIND", "127.0.0.1:0")
-        .output()
-        .unwrap();
-    assert!(!output.status.success());
-    let stderr = String::from_utf8(output.stderr).unwrap();
-    assert!(stderr.contains("KANADE_TIMEZONE must be a valid IANA timezone"));
-    assert!(!stderr.contains("not-a-timezone"));
-}
-
-#[test]
-fn config_file_errors_name_the_key_without_the_value() {
-    let _serial = serial();
-    let path = std::env::temp_dir().join(format!("kanade-toml-{}", std::process::id()));
-    std::fs::write(&path, "[runtime]\ntimezone = \"Not/A-sentinel\"\n").unwrap();
-    let run = |timezone: &str| {
-        Command::new(binary())
-            .args(["serve", "--offline"])
-            .env("KANADE_CONFIG", &path)
-            .env("KANADE_TIMEZONE", timezone)
-            .env("KANADE_ADMIN_BIND", "127.0.0.1:0")
-            .output()
-            .unwrap()
-    };
-    let output = run("");
-    assert_eq!(output.status.code(), Some(78));
-    let stderr = String::from_utf8(output.stderr).unwrap();
-    assert!(stderr.contains(
-        "KANADE_TIMEZONE must be a valid IANA timezone (kanade.toml `runtime.timezone`)"
-    ));
-    assert!(!stderr.contains("sentinel"));
-
-    std::fs::write(
-        &path,
-        "[runtime]\ntimezone = \"UTC\"\n[discord]\ntoken = \"sentinel\"\n",
-    )
-    .unwrap();
-    let output = run("Asia/Kuala_Lumpur");
-    std::fs::remove_file(&path).unwrap();
-    assert_eq!(output.status.code(), Some(78));
-    let stderr = String::from_utf8(output.stderr).unwrap();
-    assert!(stderr.contains("kanade.toml `discord.token` looks like a secret"));
-    assert!(!stderr.contains("sentinel"));
+        .env("KANADE_TIMEZONE", "Asia/Kuala_Lumpur")
+        .env("KANADE_ADMIN_BIND", "127.0.0.1:0");
+    let path = std::env::temp_dir().join(format!("kanade-refused-{}.toml", std::process::id()));
+    if let Some(text) = toml {
+        std::fs::write(&path, text).unwrap();
+        command.env("KANADE_CONFIG", &path);
+    }
+    let output = command.envs(env.iter().copied()).output().unwrap();
+    if toml.is_some() {
+        std::fs::remove_file(&path).unwrap();
+    }
+    assert_eq!(output.status.code(), Some(78), "{env:?} {toml:?}");
+    String::from_utf8(output.stderr).unwrap()
 }
 
 type Env = Vec<(&'static str, &'static str)>;
 
-/// Member sign-in settings are refused at startup, naming the key and never
-/// echoing a value: bounds, the order fresh <= idle <= absolute, a plain
-/// secret, partial Discord keys, a missing public host and a redirect other
-/// than `https://{public.host}/api/public/auth/discord/callback`.
+/// Bad settings are refused at startup, naming the key and never echoing a
+/// value: renamed and plain-secret variables, kanade.toml values, and member
+/// sign-in bounds, the order fresh <= idle <= absolute, partial Discord keys,
+/// a missing public host and a redirect other than
+/// `https://{public.host}/api/public/auth/discord/callback`.
 #[test]
-fn member_sign_in_settings_are_refused_at_startup() {
+fn bad_settings_are_refused_at_startup_naming_the_key_without_the_value() {
     let _serial = serial();
     let discord = [
         ("KANADE_PUBLIC_HOST", "kanade-pub.test"),
@@ -255,87 +198,109 @@ fn member_sign_in_settings_are_refused_at_startup() {
         pairs[3].1 = uri;
         pairs
     };
-    // (variables, expected message, text that must not be echoed)
-    let cases: Vec<(Env, &str, &str)> = vec![
+    let toml_secret =
+        |table: &str| format!("[runtime]\ntimezone = \"UTC\"\n{table} = \"sentinel\"\n");
+    // (variables, kanade.toml, expected message, text that must not be echoed)
+    let cases: Vec<(Env, Option<String>, &str, Option<&str>)> = vec![
+        (
+            vec![("KANADE_BIND", "127.0.0.1:0")],
+            None,
+            "KANADE_BIND was renamed to KANADE_ADMIN_BIND",
+            None,
+        ),
+        (
+            vec![("DISCORD_TOKEN", "plain-token-value")],
+            None,
+            "DISCORD_TOKEN is not read; use KANADE_DISCORD_TOKEN_FILE",
+            Some("plain-token-value"),
+        ),
+        (
+            vec![("KANADE_TIMEZONE", "not-a-timezone")],
+            None,
+            "KANADE_TIMEZONE must be a valid IANA timezone",
+            Some("not-a-timezone"),
+        ),
+        (
+            vec![("KANADE_TIMEZONE", "")],
+            Some("[runtime]\ntimezone = \"Not/A-sentinel\"\n".into()),
+            "KANADE_TIMEZONE must be a valid IANA timezone (kanade.toml `runtime.timezone`)",
+            Some("sentinel"),
+        ),
+        (
+            Vec::new(),
+            Some(toml_secret("[discord]\ntoken")),
+            "kanade.toml `discord.token` looks like a secret",
+            Some("sentinel"),
+        ),
+        (
+            Vec::new(),
+            Some(toml_secret("[public]\ndiscord_client_secret")),
+            "public.discord_client_secret",
+            Some("sentinel"),
+        ),
         (
             vec![("KANADE_PUBLIC_SESSION_IDLE_MINUTES", "61")],
+            None,
             "KANADE_PUBLIC_SESSION_IDLE_MINUTES must be between 5 and 60",
-            "61",
+            Some("61"),
         ),
         (
             vec![("KANADE_PUBLIC_SESSION_ABSOLUTE_HOURS", "25")],
+            None,
             "KANADE_PUBLIC_SESSION_ABSOLUTE_HOURS must be between 1 and 24",
-            "25",
+            Some("25"),
         ),
         (
             vec![("KANADE_PUBLIC_FRESH_WRITE_MINUTES", "4")],
+            None,
             "KANADE_PUBLIC_FRESH_WRITE_MINUTES must be between 5 and 30",
-            "sentinel",
+            None,
         ),
         (
             vec![
                 ("KANADE_PUBLIC_SESSION_IDLE_MINUTES", "10"),
                 ("KANADE_PUBLIC_FRESH_WRITE_MINUTES", "15"),
             ],
+            None,
             "KANADE_PUBLIC_FRESH_WRITE_MINUTES must not exceed",
-            "sentinel",
+            None,
         ),
         (
             vec![("KANADE_PUBLIC_DISCORD_CLIENT_SECRET", "plain-public-secret")],
+            None,
             "KANADE_PUBLIC_DISCORD_CLIENT_SECRET is not read; use KANADE_PUBLIC_DISCORD_CLIENT_SECRET_FILE",
-            "plain-public-secret",
+            Some("plain-public-secret"),
         ),
-        (discord[..3].to_vec(), "member sign-in needs", "sentinel"),
+        (discord[..3].to_vec(), None, "member sign-in needs", None),
         (
             discord[1..].to_vec(),
+            None,
             "KANADE_PUBLIC_HOST is required for member sign-in",
-            "sentinel",
+            None,
         ),
         (
             with_redirect("https://evil.example/api/public/auth/discord/callback"),
+            None,
             "KANADE_PUBLIC_DISCORD_REDIRECT_URI must be https://KANADE_PUBLIC_HOST/api/public/auth/discord/callback",
-            "evil",
+            Some("evil"),
         ),
         (
             with_redirect("http://kanade-pub.test/api/public/auth/discord/callback"),
+            None,
             "KANADE_PUBLIC_DISCORD_REDIRECT_URI must be",
-            "http://",
+            Some("http://"),
         ),
     ];
-    for (pairs, expected, secret) in cases {
-        let mut command = Command::new(binary());
-        command
-            .args(["serve", "--offline"])
-            .env("KANADE_TIMEZONE", "Asia/Kuala_Lumpur")
-            .env("KANADE_ADMIN_BIND", "127.0.0.1:0");
-        for (key, value) in &pairs {
-            command.env(key, value);
+    for (pairs, toml, expected, secret) in cases {
+        let stderr = refused_serve(&pairs, toml.as_deref());
+        assert!(stderr.contains(expected), "{pairs:?} {toml:?}: {stderr}");
+        if let Some(secret) = secret {
+            assert!(
+                !stderr.contains(secret),
+                "{pairs:?} {toml:?} echoed {secret}"
+            );
         }
-        let output = command.output().unwrap();
-        assert!(!output.status.success(), "{pairs:?}");
-        let stderr = String::from_utf8(output.stderr).unwrap();
-        assert!(stderr.contains(expected), "{pairs:?}: {stderr}");
-        assert!(!stderr.contains(secret), "{pairs:?} echoed {secret}");
     }
-
-    // A plain secret in kanade.toml is refused too.
-    let path = std::env::temp_dir().join(format!("kanade-public-toml-{}", std::process::id()));
-    std::fs::write(
-        &path,
-        "[runtime]\ntimezone = \"UTC\"\n[public]\ndiscord_client_secret = \"sentinel\"\n",
-    )
-    .unwrap();
-    let output = Command::new(binary())
-        .args(["serve", "--offline"])
-        .env("KANADE_CONFIG", &path)
-        .env("KANADE_ADMIN_BIND", "127.0.0.1:0")
-        .output()
-        .unwrap();
-    std::fs::remove_file(&path).unwrap();
-    assert!(!output.status.success());
-    let stderr = String::from_utf8(output.stderr).unwrap();
-    assert!(stderr.contains("public.discord_client_secret"), "{stderr}");
-    assert!(!stderr.contains("sentinel"));
 }
 
 trait ChildTimeout {

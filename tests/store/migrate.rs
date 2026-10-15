@@ -4,24 +4,72 @@ use kanade::domain::notify::DeclineNoticeStore;
 use kanade::domain::schedule::{Change, ChangeSet};
 use kanade::domain::scheduler::{ScheduleStore, Scope, StoreError};
 use kanade::infrastructure::store::{SqliteStore, SqliteStoreConfig, SqliteStoreError};
-use sqlx::sqlite::SqliteConnectOptions;
-use sqlx::{ConnectOptions, Connection, Row};
+use sqlx::{Connection, Row, SqliteConnection};
 
-use crate::support::{LATE_SCHEMA_DROPS, TempDir, create, reminder, seed, tamper};
+use crate::support::{LATE_SCHEMA_DROPS, TempDir, connect, create, reminder, seed, tamper};
+
+/// What a v34 store lacks: the roster tables.
+const ROSTER_DROPS: &str = "
+    DROP TABLE roster_fixed_picks;
+    DROP TABLE roster_run_picks;
+    DROP TABLE roster_characters;";
+
+/// What a v30 store lacks (0031 on): replays, the audit, owner requests,
+/// run prompts, the roster tables and owner pins.
+const REPLAY_ON_DROPS: &str = "
+    DROP TABLE idempotency_replays;
+    DROP TABLE auth_audit;
+    DROP TABLE owner_requests;
+    DROP TABLE run_prompts;
+    DROP TABLE roster_fixed_picks;
+    DROP TABLE roster_run_picks;
+    DROP TABLE roster_characters;
+    ALTER TABLE fixed_runs DROP COLUMN owner_pinned;";
+
+/// The web session the v24 and later upgrades start from (`id_hash` 'a'×64).
+fn old_session(origin: &str, method: &str, subject: &str, display: &str) -> String {
+    format!(
+        "INSERT INTO web_sessions (id_hash, origin, method, subject, display, created_at,
+             last_seen_at, checked_at, expires_at)
+         VALUES ('{}', '{origin}', '{method}', '{subject}', '{display}',
+             '2026-09-29T04:00:00.000000+00:00', '2026-09-29T04:00:00.000000+00:00',
+             '2026-09-29T04:00:00.000000+00:00', '2026-09-29T16:00:00.000000+00:00');",
+        "a".repeat(64)
+    )
+}
 
 async fn ledger(config: &SqliteStoreConfig) -> Vec<i64> {
-    let mut conn = SqliteConnectOptions::new()
-        .filename(&config.db_path)
-        .read_only(true)
-        .connect()
-        .await
-        .expect("raw connection");
+    let mut conn = connect(config, true).await;
     let rows = sqlx::query("SELECT version FROM schema_migrations ORDER BY version")
         .fetch_all(&mut conn)
         .await
         .expect("ledger");
     conn.close().await.expect("close");
     rows.iter().map(|row| row.get("version")).collect()
+}
+
+/// Whether binding `value` to `sql` (an UPDATE with `?1`) is refused.
+async fn refuses(conn: &mut SqliteConnection, sql: &str, value: &str) -> bool {
+    sqlx::query(sql).bind(value).execute(conn).await.is_err()
+}
+
+/// An orphan reminder is refused by the foreign keys and leaves no violation.
+async fn assert_orphans_refused(store: &SqliteStore, id: &str) {
+    let before = store.load(&Scope::All).await.expect("load");
+    let changes = vec![Change::PutReminder(reminder(id, "absent"))];
+    let result = store
+        .commit(
+            before.revision,
+            ChangeSet { changes },
+            kanade::infrastructure::store::conformance::meta(),
+        )
+        .await;
+    assert!(
+        matches!(result, Err(StoreError::Constraint(_))),
+        "{result:?}"
+    );
+    assert_eq!(store.load(&Scope::All).await.expect("load"), before);
+    assert_eq!(store.foreign_key_violations().await.expect("check"), 0);
 }
 
 #[tokio::test]
@@ -60,45 +108,48 @@ async fn reopen_is_idempotent_and_keeps_rows() {
     assert_eq!(ledger(&config).await, (1..=40).collect::<Vec<_>>());
 }
 
+/// An edited checksum, a version from a newer build or one below the first
+/// is refused, and a refused open writes nothing to the ledger.
 #[tokio::test]
-async fn changed_migration_checksum_refuses_to_open() {
-    let dir = TempDir::new();
-    let config = dir.config("checksum");
-    create(&config).await;
-    tamper(&config, "UPDATE schema_migrations SET checksum = 'edited'").await;
-    let error = SqliteStore::open(&config).await.err().expect("refused");
-    assert!(
-        matches!(error, SqliteStoreError::ChecksumMismatch { version: 1 }),
-        "{error}"
-    );
-}
-
-#[tokio::test]
-async fn future_schema_version_refuses_to_open() {
-    let dir = TempDir::new();
-    let config = dir.config("future");
-    create(&config).await;
-    tamper(
-        &config,
-        "INSERT INTO schema_migrations VALUES (41, 'next', '2027-01-01T00:00:00+00:00')",
-    )
-    .await;
-    let error = SqliteStore::open(&config).await.err().expect("refused");
-    assert!(
-        matches!(
-            error,
-            SqliteStoreError::FutureVersion {
-                found: 41,
-                known: 40
-            }
+async fn a_tampered_ledger_refuses_to_open() {
+    type Expect = fn(&SqliteStoreError) -> bool;
+    let cases: [(&str, &str, Expect, Vec<i64>); 3] = [
+        (
+            "checksum",
+            "UPDATE schema_migrations SET checksum = 'edited'",
+            |error| matches!(error, SqliteStoreError::ChecksumMismatch { version: 1 }),
+            (1..=40).collect(),
         ),
-        "{error}"
-    );
-    assert_eq!(
-        ledger(&config).await,
-        (1..=41).collect::<Vec<_>>(),
-        "a refused open writes nothing"
-    );
+        (
+            "future",
+            "INSERT INTO schema_migrations VALUES (41, 'next', '2027-01-01T00:00:00+00:00')",
+            |error| {
+                matches!(
+                    error,
+                    SqliteStoreError::FutureVersion {
+                        found: 41,
+                        known: 40
+                    }
+                )
+            },
+            (1..=41).collect(),
+        ),
+        (
+            "gap",
+            "INSERT INTO schema_migrations VALUES (0, 'unknown', '2026-01-01T00:00:00+00:00')",
+            |error| matches!(error, SqliteStoreError::MigrationGap { version: 0 }),
+            (0..=40).collect(),
+        ),
+    ];
+    for (label, sql, expected, kept) in cases {
+        let dir = TempDir::new();
+        let config = dir.config(label);
+        create(&config).await;
+        tamper(&config, sql).await;
+        let error = SqliteStore::open(&config).await.err().expect("refused");
+        assert!(expected(&error), "{label}: {error}");
+        assert_eq!(ledger(&config).await, kept, "{label}");
+    }
 }
 
 #[tokio::test]
@@ -108,22 +159,7 @@ async fn foreign_keys_are_enforced_after_reopen() {
     create(&config).await;
     let store = SqliteStore::open(&config).await.expect("reopens");
     seed(&store).await;
-    let before = store.load(&Scope::All).await.expect("load");
-    let result = store
-        .commit(
-            before.revision,
-            ChangeSet {
-                changes: vec![Change::PutReminder(reminder("m-orphan", "absent"))],
-            },
-            kanade::infrastructure::store::conformance::meta(),
-        )
-        .await;
-    assert!(
-        matches!(result, Err(StoreError::Constraint(_))),
-        "{result:?}"
-    );
-    assert_eq!(store.load(&Scope::All).await.expect("load"), before);
-    assert_eq!(store.foreign_key_violations().await.expect("check"), 0);
+    assert_orphans_refused(&store, "m-orphan").await;
     store.close().await.expect("close");
 }
 
@@ -165,39 +201,8 @@ async fn upgrading_from_v19_preserves_declines_and_reenables_foreign_keys() {
     assert!(!decline.retract_pending);
 
     seed(&store).await;
-    let before = store.load(&Scope::All).await.expect("load");
-    let result = store
-        .commit(
-            before.revision,
-            ChangeSet {
-                changes: vec![Change::PutReminder(reminder("m-orphan-v19", "absent"))],
-            },
-            kanade::infrastructure::store::conformance::meta(),
-        )
-        .await;
-    assert!(
-        matches!(result, Err(StoreError::Constraint(_))),
-        "{result:?}"
-    );
-    assert_eq!(store.foreign_key_violations().await.expect("check"), 0);
+    assert_orphans_refused(&store, "m-orphan-v19").await;
     store.close().await.expect("close");
-}
-
-#[tokio::test]
-async fn migration_gap_refuses_to_open() {
-    let dir = TempDir::new();
-    let config = dir.config("gap");
-    create(&config).await;
-    tamper(
-        &config,
-        "INSERT INTO schema_migrations VALUES (0, 'unknown', '2026-01-01T00:00:00+00:00')",
-    )
-    .await;
-    let error = SqliteStore::open(&config).await.err().expect("refused");
-    assert!(
-        matches!(error, SqliteStoreError::MigrationGap { version: 0 }),
-        "{error}"
-    );
 }
 
 #[tokio::test]
@@ -269,19 +274,8 @@ async fn a_version_one_store_gains_the_later_tables_on_open() {
     assert_eq!(store.schema_version().await.expect("version"), 40);
     assert_eq!(store.foreign_key_violations().await.expect("check"), 0);
     store.close().await.expect("close");
-    assert_eq!(
-        ledger(&config).await,
-        [
-            1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
-            25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40
-        ]
-    );
-    let mut conn = SqliteConnectOptions::new()
-        .filename(&config.db_path)
-        .read_only(true)
-        .connect()
-        .await
-        .expect("raw connection");
+    assert_eq!(ledger(&config).await, (1..=40).collect::<Vec<_>>());
+    let mut conn = connect(&config, true).await;
     let tables: i64 = sqlx::query_scalar(
         "SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = 'delivery_card_runs'",
     )
@@ -353,11 +347,7 @@ async fn upgrading_from_v22_adds_append_only_settings_changes() {
     assert_eq!(id, 1);
     store.close().await.expect("close");
 
-    let mut conn = SqliteConnectOptions::new()
-        .filename(&config.db_path)
-        .connect()
-        .await
-        .expect("raw connection");
+    let mut conn = connect(&config, false).await;
     for refused in [
         "UPDATE settings_changes SET section = 'pings'",
         "DELETE FROM settings_changes",
@@ -393,21 +383,11 @@ async fn upgrading_from_v24_keeps_sessions_and_adds_the_avatar_hash() {
              ALTER TABLE web_sessions DROP COLUMN avatar_hash;
              DROP TABLE rewrites;
              DROP TABLE header_overrides;
-             DROP TABLE idempotency_replays;
-             DROP TABLE auth_audit;
-             DROP TABLE owner_requests;
-             DROP TABLE run_prompts;
-             DROP TABLE roster_fixed_picks;
-             DROP TABLE roster_run_picks;
-             DROP TABLE roster_characters;
-             ALTER TABLE fixed_runs DROP COLUMN owner_pinned;
+             {REPLAY_ON_DROPS}
              DELETE FROM schema_migrations WHERE version >= 25;
              UPDATE store_meta SET schema_version = 24;
-             INSERT INTO web_sessions (id_hash, origin, method, subject, display, created_at,
-                 last_seen_at, checked_at, expires_at)
-             VALUES ('{old}', 'admin', 'discord', '1003', 'Cara',
-                 '2026-09-29T04:00:00.000000+00:00', '2026-09-29T04:00:00.000000+00:00',
-                 '2026-09-29T04:00:00.000000+00:00', '2026-09-29T16:00:00.000000+00:00');"
+             {}",
+            old_session("admin", "discord", "1003", "Cara")
         ),
     )
     .await;
@@ -431,23 +411,13 @@ async fn upgrading_from_v24_keeps_sessions_and_adds_the_avatar_hash() {
         store.load_session(&signed_in.id_hash).await.expect("load"),
         Some(signed_in.clone())
     );
-    assert_eq!(
-        store
-            .load_session(&old)
-            .await
-            .expect("load")
-            .unwrap()
-            .origin,
-        SessionOrigin::Admin
-    );
+    let kept = store.load_session(&old).await.expect("load").unwrap();
+    assert_eq!(kept.origin, SessionOrigin::Admin);
     assert_eq!(before.method, LoginMethod::Discord);
     store.close().await.expect("close");
 
-    let mut conn = SqliteConnectOptions::new()
-        .filename(&config.db_path)
-        .connect()
-        .await
-        .expect("raw connection");
+    let mut conn = connect(&config, false).await;
+    let set = "UPDATE web_sessions SET avatar_hash = ?1";
     for bad in [
         "0123",
         "<script>alert(1)</script>0123456789",
@@ -457,21 +427,13 @@ async fn upgrading_from_v24_keeps_sessions_and_adds_the_avatar_hash() {
         "a_a_23456789abcdef0123456789abcdef",
         "b_0123456789abcdef0123456789abcdef",
     ] {
-        let refused = sqlx::query("UPDATE web_sessions SET avatar_hash = ?1")
-            .bind(bad)
-            .execute(&mut conn)
-            .await;
-        assert!(refused.is_err(), "{bad}");
+        assert!(refuses(&mut conn, set, bad).await, "{bad}");
     }
     for good in [
         "0123456789abcdef0123456789abcdef",
         "a_0123456789abcdef0123456789abcdef",
     ] {
-        sqlx::query("UPDATE web_sessions SET avatar_hash = ?1")
-            .bind(good)
-            .execute(&mut conn)
-            .await
-            .unwrap_or_else(|error| panic!("{good}: {error}"));
+        assert!(!refuses(&mut conn, set, good).await, "{good}");
     }
     conn.close().await.expect("close");
 }
@@ -495,21 +457,11 @@ async fn upgrading_from_v25_keeps_sessions_and_adds_the_device() {
              ALTER TABLE web_sessions DROP COLUMN device;
              DROP TABLE rewrites;
              DROP TABLE header_overrides;
-             DROP TABLE idempotency_replays;
-             DROP TABLE auth_audit;
-             DROP TABLE owner_requests;
-             DROP TABLE run_prompts;
-             DROP TABLE roster_fixed_picks;
-             DROP TABLE roster_run_picks;
-             DROP TABLE roster_characters;
-             ALTER TABLE fixed_runs DROP COLUMN owner_pinned;
+             {REPLAY_ON_DROPS}
              DELETE FROM schema_migrations WHERE version >= 26;
              UPDATE store_meta SET schema_version = 25;
-             INSERT INTO web_sessions (id_hash, origin, method, subject, display, created_at,
-                 last_seen_at, checked_at, expires_at)
-             VALUES ('{old}', 'admin', 'token', 'fingerprint', 'Break-glass token',
-                 '2026-09-29T04:00:00.000000+00:00', '2026-09-29T04:00:00.000000+00:00',
-                 '2026-09-29T04:00:00.000000+00:00', '2026-09-29T16:00:00.000000+00:00');"
+             {}",
+            old_session("admin", "token", "fingerprint", "Break-glass token")
         ),
     )
     .await;
@@ -532,23 +484,16 @@ async fn upgrading_from_v25_keeps_sessions_and_adds_the_device() {
     );
     store.close().await.expect("close");
 
-    let mut conn = SqliteConnectOptions::new()
-        .filename(&config.db_path)
-        .connect()
-        .await
-        .expect("raw connection");
+    let mut conn = connect(&config, false).await;
+    let set = "UPDATE web_sessions SET device = ?1";
     for bad in [String::new(), "x".repeat(65)] {
-        let refused = sqlx::query("UPDATE web_sessions SET device = ?1")
-            .bind(&bad)
-            .execute(&mut conn)
-            .await;
-        assert!(refused.is_err(), "{bad:?}");
+        assert!(refuses(&mut conn, set, &bad).await, "{bad:?}");
     }
-    sqlx::query("UPDATE web_sessions SET device = ?1")
-        .bind("é".repeat(64))
-        .execute(&mut conn)
-        .await
-        .expect("64 characters, whatever their bytes");
+    let wide = "é".repeat(64);
+    assert!(
+        !refuses(&mut conn, set, &wide).await,
+        "64 characters, whatever their bytes"
+    );
     conn.close().await.expect("close");
 }
 
@@ -568,23 +513,13 @@ async fn upgrading_from_v29_keeps_sessions_and_adds_rotation_grace() {
     tamper(
         &config,
         &format!(
-            "DROP TABLE idempotency_replays;
-             DROP TABLE auth_audit;
-             DROP TABLE owner_requests;
-             DROP TABLE run_prompts;
-             DROP TABLE roster_fixed_picks;
-             DROP TABLE roster_run_picks;
-             DROP TABLE roster_characters;
-             ALTER TABLE fixed_runs DROP COLUMN owner_pinned;
+            "{REPLAY_ON_DROPS}
              ALTER TABLE web_sessions DROP COLUMN superseded_until;
              ALTER TABLE web_sessions DROP COLUMN client_tag;
              DELETE FROM schema_migrations WHERE version >= 30;
              UPDATE store_meta SET schema_version = 29;
-             INSERT INTO web_sessions (id_hash, origin, method, subject, display, created_at,
-                 last_seen_at, checked_at, expires_at)
-             VALUES ('{old}', 'public', 'discord', '1003', 'Cara',
-                 '2026-09-29T04:00:00.000000+00:00', '2026-09-29T04:00:00.000000+00:00',
-                 '2026-09-29T04:00:00.000000+00:00', '2026-09-29T16:00:00.000000+00:00');"
+             {}",
+            old_session("public", "discord", "1003", "Cara")
         ),
     )
     .await;
@@ -635,28 +570,30 @@ async fn upgrading_from_v29_keeps_sessions_and_adds_rotation_grace() {
     );
     store.close().await.expect("close");
 
-    let mut conn = SqliteConnectOptions::new()
-        .filename(&config.db_path)
-        .connect()
-        .await
-        .expect("raw connection");
+    let mut conn = connect(&config, false).await;
+    let set = "UPDATE web_sessions SET client_tag = ?1";
     for bad in [
         "C".repeat(64),
         "c".repeat(63),
         "g".repeat(64),
         String::new(),
     ] {
-        let refused = sqlx::query("UPDATE web_sessions SET client_tag = ?1")
-            .bind(&bad)
+        assert!(refuses(&mut conn, set, &bad).await, "{bad:?}");
+    }
+    let hex = "0123456789abcdef".repeat(4);
+    assert!(!refuses(&mut conn, set, &hex).await, "64 lowercase hex");
+    conn.close().await.expect("close");
+}
+
+/// Every `UPDATE <table> SET <column> = <bad>` is refused by the table's CHECKs.
+async fn assert_checks_refuse(config: &SqliteStoreConfig, table: &str, cases: &[(&str, &str)]) {
+    let mut conn = connect(config, false).await;
+    for (column, bad) in cases {
+        let refused = sqlx::query(&format!("UPDATE {table} SET {column} = {bad}"))
             .execute(&mut conn)
             .await;
-        assert!(refused.is_err(), "{bad:?}");
+        assert!(refused.is_err(), "{column} = {bad}");
     }
-    sqlx::query("UPDATE web_sessions SET client_tag = ?1")
-        .bind("0123456789abcdef".repeat(4))
-        .execute(&mut conn)
-        .await
-        .expect("64 lowercase hex");
     conn.close().await.expect("close");
 }
 
@@ -674,17 +611,12 @@ async fn upgrading_from_v30_adds_replays() {
     create(&config).await;
     tamper(
         &config,
-        "DROP TABLE idempotency_replays;
-         DROP TABLE auth_audit;
-         DROP TABLE owner_requests;
-         DROP TABLE run_prompts;
-         DROP TABLE roster_fixed_picks;
-         DROP TABLE roster_run_picks;
-         DROP TABLE roster_characters;
-         ALTER TABLE fixed_runs DROP COLUMN owner_pinned;
-         DELETE FROM schema_migrations WHERE version >= 31;
-         UPDATE store_meta SET schema_version = 30;
-         INSERT INTO config (key, value) VALUES ('quiet_mode', '1');",
+        &format!(
+            "{REPLAY_ON_DROPS}
+             DELETE FROM schema_migrations WHERE version >= 31;
+             UPDATE store_meta SET schema_version = 30;
+             INSERT INTO config (key, value) VALUES ('quiet_mode', '1');"
+        ),
     )
     .await;
     assert_eq!(ledger(&config).await.last(), Some(&30));
@@ -715,24 +647,14 @@ async fn upgrading_from_v30_adds_replays() {
     );
     store.close().await.expect("close");
 
-    let mut conn = SqliteConnectOptions::new()
-        .filename(&config.db_path)
-        .connect()
-        .await
-        .expect("raw connection");
-    for (column, bad) in [
+    let bad = [
         ("scope", "'other'"),
         ("request", "upper('a') || substr(request, 2)"),
         ("status", "500"),
         ("body", "'not json'"),
         ("expires_at", "created_at"),
-    ] {
-        let refused = sqlx::query(&format!("UPDATE idempotency_replays SET {column} = {bad}"))
-            .execute(&mut conn)
-            .await;
-        assert!(refused.is_err(), "{column} = {bad}");
-    }
-    conn.close().await.expect("close");
+    ];
+    assert_checks_refuse(&config, "idempotency_replays", &bad).await;
 }
 
 #[tokio::test]
@@ -748,12 +670,12 @@ async fn upgrading_from_v34_adds_run_prompts_that_close_once() {
     store.close().await.expect("close");
     tamper(
         &config,
-        "DROP TABLE run_prompts;
-         DROP TABLE roster_fixed_picks;
-         DROP TABLE roster_run_picks;
-         DROP TABLE roster_characters;
-         DELETE FROM schema_migrations WHERE version >= 35;
-         UPDATE store_meta SET schema_version = 34;",
+        &format!(
+            "DROP TABLE run_prompts;
+             {ROSTER_DROPS}
+             DELETE FROM schema_migrations WHERE version >= 35;
+             UPDATE store_meta SET schema_version = 34;"
+        ),
     )
     .await;
     assert_eq!(ledger(&config).await.last(), Some(&34));
@@ -781,22 +703,14 @@ async fn upgrading_from_v34_adds_run_prompts_that_close_once() {
     );
     store.close().await.expect("close");
 
-    let mut conn = SqliteConnectOptions::new()
-        .filename(&config.db_path)
-        .connect()
-        .await
-        .expect("raw connection");
-    for (column, bad) in [
+    let bad = [
         ("outcome", "'auto_done'"),
         ("decided_by", "NULL"),
         ("cutoff_at", "due_at"),
         ("message_settled", "2"),
-    ] {
-        let refused = sqlx::query(&format!("UPDATE run_prompts SET {column} = {bad}"))
-            .execute(&mut conn)
-            .await;
-        assert!(refused.is_err(), "{column} = {bad}");
-    }
+    ];
+    assert_checks_refuse(&config, "run_prompts", &bad).await;
+    let mut conn = connect(&config, false).await;
     let second_open = sqlx::query(
         "INSERT INTO run_prompts (run_id, ask, ends_at, due_at, cutoff_at) VALUES \
          ('r-2', 0, 'a', 'b', 'c'), ('r-2', 1, 'a', 'b', 'c')",
@@ -835,27 +749,14 @@ async fn upgrading_from_v35_keeps_audit_rows_and_stores_refused_writes() {
         limit: 200,
         ..AuditFilter::default()
     };
+    let member = "a".repeat(64);
     let dir = TempDir::new();
     let config = dir.config("v35-audit");
     let store = SqliteStore::open(&config).await.expect("opens");
-    store
-        .append_audit(row(
-            1,
-            AuditRealm::Admin,
-            AuditKind::LoginSucceeded,
-            "192.0.2.1",
-        ))
-        .await
-        .expect("admin row");
-    store
-        .append_audit(row(
-            2,
-            AuditRealm::Member,
-            AuditKind::RateLimited,
-            &"a".repeat(64),
-        ))
-        .await
-        .expect("member row");
+    let admin_row = row(1, AuditRealm::Admin, AuditKind::LoginSucceeded, "192.0.2.1");
+    store.append_audit(admin_row).await.expect("admin row");
+    let member_row = row(2, AuditRealm::Member, AuditKind::RateLimited, &member);
+    store.append_audit(member_row).await.expect("member row");
     let before = store.audit_page(&page).await.expect("page");
     store.close().await.expect("close");
     // Back to 0032's table, rows and all, as a v35 store holds it.
@@ -868,9 +769,7 @@ async fn upgrading_from_v35_keeps_audit_rows_and_stores_refused_writes() {
              {}
              INSERT INTO auth_audit SELECT * FROM auth_audit_rows;
              DROP TABLE auth_audit_rows;
-             DROP TABLE roster_fixed_picks;
-             DROP TABLE roster_run_picks;
-             DROP TABLE roster_characters;
+             {ROSTER_DROPS}
              DELETE FROM schema_migrations WHERE version >= 36;
              UPDATE store_meta SET schema_version = 35;",
             include_str!("../../src/infrastructure/store/sqlite/migrations/0032_auth_audit.sql")
@@ -885,12 +784,7 @@ async fn upgrading_from_v35_keeps_audit_rows_and_stores_refused_writes() {
     assert_eq!(store.audit_page(&page).await.expect("page"), before);
     let refused = AuditRow {
         request: Some("PUT /api/public/runs/r-1/answer".into()),
-        ..row(
-            3,
-            AuditRealm::Member,
-            AuditKind::WriteRefused,
-            &"a".repeat(64),
-        )
+        ..row(3, AuditRealm::Member, AuditKind::WriteRefused, &member)
     };
     let seq = store.append_audit(refused.clone()).await.expect("stored");
     assert_eq!(seq, 3);
@@ -904,11 +798,7 @@ async fn upgrading_from_v35_keeps_audit_rows_and_stores_refused_writes() {
     assert_eq!(listed, [AuditRow { seq, ..refused }]);
     store.close().await.expect("close");
 
-    let mut conn = SqliteConnectOptions::new()
-        .filename(&config.db_path)
-        .connect()
-        .await
-        .expect("raw connection");
+    let mut conn = connect(&config, false).await;
     let refused = sqlx::query("UPDATE auth_audit SET reason = 'changed'")
         .execute(&mut conn)
         .await;

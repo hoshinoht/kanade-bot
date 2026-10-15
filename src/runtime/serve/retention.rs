@@ -142,17 +142,17 @@ mod tests {
     use chrono::{DateTime, TimeDelta, TimeZone, Utc};
 
     use super::*;
-    use crate::infrastructure::store::{MemoryScheduleStore, model_log_conformance::extraction};
+    use crate::infrastructure::store::{SqliteStore, model_log_conformance::extraction};
 
     fn at(day: i64) -> DateTime<Utc> {
         Utc.with_ymd_and_hms(2026, 10, 11, 0, 0, 0).unwrap() + TimeDelta::days(day)
     }
 
-    async fn kept(store: &MemoryScheduleStore, id: &str) -> bool {
+    async fn kept(store: &SqliteStore, id: &str) -> bool {
         store.load_extraction(id).await.unwrap().is_some()
     }
 
-    async fn gone(store: &MemoryScheduleStore, id: &str) -> bool {
+    async fn gone(store: &SqliteStore, id: &str) -> bool {
         for _ in 0..500 {
             if !kept(store, id).await {
                 return true;
@@ -165,7 +165,7 @@ mod tests {
     #[tokio::test]
     async fn prunes_at_start_and_each_period_by_the_injected_clock_until_stopped() {
         logging::capture();
-        let store = Arc::new(MemoryScheduleStore::new());
+        let store = Arc::new(SqliteStore::open_temp().await);
         for (id, day) in [("x-old", -91), ("x-edge", -89), ("x-new", 0)] {
             store
                 .record_extraction(extraction(id, at(day)))
@@ -202,50 +202,40 @@ mod tests {
         assert_eq!(pruned[0]["extractions"], 1);
         assert_eq!(pruned[0]["cutoff"], to_iso(&at(-90)).unwrap());
 
-        // Each run checkpoints right after its prune.
-        let order: Vec<_> = logging::captured()
+        // Each run checkpoints right after its prune; stop may cut the last
+        // run between the two, leaving one trailing prune.
+        let mut order: Vec<_> = logging::captured()
             .into_iter()
             .filter_map(|line| line["event"].as_str().map(str::to_owned))
             .filter(|event| event == "model_logs_pruned" || event == "wal_checkpointed")
             .collect();
-        assert!(order.len() >= 4, "{order:?}");
+        if order.len() % 2 == 1 {
+            assert_eq!(
+                order.pop().as_deref(),
+                Some("model_logs_pruned"),
+                "{order:?}"
+            );
+        }
+        assert!(order.len() >= 2, "{order:?}");
         for pair in order.chunks(2) {
             assert_eq!(pair, ["model_logs_pruned", "wal_checkpointed"], "{order:?}");
         }
     }
 
-    /// On the real store the run's checkpoint empties the WAL the writes
-    /// filled, and logs its frame counts.
+    /// The run's checkpoint empties the WAL the writes filled, and logs its
+    /// frame counts.
     #[tokio::test]
     async fn a_run_truncates_the_sqlite_wal_after_pruning() {
-        use std::os::unix::fs::DirBuilderExt;
-
-        use crate::infrastructure::store::{SqliteStore, SqliteStoreConfig};
-
         logging::capture();
-        let root = std::fs::canonicalize(std::env::temp_dir()).expect("temp dir");
-        let dir = root.join(format!("kanade-retention-{}", uuid::Uuid::new_v4()));
-        for path in [dir.clone(), dir.join("locks")] {
-            std::fs::DirBuilder::new()
-                .mode(0o700)
-                .create(&path)
-                .expect("create");
-        }
-        let store = Arc::new(
-            SqliteStore::open(&SqliteStoreConfig {
-                db_path: dir.join("db.sqlite3"),
-                owner_lock_dir: dir.join("locks"),
-            })
-            .await
-            .expect("open"),
-        );
+        let store = Arc::new(SqliteStore::open_temp().await);
         for (n, day) in [-120, -100, 0].into_iter().enumerate() {
             store
                 .record_extraction(extraction(&format!("x-{n}"), at(day)))
                 .await
                 .unwrap();
         }
-        let wal = dir.join("db.sqlite3-wal");
+        let mut wal = store.temp_dir().config().db_path.into_os_string();
+        wal.push("-wal");
         assert!(std::fs::metadata(&wal).unwrap().len() > 0);
 
         let running = Retention::start(store.clone(), Arc::new(|| at(0)), EVERY);
@@ -276,6 +266,5 @@ mod tests {
 
         let store = Arc::into_inner(store).expect("the task let go of the store");
         store.close().await.expect("close");
-        let _ = std::fs::remove_dir_all(&dir);
     }
 }

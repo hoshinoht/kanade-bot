@@ -55,70 +55,46 @@ pub fn routes(site: Arc<Site>) -> Router<Arc<Site>> {
         .route("/api/public/sessions/{handle}", delete(sessions::end_one))
         .route("/api/public/sessions/end-all", post(sessions::end_all))
         .route_layer(from_fn_with_state(site.clone(), member::require_session));
-    // Data reads take the member's read bucket.
+    // Data reads take the member's read bucket. Each group's other methods
+    // are unmounted, set before its layers so they run inside them too.
     let data = Router::new()
-        .route("/api/public/week", get(read::week).fallback(unmounted))
-        .route(
-            "/api/public/me/allowance",
-            get(read::allowance).fallback(unmounted),
-        )
-        .route("/api/public/bosses", get(bosses::list).fallback(unmounted))
-        .route(
-            "/api/public/bosses/events",
-            get(bosses::events).fallback(unmounted),
-        )
-        .route(
-            "/api/public/bosses/{key}/knowledge",
-            get(bosses::knowledge).fallback(unmounted),
-        )
-        .route("/api/public/runs/{id}", get(runs::link).fallback(unmounted))
-        .route(
-            "/api/public/requests/mine",
-            get(requests::mine).fallback(unmounted),
-        )
-        .route(
-            "/api/public/timings",
-            get(ownership::timings).fallback(unmounted),
-        )
+        .route("/api/public/week", get(read::week))
+        .route("/api/public/me/allowance", get(read::allowance))
+        .route("/api/public/bosses", get(bosses::list))
+        .route("/api/public/bosses/events", get(bosses::events))
+        .route("/api/public/bosses/{key}/knowledge", get(bosses::knowledge))
+        .route("/api/public/runs/{id}", get(runs::link))
+        .route("/api/public/requests/mine", get(requests::mine))
+        .route("/api/public/timings", get(ownership::timings))
+        .method_not_allowed_fallback(unmounted)
         .route_layer(from_fn_with_state(site.clone(), read_bucket));
     // Refused member writes (runs, requests, ownership) are audited here.
     let writes = Router::new()
-        .route(
-            "/api/public/runs/{id}/answer",
-            put(runs::answer).fallback(unmounted),
-        )
-        .route(
-            "/api/public/runs/{id}/move",
-            post(runs::move_run).fallback(unmounted),
-        )
-        .route(
-            "/api/public/requests",
-            post(requests::submit).fallback(unmounted),
-        )
+        .route("/api/public/runs/{id}/answer", put(runs::answer))
+        .route("/api/public/runs/{id}/move", post(runs::move_run))
+        .route("/api/public/requests", post(requests::submit))
         .route(
             "/api/public/requests/{id}/withdraw",
-            post(requests::withdraw).fallback(unmounted),
+            post(requests::withdraw),
         )
-        .route(
-            "/api/public/timings/{id}/owner",
-            post(ownership::hand_off).fallback(unmounted),
-        )
+        .route("/api/public/timings/{id}/owner", post(ownership::hand_off))
         .route(
             "/api/public/timings/{id}/owner-requests",
-            post(ownership::ask).fallback(unmounted),
+            post(ownership::ask),
         )
         .route(
             "/api/public/owner-requests/{id}/accept",
-            post(ownership::accept).fallback(unmounted),
+            post(ownership::accept),
         )
         .route(
             "/api/public/owner-requests/{id}/decline",
-            post(ownership::decline).fallback(unmounted),
+            post(ownership::decline),
         )
         .route(
             "/api/public/owner-requests/{id}/withdraw",
-            post(ownership::withdraw).fallback(unmounted),
+            post(ownership::withdraw),
         )
+        .method_not_allowed_fallback(unmounted)
         .route_layer(from_fn_with_state(site.clone(), write::audit_refusals));
     let art_slots = Arc::new(Semaphore::new(assets::ART_STREAMS));
     // Data, art and the member's writes: `closed` before the session check,
@@ -140,10 +116,8 @@ pub fn routes(site: Arc<Site>) -> Router<Arc<Site>> {
     // The stream: the same bucket and `closed`, a session check that never
     // touches the session (nor rotates its id).
     let stream = Router::new()
-        .route(
-            "/api/public/events",
-            get(events::events).fallback(unmounted),
-        )
+        .route("/api/public/events", get(events::events))
+        .method_not_allowed_fallback(unmounted)
         .route_layer(from_fn_with_state(site.clone(), read_bucket))
         .route_layer(from_fn_with_state(
             site.clone(),

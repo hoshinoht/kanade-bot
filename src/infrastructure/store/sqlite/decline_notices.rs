@@ -130,7 +130,7 @@ impl DeclineNoticeStore for SqliteStore {
         run_id: &str,
         user_id: &str,
     ) -> Result<Option<DeclineNotice>, StoreError> {
-        let mut conn = self.readers.acquire().await.map_err(store_error)?;
+        let mut conn = self.reader().await.map_err(store_error)?;
         sqlx::query(&format!(
             "SELECT {COLUMNS} FROM decline_notices WHERE run_id = ?1 AND user_id = ?2"
         ))
@@ -147,7 +147,7 @@ impl DeclineNoticeStore for SqliteStore {
         &self,
         limit: usize,
     ) -> Result<Vec<DeclineNotice>, StoreError> {
-        let mut conn = self.readers.acquire().await.map_err(store_error)?;
+        let mut conn = self.reader().await.map_err(store_error)?;
         let limit = i64::try_from(limit.min(MAX_PENDING_DECLINE_NOTICES))
             .map_err(|error| StoreError::Backend(error.to_string()))?;
         sqlx::query(&format!(

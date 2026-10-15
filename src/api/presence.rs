@@ -82,6 +82,9 @@ struct Entry {
     /// The tab's latest call: check-ins and leaves are ordered by it.
     seq: u64,
     left: bool,
+    /// Test support: a simulated tab that keeps this age (never expires).
+    #[cfg(any(test, feature = "test-support"))]
+    held: Option<Duration>,
 }
 
 #[derive(Default)]
@@ -142,6 +145,8 @@ impl Presence {
                     seen: now,
                     seq,
                     left: false,
+                    #[cfg(any(test, feature = "test-support"))]
+                    held: None,
                 });
             }
         }
@@ -188,10 +193,66 @@ impl Presence {
                     seen: now,
                     seq,
                     left: true,
+                    #[cfg(any(test, feature = "test-support"))]
+                    held: None,
                 });
             }
         }
         evicted || before != admin_mode(entries, visitor.admin)
+    }
+}
+
+/// Test support: other admins put at a place directly, as browser tests and
+/// local development stand them in. Callers send the presence hint.
+#[cfg(any(test, feature = "test-support"))]
+impl Presence {
+    /// The visitor's tab at `place` in `mode`, last seen `seen` ago (it ages
+    /// from there and expires as usual), or kept at that age while `held`.
+    /// Replaces the tab's earlier entry there, its tombstone included.
+    pub fn simulate(
+        &self,
+        place: Place,
+        visitor: Visitor<'_>,
+        mode: Mode,
+        seen: Duration,
+        held: bool,
+    ) {
+        let now = Instant::now();
+        let mut places = self.lock();
+        sweep(&mut places, now);
+        let entries = room(&mut places, place);
+        entries.retain(|entry| entry.tab != visitor.tab);
+        make_room(entries);
+        entries.push(Entry {
+            tab: visitor.tab.to_owned(),
+            admin: visitor.admin.to_owned(),
+            name: visitor.name.to_owned(),
+            mode,
+            seen: now.checked_sub(seen).unwrap_or(now),
+            seq: 0,
+            left: false,
+            held: held.then_some(seen),
+        });
+    }
+
+    /// The tab is gone from `place` at once (no tombstone); whether it was there.
+    pub fn simulate_leave(&self, place: &Place, tab: &str) -> bool {
+        let mut places = self.lock();
+        let Some(entries) = places.get_mut(place) else {
+            return false;
+        };
+        let before = entries.len();
+        entries.retain(|entry| entry.tab != tab);
+        let gone = entries.len() != before;
+        if entries.is_empty() {
+            places.remove(place);
+        }
+        gone
+    }
+
+    /// Nobody anywhere.
+    pub fn clear(&self) {
+        self.lock().clear();
     }
 }
 
@@ -228,7 +289,15 @@ fn make_room(entries: &mut Vec<Entry>) -> bool {
 
 fn sweep(places: &mut HashMap<Place, Vec<Entry>>, now: Instant) {
     places.retain(|_, entries| {
-        entries.retain(|entry| now.duration_since(entry.seen) < LIFETIME);
+        entries.retain_mut(|entry| {
+            // A held entry is re-dated so every read sees the same age.
+            #[cfg(any(test, feature = "test-support"))]
+            if let Some(age) = entry.held {
+                entry.seen = now.checked_sub(age).unwrap_or(now);
+                return true;
+            }
+            now.duration_since(entry.seen) < LIFETIME
+        });
         !entries.is_empty()
     });
 }
@@ -482,6 +551,45 @@ mod tests {
         assert_eq!(places.len(), MAX_PLACES);
         assert!(!places.contains_key(&p), "the place seen longest ago went");
         assert!(places.contains_key(&place(&format!("q{MAX_PLACES}"))));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn simulated_admins_are_back_dated_held_and_taken_away() {
+        let board = Presence::default();
+        let p = place("p-kalos-fixed");
+        let put = |who: &str, mode, seen_s, held| {
+            let seen = Duration::from_secs(seen_s);
+            board.simulate(p.clone(), visitor(who, who), mode, seen, held);
+        };
+        let here = || board.here(&p, "asahi");
+        put("ren", Mode::Editing, 0, true);
+        put("kaito", Mode::Viewing, 40, true);
+        put("mika", Mode::Viewing, 55, false);
+        assert_eq!(
+            names(&here()),
+            [
+                ("ren", Mode::Editing, 0),
+                ("kaito", Mode::Viewing, 40),
+                ("mika", Mode::Viewing, 55)
+            ]
+        );
+        // Held ages stay put past the lifetime; Mika ages and is gone at 60 s.
+        advance(LIFETIME * 2).await;
+        assert_eq!(
+            names(&here()),
+            [("ren", Mode::Editing, 0), ("kaito", Mode::Viewing, 40)]
+        );
+        // Arriving again replaces the entry; leaving takes it away at once.
+        put("kaito", Mode::Editing, 0, false);
+        assert_eq!(
+            names(&here()),
+            [("kaito", Mode::Editing, 0), ("ren", Mode::Editing, 0)]
+        );
+        assert!(board.simulate_leave(&p, "ren"));
+        assert!(!board.simulate_leave(&p, "ren"), "already gone");
+        assert_eq!(names(&here()), [("kaito", Mode::Editing, 0)]);
+        board.clear();
+        assert!(board.lock().is_empty());
     }
 
     #[test]

@@ -172,6 +172,8 @@ pub struct Week {
     pub reset: String,
     pub days: Vec<WeekDay>,
     pub runs: Vec<RunDto>,
+    /// Answered and waiting places per day of the week.
+    pub stats: Stats,
     pub generated_at: String,
     pub version: u64,
 }
@@ -387,6 +389,7 @@ pub fn week(
             .filter(|run| run.week_start == frame.start)
             .map(|run| run_dto(ctx, snapshot, start_date, run, run_lengths))
             .collect(),
+        stats: stats(ctx, snapshot, frame),
         generated_at: iso_instant(ctx.now),
         version,
     }
@@ -406,7 +409,7 @@ pub struct Stats {
     pub per_day: Vec<DayStat>,
 }
 
-pub fn stats(ctx: &Context<'_>, snapshot: &ScheduleSnapshot, frame: &WeekFrame) -> Stats {
+fn stats(ctx: &Context<'_>, snapshot: &ScheduleSnapshot, frame: &WeekFrame) -> Stats {
     let start_date = ctx.local_date(frame.start);
     let mut per_day: Vec<DayStat> = (0..7u8)
         .map(|day| DayStat {

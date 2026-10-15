@@ -2,10 +2,10 @@ import type { Page } from '@playwright/test';
 import { PUBLIC, expect, settle, signInPublic, test } from './support';
 
 // My runs › Weekly timings (boards MyRuns-Timings-Owner, PhoneMyRuns-Timings-Owner)
-// against the mock's member (Asahi, 1001): she owns Baldrix (Thu) and Carling
-// (Tue, Mika asks to own it), Ren owns Kalos (Fri), Minato owns Jupiter (Mon).
-// Every write goes to the mock; the fresh-sign-in refusal and a party change
-// the mock cannot make are answered by `page.route`.
+// as the seed's member Asahi: she owns Baldrix (Thu) and Carling (Tue, Mika
+// asks to own it), Ren owns Kalos (Fri), Minato owns Jupiter (Mon). The
+// fresh-sign-in refusal and a refusal the seed cannot produce are answered by
+// `page.route`.
 
 test.describe.configure({ mode: 'parallel' });
 
@@ -64,18 +64,18 @@ test('hand off: pick a party member, the owner changes, the toast says it as Dis
   await open(page);
   const hand = row(page, 'f-carling').getByRole('button', { name: /^Hand Tue 22:00/ });
   await hand.click();
-  const picker = page.getByRole('dialog', { name: 'Hand Tue 22:00 Carling + Radiant Malefic Star to…' });
+  const picker = page.getByRole('dialog', { name: 'Hand Tue 22:00 Karling + Radiant Malefic Star to…' });
   await expect(picker).toBeVisible();
   await expect(picker.getByRole('radio')).toHaveCount(5);
   await expect(picker.getByRole('radio', { name: 'Ren' })).toBeChecked();
   // Mika's ask is marked in the list.
   await expect(picker.locator('label', { hasText: 'Mika' })).toContainText('asked to own');
   await picker.getByRole('radio', { name: 'Mika' }).check();
-  await expect(picker).toContainText("You → Mika. Discord posts “👑 Mika now owns weekly timing HCarling + HStar · Tue 22:00”. Mika's ask closes: its owner changed.");
+  await expect(picker).toContainText("You → Mika. Discord posts “👑 Mika now owns weekly timing HCarling + HMaleficStar · Tue 22:00”. Mika's ask closes: its owner changed.");
   await shot(page, 'desktop-3-picker');
   await picker.getByRole('button', { name: 'Hand to Mika' }).click();
   await expect(picker).toBeHidden();
-  await expect(toast(page).filter({ hasText: '👑 Mika now owns weekly timing HCarling + HStar · Tue 22:00.' })).toBeVisible();
+  await expect(toast(page).filter({ hasText: '👑 Mika now owns weekly timing HCarling + HMaleficStar · Tue 22:00.' })).toBeVisible();
   await expect(row(page, 'f-carling').locator('.owner')).toHaveText('Mika, owner');
   await expect(row(page, 'f-carling').getByRole('button', { name: 'Ask to own Tue 22:00' })).toBeVisible();
   await expect(row(page, 'f-carling').getByRole('group')).toHaveCount(0);
@@ -103,20 +103,20 @@ test("an ask on your timing: Decline closes it and you stay the owner", async ({
   await ask.getByRole('button', { name: "Decline Mika's ask" }).click();
   await expect(ask).toHaveCount(0);
   await expect(row(page, 'f-carling').locator('.owner')).toHaveText('You, owner');
-  await expect(page.locator('main [role="status"]').filter({ hasText: "Declined Mika's ask to own HCarling + HStar · Tue 22:00." })).toHaveCount(1);
+  await expect(page.locator('main [role="status"]').filter({ hasText: "Declined Mika's ask to own HCarling + HMaleficStar · Tue 22:00." })).toHaveCount(1);
 });
 
 test('an ask on your timing: Accept makes the asker the owner', async ({ page }) => {
   await open(page);
   await row(page, 'f-carling').getByRole('button', { name: "Accept Mika's ask" }).click();
-  await expect(toast(page).filter({ hasText: '👑 Mika now owns weekly timing HCarling + HStar · Tue 22:00.' })).toBeVisible();
+  await expect(toast(page).filter({ hasText: '👑 Mika now owns weekly timing HCarling + HMaleficStar · Tue 22:00.' })).toBeVisible();
   await expect(row(page, 'f-carling').locator('.owner')).toHaveText('Mika, owner');
   await expect(row(page, 'f-carling').getByRole('group')).toHaveCount(0);
 });
 
 test("an owner change older than the fresh window: Confirm it's you, back with the pick, then handed", async ({ page }) => {
   await open(page);
-  // The mock's clock stands still, so its sign-in never ages: answer as the server does after 15 min.
+  // A sign-in this test made is fresh, so answer as the server does after 15 min.
   await page.route('**/api/public/timings/*/owner', (route) =>
     route.fulfill({ status: 401, contentType: 'application/json', body: JSON.stringify({ error: 'reauth_required', message: 'Sign in with Discord again to make this change.' }) }),
   );

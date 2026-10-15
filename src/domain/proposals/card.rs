@@ -118,7 +118,7 @@ impl CardPayload {
 }
 
 impl CardDetails {
-    /// v4 row keys (as the card vectors spell them) plus `evidence_message_ids`
+    /// v4 row keys plus `evidence_message_ids`
     /// and `self_service`.
     pub fn to_json(&self) -> Value {
         json!({

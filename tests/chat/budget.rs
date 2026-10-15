@@ -14,11 +14,11 @@ use kanade::chat::tools::ToolContext;
 use kanade::chat::tools::bundles::{Bundle, ToolOffer};
 use kanade::domain::model_log::ChatOutcome;
 use kanade::domain::scheduler::Clock;
-use kanade::infrastructure::llm::{FakeAction, FakeProvider, Message};
+use kanade::infrastructure::llm::{FakeAction, FakeProvider};
 
-use crate::looping::{Ports, said, settings};
+use crate::looping::{Ports, conversation, said, settings};
 use crate::model::{Scripted, capabilities, client, wants};
-use crate::support::load;
+use crate::support::world_input;
 use crate::wire::kanade;
 use crate::world::World;
 
@@ -51,7 +51,7 @@ async fn ask_scripted(
     offer: ToolOffer,
     ports: &Ports,
 ) -> Asked {
-    let input = load("loop.json")["cases"][0]["input"].clone();
+    let input = world_input();
     let mut world = World::new(&input).await;
     let provider = Arc::new(Scripted {
         fake: FakeProvider::new(actions),
@@ -66,14 +66,7 @@ async fn ask_scripted(
         let (guild, mut proposer) = world.question_parts();
         let question = Question {
             ctx: &ctx,
-            conversation: vec![
-                Message::System {
-                    content: "SYSTEM".into(),
-                },
-                Message::User {
-                    content: format!("Alvin tan: {QUESTION}"),
-                },
-            ],
+            conversation: conversation(format!("Alvin tan: {QUESTION}")),
             profanity: None,
             reminder: kanade().voice_reminder(),
             offer,

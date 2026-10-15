@@ -7,7 +7,7 @@ use std::sync::Arc;
 
 use axum::{
     Json,
-    extract::{State, rejection::JsonRejection},
+    extract::State,
     http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
 };
@@ -16,7 +16,7 @@ use serde::Deserialize;
 use super::{encoded, parse};
 use crate::{
     api::{
-        admin::write::{Refusal, bad_body, origin, scheduler, state},
+        admin::write::{Body, Refusal, origin, scheduler, state},
         auth::AdminSession,
         dto::history as dto,
         error::ApiError,
@@ -196,9 +196,8 @@ pub async fn revert(
     State(site): State<Arc<Site>>,
     session: AdminSession,
     headers: HeaderMap,
-    body: Result<Json<RevertBody>, JsonRejection>,
+    Body(body): Body<RevertBody>,
 ) -> Reply {
-    let Json(body) = body.map_err(bad_body)?;
     if body.seqs.is_empty() {
         return Err(Refusal::invalid("Choose at least one change."));
     }
@@ -219,9 +218,8 @@ pub async fn restore_week(
     State(site): State<Arc<Site>>,
     session: AdminSession,
     headers: HeaderMap,
-    body: Result<Json<RestoreBody>, JsonRejection>,
+    Body(body): Body<RestoreBody>,
 ) -> Reply {
-    let Json(body) = body.map_err(bad_body)?;
     let state = state(&site)?;
     let week = parse::week(&state.policy, &body.week)
         .ok_or_else(|| Refusal::invalid("That is not the start of a boss week."))?;
@@ -242,9 +240,8 @@ pub async fn revert_actor(
     State(site): State<Arc<Site>>,
     session: AdminSession,
     headers: HeaderMap,
-    body: Result<Json<ActorBody>, JsonRejection>,
+    Body(body): Body<ActorBody>,
 ) -> Reply {
-    let Json(body) = body.map_err(bad_body)?;
     let state = state(&site)?;
     let actor = parse::actor(&body.actor)
         .ok_or_else(|| Refusal::invalid("Actor is kind:id, e.g. member:1005."))?;

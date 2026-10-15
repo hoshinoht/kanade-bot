@@ -126,121 +126,117 @@ fn write_outcome<'g>(
 /// One card, about `run`.
 fn carded(generation: &Generation, ports: &Ports, tool: &str, run: &str) {
     let outcome = write_outcome(generation, tool);
-    assert!(outcome.ok, "{}", outcome.output);
+    assert!(outcome.ok, "{tool} {run}: {}", outcome.output);
     let posted = ports.posted.lock().unwrap();
-    assert_eq!(posted.len(), 1);
-    assert_eq!(posted[0].run_id.as_deref(), Some(run));
-    assert_eq!(generation.created.len(), 1);
+    assert_eq!(posted.len(), 1, "{tool} {run}");
+    assert_eq!(posted[0].run_id.as_deref(), Some(run), "{tool} {run}");
+    assert_eq!(generation.created.len(), 1, "{tool} {run}");
 }
 
 /// No card, and the tool asked the model to ask which run.
 fn refused(generation: &Generation, ports: &Ports, tool: &str, asked: &str, listed: &[&str]) {
     let outcome = write_outcome(generation, tool);
-    assert_eq!(outcome.error, Some(REFUSED));
+    let case = format!("{tool} {asked} {listed:?}");
+    assert_eq!(outcome.error, Some(REFUSED), "{case}");
     assert!(
         outcome.output.starts_with(&format!(
             "`{asked}` matches more than one run. Ask which one:"
         )),
-        "{}",
+        "{case}: {}",
         outcome.output
     );
     for id in listed {
-        assert!(
-            outcome.output.contains(id),
-            "{id} listed: {}",
-            outcome.output
-        );
+        assert!(outcome.output.contains(id), "{case}: {}", outcome.output);
     }
-    assert!(generation.created.is_empty() && generation.posted.is_empty());
-    assert!(ports.posted.lock().unwrap().is_empty());
+    let posted = ports.posted.lock().unwrap();
+    assert!(
+        generation.created.is_empty() && generation.posted.is_empty(),
+        "{case}"
+    );
+    assert!(posted.is_empty(), "{case}");
 }
 
 const WEDNESDAY_RUN: &str = "move the wednesday run to 22:00";
 
+/// C15 and its kin: an id from the model's own read on a day with several
+/// runs, a description the model made up, and a different run than the one
+/// the asker singled out are each refused with the "Ask which one" listing.
 #[tokio::test]
-async fn c15_an_id_from_the_models_own_read_is_refused_when_the_day_has_several_runs() {
-    let (generation, ports) = ask(
-        world().await,
-        COBALT,
-        vec![user(&format!("Cobalt: {WEDNESDAY_RUN}"))],
-        vec![
-            calls(&[("get_schedule", json!({"week": "auto", "day": "wednesday"}))]),
-            moves("a1000003", "wed 22:00"),
-            says("Which one -- the HStar at 21:30 or the Kalos at 23:00?"),
-        ],
-    )
-    .await;
-    let listed = ["a1000003", "b2000005", "a1000004"];
-    refused(&generation, &ports, "propose_move", WEDNESDAY_RUN, &listed);
+async fn a_run_the_asker_did_not_single_out_is_refused() {
+    let hstar = "cancel the HStar on Wednesday";
+    let read = calls(&[("get_schedule", json!({"week": "auto", "day": "wednesday"}))]);
+    let cases = [
+        (
+            WEDNESDAY_RUN,
+            vec![
+                read,
+                moves("a1000003", "wed 22:00"),
+                says("Which one -- the HStar at 21:30 or the Kalos at 23:00?"),
+            ],
+            "propose_move",
+            &["a1000003", "b2000005", "a1000004"][..],
+        ),
+        (
+            WEDNESDAY_RUN,
+            vec![moves("kalos wednesday", "wed 22:00"), says("Which one?")],
+            "propose_move",
+            &["a1000003", "a1000004"],
+        ),
+        (
+            hstar,
+            vec![cancels("a1000004"), says("Which one?")],
+            "propose_cancel",
+            &["a1000003", "a1000004"],
+        ),
+    ];
+    for (asked, actions, tool, listed) in cases {
+        let turns = vec![user(&format!("Cobalt: {asked}"))];
+        let (generation, ports) = ask(world().await, COBALT, turns, actions).await;
+        refused(&generation, &ports, tool, asked, listed);
+    }
 }
 
+/// C13, C14 and their kin: a boss and day that single out the run, a cancel
+/// of the named boss on its day, an id the asker typed on a busy day, and a
+/// move whose target day does not describe the run all keep the card.
 #[tokio::test]
-async fn a_description_the_model_made_up_is_refused_the_same_way() {
-    let (generation, ports) = ask(
-        world().await,
-        COBALT,
-        vec![user(&format!("Cobalt: {WEDNESDAY_RUN}"))],
-        vec![moves("kalos wednesday", "wed 22:00"), says("Which one?")],
-    )
-    .await;
-    let listed = ["a1000003", "a1000004"];
-    refused(&generation, &ports, "propose_move", WEDNESDAY_RUN, &listed);
-}
-
-#[tokio::test]
-async fn c13_a_boss_and_day_that_single_out_the_run_keep_the_card() {
-    let (generation, ports) = ask(
-        world().await,
-        BRAMBLE,
-        vec![user("Bramble: can we push the kalos tomorrow to 23:30?")],
-        vec![
-            calls(&[("get_schedule", json!({"week": "auto", "day": "wednesday"}))]),
-            moves("a1000004", "tomorrow 23:30"),
-            says("Card's up -- it needs a ✅."),
-        ],
-    )
-    .await;
-    carded(&generation, &ports, "propose_move", "a1000004");
-}
-
-#[tokio::test]
-async fn c14_a_cancel_of_the_named_boss_on_its_day_keeps_the_card() {
-    let (generation, ports) = ask(
-        world().await,
-        COBALT,
-        vec![user(
+async fn words_that_single_out_the_run_keep_the_card() {
+    let up = "Card's up -- it needs a ✅.";
+    let read = calls(&[("get_schedule", json!({"week": "auto", "day": "wednesday"}))]);
+    let cases = [
+        (
+            BRAMBLE,
+            "Bramble: can we push the kalos tomorrow to 23:30?",
+            vec![read, moves("a1000004", "tomorrow 23:30"), says(up)],
+            "propose_move",
+            "a1000004",
+        ),
+        (
+            COBALT,
             "Cobalt: cancel the hstar on wednesday, we can't make it",
-        )],
-        vec![cancels("a1000003"), says("Card's up -- it needs a ✅.")],
-    )
-    .await;
-    carded(&generation, &ports, "propose_cancel", "a1000003");
-}
-
-#[tokio::test]
-async fn an_id_the_asker_typed_is_taken_even_on_a_busy_day() {
-    let (generation, ports) = ask(
-        world().await,
-        COBALT,
-        vec![user("Cobalt: move the wednesday run #a1000003 to 22:00")],
-        vec![moves("a1000003", "wed 22:00"), says("Card's up.")],
-    )
-    .await;
-    carded(&generation, &ports, "propose_move", "a1000003");
-}
-
-#[tokio::test]
-async fn a_different_run_than_the_one_the_asker_singled_out_is_refused() {
-    let asked = "cancel the HStar on Wednesday";
-    let (generation, ports) = ask(
-        world().await,
-        COBALT,
-        vec![user(&format!("Cobalt: {asked}"))],
-        vec![cancels("a1000004"), says("Which one?")],
-    )
-    .await;
-    let listed = ["a1000003", "a1000004"];
-    refused(&generation, &ports, "propose_cancel", asked, &listed);
+            vec![cancels("a1000003"), says(up)],
+            "propose_cancel",
+            "a1000003",
+        ),
+        (
+            COBALT,
+            "Cobalt: move the wednesday run #a1000003 to 22:00",
+            vec![moves("a1000003", "wed 22:00"), says("Card's up.")],
+            "propose_move",
+            "a1000003",
+        ),
+        (
+            COBALT,
+            "Cobalt: move the hstar to friday 21:30",
+            vec![moves("a1000003", "fri 21:30"), says("Card's up.")],
+            "propose_move",
+            "a1000003",
+        ),
+    ];
+    for (asker, line, actions, tool, run) in cases {
+        let (generation, ports) = ask(world().await, asker, vec![user(line)], actions).await;
+        carded(&generation, &ports, tool, run);
+    }
 }
 
 #[tokio::test]
@@ -262,18 +258,6 @@ async fn words_that_fit_no_open_run_refuse_the_models_pick() {
         outcome.output
     );
     assert!(generation.created.is_empty() && ports.posted.lock().unwrap().is_empty());
-}
-
-#[tokio::test]
-async fn the_day_a_move_goes_to_does_not_describe_the_run() {
-    let (generation, ports) = ask(
-        world().await,
-        COBALT,
-        vec![user("Cobalt: move the hstar to friday 21:30")],
-        vec![moves("a1000003", "fri 21:30"), says("Card's up.")],
-    )
-    .await;
-    carded(&generation, &ports, "propose_move", "a1000003");
 }
 
 const WHICH: &str = "Which one -- HStar 21:30, Baldrix 22:00 in #boss-beta, or Kalos 23:00?";

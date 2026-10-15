@@ -14,7 +14,6 @@ const METHODS: [&str; 7] = ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OP
 /// Every admin path the PWA calls (docs/notes/admin-api.md) plus test/mock hooks.
 const ADMIN_PATHS: [&str; 55] = [
     "/api/admin/week?week=next",
-    "/api/admin/stats",
     "/api/admin/summary",
     "/api/admin/members",
     "/api/admin/members/m1",
@@ -36,6 +35,7 @@ const ADMIN_PATHS: [&str; 55] = [
     "/api/admin/runs/r1/characters/m1",
     "/api/admin/fixed",
     "/api/admin/fixed/f1",
+    "/api/admin/fixed/f1/choices",
     "/api/admin/validate/bosses",
     "/api/admin/bosses",
     "/api/admin/bosses/events",
@@ -66,7 +66,7 @@ const ADMIN_PATHS: [&str; 55] = [
     "/api/admin/history/1/cherry-pick",
     "/api/admin/requests/q1/approve",
     "/__test/whoami",
-    "/__mock/reports",
+    "/__e2e/reports",
     "/healthz",
 ];
 
@@ -253,6 +253,7 @@ async fn closed_public_portal_serves_status_identity_and_shell_only() {
     let status = get(public, PUBLIC_HOST, "/api/public/status").await;
     assert_eq!(status.status, 200);
     assert_eq!(status.json(), serde_json::json!({"portal": "closed"}));
+    crate::schemas::assert_valid("public.json#/$defs/PublicStatus", "status", &status.json());
 
     for path in [
         "/api/public/week",

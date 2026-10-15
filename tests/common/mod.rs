@@ -1,39 +1,26 @@
-//! Scheduler-vector support shared by the `scheduler` and `notify` test
-//! targets: vector loading, pinned clock/id seams and v4-shaped snapshots.
-//! Each target uses a different subset.
+//! Support shared by several test targets: pinned clock/id seams, a
+//! scheduler over a temp SQLite store, JSON field readers and structural
+//! schedule checks. Each target uses a different subset.
 #![allow(dead_code)]
 
-use std::{
-    collections::BTreeMap,
-    fs,
-    path::PathBuf,
-    sync::{Arc, Mutex},
-};
+use std::sync::{Arc, Mutex};
 
-use chrono::{DateTime, FixedOffset, NaiveTime, Timelike, Utc};
+use chrono::{DateTime, FixedOffset, NaiveTime, Utc};
 use chrono_tz::Tz;
 use kanade::domain::{
     ids::IdGenerator,
-    schedule::{Reminder, ScheduleSnapshot},
+    schedule::ScheduleSnapshot,
     scheduler::{Clock, ScheduleStore, SchedulerService, Scope},
     time::{IsoDateTime, to_iso},
     weeks,
 };
-use kanade::infrastructure::store::MemoryScheduleStore;
-use serde_json::{Value, json};
+use kanade::infrastructure::store::SqliteStore;
+use serde_json::Value;
 
-pub type Service = SchedulerService<MemoryScheduleStore, SeqIds, TestClock>;
+pub type Service<S = SqliteStore> = SchedulerService<S, SeqIds, TestClock>;
 
-pub fn load(name: &str) -> Value {
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("docs/v5/vectors/scheduler")
-        .join(name);
-    let text = fs::read_to_string(&path).unwrap_or_else(|error| panic!("{path:?}: {error}"));
-    serde_json::from_str(&text).unwrap_or_else(|error| panic!("{path:?}: {error}"))
-}
-
-/// The case's UUID sequence; running out fails the contract, as in the producer.
-/// Clones share one cursor so the replayer can draw ids v4 spent elsewhere.
+/// A fixed UUID sequence; running out fails the test.
+/// Clones share one cursor so a test can draw ids the service did not.
 #[derive(Clone)]
 pub struct SeqIds {
     ids: Arc<Vec<String>>,
@@ -62,7 +49,7 @@ impl IdGenerator for SeqIds {
     }
 }
 
-/// One aware clock shared by the service and the replayer (`set_clock`).
+/// One aware clock shared by the service and the test (`set`).
 #[derive(Clone)]
 pub struct TestClock(Arc<Mutex<DateTime<Utc>>>);
 
@@ -82,15 +69,21 @@ impl Clock for TestClock {
     }
 }
 
-pub fn service(input: &Value) -> (Service, TestClock) {
-    let (service, clock, _) = service_with_ids(input);
+pub async fn service(input: &Value) -> (Service, TestClock) {
+    let (service, clock, _) = service_with_ids(input).await;
     (service, clock)
 }
 
-pub fn service_with_ids(input: &Value) -> (Service, TestClock, SeqIds) {
+/// A scheduler at `input.clock` drawing ids from `input.uuid_sequence`.
+pub async fn service_with_ids(input: &Value) -> (Service, TestClock, SeqIds) {
+    service_over(SqliteStore::open_temp().await, input)
+}
+
+/// [`service_with_ids`] over `store`.
+pub fn service_over<S: ScheduleStore>(store: S, input: &Value) -> (Service<S>, TestClock, SeqIds) {
     let clock = TestClock::new(instant(&input["clock"]));
     let ids = SeqIds::new(&input["uuid_sequence"]);
-    let service = SchedulerService::new(MemoryScheduleStore::new(), ids.clone(), clock.clone());
+    let service = SchedulerService::new(store, ids.clone(), clock.clone());
     (service, clock, ids)
 }
 
@@ -110,7 +103,7 @@ pub fn strings(value: &Value) -> Vec<String> {
 }
 
 pub fn instant(value: &Value) -> DateTime<FixedOffset> {
-    match IsoDateTime::parse(text(value)).expect("vector datetime") {
+    match IsoDateTime::parse(text(value)).expect("aware datetime") {
         IsoDateTime::Aware(at) => at,
         IsoDateTime::Naive(_) => panic!("{value} must be aware"),
     }
@@ -155,176 +148,8 @@ pub fn iso(at: DateTime<Utc>) -> String {
     to_iso(&at).expect("in range")
 }
 
-pub fn opt_iso(at: Option<DateTime<Utc>>) -> Value {
-    at.map_or(Value::Null, |at| json!(iso(at)))
-}
-
-pub fn hhmm(time: NaiveTime) -> String {
-    format!("{:02}:{:02}", time.hour(), time.minute())
-}
-
-pub fn reminder_json(row: &Reminder, message_id: bool) -> Value {
-    let mut value = json!({
-        "id": row.id,
-        "run_id": row.run_id,
-        "kind": row.kind,
-        "fire_at": iso(row.fire_at),
-        "sent_at": opt_iso(row.sent_at),
-    });
-    if message_id {
-        value["message_id"] = json!(row.message_id);
-    }
-    value
-}
-
-pub async fn snapshot(service: &Service) -> ScheduleSnapshot {
+pub async fn snapshot<S: ScheduleStore>(service: &Service<S>) -> ScheduleSnapshot {
     service.store().load(&Scope::All).await.expect("load")
-}
-
-/// The v4 replayer's `final_state`: reminders grouped by run order, then `(fire_at, kind)`.
-pub fn final_state(state: &ScheduleSnapshot, message_id: bool) -> Value {
-    let mut by_run: BTreeMap<&str, Vec<&Reminder>> = BTreeMap::new();
-    for row in &state.reminders {
-        by_run.entry(&row.run_id).or_default().push(row);
-    }
-    let reminders: Vec<Value> = state
-        .runs
-        .iter()
-        .flat_map(|run| {
-            let mut rows = by_run.remove(run.id.as_str()).unwrap_or_default();
-            rows.sort_by(|a, b| (a.fire_at, &a.kind).cmp(&(b.fire_at, &b.kind)));
-            rows.into_iter().map(|row| reminder_json(row, message_id))
-        })
-        .collect();
-    assert!(by_run.is_empty(), "reminders without a run: {by_run:?}");
-    json!({
-        "fixed_runs": state.fixed_runs.iter().map(|row| json!({
-            "id": row.id,
-            "owner_id": row.owner_id,
-            "channel_id": row.channel_id,
-            "bosses": row.bosses,
-            "weekday": row.weekday.num_days_from_monday(),
-            "time": hhmm(row.time),
-            "participants": row.participants,
-            "note": row.note,
-        })).collect::<Vec<_>>(),
-        "runs": state.runs.iter().map(|row| json!({
-            "id": row.id,
-            "fixed_run_id": row.fixed_run_id,
-            "channel_id": row.channel_id,
-            "bosses": row.bosses,
-            "participants": row.participants,
-            "status": row.status.as_str(),
-            "source": row.source.as_str(),
-            "week_start": iso(row.week_start),
-            "datetime": iso(row.datetime),
-        })).collect::<Vec<_>>(),
-        "reminders": reminders,
-        "rsvps": state.rsvps.iter().map(|row| json!({
-            "run_id": row.run_id,
-            "user_id": row.user_id,
-            "state": row.state.as_str(),
-            "source": row.source.as_str(),
-            "at": iso(row.at),
-        })).collect::<Vec<_>>(),
-        "side_effects": [],
-    })
-}
-
-/// Register `"{fixed_key}@{week_text}"` for every timing materialised that week.
-pub async fn register_materialised(
-    service: &Service,
-    fixed_refs: &BTreeMap<String, String>,
-    week: DateTime<Utc>,
-    week_text: &str,
-    run_refs: &mut BTreeMap<String, String>,
-) {
-    let state = snapshot(service).await;
-    for (key, fixed_id) in fixed_refs {
-        if let Some(run) = state
-            .runs
-            .iter()
-            .find(|run| run.fixed_run_id.as_ref() == Some(fixed_id) && run.week_start == week)
-        {
-            run_refs.insert(format!("{key}@{week_text}"), run.id.clone());
-        }
-    }
-}
-
-pub fn run_ref<'a>(refs: &'a BTreeMap<String, String>, key: &Value) -> &'a str {
-    refs.get(text(key))
-        .unwrap_or_else(|| panic!("no run produced for key {key}"))
-}
-
-/// A step's result: its value, or the declared `ValueError` with v4's message.
-pub fn step_result<E: std::fmt::Display>(step: &Value, result: Result<Value, E>) -> Value {
-    match (result, step.get("error_type")) {
-        (Ok(value), _) => json!({ "value": value }),
-        (Err(error), Some(kind)) => {
-            json!({ "error": { "type": kind, "message": error.to_string() } })
-        }
-        (Err(error), None) => panic!("step {step} failed unexpectedly: {error}"),
-    }
-}
-
-/// Compare one replayed case to its expectation, listing every difference.
-pub fn assert_case(case_id: &str, actual: &Value, expected: &Value) {
-    let mut failures = Vec::new();
-    let steps = actual["steps"].as_array().expect("steps");
-    let wanted = expected["steps"].as_array().expect("expected steps");
-    assert_eq!(steps.len(), wanted.len(), "{case_id}: step count");
-    for (index, (got, want)) in steps.iter().zip(wanted).enumerate() {
-        if got != want {
-            failures.push(format!("step {index}: expected {want}\n  got {got}"));
-        }
-    }
-    for table in ["fixed_runs", "runs", "reminders", "rsvps", "side_effects"] {
-        let (got, want) = (
-            &actual["final_state"][table],
-            &expected["final_state"][table],
-        );
-        if got != want {
-            failures.push(format!("final {table}: expected {want}\n  got {got}"));
-        }
-    }
-    assert!(
-        failures.is_empty(),
-        "{case_id} mismatches:\n{}",
-        failures.join("\n")
-    );
-}
-
-/// A frozen v4 value the user deliberately changed for v5. Each entry must
-/// match the vector's v4 value before it is replaced, and every entry of a
-/// named list must be used (callers sum [`apply_deviations`] counts).
-pub struct Deviation {
-    pub case_id: &'static str,
-    pub pointer: String,
-    pub v4: Value,
-    pub v5: Value,
-}
-
-/// The expectation after the named deviations; returns how many applied.
-pub fn apply_deviations(
-    case_id: &str,
-    expected: &Value,
-    deviations: &[Deviation],
-) -> (Value, usize) {
-    let mut expected = expected.clone();
-    let mut applied = 0;
-    for deviation in deviations.iter().filter(|d| d.case_id == case_id) {
-        let slot = expected
-            .pointer_mut(&deviation.pointer)
-            .unwrap_or_else(|| panic!("{case_id}: no {}", deviation.pointer));
-        assert_eq!(
-            *slot, deviation.v4,
-            "{case_id}{}: frozen v4 value changed",
-            deviation.pointer
-        );
-        *slot = deviation.v5.clone();
-        applied += 1;
-    }
-    (expected, applied)
 }
 
 /// Structural checks that must hold after any mutation: reminder kinds unique

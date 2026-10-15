@@ -156,7 +156,8 @@
           moved.
         {:else if shape === 'not_in'}
           {#if link.removed}
-            <b>You're no longer in this party.</b> {link.removed.by} removed you from {title}{removedOn ? ` on ${removedOn.date}` : ''}, so you can't move it. The run is unchanged.
+            <!-- `by` opens a sentence: the API's "an admin" reads "An admin"; a member's name is left as written. -->
+            <b>You're no longer in this party.</b> {link.removed.by.replace(/^an? /, (article) => article[0]!.toUpperCase() + article.slice(1))} removed you from {title}{removedOn ? ` on ${removedOn.date}` : ''}, so you can't move it. The run is unchanged.
           {:else}
             <b>You're not in this party.</b> Only its party can move {title}, so nothing changed.
           {/if}

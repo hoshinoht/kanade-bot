@@ -16,21 +16,29 @@ export function effectiveReasoning(reasoning: string, extractionEffort: string):
 export const ALL_EFFORTS = ['minimal', 'low', 'medium', 'high', 'xhigh', 'max'];
 
 /**
- * Whether an effort is legal for an alias: `off` always is; `null` efforts
- * mean Kanata restricts nothing, so every level is (admin-api "Config semantics").
+ * Whether an effort is legal for an alias: `off` unless the alias requires
+ * reasoning (`off_allowed: false`); `null` efforts mean Kanata restricts
+ * nothing, so every level is (admin-api "Config semantics").
  */
 export function isReasoningValid(model: ModelInfo | undefined, effort: string): boolean {
-  if (effort === 'off') return true;
+  if (effort === 'off') return model?.off_allowed !== false;
   if (!model) return false;
   if (model.reasoning_efforts === null) return ALL_EFFORTS.includes(effort);
   return model.reasoning_efforts.includes(effort);
 }
 
+/** What a stranded level becomes, as the server resets it: `off`, or the lowest published level where the alias requires reasoning. */
+export function resetLevel(model: ModelInfo | undefined): string {
+  if (model?.off_allowed !== false) return 'off';
+  const published = model.reasoning_efforts ?? ALL_EFFORTS;
+  return ALL_EFFORTS.find((e) => published.includes(e)) ?? 'off';
+}
+
 /**
  * The reasoning levels a role may pick. Inherit is offered only when the
- * extraction role's current effort is `off` or in the role model's published
- * list (every level when it publishes none); otherwise the resolved
- * effort would be illegal, so the role must choose explicitly.
+ * extraction role's current effort is legal for the role model
+ * (`isReasoningValid`); otherwise the resolved effort would be refused, so
+ * the role must choose explicitly.
  */
 export function reasoningChoices(
   role: ModelRole,
@@ -48,8 +56,7 @@ export function reasoningChoices(
   // A saved value the catalog no longer lists stays selectable, marked, so a
   // fail-closed admin sees what is stored rather than a blank box.
   if (current && !values.has(current)) choices.push({ value: current, label: `${current} (not listed)` });
-  const inherit =
-    extractionEffort === 'off' || (model !== undefined && (published === null ? ALL_EFFORTS : (published ?? [])).includes(extractionEffort));
+  const inherit = isReasoningValid(model, extractionEffort);
   if (inherit) return [{ value: '', label: 'Same as extraction' }, ...choices];
   // Never a blank box: a stored inherit that no longer fits stays visible, marked.
   if (current === '') return [{ value: '', label: `Same as extraction (${extractionEffort}, not published)` }, ...choices];
@@ -58,8 +65,8 @@ export function reasoningChoices(
 
 /**
  * Inheriting roles whose resolved effort is illegal for their alias once
- * extraction's effort (or an alias) changed: they switch to `off`, as the
- * server would otherwise refuse the save. Returns the reset roles, named.
+ * extraction's effort (or an alias) changed: they switch to `resetLevel`,
+ * as the server would otherwise refuse the save. Returns the reset roles.
  */
 export function resetStrandedInheritors(roles: Record<ModelRole, RoleModel>, catalog: ModelInfo[]): ModelRole[] {
   const reset: ModelRole[] = [];
@@ -67,7 +74,7 @@ export function resetStrandedInheritors(roles: Record<ModelRole, RoleModel>, cat
     if (roles[role].reasoning !== '') continue;
     const model = catalog.find((m) => m.id === roles[role].alias);
     if (!isReasoningValid(model, roles.extraction.reasoning)) {
-      roles[role].reasoning = 'off';
+      roles[role].reasoning = resetLevel(model);
       reset.push(role);
     }
   }

@@ -128,10 +128,7 @@ async fn backup_writes_a_snapshot_and_manifest_and_never_overwrites() {
     assert_eq!(manifest.history_head.seq, 0);
     assert_eq!(manifest.schema_version, schema);
     assert!(manifest.created_at.is_some());
-    assert_eq!(
-        std::fs::metadata(&snapshot).unwrap().permissions().mode() & 0o777,
-        0o600
-    );
+    assert_eq!(mode(&snapshot), 0o600);
 
     let again = dir.backup(&["--name", name]);
     assert_eq!(again.status.code(), Some(78), "{}", text(&again.stderr));

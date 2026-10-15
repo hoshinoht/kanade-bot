@@ -249,6 +249,20 @@ impl DebugCards for Cards {
     }
 }
 
+/// A slash rig whose `/debug` test cards go to `cards`.
+async fn card_slash(cards: &Arc<Cards>) -> Slash {
+    Slash::with(Ports {
+        debug_cards: Some(cards.clone()),
+        ..Ports::default()
+    })
+    .await
+}
+
+/// Dan's `/debug <leaf>` reply.
+async fn debug(slash: &Slash, leaf: &str, options: serde_json::Value) -> String {
+    slash.run(DAN, "debug", sub(leaf, options)).await
+}
+
 #[tokio::test]
 async fn debug_posts_test_cards_through_the_port() {
     let ping = |run: &str, kind: &str| sub("ping", json!([opt("run_id", run), opt("kind", kind)]));
@@ -260,11 +274,7 @@ async fn debug_posts_test_cards_through_the_port() {
     );
 
     let cards = Arc::new(Cards::default());
-    let slash = Slash::with(Ports {
-        debug_cards: Some(cards.clone()),
-        ..Ports::default()
-    })
-    .await;
+    let slash = card_slash(&cards).await;
     assert_eq!(
         slash.run(DAN, "debug", ping("1111", "countdown_60")).await,
         "✅ Posted a `countdown_60` test for run `#11111111` in <#301>. Its ✅/❌ drive the real \
@@ -282,7 +292,7 @@ async fn debug_posts_test_cards_through_the_port() {
         "❌ No run matches `nope`."
     );
     assert_eq!(
-        slash.run(DAN, "debug", sub("clear_test", json!([]))).await,
+        debug(&slash, "clear_test", json!([])).await,
         "🧹 Removed 2 test message(s), 1 could not be deleted."
     );
     // The picker lists every run for testers.
@@ -308,11 +318,8 @@ fn int_opt(name: &str, value: i64) -> serde_json::Value {
 #[tokio::test]
 async fn debug_ping_options_reach_the_port_and_shape_the_reply() {
     let cards = Arc::new(Cards::default());
-    let slash = Slash::with(Ports {
-        debug_cards: Some(cards.clone()),
-        ..Ports::default()
-    })
-    .await;
+    let slash = card_slash(&cards).await;
+    let ping = async |options| debug(&slash, "ping", options).await;
     let last = || {
         cards
             .posted
@@ -333,22 +340,14 @@ async fn debug_ping_options_reach_the_port_and_shape_the_reply() {
             reason: "rejected (markup)".into(),
         }),
     });
-    let reply = slash
-        .run(
-            DAN,
-            "debug",
-            sub(
-                "ping",
-                json!([
-                    opt("kind", "day_of"),
-                    opt("run_id", R_KALOS),
-                    channel_opt("channel", LOUNGE),
-                    opt("style", "redesigned"),
-                    opt("header", "rewrite"),
-                ]),
-            ),
-        )
-        .await;
+    let reply = ping(json!([
+        opt("kind", "day_of"),
+        opt("run_id", R_KALOS),
+        channel_opt("channel", LOUNGE),
+        opt("style", "redesigned"),
+        opt("header", "rewrite"),
+    ]))
+    .await;
     assert_eq!(
         reply,
         "✅ Posted a sandbox `day_of` test for run `#11111111` in <#302> (display only: nothing \
@@ -370,25 +369,17 @@ async fn debug_ping_options_reach_the_port_and_shape_the_reply() {
             reason: "accepted".into(),
         }),
     });
-    let reply = slash
-        .run(
-            DAN,
-            "debug",
-            sub(
-                "ping",
-                json!([
-                    opt("kind", "countdown_15"),
-                    opt("bosses", "hard star, xkalos"),
-                    int_opt("time", 30),
-                    opt("party", "<@1001> <@1002>"),
-                    opt("in", "<@1001>"),
-                    opt("out", "<@1006>"),
-                    opt("status", "at_risk"),
-                    opt("header", "rewrite"),
-                ]),
-            ),
-        )
-        .await;
+    let reply = ping(json!([
+        opt("kind", "countdown_15"),
+        opt("bosses", "hard star, xkalos"),
+        int_opt("time", 30),
+        opt("party", "<@1001> <@1002>"),
+        opt("in", "<@1001>"),
+        opt("out", "<@1006>"),
+        opt("status", "at_risk"),
+        opt("header", "rewrite"),
+    ]))
+    .await;
     assert_eq!(
         reply,
         "✅ Posted a sample `countdown_15` test in <#301> (display only: nothing is stored for \
@@ -405,16 +396,7 @@ async fn debug_ping_options_reach_the_port_and_shape_the_reply() {
             status: RunStatus::AtRisk,
         })
     );
-    slash
-        .run(
-            DAN,
-            "debug",
-            sub(
-                "ping",
-                json!([opt("kind", "amend"), opt("bosses", "normal star")]),
-            ),
-        )
-        .await;
+    ping(json!([opt("kind", "amend"), opt("bosses", "normal star")])).await;
     let TestSubject::Sample(sample) = last().subject else {
         panic!("a sample");
     };
@@ -430,9 +412,7 @@ async fn debug_ping_options_reach_the_port_and_shape_the_reply() {
         header: None,
     });
     assert_eq!(
-        slash
-            .run(DAN, "debug", sub("ping", json!([opt("kind", "digest")])))
-            .await,
+        ping(json!([opt("kind", "digest")])).await,
         "✅ Posted a `digest` test of this boss week in <#301> (display only: nothing is stored \
          for it and reactions do nothing here)."
     );
@@ -464,18 +444,10 @@ async fn debug_ping_options_reach_the_port_and_shape_the_reply() {
             "❌ `in` needs member mentions like <@123>.",
         ),
     ] {
-        assert_eq!(slash.run(DAN, "debug", sub("ping", options)).await, refusal);
+        assert_eq!(ping(options).await, refusal);
     }
     assert!(
-        slash
-            .run(
-                DAN,
-                "debug",
-                sub(
-                    "ping",
-                    json!([opt("kind", "day_of"), opt("bosses", "hard kalos")])
-                ),
-            )
+        ping(json!([opt("kind", "day_of"), opt("bosses", "hard kalos")]))
             .await
             .starts_with("❌ "),
         "the catalog's own parse error"
@@ -490,15 +462,9 @@ async fn debug_ping_options_reach_the_port_and_shape_the_reply() {
 #[tokio::test]
 async fn debug_header_tries_through_the_port() {
     let cards = Arc::new(Cards::default());
-    let slash = Slash::with(Ports {
-        debug_cards: Some(cards.clone()),
-        ..Ports::default()
-    })
-    .await;
+    let slash = card_slash(&cards).await;
     assert_eq!(
-        slash
-            .run(DAN, "debug", sub("header", json!([opt("kind", "day_of")])))
-            .await,
+        debug(&slash, "header", json!([opt("kind", "day_of")])).await,
         "Header rewrites aren't set up here (no rewrite model or persona), so there is nothing \
          to try."
     );
@@ -507,20 +473,16 @@ async fn debug_header_tries_through_the_port() {
         accepted: 1,
     });
     assert_eq!(
-        slash
-            .run(
-                DAN,
-                "debug",
-                sub(
-                    "header",
-                    json!([
-                        opt("kind", "countdown"),
-                        int_opt("tries", 2),
-                        channel_opt("channel", LOUNGE)
-                    ]),
-                ),
-            )
-            .await,
+        debug(
+            &slash,
+            "header",
+            json!([
+                opt("kind", "countdown"),
+                int_opt("tries", 2),
+                channel_opt("channel", LOUNGE)
+            ]),
+        )
+        .await,
         "✅ Tried the `countdown` header rewrite 2 time(s), 1 accepted; results posted in \
          <#302>. Nothing was stored."
     );
@@ -547,9 +509,7 @@ async fn debug_header_tries_through_the_port() {
 async fn debug_rewrite_starts_one_run_through_the_port_and_reports_refusals() {
     let unavailable = Slash::new().await;
     assert_eq!(
-        unavailable
-            .run(DAN, "debug", sub("rewrite", json!([])))
-            .await,
+        debug(&unavailable, "rewrite", json!([])).await,
         "❌ Header rewrites aren't available right now."
     );
     let calls = Arc::new(Mutex::new(Vec::new()));
@@ -571,20 +531,14 @@ async fn debug_rewrite_starts_one_run_through_the_port_and_reports_refusals() {
         ..Ports::default()
     })
     .await;
-    let rewrite = || sub("rewrite", json!([]));
-    assert_eq!(
-        slash.run(DAN, "debug", rewrite()).await,
+    for reply in [
         "✏️ Rewriting 4 header(s) posted this boss week; the posts are edited in place and a \
-         summary follows here when it ends. Every call is in the Rewrites log."
-    );
-    assert_eq!(
-        slash.run(DAN, "debug", rewrite()).await,
-        "❌ A header rewrite is already running; its summary is posted when it ends."
-    );
-    assert_eq!(
-        slash.run(DAN, "debug", rewrite()).await,
-        "Nothing posted this boss week has a header to rewrite."
-    );
+         summary follows here when it ends. Every call is in the Rewrites log.",
+        "❌ A header rewrite is already running; its summary is posted when it ends.",
+        "Nothing posted this boss week has a header to rewrite.",
+    ] {
+        assert_eq!(debug(&slash, "rewrite", json!([])).await, reply);
+    }
     let calls = calls.lock().unwrap().clone();
     assert_eq!(calls.len(), 3);
     assert_eq!(
@@ -614,7 +568,7 @@ async fn debug_materialises_through_the_writer_and_lists_reminder_rows() {
     );
 
     // The week after next has no run from the Tuesday timing yet.
-    let created = slash.run(DAN, "debug", sub("materialise", json!([]))).await;
+    let created = debug(&slash, "materialise", json!([])).await;
     let (head, line) = created.split_once('\n').unwrap();
     assert_eq!(head, "Created 1 run(s):");
     let short = line
@@ -622,7 +576,7 @@ async fn debug_materialises_through_the_writer_and_lists_reminder_rows() {
         .and_then(|rest| rest.strip_suffix("` · XKalos · Tue 13 Oct 22:00"))
         .unwrap_or_else(|| panic!("{line}"));
     assert_eq!(
-        slash.run(DAN, "debug", sub("materialise", json!([]))).await,
+        debug(&slash, "materialise", json!([])).await,
         "Nothing new - both weeks were already materialised."
     );
 
@@ -657,13 +611,16 @@ async fn say_posts_verbatim_and_notifies_only_written_users() {
         ..Ports::default()
     })
     .await;
-    let say = |text: &str| json!([opt("message", text)]);
-    let text = "Raid at 9 <@1002> <@&777> @everyone 1004";
-    let reply = slash
-        .run_in(ALICE, &[ADMIN_ROLE], KALOS, "say", say(text))
-        .await;
+    let say = async |options| {
+        slash
+            .run_in(ALICE, &[ADMIN_ROLE], KALOS, "say", options)
+            .await
+            .content
+    };
+    let text = |text: &str| json!([opt("message", text)]);
+    let raw = "Raid at 9 <@1002> <@&777> @everyone 1004";
     assert_eq!(
-        reply.content,
+        say(text(raw)).await,
         "✅ Posted in <#301> (notifying 1 member(s))."
     );
     let calls = slash.discord.calls();
@@ -676,74 +633,45 @@ async fn say_posts_verbatim_and_notifies_only_written_users() {
         panic!("posted: {calls:?}");
     };
     assert_eq!(channel.get(), KALOS);
-    assert_eq!(message.content.as_deref(), Some(text));
+    assert_eq!(message.content.as_deref(), Some(raw));
     let allowed = serde_json::to_value(&message.allowed_mentions).unwrap();
     assert_eq!(allowed["users"], json!(["1002"]));
     assert!(allowed.get("roles").is_none_or(|roles| roles == &json!([])));
     assert_eq!(allowed["parse"], json!([]));
 
-    let reply = slash
-        .run_in(ALICE, &[ADMIN_ROLE], KALOS, "say", say("   "))
-        .await;
-    assert_eq!(reply.content, "❌ Nothing to say.");
-    let long = "x".repeat(1901);
-    let reply = slash
-        .run_in(ALICE, &[ADMIN_ROLE], KALOS, "say", say(&long))
-        .await;
+    assert_eq!(say(text("   ")).await, "❌ Nothing to say.");
     assert_eq!(
-        reply.content,
+        say(text(&"x".repeat(1901))).await,
         "❌ That's 1901 characters; keep it under 1900."
     );
     // Never split: over Discord's 2,000 however it counts, refused whole.
-    let astral = "🧪".repeat(1_001);
-    let reply = slash
-        .run_in(ALICE, &[ADMIN_ROLE], KALOS, "say", say(&astral))
-        .await;
     assert_eq!(
-        reply.content,
+        say(text(&"🧪".repeat(1_001))).await,
         "❌ That's 1001 characters; keep it under 1900."
     );
-    let reply = slash
-        .run_in(
-            ALICE,
-            &[ADMIN_ROLE],
-            KALOS,
-            "say",
-            json!([
-                opt("message", "hi"),
-                json!({ "name": "channel", "type": 7, "value": LOUNGE.to_string() })
-            ]),
-        )
-        .await;
     assert_eq!(
-        reply.content,
+        say(json!([
+            opt("message", "hi"),
+            json!({ "name": "channel", "type": 7, "value": LOUNGE.to_string() })
+        ]))
+        .await,
         "❌ the bot has no access to #lounge - grant the Kanade role View Channel + Send \
          Messages there"
     );
     // An unconfirmed post is reported, never retried.
-    slash.discord.script(
-        Op::Create,
-        Step::Ambiguous {
-            kind: kanade::bot::transport::AmbiguousKind::Timeout,
-            applied: true,
-        },
-    );
-    let reply = slash
-        .run_in(ALICE, &[ADMIN_ROLE], KALOS, "say", say("hello"))
-        .await;
+    slash
+        .discord
+        .script(Op::Create, crate::support::timed_out(true));
     assert_eq!(
-        reply.content,
+        say(text("hello")).await,
         "⚠️ Discord did not confirm delivery. Check the channel before retrying."
     );
     slash
         .discord
         .script(Op::Create, Step::Reject(RejectionKind::MissingPermissions));
-    let reply = slash
-        .run_in(ALICE, &[ADMIN_ROLE], KALOS, "say", say("hello"))
-        .await;
     assert!(
-        reply
-            .content
+        say(text("hello"))
+            .await
             .starts_with("❌ the bot has no access to #kalos-four")
     );
     assert_eq!(slash.discord.count(Op::Create), 3);

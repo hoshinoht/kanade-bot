@@ -14,6 +14,7 @@
     "e2e": "playwright test",
     "e2e:rust": "playwright test -c playwright.rust.config.ts",
     "leak": "playwright test e2e/bundle.spec.ts",
+    "serve:dev": "cargo run --release --example e2e_server --features test-support -- --admin-port 4173 --public-port 4174 --web-dir .",
     "measure": "bun scripts/measure.ts",
     "fidelity": "bun scripts/fidelity.ts",
     "showcase": "bun scripts/showcase.ts",

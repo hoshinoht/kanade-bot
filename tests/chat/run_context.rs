@@ -103,10 +103,52 @@ async fn context_for(world: &World, replied: Option<&str>) -> RunContext {
     .expect("store reads")
 }
 
-/// A day-of card for tonight's Carling, and its context.
+/// A day-of card for tonight's Carling (posted as `/debug ping` posts one),
+/// and its context.
 async fn day_of(world: &World) -> RunContext {
-    world.service.store().test_map_card_run(DAY_OF, "c3000001");
+    let target = DeliveryTarget::DebugCard {
+        run_id: "c3000001".into(),
+        kind: "day_of".into(),
+    };
+    let card = (EffectKind::DebugCard, target, IntentContent::Plain);
+    post(world, HOME, vec![(card, DAY_OF)]).await;
     context_for(world, Some(DAY_OF)).await
+}
+
+/// Claim and bind each card in `channel` as its message, as delivery does.
+async fn post(
+    world: &World,
+    channel: &str,
+    cards: Vec<((EffectKind, DeliveryTarget, IntentContent), &str)>,
+) {
+    let store = world.service.store();
+    let at = utc(&json!("2026-10-08T20:00:00+08:00"));
+    let lease = store
+        .begin_lease("runctx-test", "delivery", at)
+        .await
+        .expect("lease");
+    for ((effect, target, content), message) in cards {
+        let intent = NotificationIntent {
+            effect,
+            effect_context: Vec::new(),
+            channel_id: channel.into(),
+            targets: vec![target],
+            mentions: Vec::new(),
+            content,
+            warnings: Vec::new(),
+        };
+        let Ok(Claim::Fresh(attempt)) = store.claim(&lease, &intent, None, at).await else {
+            panic!("a fresh claim");
+        };
+        let receipt = Receipt {
+            channel_id: channel.into(),
+            message_id: message.into(),
+        };
+        store
+            .bind(&lease, &attempt, &receipt, None, at)
+            .await
+            .expect("bound");
+    }
 }
 
 fn system_with(world: &World, focus: &str, runs: &str) -> String {
@@ -303,52 +345,28 @@ async fn post_cards(world: &mut World) {
         .save_card(&proposal, OTHER, &details, at)
         .await
         .expect("card saved");
-    let lease = store
-        .begin_lease("runctx-test", "delivery", at)
-        .await
-        .expect("lease");
     let week = utc(&json!("2026-10-08T00:00:00+08:00"));
-    let posts = [
-        (
-            EffectKind::Card,
-            DeliveryTarget::Card(proposal.clone()),
-            IntentContent::ProposalCard {
-                proposal_ids: vec![proposal.clone()],
-            },
-            PROPOSAL,
-        ),
-        (
-            EffectKind::Digest,
-            DeliveryTarget::Digest(week),
-            IntentContent::Digest {
-                week_start: week,
-                inclusion: Default::default(),
-            },
-            DIGEST,
-        ),
-    ];
-    for (effect, target, content, message) in posts {
-        let intent = NotificationIntent {
-            effect,
-            effect_context: Vec::new(),
-            channel_id: OTHER.into(),
-            targets: vec![target],
-            mentions: Vec::new(),
-            content,
-            warnings: Vec::new(),
-        };
-        let Ok(Claim::Fresh(attempt)) = store.claim(&lease, &intent, None, at).await else {
-            panic!("a fresh claim");
-        };
-        let receipt = Receipt {
-            channel_id: OTHER.into(),
-            message_id: message.into(),
-        };
-        store
-            .bind(&lease, &attempt, &receipt, None, at)
-            .await
-            .expect("bound");
-    }
+    let proposal_card = (
+        EffectKind::Card,
+        DeliveryTarget::Card(proposal.clone()),
+        IntentContent::ProposalCard {
+            proposal_ids: vec![proposal.clone()],
+        },
+    );
+    let digest = (
+        EffectKind::Digest,
+        DeliveryTarget::Digest(week),
+        IntentContent::Digest {
+            week_start: week,
+            inclusion: Default::default(),
+        },
+    );
+    post(
+        world,
+        OTHER,
+        vec![(proposal_card, PROPOSAL), (digest, DIGEST)],
+    )
+    .await;
 }
 
 /// A proposal card names the run it changes and a digest its week's runs
@@ -448,7 +466,7 @@ async fn a_reply_asking_for_an_extra_run_is_still_an_add() {
 #[tokio::test]
 async fn a_question_that_is_not_a_reply_to_a_card_gets_no_block() {
     let world = world().await;
-    world.service.store().test_map_card_run(DAY_OF, "c3000001");
+    day_of(&world).await;
     for replied in [
         None,
         Some("700000000000000999"),

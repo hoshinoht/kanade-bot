@@ -1,9 +1,9 @@
 import type { Page } from '@playwright/test';
-import { ADMIN, csrf, expect, go, test, toast, choose, expectValue, optionLabels, optionIn, openList, toggleOptions, unconditional } from './support';
+import { ADMIN, csrf, expect, go, signInAdmin, test, toast, choose, expectValue, optionLabels, optionIn, openList, toggleOptions, unconditional } from './support';
 
 // Knowledge (tracked boss/knowledge, schema v2), Inbox, Extractions + rescan,
 // Chat, Limits, History (revert / restore / by member / checkpoints) and the
-// run pane's change log. Mock clock pinned (playwright.config.ts).
+// run pane's change log. Server clock pinned (playwright.config.ts).
 
 test('knowledge: opens on the difficulty the guild runs, switches, credits sources', async ({ page }) => {
   await go(page, '/bosses/MaleficStar/knowledge');
@@ -29,25 +29,26 @@ test('knowledge: opens on the difficulty the guild runs, switches, credits sourc
   await expect(page.locator('.guide-tile').filter({ has: page.getByText('Party', { exact: true }) }).locator('dd')).toHaveText('Solo');
 });
 
-test('inbox: extractor tab — list and detail, edit then approve, reject, a chat proposal', async ({ page }) => {
+test('inbox: extractor tab — list and detail, edit then approve, reject', async ({ page }) => {
   await go(page, '/inbox');
-  await expect(page.getByRole('heading', { level: 1 })).toHaveText('11 changes waiting');
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('9 changes waiting');
   const tabs = page.getByRole('tablist', { name: 'Inbox' });
   await expect(tabs.getByRole('tab', { name: /Extractor/ })).toHaveAttribute('aria-selected', 'true');
-  await expect(tabs.getByRole('tab', { name: /Extractor/ })).toContainText('3');
-  await expect(tabs.getByRole('tab', { name: /Self-service/ })).toContainText('6');
+  // The real scheduler refuses the mock's chat proposal (moving Monday's run
+  // after it ended), so the extractor queue is the two seeded cards.
+  await expect(tabs.getByRole('tab', { name: /Extractor/ })).toContainText('2');
+  await expect(tabs.getByRole('tab', { name: /Self-service/ })).toContainText('5');
   const list = page.getByRole('listbox', { name: 'Extractor items' });
-  await expect(list.getByRole('option')).toHaveCount(3);
+  await expect(list.getByRole('option')).toHaveCount(2);
   // Wide screens open the first item; the list is keyboard-navigable and deep-linked.
   const detail = page.locator('.inbox__detail');
+  await expect(detail.getByRole('heading', { level: 2 })).toContainText('New run');
+  await list.focus();
+  await page.keyboard.press('ArrowDown');
+  await expect(page).toHaveURL(/tab=extractor&item=p-bm-move/);
   await expect(detail.getByRole('heading', { level: 2 })).toContainText('Black Mage');
   await expect(detail).toContainText('Read from chat');
   await expect(detail.getByLabel('Evidence')).toContainText('tue cannot, wed same time ok?');
-  await list.focus();
-  await page.keyboard.press('ArrowDown');
-  await expect(page).toHaveURL(/tab=extractor&item=p-limbo-add/);
-  await expect(detail.getByRole('heading', { level: 2 })).toContainText('New run');
-  await page.keyboard.press('ArrowUp');
 
   // One approval at a corrected time: day and HH:MM in the proposal's own boss week.
   await detail.getByRole('button', { name: 'Edit, then approve' }).click();
@@ -65,8 +66,8 @@ test('inbox: extractor tab — list and detail, edit then approve, reject, a cha
   await expect(picker.getByText('reads as Wed 30 22:30')).toBeVisible();
   await detail.getByRole('button', { name: 'Approve · Wed 30 22:30' }).click();
   expect((await sent).postDataJSON()).toEqual({ version: 1, day: 6, time: '22:30' });
-  await expect(toast(page, 'Approved: move #a7c1e9d2.')).toBeVisible();
-  await expect(list.getByRole('option')).toHaveCount(2);
+  await expect(toast(page, 'Approved: move #pbmmove.')).toBeVisible();
+  await expect(list.getByRole('option')).toHaveCount(1);
 
   // Kanade's proposals reject without a reason, as in v4: no reason field at all.
   await expect(detail.getByRole('heading', { level: 2 })).toContainText('New run');
@@ -74,12 +75,7 @@ test('inbox: extractor tab — list and detail, edit then approve, reject, a cha
   const dialog = page.getByRole('dialog');
   await expect(dialog.getByRole('textbox', { name: 'Reason' })).toHaveCount(0);
   await dialog.getByRole('button', { name: 'Reject change' }).click();
-  await expect(toast(page, 'Rejected: new run #c8e0a2b4.')).toBeVisible();
-
-  // Asked of Kanade in chat: approved like any proposal.
-  await expect(detail).toContainText('Asked of Kanade');
-  await detail.getByRole('button', { name: 'Approve', exact: true }).click();
-  await expect(toast(page, 'Approved: move #b2c4d6e8.')).toBeVisible();
+  await expect(toast(page, 'Rejected: new run #plimboad.')).toBeVisible();
   // An empty tab says why, visibly, not just that it is empty.
   await expect(page.getByRole('heading', { name: 'Nothing waiting' })).toBeVisible();
   await expect(page.getByText('The extractor posts a card when it reads a change in a watched channel.')).toBeVisible();
@@ -90,15 +86,14 @@ test('inbox: extractor tab — list and detail, edit then approve, reject, a cha
 });
 
 test('inbox: a token or Tailscale session cannot decide proposals, but can decide requests', async ({ page }) => {
-  const switched = await page.request.post(`${ADMIN}/__mock/session`, { data: { method: 'token' } });
-  expect(switched.status()).toBe(204);
+  await signInAdmin(page, 'token');
   const approvals: string[] = [];
   page.on('request', (r) => {
     if (r.method() === 'POST' && /\/api\/admin\/inbox\/p-[a-z-]+\/approve$/.test(r.url())) approvals.push(r.url());
   });
   await go(page, '/inbox');
   const detail = page.locator('.inbox__detail');
-  await expect(detail.getByRole('heading', { level: 2 })).toContainText('Black Mage');
+  await expect(detail.getByRole('heading', { level: 2 })).toContainText('New run');
   // The session says how it signed in: proposal decisions are off before any attempt.
   await expect(detail.getByRole('button', { name: 'Approve', exact: true })).toBeDisabled();
   await expect(detail.getByRole('button', { name: 'Reject…' })).toBeDisabled();
@@ -106,7 +101,7 @@ test('inbox: a token or Tailscale session cannot decide proposals, but can decid
   await expect(detail).toContainText("Sign in with Discord to approve or reject Kanade's proposals. Members' requests can still be decided here.");
   expect(approvals).toEqual([]);
   const list = page.getByRole('listbox', { name: 'Extractor items' });
-  await expect(list.getByRole('option')).toHaveCount(3);
+  await expect(list.getByRole('option')).toHaveCount(2);
 
   await page.getByRole('tab', { name: /Self-service/ }).click();
   await page.getByRole('listbox', { name: 'Self-service items' }).getByRole('option', { name: /HFA/ }).click();
@@ -114,11 +109,11 @@ test('inbox: a token or Tailscale session cannot decide proposals, but can decid
   const dialog = page.getByRole('dialog');
   await dialog.getByRole('textbox', { name: 'Reason' }).fill('The run moved; ask again.');
   await dialog.getByRole('button', { name: 'Reject change' }).click();
-  await expect(toast(page, 'Rejected: leave #e5f7a9b1.')).toBeVisible();
+  await expect(toast(page, 'Rejected: leave #pfareque.')).toBeVisible();
 });
 
 test('inbox: a 403 discord_session_required still locks proposals when the session did not say its method', async ({ page }) => {
-  await page.request.post(`${ADMIN}/__mock/session`, { data: { method: 'token' } });
+  await signInAdmin(page, 'token');
   // An older session answer without `method`: the refusal is the fallback.
   await page.route(`${ADMIN}/api/admin/session`, async (route) => {
     const response = await route.fetch(unconditional(route));
@@ -126,7 +121,7 @@ test('inbox: a 403 discord_session_required still locks proposals when the sessi
   });
   await go(page, '/inbox');
   const detail = page.locator('.inbox__detail');
-  await expect(detail.getByRole('heading', { level: 2 })).toContainText('Black Mage');
+  await expect(detail.getByRole('heading', { level: 2 })).toContainText('New run');
   await detail.getByRole('button', { name: 'Approve', exact: true }).click();
   await expect(detail.getByRole('alert')).toHaveText("Sign in with Discord to approve or reject Kanade's proposals.");
   await expect(detail.getByRole('button', { name: 'Approve', exact: true })).toBeDisabled();
@@ -136,11 +131,11 @@ test('inbox: a 403 discord_session_required still locks proposals when the sessi
 test('inbox: self-service tab — request types, badges, conflicts, choices, reasons and refusals', async ({ page }) => {
   await go(page, '/inbox?tab=self_service');
   const list = page.getByRole('listbox', { name: 'Self-service items' });
-  await expect(list.getByRole('option')).toHaveCount(6);
-  await expect(list.getByRole('option', { name: /XKalos/ }).first()).toContainText('expired');
+  // The real scheduler refuses the mock's expired swap and its join by a
+  // member already on the run, so neither is seeded; Asahi's own weekly
+  // change waits here with the others.
+  await expect(list.getByRole('option')).toHaveCount(5);
   await expect(list.getByRole('option', { name: /HFA/ })).toContainText('conflict');
-  await expect(list.getByRole('option', { name: /HJupiter/ })).toContainText('requester not allowed');
-  await expect(list.getByRole('option', { name: /HJupiter/ })).toContainText('already in effect');
   const detail = page.locator('.inbox__detail');
 
   // A member asking to join this week's run: preview, the member's summary, approve.
@@ -148,7 +143,7 @@ test('inbox: self-service tab — request types, badges, conflicts, choices, rea
   await expect(page).toHaveURL(/tab=self_service&item=p-carling-link/);
   await expect(detail.getByRole('heading', { level: 2 })).toContainText('Join');
   await expect(detail).toContainText('Sent by Nagi as a member request.');
-  await expect(detail).toContainText('The member sees: “member request: join HCarling + HStar Tue 29 Sep 22:00”');
+  await expect(detail).toContainText('The member sees: “member request: join run:r-carling”');
   await expect(detail.locator('.proposal__changes')).toContainText('Nagi');
   await expect(detail.getByRole('button', { name: 'Edit, then approve' })).toHaveCount(0);
 
@@ -159,20 +154,21 @@ test('inbox: self-service tab — request types, badges, conflicts, choices, rea
   await expect(detail).toContainText('cannot be approved; reject it');
   await expect(detail.getByRole('checkbox')).toHaveCount(0);
 
-  // Expired items can only be rejected, and say why; requests need a reason (1–500 characters).
-  await list.getByRole('option', { name: /Swap/ }).click();
-  await expect(detail.getByRole('button', { name: 'Approve', exact: true })).toBeDisabled();
-  await expect(detail).toContainText('It expired; it can only be rejected.');
+  // Requests need a reason to reject (1–500 characters).
   await detail.getByRole('button', { name: 'Reject…' }).click();
   const dialog = page.getByRole('dialog');
   await dialog.getByRole('button', { name: 'Reject change' }).click();
   await expect(dialog.getByRole('alert')).toContainText('Say why');
-  await dialog.getByRole('textbox', { name: 'Reason' }).fill('It expired before the run.');
+  await dialog.getByRole('textbox', { name: 'Reason' }).fill('The run moved; ask again.');
   await dialog.getByRole('button', { name: 'Reject change' }).click();
-  await expect(toast(page, 'Rejected: swap #f6a8b0c2.')).toBeVisible();
+  await expect(toast(page, 'Rejected: leave #pfareque.')).toBeVisible();
 
   // A weekly-timing change lists only its amended runs, and always names its choices.
-  await list.getByRole('option', { name: /Weekly timing change/ }).click();
+  // XKalos's amended run (Fri 25 22:00) has ended at the pinned Tuesday, and an ended
+  // run is frozen, never a choice: the server clock goes back to Fri 25 12:00 (guild time).
+  expect((await page.request.post(`${ADMIN}/__e2e/clock`, { data: { at: '2026-09-25T04:00:00Z' } })).ok()).toBe(true);
+  await go(page, '/inbox?tab=self_service&item=p-kalos-fixed');
+  await expect(detail.getByRole('heading', { level: 2 })).toContainText('Weekly timing change');
   const refused = await page.request.post(`${ADMIN}/api/admin/inbox/p-kalos-fixed/approve`, { headers: await csrf(page.request), data: { version: 1 } });
   expect(refused.status()).toBe(422);
   expect(((await refused.json()) as { error: string }).error).toBe('choices_required');
@@ -182,16 +178,15 @@ test('inbox: self-service tab — request types, badges, conflicts, choices, rea
   const sent = page.waitForRequest((r) => r.url().endsWith('/api/admin/inbox/p-kalos-fixed/approve'));
   await detail.getByRole('button', { name: 'Approve', exact: true }).click();
   expect((await sent).postDataJSON()).toEqual({ version: 1, choices: { 'r-kalos': 'keep' } });
-  await expect(toast(page, 'Approved: weekly timing change #d4e6f8a0.')).toBeVisible();
+  await expect(toast(page, 'Approved: weekly timing change #pkalosfi.')).toBeVisible();
 
   await list.getByRole('option', { name: /New weekly run/ }).click();
   await detail.getByRole('button', { name: 'Approve', exact: true }).click();
-  await expect(toast(page, 'Approved: new weekly run #c1d3e5f7.')).toBeVisible();
+  await expect(toast(page, 'Approved: new weekly run #plimbone.')).toBeVisible();
 
   // The API speaks the contract's codes.
   const post = async (path: string, data: object) => page.request.post(`${ADMIN}/api/admin/inbox/${path}`, { headers: await csrf(page.request), data });
   const code = async (r: Awaited<ReturnType<typeof post>>) => [r.status(), ((await r.json()) as { error: string }).error];
-  expect(await code(await post('p-jupiter-same/approve', { version: 1 }))).toEqual([409, 'requester_unauthorised']);
   expect(await code(await post('p-carling-link/reject', { version: 7, reason: 'x' }))).toEqual([409, 'stale']);
   expect(await code(await post('p-carling-link/approve', { version: 1, force: true }))).toEqual([422, 'force_unsupported']);
   expect(await code(await post('p-carling-link/approve', {}))).toEqual([422, 'version_required']);
@@ -207,7 +202,7 @@ test('inbox on a phone: the list, then the detail with a back action', async ({ 
   await expect(page.locator('.inbox__detail')).toBeHidden();
   await list.getByRole('option', { name: /HCarling/ }).click();
   await expect(list).toBeHidden();
-  await expect(page.locator('.inbox__detail').getByRole('heading', { level: 2 })).toContainText('Carling');
+  await expect(page.locator('.inbox__detail').getByRole('heading', { level: 2 })).toContainText('Karling');
   // B_PhoneInbox: "‹ Inbox" replaces the menu and title; no page line or tabs;
   // the decision is a bottom action bar with the pencil opening the edit field.
   const back = page.locator('.topbar').getByRole('button', { name: 'Back to the list (Inbox)' });
@@ -274,7 +269,7 @@ test('inbox on a phone by keyboard: arrows move the active option, Enter opens, 
   await go(page, '/inbox?tab=self_service');
   const list = page.getByRole('listbox', { name: 'Self-service items' });
   const options = list.getByRole('option');
-  await expect(options).toHaveCount(6);
+  await expect(options).toHaveCount(5);
   const detail = page.locator('.inbox__detail');
   // Read up front: the list (and its options) is hidden while a detail is open.
   const ids = await options.evaluateAll((els) => els.map((el) => el.id));
@@ -328,7 +323,7 @@ test('inbox on a phone: approving returns to the list without a dead Back step',
   await page.getByRole('tab', { name: /Self-service/ }).click();
   const list = page.getByRole('listbox', { name: 'Self-service items' });
   const options = list.getByRole('option');
-  await expect(options).toHaveCount(6);
+  await expect(options).toHaveCount(5);
   const ids = await options.evaluateAll((els) => els.map((el) => el.id));
   const carling = ids.findIndex((id) => id.endsWith('-p-carling-link'));
   const neighbour = ids[carling + 1] ?? ids[carling - 1]!;
@@ -341,7 +336,7 @@ test('inbox on a phone: approving returns to the list without a dead Back step',
   await expect(list).toHaveAttribute('aria-activedescendant', neighbour);
   await expect(page).not.toHaveURL(/item=/);
   // A later pick restores itself on Back, not the earlier neighbour.
-  const other = options.filter({ hasText: 'HJupiter' });
+  const other = options.filter({ hasText: 'HFA' });
   const otherId = (await other.getAttribute('id'))!;
   expect(otherId).not.toBe(neighbour);
   await other.click();
@@ -485,7 +480,10 @@ test('extraction filters: outcome, model and member, deep-linked', async ({ page
 });
 
 test('limits: backends, queue, admission by kind and an allowance reset', async ({ page }) => {
-  // The mock runs Config's one gateway group; two more groups show the other breaker states.
+  // The server runs Config's one gateway group; two more groups show the other
+  // breaker states. Admission refusals and allowance windows live in the
+  // gateway and the chat runtime, which no harness flow fills: one refusal
+  // per scope and one member's used window stand in for them.
   await page.route(`${ADMIN}/api/admin/limits`, async (route) => {
     const res = await route.fetch(unconditional(route));
     const body = await res.json();
@@ -495,6 +493,12 @@ test('limits: backends, queue, admission by kind and an allowance reset', async 
       { ...idle, name: 'chat', backend: 'Kanata', models: ['kanata/chat'], permits: { in_use: 2, total: 4 }, breaker: { state: 'half_open', failures: 3, since } },
       { ...idle, name: 'rewrite', backend: 'Kanata', models: ['kanata/rewrite-small'], permits: { in_use: 0, total: 1 }, breaker: { state: 'open', failures: 5, since, retry_at: since } },
     );
+    body.admission.refusals = [
+      { kind: 'rate', scope: 'group', target: 'gateway', count: 3, last_at: since },
+      { kind: 'key_rate', scope: 'key', target: 'gateway key …7f2a', count: 2, last_at: since },
+    ];
+    const metered = body.allowances.find((row: { staff: boolean }) => !row.staff);
+    Object.assign(metered, { used: 2, resets_at: new Date(Date.parse(body.generated_at) + 120_000).toISOString() });
     await route.fulfill({ response: res, json: body });
   });
   await go(page, '/limits');
@@ -538,52 +542,58 @@ test('limits: a server without the route shows the page and says so, and stops a
 });
 
 test('history: seeded timeline, strict revert, conflicts and force', async ({ page }) => {
+  // The real chain: #1 import, #2 the delivery tick's reminders, then the
+  // mock's #2–#9 as #3–#10; the 15 seeded character saves are settings records.
   await go(page, '/history');
-  await expect(page.getByRole('heading', { level: 1 })).toHaveText('9 changes');
-  const latest = page.getByRole('listitem').filter({ hasText: '#9' }).first();
-  await expect(latest).toContainText('reverts #8');
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('25 changes');
+  const latest = page.getByRole('listitem').filter({ hasText: '#10' }).first();
+  await expect(latest).toContainText('reverts #9');
   await expect(latest).toContainText('rollback');
   // The rail's tags: the undone record points back at its rollback, and a
   // backup snapshot marks the record its manifest anchors (not the mismatched one).
-  await expect(page.locator('[data-history="8"] .history-tag--undone')).toHaveText('reverted by #9');
-  await expect(page.locator('[data-history="3"] .history-tag--backup')).toContainText('backup');
-  await expect(page.locator('[data-history="1"] .history-tag--backup')).toHaveCount(1);
-  await expect(page.locator('[data-history="2"] .history-tag--backup')).toHaveCount(0);
-  // Records carry reminder rows; a move's re-placed cards fold into one line.
-  const moved = page.getByRole('listitem').filter({ hasText: '#3' }).first();
-  await expect(moved).toContainText('XKalos: 2 reminders re-placed');
-  // `admin:discord:1001` reads as the staff member's name.
+  // The seed's matching and older-schema manifests both name the head, #10.
+  await expect(page.locator('[data-history="9"] .history-tag--undone')).toHaveText('reverted by #10');
+  const backupTags = page.locator('[data-history="10"] .history-tag--backup');
+  await expect(backupTags).toHaveCount(2);
+  for (const tag of await backupTags.all()) await expect(tag).toContainText('backup');
+  await expect(page.locator('[data-history="4"] .history-tag--backup')).toHaveCount(0);
+  // The scheduler rebuilds moved reminders as new rows; History folds them onto the run.
+  const moved = page.getByRole('listitem').filter({ hasText: '#4' }).first();
+  await expect(moved).toContainText('XKalos: Fri 25 21:30 → Fri 25 22:00');
+  await expect(moved).toContainText('XKalos: 3 reminders re-placed');
+  // A member actor reads as the member's name.
   await expect(moved.locator('strong').first()).toHaveText('Asahi');
-  await choose(page.getByLabel('Who'), 'admin:discord:1001');
-  await expect(page.getByRole('heading', { level: 1 })).toHaveText('1 change');
   await choose(page.getByLabel('Who'), { label: 'Admin (token)' });
-  await expect(page.getByRole('listitem').filter({ hasText: '#9' }).first().locator('strong').first()).toHaveText('Admin (token)');
+  await expect(page.getByRole('listitem').filter({ hasText: '#10' }).first().locator('strong').first()).toHaveText('Admin (token)');
   await choose(page.getByLabel('Who'), { label: 'everyone' });
-  await expect(page.getByRole('heading', { level: 1 })).toHaveText('9 changes');
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('25 changes');
 
-  // Tsubame's answer (#2) was followed by an admin moving that run (#3): conflict.
-  await page.locator('[data-history="2"]').click();
+  // Tsubame's answer (#3) was followed by an admin moving that run (#4): conflict.
+  await page.locator('[data-history="3"]').click();
   await page.getByRole('complementary', { name: 'Change details' }).getByRole('button', { name: 'Revert…' }).click();
-  const dialog = page.getByRole('dialog', { name: 'Revert #2?' });
+  const dialog = page.getByRole('dialog', { name: 'Revert #3?' });
   await expect(dialog.getByRole('alert')).toContainText('Changed again since');
-  await expect(dialog.getByRole('alert')).toContainText('#2: XKalos');
+  await expect(dialog.getByRole('alert')).toContainText('#3: XKalos');
   // A strict refusal plans no rows; the dialog shows what forcing would do instead.
+  // Force puts r-kalos back to #3's recorded `before` (`domain/history/revert.rs`):
+  // #4 already left it unconfirmed, so no status line, but #4's move to 22:00 is
+  // undone, its reminders follow the slot, and Tsubame's answer goes.
   await expect(dialog.getByRole('heading', { name: 'Would change', exact: true })).toHaveCount(0);
   await expect(dialog.getByRole('heading', { name: 'Forcing it would change' })).toBeVisible();
-  await expect(dialog.getByText('XKalos: at risk → unconfirmed')).toBeVisible();
+  await expect(dialog.locator('.plan li')).toHaveText(['XKalos: Fri 25 22:00 → Fri 25 21:30', 'XKalos: 1 reminder re-placed', 'Tsubame → no answer for XKalos (was out)']);
   await expect(dialog.getByRole('button', { name: 'Force revert' })).toBeDisabled();
   await dialog.getByRole('checkbox', { name: /Force it/ }).check();
   await dialog.getByRole('button', { name: 'Force revert' }).click();
-  await expect(toast(page, 'Reverted as #10.')).toBeVisible();
-  await expect(page.getByRole('heading', { level: 1 })).toHaveText('10 changes');
+  await expect(toast(page, 'Reverted as #11.')).toBeVisible();
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('26 changes');
 
-  // #7 (Seren cancelled) has no later change: a strict revert applies.
-  await page.locator('[data-history="7"]').click();
+  // #8 (Seren cancelled) has no later change: a strict revert applies.
+  await page.locator('[data-history="8"]').click();
   await page.getByRole('complementary', { name: 'Change details' }).getByRole('button', { name: 'Revert…' }).click();
-  const strict = page.getByRole('dialog', { name: 'Revert #7?' });
+  const strict = page.getByRole('dialog', { name: 'Revert #8?' });
   await expect(strict.getByText('HSeren: cancelled → unconfirmed')).toBeVisible();
   await strict.getByRole('button', { name: 'Revert', exact: true }).click();
-  await expect(toast(page, 'Reverted as #11.')).toBeVisible();
+  await expect(toast(page, 'Reverted as #12.')).toBeVisible();
 
   await page.getByRole('tab', { name: 'Checkpoints' }).click();
   await expect(page.getByRole('status').filter({ hasText: 'Chain verified' })).toHaveText(/Chain verified: \d+ records, head #\d+\./);
@@ -607,10 +617,10 @@ test('history: seeded timeline, strict revert, conflicts and force', async ({ pa
 
 test('history: restore a week to a point, revert a member, and a run’s change log', async ({ page }) => {
   await go(page, '/history');
-  await page.locator('[data-history="3"]').click();
+  await page.locator('[data-history="4"]').click();
   await page.getByRole('complementary', { name: 'Change details' }).getByRole('button', { name: 'Restore week to here…' }).click();
   const restore = page.getByRole('dialog', { name: /^Restore the week of/ });
-  await expect(restore.getByText(/HCarling \+ HStar roster: −Ren \(2\)/)).toBeVisible();
+  await expect(restore.getByText(/HCarling \+ HMaleficStar roster: −Ren \(2\)/)).toBeVisible();
   await page.keyboard.press('Escape');
   await expect(restore).toBeHidden();
 
@@ -629,9 +639,11 @@ test('history: restore a week to a point, revert a member, and a run’s change 
   await sheet.getByRole('tab', { name: 'Changes' }).click();
   const log = sheet.getByRole('region', { name: 'Changes' });
   const rows = log.locator('.runlog__row');
-  await expect(rows).toHaveCount(2);
-  const moved = log.locator('[data-runlog="3"] .runlog__row');
-  await expect(rows.first()).toContainText('#3');
+  // #4 (the move), #3 (Tsubame's answer), then #1, the import that created the run.
+  await expect(rows).toHaveCount(3);
+  const moved = log.locator('[data-runlog="4"] .runlog__row');
+  await expect(rows.first()).toContainText('#4');
+  await expect(rows.last()).toContainText('#1');
   await expect(moved).toContainText('Fri 25 21:30 → Fri 25 22:00');
   await expect(moved).toContainText('Asahi');
   await expect(moved).toContainText('via extraction approval');
@@ -640,19 +652,19 @@ test('history: restore a week to a point, revert a member, and a run’s change 
   await expect(moved).toHaveAttribute('aria-expanded', 'false');
   await moved.click();
   await expect(moved).toHaveAttribute('aria-expanded', 'true');
-  const diff = log.locator('[data-runlog="3"] dl');
+  const diff = log.locator('[data-runlog="4"] dl');
   await expect(diff.locator('.runlog__field').filter({ hasText: 'Day and time' })).toContainText('Fri 25 21:30');
   await expect(diff.locator('.runlog__field').filter({ hasText: 'Day and time' })).toContainText('Fri 25 22:00');
   // By field: who last set Tsubame's answer.
   await choose(log.getByLabel('By field'), { label: "Tsubame's answer" });
   await expect(rows).toHaveCount(1);
   await expect(rows.first()).toContainText('Tsubame → out for XKalos');
-  await expect(rows.first()).toContainText('#2');
+  await expect(rows.first()).toContainText('#3');
 });
 
 // The Config sections, one test each so they spread across workers (as one
 // test they outran the default budget on CI). Every test opens Config afresh
-// on a reset mock.
+// on a reset server.
 test.describe('config sections save', () => {
   test.describe.configure({ mode: 'parallel' });
 
@@ -741,7 +753,8 @@ test.describe('config sections save', () => {
     const kanade = profiles.getByRole('row', { name: /^Select Kanade\b/ });
     // Cells after the selection box: voice first.
     await expect(kanade.getByRole('cell').nth(1)).toHaveText('comedy.');
-    await expect(kanade).toContainText('Kanade Teases lightly');
+    // The preview is the prompt file's first non-empty line (`prompt_summary`).
+    await expect(kanade.getByRole('cell').nth(2)).toContainText('Kanade');
     await expect(kanade).not.toContainText('**');
     await expect(profiles).not.toContainText('config/personas/profiles/kanade');
     // Visibility is editable and profile text stays file-backed.
@@ -796,8 +809,7 @@ test.describe('config sections save', () => {
     await expect(panel.getByText(/publishes no trust zone/)).toBeVisible();
     await choose(models.nth(2), 'kanata/rewrite-small');
 
-    // Reasoning offers only the model's published efforts: the small rewrite
-    // model publishes none, and extraction runs medium, so its picker is off only.
+    // The seed's extraction effort is High, so the no-reasoning rewrite model cannot inherit it.
     expect(await optionLabels(reasonings.nth(2))).toEqual(['Off']);
     // `null` efforts: Kanata restricts nothing, so every level is offered.
     await choose(models.nth(2), 'kanata/legacy');
@@ -807,9 +819,15 @@ test.describe('config sections save', () => {
     // Inherit is offered only while the extraction effort fits the role model.
     expect((await optionLabels(reasonings.nth(1)))[0]).toBe('Same as extraction');
     await choose(reasonings.first(), 'high');
-    expect((await optionLabels(reasonings.nth(1)))[0]).toBe('Off');
+    // kanata/chat publishes low and medium only, without `none` (it requires reasoning):
+    // high does not fit, so no inherit; its lowest published level comes first.
+    const chatChoices = await optionLabels(reasonings.nth(1));
+    expect(chatChoices).not.toContain('Same as extraction');
+    expect(chatChoices.slice(0, 2)).toEqual(['Low', 'Medium']);
     await choose(models.first(), 'kanata/extract');
     await choose(reasonings.first(), 'medium');
+    // High resets chat to its lowest published level; Medium then fits for inheritance again.
+    await choose(reasonings.nth(1), '');
     // Chat needs tools: the tool-less model is offered disabled, with why.
     await expect(optionIn(await openList(models.nth(1)), 'kanata/rewrite-small')).toHaveAttribute('aria-disabled', 'true');
     await models.nth(1).press('Escape');
@@ -829,10 +847,10 @@ test.describe('config sections save', () => {
       data: { models: { kanata_limits: [] } },
     });
     await expect(badKey.status()).toBe(422);
-    expect(await badKey.text()).toContain('Unknown or read-only');
-    // An unwatched channel has nothing to re-read.
-    const reread = await page.request.post(`${ADMIN}/api/admin/rescan`, { headers: await csrf(page.request), data: { channels: ['bm-trio'], window: 'week' } });
-    expect(await reread.text()).toContain('not watched');
+    expect(await badKey.json()).toEqual({ error: 'unknown_field', message: 'Unknown setting: models.kanata_limits.' });
+    // An unwatched channel (#bm-trio) has nothing to re-read.
+    const reread = await page.request.post(`${ADMIN}/api/admin/rescan`, { headers: await csrf(page.request), data: { channels: ['120000000000000008'], window: 'week' } });
+    expect(await reread.text()).toContain('#bm-trio is not watched');
   });
 
   test('notifications: quiet mode on and off', async ({ page }) => {
@@ -873,10 +891,22 @@ test.describe('config sections save', () => {
     const panel = await config(page);
     // Digest posts.
     await page.getByRole('tab', { name: 'Weekly digest' }).click();
-    await choose(panel.getByRole('combobox', { name: 'Channel' }), 'fa-night');
-    await panel.getByRole('button', { name: 'Post it now…' }).click();
-    await page.getByRole('dialog', { name: /digest to #?fa-night/ }).getByRole('button', { name: 'Post it now' }).click();
+    await choose(panel.getByRole('combobox', { name: 'Channel' }), { label: '#fa-night' });
+    const post = async () => {
+      await panel.getByRole('button', { name: 'Post it now…' }).click();
+      await page.getByRole('dialog', { name: /digest to #?fa-night/ }).getByRole('button', { name: 'Post it now' }).click();
+    };
+    // The harness's gateway never connects, so delivery is paused and the real post refuses.
+    await post();
+    await expect(panel.getByRole('alert')).toHaveText('The service is unavailable right now.');
+    // A connected bot's answer (`POST /api/admin/digest`, posted by delivery; tests/api/limits.rs).
+    await page.route(`${ADMIN}/api/admin/digest`, async (route) => {
+      expect(route.request().postDataJSON()).toEqual({ week: 'this', channel_id: '120000000000000004' });
+      await route.fulfill({ json: { message: "Posted this week's digest in #fa-night; people are named, not pinged." } });
+    });
+    await post();
     await expect(toast(page, /Posted this week's digest in #fa-night/)).toBeVisible();
+    await expect(panel.getByRole('alert')).toHaveCount(0);
   });
 
   test('set in the environment: read-only values with reasons', async ({ page }) => {
@@ -920,9 +950,11 @@ test('access: per-channel permissions and a recheck', async ({ page }) => {
   await expect(detail.getByText(/^Checked /)).toBeVisible();
   const table = page.getByRole('table', { name: "The bot's permissions in each channel" });
   await expect(table.getByRole('row', { name: /#hstar-party/ })).toContainText('Post: granted');
-  await expect(table.getByRole('row', { name: /#bm-trio/ })).toContainText('Post: missing');
   await expect(table.getByRole('row', { name: /#boss-schedule/ })).toContainText('digest');
-  await expect(page.getByText(/1 channel.*will not get reminders/)).toBeVisible();
+  // The report lists watched channels and the digest one: #bm-trio (no Post) is unwatched,
+  // so every listed channel gets its reminders; #seren-trio lacks Manage Messages.
+  await expect(detail.getByRole('status').filter({ hasText: /^Checked / })).toContainText('every channel gets its reminders. 1 cannot have old reactions tidied.');
+  await expect(table.getByRole('row', { name: /#seren-trio/ })).toContainText('Manage messages: missing');
   await expect(page.getByText(/without it the reminders/)).toBeVisible();
 
   await page.getByRole('button', { name: 'Check again' }).click();
@@ -953,7 +985,7 @@ test('week and sheet: per-channel re-read from the board and the sheet', async (
   // The sheet's channel button reports in the sheet itself.
   await page.setViewportSize({ width: 1280, height: 800 });
   await page.locator('[data-run="r-carling"] .plan-card__open').click();
-  await expect(page.getByRole('complementary', { name: 'HCarling + HStar' })).toBeVisible();
+  await expect(page.getByRole('complementary', { name: 'HCarling + HMaleficStar' })).toBeVisible();
   await page.getByRole('button', { name: 'Re-read #hstar-party from Discord and propose any changes' }).click();
   const notice = page.locator('.sheet__notice');
   await expect(notice).toContainText('Re-reading #hstar-party…');
@@ -979,7 +1011,7 @@ test('re-read while the extractor is off: off before any press, with the server\
   // The run pane's channel button says the same, in the pane.
   await page.setViewportSize({ width: 1280, height: 800 });
   await page.locator('[data-run="r-carling"] .plan-card__open').click();
-  await expect(page.getByRole('complementary', { name: 'HCarling + HStar' })).toBeVisible();
+  await expect(page.getByRole('complementary', { name: 'HCarling + HMaleficStar' })).toBeVisible();
   const sheet = page.getByRole('button', { name: 'Re-read #hstar-party from Discord and propose any changes' });
   await expect(sheet).toHaveAttribute('aria-disabled', 'true');
   await expect(sheet).toHaveAccessibleDescription(why);
@@ -1037,20 +1069,24 @@ test('config on a phone: the section strip scrolls itself, never the frame', asy
   expect(window.height).toBeGreaterThan(300);
 });
 
-test('models: extraction to High resets an inheriting chat to Off, saved and resynced', async ({ page }) => {
+test('models: extraction to High resets inheritors to legal levels, saved and resynced', async ({ page }) => {
+  // Chat requires reasoning and publishes Low first; Rewrite has no reasoning control.
   await go(page, '/config?section=models');
   const panel = page.locator('.settings__panel:not([hidden])');
   const reasonings = panel.getByRole('combobox', { name: /^Reasoning/ });
-  // Seed: extraction medium, chat inherits.
+  const resetNote = panel.getByRole('status').filter({ hasText: 'reasoning reset to' });
+  // Seed: chat and rewrite both inherit extraction's effort.
   await expectValue(reasonings.nth(1), '');
   await choose(reasonings.first(), 'high');
-  await expect(panel.getByRole('status').filter({ hasText: 'Chat reasoning reset to Off' })).toBeVisible();
-  await expectValue(reasonings.nth(1), 'off');
+  await expect(resetNote).toContainText('Chat reasoning reset to Low');
+  await expect(resetNote).toContainText('Rewrite reasoning reset to Off');
+  await expectValue(reasonings.nth(1), 'low');
+  await expectValue(reasonings.nth(2), 'off');
   // A later change that resets nothing clears the note.
   await choose(reasonings.first(), 'low');
-  await expect(panel.getByText(/reasoning reset to Off/)).toHaveCount(0);
+  await expect(panel.getByText(/reasoning reset to/)).toHaveCount(0);
   await choose(reasonings.first(), 'high');
-  await expect(panel.getByText(/reasoning reset to Off/)).toHaveCount(0);
+  await expect(panel.getByText(/reasoning reset to/)).toHaveCount(0);
   await panel.getByRole('button', { name: 'Save models' }).click();
   await expect(toast(page, /Models saved; the next question uses them\./)).toBeVisible();
 
@@ -1065,7 +1101,8 @@ test('models: extraction to High resets an inheriting chat to Off, saved and res
     expect(legal, `${role} resolves to ${resolved}`).toBe(true);
   }
   // The dropdown shows a real, selected option, never a blank box.
-  await expect(reasonings.nth(1).locator('.dd__value')).toHaveText('Off');
+  await expect(reasonings.nth(1).locator('.dd__value')).toHaveText('Low');
+  await expect(reasonings.nth(2).locator('.dd__value')).toHaveText('Off');
 
   // The server refuses an explicit inherit that would resolve illegally.
   const refused = await page.request.patch(`${ADMIN}/api/admin/config`, { headers: await csrf(page.request), data: { models: { roles: { chat: { reasoning: '' } } } } });
@@ -1107,7 +1144,8 @@ test('models: capacity groups read-only, one row per group, Kanata limits in wor
   await expect(groups.getByRole('row')).toHaveCount(2);
   await expect(groups.getByRole('columnheader')).toHaveText(['Group', 'Permits', 'Models', 'Startup check']);
   const gateway = groups.getByRole('row', { name: /gateway/ });
-  await expect(gateway.locator('.capchip')).toHaveText(['kanata/extract', 'kanata/chat', 'kanata/rewrite-small']);
+  // The real default group lists its role aliases sorted.
+  await expect(gateway.locator('.capchip')).toHaveText(['kanata/chat', 'kanata/extract', 'kanata/rewrite-small']);
   await expect(panel.getByRole('button', { name: /Add a row|Save groups/ })).toHaveCount(0);
   // The server's verdict sits on its group's row, without repeating the group's name;
   // nothing spans groups, so no list under the table and no client-side warnings.
@@ -1118,7 +1156,8 @@ test('models: capacity groups read-only, one row per group, Kanata limits in wor
   await expect(panel).not.toContainText('size its limits for both');
   // Mixed Kanata limits: the models in use, a disclosure for the rest, never a `model:level` variant.
   const inUse = panel.getByRole('table', { name: 'What Kanata admits for the models in use' });
-  await expect(inUse.getByRole('rowheader')).toHaveText(['kanata/extract', 'kanata/chat', 'kanata/rewrite-small']);
+  // In the server's `alias_limits` order (sorted by alias).
+  await expect(inUse.getByRole('rowheader')).toHaveText(['kanata/chat', 'kanata/extract', 'kanata/rewrite-small']);
   await panel.getByText('Show all models').click();
   await expect(panel.getByRole('table', { name: 'What Kanata admits for every listed model' })).not.toContainText(':');
   await expect(panel.getByText("Kanata publishes no limit for this key; it is shared with the owner's other clients.")).toHaveCount(1);
@@ -1249,6 +1288,15 @@ test('digest: the last posted card follows the API, and is omitted without one',
 
 test('env: copy buttons write the raw env value; none where it is unset', async ({ page, context }) => {
   await context.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: ADMIN });
+  // The harness sets every env row (the pilot role too, unset on the mock): the
+  // server's own unset row (`value: "not set"`, `copy: null`) stands in for it.
+  await page.route(`${ADMIN}/api/admin/config`, async (route) => {
+    const response = await route.fetch(unconditional(route));
+    const body = await response.json();
+    const pilot = body.env.find((row: { key: string }) => row.key === 'KANADE_CHAT_PILOT_ROLE_ID');
+    Object.assign(pilot, { value: 'not set', copy: null });
+    await route.fulfill({ response, json: body });
+  });
   await go(page, '/config?section=env');
   const panel = page.locator('.settings__panel:not([hidden])');
   // The row shows the human value; the copy is the env form.
@@ -1256,8 +1304,9 @@ test('env: copy buttons write the raw env value; none where it is unset', async 
   await panel.getByRole('button', { name: 'Copy KANADE_BOSS_WEEK_RESET_WEEKDAY' }).click();
   await expect(toast(page, 'Copied KANADE_BOSS_WEEK_RESET_WEEKDAY.')).toBeVisible();
   expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('thu');
+  await expect(panel.getByRole('row', { name: /Digest channel/ })).toContainText('#boss-schedule');
   await panel.getByRole('button', { name: 'Copy KANADE_POST_CHANNEL_ID' }).click();
-  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('boss-schedule');
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('120000000000000010');
   // Unset values have nothing to copy.
   await expect(panel.getByRole('row', { name: /Chat pilot role/ }).getByRole('button')).toHaveCount(0);
   await expect(panel.getByRole('button', { name: 'Copy KANADE_CHAT_PILOT_ROLE_ID' })).toHaveCount(0);

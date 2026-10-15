@@ -213,7 +213,7 @@ impl SqliteStore {
                 path: staged.clone(),
             })?
             .to_owned();
-        let readers = self.readers.clone();
+        let mut reader = self.reader().await?;
         let dest = dest.to_owned();
         let created_at = now_seconds();
         let abandoned = Arc::new(AtomicBool::new(false));
@@ -221,8 +221,9 @@ impl SqliteStore {
         let task = tokio::spawn(async move {
             sqlx::query("VACUUM INTO ?1")
                 .bind(target)
-                .execute(&readers)
+                .execute(&mut *reader)
                 .await?;
+            drop(reader);
             // The snapshot came from the owned inode only if the path still
             // names it after the copy.
             identity.verify()?;

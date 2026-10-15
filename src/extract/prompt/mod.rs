@@ -208,8 +208,8 @@ pub fn extraction_request(
     }
 }
 
-/// The live path supplies its resolved completion reserve; the original
-/// constructor remains for frozen prompt vectors.
+/// The live path supplies its resolved completion reserve;
+/// [`extraction_request`] uses the built-in one.
 pub fn extraction_request_with_reserve(
     model: &str,
     messages: Vec<Message>,

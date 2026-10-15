@@ -39,7 +39,7 @@ pub(crate) async fn on() -> On {
     let (address, _) = fake_nexon().await;
     let skew = Arc::new(Mutex::new(TimeDelta::zero()));
     let slot = Arc::new(OnceLock::new());
-    let module = skewed(Some(address), Arc::clone(&slot), Arc::clone(&skew));
+    let module = skewed(Some(address), Arc::clone(&slot), Arc::clone(&skew)).await;
     let reads = Reads::with_character_data(Some(config()), module).await;
     let service = slot.get().unwrap().clone();
     On {

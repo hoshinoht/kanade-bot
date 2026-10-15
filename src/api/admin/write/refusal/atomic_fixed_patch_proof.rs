@@ -27,7 +27,7 @@ use crate::{
             Scope, StoreError,
         },
     },
-    infrastructure::store::MemoryScheduleStore,
+    infrastructure::store::SqliteStore,
 };
 
 const REQUEST_ID: &str = "fixed-patch-no-op-race";
@@ -42,7 +42,7 @@ struct Effects {
     outbox: Vec<OutboxNotice>,
 }
 
-async fn effects(store: &MemoryScheduleStore) -> Effects {
+async fn effects(store: &SqliteStore) -> Effects {
     Effects {
         schedule: store.load(&Scope::All).await.expect("schedule snapshot"),
         history: store
@@ -150,7 +150,7 @@ struct CompetingWrite {
 }
 
 struct InterleavingStore {
-    inner: Arc<MemoryScheduleStore>,
+    inner: Arc<SqliteStore>,
     competing: Mutex<Option<CompetingWrite>>,
     competing_baseline: Mutex<Option<Effects>>,
     request_reads: AtomicUsize,
@@ -160,7 +160,7 @@ struct InterleavingStore {
 }
 
 impl InterleavingStore {
-    fn new(inner: Arc<MemoryScheduleStore>, competing: Option<CompetingWrite>) -> Self {
+    fn new(inner: Arc<SqliteStore>, competing: Option<CompetingWrite>) -> Self {
         Self {
             inner,
             competing: Mutex::new(competing),
@@ -236,7 +236,7 @@ impl ScheduleStore for InterleavingStore {
 }
 
 struct Fixture {
-    store: Arc<MemoryScheduleStore>,
+    store: Arc<SqliteStore>,
     fixed_id: String,
     clock: FixedClock,
     policy: SchedulePolicy,
@@ -245,7 +245,7 @@ struct Fixture {
 }
 
 async fn fixture() -> Fixture {
-    let store = Arc::new(MemoryScheduleStore::new());
+    let store = Arc::new(SqliteStore::open_temp().await);
     let clock = FixedClock(Utc.with_ymd_and_hms(2026, 10, 6, 4, 0, 0).single().unwrap());
     let mut service = SchedulerService::new(Arc::clone(&store), CountingIds(0), clock.clone());
     let fixed_id = service

@@ -1,8 +1,9 @@
 // Layout fidelity against the M3E boards: bun run fidelity [pair ...] [--keep]
 // Builds with KANADE_FIDELITY=1 (keeps the data-fid tags), runs
-// e2e/fidelity.spec.ts, then rebuilds clean so no tagged dist is left behind
-// (e2e/bundle.spec.ts fails on one). --keep skips the clean rebuild while
-// iterating; run once without it, or `bun run build`, before anything else.
+// e2e/fidelity.spec.ts on the real-API e2e server (playwright.config.ts;
+// KANADE_REAL_ART=1 serves the private boss/ art), then rebuilds clean so no
+// tagged dist is left behind (e2e/bundle.spec.ts fails on one). --keep skips the
+// clean rebuild while iterating; run once without it, or `bun run build`, before anything else.
 import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
 

@@ -48,7 +48,7 @@ pub(super) const SWEEP_EVERY: Duration = Duration::from_secs(60 * 60);
 const RETRY_FLOOR: Duration = Duration::from_secs(60);
 
 /// The running module: the service, its file and its task.
-pub(super) struct Module {
+pub struct Module {
     file: Arc<SqliteCharData>,
     task: Task,
 }
@@ -60,6 +60,18 @@ pub(super) async fn start(
     composition: &mut Composition,
     clock: Clock,
 ) -> Result<Option<Module>, Error> {
+    start_with(config, store, composition, clock, NexonClient::new).await
+}
+
+/// [`start`] building the NEXON client with `nexon` (`None`: no TLS
+/// provider); tests point it at a loopback fake.
+pub(super) async fn start_with(
+    config: &ServeConfig,
+    store: &Arc<SqliteStore>,
+    composition: &mut Composition,
+    clock: Clock,
+    nexon: impl FnOnce(ApiKey) -> Option<NexonClient>,
+) -> Result<Option<Module>, Error> {
     let Some(settings) = &config.character_data else {
         return Ok(None);
     };
@@ -69,7 +81,7 @@ pub(super) async fn start(
         .map(|path| Redacted::read(path, NEXON_API_KEY_FILE_KEY))
         .transpose()?;
     let nexon = match key {
-        Some(key) => Some(NexonClient::new(ApiKey::new(key.expose())).ok_or_else(|| {
+        Some(key) => Some(nexon(ApiKey::new(key.expose())).ok_or_else(|| {
             Error::Startup("the Nexon client could not be built (no TLS provider)".into())
         })?),
         None => None,
@@ -120,7 +132,7 @@ pub(super) async fn start(
 impl Module {
     /// Join the task, then close the file once the API has let go of it
     /// (waiting at most `wait`).
-    pub(super) async fn stop(self, wait: Duration) {
+    pub async fn stop(self, wait: Duration) {
         self.task.stop().await;
         close(self.file, wait).await;
     }

@@ -10,14 +10,14 @@ use std::sync::Arc;
 
 use axum::{
     Json,
-    extract::{Path as UrlPath, State, rejection::JsonRejection},
+    extract::{Path as UrlPath, State},
     http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
 };
 use serde::Deserialize;
 use serde_json::json;
 
-use super::{bad_body, origin, refusal::Refusal, state};
+use super::{Body, origin, refusal::Refusal, state};
 use crate::{
     api::{
         admin::{
@@ -119,9 +119,8 @@ pub async fn update(
     session: AdminSession,
     UrlPath(user_id): UrlPath<String>,
     headers: HeaderMap,
-    body: Result<Json<MemberPatch>, JsonRejection>,
+    Body(patch): Body<MemberPatch>,
 ) -> Reply {
-    let Json(patch) = body.map_err(bad_body)?;
     let state = state(&site)?;
     let personas = state.profile_options();
     let ping_level = patch
@@ -180,9 +179,8 @@ pub async fn add_alias(
     session: AdminSession,
     UrlPath(user_id): UrlPath<String>,
     headers: HeaderMap,
-    body: Result<Json<AliasRequest>, JsonRejection>,
+    Body(request): Body<AliasRequest>,
 ) -> Reply {
-    let Json(request) = body.map_err(bad_body)?;
     let state = state(&site)?;
     let alias = portal_alias(&request.alias)
         .ok_or_else(|| Refusal::invalid("An alias is one word: letters, digits, - or _."))?;

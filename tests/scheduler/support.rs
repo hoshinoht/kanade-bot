@@ -1,4 +1,4 @@
-//! Fixtures shared by the hand-written (non-vector) scheduler tests: a Kuala
+//! Fixtures shared by the hand-written scheduler tests: a Kuala
 //! Lumpur guild (members 1001–1004 watching channels 222 and 333) with its
 //! policy, readable ids, draft-operation builders and the weekly-timing
 //! schedules most tests start from.
@@ -14,8 +14,8 @@ use kanade::domain::schedule::{
     NewFixedRun, ReminderPolicy, RsvpSource, RsvpState, RunSource, RunStatus, SchedulePolicy,
     ScheduleSnapshot,
 };
-use kanade::domain::scheduler::{Clock, ScheduleStore, SchedulerService, Scope};
-use kanade::infrastructure::store::MemoryScheduleStore;
+use kanade::domain::scheduler::{Attributed, Clock, ScheduleStore, SchedulerService, Scope};
+use kanade::infrastructure::store::SqliteStore;
 
 use crate::common::TestClock;
 
@@ -120,6 +120,13 @@ pub async fn snapshot<S: ScheduleStore, I: IdGenerator, C: Clock>(
     service.store().load(&Scope::All).await.unwrap()
 }
 
+/// `service` attributing its next mutation to the tests.
+pub fn by_tests<S: ScheduleStore, I: IdGenerator, C: Clock>(
+    service: &mut SchedulerService<S, I, C>,
+) -> Attributed<'_, S, I, C> {
+    service.as_origin(Origin::for_tests())
+}
+
 pub fn existing(id: &str) -> Target {
     Target::Existing(id.to_owned())
 }
@@ -166,7 +173,7 @@ pub fn kalos_run(fixed: Option<Target>, week_start: DateTime<Utc>) -> DraftOp {
 /// Weekly Mon 21:30 in 222 (party 1001, 1002) with runs for 31 Aug, 7 Sep
 /// and 14 Sep; the 7 Sep run is amended to Wed 9 Sep 21:00.
 pub struct OneTiming {
-    pub service: SchedulerService<MemoryScheduleStore, CountingIds, TestClock>,
+    pub service: SchedulerService<SqliteStore, CountingIds, TestClock>,
     pub clock: TestClock,
     pub fixed: String,
     pub runs: [String; 3],
@@ -175,17 +182,15 @@ pub struct OneTiming {
 pub async fn one_timing() -> OneTiming {
     let clock = TestClock::new(kl(27, 1, 0));
     let mut service = SchedulerService::new(
-        MemoryScheduleStore::new(),
+        SqliteStore::open_temp().await,
         CountingIds::default(),
         clock.clone(),
     );
-    let fixed = service
-        .as_origin(Origin::for_tests())
+    let fixed = by_tests(&mut service)
         .add_fixed_run(weekly("222", Weekday::Mon, hm(21, 30), &["1001", "1002"]))
         .await
         .unwrap();
-    service
-        .as_origin(Origin::for_tests())
+    by_tests(&mut service)
         .materialise_weeks(&policy())
         .await
         .unwrap();
@@ -199,8 +204,7 @@ pub async fn one_timing() -> OneTiming {
         run_at(kl(7, 21, 30)),
         run_at(kl(14, 21, 30)),
     ];
-    service
-        .as_origin(Origin::for_tests())
+    by_tests(&mut service)
         .amend_run(&runs[1], utc(kl(9, 21, 0)), &policy())
         .await
         .unwrap();
@@ -218,25 +222,24 @@ pub async fn one_timing() -> OneTiming {
 /// draws must never collide with stored rows, or the owner log renames the
 /// wrong rows.
 pub struct TwoTimings {
-    pub service: SchedulerService<MemoryScheduleStore, RandomIds, TestClock>,
+    pub service: SchedulerService<SqliteStore, RandomIds, TestClock>,
     pub fixed: [String; 2],
     pub runs: [[String; 3]; 2],
 }
 
 pub async fn two_timings() -> TwoTimings {
     let mut service = SchedulerService::new(
-        MemoryScheduleStore::new(),
+        SqliteStore::open_temp().await,
         RandomIds,
         TestClock::new(kl(27, 1, 0)),
     );
     let mut fixed = Vec::new();
     for (weekday, channel) in [(Weekday::Mon, "222"), (Weekday::Tue, "333")] {
         let timing = weekly(channel, weekday, hm(21, 30), &["1001", "1002"]);
-        let id = service.as_origin(Origin::for_tests()).add_fixed_run(timing);
+        let id = by_tests(&mut service).add_fixed_run(timing);
         fixed.push(id.await.unwrap());
     }
-    service
-        .as_origin(Origin::for_tests())
+    by_tests(&mut service)
         .materialise_weeks(&policy())
         .await
         .unwrap();
@@ -257,8 +260,7 @@ pub async fn two_timings() -> TwoTimings {
             .find(|run| run.id == ids[1])
             .unwrap()
             .datetime;
-        service
-            .as_origin(Origin::for_tests())
+        by_tests(&mut service)
             .amend_run(&ids[1], to + TimeDelta::days(1), &policy())
             .await
             .unwrap();

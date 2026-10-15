@@ -1,20 +1,48 @@
+import type { Limits } from '@kanade/api-types';
 import type { Page } from '@playwright/test';
-import { ADMIN, expect, test } from './support';
+import { ADMIN, expect, setLimitGroups, test, unconditional } from './support';
 
 // Live Limits (B_LimitsLive and its tab boards): one row card per model
 // group, the Queue / Admission / Allowances tabs, the phone order and
-// sideways tab strip, the footer's server time and the stale chip. The mock
-// seeds three groups with `POST /__mock/limits {groups: "three"}` (cloud full
-// and queueing, local half-open at 2/4, legacy open); the fixture's reset
-// restores its one gateway group.
+// sideways tab strip, the footer's server time and the stale chip. The e2e
+// server's canned governor shows three groups after `setLimitGroups('three')`
+// (cloud full and queueing, local half-open at 2/4, legacy open); the
+// fixture's reset restores its one gateway group. Allowance windows are the
+// chat runtime's own, filled with `/__e2e/chat-allowance`.
 
-async function seedThree(): Promise<void> {
-  const res = await fetch(`${ADMIN}/__mock/limits`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ groups: 'three' }),
+/** The seed's member snowflakes. */
+const ASAHI = '100000000000001001';
+const REN = '100000000000001002';
+const RIN = '100000000000001010';
+const KOHANE = '100000000000001014';
+
+/** The chatbot answers `answers` for `member`, as if asked in a watched channel. */
+async function spend(member: string, answers: number): Promise<void> {
+  const spent = await fetch(`${ADMIN}/__e2e/chat-allowance`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ member, answers }) });
+  expect(spent.status, await spent.text()).toBe(204);
+}
+
+/** `seconds` after an ISO instant, as the server writes them. */
+const after = (at: string, seconds: number) => new Date(Date.parse(at) + seconds * 1000).toISOString().replace('.000Z', 'Z');
+
+/**
+ * Rewrites each Limits read the page makes (the real answer, fetched): the
+ * real server records no admission refusals yet (`AdmissionWindow::last_hour`
+ * is always empty), so the Admission tab gets the board's four.
+ */
+async function withRefusals(page: Page): Promise<void> {
+  await page.route(`${ADMIN}/api/admin/limits`, async (route) => {
+    const response = await route.fetch(unconditional(route));
+    const body = (await response.json()) as Limits;
+    const named = (at: number) => (body.groups[at] ?? body.groups[0])?.name ?? 'gateway';
+    body.admission.refusals = [
+      { kind: 'rate', scope: 'group', target: named(1), count: 3, last_at: after(body.generated_at, -6 * 60) },
+      { kind: 'concurrency', scope: 'group', target: named(0), count: 1, last_at: after(body.generated_at, -41 * 60) },
+      { kind: 'quota', scope: 'key', target: 'gateway key …7f2a', count: 1, last_at: after(body.generated_at, -22 * 60) },
+      { kind: 'key_rate', scope: 'key', target: 'gateway key …7f2a', count: 2, last_at: after(body.generated_at, -9 * 60) },
+    ];
+    await route.fulfill({ response, json: body });
   });
-  expect(res.status).toBe(204);
 }
 
 async function open(page: Page, query = ''): Promise<void> {
@@ -25,7 +53,8 @@ async function open(page: Page, query = ''): Promise<void> {
 const cards = (page: Page) => page.getByRole('tabpanel').getByRole('article');
 
 test('Backends: a row card per group in the configured order, breaker in words, waits and the open breaker sentence', async ({ page }) => {
-  await seedThree();
+  await setLimitGroups('three');
+  await withRefusals(page);
   await page.setViewportSize({ width: 1280, height: 800 });
   await open(page);
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('cloud is at capacity');
@@ -57,7 +86,7 @@ test('Backends: a row card per group in the configured order, breaker in words, 
 });
 
 test('Backends: two bars wave at most, the open breaker stays flat, and reduced motion draws every bar flat', async ({ page }) => {
-  await seedThree();
+  await setLimitGroups('three');
   await open(page);
   const bar = (name: string) => page.getByRole('progressbar', { name: `${name} permits in use` });
   await expect(bar('cloud')).toHaveAttribute('aria-valuetext', '2 of 2 in use, requests in flight');
@@ -72,7 +101,8 @@ test('Backends: two bars wave at most, the open breaker stays flat, and reduced 
 });
 
 test('tabs: arrow keys move between tabs and each keeps its own panel', async ({ page }) => {
-  await seedThree();
+  await setLimitGroups('three');
+  await withRefusals(page);
   await open(page);
   const backends = page.getByRole('tab', { name: /Backends/ });
   await backends.focus();
@@ -97,6 +127,8 @@ test('tabs: arrow keys move between tabs and each keeps its own panel', async ({
 });
 
 test('Allowances: Reset only where the window has use, and it clears that window', async ({ page }) => {
+  // Ren has two answers in his window; nobody else has any.
+  await spend(REN, 2);
   await open(page);
   await page.getByRole('tab', { name: /Allowances/ }).click();
   const table = page.getByRole('table', { name: 'Chatbot allowances' });
@@ -115,6 +147,7 @@ test('Allowances: Reset only where the window has use, and it clears that window
 });
 
 test('Allowances: after a Reset from the keyboard, focus lands on that member, not the page', async ({ page }) => {
+  await spend(REN, 2);
   await open(page);
   await page.getByRole('tab', { name: /Allowances/ }).click();
   const table = page.getByRole('table', { name: 'Chatbot allowances' });
@@ -131,38 +164,50 @@ test('Allowances: after a Reset from the keyboard, focus lands on that member, n
 });
 
 test('Allowances: "resets in" counts down on the server clock, only where answers count', async ({ page }) => {
-  // A browser clock days away from the mock's: the countdown must not follow it.
+  // A browser clock days away from the server's: the countdown must not follow it.
   await page.clock.install({ time: new Date('2026-10-02T21:13:00Z') });
   await page.clock.pauseAt(new Date('2026-10-02T21:13:01Z'));
   await page.setViewportSize({ width: 1280, height: 800 });
+  // The chat runtime counts its windows in monotonic time from real answers, so real
+  // windows never sit at a fixed point: the read is the real one with the board's two
+  // windows written in (Rin on her own 20 per 6 h override, Ren on 4 per 5 min).
+  await page.route(`${ADMIN}/api/admin/limits`, async (route) => {
+    const response = await route.fetch(unconditional(route));
+    const body = (await response.json()) as Limits;
+    for (const row of body.allowances) {
+      if (row.member.id === RIN) Object.assign(row, { allowance: { count: 20, per_s: 21_600 }, used: 7, overridden: true, resets_at: after(body.generated_at, 18_720) });
+      if (row.member.id === REN) Object.assign(row, { allowance: { count: 4, per_s: 300 }, used: 2, resets_at: after(body.generated_at, 132) });
+    }
+    await route.fulfill({ response, json: body });
+  });
   await open(page);
   await page.getByRole('tab', { name: /Allowances/ }).click();
   const table = page.getByRole('table', { name: 'Chatbot allowances' });
   const row = (id: string) => table.locator('tbody tr', { has: page.locator(`#limits-allowance-${id}`) });
   // Rin runs on her own 20 per 6 h; Ren on the guild's 4 per 5 min.
-  await expect(row('1010')).toContainText('7 used, 13 left · resets in 5 h 12 m');
-  await expect(row('1002')).toContainText('2 used, 2 left · resets in 2 m 12 s');
+  await expect(row(RIN)).toContainText('7 used, 13 left · resets in 5 h 12 m');
+  await expect(row(REN)).toContainText('2 used, 2 left · resets in 2 m 12 s');
   // The allowance is a bar of answers used against the count, the window in words.
-  const rin = row('1010').getByRole('progressbar', { name: "Rin's answers used" });
+  const rin = row(RIN).getByRole('progressbar', { name: "Rin's answers used" });
   await expect(rin).toHaveAttribute('aria-valuenow', '7');
   await expect(rin).toHaveAttribute('aria-valuemax', '20');
   await expect(rin).toHaveAttribute('aria-valuetext', '7 of 20 answers used, 6 h window');
-  await expect(row('1010')).toContainText('20 per 6 h');
-  await expect(row('1002')).toContainText('4 per 5 min');
+  await expect(row(RIN)).toContainText('20 per 6 h');
+  await expect(row(REN)).toContainText('4 per 5 min');
   await expect(table).not.toContainText(/per \d+s/);
-  await expect(row('1001').getByRole('progressbar')).toHaveCount(0);
-  await expect(row('1001')).toContainText('exempt');
+  await expect(row(ASAHI).getByRole('progressbar')).toHaveCount(0);
+  await expect(row(ASAHI)).toContainText('exempt');
   // Staff and an idle window have nothing to reset.
-  await expect(row('1001')).not.toContainText('resets');
-  await expect(row('1014')).toContainText('idle');
-  await expect(row('1014')).not.toContainText('resets');
+  await expect(row(ASAHI)).not.toContainText('resets');
+  await expect(row(KOHANE)).toContainText('idle');
+  await expect(row(KOHANE)).not.toContainText('resets');
   // Monotonic time since the snapshot moves it; the next poll is 5 s away.
   await page.clock.runFor(3000);
-  await expect(row('1002')).toContainText('resets in 2 m 9 s');
+  await expect(row(REN)).toContainText('resets in 2 m 9 s');
 });
 
 test('footer: the server clock at the snapshot, never the browser clock', async ({ page }) => {
-  // A browser clock a day and a few hours away from the mock's.
+  // A browser clock a day and a few hours away from the server's.
   await page.clock.setFixedTime('2026-09-30T09:37:00Z');
   await open(page);
   await expect(page.locator('footer').filter({ hasText: 'Updated' })).toContainText('Updated Tue 29 Sep 12:00 · every 5 s');
@@ -219,7 +264,8 @@ test.describe('phone', () => {
   test.use({ viewport: { width: 390, height: 844 } });
 
   test('open, then half-open breakers lead; the tab strip keeps all four counts and scrolls sideways', async ({ page }) => {
-    await seedThree();
+    await setLimitGroups('three');
+    await withRefusals(page);
     await open(page);
     await expect(cards(page).getByRole('heading', { level: 3 })).toHaveText(['legacy', 'local', 'cloud']);
     const strip = page.getByRole('tablist', { name: 'Limits' });
@@ -245,6 +291,7 @@ test.describe('phone', () => {
   });
 
   test('Admission reads each refusal as a two-line row, grouped by scope', async ({ page }) => {
+    await withRefusals(page);
     await open(page);
     await page.getByRole('tab', { name: /Admission/ }).click();
     const panel = page.getByRole('tabpanel');

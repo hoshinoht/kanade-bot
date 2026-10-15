@@ -8,7 +8,7 @@ use chrono::TimeDelta;
 use kanade::bot::delivery::cards::redesign::OPEN_IN_PORTAL;
 use kanade::bot::delivery::cards::{CardKit, V2Kit};
 use kanade::domain::settings::MessageStyle;
-use kanade::infrastructure::store::MemoryScheduleStore;
+use kanade::infrastructure::store::SqliteStore;
 use twilight_model::channel::message::Component;
 
 use crate::cards::{answer, art_dir, created, edits, kit, pictures, refresher, seed_day_of, world};
@@ -33,7 +33,7 @@ fn styled(art: &crate::support::TempDir, redesigned: &Arc<AtomicBool>) -> CardKi
 #[tokio::test]
 async fn the_tick_posts_and_refresh_edits_in_the_live_style() {
     let art = art_dir();
-    let store = Arc::new(MemoryScheduleStore::new());
+    let store = Arc::new(SqliteStore::open_temp().await);
     let world = world();
     let fake = Arc::new(support::fake());
     let (star, _) = seed_day_of(&*store).await;
@@ -115,7 +115,7 @@ fn links(rows: &[Component]) -> Vec<(String, String)> {
 #[tokio::test]
 async fn refresh_adds_and_drops_the_portal_link_with_the_switch() {
     let art = art_dir();
-    let store = Arc::new(MemoryScheduleStore::new());
+    let store = Arc::new(SqliteStore::open_temp().await);
     let world = world();
     let fake = Arc::new(support::fake());
     let (star, _) = seed_day_of(&*store).await;

@@ -143,6 +143,17 @@ impl Allowance {
         self.told_until.remove(member);
     }
 
+    /// Test support: one answer for `member` at `now`, spent from both
+    /// budgets as `gate::decide` spends it; nothing is spent, and `false`
+    /// comes back, when either budget is already full.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn spend(&mut self, member: &str, now: f64) -> bool {
+        if self.person.remaining(member, now) == 0 || self.pool.remaining(GLOBAL_KEY, now) == 0 {
+            return false;
+        }
+        self.person.allow(member, now) && self.pool.allow(GLOBAL_KEY, now)
+    }
+
     pub fn snapshot(&self, now: f64) -> AllowanceSnapshot {
         let mut keys = self.person.active(now);
         keys.extend(self.person.overrides().keys().cloned());

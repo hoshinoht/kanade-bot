@@ -34,7 +34,6 @@ async fn hot_reads_revalidate_with_strong_tags() {
     let reads = Reads::new().await;
     for path in [
         "/api/admin/week",
-        "/api/admin/stats",
         "/api/admin/summary",
         "/api/admin/inbox",
         "/api/admin/reminders",

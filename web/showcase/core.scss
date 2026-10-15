@@ -1,0 +1,31 @@
+// Every core partial and nothing else, in admin.scss order (core only), then
+// the page-only core partials the lazily loaded pages import.
+@use "../packages/ui/src/styles/core/base";
+@use "../packages/ui/src/styles/core/shell";
+@use "../packages/ui/src/styles/core/frame";
+@use "../packages/ui/src/styles/core/page-furniture";
+@use "../packages/ui/src/styles/core/forms";
+@use "../packages/ui/src/styles/core/buttons";
+@use "../packages/ui/src/styles/core/m3e-buttons";
+@use "../packages/ui/src/styles/core/chips-status";
+@use "../packages/ui/src/styles/core/progress";
+@use "../packages/ui/src/styles/core/card-window";
+@use "../packages/ui/src/styles/core/tabs";
+@use "../packages/ui/src/styles/core/nav-rail";
+@use "../packages/ui/src/styles/core/topbar";
+@use "../packages/ui/src/styles/core/page-line";
+@use "../packages/ui/src/styles/core/m3e-primitives";
+@use "../packages/ui/src/styles/core/state-note";
+@use "../packages/ui/src/styles/core/avatar";
+@use "../packages/ui/src/styles/core/row-expansion";
+@use "../packages/ui/src/styles/core/stats-tables";
+@use "../packages/ui/src/styles/core/theme-tiles";
+@use "../packages/ui/src/styles/core/modal";
+@use "../packages/ui/src/styles/core/toast";
+@use "../packages/ui/src/styles/core/icons";
+@use "../packages/ui/src/styles/core/motion";
+@use "../packages/ui/src/styles/core/arrival";
+@use "../packages/ui/src/styles/core/loading";
+@use "../packages/ui/src/styles/core/panes";
+@use "../packages/ui/src/styles/core/select";
+@use "../packages/ui/src/styles/core/date-picker";

@@ -65,6 +65,13 @@ const ALLOW: Allow[] = [
     reason: "a list row's one-line summary; opening the row shows it in full",
   },
   {
+    selector: '.models__role:nth-of-type(2) .field:nth-of-type(2) .dd__value',
+    screens: ['admin/config?section=models'],
+    sizes: ['1280×800', '1280×600'],
+    kinds: ['ellipsis'],
+    reason: 'Chat’s saved inherited effort stays selected but marks extraction’s Off as unpublished; the constrained control ellipsizes the full label',
+  },
+  {
     selector: '.extract-row__facts',
     screens: EXTRACTIONS,
     sizes: '*',

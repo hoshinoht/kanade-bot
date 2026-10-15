@@ -539,8 +539,8 @@ async fn a_full_backlog_drops_its_oldest_messages_and_says_so() {
     assert!(drops.iter().all(|d| d.capacity == 3));
 }
 
-/// v5 difference from v4 (user decision 2026-10-01, no frozen vector covers
-/// it): an answer about a version edited during its call applies nothing;
+/// v5 difference from v4 (user decision 2026-10-01): an answer about a
+/// version edited during its call applies nothing;
 /// the edit is its own version, read once, and makes the only card.
 #[tokio::test(start_paused = true)]
 async fn an_edit_during_an_in_flight_read_drops_the_stale_answer() {

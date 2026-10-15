@@ -12,10 +12,10 @@ use kanade::domain::schedule::{
     Change, ChangeSet, Notice, NoticeChange, RequestDecision, Run, RunSource, RunStatus,
 };
 use kanade::domain::scheduler::Scope;
-use kanade::infrastructure::store::MemoryScheduleStore;
+use kanade::infrastructure::store::SqliteStore;
 
 use crate::scenarios::{HOME, World, config, delivery, now, week, world};
-use crate::support::{Store, TempDir, on_both_stores};
+use crate::support::{Store, TempDir};
 
 fn run(id: &str) -> Run {
     Run {
@@ -140,15 +140,6 @@ async fn undecodable_is_skipped<S: Store>(store: &S, world: &World) {
 }
 
 #[tokio::test]
-async fn a_memory_undecodable_notice_is_skipped_and_alerted() {
-    let store = MemoryScheduleStore::new();
-    let bad = enqueue(&store, "r-1", vec![merged("bad")], now()).await;
-    enqueue(&store, "r-2", vec![merged("good")], now()).await;
-    store.corrupt_notice(&bad, 0, "payload damaged");
-    undecodable_is_skipped(&store, &world()).await;
-}
-
-#[tokio::test]
 async fn a_sqlite_undecodable_notice_is_skipped_and_alerted() {
     let dir = TempDir::new();
     let store = dir.open().await;
@@ -212,7 +203,7 @@ async fn a_backlog_goes_stale<S: Store>(store: &S) {
 
 #[tokio::test]
 async fn notices_older_than_the_age_limit_are_retired_unsent() {
-    on_both_stores!(a_backlog_goes_stale);
+    a_backlog_goes_stale(&SqliteStore::open_temp().await).await;
 }
 
 async fn unroutable_goes_stale<S: Store>(store: &S) {
@@ -231,7 +222,7 @@ async fn unroutable_goes_stale<S: Store>(store: &S) {
 
 #[tokio::test]
 async fn an_unroutable_notice_eventually_retires_as_stale() {
-    on_both_stores!(unroutable_goes_stale);
+    unroutable_goes_stale(&SqliteStore::open_temp().await).await;
 }
 
 // --- order within a source --------------------------------------------------
@@ -273,7 +264,7 @@ async fn released_summary_holds_the_requester_notice<S: Store>(store: &S) {
 
 #[tokio::test]
 async fn a_released_merge_summary_holds_back_its_requester_notice() {
-    on_both_stores!(released_summary_holds_the_requester_notice);
+    released_summary_holds_the_requester_notice(&SqliteStore::open_temp().await).await;
 }
 
 async fn cap_holds_the_rest_of_a_source<S: Store>(store: &S) {
@@ -325,5 +316,5 @@ async fn cap_holds_the_rest_of_a_source<S: Store>(store: &S) {
 
 #[tokio::test]
 async fn a_capped_notice_holds_back_the_rest_of_its_source() {
-    on_both_stores!(cap_holds_the_rest_of_a_source);
+    cap_holds_the_rest_of_a_source(&SqliteStore::open_temp().await).await;
 }

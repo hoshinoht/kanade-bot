@@ -9,9 +9,10 @@ use kanade::domain::ids::RandomIds;
 use kanade::domain::proposals::{ChangeKind, ProposedChange};
 use kanade::domain::schedule::{NewRun, RunSource, RunStatus};
 use kanade::domain::scheduler::{ProposalRequest, SchedulerService, Supersede};
+use kanade::infrastructure::store::SqliteStore;
 
 use crate::scenarios::{HOME, config, delivery, now, week, world};
-use crate::support::{Store, on_both_stores};
+use crate::support::Store;
 
 async fn propose_at<S: Store>(
     store: &S,
@@ -104,5 +105,5 @@ async fn expire_proposals_once<S: Store>(store: &S) {
 
 #[tokio::test]
 async fn the_tick_expires_proposals_past_their_ttl_once_and_silently() {
-    on_both_stores!(expire_proposals_once);
+    expire_proposals_once(&SqliteStore::open_temp().await).await;
 }

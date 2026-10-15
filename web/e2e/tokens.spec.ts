@@ -8,7 +8,7 @@ import { ADMIN, expect, test } from './support';
 // not its light edge. Overrides live in packages/tokens/_contrast.scss.
 
 // Every colourway (keys from @kanade/tokens/colorways); dynamic is the
-// palette derived from the mock's avatar, checked once it has been applied.
+// palette derived from the seeded avatar, checked once it has been applied.
 const LOOKS = COLORWAYS.map((way) => way.key).flatMap((c) => (['light', 'dark'] as const).map((t) => [c, t] as const));
 
 /** [foreground, background, minimum ratio]; a transparent background falls back to the ground. */

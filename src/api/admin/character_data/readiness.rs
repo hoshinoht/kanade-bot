@@ -16,7 +16,7 @@ use std::{collections::BTreeMap, sync::Arc};
 
 use axum::{
     Json, Router,
-    extract::{Path as UrlPath, State, rejection::JsonRejection},
+    extract::{Path as UrlPath, State},
     response::IntoResponse,
     routing::{get, post},
 };
@@ -25,7 +25,7 @@ use serde::Deserialize;
 use super::{
     super::{
         characters::{Both, Timing, party},
-        write::{Refusal, bad_body, state},
+        write::{Body, Refusal, state},
     },
     Module, Reply,
     estimates::lookup_name,
@@ -198,9 +198,8 @@ async fn preview(
     Module(module): Module,
     State(site): State<Arc<Site>>,
     _: AdminSession,
-    body: Result<Json<TimingPreview>, JsonRejection>,
+    Body(body): Body<TimingPreview>,
 ) -> Reply {
-    let Json(body) = body.map_err(bad_body)?;
     if body.bosses.len() > PREVIEW_MAX || body.participants.len() > PREVIEW_MAX {
         return Err(Refusal::invalid(format!(
             "A preview reads at most {PREVIEW_MAX} bosses and {PREVIEW_MAX} members."

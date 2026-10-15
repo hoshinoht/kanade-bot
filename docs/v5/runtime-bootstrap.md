@@ -78,7 +78,7 @@ the container's own listener address) and has a bounded timeout.
 | `KANADE_PUBLIC_HOST` | unset | Exact `host[:port]` of the public listener; required with `KANADE_PUBLIC_BIND`, must differ from the admin host. |
 | `KANADE_TRUSTED_PROXY` | unset | IP of the edge peer; only it may supply `X-Forwarded-*`/`Forwarded` headers to admin, and `Tailscale-*` only with the edge secret. With `KANADE_EDGE_SECRET_FILE` set it is trusted only when it presents the secret. |
 | `KANADE_CLOUDFLARED_PEER` | unset | IP of the cloudflared peer; only it may supply `X-Forwarded-*` and `CF-*` headers (client IP from `CF-Connecting-IP`) to public. Required with `KANADE_PUBLIC_BIND`: without it every member would be the proxy's address (pooled sign-in limits, no client-change rotation), so startup refuses. A request from the peer without `CF-Connecting-IP` counts as the peer itself, so local runs and tests with no proxy name their own loopback (`127.0.0.1`). Compose fixes `172.25.0.3`, which also covers the tailnet test stage. |
-| `KANADE_WEB_DIR` | unset | Web workspace root; serves `apps/admin/dist` and `apps/public/dist` (same layout as `devtools/pwa-mock`). Unset serves no shell. |
+| `KANADE_WEB_DIR` | unset | Web workspace root (`web/`); serves `apps/admin/dist` and `apps/public/dist`. Unset serves no shell. |
 | `KANADE_BOSS_DIR` | unset | Private boss art root (`portraits/`, `portraits/icon/`, `artwork/entry/`). Unset or missing art is 404. |
 | `KANADE_IDENTITY_DIR` | unset | Cached `avatar.*`/`banner.*`; unset serves generated SVG stand-ins. With the gateway on, serve creates it (`0700`) and, after each `READY` and on the bot's own nickname/avatar/user changes, fetches the guild avatar (else user avatar) and banner from Discord's CDN (png/webp/gif/jpeg, ≤ 8 MiB, 20 s timeout, no redirects), replacing files by temp + rename; no avatar/banner removes the file (monogram/wash). Logs `identity_cached {avatar, banner}`; failures log WARN `identity_refresh_failed {kind, reason}` and keep the last files. Compose sets `/data/identity`. |
 | `KANADE_ADMIN_DISCORD_CLIENT_ID` | unset | Discord application id; the three Discord variables are all-or-none. |
@@ -621,11 +621,11 @@ Tailscale headers from any other peer are stripped before routing), then a
 64 KiB declared-body limit (`413`) and a 30 s handler timeout (`503
 timeout`). Errors are `ApiError` bodies `{error, message}` with generic text.
 
-Headers match `devtools/pwa-mock` (CSP with enforced Trusted Types,
-`require-trusted-types-for 'script'; trusted-types kanade-sw`, the one policy
-being the service-worker registration; `nosniff`, `no-referrer`, COOP/CORP
-`same-origin`, Permissions-Policy, per-path Cache-Control) without the mock's
-dev-only `report-uri`; non-2xx answers are `no-store`;
+Headers: CSP with enforced Trusted Types
+(`require-trusted-types-for 'script'; trusted-types kanade-sw`, the one policy
+being the service-worker registration; no `report-uri`, which only the
+browser e2e server adds), `nosniff`, `no-referrer`, COOP/CORP `same-origin`,
+Permissions-Policy and per-path Cache-Control; non-2xx answers are `no-store`;
 `Strict-Transport-Security` is sent on the public origin only; no CORS headers
 are ever sent.
 
@@ -760,8 +760,7 @@ to the redesigned cards' and the admin preview's difficulty marks; a
 missing pill or a failed list keeps the written label
 (`difficulty_marks`/`difficulty_marks_unavailable`). Restart serve after
 uploading.
-`import v4` is the one-off testing import from a v4 snapshot
-(`v4-import.md`). `backup [--name FILE]` is the deploy-time snapshot:
+`backup [--name FILE]` is the deploy-time snapshot:
 it needs only `KANADE_DB_PATH`, `KANADE_OWNER_LOCK_DIR` and
 `KANADE_BACKUP_DIR`, refuses when no store exists (it never creates one) and,
 through the owner lock, while serve owns the store (exit `69`, "stop the bot
@@ -784,7 +783,7 @@ refuses an existing `--out`, fails before writing on a wrong identity and
 removes a partial output when the input is damaged or truncated. Key and
 recipient errors name the line number, never its content. The files are
 standard age, so `age -d -i` also opens them. `serve --offline` wires no
-scheduler, persistence, Discord, import, admin API or mutation route.
+scheduler, persistence, Discord, admin API or mutation route.
 
 `restore --from PATH [--identity FILE] [--apply]` replaces the store with a
 `kanade backup` snapshot while serve is stopped; it is a dry run unless

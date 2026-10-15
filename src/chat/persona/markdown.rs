@@ -1,6 +1,6 @@
 //! v4 Markdown conventions reproduced exactly: outer stripping, line splitting,
 //! the `# Persona:` name and `Good` example extraction. Hand-written matchers
-//! mirror the v4 regular expressions; the persona oracle vectors pin them.
+//! mirror the v4 regular expressions.
 
 use crate::domain::pytext::is_space;
 pub(crate) use crate::domain::pytext::strip;

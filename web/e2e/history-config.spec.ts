@@ -2,7 +2,7 @@ import type { Page } from '@playwright/test';
 import { choose, expect, go, test, toast } from './support';
 
 // A Config section save joins the History timeline as a view-only row with
-// its before/after (the mock records it like the server). Clock pinned.
+// its before/after. Clock pinned.
 
 async function saveQuietMode(page: Page) {
   await go(page, '/config?section=notifications');
@@ -14,7 +14,8 @@ test('history: a saved Config section is a view-only row with its before and aft
   await page.setViewportSize({ width: 1280, height: 800 });
   await saveQuietMode(page);
   await go(page, '/history');
-  const row = page.locator('.history-row--config');
+  // The seed's character saves are Config rows too (Asahi's, through the real character writes).
+  const row = page.locator('.history-row--config').filter({ hasText: 'Config · Notifications' });
   await expect(row).toHaveCount(1);
   await expect(row).toContainText('Config · Notifications — quiet_mode');
   await expect(row.locator('.chip', { hasText: 'Config' })).toBeVisible();
@@ -42,14 +43,14 @@ test('history: a saved Config section is a view-only row with its before and aft
   await expect(viewer).toBeHidden();
   await expect(trigger).toBeFocused();
 
-  // Who applies to Config saves too.
-  await choose(page.getByRole('combobox', { name: 'Who' }), 'member:1005');
+  // Who applies to Config saves too. The seed's character saves are Asahi's as well, so only her Notifications save is counted.
+  await choose(page.getByRole('combobox', { name: 'Who' }), 'member:100000000000001005');
   await expect(page.locator('.history-row--config')).toHaveCount(0);
-  await choose(page.getByRole('combobox', { name: 'Who' }), 'admin:discord:1001');
-  await expect(page.locator('.history-row--config')).toHaveCount(1);
+  await choose(page.getByRole('combobox', { name: 'Who' }), 'admin:discord:100000000000001001');
+  await expect(row).toHaveCount(1);
 
   // The link opens the section it saved.
-  await page.locator('.history-row--config').click();
+  await row.click();
   await pane.getByRole('link', { name: 'Open Notifications in Config' }).click();
   await expect(page).toHaveURL(/\/config\?section=notifications/);
   await expect(page.getByRole('switch', { name: /^Quiet mode/ })).toHaveAttribute('aria-checked', 'true');
@@ -59,7 +60,7 @@ test('history: on a phone a Config save opens as a sheet without Revert', async 
   await page.setViewportSize({ width: 390, height: 844 });
   await saveQuietMode(page);
   await go(page, '/history');
-  const row = page.locator('.history-row--config');
+  const row = page.locator('.history-row--config').filter({ hasText: 'Config · Notifications' });
   await row.click();
   const detail = page.getByRole('dialog', { name: 'Notifications settings' });
   await expect(detail).toBeVisible();

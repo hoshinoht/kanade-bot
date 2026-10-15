@@ -4,9 +4,10 @@
 use chrono::TimeDelta;
 use kanade::bot::delivery::AdminAlert;
 use kanade::domain::history::{Actor, ChangeHistory, CheckpointKind, Checkpoints};
+use kanade::infrastructure::store::SqliteStore;
 
 use crate::scenarios::{delivery, now, week, world};
-use crate::support::{Store, TempDir, on_both_stores};
+use crate::support::Store;
 
 async fn each_week_gets_one_checkpoint<S: Store + ChangeHistory>(store: &S) {
     let world = world();
@@ -46,16 +47,16 @@ async fn each_week_gets_one_checkpoint<S: Store + ChangeHistory>(store: &S) {
 
 #[tokio::test]
 async fn each_boss_week_gets_one_automatic_checkpoint() {
-    on_both_stores!(each_week_gets_one_checkpoint);
+    each_week_gets_one_checkpoint(&SqliteStore::open_temp().await).await;
 }
 
 #[tokio::test]
 async fn a_failed_checkpoint_never_aborts_the_tick_and_is_retried() {
-    let dir = TempDir::new();
-    let store = dir.open().await;
+    let store = SqliteStore::open_temp().await;
     let world = world();
     // Break checkpoint writes behind the store's back.
-    dir.raw("DROP TABLE checkpoints;").await;
+    let dir = store.temp_dir();
+    dir.raw("DROP TABLE checkpoints;").await.expect("drop");
     let mut delivery = delivery(&store, &world, &world.fake);
     delivery.tick_at(now()).await.expect("the tick still runs");
     assert!(
@@ -77,7 +78,8 @@ async fn a_failed_checkpoint_never_aborts_the_tick_and_is_retried() {
             created_by_kind TEXT NOT NULL, created_by_id TEXT NOT NULL);
          CREATE UNIQUE INDEX checkpoints_auto_week ON checkpoints (week_start) WHERE kind = 'auto';",
     )
-    .await;
+    .await
+    .expect("recreate");
     delivery
         .tick_at(now() + TimeDelta::minutes(1))
         .await

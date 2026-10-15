@@ -375,15 +375,13 @@ impl Config {
                 slot.set(desk.clone()).ok().unwrap();
                 desk
             };
-            if let Some(limits) = model_limits {
-                Reads::with_config_and_model_limits(make, limits).await
-            } else if two_admins {
-                Reads::with_config_and_logins(make).await
-            } else if role_directory_connected {
-                Reads::with_config(make).await
-            } else {
-                Reads::with_config_role_directory_connected(make, role_directory_connected).await
-            }
+            Reads::build(|b| {
+                b.config = Some(Box::new(make));
+                b.model_limits = model_limits;
+                b.logins = two_admins;
+                b.role_directory_connected = role_directory_connected;
+            })
+            .await
         };
         Self {
             reads,
@@ -601,7 +599,8 @@ async fn get_shows_settings_models_personas_and_env_facts() {
         view["chatbot"]["missing_env"],
         json!(["KANADE_CHAT_CATEGORY_IDS"])
     );
-    assert_eq!(view["manage_messages"], json!({"missing": []}));
+    // The guild's limbo-trio is watched but may not tidy messages.
+    assert_eq!(view["manage_messages"], json!({"missing": ["#limbo-trio"]}));
 
     let models = &view["models"];
     assert_eq!(models["reachable"], true);
@@ -690,6 +689,11 @@ async fn get_shows_settings_models_personas_and_env_facts() {
         "missing is private"
     );
     assert_eq!(persona["profiles"][0]["prompt_summary"], "# Reply profile");
+    let prompt = persona["profiles"][0]["prompt"].as_str().unwrap();
+    assert!(
+        prompt.starts_with("# Reply profile\n") && prompt.trim().lines().count() > 1,
+        "the whole prompt, not its summary line: {prompt:?}"
+    );
     assert_eq!(persona["role_profiles"], json!([]));
     assert!(
         persona["role_profiles_digest"]
@@ -1472,29 +1476,15 @@ async fn run_lengths_are_validated_saved_once_and_apply_to_the_next_week_read() 
 #[tokio::test]
 async fn summary_reports_the_running_quiet_mode() {
     let config = Config::new().await;
-    assert_eq!(
-        admin_summary(&config).await["quiet_mode"],
-        false,
-        "default off"
-    );
-
-    config
-        .patch(json!({"notifications": {"quiet_mode": true}}))
-        .await;
-    assert_eq!(
-        admin_summary(&config).await["quiet_mode"],
-        true,
-        "the next read sees the save, no restart"
-    );
-
-    config
-        .patch(json!({"notifications": {"quiet_mode": false}}))
-        .await;
-    assert_eq!(
-        admin_summary(&config).await["quiet_mode"],
-        false,
-        "off again"
-    );
+    let quiet = async || admin_summary(&config).await["quiet_mode"].clone();
+    assert_eq!(quiet().await, false, "default off");
+    // The next read sees each save, no restart.
+    for on in [true, false] {
+        config
+            .patch(json!({"notifications": {"quiet_mode": on}}))
+            .await;
+        assert_eq!(quiet().await, on, "quiet_mode {on}");
+    }
 }
 
 #[tokio::test]
@@ -1737,19 +1727,26 @@ async fn profiles_reload_and_persona_switch_swap_the_live_snapshot() {
 async fn config_routes_need_a_session_and_writes_need_csrf() {
     let config = Config::new().await;
     let admin = config.reads.admin;
+    // A CSRF token alone is no session.
+    let csrf_only = [ORIGIN, ("X-Kanade-CSRF", config.reads.csrf.as_str())];
     for (method, path) in [("GET", PATH), ("PATCH", PATH), ("POST", RELOAD)] {
-        let reply = send(admin, method, ADMIN_HOST, path, &[ORIGIN], Some("{}")).await;
+        let reply = send(admin, method, ADMIN_HOST, path, &csrf_only, Some("{}")).await;
         refused(&reply, 401, "unauthenticated", path);
     }
-    let body = role_profiles(&[("700", "calm")], &config.digest().await).to_string();
-    for (method, path) in [("PATCH", PATH), ("POST", RELOAD)] {
+    let profiles = role_profiles(&[("700", "calm")], &config.digest().await);
+    let list = json!({"watching": {"channel_ids": ["77"]}});
+    for (method, path, body) in [
+        ("PATCH", PATH, &profiles),
+        ("PATCH", PATH, &list),
+        ("POST", RELOAD, &profiles),
+    ] {
         let headers = [ORIGIN, ("Cookie", config.reads.cookie.as_str())];
+        let body = body.to_string();
         let reply = send(admin, method, ADMIN_HOST, path, &headers, Some(&body)).await;
-        refused(&reply, 403, "csrf", path);
+        refused(&reply, 403, "csrf", &body);
     }
-    let persona = config.desk.settings().await.persona;
-    assert!(persona.profile_visibility.is_empty());
-    assert!(persona.role_profiles.is_empty());
+    assert!(config.reads.store.settings_rows().await.unwrap().is_empty());
+    assert_eq!(config.desk.settings().await, settings());
     // The mounted route validates its required body before it reaches the
     // offline delivery port.
     let reply = config
@@ -1878,6 +1875,11 @@ async fn access_reports_watched_and_digest_channels() {
             ]
         );
     }
+    // Config's risk chip lists the same channels the report flags.
+    assert_eq!(
+        config.get().await["manage_messages"],
+        json!({"missing": ["#limbo-trio"]})
+    );
 }
 
 #[tokio::test]
@@ -2598,34 +2600,6 @@ async fn list_saves_refuse_mixed_bodies_bad_ids_and_the_removed_chat_channel_lis
 }
 
 #[tokio::test]
-async fn a_list_save_needs_a_session_and_csrf() {
-    let config = Config::with_settings(seeded_lists()).await;
-    let body = json!({"watching": {"channel_ids": ["77"]}}).to_string();
-    let no_csrf = send(
-        config.reads.admin,
-        "PATCH",
-        ADMIN_HOST,
-        PATH,
-        &[ORIGIN, ("Cookie", &config.reads.cookie)],
-        Some(&body),
-    )
-    .await;
-    assert_eq!(no_csrf.status, 403, "{}", no_csrf.text());
-    let no_session = send(
-        config.reads.admin,
-        "PATCH",
-        ADMIN_HOST,
-        PATH,
-        &[ORIGIN, ("X-Kanade-CSRF", &config.reads.csrf)],
-        Some(&body),
-    )
-    .await;
-    assert_eq!(no_session.status, 401, "{}", no_session.text());
-    assert!(config.reads.store.settings_rows().await.unwrap().is_empty());
-    assert_eq!(config.desk.settings().await.watching.channel_ids, ["12"]);
-}
-
-#[tokio::test]
 async fn a_config_save_hints_settings_to_open_event_streams() {
     let config = Config::new().await;
     let mut stream = crate::events::Stream::open(config.reads.admin, &config.reads.cookie).await;
@@ -2744,116 +2718,72 @@ async fn account_reply_style_shows_role_overrides_and_the_saved_public_choice() 
 }
 
 #[tokio::test]
-async fn message_style_saves_live_and_records_only_its_row() {
+async fn notification_fields_save_live_record_only_their_row_and_refuse_bad_values() {
     let config = Config::new().await;
-    let mut changes = config.desk.subscribe();
-    assert_eq!(
-        config.get().await["notifications"],
-        json!({"quiet_mode": false, "message_style": "classic", "header_generation_time": "00:00"}),
-        "classic by default"
-    );
-    let saved = config
-        .patch(json!({"notifications": {"message_style": "redesigned"}}))
-        .await;
-    assert_eq!(
-        saved["notifications"],
-        json!({"quiet_mode": false, "message_style": "redesigned", "header_generation_time": "00:00"})
-    );
-    assert_eq!(
-        changes
-            .borrow_and_update()
-            .settings
-            .notifications
-            .message_style
-            .as_str(),
-        "redesigned",
-        "published live"
-    );
-    let rows = config.reads.store.settings_rows().await.unwrap();
-    assert_eq!(rows[keys::MESSAGE_STYLE], "redesigned");
-    let recorded = config.changes().await;
-    assert_eq!(recorded[0].section, "notifications");
-    assert_eq!(
-        recorded[0].values.keys().collect::<Vec<_>>(),
-        [keys::MESSAGE_STYLE]
-    );
-    assert_eq!(recorded[0].values[keys::MESSAGE_STYLE].from, "classic");
-    assert_eq!(recorded[0].values[keys::MESSAGE_STYLE].to, "redesigned");
-
-    // A quiet-mode save keeps the style, and the style keeps quiet mode.
+    let notifications = |quiet: bool, style: &str, header: &str| json!({"quiet_mode": quiet, "message_style": style, "header_generation_time": header});
+    let defaults = notifications(false, "classic", "00:00");
+    assert_eq!(config.get().await["notifications"], defaults, "defaults");
+    let clock = "The header generation time is HH:MM, for example 03:30.";
+    let cases = [
+        (
+            "message_style",
+            keys::MESSAGE_STYLE,
+            ("classic", "redesigned"),
+            vec![json!("fancy"), json!("Classic"), json!(true)],
+            None,
+        ),
+        (
+            "header_generation_time",
+            keys::HEADER_GENERATION_TIME,
+            ("00:00", "03:30"),
+            vec![json!("3:30"), json!("24:00"), json!("03:61"), json!(330)],
+            Some(clock),
+        ),
+    ];
+    for (field, key, (from, to), bad, message) in cases {
+        let mut changes = config.desk.subscribe();
+        let saved = config.patch(json!({"notifications": {field: to}})).await;
+        assert_eq!(saved["notifications"][field], to, "{field}");
+        let after = saved["notifications"].clone();
+        let settings = config.desk.settings().await;
+        let published = changes.borrow_and_update().settings.clone();
+        assert_eq!(*published, settings, "{field}: published live");
+        let rows = config.reads.store.settings_rows().await.unwrap();
+        assert_eq!(rows[key], to, "{field}");
+        let recorded = &config.changes().await[0];
+        assert_eq!(recorded.section, "notifications", "{field}");
+        let values = recorded.values.keys().collect::<Vec<_>>();
+        assert_eq!(values, [key], "{field}: only its row");
+        assert_eq!(
+            (
+                recorded.values[key].from.as_str(),
+                recorded.values[key].to.as_str()
+            ),
+            (from, to)
+        );
+        for bad in bad {
+            let refused = config.invalid(json!({"notifications": {field: bad}})).await;
+            if let Some(message) = message {
+                assert_eq!(refused, message, "{field}");
+            }
+        }
+        let kept = config.get().await["notifications"].clone();
+        assert_eq!(kept, after, "{field}: a refused save changes nothing");
+    }
+    // Each save keeps the other fields.
     let quiet = config
         .patch(json!({"notifications": {"quiet_mode": true}}))
         .await;
-    assert_eq!(quiet["notifications"]["message_style"], "redesigned");
+    assert_eq!(
+        quiet["notifications"],
+        notifications(true, "redesigned", "03:30")
+    );
     let back = config
         .patch(json!({"notifications": {"message_style": "classic"}}))
         .await;
     assert_eq!(
         back["notifications"],
-        json!({"quiet_mode": true, "message_style": "classic", "header_generation_time": "00:00"})
-    );
-
-    for bad in [json!("fancy"), json!("Classic"), json!(true)] {
-        config
-            .invalid(json!({"notifications": {"message_style": bad}}))
-            .await;
-    }
-    assert_eq!(
-        config
-            .desk
-            .settings()
-            .await
-            .notifications
-            .message_style
-            .as_str(),
-        "classic",
-        "a refused save changes nothing"
-    );
-}
-
-#[tokio::test]
-async fn header_generation_time_saves_live_records_its_row_and_refuses_bad_clocks() {
-    let config = Config::new().await;
-    let mut changes = config.desk.subscribe();
-    let saved = config
-        .patch(json!({"notifications": {"header_generation_time": "03:30"}}))
-        .await;
-    assert_eq!(saved["notifications"]["header_generation_time"], "03:30");
-    assert_eq!(saved["notifications"]["message_style"], "classic", "kept");
-    assert_eq!(
-        changes
-            .borrow_and_update()
-            .settings
-            .notifications
-            .header_generation_time,
-        chrono::NaiveTime::from_hms_opt(3, 30, 0).unwrap(),
-        "published live"
-    );
-    let rows = config.reads.store.settings_rows().await.unwrap();
-    assert_eq!(rows[keys::HEADER_GENERATION_TIME], "03:30");
-    let recorded = config.changes().await;
-    assert_eq!(
-        recorded[0].values.keys().collect::<Vec<_>>(),
-        [keys::HEADER_GENERATION_TIME]
-    );
-    assert_eq!(
-        recorded[0].values[keys::HEADER_GENERATION_TIME].from,
-        "00:00"
-    );
-    assert_eq!(recorded[0].values[keys::HEADER_GENERATION_TIME].to, "03:30");
-    for bad in [json!("3:30"), json!("24:00"), json!("03:61"), json!(330)] {
-        let message = config
-            .invalid(json!({"notifications": {"header_generation_time": bad}}))
-            .await;
-        assert_eq!(
-            message,
-            "The header generation time is HH:MM, for example 03:30."
-        );
-    }
-    assert_eq!(
-        config.get().await["notifications"]["header_generation_time"],
-        "03:30",
-        "a refused save changes nothing"
+        notifications(true, "classic", "03:30")
     );
 }
 

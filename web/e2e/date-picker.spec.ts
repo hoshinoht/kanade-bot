@@ -3,7 +3,7 @@ import type { Page } from '@playwright/test';
 import { ADMIN, expect, settle, test, choose } from './support';
 
 // The date picker (boards P_Dates, P_DatesSpec, P_DatesPhone): Chat and
-// Extractions' From–To range and History's "Since". The mock's clock is Tue
+// Extractions' From–To range and History's "Since". The pinned clock is Tue
 // 29 Sep 2026 12:00 in Kuala Lumpur, so today is the 29th and the boss week
 // started Thu 24 Sep; later days are disabled.
 
@@ -141,6 +141,8 @@ test('extractions range: the same picker, and axe finds nothing serious with it 
 test('history since: picks on click, closes, and sends the start of that guild day', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
   await page.goto(`${ADMIN}/history?sw=off`);
+  // The member revert lives in a change's pane; the newest row is the seed's character Config save.
+  await page.locator('.history-row:not(.history-row--config)').first().click();
   const pane = page.getByRole('complementary', { name: 'Change details' });
   const trigger = pane.getByRole('button', { name: /^Since/ });
   await expect(trigger).toHaveText(/any date/);

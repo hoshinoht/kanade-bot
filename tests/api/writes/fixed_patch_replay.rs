@@ -1,15 +1,13 @@
 use std::sync::Arc;
 
-use chrono::{NaiveTime, TimeZone, Utc, Weekday};
+use chrono::{NaiveTime, TimeZone, Utc};
 use kanade::{
-    api::write::{ApiClock, FixedPatchLookupGate},
+    api::write::FixedPatchLookupGate,
     domain::{
         history::{Actor, Origin, Surface},
-        ids::RandomIds,
         members::Roster,
         notify::NoticeOutbox,
-        schedule::{FixedEdit, FixedEditChoices, FixedEditRequest, ReminderPolicy, SchedulePolicy},
-        scheduler::SchedulerService,
+        schedule::{FixedEdit, FixedEditChoices, FixedEditRequest},
     },
 };
 use serde_json::{Value, json};
@@ -17,7 +15,7 @@ use tokio::task::JoinHandle;
 
 use super::{ORIGIN, Reads, timing};
 use crate::{
-    reads::EDGE_HEADERS,
+    reads::{EDGE_HEADERS, policy, scheduler},
     support::{ADMIN_HOST, Reply, send},
 };
 
@@ -90,49 +88,42 @@ async fn fixed_patch_replay_survives_an_interleaved_other_admin_edit() {
 }
 
 /// The retry can begin before the first request commits. Once the first write
-/// lands and a participant loses their role, the held handler must recover the
-/// recorded identity instead of refusing strict current-roster validation.
+/// lands and a participant loses their role (or the watched-channel cache
+/// disappears), the held handler must recover the recorded identity instead
+/// of refusing strict current-roster validation.
 #[tokio::test]
-async fn concurrently_recorded_fixed_patch_replays_after_roster_loss() {
+async fn concurrently_recorded_fixed_patch_replays_after_roster_or_watched_channel_loss() {
     let _serial = LOOKUP_GATE_TESTS.lock().await;
-    let reads = Arc::new(Reads::with_logins().await);
-    let original = timing(reads.version().await, "21:30", "seed");
-    let key = "fixed-race-roster";
-    let gate = FixedPatchLookupGate::install(key);
-    let held = spawn_patch(&reads, original.clone(), key);
-    gate.reached().await;
+    for lost_channel in [false, true] {
+        let reads = Arc::new(Reads::with_logins().await);
+        let original = timing(reads.version().await, "21:30", "seed");
+        let (key, gate) = if lost_channel {
+            let key = "fixed-race-channel";
+            (
+                key,
+                FixedPatchLookupGate::install_lost_channel(key, "kalos-four"),
+            )
+        } else {
+            (
+                "fixed-race-roster",
+                FixedPatchLookupGate::install("fixed-race-roster"),
+            )
+        };
+        let held = spawn_patch(&reads, original.clone(), key);
+        gate.reached().await;
 
-    ok(&patch(&reads, original, key).await);
-    reads.demote("1002").await;
-    let before = state(&reads).await;
-    gate.release();
+        ok(&patch(&reads, original, key).await);
+        if !lost_channel {
+            reads.demote("1002").await;
+        }
+        let before = state(&reads).await;
+        gate.release();
 
-    let replay = held.await.unwrap();
-    ok(&replay);
-    assert_eq!(replay.json()["note"], "seed");
-    assert_unchanged(&reads, before).await;
-}
-
-/// The same initially-fresh race remains a replay when the watched-channel
-/// cache disappears before strict validation runs.
-#[tokio::test]
-async fn concurrently_recorded_fixed_patch_replays_after_watched_channel_loss() {
-    let _serial = LOOKUP_GATE_TESTS.lock().await;
-    let reads = Arc::new(Reads::with_logins().await);
-    let original = timing(reads.version().await, "21:30", "seed");
-    let key = "fixed-race-channel";
-    let gate = FixedPatchLookupGate::install_lost_channel(key, "kalos-four");
-    let held = spawn_patch(&reads, original.clone(), key);
-    gate.reached().await;
-
-    ok(&patch(&reads, original, key).await);
-    let before = state(&reads).await;
-    gate.release();
-
-    let replay = held.await.unwrap();
-    ok(&replay);
-    assert_eq!(replay.json()["note"], "seed");
-    assert_unchanged(&reads, before).await;
+        let replay = held.await.unwrap();
+        ok(&replay);
+        assert_eq!(replay.json()["note"], "seed", "{key}");
+        assert_unchanged(&reads, before).await;
+    }
 }
 
 /// A key that is still unseen after the same boundary never receives the
@@ -288,20 +279,7 @@ async fn fixed_patch_replay_canonicalizes_explicit_expectation_order() {
 async fn fixed_patch_rejects_a_pre_fix_derived_digest_key() {
     let reads = Reads::new().await;
     let now = Utc.with_ymd_and_hms(2026, 9, 29, 4, 0, 0).unwrap();
-    let policy = SchedulePolicy::new(
-        ReminderPolicy {
-            zone: chrono_tz::Asia::Kuala_Lumpur,
-            ping_time: NaiveTime::from_hms_opt(9, 0, 0).unwrap(),
-            countdowns: vec![60, 15],
-        },
-        Weekday::Thu,
-        NaiveTime::MIN,
-    );
-    let mut service = SchedulerService::new(
-        reads.store.clone(),
-        RandomIds,
-        ApiClock(Arc::new(move || now)),
-    );
+    let mut service = scheduler(&reads.store, now);
     let old_request = FixedEditRequest {
         fixed_id: "f-kalos".into(),
         edit: FixedEdit {
@@ -316,7 +294,7 @@ async fn fixed_patch_rejects_a_pre_fix_derived_digest_key() {
             Origin::new(Actor::admin("token"), Surface::AdminPortal)
                 .with_request_id("fixed-legacy-derived"),
         )
-        .apply_fixed_edit(&old_request, &directory, &policy)
+        .apply_fixed_edit(&old_request, &directory, &policy())
         .await
         .unwrap();
     let before = state(&reads).await;

@@ -98,7 +98,7 @@ async fn discord_sessions_show_named_roles_access_and_the_limits_row() {
 
 #[tokio::test]
 async fn an_unavailable_role_directory_is_null_not_an_empty_list() {
-    let reads = Reads::with_logins_role_directory_connected(false).await;
+    let reads = Reads::build(|b| (b.logins, b.role_directory_connected) = (true, false)).await;
     cara_with_roles(&reads).await;
     let (cookie, _) = reads.discord_session(1003, "Cara").await;
     let value = me(&reads, &[("Cookie", &cookie)]).await;

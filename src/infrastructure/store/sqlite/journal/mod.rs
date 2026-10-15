@@ -27,7 +27,7 @@ use crate::domain::notify::{
 use crate::domain::time::{from_iso, to_iso};
 use crate::infrastructure::store::Written;
 
-fn backend(error: sqlx::Error) -> JournalError {
+pub(super) fn backend(error: sqlx::Error) -> JournalError {
     JournalError::Backend(error.to_string())
 }
 
@@ -229,7 +229,7 @@ async fn suppress_natives(
 }
 
 /// Release every target and retire the attempt with `actor` and `reason`.
-async fn release_and_retire(
+pub(super) async fn release_and_retire(
     tx: &mut SqliteConnection,
     attempt: &AttemptId,
     actor: &str,
@@ -270,13 +270,14 @@ async fn release_and_retire(
 
 impl DeliveryJournal for SqliteStore {
     async fn load_view(&self) -> Result<ActiveClaims, JournalError> {
+        let mut conn = self.reader().await.map_err(backend)?;
         let rows = sqlx::query(
             "SELECT t.binding_type, t.key_primary, t.key_secondary FROM delivery_attempt_targets t
              JOIN delivery_attempts a USING (attempt_id)
              WHERE t.released_at IS NULL AND a.dedupe_active = 1
                AND a.state IN ('intent', 'indeterminate')",
         )
-        .fetch_all(&self.readers)
+        .fetch_all(&mut *conn)
         .await
         .map_err(backend)?;
         let mut held = BTreeSet::new();
@@ -293,7 +294,7 @@ impl DeliveryJournal for SqliteStore {
         &self,
         attempt: &AttemptId,
     ) -> Result<Option<AttemptRecord>, JournalError> {
-        let mut conn = self.readers.acquire().await.map_err(backend)?;
+        let mut conn = self.reader().await.map_err(backend)?;
         let Some(row) = sqlx::query(
             "SELECT state, channel_id, message_id, resolved_by, resolution_reason
              FROM delivery_attempts WHERE attempt_id = ?1",
@@ -327,7 +328,7 @@ impl DeliveryJournal for SqliteStore {
         ordinal: i64,
     ) -> Result<Option<crate::domain::notify::Receipt>, JournalError> {
         let key = crate::domain::notify::DedupeKey::source(source, ordinal);
-        let mut conn = self.readers.acquire().await.map_err(backend)?;
+        let mut conn = self.reader().await.map_err(backend)?;
         let row = sqlx::query(
             "SELECT channel_id, message_id FROM delivery_attempts
              WHERE dedupe_scope = 'source' AND dedupe_key = ?1 AND state = 'bound'
@@ -350,7 +351,7 @@ impl DeliveryJournal for SqliteStore {
     }
 
     async fn load_digests(&self) -> Result<DigestLog, JournalError> {
-        let mut conn = self.readers.acquire().await.map_err(backend)?;
+        let mut conn = self.reader().await.map_err(backend)?;
         let last_digest_week = sqlx::query_scalar("SELECT value FROM config WHERE key = ?1")
             .bind(DIGEST_MARKER_KEY)
             .fetch_optional(&mut *conn)
@@ -542,12 +543,12 @@ impl DeliveryJournal for SqliteStore {
 
 impl NoticeOutbox for SqliteStore {
     async fn pending_notices(&self) -> Result<PendingNotices, JournalError> {
-        let mut conn = self.readers.acquire().await.map_err(backend)?;
+        let mut conn = self.reader().await.map_err(backend)?;
         outbox::pending(&mut conn).await
     }
 
     async fn outbox_notices(&self) -> Result<Vec<OutboxNotice>, JournalError> {
-        let mut conn = self.readers.acquire().await.map_err(backend)?;
+        let mut conn = self.reader().await.map_err(backend)?;
         outbox::all(&mut conn).await
     }
 

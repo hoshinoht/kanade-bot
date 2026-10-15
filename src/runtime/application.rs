@@ -5,14 +5,10 @@ use serde::Serialize;
 use crate::{
     api::server,
     cli::{self, Command, healthcheck},
-    import,
 };
 
 use super::{
-    config::{
-        self, BackupConfig, HealthcheckConfig, ImportConfig, RuntimeConfig, ServeConfig,
-        StoreSettings,
-    },
+    config::{self, BackupConfig, HealthcheckConfig, RuntimeConfig, ServeConfig, StoreSettings},
     error::Error,
     restore, serve,
 };
@@ -43,29 +39,10 @@ async fn dispatch(command: Command, environment: &BTreeMap<String, String>) -> R
             )?)
             .await
         }
-        Command::ImportV4(args) => {
-            let config = ImportConfig::from_mapping(environment)?;
-            let options = import::v4::Options {
-                from: args.from,
-                since: args.since,
-                apply: args.apply,
-                refresh_logs: args.refresh_logs,
-            };
-            let report = import::v4::run(&options, &config, import::v4::system_now())
-                .await
-                .map_err(|error| match error {
-                    import::v4::ImportError::Store(_) => {
-                        Error::Unavailable(format!("import v4: {error}"))
-                    }
-                    _ => Error::Configuration(format!("import v4: {error}")),
-                })?;
-            print!("{report}");
-            Ok(())
-        }
         Command::Backup(args) => backup(args, environment).await,
         Command::Restore(options) => {
             let settings = StoreSettings::from_mapping(environment)?;
-            let report = restore::run(&options, &settings, import::v4::system_now()).await?;
+            let report = restore::run(&options, &settings, crate::api::auth::system_now()).await?;
             print!("{report}");
             Ok(())
         }
@@ -87,7 +64,7 @@ async fn backup(
     match args {
         cli::backup::Args::Snapshot { name } => {
             let config = BackupConfig::from_mapping(environment)?;
-            let report = super::backup::run(name, &config, import::v4::system_now()).await?;
+            let report = super::backup::run(name, &config, crate::api::auth::system_now()).await?;
             print!("{report}");
             Ok(())
         }

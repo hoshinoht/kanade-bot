@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { CharacterRow } from '@kanade/api-types';
 import { checkForm, classOptions, dayMonth, IGN_ERROR, invalidField, LEVEL_ERROR, mainLocked, regionLabel, splitCharacters, takenKey } from '../src/characters/roster';
 
-// Invented characters, as the mock seeds them.
+// Invented characters, as the e2e seed has them.
 const row = (id: string, ign: string, role: 'main' | 'alt', retired = false): CharacterRow => ({
   id,
   member_id: '1003',

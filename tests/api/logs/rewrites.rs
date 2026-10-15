@@ -2,7 +2,7 @@ use kanade::domain::model_log::{RewriteKind, RewriteLog, RewriteLogStore, Rewrit
 use serde_json::json;
 
 use super::{ERROR, Logs, ids, utc};
-use crate::schemas::assert_valid;
+use crate::{schemas::assert_valid, support::fields};
 
 const REWRITES: &str = "rewrites.json#/$defs/Rewrites";
 const REWRITE: &str = "rewrites.json#/$defs/Rewrite";
@@ -113,14 +113,8 @@ async fn rewrites_list_newest_first_with_total_facets_and_summary() {
     let over = &all["rows"][0];
     assert_eq!(over["verdict"], "unavailable");
     assert_eq!(over["code"], "budget_exceeded");
-    assert_eq!(
-        (
-            &over["prompt_tokens"],
-            &over["completion_tokens"],
-            &over["reservation"]
-        ),
-        (&json!(300), &json!(112), &json!(287))
-    );
+    let usage = ["prompt_tokens", "completion_tokens", "reservation"];
+    assert_eq!(fields(over, &usage), json!([300, 112, 287]));
     assert_eq!(over["at"], "2026-09-29T02:00:00Z");
     assert!(
         over.get("reasoning_content").is_none(),
@@ -135,9 +129,9 @@ async fn rewrites_list_newest_first_with_total_facets_and_summary() {
         all["summary"],
         json!([
             {"model": "kanata/other", "count": 1, "accepted": 0, "prompt_tokens": 200,
-             "completion_tokens": 8, "reported": 1, "est_ratio": 1.05},
+             "completion_tokens": 8, "reported": 1},
             {"model": "kanata/rewrite", "count": 2, "accepted": 1, "prompt_tokens": 500,
-             "completion_tokens": 120, "reported": 2, "est_ratio": 1.31},
+             "completion_tokens": 120, "reported": 2},
         ])
     );
 }

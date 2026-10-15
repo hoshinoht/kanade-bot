@@ -145,7 +145,7 @@ fn too_long(field: &str, value: Option<&str>, cap: usize) -> Result<(), StoreErr
 }
 
 impl RewriteLog {
-    /// The row shape both stores refuse to break.
+    /// The row shape SQLite refuses to break.
     pub fn check_shape(&self) -> Result<(), StoreError> {
         if !REWRITE_VERDICTS.contains(&self.verdict.as_str()) {
             return Err(StoreError::Constraint(format!(

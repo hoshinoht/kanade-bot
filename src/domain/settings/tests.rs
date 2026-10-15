@@ -13,6 +13,32 @@ fn rows(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
         .collect()
 }
 
+/// `pairs` read over the code defaults.
+fn read(pairs: &[(&str, &str)]) -> Result<RuntimeSettings, SettingsError> {
+    resolve(&rows(pairs), &RuntimeSettings::default())
+}
+
+/// `section`'s stored rows read back over the code defaults.
+fn round_trip(section: &Section) -> RuntimeSettings {
+    let written = encode_checked(section).expect("stored form");
+    let pairs: Vec<(&str, &str)> = written
+        .iter()
+        .map(|(key, value)| (*key, value.as_str()))
+        .collect();
+    read(&pairs).expect("readable")
+}
+
+/// Each of `values` under `key` is refused as a malformed `key`.
+fn refused_under(key: &str, values: &[&str]) {
+    for value in values {
+        let error = read(&[(key, value)]).expect_err("refused");
+        assert!(
+            matches!(&error, SettingsError::Malformed { key: named, .. } if *named == key),
+            "{key} = {value:?}: {error:?}"
+        );
+    }
+}
+
 fn time(hour: u32, minute: u32) -> NaiveTime {
     NaiveTime::from_hms_opt(hour, minute, 0).expect("valid time")
 }
@@ -142,11 +168,7 @@ fn profanity_defaults_check_both_sides_and_stored_rows_are_strict() {
     let stored = |edit: fn(&mut Profanity)| {
         let mut profanity = Profanity::default();
         edit(&mut profanity);
-        let row = serde_json::to_string(&profanity).unwrap();
-        resolve(
-            &rows(&[(keys::PROFANITY, &row)]),
-            &RuntimeSettings::default(),
-        )
+        read(&[(keys::PROFANITY, &serde_json::to_string(&profanity).unwrap())])
     };
     let saved = stored(|p| p.extra_words = vec!["frick".into()]).expect("reads");
     assert_eq!(saved.profanity.extra_words, ["frick"]);
@@ -178,30 +200,21 @@ fn profanity_defaults_check_both_sides_and_stored_rows_are_strict() {
             "a malformed profanity row is refused"
         );
     }
-    assert!(matches!(
-        resolve(
-            &rows(&[(keys::PROFANITY, r#"{"extra_words":[]}"#)]),
-            &RuntimeSettings::default()
-        ),
-        Err(SettingsError::Malformed { .. })
-    ));
+    refused_under(keys::PROFANITY, &[r#"{"extra_words":[]}"#]);
 }
 
 #[test]
 fn v4_encodings_read_as_v4_did() {
-    let settings = resolve(
-        &rows(&[
-            ("day_of_ping_time", "07:30"),
-            ("countdown_minutes", "15;60, 15"),
-            ("extract_enabled", "0"),
-            ("chat_pilot_rate_window_s", "300.0"),
-            ("chat_pilot_global_rate_window_s", "90.5"),
-            ("extract_reasoning", "none"),
-            ("chat_pilot_think", ""),
-            ("extract_model", "  "),
-        ]),
-        &RuntimeSettings::default(),
-    )
+    let settings = read(&[
+        ("day_of_ping_time", "07:30"),
+        ("countdown_minutes", "15;60, 15"),
+        ("extract_enabled", "0"),
+        ("chat_pilot_rate_window_s", "300.0"),
+        ("chat_pilot_global_rate_window_s", "90.5"),
+        ("extract_reasoning", "none"),
+        ("chat_pilot_think", ""),
+        ("extract_model", "  "),
+    ])
     .expect("v4 rows read");
     assert_eq!(settings.pings.day_of_ping_time, time(7, 30));
     assert_eq!(settings.pings.countdown_minutes, [60, 15]);
@@ -218,30 +231,19 @@ fn v4_encodings_read_as_v4_did() {
 
 #[test]
 fn profile_visibility_is_private_by_default_and_deduplicates_in_order() {
-    assert!(
-        RuntimeSettings::default()
-            .persona
-            .profile_visibility
-            .is_empty()
-    );
-    let settings = resolve(
-        &rows(&[(keys::PROFILE_VISIBILITY, "loud,terse,loud")]),
-        &RuntimeSettings::default(),
-    )
-    .expect("visibility list reads");
+    let defaults = RuntimeSettings::default();
+    assert!(defaults.persona.profile_visibility.is_empty());
+    let settings = read(&[(keys::PROFILE_VISIBILITY, "loud,terse,loud")]).expect("reads");
     assert_eq!(settings.persona.profile_visibility, ["loud", "terse"]);
 }
 
 #[test]
 fn role_profiles_default_empty_and_preserve_order() {
     assert!(RuntimeSettings::default().persona.role_profiles.is_empty());
-    let settings = resolve(
-        &rows(&[(
-            keys::ROLE_PROFILES,
-            r#"[{"role_id":"123","profile":"private"},{"role_id":"456","profile":"public"}]"#,
-        )]),
-        &RuntimeSettings::default(),
-    )
+    let settings = read(&[(
+        keys::ROLE_PROFILES,
+        r#"[{"role_id":"123","profile":"private"},{"role_id":"456","profile":"public"}]"#,
+    )])
     .expect("ordered assignments read");
     assert_eq!(
         settings.persona.role_profiles,
@@ -260,34 +262,20 @@ fn role_profiles_default_empty_and_preserve_order() {
 
 #[test]
 fn role_profiles_reject_noncanonical_duplicate_and_oversized_rows() {
+    let too_many = (1..=MAX_ROLE_PROFILE_ASSIGNMENTS + 1)
+        .map(|id| format!(r#"{{"role_id":"{id}","profile":"calm"}}"#))
+        .collect::<Vec<_>>()
+        .join(",");
     for value in [
         r#"[{"role_id":"0123","profile":"calm"}]"#,
         r#"[{"role_id":"0","profile":"calm"}]"#,
         r#"[{"role_id":"123","profile":"../private"}]"#,
         r#"[{"role_id":"123","profile":"calm","name":"Officer"}]"#,
         r#"[{"role_id":"123","profile":"calm"},{"role_id":"123","profile":"bold"}]"#,
+        &format!("[{too_many}]"),
     ] {
-        assert!(
-            resolve(
-                &rows(&[(keys::ROLE_PROFILES, value)]),
-                &RuntimeSettings::default()
-            )
-            .is_err(),
-            "{value}"
-        );
+        assert!(read(&[(keys::ROLE_PROFILES, value)]).is_err(), "{value}");
     }
-    let too_many = (1..=MAX_ROLE_PROFILE_ASSIGNMENTS + 1)
-        .map(|id| format!(r#"{{"role_id":"{id}","profile":"calm"}}"#))
-        .collect::<Vec<_>>()
-        .join(",");
-    let value = format!("[{too_many}]");
-    assert!(
-        resolve(
-            &rows(&[(keys::ROLE_PROFILES, &value)]),
-            &RuntimeSettings::default()
-        )
-        .is_err()
-    );
 }
 
 #[test]
@@ -304,12 +292,8 @@ fn malformed_values_name_their_key() {
         ("v5.attendance_mode", "V5"),
         ("v5.profile_visibility", "../private"),
     ] {
-        let error =
-            resolve(&rows(&[(key, value)]), &RuntimeSettings::default()).expect_err("malformed");
-        assert!(
-            matches!(&error, SettingsError::Malformed { key: named, .. } if *named == key),
-            "{key}: {error:?}"
-        );
+        refused_under(key, &[value]);
+        let error = read(&[(key, value)]).expect_err("malformed");
         assert!(error.to_string().contains(key), "{error}");
     }
 }
@@ -348,12 +332,8 @@ fn schedule_policy_comes_from_settings() {
     assert_eq!(policy.reset_weekday, Weekday::Mon);
     assert_eq!(policy.reset_time, time(2, 0));
     assert_eq!(policy.attendance, AttendancePolicy::V5);
-    assert_eq!(
-        RuntimeSettings::default()
-            .schedule_policy(chrono_tz::UTC)
-            .attendance,
-        AttendancePolicy::V4_COMPAT
-    );
+    let default_policy = RuntimeSettings::default().schedule_policy(chrono_tz::UTC);
+    assert_eq!(default_policy.attendance, AttendancePolicy::V4_COMPAT);
 }
 
 #[test]
@@ -369,16 +349,9 @@ fn self_service_links_need_the_public_portal() {
 
 #[test]
 fn a_zero_member_allowance_is_staff_only_but_the_pool_needs_one() {
-    let defaults = RuntimeSettings::default();
-    let read = resolve(&rows(&[(keys::CHAT_RATE_COUNT, "0")]), &defaults).expect("reads");
-    assert_eq!(read.chatbot.member_rate.count, 0);
-    assert!(matches!(
-        resolve(&rows(&[(keys::CHAT_GLOBAL_RATE_COUNT, "0")]), &defaults),
-        Err(SettingsError::Malformed {
-            key: keys::CHAT_GLOBAL_RATE_COUNT,
-            ..
-        })
-    ));
+    let read_rate = read(&[(keys::CHAT_RATE_COUNT, "0")]).expect("reads");
+    assert_eq!(read_rate.chatbot.member_rate.count, 0);
+    refused_under(keys::CHAT_GLOBAL_RATE_COUNT, &["0"]);
 }
 
 #[test]
@@ -412,37 +385,23 @@ fn toggle_sections_never_write_their_id_lists() {
 
 #[test]
 fn header_generation_time_defaults_to_midnight_round_trips_and_refuses_bad_clocks() {
-    let midnight = chrono::NaiveTime::MIN;
-    assert_eq!(
-        RuntimeSettings::default()
-            .notifications
-            .header_generation_time,
-        midnight
-    );
-    let at = chrono::NaiveTime::from_hms_opt(3, 30, 0).unwrap();
+    let defaults = RuntimeSettings::default().notifications;
+    assert_eq!(defaults.header_generation_time, NaiveTime::MIN);
+    let at = time(3, 30);
     let section = Section::Notifications(Notifications {
         header_generation_time: at,
         ..Notifications::default()
     });
     let written = encode_checked(&section).expect("stored form");
     assert!(written.contains(&(keys::HEADER_GENERATION_TIME, "03:30".to_owned())));
-    let pairs: Vec<(&str, &str)> = written
-        .iter()
-        .map(|(key, value)| (*key, value.as_str()))
-        .collect();
-    let read = resolve(&rows(&pairs), &RuntimeSettings::default()).expect("readable");
-    assert_eq!(read.notifications.header_generation_time, at);
-    for bad in ["", "24:00", "03:60", "noon"] {
-        let error = resolve(
-            &rows(&[(keys::HEADER_GENERATION_TIME, bad)]),
-            &RuntimeSettings::default(),
-        )
-        .expect_err("refused");
-        assert!(
-            matches!(&error, SettingsError::Malformed { key, .. } if *key == keys::HEADER_GENERATION_TIME),
-            "{bad:?}: {error:?}"
-        );
-    }
+    assert_eq!(
+        round_trip(&section).notifications.header_generation_time,
+        at
+    );
+    refused_under(
+        keys::HEADER_GENERATION_TIME,
+        &["", "24:00", "03:60", "noon"],
+    );
 }
 
 #[test]
@@ -459,25 +418,12 @@ fn message_style_round_trips_and_refuses_unknown_text() {
         });
         let written = encode_checked(&section).expect("stored form");
         assert!(written.contains(&(keys::MESSAGE_STYLE, style.as_str().to_owned())));
-        let pairs: Vec<(&str, &str)> = written
-            .iter()
-            .map(|(key, value)| (*key, value.as_str()))
-            .collect();
-        let read = resolve(&rows(&pairs), &RuntimeSettings::default()).expect("readable");
+        let read = round_trip(&section);
         assert_eq!(read.notifications.message_style, style);
         assert!(read.notifications.quiet_mode);
     }
     assert_eq!(MessageStyle::Classic.as_str(), "classic");
     assert_eq!(MessageStyle::Redesigned.as_str(), "redesigned");
-    for bad in ["", "Classic", "REDESIGNED", "fancy", " classic"] {
-        let error = resolve(
-            &rows(&[(keys::MESSAGE_STYLE, bad)]),
-            &RuntimeSettings::default(),
-        )
-        .expect_err("refused");
-        assert!(
-            matches!(&error, SettingsError::Malformed { key, .. } if *key == keys::MESSAGE_STYLE),
-            "{bad:?}: {error:?}"
-        );
-    }
+    let bad = ["", "Classic", "REDESIGNED", "fancy", " classic"];
+    refused_under(keys::MESSAGE_STYLE, &bad);
 }

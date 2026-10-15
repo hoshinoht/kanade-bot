@@ -10,7 +10,6 @@ mod messages;
 #[cfg(test)]
 mod plans;
 mod prune;
-mod refresh;
 mod rewrites;
 
 use chrono::{DateTime, Utc};
@@ -125,6 +124,8 @@ impl ModelLogStore for SqliteStore {
         read: &[ReadMessage],
         at: DateTime<Utc>,
     ) -> Result<bool, StoreError> {
+        #[cfg(any(test, feature = "test-support"))]
+        self.faults.exact_marks()?;
         write_txn!(self, tx, messages::mark_read_exact(&mut tx, read, &at))
     }
 

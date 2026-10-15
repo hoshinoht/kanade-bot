@@ -19,6 +19,8 @@ impl CardIndex for SqliteStore {
         &self,
         message: Id<MessageMarker>,
     ) -> Result<Vec<String>, LookupError> {
+        let lookup = |error: sqlx::Error| LookupError(error.to_string());
+        let mut conn = self.reader().await.map_err(lookup)?;
         sqlx::query_scalar(
             "SELECT run_id FROM delivery_card_runs WHERE message_id = ?1
              UNION
@@ -26,9 +28,9 @@ impl CardIndex for SqliteStore {
              ORDER BY 1",
         )
         .bind(message.get().to_string())
-        .fetch_all(&self.readers)
+        .fetch_all(&mut *conn)
         .await
-        .map_err(|error| LookupError(error.to_string()))
+        .map_err(lookup)
     }
 }
 
@@ -40,6 +42,10 @@ impl ReplayCards for SqliteStore {
         let not_before = to_iso(&not_before).map_err(|error| LookupError(error.to_string()))?;
         // Keep the live CardIndex union intact. The aggregation makes a shared
         // message one read even when it has several historic journal rows.
+        let mut conn = self
+            .reader()
+            .await
+            .map_err(|error| LookupError(error.to_string()))?;
         let rows = sqlx::query(
             r"WITH mapped AS (
                 SELECT d.run_id, d.message_id, a.channel_id, a.resolved_at,
@@ -69,7 +75,7 @@ impl ReplayCards for SqliteStore {
               ORDER BY run_id, message_id",
         )
         .bind(not_before)
-        .fetch_all(&self.readers)
+        .fetch_all(&mut *conn)
         .await
         .map_err(|error| LookupError(error.to_string()))?;
         let mut runs: Vec<ReplayRunCards> = Vec::new();

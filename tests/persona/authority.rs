@@ -9,7 +9,7 @@ use kanade::{
 };
 
 use crate::{
-    oracle::{cases, expected, turn},
+    prompt_cases::{cases, expected, turn},
     support::{pid, prof, profile, tracked},
 };
 

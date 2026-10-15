@@ -9,14 +9,13 @@ use std::sync::Arc;
 
 use axum::{
     Json, Router,
-    extract::rejection::JsonRejection,
     http::StatusCode,
     response::{IntoResponse, Response},
     routing::get,
 };
 use serde::Deserialize;
 
-use super::super::write::{Refusal, bad_body};
+use super::super::write::{Body, Refusal};
 use super::{Module, not_connected};
 use crate::{
     api::{
@@ -60,9 +59,8 @@ pub struct LookupRequest {
 async fn look_up(
     Module(module): Module,
     session: AdminSession,
-    body: Result<Json<LookupRequest>, JsonRejection>,
+    Body(body): Body<LookupRequest>,
 ) -> Reply {
-    let Json(body) = body.map_err(bad_body)?;
     let ign = parse_ign(&body.ign).map_err(|error| Refusal::invalid(error.to_string()))?;
     let world = parse_world(body.world.as_deref().unwrap_or(DEFAULT_WORLD))
         .map_err(|error| Refusal::invalid(error.to_string()))?;

@@ -5,15 +5,22 @@
 //! cap, unlink and the roster hooks, with History rows of status words only
 //! and nothing written to the change history.
 
-use std::sync::{
-    Arc, Mutex,
-    atomic::{AtomicUsize, Ordering},
+use std::{
+    net::SocketAddr,
+    sync::{
+        Arc, Mutex, OnceLock,
+        atomic::{AtomicUsize, Ordering},
+    },
+    time::Duration,
 };
 
 use axum::Router;
 use chrono::TimeDelta;
 use kanade::{
-    api::admin::config::{ConfigDesk, ConfigFacts, ConfigInputs},
+    api::{
+        admin::config::{ConfigDesk, ConfigFacts, ConfigInputs},
+        auth::Clock,
+    },
     domain::{
         chardata::NOTICE_VERSION,
         settings::{RuntimeSettings, SettingsChangeQuery, SettingsStore},
@@ -21,14 +28,15 @@ use kanade::{
     infrastructure::{
         character_data::{CharacterData, ConfirmOutcome, RosterSide, Timing},
         nexon::{ApiKey, NexonClient},
-        store::MemoryCharData,
+        scouter::{Estimates, ScouterClient},
+        store::SqliteCharData,
     },
 };
 use serde_json::{Value, json};
 
 use crate::{
     reads::{CharacterDataMaker, ConfigMaker, Reads},
-    support::{ADMIN_HOST, send},
+    support::{ADMIN_HOST, fields, send},
 };
 
 const LINK: &str = "character_data.json#/$defs/CharacterLink";
@@ -114,30 +122,53 @@ pub(crate) fn config() -> ConfigMaker {
 
 /// The module with a key (the fake's address) or without one; the service
 /// is handed back for the member's confirmation (S3's Discord side).
-fn module(
-    nexon: Option<std::net::SocketAddr>,
-    slot: Arc<std::sync::OnceLock<Arc<CharacterData>>>,
+async fn module(
+    nexon: Option<SocketAddr>,
+    slot: Arc<OnceLock<Arc<CharacterData>>>,
 ) -> CharacterDataMaker {
-    skewed(nexon, slot, Arc::default())
+    skewed(nexon, slot, Arc::default()).await
 }
 
 /// [`module`] on the pinned clock moved by `skew` (the lookup spacing).
-pub(crate) fn skewed(
-    nexon: Option<std::net::SocketAddr>,
-    slot: Arc<std::sync::OnceLock<Arc<CharacterData>>>,
+pub(crate) async fn skewed(
+    nexon: Option<SocketAddr>,
+    slot: Arc<OnceLock<Arc<CharacterData>>>,
     skew: Arc<Mutex<TimeDelta>>,
 ) -> CharacterDataMaker {
+    maker(
+        Arc::new(SqliteCharData::open_temp().await),
+        nexon,
+        None,
+        skew,
+        slot,
+    )
+}
+
+/// The module as serve composes it over `file`, handing its service to
+/// `slot`: the fake Open API at `nexon` and the scouter at `scouter` (with
+/// its client timeout) when given, on the pinned clock moved by `skew`.
+pub(crate) fn maker(
+    file: Arc<SqliteCharData>,
+    nexon: Option<SocketAddr>,
+    scouter: Option<(SocketAddr, Duration)>,
+    skew: Arc<Mutex<TimeDelta>>,
+    slot: Arc<OnceLock<Arc<CharacterData>>>,
+) -> CharacterDataMaker {
     Box::new(move |store, clock| {
-        let service = Arc::new(CharacterData::new(
-            Arc::new(MemoryCharData::new()),
-            store as Arc<dyn RosterSide>,
-            nexon.map(|address| NexonClient::plain(address, ApiKey::new("invented-key"))),
-            Arc::new(move || clock() + *skew.lock().unwrap()),
-            Timing {
-                spacing: std::time::Duration::from_millis(1),
-                rate_limit_unit: std::time::Duration::from_millis(1),
-            },
-        ));
+        let clock: Clock = Arc::new(move || clock() + *skew.lock().unwrap());
+        let nexon = nexon.map(|address| NexonClient::plain(address, ApiKey::new("invented-key")));
+        let timing = Timing {
+            spacing: Duration::from_millis(1),
+            rate_limit_unit: Duration::from_millis(1),
+        };
+        let roster = store as Arc<dyn RosterSide>;
+        let mut service = CharacterData::new(file, roster, nexon, Arc::clone(&clock), timing);
+        if let Some((address, timeout)) = scouter {
+            let url = format!("http://{address}");
+            let client = ScouterClient::new(&url).unwrap().with_timeout(timeout);
+            service = service.with_estimates(Estimates::new(client, url, clock));
+        }
+        let service = Arc::new(service);
         slot.set(Arc::clone(&service)).ok().unwrap();
         service
     })
@@ -145,12 +176,10 @@ pub(crate) fn skewed(
 
 /// The module over the fake Open API at `nexon` (and the config API when
 /// `config`): the reads and the service, for the member's confirmation.
-async fn on(
-    nexon: std::net::SocketAddr,
-    config: Option<ConfigMaker>,
-) -> (Reads, Arc<CharacterData>) {
-    let slot = Arc::new(std::sync::OnceLock::new());
-    let reads = Reads::with_character_data(config, module(Some(nexon), Arc::clone(&slot))).await;
+async fn on(nexon: SocketAddr, config: Option<ConfigMaker>) -> (Reads, Arc<CharacterData>) {
+    let slot = Arc::new(OnceLock::new());
+    let module = module(Some(nexon), Arc::clone(&slot)).await;
+    let reads = Reads::with_character_data(config, module).await;
     (reads, slot.get().unwrap().clone())
 }
 
@@ -219,7 +248,7 @@ async fn config_has_no_health_block_while_off() {
 #[tokio::test]
 async fn without_a_key_links_are_refused_and_health_says_no_key() {
     let slot = Arc::default();
-    let reads = Reads::with_character_data(Some(config()), module(None, slot)).await;
+    let reads = Reads::with_character_data(Some(config()), module(None, slot).await).await;
     let answer = created(&reads, json!({"ign": IGN})).await;
     assert_eq!(answer["link"], Value::Null, "no link asked without a key");
     let id = answer["id"].as_str().unwrap().to_owned();
@@ -261,12 +290,8 @@ async fn an_admin_request_is_pending_until_the_member_confirms() {
         .unwrap();
     let asked = reads.read(&link(&id), LINK).await;
     assert_eq!(
-        (
-            &asked["state"],
-            &asked["version"],
-            &asked["requested_by"]["kind"]
-        ),
-        (&json!("pending"), &json!(1), &json!("admin"))
+        fields(&asked, &["state", "version", "requested_by/kind"]),
+        json!(["pending", 1, "admin"])
     );
     assert_eq!(calls.load(Ordering::SeqCst), 0, "a create calls nothing");
     // Withdrawn, so the explicit request below starts from no link.
@@ -433,7 +458,7 @@ async fn a_lookup_shows_nexon_data_once_and_stores_nothing() {
     let slot = Arc::new(std::sync::OnceLock::new());
     let reads = Reads::with_character_data(
         Some(config()),
-        skewed(Some(address), Arc::clone(&slot), Arc::clone(&skew)),
+        skewed(Some(address), Arc::clone(&slot), Arc::clone(&skew)).await,
     )
     .await;
     let later = |seconds| *skew.lock().unwrap() += TimeDelta::seconds(seconds);

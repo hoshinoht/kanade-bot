@@ -369,16 +369,17 @@ fn knowledge_over_the_file_cap_fails_the_whole_load() {
     );
 }
 
+/// `Personas/` holding only the tracked `kanade` bundle.
+fn personas_root(temp: &Temp) -> PathBuf {
+    let bundle = temp.write("Personas/bundles/kanade.yaml", "");
+    fs::copy(repo("config/personas/bundles/kanade.yaml"), bundle).expect("bundle");
+    temp.0.join("Personas")
+}
+
 #[test]
 fn personas_fall_back_to_tracked_kanade_without_private_files() {
     let temp = Temp::new();
-    let root = temp.0.join("Personas");
-    fs::create_dir_all(root.join("bundles")).expect("dir");
-    fs::copy(
-        repo("config/personas/bundles/kanade.yaml"),
-        root.join("bundles/kanade.yaml"),
-    )
-    .expect("bundle");
+    let root = personas_root(&temp);
     let load = load_personas(&root, None).expect("personas");
     let active = load.snapshot.active().expect("fallback active");
     assert_eq!(active.bundle.value.id.to_string(), "kanade");
@@ -388,14 +389,8 @@ fn personas_fall_back_to_tracked_kanade_without_private_files() {
 #[test]
 fn personas_list_readable_profiles_but_never_the_example() {
     let temp = Temp::new();
-    let root = temp.0.join("Personas");
-    fs::create_dir_all(root.join("bundles")).expect("dir");
+    let root = personas_root(&temp);
     fs::create_dir_all(root.join("profiles")).expect("dir");
-    fs::copy(
-        repo("config/personas/bundles/kanade.yaml"),
-        root.join("bundles/kanade.yaml"),
-    )
-    .expect("bundle");
     fs::copy(
         repo("config/personas/catalog.example.yaml"),
         root.join("catalog.yaml"),

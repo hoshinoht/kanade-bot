@@ -1,6 +1,5 @@
 //! Scheduler store and delivery-journal adapters. SQLite is the production
-//! store; the in-memory store and the conformance suites every store must
-//! pass are test support.
+//! store; conformance suites run against SQLite in test support.
 
 pub mod auth_audit;
 mod history;
@@ -42,8 +41,6 @@ pub mod journal_conformance;
 #[cfg(any(test, feature = "test-support"))]
 pub mod members_conformance;
 #[cfg(any(test, feature = "test-support"))]
-mod memory;
-#[cfg(any(test, feature = "test-support"))]
 pub mod model_log_conformance;
 #[cfg(any(test, feature = "test-support"))]
 pub mod outbox_conformance;
@@ -64,9 +61,9 @@ pub mod settings_conformance;
 #[cfg(any(test, feature = "test-support"))]
 pub mod web_sessions_conformance;
 
-#[cfg(any(test, feature = "test-support"))]
-pub use memory::{MemoryCharData, MemoryScheduleStore};
 pub use observer::{RunObserver, WriteObserver, Written};
+#[cfg(any(test, feature = "test-support"))]
+pub use sqlite::TempStoreDir;
 pub use sqlite::{
     BackupManifest, Seal, SqliteCharData, SqliteStore, SqliteStoreConfig, SqliteStoreError,
     SwapOwnership,

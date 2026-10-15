@@ -9,50 +9,25 @@ pub mod fake;
 mod rescan;
 mod rewrites;
 
-use std::sync::Arc;
-
-use chrono::{DateTime, NaiveTime, TimeZone, Utc, Weekday};
-use kanade::{
-    api::write::ApiClock,
-    domain::{
-        drafts::ProposalSource,
-        ids::RandomIds,
-        members::{MemberStore, Roster},
-        model_log::{
-            ChatInteraction, ChatOutcome, ChatRound, ExtractionLog, ExtractionOutcome,
-            ExtractionRefusal, ModelLogStore, WatchedMessage,
-        },
-        proposals::{CardDetails, CardPayload, ChangeKind, ProposalCardStore, ProposedChange},
-        schedule::{ReminderPolicy, SchedulePolicy},
-        scheduler::{ProposalRequest, SchedulerService, Supersede},
+use chrono::{DateTime, Utc};
+use kanade::domain::{
+    drafts::ProposalSource,
+    model_log::{
+        ChatInteraction, ChatOutcome, ChatRound, ExtractionLog, ExtractionOutcome,
+        ExtractionRefusal, ModelLogStore, WatchedMessage,
     },
+    proposals::{CardDetails, CardPayload, ChangeKind, ProposalCardStore, ProposedChange},
+    scheduler::{ProposalRequest, Supersede},
 };
 use serde_json::{Value, json};
 
 use crate::{
-    reads::Reads,
-    support::{ADMIN_HOST, Reply, request, send},
+    reads::{Reads, policy, roster, scheduler, utc},
+    support::{ADMIN_HOST, Reply, request, send, strs},
 };
 
 pub const ORIGIN: (&str, &str) = ("Origin", "https://kanade.test");
 pub const ERROR: &str = "error.json#/$defs/ApiError";
-
-pub fn utc(month: u32, day: u32, hour: u32, minute: u32) -> DateTime<Utc> {
-    Utc.with_ymd_and_hms(2026, month, day, hour, minute, 0)
-        .unwrap()
-}
-
-pub fn policy() -> SchedulePolicy {
-    SchedulePolicy::new(
-        ReminderPolicy {
-            zone: chrono_tz::Asia::Kuala_Lumpur,
-            ping_time: NaiveTime::from_hms_opt(9, 0, 0).unwrap(),
-            countdowns: vec![60, 15],
-        },
-        Weekday::Thu,
-        NaiveTime::MIN,
-    )
-}
 
 pub struct Logs {
     pub reads: Reads,
@@ -273,14 +248,10 @@ async fn seed_chats(reads: &Reads) {
 
 async fn seed_proposal(reads: &Reads) -> String {
     let store = &reads.store;
-    let mut directory = Roster::new();
-    for profile in store.list_members().await.unwrap() {
-        directory.upsert(profile.member);
-    }
+    let mut directory = roster(store).await;
     directory.watch("kalos-four");
     let at = utc(9, 29, 2, 0);
-    let mut service =
-        SchedulerService::new(store.clone(), RandomIds, ApiClock(Arc::new(move || at)));
+    let mut service = scheduler(store, at);
     let proposal = service
         .propose(
             ProposalRequest {
@@ -436,11 +407,6 @@ impl Logs {
 }
 
 /// Row ids of a list response.
-pub fn ids(value: &Value) -> Vec<String> {
-    value["rows"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|row| row["id"].as_str().unwrap().to_owned())
-        .collect()
+pub fn ids(value: &Value) -> Vec<&str> {
+    strs(&value["rows"], "id")
 }

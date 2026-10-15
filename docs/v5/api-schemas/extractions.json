@@ -4,7 +4,7 @@
   "title": "Extraction log, call detail and rescan jobs",
   "$defs": {
     "ExtractionOutcome": {
-      "description": "`identity_leak`: the provider-boundary scanner refused the request (pseudonymization on; nothing was sent). `unknown`: a v4-imported call that maps to no other outcome (never a filter the PWA offers).",
+      "description": "`identity_leak`: the provider-boundary scanner refused the request (pseudonymization on; nothing was sent). `unknown`: a legacy call that maps to no other outcome (never a filter the PWA offers).",
       "enum": ["proposed", "no_change", "failed", "turned_away", "content_blocked", "self_service_link", "identity_leak", "unknown"]
     },
     "ExtractionRow": {
@@ -142,18 +142,13 @@
     "ExtractionSummary": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["model", "count", "prompt_tokens", "completion_tokens", "reported", "est_ratio"],
+      "required": ["model", "count", "prompt_tokens", "completion_tokens", "reported"],
       "properties": {
         "model": { "type": "string" },
         "count": { "type": "integer", "minimum": 0 },
         "prompt_tokens": { "$ref": "#/$defs/TokenCount", "description": "Sum over this model's calls that reported a pair; null when none did." },
         "completion_tokens": { "$ref": "#/$defs/TokenCount" },
-        "reported": { "type": "integer", "minimum": 0, "description": "Calls that reported a usage pair." },
-        "est_ratio": {
-          "description": "Median of reported prompt tokens / prompt estimate over the calls with both (estimate > 0), rounded to two decimals (mean of the two middle values for an even count); null when none.",
-          "type": ["number", "null"],
-          "minimum": 0
-        }
+        "reported": { "type": "integer", "minimum": 0, "description": "Calls that reported a usage pair." }
       }
     },
     "RescanJob": {

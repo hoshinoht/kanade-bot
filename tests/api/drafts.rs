@@ -5,45 +5,25 @@
 
 use std::sync::Arc;
 
-use chrono::{DateTime, NaiveTime, TimeZone, Utc, Weekday};
+use chrono::{DateTime, Utc};
 use kanade::{
-    api::write::ApiClock,
     domain::{
         history::{Actor, ChangeHistory, Origin, Surface},
-        ids::RandomIds,
         notify::NoticeOutbox,
-        schedule::{ReminderPolicy, SchedulePolicy},
-        scheduler::{ScheduleStore, SchedulerService, Scope},
+        scheduler::{ScheduleStore, Scope},
     },
     infrastructure::store::SqliteStore,
 };
 use serde_json::{Value, json};
 
 use crate::{
-    reads::Reads,
+    reads::{Reads, policy, scheduler, utc},
     schemas::assert_valid,
-    support::{ADMIN_HOST, Reply, request, send},
+    support::{ADMIN_HOST, Reply, fields, find, request, send, strs},
 };
 
 const ORIGIN: (&str, &str) = ("Origin", "https://kanade.test");
 const ERROR: &str = "error.json#/$defs/ApiError";
-
-fn utc(month: u32, day: u32, hour: u32, minute: u32) -> DateTime<Utc> {
-    Utc.with_ymd_and_hms(2026, month, day, hour, minute, 0)
-        .unwrap()
-}
-
-fn policy() -> SchedulePolicy {
-    SchedulePolicy::new(
-        ReminderPolicy {
-            zone: chrono_tz::Asia::Kuala_Lumpur,
-            ping_time: NaiveTime::from_hms_opt(9, 0, 0).unwrap(),
-            countdowns: vec![60, 15],
-        },
-        Weekday::Thu,
-        NaiveTime::MIN,
-    )
-}
 
 /// The other admin moves a run on the live schedule.
 async fn moved_upstream(store: &Arc<SqliteStore>, run: &str, to: DateTime<Utc>) {
@@ -57,9 +37,7 @@ async fn moved_upstream_at(
     to: DateTime<Utc>,
     at: DateTime<Utc>,
 ) {
-    let mut service =
-        SchedulerService::new(store.clone(), RandomIds, ApiClock(Arc::new(move || at)));
-    service
+    scheduler(store, at)
         .as_origin(Origin::new(
             Actor::admin("discord:1003"),
             Surface::AdminPortal,
@@ -556,14 +534,6 @@ async fn take_drops_the_operation_and_closed_drafts_are_listed_read_only() {
             "drafts.json#/$defs/DraftList",
         )
         .await;
-    let ids = |list: &Value| -> Vec<String> {
-        list["drafts"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|row| row["id"].as_str().unwrap().to_owned())
-            .collect()
-    };
     assert_eq!(ids(&open), std::slice::from_ref(&taken));
     let (_, closed) = desk
         .get(
@@ -651,42 +621,16 @@ async fn the_graph_lists_own_drafts_spanning_the_asked_records() {
             value
         }
     };
-    let ids = |value: &Value| -> Vec<String> {
-        let mut ids: Vec<String> = value["drafts"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|row| row["id"].as_str().unwrap().to_owned())
-            .collect();
-        ids.sort();
-        ids
-    };
-    let sorted = |list: &[&String]| -> Vec<String> {
-        let mut ids: Vec<String> = list.iter().map(|id| (*id).clone()).collect();
-        ids.sort();
-        ids
-    };
-
     let all = graph(base, later).await;
     assert_eq!(all["head"], json!(later));
-    assert_eq!(ids(&all), sorted(&[&open, &scratch, &merged]));
-    let row = |value: &Value, id: &str| -> Value {
-        value["drafts"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .find(|row| row["id"] == json!(id))
-            .cloned()
-            .unwrap()
-    };
+    let mut every = vec![open.clone(), scratch.clone(), merged.clone()];
+    every.sort();
+    assert_eq!(ids(&all), every);
+    let row = |value: &Value, id: &str| find(&value["drafts"], "id", id).clone();
     let open_row = row(&all, &open);
     assert_eq!(
-        (
-            &open_row["status"],
-            &open_row["closed_at"],
-            &open_row["up_to_date"]
-        ),
-        (&json!("open"), &Value::Null, &json!(false)),
+        fields(&open_row, &["status", "closed_at", "up_to_date"]),
+        json!(["open", null, false]),
         "base moved, no conflict count"
     );
     for (id, status) in [(&scratch, "discarded"), (&merged, "merged")] {
@@ -749,4 +693,14 @@ async fn the_graph_lists_own_drafts_spanning_the_asked_records() {
         .await;
     assert_eq!(other["drafts"].as_array().unwrap().len(), 1);
     assert_eq!(other["drafts"][0]["title"], json!("Not mine"));
+}
+
+/// A draft list's ids, sorted.
+fn ids(list: &Value) -> Vec<String> {
+    let mut ids: Vec<String> = strs(&list["drafts"], "id")
+        .into_iter()
+        .map(str::to_owned)
+        .collect();
+    ids.sort();
+    ids
 }

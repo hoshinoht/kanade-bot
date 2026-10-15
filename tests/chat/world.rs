@@ -1,6 +1,6 @@
-//! One clean seeded scheduler per case, as the v4 host seeds its repo: the
-//! vector's rows with their ids, its channels, roster and catalog, a pinned
-//! clock and the case's uuid sequence.
+//! One clean seeded scheduler per world, as the v4 host seeds its repo: the
+//! input's rows with their ids, its channels, roster and catalog, a pinned
+//! clock and the input's uuid sequence.
 
 use std::collections::BTreeMap;
 
@@ -23,13 +23,13 @@ use kanade::domain::schedule::{
 };
 use kanade::domain::scheduler::{Clock, ScheduleStore, Scope};
 use kanade::infrastructure::llm::identity::PassthroughSession;
-use kanade::infrastructure::store::MemoryScheduleStore;
+use kanade::infrastructure::store::SqliteStore;
 use kanade::infrastructure::store::conformance::meta;
 use serde_json::{Value, json};
 
 use crate::common::{self, SeqIds, TestClock, clock_time, strings, text, utc, weekday, zone};
 
-/// The v4 host's `Settings` defaults the chat vectors leave implicit.
+/// The v4 host's `Settings` defaults the world inputs leave implicit.
 const PING_TIME: &str = "01:00";
 const COUNTDOWNS: [u32; 1] = [60];
 
@@ -102,7 +102,7 @@ impl Directory for Guild {
     }
 }
 
-/// The vectors' stand-in strategy store.
+/// A stand-in strategy store: the listed bosses have a guide.
 pub struct Guides(Vec<String>);
 
 impl StrategyGuides for Guides {
@@ -151,7 +151,7 @@ pub fn catalog(raw: &Value) -> BossTable {
 }
 
 pub struct World {
-    pub service: common::Service,
+    pub service: common::Service<SqliteStore>,
     pub clock: TestClock,
     pub ids: SeqIds,
     pub policy: SchedulePolicy,
@@ -166,7 +166,7 @@ pub struct World {
 
 impl World {
     pub async fn new(input: &Value) -> Self {
-        let (service, clock, ids) = common::service_with_ids(input);
+        let (service, clock, ids) = common::service_over(SqliteStore::open_temp().await, input);
         let zone = zone(input);
         let policy = SchedulePolicy::new(
             ReminderPolicy {
@@ -215,8 +215,8 @@ impl World {
         let mut changes = Vec::new();
         for raw in world["fixed"].as_array().expect("fixed") {
             changes.push(Change::PutFixedRun(FixedRun {
-                // The frozen v4 vectors give the stored owner owner rights,
-                // which v5 keeps only for a staff-pinned owner.
+                // Seeded owners keep owner rights as in v4, which v5 keeps
+                // only for a staff-pinned owner.
                 owner_pinned: true,
                 id: text(&raw["id"]).to_owned(),
                 owner_id: text(&raw["owner_id"]).to_owned(),
@@ -333,10 +333,7 @@ impl World {
     /// The loop's static guild view and the scheduler it proposes through.
     pub fn question_parts(
         &mut self,
-    ) -> (
-        GuildView<'_>,
-        Proposer<'_, MemoryScheduleStore, SeqIds, TestClock>,
-    ) {
+    ) -> (GuildView<'_>, Proposer<'_, SqliteStore, SeqIds, TestClock>) {
         let Self {
             service,
             policy,

@@ -18,7 +18,7 @@ use kanade::domain::schedule::{
     SchedulePolicy,
 };
 use kanade::domain::scheduler::{ScheduleStore, SchedulerService};
-use kanade::infrastructure::store::MemoryScheduleStore;
+use kanade::infrastructure::store::SqliteStore;
 use twilight_model::channel::message::ReactionType;
 use twilight_model::id::Id;
 
@@ -90,16 +90,16 @@ impl TestClock {
 }
 
 pub struct World {
-    pub store: Arc<MemoryScheduleStore>,
+    pub store: Arc<SqliteStore>,
     pub fake: Arc<FakeDiscord>,
     pub alerts: Arc<AlertRecorder>,
     pub clock: TestClock,
 }
 
 impl World {
-    pub fn new() -> Self {
+    pub async fn new() -> Self {
         Self {
-            store: Arc::new(MemoryScheduleStore::new()),
+            store: Arc::new(SqliteStore::open_temp().await),
             fake: Arc::new(FakeDiscord::new()),
             alerts: Arc::new(AlertRecorder::new()),
             clock: TestClock::new(),
@@ -136,7 +136,7 @@ impl World {
     pub fn service_at(
         &self,
         at: DateTime<Utc>,
-    ) -> SchedulerService<Arc<MemoryScheduleStore>, RandomIds, FixedClock> {
+    ) -> SchedulerService<Arc<SqliteStore>, RandomIds, FixedClock> {
         SchedulerService::new(Arc::clone(&self.store), RandomIds, FixedClock(at))
     }
 
@@ -274,9 +274,7 @@ impl World {
         self.fake.seed_message(Id::new(CHANNEL), Id::new(message));
     }
 
-    pub fn card_outbox(
-        &self,
-    ) -> CardOutbox<MemoryScheduleStore, FakeDiscord, RandomIds, AlertRecorder> {
+    pub fn card_outbox(&self) -> CardOutbox<SqliteStore, FakeDiscord, RandomIds, AlertRecorder> {
         CardOutbox(Arc::new(CardDesk::new(
             DeskDeps {
                 store: Arc::clone(&self.store),
@@ -309,7 +307,7 @@ impl World {
         (run, message)
     }
 
-    pub fn replay(&self) -> RsvpReplay<MemoryScheduleStore, FakeDiscord, AlertRecorder> {
+    pub fn replay(&self) -> RsvpReplay<SqliteStore, FakeDiscord, AlertRecorder> {
         RsvpReplay::new(
             Arc::clone(&self.store),
             Arc::clone(&self.fake),
@@ -324,4 +322,9 @@ impl World {
             .await
             .unwrap()
     }
+}
+
+/// How many answers one more pass of `replay` (no live events) applies.
+pub async fn applied(replay: &mut RsvpReplay<SqliteStore, FakeDiscord, AlertRecorder>) -> usize {
+    replay.replay(Id::new(SELF), || true, &mut ()).await.applied
 }

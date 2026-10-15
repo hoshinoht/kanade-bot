@@ -2,8 +2,8 @@
 //! sends the model today. Persona/profile placement in the one system
 //! message, the scheduler voice note sent last on every round, alias and
 //! effort, the routed tool list, and how mentions of the bot and of other
-//! members appear in the source text. Wholly invented fixtures on the loop
-//! vector's synthetic world; the fake provider records every request.
+//! members appear in the source text. Wholly invented fixtures on the
+//! synthetic chat world; the fake provider records every request.
 
 use std::sync::Arc;
 
@@ -28,7 +28,7 @@ use serde_json::{Value, json};
 
 use crate::looping::{Ports, said, settings};
 use crate::model::{Scripted, capabilities, client};
-use crate::support::load;
+use crate::support::world_input;
 use crate::wire::kanade;
 use crate::world::World;
 
@@ -57,7 +57,7 @@ fn words(text: &str) -> FakeAction {
 }
 
 fn input() -> Value {
-    load("loop.json")["cases"][0]["input"].clone()
+    world_input()
 }
 
 fn bundle_with(profile: Option<&str>) -> CompiledPersona {
@@ -387,7 +387,7 @@ async fn every_round_resends_the_system_prompt_and_ends_with_the_voice_note() {
     );
 }
 
-/// Without a live route effort the caller's (vector `low`) is sent.
+/// Without a live route effort the caller's (the fixture's `low`) is sent.
 #[tokio::test]
 async fn the_caller_effort_applies_when_the_route_has_none() {
     let persona = kanade();

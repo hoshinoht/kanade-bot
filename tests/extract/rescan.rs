@@ -2,15 +2,13 @@
 //! before reading, v4 widening, cancellation between bursts, and no duplicate
 //! proposals when handled messages are read again.
 
-use std::sync::Arc;
-
-use kanade::domain::model_log::{ExtractionOutcome, ModelLogStore, RescanStatus};
-use kanade::extract::rescan::{RescanError, RescanRequest, Rescans};
+use kanade::domain::model_log::{ExtractionOutcome, ModelLogStore, RescanJob, RescanStatus};
+use kanade::extract::rescan::{JobView, RescanError, RescanRequest};
 use kanade::infrastructure::llm::FakeAction;
 use serde_json::Value;
 
 use crate::fakes::{
-    CHANNEL, FakeHistory, MY, OTHER, STRANGER, World, after, local, message, nothing, reply,
+    CHANNEL, FakeHistory, Jobs, MY, OTHER, STRANGER, World, after, local, message, nothing, reply,
     rescans as jobs, start,
 };
 
@@ -50,14 +48,26 @@ fn history(
     history
 }
 
+/// The stored row of job `id`.
+async fn job_row(world: &World, id: &str) -> RescanJob {
+    let row = world.store.load_rescan_job(id).await.expect("load");
+    row.expect("job")
+}
+
 async fn status(world: &World, id: &str) -> RescanStatus {
-    world
-        .store
-        .load_rescan_job(id)
+    job_row(world, id).await.status
+}
+
+/// Job `id` as the jobs report it.
+async fn view(jobs: &Jobs, id: &str) -> JobView {
+    jobs.get(id).await.expect("get").expect("job")
+}
+
+/// Submits a portal rescan of `channels` over `window` that must queue.
+async fn queue(jobs: &Jobs, channels: &[&str], window: &str) -> JobView {
+    jobs.submit(request(channels, window))
         .await
-        .expect("load")
-        .expect("job")
-        .status
+        .expect("queued")
 }
 
 #[tokio::test(start_paused = true)]
@@ -80,10 +90,7 @@ async fn a_job_backfills_then_reads_each_channel_in_turn() {
         }],
     );
     let jobs = jobs(&world.extractor, source);
-    let job = jobs
-        .submit(request(&[CHANNEL, OTHER], "week"))
-        .await
-        .expect("queued");
+    let job = queue(&jobs, &[CHANNEL, OTHER], "week").await;
     let id = job.job.id.clone();
     assert_eq!(job.job.status, RescanStatus::Queued);
     assert_eq!(status(&world, &id).await, RescanStatus::Queued);
@@ -91,9 +98,9 @@ async fn a_job_backfills_then_reads_each_channel_in_turn() {
     let _worker = start(&jobs);
     after(1).await;
     assert_eq!(status(&world, &id).await, RescanStatus::Running);
-    let view = jobs.get(&id).await.expect("get").expect("job");
+    let current = view(&jobs, &id).await.current;
     assert_eq!(
-        view.current.as_deref(),
+        current.as_deref(),
         Some(OTHER),
         "first channel done, pacing"
     );
@@ -105,12 +112,7 @@ async fn a_job_backfills_then_reads_each_channel_in_turn() {
         "the second channel's call waited its turn"
     );
 
-    let stored = world
-        .store
-        .load_rescan_job(&id)
-        .await
-        .expect("load")
-        .expect("job");
+    let stored = job_row(&world, &id).await;
     assert_eq!(stored.status, RescanStatus::Done);
     assert!(stored.started_at.is_some() && stored.finished_at.is_some());
     let results = stored.results.as_array().expect("results");
@@ -122,10 +124,7 @@ async fn a_job_backfills_then_reads_each_channel_in_turn() {
     assert_eq!(world.live_proposals().await.len(), 1);
     assert_eq!(world.logs().await.len(), 2);
     assert_eq!(world.outbox.cards.lock().unwrap().len(), 1);
-    assert_eq!(
-        jobs.get(&id).await.expect("get").expect("job").current,
-        None
-    );
+    assert_eq!(view(&jobs, &id).await.current, None);
 }
 
 /// The progress total: each channel's gated, role-holder messages in its
@@ -151,30 +150,18 @@ async fn a_job_counts_each_channel_s_window_when_it_starts() {
             .expect("cache");
     }
     let jobs = jobs(&world.extractor, FakeHistory::default());
-    let id = jobs
-        .submit(request(&[CHANNEL, OTHER], "week"))
-        .await
-        .expect("queued")
-        .job
-        .id;
-    assert!(
-        jobs.get(&id)
-            .await
-            .expect("get")
-            .expect("job")
-            .expected
-            .is_empty()
-    );
+    let id = queue(&jobs, &[CHANNEL, OTHER], "week").await.job.id;
+    assert!(view(&jobs, &id).await.expected.is_empty());
     let _worker = start(&jobs);
     after(1).await;
-    let view = jobs.get(&id).await.expect("get").expect("job");
-    assert_eq!(view.job.status, RescanStatus::Running);
+    let running = view(&jobs, &id).await;
+    assert_eq!(running.job.status, RescanStatus::Running);
     // CHANNEL: this week's scheduling message only; OTHER's empty week widens.
-    assert_eq!(view.expected.len(), 2);
-    assert_eq!(view.expected[CHANNEL], 1);
-    assert_eq!(view.expected[OTHER], 1);
+    assert_eq!(running.expected.len(), 2);
+    assert_eq!(running.expected[CHANNEL], 1);
+    assert_eq!(running.expected[OTHER], 1);
     after(30).await;
-    let done = jobs.get(&id).await.expect("get").expect("job");
+    let done = view(&jobs, &id).await;
     assert_eq!(done.job.status, RescanStatus::Done);
     let results = done.job.results.as_array().expect("results");
     assert_eq!(results[0]["gated"], 1);
@@ -186,26 +173,15 @@ async fn a_job_counts_each_channel_s_window_when_it_starts() {
 async fn a_repeat_request_attaches_and_a_new_window_replaces_the_queued_job() {
     let world = World::new(Vec::new()).await;
     let jobs = jobs(&world.extractor, FakeHistory::default());
-    let first = jobs
-        .submit(request(&[CHANNEL, OTHER], "week"))
-        .await
-        .expect("queued");
+    let first = queue(&jobs, &[CHANNEL, OTHER], "week").await;
     let again = jobs
         .submit(request(&[CHANNEL], "week"))
         .await
         .expect("attached");
     assert_eq!(again.job.id, first.job.id, "a narrower request attaches");
-    let wider = jobs
-        .submit(request(&[CHANNEL], "two_weeks"))
-        .await
-        .expect("queued");
+    let wider = queue(&jobs, &[CHANNEL], "two_weeks").await;
     assert_ne!(wider.job.id, first.job.id);
-    let replaced = world
-        .store
-        .load_rescan_job(&first.job.id)
-        .await
-        .expect("load")
-        .expect("job");
+    let replaced = job_row(&world, &first.job.id).await;
     assert_eq!(replaced.status, RescanStatus::Cancelled);
     assert_eq!(
         replaced.error.as_deref(),
@@ -238,12 +214,7 @@ async fn cancelling_a_running_job_stops_before_the_next_burst() {
         ],
     );
     let jobs = jobs(&world.extractor, source);
-    let id = jobs
-        .submit(request(&[CHANNEL], "week"))
-        .await
-        .expect("queued")
-        .job
-        .id;
+    let id = queue(&jobs, &[CHANNEL], "week").await.job.id;
     let _worker = start(&jobs);
     after(1).await;
     assert_eq!(
@@ -254,12 +225,7 @@ async fn cancelling_a_running_job_stops_before_the_next_burst() {
     assert!(jobs.cancel(&id).await.expect("cancel"));
     after(30).await;
     assert_eq!(world.requests(), 1);
-    let stored = world
-        .store
-        .load_rescan_job(&id)
-        .await
-        .expect("load")
-        .expect("job");
+    let stored = job_row(&world, &id).await;
     assert_eq!(stored.status, RescanStatus::Cancelled);
     assert_eq!(stored.results[0]["cancelled"], Value::Bool(true));
     assert_eq!(stored.results[0]["bursts"], 2);
@@ -281,16 +247,12 @@ async fn reading_handled_messages_again_does_not_duplicate_proposals() {
     let jobs = jobs(&world.extractor, source);
     let _worker = start(&jobs);
 
-    jobs.submit(request(&[CHANNEL], "week"))
-        .await
-        .expect("queued");
+    queue(&jobs, &[CHANNEL], "week").await;
     after(1).await;
     let first = world.live_proposals().await;
     assert_eq!(first.len(), 1);
 
-    jobs.submit(request(&[CHANNEL], "since_reset"))
-        .await
-        .expect("queued");
+    queue(&jobs, &[CHANNEL], "since_reset").await;
     after(1).await;
     let second = world.live_proposals().await;
     assert_eq!(second.len(), 1, "the re-read replaces, never duplicates");
@@ -301,10 +263,7 @@ async fn reading_handled_messages_again_does_not_duplicate_proposals() {
         .approve(&second[0].draft.id)
         .await
         .expect("approved");
-    let view = jobs
-        .submit(request(&[CHANNEL], "week"))
-        .await
-        .expect("queued");
+    let view = queue(&jobs, &[CHANNEL], "week").await;
     after(20).await;
     assert_eq!(
         world.requests(),
@@ -312,12 +271,7 @@ async fn reading_handled_messages_again_does_not_duplicate_proposals() {
         "a rescan re-reads processed messages (v4)"
     );
     assert!(world.live_proposals().await.is_empty(), "already scheduled");
-    let stored = world
-        .store
-        .load_rescan_job(&view.job.id)
-        .await
-        .expect("load")
-        .expect("job");
+    let stored = job_row(&world, &view.job.id).await;
     assert_eq!(stored.results[0]["proposals"], 0);
     assert_eq!(stored.results[0]["dropped"], 1);
     let last = world.logs().await.pop().expect("log");
@@ -334,32 +288,16 @@ async fn an_empty_week_widens_once_and_since_reset_does_not() {
     let jobs = jobs(&world.extractor, source);
     let _worker = start(&jobs);
 
-    let narrow = jobs
-        .submit(request(&[CHANNEL], "since_reset"))
-        .await
-        .expect("queued");
+    let narrow = queue(&jobs, &[CHANNEL], "since_reset").await;
     after(5).await;
-    let stored = world
-        .store
-        .load_rescan_job(&narrow.job.id)
-        .await
-        .expect("load")
-        .expect("job");
+    let stored = job_row(&world, &narrow.job.id).await;
     assert_eq!(stored.results[0]["widened"], false);
     assert_eq!(stored.results[0]["gated"], 0);
     assert_eq!(world.requests(), 0);
 
-    let week = jobs
-        .submit(request(&[CHANNEL], "week"))
-        .await
-        .expect("queued");
+    let week = queue(&jobs, &[CHANNEL], "week").await;
     after(5).await;
-    let stored = world
-        .store
-        .load_rescan_job(&week.job.id)
-        .await
-        .expect("load")
-        .expect("job");
+    let stored = job_row(&world, &week.job.id).await;
     assert_eq!(stored.results[0]["widened"], true);
     assert_eq!(stored.results[0]["gated"], 1);
     assert_eq!(world.requests(), 1);
@@ -377,19 +315,9 @@ async fn outsiders_are_not_read_and_a_model_failure_is_reported_not_raised() {
     );
     let jobs = jobs(&world.extractor, source);
     let _worker = start(&jobs);
-    let id = jobs
-        .submit(request(&[CHANNEL], "week"))
-        .await
-        .expect("queued")
-        .job
-        .id;
+    let id = queue(&jobs, &[CHANNEL], "week").await.job.id;
     after(5).await;
-    let stored = world
-        .store
-        .load_rescan_job(&id)
-        .await
-        .expect("load")
-        .expect("job");
+    let stored = job_row(&world, &id).await;
     assert_eq!(stored.status, RescanStatus::Done);
     assert_eq!(stored.results[0]["stored"], 1, "only role holders count");
     assert_eq!(stored.results[0]["gated"], 1);
@@ -409,14 +337,8 @@ async fn outsiders_are_not_read_and_a_model_failure_is_reported_not_raised() {
 async fn closing_cancels_queued_jobs_and_refuses_new_ones() {
     let world = World::new(Vec::new()).await;
     let jobs = jobs(&world.extractor, FakeHistory::default());
-    let first = jobs
-        .submit(request(&[CHANNEL], "week"))
-        .await
-        .expect("queued");
-    let second = jobs
-        .submit(request(&[OTHER], "week"))
-        .await
-        .expect("queued");
+    let first = queue(&jobs, &[CHANNEL], "week").await;
+    let second = queue(&jobs, &[OTHER], "week").await;
     jobs.close().await;
     for id in [&first.job.id, &second.job.id] {
         assert_eq!(status(&world, id).await, RescanStatus::Cancelled);
@@ -440,19 +362,9 @@ async fn split_conversation(actions: Vec<FakeAction>) -> (World, Value) {
         history(CHANNEL, vec![long("1", 0), long("2", 1)]),
     );
     let _worker = start(&jobs);
-    let id = jobs
-        .submit(request(&[CHANNEL], "week"))
-        .await
-        .expect("queued")
-        .job
-        .id;
+    let id = queue(&jobs, &[CHANNEL], "week").await.job.id;
     after(200).await;
-    let stored = world
-        .store
-        .load_rescan_job(&id)
-        .await
-        .expect("load")
-        .expect("job");
+    let stored = job_row(&world, &id).await;
     assert_eq!(stored.status, RescanStatus::Done);
     let result = stored.results[0].clone();
     (world, result)
@@ -501,47 +413,10 @@ async fn a_piece_still_turned_away_is_reported_unread() {
     assert!(!world.processed("2").await);
 }
 
-/// A private, canonical temp dir as the SQLite store requires.
-struct SqliteDir(std::path::PathBuf);
-
-impl SqliteDir {
-    fn new() -> Self {
-        use std::os::unix::fs::DirBuilderExt;
-        let root = std::fs::canonicalize(std::env::temp_dir()).expect("temp dir");
-        let path = root.join(format!("kanade-rescan-{}", uuid::Uuid::new_v4()));
-        for dir in [path.clone(), path.join("locks")] {
-            std::fs::DirBuilder::new()
-                .mode(0o700)
-                .create(&dir)
-                .expect("private dir");
-        }
-        Self(path)
-    }
-
-    fn config(&self) -> kanade::infrastructure::store::SqliteStoreConfig {
-        kanade::infrastructure::store::SqliteStoreConfig {
-            db_path: self.0.join("rescan.sqlite3"),
-            owner_lock_dir: self.0.join("locks"),
-        }
-    }
-}
-
-impl Drop for SqliteDir {
-    fn drop(&mut self) {
-        let _ = std::fs::remove_dir_all(&self.0);
-    }
-}
-
 #[tokio::test]
 async fn concurrent_submits_queue_one_job() {
-    use kanade::infrastructure::store::SqliteStore;
     let world = World::new(Vec::new()).await;
-    let dir = SqliteDir::new();
-    let store = Arc::new(SqliteStore::open(&dir.config()).await.expect("opens"));
-    let jobs = Rescans::new(
-        world.over_sqlite(store.clone()),
-        Arc::new(FakeHistory::default()),
-    );
+    let jobs = jobs(&world.extractor, FakeHistory::default());
     let (a, b) = tokio::join!(
         jobs.submit(request(&[CHANNEL], "week")),
         jobs.submit(request(&[CHANNEL], "week")),
@@ -553,16 +428,11 @@ async fn concurrent_submits_queue_one_job() {
     );
     assert_eq!(c.expect("c").job.id, d.expect("d").job.id);
     assert_eq!(jobs.queued(), 1);
-    let rows = store.recent_rescan_jobs(10).await.expect("jobs");
+    let rows = world.store.recent_rescan_jobs(10).await.expect("jobs");
     let statuses: Vec<_> = rows.iter().map(|job| job.status).collect();
     assert_eq!(
         statuses,
         [RescanStatus::Queued, RescanStatus::Cancelled],
         "one replacement, no duplicate"
     );
-    drop(jobs);
-    let Ok(store) = Arc::try_unwrap(store) else {
-        panic!("the store has one owner left");
-    };
-    store.close().await.expect("close");
 }

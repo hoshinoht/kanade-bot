@@ -94,7 +94,7 @@ impl RunPrompt {
         format!("{}:{}", self.run_id, self.ask)
     }
 
-    /// The shape both stores enforce (SQLite by CHECK as well).
+    /// The persisted shape, also enforced by SQLite CHECK constraints.
     ///
     /// # Errors
     /// [`StoreError::Constraint`] naming the first bad field.
@@ -147,7 +147,7 @@ pub struct PromptClose {
 }
 
 impl PromptClose {
-    /// The shape both stores refuse before writing anything.
+    /// The shape rejected before a SQLite write.
     ///
     /// # Errors
     /// [`StoreError::Constraint`].

@@ -58,12 +58,7 @@ impl Inbox {
 }
 
 fn ids_of(items: &Value) -> Vec<String> {
-    items
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|item| item["id"].as_str().unwrap().to_owned())
-        .collect()
+    strs(items, "id").into_iter().map(str::to_owned).collect()
 }
 
 #[tokio::test]
@@ -76,80 +71,73 @@ async fn closed_items_list_newest_first_with_outcome_decider_and_history_link() 
         "nothing closed yet"
     );
 
-    inbox
-        .close(
+    use DraftStatus::{Discarded, Expired, Rejected, Withdrawn};
+    let system = |component: &str| Actor::system(component);
+    let (admin, member) = (|id: &str| Actor::admin(id), |id: &str| Actor::member(id));
+    let (enough, needed) = (
+        Some("One weekly is enough."),
+        Some("We need you this week."),
+    );
+    let closes = [
+        (
             &ids.expired_request,
-            DraftStatus::Expired,
-            Actor::system("delivery"),
+            Expired,
+            system("delivery"),
             None,
-            utc(9, 24, 0, 0),
-        )
-        .await;
-    inbox
-        .close(
+            (24, 0, 0),
+        ),
+        (
             &ids.expired_extraction,
-            DraftStatus::Discarded,
-            Actor::system("extraction"),
+            Discarded,
+            system("extraction"),
             Some(SUPERSEDED),
-            utc(9, 28, 5, 0),
-        )
-        .await;
-    inbox
-        .close(
+            (28, 5, 0),
+        ),
+        (
             &ids.expired_chat,
-            DraftStatus::Discarded,
-            Actor::admin("token"),
+            Discarded,
+            admin("token"),
             Some("duplicate"),
-            utc(9, 28, 6, 0),
-        )
-        .await;
-    // The Discord admin approves the move; that retires the other live
-    // r-kalos proposal (closed superseded).
-    let head = inbox.head().await;
-    let version = inbox.item(&ids.moved).await["version"].clone();
-    ok(&inbox
-        .discord(
-            &path(&ids.moved, "approve"),
-            json!({"version": version}),
-            &[],
-        )
-        .await);
-    inbox
-        .close(
+            (28, 6, 0),
+        ),
+        (
             &ids.new_fixed,
-            DraftStatus::Rejected,
-            Actor::admin("tailscale:ops"),
-            Some("One weekly is enough."),
-            utc(9, 29, 5, 0),
-        )
-        .await;
-    inbox
-        .close(
-            &ids.leave,
-            DraftStatus::Withdrawn,
-            Actor::member("1002"),
-            None,
-            utc(9, 29, 5, 10),
-        )
-        .await;
-    inbox
-        .close(
+            Rejected,
+            admin("tailscale:ops"),
+            enough,
+            (29, 5, 0),
+        ),
+        (&ids.leave, Withdrawn, member("1002"), None, (29, 5, 10)),
+        (
             &ids.cancel_chat,
-            DraftStatus::Rejected,
-            Actor::member("1003"),
+            Rejected,
+            member("1003"),
             None,
-            utc(9, 29, 5, 20),
-        )
-        .await;
-    inbox
-        .close(
+            (29, 5, 20),
+        ),
+        (
             &ids.swap,
-            DraftStatus::Rejected,
-            Actor::admin("discord:1003"),
-            Some("We need you this week."),
-            utc(9, 29, 5, 30),
-        )
-        .await;
+            Rejected,
+            admin("discord:1003"),
+            needed,
+            (29, 5, 30),
+        ),
+    ];
+    let mut head = 0;
+    for (n, (id, status, actor, reason, (day, hour, minute))) in closes.into_iter().enumerate() {
+        // After the expiries, the Discord admin approves the move; that
+        // retires the other live r-kalos proposal (closed superseded).
+        if n == 3 {
+            head = inbox.head().await;
+            let version = inbox.item(&ids.moved).await["version"].clone();
+            let approve = path(&ids.moved, "approve");
+            ok(&inbox
+                .discord(&approve, json!({"version": version}), &[])
+                .await);
+        }
+        let at = utc(9, day, hour, minute);
+        inbox.close(id, status, actor, reason, at).await;
+    }
 
     let page = inbox.past_page("").await;
     assert_eq!(page["next_before"], Value::Null);
@@ -184,18 +172,8 @@ async fn closed_items_list_newest_first_with_outcome_decider_and_history_link() 
 
     let moved = by(&ids.moved);
     assert_eq!(
-        (
-            &moved["outcome"],
-            &moved["tab"],
-            &moved["source"],
-            &moved["kind"]
-        ),
-        (
-            &json!("approved"),
-            &json!("extractor"),
-            &json!("extraction"),
-            &json!("move")
-        )
+        fields(&moved, &["outcome", "tab", "source", "kind"]),
+        json!(["approved", "extractor", "extraction", "move"])
     );
     assert_eq!(
         moved["decided_by"],
@@ -212,8 +190,8 @@ async fn closed_items_list_newest_first_with_outcome_decider_and_history_link() 
     assert_eq!(moved["card_url"], Value::Null, "the card was never posted");
     let evidence = moved["evidence"].as_array().unwrap();
     assert_eq!(
-        (&evidence[0]["author"], &evidence[0]["missing"]),
-        (&json!("Alice"), &json!(false))
+        fields(&evidence[0], &["author", "missing"]),
+        json!(["Alice", false])
     );
     // Not cached any more, but the link still names the message.
     assert_eq!(evidence[1]["missing"], true);
@@ -232,18 +210,8 @@ async fn closed_items_list_newest_first_with_outcome_decider_and_history_link() 
 
     let swap = by(&ids.swap);
     assert_eq!(
-        (
-            &swap["outcome"],
-            &swap["tab"],
-            &swap["source"],
-            &swap["kind"]
-        ),
-        (
-            &json!("rejected"),
-            &json!("self_service"),
-            &json!("self_service"),
-            &json!("swap")
-        )
+        fields(&swap, &["outcome", "tab", "source", "kind"]),
+        json!(["rejected", "self_service", "self_service", "swap"])
     );
     assert_eq!(swap["reason"], "We need you this week.");
     assert_eq!(

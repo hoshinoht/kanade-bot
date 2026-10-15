@@ -1,7 +1,8 @@
 <!--
   Add or edit a weekly timing (v4 fixed.html / fixed_rows.html editor). Saving
-  an edit whose timing has amended runs this week or next asks, per run,
-  whether it follows the new timing or keeps its own change (v5). With the
+  an edit that moves the timing's day or time asks, per run the server lists
+  (runs moved off the timing this week or next), whether it follows the new
+  timing or keeps its own change (v5). With the
   modules `roster` and `character_data` on, the editor has Timing and
   Characters tabs (B_FixedReady): the Characters tab (`FixedCharacters`) is
   who each member brings and their readiness; off, it is today's editor
@@ -20,6 +21,7 @@
   import type { Week } from '@kanade/api-types';
   import { fixedReadyRoutes, probeFixedReady } from '../chardata/routes.svelte';
   import FixedCharacters from './FixedCharacters.svelte';
+  import { runsToChoose } from './choices';
 
   let {
     open = $bindable(false),
@@ -112,6 +114,8 @@
   let ownerError = $state('');
   let busy = $state(false);
   let step = $state<'edit' | 'choose'>('edit');
+  /** The runs the server listed for this save's day and time (the choose step's questions). */
+  let listed = $state<FixedRow['runs']>([]);
   let decisions = $state<Record<string, 'update' | 'keep'>>({});
   let seeded: string | null = null;
   /** Pinned when the form opens, so a re-read behind it cannot turn a stale save into an overwrite. */
@@ -139,6 +143,7 @@
       error = '';
       step = 'edit';
       decisions = {};
+      listed = [];
     }
     if (!open) seeded = null;
   });
@@ -158,6 +163,8 @@
   });
 
   const amended = $derived(row?.runs.filter((r) => r.amended) ?? []);
+  /** A save that moves the timing may ask about its amended runs first. */
+  const mayAsk = $derived(Boolean(row) && amended.length > 0 && (Number(weekday) !== row!.weekday || time.trim() !== row!.time));
   const roster = $derived(members.filter((m) => m.bossing));
   /** Default first (it follows the party), then the roster, plus a pinned owner who has since left it. */
   const ownerOptions = $derived.by(() => {
@@ -229,6 +236,7 @@
       note: note.trim() || null,
       // Always sent: '' keeps or restores the default; a member pins them; unchanged is no edit.
       owner_id: pickedOwner,
+      // One per run the server listed for this day and time; none when it listed none.
       decisions,
     };
   }
@@ -262,14 +270,25 @@
     onsaved(result.value, row ? `Saved ${title}.` : `Added ${title}; its runs are on the board.`);
   }
 
-  function submit(event: SubmitEvent) {
+  async function submit(event: SubmitEvent) {
     event.preventDefault();
-    if (step === 'edit' && amended.length > 0) {
-      decisions = Object.fromEntries(amended.map((r) => [r.run_id, decisions[r.run_id] ?? 'keep']));
-      step = 'choose';
+    if (busy) return;
+    if (step === 'choose' || !row) {
+      void save();
       return;
     }
-    void save();
+    busy = true;
+    error = '';
+    const runs = await runsToChoose(row, Number(weekday), time);
+    busy = false;
+    if (!runs.ok) {
+      error = runs.message;
+      return;
+    }
+    decisions = Object.fromEntries(runs.value.map((r) => [r.run_id, decisions[r.run_id] ?? 'keep']));
+    listed = runs.value;
+    if (listed.length > 0) step = 'choose';
+    else void save();
   }
 
   function when(run: FixedRow['runs'][number]): string {
@@ -416,10 +435,10 @@
       <label class="field fixedsheet__note"><span>Note</span><input bind:value={note} /></label>
     {:else}
       <p>
-        {amended.length === 1 ? 'One run from this timing was' : `${amended.length} runs from this timing were`} changed
+        {listed.length === 1 ? 'One run from this timing was' : `${listed.length} runs from this timing were`} changed
         for their week. Choose what each does with the new timing:
       </p>
-      {#each amended as run (run.run_id)}
+      {#each listed as run (run.run_id)}
         <fieldset class="field choice">
           <legend class="label">#{run.short_id} · {when(run)}</legend>
           <label class="choice__opt">
@@ -444,7 +463,7 @@
           <button class="btn" type="button" onclick={onclose}>Cancel</button>
         {/if}
         <button class="btn btn--primary" type="submit" form="{uid}-form" disabled={busy}>
-          {row ? (step === 'edit' && amended.length ? 'Save…' : 'Save changes') : 'Add timing'}
+          {row ? (step === 'edit' && mayAsk ? 'Save…' : 'Save changes') : 'Add timing'}
         </button>
       </footer>
     {/if}
@@ -483,7 +502,7 @@
       <button class="btn" type="button" onclick={close}>Cancel</button>
     {/if}
     <button class="btn btn--primary" type="submit" form="{uid}-form" disabled={busy}>
-      {row ? (step === 'edit' && amended.length ? 'Save…' : 'Save changes') : 'Add timing'}
+      {row ? (step === 'edit' && mayAsk ? 'Save…' : 'Save changes') : 'Add timing'}
     </button>
   {/snippet}
   </Modal>

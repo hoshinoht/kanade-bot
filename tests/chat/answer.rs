@@ -1,4 +1,4 @@
-//! The v5 question loop beyond v4's vectors: dynamic tool rounds and
+//! The v5 question loop beyond v4's behaviour: dynamic tool rounds and
 //! `request_tools`, card delivery failure, the clean retry on a content
 //! filter, identity encoding across rounds, and the chat-log row.
 
@@ -19,14 +19,14 @@ use kanade::domain::model_log::{ChatInteraction, ChatOutcome, ModelLogStore};
 use kanade::domain::proposals::{ChangeKind, ProposedChange};
 use kanade::domain::scheduler::Clock;
 use kanade::domain::scheduler::{ProposalRequest, SchedulerService, Supersede};
-use kanade::infrastructure::llm::governor::{DEFAULT_TOOL_ROUNDS, Governor};
+use kanade::infrastructure::llm::governor::{DEFAULT_TOOL_ROUNDS, Governor, Role};
 use kanade::infrastructure::llm::{ChatRequest, Effort, FakeAction, FakeProvider, Message};
 use serde_json::{Value, json};
 
 use crate::looping::{Ports, V4_TOOL_ROUNDS, said, settings};
 use crate::model::{Scripted, capabilities, client};
 use crate::slow_store::SlowStore;
-use crate::support::load;
+use crate::support::world_input;
 use crate::wire::kanade;
 use crate::world::World;
 
@@ -39,12 +39,35 @@ fn wants(calls: &[(&str, &str, Value)]) -> FakeAction {
     crate::model::wants(MODEL, calls)
 }
 
+/// `propose_move` of hstar to Thu 22:00 (call `m1`).
+fn move_hstar() -> FakeAction {
+    let to = json!({"run_query": "hstar", "to_when": "thu 22:00"});
+    wants(&[("m1", "propose_move", to)])
+}
+
 fn words(text: &str) -> FakeAction {
     FakeAction::Response(said(MODEL, text))
 }
 
 fn filtered() -> FakeAction {
     crate::model::filtered(MODEL)
+}
+
+/// The system prompt and Alvin's `line`.
+fn conversation(line: &str) -> Vec<Message> {
+    vec![
+        Message::System {
+            content: "SYSTEM".into(),
+        },
+        Message::User {
+            content: format!("Alvin tan: {line}"),
+        },
+    ]
+}
+
+/// Routes chat to an external provider.
+fn external(governor: &Governor) {
+    governor.set_external(Role::Chat, true);
 }
 
 struct Run {
@@ -85,6 +108,11 @@ async fn run(
     run_routed(actions, offer, tool_rounds, question, ports, |_| {}).await
 }
 
+/// `run` with eight tool rounds and recording ports.
+async fn ask(actions: Vec<FakeAction>, offer: ToolOffer, question: &str) -> Run {
+    run(actions, offer, 8, question, &Ports::default()).await
+}
+
 /// `route` adjusts the governor before the question.
 async fn run_routed(
     actions: Vec<FakeAction>,
@@ -94,7 +122,7 @@ async fn run_routed(
     ports: &impl kanade::chat::answer::ChatPorts,
     route: impl FnOnce(&Governor),
 ) -> Run {
-    let input = load("loop.json")["cases"][0]["input"].clone();
+    let input = world_input();
     let mut world = World::new(&input).await;
     let provider = Arc::new(Scripted {
         fake: FakeProvider::new(actions),
@@ -108,19 +136,11 @@ async fn run_routed(
         client: &client,
         route: None,
     };
-    let conversation = vec![
-        Message::System {
-            content: "SYSTEM".into(),
-        },
-        Message::User {
-            content: format!("Alvin tan: {question}"),
-        },
-    ];
     let generation = {
         let (guild, mut proposer) = world.question_parts();
         let question = Question {
             ctx: &ctx,
-            conversation,
+            conversation: conversation(question),
             profanity: None,
             reminder: persona.voice_reminder(),
             offer,
@@ -159,16 +179,13 @@ fn the_default_round_cap_is_the_user_decision() {
 
 #[tokio::test(start_paused = true)]
 async fn requested_tools_apply_from_the_next_round() {
-    let ports = Ports::default();
-    let run = run(
+    let run = ask(
         vec![
             wants(&[("r1", "request_tools", json!({"bundle": "run_changes"}))]),
             words("Which night works?"),
         ],
         ToolOffer::dynamic([], false),
-        8,
         "can we move hstar?",
-        &ports,
     )
     .await;
     let generation = &run.generation;
@@ -249,60 +266,52 @@ async fn request_tools_beside_a_posted_write_is_not_charged() {
 
 /// A request that would leave no round offering the bundle and no final
 /// no-tools round is refused (nothing added, nothing charged), and the
-/// final round is still sent.
-async fn refused_without_room(tool_rounds: u8, earlier: usize) -> Run {
-    let mut actions: Vec<FakeAction> = (0..earlier)
-        .map(|n| wants(&[(&format!("l{n}"), "list_bosses", json!({}))]))
-        .collect();
-    actions.push(wants(&[(
-        "r1",
-        "request_tools",
-        json!({"bundle": "strategy"}),
-    )]));
-    actions.push(words("Hard Star, then."));
-    run(
-        actions,
-        ToolOffer::dynamic([], false),
-        tool_rounds,
-        "how do we do hstar?",
-        &Ports::default(),
-    )
-    .await
-}
-
-fn assert_refused_then_answered(run: &Run, tool_rounds: usize) {
-    let generation = &run.generation;
-    assert_eq!(generation.failure, None, "{:?}", generation.failure);
-    let asked = generation.outcomes.last().expect("request_tools outcome");
-    assert_eq!(
-        (asked.outcome.output.as_str(), asked.outcome.error),
-        (NO_ROUND_LEFT, Some(REFUSED))
-    );
-    assert_eq!(run.requests.len(), tool_rounds);
-    assert_eq!(generation.rounds as usize, tool_rounds);
-    assert!(run.requests[tool_rounds - 1].tools.is_empty());
-    assert!(!tool_names(&run.requests[tool_rounds - 2]).contains(&"get_boss_strategy"));
-    assert_eq!(generation.reply, "Hard Star, then.");
-}
-
+/// final round is still sent: in the first of two rounds and in the
+/// penultimate default round.
 #[tokio::test(start_paused = true)]
-async fn request_tools_in_the_first_of_two_rounds_is_refused() {
-    let run = refused_without_room(2, 0).await;
-    assert_refused_then_answered(&run, 2);
-}
-
-#[tokio::test(start_paused = true)]
-async fn request_tools_in_the_penultimate_default_round_is_refused() {
-    let rounds = usize::from(DEFAULT_TOOL_ROUNDS);
-    let run = refused_without_room(DEFAULT_TOOL_ROUNDS, rounds - 2).await;
-    assert_refused_then_answered(&run, rounds);
+async fn request_tools_without_a_round_to_spare_is_refused() {
+    let default = usize::from(DEFAULT_TOOL_ROUNDS);
+    for (tool_rounds, earlier) in [(2, 0), (DEFAULT_TOOL_ROUNDS, default - 2)] {
+        let mut actions: Vec<FakeAction> = (0..earlier)
+            .map(|n| wants(&[(&format!("l{n}"), "list_bosses", json!({}))]))
+            .collect();
+        actions.push(wants(&[(
+            "r1",
+            "request_tools",
+            json!({"bundle": "strategy"}),
+        )]));
+        actions.push(words("Hard Star, then."));
+        let offer = ToolOffer::dynamic([], false);
+        let run = run(
+            actions,
+            offer,
+            tool_rounds,
+            "how do we do hstar?",
+            &Ports::default(),
+        )
+        .await;
+        let (generation, rounds) = (&run.generation, usize::from(tool_rounds));
+        assert_eq!(generation.failure, None, "{tool_rounds}");
+        let asked = generation.outcomes.last().expect("request_tools outcome");
+        assert_eq!(
+            (asked.outcome.output.as_str(), asked.outcome.error),
+            (NO_ROUND_LEFT, Some(REFUSED)),
+            "{tool_rounds}"
+        );
+        assert_eq!(run.requests.len(), rounds, "{tool_rounds}");
+        assert_eq!(generation.rounds as usize, rounds, "{tool_rounds}");
+        assert!(run.requests[rounds - 1].tools.is_empty(), "{tool_rounds}");
+        let offered = tool_names(&run.requests[rounds - 2]);
+        assert!(!offered.contains(&"get_boss_strategy"), "{tool_rounds}");
+        assert_eq!(generation.reply, "Hard Star, then.", "{tool_rounds}");
+    }
 }
 
 /// A call in the same reply as `request_tools` is judged by what that
 /// round offered: the new bundle arrives next round.
 #[tokio::test(start_paused = true)]
 async fn a_tool_requested_in_the_same_reply_waits_for_the_next_round() {
-    let run = run(
+    let run = ask(
         vec![
             wants(&[
                 ("r1", "request_tools", json!({"bundle": "run_changes"})),
@@ -311,9 +320,7 @@ async fn a_tool_requested_in_the_same_reply_waits_for_the_next_round() {
             words("Shall I cancel it?"),
         ],
         ToolOffer::dynamic([], false),
-        8,
         "cancel hstar",
-        &Ports::default(),
     )
     .await;
     let cancel = &run.generation.outcomes[1].outcome;
@@ -339,21 +346,8 @@ async fn a_hanging_card_post_ends_the_question_at_its_deadline() {
         ..Ports::default()
     };
     let started = tokio::time::Instant::now();
-    let run = run(
-        vec![
-            wants(&[(
-                "m1",
-                "propose_move",
-                json!({"run_query": "hstar", "to_when": "thu 22:00"}),
-            )]),
-            words("never reached"),
-        ],
-        ToolOffer::full_set(false),
-        8,
-        "move hstar",
-        &ports,
-    )
-    .await;
+    let actions = vec![move_hstar(), words("never reached")];
+    let run = run(actions, ToolOffer::full_set(false), 8, "move hstar", &ports).await;
     let timeout = settings(&run.input, 8).timeout;
     assert!(started.elapsed() >= timeout && started.elapsed() < timeout * 2);
     let generation = &run.generation;
@@ -383,7 +377,7 @@ async fn a_hanging_card_post_ends_the_question_at_its_deadline() {
 /// arguments (v4 read them with `str(args.get(..) or "")`). Nothing fails.
 #[tokio::test(start_paused = true)]
 async fn unknown_tools_and_schema_invalid_arguments_get_notes_not_failures() {
-    let run = run(
+    let run = ask(
         vec![
             wants(&[
                 ("u1", "delete_run", json!({"run_query": "hstar"})),
@@ -394,9 +388,7 @@ async fn unknown_tools_and_schema_invalid_arguments_get_notes_not_failures() {
             words("Which run did you mean?"),
         ],
         ToolOffer::full_set(false),
-        8,
         "hmm",
-        &Ports::default(),
     )
     .await;
     let generation = &run.generation;
@@ -442,15 +434,13 @@ async fn unknown_tools_and_schema_invalid_arguments_get_notes_not_failures() {
 /// which refuses it with the steering note and runs nothing.
 #[tokio::test(start_paused = true)]
 async fn an_unoffered_tool_is_steered_to_request_tools() {
-    let run = run(
+    let run = ask(
         vec![
             wants(&[("c1", "propose_cancel", json!({"run_query": "hstar"}))]),
             words("Want me to ask for that?"),
         ],
         ToolOffer::dynamic([], false),
-        8,
         "cancel hstar",
-        &Ports::default(),
     )
     .await;
     let outcome = &run.generation.outcomes[0].outcome;
@@ -474,14 +464,7 @@ async fn an_undelivered_card_is_reported_to_the_model_as_not_posted() {
         ..Ports::default()
     };
     let run = run(
-        vec![
-            wants(&[(
-                "m1",
-                "propose_move",
-                json!({"run_query": "hstar", "to_when": "thu 22:00"}),
-            )]),
-            words("Card's up!"),
-        ],
+        vec![move_hstar(), words("Card's up!")],
         ToolOffer::full_set(false),
         V4_TOOL_ROUNDS,
         "move hstar to thu 22:00",
@@ -510,27 +493,28 @@ async fn an_undelivered_card_is_reported_to_the_model_as_not_posted() {
     assert_eq!(chat_outcome(generation), ChatOutcome::Refused);
 }
 
-/// `D-GROUND-WRITE`: a lookup then a posted move keeps the model's card
-/// reply; v4's regrounding swapped its time line for the whole listing.
-#[tokio::test(start_paused = true)]
-async fn a_posted_card_reply_is_not_regrounded_into_the_lookup() {
-    let said = "The **Hard Star** move is up for *Thu 22:00*. It still needs a ✅ before anything changes.\n\nParty: Alvin tan.";
-    let run = run(
+/// A schedule lookup, then the hstar move card, then the model's `reply`.
+async fn lookup_then_move(reply: &str) -> Run {
+    run(
         vec![
             wants(&[("s1", "get_schedule", json!({"scope": "all"}))]),
-            wants(&[(
-                "m1",
-                "propose_move",
-                json!({"run_query": "hstar", "to_when": "thu 22:00"}),
-            )]),
-            words(said),
+            move_hstar(),
+            words(reply),
         ],
         ToolOffer::full_set(false),
         V4_TOOL_ROUNDS,
         "move hstar to thu 22:00",
         &Ports::default(),
     )
-    .await;
+    .await
+}
+
+/// `D-GROUND-WRITE`: a lookup then a posted move keeps the model's card
+/// reply; v4's regrounding swapped its time line for the whole listing.
+#[tokio::test(start_paused = true)]
+async fn a_posted_card_reply_is_not_regrounded_into_the_lookup() {
+    let said = "The **Hard Star** move is up for *Thu 22:00*. It still needs a ✅ before anything changes.\n\nParty: Alvin tan.";
+    let run = lookup_then_move(said).await;
     let generation = &run.generation;
     assert!(generation.outcomes[0].outcome.ok, "the lookup listed runs");
     assert_eq!(generation.posted.len(), 1, "the card was posted");
@@ -547,36 +531,15 @@ async fn a_posted_card_reply_never_carries_copied_context() {
     let copied = format!(
         "{said}\nContext (hidden from members): in 2 days · you haven't answered\nin 2 days · you said yes"
     );
-    let run = run(
-        vec![
-            wants(&[("s1", "get_schedule", json!({"scope": "all"}))]),
-            wants(&[(
-                "m1",
-                "propose_move",
-                json!({"run_query": "hstar", "to_when": "thu 22:00"}),
-            )]),
-            words(&copied),
-        ],
-        ToolOffer::full_set(false),
-        V4_TOOL_ROUNDS,
-        "move hstar to thu 22:00",
-        &Ports::default(),
-    )
-    .await;
+    let run = lookup_then_move(&copied).await;
     assert_eq!(run.generation.posted.len(), 1, "the card was posted");
     assert_eq!(run.generation.reply, said);
 }
 
 #[tokio::test(start_paused = true)]
 async fn a_content_filter_spends_the_clean_retry_then_blocks() {
-    let answered = run(
-        vec![filtered(), words("Here you go.")],
-        ToolOffer::full_set(false),
-        8,
-        "what's on?",
-        &Ports::default(),
-    )
-    .await;
+    let actions = vec![filtered(), words("Here you go.")];
+    let answered = ask(actions, ToolOffer::full_set(false), "what's on?").await;
     let generation = &answered.generation;
     assert_eq!(generation.reply, "Here you go.");
     assert!(generation.clean_retry);
@@ -585,14 +548,8 @@ async fn a_content_filter_spends_the_clean_retry_then_blocks() {
     assert_eq!(clean.messages.len(), 3, "system, question, reminder");
     assert_eq!(chat_outcome(generation), ChatOutcome::Answered);
 
-    let blocked = run(
-        vec![filtered(), filtered()],
-        ToolOffer::full_set(false),
-        8,
-        "what's on?",
-        &Ports::default(),
-    )
-    .await;
+    let actions = vec![filtered(), filtered()];
+    let blocked = ask(actions, ToolOffer::full_set(false), "what's on?").await;
     assert_eq!(
         blocked.generation.failure,
         Some(AnswerFailure::ContentBlocked)
@@ -604,10 +561,9 @@ async fn a_content_filter_spends_the_clean_retry_then_blocks() {
     );
 }
 
+/// An external chat route runs without a permission gate and is labeled.
 #[tokio::test(start_paused = true)]
 async fn external_chat_rounds_tools_and_clean_retry_send_raw_synthetic_data() {
-    use kanade::infrastructure::llm::governor::Role;
-
     let raw = "SyntheticMember 999000111222333444 https://synthetic.invalid/member?id=fixture";
     let question = format!("Check this schedule detail: {raw}");
     let run = run_routed(
@@ -620,9 +576,7 @@ async fn external_chat_rounds_tools_and_clean_retry_send_raw_synthetic_data() {
         8,
         &question,
         &Ports::default(),
-        |governor| {
-            governor.set_external(Role::Chat, true);
-        },
+        external,
     )
     .await;
     assert!(run.generation.failure.is_none());
@@ -651,9 +605,9 @@ async fn external_chat_rounds_tools_and_clean_retry_send_raw_synthetic_data() {
 
 #[tokio::test(start_paused = true)]
 async fn an_external_pre_admission_refusal_does_not_claim_disclosure() {
-    use kanade::infrastructure::llm::governor::{Refused, Role, SessionError, SessionFailure};
+    use kanade::infrastructure::llm::governor::{Refused, SessionError, SessionFailure};
 
-    let input = load("loop.json")["cases"][0]["input"].clone();
+    let input = world_input();
     let mut world = World::new(&input).await;
     let provider = Arc::new(Scripted {
         fake: FakeProvider::new([]),
@@ -671,28 +625,15 @@ async fn an_external_pre_admission_refusal_does_not_claim_disclosure() {
     };
     let generation = {
         let (guild, mut proposer) = world.question_parts();
-        answer(
-            &deps,
-            Question {
-                ctx: &ctx,
-                conversation: vec![
-                    Message::System {
-                        content: "SYSTEM".into(),
-                    },
-                    Message::User {
-                        content: "Alvin tan: synthetic question".into(),
-                    },
-                ],
-                profanity: None,
-                reminder: persona.voice_reminder(),
-                offer: ToolOffer::dynamic([], false),
-                settings: settings(&input, 8),
-            },
-            &guild,
-            &mut proposer,
-            &Ports::default(),
-        )
-        .await
+        let question = Question {
+            ctx: &ctx,
+            conversation: conversation("synthetic question"),
+            profanity: None,
+            reminder: persona.voice_reminder(),
+            offer: ToolOffer::dynamic([], false),
+            settings: settings(&input, 8),
+        };
+        answer(&deps, question, &guild, &mut proposer, &Ports::default()).await
     };
 
     assert!(matches!(
@@ -721,17 +662,13 @@ async fn an_external_pre_admission_refusal_does_not_claim_disclosure() {
 
 #[tokio::test(start_paused = true)]
 async fn an_external_admitted_failure_keeps_the_disclosure_guardrail() {
-    use kanade::infrastructure::llm::governor::Role;
-
     let run = run_routed(
         vec![filtered(), filtered()],
         ToolOffer::dynamic([], false),
         8,
         "synthetic external failure",
         &Ports::default(),
-        |governor| {
-            governor.set_external(Role::Chat, true);
-        },
+        external,
     )
     .await;
     assert_eq!(run.generation.failure, Some(AnswerFailure::ContentBlocked));
@@ -746,20 +683,21 @@ async fn an_external_admitted_failure_keeps_the_disclosure_guardrail() {
     );
 }
 
+/// `list_fixed`, then "Three weeklies." (as `first`'s reply when given).
+async fn weeklies(first: Option<FakeAction>, offer: ToolOffer) -> Run {
+    let first = first.unwrap_or_else(|| wants(&[("l1", "list_fixed", json!({}))]));
+    ask(
+        vec![first, words("Three weeklies.")],
+        offer,
+        "which weeklies?",
+    )
+    .await
+}
+
 #[tokio::test(start_paused = true)]
 async fn a_question_is_logged_as_one_interaction_with_its_rounds() {
-    let run = run(
-        vec![
-            wants(&[("l1", "list_fixed", json!({}))]),
-            words("Three weeklies."),
-        ],
-        ToolOffer::dynamic([Bundle::Strategy], false),
-        8,
-        "which weeklies?",
-        &Ports::default(),
-    )
-    .await;
-    let row = run.row("chat-1", settings(&run.input, 8).reasoning, 1234);
+    let run = weeklies(None, ToolOffer::dynamic([Bundle::Strategy], false)).await;
+    let row = stored_row(&run, "chat-1").await;
     assert_eq!(row.outcome, ChatOutcome::Answered);
     assert_eq!(row.request_count, 2);
     assert_eq!(row.rounds.len(), 2);
@@ -767,9 +705,6 @@ async fn a_question_is_logged_as_one_interaction_with_its_rounds() {
     assert_eq!(row.rounds[0].tool_bundles, ["read", "strategy"]);
     assert_eq!(row.rounds[0].tool_calls[0]["outcome"], "ok");
     assert_eq!(row.rounds[1].response.as_deref(), Some("Three weeklies."));
-    let store = run.world.service.store();
-    store.record_chat(row.clone()).await.expect("recorded");
-    assert_eq!(store.load_chat("chat-1").await.expect("load"), Some(row));
 }
 
 /// `action`'s response with a reported usage pair.
@@ -816,18 +751,9 @@ fn estimate_of(request: &ChatRequest) -> Option<u64> {
 /// completion reserve; a round that reported nothing keeps an unset pair.
 #[tokio::test(start_paused = true)]
 async fn each_round_logs_its_reported_pair_and_prompt_estimate() {
-    let run = run(
-        vec![
-            reported(wants(&[("l1", "list_fixed", json!({}))]), 900, 20),
-            words("Three weeklies."),
-        ],
-        ToolOffer::dynamic([Bundle::Strategy], false),
-        8,
-        "which weeklies?",
-        &Ports::default(),
-    )
-    .await;
-    let row = run.row("chat-usage", settings(&run.input, 8).reasoning, 1);
+    let first = reported(wants(&[("l1", "list_fixed", json!({}))]), 900, 20);
+    let run = weeklies(Some(first), ToolOffer::dynamic([Bundle::Strategy], false)).await;
+    let row = stored_row(&run, "chat-usage").await;
     assert_eq!(run.requests.len(), 2);
     let usage: Vec<_> = row
         .rounds
@@ -858,12 +784,6 @@ async fn each_round_logs_its_reported_pair_and_prompt_estimate() {
         (Some(900), Some(20)),
         "turn totals sum the rounds that reported"
     );
-    let store = run.world.service.store();
-    store.record_chat(row.clone()).await.expect("recorded");
-    assert_eq!(
-        store.load_chat("chat-usage").await.expect("load"),
-        Some(row)
-    );
 }
 
 #[tokio::test(start_paused = true)]
@@ -875,15 +795,9 @@ async fn reasoning_is_logged_per_round_but_never_enters_the_tool_loop() {
     };
     first.reasoning_content = Some("奏".repeat(REASONING_CAP));
     first.reasoning_tokens = Some(32);
-    let run = run(
-        vec![FakeAction::Response(first), words("Three weeklies.")],
-        ToolOffer::dynamic([Bundle::Strategy], false),
-        8,
-        "which weeklies?",
-        &Ports::default(),
-    )
-    .await;
-    let row = run.row("chat-reasoning", settings(&run.input, 8).reasoning, 1);
+    let first = FakeAction::Response(first);
+    let run = weeklies(Some(first), ToolOffer::dynamic([Bundle::Strategy], false)).await;
+    let row = stored_row(&run, "chat-reasoning").await;
     assert_eq!(row.rounds[0].reasoning_tokens, Some(32));
     let text = row.rounds[0].reasoning_content.as_deref().expect("text");
     assert!(text.len() <= REASONING_CAP && text.ends_with(REASONING_TRUNCATED));
@@ -904,24 +818,12 @@ async fn reasoning_is_logged_per_round_but_never_enters_the_tool_loop() {
             assert!(!message.to_string().contains('奏'));
         }
     }
-    let store = run.world.service.store();
-    store.record_chat(row.clone()).await.expect("record");
-    assert_eq!(
-        store.load_chat("chat-reasoning").await.expect("load"),
-        Some(row)
-    );
 }
 
 #[tokio::test(start_paused = true)]
 async fn the_clean_retry_is_a_round_with_its_own_usage() {
-    let run = run(
-        vec![filtered(), reported(words("Here you go."), 300, 12)],
-        ToolOffer::full_set(false),
-        8,
-        "what's on?",
-        &Ports::default(),
-    )
-    .await;
+    let actions = vec![filtered(), reported(words("Here you go."), 300, 12)];
+    let run = ask(actions, ToolOffer::full_set(false), "what's on?").await;
     let rounds = &run.generation.model_rounds;
     assert_eq!(rounds.len(), 1, "the filtered request was never answered");
     assert!(rounds[0].clean);
@@ -962,16 +864,14 @@ async fn logged_request_ids_are_exactly_the_ids_sent_across_rounds_and_retries()
     use kanade::infrastructure::llm::LlmProvider as _;
     // Round 1 answers at once; round 2's first request fails transiently and
     // its retry answers.
-    let run = run(
+    let run = ask(
         vec![
             wants(&[("r1", "list_fixed", json!({}))]),
             FakeAction::Transient,
             words("Three weeklies."),
         ],
         ToolOffer::dynamic([Bundle::Strategy], false),
-        8,
         "which weeklies?",
-        &Ports::default(),
     )
     .await;
     let row = stored_row(&run, "chat-rounds").await;
@@ -990,15 +890,8 @@ async fn logged_request_ids_are_exactly_the_ids_sent_across_rounds_and_retries()
 
     // A filtered request answers no round, so only the session stem finds
     // it; the clean retry is its own round.
-    let run = run_routed(
-        vec![filtered(), words("Here you go.")],
-        ToolOffer::full_set(false),
-        8,
-        "which weeklies?",
-        &Ports::default(),
-        |_| {},
-    )
-    .await;
+    let actions = vec![filtered(), words("Here you go.")];
+    let run = ask(actions, ToolOffer::full_set(false), "which weeklies?").await;
     let row = stored_row(&run, "chat-clean").await;
     let session = row.session_id.clone().expect("session");
     assert_eq!(run.request_ids, numbered(&session, 2));
@@ -1098,7 +991,7 @@ async fn a_logged_call_keeps_its_result_and_wall_time_through_the_store_and_the_
 #[tokio::test(start_paused = true)]
 async fn a_deadline_during_staging_still_reports_and_supersedes_the_proposal() {
     const HSTAR: &str = "a1a1a1a1-0000-4000-8000-000000000001";
-    let input = load("loop.json")["cases"][0]["input"].clone();
+    let input = world_input();
     let mut world = World::new(&input).await;
     let timeout = settings(&input, 8).timeout;
 
@@ -1132,14 +1025,7 @@ async fn a_deadline_during_staging_still_reports_and_supersedes_the_proposal() {
         world.clock.clone(),
     );
     let provider = Arc::new(Scripted {
-        fake: FakeProvider::new([
-            wants(&[(
-                "m1",
-                "propose_move",
-                json!({"run_query": "hstar", "to_when": "thu 22:00"}),
-            )]),
-            words("never reached"),
-        ]),
+        fake: FakeProvider::new([move_hstar(), words("never reached")]),
         caps: capabilities(&input["caps"]),
     });
     let (_governor, client) = client(Some(MODEL), provider.clone());
@@ -1151,14 +1037,7 @@ async fn a_deadline_during_staging_still_reports_and_supersedes_the_proposal() {
     let ports = Ports::default();
     let question = Question {
         ctx: &ctx,
-        conversation: vec![
-            Message::System {
-                content: "SYSTEM".into(),
-            },
-            Message::User {
-                content: "Alvin tan: move hstar to thu 22:00".into(),
-            },
-        ],
+        conversation: conversation("move hstar to thu 22:00"),
         profanity: None,
         reminder: kanade().voice_reminder(),
         offer: ToolOffer::full_set(false),
@@ -1189,20 +1068,18 @@ async fn a_deadline_during_staging_still_reports_and_supersedes_the_proposal() {
             generation.created
         );
     };
-    let (new, _) = store
-        .load_proposal(created)
-        .await
-        .expect("load")
-        .expect("stored");
-    assert_eq!(new.draft.status, DraftStatus::Submitted);
-    let (old, _) = store
-        .load_proposal(&older)
-        .await
-        .expect("load")
-        .expect("stored");
+    let status = async |id: &str| {
+        let (loaded, _) = store
+            .load_proposal(id)
+            .await
+            .expect("load")
+            .expect("stored");
+        (loaded.draft.status, loaded.draft.close_reason)
+    };
+    assert_eq!(status(created).await.0, DraftStatus::Submitted);
     assert_eq!(
-        (old.draft.status, old.draft.close_reason.as_deref()),
-        (DraftStatus::Discarded, Some(SUPERSEDED)),
+        status(&older).await,
+        (DraftStatus::Discarded, Some(SUPERSEDED.to_owned())),
         "supersede ran"
     );
     assert!(ports.posted.lock().unwrap().is_empty() && generation.posted.is_empty());
@@ -1224,27 +1101,4 @@ async fn a_deadline_during_staging_still_reports_and_supersedes_the_proposal() {
         row.rounds[0].tool_calls[0]["created"],
         json!(generation.created)
     );
-}
-
-/// An external chat route runs without a permission gate and is labeled.
-#[tokio::test(start_paused = true)]
-async fn external_unmasked_chat_runs_without_opt_in_and_marks_the_guardrail() {
-    use kanade::infrastructure::llm::governor::Role;
-    let ports = Ports::default();
-    let run = run_routed(
-        vec![words("Nothing on.")],
-        ToolOffer::dynamic([], false),
-        8,
-        "what's on?",
-        &ports,
-        move |governor: &Governor| {
-            governor.set_external(Role::Chat, true);
-        },
-    )
-    .await;
-    assert_eq!(run.generation.reply, "Nothing on.");
-    assert!(run.generation.external_unmasked);
-    assert_eq!(run.generation.route(), "external_unmasked");
-    let row = run.row("chat-x", None, 10);
-    assert_eq!(row.guardrail, json!({"external_unmasked": true}));
 }

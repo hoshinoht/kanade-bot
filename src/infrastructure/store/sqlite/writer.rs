@@ -59,6 +59,8 @@ impl Writer {
     /// Wait for the connection, reconnecting if the last one was orphaned.
     pub(super) async fn lease(&self) -> Result<WriterLease<'_>, LeaseError> {
         let mut slot = self.slot.lock().await;
+        #[cfg(any(test, feature = "test-support"))]
+        let hold = super::hold::ClockHold::new();
         self.identity.verify().map_err(LeaseError::Identity)?;
         let conn = match slot.take() {
             Some(conn) => conn,
@@ -80,6 +82,8 @@ impl Writer {
             slot,
             conn: Some(conn),
             writer: self,
+            #[cfg(any(test, feature = "test-support"))]
+            _hold: hold,
         })
     }
 
@@ -123,6 +127,9 @@ pub(crate) struct WriterLease<'a> {
     slot: MutexGuard<'a, Option<SqliteConnection>>,
     conn: Option<SqliteConnection>,
     writer: &'a Writer,
+    /// Test support: a paused clock stays still while the lease is held.
+    #[cfg(any(test, feature = "test-support"))]
+    _hold: super::hold::ClockHold,
 }
 
 impl WriterLease<'_> {

@@ -10,7 +10,7 @@ async fn rows_19_20_23_terminal_otot_started_and_past_runs_are_not_candidates() 
         (RunStatus::Otot, chrono::TimeDelta::days(1)),
         (RunStatus::Planned, chrono::TimeDelta::seconds(-1)),
     ] {
-        let world = World::new();
+        let world = World::new().await;
         let run = world
             .run(&[MEMBER], world.clock.get() + offset, status)
             .await;
@@ -22,7 +22,7 @@ async fn rows_19_20_23_terminal_otot_started_and_past_runs_are_not_candidates() 
 
 #[tokio::test]
 async fn max_age_does_not_make_an_old_card_evidence() {
-    let world = World::new();
+    let world = World::new().await;
     world.clock.set(now() - chrono::TimeDelta::days(8));
     let run = world.planned(&[MEMBER], 24).await;
     world.card(&run, 400).await;
@@ -33,7 +33,7 @@ async fn max_age_does_not_make_an_old_card_evidence() {
 
 #[tokio::test]
 async fn row_25_old_mapped_card_is_still_read_for_guarded_removal() {
-    let world = World::new();
+    let world = World::new().await;
     world.clock.set(now() - chrono::TimeDelta::days(8));
     let run = world.planned(&[MEMBER], 24).await;
     world.card(&run, 400).await;
@@ -54,7 +54,7 @@ async fn row_25_old_mapped_card_is_still_read_for_guarded_removal() {
 
 #[tokio::test]
 async fn row_23_previous_week_run_is_not_replayed_after_rollover() {
-    let world = World::new();
+    let world = World::new().await;
     world.clock.set(now() - chrono::TimeDelta::days(8));
     let run = world.planned(&[MEMBER], -24).await;
     world.card(&run, 400).await;
@@ -70,7 +70,7 @@ async fn row_23_previous_week_run_is_not_replayed_after_rollover() {
 
 #[tokio::test]
 async fn row_26_card_and_message_budgets_defer_whole_runs() {
-    let world = World::new();
+    let world = World::new().await;
     let run = world.planned(&[MEMBER], 24).await;
     for message in 400..409 {
         world.card(&run, message).await;
@@ -80,7 +80,7 @@ async fn row_26_card_and_message_budgets_defer_whole_runs() {
         0,
         "over-eight-card run is never partly planned"
     );
-    let world = World::new();
+    let world = World::new().await;
     for message in 400..441 {
         let run = world.planned(&[MEMBER], 24).await;
         world.card(&run, message).await;
@@ -92,13 +92,13 @@ async fn row_26_card_and_message_budgets_defer_whole_runs() {
 
 #[tokio::test]
 async fn row_26_per_run_eight_card_cap_skips_whole_run_then_continues_shared_card() {
-    let world = World::new();
+    let world = World::new().await;
     let first = world.planned(&[MEMBER], 24).await;
     let oversized = world.planned(&[MEMBER], 25).await;
     let later = world.planned(&[MEMBER], 26).await;
     world.card(&first, 400).await;
-    world.store.test_map_card_run("400", &oversized);
-    world.store.test_map_card_run("400", &later);
+    world.store.test_map_card_run("400", &oversized).await;
+    world.store.test_map_card_run("400", &later).await;
     for message in 401..409 {
         world.card(&oversized, message).await;
     }
@@ -112,7 +112,7 @@ async fn row_26_per_run_eight_card_cap_skips_whole_run_then_continues_shared_car
 
 #[tokio::test]
 async fn row_26_pass_budget_counts_shared_grouped_cards_and_skips_whole_runs() {
-    let world = World::new();
+    let world = World::new().await;
     let mut runs = Vec::new();
     for hours in 24..=32 {
         runs.push(world.planned(&[MEMBER], hours).await);
@@ -132,12 +132,13 @@ async fn row_26_pass_budget_counts_shared_grouped_cards_and_skips_whole_runs() {
         }
         world
             .store
-            .test_map_card_run(&last.to_string(), &runs[index + 1]);
+            .test_map_card_run(&last.to_string(), &runs[index + 1])
+            .await;
     }
     world.card(&runs[6], 439).await;
     world.card(&runs[7], 440).await;
     world.card(&runs[7], 441).await;
-    world.store.test_map_card_run("400", &runs[8]);
+    world.store.test_map_card_run("400", &runs[8]).await;
     for message in [400, 408, 415, 421, 427, 433, 439] {
         world.react(message, "✅", &[MEMBER]);
     }

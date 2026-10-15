@@ -9,42 +9,32 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use chrono::{DateTime, NaiveTime, TimeDelta, TimeZone, Utc};
-use kanade::bot::delivery::cards::{
-    CardKit, CardRecord, DigestPhraseStore, HeadingRewrite, ReminderCardStore,
-};
+use kanade::bot::delivery::cards::{CardKit, CardRecord, ReminderCardStore};
 use kanade::bot::delivery::{
     HEADER_HORIZON, HeaderPregen, MAX_ATTEMPTS_PER_KEY, MAX_BUSY_RETRIES, MAX_CATCHUP_PER_TICK,
     PREGEN_DEADLINE, PregenReport, SEEN_HORIZON,
 };
 use kanade::chat::nudge::{
     NudgeRewriter, RewriteAttempt, RewriteDetail, RewriteFailure, RewriteOutcome, RewritePrompt,
-    RewriteSink, SharedRewriter, StoreRewriteSink,
+    RewriteSink, StoreRewriteSink,
 };
 use kanade::domain::history::Origin;
 use kanade::domain::ids::RandomIds;
 use kanade::domain::model_log::{RewriteFilter, RewriteLogStore, RewriteStage};
 use kanade::domain::notify::{DedupeKey, DeliveryTarget};
-use kanade::domain::schedule::RunStatus;
-use kanade::infrastructure::store::MemoryScheduleStore;
+use kanade::infrastructure::store::SqliteStore;
 use tokio::sync::watch;
 
 use crate::cards::{
-    Script, Scripted, before_due, created, kit, pregen, redesigned, rewriting, run, seed_day_of,
+    Script, Scripted, before_due, created, kalos, kit, pregen, redesigned, rewriting, seed_day_of,
     shows_phrase, world,
 };
 use crate::scenarios::{self, now, previous_week, week};
-use crate::support::{self, mark_digest_week, seed_digest};
+use crate::support::{self, mark_digest_week, seed_digest, week_phrase};
 
 /// A Kalos countdown firing at `at`; returns its record key.
-async fn countdown_at(store: &MemoryScheduleStore, at: DateTime<Utc>) -> String {
-    let id = run(
-        store,
-        &["XKalos"],
-        &["1001"],
-        at + TimeDelta::minutes(15),
-        RunStatus::Planned,
-    )
-    .await;
+async fn countdown_at(store: &SqliteStore, at: DateTime<Utc>) -> String {
+    let id = kalos(store, &["1001"], at + TimeDelta::minutes(15)).await;
     let mut ids = RandomIds;
     let reminder = support::service(store, &mut ids, now())
         .as_origin(Origin::for_tests())
@@ -58,7 +48,7 @@ async fn countdown_at(store: &MemoryScheduleStore, at: DateTime<Utc>) -> String 
         .to_owned()
 }
 
-async fn heading(store: &MemoryScheduleStore, key: &str) -> Option<String> {
+async fn heading(store: &SqliteStore, key: &str) -> Option<String> {
     store
         .card_record(key)
         .await
@@ -70,16 +60,11 @@ async fn heading(store: &MemoryScheduleStore, key: &str) -> Option<String> {
 struct Rig {
     clock: Arc<Mutex<DateTime<Utc>>>,
     time: Arc<Mutex<NaiveTime>>,
-    worker: HeaderPregen<MemoryScheduleStore>,
+    worker: HeaderPregen<SqliteStore>,
 }
 
 impl Rig {
-    fn new(
-        store: &Arc<MemoryScheduleStore>,
-        cards: &CardKit,
-        at: DateTime<Utc>,
-        time: NaiveTime,
-    ) -> Self {
+    fn new(store: &Arc<SqliteStore>, cards: &CardKit, at: DateTime<Utc>, time: NaiveTime) -> Self {
         let clock = Arc::new(Mutex::new(at));
         let batch_time = Arc::new(Mutex::new(time));
         let now = Arc::clone(&clock);
@@ -99,7 +84,7 @@ impl Rig {
         }
     }
 
-    fn at(&self, at: DateTime<Utc>) -> &HeaderPregen<MemoryScheduleStore> {
+    fn at(&self, at: DateTime<Utc>) -> &HeaderPregen<SqliteStore> {
         *self.clock.lock().unwrap() = at;
         &self.worker
     }
@@ -121,7 +106,7 @@ fn phrasing(rewriter: &Arc<Scripted>) -> CardKit {
 }
 
 /// The cards with a rewrite log, so tests can read each row's stage.
-fn logged(rewriter: &Arc<Scripted>, logs: &Arc<MemoryScheduleStore>) -> CardKit {
+fn logged(rewriter: &Arc<Scripted>, logs: &Arc<SqliteStore>) -> CardKit {
     let mut cards = phrasing(rewriter);
     cards.heading.log = Some(Arc::new(StoreRewriteSink::new(
         Arc::clone(logs),
@@ -130,20 +115,38 @@ fn logged(rewriter: &Arc<Scripted>, logs: &Arc<MemoryScheduleStore>) -> CardKit 
     cards
 }
 
-async fn stages(logs: &MemoryScheduleStore) -> Vec<(String, RewriteStage)> {
-    let mut rows: Vec<_> = logs
-        .list_rewrites(&RewriteFilter {
-            limit: 100,
-            ..RewriteFilter::default()
-        })
+async fn logged_rows(logs: &SqliteStore) -> Vec<kanade::domain::model_log::RewriteLog> {
+    logs.list_rewrites(&RewriteFilter {
+        limit: 100,
+        ..RewriteFilter::default()
+    })
+    .await
+    .expect("list")
+    .items
+}
+
+async fn stages(logs: &SqliteStore) -> Vec<(String, RewriteStage)> {
+    let mut rows: Vec<_> = logged_rows(logs)
         .await
-        .expect("list")
-        .items
         .into_iter()
         .map(|row| (row.context.unwrap_or_default(), row.stage))
         .collect();
     rows.sort();
     rows
+}
+
+/// Runs `worker` until its first pass is a second into a rewrite, then
+/// stops it and waits for it to end.
+async fn stop_mid_rewrite(worker: &HeaderPregen<SqliteStore>) {
+    let (stop, stopped) = watch::channel(false);
+    let running = worker.run(stopped);
+    tokio::pin!(running);
+    tokio::select! {
+        () = &mut running => panic!("the worker ended on its own"),
+        () = tokio::time::sleep(Duration::from_secs(1)) => {}
+    }
+    stop.send_replace(true);
+    running.await;
 }
 
 #[test]
@@ -158,8 +161,8 @@ fn the_window_and_budgets_are_pinned() {
 
 #[tokio::test]
 async fn the_batch_at_the_configured_time_covers_the_next_24_hours_only() {
-    let store = Arc::new(MemoryScheduleStore::new());
-    let logs = Arc::new(MemoryScheduleStore::new());
+    let store = Arc::new(SqliteStore::open_temp().await);
+    let logs = Arc::new(SqliteStore::open_temp().await);
     let batch = kl(10, 21, 0);
     let soon = countdown_at(&store, batch + TimeDelta::hours(23)).await;
     let later = countdown_at(&store, batch + TimeDelta::hours(25)).await;
@@ -198,8 +201,8 @@ async fn the_batch_at_the_configured_time_covers_the_next_24_hours_only() {
 
 #[tokio::test]
 async fn catch_up_rewrites_only_cards_the_last_batch_had_not_seen() {
-    let store = Arc::new(MemoryScheduleStore::new());
-    let logs = Arc::new(MemoryScheduleStore::new());
+    let store = Arc::new(SqliteStore::open_temp().await);
+    let logs = Arc::new(SqliteStore::open_temp().await);
     let batch = kl(10, 3, 0);
     let known = countdown_at(&store, batch + TimeDelta::hours(30)).await;
     let rewriter = Scripted::new(Script::Reply("Waku waku!"));
@@ -219,7 +222,7 @@ async fn catch_up_rewrites_only_cards_the_last_batch_had_not_seen() {
 
 #[tokio::test]
 async fn a_start_after_the_days_batch_time_runs_a_batch_at_once() {
-    let store = Arc::new(MemoryScheduleStore::new());
+    let store = Arc::new(SqliteStore::open_temp().await);
     let key = countdown_at(&store, kl(10, 22, 0)).await;
     let rewriter = Scripted::new(Script::Reply("Waku waku!"));
     let cards = phrasing(&rewriter);
@@ -237,7 +240,7 @@ async fn a_start_after_the_days_batch_time_runs_a_batch_at_once() {
 
 #[tokio::test]
 async fn a_changed_time_applies_from_its_next_occurrence() {
-    let store = Arc::new(MemoryScheduleStore::new());
+    let store = Arc::new(SqliteStore::open_temp().await);
     let rewriter = Scripted::new(Script::Reply("Waku waku!"));
     let rig = Rig::new(&store, &phrasing(&rewriter), kl(10, 20, 0), NaiveTime::MIN);
     assert!(rig.worker.pass().await.batch, "00:00 has passed today");
@@ -255,7 +258,7 @@ async fn a_changed_time_applies_from_its_next_occurrence() {
 
 #[tokio::test]
 async fn a_batch_has_no_cap_but_catch_up_does() {
-    let store = Arc::new(MemoryScheduleStore::new());
+    let store = Arc::new(SqliteStore::open_temp().await);
     let mut keys = Vec::new();
     for hour in 1..=6 {
         keys.push(countdown_at(&store, kl(10, 21, 0) + TimeDelta::hours(hour)).await);
@@ -318,19 +321,13 @@ impl NudgeRewriter for Busy {
 
 #[tokio::test]
 async fn a_busy_permit_retries_on_later_ticks_without_spending_attempts() {
-    let store = Arc::new(MemoryScheduleStore::new());
+    let store = Arc::new(SqliteStore::open_temp().await);
     let key = countdown_at(&store, kl(10, 23, 0)).await;
     let busy = Arc::new(Busy {
         busy: MAX_ATTEMPTS_PER_KEY as usize + 1,
         calls: AtomicUsize::new(0),
     });
-    let cards = CardKit {
-        heading: HeadingRewrite {
-            rewriter: Some(SharedRewriter(busy.clone())),
-            ..rewriting(&Scripted::new(Script::Fail)).heading
-        },
-        ..redesigned(kit(None))
-    };
+    let cards = redesigned(rewriting(&busy));
     let rig = Rig::new(&store, &cards, kl(10, 21, 0), clock(21, 0));
     let first = rig.worker.pass().await;
     assert_eq!((first.batch, first.failed), (true, 1));
@@ -348,7 +345,7 @@ async fn a_busy_permit_retries_on_later_ticks_without_spending_attempts() {
 
 #[tokio::test]
 async fn a_stored_line_is_never_rewritten() {
-    let store = Arc::new(MemoryScheduleStore::new());
+    let store = Arc::new(SqliteStore::open_temp().await);
     let key = countdown_at(&store, kl(10, 23, 0)).await;
     store
         .save_card_record(
@@ -379,7 +376,7 @@ async fn failed_rewrites_store_nothing_and_stop_after_the_attempt_budget() {
         Script::Reply("confirmed!"),
         Script::Reply("20:14"),
     ] {
-        let store = Arc::new(MemoryScheduleStore::new());
+        let store = Arc::new(SqliteStore::open_temp().await);
         let world = world();
         let key = countdown_at(&store, now() - TimeDelta::minutes(1)).await;
         let rewriter = Scripted::new(script);
@@ -404,7 +401,7 @@ async fn failed_rewrites_store_nothing_and_stop_after_the_attempt_budget() {
 
 #[tokio::test]
 async fn without_a_rewriter_or_persona_nothing_is_pregenerated() {
-    let store = Arc::new(MemoryScheduleStore::new());
+    let store = Arc::new(SqliteStore::open_temp().await);
     let world = world();
     let key = countdown_at(&store, now() + TimeDelta::hours(1)).await;
     let rewriter = Scripted::new(Script::Reply("Waku waku!"));
@@ -423,21 +420,13 @@ async fn without_a_rewriter_or_persona_nothing_is_pregenerated() {
 
 #[tokio::test(start_paused = true)]
 async fn a_running_worker_stops_mid_rewrite() {
-    let store = Arc::new(MemoryScheduleStore::new());
+    let store = Arc::new(SqliteStore::open_temp().await);
     let world = world();
     let key = countdown_at(&store, now() + TimeDelta::hours(1)).await;
     let rewriter = Scripted::new(Script::Hang);
     let worker = pregen(&store, &world, &phrasing(&rewriter), now());
-    let (stop, stopped) = watch::channel(false);
-    let running = worker.run(stopped);
-    tokio::pin!(running);
-    tokio::select! {
-        () = &mut running => panic!("the worker ended on its own"),
-        () = tokio::time::sleep(std::time::Duration::from_secs(1)) => {}
-    }
-    assert_eq!(rewriter.calls(), 1, "the first pass is mid-rewrite");
-    stop.send_replace(true);
-    running.await;
+    stop_mid_rewrite(&worker).await;
+    assert_eq!(rewriter.calls(), 1, "the first pass was mid-rewrite");
     assert_eq!(heading(&store, &key).await, None);
 }
 
@@ -445,30 +434,15 @@ async fn a_running_worker_stops_mid_rewrite() {
 /// with its latency) and stores nothing; the key stays the batch's to retry.
 #[tokio::test(start_paused = true)]
 async fn a_rewrite_cut_by_the_worker_stop_is_logged_as_shutdown() {
-    let store = Arc::new(MemoryScheduleStore::new());
-    let logs = Arc::new(MemoryScheduleStore::new());
+    let store = Arc::new(SqliteStore::open_temp().await);
+    let logs = Arc::new(SqliteStore::open_temp().await);
     let world = world();
     let key = countdown_at(&store, now() + TimeDelta::hours(1)).await;
     let rewriter = Scripted::new(Script::Hang);
     let worker = pregen(&store, &world, &logged(&rewriter, &logs), now());
-    let (stop, stopped) = watch::channel(false);
-    let running = worker.run(stopped);
-    tokio::pin!(running);
-    tokio::select! {
-        () = &mut running => panic!("the worker ended on its own"),
-        () = tokio::time::sleep(Duration::from_secs(1)) => {}
-    }
-    stop.send_replace(true);
-    running.await;
+    stop_mid_rewrite(&worker).await;
     assert_eq!(heading(&store, &key).await, None, "nothing stored");
-    let rows = logs
-        .list_rewrites(&RewriteFilter {
-            limit: 10,
-            ..RewriteFilter::default()
-        })
-        .await
-        .expect("list")
-        .items;
+    let rows = logged_rows(&logs).await;
     let cut: Vec<_> = rows
         .iter()
         .map(|row| {
@@ -498,7 +472,7 @@ async fn a_rewrite_cut_by_the_worker_stop_is_logged_as_shutdown() {
 
 /// Stops the worker while logging, i.e. after the model call returned.
 struct StopOnLog {
-    inner: StoreRewriteSink<MemoryScheduleStore>,
+    inner: StoreRewriteSink<SqliteStore>,
     stop: watch::Sender<bool>,
 }
 
@@ -513,8 +487,8 @@ impl RewriteSink for StopOnLog {
 /// before the worker reads the result: the attempt is spent, not retried free.
 #[tokio::test]
 async fn a_failure_finished_before_the_stop_still_counts() {
-    let store = Arc::new(MemoryScheduleStore::new());
-    let logs = Arc::new(MemoryScheduleStore::new());
+    let store = Arc::new(SqliteStore::open_temp().await);
+    let logs = Arc::new(SqliteStore::open_temp().await);
     let world = world();
     let key = countdown_at(&store, now() + TimeDelta::hours(1)).await;
     let rewriter = Scripted::new(Script::Fail);
@@ -526,14 +500,7 @@ async fn a_failure_finished_before_the_stop_still_counts() {
     }));
     let worker = pregen(&store, &world, &cards, now());
     worker.run(stopped).await;
-    let rows = logs
-        .list_rewrites(&RewriteFilter {
-            limit: 10,
-            ..RewriteFilter::default()
-        })
-        .await
-        .expect("list")
-        .items;
+    let rows = logged_rows(&logs).await;
     assert_eq!(rows.len(), 1);
     assert_ne!(rows[0].code.as_deref(), Some("shutdown"), "{:?}", rows[0]);
     assert_eq!(heading(&store, &key).await, None);
@@ -547,8 +514,8 @@ async fn a_failure_finished_before_the_stop_still_counts() {
 
 #[tokio::test]
 async fn before_its_first_batch_a_process_catches_up_only_until_the_batch_time() {
-    let store = Arc::new(MemoryScheduleStore::new());
-    let logs = Arc::new(MemoryScheduleStore::new());
+    let store = Arc::new(SqliteStore::open_temp().await);
+    let logs = Arc::new(SqliteStore::open_temp().await);
     let early = countdown_at(&store, kl(10, 20, 45)).await;
     let late = countdown_at(&store, kl(10, 23, 0)).await;
     let rewriter = Scripted::new(Script::Reply("Waku waku!"));
@@ -576,10 +543,9 @@ async fn before_its_first_batch_a_process_catches_up_only_until_the_batch_time()
 #[tokio::test]
 async fn the_digest_phrase_is_pregenerated_only_for_an_unposted_coming_week() {
     let before_reset = week() - TimeDelta::minutes(1);
-    let digest_key = DedupeKey::native(&[DeliveryTarget::Digest(week())]).expect("digest key");
 
     // Too early: the reset is beyond the horizon.
-    let store = Arc::new(MemoryScheduleStore::new());
+    let store = Arc::new(SqliteStore::open_temp().await);
     let world = world();
     let rewriter = Scripted::new(Script::Reply("Waku waku!"));
     let cards = phrasing(&rewriter);
@@ -593,18 +559,15 @@ async fn the_digest_phrase_is_pregenerated_only_for_an_unposted_coming_week() {
         1
     );
     assert_eq!(
-        store
-            .digest_phrase(digest_key.as_str())
-            .await
-            .expect("phrase"),
+        week_phrase(&*store, week()).await,
         Some("Waku waku!".into())
     );
 
     // A (legacy, phrase-less) digest already posted for that week keeps its
     // line; so does a week the marker already covers.
-    let legacy = Arc::new(MemoryScheduleStore::new());
+    let legacy = Arc::new(SqliteStore::open_temp().await);
     seed_digest(&*legacy, week(), "222", "7001", previous_week()).await;
-    let marked = Arc::new(MemoryScheduleStore::new());
+    let marked = Arc::new(SqliteStore::open_temp().await);
     mark_digest_week(&*marked, week(), week()).await;
     for store in [legacy, marked] {
         assert_eq!(
@@ -614,13 +577,7 @@ async fn the_digest_phrase_is_pregenerated_only_for_an_unposted_coming_week() {
                 ..PregenReport::default()
             }
         );
-        assert_eq!(
-            store
-                .digest_phrase(digest_key.as_str())
-                .await
-                .expect("phrase"),
-            None
-        );
+        assert_eq!(week_phrase(&*store, week()).await, None);
     }
     assert_eq!(rewriter.calls(), 1);
 }
@@ -637,29 +594,23 @@ async fn under_the_classic_style_only_day_of_headings_are_pregenerated() {
         batch: true,
         ..PregenReport::default()
     };
-    let countdowns = Arc::new(MemoryScheduleStore::new());
+    let countdowns = Arc::new(SqliteStore::open_temp().await);
     let countdown = countdown_at(&countdowns, now() + TimeDelta::hours(1)).await;
     assert_eq!(
         pregen(&countdowns, &world, &classic, now()).pass().await,
         idle
     );
     assert_eq!(heading(&countdowns, &countdown).await, None);
-    let digests = Arc::new(MemoryScheduleStore::new());
+    let digests = Arc::new(SqliteStore::open_temp().await);
     let before_reset = week() - TimeDelta::minutes(1);
-    let digest_key = DedupeKey::native(&[DeliveryTarget::Digest(week())]).expect("digest key");
+
     assert_eq!(
         pregen(&digests, &world, &classic, before_reset)
             .pass()
             .await,
         idle
     );
-    assert_eq!(
-        digests
-            .digest_phrase(digest_key.as_str())
-            .await
-            .expect("phrase"),
-        None
-    );
+    assert_eq!(week_phrase(&*digests, week()).await, None);
     assert_eq!(rewriter.calls(), 0, "classic shows neither phrase");
 
     // The same cards once the style is redesigned: both phrases.
@@ -681,7 +632,7 @@ async fn under_the_classic_style_only_day_of_headings_are_pregenerated() {
     assert_eq!(rewriter.calls(), 2);
 
     let day_of = Scripted::new(Script::Reply("Rise and shine, it's {day}!"));
-    let mornings = Arc::new(MemoryScheduleStore::new());
+    let mornings = Arc::new(SqliteStore::open_temp().await);
     seed_day_of(&*mornings).await;
     assert_eq!(
         pregen(&mornings, &world, &rewriting(&day_of), before_due())

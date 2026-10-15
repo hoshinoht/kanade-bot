@@ -21,7 +21,7 @@ use kanade::domain::schedule::{
     ScheduleSnapshot, StatusChange,
 };
 use kanade::domain::settings::MessageStyle;
-use kanade::infrastructure::store::MemoryScheduleStore;
+use kanade::infrastructure::store::SqliteStore;
 
 use super::ZONE;
 use crate::cards::{created, kit, world};
@@ -477,7 +477,7 @@ fn difficulty_marks_label_the_bosses() {
 /// A cancellation made outside the channel, drained by the tick with `kit`:
 /// the run's id and the one post.
 async fn drained_cancel(kit: CardKit) -> (String, OutgoingMessage) {
-    let store = MemoryScheduleStore::new();
+    let store = SqliteStore::open_temp().await;
     let world = world();
     let mut generator = RandomIds;
     let mut service = support::service(&store, &mut generator, now());

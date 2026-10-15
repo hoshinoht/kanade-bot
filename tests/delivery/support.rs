@@ -1,32 +1,20 @@
-//! Stores, fixtures and effect records shared by the delivery tests.
+//! Stores and fixtures shared by the delivery tests.
 
-use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
 use chrono::{DateTime, Utc};
-use kanade::bot::delivery::{
-    DEFAULT_MAX_SENDS_PER_TICK, DeliveryConfig, FixedClock, IdsRef, SendOutcome, SendReport,
-    StoreRef,
-};
+use kanade::bot::delivery::{FixedClock, IdsRef, StoreRef};
 use kanade::bot::events::CardIndex;
-use kanade::bot::transport::{AmbiguousKind, FakeDiscord, Op, Step};
-use kanade::domain::history::Origin;
-use kanade::domain::ids::{IdGenerator, short_id};
-use kanade::domain::members::{Member, PingLevel, Roster};
+use kanade::bot::transport::FakeDiscord;
+use kanade::domain::ids::IdGenerator;
 use kanade::domain::notify::{
-    Claim, DeliveryJournal, DeliveryTarget, DeliveryWarning, DigestInclusion, EffectKind,
-    IntentContent, Lease, NotificationIntent, Receipt,
+    Claim, DeliveryJournal, DeliveryTarget, DigestInclusion, EffectKind, IntentContent, Lease,
+    NotificationIntent, Receipt,
 };
-use kanade::domain::schedule::{
-    NewRun, ReminderPolicy, RunSource, RunStatus, SchedulePolicy, ScheduleSnapshot,
-};
-use kanade::domain::scheduler::{ScheduleStore, SchedulerError, SchedulerService, Scope};
-use kanade::domain::time::isoformat;
+use kanade::domain::schedule::ScheduleSnapshot;
+use kanade::domain::scheduler::{ScheduleStore, SchedulerService, Scope};
 use kanade::infrastructure::store::{SqliteStore, SqliteStoreConfig};
-use serde_json::{Value, json};
 use twilight_model::channel::message::Component;
-
-use crate::common::{SeqIds, clock_time, countdowns, instant, strings, text, utc, weekday, zone};
 
 /// v4's first stub message id.
 pub const FIRST_MESSAGE_ID: u64 = 700_000_000_000_000_001;
@@ -96,23 +84,6 @@ impl TempDir {
     pub async fn open(&self) -> SqliteStore {
         SqliteStore::open(&self.config()).await.expect("open store")
     }
-
-    /// Run `sql` on the store's database behind its back.
-    pub async fn raw(&self, sql: &str) {
-        use sqlx::sqlite::SqliteConnectOptions;
-        use sqlx::{ConnectOptions, Connection};
-
-        let mut conn = SqliteConnectOptions::new()
-            .filename(self.config().db_path)
-            .connect()
-            .await
-            .expect("raw connection");
-        sqlx::raw_sql(sql)
-            .execute(&mut conn)
-            .await
-            .expect("raw sql");
-        conn.close().await.expect("close");
-    }
 }
 
 impl Drop for TempDir {
@@ -121,65 +92,12 @@ impl Drop for TempDir {
     }
 }
 
-/// Run `$f(&store, args..)` against a fresh memory store, then a fresh
-/// SQLite store in a temp directory.
-macro_rules! on_both_stores {
-    ($f:path $(, $arg:expr)* $(,)?) => {{
-        let memory = kanade::infrastructure::store::MemoryScheduleStore::new();
-        $f(&memory $(, $arg)*).await;
-        let dir = $crate::support::TempDir::new();
-        let sqlite = dir.open().await;
-        $f(&sqlite $(, $arg)*).await;
-        sqlite.close().await.expect("close store");
-    }};
-}
-pub(crate) use on_both_stores;
-
-pub fn policy(input: &Value) -> SchedulePolicy {
-    SchedulePolicy::new(
-        ReminderPolicy {
-            zone: zone(input),
-            ping_time: clock_time(&input["ping_time"]),
-            countdowns: countdowns(&input["countdowns"]),
-        },
-        weekday(&input["reset_weekday"]),
-        clock_time(&input["reset_time"]),
-    )
-}
-
-pub fn config(input: &Value) -> DeliveryConfig {
-    DeliveryConfig {
-        instance_id: INSTANCE.into(),
-        policy: policy(input),
-        post_channel_id: input["post_channel_id"].as_str().map(str::to_owned),
-        quiet_mode: false,
-        max_sends_per_tick: DEFAULT_MAX_SENDS_PER_TICK,
-        max_notice_age: kanade::domain::notify::DEFAULT_MAX_NOTICE_AGE,
-        run_lengths: kanade::domain::settings::RunLengths::default(),
-        // The v4 vector replays keep v4's 2 h rule.
-        freeze_ended: false,
+/// A send that timed out, after Discord did (`applied`) or did not apply it.
+pub fn timed_out(applied: bool) -> kanade::bot::transport::Step {
+    kanade::bot::transport::Step::Ambiguous {
+        kind: kanade::bot::transport::AmbiguousKind::Timeout,
+        applied,
     }
-}
-
-pub fn roster(input: &Value) -> Roster {
-    let mut roster = Roster::new();
-    for member in input["members"].as_array().expect("members") {
-        roster.upsert(Member {
-            user_id: text(&member["user_id"]).to_owned(),
-            display_name: member["display_name"].as_str().map(str::to_owned),
-            nickname: member["nickname"].as_str().map(str::to_owned),
-            has_role: member["has_role"].as_bool().unwrap_or_default(),
-            is_bot: false,
-            ping_level: PingLevel::parse_stored(text(&member["ping_level"])).expect("level"),
-        });
-    }
-    roster
-}
-
-pub fn channels(input: &Value) -> BTreeSet<String> {
-    strings(&input["available_channel_ids"])
-        .into_iter()
-        .collect()
 }
 
 pub fn fake() -> FakeDiscord {
@@ -225,6 +143,16 @@ pub async fn mark_digest_week<S: Store>(store: &S, week: DateTime<Utc>, now: Dat
     .await;
 }
 
+/// The stored digest phrase for the boss week starting at `week`.
+pub async fn week_phrase(
+    store: &impl kanade::bot::delivery::cards::DigestPhraseStore,
+    week: DateTime<Utc>,
+) -> Option<String> {
+    let key = kanade::domain::notify::DedupeKey::native(&[DeliveryTarget::Digest(week)])
+        .expect("digest key");
+    store.digest_phrase(key.as_str()).await.expect("phrase")
+}
+
 /// A digest intent for `week` in `channel` (for seeding cards).
 pub fn digest_intent(week: DateTime<Utc>, channel: &str) -> NotificationIntent {
     NotificationIntent {
@@ -268,130 +196,6 @@ pub async fn seed_digest<S: Store>(
             .expect("bind");
     })
     .await;
-}
-
-fn label(outcome: &SendOutcome) -> &'static str {
-    match outcome {
-        SendOutcome::Bound(_) => "bound",
-        SendOutcome::Uncertain => "raised:DeliveryUncertainError",
-        SendOutcome::Suppressed => "suppressed",
-        other => panic!("no v4 label for {other:?}"),
-    }
-}
-
-/// A send as the v4 replayer records a `SendPlan`.
-pub fn effect_json(report: &SendReport) -> Value {
-    let intent = &report.intent;
-    let mut value = json!({
-        "effect_kind": intent.effect.as_str(),
-        "channel_id": intent.channel_id,
-        "dedupe_scope": "native",
-        "targets": intent.targets.iter().map(|target| json!({
-            "binding_type": target.binding_type(),
-            "key_primary": target.key_primary().expect("in range"),
-            "key_secondary": null,
-        })).collect::<Vec<_>>(),
-        "mentions": intent.mentions,
-        "role_mentions": [],
-        "mention_everyone": false,
-        "outcome": label(&report.outcome),
-    });
-    if let IntentContent::Digest { inclusion, .. } = &intent.content {
-        value["digest"] = json!({
-            "days": inclusion.days.iter().map(|day| json!({
-                "runs": day.run_ids.iter().map(|id| short_id(id)).collect::<Vec<_>>(),
-            })).collect::<Vec<_>>(),
-            "cleared": inclusion.cleared,
-            "live": inclusion.live,
-            "unsettled": inclusion.unsettled,
-            "at_risk": inclusion.at_risk,
-        });
-    }
-    if !intent.warnings.is_empty() {
-        value["warnings"] = intent
-            .warnings
-            .iter()
-            .map(|warning| {
-                let DeliveryWarning::HomeChannelUnavailable {
-                    home_channel_id,
-                    run_ids,
-                } = warning;
-                json!({
-                    "kind": "home_channel_unavailable",
-                    "home_channel_id": home_channel_id,
-                    "run_ids": run_ids,
-                })
-            })
-            .collect();
-    }
-    value
-}
-
-/// Register `"{fixed_key}@{week_text}"` for every timing materialised that week.
-pub async fn register_materialised(
-    store: &impl ScheduleStore,
-    fixed_refs: &BTreeMap<String, String>,
-    week: DateTime<Utc>,
-    week_text: &str,
-    run_refs: &mut BTreeMap<String, String>,
-) {
-    let state = snapshot(store).await;
-    for (key, fixed_id) in fixed_refs {
-        if let Some(run) = state
-            .runs
-            .iter()
-            .find(|run| run.fixed_run_id.as_ref() == Some(fixed_id) && run.week_start == week)
-        {
-            run_refs.insert(format!("{key}@{week_text}"), run.id.clone());
-        }
-    }
-}
-
-/// The vector steps the dispatch and digest replays share: `create_run`,
-/// `set_clock` and `set_transport`. `None` for any other op.
-pub async fn shared_step<S: Store>(
-    store: &S,
-    ids: &mut SeqIds,
-    now: &mut DateTime<Utc>,
-    fake: &FakeDiscord,
-    run_refs: &mut BTreeMap<String, String>,
-    step: &Value,
-) -> Option<Result<Value, SchedulerError>> {
-    Some(match text(&step["op"]) {
-        "create_run" => {
-            let id = service(store, ids, *now)
-                .as_origin(Origin::for_tests())
-                .create_run(NewRun {
-                    fixed_run_id: None,
-                    channel_id: step["channel_id"].as_str().map(str::to_owned),
-                    week_start: utc(&step["week_start"]),
-                    datetime: utc(&step["at"]),
-                    bosses: strings(&step["bosses"]),
-                    participants: strings(&step["participants"]),
-                    status: RunStatus::parse(text(&step["status"])).unwrap(),
-                    source: RunSource::parse(text(&step["source"])).unwrap(),
-                })
-                .await
-                .expect("create_run");
-            run_refs.insert(text(&step["run_key"]).to_owned(), id.clone());
-            Ok(json!(id))
-        }
-        "set_clock" => {
-            let at = instant(&step["clock"]);
-            *now = at.with_timezone(&Utc);
-            Ok(json!(isoformat(&at)))
-        }
-        "set_transport" => {
-            let fail = step["fail_sends"].as_bool().expect("fail_sends");
-            let step = fail.then_some(Step::Ambiguous {
-                kind: AmbiguousKind::Timeout,
-                applied: false,
-            });
-            fake.set_default(Op::Create, step);
-            Ok(json!(fail))
-        }
-        _ => return None,
-    })
 }
 
 /// Every text display of a Components V2 layout, in order (sections and

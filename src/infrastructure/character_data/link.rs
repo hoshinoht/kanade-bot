@@ -82,8 +82,10 @@ impl CharacterData {
     async fn read_view(&self, character_id: &str, refresh: bool) -> Result<LinkView, StoreError> {
         let now = self.now();
         let current = self.current_link(character_id).await?;
+        // A retired character keeps its data until it expires (refresh is
+        // paused, not the data): the strip shows it with its deletion date.
         let snapshot = match &current {
-            Some((link, true)) if link.status == LinkStatus::Active => {
+            Some((link, _)) if link.status == LinkStatus::Active => {
                 self.store.snapshot(character_id.to_owned(), now).await?
             }
             _ => None,
@@ -163,10 +165,11 @@ impl CharacterData {
     }
 
     /// The fresh data a reader may show (strip, readiness, posts): only for
-    /// an active link on an active roster character that still matches it.
+    /// an active link on a roster character that still matches it. A retired
+    /// character's data is kept, and shown, until it expires.
     pub async fn data(&self, character_id: &str) -> Result<Option<Snapshot>, StoreError> {
         match self.current_link(character_id).await? {
-            Some((link, true)) if link.status == LinkStatus::Active => {
+            Some((link, _)) if link.status == LinkStatus::Active => {
                 self.store
                     .snapshot(character_id.to_owned(), self.now())
                     .await

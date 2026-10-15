@@ -38,7 +38,7 @@
               "day": { "type": "integer", "minimum": 0, "maximum": 6 },
               "time": { "$ref": "week.json#/$defs/RunTime" },
               "status": { "$ref": "common.json#/$defs/RunStatus" },
-              "amended": { "type": "boolean" }
+              "amended": { "type": "boolean", "description": "Off its weekly timing this week (day, time or roster) and not yet ended; an ended run is frozen, so a timing edit never asks about it." }
             }
           }
         }
@@ -90,6 +90,25 @@
             }
           }
         }
+      }
+    },
+    "FixedChoicesRequest": {
+      "description": "Request body of `POST /api/admin/fixed/{id}/choices`: the day (0 = Monday) and time the editor is about to save.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["weekday", "time"],
+      "properties": {
+        "weekday": { "type": "integer", "minimum": 0, "maximum": 6 },
+        "time": { "type": "string", "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$" }
+      }
+    },
+    "FixedChoices": {
+      "description": "`POST /api/admin/fixed/{id}/choices`: the live runs a PATCH moving the timing to that day and time needs an `update`/`keep` decision for, exactly as the PATCH decides them: runs off their weekly slot whose own day and time differ from the new ones, not yet ended. Empty when day and time are unchanged (send no `decisions`). Nothing is written.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["runs"],
+      "properties": {
+        "runs": { "type": "array", "items": { "$ref": "#/$defs/FixedRow/properties/runs/items" } }
       }
     },
     "FixedRetired": {

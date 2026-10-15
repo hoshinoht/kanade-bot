@@ -1,12 +1,12 @@
 import { mkdirSync } from 'node:fs';
 import type { Locator, Page } from '@playwright/test';
-import { ADMIN, csrf, expect, settle, test, useLook } from './support';
+import { ADMIN, PUBLIC, csrf, expect, resetWeek, setCharacterData, setEstimates, setModules, settle, test, useLook } from './support';
 
 // Character data (module `character_data`; boards in docs/research/2026-10-12-chardata-mockups)
-// over the mock's invented seed: MikaBish (ch-s3) linked by today's 04:01 batch, MikaHero
+// over the e2e server's seed: MikaBish (ch-s3) linked by today's 04:01 batch, MikaHero
 // linked but retired, Mikadere stale, Hotaru7 expired, YuzuPala and TsubaKain linked, AsahiDK pending, the rest not linked;
-// estimates on (a done lookup of MikaNL). `/__mock/modules {character_data}` turns the module
-// off, `/__mock/character-data {health}` picks Config's health (and `setup`: no key, no scouter).
+// estimates on, answered by the fake scouter (`setEstimates` picks how). `setModules({character_data})` turns the module
+// off, `setCharacterData(health)` drives Config's health through real calls (and `setup`: no key, no scouter).
 
 const ATTRIBUTION = 'Data based on NEXON Open API';
 const RUN = 'r-carling';
@@ -24,8 +24,11 @@ async function openEdit(page: Page, ign: string, who: RegExp = /^Mika/): Promise
 }
 
 const stripOf = (dialog: Locator) => dialog.getByRole('region', { name: 'Character data' });
-const estimates = (page: Page, scenario: string) => page.request.post(`${ADMIN}/__mock/estimates`, { data: { scenario } });
-const health = (page: Page, value: string) => page.request.post(`${ADMIN}/__mock/character-data`, { data: { health: value } });
+const estimates = (_page: Page, scenario: string, ign?: string) => setEstimates(scenario, ign);
+const health = (_page: Page, value: 'ok' | 'alert' | 'refused' | 'setup') => setCharacterData(value);
+/** The run's title: the real catalog's Malefic Star token. */
+const CARLING = 'HCarling + HMaleficStar';
+const MIKA = '100000000000001003';
 
 test('chardata strip: linked shows manual and NEXON side by side, attributed, Refresh waits a day', async ({ page }) => {
   const strip = stripOf(await openEdit(page, 'MikaBish'));
@@ -38,7 +41,8 @@ test('chardata strip: linked shows manual and NEXON side by side, attributed, Re
   const refresh = strip.getByRole('button', { name: 'Refresh' });
   await expect(refresh).not.toHaveAttribute('aria-disabled');
   await expect(strip).toContainText('Refreshed 29 Sep 04:01. Refresh asks NEXON now');
-  await expect(strip.getByRole('link', { name: 'Privacy' })).toHaveAttribute('href', 'https://portal.example.invalid/privacy');
+  // The real server links the public origin's own /privacy page.
+  await expect(strip.getByRole('link', { name: 'Privacy' })).toHaveAttribute('href', `${PUBLIC.replace(/^http:/, 'https:')}/privacy`);
   await expect(strip.locator('.chardata__foot')).toContainText('Linked 21 Sep by Mika (notice 1) · refreshed daily');
   // No "Use these": nothing copies NEXON values into the roster.
   await expect(strip.getByRole('button', { name: /use these/i })).toHaveCount(0);
@@ -75,17 +79,11 @@ test('chardata strip: Unlink… confirms inline from Cancel and deletes; Link…
   await expect(strip.locator('.chardata__head .status-chip')).toHaveText('not linked');
 });
 
-test('chardata strip: stale, expired (Refresh tries now), retired (paused) and pending', async ({ page }) => {
+test('chardata strip: stale, expired (Refresh tries now) and pending', async ({ page }) => {
   let strip = stripOf(await openEdit(page, 'Mikadere'));
   await expect(strip.locator('.chardata__head .status-chip')).toHaveText('stale');
   await expect(strip).toContainText('NEXON no longer finds Mikadere under that name');
   await expect(strip.getByText(ATTRIBUTION)).toHaveCount(0);
-
-  strip = stripOf(await openEdit(page, 'MikaHero'));
-  await expect(strip.locator('.chardata__head .status-chip')).toHaveText('refresh paused');
-  await expect(strip).toContainText('deleted 19 Oct unless it is brought back');
-  await expect(strip.getByText(ATTRIBUTION, { exact: true })).toBeVisible();
-  await expect(strip.getByRole('button', { name: 'Refresh' })).toHaveAccessibleDescription(/MikaHero is retired, so its daily refresh is paused/);
 
   strip = stripOf(await openEdit(page, 'AsahiDK', /^Asahi/));
   await expect(strip.locator('.chardata__head .status-chip')).toHaveText('pending');
@@ -99,6 +97,14 @@ test('chardata strip: stale, expired (Refresh tries now), retired (paused) and p
   await expect(strip.locator('.chardata__head .status-chip')).toHaveText('linked');
   await expect(strip.getByText(ATTRIBUTION, { exact: true })).toBeVisible();
   await expect(strip.getByRole('status').filter({ hasText: 'Refreshed Hotaru7 from NEXON.' })).toHaveCount(1);
+});
+
+test('chardata strip: retired (paused) keeps its data until it would expire', async ({ page }) => {
+  const strip = stripOf(await openEdit(page, 'MikaHero'));
+  await expect(strip.locator('.chardata__head .status-chip')).toHaveText('refresh paused');
+  await expect(strip).toContainText('deleted 19 Oct unless it is brought back');
+  await expect(strip.getByText(ATTRIBUTION, { exact: true })).toBeVisible();
+  await expect(strip.getByRole('button', { name: 'Refresh' })).toHaveAccessibleDescription(/MikaHero is retired, so its daily refresh is paused/);
 });
 
 test('chardata strip: no key reads not connected with Link… off; module off draws nothing and asks nothing', async ({ page }) => {
@@ -115,7 +121,7 @@ test('chardata strip: no key reads not connected with Link… off; module off dr
   // No scouter URL either: no estimate row.
   await expect(strip.locator('.estimate')).toHaveCount(0);
 
-  await page.request.post(`${ADMIN}/__mock/modules`, { data: { character_data: false } });
+  await setModules({ character_data: false });
   const asked: string[] = [];
   page.on('request', (r) => /\/api\/admin\/(characters\/[^/]+\/(link|refresh)|estimates)/.test(r.url()) && asked.push(r.url()));
   dialog = await openEdit(page, 'MikaBish');
@@ -162,9 +168,10 @@ test('chardata estimate row: running, queued behind it, busy, 422, 503 and faile
   await row.getByRole('button', { name: 'Look up' }).click();
   await expect(row.locator('.estimate__progress')).toContainText('Looking up MikaBish…');
   await expect(row.getByRole('button', { name: 'Looking up…' })).toHaveAttribute('aria-disabled', 'true');
-  // Another character's lookup is never refused: it waits its turn, with its place.
+  // Another character's lookup is never refused: it waits its turn, with its place. (Results live in
+  // the server's memory only, so after a reset MikaNL has none and offers Look up, not Look up again.)
   row = stripOf(await openEdit(page, 'MikaNL')).locator('.estimate');
-  await row.getByRole('button', { name: 'Look up again' }).click();
+  await row.getByRole('button', { name: 'Look up', exact: true }).click();
   await expect(row.locator('.estimate__progress')).toContainText('Queued · 1 ahead');
   await expect(row.getByRole('button', { name: 'Queued…' })).toHaveAttribute('aria-disabled', 'true');
   await expect(row.getByRole('status')).toHaveText('Queued · 1 ahead');
@@ -177,7 +184,7 @@ test('chardata estimate row: running, queued behind it, busy, 422, 503 and faile
     ['timeout', /Try again$/, 'The scouter didn’t answer within 2 minutes (504).', false],
   ];
   for (const [scenario, button, text, off] of cases) {
-    await page.request.post(`${ADMIN}/api/admin/reset`);
+    await resetWeek();
     await estimates(page, scenario);
     row = stripOf(await openEdit(page, 'MikaBish')).locator('.estimate');
     await row.getByRole('button', { name: 'Look up' }).click();
@@ -189,7 +196,7 @@ test('chardata estimate row: running, queued behind it, busy, 422, 503 and faile
   }
   await expect(row.getByRole('link', { name: 'Config › Character data' })).toHaveCount(0);
 
-  await page.request.post(`${ADMIN}/api/admin/reset`);
+  await resetWeek();
   await estimates(page, 'off');
   const strip = stripOf(await openEdit(page, 'MikaBish'));
   await expect(strip.locator('.chardata__head .status-chip')).toHaveText('linked');
@@ -201,8 +208,8 @@ async function carling(page: Page): Promise<Locator> {
   const phone = page.viewportSize()!.width < 900;
   if (!phone) await page.locator('.board').evaluate((board) => (board.scrollLeft = board.scrollWidth));
   await page.locator(`[data-run="${RUN}"] .plan-card__open`).click();
-  if (!phone) await page.getByRole('complementary', { name: 'HCarling + HStar' }).getByRole('button', { name: 'Open in a larger view' }).click();
-  const sheet = page.getByRole('dialog', { name: 'HCarling + HStar' });
+  if (!phone) await page.getByRole('complementary', { name: CARLING }).getByRole('button', { name: 'Open in a larger view' }).click();
+  const sheet = page.getByRole('dialog', { name: CARLING });
   await expect(sheet.getByRole('list', { name: 'Party' })).toBeVisible();
   return sheet;
 }
@@ -220,7 +227,7 @@ test('chardata estimate panel: party lookup with totals, missing members and the
   // The members table shows from the start and fills in; the total comes last.
   const members = panel.getByRole('table', { name: 'Effective % per member' });
   await expect(members).toBeVisible();
-  await expect(panel.locator('.estimate__combined')).toContainText('Carling', { timeout: 20_000 });
+  await expect(panel.locator('.estimate__combined')).toContainText('Karling', { timeout: 20_000 });
   await expect(panel.locator('.estimate__combined')).toContainText('not complete');
   await expect(panel.locator('.estimate__missing')).toHaveText([/Ren \(2\) missing · no characters on the roster/]);
   await expect(panel.locator('p.chardata__foot')).toContainText('Ren (2) has no character (missing, never 0%).');
@@ -239,7 +246,7 @@ test('chardata estimate panel: queued behind another lookup, a member that fails
   await expect(panel.locator('.estimate__pending').first()).toContainText('queued');
   await expect(panel.locator('.estimate__error')).toHaveCount(0);
 
-  await page.request.post(`${ADMIN}/api/admin/reset`);
+  await resetWeek();
   await estimates(page, 'failed');
   panel = (await carling(page)).locator('.estimate-panel');
   await panel.getByRole('button', { name: 'Look up party' }).click();
@@ -253,13 +260,15 @@ test('chardata estimate panel: queued behind another lookup, a member that fails
   await expect(panel.locator('.estimate__error')).toHaveCount(0);
   await expect(panel.getByRole('button', { name: 'Try again' })).toBeVisible();
 
-  await page.request.post(`${ADMIN}/api/admin/reset`);
+  await resetWeek();
   await estimates(page, 'off');
   const sheet = await carling(page);
   await expect(sheet.locator('.estimate-panel')).toHaveCount(0);
 });
 
 test('chardata estimate panel: members fill in as each finishes, and readiness follows each', async ({ page }) => {
+  // Each lookup takes longer than the page's poll, so the members come in one at a time.
+  await estimates(page, 'paced');
   const sheet = await carling(page);
   const panel = sheet.locator('.estimate-panel');
   await panel.getByRole('button', { name: 'Look up party' }).click();
@@ -271,16 +280,16 @@ test('chardata estimate panel: members fill in as each finishes, and readiness f
   // Readiness is read again for that member, before the lookup ends.
   await expect(sheet.locator('.ready__scouter').first()).toBeVisible();
   await expect(panel.locator('.estimate__pending').first()).toBeVisible();
-  await expect(panel.locator('.estimate__combined')).toContainText('Carling', { timeout: 20_000 });
+  await expect(panel.locator('.estimate__combined')).toContainText('Karling', { timeout: 20_000 });
   await expect(panel.locator('.estimate__pending')).toHaveCount(0);
 });
 
 test('chardata estimate: an assumed critical rate is labelled in the panel, the strip and readiness', async ({ page }) => {
-  await estimates(page, 'assumed');
+  await estimates(page, 'assumed', 'MikaBish');
   const sheet = await carling(page);
   const panel = sheet.locator('.estimate-panel');
   await panel.getByRole('button', { name: 'Look up party' }).click();
-  await expect(panel.locator('.estimate__combined')).toContainText('Carling', { timeout: 20_000 });
+  await expect(panel.locator('.estimate__combined')).toContainText('Karling', { timeout: 20_000 });
   await expect(panel.locator('.estimate__assumed')).toHaveText(['Assumes 100% critical rate (actual 89%)']);
   await expect(panel.locator('p.chardata__foot')).toContainText('at an assumed 100% critical rate.');
   await expect(panel.locator('.estimate__head + .chardata__sub')).toContainText('For planning only, not eligibility.');
@@ -319,7 +328,8 @@ test('chardata health: ok, problems, no key and refused; module off hides the se
   await expect(panel.getByRole('heading', { name: 'Character data' })).toBeVisible();
   await expect(panel.locator('[aria-labelledby="chardata-nexon-h"]')).toContainText('162 of 800 calls');
   await expect(panel.locator('[aria-labelledby="chardata-nexon-h"]')).toContainText('linked');
-  await expect(panel.locator('[aria-labelledby="chardata-scouter-h"]')).toContainText('http://scouter:8091');
+  // The configured scouter URL: the e2e server's fake scouter.
+  await expect(panel.locator('[aria-labelledby="chardata-scouter-h"]')).toContainText(/http:\/\/127\.0\.0\.1:\d+/);
   await expect(page.getByRole('tab', { name: /^Character data/ })).toContainText('ok');
 
   await health(page, 'alert');
@@ -344,7 +354,7 @@ test('chardata health: ok, problems, no key and refused; module off hides the se
   await expect(panel.locator('[aria-labelledby="chardata-scouter-h"]')).toContainText('KANADE_SCOUTER_URL is unset');
   await expect(panel.locator('[aria-labelledby="chardata-env-h"]')).toContainText('unset');
 
-  await page.request.post(`${ADMIN}/__mock/modules`, { data: { character_data: false } });
+  await setModules({ character_data: false });
   await page.reload();
   await expect(page.getByRole('tabpanel', { name: 'Pings' })).toBeVisible();
   await expect(page.getByRole('tab', { name: /^Character data/ })).toHaveCount(0);
@@ -360,11 +370,11 @@ test('chardata readiness: level and CP per slot, a level verdict per boss, attri
   const yuzu = slotOf(sheet, 'Yuzu').getByRole('group', { name: 'Readiness of YuzuPala' });
   await expect(yuzu).toContainText('Lv. 276 · CP 52.1M');
   await expect(yuzu).toContainText('NEXON · as of 29 Sep');
-  // One level verdict per boss of the run (HCarling + HStar); CP is shown, never judged.
-  await expect(yuzu.getByRole('listitem')).toHaveText([/^HCarling\s*Lv ok$/, /^HStar\s*under Lv\. \d+$/]);
+  // One level verdict per boss of the run (HCarling + HMaleficStar); CP is shown, never judged.
+  await expect(yuzu.getByRole('listitem')).toHaveText([/^HCarling\s*Lv ok$/, /^HMaleficStar\s*under Lv\. \d+$/]);
   await expect(sheet.locator('.ready__bosses').filter({ hasText: /floor|CP/i })).toHaveCount(0);
   const tsubame = slotOf(sheet, 'Tsubame').getByRole('group', { name: 'Readiness of TsubaKain' });
-  await expect(tsubame.getByRole('listitem')).toHaveText([/^HCarling\s*Lv ok$/, /^HStar\s*Lv ok$/]);
+  await expect(tsubame.getByRole('listitem')).toHaveText([/^HCarling\s*Lv ok$/, /^HMaleficStar\s*Lv ok$/]);
   const hotaru = slotOf(sheet, 'Hotaru').getByRole('group', { name: 'Readiness of Hotaru7' });
   await expect(hotaru).toContainText('Lv. 275 · CP —');
   await expect(hotaru).toContainText('manual · NEXON data expired');
@@ -375,8 +385,8 @@ test('chardata readiness: level and CP per slot, a level verdict per boss, attri
   await expect(sheet.getByRole('link', { name: /floor/i })).toHaveCount(0);
   // Never blocking: a pick under an entry level saves as before and the lines follow it.
   await sheet.getByRole('button', { name: /^Mika's character on HCarling/ }).click();
-  await sheet.getByRole('dialog', { name: "Mika's character for HCarling + HStar" }).getByRole('option', { name: /Mikadere/ }).click();
-  await expect(slotOf(sheet, 'Mika').getByRole('group', { name: 'Readiness of Mikadere' }).getByRole('listitem')).toHaveText([/^HCarling\s*under Lv\. \d+$/, /^HStar\s*under Lv\. \d+$/]);
+  await sheet.getByRole('dialog', { name: `Mika's character for ${CARLING}` }).getByRole('option', { name: /Mikadere/ }).click();
+  await expect(slotOf(sheet, 'Mika').getByRole('group', { name: 'Readiness of Mikadere' }).getByRole('listitem')).toHaveText([/^HCarling\s*under Lv\. \d+$/, /^HMaleficStar\s*under Lv\. \d+$/]);
 });
 
 test('chardata readiness: after the run lookup ends, the estimate per boss replaces the slot CP', async ({ page }) => {
@@ -406,7 +416,7 @@ test('chardata readiness: the phone list says it never blocks; module off asks n
   await expect(slotOf(sheet, 'Yuzu').getByRole('group', { name: 'Readiness of YuzuPala' })).toContainText('Lv. 276 · CP 52.1M');
 
   await page.setViewportSize({ width: 1280, height: 800 });
-  await page.request.post(`${ADMIN}/__mock/modules`, { data: { character_data: false } });
+  await setModules({ character_data: false });
   const asked: string[] = [];
   page.on('request', (r) => /\/readiness/.test(r.url()) && asked.push(r.url()));
   sheet = await carling(page);
@@ -422,9 +432,7 @@ test('chardata capture', async ({ page }) => {
   test.setTimeout(300_000);
   mkdirSync(CAPTURES, { recursive: true });
   await useLook(page, 'blossom');
-  const reset = async () => {
-    await page.request.post(`${ADMIN}/api/admin/reset`);
-  };
+  const reset = resetWeek;
   const shot = async (name: string, target?: Locator) => {
     await target?.scrollIntoViewIfNeeded();
     await settle(page);
@@ -452,7 +460,7 @@ test('chardata capture', async ({ page }) => {
     await health(page, 'setup');
     s = await strip('MikaBish');
     await shot(`${phone ? 'B_PhoneCharStates' : 'B_CharStates'}-not-connected`, s);
-    await page.request.post(`${ADMIN}/__mock/modules`, { data: { character_data: false } });
+    await setModules({ character_data: false });
     const off = await openEdit(page, 'MikaBish');
     await shot(`${phone ? 'B_PhoneCharStates' : 'B_CharStates'}-off`, off.getByRole('switch', { name: 'Retired' }));
     await reset();
@@ -525,14 +533,14 @@ test('chardata capture', async ({ page }) => {
     await reset();
     await estimates(page, 'off');
     // As the board: Mika brings MikaBish.
-    await page.request.put(`${ADMIN}/api/admin/runs/${RUN}/characters/1003`, { headers: await csrf(page.request), data: { character_id: 'ch-s3', version: 0 } });
+    await page.request.put(`${ADMIN}/api/admin/runs/${RUN}/characters/${MIKA}`, { headers: await csrf(page.request), data: { character_id: 'ch-s3', version: 0 } });
     sheet = await carling(page);
     await expect(sheet.locator('.ready').first()).toBeVisible();
     await shot(`${P}CharReady`, phone ? sheet.locator('.ready__hint') : undefined);
 
     // The same readiness once a party lookup is kept: the estimate per boss replaces the CP.
     await reset();
-    await page.request.put(`${ADMIN}/api/admin/runs/${RUN}/characters/1003`, { headers: await csrf(page.request), data: { character_id: 'ch-s3', version: 0 } });
+    await page.request.put(`${ADMIN}/api/admin/runs/${RUN}/characters/${MIKA}`, { headers: await csrf(page.request), data: { character_id: 'ch-s3', version: 0 } });
     const started = await page.request.post(`${ADMIN}/api/admin/estimates`, { headers: await csrf(page.request), data: { run_id: RUN } });
     const jobId = (await started.json()).job.id as string;
     await expect.poll(async () => (await (await page.request.get(`${ADMIN}/api/admin/estimates/${jobId}`)).json()).state, { timeout: 20_000 }).toBe('done');
@@ -546,7 +554,7 @@ test('chardata capture', async ({ page }) => {
       ['alert', 'CfgCharHealthAlert'],
       ['setup', 'CfgCharHealthSetup'],
       ['refused', 'CfgCharHealthRefused'],
-    ]) {
+    ] as const) {
       await reset();
       await health(page, value);
       await page.goto(`${ADMIN}/config?section=character-data&sw=off`);
@@ -568,7 +576,7 @@ test('chardata estimate queue capture', async ({ page }) => {
     await settle(page);
     await page.screenshot({ path: `${QUEUE_CAPTURES}/${name}.png`, animations: 'disabled' });
   };
-  const reset = () => page.request.post(`${ADMIN}/api/admin/reset`);
+  const reset = resetWeek;
   const holdMikaBish = async () => {
     await estimates(page, 'hold');
     await page.request.post(`${ADMIN}/api/admin/estimates`, { headers: await csrf(page.request), data: { character_ids: ['ch-s3'] } });
@@ -592,7 +600,7 @@ test('chardata estimate queue capture', async ({ page }) => {
     await expect(row.locator('.estimate__progress')).toContainText('Looking up MikaBish…');
     await shot(`${P}strip-running`, row);
     await reset();
-    await estimates(page, 'assumed');
+    await estimates(page, 'assumed', 'MikaBish');
     row = stripOf(await openEdit(page, 'MikaBish')).locator('.estimate');
     await row.getByRole('button', { name: 'Look up' }).click();
     await expect(row.locator('.estimate__assumed')).toBeVisible({ timeout: 20_000 });
@@ -620,7 +628,7 @@ test('chardata estimate queue capture', async ({ page }) => {
     await expect(panel.locator('.estimate__combined')).toBeVisible({ timeout: 20_000 });
     await shot(`${P}panel-partial-failed-member`, panel);
     await reset();
-    await estimates(page, 'assumed');
+    await estimates(page, 'assumed', 'MikaBish');
     sheet = await carling(page);
     panel = sheet.locator('.estimate-panel');
     await panel.getByRole('button', { name: 'Look up party' }).click();

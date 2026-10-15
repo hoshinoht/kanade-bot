@@ -1,16 +1,39 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import type { EstimateJob, EstimateStarted } from '@kanade/api-types';
+import type { EstimateJob, EstimateStarted, Limits } from '@kanade/api-types';
 import type { Locator, Page } from '@playwright/test';
 import { boardExists, composite, diff, markdown, MOCKUPS, renderBoard, settle, skeleton } from './fidelity-kit';
-import { ADMIN, expect, PINNED_NOW, PUBLIC, test, choose, csrf, openList, setPortal, signInPublic, useLook } from './support';
+import {
+  ADMIN,
+  expect,
+  PINNED_NOW,
+  PUBLIC,
+  test,
+  choose,
+  csrf,
+  dropSessions,
+  endMemberSessions,
+  openList,
+  setCharacterData,
+  setClock,
+  setEstimates,
+  setLimitGroups,
+  setMemberCharacters,
+  setModules,
+  setPortal,
+  signInPublic,
+  unconditional,
+  useLook,
+} from './support';
 
 // Layout fidelity against the M3E boards: `bun run fidelity [pair ...] [--keep]`
 // (scripts/fidelity.ts builds with KANADE_FIDELITY=1 so the data-fid tags
 // survive, runs this spec, then rebuilds clean). Writes, per pair, under the
 // git-ignored e2e/.captures/fidelity/: report.md, report.json, composite.png
 // (board left, app right, findings outlined), board.json and app.json.
-// It reports; it never fails on findings.
+// It reports; it never fails on findings. It drives the real-API e2e server:
+// the seed keeps the retired dev mock's ids, names and times, and the boards'
+// states come from its `/__e2e/` controls.
 const ENABLED = process.env.KANADE_FIDELITY === '1';
 const ONLY = (process.env.KANADE_FIDELITY_ONLY ?? '').split(',').filter(Boolean);
 const OUT = join(import.meta.dirname, '.captures', 'fidelity');
@@ -41,15 +64,27 @@ interface Pair {
  */
 const LATER_FIDS = ['rail', 'rail-more', 'rail-more-menu', 'drawer-more', 'sheet-stage'];
 
+/** A harness control (`examples/e2e_server/controls*.rs`) that must succeed. */
+const control = async (page: Page, path: string, data?: unknown) => {
+  const done = await page.request.post(`${ADMIN}/__e2e/${path}`, data === undefined ? {} : { data });
+  expect(done.ok(), `/__e2e/${path}: ${await done.text()}`).toBe(true);
+  return done;
+};
+/** The real member ids (`1` + the mock's id, zero-padded: examples/e2e_server/seed/ids.rs). */
+const member = (mockId: number) => `1${String(mockId).padStart(17, '0')}`;
 /**
- * Module `character_data` off (the mock starts with it on): boards drawn before it
+ * The server clock at Fri 25 Sep 12:00 guild time, as drafts.spec's request edits: XKalos (amended
+ * to 22:00) is still ahead, so the weekly-timing edit offers Keep/Update for it, as the boards draw.
+ */
+const beforeKalos = () => setClock('2026-09-25T04:00:00Z');
+
+/**
+ * Module `character_data` off (it starts on): boards drawn before it
  * (the run sheet's Estimate panel and readiness lines) compare against their own screen.
  */
-const chardataOff = async (page: Page) => {
-  await page.request.post(`${ADMIN}/__mock/modules`, { data: { character_data: false } });
-};
+const chardataOff = () => setModules({ character_data: false });
 const withChardataOff = (setup?: (page: Page) => Promise<void>) => async (page: Page) => {
-  await chardataOff(page);
+  await chardataOff();
   await setup?.(page);
 };
 
@@ -131,15 +166,15 @@ const allSets = async (page: Page) => {
 };
 const ended = async (page: Page) => {
   await devicesShown(page);
-  await page.request.post(`${PUBLIC}/__mock/public/end`);
+  await endMemberSessions();
   // Reopening the tab re-reads the devices: the 401 ends the screen.
   await page.getByRole('tab', { name: 'Profile' }).click();
   await page.getByRole('tab', { name: /^Devices/ }).click();
   await expect(page.getByRole('heading', { level: 1, name: "You've been signed out" })).toBeVisible();
 };
-/** A Discord link's slot: Wed 30 Sep 21:30 guild time, the last day of the mock's boss week. */
+/** A Discord link's slot: Wed 30 Sep 21:30 guild time, the last day of the seeded boss week. */
 const MOVE_TO = '2026-09-30T13:30:00Z';
-/** Last week's Kalos (the mock's `p-kalos`) at its old Fri 22:00. */
+/** Last week's Kalos (the seed's `p-kalos`) at its old Fri 22:00. */
 const PAST_MOVE_TO = '2026-09-18T14:00:00Z';
 const moveShown = async (page: Page) => {
   await page.waitForLoadState('networkidle');
@@ -149,16 +184,13 @@ const moveNotice = async (page: Page) => {
   await page.waitForLoadState('networkidle');
   await expect(page.locator('main [data-fid="move-notice"]')).toBeVisible();
 };
-/** Ren took Asahi off HCarling + HStar after the link was sent. */
+/** Ren took Asahi off HCarling + HMaleficStar after the link was sent. */
 const removedFromCarling = async (page: Page) => {
   await signInPublic(page);
-  expect((await page.request.post(`${PUBLIC}/__mock/public/remove`, { data: { run: 'r-carling' } })).ok()).toBe(true);
+  await control(page, 'public/remove', { run: 'r-carling' });
 };
 /** Signed in longer ago than the fresh window: the next write asks "Confirm it's you". */
-const unfresh = async (page: Page) => {
-  await signInPublic(page);
-  expect((await page.request.post(`${PUBLIC}/__mock/public/unfresh`)).ok()).toBe(true);
-};
+const unfresh = (page: Page) => signInPublic(page, { stale: true });
 const confirmAnswer = async (page: Page) => {
   await page.waitForLoadState('networkidle');
   await page.locator('main [data-fid="week-answer"]').getByRole('button', { name: 'Maybe' }).click();
@@ -175,21 +207,54 @@ const requestConfirm = async (page: Page) => {
   await page.getByRole('button', { name: 'Send request' }).click();
   await expect(page.getByRole('dialog', { name: "Confirm it's you" })).toBeVisible();
 };
+/**
+ * Signed in with the live stream cut: the real stream's hints would tell the page about
+ * the requests `requestLimit` sends elsewhere before its press (precedent: public-requests.spec).
+ */
+const signedInQuiet = async (page: Page) => {
+  await signInPublic(page);
+  await page.route('**/api/public/events*', (route) => route.abort());
+};
+/** Sends a member request straight to the API, as another tab would; answers the request. */
+const sendElsewhere = async (page: Page, body: Record<string, unknown>, key: string): Promise<{ id: string }> => {
+  const session = await page.request.get(`${PUBLIC}/api/public/session`);
+  const sent = await page.request.post(`${PUBLIC}/api/public/requests`, {
+    headers: { 'X-Kanade-CSRF': session.headers()['x-kanade-csrf'] ?? '', 'Idempotency-Key': key, Origin: PUBLIC },
+    data: body,
+  });
+  expect(sent.status(), await sent.text()).toBe(201);
+  return sent.json();
+};
+/** XBM is the one open run Asahi is not on; Kaito is not on HCarling + HMaleficStar. */
+const SWAP_CARLING = { kind: 'swap', run_id: 'r-carling', with: member(1009) };
 /** Two more requests sent elsewhere fill the three open: the press is refused, the toast says so and the key is off. */
 const requestLimit = async (page: Page) => {
   await requestForm(page);
-  const session = await page.request.get(`${PUBLIC}/api/public/session`);
-  const token = session.headers()['x-kanade-csrf'] ?? '';
-  for (const run of ['r-limbo', 'r-fa']) {
-    const sent = await page.request.post(`${PUBLIC}/api/public/requests`, {
-      headers: { 'X-Kanade-CSRF': token, 'Idempotency-Key': `fid-limit-${run}` },
-      data: { kind: 'join', run_id: run },
-    });
-    expect(sent.status()).toBe(201);
-  }
+  await sendElsewhere(page, { kind: 'join', run_id: 'r-bm' }, 'fid-limit-join');
+  await sendElsewhere(page, SWAP_CARLING, 'fid-limit-swap');
   await page.getByRole('button', { name: 'Send request' }).click();
   await expect(page.locator('main [data-fid="request-limit"]')).toBeVisible();
   await expect(page.getByRole('group', { name: 'Notification' })).toBeVisible();
+};
+/**
+ * Requests-Expired: a swap on HCarling + HMaleficStar nobody decided before its boss week ended.
+ * A real request expires only once its week is over (the seed cannot hold one: the real
+ * scheduler refuses the mock's expired swap, and moving the clock past the week would change
+ * every other row), so Asahi sends the swap and the page reads it as expired.
+ */
+const expiredSwap = async (page: Page) => {
+  await signInPublic(page);
+  const { id } = await sendElsewhere(page, SWAP_CARLING, 'fid-expired-swap');
+  await page.route('**/api/public/requests/mine*', async (route) => {
+    const mine = await (await route.fetch()).json();
+    for (const request of mine.requests) if (request.id === id) request.state = 'expired';
+    route.fulfill({ json: { ...mine, open: mine.open - 1 } });
+  });
+};
+const expiredShown = async (page: Page) => {
+  await page.waitForLoadState('networkidle');
+  await page.locator('main [data-fid="requests-row"]').filter({ hasText: 'expired' }).first().click();
+  await expect(page.locator('main .req-detail')).toContainText('expired');
 };
 const requestsShown = async (page: Page) => {
   await page.waitForLoadState('networkidle');
@@ -271,16 +336,16 @@ const PUBLIC_PAIRS: Pair[] = [
   // Frame 1 of each board (the list); Always in, attendance and suggestions have no API yet (expected gaps).
   { name: 'pub-myruns-timings-owner', board: 'MyRuns-Timings-Owner', path: '/mine?week=timings', setup: signInPublic, ready: timingsShown },
   { name: 'pub-phone-myruns-timings-owner', board: 'PhoneMyRuns-Timings-Owner', path: '/mine?week=timings', setup: signInPublic, ready: timingsShown },
-  // Bosses and guides (the admin Bosses window, shared): the list, Carling's guide (Hard, Phases, Destiny), Kai (event).
+  // Bosses and guides (the admin Bosses window, shared): the list, Carling's guide (Hard, Phases, Destiny), Kai (event). The real catalog names Carling "Karling".
   { name: 'pub-bosses', board: 'Bosses', path: '/bosses', setup: signInPublic, ready: bossesShown },
-  { name: 'pub-guide', board: 'Guide', path: '/bosses/Carling', setup: signInPublic, ready: guideShown('Carling') },
-  { name: 'pub-guide-phases', board: 'Guide-Phases', path: '/bosses/Carling?tab=phases', setup: signInPublic, ready: guideShown('Carling') },
-  { name: 'pub-guide-destiny', board: 'Guide-Destiny', path: '/bosses/Carling?difficulty=Destiny', setup: signInPublic, ready: guideShown('Carling') },
+  { name: 'pub-guide', board: 'Guide', path: '/bosses/Carling', setup: signInPublic, ready: guideShown('Karling') },
+  { name: 'pub-guide-phases', board: 'Guide-Phases', path: '/bosses/Carling?tab=phases', setup: signInPublic, ready: guideShown('Karling') },
+  { name: 'pub-guide-destiny', board: 'Guide-Destiny', path: '/bosses/Carling?difficulty=Destiny', setup: signInPublic, ready: guideShown('Karling') },
   { name: 'pub-guide-event', board: 'Guide-Event', path: '/bosses/Kai', setup: signInPublic, ready: guideShown('Kai') },
   { name: 'pub-phone-bosses', board: 'PhoneBosses', path: '/bosses', setup: signInPublic, ready: bossesShown },
-  { name: 'pub-phone-guide', board: 'PhoneGuide', path: '/bosses/Carling', setup: signInPublic, ready: guideShown('Carling') },
-  { name: 'pub-phone-guide-phases', board: 'PhoneGuide-Phases', path: '/bosses/Carling?tab=phases', setup: signInPublic, ready: guideShown('Carling') },
-  { name: 'pub-phone-guide-destiny', board: 'PhoneGuide-Destiny', path: '/bosses/Carling?difficulty=Destiny', setup: signInPublic, ready: guideShown('Carling') },
+  { name: 'pub-phone-guide', board: 'PhoneGuide', path: '/bosses/Carling', setup: signInPublic, ready: guideShown('Karling') },
+  { name: 'pub-phone-guide-phases', board: 'PhoneGuide-Phases', path: '/bosses/Carling?tab=phases', setup: signInPublic, ready: guideShown('Karling') },
+  { name: 'pub-phone-guide-destiny', board: 'PhoneGuide-Destiny', path: '/bosses/Carling?difficulty=Destiny', setup: signInPublic, ready: guideShown('Karling') },
   // Member writes: the run's Move page (a Discord link), its stale shapes, the answer's fresh sign-in, the request form and My requests.
   { name: 'pub-move', board: 'Move', path: `/runs/r-carling?move_to=${MOVE_TO}`, setup: signInPublic, ready: moveShown },
   { name: 'pub-move-notin', board: 'Move-NotIn', path: `/runs/r-carling?move_to=${MOVE_TO}`, setup: removedFromCarling, ready: moveNotice },
@@ -288,9 +353,9 @@ const PUBLIC_PAIRS: Pair[] = [
   { name: 'pub-confirm-answer', board: 'ConfirmAnswer', path: '/?run=r-carling', setup: unfresh, ready: confirmAnswer },
   { name: 'pub-request-form', board: 'RequestForm', path: '/requests/new?run=r-carling', setup: signInPublic, ready: requestForm },
   { name: 'pub-request-form-confirm', board: 'RequestForm-Confirm', path: '/requests/new?run=r-carling', setup: unfresh, ready: requestConfirm },
-  { name: 'pub-request-form-limit', board: 'RequestForm-Limit', path: '/requests/new?run=r-carling', setup: signInPublic, ready: requestLimit },
+  { name: 'pub-request-form-limit', board: 'RequestForm-Limit', path: '/requests/new?run=r-carling', setup: signedInQuiet, ready: requestLimit },
   { name: 'pub-requests', board: 'Requests', path: '/requests', setup: signInPublic, ready: requestsShown },
-  { name: 'pub-requests-expired', board: 'Requests-Expired', path: '/requests?open=req-carling-swap', setup: signInPublic, ready: requestsShown },
+  { name: 'pub-requests-expired', board: 'Requests-Expired', path: '/requests', setup: expiredSwap, ready: expiredShown },
   { name: 'pub-phone-move', board: 'PhoneMove', path: `/runs/r-carling?move_to=${MOVE_TO}`, setup: signInPublic, ready: moveShown },
   { name: 'pub-phone-move-notin', board: 'PhoneMove-NotIn', path: `/runs/r-carling?move_to=${MOVE_TO}`, setup: removedFromCarling, ready: moveNotice },
   { name: 'pub-phone-move-weekover', board: 'PhoneMove-WeekOver', path: `/runs/p-kalos?move_to=${PAST_MOVE_TO}`, setup: signInPublic, ready: moveNotice },
@@ -303,12 +368,12 @@ const PUBLIC_PAIRS: Pair[] = [
 
 // Member characters (boards: KANADE_MOCKUPS=…/docs/research/2026-10-13-member-characters, with a
 // `render` link to the M3E mockups' renderer). Asahi's characters as the boards draw them
-// (`/__mock/public/characters {"roster": "board"}`). The states boards (M_CharStates*,
+// (`setMemberCharacters('board')`). The states boards (M_CharStates*,
 // M_LinkOutcomes, M_EstStates*, M_RunStates, M_PhoneCharStates, M_PhoneEstStates*) are grids of
 // cells over several screens: e2e/public-characters.spec.ts covers each of their states instead.
 const boardRoster = async (page: Page) => {
   await signInPublic(page);
-  expect((await page.request.post(`${PUBLIC}/__mock/public/characters`, { data: { roster: 'board' } })).status()).toBe(204);
+  await setMemberCharacters('board');
 };
 /** M_CharsMenu draws no waiting request: an admin withdraws Ren's first. */
 const boardRosterNoRequest = async (page: Page) => {
@@ -316,10 +381,10 @@ const boardRosterNoRequest = async (page: Page) => {
   expect((await page.request.delete(`${ADMIN}/api/admin/characters/ch-b2/link`, { headers: await csrf(page.request) })).ok()).toBe(true);
 };
 const boardRosterUnfresh = async (page: Page) => {
-  await boardRoster(page);
-  expect((await page.request.post(`${PUBLIC}/__mock/public/unfresh`)).ok()).toBe(true);
+  await setMemberCharacters('board');
+  await unfresh(page);
 };
-/** The board draws the party's cached estimates: an admin looks the run's party up first (each read advances the mock's job). */
+/** The board draws the party's cached estimates: an admin looks the run's party up first. */
 const boardRosterWithReadings = async (page: Page) => {
   await boardRoster(page);
   const headers = await csrf(page.request);
@@ -420,7 +485,7 @@ const MEMBER_CHAR_PAIRS: Pair[] = [
   { name: 'mc-phone-run-party', board: 'M_PhoneRunParty', path: '/?run=r-carling', setup: boardRosterWithReadings, ready: runParty },
 ].map((pair) => ({ ...pair, app: 'public' as const }));
 
-// The character roster (module `roster`, on in the mock): Mika's sheet on its Characters tab.
+// The character roster (module `roster`, on by default): Mika's sheet on its Characters tab.
 // The Members frame around the sheet is the `members` pair's (B_Members); these pairs
 // compare the sheet, the tab and the dialogs (desktop: the page line, the roster bar
 // and list; phone: also the top bar, which phone-nav compares, and the roster window).
@@ -445,26 +510,42 @@ const editBoard = (centre?: string) => (page: Page) =>
 // The phone pairs leave the top bar (phone-nav's) and the screen-reader page line out too.
 const DRAFTS_OMIT = ['rail', 'topbar', 'move-days', 'move-day', 'move-time'];
 const PHONE_DRAFTS_OMIT = [...DRAFTS_OMIT, 'page-line'];
-/** The boards' drafts hold six changes; the mock seeds two (Weekend reshuffle) and three (Carling retime). */
-const moreOps = (id: string, version: number) => async (page: Page) => {
+/** Stages `ops` in draft `id`, each a real drafts-service write that must succeed. */
+const stage = async (page: Page, id: string, ops: unknown[]) => {
   const headers = await csrf(page.request);
-  for (const op of [
-    { kind: 'party', run: 'r-bm', add: ['1004'], remove: ['1008'] },
-    { kind: 'status', run: 'r-bm', status: 'confirmed' },
-    { kind: 'move', run: 'r-fa', day: 6, time: '23:00' },
-    { kind: 'status', run: 'r-bellona', status: 'cancelled' },
-  ].slice(0, id === 'd-weekend' ? 4 : 3)) {
+  let version: number = (await (await page.request.get(`${ADMIN}/api/admin/drafts/${id}`)).json()).version;
+  for (const op of ops) {
     const done = await page.request.post(`${ADMIN}/api/admin/drafts/${id}/ops`, { headers, data: { version, op } });
+    expect(done.ok(), `staging ${JSON.stringify(op)} in ${id}: ${await done.text()}`).toBe(true);
     version = (await done.json()).version;
   }
 };
+/**
+ * The boards' drafts hold six changes; the seed stages two (Weekend reshuffle) and the drafts
+ * board three (Carling retime). The mock's extra changes moved HFA and cancelled Bellona, which
+ * have ended by the pinned Tuesday (the real scheduler refuses them): next week's runs stand in,
+ * so the merge preview again shows a slot change and a cancellation of their own.
+ */
+const moreOps = (id: string) => (page: Page) =>
+  stage(
+    page,
+    id,
+    [
+      { kind: 'party', run: 'r-bm', add: [member(1004)], remove: [member(1008)] },
+      { kind: 'status', run: 'r-bm', status: 'confirmed' },
+      { kind: 'move', run: 'n-carling', day: 6, time: '23:00' },
+      { kind: 'status', run: 'n-kalos', status: 'cancelled' },
+    ].slice(0, id === 'd-weekend' ? 4 : 3),
+  );
 /**
  * B_DraftsConflict's data on Carling retime: the open draft heads the list (the board's
  * conflicted draft is its first row), and the upstream cancellation flags changes 3 and 4,
  * as the board's does, rather than the seeded 2 and 3 (change 2 is a clean one on the board).
  */
 const conflictLikeBoard = async (page: Page) => {
-  await moreOps('d-carling', 4)(page);
+  // The drafts boards' closed drafts and Carling retime's conflicts.
+  await control(page, 'drafts/board');
+  await moreOps('d-carling')(page);
   await page.route('**/api/admin/drafts?state=open', async (route) => {
     const list = await (await route.fetch()).json();
     route.fulfill({ json: { ...list, drafts: [...list.drafts].sort((a: { id: string }, b: { id: string }) => Number(b.id === 'd-carling') - Number(a.id === 'd-carling')) } });
@@ -475,11 +556,11 @@ const conflictLikeBoard = async (page: Page) => {
     route.fulfill({ json: preview });
   });
 };
-/** The boards list three open drafts: the mock's two plus "Bellona clean-up" with one change. */
+/** The boards list three open drafts: the seeded two plus "Bellona clean-up" with one change (on next week's HFA: Bellona has ended). */
 const thirdDraft = async (page: Page) => {
   const headers = await csrf(page.request);
   const made = await (await page.request.post(`${ADMIN}/api/admin/drafts`, { headers, data: { title: 'Bellona clean-up' } })).json();
-  await page.request.post(`${ADMIN}/api/admin/drafts/${made.id}/ops`, { headers, data: { version: made.version, op: { kind: 'status', run: 'r-bellona', status: 'cancelled' } } });
+  await stage(page, made.id, [{ kind: 'status', run: 'n-fa', status: 'cancelled' }]);
 };
 const draftShown = (title: string) => async (page: Page) => {
   await expect(page.getByRole('heading', { level: 2, name: title })).toBeVisible();
@@ -489,9 +570,10 @@ const draftsList = async (page: Page) => {
   await expect(page.getByRole('listbox', { name: 'Open drafts' })).toBeVisible();
   await page.waitForLoadState('networkidle');
 };
-/** No open drafts; the closed tab gains the board's third, expired row. */
+/** No open drafts; the closed tab (the drafts board's two) gains the board's third, expired row. */
 const noOpenDrafts = async (page: Page) => {
-  await page.route('**/api/admin/drafts?state=open', (route) => route.fulfill({ json: { head: 9, drafts: [] } }));
+  await control(page, 'drafts/board');
+  await page.route('**/api/admin/drafts?state=open', async (route) => route.fulfill({ json: { ...(await (await route.fetch()).json()), drafts: [] } }));
   await page.route('**/api/admin/drafts?state=closed', async (route) => {
     const list = await (await route.fetch()).json();
     route.fulfill({ json: { ...list, drafts: [...list.drafts, { ...list.drafts[0], id: 'd-old', title: 'Bellona clean-up', status: 'expired', merged_seq: null }] } });
@@ -519,10 +601,10 @@ const requestEdited = async (page: Page) => {
     for (const el of document.querySelectorAll('*')) if (el.scrollTop) el.scrollTop = 0;
   });
 };
-/** Tsubame changes the request under the edit: Approve edited is refused. */
+/** Tsubame's request changes under the edit (another admin's edit on the real server): Approve edited is refused. */
 const requestRefused = async (page: Page) => {
   await requestEdited(page);
-  await page.request.post(`${ADMIN}/__mock/inbox/kalos-v4`);
+  await control(page, 'inbox/kalos-v4');
   await page.getByRole('button', { name: 'Approve edited' }).click();
   await expect(page.locator('[data-fid="inbox-edit-toast"]')).toBeVisible();
   await page.locator('.toast').evaluate((el) => Promise.all(el.getAnimations().map((a) => a.finished)));
@@ -608,15 +690,15 @@ const stageApp = (page: Page) =>
       for (const el of document.querySelectorAll<HTMLElement>('[data-fid="week-move"]')) el.dataset.fid = 'sheet-actions';
     }
   });
-/** HCarling + HStar in the full sheet (the pane's larger view on a laptop, the sheet on a phone). */
+/** HCarling + HMaleficStar in the full sheet (the pane's larger view on a laptop, the sheet on a phone). */
 const carlingSheet = async (page: Page) => {
   await page.locator('[data-run="r-carling"] .plan-card__open').click();
-  const pane = page.getByRole('complementary', { name: 'HCarling + HStar' });
+  const pane = page.getByRole('complementary', { name: 'HCarling + HMaleficStar' });
   if (page.viewportSize()!.width >= 900) {
     await expect(pane).toBeVisible();
     await pane.getByRole('button', { name: 'Open in a larger view' }).click();
   }
-  const sheet = page.getByRole('dialog', { name: 'HCarling + HStar' });
+  const sheet = page.getByRole('dialog', { name: 'HCarling + HMaleficStar' });
   await expect(sheet).toBeVisible();
   await sheet.evaluate((el) => Promise.all(el.getAnimations({ subtree: true }).map((a) => a.finished)));
   return sheet;
@@ -628,7 +710,7 @@ const noDrafts = async (page: Page) => {
   await expect(page.locator('[data-fid="empty-recent-row"]').first()).toBeVisible();
 };
 const DRAFT_PAIRS: Pair[] = [
-  { name: 'drafts', board: 'B_Drafts', path: '/drafts?item=d-weekend', omit: DRAFTS_OMIT, setup: moreOps('d-weekend', 3), ready: draftShown('Weekend reshuffle') },
+  { name: 'drafts', board: 'B_Drafts', path: '/drafts?item=d-weekend', omit: DRAFTS_OMIT, setup: moreOps('d-weekend'), ready: draftShown('Weekend reshuffle') },
   { name: 'drafts-conflict', board: 'B_DraftsConflict', path: '/drafts?item=d-carling', omit: DRAFTS_OMIT, setup: conflictLikeBoard, ready: draftShown('Carling retime') },
   ...withPhone({ name: 'drafts-empty', board: 'B_DraftsEmpty', path: '/drafts', omit: DRAFTS_OMIT, setup: noOpenDrafts, ready: noDrafts }, { omit: PHONE_DRAFTS_OMIT }),
   ...withPhone(
@@ -641,9 +723,12 @@ const DRAFT_PAIRS: Pair[] = [
   ),
   { name: 'phone-drafts', board: 'B_PhoneDrafts', path: '/drafts', omit: PHONE_DRAFTS_OMIT, setup: thirdDraft, ready: draftsList },
   { name: 'phone-draft-conflict', board: 'B_PhoneDraftConflict', path: '/drafts?item=d-carling', omit: PHONE_DRAFTS_OMIT, setup: conflictLikeBoard, ready: draftShown('Carling retime') },
-  ...withPhone({ name: 'inbox-edit', board: 'B_InboxEdit', path: '/inbox?tab=self_service&item=p-kalos-fixed', omit: INBOX_EDIT_OMIT, prepare: inboxEditBoard, ready: requestEdited }, { omit: PHONE_INBOX_EDIT_OMIT }),
   ...withPhone(
-    { name: 'inbox-edit-conflict', board: 'B_InboxEditConflict', path: '/inbox?tab=self_service&item=p-kalos-fixed', omit: INBOX_EDIT_OMIT, prepare: inboxEditBoard, ready: requestRefused },
+    { name: 'inbox-edit', board: 'B_InboxEdit', path: '/inbox?tab=self_service&item=p-kalos-fixed', omit: INBOX_EDIT_OMIT, setup: beforeKalos, prepare: inboxEditBoard, ready: requestEdited },
+    { omit: PHONE_INBOX_EDIT_OMIT },
+  ),
+  ...withPhone(
+    { name: 'inbox-edit-conflict', board: 'B_InboxEditConflict', path: '/inbox?tab=self_service&item=p-kalos-fixed', omit: INBOX_EDIT_OMIT, setup: beforeKalos, prepare: inboxEditBoard, ready: requestRefused },
     { omit: PHONE_INBOX_EDIT_OMIT },
   ),
   {
@@ -653,7 +738,7 @@ const DRAFT_PAIRS: Pair[] = [
     omit: STAGE_OMIT,
     scope: STAGE_SCOPE,
     prepare: stageBoard,
-    // The board's picker lists three drafts; the mock seeds two.
+    // The board's picker lists three drafts; the seed has two.
     setup: withChardataOff(thirdDraft),
     ready: async (page) => {
       const sheet = await carlingSheet(page);
@@ -670,23 +755,18 @@ const DRAFT_PAIRS: Pair[] = [
     scope: STAGE_SCOPE,
     prepare: stageBoard,
     // The board's draft already moves this run and adds Hinata to it; its party has six
-    // (the mock adds a second Ren, #1013, this week).
+    // (the seed adds a second Ren, #1013, this week).
     setup: async (page) => {
-      await chardataOff(page);
-      const headers = await csrf(page.request);
-      let version = 3;
-      for (const op of [
+      await chardataOff();
+      await stage(page, 'd-weekend', [
         { kind: 'move', run: 'r-carling', day: 6, time: '21:30' },
-        { kind: 'party', run: 'r-carling', add: ['1006'] },
-      ]) {
-        const done = await page.request.post(`${ADMIN}/api/admin/drafts/d-weekend/ops`, { headers, data: { version, op } });
-        version = (await done.json()).version;
-      }
+        { kind: 'party', run: 'r-carling', add: [member(1006)] },
+      ]);
       await page.route('**/api/admin/week*', async (route) => {
         const response = await route.fetch();
         if (response.status() !== 200) return route.fulfill({ response });
         const week = await response.json();
-        for (const run of week.runs) if (run.id === 'r-carling') run.participants = run.participants.filter((p: { id: string }) => p.id !== '1013');
+        for (const run of week.runs) if (run.id === 'r-carling') run.participants = run.participants.filter((p: { id: string }) => p.id !== member(1013));
         return route.fulfill({ json: week });
       });
     },
@@ -719,15 +799,20 @@ const DRAFT_PAIRS: Pair[] = [
 ];
 
 // Presence (KANADE_MOCKUPS=docs/research/2026-10-12-graph-presence-mockups). `POST
-// /__mock/presence/board` seeds the boards' other admins: Ren editing p-kalos-fixed with
-// Kaito viewing it 40 s ago, and Ren editing HCarling + HStar. The Inbox boards redraw
+// /__e2e/presence/board` seeds the boards' other admins: Ren editing p-kalos-fixed with
+// Kaito viewing it 40 s ago, and Ren editing HCarling + HMaleficStar. The Inbox boards redraw
 // B_InboxEdit (the inbox-edit pairs compare it) and the run sheet boards B_RunSheetStage
 // (the stage pairs' frame): these compare what presence adds. B_PresenceDraft and
 // B_PhonePresenceDraft have no pair: drafts are their author's only, so Draft detail
 // shows no presence (the boards draw another admin's view of the draft).
 const PRESENCE_SCOPE = ['presence', 'presence-pop', 'presence-note'];
 const presenceBoard = async (page: Page) => {
-  await page.request.post(`${ADMIN}/__mock/presence/board`);
+  await control(page, 'presence/board');
+};
+/** The Inbox presence boards over B_InboxEdit's state (its clock). */
+const presenceInbox = async (page: Page) => {
+  await beforeKalos();
+  await presenceBoard(page);
 };
 /**
  * B_PresenceInbox draws the popover as a top-level overlay placed for its own window,
@@ -761,14 +846,14 @@ const PRESENCE_PAIRS: Pair[] = [
     omit: INBOX_EDIT_OMIT,
     scope: PRESENCE_SCOPE,
     prepare: presenceInboxBoard,
-    setup: presenceBoard,
+    setup: presenceInbox,
     ready: async (page) => {
       await requestEdited(page);
       await page.getByRole('button', { name: /^Other admins here/ }).click();
       await expect(page.getByRole('dialog', { name: 'Admins here' })).toBeVisible();
     },
   },
-  { name: 'phone-presence-inbox', board: 'B_PhonePresenceInbox', path: '/inbox?tab=self_service&item=p-kalos-fixed', omit: PHONE_INBOX_EDIT_OMIT, scope: PRESENCE_SCOPE, prepare: inboxEditBoard, setup: presenceBoard, ready: requestEdited },
+  { name: 'phone-presence-inbox', board: 'B_PhonePresenceInbox', path: '/inbox?tab=self_service&item=p-kalos-fixed', omit: PHONE_INBOX_EDIT_OMIT, scope: PRESENCE_SCOPE, prepare: inboxEditBoard, setup: presenceInbox, ready: requestEdited },
   {
     name: 'presence-run-sheet',
     board: 'B_PresenceRunSheet',
@@ -801,12 +886,12 @@ const PRESENCE_PAIRS: Pair[] = [
 ];
 
 // History graph (KANADE_MOCKUPS=docs/research/2026-10-12-graph-presence-mockups, with the
-// shared render/ beside the boards). `POST /__mock/graph/board` seeds the boards' History
+// shared render/ beside the boards). `POST /__e2e/graph/board` seeds the boards' History
 // (head #39) and drafts. The rail is the rail-more pairs'; the phone top bar phone-nav's.
 const GRAPH_OMIT = ['rail', 'topbar'];
 const PHONE_GRAPH_OMIT = [...GRAPH_OMIT, 'page-line'];
 const graphBoard = async (page: Page) => {
-  await page.request.post(`${ADMIN}/__mock/graph/board`);
+  await control(page, 'graph/board');
 };
 const graphShown = async (page: Page) => {
   await expect(page.getByRole('grid', { name: /^History graph/ })).toBeVisible();
@@ -826,7 +911,8 @@ const graphLong = async (page: Page) => {
   await expect(page.getByText('Showing #18 – #28')).toBeVisible();
   await page.locator('.graph__scroll').evaluate((el) => (el.scrollTop = 0));
 };
-const graphEmpty = (page: Page) => page.route('**/api/admin/drafts/graph?*', (route) => route.fulfill({ json: { head: 9, drafts: [] } }));
+const graphEmpty = (page: Page) =>
+  page.route('**/api/admin/drafts/graph?*', async (route) => route.fulfill({ json: { ...(await (await route.fetch()).json()), drafts: [] } }));
 const GRAPH_PAIRS: Pair[] = [
   {
     name: 'history-graph',
@@ -878,11 +964,10 @@ const GRAPH_PAIRS: Pair[] = [
   },
 ];
 
-const rosterOff = async (page: Page) => {
-  await page.request.post(`${ADMIN}/__mock/modules`, { data: { roster: false } });
-};
+const rosterOff = () => setModules({ roster: false });
 const rosterTab = async (page: Page, role: 'complementary' | 'dialog', name: string) => {
-  await page.getByRole('button', { name: /^Mika/ }).click();
+  // Mikan is on the roster too.
+  await page.getByRole('button', { name: /^Mika\b/ }).click();
   const sheet = page.getByRole(role, { name, exact: true });
   await sheet.getByRole('tab', { name: /^Characters/ }).click();
   await expect(sheet.getByRole('list', { name: "Mika's characters" })).toBeVisible();
@@ -918,8 +1003,10 @@ const runPickBoard = (page: Page) =>
 /** The boards' Ren (1) picked RenShade (no "inferred"), as on the other run it clashes with. */
 const renPicked = async (page: Page) => {
   const headers = await csrf(page.request);
-  for (const run of ['r-carling', 'r-nstar'])
-    await page.request.put(`${ADMIN}/api/admin/runs/${run}/characters/1002`, { headers, data: { character_id: 'ch-s7', version: 0 } });
+  for (const run of ['r-carling', 'r-nstar']) {
+    const picked = await page.request.put(`${ADMIN}/api/admin/runs/${run}/characters/${member(1002)}`, { headers, data: { character_id: 'ch-s7', version: 0 } });
+    expect(picked.ok(), `Ren's pick on ${run}: ${await picked.text()}`).toBe(true);
+  }
 };
 
 // Character data (KANADE_MOCKUPS=docs/research/2026-10-12-chardata-mockups). The strip boards
@@ -928,17 +1015,13 @@ const renPicked = async (page: Page) => {
 // the Estimate panel adds; the Config boards are the whole Settings window. The States boards
 // (B_CharStates*, B_EstStates*, B_EstRunStates*) are grids of cells over several screens, not
 // one screen: e2e/chardata.spec.ts covers each of their states instead.
-const scouterOff = async (page: Page) => {
-  await page.request.post(`${ADMIN}/__mock/estimates`, { data: { scenario: 'off' } });
-};
-const chardataHealth = (health: string) => async (page: Page) => {
-  await page.request.post(`${ADMIN}/__mock/character-data`, { data: { health } });
-};
-/** A finished scouter lookup (the mock steps a running job once per read). */
+const scouterOff = () => setEstimates('off');
+const chardataHealth = (health: 'ok' | 'alert' | 'setup' | 'refused') => () => setCharacterData(health);
+/** A finished scouter lookup. */
 const lookedUp = (target: { character_ids: string[] } | { run_id: string }) => async (page: Page) => {
   const headers = await csrf(page.request);
   const { job } = await (await page.request.post(`${ADMIN}/api/admin/estimates`, { headers, data: target })).json();
-  for (let read = 0; read < 10; read++) if ((await (await page.request.get(`${ADMIN}/api/admin/estimates/${job.id}`)).json()).state !== 'running') break;
+  await expect.poll(async () => (await (await page.request.get(`${ADMIN}/api/admin/estimates/${job.id}`)).json()).state, { timeout: 30_000 }).not.toBe('running');
 };
 /** The boards' MikaBish unlinked first (B_CharLink asks to link it). */
 const unlinked = async (page: Page) => {
@@ -1016,16 +1099,26 @@ const READY_SCOPE = [
   'party-ready-rules',
 ];
 const readyBoard = async (page: Page) => {
-  await scouterOff(page);
+  await scouterOff();
   await renPicked(page);
   const headers = await csrf(page.request);
-  await page.request.put(`${ADMIN}/api/admin/runs/r-carling/characters/1003`, { headers, data: { character_id: 'ch-s3', version: 0 } });
+  const picked = await page.request.put(`${ADMIN}/api/admin/runs/r-carling/characters/${member(1003)}`, { headers, data: { character_id: 'ch-s3', version: 0 } });
+  expect(picked.ok(), `Mika's pick: ${await picked.text()}`).toBe(true);
 };
 const readyShownOn = async (page: Page) => {
   const sheet = await carlingSheet(page);
   await expect(sheet.locator('[data-fid="party-ready"]').first()).toBeVisible();
   // The phone board shows the Party list scrolled to its end (the rules line).
   if (page.viewportSize()!.width < 600) await sheet.locator('.ready__hint').evaluate((el) => el.scrollIntoView({ block: 'end' }));
+};
+/**
+ * History's newest change (the head), as the boards open a member's change. The page opens on
+ * the newest row, which on the real server is a Config save (no member revert), and the seed's
+ * import also touches next week's runs, so it heads the list under next week's group.
+ */
+const newestChange = async (page: Page) => {
+  const { head } = await (await page.request.get(`${ADMIN}/api/admin/history`)).json();
+  return page.locator(`.history-row[data-history="${head.seq}"]`).first();
 };
 /** Ready once what `shown` finds is visible. */
 const visible = (shown: (page: Page) => Locator) => (page: Page) => expect(shown(page)).toBeVisible();
@@ -1041,7 +1134,10 @@ const PAIRS: Pair[] = [
     name: 'history',
     board: 'B_History',
     path: '/history',
-    ready: opens((page) => page.locator('[data-history]').first(), (page) => page.getByRole('complementary', { name: 'Change details' })),
+    ready: async (page) => {
+      await (await newestChange(page)).click();
+      await expect(page.getByRole('complementary', { name: 'Change details' })).toBeVisible();
+    },
   },
   { name: 'history-ck', board: 'B_HistoryCk', path: '/history', ready: opens((page) => page.getByRole('tab', { name: 'Checkpoints' }), (page) => page.getByRole('table', { name: /Backups/ })) },
   {
@@ -1058,7 +1154,7 @@ const PAIRS: Pair[] = [
     path: '/members',
     // B_Members predates the roster module; B_RosterOff: with it off the sheet is exactly this one.
     setup: rosterOff,
-    ready: opens((page) => page.getByRole('button', { name: /^Mika/ }), (page) => page.getByRole('complementary', { name: 'Member details' })),
+    ready: opens((page) => page.getByRole('button', { name: /^Mika\b/ }), (page) => page.getByRole('complementary', { name: 'Member details' })),
   },
   // The character roster (KANADE_MOCKUPS=docs/research/2026-10-11-roster-mockups):
   // Mika's Characters tab with MikaBish's menu, the Edit dialog with the IGN
@@ -1124,7 +1220,7 @@ const PAIRS: Pair[] = [
   },
   { name: 'roster-delete', board: 'B_RosterDelete', path: '/members', omit: ROSTER_FRAME, ready: (page) => rosterDelete(page, 'complementary', 'Member details') },
   { name: 'phone-roster-delete', board: 'B_PhoneRosterDelete', path: '/members', omit: PHONE_ROSTER_FRAME, ready: (page) => rosterDelete(page, 'dialog', 'Mika') },
-  // The run-sheet character picker (B_RosterRunPick, B_PhoneRosterRunPick): HCarling + HStar
+  // The run-sheet character picker (B_RosterRunPick, B_PhoneRosterRunPick): HCarling + HMaleficStar
   // with Mika's picker open. The sheet around the party is hero-sheet's and hero-phone's.
   {
     name: 'roster-run-pick',
@@ -1137,7 +1233,7 @@ const PAIRS: Pair[] = [
     ready: async (page) => {
       const sheet = await carlingSheet(page);
       await sheet.getByRole('button', { name: /^Pick Mika's character/ }).click();
-      await expect(sheet.getByRole('dialog', { name: "Mika's character for HCarling + HStar" })).toBeVisible();
+      await expect(sheet.getByRole('dialog', { name: "Mika's character for HCarling + HMaleficStar" })).toBeVisible();
     },
   },
   {
@@ -1166,7 +1262,7 @@ const PAIRS: Pair[] = [
         'link',
         'Link',
         async (page: Page) => {
-          await scouterOff(page);
+          await scouterOff();
           await unlinked(page);
         },
         150,
@@ -1182,7 +1278,7 @@ const PAIRS: Pair[] = [
       { omit: PHONE_ROSTER_FRAME, prepare: stripBoard(false), ready: stripOpen('dialog', 'Mika', phoneScroll, act) },
     ),
   ),
-  // The run sheet's Estimate panel over HCarling + HStar (B_RosterRunPick's sheet, Ren (1) picked).
+  // The run sheet's Estimate panel over HCarling + HMaleficStar (B_RosterRunPick's sheet, Ren (1) picked).
   ...withPhone({
     name: 'chardata-estimate-run',
     board: 'B_CharEstimateRun',
@@ -1267,7 +1363,7 @@ const PAIRS: Pair[] = [
     board: 'B_WeekSel',
     path: '/',
     // The board shows today's first run selected in the side pane.
-    ready: opens((page) => page.locator('[data-run="r-carling"] .plan-card__open'), (page) => page.getByRole('complementary', { name: 'HCarling + HStar' })),
+    ready: opens((page) => page.locator('[data-run="r-carling"] .plan-card__open'), (page) => page.getByRole('complementary', { name: 'HCarling + HMaleficStar' })),
   },
   { name: 'week-runs', board: 'B_WeekRuns', path: '/?week=next', ready: opens((page) => page.getByRole('tab', { name: /^Runs/ }), (page) => page.getByRole('table', { name: /Every run/ })) },
   { name: 'week-answers', board: 'B_WeekAnswers', path: '/?week=next', ready: opens((page) => page.getByRole('tab', { name: /^Answers/ }), (page) => page.getByRole('heading', { name: 'Still waiting' })) },
@@ -1275,7 +1371,7 @@ const PAIRS: Pair[] = [
     name: 'reminders',
     board: 'B_Reminders',
     path: '/reminders',
-    // The "In" column and "today" read the browser clock: pin it to the mock's.
+    // The "In" column and "today" read the browser clock: pin it to the server's.
     ready: async (page) => {
       await page.clock.setFixedTime(PINNED_NOW);
       await page.reload();
@@ -1295,8 +1391,8 @@ const PAIRS: Pair[] = [
       await expect(page.getByRole('link', { name: /Config → Models/ })).toBeVisible();
     },
   },
-  // Live Limits: the boards show the mock's three seeded groups (cloud full and
-  // queueing, local half-open, legacy open), or its default one gateway group.
+  // Live Limits: the boards show three governor groups (cloud full and queueing, local
+  // half-open, legacy open) or the one gateway group (`setLimitGroups`, canned on the harness).
   ...(
     [
       ['limits-live', 'B_LimitsLive', 'three', 'Backends'],
@@ -1313,7 +1409,22 @@ const PAIRS: Pair[] = [
       board,
       path: '/limits',
       ready: async (page) => {
-        await page.request.post(`${ADMIN}/__mock/limits`, { data: { groups } });
+        await setLimitGroups(groups);
+        // The real server records no admission refusals yet (`AdmissionWindow::last_hour` is
+        // always empty): each read gets the board's four, as limits.spec does.
+        await page.route(`${ADMIN}/api/admin/limits`, async (route) => {
+          const response = await route.fetch(unconditional(route));
+          const body = (await response.json()) as Limits;
+          const named = (at: number) => (body.groups[at] ?? body.groups[0])?.name ?? 'gateway';
+          const ago = (minutes: number) => new Date(Date.parse(body.generated_at) - minutes * 60_000).toISOString().replace('.000Z', 'Z');
+          body.admission.refusals = [
+            { kind: 'rate', scope: 'group', target: named(1), count: 3, last_at: ago(6) },
+            { kind: 'concurrency', scope: 'group', target: named(0), count: 1, last_at: ago(41) },
+            { kind: 'quota', scope: 'key', target: 'gateway key …7f2a', count: 1, last_at: ago(22) },
+            { kind: 'key_rate', scope: 'key', target: 'gateway key …7f2a', count: 2, last_at: ago(9) },
+          ];
+          await route.fulfill({ response, json: body });
+        });
         await page.reload();
         const chosen = page.getByRole('tab', { name: new RegExp(`^${tab}`) });
         await chosen.click();
@@ -1352,7 +1463,7 @@ const PAIRS: Pair[] = [
     path: `/config?section=${section}`,
     ready: (page: Page) => expect(page.getByRole('heading', { level: 3, name: heading })).toBeVisible(),
   })),
-  // c-when is the mock's masked turn: two rounds, one tool call and a stored Model view, as the boards show.
+  // c-when is the seed's masked turn: two rounds, one tool call and a stored Model view, as the boards show.
   { name: 'chat', board: 'B_Chat', path: '/chat/c-when', ready: visible((page) => page.getByRole('button', { name: 'Model view (masked)' })) },
   { name: 'chat-trace', board: 'B_ChatTrace', path: '/chat/c-when', ready: opens((page) => page.getByRole('tab', { name: /^Model trace/ }), (page) => page.getByText('Round 2', { exact: true })) },
   {
@@ -1424,10 +1535,11 @@ const PAIRS: Pair[] = [
     board: 'HeroLogin',
     path: '/login',
     ready: async (page) => {
-      await page.request.post(`${ADMIN}/__mock/session`, { data: { method: 'none' } });
+      // Signed out behind the page's back: the browser forgets its session cookies.
+      await dropSessions(page.context());
       await page.goto(`${ADMIN}/login?sw=off`);
       await expect(page.getByRole('link', { name: 'Sign in with Discord' })).toBeVisible();
-      await expect(page.getByText('Carling + Radiant Malefic Star')).toBeVisible();
+      await expect(page.getByText('Karling + Radiant Malefic Star')).toBeVisible();
     },
   },
   // The run sheet: the phone's full sheet, and the pane's "larger view" on a laptop.
@@ -1436,7 +1548,7 @@ const PAIRS: Pair[] = [
     board: 'HeroPhone',
     path: '/',
     setup: chardataOff,
-    ready: opens((page) => page.locator('[data-run="r-carling"] .plan-card__open'), (page) => page.getByRole('dialog', { name: 'HCarling + HStar' })),
+    ready: opens((page) => page.locator('[data-run="r-carling"] .plan-card__open'), (page) => page.getByRole('dialog', { name: 'HCarling + HMaleficStar' })),
   },
   {
     name: 'hero-sheet',
@@ -1445,8 +1557,8 @@ const PAIRS: Pair[] = [
     setup: chardataOff,
     ready: async (page) => {
       await page.locator('[data-run="r-carling"] .plan-card__open').click();
-      await page.getByRole('complementary', { name: 'HCarling + HStar' }).getByRole('button', { name: 'Open in a larger view' }).click();
-      await expect(page.getByRole('dialog', { name: 'HCarling + HStar' })).toBeVisible();
+      await page.getByRole('complementary', { name: 'HCarling + HMaleficStar' }).getByRole('button', { name: 'Open in a larger view' }).click();
+      await expect(page.getByRole('dialog', { name: 'HCarling + HMaleficStar' })).toBeVisible();
     },
   },
   // The date picker (picker boards, KANADE_MOCKUPS=…/2026-10-04-picker-mockups): Chat's
@@ -1470,6 +1582,7 @@ const PAIRS: Pair[] = [
     board: 'P_DatesSpec',
     path: '/history',
     ready: async (page) => {
+      await (await newestChange(page)).click();
       const trigger = page.getByRole('complementary', { name: 'Change details' }).getByRole('button', { name: /^Since/ });
       await trigger.click();
       await page.getByRole('dialog', { name: 'Since' }).getByRole('button', { name: /^Last reset/ }).click();
@@ -1490,14 +1603,14 @@ const PAIRS: Pair[] = [
     },
   },
   // The Move picker (KANADE_MOCKUPS=docs/research/2026-10-04-picker-mockups). Next week
-  // has a clash to show: HCarling + HStar on Monday at HFA's 20:00.
+  // has a clash to show: HCarling + HMaleficStar on Monday at HFA's 20:00.
   {
     name: 'move-pane',
     board: 'Main',
     path: '/?week=next',
     ready: async (page) => {
       await page.locator('[data-run="n-carling"] .plan-card__open').click();
-      const pane = page.getByRole('complementary', { name: 'HCarling + HStar' });
+      const pane = page.getByRole('complementary', { name: 'HCarling + HMaleficStar' });
       await pane.getByRole('radio', { name: /^Mon 05/ }).click();
       await pane.getByRole('textbox', { name: 'Type a day and time' }).fill('20:00');
       await expect(pane.getByRole('status').filter({ hasText: 'Clash:' })).toBeVisible();
@@ -1522,8 +1635,8 @@ const PAIRS: Pair[] = [
     path: '/?week=next',
     ready: async (page) => {
       await page.locator('[data-run="n-carling"] .plan-card__open').click();
-      await page.getByRole('dialog', { name: 'HCarling + HStar' }).getByRole('button', { name: 'Move HCarling + HStar…' }).click();
-      const view = page.getByRole('dialog', { name: 'Move HCarling + HStar' });
+      await page.getByRole('dialog', { name: 'HCarling + HMaleficStar' }).getByRole('button', { name: 'Move HCarling + HMaleficStar…' }).click();
+      const view = page.getByRole('dialog', { name: 'Move HCarling + HMaleficStar' });
       await view.getByRole('radio', { name: /^Mon 05/ }).click();
       await view.getByRole('textbox', { name: 'Or type a day and time' }).fill('20:00');
       await expect(view.getByRole('status').filter({ hasText: 'Clash:' })).toBeVisible();

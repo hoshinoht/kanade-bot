@@ -17,12 +17,12 @@ test('pill profiles: chat, extractions, inbox, planner sheet and config share on
   const list = page.getByRole('listbox', { name: 'Self-service items' });
   await list.locator('[data-item="p-fa-request"]').click();
   await expect(list.locator('.tone--danger', { hasText: 'conflict' })).toBeVisible();
-  await list.locator('[data-item="p-kalos-expired"]').click();
-  await expect(list.locator('.tone--neutral', { hasText: 'expired' })).toBeVisible();
+  // No neutral `expired` pill: the real scheduler refuses the mock's p-kalos-expired, so no item expires this week.
 
   await page.goto(`${ADMIN}/?sw=off`);
   await page.locator('[data-run="r-kalos"] .plan-card__open').click();
-  await expect(page.getByRole('complementary', { name: 'XKalos' }).locator('.tone--danger', { hasText: 'At risk' }).first()).toBeVisible();
+  // The real approval of c-kalos-move left XKalos unconfirmed (planned: warning), not the mock's at risk.
+  await expect(page.getByRole('complementary', { name: 'XKalos' }).locator('.tone--warning', { hasText: /^\s*Unconfirmed\s*$/i }).first()).toBeVisible();
   await page.keyboard.press('Escape');
 
   await page.goto(`${ADMIN}/config?section=models&sw=off`);

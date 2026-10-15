@@ -11,7 +11,7 @@ mod runs;
 
 use std::collections::BTreeSet;
 
-use chrono::{DateTime, TimeZone, Utc};
+use chrono::{DateTime, Utc};
 use kanade::domain::{
     history::{ChangeHistory, ChangeRecord},
     schedule::{Change, Run, RunSource, RunStatus},
@@ -19,6 +19,7 @@ use kanade::domain::{
 use serde_json::Value;
 
 use super::member_support::{Browser, MemberHarness, Options, PUB_ORIGIN, discord_user};
+pub(super) use crate::reads::{this_week, utc};
 use crate::{
     reads::{Reads, commit_as},
     schemas::assert_valid,
@@ -30,16 +31,6 @@ pub(super) const ALICE: u64 = 1001;
 pub(super) const BOB: u64 = 1002;
 pub(super) const CARA: u64 = 1003;
 pub(super) const DAN: u64 = 1004;
-
-pub(super) fn utc(month: u32, day: u32, hour: u32, minute: u32) -> DateTime<Utc> {
-    Utc.with_ymd_and_hms(2026, month, day, hour, minute, 0)
-        .unwrap()
-}
-
-/// Thursday 24 Sep 00:00 KL: this boss week.
-pub(super) fn this_week() -> DateTime<Utc> {
-    utc(9, 23, 16, 0)
-}
 
 pub(super) fn keys(value: &Value) -> BTreeSet<&str> {
     value

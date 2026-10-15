@@ -1,5 +1,5 @@
 import AxeBuilder from '@axe-core/playwright';
-import { ADMIN, expect, test } from './support';
+import { ADMIN, ASAHI_SNOWFLAKE, expect, signInAdmin, test } from './support';
 
 // The shell's chrome (was the masthead; now the navigation rail and, on a
 // phone, the top bar): captures (git-ignored) go to
@@ -58,7 +58,7 @@ test('account menu: keyboard, copy the user id, sign out, and axe', async ({ pag
   await expect(account).toBeFocused();
   await page.keyboard.press('ArrowDown');
   await page.keyboard.press('Enter');
-  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('1001');
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(ASAHI_SNOWFLAKE);
   await expect(page.getByRole('group', { name: 'Notification' }).filter({ hasText: 'Copied your user ID.' })).toBeVisible();
 
   // A click elsewhere closes it; Sign out from the menu ends the session.
@@ -72,7 +72,7 @@ test('account menu: keyboard, copy the user id, sign out, and axe', async ({ pag
 });
 
 test('account menu: a token session has no user id to copy', async ({ page }) => {
-  await page.request.post(`${ADMIN}/__mock/session`, { data: { method: 'token' } });
+  await signInAdmin(page, 'token');
   await page.goto(`${ADMIN}/?sw=off`);
   await page.getByRole('button', { name: /Break-glass token/ }).click();
   const menu = page.getByRole('menu', { name: 'Account' });

@@ -1,4 +1,4 @@
-//! Member requests over the in-memory store: submit, limits, withdraw,
+//! Member requests over a temp SQLite store: submit, limits, withdraw,
 //! admin edit, approve (merge) and reject, expiry and requester notices.
 
 use std::collections::BTreeMap;
@@ -26,16 +26,16 @@ use kanade::domain::scheduler::{
     Approved, Committed, DraftError, MergeWarning, RecordedRequest, RequestError, RequestPreview,
     RequestResult, ScheduleStore, SchedulerService, Scope, SkipReason, StoreError,
 };
-use kanade::infrastructure::store::MemoryScheduleStore;
+use kanade::infrastructure::store::SqliteStore;
 
 use crate::common::TestClock;
 use crate::support::{
-    AnyChannel, Guild, TwoTimings as Fixture, hm, kl, owned, policy, snapshot,
+    AnyChannel, Guild, TwoTimings as Fixture, by_tests, hm, kl, owned, policy, snapshot,
     two_timings as fixture,
 };
 
 type Svc<S> = SchedulerService<S, RandomIds, TestClock>;
-type Service = Svc<MemoryScheduleStore>;
+type Service = Svc<SqliteStore>;
 
 struct Frozen(&'static str);
 
@@ -57,6 +57,11 @@ async fn submit(
     service
         .submit_request(member, "please", spec, None, &policy(), &Guild, &NoFreezes)
         .await
+}
+
+/// A submit that must succeed.
+async fn filed(service: &mut Service, member: &str, spec: RequestSpec) -> StoredDraft {
+    submit(service, member, spec).await.unwrap()
 }
 
 /// Submit as 1003 with the request id `sub-1`.
@@ -93,6 +98,15 @@ async fn approve<S: ScheduleStore + DraftStore>(
     version: u64,
 ) -> RequestResult<Approved> {
     approve_as(service, &admin(), id, version, None, &NoFreezes).await
+}
+
+/// Approve version 1 as the admin with `choices`, without freezes.
+async fn approve_with(
+    service: &mut Service,
+    id: &str,
+    choices: Option<FixedEditChoices>,
+) -> RequestResult<Approved> {
+    approve_as(service, &admin(), id, 1, choices, &NoFreezes).await
 }
 
 async fn preview(
@@ -162,24 +176,21 @@ async fn set_party(f: &mut Fixture, fixed: &str, party: &[&str]) {
         participants: Some(owned(party)),
         ..FixedEdit::default()
     };
-    f.service
-        .as_origin(Origin::for_tests())
+    by_tests(&mut f.service)
         .update_fixed(fixed, edit, &Guild, &policy())
         .await
         .unwrap();
 }
 
 async fn substitute(f: &mut Fixture, run: &str, out: &[&str], into: &[&str]) {
-    f.service
-        .as_origin(Origin::for_tests())
+    by_tests(&mut f.service)
         .swap_participants(run, &owned(out), &owned(into), true, &Guild)
         .await
         .unwrap();
 }
 
 async fn answer(f: &mut Fixture, run: &str, user: &str) {
-    f.service
-        .as_origin(Origin::for_tests())
+    by_tests(&mut f.service)
         .set_rsvp(run, user, RsvpState::Yes, RsvpSource::Chat)
         .await
         .unwrap();
@@ -188,9 +199,7 @@ async fn answer(f: &mut Fixture, run: &str, user: &str) {
 #[tokio::test]
 async fn an_approved_request_merges_as_the_admin_and_tells_only_the_requester() {
     let mut f = fixture().await;
-    let request = submit(&mut f.service, "1003", join(&f.runs[0][0]))
-        .await
-        .unwrap();
+    let request = filed(&mut f.service, "1003", join(&f.runs[0][0])).await;
     assert_eq!(request.status, DraftStatus::Submitted);
     assert_eq!(request.request_type.as_deref(), Some("join"));
     let base = request.base.clone();
@@ -258,7 +267,7 @@ async fn a_requester_who_left_the_run_is_refused_at_approval() {
         subject: Subject::Run(f.runs[0][0].clone()),
         with: "1003".into(),
     };
-    let request = submit(&mut f.service, "1002", swap).await.unwrap();
+    let request = filed(&mut f.service, "1002", swap).await;
     let run = f.runs[0][0].clone();
     substitute(&mut f, &run, &["1002"], &["1004"]).await;
     let head = f.service.store().history_head().await.unwrap();
@@ -279,7 +288,7 @@ async fn a_requester_who_left_the_run_is_refused_at_approval() {
 async fn pending_requests_are_capped() {
     let mut f = fixture().await;
     for run in [&f.runs[0][0], &f.runs[0][2], &f.runs[1][0]] {
-        submit(&mut f.service, "1003", join(run)).await.unwrap();
+        filed(&mut f.service, "1003", join(run)).await;
     }
     assert!(matches!(
         submit(&mut f.service, "1003", join(&f.runs[1][2])).await,
@@ -289,17 +298,13 @@ async fn pending_requests_are_capped() {
         }))
     ));
     // Another member is not affected.
-    submit(&mut f.service, "1004", join(&f.runs[1][2]))
-        .await
-        .unwrap();
+    filed(&mut f.service, "1004", join(&f.runs[1][2])).await;
 }
 
 #[tokio::test]
 async fn withdrawn_and_rejected_requests_cannot_be_approved() {
     let mut f = fixture().await;
-    let withdrawn = submit(&mut f.service, "1003", join(&f.runs[0][0]))
-        .await
-        .unwrap();
+    let withdrawn = filed(&mut f.service, "1003", join(&f.runs[0][0])).await;
     // Only the requester withdraws.
     assert!(matches!(
         f.service.withdraw_request("1004", &withdrawn.id, 1).await,
@@ -316,9 +321,7 @@ async fn withdrawn_and_rejected_requests_cannot_be_approved() {
             ..
         }))
     ));
-    let rejected = submit(&mut f.service, "1003", join(&f.runs[0][2]))
-        .await
-        .unwrap();
+    let rejected = filed(&mut f.service, "1003", join(&f.runs[0][2])).await;
     assert!(matches!(
         f.service
             .reject_request(&admin(), &rejected.id, 1, "  ")
@@ -367,9 +370,7 @@ async fn withdrawn_and_rejected_requests_cannot_be_approved() {
 #[tokio::test]
 async fn approval_needs_an_admin_and_the_reviewed_version() {
     let mut f = fixture().await;
-    let request = submit(&mut f.service, "1003", join(&f.runs[0][0]))
-        .await
-        .unwrap();
+    let request = filed(&mut f.service, "1003", join(&f.runs[0][0])).await;
     for actor in [Actor::member("1001"), Actor::system("delivery")] {
         assert!(matches!(
             approve_as(&mut f.service, &actor, &request.id, 1, None, &NoFreezes).await,
@@ -457,9 +458,7 @@ async fn change_requests_need_choices_and_report_stale_ones() {
         submit(&mut f.service, "1001", note).await,
         Err(RequestError::Refused(RequestRefusal::FieldNotAllowed))
     ));
-    let request = submit(&mut f.service, "1001", retime(&f.fixed[0]))
-        .await
-        .unwrap();
+    let request = filed(&mut f.service, "1001", retime(&f.fixed[0])).await;
     assert!(
         request.scope.expires_week().is_none(),
         "a weekly change does not expire by week"
@@ -469,25 +468,14 @@ async fn change_requests_need_choices_and_report_stale_ones() {
         Err(RequestError::Refused(RequestRefusal::ChoicesRequired))
     ));
     // Another amendment lands upstream: the reviewed choices are stale.
-    let stale = submit(&mut f.service, "1002", retime(&f.fixed[0]))
-        .await
-        .unwrap();
+    let stale = filed(&mut f.service, "1002", retime(&f.fixed[0])).await;
     let moved = run_row(&snapshot(&f.service).await, &f.runs[0][2]).datetime + TimeDelta::days(1);
-    f.service
-        .as_origin(Origin::for_tests())
+    by_tests(&mut f.service)
         .amend_run(&f.runs[0][2], moved, &policy())
         .await
         .unwrap();
     let choices = keep_for_this_week(&[&f.runs[0][1], &f.runs[0][2]]);
-    let result = approve_as(
-        &mut f.service,
-        &admin(),
-        &stale.id,
-        1,
-        Some(choices),
-        &NoFreezes,
-    )
-    .await;
+    let result = approve_with(&mut f.service, &stale.id, Some(choices)).await;
     assert!(
         matches!(
             &result,
@@ -500,9 +488,7 @@ async fn change_requests_need_choices_and_report_stale_ones() {
         "{result:?}"
     );
     // Choices only apply to change requests.
-    let joined = submit(&mut f.service, "1003", join(&f.runs[1][0]))
-        .await
-        .unwrap();
+    let joined = filed(&mut f.service, "1003", join(&f.runs[1][0])).await;
     let all = Some(FixedEditChoices::UpdateAll);
     assert!(matches!(
         approve_as(&mut f.service, &admin(), &joined.id, 1, all, &NoFreezes).await,
@@ -513,21 +499,12 @@ async fn change_requests_need_choices_and_report_stale_ones() {
 #[tokio::test]
 async fn a_change_request_merges_with_per_run_choices() {
     let mut f = fixture().await;
-    let request = submit(&mut f.service, "1001", retime(&f.fixed[0]))
-        .await
-        .unwrap();
+    let request = filed(&mut f.service, "1001", retime(&f.fixed[0])).await;
     let choices = keep_for_this_week(&[&f.runs[0][1]]);
     let before = run_row(&snapshot(&f.service).await, &f.runs[0][1]).datetime;
-    approve_as(
-        &mut f.service,
-        &admin(),
-        &request.id,
-        1,
-        Some(choices),
-        &NoFreezes,
-    )
-    .await
-    .unwrap();
+    approve_with(&mut f.service, &request.id, Some(choices))
+        .await
+        .unwrap();
     let state = snapshot(&f.service).await;
     let timing = state
         .fixed_runs
@@ -542,13 +519,9 @@ async fn a_change_request_merges_with_per_run_choices() {
 #[tokio::test]
 async fn run_requests_expire_after_the_reset_and_weekly_ones_do_not() {
     let mut f = fixture().await;
-    let weekly = submit(&mut f.service, "1003", join_timing(&f.fixed[1]))
-        .await
-        .unwrap();
+    let weekly = filed(&mut f.service, "1003", join_timing(&f.fixed[1])).await;
     assert!(weekly.scope.expires_week().is_none());
-    let this_week = submit(&mut f.service, "1003", join(&f.runs[0][0]))
-        .await
-        .unwrap();
+    let this_week = filed(&mut f.service, "1003", join(&f.runs[0][0])).await;
     assert!(this_week.scope.expires_week().is_some());
     f.service.clock().set(kl(3, 1, 0));
     let expired = f.service.expire_due_drafts(&policy()).await.unwrap();
@@ -602,9 +575,7 @@ async fn request_and_admin_methods_refuse_each_others_drafts() {
         approve(&mut f.service, &draft.id, 1).await,
         Err(RequestError::AdminDraft)
     ));
-    let request = submit(&mut f.service, "1003", join(&f.runs[0][0]))
-        .await
-        .unwrap();
+    let request = filed(&mut f.service, "1003", join(&f.runs[0][0])).await;
     assert!(matches!(
         f.service
             .merge_draft("root", &request.id, 1, &policy(), &Guild, None)
@@ -617,10 +588,8 @@ async fn request_and_admin_methods_refuse_each_others_drafts() {
 async fn two_joins_on_one_timing_both_merge() {
     let mut f = fixture().await;
     let timing = join_timing(&f.fixed[1]);
-    let first = submit(&mut f.service, "1003", timing.clone())
-        .await
-        .unwrap();
-    let second = submit(&mut f.service, "1004", timing).await.unwrap();
+    let first = filed(&mut f.service, "1003", timing.clone()).await;
+    let second = filed(&mut f.service, "1004", timing).await;
     approve(&mut f.service, &first.id, 1).await.unwrap();
     let result = approve(&mut f.service, &second.id, 1).await;
     assert!(result.is_ok(), "{result:?}");
@@ -631,12 +600,8 @@ async fn two_joins_on_one_timing_both_merge() {
 #[tokio::test]
 async fn a_leave_after_an_upstream_join_merges() {
     let mut f = fixture().await;
-    let leave = submit(&mut f.service, "1002", leave_timing(&f.fixed[1]))
-        .await
-        .unwrap();
-    let join = submit(&mut f.service, "1003", join_timing(&f.fixed[1]))
-        .await
-        .unwrap();
+    let leave = filed(&mut f.service, "1002", leave_timing(&f.fixed[1])).await;
+    let join = filed(&mut f.service, "1003", join_timing(&f.fixed[1])).await;
     approve(&mut f.service, &join.id, 1).await.unwrap();
     approve(&mut f.service, &leave.id, 1).await.unwrap();
     let state = snapshot(&f.service).await;
@@ -651,9 +616,7 @@ async fn a_leave_after_an_upstream_join_merges() {
 #[tokio::test]
 async fn a_swap_after_an_upstream_change_merges() {
     let mut f = fixture().await;
-    let swap = submit(&mut f.service, "1002", swap_timing(&f.fixed[1], "1004"))
-        .await
-        .unwrap();
+    let swap = filed(&mut f.service, "1002", swap_timing(&f.fixed[1], "1004")).await;
     // An administrator adds 1003 to the party directly meanwhile.
     let fixed = f.fixed[1].clone();
     set_party(&mut f, &fixed, &["1001", "1002", "1003"]).await;
@@ -686,9 +649,7 @@ async fn joining_a_party_you_are_on_is_refused() {
 #[tokio::test]
 async fn preview_request_analyses_and_writes_nothing() {
     let mut f = fixture().await;
-    let request = submit(&mut f.service, "1002", leave_timing(&f.fixed[1]))
-        .await
-        .unwrap();
+    let request = filed(&mut f.service, "1002", leave_timing(&f.fixed[1])).await;
     let head = f.service.store().history_head().await.unwrap();
     assert!(matches!(
         preview(&f.service, &Actor::member("1001"), &request.id, &NoFreezes).await,
@@ -736,9 +697,7 @@ async fn preview_request_analyses_and_writes_nothing() {
 #[tokio::test]
 async fn rejection_reasons_are_capped() {
     let mut f = fixture().await;
-    let request = submit(&mut f.service, "1003", join(&f.runs[0][0]))
-        .await
-        .unwrap();
+    let request = filed(&mut f.service, "1003", join(&f.runs[0][0])).await;
     for reason in ["x".repeat(501), "no\u{7}".to_owned(), "a\nb".to_owned()] {
         assert!(matches!(
             f.service
@@ -771,20 +730,11 @@ async fn an_exact_submit_retry_replays_before_other_checks() {
 #[tokio::test]
 async fn approved_choices_are_recorded_in_the_merged_event() {
     let mut f = fixture().await;
-    let request = submit(&mut f.service, "1001", retime(&f.fixed[0]))
+    let request = filed(&mut f.service, "1001", retime(&f.fixed[0])).await;
+    let choices = Some(keep_for_this_week(&[&f.runs[0][1]]));
+    let approved = approve_with(&mut f.service, &request.id, choices)
         .await
         .unwrap();
-    let choices = Some(keep_for_this_week(&[&f.runs[0][1]]));
-    let approved = approve_as(
-        &mut f.service,
-        &admin(),
-        &request.id,
-        1,
-        choices,
-        &NoFreezes,
-    )
-    .await
-    .unwrap();
     let events = f.service.store().draft_events(&request.id).await.unwrap();
     let merged = events.last().unwrap();
     assert_eq!(merged.kind, DraftEventKind::Merged);
@@ -807,7 +757,7 @@ enum Twist {
 }
 
 struct Twisted<'a> {
-    inner: &'a MemoryScheduleStore,
+    inner: &'a SqliteStore,
     twist: Twist,
     fixed: String,
     requester: String,
@@ -973,9 +923,7 @@ fn twisted<'a>(f: &'a Fixture, twist: Twist, requester: &str) -> Twisted<'a> {
 #[tokio::test]
 async fn a_requester_removed_before_the_commit_is_refused() {
     let mut f = fixture().await;
-    let request = submit(&mut f.service, "1002", swap_timing(&f.fixed[1], "1003"))
-        .await
-        .unwrap();
+    let request = filed(&mut f.service, "1002", swap_timing(&f.fixed[1], "1003")).await;
     let store = twisted(&f, Twist::RemoveRequester, "1002");
     let mut service = SchedulerService::new(&store, RandomIds, TestClock::new(kl(27, 1, 0)));
     let result = approve(&mut service, &request.id, 1).await;
@@ -998,14 +946,8 @@ async fn a_requester_removed_before_the_commit_is_refused() {
 #[tokio::test]
 async fn committed_decisions_never_fail_on_later_reads() {
     let mut f = fixture().await;
-    let approve_id = submit(&mut f.service, "1003", join(&f.runs[0][0]))
-        .await
-        .unwrap()
-        .id;
-    let reject_id = submit(&mut f.service, "1003", join(&f.runs[0][2]))
-        .await
-        .unwrap()
-        .id;
+    let approve_id = filed(&mut f.service, "1003", join(&f.runs[0][0])).await.id;
+    let reject_id = filed(&mut f.service, "1003", join(&f.runs[0][2])).await.id;
     for (id, approving) in [(&approve_id, true), (&reject_id, false)] {
         let store = twisted(&f, Twist::FailLoadsAfterWrite, "1003");
         let mut service = SchedulerService::new(&store, RandomIds, TestClock::new(kl(27, 1, 0)));
@@ -1023,9 +965,7 @@ async fn committed_decisions_never_fail_on_later_reads() {
 #[tokio::test]
 async fn a_timing_join_merges_after_an_upstream_one_off_substitution() {
     let mut f = fixture().await;
-    let request = submit(&mut f.service, "1003", join_timing(&f.fixed[1]))
-        .await
-        .unwrap();
+    let request = filed(&mut f.service, "1003", join_timing(&f.fixed[1])).await;
     let run = f.runs[1][0].clone();
     substitute(&mut f, &run, &["1002"], &["1004"]).await;
     approve(&mut f.service, &request.id, 1).await.unwrap();
@@ -1041,9 +981,7 @@ async fn a_substitution_made_before_submit_survives_approval() {
     let run = f.runs[1][0].clone();
     substitute(&mut f, &run, &["1002"], &["1004"]).await;
     answer(&mut f, &run, "1004").await;
-    let request = submit(&mut f.service, "1003", join_timing(&f.fixed[1]))
-        .await
-        .unwrap();
+    let request = filed(&mut f.service, "1003", join_timing(&f.fixed[1])).await;
     approve(&mut f.service, &request.id, 1).await.unwrap();
     let state = snapshot(&f.service).await;
     let party = sorted(run_row(&state, &run).participants);
@@ -1067,9 +1005,7 @@ async fn a_timing_leave_drops_only_the_leavers_answers() {
     // old whole-party push would have put 1001 back).
     let middle = f.runs[1][1].clone();
     substitute(&mut f, &middle, &["1001"], &["1004"]).await;
-    let request = submit(&mut f.service, "1002", leave_timing(&f.fixed[1]))
-        .await
-        .unwrap();
+    let request = filed(&mut f.service, "1002", leave_timing(&f.fixed[1])).await;
     approve(&mut f.service, &request.id, 1).await.unwrap();
     let state = snapshot(&f.service).await;
     for run in &runs {
@@ -1083,9 +1019,7 @@ async fn a_timing_leave_drops_only_the_leavers_answers() {
 #[tokio::test]
 async fn a_request_already_in_effect_is_flagged_not_closed() {
     let mut f = fixture().await;
-    let request = submit(&mut f.service, "1003", join_timing(&f.fixed[1]))
-        .await
-        .unwrap();
+    let request = filed(&mut f.service, "1003", join_timing(&f.fixed[1])).await;
     // An administrator adds 1003 directly meanwhile.
     let fixed = f.fixed[1].clone();
     set_party(&mut f, &fixed, &["1001", "1002", "1003"]).await;
@@ -1109,9 +1043,7 @@ async fn a_request_already_in_effect_is_flagged_not_closed() {
         "no automatic close"
     );
     // A fresh request is not flagged.
-    let fresh = submit(&mut f.service, "1004", join_timing(&f.fixed[1]))
-        .await
-        .unwrap();
+    let fresh = filed(&mut f.service, "1004", join_timing(&f.fixed[1])).await;
     let fresh = preview(&f.service, &admin(), &fresh.id, &NoFreezes).await;
     assert!(!fresh.unwrap().no_effect);
 }
@@ -1122,9 +1054,7 @@ async fn a_delta_that_would_empty_a_run_skips_it_and_warns() {
     let lonely = f.runs[1][0].clone();
     // This week only 1002 plays that run.
     substitute(&mut f, &lonely, &["1001"], &[]).await;
-    let request = submit(&mut f.service, "1002", leave_timing(&f.fixed[1]))
-        .await
-        .unwrap();
+    let request = filed(&mut f.service, "1002", leave_timing(&f.fixed[1])).await;
     let skipped = [MergeWarning::PartyDeltaSkipped {
         run_id: lonely.clone(),
         reason: SkipReason::Emptied,

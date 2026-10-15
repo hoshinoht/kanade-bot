@@ -11,7 +11,7 @@ use kanade::domain::{
     },
     history::{
         ChangeFilter, ChangeHistory, ChangeQuery, ChangeRecord, ChangeRef, HistoryGap, MAX_PAGE,
-        Origin, rewind,
+        rewind,
     },
     schedule::{
         AmendedRunChoice, FixedEdit, FixedEditChoices, FixedEditRequest, FixedField, NewFixedRun,
@@ -19,16 +19,16 @@ use kanade::domain::{
     },
     scheduler::SchedulerService,
 };
-use kanade::infrastructure::store::MemoryScheduleStore;
+use kanade::infrastructure::store::SqliteStore;
 use serde_json::{Value, json};
 
 use crate::common::TestClock;
 use crate::support::{
-    CountingIds, Guild, amend, existing, hm, kalos_run, kl, now, one_timing as fixture, owned,
-    policy, rsvp, snapshot, swap, utc, weekly,
+    CountingIds, Guild, amend, by_tests, existing, hm, kalos_run, kl, now, one_timing as fixture,
+    owned, policy, rsvp, snapshot, swap, utc, weekly,
 };
 
-type Service = SchedulerService<MemoryScheduleStore, CountingIds, TestClock>;
+type Service = SchedulerService<SqliteStore, CountingIds, TestClock>;
 
 fn id(target: &Target) -> &str {
     match target {
@@ -40,7 +40,7 @@ fn id(target: &Target) -> &str {
 /// Commit one operation through the service, as another member would.
 async fn commit(service: &mut Service, op: &DraftOp) {
     let policy = policy();
-    let origin = service.as_origin(Origin::for_tests());
+    let origin = by_tests(service);
     let committed = match op {
         DraftOp::AddFixedRun(new) => origin.add_fixed_run(new.clone()).await.map(drop),
         DraftOp::ApplyFixedEdit {
@@ -229,8 +229,13 @@ fn codec_samples() -> Vec<DraftOp> {
     ]
 }
 
+/// The pinned `kanade.draft_op.v1` strings, cross-checked with Python's
+/// `json.dumps(value, ensure_ascii=False, separators=(",", ":"), sort_keys=True)`.
+/// Never regenerate it to make a failing test pass: a change to the encoder's
+/// output is a new format version. Print the encoder's output with
+/// `KANADE_PRINT_GOLDEN=1 cargo test --all-features --test scheduler codec_matches -- --nocapture`.
 fn golden_path() -> std::path::PathBuf {
-    std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("docs/v5/vectors/drafts/draft_ops.json")
+    std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/drafts/draft_ops.json")
 }
 
 #[test]
@@ -944,8 +949,7 @@ async fn a_retirement_staged_before_a_reset_goes_stale() {
     // After the next reset the fourth week is materialised with a live run.
     let later = kl(3, 1, 0);
     f.clock.set(later);
-    f.service
-        .as_origin(Origin::for_tests())
+    by_tests(&mut f.service)
         .materialise_weeks(&policy())
         .await
         .unwrap();
@@ -1005,8 +1009,7 @@ async fn edit_fixed_run_skips_absent_timings_and_empty_edits_before_reading_week
     let note = [FixedField::Note];
     let reminders = policy().reminders;
     let mut edit = async |fixed: &str, changed: &[FixedField]| {
-        f.service
-            .as_origin(Origin::for_tests())
+        by_tests(&mut f.service)
             .edit_fixed_run(fixed, Default::default(), changed, &[edge], &reminders)
             .await
     };

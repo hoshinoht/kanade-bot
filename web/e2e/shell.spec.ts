@@ -16,9 +16,9 @@ test('rail: grouped destinations beside the page, no masthead, no 1180 px cap', 
   const rail = page.locator('.navrail');
   const nav = rail.getByRole('navigation', { name: 'Sections' });
   await expect(nav.getByRole('link', { name: 'Week' })).toHaveAttribute('aria-current', 'page');
-  await expect(nav.getByRole('link', { name: /^Inbox/ })).toContainText('11');
+  await expect(nav.getByRole('link', { name: /^Inbox/ })).toContainText('9');
   // The badge is part of the link's name, said as words.
-  await expect(nav.getByRole('link', { name: 'Inbox 11 waiting', exact: true })).toBeVisible();
+  await expect(nav.getByRole('link', { name: 'Inbox 9 waiting', exact: true })).toBeVisible();
   // The page uses the width (G6): main runs from the rail to the edge.
   const main = (await page.locator('#main').boundingBox())!;
   const railBox = (await rail.boundingBox())!;
@@ -83,7 +83,7 @@ for (const size of [
 
 test('rail: More is a keyboard menu of Rewrites, Limits and Reminders', async ({ page }) => {
   await page.goto(`${ADMIN}/members?sw=off`);
-  await expect(page.getByRole('heading', { level: 1 })).toHaveText('13 bossers');
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('15 bossers');
   const nav = page.locator('.navrail').getByRole('navigation', { name: 'Sections' });
   const more = nav.getByRole('button', { name: 'More', exact: true });
   await expect(more).toHaveAttribute('aria-haspopup', 'menu');
@@ -159,11 +159,11 @@ test('phone: 48 px top bar, Inbox one tap away, and no rail or nav row', async (
   await expect(bar.locator('[data-fresh="live"]')).toBeVisible();
   await expect(page.locator('.navrail')).toHaveCount(0);
   await expect(page.getByRole('navigation', { name: 'Sections' })).toHaveCount(0);
-  const inbox = bar.getByRole('link', { name: 'Inbox 11 waiting', exact: true });
-  await expect(inbox).toContainText('11');
+  const inbox = bar.getByRole('link', { name: 'Inbox 9 waiting', exact: true });
+  await expect(inbox).toContainText('9');
   await inbox.click();
   await expect(page).toHaveURL(`${ADMIN}/inbox`);
-  await expect(page.getByRole('heading', { level: 1 })).toHaveText('11 changes waiting');
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('9 changes waiting');
   await expect(inbox).toHaveAttribute('aria-current', 'page');
   // The phone's chrome above the window: top bar, page line and margins
   // (≈ 100 px; the masthead, pinned nav and page-head card took ≈ 185).
@@ -175,7 +175,7 @@ test('phone: 48 px top bar, Inbox one tap away, and no rail or nav row', async (
 test('phone: the navigation drawer traps focus, closes every way, and gives focus back', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(`${ADMIN}/members?sw=off`);
-  await expect(page.getByRole('heading', { level: 1 })).toHaveText('13 bossers');
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('15 bossers');
   const menu = page.getByRole('button', { name: 'Open the navigation' });
   await expect(menu).toHaveAttribute('aria-expanded', 'false');
   await menu.click();
@@ -219,7 +219,7 @@ test('phone: the navigation drawer traps focus, closes every way, and gives focu
   await drawer.getByRole('link', { name: 'History' }).click();
   await expect(page).toHaveURL(`${ADMIN}/history`);
   await expect(drawer).toBeHidden();
-  await expect(page.getByRole('heading', { level: 1 })).toHaveText('9 changes');
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('25 changes');
   await expect(page.locator('#main')).toBeFocused();
   await expect(page.locator('.topbar__title')).toHaveText('History');
   expect(await scrolls(page)).toBeLessThanOrEqual(0);
@@ -293,7 +293,7 @@ test('phone: the drawer has a More row that opens in place', async ({ page }) =>
 test('phone landscape uses the phone frame (the rail would not fit 390 px of height)', async ({ page }) => {
   await page.setViewportSize({ width: 844, height: 390 });
   await page.goto(`${ADMIN}/inbox?sw=off`);
-  await expect(page.getByRole('heading', { level: 1 })).toHaveText('11 changes waiting');
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('9 changes waiting');
   await expect(page.locator('.topbar')).toBeVisible();
   await expect(page.locator('.navrail')).toHaveCount(0);
   await page.getByRole('button', { name: 'Open the navigation' }).click();
@@ -309,7 +309,7 @@ for (const size of [
   test(`page line: the time zone is in the status chip's tooltip at ${size.width}×${size.height}`, async ({ page }) => {
     await page.setViewportSize(size);
     await page.goto(`${ADMIN}/members?sw=off`);
-    await expect(page.getByRole('heading', { level: 1 })).toHaveText('13 bossers');
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText('15 bossers');
     const status = page.locator('.pageline').getByRole('group', { name: 'Status' });
     await expect(status).toBeVisible();
     await expect(status).toHaveAttribute('title', 'Every time here is Asia/Kuala_Lumpur');
@@ -319,7 +319,7 @@ for (const size of [
 test('phone: a drawer link to the page already shown closes it and gives focus back to the menu', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(`${ADMIN}/members?sw=off`);
-  await expect(page.getByRole('heading', { level: 1 })).toHaveText('13 bossers');
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('15 bossers');
   const menu = page.getByRole('button', { name: 'Open the navigation' });
   await menu.click();
   const drawer = page.getByRole('dialog', { name: 'Navigation' });
@@ -332,7 +332,7 @@ test('phone: a drawer link to the page already shown closes it and gives focus b
 test('phone: a swipe in from the left edge opens the drawer; a vertical stroke does not', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(`${ADMIN}/members?sw=off`);
-  await expect(page.getByRole('heading', { level: 1 })).toHaveText('13 bossers');
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('15 bossers');
   const strip = page.locator('.edgeswipe');
   await expect(strip).toHaveCSS('touch-action', 'pan-y');
   const drawer = page.getByRole('dialog', { name: 'Navigation' });
@@ -404,7 +404,7 @@ test('page line: unboxed on the ground, the count a bold mono numeral, Live HH:M
   }
 });
 
-// Live data has more models than the mock: two more in the summary.
+// Live data has more models than the seed: two more in the summary.
 async function fourModels(page: Page) {
   await page.route(/\/api\/admin\/chat(\?.*)?$/, async (route) => {
     const response = await route.fetch(unconditional(route));

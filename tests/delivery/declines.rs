@@ -1,9 +1,9 @@
-//! Durable decline notice delivery and retraction over both stores.
+//! Durable decline notice delivery and retraction on the SQLite store.
 
 use chrono::Duration;
 use kanade::bot::mentions::allow_users;
 use kanade::bot::transport::{
-    AmbiguousKind, Call, FakeDiscord, MessageId, Op, Outcome, RejectionKind, Step,
+    AmbiguousKind, Call, FakeDiscord, MessageId, Op, Outcome, RejectionKind,
 };
 use kanade::domain::history::{ChangeHistory, ChangeMeta, Origin};
 use kanade::domain::ids::RandomIds;
@@ -13,11 +13,16 @@ use kanade::domain::schedule::{
 };
 use kanade::domain::scheduler::{DeclineNoticeContext, Scope};
 use kanade::domain::settings::MessageStyle;
+use kanade::infrastructure::store::SqliteStore;
 
 use crate::intercept::Intercept;
 use crate::redesign::notices::styled;
 use crate::scenarios::{HOME, delivery, now, week, world};
-use crate::support::{Store, on_both_stores};
+use crate::support::Store;
+
+fn later() -> chrono::DateTime<chrono::Utc> {
+    now() + Duration::minutes(1)
+}
 
 async fn seed<S: Store>(store: &S) -> (String, String) {
     let run_id = "decline-run".to_owned();
@@ -99,7 +104,7 @@ async fn decline_history_uses_rsvp_clock<S: Store + ChangeHistory>(store: &S) {
 
 #[tokio::test]
 async fn committed_decline_history_uses_the_rsvp_clock() {
-    on_both_stores!(decline_history_uses_rsvp_clock);
+    decline_history_uses_rsvp_clock(&SqliteStore::open_temp().await).await;
 }
 
 async fn seed_second_candidate<S: Store>(store: &S, run_id: &str) -> String {
@@ -161,7 +166,7 @@ async fn posts_v4_text_as_a_reply<S: Store>(store: &S) {
 
 #[tokio::test]
 async fn decline_notice_uses_exact_text_and_source_reply() {
-    on_both_stores!(posts_v4_text_as_a_reply);
+    posts_v4_text_as_a_reply(&SqliteStore::open_temp().await).await;
 }
 
 /// The decline notice in `style`, posted as a reply to the decline; the
@@ -194,24 +199,20 @@ async fn posts_in_style<S: Store>(store: &S, style: MessageStyle) {
 
 #[tokio::test]
 async fn decline_notice_follows_the_live_message_style() {
-    on_both_stores!(posts_in_style, MessageStyle::Classic);
-    on_both_stores!(posts_in_style, MessageStyle::Redesigned);
+    posts_in_style(&SqliteStore::open_temp().await, MessageStyle::Classic).await;
+    posts_in_style(&SqliteStore::open_temp().await, MessageStyle::Redesigned).await;
 }
 
 async fn ambiguous_never_reposts<S: Store>(store: &S) {
     let world = world();
     seed(store).await;
-    world.fake.script(
-        Op::Create,
-        Step::Ambiguous {
-            kind: AmbiguousKind::Timeout,
-            applied: true,
-        },
-    );
+    world
+        .fake
+        .script(Op::Create, crate::support::timed_out(true));
     let mut delivery = delivery(store, &world, &world.fake);
     delivery.drain_decline_notices(now()).await.expect("first");
     delivery
-        .drain_decline_notices(now() + Duration::minutes(1))
+        .drain_decline_notices(later())
         .await
         .expect("replay");
     assert_eq!(world.fake.count(Op::Create), 1);
@@ -219,7 +220,7 @@ async fn ambiguous_never_reposts<S: Store>(store: &S) {
 
 #[tokio::test]
 async fn ambiguous_decline_send_is_never_reclaimed() {
-    on_both_stores!(ambiguous_never_reposts);
+    ambiguous_never_reposts(&SqliteStore::open_temp().await).await;
 }
 
 async fn confirmed_retraction_retires_exact_binding<S: Store>(store: &S) {
@@ -238,7 +239,7 @@ async fn confirmed_retraction_retires_exact_binding<S: Store>(store: &S) {
     assert!(!notice.retract_pending);
     assert_eq!(world.fake.count(Op::Delete), 1);
     delivery
-        .drain_decline_notices(now() + Duration::minutes(1))
+        .drain_decline_notices(later())
         .await
         .expect("replay");
     assert_eq!(
@@ -283,12 +284,12 @@ async fn committed_retraction_survives_a_missing_post_commit_port<S: Store>(stor
 
 #[tokio::test]
 async fn committed_retraction_survives_an_absent_post_commit_port() {
-    on_both_stores!(committed_retraction_survives_a_missing_post_commit_port);
+    committed_retraction_survives_a_missing_post_commit_port(&SqliteStore::open_temp().await).await;
 }
 
 #[tokio::test]
 async fn confirmed_delete_retires_the_bound_decline_attempt() {
-    on_both_stores!(confirmed_retraction_retires_exact_binding);
+    confirmed_retraction_retires_exact_binding(&SqliteStore::open_temp().await).await;
 }
 
 /// The stored notice of `user` on `run`.
@@ -332,7 +333,7 @@ async fn unsent_race_resolves_without_repost<S: Store>(store: &S) {
     let notice = notice(store, &run, &user).await;
     assert!(!notice.retract_pending, "the proven-unsent race resolved");
     delivery
-        .drain_decline_notices(now() + Duration::minutes(1))
+        .drain_decline_notices(later())
         .await
         .expect("replay");
     assert_eq!(world.fake.count(Op::Create), 1, "no replacement post");
@@ -340,7 +341,7 @@ async fn unsent_race_resolves_without_repost<S: Store>(store: &S) {
 
 #[tokio::test]
 async fn in_flight_retraction_after_an_unsent_create_is_resolved() {
-    on_both_stores!(unsent_race_resolves_without_repost);
+    unsent_race_resolves_without_repost(&SqliteStore::open_temp().await).await;
 }
 
 async fn bind_then_confirmed_delete_race<S: Store>(store: &S) {
@@ -357,20 +358,16 @@ async fn bind_then_confirmed_delete_race<S: Store>(store: &S) {
 
 #[tokio::test]
 async fn in_flight_retraction_binds_then_confirms_delete() {
-    on_both_stores!(bind_then_confirmed_delete_race);
+    bind_then_confirmed_delete_race(&SqliteStore::open_temp().await).await;
 }
 
 async fn bind_then_ambiguous_delete_race<S: Store>(store: &S) {
     let world = world();
     let (run, user) = seed(store).await;
     for _ in 0..2 {
-        world.fake.script(
-            Op::Delete,
-            Step::Ambiguous {
-                kind: AmbiguousKind::Timeout,
-                applied: false,
-            },
-        );
+        world
+            .fake
+            .script(Op::Delete, crate::support::timed_out(false));
     }
     let transport = retracted_mid_send(&world.fake, store, &run, &user, None);
     let mut delivery = delivery(store, &world, &transport);
@@ -378,7 +375,7 @@ async fn bind_then_ambiguous_delete_race<S: Store>(store: &S) {
     assert_eq!(report.retracted, 0);
     assert_eq!(world.fake.count(Op::Delete), 2, "one identical retry");
     delivery
-        .drain_decline_notices(now() + Duration::minutes(1))
+        .drain_decline_notices(later())
         .await
         .expect("replay");
     assert_eq!(
@@ -390,7 +387,7 @@ async fn bind_then_ambiguous_delete_race<S: Store>(store: &S) {
 
 #[tokio::test]
 async fn in_flight_retraction_binds_then_retries_ambiguous_delete_once() {
-    on_both_stores!(bind_then_ambiguous_delete_race);
+    bind_then_ambiguous_delete_race(&SqliteStore::open_temp().await).await;
 }
 
 async fn ambiguous_send_race<S: Store>(store: &S) {
@@ -402,7 +399,7 @@ async fn ambiguous_send_race<S: Store>(store: &S) {
     delivery.drain_decline_notices(now()).await.expect("race");
     assert!(notice(store, &run, &user).await.retract_pending);
     delivery
-        .drain_decline_notices(now() + Duration::minutes(1))
+        .drain_decline_notices(later())
         .await
         .expect("replay");
     assert_eq!(
@@ -414,15 +411,12 @@ async fn ambiguous_send_race<S: Store>(store: &S) {
 
 #[tokio::test]
 async fn in_flight_retraction_after_an_ambiguous_create_never_reposts() {
-    on_both_stores!(ambiguous_send_race);
+    ambiguous_send_race(&SqliteStore::open_temp().await).await;
 }
 
 async fn cooldown_survives_recovery<S: Store>(store: &S) {
     let (run, user) = seed(store).await;
-    store
-        .recover_on_start(now() + Duration::minutes(1))
-        .await
-        .expect("recover");
+    store.recover_on_start(later()).await.expect("recover");
     assert!(
         store
             .decline_notice_on_cooldown(&run, &user, now() + Duration::hours(5))
@@ -439,7 +433,7 @@ async fn cooldown_survives_recovery<S: Store>(store: &S) {
 
 #[tokio::test]
 async fn decline_cooldown_survives_restart_recovery() {
-    on_both_stores!(cooldown_survives_recovery);
+    cooldown_survives_recovery(&SqliteStore::open_temp().await).await;
 }
 
 async fn recovery_drains_unbound_and_bound_pending_once<S: Store>(store: &S) {
@@ -455,12 +449,9 @@ async fn recovery_drains_unbound_and_bound_pending_once<S: Store>(store: &S) {
         .mark_decline_retract_pending(&run, &user)
         .await
         .expect("mark bound");
-    store
-        .recover_on_start(now() + Duration::minutes(1))
-        .await
-        .expect("recover");
+    store.recover_on_start(later()).await.expect("recover");
     delivery
-        .drain_decline_notices(now() + Duration::minutes(1))
+        .drain_decline_notices(later())
         .await
         .expect("recovery tick");
     delivery
@@ -478,7 +469,7 @@ async fn recovery_drains_unbound_and_bound_pending_once<S: Store>(store: &S) {
 
 #[tokio::test]
 async fn restart_recovery_drains_unbound_and_bound_retraction_without_duplicates() {
-    on_both_stores!(recovery_drains_unbound_and_bound_pending_once);
+    recovery_drains_unbound_and_bound_pending_once(&SqliteStore::open_temp().await).await;
 }
 
 async fn shutdown_deadline_cancels_the_actual_decline_drain<S: Store>(store: &S) {
@@ -499,7 +490,7 @@ async fn shutdown_deadline_cancels_the_actual_decline_drain<S: Store>(store: &S)
         .await
         .expect("recover");
     delivery
-        .drain_decline_notices(now() + Duration::minutes(1))
+        .drain_decline_notices(later())
         .await
         .expect("replay");
     assert_eq!(
@@ -511,5 +502,5 @@ async fn shutdown_deadline_cancels_the_actual_decline_drain<S: Store>(store: &S)
 
 #[tokio::test]
 async fn shutdown_deadline_cancels_the_actual_decline_drain_before_store_close() {
-    on_both_stores!(shutdown_deadline_cancels_the_actual_decline_drain);
+    shutdown_deadline_cancels_the_actual_decline_drain(&SqliteStore::open_temp().await).await;
 }

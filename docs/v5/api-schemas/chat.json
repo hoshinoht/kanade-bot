@@ -4,7 +4,7 @@
   "title": "Chatbot log and turn detail",
   "$defs": {
     "ChatOutcome": {
-      "description": "`unknown`: a v4-imported question that maps to no other outcome. `profanity`: the profanity guardrail deflected the question or retried or replaced the reply (see ChatTurn.profanity).",
+      "description": "`unknown`: a legacy question that maps to no other outcome. `profanity`: the profanity guardrail deflected the question or retried or replaced the reply (see ChatTurn.profanity).",
       "enum": [
         "answered",
         "refused",
@@ -88,7 +88,7 @@
         },
         "completion_tokens": {
           "$ref": "#/$defs/TokenCount",
-          "description": "As `prompt_tokens`, for completion tokens. v4-imported turns may carry one of the two."
+          "description": "As `prompt_tokens`, for completion tokens. Legacy turns may carry one of the two."
         }
       }
     },
@@ -144,9 +144,6 @@
           "type": "integer",
           "minimum": 0,
           "description": "This model's round rows that reported a usage pair."
-        },
-        "est_ratio": {
-          "$ref": "#/$defs/EstimateRatio"
         }
       }
     },
@@ -264,7 +261,7 @@
         },
         "completion_tokens": {
           "$ref": "#/$defs/TokenCount",
-          "description": "As `prompt_tokens`, for completion tokens. v4-imported turns may carry one of the two."
+          "description": "As `prompt_tokens`, for completion tokens. Legacy turns may carry one of the two."
         },
         "said": {
           "type": "string"
@@ -599,14 +596,6 @@
       "description": "A provider-reported or estimated token count; null = not reported (older rows, v4 imports, failed or cut calls), never 0 for unknown.",
       "type": [
         "integer",
-        "null"
-      ],
-      "minimum": 0
-    },
-    "EstimateRatio": {
-      "description": "Median of reported prompt tokens / local prompt estimate over the requests that have both (estimate > 0), rounded to two decimals; the mean of the two middle values for an even count; null when none.",
-      "type": [
-        "number",
         "null"
       ],
       "minimum": 0

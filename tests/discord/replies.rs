@@ -205,13 +205,7 @@ async fn a_refused_completion_gets_one_fallback_edit() {
 
     // An ambiguous completion may have landed: no fallback over it.
     let fake = FakeDiscord::new();
-    fake.script(
-        Op::CompleteDeferred,
-        Step::Ambiguous {
-            kind: AmbiguousKind::Timeout,
-            applied: true,
-        },
-    );
+    fake.script(Op::CompleteDeferred, crate::support::timed_out(true));
     handle(
         &dispatcher(InteractionReply::ephemeral("ok"), Some(true)),
         &fake,

@@ -1,5 +1,5 @@
-//! Pure write rules both stores apply before touching their tables; the SQL
-//! and locking stay in each backend.
+//! Pure write rules checked before SQLite writes; SQL and locking stay in
+//! the store.
 
 use chrono::{DateTime, Utc};
 

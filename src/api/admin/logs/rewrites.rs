@@ -9,7 +9,7 @@ use axum::{
     response::IntoResponse,
 };
 
-use super::{Reply, filter, state};
+use super::{Reply, every, filter, state};
 use crate::api::admin::write::Refusal;
 use crate::{
     api::{
@@ -17,26 +17,9 @@ use crate::{
         dto::logs::{RewriteFacets, Rewrites, rewrite, rewrite_row, rewrite_summary},
         error::ApiError,
         listeners::Site,
-        state::ApiState,
     },
-    domain::model_log::{RewriteFilter, RewriteLog},
+    domain::model_log::RewriteFilter,
 };
-
-async fn every(state: &ApiState, mut filter: RewriteFilter) -> Result<Vec<RewriteLog>, Refusal> {
-    let mut rows = Vec::new();
-    loop {
-        let page = state
-            .store
-            .rewrite_logs(filter.clone())
-            .await
-            .map_err(Refusal::unavailable)?;
-        rows.extend(page.items);
-        match page.next {
-            Some(cursor) => filter.cursor = Some(cursor),
-            None => return Ok(rows),
-        }
-    }
-}
 
 pub async fn list(State(site): State<Arc<Site>>, _: AdminSession, uri: Uri) -> Reply {
     let state = state(&site)?;
@@ -46,7 +29,13 @@ pub async fn list(State(site): State<Arc<Site>>, _: AdminSession, uri: Uri) -> R
         .rewrite_log_facets()
         .await
         .map_err(Refusal::unavailable)?;
-    let rows = every(state, filter).await?;
+    let rows = every(filter.cursor.clone(), |cursor| {
+        state.store.rewrite_logs(RewriteFilter {
+            cursor,
+            ..filter.clone()
+        })
+    })
+    .await?;
     Ok(Json(Rewrites {
         summary: rewrite_summary(&rows),
         rows: rows.iter().map(rewrite_row).collect(),

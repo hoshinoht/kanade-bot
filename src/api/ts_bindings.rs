@@ -187,6 +187,7 @@ fn bindings() -> String {
         .add::<estimates::EstimateError>()
         .add::<fixed::FixedRunLink>()
         .add::<fixed::FixedRow>()
+        .add::<admin::FixedChoices>()
         .add::<admin::ValidateResult>()
         .add::<reminders::ReminderState>()
         .add::<reminders::ReminderRow>()

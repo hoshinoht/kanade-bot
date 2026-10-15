@@ -12,7 +12,7 @@ use super::support::*;
 
 #[tokio::test]
 async fn row_24_generation_cancellation_between_calls_aborts_without_writing() {
-    let world = World::new();
+    let world = World::new().await;
     let (run, message) = world.carded_run().await;
     world.react(message.get(), "✅", &[MEMBER]);
     let current = Arc::new(AtomicBool::new(true));
@@ -35,7 +35,7 @@ async fn row_24_generation_cancellation_between_calls_aborts_without_writing() {
 
 #[tokio::test]
 async fn cancellation_between_mapped_cards_keeps_prior_and_inflight_request_counts() {
-    let world = World::new();
+    let world = World::new().await;
     let (run, first) = world.carded_run().await;
     world.card(&run, 401).await;
     for message in [first.get(), 401] {
@@ -65,7 +65,7 @@ async fn cancellation_between_mapped_cards_keeps_prior_and_inflight_request_coun
 
 #[tokio::test]
 async fn current_clock_is_checked_after_live_drain_before_commit() {
-    let world = World::new();
+    let world = World::new().await;
     let (run, message) = world.carded_run().await;
     world.react(message.get(), "✅", &[MEMBER]);
     world.clock.set(now() + chrono::TimeDelta::days(2));
@@ -75,7 +75,7 @@ async fn current_clock_is_checked_after_live_drain_before_commit() {
 
 #[tokio::test]
 async fn row_9c_status_changed_during_http_is_stale_not_reblessed() {
-    let world = World::new();
+    let world = World::new().await;
     let (run, message) = world.carded_run().await;
     world.react(message.get(), "✅", &[MEMBER]);
     let hold = world.fake.hold(Op::ReactionUsers);
@@ -137,7 +137,7 @@ impl ReplayLive for TouchAlways {
 
 #[tokio::test]
 async fn row_9c_clock_advances_after_drain_and_before_commit() {
-    let world = World::new();
+    let world = World::new().await;
     let (run, message) = world.carded_run().await;
     world.react(message.get(), "✅", &[MEMBER]);
     let mut live = AdvanceClockLive {
@@ -157,7 +157,7 @@ async fn row_9c_clock_advances_after_drain_and_before_commit() {
 
 #[tokio::test]
 async fn row_10_live_event_restarts_once_and_retry_cap_is_three_restarts() {
-    let world = World::new();
+    let world = World::new().await;
     let (run, message) = world.carded_run().await;
     world.react(message.get(), "✅", &[MEMBER]);
     let mut live = TouchOnce {
@@ -177,7 +177,7 @@ async fn row_10_live_event_restarts_once_and_retry_cap_is_three_restarts() {
         world.snapshot(&run).await.rsvps[0].state,
         kanade::domain::schedule::RsvpState::Yes
     );
-    let world = World::new();
+    let world = World::new().await;
     let (_run, message) = world.carded_run().await;
     let mut live = TouchAlways {
         message: message.to_string(),

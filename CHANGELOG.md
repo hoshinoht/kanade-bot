@@ -9,6 +9,25 @@ _In development_
 ### Changes
 - Estimates are now labelled “Estimate” on the portals and in Discord.
 
+### Fixes
+- Fixed Config never showing the "Manage Messages missing" warning when the bot lacks Manage Messages in a channel it uses.
+- Fixed phones cutting off a member's runs in the Week's Answers view and the Reminders count running past the window edge.
+- Fixed low-contrast "still a question" chips on the selected Inbox item in the Sumire dark and Catppuccin light colourways.
+- Fixed Config › Persona showing only a reply profile's first line when you open its whole prompt.
+- Fixed Fixed timings asking Keep or Update for a run that had already ended this week, which then made the save fail.
+- Fixed Config › Models resetting a "Same as extraction" role to Off when its model requires reasoning; it now takes the model's lowest level, so the save goes through.
+- Fixed History listing every reminder card of a moved run instead of one "reminders re-placed" line.
+- Fixed a retired character's NEXON data disappearing at once; it now stays, with its deletion date, until it expires.
+- Fixed the member portal's Move page starting a sentence with a lowercase "an admin".
+- Fixed the Inbox toast for a refused edited approval blaming the member, when another admin had changed the request.
+- Fixed screen readers reading the tick on picked party members in the Fixed timing editor as part of the name.
+- Fixed Fixed timings asking Keep or Update on saves that keep the day and time, or about runs changed only in their party, which made the save fail; it now asks only about runs the new day or time would move.
+- Fixed the bot skipping that day's morning card when it starts after the ping time; a due card for a run still ahead now posts, up to 12 hours late.
+- Fixed four security issues in the bot's TLS library (RUSTSEC-2026-0346 to 0349) by updating it.
+
+### Removed
+- Removed the one-off `kanade import v4` command; v4 data already imported stays readable.
+
 ## 1.0.0-beta.7
 
 _13 Oct 2026_

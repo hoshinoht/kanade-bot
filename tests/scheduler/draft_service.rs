@@ -1,4 +1,4 @@
-//! Administrator drafts over the in-memory store: staging, preview,
+//! Administrator drafts over a temp SQLite store: staging, preview,
 //! rebase, merge, expiry and their errors. Nothing here touches the network,
 //! and previews never write.
 
@@ -26,16 +26,16 @@ use kanade::domain::scheduler::{
     Committed, DraftError, DraftResult, MergeOutcome, RecordedRequest, ScheduleStore,
     SchedulerService, Scope, StoreError,
 };
-use kanade::infrastructure::store::MemoryScheduleStore;
+use kanade::infrastructure::store::SqliteStore;
 
 use crate::common::TestClock;
 use crate::support::{
-    AnyChannel, Guild, TwoTimings as Fixture, amend, existing, hm, kalos_run, kl, now, policy,
-    rsvp, snapshot, swap, two_timings as fixture, utc, weekly,
+    AnyChannel, Guild, TwoTimings as Fixture, amend, by_tests, existing, hm, kalos_run, kl, now,
+    policy, rsvp, snapshot, swap, two_timings as fixture, utc, weekly,
 };
 
 type Svc<S> = SchedulerService<S, RandomIds, TestClock>;
-type Service = Svc<MemoryScheduleStore>;
+type Service = Svc<SqliteStore>;
 
 async fn head_seq(service: &Service) -> u64 {
     service.store().history_head().await.unwrap().seq
@@ -136,11 +136,9 @@ async fn merge(service: &mut Service, id: &str, version: u64) -> DraftResult<Mer
 
 /// Another writer moves `run` outside the draft.
 async fn upstream_amend(service: &mut Service, run: &str, to: DateTime<FixedOffset>) {
-    service
-        .as_origin(Origin::for_tests())
-        .amend_run(run, utc(to), &policy())
-        .await
-        .unwrap();
+    let policy = policy();
+    let amended = by_tests(service).amend_run(run, utc(to), &policy);
+    amended.await.unwrap();
 }
 
 async fn stage(service: &mut Service, ops: &[DraftOp]) -> String {
@@ -461,15 +459,22 @@ async fn a_second_merger_gets_already_merged_and_a_retry_replays() {
 async fn a_history_gap_is_refused() {
     let mut f = fixture().await;
     let id = stage(&mut f.service, &[amend(&f.runs[0][0], kl(1, 20, 0))]).await;
-    f.service
-        .as_origin(Origin::for_tests())
+    by_tests(&mut f.service)
         .set_rsvp(&f.runs[1][2], "1001", RsvpState::No, RsvpSource::Chat)
         .await
         .unwrap();
     let tip = f.service.store().history_head().await.unwrap();
-    f.service.store().tamper_change(tip.seq, |record| {
-        record.notices.push("forged".into());
-    });
+    f.service
+        .store()
+        .temp_dir()
+        .raw(&format!(
+            "DROP TRIGGER change_log_no_update;
+             UPDATE change_log SET body = replace(body, '\"notices\":[]', '\"notices\":[\"forged\"]')
+             WHERE seq = {};",
+            tip.seq
+        ))
+        .await
+        .expect("tamper");
     assert!(matches!(
         preview(&f.service, &id).await,
         Err(DraftError::HistoryGap(_))
@@ -580,8 +585,7 @@ async fn a_settling_rebase_keeps_the_edits_and_lands_on_the_head() {
         announce: false,
         via_portal: false,
     };
-    f.service
-        .as_origin(Origin::for_tests())
+    by_tests(&mut f.service)
         .set_status(&f.runs[1][0], cancel, &policy.reminders)
         .await
         .unwrap();
@@ -871,7 +875,7 @@ async fn an_upstream_move_into_a_past_week_expires_the_draft_at_merge() {
 
 /// A store failing the first merge commit with a revision conflict.
 struct Racy<'a> {
-    inner: &'a MemoryScheduleStore,
+    inner: &'a SqliteStore,
     attempts: AtomicUsize,
     race: Race,
 }

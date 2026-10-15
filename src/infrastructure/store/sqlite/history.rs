@@ -677,26 +677,26 @@ pub(super) async fn count_in(
 
 impl ChangeHistory for SqliteStore {
     async fn load_change(&self, seq: u64) -> Result<Option<ChangeRecord>, StoreError> {
-        let mut conn = self.readers.acquire().await.map_err(backend)?;
+        let mut conn = self.reader().await.map_err(backend)?;
         change_in(&mut conn, seq).await
     }
 
     async fn load_checked(&self, seq: u64) -> Result<CheckedChange, StoreError> {
-        let mut conn = self.readers.acquire().await.map_err(backend)?;
+        let mut conn = self.reader().await.map_err(backend)?;
         checked_in(&mut conn, seq).await
     }
     async fn list_changes(&self, query: &ChangeQuery) -> Result<ChangePage, StoreError> {
-        let mut conn = self.readers.acquire().await.map_err(backend)?;
+        let mut conn = self.reader().await.map_err(backend)?;
         list_in(&mut conn, query).await
     }
 
     async fn count_changes(&self, filter: &ChangeFilter) -> Result<u64, StoreError> {
-        let mut conn = self.readers.acquire().await.map_err(backend)?;
+        let mut conn = self.reader().await.map_err(backend)?;
         count_in(&mut conn, filter).await
     }
 
     async fn verify_history(&self) -> Result<HistoryVerification, StoreError> {
-        let mut conn = self.readers.acquire().await.map_err(backend)?;
+        let mut conn = self.reader().await.map_err(backend)?;
         let mut tx = conn.begin().await.map_err(backend)?;
         let mut weeks: BTreeMap<u64, BTreeSet<DateTime<Utc>>> = BTreeMap::new();
         for row in sqlx::query("SELECT seq, week_start FROM change_log_weeks")
@@ -765,7 +765,7 @@ impl ChangeHistory for SqliteStore {
     }
 
     async fn history_head(&self) -> Result<ChangeRef, StoreError> {
-        let mut conn = self.readers.acquire().await.map_err(backend)?;
+        let mut conn = self.reader().await.map_err(backend)?;
         head_ref(&mut conn).await
     }
 }
@@ -831,7 +831,7 @@ impl BlameIndex for SqliteStore {
         &self,
         target: &BlameTarget,
     ) -> Result<BTreeMap<String, u64>, StoreError> {
-        let mut conn = self.readers.acquire().await.map_err(backend)?;
+        let mut conn = self.reader().await.map_err(backend)?;
         last_changes_in(&mut conn, target).await
     }
 
@@ -966,11 +966,12 @@ impl Checkpoints for SqliteStore {
     }
 
     async fn load_checkpoint(&self, name: &str) -> Result<Option<Checkpoint>, StoreError> {
+        let mut conn = self.reader().await.map_err(backend)?;
         let row = sqlx::query(&format!(
             "SELECT {CHECKPOINT_COLUMNS} FROM checkpoints WHERE name = ?1"
         ))
         .bind(name)
-        .fetch_optional(&self.readers)
+        .fetch_optional(&mut *conn)
         .await
         .map_err(backend)?;
         row.as_ref().map(checkpoint).transpose()
@@ -980,7 +981,7 @@ impl Checkpoints for SqliteStore {
         &self,
         week: Option<DateTime<Utc>>,
     ) -> Result<Vec<Checkpoint>, StoreError> {
-        let mut conn = self.readers.acquire().await.map_err(backend)?;
+        let mut conn = self.reader().await.map_err(backend)?;
         let week = week.as_ref().map(rows::instant).transpose()?;
         checkpoint_rows(&mut conn, week.as_deref()).await
     }

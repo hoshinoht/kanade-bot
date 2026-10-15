@@ -18,7 +18,7 @@ use kanade::chat::nudge::{
 };
 use kanade::domain::model_log::{RewriteFilter, RewriteLogStore, RewriteStage};
 use kanade::domain::settings::MessageStyle;
-use kanade::infrastructure::store::MemoryScheduleStore;
+use kanade::infrastructure::store::SqliteStore;
 use tokio::sync::{Notify, watch};
 
 use crate::cards::{answer, created, edits, kit, persona, refresher, seed_day_of, world};
@@ -78,8 +78,8 @@ impl NudgeRewriter for BySeed {
 
 /// A day-of card and this week's digest, posted with the seeds in `style`.
 struct Posted {
-    store: Arc<MemoryScheduleStore>,
-    logs: Arc<MemoryScheduleStore>,
+    store: Arc<SqliteStore>,
+    logs: Arc<SqliteStore>,
     fake: Arc<FakeDiscord>,
     world: World,
     star: String,
@@ -88,7 +88,7 @@ struct Posted {
 
 impl Posted {
     async fn new(style: MessageStyle) -> Self {
-        let store = Arc::new(MemoryScheduleStore::new());
+        let store = Arc::new(SqliteStore::open_temp().await);
         let world = world();
         let fake = Arc::new(support::fake());
         let (star, _) = seed_day_of(&*store).await;
@@ -103,7 +103,7 @@ impl Posted {
         assert_eq!(created(&fake).len(), 2, "digest and morning card");
         Self {
             store,
-            logs: Arc::new(MemoryScheduleStore::new()),
+            logs: Arc::new(SqliteStore::open_temp().await),
             fake,
             world,
             star,
@@ -111,7 +111,7 @@ impl Posted {
         }
     }
 
-    fn refresh(&self, rewriter: &Arc<BySeed>) -> CardRefresh<MemoryScheduleStore, FakeDiscord> {
+    fn refresh(&self, rewriter: &Arc<BySeed>) -> CardRefresh<SqliteStore, FakeDiscord> {
         let style = self.style;
         let cards = CardKit {
             heading: HeadingRewrite {
@@ -129,10 +129,7 @@ impl Posted {
         refresher(&self.store, &self.fake, &self.world, cards)
     }
 
-    fn manual(
-        &self,
-        rewriter: &Arc<BySeed>,
-    ) -> Arc<ManualRewrite<MemoryScheduleStore, FakeDiscord>> {
+    fn manual(&self, rewriter: &Arc<BySeed>) -> Arc<ManualRewrite<SqliteStore, FakeDiscord>> {
         Arc::new(ManualRewrite::new(Arc::new(self.refresh(rewriter))))
     }
 
@@ -177,7 +174,7 @@ fn digest_phrase(edit: &MessageEdit) -> Option<String> {
 
 /// Start `manual`'s worker; it runs until the returned sender stops it.
 fn spawn_worker(
-    manual: &Arc<ManualRewrite<MemoryScheduleStore, FakeDiscord>>,
+    manual: &Arc<ManualRewrite<SqliteStore, FakeDiscord>>,
 ) -> (watch::Sender<bool>, tokio::task::JoinHandle<()>) {
     let (stop, stopped) = watch::channel(false);
     let manual = Arc::clone(manual);
@@ -194,7 +191,7 @@ async fn run_ends(finished: &mut watch::Receiver<Option<ManualReport>>) {
 
 /// Start the worker, trigger one run and wait for its report.
 async fn run_once(
-    manual: &Arc<ManualRewrite<MemoryScheduleStore, FakeDiscord>>,
+    manual: &Arc<ManualRewrite<SqliteStore, FakeDiscord>>,
 ) -> (ManualStart, ManualReport) {
     let (stop, worker) = spawn_worker(manual);
     let mut finished = manual.finished();

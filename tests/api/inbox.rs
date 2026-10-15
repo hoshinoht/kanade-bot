@@ -3,32 +3,26 @@
 //! listed with previews and decided per source. Every response is validated
 //! against the contract schemas.
 
-use std::sync::Arc;
-
-use chrono::{DateTime, NaiveTime, TimeZone, Utc, Weekday};
+use chrono::{DateTime, NaiveTime, Utc, Weekday};
 use kanade::{
-    api::write::ApiClock,
     domain::{
         drafts::{DraftEventKind, DraftStatus, DraftStore, LoadedDraft, ProposalSource},
         history::{Actor, ChangeHistory, ChangeRecord, Origin, Surface},
-        ids::RandomIds,
         members::{MemberStore, Roster},
         model_log::{ModelLogStore, WatchedMessage},
         proposals::{CardDetails, CardPayload, ChangeKind, ProposalCardStore, ProposedChange},
         requests::{NoFreezes, RequestSpec, Subject},
-        schedule::{
-            FixedEdit, NewFixedRun, NewRun, ReminderPolicy, RunSource, RunStatus, SchedulePolicy,
-        },
-        scheduler::{ProposalRequest, SchedulerService, Supersede},
+        schedule::{FixedEdit, NewFixedRun, NewRun, RunSource, RunStatus},
+        scheduler::{ProposalRequest, Supersede},
     },
     infrastructure::store::SqliteStore,
 };
 use serde_json::{Value, json};
 
 use crate::{
-    reads::{EDGE_HEADERS, Reads},
+    reads::{EDGE_HEADERS, Reads, Scheduler, policy, roster, scheduler, utc},
     schemas::assert_valid,
-    support::{ADMIN_HOST, Reply, find, request, send, strs},
+    support::{ADMIN_HOST, Reply, fields, find, request, send, strs},
 };
 
 const ORIGIN: (&str, &str) = ("Origin", "https://kanade.test");
@@ -37,40 +31,14 @@ const MESSAGE: &str = "common.json#/$defs/Message";
 const ERROR: &str = "error.json#/$defs/ApiError";
 const DISCORD_EPOCH_MS: i64 = 1_420_070_400_000;
 
-fn utc(month: u32, day: u32, hour: u32, minute: u32) -> DateTime<Utc> {
-    Utc.with_ymd_and_hms(2026, month, day, hour, minute, 0)
-        .unwrap()
-}
-
 fn snowflake(at: DateTime<Utc>) -> String {
     (((at.timestamp_millis() - DISCORD_EPOCH_MS) as u64) << 22).to_string()
 }
 
-fn policy() -> SchedulePolicy {
-    SchedulePolicy::new(
-        ReminderPolicy {
-            zone: chrono_tz::Asia::Kuala_Lumpur,
-            ping_time: NaiveTime::from_hms_opt(9, 0, 0).unwrap(),
-            countdowns: vec![60, 15],
-        },
-        Weekday::Thu,
-        NaiveTime::MIN,
-    )
-}
-
-type Service = SchedulerService<Arc<SqliteStore>, RandomIds, ApiClock>;
-
-fn service(store: &Arc<SqliteStore>, at: DateTime<Utc>) -> Service {
-    SchedulerService::new(store.clone(), RandomIds, ApiClock(Arc::new(move || at)))
-}
-
 async fn directory(store: &SqliteStore) -> Roster {
-    let mut roster = Roster::new();
-    for profile in store.list_members().await.unwrap() {
-        roster.upsert(profile.member);
-    }
-    roster.watch("kalos-four");
-    roster
+    let mut directory = roster(store).await;
+    directory.watch("kalos-four");
+    directory
 }
 
 /// Ids of everything seeded.
@@ -99,7 +67,7 @@ struct Inbox {
 }
 
 /// A scheduler on one pinned clock over the seeded directory.
-struct Seeder<'a>(Service, &'a Roster);
+struct Seeder<'a>(Scheduler, &'a Roster);
 
 impl Seeder<'_> {
     /// A `kind` proposal about `run` (to `to`) from `source`: its id.
@@ -152,7 +120,7 @@ async fn seeded() -> Inbox {
     let dir = directory(&store).await;
 
     // Last boss week: a run and a request that has since expired.
-    let mut past = Seeder(service(&store, utc(9, 19, 4, 0)), &dir);
+    let mut past = Seeder(scheduler(&store, utc(9, 19, 4, 0)), &dir);
     let p_run = past
         .0
         .as_origin(Origin::new(Actor::admin("seed"), Surface::AdminPortal))
@@ -173,11 +141,11 @@ async fn seeded() -> Inbox {
 
     // Yesterday: two proposals now past their 24 h.
     use {ChangeKind::*, ProposalSource::*};
-    let mut yesterday = Seeder(service(&store, utc(9, 28, 3, 0)), &dir);
+    let mut yesterday = Seeder(scheduler(&store, utc(9, 28, 3, 0)), &dir);
     let expired_chat = yesterday.propose(Cancel, "r-kalos", None, Chat).await;
     let expired_extraction = yesterday.propose(Otot, "r-kalos", None, Extraction).await;
 
-    let mut now = Seeder(service(&store, utc(9, 29, 4, 0)), &dir);
+    let mut now = Seeder(scheduler(&store, utc(9, 29, 4, 0)), &dir);
     // r-kalos moves off its weekly slot (Tue 22:00 → 21:00), so a timing
     // change must ask about it.
     now.0
@@ -416,45 +384,15 @@ async fn the_inbox_lists_both_proposal_sources_and_every_request_type() {
         .iter()
         .map(|item| item["id"].as_str().unwrap())
         .collect();
-    assert_eq!(
-        items.len(),
-        14,
-        "{listed:?} {:?}",
-        [
-            &ids.expired_request,
-            &ids.expired_chat,
-            &ids.expired_extraction,
-            &ids.moved,
-            &ids.to_edit,
-            &ids.cancel_chat,
-            &ids.to_no_effect,
-            &ids.cancel_nkalos,
-            &ids.join,
-            &ids.leave,
-            &ids.swap,
-            &ids.new_fixed,
-            &ids.change,
-            &ids.unauthorised
-        ]
-    );
+    assert_eq!(items.len(), 14, "{listed:?}");
     let by = |id: &str| items.iter().find(|item| item["id"] == id).unwrap().clone();
     // Oldest first: last week's request, then yesterday's proposals.
     assert_eq!(items[0]["id"], ids.expired_request.as_str());
 
     let moved = by(&ids.moved);
     assert_eq!(
-        (
-            &moved["source"],
-            &moved["tab"],
-            &moved["kind"],
-            &moved["kind_label"]
-        ),
-        (
-            &json!("extraction"),
-            &json!("extractor"),
-            &json!("move"),
-            &json!("Move")
-        )
+        fields(&moved, &["source", "tab", "kind", "kind_label"]),
+        json!(["extraction", "extractor", "move", "Move"])
     );
     assert_eq!(moved["when"], "Wed 30 Sep 21:00");
     assert_eq!(moved["from_when"], "Tue 29 Sep 21:00");
@@ -507,18 +445,8 @@ async fn the_inbox_lists_both_proposal_sources_and_every_request_type() {
     ] {
         let item = by(id);
         assert_eq!(
-            (
-                &item["kind"],
-                &item["kind_label"],
-                &item["tab"],
-                &item["source"]
-            ),
-            (
-                &json!(kind),
-                &json!(label),
-                &json!("self_service"),
-                &json!("self_service")
-            ),
+            fields(&item, &["kind", "kind_label", "tab", "source"]),
+            json!([kind, label, "self_service", "self_service"]),
             "{kind}"
         );
         assert_eq!(item["self_service"]["via"], "request", "{kind}");
@@ -1194,7 +1122,7 @@ async fn items_carry_a_one_line_consequence_from_the_preview() {
     let ids = &inbox.ids;
     let store = inbox.reads.store.clone();
     let dir = directory(&store).await;
-    let mut now = Seeder(service(&store, utc(9, 29, 4, 0)), &dir);
+    let mut now = Seeder(scheduler(&store, utc(9, 29, 4, 0)), &dir);
     // r-kalos (Tue 21:00 KL) to 22:00 the same day: T-1h and T-15m are
     // queued and move; the morning card was already sent and is not counted.
     let later = Some(utc(9, 29, 14, 0));
@@ -1230,7 +1158,7 @@ async fn items_carry_a_one_line_consequence_from_the_preview() {
 async fn timing_and_party(inbox: &Inbox, title: &str) -> String {
     let store = &inbox.reads.store;
     let dir = directory(store).await;
-    let mut now = Seeder(service(store, utc(9, 29, 4, 0)), &dir);
+    let mut now = Seeder(scheduler(store, utc(9, 29, 4, 0)), &dir);
     let spec = RequestSpec::ChangeFixed {
         fixed_id: "f-kalos".into(),
         edit: FixedEdit {
@@ -1345,7 +1273,7 @@ async fn an_approval_with_changes_retimes_leaves_out_and_tells_the_member() {
     // The member withdraws the next one while the admin edits: refused 409.
     let next = timing_and_party(&inbox, "Or Sundays.").await;
     let nv = inbox.item(&next).await["version"].as_u64().unwrap();
-    let mut member = service(store, utc(9, 29, 4, 0));
+    let mut member = scheduler(store, utc(9, 29, 4, 0));
     member.withdraw_request("1001", &next, nv).await.unwrap();
     let body = json!({"version": nv, "choices": {"r-kalos": "keep"}, "edit": edit});
     let refusal = inbox.token_refusal(&path(&next, "approve"), body).await;

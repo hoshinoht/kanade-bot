@@ -161,11 +161,7 @@ pub fn extraction_summary(rows: &[ExtractionLog]) -> Vec<ExtractionSummary> {
             let mine: Vec<&ExtractionLog> = rows.iter().filter(|log| log.model == model).collect();
             let mut usage = UsageTally::default();
             for log in &mine {
-                usage.add(
-                    log.prompt_tokens,
-                    log.completion_tokens,
-                    log.prompt_estimate,
-                );
+                usage.add(log.prompt_tokens, log.completion_tokens);
             }
             ExtractionSummary {
                 model: model.to_owned(),

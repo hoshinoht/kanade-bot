@@ -42,7 +42,7 @@ use kanade::{
         state::GuildAccess,
     },
     bot::commands::{AccessPolicy, Invoker},
-    infrastructure::store::MemoryScheduleStore,
+    infrastructure::store::SqliteStore,
 };
 use twilight_model::id::Id;
 
@@ -66,7 +66,7 @@ pub struct Harness {
     pub discord: Arc<FakeDiscord>,
     pub guild: Arc<FakeGuild>,
     pub audit: Arc<RecordingAudit>,
-    pub store: Arc<MemoryScheduleStore>,
+    pub store: Arc<SqliteStore>,
     /// Owner and policy the store-backed staff gate reads (`store_gated`).
     pub access: Arc<GuildAccess>,
     clock: Arc<Mutex<DateTime<Utc>>>,
@@ -99,14 +99,10 @@ impl Harness {
 
     /// `edge`: the trusted proxy peer (the test client is always 127.0.0.1).
     pub async fn with(edge: Option<IpAddr>, token: &str) -> Self {
-        Self::sharing(edge, token, Arc::new(MemoryScheduleStore::new())).await
+        Self::sharing(edge, token, Arc::new(SqliteStore::open_temp().await)).await
     }
 
-    pub async fn sharing(
-        edge: Option<IpAddr>,
-        token: &str,
-        store: Arc<MemoryScheduleStore>,
-    ) -> Self {
+    pub async fn sharing(edge: Option<IpAddr>, token: &str, store: Arc<SqliteStore>) -> Self {
         Self::build(edge, token, store, None, false).await
     }
 
@@ -115,7 +111,7 @@ impl Harness {
         Self::build(
             None,
             TOKEN,
-            Arc::new(MemoryScheduleStore::new()),
+            Arc::new(SqliteStore::open_temp().await),
             None,
             true,
         )
@@ -127,7 +123,7 @@ impl Harness {
         Self::build(
             None,
             TOKEN,
-            Arc::new(MemoryScheduleStore::new()),
+            Arc::new(SqliteStore::open_temp().await),
             Some(limits),
             false,
         )
@@ -137,7 +133,7 @@ impl Harness {
     async fn build(
         edge: Option<IpAddr>,
         token: &str,
-        store: Arc<MemoryScheduleStore>,
+        store: Arc<SqliteStore>,
         limits: Option<fn(Route) -> Limits>,
         store_gate: bool,
     ) -> Self {
@@ -229,6 +225,7 @@ impl Harness {
             )
             .await;
         assert_eq!(reply.status, 200, "{}", reply.text());
+        crate::schemas::assert_valid("identity.json#/$defs/Session", "token login", &reply.json());
         (
             reply.cookie(wire::SESSION_COOKIE).unwrap(),
             reply.header("x-kanade-csrf").unwrap().to_owned(),

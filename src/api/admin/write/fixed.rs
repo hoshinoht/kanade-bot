@@ -5,7 +5,7 @@ use std::{collections::BTreeMap, sync::Arc};
 
 use axum::{
     Json,
-    extract::{Path as UrlPath, State, rejection::JsonRejection},
+    extract::{Path as UrlPath, State},
     http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
 };
@@ -13,14 +13,15 @@ use chrono::{NaiveTime, Weekday};
 use serde::{Deserialize, Serialize};
 
 use super::{
-    bad_body, origin,
+    Body, origin,
     precondition::{Explicit, OverrideRef, SeenField, expectations},
+    recorded,
     refusal::{Refusal, scheduler},
     state, write_context,
 };
 use crate::{
     api::{
-        admin::context::{context, frames, roster, weeks},
+        admin::context::{context, frames, roster, run_ends, weeks},
         auth::AdminSession,
         dto::{self, Art},
         error::ApiError,
@@ -39,8 +40,12 @@ use crate::{
     },
 };
 
+mod choices;
 mod replay;
 
+#[cfg(test)]
+pub(crate) use choices::FixedChoices;
+pub use choices::choices;
 use replay::{FixedPatchIdentity, RefusalReplay};
 
 type Reply = Result<Response, Refusal>;
@@ -83,19 +88,25 @@ struct Checked {
     owner_id: Option<String>,
 }
 
+/// The form's weekday (0 = Monday) and `HH:MM` time.
+fn slot(weekday: u8, time: &str) -> Result<(Weekday, NaiveTime), Refusal> {
+    let weekday = crate::domain::weeks::weekday_from_index(i64::from(weekday))
+        .ok()
+        .filter(|_| weekday <= 6)
+        .ok_or_else(|| Refusal::invalid("Pick a weekday."))?;
+    let time = (time.len() == 5)
+        .then(|| NaiveTime::parse_from_str(time, "%H:%M").ok())
+        .flatten()
+        .ok_or_else(|| Refusal::invalid("Times are HH:MM, 00:00 to 23:59."))?;
+    Ok((weekday, time))
+}
+
 fn checked(
     state: &ApiState,
     request: &FixedRequest,
     directory: &Roster,
 ) -> Result<Checked, Refusal> {
-    let weekday = crate::domain::weeks::weekday_from_index(i64::from(request.weekday))
-        .ok()
-        .filter(|_| request.weekday <= 6)
-        .ok_or_else(|| Refusal::invalid("Pick a weekday."))?;
-    let time = (request.time.len() == 5)
-        .then(|| NaiveTime::parse_from_str(&request.time, "%H:%M").ok())
-        .flatten()
-        .ok_or_else(|| Refusal::invalid("Times are HH:MM, 00:00 to 23:59."))?;
+    let (weekday, time) = slot(request.weekday, &request.time)?;
     let bosses = state
         .catalog
         .parse(&request.bosses)
@@ -148,23 +159,12 @@ async fn row(
     let [this, next] = frames(state, now).map_err(Refusal::from)?;
     let snapshot = weeks(state, vec![this.start, next.start]).await?;
     let ctx = context(site, state, roster(profiles), now);
-    dto::fixed::rows(&ctx, &snapshot, [this.start, next.start])
+    let ends = run_ends(state).await;
+    dto::fixed::rows(&ctx, &snapshot, [this.start, next.start], &ends)
         .into_iter()
         .find(|row| row.id == fixed_id)
         .map(|row| Json(row).into_response())
         .ok_or_else(|| Refusal::not_found("not_found", "That weekly timing no longer exists."))
-}
-
-/// The change already recorded for this request's `Idempotency-Key`, if any.
-async fn recorded(state: &ApiState, origin: &Origin) -> Result<Option<ChangeRecord>, Refusal> {
-    let Some(request_id) = origin.request_id.clone() else {
-        return Ok(None);
-    };
-    state
-        .store
-        .recorded_change(origin.actor.clone(), request_id)
-        .await
-        .map_err(Refusal::unavailable)
 }
 
 /// A replay is checked against the roster as the first attempt saw it, not
@@ -207,9 +207,8 @@ pub async fn create(
     State(site): State<Arc<Site>>,
     session: AdminSession,
     headers: HeaderMap,
-    body: Result<Json<FixedRequest>, JsonRejection>,
+    Body(request): Body<FixedRequest>,
 ) -> Reply {
-    let Json(request) = body.map_err(bad_body)?;
     let state = state(&site)?;
     let origin = origin(&session, &headers)?;
     let first = recorded(state, &origin).await?;
@@ -260,9 +259,8 @@ pub async fn update(
     session: AdminSession,
     headers: HeaderMap,
     UrlPath(fixed_id): UrlPath<String>,
-    body: Result<Json<FixedRequest>, JsonRejection>,
+    Body(request): Body<FixedRequest>,
 ) -> Reply {
-    let Json(request) = body.map_err(bad_body)?;
     let state = state(&site)?;
     let origin = origin(&session, &headers)?;
     let first = recorded(state, &origin).await?.is_some();
@@ -518,9 +516,8 @@ pub(crate) struct ValidateResult {
 pub async fn validate_bosses(
     State(site): State<Arc<Site>>,
     _: AdminSession,
-    body: Result<Json<ValidateRequest>, JsonRejection>,
+    Body(request): Body<ValidateRequest>,
 ) -> Reply {
-    let Json(request) = body.map_err(bad_body)?;
     let state = state(&site)?;
     let tokens = state
         .catalog

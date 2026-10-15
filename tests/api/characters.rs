@@ -15,7 +15,7 @@ use serde_json::{Value, json};
 use crate::{
     reads::Reads,
     schemas::assert_valid,
-    support::{ADMIN_HOST, find, request, strs},
+    support::{ADMIN_HOST, fields, find, request, strs},
 };
 
 const ROW: &str = "characters.json#/$defs/CharacterRow";
@@ -90,25 +90,18 @@ async fn characters_are_created_listed_edited_retired_and_deleted() {
         json!({"ign": " Wisteria ", "class": "Bishop", "level": 260, "role": "main"}),
     )
     .await;
+    let shown = [
+        "ign",
+        "world",
+        "class",
+        "level",
+        "role",
+        "version",
+        "retired_at",
+    ];
     assert_eq!(
-        (
-            &main["ign"],
-            &main["world"],
-            &main["class"],
-            &main["level"],
-            &main["role"],
-            &main["version"],
-            &main["retired_at"],
-        ),
-        (
-            &json!("Wisteria"),
-            &json!("msea"),
-            &json!("Bishop"),
-            &json!(260),
-            &json!("main"),
-            &json!(1),
-            &Value::Null
-        )
+        fields(&main, &shown),
+        json!(["Wisteria", "msea", "Bishop", 260, "main", 1, null])
     );
     assert_eq!(main["created_at"], "2026-09-29T04:00:00Z");
     let alt = created(&reads, ALICE, json!({"ign": "Heather9"})).await;

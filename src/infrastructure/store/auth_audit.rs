@@ -62,7 +62,7 @@ pub struct AuditRow {
 }
 
 impl AuditRow {
-    /// The shape both stores enforce (SQLite by CHECK as well).
+    /// The persisted shape, also enforced by SQLite CHECK constraints.
     ///
     /// # Errors
     /// [`StoreError::Constraint`] naming the first bad field.

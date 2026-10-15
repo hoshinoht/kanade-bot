@@ -6,9 +6,10 @@ use kanade::domain::drafts::{DraftChange, DraftEventKind, DraftStatus, DraftUpda
 use kanade::domain::history::Actor;
 use kanade::domain::ids::IdGenerator;
 use kanade::domain::scheduler::SchedulerService;
+use kanade::infrastructure::store::SqliteStore;
 
 use crate::scenarios::{delivery, now, previous_week, week, world};
-use crate::support::{Store, TempDir, on_both_stores};
+use crate::support::Store;
 
 #[derive(Default)]
 struct Counter(u64);
@@ -83,15 +84,15 @@ async fn expire_past_week_drafts<S: Store>(store: &S) {
 
 #[tokio::test]
 async fn the_tick_expires_past_week_drafts() {
-    on_both_stores!(expire_past_week_drafts);
+    expire_past_week_drafts(&SqliteStore::open_temp().await).await;
 }
 
 #[tokio::test]
 async fn a_failed_expiry_never_aborts_the_tick() {
-    let dir = TempDir::new();
-    let store = dir.open().await;
+    let store = SqliteStore::open_temp().await;
     let world = world();
-    dir.raw("DROP TABLE drafts;").await;
+    let dir = store.temp_dir();
+    dir.raw("DROP TABLE drafts;").await.expect("drop");
     let mut tick = delivery(&store, &world, &world.fake);
     tick.tick_at(now()).await.expect("the tick still runs");
     assert!(

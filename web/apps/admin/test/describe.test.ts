@@ -72,6 +72,34 @@ suite('history describe', () => {
     ]);
   });
 
+  it('folds a move whose scheduler withdrew every card and wrote new ones into one line', () => {
+    const card = (id: string, kind: string, fire_at: string, sent_at: string | null = null) => reminder({ id, kind, fire_at, sent_at });
+    const lines = describe(
+      record([
+        { key: { table: 'runs', id: 'r' }, before: run({}), after: run({ datetime: '2026-09-25T14:00:00+00:00' }) },
+        { key: { table: 'reminders', id: 'old-day' }, before: card('old-day', 'day_of', '2026-09-25T01:00:00+00:00', '2026-09-25T01:00:00+00:00'), after: null },
+        { key: { table: 'reminders', id: 'old-60' }, before: card('old-60', 'countdown_60', '2026-09-25T12:30:00+00:00'), after: null },
+        { key: { table: 'reminders', id: 'new-day' }, before: null, after: card('new-day', 'day_of', '2026-09-25T01:00:00+00:00', '2026-09-25T09:00:00+00:00') },
+        { key: { table: 'reminders', id: 'new-60' }, before: null, after: card('new-60', 'countdown_60', '2026-09-25T13:00:00+00:00') },
+      ]),
+      names,
+      TZ,
+    );
+    expect(lines).toEqual(['XKalos: Fri 25 21:30 → Fri 25 22:00', 'XKalos: 2 reminders re-placed']);
+  });
+
+  it('keeps a line per card when the run did not move', () => {
+    const lines = describe(
+      record([
+        { key: { table: 'runs', id: 'r' }, before: run({}), after: run({ status: 'cancelled' }) },
+        { key: { table: 'reminders', id: 'rem-1' }, before: reminder({}), after: null },
+      ]),
+      names,
+      TZ,
+    );
+    expect(lines).toEqual(['XKalos: unconfirmed → cancelled', 'T-1h card for XKalos withdrawn']);
+  });
+
   it('names the run of an answer from the same record', () => {
     const lines = describe(
       record([

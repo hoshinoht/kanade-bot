@@ -1,6 +1,6 @@
 //! Pipeline-level fakes: a pinned wall clock, counted ids, a guild, the real
-//! scheduler proposal service over the memory store, an outbox recorder, a
-//! history source and a `FakeProvider` behind a real governor (wrapped in
+//! scheduler proposal service over a temp SQLite store, an outbox recorder,
+//! a history source and a `FakeProvider` behind a real governor (wrapped in
 //! [`Model`] for gates and injected panics).
 
 use std::collections::{BTreeMap, HashSet};
@@ -41,12 +41,12 @@ use kanade::infrastructure::llm::{
     CapabilityFuture, ChatRequest, CompletionFuture, CompletionResponse, ExecutionLimits,
     FakeAction, FakeProvider, FinishReason, LlmProvider, ModelCapabilities, RetryPolicy, Usage,
 };
-use kanade::infrastructure::store::{MemoryScheduleStore, SqliteStore};
+use kanade::infrastructure::store::SqliteStore;
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 
 use crate::common::TestClock;
-use crate::support;
+use crate::support::fixture_catalog;
 
 pub const CHANNEL: &str = "900";
 pub const OTHER: &str = "901";
@@ -57,9 +57,9 @@ pub const PRIYA: &str = "114200000000000033";
 pub const KANON: &str = "114200000000000044";
 pub const STRANGER: &str = "114200000000000099";
 
-pub type Service<'a> = SchedulerService<StoreRef<'a, MemoryScheduleStore>, Ids, TestClock>;
-pub type Core = Extractor<MemoryScheduleStore, Model, Scheduler, Recorder>;
-pub type Jobs = Rescans<MemoryScheduleStore, Model, Scheduler, Recorder, FakeHistory>;
+pub type Service<'a> = SchedulerService<StoreRef<'a, SqliteStore>, Ids, TestClock>;
+pub type Core = Extractor<SqliteStore, Model, Scheduler, Recorder>;
+pub type Jobs = Rescans<SqliteStore, Model, Scheduler, Recorder, FakeHistory>;
 
 /// Rescan jobs over `extractor`, backfilling from `history`.
 pub fn rescans(extractor: &Arc<Core>, history: FakeHistory) -> Arc<Jobs> {
@@ -85,7 +85,7 @@ pub fn local(month: u32, day: u32, hour: u32, minute: u32) -> DateTime<Utc> {
         .with_timezone(&Utc)
 }
 
-/// Sunday 30 Aug 2026 13:07, as the plan vectors.
+/// Sunday 30 Aug 2026 13:07.
 pub fn now() -> DateTime<Utc> {
     local(8, 30, 13, 7)
 }
@@ -149,8 +149,7 @@ pub struct FakeGuild {
 
 impl FakeGuild {
     fn new() -> Self {
-        let raw = support::load("plan.json");
-        let bosses = support::catalog(&raw["cases"][0]["input"]["catalog"]);
+        let bosses = fixture_catalog();
         Self {
             members: vec![
                 // Names that are not English words, so the leak finder
@@ -217,7 +216,7 @@ impl Directory for Roster {
 
 /// The scheduler's real proposal service, one short-lived service per call.
 pub struct Scheduler {
-    pub store: Arc<MemoryScheduleStore>,
+    pub store: Arc<SqliteStore>,
     pub clock: TestClock,
     pub ids: Ids,
     pub directory: Roster,
@@ -536,7 +535,7 @@ pub fn client(actions: Vec<FakeAction>, grouped: bool) -> (Arc<Model>, Arc<Model
 }
 
 pub struct World {
-    pub store: Arc<MemoryScheduleStore>,
+    pub store: Arc<SqliteStore>,
     pub provider: Arc<FakeProvider>,
     /// The hooks around `provider`.
     pub model: Arc<Model>,
@@ -585,7 +584,7 @@ impl World {
         self_service: bool,
         live: Option<LiveContext>,
     ) -> Self {
-        let store = Arc::new(MemoryScheduleStore::new());
+        let store = Arc::new(SqliteStore::open_temp().await);
         let clock = TestClock::new(now().fixed_offset());
         let guild = Arc::new(FakeGuild::new());
         let scheduler = Arc::new(Scheduler {
@@ -677,28 +676,6 @@ impl World {
         let (sender, events) = mpsc::channel(1_024);
         let pipeline = Pipeline::new(self.extractor.clone());
         (sender, tokio::spawn(pipeline.run(events)))
-    }
-
-    /// This world's guild and outbox over a SQLite model-log store, whose
-    /// writes really suspend (the memory store never yields).
-    pub fn over_sqlite(
-        &self,
-        store: Arc<SqliteStore>,
-    ) -> Arc<Extractor<SqliteStore, Model, Scheduler, Recorder>> {
-        let (_, client) = client(Vec::new(), true);
-        Arc::new(Extractor::new(
-            Deps {
-                store,
-                client,
-                guild: self.guild.clone(),
-                proposer: self.scheduler.clone(),
-                outbox: self.outbox.clone(),
-                clock: Arc::new(TestClock::new(now().fixed_offset())),
-                ids: Box::new(Ids::new(0x5a1)),
-                self_service: None,
-            },
-            config(),
-        ))
     }
 
     /// Extraction log rows, oldest first.

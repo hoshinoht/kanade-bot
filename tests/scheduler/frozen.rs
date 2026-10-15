@@ -6,7 +6,6 @@
 
 use chrono::{DateTime, NaiveTime, TimeZone, Utc, Weekday};
 use kanade::domain::completion::{RunEnds, RunEndsSource};
-use kanade::domain::history::Origin;
 use kanade::domain::members::Roster;
 use kanade::domain::notify::digest_inclusion;
 use kanade::domain::schedule::{
@@ -18,11 +17,12 @@ use kanade::domain::scheduler::{
     Attributed, DeclineNoticeContext, ScheduleStore, SchedulerError, SchedulerService, Scope,
 };
 use kanade::domain::settings::RunLengths;
-use kanade::infrastructure::store::MemoryScheduleStore;
+use kanade::infrastructure::store::SqliteStore;
 
 use crate::common::{SeqIds, TestClock};
+use crate::support::by_tests;
 
-type Service = SchedulerService<MemoryScheduleStore, SeqIds, TestClock>;
+type Service = SchedulerService<SqliteStore, SeqIds, TestClock>;
 
 const ALICE: &str = "1001";
 const BOB: &str = "1002";
@@ -65,8 +65,8 @@ struct World {
 
 impl World {
     /// A handle for one mutation attributed to the tests.
-    fn op(&mut self) -> Attributed<'_, MemoryScheduleStore, SeqIds, TestClock> {
-        self.service.as_origin(Origin::for_tests())
+    fn op(&mut self) -> Attributed<'_, SqliteStore, SeqIds, TestClock> {
+        by_tests(&mut self.service)
     }
 }
 
@@ -79,10 +79,9 @@ fn ids() -> SeqIds {
 /// with the clock at `now`.
 async fn world(status: RunStatus, now: DateTime<Utc>) -> World {
     let clock = TestClock::new(utc(1, 0, 0).fixed_offset());
-    let mut service = SchedulerService::new(MemoryScheduleStore::new(), ids(), clock.clone())
+    let mut service = SchedulerService::new(SqliteStore::open_temp().await, ids(), clock.clone())
         .with_run_ends(RunEndsSource::fixed(RunLengths::default(), None, policy()));
-    let fixed = service
-        .as_origin(Origin::for_tests())
+    let fixed = by_tests(&mut service)
         .add_fixed_run(NewFixedRun {
             owner_id: ALICE.into(),
             channel_id: Some("900".into()),
@@ -96,8 +95,7 @@ async fn world(status: RunStatus, now: DateTime<Utc>) -> World {
         .await
         .unwrap();
     let week = utc_instant(&policy().week_of(&start()).unwrap()).unwrap();
-    let run = service
-        .as_origin(Origin::for_tests())
+    let run = by_tests(&mut service)
         .create_run(NewRun {
             fixed_run_id: Some(fixed.clone()),
             channel_id: Some("900".into()),

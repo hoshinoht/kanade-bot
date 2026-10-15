@@ -142,18 +142,27 @@ pub async fn compose(
     channels: Arc<dyn ChannelList>,
     health: LiveHealth,
 ) -> Result<Composition, Error> {
-    compose_with(config, store, channels, health, None).await
+    compose_with(
+        config,
+        store,
+        channels,
+        health,
+        None,
+        Arc::new(auth::system_now),
+    )
+    .await
 }
 
-/// [`compose`]; a `shared` model stack (built once by the caller from the same
-/// config) replaces building one, and its listing and refresh stay the
-/// caller's.
+/// [`compose`] on `clock` (the writer's, the API's and both sign-in realms'
+/// sessions); a `shared` model stack (built once by the caller from the same
+/// config) replaces building one, and its listing and refresh stay the caller's.
 pub(super) async fn compose_with(
     config: &ServeConfig,
     store: Arc<SqliteStore>,
     channels: Arc<dyn ChannelList>,
     health: LiveHealth,
     shared: Option<Arc<ModelStack>>,
+    clock: Clock,
 ) -> Result<Composition, Error> {
     let catalog = load_catalog(&config.files.catalog_file).map_err(file_error)?;
     let knowledge = config
@@ -199,7 +208,8 @@ pub(super) async fn compose_with(
     );
     let auth: AdminAuth =
         auth::from_settings(&config.runtime.admin_auth, store.clone(), Arc::new(staff))?
-            .with_audit(Arc::new(StoreAudit::new(store.clone())));
+            .with_audit(Arc::new(StoreAudit::new(store.clone())))
+            .with_clock(clock.clone());
     // One portrait cache for both origins.
     let avatars = Arc::new(AvatarCache::discord(
         config.runtime.http.identity_dir.as_deref(),
@@ -223,7 +233,9 @@ pub(super) async fn compose_with(
         }),
     });
     let member = match config.runtime.public_bind {
-        Some(_) => Some(Arc::new(member_realm(config, &store, &desk, &avatars)?)),
+        Some(_) => Some(Arc::new(
+            member_realm(config, &store, &desk, &avatars)?.with_clock(clock.clone()),
+        )),
         None => None,
     };
 
@@ -232,7 +244,6 @@ pub(super) async fn compose_with(
         .schema_version()
         .await
         .map_err(|_| Error::Startup("store schema version could not be read".into()))?;
-    let clock: Clock = Arc::new(auth::system_now);
     // Every write path (portal, Discord, extractor, tick) commits through this
     // store, so its write hook is the one place change hints come from.
     let events = Arc::new(Hub::default());
@@ -294,6 +305,101 @@ pub(super) async fn compose_with(
         models,
         knowledge,
         model_tasks,
+    })
+}
+
+/// Test support: what [`compose_for_tests`] puts in place of serve's
+/// outside world.
+#[cfg(any(test, feature = "test-support"))]
+pub struct Overrides {
+    /// The wall clock of the writer, the API, both sign-in realms and module
+    /// `character_data`.
+    pub clock: Clock,
+    /// The Discord API behind both sign-in realms the config sets up.
+    pub discord: Option<Arc<dyn crate::api::auth::discord::DiscordApi>>,
+    /// Both realms' authorization page (the fake Discord's).
+    pub authorize_url: Option<String>,
+    /// Governor snapshots in place of the model stack's.
+    pub model_limits: Option<crate::api::state::ModelLimits>,
+    /// A loopback fake NEXON Open API (plain HTTP) for module `character_data`.
+    pub nexon: Option<std::net::SocketAddr>,
+}
+
+/// Test support: the composition and its running module `character_data`
+/// (stop it before closing the store).
+#[cfg(any(test, feature = "test-support"))]
+pub struct TestComposition {
+    pub composition: Composition,
+    pub character_data: Option<super::CharacterDataModule>,
+}
+
+/// Test support: compose as serve does without the gateway (no guild cache,
+/// then module `character_data` on the same clock), with `overrides` in place
+/// of the system clock, Discord, the model governor and NEXON.
+#[cfg(any(test, feature = "test-support"))]
+pub async fn compose_for_tests(
+    config: &ServeConfig,
+    store: Arc<SqliteStore>,
+    overrides: Overrides,
+) -> Result<TestComposition, Error> {
+    use crate::{
+        api::{auth::discord::DiscordLogin, state::StaticChannels},
+        infrastructure::nexon::NexonClient,
+    };
+
+    let Overrides {
+        clock,
+        discord,
+        authorize_url,
+        model_limits,
+        nexon,
+    } = overrides;
+    let mut composition = compose_with(
+        config,
+        store.clone(),
+        Arc::new(StaticChannels(Vec::new())),
+        LiveHealth::new(store.clone()),
+        None,
+        Arc::clone(&clock),
+    )
+    .await?;
+    // Compose returned the only handles.
+    let unshared = || Error::Startup("the composition is already shared".into());
+    let fake = |mut login: DiscordLogin| {
+        if let Some(api) = &discord {
+            login.api = Arc::clone(api);
+        }
+        match &authorize_url {
+            Some(url) => login.with_authorize_url(url.clone()),
+            None => login,
+        }
+    };
+    let admin = &mut composition.admin;
+    Arc::get_mut(&mut admin.auth)
+        .ok_or_else(unshared)?
+        .map_discord(fake);
+    if let Some(member) = &mut admin.member {
+        Arc::get_mut(member).ok_or_else(unshared)?.map_discord(fake);
+    }
+    if model_limits.is_some() {
+        Arc::get_mut(&mut admin.state)
+            .ok_or_else(unshared)?
+            .model_limits = model_limits;
+    }
+    let character_data = super::character_data::start_with(
+        config,
+        &store,
+        &mut composition,
+        clock,
+        |key| match nexon {
+            Some(address) => Some(NexonClient::plain(address, key)),
+            None => NexonClient::new(key),
+        },
+    )
+    .await?;
+    Ok(TestComposition {
+        composition,
+        character_data,
     })
 }
 

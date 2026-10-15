@@ -10,12 +10,12 @@ use kanade::domain::history::{
 };
 use kanade::domain::schedule::{RsvpSource, RsvpState, SchedulePolicy};
 use kanade::domain::scheduler::SchedulerService;
-use kanade::infrastructure::store::MemoryScheduleStore;
+use kanade::infrastructure::store::SqliteStore;
 
 use crate::common::TestClock;
 use crate::support::{self, CountingIds, hm, snapshot, weekly};
 
-type Service = SchedulerService<MemoryScheduleStore, CountingIds, TestClock>;
+type Service = SchedulerService<SqliteStore, CountingIds, TestClock>;
 
 fn kl(month: u32, day: u32, hour: u32) -> DateTime<FixedOffset> {
     FixedOffset::east_opt(8 * 3600)
@@ -48,7 +48,7 @@ struct Fixture {
 
 async fn fixture() -> Fixture {
     let mut service = SchedulerService::new(
-        MemoryScheduleStore::new(),
+        SqliteStore::open_temp().await,
         CountingIds::default(),
         TestClock::new(kl(8, 27, 1)),
     );

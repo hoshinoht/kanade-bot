@@ -1,4 +1,4 @@
-import type { Channel, ConfigView, EventTopic, Identity, Me, MemberRow, Role, MoveResult, Run, RunResult, RunStatus, Session, Stats, Summary, SwapResult, Week, WeekKey } from '@kanade/api-types';
+import type { Channel, ConfigView, EventTopic, Identity, Me, MemberRow, Role, MoveResult, Run, RunResult, RunStatus, Session, Summary, SwapResult, Week, WeekKey } from '@kanade/api-types';
 import { ApiRequestError, createClient, createPoller, wroteWithin, type LiveEvents, type Poller } from '@kanade/client';
 import { arrival, live, OWN_ECHO_MS } from './resource.svelte';
 import { clockTime, runTitle, whenLabel, type FreshState } from '@kanade/ui';
@@ -14,11 +14,11 @@ export const FALLBACK_POLL_MS = 60_000;
 export const WEEK_TOPICS: readonly EventTopic[] = ['schedule', 'inbox', 'delivery', 'settings'];
 
 /**
- * A polled week, its stats, which week was asked for, whether it came from
- * elsewhere (a hint or a timed poll, not the admin's own refresh or write),
- * and the event stream's restart count when it was read.
+ * A polled week (its stats included), which week was asked for, whether it
+ * came from elsewhere (a hint or a timed poll, not the admin's own refresh or
+ * write), and the event stream's restart count when it was read.
  */
-type Snapshot = [Week, Stats, WeekKey, boolean, number];
+type Snapshot = [Week, WeekKey, boolean, number];
 
 /** The last planner change, for one-step undo: a move goes back; a swap is swapped again. */
 export type LastMove =
@@ -41,7 +41,6 @@ export const isPast = (run: Run) => run.status === 'done' || run.status === 'can
 
 export class AdminWeek {
   week = $state<Week | null>(null);
-  stats = $state<Stats | null>(null);
   fresh = $state<FreshState>('loading');
   updated = $state('');
   lastMove = $state<LastMove | null>(null);
@@ -94,9 +93,8 @@ export class AdminWeek {
         const epoch = this.#events.epoch;
         const query = `?week=${which}`;
         const quietSaves = this.#quietSaves;
-        const [week, stats, read, current] = await Promise.all([
+        const [week, read, current] = await Promise.all([
           this.#client.get<Week>(`/api/admin/week${query}`, { signal }),
-          this.#client.get<Stats>(`/api/admin/stats${query}`, { signal }),
           this.#client.get<Summary>('/api/admin/summary', { signal }),
           // Next week on screen: the Glance's next run still lives in this week.
           which === 'next' ? this.#client.get<Week>('/api/admin/week?week=this', { signal }) : null,
@@ -109,7 +107,7 @@ export class AdminWeek {
           this.summary = summary;
         }
         if (current && !same(this.#current, current)) this.#current = current;
-        return [week, stats, which, remote, epoch] as Snapshot;
+        return [week, which, remote, epoch] as Snapshot;
       },
       intervalMs: POLL_MS,
       maxIntervalMs: 2 * 60_000,
@@ -147,7 +145,7 @@ export class AdminWeek {
   #receive(snapshot: Snapshot) {
     // Reachable again: the connection is live even if this snapshot waits.
     this.fresh = 'live';
-    const [week, , which, , epoch] = snapshot;
+    const [week, which, , epoch] = snapshot;
     // Asked for before a this/next switch: not the week on screen any more.
     if (which !== this.which) return;
     // A response that left the server before our own move committed is older
@@ -155,7 +153,7 @@ export class AdminWeek {
     // lower the version).
     if (this.#older(week, epoch)) return;
     if (this.#holding || this.#pendingMoves > 0) {
-      if (!this.#buffered || week.version >= this.#buffered[0].version || epoch !== this.#buffered[4]) this.#buffered = snapshot;
+      if (!this.#buffered || week.version >= this.#buffered[0].version || epoch !== this.#buffered[3]) this.#buffered = snapshot;
       return;
     }
     this.#apply(snapshot);
@@ -177,7 +175,7 @@ export class AdminWeek {
    */
   beforeArrival: ((added: string[]) => void) | null = null;
 
-  #apply([week, stats, , remote, epoch]: Snapshot) {
+  #apply([week, , remote, epoch]: Snapshot) {
     this.#epoch = epoch;
     // An unchanged poll keeps the objects on screen: new-but-equal objects
     // re-run every derived value and attachment on the page for nothing.
@@ -190,7 +188,6 @@ export class AdminWeek {
       }
       this.week = week;
     } else if (this.week) this.week.generated_at = week.generated_at;
-    if (JSON.stringify(this.stats) !== JSON.stringify(stats)) this.stats = stats;
     // "Updated" names the data on screen, not the last response received.
     this.updated = clockTime(week.generated_at, week.timezone, false);
   }
@@ -199,7 +196,7 @@ export class AdminWeek {
     if (this.#holding || this.#pendingMoves > 0 || !this.#buffered) return;
     const snapshot = this.#buffered;
     this.#buffered = null;
-    if (!this.#older(snapshot[0], snapshot[4])) this.#apply(snapshot);
+    if (!this.#older(snapshot[0], snapshot[3])) this.#apply(snapshot);
   }
 
   /** Switch between this and next boss week; the board shows loading until it arrives. */
@@ -208,7 +205,6 @@ export class AdminWeek {
     this.which = which;
     this.#buffered = null;
     this.week = null;
-    this.stats = null;
     this.lastMove = null;
     this.fresh = 'loading';
     void this.#poller.refresh();

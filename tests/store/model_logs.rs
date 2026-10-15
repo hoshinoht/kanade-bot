@@ -8,10 +8,9 @@ use kanade::domain::model_log::{
 };
 use kanade::domain::scheduler::StoreError;
 use kanade::infrastructure::store::{SqliteStore, SqliteStoreConfig};
-use sqlx::sqlite::SqliteConnectOptions;
-use sqlx::{ConnectOptions, Connection};
+use sqlx::Connection;
 
-use crate::support::{LATE_SCHEMA_DROPS, TempDir, create, raw, tamper};
+use crate::support::{LATE_SCHEMA_DROPS, TempDir, connect, create, raw, tamper};
 
 #[tokio::test]
 async fn an_out_of_range_wire_reasoning_count_is_unknown_and_stored_as_null() {
@@ -77,12 +76,7 @@ async fn an_out_of_range_wire_reasoning_count_is_unknown_and_stored_as_null() {
         store.load_extraction("parsed").await.expect("load"),
         Some(log)
     );
-    let mut conn = SqliteConnectOptions::new()
-        .filename(&config.db_path)
-        .read_only(true)
-        .connect()
-        .await
-        .expect("raw read");
+    let mut conn = connect(&config, true).await;
     let tokens: Option<i64> =
         sqlx::query_scalar("SELECT reasoning_tokens FROM extractions WHERE id = 'parsed'")
             .fetch_one(&mut conn)
@@ -97,12 +91,7 @@ async fn an_out_of_range_wire_reasoning_count_is_unknown_and_stored_as_null() {
 }
 
 async fn count(config: &SqliteStoreConfig, table: &str) -> i64 {
-    let mut conn = SqliteConnectOptions::new()
-        .filename(&config.db_path)
-        .read_only(true)
-        .connect()
-        .await
-        .expect("raw connection");
+    let mut conn = connect(config, true).await;
     // Test-only: `table` is one of the fixed names below.
     let found = sqlx::query_scalar(&format!("SELECT COUNT(*) FROM {table}"))
         .fetch_one(&mut conn)

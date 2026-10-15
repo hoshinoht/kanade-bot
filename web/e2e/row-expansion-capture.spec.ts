@@ -21,7 +21,7 @@ for (const size of [{ width: 1280, height: 800 }, { width: 390, height: 844 }]) 
     const tag = `${size.width}x${size.height}`;
 
     await page.goto(`${ADMIN}/fixed?sw=off`);
-    const fixed = page.getByRole('button', { name: 'Edit Tuesday 22:00 — HCarling + HStar', exact: true });
+    const fixed = page.getByRole('button', { name: 'Edit Tuesday 22:00 — HCarling + HMaleficStar', exact: true });
     await expect(fixed).toBeVisible();
     await shot(page, `fixed-collapsed-${tag}`);
     await fixed.click();
@@ -53,7 +53,7 @@ for (const size of [{ width: 1280, height: 800 }, { width: 390, height: 844 }]) 
     await shot(page, `history-selected-${tag}`);
 
     await page.goto(`${ADMIN}/members?sw=off`);
-    const member = page.locator('[data-member="1003"]');
+    const member = page.locator('[data-member="100000000000001003"]');
     await expect(member).toBeVisible();
     await shot(page, `members-collapsed-${tag}`);
     await member.click();

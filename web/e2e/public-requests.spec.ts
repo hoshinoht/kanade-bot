@@ -5,9 +5,9 @@ import { PUBLIC, choose, expect, settle, signInPublic, test, useLook } from './s
 // The member's requests to the admins (member-writes contract Phase B,
 // boards RequestForm, RequestForm-Confirm, RequestForm-Limit, Requests,
 // Requests-Expired, PhoneRequest, PhoneRequests) and the Move page's axe
-// pass, against the mock's member (Asahi): one waiting weekly change on
-// XKalos, then approved, declined, withdrawn and expired ones; 3 may wait
-// at once. Every test ends with zero CSP/TT reports.
+// pass, as the real server's member (Asahi): one waiting weekly change on
+// XKalos, then declined and withdrawn ones; 3 may wait at once. Every test
+// ends with zero CSP/TT reports.
 
 test.describe.configure({ mode: 'parallel' });
 
@@ -26,13 +26,16 @@ async function form(page: Page, query = ''): Promise<void> {
 /** Sends a request straight to the API, as another tab would. */
 async function sendElsewhere(page: Page, body: Record<string, unknown>, key: string): Promise<number> {
   const session = await page.request.get(`${PUBLIC}/api/public/session`);
-  const sent = await page.request.post(`${PUBLIC}/api/public/requests`, { headers: { 'X-Kanade-CSRF': session.headers()['x-kanade-csrf'] ?? '', 'Idempotency-Key': key }, data: body });
+  const sent = await page.request.post(`${PUBLIC}/api/public/requests`, {
+    headers: { 'X-Kanade-CSRF': session.headers()['x-kanade-csrf'] ?? '', 'Idempotency-Key': key, Origin: PUBLIC },
+    data: body,
+  });
   return sent.status();
 }
 
 async function sent(page: Page, title: string): Promise<void> {
   await expect(toast(page).filter({ hasText: `Sent: ${title}. The admins review it; Discord tells you when one decides.` })).toBeVisible();
-  await expect(page).toHaveURL(/\/requests\?open=req-/);
+  await expect(page).toHaveURL(/\/requests\?open=[0-9a-f-]{36}$/);
   const detail = page.locator('.req-detail');
   await expect(detail.getByRole('heading', { level: 2 })).toContainText(title);
   await expect(detail.locator('.req-chip')).toHaveText('waiting');
@@ -42,26 +45,26 @@ async function sent(page: Page, title: string): Promise<void> {
 const KINDS: { kind: string; title: string; fill: (page: Page) => Promise<void> }[] = [
   {
     kind: 'Join a run',
-    title: 'Join HLimbo',
+    title: 'Join XBM',
     fill: async (page) => {
       // Join lists only runs Asahi is not in.
-      await expect(subject(page, 'HCarling + HStar')).toHaveCount(0);
-      await subject(page, 'HLimbo').click();
+      await expect(subject(page, 'HCarling + HMaleficStar')).toHaveCount(0);
+      await subject(page, 'XBM').click();
     },
   },
   {
     kind: 'Leave a run',
-    title: 'Leave HCarling + HStar',
+    title: 'Leave HCarling + HMaleficStar',
     fill: async (page) => {
-      await subject(page, 'HCarling + HStar').first().click();
+      await subject(page, 'HCarling + HMaleficStar').first().click();
       await note(page).fill('Something came up on Tuesday evening.');
     },
   },
   {
     kind: 'Swap my place',
-    title: 'Swap my place on HCarling + HStar',
+    title: 'Swap my place on HCarling + HMaleficStar',
     fill: async (page) => {
-      await subject(page, 'HCarling + HStar').first().click();
+      await subject(page, 'HCarling + HMaleficStar').first().click();
       await choose(page.getByRole('combobox', { name: 'Who takes your place' }), { label: 'Kaito' });
       await expect(page.locator('.req-aside__line')).toContainText('Kaito takes your place');
     },
@@ -104,7 +107,7 @@ for (const { kind, title, fill } of KINDS) {
 test('a run named by the address picks Leave for your own run and Join for someone else’s', async ({ page }) => {
   await form(page, 'run=r-carling');
   await expect(page.getByRole('radio', { name: 'Leave a run' })).toBeChecked();
-  await expect(subject(page, 'HCarling + HStar').first().getByRole('radio')).toBeChecked();
+  await expect(subject(page, 'HCarling + HMaleficStar').first().getByRole('radio')).toBeChecked();
   await page.goto(`${PUBLIC}/requests/new?run=r-limbo&sw=off`);
   await expect(page.getByRole('radio', { name: 'Join a run' })).toBeChecked();
   await expect(subject(page, 'HLimbo').getByRole('radio')).toBeChecked();
@@ -129,9 +132,8 @@ test("Discord's weekly-change link prefills the timing, day and time", async ({ 
 });
 
 test("a send older than the fresh window: Confirm it's you, back with the form kept, Send again", async ({ page }) => {
-  // Aged before the page reads the session and devices, so both carry the same sign-in time.
-  await signInPublic(page);
-  expect((await page.request.post(`${PUBLIC}/__mock/public/unfresh`)).ok()).toBe(true);
+  // Signed in before the fresh window, so the session and devices reads carry the same sign-in time.
+  await signInPublic(page, { stale: true });
   await page.goto(`${PUBLIC}/requests/new?run=r-carling&sw=off`);
   await expect(page.getByRole('radiogroup', { name: 'Request type' })).toBeVisible();
   await note(page).fill('Something came up on Tuesday evening.');
@@ -139,22 +141,24 @@ test("a send older than the fresh window: Confirm it's you, back with the form k
   const confirm = page.getByRole('dialog', { name: "Confirm it's you" });
   await expect(confirm).toContainText('Sending a request needs a Discord sign-in from the last 15 minutes.');
   await expect(confirm).toContainText(
-    'Your request is kept: Leave HCarling + HStar, Tue 29 Sep 22:00 · #hstar-party, with your note. You come back to this page and press Send once more.',
+    'Your request is kept: Leave HCarling + HMaleficStar, Tue 29 Sep 22:00 · #hstar-party, with your note. You come back to this page and press Send once more.',
   );
   await confirm.getByRole('link', { name: 'Sign in again' }).click();
   await expect(page).toHaveURL(/\/requests\/new\?kind=leave&run=r-carling&note=/);
   await expect(page.getByRole('radio', { name: 'Leave a run' })).toBeChecked();
   await expect(note(page)).toHaveValue('Something came up on Tuesday evening.');
   await sendKey(page).click();
-  await sent(page, 'Leave HCarling + HStar');
+  await sent(page, 'Leave HCarling + HMaleficStar');
   await expect(page.locator('.req-detail__note')).toHaveText('“Something came up on Tuesday evening.”');
 });
 
 test('at the open limit: the toast says nothing was sent, the key is off with the reason', async ({ page }) => {
+  // A tab that missed the other tab's sends (no live hint), so its Send meets the server's limit.
+  await page.route(`${PUBLIC}/api/public/events`, (route) => route.abort());
   await form(page, 'run=r-carling');
-  // Two more sent from another tab fill the three that may wait.
-  expect(await sendElsewhere(page, { kind: 'join', run_id: 'r-limbo' }, 'e2e-limit-1')).toBe(201);
-  expect(await sendElsewhere(page, { kind: 'join', run_id: 'r-fa' }, 'e2e-limit-2')).toBe(201);
+  // Two more sent from another tab fill the three that may wait (XBM is the one open run she is not on).
+  expect(await sendElsewhere(page, { kind: 'join', run_id: 'r-bm' }, 'e2e-limit-1')).toBe(201);
+  expect(await sendElsewhere(page, { kind: 'swap', run_id: 'r-carling', with: '100000000000001009' }, 'e2e-limit-2')).toBe(201);
   await sendKey(page).click();
   const refused = toast(page).filter({ hasText: 'Limit reached: 3 requests waiting. Nothing was sent.' });
   await expect(refused).toBeVisible();
@@ -189,36 +193,29 @@ test('My requests: newest first, each state on its chip; the open one says where
   await signInPublic(page);
   await page.goto(`${PUBLIC}/requests?sw=off`);
   const rows = page.getByRole('navigation', { name: 'Your requests' }).getByRole('link');
-  await expect(rows).toHaveCount(5);
+  // The real scheduler refuses the mock's approved join (Asahi is already on
+  // HJupiter) and its expired swap (no Carling run last week), so neither is seeded.
+  await expect(rows).toHaveCount(3);
   const chips = await rows.evaluateAll((links) => links.map((a) => [(a as HTMLElement).dataset.request, a.querySelector('.req-chip')?.textContent?.trim()]));
   expect(chips).toEqual([
     ['req-kalos-weekly', 'waiting'],
-    ['req-jupiter-join', 'approved'],
     ['req-bellona-join', 'declined'],
     ['req-jupiter-new', 'withdrawn'],
-    ['req-carling-swap', 'expired'],
   ]);
-  await expect(page.locator('.pageline__context')).toHaveText('· 1 waiting · 2 decided');
+  await expect(page.locator('.pageline__context')).toHaveText('· 1 waiting · 1 decided');
   // The first is open by default: waiting, with Withdraw….
   await expect(rows.first()).toHaveAttribute('aria-current', 'page');
   await expect(page.locator('.req-detail')).toContainText('Waiting on the admins. The weekly timing stays Fri 21:30 until one decides');
   await expect(page.getByRole('button', { name: 'Withdraw…' })).toBeVisible();
   // Declined: the admin's reason.
-  await rows.nth(2).click();
+  await rows.nth(1).click();
   await expect(page).toHaveURL(/open=req-bellona-join/);
-  await expect(page.locator('.req-detail')).toContainText('Declined by Ren');
+  // Members never learn which admin decided (`dto::public::actor_label`).
+  await expect(page.locator('.req-detail')).toContainText('Declined by an admin');
   await expect(page.locator('.req-detail')).toContainText('“party is full” Nothing changed.');
   await expect(page.getByRole('button', { name: 'Withdraw…' })).toHaveCount(0);
-  // Approved: where the change shows.
-  await rows.nth(1).click();
-  await expect(page.locator('.req-detail')).toContainText('Approved by Ren');
-  await expect(page.locator('.req-detail').getByRole('link', { name: 'Open the run' })).toBeVisible();
-  // Expired (board Requests-Expired): nothing changed, and Ask again for this week's run.
-  await rows.nth(4).click();
-  await expect(page.locator('.req-detail')).toContainText('No admin decided before the boss week ended, so this request expired');
-  await expect(page.locator('.req-detail').getByRole('link', { name: 'Ask again for this week…' })).toHaveAttribute('href', '/requests/new?run=r-carling&kind=swap');
   // Withdrawn.
-  await rows.nth(3).click();
+  await rows.nth(2).click();
   await expect(page.locator('.req-detail')).toContainText('You withdrew this request');
 });
 
@@ -259,7 +256,7 @@ test('phone: the request form is rows with a bottom Send, every key 44 px', asyn
   expect(Math.round(foot.y + foot.height)).toBeLessThanOrEqual(844);
   expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(0);
   await sendKey(page).click();
-  await expect(page).toHaveURL(/\/requests\?open=req-/);
+  await expect(page).toHaveURL(/\/requests\?open=[0-9a-f-]{36}$/);
 });
 
 test('phone: My requests unfolds the open row in place with a 44 px Withdraw…', async ({ page }) => {
@@ -291,7 +288,8 @@ for (const theme of ['light', 'dark'] as const) {
       test.setTimeout(60_000);
       await page.setViewportSize(size);
       await useLook(page, 'marigold', theme);
-      await signInPublic(page);
+      // Signed in before the fresh window: the send below asks to confirm it's you.
+      await signInPublic(page, { stale: true });
       await page.goto(`${PUBLIC}/runs/r-carling?move_to=${encodeURIComponent('2026-09-30T13:30:00Z')}&sw=off`);
       await expect(page.locator('.movepick__result')).toContainText('Wed 30 21:30');
       await serious(page, 'move');
@@ -301,12 +299,11 @@ for (const theme of ['light', 'dark'] as const) {
       await page.goto(`${PUBLIC}/requests/new?run=r-carling&sw=off`);
       await expect(note(page)).toBeVisible();
       await serious(page, 'request form');
-      await page.request.post(`${PUBLIC}/__mock/public/unfresh`);
       await sendKey(page).click();
       await expect(page.getByRole('dialog', { name: "Confirm it's you" })).toBeVisible();
       await serious(page, 'confirm');
-      await page.goto(`${PUBLIC}/requests?open=req-carling-swap&sw=off`);
-      await expect(page.locator('[data-request="req-carling-swap"]')).toBeVisible();
+      await page.goto(`${PUBLIC}/requests?open=req-bellona-join&sw=off`);
+      await expect(page.locator('[data-request="req-bellona-join"]')).toBeVisible();
       await serious(page, 'requests');
     });
   }

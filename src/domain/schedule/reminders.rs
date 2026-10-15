@@ -173,6 +173,11 @@ pub fn refresh_run_reminders(
 /// is retired rather than becoming due; a skipped row reopens if its new time
 /// is ahead.
 ///
+/// v5 deviation from v4: a due, unsent row already at its ping time is left
+/// queued while its run is still ahead, so a process started after the ping
+/// time still posts that morning's card (dispatch's [`is_stale`] cutoff still
+/// applies). v4 wrote it as handled on the first tick.
+///
 /// # Errors
 /// [`ScheduleError::DateOutOfRange`].
 pub fn reconcile_day_of(
@@ -196,13 +201,13 @@ pub fn reconcile_day_of(
         let spec = reminder_specs(run.datetime.fixed_offset(), run.status, &day_policy)?
             .into_iter()
             .find(|spec| spec.kind == DAY_OF);
-        if let Some(spec) = spec
-            && draft.reschedule_unposted_reminder(
-                &reminder.id,
-                spec.fire_at.with_timezone(&Utc),
-                now,
-            )
-        {
+        let Some(spec) = spec else {
+            continue;
+        };
+        let fire_at = spec.fire_at.with_timezone(&Utc);
+        let waiting =
+            reminder.fire_at == fire_at && reminder.sent_at.is_none() && now < run.datetime;
+        if !waiting && draft.reschedule_unposted_reminder(&reminder.id, fire_at, now) {
             changed += 1;
         }
     }

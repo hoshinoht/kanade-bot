@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 
 use kanade::bot::cards::emojis::{self, PILLS};
 use kanade::bot::transport::{
-    AmbiguousKind, ApplicationEmoji, Call, FakeDiscord, Op, Outcome, RejectionKind, Step,
+    ApplicationEmoji, Call, FakeDiscord, Op, Outcome, RejectionKind, Step,
 };
 use kanade::cli::emojis::sync;
 use twilight_model::id::Id;
@@ -144,13 +144,7 @@ async fn nothing_is_uploaded_without_a_successful_list() {
 #[tokio::test]
 async fn a_failed_upload_is_reported_and_the_rest_continue() {
     let fake = FakeDiscord::new();
-    fake.script(
-        Op::CreateApplicationEmoji,
-        Step::Ambiguous {
-            kind: AmbiguousKind::Timeout,
-            applied: false,
-        },
-    );
+    fake.script(Op::CreateApplicationEmoji, crate::support::timed_out(false));
     let (result, report) = run(&fake, &assets(), false).await;
     assert!(result.is_err(), "an incomplete set fails the command");
     assert!(

@@ -28,7 +28,7 @@ async fn reacted_run(world: &World) -> String {
 
 #[tokio::test]
 async fn row_9_portal_answer_while_http_is_held_is_stale_at_commit() {
-    let world = World::new();
+    let world = World::new().await;
     let (run, message) = world.carded_run().await;
     world.react(message.get(), "✅", &[MEMBER]);
     let (held_http, task) = held_replay(&world).await;
@@ -44,7 +44,7 @@ async fn row_9_portal_answer_while_http_is_held_is_stale_at_commit() {
 
 #[tokio::test]
 async fn row_9b_amend_run_while_http_is_held_is_stale_at_commit() {
-    let world = World::new();
+    let world = World::new().await;
     let run = reacted_run(&world).await;
     let (held_http, task) = held_replay(&world).await;
     let moved_to = now() + chrono::TimeDelta::hours(30);
@@ -65,7 +65,7 @@ async fn row_9b_amend_run_while_http_is_held_is_stale_at_commit() {
 
 #[tokio::test]
 async fn row_9b_status_change_while_http_is_held_is_stale_at_commit() {
-    let world = World::new();
+    let world = World::new().await;
     let run = reacted_run(&world).await;
     let (held_http, task) = held_replay(&world).await;
     world

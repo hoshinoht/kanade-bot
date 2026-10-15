@@ -14,6 +14,8 @@ async function lists(page: Page): Promise<Lists> {
   return (await (await page.request.get(`${ADMIN}/api/admin/config`)).json()) as Lists;
 }
 const patched = (page: Page) => page.waitForRequest((r) => r.url().endsWith('/api/admin/config') && r.method() === 'PATCH');
+/** #kalos-four's id (the harness seeds Discord snowflakes: examples/e2e_server/seed/ids.rs). */
+const KALOS_FOUR = '120000000000000002';
 
 test('channels: each list saves alone and then overrides its env seed', async ({ page }) => {
   await page.goto(`${ADMIN}/config?section=channels&sw=off`);
@@ -47,11 +49,11 @@ test('channels: each list saves alone and then overrides its env seed', async ({
   // Watched channels come from the guild's channel picker.
   const channels = card(page, 'Watched channels');
   const before = after.watching.channel_ids;
-  expect(before).toContain('kalos-four');
+  expect(before).toContain(KALOS_FOUR);
   await toggleOptions(channels.getByRole('combobox', { name: 'Watched channels to keep' }), ['#kalos-four']);
   const save = patched(page);
   await channels.getByRole('button', { name: 'Save watched channels' }).click();
-  expect((await save).postDataJSON()).toEqual({ watching: { channel_ids: before.filter((id) => id !== 'kalos-four') } });
+  expect((await save).postDataJSON()).toEqual({ watching: { channel_ids: before.filter((id) => id !== KALOS_FOUR) } });
   await expect.poll(async () => (await lists(page)).watching.channel_ids_source).toBe('saved');
 });
 

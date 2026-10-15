@@ -1,6 +1,6 @@
 import { ADMIN, CAPTURE_VIEWPORTS, LOOKS, expect, settle, test, useLook } from './support';
 
-// The core primitives showcase (devtools/pwa-mock/showcase/): every core
+// The core primitives showcase (web/showcase/): every core
 // primitive once, captured per colourway into the git-ignored
 // e2e/.captures/showcase/ for visual checks, under the admin origin's CSP
 // (the fixture fails on any report). Dev-only: `bun run build && bun run

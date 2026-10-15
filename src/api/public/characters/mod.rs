@@ -54,23 +54,20 @@ pub(super) fn routes(site: &Arc<Site>) -> Router<Arc<Site>> {
             get(roster::list)
                 .route_layer(read())
                 .post(roster::create)
-                .route_layer(audited())
-                .fallback(unmounted),
+                .route_layer(audited()),
         )
         .route(
             "/api/public/me/characters/{id}",
-            patch(roster::update)
-                .route_layer(audited())
-                .fallback(unmounted),
+            patch(roster::update).route_layer(audited()),
         )
         .route(
             "/api/public/runs/{id}/characters",
-            get(party::read).route_layer(read()).fallback(unmounted),
+            get(party::read).route_layer(read()),
         );
     let nexon = Router::new()
         .route(
             "/api/public/me/characters/lookup",
-            post(link::look_up).route_layer(read()).fallback(unmounted),
+            post(link::look_up).route_layer(read()),
         )
         .route(
             "/api/public/me/characters/{id}/link",
@@ -78,38 +75,31 @@ pub(super) fn routes(site: &Arc<Site>) -> Router<Arc<Site>> {
                 .route_layer(read())
                 .post(link::confirm)
                 .delete(link::unlink)
-                .route_layer(audited())
-                .fallback(unmounted),
+                .route_layer(audited()),
         )
         .route(
             "/api/public/me/characters/{id}/link/notice",
-            get(link::notice).route_layer(read()).fallback(unmounted),
+            get(link::notice).route_layer(read()),
         )
         .route(
             "/api/public/me/characters/{id}/link/cancel",
-            post(link::cancel).route_layer(read()).fallback(unmounted),
+            post(link::cancel).route_layer(read()),
         )
         .route(
             "/api/public/me/characters/links",
-            delete(link::unlink_all)
-                .route_layer(audited())
-                .fallback(unmounted),
+            delete(link::unlink_all).route_layer(audited()),
         )
-        .route(
-            "/api/public/me/data",
-            get(link::data).route_layer(read()).fallback(unmounted),
-        );
+        .route("/api/public/me/data", get(link::data).route_layer(read()));
     let scouter = Router::new()
         .route(
             "/api/public/me/estimates",
             get(estimates::status)
                 .post(estimates::start)
-                .route_layer(read())
-                .fallback(unmounted),
+                .route_layer(read()),
         )
         .route(
             "/api/public/me/estimates/{job}",
-            get(estimates::read).route_layer(read()).fallback(unmounted),
+            get(estimates::read).route_layer(read()),
         );
     Router::new()
         .merge(gated(site, roster, Need::Roster))
@@ -143,9 +133,11 @@ impl Need {
 
 /// The session check inside the module gate inside `closed`: a portal that
 /// is closed answers `closed`, an off module the generic `404`, both
-/// before the session is read.
+/// before the session is read. Other methods are unmounted, behind the same
+/// layers.
 fn gated(site: &Arc<Site>, routes: Router<Arc<Site>>, need: Need) -> Router<Arc<Site>> {
     routes
+        .method_not_allowed_fallback(unmounted)
         .route_layer(from_fn_with_state(site.clone(), member::require_session))
         .route_layer(from_fn_with_state((site.clone(), need), gate))
         .route_layer(from_fn_with_state(site.clone(), closed))

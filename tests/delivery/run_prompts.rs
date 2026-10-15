@@ -9,10 +9,11 @@ use kanade::domain::history::{Actor, ChangeHistory, Origin};
 use kanade::domain::ids::RandomIds;
 use kanade::domain::schedule::{NewRun, RunSource, RunStatus, StatusChange};
 use kanade::domain::scheduler::Scope;
+use kanade::infrastructure::store::SqliteStore;
 use twilight_model::channel::message::Component;
 
 use crate::scenarios::{HOME, config, delivery, now, week, world};
-use crate::support::{self, Store, on_both_stores};
+use crate::support::{self, Store, v2_texts as texts};
 
 /// A run that started an hour before `now()`: ends 30 minutes before it, so
 /// its prompt is due at `now()`; its cutoff is local midnight, 16:00Z.
@@ -46,16 +47,17 @@ fn reset() -> DateTime<Utc> {
     week() + TimeDelta::days(7)
 }
 
-fn texts(components: &[Component]) -> Vec<String> {
-    let mut out = Vec::new();
-    for component in components {
-        match component {
-            Component::TextDisplay(text) => out.push(text.content.clone()),
-            Component::Container(container) => out.extend(texts(&container.components)),
-            _ => {}
-        }
-    }
-    out
+fn later() -> DateTime<Utc> {
+    now() + TimeDelta::minutes(1)
+}
+
+async fn set_status<S: Store>(store: &S, id: &str, status: RunStatus) {
+    let mut ids = RandomIds;
+    support::service(store, &mut ids, now())
+        .as_origin(Origin::for_tests())
+        .set_run_status(id, status)
+        .await
+        .expect("status");
 }
 
 fn buttons(components: &[Component]) -> Vec<String> {
@@ -150,7 +152,7 @@ async fn once_across_restart_and_replay<S: Store>(store: &S) {
     first.tick_at(now()).await.expect("replayed tick");
     let mut restarted = delivery(store, &world, &world.fake);
     restarted
-        .tick_at(now() + TimeDelta::minutes(1))
+        .tick_at(later())
         .await
         .expect("tick after a restart");
     assert_eq!(prompts(&world.fake.calls()).len(), 1, "posted exactly once");
@@ -159,7 +161,7 @@ async fn once_across_restart_and_replay<S: Store>(store: &S) {
 
 #[tokio::test]
 async fn a_prompt_posts_half_an_hour_after_the_end_once_across_restarts() {
-    on_both_stores!(once_across_restart_and_replay);
+    once_across_restart_and_replay(&SqliteStore::open_temp().await).await;
 }
 
 async fn pressed_edits_without_a_notice<S: Store>(store: &S) {
@@ -193,10 +195,7 @@ async fn pressed_edits_without_a_notice<S: Store>(store: &S) {
         next: None,
     };
     assert!(store.close_run_prompt(id.clone(), 0, close).await.unwrap());
-    let report = delivery
-        .tick_at(now() + TimeDelta::minutes(1))
-        .await
-        .expect("tick");
+    let report = delivery.tick_at(later()).await.expect("tick");
     assert_eq!(report.prompts.settled, [format!("{id}:0")]);
     let edits = edits(&world.fake.calls());
     let [(text, left)] = &edits[..] else {
@@ -209,7 +208,7 @@ async fn pressed_edits_without_a_notice<S: Store>(store: &S) {
 
 #[tokio::test]
 async fn a_pressed_prompt_edits_into_its_outcome_without_a_notice() {
-    on_both_stores!(pressed_edits_without_a_notice);
+    pressed_edits_without_a_notice(&SqliteStore::open_temp().await).await;
 }
 
 async fn not_yet_asks_again<S: Store>(store: &S) {
@@ -254,7 +253,7 @@ async fn not_yet_asks_again<S: Store>(store: &S) {
 
 #[tokio::test]
 async fn not_yet_asks_again_half_an_hour_later() {
-    on_both_stores!(not_yet_asks_again);
+    not_yet_asks_again(&SqliteStore::open_temp().await).await;
 }
 
 async fn auto_done_at_end_of_day<S: Store + ChangeHistory>(store: &S) {
@@ -291,7 +290,7 @@ async fn auto_done_at_end_of_day<S: Store + ChangeHistory>(store: &S) {
 
 #[tokio::test]
 async fn an_unanswered_run_is_marked_done_at_the_end_of_the_day() {
-    on_both_stores!(auto_done_at_end_of_day);
+    auto_done_at_end_of_day(&SqliteStore::open_temp().await).await;
 }
 
 async fn skipped_prompt_done_at_reset<S: Store + ChangeHistory>(store: &S) {
@@ -314,7 +313,7 @@ async fn skipped_prompt_done_at_reset<S: Store + ChangeHistory>(store: &S) {
 
 #[tokio::test]
 async fn a_prompt_due_at_the_reset_is_skipped_and_the_run_done_at_the_reset() {
-    on_both_stores!(skipped_prompt_done_at_reset);
+    skipped_prompt_done_at_reset(&SqliteStore::open_temp().await).await;
 }
 
 async fn own_time_done_at_reset<S: Store>(store: &S) {
@@ -331,7 +330,7 @@ async fn own_time_done_at_reset<S: Store>(store: &S) {
 
 #[tokio::test]
 async fn own_time_runs_get_no_prompt_and_are_done_at_the_reset() {
-    on_both_stores!(own_time_done_at_reset);
+    own_time_done_at_reset(&SqliteStore::open_temp().await).await;
 }
 
 async fn terminal_runs_unprompted<S: Store>(store: &S) {
@@ -346,7 +345,7 @@ async fn terminal_runs_unprompted<S: Store>(store: &S) {
 
 #[tokio::test]
 async fn cancelled_and_done_runs_get_no_prompt() {
-    on_both_stores!(terminal_runs_unprompted);
+    terminal_runs_unprompted(&SqliteStore::open_temp().await).await;
 }
 
 async fn moved_run_replans<S: Store>(store: &S) {
@@ -361,10 +360,7 @@ async fn moved_run_replans<S: Store>(store: &S) {
         .amend_run(&id, moved_to, &config().policy)
         .await
         .expect("move");
-    let report = delivery
-        .tick_at(now() + TimeDelta::minutes(1))
-        .await
-        .expect("tick");
+    let report = delivery.tick_at(later()).await.expect("tick");
     assert_eq!(report.prompts.closed, [format!("{id}:0")]);
     assert_eq!(report.prompts.opened, [format!("{id}:1")]);
     let edits = edits(&world.fake.calls());
@@ -382,7 +378,7 @@ async fn moved_run_replans<S: Store>(store: &S) {
 
 #[tokio::test]
 async fn a_moved_run_re_plans_its_prompt() {
-    on_both_stores!(moved_run_replans);
+    moved_run_replans(&SqliteStore::open_temp().await).await;
 }
 
 /// The tick's first ask of `id`, closed as a press by `by` (the claim landed).
@@ -403,10 +399,7 @@ async fn lost_settle_is_finished<S: Store + ChangeHistory>(store: &S) {
     delivery.tick_at(now()).await.expect("tick");
     claimed(store, &id, PromptOutcome::DidntHappen, "1002").await;
     let head = store.history_head().await.unwrap().seq;
-    delivery
-        .tick_at(now() + TimeDelta::minutes(1))
-        .await
-        .expect("tick");
+    delivery.tick_at(later()).await.expect("tick");
     assert_eq!(status(store, &id).await, RunStatus::Cancelled);
     let record = store.load_change(head + 1).await.unwrap().unwrap();
     assert_eq!(record.origin.actor, Actor::member("1002"));
@@ -423,7 +416,7 @@ async fn lost_settle_is_finished<S: Store + ChangeHistory>(store: &S) {
 
 #[tokio::test]
 async fn a_claimed_press_whose_status_was_lost_is_finished_by_the_tick() {
-    on_both_stores!(lost_settle_is_finished);
+    lost_settle_is_finished(&SqliteStore::open_temp().await).await;
 }
 
 async fn lost_close_is_closed<S: Store>(store: &S) {
@@ -431,16 +424,8 @@ async fn lost_close_is_closed<S: Store>(store: &S) {
     let id = run(store, RunStatus::Planned, started()).await;
     let mut delivery = delivery(store, &world, &world.fake);
     delivery.tick_at(now()).await.expect("tick");
-    let mut ids = RandomIds;
-    support::service(store, &mut ids, now())
-        .as_origin(Origin::for_tests())
-        .set_run_status(&id, RunStatus::Done)
-        .await
-        .expect("done");
-    let report = delivery
-        .tick_at(now() + TimeDelta::minutes(1))
-        .await
-        .expect("tick");
+    set_status(store, &id, RunStatus::Done).await;
+    let report = delivery.tick_at(later()).await.expect("tick");
     assert_eq!(report.prompts.closed, [format!("{id}:0")]);
     let edits = edits(&world.fake.calls());
     assert_eq!(edits[0].1, Vec::<String>::new(), "buttons removed");
@@ -449,7 +434,7 @@ async fn lost_close_is_closed<S: Store>(store: &S) {
 
 #[tokio::test]
 async fn a_run_settled_while_its_close_was_lost_has_its_prompt_closed() {
-    on_both_stores!(lost_close_is_closed);
+    lost_close_is_closed(&SqliteStore::open_temp().await).await;
 }
 
 async fn cutoff_then_press_guard<S: Store>(store: &S) {
@@ -486,7 +471,7 @@ async fn cutoff_then_press_guard<S: Store>(store: &S) {
 
 #[tokio::test]
 async fn a_press_landing_after_the_cutoff_leaves_the_run_done() {
-    on_both_stores!(cutoff_then_press_guard);
+    cutoff_then_press_guard(&SqliteStore::open_temp().await).await;
 }
 
 async fn bound_post_is_recovered<S: Store>(store: &S) {
@@ -540,7 +525,7 @@ async fn bound_post_is_recovered<S: Store>(store: &S) {
 
 #[tokio::test]
 async fn a_post_bound_before_it_was_recorded_is_recovered_from_the_journal() {
-    on_both_stores!(bound_post_is_recovered);
+    bound_post_is_recovered(&SqliteStore::open_temp().await).await;
 }
 
 async fn reopened_run_is_asked_again<S: Store>(store: &S) {
@@ -548,17 +533,9 @@ async fn reopened_run_is_asked_again<S: Store>(store: &S) {
     let id = run(store, RunStatus::Planned, started()).await;
     let mut delivery = delivery(store, &world, &world.fake);
     delivery.tick_at(now()).await.expect("tick");
-    let mut ids = RandomIds;
     for status in [RunStatus::Cancelled, RunStatus::Planned] {
-        support::service(store, &mut ids, now())
-            .as_origin(Origin::for_tests())
-            .set_run_status(&id, status)
-            .await
-            .expect("status");
-        delivery
-            .tick_at(now() + TimeDelta::minutes(1))
-            .await
-            .expect("tick");
+        set_status(store, &id, status).await;
+        delivery.tick_at(later()).await.expect("tick");
     }
     assert_eq!(prompts(&world.fake.calls()).len(), 2, "asked again");
     assert!(store.run_prompt(id, 1).await.unwrap().unwrap().is_open());
@@ -566,7 +543,7 @@ async fn reopened_run_is_asked_again<S: Store>(store: &S) {
 
 #[tokio::test]
 async fn a_run_live_again_after_its_prompt_closed_is_asked_again() {
-    on_both_stores!(reopened_run_is_asked_again);
+    reopened_run_is_asked_again(&SqliteStore::open_temp().await).await;
 }
 
 async fn after_midnight_end<S: Store>(store: &S) {
@@ -592,5 +569,5 @@ async fn after_midnight_end<S: Store>(store: &S) {
 
 #[tokio::test]
 async fn a_run_ending_after_midnight_is_cut_off_at_the_next_midnight() {
-    on_both_stores!(after_midnight_end);
+    after_midnight_end(&SqliteStore::open_temp().await).await;
 }

@@ -1,14 +1,15 @@
 import AxeBuilder from '@axe-core/playwright';
 import type { Locator, Page } from '@playwright/test';
-import { HEADING, PUBLIC, expect, setPortal, settle, signInPublic, test } from './support';
+import { HEADING, PUBLIC, endMemberSessions, expect, setPortal, settle, signInPublic, test, useDiscordAccount } from './support';
 
 // The member portal's first step (docs/notes/member-auth-contract.md §6,
-// decisions D4-A/D5-A) against the mock's public session routes. Every test
-// also ends with zero CSP / Trusted Types reports (the auto `csp` fixture).
+// decisions D4-A/D5-A) against the real server's public session routes and
+// the harness's fake Discord page. Every test also ends with zero CSP /
+// Trusted Types reports (the auto `csp` fixture).
 
 test.describe.configure({ mode: 'parallel' });
 
-const COOKIE = 'kanade_pub';
+const COOKIE = '__Host-kanade_pub';
 /** Everything the portal may read before sign-in or on Account alone: no schedule, no art. */
 const ALLOWED: Record<string, true> = {
   '/api/public/status': true,
@@ -43,8 +44,9 @@ function requests(page: Page): string[] {
   return seen;
 }
 
+// Unfiltered: `cookies(url)` hides Secure (`__Host-`) cookies from an http:// URL, and the harness serves http.
 async function sessionCookie(page: Page) {
-  return (await page.context().cookies(PUBLIC)).find((c) => c.name === COOKIE);
+  return (await page.context().cookies()).find((c) => c.name === COOKIE);
 }
 
 async function serious(page: Page, label: string) {
@@ -123,15 +125,17 @@ test('signed out: Sign in with the privacy notice, and no schedule request', asy
 
 test('signing in through the Discord stand-in lands on the Week, with the avatar and name on the account chip', async ({ page }) => {
   const seen = requests(page);
+  await useDiscordAccount(page.context());
   await page.goto(`${PUBLIC}/?sw=off`);
   await page.getByRole('link', { name: 'Sign in with Discord' }).click();
-  // start → (no Discord) callback → landing → back to `next`.
+  // start → the fake Discord page (approves Asahi) → callback → landing → back to `next`.
   await expect(page).toHaveURL(`${PUBLIC}/?sw=off`);
   await expect(page.getByRole('heading', { level: 1, name: 'Week' })).toBeVisible();
   const chip = accountButton(page);
   await expect(chip).toHaveAccessibleName('Account: Asahi');
   await expect(chip).toContainText('Asahi');
-  await expect(chip.locator('img')).toHaveAttribute('src', '/api/public/session/avatar?v=1');
+  // The real server versions the portrait by its hash.
+  await expect(chip.locator('img')).toHaveAttribute('src', /^\/api\/public\/session\/avatar\?v=[0-9a-f]+$/);
   await expect.poll(() => chip.locator('img').evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth > 0)).toBe(true);
   const cookie = await sessionCookie(page);
   expect(cookie).toMatchObject({ httpOnly: true, sameSite: 'Strict' });
@@ -181,14 +185,19 @@ test('closed while signed in: the account gives way to the closed notice', async
 });
 
 test('denied: a neutral page and no session cookie; another account or try again', async ({ page }) => {
-  await page.request.post(`${PUBLIC}/__mock/public/discord`, { data: { error: 'not_eligible' } });
+  // Plain is in the guild without the bossing role.
+  await useDiscordAccount(page.context(), 'ineligible');
   await page.goto(`${PUBLIC}/?sw=off`);
+  // Sign in shows once the first load's session read answered 401: watch from there.
+  const key = page.getByRole('link', { name: 'Sign in with Discord' });
+  await expect(key).toBeVisible();
   const seen = requests(page);
-  await page.getByRole('link', { name: 'Sign in with Discord' }).click();
+  await key.click();
   await expect(page.getByRole('heading', { name: "This account can't see the schedule" })).toBeVisible();
   // The outcome is shown once: the address drops it, so a reload starts afresh.
   await expect(page).toHaveURL(`${PUBLIC}/`);
-  expect(await page.context().cookies(PUBLIC)).toEqual([]);
+  // Neither the session nor the sign-in's pre-auth cookie (`__Host-kanade_pub_login`) is left.
+  expect((await page.context().cookies()).filter((c) => c.name.startsWith(COOKIE))).toEqual([]);
   // Neutral: nothing about the guild or which role is missing.
   await expect(page.locator('main')).not.toContainText(/not in the guild|missing|bossing role is missing|not a member/i);
   // Denied reads no session (nobody is signed in) and no schedule.
@@ -286,7 +295,7 @@ test('sign out: this device only, back to Sign in', async ({ page }) => {
 test('session ended mid-use: the Session ended screen, nothing of the account left', async ({ page }) => {
   await openAccount(page);
   // Expired, signed out elsewhere or no longer eligible: the server ended it.
-  await page.request.post(`${PUBLIC}/__mock/public/end`);
+  await endMemberSessions();
   await devices(page).nth(1).getByRole('button', { name: /^Sign out/ }).click();
   await expect(page.getByRole('heading', { level: 1, name: "You've been signed out" })).toBeVisible();
   await expect(accountButton(page)).toHaveCount(0);
@@ -298,7 +307,7 @@ test('session ended mid-use: the Session ended screen, nothing of the account le
 test('a rotated session: writes carry the newest token any answer sent', async ({ page }) => {
   await openAccount(page);
   // As after a client IP change: the next request rotates the id and token.
-  await page.request.post(`${PUBLIC}/__mock/public/rotate`);
+  await page.setExtraHTTPHeaders({ 'CF-Connecting-IP': '203.0.113.7' });
   const sent: string[] = [];
   page.on('request', (request) => {
     if (request.method() === 'DELETE') sent.push(request.headers()['x-kanade-csrf'] ?? '');
@@ -471,7 +480,7 @@ const SCREENS: { name: string; open: (page: Page) => Promise<void>; action: (pag
     name: 'Session ended',
     open: async (page) => {
       await openAccount(page);
-      await page.request.post(`${PUBLIC}/__mock/public/end`);
+      await endMemberSessions();
       await devices(page).nth(1).getByRole('button').click();
       await expect(page.getByRole('heading', { name: "You've been signed out" })).toBeVisible();
     },

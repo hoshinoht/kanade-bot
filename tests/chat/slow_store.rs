@@ -14,10 +14,10 @@ use kanade::domain::drafts::{
 use kanade::domain::history::{Actor, ChangeMeta, ChangeRecord, ChangeRef};
 use kanade::domain::schedule::{ChangeSet, ScheduleSnapshot};
 use kanade::domain::scheduler::{Committed, RecordedRequest, ScheduleStore, Scope, StoreError};
-use kanade::infrastructure::store::MemoryScheduleStore;
+use kanade::infrastructure::store::SqliteStore;
 
 pub struct SlowStore<'a> {
-    pub inner: &'a MemoryScheduleStore,
+    pub inner: &'a SqliteStore,
     /// How long `create_proposal` stalls after its commit.
     pub stall: Duration,
 }

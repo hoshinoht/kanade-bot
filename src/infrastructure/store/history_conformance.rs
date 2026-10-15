@@ -199,6 +199,36 @@ async fn revert<S: ScheduleStore + ChangeHistory>(
         .expect("revert runs")
 }
 
+/// Member `who` answers `run` in chat.
+async fn answer<S: ScheduleStore>(
+    service: &mut Service<S>,
+    who: &str,
+    run: &str,
+    state: RsvpState,
+) {
+    let origin = member(who);
+    let answered = service
+        .as_origin(origin)
+        .set_rsvp(run, who, state, RsvpSource::Chat);
+    answered.await.expect("rsvp");
+}
+
+/// Member 2 moves `run` to `to`.
+async fn move_run<S: ScheduleStore>(service: &mut Service<S>, run: &str, to: DateTime<Utc>) {
+    let policy = policy();
+    let moved = service.as_origin(member("2")).amend_run(run, to, &policy);
+    moved.await.expect("amend");
+}
+
+/// The admin sets `run`'s status quietly on the portal.
+async fn set_status<S: ScheduleStore>(service: &mut Service<S>, run: &str, to: RunStatus) {
+    let reminders = policy().reminders;
+    let set = service
+        .as_origin(admin())
+        .set_status(run, status(to), &reminders);
+    set.await.expect("status");
+}
+
 async fn genesis_then_one_attributed_record_per_commit<S: ScheduleStore + ChangeHistory>(store: S) {
     let genesis = latest(&store).await;
     assert_eq!((genesis.seq, genesis.id.as_str()), (0, "genesis"));
@@ -454,16 +484,8 @@ async fn lists_filter_by_week_actor_and_revision<S: ScheduleStore + ChangeHistor
     let first = run_of(&service, &fixed[0], 0).await;
     let second = run_of(&service, &fixed[0], 1).await;
     let mark = snapshot(&service).await.revision;
-    service
-        .as_origin(member("3"))
-        .set_rsvp(&second, "3", RsvpState::Maybe, RsvpSource::Chat)
-        .await
-        .expect("rsvp");
-    service
-        .as_origin(member("2"))
-        .set_rsvp(&first, "2", RsvpState::No, RsvpSource::Chat)
-        .await
-        .expect("rsvp");
+    answer(&mut service, "3", &second, RsvpState::Maybe).await;
+    answer(&mut service, "2", &first, RsvpState::No).await;
     let list = |filter| {
         let query = ChangeQuery::new(filter);
         let store = service.store();
@@ -553,30 +575,14 @@ async fn a_run_log_lists_every_record_touching_the_run<S: ScheduleStore + Change
     };
     let records = all_records(service.store()).await;
     let (created, other_created) = (creation(&run, &records), creation(&other, &records));
-    service
-        .as_origin(member("2"))
-        .amend_run(&run, utc(8, 29, 22, 0), &policy())
-        .await
-        .expect("move");
+    move_run(&mut service, &run, utc(8, 29, 22, 0)).await;
     let moved = latest(service.store()).await;
     revert(&mut service, &[moved.seq], RevertMode::Strict, &none).await;
     let reverted = latest(service.store()).await;
-    service
-        .as_origin(member("3"))
-        .set_rsvp(&next, "3", RsvpState::Maybe, RsvpSource::Chat)
-        .await
-        .expect("other run's rsvp");
-    service
-        .as_origin(member("2"))
-        .set_rsvp(&run, "2", RsvpState::No, RsvpSource::Chat)
-        .await
-        .expect("rsvp");
+    answer(&mut service, "3", &next, RsvpState::Maybe).await;
+    answer(&mut service, "2", &run, RsvpState::No).await;
     let answered = latest(service.store()).await;
-    service
-        .as_origin(admin())
-        .set_status(&next, status(RunStatus::Confirmed), &policy().reminders)
-        .await
-        .expect("other run's status");
+    set_status(&mut service, &next, RunStatus::Confirmed).await;
     service
         .as_origin(admin())
         .swap_run_slots(&run, &other, &policy())
@@ -721,11 +727,7 @@ async fn reverting_a_revert_reapplies_the_change<S: ScheduleStore + ChangeHistor
         mut service, fixed, ..
     } = fixture(store).await;
     let run = run_of(&service, &fixed[0], 0).await;
-    service
-        .as_origin(member("2"))
-        .amend_run(&run, utc(8, 29, 22, 0), &policy())
-        .await
-        .expect("amend");
+    move_run(&mut service, &run, utc(8, 29, 22, 0)).await;
     let amended = snapshot(&service).await;
     let amend = latest(service.store()).await;
     let none = BTreeSet::new();
@@ -789,17 +791,9 @@ async fn conflicting_revert_is_refused_unless_forced<S: ScheduleStore + ChangeHi
     } = fixture(store).await;
     let run = run_of(&service, &fixed[0], 0).await;
     let original = snapshot(&service).await;
-    service
-        .as_origin(member("2"))
-        .amend_run(&run, utc(8, 29, 22, 0), &policy())
-        .await
-        .expect("amend");
+    move_run(&mut service, &run, utc(8, 29, 22, 0)).await;
     let amend = latest(service.store()).await;
-    service
-        .as_origin(admin())
-        .set_status(&run, status(RunStatus::Confirmed), &policy().reminders)
-        .await
-        .expect("status");
+    set_status(&mut service, &run, RunStatus::Confirmed).await;
     let revision = snapshot(&service).await.revision;
     let none = BTreeSet::new();
     let refused = revert(&mut service, &[amend.seq], RevertMode::Strict, &none).await;
@@ -853,11 +847,7 @@ async fn week_restore_leaves_timings_and_other_weeks<S: ScheduleStore + ChangeHi
         .update_fixed(&fixed[0], edit, &roster(), &policy())
         .await
         .expect("fixed edit");
-    service
-        .as_origin(admin())
-        .set_status(&runs[1], status(RunStatus::Confirmed), &policy().reminders)
-        .await
-        .expect("later week-1 edit");
+    set_status(&mut service, &runs[1], RunStatus::Confirmed).await;
     let edited = snapshot(&service).await;
     let outcome = service
         .restore_week_to(
@@ -914,31 +904,11 @@ async fn week_restores_to_a_point_leaving_other_weeks<S: ScheduleStore + ChangeH
     let this_week = run_of(&service, &fixed[0], 0).await;
     let this_sunday = run_of(&service, &fixed[1], 0).await;
     let next_week = run_of(&service, &fixed[0], 1).await;
-    service
-        .as_origin(member("2"))
-        .amend_run(&this_week, utc(8, 29, 21, 0), &policy())
-        .await
-        .expect("amend");
+    move_run(&mut service, &this_week, utc(8, 29, 21, 0)).await;
     clock.advance(TimeDelta::minutes(5));
-    service
-        .as_origin(member("2"))
-        .set_rsvp(&next_week, "2", RsvpState::No, RsvpSource::Chat)
-        .await
-        .expect("other week");
-    service
-        .as_origin(member("1"))
-        .set_rsvp(&this_sunday, "1", RsvpState::Yes, RsvpSource::Chat)
-        .await
-        .expect("rsvp");
-    service
-        .as_origin(admin())
-        .set_status(
-            &this_sunday,
-            status(RunStatus::Cancelled),
-            &policy().reminders,
-        )
-        .await
-        .expect("status");
+    answer(&mut service, "2", &next_week, RsvpState::No).await;
+    answer(&mut service, "1", &this_sunday, RsvpState::Yes).await;
+    set_status(&mut service, &this_sunday, RunStatus::Cancelled).await;
     let outcome = service
         .restore_week_to(
             "root",
@@ -1002,30 +972,18 @@ async fn spam_by_one_member_reverts_exactly<S: ScheduleStore + ChangeHistory>(st
     for n in 0..30 {
         clock.advance(TimeDelta::minutes(1));
         let to = utc(8, 29, 10, 0) + TimeDelta::minutes(10 * n);
-        service
-            .as_origin(member("2"))
-            .amend_run(&run, to, &policy())
-            .await
-            .expect("spam move");
+        move_run(&mut service, &run, to).await;
         if n % 3 == 0 {
             let state = if n % 2 == 0 {
                 RsvpState::No
             } else {
                 RsvpState::Yes
             };
-            service
-                .as_origin(member("2"))
-                .set_rsvp(&other, "2", state, RsvpSource::Chat)
-                .await
-                .expect("spam rsvp");
+            answer(&mut service, "2", &other, state).await;
         }
     }
     let next_week = run_of(&service, &fixed[0], 1).await;
-    service
-        .as_origin(member("1"))
-        .set_rsvp(&next_week, "1", RsvpState::Yes, RsvpSource::Chat)
-        .await
-        .expect("bystander");
+    answer(&mut service, "1", &next_week, RsvpState::Yes).await;
     let outcome = service
         .revert_by_actor(
             "root",
@@ -1068,17 +1026,9 @@ async fn sent_and_held_reminders_survive_a_revert<S: ScheduleStore + ChangeHisto
     } = fixture(store).await;
     let run = run_of(&service, &fixed[0], 0).await;
     let sunday = run_of(&service, &fixed[1], 0).await;
-    service
-        .as_origin(member("2"))
-        .amend_run(&run, utc(8, 29, 22, 0), &policy())
-        .await
-        .expect("amend");
+    move_run(&mut service, &run, utc(8, 29, 22, 0)).await;
     let amend = latest(service.store()).await;
-    service
-        .as_origin(member("2"))
-        .amend_run(&sunday, utc(8, 30, 22, 0), &policy())
-        .await
-        .expect("amend");
+    move_run(&mut service, &sunday, utc(8, 30, 22, 0)).await;
     let sunday_amend = latest(service.store()).await;
     let state = snapshot(&service).await;
     let day_of = |run_id: &str| {
@@ -1153,11 +1103,7 @@ async fn due_unsent_reminders_survive_a_revert<S: ScheduleStore + ChangeHistory>
     assert_eq!(before.len(), 1, "the day-of ping is due");
     let since = clock.now();
     for state in [RsvpState::No, RsvpState::Yes, RsvpState::Maybe] {
-        service
-            .as_origin(member("2"))
-            .set_rsvp(&run, "2", state, RsvpSource::Chat)
-            .await
-            .expect("rsvp spam");
+        answer(&mut service, "2", &run, state).await;
     }
     // Both participants confirm: the second reaction flips the run to
     // `confirmed` (no reminder rebuild), so reverting it changes the run's
@@ -1310,11 +1256,7 @@ async fn exact_retries_are_already_applied<S: ScheduleStore + ChangeHistory>(sto
         "exact_retries_are_already_applied: swap"
     );
 
-    service
-        .as_origin(member("2"))
-        .amend_run(&sunday, utc(8, 30, 22, 0), &policy())
-        .await
-        .expect("amend");
+    move_run(&mut service, &sunday, utc(8, 30, 22, 0)).await;
     let amend = latest(service.store()).await;
     for (mode, request, target) in [
         (RevertMode::Strict, "rv-strict", amend.seq),
@@ -1365,11 +1307,7 @@ async fn a_rollback_that_changes_nothing_is_silent<S: ScheduleStore + ChangeHist
         mut service, fixed, ..
     } = fixture(store).await;
     let run = run_of(&service, &fixed[0], 0).await;
-    service
-        .as_origin(member("2"))
-        .set_rsvp(&run, "2", RsvpState::No, RsvpSource::Chat)
-        .await
-        .expect("rsvp");
+    answer(&mut service, "2", &run, RsvpState::No).await;
     let rsvp = latest(service.store()).await;
     let none = BTreeSet::new();
     revert(&mut service, &[rsvp.seq], RevertMode::Strict, &none).await;
@@ -1415,11 +1353,7 @@ async fn rollback_notices_go_to_each_channel<S: ScheduleStore + ChangeHistory>(s
     clock.advance(TimeDelta::minutes(1));
     let since = clock.now();
     for run in home.iter().chain(&elsewhere) {
-        service
-            .as_origin(member("2"))
-            .set_rsvp(run, "2", RsvpState::No, RsvpSource::Chat)
-            .await
-            .expect("rsvp");
+        answer(&mut service, "2", run, RsvpState::No).await;
     }
     let outcome = service
         .revert_by_actor(
@@ -1489,17 +1423,9 @@ async fn blame_names_the_last_change_per_field<S: ScheduleStore + ChangeHistory 
         assert_eq!(last.via, Via::Direct);
     }
 
-    service
-        .as_origin(member("2"))
-        .amend_run(&run, utc(8, 29, 22, 0), &policy())
-        .await
-        .expect("amend");
+    move_run(&mut service, &run, utc(8, 29, 22, 0)).await;
     let amend = latest(service.store()).await;
-    service
-        .as_origin(member("1"))
-        .set_rsvp(&run, "1", RsvpState::Yes, RsvpSource::Chat)
-        .await
-        .expect("rsvp");
+    answer(&mut service, "1", &run, RsvpState::Yes).await;
     let rsvp = latest(service.store()).await;
     service
         .as_origin(admin())
@@ -1701,16 +1627,8 @@ async fn restoring_a_checkpoint_previews_then_applies<
         .await
         .expect("checkpoint");
     let clean = snapshot(&service).await;
-    service
-        .as_origin(member("2"))
-        .amend_run(&run, utc(8, 29, 22, 0), &policy())
-        .await
-        .expect("amend");
-    service
-        .as_origin(member("2"))
-        .set_rsvp(&next_week, "2", RsvpState::No, RsvpSource::Chat)
-        .await
-        .expect("other week");
+    move_run(&mut service, &run, utc(8, 29, 22, 0)).await;
+    answer(&mut service, "2", &next_week, RsvpState::No).await;
     let changed = snapshot(&service).await;
     let count = all_records(service.store()).await.len();
 

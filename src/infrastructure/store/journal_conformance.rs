@@ -205,6 +205,20 @@ fn receipt(channel: &str, message: &str) -> Receipt {
     }
 }
 
+/// Bind `attempt` to `message` in `channel`, which the journal must take.
+async fn bound<S: DeliveryJournal>(
+    store: &S,
+    lease: &Lease,
+    attempt: &AttemptId,
+    channel: &str,
+    message: &str,
+    hour: i64,
+) {
+    let receipt = receipt(channel, message);
+    let bind = store.bind(lease, attempt, &receipt, None, at(hour)).await;
+    bind.unwrap_or_else(|error| panic!("bind {message}: {error:?}"));
+}
+
 async fn claim_holds_its_targets<S: ScheduleStore + DeliveryJournal>(store: &S) {
     seed(store).await;
     let lease = lease(store).await;
@@ -292,10 +306,7 @@ async fn bind_stamps_sent_at_and_the_actual_channel<S: ScheduleStore + DeliveryJ
     );
     assert_eq!(snapshot(store).await, before, "nothing was written");
 
-    store
-        .bind(&lease, &attempt, &receipt(FALLBACK, "5001"), None, at(8))
-        .await
-        .expect("bind_stamps_sent_at_and_the_actual_channel");
+    bound(store, &lease, &attempt, FALLBACK, "5001", 8).await;
     let after = snapshot(store).await;
     assert_eq!(
         after.revision,
@@ -674,10 +685,7 @@ async fn card_runs_survive_a_reminder_rebuild<S: ScheduleStore + DeliveryJournal
     seed(store).await;
     let lease = lease(store).await;
     let attempt = fresh(store, &lease, &intent(&["m-1", "m-2"], FALLBACK)).await;
-    store
-        .bind(&lease, &attempt, &receipt(FALLBACK, "5001"), None, at(8))
-        .await
-        .expect("bind");
+    bound(store, &lease, &attempt, FALLBACK, "5001", 8).await;
     let runs = |message| store.runs_for_message(Id::new(message));
     assert_eq!(runs(5001).await.expect("lookup"), ["r-1"]);
     commit(
@@ -718,10 +726,7 @@ async fn replay_cards_keep_all_mappings_but_select_fresh_evidence<
         .await
         .expect("record");
     let attempt = fresh(store, &lease, &intent).await;
-    store
-        .bind(&lease, &attempt, &receipt(HOME, "5001"), None, at(8))
-        .await
-        .expect("bind");
+    bound(store, &lease, &attempt, HOME, "5001", 8).await;
     commit(
         store,
         vec![Change::PutReminder(Reminder {
@@ -751,16 +756,7 @@ async fn replay_cards_keep_all_mappings_but_select_fresh_evidence<
         .await
         .expect("debug lease");
     let debug_attempt = fresh(store, &debug_lease, &debug_intent).await;
-    store
-        .bind(
-            &debug_lease,
-            &debug_attempt,
-            &receipt(HOME, "5002"),
-            None,
-            at(8),
-        )
-        .await
-        .expect("debug card bind");
+    bound(store, &debug_lease, &debug_attempt, HOME, "5002", 8).await;
     assert!(
         store
             .clear_debug_card("5002", at(9))
@@ -775,23 +771,16 @@ async fn replay_cards_keep_all_mappings_but_select_fresh_evidence<
         3,
         "the run keeps every mapped message"
     );
-    let fresh = cards[0]
-        .cards
-        .iter()
-        .find(|card| card.message_id == "5001")
-        .expect("bound reminder mapping");
-    assert!(fresh.evidence);
-    let cleared = cards[0]
-        .cards
-        .iter()
-        .find(|card| card.message_id == "5002")
-        .expect("cleared debug mapping is retained");
-    assert!(!cleared.evidence);
-    let unbound = cards[0]
-        .cards
-        .iter()
-        .find(|card| card.message_id == "5003")
-        .expect("unbound reminder mapping is retained");
+    let card = |message: &str| {
+        let card = cards[0]
+            .cards
+            .iter()
+            .find(|card| card.message_id == message);
+        card.unwrap_or_else(|| panic!("mapping {message} is retained"))
+    };
+    assert!(card("5001").evidence, "the bound reminder is evidence");
+    assert!(!card("5002").evidence, "a cleared debug card is not");
+    let unbound = card("5003");
     assert!(!unbound.evidence);
     assert_eq!(unbound.channel_id, None);
     assert!(
@@ -859,10 +848,7 @@ async fn unsent_release_frees_the_target_for_a_fresh_claim<S: ScheduleStore + De
     );
 
     let retry = fresh(store, &lease, &intent(&["m-1"], HOME)).await;
-    store
-        .bind(&lease, &retry, &receipt(HOME, "5001"), None, at(9))
-        .await
-        .expect("the reclaimed reminder binds");
+    bound(store, &lease, &retry, HOME, "5001", 9).await;
     assert_eq!(
         row(&snapshot(store).await, "m-1").message_id.as_deref(),
         Some("5001")
@@ -928,15 +914,9 @@ async fn older_digests_are_retired_and_kept<S: ScheduleStore + DeliveryJournal>(
     let mut first = digest_intent();
     first.targets = vec![DeliveryTarget::Digest(earlier)];
     let old = fresh(store, &lease, &first).await;
-    store
-        .bind(&lease, &old, &receipt(HOME, "7001"), None, at(1))
-        .await
-        .expect("bind");
+    bound(store, &lease, &old, HOME, "7001", 1).await;
     let current = fresh(store, &lease, &digest_intent()).await;
-    store
-        .bind(&lease, &current, &receipt(HOME, "7002"), None, at(2))
-        .await
-        .expect("bind");
+    bound(store, &lease, &current, HOME, "7002", 2).await;
     assert_eq!(
         store.retire_digests_before(&lease, week(), at(3)).await,
         Ok(1),
@@ -961,7 +941,7 @@ async fn older_digests_are_retired_and_kept<S: ScheduleStore + DeliveryJournal>(
     assert_eq!(
         retired,
         [("7001", Some(at(3))), ("7002", Some(at(5)))],
-        "an earlier retirement is kept, as the v4 vector"
+        "an earlier retirement is kept, as in v4"
     );
     assert_eq!(
         state(store, &old).await,
@@ -1044,10 +1024,7 @@ async fn reminder_card_records_are_written_once_and_found_when_bound<
     let lease = lease(store).await;
     let attempt = fresh(store, &lease, &day_of).await;
     assert!(store.posted_cards("r-1").await.expect("read").is_empty());
-    store
-        .bind(&lease, &attempt, &receipt(HOME, "5001"), None, at(8))
-        .await
-        .expect("bind");
+    bound(store, &lease, &attempt, HOME, "5001", 8).await;
     assert_eq!(
         store.posted_cards("r-1").await.expect("read"),
         [PostedCard {
@@ -1063,10 +1040,7 @@ async fn reminder_card_records_are_written_once_and_found_when_bound<
     // A bound card without a record (posted before records) is not listed.
     let countdown = intent(&["m-2"], HOME);
     let attempt = fresh(store, &lease, &countdown).await;
-    store
-        .bind(&lease, &attempt, &receipt(HOME, "5002"), None, at(8))
-        .await
-        .expect("bind");
+    bound(store, &lease, &attempt, HOME, "5002", 8).await;
     assert_eq!(store.posted_cards("r-1").await.expect("read").len(), 1);
 }
 
@@ -1139,10 +1113,7 @@ async fn header_overrides_win_over_the_kept_original<
         .expect("save");
     let lease = lease(store).await;
     let attempt = fresh(store, &lease, &day_of).await;
-    store
-        .bind(&lease, &attempt, &receipt(HOME, "5001"), None, at(8))
-        .await
-        .expect("bind");
+    bound(store, &lease, &attempt, HOME, "5001", 8).await;
     let rewritten = |line: &str| CardRecord {
         kind: "day_of".into(),
         heading: Some(line.into()),
@@ -1300,10 +1271,7 @@ async fn test_cards_are_per_operation_registered_and_cleared<
         (&second_lease, &second, "7002"),
         (&second_lease, &amend, "7003"),
     ] {
-        store
-            .bind(lease, attempt, &receipt(HOME, message), None, at(8))
-            .await
-            .expect("bind");
+        bound(store, lease, attempt, HOME, message, 8).await;
     }
     assert_eq!(
         snapshot(store).await.reminders,
@@ -1347,20 +1315,9 @@ async fn test_cards_are_per_operation_registered_and_cleared<
             })
             .collect::<Vec<_>>()
     );
-    assert!(
-        store
-            .debug_cards_in(HOME, at(9))
-            .await
-            .expect("list")
-            .is_empty()
-    );
-    assert!(
-        store
-            .debug_cards_in(FALLBACK, at(7))
-            .await
-            .expect("list")
-            .is_empty()
-    );
+    let listed = async |channel, hour| store.debug_cards_in(channel, at(hour)).await;
+    assert!(listed(HOME, 9).await.expect("list").is_empty());
+    assert!(listed(FALLBACK, 7).await.expect("list").is_empty());
     assert!(store.clear_debug_card("7001", at(9)).await.expect("clear"));
     assert!(!store.clear_debug_card("7001", at(9)).await.expect("again"));
     assert!(
@@ -1384,4 +1341,45 @@ async fn test_cards_are_per_operation_registered_and_cleared<
         ["7002"],
         "a cleared card is no longer refreshed"
     );
+}
+
+/// The SQLite store's journal shortcuts `test_map_card_run` and
+/// `test_retire_bound_attempt` (`sqlite/faults.rs`) over a real binding.
+#[cfg(test)]
+mod sqlite_shortcuts {
+    use twilight_model::id::Id;
+
+    use super::*;
+    use crate::infrastructure::store::SqliteStore;
+
+    #[tokio::test]
+    async fn a_run_maps_onto_a_posted_card_and_a_bound_attempt_retires() {
+        let store = SqliteStore::open_temp().await;
+        seed(&store).await;
+        let lease = lease(&store).await;
+        let attempt = fresh(&store, &lease, &intent(&["m-1"], HOME)).await;
+        bound(&store, &lease, &attempt, HOME, "5001", 8).await;
+        store.test_map_card_run("5001", "r-2").await;
+        store.test_map_card_run("5001", "r-2").await;
+        let runs = store.runs_for_message(Id::new(5001)).await.expect("lookup");
+        assert_eq!(runs, ["r-1", "r-2"], "mapped once");
+
+        store.test_retire_bound_attempt(&attempt).await;
+        let retired = store
+            .load_attempt(&attempt)
+            .await
+            .expect("load")
+            .expect("attempt");
+        assert_eq!(retired.state, AttemptState::Retired);
+        assert_eq!(retired.resolved_by.as_deref(), Some("test"));
+        assert_eq!(retired.resolution_reason, "test retirement");
+        store.close().await.expect("close");
+    }
+
+    #[tokio::test]
+    #[should_panic(expected = "no bound delivery attempt posted message 9999")]
+    async fn mapping_needs_a_posted_card() {
+        let store = SqliteStore::open_temp().await;
+        store.test_map_card_run("9999", "r-1").await;
+    }
 }

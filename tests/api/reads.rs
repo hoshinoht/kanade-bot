@@ -41,9 +41,10 @@ use kanade::{
     domain::{
         attendance::AttendanceDefault,
         catalog::{BossSpec, BossTable, CatalogSpec, DifficultySpec, GuideSpec},
+        completion::RunEndsSource,
         history::{Actor, ChangeMeta, Origin, Surface},
         ids::RandomIds,
-        members::{Member, MemberProfile, MemberStore, PingLevel},
+        members::{Member, MemberProfile, MemberStore, PingLevel, Roster},
         model_log::AllowanceOverride,
         schedule::{
             Change, ChangeSet, FixedRun, Reminder, ReminderPolicy, Rsvp, RsvpSource, RsvpState,
@@ -51,16 +52,17 @@ use kanade::{
         },
         scheduler::SchedulerService,
         scheduler::{ScheduleStore, Scope},
+        settings::RunLengths,
     },
     infrastructure::store::{SqliteStore, SqliteStoreConfig},
 };
-use serde_json::Value;
+use serde_json::{Value, json};
 use twilight_model::id::Id;
 
 use crate::{
     logs::fake::FakeRescans,
     schemas::assert_valid,
-    support::{ADMIN_HOST, Fixture, find, get, request, send, spawn, strs},
+    support::{ADMIN_HOST, Fixture, columns, fields, find, get, request, send, spawn, strs},
 };
 
 pub type ConfigMaker = Box<dyn FnOnce(Arc<SqliteStore>) -> Arc<ConfigDesk> + Send>;
@@ -75,23 +77,26 @@ pub type CharacterDataMaker = Box<
 >;
 
 /// What a [`Reads`] build composes; the default is [`Reads::new`].
-struct Build {
+pub(crate) struct Build {
     /// Boss weeks reset Thursday at this time (KL).
-    reset: NaiveTime,
+    pub(crate) reset: NaiveTime,
     /// Discord and Tailscale sign-in through a trusted edge.
-    logins: bool,
-    config: Option<ConfigMaker>,
-    role_directory_connected: bool,
-    digest_delivery: bool,
+    pub(crate) logins: bool,
+    pub(crate) config: Option<ConfigMaker>,
+    pub(crate) role_directory_connected: bool,
+    pub(crate) digest_delivery: bool,
     /// `KANADE_BACKUP_DIR` set (an empty directory).
-    backup_dir: bool,
-    model_limits: Option<kanade::api::state::ModelLimits>,
+    pub(crate) backup_dir: bool,
+    pub(crate) model_limits: Option<kanade::api::state::ModelLimits>,
     /// A rescan runner composed (the fake); `false` is serve without an extractor.
-    rescans: bool,
+    pub(crate) rescans: bool,
     /// The roster module switched on (`modules.roster`).
-    characters: bool,
+    pub(crate) characters: bool,
     /// Module `character_data` switched on.
-    character_data: Option<CharacterDataMaker>,
+    pub(crate) character_data: Option<CharacterDataMaker>,
+    /// The writer freezes ended runs (serve's `RunEnds` from the default
+    /// run lengths); `false` keeps v4 rules, where nothing ends.
+    pub(crate) run_ends: bool,
 }
 
 impl Default for Build {
@@ -107,6 +112,7 @@ impl Default for Build {
             rescans: true,
             characters: false,
             character_data: None,
+            run_ends: false,
         }
     }
 }
@@ -130,13 +136,13 @@ pub const EVENTS: EventsConfig = EventsConfig {
     max_lifetime: std::time::Duration::from_secs(60),
 };
 
-fn utc(month: u32, day: u32, hour: u32, minute: u32) -> DateTime<Utc> {
+pub(crate) fn utc(month: u32, day: u32, hour: u32, minute: u32) -> DateTime<Utc> {
     Utc.with_ymd_and_hms(2026, month, day, hour, minute, 0)
         .unwrap()
 }
 
 /// Thursday 24 Sep 00:00 KL and Thursday 1 Oct 00:00 KL.
-fn this_week() -> DateTime<Utc> {
+pub(crate) fn this_week() -> DateTime<Utc> {
     utc(9, 23, 16, 0)
 }
 
@@ -349,6 +355,11 @@ impl ChatView for FakeChat {
         self.resets.lock().unwrap().push(member_id.to_owned());
     }
 
+    fn spend_allowance(&self, member_id: &str) -> bool {
+        let now = *self.now.lock().unwrap();
+        self.pilot.lock().unwrap().allowance.spend(member_id, now)
+    }
+
     fn status(&self) -> &'static str {
         "idle"
     }
@@ -548,6 +559,38 @@ pub(crate) async fn commit_as(
     store.commit(revision, set, meta).await.unwrap();
 }
 
+/// The seeded deployment's policy: KL, morning pings at 09:00 and T-60/T-15
+/// countdowns, boss weeks resetting Thursday at `reset`.
+pub(crate) fn policy_resetting(reset: NaiveTime) -> SchedulePolicy {
+    let reminders = ReminderPolicy {
+        zone: chrono_tz::Asia::Kuala_Lumpur,
+        ping_time: NaiveTime::from_hms_opt(9, 0, 0).unwrap(),
+        countdowns: vec![60, 15],
+    };
+    SchedulePolicy::new(reminders, Weekday::Thu, reset)
+}
+
+/// [`policy_resetting`] at midnight, as [`Reads::new`] serves.
+pub(crate) fn policy() -> SchedulePolicy {
+    policy_resetting(NaiveTime::MIN)
+}
+
+pub(crate) type Scheduler = SchedulerService<Arc<SqliteStore>, RandomIds, ApiClock>;
+
+/// A scheduler over `store` on a clock pinned at `at`.
+pub(crate) fn scheduler(store: &Arc<SqliteStore>, at: DateTime<Utc>) -> Scheduler {
+    SchedulerService::new(store.clone(), RandomIds, ApiClock(Arc::new(move || at)))
+}
+
+/// Every stored member, as a scheduler directory.
+pub(crate) async fn roster(store: &SqliteStore) -> Roster {
+    let mut roster = Roster::new();
+    for profile in store.list_members().await.unwrap() {
+        roster.upsert(profile.member);
+    }
+    roster
+}
+
 impl Reads {
     /// The seeded boss catalog.
     pub fn catalog(&self) -> BossTable {
@@ -563,10 +606,6 @@ impl Reads {
         Self::build(|b| b.reset = reset).await
     }
 
-    pub async fn with_role_directory_connected(connected: bool) -> Self {
-        Self::build(|b| b.role_directory_connected = connected).await
-    }
-
     /// With the config API over the seeded store.
     pub async fn with_config(
         make: impl FnOnce(Arc<SqliteStore>) -> Arc<ConfigDesk> + Send + 'static,
@@ -574,42 +613,9 @@ impl Reads {
         Self::build(|b| b.config = Some(Box::new(make))).await
     }
 
-    /// With the config API and live governor snapshots.
-    pub async fn with_config_and_model_limits(
-        make: impl FnOnce(Arc<SqliteStore>) -> Arc<ConfigDesk> + Send + 'static,
-        model_limits: kanade::api::state::ModelLimits,
-    ) -> Self {
-        Self::build(|b| {
-            b.config = Some(Box::new(make));
-            b.model_limits = Some(model_limits);
-        })
-        .await
-    }
-
     /// With live governor snapshots and no config desk.
     pub async fn with_model_limits(model_limits: kanade::api::state::ModelLimits) -> Self {
         Self::build(|b| b.model_limits = Some(model_limits)).await
-    }
-
-    pub async fn with_config_role_directory_connected(
-        make: impl FnOnce(Arc<SqliteStore>) -> Arc<ConfigDesk> + Send + 'static,
-        connected: bool,
-    ) -> Self {
-        Self::build(|b| {
-            b.config = Some(Box::new(make));
-            b.role_directory_connected = connected;
-        })
-        .await
-    }
-
-    pub async fn with_config_and_logins(
-        make: impl FnOnce(Arc<SqliteStore>) -> Arc<ConfigDesk> + Send + 'static,
-    ) -> Self {
-        Self::build(|b| {
-            b.config = Some(Box::new(make));
-            b.logins = true;
-        })
-        .await
     }
 
     /// Also Discord sign-in and Tailscale sign-in through a trusted edge
@@ -618,27 +624,8 @@ impl Reads {
         Self::build(|b| b.logins = true).await
     }
 
-    /// Sign-ins as [`Reads::with_logins`], over a role directory that may be down.
-    pub async fn with_logins_role_directory_connected(connected: bool) -> Self {
-        Self::build(|b| {
-            b.logins = true;
-            b.role_directory_connected = connected;
-        })
-        .await
-    }
-
     pub async fn without_digest_delivery() -> Self {
         Self::build(|b| b.digest_delivery = false).await
-    }
-
-    /// No rescan runner: serve without an extraction model.
-    pub async fn without_rescans() -> Self {
-        Self::build(|b| b.rescans = false).await
-    }
-
-    /// No `KANADE_BACKUP_DIR`: checkpoints list no backups.
-    pub async fn without_backup_dir() -> Self {
-        Self::build(|b| b.backup_dir = false).await
     }
 
     /// With the roster module on (`modules.roster`), as serve composes it.
@@ -661,7 +648,7 @@ impl Reads {
     }
 
     /// A build from [`Build::default`] as `tune` adjusts it.
-    async fn build(tune: impl FnOnce(&mut Build)) -> Self {
+    pub(crate) async fn build(tune: impl FnOnce(&mut Build)) -> Self {
         let mut build = Build::default();
         tune(&mut build);
         let Build {
@@ -675,6 +662,7 @@ impl Reads {
             rescans: with_rescans,
             characters,
             character_data,
+            run_ends,
         } = build;
         let dir = TempDir::new();
         let backup_dir = backup_dir.then(|| {
@@ -742,12 +730,15 @@ impl Reads {
                     SECOND_TAILSCALE_ADMIN.to_owned(),
                 ]);
         }
-        let zone = chrono_tz::Asia::Kuala_Lumpur;
-        let writer = Arc::new(SchedulerWriter::new(SchedulerService::new(
-            store.clone(),
-            RandomIds,
-            ApiClock(Arc::new(move || pinned)),
-        )));
+        let mut service = scheduler(&store, pinned);
+        if run_ends {
+            service = service.with_run_ends(RunEndsSource::fixed(
+                RunLengths::default(),
+                Some(Arc::new(catalog())),
+                policy_resetting(reset),
+            ));
+        }
+        let writer = Arc::new(SchedulerWriter::new(service));
         let rescans = FakeRescans::new(pinned);
         let proposal_refreshes = Arc::new(Mutex::new(Vec::new()));
         let proposal_refresh: ProposalCardRefresh = {
@@ -809,15 +800,7 @@ impl Reads {
         let state = ApiState {
             store: store.clone(),
             writer,
-            policy: SchedulePolicy::new(
-                ReminderPolicy {
-                    zone,
-                    ping_time: NaiveTime::from_hms_opt(9, 0, 0).unwrap(),
-                    countdowns: vec![60, 15],
-                },
-                Weekday::Thu,
-                reset,
-            ),
+            policy: policy_resetting(reset),
             catalog: Arc::new(catalog()),
             channels: Arc::new(ReadyGuild(
                 StaticChannels(
@@ -1122,44 +1105,23 @@ async fn week_projects_runs_answers_cards_and_the_history_version() {
     assert_eq!(week["runs"].as_array().unwrap().len(), 2, "this week only");
 
     let kalos = run(&week, "r-kalos");
+    assert_eq!(fields(kalos, &["day", "time"]), json!([5, "22:00"]));
+    assert_eq!(kalos["tally"], json!({"on": 1, "total": 3}));
     assert_eq!(
-        (kalos["day"].clone(), kalos["time"].clone()),
-        (5.into(), "22:00".into())
-    );
-    assert_eq!(kalos["tally"], serde_json::json!({"on": 1, "total": 3}));
-    let answers: Vec<_> = kalos["participants"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|p| (p["name"].as_str().unwrap(), p["answer"].as_str().unwrap()))
-        .collect();
-    assert_eq!(
-        answers,
-        [("Alice", "yes"), ("Bobby", "no"), ("Dan", "waiting")]
+        columns(&kalos["participants"], &["name", "answer"]),
+        json!([["Alice", "yes"], ["Bobby", "no"], ["Dan", "waiting"]])
     );
     assert_eq!(kalos["channel"], "#kalos-four");
     assert_eq!(kalos["amended"], true);
     assert_eq!(kalos["roster_change"]["out"][0]["name"], "Cara");
     assert_eq!(kalos["roster_change"]["in"][0]["name"], "Dan");
-    let cards: Vec<_> = kalos["cards"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|c| {
-            (
-                c["label"].as_str().unwrap(),
-                c["state"].as_str().unwrap(),
-                c["at"].as_str().unwrap(),
-            )
-        })
-        .collect();
     assert_eq!(
-        cards,
-        [
-            ("morning", "posted", "09:00"),
-            ("T-1h", "queued", "21:00"),
-            ("T-15m", "queued", "21:45")
-        ],
+        columns(&kalos["cards"], &["label", "state", "at"]),
+        json!([
+            ["morning", "posted", "09:00"],
+            ["T-1h", "queued", "21:00"],
+            ["T-15m", "queued", "21:45"]
+        ]),
         "an unlabelled countdown (30 min) is left out"
     );
     assert_eq!(
@@ -1168,15 +1130,14 @@ async fn week_projects_runs_answers_cards_and_the_history_version() {
     );
     let boss = &kalos["bosses"][0];
     assert_eq!(
-        (boss["key"].clone(), boss["name"].clone()),
-        ("Kalos".into(), "Gatekeeper Kalos".into())
+        fields(boss, &["key", "name"]),
+        json!(["Kalos", "Gatekeeper Kalos"])
     );
     assert_eq!(boss["portrait"], Value::Null, "no portrait file");
     assert_eq!(boss["portrait_sm"], "/art/icons/Kalos");
     assert_eq!(boss["art"], "/art/entry/Kalos");
     assert_eq!(boss["animated"], Value::Null, "no clip file");
     assert_eq!(boss["hue"], 25);
-
     let star = run(&week, "r-star");
     assert_eq!(
         star["bosses"].as_array().unwrap().len(),
@@ -1206,16 +1167,15 @@ async fn week_projects_runs_answers_cards_and_the_history_version() {
 #[tokio::test]
 async fn stats_summary_and_reminders() {
     let reads = Reads::new().await;
-    let stats = reads
-        .read("/api/admin/stats", "week.json#/$defs/Stats")
-        .await;
+    let week = reads.read("/api/admin/week", "week.json#/$defs/Week").await;
+    let stats = &week["stats"];
     assert_eq!(
         stats["per_day"][5],
-        serde_json::json!({"day": 5, "answered": 2, "waiting": 1})
+        json!({"day": 5, "answered": 2, "waiting": 1})
     );
     assert_eq!(
         stats["per_day"][2],
-        serde_json::json!({"day": 2, "answered": 1, "waiting": 0})
+        json!({"day": 2, "answered": 1, "waiting": 0})
     );
 
     let summary = reads
@@ -1235,34 +1195,27 @@ async fn stats_summary_and_reminders() {
     assert_eq!(summary["quiet_mode"], false, "no config desk: the default");
     assert_eq!(
         summary["model"],
-        serde_json::json!({"busy": false, "holder": null}),
+        json!({"busy": false, "holder": null}),
         "no governor: free"
     );
-    assert_eq!(summary["rescan_off"], serde_json::Value::Null);
+    assert_eq!(summary["rescan_off"], Value::Null);
 
     let reminders = reads
         .read("/api/admin/reminders", "reminders.json#/$defs/Reminders")
         .await;
-    let ids = |list: &str| -> Vec<String> {
-        reminders[list]
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|row| {
-                format!(
-                    "{}:{}",
-                    row["id"].as_str().unwrap(),
-                    row["state"].as_str().unwrap()
-                )
-            })
-            .collect()
-    };
-    assert_eq!(ids("upcoming"), ["m-kalos-60:queued", "m-kalos-15:queued"]);
+    let ids = |list: &str| columns(&reminders[list], &["id", "state"]);
+    assert_eq!(
+        ids("upcoming"),
+        json!([["m-kalos-60", "queued"], ["m-kalos-15", "queued"]])
+    );
     assert_eq!(summary["reminders"], 2, "the upcoming rows above");
-    assert_eq!(ids("sent"), ["m-kalos-day:sent", "m-star-day:stale"]);
+    assert_eq!(
+        ids("sent"),
+        json!([["m-kalos-day", "sent"], ["m-star-day", "stale"]])
+    );
     assert_eq!(
         reminders["sent"][0]["party"],
-        serde_json::json!(["Alice", "Bobby", "Dan"])
+        json!(["Alice", "Bobby", "Dan"])
     );
     assert_eq!(reminders["sent"][0]["at"], "Tue 29 Sep 09:00");
 }
@@ -1306,13 +1259,13 @@ async fn summary_reports_a_full_governor_group_and_a_switched_off_rescan() {
     let summary = || reads.read("/api/admin/summary", "week.json#/$defs/Summary");
     assert_eq!(
         summary().await["model"],
-        serde_json::json!({"busy": false, "holder": null}),
+        json!({"busy": false, "holder": null}),
         "a permit is free in every group"
     );
     *busy.lock().unwrap() = true;
     assert_eq!(
         summary().await["model"],
-        serde_json::json!({"busy": true, "holder": "rescan"}),
+        json!({"busy": true, "holder": "rescan"}),
         "the full group's longest-held permit, not the first listed"
     );
 
@@ -1331,31 +1284,19 @@ async fn members_channels_personas_and_fixed() {
     let members = reads
         .read("/api/admin/members", "members.json#/$defs/MemberRows")
         .await;
-    let rows: Vec<_> = members
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|row| {
-            (
-                row["id"].as_str().unwrap(),
-                row["access"].as_str().unwrap(),
-                row["bossing"].as_bool().unwrap(),
-            )
-        })
-        .collect();
     assert_eq!(
-        rows,
-        [
-            ("1001", "none", true),
-            ("1002", "none", true),
-            ("1003", "staff", false),
-            ("1004", "none", true),
-            ("1006", "pilot", false),
-        ],
+        columns(&members, &["id", "access", "bossing"]),
+        json!([
+            ["1001", "none", true],
+            ["1002", "none", true],
+            ["1003", "staff", false],
+            ["1004", "none", true],
+            ["1006", "pilot", false],
+        ]),
         "bots never, non-bossers only with access; by name"
     );
     let alice = &members[0];
-    assert_eq!(alice["aliases"], serde_json::json!(["ali"]));
+    assert_eq!(alice["aliases"], json!(["ali"]));
     assert_eq!(alice["runs_this_week"], 2);
     assert_eq!(alice["persona"], "terse");
     assert_eq!(
@@ -1371,14 +1312,14 @@ async fn members_channels_personas_and_fixed() {
         .await;
     assert_eq!(
         channels[0],
-        serde_json::json!({"id": "kalos-four", "name": "#kalos-four"})
+        json!({"id": "kalos-four", "name": "#kalos-four"})
     );
     let roles = reads
         .read("/api/admin/roles", "common.json#/$defs/Roles")
         .await;
     assert_eq!(
         roles,
-        serde_json::json!([
+        json!([
             {"id": "700", "name": "Officer", "color": "#0a0bff"},
             {"id": "701", "name": "Bossing"},
             {"id": "702", "name": "Integration"},
@@ -1394,40 +1335,28 @@ async fn members_channels_personas_and_fixed() {
     let personas = reads
         .read("/api/admin/personas", "members.json#/$defs/Personas")
         .await;
-    assert_eq!(
-        personas,
-        serde_json::json!([]),
-        "missing settings are private"
-    );
+    assert_eq!(personas, json!([]), "missing settings are private");
 
     let fixed = reads
         .read("/api/admin/fixed", "fixed.json#/$defs/FixedRows")
         .await;
     let row = &fixed[0];
     assert_eq!(
-        (row["weekday"].clone(), row["weekday_name"].clone()),
-        (1.into(), "Tuesday".into())
+        fields(row, &["weekday", "weekday_name"]),
+        json!([1, "Tuesday"])
     );
     assert_eq!(row["time"], "22:00");
     assert_eq!(row["owner"], "Alice");
     assert_eq!(row["channel_watched"], true);
-    let runs: Vec<_> = row["runs"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|link| {
-            (
-                link["run_id"].as_str().unwrap(),
-                link["week"].as_str().unwrap(),
-            )
-        })
-        .collect();
-    assert_eq!(runs, [("r-kalos", "this"), ("n-kalos", "next")]);
+    assert_eq!(
+        columns(&row["runs"], &["run_id", "week"]),
+        json!([["r-kalos", "this"], ["n-kalos", "next"]])
+    );
 }
 
 #[tokio::test]
 async fn roles_are_unavailable_when_the_guild_directory_is_disconnected() {
-    let reads = Reads::with_role_directory_connected(false).await;
+    let reads = Reads::build(|b| b.role_directory_connected = false).await;
     assert_eq!(
         reads.status("/api/admin/roles", true).await,
         (503, "unavailable".into())
@@ -1441,20 +1370,14 @@ async fn bosses_events_and_knowledge() {
         .read("/api/admin/bosses", "bosses.json#/$defs/BossRows")
         .await;
     assert_eq!(bosses[0]["key"], "Kalos");
-    let in_use: Vec<_> = bosses[0]["difficulties"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|d| (d["token"].as_str().unwrap(), d["in_use"].as_bool().unwrap()))
-        .collect();
     assert_eq!(
-        in_use,
-        [
-            ("EKalos", false),
-            ("NKalos", false),
-            ("CKalos", false),
-            ("XKalos", true)
-        ]
+        columns(&bosses[0]["difficulties"], &["token", "in_use"]),
+        json!([
+            ["EKalos", false],
+            ["NKalos", false],
+            ["CKalos", false],
+            ["XKalos", true]
+        ])
     );
     assert_eq!(bosses[1]["portrait"], "/art/portraits/MaleficStar");
 
@@ -1468,7 +1391,7 @@ async fn bosses_events_and_knowledge() {
     assert_eq!(star["path"], "boss/knowledge/maleficstar.yaml");
     assert_eq!(star["animated"], "/art/animated/MaleficStar");
     let kalos = knowledge(&reads, "Kalos").await;
-    assert_eq!(kalos["in_use"], serde_json::json!(["x"]));
+    assert_eq!(kalos["in_use"], json!(["x"]));
     assert_eq!(kalos["animated"], Value::Null, "absent animation is null");
     for path in [
         "/api/admin/bosses/Nobody/knowledge",
@@ -1579,13 +1502,8 @@ async fn event_bosses_carry_and_serve_their_art() {
     // Absent art stays null.
     let kai = find(&events, "key", "Kai");
     assert_eq!(
-        (
-            &kai["portrait"],
-            &kai["portrait_sm"],
-            &kai["art"],
-            &kai["animated"]
-        ),
-        (&Value::Null, &Value::Null, &Value::Null, &Value::Null)
+        fields(kai, &["portrait", "portrait_sm", "art", "animated"]),
+        json!([null, null, null, null])
     );
 
     let doc = knowledge(&reads, "StarWyrm").await;
@@ -1624,7 +1542,6 @@ async fn every_read_needs_a_session_and_art_uses_catalog_keys() {
     let reads = Reads::new().await;
     for path in [
         "/api/admin/week",
-        "/api/admin/stats",
         "/api/admin/summary",
         "/api/admin/fixed",
         "/api/admin/reminders",

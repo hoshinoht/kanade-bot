@@ -12,25 +12,23 @@ use kanade::bot::commands::{
     DebugCards, HeaderNote, HeaderRequest, HeaderTrialKind, HeaderTrials, PingRequest, SampleRun,
     TestKind, TestPosted, TestReport, TestSubject,
 };
-use kanade::bot::delivery::cards::{CardKit, DigestPhraseStore, HeadingRewrite, ReminderCardStore};
+use kanade::bot::delivery::cards::{CardKit, ReminderCardStore};
 use kanade::bot::delivery::{
     CardRefresh, DebugCardStore, DebugDesk, FixedClock, SAMPLE_RUN_ID, StoreRef, TEST_PREFIX,
 };
 use kanade::bot::events::{ReactionRouter, RsvpAnswer, RsvpReaction};
 use kanade::bot::transport::{Call, FakeDiscord, Outcome};
-use kanade::chat::nudge::{NudgeRewriter, RewriteFailure, RewritePrompt, SharedRewriter};
+use kanade::chat::nudge::{NudgeRewriter, RewriteFailure, RewritePrompt};
 use kanade::domain::ids::RandomIds;
 use kanade::domain::notify::{ActiveClaims, DedupeKey, DeliveryJournal, DeliveryTarget};
 use kanade::domain::schedule::{RunStatus, ScheduleSnapshot};
 use kanade::domain::scheduler::SchedulerService;
 use kanade::domain::settings::MessageStyle;
-use kanade::infrastructure::store::MemoryScheduleStore;
+use kanade::infrastructure::store::SqliteStore;
 use twilight_model::id::Id;
 
-use crate::cards::{
-    Script, Scripted, allowed, created, kit, persona, refresher, rewriting, tonight, world,
-};
-use crate::debug::{desk, on_both_arcs, star};
+use crate::cards::{Script, Scripted, allowed, created, kit, refresher, rewriting, tonight, world};
+use crate::debug::{desk, star};
 use crate::scenarios::{self, HOME, POST, now, week};
 use crate::support::{self, Store, seed_digest};
 
@@ -200,12 +198,12 @@ async fn sandbox_posts_are_display_only<S: Store + DebugCardStore + 'static>(sto
 
 #[tokio::test]
 async fn a_test_card_outside_the_home_channel_is_display_only() {
-    on_both_arcs!(sandbox_posts_are_display_only);
+    sandbox_posts_are_display_only(Arc::new(SqliteStore::open_temp().await)).await;
 }
 
 #[tokio::test]
 async fn the_test_channel_is_the_default_target() {
-    let store = Arc::new(MemoryScheduleStore::new());
+    let store = Arc::new(SqliteStore::open_temp().await);
     let world = world();
     let fake = Arc::new(support::fake());
     let run_id = star(&*store).await;
@@ -255,7 +253,7 @@ async fn the_test_channel_is_the_default_target() {
 
 #[tokio::test(start_paused = true)]
 async fn style_and_header_overrides_touch_no_setting_or_record() {
-    let store = Arc::new(MemoryScheduleStore::new());
+    let store = Arc::new(SqliteStore::open_temp().await);
     let world = world();
     let fake = Arc::new(support::fake());
     let run_id = star(&*store).await;
@@ -345,13 +343,7 @@ async fn style_and_header_overrides_touch_no_setting_or_record() {
         Some("Waku waku!"),
         "the phrase under the title: {texts:?}"
     );
-    assert_eq!(
-        store
-            .digest_phrase(&record_key(DeliveryTarget::Digest(week())))
-            .await
-            .expect("read"),
-        None
-    );
+    assert_eq!(support::week_phrase(&*store, week()).await, None);
     let amend = phrases
         .ping(PingRequest {
             rewrite: true,
@@ -393,11 +385,11 @@ async fn style_and_header_overrides_touch_no_setting_or_record() {
 }
 
 fn desk_with(
-    store: &Arc<MemoryScheduleStore>,
+    store: &Arc<SqliteStore>,
     fake: &Arc<FakeDiscord>,
     world: &scenarios::World,
     cards: CardKit,
-) -> DebugDesk<MemoryScheduleStore, FakeDiscord> {
+) -> DebugDesk<SqliteStore, FakeDiscord> {
     desk(store, fake, world, cards, &[HOME], None)
 }
 
@@ -454,7 +446,7 @@ async fn the_week_digest_is_a_test_copy<S: Store + DebugCardStore + 'static>(sto
 
 #[tokio::test]
 async fn the_digest_kind_posts_a_test_copy_and_leaves_the_real_digest() {
-    on_both_arcs!(the_week_digest_is_a_test_copy);
+    the_week_digest_is_a_test_copy(Arc::new(SqliteStore::open_temp().await)).await;
 }
 
 async fn samples_store_nothing<S: Store + DebugCardStore + 'static>(store: Arc<S>) {
@@ -559,7 +551,7 @@ async fn samples_store_nothing<S: Store + DebugCardStore + 'static>(store: Arc<S
 
 #[tokio::test]
 async fn sample_runs_render_from_options_and_store_nothing() {
-    on_both_arcs!(samples_store_nothing);
+    samples_store_nothing(Arc::new(SqliteStore::open_temp().await)).await;
 }
 
 /// One scripted rewrite: a reply after a delay, a failure, or no answer.
@@ -590,18 +582,10 @@ impl NudgeRewriter for Steps {
 }
 
 fn stepping(steps: Vec<Step>) -> CardKit {
-    CardKit {
-        heading: HeadingRewrite {
-            rewriter: Some(SharedRewriter(Arc::new(Steps(Mutex::new(steps.into()))))),
-            persona: Some(persona()),
-            words: None,
-            log: None,
-        },
-        ..kit(None)
-    }
+    rewriting(&Arc::new(Steps(Mutex::new(steps.into()))))
 }
 
-fn header(kind: HeaderTrialKind, tries: u8) -> HeaderRequest {
+pub(crate) fn header(kind: HeaderTrialKind, tries: u8) -> HeaderRequest {
     HeaderRequest {
         kind,
         tries,
@@ -612,7 +596,7 @@ fn header(kind: HeaderTrialKind, tries: u8) -> HeaderRequest {
 
 #[tokio::test(start_paused = true)]
 async fn header_trials_post_each_verdict_and_store_nothing() {
-    let store = Arc::new(MemoryScheduleStore::new());
+    let store = Arc::new(SqliteStore::open_temp().await);
     let world = world();
     let fake = Arc::new(support::fake());
     star(&*store).await;
@@ -739,13 +723,7 @@ async fn header_trials_post_each_verdict_and_store_nothing() {
                 .is_empty()
         );
     }
-    assert_eq!(
-        store
-            .digest_phrase(&record_key(DeliveryTarget::Digest(week())))
-            .await
-            .expect("read"),
-        None
-    );
+    assert_eq!(support::week_phrase(&*store, week()).await, None);
 
     // No rewriter configured: nothing is tried or posted.
     let posts = created(&fake).len();

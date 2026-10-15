@@ -17,7 +17,7 @@ use axum::{
 use chrono::{DateTime, TimeDelta, TimeZone, Utc};
 
 use super::*;
-use crate::domain::characters::{CharacterChange, CharacterRecord, CharacterRole};
+use crate::domain::characters::{CharacterChange, CharacterRecord, CharacterRole, CharacterWrite};
 use crate::domain::chardata::{
     CharDataStore, ConsentSurface, DAILY_CALLS, Link, LinkStatus, NOTICE_VERSION, Post,
 };
@@ -25,7 +25,7 @@ use crate::domain::history::{Actor, Surface};
 use crate::domain::settings::SettingsChangeQuery;
 use crate::infrastructure::nexon::{ApiKey, KEY_HEADER};
 use crate::infrastructure::store::members_conformance::gateway;
-use crate::infrastructure::store::{MemoryCharData, MemoryScheduleStore};
+use crate::infrastructure::store::{SqliteCharData, SqliteStore};
 
 const IGN: &str = "Wisteria";
 const OCID: &str = "ocid-invented-0001";
@@ -129,8 +129,8 @@ async fn answer(State(fake): State<Arc<Fake>>, request: Request) -> impl IntoRes
 
 struct Rig {
     service: Arc<CharacterData>,
-    file: Arc<MemoryCharData>,
-    roster: Arc<MemoryScheduleStore>,
+    file: Arc<SqliteCharData>,
+    roster: Arc<SqliteStore>,
     flaky: Arc<FlakyRoster>,
     fake: Arc<Fake>,
     now: Arc<Mutex<DateTime<Utc>>>,
@@ -144,7 +144,7 @@ async fn rig_with(connected: bool) -> Rig {
     tokio::spawn(async move {
         let _ = axum::serve(listener, app).await;
     });
-    let roster = Arc::new(MemoryScheduleStore::new());
+    let roster = Arc::new(SqliteStore::open_temp().await);
     roster
         .apply_gateway(gateway("1001", "Alice", &["10"]))
         .await
@@ -187,7 +187,7 @@ async fn rig_with(connected: bool) -> Rig {
             .await
             .unwrap();
     }
-    let file = Arc::new(MemoryCharData::new());
+    let file = Arc::new(SqliteCharData::open_temp().await);
     let now = Arc::new(Mutex::new(at(11, 0)));
     let clock = {
         let now = Arc::clone(&now);
@@ -218,9 +218,9 @@ async fn rig_with(connected: bool) -> Rig {
     }
 }
 
-/// The roster side over the memory store, whose History writes can fail.
+/// The roster side over a temp SQLite store, whose History writes can fail.
 struct FlakyRoster {
-    inner: Arc<MemoryScheduleStore>,
+    inner: Arc<SqliteStore>,
     fail_records: std::sync::atomic::AtomicBool,
 }
 
@@ -287,6 +287,18 @@ impl Rig {
 
     async fn link(&self, id: &str) -> Option<Link> {
         self.file.link(id.into()).await.unwrap()
+    }
+
+    /// Make `id`'s link consented to a notice older than the current one.
+    /// None predates version 1, so only a tampered row can say so.
+    async fn older_notice(&self, id: &str) {
+        let sql = format!(
+            "PRAGMA ignore_check_constraints = ON;
+             UPDATE links SET consent_version = {}, version = version + 1
+             WHERE character_id = '{id}';",
+            NOTICE_VERSION - 1
+        );
+        self.file.temp_dir().raw(&sql).await.expect("link tampered");
     }
 
     async fn confirm(&self) -> ConfirmOutcome {
@@ -875,11 +887,7 @@ async fn roster_edits_unlink_and_the_orphan_pass_catches_the_rest() {
     // An older notice sends a link back to pending, its data gone.
     let rig = rig_with(true).await;
     rig.confirm().await;
-    let mut old = rig.link("c1").await.unwrap();
-    let version = old.version;
-    old.consent_version = Some(NOTICE_VERSION - 1);
-    old.version += 1;
-    rig.file.put_link(old, version).await.unwrap();
+    rig.older_notice("c1").await;
     let report = rig.service.sweep().await;
     assert_eq!(report.reconsent, 1);
     assert_eq!(rig.link("c1").await.unwrap().status, LinkStatus::Pending);
@@ -919,6 +927,89 @@ async fn rename(rig: &Rig, id: &str, ign: &str) -> crate::domain::characters::Ch
         .await
         .unwrap();
     after
+}
+
+/// User decision: a retired character keeps its NEXON data until it expires
+/// (refresh paused), so the strip can say when it will be deleted; then it
+/// reads as gone and the sweep removes the link.
+#[tokio::test]
+async fn a_retired_character_keeps_its_data_until_it_expires() {
+    let rig = rig().await;
+    // c2 "Heather", an alt (a main cannot be retired while it is the main).
+    rig.fake.queue("basic", [(200, basic("Heather"))]);
+    let ConfirmOutcome::Linked(_, FetchState::Stored) = rig
+        .service
+        .confirm_link(
+            "1001",
+            "c2",
+            NOTICE_VERSION,
+            crate::domain::chardata::ConsentSurface::Discord,
+        )
+        .await
+        .unwrap()
+    else {
+        panic!("c2 linked with data");
+    };
+    let current = roster_row(&rig, "c2").await;
+    let mut retired = current.clone();
+    retired.retired_at = Some(at(11, 1));
+    let retired = retired.next_version(at(11, 1), &Actor::admin("token"));
+    let written = rig
+        .roster
+        .apply_character(
+            CharacterChange::Update {
+                version: current.version,
+                after: retired.clone(),
+            },
+            CharacterRecord {
+                at: at(11, 1),
+                actor: Actor::admin("token"),
+                surface: Surface::AdminPortal,
+            },
+        )
+        .await
+        .unwrap();
+    assert!(matches!(written, CharacterWrite::Updated(_)), "{written:?}");
+    rig.service
+        .roster_changed(
+            "c2",
+            Some(&retired),
+            &Actor::admin("token"),
+            Surface::AdminPortal,
+        )
+        .await;
+
+    let view = rig.service.view("c2").await.unwrap();
+    assert_eq!(
+        view.link.unwrap().status,
+        LinkStatus::Active,
+        "still linked"
+    );
+    let snapshot = view.snapshot.expect("kept while retired");
+    assert_eq!(snapshot.character_name.as_deref(), Some("Heather"));
+    assert_eq!(
+        rig.service.data("c2").await.unwrap().as_ref(),
+        Some(&snapshot)
+    );
+    assert_eq!(
+        rig.service.status("c2").await.unwrap().snapshot.as_ref(),
+        Some(&snapshot)
+    );
+    assert_eq!(rig.service.sweep().await.unlinked, 0, "kept while fresh");
+
+    rig.set_now(snapshot.expires_at);
+    assert_eq!(
+        rig.service.view("c2").await.unwrap().snapshot,
+        None,
+        "expired"
+    );
+    assert_eq!(rig.service.data("c2").await.unwrap(), None);
+    assert_eq!(
+        rig.service.sweep().await.unlinked,
+        1,
+        "retired with expired data"
+    );
+    assert_eq!(rig.link("c2").await, None);
 }
 
 /// An IGN edit whose post-commit unlink fails: reads fail closed (no data,
@@ -967,11 +1058,7 @@ async fn a_failed_reconsent_audit_is_retried_by_the_next_sweep() {
     crate::runtime::logging::capture();
     let rig = rig().await;
     rig.confirm().await;
-    let mut old = rig.link("c1").await.unwrap();
-    let version = old.version;
-    old.consent_version = Some(NOTICE_VERSION - 1);
-    old.version += 1;
-    rig.file.put_link(old, version).await.unwrap();
+    rig.older_notice("c1").await;
     rig.flaky
         .fail_records
         .store(true, std::sync::atomic::Ordering::SeqCst);
@@ -1006,11 +1093,7 @@ async fn a_failed_repend_write_serves_nothing_and_audits_once() {
     crate::runtime::logging::capture();
     let rig = rig().await;
     rig.confirm().await;
-    let mut old = rig.link("c1").await.unwrap();
-    let version = old.version;
-    old.consent_version = Some(NOTICE_VERSION - 1);
-    old.version += 1;
-    rig.file.put_link(old, version).await.unwrap();
+    rig.older_notice("c1").await;
     rig.file.fail_put_links(true);
     assert_eq!(rig.service.sweep().await.reconsent, 0);
     assert_eq!(rig.link("c1").await.unwrap().status, LinkStatus::Active);
@@ -1304,12 +1387,7 @@ async fn the_startup_pass_leaves_expired_stale_and_pending_links_alone() {
                 };
                 rig.file.put_link(pending, version).await.unwrap();
             }
-            _ => {
-                let mut old = link;
-                old.consent_version = Some(NOTICE_VERSION - 1);
-                old.version += 1;
-                rig.file.put_link(old, version).await.unwrap();
-            }
+            _ => rig.older_notice("c1").await,
         }
         rename(&rig, "c1", "WISTERIA").await;
         assert_eq!(rig.service.match_ign_cases().await, 0, "{case}");

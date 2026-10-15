@@ -85,8 +85,7 @@
         "accepted",
         "prompt_tokens",
         "completion_tokens",
-        "reported",
-        "est_ratio"
+        "reported"
       ],
       "properties": {
         "model": {
@@ -109,14 +108,6 @@
         "reported": {
           "type": "integer",
           "minimum": 0
-        },
-        "est_ratio": {
-          "type": [
-            "number",
-            "null"
-          ],
-          "minimum": 0,
-          "description": "Median of reported prompt tokens / prompt estimate, two decimals; null when none."
         }
       }
     },

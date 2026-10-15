@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use axum::{
     Json,
-    extract::{Path as UrlPath, State, rejection::JsonRejection},
+    extract::{Path as UrlPath, State},
     http::HeaderMap,
     response::{IntoResponse, Response},
 };
@@ -13,7 +13,7 @@ use chrono::{NaiveTime, TimeZone};
 use serde::{Deserialize, Serialize};
 
 use super::{
-    bad_body, origin,
+    Body, origin,
     precondition::{Explicit, OverrideRef, SeenField, version_expectations},
     refusal::{Refusal, scheduler},
     run_edit::{Answer, Previous, SlotError, load_run, put_answer, reloaded, slot, write_run},
@@ -146,9 +146,8 @@ pub async fn move_run(
     session: AdminSession,
     headers: HeaderMap,
     UrlPath(run_id): UrlPath<String>,
-    body: Result<Json<MoveRequest>, JsonRejection>,
+    Body(request): Body<MoveRequest>,
 ) -> Reply {
-    let Json(request) = body.map_err(bad_body)?;
     let state = state(&site)?;
     if request.day > 6 {
         return Err(Refusal::invalid("A boss week has seven days."));
@@ -217,9 +216,8 @@ pub async fn swap(
     session: AdminSession,
     headers: HeaderMap,
     UrlPath(run_id): UrlPath<String>,
-    body: Result<Json<SwapRequest>, JsonRejection>,
+    Body(request): Body<SwapRequest>,
 ) -> Reply {
-    let Json(request) = body.map_err(bad_body)?;
     if run_id == request.with {
         return Err(Refusal::invalid("A run cannot be swapped with itself."));
     }
@@ -277,9 +275,8 @@ pub async fn status(
     session: AdminSession,
     headers: HeaderMap,
     UrlPath(run_id): UrlPath<String>,
-    body: Result<Json<StatusRequest>, JsonRejection>,
+    Body(request): Body<StatusRequest>,
 ) -> Reply {
-    let Json(request) = body.map_err(bad_body)?;
     let status = RunStatus::parse(&request.status).map_err(|_| {
         Refusal::invalid("Pick one of planned, confirmed, own time, done or cancelled.")
     })?;
@@ -317,9 +314,8 @@ pub async fn rsvp(
     session: AdminSession,
     headers: HeaderMap,
     UrlPath(run_id): UrlPath<String>,
-    body: Result<Json<RsvpRequest>, JsonRejection>,
+    Body(request): Body<RsvpRequest>,
 ) -> Reply {
-    let Json(request) = body.map_err(bad_body)?;
     let answer = match request.answer.as_str() {
         "yes" => Some(RsvpState::Yes),
         "no" => Some(RsvpState::No),
@@ -364,9 +360,8 @@ pub async fn participants(
     session: AdminSession,
     headers: HeaderMap,
     UrlPath(run_id): UrlPath<String>,
-    body: Result<Json<ParticipantsRequest>, JsonRejection>,
+    Body(request): Body<ParticipantsRequest>,
 ) -> Reply {
-    let Json(request) = body.map_err(bad_body)?;
     if request.add.is_none() && request.remove.is_none() {
         return Err(Refusal::invalid("Name someone to add or remove."));
     }
@@ -401,9 +396,8 @@ pub async fn reset(
     session: AdminSession,
     headers: HeaderMap,
     UrlPath(run_id): UrlPath<String>,
-    body: Result<Json<ResetRequest>, JsonRejection>,
+    Body(request): Body<ResetRequest>,
 ) -> Reply {
-    let Json(request) = body.map_err(bad_body)?;
     let fields: Vec<String> = ["slot", "participants", "bosses", "channel"]
         .map(str::to_owned)
         .into();

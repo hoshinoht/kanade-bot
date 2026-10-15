@@ -1,7 +1,10 @@
 use serde_json::json;
 
 use super::{ERROR, Logs, ids};
-use crate::schemas::assert_valid;
+use crate::{
+    schemas::assert_valid,
+    support::{columns, fields},
+};
 
 const CHAT: &str = "chat.json#/$defs/Chat";
 const TURN: &str = "chat.json#/$defs/ChatTurn";
@@ -59,34 +62,22 @@ async fn chat_lists_every_row_newest_first_with_total_facets_and_summary() {
         })
     );
     // Counts only: a withheld turn shows them; turn totals pass through as logged.
-    assert_eq!(
-        (
-            &all["rows"][2]["prompt_tokens"],
-            &all["rows"][2]["completion_tokens"]
-        ),
-        (&json!(500), &json!(20))
-    );
-    assert_eq!(
-        (
-            &all["rows"][3]["prompt_tokens"],
-            &all["rows"][3]["completion_tokens"]
-        ),
-        (&json!(10), &json!(null))
-    );
+    let tokens = ["prompt_tokens", "completion_tokens"];
+    assert_eq!(fields(&all["rows"][2], &tokens), json!([500, 20]));
+    assert_eq!(fields(&all["rows"][3], &tokens), json!([10, null]));
     // A rate-limited question ran no model.
     assert_eq!(all["rows"][3]["model"], "—");
     assert_eq!(all["rows"][3]["latency_ms"], 0);
     assert_eq!(
         all["summary"],
         json!([
-            // Round rows with a pair: c-answer round 1 (1200/1000) and
-            // c-timeout (900/1000); median of 1.2 and 0.9.
+            // Round rows with a pair: c-answer round 1 (1200) and c-timeout (900).
             {"model": "kanata/chat", "count": 2, "answered": 1, "refused": 0, "errors": 1,
              "p50_ms": 4000, "tool_calls": 1, "prompt_tokens": 2100, "completion_tokens": 40,
-             "reported": 2, "est_ratio": 1.05},
+             "reported": 2},
             {"model": "kanata/chat-cloud", "count": 1, "answered": 0, "refused": 0, "errors": 0,
              "p50_ms": 0, "tool_calls": 1, "prompt_tokens": 500, "completion_tokens": 20,
-             "reported": 1, "est_ratio": 1.25},
+             "reported": 1},
         ])
     );
 
@@ -100,18 +91,16 @@ async fn chat_lists_every_row_newest_first_with_total_facets_and_summary() {
 }
 
 /// Summary usage comes from each model's own round rows: unreported rounds
-/// leave null sums (never 0), turn totals are never used, and the ratio is
-/// the median over rounds with both a pair and a non-zero estimate.
+/// leave null sums (never 0) and turn totals are never used.
 #[test]
 fn chat_summary_usage_sums_round_rows_per_model() {
     use kanade::api::dto::logs::chat_summary;
     use kanade::domain::model_log::ChatOutcome;
 
-    let round = |model: &str, pair: Option<(u64, u64)>, estimate: Option<u64>| {
+    let round = |model: &str, pair: Option<(u64, u64)>| {
         let mut round = super::round(model, &[], json!([]), None);
         round.prompt_tokens = pair.map(|pair| pair.0);
         round.completion_tokens = pair.map(|pair| pair.1);
-        round.prompt_estimate = estimate;
         round
     };
     let mut mixed = super::chat(
@@ -124,36 +113,20 @@ fn chat_summary_usage_sums_round_rows_per_model() {
         ChatOutcome::Answered,
         Some(10),
         vec![
-            round("a", Some((100, 1)), Some(100)),
-            round("a", Some((300, 3)), Some(100)),
-            round("a", Some((200, 2)), Some(100)),
-            round("a", Some((50, 5)), None),
-            round("b", None, Some(70)),
+            round("a", Some((100, 1))),
+            round("a", Some((300, 3))),
+            round("a", Some((200, 2))),
+            round("a", Some((50, 5))),
+            round("b", None),
         ],
     );
     // Turn totals that disagree with the rounds are ignored by the summary.
     (mixed.prompt_tokens, mixed.completion_tokens) = (Some(1), Some(1));
     let summary = serde_json::to_value(chat_summary(&[mixed])).unwrap();
-    let usage: Vec<_> = summary
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|model| {
-            (
-                model["model"].clone(),
-                model["prompt_tokens"].clone(),
-                model["completion_tokens"].clone(),
-                model["reported"].clone(),
-                model["est_ratio"].clone(),
-            )
-        })
-        .collect();
+    let shown = ["model", "prompt_tokens", "completion_tokens", "reported"];
     assert_eq!(
-        usage,
-        [
-            (json!("a"), json!(650), json!(11), json!(4), json!(2.0)),
-            (json!("b"), json!(null), json!(null), json!(0), json!(null)),
-        ]
+        columns(&summary, &shown),
+        json!([["a", 650, 11, 4], ["b", null, null, 0]])
     );
 }
 
@@ -185,7 +158,7 @@ async fn chat_filters_each_and_combined() {
         ),
         ("?outcome=answered&channel=star", &[]),
         ("?q=%20summarise%20", &["c-timeout"]),
-        // Parses; no v4-imported row here.
+        // Parses; no legacy row in this fixture.
         ("?outcome=unknown", &[]),
     ];
     for (query, expected) in cases {
@@ -337,19 +310,9 @@ fn an_imported_v4_turn_shows_its_output_and_ms() {
     };
     let turn = chat_turn(&names, &row, &[], None, None);
     assert_valid(TURN, "v4 turn", &turn);
-    let shown: Vec<_> = turn["tools"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|tool| (tool["result"].clone(), tool["took_ms"].clone()))
-        .collect();
     assert_eq!(
-        shown,
-        [
-            (json!("Kalos strategy"), json!(12)),
-            (json!("x"), json!(null)),
-            (json!(""), json!(null)),
-        ]
+        columns(&turn["tools"], &["result", "took_ms"]),
+        json!([["Kalos strategy", 12], ["x", null], ["", null]])
     );
 
     row.withheld = true;
@@ -444,13 +407,8 @@ async fn a_masked_turn_shows_its_model_view_with_names_never_ids() {
     assert_eq!(shown["rounds"][0]["request"], view.rounds[0].request);
     assert_eq!(shown["rounds"][0]["tool_calls"], view.rounds[0].tool_calls);
     assert_eq!(shown["rounds"][1]["reply"], "Haruka, Sora is on Kalos.");
-    assert_eq!(
-        (
-            shown["rounds"][1]["round"].clone(),
-            shown["rounds"][1]["clean"].clone()
-        ),
-        (json!(2), json!(true))
-    );
+    let retry = fields(&shown["rounds"][1], &["round", "clean"]);
+    assert_eq!(retry, json!([2, true]));
     assert_eq!(
         shown["mapping"],
         json!([

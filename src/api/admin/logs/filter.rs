@@ -2,7 +2,7 @@
 //! an unknown, repeated or undecodable key, an unknown outcome, kind, stage
 //! or verdict, a malformed or inverted date range, a `min_ms` that is not
 //! whole milliseconds, or a Chat-only filter on Extractions. Empty values
-//! mean "not set" (the mock's rule).
+//! mean "not set".
 
 use axum::http::Uri;
 use chrono::{DateTime, Days, NaiveDate, NaiveTime, TimeZone, Utc};

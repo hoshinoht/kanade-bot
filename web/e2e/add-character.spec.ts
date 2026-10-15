@@ -1,11 +1,14 @@
 import { mkdirSync } from 'node:fs';
 import type { Locator, Page } from '@playwright/test';
-import { ADMIN, choose, expect, settle, test } from './support';
+import { ADMIN, advanceClock, choose, expect, setCharacterData, settle, test } from './support';
 
-// Add character with NEXON connected (module `character_data`, the mock's `ok` health): IGN,
-// region and role only; Look up asks the mock, which answers by IGN prefix (`Nope…` not
-// found, `Busy…` held, `Offline…` not connected, anything else found); nothing is stored and
-// saving makes the member's pending link. Other regions keep the manual Class and Level.
+// Add character with NEXON connected (module `character_data`, the seed's key): IGN, region and
+// role only; Look up asks the e2e server's fake NEXON, which answers by IGN prefix (`Nope…` not
+// found, `Busy…` maintenance: held, anything else found); nothing is stored and saving makes the
+// member's pending link. Other regions keep the manual Class and Level. Mika is the seed's member
+// 100000000000001003.
+
+const MIKA = '100000000000001003';
 
 const ATTRIBUTION = 'Data based on NEXON Open API';
 const SHOWN_ONLY = 'Shown only; saved after the member confirms in Discord.';
@@ -49,13 +52,13 @@ test('add character: MapleSEA asks no class or level; Look up shows NEXON, shown
   await ign.fill('MikaKain');
 
   // Saving sends no class or level and asks Mika to link it.
-  const posted = page.waitForRequest((r) => r.url().endsWith('/api/admin/members/1003/characters') && r.method() === 'POST');
+  const posted = page.waitForRequest((r) => r.url().endsWith(`/api/admin/members/${MIKA}/characters`) && r.method() === 'POST');
   await add.getByRole('button', { name: 'Add character' }).click();
   const body = (await posted).postDataJSON();
   expect(body).toEqual({ ign: 'MikaKain', world: 'msea', role: 'alt' });
   await expect(add).toBeHidden();
   await expect(page.locator('.toast:not(.is-leaving)').filter({ hasText: 'Added MikaKain. Asked Mika to link it' })).toBeVisible();
-  const list = await (await page.request.get(`${ADMIN}/api/admin/members/1003/characters`)).json();
+  const list = await (await page.request.get(`${ADMIN}/api/admin/members/${MIKA}/characters`)).json();
   const row = list.characters.find((c: { ign: string }) => c.ign === 'MikaKain');
   expect([row.class, row.level]).toEqual([null, null]);
   const link = await (await page.request.get(`${ADMIN}/api/admin/characters/${row.id}/link`)).json();
@@ -70,13 +73,14 @@ test('add character: not found, held and not connected show inline', async ({ pa
   await expect(card(add).locator('.status-chip')).toHaveText('not found');
   await expect(card(add)).toContainText('NEXON has no MapleSEA character named “NopeMika”');
   await expect(ign).toHaveAttribute('aria-describedby', /lookup/);
-
+  // One lookup per admin every 3 s of server time; the server clock only moves on request.
+  await advanceClock(3);
   await ign.fill('BusyMika');
   await add.getByRole('button', { name: 'Look up' }).click();
   await expect(card(add).locator('.status-chip')).toHaveText('held');
   await expect(card(add)).toContainText('You can still add BusyMika');
-
-  // No key after all: the manual fields come back with the reason.
+  // No key after all (the server restarted without one): the manual fields come back with the reason.
+  await setCharacterData('setup');
   await ign.fill('OfflineMika');
   await add.getByRole('button', { name: 'Look up' }).click();
   await expect(card(add).locator('.status-chip')).toHaveText('not connected');
@@ -99,7 +103,7 @@ test('add character: another region keeps the manual class and level and asks no
 });
 
 test('add character: without a key the manual fields stay', async ({ page }) => {
-  await page.request.post(`${ADMIN}/__mock/character-data`, { data: { health: 'setup' } });
+  await setCharacterData('setup');
   await page.goto(`${ADMIN}/members?sw=off`);
   await page.getByRole('button', { name: /^Mika/ }).first().click();
   const pane = page.getByRole('complementary', { name: 'Member details' });

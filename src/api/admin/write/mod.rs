@@ -13,24 +13,29 @@ mod runs;
 
 #[cfg(test)]
 pub(crate) use {
-    fixed::ValidateResult,
+    fixed::{FixedChoices, ValidateResult},
     runs::{Message, MoveResult, RunResult, SwapResult},
 };
 
 use std::sync::Arc;
 
 use axum::{
-    Router,
+    Json, Router,
+    extract::{FromRequest, Request},
     http::HeaderMap,
     routing::{delete, patch, post},
 };
+use serde::de::DeserializeOwned;
 
 use super::context::roster;
 use crate::{
     api::{
         auth::AdminSession, error::ApiError, listeners::Site, state::ApiState, write::WriteContext,
     },
-    domain::{history::Origin, members::MemberProfile},
+    domain::{
+        history::{ChangeRecord, Origin},
+        members::MemberProfile,
+    },
 };
 
 pub use {
@@ -59,6 +64,7 @@ pub fn routes() -> Router<Arc<Site>> {
             "/api/admin/fixed/{id}",
             patch(fixed::update).delete(fixed::retire),
         )
+        .route("/api/admin/fixed/{id}/choices", post(fixed::choices))
         .route("/api/admin/validate/bosses", post(fixed::validate_bosses))
         .route("/api/admin/members/{id}", patch(members::update))
         .route("/api/admin/members/{id}/aliases", post(members::add_alias))
@@ -114,6 +120,19 @@ pub fn origin(session: &AdminSession, headers: &HeaderMap) -> Result<Origin, Ref
     Ok(origin)
 }
 
+/// The change already recorded for this request's `Idempotency-Key`, if any
+/// (a retry). Shared by admin and member writes.
+pub async fn recorded(state: &ApiState, origin: &Origin) -> Result<Option<ChangeRecord>, Refusal> {
+    let Some(request_id) = origin.request_id.clone() else {
+        return Ok(None);
+    };
+    state
+        .store
+        .recorded_change(origin.actor.clone(), request_id)
+        .await
+        .map_err(Refusal::unavailable)
+}
+
 pub fn state(site: &Site) -> Result<&Arc<ApiState>, Refusal> {
     super::context::state(site).map_err(Refusal::from)
 }
@@ -143,4 +162,17 @@ pub fn write_context_of(state: &ApiState, profiles: &[MemberProfile]) -> WriteCo
 /// A malformed or unknown-field JSON body.
 pub fn bad_body<T>(_: T) -> Refusal {
     ApiError::INVALID_BODY.into()
+}
+
+/// A JSON body; a malformed or unknown-field one is refused as [`bad_body`]
+/// before the handler runs.
+pub struct Body<T>(pub T);
+
+impl<T: DeserializeOwned, S: Send + Sync> FromRequest<S> for Body<T> {
+    type Rejection = Refusal;
+
+    async fn from_request(request: Request, state: &S) -> Result<Self, Refusal> {
+        let Json(body) = Json::from_request(request, state).await.map_err(bad_body)?;
+        Ok(Self(body))
+    }
 }

@@ -2,7 +2,8 @@ import type { FixedRow } from '@kanade/api-types';
 import type { Locator, Page } from '@playwright/test';
 import { ADMIN, expect, settle, test, unconditional } from './support';
 
-const MULTI = 'Edit Tuesday 22:00 — HCarling + HStar';
+const MULTI = 'Edit Tuesday 22:00 — HCarling + HMaleficStar';
+const MIKA = '100000000000001003';
 const height = (row: Locator) => row.evaluate((el) => Math.round(el.getBoundingClientRect().height));
 const fixedRow = (page: Page) => page.locator('tr').filter({ has: page.getByRole('button', { name: MULTI, exact: true }) });
 
@@ -14,7 +15,7 @@ test('Fixed: compact multi-boss identity is one ellipsised line with overlapping
   await expect(compact).toBeVisible();
   await expect(compact.locator('.portrait')).toHaveCount(2);
   await expect(compact.locator('.pill')).toHaveCount(2);
-  await expect(compact.locator('.boss-stack__names')).toContainText('Carling + Radiant Malefic Star');
+  await expect(compact.locator('.boss-stack__names')).toContainText('Karling + Radiant Malefic Star');
   const layout = await compact.evaluate((el) => {
     const name = el.querySelector<HTMLElement>('.boss-stack__names')!;
     const pictures = [...el.querySelectorAll('.portrait')].map((p) => p.getBoundingClientRect());
@@ -103,7 +104,7 @@ test('Week: opening a run keeps its card at rest (the ring marks it), and closin
 
 test('Bosses: selection preserves the list DOM while revealing all difficulties', async ({ page }) => {
   await page.goto(`${ADMIN}/bosses/MaleficStar/knowledge?sw=off`);
-  const row = page.locator('.bossrow').filter({ has: page.getByRole('link', { name: 'Carling', exact: true }) });
+  const row = page.locator('.bossrow').filter({ has: page.getByRole('link', { name: 'Karling', exact: true }) });
   await expect(row).toBeVisible();
   const before = await height(row);
   await row.evaluate((el) => el.setAttribute('data-preserved', 'yes'));
@@ -117,9 +118,9 @@ test('Bosses: selection preserves the list DOM while revealing all difficulties'
 });
 
 for (const screen of [
-  { name: 'Inbox', path: '/inbox?tab=self_service', selector: '[data-item="p-kalos-expired"]', state: 'aria-selected' },
+  { name: 'Inbox', path: '/inbox?tab=extractor', selector: '[data-item="p-bm-move"]', state: 'aria-selected' },
   { name: 'History', path: '/history', selector: '[data-history="2"]', state: 'aria-current' },
-  { name: 'Members', path: '/members', selector: '[data-member="1003"]', state: 'aria-current' },
+  { name: 'Members', path: '/members', selector: `[data-member="${MIKA}"]`, state: 'aria-current' },
   { name: 'Config', path: '/config?section=pings', selector: '.settings__tab[aria-controls$="-models"]', state: 'aria-selected' },
 ]) {
   test(`${screen.name}: selection grows the shared content and keeps the shell fixed`, async ({ page }) => {
@@ -199,7 +200,7 @@ const PHONE_ROWS = [
   { name: 'Inbox self-service', path: '/inbox?tab=self_service', row: '[data-item="p-carling-link"]', state: 'aria-selected' },
   { name: 'Inbox extractor', path: '/inbox?tab=extractor', row: '[data-item="p-bm-move"]', state: 'aria-selected' },
   { name: 'History', path: '/history', row: '[data-history="2"]', state: 'aria-current' },
-  { name: 'Members', path: '/members', row: '[data-member="1003"]', state: 'aria-current' },
+  { name: 'Members', path: '/members', row: `[data-member="${MIKA}"]`, state: 'aria-current' },
   { name: 'Bosses catalog', path: '/bosses', row: '.bossrow:has(a[href="/bosses/Carling/knowledge"])', trigger: 'a', state: 'aria-current' },
   { name: 'Bosses event', path: '/bosses', row: '.bosses-events li:has(a[href="/bosses/Kai/knowledge"])', trigger: 'a', state: 'aria-current' },
   { name: 'Config', path: '/config?section=pings', row: '.settings__tab[aria-controls$="-models"]', state: 'aria-selected' },

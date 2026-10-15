@@ -1,7 +1,7 @@
 //! Pure scheduling domain ported from v4 `bot/domain`: no I/O and no clock reads.
 //!
 //! Error `Display` output reproduces the v4 messages byte-for-byte because they
-//! reach members verbatim and are frozen in `docs/v5/vectors/domain`.
+//! reach members verbatim.
 
 #[macro_use]
 mod forward;

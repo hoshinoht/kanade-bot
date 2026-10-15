@@ -1,4 +1,4 @@
-//! History (A5): the record list and records, blame, the chain check, and
+//! History (A5): the record list, blame, the chain check, and
 //! rollbacks (revert, week restore, actor revert) with preview-then-apply.
 //! Pages also carry Config section saves (view-only, outside the chain).
 //! Reads use the store's readers; rollbacks and their previews go through
@@ -14,7 +14,7 @@ use std::sync::Arc;
 
 use axum::{
     Json, Router,
-    extract::{Path as UrlPath, State, rejection::PathRejection},
+    extract::State,
     http::Uri,
     response::{IntoResponse, Response},
     routing::{get, post},
@@ -47,7 +47,6 @@ pub fn routes() -> Router<Arc<Site>> {
             "/api/admin/history/revert-actor",
             post(rollback::revert_actor),
         )
-        .route("/api/admin/history/{seq}", get(record))
 }
 
 type Reply = Result<Response, ApiError>;
@@ -168,26 +167,6 @@ async fn page(State(site): State<Arc<Site>>, _: AdminSession, uri: Uri) -> Reply
         settings_total,
     })
     .into_response())
-}
-
-async fn record(
-    State(site): State<Arc<Site>>,
-    _: AdminSession,
-    seq: Result<UrlPath<u64>, PathRejection>,
-) -> Reply {
-    let state = state(&site)?;
-    // A non-numeric seq names no record.
-    let UrlPath(seq) = seq.map_err(|_| ApiError::NOT_FOUND)?;
-    if seq > MAX_SEQ {
-        return Err(ApiError::NOT_FOUND);
-    }
-    let record = state
-        .store
-        .change(seq)
-        .await
-        .map_err(unavailable)?
-        .ok_or(ApiError::NOT_FOUND)?;
-    Ok(Json(encoded(dto::record(&record))?).into_response())
 }
 
 /// The chain check and the backup manifests in `KANADE_BACKUP_DIR` (A5-9),

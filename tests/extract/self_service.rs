@@ -309,35 +309,28 @@ async fn a_link_that_never_posted_gives_the_weekly_tip_back() {
     );
 }
 
+/// A card that never posted gives the weekly tip back; a saved card waiting
+/// for a repost still carries the link, so its tip stays spent.
 #[tokio::test(start_paused = true)]
-async fn a_card_that_never_posted_gives_the_weekly_tip_back() {
-    let world = portal_world(false).await;
-    world.outbox.fail_posts.store(true, Ordering::SeqCst);
-    let (events, _loop) = world.pipeline();
-    events.send(post("101")).await.expect("send");
-    after(91).await;
+async fn a_card_keeps_its_tip_only_while_it_may_still_post() {
+    for (case, failed, tip_free) in [("failed", true, true), ("pending", false, false)] {
+        let world = portal_world(false).await;
+        let flag = if failed {
+            &world.outbox.fail_posts
+        } else {
+            &world.outbox.pending_posts
+        };
+        flag.store(true, Ordering::SeqCst);
+        let (events, _loop) = world.pipeline();
+        events.send(post("101")).await.expect("send");
+        after(91).await;
 
-    let cards = world.outbox.cards.lock().unwrap().clone();
-    assert!(cards[0].entries[0].self_service.is_some());
-    let week = reset().current_week(now()).unwrap();
-    assert!(world.store.claim_tip(MY, week, now()).await.unwrap());
-}
-
-#[tokio::test(start_paused = true)]
-async fn a_saved_card_waiting_for_a_repost_keeps_its_tip() {
-    let world = portal_world(false).await;
-    world.outbox.pending_posts.store(true, Ordering::SeqCst);
-    let (events, _loop) = world.pipeline();
-    events.send(post("101")).await.expect("send");
-    after(91).await;
-
-    let cards = world.outbox.cards.lock().unwrap().clone();
-    assert!(cards[0].entries[0].self_service.is_some());
-    let week = reset().current_week(now()).unwrap();
-    assert!(
-        !world.store.claim_tip(MY, week, now()).await.unwrap(),
-        "the stranded repost still carries the link, so the tip stays spent"
-    );
+        let cards = world.outbox.cards.lock().unwrap().clone();
+        assert!(cards[0].entries[0].self_service.is_some(), "{case}");
+        let week = reset().current_week(now()).unwrap();
+        let claimed = world.store.claim_tip(MY, week, now()).await.unwrap();
+        assert_eq!(claimed, tip_free, "{case}");
+    }
 }
 
 #[tokio::test(start_paused = true)]
@@ -775,7 +768,7 @@ async fn a_rewrite_row_records_max_tokens_only_when_the_route_sends_it() {
     use kanade::chat::nudge::StoreRewriteSink;
     use kanade::domain::model_log::{RewriteFilter, RewriteLogStore};
     use kanade::infrastructure::llm::ModelCapabilities;
-    use kanade::infrastructure::store::MemoryScheduleStore;
+    use kanade::infrastructure::store::SqliteStore;
 
     let mut rows = Vec::new();
     for sampling_controls in [false, true] {
@@ -784,7 +777,7 @@ async fn a_rewrite_row_records_max_tokens_only_when_the_route_sends_it() {
             sampling_controls,
             ..ModelCapabilities::minimal()
         });
-        let logs = Arc::new(MemoryScheduleStore::new());
+        let logs = Arc::new(SqliteStore::open_temp().await);
         let rewriter = GovernedRewriter::new(client).with_reserve(Arc::new(|_: &str| 80));
         Nudger::new(Arc::new(Fixed), rewriter)
             .with_log(Arc::new(StoreRewriteSink::new(

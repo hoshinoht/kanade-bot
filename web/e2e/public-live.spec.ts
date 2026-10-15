@@ -1,14 +1,16 @@
 import type { Page } from '@playwright/test';
-import { PUBLIC, expect, signInPublic, test } from './support';
+import { PUBLIC, expect, setModules, signInPublic, signInPublicAs, test } from './support';
 
 // Member live updates (public-portal-plan § Live updates): the portal holds
 // one `GET /api/public/events` stream while signed in and shown. A hint
 // re-reads what it names (`schedule` and `mine` the weeks, `mine` the
 // requests and timings already read, `allowance` the allowance); the week
 // polls every 60 s while the stream is open (`weeks.test.ts` pins the
-// cadence: the mock's held responses keep the browser's stream connecting,
-// not open) and every 30 s once it drops.
-// `POST /__mock/public/hint` stands in for the server's member-scoped hints.
+// cadence) and every 30 s once it drops.
+// The server decides each member's hints from what changed, so `POST
+// /__e2e/public/hint` makes a change that is that topic for Asahi (an
+// answer on someone else's run, one on hers, a chatbot answer from her
+// allowance).
 declare global {
   interface Window {
     /** Every EventSource the page opened (`countStreams`). */
@@ -32,9 +34,18 @@ async function countStreams(page: Page) {
 
 const states = (page: Page) => page.evaluate(() => window.__streams.map((s) => s.readyState));
 
-async function hint(page: Page, topic: 'schedule' | 'mine' | 'allowance') {
-  const reply = await page.request.post(`${PUBLIC}/__mock/public/hint`, { data: { topic } });
-  expect(reply.status()).toBe(204);
+/** A change that is `topic` for `member` (Asahi unless named). */
+async function hint(page: Page, topic: 'schedule' | 'mine' | 'allowance', member?: string) {
+  const reply = await page.request.post(`${PUBLIC}/__e2e/public/hint`, { data: { topic, member } });
+  expect(reply.status(), await reply.text()).toBe(204);
+}
+
+/** Ren: a chatbot pilot, so a chat answer moves his allowance (staff such as Asahi have none to move). */
+const REN = '100000000000001002';
+
+/** The page's stream is open (a hint sent while it connects reaches nobody). */
+async function streaming(page: Page) {
+  await expect.poll(async () => (await states(page)).some((state) => state === 1)).toBe(true);
 }
 
 /** Every GET the page makes to `path`, as it goes out. */
@@ -47,7 +58,8 @@ function reads(page: Page, path: string): string[] {
 }
 
 test('each hint re-reads only what it names', async ({ page }) => {
-  await signInPublic(page);
+  await countStreams(page);
+  await signInPublicAs(page, REN);
   // Account reads the allowance when it opens.
   const opened = page.waitForResponse((r) => r.url().endsWith('/api/public/me/allowance'));
   await page.goto(`${PUBLIC}/account?sw=off`);
@@ -55,16 +67,16 @@ test('each hint re-reads only what it names', async ({ page }) => {
   const allowance = reads(page, '/api/public/me/allowance');
   const week = reads(page, '/api/public/week');
   const requests = reads(page, '/api/public/requests/mine');
-  await expect.poll(() => page.evaluate(() => performance.getEntriesByType('resource').some((e) => e.name.includes('/api/public/events')))).toBe(true);
+  await streaming(page);
 
   const allowanceRead = page.waitForResponse((r) => r.url().endsWith('/api/public/me/allowance'));
-  await hint(page, 'allowance');
+  await hint(page, 'allowance', REN);
   await allowanceRead;
   expect(week).toEqual([]);
 
   const weekRead = page.waitForResponse((r) => r.url().endsWith('/api/public/week?week=next'));
   const requestsRead = page.waitForResponse((r) => r.url().endsWith('/api/public/requests/mine'));
-  await hint(page, 'mine');
+  await hint(page, 'mine', REN);
   await Promise.all([weekRead, requestsRead]);
   expect(allowance).toHaveLength(1);
   expect(requests).toHaveLength(1);
@@ -78,7 +90,7 @@ test('when the stream drops, the week goes back to its 30 s poll', async ({ page
   await page.goto(`${PUBLIC}/?sw=off`);
   await expect(page.locator('[data-run="r-limbo"]')).toHaveCount(1);
   // The stream is up: a hint re-reads the week at once.
-  await expect.poll(async () => (await states(page)).some((state) => state !== 2)).toBe(true);
+  await streaming(page);
   const week = reads(page, '/api/public/week');
   await hint(page, 'schedule');
   // Hints for one reader within 250 ms wake it once (on the page's clock).
@@ -90,10 +102,10 @@ test('when the stream drops, the week goes back to its 30 s poll', async ({ page
     .toBeGreaterThan(1);
   week.length = 0;
 
-  // The stream drops: the server refuses it from now on.
+  // The stream drops: the server refuses it from now on, then restarts (as after a
+  // module change), which ends every open stream; the reconnect is refused.
   await page.route(`${PUBLIC}/api/public/events`, (route) => route.fulfill({ status: 503, contentType: 'application/json', body: '{"error":"unavailable","message":"Try again later."}' }));
-  // A hint ends the held response, and the reconnect is refused.
-  await hint(page, 'allowance');
+  await setModules({});
   await expect.poll(async () => (await states(page)).every((state) => state === 2)).toBe(true);
   // Within the 30 s cadence (the stream's would be 60 s).
   await page.clock.runFor(31_000);

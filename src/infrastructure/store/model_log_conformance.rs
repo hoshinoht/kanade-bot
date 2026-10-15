@@ -50,20 +50,14 @@ async fn retention_prunes_old_logs_and_processed_messages<S: ModelLogStore>(stor
     }
     let mut old_chat = chat("c-old", just_before);
     old_chat.rounds = vec![round("kanata/old", &["old_tool"])];
-    store.record_chat(old_chat).await.expect("record");
-    store
-        .record_chat(chat("c-edge", cutoff))
-        .await
-        .expect("record");
+    put_chat(&store, old_chat).await;
+    put_chat(&store, chat("c-edge", cutoff)).await;
     for (id, at) in [
         ("m-old", just_before),
         ("m-pending", just_before),
         ("m-new", cutoff),
     ] {
-        store
-            .upsert_message(message(id, "900", at, "x"))
-            .await
-            .expect("message");
+        put_message(&store, message(id, "900", at, "x")).await;
     }
     store
         .mark_processed(&["m-old".into(), "m-new".into()], cutoff)
@@ -132,10 +126,7 @@ async fn reasoning_round_trips_with_independent_nulls_and_row_retention<S: Model
     let mut second = round("m", &[]);
     second.reasoning_tokens = Some(15);
     interaction.rounds = vec![first, second, round("m", &[])];
-    store
-        .record_chat(interaction.clone())
-        .await
-        .expect("record");
+    put_chat(&store, interaction.clone()).await;
     assert_eq!(
         store.load_chat(&interaction.id).await.expect("load"),
         Some(interaction.clone())
@@ -171,7 +162,7 @@ async fn reasoning_round_trips_with_independent_nulls_and_row_retention<S: Model
         assert_eq!(
             result.is_ok(),
             valid,
-            "reasoning counts have the same bound on both stores"
+            "reasoning counts follow the SQLite integer bound"
         );
         assert_eq!(
             store.load_extraction(&count_log.id).await.expect("load"),
@@ -186,7 +177,7 @@ async fn reasoning_round_trips_with_independent_nulls_and_row_retention<S: Model
         assert_eq!(
             result.is_ok(),
             valid,
-            "round counts have the same bound on both stores"
+            "round counts follow the SQLite integer bound"
         );
         assert_eq!(
             store.load_chat(&count_chat.id).await.expect("load"),
@@ -246,10 +237,7 @@ async fn correlation_ids_round_trip_and_refuse_malformed_ids<S: ModelLogStore>(s
         "kanade-chat-0000abcd-2-3".into(),
     ];
     interaction.rounds = vec![first, second, round("m", &[])];
-    store
-        .record_chat(interaction.clone())
-        .await
-        .expect("record");
+    put_chat(&store, interaction.clone()).await;
     assert_eq!(
         store.load_chat(&interaction.id).await.expect("load"),
         Some(interaction.clone())
@@ -380,23 +368,27 @@ fn ids<T>(items: &[T], id: impl Fn(&T) -> &str) -> Vec<String> {
     items.iter().map(|item| id(item).to_owned()).collect()
 }
 
+async fn put_chat<S: ModelLogStore>(store: &S, interaction: ChatInteraction) {
+    let recorded = store.record_chat(interaction).await;
+    recorded.expect("record chat");
+}
+
+async fn put_message<S: ModelLogStore>(store: &S, message: WatchedMessage) {
+    let upserted = store.upsert_message(message).await;
+    upserted.expect("message");
+}
+
 async fn read_marks_skip_messages_edited_since<S: ModelLogStore>(store: S) {
     let at = utc(20, 12, 0);
     for (id, text) in [("m-1", "Lotus 9pm?"), ("m-2", "Lotus ok")] {
-        store
-            .upsert_message(message(id, "900", at, text))
-            .await
-            .expect("insert");
+        put_message(&store, message(id, "900", at, text)).await;
     }
     let read = |id: &str, content: &str| ReadMessage {
         id: id.into(),
         content: content.into(),
     };
     // Edited while it was being read: the next read must see it.
-    store
-        .upsert_message(message("m-1", "900", at, "Lotus 10pm?"))
-        .await
-        .expect("edit");
+    put_message(&store, message("m-1", "900", at, "Lotus 10pm?")).await;
     let marked = store
         .mark_read(
             &[
@@ -428,10 +420,7 @@ async fn read_marks_skip_messages_edited_since<S: ModelLogStore>(store: S) {
 async fn exact_read_marks_are_all_or_nothing<S: ModelLogStore>(store: S) {
     let at = utc(20, 12, 0);
     for (id, text) in [("m-1", "Lotus 9pm?"), ("m-2", "Lotus ok")] {
-        store
-            .upsert_message(message(id, "900", at, text))
-            .await
-            .expect("insert");
+        put_message(&store, message(id, "900", at, text)).await;
     }
     let read = |id: &str, content: &str| ReadMessage {
         id: id.into(),
@@ -444,10 +433,7 @@ async fn exact_read_marks_are_all_or_nothing<S: ModelLogStore>(store: S) {
             .expect("pending");
         ids(&rows, |m| &m.id)
     };
-    store
-        .upsert_message(message("m-1", "900", at, "Lotus 10pm?"))
-        .await
-        .expect("edit");
+    put_message(&store, message("m-1", "900", at, "Lotus 10pm?")).await;
     // One stale version: nothing is marked, not even the unchanged row.
     assert!(
         !store
@@ -504,18 +490,9 @@ async fn messages_cache_edits_and_windows<S: ModelLogStore>(store: S) {
             .expect("insert"),
         MessageUpsert::Inserted
     );
-    store
-        .upsert_message(message("m-2", "900", utc(20, 12, 5), "ok"))
-        .await
-        .expect("insert");
-    store
-        .upsert_message(message("m-3", "901", at, "elsewhere"))
-        .await
-        .expect("insert");
-    store
-        .upsert_message(message("m-0", "900", utc(19, 12, 0), "too old"))
-        .await
-        .expect("insert");
+    put_message(&store, message("m-2", "900", utc(20, 12, 5), "ok")).await;
+    put_message(&store, message("m-3", "901", at, "elsewhere")).await;
+    put_message(&store, message("m-0", "900", utc(19, 12, 0), "too old")).await;
     assert_eq!(
         store
             .mark_processed(
@@ -812,10 +789,7 @@ async fn chat_logs_round_trip_with_rounds<S: ModelLogStore>(store: S) {
     interaction.rounds[0].route = Some("homelab".into());
     interaction.rounds[1].route = Some("external_masked".into());
     interaction.rounds[1].clean = true;
-    store
-        .record_chat(interaction.clone())
-        .await
-        .expect("record");
+    put_chat(&store, interaction.clone()).await;
     assert_eq!(
         store.load_chat("c-1").await.expect("load"),
         Some(interaction.clone()),
@@ -915,10 +889,7 @@ async fn token_usage_round_trips_and_pairs_are_whole<S: ModelLogStore>(store: S)
             ..round("kanata/chat", &[])
         },
     ];
-    store
-        .record_chat(interaction.clone())
-        .await
-        .expect("record");
+    put_chat(&store, interaction.clone()).await;
     assert_eq!(
         store.load_chat("c-usage").await.expect("load"),
         Some(interaction.clone()),
@@ -958,10 +929,7 @@ async fn token_usage_round_trips_and_pairs_are_whole<S: ModelLogStore>(store: S)
     let mut totals = chat("c-totals", utc(20, 14, 0));
     totals.prompt_tokens = Some(1000);
     totals.completion_tokens = None;
-    store
-        .record_chat(totals.clone())
-        .await
-        .expect("half interaction totals are accepted");
+    put_chat(&store, totals.clone()).await;
     assert_eq!(
         store.load_chat("c-totals").await.expect("load"),
         Some(totals)
@@ -1009,10 +977,7 @@ async fn masked_chat_views_round_trip_and_prune<S: ModelLogStore>(store: S) {
         .record_masked_chat(chat("c-masked", old), masked())
         .await
         .expect("record");
-    store
-        .record_chat(chat("c-plain", cutoff))
-        .await
-        .expect("record");
+    put_chat(&store, chat("c-plain", cutoff)).await;
     assert_eq!(
         store.load_masked_chat("c-masked").await.expect("load"),
         Some(masked()),
@@ -1073,11 +1038,8 @@ async fn profanity_is_a_chat_outcome_with_its_guardrail_detail<S: ModelLogStore>
     hit.guardrail =
         json!({"profanity": {"side": "question", "word": "frick", "sent": "Language, please!"}});
     hit.rounds = Vec::new();
-    store.record_chat(hit.clone()).await.expect("record");
-    store
-        .record_chat(chat("c-fine", utc(22, 9, 0)))
-        .await
-        .expect("record");
+    put_chat(&store, hit.clone()).await;
+    put_chat(&store, chat("c-fine", utc(22, 9, 0))).await;
     assert_eq!(
         store.load_chat("c-rude").await.expect("load"),
         Some(hit),
@@ -1121,7 +1083,7 @@ async fn chat_filters_match_rounds_flags_and_latency<S: ModelLogStore>(store: S)
     d.rounds = Vec::new();
     d.latency_ms = Some(10);
     for interaction in [a, b, c, d] {
-        store.record_chat(interaction).await.expect("record");
+        put_chat(&store, interaction).await;
     }
     let list = |filter: ChatFilter| {
         let store = &store;

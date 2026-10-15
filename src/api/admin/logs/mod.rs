@@ -20,9 +20,12 @@ use crate::{
     api::{
         dto::logs::Names,
         listeners::Site,
-        state::{ApiState, ChannelEntry},
+        state::{ApiState, ChannelEntry, ReadFuture},
     },
-    domain::members::Roster,
+    domain::{
+        members::Roster,
+        model_log::{LogCursor, LogPage},
+    },
 };
 
 pub fn routes() -> Router<Arc<Site>> {
@@ -42,6 +45,22 @@ pub fn routes() -> Router<Arc<Site>> {
 }
 
 type Reply = Result<axum::response::Response, Refusal>;
+
+/// Every row from `cursor` on, one store page after another.
+async fn every<'a, T>(
+    mut cursor: Option<LogCursor>,
+    page: impl Fn(Option<LogCursor>) -> ReadFuture<'a, LogPage<T>>,
+) -> Result<Vec<T>, Refusal> {
+    let mut rows = Vec::new();
+    loop {
+        let page = page(cursor).await.map_err(Refusal::unavailable)?;
+        rows.extend(page.items);
+        cursor = page.next;
+        if cursor.is_none() {
+            return Ok(rows);
+        }
+    }
+}
 
 /// Members and channels by id, for names.
 struct Directory {

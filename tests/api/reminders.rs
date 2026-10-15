@@ -14,7 +14,6 @@ use kanade::{
     domain::{
         attendance::AttendancePolicy,
         history::ChangeHistory,
-        members::{MemberStore, Roster},
         notify::{
             Claim, DedupeKey, DeliveryJournal, DeliverySettings, DeliveryTarget, DispatchInput,
             NotificationIntent, Receipt, plan_dispatch,
@@ -27,23 +26,15 @@ use kanade::{
 use serde_json::Value;
 
 use crate::{
-    reads::{Reads, commit_as},
+    reads::{Reads, commit_as, roster},
     schemas::assert_valid,
-    support::{ADMIN_HOST, Fixture, PUBLIC_HOST, find, public, request},
+    support::{ADMIN_HOST, Fixture, PUBLIC_HOST, columns, find, public, request, strs},
 };
 
 const SCHEMA: &str = "reminders.json#/$defs/ReminderPreview";
 
 fn preview_path(id: &str) -> String {
     format!("/api/admin/reminders/{id}/preview")
-}
-
-async fn roster(reads: &Reads) -> Roster {
-    let mut roster = Roster::new();
-    for profile in reads.store.list_members().await.unwrap() {
-        roster.upsert(profile.member);
-    }
-    roster
 }
 
 /// What the tick posts for `reminder_id` when it falls due at `at`.
@@ -60,7 +51,7 @@ async fn tick_post(
             row.sent_at = None;
         }
     }
-    let members = roster(reads).await;
+    let members = roster(&reads.store).await;
     let channels: BTreeSet<String> = ["kalos-four".to_owned(), "star".to_owned()].into();
     let settings = DeliverySettings {
         post_channel_id: None,
@@ -106,23 +97,15 @@ fn assert_same(card: &Value, message: &kanade::bot::transport::OutgoingMessage) 
         "colour bar"
     );
     assert_eq!(card["description"], serde_json::json!(embed.description));
-    let fields: Vec<(String, String)> = embed
+    let fields: Vec<_> = embed
         .fields
         .iter()
-        .map(|field| (field.name.clone(), field.value.clone()))
+        .map(|field| [&field.name, &field.value])
         .collect();
-    let shown: Vec<(String, String)> = card["fields"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|field| {
-            (
-                field["name"].as_str().unwrap().to_owned(),
-                field["value"].as_str().unwrap().to_owned(),
-            )
-        })
-        .collect();
-    assert_eq!(shown, fields);
+    assert_eq!(
+        columns(&card["fields"], &["name", "value"]),
+        serde_json::json!(fields)
+    );
     assert_eq!(
         card["footer"],
         serde_json::json!(embed.footer.as_ref().map(|f| f.text.clone()))
@@ -261,13 +244,8 @@ async fn post_morning(
     intent
 }
 
-fn field_names(card: &Value) -> Vec<String> {
-    card["fields"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|field| field["name"].as_str().unwrap().to_owned())
-        .collect()
+fn field_names(card: &Value) -> Vec<&str> {
+    strs(&card["fields"], "name")
 }
 
 #[tokio::test]

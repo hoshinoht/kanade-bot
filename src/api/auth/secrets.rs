@@ -118,7 +118,7 @@ pub fn member_from_settings(
 mod tests {
     use super::*;
     use crate::api::auth::staff::{GateFuture, StaffCheck};
-    use crate::infrastructure::store::MemoryScheduleStore;
+    use crate::infrastructure::store::SqliteStore;
 
     struct Nobody;
 
@@ -128,7 +128,7 @@ mod tests {
         }
     }
 
-    fn build(token: &str) -> Result<AdminAuth, Error> {
+    async fn build(token: &str) -> Result<AdminAuth, Error> {
         let path = std::env::temp_dir().join(format!("kanade-token-{}", uuid::Uuid::new_v4()));
         std::fs::write(&path, token).unwrap();
         let settings = AdminAuthSettings {
@@ -137,23 +137,23 @@ mod tests {
         };
         let result = from_settings(
             &settings,
-            Arc::new(MemoryScheduleStore::new()),
+            Arc::new(SqliteStore::open_temp().await),
             Arc::new(Nobody),
         );
         std::fs::remove_file(path).unwrap();
         result
     }
 
-    #[test]
-    fn token_files_are_trimmed_bounded_and_never_quoted() {
+    #[tokio::test]
+    async fn token_files_are_trimmed_bounded_and_never_quoted() {
         let token = "x".repeat(40);
-        let auth = build(&format!("{token}\n")).unwrap();
+        let auth = build(&format!("{token}\n")).await.unwrap();
         assert!(auth.breakglass_matches(token.as_bytes()).is_some());
         assert!(!format!("{auth:?}").contains(&token));
 
-        let error = build("short-secret-value").unwrap_err().to_string();
+        let error = build("short-secret-value").await.unwrap_err().to_string();
         assert_eq!(error, "KANADE_ADMIN_TOKEN_FILE must hold at least 32 bytes");
-        let error = build("").unwrap_err().to_string();
+        let error = build("").await.unwrap_err().to_string();
         assert!(!error.contains("short"), "{error}");
 
         let missing = AdminAuthSettings {
@@ -162,7 +162,7 @@ mod tests {
         };
         let error = from_settings(
             &missing,
-            Arc::new(MemoryScheduleStore::new()),
+            Arc::new(SqliteStore::open_temp().await),
             Arc::new(Nobody),
         )
         .unwrap_err()

@@ -7,7 +7,7 @@ use std::{collections::BTreeMap, sync::Arc};
 
 use axum::{
     Json,
-    extract::{Path as UrlPath, State, rejection::JsonRejection},
+    extract::{Path as UrlPath, State},
     http::HeaderMap,
     response::{IntoResponse, Response},
 };
@@ -16,7 +16,7 @@ use serde::Deserialize;
 use serde_json::json;
 
 use super::{
-    super::write::{Refusal, bad_body, origin, state, strict_time, write_context},
+    super::write::{Body, Refusal, origin, state, strict_time, write_context},
     refusal::{
         self, discord_session_required, edit_not_applicable, not_found, stale, unprocessable,
     },
@@ -236,9 +236,8 @@ pub async fn approve(
     session: AdminSession,
     headers: HeaderMap,
     UrlPath(id): UrlPath<String>,
-    body: Result<Json<ApproveBody>, JsonRejection>,
+    Body(body): Body<ApproveBody>,
 ) -> Reply {
-    let Json(body) = body.map_err(bad_body)?;
     let state = state(&site)?;
     origin(&session, &headers)?;
     if body.force == Some(true) {
@@ -323,9 +322,8 @@ pub async fn reject(
     session: AdminSession,
     headers: HeaderMap,
     UrlPath(id): UrlPath<String>,
-    body: Result<Json<RejectBody>, JsonRejection>,
+    Body(body): Body<RejectBody>,
 ) -> Reply {
-    let Json(body) = body.map_err(bad_body)?;
     let state = state(&site)?;
     origin(&session, &headers)?;
     let loaded = load(state, &id).await?;

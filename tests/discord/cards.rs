@@ -1,4 +1,4 @@
-//! Proposal cards end to end on the fake transport and the memory store:
+//! Proposal cards end to end on the fake transport and a temp SQLite store:
 //! journalled posting (claim → send → bind; ambiguous sends held, never
 //! replayed; refused sends reposted with the next card), ✅/❌ through the
 //! scheduler's approval rules, card refreshes and chat answers; the
@@ -45,7 +45,7 @@ use kanade::extract::pipeline::{
     BacklogDrop, Card, CardEntry, ChatAnswer, Outbox, PostResult, Redirected, SelfServiceTip,
 };
 use kanade::extract::redirect::RedirectLink;
-use kanade::infrastructure::store::MemoryScheduleStore;
+use kanade::infrastructure::store::SqliteStore;
 use twilight_model::application::command::Command;
 use twilight_model::id::{Id, marker::GuildMarker};
 
@@ -129,10 +129,10 @@ impl Authority for Staff {
     }
 }
 
-type Desk = CardDesk<MemoryScheduleStore, FakeDiscord, Ids, AlertRecorder>;
+type Desk = CardDesk<SqliteStore, FakeDiscord, Ids, AlertRecorder>;
 
 struct World {
-    store: Arc<MemoryScheduleStore>,
+    store: Arc<SqliteStore>,
     discord: Arc<FakeDiscord>,
     alerts: Arc<AlertRecorder>,
     ids: Ids,
@@ -141,12 +141,12 @@ struct World {
 }
 
 fn desk_with<T: DiscordTransport>(
-    store: &Arc<MemoryScheduleStore>,
+    store: &Arc<SqliteStore>,
     transport: Arc<T>,
     alerts: &Arc<AlertRecorder>,
     ids: &Ids,
     at: DateTime<Utc>,
-) -> CardDesk<MemoryScheduleStore, T, Ids, AlertRecorder> {
+) -> CardDesk<SqliteStore, T, Ids, AlertRecorder> {
     CardDesk::new(
         DeskDeps {
             store: store.clone(),
@@ -168,7 +168,7 @@ fn desk_with<T: DiscordTransport>(
 
 impl World {
     async fn new() -> Self {
-        let store = Arc::new(MemoryScheduleStore::new());
+        let store = Arc::new(SqliteStore::open_temp().await);
         let discord = Arc::new(FakeDiscord::new());
         let alerts = Arc::new(AlertRecorder::new());
         let ids = Ids::default();
@@ -282,7 +282,11 @@ impl World {
     /// Proposes a move to `to`, posts its card and returns the proposal and
     /// card message ids.
     async fn posted(&self, to: DateTime<Utc>) -> (String, String) {
-        let entry = self.propose(to).await;
+        self.post(self.propose(to).await).await
+    }
+
+    /// Posts `entry`'s card; returns the proposal and card message ids.
+    async fn post(&self, entry: CardEntry) -> (String, String) {
         let id = entry.proposal_id.clone();
         self.desk.post_card(&one(entry)).await;
         let message = self.message_of(&id).await.expect("posted");
@@ -343,9 +347,9 @@ impl World {
 }
 
 fn service<'a>(
-    store: &'a Arc<MemoryScheduleStore>,
+    store: &'a Arc<SqliteStore>,
     ids: &Ids,
-) -> SchedulerService<StoreRef<'a, MemoryScheduleStore>, Ids, FixedClock> {
+) -> SchedulerService<StoreRef<'a, SqliteStore>, Ids, FixedClock> {
     SchedulerService::new(StoreRef(&**store), ids.clone(), FixedClock(now()))
 }
 
@@ -422,13 +426,9 @@ async fn a_card_is_journalled_bound_and_mentions_nobody() {
 #[tokio::test]
 async fn an_ambiguous_card_is_held_and_never_replayed() {
     let world = World::new().await;
-    world.discord.script(
-        Op::Create,
-        Step::Ambiguous {
-            kind: AmbiguousKind::Timeout,
-            applied: false,
-        },
-    );
+    world
+        .discord
+        .script(Op::Create, crate::support::timed_out(false));
     let first = world.propose(local(9, 2, 21, 30)).await;
     assert_eq!(world.desk.post_card(&one(first)).await, PostResult::Posted);
     let second = world.propose(local(9, 2, 22, 30)).await;
@@ -561,12 +561,13 @@ async fn an_admin_rejects_and_the_card_says_so() {
 #[tokio::test]
 async fn a_successfully_rejected_chat_card_hands_only_stored_facts_to_chat() {
     let world = World::new().await;
-    let entry = world
-        .propose_from(local(9, 2, 21, 30), ProposalSource::Chat)
+    let (id, message) = world
+        .post(
+            world
+                .propose_from(local(9, 2, 21, 30), ProposalSource::Chat)
+                .await,
+        )
         .await;
-    let id = entry.proposal_id.clone();
-    world.desk.post_card(&one(entry)).await;
-    let message = world.message_of(&id).await.expect("posted");
     assert!(matches!(
         world.answer(&message, MY, RsvpAnswer::No).await,
         CardReaction::Rejected { .. }
@@ -586,12 +587,13 @@ async fn a_successfully_rejected_chat_card_hands_only_stored_facts_to_chat() {
 async fn an_approval_that_no_longer_applies_keeps_v4_wording() {
     let world = World::new().await;
     // A carded answer for Alvin (the chatbot cards these), checked again at ✅.
-    let entry = world
-        .propose_rsvp(ALVIN, RsvpState::Yes, ProposalSource::Extraction, "x-2")
+    let (id, message) = world
+        .post(
+            world
+                .propose_rsvp(ALVIN, RsvpState::Yes, ProposalSource::Extraction, "x-2")
+                .await,
+        )
         .await;
-    let id = entry.proposal_id.clone();
-    world.desk.post_card(&one(entry)).await;
-    let message = world.message_of(&id).await.expect("posted");
     service(&world.store, &world.ids)
         .as_origin(Origin::for_tests())
         .swap_participants(&world.run, &[ALVIN.into()], &[], false, &Roster)
@@ -681,19 +683,15 @@ async fn chat_answers_count_for_participants_only() {
 #[tokio::test]
 async fn proposal_decline_is_not_a_candidate_but_extraction_decline_is() {
     let world = World::new().await;
-    let entry = CardEntry {
-        summary: "I can't make it".into(),
-        evidence_message_ids: vec!["101".into()],
-        ..world
-            .propose_rsvp(MY, RsvpState::No, ProposalSource::Chat, "chat-no-1")
-            .await
-    };
-    let proposal_id = entry.proposal_id.clone();
-    world.desk.post_card(&one(entry)).await;
-    let message = world
-        .message_of(&proposal_id)
-        .await
-        .expect("posted proposal");
+    let (_, message) = world
+        .post(CardEntry {
+            summary: "I can't make it".into(),
+            evidence_message_ids: vec!["101".into()],
+            ..world
+                .propose_rsvp(MY, RsvpState::No, ProposalSource::Chat, "chat-no-1")
+                .await
+        })
+        .await;
     assert!(matches!(
         world.answer(&message, MY, RsvpAnswer::Yes).await,
         CardReaction::Approved { .. }
@@ -794,13 +792,9 @@ async fn the_outbox_posts_links_unpinged_and_alerts_backlog_drops() {
 #[tokio::test]
 async fn a_released_card_posts_even_beside_a_held_one() {
     let world = World::new().await;
-    world.discord.script(
-        Op::Create,
-        Step::Ambiguous {
-            kind: AmbiguousKind::Timeout,
-            applied: false,
-        },
-    );
+    world
+        .discord
+        .script(Op::Create, crate::support::timed_out(false));
     let held = world.propose(local(9, 2, 21, 30)).await;
     let held_id = held.proposal_id.clone();
     world.desk.post_card(&one(held)).await;
@@ -966,7 +960,7 @@ async fn the_portal_refresh_port_re_renders_a_committed_card_on_fake_discord() {
 /// recovery racing the send), so the journal write after the send fails.
 struct LeaseLost {
     fake: Arc<FakeDiscord>,
-    store: Arc<MemoryScheduleStore>,
+    store: Arc<SqliteStore>,
 }
 
 impl DiscordTransport for LeaseLost {

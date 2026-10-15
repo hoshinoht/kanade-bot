@@ -9,6 +9,7 @@ use super::{
     weekday_name,
 };
 use crate::domain::{
+    completion::RunEnds,
     ids::short_id,
     schedule::{FixedRun, ScheduleSnapshot},
 };
@@ -53,11 +54,12 @@ pub fn rows(
     ctx: &Context<'_>,
     snapshot: &ScheduleSnapshot,
     weeks: [DateTime<Utc>; 2],
+    ends: &RunEnds,
 ) -> Vec<FixedRow> {
     snapshot
         .fixed_runs
         .iter()
-        .map(|fixed| row(ctx, snapshot, weeks, fixed))
+        .map(|fixed| row(ctx, snapshot, weeks, ends, fixed))
         .collect()
 }
 
@@ -65,6 +67,7 @@ fn row(
     ctx: &Context<'_>,
     snapshot: &ScheduleSnapshot,
     weeks: [DateTime<Utc>; 2],
+    ends: &RunEnds,
     fixed: &FixedRun,
 ) -> FixedRow {
     let channel_id = fixed.channel_id.clone().unwrap_or_default();
@@ -87,7 +90,9 @@ fn row(
                 day: day_index(ctx, start_date, run.datetime),
                 time: run_time(ctx, run),
                 status: run.status.as_str(),
-                amended: is_amended(ctx, run, Some(fixed)),
+                // An ended run is frozen: a timing edit leaves it alone
+                // (`preview_fixed_edit`), so the editor must not ask about it.
+                amended: is_amended(ctx, run, Some(fixed)) && !ends.frozen(run, ctx.now),
             })
         })
         .collect();

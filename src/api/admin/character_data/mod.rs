@@ -19,7 +19,7 @@ use std::sync::Arc;
 
 use axum::{
     Json, Router,
-    extract::{FromRequestParts, Path as UrlPath, State, rejection::JsonRejection},
+    extract::{FromRequestParts, Path as UrlPath, State},
     http::{HeaderMap, StatusCode, request::Parts},
     response::{IntoResponse, Response},
     routing::{get, post},
@@ -29,7 +29,7 @@ use serde_json::{Value, json};
 
 use super::{
     replay::recall,
-    write::{Refusal, bad_body, state},
+    write::{Body, Refusal, state},
 };
 use crate::{
     api::{
@@ -125,9 +125,8 @@ async fn request(
     session: AdminSession,
     UrlPath(id): UrlPath<String>,
     headers: HeaderMap,
-    body: Result<Json<LinkRequest>, JsonRejection>,
+    Body(body): Body<LinkRequest>,
 ) -> Reply {
-    let Json(body) = body.map_err(bad_body)?;
     let state = state(&site)?;
     let version = body.version.ok_or_else(|| {
         Refusal::unprocessable(

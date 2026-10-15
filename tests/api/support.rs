@@ -236,6 +236,25 @@ pub fn strs<'a>(list: &'a serde_json::Value, field: &str) -> Vec<&'a str> {
         .collect()
 }
 
+/// `entry`'s `names` fields (`a/b` reaches into objects and arrays), as one
+/// JSON array; an absent field is `null`.
+pub fn fields(entry: &serde_json::Value, names: &[&str]) -> serde_json::Value {
+    let field = |name: &&str| entry.pointer(&format!("/{name}")).cloned();
+    names
+        .iter()
+        .map(|name| field(name).unwrap_or_default())
+        .collect()
+}
+
+/// [`fields`] of each entry of `list`, in order.
+#[track_caller]
+pub fn columns(list: &serde_json::Value, names: &[&str]) -> serde_json::Value {
+    items(list)
+        .iter()
+        .map(|entry| fields(entry, names))
+        .collect()
+}
+
 #[track_caller]
 pub fn items(list: &serde_json::Value) -> &Vec<serde_json::Value> {
     list.as_array()

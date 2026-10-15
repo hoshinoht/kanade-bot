@@ -9,7 +9,7 @@ use super::support::*;
 /// A card-outbox Yes for `MEMBER`, then a stale ❌ on the card that replay must
 /// not apply. `fail_second_write` fails the outbox's second commit.
 async fn assert_card_outbox_answer(fail_second_write: bool) {
-    let world = World::new();
+    let world = World::new().await;
     let (run, message) = world.carded_run().await;
     let head = world.store.history_head().await.unwrap().seq;
     if fail_second_write {
@@ -52,10 +52,12 @@ async fn assert_guarded_yes_kept(world: &World, run: &str) {
     assert_eq!(world.snapshot(run).await.rsvps[0].state, RsvpState::Yes);
 }
 
+/// Without the bot's own ✅ (never added, or gone with a moderator's
+/// remove-all, row 14) a live answer cannot be cleared.
 #[tokio::test]
 async fn row_3_guard_g_c_requires_the_bot_reaction_for_removal() {
     for own in [false, true] {
-        let world = World::new();
+        let world = World::new().await;
         let (run, message) = world.carded_run().await;
         world.member_reacts_yes(&run).await;
         if own {
@@ -72,7 +74,7 @@ async fn row_3_guard_g_c_requires_the_bot_reaction_for_removal() {
 
 #[tokio::test]
 async fn row_8a_portal_answer_after_reaction_wins_over_stale_card() {
-    let world = World::new();
+    let world = World::new().await;
     let (run, message) = world.carded_run().await;
     world.member_reacts_yes(&run).await;
     world.portal_answer(&run, Some(RsvpState::No)).await;
@@ -83,7 +85,7 @@ async fn row_8a_portal_answer_after_reaction_wins_over_stale_card() {
 
 #[tokio::test]
 async fn row_8b_slash_rsvp_cannot_be_removed_by_card_absence() {
-    let world = World::new();
+    let world = World::new().await;
     let (run, message) = world.carded_run().await;
     world.member_reacts_yes(&run).await;
     world
@@ -103,18 +105,17 @@ async fn row_8b_slash_rsvp_cannot_be_removed_by_card_absence() {
 }
 
 #[tokio::test]
-async fn row_8c_card_outbox_both_writes_succeed_and_source_chat_wins() {
-    assert_card_outbox_answer(false).await;
-}
-
-#[tokio::test]
-async fn row_8d_card_outbox_second_write_failure_keeps_extract_request_local() {
-    assert_card_outbox_answer(true).await;
+async fn rows_8c_8d_card_outbox_answers_keep_their_source_and_extract_request() {
+    // 8c: both writes succeed and source chat wins; 8d: the second write
+    // fails and the extract request stays local.
+    for fail_second_write in [false, true] {
+        assert_card_outbox_answer(fail_second_write).await;
+    }
 }
 
 #[tokio::test]
 async fn guard_g_a_nonreaction_answer_is_not_removed_when_remote_is_absent() {
-    let world = World::new();
+    let world = World::new().await;
     let (run, message) = world.carded_run().await;
     world.portal_answer(&run, Some(RsvpState::No)).await;
     world.react(message.get(), "❌", &[SELF]);
@@ -124,53 +125,35 @@ async fn guard_g_a_nonreaction_answer_is_not_removed_when_remote_is_absent() {
     assert_eq!(answer.source, RsvpSource::Chat);
 }
 
+/// Guard G-b: an unreadable mapped card prevents removal; row 22: a card
+/// mapping cleared by `/debug clear_test` is still read for that safety.
 #[tokio::test]
-async fn guard_g_b_unreadable_mapped_card_prevents_removal() {
-    let world = World::new();
-    let (run, fresh) = world.carded_run().await;
-    world.card(&run, 401).await;
-    world.member_reacts_yes(&run).await;
-    world.react(fresh.get(), "✅", &[SELF]);
-    world
-        .fake
-        .delete_message(Id::new(CHANNEL), Id::new(401))
-        .await;
-    assert_guarded_yes_kept(&world, &run).await;
-}
-
-#[tokio::test]
-async fn row_22_cleared_card_mapping_is_still_read_for_removal_safety() {
+async fn guard_g_b_unreadable_mapped_card_prevents_removal_even_once_cleared() {
     use kanade::bot::delivery::DebugCardStore;
 
-    let world = World::new();
-    let (run, fresh) = world.carded_run().await;
-    world.card(&run, 401).await;
-    world.store.clear_debug_card("401", now()).await.unwrap();
-    world.member_reacts_yes(&run).await;
-    world.react(fresh.get(), "✅", &[SELF]);
-    world
-        .fake
-        .delete_message(Id::new(CHANNEL), Id::new(401))
-        .await;
-    assert_guarded_yes_kept(&world, &run).await;
+    for cleared in [false, true] {
+        let world = World::new().await;
+        let (run, fresh) = world.carded_run().await;
+        world.card(&run, 401).await;
+        if cleared {
+            world.store.clear_debug_card("401", now()).await.unwrap();
+        }
+        world.member_reacts_yes(&run).await;
+        world.react(fresh.get(), "✅", &[SELF]);
+        world
+            .fake
+            .delete_message(Id::new(CHANNEL), Id::new(401))
+            .await;
+        assert_guarded_yes_kept(&world, &run).await;
+    }
 }
 
 #[tokio::test]
 async fn row_22_unbound_reminder_mapping_is_still_guarded() {
-    let world = World::new();
+    let world = World::new().await;
     let (run, fresh) = world.carded_run().await;
     world.unbound_card_mapping(&run, 401).await;
     world.member_reacts_yes(&run).await;
     world.react(fresh.get(), "✅", &[SELF]);
-    assert_guarded_yes_kept(&world, &run).await;
-}
-
-#[tokio::test]
-async fn row_14_moderator_remove_all_without_bot_reaction_cannot_clear() {
-    let world = World::new();
-    let (run, message) = world.carded_run().await;
-    world.member_reacts_yes(&run).await;
-    world.react(message.get(), "✅", &[SELF]);
-    world.react(message.get(), "✅", &[]);
     assert_guarded_yes_kept(&world, &run).await;
 }

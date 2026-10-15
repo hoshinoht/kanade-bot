@@ -1,11 +1,15 @@
 import type { Locator } from '@playwright/test';
-import { expect, go, test } from './support';
+import { ADMIN, expect, go, test } from './support';
 
 // Member and admin portraits (`/api/admin/members/{id}/avatar`,
-// `/api/admin/me/avatar`): the mock serves generated stand-in art for most
-// members and the server's monogram for 1005, 1009 and 1014. Each portrait
-// is a same-origin image under the strict CSP; the letter stays only when an
-// image cannot load.
+// `/api/admin/me/avatar`): no seeded member has a Discord avatar, so each
+// portrait is the server's monogram, a same-origin image under the strict
+// CSP; the letter stays only when an image cannot load.
+
+const ASAHI = '100000000000001001';
+const MIKA = '100000000000001003';
+const TSUBAME = '100000000000001005';
+const REN = '100000000000001002';
 
 /** The portrait's image has loaded (decoded, non-zero size). */
 async function loaded(avatar: Locator, src: RegExp) {
@@ -18,21 +22,20 @@ async function loaded(avatar: Locator, src: RegExp) {
 test('members: rows and the sheet show each member’s portrait', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
   await go(page, '/members');
-  const asahi = page.locator('.memberlist__row[data-member="1001"]');
-  await loaded(asahi.locator('.memberlist__av'), /\/api\/admin\/members\/1001\/avatar$/);
-  // A member without an avatar still gets an image: the server's monogram.
-  await loaded(page.locator('.memberlist__row[data-member="1005"] .memberlist__av'), /\/members\/1005\/avatar$/);
+  const asahi = page.locator(`.memberlist__row[data-member="${ASAHI}"]`);
+  await loaded(asahi.locator('.memberlist__av'), new RegExp(`/api/admin/members/${ASAHI}/avatar$`));
+  await loaded(page.locator(`.memberlist__row[data-member="${TSUBAME}"] .memberlist__av`), new RegExp(`/members/${TSUBAME}/avatar$`));
   await asahi.click();
   const pane = page.getByRole('complementary', { name: 'Member details' });
-  await loaded(pane.locator('.membersheet__avatar'), /\/members\/1001\/avatar$/);
+  await loaded(pane.locator('.membersheet__avatar'), new RegExp(`/members/${ASAHI}/avatar$`));
 });
 
 test('members: on a phone the sheet shows the portrait beside the Discord account', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await go(page, '/members');
-  await page.locator('.memberlist__row[data-member="1003"]').click();
+  await page.locator(`.memberlist__row[data-member="${MIKA}"]`).click();
   const sheet = page.getByRole('dialog');
-  await loaded(sheet.locator('.membersheet__account .membersheet__avatar'), /\/members\/1003\/avatar$/);
+  await loaded(sheet.locator('.membersheet__account .membersheet__avatar'), new RegExp(`/members/${MIKA}/avatar$`));
 });
 
 test('inbox: thread messages show their authors’ portraits', async ({ page }) => {
@@ -62,18 +65,22 @@ test('account: a portrait that cannot load falls back to the initial', async ({ 
 });
 
 test('history: a cleared Limits window is a view-only Limits row with the window as it was', async ({ page }) => {
+  // Two answers in Ren's chat window, as the chatbot would spend them.
+  expect((await page.request.post(`${ADMIN}/__e2e/chat-allowance`, { data: { member: REN, answers: 2 } })).status()).toBe(204);
   await page.setViewportSize({ width: 1280, height: 800 });
   await go(page, '/limits');
   await page.getByRole('tab', { name: /Allowances/ }).click();
-  const reset = page.getByRole('table', { name: 'Chatbot allowances' }).getByRole('button', { name: /^Reset .*'s window$/ }).first();
+  const reset = page.getByRole('table', { name: 'Chatbot allowances' }).getByRole('button', { name: /^Reset .*'s window$/ });
+  await expect(reset).toHaveCount(1);
   const name = (await reset.getAttribute('aria-label'))!.replace(/^Reset (.*)'s window$/, '$1');
+  expect(name).toBe('Ren');
   await reset.click();
   await expect(page.getByRole('group', { name: 'Notification' }).filter({ hasText: `${name}'s window is reset.` })).toBeVisible();
 
   await go(page, '/history');
-  const row = page.locator('.history-row--config');
+  // The seed's own Config rows (characters) are there too: pick the Limits one.
+  const row = page.locator('.history-row--config').filter({ has: page.locator('.chip', { hasText: 'Limits' }) });
   await expect(row).toHaveCount(1);
-  await expect(row.locator('.chip', { hasText: 'Limits' })).toBeVisible();
   await expect(row).toContainText(`Limits · cleared ${name}'s chat window`);
   await row.click();
   const pane = page.getByRole('complementary', { name: 'Change details' });

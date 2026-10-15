@@ -215,9 +215,11 @@
     else error = refused(result.code, result.message);
   }
 
-  // An edited approval of a request the member changed meanwhile is refused (409 `stale`;
-  // user decision: no keep-my-edits merge): the editor closes with its edits cleared, the
+  // An edited approval of a request changed meanwhile is refused (409 `stale`; user
+  // decision: no keep-my-edits merge): the editor closes with its edits cleared, the
   // request reloads read-only at its new version, flagged, and a toast offers Edit again.
+  // The toast names no one: an open request's version moves on another admin's edit
+  // (members withdraw and resubmit), and the list does not say who made it.
   let refusal = $state(0);
   let editAgain = $state(0);
   let changed = $state<Record<string, { version: number; asked: Record<string, string> }>>({});
@@ -230,12 +232,11 @@
     await inbox.load();
     const now = inbox.data?.find((item) => item.id === p.id);
     changed = { ...changed, [p.id]: was };
-    const who = p.self_service?.member.name ?? 'The member';
     if (refusalToast !== null) toaster.dismiss(refusalToast);
     refusalToast = toaster.show({
       message: now
-        ? `Couldn’t approve your edit. ${who} changed this request (now version ${now.version}), so your edits were cleared. Start over from the new version.`
-        : `Couldn’t approve your edit: ${who} changed or withdrew this request.`,
+        ? `Couldn’t approve your edit. This request was changed meanwhile (now version ${now.version}), so your edits were cleared. Start over from the new version.`
+        : 'Couldn’t approve your edit: this request was changed or closed meanwhile.',
       tone: 'error',
       timeoutMs: null,
       className: 'inbox-edit-toast',

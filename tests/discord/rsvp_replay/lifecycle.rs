@@ -2,50 +2,26 @@ use kanade::domain::history::{Actor, ChangeHistory, Origin, Surface};
 use kanade::domain::notify::DeclineNoticeStore;
 use kanade::domain::schedule::RsvpState;
 use kanade::domain::scheduler::DeclineNoticeContext;
-use twilight_model::id::Id;
 
 use super::support::*;
 
 #[tokio::test]
 async fn row_8e_portal_clear_stays_cleared_and_replay_is_idempotent() {
-    let world = World::new();
+    let world = World::new().await;
     let (run, message) = world.carded_run().await;
     world.member_reacts_yes(&run).await;
     world.portal_answer(&run, None).await;
     world.react(message.get(), "✅", &[MEMBER]);
     let mut replay = world.replay();
     for _ in 0..2 {
-        assert_eq!(
-            replay.replay(Id::new(SELF), || true, &mut ()).await.applied,
-            0
-        );
+        assert_eq!(applied(&mut replay).await, 0);
     }
     assert!(world.snapshot(&run).await.rsvps.is_empty());
-    let _ = world.store.history_head().await.unwrap();
-}
-
-#[tokio::test]
-async fn replay_written_answer_remains_reaction_owned_on_the_next_pass() {
-    let world = World::new();
-    let (run, message) = world.carded_run().await;
-    world.react(message.get(), "✅", &[MEMBER]);
-    let mut replay = world.replay();
-    assert_eq!(
-        replay.replay(Id::new(SELF), || true, &mut ()).await.applied,
-        1
-    );
-    world.react(message.get(), "❌", &[MEMBER]);
-    world.react(message.get(), "✅", &[]);
-    assert_eq!(
-        replay.replay(Id::new(SELF), || true, &mut ()).await.applied,
-        1
-    );
-    assert_eq!(world.snapshot(&run).await.rsvps[0].state, RsvpState::No);
 }
 
 #[tokio::test]
 async fn replayed_yes_has_one_history_write_and_does_not_retract_a_decline() {
-    let world = World::new();
+    let world = World::new().await;
     let (run, message) = world.carded_run().await;
     world
         .service_at(now())
@@ -78,10 +54,7 @@ async fn replayed_yes_has_one_history_write_and_does_not_retract_a_decline() {
     world.react(message.get(), "❌", &[]);
     let before = world.store.history_head().await.unwrap().seq;
     let mut replay = world.replay();
-    assert_eq!(
-        replay.replay(Id::new(SELF), || true, &mut ()).await.applied,
-        1
-    );
+    assert_eq!(applied(&mut replay).await, 1);
     let after = world.store.history_head().await.unwrap().seq;
     assert_eq!(after, before + 1);
     assert_eq!(
@@ -96,10 +69,7 @@ async fn replayed_yes_has_one_history_write_and_does_not_retract_a_decline() {
         .unwrap()
         .expect("existing decline candidate remains");
     assert!(!notice.retract_pending, "replay does not queue retraction");
-    assert_eq!(
-        replay.replay(Id::new(SELF), || true, &mut ()).await.applied,
-        0
-    );
+    assert_eq!(applied(&mut replay).await, 0);
     assert_eq!(world.store.history_head().await.unwrap().seq, after);
     assert_eq!(observed.lock().unwrap().len(), 1);
     assert_eq!(world.snapshot(&run).await.rsvps[0].state, RsvpState::Yes);
@@ -107,7 +77,7 @@ async fn replayed_yes_has_one_history_write_and_does_not_retract_a_decline() {
 
 #[tokio::test]
 async fn row_13_replay_queues_one_refresh_and_never_creates_decline_notice() {
-    let world = World::new();
+    let world = World::new().await;
     let (run, message) = world.carded_run().await;
     let observed = world.observe_run_writes();
     world.react(message.get(), "❌", &[MEMBER]);

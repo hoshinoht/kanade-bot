@@ -11,8 +11,8 @@
 //! alerts and posts nothing; v4 compared for equality and re-posted.
 //!
 //! v5 deviation (user decisions 2026-10-09/10): v4 marked every live run
-//! done two hours after its start (`mark_done`, kept for the vector
-//! replays); the tick now asks each run's channel half an hour after it ends
+//! done two hours after its start (`mark_done`); the tick now asks each
+//! run's channel half an hour after it ends
 //! and marks it done only when answered or at its cutoff
 //! (`run_prompts.rs`).
 
@@ -87,7 +87,7 @@ pub struct DeliveryConfig {
     pub run_lengths: RunLengths,
     /// v5 (user decision 2026-10-10): a live run past its end is frozen and
     /// counts as ended in the digest; `false` keeps v4's rules (2 h after
-    /// the start) for the v4 vector replays only.
+    /// the start).
     pub freeze_ended: bool,
 }
 

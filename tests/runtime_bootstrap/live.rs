@@ -312,42 +312,39 @@ fn live_serve_builds_discord_sign_in_without_network() {
     assert!(!stderr.contains("discord-client-secret"), "{stderr}");
 }
 
+/// A missing bot token file or a bad backup recipients file is refused with
+/// 78 before the store is opened.
 #[test]
-fn live_serve_refuses_a_missing_bot_token_file_before_opening_the_store() {
+fn live_serve_refuses_bad_secret_files_before_opening_the_store() {
     let _serial = serial();
-    let live = Live::new();
-    fs::remove_file(live.root.join("discord_token")).unwrap();
-    let output = live.command(unused_loopback_port(), None).output().unwrap();
-    assert!(!output.status.success());
-    let stderr = String::from_utf8(output.stderr).unwrap();
-    assert!(stderr.contains("KANADE_DISCORD_TOKEN_FILE"), "{stderr}");
-    assert!(!live.root.join("db").exists(), "store opened anyway");
-}
-
-#[test]
-fn live_serve_refuses_a_bad_backup_recipients_file_before_opening_the_store() {
-    let _serial = serial();
-    let live = Live::new();
-    let recipients = live.root.join("backup_recipients");
-    for (text, expected) in [
+    for (recipients, expected) in [
+        // No recipients file: the bot token file is removed instead.
+        (None, "KANADE_DISCORD_TOKEN_FILE"),
         (
-            "# no keys yet\n",
+            Some("# no keys yet\n"),
             "KANADE_BACKUP_RECIPIENTS_FILE holds no age recipients",
         ),
         (
-            "age1notakey\n",
+            Some("age1notakey\n"),
             "KANADE_BACKUP_RECIPIENTS_FILE: line 1 is not an age X25519 recipient",
         ),
     ] {
-        fs::write(&recipients, text).unwrap();
-        let output = live
-            .command(unused_loopback_port(), None)
-            .env("KANADE_BACKUP_RECIPIENTS_FILE", &recipients)
-            .output()
-            .unwrap();
+        let live = Live::new();
+        let mut command = live.command(unused_loopback_port(), None);
+        if let Some(text) = recipients {
+            let path = live.root.join("backup_recipients");
+            fs::write(&path, text).unwrap();
+            command.env("KANADE_BACKUP_RECIPIENTS_FILE", path);
+        } else {
+            fs::remove_file(live.root.join("discord_token")).unwrap();
+        }
+        let output = command.output().unwrap();
         assert_eq!(output.status.code(), Some(78), "{output:?}");
         let stderr = String::from_utf8(output.stderr).unwrap();
         assert!(stderr.contains(expected), "{stderr}");
-        assert!(!live.root.join("db").exists(), "store opened anyway");
+        assert!(
+            !live.root.join("db").exists(),
+            "{expected}: store opened anyway"
+        );
     }
 }

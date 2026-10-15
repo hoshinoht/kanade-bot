@@ -280,6 +280,14 @@ td.reminders-table__run a {
     width: auto;
   }
 
+  // Each part stays whole; the count wraps under the next reminder instead
+  // of running past the edge.
+  .reminders-window__foot {
+    flex-wrap: wrap;
+    row-gap: 0;
+    padding-block: 4px;
+  }
+
   // P_SelectPhone: the pills on two columns, the run (the longest value) across both.
   .reminders-filters__panel {
     display: grid;

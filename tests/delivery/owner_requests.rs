@@ -3,15 +3,16 @@
 //! send, edited to the decision without buttons, and expired after 24 hours.
 
 use chrono::{NaiveTime, Weekday};
-use kanade::bot::transport::{AmbiguousKind, Call, Op, Step};
+use kanade::bot::transport::{Call, Op};
 use kanade::domain::history::Origin;
 use kanade::domain::ids::RandomIds;
 use kanade::domain::ownership::{OwnerRequest, OwnerRequestStatus, OwnerRequestStore};
 use kanade::domain::schedule::NewFixedRun;
+use kanade::infrastructure::store::SqliteStore;
 use twilight_model::channel::message::Component;
 
 use crate::scenarios::{HOME, delivery, now, world};
-use crate::support::{self, Store, on_both_stores};
+use crate::support::{self, Store};
 
 /// A timing in `HOME` with party 1001 (its owner) and 1002.
 async fn timing<S: Store>(store: &S) -> String {
@@ -166,7 +167,7 @@ async fn posted_once_then_settled<S: Store + OwnerRequestStore>(store: &S) {
 
 #[tokio::test]
 async fn an_ownership_request_is_posted_once_and_edited_to_its_decision() {
-    on_both_stores!(posted_once_then_settled);
+    posted_once_then_settled(&SqliteStore::open_temp().await).await;
 }
 
 async fn ambiguous_post_is_never_resent<S: Store + OwnerRequestStore>(store: &S) {
@@ -179,13 +180,9 @@ async fn ambiguous_post_is_never_resent<S: Store + OwnerRequestStore>(store: &S)
         .await
         .expect("tick");
     ask(store, fixed_id, 1).await;
-    world.fake.script(
-        Op::Create,
-        Step::Ambiguous {
-            kind: AmbiguousKind::Timeout,
-            applied: true,
-        },
-    );
+    world
+        .fake
+        .script(Op::Create, crate::support::timed_out(true));
     for minutes in [0, 1, 2] {
         let report = delivery
             .tick_at(now() + chrono::Duration::minutes(minutes))
@@ -202,7 +199,7 @@ async fn ambiguous_post_is_never_resent<S: Store + OwnerRequestStore>(store: &S)
 
 #[tokio::test]
 async fn an_ambiguous_ownership_request_post_is_never_resent() {
-    on_both_stores!(ambiguous_post_is_never_resent);
+    ambiguous_post_is_never_resent(&SqliteStore::open_temp().await).await;
 }
 
 async fn expired_after_a_day_unposted<S: Store + OwnerRequestStore>(store: &S) {
@@ -222,5 +219,5 @@ async fn expired_after_a_day_unposted<S: Store + OwnerRequestStore>(store: &S) {
 
 #[tokio::test]
 async fn an_ownership_request_expires_after_a_day() {
-    on_both_stores!(expired_after_a_day_unposted);
+    expired_after_a_day_unposted(&SqliteStore::open_temp().await).await;
 }
