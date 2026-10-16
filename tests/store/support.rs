@@ -59,6 +59,10 @@ pub const LATE_SCHEMA_DROPS: &str = "
     DROP TABLE auth_audit;
     DROP TABLE owner_requests;
     DROP TABLE run_prompts;
+    DROP TABLE guide_publish_ops;
+    DROP TABLE guide_slots;
+    DROP TABLE guide_publishes;
+    DROP TABLE guides;
     DROP TABLE roster_fixed_boss_picks;
     DROP TABLE roster_run_boss_picks;
     DROP TABLE roster_fixed_picks;
