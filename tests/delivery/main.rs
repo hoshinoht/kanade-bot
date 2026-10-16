@@ -13,6 +13,7 @@ mod declines;
 mod digest_v2;
 mod drafts;
 mod failures;
+mod guides;
 mod intercept;
 mod late_start;
 mod manual;

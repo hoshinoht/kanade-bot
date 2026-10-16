@@ -13,6 +13,7 @@
 //! until restart recovery makes it indeterminate; it is never resent.
 
 use chrono::{DateTime, Utc};
+use twilight_model::channel::message::MessageFlags;
 
 use super::alerts::{AdminAlert, AlertSink, AlertThrottle};
 use crate::bot::gateway::DeliveryOperation;
@@ -197,7 +198,15 @@ where
         if let Some(operation) = operation {
             operation.after_claim_result().await;
         }
-        self.claimed(intent, claim, message, record_week, now).await
+        self.claimed(
+            intent,
+            claim,
+            message,
+            record_week,
+            MessageFlags::empty(),
+            now,
+        )
+        .await
     }
 
     /// Execute one admitted outbox notice, claimed by its durable
@@ -217,9 +226,30 @@ where
         if !operation.begin() {
             return Ok(None);
         }
-        self.execute_source_claim(intent, message, source, ordinal, now)
+        self.execute_source_claim(intent, message, source, ordinal, MessageFlags::empty(), now)
             .await
             .map(Some)
+    }
+
+    /// Post `message` once by its durable `(source, ordinal)` key under the
+    /// executor's lease, outside the gateway's operation admission (the guide
+    /// publisher's own single-flight worker). `flags` within
+    /// [`crate::bot::transport::CREATE_FLAGS`] (e.g. `SILENT`) go out through
+    /// `create_flagged_message`; empty is a plain create, as every other path.
+    ///
+    /// # Errors
+    /// As [`Executor::execute`].
+    pub async fn execute_source(
+        &self,
+        intent: &NotificationIntent,
+        message: &OutgoingMessage,
+        source: &str,
+        ordinal: i64,
+        flags: MessageFlags,
+        now: DateTime<Utc>,
+    ) -> Result<SendOutcome, SendFailure> {
+        self.execute_source_claim(intent, message, source, ordinal, flags, now)
+            .await
     }
 
     async fn execute_source_claim(
@@ -228,13 +258,14 @@ where
         message: &OutgoingMessage,
         source: &str,
         ordinal: i64,
+        flags: MessageFlags,
         now: DateTime<Utc>,
     ) -> Result<SendOutcome, SendFailure> {
         let claim = self
             .journal
             .claim_source(self.lease, intent, source, ordinal, now)
             .await;
-        self.claimed(intent, claim, message, None, now).await
+        self.claimed(intent, claim, message, None, flags, now).await
     }
 
     async fn claimed(
@@ -243,6 +274,7 @@ where
         claim: Result<Claim, JournalError>,
         message: &OutgoingMessage,
         record_week: Option<DateTime<Utc>>,
+        flags: MessageFlags,
         now: DateTime<Utc>,
     ) -> Result<SendOutcome, SendFailure> {
         let attempt = match claim {
@@ -254,7 +286,7 @@ where
             Err(error) => return Err(self.failed(intent, None, error, now)),
         };
         self.warn(intent, now);
-        self.deliver(intent, &attempt, message, record_week, now)
+        self.deliver(intent, &attempt, message, record_week, flags, now)
             .await
             .map_err(|(error, maybe_delivered)| {
                 let mut failure = self.failed(intent, Some(attempt), error, now);
@@ -292,10 +324,18 @@ where
         attempt: &AttemptId,
         message: &OutgoingMessage,
         record_week: Option<DateTime<Utc>>,
+        flags: MessageFlags,
         now: DateTime<Utc>,
     ) -> Result<SendOutcome, (JournalError, bool)> {
         let outcome = match parse_id(&intent.channel_id) {
-            Some(channel) => self.transport.create_message(channel, message).await,
+            Some(channel) if flags.is_empty() => {
+                self.transport.create_message(channel, message).await
+            }
+            Some(channel) => {
+                self.transport
+                    .create_flagged_message(channel, message, flags)
+                    .await
+            }
             None => Outcome::DefinitelyRejected(RejectionKind::Invalid),
         };
         let maybe = |error| (error, true);
