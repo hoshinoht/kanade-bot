@@ -61,7 +61,7 @@ async fn tailscale_sign_in_needs_the_trusted_edge_and_an_allow_listed_login() {
     assert_eq!(login.status, 200);
     assert_eq!(
         login.json(),
-        serde_json::json!({"display": "Ops Person", "method": "tailscale", "roster": false})
+        serde_json::json!({"display": "Ops Person", "method": "tailscale", "roster": false, "guides": false})
     );
     let id = login.cookie(wire::SESSION_COOKIE).unwrap();
     let (name, value) = cookie(&id);
@@ -253,7 +253,7 @@ async fn break_glass_works_by_login_and_bearer_and_is_logged_loudly() {
     let me = harness.get("/api/admin/session", &[(name, &value)]).await;
     assert_eq!(
         me.json(),
-        serde_json::json!({"display": "Break-glass token", "method": "token", "roster": false})
+        serde_json::json!({"display": "Break-glass token", "method": "token", "roster": false, "guides": false})
     );
     // Only the SHA-256 of the cookie is stored.
     let stored = harness

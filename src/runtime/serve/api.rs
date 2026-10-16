@@ -291,6 +291,8 @@ pub(super) async fn compose_with(
         marks: Default::default(),
         characters,
         character_data: None,
+        // Module `guides`: serve attaches its port while `modules.guides` is on.
+        guides: None,
     };
     Ok(Composition {
         admin: LiveAdmin {

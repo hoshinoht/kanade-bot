@@ -12,6 +12,7 @@ pub(crate) mod context;
 mod drafts;
 mod etag;
 mod events;
+mod guides;
 mod headers;
 mod history;
 mod inbox;
@@ -60,6 +61,7 @@ pub fn routes() -> Router<Arc<Site>> {
         .merge(config::routes())
         .merge(characters::routes())
         .merge(character_data::routes())
+        .merge(guides::routes())
         .merge(presence::routes())
         .merge(events::routes())
         .route_layer(axum::middleware::from_fn(etag::revalidate))

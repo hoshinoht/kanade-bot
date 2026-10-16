@@ -178,7 +178,12 @@ method: SignInMethod,
  * The character roster module (`modules.roster`) is on: the Members
  * sheet shows Characters. Off, its routes answer `404`.
  */
-roster: boolean, };
+roster: boolean, 
+/**
+ * The guide publisher module (`modules.guides`) is on: the rail's More
+ * menu shows Guides. Off, its routes answer `404`.
+ */
+guides: boolean, };
 
 export type SignInMethods = { discord: boolean, 
 /**
@@ -1097,6 +1102,310 @@ detail: string, retry_after_seconds: number | null,
  * The character it is about, when known.
  */
 character_id: string | null, };
+
+/**
+ * One block as the editor sends and reads it (`kind` tags it). Ids are
+ * hyphenated UUIDs the editor keeps across reorders.
+ */
+export type GuideBlock = { "kind": "text", id: string, content: string, } | { "kind": "bosses", id: string, heading?: string, entries: Array<GuideBossEntry>, } | { "kind": "spacer", id: string, };
+
+/**
+ * One boss of a bosses block.
+ */
+export type GuideBossEntry = { 
+/**
+ * The catalog key, exact case (`MaleficStar`).
+ */
+key: string, 
+/**
+ * Up to 1,000 units, added under the embed's description.
+ */
+note?: string, 
+/**
+ * Also show the entry artwork as the large image (the portrait
+ * thumbnail is always shown when the art exists); `false` when absent.
+ */
+large_image: boolean, };
+
+/**
+ * The list chip (approved boards): `publishing` (a run is queued or
+ * running), `needs_attention` (a post could not be confirmed),
+ * `blocked`, `not_published` (no message in Discord), `out_of_date`,
+ * `published`, in that order of precedence.
+ */
+export type GuideStatus = "not_published" | "published" | "out_of_date" | "publishing" | "needs_attention" | "blocked";
+
+/**
+ * Why a guide is out of date, needs attention, is blocked or is not
+ * published yet; the most telling one when several hold.
+ */
+export type StatusReason = "no_channel" | "draft_changed" | "channel_changed" | "art_changed" | "boss_facts_changed" | "message_deleted" | "unconfirmed_message" | "channel_missing" | "discord_refused" | "draft_invalid";
+
+/**
+ * A live run's progress: Discord effects settled of those planned.
+ */
+export type RunProgress = { done: number, 
+/**
+ * Edits, posts and deletes the request planned; `null` when its
+ * History record cannot be read.
+ */
+total: number | null, };
+
+/**
+ * A run's lifecycle; `done`, `stopped` and `cancelled` are final.
+ */
+export type GuideRunState = "queued" | "running" | "done" | "stopped" | "cancelled";
+
+/**
+ * Why a run stopped before its last op.
+ */
+export type GuideStopReason = "plan_changed" | "unknown_slot" | "edit_unconfirmed" | "delete_unconfirmed" | "rejected" | "discord_unavailable" | "interrupted";
+
+/**
+ * A plan op's kind; `forget` drops a slot without a Discord call.
+ */
+export type GuideOpKind = "edit" | "create" | "delete" | "forget";
+
+/**
+ * The newest run, for the list's time and a stopped run's reason.
+ */
+export type RunSummary = { id: string, kind: 'publish' | 'unpublish' | 'search', state: GuideRunState, stop_reason: GuideStopReason | null, requested_by: SettingsActor, requested_at: string, finished_at: string | null, };
+
+export type GuideRow = { id: string, title: string, channel_id: string | null, 
+/**
+ * `#name` while the bot lists the channel.
+ */
+channel_name: string | null, 
+/**
+ * Send it back with a save, delete or publish.
+ */
+version: number, 
+/**
+ * Messages the guide has in Discord now (posted slots).
+ */
+messages: number, status: GuideStatus, reason: StatusReason | null, 
+/**
+ * `unconfirmed_message`'s slot (0-based; the app shows message n + 1).
+ */
+position: number | null, 
+/**
+ * While `publishing`.
+ */
+progress: RunProgress | null, last_run: RunSummary | null, 
+/**
+ * The first boss's portrait (`/art/portraits/{key}`), if any.
+ */
+portrait: string | null, updated_at: string, updated_by: SettingsActor, };
+
+/**
+ * `GET /api/admin/guides`: by title.
+ */
+export type GuideList = { guides: Array<GuideRow>, };
+
+/**
+ * One published slot.
+ */
+export type GuideSlotRow = { channel_id: string, position: number, 
+/**
+ * Whole; `null` while unknown.
+ */
+message_id: string | null, state: 'posted' | 'gone' | 'unknown', updated_at: string, };
+
+/**
+ * `GET /api/admin/guides/{id}`.
+ */
+export type GuideDetail = { guide: GuideRow, blocks: Array<GuideBlock>, created_at: string, created_by: SettingsActor, 
+/**
+ * By channel, then position.
+ */
+slots: Array<GuideSlotRow>, };
+
+/**
+ * A create's or save's answer: what to send back next.
+ */
+export type GuideSaved = { id: string, version: number, updated_at: string, };
+
+/**
+ * One boss embed as Discord shows it; pictures are same-origin art URLs.
+ */
+export type PreviewEmbed = { title: string, description: string, 
+/**
+ * `#rrggbb`.
+ */
+color: string, 
+/**
+ * `/art/portraits/{key}`.
+ */
+thumbnail: string | null, 
+/**
+ * `/art/entry/{key}`.
+ */
+image: string | null, };
+
+/**
+ * One message the guide renders, in order.
+ */
+export type PreviewSlot = { position: number, block_id: string, 
+/**
+ * The message's index within its block.
+ */
+part: number, content: string, 
+/**
+ * UTF-16 units of `content` (Discord's count).
+ */
+content_units: number, embeds: Array<PreviewEmbed>, 
+/**
+ * Title and description units of every embed (at most 6,000).
+ */
+embed_units: number, 
+/**
+ * The files the message uploads.
+ */
+files: Array<string>, hash: string, };
+
+/**
+ * Something the preview shows that never fails a render.
+ */
+export type GuideWarning = { 
+/**
+ * `missing_art`: the embed goes without that picture.
+ */
+kind: 'missing_art', block_id: string, 
+/**
+ * The entry's index in its block.
+ */
+entry: number, key: string, art: 'portrait' | 'entry', };
+
+/**
+ * `POST /api/admin/guides/{id}/render`.
+ */
+export type GuidePreview = { slots: Array<PreviewSlot>, warnings: Array<GuideWarning>, };
+
+/**
+ * One reason blocks are refused, naming the block and field.
+ */
+export type GuideProblem = { problem: 'too_many_blocks' | 'too_large' | 'bad_id' | 'duplicate_id' | 'empty' | 'too_long' | 'unknown_boss' | 'too_many_slots', block_id: string | null, 
+/**
+ * `content`, `heading`, `entries`, `entries[i].key|note|title|description`.
+ */
+field: string | null, 
+/**
+ * The value's length or count, and its limit.
+ */
+units: number | null, limit: number | null, 
+/**
+ * `unknown_boss`'s key.
+ */
+key: string | null, message: string, };
+
+/**
+ * `422 invalid_blocks`: an `ApiError` plus every problem, in block order.
+ */
+export type GuideBlocksRefused = { error: 'invalid_blocks' | 'draft_invalid', message: string, problems: Array<GuideProblem>, };
+
+/**
+ * What a plan needs confirmed, or what a publish confirms.
+ */
+export type GuideConfirmations = { 
+/**
+ * Posted messages from this position on are deleted and posted again.
+ */
+repost_from: number | null, 
+/**
+ * New messages go below messages that are not the guide's.
+ */
+interleaved: boolean, 
+/**
+ * The guide moves to another channel.
+ */
+channel_move: boolean, };
+
+/**
+ * `422 needs_confirmation`: an `ApiError` plus what the plan needs.
+ */
+export type GuideNeedsConfirmation = { error: 'needs_confirmation', message: string, needs: GuideConfirmations, };
+
+export type GuidePlanCounts = { keep: number, edit: number, create: number, 
+/**
+ * Discord deletes only.
+ */
+delete: number, };
+
+/**
+ * One op in run order. `forget` drops a slot without a Discord call.
+ */
+export type GuidePlanOp = { kind: GuideOpKind, position: number, channel_id: string, 
+/**
+ * Whole, for edits and deletes.
+ */
+message_id: string | null, 
+/**
+ * The rendered message's block kind, for edits and creates.
+ */
+block_kind: 'text' | 'bosses' | 'spacer' | null, 
+/**
+ * Its first line of text or first embed title.
+ */
+summary: string | null, };
+
+/**
+ * Why a plan cannot run.
+ */
+export type GuidePlanBlocked = { 
+/**
+ * `unknown_slot`: settle it first (no ops); `channel_missing` (no
+ * ops); `missing_grants`: the ops are shown but must not run.
+ */
+reason: 'unknown_slot' | 'channel_missing' | 'missing_grants', channel_id: string | null, position: number | null, grants: Array<'view' | 'send' | 'history' | 'embed' | 'attach'>, };
+
+/**
+ * `GET /api/admin/guides/{id}/plan`: the saved version rendered and the
+ * plan to publish (or unpublish) it, checked against the channel when
+ * Discord answered in time.
+ */
+export type GuidePlan = { kind: 'publish' | 'unpublish', version: number, 
+/**
+ * The target channel; empty only for an unpublish of a guide with no
+ * channel and no messages.
+ */
+channel_id: string, delete_old: boolean, 
+/**
+ * `false`: "Unchecked" (Discord was slow or offline); the worker
+ * checks again before acting.
+ */
+checked: boolean, no_op: boolean, 
+/**
+ * Send it back with the publish.
+ */
+plan_hash: string, counts: GuidePlanCounts, needs: GuideConfirmations, blocked: GuidePlanBlocked | null, ops: Array<GuidePlanOp>, 
+/**
+ * The rendered messages (empty for an unpublish).
+ */
+slots: Array<PreviewSlot>, warnings: Array<GuideWarning>, };
+
+/**
+ * One op of a run's log.
+ */
+export type GuideRunOp = { ordinal: number, kind: GuideOpKind, position: number, channel_id: string, message_id: string | null, outcome: 'pending' | 'done' | 'gone' | 'recovered' | 'unknown' | 'rejected' | 'skipped', 
+/**
+ * An unconfirmed post's search matches (zero or several).
+ */
+candidates: Array<string>, at: string, };
+
+/**
+ * `GET /api/admin/guides/{id}/publishes/{run}`: the progress screen.
+ */
+export type GuideRun = { id: string, guide_id: string, kind: 'publish' | 'unpublish' | 'search', state: GuideRunState, stop_reason: GuideStopReason | null, version: number, channel_id: string, plan_hash: string, confirmed: GuideConfirmations, delete_old: boolean, requested_by: SettingsActor, requested_at: string, started_at: string | null, finished_at: string | null, cancel_requested_at: string | null, progress: RunProgress, 
+/**
+ * By ordinal; each is recorded before its effect is tried.
+ */
+ops: Array<GuideRunOp>, };
+
+/**
+ * A publish, unpublish or search request's answer: `202` with the queued
+ * run, or `200` with `no_op` when the channel already shows the guide.
+ */
+export type GuidePublishResult = { no_op: boolean, publish: GuideRun | null, };
 
 export type FixedRunLink = { run_id: string, short_id: string, week: WeekKey, day: number, time: string | null, status: RunStatus, amended: boolean, };
 

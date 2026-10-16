@@ -13,8 +13,8 @@ use super::{
     assets::Identity,
     dto::{
         self, account, bosses, character_data, characters, config, drafts, estimates, events,
-        fixed, history, inbox, inbox_past, limits, logs, members, presence, readiness, reminders,
-        rescan, sign_ins, week,
+        fixed, guides, history, inbox, inbox_past, limits, logs, members, presence, readiness,
+        reminders, rescan, sign_ins, week,
     },
     error, public,
 };
@@ -191,6 +191,36 @@ fn bindings() -> String {
         .add::<estimates::EstimateCombined>()
         .add::<estimates::EstimateIssue>()
         .add::<estimates::EstimateError>()
+        // Guides
+        .add::<guides::GuideBlock>()
+        .add::<guides::GuideBossEntry>()
+        .add::<guides::GuideStatus>()
+        .add::<guides::StatusReason>()
+        .add::<guides::RunProgress>()
+        .add::<guides::GuideRunState>()
+        .add::<guides::GuideStopReason>()
+        .add::<guides::GuideOpKind>()
+        .add::<guides::RunSummary>()
+        .add::<guides::GuideRow>()
+        .add::<guides::GuideList>()
+        .add::<guides::GuideSlotRow>()
+        .add::<guides::GuideDetail>()
+        .add::<guides::GuideSaved>()
+        .add::<guides::PreviewEmbed>()
+        .add::<guides::PreviewSlot>()
+        .add::<guides::GuideWarning>()
+        .add::<guides::GuidePreview>()
+        .add::<guides::GuideProblem>()
+        .add::<guides::GuideBlocksRefused>()
+        .add::<guides::GuideConfirmations>()
+        .add::<guides::GuideNeedsConfirmation>()
+        .add::<guides::GuidePlanCounts>()
+        .add::<guides::GuidePlanOp>()
+        .add::<guides::GuidePlanBlocked>()
+        .add::<guides::GuidePlan>()
+        .add::<guides::GuideRunOp>()
+        .add::<guides::GuideRun>()
+        .add::<guides::GuidePublishResult>()
         .add::<fixed::FixedRunLink>()
         .add::<fixed::FixedRow>()
         .add::<admin::FixedChoices>()

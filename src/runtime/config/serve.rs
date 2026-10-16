@@ -46,6 +46,9 @@ pub struct Modules {
     /// `KANADE_MODULE_CHARACTER_DATA` (`modules.character_data`, default
     /// off, needs `roster`): NEXON Open API data for linked characters.
     pub character_data: bool,
+    /// `KANADE_MODULE_GUIDES` (`modules.guides`, default off): the guide
+    /// publisher's admin routes and its publish worker.
+    pub guides: bool,
 }
 
 /// Initial runtime settings; applied only where the store has none yet.
@@ -73,6 +76,7 @@ impl ServeConfig {
         let modules = Modules {
             roster: flag(values, "KANADE_MODULE_ROSTER")?.unwrap_or(false),
             character_data: flag(values, super::character_data::FLAG_KEY)?.unwrap_or(false),
+            guides: flag(values, "KANADE_MODULE_GUIDES")?.unwrap_or(false),
         };
         Ok(Self {
             runtime: RuntimeConfig::from_mapping(values)?,
@@ -284,14 +288,18 @@ mod tests {
 
     #[test]
     fn modules_are_strict_flags() {
-        for (value, roster) in [("", false), ("0", false), ("1", true)] {
+        for (value, on) in [("", false), ("0", false), ("1", true)] {
             let modules = config(&[("KANADE_MODULE_ROSTER", value)]).unwrap().modules;
-            assert_eq!(modules.roster, roster, "{value:?}");
+            assert_eq!(modules.roster, on, "{value:?}");
+            let modules = config(&[("KANADE_MODULE_GUIDES", value)]).unwrap().modules;
+            assert_eq!(modules.guides, on, "{value:?}");
         }
-        assert_eq!(
-            config(&[("KANADE_MODULE_ROSTER", "on")]).unwrap_err(),
-            "KANADE_MODULE_ROSTER must be 0 or 1"
-        );
+        for key in ["KANADE_MODULE_ROSTER", "KANADE_MODULE_GUIDES"] {
+            assert_eq!(
+                config(&[(key, "on")]).unwrap_err(),
+                format!("{key} must be 0 or 1")
+            );
+        }
     }
 
     #[test]

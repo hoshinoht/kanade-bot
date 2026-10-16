@@ -63,6 +63,9 @@ pub(crate) struct SessionView {
     /// The character roster module (`modules.roster`) is on: the Members
     /// sheet shows Characters. Off, its routes answer `404`.
     roster: bool,
+    /// The guide publisher module (`modules.guides`) is on: the rail's More
+    /// menu shows Guides. Off, its routes answer `404`.
+    guides: bool,
 }
 
 /// Whether the roster module's routes are served (read at startup).
@@ -70,6 +73,13 @@ fn roster_on(site: &Site) -> bool {
     site.state
         .as_ref()
         .is_some_and(|state| state.characters.is_some())
+}
+
+/// Whether the guide publisher's routes are served (read at startup).
+fn guides_on(site: &Site) -> bool {
+    site.state
+        .as_ref()
+        .is_some_and(|state| state.guides.is_some())
 }
 
 fn session_cookie(auth: &AdminAuth, id: &str) -> HeaderValue {
@@ -92,6 +102,7 @@ fn signed_in(
         display,
         method: method.as_str(),
         roster: roster_on(site),
+        guides: guides_on(site),
     })
     .into_response();
     let headers = response.headers_mut();

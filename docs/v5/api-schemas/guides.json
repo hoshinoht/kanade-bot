@@ -1,0 +1,354 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kanade.invalid/api-schemas/guides.json",
+  "title": "Guide publisher (module guides)",
+  "$defs": {
+    "Snowflake": { "type": "string", "pattern": "^[0-9]{17,20}$" },
+    "NullableSnowflake": { "type": ["string", "null"], "pattern": "^[0-9]{17,20}$" },
+    "Hash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "BlockId": { "type": "string", "minLength": 1 },
+    "GuideBossEntry": {
+      "description": "One boss of a bosses block: the catalog key (exact case), an optional note (≤ 1,000 UTF-16 units) and whether the entry artwork shows as the large image (the portrait thumbnail always shows when the art exists).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["key", "large_image"],
+      "properties": {
+        "key": { "type": "string", "minLength": 1 },
+        "note": { "type": "string" },
+        "large_image": { "type": "boolean" }
+      }
+    },
+    "GuideBlock": {
+      "description": "One block, tagged by `kind`. Ids are hyphenated UUIDs the editor keeps across reorders. Text: one message of 1 to 2,000 UTF-16 units. Bosses: one embed per entry, `heading` the first message's content. Spacer: one message holding a zero-width space.",
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "id", "content"],
+          "properties": {
+            "kind": { "const": "text" },
+            "id": { "$ref": "#/$defs/BlockId" },
+            "content": { "type": "string" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "id", "entries"],
+          "properties": {
+            "kind": { "const": "bosses" },
+            "id": { "$ref": "#/$defs/BlockId" },
+            "heading": { "type": "string" },
+            "entries": { "type": "array", "items": { "$ref": "#/$defs/GuideBossEntry" } }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "id"],
+          "properties": {
+            "kind": { "const": "spacer" },
+            "id": { "$ref": "#/$defs/BlockId" }
+          }
+        }
+      ]
+    },
+    "GuideStatus": {
+      "description": "The list chip, derived on every read: `publishing` (a run is queued or running), `needs_attention` (a post could not be confirmed), `blocked`, `not_published` (no message in Discord), `out_of_date`, `published`, in that order of precedence.",
+      "enum": ["not_published", "published", "out_of_date", "publishing", "needs_attention", "blocked"]
+    },
+    "StatusReason": {
+      "description": "Why: `no_channel` (not published), `draft_changed`, `channel_changed`, `art_changed`, `boss_facts_changed` (catalog or a knowledge lead), `message_deleted` (out of date), `unconfirmed_message` (needs attention, at `position`), `channel_missing`, `discord_refused` (the last run stopped `rejected`), `draft_invalid` (the saved draft no longer renders) (blocked).",
+      "enum": ["no_channel", "draft_changed", "channel_changed", "art_changed", "boss_facts_changed", "message_deleted", "unconfirmed_message", "channel_missing", "discord_refused", "draft_invalid"]
+    },
+    "RunState": { "enum": ["queued", "running", "done", "stopped", "cancelled"] },
+    "StopReason": { "enum": ["plan_changed", "unknown_slot", "edit_unconfirmed", "delete_unconfirmed", "rejected", "discord_unavailable", "interrupted"] },
+    "RunKind": { "enum": ["publish", "unpublish", "search"] },
+    "OpKind": { "enum": ["edit", "create", "delete", "forget"] },
+    "RunProgress": {
+      "description": "Discord effects settled of those the request planned (`total`, null when its History record cannot be read).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["done", "total"],
+      "properties": {
+        "done": { "type": "integer", "minimum": 0 },
+        "total": { "type": ["integer", "null"], "minimum": 0 }
+      }
+    },
+    "RunSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind", "state", "stop_reason", "requested_by", "requested_at", "finished_at"],
+      "properties": {
+        "id": { "type": "string" },
+        "kind": { "$ref": "#/$defs/RunKind" },
+        "state": { "$ref": "#/$defs/RunState" },
+        "stop_reason": { "oneOf": [{ "$ref": "#/$defs/StopReason" }, { "type": "null" }] },
+        "requested_by": { "$ref": "history.json#/$defs/Actor" },
+        "requested_at": { "type": "string" },
+        "finished_at": { "$ref": "common.json#/$defs/NullableString" }
+      }
+    },
+    "GuideRow": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "title", "channel_id", "channel_name", "version", "messages", "status", "reason", "position", "progress", "last_run", "portrait", "updated_at", "updated_by"],
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "channel_id": { "$ref": "#/$defs/NullableSnowflake" },
+        "channel_name": { "$ref": "common.json#/$defs/NullableString", "description": "`#name` while the bot lists the channel." },
+        "version": { "type": "integer", "minimum": 1, "description": "Send it back with a save, delete or publish." },
+        "messages": { "type": "integer", "minimum": 0, "description": "Messages in Discord now (posted slots)." },
+        "status": { "$ref": "#/$defs/GuideStatus" },
+        "reason": { "oneOf": [{ "$ref": "#/$defs/StatusReason" }, { "type": "null" }] },
+        "position": { "type": ["integer", "null"], "minimum": 0, "description": "The unconfirmed post's slot (0-based)." },
+        "progress": { "oneOf": [{ "$ref": "#/$defs/RunProgress" }, { "type": "null" }], "description": "While publishing." },
+        "last_run": { "oneOf": [{ "$ref": "#/$defs/RunSummary" }, { "type": "null" }] },
+        "portrait": { "$ref": "common.json#/$defs/NullableString", "description": "The first boss's `/art/portraits/{key}`." },
+        "updated_at": { "type": "string" },
+        "updated_by": { "$ref": "history.json#/$defs/Actor" }
+      }
+    },
+    "GuideList": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["guides"],
+      "properties": { "guides": { "type": "array", "items": { "$ref": "#/$defs/GuideRow" }, "description": "By title." } }
+    },
+    "GuideSlotRow": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["channel_id", "position", "message_id", "state", "updated_at"],
+      "properties": {
+        "channel_id": { "$ref": "#/$defs/Snowflake" },
+        "position": { "type": "integer", "minimum": 0 },
+        "message_id": { "$ref": "#/$defs/NullableSnowflake", "description": "Whole; null while unknown." },
+        "state": { "enum": ["posted", "gone", "unknown"] },
+        "updated_at": { "type": "string" }
+      }
+    },
+    "GuideDetail": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["guide", "blocks", "created_at", "created_by", "slots"],
+      "properties": {
+        "guide": { "$ref": "#/$defs/GuideRow" },
+        "blocks": { "type": "array", "items": { "$ref": "#/$defs/GuideBlock" } },
+        "created_at": { "type": "string" },
+        "created_by": { "$ref": "history.json#/$defs/Actor" },
+        "slots": { "type": "array", "items": { "$ref": "#/$defs/GuideSlotRow" }, "description": "By channel, then position." }
+      }
+    },
+    "GuideSaved": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "version", "updated_at"],
+      "properties": {
+        "id": { "type": "string" },
+        "version": { "type": "integer", "minimum": 1 },
+        "updated_at": { "type": "string" }
+      }
+    },
+    "PreviewEmbed": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["title", "description", "color", "thumbnail", "image"],
+      "properties": {
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "color": { "type": "string", "pattern": "^#[0-9a-f]{6}$" },
+        "thumbnail": { "$ref": "common.json#/$defs/NullableString", "description": "`/art/portraits/{key}`." },
+        "image": { "$ref": "common.json#/$defs/NullableString", "description": "`/art/entry/{key}`." }
+      }
+    },
+    "PreviewSlot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["position", "block_id", "part", "content", "content_units", "embeds", "embed_units", "files", "hash"],
+      "properties": {
+        "position": { "type": "integer", "minimum": 0 },
+        "block_id": { "type": "string" },
+        "part": { "type": "integer", "minimum": 0 },
+        "content": { "type": "string" },
+        "content_units": { "type": "integer", "minimum": 0, "maximum": 2000 },
+        "embeds": { "type": "array", "maxItems": 10, "items": { "$ref": "#/$defs/PreviewEmbed" } },
+        "embed_units": { "type": "integer", "minimum": 0, "maximum": 6000 },
+        "files": { "type": "array", "items": { "type": "string" } },
+        "hash": { "$ref": "#/$defs/Hash" }
+      }
+    },
+    "GuideWarning": {
+      "description": "`missing_art`: the embed goes without that picture (never a failure).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "block_id", "entry", "key", "art"],
+      "properties": {
+        "kind": { "const": "missing_art" },
+        "block_id": { "type": "string" },
+        "entry": { "type": "integer", "minimum": 0 },
+        "key": { "type": "string" },
+        "art": { "enum": ["portrait", "entry"] }
+      }
+    },
+    "GuidePreview": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["slots", "warnings"],
+      "properties": {
+        "slots": { "type": "array", "items": { "$ref": "#/$defs/PreviewSlot" } },
+        "warnings": { "type": "array", "items": { "$ref": "#/$defs/GuideWarning" } }
+      }
+    },
+    "GuideProblem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["problem", "block_id", "field", "units", "limit", "key", "message"],
+      "properties": {
+        "problem": { "enum": ["too_many_blocks", "too_large", "bad_id", "duplicate_id", "empty", "too_long", "unknown_boss", "too_many_slots"] },
+        "block_id": { "$ref": "common.json#/$defs/NullableString" },
+        "field": { "$ref": "common.json#/$defs/NullableString", "description": "`content`, `heading`, `entries`, `entries[i].key|note|title|description`." },
+        "units": { "type": ["integer", "null"], "minimum": 0 },
+        "limit": { "type": ["integer", "null"], "minimum": 0 },
+        "key": { "$ref": "common.json#/$defs/NullableString" },
+        "message": { "type": "string" }
+      }
+    },
+    "GuideBlocksRefused": {
+      "description": "`422 invalid_blocks` (blocks as sent) or `422 draft_invalid` (the saved draft no longer renders): an ApiError plus every problem, in block order.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["error", "message", "problems"],
+      "properties": {
+        "error": { "enum": ["invalid_blocks", "draft_invalid"] },
+        "message": { "type": "string" },
+        "problems": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/GuideProblem" } }
+      }
+    },
+    "GuideConfirmations": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["repost_from", "interleaved", "channel_move"],
+      "properties": {
+        "repost_from": { "type": ["integer", "null"], "minimum": 0, "description": "Posted messages from this position on are deleted and posted again." },
+        "interleaved": { "type": "boolean", "description": "New messages go below messages that are not the guide's." },
+        "channel_move": { "type": "boolean", "description": "The guide moves to another channel." }
+      }
+    },
+    "GuideNeedsConfirmation": {
+      "description": "`422 needs_confirmation`: an ApiError plus what the plan needs confirmed.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["error", "message", "needs"],
+      "properties": {
+        "error": { "const": "needs_confirmation" },
+        "message": { "type": "string" },
+        "needs": { "$ref": "#/$defs/GuideConfirmations" }
+      }
+    },
+    "GuidePlanCounts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["keep", "edit", "create", "delete"],
+      "properties": {
+        "keep": { "type": "integer", "minimum": 0 },
+        "edit": { "type": "integer", "minimum": 0 },
+        "create": { "type": "integer", "minimum": 0 },
+        "delete": { "type": "integer", "minimum": 0, "description": "Discord deletes only." }
+      }
+    },
+    "GuidePlanOp": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "position", "channel_id", "message_id", "block_kind", "summary"],
+      "properties": {
+        "kind": { "$ref": "#/$defs/OpKind" },
+        "position": { "type": "integer", "minimum": 0 },
+        "channel_id": { "type": "string" },
+        "message_id": { "$ref": "common.json#/$defs/NullableString", "description": "Whole, for edits and deletes." },
+        "block_kind": { "enum": ["text", "bosses", "spacer", null] },
+        "summary": { "$ref": "common.json#/$defs/NullableString", "description": "The written message's first line of text, else its first embed title." }
+      }
+    },
+    "GuidePlanBlocked": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["reason", "channel_id", "position", "grants"],
+      "properties": {
+        "reason": { "enum": ["unknown_slot", "channel_missing", "missing_grants"] },
+        "channel_id": { "$ref": "common.json#/$defs/NullableString" },
+        "position": { "type": ["integer", "null"], "minimum": 0 },
+        "grants": { "type": "array", "items": { "enum": ["view", "send", "history", "embed", "attach"] } }
+      }
+    },
+    "GuidePlan": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "version", "channel_id", "delete_old", "checked", "no_op", "plan_hash", "counts", "needs", "blocked", "ops", "slots", "warnings"],
+      "properties": {
+        "kind": { "enum": ["publish", "unpublish"] },
+        "version": { "type": "integer", "minimum": 1 },
+        "channel_id": { "type": "string", "description": "The target channel (empty only for an unpublish of a guide with no channel and no messages)." },
+        "delete_old": { "type": "boolean" },
+        "checked": { "type": "boolean", "description": "false: \"Unchecked\" (Discord was slow or offline); the worker checks again before acting." },
+        "no_op": { "type": "boolean" },
+        "plan_hash": { "$ref": "#/$defs/Hash" },
+        "counts": { "$ref": "#/$defs/GuidePlanCounts" },
+        "needs": { "$ref": "#/$defs/GuideConfirmations" },
+        "blocked": { "oneOf": [{ "$ref": "#/$defs/GuidePlanBlocked" }, { "type": "null" }] },
+        "ops": { "type": "array", "items": { "$ref": "#/$defs/GuidePlanOp" }, "description": "In run order." },
+        "slots": { "type": "array", "items": { "$ref": "#/$defs/PreviewSlot" } },
+        "warnings": { "type": "array", "items": { "$ref": "#/$defs/GuideWarning" } }
+      }
+    },
+    "GuideRunOp": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ordinal", "kind", "position", "channel_id", "message_id", "outcome", "candidates", "at"],
+      "properties": {
+        "ordinal": { "type": "integer", "minimum": 0 },
+        "kind": { "$ref": "#/$defs/OpKind" },
+        "position": { "type": "integer", "minimum": 0 },
+        "channel_id": { "type": "string" },
+        "message_id": { "$ref": "common.json#/$defs/NullableString" },
+        "outcome": { "enum": ["pending", "done", "gone", "recovered", "unknown", "rejected", "skipped"] },
+        "candidates": { "type": "array", "items": { "type": "string" } },
+        "at": { "type": "string" }
+      }
+    },
+    "GuideRun": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "guide_id", "kind", "state", "stop_reason", "version", "channel_id", "plan_hash", "confirmed", "delete_old", "requested_by", "requested_at", "started_at", "finished_at", "cancel_requested_at", "progress", "ops"],
+      "properties": {
+        "id": { "type": "string" },
+        "guide_id": { "type": "string" },
+        "kind": { "$ref": "#/$defs/RunKind" },
+        "state": { "$ref": "#/$defs/RunState" },
+        "stop_reason": { "oneOf": [{ "$ref": "#/$defs/StopReason" }, { "type": "null" }] },
+        "version": { "type": "integer", "minimum": 1 },
+        "channel_id": { "type": "string" },
+        "plan_hash": { "$ref": "#/$defs/Hash" },
+        "confirmed": { "$ref": "#/$defs/GuideConfirmations" },
+        "delete_old": { "type": "boolean" },
+        "requested_by": { "$ref": "history.json#/$defs/Actor" },
+        "requested_at": { "type": "string" },
+        "started_at": { "$ref": "common.json#/$defs/NullableString" },
+        "finished_at": { "$ref": "common.json#/$defs/NullableString" },
+        "cancel_requested_at": { "$ref": "common.json#/$defs/NullableString" },
+        "progress": { "$ref": "#/$defs/RunProgress" },
+        "ops": { "type": "array", "items": { "$ref": "#/$defs/GuideRunOp" }, "description": "By ordinal; each recorded before its effect is tried." }
+      }
+    },
+    "GuidePublishResult": {
+      "description": "`202` with the queued run, or `200` with `no_op: true` and `publish: null` when the channel already shows the guide.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["no_op", "publish"],
+      "properties": {
+        "no_op": { "type": "boolean" },
+        "publish": { "oneOf": [{ "$ref": "#/$defs/GuideRun" }, { "type": "null" }] }
+      }
+    }
+  }
+}
