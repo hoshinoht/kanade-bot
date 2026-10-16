@@ -118,6 +118,9 @@ bossing_role_id = "223456789012345678"
 # character_data: NEXON Open API data for linked roster characters (needs
 # roster; off: its routes answer 404, no task runs and no file is opened).
 # character_data = false
+# guides: the guide publisher (admin Guides routes and the publish worker;
+# off: the routes answer 404 and no worker runs; stored guides are kept).
+# guides = false
 
 [character_data]
 # Required while the module is on: its own SQLite file, outside the store

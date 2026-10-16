@@ -206,6 +206,7 @@ pub(super) const KEYS: &[(&str, &str, Kind)] = &[
         "KANADE_MODULE_CHARACTER_DATA",
         Flag,
     ),
+    ("modules.guides", "KANADE_MODULE_GUIDES", Flag),
     (
         "character_data.db_path",
         "KANADE_CHARACTER_DATA_DB_PATH",

@@ -12,6 +12,7 @@ pub mod drafts;
 pub mod estimates;
 pub mod events;
 pub mod fixed;
+pub mod guides;
 pub mod history;
 pub mod inbox;
 pub mod inbox_past;

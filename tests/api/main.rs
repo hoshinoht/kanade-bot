@@ -15,6 +15,7 @@ mod estimates;
 mod etag;
 mod events;
 mod fixed_characters;
+mod guides;
 mod header_rewrite;
 mod headers;
 mod history;

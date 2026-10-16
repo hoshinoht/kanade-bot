@@ -97,6 +97,9 @@ pub(crate) struct Build {
     /// The writer freezes ended runs (serve's `RunEnds` from the default
     /// run lengths); `false` keeps v4 rules, where nothing ends.
     pub(crate) run_ends: bool,
+    /// Module `guides` switched on with this port; the channel list then
+    /// also holds [`GUIDE_CHANNELS`].
+    pub(crate) guides: Option<Arc<dyn kanade::api::state::GuidePort>>,
 }
 
 impl Default for Build {
@@ -113,6 +116,7 @@ impl Default for Build {
             characters: false,
             character_data: None,
             run_ends: false,
+            guides: None,
         }
     }
 }
@@ -140,6 +144,10 @@ pub(crate) fn utc(month: u32, day: u32, hour: u32, minute: u32) -> DateTime<Utc>
     Utc.with_ymd_and_hms(2026, month, day, hour, minute, 0)
         .unwrap()
 }
+
+/// Snowflake channels the guide tests publish to (listed only with module
+/// `guides` on, so other suites see the usual three).
+pub(crate) const GUIDE_CHANNELS: [&str; 2] = ["100000000000000001", "100000000000000002"];
 
 /// Thursday 24 Sep 00:00 KL and Thursday 1 Oct 00:00 KL.
 pub(crate) fn this_week() -> DateTime<Utc> {
@@ -663,6 +671,7 @@ impl Reads {
             characters,
             character_data,
             run_ends,
+            guides,
         } = build;
         let dir = TempDir::new();
         let backup_dir = backup_dir.then(|| {
@@ -805,12 +814,20 @@ impl Reads {
             channels: Arc::new(ReadyGuild(
                 StaticChannels(
                     [("kalos-four", true), ("star", false), ("limbo-trio", true)]
+                        .into_iter()
+                        .chain(
+                            guides
+                                .is_some()
+                                .then_some(GUIDE_CHANNELS.map(|id| (id, false)))
+                                .into_iter()
+                                .flatten(),
+                        )
                         .map(|(id, watched)| ChannelEntry {
                             id: id.into(),
                             name: format!("#{id}"),
                             watched,
                         })
-                        .into(),
+                        .collect(),
                 ),
                 role_directory_connected,
             )),
@@ -840,6 +857,7 @@ impl Reads {
                 .then(|| store.clone() as Arc<dyn kanade::api::state::CharacterRoster>),
             character_data: character_data
                 .map(|make| make(store.clone(), Arc::new(move || pinned))),
+            guides,
         };
         let mut http = fixture.http();
         if logins {
@@ -929,6 +947,7 @@ impl Reads {
             marks: old.marks.clone(),
             characters: old.characters.clone(),
             character_data: old.character_data.clone(),
+            guides: old.guides.clone(),
         };
         self.site.state = Some(Arc::new(state));
         self.admin = spawn(self.site.clone()).await;

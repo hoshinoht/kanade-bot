@@ -13,8 +13,11 @@ register every file as an in-memory resource under its `$id`.
   scores, rates and seconds stay `number`.
 - Every non-2xx JSON body on both origins is `error.json#/$defs/ApiError`,
   except `429 request_limit`, which adds `limit`
-  (`public.json#/$defs/MemberRequestLimit`), and `429 member_limited`, which
-  adds `next_at` (`public.json#/$defs/MemberEstimateLimit`).
+  (`public.json#/$defs/MemberRequestLimit`), `429 member_limited`, which
+  adds `next_at` (`public.json#/$defs/MemberEstimateLimit`), `422
+  invalid_blocks`/`draft_invalid`, which add `problems`
+  (`guides.json#/$defs/GuideBlocksRefused`), and `422 needs_confirmation`,
+  which adds `needs` (`guides.json#/$defs/GuideNeedsConfirmation`).
 - Successful admin JSON `GET`s (outside `/api/admin/auth/`) carry a strong
   `ETag`; `If-None-Match` naming it answers `304` with no body and the same
   headers.
@@ -109,6 +112,19 @@ Pointers are `<file>#/$defs/<Name>`.
 | `POST /api/admin/estimates` | `202` `character_data.json#/$defs/EstimateStarted` (body `EstimateRequest`: `character_ids` (1 to 6) or `run_id`, optional `refresh`; module `character_data` with `KANADE_SCOUTER_URL`: every estimate route answers the generic 404, before the session check, while the module is off or the URL unset; CSRF; no History row. A run looks up the character each party member brings (as `GET …/characters` resolves it); members without one are `missing`. Jobs wait in one FIFO line and run one at a time: a new job is `queued` with its `position`, or `running` when nothing is ahead; a target already queued or running answers that job; the job is already `done` with `cache_hit` when stored results younger than `estimate_days` cover the same IGN set; 429 `estimate_queue_full` when 16 jobs wait already; 422 `invalid`, `region` (not MapleSEA), `unsupported_ign`, `nothing_to_look_up`, `too_many`; 404 `not_found` for an unknown character or run; 400 `invalid_body` for any other field) |
 | `GET /api/admin/estimates?character_ids=<a>,<b>` or `?run_id=<id>` | `character_data.json#/$defs/EstimateStatus` (that target's job, with its `position` while queued, and the running job; 422 `invalid` for any other query) |
 | `GET /api/admin/estimates/{job}` | `character_data.json#/$defs/EstimateJob` (each character's `outcome` and the members found so far fill in as each finishes; one failure never stops the others, and the party total covers the members found, `complete` only when all were; `stale` once its `fetched_at` is at least `fresh_days` (the saved `estimate_days`) old. 404 `not_found` once gone ("That lookup is gone: lookups are kept for 24 hours."). Jobs live in memory only, lost on restart: one per target, kept 24 hours; a new lookup of the same characters or run replaces a finished one (the old id answers 404); at most 512 targets, past which the oldest finished one goes early. Results are kept up to 30 days in memory (the newest 1024 of each kind) and in the character-data file) |
+| `GET /api/admin/guides` | `guides.json#/$defs/GuideList` (module `guides`: every guide route answers the generic 404, before the session check, while `modules.guides` is off; by title; each row's `status` chip is derived on every read from the saved draft rendered now, the published slots and the newest run, never from Discord: `publishing` (with `progress` done of planned, the plan's counts from the request's History record), `needs_attention` (`reason` `unconfirmed_message`, `position`), `blocked` (`channel_missing` from the gateway cache, `discord_refused` after a run stopped `rejected`, `draft_invalid`), `not_published` (`no_channel`), `out_of_date` (`channel_changed`, `message_deleted`, `draft_changed`, `art_changed`, `boss_facts_changed`), `published`; `last_run` is the newest run) |
+| `POST /api/admin/guides` | `201` `guides.json#/$defs/GuideSaved` (body `{title, channel_id?}`: title 1 to 100 characters, trimmed; the channel a snowflake the bot lists, else 422 `invalid`; version 1 with no blocks; 409 `channel_taken` (one guide per channel); CSRF; a retry with the same Idempotency-Key (scope `config`, identity the full normalized form) replays the first answer, another request under it is 422 `idempotency_mismatch`; History settings row, section `guides`, key `guide.<id>`) |
+| `GET /api/admin/guides/{id}` | `guides.json#/$defs/GuideDetail` (the draft's blocks, its row and its published slots with whole message ids; 404 `not_found`) |
+| `PATCH /api/admin/guides/{id}` | `guides.json#/$defs/GuideSaved` (body `{version, title, channel_id, blocks}`, the whole draft: 409 `stale` for another version, 409 `channel_taken`, 422 `guides.json#/$defs/GuideBlocksRefused` `invalid_blocks` with every problem (block id, field, units and limit, unknown boss key; lengths in UTF-16 units, never clipped); an unchanged form answers the stored version and writes nothing; saves stay open during a run (the worker stops a stale publish `plan_changed`); a draft-only save records no History row, a rename or channel change does; Idempotency-Key as the POST) |
+| `DELETE /api/admin/guides/{id}` | `common.json#/$defs/Message` (body `{version}`; 409 `stale`, 409 `unpublish_first` while messages are (or may be) in Discord, 409 `publishing` during a run; History row; Idempotency-Key as the POST) |
+| `POST /api/admin/guides/{id}/render` | `guides.json#/$defs/GuidePreview` (body `{blocks}`: unsaved blocks rendered as Discord shows them, art as `/art/…` URLs, `missing_art` warnings; CSRF, no key, writes nothing; 422 `invalid_blocks` as the PATCH) |
+| `GET /api/admin/guides/{id}/plan?kind=publish\|unpublish&delete_old=1\|0` | `guides.json#/$defs/GuidePlan` (the saved version rendered and planned against the published slots and, while Discord is connected, a live read of the channel within 5 s (`checked`; false is "Unchecked", the worker checks again); ops in run order with whole message ids, counts, `needs`, `blocked`, `plan_hash` to publish with; `delete_old` defaults to 1; an unpublish deletes every published message newest first; 409 `no_channel`; 422 `draft_invalid` (`GuideBlocksRefused`) when the saved draft no longer renders; 422 `invalid_query`) |
+| `POST /api/admin/guides/{id}/publish` | `202` `guides.json#/$defs/GuidePublishResult` (body `{version, plan_hash, confirm: {repost_from?, interleaved?, channel_move?}, delete_old?}`: the plan is recomputed now; `200` with `no_op` when nothing would change; 409 `stale`, `plan_changed` (differs from `plan_hash`), `publishing` (a run is queued or running), `blocked` (an unconfirmed post, a missing channel or grant), `no_channel`; 422 `guides.json#/$defs/GuideNeedsConfirmation` `needs_confirmation` with `needs`; 503 `discord_offline` while the gateway is not connected; queues the run for the worker; History row `publish.<run>` (the outcome later by `system:guides`); Idempotency-Key as the POST) |
+| `POST /api/admin/guides/{id}/unpublish` | `202` `guides.json#/$defs/GuidePublishResult` (body `{plan_hash, confirm: true}` from `…/plan?kind=unpublish`; a run deleting every published message; 422 `confirm_required`; otherwise as publish) |
+| `POST /api/admin/guides/{id}/search` | `202` `guides.json#/$defs/GuidePublishResult` ("Search again": a run of kind `search` for the guide's unconfirmed posts; 409 `nothing_unknown`, `publishing`; 503 `discord_offline`; Idempotency-Key as the POST) |
+| `POST /api/admin/guides/{id}/slots/not-posted` | `common.json#/$defs/Message` (body `{channel_id, position, confirm: true}`: "Mark as not posted" drops an unconfirmed slot so the next publish posts it again (a copy may stay if it did post); 422 `confirm_required`; 404 `not_found`; 409 `not_unknown`, `publishing`; History row `slot.<guide>.<position>`; Idempotency-Key as the POST) |
+| `GET /api/admin/guides/{id}/publishes/{run}` | `guides.json#/$defs/GuideRun` (the progress screen: state, stop reason, `progress` and the op log by ordinal; 404 `not_found` for another guide's run) |
+| `POST /api/admin/guides/{id}/publishes/{run}/cancel` | `guides.json#/$defs/GuideRun` (with `cancel_requested_at`; the worker stops between ops and the run ends `cancelled`; 409 `finished`; 404 `not_found`; Idempotency-Key as the POST) |
 | `GET /api/admin/personas` | `members.json#/$defs/Personas` |
 | `GET /api/admin/channels` | `common.json#/$defs/Channels` |
 | `GET /api/admin/roles` | `common.json#/$defs/Roles` |
@@ -166,7 +182,7 @@ Pointers are `<file>#/$defs/<Name>`.
 `public.json`, `week.json`, `members.json`, `characters.json`, `fixed.json`,
 `bosses.json`, `reminders.json`, `inbox.json`, `drafts.json`, `extractions.json`,
 `chat.json`, `rewrites.json`, `limits.json`, `history.json`, `config.json`,
-`presence.json`.
+`presence.json`, `guides.json`.
 
 ## Changes since A0
 
@@ -346,3 +362,5 @@ Pointers are `<file>#/$defs/<Name>`.
   lookup job's totals) is removed; the portal reads `party_total`
   (`character_data.json` `RunPartyTotal`, the saved estimates' figures)
   instead.
+- Guide publisher (2026-10-16): `guides.json` for the `/api/admin/guides…`
+  routes (module `guides`), and `identity.json` `Session.guides`.

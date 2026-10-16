@@ -30,6 +30,10 @@ use crate::{
             ProposalStore, StoredDraft, StoredProposal,
         },
         forward_boxed,
+        guides::{
+            CancelRequest, GuideChange, GuideRecord, GuideStore, GuideWrite, NotPosted,
+            PublishRequest, PublishRequested,
+        },
         history::{
             Actor, BlameIndex, BlameTarget, ChangeFilter, ChangeHistory, ChangeQuery, ChangeRecord,
             ChangeRef, HeldReminders, HistoryVerification, JournalHeld, changed_fields,
@@ -100,9 +104,10 @@ pub type HeaderRewritePort = Arc<
         + Sync,
 >;
 
-/// The delivery-owned guide publisher, absent while Discord is offline; the
-/// API never holds a transport. Runs are queued in the store
-/// ([`crate::domain::guides::GuideStore::request_publish`]).
+/// The delivery-owned guide publisher (`modules.guides`); the API never
+/// holds a transport. Runs are queued in the store
+/// ([`crate::domain::guides::GuideStore::request_publish`]) and Discord's
+/// availability is [`ChannelList::connected`].
 pub trait GuidePort: Send + Sync {
     /// Read the channel for a plan (4.4): which of `slots` are gone, its
     /// newest message and the bot's grants, within
@@ -122,6 +127,120 @@ pub trait GuidePort: Send + Sync {
 pub type ModelLimits = Arc<
     dyn Fn(DateTime<Utc>) -> Vec<crate::infrastructure::llm::governor::GroupSnapshot> + Send + Sync,
 >;
+
+/// The guide tables (they exist whether or not `modules.guides` is on),
+/// object-safe as [`ReadStore`]: the [`GuideStore`] reads and the admin
+/// writes, each with a keyed request's replay in the same transaction (see
+/// [`ReplayStore::apply_guide_replayed`]).
+pub trait GuideBook: GuideStore {
+    fn write_guide(
+        &self,
+        change: GuideChange,
+        record: GuideRecord,
+        replay: Option<StoredReplay>,
+    ) -> ReadFuture<'_, KeyedWrite<GuideWrite>>;
+    fn queue_publish(
+        &self,
+        request: PublishRequest,
+        record: GuideRecord,
+        replay: Option<StoredReplay>,
+    ) -> ReadFuture<'_, KeyedWrite<PublishRequested>>;
+    /// A keyed cancel is stamped at the replay's `created_at`, else `at`.
+    fn cancel_publish(
+        &self,
+        guide_id: String,
+        publish_id: String,
+        at: DateTime<Utc>,
+        replay: Option<StoredReplay>,
+    ) -> ReadFuture<'_, KeyedWrite<CancelRequest>>;
+    fn not_posted(
+        &self,
+        guide_id: String,
+        channel_id: String,
+        position: u32,
+        record: GuideRecord,
+        replay: Option<StoredReplay>,
+    ) -> ReadFuture<'_, KeyedWrite<NotPosted>>;
+}
+
+impl<T: GuideStore + ReplayStore + Send + Sync> GuideBook for T {
+    fn write_guide(
+        &self,
+        change: GuideChange,
+        record: GuideRecord,
+        replay: Option<StoredReplay>,
+    ) -> ReadFuture<'_, KeyedWrite<GuideWrite>> {
+        Box::pin(async move {
+            match replay {
+                Some(replay) => self.apply_guide_replayed(change, record, replay).await,
+                None => self
+                    .apply_guide(change, record)
+                    .await
+                    .map(KeyedWrite::Applied),
+            }
+        })
+    }
+
+    fn queue_publish(
+        &self,
+        request: PublishRequest,
+        record: GuideRecord,
+        replay: Option<StoredReplay>,
+    ) -> ReadFuture<'_, KeyedWrite<PublishRequested>> {
+        Box::pin(async move {
+            match replay {
+                Some(replay) => self.request_publish_replayed(request, record, replay).await,
+                None => self
+                    .request_publish(request, record)
+                    .await
+                    .map(KeyedWrite::Applied),
+            }
+        })
+    }
+
+    fn cancel_publish(
+        &self,
+        guide_id: String,
+        publish_id: String,
+        at: DateTime<Utc>,
+        replay: Option<StoredReplay>,
+    ) -> ReadFuture<'_, KeyedWrite<CancelRequest>> {
+        Box::pin(async move {
+            match replay {
+                Some(replay) => {
+                    self.request_cancel_replayed(guide_id, publish_id, replay)
+                        .await
+                }
+                None => self
+                    .request_cancel(guide_id, publish_id, at)
+                    .await
+                    .map(KeyedWrite::Applied),
+            }
+        })
+    }
+
+    fn not_posted(
+        &self,
+        guide_id: String,
+        channel_id: String,
+        position: u32,
+        record: GuideRecord,
+        replay: Option<StoredReplay>,
+    ) -> ReadFuture<'_, KeyedWrite<NotPosted>> {
+        Box::pin(async move {
+            match replay {
+                Some(replay) => {
+                    self.mark_not_posted_replayed(guide_id, channel_id, position, record, replay)
+                        .await
+                }
+                None => self
+                    .mark_not_posted(guide_id, channel_id, position, record)
+                    .await
+                    .map(KeyedWrite::Applied),
+            }
+        })
+    }
+}
 
 /// Object-safe reads over any store that implements the domain ports.
 pub trait ReadStore: Send + Sync {
@@ -265,6 +384,8 @@ pub trait ReadStore: Send + Sync {
     ) -> ReadFuture<'_, ()>;
     fn unsettled_owner_requests(&self) -> ReadFuture<'_, Vec<OwnerRequest>>;
     fn settle_owner_request_message(&self, id: String) -> ReadFuture<'_, ()>;
+    /// The guide tables (module `guides`).
+    fn guide_book(&self) -> &dyn GuideBook;
 }
 
 /// The roster module's store (`modules.roster`), object-safe as
@@ -393,6 +514,7 @@ where
         + AuthAuditStore
         + OwnerRequestStore
         + SnapshotReads
+        + GuideStore
         + Send
         + Sync,
 {
@@ -763,6 +885,10 @@ where
     fn settle_owner_request_message(&self, id: String) -> ReadFuture<'_, ()> {
         Box::pin(async move { OwnerRequestStore::settle_owner_request_message(self, &id).await })
     }
+
+    fn guide_book(&self) -> &dyn GuideBook {
+        self
+    }
 }
 
 /// A channel the admin may pick (home channels, digest override).
@@ -999,6 +1125,9 @@ pub struct ApiState {
     /// Character data (`modules.character_data`, read at startup); `None`
     /// answers its routes `404` and leaves Config without its health block.
     pub character_data: Option<Arc<crate::infrastructure::character_data::CharacterData>>,
+    /// The guide publisher (`modules.guides`, read at startup), attached by
+    /// serve with its worker; `None` answers every guide route `404`.
+    pub guides: Option<Arc<dyn GuidePort>>,
 }
 
 impl std::fmt::Debug for ApiState {

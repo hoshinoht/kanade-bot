@@ -407,7 +407,7 @@ async fn rows_logged_before_context_facts_still_read_after_a_reopen() {
     let store = SqliteStore::open(&config)
         .await
         .expect("reopen after additive migration");
-    assert_eq!(store.schema_version().await.expect("version"), 41);
+    assert_eq!(store.schema_version().await.expect("version"), 42);
     let mut extraction = extraction;
     extraction.id = "x-reasoning".into();
     extraction.reasoning_content = Some("Stored extraction reasoning.".into());
@@ -471,7 +471,7 @@ async fn the_profanity_migration_keeps_existing_chat_rows_and_their_children() {
     )
     .await;
     let store = SqliteStore::open(&config).await.expect("migrates");
-    assert_eq!(store.schema_version().await.expect("version"), 41);
+    assert_eq!(store.schema_version().await.expect("version"), 42);
     let plain = store
         .load_chat("c-plain")
         .await
