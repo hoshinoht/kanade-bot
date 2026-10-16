@@ -1,8 +1,8 @@
 //! `character_data.json` readiness (module `character_data`) of a run or a
 //! weekly timing: each party slot's level and power, its level against
-//! each boss, and the character's scouter reading per boss when the
-//! estimates' 24-hour memory holds one. NEXON values appear only from an
-//! active link's unexpired data, with the attribution.
+//! each boss, and the character's stored scouter reading per boss, of any
+//! age, marked `stale` once at least `estimate_days` old. NEXON values
+//! appear only from an active link's unexpired data, with the attribution.
 
 use chrono::{DateTime, Utc};
 use serde::Serialize;
@@ -16,7 +16,7 @@ use crate::{
         characters::{Basis, Character},
         chardata::{ATTRIBUTION, LevelSource, LevelVerdict, Readiness, Requirement, date_text},
     },
-    infrastructure::scouter::{Member, scouter_keys},
+    infrastructure::scouter::{Estimates, Member, RosterIgn, scouter_keys},
 };
 
 #[derive(Serialize)]
@@ -27,6 +27,9 @@ pub struct RunReadiness {
     pub slots: Vec<ReadinessSlot>,
     /// Some slot shows a NEXON value: show the attribution.
     pub nexon_data: bool,
+    /// The saved `estimate_days`: a reading at least this old is `stale`
+    /// ("older than n days"); `null` while estimates are off.
+    pub fresh_days: Option<u32>,
     /// `Data based on NEXON Open API`.
     pub attribution: &'static str,
 }
@@ -42,6 +45,8 @@ pub struct TimingReadiness {
     pub slots: Vec<ReadinessSlot>,
     /// Some slot shows a NEXON value: show the attribution.
     pub nexon_data: bool,
+    /// As [`RunReadiness::fresh_days`].
+    pub fresh_days: Option<u32>,
     /// `Data based on NEXON Open API`.
     pub attribution: &'static str,
 }
@@ -108,9 +113,9 @@ pub struct BossReadiness {
     pub entry_level: Option<u16>,
     #[cfg_attr(test, ts(type = "'ok' | 'under' | 'unknown'"))]
     pub level: &'static str,
-    /// The character's scouter reading for this boss from the
-    /// estimates' 24-hour memory (never looked up here); `null` without
-    /// one, or while estimates are off.
+    /// The character's stored scouter reading for this boss, of any age
+    /// (never looked up here); `null` without one, or while estimates are
+    /// off.
     pub scouter: Option<ScouterReading>,
 }
 
@@ -128,6 +133,9 @@ pub struct ScouterReading {
     pub estimated_minutes: Option<f64>,
     /// When kanade received it from the scouter.
     pub fetched_at: String,
+    /// Fetched at least `estimate_days` ago: show it marked "older than n
+    /// days".
+    pub stale: bool,
     /// The scouter assumed a 100% critical rate for this character (theirs
     /// is under it): label it "Assumes 100% critical rate (actual N%)".
     pub critical_rate_assumed: bool,
@@ -136,12 +144,28 @@ pub struct ScouterReading {
     pub critical_rate_actual: Option<f64>,
 }
 
-/// The card for `boss` in `member`'s result, through the scouter key table.
-pub fn reading(
-    boss: &Requirement,
-    member: &Member,
-    fetched_at: DateTime<Utc>,
-) -> Option<ScouterReading> {
+/// A character's stored scouter result: when it was fetched, and whether
+/// that is at least `estimate_days` ago.
+pub struct Cached {
+    pub member: Member,
+    pub fetched_at: DateTime<Utc>,
+    pub stale: bool,
+}
+
+impl Cached {
+    /// `ign`'s stored result of any age; never starts a lookup.
+    pub fn of(estimates: &Estimates, ign: &RosterIgn) -> Option<Self> {
+        estimates.cached(ign).map(|(member, fetched_at)| Self {
+            stale: estimates.stale(fetched_at),
+            member,
+            fetched_at,
+        })
+    }
+}
+
+/// The card for `boss` in `cached`'s result, through the scouter key table.
+pub fn reading(boss: &Requirement, cached: &Cached) -> Option<ScouterReading> {
+    let member = &cached.member;
     let token = format!("{}{}", boss.difficulty.to_ascii_uppercase(), boss.boss);
     let card = scouter_keys(&token).find_map(|key| member.bosses.get(key))?;
     let assumed = member.crit_assumed();
@@ -150,15 +174,15 @@ pub fn reading(
         effective_percentage: card.effective_percentage,
         rating: card.rating.clone(),
         estimated_minutes: card.estimated_minutes,
-        fetched_at: iso_instant(fetched_at),
+        fetched_at: iso_instant(cached.fetched_at),
+        stale: cached.stale,
         critical_rate_assumed: assumed,
         critical_rate_actual: member.critical_rate_actual.filter(|_| assumed),
     })
 }
 
 /// One slot: `candidates` is how many active characters the member has,
-/// `brings` the character and why; `scouter` its cached scouter
-/// result and when it was fetched.
+/// `brings` the character and why; `scouter` its stored scouter result.
 pub fn slot(
     member_id: &str,
     candidates: usize,
@@ -166,7 +190,7 @@ pub fn slot(
     link: Option<&'static str>,
     readiness: &Readiness,
     bosses: &[Requirement],
-    scouter: Option<&(Member, DateTime<Utc>)>,
+    scouter: Option<&Cached>,
 ) -> ReadinessSlot {
     ReadinessSlot {
         member_id: member_id.to_owned(),
@@ -199,18 +223,23 @@ pub fn slot(
                     LevelVerdict::Under => "under",
                     LevelVerdict::Unknown => "unknown",
                 },
-                scouter: scouter
-                    .and_then(|(member, fetched_at)| reading(boss, member, *fetched_at)),
+                scouter: scouter.and_then(|cached| reading(boss, cached)),
             })
             .collect(),
     }
 }
 
-pub fn run(run_id: &str, slots: Vec<ReadinessSlot>, nexon_data: bool) -> RunReadiness {
+pub fn run(
+    run_id: &str,
+    slots: Vec<ReadinessSlot>,
+    nexon_data: bool,
+    fresh_days: Option<u32>,
+) -> RunReadiness {
     RunReadiness {
         run_id: run_id.to_owned(),
         slots,
         nexon_data,
+        fresh_days,
         attribution: ATTRIBUTION,
     }
 }
@@ -219,11 +248,13 @@ pub fn timing(
     fixed_run_id: Option<&str>,
     slots: Vec<ReadinessSlot>,
     nexon_data: bool,
+    fresh_days: Option<u32>,
 ) -> TimingReadiness {
     TimingReadiness {
         fixed_run_id: fixed_run_id.map(str::to_owned),
         slots,
         nexon_data,
+        fresh_days,
         attribution: ATTRIBUTION,
     }
 }

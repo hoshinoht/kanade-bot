@@ -211,6 +211,7 @@ pub struct PartyTotal {
 #[cfg_attr(test, derive(ts_rs::TS))]
 pub struct PartyTotals {
     pub fetched_at: String,
+    pub stale: bool,
     pub bosses: Vec<PartyTotal>,
 }
 
@@ -221,6 +222,7 @@ pub struct RunPartyCharacters {
     pub slots: Vec<PartyCharacterSlot>,
     pub character_data: bool,
     pub estimates: bool,
+    pub fresh_days: Option<u32>,
     pub totals: Option<PartyTotals>,
     pub nexon_data: bool,
     pub attribution: &'static str,

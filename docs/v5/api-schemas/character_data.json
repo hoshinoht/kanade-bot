@@ -101,11 +101,12 @@
       "description": "GET /api/admin/runs/{id}/readiness: each party slot (as GET .../characters resolves it) with its level and power, and its level against each boss of the run. Computed on read, never stored, never blocking. NEXON values only from an active link's unexpired data.",
       "type": "object",
       "additionalProperties": false,
-      "required": ["run_id", "slots", "nexon_data", "attribution"],
+      "required": ["run_id", "slots", "nexon_data", "fresh_days", "attribution"],
       "properties": {
         "run_id": { "type": "string" },
         "slots": { "type": "array", "items": { "$ref": "#/$defs/ReadinessSlot" }, "description": "In party order." },
         "nexon_data": { "type": "boolean", "description": "Some slot shows a NEXON value: show the attribution." },
+        "fresh_days": { "type": ["integer", "null"], "minimum": 1, "maximum": 30, "description": "The saved estimate_days: a scouter reading at least this old is `stale` (show it marked older than n days); null while estimates are off." },
         "attribution": { "const": "Data based on NEXON Open API" }
       }
     },
@@ -113,11 +114,12 @@
       "description": "GET /api/admin/fixed/{id}/readiness (the saved timing) and POST /api/admin/fixed/readiness (the Fixed editor's form as it stands; body `TimingPreview`), modules `roster` and `character_data`: each party slot as GET /api/admin/fixed/{id}/characters resolves it (picks only for members of the saved party), with the same values and verdicts as `RunReadiness`. Computed on read, never stored, never blocking.",
       "type": "object",
       "additionalProperties": false,
-      "required": ["fixed_run_id", "slots", "nexon_data", "attribution"],
+      "required": ["fixed_run_id", "slots", "nexon_data", "fresh_days", "attribution"],
       "properties": {
         "fixed_run_id": { "$ref": "common.json#/$defs/NullableString", "description": "Null for a timing not added yet." },
         "slots": { "type": "array", "items": { "$ref": "#/$defs/ReadinessSlot" }, "description": "In party order." },
         "nexon_data": { "type": "boolean", "description": "Some slot shows a NEXON value: show the attribution." },
+        "fresh_days": { "type": ["integer", "null"], "minimum": 1, "maximum": 30, "description": "As RunReadiness.fresh_days." },
         "attribution": { "const": "Data based on NEXON Open API" }
       }
     },
@@ -186,7 +188,7 @@
         "entry_level": { "type": ["integer", "null"], "minimum": 1, "description": "From boss knowledge; null when it has none." },
         "level": { "enum": ["ok", "under", "unknown"], "description": "ok at or above entry_level; unknown without a level or an entry_level." },
         "scouter": {
-          "description": "The character's scouter reading for this boss from the estimates' 24-hour memory (readiness never looks one up); null without one, for a boss the scouter has no card for, or while estimates are off.",
+          "description": "The character's stored scouter reading for this boss, of any age up to the 30 days it is kept (readiness never looks one up); null without one, for a boss the scouter has no card for, or while estimates are off.",
           "oneOf": [{ "$ref": "#/$defs/ScouterReading" }, { "type": "null" }]
         }
       }
@@ -195,13 +197,14 @@
       "description": "Shown, never judged: a clear-time estimate, for planning only, not eligibility.",
       "type": "object",
       "additionalProperties": false,
-      "required": ["percentage", "effective_percentage", "rating", "estimated_minutes", "fetched_at", "critical_rate_assumed", "critical_rate_actual"],
+      "required": ["percentage", "effective_percentage", "rating", "estimated_minutes", "fetched_at", "stale", "critical_rate_assumed", "critical_rate_actual"],
       "properties": {
         "percentage": { "type": "number", "minimum": 0, "description": "The character's share (effective_percentage), else the card's percentage." },
         "effective_percentage": { "type": ["number", "null"], "minimum": 0, "description": "The character's own share only; null when the scouter can't tell. Shares of a party total use this, never `percentage`, which may be a party card's whole-party figure." },
         "rating": { "type": "string" },
         "estimated_minutes": { "type": ["number", "null"], "minimum": 0 },
         "fetched_at": { "type": "string", "description": "When kanade received it from the scouter." },
+        "stale": { "type": "boolean", "description": "fetched_at is at least estimate_days (the response's fresh_days) ago: show it marked older than n days." },
         "critical_rate_assumed": { "type": "boolean", "description": "The scouter assumed a 100% critical rate (the character's is under it): label it Assumes 100% critical rate (actual N%)." },
         "critical_rate_actual": { "type": ["number", "null"], "minimum": 0, "description": "The character's own critical rate with an assumed reading; null otherwise or when the scouter didn't say." }
       }
@@ -298,7 +301,7 @@
       }
     },
     "EstimateRequest": {
-      "description": "POST /api/admin/estimates body: exactly one of character_ids (1 to 6) or run_id; refresh skips the 24-hour memory (Look up again).",
+      "description": "POST /api/admin/estimates body: exactly one of character_ids (1 to 6) or run_id; refresh skips the stored results (Look up again).",
       "type": "object",
       "additionalProperties": false,
       "properties": {
@@ -329,7 +332,7 @@
       "description": "One scouter lookup (admin only), queued and looked up one at a time. The scouter is sent roster IGNs only, never a Nexon field.",
       "type": "object",
       "additionalProperties": false,
-      "required": ["id", "state", "position", "run_id", "character_ids", "started_by", "started_at", "finished_at", "characters", "missing", "progress", "fetched_at", "result", "error", "label", "note"],
+      "required": ["id", "state", "position", "run_id", "character_ids", "started_by", "started_at", "finished_at", "characters", "missing", "progress", "fetched_at", "stale", "fresh_days", "result", "error", "label", "note"],
       "properties": {
         "id": { "type": "string", "minLength": 1 },
         "state": { "enum": ["queued", "running", "done", "failed"], "description": "done once at least one character was found (failed members carry their own error); failed when nobody was." },
@@ -379,7 +382,9 @@
             "current": { "$ref": "common.json#/$defs/NullableString", "description": "The character being looked up now; null while queued, between characters, for the party total and once finished." }
           }
         },
-        "fetched_at": { "$ref": "common.json#/$defs/NullableString", "description": "When the result came from the scouter (a cached answer keeps its first time); null until done." },
+        "fetched_at": { "$ref": "common.json#/$defs/NullableString", "description": "When the result came from the scouter (answered from stored results: the oldest one it used); null until done." },
+        "stale": { "type": "boolean", "description": "fetched_at is at least fresh_days ago: show the result (members and party total) marked older than n days. false until done, and for a job answered by a fresh lookup." },
+        "fresh_days": { "type": "integer", "minimum": 1, "maximum": 30, "description": "The saved estimate_days." },
         "result": { "oneOf": [{ "$ref": "#/$defs/EstimateResult" }, { "type": "null" }], "description": "The characters found so far (while queued or running too) and, once done, the party total; null with nobody found." },
         "error": { "oneOf": [{ "$ref": "#/$defs/EstimateError" }, { "type": "null" }], "description": "failed: why nobody was found (the first character's error). done: why the party total is missing although characters were found (character_id null)." },
         "label": { "const": "Clear-time estimate" },
@@ -391,7 +396,7 @@
       "additionalProperties": false,
       "required": ["cache_hit", "complete", "members", "combined"],
       "properties": {
-        "cache_hit": { "type": "boolean", "description": "Answered from kanade's 24-hour memory (never persisted) without calling the scouter." },
+        "cache_hit": { "type": "boolean", "description": "Answered from stored results younger than estimate_days (kept up to 30 days in memory and in the character-data file, never in backups) without calling the scouter." },
         "complete": { "type": "boolean", "description": "Done, no party member missing or failed, and every total complete." },
         "members": {
           "type": "array",

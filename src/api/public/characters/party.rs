@@ -1,12 +1,13 @@
 //! `GET /api/public/runs/{id}/characters`: on a run the caller is on, the
 //! character each party member brings (as the admin's `…/characters`
-//! resolves it) with its IGN, class and roster level, and each one's cached
-//! scouter reading per boss of the run (never looked up here), plus the
-//! party totals of the run's newest finished lookup. NEXON
-//! data shows only on the caller's own slot: the notice names admins and
-//! share-card channels as who sees it, never the party (others see the
-//! roster level, which holds NEXON's copied level). No combat power,
-//! no verdicts. Anyone not on the run gets the generic `404`.
+//! resolves it) with its IGN, class and roster level, and each one's stored
+//! scouter reading per boss of the run, of any age, marked `stale` once at
+//! least `estimate_days` old (never looked up here), plus the party totals
+//! of the run's newest finished lookup. NEXON data shows only on the
+//! caller's own slot: the notice names admins and share-card channels as
+//! who sees it, never the party (others see the roster level, which holds
+//! NEXON's copied level). No combat power, no verdicts. Anyone not on the
+//! run gets the generic `404`.
 
 use std::sync::Arc;
 
@@ -28,11 +29,12 @@ use crate::{
         dto::{
             self, Art,
             estimates::{LABEL, NOTE, run_totals},
+            iso_instant,
             public::{
                 PartyCharacter, PartyCharacterSlot, PartyEstimate, PartyMember, PartyTotal,
                 PartyTotals, RunPartyCharacters,
             },
-            readiness::reading,
+            readiness::{Cached, reading},
         },
         listeners::Site,
         public::write::path_id,
@@ -114,12 +116,12 @@ pub(super) async fn read(
         let scouter = estimates.zip(brought).map(|(estimates, character)| {
             RosterIgn::lookup(character)
                 .ok()
-                .and_then(|ign| estimates.cached(&ign))
-                .map(|(member, fetched_at)| {
+                .and_then(|ign| Cached::of(estimates, &ign))
+                .map(|cached| {
                     bosses
                         .iter()
                         .filter_map(|boss| {
-                            reading(boss, &member, fetched_at).map(|reading| PartyEstimate {
+                            reading(boss, &cached).map(|reading| PartyEstimate {
                                 boss: boss.boss.clone(),
                                 difficulty: boss.difficulty.clone(),
                                 reading,
@@ -146,6 +148,7 @@ pub(super) async fn read(
         slots: out,
         character_data: module.is_some(),
         estimates: estimates.is_some(),
+        fresh_days: estimates.map(Estimates::fresh_days),
         totals,
         nexon_data,
         attribution: ATTRIBUTION,
@@ -156,8 +159,8 @@ pub(super) async fn read(
 }
 
 /// The totals of the run's newest lookup once it is done (what the admin's
-/// Estimate panel shows), for the run's bosses as they are now; never
-/// starts one.
+/// Estimate panel shows), for the run's bosses as they are now, `stale` by
+/// the job's `fetched_at`; never starts one.
 fn party_totals(
     estimates: &Estimates,
     run_id: &str,
@@ -184,5 +187,9 @@ fn party_totals(
             })
         })
         .collect();
-    Some(PartyTotals { fetched_at, bosses })
+    Some(PartyTotals {
+        fetched_at: iso_instant(fetched_at),
+        stale: estimates.stale(fetched_at),
+        bosses,
+    })
 }

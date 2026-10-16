@@ -112,7 +112,7 @@ export type SharedCard = { channel: string | null, posted_at: string, cleared_by
 
 export type MemberEstimateLimit = { error: 'member_limited', message: string, next_at: string, };
 
-export type RunPartyCharacters = { run_id: string, slots: Array<PartyCharacterSlot>, character_data: boolean, estimates: boolean, totals: PartyTotals | null, nexon_data: boolean, attribution: string, estimate_label: string, estimate_note: string, };
+export type RunPartyCharacters = { run_id: string, slots: Array<PartyCharacterSlot>, character_data: boolean, estimates: boolean, fresh_days: number | null, totals: PartyTotals | null, nexon_data: boolean, attribution: string, estimate_label: string, estimate_note: string, };
 
 export type PartyCharacterSlot = { member: PartyMember, you: boolean, character: PartyCharacter | null, scouter: Array<PartyEstimate> | null, };
 
@@ -136,6 +136,11 @@ effective_percentage: number | null, rating: string, estimated_minutes: number |
  */
 fetched_at: string, 
 /**
+ * Fetched at least `estimate_days` ago: show it marked "older than n
+ * days".
+ */
+stale: boolean, 
+/**
  * The scouter assumed a 100% critical rate for this character (theirs
  * is under it): label it "Assumes 100% critical rate (actual N%)".
  */
@@ -146,7 +151,7 @@ critical_rate_assumed: boolean,
  */
 critical_rate_actual: number | null, };
 
-export type PartyTotals = { fetched_at: string, bosses: Array<PartyTotal>, };
+export type PartyTotals = { fetched_at: string, stale: boolean, bosses: Array<PartyTotal>, };
 
 export type PartyTotal = { boss: string, difficulty: Difficulty, combined_percentage: number | null, estimated_minutes: number | null, technically_possible: boolean | null, complete: boolean, };
 
@@ -592,6 +597,11 @@ slots: Array<ReadinessSlot>,
  */
 nexon_data: boolean, 
 /**
+ * The saved `estimate_days`: a reading at least this old is `stale`
+ * ("older than n days"); `null` while estimates are off.
+ */
+fresh_days: number | null, 
+/**
  * `Data based on NEXON Open API`.
  */
 attribution: string, };
@@ -613,6 +623,10 @@ slots: Array<ReadinessSlot>,
  * Some slot shows a NEXON value: show the attribution.
  */
 nexon_data: boolean, 
+/**
+ * As [`RunReadiness::fresh_days`].
+ */
+fresh_days: number | null, 
 /**
  * `Data based on NEXON Open API`.
  */
@@ -670,9 +684,9 @@ boss: string, difficulty: Difficulty,
  */
 entry_level: number | null, level: 'ok' | 'under' | 'unknown', 
 /**
- * The character's scouter reading for this boss from the
- * estimates' 24-hour memory (never looked up here); `null` without
- * one, or while estimates are off.
+ * The character's stored scouter reading for this boss, of any age
+ * (never looked up here); `null` without one, or while estimates are
+ * off.
  */
 scouter: ScouterReading | null, };
 
@@ -694,6 +708,11 @@ effective_percentage: number | null, rating: string, estimated_minutes: number |
  * When kanade received it from the scouter.
  */
 fetched_at: string, 
+/**
+ * Fetched at least `estimate_days` ago: show it marked "older than n
+ * days".
+ */
+stale: boolean, 
 /**
  * The scouter assumed a 100% critical rate for this character (theirs
  * is under it): label it "Assumes 100% critical rate (actual N%)".
@@ -752,10 +771,20 @@ characters: Array<EstimateCharacter>,
  */
 missing: Array<EstimateMissing>, progress: EstimateProgress, 
 /**
- * When the result came from the scouter (a cached result keeps its
- * first time); `null` until the job is done.
+ * When the result came from the scouter (answered from a stored
+ * result: the oldest one it used); `null` until the job is done.
  */
 fetched_at: string | null, 
+/**
+ * `fetched_at` is at least `fresh_days` ago: show the result (members
+ * and party total) marked "older than n days". `false` until done,
+ * and for a job answered by a fresh lookup.
+ */
+stale: boolean, 
+/**
+ * The saved `estimate_days`.
+ */
+fresh_days: number, 
 /**
  * The characters found so far (while queued or running too) and,
  * once done, the party total; `null` with none found.
@@ -805,7 +834,8 @@ current: string | null, };
 
 export type EstimateResult = { 
 /**
- * Answered from kanade's 24-hour memory without calling the scouter.
+ * Answered from a stored result younger than `estimate_days` without
+ * calling the scouter.
  */
 cache_hit: boolean, 
 /**

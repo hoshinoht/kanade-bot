@@ -202,7 +202,7 @@ async fn start(
         Start::Started(started) | Start::Joined(started) => Ok((
             StatusCode::ACCEPTED,
             Json(EstimateStarted {
-                job: job(&started, &state.catalog),
+                job: job(&started, &state.catalog, estimates),
             }),
         )
             .into_response()),
@@ -254,10 +254,10 @@ async fn status(
     Ok(Json(EstimateStatus {
         job: estimates
             .latest(&target)
-            .map(|found| job(&found, &state.catalog)),
+            .map(|found| job(&found, &state.catalog, estimates)),
         running: estimates
             .running()
-            .map(|running| job(&running, &state.catalog)),
+            .map(|running| job(&running, &state.catalog, estimates)),
     })
     .into_response())
 }
@@ -270,11 +270,12 @@ async fn read(
     UrlPath(id): UrlPath<String>,
 ) -> Reply {
     let state = state(&site)?;
-    let found = scouter.estimates()?.job(&id).ok_or_else(|| {
+    let estimates = scouter.estimates()?;
+    let found = estimates.job(&id).ok_or_else(|| {
         Refusal::not_found(
             "not_found",
-            "That lookup is gone: results are kept for 24 hours.",
+            "That lookup is gone: lookups are kept for 24 hours.",
         )
     })?;
-    Ok(Json(job(&found, &state.catalog)).into_response())
+    Ok(Json(job(&found, &state.catalog, estimates)).into_response())
 }

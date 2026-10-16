@@ -7,10 +7,11 @@
 //! /api/admin/fixed/readiness` for the Fixed editor's form as it stands (a
 //! timing not added yet, or an unsaved boss or party change; picks count
 //! only for members of the saved party). With estimates on, each boss also
-//! carries the character's scouter reading when the estimates' 24-hour
-//! memory holds one; readiness never starts a lookup. Computed on read;
-//! nothing is stored and nothing is blocked. While a module is off the
-//! routes answer the generic `404` before the session is checked.
+//! carries the character's stored scouter reading, of any age, marked
+//! `stale` once at least `estimate_days` old; readiness never starts a
+//! lookup. Computed on read; nothing is stored and nothing is blocked.
+//! While a module is off the routes answer the generic `404` before the
+//! session is checked.
 
 use std::{collections::BTreeMap, sync::Arc};
 
@@ -33,7 +34,10 @@ use crate::{
     api::{
         auth::AdminSession,
         dto::{
-            self, Art, bosses::entry_levels, character_data::link_state, readiness::ReadinessSlot,
+            self, Art,
+            bosses::entry_levels,
+            character_data::link_state,
+            readiness::{Cached, ReadinessSlot},
         },
         error::ApiError,
         listeners::Site,
@@ -43,7 +47,10 @@ use crate::{
         characters::PartySlot,
         chardata::{Requirement, Subject, readiness},
     },
-    infrastructure::{character_data::CharacterData, scouter::RosterIgn},
+    infrastructure::{
+        character_data::CharacterData,
+        scouter::{Estimates, RosterIgn},
+    },
 };
 
 pub fn routes() -> Router<Arc<Site>> {
@@ -83,14 +90,15 @@ async fn requirements(state: &ApiState, tokens: Vec<String>) -> Result<Vec<Requi
     .map_err(Refusal::unavailable)
 }
 
-/// Each slot's readiness against `bosses`, in order, and whether any shows
-/// a NEXON value.
+/// Each slot's readiness against `bosses`, in order, whether any shows
+/// a NEXON value, and the saved `estimate_days` while estimates are on.
 async fn answers(
     state: &ApiState,
     module: &CharacterData,
     slots: &[PartySlot],
     bosses: &[Requirement],
-) -> Result<(Vec<ReadinessSlot>, bool), Refusal> {
+) -> Result<(Vec<ReadinessSlot>, bool, Option<u32>), Refusal> {
+    let estimates = module.estimates();
     let mut answers = Vec::with_capacity(slots.len());
     let mut nexon_data = false;
     for slot in slots {
@@ -106,10 +114,9 @@ async fn answers(
                     link: view.link.as_ref().map(|link| link.status),
                     snapshot: view.snapshot.as_ref(),
                 };
-                let scouter = module
-                    .estimates()
+                let scouter = estimates
                     .zip(RosterIgn::lookup(character).ok())
-                    .and_then(|(estimates, ign)| estimates.cached(&ign));
+                    .and_then(|(estimates, ign)| Cached::of(estimates, &ign));
                 (
                     Some(link_state(&view)),
                     readiness(&subject, bosses, view.now),
@@ -133,7 +140,7 @@ async fn answers(
             scouter.as_ref(),
         ));
     }
-    Ok((answers, nexon_data))
+    Ok((answers, nexon_data, estimates.map(Estimates::fresh_days)))
 }
 
 /// `GET /api/admin/runs/{id}/readiness`.
@@ -151,8 +158,8 @@ async fn read(
         .ok_or_else(|| Refusal::from(ApiError::NOT_FOUND))?;
     let (run, slots) = party(state, roster.as_ref(), &run_id).await?;
     let bosses = requirements(state, run.bosses.clone()).await?;
-    let (slots, nexon_data) = answers(state, &module, &slots, &bosses).await?;
-    Ok(Json(dto::readiness::run(&run.id, slots, nexon_data)).into_response())
+    let (slots, nexon_data, fresh_days) = answers(state, &module, &slots, &bosses).await?;
+    Ok(Json(dto::readiness::run(&run.id, slots, nexon_data, fresh_days)).into_response())
 }
 
 /// `GET /api/admin/fixed/{id}/readiness`: the saved timing's party and
@@ -172,8 +179,14 @@ async fn read_timing(
         .ok_or_else(|| Refusal::from(ApiError::UNAVAILABLE))?;
     let slots = timing.slots(&fixed.participants);
     let bosses = requirements(state, fixed.bosses.clone()).await?;
-    let (slots, nexon_data) = answers(state, &module, &slots, &bosses).await?;
-    Ok(Json(dto::readiness::timing(Some(&fixed.id), slots, nexon_data)).into_response())
+    let (slots, nexon_data, fresh_days) = answers(state, &module, &slots, &bosses).await?;
+    Ok(Json(dto::readiness::timing(
+        Some(&fixed.id),
+        slots,
+        nexon_data,
+        fresh_days,
+    ))
+    .into_response())
 }
 
 /// The most bosses or members a preview reads (a form never holds more).
@@ -221,11 +234,12 @@ async fn preview(
         .filter(|token| state.catalog.split(token).is_some())
         .collect();
     let bosses = requirements(state, tokens).await?;
-    let (slots, nexon_data) = answers(state, &module, &slots, &bosses).await?;
+    let (slots, nexon_data, fresh_days) = answers(state, &module, &slots, &bosses).await?;
     Ok(Json(dto::readiness::timing(
         body.fixed_run_id.as_deref(),
         slots,
         nexon_data,
+        fresh_days,
     ))
     .into_response())
 }

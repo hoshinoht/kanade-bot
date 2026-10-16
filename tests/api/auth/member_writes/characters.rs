@@ -419,6 +419,15 @@ async fn every_route_is_the_generic_404_while_its_module_is_off() {
         fields(&mine, &["character_data", "connected", "estimates"]),
         json!([true, true, false])
     );
+    // The party read stays as it was: no readings, totals or freshness.
+    let party = chars.portal.read(&alice, PARTY, PARTY_VIEW).await;
+    assert_eq!(
+        fields(&party, &["estimates", "fresh_days", "totals"]),
+        json!([false, null, null])
+    );
+    for slot in party["slots"].as_array().unwrap() {
+        assert_eq!(slot["scouter"], Value::Null, "{slot}");
+    }
 }
 
 #[tokio::test]
@@ -1108,6 +1117,28 @@ async fn the_party_sees_roster_levels_and_estimates_never_another_members_nexon_
         }])
     );
     assert!(party["totals"]["fetched_at"].is_string());
+    // Fresh until estimate_days (default 7) have passed, then marked stale,
+    // readings and totals alike, and still shown.
+    let stale = |party: &Value| {
+        let mut flags: Vec<Value> = party["slots"].as_array().unwrap()[..2]
+            .iter()
+            .flat_map(|slot| slot["scouter"].as_array().unwrap())
+            .map(|estimate| estimate["stale"].clone())
+            .collect();
+        flags.push(party["totals"]["stale"].clone());
+        flags.dedup();
+        flags
+    };
+    assert_eq!(party["fresh_days"], 7);
+    assert_eq!(stale(&party), [json!(false)]);
+    *chars.skew.lock().unwrap() += TimeDelta::days(7) - TimeDelta::seconds(1);
+    let party = chars.portal.read(&alice, PARTY, PARTY_VIEW).await;
+    assert_eq!(stale(&party), [json!(false)], "a second short of 7 days");
+    *chars.skew.lock().unwrap() += TimeDelta::seconds(1);
+    let party = chars.portal.read(&alice, PARTY, PARTY_VIEW).await;
+    assert_eq!(stale(&party), [json!(true)], "7 days old");
+    assert_eq!(party["fresh_days"], 7);
+    assert_eq!(party["totals"]["bosses"][0]["combined_percentage"], 18.0);
     assert_eq!(chars.scouter.as_ref().unwrap().targets().len(), seen);
 
     // Not on the run: the same 404 as a run that does not exist.
