@@ -115,6 +115,20 @@ impl PersonaRoot {
         Ok(Self { canonical })
     }
 
+    /// Canonical `path`, which must lie under the root and spell every
+    /// component with its exact case: a case-insensitive volume (macOS) finds
+    /// `Alpha.yaml` for `alpha.yaml` where Linux, the deployment, does not.
+    fn resolve(&self, path: &Path) -> Result<PathBuf, PersonaError> {
+        let resolved = fs::canonicalize(path).map_err(io_error)?;
+        if !resolved.starts_with(&self.canonical) {
+            Err(PersonaError::Escape)
+        } else if resolved != path {
+            Err(PersonaError::Missing)
+        } else {
+            Ok(resolved)
+        }
+    }
+
     fn read(&self, dir: Option<&str>, name: &str) -> Result<(String, Source), PersonaError> {
         let mut path = self.canonical.clone();
         if let Some(dir) = dir {
@@ -129,10 +143,7 @@ impl PersonaRoot {
         if !before.is_file() {
             return Err(PersonaError::NotRegular);
         }
-        let resolved = fs::canonicalize(&path).map_err(io_error)?;
-        if !resolved.starts_with(&self.canonical) {
-            return Err(PersonaError::Escape);
-        }
+        let resolved = self.resolve(&path)?;
         let (file, opened) = open_regular(&resolved, MAX_FILE_BYTES).map_err(refused)?;
         // Reject a file swapped between the checks above and the open.
         if !same_file(&before, &opened) {
@@ -188,7 +199,7 @@ impl PersonaRoot {
     /// [`MAX_PROFILE_FILES`] candidates fails the whole load.
     pub fn load_profiles(&self) -> Result<ProfileSet, PersonaError> {
         let dir = self.canonical.join(PROFILES_DIR);
-        match check_dir(&dir) {
+        match check_dir(&dir).and_then(|()| self.resolve(&dir).map(drop)) {
             Ok(()) => {}
             Err(PersonaError::Missing) => return Ok(ProfileSet::default()),
             Err(error) => return Err(error),

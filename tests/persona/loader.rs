@@ -239,3 +239,43 @@ fn more_profile_candidates_than_the_cap_fail_the_whole_load() {
         PersonaError::TooManyProfiles
     );
 }
+
+#[test]
+fn names_differing_only_in_case_are_missing_on_every_filesystem() {
+    // macOS volumes are case-insensitive and Linux (production) is not: a file
+    // or directory matching the ID-derived name only up to case must be
+    // missing on both, or a macOS run accepts what the deployment refuses.
+    let fixture = Fixture::new();
+    fixture.write("Catalog.yaml", catalog("alpha", &[("alpha", &[])]));
+    fixture.write("bundles/Alpha.yaml", bundle("alpha", "Alpha"));
+    fixture.write("profiles/Style.yaml", profile("style", None));
+    let root = fixture.root();
+    assert_eq!(root.load_catalog().unwrap_err(), PersonaError::Missing);
+    assert_eq!(
+        root.load_bundle(&pid("alpha")).unwrap_err(),
+        PersonaError::Missing
+    );
+    assert_eq!(
+        root.load_profile(&prof("style")).unwrap_err(),
+        PersonaError::Missing
+    );
+    let set = root.load_profiles().unwrap();
+    assert!(set.readable.is_empty());
+    assert_eq!(set.unreadable[0].basename, "Style.yaml");
+    assert_eq!(set.unreadable[0].error, PersonaError::UnsafeId);
+
+    fs::rename(fixture.path("bundles"), fixture.path("Bundles")).unwrap();
+    fixture.write("Bundles/beta.yaml", bundle("beta", "Beta"));
+    assert_eq!(
+        root.load_bundle(&pid("beta")).unwrap_err(),
+        PersonaError::Missing
+    );
+    fs::rename(fixture.path("profiles"), fixture.path("Profiles")).unwrap();
+    fixture.write("Profiles/good.yaml", profile("good", None));
+    let set = root.load_profiles().unwrap();
+    assert!(set.readable.is_empty() && set.unreadable.is_empty());
+    assert_eq!(
+        root.load_profile(&prof("good")).unwrap_err(),
+        PersonaError::Missing
+    );
+}
