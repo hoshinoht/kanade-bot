@@ -4,9 +4,9 @@ What changed in each Kanade release, newest first. Upgrading across several rele
 
 ## 1.0.0-beta.8
 
-_In development_
+_17 Oct 2026_
 
-Estimates are now kept for up to 30 days and refreshed before upcoming runs, admins can pick a character per boss, and the run sheet's Party tab shows a Party total. Estimates stay optional: without the scouter everything else works as before.
+Estimates are now kept for up to 30 days and refreshed before upcoming runs, admins can pick a character per boss, the run sheet's Party tab shows a Party total, and an optional Guides screen publishes boss guides to Discord. Estimates and guides stay optional: without the scouter or the guides module everything else works as before.
 
 > [!IMPORTANT]
 > This release adds stored estimates to the character-data file and per-boss picks to the main store. Rolling back to an older image needs the pre-deploy backup restored and one command on the character-data file, both with the bot stopped (deploy README, "Stop and roll back"); otherwise the older image refuses to start.
