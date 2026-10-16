@@ -6,8 +6,11 @@
 //!
 //! `GET /api/admin/reminders/{id}/estimate.png`: the "Who carries" image a
 //! new post of that card attaches (redesigned day-of and countdown), drawn
-//! by the delivery chart code from the roster and the estimates cached now
-//! (never a lookup); `404` wherever the preview's `card.estimate` is null.
+//! by the delivery chart code from the roster and the estimates stored now
+//! (never a lookup), under the tick's rules: none while a lookup includes a
+//! party member with no stored result, and "older than n days" on its "as
+//! of" line and alt text when the oldest reading is stale; `404` wherever
+//! the preview's `card.estimate` is null.
 
 use std::sync::Arc;
 

@@ -1291,9 +1291,9 @@ async fn the_reminder_preview_shows_the_estimate_image_from_cached_readings() {
 }
 
 /// The live report: a card drawn while the party's lookup had found only
-/// its first members showed the rest as "no estimate". While a lookup of
-/// anyone in the party is queued or running the image is left off; once
-/// it finishes the image has every member.
+/// its first members showed the rest as "no estimate". While a lookup
+/// includes a party member with no stored result the image is left off;
+/// once it finishes the image has every member.
 #[tokio::test]
 async fn the_reminder_preview_has_no_estimate_image_while_its_party_is_looked_up() {
     const CARD: &str = "/api/admin/reminders/m-kalos-15/preview";
