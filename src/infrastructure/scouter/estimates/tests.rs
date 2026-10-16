@@ -100,6 +100,7 @@ fn lookup(target: Target, subjects: Vec<Subject>) -> JobRequest {
         target,
         subjects,
         missing: Vec::new(),
+        parties: Vec::new(),
         started_by: Actor::system("test"),
         refresh: false,
     }
@@ -414,6 +415,136 @@ async fn a_party_lookup_writes_every_result_through() {
     );
 }
 
+/// A fake sidecar noting every query: each `ign=` answers HLimbo and
+/// NLimbo cards, each `igns=` a total for both whose percentage says
+/// whether the set held MikaNL (200) or not (100).
+async fn noting_sidecar() -> (String, Arc<Mutex<Vec<String>>>) {
+    let asked: Arc<Mutex<Vec<String>>> = Arc::default();
+    let seen = Arc::clone(&asked);
+    let answer = move |uri: axum::http::Uri| {
+        let seen = Arc::clone(&seen);
+        async move {
+            let query = uri.query().unwrap_or_default().to_owned();
+            seen.lock().unwrap().push(query.clone());
+            let card = serde_json::json!({
+                "percentage": 60.0, "rating": "Party-able", "party": false,
+                "effective_percentage": 60.0, "estimated_minutes": 50.0,
+            });
+            match query.strip_prefix("ign=") {
+                Some(name) => serde_json::json!({
+                    "ign": name, "preset": "00010",
+                    "bosses": {"hard_limbo": card, "normal_limbo": card},
+                })
+                .to_string(),
+                None => {
+                    let pct = if query.to_ascii_lowercase().contains("mikanl") {
+                        200.0
+                    } else {
+                        100.0
+                    };
+                    let total = serde_json::json!({
+                        "combined_percentage": pct, "estimated_minutes": 20.0,
+                        "technically_possible": true, "complete": true,
+                    });
+                    serde_json::json!({"combined": {"hard_limbo": total, "normal_limbo": total}})
+                        .to_string()
+                }
+            }
+        }
+    };
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let app = axum::Router::new().route("/v1/bosses", axum::routing::get(answer));
+    tokio::spawn(async move {
+        let _ = axum::serve(listener, app).await;
+    });
+    (format!("http://{address}"), asked)
+}
+
+/// Per-boss picks: each distinct character is looked up once, then one
+/// total per distinct boss party, each counted only for its bosses; a
+/// party another party already asked is not asked again; each whole party
+/// is kept under its own IGN set.
+#[tokio::test]
+async fn each_distinct_character_once_and_one_total_per_distinct_boss_party() {
+    let (url, asked) = noting_sidecar().await;
+    let estimates = Estimates::new(ScouterClient::new(&url).unwrap(), url, Arc::new(|| at(4)));
+    let (ren, bish, nl) = (
+        subject("ch-1", "RenShade"),
+        subject("ch-2", "MikaBish"),
+        subject("ch-3", "MikaNL"),
+    );
+    let party = |bosses: &[&str], subjects: &[usize]| BossParty {
+        bosses: bosses.iter().map(|boss| (*boss).to_owned()).collect(),
+        subjects: subjects.to_vec(),
+        missing: 0,
+    };
+    let request = JobRequest {
+        parties: vec![
+            party(&["HLimbo", "HLimbo2"], &[0, 1]),
+            party(&["NLimbo"], &[0, 2]),
+            // The same characters as the first party: its answer is reused.
+            party(&["XLimbo"], &[0, 1]),
+        ],
+        ..lookup(
+            Target::Run {
+                run_id: "r1".into(),
+                bosses: vec!["HLimbo".into(), "NLimbo".into(), "XLimbo".into()],
+            },
+            vec![ren.clone(), bish.clone(), nl.clone()],
+        )
+    };
+    let Start::Started(job) = estimates.start(request) else {
+        panic!("a new job");
+    };
+    let done = finished(&estimates, &job.id).await;
+    let Some(Ok(found)) = &done.outcome else {
+        panic!("found: {:?}", done.outcome);
+    };
+    let asked = asked.lock().unwrap().clone();
+    let singles = asked
+        .iter()
+        .filter(|query| query.starts_with("ign="))
+        .count();
+    let totals = asked
+        .iter()
+        .filter(|query| query.starts_with("igns="))
+        .count();
+    assert_eq!((singles, totals), (3, 2), "{asked:?}");
+    let combined = found.combined.as_ref().expect("totals");
+    assert_eq!(combined["hard_limbo"].combined_percentage, Some(100.0));
+    assert_eq!(combined["normal_limbo"].combined_percentage, Some(200.0));
+    assert!(
+        estimates
+            .cached_party(&[ren.ign.clone(), bish.ign.clone()])
+            .is_some()
+    );
+    assert!(
+        estimates
+            .cached_party(&[ren.ign.clone(), nl.ign.clone()])
+            .is_some()
+    );
+    assert_eq!(done.parties.len(), 3);
+
+    // The same run again: every result and both totals are fresh, so it is
+    // answered from memory without asking the sidecar.
+    let again = JobRequest {
+        parties: vec![party(&["HLimbo"], &[0, 1]), party(&["NLimbo"], &[0, 2])],
+        ..lookup(
+            Target::Run {
+                run_id: "r2".into(),
+                bosses: vec!["HLimbo".into(), "NLimbo".into()],
+            },
+            vec![ren, bish, nl],
+        )
+    };
+    let found = hit(estimates.start(again));
+    assert_eq!(
+        found.combined.unwrap()["normal_limbo"].combined_percentage,
+        Some(200.0)
+    );
+}
+
 /// `429 busy` is asked again after its Retry-After while the wait ends
 /// before the deadline; past it, the busy answer stands.
 #[tokio::test(start_paused = true)]
@@ -628,6 +759,7 @@ fn upcoming(id: &str, hours: i64, subjects: Vec<Subject>) -> UpcomingRun {
         week_start: at(0),
         subjects,
         missing: Vec::new(),
+        parties: Vec::new(),
     }
 }
 

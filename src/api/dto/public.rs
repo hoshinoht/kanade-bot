@@ -10,9 +10,9 @@ mod runs;
 
 pub use characters::{
     LinkCancelled, LinkNotice, LinkOutcome, MemberEstimateLimit, MyCharacterCreated, MyCharacters,
-    MyData, MyDataEntry, NoticeSection, PartyCharacter, PartyCharacterSlot, PartyEstimate,
-    PartyMember, PartyTotal, PartyTotals, PendingLink, RunPartyCharacters, SharedCard, Unlinked,
-    UnlinkedAll,
+    MyData, MyDataEntry, NoticeSection, PartyBossCharacter, PartyCharacter, PartyCharacterSlot,
+    PartyEstimate, PartyMember, PartyTotal, PartyTotals, PendingLink, RunPartyCharacters,
+    SharedCard, Unlinked, UnlinkedAll,
 };
 pub use requests::{
     MemberProposed, MemberRequest, MemberRequestLimit, MemberRequestOptions, MemberRequests,

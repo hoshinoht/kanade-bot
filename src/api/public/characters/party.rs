@@ -1,13 +1,14 @@
 //! `GET /api/public/runs/{id}/characters`: on a run the caller is on, the
 //! character each party member brings (as the admin's `…/characters`
-//! resolves it) with its IGN, class and roster level, and each one's stored
-//! scouter reading per boss of the run, of any age, marked `stale` once at
-//! least `estimate_days` old (never looked up here), plus the party totals
-//! of the run's newest finished lookup. NEXON data shows only on the
-//! caller's own slot: the notice names admins and share-card channels as
-//! who sees it, never the party (others see the roster level, which holds
-//! NEXON's copied level). No combat power, no verdicts. Anyone not on the
-//! run gets the generic `404`.
+//! resolves it) with its IGN, class and roster level, read-only, one line
+//! per boss when they bring different characters to different bosses, and
+//! each boss's stored scouter reading of the character brought to it, of
+//! any age, marked `stale` once at least `estimate_days` old (never looked
+//! up here), plus the party totals of the run's newest finished lookup.
+//! NEXON data shows only on the caller's own slot: the notice names admins
+//! and share-card channels as who sees it, never the party (others see the
+//! roster level, which holds NEXON's copied level). No combat power, no
+//! verdicts, no picking. Anyone not on the run gets the generic `404`.
 
 use std::sync::Arc;
 
@@ -31,8 +32,8 @@ use crate::{
             estimates::{LABEL, NOTE, run_totals},
             iso_instant,
             public::{
-                PartyCharacter, PartyCharacterSlot, PartyEstimate, PartyMember, PartyTotal,
-                PartyTotals, RunPartyCharacters,
+                PartyBossCharacter, PartyCharacter, PartyCharacterSlot, PartyEstimate, PartyMember,
+                PartyTotal, PartyTotals, RunPartyCharacters,
             },
             readiness::{Cached, reading},
         },
@@ -41,10 +42,76 @@ use crate::{
     },
     domain::{
         catalog::BossTable,
+        characters::{Character, PartySlot},
         chardata::{ATTRIBUTION, Requirement, date_text},
     },
-    infrastructure::scouter::{Estimates, RosterIgn, Target},
+    infrastructure::{
+        character_data::CharacterData,
+        scouter::{Estimates, RosterIgn, Target},
+    },
 };
+
+/// `character` as the party sees it: the caller's own with their fresh
+/// NEXON level when there is one, anyone else's with the roster level.
+/// Also whether a NEXON value shows.
+async fn shown(
+    module: Option<&CharacterData>,
+    character: &Character,
+    you: bool,
+) -> Result<(PartyCharacter, bool), Refusal> {
+    let nexon = match module {
+        Some(module) if you => module
+            .data(&character.id)
+            .await
+            .map_err(Refusal::unavailable)?
+            .and_then(|snapshot| {
+                snapshot
+                    .level
+                    .map(|level| (level, date_text(snapshot.as_of())))
+            }),
+        _ => None,
+    };
+    Ok(match nexon {
+        Some((level, as_of)) => (
+            PartyCharacter {
+                ign: character.ign.clone(),
+                class: character.class.clone(),
+                level: Some(level),
+                level_source: "nexon",
+                as_of: Some(as_of),
+            },
+            true,
+        ),
+        None => (
+            PartyCharacter {
+                ign: character.ign.clone(),
+                class: character.class.clone(),
+                level: character.level,
+                level_source: "roster",
+                as_of: None,
+            },
+            false,
+        ),
+    })
+}
+
+/// The character brought to each of `bosses` (the run's tokens the catalog
+/// knows, in order).
+fn per_boss<'s>(
+    catalog: &BossTable,
+    slot: &'s PartySlot,
+    bosses: &[Requirement],
+) -> Vec<Option<&'s Character>> {
+    let known: Vec<usize> = (0..slot.bosses.len())
+        .filter(|at| catalog.split(&slot.bosses[*at].token).is_some())
+        .collect();
+    (0..bosses.len())
+        .map(|at| match known.get(at) {
+            Some(boss) => slot.brought_to(*boss).map(|(character, _)| character),
+            None => slot.brought().map(|(character, _)| character),
+        })
+        .collect()
+}
 
 pub(super) async fn read(
     State(site): State<Arc<Site>>,
@@ -71,8 +138,8 @@ pub(super) async fn read(
             entry_level: None,
         })
         .collect();
-    let module = state.character_data.as_ref();
-    let estimates = module.and_then(|module| module.estimates());
+    let module = state.character_data.as_deref();
+    let estimates = module.and_then(CharacterData::estimates);
     let mut nexon_data = false;
     let mut out = Vec::with_capacity(slots.len());
     for slot in &slots {
@@ -80,57 +147,52 @@ pub(super) async fn read(
         let brought = slot.brought().map(|(character, _)| character);
         let character = match brought {
             Some(character) => {
-                // Only the caller's own NEXON level, from fresh data.
-                let nexon = match module {
-                    Some(module) if you => module
-                        .data(&character.id)
-                        .await
-                        .map_err(Refusal::unavailable)?
-                        .and_then(|snapshot| {
-                            snapshot
-                                .level
-                                .map(|level| (level, date_text(snapshot.as_of())))
-                        }),
-                    _ => None,
-                };
-                nexon_data |= nexon.is_some();
-                Some(match nexon {
-                    Some((level, as_of)) => PartyCharacter {
-                        ign: character.ign.clone(),
-                        class: character.class.clone(),
-                        level: Some(level),
-                        level_source: "nexon",
-                        as_of: Some(as_of),
-                    },
-                    None => PartyCharacter {
-                        ign: character.ign.clone(),
-                        class: character.class.clone(),
-                        level: character.level,
-                        level_source: "roster",
-                        as_of: None,
-                    },
-                })
+                let (line, nexon) = shown(module, character, you).await?;
+                nexon_data |= nexon;
+                Some(line)
             }
             None => None,
         };
-        let scouter = estimates.zip(brought).map(|(estimates, character)| {
-            RosterIgn::lookup(character)
-                .ok()
-                .and_then(|ign| Cached::of(estimates, &ign))
-                .map(|cached| {
-                    bosses
-                        .iter()
-                        .filter_map(|boss| {
-                            reading(boss, &cached).map(|reading| PartyEstimate {
-                                boss: boss.boss.clone(),
-                                difficulty: boss.difficulty.clone(),
-                                reading,
-                            })
+        let carried = per_boss(&state.catalog, slot, &bosses);
+        let differs = carried
+            .iter()
+            .any(|character| character.map(|row| &row.id) != brought.map(|row| &row.id));
+        let mut lines = Vec::new();
+        if differs {
+            for (boss, character) in bosses.iter().zip(&carried) {
+                let character = match character {
+                    Some(character) => {
+                        let (line, nexon) = shown(module, character, you).await?;
+                        nexon_data |= nexon;
+                        Some(line)
+                    }
+                    None => None,
+                };
+                lines.push(PartyBossCharacter {
+                    boss: boss.boss.clone(),
+                    difficulty: boss.difficulty.clone(),
+                    character,
+                });
+            }
+        }
+        // Each boss's reading is of the character brought to it.
+        let scouter = estimates
+            .filter(|_| carried.iter().any(Option::is_some))
+            .map(|estimates| {
+                bosses
+                    .iter()
+                    .zip(&carried)
+                    .filter_map(|(boss, character)| {
+                        let ign = RosterIgn::lookup((*character)?).ok()?;
+                        let cached = Cached::of(estimates, &ign)?;
+                        reading(boss, &cached).map(|reading| PartyEstimate {
+                            boss: boss.boss.clone(),
+                            difficulty: boss.difficulty.clone(),
+                            reading,
                         })
-                        .collect()
-                })
-                .unwrap_or_default()
-        });
+                    })
+                    .collect()
+            });
         out.push(PartyCharacterSlot {
             member: PartyMember {
                 id: slot.member_id.clone(),
@@ -139,6 +201,7 @@ pub(super) async fn read(
             you,
             character,
             scouter,
+            bosses: lines,
         });
     }
     let totals =

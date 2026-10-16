@@ -75,7 +75,7 @@ impl UpcomingParties for StoreParties {
                     .await
                     .ok()?;
                 let slots = roster.slots(run, &week, &snapshot.fixed_runs, &self.catalog);
-                let (subjects, missing) = party_subjects(&slots);
+                let (subjects, missing, parties) = party_subjects(&slots, &run.bosses);
                 runs.push(UpcomingRun {
                     run_id: run.id.clone(),
                     bosses: run.bosses.clone(),
@@ -84,6 +84,7 @@ impl UpcomingParties for StoreParties {
                     week_start: run.week_start,
                     subjects,
                     missing,
+                    parties,
                 });
             }
             Some(Upcoming {

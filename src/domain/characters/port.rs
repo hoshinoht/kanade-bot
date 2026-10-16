@@ -265,8 +265,9 @@ pub fn plan(
     })
 }
 
-/// Persistence of `roster_characters`, `roster_run_picks` and
-/// `roster_fixed_picks`. Reads never take the writer.
+/// Persistence of `roster_characters`, `roster_run_picks`,
+/// `roster_fixed_picks` and their per-boss tables. Reads never take the
+/// writer.
 pub trait CharacterStore {
     /// One member's characters, retired included, oldest first.
     fn member_characters(
@@ -292,7 +293,8 @@ pub trait CharacterStore {
     ) -> impl Future<Output = Result<CharacterWrite, StoreError>> + Send;
 
     /// The stored picks of `scope` on these targets (runs, or weekly
-    /// timings; every member), by target then member.
+    /// timings; every member), per-boss picks included, by target then
+    /// member (then boss).
     fn picks(
         &self,
         scope: PickScope,
@@ -300,9 +302,10 @@ pub trait CharacterStore {
     ) -> impl Future<Output = Result<Vec<Pick>, StoreError>> + Send;
 
     /// Apply `change` under [`super::plan_pick`] (against the slot's stored
-    /// pick and the character a set names) and append its History record
-    /// in one transaction. A refusal ([`PickWrite::applied`] false) or a
-    /// no-op writes nothing.
+    /// pick and the character a set names) or, for "same for every boss",
+    /// [`super::plan_same`] (against the member's per-boss picks it names),
+    /// and append its History record in one transaction. A refusal
+    /// ([`PickWrite::applied`] false) or a no-op writes nothing.
     fn apply_pick(
         &self,
         change: PickChange,

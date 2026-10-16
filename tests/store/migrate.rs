@@ -10,6 +10,8 @@ use crate::support::{LATE_SCHEMA_DROPS, TempDir, connect, create, reminder, seed
 
 /// What a v34 store lacks: the roster tables.
 const ROSTER_DROPS: &str = "
+    DROP TABLE roster_fixed_boss_picks;
+    DROP TABLE roster_run_boss_picks;
     DROP TABLE roster_fixed_picks;
     DROP TABLE roster_run_picks;
     DROP TABLE roster_characters;";
@@ -21,6 +23,8 @@ const REPLAY_ON_DROPS: &str = "
     DROP TABLE auth_audit;
     DROP TABLE owner_requests;
     DROP TABLE run_prompts;
+    DROP TABLE roster_fixed_boss_picks;
+    DROP TABLE roster_run_boss_picks;
     DROP TABLE roster_fixed_picks;
     DROP TABLE roster_run_picks;
     DROP TABLE roster_characters;
@@ -83,12 +87,12 @@ async fn empty_file_migrates_to_the_newest_version_with_sound_foreign_keys() {
     )
     .expect("chmod");
     let store = SqliteStore::open(&config).await.expect("opens");
-    assert_eq!(store.schema_version().await.expect("version"), 40);
+    assert_eq!(store.schema_version().await.expect("version"), 41);
     assert_eq!(store.foreign_key_violations().await.expect("check"), 0);
     let empty = store.load(&Scope::All).await.expect("load");
     assert_eq!(empty.revision, 0);
     store.close().await.expect("close");
-    assert_eq!(ledger(&config).await, (1..=40).collect::<Vec<_>>());
+    assert_eq!(ledger(&config).await, (1..=41).collect::<Vec<_>>());
 }
 
 #[tokio::test]
@@ -101,11 +105,11 @@ async fn reopen_is_idempotent_and_keeps_rows() {
     store.close().await.expect("close");
     for _ in 0..2 {
         let store = SqliteStore::open(&config).await.expect("reopens");
-        assert_eq!(store.schema_version().await.expect("version"), 40);
+        assert_eq!(store.schema_version().await.expect("version"), 41);
         assert_eq!(store.load(&Scope::All).await.expect("load"), before);
         store.close().await.expect("close");
     }
-    assert_eq!(ledger(&config).await, (1..=40).collect::<Vec<_>>());
+    assert_eq!(ledger(&config).await, (1..=41).collect::<Vec<_>>());
 }
 
 /// An edited checksum, a version from a newer build or one below the first
@@ -118,27 +122,27 @@ async fn a_tampered_ledger_refuses_to_open() {
             "checksum",
             "UPDATE schema_migrations SET checksum = 'edited'",
             |error| matches!(error, SqliteStoreError::ChecksumMismatch { version: 1 }),
-            (1..=40).collect(),
+            (1..=41).collect(),
         ),
         (
             "future",
-            "INSERT INTO schema_migrations VALUES (41, 'next', '2027-01-01T00:00:00+00:00')",
+            "INSERT INTO schema_migrations VALUES (42, 'next', '2027-01-01T00:00:00+00:00')",
             |error| {
                 matches!(
                     error,
                     SqliteStoreError::FutureVersion {
-                        found: 41,
-                        known: 40
+                        found: 42,
+                        known: 41
                     }
                 )
             },
-            (1..=41).collect(),
+            (1..=42).collect(),
         ),
         (
             "gap",
             "INSERT INTO schema_migrations VALUES (0, 'unknown', '2026-01-01T00:00:00+00:00')",
             |error| matches!(error, SqliteStoreError::MigrationGap { version: 0 }),
-            (0..=40).collect(),
+            (0..=41).collect(),
         ),
     ];
     for (label, sql, expected, kept) in cases {
@@ -261,6 +265,8 @@ async fn a_version_one_store_gains_the_later_tables_on_open() {
          DROP TABLE auth_audit;
          DROP TABLE owner_requests;
          DROP TABLE run_prompts;
+         DROP TABLE roster_fixed_boss_picks;
+         DROP TABLE roster_run_boss_picks;
          DROP TABLE roster_fixed_picks;
          DROP TABLE roster_run_picks;
          DROP TABLE roster_characters;
@@ -271,10 +277,10 @@ async fn a_version_one_store_gains_the_later_tables_on_open() {
     .await;
     assert_eq!(ledger(&config).await, [1]);
     let store = SqliteStore::open(&config).await.expect("migrates");
-    assert_eq!(store.schema_version().await.expect("version"), 40);
+    assert_eq!(store.schema_version().await.expect("version"), 41);
     assert_eq!(store.foreign_key_violations().await.expect("check"), 0);
     store.close().await.expect("close");
-    assert_eq!(ledger(&config).await, (1..=40).collect::<Vec<_>>());
+    assert_eq!(ledger(&config).await, (1..=41).collect::<Vec<_>>());
     let mut conn = connect(&config, true).await;
     let tables: i64 = sqlx::query_scalar(
         "SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = 'delivery_card_runs'",
@@ -310,7 +316,7 @@ async fn upgrading_from_v22_adds_append_only_settings_changes() {
     )
     .await;
     let store = SqliteStore::open(&config).await.expect("v22 migrates");
-    assert_eq!(store.schema_version().await.expect("version"), 40);
+    assert_eq!(store.schema_version().await.expect("version"), 41);
     let rows = store.settings_rows().await.expect("rows");
     assert_eq!(rows.get(keys::QUIET_MODE).map(String::as_str), Some("1"));
     assert!(
@@ -392,7 +398,7 @@ async fn upgrading_from_v24_keeps_sessions_and_adds_the_avatar_hash() {
     )
     .await;
     let store = SqliteStore::open(&config).await.expect("v24 migrates");
-    assert_eq!(store.schema_version().await.expect("version"), 40);
+    assert_eq!(store.schema_version().await.expect("version"), 41);
     let before = store.load_session(&old).await.expect("load").expect("kept");
     assert_eq!(
         (before.subject.as_str(), before.avatar_hash.as_deref()),
@@ -466,7 +472,7 @@ async fn upgrading_from_v25_keeps_sessions_and_adds_the_device() {
     )
     .await;
     let store = SqliteStore::open(&config).await.expect("v25 migrates");
-    assert_eq!(store.schema_version().await.expect("version"), 40);
+    assert_eq!(store.schema_version().await.expect("version"), 41);
     let before = store.load_session(&old).await.expect("load").expect("kept");
     assert_eq!(before.device, None);
     let signed_in = WebSession {
@@ -524,7 +530,7 @@ async fn upgrading_from_v29_keeps_sessions_and_adds_rotation_grace() {
     )
     .await;
     let store = SqliteStore::open(&config).await.expect("v29 migrates");
-    assert_eq!(store.schema_version().await.expect("version"), 40);
+    assert_eq!(store.schema_version().await.expect("version"), 41);
     let before = store.load_session(&old).await.expect("load").expect("kept");
     assert_eq!(
         (
@@ -621,7 +627,7 @@ async fn upgrading_from_v30_adds_replays() {
     .await;
     assert_eq!(ledger(&config).await.last(), Some(&30));
     let store = SqliteStore::open(&config).await.expect("v30 migrates");
-    assert_eq!(store.schema_version().await.expect("version"), 40);
+    assert_eq!(store.schema_version().await.expect("version"), 41);
     let rows = store.settings_rows().await.expect("rows");
     assert_eq!(rows.get(keys::QUIET_MODE).map(String::as_str), Some("1"));
     let now = Utc.with_ymd_and_hms(2026, 10, 9, 4, 0, 0).unwrap();
@@ -680,7 +686,7 @@ async fn upgrading_from_v34_adds_run_prompts_that_close_once() {
     .await;
     assert_eq!(ledger(&config).await.last(), Some(&34));
     let store = SqliteStore::open(&config).await.expect("v34 migrates");
-    assert_eq!(store.schema_version().await.expect("version"), 40);
+    assert_eq!(store.schema_version().await.expect("version"), 41);
     assert_eq!(
         store.load(&Scope::All).await.expect("load"),
         before,
@@ -779,7 +785,7 @@ async fn upgrading_from_v35_keeps_audit_rows_and_stores_refused_writes() {
     assert_eq!(ledger(&config).await.last(), Some(&35));
 
     let store = SqliteStore::open(&config).await.expect("v35 migrates");
-    assert_eq!(store.schema_version().await.expect("version"), 40);
+    assert_eq!(store.schema_version().await.expect("version"), 41);
     assert_eq!(store.foreign_key_violations().await.expect("check"), 0);
     assert_eq!(store.audit_page(&page).await.expect("page"), before);
     let refused = AuditRow {

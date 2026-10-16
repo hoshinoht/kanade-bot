@@ -121,7 +121,7 @@ async fn readiness_judges_each_slot_per_boss_and_writes_nothing() {
     // Estimates off (no scouter URL): never a scouter reading, no freshness.
     assert_eq!(
         linked["bosses"],
-        json!([{"boss": "Kalos", "difficulty": "x", "entry_level": 265, "level": "ok", "scouter": null}])
+        json!([{"boss": "Kalos", "difficulty": "x", "character_id": alice, "entry_level": 265, "level": "ok", "scouter": null}])
     );
     assert_eq!(ready["fresh_days"], Value::Null);
 
@@ -162,8 +162,8 @@ async fn readiness_judges_each_slot_per_boss_and_writes_nothing() {
     assert_eq!(
         slot(&star, "1001")["bosses"],
         json!([
-            {"boss": "MaleficStar", "difficulty": "h", "entry_level": 280, "level": "under", "scouter": null},
-            {"boss": "Lucid", "difficulty": "h", "entry_level": null, "level": "unknown", "scouter": null},
+            {"boss": "MaleficStar", "difficulty": "h", "character_id": alice, "entry_level": 280, "level": "under", "scouter": null},
+            {"boss": "Lucid", "difficulty": "h", "character_id": alice, "entry_level": null, "level": "unknown", "scouter": null},
         ])
     );
 

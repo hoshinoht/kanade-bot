@@ -17,8 +17,8 @@ pub use character::{
 };
 pub use party::{PartyReads, PartyRoster};
 pub use picks::{
-    Basis, Clash, PartySlot, Pick, PickChange, PickScope, PickWrite, PlannedPick, StoredPicks,
-    party_slots, pick_version, plan_pick, timing_slots,
+    Basis, BossSlot, Clash, PartySlot, Pick, PickChange, PickScope, PickWrite, PlannedPick,
+    PlannedSame, StoredPicks, party_slots, pick_version, plan_pick, plan_same, timing_slots,
 };
 pub use port::{
     CHARACTERS_SECTION, CharacterChange, CharacterRecord, CharacterStore, CharacterWrite, Planned,
@@ -46,6 +46,8 @@ mod tests {
                     "roster_characters",
                     "roster_run_picks",
                     "roster_fixed_picks",
+                    "roster_run_boss_picks",
+                    "roster_fixed_boss_picks",
                     "StoredPicks",
                     "PartySlot",
                 ]

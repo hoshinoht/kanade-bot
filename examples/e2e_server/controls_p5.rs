@@ -58,7 +58,7 @@ use kanade::{
     infrastructure::{
         character_data::CharacterData,
         scouter::{
-            Estimates, JobRequest, JobState, Missing, RosterIgn, Start, Subject, Target,
+            BossParty, Estimates, JobRequest, JobState, Missing, RosterIgn, Start, Subject, Target,
             party_subjects,
         },
         store::SqliteStore,
@@ -216,6 +216,7 @@ fn start_lookup(data: &CharacterData, subject: Subject, actor: Actor) -> Result<
         target: Target::Characters(vec![subject.character_id.clone()]),
         subjects: vec![subject],
         missing: Vec::new(),
+        parties: Vec::new(),
         started_by: actor,
         refresh: true,
     }) {
@@ -271,7 +272,7 @@ async fn run_party(
     store: &SqliteStore,
     state: &ApiState,
     run_id: &str,
-) -> Result<(Target, Vec<Subject>, Vec<Missing>), Fail> {
+) -> Result<(Target, Vec<Subject>, Vec<Missing>, Vec<BossParty>), Fail> {
     let run = store
         .load(&Scope::Run(run_id.into()))
         .await?
@@ -285,7 +286,7 @@ async fn run_party(
     runs.push(run.clone());
     let party = PartyRoster::load(store, &run, &runs).await?;
     let slots = party.slots(&run, &runs, &week.fixed_runs, &state.catalog);
-    let (subjects, missing) = party_subjects(&slots);
+    let (subjects, missing, parties) = party_subjects(&slots, &run.bosses);
     if subjects.is_empty() {
         return Err(format!("no one on {run_id} has a character to look up").into());
     }
@@ -293,7 +294,7 @@ async fn run_party(
         run_id: run.id,
         bosses: run.bosses,
     };
-    Ok((target, subjects, missing))
+    Ok((target, subjects, missing, parties))
 }
 
 /// A finished lookup of `aged` fetched `days` before the server clock, as
@@ -302,11 +303,12 @@ async fn aged(shared: &Shared, aged: Aged, days: i64) -> Result<(), Fail> {
     let (store, state) = shared.live_parts().await?;
     let data = shared.character_data().await?;
     let estimates = data.estimates().ok_or("the scouter is off")?;
-    let (target, subjects, missing) = match aged {
+    let (target, subjects, missing, parties) = match aged {
         Aged::Run(run) => run_party(&store, &state, &run).await?,
         Aged::Character(id) => (
             Target::Characters(vec![id.clone()]),
             vec![subject(&store, &id).await?],
+            Vec::new(),
             Vec::new(),
         ),
     };
@@ -316,6 +318,7 @@ async fn aged(shared: &Shared, aged: Aged, days: i64) -> Result<(), Fail> {
         target,
         subjects,
         missing,
+        parties,
         started_by: Actor::admin(format!("discord:{ASAHI}")),
         refresh: true,
     }) {

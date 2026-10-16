@@ -204,13 +204,15 @@ async fn roster(seed: &Seed<'_>) -> Result<(), Fail> {
 }
 
 /// Asahi picks AsahiDK on `r-carling`; Mika's pick for the `f-carling`
-/// timing is MikaBish, so its runs bring her from the timing.
+/// timing is MikaBish, so its runs bring her from the timing. `boss` names
+/// a per-boss pick (none seeded yet: each pick adds a History row, and the
+/// History count is pinned by the browser e2e).
 async fn picks(seed: &Seed<'_>) -> Result<(), Fail> {
     let picks = [
-        (PickScope::Run, "r-carling", ASAHI, "ch-s5", 2 * DAY),
-        (PickScope::Timing, "f-carling", MIKA, "ch-s3", DAY),
+        (PickScope::Run, "r-carling", ASAHI, None, "ch-s5", 2 * DAY),
+        (PickScope::Timing, "f-carling", MIKA, None, "ch-s3", DAY),
     ];
-    for (scope, target, member, character, ago) in picks {
+    for (scope, target, member, boss, character, ago) in picks {
         let record = CharacterRecord {
             at: seed.ago(ago),
             actor: asahi(),
@@ -220,6 +222,7 @@ async fn picks(seed: &Seed<'_>) -> Result<(), Fail> {
             scope,
             target: target.into(),
             member_id: member.into(),
+            boss: boss.map(str::to_owned),
             character_id: character.into(),
             version: 0,
         };

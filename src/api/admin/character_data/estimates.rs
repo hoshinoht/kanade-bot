@@ -35,8 +35,8 @@ use crate::{
     infrastructure::{
         character_data::CharacterData,
         scouter::{
-            Estimates, JobRequest, MAX_BATCH, MAX_QUEUED, Missing, MissingReason, RosterIgn, Start,
-            Subject, Target, party_subjects, push_subject,
+            BossParty, Estimates, JobRequest, MAX_BATCH, MAX_QUEUED, Missing, MissingReason,
+            RosterIgn, Start, Subject, Target, party_subjects, push_subject,
         },
     },
 };
@@ -97,7 +97,7 @@ pub(crate) fn estimate_ign(character: &Character) -> Result<RosterIgn, Refusal> 
     })
 }
 
-type Resolved = (Target, Vec<Subject>, Vec<Missing>);
+type Resolved = (Target, Vec<Subject>, Vec<Missing>, Vec<BossParty>);
 
 /// The characters asked for, sorted (the target), each looked up.
 async fn characters(roster: &dyn CharacterRoster, ids: Vec<String>) -> Result<Resolved, Refusal> {
@@ -126,28 +126,29 @@ async fn characters(roster: &dyn CharacterRoster, ids: Vec<String>) -> Result<Re
             },
         );
     }
-    Ok((Target::Characters(ids), subjects, Vec::new()))
+    Ok((Target::Characters(ids), subjects, Vec::new(), Vec::new()))
 }
 
-/// The run's party: the character each member brings (as `…/characters`
-/// resolves it); the rest are missing.
+/// The run's party: the character each member brings to each boss (as
+/// `…/characters` resolves it), and each boss's party; the rest are
+/// missing.
 async fn run_party(
     state: &ApiState,
     roster: &dyn CharacterRoster,
     run_id: String,
 ) -> Result<Resolved, Refusal> {
     let (run, slots) = party(state, roster, &run_id).await?;
-    let (subjects, missing) = party_subjects(&slots);
+    let (subjects, missing, parties) = party_subjects(&slots, &run.bosses);
     if subjects.is_empty() {
         return Err(Refusal::unprocessable(
             "nothing_to_look_up",
             "No one in this party has a character to look up.",
         ));
     }
-    if subjects.len() > MAX_BATCH {
+    if parties.iter().any(|party| party.subjects.len() > MAX_BATCH) {
         return Err(Refusal::unprocessable(
             "too_many",
-            format!("An estimate looks up at most {MAX_BATCH} characters at once."),
+            format!("An estimate looks up at most {MAX_BATCH} characters per boss."),
         ));
     }
     Ok((
@@ -157,6 +158,7 @@ async fn run_party(
         },
         subjects,
         missing,
+        parties,
     ))
 }
 
@@ -187,7 +189,7 @@ async fn start(
     let state = state(&site)?;
     let estimates = scouter.estimates()?;
     let roster = roster(state)?;
-    let (target, subjects, missing) = match (body.character_ids, body.run_id) {
+    let (target, subjects, missing, parties) = match (body.character_ids, body.run_id) {
         (Some(ids), None) => characters(roster.as_ref(), ids).await?,
         (None, Some(run_id)) => run_party(state, roster.as_ref(), run_id).await?,
         _ => return Err(Refusal::invalid("Send character_ids or run_id.")),
@@ -196,6 +198,7 @@ async fn start(
         target,
         subjects,
         missing,
+        parties,
         started_by: session.origin().actor,
         refresh: body.refresh,
     }) {

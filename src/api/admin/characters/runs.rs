@@ -1,8 +1,12 @@
 //! The character each party member brings to a run: a read of the run's
-//! slots (candidates, the run's own pick, what each member brings and why,
-//! warnings) and a write that sets or clears one member's pick. Reads never
-//! write: what a member brings is resolved each time (the run's pick, else
-//! its weekly timing's pick, read live, else their main, else their only
+//! slots (candidates, the run's own pick, what each member brings to each
+//! boss and why, warnings), a write that sets or clears one member's pick
+//! (the first boss's, and every boss's without one of its own), one that
+//! sets or clears their pick for a later boss, and "same for every boss",
+//! which clears their per-boss picks in one write. Reads never write: what
+//! a member brings is resolved each time (the run's pick, else its weekly
+//! timing's pick, read live, else their main, else their only character;
+//! a later boss its own run pick, else its timing's, else the first boss's
 //! character). A pick saves directly, also while the admin stages a draft
 //! (it is roster data outside the history chain), with its History row and
 //! keyed replay in one transaction; a live run past its end refuses it
@@ -21,7 +25,10 @@ use serde_json::json;
 use super::{
     super::replay::recall,
     Reply, Roster,
-    picks::{CharacterPick, SlotWrite, apply, named, stale},
+    picks::{
+        CharacterPick, SameForEveryBoss, SlotWrite, apply, later_boss, later_versions, named,
+        plan_same, stale,
+    },
     write::record,
 };
 use crate::{
@@ -31,7 +38,7 @@ use crate::{
             write::{Body, Refusal, load_run, state},
         },
         auth::AdminSession,
-        dto::characters::{RunCharacters, run_slot},
+        dto::characters::{RunCharacterSlot, RunCharacters, run_slot},
         error::ApiError,
         listeners::Site,
         state::{ApiState, CharacterRoster},
@@ -112,6 +119,21 @@ impl Week {
                 .collect(),
         }
     }
+
+    /// `member_id`'s slot as the API answers it (a write's answer).
+    fn slot(
+        &self,
+        site: &Site,
+        state: &ApiState,
+        run: &Run,
+        member_id: &str,
+    ) -> Result<RunCharacterSlot, Refusal> {
+        self.answer(site, state, run)
+            .slots
+            .into_iter()
+            .find(|slot| slot.member_id == member_id)
+            .ok_or_else(|| Refusal::from(ApiError::UNAVAILABLE))
+    }
 }
 
 /// `GET /api/admin/runs/{id}/characters`.
@@ -138,49 +160,174 @@ pub async fn pick(
     headers: HeaderMap,
     Body(body): Body<CharacterPick>,
 ) -> Reply {
-    let state = state(&site)?;
-    let (character_id, version) = body.parts("run's")?;
-    let request = format!(
-        "character.pick\u{1f}{run_id}\u{1f}{member_id}\u{1f}{}",
-        json!({ "character_id": character_id, "version": version })
-    );
-    let (keyed, answered) = recall(state, &session, &headers, &request).await?;
-    if let Some(answer) = answered {
-        return Ok(answer);
-    }
-    let now = state.now();
-    let run = run_of(state, &run_id).await?;
-    if run_ends(state).await.frozen(&run, now) {
-        return Err(Refusal::conflict("run_ended", RUN_ENDED));
-    }
-    if !run.participants.contains(&member_id) {
-        return Err(Refusal::unprocessable(
-            "not_on_run",
-            "That member is not in this run's party.",
-        ));
-    }
-    let mut week = Week::load(state, roster.as_ref(), &run).await?;
-    let record = record(&session, now);
-    let write = SlotWrite {
-        scope: PickScope::Run,
-        target: &run_id,
+    let write = Asked {
+        site: &site,
+        session: &session,
+        headers: &headers,
+        run_id: &run_id,
         member_id: &member_id,
-        version,
-        at: now,
-        actor: &record.actor,
     };
-    if pick_version(write.current(&week.party.picks)) != version {
-        return Err(stale(PickScope::Run));
+    write.pick(roster.as_ref(), None, body).await
+}
+
+/// `PUT /api/admin/runs/{id}/characters/{member}/bosses/{boss}`: set or
+/// clear one party member's pick for a later boss of the run (`boss`: its
+/// token or catalog boss). The answer is that member's slot as it now
+/// reads.
+pub async fn boss_pick(
+    Roster(roster): Roster,
+    State(site): State<Arc<Site>>,
+    session: AdminSession,
+    UrlPath((run_id, member_id, boss)): UrlPath<(String, String, String)>,
+    headers: HeaderMap,
+    Body(body): Body<CharacterPick>,
+) -> Reply {
+    let write = Asked {
+        site: &site,
+        session: &session,
+        headers: &headers,
+        run_id: &run_id,
+        member_id: &member_id,
+    };
+    write.pick(roster.as_ref(), Some(&boss), body).await
+}
+
+/// `POST /api/admin/runs/{id}/characters/{member}/same`: "same for every
+/// boss", clearing the member's per-boss picks on the run in one write.
+/// The answer is that member's slot as it now reads.
+pub async fn same(
+    Roster(roster): Roster,
+    State(site): State<Arc<Site>>,
+    session: AdminSession,
+    UrlPath((run_id, member_id)): UrlPath<(String, String)>,
+    headers: HeaderMap,
+    Body(body): Body<SameForEveryBoss>,
+) -> Reply {
+    let write = Asked {
+        site: &site,
+        session: &session,
+        headers: &headers,
+        run_id: &run_id,
+        member_id: &member_id,
+    };
+    write.same(roster.as_ref(), body).await
+}
+
+/// One write to a member's slots on a run, as asked.
+struct Asked<'a> {
+    site: &'a Site,
+    session: &'a AdminSession,
+    headers: &'a HeaderMap,
+    run_id: &'a str,
+    member_id: &'a str,
+}
+
+impl Asked<'_> {
+    /// The run, unless it is past its end or the member is not in its party.
+    async fn run(&self, state: &ApiState) -> Result<Run, Refusal> {
+        let run = run_of(state, self.run_id).await?;
+        if run_ends(state).await.frozen(&run, state.now()) {
+            return Err(Refusal::conflict("run_ended", RUN_ENDED));
+        }
+        if !run.participants.iter().any(|id| id == self.member_id) {
+            return Err(Refusal::unprocessable(
+                "not_on_run",
+                "That member is not in this run's party.",
+            ));
+        }
+        Ok(run)
     }
-    if let Some(character_id) = &character_id {
-        named(roster.as_ref(), character_id, &member_id).await?;
+
+    /// `body` for the member's own pick, or with `boss` for that boss's.
+    async fn pick(
+        &self,
+        roster: &dyn CharacterRoster,
+        boss: Option<&str>,
+        body: CharacterPick,
+    ) -> Reply {
+        let state = state(self.site)?;
+        let (character_id, version) = body.parts("run's")?;
+        let (run_id, member_id) = (self.run_id, self.member_id);
+        let asked = json!({ "character_id": character_id, "version": version });
+        let request = match boss {
+            None => format!("character.pick\u{1f}{run_id}\u{1f}{member_id}\u{1f}{asked}"),
+            Some(boss) => {
+                format!(
+                    "character.bosspick\u{1f}{run_id}\u{1f}{member_id}\u{1f}{boss}\u{1f}{asked}"
+                )
+            }
+        };
+        let (keyed, answered) = recall(state, self.session, self.headers, &request).await?;
+        if let Some(answer) = answered {
+            return Ok(answer);
+        }
+        let now = state.now();
+        let run = self.run(state).await?;
+        let boss = boss
+            .map(|asked| later_boss(&state.catalog, &run.bosses, asked, PickScope::Run))
+            .transpose()?;
+        let mut week = Week::load(state, roster, &run).await?;
+        let record = record(self.session, now);
+        let write = SlotWrite {
+            scope: PickScope::Run,
+            target: run_id,
+            member_id,
+            boss: boss.as_deref(),
+            version,
+            at: now,
+            actor: &record.actor,
+        };
+        if pick_version(write.current(&week.party.picks)) != version {
+            return Err(stale(PickScope::Run));
+        }
+        if let Some(character_id) = &character_id {
+            named(roster, character_id, member_id).await?;
+        }
+        let change = write.plan(&mut week.party.picks, character_id);
+        let slot = week.slot(self.site, state, &run, member_id)?;
+        apply(roster, keyed, change, record, json!(slot)).await
     }
-    let change = write.plan(&mut week.party.picks, character_id);
-    let answer = week.answer(&site, state, &run);
-    let slot = answer
-        .slots
-        .into_iter()
-        .find(|slot| slot.member_id == member_id)
-        .ok_or_else(|| Refusal::from(ApiError::UNAVAILABLE))?;
-    apply(roster.as_ref(), keyed, change, record, json!(slot)).await
+
+    /// "Same for every boss" against the versions `body` was loaded at.
+    async fn same(&self, roster: &dyn CharacterRoster, body: SameForEveryBoss) -> Reply {
+        let state = state(self.site)?;
+        let sent = body.versions("run's")?;
+        let (run_id, member_id) = (self.run_id, self.member_id);
+        let request = format!(
+            "character.samepick\u{1f}{run_id}\u{1f}{member_id}\u{1f}{}",
+            json!({ "versions": sent })
+        );
+        let (keyed, answered) = recall(state, self.session, self.headers, &request).await?;
+        if let Some(answer) = answered {
+            return Ok(answer);
+        }
+        let now = state.now();
+        let run = self.run(state).await?;
+        let mut week = Week::load(state, roster, &run).await?;
+        let slots = week.slots(state, &run);
+        let slot = slots
+            .iter()
+            .find(|slot| slot.member_id == member_id)
+            .ok_or_else(|| Refusal::from(ApiError::UNAVAILABLE))?;
+        let (versions, fresh) = later_versions(slot, &sent);
+        if !fresh {
+            return Err(stale(PickScope::Run));
+        }
+        let change = plan_same(
+            &mut week.party.picks,
+            PickScope::Run,
+            run_id,
+            member_id,
+            versions,
+        );
+        let slot = week.slot(self.site, state, &run, member_id)?;
+        apply(
+            roster,
+            keyed,
+            change,
+            record(self.session, now),
+            json!(slot),
+        )
+        .await
+    }
 }

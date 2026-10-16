@@ -447,6 +447,22 @@ async fn admin_routes_stay_off_the_public_origin_and_member_routes_off_the_admin
         ("POST", "/api/admin/estimates".to_owned()),
         ("GET", "/api/admin/runs/r-kalos/characters".to_owned()),
         ("GET", "/api/admin/runs/r-kalos/readiness".to_owned()),
+        (
+            "PUT",
+            "/api/admin/runs/r-kalos/characters/1001/bosses/Kalos".to_owned(),
+        ),
+        (
+            "POST",
+            "/api/admin/runs/r-kalos/characters/1001/same".to_owned(),
+        ),
+        (
+            "PUT",
+            "/api/admin/fixed/f-kalos/characters/1001/bosses/Kalos".to_owned(),
+        ),
+        (
+            "POST",
+            "/api/admin/fixed/f-kalos/characters/1001/same".to_owned(),
+        ),
     ] {
         let reply = chars
             .portal
@@ -1057,6 +1073,7 @@ async fn the_party_sees_roster_levels_and_estimates_never_another_members_nexon_
             "you": true,
             "character": {"ign": "AsahiKanna", "class": "Bishop", "level": 271, "level_source": "nexon", "as_of": "2026-09-28"},
             "scouter": [],
+            "bosses": [],
         })
     );
     // Other members see the roster level, which holds NEXON's copy.
@@ -1067,6 +1084,7 @@ async fn the_party_sees_roster_levels_and_estimates_never_another_members_nexon_
             "you": false,
             "character": {"ign": "BobKnight", "class": "Bishop", "level": 271, "level_source": "roster", "as_of": null},
             "scouter": [],
+            "bosses": [],
         })
     );
     assert_eq!(
@@ -1150,4 +1168,80 @@ async fn the_party_sees_roster_levels_and_estimates_never_another_members_nexon_
         .get(Some(&alice), "/api/public/runs/r-nope/characters")
         .await;
     assert_eq!(outside.json(), unknown.json());
+}
+
+/// A member who brings another character to a later boss shows one
+/// read-only line per boss; the rest keep their single line.
+#[tokio::test]
+async fn the_party_sees_per_boss_characters_only_where_they_differ() {
+    use chrono::{TimeZone, Utc};
+    use kanade::domain::schedule::{Change, Run, RunSource, RunStatus};
+
+    let chars = Chars::new(true, false).await;
+    let kanna = json!({"ign": "AsahiKanna", "class": "Kanna", "level": 250});
+    chars.admin_add(ALICE, kanna).await;
+    let mech = json!({"ign": "AsahiMech", "class": "Mechanic", "level": 262});
+    let mech = chars.admin_add(ALICE, mech).await;
+    let knight = json!({"ign": "BobKnight", "class": "Hero", "level": 260});
+    chars.admin_add(BOB, knight).await;
+    let utc = |day, hour| Utc.with_ymd_and_hms(2026, 9, day, hour, 0, 0).unwrap();
+    let run = Run {
+        id: "r-two".into(),
+        fixed_run_id: None,
+        channel_id: Some("star".into()),
+        week_start: utc(23, 16),
+        datetime: utc(30, 13),
+        bosses: vec!["XKalos".into(), "HMaleficStar".into()],
+        participants: vec!["1001".into(), "1002".into()],
+        status: RunStatus::Planned,
+        source: RunSource::Amend,
+        attendance: Vec::new(),
+        status_pin: None,
+    };
+    crate::reads::commit_as(
+        &chars.reads().store,
+        "seed",
+        utc(28, 0),
+        vec![Change::PutRun(run)],
+    )
+    .await;
+    let path = "/api/admin/runs/r-two/characters/1001/bosses/MaleficStar";
+    let body = json!({"character_id": mech, "version": 0});
+    let picked = chars.reads().call("PUT", path, body, &[]).await;
+    assert_eq!(picked.status, 200, "{}", picked.text());
+
+    let alice = chars.portal.sign_in(ALICE).await;
+    let party = chars
+        .portal
+        .read(&alice, "/api/public/runs/r-two/characters", PARTY_VIEW)
+        .await;
+    let slots = party["slots"].as_array().unwrap();
+    assert_eq!(slots[0]["character"]["ign"], "AsahiKanna");
+    let lines: Vec<(Value, Value, Value)> = slots[0]["bosses"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|line| {
+            (
+                line["boss"].clone(),
+                line["difficulty"].clone(),
+                line["character"]["ign"].clone(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        lines,
+        [
+            (json!("Kalos"), json!("x"), json!("AsahiKanna")),
+            (json!("MaleficStar"), json!("h"), json!("AsahiMech")),
+        ]
+    );
+    assert_eq!(slots[1]["bosses"], json!([]), "Bob brings one character");
+    // Members cannot pick: the per-boss write is not on the public origin.
+    let markers = [PUB_ORIGIN, ("X-Kanade-CSRF", alice.csrf.as_str())];
+    let reply = chars
+        .portal
+        .send(Some(&alice), "PUT", path, &markers, Some("{}"))
+        .await;
+    assert_eq!(refused(&reply), (404, "not_found".into()));
 }

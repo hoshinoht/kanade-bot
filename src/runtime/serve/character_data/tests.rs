@@ -276,6 +276,7 @@ async fn stop_cancels_and_joins_a_running_estimate_lookup() {
             ign: RosterIgn::of(&wisteria()).unwrap(),
         }],
         missing: Vec::new(),
+        parties: Vec::new(),
         started_by: Actor::admin("token"),
         refresh: false,
     }) else {
@@ -393,6 +394,7 @@ async fn stop_joins_with_background_lookups_waiting() {
             ign: RosterIgn::of(character).unwrap(),
         }],
         missing: Vec::new(),
+        parties: Vec::new(),
     };
     let parties: Arc<dyn UpcomingParties> = Arc::new(Parties(vec![
         run("r1", 2, &wisteria()),

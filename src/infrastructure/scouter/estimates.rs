@@ -39,11 +39,14 @@
 //!
 //! A job looks up each character on its own (`ign=`) and records each
 //! outcome as it arrives: one character's failure never stops the others,
-//! and every success is kept under its IGN. A party then asks once as
-//! `igns=` with the characters that succeeded, for the scouter's party
-//! total, which its own short cache answers without rendering again; the
-//! total is complete only when every character succeeded. A `429 busy` is
-//! asked again after its `Retry-After` while the job's deadline allows.
+//! and every success is kept under its IGN. Each distinct boss party (most
+//! runs bring one party to every boss; per-boss picks can make more) then
+//! asks once as `igns=` with its characters that succeeded, for the
+//! scouter's party total, which its own short cache answers without
+//! rendering again; each total counts only for that party's bosses, and is
+//! kept under its IGN set only when every character of it succeeded. A
+//! `429 busy` is asked again after its `Retry-After` while the job's
+//! deadline allows.
 
 use std::{
     collections::{BTreeMap, HashMap, HashSet, VecDeque},
@@ -55,8 +58,9 @@ use chrono::{DateTime, TimeDelta, Utc};
 use tokio::{sync::Notify, task::JoinHandle, time::Instant};
 
 use super::{
-    LookupError, RosterIgn, ScouterClient,
+    BossParty, LookupError, RosterIgn, ScouterClient,
     refresh::{self, Memory, Reading, UpcomingParties},
+    scouter_keys,
     wire::{Combined, Member},
 };
 use crate::{
@@ -94,6 +98,9 @@ pub const BACKOFF: Duration = Duration::from_secs(24 * 60 * 60);
 pub const REFRESHER: &str = "estimate_refresh";
 /// Health probes `GET /healthz` at most this often.
 const PROBE_EVERY: Duration = Duration::from_secs(60);
+
+/// A party total as the scouter answers it: scouter boss key → total.
+pub type Totals = BTreeMap<String, Combined>;
 
 /// Days a result answers a lookup at once (the saved `estimate_days`),
 /// read at every lookup so a Config save applies at once.
@@ -156,20 +163,62 @@ impl Target {
 
 pub struct JobRequest {
     pub target: Target,
-    /// 1 to `MAX_BATCH`, unique by IGN.
+    /// Unique by IGN; every character brought to any boss.
     pub subjects: Vec<Subject>,
     pub missing: Vec<Missing>,
+    /// The distinct boss parties, each at most `MAX_BATCH`; empty for one
+    /// party of every subject (a lookup of characters, or a run that
+    /// brings the same characters to every boss).
+    pub parties: Vec<BossParty>,
     pub started_by: Actor,
     /// Skip the cache ("Look up again").
     pub refresh: bool,
+}
+
+/// `parties` as a job keeps them: never empty.
+fn parties_of(parties: Vec<BossParty>, subjects: usize) -> Vec<BossParty> {
+    if parties.is_empty() {
+        vec![BossParty::whole(subjects)]
+    } else {
+        parties
+    }
+}
+
+/// One total over every boss: `totals[i]` is `parties[i]`'s. A single
+/// party's total is kept whole (every boss the scouter knows); with several,
+/// each total counts only for its own party's bosses. `None` when no party
+/// has one.
+pub(super) fn merged(
+    parties: &[BossParty],
+    totals: Vec<Option<BTreeMap<String, Combined>>>,
+) -> Option<BTreeMap<String, Combined>> {
+    if let [_] = parties {
+        return totals.into_iter().next().flatten();
+    }
+    let mut merged: Option<BTreeMap<String, Combined>> = None;
+    for (party, total) in parties.iter().zip(totals) {
+        let Some(total) = total else {
+            continue;
+        };
+        let into = merged.get_or_insert_with(BTreeMap::new);
+        for token in &party.bosses {
+            for key in scouter_keys(token) {
+                if let Some(found) = total.get(key) {
+                    into.insert(key.to_owned(), found.clone());
+                }
+            }
+        }
+    }
+    merged
 }
 
 /// A finished job with at least one character found (their results are
 /// the job's `results`).
 #[derive(Clone, Debug, PartialEq)]
 pub struct Found {
-    /// The scouter's party total over the characters that succeeded;
-    /// `None` for one character, or when `total_failure` says why.
+    /// The scouter's party totals over the characters that succeeded, each
+    /// boss's from its own party ([`merged`]); `None` for one character, or
+    /// when `total_failure` says why.
     pub combined: Option<BTreeMap<String, Combined>>,
     /// The party total's own failure, after characters succeeded.
     pub total_failure: Option<Failure>,
@@ -268,6 +317,8 @@ pub struct Job {
     pub finished_at: Option<DateTime<Utc>>,
     pub subjects: Vec<Subject>,
     pub missing: Vec<Missing>,
+    /// The distinct boss parties (never empty).
+    pub parties: Vec<BossParty>,
     /// Jobs ahead of it, the running one included, while it waits.
     pub position: Option<usize>,
     /// Each subject's outcome, in subject order, as it arrives.
@@ -550,11 +601,12 @@ impl Inner {
     }
 
     /// What memory answers for a lookup of `subjects` at once: each one's
-    /// result (and the total, for a party), every one about these very
-    /// characters and `fresh`; `None` unless all are.
+    /// result (and, for a party, each of `parties`' totals), every one
+    /// about these very characters and `fresh`; `None` unless all are.
     fn answer(
         &self,
         subjects: &[Subject],
+        parties: &[BossParty],
         party: bool,
         now: Instant,
         fresh: impl Fn(DateTime<Utc>) -> bool,
@@ -568,12 +620,25 @@ impl Inner {
             results.push(Some(Ok(held.value.clone())));
         }
         let combined = if party {
-            let ids = characters(subjects);
-            let held = self
-                .party(&set_key(subjects.iter().map(|subject| &subject.ign)), now)
-                .filter(|held| held.characters == ids && fresh(held.fetched_at))?;
-            seen(held.fetched_at);
-            Some(held.value.clone())
+            let mut totals = Vec::with_capacity(parties.len());
+            for members in parties {
+                let members: Vec<Subject> = members
+                    .subjects
+                    .iter()
+                    .filter_map(|at| subjects.get(*at).cloned())
+                    .collect();
+                if members.is_empty() {
+                    totals.push(None);
+                    continue;
+                }
+                let ids = characters(&members);
+                let held = self
+                    .party(&set_key(members.iter().map(|subject| &subject.ign)), now)
+                    .filter(|held| held.characters == ids && fresh(held.fetched_at))?;
+                seen(held.fetched_at);
+                totals.push(Some(held.value.clone()));
+            }
+            merged(parties, totals)
         } else {
             None
         };
@@ -650,8 +715,8 @@ impl Inner {
             return Next::Run(id);
         }
         while let Some(kept) = self.background.front() {
-            let subjects = &kept.job.subjects;
-            if self.answer(subjects, true, now, &fresh).is_some() {
+            let (subjects, parties) = (&kept.job.subjects, &kept.job.parties);
+            if self.answer(subjects, parties, true, now, &fresh).is_some() {
                 self.background.pop_front();
                 continue;
             }
@@ -841,11 +906,12 @@ impl Shared {
     /// Job `id`'s lookups; `None` when the job is gone, or a background job
     /// the cap stopped.
     async fn run(&self, id: &str) -> Option<Result<Found, Failure>> {
-        let (subjects, party, refresh) = {
+        let (subjects, parties, party, refresh) = {
             let inner = self.inner();
             let kept = inner.jobs.iter().find(|kept| kept.job.id == id)?;
             (
                 kept.job.subjects.clone(),
+                kept.job.parties.clone(),
                 kept.job.target.party(),
                 kept.refresh,
             )
@@ -853,9 +919,10 @@ impl Shared {
         let igns: Vec<RosterIgn> = subjects.iter().map(|subject| subject.ign.clone()).collect();
         // Each call the job makes adds the client's timeout to its budget;
         // a busy wait spends from the same budget.
-        let calls = u32::try_from(igns.len() + usize::from(party)).unwrap_or(u32::MAX);
+        let totals = if party { parties.len() } else { 0 };
+        let calls = u32::try_from(igns.len() + totals).unwrap_or(u32::MAX);
         let deadline = Instant::now() + self.client.timeout().saturating_mul(calls);
-        let mut found = Vec::with_capacity(igns.len());
+        let mut found = vec![false; subjects.len()];
         let mut first_failure = None;
         for (at, subject) in subjects.iter().enumerate() {
             // Found meanwhile (another job, or before this one was queued),
@@ -885,7 +952,7 @@ impl Shared {
                 }
             };
             match &outcome {
-                Ok(_) => found.push(subject.ign.clone()),
+                Ok(_) => found[at] = true,
                 Err(failure) => {
                     first_failure.get_or_insert_with(|| failure.clone());
                 }
@@ -897,26 +964,13 @@ impl Shared {
                 job.current = None;
             });
         }
-        if found.is_empty() {
+        if !found.contains(&true) {
             return first_failure.map(Err);
         }
         let fetched_at = self.now();
         let (combined, total_failure) = if party {
-            let result = self
-                .call(deadline, |within| self.client.batch(&found, within))
-                .await;
-            match result {
-                Ok(batch) => {
-                    // A whole party, every character found, is kept under
-                    // its IGN set.
-                    if first_failure.is_none() {
-                        self.keep_party(&subjects, &batch.combined, fetched_at)
-                            .await;
-                    }
-                    (Some(batch.combined), None)
-                }
-                Err(error) => (None, Some(Failure::of(&error, &igns, None))),
-            }
+            self.totals(&subjects, &parties, &found, &igns, deadline, fetched_at)
+                .await
         } else {
             (None, None)
         };
@@ -926,6 +980,61 @@ impl Shared {
             fetched_at,
             cache_hit: false,
         }))
+    }
+
+    /// One `igns=` call per distinct boss party with its characters that
+    /// were `found` (a party whose set another party already asked reuses
+    /// that answer); a party every character of which was found is kept
+    /// under its IGN set. The merged totals and the first total's failure.
+    async fn totals(
+        &self,
+        subjects: &[Subject],
+        parties: &[BossParty],
+        found: &[bool],
+        igns: &[RosterIgn],
+        deadline: Instant,
+        fetched_at: DateTime<Utc>,
+    ) -> (Option<BTreeMap<String, Combined>>, Option<Failure>) {
+        let mut asked: Vec<(Vec<usize>, Option<Totals>)> = Vec::new();
+        let mut totals = Vec::with_capacity(parties.len());
+        let mut failure = None;
+        for party in parties {
+            let members: Vec<usize> = party
+                .subjects
+                .iter()
+                .copied()
+                .filter(|at| found.get(*at).copied().unwrap_or(false))
+                .collect();
+            if members.is_empty() {
+                totals.push(None);
+                continue;
+            }
+            if let Some((_, total)) = asked.iter().find(|(set, _)| *set == members) {
+                totals.push(total.clone());
+                continue;
+            }
+            let batch: Vec<RosterIgn> = members.iter().map(|at| igns[*at].clone()).collect();
+            let result = self
+                .call(deadline, |within| self.client.batch(&batch, within))
+                .await;
+            let total = match result {
+                Ok(batch) => {
+                    if members.len() == party.subjects.len() {
+                        let whole: Vec<Subject> =
+                            members.iter().map(|at| subjects[*at].clone()).collect();
+                        self.keep_party(&whole, &batch.combined, fetched_at).await;
+                    }
+                    Some(batch.combined)
+                }
+                Err(error) => {
+                    failure.get_or_insert_with(|| Failure::of(&error, igns, None));
+                    None
+                }
+            };
+            asked.push((members, total.clone()));
+            totals.push(total);
+        }
+        (merged(parties, totals), failure)
     }
 
     /// Records job `id`'s outcome (`None`: drops the job); a background
@@ -1248,9 +1357,10 @@ impl Estimates {
             inner.jobs.push_back(kept);
             return Start::Joined(self.hand(inner, &id, instant));
         }
+        let parties = parties_of(request.parties, request.subjects.len());
         let hit = (!request.refresh)
             .then(|| {
-                inner.answer(&request.subjects, party, instant, |fetched_at| {
+                inner.answer(&request.subjects, &parties, party, instant, |fetched_at| {
                     self.shared.fresh(fetched_at, now)
                 })
             })
@@ -1269,6 +1379,7 @@ impl Estimates {
             current: None,
             subjects: request.subjects,
             missing: request.missing,
+            parties,
             outcome: None,
         };
         // One retained job per target: the new one replaces the last.
@@ -1422,6 +1533,7 @@ impl Estimates {
                     position: None,
                     results: vec![None; due.run.subjects.len()],
                     current: None,
+                    parties: parties_of(due.run.parties, due.run.subjects.len()),
                     subjects: due.run.subjects,
                     missing: due.run.missing,
                     outcome: None,

@@ -15,6 +15,7 @@ _In development_
 - Redesigned day-of and countdown reminder cards now carry a "Who carries" image showing each boss's estimate split between the party members by IGN (or "no estimate yet"), from the stored estimates at the time the card is posted. The image is left off only while a party member with no estimate yet is still being looked up, so they never show as "no estimate". The admin Reminders card preview shows the same image, drawn from the estimates stored at the time you open it.
 - Estimates are now kept for up to 30 days, across restarts, and refreshed automatically for party members of runs in the next 7 days, so reminder images and run sheets usually show one without anyone pressing Look up.
 - Added "Refresh estimates every n days" to Config › Character data (7 unless changed); an older estimate still shows, marked "older than n days", on the run sheet, the roster, the member portal and the reminder image.
+- Admins can now pick a character per boss for each party member on multi-boss weekly timings and runs, and readiness, estimates, the "Who carries" image and the member portal's Party · characters follow each boss's own character.
 
 ### Changes
 - Estimates are now labelled “Estimate” on the portals and in Discord.

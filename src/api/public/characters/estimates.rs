@@ -134,6 +134,7 @@ pub(super) async fn start(
             ign,
         }],
         missing: Vec::new(),
+        parties: Vec::new(),
         started_by: Actor::member(me),
         refresh: body.refresh,
     });

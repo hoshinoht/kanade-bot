@@ -1,8 +1,8 @@
 //! `CharacterStore` over `roster_characters` (0037), `roster_run_picks`
-//! (0039) and `roster_fixed_picks` (0040, both in `picks.rs`): constant SQL,
-//! reads on a reader connection, one `BEGIN IMMEDIATE` per write with its
-//! History row (`settings_changes`, section `characters`). Deleting a
-//! character cascades to its picks.
+//! (0039), `roster_fixed_picks` (0040) and their per-boss tables (0041, the
+//! picks all in `picks.rs`): constant SQL, reads on a reader connection, one
+//! `BEGIN IMMEDIATE` per write with its History row (`settings_changes`,
+//! section `characters`). Deleting a character cascades to its picks.
 
 use sqlx::{Connection, Row, SqliteConnection, sqlite::SqliteRow};
 

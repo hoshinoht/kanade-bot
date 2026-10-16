@@ -34,7 +34,7 @@ pub use rules::{
     RATE_LIMIT_TRIES, UnlinkReason, estimates_orphaned, has_departed, link_change, next_batch,
     orphan, pending_expired, rate_limit_delay, same_identity,
 };
-pub use shares::{Carrier, PartyShares, split};
+pub use shares::{BossCarrier, Carrier, PartyShares, split};
 
 #[cfg(test)]
 mod tests {

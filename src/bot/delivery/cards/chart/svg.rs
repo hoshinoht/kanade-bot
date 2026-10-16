@@ -1,9 +1,10 @@
 //! The chart as an SVG string, laid out as the approved board's PNG
 //! (`_src/chart.mjs`, `pngCard`): 560 px wide, one block per run (its time
-//! and bosses, one 100% bar per boss, the numbered IGN legend, the
-//! no-estimate count), at most [`MAX_BARS`] bars then "+n more", and the
-//! "as of" footer. Pure and deterministic: the same chart gives the same
-//! string.
+//! and bosses, one 100% bar per boss of that boss's own party, the numbered
+//! IGN legend, by bar when a member brings another character to some boss,
+//! the no-estimate count), at most [`MAX_BARS`] bars then "+n more", and
+//! the "as of" footer. Pure and deterministic: the same chart gives the
+//! same string.
 
 use std::fmt::Write;
 
@@ -154,7 +155,7 @@ fn bar(out: &mut String, run: &ChartRun, index: usize, boss: usize, x0: f64, y: 
             out,
             r#"<rect x="{x}" y="{y}" width="{w}" height="{BAR_HEIGHT}" fill="{fill}"/>"#
         );
-        let crit = party.carriers[member].crit_assumed;
+        let crit = party.carriers[member].crit_at(boss);
         if crit {
             let _ = write!(
                 out,
@@ -175,32 +176,29 @@ fn bar(out: &mut String, run: &ChartRun, index: usize, boss: usize, x0: f64, y: 
     out.push_str("</g>");
 }
 
-/// The legend: a numbered swatch and IGN for each member with a figure;
-/// with one boss, their share too. Then how many have no estimate.
-fn legend(out: &mut String, run: &ChartRun, index: usize, y: &mut f64) {
-    let party = &run.party;
-    let shown: Vec<usize> = party
-        .carriers
-        .iter()
-        .enumerate()
-        .filter(|(_, carrier)| carrier.estimated())
-        .map(|(member, _)| member)
-        .collect();
-    if shown.is_empty() {
-        return;
-    }
+/// One legend entry: the member's place, the IGN shown and whether its
+/// critical rate was assumed.
+type Entry<'a> = (usize, &'a str, bool);
+
+/// A grid of numbered swatches, three to a row, each with its IGN (and with
+/// `shares` its share of the one boss).
+fn swatches(
+    out: &mut String,
+    index: usize,
+    y: &mut f64,
+    shown: &[Entry<'_>],
+    shares: Option<&[Option<u32>]>,
+) {
     let column = (f64::from(WIDTH) - 2.0 * PAD) / 3.0;
-    let shares = (party.bosses.len() == 1).then(|| party.shares(0));
-    for (slot, &member) in shown.iter().enumerate() {
+    for (slot, &(member, ign, crit)) in shown.iter().enumerate() {
         let x = PAD + (slot % 3) as f64 * column;
         let top = *y + (slot / 3) as f64 * 21.0;
-        let carrier = &party.carriers[member];
         let (fill, ink) = who(member);
         let _ = write!(
             out,
             r#"<rect x="{x}" y="{top}" width="16" height="16" rx="4" fill="{fill}"/>"#
         );
-        if carrier.crit_assumed {
+        if crit {
             let _ = write!(
                 out,
                 r#"<rect x="{x}" y="{top}" width="16" height="16" rx="4" fill="url(#{})"/>"#,
@@ -214,15 +212,15 @@ fn legend(out: &mut String, run: &ChartRun, index: usize, y: &mut f64) {
             &(member + 1).to_string(),
             Style::counted(11.0, ink).bold().anchored("middle"),
         );
-        let star = if carrier.crit_assumed { "*" } else { "" };
+        let star = if crit { "*" } else { "" };
         text(
             out,
             x + 22.0,
             top + 12.5,
-            &format!("{}{star}", carrier.ign),
+            &format!("{ign}{star}"),
             Style::spoken(13.5, STRONG).bold(),
         );
-        if let Some(share) = shares.as_ref().and_then(|shares| shares[member]) {
+        if let Some(share) = shares.and_then(|shares| shares[member]) {
             text(
                 out,
                 x + column - 14.0,
@@ -233,6 +231,56 @@ fn legend(out: &mut String, run: &ChartRun, index: usize, y: &mut f64) {
         }
     }
     *y += shown.len().div_ceil(3) as f64 * 21.0 + 2.0;
+}
+
+/// The legend: a numbered swatch and IGN for each member with a figure;
+/// with one boss, their share too. When a member brings another character
+/// to some boss, one such list per bar, each under its boss and naming
+/// that bar's characters. Then how many have no estimate.
+fn legend(out: &mut String, run: &ChartRun, index: usize, y: &mut f64) {
+    let party = &run.party;
+    if party.per_boss() {
+        let mut any = false;
+        for (boss, token) in party.bosses.iter().enumerate() {
+            let shown: Vec<Entry<'_>> = party
+                .carriers
+                .iter()
+                .enumerate()
+                .filter(|(_, carrier)| {
+                    carrier
+                        .effective
+                        .get(boss)
+                        .copied()
+                        .flatten()
+                        .is_some_and(|value| value.is_finite() && value >= 0.0)
+                })
+                .map(|(member, carrier)| (member, carrier.ign_at(boss), carrier.crit_at(boss)))
+                .collect();
+            if shown.is_empty() {
+                continue;
+            }
+            any = true;
+            text(out, PAD, *y + 11.0, token, Style::counted(11.0, DIM).bold());
+            *y += 16.0;
+            swatches(out, index, y, &shown, None);
+        }
+        if !any {
+            return;
+        }
+    } else {
+        let shown: Vec<Entry<'_>> = party
+            .carriers
+            .iter()
+            .enumerate()
+            .filter(|(_, carrier)| carrier.estimated())
+            .map(|(member, carrier)| (member, carrier.ign.as_str(), carrier.crit_assumed))
+            .collect();
+        if shown.is_empty() {
+            return;
+        }
+        let shares = (party.bosses.len() == 1).then(|| party.shares(0));
+        swatches(out, index, y, &shown, shares.as_deref());
+    }
     let none = party.no_estimate();
     if none > 0 {
         let _ = write!(
@@ -252,10 +300,11 @@ fn legend(out: &mut String, run: &ChartRun, index: usize, y: &mut f64) {
     }
 }
 
-/// The hatch patterns of a run's assumed-crit members.
+/// The hatch patterns of a run's members with an assumed critical rate
+/// behind a figure.
 fn hatches(defs: &mut String, run: &ChartRun, index: usize) {
     for (member, carrier) in run.party.carriers.iter().enumerate() {
-        if carrier.crit_assumed {
+        if carrier.crit_assumed || carrier.crit_shown() {
             let _ = write!(
                 defs,
                 r#"<pattern id="{}" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="2.2" height="6" fill="{}" fill-opacity="0.34"/></pattern>"#,
@@ -333,7 +382,7 @@ pub fn svg(chart: &Chart) -> Drawn {
         run.party
             .carriers
             .iter()
-            .any(|carrier| carrier.crit_assumed && carrier.estimated())
+            .any(|carrier| carrier.crit_shown())
     });
     rule(&mut body, y - 4.0);
     let note = if crit {

@@ -1,7 +1,10 @@
 //! What run picks (`runs.rs`) and timing picks (`fixed.rs`) share: the
-//! `CharacterPick` body, the refusals, the character a set names (checked
-//! before the write, so the answer is known and a keyed request stores
-//! exactly what it answered) and the keyed write itself.
+//! `CharacterPick` and `SameForEveryBoss` bodies, the refusals, the boss a
+//! per-boss write names, the character a set names (checked before the
+//! write, so the answer is known and a keyed request stores exactly what
+//! it answered) and the keyed write itself.
+
+use std::collections::BTreeMap;
 
 use axum::{Json, http::StatusCode, response::IntoResponse};
 use chrono::{DateTime, Utc};
@@ -19,7 +22,10 @@ use crate::{
         state::CharacterRoster,
     },
     domain::{
-        characters::{Character, CharacterRecord, Pick, PickChange, PickScope, PickWrite},
+        catalog::BossTable,
+        characters::{
+            Character, CharacterRecord, PartySlot, Pick, PickChange, PickScope, PickWrite,
+        },
         history::Actor,
     },
     infrastructure::store::replays::KeyedWrite,
@@ -100,6 +106,86 @@ impl CharacterPick {
     }
 }
 
+/// `SameForEveryBoss`: `versions`, each later boss's `version` as read
+/// (by its catalog `key`; a boss left out counts as 0).
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SameForEveryBoss {
+    #[serde(default)]
+    versions: Option<BTreeMap<String, u32>>,
+}
+
+impl SameForEveryBoss {
+    /// The versions, required.
+    pub(super) fn versions(self, loaded: &str) -> Result<BTreeMap<String, u32>, Refusal> {
+        self.versions.ok_or_else(|| {
+            Refusal::unprocessable(
+                "version_required",
+                format!("Send the versions the {loaded} characters were loaded at."),
+            )
+        })
+    }
+}
+
+/// The catalog boss `asked` names among `tokens` (a token of the run or
+/// timing, or its catalog boss) when it is a later boss: the first boss's
+/// character is the member's own pick, never a per-boss one.
+pub(super) fn later_boss(
+    catalog: &BossTable,
+    tokens: &[String],
+    asked: &str,
+    scope: PickScope,
+) -> Result<String, Refusal> {
+    let key = |token: &str| {
+        catalog
+            .split(token)
+            .map_or_else(|| token.to_owned(), |(_, boss)| boss.short().to_owned())
+    };
+    let first = tokens.first().map(|token| key(token));
+    let Some(boss) = tokens
+        .iter()
+        .map(|token| (token, key(token)))
+        .find(|(token, boss)| *token == asked || boss == asked)
+        .map(|(_, boss)| boss)
+    else {
+        return Err(Refusal::unprocessable(
+            match scope {
+                PickScope::Run => "boss_not_on_run",
+                PickScope::Timing => "boss_not_on_timing",
+            },
+            format!("That boss is not on {}.", on(scope)),
+        ));
+    };
+    if first.as_ref() == Some(&boss) {
+        return Err(Refusal::unprocessable(
+            "first_boss",
+            "The first boss brings the member's own pick: pick it on their row.",
+        ));
+    }
+    Ok(boss)
+}
+
+/// Every later boss's stored per-boss version on `slot` as read now (by
+/// catalog boss), and whether `sent` (the versions a "same for every boss"
+/// was loaded at, absent = 0) matches it.
+pub(super) fn later_versions(
+    slot: &PartySlot,
+    sent: &BTreeMap<String, u32>,
+) -> (BTreeMap<String, u32>, bool) {
+    let first = slot.bosses.first().map(|boss| boss.boss.as_str());
+    let now: BTreeMap<String, u32> = slot
+        .bosses
+        .iter()
+        .skip(1)
+        .filter(|boss| Some(boss.boss.as_str()) != first)
+        .map(|boss| (boss.boss.clone(), boss.version))
+        .collect();
+    let fresh = now
+        .iter()
+        .all(|(boss, version)| sent.get(boss).copied().unwrap_or(0) == *version);
+    (now, fresh)
+}
+
 /// The character a set names: on the roster, the member's and active.
 pub(super) async fn named(
     roster: &dyn CharacterRoster,
@@ -121,11 +207,13 @@ pub(super) async fn named(
 }
 
 /// One slot write, planned against `picks` (the loaded rows, changed in
-/// place to how the write leaves them, for the answer).
+/// place to how the write leaves them, for the answer). `boss` names a
+/// per-boss slot (a later boss's catalog boss).
 pub(super) struct SlotWrite<'a> {
     pub scope: PickScope,
     pub target: &'a str,
     pub member_id: &'a str,
+    pub boss: Option<&'a str>,
     pub version: u32,
     pub at: DateTime<Utc>,
     pub actor: &'a Actor,
@@ -133,7 +221,10 @@ pub(super) struct SlotWrite<'a> {
 
 impl SlotWrite<'_> {
     fn here(&self, pick: &Pick) -> bool {
-        pick.scope == self.scope && pick.target == self.target && pick.member_id == self.member_id
+        pick.scope == self.scope
+            && pick.target == self.target
+            && pick.member_id == self.member_id
+            && pick.boss.as_deref() == self.boss
     }
 
     /// The stored row of the slot (whatever it names), for its version.
@@ -146,6 +237,7 @@ impl SlotWrite<'_> {
     pub(super) fn plan(&self, picks: &mut Vec<Pick>, character_id: Option<String>) -> PickChange {
         let current = self.current(picks).cloned();
         picks.retain(|pick| !self.here(pick));
+        let boss = self.boss.map(str::to_owned);
         match character_id {
             Some(character_id) => {
                 picks.push(match current {
@@ -154,6 +246,7 @@ impl SlotWrite<'_> {
                         scope: self.scope,
                         target: self.target.to_owned(),
                         member_id: self.member_id.to_owned(),
+                        boss: boss.clone(),
                         character_id: character_id.clone(),
                         picked_at: self.at,
                         picked_by: self.actor.clone(),
@@ -164,6 +257,7 @@ impl SlotWrite<'_> {
                     scope: self.scope,
                     target: self.target.to_owned(),
                     member_id: self.member_id.to_owned(),
+                    boss,
                     character_id,
                     version: self.version,
                 }
@@ -172,9 +266,36 @@ impl SlotWrite<'_> {
                 scope: self.scope,
                 target: self.target.to_owned(),
                 member_id: self.member_id.to_owned(),
+                boss,
                 version: self.version,
             },
         }
+    }
+}
+
+/// Leave `picks` as "same for every boss" will (`member`'s per-boss rows
+/// on `target` for `versions`' bosses gone) and return the change to send.
+pub(super) fn plan_same(
+    picks: &mut Vec<Pick>,
+    scope: PickScope,
+    target: &str,
+    member_id: &str,
+    versions: BTreeMap<String, u32>,
+) -> PickChange {
+    picks.retain(|pick| {
+        !(pick.scope == scope
+            && pick.target == target
+            && pick.member_id == member_id
+            && pick
+                .boss
+                .as_ref()
+                .is_some_and(|boss| versions.contains_key(boss)))
+    });
+    PickChange::Same {
+        scope,
+        target: target.to_owned(),
+        member_id: member_id.to_owned(),
+        versions,
     }
 }
 

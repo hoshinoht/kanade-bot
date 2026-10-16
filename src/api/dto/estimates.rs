@@ -15,8 +15,8 @@ use super::{history::SettingsActor, iso_instant};
 use crate::{
     domain::catalog::BossTable,
     infrastructure::scouter::{
-        Card, Combined, Estimates, Failure, FailureKind, Found, Job, Member, Subject, Target,
-        catalog_token, scouter_keys,
+        BossParty, Card, Combined, Estimates, Failure, FailureKind, Found, Job, Member, Subject,
+        Target, catalog_token, scouter_keys,
     },
 };
 
@@ -59,10 +59,15 @@ pub struct EstimateJob {
     pub started_at: String,
     pub finished_at: Option<String>,
     /// Who is looked up, in party order (roster IGNs), each with their
-    /// outcome as it arrives.
+    /// outcome as it arrives: every character brought to any boss, once.
     pub characters: Vec<EstimateCharacter>,
-    /// Party members not looked up (listed as missing, never 0%).
+    /// Party members not looked up for some boss (listed as missing, never
+    /// 0%).
     pub missing: Vec<EstimateMissing>,
+    /// A run's distinct boss parties, each with the bosses it plays and
+    /// the characters it brings (one when every boss brings the same
+    /// characters); empty for a lookup of characters.
+    pub parties: Vec<EstimateParty>,
     pub progress: EstimateProgress,
     /// When the result came from the scouter (answered from a stored
     /// result: the oldest one it used); `null` until the job is done.
@@ -99,6 +104,18 @@ pub struct EstimateCharacter {
     pub error: Option<EstimateError>,
 }
 
+/// The characters a run brings to some of its bosses; each of those
+/// bosses' totals is this party's.
+#[derive(Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+pub struct EstimateParty {
+    /// Catalog tokens, in run order.
+    pub bosses: Vec<String>,
+    /// Its characters, in party order.
+    pub character_ids: Vec<String>,
+    /// How many of its members bring no character the scouter can take.
+    pub missing: u32,
+}
 #[derive(Serialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
 pub struct EstimateMissing {
@@ -344,21 +361,45 @@ fn uncovered(token: &str, found: &[&Subject]) -> EstimateCombined {
     }
 }
 
+/// The party playing `token` (the first for a lookup of characters).
+fn party_of<'j>(job: &'j Job, token: &str) -> Option<&'j BossParty> {
+    job.parties
+        .iter()
+        .find(|party| party.bosses.iter().any(|boss| boss == token))
+        .or_else(|| job.parties.first())
+}
+
+/// `party`'s characters that were found.
+fn found_in<'j>(job: &'j Job, party: Option<&BossParty>) -> Vec<&'j Subject> {
+    job.subjects
+        .iter()
+        .zip(&job.results)
+        .enumerate()
+        .filter(|(at, (_, result))| {
+            matches!(result, Some(Ok(_))) && party.is_none_or(|party| party.subjects.contains(at))
+        })
+        .map(|(_, (subject, _))| subject)
+        .collect()
+}
+
+/// `party` has no member missing and none of its characters failed; a
+/// party of every boss (or none) is the whole job.
+fn party_whole(job: &Job, party: Option<&BossParty>) -> bool {
+    let failed = |at: &usize| matches!(job.results.get(*at), Some(Some(Err(_))));
+    match party.filter(|party| !party.bosses.is_empty()) {
+        Some(party) => party.missing == 0 && !party.subjects.iter().any(failed),
+        None => whole(job),
+    }
+}
+
 fn totals(
     job: &Job,
     totals: &BTreeMap<String, Combined>,
-    party_whole: bool,
     catalog: &BossTable,
 ) -> Vec<EstimateCombined> {
     let subjects = &job.subjects;
     match &job.target {
         Target::Run { bosses, .. } => {
-            let found: Vec<&Subject> = subjects
-                .iter()
-                .zip(&job.results)
-                .filter(|(_, result)| matches!(result, Some(Ok(_))))
-                .map(|(subject, _)| subject)
-                .collect();
             let mut tokens: Vec<&str> = Vec::new();
             for token in bosses {
                 if catalog.split(token).is_some() && !tokens.contains(&token.as_str()) {
@@ -368,16 +409,18 @@ fn totals(
             tokens
                 .into_iter()
                 .map(|token| {
+                    let party = party_of(job, token);
                     scouter_keys(token)
                         .find_map(|key| totals.get(key))
                         .map_or_else(
-                            || uncovered(token, &found),
-                            |total| combined(token, total, subjects, party_whole),
+                            || uncovered(token, &found_in(job, party)),
+                            |total| combined(token, total, subjects, party_whole(job, party)),
                         )
                 })
                 .collect()
         }
         Target::Characters(_) => {
+            let party_whole = whole(job);
             let mut rows: Vec<EstimateCombined> = Vec::new();
             for (key, total) in totals {
                 if let Some(token) = catalog_token(key, catalog)
@@ -393,7 +436,7 @@ fn totals(
 }
 
 /// No party member missing and none failed.
-fn party_whole(job: &Job) -> bool {
+fn whole(job: &Job) -> bool {
     job.missing.is_empty()
         && !job
             .results
@@ -412,10 +455,7 @@ pub fn run_totals(
         return None;
     };
     let combined = found.combined.as_ref()?;
-    Some((
-        found.fetched_at,
-        totals(job, combined, party_whole(job), catalog),
-    ))
+    Some((found.fetched_at, totals(job, combined, catalog)))
 }
 
 /// The characters found so far and, once done, the party total; `None`
@@ -433,10 +473,10 @@ fn result(job: &Job, found: Option<&Found>, catalog: &BossTable) -> Option<Estim
     if members.is_empty() {
         return None;
     }
-    let party_whole = party_whole(job);
+    let party_whole = whole(job);
     let combined = found
         .and_then(|found| found.combined.as_ref())
-        .map(|combined| totals(job, combined, party_whole, catalog));
+        .map(|combined| totals(job, combined, catalog));
     let complete = found.is_some_and(|found| found.total_failure.is_none())
         && party_whole
         && combined
@@ -524,6 +564,23 @@ pub fn job(job: &Job, catalog: &BossTable, estimates: &Estimates) -> EstimateJob
                 reason: missing.reason.as_str(),
             })
             .collect(),
+        parties: match &job.target {
+            Target::Run { .. } => job
+                .parties
+                .iter()
+                .map(|party| EstimateParty {
+                    bosses: party.bosses.clone(),
+                    character_ids: party
+                        .subjects
+                        .iter()
+                        .filter_map(|at| job.subjects.get(*at))
+                        .map(|subject| subject.character_id.clone())
+                        .collect(),
+                    missing: count(party.missing),
+                })
+                .collect(),
+            Target::Characters(_) => Vec::new(),
+        },
         progress: EstimateProgress {
             done: count(job.done()),
             total: count(job.subjects.len()),

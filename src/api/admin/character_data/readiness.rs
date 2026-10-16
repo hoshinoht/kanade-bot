@@ -1,17 +1,17 @@
 //! Readiness (module `character_data`): `GET /api/admin/runs/{id}/readiness`
 //! shows each party slot of a run (the slots of `GET …/characters`) with its
-//! level and power, and judges its level against the boss knowledge
-//! `entry_level` of each boss of the run. A weekly timing's readiness (with
-//! module `roster` on too) reads the same way: `GET
-//! /api/admin/fixed/{id}/readiness` for the saved timing, and `POST
-//! /api/admin/fixed/readiness` for the Fixed editor's form as it stands (a
-//! timing not added yet, or an unsaved boss or party change; picks count
-//! only for members of the saved party). With estimates on, each boss also
-//! carries the character's stored scouter reading, of any age, marked
-//! `stale` once at least `estimate_days` old; readiness never starts a
-//! lookup. Computed on read; nothing is stored and nothing is blocked.
-//! While a module is off the routes answer the generic `404` before the
-//! session is checked.
+//! level and power, and judges the level of the character brought to each
+//! boss of the run (per-boss picks) against that boss's knowledge
+//! `entry_level`. A weekly timing's readiness (with module `roster` on too)
+//! reads the same way: `GET /api/admin/fixed/{id}/readiness` for the saved
+//! timing, and `POST /api/admin/fixed/readiness` for the Fixed editor's form
+//! as it stands (a timing not added yet, or an unsaved boss or party
+//! change; picks count only for members of the saved party). With
+//! estimates on, each boss also carries its character's stored scouter
+//! reading, of any age, marked `stale` once at least `estimate_days` old;
+//! readiness never starts a lookup. Computed on read; nothing is stored and
+//! nothing is blocked. While a module is off the routes answer the generic
+//! `404` before the session is checked.
 
 use std::{collections::BTreeMap, sync::Arc};
 
@@ -37,14 +37,15 @@ use crate::{
             self, Art,
             bosses::entry_levels,
             character_data::link_state,
-            readiness::{Cached, ReadinessSlot},
+            readiness::{Cached, Judged, ReadinessSlot},
         },
         error::ApiError,
         listeners::Site,
         state::ApiState,
     },
     domain::{
-        characters::PartySlot,
+        catalog::BossTable,
+        characters::{Character, PartySlot},
         chardata::{Requirement, Subject, readiness},
     },
     infrastructure::{
@@ -90,6 +91,61 @@ async fn requirements(state: &ApiState, tokens: Vec<String>) -> Result<Vec<Requi
     .map_err(Refusal::unavailable)
 }
 
+/// `character`'s values against `bosses`: its link, readiness and stored
+/// scouter result (`None`: nothing brought).
+async fn judge<'c>(
+    state: &ApiState,
+    module: &CharacterData,
+    character: Option<&'c Character>,
+    bosses: &[Requirement],
+) -> Result<Judged<'c>, Refusal> {
+    let Some(character) = character else {
+        return Ok(Judged {
+            character: None,
+            link: None,
+            readiness: readiness(&Subject::default(), bosses, state.now()),
+            scouter: None,
+        });
+    };
+    let view = module
+        .status(&character.id)
+        .await
+        .map_err(Refusal::unavailable)?;
+    let subject = Subject {
+        manual_level: character.level,
+        link: view.link.as_ref().map(|link| link.status),
+        snapshot: view.snapshot.as_ref(),
+    };
+    let scouter = module
+        .estimates()
+        .zip(RosterIgn::lookup(character).ok())
+        .and_then(|(estimates, ign)| Cached::of(estimates, &ign));
+    Ok(Judged {
+        character: Some(character),
+        link: Some(link_state(&view)),
+        readiness: readiness(&subject, bosses, view.now),
+        scouter,
+    })
+}
+
+/// The character brought to each of `bosses`: the slot's bosses whose
+/// token the catalog knows (as [`requirements`] keeps them), in order.
+fn brought_to<'s>(
+    catalog: &BossTable,
+    slot: &'s PartySlot,
+    bosses: &[Requirement],
+) -> Vec<Option<&'s Character>> {
+    let known: Vec<usize> = (0..slot.bosses.len())
+        .filter(|at| catalog.split(&slot.bosses[*at].token).is_some())
+        .collect();
+    (0..bosses.len())
+        .map(|at| match known.get(at) {
+            Some(boss) => slot.brought_to(*boss).map(|(character, _)| character),
+            None => slot.brought().map(|(character, _)| character),
+        })
+        .collect()
+}
+
 /// Each slot's readiness against `bosses`, in order, whether any shows
 /// a NEXON value, and the saved `estimate_days` while estimates are on.
 async fn answers(
@@ -98,49 +154,58 @@ async fn answers(
     slots: &[PartySlot],
     bosses: &[Requirement],
 ) -> Result<(Vec<ReadinessSlot>, bool, Option<u32>), Refusal> {
-    let estimates = module.estimates();
     let mut answers = Vec::with_capacity(slots.len());
     let mut nexon_data = false;
     for slot in slots {
         let brings = slot.brought();
-        let (link, ready, scouter) = match brings {
-            Some((character, _)) => {
-                let view = module
-                    .status(&character.id)
-                    .await
-                    .map_err(Refusal::unavailable)?;
-                let subject = Subject {
-                    manual_level: character.level,
-                    link: view.link.as_ref().map(|link| link.status),
-                    snapshot: view.snapshot.as_ref(),
-                };
-                let scouter = estimates
-                    .zip(RosterIgn::lookup(character).ok())
-                    .and_then(|(estimates, ign)| Cached::of(estimates, &ign));
-                (
-                    Some(link_state(&view)),
-                    readiness(&subject, bosses, view.now),
-                    scouter,
-                )
+        let first = judge(
+            state,
+            module,
+            brings.map(|(character, _)| character),
+            bosses,
+        )
+        .await?;
+        // Each other character brought, judged once.
+        let mut others: Vec<Judged<'_>> = Vec::new();
+        let per_boss = brought_to(&state.catalog, slot, bosses);
+        for character in per_boss.iter().flatten() {
+            let seen = first.character.map(|row| row.id.as_str()) == Some(character.id.as_str())
+                || others
+                    .iter()
+                    .any(|judged| judged.character.is_some_and(|row| row.id == character.id));
+            if !seen {
+                others.push(judge(state, module, Some(character), bosses).await?);
             }
-            None => (
-                None,
-                readiness(&Subject::default(), bosses, state.now()),
-                None,
-            ),
-        };
-        nexon_data |= ready.nexon;
+        }
+        let judged: Vec<&Judged<'_>> = per_boss
+            .iter()
+            .map(|character| {
+                character
+                    .and_then(|character| {
+                        others.iter().find(|judged| {
+                            judged.character.is_some_and(|row| row.id == character.id)
+                        })
+                    })
+                    .unwrap_or(&first)
+            })
+            .collect();
+        nexon_data |= first.readiness.nexon || others.iter().any(|judged| judged.readiness.nexon);
+        let others: Vec<&Judged<'_>> = others.iter().collect();
         answers.push(dto::readiness::slot(
             &slot.member_id,
             slot.candidates.len(),
             brings,
-            link,
-            &ready,
+            &first,
+            &judged,
             bosses,
-            scouter.as_ref(),
+            &others,
         ));
     }
-    Ok((answers, nexon_data, estimates.map(Estimates::fresh_days)))
+    Ok((
+        answers,
+        nexon_data,
+        module.estimates().map(Estimates::fresh_days),
+    ))
 }
 
 /// `GET /api/admin/runs/{id}/readiness`.
@@ -177,7 +242,7 @@ async fn read_timing(
         .fixed
         .as_ref()
         .ok_or_else(|| Refusal::from(ApiError::UNAVAILABLE))?;
-    let slots = timing.slots(&fixed.participants);
+    let slots = timing.slots(&state.catalog, &fixed.participants, &fixed.bosses);
     let bosses = requirements(state, fixed.bosses.clone()).await?;
     let (slots, nexon_data, fresh_days) = answers(state, &module, &slots, &bosses).await?;
     Ok(Json(dto::readiness::timing(
@@ -225,14 +290,15 @@ async fn preview(
         Some(&body.participants),
     )
     .await?;
-    let slots = timing.slots(&body.participants);
     // A saved token the catalog dropped still shows by its text; a form's
-    // unknown token is no boss at all.
-    let tokens = body
+    // unknown token is no boss at all. Per-boss picks read against the
+    // form's bosses, as they will once it is saved.
+    let tokens: Vec<String> = body
         .bosses
         .into_iter()
         .filter(|token| state.catalog.split(token).is_some())
         .collect();
+    let slots = timing.slots(&state.catalog, &body.participants, &tokens);
     let bosses = requirements(state, tokens).await?;
     let (slots, nexon_data, fresh_days) = answers(state, &module, &slots, &bosses).await?;
     Ok(Json(dto::readiness::timing(

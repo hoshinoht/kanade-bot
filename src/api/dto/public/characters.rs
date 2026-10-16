@@ -188,11 +188,21 @@ pub struct PartyEstimate {
 
 #[derive(Serialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
+pub struct PartyBossCharacter {
+    pub boss: String,
+    #[cfg_attr(test, ts(type = "Difficulty"))]
+    pub difficulty: String,
+    pub character: Option<PartyCharacter>,
+}
+
+#[derive(Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct PartyCharacterSlot {
     pub member: PartyMember,
     pub you: bool,
     pub character: Option<PartyCharacter>,
     pub scouter: Option<Vec<PartyEstimate>>,
+    pub bosses: Vec<PartyBossCharacter>,
 }
 
 #[derive(Serialize)]

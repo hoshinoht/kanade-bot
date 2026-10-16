@@ -72,12 +72,13 @@ pub fn alt(chart: &Chart) -> String {
                             .iter()
                             .zip(&shares)
                             .filter_map(|(carrier, share)| {
-                                let crit = if carrier.crit_assumed {
+                                let crit = if carrier.crit_at(boss) {
                                     " (assumed crit)"
                                 } else {
                                     ""
                                 };
-                                share.map(|share| format!("{} {share}%{crit}", carrier.ign))
+                                share
+                                    .map(|share| format!("{} {share}%{crit}", carrier.ign_at(boss)))
                             })
                             .collect();
                         format!("{token} {}, {}", svg::percent(total), parts.join(", "))

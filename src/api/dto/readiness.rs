@@ -1,8 +1,10 @@
 //! `character_data.json` readiness (module `character_data`) of a run or a
 //! weekly timing: each party slot's level and power, its level against
 //! each boss, and the character's stored scouter reading per boss, of any
-//! age, marked `stale` once at least `estimate_days` old. NEXON values
-//! appear only from an active link's unexpired data, with the attribution.
+//! age, marked `stale` once at least `estimate_days` old. Each boss is
+//! judged for the character brought to it (per-boss picks), and every
+//! other character brought shows its own values once. NEXON values appear
+//! only from an active link's unexpired data, with the attribution.
 
 use chrono::{DateTime, Utc};
 use serde::Serialize;
@@ -55,8 +57,8 @@ pub struct TimingReadiness {
 #[cfg_attr(test, derive(ts_rs::TS))]
 pub struct ReadinessSlot {
     pub member_id: String,
-    /// The character the member brings (as `…/characters` resolves it);
-    /// `null` with none.
+    /// The character the member brings to the first boss (as
+    /// `…/characters` resolves it); `null` with none.
     pub character: Option<CharacterChoice>,
     /// Where `character` comes from; `null` with none.
     #[cfg_attr(test, ts(type = "'run_pick' | 'timing_pick' | 'main' | 'only' | null"))]
@@ -77,8 +79,30 @@ pub struct ReadinessSlot {
     pub level: Option<ReadinessLevel>,
     /// `null` without usable data.
     pub power: Option<ReadinessPower>,
-    /// One per boss of the run, in run order.
+    /// One per boss of the run, in run order, each judged for the character
+    /// brought to it.
     pub bosses: Vec<BossReadiness>,
+    /// Every other character the member brings to a later boss, once each
+    /// in boss order, with its own values; empty when every boss brings
+    /// `character`.
+    pub characters: Vec<ReadinessCharacter>,
+}
+
+/// A character brought to some later boss but not the first, with its
+/// values (the slot's `link`, `level` and `power` are the first boss's).
+#[derive(Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+pub struct ReadinessCharacter {
+    pub character: CharacterChoice,
+    #[cfg_attr(
+        test,
+        ts(
+            type = "'not_connected' | 'not_linked' | 'pending' | 'linked' | 'stale' | 'expired' | null"
+        )
+    )]
+    pub link: Option<&'static str>,
+    pub level: Option<ReadinessLevel>,
+    pub power: Option<ReadinessPower>,
 }
 
 #[derive(Serialize)]
@@ -109,11 +133,14 @@ pub struct BossReadiness {
     pub boss: String,
     #[cfg_attr(test, ts(type = "Difficulty"))]
     pub difficulty: String,
+    /// The character judged for this boss (the one brought to it); `null`
+    /// with none.
+    pub character_id: Option<String>,
     /// From boss knowledge; `null` when it has none.
     pub entry_level: Option<u16>,
     #[cfg_attr(test, ts(type = "'ok' | 'under' | 'unknown'"))]
     pub level: &'static str,
-    /// The character's stored scouter reading for this boss, of any age
+    /// That character's stored scouter reading for this boss, of any age
     /// (never looked up here); `null` without one, or while estimates are
     /// off.
     pub scouter: Option<ScouterReading>,
@@ -181,49 +208,87 @@ pub fn reading(boss: &Requirement, cached: &Cached) -> Option<ScouterReading> {
     })
 }
 
+/// One character's values as readiness shows them: the character (`None`
+/// with nothing brought), its link, its readiness against every boss and
+/// its stored scouter result.
+pub struct Judged<'a> {
+    pub character: Option<&'a Character>,
+    pub link: Option<&'static str>,
+    pub readiness: Readiness,
+    pub scouter: Option<Cached>,
+}
+
+fn level(readiness: &Readiness) -> Option<ReadinessLevel> {
+    readiness.level.map(|level| ReadinessLevel {
+        value: level.value,
+        source: match level.source {
+            LevelSource::Nexon => "nexon",
+            LevelSource::Manual => "manual",
+        },
+        as_of: level.as_of.map(date_text),
+    })
+}
+
+fn power(readiness: &Readiness) -> Option<ReadinessPower> {
+    readiness.power.map(|power| ReadinessPower {
+        kind: "nexon_cp",
+        value: power.value,
+        as_of: power.as_of.map(date_text),
+    })
+}
+
 /// One slot: `candidates` is how many active characters the member has,
-/// `brings` the character and why; `scouter` its stored scouter result.
+/// `brings` the first boss's character and why, `first` its values;
+/// `judged[i]` is the values of the character brought to `bosses[i]`, and
+/// `others` every other character brought, once each.
 pub fn slot(
     member_id: &str,
     candidates: usize,
     brings: Option<(&Character, Basis)>,
-    link: Option<&'static str>,
-    readiness: &Readiness,
+    first: &Judged<'_>,
+    judged: &[&Judged<'_>],
     bosses: &[Requirement],
-    scouter: Option<&Cached>,
+    others: &[&Judged<'_>],
 ) -> ReadinessSlot {
     ReadinessSlot {
         member_id: member_id.to_owned(),
         character: brings.map(|(character, _)| choice(character)),
         basis: brings.map(|(_, basis)| basis.as_str()),
         candidates: u32::try_from(candidates).unwrap_or(u32::MAX),
-        link,
-        level: readiness.level.map(|level| ReadinessLevel {
-            value: level.value,
-            source: match level.source {
-                LevelSource::Nexon => "nexon",
-                LevelSource::Manual => "manual",
-            },
-            as_of: level.as_of.map(date_text),
-        }),
-        power: readiness.power.map(|power| ReadinessPower {
-            kind: "nexon_cp",
-            value: power.value,
-            as_of: power.as_of.map(date_text),
-        }),
+        link: first.link,
+        level: level(&first.readiness),
+        power: power(&first.readiness),
         bosses: bosses
             .iter()
-            .zip(&readiness.bosses)
-            .map(|(boss, verdict)| BossReadiness {
-                boss: boss.boss.clone(),
-                difficulty: boss.difficulty.clone(),
-                entry_level: boss.entry_level,
-                level: match verdict {
-                    LevelVerdict::Ok => "ok",
-                    LevelVerdict::Under => "under",
-                    LevelVerdict::Unknown => "unknown",
-                },
-                scouter: scouter.and_then(|cached| reading(boss, cached)),
+            .enumerate()
+            .map(|(at, boss)| {
+                let judged = judged.get(at).copied().unwrap_or(first);
+                BossReadiness {
+                    boss: boss.boss.clone(),
+                    difficulty: boss.difficulty.clone(),
+                    character_id: judged.character.map(|character| character.id.clone()),
+                    entry_level: boss.entry_level,
+                    level: match judged.readiness.bosses.get(at) {
+                        Some(LevelVerdict::Ok) => "ok",
+                        Some(LevelVerdict::Under) => "under",
+                        Some(LevelVerdict::Unknown) | None => "unknown",
+                    },
+                    scouter: judged
+                        .scouter
+                        .as_ref()
+                        .and_then(|cached| reading(boss, cached)),
+                }
+            })
+            .collect(),
+        characters: others
+            .iter()
+            .filter_map(|judged| {
+                Some(ReadinessCharacter {
+                    character: choice(judged.character?),
+                    link: judged.link,
+                    level: level(&judged.readiness),
+                    power: power(&judged.readiness),
+                })
             })
             .collect(),
     }

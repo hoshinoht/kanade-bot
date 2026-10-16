@@ -114,7 +114,9 @@ export type MemberEstimateLimit = { error: 'member_limited', message: string, ne
 
 export type RunPartyCharacters = { run_id: string, slots: Array<PartyCharacterSlot>, character_data: boolean, estimates: boolean, fresh_days: number | null, totals: PartyTotals | null, nexon_data: boolean, attribution: string, estimate_label: string, estimate_note: string, };
 
-export type PartyCharacterSlot = { member: PartyMember, you: boolean, character: PartyCharacter | null, scouter: Array<PartyEstimate> | null, };
+export type PartyCharacterSlot = { member: PartyMember, you: boolean, character: PartyCharacter | null, scouter: Array<PartyEstimate> | null, bosses: Array<PartyBossCharacter>, };
+
+export type PartyBossCharacter = { boss: string, difficulty: Difficulty, character: PartyCharacter | null, };
 
 export type PartyMember = { id: string, name: string, };
 
@@ -369,6 +371,51 @@ bosses: Array<string>,
 basis: 'run_pick' | 'timing_pick' | 'main' | 'only', };
 
 /**
+ * One boss of a party member's slot on a run or a weekly timing.
+ */
+export type BossCharacterSlot = { 
+/**
+ * The boss token as the run or timing lists it (`HMaleficStar`).
+ */
+boss: string, 
+/**
+ * The catalog boss (`MaleficStar`, any difficulty): what a per-boss
+ * pick is kept under, the `{boss}` of its write.
+ */
+key: string, 
+/**
+ * This boss's own stored pick at this level while it names a
+ * candidate (the first boss: the slot's `picked`); a pick kept for a
+ * boss that is now first or gone never shows.
+ */
+picked: string | null, 
+/**
+ * When `picked` was picked; `null` without it.
+ */
+picked_at: string | null, 
+/**
+ * Who picked `picked`; `null` without it.
+ */
+picked_by: SettingsActor | null, 
+/**
+ * The character brought to this boss: the first boss as the slot's
+ * `brings`; a later boss its run pick, else its timing's pick, else
+ * the first boss's character. `null` with none.
+ */
+brings: string | null, 
+/**
+ * Where `brings` comes from: for a later boss `run_pick` / `timing_pick`
+ * are picks for this boss, `same_as_first` is the first boss's
+ * character; `null` with nothing brought.
+ */
+basis: 'run_pick' | 'timing_pick' | 'main' | 'only' | 'same_as_first' | null, 
+/**
+ * Send it back with this boss's pick: 0 while it has none (the first
+ * boss: the slot's `version`).
+ */
+version: number, };
+
+/**
  * One party member's slot on a run or a weekly timing.
  */
 export type RunCharacterSlot = { member_id: string, 
@@ -382,7 +429,7 @@ candidates: Array<CharacterChoice>,
 retired: number, 
 /**
  * This slot's own stored pick (the run's on a run, the timing's on a
- * timing) while it names a candidate.
+ * timing) while it names a candidate: the first boss's pick.
  */
 picked: string | null, 
 /**
@@ -394,7 +441,8 @@ picked_at: string | null,
  */
 picked_by: SettingsActor | null, 
 /**
- * The character the member brings: on a run its pick, else its
+ * The character the member brings to the first boss (and to every
+ * boss without a pick of its own): on a run its pick, else its
  * timing's pick, else their main, else their only active character;
  * on a timing its pick, else the main, else the only one. `null` with
  * none (no characters, or several and no main). Never stored.
@@ -409,10 +457,19 @@ basis: 'run_pick' | 'timing_pick' | 'main' | 'only' | null,
  */
 version: number, 
 /**
- * Other runs with the character brought here for a shared boss (always
- * empty on a timing).
+ * Other runs with the character brought here for a shared boss,
+ * compared boss by boss (always empty on a timing).
  */
-warnings: Array<CharacterClash>, };
+warnings: Array<CharacterClash>, 
+/**
+ * Each boss in order (the first repeats the slot's pick); empty for a
+ * run or timing with no bosses.
+ */
+bosses: Array<BossCharacterSlot>, 
+/**
+ * Some boss brings another character than the first boss.
+ */
+per_boss: boolean, };
 
 export type RunCharacters = { run_id: string, 
 /**
@@ -634,8 +691,8 @@ attribution: string, };
 
 export type ReadinessSlot = { member_id: string, 
 /**
- * The character the member brings (as `…/characters` resolves it);
- * `null` with none.
+ * The character the member brings to the first boss (as
+ * `…/characters` resolves it); `null` with none.
  */
 character: CharacterChoice | null, 
 /**
@@ -661,9 +718,22 @@ level: ReadinessLevel | null,
  */
 power: ReadinessPower | null, 
 /**
- * One per boss of the run, in run order.
+ * One per boss of the run, in run order, each judged for the character
+ * brought to it.
  */
-bosses: Array<BossReadiness>, };
+bosses: Array<BossReadiness>, 
+/**
+ * Every other character the member brings to a later boss, once each
+ * in boss order, with its own values; empty when every boss brings
+ * `character`.
+ */
+characters: Array<ReadinessCharacter>, };
+
+/**
+ * A character brought to some later boss but not the first, with its
+ * values (the slot's `link`, `level` and `power` are the first boss's).
+ */
+export type ReadinessCharacter = { character: CharacterChoice, link: 'not_connected' | 'not_linked' | 'pending' | 'linked' | 'stale' | 'expired' | null, level: ReadinessLevel | null, power: ReadinessPower | null, };
 
 export type ReadinessLevel = { value: number, source: 'nexon' | 'manual', 
 /**
@@ -680,11 +750,16 @@ export type BossReadiness = {
  */
 boss: string, difficulty: Difficulty, 
 /**
+ * The character judged for this boss (the one brought to it); `null`
+ * with none.
+ */
+character_id: string | null, 
+/**
  * From boss knowledge; `null` when it has none.
  */
 entry_level: number | null, level: 'ok' | 'under' | 'unknown', 
 /**
- * The character's stored scouter reading for this boss, of any age
+ * That character's stored scouter reading for this boss, of any age
  * (never looked up here); `null` without one, or while estimates are
  * off.
  */
@@ -763,13 +838,20 @@ character_ids: Array<string>, started_by: SettingsActor,
 started_at: string, finished_at: string | null, 
 /**
  * Who is looked up, in party order (roster IGNs), each with their
- * outcome as it arrives.
+ * outcome as it arrives: every character brought to any boss, once.
  */
 characters: Array<EstimateCharacter>, 
 /**
- * Party members not looked up (listed as missing, never 0%).
+ * Party members not looked up for some boss (listed as missing, never
+ * 0%).
  */
-missing: Array<EstimateMissing>, progress: EstimateProgress, 
+missing: Array<EstimateMissing>, 
+/**
+ * A run's distinct boss parties, each with the bosses it plays and
+ * the characters it brings (one when every boss brings the same
+ * characters); empty for a lookup of characters.
+ */
+parties: Array<EstimateParty>, progress: EstimateProgress, 
 /**
  * When the result came from the scouter (answered from a stored
  * result: the oldest one it used); `null` until the job is done.
@@ -820,6 +902,24 @@ export type EstimateMissing = { member_id: string,
  * The character they bring, when there is one.
  */
 character_id: string | null, reason: 'no_characters' | 'no_character_picked' | 'other_region' | 'unsupported_ign', };
+
+/**
+ * The characters a run brings to some of its bosses; each of those
+ * bosses' totals is this party's.
+ */
+export type EstimateParty = { 
+/**
+ * Catalog tokens, in run order.
+ */
+bosses: Array<string>, 
+/**
+ * Its characters, in party order.
+ */
+character_ids: Array<string>, 
+/**
+ * How many of its members bring no character the scouter can take.
+ */
+missing: number, };
 
 export type EstimateProgress = { 
 /**

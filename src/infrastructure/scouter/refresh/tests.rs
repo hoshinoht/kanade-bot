@@ -58,6 +58,7 @@ fn run(id: &str, in_hours: i64, subjects: Vec<Subject>) -> UpcomingRun {
         },
         subjects,
         missing: Vec::new(),
+        parties: Vec::new(),
     }
 }
 

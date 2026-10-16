@@ -6,6 +6,7 @@ mod account;
 mod assets;
 mod auth;
 mod avatars;
+mod boss_picks;
 mod character_data;
 mod characters;
 mod config;

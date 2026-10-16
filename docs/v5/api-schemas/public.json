@@ -669,12 +669,23 @@
     "PartyCharacterSlot": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["member", "you", "character", "scouter"],
+      "required": ["member", "you", "character", "scouter", "bosses"],
       "properties": {
         "member": { "$ref": "#/$defs/PartyMember" },
         "you": { "type": "boolean" },
-        "character": { "anyOf": [{ "$ref": "#/$defs/PartyCharacter" }, { "type": "null" }], "description": "null: no character on the roster." },
-        "scouter": { "anyOf": [{ "type": "array", "items": { "$ref": "#/$defs/PartyEstimate" } }, { "type": "null" }], "description": "Per boss of the run from the stored result, of any age up to the 30 days it is kept, each marked `stale` once at least `fresh_days` old (empty: no estimate yet); null with estimates off or no character." }
+        "character": { "anyOf": [{ "$ref": "#/$defs/PartyCharacter" }, { "type": "null" }], "description": "The first boss's character; null: no character on the roster." },
+        "scouter": { "anyOf": [{ "type": "array", "items": { "$ref": "#/$defs/PartyEstimate" } }, { "type": "null" }], "description": "Per boss of the run from the stored result of the character brought to that boss, of any age up to the 30 days it is kept, each marked `stale` once at least `fresh_days` old (empty: no estimate yet); null with estimates off or no character." },
+        "bosses": { "type": "array", "items": { "$ref": "#/$defs/PartyBossCharacter" }, "description": "Read-only, one line per boss of the run when the member brings different characters to different bosses (per-boss picks); empty otherwise." }
+      }
+    },
+    "PartyBossCharacter": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["boss", "difficulty", "character"],
+      "properties": {
+        "boss": { "type": "string" },
+        "difficulty": { "$ref": "common.json#/$defs/Difficulty" },
+        "character": { "anyOf": [{ "$ref": "#/$defs/PartyCharacter" }, { "type": "null" }] }
       }
     },
     "PartyTotal": {

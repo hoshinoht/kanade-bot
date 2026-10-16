@@ -1,16 +1,17 @@
 //! The estimate share chart on redesigned day-of and countdown posts: each
 //! run's party from the roster (as the admin and portal character reads
-//! resolve it) and each member's stored scouter estimate, of any age, drawn
-//! once as a plain `estimate.png` attachment when the card is posted.
-//! Stored only: a card never starts a lookup. While a queued, running or
-//! waiting lookup (manual or background) includes a member who has no
-//! stored result yet, it posts without the image (it would draw them as
-//! "no estimate"); a refresh of members who all have one still draws what
-//! is stored. When the oldest reading used is at least `estimate_days`
-//! old, the "as of" line and the alt text add "older than n days". Edits
-//! never upload, so the posted image stays as it was ("as of" its
-//! readings). Anything that fails leaves the image off and the card posts
-//! as it would have; it is logged, never alerted.
+//! resolve it, boss by boss: a member may bring another character to a
+//! later boss) and each character's stored scouter estimate, of any age,
+//! drawn once as a plain `estimate.png` attachment when the card is
+//! posted. Stored only: a card never starts a lookup. While a queued,
+//! running or waiting lookup (manual or background) includes a character
+//! brought who has no stored result yet, it posts without the image (it
+//! would draw them as "no estimate"); a refresh of characters who all have
+//! one still draws what is stored. When the oldest reading used is at
+//! least `estimate_days` old, the "as of" line and the alt text add "older
+//! than n days". Edits never upload, so the posted image stays as it was
+//! ("as of" its readings). Anything that fails leaves the image off and
+//! the card posts as it would have; it is logged, never alerted.
 
 use std::cell::Cell;
 use std::collections::BTreeMap;
@@ -27,13 +28,15 @@ use super::cards::{CardContext, CardKit, card_runs};
 use crate::bot::commands::text::{MONTH_NAMES, local_time, weekday_name};
 use crate::bot::transport::{OutgoingMessage, Upload, legacy_rows};
 use crate::domain::catalog::BossTable;
-use crate::domain::characters::{PartyReads, PartyRoster, PartySlot};
-use crate::domain::chardata::{Carrier, PartyShares};
+use crate::domain::characters::{Character, PartyReads, PartyRoster, PartySlot};
+use crate::domain::chardata::{BossCarrier, Carrier, PartyShares};
 use crate::domain::notify::IntentContent;
 use crate::domain::schedule::{Run, RunStatus, ScheduleSnapshot};
 use crate::domain::settings::MessageStyle;
 use crate::infrastructure::character_data::CharacterData;
-use crate::infrastructure::scouter::{Combined, Estimates, Member, RosterIgn, scouter_keys};
+use crate::infrastructure::scouter::{
+    Combined, Estimates, Member, RosterIgn, Totals, scouter_keys,
+};
 use crate::runtime::logging;
 
 /// How long drawing may take before the card posts without it.
@@ -47,7 +50,8 @@ pub const MAX_ATTACHMENTS: usize = 10;
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct RunEstimate {
     pub party: PartyShares,
-    /// The party's estimated minutes per boss (a stored whole-party lookup).
+    /// The party's estimated minutes per boss (a stored lookup of that
+    /// boss's whole party).
     pub minutes: Vec<Option<f64>>,
     /// When the oldest reading used (members' and the party total) was
     /// fetched.
@@ -113,11 +117,9 @@ impl<S: PartyReads + Send + Sync + ?Sized + 'static> PartyEstimates for CachedEs
     }
 }
 
-/// The IGN `slot`'s member is looked up under, when they bring a
-/// character the scouter can take.
-fn brought_ign(slot: &PartySlot) -> Option<RosterIgn> {
-    slot.brought()
-        .and_then(|(character, _)| RosterIgn::lookup(character).ok())
+/// The IGN a character is looked up under, when the scouter can take it.
+fn ign_of(character: Option<&Character>) -> Option<RosterIgn> {
+    character.and_then(|character| RosterIgn::lookup(character).ok())
 }
 
 /// `run`'s stored estimates, unless a queued, running or waiting lookup
@@ -149,10 +151,12 @@ fn settled_estimate(run: &Run, slots: &[PartySlot], estimates: &Estimates) -> Op
     Some(estimate)
 }
 
-/// `run`'s slots read against the estimates memory: a member bringing a
-/// character the scouter can take is a carrier (with nothing stored, a
-/// carrier without figures); anyone else is missing. `older_than` is left
-/// for the caller.
+/// `run`'s slots read against the estimates memory, boss by boss: a member
+/// bringing a character the scouter can take to some boss is a carrier
+/// (with nothing stored, a carrier without figures), numbered once, each
+/// boss's figure from the character brought to it; anyone else is missing.
+/// Each boss's minutes come from the stored total of that boss's own
+/// party. `older_than` is left for the caller.
 pub fn read_estimates(
     run: &Run,
     slots: &[PartySlot],
@@ -163,47 +167,98 @@ pub fn read_estimates(
         bosses: run.bosses.clone(),
         ..PartyShares::default()
     };
-    let mut igns: Vec<RosterIgn> = Vec::new();
     let mut oldest: Option<DateTime<Utc>> = None;
+    let mut seen = |at: DateTime<Utc>| oldest = Some(oldest.map_or(at, |was| was.min(at)));
+    // Each boss's own party: the IGNs brought to it, and who brings none.
+    let mut parties: Vec<(Vec<RosterIgn>, usize)> = vec![(Vec::new(), 0); run.bosses.len()];
     for slot in slots {
-        let Some(ign) = brought_ign(slot) else {
+        let brought: Vec<Option<RosterIgn>> = (0..run.bosses.len())
+            .map(|boss| ign_of(slot.brought_to(boss).map(|(character, _)| character)))
+            .collect();
+        for (boss, ign) in brought.iter().enumerate() {
+            match ign {
+                Some(ign) => parties[boss].0.push(ign.clone()),
+                None => parties[boss].1 += 1,
+            }
+        }
+        let Some(ign) = ign_of(slot.brought().map(|(character, _)| character))
+            .or_else(|| brought.iter().flatten().next().cloned())
+        else {
             party.missing += 1;
             continue;
         };
         let reading = cached(&ign);
         if let Some((_, fetched_at)) = &reading {
-            oldest = Some(oldest.map_or(*fetched_at, |seen| seen.min(*fetched_at)));
+            seen(*fetched_at);
+        }
+        let mut effective = Vec::with_capacity(run.bosses.len());
+        let mut per_boss = Vec::with_capacity(run.bosses.len());
+        for (token, there) in run.bosses.iter().zip(&brought) {
+            let (figure, other) = match there {
+                Some(there) if there.key() != ign.key() => {
+                    let other = cached(there);
+                    if let Some((_, fetched_at)) = &other {
+                        seen(*fetched_at);
+                    }
+                    (
+                        other
+                            .as_ref()
+                            .and_then(|(member, _)| member.effective(token)),
+                        Some(BossCarrier {
+                            ign: there.as_str().to_owned(),
+                            crit_assumed: other
+                                .as_ref()
+                                .is_some_and(|(member, _)| member.crit_assumed()),
+                        }),
+                    )
+                }
+                Some(_) => (
+                    reading
+                        .as_ref()
+                        .and_then(|(member, _)| member.effective(token)),
+                    None,
+                ),
+                None => (None, None),
+            };
+            effective.push(figure);
+            per_boss.push(other);
+        }
+        if per_boss.iter().all(Option::is_none) {
+            per_boss.clear();
         }
         party.carriers.push(Carrier {
             ign: ign.as_str().to_owned(),
             crit_assumed: reading
                 .as_ref()
                 .is_some_and(|(member, _)| member.crit_assumed()),
-            effective: run
-                .bosses
-                .iter()
-                .map(|token| {
-                    reading
-                        .as_ref()
-                        .and_then(|(member, _)| member.effective(token))
-                })
-                .collect(),
+            effective,
+            per_boss,
         });
-        igns.push(ign);
     }
-    let whole = (party.missing == 0 && !igns.is_empty())
-        .then(|| cached_party(&igns))
-        .flatten();
-    if let Some((_, fetched_at)) = &whole {
-        oldest = Some(oldest.map_or(*fetched_at, |seen| seen.min(*fetched_at)));
-    }
+    // One stored total per distinct party, each counted for its bosses.
+    let mut totals: Vec<(&[RosterIgn], Option<Totals>)> = Vec::new();
     let minutes = run
         .bosses
         .iter()
-        .map(|token| {
-            let (combined, _) = whole.as_ref()?;
+        .zip(&parties)
+        .map(|(token, (igns, missing))| {
+            if *missing > 0 || igns.is_empty() {
+                return None;
+            }
+            let total = match totals.iter().find(|(set, _)| *set == igns.as_slice()) {
+                Some((_, total)) => total.clone(),
+                None => {
+                    let found = cached_party(igns);
+                    if let Some((_, fetched_at)) = &found {
+                        seen(*fetched_at);
+                    }
+                    let total = found.map(|(total, _)| total);
+                    totals.push((igns, total.clone()));
+                    total
+                }
+            };
             scouter_keys(token)
-                .find_map(|key| combined.get(key))
+                .find_map(|key| total.as_ref()?.get(key))
                 .and_then(|total| total.estimated_minutes)
         })
         .collect();
@@ -408,6 +463,11 @@ mod tests {
         estimates
     }
 
+    /// The IGN `slot`'s member brings.
+    fn brought_ign(slot: &PartySlot) -> Option<RosterIgn> {
+        ign_of(slot.brought().map(|(character, _)| character))
+    }
+
     /// A queued lookup of `(member, IGN)` for `target`, as a refresh does:
     /// never answered from memory.
     fn refresh(estimates: &Estimates, target: Target, members: &[(&str, &str)]) {
@@ -422,6 +482,7 @@ mod tests {
                 })
                 .collect(),
             missing: Vec::new(),
+            parties: Vec::new(),
             started_by: Actor::system("test"),
             refresh: true,
         });
@@ -455,6 +516,7 @@ mod tests {
             pick: None,
             version: 1,
             clashes: Vec::new(),
+            bosses: Vec::new(),
         }
     }
 
@@ -495,6 +557,7 @@ mod tests {
                 ign: brought_ign(&slot("1002", "RENSHADE")).unwrap(),
             }],
             missing: Vec::new(),
+            parties: Vec::new(),
             started_by: Actor::system("test"),
             refresh: false,
         });

@@ -26,10 +26,10 @@ pub use estimates::{
     BACKGROUND_CAP, BACKGROUND_GAP, BACKOFF, CACHE_TTL, CAP_WINDOW, Estimates, Failure,
     FailureKind, Found, FreshDays, JOB_TTL, Job, JobRequest, JobSource, JobState, MAX_CACHED,
     MAX_JOBS, MAX_QUEUED, MemberOutcome, Missing, MissingReason, REFRESHER, ScouterHealth,
-    ScouterState, Start, Subject, Target,
+    ScouterState, Start, Subject, Target, Totals,
 };
 pub use ign::RosterIgn;
 pub use keys::{BOSS_KEYS, catalog_token, scouter_keys};
-pub use party::{party_subjects, push_subject};
+pub use party::{BossParty, party_subjects, push_subject};
 pub use refresh::{Upcoming, UpcomingFuture, UpcomingParties, UpcomingRun};
 pub use wire::{Card, Combined, Member};

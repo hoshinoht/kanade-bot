@@ -1,17 +1,18 @@
 //! Which upcoming parties the background refresh looks up (pure): live
 //! runs starting within [`HORIZON`] from the current and next boss weeks,
 //! plus the current week's own-time runs, soonest first. A run is due when
-//! a brought character's result, or the total of exactly its IGN set, is
-//! missing, no longer fresh, or not about those very characters. Due runs
-//! are queued while the lookups they need fit the day's cap; a run whose
-//! last background lookup failed is left alone for a day.
+//! a brought character's result, or the total of exactly one of its boss
+//! parties' IGN sets, is missing, no longer fresh, or not about those very
+//! characters. Due runs are queued while the lookups they need fit the
+//! day's cap; a run whose last background lookup failed is left alone for
+//! a day.
 
 use std::{collections::HashSet, pin::Pin};
 
 use chrono::{DateTime, TimeDelta, Utc};
 
 use super::{
-    MAX_BATCH, Missing, RosterIgn, Subject,
+    BossParty, MAX_BATCH, Missing, RosterIgn, Subject,
     estimates::{characters, set_key},
 };
 use crate::domain::schedule::RunStatus;
@@ -29,6 +30,9 @@ pub struct UpcomingRun {
     pub week_start: DateTime<Utc>,
     pub subjects: Vec<Subject>,
     pub missing: Vec<Missing>,
+    /// The distinct boss parties (see [`super::party_subjects`]); empty
+    /// for one party of every subject.
+    pub parties: Vec<BossParty>,
 }
 
 /// What [`UpcomingParties`] read: the current boss week's start and its
@@ -101,9 +105,10 @@ pub struct Selection {
 /// What the refresh queues from `upcoming` at `now`. `fresh` is the saved
 /// `estimate_days` test, `backed_off` names a run whose last background
 /// job failed, and `cap_left` is how many `ign=` lookups the cap still
-/// allows. Runs with nobody to look up or more than [`MAX_BATCH`] are
-/// skipped; once a due run's lookups do not fit, nothing after it is
-/// queued, so a later run never takes the budget from a sooner one.
+/// allows. Runs with nobody to look up or a boss party of more than
+/// [`MAX_BATCH`] are skipped; once a due run's lookups do not fit, nothing
+/// after it is queued, so a later run never takes the budget from a sooner
+/// one.
 pub fn select(
     upcoming: Upcoming,
     now: DateTime<Utc>,
@@ -127,7 +132,13 @@ pub fn select(
     let mut counted: HashSet<String> = HashSet::new();
     let mut full = false;
     for run in runs {
-        if run.subjects.is_empty() || run.subjects.len() > MAX_BATCH {
+        let whole = [BossParty::whole(run.subjects.len())];
+        let parties = if run.parties.is_empty() {
+            &whole[..]
+        } else {
+            &run.parties[..]
+        };
+        if run.subjects.is_empty() || parties.iter().any(|party| party.subjects.len() > MAX_BATCH) {
             continue;
         }
         let stale: Vec<String> = run
@@ -141,10 +152,18 @@ pub fn select(
             })
             .map(|subject| subject.ign.key())
             .collect();
-        let ids = characters(&run.subjects);
-        let total_due = memory
-            .party(&set_key(run.subjects.iter().map(|subject| &subject.ign)))
-            .is_none_or(|held| !fresh(held.fetched_at) || held.characters != ids.as_slice());
+        let total_due = parties.iter().any(|party| {
+            let members: Vec<Subject> = party
+                .subjects
+                .iter()
+                .filter_map(|at| run.subjects.get(*at).cloned())
+                .collect();
+            let ids = characters(&members);
+            !members.is_empty()
+                && memory
+                    .party(&set_key(members.iter().map(|subject| &subject.ign)))
+                    .is_none_or(|held| !fresh(held.fetched_at) || held.characters != ids.as_slice())
+        });
         if stale.is_empty() && !total_due {
             continue;
         }

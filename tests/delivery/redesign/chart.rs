@@ -19,12 +19,12 @@ use kanade::bot::delivery::{
 };
 use kanade::bot::transport::{OutgoingMessage, Upload, legacy_rows};
 use kanade::domain::catalog::BossTable;
-use kanade::domain::characters::{Basis, Character, CharacterRole, PartySlot};
-use kanade::domain::chardata::{Carrier, CharDataStore, PartyShares};
+use kanade::domain::characters::{Basis, BossSlot, Character, CharacterRole, PartySlot};
+use kanade::domain::chardata::{BossCarrier, Carrier, CharDataStore, PartyShares};
 use kanade::domain::history::Actor;
 use kanade::domain::schedule::{Run, ScheduleSnapshot};
 use kanade::infrastructure::character_data::{CharacterData, RosterSide, Timing};
-use kanade::infrastructure::scouter::{Card, Member};
+use kanade::infrastructure::scouter::{Card, Combined, Member};
 use kanade::infrastructure::store::{SqliteCharData, SqliteStore};
 use resvg::tiny_skia::Pixmap;
 
@@ -40,6 +40,7 @@ fn carrier(ign: &str, crit: bool, effective: &[f64]) -> Carrier {
         ign: ign.into(),
         crit_assumed: crit,
         effective: effective.iter().copied().map(Some).collect(),
+        per_boss: Vec::new(),
     }
 }
 
@@ -393,6 +394,7 @@ fn slot(member: &str, brings: Option<Character>) -> PartySlot {
         pick: None,
         version: 0,
         clashes: Vec::new(),
+        bosses: Vec::new(),
     }
 }
 
@@ -478,6 +480,169 @@ fn a_run_reads_its_party_from_slots_and_the_estimates_memory() {
         "a party total only for a whole party"
     );
     assert_eq!(estimate.party.no_estimate(), 4);
+}
+
+/// A reading with a card for XKalos and HMaleficStar.
+fn two(ign: &str, kalos: f64, star: f64) -> Member {
+    let card = |effective: f64| Card {
+        percentage: effective,
+        rating: "Party-able".into(),
+        party: false,
+        effective_percentage: Some(effective),
+        estimated_minutes: None,
+    };
+    Member {
+        bosses: [
+            ("extreme_kalos".to_owned(), card(kalos)),
+            ("hard_maleficStar".to_owned(), card(star)),
+        ]
+        .into(),
+        ..reading(ign, None, 0.0, false)
+    }
+}
+
+/// A total of `minutes` for each of the two bosses' keys.
+fn total(minutes: f64) -> std::collections::BTreeMap<String, Combined> {
+    let combined: Combined = serde_json::from_value(serde_json::json!({
+        "combined_percentage": 120.0,
+        "estimated_minutes": minutes,
+        "technically_possible": true,
+        "complete": true,
+        "issues": {},
+    }))
+    .expect("a total");
+    [
+        ("extreme_kalos".to_owned(), combined.clone()),
+        ("hard_maleficStar".to_owned(), combined),
+    ]
+    .into()
+}
+
+/// Per-boss picks: each bar is that boss's own party (a member keeps their
+/// number with another character), each boss's minutes come from its own
+/// party's total, and only then does the legend name the characters per
+/// bar.
+#[test]
+fn each_bar_is_its_own_bosss_party_when_the_party_differs() {
+    let schedule = week();
+    let mut run = schedule
+        .runs
+        .iter()
+        .find(|run| run.id == KALOS)
+        .unwrap()
+        .clone();
+    run.bosses = vec!["XKalos".into(), "HMaleficStar".into()];
+    let fetched = Utc.with_ymd_and_hms(2026, 9, 9, 8, 0, 0).unwrap();
+    let dk = character("1001", "AsahiDK", "msea");
+    let mech = Character {
+        id: "ch-1001-mech".into(),
+        ign: "AsahiMech".into(),
+        role: CharacterRole::Alt,
+        ..dk.clone()
+    };
+    let boss = |token: &str, key: &str, brings: &Character, basis| BossSlot {
+        token: token.into(),
+        boss: key.into(),
+        pick: None,
+        brings: Some((brings.id.clone(), basis)),
+        version: 0,
+    };
+    let asahi = PartySlot {
+        candidates: vec![dk.clone(), mech.clone()],
+        bosses: vec![
+            boss("XKalos", "Kalos", &dk, Basis::Main),
+            boss("HMaleficStar", "MaleficStar", &mech, Basis::RunPick),
+        ],
+        ..slot("1001", Some(dk.clone()))
+    };
+    let ren = slot("1003", Some(character("1003", "RenShade", "msea")));
+    let asked = std::cell::RefCell::new(Vec::new());
+    let estimate = read_estimates(
+        &run,
+        &[asahi, ren],
+        |ign| match ign.as_str() {
+            "AsahiDK" => Some((two("AsahiDK", 40.0, 10.0), fetched)),
+            "AsahiMech" => Some((two("AsahiMech", 5.0, 30.0), fetched)),
+            "RenShade" => Some((two("RenShade", 60.0, 90.0), fetched)),
+            _ => None,
+        },
+        |igns| {
+            let set: Vec<String> = igns.iter().map(|ign| ign.as_str().to_owned()).collect();
+            asked.borrow_mut().push(set.clone());
+            let minutes = if set.contains(&"AsahiMech".to_owned()) {
+                9.0
+            } else {
+                7.0
+            };
+            Some((total(minutes), fetched))
+        },
+    );
+    assert_eq!(
+        *asked.borrow(),
+        [
+            vec!["AsahiDK".to_owned(), "RenShade".to_owned()],
+            vec!["AsahiMech".to_owned(), "RenShade".to_owned()],
+        ],
+        "one total per distinct boss party"
+    );
+    assert_eq!(estimate.minutes, [Some(7.0), Some(9.0)]);
+    let party = &estimate.party;
+    assert_eq!(
+        party.carriers[0],
+        Carrier {
+            per_boss: vec![
+                None,
+                Some(BossCarrier {
+                    ign: "AsahiMech".into(),
+                    crit_assumed: false,
+                }),
+            ],
+            ..carrier("AsahiDK", false, &[40.0, 30.0])
+        }
+    );
+    assert_eq!(party.carriers[1], carrier("RenShade", false, &[60.0, 90.0]));
+    assert_eq!(party.shares(1), [Some(25), Some(75)]);
+    let chart = Chart {
+        runs: vec![ChartRun {
+            time: "21:30".into(),
+            party: estimate.party.clone(),
+            minutes: estimate.minutes.clone(),
+        }],
+        as_of: "Tue 29 Sep 08:41".into(),
+        older_than: None,
+        portal: false,
+    };
+    let drawn = chart::svg(&chart).svg;
+    assert!(
+        drawn.contains(">AsahiMech<"),
+        "the Star bar names AsahiMech"
+    );
+    assert!(drawn.contains(">AsahiDK<"));
+    assert_eq!(drawn.matches(">RenShade<").count(), 2, "once per bar");
+    let alt = chart::alt(&chart);
+    assert!(
+        alt.contains("HMaleficStar 120.0%, AsahiMech 25%, RenShade 75%"),
+        "{alt}"
+    );
+    assert!(
+        alt.contains("XKalos 100.0%, AsahiDK 40%, RenShade 60%"),
+        "{alt}"
+    );
+    // The same characters at every boss: one legend, as before.
+    let same = Chart {
+        runs: vec![ChartRun {
+            party: PartyShares {
+                carriers: vec![
+                    carrier("AsahiDK", false, &[40.0, 10.0]),
+                    carrier("RenShade", false, &[60.0, 90.0]),
+                ],
+                ..estimate.party
+            },
+            ..chart.runs[0].clone()
+        }],
+        ..chart
+    };
+    assert_eq!(chart::svg(&same).svg.matches(">RenShade<").count(), 1);
 }
 
 /// A port answering fixed estimates per run id; `None` for any other run.

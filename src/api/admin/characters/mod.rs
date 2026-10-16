@@ -1,13 +1,15 @@
 //! The manual character roster (module `roster`): one member's characters
 //! and their create, edit (retire included) and delete, the character each
 //! party member brings to a run (`runs.rs`) and, with module
-//! `character_data` on too, to a weekly timing (`fixed.rs`). While a
-//! route's module is off (`modules.roster`, read at startup) it answers the
-//! generic `404`, before the session is even checked, as an unmounted path
-//! does. Writes take the session's CSRF token, record History rows
-//! (section `characters`, key `character.<id>`, `pick.<run>.<member>` or
-//! `fixedpick.<fixed>.<member>`) and replay an `Idempotency-Key` (scope
-//! `config`) in the same transaction; roster data never reaches a model.
+//! `character_data` on too, to a weekly timing (`fixed.rs`), for the first
+//! boss and per later boss. While a route's module is off
+//! (`modules.roster`, read at startup) it answers the generic `404`, before
+//! the session is even checked, as an unmounted path does. Writes take the
+//! session's CSRF token, record History rows (section `characters`, key
+//! `character.<id>`, `pick.<run>.<member>` or `fixedpick.<fixed>.<member>`,
+//! `.<boss>` for a per-boss pick and `.*` for "same for every boss") and
+//! replay an `Idempotency-Key` (scope `config`) in the same transaction;
+//! roster data never reaches a model.
 
 mod fixed;
 mod picks;
@@ -25,7 +27,7 @@ use axum::{
     extract::{FromRequestParts, Path as UrlPath, State},
     http::request::Parts,
     response::{IntoResponse, Response},
-    routing::{get, patch, put},
+    routing::{get, patch, post, put},
 };
 
 use super::write::{Refusal, state};
@@ -49,10 +51,26 @@ pub fn routes() -> Router<Arc<Site>> {
         )
         .route("/api/admin/runs/{id}/characters", get(runs::read))
         .route("/api/admin/runs/{id}/characters/{member}", put(runs::pick))
+        .route(
+            "/api/admin/runs/{id}/characters/{member}/bosses/{boss}",
+            put(runs::boss_pick),
+        )
+        .route(
+            "/api/admin/runs/{id}/characters/{member}/same",
+            post(runs::same),
+        )
         .route("/api/admin/fixed/{id}/characters", get(fixed::read))
         .route(
             "/api/admin/fixed/{id}/characters/{member}",
             put(fixed::pick),
+        )
+        .route(
+            "/api/admin/fixed/{id}/characters/{member}/bosses/{boss}",
+            put(fixed::boss_pick),
+        )
+        .route(
+            "/api/admin/fixed/{id}/characters/{member}/same",
+            post(fixed::same),
         )
 }
 

@@ -269,6 +269,7 @@ async fn sqlite_picks_survive_reopen() {
                     scope,
                     target: target.into(),
                     member_id: "1001".into(),
+                    boss: None,
                     character_id: "c-1".into(),
                     version: 0,
                 },

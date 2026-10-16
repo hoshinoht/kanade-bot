@@ -9,7 +9,7 @@ use super::{
     week::{Context, day_index, run_time},
 };
 use crate::domain::{
-    characters::{Character, Clash, PartySlot},
+    characters::{BossSlot, Character, Clash, PartySlot, Pick},
     ids::short_id,
     schedule::Run,
 };
@@ -111,6 +111,40 @@ pub struct CharacterClash {
     pub basis: &'static str,
 }
 
+/// One boss of a party member's slot on a run or a weekly timing.
+#[derive(Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+pub struct BossCharacterSlot {
+    /// The boss token as the run or timing lists it (`HMaleficStar`).
+    pub boss: String,
+    /// The catalog boss (`MaleficStar`, any difficulty): what a per-boss
+    /// pick is kept under, the `{boss}` of its write.
+    pub key: String,
+    /// This boss's own stored pick at this level while it names a
+    /// candidate (the first boss: the slot's `picked`); a pick kept for a
+    /// boss that is now first or gone never shows.
+    pub picked: Option<String>,
+    /// When `picked` was picked; `null` without it.
+    pub picked_at: Option<String>,
+    /// Who picked `picked`; `null` without it.
+    pub picked_by: Option<SettingsActor>,
+    /// The character brought to this boss: the first boss as the slot's
+    /// `brings`; a later boss its run pick, else its timing's pick, else
+    /// the first boss's character. `null` with none.
+    pub brings: Option<String>,
+    /// Where `brings` comes from: for a later boss `run_pick` / `timing_pick`
+    /// are picks for this boss, `same_as_first` is the first boss's
+    /// character; `null` with nothing brought.
+    #[cfg_attr(
+        test,
+        ts(type = "'run_pick' | 'timing_pick' | 'main' | 'only' | 'same_as_first' | null")
+    )]
+    pub basis: Option<&'static str>,
+    /// Send it back with this boss's pick: 0 while it has none (the first
+    /// boss: the slot's `version`).
+    pub version: u32,
+}
+
 /// One party member's slot on a run or a weekly timing.
 #[derive(Serialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
@@ -121,13 +155,14 @@ pub struct RunCharacterSlot {
     /// How many retired characters they have (never offered).
     pub retired: u32,
     /// This slot's own stored pick (the run's on a run, the timing's on a
-    /// timing) while it names a candidate.
+    /// timing) while it names a candidate: the first boss's pick.
     pub picked: Option<String>,
     /// When `picked` was picked; `null` without it.
     pub picked_at: Option<String>,
     /// Who picked `picked`; `null` without it.
     pub picked_by: Option<SettingsActor>,
-    /// The character the member brings: on a run its pick, else its
+    /// The character the member brings to the first boss (and to every
+    /// boss without a pick of its own): on a run its pick, else its
     /// timing's pick, else their main, else their only active character;
     /// on a timing its pick, else the main, else the only one. `null` with
     /// none (no characters, or several and no main). Never stored.
@@ -137,9 +172,14 @@ pub struct RunCharacterSlot {
     pub basis: Option<&'static str>,
     /// Send it back with the pick: 0 while nothing is picked.
     pub version: u32,
-    /// Other runs with the character brought here for a shared boss (always
-    /// empty on a timing).
+    /// Other runs with the character brought here for a shared boss,
+    /// compared boss by boss (always empty on a timing).
     pub warnings: Vec<CharacterClash>,
+    /// Each boss in order (the first repeats the slot's pick); empty for a
+    /// run or timing with no bosses.
+    pub bosses: Vec<BossCharacterSlot>,
+    /// Some boss brings another character than the first boss.
+    pub per_boss: bool,
 }
 
 #[derive(Serialize)]
@@ -183,22 +223,50 @@ fn clash(ctx: &Context<'_>, week: &[Run], clash: &Clash) -> Option<CharacterClas
     })
 }
 
+/// A pick's `picked`, `picked_at` and `picked_by`.
+fn picked(pick: Option<&Pick>) -> (Option<String>, Option<String>, Option<SettingsActor>) {
+    pick.map_or((None, None, None), |pick| {
+        (
+            Some(pick.character_id.clone()),
+            Some(iso_instant(pick.picked_at)),
+            Some(SettingsActor {
+                kind: pick.picked_by.kind(),
+                id: pick.picked_by.id().to_owned(),
+            }),
+        )
+    })
+}
+
+fn boss_slot(boss: &BossSlot) -> BossCharacterSlot {
+    let (picked, picked_at, picked_by) = picked(boss.pick.as_ref());
+    BossCharacterSlot {
+        boss: boss.token.clone(),
+        key: boss.boss.clone(),
+        picked,
+        picked_at,
+        picked_by,
+        brings: boss.brings.as_ref().map(|(id, _)| id.clone()),
+        basis: boss.brings.as_ref().map(|(_, basis)| basis.as_str()),
+        version: boss.version,
+    }
+}
+
 /// `slot` without its clashes, as a timing answers it.
 pub fn slot(slot: &PartySlot) -> RunCharacterSlot {
+    let (picked, picked_at, picked_by) = picked(slot.pick.as_ref());
     RunCharacterSlot {
         member_id: slot.member_id.clone(),
         candidates: slot.candidates.iter().map(choice).collect(),
         retired: u32::try_from(slot.retired).unwrap_or(u32::MAX),
-        picked: slot.pick.as_ref().map(|pick| pick.character_id.clone()),
-        picked_at: slot.pick.as_ref().map(|pick| iso_instant(pick.picked_at)),
-        picked_by: slot.pick.as_ref().map(|pick| SettingsActor {
-            kind: pick.picked_by.kind(),
-            id: pick.picked_by.id().to_owned(),
-        }),
+        picked,
+        picked_at,
+        picked_by,
         brings: slot.bringing().map(str::to_owned),
         basis: slot.brings.as_ref().map(|(_, basis)| basis.as_str()),
         version: slot.version,
         warnings: Vec::new(),
+        bosses: slot.bosses.iter().map(boss_slot).collect(),
+        per_boss: slot.per_boss(),
     }
 }
 

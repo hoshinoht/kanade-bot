@@ -137,11 +137,11 @@
     "ReadinessSlot": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["member_id", "character", "basis", "candidates", "link", "level", "power", "bosses"],
+      "required": ["member_id", "character", "basis", "candidates", "link", "level", "power", "bosses", "characters"],
       "properties": {
         "member_id": { "type": "string" },
         "character": {
-          "description": "The character the member brings (as GET .../characters resolves it); null with none.",
+          "description": "The character the member brings to the first boss (as GET .../characters resolves it); null with none. `link`, `level` and `power` are its values.",
           "oneOf": [{ "$ref": "characters.json#/$defs/CharacterChoice" }, { "type": "null" }]
         },
         "basis": { "oneOf": [{ "$ref": "characters.json#/$defs/CharacterBasis" }, { "type": "null" }], "description": "Where `character` comes from; null with none." },
@@ -155,7 +155,22 @@
           "description": "NEXON combat power: shown, never judged. Null without usable data.",
           "oneOf": [{ "$ref": "#/$defs/ReadinessPower" }, { "type": "null" }]
         },
-        "bosses": { "type": "array", "items": { "$ref": "#/$defs/BossReadiness" }, "description": "One per boss of the run, in run order." }
+        "bosses": { "type": "array", "items": { "$ref": "#/$defs/BossReadiness" }, "description": "One per boss of the run, in run order, each judged for the character brought to it." },
+        "characters": {
+          "type": "array",
+          "description": "Every other character the member brings to a later boss (per-boss picks), once each in boss order, with its own values; empty when every boss brings `character`.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["character", "link", "level", "power"],
+            "properties": {
+              "character": { "$ref": "characters.json#/$defs/CharacterChoice" },
+              "link": { "enum": ["not_connected", "not_linked", "pending", "linked", "stale", "expired", null] },
+              "level": { "oneOf": [{ "$ref": "#/$defs/ReadinessLevel" }, { "type": "null" }] },
+              "power": { "oneOf": [{ "$ref": "#/$defs/ReadinessPower" }, { "type": "null" }] }
+            }
+          }
+        }
       }
     },
     "ReadinessLevel": {
@@ -181,14 +196,15 @@
     "BossReadiness": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["boss", "difficulty", "entry_level", "level", "scouter"],
+      "required": ["boss", "difficulty", "character_id", "entry_level", "level", "scouter"],
       "properties": {
         "boss": { "type": "string", "description": "Catalog boss key." },
+        "character_id": { "$ref": "common.json#/$defs/NullableString", "description": "The character judged for this boss (the one brought to it); null with none." },
         "difficulty": { "enum": ["e", "n", "h", "c", "x"] },
         "entry_level": { "type": ["integer", "null"], "minimum": 1, "description": "From boss knowledge; null when it has none." },
         "level": { "enum": ["ok", "under", "unknown"], "description": "ok at or above entry_level; unknown without a level or an entry_level." },
         "scouter": {
-          "description": "The character's stored scouter reading for this boss, of any age up to the 30 days it is kept (readiness never looks one up); null without one, for a boss the scouter has no card for, or while estimates are off.",
+          "description": "That character's stored scouter reading for this boss, of any age up to the 30 days it is kept (readiness never looks one up); null without one, for a boss the scouter has no card for, or while estimates are off.",
           "oneOf": [{ "$ref": "#/$defs/ScouterReading" }, { "type": "null" }]
         }
       }
@@ -332,7 +348,7 @@
       "description": "One scouter lookup (admin only), queued and looked up one at a time. The scouter is sent roster IGNs only, never a Nexon field.",
       "type": "object",
       "additionalProperties": false,
-      "required": ["id", "state", "position", "run_id", "character_ids", "started_by", "started_at", "finished_at", "characters", "missing", "progress", "fetched_at", "stale", "fresh_days", "result", "error", "label", "note"],
+      "required": ["id", "state", "position", "run_id", "character_ids", "started_by", "started_at", "finished_at", "characters", "missing", "parties", "progress", "fetched_at", "stale", "fresh_days", "result", "error", "label", "note"],
       "properties": {
         "id": { "type": "string", "minLength": 1 },
         "state": { "enum": ["queued", "running", "done", "failed"], "description": "done once at least one character was found (failed members carry their own error); failed when nobody was." },
@@ -344,7 +360,7 @@
         "finished_at": { "$ref": "common.json#/$defs/NullableString" },
         "characters": {
           "type": "array",
-          "maxItems": 6,
+          "description": "Every character brought to any boss, once (at most 6 per boss).",
           "items": {
             "type": "object",
             "additionalProperties": false,
@@ -360,7 +376,7 @@
         },
         "missing": {
           "type": "array",
-          "description": "Party members not looked up: listed as missing, never 0%.",
+          "description": "Party members not looked up for some boss: listed as missing, never 0%.",
           "items": {
             "type": "object",
             "additionalProperties": false,
@@ -369,6 +385,20 @@
               "member_id": { "type": "string" },
               "character_id": { "$ref": "common.json#/$defs/NullableString" },
               "reason": { "enum": ["no_characters", "no_character_picked", "other_region", "unsupported_ign"] }
+            }
+          }
+        },
+        "parties": {
+          "type": "array",
+          "description": "A run's distinct boss parties: each boss's total is its own party's, asked once per party (one party when every boss brings the same characters); empty for a character lookup.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["bosses", "character_ids", "missing"],
+            "properties": {
+              "bosses": { "type": "array", "items": { "type": "string" }, "description": "Catalog tokens, in run order." },
+              "character_ids": { "type": "array", "maxItems": 6, "items": { "type": "string" } },
+              "missing": { "type": "integer", "minimum": 0 }
             }
           }
         },

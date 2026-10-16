@@ -89,7 +89,7 @@
       "description": "One party member on a run or a weekly timing. `candidates` are their active characters (no level filter), oldest first; empty when they have none; `retired` counts the rest (never offered). `picked` is this slot's own stored pick (the run's on a run, the timing's on a timing) while it names a candidate, with `picked_at`/`picked_by`. `brings` is the character the member brings, resolved on every read and never stored: on a run its pick, else its timing's pick, else the main, else the only active character; on a timing its pick, else the main, else the only one; null with none. `basis` says which. `version` is the slot version a pick sends back (0 while nothing is stored). `warnings` is always empty on a timing.",
       "type": "object",
       "additionalProperties": false,
-      "required": ["member_id", "candidates", "retired", "picked", "picked_at", "picked_by", "brings", "basis", "version", "warnings"],
+      "required": ["member_id", "candidates", "retired", "picked", "picked_at", "picked_by", "brings", "basis", "version", "warnings", "bosses", "per_boss"],
       "properties": {
         "member_id": { "type": "string" },
         "candidates": { "type": "array", "items": { "$ref": "#/$defs/CharacterChoice" } },
@@ -100,7 +100,25 @@
         "brings": { "$ref": "common.json#/$defs/NullableString" },
         "basis": { "oneOf": [{ "$ref": "#/$defs/CharacterBasis" }, { "type": "null" }] },
         "version": { "type": "integer", "minimum": 0 },
-        "warnings": { "type": "array", "items": { "$ref": "#/$defs/CharacterClash" } }
+        "warnings": { "type": "array", "items": { "$ref": "#/$defs/CharacterClash" }, "description": "Compared boss by boss: a clash names only the bosses whose brought character is the same on both runs." },
+        "bosses": { "type": "array", "items": { "$ref": "#/$defs/BossCharacterSlot" }, "description": "Each boss of the run or timing in order; the first repeats the slot's own pick, version and character. Empty with no bosses." },
+        "per_boss": { "type": "boolean", "description": "Some boss brings another character than the first boss." }
+      }
+    },
+    "BossCharacterSlot": {
+      "description": "One boss of a party member's slot. A later boss brings its own pick at the run, else its timing's pick for it, else the first boss's character (`same_as_first`); each boss's own pick wins at its level. A per-boss pick is kept under the catalog boss (`key`, any difficulty) and is ignored, but kept, while its boss is not on the run or timing or is its first boss.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["boss", "key", "picked", "picked_at", "picked_by", "brings", "basis", "version"],
+      "properties": {
+        "boss": { "type": "string", "description": "The boss token as listed (`HMaleficStar`)." },
+        "key": { "type": "string", "description": "The catalog boss (`MaleficStar`): the `{boss}` of a per-boss write and a `versions` key." },
+        "picked": { "$ref": "common.json#/$defs/NullableString" },
+        "picked_at": { "$ref": "common.json#/$defs/NullableString" },
+        "picked_by": { "oneOf": [{ "$ref": "history.json#/$defs/Actor" }, { "type": "null" }] },
+        "brings": { "$ref": "common.json#/$defs/NullableString" },
+        "basis": { "oneOf": [{ "$ref": "#/$defs/CharacterBasis" }, { "const": "same_as_first" }, { "type": "null" }] },
+        "version": { "type": "integer", "minimum": 0, "description": "This boss's own pick version (0 with none); the first boss's is the slot's." }
       }
     },
     "RunCharacters": {
@@ -123,13 +141,22 @@
       }
     },
     "CharacterPick": {
-      "description": "Request body of `PUT /api/admin/runs/{id}/characters/{member}` and `PUT /api/admin/fixed/{id}/characters/{member}`. `character_id` names one of the member's active characters, or is null to clear the pick (required either way, else 422 `invalid`); `version` is the slot version read (else 422 `version_required`; another is 409 `stale`).",
+      "description": "Request body of `PUT /api/admin/runs/{id}/characters/{member}`, `PUT /api/admin/fixed/{id}/characters/{member}` and their per-boss `…/bosses/{boss}` forms. `character_id` names one of the member's active characters, or is null to clear the pick (required either way, else 422 `invalid`); `version` is the slot version read (the boss's own `version` for a per-boss write; else 422 `version_required`; another is 409 `stale`).",
       "type": "object",
       "additionalProperties": false,
       "required": ["character_id", "version"],
       "properties": {
         "character_id": { "type": ["string", "null"] },
         "version": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "SameForEveryBoss": {
+      "description": "Request body of `POST /api/admin/runs/{id}/characters/{member}/same` and `POST /api/admin/fixed/{id}/characters/{member}/same`: each later boss's `version` as read, by its catalog `key` (a boss left out counts as 0; required, else 422 `version_required`; any other version now is 409 `stale`).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["versions"],
+      "properties": {
+        "versions": { "type": "object", "additionalProperties": { "type": "integer", "minimum": 0 } }
       }
     },
     "CharacterCreate": {

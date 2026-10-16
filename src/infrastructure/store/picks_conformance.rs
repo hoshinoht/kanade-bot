@@ -1,11 +1,16 @@
 //! Character picks every store must keep, per run and per weekly timing:
-//! one stored pick per `(scope, target, member)` behind a slot version (0
+//! one stored pick per `(scope, target, member)`, and one per later boss
+//! per `(scope, target, member, boss)`, each behind its own version (0
 //! with none); a set names an active character of that member; a clear
-//! deletes the row; a no-op or refusal writes and records nothing; every
-//! effective write is recorded in History (section `characters`, key
-//! `pick.<run>.<member>` or `fixedpick.<fixed>.<member>`) with it; keyed
+//! deletes the row; "same for every boss" deletes the named per-boss rows
+//! in one write, or none when any changed; a no-op or refusal writes and
+//! records nothing; every effective write is recorded in History (section
+//! `characters`, key `pick.<run>.<member>` or `fixedpick.<fixed>.<member>`,
+//! `.<boss>` per boss, `.*` for "same for every boss") with it; keyed
 //! writes replay in the same transaction; the two scopes never see each
 //! other's rows; deleting a character drops its picks in both.
+
+use std::collections::BTreeMap;
 
 use chrono::{DateTime, TimeZone, Utc};
 
@@ -28,6 +33,8 @@ pub async fn run_suite<S: CharacterStore + ReplayStore + SettingsStore>(make: im
         deleting_a_character_drops_its_picks(make().await, scope).await;
         keyed_picks_replay_in_the_same_write(make().await, scope).await;
         malformed_picks_are_refused(make().await, scope).await;
+        per_boss_picks_are_slots_of_their_own(make().await, scope).await;
+        same_for_every_boss_clears_the_named_bosses_at_once(make().await, scope).await;
     }
     run_and_timing_picks_are_separate_slots(make().await).await;
 }
@@ -87,6 +94,7 @@ fn set(scope: PickScope, target: &str, member: &str, character: &str, version: u
         scope,
         target: target.into(),
         member_id: member.into(),
+        boss: None,
         character_id: character.into(),
         version,
     }
@@ -97,7 +105,55 @@ fn clear(scope: PickScope, target: &str, member: &str, version: u32) -> PickChan
         scope,
         target: target.into(),
         member_id: member.into(),
+        boss: None,
         version,
+    }
+}
+
+/// `change` (a set or clear) for `boss` instead of the slot's own pick.
+fn for_boss(change: PickChange, boss: &str) -> PickChange {
+    match change {
+        PickChange::Set {
+            scope,
+            target,
+            member_id,
+            character_id,
+            version,
+            ..
+        } => PickChange::Set {
+            scope,
+            target,
+            member_id,
+            boss: Some(boss.into()),
+            character_id,
+            version,
+        },
+        PickChange::Clear {
+            scope,
+            target,
+            member_id,
+            version,
+            ..
+        } => PickChange::Clear {
+            scope,
+            target,
+            member_id,
+            boss: Some(boss.into()),
+            version,
+        },
+        same @ PickChange::Same { .. } => same,
+    }
+}
+
+fn same(scope: PickScope, target: &str, member: &str, versions: &[(&str, u32)]) -> PickChange {
+    PickChange::Same {
+        scope,
+        target: target.into(),
+        member_id: member.into(),
+        versions: versions
+            .iter()
+            .map(|(boss, version)| ((*boss).to_owned(), *version))
+            .collect::<BTreeMap<_, _>>(),
     }
 }
 
@@ -113,10 +169,18 @@ fn pick(
         scope,
         target: target.into(),
         member_id: member.into(),
+        boss: None,
         character_id: character.into(),
         picked_at: at(hour),
         picked_by: admin(),
         version,
+    }
+}
+
+fn boss_pick(scope: PickScope, boss: &str, character: &str, hour: u32, version: u32) -> Pick {
+    Pick {
+        boss: Some(boss.into()),
+        ..pick(scope, "t-1", "1001", character, hour, version)
     }
 }
 
@@ -476,6 +540,246 @@ async fn malformed_picks_are_refused<S: CharacterStore + SettingsStore>(
         refused(store.apply_pick(bad, record(4)).await);
     }
     assert!(history(&store, scope).await.is_empty());
+}
+
+/// A per-boss pick is a slot of its own beside the member's pick: its own
+/// version, row, History key (with the boss) and delete; the member's pick
+/// never moves it.
+async fn per_boss_picks_are_slots_of_their_own<S: CharacterStore + SettingsStore>(
+    store: S,
+    scope: PickScope,
+) {
+    seeded(&store).await;
+    let star = boss_pick(scope, "MaleficStar", "c-2", 4, 1);
+    assert_eq!(
+        store
+            .apply_pick(
+                for_boss(set(scope, "t-1", "1001", "c-2", 0), "MaleficStar"),
+                record(4)
+            )
+            .await
+            .unwrap(),
+        PickWrite::Picked(star.clone())
+    );
+    // The member's own pick is at version 0 still, and leaves the boss's.
+    let own = pick(scope, "t-1", "1001", "c-1", 5, 1);
+    assert_eq!(
+        store
+            .apply_pick(set(scope, "t-1", "1001", "c-1", 0), record(5))
+            .await
+            .unwrap(),
+        PickWrite::Picked(own.clone())
+    );
+    assert_eq!(
+        picks(&store, scope, &["t-1"]).await,
+        [own.clone(), star.clone()],
+        "the member's pick, then the per-boss ones"
+    );
+    // Each boss has its own version: another boss starts at 0.
+    assert_eq!(
+        store
+            .apply_pick(
+                for_boss(set(scope, "t-1", "1001", "c-1", 1), "MaleficStar"),
+                record(6)
+            )
+            .await
+            .unwrap(),
+        PickWrite::Picked(boss_pick(scope, "MaleficStar", "c-1", 6, 2))
+    );
+    assert_eq!(
+        store
+            .apply_pick(
+                for_boss(set(scope, "t-1", "1001", "c-2", 1), "Limbo"),
+                record(6)
+            )
+            .await
+            .unwrap(),
+        PickWrite::Stale(None)
+    );
+    assert!(
+        store
+            .apply_pick(
+                for_boss(set(scope, "t-1", "1001", "c-3", 0), "Limbo"),
+                record(6)
+            )
+            .await
+            .unwrap()
+            == PickWrite::NotTheirs
+    );
+    // History: one row per effective write, keyed by the boss, its sides
+    // naming it; the first per-boss pick came from "no pick of its own".
+    let rows = history(&store, scope).await;
+    let key = format!("{}t-1.1001.MaleficStar", prefix(scope));
+    let boss_rows: Vec<_> = rows
+        .iter()
+        .filter_map(|change| change.values.get(&key))
+        .collect();
+    assert_eq!(boss_rows.len(), 2, "{rows:?}");
+    assert_eq!(boss_rows[1].from, "");
+    let to: serde_json::Value = serde_json::from_str(&boss_rows[1].to).unwrap();
+    assert_eq!(to["boss"], "MaleficStar");
+    assert_eq!(to["ign"], "Wisteria");
+    let own_key = format!("{}t-1.1001", prefix(scope));
+    let own_row = rows
+        .iter()
+        .find_map(|change| change.values.get(&own_key))
+        .expect("the member's pick row");
+    let own_side: serde_json::Value = serde_json::from_str(&own_row.to).unwrap();
+    assert!(own_side.get("boss").is_none(), "{own_side}");
+    // Clearing the boss's pick deletes its row only.
+    assert_eq!(
+        store
+            .apply_pick(
+                for_boss(clear(scope, "t-1", "1001", 2), "MaleficStar"),
+                record(7)
+            )
+            .await
+            .unwrap(),
+        PickWrite::Cleared
+    );
+    assert_eq!(picks(&store, scope, &["t-1"]).await, [own]);
+    // Deleting a character drops its per-boss picks too.
+    assert!(
+        store
+            .apply_pick(
+                for_boss(set(scope, "t-1", "1001", "c-2", 0), "Limbo"),
+                record(8)
+            )
+            .await
+            .unwrap()
+            .applied()
+    );
+    assert!(
+        store
+            .apply_character(
+                CharacterChange::Delete {
+                    id: "c-2".into(),
+                    version: 1
+                },
+                record(9)
+            )
+            .await
+            .unwrap()
+            .applied()
+    );
+    assert_eq!(
+        picks(&store, scope, &["t-1"]).await,
+        [pick(scope, "t-1", "1001", "c-1", 5, 1)]
+    );
+    for bad in ["", &"b".repeat(65)] {
+        refused(
+            store
+                .apply_pick(
+                    for_boss(set(scope, "t-1", "1001", "c-1", 0), bad),
+                    record(10),
+                )
+                .await,
+        );
+    }
+}
+
+/// "Same for every boss" deletes every per-boss pick it names in one write
+/// with one History row (key `.*`, the cleared picks on its `from` side);
+/// a boss at another version refuses the whole write; a boss it does not
+/// name keeps its pick; with nothing to clear it records nothing.
+async fn same_for_every_boss_clears_the_named_bosses_at_once<
+    S: CharacterStore + ReplayStore + SettingsStore,
+>(
+    store: S,
+    scope: PickScope,
+) {
+    seeded(&store).await;
+    for (boss, character) in [("MaleficStar", "c-2"), ("Limbo", "c-2"), ("Kalos", "c-1")] {
+        assert!(
+            store
+                .apply_pick(
+                    for_boss(set(scope, "t-1", "1001", character, 0), boss),
+                    record(4)
+                )
+                .await
+                .unwrap()
+                .applied()
+        );
+    }
+    let before = history(&store, scope).await.len();
+    // Limbo was read at another version: nothing goes.
+    assert_eq!(
+        store
+            .apply_pick(
+                same(scope, "t-1", "1001", &[("MaleficStar", 1), ("Limbo", 2)]),
+                record(5)
+            )
+            .await
+            .unwrap(),
+        PickWrite::Stale(None)
+    );
+    assert_eq!(picks(&store, scope, &["t-1"]).await.len(), 3);
+    let replay = StoredReplay::new(
+        ReplayScope::Config,
+        "admin:token".into(),
+        "same".into(),
+        std::iter::repeat_n('d', 64).collect(),
+        200,
+        r#"{"member_id":"1001"}"#.into(),
+        at(5),
+    );
+    assert_eq!(
+        store
+            .apply_pick_replayed(
+                same(scope, "t-1", "1001", &[("MaleficStar", 1), ("Limbo", 1)]),
+                record(5),
+                replay.clone()
+            )
+            .await
+            .unwrap(),
+        KeyedWrite::Applied(PickWrite::Cleared)
+    );
+    assert_eq!(
+        picks(&store, scope, &["t-1"]).await,
+        [boss_pick(scope, "Kalos", "c-1", 4, 1)],
+        "a boss it did not name keeps its pick"
+    );
+    let rows = history(&store, scope).await;
+    assert_eq!(rows.len(), before + 1, "one row for the whole write");
+    let key = format!("{}t-1.1001.*", prefix(scope));
+    let row = rows[0]
+        .values
+        .get(&key)
+        .expect("the same-for-every-boss row");
+    assert_eq!(rows[0].values.len(), 1);
+    assert_eq!(row.to, "");
+    let cleared: serde_json::Value = serde_json::from_str(&row.from).unwrap();
+    let bosses: Vec<&str> = cleared
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|side| side["boss"].as_str().unwrap())
+        .collect();
+    assert_eq!(bosses, ["Limbo", "MaleficStar"]);
+    assert_eq!(cleared[0]["ign"], "Wisteria");
+    // The retry replays; nothing left to clear is a no-op with no row.
+    assert!(matches!(
+        store
+            .apply_pick_replayed(
+                same(scope, "t-1", "1001", &[("MaleficStar", 1), ("Limbo", 1)]),
+                record(6),
+                replay
+            )
+            .await
+            .unwrap(),
+        KeyedWrite::Replayed(_)
+    ));
+    assert_eq!(
+        store
+            .apply_pick(
+                same(scope, "t-1", "1001", &[("MaleficStar", 0), ("Limbo", 0)]),
+                record(7)
+            )
+            .await
+            .unwrap(),
+        PickWrite::Cleared
+    );
+    assert_eq!(history(&store, scope).await.len(), before + 1);
 }
 
 /// A run and a timing may share an id: their slots, versions and History
