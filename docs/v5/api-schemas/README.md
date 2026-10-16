@@ -65,7 +65,7 @@ Pointers are `<file>#/$defs/<Name>`.
 | `POST /api/public/me/estimates` | body `public.json#/$defs/MemberEstimateRequest`; `202` `character_data.json#/$defs/EstimateStarted` (one of the caller's characters (else the generic 404) in the admins' FIFO queue; a lookup of it already queued or running answers that job; one counted start per 30 min per member, else 429 `public.json#/$defs/MemberEstimateLimit` with `next_at`; a failed lookup or an answer from a stored result younger than `estimate_days` does not count; 429 `estimate_queue_full`; 422 `region`/`unsupported_ign`; no fresh sign-in) |
 | `GET /api/public/me/estimates?character_id=<id>` | `character_data.json#/$defs/EstimateStatus` (that character's newest job; `running` only when it is a lookup of the caller's own characters) |
 | `GET /api/public/me/estimates/{job}` | `character_data.json#/$defs/EstimateJob` (only a lookup of the caller's own characters, else the generic 404) |
-| `GET /api/public/runs/{id}/characters` | `public.json#/$defs/RunPartyCharacters` (module `roster`; a run the caller is on, else 404 `not_found` as for a run that does not exist; each party member's IGN, class and roster level (the caller's own NEXON level when linked), their stored scouter readings per boss of any age, each `stale` once at least `fresh_days` (the saved `estimate_days`) old, and the run's newest finished party lookup's totals, `stale` the same way; never another member's NEXON data or link state) |
+| `GET /api/public/runs/{id}/characters` | `public.json#/$defs/RunPartyCharacters` (module `roster`; a run the caller is on, else 404 `not_found` as for a run that does not exist; each party member's IGN, class and roster level (the caller's own NEXON level when linked), one line per boss when they bring different characters to different bosses, their stored scouter readings per boss of any age, each `stale` once at least `fresh_days` (the saved `estimate_days`) old, and the run's Party total from the saved estimates (`party_total`, as the admin's run read); never another member's NEXON data or link state) |
 | `GET /api/admin/session` | `identity.json#/$defs/Session` |
 | `GET /api/admin/me` | `identity.json#/$defs/Me` |
 | `GET /api/admin/me/sessions` | `identity.json#/$defs/AccountSessions` |
@@ -341,3 +341,8 @@ Pointers are `<file>#/$defs/<Name>`.
   the scouter tried assuming 100% critical rate and couldn't finish), message
   `The estimate couldn't be completed for this character. Try again later.`;
   `critical_rate` now means the scouter didn't try the assumption.
+- Portal Party total (2026-10-16): `public.json`
+  `RunPartyCharacters.totals` (`PartyTotals`, `PartyTotal`: the newest
+  lookup job's totals) is removed; the portal reads `party_total`
+  (`character_data.json` `RunPartyTotal`, the saved estimates' figures)
+  instead.

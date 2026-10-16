@@ -1,13 +1,15 @@
 /**
  * Who each party member brings to a run (module `roster`; boards
- * B_RosterRunPick, B_PhoneRosterRunPick) or a weekly timing (modules `roster`
- * and `character_data`; B_FixedReady*): `GET /api/admin/{runs,fixed}/{id}/characters`
- * and `PUT …/characters/{member}`. Picks save directly, never through
- * run-sheet staging or the timing's form, and a warning never blocks a save.
- * UI only: characters never reach a model path.
+ * B_RosterRunPick, B_PhoneRosterRunPick, per boss B_RunBossPicks) or a weekly
+ * timing (modules `roster` and `character_data`; B_FixedReady*, B_FixedBoss*):
+ * `GET /api/admin/{runs,fixed}/{id}/characters`, `PUT …/characters/{member}`
+ * (the first boss and every boss without its own pick), `PUT …/bosses/{key}`
+ * (a later boss) and `POST …/same` (same for every boss). Picks save directly,
+ * never through run-sheet staging or the timing's form, and a warning never
+ * blocks a save. UI only: characters never reach a model path.
  */
 import type { CharacterChoice, CharacterClash, RunCharacterSlot, Week } from '@kanade/api-types';
-import { ApiRequestError, createClient } from '@kanade/client';
+import { ApiRequestError, createClient, type Client } from '@kanade/client';
 import { dayLabel, type Outcome } from '@kanade/ui';
 import { errorText, isUnbuilt, live, send } from '../resource.svelte';
 
@@ -58,11 +60,28 @@ export class CharacterSlots<T extends { slots: RunCharacterSlot[] }> {
   }
 
   /** Picks (or with `null` clears) at the slot version shown; a 409 `stale` re-reads. */
-  async pick(member: string, characterId: string | null): Promise<Outcome<RunCharacterSlot>> {
+  pick(member: string, characterId: string | null): Promise<Outcome<RunCharacterSlot>> {
     const version = this.slot(member)?.version ?? 0;
-    const result = await send((c) =>
-      c.put<RunCharacterSlot>(`${this.#path}/${encodeURIComponent(member)}`, { character_id: characterId, version }),
-    );
+    return this.#write(member, (c, at) => c.put<RunCharacterSlot>(at, { character_id: characterId, version }));
+  }
+
+  /**
+   * A later boss's own pick (or with `null` its clear: back to the first boss's
+   * character, or the timing's pick for it), at that boss's version shown.
+   */
+  pickBoss(member: string, key: string, characterId: string | null): Promise<Outcome<RunCharacterSlot>> {
+    const version = this.slot(member)?.bosses.find((b) => b.key === key)?.version ?? 0;
+    return this.#write(member, (c, at) => c.put<RunCharacterSlot>(`${at}/bosses/${encodeURIComponent(key)}`, { character_id: characterId, version }));
+  }
+
+  /** "Same for every boss": clears the member's per-boss picks in one write, at the versions shown. */
+  same(member: string): Promise<Outcome<RunCharacterSlot>> {
+    const versions = Object.fromEntries((this.slot(member)?.bosses.slice(1) ?? []).map((b) => [b.key, b.version]));
+    return this.#write(member, (c, at) => c.post<RunCharacterSlot>(`${at}/same`, { versions }));
+  }
+
+  async #write(member: string, request: (c: Client, at: string) => Promise<RunCharacterSlot>): Promise<Outcome<RunCharacterSlot>> {
+    const result = await send((c) => request(c, `${this.#path}/${encodeURIComponent(member)}`));
     if (result.ok) {
       ++this.#seq;
       if (this.data) this.data = { ...this.data, slots: this.data.slots.map((s) => (s.member_id === member ? result.value : s)) };

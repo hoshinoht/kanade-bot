@@ -11,11 +11,11 @@ _In development_
 
 ### New features
 - A linked character's roster class and level now take NEXON's values on every refresh, recorded in History as NEXON, and stay on the roster after an unlink or once the NEXON data expires, so other members see the current level.
-- Added "Who carries", a bar per boss showing each member's share of the party's estimate, to the run sheet's Clear-time estimate panel and the member portal's run Party · characters, where the run's total (minutes, %, technically possible) now shows too.
+- Added "Who carries", a bar per boss showing each member's share of the party's estimate, to the run sheet's Clear-time estimate panel and the member portal's run Party · characters.
 - Redesigned day-of and countdown reminder cards now carry a "Who carries" image showing each boss's estimate split between the party members by IGN (or "no estimate yet"), from the stored estimates at the time the card is posted. The image is left off only while a party member with no estimate yet is still being looked up, so they never show as "no estimate". The admin Reminders card preview shows the same image, drawn from the estimates stored at the time you open it.
 - Estimates are now kept for up to 30 days, across restarts, and refreshed automatically for party members of runs in the next 7 days, so reminder images and run sheets usually show one without anyone pressing Look up.
 - Added "Refresh estimates every n days" to Config › Character data (7 unless changed); an older estimate still shows, marked "older than n days", on the run sheet, the roster, the member portal and the reminder image.
-- Admins can now pick a character per boss for each party member on multi-boss weekly timings and runs, and readiness, estimates, the "Who carries" image and the member portal's Party · characters follow each boss's own character.
+- Admins can now pick a character per boss for each party member on multi-boss weekly timings (Per boss in the Fixed editor's Characters tab) and runs (each boss's cell on the run sheet), with "Same for every boss" to undo it, and readiness, estimates, the "Who carries" image and the member portal's Party · characters follow each boss's own character.
 
 ### Changes
 - Estimates are now labelled “Estimate” on the portals and in Discord.
@@ -23,6 +23,8 @@ _In development_
 - The admin app, the member portal and Discord now say that unlinking keeps the class and level on the roster, and "Waiting for you" now only shows links waiting for the member to confirm the notice.
 - The NEXON link notice and the Privacy page now say that a linked character's class and level are copied to the roster, stay after an unlink and are seen by guild members; members who linked a character themselves are asked to confirm the new notice before it refreshes again, while characters an admin linked stay linked.
 - The Privacy page now says how long estimates are kept, how they are refreshed and when they are deleted.
+- The run sheet's Party tab is now a member × boss grid: each boss is drawn once, a Party total row on top shows each boss's % and minutes, technically possible, when it was looked up and any assumed critical rate, each cell shows that member's character, level verdict and estimate for that boss, and the Clear-time estimate panel keeps only the lookup and Who carries.
+- The member portal's Party · characters now opens with the same Party total as the run sheet and the reminder image, and neither portal nor run sheet shows a level or Combat Power that isn't known.
 
 ### Improvements
 - Corrected boss guide details for eight bosses (gauge rules, forced merges, entry levels and MapleSEA mechanic names) after a source check.

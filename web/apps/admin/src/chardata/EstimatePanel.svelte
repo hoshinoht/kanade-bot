@@ -1,23 +1,21 @@
 <!--
   The run sheet's Estimate panel (boards B_CharEstimateRun, B_EstRunStates,
-  phone twins): one scouter lookup over the characters the party brings
-  (at most 6), as a job that may first wait its turn ("Queued · 2 ahead").
-  Each member's row fills in as their lookup finishes; one that fails says why
-  in its row and never stops the others. Per boss of the run: the combined
-  minutes and % over the members found, "technically possible", "not
-  complete"; once done, Who carries (`ShareChart`, boards in
-  docs/research/2026-10-15-estimate-share-chart) between the totals and the
-  table, whose rows carry each member's numbered colour. Members without a
-  character are listed as missing, never 0%.
-  Labelled as the scouter's and as planning only, and "Assumes 100% critical
-  rate (actual N%)" for a member the scouter assumed it for. No scouter URL:
-  no panel.
+  phone twins; since the Party grid, B_RunBossEstimate and
+  B_PhoneRunBossEstimate): one scouter lookup over the characters the party
+  brings (every character brought to some boss, at most 6 per boss), as a job
+  that may first wait its turn ("Queued · 2 ahead"). One member failing never
+  stops the others: the issues line says who. Once done, Who carries
+  (`ShareChart`): a bar per boss, each that boss's own party, numbered and
+  coloured by member, with its key and, when a member brings another
+  character to a later boss, a line saying who brings whom. The per-boss
+  totals and each member's % live in the Party grid (its Party total row and
+  cells). Labelled as the scouter's and as planning only. No scouter URL: no
+  panel.
 -->
 <script lang="ts">
-  import type { Boss, EstimateCharacter, RunCharacters } from '@kanade/api-types';
+  import type { Boss, RunCharacters } from '@kanade/api-types';
   import {
     activeJob,
-    assumedCrit,
     dayTime,
     DIFFICULTY_WORDS,
     ESTIMATE_LABEL,
@@ -26,16 +24,12 @@
     EstimateLookup,
     EstimateProgress,
     Icon,
-    minutes,
     olderThan,
-    percent,
     ShareChart,
-    StatusChip,
-    whoColour,
     type ShareMember,
   } from '@kanade/ui';
   import '@kanade/ui/styles/screens/character-data.scss';
-  import { joinNames, MISSING_REASONS } from './format';
+  import { joinNames } from './format';
   import { adminEstimateApi, chardataRoutes, estimateStep } from './routes.svelte';
 
   let {
@@ -47,9 +41,9 @@
     sheet,
   }: {
     runId: string;
-    /** The run's bosses, in order (the totals' columns). */
+    /** The run's bosses, in order (Who carries' bars). */
     bosses: Boss[];
-    /** Who brings which character (the run sheet's picks), for the counts before a lookup. */
+    /** Who brings which character to each boss (the run sheet's picks), for the counts before a lookup. */
     slots: RunCharacters | null;
     /** A party member as the sheet names them. */
     name: (memberId: string) => string;
@@ -75,28 +69,48 @@
   const error = $derived(job?.state === 'failed' ? job.error : null);
   const totalError = $derived(done ? (job?.error ?? null) : null);
   const failed = $derived(job?.characters.filter((c) => c.outcome === 'failed') ?? []);
-  const memberOf = (c: EstimateCharacter) => result?.members.find((m) => m.character_id === c.character_id) ?? null;
-  const assumedNames = $derived(result?.members.filter((m) => m.critical_rate_assumed).map((m) => m.ign) ?? []);
-  // Who carries, once done: party order (the table's rows), each looked-up character numbered by its row.
+
+  // Each boss's party: the job's parties, else (one party) everyone looked up.
+  const partyOf = (token: string): string[] => job?.parties.find((p) => p.bosses.includes(token))?.character_ids ?? job?.characters.map((c) => c.character_id) ?? [];
+
+  // Who carries, once done: one member each, in party order and numbered by it, with that boss's character's share per bar.
   const shareMembers = $derived.by((): ShareMember[] => {
     if (!job || !done || !result) return [];
-    const found: ShareMember[] = job.characters.map((c, i) => {
-      const member = memberOf(c);
-      return {
-        id: c.member_id,
-        name: name(c.member_id),
-        ign: c.ign,
-        n: i + 1,
-        effective: Object.fromEntries(member?.bosses.map((b) => [b.boss, b.effective_percentage]) ?? []),
-        assumed: member?.critical_rate_assumed ?? false,
-      };
+    const order = [...new Set([...job.characters.map((c) => c.member_id), ...job.missing.map((m) => m.member_id)])];
+    let n = 0;
+    return order.map((member) => {
+      const mine = job.characters.filter((c) => c.member_id === member);
+      const effective: Record<string, number | null> = {};
+      const assumed: Record<string, boolean> = {};
+      const igns: Record<string, string> = {};
+      for (const boss of bosses) {
+        const character = mine.find((c) => partyOf(boss.token).includes(c.character_id));
+        const found = character ? result.members.find((m) => m.character_id === character.character_id) : undefined;
+        if (!character) continue;
+        igns[boss.token] = character.ign;
+        effective[boss.token] = found?.bosses.find((b) => b.boss === boss.token)?.effective_percentage ?? null;
+        assumed[boss.token] = found?.critical_rate_assumed ?? false;
+      }
+      return { id: member, name: name(member), igns, n: mine.length ? ++n : null, effective, assumed };
     });
-    return [...found, ...job.missing.map((gap) => ({ id: gap.member_id, name: name(gap.member_id), ign: null, n: null, effective: {}, assumed: false }))];
   });
   const shareBosses = $derived(bosses.map((boss) => ({ token: boss.token, title: `${boss.name} ${DIFFICULTY_WORDS[boss.difficulty]}` })));
+  // "Per boss: Asahi brings AsahiMech and Mika brings MikaNL to HMaleficStar; each bar is that boss's own party."
+  const by = $derived.by(() => {
+    if (!job || job.parties.length < 2) return null;
+    const first = job.parties[0]!;
+    const lines = job.parties.slice(1).flatMap((party) => {
+      const swaps = party.character_ids
+        .filter((id) => !first.character_ids.includes(id))
+        .map((id) => job.characters.find((c) => c.character_id === id))
+        .flatMap((c) => (c ? [`${name(c.member_id)} brings ${c.ign}`] : []));
+      return swaps.length ? [`${joinNames(swaps)} to ${joinNames(party.bosses)}`] : [];
+    });
+    return lines.length ? `Per boss: ${lines.join('; ')}; each bar is that boss’s own party.` : null;
+  });
 
-  // Before a lookup: who brings a character, and who will be listed as missing.
-  const bringing = $derived(slots?.slots.filter((s) => s.brings) ?? []);
+  // Before a lookup: the characters brought to any boss, and who will be listed as missing.
+  const bringing = $derived([...new Set(slots?.slots.flatMap((s) => (s.bosses.length ? s.bosses.map((b) => b.brings) : [s.brings])).filter((id): id is string => id !== null) ?? [])]);
   const without = $derived(slots?.slots.filter((s) => !s.brings).map((s) => name(s.member_id)) ?? []);
   const nothing = $derived(slots !== null && bringing.length === 0);
 
@@ -125,8 +139,8 @@
     const missing = job.missing.map((m) => name(m.member_id));
     if (missing.length) lines.push(`${joinNames(missing)} ${missing.length === 1 ? 'has' : 'have'} no character (missing, never 0%).`);
     if (failed.length) lines.push(`${joinNames(failed.map((c) => c.ign))} couldn’t be looked up: the totals leave ${failed.length === 1 ? 'them' : 'them all'} out.`);
-    if (assumedNames.length && result.combined?.length)
-      lines.push(`The totals count ${joinNames(assumedNames)} at an assumed 100% critical rate.`);
+    // Why, in the strip's words (the members table that said it per row is gone).
+    for (const c of failed) if (c.error) lines.push(`${c.ign}: ${estimateErrorText(c.error, c.ign).lead}`);
     for (const total of result.combined ?? []) {
       const boss = bosses.find((b) => b.token === total.boss);
       const title = boss ? `${boss.name} ${DIFFICULTY_WORDS[boss.difficulty]}` : total.boss;
@@ -173,7 +187,9 @@
     </div>
     <span class="chardata__sub" data-fid="estimate-disclaimer"
       ><b>{job?.note ?? ESTIMATE_NOTE}.</b> Members see their own and their run party’s estimates. {#if done && job?.fetched_at}Looked up
-        <span class="mono">{dayTime(job.fetched_at, timeZone)}</span>{job.stale ? olderThan(job.fresh_days) : ''}.{/if}</span
+        <span class="mono">{dayTime(job.fetched_at, timeZone)}</span>{job.stale ? olderThan(job.fresh_days) : ''}{job.parties.length > 1
+          ? ` · ${job.characters.length} characters, a party per boss`
+          : ''}.{/if}</span
     >
 
     {#if lookup.refused}
@@ -188,104 +204,19 @@
       )}
     {:else if totalError}
       {@const words = estimateErrorText(totalError, null)}
-      {@render problem('No party total.', `The members below were found, but the scouter’s total didn’t come back: ${words.lead} ${words.text}`)}
+      {@render problem('No party total.', `The members were found, but the scouter’s total didn’t come back: ${words.lead} ${words.text}`)}
     {/if}
 
-    {#if job && (result || failed.length || active) && !lookup.refused}
-      {#if done && result?.combined?.length}
-        <div class="estimate__combined" class:estimate__combined--one={sheet || result.combined.length === 1} data-fid="estimate-combined">
-          {#each result.combined as total (total.boss)}
-            {@const boss = bosses.find((b) => b.token === total.boss)}
-            <div class="chardata__col">
-              <span class="estimate__boss"
-                ><b>{boss?.name ?? total.boss}</b>{#if boss}<span class="pill pill--{boss.difficulty}">{DIFFICULTY_WORDS[boss.difficulty].toUpperCase()}</span>{/if}</span
-              >
-              <span class="chardata__value"
-                >{#if total.estimated_minutes !== null}<span class="mono">{minutes(total.estimated_minutes)}</span><span class="chardata__sub"
-                    >· <span class="mono">{percent(total.combined_percentage)}</span></span
-                  >{:else}—<span class="chardata__sub">no total</span>{/if}</span
-              >
-              <span class="estimate__chips">
-                {#if total.technically_possible === true}<StatusChip tone="ok"><Icon name="check" />technically possible</StatusChip>
-                {:else if total.technically_possible === false}<StatusChip tone="warn"><Icon name="alert-triangle" />not technically possible</StatusChip>{/if}
-                {#if !total.complete}<StatusChip tone="warn"><Icon name="alert-triangle" />not complete</StatusChip>{/if}
-              </span>
-            </div>
-          {/each}
-        </div>
+    {#if job && done && result && !lookup.refused}
+      {#if shareMembers.some((m) => m.n !== null)}
+        <ShareChart bosses={shareBosses} members={shareMembers} {by} fids={{ keys: 'estimate-share-keys', by: 'estimate-share-by' }} data-fid="estimate-share" />
       {/if}
-      {#if shareMembers.length}
-        <ShareChart bosses={shareBosses} members={shareMembers} fids={{ missing: 'estimate-share-missing' }} data-fid="estimate-share" />
-      {/if}
-      <table class="estimate__table" data-fid="estimate-members">
-        <caption class="vh">Effective % per member</caption>
-        <thead>
-          <tr>
-            <th scope="col">Member · effective %</th>
-            {#each bosses as boss (boss.token)}<th scope="col" class="estimate__n"><abbr title="{boss.name} {DIFFICULTY_WORDS[boss.difficulty]}">{boss.token}</abbr></th>{/each}
-          </tr>
-        </thead>
-        <tbody>
-          {#each job.characters as c, i (c.character_id)}
-            {@const member = memberOf(c)}
-            {#if member}
-              {@const assumed = assumedCrit(member)}
-              <tr>
-                <th scope="row" class="estimate__who"
-                  >{#if shareMembers.length}<span
-                      class="share__sw share--who-{whoColour(i + 1)}"
-                      class:share__sw--assumed={member.critical_rate_assumed}
-                      aria-hidden="true">{i + 1}</span
-                    >{/if}<b>{name(c.member_id)}</b> <span class="chardata__sub">{member.ign}</span>{#if assumed}<span
-                      class="estimate__who-note estimate__assumed"
-                      data-fid="estimate-assumed"
-                      ><Icon name="alert-triangle" />{assumed}</span
-                    >{/if}</th
-                >
-                {#each bosses as boss (boss.token)}
-                  <td class="estimate__n">{percent(member.bosses.find((b) => b.boss === boss.token)?.effective_percentage ?? null)}</td>
-                {/each}
-              </tr>
-            {:else if c.outcome === 'failed' && c.error}
-              {@const words = estimateErrorText(c.error, c.ign)}
-              <tr class="estimate__failed">
-                <th scope="row" class="estimate__who"
-                  >{#if shareMembers.length}<span class="share__sw share__sw--none" aria-hidden="true"></span>{/if}<b>{name(c.member_id)}</b> <span class="chardata__sub"
-                    >{c.ign}</span
-                  ><span class="estimate__who-note" title={words.text}
-                    >failed · {words.lead}<span class="vh"> {words.text}</span></span
-                  ></th
-                >
-                {#each bosses as boss (boss.token)}<td class="estimate__n">—</td>{/each}
-              </tr>
-            {:else}
-              <tr class="estimate__pending">
-                <th scope="row" class="estimate__who"
-                  ><b>{name(c.member_id)}</b> <span class="chardata__sub">{c.ign}</span><span class="estimate__who-note"
-                    >{job.progress.current === c.character_id ? 'looking up…' : queued ? 'queued' : 'waiting'}</span
-                  ></th
-                >
-                {#each bosses as boss (boss.token)}<td class="estimate__n">…</td>{/each}
-              </tr>
-            {/if}
-          {/each}
-          {#each job.missing as gap (gap.member_id)}
-            <tr class="estimate__missing" data-fid="estimate-missing">
-              <th scope="row" class="estimate__who"
-                >{#if shareMembers.length}<span class="share__sw share__sw--none" aria-hidden="true"></span>{/if}<b>{name(gap.member_id)}</b>
-                <span>missing · {MISSING_REASONS[gap.reason]}</span></th
-              >
-              {#each bosses as boss (boss.token)}<td class="estimate__n">—</td>{/each}
-            </tr>
-          {/each}
-        </tbody>
-      </table>
       {#if issues.length}<p class="chardata__foot" data-fid="estimate-issues"><span><b>Issues:</b> {issues.join(' ')}</span></p>{/if}
     {:else if nothing}
       <span class="chardata__msg" id="{uid}-why">No one in this party has a character to look up yet.</span>
-    {:else if !lookup.refused && !error}
+    {:else if !lookup.refused && !error && !active}
       <span class="chardata__msg"
-        >Looks up the {bringing.length || ''} character{bringing.length === 1 ? '' : 's'} this run brings (at most 6) and adds their effective % per boss.
+        >Looks up the {bringing.length || ''} character{bringing.length === 1 ? '' : 's'} this run brings (at most 6 per boss) and adds their effective % per boss.
         Takes up to 2 minutes, after any lookup ahead of it.</span
       >
       {#if without.length}<span class="chardata__sub">{joinNames(without)} {without.length === 1 ? 'has' : 'have'} no character yet and will be listed as missing.</span>{/if}

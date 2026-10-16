@@ -245,15 +245,16 @@ test('fixed ready: runs made from the timing read its pick live, tagged "from ti
   await page.locator('[data-run="r-carling"] .plan-card__open').click();
   await page.getByRole('complementary', { name: 'HCarling + HMaleficStar' }).getByRole('button', { name: 'Open in a larger view' }).click();
   const sheet = page.getByRole('dialog', { name: 'HCarling + HMaleficStar' });
-  const mika = sheet.locator('.slot').filter({ has: page.locator('.slot__name', { hasText: /^Mika$/ }) });
+  const member = (name: string) => sheet.locator('.bossgrid__row').filter({ has: page.locator('.slot__name', { hasText: new RegExp(`^${name}$`) }) });
+  const mika = member('Mika');
   await expect(mika.getByRole('button', { name: "Mika's character on HCarling + HMaleficStar: Mikadere, from timing. Change" })).toBeVisible();
-  await expect(mika.locator('.slot__basis')).toHaveText('from timing');
+  await expect(mika.locator('.bossgrid__basis')).toHaveText('from timing');
   // Asahi's own run pick still wins over the default.
-  const asahi = sheet.locator('.slot').filter({ has: page.locator('.slot__name', { hasText: /^Asahi$/ }) });
+  const asahi = member('Asahi');
   await expect(asahi.getByRole('button', { name: "Asahi's character on HCarling + HMaleficStar: AsahiDK. Change" })).toBeVisible();
-  await expect(asahi.locator('.slot__basis')).toHaveCount(0);
-  const tsubame = sheet.locator('.slot').filter({ has: page.locator('.slot__name', { hasText: /^Tsubame$/ }) });
-  await expect(tsubame.locator('.slot__basis')).toHaveText('main');
+  await expect(asahi.locator('.bossgrid__basis')).toHaveText('picked on this run');
+  // A main needs no words in the grid.
+  await expect(member('Tsubame').locator('.bossgrid__basis')).toHaveCount(0);
 });
 
 test('fixed ready: the phone picks from a bottom sheet with 44 px controls', async ({ page }) => {

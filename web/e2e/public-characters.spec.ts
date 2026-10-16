@@ -377,22 +377,25 @@ async function lookedUpRun(page: Page, run: string) {
   await expect.poll(async () => (await (await page.request.get(`${ADMIN}/api/admin/estimates/${job.id}`)).json()).state, { timeout: 30_000 }).toBe('done');
 }
 
-test('run Party · characters: the run total, then Who carries with its key, then the members', async ({ page }) => {
+test('run Party · characters: the Party total, then Who carries with its key, then the members', async ({ page }) => {
   await signInPublic(page);
   await roster(page);
-  const before = (await (await page.request.get(`${PUBLIC}/api/public/runs/r-carling/characters`)).json()) as { totals: unknown };
-  expect(before.totals).toBeNull();
-  await lookedUpRun(page, 'r-carling');
   await page.goto(`${PUBLIC}/?run=r-carling&sw=off`);
   const section = page.getByRole('region', { name: 'Party · characters' });
-  const total = section.locator('.estimate__combined');
-  await expect(total.locator('.chardata__col')).toHaveCount(2);
-  await expect(total).toContainText('Karling');
-  await expect(total).toContainText(/\d+(\.\d)? min ?· \d+\.\d%/);
-  await expect(total).toContainText('technically possible');
-  // Below the note: total, chart, then the members; no swatch on a member row.
+  const total = section.locator('.party-total');
+  // Nothing saved yet: a dashed "no estimate yet" per boss, never 0%.
+  await expect(total).toContainText('Fills in after the next lookup.');
+  await expect(total.locator('.party-total__none')).toHaveCount(2);
+  await lookedUpRun(page, 'r-carling');
+  await page.reload();
+  await expect(total.locator('.party-total__row')).toHaveCount(2);
+  await expect(total).toContainText('HCarling');
+  await expect(total).toContainText(/as of \w{3} \d{1,2} \w{3} \d{2}:\d{2}/);
+  await expect(total.locator('.party-total__num').first()).toHaveText(/^\d+\.\d%$/);
+  // Below the note: the Party total, the chart, then the members; no swatch on a member row.
   const order = await section.evaluate((el) => [...el.children].map((child) => child.className.split(' ')[0]));
-  expect(order.slice(order.indexOf('party-chars__note'))).toEqual(['party-chars__note', 'estimate__combined', 'share', 'party-chars']);
+  expect(order.slice(order.indexOf('party-chars__note'))).toEqual(['party-chars__note', 'party-total', 'share', 'party-chars']);
+  await expect(section.locator('.estimate__combined')).toHaveCount(0);
   await expect(section.locator('.party-char .share__sw')).toHaveCount(0);
   const chart = section.locator('figure.share');
   const bars = chart.getByRole('img');
@@ -406,19 +409,19 @@ test('run Party · characters: the run total, then Who carries with its key, the
   const parts = await bars.first().locator('.share__n').allTextContents();
   expect(await keys.locator('.share__sw').allTextContents()).toEqual(parts);
   await expect(keys.filter({ hasText: 'You' })).toHaveCount(1);
-  // Ren (2) brings no character: counted, never a 0% part (the portal names members as the party list does).
-  await expect(chart.locator('.share__note').last()).toHaveText('1 with no estimate: Ren (not in the total, never 0%)');
+  // Ren (2) brings no character: counted in the Party total's notes, never a 0% part.
+  await expect(total.locator('.share__note').last()).toHaveText('1 with no estimate: Ren (not in the total, never 0%)');
+  await expect(chart.locator('.share__note')).toHaveCount(0);
 });
 
-test('run Party · characters: a lookup at least estimate_days old still shows, marked "older than n days"', async ({ page }) => {
+test('run Party · characters: a total at least estimate_days old still shows, marked "older than n days"', async ({ page }) => {
   await signInPublic(page);
   await roster(page);
   // The party looked up 8 days before the pinned clock: past the default 7.
   await ageEstimate({ run: 'r-carling' }, 8);
   await page.goto(`${PUBLIC}/?run=r-carling&sw=off`);
   const section = page.getByRole('region', { name: 'Party · characters' });
-  await expect(section.locator('.estimate__combined')).toContainText('Karling');
-  await expect(section.locator('.estimate__combined + .chardata__sub')).toHaveText('Run total · older than 7 days');
+  await expect(section.locator('.party-total')).toContainText(/as of \w{3} 21 Sep \d{2}:\d{2}\s*· older than 7 days/);
   const marked = section.locator('.party-char').filter({ has: page.locator('.party-char__none', { hasText: /^Estimate · older than 7 days$/ }) });
   await expect(marked.first()).toBeVisible();
   // Every member with a reading is marked; the readings and the chart still show.
@@ -428,8 +431,28 @@ test('run Party · characters: a lookup at least estimate_days old still shows, 
   // Fresh again after a new lookup: no marker.
   await ageEstimate({ run: 'r-carling' }, 1);
   await page.reload();
-  await expect(section.locator('.estimate__combined')).toContainText('Karling');
+  await expect(section.locator('.party-total .party-total__num').first()).toBeVisible();
   await expect(section).not.toContainText('older than');
+});
+
+test('run Party · characters: per-boss lines only where a member’s characters differ; no Party total with estimates off', async ({ page }) => {
+  await signInPublic(page);
+  // Next week's HCarling + HMaleficStar: the seed has Asahi bring AsahiMech to HMaleficStar.
+  await page.goto(`${PUBLIC}/?week=next&run=n-carling&sw=off`);
+  const section = page.getByRole('region', { name: 'Party · characters' });
+  const you = section.locator('.party-char--me');
+  await expect(you.locator('.party-char__line')).toHaveCount(2);
+  await expect(you.locator('.party-char__line').first()).toContainText(/HCarling\s*AsahiDK\s*Dark Knight/);
+  await expect(you.locator('.party-char__line').last()).toContainText(/HMaleficStar\s*AsahiMech\s*Mechanic/);
+  // Everyone else brings one character: one line each.
+  for (const other of await section.locator('.party-char:not(.party-char--me)').all()) expect(await other.locator('.party-char__line').count()).toBeLessThanOrEqual(1);
+  // An unknown level says nothing ("Lv. — roster" is gone).
+  await expect(section).not.toContainText('Lv. —');
+
+  await setEstimates('off');
+  await page.reload();
+  await expect(section).toBeVisible();
+  await expect(section.locator('.party-total, figure.share')).toHaveCount(0);
 });
 
 test('my scouter lookup: a result at least estimate_days old reads "older than n days"', async ({ page }) => {

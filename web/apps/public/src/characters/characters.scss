@@ -318,3 +318,10 @@ dialog.mydata-dialog:not(.own-sheet) {
 .member-slot__chars .party-char__line {
   gap: 0 5px;
 }
+
+// A member bringing another character to a later boss: the boss names its line.
+.party-char__boss {
+  color: var(--dim-text);
+  font-family: var(--mono);
+  font-weight: 600;
+}

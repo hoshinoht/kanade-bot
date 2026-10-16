@@ -419,10 +419,10 @@ async fn every_route_is_the_generic_404_while_its_module_is_off() {
         fields(&mine, &["character_data", "connected", "estimates"]),
         json!([true, true, false])
     );
-    // The party read stays as it was: no readings, totals or freshness.
+    // The party read stays as it was: no readings, Party total or freshness.
     let party = chars.portal.read(&alice, PARTY, PARTY_VIEW).await;
     assert_eq!(
-        fields(&party, &["estimates", "fresh_days", "totals"]),
+        fields(&party, &["estimates", "fresh_days", "party_total"]),
         json!([false, null, null])
     );
     for slot in party["slots"].as_array().unwrap() {
@@ -1092,7 +1092,11 @@ async fn the_party_sees_roster_levels_and_estimates_never_another_members_nexon_
         json!([false, null, null])
     );
     assert_eq!(party["nexon_data"], true);
-    assert_eq!(party["totals"], Value::Null, "no lookup of the run yet");
+    assert_eq!(
+        party["party_total"]["as_of"],
+        Value::Null,
+        "no lookup of the run yet"
+    );
     // No combat power anywhere, nor link state.
     let text = party.to_string();
     for word in ["27182818", "combat", "linked", "consent", "pending"] {
@@ -1122,19 +1126,6 @@ async fn the_party_sees_roster_levels_and_estimates_never_another_members_nexon_
             json!([9.0, 9.0])
         );
     }
-    // The run lookup's party total: the third member brings no character.
-    assert_eq!(
-        party["totals"]["bosses"],
-        json!([{
-            "boss": "Kalos",
-            "difficulty": "x",
-            "combined_percentage": 18.0,
-            "estimated_minutes": 3000.0 / 18.0,
-            "technically_possible": false,
-            "complete": false,
-        }])
-    );
-    assert!(party["totals"]["fetched_at"].is_string());
     // The Party total: the saved readings, as the admin's run read and the
     // reminder image have them; no minutes while a member brings nothing.
     assert_eq!(
@@ -1164,7 +1155,7 @@ async fn the_party_sees_roster_levels_and_estimates_never_another_members_nexon_
             .flat_map(|slot| slot["scouter"].as_array().unwrap())
             .map(|estimate| estimate["stale"].clone())
             .collect();
-        flags.push(party["totals"]["stale"].clone());
+        flags.push(party["party_total"]["stale"].clone());
         flags.dedup();
         flags
     };
@@ -1178,7 +1169,10 @@ async fn the_party_sees_roster_levels_and_estimates_never_another_members_nexon_
     assert_eq!(stale(&party), [json!(true)], "7 days old");
     assert_eq!(party["party_total"]["stale"], true);
     assert_eq!(party["fresh_days"], 7);
-    assert_eq!(party["totals"]["bosses"][0]["combined_percentage"], 18.0);
+    assert_eq!(
+        party["party_total"]["bosses"][0]["combined_percentage"],
+        18.0
+    );
     assert_eq!(chars.scouter.as_ref().unwrap().targets().len(), seen);
 
     // Not on the run: the same 404 as a run that does not exist.

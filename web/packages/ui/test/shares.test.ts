@@ -1,13 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { shareBar, shareLabel, shareNotes, whoColour, wholeShares, type ShareMember } from '../src/characters/shares';
+import { shareBar, shareLabel, whoColour, wholeShares, type ShareMember } from '../src/characters/shares';
 
 const member = (n: number | null, name: string, effective: Record<string, number | null>, assumed = false): ShareMember => ({
   id: name.toLowerCase(),
   name,
-  ign: n === null ? null : `${name}IGN`,
+  igns: {},
   n,
   effective,
-  assumed,
+  assumed: Object.fromEntries(Object.keys(effective).map((token) => [token, assumed])),
 });
 
 // The approved Kalos board's numbers (the user's screenshot, members renamed).
@@ -90,13 +90,28 @@ describe('shareBar', () => {
   });
 });
 
-describe('shareNotes', () => {
-  it('names the assumed members drawn and the members with no part anywhere', () => {
-    const party = [member(1, 'Asahi', { A: 10 }), member(2, 'Ren', { B: 5 }, true), member(3, 'Mika', {}, true), member(null, 'Hotaru', {})];
-    const bars = ['A', 'B'].map((token) => shareBar(token, party));
-    const notes = shareNotes(bars, party);
-    expect(notes.assumed.map((m) => m.name)).toEqual(['Ren']);
-    expect(notes.none.map((m) => m.name)).toEqual(['Mika', 'Hotaru']);
+describe('per boss', () => {
+  it('keeps a member’s number on every bar and names the character each boss brings', () => {
+    const asahi: ShareMember = {
+      id: 'asahi',
+      name: 'Asahi',
+      igns: { HCarling: 'AsahiDK', HMaleficStar: 'AsahiMech' },
+      n: 1,
+      effective: { HCarling: 30, HMaleficStar: 10 },
+      assumed: { HMaleficStar: true },
+    };
+    const party = [asahi, member(2, 'Ren', { HCarling: 30, HMaleficStar: 30 })];
+    const carling = shareBar('HCarling', party);
+    const star = shareBar('HMaleficStar', party);
+    expect(carling.parts.map((p) => [p.n, p.ign, p.assumed])).toEqual([
+      [1, 'AsahiDK', false],
+      [2, null, false],
+    ]);
+    expect(star.parts.map((p) => [p.n, p.ign, p.assumed])).toEqual([
+      [1, 'AsahiMech', true],
+      [2, null, false],
+    ]);
+    expect(shareLabel('HMaleficStar', star)).toBe('HMaleficStar shares: Asahi (AsahiMech) 25% (assumes 100% critical rate), Ren 75%');
   });
 });
 

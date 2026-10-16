@@ -3,8 +3,7 @@
 // (manual and NEXON values side by side, Link… / Unlink… / Refresh with
 // inline confirmations), the scouter's estimate row and the run sheet's
 // Estimate panel, and Config › Character data's health cards. Imported by
-// the components that draw them: the shared strip, the admin's, and the
-// portal's run total (`PartyShare.svelte`, the panel's totals columns).
+// the components that draw them: the shared strip and the admin's.
 @use "../core/breakpoints" as *;
 @use "../core/mixins" as *;
 
@@ -28,8 +27,7 @@
   min-height: 32px;
 }
 
-.chardata__head .status-chip .icon,
-.estimate__chips .status-chip .icon {
+.chardata__head .status-chip .icon {
   width: 13px;
   height: 13px;
   margin-right: 4px;
@@ -280,35 +278,6 @@
   text-align: right;
 }
 
-.estimate__table tr.estimate__missing td {
-  color: var(--risk-text);
-}
-
-.estimate__table .estimate__who {
-  white-space: normal;
-}
-
-// A party member still waiting for their lookup, or one that failed (the
-// others fill in regardless); its line under the name says which.
-.estimate__table tr.estimate__pending :is(th, td) {
-  color: var(--dim-text);
-}
-
-.estimate__table tr.estimate__failed td {
-  color: var(--risk-text);
-}
-
-.estimate__who-note {
-  display: block;
-  color: var(--dim-text);
-  font-size: 11px;
-  line-height: 1.3;
-}
-
-.estimate__failed .estimate__who-note {
-  color: var(--risk-text);
-}
-
 // "Assumes 100% critical rate (actual 89%)": the result is a what-if, so it
 // is said beside the numbers in the label's warning tone.
 .estimate__assumed {
@@ -328,43 +297,17 @@
   flex: none;
 }
 
-.estimate__who-note.estimate__assumed {
-  display: flex;
-  font-size: 11px;
-}
-
 .estimate__boss {
   display: flex;
   align-items: center;
   gap: 6px;
 }
 
-.estimate__combined {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 6px;
-}
-
-.estimate__combined--one {
-  grid-template-columns: minmax(0, 1fr);
-}
-
-.estimate__chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-}
-
-// The run sheet: with the panel the aside widens and the party takes three
-// columns (B_CharEstimateRun); the phone's Party list ends with it.
+// The run sheet: with the panel the aside widens; the phone's Party list ends with it.
 .runsheet__aside:has(> .estimate-panel) {
   width: 440px;
   min-height: 0;
   overflow-y: auto;
-}
-
-.runsheet__panel--party:has(> .runsheet__aside > .estimate-panel) .runsheet__party {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
 .runsheet__estimate {
@@ -630,31 +573,12 @@
   min-width: 0;
 }
 
-
-.runsheet--narrow .ready {
-  padding-left: 36px;
-}
-
 .runsheet--narrow .ready__note,
-.runsheet--narrow .ready__estimate,
-.runsheet--narrow .ready__hint {
+.runsheet--narrow .ready__estimate {
   flex-shrink: 0;
   margin: 0;
   padding: 0 2px 4px;
   list-style: none;
-}
-
-// B_CharReady / B_CharEstimateRun: the party keeps its own height beside the aside.
-.runsheet__readiness .runsheet__party {
-  flex: none;
-}
-
-.runsheet__panel--party:has(> .runsheet__aside > .estimate-panel) > .runsheet__party {
-  align-self: flex-start;
-}
-
-.ready__rules {
-  align-items: flex-start;
 }
 
 .ready__note .chardata__attrib {

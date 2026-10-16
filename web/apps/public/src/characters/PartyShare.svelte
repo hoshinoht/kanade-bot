@@ -1,64 +1,64 @@
 <!--
-  Under Party · characters' note (boards M_RunShare, M_RunShareMulti,
-  M_PhoneRunShare in docs/research/2026-10-15-estimate-share-chart): the run's
-  party total per boss from its newest finished lookup (minutes, %,
-  technically possible; the admin Estimate panel's columns; "Run total · older
-  than n days" once it is at least the saved `estimate_days` old), then Who
-  carries over the party's cached readings with its key, since the portal has
-  no members table. Parts are in party order; only a reading's effective %
-  counts, never the party card's figure.
+  Under Party · characters' note (boards M_PartyTotal*, M_PhonePartyTotal* in
+  docs/research/2026-10-16-party-polish): the run's Party total (`PartyTotal`,
+  the saved estimates' figures, the same as the admin's and the reminder
+  image's; as of when, "older than n days" once stale, who is counted at an
+  assumed critical rate and who has no estimate), then Who carries over the
+  party's saved readings with its key, since the portal has no members
+  table. Parts are in party order, each boss its own party; only a reading's
+  effective % counts, never the party card's figure. Estimates off: nothing.
 -->
 <script lang="ts">
   import type { MemberRun, RunPartyCharacters } from '@kanade/api-types';
-  import { DIFFICULTY_WORDS, Icon, minutes, olderThan, percent, ShareChart, StatusChip, type ShareMember } from '@kanade/ui';
-  import '@kanade/ui/styles/screens/character-data.scss';
+  import { DIFFICULTY_WORDS, PartyTotal, ShareChart, totalNotes, type ShareMember, type TotalReading } from '@kanade/ui';
 
-  let { party, run }: { party: RunPartyCharacters; run: MemberRun } = $props();
+  let { party, run, timeZone }: { party: RunPartyCharacters; run: MemberRun; timeZone: string } = $props();
 
-  const totals = $derived(
-    (party.totals?.bosses ?? []).flatMap((total) => {
-      const boss = run.bosses.find((b) => b.key === total.boss && b.difficulty === total.difficulty);
-      return boss ? [{ boss, total }] : [];
-    }),
+  const bosses = $derived(run.bosses.map((boss) => ({ token: boss.token, title: `${boss.name} ${DIFFICULTY_WORDS[boss.difficulty]}` })));
+  const tokenOf = (boss: string, difficulty: string) => `${difficulty.toUpperCase()}${boss}`;
+  // The character each boss brings: its own line when they differ, else the slot's.
+  const ignOf = (slot: RunPartyCharacters['slots'][number], token: string) =>
+    slot.bosses.find((b) => tokenOf(b.boss, b.difficulty) === token)?.character?.ign ?? slot.character?.ign ?? null;
+
+  const readings = $derived(
+    party.slots.flatMap((slot): TotalReading[] =>
+      run.bosses.map((boss) => ({
+        name: slot.you ? 'You' : slot.member.name,
+        token: boss.token,
+        ign: ignOf(slot, boss.token),
+        reading: slot.scouter?.find((r) => tokenOf(r.boss, r.difficulty) === boss.token) ?? null,
+      })),
+    ),
   );
   // Party order; a member whose character has a reading is numbered, in turn.
   const members = $derived.by((): ShareMember[] => {
     let n = 0;
     return party.slots.map((slot) => {
-      const readings = slot.character ? (slot.scouter ?? []) : [];
+      const readings = slot.scouter ?? [];
       return {
         id: slot.member.id,
         name: slot.member.name,
-        ign: slot.character?.ign ?? null,
+        igns: Object.fromEntries(run.bosses.flatMap((boss) => (ignOf(slot, boss.token) ? [[boss.token, ignOf(slot, boss.token)!]] : []))),
         n: readings.length ? ++n : null,
-        effective: Object.fromEntries(readings.map((r) => [`${r.difficulty.toUpperCase()}${r.boss}`, r.effective_percentage])),
-        assumed: readings.some((r) => r.critical_rate_assumed),
+        effective: Object.fromEntries(readings.map((r) => [tokenOf(r.boss, r.difficulty), r.effective_percentage])),
+        assumed: Object.fromEntries(readings.map((r) => [tokenOf(r.boss, r.difficulty), r.critical_rate_assumed])),
       };
     });
   });
   const you = $derived(party.slots.find((slot) => slot.you)?.member.id ?? null);
-  const bosses = $derived(run.bosses.map((boss) => ({ token: boss.token, title: `${boss.name} ${DIFFICULTY_WORDS[boss.difficulty]}` })));
 </script>
-{#if totals.length}
-  <div class="estimate__combined" class:estimate__combined--one={totals.length === 1} data-fid="estimate-combined">
-    {#each totals as { boss, total } (boss.token)}
-      <div class="chardata__col">
-        <span class="estimate__boss"><b>{boss.name}</b><span class="pill pill--{boss.difficulty}">{DIFFICULTY_WORDS[boss.difficulty].toUpperCase()}</span></span>
-        <span class="chardata__value"
-          >{#if total.estimated_minutes !== null}<span class="mono">{minutes(total.estimated_minutes)}</span><span class="chardata__sub"
-              >· <span class="mono">{percent(total.combined_percentage)}</span></span
-            >{:else}—<span class="chardata__sub">no total</span>{/if}</span
-        >
-        <span class="estimate__chips">
-          {#if total.technically_possible === true}<StatusChip tone="ok"><Icon name="check" />technically possible</StatusChip>
-          {:else if total.technically_possible === false}<StatusChip tone="warn"><Icon name="alert-triangle" />not technically possible</StatusChip>{/if}
-          {#if !total.complete}<StatusChip tone="warn"><Icon name="alert-triangle" />not complete</StatusChip>{/if}
-        </span>
-      </div>
-    {/each}
-  </div>
-  {#if party.totals?.stale && party.fresh_days !== null}<p class="chardata__sub">Run total{olderThan(party.fresh_days)}</p>{/if}
+
+{#if party.party_total}
+  <PartyTotal
+    total={party.party_total}
+    {bosses}
+    {timeZone}
+    notes={totalNotes(party.party_total, readings)}
+    audience="member"
+    fids={{ row: 'party-total-row', asOf: 'party-total-asof', notes: 'party-total-notes' }}
+    data-fid="party-total"
+  />
 {/if}
 {#if party.estimates && members.some((m) => m.n !== null)}
-  <ShareChart {bosses} {members} keys {you} fids={{ missing: 'estimate-share-missing', keys: 'estimate-share-keys' }} data-fid="estimate-share" />
+  <ShareChart {bosses} {members} {you} fids={{ keys: 'estimate-share-keys' }} data-fid="estimate-share" />
 {/if}

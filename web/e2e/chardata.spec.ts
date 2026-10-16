@@ -221,49 +221,50 @@ async function carling(page: Page): Promise<Locator> {
   await page.locator(`[data-run="${RUN}"] .plan-card__open`).click();
   if (!phone) await page.getByRole('complementary', { name: CARLING }).getByRole('button', { name: 'Open in a larger view' }).click();
   const sheet = page.getByRole('dialog', { name: CARLING });
-  await expect(sheet.getByRole('list', { name: 'Party' })).toBeVisible();
+  await expect(sheet.getByRole('table', { name: /^Party/ }).or(sheet.getByRole('list', { name: 'Party' }))).toBeVisible();
   return sheet;
 }
 
-test('chardata estimate panel: party lookup with totals, missing members and the labels', async ({ page }) => {
+test('chardata estimate panel: party lookup, the Party total row, missing members and the labels', async ({ page }) => {
   const sheet = await carling(page);
   const panel = sheet.locator('.estimate-panel');
   await expect(panel.locator('.estimate__label')).toHaveText('Clear-time estimate');
   await expect(panel.locator('.estimate__head + .chardata__sub')).toContainText("For planning only, not eligibility. Members see their own and their run party’s estimates.");
-  await expect(panel).toContainText('this run brings (at most 6)');
+  await expect(panel).toContainText('this run brings (at most 6 per boss)');
   // Mika brings MikaBish from the timing; only Ren (2), with no characters, is missing.
   await expect(panel).toContainText('Ren (2) has no character yet and will be listed as missing.');
+  // Before any lookup the Party total says what fills it in.
+  const total = sheet.locator('.bossgrid__total');
+  await expect(total).toContainText('Look up party fills it in.');
+  await expect(total.locator('.party-total__none')).toHaveCount(2);
   await panel.getByRole('button', { name: 'Look up party' }).click();
   await expect(panel.locator('.estimate__progress')).toContainText(/Looking up \d of \d · /);
-  // The members table shows from the start and fills in; the total comes last.
-  const members = panel.getByRole('table', { name: 'Effective % per member' });
-  await expect(members).toBeVisible();
-  await expect(panel.locator('.estimate__combined')).toContainText('Karling', { timeout: 20_000 });
-  await expect(panel.locator('.estimate__combined')).toContainText('not complete');
-  await expect(panel.locator('.estimate__missing')).toHaveText([/Ren \(2\) missing · no characters on the roster/]);
+  const chart = panel.locator('figure.share');
+  await expect(chart).toBeVisible({ timeout: 20_000 });
+  // The grid's Party total row carries the totals; the panel keeps no tiles and no members table.
+  await expect(total).toContainText(/as of \w{3} \d{1,2} \w{3} \d{2}:\d{2}/);
+  await expect(total.locator('.party-total__num')).toHaveCount(2);
+  await expect(total).toContainText('not complete');
+  await expect(sheet.locator('.bossgrid-wrap > .share__notes')).toContainText('1 with no estimate: Ren (2) (not in the total, never 0%)');
+  await expect(panel.locator('table, .estimate__combined')).toHaveCount(0);
   await expect(panel.locator('p.chardata__foot')).toContainText('Ren (2) has no character (missing, never 0%).');
   await expect(panel.locator('.estimate__head + .chardata__sub')).toContainText(/Looked up \d+ \w{3} \d{2}:\d{2}\.$/);
   await expect(panel.locator('.estimate__head + .chardata__sub')).not.toContainText(/in memory|older than/);
-  // Who carries: between the totals and the table, one 100% bar per boss in party order, each part
-  // numbered as its table row; the member with no character is counted, never a 0% part.
-  const chart = panel.locator('figure.share');
-  await expect(chart).toBeVisible();
-  expect(await chart.evaluate((el) => el.previousElementSibling?.classList.contains('estimate__combined') && el.nextElementSibling?.tagName === 'TABLE')).toBe(true);
+  // Who carries: one 100% bar per boss in party order, numbered by member, with its key.
   const bars = chart.getByRole('img');
   await expect(bars).toHaveCount(2);
   await expect(bars.first()).toHaveAttribute('aria-label', /^HCarling shares: .+%; 1 with no estimate$/);
-  const rows = await members.locator('tbody tr:not(.estimate__missing)').count();
+  const keys = await chart.locator('.share__keys li').count();
+  expect(keys).toBeGreaterThan(1);
   for (const bar of await bars.all()) {
     const parts = bar.locator('.share__seg');
-    await expect(parts).toHaveCount(rows);
-    expect(await parts.locator('.share__n').allTextContents()).toEqual(Array.from({ length: rows }, (_, i) => String(i + 1)));
+    await expect(parts).toHaveCount(keys);
+    expect(await parts.locator('.share__n').allTextContents()).toEqual(Array.from({ length: keys }, (_, i) => String(i + 1)));
     const shares = (await parts.evaluateAll((els) => els.map((el) => el.getAttribute('title') ?? ''))).map((t) => Number(/· (\d+)% of/.exec(t)![1]));
     expect(shares.reduce((a, b) => a + b, 0)).toBe(100);
   }
-  await expect(chart.locator('.share__note')).toHaveText(['1 with no estimate: Ren (2) (not in the total, never 0%)']);
-  // The table's rows carry the same numbers; the missing row a hollow swatch.
-  await expect(members.locator('tbody tr:not(.estimate__missing) .share__sw')).toHaveText(Array.from({ length: rows }, (_, i) => String(i + 1)));
-  await expect(members.locator('.estimate__missing .share__sw--none')).toHaveCount(1);
+  // Each cell carries that boss's %.
+  await expect(slotOf(sheet, 'Yuzu').locator('.bossgrid__pct')).toHaveCount(2);
 });
 
 test('chardata estimates: a result at least estimate_days old still shows, marked "older than n days"', async ({ page }) => {
@@ -271,12 +272,12 @@ test('chardata estimates: a result at least estimate_days old still shows, marke
   await ageEstimate({ run: RUN }, 8);
   const sheet = await carling(page);
   const panel = sheet.locator('.estimate-panel');
-  await expect(panel.locator('.estimate__combined')).toContainText('Karling');
+  await expect(sheet.locator('.bossgrid__total')).toContainText('older than 7 days');
   await expect(panel.locator('.estimate__head + .chardata__sub')).toContainText(/Looked up 21 Sep \d{2}:\d{2} · older than 7 days\.$/);
-  // Readiness names the same reading's time, marked the same way.
-  const yuzu = slotOf(sheet, 'Yuzu').getByRole('group', { name: 'Readiness of YuzuPala' });
-  await expect(yuzu.locator('.ready__scouter-at')).toHaveText(/^Estimate · 21 Sep \d{2}:\d{2} · older than 7 days$/);
-  await expect(yuzu.locator('.ready__scouter').first()).toHaveText(/^Estimate \d+% · ~\d+ min/);
+  // Each cell's % says the same in its title.
+  const yuzu = slotOf(sheet, 'Yuzu').locator('.bossgrid__pct').first();
+  await expect(yuzu).toHaveText(/^\d+%/);
+  await expect(yuzu).toHaveAttribute('title', /older than 7 days$/);
 
   // The roster strip: 3 days old is fresh at 7, stale once Config lowers it to 3.
   await ageEstimate({ character: 'ch-s3' }, 3);
@@ -294,36 +295,29 @@ test('chardata estimate panel: queued behind another lookup, a member that fails
   await estimates(page, 'hold');
   expect((await page.request.post(`${ADMIN}/api/admin/estimates`, { headers, data: { character_ids: ['ch-s3'] } })).status()).toBe(202);
   let panel = (await carling(page)).locator('.estimate-panel');
-  // Never refused: the party waits its turn, its members listed as queued.
+  // Never refused: the party waits its turn.
   await panel.getByRole('button', { name: 'Look up party' }).click();
   await expect(panel.locator('.estimate__progress')).toContainText('Queued · 1 ahead');
   await expect(panel.getByRole('button', { name: 'Queued…' })).toHaveAttribute('aria-disabled', 'true');
-  await expect(panel.locator('.estimate__pending').first()).toContainText('queued');
   await expect(panel.locator('.estimate__error')).toHaveCount(0);
 
   await resetWeek();
   await estimates(page, 'failed');
-  panel = (await carling(page)).locator('.estimate-panel');
+  let sheet = await carling(page);
+  panel = sheet.locator('.estimate-panel');
   await panel.getByRole('button', { name: 'Look up party' }).click();
-  // The last member fails in their row; the others are found and totalled.
-  const failed = panel.locator('.estimate__failed');
-  await expect(failed).toHaveCount(1, { timeout: 20_000 });
-  await expect(failed).toContainText('failed · Lookup failed.');
-  await expect(panel.locator('.estimate__combined')).toContainText('not complete', { timeout: 20_000 });
-  await expect(panel.locator('.estimate__pending')).toHaveCount(0);
-  await expect(panel.locator('p.chardata__foot')).toContainText('couldn’t be looked up: the totals leave them out.');
+  // The last member fails; the others are found and totalled.
+  await expect(panel.locator('p.chardata__foot')).toContainText('couldn’t be looked up: the totals leave them out.', { timeout: 20_000 });
+  await expect(panel.locator('p.chardata__foot')).toContainText(': Lookup failed.');
+  await expect(sheet.locator('.bossgrid__total')).toContainText('not complete');
   await expect(panel.locator('.estimate__error')).toHaveCount(0);
   await expect(panel.getByRole('button', { name: 'Try again' })).toBeVisible();
-  // The failed member keeps their number in the table but has no part, and is counted.
-  const failedNumber = (await panel.locator('tbody tr').evaluateAll((rows) => rows.findIndex((row) => row.classList.contains('estimate__failed')))) + 1;
-  await expect(failed.locator('.share__sw--none')).toHaveCount(1);
-  const parts = panel.locator('figure.share .share__seg .share__n');
-  expect(await parts.allTextContents()).not.toContain(String(failedNumber));
-  await expect(panel.locator('figure.share .share__note').last()).toHaveText(/^2 with no estimate: .+ and Ren \(2\) \(not in the total, never 0%\)$/);
+  // The failed member has no part and is counted under the grid, with Ren (2).
+  await expect(sheet.locator('.bossgrid-wrap > .share__notes')).toContainText(/2 with no estimate: .+ and Ren \(2\) \(not in the total, never 0%\)/);
 
   await resetWeek();
   await estimates(page, 'off');
-  const sheet = await carling(page);
+  sheet = await carling(page);
   await expect(sheet.locator('.estimate-panel')).toHaveCount(0);
 });
 
@@ -331,33 +325,26 @@ test('chardata estimate panel: a member whose 100% crit assumption failed says s
   await estimates(page, 'assumption_failed');
   const panel = (await carling(page)).locator('.estimate-panel');
   await panel.getByRole('button', { name: 'Look up party' }).click();
-  const failed = panel.locator('.estimate__failed');
-  await expect(failed).toHaveCount(1, { timeout: 20_000 });
-  await expect(failed).toContainText('failed · The estimate couldn’t be completed for this character.');
-  await expect(failed.locator('.estimate__who-note')).toHaveAttribute('title', /^The scouter tried assuming 100% critical rate for \w+ and couldn’t finish\. Try again later\.$/);
-  await expect(failed).not.toContainText('Set up critical rate');
+  const foot = panel.locator('p.chardata__foot');
+  await expect(foot).toContainText('couldn’t be looked up', { timeout: 20_000 });
+  await expect(foot).toContainText('The estimate couldn’t be completed for this character.');
+  await expect(foot).not.toContainText('Set up critical rate');
   await expect(panel.getByRole('button', { name: 'Try again' })).toBeVisible();
 });
 
-test('chardata estimate panel: members fill in as each finishes, and readiness follows each', async ({ page }) => {
+test('chardata estimate panel: cells fill in as each member finishes, the chart once done', async ({ page }) => {
   // Each lookup takes longer than the page's poll, so the members come in one at a time.
   await estimates(page, 'paced');
   const sheet = await carling(page);
   const panel = sheet.locator('.estimate-panel');
   await panel.getByRole('button', { name: 'Look up party' }).click();
-  const found = panel.locator('tbody tr:not(.estimate__pending):not(.estimate__missing)');
-  // One member in, the rest still waiting, the lookup still running.
-  await expect(found).toHaveCount(1, { timeout: 10_000 });
-  await expect(panel.locator('.estimate__pending').first()).toBeVisible();
+  // Readiness is read again for the first member found, before the lookup ends.
+  await expect(sheet.locator('.bossgrid__pct').first()).toBeVisible({ timeout: 10_000 });
   await expect(panel.locator('.estimate__progress')).toBeVisible();
   // No chart and no colours until the lookup is done.
   await expect(panel.locator('figure.share')).toHaveCount(0);
-  await expect(panel.locator('.share__sw')).toHaveCount(0);
-  // Readiness is read again for that member, before the lookup ends.
-  await expect(sheet.locator('.ready__scouter').first()).toBeVisible();
-  await expect(panel.locator('.estimate__pending').first()).toBeVisible();
-  await expect(panel.locator('.estimate__combined')).toContainText('Karling', { timeout: 20_000 });
-  await expect(panel.locator('.estimate__pending')).toHaveCount(0);
+  await expect(panel.locator('figure.share')).toBeVisible({ timeout: 20_000 });
+  await expect(sheet.locator('.bossgrid__total .party-total__num').first()).toBeVisible();
 });
 
 test('chardata estimate: an assumed critical rate is labelled in the panel, the strip and readiness', async ({ page }) => {
@@ -365,19 +352,19 @@ test('chardata estimate: an assumed critical rate is labelled in the panel, the 
   const sheet = await carling(page);
   const panel = sheet.locator('.estimate-panel');
   await panel.getByRole('button', { name: 'Look up party' }).click();
-  await expect(panel.locator('.estimate__combined')).toContainText('Karling', { timeout: 20_000 });
-  await expect(panel.locator('.estimate__assumed')).toHaveText(['Assumes 100% critical rate (actual 89%)']);
-  await expect(panel.locator('p.chardata__foot')).toContainText('at an assumed 100% critical rate.');
+  await expect(panel.locator('figure.share')).toBeVisible({ timeout: 20_000 });
+  // The Party total stars the bosses it counts her for and names her with her actual rate.
+  await expect(sheet.locator('.bossgrid__total .party-total__num').first()).toHaveText(/^\d+\.\d%\*$/);
+  await expect(sheet.locator('.bossgrid-wrap > .share__notes')).toContainText('* MikaBish at an assumed 100% critical rate (actual 89%)');
   await expect(panel.locator('.estimate__head + .chardata__sub')).toContainText('For planning only, not eligibility.');
-  // Who carries hatches and stars MikaBish's parts and names her in its note.
+  // Who carries hatches and stars MikaBish's parts; her key swatch is hatched too.
   const hatched = panel.locator('figure.share .share__seg--assumed');
   await expect(hatched).toHaveCount(2);
   await expect(hatched.locator('.share__pct').first()).toHaveText(/^\d+%\*$/);
-  await expect(panel.locator('figure.share .share__note').first()).toHaveText('* MikaBish at an assumed 100% critical rate');
-  await expect(panel.locator('.estimate__who .share__sw--assumed')).toHaveCount(1);
-  const chip = sheet.locator('.ready__scouter', { hasText: 'crit assumed' }).first();
-  await expect(chip).toHaveText(/^Estimate \d+%( · ~\d+ min)? · crit assumed/);
-  await expect(chip).toHaveAttribute('title', /Assumes 100% critical rate \(actual 89%\)$/);
+  await expect(panel.locator('.share__keys .share__sw--assumed')).toHaveCount(1);
+  const pct = slotOf(sheet, 'Mika').locator('.bossgrid__pct').first();
+  await expect(pct).toHaveText(/^\d+%\*/);
+  await expect(pct).toHaveAttribute('title', /Assumes 100% critical rate \(actual 89%\)$/);
 
   const row = stripOf(await openEdit(page, 'MikaBish')).locator('.estimate');
   await row.getByRole('button', { name: 'Look up' }).click();
@@ -507,50 +494,48 @@ test('chardata config: Refresh estimates every n days saves with the bar, refuse
 });
 
 const slotOf = (sheet: Locator, name: string) =>
-  sheet.locator('.slot').filter({ has: sheet.page().locator('.slot__name', { hasText: new RegExp(`^${name.replace(/[()]/g, '\\$&')}$`) }) });
+  sheet.locator('.slot, .bossgrid__row').filter({ has: sheet.page().locator('.slot__name', { hasText: new RegExp(`^${name.replace(/[()]/g, '\\$&')}$`) }) });
+/** A member's level verdicts, one per boss of the run (the grid's cells). */
+const verdicts = (sheet: Locator, name: string) => slotOf(sheet, name).locator('.bossgrid__facts .status-chip');
 
-test('chardata readiness: level and CP per slot, a level verdict per boss, attributed and never blocking', async ({ page }) => {
+test('chardata readiness: a level verdict per boss cell, CP once per character only when known, never blocking', async ({ page }) => {
   const sheet = await carling(page);
   await expect(sheet.locator('.ready__note')).toContainText('It never blocks a pick or a save.');
   await expect(sheet.locator('.ready__note')).toContainText(ATTRIBUTION);
-  const yuzu = slotOf(sheet, 'Yuzu').getByRole('group', { name: 'Readiness of YuzuPala' });
-  await expect(yuzu).toContainText('Lv. 276 · CP 52.1M');
-  await expect(yuzu).toContainText('NEXON · as of 29 Sep');
   // One level verdict per boss of the run (HCarling + HMaleficStar); CP is shown, never judged.
-  await expect(yuzu.getByRole('listitem')).toHaveText([/^HCarling\s*Lv ok$/, /^HMaleficStar\s*under Lv\. \d+$/]);
-  await expect(sheet.locator('.ready__bosses').filter({ hasText: /floor|CP/i })).toHaveCount(0);
-  const tsubame = slotOf(sheet, 'Tsubame').getByRole('group', { name: 'Readiness of TsubaKain' });
-  await expect(tsubame.getByRole('listitem')).toHaveText([/^HCarling\s*Lv ok$/, /^HMaleficStar\s*Lv ok$/]);
-  const hotaru = slotOf(sheet, 'Hotaru').getByRole('group', { name: 'Readiness of Hotaru7' });
-  await expect(hotaru).toContainText('Lv. 275 · CP —');
-  await expect(hotaru).toContainText('manual · NEXON data expired');
-  await expect(hotaru.getByRole('listitem').first()).toHaveText(/^HCarling\s*Lv ok$/);
-  await expect(slotOf(sheet, 'Ren (1)').getByRole('group', { name: 'Readiness of RenShade' })).toContainText('manual · not linked');
+  await expect(verdicts(sheet, 'Yuzu')).toHaveText(['Lv ok', /^under Lv\. \d+$/]);
+  await expect(slotOf(sheet, 'Yuzu').locator('.bossgrid__src')).toHaveText(['YuzuPala · CP 52.1M · NEXON · 29 Sep']);
+  await expect(verdicts(sheet, 'Tsubame')).toHaveText(['Lv ok', 'Lv ok']);
+  // Unknown CP is left out entirely: no "CP —", no "manual · not linked".
+  await expect(verdicts(sheet, 'Hotaru').first()).toHaveText('Lv ok');
+  await expect(slotOf(sheet, 'Hotaru').locator('.bossgrid__src')).toHaveCount(0);
+  await expect(sheet.locator('.bossgrid')).not.toContainText(/CP —|Lv\. —|manual · not linked/);
   // Mika brings the timing's pick (MikaBish); no one on this run is left without a character.
-  await expect(slotOf(sheet, 'Mika').getByRole('group', { name: 'Readiness of MikaBish' })).toContainText('Lv. 283 · CP 48.2M');
+  await expect(slotOf(sheet, 'Mika').locator('.bossgrid__src')).toHaveText(['MikaBish · CP 48.2M · NEXON · 29 Sep']);
   await expect(sheet.getByRole('link', { name: /floor/i })).toHaveCount(0);
-  // Never blocking: a pick under an entry level saves as before and the lines follow it.
+  // Never blocking: a pick under an entry level saves as before and the verdicts follow it.
   await sheet.getByRole('button', { name: /^Mika's character on HCarling/ }).click();
   await sheet.getByRole('dialog', { name: `Mika's character for ${CARLING}` }).getByRole('option', { name: /Mikadere/ }).click();
-  await expect(slotOf(sheet, 'Mika').getByRole('group', { name: 'Readiness of Mikadere' }).getByRole('listitem')).toHaveText([/^HCarling\s*under Lv\. \d+$/, /^HMaleficStar\s*under Lv\. \d+$/]);
+  await expect(verdicts(sheet, 'Mika')).toHaveText([/^under Lv\. \d+$/, /^under Lv\. \d+$/]);
+  // The verdict rules are a small disclosure in the aside.
+  const rules = sheet.locator('details.bossgrid__rules');
+  await expect(rules.locator('summary')).toHaveText('How the verdict reads');
+  await rules.locator('summary').click();
+  await expect(rules).toContainText('for the character that boss brings');
 });
 
-test('chardata readiness: after the run lookup ends, the estimate per boss replaces the slot CP', async ({ page }) => {
+test('chardata readiness: after the run lookup ends, each cell shows that boss’s estimate', async ({ page }) => {
   const sheet = await carling(page);
-  const yuzu = slotOf(sheet, 'Yuzu').getByRole('group', { name: 'Readiness of YuzuPala' });
-  await expect(yuzu).toContainText('Lv. 276 · CP 52.1M');
-  await expect(yuzu.locator('.ready__scouter')).toHaveCount(0);
+  const yuzu = slotOf(sheet, 'Yuzu');
+  await expect(yuzu.locator('.bossgrid__pct')).toHaveCount(0);
   await expect(sheet.locator('.ready__estimate')).toHaveCount(0);
   await sheet.locator('.estimate-panel').getByRole('button', { name: 'Look up party' }).click();
   // No page reload: readiness is read again when the lookup ends.
-  const chip = yuzu.locator('.ready__scouter').first();
-  await expect(chip).toHaveText(/^Estimate \d+% · ~\d+ min/, { timeout: 20_000 });
-  await expect(chip).toHaveAttribute('title', 'Party-able');
-  await expect(yuzu.locator('.ready__values')).toHaveText('Lv. 276');
-  await expect(yuzu).not.toContainText('CP 52.1M');
-  await expect(yuzu.locator('.ready__scouter-at')).toContainText(/^Estimate · \d+ \w{3} \d{2}:\d{2}$/);
+  const pct = yuzu.locator('.bossgrid__pct').first();
+  await expect(pct).toHaveText(/^\d+%/, { timeout: 20_000 });
+  await expect(pct).toHaveAttribute('title', /Party-able/);
   // Level chips unchanged; the label and note show once for the panel.
-  await expect(yuzu.getByRole('listitem').first().locator('.status-chip').first()).toHaveText('Lv ok');
+  await expect(verdicts(sheet, 'Yuzu').first()).toHaveText('Lv ok');
   await expect(sheet.locator('.ready__estimate')).toHaveText(/^Clear-time estimate · For planning only, not eligibility\./);
 });
 
@@ -559,7 +544,7 @@ test('chardata readiness: the phone list says it never blocks; module off asks n
   let sheet = await carling(page);
   const party = sheet.getByRole('list', { name: 'Party' });
   await expect(party.locator('.ready__note')).toContainText('Readiness · never blocks');
-  await expect(slotOf(sheet, 'Yuzu').getByRole('group', { name: 'Readiness of YuzuPala' })).toContainText('Lv. 276 · CP 52.1M');
+  await expect(slotOf(sheet, 'Yuzu').locator('.bossgrid__src')).toHaveText(['YuzuPala · CP 52.1M · NEXON · 29 Sep']);
 
   await page.setViewportSize({ width: 1280, height: 800 });
   await setModules({ character_data: false });
@@ -567,7 +552,7 @@ test('chardata readiness: the phone list says it never blocks; module off asks n
   page.on('request', (r) => /\/readiness/.test(r.url()) && asked.push(r.url()));
   sheet = await carling(page);
   await expect(slotOf(sheet, 'Yuzu')).toBeVisible();
-  await expect(sheet.locator('.ready, .ready__note, .ready__rules')).toHaveCount(0);
+  await expect(sheet.locator('.bossgrid__facts .status-chip, .ready__note, .bossgrid__rules, .bossgrid__total')).toHaveCount(0);
   expect(asked.length).toBeLessThanOrEqual(1);
 });
 
@@ -652,7 +637,7 @@ test('chardata capture', async ({ page }) => {
     let panel = sheet.locator('.estimate-panel');
     await shot(`${phone ? 'B_PhoneEstRunStates' : 'B_EstRunStates'}-idle`, panel);
     await panel.getByRole('button', { name: 'Look up party' }).click();
-    await expect(panel.getByRole('table', { name: 'Effective % per member' })).toBeVisible({ timeout: 20_000 });
+    await expect(panel.locator('figure.share')).toBeVisible({ timeout: 20_000 });
     await shot(`${P}CharEstimateRun`, panel);
     for (const [scenario, name] of [
       ['hold', 'running'],
@@ -665,8 +650,8 @@ test('chardata capture', async ({ page }) => {
       sheet = await carling(page);
       panel = sheet.locator('.estimate-panel');
       await panel.getByRole('button', { name: 'Look up party' }).click();
-      await expect(panel.locator('.estimate__progress, .estimate__table').first()).toBeVisible({ timeout: 20_000 });
-      if (scenario !== 'hold') await expect(panel.locator('.estimate__failed')).toBeVisible({ timeout: 20_000 });
+      await expect(panel.locator('.estimate__progress, figure.share').first()).toBeVisible({ timeout: 20_000 });
+      if (scenario !== 'hold') await expect(panel.locator('p.chardata__foot, .estimate__error').first()).toBeVisible({ timeout: 20_000 });
       await shot(`${phone ? 'B_PhoneEstRunStates' : 'B_EstRunStates'}-${name}`, panel);
     }
     await reset();
@@ -683,8 +668,8 @@ test('chardata capture', async ({ page }) => {
     // As the board: Mika brings MikaBish.
     await page.request.put(`${ADMIN}/api/admin/runs/${RUN}/characters/${MIKA}`, { headers: await csrf(page.request), data: { character_id: 'ch-s3', version: 0 } });
     sheet = await carling(page);
-    await expect(sheet.locator('.ready').first()).toBeVisible();
-    await shot(`${P}CharReady`, phone ? sheet.locator('.ready__hint') : undefined);
+    await expect(sheet.locator('.bossgrid__facts .status-chip').first()).toBeVisible();
+    await shot(`${P}CharReady`, phone ? sheet.locator('.estimate-panel, .slot').last() : undefined);
 
     // The same readiness once a party lookup is kept: the estimate per boss replaces the CP.
     await reset();
@@ -693,8 +678,8 @@ test('chardata capture', async ({ page }) => {
     const jobId = (await started.json()).job.id as string;
     await expect.poll(async () => (await (await page.request.get(`${ADMIN}/api/admin/estimates/${jobId}`)).json()).state, { timeout: 20_000 }).toBe('done');
     sheet = await carling(page);
-    await expect(sheet.locator('.ready__scouter').first()).toBeVisible();
-    await shot(`${P}CharReady-scouter`, phone ? sheet.locator('.ready__hint') : undefined);
+    await expect(sheet.locator('.bossgrid__pct').first()).toBeVisible();
+    await shot(`${P}CharReady-scouter`, phone ? sheet.locator('.slot').last() : undefined);
 
     // Config › Character data.
     for (const [value, name] of [

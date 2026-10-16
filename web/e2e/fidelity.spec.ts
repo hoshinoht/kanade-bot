@@ -984,13 +984,10 @@ const rosterDelete = async (page: Page, role: 'complementary' | 'dialog', name: 
   await expect(confirm.getByRole('button', { name: 'Cancel' })).toBeFocused();
 };
 /**
- * The run-pick boards redraw the run sheet; these pairs compare what the roster adds to its
- * Party tab. The boards' "Later slice" tags and Mikadere's disabled level reason are not
- * built (user, 2026-10-12: any active character, no level filter): the board loses the tags
- * and the reason before it is measured, and its picker is the shared Modal on the phone. The
- * rules box keeps its tag as the header line the app's "Characters" caption stands in.
+ * B_CharEstimateRun redraws the run sheet with the roster's Party tab. Its "Later slice" tags and
+ * Mikadere's disabled level reason are not built (user, 2026-10-12: any active character, no
+ * level filter): the board loses them before it is measured.
  */
-const RUN_PICK_SCOPE = ['party-slot', 'party-char', 'party-pick', 'party-warn', 'party-rules', 'roster-picker', 'roster-picker-option'];
 const runPickBoard = (page: Page) =>
   page.evaluate(() => {
     document.querySelector('[data-fid="party-later"]')?.remove();
@@ -1077,7 +1074,8 @@ const ESTIMATE_RUN_SCOPE = [
 const estimateRun = async (page: Page) => {
   const sheet = await carlingSheet(page);
   const panel = sheet.locator('[data-fid="estimate-panel"]');
-  await expect(panel.locator('[data-fid="estimate-members"]')).toBeVisible();
+  // The panel's members table is gone (the Party grid carries each member's %): wait for Who carries.
+  await expect(panel.locator('[data-fid="estimate-share"]')).toBeVisible();
   // The phone board shows the Party list scrolled to the panel at its end.
   if (page.viewportSize()!.width < 600) await panel.evaluate((el) => el.scrollIntoView({ block: 'end' }));
 };
@@ -1095,30 +1093,6 @@ const healthEdited = async (page: Page) => {
   await expect(page.getByText('1 unsaved change')).toBeVisible();
 };
 const PHONE_CFG_SCOPE = ['cfg-title', 'cfg-savebar', 'cfg-save'];
-const READY_SCOPE = [
-  'party-slot',
-  'party-char',
-  'party-pick',
-  'party-warn',
-  'sheet-aside',
-  'party-ready',
-  'party-ready-note',
-  'party-ready-attrib',
-  'party-ready-rules',
-];
-const readyBoard = async (page: Page) => {
-  await scouterOff();
-  await renPicked(page);
-  const headers = await csrf(page.request);
-  const picked = await page.request.put(`${ADMIN}/api/admin/runs/r-carling/characters/${member(1003)}`, { headers, data: { character_id: 'ch-s3', version: 0 } });
-  expect(picked.ok(), `Mika's pick: ${await picked.text()}`).toBe(true);
-};
-const readyShownOn = async (page: Page) => {
-  const sheet = await carlingSheet(page);
-  await expect(sheet.locator('[data-fid="party-ready"]').first()).toBeVisible();
-  // The phone board shows the Party list scrolled to its end (the rules line).
-  if (page.viewportSize()!.width < 600) await sheet.locator('.ready__hint').evaluate((el) => el.scrollIntoView({ block: 'end' }));
-};
 /**
  * History's newest change (the head), as the boards open a member's change. The page opens on
  * the newest row, which on the real server is a Config save (no member revert), and the seed's
@@ -1226,6 +1200,112 @@ const SHARE_PAIRS: Pair[] = [
   ),
 ];
 
+// Per-boss picks v2 and the Party total (KANADE_MOCKUPS=docs/research/2026-10-16-per-boss-picks, then
+// 2026-10-16-party-polish): the run sheet's Party grid over r-carling with Asahi's own HMaleficStar pick
+// (AsahiMech) and Mika's timing pick for it (MikaNL) as the boards draw, after a party lookup; the Fixed
+// editor's per-boss list; the portal's Party total block. The States boards are notes over fragments.
+const GRID_SCOPE = [
+  'week-party',
+  'party-slot',
+  'party-grid-boss',
+  'party-grid-cell',
+  'party-total',
+  'party-total-row',
+  'party-total-asof',
+  'party-total-notes',
+  'party-boss-same',
+  'party-warn',
+  'party-ready-rules',
+  'party-pick-menu',
+  'sheet-aside',
+  'estimate-panel',
+  'estimate-share',
+];
+const bossPicked = async (page: Page) => {
+  const headers = await csrf(page.request);
+  for (const [path, character] of [
+    [`runs/r-carling/characters/${member(1001)}/bosses/MaleficStar`, 'ch-s6'],
+    [`fixed/f-carling/characters/${member(1003)}/bosses/MaleficStar`, 'ch-s2'],
+  ]) {
+    const done = await page.request.put(`${ADMIN}/api/admin/${path}`, { headers, data: { character_id: character, version: 0 } });
+    expect(done.ok(), `${path}: ${await done.text()}`).toBe(true);
+  }
+  await shareLookedUp('r-carling')(page);
+};
+const gridShown = (scroll?: 'estimate' | 'asahi-pick') => async (page: Page) => {
+  await carlingSheet(page);
+  // The cell's popover is a dialog named after the run too: take the sheet itself.
+  const sheet = page.locator('dialog.runsheet[open]');
+  await expect(sheet.locator('[data-fid="party-total"]')).toBeVisible();
+  await expect(sheet.locator('[data-fid="estimate-share"]')).toBeVisible();
+  if (scroll === 'asahi-pick') {
+    await sheet.getByRole('button', { name: /^Asahi's character for HMaleficStar/ }).click();
+    await expect(sheet.locator('[data-fid="party-pick-menu"]')).toBeVisible();
+  }
+  if (scroll === 'estimate')
+    await sheet.locator('[data-fid="estimate-panel"]').evaluate((el, block) => el.scrollIntoView({ block }), page.viewportSize()!.width < 600 ? ('end' as const) : ('start' as const));
+  await sheet.evaluate((el) => Promise.all(el.getAnimations({ subtree: true }).map((a) => a.finished)));
+};
+const fixedBoss = (pick: boolean) => async (page: Page) => {
+  await page.getByRole('button', { name: 'Edit Tuesday 22:00 — HCarling + HMaleficStar' }).click();
+  const phone = page.viewportSize()!.width < 600;
+  const editor = phone ? page.getByRole('dialog', { name: 'Tuesday 22:00 — HCarling + HMaleficStar' }) : page.getByRole('complementary', { name: 'Weekly timing details' });
+  await editor.getByRole('tab', { name: /^Characters/ }).click();
+  // As B_FixedBoss2: Asahi's Per boss opened, Mika's list open with her HMaleficStar pick.
+  if (!phone) await editor.getByRole('button', { name: "Pick Asahi's character per boss" }).click();
+  const list = editor.locator('[data-fid="fixed-boss-picks"]').last();
+  await expect(list).toBeVisible();
+  await list.evaluate((el) => el.scrollIntoView({ block: 'center' }));
+  if (pick) {
+    await list.getByRole('button', { name: /^Mika's character for HMaleficStar/ }).click();
+    await expect(page.locator('[data-fid="fixed-pick-menu"]').first()).toBeVisible();
+  }
+};
+const fixedBossSetup = async (page: Page) => {
+  const done = await page.request.put(`${ADMIN}/api/admin/fixed/f-carling/characters/${member(1003)}/bosses/MaleficStar`, { headers: await csrf(page.request), data: { character_id: 'ch-s2', version: 0 } });
+  expect(done.ok(), await done.text()).toBe(true);
+};
+const BOSS_PICK_PAIRS: Pair[] = [
+  { name: 'boss-grid', board: 'B_RunBossPicks', path: '/', omit: STAGE_OMIT, scope: GRID_SCOPE, setup: bossPicked, ready: gridShown() },
+  { name: 'boss-grid-dark', board: 'B_RunBossPicksDark', path: '/', theme: 'dark', omit: STAGE_OMIT, scope: GRID_SCOPE, setup: bossPicked, ready: gridShown() },
+  { name: 'boss-grid-pick', board: 'B_RunBossPick', path: '/', omit: STAGE_OMIT, scope: GRID_SCOPE, setup: bossPicked, ready: gridShown('asahi-pick') },
+  { name: 'boss-grid-estimate', board: 'B_RunBossEstimate', path: '/', omit: STAGE_OMIT, scope: GRID_SCOPE, setup: bossPicked, ready: gridShown('estimate') },
+  { name: 'phone-boss-grid', board: 'B_PhoneRunBossPicks', path: '/', omit: STAGE_OMIT, scope: GRID_SCOPE, setup: bossPicked, ready: gridShown() },
+  { name: 'phone-boss-grid-estimate', board: 'B_PhoneRunBossEstimate', path: '/', omit: STAGE_OMIT, scope: GRID_SCOPE, setup: bossPicked, ready: gridShown('estimate') },
+  { name: 'fixed-boss', board: 'B_FixedBoss2', path: '/fixed', setup: fixedBossSetup, ready: fixedBoss(false) },
+  { name: 'fixed-boss-dark', board: 'B_FixedBoss2Dark', path: '/fixed', theme: 'dark', setup: fixedBossSetup, ready: fixedBoss(false) },
+  { name: 'fixed-boss-pick', board: 'B_FixedBoss2Pick', path: '/fixed', setup: fixedBossSetup, ready: fixedBoss(true) },
+  { name: 'phone-fixed-boss', board: 'B_PhoneFixedBoss', path: '/fixed', setup: fixedBossSetup, ready: fixedBoss(false) },
+  { name: 'phone-fixed-boss-pick', board: 'B_PhoneFixedBossPick', path: '/fixed', setup: fixedBossSetup, ready: fixedBoss(true) },
+  // The Party total (2026-10-16-party-polish v2): the admin grid's row, the portal's block.
+  { name: 'party-total', board: 'B_PartyTotal', path: '/', omit: STAGE_OMIT, scope: GRID_SCOPE, setup: shareLookedUp('r-carling'), ready: gridShown() },
+  { name: 'party-total-crit', board: 'B_PartyTotalCrit', path: '/', theme: 'dark', omit: STAGE_OMIT, scope: GRID_SCOPE, setup: shareLookedUp('r-carling'), ready: gridShown() },
+  ...(
+    [
+      ['mc-party-total', 'M_PartyTotal', undefined],
+      ['mc-party-total-crit', 'M_PartyTotalCrit', 'dark'],
+      ['mc-phone-party-total', 'M_PhonePartyTotal', undefined],
+    ] as const
+  ).map(
+    ([name, board, theme]): Pair => ({
+      name,
+      board,
+      app: 'public',
+      path: '/?run=r-carling',
+      theme,
+      scope: [...SHARE_PORTAL_SCOPE, 'party-total', 'party-total-row', 'party-total-asof', 'party-total-notes'],
+      setup: async (page) => {
+        await boardRoster(page);
+        await shareLookedUp('r-carling')(page);
+      },
+      ready: async (page) => {
+        await expect(page.locator('[data-fid="party-total"]')).toBeVisible();
+        await runParty(page);
+      },
+    }),
+  ),
+];
+
 const PAIRS: Pair[] = [
   { name: 'inbox-self', board: 'B_InboxSelf', path: '/inbox?tab=self_service&item=p-fa-request', ready: visible((page) => page.getByText('Changed since the member asked')) },
   {
@@ -1318,38 +1398,8 @@ const PAIRS: Pair[] = [
   },
   { name: 'roster-delete', board: 'B_RosterDelete', path: '/members', omit: ROSTER_FRAME, ready: (page) => rosterDelete(page, 'complementary', 'Member details') },
   { name: 'phone-roster-delete', board: 'B_PhoneRosterDelete', path: '/members', omit: PHONE_ROSTER_FRAME, ready: (page) => rosterDelete(page, 'dialog', 'Mika') },
-  // The run-sheet character picker (B_RosterRunPick, B_PhoneRosterRunPick): HCarling + HMaleficStar
-  // with Mika's picker open. The sheet around the party is hero-sheet's and hero-phone's.
-  {
-    name: 'roster-run-pick',
-    board: 'B_RosterRunPick',
-    path: '/',
-    omit: STAGE_OMIT,
-    scope: RUN_PICK_SCOPE,
-    setup: withChardataOff(renPicked),
-    prepare: runPickBoard,
-    ready: async (page) => {
-      const sheet = await carlingSheet(page);
-      await sheet.getByRole('button', { name: /^Pick Mika's character/ }).click();
-      await expect(sheet.getByRole('dialog', { name: "Mika's character for HCarling + HMaleficStar" })).toBeVisible();
-    },
-  },
-  {
-    name: 'phone-roster-run-pick',
-    board: 'B_PhoneRosterRunPick',
-    path: '/',
-    omit: STAGE_OMIT,
-    scope: RUN_PICK_SCOPE,
-    setup: withChardataOff(renPicked),
-    prepare: runPickBoard,
-    ready: async (page) => {
-      const sheet = await carlingSheet(page);
-      await sheet.getByRole('button', { name: /^Pick Mika's character/ }).click();
-      const picker = page.getByRole('dialog', { name: "Mika's character" });
-      await expect(picker).toBeVisible();
-      await picker.evaluate((el) => Promise.all(el.getAnimations({ subtree: true }).map((a) => a.finished)));
-    },
-  },
+  // B_RosterRunPick / B_PhoneRosterRunPick and B_CharReady drew the Party list before the grid
+  // (superseded by B_RunBossPicks*, BOSS_PICK_PAIRS): their screen no longer exists, so no pair.
   // Character data (KANADE_MOCKUPS=docs/research/2026-10-12-chardata-mockups): the strip,
   // linked, asking to link, confirming an unlink, and with the estimate row (B_Char<board>,
   // B_PhoneChar<board>), each scrolled by the board's laptop and phone offsets.
@@ -1392,8 +1442,6 @@ const PAIRS: Pair[] = [
     prepare: runPickBoard,
     ready: estimateRun,
   }),
-  // Readiness on the Party tab (B_CharReady): Mika brings MikaBish as the board draws; no scouter (no Estimate panel).
-  ...withPhone({ name: 'chardata-ready', board: 'B_CharReady', path: '/', omit: STAGE_OMIT, scope: READY_SCOPE, setup: readyBoard, prepare: runPickBoard, ready: readyShownOn }),
   // Config › Character data: all ok, problems, no key, key refused. The phone boards draw their
   // own Config frame (no phone Config board was approved before them): those pairs compare the
   // section's contents (PHONE_CFG_SCOPE), not the shared frame.
@@ -1797,7 +1845,7 @@ const PAIRS: Pair[] = [
 test.describe('layout fidelity', () => {
   test.skip(!ENABLED, 'run with `bun run fidelity` (needs a KANADE_FIDELITY=1 build)');
 
-  for (const pair of [...PAIRS, ...DRAFT_PAIRS, ...GRAPH_PAIRS, ...PRESENCE_PAIRS, ...PUBLIC_PAIRS, ...MEMBER_CHAR_PAIRS, ...SHARE_PAIRS].filter((p) => !ONLY.length || ONLY.includes(p.name))) {
+  for (const pair of [...PAIRS, ...DRAFT_PAIRS, ...GRAPH_PAIRS, ...PRESENCE_PAIRS, ...PUBLIC_PAIRS, ...MEMBER_CHAR_PAIRS, ...SHARE_PAIRS, ...BOSS_PICK_PAIRS].filter((p) => !ONLY.length || ONLY.includes(p.name))) {
     test(pair.name, async ({ page, browser }) => {
       test.skip(!boardExists(pair.board), `no board ${pair.board}.dc.html under ${MOCKUPS}`);
       const dir = join(OUT, pair.name);

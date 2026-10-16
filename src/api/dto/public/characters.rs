@@ -207,33 +207,12 @@ pub struct PartyCharacterSlot {
 
 #[derive(Serialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
-pub struct PartyTotal {
-    pub boss: String,
-    #[cfg_attr(test, ts(type = "Difficulty"))]
-    pub difficulty: String,
-    pub combined_percentage: Option<f64>,
-    pub estimated_minutes: Option<f64>,
-    pub technically_possible: Option<bool>,
-    pub complete: bool,
-}
-
-#[derive(Serialize)]
-#[cfg_attr(test, derive(ts_rs::TS))]
-pub struct PartyTotals {
-    pub fetched_at: String,
-    pub stale: bool,
-    pub bosses: Vec<PartyTotal>,
-}
-
-#[derive(Serialize)]
-#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct RunPartyCharacters {
     pub run_id: String,
     pub slots: Vec<PartyCharacterSlot>,
     pub character_data: bool,
     pub estimates: bool,
     pub fresh_days: Option<u32>,
-    pub totals: Option<PartyTotals>,
     pub party_total: Option<crate::api::dto::estimates::RunPartyTotal>,
     pub nexon_data: bool,
     pub attribution: &'static str,

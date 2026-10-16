@@ -118,8 +118,6 @@ fn bindings() -> String {
         .add::<dto::public::PartyMember>()
         .add::<dto::public::PartyCharacter>()
         .add::<dto::public::PartyEstimate>()
-        .add::<dto::public::PartyTotals>()
-        .add::<dto::public::PartyTotal>()
         .add::<error::Body>()
         .add::<Identity>()
         .add::<admin::SessionView>()

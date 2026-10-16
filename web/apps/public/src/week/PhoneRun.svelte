@@ -115,7 +115,7 @@
     {#if party?.data}
       <div class="party-chars-list" data-fid="week-party-chars">
         <PartyNote party={party.data} />
-        <PartyShare party={party.data} {run} />
+        <PartyShare party={party.data} {run} timeZone={week.timezone} />
         {@render list(false)}
       </div>
     {:else}

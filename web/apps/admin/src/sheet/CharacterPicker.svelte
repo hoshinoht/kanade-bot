@@ -1,12 +1,15 @@
 <!--
   A party member's character for one run (module `roster`; B_RosterRunPick,
   B_PhoneRosterRunPick) or one weekly timing (B_FixedReadyPick,
-  B_PhoneFixedReadyPick): their active characters, the main crowned. On a
-  wide screen a popover by the slot's chip (a listbox: a choice saves at
-  once); in the narrow sheet or editor a bottom sheet with radios and
-  "Use <IGN>". On a run, Clear pick goes back to the default (the timing's
-  pick, the main or the only character); a timing's caller clears when the
-  default is chosen. Picks save live, never into a staged draft or a form.
+  B_PhoneFixedReadyPick), or for one later boss of either (`boss`;
+  B_RunBossPick, B_FixedBoss2Pick, B_PhoneFixedBossPick): their active
+  characters, the main crowned. On a wide screen a popover by the chip (a
+  listbox: a choice saves at once); in the narrow sheet or editor a bottom
+  sheet with radios and "Use <IGN>". On a run, Clear pick goes back to the
+  default (the timing's pick, the main or the only character; for a later
+  boss the timing's pick for it, else the first boss's character); a timing's
+  caller clears when the default is chosen. Picks save live, never into a
+  staged draft or a form.
 -->
 <script lang="ts">
   import { tick, untrack, type Snippet } from 'svelte';
@@ -30,6 +33,7 @@
     meta,
     under,
     note,
+    boss = null,
     onpick,
     onclose,
     returnFocus,
@@ -65,10 +69,12 @@
     onclose?: (refocus: boolean) => void;
     /** Where focus returns when the bottom sheet closes. */
     returnFocus?: () => HTMLElement | null;
+    /** A later boss's pick: that boss's token, the first boss's, and what it brings and has picked. */
+    boss?: { token: string; first: string; brings: string | null; picked: string | null } | null;
   } = $props();
 
   const uid = $props.id();
-  const current = $derived(slot.brings);
+  const current = $derived(boss ? boss.brings : slot.brings);
   let pop = $state<HTMLDivElement>();
   let list = $state<HTMLDivElement>();
   // The sheet's radio: what the member brings, else the main, else the first.
@@ -151,8 +157,8 @@
 {/snippet}
 
 {#snippet extras()}
-  <!-- A timing goes back to its default by choosing it; with no main and several characters there is none to choose. -->
-  {#if slot.picked && (what === 'run' || !(slot.candidates.some((c) => c.role === 'main') || slot.candidates.length === 1))}
+  <!-- A timing goes back to its default by choosing it (a later boss: the first boss's character); with no main and several characters there is none to choose. -->
+  {#if boss ? boss.picked && what === 'run' : slot.picked && (what === 'run' || !(slot.candidates.some((c) => c.role === 'main') || slot.candidates.length === 1))}
     <button type="button" class="btn charpick__clear" disabled={busy} onclick={() => onpick(null)}
       >Clear pick<span class="charpick__clearhint">&nbsp;· {what === 'run' ? 'back to the default' : 'nothing is brought'}</span></button
     >
@@ -163,8 +169,17 @@
 {/snippet}
 
 {#if variant === 'popover'}
-  <div class="charpick charpick--pop" role="dialog" tabindex="-1" aria-label="{name}'s character for {title}" data-fid={fid} bind:this={pop} onkeydown={popKey} onfocusout={leave}>
-    <p class="cap charpick__cap" id="{uid}-cap">{name}'s character for this {what}</p>
+  <div
+    class="charpick charpick--pop"
+    role="dialog"
+    tabindex="-1"
+    aria-label="{name}'s character for {boss ? `${boss.token} on ${title}` : title}"
+    data-fid={fid}
+    bind:this={pop}
+    onkeydown={popKey}
+    onfocusout={leave}
+  >
+    <p class="cap charpick__cap" id="{uid}-cap">{name}'s character for {boss ? boss.token : `this ${what}`}</p>
     <div class="charpick__options" role="listbox" aria-labelledby="{uid}-cap" tabindex="-1" bind:this={list} onkeydown={listKey} onclick={listClick}>
       {#each slot.candidates as c, index (c.id)}
         <div
@@ -185,9 +200,9 @@
     {@render extras()}
   </div>
 {:else}
-  <Modal bind:open title="{name}'s character{what === 'timing' ? ' for this timing' : ''}" {eyebrow} narrow className="charsheet" {fid} fidParts={{}} {returnFocus}>
+  <Modal bind:open title="{name}'s character{boss ? ` for ${boss.token}` : what === 'timing' ? ' for this timing' : ''}" {eyebrow} narrow className="charsheet" {fid} fidParts={{}} {returnFocus}>
     <fieldset class="charpick charpick--sheet">
-      <legend class="vh">{name}'s character for {title}</legend>
+      <legend class="vh">{name}'s character for {boss ? `${boss.token} on ${title}` : title}</legend>
       {#each slot.candidates as c, index (c.id)}
         <label class="charpick__option" class:charpick__option--on={c.id === choice} class:charpick__option--under={under?.(c)} data-fid={index === 0 || tagEveryOption ? optionFid : undefined}>
           <input type="radio" name="{uid}-char" value={c.id} bind:group={choice} />

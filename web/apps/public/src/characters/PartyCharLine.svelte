@@ -28,9 +28,9 @@
   } = $props();
 
   const character = $derived(slot.character);
-  const source = $derived(
-    character?.level_source === 'nexon' ? `NEXON${character.as_of ? ` · as of ${asOfDate(character.as_of).replace(/ \d{4}$/, '')}` : ''} · only you see this` : 'roster',
-  );
+  // The source qualifies a level: none without one ("Lv. — roster" said nothing).
+  const sourceOf = (c: NonNullable<PartyCharacterSlot['character']>) =>
+    c.level_source === 'nexon' ? `NEXON${c.as_of ? ` · as of ${asOfDate(c.as_of).replace(/ \d{4}$/, '')}` : ''} · only you see this` : 'roster';
   const older = $derived(freshDays !== null && slot.scouter?.some((reading) => reading.stale) ? olderThan(freshDays) : '');
 </script>
 
@@ -49,14 +49,27 @@
   {#if older}<span class="party-char__none">Estimate{older}</span>{/if}
 {/snippet}
 
-{#if !character}
+{#snippet line(c: NonNullable<PartyCharacterSlot['character']>, boss: string | null, fid: boolean)}
+  <span class="party-char__line" data-fid={fid ? 'party-char-line' : undefined}
+    >{#if boss}<span class="party-char__boss">{boss}</span>{/if}<span class="mono">{c.ign}</span>{#if c.class}<span>{c.class}</span>{/if}{#if c.level !== null}<span
+        class="mono">Lv. {c.level}</span
+      ><span class="party-char__src">{sourceOf(c)}</span>{/if}</span
+  >
+{/snippet}
+
+{#if !character && !slot.bosses.length}
   <span class="party-char__none">No character on the roster yet</span>
 {:else}
-  <span class="party-char__line" data-fid={tagged ? 'party-char-line' : undefined}
-    ><span class="mono">{character.ign}</span>{#if character.class}<span>{character.class}</span>{/if}<span class="mono">Lv. {character.level ?? '—'}</span><span
-      class="party-char__src">{source}</span
-    ></span
-  >
+  {#if slot.bosses.length}
+    <!-- They bring another character to a later boss: one read-only line per boss. -->
+    {#each slot.bosses as b, i (`${b.difficulty}${b.boss}`)}
+      {#if b.character}{@render line(b.character, `${b.difficulty.toUpperCase()}${b.boss}`, tagged && i === 0)}{:else}<span class="party-char__none"
+          >{b.difficulty.toUpperCase()}{b.boss} · no character</span
+        >{/if}
+    {/each}
+  {:else if character}
+    {@render line(character, null, tagged)}
+  {/if}
   {#if slot.scouter?.length}
     {#if boxed}<span class="party-char">{@render chips()}</span>{:else}{@render chips()}{/if}
   {:else if slot.scouter}

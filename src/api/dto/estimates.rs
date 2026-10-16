@@ -8,7 +8,6 @@
 
 use std::collections::BTreeMap;
 
-use chrono::{DateTime, Utc};
 use serde::Serialize;
 
 use super::{history::SettingsActor, iso_instant};
@@ -516,20 +515,6 @@ fn whole(job: &Job) -> bool {
             .results
             .iter()
             .any(|result| matches!(result, Some(Err(_))))
-}
-
-/// A finished run lookup's party totals per run boss, and when they came
-/// from the scouter (the job's `fetched_at`); `None` until it is done, or
-/// when the total failed.
-pub fn run_totals(
-    job: &Job,
-    catalog: &BossTable,
-) -> Option<(DateTime<Utc>, Vec<EstimateCombined>)> {
-    let Some(Ok(found)) = &job.outcome else {
-        return None;
-    };
-    let combined = found.combined.as_ref()?;
-    Some((found.fetched_at, totals(job, combined, catalog)))
 }
 
 /// The characters found so far and, once done, the party total; `None`

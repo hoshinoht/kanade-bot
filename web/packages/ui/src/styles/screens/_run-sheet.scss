@@ -1109,44 +1109,94 @@ dialog.stagesheet .stagepick__go { flex: 1 1 auto; justify-content: center; }
 .slot--chars .slot__text { line-height: 1.2; }
 // Rows fit the slot: a name, chip or clash line never widens the party (or the phone's sheet).
 .slot--chars > * { contain: inline-size; }
-// Laptop: the chip fills its row, as the board's does. The basis tag ("from timing", "main",
-// "only character") follows it there rather than joining the head: a quarter-width slot has
-// 201 px inside, and mark (26), a tag (73), × (32) and three 10 px gaps would leave the name
-// 40 px: "Tsubame" (59) and "Hotaru" (46) cut.
-.runsheet--wide .slotchar__btn { flex: 1 1 auto; min-width: 0; }
-.runsheet--wide .slotchar > .slot__basis { flex: none; align-self: center; margin-left: 8px; }
-
-// Text, not colour: where the slot's character comes from when the run did not pick it.
-.slot__basis {
-  display: inline-flex;
-  align-items: center;
-  height: 20px;
-  padding: 0 7px;
-  border-radius: 10px;
-  background: var(--chip-fill);
-  color: var(--ink);
-  font-family: var(--mono);
-  font-size: var(--fs-micro);
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  white-space: nowrap;
-}
 
 // The character chip and "Pick character" (`.slotchar*`) are `_character-pick.scss`'s: the Fixed editor draws them too.
 .slotchar__none { color: var(--dim-text); font-size: var(--fs-mini); line-height: 1.4; }
 .slotchar__none a { color: var(--accent-text); }
+// A later boss's chip for a member with one character: nothing to pick.
+.slotchar__static { cursor: default; }
 
-// The same character on another run of a shared boss this boss week: a note, never a block.
-.slot__warn {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  color: color-mix(in srgb, var(--warn-text) 85%, var(--ink));
-  font-size: var(--fs-mini);
-  line-height: 1.3;
-}
-
-.slot__warn > .icon { flex: none; width: 14px; height: 14px; color: var(--warn-text); }
+/* ── the Party grid (`sheet/PartyGrid.svelte`; B_RunBossPicks): members × bosses, the Party total on top ── */
+.bossgrid-wrap { display: flex; flex: 1 1 auto; flex-direction: column; gap: 8px; min-width: 0; }
+.bossgrid__scroll { min-width: 0; }
+// Four bosses or more: the grid scrolls sideways, the member column frozen (DATA-3).
+.bossgrid__scroll--wide { overflow-x: auto; overscroll-behavior-x: contain; }
+.bossgrid { width: 100%; border-collapse: separate; border-spacing: 0 3px; table-layout: fixed; margin: -3px 0; }
+.bossgrid--wide { min-width: calc(140px + 152px + var(--bosses, 4) * 190px); }
+.bossgrid col.bossgrid__c-who { width: 140px; }
+.bossgrid col.bossgrid__c-end { width: 152px; }
+.bossgrid th,
+.bossgrid td { padding: 6px 8px; border-bottom: 0; background: var(--row); color: var(--ink); font-size: var(--fs-small); font-weight: 400; letter-spacing: normal; text-align: start; text-transform: none; vertical-align: top; white-space: normal; }
+.bossgrid tr > :first-child { border-start-start-radius: 12px; border-end-start-radius: 12px; }
+.bossgrid tr > :last-child { border-start-end-radius: 12px; border-end-end-radius: 12px; }
+.bossgrid thead th,
+.bossgrid thead td { position: static; padding: 0 8px 2px; background: transparent; box-shadow: none; vertical-align: bottom; }
+.bossgrid--wide tr > :first-child { position: sticky; inset-inline-start: 0; z-index: 1; background: linear-gradient(var(--row), var(--row)), var(--surface); }
+.bossgrid--wide thead tr > :first-child { background: var(--surface); }
+.bossgrid--wide tr.bossgrid__total > :first-child { background: linear-gradient(var(--chip-fill), var(--chip-fill)), var(--surface); }
+.bossgrid__corner { color: var(--dim-text); font-size: var(--fs-mini); font-weight: 600; }
+.bossgrid__head { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 0 8px; min-width: 0; }
+.bossgrid__head .portrait { grid-row: span 2; }
+.bossgrid__head b { min-width: 0; overflow: hidden; color: var(--ink); font: 700 var(--fs-small)/1.2 var(--display); text-overflow: ellipsis; white-space: nowrap; }
+.bossgrid__meta { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 6px; min-width: 0; }
+.bossgrid__meta .pill { font-size: 10px; }
+.bossgrid__meta .boss__lv { white-space: nowrap; }
+// The Party total: the approved block's figures, one cell per boss.
+.bossgrid tr.bossgrid__total > * { background: var(--chip-fill); }
+.bossgrid__total .share__title,
+.bossgrid__total .share__sub { display: block; }
+.bossgrid__total .share__sub .mono { font-size: 11px; }
+// A member row.
+.bossgrid__row:hover > * { background: var(--row-hover); }
+.bossgrid__who { overflow: hidden; }
+.bossgrid__id { display: grid; grid-template-columns: 26px minmax(0, 1fr) auto; align-items: center; gap: 2px 8px; }
+.bossgrid__id .slot__mark { grid-row: span 2; }
+.bossgrid__id .slot__name { min-width: 0; overflow-wrap: anywhere; }
+.bossgrid__id .slot__state { grid-column: 2; margin: 0; line-height: 1.2; }
+.bossgrid__id .slot__x { grid-column: 3; grid-row: 1 / span 2; min-width: 28px; min-height: 28px; }
+.bossgrid__basis { display: block; margin: 4px 0 0 34px; color: var(--dim-text); font-size: 11px; line-height: 1.3; }
+.bossgrid th.bossgrid__who--yes { background: color-mix(in srgb, var(--ok) 12%, var(--row)); }
+.bossgrid th.bossgrid__who--maybe { background: color-mix(in srgb, var(--own) 12%, var(--row)); }
+.bossgrid th.bossgrid__who--no { background: color-mix(in srgb, var(--risk) 10%, var(--row)); }
+.bossgrid th.bossgrid__who--waiting { box-shadow: inset 2px 0 0 var(--warn-text); }
+.bossgrid__cell { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.bossgrid__cell .slotchar { position: relative; display: flex; min-width: 0; }
+.bossgrid__cell .slotchar__btn { flex: 0 1 auto; min-width: 0; min-height: 32px; }
+.bossgrid__cell .charpick--pop { left: 0; right: auto; }
+.bossgrid__facts { display: flex; flex-wrap: wrap; align-items: center; gap: 3px 6px; min-width: 0; }
+.bossgrid__facts .status-chip { min-height: 20px; padding: 0 7px; font-size: 11px; }
+.bossgrid__pct { color: var(--ink); font: 700 12px/1.2 var(--mono); }
+.bossgrid__src { color: var(--dim-text); font-family: var(--mono); font-size: 11px; line-height: 1.3; }
+.bossgrid__same { color: var(--dim-text); font-size: 11px; }
+// Inherited ("same as the first boss"): dashed and quiet, so real overrides stand out.
+.bossgrid td.bossgrid--inherited { background: color-mix(in srgb, var(--row) 55%, transparent); }
+.bossgrid--inherited .slotchar__btn { border-style: dashed; background: transparent; color: var(--dim-text); }
+.bossgrid--inherited .slotchar__ign { font-weight: 500; }
+.bossgrid__warn { display: flex; align-items: flex-start; gap: 5px; color: color-mix(in srgb, var(--warn-text) 85%, var(--ink)); font-size: 11px; line-height: 1.3; }
+.bossgrid__warn .icon { flex: none; width: 13px; height: 13px; margin-top: 1px; color: var(--warn-text); }
+.bossgrid td.bossgrid__end { vertical-align: middle; }
+.bossgrid__end .btn { min-height: 32px; gap: 5px; padding: 0 10px; border-radius: 16px; font-size: var(--fs-mini); white-space: nowrap; }
+.bossgrid__end .btn .icon,
+.bossgrid__reset .icon { flex: none; width: 13px; height: 13px; }
+.bossgrid__empty { color: var(--dim-text); font-size: var(--fs-mini); }
+.bossgrid-wrap > .share__notes { margin: 0 2px; }
+.bossgrid__add { display: flex; align-items: center; gap: 8px; padding: 4px 8px; border: 1.5px dashed var(--line); border-radius: 12px; }
+// "How the verdict reads", a small disclosure in the aside.
+.bossgrid__rules { color: var(--dim-text); font-size: var(--fs-mini); line-height: 1.45; }
+.bossgrid__rules summary { display: inline-flex; align-items: center; gap: 6px; min-height: 28px; color: var(--ink); font-weight: 600; cursor: pointer; list-style: none; }
+.bossgrid__rules summary::-webkit-details-marker { display: none; }
+.bossgrid__rules summary .icon { width: 14px; height: 14px; }
+.bossgrid__rules ul { margin: 4px 0 0; padding-inline-start: 18px; }
+// Phone: a member card with one line per boss.
+.bossstack { display: flex; flex-direction: column; gap: 4px; margin: 4px 0 0; padding: 0; list-style: none; }
+.bossstack__row { display: grid; grid-template-columns: 84px minmax(0, 1fr); align-items: center; gap: 2px 8px; padding: 3px 0; }
+.bossstack__boss { overflow: hidden; color: var(--dim-text); font: 600 11px/1.2 var(--mono); text-overflow: ellipsis; white-space: nowrap; }
+.bossstack__row .bossgrid__cell { flex-direction: row; flex-wrap: wrap; align-items: center; gap: 4px 6px; }
+.bossstack__row .slotchar__btn { min-height: 40px; }
+.slot--chars > .bossgrid__basis { margin: 0; }
+.slot--chars > .bossgrid__src { padding-left: 92px; }
+.slot .bossgrid__reset { align-self: stretch; justify-content: center; min-height: 44px; gap: 6px; border-radius: 22px; font-size: var(--fs-small); }
+.runsheet__party > li.party-total { margin: 0 0 4px; }
 
 .runsheet__charrules {
   display: flex;
@@ -1159,14 +1209,11 @@ dialog.stagesheet .stagepick__go { flex: 1 1 auto; justify-content: center; }
   line-height: 1.45;
 }
 
-// The narrow sheet's slot: one head row (mark, name, answer, basis tag, chip, ×), clash lines under it.
-// The name sits over its answer here too, so the row keeps room for the chip and ×.
+// The narrow sheet's slot: the head row (mark, name over answer, ×), then a line per boss.
 .runsheet--narrow .slot--chars { height: auto; min-height: 52px; padding: 8px 10px; gap: 6px; }
 .runsheet--narrow .slot--chars > .slot__head { gap: 8px; }
-.runsheet--narrow .slot--chars > .slot__warn { padding-left: 34px; }
 .runsheet--narrow .slot--chars .slot__text { flex-direction: column; align-items: flex-start; gap: 1px; }
 .runsheet--narrow .slot--chars .slot__state { margin-left: 0; max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
-.runsheet--narrow .slot__basis { padding: 0 5px; letter-spacing: 0.02em; }
-.runsheet--narrow .slotchar__btn { min-height: 36px; padding: 0 10px 0 12px; }
+.runsheet--narrow .slotchar__btn { padding: 0 10px 0 12px; }
 .runsheet--narrow .slotchar__pick { padding: 0 12px; }
 }

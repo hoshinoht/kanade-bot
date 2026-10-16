@@ -205,12 +205,21 @@ async fn roster(seed: &Seed<'_>) -> Result<(), Fail> {
 
 /// Asahi picks AsahiDK on `r-carling`; Mika's pick for the `f-carling`
 /// timing is MikaBish, so its runs bring her from the timing. `boss` names
-/// a per-boss pick (none seeded yet: each pick adds a History row, and the
-/// History count is pinned by the browser e2e).
+/// a per-boss pick: next week's `n-carling` brings AsahiMech to
+/// HMaleficStar (each pick adds a History row, and the History count is
+/// pinned by the browser e2e).
 async fn picks(seed: &Seed<'_>) -> Result<(), Fail> {
     let picks = [
         (PickScope::Run, "r-carling", ASAHI, None, "ch-s5", 2 * DAY),
         (PickScope::Timing, "f-carling", MIKA, None, "ch-s3", DAY),
+        (
+            PickScope::Run,
+            "n-carling",
+            ASAHI,
+            Some("MaleficStar"),
+            "ch-s6",
+            DAY,
+        ),
     ];
     for (scope, target, member, boss, character, ago) in picks {
         let record = CharacterRecord {

@@ -259,3 +259,24 @@ dialog.fixedsheet--tabbed .fixedsheet__content { padding: 12px; }
 .fixedready__status--warn { background: color-mix(in srgb, var(--warn) 12%, var(--surface)); box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--warn) 50%, var(--surface)); color: var(--ink); }
 .fixedready__status--risk { background: color-mix(in srgb, var(--risk) 16%, var(--surface)); color: var(--risk-text); }
 .fixedready__status .btn { flex: none; min-height: 28px; padding: 0 12px; border-color: currentColor; border-radius: 14px; background: transparent; color: inherit; }
+
+// Per boss (B_FixedBoss2, B_FixedBoss4, B_PhoneFixedBoss): one line per boss (boss · chip · verdict ·
+// basis), then each distinct character's values once; a boss with no pick of its own is dashed.
+.bosspick { display: flex; flex-direction: column; gap: 4px; min-width: 0; margin: 0; padding: 0; list-style: none; }
+.bosspick__row { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; min-width: 0; }
+.bosspick__boss { flex: none; width: 92px; overflow: hidden; color: var(--dim-text); font-family: var(--mono); font-size: 11px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.bosspick__row .slotchar { position: relative; display: inline-flex; flex: 0 1 auto; min-width: 0; }
+.bosspick__row .charpick--pop { right: auto; left: 0; }
+.bosspick__row .slotchar__btn { flex: 0 1 auto; min-height: 32px; }
+.bosspick__row .slotchar__btn--same { border-style: dashed; background: transparent; color: var(--dim-text); }
+.bosspick__chips { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+.bosspick__chips .status-chip { min-height: 20px; padding: 0 7px; font-size: 11px; }
+.bosspick__chars { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.bosspick__chars .ready__values b { margin-right: 6px; font-weight: 800; }
+.bosspick__toggle { flex: none; gap: 6px; min-height: 32px; padding: 0 12px; border-radius: 16px; font-size: var(--fs-small); }
+.bosspick__toggle .icon { width: 14px; height: 14px; }
+.bosspick__toggle[aria-expanded="true"] .icon:last-child { rotate: 180deg; }
+.fixedready__row > .bosspick__toggle { align-self: flex-start; }
+.fixedready:not(.fixedready--wide) .bosspick__boss { width: 84px; }
+.fixedready:not(.fixedready--wide) .bosspick__toggle,
+.fixedready:not(.fixedready--wide) .bosspick__row .slotchar__btn { min-height: 40px; }

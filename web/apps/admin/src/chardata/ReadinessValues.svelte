@@ -37,14 +37,14 @@
     row?: boolean;
   } = $props();
 
-  const line = $derived(readinessLine(slot));
   const readAt = $derived(scouterAt(slot));
+  const line = $derived(readinessLine(slot, readAt !== null));
   const older = $derived(freshDays !== null && scouterStale(slot) ? olderThan(freshDays) : '');
 </script>
 
 <div class="ready" class:ready--row={row} role="group" aria-label="Readiness of {character.ign}" data-fid={fid}>
   <span class="ready__line"
-    ><span class="ready__values">{line.values}</span><span class="ready__source">{line.source}</span>{#if readAt}<span class="ready__source ready__scouter-at"
+    >{#if line.values}<span class="ready__values">{line.values}</span>{/if}<span class="ready__source">{line.source}</span>{#if readAt}<span class="ready__source ready__scouter-at"
         >Estimate · <span class="mono">{dayTime(readAt, timeZone)}</span>{older}</span
       >{/if}</span
   >

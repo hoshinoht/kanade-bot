@@ -23,9 +23,9 @@ test('admin: grouped nav has every v4 section as a real route', async ({ page })
 
   await nav.getByRole('link', { name: 'History' }).click();
   await expect(page).toHaveURL(`${ADMIN}/history`);
-  // 10 records plus the seed's 15 character Config saves (the real character writes record them)
+  // 10 records plus the seed's 16 character Config saves (the real character writes record them)
   // and the startup pass's 4 copies of NEXON's class and level onto linked characters.
-  await expect(page.getByRole('heading', { level: 1 })).toHaveText('29 changes');
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('30 changes');
   await expect(page).toHaveTitle(/^History — /);
   await expect(page.locator('#main')).toBeFocused();
   await expect(nav.getByRole('link', { name: 'History' })).toHaveAttribute('aria-current', 'page');

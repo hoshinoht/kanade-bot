@@ -130,7 +130,7 @@
           <p class="cap" id="member-answer-title">Your answer</p>
           <AnswerChoice {run} {week} {which} {memberId} {flow} {picked} {onpress} data-fid="week-answer" />
         </section>
-        {#if party?.data}<PartyCharacters party={party.data} {run} />{/if}
+        {#if party?.data}<PartyCharacters party={party.data} {run} timeZone={week.timezone} />{/if}
         {#if movable(run, week, which, memberId)}
           <MemberMove
             {run}

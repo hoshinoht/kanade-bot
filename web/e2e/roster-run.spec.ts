@@ -30,7 +30,8 @@ async function sheetOf(page: Page, run = RUN, title = T): Promise<Locator> {
   await page.locator(`[data-run="${run}"] .plan-card__open`).click();
   if (!phone) await page.getByRole('complementary', { name: title }).getByRole('button', { name: 'Open in a larger view' }).click();
   const sheet = page.getByRole('dialog', { name: title });
-  await expect(sheet.getByRole('list', { name: 'Party' })).toBeVisible();
+  // The Party grid (laptop) or the Party list (phone, or no characters).
+  await expect(sheet.getByRole('table', { name: /^Party/ }).or(sheet.getByRole('list', { name: 'Party' }))).toBeVisible();
   return sheet;
 }
 
@@ -42,7 +43,7 @@ async function carling(page: Page): Promise<Locator> {
 }
 
 const slot = (sheet: Locator, name: string) =>
-  sheet.locator('.slot').filter({ has: sheet.page().locator('.slot__name', { hasText: new RegExp(`^${name.replace(/[()]/g, '\\$&')}$`) }) });
+  sheet.locator('.slot, .bossgrid__row').filter({ has: sheet.page().locator('.slot__name', { hasText: new RegExp(`^${name.replace(/[()]/g, '\\$&')}$`) }) });
 const notice = (sheet: Locator) => sheet.locator('.sheet__notice');
 
 async function picked(page: Page, member: string): Promise<{ picked: string | null; brings: string | null; basis: string | null }> {
@@ -94,17 +95,18 @@ test('roster run: clear a pick, and undo it', async ({ page }) => {
 test('roster run: the main until picked; picking stores it, Clear goes back to the main', async ({ page }) => {
   const sheet = await carling(page);
   const yuzu = slot(sheet, 'Yuzu');
-  await expect(yuzu.locator('.slot__basis')).toHaveText('main');
+  // The main needs no words in the grid; a run pick says so under the name.
+  await expect(yuzu.locator('.bossgrid__basis')).toHaveCount(0);
   await yuzu.getByRole('button', { name: `Yuzu's character on ${T}: YuzuPala, main. Change` }).click();
   await page.keyboard.press('Enter');
   await expect(notice(sheet)).toContainText(`Yuzu brings YuzuPala to ${T}.`);
-  await expect(yuzu.locator('.slot__basis')).toHaveCount(0);
+  await expect(yuzu.locator('.bossgrid__basis')).toHaveText('picked on this run');
   expect(await picked(page, YUZU)).toMatchObject({ picked: 'ch-s8', brings: 'ch-s8', basis: 'run_pick' });
 
   await yuzu.getByRole('button', { name: /YuzuPala\. Change$/ }).click();
   await sheet.getByRole('button', { name: 'Clear pick · back to the default' }).click();
   await expect(notice(sheet)).toContainText("Cleared Yuzu's pick: back to YuzuPala (main).");
-  await expect(yuzu.locator('.slot__basis')).toHaveText('main');
+  await expect(yuzu.locator('.bossgrid__basis')).toHaveCount(0);
   expect(await picked(page, YUZU)).toMatchObject({ picked: null, brings: 'ch-s8', basis: 'main' });
 });
 
@@ -112,7 +114,9 @@ test('roster run: a clash names the other run and never blocks the pick', async 
   const sheet = await carling(page);
   const ren = slot(sheet, 'Ren (1)');
   const warning = ren.getByRole('note');
-  await expect(warning).toHaveText(/^\s*RenShade is also on \w{3} \d{1,2} 21:00 NMaleficStar this boss week \(main there\)\.$/);
+  // The clash warns in the cell of the boss it shares (HMaleficStar), never blocking.
+  await expect(warning).toHaveText(/^\s*Also on \w{3} \d{1,2} 21:00 NMaleficStar this boss week \(main there\)\.$/);
+  await expect(ren.locator('td').nth(1).getByRole('note')).toBeVisible();
   await ren.getByRole('button', { name: /RenShade, main\. Change$/ }).click();
   await page.keyboard.press('Enter');
   await expect(notice(sheet)).toContainText(`Ren (1) brings RenShade to ${T}.`);
@@ -136,7 +140,7 @@ test('roster run: module off in the session, no character UI and no character re
   await page.goto(`${ADMIN}/?sw=off`);
   const sheet = await sheetOf(page);
   await expect(slot(sheet, 'Mika')).toBeVisible();
-  await expect(sheet.locator('.slotchar, .slot__warn, .slot__basis')).toHaveCount(0);
+  await expect(sheet.locator('.slotchar, .bossgrid, .bossgrid__basis')).toHaveCount(0);
   expect(asked).toEqual([]);
 });
 
@@ -219,7 +223,7 @@ test('roster run: the phone picks from a bottom sheet, 44 px rows', async ({ pag
   const pick = sheet.getByRole('button', { name: /^Mika's character on HCarling/ });
   // The startup pass copied MikaBish's NEXON level (283) into the roster.
   await expect(pick).toHaveText('MikaBish283');
-  await expect(slot(sheet, 'Mika').locator('.slot__basis')).toHaveText('from timing');
+  await expect(slot(sheet, 'Mika').locator('.bossgrid__basis')).toHaveText('from timing');
   await pick.click();
   const picker = page.getByRole('dialog', { name: "Mika's character" });
   await expect(picker.getByRole('radio', { name: /MikaBish/ })).toBeChecked();
@@ -278,7 +282,7 @@ for (const [width, height] of [
     // Undo still works and hands focus back to the slot's character button.
     await notice(sheet).getByRole('button', { name: 'Undo' }).click();
     await expect.poll(async () => (await picked(page, MIKA)).picked).toBe(before);
-    await expect(slot(sheet, 'Mika').getByRole('button', { name: /^Mika's character/ })).toBeFocused();
+    await expect(slot(sheet, 'Mika').getByRole('button', { name: /^Mika's character on / })).toBeFocused();
 
     // A status change's notice (with its own Undo) uses the same line.
     await sheet.locator('.seg--status').getByRole('button', { name: 'Confirmed' }).click();

@@ -108,7 +108,11 @@ export type { Outcome } from './outcome';
 export { default as CharacterPanel } from './characters/CharacterPanel.svelte';
 export { default as EstimateProgress } from './characters/EstimateProgress.svelte';
 export { default as ShareChart } from './characters/ShareChart.svelte';
-export { shareBar, shareNotes, whoColour, wholeShares, type ShareBar, type ShareMember, type SharePart } from './characters/shares';
+export { shareBar, whoColour, wholeShares, type ShareBar, type ShareMember, type SharePart } from './characters/shares';
+export { default as PartyTotal } from './characters/PartyTotal.svelte';
+export { default as PartyTotalFigure } from './characters/PartyTotalFigure.svelte';
+export { default as PartyTotalNotes } from './characters/PartyTotalNotes.svelte';
+export { asOfTime, hasTotal, totalNotes, type TotalNotes, type TotalReading } from './characters/partyTotal';
 export {
   activeJob,
   CharacterLinkView,

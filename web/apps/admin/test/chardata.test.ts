@@ -115,12 +115,13 @@ describe('run readiness', () => {
     ...over,
   });
 
-  it('shows level and CP with their source; CP is never judged', () => {
+  it('shows level and CP with their source, leaving unknown values out; CP is never judged', () => {
     expect(readinessLine(slot({}))).toEqual({ values: 'Lv. 276 · CP 52.1M', source: 'NEXON · as of 29 Sep' });
     expect(readinessLine(slot({ link: 'expired', level: { value: 275, source: 'manual', as_of: null }, power: null }))).toEqual({
-      values: 'Lv. 275 · CP —',
+      values: 'Lv. 275',
       source: 'manual · NEXON data expired',
     });
+    expect(readinessLine(slot({ link: 'not_linked', level: null, power: null }))).toEqual({ values: '', source: 'manual · not linked' });
   });
 
   it('judges each boss by level only', () => {
@@ -131,7 +132,7 @@ describe('run readiness', () => {
 
   it('replaces CP with an estimate per boss once a slot has a reading', () => {
     const read = slot({ bosses: [boss('ok', reading()), boss('under')] });
-    expect(readinessLine(read)).toEqual({ values: 'Lv. 276', source: 'NEXON · as of 29 Sep' });
+    expect(readinessLine(read, true)).toEqual({ values: 'Lv. 276', source: 'NEXON · as of 29 Sep' });
     expect(scouterAt(read)).toBe('2026-09-29T02:10:00Z');
     expect(scouterAt(slot({}))).toBeNull();
     expect(scouterChip(reading())).toEqual({ text: 'Estimate 164% · ~18 min', rating: '2p Min Cut', assumed: null });
@@ -144,7 +145,7 @@ describe('run readiness', () => {
       assumed: 'Assumes 100% critical rate (actual 89%)',
     });
     // Manual level, no NEXON data: the reading still hides the CP dash.
-    expect(readinessLine(slot({ link: 'not_linked', level: { value: 270, source: 'manual', as_of: null }, power: null, bosses: [boss('unknown', reading())] }))).toEqual({
+    expect(readinessLine(slot({ link: 'not_linked', level: { value: 270, source: 'manual', as_of: null }, power: null, bosses: [boss('unknown', reading())] }), true)).toEqual({
       values: 'Lv. 270',
       source: 'manual · not linked',
     });

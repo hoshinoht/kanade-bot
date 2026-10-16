@@ -11,21 +11,23 @@ export const WHO_COLOURS = 6;
 export interface ShareMember {
   /** Stable key (the member's id). */
   id: string;
-  /** As the members table (admin) or the party list (portal) names them. */
+  /** As the party list (both apps) names them. */
   name: string;
-  /** The character's IGN (the assumed-critical-rate note names it); `null` without a character. */
-  ign: string | null;
-  /** Their number: their row in the members table, 1-based; `null` (no character) is never numbered. */
+  /** The character each boss brings, per catalog token (a member may bring another to a later boss). */
+  igns: Readonly<Record<string, string>>;
+  /** Their number: their place in the party, 1-based; `null` (no character) is never numbered. */
   n: number | null;
   /** Effective % per catalog token; a missing or `null` entry is no estimate for that boss. */
   effective: Readonly<Record<string, number | null | undefined>>;
-  /** The scouter assumed a 100% critical rate: hatched and starred. */
-  assumed: boolean;
+  /** Per catalog token, the scouter assumed a 100% critical rate: hatched and starred. */
+  assumed: Readonly<Record<string, boolean | undefined>>;
 }
 
 export interface SharePart {
   id: string;
   name: string;
+  /** The character that boss brings, when known. */
+  ign: string | null;
   n: number;
   /** 1 … 6: `--who-<colour>`. */
   colour: number;
@@ -81,11 +83,12 @@ export function shareBar(token: string, members: readonly ShareMember[]): ShareB
   const parts = found.map(({ m, value }, i) => ({
     id: m.id,
     name: m.name,
+    ign: m.igns[token] ?? null,
     n: m.n!,
     colour: whoColour(m.n!),
     effective: value,
     share: shares[i]!,
-    assumed: m.assumed,
+    assumed: m.assumed[token] === true,
   }));
   const missing = members.filter((m) => known(m, token) === null);
   return {
@@ -97,22 +100,9 @@ export function shareBar(token: string, members: readonly ShareMember[]): ShareB
   };
 }
 
-/**
- * The figure's notes: who was counted at an assumed critical rate (with a
- * part somewhere), and who has no estimate for any of the bosses (counted,
- * never 0%), both in party order.
- */
-export function shareNotes(bars: readonly ShareBar[], members: readonly ShareMember[]): { assumed: ShareMember[]; none: ShareMember[] } {
-  const drawn = new Set(bars.flatMap((bar) => bar.parts.map((p) => p.id)));
-  return {
-    assumed: members.filter((m) => m.assumed && drawn.has(m.id)),
-    none: members.filter((m) => !drawn.has(m.id)),
-  };
-}
-
-/** The bar's accessible name: "HCarling shares: Asahi 31%, Mika 16% (assumes 100% critical rate)". */
+/** The bar's accessible name: "HCarling shares: Asahi (AsahiDK) 31%, Mika (MikaBish) 16% (assumes 100% critical rate)". */
 export function shareLabel(label: string, bar: ShareBar): string {
-  const parts = bar.parts.map((p) => `${p.name} ${p.share}%${p.assumed ? ' (assumes 100% critical rate)' : ''}`).join(', ');
+  const parts = bar.parts.map((p) => `${p.name}${p.ign ? ` (${p.ign})` : ''} ${p.share}%${p.assumed ? ' (assumes 100% critical rate)' : ''}`).join(', ');
   const none = bar.missing.length ? `; ${bar.missing.length} with no estimate` : '';
   return `${label} shares: ${parts}${none}`;
 }

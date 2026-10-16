@@ -221,6 +221,13 @@
   background: var(--dim-text) repeating-linear-gradient(135deg, transparent 0 3px, var(--chip-fill) 3px 5px);
 }
 
+.share__note--by .icon {
+  flex: none;
+  width: 12px;
+  height: 12px;
+  margin-right: 6px;
+}
+
 // The portal's key (no members table there): number, colour, name.
 .share__keys {
   display: flex;
@@ -246,4 +253,104 @@
     border-radius: 5px;
     font-size: 10px;
   }
+}
+
+/* ── The Party total (`PartyTotal*.svelte`; boards in docs/research/2026-10-16-party-polish):
+   Who carries' box and type, mono figures; the admin's Party grid draws the same figure per cell. ── */
+.party-total {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin: 0;
+  padding: 8px 10px 9px;
+  border-radius: 12px;
+  background: var(--chip-fill);
+  list-style: none;
+}
+
+.party-total__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 8px;
+}
+
+.party-total__rows {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.party-total__row {
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr);
+  align-items: center;
+  gap: 2px 8px;
+  min-height: 24px;
+}
+
+.party-total__boss {
+  overflow: hidden;
+  color: var(--ink);
+  font: 700 11px/1.2 var(--mono);
+  text-decoration: none;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.party-total__fig {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 3px 8px;
+  min-width: 0;
+  color: var(--ink);
+  font-size: var(--fs-small);
+
+  > span:first-child {
+    white-space: nowrap;
+  }
+
+  .status-chip {
+    font-size: 11px;
+  }
+
+  .status-chip .icon {
+    width: 12px;
+    height: 12px;
+    margin-right: 3px;
+  }
+}
+
+.party-total__num {
+  font: 700 13px/1.2 var(--mono);
+}
+
+.party-total__min {
+  color: var(--dim-text);
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.party-total__old {
+  color: color-mix(in srgb, var(--warn-text) 80%, var(--ink));
+  font-weight: 700;
+}
+
+// No figure for this boss yet: dashed, as Who carries' empty bar, never 0%.
+.party-total__none {
+  justify-self: start;
+  padding: 2px 8px;
+  border: 1.5px dashed var(--dim-text);
+  border-radius: 8px;
+  color: var(--dim-text);
+  font-size: var(--fs-mini);
+}
+
+.party-total .share__notes {
+  margin-top: 1px;
 }

@@ -1,9 +1,9 @@
 // Character data (module `character_data`; boards in
 // docs/research/2026-10-12-chardata-mockups): the admin-only words — run
-// readiness, the party estimate's missing members, Config's health cards and
-// the Add toast's link request. The strip's and estimates' shared words live
-// in `@kanade/ui` (characters/chardata.ts). Never a model path.
-import type { BossReadiness, CharacterDataHealth, EstimateMissing, ReadinessSlot } from '@kanade/api-types';
+// readiness, Config's health cards and the Add toast's link request. The
+// strip's and estimates' shared words live in `@kanade/ui`
+// (characters/chardata.ts). Never a model path.
+import type { BossReadiness, CharacterDataHealth, ReadinessSlot } from '@kanade/api-types';
 import { asOfDate, combatPower, type ChipTone, type IconName } from '@kanade/ui';
 
 /**
@@ -24,14 +24,14 @@ export function scouterStale(slot: ReadinessSlot): boolean {
 }
 
 /**
- * "Lv. 283 · CP 48.2M" and its source: "NEXON · as of 29 Sep", "manual · not linked".
- * With a scouter reading the CP is left out ("Lv. 283"): the per-boss chips replace it.
+ * "Lv. 283 · CP 48.2M" and its source: "NEXON · as of 29 Sep", "manual · not linked", for a slot's
+ * first character or another it brings to a later boss. Unknown values are left out ("CP 48.2M",
+ * or nothing: the per-boss "Lv unknown" chip says it), and with a scouter reading (`scouter`) the
+ * CP is too ("Lv. 283"): the per-boss chips replace it.
  */
-export function readinessLine(slot: ReadinessSlot): { values: string; source: string } {
-  const scouter = scouterAt(slot) !== null;
+export function readinessLine(slot: Pick<ReadinessSlot, 'level' | 'power' | 'link'>, scouter = false): { values: string; source: string } {
   const power = scouter ? null : slot.power;
-  const level = `Lv. ${slot.level?.value ?? '—'}`;
-  const values = scouter ? level : `${level} · CP ${power ? combatPower(power.value) : '—'}`;
+  const values = [slot.level ? `Lv. ${slot.level.value}` : null, power ? `CP ${combatPower(power.value)}` : null].filter(Boolean).join(' · ');
   const asOf = slot.level?.as_of ?? power?.as_of ?? null;
   if (slot.level?.source === 'nexon' || power) return { values, source: `NEXON${asOf ? ` · as of ${asOfDate(asOf).replace(/ \d{4}$/, '')}` : ''}` };
   const why: Partial<Record<NonNullable<ReadinessSlot['link']>, string>> = {
@@ -59,14 +59,6 @@ export function hourMinute(iso: string, timeZone: string): string {
   const parts = new Intl.DateTimeFormat('en-US', { hour: '2-digit', minute: '2-digit', hourCycle: 'h23', timeZone }).formatToParts(new Date(iso));
   return `${parts.find((p) => p.type === 'hour')?.value}:${parts.find((p) => p.type === 'minute')?.value}`;
 }
-
-/** Why a party member is not looked up (listed as missing, never 0%). */
-export const MISSING_REASONS: Record<EstimateMissing['reason'], string> = {
-  no_characters: 'no characters on the roster',
-  no_character_picked: 'no character picked',
-  other_region: 'not a MapleSEA character',
-  unsupported_ign: 'an IGN the scouter can’t look up',
-};
 
 /** "A", "A and B", "A, B and C". */
 export function joinNames(names: readonly string[]): string {

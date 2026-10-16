@@ -4,11 +4,12 @@
 //! per boss when they bring different characters to different bosses, and
 //! each boss's stored scouter reading of the character brought to it, of
 //! any age, marked `stale` once at least `estimate_days` old (never looked
-//! up here), plus the party totals of the run's newest finished lookup.
-//! NEXON data shows only on the caller's own slot: the notice names admins
-//! and share-card channels as who sees it, never the party (others see the
-//! roster level, which holds NEXON's copied level). No combat power, no
-//! verdicts, no picking. Anyone not on the run gets the generic `404`.
+//! up here), plus the Party total from the saved estimates (the reminder
+//! image's figures). NEXON data shows only on the caller's own slot: the
+//! notice names admins and share-card channels as who sees it, never the
+//! party (others see the roster level, which holds NEXON's copied level).
+//! No combat power, no verdicts, no picking. Anyone not on the run gets the
+//! generic `404`.
 
 use std::sync::Arc;
 
@@ -29,11 +30,10 @@ use crate::{
         auth::member::MemberSession,
         dto::{
             self, Art,
-            estimates::{LABEL, NOTE, run_totals},
-            iso_instant,
+            estimates::{LABEL, NOTE},
             public::{
                 PartyBossCharacter, PartyCharacter, PartyCharacterSlot, PartyEstimate, PartyMember,
-                PartyTotal, PartyTotals, RunPartyCharacters,
+                RunPartyCharacters,
             },
             readiness::{Cached, reading},
         },
@@ -47,7 +47,7 @@ use crate::{
     },
     infrastructure::{
         character_data::CharacterData,
-        scouter::{Estimates, RosterIgn, Target},
+        scouter::{Estimates, RosterIgn},
     },
 };
 
@@ -204,8 +204,6 @@ pub(super) async fn read(
             bosses: lines,
         });
     }
-    let totals =
-        estimates.and_then(|estimates| party_totals(estimates, &run.id, &bosses, &state.catalog));
     let party_total =
         estimates.map(|estimates| dto::estimates::party_total(estimates, &run.bosses, &slots));
     Ok(Json(RunPartyCharacters {
@@ -214,7 +212,6 @@ pub(super) async fn read(
         character_data: module.is_some(),
         estimates: estimates.is_some(),
         fresh_days: estimates.map(Estimates::fresh_days),
-        totals,
         party_total,
         nexon_data,
         attribution: ATTRIBUTION,
@@ -222,40 +219,4 @@ pub(super) async fn read(
         estimate_note: NOTE,
     })
     .into_response())
-}
-
-/// The totals of the run's newest lookup once it is done (what the admin's
-/// Estimate panel shows), for the run's bosses as they are now, `stale` by
-/// the job's `fetched_at`; never starts one.
-fn party_totals(
-    estimates: &Estimates,
-    run_id: &str,
-    bosses: &[Requirement],
-    catalog: &BossTable,
-) -> Option<PartyTotals> {
-    let job = estimates.latest(&Target::Run {
-        run_id: run_id.to_owned(),
-        bosses: Vec::new(),
-    })?;
-    let (fetched_at, rows) = run_totals(&job, catalog)?;
-    let bosses = bosses
-        .iter()
-        .filter_map(|boss| {
-            let token = format!("{}{}", boss.difficulty.to_ascii_uppercase(), boss.boss);
-            let row = rows.iter().find(|row| row.boss == token)?;
-            Some(PartyTotal {
-                boss: boss.boss.clone(),
-                difficulty: boss.difficulty.clone(),
-                combined_percentage: row.combined_percentage,
-                estimated_minutes: row.estimated_minutes,
-                technically_possible: row.technically_possible,
-                complete: row.complete,
-            })
-        })
-        .collect();
-    Some(PartyTotals {
-        fetched_at: iso_instant(fetched_at),
-        stale: estimates.stale(fetched_at),
-        bosses,
-    })
 }

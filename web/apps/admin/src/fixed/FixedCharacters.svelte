@@ -1,22 +1,28 @@
 <!--
   The Fixed editor's Characters tab (modules `roster` and `character_data`;
   B_FixedReady, B_FixedReadyEnd, B_FixedReadyPick, B_FixedReadyStates*,
-  B_PhoneFixedReady*): who each party member brings to this weekly timing and
+  B_PhoneFixedReady*; per boss B_FixedBoss2*, B_FixedBoss4, B_PhoneFixedBoss*,
+  B_BossPickStates): who each party member brings to this weekly timing and
   that character's readiness, as the run sheet draws it. A member brings their
   main, else their only character; a pick here overrides that for this timing
   only, saves at once (never through the form; Undo in the notice) and runs
-  made from the timing read it live unless they have their own pick. Readiness
-  follows the form as it stands (a preview while bosses or party differ from
-  what is saved) and is shown, never judged: it never blocks a pick or a save.
-  Picks open once the timing, and the member in its party, are saved.
+  made from the timing read it live unless they have their own pick.
+  Per boss: a member with more than one character can open "Per boss" and
+  pick another character for a later boss (a boss with no pick of its own
+  brings the first boss's, dashed "same as HCarling"); a member with any
+  per-boss pick always shows the list, with "Same for every boss" to clear
+  them in one write. Readiness follows the form as it stands (a preview while
+  bosses or party differ from what is saved) and is shown, never judged: it
+  never blocks a pick or a save. Picks open once the timing, and the member
+  in its party, are saved; per boss once the form's bosses are the saved ones.
 -->
 <script lang="ts">
-  import type { BossRow, CharacterChoice, ReadinessSlot, RunCharacterSlot, TimingCharacters } from '@kanade/api-types';
-  import { dayMonth, Icon } from '@kanade/ui';
+  import type { BossCharacterSlot, BossRow, CharacterChoice, ReadinessSlot, RunCharacterSlot, TimingCharacters } from '@kanade/api-types';
+  import { dayMonth, Icon, StatusChip } from '@kanade/ui';
   import '@kanade/ui/styles/screens/character-pick.scss';
   import '@kanade/ui/styles/screens/settings.scss';
   import { tick, untrack } from 'svelte';
-  import { scouterAt } from '../chardata/format';
+  import { levelChip, readinessLine, scouterAt } from '../chardata/format';
   import ReadinessNote from '../chardata/ReadinessNote.svelte';
   import ReadinessValues from '../chardata/ReadinessValues.svelte';
   import { estimateEnds, fixedReadyRoutes, TimingReadinessView, type TimingTarget } from '../chardata/routes.svelte';
@@ -95,8 +101,9 @@
   const error = $derived(ready.error || chars?.error || '');
   // The timing's bosses with their entry levels, as the readiness judged them.
   const entries = $derived(
-    (ready.data?.slots.find((s) => s.bosses.length)?.bosses ?? []).map((b) => ({ label: bossLabel(b.boss, b.difficulty), entry: b.entry_level })),
+    (ready.data?.slots.find((s) => s.bosses.length)?.bosses ?? []).map((b) => ({ key: b.boss, label: bossLabel(b.boss, b.difficulty), entry: b.entry_level })),
   );
+  const firstBoss = $derived(entries[0]?.label ?? tokens[0] ?? '');
 
   function bossLabel(key: string, difficulty: string): string {
     return catalog.find((b) => b.key === key)?.difficulties.find((d) => d.letter === difficulty)?.token ?? key;
@@ -154,68 +161,93 @@
     only: 'only character',
   };
 
-  // The laptop's popover (one member's), the phone's bottom sheet.
+  // Per boss: open for a member with any per-boss pick, or opened here; only while the form's bosses are the saved ones.
+  let opened = $state<string[]>([]);
+  const perBossReady = (row: Row) => Boolean(row.slot && formMatches && !locked(row) && row.slot.bosses.length > 1);
+  const perBossOpen = (row: Row) => perBossReady(row) && (row.slot!.per_boss || opened.includes(row.id));
+
+  // The laptop's popover (one cell's), the phone's bottom sheet; `i` is the boss (0: the member's own pick).
   let pickFor = $state<string | null>(null);
-  let sheetFor = $state<string | null>(null);
+  let sheetFor = $state<{ member: string; i: number } | null>(null);
   let sheetOpen = $state(false);
   let busy = $state(false);
   let panel = $state<HTMLElement>();
-  const trigger = (member: string) => panel?.querySelector<HTMLElement>(`[data-char-for="${CSS.escape(member)}"]`) ?? null;
-  const sheetRow = $derived(rows.find((r) => r.id === sheetFor) ?? null);
+  const keyOf = (member: string, i: number) => `${member}:${i}`;
+  const trigger = (member: string, i = 0) => panel?.querySelector<HTMLElement>(`[data-char-for="${CSS.escape(keyOf(member, i))}"]`) ?? null;
+  const sheetRow = $derived(rows.find((r) => r.id === sheetFor?.member) ?? null);
 
   type Notice = { member: string; tone: 'ok' | 'warn' | 'risk'; lead: string; ign?: string; tail?: string; undo?: () => void };
   let notice = $state<Notice | null>(null);
   const announcement = $derived(notice ? `${notice.lead}${notice.ign ?? ''}${notice.tail ?? ''}` : '');
 
-  function open(row: Row) {
+  function open(row: Row, i = 0) {
     if (!row.slot || locked(row)) return;
-    if (wide) pickFor = pickFor === row.id ? null : row.id;
+    if (wide) pickFor = pickFor === keyOf(row.id, i) ? null : keyOf(row.id, i);
     else {
-      sheetFor = row.id;
+      sheetFor = { member: row.id, i };
       sheetOpen = true;
     }
   }
 
-  async function closePick(member: string, refocus: boolean) {
-    if (pickFor === member) pickFor = null;
+  async function closePick(member: string, i: number, refocus: boolean) {
+    if (pickFor === keyOf(member, i)) pickFor = null;
     if (!refocus) return;
     await tick();
-    trigger(member)?.focus({ preventScroll: true });
+    trigger(member, i)?.focus({ preventScroll: true });
   }
 
-  /** A choice: the member's default clears the pick; what is picked already changes nothing. */
-  function choose(row: Row, characterId: string | null) {
+  /**
+   * A choice: the member's default clears the pick (for a later boss, the first boss's character
+   * does); what is picked already changes nothing.
+   */
+  function choose(row: Row, i: number, characterId: string | null) {
     const slot = chars?.slot(row.id);
     if (!slot) return;
-    const next = characterId !== null && characterId === fallback(slot)?.id ? null : characterId;
-    if (next === slot.picked) {
+    const entry = i > 0 ? slot.bosses[i] : null;
+    const base = entry ? slot.brings : (fallback(slot)?.id ?? null);
+    const next = characterId !== null && characterId === base ? null : characterId;
+    const picked = entry ? entry.picked : slot.picked;
+    if (next === picked) {
       pickFor = null;
       sheetOpen = false;
       return;
     }
-    void save(row, next, slot.picked, true);
+    void save(row, i, next, picked, true);
   }
 
-  async function save(row: Row, characterId: string | null, before: string | null, undoable: boolean) {
+  async function save(row: Row, i: number, characterId: string | null, before: string | null, undoable: boolean) {
     if (!chars || busy) return;
+    const entry = i > 0 ? (chars.slot(row.id)?.bosses[i] ?? null) : null;
     busy = true;
-    const result = await chars.pick(row.id, characterId).finally(() => (busy = false));
+    const result = await (entry ? chars.pickBoss(row.id, entry.key, characterId) : chars.pick(row.id, characterId)).finally(() => (busy = false));
     pickFor = null;
     sheetOpen = false;
     if (result.ok) {
-      const shown = shownCharacter(result.value);
-      const undo = undoable && before !== characterId ? () => void save(row, before, characterId, false) : undefined;
-      if (characterId && shown) notice = { member: row.id, tone: 'ok', lead: `${row.name} brings `, ign: shown.ign, tail: ' to this timing.', undo };
-      else if (shown) notice = { member: row.id, tone: 'ok', lead: `${row.name} is back on `, ign: shown.ign, tail: ` (${BASIS_WORDS[result.value.basis ?? 'main']}).`, undo };
-      else notice = { member: row.id, tone: 'ok', lead: `Cleared ${row.name}'s pick.`, undo };
+      const undo = undoable && before !== characterId ? () => void save(row, i, before, characterId, false) : undefined;
+      if (entry) {
+        const now = result.value.bosses[i];
+        const shown = result.value.candidates.find((c) => c.id === now?.brings) ?? null;
+        notice = shown
+          ? characterId
+            ? { member: row.id, tone: 'ok', lead: `${row.name} brings `, ign: shown.ign, tail: ` to ${entry.boss} on this timing.`, undo }
+            : { member: row.id, tone: 'ok', lead: `${row.name}'s ${entry.boss} is back on `, ign: shown.ign, tail: ` (same as ${firstBoss}).`, undo }
+          : { member: row.id, tone: 'ok', lead: `Cleared ${row.name}'s ${entry.boss} pick.`, undo };
+      } else {
+        const shown = shownCharacter(result.value);
+        if (characterId && shown) notice = { member: row.id, tone: 'ok', lead: `${row.name} brings `, ign: shown.ign, tail: ' to this timing.', undo };
+        else if (shown) notice = { member: row.id, tone: 'ok', lead: `${row.name} is back on `, ign: shown.ign, tail: ` (${BASIS_WORDS[result.value.basis ?? 'main']}).`, undo };
+        else notice = { member: row.id, tone: 'ok', lead: `Cleared ${row.name}'s pick.`, undo };
+      }
       void ready.load();
     } else if (result.code === 'stale') {
       // The slot was read again: say whose pick it shows now.
       const now = chars.slot(row.id);
-      const shown = now ? shownCharacter(now) : null;
-      const by = now?.picked_by ? actorName(now.picked_by, names, known) : null;
-      const lead = by ? `${by} changed ${row.name}'s pick a moment ago` : `${row.name}'s pick changed a moment ago`;
-      const basis = now?.basis ? ` (${BASIS_WORDS[now.basis]})` : '';
+      const at = entry ? now?.bosses[i] : now;
+      const shown = now ? (now.candidates.find((c) => c.id === at?.brings) ?? null) : null;
+      const by = at?.picked_by ? actorName(at.picked_by, names, known) : null;
+      const what = entry ? `${row.name}'s ${entry.boss} pick` : `${row.name}'s pick`;
+      const lead = by ? `${by} changed ${what} a moment ago` : `${what.charAt(0).toUpperCase()}${what.slice(1)} changed a moment ago`;
+      const basis = !entry && now?.basis ? ` (${BASIS_WORDS[now.basis]})` : '';
       notice = shown
         ? { member: row.id, tone: 'warn', lead: `${lead}${wide ? ", so yours wasn't saved" : ''}. Showing ${by ? 'theirs' : 'it now'}: `, ign: shown.ign, tail: `${basis}.${wide ? ' Pick again to change it.' : ''}` }
         : { member: row.id, tone: 'warn', lead: `${lead}, so yours wasn't saved. Nothing is brought now.` };
@@ -224,39 +256,128 @@
       notice = { member: row.id, tone: 'risk', lead: `Couldn't set ${row.name}'s character: ${result.message}` };
     }
     await tick();
-    trigger(row.id)?.focus({ preventScroll: true });
+    trigger(row.id, i)?.focus({ preventScroll: true });
   }
 
-  /** "the default", "picked 28 Sep by Asahi", "under HStar's Lv. 280". */
-  function meta(slot: RunCharacterSlot, c: CharacterChoice): string[] {
+  /** "Same for every boss": one write; Undo puts each per-boss pick back. */
+  async function same(row: Row) {
+    const slot = chars?.slot(row.id);
+    if (!chars || !slot || busy) return;
+    const kept = slot.bosses.slice(1).filter((b) => b.picked);
+    busy = true;
+    const result = await chars.same(row.id).finally(() => (busy = false));
+    if (result.ok) {
+      const shown = shownCharacter(result.value);
+      notice = {
+        member: row.id,
+        tone: 'ok',
+        lead: shown ? `${row.name} brings ` : `${row.name}'s per-boss picks are cleared.`,
+        ign: shown?.ign,
+        tail: shown ? ' to every boss again.' : undefined,
+        undo: kept.length ? () => void restore(row, kept) : undefined,
+      };
+      void ready.load();
+    } else if (result.code === 'stale') {
+      notice = { member: row.id, tone: 'warn', lead: `${row.name}'s per-boss picks changed a moment ago, so nothing was cleared. Showing them now.` };
+      void ready.load();
+    } else if (!result.unbuilt) {
+      notice = { member: row.id, tone: 'risk', lead: `Couldn't set ${row.name}'s characters: ${result.message}` };
+    }
+    await tick();
+    trigger(row.id, 0)?.focus({ preventScroll: true });
+  }
+
+  /** Undo of "Same for every boss": a failed restore stops there and keeps an Undo for it and the rest. */
+  async function restore(row: Row, kept: BossCharacterSlot[]) {
+    if (!chars) return;
+    busy = true;
+    let done = 0;
+    try {
+      for (const b of kept) {
+        const back = await chars.pickBoss(row.id, b.key, b.picked);
+        if (!back.ok) {
+          const left = kept.slice(done);
+          notice = {
+            member: row.id,
+            tone: 'risk',
+            lead: `Put back ${done} of ${kept.length} of ${row.name}'s per-boss picks; ${b.boss} failed (${back.message}). Undo tries the ${left.length === 1 ? 'last one' : `other ${left.length}`} again.`,
+            undo: () => void restore(row, left),
+          };
+          return;
+        }
+        done += 1;
+      }
+      notice = { member: row.id, tone: 'ok', lead: `${row.name}'s per-boss picks are back.` };
+    } finally {
+      busy = false;
+      void ready.load();
+    }
+  }
+
+  /** "the default", "same as HCarling", "picked 28 Sep by Asahi", "under HStar's Lv. 280". */
+  function meta(slot: RunCharacterSlot, i: number, c: CharacterChoice): string[] {
     const out: string[] = [];
-    if (c.id === fallback(slot)?.id) out.push('the default');
-    if (c.id === slot.picked && slot.picked_at) out.push(`picked ${dayMonth(slot.picked_at, timeZone)}${slot.picked_by ? ` by ${actorName(slot.picked_by, names, known)}` : ''}`);
-    const above = under(c);
+    const at = i > 0 ? slot.bosses[i] : slot;
+    if (i === 0 && c.id === fallback(slot)?.id) out.push('the default');
+    if (i > 0 && c.id === slot.brings) out.push(`same as ${firstBoss}`);
+    if (at && c.id === at.picked && at.picked_at) out.push(`picked ${dayMonth(at.picked_at, timeZone)}${at.picked_by ? ` by ${actorName(at.picked_by, names, known)}` : ''}`);
+    const above = under(c, i > 0 ? slot.bosses[i]?.key : undefined);
     if (above) out.push(`under ${above.label}’s Lv. ${above.entry}`);
     return out;
   }
 
-  /** The picker's note (B_FixedReadyPick, B_FixedReadyStates "no main"). */
-  function pickWords(row: Row, def: CharacterChoice | null): string {
+  /** The picker's note (B_FixedReadyPick, B_FixedReadyStates "no main", B_FixedBoss2Pick). */
+  function pickWords(row: Row, slot: RunCharacterSlot, i: number): string {
+    if (i > 0) {
+      const back = shownCharacter(slot);
+      return `Saves at once. Runs made from this timing bring it to ${slot.bosses[i]?.boss ?? 'this boss'} unless the run has its own pick.${back ? ` ${wide ? 'Choosing ' : ''}${back.ign} goes back to ${firstBoss}’s character.` : ''}`;
+    }
+    const def = fallback(slot);
     if (!def) return `${row.name} has no main, so nothing is brought until you pick. This pick is for this timing only.`;
     const back = def.role === 'main' ? ` ${wide ? 'Choosing ' : ''}${def.ign} goes back to the main.` : '';
     return `Saves at once. Runs made from this timing use it unless the run has its own pick.${back}`;
   }
 
-  /** The highest entry level above the character's level: tinted and named, still offered. */
-  function under(c: CharacterChoice): { label: string; entry: number } | null {
+  /** The highest entry level above the character's level (or that one boss's): tinted and named, still offered. */
+  function under(c: CharacterChoice, key?: string): { label: string; entry: number } | null {
     if (c.level === null) return null;
     let worst: { label: string; entry: number } | null = null;
-    for (const { label, entry } of entries) if (entry !== null && entry > c.level && (!worst || entry > worst.entry)) worst = { label, entry };
+    for (const { key: k, label, entry } of entries)
+      if ((key === undefined || k === key) && entry !== null && entry > c.level && (!worst || entry > worst.entry)) worst = { label, entry };
     return worst;
+  }
+
+  /** One boss line's verdict, for the character that boss brings. */
+  const verdictOf = (row: Row, i: number) => {
+    const key = row.slot?.bosses[i]?.key;
+    return row.ready?.bosses.find((b) => b.boss === key) ?? row.ready?.bosses[i] ?? null;
+  };
+
+  /** Each distinct character the member brings, with its values line once (B_FixedBoss2). */
+  function charLines(row: Row): { ign: string; values: string; source: string }[] {
+    if (!row.slot || !row.ready) return [];
+    const r = row.ready;
+    const ids = [...new Set(row.slot.bosses.map((b) => b.brings).filter((id): id is string => id !== null))];
+    return ids.flatMap((id) => {
+      const character = row.slot!.candidates.find((c) => c.id === id);
+      const values = r.character?.id === id ? r : r.characters.find((c) => c.character.id === id);
+      if (!character || !values) return [];
+      return [{ ign: character.ign, ...readinessLine(values, scouterAt(r) !== null) }];
+    });
   }
 </script>
 
 {#snippet basisTags(row: Row)}
   <span class="fixedready__tags">
     {#if row.unsaved}<span class="fixedready__basis fixedready__basis--new">not saved yet</span>{/if}
-    {#if row.character && row.basis === 'timing_pick'}
+    {#if perBossOpen(row) && row.slot}
+      {#if row.slot.per_boss}
+        <span class="fixedready__basis fixedready__basis--picked" data-fid="fixed-ready-basis"><Icon name="layers" />per boss</span>
+        <span>{new Set(row.slot.bosses.map((b) => b.brings)).size} characters · {row.slot.bosses.length} bosses</span>
+      {:else}
+        <span>{row.count} characters</span>
+      {/if}
+    {:else if row.character && row.basis === 'timing_pick'}
       <span class="fixedready__basis fixedready__basis--picked" data-fid="fixed-ready-basis"><Icon name="pin" />picked for this timing</span>
       {#if row.main && row.main.id !== row.character.id}<span>main is {row.main.ign}</span>{/if}
     {:else if row.character && row.basis === 'main'}
@@ -275,13 +396,13 @@
 
 {#snippet control(row: Row)}
   {@const why = locked(row)}
-  {@const expanded = pickFor === row.id || (sheetOpen && sheetFor === row.id)}
+  {@const expanded = pickFor === keyOf(row.id, 0) || (sheetOpen && sheetFor?.member === row.id && sheetFor.i === 0)}
   {#if row.character}
     <button
       type="button"
       class="slotchar__btn slotchar__chip"
       data-fid="fixed-ready-char"
-      data-char-for={row.id}
+      data-char-for={keyOf(row.id, 0)}
       aria-haspopup="dialog"
       aria-expanded={why ? undefined : expanded}
       aria-disabled={why || !row.slot ? 'true' : undefined}
@@ -296,7 +417,7 @@
       type="button"
       class="slotchar__btn slotchar__pick"
       data-fid="fixed-ready-pick"
-      data-char-for={row.id}
+      data-char-for={keyOf(row.id, 0)}
       aria-haspopup="dialog"
       aria-expanded={why ? undefined : expanded}
       aria-disabled={why || !row.slot ? 'true' : undefined}
@@ -306,10 +427,110 @@
   {/if}
 {/snippet}
 
-{#snippet pickNote(row: Row, slot: RunCharacterSlot)}
-  {@const def = fallback(slot)}
+{#snippet picker(row: Row, s: RunCharacterSlot, i: number)}
+  {@const slot = s}
+  {@const entry = i > 0 ? slot.bosses[i] : null}
+  <CharacterPicker
+    variant="popover"
+    what="timing"
+    fid="fixed-pick-menu"
+    optionFid="fixed-pick-option"
+    tagEveryOption
+    {...{ slot: s }}
+    name={row.name}
+    {title}
+    {busy}
+    boss={entry ? { token: entry.boss, first: firstBoss, brings: entry.brings, picked: entry.picked } : null}
+    meta={(c) => meta(slot, i, c)}
+    under={(c) => under(c, entry?.key) !== null}
+    onpick={(id) => choose(row, i, id)}
+    onclose={(refocus) => void closePick(row.id, i, refocus)}
+  >
+    {#snippet note()}{@render pickNote(row, slot, i)}{/snippet}
+  </CharacterPicker>
+{/snippet}
+
+{#snippet pickNote(row: Row, slot: RunCharacterSlot, i: number)}
   {#if wide}<span class="charpick__sep" aria-hidden="true"></span>{/if}
-  <p class="charpick__note" data-fid="fixed-pick-note">{pickWords(row, def)}</p>
+  <p class="charpick__note" data-fid="fixed-pick-note">{pickWords(row, slot, i)}</p>
+{/snippet}
+
+{#snippet toggle(row: Row)}
+  {#if row.slot?.per_boss}
+    <button
+      type="button"
+      class="btn bosspick__toggle"
+      data-fid="fixed-boss-same"
+      disabled={busy}
+      aria-label="{row.name}: same character for every boss (clears the per-boss picks)"
+      onclick={() => void same(row)}><Icon name="rotate-ccw" />Same for every boss</button
+    >
+  {:else}
+    {@const isOpen = opened.includes(row.id)}
+    <button
+      type="button"
+      class="btn bosspick__toggle"
+      data-fid="fixed-boss-toggle"
+      aria-expanded={isOpen}
+      aria-label="Pick {row.name}'s character per boss"
+      onclick={() => (opened = isOpen ? opened.filter((id) => id !== row.id) : [...opened, row.id])}><Icon name="layers" />Per boss<Icon name="chevron-down" /></button
+    >
+  {/if}
+{/snippet}
+
+<!-- B_FixedBoss2: one line per boss (boss · chip · verdict · basis), then each character's values once. -->
+{#snippet bossList(row: Row, slot: RunCharacterSlot)}
+  <ul class="bosspick" aria-label="{row.name}'s character per boss" data-fid="fixed-boss-picks">
+    {#each slot.bosses as entry, i (entry.boss)}
+      {@const character = slot.candidates.find((c) => c.id === entry.brings) ?? null}
+      {@const inherited = i > 0 && entry.basis === 'same_as_first'}
+      {@const verdict = verdictOf(row, i)}
+      {@const key = keyOf(row.id, i)}
+      <li class="bosspick__row" data-fid={i === 1 ? 'fixed-boss-row' : undefined}>
+        <span class="bosspick__boss" title={entry.boss}>{entry.boss}</span>
+        <span class="slotchar fixedready__control">
+          <button
+            type="button"
+            class="slotchar__btn {character ? 'slotchar__chip' : 'slotchar__pick'}"
+            class:slotchar__btn--same={inherited}
+            data-char-for={key}
+            aria-haspopup="dialog"
+            aria-expanded={pickFor === key || (sheetOpen && sheetFor?.member === row.id && sheetFor.i === i)}
+            aria-label={character
+              ? `${row.name}'s character for ${entry.boss}: ${character.ign}${inherited ? `, same as ${firstBoss}` : ''}, change`
+              : `Pick ${row.name}'s character for ${entry.boss}: ${slot.candidates.length} to choose from`}
+            onclick={() => open(row, i)}
+            >{#if character}<span class="slotchar__ign">{character.ign}</span>{#if wide && character.class}<span class="slotchar__meta">{character.class}</span>{/if}{:else}Pick character<span
+                class="slotchar__count mono">{slot.candidates.length}</span
+              >{/if}<Icon name="chevron-down" /></button
+          >
+          {#if wide && pickFor === key}{@render picker(row, slot, i)}{/if}
+        </span>
+        <span class="bosspick__chips">
+          {#if verdict && character}{@const v = levelChip(verdict)}<StatusChip tone={v.tone}>{v.text}</StatusChip>{/if}
+          {#if i === 0}
+            {#if entry.basis === 'timing_pick'}<span class="fixedready__basis fixedready__basis--picked"><Icon name="pin" />picked for this timing</span>
+            {:else if entry.basis === 'main'}<span class="fixedready__basis fixedready__basis--main"><Icon name="crown" />main</span>
+            {:else if entry.basis === 'only'}<span class="fixedready__basis fixedready__basis--only">only character</span>{/if}
+          {:else if inherited}
+            <span class="fixedready__basis fixedready__basis--none">same as {firstBoss}</span>
+          {:else if entry.basis === 'timing_pick'}
+            <span class="fixedready__basis fixedready__basis--picked"><Icon name="pin" />picked for {entry.boss}</span>
+          {/if}
+        </span>
+      </li>
+    {/each}
+  </ul>
+  {@const lines = charLines(row)}
+  {#if lines.length && !error}
+    <div class="bosspick__chars" role="group" aria-label="Readiness of {lines.map((l) => l.ign).join(' and ')}" data-fid="fixed-ready-values">
+      {#each lines as line (line.ign)}
+        <span class="ready__line"
+          ><span class="ready__values"><b>{line.ign}</b>{line.values}</span><span class="ready__source">{line.source}</span></span
+        >
+      {/each}
+    </div>
+  {/if}
 {/snippet}
 
 <div class="fixedready" class:fixedready--wide={wide} bind:this={panel}>
@@ -354,35 +575,24 @@
   {:else}
     <ul class="fixedready__rows" aria-label="Party characters">
       {#each rows as row (row.id)}
+        {@const many = perBossReady(row) && (row.count ?? 0) > 1}
+        {@const listed = perBossOpen(row)}
         <li class="fixedready__row" class:fixedready__row--new={row.unsaved} data-fid="fixed-ready-slot">
           <div class="fixedready__head">
             <span class="fixedready__who"><b class="fixedready__name">{row.name}</b>{@render basisTags(row)}</span>
             <span class="slotchar fixedready__control">
-              {@render control(row)}
-              {#if wide && pickFor === row.id && row.slot}
-                {@const slot = row.slot}
-                <CharacterPicker
-                  variant="popover"
-                  what="timing"
-                  fid="fixed-pick-menu"
-                  optionFid="fixed-pick-option"
-                  tagEveryOption
-                  {slot}
-                  name={row.name}
-                  {title}
-                  {busy}
-                  meta={(c) => meta(slot, c)}
-                  under={(c) => under(c) !== null}
-                  onpick={(id) => choose(row, id)}
-                  onclose={(refocus) => void closePick(row.id, refocus)}
-                >
-                  {#snippet note()}{@render pickNote(row, slot)}{/snippet}
-                </CharacterPicker>
+              {#if listed && many}
+                {@render toggle(row)}
+              {:else if !listed}
+                {@render control(row)}
+                {#if wide && pickFor === keyOf(row.id, 0) && row.slot}{@render picker(row, row.slot, 0)}{/if}
               {/if}
             </span>
           </div>
-          <!-- Values only for the character the row shows: right after a pick they wait for the next read. -->
-          {#if row.character && row.ready?.character?.id === row.character.id && !error}
+          {#if listed && row.slot}
+            {@render bossList(row, row.slot)}
+          {:else if row.character && row.ready?.character?.id === row.character.id && !error}
+            <!-- Values only for the character the row shows: right after a pick they wait for the next read. -->
             <ReadinessValues
               slot={row.ready}
               character={row.ready.character}
@@ -396,6 +606,7 @@
           {:else if row.character && ready.loading && !error}
             <span class="fixedready__skel fixedready__skel--long"></span><span class="fixedready__skel fixedready__skel--short"></span>
           {/if}
+          {#if !listed && many}{@render toggle(row)}{/if}
           {#if row.count === 0}
             <span class="fixedready__hint"
               >No characters yet · <a href="/members?open={encodeURIComponent(row.id)}" aria-label="{row.name} has no characters yet: add them on Members"
@@ -423,16 +634,20 @@
   {/if}
 
   <p class="fixedready__hint" data-fid="fixed-ready-default">
-    {wide
-      ? 'Each member brings their main, else their only character. A pick here overrides that for this timing only and saves at once; runs made from this timing use it unless the run has its own pick.'
-      : 'Each member brings their main, else their only character. A pick here saves at once; runs from this timing use it.'}
+    {#if wide}
+      Each member brings their main, else their only character. A pick here overrides that for this timing only and saves at once. <b>Per boss:</b> a boss with no pick
+      of its own takes the first boss’s{firstBoss ? ` (${firstBoss}’s)` : ''} character. Runs made from this timing use these unless the run has its own pick.
+    {:else}
+      Each member brings their main, else their only character. A pick here saves at once; runs from this timing use it. Per boss: a boss with no pick of its own takes
+      {firstBoss ? `${firstBoss}’s` : 'the first boss’s'} character.
+    {/if}
   </p>
   <p class="fixedready__hint" data-fid="fixed-ready-rules">
     {#snippet levels()}{#each entries as e, i (e.label)}{i ? ', ' : ''}{e.label}
         {#if e.entry !== null}<span class="mono">Lv. {e.entry}</span>{:else}no entry level{/if}{/each}{/snippet}
     {#if wide}
-      Per boss of the timing: level against its entry level{#if entries.length}&nbsp;({@render levels()}){/if}. CP, or the estimate where a lookup is kept (it
-      replaces CP), is shown, never judged. Fresh NEXON data first; else the roster level, marked manual.
+      Per boss of the timing: level against its entry level{#if entries.length}&nbsp;({@render levels()}){/if}, for the character that boss brings. CP, or the estimate
+      where a lookup is kept (it replaces CP), is shown, never judged. Fresh NEXON data first; else the roster level, marked manual.
     {:else}
       Level against each boss’s entry level{#if entries.length}: {@render levels()}{/if}. CP and estimates are shown, never judged.
     {/if}
@@ -441,9 +656,11 @@
   <span class="vh" role="status" aria-live="polite" aria-atomic="true">{announcement}</span>
 </div>
 
-{#if !wide && sheetRow?.slot}
+{#if !wide && sheetRow?.slot && sheetFor}
   {@const row = sheetRow}
   {@const slot = sheetRow.slot}
+  {@const i = sheetFor.i}
+  {@const entry = i > 0 ? slot.bosses[i] : null}
   <CharacterPicker
     variant="sheet"
     what="timing"
@@ -456,11 +673,12 @@
     {title}
     {eyebrow}
     {busy}
-    meta={(c) => meta(slot, c)}
-    under={(c) => under(c) !== null}
-    onpick={(id) => choose(row, id)}
-    returnFocus={() => trigger(row.id)}
+    boss={entry ? { token: entry.boss, first: firstBoss, brings: entry.brings, picked: entry.picked } : null}
+    meta={(c) => meta(slot, i, c)}
+    under={(c) => under(c, entry?.key) !== null}
+    onpick={(id) => choose(row, i, id)}
+    returnFocus={() => trigger(row.id, i)}
   >
-    {#snippet note()}{@render pickNote(row, slot)}{/snippet}
+    {#snippet note()}{@render pickNote(row, slot, i)}{/snippet}
   </CharacterPicker>
 {/if}

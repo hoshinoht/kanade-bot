@@ -543,11 +543,11 @@ test('limits: a server without the route shows the page and says so, and stops a
 
 test('history: seeded timeline, strict revert, conflicts and force', async ({ page }) => {
   // The real chain: #1 import, #2 the delivery tick's reminders, then the
-  // mock's #2–#9 as #3–#10; the 15 seeded character saves are settings
+  // mock's #2–#9 as #3–#10; the 16 seeded character saves are settings
   // records, and so are the startup pass's 4 copies of NEXON's class and
   // level (MikaNL, MikaBish, YuzuPala, TsubaKain).
   await go(page, '/history');
-  await expect(page.getByRole('heading', { level: 1 })).toHaveText('29 changes');
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('30 changes');
   const latest = page.getByRole('listitem').filter({ hasText: '#10' }).first();
   await expect(latest).toContainText('reverts #9');
   await expect(latest).toContainText('rollback');
@@ -568,7 +568,7 @@ test('history: seeded timeline, strict revert, conflicts and force', async ({ pa
   await choose(page.getByLabel('Who'), { label: 'Admin (token)' });
   await expect(page.getByRole('listitem').filter({ hasText: '#10' }).first().locator('strong').first()).toHaveText('Admin (token)');
   await choose(page.getByLabel('Who'), { label: 'everyone' });
-  await expect(page.getByRole('heading', { level: 1 })).toHaveText('29 changes');
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('30 changes');
 
   // Tsubame's answer (#3) was followed by an admin moving that run (#4): conflict.
   await page.locator('[data-history="3"]').click();
@@ -587,7 +587,7 @@ test('history: seeded timeline, strict revert, conflicts and force', async ({ pa
   await dialog.getByRole('checkbox', { name: /Force it/ }).check();
   await dialog.getByRole('button', { name: 'Force revert' }).click();
   await expect(toast(page, 'Reverted as #11.')).toBeVisible();
-  await expect(page.getByRole('heading', { level: 1 })).toHaveText('30 changes');
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('31 changes');
 
   // #8 (Seren cancelled) has no later change: a strict revert applies.
   await page.locator('[data-history="8"]').click();

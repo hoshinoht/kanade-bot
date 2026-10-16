@@ -112,7 +112,7 @@ export type SharedCard = { channel: string | null, posted_at: string, cleared_by
 
 export type MemberEstimateLimit = { error: 'member_limited', message: string, next_at: string, };
 
-export type RunPartyCharacters = { run_id: string, slots: Array<PartyCharacterSlot>, character_data: boolean, estimates: boolean, fresh_days: number | null, totals: PartyTotals | null, party_total: RunPartyTotal | null, nexon_data: boolean, attribution: string, estimate_label: string, estimate_note: string, };
+export type RunPartyCharacters = { run_id: string, slots: Array<PartyCharacterSlot>, character_data: boolean, estimates: boolean, fresh_days: number | null, party_total: RunPartyTotal | null, nexon_data: boolean, attribution: string, estimate_label: string, estimate_note: string, };
 
 export type PartyCharacterSlot = { member: PartyMember, you: boolean, character: PartyCharacter | null, scouter: Array<PartyEstimate> | null, bosses: Array<PartyBossCharacter>, };
 
@@ -152,10 +152,6 @@ critical_rate_assumed: boolean,
  * otherwise, or when the scouter didn't say.
  */
 critical_rate_actual: number | null, };
-
-export type PartyTotals = { fetched_at: string, stale: boolean, bosses: Array<PartyTotal>, };
-
-export type PartyTotal = { boss: string, difficulty: Difficulty, combined_percentage: number | null, estimated_minutes: number | null, technically_possible: boolean | null, complete: boolean, };
 
 export type ApiError = { error: string, message: string, };
 
