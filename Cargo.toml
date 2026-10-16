@@ -109,3 +109,31 @@ required-features = ["test-support"]
 name = "v02_quality"
 path = "examples/v02_quality/main.rs"
 required-features = ["test-support"]
+
+# The estimate chart's render and PNG encode, optimised in dev and test builds
+# too: unoptimised they take most of the 2 s CHART_DEADLINE on a 4-vCPU CI
+# runner, so parallel chart tests timed out (release renders are unaffected).
+[profile.dev.package.resvg]
+opt-level = 3
+[profile.dev.package.usvg]
+opt-level = 3
+[profile.dev.package.tiny-skia]
+opt-level = 3
+[profile.dev.package.tiny-skia-path]
+opt-level = 3
+[profile.dev.package.harfrust]
+opt-level = 3
+[profile.dev.package.skrifa]
+opt-level = 3
+[profile.dev.package.read-fonts]
+opt-level = 3
+[profile.dev.package.png]
+opt-level = 3
+[profile.dev.package.fdeflate]
+opt-level = 3
+[profile.dev.package.miniz_oxide]
+opt-level = 3
+[profile.dev.package.flate2]
+opt-level = 3
+[profile.dev.package.crc32fast]
+opt-level = 3

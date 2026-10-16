@@ -183,7 +183,8 @@ test.describe('touch', () => {
     const to = await above(page, 'r-bm');
     const [x0, y0] = [from.x + from.width / 2, from.y + from.height / 2];
     await touch('touchStart', x0, y0);
-    await page.waitForTimeout(400);
+    // Held until the long press picks the card up (not a fixed sleep: a busy runner fires the 250 ms timer late).
+    await expect(page.locator('.dnd-ghost--on')).toHaveCount(1);
     for (let i = 1; i <= 12; i++) await touch('touchMove', x0 + ((to.x - x0) * i) / 12, y0 + ((to.y - y0) * i) / 12);
     await touch('touchMove', to.x + 1, to.y + 1);
     await expect(page.locator('.dnd-ghost--on')).toContainText('→ 23:00');
