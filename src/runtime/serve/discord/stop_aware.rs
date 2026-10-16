@@ -224,6 +224,10 @@ impl<T: DiscordTransport> DiscordTransport for StopAware<T> {
             .await
     }
 
+    async fn retry_after(&self, channel: ChannelId) -> Option<std::time::Duration> {
+        self.inner.retry_after(channel).await
+    }
+
     async fn respond(&self, interaction: &InteractionRef, reply: &InteractionReply) -> Outcome<()> {
         self.race(true, self.inner.respond(interaction, reply))
             .await

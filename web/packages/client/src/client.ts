@@ -107,7 +107,8 @@ export interface Client {
   post<T>(path: string, body: unknown, options?: RequestOptions): Promise<T>;
   patch<T>(path: string, body: unknown, options?: RequestOptions): Promise<T>;
   put<T>(path: string, body: unknown, options?: RequestOptions): Promise<T>;
-  delete<T>(path: string, options?: RequestOptions): Promise<T>;
+  /** `body`: a JSON body for routes that take the precondition there (a guide's `{version}`). */
+  delete<T>(path: string, options?: RequestOptions, body?: unknown): Promise<T>;
 }
 
 /** Tagged answers one client keeps for revalidation; the oldest goes first. */
@@ -232,7 +233,7 @@ export function createClient(options: ClientOptions = {}): Client {
     post: (path, body, opts = {}) => request('POST', path, body, opts),
     patch: (path, body, opts = {}) => request('PATCH', path, body, opts),
     put: (path, body, opts = {}) => request('PUT', path, body, opts),
-    delete: (path, opts = {}) => request('DELETE', path, undefined, opts),
+    delete: (path, opts = {}, body) => request('DELETE', path, body, opts),
   };
 }
 

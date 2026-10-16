@@ -27,7 +27,7 @@
   import { onUnauthenticated } from '@kanade/client';
   import { loginHref, safeNext } from './auth';
   import { match, Router } from './router.svelte';
-  import { DETAILS, ROUTES, SECTIONS } from './routes';
+  import { DETAILS, forModules, routesFor, ROUTES, SECTIONS } from './routes';
   import type RunSheetType from './RunSheet.svelte';
   import type { default as PaletteType } from '@kanade/ui/palette';
   import EdgeSwipe from './shell/EdgeSwipe.svelte';
@@ -41,6 +41,7 @@
   import { AdminWeek, STATUS_LABELS, type MoveOutcome } from './store.svelte';
   import { Staging } from './drafts/staging.svelte';
   import { reread } from './week/reread';
+  import { followed, watchOutcomes } from './guides/outcome.svelte';
 
   // Route-level code splitting: only the Week page (and the run sheet it
   // opens) is in the initial bundle; every other page loads on first visit.
@@ -65,6 +66,7 @@
     config: () => import('./config/ConfigPage.svelte'),
     history: () => import('./history/HistoryPage.svelte'),
     drafts: () => import('./drafts/DraftsPage.svelte'),
+    guides: () => import('./guides/GuidesPage.svelte'),
   } as const;
 
   const router = new Router();
@@ -101,11 +103,18 @@
     return () => phoneQuery.removeEventListener('change', update);
   });
 
-  const route = $derived(match(router.path, ROUTES));
+  // Module destinations (Guides) exist only while the session says the server has them on.
+  const sections = $derived(forModules(SECTIONS, { guides: store.session?.guides ?? false }));
+  const route = $derived(match(router.path, routesFor(sections)));
+  // Before the session answers, a module page's path waits instead of showing Not found.
+  const awaitingModules = $derived(!route && !store.session && match(router.path, ROUTES) !== null);
   const detail = $derived(DETAILS.find((d) => d.key === route?.key));
-  const section = $derived(SECTIONS.find((s) => s.key === (detail?.section ?? route?.key)));
+  const section = $derived(sections.find((s) => s.key === (detail?.section ?? route?.key)));
   // The rail's and drawer's attention badges; More sums those of the pages behind it.
   const navBadges = $derived({ inbox: store.summary?.inbox ?? 0 });
+  // A guide run this tab started toasts once it ends, on whatever page the admin is (Guides default 9).
+  const following = $derived(followed.runs.length > 0);
+  $effect(() => (following ? watchOutcomes(toaster) : undefined));
   const which = $derived(router.query.get('week') === 'next' ? 'next' : 'this');
   const sheetRun = $derived(sheetRunId ? (store.run(sheetRunId) ?? null) : null);
   const OWN_TITLES: Record<string, string> = { login: 'Sign in', account: 'Account' };
@@ -207,6 +216,15 @@
         return { store, toaster, openId: router.query.get('open') ?? '', onopened: () => router.go('/fixed', { replace: true }) };
       case 'history':
         return { store, toaster };
+      case 'guides':
+        return {
+          store,
+          toaster,
+          item: router.query.get('item') ?? '',
+          // As Drafts: a pick on a phone pushes a tagged entry, so Back returns to the list.
+          onselect: (item: string, open: boolean) =>
+            router.go(`/guides${item ? `?item=${encodeURIComponent(item)}` : ''}`, { replace: !open, state: open ? { guideDetail: true } : null }),
+        };
       case 'drafts':
         return {
           store,
@@ -468,7 +486,7 @@
   }
 
   const commands = $derived<Command[]>([
-    ...SECTIONS.map((s) => ({ id: `go-${s.key}`, label: `Go to ${s.label}`, group: 'Page', keywords: s.group, run: () => router.go(s.href) })),
+    ...sections.map((s) => ({ id: `go-${s.key}`, label: `Go to ${s.label}`, group: 'Page', keywords: s.group, run: () => router.go(s.href) })),
     ...(['planner', 'runs', 'answers'] as const).map((id) => ({
       id: `tab-${id}`,
       label: `Show ${id === 'planner' ? 'Planner' : id === 'runs' ? 'Runs' : 'Answers'}`,
@@ -641,7 +659,7 @@
         returnTo={menuButton}
       >
         {#snippet nav(follow)}
-          <NavList active={section?.key ?? ''} badges={navBadges} counts={store.drawerCounts} inline onnavigate={follow} />
+          <NavList {sections} active={section?.key ?? ''} badges={navBadges} counts={store.drawerCounts} inline onnavigate={follow} />
         {/snippet}
         {#snippet foot()}
           {@render account()}
@@ -654,6 +672,7 @@
       <Rail
         name={store.identity?.name ?? 'Kanade'}
         avatar={store.identity ? artUrl(store.identity.avatar, store.identity) : null}
+        {sections}
         active={section?.key ?? ''}
         badges={navBadges}
         {account}
@@ -677,7 +696,7 @@
         />
       {:else if loader && route}
         {#key route.key === 'bosses' || route.key === 'boss-knowledge' ? 'boss-workspace' : route.key === 'chat' || route.key === 'chat-interaction' ? 'chat-workspace' : `${route.key} ${JSON.stringify(route.params)}`}<Lazy {loader} props={pageProps(route.key, route.params)} />{/key}
-      {:else}
+      {:else if !awaitingModules}
         <NotFoundPage path={router.path} />
       {/if}
 

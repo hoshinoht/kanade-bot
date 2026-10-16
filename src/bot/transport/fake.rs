@@ -4,6 +4,7 @@
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::time::Duration;
 
 use tokio::sync::Notify;
 use twilight_model::application::command::{Command, CommandOptionChoice};
@@ -264,6 +265,8 @@ struct State {
     /// The application's emojis, in upload order.
     application_emojis: Vec<ApplicationEmoji>,
     next_emoji_id: u64,
+    /// What [`DiscordTransport::retry_after`] answers.
+    retry_after: Option<Duration>,
     #[cfg(any(test, feature = "test-support"))]
     reaction_pages: ScriptedReactionPages,
 }
@@ -486,6 +489,12 @@ impl FakeDiscord {
     /// The application's emojis now, landed uploads included.
     pub fn application_emojis(&self) -> Vec<ApplicationEmoji> {
         self.state().application_emojis.clone()
+    }
+
+    /// The retry-after a rate-limited edit or delete reports from now on
+    /// (script the 429 itself with `Step::Reject(RateLimited)`).
+    pub fn set_retry_after(&self, wait: Option<Duration>) {
+        self.state().retry_after = wait;
     }
 }
 
@@ -721,6 +730,10 @@ impl DiscordTransport for FakeDiscord {
             outcome: outcome.clone(),
         });
         outcome
+    }
+
+    async fn retry_after(&self, _channel: ChannelId) -> Option<Duration> {
+        self.state().retry_after
     }
 
     async fn respond(&self, interaction: &InteractionRef, reply: &InteractionReply) -> Outcome<()> {

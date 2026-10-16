@@ -6,14 +6,14 @@ use std::sync::Arc;
 
 use kanade::bot::transport::{AmbiguousKind, Op, Step};
 use kanade::domain::guides::{
-    Blocked, Confirmations, GuideStore, OpKind, OpOutcome, PlanOp, PublishKind, PublishOp,
-    PublishState, SlotState, StopReason,
+    Blocked, Confirmations, GuideGrants, GuideStore, OpKind, OpOutcome, PlanOp, PublishKind,
+    PublishOp, PublishState, SlotState, StopReason,
 };
 use kanade::domain::notify::{
     Claim, DeliveryJournal, EffectKind, IntentContent, NotificationIntent, Receipt,
 };
 
-use super::{CHANNEL, Rig, at, bosses, shown, text};
+use super::{ALL, CHANNEL, Rig, at, bosses, shown, text};
 
 fn ambiguous(applied: bool) -> Step {
     Step::Ambiguous {
@@ -326,4 +326,60 @@ async fn a_create_bound_before_its_op_was_settled_is_recovered_from_the_journal(
         (slot.state, slot.message_id.as_deref()),
         (SlotState::Posted, Some(FOUND.to_string().as_str()))
     );
+}
+
+/// A search run re-reads the saved map and the channel before its first
+/// Discord call: nothing left unknown sends nothing, and a channel the bot
+/// can no longer read stops it before any search.
+#[tokio::test]
+async fn a_search_run_checks_the_saved_slots_and_the_channel_first() {
+    let rig = Rig::new().await;
+    rig.save(CHANNEL, &[text(1, "A")]).await;
+    rig.publish().await;
+    let calls = rig.fake.calls().len();
+    rig.request(
+        PublishKind::Search,
+        &"0".repeat(64),
+        Confirmations::default(),
+        false,
+    )
+    .await;
+    let run = rig.run().await;
+    assert_eq!(
+        (run.state, run.stop_reason),
+        (PublishState::Stopped, Some(StopReason::PlanChanged))
+    );
+    assert_eq!(rig.fake.calls().len(), calls, "no Discord call at all");
+    assert!(rig.ops(&run).await.is_empty());
+
+    // An unknown slot, then the bot loses Read Message History.
+    rig.save(CHANNEL, &[text(1, "A"), text(2, "B")]).await;
+    rig.fake.script(Op::Create, ambiguous(false));
+    assert_eq!(
+        rig.publish().await.stop_reason,
+        Some(StopReason::UnknownSlot)
+    );
+    rig.channels.set(
+        CHANNEL,
+        GuideGrants {
+            history: false,
+            ..ALL
+        },
+    );
+    let reads = rig.fake.count(Op::ChannelMessages);
+    rig.request(
+        PublishKind::Search,
+        &"0".repeat(64),
+        Confirmations::default(),
+        false,
+    )
+    .await;
+    let run = rig.run().await;
+    assert_eq!(run.stop_reason, Some(StopReason::Rejected));
+    assert_eq!(
+        rig.fake.count(Op::ChannelMessages),
+        reads,
+        "nothing searched"
+    );
+    assert_eq!(rig.slots().await[1].state, SlotState::Unknown);
 }

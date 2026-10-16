@@ -27,7 +27,8 @@ export const isWindowClear = (change: SettingsChangeRow) => change.section === L
 export const MEMBERS_SECTION = 'members';
 export const isMemberEdit = (change: SettingsChangeRow) => change.section === MEMBERS_SECTION;
 /** Where a record comes from: its own page, or a Config section. */
-export const settingOrigin = (change: SettingsChangeRow) => (isWindowClear(change) ? 'Limits' : isMemberEdit(change) ? 'Members' : 'Config');
+export const settingOrigin = (change: SettingsChangeRow) =>
+  isWindowClear(change) ? 'Limits' : isMemberEdit(change) ? 'Members' : change.section === 'guides' ? 'Guides' : 'Config';
 
 export const sectionLabel = (section: string) =>
   section === LIMITS_SECTION ? 'Limits' : section === MEMBERS_SECTION ? 'Members' : (SECTIONS[section]?.label ?? section);

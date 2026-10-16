@@ -13,10 +13,10 @@
 //!   (the admin every spec browses as), the break-glass token with the token
 //!   session the template holds, and what the admin's trusted edge sends for
 //!   a Tailscale sign-in (the browser is that edge's loopback peer).
-//! - `POST /__e2e/modules` `{roster?, character_data?}`: a restart over the
-//!   live store with those modules (serve reads them once, at startup);
-//!   `character_data` needs `roster`, and `roster: false` turns both off.
-//!   Answers the modules now on.
+//! - `POST /__e2e/modules` `{roster?, character_data?, guides?}`: a restart
+//!   over the live store with those modules (serve reads them once, at
+//!   startup); `character_data` needs `roster`, and `roster: false` turns
+//!   both off. Answers the modules now on.
 //! - `POST /__e2e/limits` `{groups: "three" | "default"}`: the canned
 //!   governor Limits shows: the mock's declared cloud, local and legacy
 //!   groups, or the one gateway group (no real flow fills a governor).
@@ -229,6 +229,7 @@ impl Shared {
         let mut slot = self.generation.lock().await;
         self.clock.reset();
         self.world.three_groups.store(false, Ordering::SeqCst);
+        self.world.offline.store(false, Ordering::SeqCst);
         p5::reset(&self.world);
         slot.serial += 1;
         let path = self.db_dir.join(format!("live-{}.sqlite3", slot.serial));
@@ -361,6 +362,7 @@ pub fn router(shared: &Arc<Shared>, origin: Origin) -> Router {
         .merge(discord::routes(Arc::clone(&shared.page)))
         .merge(p5::routes())
         .merge(crate::controls_p6::routes(shared))
+        .merge(crate::controls_guides::routes(shared))
         .fallback(forward);
     if origin == Origin::Admin {
         app = app.nest_service("/__showcase", shared.showcase.clone());
@@ -448,6 +450,7 @@ async fn spend_chat(
 struct ModulesChange {
     roster: Option<bool>,
     character_data: Option<bool>,
+    guides: Option<bool>,
 }
 
 async fn set_modules(
@@ -467,11 +470,13 @@ async fn set_modules(
     let modules = Modules {
         roster,
         character_data,
+        guides: change.guides.unwrap_or(current.guides),
     };
     match side.shared.restart(modules).await {
         Ok(modules) => Json(json!({
             "roster": modules.roster,
             "character_data": modules.character_data,
+            "guides": modules.guides,
         }))
         .into_response(),
         Err(error) => (StatusCode::INTERNAL_SERVER_ERROR, error.to_string()).into_response(),

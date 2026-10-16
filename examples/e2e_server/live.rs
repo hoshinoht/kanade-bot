@@ -52,6 +52,7 @@ use crate::{
     Fail, LOOPBACK,
     bot::Bot,
     fakes::{chardata, discord, gateway, guild::Guild},
+    guides::{self, GuideSide},
     seed,
 };
 
@@ -80,6 +81,10 @@ pub struct World {
     /// The scouter's and NEXON's answers, and whether a generation has a
     /// key and a scouter URL at all (`controls_p5`).
     pub chardata: Arc<chardata::Modes>,
+    /// Discord is "offline" (`/__e2e/discord/guide {script: "offline"}`):
+    /// the guild cache says disconnected and the guide channels can't be
+    /// read. Every generation reads it live; a reset clears it.
+    pub offline: Arc<AtomicBool>,
 }
 
 /// The optional modules a generation composes with (serve reads them once
@@ -88,6 +93,7 @@ pub struct World {
 pub struct Modules {
     pub roster: bool,
     pub character_data: bool,
+    pub guides: bool,
 }
 
 /// What each origin forwards to: the real listeners' routers.
@@ -102,6 +108,10 @@ pub struct Generation {
     composition: Composition,
     character_data: Option<CharacterDataModule>,
     bot: Option<Bot>,
+    /// This generation's fake Discord (the Discord side's transport).
+    discord: Arc<kanade::bot::transport::FakeDiscord>,
+    /// Module `guides`: its publisher over `discord`.
+    guides: Option<GuideSide>,
 }
 
 impl World {
@@ -147,6 +157,7 @@ impl World {
             model,
             three_groups: Arc::default(),
             chardata,
+            offline: Arc::default(),
         })
     }
 
@@ -155,6 +166,7 @@ impl World {
         Modules {
             roster: self.config.modules.roster,
             character_data: self.config.modules.character_data,
+            guides: self.config.modules.guides,
         }
     }
 
@@ -173,10 +185,18 @@ impl World {
         })
         .await?;
         let store = Arc::new(store);
+        let discord = match guides::discord(&store).await {
+            Ok(discord) => discord,
+            Err(error) => {
+                let _ = close_store(store).await;
+                return Err(error);
+            }
+        };
         let mut config = self.config.clone();
         config.store.db_path = path.clone();
         config.modules.roster = modules.roster;
         config.modules.character_data = modules.character_data;
+        config.modules.guides = modules.guides;
         if !modules.character_data {
             config.character_data = None;
         }
@@ -208,9 +228,30 @@ impl World {
                 mut composition,
                 character_data,
             }) => {
-                // The gateway's guild cache as the seeded guild shows it.
+                let guides = modules.guides.then(|| {
+                    GuideSide::new(guides::Parts {
+                        store: Arc::clone(&store),
+                        discord: Arc::clone(&discord),
+                        offline: Arc::clone(&self.offline),
+                        state: &composition.admin.state,
+                        boss_dir: config.runtime.http.boss_dir.as_deref(),
+                        knowledge_dir: composition
+                            .knowledge
+                            .as_deref()
+                            .map(|knowledge| knowledge.path.as_path()),
+                        clock: Arc::clone(&self.clock),
+                        instance_id: config.instance_id.clone(),
+                    })
+                });
+                // The gateway's guild cache as the seeded guild shows it, and
+                // the guide publisher while the module is on.
+                let offline = Arc::clone(&self.offline);
+                let port = guides.as_ref().map(GuideSide::port);
                 let installed = Arc::get_mut(&mut composition.admin.state)
-                    .map(|state| state.channels = Arc::new(Guild))
+                    .map(|state| {
+                        state.channels = Arc::new(Guild { offline });
+                        state.guides = port;
+                    })
                     .is_some();
                 let generation = Generation {
                     path,
@@ -218,6 +259,8 @@ impl World {
                     composition,
                     character_data,
                     bot: None,
+                    discord,
+                    guides,
                 };
                 if !installed {
                     let _ = generation.close().await;
@@ -244,8 +287,13 @@ impl World {
         let generation = self.open(path.to_owned(), false, self.modules()).await?;
         let live = generation.live();
         let seeded = match seed::template(generation.store.clone(), &live.state).await {
-            Ok(()) => match seed::auth_extra::seed(&generation.store, (live.state.clock)()).await {
-                Ok(()) => self.sign_in_admins(live, token).await,
+            Ok(()) => match generation.seed_guides().await {
+                Ok(()) => {
+                    match seed::auth_extra::seed(&generation.store, (live.state.clock)()).await {
+                        Ok(()) => self.sign_in_admins(live, token).await,
+                        Err(error) => Err(error),
+                    }
+                }
                 Err(error) => Err(error),
             },
             Err(error) => Err(error),
@@ -443,23 +491,56 @@ impl Generation {
         &self.store
     }
 
-    /// Starts serve's Discord side over this generation's composition.
-    async fn with_bot(self, config: ServeConfig, clock: Clock) -> Result<Self, Fail> {
+    /// Module `guides`: the template's guides (nothing while it is off).
+    async fn seed_guides(&self) -> Result<(), Fail> {
+        match &self.guides {
+            Some(side) => guides::seed(side, &self.store, &self.composition.admin.state).await,
+            None => Ok(()),
+        }
+    }
+
+    /// The guide publisher, while module `guides` is on.
+    pub fn guides(&self) -> Option<&GuideSide> {
+        self.guides.as_ref()
+    }
+
+    /// Starts serve's Discord side over this generation's composition, then
+    /// the guide worker. Serve's own guide publisher stays off: it waits for
+    /// a gateway `READY` the e2e gateway never sends.
+    async fn with_bot(self, mut config: ServeConfig, clock: Clock) -> Result<Self, Fail> {
         let Self {
             path,
             store,
             composition,
             character_data,
             bot: _,
+            discord,
+            mut guides,
         } = self;
-        match Bot::start(config, Arc::clone(&store), composition, clock).await {
-            Ok((composition, bot)) => Ok(Self {
-                path,
-                store,
-                composition,
-                character_data,
-                bot: Some(bot),
-            }),
+        config.modules.guides = false;
+        match Bot::start(
+            config,
+            Arc::clone(&store),
+            composition,
+            clock,
+            Arc::clone(&discord),
+        )
+        .await
+        {
+            Ok((composition, bot)) => {
+                if let Some(side) = &mut guides {
+                    side.spawn();
+                }
+                Ok(Self {
+                    path,
+                    store,
+                    composition,
+                    character_data,
+                    bot: Some(bot),
+                    discord,
+                    guides,
+                })
+            }
             Err(error) => {
                 if let Some(module) = character_data {
                     module.stop(CLOSE_WAIT).await;
@@ -481,7 +562,12 @@ impl Generation {
             composition,
             character_data,
             bot,
+            discord: _,
+            guides,
         } = self;
+        if let Some(side) = guides {
+            side.stop().await;
+        }
         if let Some(bot) = bot {
             bot.stop().await;
         }

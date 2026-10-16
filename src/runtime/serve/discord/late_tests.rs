@@ -52,6 +52,7 @@ fn every_default_bodied_method_is_delegated() {
             "trigger_typing",
             "reaction_users",
             "message_flags",
+            "retry_after",
             "defer_update",
             "followup",
             "autocomplete",
@@ -69,7 +70,8 @@ fn every_default_bodied_method_is_delegated() {
         // over to the ready transport.
         assert!(
             late.contains(&format!("delegate!(self,{name}("))
-                || late.contains(&format!("inner.{name}()")),
+                || late.contains(&format!("inner.{name}()"))
+                || late.contains(&format!("?.{name}(")),
             "LateTransport does not delegate `{name}`"
         );
     }
@@ -187,6 +189,8 @@ async fn defaults_reach_discord_once_ready_and_are_refused_unsent_before() {
             .await
             .failure_label(),
     );
+    // No HTTP call: Twilight's own limiter waits a retry-after, so it reports none.
+    assert_eq!(late.retry_after(channel).await, None);
     not_invalid(late.defer_update(&interaction).await.failure_label());
     not_invalid(late.followup(&interaction, &reply).await.failure_label());
     not_invalid(late.autocomplete(&interaction, &[]).await.failure_label());

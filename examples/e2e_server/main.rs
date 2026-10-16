@@ -17,8 +17,10 @@
 
 mod bot;
 mod controls;
+mod controls_guides;
 mod controls_p6;
 mod fakes;
+mod guides;
 mod live;
 mod seed;
 
@@ -238,6 +240,8 @@ fn config(
         ),
         ("KANADE_MODULE_ROSTER", "1".to_owned()),
         ("KANADE_MODULE_CHARACTER_DATA", "1".to_owned()),
+        // The guide publisher over the fake Discord (`guides`).
+        ("KANADE_MODULE_GUIDES", "1".to_owned()),
         (
             "KANADE_CHARACTER_DATA_DB_PATH",
             path("db/template.chardata.sqlite3"),

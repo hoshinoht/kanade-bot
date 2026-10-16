@@ -81,7 +81,7 @@ for (const size of [
   });
 }
 
-test('rail: More is a keyboard menu of Rewrites, Limits and Reminders', async ({ page }) => {
+test('rail: More is a keyboard menu of Rewrites, Limits, Reminders and Guides', async ({ page }) => {
   await page.goto(`${ADMIN}/members?sw=off`);
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('15 bossers');
   const nav = page.locator('.navrail').getByRole('navigation', { name: 'Sections' });
@@ -100,10 +100,11 @@ test('rail: More is a keyboard menu of Rewrites, Limits and Reminders', async ({
   for (const [key, name] of [
     ['ArrowDown', 'Limits'],
     ['ArrowDown', 'Reminders'],
+    ['ArrowDown', 'Guides'],
     ['ArrowDown', 'Rewrites'],
-    ['ArrowUp', 'Reminders'],
+    ['ArrowUp', 'Guides'],
     ['Home', 'Rewrites'],
-    ['End', 'Reminders'],
+    ['End', 'Guides'],
   ] as const) {
     await page.keyboard.press(key);
     await expect(item(name)).toBeFocused();
@@ -115,7 +116,7 @@ test('rail: More is a keyboard menu of Rewrites, Limits and Reminders', async ({
   await expect(more).toHaveAttribute('aria-expanded', 'false');
   // ↑ opens on the last item; Tab closes and moves on.
   await page.keyboard.press('ArrowUp');
-  await expect(item('Reminders')).toBeFocused();
+  await expect(item('Guides')).toBeFocused();
   await page.keyboard.press('Tab');
   await expect(menu).toBeHidden();
   // Space opens too; a click elsewhere closes.
@@ -219,8 +220,8 @@ test('phone: the navigation drawer traps focus, closes every way, and gives focu
   await drawer.getByRole('link', { name: 'History' }).click();
   await expect(page).toHaveURL(`${ADMIN}/history`);
   await expect(drawer).toBeHidden();
-  // 26 seeded records plus the startup pass's 4 copies of NEXON's class and level.
-  await expect(page.getByRole('heading', { level: 1 })).toHaveText('30 changes');
+  // 26 seeded records, the startup pass's 4 copies of NEXON's class and level, and the guides seed's 4 rows.
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('34 changes');
   await expect(page.locator('#main')).toBeFocused();
   await expect(page.locator('.topbar__title')).toHaveText('History');
   expect(await scrolls(page)).toBeLessThanOrEqual(0);
@@ -267,11 +268,11 @@ test('phone: the drawer has a More row that opens in place', async ({ page }) =>
   const drawer = page.getByRole('dialog', { name: 'Navigation' });
   const more = drawer.getByRole('button', { name: /^More/ });
   await expect(more).toHaveAttribute('aria-expanded', 'false');
-  await expect(more).toContainText('Rewrites, Limits, Reminders');
+  await expect(more).toContainText('Rewrites, Limits, Reminders, Guides');
   await expect(drawer.getByRole('link', { name: 'Limits' })).toHaveCount(0);
   await more.click();
   await expect(more).toHaveAttribute('aria-expanded', 'true');
-  await expect(drawer.getByRole('link')).toContainText(['Rewrites', 'Limits', 'Reminders']);
+  await expect(drawer.getByRole('link')).toContainText(['Rewrites', 'Limits', 'Reminders', 'Guides']);
   await drawer.getByRole('link', { name: 'Limits' }).click();
   await expect(page).toHaveURL(`${ADMIN}/limits`);
   await expect(drawer).toBeHidden();

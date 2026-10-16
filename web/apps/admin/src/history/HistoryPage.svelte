@@ -7,7 +7,7 @@
   import '@kanade/ui/styles/screens/history.scss';
   import '@kanade/ui/styles/core/date-picker.scss';
   import '@kanade/ui/styles/core/select.scss';
-  import type { ChangeRecord, Checkpoints, HistoryPage, RevertPlan, SettingsChangeRow } from '@kanade/api-types';
+  import type { Channel, ChangeRecord, Checkpoints, GuideList, HistoryPage, RevertPlan, SettingsChangeRow } from '@kanade/api-types';
   import { createClient } from '@kanade/client';
   import { SvelteSet } from 'svelte/reactivity';
   import { onMount, tick } from 'svelte';
@@ -19,6 +19,7 @@
   import HistoryDetail from './HistoryDetail.svelte';
   import ConfigDetail from './ConfigDetail.svelte';
   import { isWindowClear, mergeTimeline, sectionLabel, settingCount, settingOrigin, settingSummary, type TimelineItem } from './settings';
+  import { guideEvent, isGuideChange, type GuideLookup } from './guides';
   import CheckpointsPanel from './CheckpointsPanel.svelte';
   import SignInsPanel from './SignInsPanel.svelte';
   import GraphPanel from './GraphPanel.svelte';
@@ -215,6 +216,25 @@
   const titles = $derived(runTitles(runs, records));
   const runName = (id: string) => titles.get(id);
   const tz = $derived(store.week?.timezone ?? 'Asia/Kuala_Lumpur');
+  // Guide rows name their guide: the list (module `guides` on) and the channels, read once there are any.
+  const hasGuides = $derived(settings.some(isGuideChange));
+  let guideLookup = $state<GuideLookup>({ titles: {}, byChannel: {}, channelName: () => '#unknown-channel' });
+  let guidesRead = false;
+  $effect(() => {
+    if (!hasGuides || guidesRead) return;
+    guidesRead = true;
+    void Promise.all([store.session?.guides ? client.get<GuideList>('/api/admin/guides').catch(() => null) : null, client.get<Channel[]>('/api/admin/channels').catch(() => [])]).then(([list, channels]) => {
+      const guides = list?.guides ?? [];
+      guideLookup = {
+        titles: Object.fromEntries(guides.map((g) => [g.id, g.title])),
+        byChannel: Object.fromEntries(guides.flatMap((g) => (g.channel_id ? [[g.channel_id, g.id]] : []))),
+        channelName: (id) => channels.find((c) => c.id === id)?.name ?? '#unknown-channel',
+      };
+    });
+  });
+  const guideOf = (change: SettingsChangeRow) => guideEvent(change, settings, guideLookup);
+  // The publisher's outcome rows are `system (guides)` on the guide publisher, not reminder delivery.
+  const surfaceOf = (change: SettingsChangeRow) => (isGuideChange(change) && change.actor.kind === 'system' ? 'guide publisher' : (SURFACE_LABELS[change.surface] ?? change.surface));
   const timeline = $derived(mergeTimeline(records, settings));
   const itemKey = (item: TimelineItem) => (item.kind === 'change' ? String(item.record.seq) : `c${item.change.id}`);
   const weeks = $derived([...new Set([...records.flatMap((r) => r.weeks), ...settings.map((s) => s.week)])].sort().reverse());
@@ -346,12 +366,15 @@
 <!-- A Config save (or a cleared Limits window): the same row shape, a square dot and a "Config" (or "Limits") chip; view-only. -->
 {#snippet saveBody(change: SettingsChangeRow, isActive: boolean)}
   {@const who = actorName(change.actor, names, known)}
+  {@const guide = guideOf(change)}
+  {@const summary = guide?.summary ?? settingSummary(change)}
+  {@const count = guide?.count ?? settingCount(change)}
   <span class="history-row__dot history-row__dot--config" aria-hidden="true"></span>
   <RowContent expanded={isActive}>
-    {#snippet compact()}<strong class="history-row__actor">{who}</strong> · <span class="history-row__summary">{settingSummary(change)}</span> · {SURFACE_LABELS[change.surface] ?? change.surface} · {localAt(change.at, tz)} · {settingCount(change)}{/snippet}
+    {#snippet compact()}<strong class="history-row__actor">{who}</strong> · <span class="history-row__summary">{summary}</span> · {surfaceOf(change)} · {localAt(change.at, tz)} · {count}{/snippet}
     <span class="history-row__text">
-    <span class="history-row__head"><strong class="history-row__actor">{who}</strong><span class="chip chip--mono history-row__config">{settingOrigin(change)}</span><span class="chip chip--mono">{SURFACE_LABELS[change.surface] ?? change.surface}</span><span class="history-row__time mono">{localAt(change.at, tz)}</span><span class="history-row__rows mono">{settingCount(change)}</span>{#if isActive}<span class="history-row__open cap">open</span>{/if}</span>
-    <span class="history-row__summary">{settingSummary(change)}</span>
+    <span class="history-row__head"><strong class="history-row__actor">{who}</strong><span class="chip chip--mono history-row__config">{settingOrigin(change)}</span><span class="chip chip--mono">{surfaceOf(change)}</span><span class="history-row__time mono">{localAt(change.at, tz)}</span><span class="history-row__rows mono">{count}</span>{#if isActive}<span class="history-row__open cap">open</span>{/if}</span>
+    <span class="history-row__summary">{summary}</span>
     </span>
   </RowContent>
 {/snippet}
@@ -463,7 +486,7 @@
         {#if nextBefore !== null}<div class="history-list-region__pager"><button class="btn" type="button" disabled={loading} onclick={() => void load(true)}>Older changes</button></div>{/if}
       </div>
       {#if pane.shown?.kind === 'change'}<HistoryDetail wide={wide} member={memberRevert} record={selected ?? pane.shown.record} week={selected ? selectedWeek : pane.shown.week} timezone={tz} {names} runTitle={runName} onclose={closeDetail} onrevert={revert} onrestore={restoreWeek} onraw={showRaw} leaving={pane.leaving} onleft={(event) => pane.done(event)} />
-      {:else if pane.shown?.kind === 'config'}{@const change = selectedSave ?? pane.shown.change}<ConfigDetail wide={wide} {change} timezone={tz} actor={actorName(change.actor, names, known)} onclose={closeDetail} onraw={showSaveRaw} leaving={pane.leaving} onleft={(event) => pane.done(event)} />{/if}
+      {:else if pane.shown?.kind === 'config'}{@const change = selectedSave ?? pane.shown.change}<ConfigDetail wide={wide} {change} guide={guideOf(change)} surface={surfaceOf(change)} timezone={tz} actor={actorName(change.actor, names, known)} onclose={closeDetail} onraw={showSaveRaw} leaving={pane.leaving} onleft={(event) => pane.done(event)} />{/if}
     </div>
   {:else if tab === 'graph'}
     <div class="history-window__body history-window__body--graph" id="history-graph" role="tabpanel" aria-labelledby="history-tab-graph">

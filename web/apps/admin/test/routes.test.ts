@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ALL_SECTIONS, CAPABILITIES, enabledSections, MORE, ROUTES, SECTIONS, sumBadges } from '../src/routes';
+import { ALL_SECTIONS, CAPABILITIES, enabledSections, forModules, MORE, ROUTES, routesFor, SECTIONS, sumBadges } from '../src/routes';
 
 describe('capabilities', () => {
   it('put Drafts in Schedule after Bosses, routed, now that its page has landed', () => {
@@ -16,8 +16,16 @@ describe('capabilities', () => {
 });
 
 describe('More', () => {
-  it('holds Rewrites, Limits and Reminders in nav order', () => {
-    expect(MORE.map((s) => s.label)).toEqual(['Rewrites', 'Limits', 'Reminders']);
+  it('holds Rewrites, Limits, Reminders and Guides in nav order', () => {
+    expect(MORE.map((s) => s.label)).toEqual(['Rewrites', 'Limits', 'Reminders', 'Guides']);
+    expect(MORE.find((s) => s.key === 'guides')).toMatchObject({ href: '/guides', icon: 'book-open', module: 'guides' });
+  });
+
+  it('drops Guides from the rail, the palette and the router while the module is off', () => {
+    const off = forModules(SECTIONS, { guides: false });
+    expect(off.map((s) => s.key)).not.toContain('guides');
+    expect(routesFor(off).map((r) => r.pattern)).not.toContain('/guides');
+    expect(routesFor(forModules(SECTIONS, { guides: true })).map((r) => r.pattern)).toContain('/guides');
   });
 
   it("sums its destinations' badges and nobody else's", () => {

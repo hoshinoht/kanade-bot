@@ -15,15 +15,18 @@
   import { focusMenuItem, Icon, menuButtonKey, menuKey, pulse } from '@kanade/ui';
   import { tick, untrack } from 'svelte';
   import { arrival } from '../resource.svelte';
-  import { MORE, sumBadges } from '../routes';
+  import { sumBadges, type Section } from '../routes';
 
   let {
+    more,
     active,
     badges = {},
     counts = {},
     inline = false,
     onnavigate,
   }: {
+    /** The destinations behind More (`more` in routes.ts) whose module is on. */
+    more: Section[];
     active: string;
     badges?: Partial<Record<string, number>>;
     counts?: Partial<Record<string, number>>;
@@ -33,10 +36,10 @@
   } = $props();
 
   const uid = $props.id();
-  const current = $derived(MORE.find((s) => s.key === active));
-  const badge = $derived(sumBadges(MORE, badges));
+  const current = $derived(more.find((s) => s.key === active));
+  const badge = $derived(sumBadges(more, badges));
   // The drawer mounts on each opening: it starts open on one of these pages.
-  let open = $state(untrack(() => inline && MORE.some((s) => s.key === active)));
+  let open = $state(untrack(() => inline && more.some((s) => s.key === active)));
   // Open in the drawer, the current page's own link is the highlight.
   const here = $derived(current && !(inline && open) ? current : undefined);
   const name = $derived(
@@ -90,14 +93,14 @@
         // The drawer's list scrolls: bring the opened links into view.
         if (open) document.getElementById(`${uid}-list`)?.scrollIntoView({ block: 'nearest' });
       }}
-      >{@render face()}{#if !open}<span class="navmore__peek">{MORE.filter((s) => s !== here).map((s) => s.label).join(', ')}</span>{/if}<span
+      >{@render face()}{#if !open}<span class="navmore__peek">{more.filter((s) => s !== here).map((s) => s.label).join(', ')}</span>{/if}<span
         class="navmore__chevron"
         class:navmore__chevron--open={open}><Icon name="chevron-down" /></span
       ></button
     >
     {#if open}
       <div class="navmore__list" id="{uid}-list">
-        {#each MORE as section (section.key)}
+        {#each more as section (section.key)}
           <a class="navlist__item" href={section.href} aria-current={section.key === active ? 'page' : undefined} onclick={onnavigate}
             ><span class="navlist__ind"><Icon name={section.icon} /></span><span class="navlist__label">{section.label}</span
             >{#if (badges[section.key] ?? 0) > 0}<span class="navlist__badge">{badges[section.key]}<span class="vh"> waiting</span></span
@@ -123,13 +126,14 @@
     {#if open}
       <div class="navmore__menu" id="{uid}-menu" role="menu" aria-label="More destinations" tabindex="-1" data-fid="rail-more-menu" bind:this={menu} onkeydown={(event) => menuKey(event, menu, hide)}>
         <span class="cap navmore__cap" aria-hidden="true">More</span>
-        {#each MORE as section (section.key)}
+        {#each more as section (section.key)}
           <a
             role="menuitem"
             tabindex="-1"
             class="navmore__item"
             href={section.href}
             aria-current={section.key === active ? 'page' : undefined}
+            data-fid={section.key === 'guides' ? 'rail-more-guides' : undefined}
             onclick={() => hide(false)}
             ><Icon name={section.icon} /><span class="navmore__label">{section.label}</span>{#if (badges[section.key] ?? 0) > 0}<span class="navmore__badge"
                 >{badges[section.key]}<span class="vh"> waiting</span></span

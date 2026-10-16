@@ -15,6 +15,9 @@ export type Group = 'Schedule' | 'Kanade' | 'Operate';
 export const CAPABILITIES = { drafts: true } satisfies Record<string, boolean>;
 export type Capability = keyof typeof CAPABILITIES;
 
+/** Optional server modules the session reports (`Session.guides`): off, their destination is absent everywhere. */
+export type Module = 'guides';
+
 export interface Section {
   key: string;
   href: string;
@@ -27,6 +30,8 @@ export interface Section {
   more?: true;
   /** Shown only while this capability is on. */
   capability?: Capability;
+  /** Shown only while the server has this module on (the session says so). */
+  module?: Module;
 }
 
 /** Every destination, including those behind an off capability; the app uses `SECTIONS`. */
@@ -116,6 +121,16 @@ export const ALL_SECTIONS: Section[] = [
     icon: 'bell',
     more: true,
   },
+  {
+    key: 'guides',
+    href: '/guides',
+    label: 'Guides',
+    group: 'Operate',
+    title: 'Guides',
+    icon: 'book-open',
+    more: true,
+    module: 'guides',
+  },
   { key: 'config', href: '/config', label: 'Config', group: 'Operate', title: 'Config', icon: 'sliders' },
   // v4 "Audit", rebuilt on the git-style change history plus the Sign-ins
   // audit log; /audit redirects to /history?tab=sign-ins.
@@ -127,6 +142,10 @@ export const enabledSections = (all: Section[], on: Record<Capability, boolean>)
   all.filter((s) => !s.capability || on[s.capability]);
 
 export const SECTIONS = enabledSections(ALL_SECTIONS, CAPABILITIES);
+
+/** The destinations whose module is on (and every one that names none). */
+export const forModules = (sections: Section[], on: Partial<Record<Module, boolean>>): Section[] =>
+  sections.filter((s) => !s.module || on[s.module]);
 
 /** Behind the rail's More item, in nav order. */
 export const MORE = SECTIONS.filter((s) => s.more);
@@ -159,10 +178,13 @@ export const DETAILS: { key: string; pattern: string; section: string; title: st
 
 export const GROUPS: Group[] = ['Schedule', 'Kanade', 'Operate'];
 
-export const ROUTES = [
+/** The router's table for these destinations. */
+export const routesFor = (sections: Section[]) => [
   { key: 'login', pattern: '/login' },
   // Reached from the account menu; no navigation destination of its own.
   { key: 'account', pattern: '/account' },
-  ...SECTIONS.map((s) => ({ key: s.key, pattern: s.href })),
+  ...sections.map((s) => ({ key: s.key, pattern: s.href })),
   ...DETAILS.map((d) => ({ key: d.key, pattern: d.pattern })),
 ];
+
+export const ROUTES = routesFor(SECTIONS);

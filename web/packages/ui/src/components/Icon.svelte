@@ -2,7 +2,8 @@
   Feather icons (MIT, (c) 2013-2023 Cole Bemis), the same paths v4's
   partials/icons.html draws; `pin`, `gauge` and `history` are Lucide's
   (ISC, a Feather fork) for the navigation rail, `crown` for the roster's
-  main character, and `unlink` and `plug` (Lucide) for character data.
+  main character, `unlink` and `plug` (Lucide) for character data, and
+  `book-open` (Lucide) for Guides.
   Decorative by default; pass `label` when the mark is the only thing that
   says it.
 -->
@@ -60,7 +61,8 @@
     | 'link'
     | 'unlink'
     | 'plug'
-    | 'minus';
+    | 'minus'
+    | 'book-open';
 </script>
 
 <script lang="ts">
@@ -181,6 +183,8 @@
     <polyline points="13 17 18 12 13 7" /><polyline points="6 17 11 12 6 7" />
   {:else if name === 'layers'}
     <polygon points="12 2 2 7 12 12 22 7 12 2" /><polyline points="2 17 12 22 22 17" /><polyline points="2 12 12 17 22 12" />
+  {:else if name === 'book-open'}
+    <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z" /><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z" />
   {:else if name === 'more-horizontal'}
     <circle cx="12" cy="12" r="1" /><circle cx="19" cy="12" r="1" /><circle cx="5" cy="12" r="1" />
   {:else if name === 'more-vertical'}

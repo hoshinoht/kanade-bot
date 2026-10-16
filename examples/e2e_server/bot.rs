@@ -67,12 +67,15 @@ pub struct Bot {
 impl Bot {
     /// Start the Discord side over `composition`, whose state nothing else
     /// holds yet (it attaches the rescan runner, the header rewrite and the
-    /// card refresh to it), and hand the composition back.
+    /// card refresh to it), and hand the composition back. `transport` is
+    /// the generation's fake Discord (shared with the guide publisher and
+    /// `/__e2e/discord/*`).
     pub async fn start(
         config: ServeConfig,
         store: Arc<SqliteStore>,
         mut composition: Composition,
         clock: Clock,
+        transport: Arc<FakeDiscord>,
     ) -> Result<(Composition, Self), Fail> {
         let runtime = tokio::runtime::Handle::current();
         let (started, on_start) = oneshot::channel();
@@ -82,7 +85,7 @@ impl Bot {
                 let prepared = discord::prepare(&config, TICK);
                 let wiring = Wiring {
                     source: Silent(false),
-                    transport: Arc::new(FakeDiscord::new()),
+                    transport,
                     clock,
                     tick: TICK,
                     extraction: EXTRACTION,

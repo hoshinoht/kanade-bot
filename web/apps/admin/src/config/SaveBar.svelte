@@ -15,7 +15,24 @@
     saving = false,
     disabled = false,
     ondiscard,
-  }: { form: string; label: string; changes: Change[]; saving?: boolean; disabled?: boolean; ondiscard: () => void } = $props();
+    clean = 'All changes saved',
+    fid = 'cfg-savebar',
+    saveFid = 'cfg-save',
+    class: extra = '',
+  }: {
+    form: string;
+    label: string;
+    changes: Change[];
+    saving?: boolean;
+    disabled?: boolean;
+    ondiscard: () => void;
+    /** What the bar says with nothing to save. */
+    clean?: string;
+    /** Fidelity tags of the bar and its key (the call site's names). */
+    fid?: string;
+    saveFid?: string;
+    class?: string;
+  } = $props();
 
   const report = dirtyReport();
   $effect(() => {
@@ -25,7 +42,7 @@
   const first = $derived(changes[0]);
 </script>
 
-<div class="savebar" data-fid="cfg-savebar" class:savebar--dirty={!!first}>
+<div class={['savebar', extra]} data-fid={fid} class:savebar--dirty={!!first}>
   <p class="savebar__summary" role="status">
     {#if first}
       <span class="savebar__dot" aria-hidden="true"></span>
@@ -36,11 +53,11 @@
           >{/if}</span
       >
     {:else}
-      <span class="savebar__clean"><span class="savebar__tick" aria-hidden="true">✓</span> All changes saved</span>
+      <span class="savebar__clean"><span class="savebar__tick" aria-hidden="true">✓</span> {clean}</span>
     {/if}
   </p>
   {#if first}<button class="btn savebar__discard" type="button" disabled={saving} onclick={ondiscard}>Discard</button>{/if}
-  <button class="btn btn--primary settings__key savebar__save" data-fid="cfg-save" type="submit" {form} disabled={!first || disabled} aria-disabled={saving}
+  <button class="btn btn--primary settings__key savebar__save" data-fid={saveFid} type="submit" {form} disabled={!first || disabled} aria-disabled={saving}
     ><PendingLabel pending={saving} label="Saving…">{label}</PendingLabel></button
   >
 </div>

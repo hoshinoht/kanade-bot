@@ -43,3 +43,6 @@ pub const HSTAR_PARTY: &str = "120000000000000007";
 pub const BM_TRIO: &str = "120000000000000008";
 pub const SEREN_TRIO: &str = "120000000000000009";
 pub const BOSS_SCHEDULE: &str = "120000000000000010";
+/// The guide channels (module `guides`).
+pub const GUIDE_LIMBO: &str = "120000000000000011";
+pub const GUIDE_RAIDS: &str = "120000000000000012";

@@ -9,16 +9,20 @@
   import type { Snippet } from 'svelte';
   import NavList from './NavList.svelte';
   import { railCollapsed, rememberRail } from './chrome';
+  import type { Section } from '../routes';
 
   let {
     name,
     avatar = null,
+    sections,
     active,
     badges = {},
     account,
   }: {
     name: string;
     avatar?: string | null;
+    /** The destinations whose server module is on. */
+    sections: Section[];
     active: string;
     badges?: Partial<Record<string, number>>;
     account: Snippet;
@@ -52,6 +56,6 @@
       <Icon name={collapsed ? 'chevrons-right' : 'chevrons-left'} />
     </button>
   </div>
-  <NavList {active} {badges} />
+  <NavList {sections} {active} {badges} />
   <div class="navrail__foot">{@render account()}</div>
 </header>

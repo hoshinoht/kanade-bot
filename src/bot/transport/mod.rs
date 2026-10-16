@@ -12,6 +12,7 @@ mod fake;
 use std::fmt;
 use std::future::Future;
 use std::sync::Arc;
+use std::time::Duration;
 
 use twilight_model::application::command::{Command, CommandOptionChoice};
 use twilight_model::channel::message::ReactionType;
@@ -432,6 +433,18 @@ pub trait DiscordTransport: Send + Sync {
     ) -> impl Future<Output = Outcome<MessageFlags>> + Send {
         let _ = (channel, message);
         async { Outcome::DefinitelyRejected(RejectionKind::Invalid) }
+    }
+
+    /// After a [`RejectionKind::RateLimited`] message edit or delete in
+    /// `channel`: how long Discord asked to wait before the next one, when
+    /// the transport knows; `None` when it does not. `TwilightTransport`
+    /// keeps the default: its rate limiter already waits every retry-after
+    /// it is given within the call's deadline and send cap, so a
+    /// `RateLimited` from it means the wait outlasted the call and the
+    /// caller must not retry early.
+    fn retry_after(&self, channel: ChannelId) -> impl Future<Output = Option<Duration>> + Send {
+        let _ = channel;
+        async { None }
     }
 
     /// The initial interaction response; must land within Discord's 3 s.

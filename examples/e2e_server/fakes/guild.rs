@@ -1,16 +1,25 @@
 //! The gateway's guild cache, in place of the one `serve` fills from
-//! Discord: connected, with the seeded guild's channels and roles
+//! Discord: connected (unless `/__e2e/discord/guide {script: "offline"}`
+//! turned it off), with the seeded guild's channels and roles
 //! ([`seed::CHANNELS`], [`seed::ROLES`]) and the bot's own identity.
+
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, Ordering},
+};
 
 use kanade::api::state::{ChannelEntry, ChannelGrants, ChannelList, RoleEntry};
 
 use crate::seed;
 
 /// The bot's Discord user id and name, as the mock's gateway reports them.
-const BOT_USER_ID: &str = seed::ids::BOT;
+pub const BOT_USER_ID: &str = seed::ids::BOT;
 const BOT_NAME: &str = "YuukiSakuna";
 
-pub struct Guild;
+pub struct Guild {
+    /// Discord is "offline": the gateway is not connected.
+    pub offline: Arc<AtomicBool>,
+}
 
 impl ChannelList for Guild {
     fn channels(&self) -> Vec<ChannelEntry> {
@@ -44,7 +53,7 @@ impl ChannelList for Guild {
     }
 
     fn connected(&self) -> bool {
-        true
+        !self.offline.load(Ordering::SeqCst)
     }
 
     fn grants(&self, id: &str) -> Option<ChannelGrants> {

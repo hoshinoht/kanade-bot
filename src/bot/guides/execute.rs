@@ -3,15 +3,19 @@
 //! store write. A create that is not bound, an edit or delete that is not
 //! confirmed, a cancel or a stop ends the run: nothing later is sent.
 
+use std::collections::BTreeSet;
+
 use tokio::sync::watch;
 use uuid::Uuid;
 
 use super::inspect::deadline;
 use super::reconcile::Found;
-use super::{GUIDE_PUBLISH_OPERATION, Publisher, payload};
+use super::{CALL_DEADLINE, GUIDE_PUBLISH_OPERATION, Publisher, payload};
 use crate::bot::delivery::{Executor, LogAlerts, SendOutcome};
 use crate::bot::ids::{id_text, parse_id};
-use crate::bot::transport::{DiscordTransport, Outcome, Presence, RejectionKind, SILENT};
+use crate::bot::transport::{
+    ChannelId, DiscordTransport, Outcome, Presence, RejectionKind, SILENT,
+};
 use crate::domain::guides::{
     GuideStore, OpOutcome, PlanOp, Publish, PublishOp, PublishState, PublishedSlot, RenderedSlot,
     SlotEffect, SlotState, StopReason,
@@ -41,6 +45,9 @@ pub(super) struct Run<'a, S, T> {
     lease: Option<Lease>,
     /// The channel's newest message before the run: any create is newer.
     anchor: Option<String>,
+    /// `(channel, position)` of slots whose message the run's channel check
+    /// found gone (an unpublish's plan comes from the stored map only).
+    gone: BTreeSet<(String, u32)>,
 }
 
 /// The larger of two snowflakes in decimal text.
@@ -85,7 +92,15 @@ where
             slots,
             lease: None,
             anchor,
+            gone: BTreeSet::new(),
         }
+    }
+
+    /// Messages the channel check found gone: their deletes only drop the
+    /// slot, with no Discord call.
+    pub(super) fn with_gone(mut self, gone: BTreeSet<(String, u32)>) -> Self {
+        self.gone = gone;
+        self
     }
 
     pub(super) async fn ops(mut self, ops: Vec<PlanOp>, stop: &watch::Receiver<bool>) -> Publish {
@@ -418,6 +433,24 @@ where
         }
     }
 
+    /// Whether to send an edit or delete once more after a retryable
+    /// answer. After a 429 only once the transport's retry-after has passed:
+    /// unknown or longer than [`CALL_DEADLINE`], no early retry (the run
+    /// stops). Otherwise after the short retry pause.
+    async fn may_retry(&self, channel: ChannelId, rate_limited: bool) -> bool {
+        let publisher = self.publisher;
+        let wait = if rate_limited {
+            match publisher.transport.retry_after(channel).await {
+                Some(wait) if wait <= CALL_DEADLINE => wait,
+                _ => return false,
+            }
+        } else {
+            publisher.pauses.retry
+        };
+        tokio::time::sleep(wait).await;
+        true
+    }
+
     /// 5.2: idempotent, so an unconfirmed edit is tried once more.
     async fn edit(
         &mut self,
@@ -441,68 +474,79 @@ where
         };
         let publisher = self.publisher;
         let edit = payload::edit(slot);
+        // Whether an unconfirmed attempt may have changed the message.
+        let mut maybe_applied = false;
         for attempt in 0..2 {
-            if attempt > 0 {
-                tokio::time::sleep(publisher.pauses.retry).await;
-            }
-            match deadline(publisher.transport.edit_message(channel, message, &edit)).await {
-                Outcome::Delivered(()) => {
-                    let row = self.row(
-                        position,
-                        channel_id,
-                        Some(message_id.to_owned()),
-                        SlotState::Posted,
-                        slot,
-                        None,
-                    );
-                    return self
-                        .settle(
-                            ordinal,
-                            OpOutcome::Done,
-                            SlotEffect::Put(row),
-                            Vec::new(),
-                            Next::Go,
-                        )
-                        .await;
-                }
-                Outcome::DefinitelyRejected(
-                    RejectionKind::UnknownMessage | RejectionKind::UnknownChannel,
-                ) => {
-                    // Deleted by hand: the next plan decides tail or middle.
-                    let row = self.gone(position, channel_id, message_id);
-                    return self
-                        .settle(
-                            ordinal,
-                            OpOutcome::Gone,
-                            SlotEffect::Put(row),
-                            Vec::new(),
-                            Next::Stop(StopReason::PlanChanged),
-                        )
-                        .await;
-                }
-                Outcome::Ambiguous(_)
-                | Outcome::DefinitelyRejected(
-                    RejectionKind::NotSent | RejectionKind::RateLimited,
-                ) => {}
-                Outcome::DefinitelyRejected(_) => {
-                    return self
-                        .settle(
-                            ordinal,
-                            OpOutcome::Rejected,
-                            SlotEffect::Unchanged,
-                            Vec::new(),
-                            Next::Stop(StopReason::Rejected),
-                        )
-                        .await;
-                }
+            let rate_limited =
+                match deadline(publisher.transport.edit_message(channel, message, &edit)).await {
+                    Outcome::Delivered(()) => {
+                        let row = self.row(
+                            position,
+                            channel_id,
+                            Some(message_id.to_owned()),
+                            SlotState::Posted,
+                            slot,
+                            None,
+                        );
+                        return self
+                            .settle(
+                                ordinal,
+                                OpOutcome::Done,
+                                SlotEffect::Put(row),
+                                Vec::new(),
+                                Next::Go,
+                            )
+                            .await;
+                    }
+                    Outcome::DefinitelyRejected(
+                        RejectionKind::UnknownMessage | RejectionKind::UnknownChannel,
+                    ) => {
+                        // Deleted by hand: the next plan decides tail or middle.
+                        let row = self.gone(position, channel_id, message_id);
+                        return self
+                            .settle(
+                                ordinal,
+                                OpOutcome::Gone,
+                                SlotEffect::Put(row),
+                                Vec::new(),
+                                Next::Stop(StopReason::PlanChanged),
+                            )
+                            .await;
+                    }
+                    Outcome::Ambiguous(_) => {
+                        maybe_applied = true;
+                        false
+                    }
+                    Outcome::DefinitelyRejected(RejectionKind::NotSent) => false,
+                    Outcome::DefinitelyRejected(RejectionKind::RateLimited) => true,
+                    Outcome::DefinitelyRejected(_) => {
+                        return self
+                            .settle(
+                                ordinal,
+                                OpOutcome::Rejected,
+                                SlotEffect::Unchanged,
+                                Vec::new(),
+                                Next::Stop(StopReason::Rejected),
+                            )
+                            .await;
+                    }
+                };
+            if attempt > 0 || !self.may_retry(channel, rate_limited).await {
+                break;
             }
         }
+        // Repeating an edit is safe, so the slot stays as it was either way.
+        let (outcome, reason) = if maybe_applied {
+            (OpOutcome::Unknown, StopReason::EditUnconfirmed)
+        } else {
+            (OpOutcome::Skipped, StopReason::DiscordUnavailable)
+        };
         self.settle(
             ordinal,
-            OpOutcome::Unknown,
+            outcome,
             SlotEffect::Unchanged,
             Vec::new(),
-            Next::Stop(StopReason::EditUnconfirmed),
+            Next::Stop(reason),
         )
         .await
     }
@@ -527,7 +571,8 @@ where
     }
 
     /// 5.2: a delete is confirmed by Discord or by the message's absence;
-    /// unconfirmed, the run stops before any create.
+    /// unconfirmed, the run stops before any create. A message the run's
+    /// channel check already found gone is not deleted again.
     async fn delete(
         &mut self,
         ordinal: u32,
@@ -535,6 +580,15 @@ where
         channel_id: String,
         message_id: &str,
     ) -> Next {
+        let removed = SlotEffect::Remove {
+            channel_id: channel_id.clone(),
+            position,
+        };
+        if self.gone.contains(&(channel_id.clone(), position)) {
+            return self
+                .settle(ordinal, OpOutcome::Gone, removed, Vec::new(), Next::Go)
+                .await;
+        }
         let Some((channel, message)) = parse_id(&channel_id).zip(parse_id(message_id)) else {
             return self
                 .settle(
@@ -547,16 +601,11 @@ where
                 .await;
         };
         let publisher = self.publisher;
-        let removed = SlotEffect::Remove {
-            channel_id: channel_id.clone(),
-            position,
-        };
         let mut not_sent = false;
         for attempt in 0..2 {
-            if attempt > 0 {
-                tokio::time::sleep(publisher.pauses.retry).await;
-            }
-            match deadline(publisher.transport.delete_message(channel, message)).await {
+            let rate_limited = match deadline(publisher.transport.delete_message(channel, message))
+                .await
+            {
                 Outcome::Delivered(()) => {
                     return self
                         .settle(ordinal, OpOutcome::Done, removed, Vec::new(), Next::Go)
@@ -569,10 +618,13 @@ where
                         .settle(ordinal, OpOutcome::Gone, removed, Vec::new(), Next::Go)
                         .await;
                 }
-                Outcome::DefinitelyRejected(
-                    RejectionKind::NotSent | RejectionKind::RateLimited,
-                ) => {
+                Outcome::DefinitelyRejected(RejectionKind::NotSent) => {
                     not_sent = true;
+                    false
+                }
+                Outcome::DefinitelyRejected(RejectionKind::RateLimited) => {
+                    not_sent = true;
+                    true
                 }
                 Outcome::DefinitelyRejected(_) => {
                     return self
@@ -594,10 +646,13 @@ where
                                 .await;
                         }
                         // Still there: delete once more.
-                        Outcome::Delivered(Presence::Present) => {}
+                        Outcome::Delivered(Presence::Present) => false,
                         _ => break,
                     }
                 }
+            };
+            if attempt > 0 || !self.may_retry(channel, rate_limited).await {
+                break;
             }
         }
         let (outcome, reason) = if not_sent {

@@ -2,8 +2,15 @@
 //! on create; anything not confirmed (a moved plan, a missing grant, a
 //! repost without its confirmation) sends nothing.
 
+use std::time::Duration;
+
+use tokio::time::Instant;
+use twilight_model::id::Id;
+
 use kanade::bot::mentions;
-use kanade::bot::transport::{AmbiguousKind, Call, Op, RejectionKind, SILENT, Step};
+use kanade::bot::transport::{
+    AmbiguousKind, Call, DiscordTransport, Op, RejectionKind, SILENT, Step,
+};
 use kanade::domain::guides::{
     Blocked, Confirmations, Grant, GuideGrants, GuideStore, OpKind, OpOutcome, PublishKind,
     PublishState, SlotState, StopReason,
@@ -389,9 +396,104 @@ async fn an_unpublish_deletes_every_message_newest_first() {
     assert_eq!(run.state, PublishState::Done, "{run:?}");
     assert!(rig.slots().await.is_empty());
     assert!(rig.fake.messages().is_empty());
+    let after_first_delete = rig
+        .fake
+        .calls()
+        .into_iter()
+        .skip_while(|call| call.op() != Op::Delete)
+        .filter(|call| call.op() == Op::Presence)
+        .count();
+    assert_eq!(after_first_delete, 1, "the ambiguous delete was checked");
+}
+
+/// An unpublish is planned from the stored map; a message deleted by hand
+/// before it runs is found by the run's channel check and only dropped
+/// from the map, never deleted again (no 404 delete).
+#[tokio::test]
+async fn an_unpublish_drops_a_message_deleted_by_hand_without_deleting_it() {
+    let rig = Rig::new().await;
+    rig.save(CHANNEL, &[text(1, "A"), text(2, "B")]).await;
+    rig.publish().await;
+    let slots = rig.slots().await;
+    let id = |at: usize| slots[at].message_id.clone().unwrap();
+    rig.queue_unpublish().await;
+    // Deleted by hand after the admin confirmed.
+    let hand = rig
+        .fake
+        .delete_message(
+            Id::new(CHANNEL.parse().unwrap()),
+            Id::new(id(0).parse().unwrap()),
+        )
+        .await;
+    assert!(hand.is_delivered());
+    let before = rig.effect_count();
+    let run = rig.run().await;
+    assert_eq!((run.state, run.stop_reason), (PublishState::Done, None));
     assert_eq!(
-        rig.fake.count(Op::Presence),
-        1,
-        "the ambiguous delete was checked"
+        labels(&rig.effects().split_off(before)),
+        [format!("delete:{CHANNEL}:{}", id(1))],
+        "only the message still there is deleted"
     );
+    assert_eq!(
+        outcomes(&rig.ops(&run).await),
+        [
+            (OpKind::Delete, 1, OpOutcome::Done),
+            (OpKind::Delete, 0, OpOutcome::Gone),
+        ]
+    );
+    assert!(rig.slots().await.is_empty());
+}
+
+/// A 429 on an edit or delete is retried only after the transport's
+/// retry-after (bounded by the 30 s call deadline); a longer or unknown
+/// wait stops the run with nothing changed.
+#[tokio::test(start_paused = true)]
+async fn a_rate_limited_edit_waits_out_its_retry_after_or_stops() {
+    let rig = Rig::new().await;
+    rig.save(CHANNEL, &[text(1, "A"), text(2, "B")]).await;
+    rig.publish().await;
+
+    rig.save(CHANNEL, &[text(1, "A2"), text(2, "B")]).await;
+    rig.fake
+        .script(Op::Edit, Step::Reject(RejectionKind::RateLimited));
+    rig.fake.set_retry_after(Some(Duration::from_secs(5)));
+    let started = Instant::now();
+    let run = rig.publish().await;
+    assert_eq!(run.state, PublishState::Done, "{run:?}");
+    assert!(started.elapsed() >= Duration::from_secs(5), "waited it out");
+    assert_eq!(rig.fake.count(Op::Edit), 2);
+
+    rig.save(CHANNEL, &[text(1, "A3"), text(2, "B")]).await;
+    let before = rig.slots().await;
+    rig.fake
+        .script(Op::Edit, Step::Reject(RejectionKind::RateLimited));
+    rig.fake.set_retry_after(Some(Duration::from_secs(60)));
+    let started = Instant::now();
+    let run = rig.publish().await;
+    assert_eq!(
+        (run.state, run.stop_reason),
+        (PublishState::Stopped, Some(StopReason::DiscordUnavailable))
+    );
+    assert!(
+        started.elapsed() < Duration::from_secs(60),
+        "no wait past the deadline"
+    );
+    assert_eq!(rig.fake.count(Op::Edit), 3, "no early retry");
+    assert_eq!(
+        outcomes(&rig.ops(&run).await),
+        [(OpKind::Edit, 0, OpOutcome::Skipped)]
+    );
+    assert_eq!(rig.slots().await, before);
+
+    // A delete without a known retry-after (Twilight already waited what
+    // it was told) is not retried either.
+    rig.save(CHANNEL, &[text(1, "A3")]).await;
+    rig.fake.set_retry_after(None);
+    rig.fake
+        .script(Op::Delete, Step::Reject(RejectionKind::RateLimited));
+    let deletes = rig.fake.count(Op::Delete);
+    let run = rig.publish().await;
+    assert_eq!(run.stop_reason, Some(StopReason::DiscordUnavailable));
+    assert_eq!(rig.fake.count(Op::Delete), deletes + 1);
+    assert_eq!(rig.slots().await.len(), 2, "the slot stays");
 }

@@ -40,8 +40,9 @@ const fn party(id: &'static str, name: &'static str) -> Channel {
     }
 }
 
-/// The party channels, then the digest channel.
-pub const CHANNELS: [Channel; 10] = [
+/// The party channels, the digest channel, then the two guide channels
+/// (module `guides`; invented, not watched).
+pub const CHANNELS: [Channel; 12] = [
     party(BALDRIX_CREW, "baldrix-crew"),
     party(KALOS_FOUR, "kalos-four"),
     party(LIMBO_TRIO, "limbo-trio"),
@@ -62,6 +63,14 @@ pub const CHANNELS: [Channel; 10] = [
     Channel {
         watched: false,
         ..party(BOSS_SCHEDULE, "boss-schedule")
+    },
+    Channel {
+        watched: false,
+        ..party(GUIDE_LIMBO, "guide-limbo")
+    },
+    Channel {
+        watched: false,
+        ..party(GUIDE_RAIDS, "guide-raids")
     },
 ];
 

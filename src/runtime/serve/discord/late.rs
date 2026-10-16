@@ -7,6 +7,7 @@
 //! (a missed one would be refused `Invalid`).
 
 use std::sync::OnceLock;
+use std::time::Duration;
 
 use twilight_model::application::command::{Command, CommandOptionChoice};
 use twilight_model::channel::message::MessageFlags;
@@ -127,6 +128,10 @@ impl DiscordTransport for LateTransport {
 
     async fn message_flags(&self, channel: ChannelId, message: MessageId) -> Outcome<MessageFlags> {
         delegate!(self, message_flags(channel, message))
+    }
+
+    async fn retry_after(&self, channel: ChannelId) -> Option<Duration> {
+        self.inner.get()?.retry_after(channel).await
     }
 
     async fn respond(&self, interaction: &InteractionRef, reply: &InteractionReply) -> Outcome<()> {

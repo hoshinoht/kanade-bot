@@ -8,16 +8,19 @@
 <script lang="ts">
   import { Icon, pulse } from '@kanade/ui';
   import { arrival } from '../resource.svelte';
-  import { GROUPS, MORE, SECTIONS } from '../routes';
+  import { GROUPS, SECTIONS, type Section } from '../routes';
   import NavMore from './NavMore.svelte';
 
   let {
+    sections = SECTIONS,
     active,
     badges = {},
     counts = {},
     inline = false,
     onnavigate,
   }: {
+    /** The destinations to show: those whose server module is on. */
+    sections?: Section[];
     active: string;
     /** Attention badges by section key (the Inbox's waiting count), said as "N waiting". */
     badges?: Partial<Record<string, number>>;
@@ -28,13 +31,14 @@
     /** A link was followed (the drawer closes). */
     onnavigate?: (event: MouseEvent) => void;
   } = $props();
+  const more = $derived(sections.filter((s) => s.more));
 </script>
 
 <nav class="navlist" aria-label="Sections">
   {#each GROUPS as group (group)}
     <div class="navlist__group" role="group" aria-label={group}>
       <span class="navlist__heading" aria-hidden="true">{group}</span>
-      {#each SECTIONS.filter((s) => s.group === group && !s.more) as section (section.key)}
+      {#each sections.filter((s) => s.group === group && !s.more) as section (section.key)}
         {@const badge = badges[section.key] ?? 0}
         <!-- No whitespace inside: the link's text is exactly its label (and count). -->
         <a class="navlist__item" href={section.href} aria-current={section.key === active ? 'page' : undefined}
@@ -47,9 +51,9 @@
       {/each}
     </div>
   {/each}
-  {#if MORE.length}
+  {#if more.length}
     <div class="navlist__group navlist__group--more">
-      <NavMore {active} {badges} {counts} {inline} {onnavigate} />
+      <NavMore {more} {active} {badges} {counts} {inline} {onnavigate} />
     </div>
   {/if}
 </nav>

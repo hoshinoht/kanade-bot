@@ -135,7 +135,7 @@ export async function endMemberSessions(): Promise<void> {
 }
 
 /** Restarts the server with these optional modules (serve reads them once, at startup). */
-export async function setModules(modules: { roster?: boolean; character_data?: boolean }): Promise<void> {
+export async function setModules(modules: { roster?: boolean; character_data?: boolean; guides?: boolean }): Promise<void> {
   const set = await fetch(`${ADMIN}/__e2e/modules`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(modules) });
   expect(set.status, await set.text()).toBe(200);
 }

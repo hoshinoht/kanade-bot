@@ -19,6 +19,7 @@ Estimates are now kept for up to 30 days and refreshed before upcoming runs, adm
 - Added "Refresh estimates every n days" to Config › Character data (7 unless changed); an older estimate still shows, marked "older than n days", on the run sheet, the roster, the member portal and the reminder image.
 - Admins can now pick a character per boss for each party member on multi-boss weekly timings (Per boss in the Fixed editor's Characters tab) and runs (each boss's cell on the run sheet), with "Same for every boss" to undo it, and readiness, estimates, the "Who carries" image and the member portal's Party · characters follow each boss's own character.
 - Added `kanade --version`, which prints the release number; the bot's startup log line now carries it too.
+- Added the admin Guides screen (under More), where admins write boss guides as text, boss and spacer blocks, preview them as Discord shows them and publish them silently to a Discord channel after reviewing the plan, with later publishes editing the posted messages in place; it is off unless an operator sets `KANADE_MODULE_GUIDES=1` (`modules.guides`).
 
 ### Changes
 - Estimates are now labelled “Estimate” on the portals and in Discord.

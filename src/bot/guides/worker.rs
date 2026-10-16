@@ -3,6 +3,7 @@
 //! A run re-reads the channel, re-plans from the saved guide and runs only
 //! if the plan hash is the one the admin confirmed.
 
+use std::collections::BTreeSet;
 use std::sync::Arc;
 
 use tokio::sync::watch;
@@ -11,8 +12,8 @@ use super::Publisher;
 use super::execute::Run;
 use crate::bot::transport::DiscordTransport;
 use crate::domain::guides::{
-    Blocked, Guide, GuideStore, Inspection, Publish, PublishKind, PublishState, RenderedSlot,
-    StopReason, plan, plan_unpublish, render,
+    Blocked, Guide, GuideStore, Inspection, OpKind, PlanOp, Publish, PublishKind, PublishState,
+    PublishedSlot, RenderedSlot, StopReason, plan, plan_unpublish, render,
 };
 use crate::domain::notify::{DeliveryJournal, Lease};
 use crate::runtime::logging;
@@ -133,9 +134,48 @@ where
         if let Some(reason) = blocked {
             return self.stopped(&publish, reason, None).await;
         }
+        let gone = if publish.kind == PublishKind::Unpublish {
+            match self.gone_before_unpublish(&plan.ops, &slots).await {
+                Some(gone) => gone,
+                None => {
+                    return self
+                        .stopped(&publish, StopReason::DiscordUnavailable, None)
+                        .await;
+                }
+            }
+        } else {
+            BTreeSet::new()
+        };
         Run::new(self, &publish, &desired, slots, anchor)
+            .with_gone(gone)
             .ops(plan.ops, stop)
             .await
+    }
+
+    /// An unpublish is planned from the stored map alone (as the admin saw
+    /// it), so before it runs each channel it deletes in is read: messages
+    /// deleted by hand meanwhile are dropped from the map, not deleted
+    /// again. `None` when a channel could not be read in time. A missing
+    /// channel reports nothing gone: its deletes answer for themselves.
+    async fn gone_before_unpublish(
+        &self,
+        ops: &[PlanOp],
+        slots: &[PublishedSlot],
+    ) -> Option<BTreeSet<(String, u32)>> {
+        let channels: BTreeSet<&str> = ops
+            .iter()
+            .filter(|op| op.kind() == OpKind::Delete)
+            .map(PlanOp::channel_id)
+            .collect();
+        let mut gone = BTreeSet::new();
+        for channel in channels {
+            if let Inspection::Channel { gone: found, .. } =
+                self.inspect_channel(channel, slots).await?
+            {
+                gone.extend(found.into_iter().map(|at| (channel.to_owned(), at)));
+            }
+        }
+        Some(gone)
     }
 
     /// Render the saved draft on the blocking pool (art reads block);

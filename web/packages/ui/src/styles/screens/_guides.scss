@@ -1,0 +1,169 @@
+// Guides (module `guides`, boards G_* in docs/research/2026-10-16-guide-mockups):
+// the Drafts window (`_drafts.scss`) with an editor column and the
+// preview / publishing pane. Everything here is the boards' "Guide
+// additions": block rows (`gblock*`), boss entries (`gentry*`), the Discord
+// preview's message rows (`gpreview`, `gslot*`, CardPreview's `dcard*`),
+// the publish plan (`gplan*`) and the run pane (`guide-run*`).
+
+@use "../core/breakpoints" as *;
+
+.guides > .card__head > .card__title { color: var(--win-ink); font-size: var(--fs-body); }
+.guide-row__n { white-space: nowrap; }
+.guide-row__why { display: flex; align-items: flex-start; gap: 5px; font-size: var(--fs-mini); font-weight: 600; }
+.guide-row__why .icon { flex: none; width: 13px; height: 13px; margin-top: 1px; }
+.guide-row__why--risk { color: var(--risk-text); }
+.guide-row__why--warn { color: var(--warn-text); }
+.guide-row__why--neutral { color: var(--dim-text); }
+
+// The editor column: the blocks scroll, the save bar stays at its foot.
+.guide-edit { flex: auto; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+.guide-edit > .drafts__main { flex: auto; }
+.guide-phone__form { display: contents; }
+.guide-savebar { padding-inline: 20px; }
+.guide-channel { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
+.guide-channel > .cap { margin: 0; }
+.guide-channel .ddw { flex: 0 1 240px; min-width: 0; }
+.guide-channel__note { color: var(--dim-text); font-size: var(--fs-mini); line-height: 1.35; }
+
+.gblocks { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 3px; }
+.gblock { background: var(--row); border-radius: 4px; display: grid; grid-template-columns: 20px minmax(0, 1fr); gap: 10px; padding: 7px 6px 9px 10px; }
+.gblocks > .gblock:first-child { border-top-left-radius: 16px; border-top-right-radius: 16px; }
+.gblocks > .gblock:last-child { border-bottom-left-radius: 16px; border-bottom-right-radius: 16px; }
+.gblock > .draftop__ord { padding-top: 7px; }
+.gblock--open { background: var(--surface); box-shadow: inset 0 0 0 1.5px var(--select-edge); }
+.gblock--dragging { opacity: 0.55; }
+.gblock__main { min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.gblock__head { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; min-height: 32px; }
+// A closed block's summary opens it.
+.gblock__open { display: block; width: 100%; padding: 0; border: 0; background: none; font: inherit; font-size: var(--fs-small); text-align: left; cursor: pointer; }
+.gblock__open.gblock__summary--bosses { display: flex; }
+.gblock__open:hover { color: var(--ink); }
+// RevertDialog's acknowledgement row, for the plan's ticks and the entry's image box.
+.gplan .ack,
+.gentry .ack { display: flex; align-items: flex-start; gap: 0.4rem; }
+.gblock__msgs { color: var(--dim-text); font-size: var(--fs-mini); white-space: nowrap; }
+.gblock__count { margin-left: auto; color: var(--dim-text); font-size: var(--fs-mini); font-weight: 600; white-space: nowrap; }
+.gblock__count--over { color: var(--risk-text); font-weight: 800; }
+.gblock__tools { display: inline-flex; gap: 2px; margin-left: auto; }
+.gblock__count + .gblock__tools { margin-left: 0; }
+.gblock__up .icon { rotate: 180deg; }
+.gblock__grip { cursor: grab; }
+.gblock .draftop__x:disabled { opacity: 0.35; cursor: default; }
+.gblock__summary { margin: 0; color: var(--dim); font-size: var(--fs-small); line-height: 1.4; overflow-wrap: anywhere; }
+.gblock__summary--bosses { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; }
+.gblock__boss { display: inline-flex; align-items: center; gap: 6px; color: var(--ink); font-weight: 600; }
+.gblock__boss .portrait { width: 24px; height: 24px; }
+.gblock__text { width: 100%; box-sizing: border-box; field-sizing: content; min-height: 6lh; resize: none; font-family: var(--mono); font-size: var(--fs-mini); line-height: 1.5; background: var(--surface); }
+.gblock__text[aria-invalid="true"] { border-color: var(--risk); }
+.gblock--new { box-shadow: inset 0 0 0 1.5px var(--line); }
+.gblock .field__error { margin: 0; }
+.gblock .field__error:empty { display: none; }
+.gblock__heading input { width: 100%; box-sizing: border-box; font-family: var(--mono); font-size: var(--fs-small); }
+
+.gentries { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.gentry { display: grid; grid-template-columns: 40px minmax(0, 1fr) auto; gap: 10px; align-items: start; padding: 10px; border-radius: 14px; background: var(--row); box-shadow: inset 0 0 0 1.5px var(--line); }
+.gentry__main { min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.gentry__main > p { margin: 0; }
+.gentry__name { font-size: var(--fs-body-sm); line-height: 1.3; }
+.gentry__sub { color: var(--dim-text); font-size: var(--fs-mini); }
+.gentry__lead { display: flex; flex-direction: column; gap: 2px; font-size: var(--fs-small); line-height: 1.4; }
+.gentry__lead > .cap { margin: 0; }
+.gentry__none { color: var(--dim-text); }
+.gentry__note textarea { width: 100%; box-sizing: border-box; resize: none; font-size: var(--fs-small); line-height: 1.4; }
+.gentry__note > span:first-child,
+.gblock__heading > span:first-child { font-size: var(--fs-small); font-weight: 600; }
+.gentry__hint { color: var(--dim-text); font-size: var(--fs-mini); font-weight: 400; }
+.gentry__image { margin: 0; font-size: var(--fs-small); font-weight: 600; }
+.gentry__tools { flex-direction: column; }
+.gentries__add { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
+.gentries__add .drafts__add { margin-left: 0; }
+.gentries__add .ddw { flex: 0 1 260px; min-width: 0; }
+.gblocks__add { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding-top: 4px; }
+.gblocks__add > .cap { margin: 0 4px 0 0; }
+.gblocks__add .btn,
+.gentries__add .btn { gap: 6px; }
+.gblocks__add .icon,
+.gentries__add .icon { width: 16px; height: 16px; }
+
+// The preview: CardPreview's message, one row per Discord message.
+.gpreview.dcard { display: flex; flex-direction: column; gap: 0; margin: 0; padding: 8px 0; list-style: none; }
+.gslot { display: grid; grid-template-columns: 40px minmax(0, 1fr); gap: 12px; padding: 3px 12px; }
+.gslot__gutter { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.gslot__no { color: var(--dim-text); font-size: var(--fs-micro); line-height: 1.6; }
+.gslot--here { background: var(--select); box-shadow: inset 3px 0 0 var(--select-edge); }
+.gslot--here .gslot__no { color: var(--select-ink); font-weight: 700; }
+.gslot--risk { background: color-mix(in srgb, var(--risk) 8%, var(--surface)); box-shadow: inset 3px 0 0 var(--risk); }
+.gslot__tag { display: block; margin-top: 4px; }
+.gline--h1 { font-size: var(--fs-lg); font-weight: 800; line-height: 1.3; margin-top: 2px; }
+.gline--h2 { font-size: var(--fs-body); font-weight: 800; line-height: 1.35; margin-top: 4px; }
+.gline--li { padding-left: 1.1em; text-indent: -0.7em; }
+.gline--li::before { content: "•"; display: inline-block; width: 0.7em; text-indent: 0; }
+.gline--blank { min-height: 1.375em; }
+.guide-pane.drafts__pane .decision-card { margin-top: 0; }
+
+// The publish plan (RevertDialog's shape).
+.gplan .modal__body { display: flex; flex-direction: column; gap: 10px; }
+.gplan .modal__body > * { margin: 0; }
+.gplan__lead { color: var(--dim); font-size: var(--fs-small); line-height: 1.4; }
+.gplan__counts { display: flex; flex-wrap: wrap; gap: 6px; }
+.gplan__count b { color: var(--ink); }
+// Dimmed by colour, not opacity, so the words keep AA contrast.
+.gplan__count--zero,
+.gplan__count--zero b { color: var(--dim-text); }
+.gplan__count--delete:not(.gplan__count--zero) { border-color: color-mix(in srgb, var(--risk) 40%, var(--line)); color: var(--risk-text); }
+.gplan__head { margin: 4px 0 0; }
+.gplan__ops { gap: 3px; }
+.gplan__op.draftop { grid-template-columns: 22px 62px minmax(0, 1fr) auto; }
+.gplan__op--keep .draftop__text { color: var(--dim); }
+.gplan__op--keep .draftop__kind { background: transparent; box-shadow: inset 0 0 0 1.5px var(--line); color: var(--dim-text); }
+.gplan__op--add .draftop__kind { background: color-mix(in srgb, var(--ok) 14%, var(--surface)); color: var(--ok-text); }
+.gplan__op--delete .draftop__kind { background: color-mix(in srgb, var(--risk) 12%, var(--surface)); color: var(--risk-text); }
+.gplan__op--wait .draftop__text,
+.gplan__op--wait .draftop__ord { color: var(--dim-text); }
+.gplan__state .status-chip .icon { width: 13px; height: 13px; margin-right: 3px; }
+.gplan__waiting { color: var(--dim-text); font-size: var(--fs-mini); }
+.gplan__confirm { align-items: flex-start; }
+.gplan__confirmtext { min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.gplan__confirmtext > p { margin: 0; }
+.gplan__confirmtext .ack { margin: 0; font-weight: 700; }
+.gplan__after { color: var(--dim); font-size: var(--fs-mini); }
+.gplan__flash { margin: 0; line-height: 1.4; }
+.gplan__flash .btn { margin-top: 6px; }
+.gplan__silent { display: flex; gap: 8px; align-items: flex-start; font-size: var(--fs-small); max-width: none; }
+.gplan__silent .icon { flex: none; width: 16px; height: 16px; margin-top: 1px; }
+.gplan .field__error:empty { display: none; }
+
+.guide-unknown__actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.guide-run__note { color: var(--dim-text); font-size: var(--fs-small); margin: 0; line-height: 1.4; }
+.guide-run__summary { display: flex; flex-wrap: wrap; gap: 6px; margin: 0; }
+.guide-run__summary .icon { width: 13px; height: 13px; margin-right: 3px; }
+.guide-pane .drafts__panebody { display: flex; flex-direction: column; gap: 10px; }
+.guide-pane .gpreview.dcard { margin: -12px -12px 0; }
+.guide-pane .reminder-pane__note { margin: 0; }
+
+// Phones: Edit / Preview tabs over one scroller, Drafts' bottom bar.
+.guide-phonetabs { flex: none; display: flex; margin: 0; padding: 8px 10px 0; background: var(--surface); }
+.guide-phonetabs > button { flex: 1 1 0; justify-content: center; min-height: 40px; }
+.guide-phone .drafts__main { padding-top: 10px; }
+.guide-phone .decision-card .savebar__summary { justify-content: center; }
+.guide-phone .drafts__main > .gpreview.dcard { margin: -10px -10px 0; }
+
+@media (width < 600px) {
+  .gblock { grid-template-columns: 16px minmax(0, 1fr); gap: 8px; }
+  .gblock__count { margin-left: auto; }
+  .gblock__tools,
+  .gblock__count + .gblock__tools { flex-basis: 100%; justify-content: flex-end; margin-left: 0; }
+  .gblock__tools .draftop__x { width: 40px; height: 40px; }
+  .gentry { grid-template-columns: 34px minmax(0, 1fr); }
+  .gentry > .drafts__art,
+  .gentry > .drafts__art .portrait { width: 34px; height: 34px; }
+  .gentry__tools { grid-column: 1 / -1; flex-direction: row; justify-content: flex-end; }
+  .gplan__op.draftop { grid-template-columns: 18px 56px minmax(0, 1fr); }
+  .gplan__op.draftop > .draftop__at { display: none; }
+  .gplan__op.draftop > .gplan__state { grid-column: 3; }
+  .gslot { grid-template-columns: 32px minmax(0, 1fr); gap: 8px; padding-inline: 8px; }
+}
+
+@media #{$single-pane} {
+  .guide-phone { flex-direction: column; }
+}

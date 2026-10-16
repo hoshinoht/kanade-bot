@@ -16,8 +16,8 @@ use super::{Publisher, SEARCH_DEPTH, SEARCHES, payload};
 use crate::bot::ids::{id_text, parse_id};
 use crate::bot::transport::{DiscordTransport, HistoryPage, Outcome};
 use crate::domain::guides::{
-    Guide, GuideStore, OpOutcome, PlanOp, Publish, PublishOp, PublishState, PublishedSlot,
-    RenderedSlot, SlotEffect, SlotState, StopReason, UploadRef,
+    Guide, GuideStore, Inspection, OpOutcome, PlanOp, Publish, PublishOp, PublishState,
+    PublishedSlot, RenderedSlot, SlotEffect, SlotState, StopReason, UploadRef,
 };
 use crate::domain::notify::DeliveryJournal;
 use crate::domain::scheduler::StoreError;
@@ -152,18 +152,17 @@ where
     }
 
     /// A run of kind `search` ("Search again", 5.3): each unknown slot of
-    /// the guide is looked for again; one still unknown stops the run
-    /// `unknown_slot`.
+    /// the guide in the run's channel is looked for again; one still unknown
+    /// stops the run `unknown_slot`. Before any Discord call the saved map
+    /// is re-read (nothing left unknown: `plan_changed`, nothing done) and
+    /// the channel checked as a publish does (missing: `plan_changed`; no
+    /// view or history: `rejected`; no answer: `discord_unavailable`).
     pub(super) async fn search_run(
         &self,
         publish: &Publish,
         guide: Option<Guide>,
         stop: &watch::Receiver<bool>,
     ) -> Publish {
-        let desired = match &guide {
-            Some(guide) => self.render(guide).await.unwrap_or_default(),
-            None => Vec::new(),
-        };
         let slots = match self.store.slots(publish.guide_id.clone()).await {
             Ok(slots) => slots,
             Err(error) => {
@@ -173,8 +172,33 @@ where
         };
         let unknown: Vec<&PublishedSlot> = slots
             .iter()
-            .filter(|slot| slot.state == SlotState::Unknown && slot.source.is_some())
+            .filter(|slot| {
+                slot.state == SlotState::Unknown
+                    && slot.source.is_some()
+                    && slot.channel_id == publish.channel_id
+            })
             .collect();
+        if unknown.is_empty() {
+            return self.stopped(publish, StopReason::PlanChanged, None).await;
+        }
+        match self.inspect_channel(&publish.channel_id, &slots).await {
+            None => {
+                return self
+                    .stopped(publish, StopReason::DiscordUnavailable, None)
+                    .await;
+            }
+            Some(Inspection::ChannelMissing) => {
+                return self.stopped(publish, StopReason::PlanChanged, None).await;
+            }
+            Some(Inspection::Channel { grants, .. }) if !(grants.view && grants.history) => {
+                return self.stopped(publish, StopReason::Rejected, None).await;
+            }
+            Some(Inspection::Channel { .. }) => {}
+        }
+        let desired = match &guide {
+            Some(guide) => self.render(guide).await.unwrap_or_default(),
+            None => Vec::new(),
+        };
         let mut unresolved = false;
         for (ordinal, slot) in (0u32..).zip(unknown) {
             if *stop.borrow() {
