@@ -7,13 +7,13 @@ on:
     branches: [master]
   push:
     branches: [master]
-  # The browser e2e (4 shards and motion in parallel, ~10 min) runs only from
+  # The browser e2e (4 shards and motion in parallel, ~17 min) runs only from
   # here, with `e2e` ticked; run the full local check (`bun run e2e`) before
   # merging UI work instead.
   workflow_dispatch:
     inputs:
       e2e:
-        description: Run the Playwright end-to-end suites (about 10 minutes)
+        description: Run the Playwright end-to-end suites (about 17 minutes)
         type: boolean
         default: false
 
