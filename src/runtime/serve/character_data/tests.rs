@@ -1,7 +1,8 @@
 //! The `CharacterData` task under paused time: the sweeper runs on the
 //! monotonic period whatever the wall clock does, deletes rows stamped in
 //! the future after a step back, never suppresses expiry, wakes on unlink
-//! and is joined by `stop`.
+//! and is joined by `stop`; the estimate refresh passes 10 minutes after
+//! start, then hourly.
 
 use std::sync::{Arc, Mutex};
 
@@ -106,7 +107,7 @@ async fn the_sweeper_keeps_its_period_through_a_wall_clock_step_back() {
     let rig = rig().await;
     let file = Arc::clone(&rig.file);
     let service = Arc::clone(&rig.service);
-    let task = Task::start(Arc::clone(&rig.service), SWEEP_EVERY);
+    let task = Task::start(Arc::clone(&rig.service), SWEEP_EVERY, None);
     settle(async || service.health().await.last_sweep.is_some()).await;
     file.put_link(active("c1"), 0).await.unwrap();
     assert!(file.put_snapshot(snapshot("c1", at(11, 0))).await.unwrap());
@@ -156,7 +157,11 @@ async fn the_batch_never_runs_before_four_after_a_step_back() {
     let rig = rig().await;
     let service = Arc::clone(&rig.service);
     // A long sweep period, so only the batch wait can wake the loop.
-    let task = Task::start(Arc::clone(&rig.service), Duration::from_secs(1_000 * 3600));
+    let task = Task::start(
+        Arc::clone(&rig.service),
+        Duration::from_secs(1_000 * 3600),
+        None,
+    );
     settle(async || service.health().await.last_sweep.is_some()).await;
     // 11 Oct 00:00 UTC is 08:00 SGT: the batch is 20 hours away.
     *rig.now.lock().unwrap() = at(9, 0);
@@ -183,7 +188,7 @@ async fn the_batch_never_runs_before_four_after_a_step_back() {
 async fn a_forward_step_past_four_runs_the_owed_batch_once() {
     let rig = rig().await;
     let service = Arc::clone(&rig.service);
-    let task = Task::start(Arc::clone(&rig.service), SWEEP_EVERY);
+    let task = Task::start(Arc::clone(&rig.service), SWEEP_EVERY, None);
     settle(async || service.health().await.last_sweep.is_some()).await;
     // 11 Oct 00:00 UTC; the batch is owed at 20:00 UTC (04:00 SGT).
     *rig.now.lock().unwrap() = at(11, 21);
@@ -208,7 +213,11 @@ async fn a_forward_step_past_four_runs_the_owed_batch_once() {
 async fn repeated_step_backs_never_run_early() {
     let rig = rig().await;
     let service = Arc::clone(&rig.service);
-    let task = Task::start(Arc::clone(&rig.service), Duration::from_secs(1_000 * 3600));
+    let task = Task::start(
+        Arc::clone(&rig.service),
+        Duration::from_secs(1_000 * 3600),
+        None,
+    );
     settle(async || service.health().await.last_sweep.is_some()).await;
     for day in (5..10).rev() {
         *rig.now.lock().unwrap() = at(day, 0);
@@ -225,7 +234,7 @@ async fn repeated_step_backs_never_run_early() {
 async fn an_unlink_wakes_the_sweeper_and_stop_joins_the_task() {
     let rig = rig().await;
     let service = Arc::clone(&rig.service);
-    let task = Task::start(Arc::clone(&rig.service), SWEEP_EVERY);
+    let task = Task::start(Arc::clone(&rig.service), SWEEP_EVERY, None);
     settle(async || service.health().await.last_sweep.is_some()).await;
     let first = service.health().await.last_sweep;
     *rig.now.lock().unwrap() = at(11, 0) + TimeDelta::minutes(5);
@@ -257,7 +266,7 @@ async fn stop_cancels_and_joins_a_running_estimate_lookup() {
 
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let rig = rig_with(Some(listener.local_addr().unwrap())).await;
-    let task = Task::start(Arc::clone(&rig.service), SWEEP_EVERY);
+    let task = Task::start(Arc::clone(&rig.service), SWEEP_EVERY, None);
     let estimates = rig.service.estimates().unwrap();
     let Start::Started(job) = estimates.start(JobRequest {
         target: Target::Characters(vec!["c1".into()]),
@@ -289,6 +298,132 @@ async fn stop_cancels_and_joins_a_running_estimate_lookup() {
         .await
         .expect("closed at once");
     assert!(matches!(closed, Ok(0) | Err(_)));
+}
+
+/// The refresh's schedule, as a pass reads it: these runs.
+struct Parties(Vec<crate::infrastructure::scouter::UpcomingRun>);
+
+impl UpcomingParties for Parties {
+    fn upcoming(&self, _: DateTime<Utc>) -> crate::infrastructure::scouter::UpcomingFuture<'_> {
+        let runs = self.0.clone();
+        Box::pin(async move {
+            Some(crate::infrastructure::scouter::Upcoming {
+                current_week: at(8, 0),
+                runs,
+            })
+        })
+    }
+}
+
+fn passes() -> usize {
+    crate::runtime::logging::captured()
+        .iter()
+        .filter(|line| line["event"] == "estimate_refresh_pass")
+        .count()
+}
+
+/// The first pass waits 10 minutes (a crash loop never hammers the
+/// sidecar), then one runs every hour.
+#[tokio::test(start_paused = true)]
+async fn the_refresh_passes_ten_minutes_after_start_then_hourly() {
+    use std::time::Duration;
+
+    crate::runtime::logging::capture();
+    // Nothing listens: each pass is skipped, and still logged.
+    let rig = rig_with(Some("127.0.0.1:9".parse().unwrap())).await;
+    let parties: Arc<dyn UpcomingParties> = Arc::new(Parties(Vec::new()));
+    let task = Task::start(
+        Arc::clone(&rig.service),
+        SWEEP_EVERY,
+        Some((parties, REFRESH)),
+    );
+    tokio::time::sleep(Duration::from_secs(10 * 60 - 1)).await;
+    settle(async || rig.service.health().await.last_sweep.is_some()).await;
+    assert_eq!(passes(), 0, "not before 10 minutes");
+    tokio::time::sleep(Duration::from_secs(2)).await;
+    settle(async || passes() == 1).await;
+    tokio::time::sleep(Duration::from_secs(60 * 60 - 10)).await;
+    assert_eq!(passes(), 1, "not before the hour");
+    tokio::time::sleep(Duration::from_secs(20)).await;
+    settle(async || passes() == 2).await;
+    tokio::time::sleep(Duration::from_secs(60 * 60)).await;
+    settle(async || passes() == 3).await;
+    task.stop().await;
+}
+
+/// `stop` joins the task and the running background lookup at once, and
+/// drops the background lookups still waiting.
+#[tokio::test]
+async fn stop_joins_with_background_lookups_waiting() {
+    use std::time::Duration;
+
+    use crate::domain::schedule::RunStatus;
+    use crate::infrastructure::scouter::{RosterIgn, Subject, UpcomingRun};
+
+    // Up, but never answers a lookup.
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let app = axum::Router::new()
+        .route(
+            "/healthz",
+            axum::routing::get(|| async { axum::http::StatusCode::OK }),
+        )
+        .route(
+            "/v1/bosses",
+            axum::routing::get(std::future::pending::<String>),
+        );
+    tokio::spawn(async move {
+        let _ = axum::serve(listener, app).await;
+    });
+    let rig = rig_with(Some(address)).await;
+    let lilac = Character {
+        id: "c2".into(),
+        ign: "Lilac".into(),
+        ..wisteria()
+    };
+    let run = |id: &str, hours: i64, character: &Character| UpcomingRun {
+        run_id: id.into(),
+        bosses: vec!["HLimbo".into()],
+        status: RunStatus::Planned,
+        datetime: at(11, 0) + TimeDelta::hours(hours),
+        week_start: at(8, 0),
+        subjects: vec![Subject {
+            character_id: character.id.clone(),
+            member_id: character.member_id.clone(),
+            ign: RosterIgn::of(character).unwrap(),
+        }],
+        missing: Vec::new(),
+    };
+    let parties: Arc<dyn UpcomingParties> = Arc::new(Parties(vec![
+        run("r1", 2, &wisteria()),
+        run("r2", 3, &lilac),
+    ]));
+    let refresh = Refresh {
+        first: Duration::from_millis(10),
+        every: Duration::from_secs(60 * 60),
+    };
+    let task = Task::start(
+        Arc::clone(&rig.service),
+        SWEEP_EVERY,
+        Some((parties, refresh)),
+    );
+    let estimates = rig.service.estimates().unwrap();
+    let waiting = [RosterIgn::of(&lilac).unwrap()];
+    for _ in 0..500 {
+        if estimates.running().is_some() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    assert!(estimates.running().is_some(), "r1 is being looked up");
+    assert!(estimates.looking_up(&waiting), "r2 waits");
+    tokio::time::timeout(Duration::from_secs(5), task.stop())
+        .await
+        .expect("stop returns without waiting for the lookup");
+    assert!(
+        !estimates.looking_up(&waiting),
+        "the waiting job is dropped"
+    );
 }
 
 /// A fresh Compose volume root can come up 0755 (2026-10-12 crash-loop): a

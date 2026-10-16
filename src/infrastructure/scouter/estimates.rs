@@ -1,6 +1,19 @@
-//! Lookup jobs and their results. Jobs wait in one FIFO queue (at most
-//! [`MAX_QUEUED`]) drained by one worker, because the sidecar is one
+//! Lookup jobs and their results. Manual jobs wait in one FIFO queue (at
+//! most [`MAX_QUEUED`]) drained by one worker, because the sidecar is one
 //! browser; a request for a target already queued or running gets that job.
+//!
+//! Background jobs ([`Estimates::refresh`], the hourly pass that keeps the
+//! parties of upcoming runs fresh, see [`super::refresh`]) wait in a second
+//! queue, which each pass replaces, and which the worker takes only while
+//! no manual job waits: at least [`BACKGROUND_GAP`] after the last
+//! background job ended (a manual job never waits on it), at most
+//! [`BACKGROUND_CAP`] background `ign=` lookups per rolling
+//! [`CAP_WINDOW`], and never while the sidecar is unreachable or asks for a
+//! verification. A run whose background job failed is not refreshed again
+//! for [`BACKOFF`]. A manual lookup of a run whose background job waits
+//! moves that job into the manual queue and joins it. All of this lives in
+//! memory only: a restart starts over (serve's first pass waits 10
+//! minutes).
 //!
 //! Results are kept in memory up to [`CACHE_TTL`] (the character-data
 //! file's 30 days): each character's under their roster IGN, each whole
@@ -21,7 +34,8 @@
 //! page finds the result (or the error) when they come back. Memory is
 //! bounded by [`MAX_JOBS`] targets and [`MAX_CACHED`] results of each kind;
 //! only past those is the oldest dropped early. The worker is cancelled and
-//! joined on shutdown ([`Estimates::stop`]).
+//! joined on shutdown ([`Estimates::stop`]), and waiting background jobs
+//! are discarded (the next pass rebuilds them).
 //!
 //! A job looks up each character on its own (`ign=`) and records each
 //! outcome as it arrives: one character's failure never stops the others,
@@ -32,16 +46,17 @@
 //! asked again after its `Retry-After` while the job's deadline allows.
 
 use std::{
-    collections::{BTreeMap, HashMap, VecDeque},
+    collections::{BTreeMap, HashMap, HashSet, VecDeque},
     sync::{Arc, Mutex, MutexGuard, PoisonError},
     time::Duration,
 };
 
 use chrono::{DateTime, TimeDelta, Utc};
-use tokio::{task::JoinHandle, time::Instant};
+use tokio::{sync::Notify, task::JoinHandle, time::Instant};
 
 use super::{
     LookupError, RosterIgn, ScouterClient,
+    refresh::{self, Memory, Reading, UpcomingParties},
     wire::{Combined, Member},
 };
 use crate::{
@@ -65,8 +80,18 @@ pub const MAX_JOBS: usize = 512;
 /// Results held per kind (characters, party totals), and how many of each
 /// a restart loads; past this the oldest goes before its 30 days.
 pub const MAX_CACHED: usize = 1024;
-/// Jobs waiting behind the running one; past this a new target is refused.
+/// Manual jobs waiting behind the running one; past this a new target is
+/// refused. Background jobs never count.
 pub const MAX_QUEUED: usize = 16;
+/// Between the end of one background job and the start of the next.
+pub const BACKGROUND_GAP: Duration = Duration::from_secs(30);
+/// Background `ign=` lookups allowed per rolling [`CAP_WINDOW`].
+pub const BACKGROUND_CAP: usize = 60;
+pub const CAP_WINDOW: Duration = Duration::from_secs(24 * 60 * 60);
+/// How long a run whose background job failed is left alone.
+pub const BACKOFF: Duration = Duration::from_secs(24 * 60 * 60);
+/// The system actor background jobs are started by.
+pub const REFRESHER: &str = "estimate_refresh";
 /// Health probes `GET /healthz` at most this often.
 const PROBE_EVERY: Duration = Duration::from_secs(60);
 
@@ -284,6 +309,16 @@ pub enum Start {
 }
 
 crate::domain::spelled! {
+    /// Who a job is for (the `source` of its `estimate_finished` line).
+    JobSource {
+        /// An admin's lookup (a background job one joined included).
+        Manual => "manual",
+        /// The background refresh.
+        Background => "background",
+    }
+}
+
+crate::domain::spelled! {
     ScouterState {
         /// No `KANADE_SCOUTER_URL`: estimates are off.
         Off => "off",
@@ -351,7 +386,7 @@ fn hold<T>(map: &mut HashMap<String, Held<T>>, key: String, held: Held<T>) {
 }
 
 /// The ascending, distinct characters of `subjects`.
-fn characters(subjects: &[Subject]) -> Vec<String> {
+pub(super) fn characters(subjects: &[Subject]) -> Vec<String> {
     let mut ids: Vec<String> = subjects
         .iter()
         .map(|subject| subject.character_id.clone())
@@ -367,6 +402,7 @@ struct Kept {
     until: Option<Instant>,
     /// Skip the cache ("Look up again").
     refresh: bool,
+    source: JobSource,
 }
 
 #[derive(Default)]
@@ -378,13 +414,62 @@ struct Seen {
     probed: Option<Instant>,
 }
 
+/// The background refresh's limits, kept as they are spent.
+#[derive(Default)]
+struct Limits {
+    /// When the last background job ended.
+    ended: Option<Instant>,
+    /// Each background `ign=` lookup within the last [`CAP_WINDOW`], oldest
+    /// first.
+    lookups: VecDeque<Instant>,
+    /// Run id → until when it is left alone (its background job failed).
+    backoff: HashMap<String, Instant>,
+}
+
+impl Limits {
+    fn prune(&mut self, now: Instant) {
+        while self
+            .lookups
+            .front()
+            .is_some_and(|at| *at + CAP_WINDOW <= now)
+        {
+            self.lookups.pop_front();
+        }
+        self.backoff.retain(|_, until| *until > now);
+    }
+
+    /// Background lookups the cap still allows.
+    fn cap_left(&mut self, now: Instant) -> usize {
+        self.prune(now);
+        BACKGROUND_CAP.saturating_sub(self.lookups.len())
+    }
+}
+
+/// What the worker does next.
+enum Next {
+    Run(String),
+    /// Wait for the background gap to end (or a manual job).
+    Wait(Instant),
+    /// Nothing to do: the worker ends.
+    Idle,
+}
+
 #[derive(Default)]
 struct Inner {
     jobs: VecDeque<Kept>,
-    /// Waiting job ids, oldest first. Empty while `running` is `None`: the
-    /// worker takes the next one as it finishes a job.
+    /// Waiting manual job ids, oldest first. The worker takes the next one
+    /// as it finishes a job; a job queued while nothing runs runs at once.
     queue: VecDeque<String>,
+    /// Waiting background jobs, soonest run first; not in `jobs` until the
+    /// worker takes one.
+    background: VecDeque<Kept>,
     running: Option<String>,
+    /// A worker task is alive (running a job or waiting on the gap).
+    worker: bool,
+    /// [`Estimates::stop`] ran: no worker starts again (serve is closing
+    /// the stores).
+    stopped: bool,
+    limits: Limits,
     /// IGN key → the character's newest result.
     members: HashMap<String, Held<Member>>,
     /// Sorted IGN set → the party's newest total.
@@ -414,6 +499,20 @@ impl Inner {
     /// The newest total of exactly the IGN set `key`, of any age.
     fn party(&self, key: &str, now: Instant) -> Option<&Held<BTreeMap<String, Combined>>> {
         self.parties.get(key).filter(|held| held.until > now)
+    }
+
+    /// `subject`'s result while it is about that very character and
+    /// `fresh`: what a lookup reuses instead of asking the sidecar.
+    fn fresh_member(
+        &self,
+        subject: &Subject,
+        now: Instant,
+        fresh: impl Fn(DateTime<Utc>) -> bool,
+    ) -> Option<&Held<Member>> {
+        self.member(&subject.ign, now).filter(|held| {
+            held.characters.as_slice() == std::slice::from_ref(&subject.character_id)
+                && fresh(held.fetched_at)
+        })
     }
 
     fn keep_member(
@@ -464,10 +563,7 @@ impl Inner {
         let mut seen = |at: DateTime<Utc>| oldest = Some(oldest.map_or(at, |was| was.min(at)));
         let mut results = Vec::with_capacity(subjects.len());
         for subject in subjects {
-            let held = self.member(&subject.ign, now).filter(|held| {
-                held.characters.as_slice() == std::slice::from_ref(&subject.character_id)
-                    && fresh(held.fetched_at)
-            })?;
+            let held = self.fresh_member(subject, now, &fresh)?;
             seen(held.fetched_at);
             results.push(Some(Ok(held.value.clone())));
         }
@@ -516,10 +612,80 @@ impl Inner {
             .find(|kept| kept.job.id == id)
             .map(|kept| self.snapshot(kept))
     }
+
+    fn source(&self, id: &str) -> Option<JobSource> {
+        self.jobs
+            .iter()
+            .find(|kept| kept.job.id == id)
+            .map(|kept| kept.source)
+    }
+
+    /// Whether job `id` may ask the sidecar for one character now: always
+    /// for a manual job; for a background one only while the cap allows,
+    /// and then the lookup is counted.
+    fn take_lookup(&mut self, id: &str, now: Instant) -> bool {
+        if self.source(id) != Some(JobSource::Background) {
+            return true;
+        }
+        if self.limits.cap_left(now) == 0 {
+            return false;
+        }
+        self.limits.lookups.push_back(now);
+        true
+    }
+
+    /// The worker's next job: one an idle [`Estimates::start`] handed it,
+    /// else the oldest manual job, else the first background job (an
+    /// unhealthy sidecar has dropped them all) once the gap since the last
+    /// one has passed and
+    /// the cap still covers the characters it must ask for. A background
+    /// job memory already answers is dropped; one the cap can't cover
+    /// drops the rest too (the next pass builds them again).
+    fn next(&mut self, now: Instant, fresh: impl Fn(DateTime<Utc>) -> bool) -> Next {
+        if let Some(id) = &self.running {
+            return Next::Run(id.clone());
+        }
+        if let Some(id) = self.queue.pop_front() {
+            self.running = Some(id.clone());
+            return Next::Run(id);
+        }
+        while let Some(kept) = self.background.front() {
+            let subjects = &kept.job.subjects;
+            if self.answer(subjects, true, now, &fresh).is_some() {
+                self.background.pop_front();
+                continue;
+            }
+            let asks = subjects
+                .iter()
+                .filter(|subject| self.fresh_member(subject, now, &fresh).is_none())
+                .count();
+            if asks > self.limits.cap_left(now) {
+                self.background.clear();
+                break;
+            }
+            if let Some(ended) = self.limits.ended
+                && ended + BACKGROUND_GAP > now
+            {
+                return Next::Wait(ended + BACKGROUND_GAP);
+            }
+            let Some(kept) = self.background.pop_front() else {
+                break;
+            };
+            let target = kept.job.target.clone();
+            // One retained job per target: it replaces the last.
+            self.jobs.retain(|other| !other.job.target.same(&target));
+            let id = kept.job.id.clone();
+            self.jobs.push_back(kept);
+            self.running = Some(id.clone());
+            return Next::Run(id);
+        }
+        self.worker = false;
+        Next::Idle
+    }
 }
 
 /// The sorted, case-insensitive IGN set.
-fn set_key<'a>(igns: impl Iterator<Item = &'a RosterIgn>) -> String {
+pub(super) fn set_key<'a>(igns: impl Iterator<Item = &'a RosterIgn>) -> String {
     let mut keys: Vec<String> = igns.map(RosterIgn::key).collect();
     keys.sort_unstable();
     keys.join(",")
@@ -533,6 +699,8 @@ struct Shared {
     store: Option<Arc<dyn CharDataStore>>,
     fresh_days: FreshDays,
     inner: Mutex<Inner>,
+    /// Wakes a worker waiting on the background gap (a manual job).
+    wake: Notify,
 }
 
 impl Shared {
@@ -550,10 +718,13 @@ impl Shared {
         now - fetched_at < TimeDelta::days(i64::from((self.fresh_days)()))
     }
 
-    /// Notes what a sidecar call says about its health.
+    /// Notes what a sidecar call says about its health. Unreachable or
+    /// asking for a verification, it drops the waiting background jobs at
+    /// once (the next healthy pass builds them again).
     fn saw<T>(&self, result: &Result<T, LookupError>) {
         let now = self.now();
-        let mut inner = self.inner();
+        let mut guard = self.inner();
+        let inner = &mut *guard;
         let seen = &mut inner.seen;
         match result {
             Ok(_) => {
@@ -568,6 +739,9 @@ impl Shared {
                 }
                 seen.last_error = Some((error.label().to_owned(), now));
             }
+        }
+        if seen.unreachable || seen.verification {
+            inner.background.clear();
         }
     }
 
@@ -664,7 +838,8 @@ impl Shared {
         }
     }
 
-    /// Job `id`'s lookups; `None` when the job is gone.
+    /// Job `id`'s lookups; `None` when the job is gone, or a background job
+    /// the cap stopped.
     async fn run(&self, id: &str) -> Option<Result<Found, Failure>> {
         let (subjects, party, refresh) = {
             let inner = self.inner();
@@ -689,18 +864,16 @@ impl Shared {
                 .then(|| {
                     let now = self.now();
                     self.inner()
-                        .member(&subject.ign, Instant::now())
-                        .filter(|held| {
-                            held.characters.as_slice()
-                                == std::slice::from_ref(&subject.character_id)
-                                && self.fresh(held.fetched_at, now)
-                        })
+                        .fresh_member(subject, Instant::now(), |at| self.fresh(at, now))
                         .map(|held| held.value.clone())
                 })
                 .flatten();
             let outcome = match cached {
                 Some(member) => Ok(member),
                 None => {
+                    if !self.inner().take_lookup(id, Instant::now()) {
+                        return None;
+                    }
                     self.edit(id, |job| job.current = Some(at));
                     let result = self
                         .call(deadline, |within| self.client.single(&subject.ign, within))
@@ -755,40 +928,71 @@ impl Shared {
         }))
     }
 
-    /// Records job `id`'s outcome and hands the worker the next job.
-    fn finish(&self, id: &str, outcome: Option<Result<Found, Failure>>) -> Option<String> {
+    /// Records job `id`'s outcome (`None`: drops the job); a background
+    /// job's end starts the gap, and its failure backs its run off.
+    fn finish(&self, id: &str, outcome: Option<Result<Found, Failure>>) {
         let now = self.now();
         let instant = Instant::now();
-        let mut inner = self.inner();
+        let mut guard = self.inner();
+        let inner = &mut *guard;
         inner.seen.last_lookup_at = Some(now);
-        if let Some(outcome) = outcome
-            && let Some(at) = inner.jobs.iter().position(|kept| kept.job.id == id)
-        {
-            let job = &inner.jobs[at].job;
-            let failed = job
-                .results
-                .iter()
-                .filter(|result| matches!(result, Some(Err(_))))
-                .count();
-            log(&outcome, job.subjects.len(), failed);
-            let kept = &mut inner.jobs[at];
-            kept.until = Some(instant + JOB_TTL);
-            kept.job.current = None;
-            kept.job.finished_at = Some(now);
-            kept.job.outcome = Some(outcome);
+        inner.running = None;
+        let Some(at) = inner.jobs.iter().position(|kept| kept.job.id == id) else {
+            return;
+        };
+        let source = inner.jobs[at].source;
+        if source == JobSource::Background {
+            inner.limits.ended = Some(instant);
         }
-        inner.running = inner.queue.pop_front();
-        inner.running.clone()
+        let Some(outcome) = outcome else {
+            inner.jobs.remove(at);
+            return;
+        };
+        let job = &inner.jobs[at].job;
+        let failed = job
+            .results
+            .iter()
+            .filter(|result| matches!(result, Some(Err(_))))
+            .count();
+        log(&outcome, source, job.subjects.len(), failed);
+        let unsettled = match &outcome {
+            Ok(found) => failed > 0 || found.total_failure.is_some(),
+            Err(_) => true,
+        };
+        if source == JobSource::Background
+            && unsettled
+            && let Target::Run { run_id, .. } = &job.target
+        {
+            inner
+                .limits
+                .backoff
+                .insert(run_id.clone(), instant + BACKOFF);
+        }
+        let kept = &mut inner.jobs[at];
+        kept.until = Some(instant + JOB_TTL);
+        kept.job.current = None;
+        kept.job.finished_at = Some(now);
+        kept.job.outcome = Some(outcome);
     }
 
-    /// The one worker: job `id`, then each next one until the queue is
-    /// empty.
-    async fn work(self: Arc<Self>, mut id: String) {
+    /// The one worker: each next job until there is none, waiting out the
+    /// background gap (or until a manual job comes).
+    async fn work(self: Arc<Self>) {
         loop {
-            let outcome = self.run(&id).await;
-            match self.finish(&id, outcome) {
-                Some(next) => id = next,
-                None => return,
+            let next = {
+                let now = self.now();
+                self.inner().next(Instant::now(), |at| self.fresh(at, now))
+            };
+            match next {
+                Next::Run(id) => {
+                    let outcome = self.run(&id).await;
+                    self.finish(&id, outcome);
+                }
+                Next::Wait(until) => tokio::select! {
+                    () = tokio::time::sleep_until(until) => {}
+                    () = self.wake.notified() => {}
+                },
+                Next::Idle => return,
             }
         }
     }
@@ -800,7 +1004,8 @@ fn unsaved(kind: &'static str, error: &StoreError) {
 }
 
 /// Codes and counts only: never an IGN or a result.
-fn log(outcome: &Result<Found, Failure>, characters: usize, failed: usize) {
+fn log(outcome: &Result<Found, Failure>, source: JobSource, characters: usize, failed: usize) {
+    let source = source.as_str();
     match outcome {
         Ok(found) => crate::runtime::logging::log!(
             if failed > 0 || found.total_failure.is_some() {
@@ -810,6 +1015,7 @@ fn log(outcome: &Result<Found, Failure>, characters: usize, failed: usize) {
             },
             "estimate_finished",
             state = "done",
+            source,
             characters,
             failed,
             total_failed = found
@@ -822,11 +1028,68 @@ fn log(outcome: &Result<Found, Failure>, characters: usize, failed: usize) {
             warn,
             "estimate_finished",
             state = "failed",
+            source,
             characters,
             code = failure.kind.as_str(),
             detail = failure.detail,
             status = failure.status,
         ),
+    }
+}
+
+/// What a refresh pass found and queued; `skipped` names why it did
+/// nothing.
+struct Pass {
+    runs: usize,
+    due: usize,
+    queued: usize,
+    cap_left: usize,
+    skipped: Option<&'static str>,
+}
+
+impl Pass {
+    fn skipped(cap_left: usize, reason: &'static str) -> Self {
+        Self {
+            runs: 0,
+            due: 0,
+            queued: 0,
+            cap_left,
+            skipped: Some(reason),
+        }
+    }
+
+    fn log(&self) {
+        crate::runtime::logging::log!(
+            info,
+            "estimate_refresh_pass",
+            runs = self.runs,
+            due = self.due,
+            queued = self.queued,
+            cap_left = self.cap_left,
+            skipped = self.skipped,
+        );
+    }
+}
+
+/// The estimates memory as the refresh selection reads it.
+struct InMemory<'a> {
+    inner: &'a Inner,
+    now: Instant,
+}
+
+impl Memory for InMemory<'_> {
+    fn member(&self, ign: &RosterIgn) -> Option<Reading<'_>> {
+        self.inner.member(ign, self.now).map(|held| Reading {
+            fetched_at: held.fetched_at,
+            characters: &held.characters,
+        })
+    }
+
+    fn party(&self, set_key: &str) -> Option<Reading<'_>> {
+        self.inner.party(set_key, self.now).map(|held| Reading {
+            fetched_at: held.fetched_at,
+            characters: &held.characters,
+        })
     }
 }
 
@@ -869,6 +1132,7 @@ impl Estimates {
                 store: None,
                 fresh_days: Arc::new(|| DEFAULT_ESTIMATE_DAYS),
                 inner: Mutex::default(),
+                wake: Notify::new(),
             }),
             task: Mutex::default(),
         }
@@ -951,20 +1215,38 @@ impl Estimates {
 
     /// Queue a job (or answer it from memory at once while every result it
     /// needs is fresh); the target's own queued or running job is answered
-    /// instead of a second one. Spawns the worker on the current tokio
-    /// runtime when none runs.
+    /// instead of a second one, and its waiting background job moves into
+    /// the manual queue and is answered (also past [`MAX_QUEUED`]: the job
+    /// exists already). Spawns the worker on the current tokio runtime when
+    /// none runs, unless [`Self::stop`] ran: then the job only waits.
     pub fn start(&self, request: JobRequest) -> Start {
         let now = self.shared.now();
         let instant = Instant::now();
         let party = request.target.party();
         let mut inner = self.shared.inner();
         inner.prune(instant);
-        if let Some(active) = inner
+        if let Some(at) = inner
             .jobs
             .iter()
-            .find(|kept| kept.until.is_none() && kept.job.target.same(&request.target))
+            .position(|kept| kept.until.is_none() && kept.job.target.same(&request.target))
         {
-            return Start::Joined(inner.snapshot(active));
+            // An admin waits on it now: no cap stops it, no backoff follows.
+            inner.jobs[at].source = JobSource::Manual;
+            return Start::Joined(inner.snapshot(&inner.jobs[at]));
+        }
+        if let Some(at) = inner
+            .background
+            .iter()
+            .position(|kept| kept.job.target.same(&request.target))
+        {
+            let mut kept = inner.background.remove(at).expect("found just now");
+            kept.source = JobSource::Manual;
+            kept.refresh |= request.refresh;
+            let target = kept.job.target.clone();
+            inner.jobs.retain(|other| !other.job.target.same(&target));
+            let id = kept.job.id.clone();
+            inner.jobs.push_back(kept);
+            return Start::Joined(self.hand(inner, &id, instant));
         }
         let hit = (!request.refresh)
             .then(|| {
@@ -996,12 +1278,13 @@ impl Estimates {
             job.results = results;
             job.finished_at = Some(now);
             let outcome = Ok(found);
-            log(&outcome, job.subjects.len(), 0);
+            log(&outcome, JobSource::Manual, job.subjects.len(), 0);
             job.outcome = Some(outcome);
             inner.jobs.push_back(Kept {
                 job: job.clone(),
                 until: Some(instant + JOB_TTL),
                 refresh: false,
+                source: JobSource::Manual,
             });
             inner.prune(instant);
             return Start::Started(job);
@@ -1011,28 +1294,159 @@ impl Estimates {
             job,
             until: None,
             refresh: request.refresh,
+            source: JobSource::Manual,
         });
-        inner.queue.push_back(id.clone());
-        // No worker while nothing runs: this job starts one.
-        let first = if inner.running.is_none() {
-            inner.running = inner.queue.pop_front();
-            inner.running.clone()
-        } else {
-            None
-        };
-        inner.prune(instant);
-        let job = inner.find(&id).expect("a queued job is never pruned");
-        drop(inner);
-        if let Some(first) = first {
-            let handle = tokio::spawn(Arc::clone(&self.shared).work(first));
-            *self.task.lock().unwrap_or_else(PoisonError::into_inner) = Some(handle);
+        Start::Started(self.hand(inner, &id, instant))
+    }
+
+    /// Queue manual job `id` (already in `jobs`) and hand it to the worker:
+    /// while nothing runs it runs at once, waking a worker that waits on
+    /// the background gap or starting one. After [`Self::stop`] it only
+    /// waits. Its snapshot.
+    fn hand(&self, mut guard: MutexGuard<'_, Inner>, id: &str, instant: Instant) -> Job {
+        let inner = &mut *guard;
+        inner.queue.push_back(id.to_owned());
+        let mut wake = false;
+        if !inner.stopped {
+            let idle = inner.running.is_none();
+            if idle {
+                inner.running = inner.queue.pop_front();
+            }
+            wake = !self.start_worker(inner) && idle;
         }
-        Start::Started(job)
+        inner.prune(instant);
+        let job = inner.find(id).expect("a queued job is never pruned");
+        drop(guard);
+        if wake {
+            self.shared.wake.notify_one();
+        }
+        job
+    }
+
+    /// Start the worker unless one is alive or [`Self::stop`] ran. Called
+    /// with the state locked, so `stop` either sees this handle or this
+    /// sees `stopped`: no worker outlives a stop. Whether it started one.
+    fn start_worker(&self, inner: &mut Inner) -> bool {
+        if inner.worker || inner.stopped {
+            return false;
+        }
+        inner.worker = true;
+        let handle = tokio::spawn(Arc::clone(&self.shared).work());
+        *self.task.lock().unwrap_or_else(PoisonError::into_inner) = Some(handle);
+        true
+    }
+
+    /// One background refresh pass (the `CharacterData` task, hourly):
+    /// skipped while the sidecar is unreachable or asks for a verification
+    /// (dropping the waiting background jobs), else the due runs of
+    /// `parties` ([`refresh::select`]) replace the waiting background
+    /// jobs. A run a job is already on is left to it. Only queues: never
+    /// waits for a lookup. Logs `estimate_refresh_pass`. Does nothing after
+    /// [`Self::stop`].
+    pub async fn refresh(&self, parties: &dyn UpcomingParties) {
+        if self.shared.inner().stopped {
+            return;
+        }
+        let health = self.health().await;
+        let unhealthy = match health.state {
+            ScouterState::Unreachable => Some("unreachable"),
+            ScouterState::VerificationRequired => Some("verification_required"),
+            ScouterState::Off | ScouterState::Ok => None,
+        };
+        if let Some(reason) = unhealthy {
+            let mut inner = self.shared.inner();
+            inner.background.clear();
+            let cap_left = inner.limits.cap_left(Instant::now());
+            drop(inner);
+            Pass::skipped(cap_left, reason).log();
+            return;
+        }
+        let now = self.shared.now();
+        let upcoming = parties.upcoming(now).await;
+        let instant = Instant::now();
+        let mut guard = self.shared.inner();
+        let inner = &mut *guard;
+        if inner.stopped {
+            return;
+        }
+        inner.prune(instant);
+        let cap_left = inner.limits.cap_left(instant);
+        let Some(mut upcoming) = upcoming else {
+            drop(guard);
+            Pass::skipped(cap_left, "schedule_unreadable").log();
+            return;
+        };
+        let active: HashSet<&str> = inner
+            .jobs
+            .iter()
+            .filter(|kept| kept.until.is_none())
+            .filter_map(|kept| match &kept.job.target {
+                Target::Run { run_id, .. } => Some(run_id.as_str()),
+                Target::Characters(_) => None,
+            })
+            .collect();
+        upcoming
+            .runs
+            .retain(|run| !active.contains(run.run_id.as_str()));
+        let selection = refresh::select(
+            upcoming,
+            now,
+            |fetched_at| self.shared.fresh(fetched_at, now),
+            &InMemory {
+                inner,
+                now: instant,
+            },
+            |run_id| inner.limits.backoff.contains_key(run_id),
+            cap_left,
+        );
+        let pass = Pass {
+            runs: selection.runs,
+            due: selection.due,
+            queued: selection.queued.len(),
+            cap_left,
+            skipped: None,
+        };
+        inner.background = selection
+            .queued
+            .into_iter()
+            .map(|due| Kept {
+                job: Job {
+                    id: uuid::Uuid::new_v4().simple().to_string(),
+                    target: Target::Run {
+                        run_id: due.run.run_id,
+                        bosses: due.run.bosses,
+                    },
+                    started_by: Actor::system(REFRESHER),
+                    started_at: now,
+                    finished_at: None,
+                    position: None,
+                    results: vec![None; due.run.subjects.len()],
+                    current: None,
+                    subjects: due.run.subjects,
+                    missing: due.run.missing,
+                    outcome: None,
+                },
+                until: None,
+                refresh: false,
+                source: JobSource::Background,
+            })
+            .collect();
+        if !inner.background.is_empty() {
+            self.start_worker(inner);
+        }
+        drop(guard);
+        pass.log();
     }
 
     /// Cancel the worker, if any, and wait until its task has ended (serve
-    /// calls it before the stores close). Queued jobs stay queued.
+    /// calls it before the stores close). From then on no worker starts:
+    /// queued manual jobs stay queued; waiting background jobs are dropped.
     pub async fn stop(&self) {
+        {
+            let mut inner = self.shared.inner();
+            inner.stopped = true;
+            inner.background.clear();
+        }
         let task = self
             .task
             .lock()
@@ -1087,15 +1501,16 @@ impl Estimates {
             .map(|held| (held.value.clone(), held.fetched_at))
     }
 
-    /// Whether a queued or running job looks up any of `igns`: their
-    /// readings are still coming in, so what is cached is only part of
-    /// the answer. Never starts a lookup.
+    /// Whether a queued or running job (or a waiting background one) looks
+    /// up any of `igns`: their readings are still coming in, so what is
+    /// cached is only part of the answer. Never starts a lookup.
     pub fn looking_up(&self, igns: &[RosterIgn]) -> bool {
-        self.shared
-            .inner()
+        let inner = self.shared.inner();
+        inner
             .jobs
             .iter()
             .filter(|kept| kept.until.is_none())
+            .chain(&inner.background)
             .flat_map(|kept| &kept.job.subjects)
             .any(|subject| {
                 igns.iter()
@@ -1168,6 +1583,8 @@ impl Estimates {
                 Err(error) => {
                     seen.unreachable = true;
                     seen.last_error = Some((error.label().to_owned(), now));
+                    // Down: what waits is dropped now, as `saw` does.
+                    inner.background.clear();
                 }
             }
         }

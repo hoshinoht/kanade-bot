@@ -200,6 +200,8 @@ impl World {
                 Arc::new(move |now| gateway::limits(now, three.load(Ordering::SeqCst)))
             }),
             nexon: Some(self.nexon),
+            // Off: the browser e2e drives every lookup itself.
+            estimate_refresh: false,
         };
         match compose_for_tests(&config, store.clone(), overrides).await {
             Ok(TestComposition {

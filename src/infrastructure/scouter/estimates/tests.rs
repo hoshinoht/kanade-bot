@@ -5,7 +5,10 @@ use chrono::TimeZone;
 use super::*;
 use crate::{
     domain::characters::{Character, CharacterRole},
-    infrastructure::{scouter::Card, store::SqliteCharData},
+    infrastructure::{
+        scouter::{Card, UpcomingRun},
+        store::SqliteCharData,
+    },
     runtime::logging,
 };
 
@@ -493,4 +496,532 @@ async fn busy_is_retried_after_retry_after_within_the_deadline() {
 #[test]
 fn memory_keeps_results_as_long_as_the_file() {
     assert_eq!(TimeDelta::from_std(CACHE_TTL).unwrap(), ESTIMATE_TTL);
+}
+
+/// A fake sidecar for the background queue: it notes each `ign=` asked
+/// (the IGN and the paused clock's instant), answers it once `gate` gives a
+/// permit, and refuses it (`502`) while `fail` is set; `igns=` answers a
+/// total at once and `/healthz` is up.
+#[derive(Clone)]
+struct Fake {
+    asked: Arc<Mutex<Vec<(String, Instant)>>>,
+    gate: Arc<tokio::sync::Semaphore>,
+    fail: Arc<std::sync::atomic::AtomicBool>,
+}
+
+/// Permits enough for any test.
+const OPEN: usize = 1 << 20;
+
+impl Fake {
+    /// The fake and its URL; `open`: answers at once, else on [`Self::open`].
+    async fn start(open: bool) -> (Self, String) {
+        use axum::{
+            extract::State,
+            http::{StatusCode, Uri},
+            routing::get,
+        };
+        async fn bosses(State(fake): State<Fake>, uri: Uri) -> (StatusCode, String) {
+            let query = uri.query().unwrap_or_default();
+            let Some(name) = query.strip_prefix("ign=") else {
+                let total = serde_json::json!({"combined": {"hard_limbo": {
+                    "combined_percentage": 112.4, "estimated_minutes": 26.7,
+                    "technically_possible": true, "complete": true,
+                }}});
+                return (StatusCode::OK, total.to_string());
+            };
+            fake.asked
+                .lock()
+                .unwrap()
+                .push((name.to_owned(), Instant::now()));
+            fake.gate.acquire().await.expect("never closed").forget();
+            if fake.fail.load(Ordering::SeqCst) {
+                let body = serde_json::json!({"error": {"code": "upstream_failed"}});
+                return (StatusCode::BAD_GATEWAY, body.to_string());
+            }
+            let found = serde_json::json!({
+                "ign": name,
+                "preset": "00010",
+                "bosses": {"hard_limbo": {
+                    "percentage": 60.0, "rating": "Party-able", "party": false,
+                    "effective_percentage": 60.0, "estimated_minutes": 50.0,
+                }},
+            });
+            (StatusCode::OK, found.to_string())
+        }
+        let fake = Self {
+            asked: Arc::default(),
+            gate: Arc::new(tokio::sync::Semaphore::new(if open { OPEN } else { 0 })),
+            fail: Arc::default(),
+        };
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        let app = axum::Router::new()
+            .route("/v1/bosses", get(bosses))
+            .route("/healthz", get(|| async { StatusCode::OK }))
+            .with_state(fake.clone());
+        tokio::spawn(async move {
+            let _ = axum::serve(listener, app).await;
+        });
+        (fake, url)
+    }
+
+    fn open(&self) {
+        self.gate.add_permits(OPEN);
+    }
+
+    fn names(&self) -> Vec<String> {
+        self.asked
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|(name, _)| name.clone())
+            .collect()
+    }
+
+    /// When `name` was first asked for.
+    fn at(&self, name: &str) -> Instant {
+        self.asked
+            .lock()
+            .unwrap()
+            .iter()
+            .find(|(asked, _)| asked == name)
+            .map(|(_, at)| *at)
+            .expect("asked")
+    }
+}
+
+fn at_url(url: &str) -> Estimates {
+    Estimates::new(
+        ScouterClient::new(url).unwrap(),
+        url.to_owned(),
+        Arc::new(|| at(4)),
+    )
+}
+
+/// The sidecar was just probed and is up, so a pass does not probe it.
+fn healthy(estimates: &Estimates) {
+    estimates.shared.inner().seen.probed = Some(Instant::now());
+}
+
+/// The schedule a pass reads: these runs.
+struct Parties(Vec<UpcomingRun>);
+
+impl UpcomingParties for Parties {
+    fn upcoming(&self, _: DateTime<Utc>) -> refresh::UpcomingFuture<'_> {
+        let runs = self.0.clone();
+        Box::pin(async move {
+            Some(refresh::Upcoming {
+                current_week: at(0),
+                runs,
+            })
+        })
+    }
+}
+
+/// Run `id`, `hours` after 04:00, with `subjects`.
+fn upcoming(id: &str, hours: i64, subjects: Vec<Subject>) -> UpcomingRun {
+    UpcomingRun {
+        run_id: id.into(),
+        bosses: vec!["HLimbo".into()],
+        status: crate::domain::schedule::RunStatus::Planned,
+        datetime: at(4) + TimeDelta::hours(hours),
+        week_start: at(0),
+        subjects,
+        missing: Vec::new(),
+    }
+}
+
+fn run_target(id: &str) -> Target {
+    Target::Run {
+        run_id: id.into(),
+        bosses: vec!["HLimbo".into()],
+    }
+}
+
+fn characters_target(subject: &Subject) -> JobRequest {
+    lookup(
+        Target::Characters(vec![subject.character_id.clone()]),
+        vec![subject.clone()],
+    )
+}
+
+/// Wait (on the paused clock, 10 ms at a time) until `done` holds.
+async fn until(mut done: impl FnMut() -> bool) {
+    for _ in 0..10_000 {
+        if done() {
+            return;
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    panic!("it never happened");
+}
+
+/// Run `id`'s job, once finished.
+async fn settled(estimates: &Estimates, id: &str) -> Job {
+    let target = run_target(id);
+    until(|| {
+        estimates
+            .latest(&target)
+            .is_some_and(|job| job.outcome.is_some())
+    })
+    .await;
+    estimates.latest(&target).unwrap()
+}
+
+fn field(event: &str, key: &str) -> Vec<serde_json::Value> {
+    lines(event).iter().map(|line| line[key].clone()).collect()
+}
+
+fn ren() -> Subject {
+    subject("ch-1", "RenShade")
+}
+
+fn mika() -> Subject {
+    subject("ch-2", "MikaBish")
+}
+
+fn aoi() -> Subject {
+    subject("ch-3", "AoiLyn")
+}
+
+/// A manual job waits only for the running background job, never for the
+/// background jobs still waiting.
+#[tokio::test(start_paused = true)]
+async fn manual_jobs_run_before_waiting_background_jobs() {
+    logging::capture();
+    let (fake, url) = Fake::start(false).await;
+    let estimates = at_url(&url);
+    healthy(&estimates);
+    let parties = Parties(vec![
+        upcoming("r1", 2, vec![ren()]),
+        upcoming("r2", 3, vec![mika()]),
+    ]);
+    estimates.refresh(&parties).await;
+    until(|| fake.names().len() == 1).await;
+    let Start::Started(manual) = estimates.start(characters_target(&aoi())) else {
+        panic!("a new job");
+    };
+    assert_eq!(manual.state(), JobState::Queued);
+    assert_eq!(manual.position, Some(1), "behind the running job only");
+    fake.open();
+    settled(&estimates, "r2").await;
+    assert_eq!(fake.names(), ["RenShade", "AoiLyn", "MikaBish"]);
+    assert_eq!(
+        field("estimate_finished", "source"),
+        ["background", "manual", "background"]
+    );
+    let pass = &lines("estimate_refresh_pass")[0];
+    assert_eq!(
+        [
+            &pass["runs"],
+            &pass["due"],
+            &pass["queued"],
+            &pass["cap_left"]
+        ],
+        [2, 2, 2, 60]
+    );
+    assert!(pass["skipped"].is_null());
+}
+
+/// A manual lookup of a run whose background job waits takes that job into
+/// the manual queue: it runs next, with no gap.
+#[tokio::test(start_paused = true)]
+async fn a_manual_lookup_of_a_waiting_background_run_moves_it_up() {
+    logging::capture();
+    let (fake, url) = Fake::start(false).await;
+    let estimates = at_url(&url);
+    healthy(&estimates);
+    let parties = Parties(vec![
+        upcoming("r1", 2, vec![ren()]),
+        upcoming("r2", 3, vec![mika()]),
+        upcoming("r3", 4, vec![aoi()]),
+    ]);
+    estimates.refresh(&parties).await;
+    until(|| fake.names().len() == 1).await;
+    let Start::Joined(moved) = estimates.start(lookup(run_target("r3"), vec![aoi()])) else {
+        panic!("joined");
+    };
+    assert_eq!(moved.started_by, Actor::system(REFRESHER));
+    assert_eq!(moved.position, Some(1));
+    assert_eq!(
+        estimates.shared.inner().background.len(),
+        1,
+        "r2 still waits"
+    );
+    fake.open();
+    settled(&estimates, "r2").await;
+    assert_eq!(fake.names(), ["RenShade", "AoiLyn", "MikaBish"]);
+    assert!(
+        fake.at("AoiLyn") < fake.at("RenShade") + BACKGROUND_GAP,
+        "no gap before it"
+    );
+    assert_eq!(
+        field("estimate_finished", "source"),
+        ["background", "manual", "background"]
+    );
+}
+
+/// Background jobs never fill the manual queue, and the running one is
+/// joined as before.
+#[tokio::test(start_paused = true)]
+async fn background_jobs_do_not_count_toward_max_queued() {
+    let (fake, url) = Fake::start(false).await;
+    let estimates = at_url(&url);
+    healthy(&estimates);
+    let parties = Parties(vec![
+        upcoming("r1", 2, vec![ren()]),
+        upcoming("r2", 3, vec![mika()]),
+        upcoming("r3", 4, vec![aoi()]),
+    ]);
+    estimates.refresh(&parties).await;
+    until(|| fake.names().len() == 1).await;
+    for n in 0..MAX_QUEUED {
+        let member = subject(&format!("ch-1{n:02}"), &format!("Member{n}"));
+        assert!(matches!(
+            estimates.start(characters_target(&member)),
+            Start::Started(_)
+        ));
+    }
+    let extra = subject("ch-999", "Extra");
+    assert!(matches!(
+        estimates.start(characters_target(&extra)),
+        Start::Full
+    ));
+    assert_eq!(estimates.shared.inner().background.len(), 2);
+    assert!(matches!(
+        estimates.start(lookup(run_target("r1"), vec![ren()])),
+        Start::Joined(job) if job.state() == JobState::Running
+    ));
+    estimates.stop().await;
+    assert!(
+        estimates.shared.inner().background.is_empty(),
+        "stop drops them"
+    );
+}
+
+/// The next background job waits until 30 s after the last one ended; a
+/// manual job in that gap runs at once.
+#[tokio::test(start_paused = true)]
+async fn background_jobs_keep_a_gap_that_manual_jobs_skip() {
+    let (fake, url) = Fake::start(true).await;
+    let estimates = at_url(&url);
+    healthy(&estimates);
+    let parties = Parties(vec![
+        upcoming("r1", 2, vec![ren()]),
+        upcoming("r2", 3, vec![mika()]),
+    ]);
+    estimates.refresh(&parties).await;
+    settled(&estimates, "r1").await;
+    let ended = estimates.shared.inner().limits.ended.expect("r1 ended");
+    tokio::time::sleep_until(ended + BACKGROUND_GAP - Duration::from_secs(1)).await;
+    assert_eq!(fake.names(), ["RenShade"], "r2 waits out the gap");
+    assert!(estimates.latest(&run_target("r2")).is_none());
+    let Start::Started(manual) = estimates.start(characters_target(&aoi())) else {
+        panic!("a new job");
+    };
+    assert_eq!(manual.state(), JobState::Running, "never waits on the gap");
+    settled(&estimates, "r2").await;
+    assert!(fake.at("AoiLyn") < ended + BACKGROUND_GAP);
+    assert!(fake.at("MikaBish") >= ended + BACKGROUND_GAP);
+}
+
+/// Background `ign=` lookups stop at the cap: a job the cap no longer
+/// covers stops (keeping what it found) and the rest are dropped; passes
+/// queue nothing more until lookups leave the 24-hour window.
+#[tokio::test(start_paused = true)]
+async fn the_cap_stops_further_background_lookups() {
+    logging::capture();
+    let (fake, url) = Fake::start(false).await;
+    let estimates = at_url(&url);
+    let spend = |count: usize| {
+        let mut inner = estimates.shared.inner();
+        for _ in 0..count {
+            inner.limits.lookups.push_back(Instant::now());
+        }
+    };
+    spend(BACKGROUND_CAP - 3);
+    healthy(&estimates);
+    let parties = Parties(vec![
+        upcoming("r1", 2, vec![ren(), mika()]),
+        upcoming("r2", 3, vec![aoi()]),
+    ]);
+    estimates.refresh(&parties).await;
+    until(|| fake.names().len() == 1).await;
+    // Spent meanwhile: Mika's lookup no longer fits.
+    spend(2);
+    fake.open();
+    until(|| !estimates.shared.inner().worker).await;
+    assert_eq!(fake.names(), ["RenShade"]);
+    assert!(estimates.latest(&run_target("r1")).is_none(), "stopped");
+    assert!(estimates.latest(&run_target("r2")).is_none(), "dropped");
+    assert!(
+        estimates.cached(&ren().ign).is_some(),
+        "what it found stays"
+    );
+
+    healthy(&estimates);
+    estimates.refresh(&parties).await;
+    tokio::time::sleep(CAP_WINDOW).await;
+    healthy(&estimates);
+    estimates.refresh(&parties).await;
+    assert_eq!(field("estimate_refresh_pass", "cap_left"), [3, 0, 60]);
+    assert_eq!(field("estimate_refresh_pass", "due"), [2, 2, 2]);
+    assert_eq!(field("estimate_refresh_pass", "queued"), [2, 0, 2]);
+    estimates.stop().await;
+}
+
+/// No pass while the sidecar is unreachable or asks for a verification.
+#[tokio::test(start_paused = true)]
+async fn a_pass_is_skipped_while_the_sidecar_is_unhealthy() {
+    logging::capture();
+    let estimates = estimates(Arc::new(Mutex::new(at(4))));
+    let parties = Parties(vec![upcoming("r1", 2, vec![ren()])]);
+    // Nothing listens: the probe finds it unreachable.
+    estimates.refresh(&parties).await;
+    {
+        let mut inner = estimates.shared.inner();
+        inner.seen.unreachable = false;
+        inner.seen.verification = true;
+    }
+    estimates.refresh(&parties).await;
+    assert_eq!(
+        field("estimate_refresh_pass", "skipped"),
+        ["unreachable", "verification_required"]
+    );
+    assert_eq!(field("estimate_refresh_pass", "queued"), [0, 0]);
+    assert!(estimates.running().is_none());
+    assert!(estimates.shared.inner().background.is_empty());
+}
+
+/// A background job that finds the sidecar unreachable drops the
+/// background jobs still waiting.
+#[tokio::test(start_paused = true)]
+async fn an_unreachable_sidecar_drops_the_waiting_background_jobs() {
+    let estimates = estimates(Arc::new(Mutex::new(at(4))));
+    healthy(&estimates);
+    let parties = Parties(vec![
+        upcoming("r1", 2, vec![ren()]),
+        upcoming("r2", 3, vec![mika()]),
+    ]);
+    estimates.refresh(&parties).await;
+    assert_eq!(settled(&estimates, "r1").await.state(), JobState::Failed);
+    assert!(estimates.shared.inner().background.is_empty());
+    tokio::time::sleep(BACKGROUND_GAP * 2).await;
+    assert!(estimates.latest(&run_target("r2")).is_none(), "never run");
+}
+
+/// A run whose background job failed is not queued again for 24 hours.
+#[tokio::test(start_paused = true)]
+async fn a_failed_background_run_is_left_alone_for_a_day() {
+    logging::capture();
+    let (fake, url) = Fake::start(true).await;
+    fake.fail.store(true, Ordering::SeqCst);
+    let estimates = at_url(&url);
+    let parties = Parties(vec![upcoming("r1", 2, vec![ren()])]);
+    healthy(&estimates);
+    estimates.refresh(&parties).await;
+    assert_eq!(settled(&estimates, "r1").await.state(), JobState::Failed);
+    fake.fail.store(false, Ordering::SeqCst);
+    tokio::time::sleep(Duration::from_secs(60 * 60)).await;
+    healthy(&estimates);
+    estimates.refresh(&parties).await;
+    tokio::time::sleep(BACKOFF).await;
+    healthy(&estimates);
+    estimates.refresh(&parties).await;
+    assert_eq!(field("estimate_refresh_pass", "due"), [1, 1, 1]);
+    assert_eq!(field("estimate_refresh_pass", "queued"), [1, 0, 1]);
+    let done = settled(&estimates, "r1").await;
+    assert_eq!(done.state(), JobState::Done);
+}
+
+/// A waiting background job is joined and moved up even while the manual
+/// queue is full: it exists already, so only new jobs are refused.
+#[tokio::test(start_paused = true)]
+async fn a_waiting_background_run_is_joined_with_the_manual_queue_full() {
+    let (fake, url) = Fake::start(false).await;
+    let estimates = at_url(&url);
+    healthy(&estimates);
+    let parties = Parties(vec![
+        upcoming("r1", 2, vec![ren()]),
+        upcoming("r2", 3, vec![mika()]),
+    ]);
+    estimates.refresh(&parties).await;
+    until(|| fake.names().len() == 1).await;
+    for n in 0..MAX_QUEUED {
+        let member = subject(&format!("ch-1{n:02}"), &format!("Member{n}"));
+        assert!(matches!(
+            estimates.start(characters_target(&member)),
+            Start::Started(_)
+        ));
+    }
+    let Start::Joined(moved) = estimates.start(lookup(run_target("r2"), vec![mika()])) else {
+        panic!("joined, not refused");
+    };
+    assert_eq!(moved.position, Some(MAX_QUEUED + 1), "at the end");
+    assert!(estimates.shared.inner().background.is_empty());
+    estimates.stop().await;
+}
+
+/// After `stop` nothing starts a worker: a lookup is kept queued (memory
+/// still answers at once) and a pass does nothing.
+#[tokio::test(start_paused = true)]
+async fn nothing_starts_after_stop() {
+    logging::capture();
+    let estimates = estimates(Arc::new(Mutex::new(at(4))));
+    estimates.stop().await;
+    let Start::Started(job) = estimates.start(characters_target(&ren())) else {
+        panic!("a new job");
+    };
+    assert_eq!(job.state(), JobState::Queued);
+    tokio::time::sleep(Duration::from_secs(60)).await;
+    assert_eq!(
+        estimates.job(&job.id).map(|job| job.state()),
+        Some(JobState::Queued)
+    );
+    assert!(estimates.running().is_none());
+    assert!(!estimates.shared.inner().worker);
+    assert!(
+        estimates
+            .task
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .is_none(),
+        "no task to outlive the store"
+    );
+    healthy(&estimates);
+    let parties = Parties(vec![upcoming("r1", 2, vec![mika()])]);
+    estimates.refresh(&parties).await;
+    assert!(estimates.shared.inner().background.is_empty());
+    assert!(lines("estimate_refresh_pass").is_empty());
+    // Memory still answers.
+    estimates
+        .shared
+        .keep_member(&aoi(), &member("AoiLyn", 40.0))
+        .await;
+    hit(estimates.start(characters_target(&aoi())));
+}
+
+/// When the sidecar asks for a verification while the worker waits out
+/// the gap, the waiting background jobs go at once.
+#[tokio::test(start_paused = true)]
+async fn an_unhealthy_answer_drops_waiting_background_jobs_at_once() {
+    let (_fake, url) = Fake::start(true).await;
+    let estimates = at_url(&url);
+    healthy(&estimates);
+    let parties = Parties(vec![
+        upcoming("r1", 2, vec![ren()]),
+        upcoming("r2", 3, vec![mika()]),
+    ]);
+    estimates.refresh(&parties).await;
+    settled(&estimates, "r1").await;
+    assert!(estimates.looking_up(&[mika().ign]), "r2 waits out the gap");
+    estimates.shared.saw(&Err::<(), _>(LookupError::Refused {
+        status: 503,
+        code: "verification_required".into(),
+        ign: None,
+        retry_after: None,
+    }));
+    assert!(!estimates.looking_up(&[mika().ign]), "dropped at once");
+    assert!(estimates.shared.inner().background.is_empty());
+    estimates.stop().await;
 }
