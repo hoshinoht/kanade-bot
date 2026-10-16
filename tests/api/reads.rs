@@ -844,7 +844,6 @@ impl Reads {
             decline_retraction: Some(decline_retraction),
             digest_post: digest_delivery.then_some(digest_post),
             header_rewrite: digest_delivery.then_some(header_rewrite),
-            guides: None,
             backups: BackupDir {
                 dir: backup_dir.clone(),
                 schema_version: store.schema_version().await.unwrap(),
@@ -940,7 +939,6 @@ impl Reads {
             decline_retraction: old.decline_retraction.clone(),
             digest_post: old.digest_post.clone(),
             header_rewrite: old.header_rewrite.clone(),
-            guides: old.guides.clone(),
             backups: old.backups.clone(),
             avatars: old.avatars.clone(),
             events: old.events.clone(),

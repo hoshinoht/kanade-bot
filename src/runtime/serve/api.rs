@@ -281,7 +281,6 @@ pub(super) async fn compose_with(
         decline_retraction: None,
         digest_post: None,
         header_rewrite: None,
-        guides: None,
         backups: BackupDir {
             dir: config.backup_dir.clone(),
             schema_version,
