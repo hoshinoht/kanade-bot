@@ -6,8 +6,8 @@ use std::sync::Arc;
 use chrono::{DateTime, Utc};
 
 use super::super::{
-    ArtFile, ArtKind, Block, BossEntry, EntryImage, GuideSources, PublishedSlot, RenderedSlot,
-    SlotState, Upload, sha256_hex,
+    ArtFile, ArtKind, Block, BossEntry, GuideSources, PublishedSlot, RenderedSlot, SlotState,
+    Upload, sha256_hex,
 };
 use crate::domain::catalog::{BossSpec, BossTable, CatalogSpec, DifficultySpec, GuideSpec};
 
@@ -106,11 +106,12 @@ pub fn text(n: usize, content: &str) -> Block {
     }
 }
 
-pub fn entry(key: &str, image: EntryImage) -> BossEntry {
+/// A boss entry; `large_image` adds the entry art below the portrait.
+pub fn entry(key: &str, large_image: bool) -> BossEntry {
     BossEntry {
         key: key.to_owned(),
         note: None,
-        image,
+        large_image,
     }
 }
 

@@ -255,8 +255,8 @@ pub fn render(
                     }
                     let mut pictures = Vec::new();
                     for (kind, wanted) in [
-                        (ArtKind::Portrait, entry.image.thumbnail()),
-                        (ArtKind::Entry, entry.image.entry()),
+                        (ArtKind::Portrait, true),
+                        (ArtKind::Entry, entry.large_image),
                     ] {
                         if !wanted {
                             continue;

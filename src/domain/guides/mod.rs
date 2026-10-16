@@ -15,8 +15,8 @@ mod render;
 use std::time::Duration;
 
 pub use blocks::{
-    Block, BlockError, BossEntry, CONTENT_LIMIT, EntryImage, MAX_BLOCKS, MAX_BLOCKS_BYTES,
-    NOTE_LIMIT, units, validate,
+    Block, BlockError, BossEntry, CONTENT_LIMIT, MAX_BLOCKS, MAX_BLOCKS_BYTES, NOTE_LIMIT, units,
+    validate,
 };
 pub use hash::{plan_hash, sha256_hex, slot_hash};
 pub use plan::{

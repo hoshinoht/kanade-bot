@@ -1,4 +1,4 @@
-use super::super::{Block, BlockError, EntryImage, MAX_BLOCKS, units, validate};
+use super::super::{Block, BlockError, MAX_BLOCKS, units, validate};
 use super::support::{bosses, catalog, entry, id, text};
 
 fn errors(blocks: &[Block]) -> Vec<BlockError> {
@@ -36,7 +36,7 @@ fn blank_text_heading_and_note_are_refused() {
         block_id: id(n),
         field: field.to_owned(),
     };
-    let mut noted = entry("MaleficStar", EntryImage::None);
+    let mut noted = entry("MaleficStar", false);
     noted.note = Some(" \n".into());
     assert_eq!(
         errors(&[
@@ -57,7 +57,7 @@ fn blank_text_heading_and_note_are_refused() {
 
 #[test]
 fn notes_are_capped_at_1000_units() {
-    let mut noted = entry("MaleficStar", EntryImage::None);
+    let mut noted = entry("MaleficStar", false);
     noted.note = Some("n".repeat(1000));
     assert!(errors(&[bosses(1, None, vec![noted.clone()])]).is_empty());
     noted.note = Some("n".repeat(1001));
@@ -73,9 +73,9 @@ fn boss_keys_match_the_catalog_exactly() {
         1,
         None,
         vec![
-            entry("MaleficStar", EntryImage::Thumbnail),
-            entry("maleficstar", EntryImage::Thumbnail),
-            entry("Shiny", EntryImage::Thumbnail),
+            entry("MaleficStar", false),
+            entry("maleficstar", false),
+            entry("Shiny", false),
         ],
     )];
     let unknown = |at: usize, key: &str| BlockError::UnknownBoss {
@@ -125,32 +125,41 @@ fn blocks_round_trip_as_tagged_json() {
     let blocks = vec![
         text(1, "Hello"),
         Block::Spacer { id: id(2) },
-        bosses(3, Some("Bosses"), vec![entry("Kalos", EntryImage::Both)]),
+        bosses(3, Some("Bosses"), vec![entry("Kalos", true)]),
     ];
     let json = serde_json::to_string(&blocks).unwrap();
     assert_eq!(
         json,
         format!(
-            r#"[{{"kind":"text","id":"{}","content":"Hello"}},{{"kind":"spacer","id":"{}"}},{{"kind":"bosses","id":"{}","heading":"Bosses","entries":[{{"key":"Kalos","image":"both"}}]}}]"#,
+            r#"[{{"kind":"text","id":"{}","content":"Hello"}},{{"kind":"spacer","id":"{}"}},{{"kind":"bosses","id":"{}","heading":"Bosses","entries":[{{"key":"Kalos","large_image":true}}]}}]"#,
             id(1),
             id(2),
             id(3)
         )
     );
     assert_eq!(serde_json::from_str::<Vec<Block>>(&json).unwrap(), blocks);
-    // The image defaults to the v4 portrait thumbnail; unknown fields fail.
+    // The portrait thumbnail alone is the default (no large image, and
+    // `large_image: false` is not written); unknown fields fail, so the old
+    // `image` choices (incl. `none`) are refused rather than misread.
     let parsed: Block = serde_json::from_str(&format!(
         r#"{{"kind":"bosses","id":"{}","entries":[{{"key":"Kalos"}}]}}"#,
         id(4)
     ))
     .unwrap();
+    assert_eq!(parsed, bosses(4, None, vec![entry("Kalos", false)]));
     assert_eq!(
-        parsed,
-        bosses(4, None, vec![entry("Kalos", EntryImage::Thumbnail)])
+        serde_json::to_string(&parsed).unwrap(),
+        format!(
+            r#"{{"kind":"bosses","id":"{}","entries":[{{"key":"Kalos"}}]}}"#,
+            id(4)
+        )
     );
     for bad in [
         r#"{"kind":"text","id":"x","content":"a","extra":1}"#,
         r#"{"kind":"bosses","id":"x","entries":[{"key":"Kalos","colour":1}]}"#,
+        r#"{"kind":"bosses","id":"x","entries":[{"key":"Kalos","image":"none"}]}"#,
+        r#"{"kind":"bosses","id":"x","entries":[{"key":"Kalos","image":"thumbnail"}]}"#,
+        r#"{"kind":"bosses","id":"x","entries":[{"key":"Kalos","large_image":"yes"}]}"#,
         r#"{"kind":"poll","id":"x"}"#,
     ] {
         assert!(serde_json::from_str::<Block>(bad).is_err(), "{bad}");

@@ -1,11 +1,11 @@
 //! `Idempotency-Key` replays (migration 0031) for admin API effects that are
 //! not scheduler commits: the Limits window clear, the manual digest and
 //! header rewrite (scope `limits`), rescan submit and cancel (`rescan`), the
-//! Config PATCH, the admin member edits, and the admin character writes and
-//! run picks (`config`: the writes History lists beside the change chain). A
-//! row keeps the digest of the normalized full request and the answer to
-//! replay until it expires; an expired row reads as absent, so its key
-//! applies anew.
+//! Config PATCH, the admin member edits, the admin character writes and run
+//! picks, and the guide writes (`config`: the writes History lists beside
+//! the change chain). A row keeps the digest of the normalized full request
+//! and the answer to replay until it expires; an expired row reads as
+//! absent, so its key applies anew.
 
 use std::collections::BTreeMap;
 
@@ -14,6 +14,10 @@ use serde_json::json;
 
 use crate::domain::characters::{
     CharacterChange, CharacterRecord, CharacterWrite, PickChange, PickWrite,
+};
+use crate::domain::guides::{
+    CancelRequest, GuideChange, GuideRecord, GuideWrite, NotPosted, PublishRequest,
+    PublishRequested,
 };
 use crate::domain::history::{Actor, Surface};
 use crate::domain::members::{MemberProfile, PortalEdit};
@@ -37,7 +41,7 @@ crate::domain::spelled! {
         Limits => "limits",
         /// Rescan submit and cancel.
         Rescan => "rescan",
-        /// Config PATCH, admin member edits and admin character writes.
+        /// Config PATCH, admin member edits, admin character and guide writes.
         Config => "config",
         /// Admin draft writes (create, rename, stage, remove, rebase, discard,
         /// merge); migration 0038.
@@ -286,6 +290,49 @@ pub trait ReplayStore {
         record: CharacterRecord,
         replay: StoredReplay,
     ) -> impl Future<Output = Result<KeyedWrite<PickWrite>, StoreError>> + Send;
+
+    /// A guide create, save or delete (as `GuideStore::apply_guide`, History
+    /// record included) and `replay`, in one transaction, keyed as
+    /// [`Self::apply_character_replayed`] (stored only with
+    /// [`GuideWrite::applied`]).
+    fn apply_guide_replayed(
+        &self,
+        change: GuideChange,
+        record: GuideRecord,
+        replay: StoredReplay,
+    ) -> impl Future<Output = Result<KeyedWrite<GuideWrite>, StoreError>> + Send;
+
+    /// A publish, unpublish or search request (as
+    /// `GuideStore::request_publish`) and `replay`, in one transaction;
+    /// stored only with [`PublishRequested::Queued`].
+    fn request_publish_replayed(
+        &self,
+        request: PublishRequest,
+        record: GuideRecord,
+        replay: StoredReplay,
+    ) -> impl Future<Output = Result<KeyedWrite<PublishRequested>, StoreError>> + Send;
+
+    /// A run cancel (as `GuideStore::request_cancel`, at the replay's
+    /// `created_at`) and `replay`, in one transaction; stored only with
+    /// [`CancelRequest::Requested`].
+    fn request_cancel_replayed(
+        &self,
+        guide_id: String,
+        publish_id: String,
+        replay: StoredReplay,
+    ) -> impl Future<Output = Result<KeyedWrite<CancelRequest>, StoreError>> + Send;
+
+    /// "Mark as not posted" (as `GuideStore::mark_not_posted`, History record
+    /// included) and `replay`, in one transaction; stored only with
+    /// [`NotPosted::Removed`].
+    fn mark_not_posted_replayed(
+        &self,
+        guide_id: String,
+        channel_id: String,
+        position: u32,
+        record: GuideRecord,
+        replay: StoredReplay,
+    ) -> impl Future<Output = Result<KeyedWrite<NotPosted>, StoreError>> + Send;
 
     /// Delete every row expired at `now`; returns how many.
     fn prune_replays(

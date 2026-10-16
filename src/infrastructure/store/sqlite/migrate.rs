@@ -179,6 +179,10 @@ const MIGRATIONS: &[Migration] = &[
         version: 41,
         sql: include_str!("migrations/0041_roster_boss_picks.sql"),
     },
+    Migration {
+        version: 42,
+        sql: include_str!("migrations/0042_guides.sql"),
+    },
 ];
 
 /// The migration that adds `change_fields`, which is backfilled from the
@@ -336,7 +340,7 @@ mod tests {
             .connect()
             .await
             .expect("reopen");
-        assert_eq!(verify(&mut conn).await.expect("verified ledger"), 41);
+        assert_eq!(verify(&mut conn).await.expect("verified ledger"), 42);
         conn
     }
 
@@ -390,7 +394,7 @@ mod tests {
             "v35 refuses the new kind",
         )
         .await;
-        assert_eq!(apply(&mut conn).await.expect("0036"), 41);
+        assert_eq!(apply(&mut conn).await.expect("0036"), 42);
         let kept: Vec<String> = sqlx::query_scalar(
             "SELECT seq || '|' || at || '|' || realm || '|' || event || '|' \
              || coalesce(actor, '-') || '|' || coalesce(method, '-') || '|' \
@@ -462,7 +466,7 @@ mod tests {
         )
         .await
         .expect("v28 row");
-        assert_eq!(apply(&mut conn).await.expect("0029"), 41);
+        assert_eq!(apply(&mut conn).await.expect("0029"), 42);
         let old: Option<String> =
             sqlx::query_scalar("SELECT prompt FROM rewrites WHERE id = 'w-1'")
                 .fetch_one(&mut conn)
@@ -511,7 +515,7 @@ mod tests {
         )
         .await
         .expect("v27 rows");
-        assert_eq!(apply(&mut conn).await.expect("0028"), 41);
+        assert_eq!(apply(&mut conn).await.expect("0028"), 42);
         // Each row's columns, joined, as 0027 stored them.
         let kept: Vec<String> = sqlx::query_scalar(
             "SELECT id || '|' || stage || '|' || verdict || '|' || coalesce(rule, '-') || '|' \
@@ -581,7 +585,7 @@ mod tests {
         )
         .await
         .expect("v23 rows");
-        assert_eq!(apply(&mut conn).await.expect("additive"), 41);
+        assert_eq!(apply(&mut conn).await.expect("additive"), 42);
         let old: (
             Option<String>,
             Option<String>,
@@ -633,7 +637,7 @@ mod tests {
         let mut conn = memory_at(20, false).await;
         let insert = "INSERT INTO extractions (id, at, member_ids, model, reasoning, prompt, raw_response, request_count, outcome, guardrail, message_ids, proposal_ids";
         conn.execute(format!("{insert}) VALUES ('old', '2026-09-01T00:00:00+00:00', '[]', 'm', 'low', 'p', 'r', 1, 'unknown', '{{}}', '[]', '[]')").as_str()).await.expect("old row");
-        assert_eq!(apply(&mut conn).await.expect("additive"), 41);
+        assert_eq!(apply(&mut conn).await.expect("additive"), 42);
         let old: (String, Option<String>, Option<i64>) = sqlx::query_as("SELECT reasoning, reasoning_content, reasoning_tokens FROM extractions WHERE id = 'old'").fetch_one(&mut conn).await.expect("old row preserved");
         assert_eq!(old, ("low".into(), None, None));
         for (id, text, count, valid) in [
@@ -668,7 +672,7 @@ mod tests {
         )
         .await
         .expect("v14 rows");
-        assert_eq!(apply(&mut conn).await.expect("remaining migrations"), 41);
+        assert_eq!(apply(&mut conn).await.expect("remaining migrations"), 42);
         let kept = "SELECT COUNT(*) FROM extractions e JOIN extraction_members m \
                     ON m.extraction_id = e.id WHERE e.id = 'x-1' AND e.refusals = '[]'";
         assert_eq!(count(&mut conn, kept).await, 1);
@@ -715,7 +719,7 @@ mod tests {
         .await
         .expect("v17 cards");
 
-        assert_eq!(apply(&mut conn).await.expect("v18"), 41);
+        assert_eq!(apply(&mut conn).await.expect("v18"), 42);
         let rows: Vec<(String, Option<String>)> =
             sqlx::query_as("SELECT kind, heading FROM reminder_cards ORDER BY dedupe_key")
                 .fetch_all(&mut conn)
@@ -799,7 +803,7 @@ mod tests {
         .await
         .expect("v18 rows");
 
-        assert_eq!(apply(&mut conn).await.expect("v19"), 41);
+        assert_eq!(apply(&mut conn).await.expect("v19"), 42);
         let usage = "prompt_tokens IS NULL AND completion_tokens IS NULL \
             AND prompt_estimate IS NULL";
         let unreported: i64 = sqlx::query_scalar(&format!(
@@ -934,7 +938,7 @@ mod tests {
         )
         .await
         .expect("v15 rows");
-        assert_eq!(apply(&mut conn).await.expect("0016+"), 41);
+        assert_eq!(apply(&mut conn).await.expect("0016+"), 42);
         let row = sqlx::query(
             "SELECT c.persona, c.profile, c.profile_source, c.error_code, r.route, r.clean, \
              r.model FROM chat_interactions c JOIN chat_rounds r ON r.interaction_id = c.id",
@@ -1005,7 +1009,7 @@ mod tests {
         )
         .await
         .expect("v21 rows");
-        assert_eq!(apply(&mut conn).await.expect("0022"), 41);
+        assert_eq!(apply(&mut conn).await.expect("0022"), 42);
         let rows: Vec<(String, String, i64, i64, String, Option<String>)> = sqlx::query_as(
             "SELECT id, outcome, clean_retry, withheld, guardrail, persona \
              FROM chat_interactions ORDER BY id",
@@ -1111,7 +1115,7 @@ mod tests {
             .fetch_one(&mut conn)
             .await
             .expect("before");
-        assert_eq!(apply(&mut conn).await.expect("0041"), 41);
+        assert_eq!(apply(&mut conn).await.expect("0041"), 42);
         let after: String = sqlx::query_scalar(picks)
             .fetch_one(&mut conn)
             .await
@@ -1169,12 +1173,143 @@ mod tests {
         no_fk_violations(&mut conn).await;
     }
 
+    /// 0042 adds the guide tables to a v41 store that holds roster data and
+    /// History rows, which stay as they were; the new tables keep one live
+    /// run per guide, unique channels, slots keyed by channel and position,
+    /// ops settled once, finished runs fixed, and a guide delete cascades.
+    #[tokio::test]
+    async fn migration_42_keeps_rows_and_adds_guides() {
+        let mut conn = memory_at(41, true).await;
+        conn.execute(
+            "INSERT INTO roster_characters (id, member_id, ign, ign_key, role, created_at, \
+             updated_at, updated_by_kind, updated_by_id, version) VALUES \
+             ('c-1', '1001', 'MikaBish', 'mikabish', 'main', 't', 't', 'admin', 'discord:9', 1);
+             INSERT INTO roster_run_boss_picks VALUES \
+             ('r-1', '1001', 'MaleficStar', 'c-1', 't', 'admin', 'discord:9', 1);
+             INSERT INTO settings_changes (at, actor_kind, actor_id, surface, section, \
+             revision, changes) VALUES ('t', 'admin', 'token', 'admin_portal', 'characters', \
+             0, '{\"character.c-1\":{\"from\":\"\",\"to\":\"x\"}}');",
+        )
+        .await
+        .expect("v41 rows");
+        let kept = "SELECT (SELECT group_concat(id || '|' || ign || '|' || version) \
+                    FROM roster_characters) || ';' || (SELECT group_concat(run_id || '|' \
+                    || boss || '|' || character_id) FROM roster_run_boss_picks) || ';' || \
+                    (SELECT group_concat(id || '|' || section || '|' || changes) \
+                    FROM settings_changes)";
+        let before: String = sqlx::query_scalar(kept)
+            .fetch_one(&mut conn)
+            .await
+            .expect("before");
+        assert_eq!(apply(&mut conn).await.expect("0042"), 42);
+        let after: String = sqlx::query_scalar(kept)
+            .fetch_one(&mut conn)
+            .await
+            .expect("after");
+        assert_eq!(after, before);
+
+        let guide = "00000000-0000-4000-8000-000000000001";
+        let hash = "a".repeat(64);
+        conn.execute(
+            format!(
+                "INSERT INTO guides VALUES ('{guide}', 'Lotus', '100000000000000001', '[]', 1, \
+                 't', 'admin:token', 't', 'admin:token');
+                 INSERT INTO guide_publishes (id, guide_id, version, plan_hash, channel_id, \
+                 kind, confirmed, state, requested_by, requested_at, started_at, finished_at) \
+                 VALUES ('run-1', '{guide}', 1, '{hash}', '100000000000000001', 'publish', \
+                 '{{}}', 'done', 'admin:token', 't', 't', 't'), \
+                 ('run-2', '{guide}', 1, '{hash}', '100000000000000002', 'publish', '{{}}', \
+                 'running', 'admin:token', 't', 't', NULL);
+                 INSERT INTO guide_slots VALUES \
+                 ('{guide}', '100000000000000001', 0, '1000000000000000001', '{hash}', '[]', \
+                 'posted', NULL, 'run-1', 't'), \
+                 ('{guide}', '100000000000000002', 0, '1000000000000000002', '{hash}', '[]', \
+                 'posted', NULL, 'run-2', 't');
+                 INSERT INTO guide_publish_ops VALUES \
+                 ('run-2', 0, 'forget', 0, '100000000000000001', NULL, NULL, NULL, 'done', \
+                 NULL, 't'), \
+                 ('run-2', 1, 'create', 1, '100000000000000002', NULL, '{hash}', \
+                 'guide-post:x', 'pending', NULL, 't');"
+            )
+            .as_str(),
+        )
+        .await
+        .expect("a guide with an old and a new channel's slot at one position");
+        let other = "00000000-0000-4000-8000-000000000002";
+        refused(
+            &mut conn,
+            &format!(
+                "INSERT INTO guides VALUES ('{other}', 'Damien', '100000000000000001', '[]', 1, \
+                 't', 'a', 't', 'a')"
+            ),
+            "channels are unique across guides",
+        )
+        .await;
+        refused(
+            &mut conn,
+            &format!(
+                "INSERT INTO guide_publishes (id, guide_id, version, plan_hash, channel_id, \
+                 kind, confirmed, state, requested_by, requested_at) VALUES ('run-3', \
+                 '{guide}', 1, '{hash}', '100000000000000001', 'search', '{{}}', 'queued', \
+                 'a', 't')"
+            ),
+            "one live run per guide",
+        )
+        .await;
+        refused(
+            &mut conn,
+            "UPDATE guide_publishes SET state = 'stopped', stop_reason = 'rejected' \
+             WHERE id = 'run-1'",
+            "a finished run never changes",
+        )
+        .await;
+        refused(
+            &mut conn,
+            "UPDATE guide_publish_ops SET outcome = 'gone' WHERE ordinal = 0",
+            "a settled op never changes",
+        )
+        .await;
+        refused(
+            &mut conn,
+            "UPDATE guide_publishes SET state = 'stopped', finished_at = 't' WHERE id = 'run-2'",
+            "a stopped run names its reason",
+        )
+        .await;
+        refused(
+            &mut conn,
+            &format!(
+                "INSERT INTO guide_slots VALUES ('{guide}', '100000000000000002', 1, NULL, \
+                 '{hash}', '[]', 'unknown', NULL, 'run-2', 't')"
+            ),
+            "an unknown slot names its journal source",
+        )
+        .await;
+        conn.execute(
+            "UPDATE guide_publish_ops SET outcome = 'unknown' WHERE ordinal = 1;
+             UPDATE guide_publishes SET state = 'stopped', stop_reason = 'unknown_slot', \
+             finished_at = 't' WHERE id = 'run-2'",
+        )
+        .await
+        .expect("a pending op settles and a live run ends");
+        conn.execute(format!("DELETE FROM guides WHERE id = '{guide}'").as_str())
+            .await
+            .expect("delete");
+        let left = "SELECT (SELECT COUNT(*) FROM guide_publishes) + (SELECT COUNT(*) \
+                    FROM guide_slots) + (SELECT COUNT(*) FROM guide_publish_ops)";
+        assert_eq!(
+            count(&mut conn, left).await,
+            0,
+            "the guide's rows went with it"
+        );
+        no_fk_violations(&mut conn).await;
+    }
+
     /// Shipped migrations are frozen byte for byte: a deployed store refuses
     /// to open when an applied migration's checksum changes (a comment edit
     /// once took production down). Append new versions; never edit old ones.
     #[test]
     fn shipped_migrations_never_change() {
-        const SHIPPED: [&str; 41] = [
+        const SHIPPED: [&str; 42] = [
             "af627f54aca2d991cbf018410782ad8694b9a2d0ef681424e2e2c426d33884a1",
             "a73db1e033e3093c46928dde2f9bc8d97578b967acbc387d35a5224758237521",
             "4273dc1f916a8b2e36f3479b00aee8f3015ef5aacdd0f5a28d390011a2d7dda8",
@@ -1216,6 +1351,7 @@ mod tests {
             "7d79f462b9bc1c9a013cb3d8c0cd00a7dbca82e7601a26d342ce5cfc6e91c6d9",
             "3d08e71e52a20fb4e99014a94974327d7a69f5b7898883aa56e01c6e52d87902",
             "41fae3f4afe5d86075d759e1c98abe33fcaf68c64fbbd07519081c220ea7dfb2",
+            "028dc55d5bf3f405d8a2ce1ba87ef5be4e03190d052fa8955d9b6bdb75c8c125",
         ];
         // Index `i` holds version `i + 1`.
         for (version, sum) in (1_i64..).zip(SHIPPED) {

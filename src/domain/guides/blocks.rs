@@ -58,30 +58,12 @@ pub struct BossEntry {
     /// The admin's note, appended to the embed description.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub note: Option<String>,
-    #[serde(default)]
-    pub image: EntryImage,
-}
-
-/// Which art an entry's embed shows. The portrait thumbnail is the v4
-/// default; the entry artwork is the optional large image.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum EntryImage {
-    #[default]
-    Thumbnail,
-    Entry,
-    Both,
-    None,
-}
-
-impl EntryImage {
-    pub fn thumbnail(self) -> bool {
-        matches!(self, Self::Thumbnail | Self::Both)
-    }
-
-    pub fn entry(self) -> bool {
-        matches!(self, Self::Entry | Self::Both)
-    }
+    /// Also show the boss's entry artwork as the large image (approved
+    /// boards, default 4). The portrait thumbnail is always shown when the
+    /// art exists; there is no "no picture" choice. The older `image` field
+    /// is refused as unknown.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub large_image: bool,
 }
 
 /// Why a draft (or its rendering) is refused, naming the block and field.

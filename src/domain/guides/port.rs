@@ -57,7 +57,10 @@ pub enum GuideChange {
         channel_id: Option<String>,
         blocks: Vec<Block>,
     },
-    /// Refused while any slot is posted or unknown (decision 18).
+    /// Refused while a run is queued or running ([`GuideWrite::Busy`]), or
+    /// while any slot is posted or unknown ([`GuideWrite::Published`],
+    /// decision 18). Saves stay open during a run: the worker re-plans
+    /// against the saved guide and stops `plan_changed` if it moved.
     Delete { id: String, version: u32 },
 }
 
@@ -76,6 +79,8 @@ pub enum GuideWrite {
     ChannelTaken,
     /// A delete while messages are published (unpublish first).
     Published,
+    /// A delete while a run is queued or running (it may still post).
+    Busy,
 }
 
 impl GuideWrite {
@@ -190,6 +195,9 @@ pub struct PublishOp {
     /// A create's journal source, `guide-post:<op uuid>`; never reused.
     pub source: Option<String>,
     pub outcome: OpOutcome,
+    /// The messages an unconfirmed create's channel search matched (zero or
+    /// several make the slot unknown); empty otherwise.
+    pub candidates: Vec<String>,
     pub at: DateTime<Utc>,
 }
 
@@ -276,13 +284,16 @@ pub trait GuideStore: Send + Sync {
     fn claim_next(&self, at: DateTime<Utc>) -> StoreFuture<'_, Option<Publish>>;
     /// Append a `pending` op to a running run's log.
     fn record_op(&self, publish_id: String, op: PublishOp) -> StoreFuture<'_, ()>;
-    /// Settle a pending op and apply its slot effect in one transaction.
+    /// Settle a pending op and apply its slot effect in one transaction;
+    /// `candidates` are the search matches of an unconfirmed create
+    /// ([`PublishOp::candidates`]).
     fn apply_op_result(
         &self,
         publish_id: String,
         ordinal: u32,
         outcome: OpOutcome,
         effect: SlotEffect,
+        candidates: Vec<String>,
         at: DateTime<Utc>,
     ) -> StoreFuture<'_, ()>;
     /// End a live run (`done`, `stopped` with a reason, or `cancelled`)

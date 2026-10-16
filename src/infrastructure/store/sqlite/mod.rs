@@ -18,6 +18,7 @@ mod decline_notices;
 mod drafts;
 #[cfg(any(test, feature = "test-support"))]
 mod faults;
+mod guides;
 mod history;
 #[cfg(any(test, feature = "test-support"))]
 mod hold;

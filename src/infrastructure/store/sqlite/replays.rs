@@ -8,9 +8,13 @@ use sqlx::{Connection, Row, SqliteConnection};
 use super::SqliteStore;
 use super::rows::instant;
 use super::schedule::store_error;
-use super::{characters, members, picks, settings};
+use super::{characters, guides, members, picks, settings};
 use crate::domain::characters::{
     CharacterChange, CharacterRecord, CharacterWrite, PickChange, PickWrite,
+};
+use crate::domain::guides::{
+    CancelRequest, GuideChange, GuideRecord, GuideWrite, NotPosted, PublishRequest,
+    PublishRequested,
 };
 use crate::domain::members::PortalEdit;
 use crate::domain::scheduler::StoreError;
@@ -228,6 +232,102 @@ impl ReplayStore for SqliteStore {
             }
             let (written, recorded) = picks::apply(&mut tx, change, &record).await?;
             if written.applied() {
+                put(&mut tx, &replay).await?;
+            }
+            Ok((KeyedWrite::Applied(written), recorded))
+        })?;
+        if recorded {
+            self.written().notify(Written::Settings);
+        }
+        Ok(written)
+    }
+
+    async fn apply_guide_replayed(
+        &self,
+        change: GuideChange,
+        record: GuideRecord,
+        replay: StoredReplay,
+    ) -> Result<KeyedWrite<GuideWrite>, StoreError> {
+        replay.check()?;
+        let (written, recorded) = write_txn!(self, tx, async {
+            let found = read(&mut tx, replay.scope, &replay.actor, &replay.key).await?;
+            if let Some(answer) = keyed(found, &replay) {
+                return Ok((answer, false));
+            }
+            let (written, recorded) = guides::apply(&mut tx, change, &record).await?;
+            if written.applied() {
+                put(&mut tx, &replay).await?;
+            }
+            Ok((KeyedWrite::Applied(written), recorded))
+        })?;
+        if recorded {
+            self.written().notify(Written::Settings);
+        }
+        Ok(written)
+    }
+
+    async fn request_publish_replayed(
+        &self,
+        request: PublishRequest,
+        record: GuideRecord,
+        replay: StoredReplay,
+    ) -> Result<KeyedWrite<PublishRequested>, StoreError> {
+        replay.check()?;
+        let (written, recorded) = write_txn!(self, tx, async {
+            let found = read(&mut tx, replay.scope, &replay.actor, &replay.key).await?;
+            if let Some(answer) = keyed(found, &replay) {
+                return Ok((answer, false));
+            }
+            let (written, recorded) = guides::request(&mut tx, &request, &record).await?;
+            if matches!(written, PublishRequested::Queued(_)) {
+                put(&mut tx, &replay).await?;
+            }
+            Ok((KeyedWrite::Applied(written), recorded))
+        })?;
+        if recorded {
+            self.written().notify(Written::Settings);
+        }
+        Ok(written)
+    }
+
+    async fn request_cancel_replayed(
+        &self,
+        guide_id: String,
+        publish_id: String,
+        replay: StoredReplay,
+    ) -> Result<KeyedWrite<CancelRequest>, StoreError> {
+        replay.check()?;
+        write_txn!(self, tx, async {
+            let found = read(&mut tx, replay.scope, &replay.actor, &replay.key).await?;
+            if let Some(answer) = keyed(found, &replay) {
+                return Ok(answer);
+            }
+            let written =
+                guides::cancel(&mut tx, &guide_id, &publish_id, replay.created_at).await?;
+            if matches!(written, CancelRequest::Requested(_)) {
+                put(&mut tx, &replay).await?;
+            }
+            Ok(KeyedWrite::Applied(written))
+        })
+    }
+
+    async fn mark_not_posted_replayed(
+        &self,
+        guide_id: String,
+        channel_id: String,
+        position: u32,
+        record: GuideRecord,
+        replay: StoredReplay,
+    ) -> Result<KeyedWrite<NotPosted>, StoreError> {
+        replay.check()?;
+        let (written, recorded) = write_txn!(self, tx, async {
+            let found = read(&mut tx, replay.scope, &replay.actor, &replay.key).await?;
+            if let Some(answer) = keyed(found, &replay) {
+                return Ok((answer, false));
+            }
+            let (written, recorded) =
+                guides::not_posted(&mut tx, &guide_id, &channel_id, position, &record).await?;
+            if matches!(written, NotPosted::Removed(_)) {
                 put(&mut tx, &replay).await?;
             }
             Ok((KeyedWrite::Applied(written), recorded))

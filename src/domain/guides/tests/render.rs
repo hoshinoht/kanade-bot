@@ -1,6 +1,6 @@
 use super::super::{
-    ArtKind, Block, BlockError, EMBED_TOTAL_LIMIT, EntryImage, MAX_UPLOAD_BYTES, RenderWarning,
-    Rendered, SPACER, render,
+    ArtKind, Block, BlockError, EMBED_TOTAL_LIMIT, MAX_UPLOAD_BYTES, RenderWarning, Rendered,
+    SPACER, render,
 };
 use super::support::{Sources, bosses, catalog, entry, id, text};
 use crate::domain::catalog::{BossSpec, BossTable, CatalogSpec, DifficultySpec};
@@ -9,9 +9,11 @@ fn rendered(blocks: &[Block], sources: &Sources) -> Rendered {
     render(blocks, &catalog(), sources).unwrap()
 }
 
-/// `count` plain bosses `B0..` with `image`.
-fn plain(count: usize, image: EntryImage) -> Vec<super::super::BossEntry> {
-    (0..count).map(|n| entry(&format!("B{n}"), image)).collect()
+/// `count` plain bosses `B0..`, with the large entry image or not.
+fn plain(count: usize, large_image: bool) -> Vec<super::super::BossEntry> {
+    (0..count)
+        .map(|n| entry(&format!("B{n}"), large_image))
+        .collect()
 }
 
 /// Portrait and entry art for `B0..B<count>`, `size` bytes each, distinct.
@@ -52,13 +54,13 @@ fn boss_embeds_carry_the_v4_fields_lead_and_note() {
     let sources = Sources::default()
         .with_art(ArtKind::Portrait, "MaleficStar", b"star".to_vec())
         .with_lead("MaleficStar", "  A falling star.  ");
-    let mut star = entry("MaleficStar", EntryImage::Thumbnail);
+    let mut star = entry("MaleficStar", false);
     star.note = Some("Bring potions.".into());
     let out = rendered(
         &[bosses(
             1,
             Some("## Bosses"),
-            vec![star, entry("Kalos", EntryImage::None)],
+            vec![star, entry("Kalos", false)],
         )],
         &sources,
     );
@@ -90,7 +92,16 @@ fn boss_embeds_carry_the_v4_fields_lead_and_note() {
             .collect::<Vec<_>>(),
         ["MaleficStar-portrait.png"]
     );
-    assert!(out.warnings.is_empty());
+    // The portrait is always wanted: Kalos has none here, so it is reported.
+    assert_eq!(
+        out.warnings,
+        [RenderWarning::MissingArt {
+            block_id: id(1),
+            entry: 1,
+            key: "Kalos".into(),
+            kind: ArtKind::Portrait,
+        }]
+    );
 }
 
 #[test]
@@ -98,10 +109,7 @@ fn portraits_use_the_catalog_basename_and_entry_art_the_key() {
     let sources = Sources::default()
         .with_art(ArtKind::Portrait, "KalosFace", b"face".to_vec())
         .with_art(ArtKind::Entry, "Kalos", b"entry".to_vec());
-    let out = rendered(
-        &[bosses(1, None, vec![entry("Kalos", EntryImage::Both)])],
-        &sources,
-    );
+    let out = rendered(&[bosses(1, None, vec![entry("Kalos", true)])], &sources);
     let embed = &out.slots[0].embeds[0];
     assert_eq!(embed.thumbnail.as_deref(), Some("Kalos-portrait.png"));
     assert_eq!(embed.image.as_deref(), Some("Kalos-entry.png"));
@@ -124,11 +132,7 @@ fn mixed_case_art_keys_resolve_exactly() {
     // Art filed under the wrong case is missing, not found.
     let sources = Sources::default().with_art(ArtKind::Portrait, "maleficstar", b"x".to_vec());
     let out = rendered(
-        &[bosses(
-            1,
-            None,
-            vec![entry("MaleficStar", EntryImage::Thumbnail)],
-        )],
+        &[bosses(1, None, vec![entry("MaleficStar", false)])],
         &sources,
     );
     assert_eq!(out.slots[0].embeds[0].thumbnail, None);
@@ -146,7 +150,7 @@ fn mixed_case_art_keys_resolve_exactly() {
 #[test]
 fn missing_art_drops_the_picture_with_a_warning() {
     let out = rendered(
-        &[bosses(1, None, vec![entry("Kalos", EntryImage::Both)])],
+        &[bosses(1, None, vec![entry("Kalos", true)])],
         &Sources::default(),
     );
     let embed = &out.slots[0].embeds[0];
@@ -167,10 +171,7 @@ fn duplicate_art_is_uploaded_once_per_message() {
         &[bosses(
             1,
             None,
-            vec![
-                entry("MaleficStar", EntryImage::Thumbnail),
-                entry("MaleficStar", EntryImage::Thumbnail),
-            ],
+            vec![entry("MaleficStar", false), entry("MaleficStar", false)],
         )],
         &sources,
     );
@@ -186,10 +187,10 @@ fn duplicate_art_is_uploaded_once_per_message() {
 #[test]
 fn ten_embeds_fit_one_message_and_eleven_take_two() {
     let none = Sources::default();
-    let ten = rendered(&[bosses(1, Some("h"), plain(10, EntryImage::None))], &none);
+    let ten = rendered(&[bosses(1, Some("h"), plain(10, false))], &none);
     assert_eq!(ten.slots.len(), 1);
     assert_eq!(ten.slots[0].embeds.len(), 10);
-    let eleven = rendered(&[bosses(1, Some("h"), plain(11, EntryImage::None))], &none);
+    let eleven = rendered(&[bosses(1, Some("h"), plain(11, false))], &none);
     let shape: Vec<(u32, &str, usize)> = eleven
         .slots
         .iter()
@@ -202,7 +203,7 @@ fn ten_embeds_fit_one_message_and_eleven_take_two() {
 fn messages_split_before_6000_embed_units() {
     let entries: Vec<_> = (0..8)
         .map(|n| {
-            let mut entry = entry(&format!("B{n}"), EntryImage::None);
+            let mut entry = entry(&format!("B{n}"), false);
             entry.note = Some("w".repeat(1000));
             entry
         })
@@ -219,10 +220,7 @@ fn messages_split_before_6000_embed_units() {
 
 #[test]
 fn messages_split_at_ten_files() {
-    let out = rendered(
-        &[bosses(1, None, plain(6, EntryImage::Both))],
-        &plain_art(6, 16),
-    );
+    let out = rendered(&[bosses(1, None, plain(6, true))], &plain_art(6, 16));
     let shape: Vec<(usize, usize)> = out
         .slots
         .iter()
@@ -234,10 +232,7 @@ fn messages_split_at_ten_files() {
 #[test]
 fn messages_split_at_the_upload_byte_budget() {
     let size = 3 * 512 * 1024;
-    let out = rendered(
-        &[bosses(1, None, plain(6, EntryImage::Thumbnail))],
-        &plain_art(6, size),
-    );
+    let out = rendered(&[bosses(1, None, plain(6, false))], &plain_art(6, size));
     let shape: Vec<usize> = out.slots.iter().map(|slot| slot.uploads.len()).collect();
     assert_eq!(shape, [5, 1]);
     assert!(5 * size <= MAX_UPLOAD_BYTES && 6 * size > MAX_UPLOAD_BYTES);
@@ -246,7 +241,7 @@ fn messages_split_at_the_upload_byte_budget() {
 #[test]
 fn derived_descriptions_over_the_limit_are_refused() {
     let sources = Sources::default().with_lead("Kalos", &"l".repeat(4000));
-    let mut kalos = entry("Kalos", EntryImage::None);
+    let mut kalos = entry("Kalos", false);
     kalos.note = Some("n".repeat(100));
     let error = render(&[bosses(1, None, vec![kalos])], &catalog(), &sources).unwrap_err();
     assert!(
@@ -260,7 +255,7 @@ fn derived_descriptions_over_the_limit_are_refused() {
 
 #[test]
 fn a_guide_renders_at_most_200_messages() {
-    let entries: Vec<_> = (0..2001).map(|_| entry("B0", EntryImage::None)).collect();
+    let entries: Vec<_> = (0..2001).map(|_| entry("B0", false)).collect();
     let error = render(&[bosses(1, None, entries)], &catalog(), &Sources::default()).unwrap_err();
     assert_eq!(
         error,
@@ -287,7 +282,7 @@ fn invalid_drafts_are_refused_before_rendering() {
 fn slot_hashes_are_stable_and_follow_catalog_and_art() {
     let blocks = [
         text(1, "Hello"),
-        bosses(2, None, vec![entry("MaleficStar", EntryImage::Thumbnail)]),
+        bosses(2, None, vec![entry("MaleficStar", false)]),
     ];
     let sources =
         || Sources::default().with_art(ArtKind::Portrait, "MaleficStar", b"star".to_vec());
@@ -299,6 +294,9 @@ fn slot_hashes_are_stable_and_follow_catalog_and_art() {
     // Pinned: a changed canonical form marks every published slot out of
     // date. The text slot is sha256 of
     // `{"content":"Hello","embeds":[],"flags":"silent","uploads":[]}`.
+    // Unchanged by the 2026-10-16 narrowing of `image` to `large_image`:
+    // the hash covers the rendered output, and a portrait-only entry
+    // renders exactly as the old `thumbnail` choice did.
     assert_eq!(
         first,
         [
