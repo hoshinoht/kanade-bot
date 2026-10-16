@@ -13,7 +13,7 @@ core:
   detail: 'Press the NPC/Gather key to aim Will of Kalos (also called Kalos''s Will) and press again to fire. It refills about every 10 s (the wiki says 15 s on Easy), auto-fires after 10 s and does not charge while you are dead; since SEA v251 its crosshair stays fixed. Shoot the Eyes directly; for the drone and the ball, shoot the generator above or below them as they pass.'
 - title: Shots needed
   text: 'Scale with party size and difficulty.'
-  detail: 'Hits needed scale with party size. Eyes take 2 per member on Easy and Normal (3 on Chaos and Extreme); the drone takes 1 on Easy and Normal (2 on Chaos and Extreme); the ball takes 1 on Easy and 2 on Chaos and Extreme (Normal unconfirmed).'
+  detail: 'Hits needed scale with party size. Eyes take 2 per member on Easy and Normal (3 on Chaos and Extreme); the drone takes 1 on Easy and Normal (2 on Chaos and Extreme); the ball takes 1 on Easy and 2 on Normal, Chaos and Extreme.'
 - title: All four on
   text: 'All four still on when the next timer ends ejects the party; freeing any one resets it.'
   detail: If all four weapons are still active when the next activation timer ends, the party is ejected. Freeing any one resets it.
@@ -54,8 +54,8 @@ mechanics:
   rows:
   - {label: Each Eye, value: 2 · Chaos/Extreme 3}
   - {label: Drone, value: 1 · Chaos/Extreme 2}
-  - {label: Ball, value: Easy 1 · Chaos/Extreme 2}
-  note: 'Normal ball count unconfirmed. A weapon''s colour counts its shots left: red, then purple, then dark blue.'
+  - {label: Ball, value: Easy 1 · all others 2}
+  note: 'A weapon''s colour counts its shots left: red, then purple, then dark blue.'
 - kind: scale
   title: Phase 2 segments
   bands:

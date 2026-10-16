@@ -206,6 +206,8 @@ pub(super) async fn read(
     }
     let totals =
         estimates.and_then(|estimates| party_totals(estimates, &run.id, &bosses, &state.catalog));
+    let party_total =
+        estimates.map(|estimates| dto::estimates::party_total(estimates, &run.bosses, &slots));
     Ok(Json(RunPartyCharacters {
         run_id: run.id,
         slots: out,
@@ -213,6 +215,7 @@ pub(super) async fn read(
         estimates: estimates.is_some(),
         fresh_days: estimates.map(Estimates::fresh_days),
         totals,
+        party_total,
         nexon_data,
         attribution: ATTRIBUTION,
         estimate_label: LABEL,

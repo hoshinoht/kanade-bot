@@ -13,15 +13,84 @@ use serde::Serialize;
 
 use super::{history::SettingsActor, iso_instant};
 use crate::{
-    domain::catalog::BossTable,
+    domain::{catalog::BossTable, characters::PartySlot},
     infrastructure::scouter::{
         BossParty, Card, Combined, Estimates, Failure, FailureKind, Found, Job, Member, Subject,
-        Target, catalog_token, scouter_keys,
+        Target, catalog_token, saved_party, scouter_keys,
     },
 };
 
 pub const LABEL: &str = "Clear-time estimate";
 pub const NOTE: &str = "For planning only, not eligibility";
+
+/// A run's Party total from the saved estimates: the same figures as the
+/// reminder card's "Who carries" image (each boss its own party's summed
+/// effective %, minutes only from a saved total of that boss's whole
+/// party). Never starts a lookup.
+#[derive(Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+pub struct RunPartyTotal {
+    /// When the oldest reading used was fetched; `null` with none saved.
+    pub as_of: Option<String>,
+    /// `as_of` is at least `fresh_days` ago ("older than n days").
+    pub stale: bool,
+    /// The saved `estimate_days`.
+    pub fresh_days: u32,
+    /// One per boss of the run, in run order.
+    pub bosses: Vec<PartyTotalBoss>,
+}
+
+#[derive(Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+pub struct PartyTotalBoss {
+    /// The boss token as the run lists it (`HCarling`).
+    pub boss: String,
+    /// The sum of the members' saved effective %; `null`: no estimate yet.
+    pub combined_percentage: Option<f64>,
+    /// From the saved total of this boss's whole party; `null` while a
+    /// member brings no character the scouter can take, or none is saved.
+    pub estimated_minutes: Option<f64>,
+    /// From the same saved total; `null` without it.
+    pub technically_possible: Option<bool>,
+    /// Every party member has a saved effective % for this boss.
+    pub complete: bool,
+    /// Some figure counted assumes a 100% critical rate.
+    pub critical_rate_assumed: bool,
+    /// Party members with no estimate for this boss (not in the total,
+    /// never 0%).
+    pub no_estimate: u32,
+}
+
+/// `slots` (of a run with `bosses`) as the Party total from `estimates`'
+/// saved readings.
+pub fn party_total(estimates: &Estimates, bosses: &[String], slots: &[PartySlot]) -> RunPartyTotal {
+    let saved = saved_party(
+        bosses,
+        slots,
+        |ign| estimates.cached(ign),
+        |igns| estimates.cached_party(igns),
+    );
+    let party = &saved.party;
+    RunPartyTotal {
+        as_of: saved.oldest.map(iso_instant),
+        stale: saved.oldest.is_some_and(|at| estimates.stale(at)),
+        fresh_days: estimates.fresh_days(),
+        bosses: bosses
+            .iter()
+            .zip(&saved.totals)
+            .enumerate()
+            .map(|(at, (token, total))| PartyTotalBoss {
+                boss: token.clone(),
+                combined_percentage: party.total(at),
+                estimated_minutes: total.as_ref().and_then(|total| total.estimated_minutes),
+                technically_possible: total.as_ref().and_then(|total| total.technically_possible),
+                complete: party.complete(at),
+                critical_rate_assumed: party.crit_at(at),
+                no_estimate: count(party.no_estimate_at(at)),
+            })
+            .collect(),
+    }
+}
 
 /// `GET /api/admin/estimates?character_ids=|run_id=`.
 #[derive(Serialize)]
@@ -222,11 +291,13 @@ pub struct EstimateIssue {
 #[cfg_attr(test, derive(ts_rs::TS))]
 pub struct EstimateError {
     /// `busy` (429 past the job's deadline, or a rate limit; retry after
-    /// `retry_after_seconds`), `critical_rate` (422), `manual_check` (503),
-    /// `failed` (502, 504, timeout, no connection).
+    /// `retry_after_seconds`), `critical_rate` (422), `assumption_failed`
+    /// (422: the scouter tried assuming 100% critical rate and couldn't
+    /// finish), `manual_check` (503), `failed` (502, 504, timeout, no
+    /// connection).
     #[cfg_attr(
         test,
-        ts(type = "'busy' | 'critical_rate' | 'manual_check' | 'failed'")
+        ts(type = "'busy' | 'critical_rate' | 'assumption_failed' | 'manual_check' | 'failed'")
     )]
     pub code: &'static str,
     pub message: &'static str,
@@ -245,6 +316,9 @@ fn message(kind: FailureKind) -> &'static str {
     match kind {
         FailureKind::Busy => "The scouter is busy.",
         FailureKind::CriticalRate => "Set up critical rate on the scouter first.",
+        FailureKind::AssumptionFailed => {
+            "The estimate couldn't be completed for this character. Try again later."
+        }
         FailureKind::ManualCheck => "Scouter needs a manual check.",
         FailureKind::Failed => "Lookup failed.",
     }

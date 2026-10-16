@@ -38,7 +38,10 @@ use crate::{
             write::{Body, Refusal, load_run, state},
         },
         auth::AdminSession,
-        dto::characters::{RunCharacterSlot, RunCharacters, run_slot},
+        dto::{
+            characters::{RunCharacterSlot, RunCharacters, run_slot},
+            estimates::party_total,
+        },
         error::ApiError,
         listeners::Site,
         state::{ApiState, CharacterRoster},
@@ -110,10 +113,15 @@ impl Week {
     /// `run`'s slots as the API answers them, in party order.
     fn answer(&self, site: &Site, state: &ApiState, run: &Run) -> RunCharacters {
         let ctx = context(site, state, Members::new(), state.now());
+        let slots = self.slots(state, run);
+        let estimates = state
+            .character_data
+            .as_ref()
+            .and_then(|module| module.estimates());
         RunCharacters {
             run_id: run.id.clone(),
-            slots: self
-                .slots(state, run)
+            party_total: estimates.map(|estimates| party_total(estimates, &run.bosses, &slots)),
+            slots: slots
                 .iter()
                 .map(|slot| run_slot(&ctx, &self.runs, slot))
                 .collect(),

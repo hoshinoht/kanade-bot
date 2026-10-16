@@ -19,6 +19,7 @@ mod ign;
 mod keys;
 mod party;
 pub mod refresh;
+mod saved;
 mod wire;
 
 pub use client::{LookupError, MAX_BATCH, ScouterClient, TIMEOUT, query};
@@ -32,4 +33,5 @@ pub use ign::RosterIgn;
 pub use keys::{BOSS_KEYS, catalog_token, scouter_keys};
 pub use party::{BossParty, party_subjects, push_subject};
 pub use refresh::{Upcoming, UpcomingFuture, UpcomingParties, UpcomingRun};
+pub use saved::{SavedParty, saved_party};
 pub use wire::{Card, Combined, Member};

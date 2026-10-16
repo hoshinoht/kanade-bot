@@ -188,6 +188,9 @@ pub struct RunCharacters {
     pub run_id: String,
     /// In party order.
     pub slots: Vec<RunCharacterSlot>,
+    /// The Party total from the saved estimates (the reminder image's
+    /// figures); `null` while estimates are off.
+    pub party_total: Option<super::estimates::RunPartyTotal>,
 }
 
 /// A weekly timing's party slots (modules `roster` and `character_data`).

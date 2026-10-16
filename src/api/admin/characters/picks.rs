@@ -167,7 +167,9 @@ pub(super) fn later_boss(
 
 /// Every later boss's stored per-boss version on `slot` as read now (by
 /// catalog boss), and whether `sent` (the versions a "same for every boss"
-/// was loaded at, absent = 0) matches it.
+/// was loaded at, absent = 0) matches it. A nonzero version sent for a boss
+/// that is no longer a later boss is stale too: the form was loaded before
+/// that boss left.
 pub(super) fn later_versions(
     slot: &PartySlot,
     sent: &BTreeMap<String, u32>,
@@ -182,7 +184,10 @@ pub(super) fn later_versions(
         .collect();
     let fresh = now
         .iter()
-        .all(|(boss, version)| sent.get(boss).copied().unwrap_or(0) == *version);
+        .all(|(boss, version)| sent.get(boss).copied().unwrap_or(0) == *version)
+        && sent
+            .iter()
+            .all(|(boss, version)| *version == 0 || now.contains_key(boss));
     (now, fresh)
 }
 

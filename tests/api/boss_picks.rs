@@ -48,22 +48,25 @@ fn two_boss_run(id: &str, fixed: Option<&str>, at: DateTime<Utc>) -> Run {
     }
 }
 
-async fn add_two_boss(reads: &Reads) {
-    let fixed = FixedRun {
+fn timing_with(bosses: &[&str]) -> FixedRun {
+    FixedRun {
         owner_pinned: false,
         id: "f-two".into(),
         owner_id: "1001".into(),
         channel_id: Some("kalos-four".into()),
-        bosses: vec!["XKalos".into(), "HMaleficStar".into()],
+        bosses: bosses.iter().map(|boss| (*boss).to_owned()).collect(),
         weekday: Weekday::Wed,
         time: NaiveTime::from_hms_opt(21, 0, 0).unwrap(),
         participants: vec!["1001".into(), "1002".into()],
         note: None,
         attendance_default: AttendanceDefault::default(),
         standing: Vec::new(),
-    };
+    }
+}
+
+async fn add_two_boss(reads: &Reads) {
     let changes = vec![
-        Change::PutFixedRun(fixed),
+        Change::PutFixedRun(timing_with(&["XKalos", "HMaleficStar"])),
         Change::PutRun(two_boss_run("r-two", Some("f-two"), utc(9, 30, 13))),
         Change::PutRun(two_boss_run("r-two-ended", None, utc(9, 28, 13))),
     ];
@@ -380,4 +383,62 @@ async fn per_boss_routes_are_the_generic_404_while_their_module_is_off() {
     for (method, path) in [("PUT", fixed_boss.as_str()), ("POST", fixed_same.as_str())] {
         reads.assert_unmounted(method, path, json!({})).await;
     }
+}
+
+/// A "same for every boss" loaded before boss 2 left the timing or run
+/// is stale: its nonzero version for that boss names a pick the form saw.
+/// Sent at 0, or left out, it goes through (and the kept pick stays).
+#[tokio::test]
+async fn same_for_every_boss_loaded_before_a_boss_left_is_stale() {
+    let Two {
+        reads, wisteria, ..
+    } = two().await;
+    let timing = boss_path("fixed", "f-two", "1001", "MaleficStar");
+    let run = boss_path("runs", "r-two", "1001", "MaleficStar");
+    for path in [&timing, &run] {
+        let slot = reads.ok("PUT", path, pick(&*wisteria, 0), SLOT).await;
+        assert_eq!(slot["bosses"][1]["version"], 1, "{path}");
+    }
+    // HMaleficStar leaves both the timing and its run.
+    let mut one = two_boss_run("r-two", Some("f-two"), utc(9, 30, 13));
+    one.bosses = vec!["XKalos".into()];
+    let changes = vec![
+        Change::PutFixedRun(timing_with(&["XKalos"])),
+        Change::PutRun(one),
+    ];
+    commit_as(&reads.store, "edit", utc(9, 29, 0), changes).await;
+
+    for (scope, target) in [("fixed", "f-two"), ("runs", "r-two")] {
+        let same = same_path(scope, target, "1001");
+        assert_eq!(
+            reads
+                .refused("POST", &same, json!({"versions": {"MaleficStar": 1}}))
+                .await,
+            (409, "stale".into()),
+            "{same}: loaded while Star was boss 2"
+        );
+        for body in [
+            json!({"versions": {"MaleficStar": 0}}),
+            json!({"versions": {}}),
+        ] {
+            let slot = reads.ok("POST", &same, body, SLOT).await;
+            assert_eq!(slot["bosses"].as_array().unwrap().len(), 1, "{same}");
+        }
+    }
+    // Nothing was cleared: the kept picks come back with Star.
+    for scope in [PickScope::Timing, PickScope::Run] {
+        let target = match scope {
+            PickScope::Timing => "f-two",
+            PickScope::Run => "r-two",
+        };
+        let picks = reads
+            .store
+            .picks(scope, &[target.to_owned()])
+            .await
+            .unwrap();
+        assert_eq!(picks.len(), 1, "{target}");
+        assert_eq!(picks[0].boss.as_deref(), Some("MaleficStar"));
+    }
+    assert!(rows(&reads, "fixedpick.f-two.1001.*").await.is_empty());
+    assert!(rows(&reads, "pick.r-two.1001.*").await.is_empty());
 }

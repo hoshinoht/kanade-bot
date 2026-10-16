@@ -155,7 +155,7 @@ async function control(path: string, body: unknown): Promise<void> {
 /**
  * What later scouter lookups do (`ok`, `paced`: each slower than the page's poll,
  * `assumed`: `ign`'s result assumes 100% critical rate, `hold`, or the next single lookup fails:
- * `busy`, `critical_rate`, `manual_check`, `failed`, `timeout`), `queued` (two other members'
+ * `busy`, `critical_rate`, `assumption_failed`, `manual_check`, `failed`, `timeout`), `queued` (two other members'
  * lookups wait, then finish one by one once a lookup is queued behind them) or `off` (a restart
  * without the scouter URL).
  */

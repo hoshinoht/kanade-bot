@@ -1135,6 +1135,27 @@ async fn the_party_sees_roster_levels_and_estimates_never_another_members_nexon_
         }])
     );
     assert!(party["totals"]["fetched_at"].is_string());
+    // The Party total: the saved readings, as the admin's run read and the
+    // reminder image have them; no minutes while a member brings nothing.
+    assert_eq!(
+        party["party_total"]["bosses"],
+        json!([{
+            "boss": "XKalos",
+            "combined_percentage": 18.0,
+            "estimated_minutes": null,
+            "technically_possible": null,
+            "complete": false,
+            "critical_rate_assumed": false,
+            "no_estimate": 1,
+        }])
+    );
+    let admin = reads
+        .read(
+            "/api/admin/runs/r-kalos/characters",
+            "characters.json#/$defs/RunCharacters",
+        )
+        .await;
+    assert_eq!(admin["party_total"], party["party_total"]);
     // Fresh until estimate_days (default 7) have passed, then marked stale,
     // readings and totals alike, and still shown.
     let stale = |party: &Value| {
@@ -1155,6 +1176,7 @@ async fn the_party_sees_roster_levels_and_estimates_never_another_members_nexon_
     *chars.skew.lock().unwrap() += TimeDelta::seconds(1);
     let party = chars.portal.read(&alice, PARTY, PARTY_VIEW).await;
     assert_eq!(stale(&party), [json!(true)], "7 days old");
+    assert_eq!(party["party_total"]["stale"], true);
     assert_eq!(party["fresh_days"], 7);
     assert_eq!(party["totals"]["bosses"][0]["combined_percentage"], 18.0);
     assert_eq!(chars.scouter.as_ref().unwrap().targets().len(), seen);

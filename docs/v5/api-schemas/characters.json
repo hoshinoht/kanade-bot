@@ -124,10 +124,11 @@
     "RunCharacters": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["run_id", "slots"],
+      "required": ["run_id", "slots", "party_total"],
       "properties": {
         "run_id": { "type": "string" },
-        "slots": { "type": "array", "items": { "$ref": "#/$defs/RunCharacterSlot" }, "description": "In party order." }
+        "slots": { "type": "array", "items": { "$ref": "#/$defs/RunCharacterSlot" }, "description": "In party order." },
+        "party_total": { "anyOf": [{ "$ref": "character_data.json#/$defs/RunPartyTotal" }, { "type": "null" }], "description": "The Party total from the saved estimates, the reminder image's figures; null while estimates are off (module `character_data` without a scouter URL)." }
       }
     },
     "TimingCharacters": {

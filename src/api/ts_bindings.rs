@@ -184,6 +184,8 @@ fn bindings() -> String {
         .add::<estimates::EstimateCharacter>()
         .add::<estimates::EstimateMissing>()
         .add::<estimates::EstimateParty>()
+        .add::<estimates::RunPartyTotal>()
+        .add::<estimates::PartyTotalBoss>()
         .add::<estimates::EstimateProgress>()
         .add::<estimates::EstimateResult>()
         .add::<estimates::EstimateMember>()

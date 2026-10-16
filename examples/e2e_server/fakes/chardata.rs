@@ -11,6 +11,7 @@
 //! rate), `hold` (no lookup answers until the scenario changes), and the
 //! error scenarios, where the next single lookup fails and the rest are
 //! found: `busy` (429, `Retry-After: 40`), `critical_rate` (422),
+//! `assumption_failed` (422 `critical_rate_assumption_failed`),
 //! `manual_check` (503 `verification_required`), `failed` (502),
 //! `timeout` (504). The lookups [`Modes::hold_igns`] names wait until a
 //! lookup is queued behind them, then finish one by one.
@@ -64,6 +65,7 @@ pub enum Scenario {
     Hold,
     Busy,
     CriticalRate,
+    AssumptionFailed,
     ManualCheck,
     Failed,
     Timeout,
@@ -80,6 +82,11 @@ impl Scenario {
                 StatusCode::UNPROCESSABLE_ENTITY,
                 None,
                 "critical_rate_setup_required",
+            ),
+            Self::AssumptionFailed => (
+                StatusCode::UNPROCESSABLE_ENTITY,
+                None,
+                "critical_rate_assumption_failed",
             ),
             Self::ManualCheck => (
                 StatusCode::SERVICE_UNAVAILABLE,

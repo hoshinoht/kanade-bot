@@ -234,6 +234,7 @@ pub struct RunPartyCharacters {
     pub estimates: bool,
     pub fresh_days: Option<u32>,
     pub totals: Option<PartyTotals>,
+    pub party_total: Option<crate::api::dto::estimates::RunPartyTotal>,
     pub nexon_data: bool,
     pub attribution: &'static str,
     pub estimate_label: &'static str,

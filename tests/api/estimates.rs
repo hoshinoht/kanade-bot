@@ -174,6 +174,7 @@ fn refusal(ign: &str) -> Option<Response> {
         ("Busy", 429, "busy", Some("5")),
         ("Limited", 429, "upstream_rate_limited", Some("40")),
         ("Crit", 422, "critical_rate_setup_required", None),
+        ("Unsure", 422, "critical_rate_assumption_failed", None),
         ("Verify", 503, "verification_required", None),
         ("Blocked", 502, "upstream_blocked", None),
         ("Mismatch", 502, "result_mismatch", None),
@@ -600,6 +601,14 @@ async fn scouter_errors_map_to_the_drawn_states_and_are_never_cached() {
             "critical_rate_setup_required",
             None,
             "Set up critical rate on the scouter first.",
+        ),
+        (
+            "UnsureAa",
+            "assumption_failed",
+            Some(422),
+            "critical_rate_assumption_failed",
+            None,
+            "The estimate couldn't be completed for this character. Try again later.",
         ),
         (
             "VerifyAa",
@@ -1384,4 +1393,182 @@ async fn the_reminder_preview_has_no_estimate_image_while_its_party_is_looked_up
         "22:00 XKalos: XKalos 18.0%, MikaBish 50%, GateAa 50%; 1 with no estimate. As of Tue 29 Sep 12:00."
     );
     assert_eq!(raw_get(&reads, PNG).await.status, 200);
+}
+
+const RUN_CHARACTERS: &str = "characters.json#/$defs/RunCharacters";
+
+/// `run`'s Party total as the admin run read answers it.
+async fn party_total(reads: &Reads, run: &str) -> Value {
+    let path = format!("/api/admin/runs/{run}/characters");
+    reads.read(&path, RUN_CHARACTERS).await["party_total"].clone()
+}
+
+/// One boss of a Party total.
+fn boss_total(
+    boss: &str,
+    sum: Option<f64>,
+    minutes: Option<f64>,
+    possible: Option<bool>,
+    complete: bool,
+    crit: bool,
+    no_estimate: u32,
+) -> Value {
+    json!({
+        "boss": boss,
+        "combined_percentage": sum,
+        "estimated_minutes": minutes,
+        "technically_possible": possible,
+        "complete": complete,
+        "critical_rate_assumed": crit,
+        "no_estimate": no_estimate,
+    })
+}
+
+/// The run read's Party total comes from the saved estimates, as the
+/// reminder image does: no estimate yet, a partial party (no minutes), the
+/// whole party (minutes from its saved total), an assumed critical rate,
+/// and stale after `estimate_days`; null with estimates off.
+#[tokio::test]
+async fn the_party_total_reads_the_saved_estimates_like_the_reminder_image() {
+    for off in [Reads::with_characters().await, on(None).await] {
+        assert_eq!(party_total(&off, "r-kalos").await, Value::Null);
+    }
+    let (address, _) = fake_scouter().await;
+    let skew: Arc<Mutex<TimeDelta>> = Arc::default();
+    let (reads, _) = serve_skewed(Some(address), None, CLIENT_TIMEOUT, Arc::clone(&skew)).await;
+    character(&reads, "1001", "MikaBish").await;
+    character(&reads, "1002", "RenShade").await;
+    let none = party_total(&reads, "r-kalos").await;
+    assert_eq!(
+        none,
+        json!({
+            "as_of": null,
+            "stale": false,
+            "fresh_days": 7,
+            "bosses": [boss_total("XKalos", None, None, None, false, false, 3)],
+        }),
+        "no estimate yet"
+    );
+
+    // Dan brings nothing: the % of those saved, no minutes, not complete.
+    look_up(&reads, json!({"run_id": "r-kalos"})).await;
+    let partial = party_total(&reads, "r-kalos").await;
+    assert_eq!(
+        partial["bosses"],
+        json!([boss_total(
+            "XKalos",
+            Some(18.0),
+            None,
+            None,
+            false,
+            false,
+            1
+        )])
+    );
+    assert!(partial["as_of"].is_string());
+
+    // Dan's character assumes a critical rate; the whole party's saved
+    // total gives the minutes.
+    character(&reads, "1004", "AssumedAa").await;
+    look_up(&reads, json!({"run_id": "r-kalos"})).await;
+    let whole = party_total(&reads, "r-kalos").await;
+    assert_eq!(
+        whole["bosses"],
+        json!([boss_total(
+            "XKalos",
+            Some(27.0),
+            Some(3000.0 / 27.0),
+            Some(false),
+            true,
+            true,
+            0
+        )])
+    );
+    assert_eq!(whole["stale"], false);
+    *skew.lock().unwrap() += TimeDelta::days(7);
+    let stale = party_total(&reads, "r-kalos").await;
+    assert_eq!(
+        (&stale["stale"], &stale["bosses"]),
+        (&json!(true), &whole["bosses"])
+    );
+}
+
+/// Per-boss picks: each boss's Party total is its own party's, with the
+/// minutes of that party's saved total.
+#[tokio::test]
+async fn each_bosss_party_total_is_its_own_partys() {
+    use kanade::domain::schedule::{Change, Run, RunSource, RunStatus};
+    let (address, fake) = fake_scouter().await;
+    let reads = on(Some(address)).await;
+    character(&reads, "1001", "MikaHero").await;
+    let bish = character(&reads, "1001", "MikaBish").await;
+    character(&reads, "1002", "RenShade").await;
+    let utc = |day, hour| {
+        use chrono::TimeZone;
+        chrono::Utc
+            .with_ymd_and_hms(2026, 9, day, hour, 0, 0)
+            .unwrap()
+    };
+    let run = Run {
+        id: "r-two".into(),
+        fixed_run_id: None,
+        channel_id: Some("star".into()),
+        week_start: utc(23, 16),
+        datetime: utc(30, 13),
+        bosses: vec!["XKalos".into(), "HMaleficStar".into()],
+        participants: vec!["1001".into(), "1002".into()],
+        status: RunStatus::Planned,
+        source: RunSource::Amend,
+        attendance: Vec::new(),
+        status_pin: None,
+    };
+    crate::reads::commit_as(&reads.store, "seed", utc(28, 0), vec![Change::PutRun(run)]).await;
+    let path = "/api/admin/runs/r-two/characters/1001/bosses/MaleficStar";
+    let picked = reads
+        .call(
+            "PUT",
+            path,
+            json!({"character_id": bish, "version": 0}),
+            &[],
+        )
+        .await;
+    assert_eq!(picked.status, 200, "{}", picked.text());
+    let done = look_up(&reads, json!({"run_id": "r-two"})).await;
+    assert_eq!(done["state"], "done", "{done}");
+    let batches: Vec<String> = fake
+        .targets()
+        .into_iter()
+        .filter(|target| target.contains("igns="))
+        .collect();
+    assert_eq!(
+        batches,
+        [
+            "/v1/bosses?igns=MikaHero,RenShade",
+            "/v1/bosses?igns=MikaBish,RenShade",
+        ]
+    );
+    let total = party_total(&reads, "r-two").await;
+    assert_eq!(
+        total["bosses"],
+        json!([
+            boss_total(
+                "XKalos",
+                Some(18.0),
+                Some(3000.0 / 18.0),
+                Some(false),
+                true,
+                false,
+                0
+            ),
+            boss_total(
+                "HMaleficStar",
+                Some(43.0),
+                Some(3000.0 / 43.0),
+                Some(false),
+                true,
+                false,
+                0
+            ),
+        ])
+    );
 }

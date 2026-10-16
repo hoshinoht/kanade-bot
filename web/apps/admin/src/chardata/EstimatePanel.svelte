@@ -103,7 +103,7 @@
   const off = $derived(active || lookup.starting || nothing || error?.code === 'manual_check' || lookup.wait > 0);
   const again = $derived(Boolean((done && job?.result) || error));
   // A member that failed is asked again with the others answered from memory.
-  const retry = $derived(error?.code === 'failed' || (done && failed.length > 0));
+  const retry = $derived(error?.code === 'failed' || error?.code === 'assumption_failed' || (done && failed.length > 0));
   const label = $derived.by(() => {
     if (queued) return 'Queued…';
     if (active) return 'Looking up…';

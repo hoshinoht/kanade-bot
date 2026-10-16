@@ -8,9 +8,9 @@ core:
 - title: Midnight shrinks
   text: 'Every full gauge shrinks Midnight; it regrows by how many stayed uncursed. At zero the party fails, lives or not.'
   detail: 'Phase 2 cycles Noon, Sunset, Midnight and Dawn on a clock. Each Sun''s Curse (full gauge) shrinks the Midnight segment; at each time change Midnight grows back in proportion to how many members stayed uncursed (SEA v244). If Midnight reaches zero, the whole party fails regardless of lives.'
-- title: Mithra's Power
+- title: Power of Sun
   text: 'Each segment ends with one safe spot; one miss gives the whole party a lethal hit and a full gauge.'
-  detail: 'At the end of every segment a transition check leaves one safe spot: the Mithra''s Power pattern (also called Ray of Light; the SEA name match is unconfirmed). Everyone must stand in it or the whole party takes a lethal hit and a full gauge.'
+  detail: 'At the end of every segment a transition check leaves one safe spot: Power of Sun (MapleSEA v235; also called Mithra''s Power or Ray of Light). Everyone must stand in it or the whole party takes a lethal hit and a full gauge.'
 phases:
 - name: Phase 1
   tag: light pillars
@@ -69,7 +69,7 @@ phases:
   - title: Shrinks per curse
     text: 'Each curse shrinks Midnight; it regrows at each time change by how many stayed uncursed. At zero the party fails.'
   - title: Burst timing
-    text: 'Hold binds and the main burst for Midnight; start on the caller''s mark once everyone is in the Mithra''s Power safe spot.'
+    text: 'Hold binds and the main burst for Midnight; start on the caller''s mark once everyone is in the Power of Sun safe spot.'
   - title: Push before Dawn
     text: 'Leftover Dawn shield heals back at Noon, so take as much HP here as you can.'
   - title: Finish here
@@ -119,8 +119,8 @@ tips:
   text: 'Near-full late in Noon? Take a cheap hit so the stun lands in Noon, crouch out of it, potion.'
   detail: If your gauge is nearly full late in Noon, step away from her stab and rush, take a cheap hit on purpose so the stun lands in Noon, hold crouch as it ends and potion straight away.
 - title: Call the safe spot
-  text: 'Call Mithra''s Power early; one lagging player fails it for all.'
-  detail: Call the Mithra's Power safe spot early every cycle; lag can make a late player fail it for everyone.
+  text: 'Call Power of Sun early; one lagging player fails it for all.'
+  detail: Call the Power of Sun safe spot early every cycle; lag can make a late player fail it for everyone.
 - title: Sunset prep
   text: 'Keep Decent Holy Fountain ready; avoid walls she faces, where her charge lingers.'
   detail: Keep Decent Holy Fountain ready for Sunset, and do not fight her pinned against a wall she is facing, because her charge lingers there.
@@ -228,7 +228,7 @@ strategies:
   payoff: Safest burst window; protects the Midnight segment
   steps:
   - Burst immediately in Phase 1 to get out of the pillar phase.
-  - In Phase 2, hold binds and main burst for Midnight. The caller confirms the start once everyone is in the Mithra's Power safe spot (the exact pre-resolution timing is unverified).
+  - In Phase 2, hold binds and main burst for Midnight. The caller confirms the start once everyone is in the Power of Sun safe spot (the exact pre-resolution timing is unverified).
   - Push as much HP as possible before Dawn, because leftover Dawn shield is healed back at Noon.
   - Everyone plays to avoid curses in Noon, Sunset and Dawn; clean segments regrow Midnight.
 - name: Finish before Dawn

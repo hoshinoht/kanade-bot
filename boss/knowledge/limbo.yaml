@@ -35,7 +35,7 @@ phases:
     detail: Between Specters C and D, the Passageway gives 30s to bounce spikes into the Shadow of Origin three times; success removes 150 Erosion and failing costs nothing.
   - title: Specter C fusions
     text: 'At 80% of Phase 2 HP he vanishes ~5s, then a ~30s fusion with attackable periods. The next one triggers 20 points below the HP reached.'
-    detail: 'Specter C fuses with its Flowers at exactly 80% of Phase 2 HP: he disappears for about 5s, then runs a roughly 30s fusion pattern that is not invulnerable throughout, with periods where he can be damaged; Risk is paused and Purification is unavailable meanwhile. The next fusion triggers 20 percentage points below the HP reached during the fusion (75% means 55%), so getting under 70% before the first one ends removes it (Normal guides; Hard unverified).'
+    detail: 'Specter C fuses with its Flowers at exactly 80% of Phase 2 HP: he disappears for about 5s, then runs a roughly 30s fusion pattern that is not invulnerable throughout, with periods where he can be damaged; Risk is paused and Purification is unavailable meanwhile. The next fusion triggers 20 percentage points below the HP reached during the fusion (75% means 55%), so getting under 70% before the first one ends removes it (same on Normal and Hard per KMS write-ups).'
   - title: Specter D walls
     text: 'Close at 25/50/75/100% Risk (left, right, bottom, top) for 300% HP; 100% starts Endless Abyss.'
   - title: Everyone presses
@@ -142,8 +142,8 @@ difficulties:
   - {phase: '3', value: 2.625q}
   notes:
   - title: Aim for 550 Force
-    text: The full 1.25x damage tier; unconfirmed for SEA.
-    detail: 500 Authentic Force to enter; 550 (the full 1.25x damage tier) is strongly recommended. MapleSEA notes do not state the 550 tier, so that part is unconfirmed for SEA.
+    text: The full 1.25x damage tier.
+    detail: 500 Authentic Force to enter; 550 (the full 1.25x damage tier, +5% per 10 above the requirement) is strongly recommended.
   - title: After OVERDRIVE
     text: HP ≈ 1.31q / 656t / 656t / 1.77q (-32.5%), 20 min. SEA due Oct-Nov 2026.
     detail: 'After OVERDRIVE (KMS Jul 2026, due in MapleSEA Oct-Nov 2026): HP about 1.31q / 656t / 656t / 1.77q (32.5% less), 20-minute limit.'
@@ -160,8 +160,8 @@ difficulties:
   - {phase: '3', value: 4.993q}
   notes:
   - title: Aim for 550 Force
-    text: The full 1.25x damage tier; unconfirmed for SEA.
-    detail: 500 Authentic Force to enter; 550 (the full 1.25x damage tier) is strongly recommended. MapleSEA notes do not state the 550 tier, so that part is unconfirmed for SEA.
+    text: The full 1.25x damage tier.
+    detail: 500 Authentic Force to enter; 550 (the full 1.25x damage tier, +5% per 10 above the requirement) is strongly recommended.
   - title: After OVERDRIVE
     text: HP ≈ 2.55q / 1.28q / 1.28q / 3.37q (-32.5%), 20 min. SEA due Oct-Nov 2026.
     detail: 'After OVERDRIVE (KMS Jul 2026, due in MapleSEA Oct-Nov 2026): HP about 2.55q / 1.28q / 1.28q / 3.37q (32.5% less), 20-minute limit.'
@@ -182,13 +182,13 @@ difficulties:
     detail: 'Destiny Weapon 2nd Growth mission "Battle, Limbo" (MapleSEA v252): Hard Limbo solo in Destiny Mode, starting at 800 Erosion instead of 0. Fifth mission; needs 12,500 Adversary''s Resolve. With only 200 Erosion of room, one death (+150) leaves almost nothing; avoid every 50/80-Erosion hit and Limbo Black''s grab. Practice Mode clears count (MapleSEA v249); not available in Cross World boss content. OVERDRIVE''s phase-specific practice will not count.'
   - title: 800 is only the start
     text: 'The Passageway (-150) and Phase 3 recovery can take you below 800; record Erosion at each phase.'
-    detail: '800 is a starting value, not a floor: the Passageway after Specter C (-150) and recovery in Phase 3 can bring Erosion below it, so complete them and note your Erosion at each phase entry. The second-fusion skip is described for Normal; do not plan the Hard mission around it.'
+    detail: '800 is a starting value, not a floor: the Passageway after Specter C (-150) and recovery in Phase 3 can bring Erosion below it, so complete them and note your Erosion at each phase entry. The second-fusion skip also works on Hard, but only plan around it with damage to spare.'
   - title: Never let Risk reach 100%
     text: Bring enough damage that the Phase 2 special pattern never runs.
     detail: 'Community advice: bring enough damage that the Phase 2 special pattern (Risk at 100%) never runs.'
 strategies:
 - name: Skip the second fusion
-  when: Parties with comfortable damage for Phase 2. Described for Normal; unverified on Hard.
+  when: Parties with comfortable damage for Phase 2, on Normal or Hard.
   risk: low
   damage: high
   payoff: Removes the second disappearance and fusion pattern

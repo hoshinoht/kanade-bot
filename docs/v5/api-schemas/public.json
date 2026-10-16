@@ -717,7 +717,7 @@
       "type": "object",
       "additionalProperties": false,
       "description": "GET /api/public/runs/{id}/characters (module `roster`): on a run the caller is on, the character each party member brings (the run's pick, else its timing's pick, else the main, else the only one), its cached scouter readings and the run's party totals. Never another member's NEXON data or link state. 404 `not_found` for anyone not on the run, as for a run that does not exist. `Cache-Control: no-store`.",
-      "required": ["run_id", "slots", "character_data", "estimates", "fresh_days", "totals", "nexon_data", "attribution", "estimate_label", "estimate_note"],
+      "required": ["run_id", "slots", "character_data", "estimates", "fresh_days", "totals", "party_total", "nexon_data", "attribution", "estimate_label", "estimate_note"],
       "properties": {
         "run_id": { "type": "string" },
         "slots": { "type": "array", "items": { "$ref": "#/$defs/PartyCharacterSlot" } },
@@ -725,6 +725,7 @@
         "estimates": { "type": "boolean" },
         "fresh_days": { "type": ["integer", "null"], "minimum": 1, "maximum": 30, "description": "The saved estimate_days: a reading or total at least this old is `stale` (show it marked older than n days); null while estimates are off." },
         "totals": { "anyOf": [{ "$ref": "#/$defs/PartyTotals" }, { "type": "null" }], "description": "null while estimates are off, or without a finished lookup of this run's party in the last 24 hours (lookups are kept 24 hours), or when its total failed." },
+        "party_total": { "anyOf": [{ "$ref": "character_data.json#/$defs/RunPartyTotal" }, { "type": "null" }], "description": "The Party total from the saved estimates, the same figures as the admin's and the reminder image's; null while estimates are off." },
         "nexon_data": { "type": "boolean", "description": "The caller's own slot shows NEXON data: show `attribution` with it." },
         "attribution": { "const": "Data based on NEXON Open API" },
         "estimate_label": { "const": "Clear-time estimate" },

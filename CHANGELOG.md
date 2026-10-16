@@ -24,6 +24,9 @@ _In development_
 - The NEXON link notice and the Privacy page now say that a linked character's class and level are copied to the roster, stay after an unlink and are seen by guild members; members who linked a character themselves are asked to confirm the new notice before it refreshes again, while characters an admin linked stay linked.
 - The Privacy page now says how long estimates are kept, how they are refreshed and when they are deleted.
 
+### Improvements
+- Corrected boss guide details for eight bosses (gauge rules, forced merges, entry levels and MapleSEA mechanic names) after a source check.
+
 ### Fixes
 - Fixed Config never showing the "Manage Messages missing" warning when the bot lacks Manage Messages in a channel it uses.
 - Fixed phones cutting off a member's runs in the Week's Answers view and the Reminders count running past the window edge.
@@ -40,6 +43,7 @@ _In development_
 - Fixed the bot skipping that day's morning card when it starts after the ping time; a due card for a run still ahead now posts, up to 12 hours late.
 - Fixed four security issues in the bot's TLS library (RUSTSEC-2026-0346 to 0349) by updating it.
 - Fixed the bot proposing to move runs earlier when a message moved them "after 0930 17th": dates like "17th" or "17/10" now count, "0930" is morning, and runs already after (or before) a stated time get no proposal.
+- Fixed estimates asking you to set up critical rate on the scouter when it had already tried assuming 100% critical rate and couldn't finish; they now say the estimate couldn't be completed for that character and to try again later.
 
 ### Removed
 - Removed the one-off `kanade import v4` command; v4 data already imported stays readable.

@@ -190,6 +190,7 @@ test('chardata estimate row: running, queued behind it, busy, 422, 503 and faile
   const cases: [string, RegExp, string, boolean][] = [
     ['busy', /Look up · 0:\d\d$/, 'The scouter is busy.', true],
     ['critical_rate', /Look up again$/, 'Set up critical rate on the scouter first.', false],
+    ['assumption_failed', /Try again$/, 'The estimate couldn’t be completed for this character.', false],
     ['manual_check', /Look up$/, 'Scouter needs a manual check.', true],
     ['timeout', /Try again$/, 'The scouter didn’t answer within 2 minutes (504).', false],
   ];
@@ -324,6 +325,18 @@ test('chardata estimate panel: queued behind another lookup, a member that fails
   await estimates(page, 'off');
   const sheet = await carling(page);
   await expect(sheet.locator('.estimate-panel')).toHaveCount(0);
+});
+
+test('chardata estimate panel: a member whose 100% crit assumption failed says so and offers Try again', async ({ page }) => {
+  await estimates(page, 'assumption_failed');
+  const panel = (await carling(page)).locator('.estimate-panel');
+  await panel.getByRole('button', { name: 'Look up party' }).click();
+  const failed = panel.locator('.estimate__failed');
+  await expect(failed).toHaveCount(1, { timeout: 20_000 });
+  await expect(failed).toContainText('failed · The estimate couldn’t be completed for this character.');
+  await expect(failed.locator('.estimate__who-note')).toHaveAttribute('title', /^The scouter tried assuming 100% critical rate for \w+ and couldn’t finish\. Try again later\.$/);
+  await expect(failed).not.toContainText('Set up critical rate');
+  await expect(panel.getByRole('button', { name: 'Try again' })).toBeVisible();
 });
 
 test('chardata estimate panel: members fill in as each finishes, and readiness follows each', async ({ page }) => {
@@ -617,6 +630,7 @@ test('chardata capture', async ({ page }) => {
       ['hold', 'running'],
       ['busy', 'busy'],
       ['critical_rate', '422'],
+      ['assumption_failed', '422-assumption'],
       ['manual_check', '503'],
       ['timeout', 'failed'],
     ]) {
@@ -643,6 +657,7 @@ test('chardata capture', async ({ page }) => {
     for (const [scenario, name] of [
       ['hold', 'running'],
       ['critical_rate', '422'],
+      ['assumption_failed', '422-assumption'],
       ['failed', 'failed'],
     ]) {
       await reset();

@@ -119,6 +119,24 @@ impl PartyShares {
                 .count()
     }
 
+    /// Party members with no figure for boss `boss` (counted, never 0%).
+    pub fn no_estimate_at(&self, boss: usize) -> usize {
+        self.missing
+            + self
+                .values(boss)
+                .iter()
+                .filter(|value| value.is_none())
+                .count()
+    }
+
+    /// Some figure for boss `boss` comes from an assumed critical rate.
+    pub fn crit_at(&self, boss: usize) -> bool {
+        self.carriers
+            .iter()
+            .zip(self.values(boss))
+            .any(|(carrier, value)| value.is_some() && carrier.crit_at(boss))
+    }
+
     /// Some member brings another character to some boss: each bar names
     /// its own characters.
     pub fn per_boss(&self) -> bool {

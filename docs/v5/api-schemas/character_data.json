@@ -312,7 +312,7 @@
         "state": { "enum": ["off", "ok", "unreachable", "verification_required"] },
         "url": { "type": ["string", "null"], "pattern": "^http://", "description": "The sidecar's http://host[:port]; null while off." },
         "last_lookup_at": { "$ref": "common.json#/$defs/NullableString" },
-        "last_error": { "$ref": "common.json#/$defs/NullableString", "description": "The scouter's error code (busy, upstream_rate_limited, critical_rate_setup_required, verification_required, upstream_blocked, lookup_failed, result_mismatch, extraction_failed, lookup_timeout, …) or timeout, unreachable, unreadable." },
+        "last_error": { "$ref": "common.json#/$defs/NullableString", "description": "The scouter's error code (busy, upstream_rate_limited, critical_rate_setup_required, critical_rate_assumption_failed, verification_required, upstream_blocked, lookup_failed, result_mismatch, extraction_failed, lookup_timeout, …) or timeout, unreachable, unreadable." },
         "last_error_at": { "$ref": "common.json#/$defs/NullableString" }
       }
     },
@@ -342,6 +342,35 @@
       "properties": {
         "job": { "oneOf": [{ "$ref": "#/$defs/EstimateJob" }, { "type": "null" }] },
         "running": { "oneOf": [{ "$ref": "#/$defs/EstimateJob" }, { "type": "null" }] }
+      }
+    },
+    "RunPartyTotal": {
+      "description": "A run's Party total from the saved estimates (each character's stored result and each boss party's stored total, of any age; never looked up here): the same figures as the reminder card's Who carries image. Each boss is its own party's (per-boss picks).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["as_of", "stale", "fresh_days", "bosses"],
+      "properties": {
+        "as_of": { "$ref": "common.json#/$defs/NullableString", "description": "When the oldest reading used was fetched; null with none saved." },
+        "stale": { "type": "boolean", "description": "as_of is at least fresh_days ago: older than n days." },
+        "fresh_days": { "type": "integer", "minimum": 1, "maximum": 30 },
+        "bosses": {
+          "type": "array",
+          "description": "One per boss of the run, in run order.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["boss", "combined_percentage", "estimated_minutes", "technically_possible", "complete", "critical_rate_assumed", "no_estimate"],
+            "properties": {
+              "boss": { "type": "string", "description": "The boss token as the run lists it." },
+              "combined_percentage": { "type": ["number", "null"], "minimum": 0, "description": "The sum of the members' saved effective %; null: no estimate yet." },
+              "estimated_minutes": { "type": ["number", "null"], "minimum": 0, "description": "From the saved total of this boss's whole party; null while a member brings no character the scouter can take, or none is saved." },
+              "technically_possible": { "type": ["boolean", "null"], "description": "From the same saved total; null without it." },
+              "complete": { "type": "boolean", "description": "Every party member has a saved effective % for this boss." },
+              "critical_rate_assumed": { "type": "boolean", "description": "Some figure counted assumes a 100% critical rate." },
+              "no_estimate": { "type": "integer", "minimum": 0, "description": "Party members with no estimate for this boss (not in the total, never 0%)." }
+            }
+          }
+        }
       }
     },
     "EstimateJob": {
@@ -501,8 +530,8 @@
       "additionalProperties": false,
       "required": ["code", "message", "status", "detail", "retry_after_seconds", "character_id"],
       "properties": {
-        "code": { "enum": ["busy", "critical_rate", "manual_check", "failed"] },
-        "message": { "enum": ["The scouter is busy.", "Set up critical rate on the scouter first.", "Scouter needs a manual check.", "Lookup failed."] },
+        "code": { "enum": ["busy", "critical_rate", "assumption_failed", "manual_check", "failed"], "description": "critical_rate: under 100% critical rate with no assumed result; assumption_failed: the scouter tried assuming 100% and couldn't finish." },
+        "message": { "enum": ["The scouter is busy.", "Set up critical rate on the scouter first.", "The estimate couldn't be completed for this character. Try again later.", "Scouter needs a manual check.", "Lookup failed."] },
         "status": { "type": ["integer", "null"], "description": "The scouter's HTTP status (429, 422, 503, 502, 504); null without an answer." },
         "detail": { "type": "string", "description": "The scouter's error code, or timeout, unreachable, unreadable." },
         "retry_after_seconds": { "type": ["integer", "null"], "minimum": 0, "description": "429 only: Retry-After." },

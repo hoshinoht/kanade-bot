@@ -142,3 +142,61 @@ were left unchanged.
 - MapleSEA names for several mechanics (Radiant Malefic Star, Baldrix Phases
   2-3, Lotus bombardment, Carling's Aura Overflow).
 - Post-OVERDRIVE HP values are calculated from the published percentages.
+
+## Update 2026-10-16: source check
+
+- **Radiant Malefic Star (§3)**: Removed the disputed 750 qualifier for the
+  Floating Disaster threshold. Sources: seotbeo, 찬란한 흉성 패턴 정리,
+  https://m.blog.naver.com/seotbeo/224143006235; MapleStory Wiki, Malefic Star,
+  https://maplestorywiki.net/w/Malefic_Star.
+- **Jupiter (§6)**: Hard forced merges alternate by ordinal when centred (3rd
+  Auspicious, 6th Ruinous), not by gauge parity. Sources: seotbeo, 유피테르 패턴
+  정리, https://m.blog.naver.com/seotbeo/224176249929; MapleTools Jupiter guide
+  (already cited in `jupiter.yaml`).
+- **First Adversary (§7)**: Confirmed the Power of Order decay floor has no
+  difficulty exception. Sources: MapleSEA v247,
+  https://www.maplesea.com/updates/view/v247_Patch/; seotbeo, 최초의 대적자 패턴
+  정리, https://m.blog.naver.com/seotbeo/223971770435.
+- **First Adversary (§8)**: Confirmed that Cycle of Power resets every gauge
+  below 600 to 500. Sources: MapleSEA v247,
+  https://www.maplesea.com/updates/view/v247_Patch/; MapleSEA v249,
+  https://www.maplesea.com/updates/view/v249_Patch_IBF/; seotbeo, 최초의 대적자
+  패턴 정리, https://m.blog.naver.com/seotbeo/223971770435.
+- **Limbo (§10)**: Confirmed the Phase 2 fusion and second-fusion skip on Hard,
+  as well as Normal. Sources: namu mirror, 림보/보스 몬스터/공격 패턴,
+  https://m.namu.moe/w/림보(메이플스토리)/보스%20몬스터/공격%20패턴; seotbeo,
+  림보 패턴 정리, https://m.blog.naver.com/seotbeo/223545358052.
+- **Limbo (§11)**: Confirmed 550 Authentic Force gives the full 1.25× tier
+  (+5% per 10 above the requirement). Sources: KMS in-game Authentic Force
+  guide, https://gi.maplestory.nexon.com/Guide/GameInformation/Skill/AuthenticForce;
+  MapleStory Wiki, Limbo/Monster, https://maplestorywiki.net/w/Limbo/Monster;
+  KPRobin, MapleSEA Arcane/Authentic Force list,
+  https://kprobin.blogspot.com/2019/01/arcane-force-extra-damage-and-monster.html.
+- **Black Mage (§13)**: Confirmed Destruction grants +10% final damage. Sources:
+  MapleStory Wiki, Black Mage/Monster,
+  https://maplestorywiki.net/w/Black_Mage/Monster; namu, Black Mage attack
+  patterns and status effects,
+  https://en.namu.wiki/w/검은%20마법사/보스%20몬스터/공격%20패턴 and
+  https://en.namu.wiki/w/메이플스토리/시스템/상태이상; FMKorea,
+  https://www.fmkorea.com/10017612529; Naver,
+  https://m.blog.naver.com/PostView.naver?blogId=kiss_0153&logNo=222167352174.
+- **Black Mage (§14)**: Removed the disputed Entry level note; the file's
+  `entry_level: 255` remains. Sources: MapleSEA v183,
+  https://www.maplesea.com/updates/view/v183_black_mage_adventures_anew_patch_notes/;
+  MapleStory Wiki, Black Mage/Monster,
+  https://maplestorywiki.net/w/Black_Mage/Monster; MapleTools,
+  https://mapletools.app/bosses/blackmage.
+- **Baldrix (§15)**: Replaced the broad unconfirmed-name note with the confirmed
+  MapleSEA v246 names Ragnarok and Triad Thunder while leaving other names
+  unconfirmed. Source: MapleSEA v246,
+  https://www.maplesea.com/updates/view/v246_Patch1/.
+- **Kalos (§20)**: Confirmed the ball needs two hits per member on Normal and
+  updated the shot-count ledger. Sources: MapleSEA v251 Content 2,
+  https://www.maplesea.com/updates/view/v251_Content2/; namu mirror, 감시자
+  칼로스, https://m.namu.moe/w/감시자%20칼로스.
+- **Seren (§21)**: Renamed Mithra's Power to MapleSEA's Power of Sun and kept
+  the former names as aliases. Sources: MapleSEA v235,
+  https://www.maplesea.com/updates/view/v235_Patch_Notes/; namu mirror,
+  선택받은 세렌, https://m.namu.moe/w/선택받은%20세렌; Orange Mushroom KMS
+  v1.2.355,
+  https://orangemushroom.net/2021/10/14/kms-ver-1-2-355-haste-tactical-relay/.

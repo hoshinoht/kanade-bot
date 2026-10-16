@@ -112,7 +112,7 @@ export type SharedCard = { channel: string | null, posted_at: string, cleared_by
 
 export type MemberEstimateLimit = { error: 'member_limited', message: string, next_at: string, };
 
-export type RunPartyCharacters = { run_id: string, slots: Array<PartyCharacterSlot>, character_data: boolean, estimates: boolean, fresh_days: number | null, totals: PartyTotals | null, nexon_data: boolean, attribution: string, estimate_label: string, estimate_note: string, };
+export type RunPartyCharacters = { run_id: string, slots: Array<PartyCharacterSlot>, character_data: boolean, estimates: boolean, fresh_days: number | null, totals: PartyTotals | null, party_total: RunPartyTotal | null, nexon_data: boolean, attribution: string, estimate_label: string, estimate_note: string, };
 
 export type PartyCharacterSlot = { member: PartyMember, you: boolean, character: PartyCharacter | null, scouter: Array<PartyEstimate> | null, bosses: Array<PartyBossCharacter>, };
 
@@ -475,7 +475,12 @@ export type RunCharacters = { run_id: string,
 /**
  * In party order.
  */
-slots: Array<RunCharacterSlot>, };
+slots: Array<RunCharacterSlot>, 
+/**
+ * The Party total from the saved estimates (the reminder image's
+ * figures); `null` while estimates are off.
+ */
+party_total: RunPartyTotal | null, };
 
 /**
  * A weekly timing's party slots (modules `roster` and `character_data`).
@@ -921,6 +926,62 @@ character_ids: Array<string>,
  */
 missing: number, };
 
+/**
+ * A run's Party total from the saved estimates: the same figures as the
+ * reminder card's "Who carries" image (each boss its own party's summed
+ * effective %, minutes only from a saved total of that boss's whole
+ * party). Never starts a lookup.
+ */
+export type RunPartyTotal = { 
+/**
+ * When the oldest reading used was fetched; `null` with none saved.
+ */
+as_of: string | null, 
+/**
+ * `as_of` is at least `fresh_days` ago ("older than n days").
+ */
+stale: boolean, 
+/**
+ * The saved `estimate_days`.
+ */
+fresh_days: number, 
+/**
+ * One per boss of the run, in run order.
+ */
+bosses: Array<PartyTotalBoss>, };
+
+export type PartyTotalBoss = { 
+/**
+ * The boss token as the run lists it (`HCarling`).
+ */
+boss: string, 
+/**
+ * The sum of the members' saved effective %; `null`: no estimate yet.
+ */
+combined_percentage: number | null, 
+/**
+ * From the saved total of this boss's whole party; `null` while a
+ * member brings no character the scouter can take, or none is saved.
+ */
+estimated_minutes: number | null, 
+/**
+ * From the same saved total; `null` without it.
+ */
+technically_possible: boolean | null, 
+/**
+ * Every party member has a saved effective % for this boss.
+ */
+complete: boolean, 
+/**
+ * Some figure counted assumes a 100% critical rate.
+ */
+critical_rate_assumed: boolean, 
+/**
+ * Party members with no estimate for this boss (not in the total,
+ * never 0%).
+ */
+no_estimate: number, };
+
 export type EstimateProgress = { 
 /**
  * Characters finished so far, found or failed.
@@ -1020,10 +1081,12 @@ issue: 'missing_boss' | 'unknown_benchmark_players' | 'not_covered' | 'other', }
 export type EstimateError = { 
 /**
  * `busy` (429 past the job's deadline, or a rate limit; retry after
- * `retry_after_seconds`), `critical_rate` (422), `manual_check` (503),
- * `failed` (502, 504, timeout, no connection).
+ * `retry_after_seconds`), `critical_rate` (422), `assumption_failed`
+ * (422: the scouter tried assuming 100% critical rate and couldn't
+ * finish), `manual_check` (503), `failed` (502, 504, timeout, no
+ * connection).
  */
-code: 'busy' | 'critical_rate' | 'manual_check' | 'failed', message: string, 
+code: 'busy' | 'critical_rate' | 'assumption_failed' | 'manual_check' | 'failed', message: string, 
 /**
  * The scouter's HTTP status; `null` without an answer.
  */
