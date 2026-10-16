@@ -28,6 +28,13 @@ async function expectPrivacy(page: Page) {
   await expect(list.locator('dt')).toHaveText(ITEMS);
   await expect(list).toContainText('Kanade is not affiliated with or endorsed by NEXON.');
   await expect(list).toContainText('The guild admins on Discord.');
+  // Estimates are kept up to 30 days in the character-data file (estimate cache), so /character data covers only NEXON's data.
+  const dd = (term: string) => list.locator('dt', { hasText: term }).locator('xpath=following-sibling::dd[1]');
+  await expect(dd('Your controls')).toContainText('/character data shows everything kept about you from NEXON. /character unlink deletes it at once');
+  await expect(dd('Estimates')).toContainText(
+    'the answer is kept in Kanade’s character-data file for up to 30 days, never in backups or exports, and refreshed automatically for party members of upcoming runs as often as the admins set (every 7 days unless changed). It is deleted when the character is retired or removed from the roster, or when you leave the server.',
+  );
+  await expect(dd('Estimates')).not.toContainText('in memory');
   await expect(page.getByRole('link', { name: 'developer privacy policy' })).toHaveAttribute('href', 'https://m.nexon.com/terms/1000');
   await expect(page.getByText('Data based on NEXON Open API', { exact: true })).toBeVisible();
   await expect(page.getByText('Notice 2 · 15 Oct 2026')).toBeVisible();

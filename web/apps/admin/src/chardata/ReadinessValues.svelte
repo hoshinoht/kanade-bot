@@ -9,9 +9,9 @@
 -->
 <script lang="ts">
   import type { CharacterChoice, ReadinessSlot } from '@kanade/api-types';
-  import { dayTime, scouterChip, StatusChip } from '@kanade/ui';
+  import { dayTime, olderThan, scouterChip, StatusChip } from '@kanade/ui';
   import '@kanade/ui/styles/screens/character-data.scss';
-  import { levelChip, readinessLine, scouterAt } from './format';
+  import { levelChip, readinessLine, scouterAt, scouterStale } from './format';
 
   let {
     slot,
@@ -19,6 +19,7 @@
     timeZone,
     bossLabel,
     fid,
+    freshDays,
     bossesFid,
     row = false,
   }: {
@@ -29,6 +30,8 @@
     /** The boss as the screen names it ("HCarling"); named only when there are several. */
     bossLabel: (key: string, difficulty: string) => string;
     fid: string;
+    /** The readiness read's `fresh_days`: a reading this old reads "older than n days". */
+    freshDays: number | null;
     bossesFid?: string;
     /** The values line and the bosses side by side, wrapping (a wide Fixed editor). */
     row?: boolean;
@@ -36,12 +39,13 @@
 
   const line = $derived(readinessLine(slot));
   const readAt = $derived(scouterAt(slot));
+  const older = $derived(freshDays !== null && scouterStale(slot) ? olderThan(freshDays) : '');
 </script>
 
 <div class="ready" class:ready--row={row} role="group" aria-label="Readiness of {character.ign}" data-fid={fid}>
   <span class="ready__line"
     ><span class="ready__values">{line.values}</span><span class="ready__source">{line.source}</span>{#if readAt}<span class="ready__source ready__scouter-at"
-        >Estimate · <span class="mono">{dayTime(readAt, timeZone)}</span></span
+        >Estimate · <span class="mono">{dayTime(readAt, timeZone)}</span>{older}</span
       >{/if}</span
   >
   <ul class="ready__bosses" data-fid={bossesFid}>

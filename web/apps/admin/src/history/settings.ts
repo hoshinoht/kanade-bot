@@ -17,6 +17,7 @@ const SECTIONS: Record<string, { label: string; key: string }> = {
   models: { label: 'Models', key: 'models' },
   run_lengths: { label: 'Run lengths', key: 'run-lengths' },
   profanity: { label: 'Profanity', key: 'profanity' },
+  character_data: { label: 'Character data', key: 'character-data' },
 };
 
 /** A cleared Limits chat window, recorded beside the saves (section `limits`). */

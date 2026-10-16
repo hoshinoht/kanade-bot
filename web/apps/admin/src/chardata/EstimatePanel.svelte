@@ -27,6 +27,7 @@
     EstimateProgress,
     Icon,
     minutes,
+    olderThan,
     percent,
     ShareChart,
     StatusChip,
@@ -172,7 +173,7 @@
     </div>
     <span class="chardata__sub" data-fid="estimate-disclaimer"
       ><b>{job?.note ?? ESTIMATE_NOTE}.</b> Members see their own and their run party’s estimates. {#if done && job?.fetched_at}Looked up
-        <span class="mono">{dayTime(job.fetched_at, timeZone)}</span>, kept 24 h in memory.{/if}</span
+        <span class="mono">{dayTime(job.fetched_at, timeZone)}</span>{job.stale ? olderThan(job.fresh_days) : ''}.{/if}</span
     >
 
     {#if lookup.refused}

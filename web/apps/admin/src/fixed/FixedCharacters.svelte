@@ -389,6 +389,7 @@
               {timeZone}
               {bossLabel}
               fid="fixed-ready-values"
+              freshDays={ready.data?.fresh_days ?? null}
               bossesFid="fixed-ready-bosses"
               row={wide}
             />

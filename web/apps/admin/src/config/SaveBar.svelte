@@ -31,7 +31,7 @@
       <span class="savebar__dot" aria-hidden="true"></span>
       <span
         >{changes.length} unsaved change{changes.length === 1 ? '' : 's'} · {first.label}
-        <span class="savebar__from">{first.from || '—'}</span> → <b class="savebar__to">{first.to || '—'}</b>{#if changes.length > 1}<span class="savebar__more"
+        <span class="savebar__from">{first.from || '—'}</span> → <b class="savebar__to">{first.to || '—'}</b>{first.unit ? ` ${first.unit}` : ''}{#if changes.length > 1}<span class="savebar__more"
             >&nbsp;+{changes.length - 1} more</span
           >{/if}</span
       >

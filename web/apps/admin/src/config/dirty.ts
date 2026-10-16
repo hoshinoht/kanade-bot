@@ -1,10 +1,11 @@
 import { getContext, setContext } from 'svelte';
 
-/** One unsaved field: what the save bar names, and its saved and drafted values. */
+/** One unsaved field: what the save bar names, its saved and drafted values, and their unit ("7 → 3 days"). */
 export interface Change {
   label: string;
   from: string;
   to: string;
+  unit?: string;
 }
 
 /** Lists the changes between a saved and a drafted value set, in field order. */

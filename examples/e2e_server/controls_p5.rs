@@ -8,7 +8,12 @@
 //!   do ([`Scenario`]; `assumed` labels `ign`'s result), or `queued` (two
 //!   other members' lookups start and wait; once a lookup is queued behind
 //!   them they finish one by one) or `off` (a restart without
-//!   `KANADE_SCOUTER_URL`). 204.
+//!   `KANADE_SCOUTER_URL`). `{scenario: "aged", days, run | character}`
+//!   instead finishes one lookup of a run's party or one roster character
+//!   `days` (1 to 30) before the server clock: the clock steps back for the
+//!   lookup and forward again, so the stored result and its job carry the
+//!   old fetch time (stale once `days` reaches the saved `estimate_days`).
+//!   204.
 //! - `POST /__e2e/character-data` `{health}`: Config's health, each through
 //!   real calls on a fresh restart: `ok`; `alert` (a refresh during NEXON
 //!   maintenance holds calls for 30 minutes, a lookup the scouter answers
@@ -40,16 +45,22 @@ use chrono::{DateTime, Duration as Span, Utc};
 use kanade::{
     api::state::ApiState,
     domain::{
-        characters::{Character, CharacterChange, CharacterRecord, CharacterRole, CharacterStore},
+        characters::{
+            Character, CharacterChange, CharacterRecord, CharacterRole, CharacterStore, PartyRoster,
+        },
         chardata::{
             CharDataStore, ConsentSurface, DAILY_CALLS, Link, LinkPut, LinkStatus, NOTICE_VERSION,
             Post, PostState, STRIP_AFTER, Snapshot,
         },
         history::{Actor, Surface},
+        scheduler::{ScheduleStore, Scope},
     },
     infrastructure::{
         character_data::CharacterData,
-        scouter::{JobRequest, JobState, RosterIgn, Start, Subject, Target},
+        scouter::{
+            Estimates, JobRequest, JobState, Missing, RosterIgn, Start, Subject, Target,
+            party_subjects,
+        },
         store::SqliteStore,
     },
 };
@@ -126,6 +137,18 @@ impl Shared {
 struct EstimatesChange {
     scenario: String,
     ign: Option<String>,
+    /// `aged`: how many days before the server clock.
+    days: Option<i64>,
+    /// `aged`: the run whose party is looked up.
+    run: Option<String>,
+    /// `aged`: the roster character looked up.
+    character: Option<String>,
+}
+
+/// What `aged` looks up.
+enum Aged {
+    Run(String),
+    Character(String),
 }
 
 async fn set_estimates(
@@ -146,6 +169,22 @@ async fn set_estimates(
             answer(shared.restart_same().await)
         }
         "queued" => answer(queue_others(shared).await),
+        "aged" => {
+            let target = match (change.run, change.character) {
+                (Some(run), None) => Aged::Run(run),
+                (None, Some(character)) => Aged::Character(character),
+                _ => return StatusCode::UNPROCESSABLE_ENTITY.into_response(),
+            };
+            match change.days {
+                // Spawned, so a dropped request never leaves the clock back.
+                Some(days @ 1..=30) => {
+                    let shared = Arc::clone(&side.shared);
+                    let done = tokio::spawn(async move { aged(&shared, target, days).await });
+                    answer(done.await.unwrap_or_else(|error| Err(error.into())))
+                }
+                _ => StatusCode::UNPROCESSABLE_ENTITY.into_response(),
+            }
+        }
         other => match serde_json::from_value::<Scenario>(serde_json::Value::from(other)) {
             Ok(scenario) => {
                 modes.set_scenario(scenario, change.ign.as_deref());
@@ -206,6 +245,91 @@ async fn queue_others(shared: &Shared) -> Result<(), Fail> {
     Ok(())
 }
 
+/// Waits (at most [`LOOKUP_WAIT`]) until job `id` is no longer queued or
+/// running.
+async fn finished(estimates: &Estimates, id: &str) -> Result<JobState, Fail> {
+    let deadline = tokio::time::Instant::now() + LOOKUP_WAIT;
+    loop {
+        let state = estimates
+            .job(id)
+            .ok_or("the scouter lookup is gone")?
+            .state();
+        if !matches!(state, JobState::Queued | JobState::Running) {
+            return Ok(state);
+        }
+        if tokio::time::Instant::now() > deadline {
+            return Err("the scouter lookup did not finish".into());
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+}
+
+/// The run's party as the admin lookup resolves it: what each member
+/// brings (the run's pick, its timing's, their main, their only
+/// character), the rest missing.
+async fn run_party(
+    store: &SqliteStore,
+    state: &ApiState,
+    run_id: &str,
+) -> Result<(Target, Vec<Subject>, Vec<Missing>), Fail> {
+    let run = store
+        .load(&Scope::Run(run_id.into()))
+        .await?
+        .runs
+        .into_iter()
+        .find(|run| run.id == run_id)
+        .ok_or_else(|| format!("no run {run_id}"))?;
+    let week = store.load(&Scope::Weeks(vec![run.week_start])).await?;
+    let mut runs = week.runs;
+    runs.retain(|other| other.id != run.id);
+    runs.push(run.clone());
+    let party = PartyRoster::load(store, &run, &runs).await?;
+    let slots = party.slots(&run, &runs, &week.fixed_runs, &state.catalog);
+    let (subjects, missing) = party_subjects(&slots);
+    if subjects.is_empty() {
+        return Err(format!("no one on {run_id} has a character to look up").into());
+    }
+    let target = Target::Run {
+        run_id: run.id,
+        bosses: run.bosses,
+    };
+    Ok((target, subjects, missing))
+}
+
+/// A finished lookup of `aged` fetched `days` before the server clock, as
+/// the scenario set answers it.
+async fn aged(shared: &Shared, aged: Aged, days: i64) -> Result<(), Fail> {
+    let (store, state) = shared.live_parts().await?;
+    let data = shared.character_data().await?;
+    let estimates = data.estimates().ok_or("the scouter is off")?;
+    let (target, subjects, missing) = match aged {
+        Aged::Run(run) => run_party(&store, &state, &run).await?,
+        Aged::Character(id) => (
+            Target::Characters(vec![id.clone()]),
+            vec![subject(&store, &id).await?],
+            Vec::new(),
+        ),
+    };
+    let back = Span::days(days);
+    shared.clock.set(shared.clock.now() - back);
+    let looked_up = match estimates.start(JobRequest {
+        target,
+        subjects,
+        missing,
+        started_by: Actor::admin(format!("discord:{ASAHI}")),
+        refresh: true,
+    }) {
+        Start::Started(job) | Start::Joined(job) => finished(estimates, &job.id).await,
+        Start::Full => Err("the lookup queue is full".into()),
+    };
+    // Forward by the same span, so a live clock keeps the time it ran.
+    shared.clock.set(shared.clock.now() + back);
+    match looked_up? {
+        JobState::Done => Ok(()),
+        state => Err(format!("the aged lookup ended {state:?}").into()),
+    }
+}
+
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct HealthChange {
@@ -255,17 +379,7 @@ async fn alert(shared: &Shared) -> Result<(), Fail> {
     modes.set_scenario(Scenario::ManualCheck, None);
     let asahi = Actor::admin(format!("discord:{ASAHI}"));
     let job = start_lookup(&data, subject(&store, "ch-s3").await?, asahi)?;
-    let estimates = data.estimates().ok_or("the scouter is off")?;
-    let deadline = tokio::time::Instant::now() + LOOKUP_WAIT;
-    while estimates
-        .job(&job)
-        .is_some_and(|job| matches!(job.state(), JobState::Queued | JobState::Running))
-    {
-        if tokio::time::Instant::now() > deadline {
-            return Err("the scouter lookup did not finish".into());
-        }
-        tokio::time::sleep(Duration::from_millis(50)).await;
-    }
+    finished(data.estimates().ok_or("the scouter is off")?, &job).await?;
     modes.set_scenario(Scenario::Ok, None);
     // Two share cards an admin should look at: one stuck in its channel,
     // one whose send never came back.

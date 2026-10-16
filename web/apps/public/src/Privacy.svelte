@@ -41,14 +41,16 @@
     </dd>
     <dt>Your controls</dt>
     <dd>
-      <span class="mono">/character data</span> shows everything kept about you. <span class="mono">/character unlink</span> deletes it at once and clears your shared
-      cards; leaving the server does the same. The class and level on your roster character stay; an admin can change them.
+      <span class="mono">/character data</span> shows everything kept about you from NEXON. <span class="mono">/character unlink</span> deletes it at once and clears your
+      shared cards; leaving the server does the same. The class and level on your roster character stay; an admin can change them.
     </dd>
     <dt>Estimates</dt>
     <dd>
       Admins can ask a separate scouter service for a clear-time estimate, and you can for your own characters. It receives the IGN on the roster and nothing from NEXON; the answer
-      is kept in memory for 24 hours. Admins see every estimate; you see your own, and those of your party on runs you are on. Reminder cards show the party members’ IGNs
-      and each one’s share of the estimate to everyone in the card’s channel.
+      is kept in Kanade’s character-data file for up to 30 days, never in backups or exports, and refreshed automatically for party members of upcoming runs as often as the
+      admins set (every 7 days unless changed). It is deleted when the character is retired or removed from the roster, or when you leave the server. Admins see every
+      estimate; you see your own, and those of your party on runs you are on. Reminder cards show the party members’ IGNs and each one’s share of the estimate to everyone in
+      the card’s channel.
     </dd>
     <dt>As is</dt>
     <dd>

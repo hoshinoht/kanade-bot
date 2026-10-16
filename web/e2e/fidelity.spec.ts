@@ -1088,6 +1088,12 @@ const CHARDATA_HEALTH = [
   ['Refused', 'refused'],
 ] as const;
 const healthShown = (page: Page) => expect(page.locator('[data-fid="chardata-nexon-health"]')).toBeVisible();
+/** The Alert boards draw the Estimates card edited 7 → 3 (one unsaved change), as the `cfg` pair types into Chatbot. */
+const healthEdited = async (page: Page) => {
+  await healthShown(page);
+  await page.getByRole('spinbutton', { name: 'Refresh estimates every' }).fill('3');
+  await expect(page.getByText('1 unsaved change')).toBeVisible();
+};
 const PHONE_CFG_SCOPE = ['cfg-title', 'cfg-savebar', 'cfg-save'];
 const READY_SCOPE = [
   'party-slot',
@@ -1392,14 +1398,20 @@ const PAIRS: Pair[] = [
   // own Config frame (no phone Config board was approved before them): those pairs compare the
   // section's contents (PHONE_CFG_SCOPE), not the shared frame.
   ...CHARDATA_HEALTH.flatMap(([variant, health]) => [
-    { name: `cfg-chardata${variant ? `-${variant.toLowerCase()}` : ''}`, board: `B_CfgCharHealth${variant}`, path: '/config?section=character-data', setup: chardataHealth(health), ready: healthShown },
+    {
+      name: `cfg-chardata${variant ? `-${variant.toLowerCase()}` : ''}`,
+      board: `B_CfgCharHealth${variant}`,
+      path: '/config?section=character-data',
+      setup: chardataHealth(health),
+      ready: variant === 'Alert' ? healthEdited : healthShown,
+    },
     {
       name: `phone-cfg-chardata${variant ? `-${variant.toLowerCase()}` : ''}`,
       board: `B_PhoneCfgCharHealth${variant}`,
       path: '/config?section=character-data',
       setup: chardataHealth(health),
-      scope: [...PHONE_CFG_SCOPE, 'chardata-nexon-health', 'chardata-scouter-health', 'chardata-sweeper-health', 'chardata-env', 'chardata-post'],
-      ready: healthShown,
+      scope: [...PHONE_CFG_SCOPE, 'chardata-nexon-health', 'chardata-scouter-health', 'chardata-estimate-days', 'chardata-sweeper-health', 'chardata-env', 'chardata-post'],
+      ready: variant === 'Alert' ? healthEdited : healthShown,
     },
   ]),
   { name: 'inbox-extractor', board: 'VarRail2', path: '/inbox?tab=extractor&item=p-bm-move', ready: visible((page) => page.getByRole('heading', { level: 2, name: /Move — Black Mage/ })) },

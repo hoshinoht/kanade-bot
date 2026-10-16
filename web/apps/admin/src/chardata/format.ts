@@ -17,6 +17,12 @@ export function scouterAt(slot: ReadinessSlot): string | null {
   return at;
 }
 
+/** The reading `scouterAt` names is at least the saved `estimate_days` old ("older than n days"). */
+export function scouterStale(slot: ReadinessSlot): boolean {
+  const at = scouterAt(slot);
+  return slot.bosses.some((boss) => boss.scouter?.fetched_at === at && boss.scouter.stale);
+}
+
 /**
  * "Lv. 283 · CP 48.2M" and its source: "NEXON · as of 29 Sep", "manual · not linked".
  * With a scouter reading the CP is left out ("Lv. 283"): the per-boss chips replace it.

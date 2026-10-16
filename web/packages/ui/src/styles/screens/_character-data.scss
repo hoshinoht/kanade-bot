@@ -474,6 +474,44 @@
   line-height: 1.4;
 }
 
+// The Estimates card: "Refresh estimates every [7] days", read as a sentence (ChatbotSection's rates).
+.chardata-days {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  font-size: var(--fs-body-sm);
+}
+
+.chardata-days__label {
+  font-weight: 600;
+}
+
+// Past Config's `.settings__detail input[type="number"]` width.
+.chardata-days input.chardata-days__field[type="number"] {
+  width: 72px;
+  height: 40px;
+  font-family: var(--mono);
+  text-align: right;
+}
+
+.chardata-days__hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--dim-text);
+  font-size: var(--fs-mini);
+}
+
+// The field's unsaved mark (the save bar's dot, smaller beside a hint).
+.chardata-days__dot {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--accent-fill);
+}
+
 @media #{$single-pane} {
   .chardata-health {
     grid-template-columns: minmax(0, 1fr);
@@ -483,13 +521,19 @@
     display: contents;
   }
 
-  // Stacked: NEXON, Scouter, Sweeper, then the environment (B_PhoneCfgCharHealth).
+  // Stacked: NEXON, Scouter, Estimates, Sweeper, then the environment (B_PhoneCfgCharHealth).
   .chardata-health__env {
     order: 1;
   }
 
   .chardata-health__env .chardata-health__facts {
     grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 599px), (max-height: 500px) {
+  .chardata-days input.chardata-days__field[type="number"] {
+    height: 44px;
   }
 }
 
