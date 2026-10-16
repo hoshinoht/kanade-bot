@@ -8,8 +8,9 @@
 //! registration tasks) → chat stops (waiting questions refunded, running
 //! ones finish within the grace or are cut, each concluded) → extraction
 //! (feed, pipeline, `Rescans::close`; calls in flight cancelled) → roster and
-//! reaction, card-refresh, header pre-generation and manual header rewrite
-//! workers drain (a header rewrite in flight is abandoned) → the running tick finishes (polled throughout) →
+//! reaction, card-refresh, header pre-generation, manual header rewrite and
+//! guide publisher (module `guides`; it stops between ops) workers drain (a
+//! header rewrite in flight is abandoned) → the running tick finishes (polled throughout) →
 //! (caller) HTTP drain → store close.
 
 mod late;
@@ -44,8 +45,8 @@ use crate::{
         auth::Clock,
         rescan::RescanDesk,
         state::{
-            DeclineRetraction, DigestPost, DigestPostRequest, DigestPostResult, GuildAccess,
-            HeaderRewritePort, ProposalCardRefresh,
+            DeclineRetraction, DigestPost, DigestPostRequest, DigestPostResult, GuidePort,
+            GuildAccess, HeaderRewritePort, ProposalCardRefresh,
         },
         write::ApiClock,
     },
@@ -59,6 +60,7 @@ use crate::{
         },
         events::{GuildScope, ReactionRouter, Router},
         gateway::{ConnectionStatus, EventSource, GatewayError, Live, RunExit, run_live},
+        guides::{GuideChannels, Pauses, Publisher, PublisherParts},
         guild_cache::GuildCache,
         handler::{Fanout, MessageCounts, Reactions, press_port},
         identity,
@@ -66,7 +68,7 @@ use crate::{
     },
     chat::{driver::DriverConfig, nudge::StoreRewriteSink},
     domain::{ids::RandomIds, schedule::SchedulePolicy, scheduler::SchedulerService},
-    infrastructure::{character_data::PostDesk, store::SqliteStore},
+    infrastructure::{character_data::PostDesk, files::GuideFiles, store::SqliteStore},
     runtime::{config::ServeConfig, error::Error, logging},
 };
 
@@ -516,6 +518,41 @@ where
             ));
         }
     }
+    // Module `guides`: the single-flight publish worker, rendering through
+    // the same files adapter as the API preview so plan hashes agree.
+    let guides = config.modules.guides.then(|| {
+        Arc::new(Publisher::new(PublisherParts {
+            store: Arc::clone(&store),
+            transport: Arc::clone(&transport),
+            channels: Arc::clone(&cache) as Arc<dyn GuideChannels>,
+            catalog: Arc::clone(&composition.admin.state.catalog),
+            sources: Arc::new(GuideFiles::new(
+                config.runtime.http.boss_dir.as_deref(),
+                composition
+                    .knowledge
+                    .as_deref()
+                    .map(|knowledge| knowledge.path.as_path()),
+            )),
+            self_id: {
+                let cache = Arc::clone(&cache);
+                Arc::new(move || cache.self_id())
+            },
+            clock: Arc::clone(&wiring.clock),
+            instance_id: config.instance_id.clone(),
+            pauses: Pauses::default(),
+        }))
+    });
+    if let Some(guides) = &guides {
+        match Arc::get_mut(&mut composition.admin.state) {
+            Some(state) => state.guides = Some(Arc::clone(guides) as Arc<dyn GuidePort>),
+            None => {
+                extraction.stop(&ShutdownClock::default()).await;
+                return Err(Error::Startup(
+                    "the guide publisher could not be attached".into(),
+                ));
+            }
+        }
+    }
     // Every committed run write (reactions, commands, API, chat, proposals,
     // the tick) queues a card refresh; one task drains it.
     let refresh_queue = Arc::new(RefreshQueue::default());
@@ -680,6 +717,15 @@ where
     workers.push(tokio::spawn(async move { pregen.run(pregen_stop).await }));
     let manual_stop = stopped.clone();
     workers.push(tokio::spawn(async move { manual.run(manual_stop).await }));
+    if let Some(guides) = guides {
+        // Joined with the other workers before the store closes; it stops
+        // between ops, and a create cut by the shutdown deadline is
+        // reconciled on the next start.
+        let (guides_ready, guides_stop) = (ready.clone(), stopped.clone());
+        workers.push(tokio::spawn(async move {
+            guides.run(guides_ready, guides_stop).await;
+        }));
+    }
     let identity_dir = config.runtime.http.identity_dir.as_deref();
     workers.extend(identity::spawn(
         identity_dir,

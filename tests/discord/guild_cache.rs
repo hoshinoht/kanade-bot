@@ -303,6 +303,63 @@ fn owner_bot_has_every_permission() {
     assert!(cache.is_reachable(&LOCKED.to_string()));
 }
 
+/// Grants as the access report and the guide publisher read them: attach
+/// files is its own grant, and without send Discord ignores embed links and
+/// attach files too (developer docs "Implicit Permissions").
+#[test]
+fn attach_and_embed_follow_the_right_to_send() {
+    const EMBED_LINKS: u64 = 1 << 14;
+    const ATTACH_FILES: u64 = 1 << 15;
+    const HISTORY: u64 = 1 << 16;
+    let cache = Arc::new(GuildCache::new(guild()));
+    let mut router = Router::with_cache(scope(), Arc::clone(&cache));
+    router.route(ready(SELF_ID));
+    router.route(guild_create_with(
+        GUILD,
+        OWNER,
+        &[
+            role_json(
+                GUILD,
+                VIEW_CHANNEL | SEND_MESSAGES | EMBED_LINKS | ATTACH_FILES | HISTORY,
+            ),
+            role_json(BOT_ROLE, 0),
+        ],
+        &[
+            channel_json(WATCHED, TEXT, "kalos", None, &[]),
+            channel_json(
+                MUTED,
+                TEXT,
+                "announcements",
+                None,
+                &[overwrite(BOT_ROLE, 0, 0, SEND_MESSAGES)],
+            ),
+            channel_json(
+                LOCKED,
+                TEXT,
+                "guides",
+                None,
+                &[overwrite(BOT_ROLE, 0, 0, ATTACH_FILES)],
+            ),
+        ],
+        &[],
+        &[member(SELF_ID, &[BOT_ROLE])],
+    ));
+    let grants = |id: u64| ChannelList::grants(&*cache, &id.to_string()).expect("known");
+    let open = grants(WATCHED);
+    assert!(open.send && open.embed && open.attach && open.history);
+    let muted = grants(MUTED);
+    assert!(muted.view && muted.history, "{muted:?}");
+    assert!(
+        !muted.send && !muted.embed && !muted.attach,
+        "implicitly denied without send: {muted:?}"
+    );
+    let no_files = grants(LOCKED);
+    assert!(
+        no_files.send && no_files.embed && !no_files.attach,
+        "{no_files:?}"
+    );
+}
+
 /// The chat pilot's view of the bot: its managed role (`@Kanade` arrives as
 /// that role mention) and every name it goes by (never a party member).
 #[test]

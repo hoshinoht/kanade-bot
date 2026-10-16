@@ -95,6 +95,9 @@ pub enum EffectKind {
     DebugCard,
     /// A change notice, e.g. `notice.run.status.cancelled`.
     Notice(String),
+    /// One message of a published guide (module `guides`), claimed by its
+    /// durable `guide-post:<op>` source; v5 only.
+    GuideSlot,
 }
 
 impl EffectKind {
@@ -105,6 +108,7 @@ impl EffectKind {
             Self::Card => "card",
             Self::DebugCard => "debug_card",
             Self::Notice(kind) => kind,
+            Self::GuideSlot => "guide_slot",
         }
     }
 }

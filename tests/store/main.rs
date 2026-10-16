@@ -31,10 +31,10 @@ use kanade::domain::{
 use kanade::infrastructure::store::{
     SqliteCharData, SqliteStore, attendance_conformance, auth_audit_conformance, card_conformance,
     characters_conformance, chardata_conformance, cherry_pick_conformance, conformance,
-    decline_conformance, draft_conformance, history_conformance, journal_conformance,
-    members_conformance, model_log_conformance, outbox_conformance, owner_request_conformance,
-    picks_conformance, precondition_conformance, proposal_conformance, replay_conformance,
-    run_prompt_conformance, settings_conformance, web_sessions_conformance,
+    decline_conformance, draft_conformance, guides_conformance, history_conformance,
+    journal_conformance, members_conformance, model_log_conformance, outbox_conformance,
+    owner_request_conformance, picks_conformance, precondition_conformance, proposal_conformance,
+    replay_conformance, run_prompt_conformance, settings_conformance, web_sessions_conformance,
 };
 
 #[derive(Clone, Copy)]
@@ -222,6 +222,11 @@ async fn chardata_conforms() {
 #[tokio::test]
 async fn picks_conform() {
     picks_conformance::run_suite(SqliteStore::open_temp).await;
+}
+
+#[tokio::test]
+async fn guides_conform() {
+    guides_conformance::run_suite(SqliteStore::open_temp).await;
 }
 
 /// A pick is stored, not recomputed: run and timing picks survive a

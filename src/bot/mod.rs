@@ -14,6 +14,7 @@ pub mod delivery;
 pub mod events;
 pub mod extract_feed;
 pub mod gateway;
+pub mod guides;
 pub mod guild_cache;
 pub mod handler;
 pub mod identity;

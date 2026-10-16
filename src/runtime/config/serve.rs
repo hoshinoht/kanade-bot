@@ -46,6 +46,9 @@ pub struct Modules {
     /// `KANADE_MODULE_CHARACTER_DATA` (`modules.character_data`, default
     /// off, needs `roster`): NEXON Open API data for linked characters.
     pub character_data: bool,
+    /// `KANADE_MODULE_GUIDES` (`modules.guides`, default off): the guide
+    /// publisher's admin routes and its publish worker.
+    pub guides: bool,
 }
 
 /// Initial runtime settings; applied only where the store has none yet.
@@ -73,6 +76,7 @@ impl ServeConfig {
         let modules = Modules {
             roster: flag(values, "KANADE_MODULE_ROSTER")?.unwrap_or(false),
             character_data: flag(values, super::character_data::FLAG_KEY)?.unwrap_or(false),
+            guides: flag(values, "KANADE_MODULE_GUIDES")?.unwrap_or(false),
         };
         Ok(Self {
             runtime: RuntimeConfig::from_mapping(values)?,

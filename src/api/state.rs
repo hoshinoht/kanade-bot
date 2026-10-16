@@ -830,6 +830,8 @@ pub struct ChannelGrants {
     pub embed: bool,
     pub react: bool,
     pub manage_messages: bool,
+    /// Attach files (guide art uploads).
+    pub attach: bool,
 }
 
 impl ChannelGrants {
@@ -841,6 +843,7 @@ impl ChannelGrants {
         embed: true,
         react: true,
         manage_messages: true,
+        attach: true,
     };
 }
 
@@ -980,6 +983,9 @@ pub struct ApiState {
     pub digest_post: Option<DigestPost>,
     /// The delivery-owned manual header rewrite, absent while Discord is offline.
     pub header_rewrite: Option<HeaderRewritePort>,
+    /// The delivery-owned guide publisher (module `guides`), absent while
+    /// the module is off or Discord is offline.
+    pub guides: Option<Arc<dyn GuidePort>>,
     pub backups: BackupDir,
     /// Member and admin portraits; `None` serves monograms only.
     pub avatars: Option<Arc<super::avatars::AvatarCache>>,

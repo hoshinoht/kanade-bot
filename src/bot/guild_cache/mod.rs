@@ -341,14 +341,27 @@ impl GuildCache {
 
     /// The bot's effective permissions in a channel (a thread uses its
     /// parent's). `None` when the channel, its parent, or the bot's own roles
-    /// are not known yet.
+    /// are not known yet. Without the right to send there (in a thread,
+    /// `SEND_MESSAGES_IN_THREADS`), Discord also ignores embed links, attach
+    /// files, mention everyone and TTS (developer docs "Implicit
+    /// Permissions"), so those are dropped too.
     pub fn permissions(&self, id: Id<ChannelMarker>) -> Option<Permissions> {
         let state = self.read();
         let mut channel = state.channels.get(&id)?;
-        if channel.is_thread() {
+        let send = if channel.is_thread() {
             channel = state.channels.get(&channel.parent_id?)?;
+            Permissions::SEND_MESSAGES_IN_THREADS
+        } else {
+            Permissions::SEND_MESSAGES
+        };
+        let mut granted = permissions::in_channel(self.guild_id, &state, channel)?;
+        if !granted.contains(send) {
+            granted -= Permissions::EMBED_LINKS
+                | Permissions::ATTACH_FILES
+                | Permissions::MENTION_EVERYONE
+                | Permissions::SEND_TTS_MESSAGES;
         }
-        permissions::in_channel(self.guild_id, &state, channel)
+        Some(granted)
     }
 
     /// v4 `can_send_in`: a known, text-capable channel where the bot may view

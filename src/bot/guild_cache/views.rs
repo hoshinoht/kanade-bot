@@ -120,6 +120,7 @@ impl ChannelList for GuildCache {
             embed: granted.contains(Permissions::EMBED_LINKS),
             react: granted.contains(Permissions::ADD_REACTIONS),
             manage_messages: granted.contains(Permissions::MANAGE_MESSAGES),
+            attach: granted.contains(Permissions::ATTACH_FILES),
         })
     }
 }
