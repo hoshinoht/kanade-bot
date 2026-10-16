@@ -1476,6 +1476,17 @@ impl Estimates {
             .map(|kept| inner.snapshot(kept))
     }
 
+    /// The saved `estimate_days`: a result at least this old is stale.
+    pub fn fresh_days(&self) -> u32 {
+        (self.shared.fresh_days)()
+    }
+
+    /// A result fetched at `fetched_at` is at least `estimate_days` old now
+    /// (still shown, marked "older than n days").
+    pub fn stale(&self, fetched_at: DateTime<Utc>) -> bool {
+        !self.shared.fresh(fetched_at, self.shared.now())
+    }
+
     /// `ign`'s newest successful result still in memory, of any age, from a
     /// lookup of that character alone or of a party that included them
     /// (each character is kept under their own IGN as they are found, so
