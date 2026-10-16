@@ -10,6 +10,17 @@ cargo run --release --example e2e_server --features test-support -- \
 
 Without `--now` the clock is live and the seed is relative to the current boss week; `bun run e2e` pins it at `2026-09-29T04:00:00Z` (Tue 12:00, Kuala Lumpur). Sign in to the admin with `break_glass.token` from `/__e2e/whoami`. Everything lives under a 0700 temp directory, removed on exit.
 
+## Browser suite
+
+`bun run e2e` (in `web/`, after `bun run build`: it serves the built `dist`) starts one server per Playwright worker: worker i serves admin on base + 2i and public on base + 2i + 1.
+
+- `KANADE_E2E_WORKERS`: workers, 1–5 (default 5, 4 on CI).
+- `KANADE_E2E_PORT_BASE`: the base port (default 4373, so 4373–4382); parallel worktrees use bases 100 apart.
+- `KANADE_E2E_SERVER_BIN`: a prebuilt server binary (repo-root relative, e.g. `target/release/examples/e2e_server`) instead of `cargo run`.
+- `KANADE_CAPTURES=1`: also run the review-capture specs, which only write PNGs.
+
+CI runs the browser suite only from a manual "Run workflow" with `e2e` ticked: the `web` job builds `dist` and this server once, then the main project runs in 4 shards and motion on its own runner (about 17 minutes); pushes and pull requests skip it.
+
 ## Controls
 
 Both origins unless noted; source in `controls.rs`, `controls_p5.rs`, `controls_p6.rs`.

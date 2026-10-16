@@ -8,6 +8,9 @@ pub mod token;
 
 use crate::runtime::{error::Error, restore::Options as RestoreOptions};
 
+/// What `kanade --version` prints: the crate version, the one release number.
+pub const VERSION: &str = concat!("kanade ", env!("CARGO_PKG_VERSION"));
+
 #[derive(Debug, PartialEq, Eq)]
 pub enum Command {
     Serve {
@@ -23,6 +26,8 @@ pub enum Command {
     TokenRotate(token::Args),
     Models(models::Args),
     CtlEmojis(emojis::Args),
+    /// `--version`/`-V`: needs no configuration.
+    Version,
 }
 
 pub fn parse(arguments: impl IntoIterator<Item = String>) -> Result<Command, Error> {
@@ -31,6 +36,7 @@ pub fn parse(arguments: impl IntoIterator<Item = String>) -> Result<Command, Err
         return Err(usage());
     };
     match command {
+        "--version" | "-V" if arguments.len() == 1 => Ok(Command::Version),
         "serve" => parse_serve(&arguments[1..]),
         "healthcheck" => parse_healthcheck(&arguments[1..]),
         "models" => models::parse(&arguments[1..]).map(Command::Models),
@@ -67,7 +73,7 @@ fn parse_healthcheck(arguments: &[String]) -> Result<Command, Error> {
 
 fn usage() -> Error {
     Error::Usage(format!(
-        "usage: kanade {{serve [--offline]|healthcheck [--url http://127.0.0.1:8080/healthz]|models check [--probe]|{}|{}|{}|{}|ctl emojis [--dry-run] [--dir PATH]}}",
+        "usage: kanade {{serve [--offline]|healthcheck [--url http://127.0.0.1:8080/healthz]|models check [--probe]|{}|{}|{}|{}|ctl emojis [--dry-run] [--dir PATH]|--version}}",
         backup::USAGE,
         restore::USAGE,
         admin::USAGE,
@@ -119,6 +125,14 @@ mod tests {
             Command::Serve { offline: true }
         );
         assert!(parse(["serve".into(), "--other".into()]).is_err());
+    }
+
+    #[test]
+    fn version_is_a_sole_flag() {
+        for flag in ["--version", "-V"] {
+            assert_eq!(parse([flag.into()]).unwrap(), Command::Version);
+            assert!(parse([flag.into(), "serve".into()]).is_err());
+        }
     }
 
     #[test]

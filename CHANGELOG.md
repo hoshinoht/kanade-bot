@@ -6,16 +6,19 @@ What changed in each Kanade release, newest first. Upgrading across several rele
 
 _In development_
 
+Estimates are now kept for up to 30 days and refreshed before upcoming runs, admins can pick a character per boss, and the run sheet's Party tab shows a Party total. Estimates stay optional: without the scouter everything else works as before.
+
 > [!IMPORTANT]
-> This release adds stored estimates to the character-data file. Rolling back to an older image needs one command with the bot stopped first (deploy README, "Stop and roll back"), or the older image refuses to start while character data is on.
+> This release adds stored estimates to the character-data file and per-boss picks to the main store. Rolling back to an older image needs the pre-deploy backup restored and one command on the character-data file, both with the bot stopped (deploy README, "Stop and roll back"); otherwise the older image refuses to start.
 
 ### New features
 - A linked character's roster class and level now take NEXON's values on every refresh, recorded in History as NEXON, and stay on the roster after an unlink or once the NEXON data expires, so other members see the current level.
 - Added "Who carries", a bar per boss showing each member's share of the party's estimate, to the run sheet's Clear-time estimate panel and the member portal's run Party · characters.
-- Redesigned day-of and countdown reminder cards now carry a "Who carries" image showing each boss's estimate split between the party members by IGN (or "no estimate yet"), from the stored estimates at the time the card is posted. The image is left off only while a party member with no estimate yet is still being looked up, so they never show as "no estimate". The admin Reminders card preview shows the same image, drawn from the estimates stored at the time you open it.
+- Redesigned day-of and countdown reminder cards, and the admin Reminders card preview, now carry a "Who carries" image of each boss's estimate split between the party members by IGN (or "no estimate yet"), drawn from the stored estimates and left off only while a party member with no estimate yet is still being looked up.
 - Estimates are now kept for up to 30 days, across restarts, and refreshed automatically for party members of runs in the next 7 days, so reminder images and run sheets usually show one without anyone pressing Look up.
 - Added "Refresh estimates every n days" to Config › Character data (7 unless changed); an older estimate still shows, marked "older than n days", on the run sheet, the roster, the member portal and the reminder image.
 - Admins can now pick a character per boss for each party member on multi-boss weekly timings (Per boss in the Fixed editor's Characters tab) and runs (each boss's cell on the run sheet), with "Same for every boss" to undo it, and readiness, estimates, the "Who carries" image and the member portal's Party · characters follow each boss's own character.
+- Added `kanade --version`, which prints the release number; the bot's startup log line now carries it too.
 
 ### Changes
 - Estimates are now labelled “Estimate” on the portals and in Discord.
@@ -342,4 +345,4 @@ Kanade v5, a rewrite of the bot in Rust with a new admin app, replacing the Pyth
 
 ## 4.9.0 and earlier (v4)
 
-The Python bot, retired when v5 replaced it. Its code and changelog are at the [`v4.9.0`](https://github.com/hoshinoht/kanade-bot/tree/v4.9.0) tag and the `v4` branch; `kanade import v4` brings its data across ([guide](docs/v5/v4-import.md)).
+The Python bot, retired when v5 replaced it. Its code and changelog are at the [`v4.9.0`](https://github.com/hoshinoht/kanade-bot/tree/v4.9.0) tag and the `v4` branch; releases up to 1.0.0-beta.7 brought its data across with `kanade import v4`.

@@ -18,6 +18,10 @@ pub async fn run(
     environment: BTreeMap<String, String>,
 ) -> Result<(), Error> {
     let command = cli::parse(arguments)?;
+    if command == Command::Version {
+        println!("{}", cli::VERSION);
+        return Ok(());
+    }
     let resolved = config::resolve(environment)?;
     dispatch(command, &resolved.values)
         .await
@@ -53,6 +57,7 @@ async fn dispatch(command: Command, environment: &BTreeMap<String, String>) -> R
         }
         Command::Models(args) => cli::models::run(args, environment).await,
         Command::CtlEmojis(args) => cli::emojis::run(&args, environment).await,
+        Command::Version => unreachable!("answered before configuration"),
     }
 }
 
