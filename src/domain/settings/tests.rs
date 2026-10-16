@@ -86,6 +86,7 @@ fn every_section_round_trips_through_its_rows() {
     settings.schedule.reset_weekday = Weekday::Wed;
     settings.schedule.attendance = AttendanceMode::V5;
     settings.posting.channel_id = Some("99".into());
+    settings.character_data.estimate_days = 14;
     let sections = [
         Section::Pings(settings.pings.clone()),
         Section::Watching(settings.watching.clone()),
@@ -96,6 +97,7 @@ fn every_section_round_trips_through_its_rows() {
         Section::Models(settings.models.clone()),
         Section::RunLengths(settings.run_lengths.clone()),
         Section::Profanity(settings.profanity.clone()),
+        Section::CharacterData(settings.character_data),
         Section::Schedule(settings.schedule),
         Section::Posting(settings.posting.clone()),
         Section::IdList(
@@ -426,4 +428,36 @@ fn message_style_round_trips_and_refuses_unknown_text() {
     assert_eq!(MessageStyle::Redesigned.as_str(), "redesigned");
     let bad = ["", "Classic", "REDESIGNED", "fancy", " classic"];
     refused_under(keys::MESSAGE_STYLE, &bad);
+}
+
+#[test]
+fn estimate_days_default_to_seven_round_trip_and_refuse_out_of_range() {
+    assert_eq!(RuntimeSettings::default().character_data.estimate_days, 7);
+    for days in [1, 30] {
+        let section = Section::CharacterData(CharacterData {
+            estimate_days: days,
+        });
+        let written = encode_checked(&section).expect("stored form");
+        assert_eq!(written, [(keys::ESTIMATE_DAYS, days.to_string())]);
+        assert_eq!(round_trip(&section).character_data.estimate_days, days);
+    }
+    for days in [0, 31] {
+        let section = Section::CharacterData(CharacterData {
+            estimate_days: days,
+        });
+        assert!(
+            matches!(
+                encode_checked(&section),
+                Err(SettingsError::Malformed {
+                    key: keys::ESTIMATE_DAYS,
+                    ..
+                })
+            ),
+            "{days} is refused before anything is written"
+        );
+    }
+    refused_under(
+        keys::ESTIMATE_DAYS,
+        &["", "0", "31", "-1", "7.5", "seven", " 7"],
+    );
 }

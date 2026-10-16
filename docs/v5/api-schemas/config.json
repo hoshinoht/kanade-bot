@@ -391,7 +391,7 @@
         },
         "character_data": {
           "$ref": "character_data.json#/$defs/CharacterDataHealth",
-          "description": "Module character_data's health (informational, never part of /healthz); absent while the module is off."
+          "description": "Module character_data's health (informational, never part of /healthz) and its estimate_days setting (PATCH character_data.estimate_days); absent while the module is off."
         }
       }
     },

@@ -3,8 +3,10 @@
 //! up one at a time, because a lookup takes up to a few minutes. While the
 //! module is off or the URL is unset, every route answers the generic `404`
 //! before the session is checked, as an unmounted path does. `POST` takes
-//! the session's CSRF token. Nothing is stored: jobs and results live 24
-//! hours in memory. The scouter is sent roster IGNs only.
+//! the session's CSRF token. Jobs live 24 hours in memory; results are kept
+//! up to 30 days in memory and in the character-data file, and one younger
+//! than the saved `estimate_days` answers a lookup at once. The scouter is
+//! sent roster IGNs only.
 
 use std::sync::Arc;
 
@@ -34,7 +36,7 @@ use crate::{
         character_data::CharacterData,
         scouter::{
             Estimates, JobRequest, MAX_BATCH, MAX_QUEUED, Missing, MissingReason, RosterIgn, Start,
-            Subject, Target,
+            Subject, Target, party_subjects, push_subject,
         },
     },
 };
@@ -95,16 +97,6 @@ pub(crate) fn estimate_ign(character: &Character) -> Result<RosterIgn, Refusal> 
     })
 }
 
-/// Unique by IGN (the scouter refuses duplicates).
-fn push(subjects: &mut Vec<Subject>, subject: Subject) {
-    if !subjects
-        .iter()
-        .any(|seen| seen.ign.key() == subject.ign.key())
-    {
-        subjects.push(subject);
-    }
-}
-
 type Resolved = (Target, Vec<Subject>, Vec<Missing>);
 
 /// The characters asked for, sorted (the target), each looked up.
@@ -125,7 +117,7 @@ async fn characters(roster: &dyn CharacterRoster, ids: Vec<String>) -> Result<Re
             .map_err(Refusal::unavailable)?
             .ok_or_else(not_found)?;
         let ign = estimate_ign(&character)?;
-        push(
+        push_subject(
             &mut subjects,
             Subject {
                 character_id: character.id,
@@ -145,40 +137,7 @@ async fn run_party(
     run_id: String,
 ) -> Result<Resolved, Refusal> {
     let (run, slots) = party(state, roster, &run_id).await?;
-    let mut subjects = Vec::new();
-    let mut missing = Vec::new();
-    for slot in &slots {
-        let brought = slot
-            .bringing()
-            .and_then(|id| slot.candidates.iter().find(|row| row.id == id));
-        let Some(character) = brought else {
-            missing.push(Missing {
-                member_id: slot.member_id.clone(),
-                character_id: None,
-                reason: if slot.candidates.is_empty() {
-                    MissingReason::NoCharacters
-                } else {
-                    MissingReason::NoCharacterPicked
-                },
-            });
-            continue;
-        };
-        match RosterIgn::lookup(character) {
-            Ok(ign) => push(
-                &mut subjects,
-                Subject {
-                    character_id: character.id.clone(),
-                    member_id: character.member_id.clone(),
-                    ign,
-                },
-            ),
-            Err(reason) => missing.push(Missing {
-                member_id: slot.member_id.clone(),
-                character_id: Some(character.id.clone()),
-                reason,
-            }),
-        }
-    }
+    let (subjects, missing) = party_subjects(&slots);
     if subjects.is_empty() {
         return Err(Refusal::unprocessable(
             "nothing_to_look_up",
@@ -202,7 +161,7 @@ async fn run_party(
 }
 
 /// `EstimateRequest`: `character_ids` (1 to 6) or `run_id`, and
-/// `refresh` to skip the 24-hour memory ("Look up again").
+/// `refresh` to skip the memory ("Look up again").
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct EstimateRequest {
@@ -215,9 +174,10 @@ pub struct EstimateRequest {
 }
 
 /// `POST /api/admin/estimates` → `202 {job}`: queued (or running at once),
-/// already `done` when the 24-hour memory answers it, or the target's job
-/// already queued or running; `429 estimate_queue_full` past
-/// [`MAX_QUEUED`] waiting jobs.
+/// already `done` when memory holds a result younger than the saved
+/// `estimate_days` for each, or the target's job (also a waiting background
+/// refresh, which moves into the queue) already queued or running;
+/// `429 estimate_queue_full` past [`MAX_QUEUED`] waiting jobs.
 async fn start(
     scouter: Scouter,
     State(site): State<Arc<Site>>,
@@ -242,7 +202,7 @@ async fn start(
         Start::Started(started) | Start::Joined(started) => Ok((
             StatusCode::ACCEPTED,
             Json(EstimateStarted {
-                job: job(&started, &state.catalog),
+                job: job(&started, &state.catalog, estimates),
             }),
         )
             .into_response()),
@@ -294,10 +254,10 @@ async fn status(
     Ok(Json(EstimateStatus {
         job: estimates
             .latest(&target)
-            .map(|found| job(&found, &state.catalog)),
+            .map(|found| job(&found, &state.catalog, estimates)),
         running: estimates
             .running()
-            .map(|running| job(&running, &state.catalog)),
+            .map(|running| job(&running, &state.catalog, estimates)),
     })
     .into_response())
 }
@@ -310,11 +270,12 @@ async fn read(
     UrlPath(id): UrlPath<String>,
 ) -> Reply {
     let state = state(&site)?;
-    let found = scouter.estimates()?.job(&id).ok_or_else(|| {
+    let estimates = scouter.estimates()?;
+    let found = estimates.job(&id).ok_or_else(|| {
         Refusal::not_found(
             "not_found",
-            "That lookup is gone: results are kept for 24 hours.",
+            "That lookup is gone: lookups are kept for 24 hours.",
         )
     })?;
-    Ok(Json(job(&found, &state.catalog)).into_response())
+    Ok(Json(job(&found, &state.catalog, estimates)).into_response())
 }

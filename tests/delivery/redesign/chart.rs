@@ -14,17 +14,18 @@ use chrono::{TimeDelta, TimeZone, Utc};
 use kanade::bot::delivery::cards::chart::{self, Chart, ChartRun, SCALE};
 use kanade::bot::delivery::cards::{self, CardArt, CardContext, CardKit, V2Kit, redesign};
 use kanade::bot::delivery::{
-    EstimateFuture, MAX_ATTACHMENTS, PartyEstimates, RunEstimate, attach_chart, chart_for,
-    read_estimates,
+    CachedEstimates, EstimateFuture, MAX_ATTACHMENTS, PartyEstimates, RunEstimate, attach_chart,
+    chart_for, read_estimates,
 };
 use kanade::bot::transport::{OutgoingMessage, Upload, legacy_rows};
 use kanade::domain::catalog::BossTable;
 use kanade::domain::characters::{Basis, Character, CharacterRole, PartySlot};
-use kanade::domain::chardata::{Carrier, PartyShares};
+use kanade::domain::chardata::{Carrier, CharDataStore, PartyShares};
 use kanade::domain::history::Actor;
 use kanade::domain::schedule::{Run, ScheduleSnapshot};
+use kanade::infrastructure::character_data::{CharacterData, RosterSide, Timing};
 use kanade::infrastructure::scouter::{Card, Member};
-use kanade::infrastructure::store::SqliteStore;
+use kanade::infrastructure::store::{SqliteCharData, SqliteStore};
 use resvg::tiny_skia::Pixmap;
 
 use super::{KALOS, MALEFIC, countdown, day_of, members, redesigned_v5, week};
@@ -134,6 +135,7 @@ fn fixtures() -> Vec<(&'static str, Chart)> {
     let chart = |runs: Vec<ChartRun>, as_of: &str| Chart {
         runs,
         as_of: as_of.into(),
+        older_than: None,
         portal: true,
     };
     let mut jupiter = kalos();
@@ -295,6 +297,7 @@ fn the_svg_says_what_the_board_says() {
             &[],
         )],
         as_of: AS_OF.into(),
+        older_than: None,
         portal: false,
     };
     assert!(chart::svg(&odd).svg.contains("A&lt;b&amp;"));
@@ -315,6 +318,50 @@ fn the_alt_text_carries_the_same_facts_by_ign() {
         "21:30 XKalos: XKalos no estimate yet. 22:00 HCarling + HMaleficStar: HCarling no \
          estimate yet; HMaleficStar no estimate yet. As of Thu 1 Oct 09:00."
     );
+}
+
+/// The oldest reading at least `estimate_days` old: the "as of" line and
+/// the alt text say "older than n days" (one day singular); fresh, both
+/// are as the board has them.
+#[test]
+fn a_stale_chart_says_older_than_n_days_and_a_fresh_one_does_not() {
+    let fresh = fixtures().remove(0).1;
+    let drawn = chart::svg(&fresh).svg;
+    assert!(
+        drawn.contains(&format!(
+            "Clear-time estimate · as of {AS_OF} · * assumes 100% critical rate</text>"
+        )),
+        "{drawn}"
+    );
+    assert!(!drawn.contains("older than"));
+    assert!(chart::alt(&fresh).ends_with(&format!(". As of {AS_OF}.")));
+
+    let out = std::env::var_os("KANADE_CHART_PNG_DIR").map(PathBuf::from);
+    for (days, phrase) in [(7, "older than 7 days"), (1, "older than 1 day")] {
+        let stale = Chart {
+            older_than: Some(days),
+            ..fresh.clone()
+        };
+        let drawn = chart::svg(&stale);
+        assert!(
+            drawn.svg.contains(&format!(
+                "Clear-time estimate · as of {AS_OF} · {phrase} · * assumes 100% critical rate</text>"
+            )),
+            "{}",
+            drawn.svg
+        );
+        let alt = chart::alt(&stale);
+        assert!(
+            alt.ends_with(&format!(". As of {AS_OF} · {phrase}.")),
+            "{alt}"
+        );
+        assert_eq!(drawn.height, chart::svg(&fresh).height, "the same line");
+        let bytes = chart::png(&drawn).expect("renders");
+        if let Some(dir) = &out {
+            std::fs::create_dir_all(dir).unwrap();
+            std::fs::write(dir.join(format!("estimate-stale-{days}.png")), &bytes).unwrap();
+        }
+    }
 }
 
 fn character(member: &str, ign: &str, world: &str) -> Character {
@@ -457,6 +504,7 @@ fn estimate(time: ChartRun) -> RunEstimate {
         party: time.party,
         minutes: time.minutes,
         oldest: Some(Utc.with_ymd_and_hms(2026, 9, 9, 0, 41, 0).unwrap()),
+        older_than: None,
     }
 }
 
@@ -650,6 +698,99 @@ async fn classic_cards_unset_ports_and_failures_post_without_it() {
     assert!(chart_for(&digest, &ctx, &*port(), at).await.is_none());
 }
 
+/// One stale run marks the whole card's chart: the "as of" line and the
+/// posted PNG's description say "older than n days". Fresh, neither does.
+#[tokio::test]
+async fn a_stale_reading_marks_the_posted_chart_and_its_description() {
+    let (schedule, roster, table) = (week(), members(), catalog());
+    let ctx = redesigned_v5(&schedule, &roster, &table);
+    let at = Utc.with_ymd_and_hms(2026, 9, 9, 1, 0, 0).unwrap();
+    let content = day_of(&[KALOS, MALEFIC]);
+    let stale = || {
+        let mut star = carling();
+        star.party.bosses = vec!["HMaleficStar".into(), "HKalos".into()];
+        Fixed(vec![
+            (KALOS.into(), estimate(kalos())),
+            (
+                MALEFIC.into(),
+                RunEstimate {
+                    older_than: Some(7),
+                    ..estimate(star)
+                },
+            ),
+        ])
+    };
+    let chart = chart_for(&content, &ctx, &stale(), at)
+        .await
+        .expect("a chart");
+    assert_eq!(chart.older_than, Some(7));
+    let drawn = chart::svg(&chart).svg;
+    assert!(
+        drawn.contains("as of Wed 9 Sep 08:41 · older than 7 days"),
+        "{drawn}"
+    );
+    let stale_kit = CardKit {
+        estimates: Some(Arc::new(stale())),
+        ..CardKit::default()
+    };
+    let alt = described(&content, &ctx, &stale_kit, at).await;
+    assert!(
+        alt.ends_with(". As of Wed 9 Sep 08:41 · older than 7 days."),
+        "{alt}"
+    );
+
+    let fresh = chart_for(&content, &ctx, &*port(), at).await.unwrap();
+    assert_eq!(fresh.older_than, None);
+    assert!(!chart::svg(&fresh).svg.contains("older than"));
+    let alt = described(&content, &ctx, &charted(CardKit::default()), at).await;
+    assert!(alt.ends_with(". As of Wed 9 Sep 08:41."), "{alt}");
+}
+
+/// The description of the chart a new post of `content` carries.
+async fn described(
+    content: &kanade::domain::notify::IntentContent,
+    ctx: &CardContext<'_>,
+    kit: &CardKit,
+    at: chrono::DateTime<Utc>,
+) -> String {
+    let mut message = post();
+    attach_chart(&mut message, content, ctx, kit, at).await;
+    png_upload(&message)
+        .and_then(|upload| upload.description.clone())
+        .expect("the chart")
+}
+
+/// Estimates off (module `character_data` without a scouter URL): the
+/// serve port draws nothing and the card posts exactly as it would have.
+#[tokio::test]
+async fn without_a_scouter_url_the_card_posts_unchanged() {
+    let (schedule, roster, table) = (week(), members(), catalog());
+    let ctx = redesigned_v5(&schedule, &roster, &table);
+    let at = Utc.with_ymd_and_hms(2026, 9, 9, 1, 0, 0).unwrap();
+    let store = Arc::new(SqliteStore::open_temp().await);
+    let module = CharacterData::new(
+        Arc::new(SqliteCharData::open_temp().await) as Arc<dyn CharDataStore>,
+        Arc::clone(&store) as Arc<dyn RosterSide>,
+        None,
+        Arc::new(move || at),
+        Timing::default(),
+    );
+    assert!(module.estimates().is_none(), "no scouter URL");
+    let port = CachedEstimates::new(store, Arc::new(module));
+    let content = countdown(KALOS);
+    assert!(chart_for(&content, &ctx, &port, at).await.is_none());
+
+    let kit = CardKit {
+        estimates: Some(Arc::new(port)),
+        ..CardKit::default()
+    };
+    let card = cards::build(&content, &ctx, None, &[]).expect("a card");
+    let mut message = card.message(&[], &CardArt::default());
+    let before = message.clone();
+    attach_chart(&mut message, &content, &ctx, &kit, at).await;
+    assert_eq!(message, before, "posted as it would have been");
+}
+
 /// While the public portal is open the run cards post with the legacy
 /// "Open in portal" row under their text: the chart is still attached
 /// (Discord shows files beside link rows), and its overflow line points
@@ -677,6 +818,7 @@ async fn an_open_portal_post_carries_the_chart_beside_its_link_row() {
         },
         minutes: vec![None; 9],
         oldest: None,
+        older_than: None,
     };
     let port = Fixed(vec![(KALOS.into(), busy)]);
     let kit = CardKit {

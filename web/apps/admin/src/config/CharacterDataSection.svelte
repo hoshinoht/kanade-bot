@@ -1,9 +1,12 @@
 <!--
   Config › Character data (module `character_data`; boards B_CfgCharHealth,
-  …Alert, …Setup, …Refused and phone twins): read-only health of the NEXON
-  Open API (key, the 24-hour call budget, the daily batch, links), of
-  the scouter, and of the sweeper that strips shared Discord cards, plus
-  what is set in the environment. Informational: it never changes /healthz.
+  …Alert, …Setup, …Refused and phone twins): health of the NEXON Open API
+  (key, the 24-hour call budget, the daily batch, links), of the scouter,
+  and of the sweeper that strips shared Discord cards, plus what is set in
+  the environment. Health is informational: it never changes /healthz.
+  While estimates are on (a scouter URL is set) the Estimates card holds the
+  section's one setting, how many days an estimate stays fresh (1 to 30,
+  saved with the bar; a stale one reads "older than n days").
 -->
 <script lang="ts">
   import type { CharacterDataHealth } from '@kanade/api-types';
@@ -11,9 +14,47 @@
   import '@kanade/ui/styles/screens/character-data.scss';
   import { directory } from '../names/directory.svelte';
   import { hourMinute, nexonTag, scouterTag, sweeperTag } from '../chardata/format';
+  import { changes } from './dirty';
+  import { followSaved } from './follow.svelte';
+  import type { Save } from './save';
+  import SaveBar from './SaveBar.svelte';
   import SettingsPanel from './SettingsPanel.svelte';
 
-  let { health, timeZone }: { health: CharacterDataHealth; timeZone: string } = $props();
+  let { health, timeZone, save }: { health: CharacterDataHealth; timeZone: string; save: Save } = $props();
+  const uid = $props.id();
+
+  // Estimates are on while a scouter URL is set; Setup (no URL) has no setting and no bar.
+  const estimatesOn = $derived(health.scouter.state !== 'off');
+  // svelte-ignore state_referenced_locally
+  let days = $state<number | null | undefined>(health.estimate_days);
+  followSaved(
+    () => health.estimate_days,
+    () => days,
+    (saved) => (days = saved),
+  );
+  let error = $state('');
+  let saving = $state(false);
+  const pending = $derived(
+    changes([{ label: 'Estimate refresh', from: health.estimate_days, to: days ?? null, show: (value) => (typeof value === 'number' ? String(value) : '') }]).map(
+      (change) => ({ ...change, unit: 'days' }),
+    ),
+  );
+  const edited = $derived(pending.length > 0);
+  // The helper quotes the drafted n while it is a number, else the saved one.
+  const shownDays = $derived(typeof days === 'number' ? days : health.estimate_days);
+
+  function discard() {
+    days = health.estimate_days;
+    error = '';
+  }
+
+  // Out of range or empty goes to the server, which refuses it (422) with the range; shown inline.
+  async function submit(event: SubmitEvent) {
+    event.preventDefault();
+    saving = true;
+    error = await save({ character_data: { estimate_days: days ?? null } }, 'Estimate refresh saved.');
+    saving = false;
+  }
 
   const nexon = $derived(nexonTag(health, timeZone));
   const scouter = $derived(scouterTag(health));
@@ -122,6 +163,41 @@
   </section>
 {/snippet}
 
+{#snippet estimatesCard()}
+  <form
+    class="chardata-health__card"
+    id="{uid}-form"
+    aria-labelledby="chardata-estimate-days-h"
+    data-fid="chardata-estimate-days"
+    onsubmit={submit}
+    novalidate
+  >
+    <h4 class="chardata-health__title" id="chardata-estimate-days-h">Estimates</h4>
+    <div class="chardata-days">
+      <label class="chardata-days__label" for="{uid}-days">Refresh estimates every</label>
+      <input
+        id="{uid}-days"
+        class="chardata-days__field"
+        class:settings__changed={edited}
+        type="number"
+        min="1"
+        max="30"
+        bind:value={days}
+        aria-invalid={error ? 'true' : undefined}
+        aria-describedby="{uid}-help{error ? ` ${uid}-error` : ''}"
+      />
+      <span>days</span>
+      {#if edited}<span class="chardata-days__hint"
+          ><span class="chardata-days__dot" aria-hidden="true"></span><span>was <span class="mono">{health.estimate_days}</span> · 1 to 30</span></span
+        >{:else}<span class="chardata-days__hint">1 to 30 · default 7</span>{/if}
+    </div>
+    <p class="chardata__msg" id="{uid}-help">
+      Estimates older than this show “older than {shownDays} day{shownDays === 1 ? '' : 's'}”. Party members of runs in the next 7 days are refreshed automatically.
+    </p>
+    {#if error}<p class="field__error" id="{uid}-error" role="alert">{error}</p>{/if}
+  </form>
+{/snippet}
+
 {#snippet sweeperCard()}
   <section class="chardata-health__card chardata-health__card--{sweeper.tone === 'risk' ? 'risk' : 'plain'}" aria-labelledby="chardata-sweeper-h" data-fid="chardata-sweeper-health">
     <div class="chardata-health__head"><h4 class="chardata-health__title" id="chardata-sweeper-h">Sweeper</h4><span class="chardata__grow"></span>{@render tagChip(sweeper)}</div>
@@ -165,9 +241,12 @@
 {/snippet}
 
 <SettingsPanel title="Character data">
-  {#snippet lead()}Read-only and informational: it never changes /healthz.{/snippet}
+  {#snippet lead()}{estimatesOn ? 'Health is informational: it never changes /healthz.' : 'Read-only and informational: it never changes /healthz.'}{/snippet}
   <div class="chardata-health">
     <div class="chardata-health__col">{@render nexonCard()}{@render envCard()}</div>
-    <div class="chardata-health__col">{@render scouterCard()}{@render sweeperCard()}</div>
+    <div class="chardata-health__col">{@render scouterCard()}{#if estimatesOn}{@render estimatesCard()}{/if}{@render sweeperCard()}</div>
   </div>
+  {#snippet bar()}
+    {#if estimatesOn}<SaveBar form="{uid}-form" label="Save character data" changes={pending} {saving} ondiscard={discard} />{/if}
+  {/snippet}
 </SettingsPanel>

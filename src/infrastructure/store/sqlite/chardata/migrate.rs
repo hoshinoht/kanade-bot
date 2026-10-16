@@ -22,6 +22,10 @@ const MIGRATIONS: &[Migration] = &[
         version: 2,
         sql: include_str!("migrations/0002_link_surface.sql"),
     },
+    Migration {
+        version: 3,
+        sql: include_str!("migrations/0003_estimates.sql"),
+    },
 ];
 
 const LEDGER: &str = "CREATE TABLE IF NOT EXISTS chardata_migrations (
@@ -87,6 +91,10 @@ mod tests {
             (
                 2,
                 "ec706a780435e20f64fd82bbd688bdb0566cc49f37b2811a811b5a3b4546945b",
+            ),
+            (
+                3,
+                "b46c78a920ae2e60ebf1c080bc73b983f0e9119140f7edaa95abaa2f13301093",
             ),
         ];
         for (version, sum) in SHIPPED {

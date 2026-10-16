@@ -345,7 +345,7 @@ pub fn svg(chart: &Chart) -> Drawn {
         &mut body,
         PAD,
         y + 12.0,
-        &format!("Clear-time estimate · as of {}{note}", chart.as_of),
+        &format!("Clear-time estimate · as of {}{note}", super::as_of(chart)),
         Style::spoken(12.0, DIM),
     );
     y += 18.0;

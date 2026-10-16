@@ -2,11 +2,13 @@
 //! never a stored value (which may be Nexon data).
 
 use chrono::{DateTime, Utc};
+use serde::de::DeserializeOwned;
 use sqlx::Row;
 use sqlx::sqlite::SqliteRow;
 
 use crate::domain::chardata::{
-    ConsentSurface, Link, LinkStatus, Post, PostState, Snapshot, parse_date,
+    ConsentSurface, Link, LinkStatus, MemberEstimate, PartyEstimate, Post, PostState, Snapshot,
+    parse_date,
 };
 use crate::domain::history::Actor;
 use crate::domain::scheduler::StoreError;
@@ -108,5 +110,30 @@ pub(super) fn post(row: &SqliteRow) -> Result<Post, StoreError> {
         posted_at: instant(row, "posted_at")?,
         strip_due_at: instant(row, "strip_due_at")?,
         state: PostState::parse(&state).ok_or_else(|| corrupt("state"))?,
+    })
+}
+
+fn json<T: DeserializeOwned>(row: &SqliteRow, column: &str) -> Result<T, StoreError> {
+    serde_json::from_str(&get::<String>(row, column)?).map_err(|_| corrupt(column))
+}
+
+pub(super) fn member_estimate(row: &SqliteRow) -> Result<MemberEstimate, StoreError> {
+    Ok(MemberEstimate {
+        character_id: get(row, "character_id")?,
+        ign_key: get(row, "ign_key")?,
+        result: json(row, "result")?,
+        fetched_at: instant(row, "fetched_at")?,
+    })
+}
+
+/// A party row with its characters as a JSON array (`character_ids`).
+pub(super) fn party_estimate(row: &SqliteRow) -> Result<PartyEstimate, StoreError> {
+    let mut character_ids: Vec<String> = json(row, "character_ids")?;
+    character_ids.sort_unstable();
+    Ok(PartyEstimate {
+        set_key: get(row, "set_key")?,
+        character_ids,
+        combined: json(row, "result")?,
+        fetched_at: instant(row, "fetched_at")?,
     })
 }

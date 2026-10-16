@@ -6,6 +6,7 @@
 //! `secure_delete=ON`, so deleted Nexon data is overwritten in place. All
 //! SQL is constant. `kanade backup`/`restore` never open this file.
 
+mod estimates;
 mod migrate;
 mod rows;
 
@@ -22,8 +23,9 @@ use super::schedule::store_error;
 use super::writer::{LeaseError, Writer, WriterLease};
 use super::{SqliteStoreConfig, SqliteStoreError, connect};
 use crate::domain::chardata::{
-    CALL_WINDOW, CharDataStore, ConsentSurface, FUTURE_SKEW, Link, LinkPut, LinkStatus, Post,
-    PostState, RefreshState, Snapshot, StoreFuture, date_text,
+    CALL_WINDOW, CharDataStore, ConsentSurface, DeletedEstimates, FUTURE_SKEW, Link, LinkPut,
+    LinkStatus, MemberEstimate, PartyEstimate, Post, PostState, RefreshState, Snapshot,
+    StoreFuture, StoredEstimates, date_text,
 };
 use crate::domain::scheduler::StoreError;
 use rows::{LINK_COLUMNS, POST_COLUMNS, SNAPSHOT_COLUMNS, at, link, post, snapshot};
@@ -512,6 +514,16 @@ impl CharDataStore for SqliteCharData {
         fn prune_calls(&self, before: DateTime<Utc>) -> StoreFuture<'_, u64> = Self::drop_calls;
         fn create_post(&self, post: Post) -> StoreFuture<'_, bool> = Self::insert_post;
         fn posts(&self) -> StoreFuture<'_, Vec<Post>> = Self::post_rows;
+        fn estimates(&self, now: DateTime<Utc>, limit: u32) -> StoreFuture<'_, StoredEstimates> =
+            Self::load_estimates;
+        fn put_member_estimate(&self, estimate: MemberEstimate) -> StoreFuture<'_, ()> =
+            Self::write_member_estimate;
+        fn put_party_estimate(&self, estimate: PartyEstimate) -> StoreFuture<'_, ()> =
+            Self::write_party_estimate;
+        fn delete_estimates(&self, character_id: String) -> StoreFuture<'_, DeletedEstimates> =
+            Self::remove_estimates;
+        fn sweep_estimates(&self, now: DateTime<Utc>) -> StoreFuture<'_, u64> =
+            Self::sweep_estimate_rows;
     }
 
     fn set_post_message(&self, reference: String, message_id: String) -> StoreFuture<'_, bool> {

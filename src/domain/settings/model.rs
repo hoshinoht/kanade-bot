@@ -21,6 +21,7 @@ pub struct RuntimeSettings {
     pub models: Models,
     pub run_lengths: RunLengths,
     pub profanity: Profanity,
+    pub character_data: CharacterData,
     pub schedule: Schedule,
     pub posting: Posting,
 }
@@ -471,6 +472,25 @@ impl Default for Schedule {
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Posting {
     pub channel_id: Option<String>,
+}
+
+/// Module `character_data`'s settings: a scouter estimate `estimate_days`
+/// old or older is stale (`v5.estimate_days`, default 7).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct CharacterData {
+    pub estimate_days: u32,
+}
+
+/// At most the 30 days a stored estimate is kept.
+pub const ESTIMATE_DAYS: std::ops::RangeInclusive<u32> = 1..=30;
+pub const DEFAULT_ESTIMATE_DAYS: u32 = 7;
+
+impl Default for CharacterData {
+    fn default() -> Self {
+        Self {
+            estimate_days: DEFAULT_ESTIMATE_DAYS,
+        }
+    }
 }
 
 impl RuntimeSettings {

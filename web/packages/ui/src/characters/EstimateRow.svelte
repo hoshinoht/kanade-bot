@@ -14,7 +14,7 @@
   import { dayTime } from '../account';
   import Icon from '../components/Icon.svelte';
   import { clockTime, DIFFICULTY_WORDS } from '../format';
-  import { assumedCrit, catalogBoss, clock, ESTIMATE_LABEL, ESTIMATE_NOTE, estimateErrorText, minutes, percent } from './chardata';
+  import { assumedCrit, catalogBoss, clock, ESTIMATE_LABEL, ESTIMATE_NOTE, estimateErrorText, minutes, olderThan, percent } from './chardata';
   import EstimateProgress from './EstimateProgress.svelte';
   import { activeJob, EstimateLookup, type CharacterFids, type CharacterKit } from './kit.svelte';
 
@@ -113,7 +113,7 @@
     </table>
     <span class="chardata__foot"
       >Looked up <span class="mono">{dayTime(job.fetched_at ?? job.started_at, kit.timeZone)}</span>{#if member}{` by ${kit.actor(job.started_by)}`}{/if}
-      {#if found}(preset <span class="mono">{found.preset}</span>){/if} · kept 24 h in memory only · bosses outside the catalog are left out</span
+      {#if found}(preset <span class="mono">{found.preset}</span>){/if}{#if job.stale}{olderThan(job.fresh_days)}{/if} · bosses outside the catalog are left out</span
     >
   {/if}
 {/snippet}
@@ -163,7 +163,7 @@
       {#if assumed}<span class="estimate__assumed" data-fid={fids.assumed}><Icon name="alert-triangle" />{assumed}</span>{/if}
       {@render resultTable()}
     {:else}
-      <span class="chardata__msg">No lookup in the last 24 h. A lookup takes up to 2 minutes, after any ahead of it.</span>
+      <span class="chardata__msg">No lookup yet. A lookup takes up to 2 minutes, after any ahead of it.</span>
     {/if}
     {#if sheet}<div class="chardata__actions">{@render button()}</div>{/if}
   </div>

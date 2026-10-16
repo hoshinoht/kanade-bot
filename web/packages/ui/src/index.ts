@@ -158,6 +158,7 @@ export {
   lookupLine,
   lookupMiss,
   minutes,
+  olderThan,
   PENDING_DAYS,
   percent,
   queuedText,

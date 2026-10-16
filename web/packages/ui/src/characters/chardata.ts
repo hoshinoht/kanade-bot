@@ -52,6 +52,12 @@ export function assumedCrit(found: { critical_rate_assumed: boolean; critical_ra
 export const queuedText = (position: number | null) => `Queued · ${position ?? 1} ahead`;
 
 /**
+ * The marker a result at least the saved `estimate_days` old (`stale` in the
+ * API) adds to its time line: " · older than 7 days". Still shown, never hidden.
+ */
+export const olderThan = (days: number) => ` · older than ${days} day${days === 1 ? '' : 's'}`;
+
+/**
  * One boss's scouter reading as a chip: "Estimate 164% · ~18 min"; the rating
  * goes in its title. An assumed critical rate adds a short "· crit assumed" marker and
  * its full label (`assumed`) for the title.

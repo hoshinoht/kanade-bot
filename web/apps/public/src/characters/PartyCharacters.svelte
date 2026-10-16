@@ -33,7 +33,7 @@
             ><span aria-hidden="true">{ANSWER_MARKS[answer].mark}</span> {ANSWER_MARKS[answer].word}</span
           ></span
         >
-        <PartyCharLine {slot} tagged={i === 0} />
+        <PartyCharLine {slot} freshDays={party.fresh_days} tagged={i === 0} />
       </li>
     {/each}
   </ul>

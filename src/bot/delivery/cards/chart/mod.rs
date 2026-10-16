@@ -35,8 +35,21 @@ pub struct Chart {
     pub runs: Vec<ChartRun>,
     /// `Tue 29 Sep 08:41`: the oldest reading drawn, else the post time.
     pub as_of: String,
+    /// The saved `estimate_days` while the oldest reading is at least that
+    /// old (see [`as_of()`]); `None` while fresh.
+    pub older_than: Option<u32>,
     /// The public portal is open (the overflow line points there).
     pub portal: bool,
+}
+
+/// `Tue 29 Sep 08:41`, or `Tue 29 Sep 08:41 · older than 7 days` when the
+/// oldest reading is stale: the image's "as of" line and the alt text.
+pub fn as_of(chart: &Chart) -> String {
+    match chart.older_than {
+        None => chart.as_of.clone(),
+        Some(1) => format!("{} · older than 1 day", chart.as_of),
+        Some(days) => format!("{} · older than {days} days", chart.as_of),
+    }
 }
 
 /// The attachment's description: the same facts by IGN.
@@ -84,7 +97,7 @@ pub fn alt(chart: &Chart) -> String {
             line
         })
         .collect();
-    let text = format!("{}. As of {}.", runs.join(". "), chart.as_of);
+    let text = format!("{}. As of {}.", runs.join(". "), as_of(chart));
     match text.char_indices().nth(MAX_ALT - 1) {
         Some((at, _)) => format!("{}…", &text[..at]),
         None => text,

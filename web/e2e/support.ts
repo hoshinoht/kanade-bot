@@ -164,6 +164,14 @@ export async function setEstimates(scenario: string, ign?: string): Promise<void
 }
 
 /**
+ * A finished lookup of a run's party or one roster character, fetched `days` (1–30) before the
+ * server clock (`aged`): at the saved `estimate_days` (7 by default) or more it reads "older than n days".
+ */
+export async function ageEstimate(target: { run: string } | { character: string }, days: number): Promise<void> {
+  await control('/__e2e/estimates', { scenario: 'aged', days, ...target });
+}
+
+/**
  * Config's character-data health through real calls on a restart (`ok`, `alert`,
  * `refused`, `setup`: no NEXON key and no scouter URL), or `budget`: the day's NEXON calls spent.
  */

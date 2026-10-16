@@ -323,6 +323,9 @@ pub struct Overrides {
     pub model_limits: Option<crate::api::state::ModelLimits>,
     /// A loopback fake NEXON Open API (plain HTTP) for module `character_data`.
     pub nexon: Option<std::net::SocketAddr>,
+    /// Run the background estimate refresh on serve's schedule (10 minutes
+    /// after start, then hourly); off, nothing looks up on its own.
+    pub estimate_refresh: bool,
 }
 
 /// Test support: the composition and its running module `character_data`
@@ -353,6 +356,7 @@ pub async fn compose_for_tests(
         authorize_url,
         model_limits,
         nexon,
+        estimate_refresh,
     } = overrides;
     let mut composition = compose_with(
         config,
@@ -395,6 +399,7 @@ pub async fn compose_for_tests(
             Some(address) => Some(NexonClient::plain(address, key)),
             None => NexonClient::new(key),
         },
+        estimate_refresh.then_some(super::character_data::REFRESH),
     )
     .await?;
     Ok(TestComposition {

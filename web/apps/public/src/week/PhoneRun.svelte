@@ -107,7 +107,7 @@
             <Avatar class="member-slot__avatar" src={null} name={person.name} />
             <span class="member-slot__name">{person.id === memberId ? 'You' : person.name}</span>
             <span class="chip chip--{person.answer}"><span aria-hidden="true">{ANSWER_MARKS[person.answer].mark}</span> {ANSWER_MARKS[person.answer].word}</span>
-            {#if slot}<span class="member-slot__chars"><PartyCharLine {slot} boxed /></span>{/if}
+            {#if slot}<span class="member-slot__chars"><PartyCharLine {slot} freshDays={party?.data?.fresh_days ?? null} boxed /></span>{/if}
           </li>
         {/each}
       </ul>

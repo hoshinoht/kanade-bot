@@ -530,7 +530,7 @@
 {#snippet slotReady(person: Participant)}
   {@const r = ready?.data?.slots.find((s) => s.member_id === person.id)}
   {#if r?.character}
-    <ReadinessValues slot={r} character={r.character} timeZone={week.timezone} {bossLabel} fid="party-ready" />
+    <ReadinessValues slot={r} character={r.character} timeZone={week.timezone} {bossLabel} fid="party-ready" freshDays={ready?.data?.fresh_days ?? null} />
   {:else if r && wide && chars?.slot(person.id)?.candidates.length}
     <span class="ready__source">Readiness shows once a character is picked.</span>
   {/if}

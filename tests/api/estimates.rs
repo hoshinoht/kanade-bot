@@ -22,6 +22,7 @@ use axum::{
     response::{IntoResponse, Response},
     routing::get,
 };
+use chrono::TimeDelta;
 use kanade::infrastructure::{
     character_data::{CharacterData, ConfirmOutcome},
     scouter::{MAX_QUEUED, TIMEOUT},
@@ -295,10 +296,20 @@ async fn serve(
     nexon: Option<SocketAddr>,
     timeout: Duration,
 ) -> (Reads, Arc<CharacterData>) {
+    serve_skewed(scouter, nexon, timeout, Arc::default()).await
+}
+
+/// [`serve`] on the pinned clock moved by `skew`.
+async fn serve_skewed(
+    scouter: Option<SocketAddr>,
+    nexon: Option<SocketAddr>,
+    timeout: Duration,
+    skew: Arc<Mutex<TimeDelta>>,
+) -> (Reads, Arc<CharacterData>) {
     let slot = Arc::new(std::sync::OnceLock::new());
     let file = Arc::new(SqliteCharData::open_temp().await);
     let scouter = scouter.map(|address| (address, timeout));
-    let module = maker(file, nexon, scouter, Arc::default(), Arc::clone(&slot));
+    let module = maker(file, nexon, scouter, skew, Arc::clone(&slot));
     let reads = Reads::with_character_data(Some(config()), module).await;
     (reads, slot.get().unwrap().clone())
 }
@@ -1036,6 +1047,7 @@ async fn an_assumed_critical_rate_is_labelled_in_the_result_and_readiness() {
             "rating": "6p Min Cut",
             "estimated_minutes": 3000.0 / 9.0,
             "fetched_at": "2026-09-29T04:00:00Z",
+            "stale": false,
             "critical_rate_assumed": true,
             "critical_rate_actual": 89.0,
         })
@@ -1176,7 +1188,7 @@ async fn readiness_shows_cached_scouter_readings_per_boss_and_never_looks_up() {
     let alice = ready_slot(&mixed, "1001");
     assert_eq!(
         alice["bosses"][0]["scouter"],
-        json!({"percentage": 9.0, "effective_percentage": 9.0, "rating": "6p Min Cut", "estimated_minutes": 3000.0 / 9.0, "fetched_at": "2026-09-29T04:00:00Z", "critical_rate_assumed": false, "critical_rate_actual": null})
+        json!({"percentage": 9.0, "effective_percentage": 9.0, "rating": "6p Min Cut", "estimated_minutes": 3000.0 / 9.0, "fetched_at": "2026-09-29T04:00:00Z", "stale": false, "critical_rate_assumed": false, "critical_rate_actual": null})
     );
     assert_eq!(alice["power"], Value::Null);
     let bob = ready_slot(&mixed, "1002");
@@ -1207,6 +1219,53 @@ async fn readiness_shows_cached_scouter_readings_per_boss_and_never_looks_up() {
     assert_eq!(
         status(&reads, "run_id=r-kalos").await["running"],
         Value::Null
+    );
+}
+
+/// A stored reading at least `estimate_days` old (the default 7 here) still
+/// shows, marked stale, in readiness and in the job that found it; a lookup
+/// then asks the scouter again, and that fresh answer is not stale.
+#[tokio::test]
+async fn readings_older_than_estimate_days_show_marked_stale() {
+    const KALOS: &str = "/api/admin/runs/r-kalos/readiness";
+    let (address, fake) = fake_scouter().await;
+    let skew: Arc<Mutex<TimeDelta>> = Arc::default();
+    let (reads, _) = serve_skewed(Some(address), None, CLIENT_TIMEOUT, Arc::clone(&skew)).await;
+    let ren = character(&reads, "1001", "RenShade").await;
+    let done = look_up(&reads, json!({"character_ids": [ren]})).await;
+    let job = format!("{ESTIMATES}/{}", done["id"].as_str().unwrap());
+    let reading = async || {
+        let ready = reads.read(KALOS, READY).await;
+        assert_eq!(ready["fresh_days"], 7);
+        let scouter = &ready_slot(&ready, "1001")["bosses"][0]["scouter"];
+        assert_eq!(scouter["percentage"], 9.0, "still shown");
+        let job = reads.read(&job, JOB).await;
+        assert_eq!(job["fresh_days"], 7);
+        (scouter["stale"].clone(), job["stale"].clone())
+    };
+    assert_eq!(fields(&done, &["stale", "fresh_days"]), json!([false, 7]));
+    assert_eq!(reading().await, (json!(false), json!(false)));
+
+    *skew.lock().unwrap() += TimeDelta::days(7) - TimeDelta::seconds(1);
+    assert_eq!(reading().await, (json!(false), json!(false)), "just short");
+    *skew.lock().unwrap() += TimeDelta::seconds(1);
+    assert_eq!(reading().await, (json!(true), json!(true)), "7 days old");
+    let status = status(&reads, &format!("character_ids={ren}")).await;
+    assert_eq!(
+        fields(&status["job"], &["stale", "fresh_days"]),
+        json!([true, 7])
+    );
+
+    // A stale result never answers a lookup: the scouter is asked again.
+    let lookups = fake.lookups().len();
+    let again = look_up(&reads, json!({"character_ids": [ren]})).await;
+    assert_eq!(fake.lookups().len(), lookups + 1);
+    assert_eq!(again["result"]["cache_hit"], false);
+    assert_eq!(fields(&again, &["stale", "fresh_days"]), json!([false, 7]));
+    let ready = reads.read(KALOS, READY).await;
+    assert_eq!(
+        ready_slot(&ready, "1001")["bosses"][0]["scouter"]["stale"],
+        false
     );
 }
 
@@ -1291,9 +1350,9 @@ async fn the_reminder_preview_shows_the_estimate_image_from_cached_readings() {
 }
 
 /// The live report: a card drawn while the party's lookup had found only
-/// its first members showed the rest as "no estimate". While a lookup of
-/// anyone in the party is queued or running the image is left off; once
-/// it finishes the image has every member.
+/// its first members showed the rest as "no estimate". While a lookup
+/// includes a party member with no stored result the image is left off;
+/// once it finishes the image has every member.
 #[tokio::test]
 async fn the_reminder_preview_has_no_estimate_image_while_its_party_is_looked_up() {
     const CARD: &str = "/api/admin/reminders/m-kalos-15/preview";

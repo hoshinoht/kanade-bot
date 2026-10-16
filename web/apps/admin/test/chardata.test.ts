@@ -20,12 +20,13 @@ import {
   lookupLine,
   lookupMiss,
   minutes,
+  olderThan,
   percent,
   queuedText,
   scouterChip,
   stripState,
 } from '@kanade/ui';
-import { createdLinkNote, healthNote, joinNames, levelChip, readinessLine, scouterAt } from '../src/chardata/format';
+import { createdLinkNote, healthNote, joinNames, levelChip, readinessLine, scouterAt, scouterStale } from '../src/chardata/format';
 
 // Wholly invented data, as the e2e seed has it.
 const row = (retired: boolean): CharacterRow => ({
@@ -70,6 +71,7 @@ const health = (over: Partial<CharacterDataHealth>): CharacterDataHealth => ({
   last_sweep: null,
   posts: { due: 0, unknown: 0, stuck: 0, overdue: 0, items: [] },
   scouter: { state: 'ok', url: 'http://scouter:8091', last_lookup_at: null, last_error: null, last_error_at: null },
+  estimate_days: 7,
   ...over,
 });
 
@@ -96,6 +98,7 @@ describe('run readiness', () => {
     rating: '2p Min Cut',
     estimated_minutes: 18.3,
     fetched_at: '2026-09-29T02:10:00Z',
+    stale: false,
     critical_rate_assumed: false,
     critical_rate_actual: null,
     ...over,
@@ -145,6 +148,17 @@ describe('run readiness', () => {
       values: 'Lv. 270',
       source: 'manual · not linked',
     });
+  });
+
+  it('marks the slot’s newest reading once it is at least estimate_days old', () => {
+    expect(scouterStale(slot({ bosses: [boss('ok', reading())] }))).toBe(false);
+    expect(scouterStale(slot({ bosses: [boss('ok', reading({ stale: true }))] }))).toBe(true);
+    // Only the reading the line names (the newest) counts.
+    const mixed = slot({ bosses: [boss('ok', reading({ fetched_at: '2026-09-20T02:10:00Z', stale: true })), boss('under', reading())] });
+    expect(scouterStale(mixed)).toBe(false);
+    expect(scouterStale(slot({}))).toBe(false);
+    expect(olderThan(7)).toBe(' · older than 7 days');
+    expect(olderThan(1)).toBe(' · older than 1 day');
   });
 });
 

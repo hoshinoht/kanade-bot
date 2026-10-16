@@ -1,6 +1,6 @@
 //! `character_data.json`: one character's link and Nexon data (module
-//! `character_data`) and the module's Config health block. The ocid never
-//! appears here.
+//! `character_data`) and the module's Config block (health plus its
+//! `estimate_days` setting). The ocid never appears here.
 
 use serde::Serialize;
 
@@ -204,6 +204,10 @@ pub struct CharacterDataHealth {
     pub last_sweep: Option<String>,
     pub posts: Option<PostHealth>,
     pub scouter: ScouterHealthBlock,
+    /// The saved `v5.estimate_days` (1 to 30, default 7): an estimate this
+    /// many days old is stale. The block's one writable field (PATCH
+    /// `character_data.estimate_days`).
+    pub estimate_days: u32,
 }
 
 /// The scouter (estimates): `off` without `KANADE_SCOUTER_URL`.
@@ -269,8 +273,12 @@ pub struct PostIssueItem {
     pub jump_url: Option<String>,
 }
 
-/// `guild_id` makes the items' jump links.
-pub fn health(health: &Health, guild_id: Option<&str>) -> CharacterDataHealth {
+/// `guild_id` makes the items' jump links; `settings` are the saved ones.
+pub fn health(
+    health: &Health,
+    guild_id: Option<&str>,
+    settings: crate::domain::settings::CharacterData,
+) -> CharacterDataHealth {
     CharacterDataHealth {
         nexon: health.nexon.as_str(),
         backoff_until: health.backoff_until.map(iso_instant),
@@ -327,5 +335,6 @@ pub fn health(health: &Health, guild_id: Option<&str>) -> CharacterDataHealth {
                 .as_ref()
                 .map(|(_, at)| iso_instant(*at)),
         },
+        estimate_days: settings.estimate_days,
     }
 }

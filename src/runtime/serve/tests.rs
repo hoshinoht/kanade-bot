@@ -679,6 +679,7 @@ async fn compose_for_tests_serves_on_the_injected_clock_and_a_fake_discord() {
             authorize_url: Some("http://127.0.0.1:9/oauth2/authorize".into()),
             model_limits: Some(Arc::new(|_| Vec::new())),
             nexon: None,
+            estimate_refresh: false,
         },
     )
     .await
@@ -802,6 +803,7 @@ async fn compose_for_tests_points_character_data_at_a_loopback_nexon() {
             authorize_url: None,
             model_limits: None,
             nexon: Some(address),
+            estimate_refresh: false,
         },
     )
     .await

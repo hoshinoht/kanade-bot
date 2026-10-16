@@ -3,18 +3,20 @@
 //! (`HLimbo`); the scouter's other cards are left out. Every job carries
 //! the binding labels "Clear-time estimate" and "For planning only, not
 //! eligibility"; a member whose critical rate was assumed says so
-//! (`critical_rate_assumed`).
+//! (`critical_rate_assumed`). A result fetched at least `estimate_days`
+//! ago is `stale` ("older than n days").
 
 use std::collections::BTreeMap;
 
+use chrono::{DateTime, Utc};
 use serde::Serialize;
 
 use super::{history::SettingsActor, iso_instant};
 use crate::{
     domain::catalog::BossTable,
     infrastructure::scouter::{
-        Card, Combined, Failure, FailureKind, Found, Job, Member, Subject, Target, catalog_token,
-        scouter_keys,
+        Card, Combined, Estimates, Failure, FailureKind, Found, Job, Member, Subject, Target,
+        catalog_token, scouter_keys,
     },
 };
 
@@ -62,9 +64,15 @@ pub struct EstimateJob {
     /// Party members not looked up (listed as missing, never 0%).
     pub missing: Vec<EstimateMissing>,
     pub progress: EstimateProgress,
-    /// When the result came from the scouter (a cached result keeps its
-    /// first time); `null` until the job is done.
+    /// When the result came from the scouter (answered from a stored
+    /// result: the oldest one it used); `null` until the job is done.
     pub fetched_at: Option<String>,
+    /// `fetched_at` is at least `fresh_days` ago: show the result (members
+    /// and party total) marked "older than n days". `false` until done,
+    /// and for a job answered by a fresh lookup.
+    pub stale: bool,
+    /// The saved `estimate_days`.
+    pub fresh_days: u32,
     /// The characters found so far (while queued or running too) and,
     /// once done, the party total; `null` with none found.
     pub result: Option<EstimateResult>,
@@ -118,7 +126,8 @@ pub struct EstimateProgress {
 #[derive(Serialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
 pub struct EstimateResult {
-    /// Answered from kanade's 24-hour memory without calling the scouter.
+    /// Answered from a stored result younger than `estimate_days` without
+    /// calling the scouter.
     pub cache_hit: bool,
     /// Done, no party member missing or failed, and every total complete.
     pub complete: bool,
@@ -393,14 +402,18 @@ fn party_whole(job: &Job) -> bool {
 }
 
 /// A finished run lookup's party totals per run boss, and when they came
-/// from the scouter; `None` until it is done, or when the total failed.
-pub fn run_totals(job: &Job, catalog: &BossTable) -> Option<(String, Vec<EstimateCombined>)> {
+/// from the scouter (the job's `fetched_at`); `None` until it is done, or
+/// when the total failed.
+pub fn run_totals(
+    job: &Job,
+    catalog: &BossTable,
+) -> Option<(DateTime<Utc>, Vec<EstimateCombined>)> {
     let Some(Ok(found)) = &job.outcome else {
         return None;
     };
     let combined = found.combined.as_ref()?;
     Some((
-        iso_instant(found.fetched_at),
+        found.fetched_at,
         totals(job, combined, party_whole(job), catalog),
     ))
 }
@@ -455,7 +468,9 @@ fn count(value: usize) -> u32 {
     u32::try_from(value).unwrap_or(u32::MAX)
 }
 
-pub fn job(job: &Job, catalog: &BossTable) -> EstimateJob {
+/// `job` as the API shows it, `stale` against `estimates`' saved
+/// `estimate_days`.
+pub fn job(job: &Job, catalog: &BossTable, estimates: &Estimates) -> EstimateJob {
     let (run_id, character_ids) = match &job.target {
         Target::Run { run_id, .. } => (Some(run_id.clone()), Vec::new()),
         Target::Characters(ids) => (None, ids.clone()),
@@ -463,7 +478,7 @@ pub fn job(job: &Job, catalog: &BossTable) -> EstimateJob {
     let (fetched_at, found, failure) = match &job.outcome {
         None => (None, None, None),
         Some(Ok(found)) => (
-            Some(iso_instant(found.fetched_at)),
+            Some(found.fetched_at),
             Some(found),
             found.total_failure.as_ref(),
         ),
@@ -517,7 +532,9 @@ pub fn job(job: &Job, catalog: &BossTable) -> EstimateJob {
                 .and_then(|at| job.subjects.get(at))
                 .map(|subject| subject.character_id.clone()),
         },
-        fetched_at,
+        fetched_at: fetched_at.map(iso_instant),
+        stale: fetched_at.is_some_and(|at| estimates.stale(at)),
+        fresh_days: estimates.fresh_days(),
         result: result(job, found, catalog),
         error: failure.map(|failure| error(job, failure)),
         label: LABEL,

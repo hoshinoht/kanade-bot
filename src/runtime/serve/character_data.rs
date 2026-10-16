@@ -1,19 +1,26 @@
 //! Module `character_data` in serve: read the optional Nexon key (a set
 //! but unreadable file refuses startup), open the separate character-data
 //! file (its directory created 0700, owned under the main store's lock
-//! directory), attach the service to the admin API and run the joined
-//! `CharacterData` task. Off, none of this runs and no file is created.
+//! directory), load the scouter's stored estimates (with a scouter URL; they
+//! are written through to the file from then on and answer lookups for the
+//! live `estimate_days`), attach the service to the admin API and run the
+//! joined `CharacterData` task. Off, none of this runs and no file is
+//! created.
 //!
 //! The task sweeps at startup (after that first sweep, admin requests left
 //! pending become active and fetch, and roster rows take the class, level
 //! and IGN case their fresh NEXON data holds) and then every
 //! [`SWEEP_EVERY`] (and whenever an unlink wakes it), runs the daily batch
 //! at 04:00 Singapore time and retries characters whose retry time has
-//! come.
+//! come. With a scouter URL it also runs the background estimate refresh
+//! ([`REFRESH`]: first [`Refresh::first`] after start, so a crash loop
+//! never hammers the sidecar, then every [`Refresh::every`]), which only
+//! queues lookups of upcoming parties ([`upcoming`]) and never waits for
+//! them.
 //! Periods run on tokio's monotonic clock; the batch time and every cutoff
 //! come from the injected wall clock, so a wall-clock step never stops the
 //! sweeper. Stopping cancels a run in progress and joins the task before
-//! either store closes.
+//! either store closes; waiting background lookups are dropped.
 
 use std::{
     path::Path,
@@ -24,6 +31,7 @@ use std::{
 use chrono::{DateTime, Utc};
 use tokio::{sync::watch, task::JoinHandle};
 
+use self::upcoming::StoreParties;
 use super::{api::Composition, store::create_private_dir};
 use crate::{
     api::auth::Clock,
@@ -31,7 +39,7 @@ use crate::{
     infrastructure::{
         character_data::{CharacterData, RosterSide, Timing},
         nexon::{ApiKey, NexonClient},
-        scouter::{Estimates, ScouterClient},
+        scouter::{Estimates, ScouterClient, UpcomingParties},
         store::{SqliteCharData, SqliteStore, SqliteStoreConfig, SqliteStoreError},
     },
     runtime::{
@@ -49,6 +57,23 @@ pub(super) const SWEEP_EVERY: Duration = Duration::from_secs(60 * 60);
 /// (a store error) never spins.
 const RETRY_FLOOR: Duration = Duration::from_secs(60);
 
+/// When the background estimate refresh passes run.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Refresh {
+    /// After the task starts.
+    pub first: Duration,
+    /// Between passes.
+    pub every: Duration,
+}
+
+/// Serve's: 10 minutes after start, then hourly.
+pub const REFRESH: Refresh = Refresh {
+    first: Duration::from_secs(10 * 60),
+    every: Duration::from_secs(60 * 60),
+};
+
+mod upcoming;
+
 /// The running module: the service, its file and its task.
 pub struct Module {
     file: Arc<SqliteCharData>,
@@ -62,17 +87,27 @@ pub(super) async fn start(
     composition: &mut Composition,
     clock: Clock,
 ) -> Result<Option<Module>, Error> {
-    start_with(config, store, composition, clock, NexonClient::new).await
+    start_with(
+        config,
+        store,
+        composition,
+        clock,
+        NexonClient::new,
+        Some(REFRESH),
+    )
+    .await
 }
 
 /// [`start`] building the NEXON client with `nexon` (`None`: no TLS
-/// provider); tests point it at a loopback fake.
+/// provider) and running the estimate refresh on `refresh` (`None`: off);
+/// tests point NEXON at a loopback fake and turn the refresh off.
 pub(super) async fn start_with(
     config: &ServeConfig,
     store: &Arc<SqliteStore>,
     composition: &mut Composition,
     clock: Clock,
     nexon: impl FnOnce(ApiKey) -> Option<NexonClient>,
+    refresh: Option<Refresh>,
 ) -> Result<Option<Module>, Error> {
     let Some(settings) = &config.character_data else {
         return Ok(None);
@@ -104,7 +139,35 @@ pub(super) async fn start_with(
         clock,
         Timing::default(),
     );
+    // The background refresh's reads, while there are estimates to refresh.
+    let mut parties = None;
     if let Some(estimates) = scouter {
+        // The saved `estimate_days` and reset: the startup values, then each
+        // Config save.
+        let saved = super::context::changes_or(
+            composition
+                .admin
+                .state
+                .config
+                .as_ref()
+                .map(|desk| desk.subscribe()),
+            &composition.settings,
+        );
+        parties = refresh.map(|refresh| {
+            let port: Arc<dyn UpcomingParties> = Arc::new(StoreParties::new(
+                Arc::clone(store),
+                Arc::clone(&composition.admin.state.catalog),
+                saved.clone(),
+                config.runtime.timezone,
+            ));
+            (port, refresh)
+        });
+        let estimates = estimates
+            .with_store(Arc::clone(&file) as Arc<dyn CharDataStore>)
+            .with_fresh_days(Arc::new(move || {
+                saved.borrow().settings.character_data.estimate_days
+            }));
+        estimates.load().await;
         service = service.with_estimates(estimates);
     }
     if let Some(url) = privacy_url(config) {
@@ -127,7 +190,7 @@ pub(super) async fn start_with(
     );
     Ok(Some(Module {
         file,
-        task: Task::start(service, SWEEP_EVERY),
+        task: Task::start(service, SWEEP_EVERY, parties),
     }))
 }
 
@@ -209,7 +272,7 @@ async fn close(mut file: Arc<SqliteCharData>, wait: Duration) {
 }
 
 /// The joined `CharacterData` task; stopping it also cancels and joins a
-/// running estimate lookup.
+/// running estimate lookup and drops the waiting background ones.
 pub(super) struct Task {
     stop: watch::Sender<bool>,
     task: JoinHandle<()>,
@@ -222,11 +285,20 @@ fn until(now: DateTime<Utc>, at: DateTime<Utc>) -> Duration {
 }
 
 impl Task {
-    pub(super) fn start(service: Arc<CharacterData>, sweep_every: Duration) -> Self {
+    /// `parties`: the estimate refresh's reads and when its passes run
+    /// (`None`: no refresh).
+    pub(super) fn start(
+        service: Arc<CharacterData>,
+        sweep_every: Duration,
+        parties: Option<(Arc<dyn UpcomingParties>, Refresh)>,
+    ) -> Self {
         let (stop, mut stopped) = watch::channel(false);
         let joined = Arc::clone(&service);
         let task = tokio::spawn(async move {
             let mut next_sweep = tokio::time::Instant::now();
+            let mut next_refresh = parties
+                .as_ref()
+                .map(|(_, refresh)| tokio::time::Instant::now() + refresh.first);
             // After the startup sweep (which drops lapsed requests), once:
             // admin requests left pending become active and fetch, then
             // roster rows take what fresh snapshots already hold.
@@ -278,6 +350,15 @@ impl Task {
                         }
                         () = tokio::time::sleep(strip_in.unwrap_or(Duration::MAX)), if strip_in.is_some() => {
                             service.strip_posts().await;
+                        }
+                        // Queues lookups only: the worker does them.
+                        () = tokio::time::sleep_until(next_refresh.unwrap_or(next_sweep)), if next_refresh.is_some() => {
+                            if let Some((port, refresh)) = &parties {
+                                next_refresh = Some(tokio::time::Instant::now() + refresh.every);
+                                if let Some(estimates) = service.estimates() {
+                                    estimates.refresh(port.as_ref()).await;
+                                }
+                            }
                         }
                     }
                     false

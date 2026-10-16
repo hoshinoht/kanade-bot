@@ -1,6 +1,6 @@
 import { mkdirSync } from 'node:fs';
 import type { Locator, Page } from '@playwright/test';
-import { ADMIN, PUBLIC, csrf, expect, resetWeek, setCharacterData, setEstimates, setModules, settle, test, useLook } from './support';
+import { ADMIN, PUBLIC, ageEstimate, csrf, expect, resetWeek, setCharacterData, setEstimates, setModules, settle, test, useLook } from './support';
 
 // Character data (module `character_data`; boards in docs/research/2026-10-12-chardata-mockups)
 // over the e2e server's seed: MikaBish (ch-s3) linked by today's 04:01 batch, MikaHero
@@ -160,13 +160,15 @@ test('chardata estimate row: labelled, runs as a job, then shows catalog bosses'
   const row = strip.locator('.estimate');
   await expect(row.locator('.estimate__label')).toHaveText('Clear-time estimate');
   await expect(row.locator('.estimate__head + .chardata__sub')).toContainText('For planning only, not eligibility.');
-  await expect(row).toContainText('No lookup in the last 24 h.');
+  await expect(row).toContainText('No lookup yet.');
   await row.getByRole('button', { name: 'Look up' }).click();
   const table = row.getByRole('table', { name: 'Clear-time estimate for MikaBish' });
   await expect(table).toBeVisible();
   await expect(table.getByRole('row')).toHaveCount(5);
   await expect(table.getByRole('row').nth(1)).toContainText('Limbo');
-  await expect(row).toContainText('(preset 00010) · kept 24 h in memory only');
+  await expect(row.locator('.chardata__foot')).toContainText('(preset 00010) · bosses outside the catalog are left out');
+  await expect(row).not.toContainText('in memory');
+  await expect(row).not.toContainText('older than');
   await expect(row.getByRole('button', { name: 'Look up again' })).toBeVisible();
 });
 
@@ -176,8 +178,8 @@ test('chardata estimate row: running, queued behind it, busy, 422, 503 and faile
   await row.getByRole('button', { name: 'Look up' }).click();
   await expect(row.locator('.estimate__progress')).toContainText('Looking up MikaBish…');
   await expect(row.getByRole('button', { name: 'Looking up…' })).toHaveAttribute('aria-disabled', 'true');
-  // Another character's lookup is never refused: it waits its turn, with its place. (Results live in
-  // the server's memory only, so after a reset MikaNL has none and offers Look up, not Look up again.)
+  // Another character's lookup is never refused: it waits its turn, with its place. (A reset starts
+  // with no stored results, so MikaNL has none and offers Look up, not Look up again.)
   row = stripOf(await openEdit(page, 'MikaNL')).locator('.estimate');
   await row.getByRole('button', { name: 'Look up', exact: true }).click();
   await expect(row.locator('.estimate__progress')).toContainText('Queued · 1 ahead');
@@ -239,7 +241,8 @@ test('chardata estimate panel: party lookup with totals, missing members and the
   await expect(panel.locator('.estimate__combined')).toContainText('not complete');
   await expect(panel.locator('.estimate__missing')).toHaveText([/Ren \(2\) missing · no characters on the roster/]);
   await expect(panel.locator('p.chardata__foot')).toContainText('Ren (2) has no character (missing, never 0%).');
-  await expect(panel.locator('.estimate__head + .chardata__sub')).toContainText('kept 24 h in memory');
+  await expect(panel.locator('.estimate__head + .chardata__sub')).toContainText(/Looked up \d+ \w{3} \d{2}:\d{2}\.$/);
+  await expect(panel.locator('.estimate__head + .chardata__sub')).not.toContainText(/in memory|older than/);
   // Who carries: between the totals and the table, one 100% bar per boss in party order, each part
   // numbered as its table row; the member with no character is counted, never a 0% part.
   const chart = panel.locator('figure.share');
@@ -260,6 +263,29 @@ test('chardata estimate panel: party lookup with totals, missing members and the
   // The table's rows carry the same numbers; the missing row a hollow swatch.
   await expect(members.locator('tbody tr:not(.estimate__missing) .share__sw')).toHaveText(Array.from({ length: rows }, (_, i) => String(i + 1)));
   await expect(members.locator('.estimate__missing .share__sw--none')).toHaveCount(1);
+});
+
+test('chardata estimates: a result at least estimate_days old still shows, marked "older than n days"', async ({ page }) => {
+  // The party looked up 8 days before the pinned Tue 29 Sep 12:00 (guild time): past the default 7.
+  await ageEstimate({ run: RUN }, 8);
+  const sheet = await carling(page);
+  const panel = sheet.locator('.estimate-panel');
+  await expect(panel.locator('.estimate__combined')).toContainText('Karling');
+  await expect(panel.locator('.estimate__head + .chardata__sub')).toContainText(/Looked up 21 Sep \d{2}:\d{2} · older than 7 days\.$/);
+  // Readiness names the same reading's time, marked the same way.
+  const yuzu = slotOf(sheet, 'Yuzu').getByRole('group', { name: 'Readiness of YuzuPala' });
+  await expect(yuzu.locator('.ready__scouter-at')).toHaveText(/^Estimate · 21 Sep \d{2}:\d{2} · older than 7 days$/);
+  await expect(yuzu.locator('.ready__scouter').first()).toHaveText(/^Estimate \d+% · ~\d+ min/);
+
+  // The roster strip: 3 days old is fresh at 7, stale once Config lowers it to 3.
+  await ageEstimate({ character: 'ch-s3' }, 3);
+  let row = stripOf(await openEdit(page, 'MikaBish')).locator('.estimate');
+  await expect(row.locator('.chardata__foot')).toContainText(/^Looked up 26 Sep \d{2}:\d{2}\s+\(preset 00010\) · bosses outside/);
+  await expect(row).not.toContainText('older than');
+  const lowered = await page.request.patch(`${ADMIN}/api/admin/config`, { headers: await csrf(page.request), data: { character_data: { estimate_days: 3 } } });
+  expect(lowered.status(), await lowered.text()).toBe(200);
+  row = stripOf(await openEdit(page, 'MikaBish')).locator('.estimate');
+  await expect(row.locator('.chardata__foot')).toContainText('(preset 00010) · older than 3 days · bosses outside the catalog are left out');
 });
 
 test('chardata estimate panel: queued behind another lookup, a member that fails, and off', async ({ page }) => {
@@ -374,6 +400,10 @@ test('chardata health: ok, problems, no key and refused; module off hides the se
   // The configured scouter URL: the e2e server's fake scouter.
   await expect(panel.locator('[aria-labelledby="chardata-scouter-h"]')).toContainText(/http:\/\/127\.0\.0\.1:\d+/);
   await expect(page.getByRole('tab', { name: /^Character data/ })).toContainText('ok');
+  // Estimates are on (a scouter URL): the section has its one setting and a save bar.
+  await expect(panel.locator('.settings__lead')).toHaveText('Health is informational: it never changes /healthz.');
+  await expect(panel.getByRole('form', { name: 'Estimates' })).toBeVisible();
+  await expect(page.locator('.savebar')).toContainText('All changes saved');
 
   await health(page, 'alert');
   await page.reload();
@@ -396,11 +426,71 @@ test('chardata health: ok, problems, no key and refused; module off hides the se
   await expect(panel.locator('[aria-labelledby="chardata-nexon-h"]')).toContainText('KANADE_NEXON_API_KEY_FILE');
   await expect(panel.locator('[aria-labelledby="chardata-scouter-h"]')).toContainText('KANADE_SCOUTER_URL is unset');
   await expect(panel.locator('[aria-labelledby="chardata-env-h"]')).toContainText('unset');
+  // Estimates off: no setting, no save bar, the read-only lead.
+  await expect(panel.getByRole('form', { name: 'Estimates' })).toHaveCount(0);
+  await expect(page.locator('.savebar')).toHaveCount(0);
+  await expect(panel.locator('.settings__lead')).toHaveText('Read-only and informational: it never changes /healthz.');
 
   await setModules({ character_data: false });
   await page.reload();
   await expect(page.getByRole('tabpanel', { name: 'Pings' })).toBeVisible();
   await expect(page.getByRole('tab', { name: /^Character data/ })).toHaveCount(0);
+});
+
+test('chardata config: Refresh estimates every n days saves with the bar, refuses out of range, and lands in History', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto(`${ADMIN}/config?section=character-data&sw=off`);
+  const panel = page.getByRole('tabpanel', { name: /^Character data/ });
+  const card = panel.getByRole('form', { name: 'Estimates' });
+  const field = card.getByRole('spinbutton', { name: 'Refresh estimates every' });
+  const bar = page.locator('.savebar');
+  await expect(field).toHaveValue('7');
+  await expect(card).toContainText('1 to 30 · default 7');
+  await expect(card).toContainText('Estimates older than this show “older than 7 days”. Party members of runs in the next 7 days are refreshed automatically.');
+  await expect(bar).toContainText('All changes saved');
+  await expect(bar.getByRole('button', { name: 'Save character data' })).toBeDisabled();
+
+  // Edited: the ring, "was 7", the helper follows, and the bar names the change; Discard puts it back.
+  await field.fill('3');
+  await expect(field).toHaveClass(/settings__changed/);
+  await expect(card).toContainText('was 7 · 1 to 30');
+  await expect(card).toContainText('“older than 3 days”');
+  await expect(bar).toContainText('1 unsaved change · Estimate refresh 7 → 3 days');
+  await bar.getByRole('button', { name: 'Discard' }).click();
+  await expect(field).toHaveValue('7');
+  await expect(bar).toContainText('All changes saved');
+
+  // Out of range: the server refuses it (422) inline, and the typed value stays.
+  await field.fill('31');
+  const refused = page.waitForResponse((r) => r.url().endsWith('/api/admin/config') && r.request().method() === 'PATCH');
+  await bar.getByRole('button', { name: 'Save character data' }).click();
+  expect((await refused).status()).toBe(422);
+  await expect(card.getByRole('alert')).toContainText('1 to 30 days');
+  await expect(field).toHaveAttribute('aria-invalid', 'true');
+  await expect(field).toHaveValue('31');
+
+  await field.fill('3');
+  const saved = page.waitForRequest((r) => r.url().endsWith('/api/admin/config') && r.method() === 'PATCH');
+  await bar.getByRole('button', { name: 'Save character data' }).click();
+  expect((await saved).postDataJSON()).toEqual({ character_data: { estimate_days: 3 } });
+  await expect(page.getByText('Estimate refresh saved.')).toBeVisible();
+  await expect(bar).toContainText('All changes saved');
+  await expect(field).toHaveValue('3');
+  await expect(card.getByRole('alert')).toHaveCount(0);
+  await expect(card).toContainText('1 to 30 · default 7');
+
+  // One History row, view-only, with its before and after.
+  await page.goto(`${ADMIN}/history?sw=off`);
+  const row = page.locator('.history-row--config').filter({ hasText: 'Config · Character data' });
+  await expect(row).toHaveCount(1);
+  await expect(row).toContainText('Config · Character data — estimate_days');
+  await row.click();
+  const pane = page.getByRole('complementary', { name: 'Change details' });
+  const changed = pane.locator('.history-diff__field');
+  await expect(changed.locator('dt')).toHaveText('estimate_days');
+  await expect(changed.locator('.history-diff__was')).toHaveText(/^was\s*7$/);
+  await expect(changed.locator('.history-diff__now')).toHaveText(/^now\s*3$/);
+  await expect(pane.getByRole('link', { name: 'Open Character data in Config' })).toHaveAttribute('href', '/config?section=character-data');
 });
 
 const slotOf = (sheet: Locator, name: string) =>

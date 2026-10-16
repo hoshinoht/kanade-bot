@@ -2,14 +2,15 @@
   Under Party · characters' note (boards M_RunShare, M_RunShareMulti,
   M_PhoneRunShare in docs/research/2026-10-15-estimate-share-chart): the run's
   party total per boss from its newest finished lookup (minutes, %,
-  technically possible; the admin Estimate panel's columns), then Who carries
-  over the party's cached readings with its key, since the portal has no
-  members table. Parts are in party order; only a reading's effective %
+  technically possible; the admin Estimate panel's columns; "Run total · older
+  than n days" once it is at least the saved `estimate_days` old), then Who
+  carries over the party's cached readings with its key, since the portal has
+  no members table. Parts are in party order; only a reading's effective %
   counts, never the party card's figure.
 -->
 <script lang="ts">
   import type { MemberRun, RunPartyCharacters } from '@kanade/api-types';
-  import { DIFFICULTY_WORDS, Icon, minutes, percent, ShareChart, StatusChip, type ShareMember } from '@kanade/ui';
+  import { DIFFICULTY_WORDS, Icon, minutes, olderThan, percent, ShareChart, StatusChip, type ShareMember } from '@kanade/ui';
   import '@kanade/ui/styles/screens/character-data.scss';
 
   let { party, run }: { party: RunPartyCharacters; run: MemberRun } = $props();
@@ -56,6 +57,7 @@
       </div>
     {/each}
   </div>
+  {#if party.totals?.stale && party.fresh_days !== null}<p class="chardata__sub">Run total{olderThan(party.fresh_days)}</p>{/if}
 {/if}
 {#if party.estimates && members.some((m) => m.n !== null)}
   <ShareChart {bosses} {members} keys {you} fids={{ missing: 'estimate-share-missing', keys: 'estimate-share-keys' }} data-fid="estimate-share" />

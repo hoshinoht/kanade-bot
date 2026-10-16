@@ -5,18 +5,33 @@
   see this"), then the scouter's cached estimate per boss of the run, shown
   and never judged ("HCarling · Estimate 31% · ~96 min"; an assumed
   critical rate as "crit assumed", its full label in the title and the
-  accessible name). No character, or no lookup in 24 h, says so; never 0%.
+  accessible name), "Estimate · older than n days" under readings at least
+  the saved `estimate_days` old. No character, or no estimate yet, says so;
+  never 0%.
 -->
 <script lang="ts">
   import type { PartyCharacterSlot } from '@kanade/api-types';
-  import { asOfDate, scouterChip } from '@kanade/ui';
+  import { asOfDate, olderThan, scouterChip } from '@kanade/ui';
 
-  let { slot, tagged = false, boxed = false }: { slot: PartyCharacterSlot; tagged?: boolean; /** The phone slot: the chips on their own row box. */ boxed?: boolean } = $props();
+  let {
+    slot,
+    freshDays,
+    tagged = false,
+    boxed = false,
+  }: {
+    slot: PartyCharacterSlot;
+    /** `RunPartyCharacters.fresh_days`: the "older than n days" marker's n. */
+    freshDays: number | null;
+    tagged?: boolean;
+    /** The phone slot: the chips on their own row box. */
+    boxed?: boolean;
+  } = $props();
 
   const character = $derived(slot.character);
   const source = $derived(
     character?.level_source === 'nexon' ? `NEXON${character.as_of ? ` · as of ${asOfDate(character.as_of).replace(/ \d{4}$/, '')}` : ''} · only you see this` : 'roster',
   );
+  const older = $derived(freshDays !== null && slot.scouter?.some((reading) => reading.stale) ? olderThan(freshDays) : '');
 </script>
 
 {#snippet chips()}
@@ -31,6 +46,7 @@
       </li>
     {/each}
   </ul>
+  {#if older}<span class="party-char__none">Estimate{older}</span>{/if}
 {/snippet}
 
 {#if !character}
@@ -44,6 +60,6 @@
   {#if slot.scouter?.length}
     {#if boxed}<span class="party-char">{@render chips()}</span>{:else}{@render chips()}{/if}
   {:else if slot.scouter}
-    <span class="party-char__none">No estimate in the last 24 h</span>
+    <span class="party-char__none">No estimate yet</span>
   {/if}
 {/if}

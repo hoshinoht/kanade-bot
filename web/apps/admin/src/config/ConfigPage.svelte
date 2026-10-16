@@ -80,7 +80,7 @@
       key: 'character-data',
       label: 'Character data',
       group: 'Server',
-      terms: 'nexon open api key budget batch links scouter estimates sweeper shared cards health',
+      terms: 'nexon open api key budget batch links scouter estimates refresh days sweeper shared cards health',
       module: 'character_data',
     },
     { key: 'theme', label: 'Theme', group: 'Server', terms: 'colourway colorway mode system light dark' },
@@ -485,7 +485,7 @@
             {:else if config.data}
               {@const c = config.data}
               {#if item.key === 'character-data'}
-                {#if c.character_data}<CharacterDataSection health={c.character_data} {timeZone} />{/if}
+                {#if c.character_data}<CharacterDataSection health={c.character_data} {timeZone} {save} />{/if}
               {:else if item.key === 'pings'}
                 <PingsSection pings={c.pings} {save} />
               {:else if item.key === 'run-lengths'}

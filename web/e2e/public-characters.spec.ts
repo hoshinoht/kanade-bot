@@ -1,7 +1,7 @@
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Locator, Page } from '@playwright/test';
-import { ADMIN, PUBLIC, csrf, expect, setCharacterData, setEstimates, setMemberCharacters, setModules, settle, signInPublic, test } from './support';
+import { ADMIN, PUBLIC, ageEstimate, csrf, expect, setCharacterData, setEstimates, setMemberCharacters, setModules, settle, signInPublic, test } from './support';
 
 // The member's own characters on the portal (module `roster`; boards in
 // docs/research/2026-10-13-member-characters) over the seed's member Asahi:
@@ -340,6 +340,9 @@ test('run Party · characters: others show roster level and estimates, only you 
   await expect(others.filter({ hasText: 'roster' }).first()).toBeVisible();
   await expect(section.getByText('Clear-time estimate')).toBeVisible();
   await expect(section.getByText(ATTRIBUTION)).toBeVisible();
+  // Estimates on, nothing looked up yet: each character says so (never 0%).
+  await expect(section.locator('.party-char__none').filter({ hasText: 'No estimate yet' }).first()).toBeVisible();
+  await expect(section).not.toContainText('in the last 24 h');
   // The party read itself never carries another member's NEXON data.
   const party = (await (await page.request.get(`${PUBLIC}/api/public/runs/r-carling/characters`)).json()) as { slots: { you: boolean; character: { level_source: string } | null }[] };
   expect(party.slots.filter((s) => !s.you && s.character?.level_source === 'nexon')).toEqual([]);
@@ -393,6 +396,37 @@ test('run Party · characters: the run total, then Who carries with its key, the
   await expect(keys.filter({ hasText: 'You' })).toHaveCount(1);
   // Ren (2) brings no character: counted, never a 0% part (the portal names members as the party list does).
   await expect(chart.locator('.share__note').last()).toHaveText('1 with no estimate: Ren (not in the total, never 0%)');
+});
+
+test('run Party · characters: a lookup at least estimate_days old still shows, marked "older than n days"', async ({ page }) => {
+  await signInPublic(page);
+  await roster(page);
+  // The party looked up 8 days before the pinned clock: past the default 7.
+  await ageEstimate({ run: 'r-carling' }, 8);
+  await page.goto(`${PUBLIC}/?run=r-carling&sw=off`);
+  const section = page.getByRole('region', { name: 'Party · characters' });
+  await expect(section.locator('.estimate__combined')).toContainText('Karling');
+  await expect(section.locator('.estimate__combined + .chardata__sub')).toHaveText('Run total · older than 7 days');
+  const marked = section.locator('.party-char').filter({ has: page.locator('.party-char__none', { hasText: /^Estimate · older than 7 days$/ }) });
+  await expect(marked.first()).toBeVisible();
+  // Every member with a reading is marked; the readings and the chart still show.
+  expect(await marked.count()).toBe(await section.locator('.party-char').filter({ has: page.locator('.ready__scouter') }).count());
+  await expect(section.locator('figure.share')).toBeVisible();
+
+  // Fresh again after a new lookup: no marker.
+  await ageEstimate({ run: 'r-carling' }, 1);
+  await page.reload();
+  await expect(section.locator('.estimate__combined')).toContainText('Karling');
+  await expect(section).not.toContainText('older than');
+});
+
+test('my scouter lookup: a result at least estimate_days old reads "older than n days"', async ({ page }) => {
+  await openTab(page);
+  await ageEstimate({ character: 'ch-b3' }, 8);
+  const row = (await openEdit(page, 'AsahiPath')).locator('.estimate');
+  await expect(row.getByRole('table')).toBeVisible();
+  await expect(row.locator('.chardata__foot')).toContainText(/^Looked up 21 Sep \d{2}:\d{2} by .+ · older than 7 days · bosses outside the catalog are left out$/);
+  await expect(row).not.toContainText('in memory');
 });
 
 test('other members’ characters, lookups and runs are the generic 404', async ({ page }) => {

@@ -403,9 +403,19 @@ docker compose up -d --force-recreate bot
 Lookups wait in one line (at most 16) and run one at a time; each can take
 a few minutes (the bot waits up to 190 s per sidecar call, as long as the
 sidecar's own queue and lookup can take). This needs the scouter build with
-its request queue and the critical-rate assumption. Results stay in the bot's
-memory for 24 hours and are lost on restart; they are never written to the
-store, backups or logs.
+its request queue and the critical-rate assumption. Results are kept in the
+character-data file for up to 30 days (never in the main store, backups or
+logs) and survive restarts; one older than Config › Character data's
+"Refresh estimates every n days" still shows, marked "older than n days".
+From 10 minutes after start, then hourly, the bot refreshes the party
+members of live runs in the next 7 days whose estimate is missing or that
+old: background lookups wait behind every admin or member lookup, at least
+30 s apart, at most 60 a day, a failed party is left for a day, and none run
+while the sidecar is unreachable or asks for a verification. Each pass logs
+`estimate_refresh_pass`.
+
+Kanade does not need the scouter: without `KANADE_SCOUTER_URL` every
+estimate feature is off and the rest runs unchanged.
 
 ## Operations
 
@@ -604,6 +614,24 @@ the matching pre-deploy backup: with the bot stopped, restore the tarball
 ([Restore](#restore)) when the newer image migrated the store, then
 `docker tag kanade-v5:rollback-<sha> kanade-v5:local` and
 `docker compose up -d --no-build`.
+
+An image older than 1.0.0-beta.8 refuses a character-data file the newer one
+migrated (character data schema refused). With the bot stopped, drop the
+stored estimates before starting the older image (this deletes only cached
+estimates; links and NEXON data stay):
+
+```sh
+docker run --rm -v kanade_v5_chardata:/chardata alpine sh -c '
+  apk add -q sqlite su-exec &&
+  su-exec 65532:65532 sqlite3 /chardata/db/chardata.sqlite "
+    PRAGMA secure_delete = ON;
+    BEGIN;
+    DROP TABLE estimate_party_members;
+    DROP TABLE estimate_parties;
+    DROP TABLE estimate_members;
+    DELETE FROM chardata_migrations WHERE version = 3;
+    COMMIT;"'
+```
 
 An image older than 1.0.0-beta.7 also needs that release's `compose.yaml`,
 which holds the whole host topology, and refuses to connect the gateway

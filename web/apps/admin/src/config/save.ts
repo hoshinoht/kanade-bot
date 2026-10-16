@@ -26,6 +26,8 @@ export interface ConfigPatch {
   run_lengths?: Partial<ConfigView['run_lengths']>;
   /** Lists replace whole; `builtin_words` is read-only (422). */
   profanity?: Partial<Omit<ConfigView['profanity'], 'builtin_words'>>;
+  /** Module `character_data`: its one writable field, 1 to 30 (422 outside). */
+  character_data?: { estimate_days?: number | null };
 }
 
 /** The opposite change, offered as Undo on the success toast (switches and visibility). */

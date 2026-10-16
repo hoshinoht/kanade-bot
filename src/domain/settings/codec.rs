@@ -9,10 +9,10 @@ use chrono::{NaiveTime, Timelike, Weekday};
 use super::SettingsError;
 use super::keys;
 use super::model::{
-    Chatbot, ContextSettings, MAX_CONTEXT_TOKENS, MAX_ROLE_PROFILE_ASSIGNMENTS, MessageStyle,
-    Models, Notifications, OVERRIDE_RUN_MINUTES, Persona, Pings, Posting, Profanity, RUN_MINUTES,
-    Reasoning, RoleModel, RoleProfileAssignment, RunLengths, RuntimeSettings, Schedule,
-    SelfService, SelfServiceMode, Watching,
+    CharacterData, Chatbot, ContextSettings, ESTIMATE_DAYS, MAX_CONTEXT_TOKENS,
+    MAX_ROLE_PROFILE_ASSIGNMENTS, MessageStyle, Models, Notifications, OVERRIDE_RUN_MINUTES,
+    Persona, Pings, Posting, Profanity, RUN_MINUTES, Reasoning, RoleModel, RoleProfileAssignment,
+    RunLengths, RuntimeSettings, Schedule, SelfService, SelfServiceMode, Watching,
 };
 use crate::domain::attendance::AttendanceMode;
 use crate::domain::weeks::{parse_hhmm, parse_weekday};
@@ -30,6 +30,7 @@ pub enum Section {
     Models(Models),
     RunLengths(RunLengths),
     Profanity(Profanity),
+    CharacterData(CharacterData),
     Schedule(Schedule),
     Posting(Posting),
     /// One id list written alone: `Watching`/`Chatbot` saves never write their
@@ -241,6 +242,25 @@ fn count(key: &'static str, value: &str, floor: u32) -> Result<u32, SettingsErro
     }
 }
 
+/// Whole days in [`ESTIMATE_DAYS`].
+fn estimate_days(key: &'static str, value: &str) -> Result<u32, SettingsError> {
+    value
+        .parse::<u32>()
+        .ok()
+        .filter(|days| ESTIMATE_DAYS.contains(days))
+        .ok_or_else(|| {
+            malformed(
+                key,
+                value,
+                format!(
+                    "expected whole days from {} to {}",
+                    ESTIMATE_DAYS.start(),
+                    ESTIMATE_DAYS.end()
+                ),
+            )
+        })
+}
+
 /// v4 stored windows as float text (`300.0`); a fractional one rounds up, so
 /// a limiter window never shortens.
 fn window(key: &'static str, value: &str) -> Result<u32, SettingsError> {
@@ -411,6 +431,7 @@ fn apply(out: &mut RuntimeSettings, key: &'static str, value: &str) -> Result<()
         keys::MODEL_CONTEXT => out.models.context = context(key, value)?,
         keys::RUN_LENGTHS => out.run_lengths = run_lengths(key, value)?,
         keys::PROFANITY => out.profanity = profanity(key, value)?,
+        keys::ESTIMATE_DAYS => out.character_data.estimate_days = estimate_days(key, value)?,
         keys::RESET_WEEKDAY => {
             out.schedule.reset_weekday =
                 parse_weekday(value).map_err(|error| malformed(key, value, error.to_string()))?;
@@ -538,6 +559,10 @@ pub(super) fn encode(section: &Section) -> Rows {
             keys::PROFANITY,
             serde_json::to_string(profanity).expect("profanity settings serialize infallibly"),
         )],
+        Section::CharacterData(character_data) => vec![(
+            keys::ESTIMATE_DAYS,
+            character_data.estimate_days.to_string(),
+        )],
         Section::Schedule(schedule) => vec![
             (keys::RESET_WEEKDAY, weekday_text(schedule.reset_weekday)),
             (keys::RESET_TIME, clock_text(schedule.reset_time)),
@@ -582,6 +607,7 @@ pub(super) fn encode_checked(section: &Section) -> Result<Rows, SettingsError> {
         Section::Models(_) => Section::Models(probe.models),
         Section::RunLengths(_) => Section::RunLengths(probe.run_lengths),
         Section::Profanity(_) => Section::Profanity(probe.profanity),
+        Section::CharacterData(_) => Section::CharacterData(probe.character_data),
         Section::Schedule(_) => Section::Schedule(probe.schedule),
         Section::Posting(_) => Section::Posting(probe.posting),
         Section::IdList(list, _) => Section::IdList(*list, list.get(&probe).clone()),
@@ -607,6 +633,7 @@ impl Section {
             Self::Models(_) => "models",
             Self::RunLengths(_) => "run_lengths",
             Self::Profanity(_) => "profanity",
+            Self::CharacterData(_) => "character_data",
             Self::Schedule(_) => "schedule",
             Self::Posting(_) => "posting",
             Self::IdList(list, _) => list.section(),

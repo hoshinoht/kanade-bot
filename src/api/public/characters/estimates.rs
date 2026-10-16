@@ -3,9 +3,10 @@
 //! one queue the admins use (behind every lookup already waiting). A
 //! member starts at most one lookup per 30 minutes; a lookup that fails
 //! gives the slot back, and joining a lookup already queued or running (or
-//! one answered from the 24-hour memory) never takes it. A member sees
-//! only lookups of their own characters: another job is the generic `404`,
-//! and the running job is shown only when it is theirs.
+//! one answered from a stored result younger than `estimate_days`) never
+//! takes it. A member sees only lookups of their own characters: another
+//! job is the generic `404`, and the running job is shown only when it is
+//! theirs.
 
 use std::sync::Arc;
 
@@ -64,7 +65,7 @@ fn theirs(job: &Job, me: &str) -> bool {
 }
 
 /// `MemberEstimateRequest`: one of the caller's characters, and `refresh`
-/// to skip the 24-hour memory ("Look up again").
+/// to skip the stored results ("Look up again").
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct StartBody {
@@ -100,7 +101,7 @@ pub(super) async fn start(
     if let Some(found) = estimates.latest(&target)
         && matches!(found.state(), JobState::Queued | JobState::Running)
     {
-        return Ok(accepted(job(&found, &state.catalog)));
+        return Ok(accepted(job(&found, &state.catalog, estimates)));
     }
     let now = member.now();
     let failed = |id: &str| {
@@ -147,11 +148,11 @@ pub(super) async fn start(
             member
                 .rate()
                 .settle_estimate(me, counted.then_some(found.id.as_str()));
-            Ok(accepted(job(&found, &state.catalog)))
+            Ok(accepted(job(&found, &state.catalog, estimates)))
         }
         Start::Joined(found) => {
             member.rate().settle_estimate(me, None);
-            Ok(accepted(job(&found, &state.catalog)))
+            Ok(accepted(job(&found, &state.catalog, estimates)))
         }
         Start::Full => {
             member.rate().settle_estimate(me, None);
@@ -183,11 +184,11 @@ pub(super) async fn status(
     Ok(Json(EstimateStatus {
         job: estimates
             .latest(&target)
-            .map(|found| job(&found, &state.catalog)),
+            .map(|found| job(&found, &state.catalog, estimates)),
         running: estimates
             .running()
             .filter(|running| theirs(running, me))
-            .map(|running| job(&running, &state.catalog)),
+            .map(|running| job(&running, &state.catalog, estimates)),
     })
     .into_response())
 }
@@ -201,9 +202,10 @@ pub(super) async fn read(
 ) -> Reply {
     let id = path_id(path)?;
     let state = state(&site)?;
-    let found = estimates(&site)?
+    let estimates = estimates(&site)?;
+    let found = estimates
         .job(&id)
         .filter(|found| theirs(found, &session.user_id))
         .ok_or(ApiError::NOT_FOUND)?;
-    Ok(Json(job(&found, &state.catalog)).into_response())
+    Ok(Json(job(&found, &state.catalog, estimates)).into_response())
 }

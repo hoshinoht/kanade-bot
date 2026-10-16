@@ -46,7 +46,7 @@ pub struct ConfigView {
     /// `null` when no digest is active or the journal could not be read.
     pub last_digest: Option<LastDigest>,
     /// Module `character_data`'s health (informational, never part of
-    /// `/healthz`); absent while the module is off.
+    /// `/healthz`) and its `estimate_days` setting; absent while the module is off.
     #[serde(skip_serializing_if = "Option::is_none")]
     #[cfg_attr(test, ts(optional))]
     pub character_data: Option<super::character_data::CharacterDataHealth>,

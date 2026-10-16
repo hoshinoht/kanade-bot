@@ -901,7 +901,8 @@ async fn strips_finish_on_404_delete_on_403_and_stick_when_both_are_refused() {
     assert_eq!(posts[0].state, PostState::Stuck);
     let health = rig.service.health().await;
     assert_eq!(health.posts.unwrap().stuck, 1);
-    let dto = kanade::api::dto::character_data::health(&health, Some("100"));
+    let settings = kanade::domain::settings::CharacterData::default();
+    let dto = kanade::api::dto::character_data::health(&health, Some("100"), settings);
     let item = &dto.posts.unwrap().items[0];
     assert_eq!(item.state, "stuck");
     assert_eq!(

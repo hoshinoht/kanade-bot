@@ -611,7 +611,7 @@
     "MemberEstimateRequest": {
       "type": "object",
       "additionalProperties": false,
-      "description": "Body of POST /api/public/me/estimates: one of the caller's characters; `refresh` skips the 24-hour memory (Look up again).",
+      "description": "Body of POST /api/public/me/estimates: one of the caller's characters; `refresh` skips the stored results (Look up again).",
       "required": ["character_id"],
       "properties": {
         "character_id": { "type": "string" },
@@ -651,8 +651,8 @@
     "PartyEstimate": {
       "type": "object",
       "additionalProperties": false,
-      "description": "One boss of the run: the character's cached scouter reading (`character_data.json#/$defs/ScouterReading` plus the boss).",
-      "required": ["boss", "difficulty", "percentage", "effective_percentage", "rating", "estimated_minutes", "fetched_at", "critical_rate_assumed", "critical_rate_actual"],
+      "description": "One boss of the run: the character's stored scouter reading (`character_data.json#/$defs/ScouterReading` plus the boss).",
+      "required": ["boss", "difficulty", "percentage", "effective_percentage", "rating", "estimated_minutes", "fetched_at", "stale", "critical_rate_assumed", "critical_rate_actual"],
       "properties": {
         "boss": { "type": "string" },
         "difficulty": { "$ref": "common.json#/$defs/Difficulty" },
@@ -661,6 +661,7 @@
         "rating": { "$ref": "character_data.json#/$defs/ScouterReading/properties/rating" },
         "estimated_minutes": { "$ref": "character_data.json#/$defs/ScouterReading/properties/estimated_minutes" },
         "fetched_at": { "$ref": "character_data.json#/$defs/ScouterReading/properties/fetched_at" },
+        "stale": { "$ref": "character_data.json#/$defs/ScouterReading/properties/stale" },
         "critical_rate_assumed": { "$ref": "character_data.json#/$defs/ScouterReading/properties/critical_rate_assumed" },
         "critical_rate_actual": { "$ref": "character_data.json#/$defs/ScouterReading/properties/critical_rate_actual" }
       }
@@ -673,7 +674,7 @@
         "member": { "$ref": "#/$defs/PartyMember" },
         "you": { "type": "boolean" },
         "character": { "anyOf": [{ "$ref": "#/$defs/PartyCharacter" }, { "type": "null" }], "description": "null: no character on the roster." },
-        "scouter": { "anyOf": [{ "type": "array", "items": { "$ref": "#/$defs/PartyEstimate" } }, { "type": "null" }], "description": "Per boss of the run from the 24-hour memory (empty: no lookup in the last 24 h); null with estimates off or no character." }
+        "scouter": { "anyOf": [{ "type": "array", "items": { "$ref": "#/$defs/PartyEstimate" } }, { "type": "null" }], "description": "Per boss of the run from the stored result, of any age up to the 30 days it is kept, each marked `stale` once at least `fresh_days` old (empty: no estimate yet); null with estimates off or no character." }
       }
     },
     "PartyTotal": {
@@ -693,10 +694,11 @@
     "PartyTotals": {
       "type": "object",
       "additionalProperties": false,
-      "description": "The run's newest finished party lookup (an admin's Look up party), from the 24-hour memory; never looked up here.",
-      "required": ["fetched_at", "bosses"],
+      "description": "The run's newest finished party lookup (an admin's Look up party, or a background refresh); lookups are kept 24 hours. Never looked up here.",
+      "required": ["fetched_at", "stale", "bosses"],
       "properties": {
-        "fetched_at": { "type": "string", "description": "When kanade received it from the scouter." },
+        "fetched_at": { "type": "string", "description": "When kanade received it from the scouter (answered from stored results: the oldest one it used)." },
+        "stale": { "type": "boolean", "description": "fetched_at is at least `fresh_days` ago: show the totals marked older than n days." },
         "bosses": { "type": "array", "items": { "$ref": "#/$defs/PartyTotal" }, "description": "The run's bosses it has a total for, in run order." }
       }
     },
@@ -704,13 +706,14 @@
       "type": "object",
       "additionalProperties": false,
       "description": "GET /api/public/runs/{id}/characters (module `roster`): on a run the caller is on, the character each party member brings (the run's pick, else its timing's pick, else the main, else the only one), its cached scouter readings and the run's party totals. Never another member's NEXON data or link state. 404 `not_found` for anyone not on the run, as for a run that does not exist. `Cache-Control: no-store`.",
-      "required": ["run_id", "slots", "character_data", "estimates", "totals", "nexon_data", "attribution", "estimate_label", "estimate_note"],
+      "required": ["run_id", "slots", "character_data", "estimates", "fresh_days", "totals", "nexon_data", "attribution", "estimate_label", "estimate_note"],
       "properties": {
         "run_id": { "type": "string" },
         "slots": { "type": "array", "items": { "$ref": "#/$defs/PartyCharacterSlot" } },
         "character_data": { "type": "boolean" },
         "estimates": { "type": "boolean" },
-        "totals": { "anyOf": [{ "$ref": "#/$defs/PartyTotals" }, { "type": "null" }], "description": "null while estimates are off, or without a finished lookup of this run's party in the last 24 hours (or when its total failed)." },
+        "fresh_days": { "type": ["integer", "null"], "minimum": 1, "maximum": 30, "description": "The saved estimate_days: a reading or total at least this old is `stale` (show it marked older than n days); null while estimates are off." },
+        "totals": { "anyOf": [{ "$ref": "#/$defs/PartyTotals" }, { "type": "null" }], "description": "null while estimates are off, or without a finished lookup of this run's party in the last 24 hours (lookups are kept 24 hours), or when its total failed." },
         "nexon_data": { "type": "boolean", "description": "The caller's own slot shows NEXON data: show `attribution` with it." },
         "attribution": { "const": "Data based on NEXON Open API" },
         "estimate_label": { "const": "Clear-time estimate" },
