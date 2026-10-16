@@ -188,6 +188,9 @@ crate::domain::spelled! {
         Busy => "busy",
         /// 422: critical rate under 100% and no assumed result.
         CriticalRate => "critical_rate",
+        /// 422 `critical_rate_assumption_failed`: the scouter tried assuming
+        /// 100% critical rate and couldn't complete the estimate.
+        AssumptionFailed => "assumption_failed",
         /// 503: the scouter asked for a verification.
         ManualCheck => "manual_check",
         /// 502, 504, the client timeout, no connection, an unreadable answer.
@@ -208,17 +211,21 @@ pub struct Failure {
     pub subject: Option<usize>,
 }
 
+/// The scouter's 422 code once it tried assuming 100% critical rate and failed.
+const ASSUMPTION_FAILED: &str = "critical_rate_assumption_failed";
+
 impl Failure {
     fn of(error: &LookupError, igns: &[RosterIgn], at: Option<usize>) -> Self {
         let (kind, status, retry_after, ign) = match error {
             LookupError::Refused {
                 status,
+                code,
                 ign,
                 retry_after,
-                ..
             } => (
                 match status {
                     429 => FailureKind::Busy,
+                    422 if code == ASSUMPTION_FAILED => FailureKind::AssumptionFailed,
                     422 => FailureKind::CriticalRate,
                     503 => FailureKind::ManualCheck,
                     _ => FailureKind::Failed,

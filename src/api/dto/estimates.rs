@@ -205,11 +205,13 @@ pub struct EstimateIssue {
 #[cfg_attr(test, derive(ts_rs::TS))]
 pub struct EstimateError {
     /// `busy` (429 past the job's deadline, or a rate limit; retry after
-    /// `retry_after_seconds`), `critical_rate` (422), `manual_check` (503),
-    /// `failed` (502, 504, timeout, no connection).
+    /// `retry_after_seconds`), `critical_rate` (422), `assumption_failed`
+    /// (422: the scouter tried assuming 100% critical rate and couldn't
+    /// finish), `manual_check` (503), `failed` (502, 504, timeout, no
+    /// connection).
     #[cfg_attr(
         test,
-        ts(type = "'busy' | 'critical_rate' | 'manual_check' | 'failed'")
+        ts(type = "'busy' | 'critical_rate' | 'assumption_failed' | 'manual_check' | 'failed'")
     )]
     pub code: &'static str,
     pub message: &'static str,
@@ -228,6 +230,9 @@ fn message(kind: FailureKind) -> &'static str {
     match kind {
         FailureKind::Busy => "The scouter is busy.",
         FailureKind::CriticalRate => "Set up critical rate on the scouter first.",
+        FailureKind::AssumptionFailed => {
+            "The estimate couldn't be completed for this character. Try again later."
+        }
         FailureKind::ManualCheck => "Scouter needs a manual check.",
         FailureKind::Failed => "Lookup failed.",
     }

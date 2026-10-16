@@ -296,7 +296,7 @@
         "state": { "enum": ["off", "ok", "unreachable", "verification_required"] },
         "url": { "type": ["string", "null"], "pattern": "^http://", "description": "The sidecar's http://host[:port]; null while off." },
         "last_lookup_at": { "$ref": "common.json#/$defs/NullableString" },
-        "last_error": { "$ref": "common.json#/$defs/NullableString", "description": "The scouter's error code (busy, upstream_rate_limited, critical_rate_setup_required, verification_required, upstream_blocked, lookup_failed, result_mismatch, extraction_failed, lookup_timeout, …) or timeout, unreachable, unreadable." },
+        "last_error": { "$ref": "common.json#/$defs/NullableString", "description": "The scouter's error code (busy, upstream_rate_limited, critical_rate_setup_required, critical_rate_assumption_failed, verification_required, upstream_blocked, lookup_failed, result_mismatch, extraction_failed, lookup_timeout, …) or timeout, unreachable, unreadable." },
         "last_error_at": { "$ref": "common.json#/$defs/NullableString" }
       }
     },
@@ -471,8 +471,8 @@
       "additionalProperties": false,
       "required": ["code", "message", "status", "detail", "retry_after_seconds", "character_id"],
       "properties": {
-        "code": { "enum": ["busy", "critical_rate", "manual_check", "failed"] },
-        "message": { "enum": ["The scouter is busy.", "Set up critical rate on the scouter first.", "Scouter needs a manual check.", "Lookup failed."] },
+        "code": { "enum": ["busy", "critical_rate", "assumption_failed", "manual_check", "failed"], "description": "critical_rate: under 100% critical rate with no assumed result; assumption_failed: the scouter tried assuming 100% and couldn't finish." },
+        "message": { "enum": ["The scouter is busy.", "Set up critical rate on the scouter first.", "The estimate couldn't be completed for this character. Try again later.", "Scouter needs a manual check.", "Lookup failed."] },
         "status": { "type": ["integer", "null"], "description": "The scouter's HTTP status (429, 422, 503, 502, 504); null without an answer." },
         "detail": { "type": "string", "description": "The scouter's error code, or timeout, unreachable, unreadable." },
         "retry_after_seconds": { "type": ["integer", "null"], "minimum": 0, "description": "429 only: Retry-After." },

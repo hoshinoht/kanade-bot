@@ -332,3 +332,8 @@ Pointers are `<file>#/$defs/<Name>`.
   `EstimateJob`, and on `RunReadiness`, `TimingReadiness` and
   `RunPartyCharacters`, where it is `null` while estimates are off. The
   "24-hour memory" wording is gone (jobs are still kept 24 hours).
+- Failed crit assumption (2026-10-16): `character_data.json` `EstimateError.code`
+  `assumption_failed` (status 422, detail `critical_rate_assumption_failed`:
+  the scouter tried assuming 100% critical rate and couldn't finish), message
+  `The estimate couldn't be completed for this character. Try again later.`;
+  `critical_rate` now means the scouter didn't try the assumption.

@@ -414,6 +414,32 @@ async fn a_party_lookup_writes_every_result_through() {
     );
 }
 
+/// A 422 is the crit-setup state unless the scouter says it tried assuming
+/// 100% critical rate and couldn't finish.
+#[test]
+fn a_failed_crit_assumption_is_its_own_state() {
+    let refused = |code: &str| LookupError::Refused {
+        status: 422,
+        code: code.into(),
+        ign: Some("CritAa".into()),
+        retry_after: None,
+    };
+    let igns = [ign("CritAa")];
+    for (code, kind) in [
+        ("critical_rate_setup_required", FailureKind::CriticalRate),
+        (
+            "critical_rate_assumption_failed",
+            FailureKind::AssumptionFailed,
+        ),
+        ("unknown", FailureKind::CriticalRate),
+    ] {
+        let failure = Failure::of(&refused(code), &igns, None);
+        assert_eq!(failure.kind, kind, "{code}");
+        assert_eq!((failure.status, failure.detail.as_str()), (Some(422), code));
+        assert_eq!(failure.subject, Some(0));
+    }
+}
+
 /// `429 busy` is asked again after its Retry-After while the wait ends
 /// before the deadline; past it, the busy answer stands.
 #[tokio::test(start_paused = true)]

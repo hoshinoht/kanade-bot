@@ -69,7 +69,7 @@
     if (queued) return 'Queued…';
     if (active) return 'Looking up…';
     if (lookup.wait > 0) return `Look up · ${clock(lookup.wait)}`;
-    if (error?.code === 'failed') return 'Try again';
+    if (error?.code === 'failed' || error?.code === 'assumption_failed') return 'Try again';
     if (result || error?.code === 'critical_rate') return 'Look up again';
     return 'Look up';
   });

@@ -174,6 +174,7 @@ fn refusal(ign: &str) -> Option<Response> {
         ("Busy", 429, "busy", Some("5")),
         ("Limited", 429, "upstream_rate_limited", Some("40")),
         ("Crit", 422, "critical_rate_setup_required", None),
+        ("Unsure", 422, "critical_rate_assumption_failed", None),
         ("Verify", 503, "verification_required", None),
         ("Blocked", 502, "upstream_blocked", None),
         ("Mismatch", 502, "result_mismatch", None),
@@ -600,6 +601,14 @@ async fn scouter_errors_map_to_the_drawn_states_and_are_never_cached() {
             "critical_rate_setup_required",
             None,
             "Set up critical rate on the scouter first.",
+        ),
+        (
+            "UnsureAa",
+            "assumption_failed",
+            Some(422),
+            "critical_rate_assumption_failed",
+            None,
+            "The estimate couldn't be completed for this character. Try again later.",
         ),
         (
             "VerifyAa",

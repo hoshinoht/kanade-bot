@@ -21,7 +21,7 @@ Both origins unless noted; source in `controls.rs`, `controls_p5.rs`, `controls_
 - `POST /__e2e/limits` `{groups: "three" | "default"}`: the canned governor groups Limits shows.
 - `POST /__e2e/chat-allowance` `{member, answers}`: spend answers from a member's live chat window.
 - `POST /__e2e/public/end`: end every member-portal session; `{ended}`.
-- `POST /__e2e/estimates` `{scenario, ign?}`: what later scouter lookups do (`ok`, `paced`, `assumed`, `hold`, `busy`, `critical_rate`, `manual_check`, `failed`, `timeout`, `queued`, `off`); `{scenario: "aged", days, run | character}`: a finished lookup of a run's party or one character fetched `days` (1–30) before the server clock, to show "older than n days".
+- `POST /__e2e/estimates` `{scenario, ign?}`: what later scouter lookups do (`ok`, `paced`, `assumed`, `hold`, `busy`, `critical_rate`, `assumption_failed`, `manual_check`, `failed`, `timeout`, `queued`, `off`); `{scenario: "aged", days, run | character}`: a finished lookup of a run's party or one character fetched `days` (1–30) before the server clock, to show "older than n days".
 - `POST /__e2e/character-data` `{health}`: Config's character-data health (`ok`, `alert`, `refused`, `setup`, `budget`).
 - `POST /__e2e/public/characters` `{roster: "board" | "empty"}`: Asahi's own characters as the member boards draw them, or none.
 - `POST /__e2e/arrive` `{kind}`: a change made outside the portal (`reaction`, `move`, `run`, `proposal`, `chat`, `extraction`, `member`).

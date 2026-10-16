@@ -193,6 +193,11 @@ describe('scouter estimates', () => {
   it('says each error the boards draw', () => {
     const error = (code: EstimateError['code'], status: number | null, detail = ''): EstimateError => ({ code, message: '', status, detail, retry_after_seconds: 40, character_id: null });
     expect(estimateErrorText(error('critical_rate', 422), 'YuzuPala').text).toContain('YuzuPala’s critical rate under 100% and couldn’t assume 100% for it.');
+    expect(estimateErrorText(error('assumption_failed', 422), 'YuzuPala')).toEqual({
+      lead: 'The estimate couldn’t be completed for this character.',
+      text: 'The scouter tried assuming 100% critical rate for YuzuPala and couldn’t finish. Try again later.',
+    });
+    expect(estimateErrorText(error('critical_rate', 422), null).lead).toBe('Set up critical rate on the scouter first.');
     expect(estimateErrorText(error('manual_check', 503), null).lead).toBe('Scouter needs a manual check.');
     expect(estimateErrorText(error('failed', 504), null).text).toBe('The scouter didn’t answer within 2 minutes (504). Nothing was kept.');
     expect(estimateErrorText(error('failed', null, 'timeout'), null).text).toBe('The scouter didn’t answer in time. Nothing was kept.');

@@ -39,6 +39,7 @@ _In development_
 - Fixed the bot skipping that day's morning card when it starts after the ping time; a due card for a run still ahead now posts, up to 12 hours late.
 - Fixed four security issues in the bot's TLS library (RUSTSEC-2026-0346 to 0349) by updating it.
 - Fixed the bot proposing to move runs earlier when a message moved them "after 0930 17th": dates like "17th" or "17/10" now count, "0930" is morning, and runs already after (or before) a stated time get no proposal.
+- Fixed estimates asking you to set up critical rate on the scouter when it had already tried assuming 100% critical rate and couldn't finish; they now say the estimate couldn't be completed for that character and to try again later.
 
 ### Removed
 - Removed the one-off `kanade import v4` command; v4 data already imported stays readable.

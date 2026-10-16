@@ -324,6 +324,18 @@ test('my scouter lookup: a failure doesn’t count toward the 30 minutes', async
   await expect(row.getByRole('table')).toBeVisible({ timeout: 20_000 });
 });
 
+test('my scouter lookup: a failed 100% crit assumption says the estimate couldn’t be completed', async ({ page }) => {
+  await setEstimates('assumption_failed');
+  await openTab(page);
+  const row = (await openEdit(page, 'AsahiBlaze')).locator('.estimate');
+  await row.getByRole('button', { name: 'Look up' }).click();
+  const alert = row.getByRole('alert');
+  await expect(alert).toContainText('The estimate couldn’t be completed for this character.', { timeout: 20_000 });
+  await expect(alert).toContainText('The scouter tried assuming 100% critical rate for AsahiBlaze and couldn’t finish. Try again later.');
+  await expect(alert).not.toContainText('Set up critical rate');
+  await expect(row.getByRole('button', { name: 'Try again' })).toBeVisible();
+});
+
 test('run Party · characters: others show roster level and estimates, only you see your NEXON level', async ({ page }) => {
   await signInPublic(page);
   await roster(page);

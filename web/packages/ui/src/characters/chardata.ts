@@ -114,6 +114,11 @@ export function estimateErrorText(error: EstimateError, ign: string | null): { l
         lead: 'Set up critical rate on the scouter first.',
         text: `The scouter shows ${ign ?? 'a character'}’s critical rate under 100% and couldn’t assume 100% for it. Fix it on the scouter, then look up again.`,
       };
+    case 'assumption_failed':
+      return {
+        lead: 'The estimate couldn’t be completed for this character.',
+        text: `The scouter tried assuming 100% critical rate for ${ign ?? 'this character'} and couldn’t finish. Try again later.`,
+      };
     case 'manual_check':
       return { lead: 'Scouter needs a manual check.', text: 'The scouter asked for a verification. Lookups stay off until an operator runs the scouter setup.' };
     case 'failed': {
