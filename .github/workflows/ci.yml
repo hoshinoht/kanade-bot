@@ -7,12 +7,13 @@ on:
     branches: [master]
   push:
     branches: [master]
-  # The browser e2e (~30 min) runs only from here, with `e2e` ticked; run the
-  # full local check (`bun run e2e`) before merging UI work instead.
+  # The browser e2e (4 shards and motion in parallel, ~10 min) runs only from
+  # here, with `e2e` ticked; run the full local check (`bun run e2e`) before
+  # merging UI work instead.
   workflow_dispatch:
     inputs:
       e2e:
-        description: Run the Playwright end-to-end suites (about 30 minutes)
+        description: Run the Playwright end-to-end suites (about 10 minutes)
         type: boolean
         default: false
 
@@ -179,32 +180,93 @@ jobs:
         working-directory: web
         run: bun run build
 
-      # Built ahead so Playwright's webServer start stays well inside its timeout.
+      # Built once here and shared with the e2e shards, so Playwright's webServer
+      # starts a ready binary. Every job checks out to the same path, which the
+      # binary's compile-time repo root (tracked catalog, persona, fixtures) needs.
       - name: E2E server build
         if: ${{ inputs.e2e }}
         run: cargo build --locked --release --example e2e_server --features test-support
+      - name: Keep the e2e server and the built PWAs
+        if: ${{ inputs.e2e }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-build
+          path: |
+            target/release/examples/e2e_server
+            web/apps/admin/dist
+            web/apps/public/dist
+          retention-days: 1
 
+  # The main e2e project split over 4 runners (CPU-bound in Chrome, so runners,
+  # not workers, are what shortens it); each shard runs its own servers.
+  e2e:
+    needs: web
+    if: ${{ inputs.e2e }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.0
+      - uses: actions/download-artifact@v4
+        with:
+          name: e2e-build
+      - name: Install
+        working-directory: web
+        run: |
+          chmod +x ../target/release/examples/e2e_server
+          bun install --frozen-lockfile
       # ubuntu-latest ships Google Chrome, which the suite uses (channel 'chrome');
       # no browser download, no secrets. Boss art is the committed synthetic fixture set.
-      - name: End-to-end
-        id: e2e
-        if: ${{ inputs.e2e }}
-        working-directory: web
-        run: bun run e2e --project=main
-      # Frame-timing checks run alone, on one worker and one server, after the rest
-      # (also when the main suite failed). Their fps floors are reported, not enforced, on CI.
-      - name: End-to-end (motion)
-        if: ${{ !cancelled() && steps.e2e.outcome != 'skipped' }}
+      - name: End-to-end (shard ${{ matrix.shard }}/4)
         working-directory: web
         env:
-          KANADE_E2E_WORKERS: '1'
-        run: bun run e2e --project=motion --output e2e/.results/motion
+          KANADE_E2E_SERVER_BIN: target/release/examples/e2e_server
+        run: bun run e2e --project=main --shard=${{ matrix.shard }}/4
       - name: Keep Playwright traces
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: playwright-results
+          name: playwright-results-${{ matrix.shard }}
           path: web/e2e/.results
           # `.results` is a hidden directory, which upload-artifact@v4 skips by default.
+          include-hidden-files: true
+          retention-days: 7
+
+  # Frame-timing checks on their own runner, one worker and one server. Their
+  # fps floors are reported, not enforced, on CI.
+  e2e-motion:
+    needs: web
+    if: ${{ inputs.e2e }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.0
+      - uses: actions/download-artifact@v4
+        with:
+          name: e2e-build
+      - name: Install
+        working-directory: web
+        run: |
+          chmod +x ../target/release/examples/e2e_server
+          bun install --frozen-lockfile
+      - name: End-to-end (motion)
+        working-directory: web
+        env:
+          KANADE_E2E_WORKERS: '1'
+          KANADE_E2E_SERVER_BIN: target/release/examples/e2e_server
+        run: bun run e2e --project=motion
+      - name: Keep Playwright traces
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-results-motion
+          path: web/e2e/.results
           include-hidden-files: true
           retention-days: 7

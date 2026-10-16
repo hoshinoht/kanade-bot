@@ -1,6 +1,9 @@
 import type { Page } from '@playwright/test';
 import { ADMIN, REAL_ART, expect, settle, test, useLook } from './support';
 
+// Review captures only (nothing compares them): off in the default run and on CI.
+test.skip(!process.env.KANADE_CAPTURES, 'set KANADE_CAPTURES=1 to write the review captures');
+
 const OUT = `e2e/.captures/${REAL_ART ? 'real' : 'synthetic'}/row-expansion`;
 
 async function shot(page: Page, name: string) {

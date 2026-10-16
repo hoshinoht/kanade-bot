@@ -27,8 +27,10 @@ import {
 const OUT = REAL_ART ? 'e2e/.captures/real' : 'e2e/.captures/synthetic';
 
 // Each capture is independent (own files, reset server), and this file is the
-// suite's longest: spread its tests across workers.
+// suite's longest: spread its tests across workers. Review captures only
+// (nothing compares them): off in the default run and on CI.
 test.describe.configure({ mode: 'parallel' });
+test.skip(!process.env.KANADE_CAPTURES, 'set KANADE_CAPTURES=1 to write the review captures');
 
 async function shot(page: Page, name: string) {
   await settle(page);

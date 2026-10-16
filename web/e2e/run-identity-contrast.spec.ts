@@ -1,5 +1,5 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
-import type { BrowserContext, Locator, Page } from '@playwright/test';
+import type { Locator, Page } from '@playwright/test';
 import type { Week } from '@kanade/api-types';
 import { COLORWAYS } from '../packages/tokens/src/colorways';
 import { ADMIN, PUBLIC, REAL_ART, expect, settle, signInPublic, test, unconditional, useLook } from './support';
@@ -99,43 +99,39 @@ async function blank(card: Locator, art: boolean) {
 }
 
 /** Worst contrast of each item's colour against the pixels in its box. */
-async function worst(context: BrowserContext, png: Buffer, origin: { x: number; y: number }, list: Item[]): Promise<number[]> {
-  const scratch = await context.newPage();
-  try {
-    return await scratch.evaluate(
-      async ({ data, origin, list }) => {
-        const bitmap = await createImageBitmap(new Blob([new Uint8Array(data)], { type: 'image/png' }));
-        const canvas = new OffscreenCanvas(bitmap.width, bitmap.height);
-        const ctx = canvas.getContext('2d')!;
-        ctx.drawImage(bitmap, 0, 0);
-        const lin = (c: number) => {
-          const s = c / 255;
-          return s <= 0.04045 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
-        };
-        const lum = (r: number, g: number, b: number) => 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
-        return list.map(({ color, rect }) => {
-          const text = lum(...color);
-          // Whole pixels inside the line box only: rounding out would sample a
-          // chip's own outline ring at a fractional edge, which no glyph sits on.
-          const x = Math.max(0, Math.ceil(rect.x - origin.x));
-          const y = Math.max(0, Math.ceil(rect.y - origin.y));
-          const w = Math.min(bitmap.width, Math.floor(rect.x + rect.width - origin.x)) - x;
-          const h = Math.min(bitmap.height, Math.floor(rect.y + rect.height - origin.y)) - y;
-          const px = ctx.getImageData(x, y, Math.max(1, w), Math.max(1, h)).data;
-          let min = 21;
-          for (let i = 0; i < px.length; i += 4) {
-            const bg = lum(px[i]!, px[i + 1]!, px[i + 2]!);
-            const ratio = (Math.max(bg, text) + 0.05) / (Math.min(bg, text) + 0.05);
-            if (ratio < min) min = ratio;
-          }
-          return Math.round(min * 100) / 100;
-        });
-      },
-      { data: [...png], origin, list },
-    );
-  } finally {
-    await scratch.close();
-  }
+async function worst(scratch: Page, png: Buffer, origin: { x: number; y: number }, list: Item[]): Promise<number[]> {
+  return scratch.evaluate(
+    async ({ data, origin, list }) => {
+      const bytes = Uint8Array.from(atob(data), (c) => c.charCodeAt(0));
+      const bitmap = await createImageBitmap(new Blob([bytes], { type: 'image/png' }));
+      const canvas = new OffscreenCanvas(bitmap.width, bitmap.height);
+      const ctx = canvas.getContext('2d')!;
+      ctx.drawImage(bitmap, 0, 0);
+      const lin = (c: number) => {
+        const s = c / 255;
+        return s <= 0.04045 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+      };
+      const lum = (r: number, g: number, b: number) => 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
+      return list.map(({ color, rect }) => {
+        const text = lum(...color);
+        // Whole pixels inside the line box only: rounding out would sample a
+        // chip's own outline ring at a fractional edge, which no glyph sits on.
+        const x = Math.max(0, Math.ceil(rect.x - origin.x));
+        const y = Math.max(0, Math.ceil(rect.y - origin.y));
+        const w = Math.min(bitmap.width, Math.floor(rect.x + rect.width - origin.x)) - x;
+        const h = Math.min(bitmap.height, Math.floor(rect.y + rect.height - origin.y)) - y;
+        const px = ctx.getImageData(x, y, Math.max(1, w), Math.max(1, h)).data;
+        let min = 21;
+        for (let i = 0; i < px.length; i += 4) {
+          const bg = lum(px[i]!, px[i + 1]!, px[i + 2]!);
+          const ratio = (Math.max(bg, text) + 0.05) / (Math.min(bg, text) + 0.05);
+          if (ratio < min) min = ratio;
+        }
+        return Math.round(min * 100) / 100;
+      });
+    },
+    { data: png.toString('base64'), origin, list },
+  );
 }
 
 async function measure(page: Page, card: Locator): Promise<{ name: string; need: number; art: number; plain: number }[]> {
@@ -144,11 +140,17 @@ async function measure(page: Page, card: Locator): Promise<{ name: string; need:
   const list = await items(card);
   const box = (await card.boundingBox())!;
   const clip = { x: Math.floor(box.x), y: Math.floor(box.y), width: Math.ceil(box.width), height: Math.ceil(box.height) };
-  await blank(card, true);
-  const withArt = await worst(page.context(), await page.screenshot({ clip, animations: 'disabled' }), clip, list);
-  await blank(card, false);
-  const plain = await worst(page.context(), await page.screenshot({ clip, animations: 'disabled' }), clip, list);
-  return list.map((item, i) => ({ name: item.name, need: item.large ? 3 : 4.5, art: withArt[i]!, plain: plain[i]! }));
+  // A blank page of its own does the pixel work, so the app page is left as it rendered.
+  const scratch = await page.context().newPage();
+  try {
+    await blank(card, true);
+    const withArt = await worst(scratch, await page.screenshot({ clip, animations: 'disabled' }), clip, list);
+    await blank(card, false);
+    const plain = await worst(scratch, await page.screenshot({ clip, animations: 'disabled' }), clip, list);
+    return list.map((item, i) => ({ name: item.name, need: item.large ? 3 : 4.5, art: withArt[i]!, plain: plain[i]! }));
+  } finally {
+    await scratch.close();
+  }
 }
 
 // Every colourway in both faces; Dynamic is marigold until an avatar palette is cached.

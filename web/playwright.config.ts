@@ -20,7 +20,8 @@ const PINNED_NOW = '2026-09-29T04:00:00Z';
 // worktree links boss/portraits in from the main checkout: point at the real dir.
 const BOSS_DIR = process.env.KANADE_REAL_ART === '1' ? ` --boss-dir ${dirname(realpathSync(join(import.meta.dirname, '..', 'boss', 'portraits')))}` : '';
 const MAX_WORKERS = 5;
-const workers = Number(process.env.KANADE_E2E_WORKERS ?? '4');
+// The suite is CPU-bound in Chrome: 5 workers on a 12-core Mac (6 and 8 barely gain and flake), 4 on CI's 4 vCPUs.
+const workers = Number(process.env.KANADE_E2E_WORKERS ?? (process.env.CI ? '4' : '5'));
 if (!Number.isInteger(workers) || workers < 1 || workers > MAX_WORKERS)
   throw new Error(`KANADE_E2E_WORKERS must be 1..${MAX_WORKERS} (one server per worker), got ${process.env.KANADE_E2E_WORKERS}`);
 const base = Number(process.env.KANADE_E2E_PORT_BASE ?? '4373');
@@ -33,6 +34,9 @@ process.env.KANADE_E2E_ORIGIN_BASE = String(base);
 const MOTION = /(^|[\\/])motion\.spec\.ts$/;
 // The Rust smoke suite has its own server and config (playwright.rust.config.ts).
 const RUST = '**/rust/**';
+// The server: `cargo run` by default; KANADE_E2E_SERVER_BIN (repo-root
+// relative) runs a prebuilt binary instead, as CI's shards do.
+const SERVER = process.env.KANADE_E2E_SERVER_BIN ?? 'cargo run --quiet --locked --offline --release --example e2e_server --features test-support --';
 
 export default defineConfig({
   testDir: './e2e',
@@ -57,7 +61,7 @@ export default defineConfig({
     const adminPort = base + 2 * i;
     const publicPort = adminPort + 1;
     return {
-      command: `cargo run --quiet --locked --offline --release --example e2e_server --features test-support -- --admin-port ${adminPort} --public-port ${publicPort} --web-dir web --now ${PINNED_NOW}${BOSS_DIR}`,
+      command: `${SERVER} --admin-port ${adminPort} --public-port ${publicPort} --web-dir web --now ${PINNED_NOW}${BOSS_DIR}`,
       cwd: '..',
       url: `http://127.0.0.1:${adminPort}/__e2e/whoami`,
       // Never drive a stray server: the fixture also checks `/__e2e/whoami`.
