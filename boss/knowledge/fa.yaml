@@ -7,10 +7,10 @@ core:
   detail: Each player has 1000 Will of the Adversary (also called Enemy's Will); a death costs 200 and reaching 0 removes you.
 - title: Power of Order
   text: Shared gauge that sets the party's final damage by stage.
-  detail: 'Power of Order is shared, starts each phase at 500 and decays 5 per second, but decay alone never drops it below the current stage (MapleSEA v247; one Korean source limits this to Normal and below, unconfirmed for Hard/Extreme). Stages: under 200 = -40% final damage, 200-399 = -20%, 400-599 = 0, 600-799 = +10%, 800+ = +20%.'
+  detail: 'Power of Order is shared, starts each phase at 500 and decays 5 per second, but decay alone never drops it below the current stage (MapleSEA v247, with no difficulty exception). Stages: under 200 = -40% final damage, 200-399 = -20%, 400-599 = 0, 600-799 = +10%, 800+ = +20%.'
 - title: Cycle of Power
-  text: Every 2:18. 600+ is kept; under 400 costs Will and resets to 500.
-  detail: 'Cycle of Power every 2:18 (5s warning). At stage 4 or higher (600+) the gauge is kept (MapleSEA v249). Below 400 everyone also loses Will (100 at 200-399, 200 under 200) and the gauge returns to 500; whether a stage 3 gauge resets to 500 or is kept is unconfirmed.'
+  text: Every 2:18. 600+ is kept; anything lower resets to 500, and under 400 also costs Will.
+  detail: 'Cycle of Power every 2:18 (5s warning). At stage 4 or higher (600+) the gauge is kept (MapleSEA v249); anything lower, stage 3 included, returns to 500 (MapleSEA v247). Below 400 everyone also loses Will (100 at 200-399, 200 under 200).'
 - title: Immortal Will
   text: 0.5s parry on NPC/Gather. 6s cooldown, 4.5s back on a rewarded parry.
   detail: Immortal Will (NPC/Gather key; also called Indomitable Will) is a 0.5s parry with a 6s cooldown. A rewarded parry cuts 4.5s off it and raises Power of Order, so a whiff costs the full 6s. It works while you are i-framed, but not during Origin or Ascent casts.

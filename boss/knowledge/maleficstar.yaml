@@ -47,7 +47,7 @@ phases:
     detail: 'Each catch opens two altars for 7s, picked by pressing the NPC/Gather key on the left or right half of the map: left lowers Illusion Magic by 250 for -5 to -15% final damage, right raises it by 250 for +5 to +15% (more at a higher gauge), within -10% to +30% overall. Whether the tier is read before or after the gauge moves is unresolved, so the exact total after several rights is too.'
   - title: Penalties rise with the gauge
     text: 'See the scale: higher Illusion Magic brings Predation per hit, the Floating Disaster, then more damage taken.'
-    detail: 'Reality penalties scale with Illusion Magic: from 250 every hit adds Predation, from 500 the Floating Disaster joins (one source says 750), from 750 you take more damage.'
+    detail: 'Reality penalties scale with Illusion Magic: from 250 every hit adds Predation, from 500 the Floating Disaster joins, from 750 you take more damage.'
   - title: Locked at 1000
     text: 'At 1000 Illusion Magic you cannot swap out; a 40 s countdown starts, then a forced swap costs 160/200 Predation.'
   - title: Ready to Eat
@@ -61,7 +61,7 @@ mechanics:
   - {label: 500+ Floating Disaster, span: 22, tone: yellow}
   - {label: 750+ more damage taken, span: 22, tone: red}
   - {label: 1000 locked in, span: 10, tone: risk}
-  note: 'One source puts the Floating Disaster at 750. At 1000 you cannot swap out; a 40 s countdown starts and a forced swap follows at 0.'
+  note: 'At 1000 you cannot swap out; a 40 s countdown starts and a forced swap follows at 0.'
 - kind: ledger
   title: Predation · shared, fails at 1000 (solo)
   rows:

@@ -4,7 +4,7 @@ lead: 'Four phases of curse management: never take white and black hits within 6
 core:
 - title: Two curses
   text: 'Hits apply white Creation or black Destruction for 6 s; taking the other while one is active costs a life.'
-  detail: 'Hits apply the Curse of Creation (also called Creative Curse; white: heal-over-time, -10% damage, burning aura) or the Curse of Destruction (also called Destructive Curse; black: +15% damage taken, +10% damage per the English wiki, SEA value unconfirmed, no potions) for 6s. Taking the opposite curse while one is active costs a life, deals +50% HP damage and seals skills for 5s.'
+  detail: 'Hits apply the Curse of Creation (also called Creative Curse; white: heal-over-time, -10% damage, burning aura) or the Curse of Destruction (also called Destructive Curse; black: +15% damage taken, +10% final damage per KMS and GMS sources, no potions) for 6s. Taking the opposite curse while one is active costs a life, deals +50% HP damage and seals skills for 5s.'
 - title: Origin binds only
   text: 'From Phase 2, only Origin skills bind him; normal binds still work on the Phase 1 knights.'
   detail: Only Origin skills can bind Black Mage from Phase 2 onward; normal binds still work on the Phase 1 knights.
@@ -124,9 +124,6 @@ notes:
 - title: MapleSEA changes
   text: 'v244 stopped the Phase 3 ultimate overlapping absorption, v246 dropped the entry item, v249 cut two Phase 2-3 patterns.'
   detail: 'MapleSEA changes: v244 stopped the Phase 3 Creation ultimate overlapping the absorption pattern; v246 removed the entry item; v249 removed Dark Falling and Morning Starfall from Phases 2 and 3.'
-- title: Entry level
-  text: '255 per wiki and guides; MapleTools says 275 (unconfirmed).'
-  detail: Entry level 255 per the wiki and guides; MapleTools lists 275 (unconfirmed which is right).
 difficulties:
 - name: Hard
   entry_level: 255
@@ -218,7 +215,7 @@ strategies:
   - Pick Creation (White) State with the Harvest key as Phase 4 starts.
   - Dodge black attacks; a hit gives Destruction (+10% damage, +15% damage taken, no potions).
   - Swap only for pillar checks, then return to White; check your current curse before any swap.
-  - The +10% figure is the English wiki's (another source differs, SEA unconfirmed); on Extreme the state is set at random every 30s.
+  - The +10% figure is the KMS/GMS value; on Extreme the state is set at random every 30s.
 sources:
 - url: https://maplestorywiki.net/w/Black_Mage/Monster
   title: MapleStory Wiki - Black Mage/Monster

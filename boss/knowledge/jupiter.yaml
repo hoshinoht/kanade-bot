@@ -126,8 +126,8 @@ strategies:
 difficulty_notes:
   h:
     title: Forced merges
-    text: 'Every third merge is Auspicious or Ruinous. Which one when centred is unconfirmed.'
-    detail: Every third merge is forced to Auspicious or Ruinous; off-centre it follows the needle as usual. When centred, the guide says an odd exact gauge value gives Auspicious and an even one Ruinous, while MapleTools says forced merges alternate (unconfirmed).
+    text: 'Every third merge is forced and alternates: the 3rd is Auspicious, the 6th Ruinous, and so on.'
+    detail: 'Every third merge is forced to Auspicious or Ruinous; off-centre it follows the needle as usual. When centred, forced merges alternate: the 3rd, 9th, 15th merges are Auspicious and the 6th, 12th Ruinous (a KMS pattern write-up and MapleTools agree).'
 notes:
 - title: Limits
   text: '30 min now (20 after OVERDRIVE), 10s potions; no slows or critical binds.'

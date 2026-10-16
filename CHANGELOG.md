@@ -23,6 +23,9 @@ _In development_
 - The NEXON link notice and the Privacy page now say that a linked character's class and level are copied to the roster, stay after an unlink and are seen by guild members; members who linked a character themselves are asked to confirm the new notice before it refreshes again, while characters an admin linked stay linked.
 - The Privacy page now says how long estimates are kept, how they are refreshed and when they are deleted.
 
+### Improvements
+- Corrected boss guide details for eight bosses (gauge rules, forced merges, entry levels and MapleSEA mechanic names) after a source check.
+
 ### Fixes
 - Fixed Config never showing the "Manage Messages missing" warning when the bot lacks Manage Messages in a channel it uses.
 - Fixed phones cutting off a member's runs in the Week's Answers view and the Reminders count running past the window edge.
