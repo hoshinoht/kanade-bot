@@ -16,6 +16,7 @@ pub mod characters;
 pub mod chardata;
 pub mod completion;
 pub mod drafts;
+pub mod guides;
 pub mod history;
 pub mod ids;
 pub mod members;

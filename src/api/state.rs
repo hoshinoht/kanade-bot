@@ -100,6 +100,23 @@ pub type HeaderRewritePort = Arc<
         + Sync,
 >;
 
+/// The delivery-owned guide publisher, absent while Discord is offline; the
+/// API never holds a transport. Runs are queued in the store
+/// ([`crate::domain::guides::GuideStore::request_publish`]).
+pub trait GuidePort: Send + Sync {
+    /// Read the channel for a plan (4.4): which of `slots` are gone, its
+    /// newest message and the bot's grants, within
+    /// [`crate::domain::guides::INSPECT_BUDGET`]; `None` when Discord did
+    /// not answer in time (the plan is then "Unchecked").
+    fn inspect(
+        &self,
+        channel_id: String,
+        slots: Vec<crate::domain::guides::PublishedSlot>,
+    ) -> Pin<Box<dyn Future<Output = Option<crate::domain::guides::Inspection>> + Send + '_>>;
+    /// Wake the single-flight worker to claim queued runs (of any guide).
+    fn wake(&self);
+}
+
 /// Live governor snapshots for the Limits page. `None` means model serving is
 /// not composed; allowance rows still remain useful.
 pub type ModelLimits = Arc<
