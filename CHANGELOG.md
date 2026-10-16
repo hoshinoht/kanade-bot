@@ -6,16 +6,22 @@ What changed in each Kanade release, newest first. Upgrading across several rele
 
 _In development_
 
+> [!IMPORTANT]
+> This release adds stored estimates to the character-data file. Rolling back to an older image needs one command with the bot stopped first (deploy README, "Stop and roll back"), or the older image refuses to start while character data is on.
+
 ### New features
 - A linked character's roster class and level now take NEXON's values on every refresh, recorded in History as NEXON, and stay on the roster after an unlink or once the NEXON data expires, so other members see the current level.
 - Added "Who carries", a bar per boss showing each member's share of the party's estimate, to the run sheet's Clear-time estimate panel and the member portal's run Party · characters, where the run's total (minutes, %, technically possible) now shows too.
-- Redesigned day-of and countdown reminder cards now carry a "Who carries" image showing each boss's estimate split between the party members by IGN (or "no estimate yet"), from estimates looked up in the last 24 hours and fixed at the time the card is posted. The image is left off while an estimate lookup for anyone in the card's party is still queued or running, so members still being looked up never show as "no estimate". The admin Reminders card preview shows the same image, drawn from the estimates cached at the time you open it.
+- Redesigned day-of and countdown reminder cards now carry a "Who carries" image showing each boss's estimate split between the party members by IGN (or "no estimate yet"), from the stored estimates at the time the card is posted. The image is left off only while a party member with no estimate yet is still being looked up, so they never show as "no estimate". The admin Reminders card preview shows the same image, drawn from the estimates stored at the time you open it.
+- Estimates are now kept for up to 30 days, across restarts, and refreshed automatically for party members of runs in the next 7 days, so reminder images and run sheets usually show one without anyone pressing Look up.
+- Added "Refresh estimates every n days" to Config › Character data (7 unless changed); an older estimate still shows, marked "older than n days", on the run sheet, the roster, the member portal and the reminder image.
 
 ### Changes
 - Estimates are now labelled “Estimate” on the portals and in Discord.
 - An admin's Link… (and Add character for a MapleSEA character) now links it at once and fetches its NEXON data, without waiting for the member to confirm; link requests still waiting from before become active on the first start.
 - The admin app, the member portal and Discord now say that unlinking keeps the class and level on the roster, and "Waiting for you" now only shows links waiting for the member to confirm the notice.
 - The NEXON link notice and the Privacy page now say that a linked character's class and level are copied to the roster, stay after an unlink and are seen by guild members; members who linked a character themselves are asked to confirm the new notice before it refreshes again, while characters an admin linked stay linked.
+- The Privacy page now says how long estimates are kept, how they are refreshed and when they are deleted.
 
 ### Fixes
 - Fixed Config never showing the "Manage Messages missing" warning when the bot lacks Manage Messages in a channel it uses.
