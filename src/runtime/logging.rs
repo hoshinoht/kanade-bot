@@ -28,12 +28,14 @@ pub fn server_started(mode: &'static str, bind: &str) {
         event: &'static str,
         mode: &'static str,
         bind: &'a str,
+        version: &'static str,
     }
     emit(&Event {
         level: "INFO",
         event: "server_started",
         mode,
         bind,
+        version: env!("CARGO_PKG_VERSION"),
     });
 }
 

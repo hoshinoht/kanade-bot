@@ -2,7 +2,11 @@
 
 `kanade` is the single Rust executable, version `1.0.0-beta.8` (the release
 label everywhere: Cargo, CHANGELOG and its `v1.0.0-beta.8` git tag once it
-is released; the last release is tagged `v1.0.0-beta.7`).
+is released; the last release is tagged `v1.0.0-beta.7`). The crate version
+is the one source: `kanade --version` prints `kanade 1.0.0-beta.8` without
+reading any settings, and the `server_started` log line, the admin Account
+page and the image's OCI version label show the same number; the commit is
+only in the image's revision label.
 
 ## Available now
 
@@ -11,6 +15,7 @@ sync, delivery tick, the chat pilot and extraction (behind its settings
 switch) for the configured guild):
 
 ```sh
+kanade --version
 KANADE_TIMEZONE=Asia/Kuala_Lumpur kanade serve --offline
 kanade serve        # live: the "Serve environment" below is required
 KANADE_HEALTHCHECK_URL=http://127.0.0.1:8080/healthz kanade healthcheck
@@ -154,7 +159,7 @@ lists are comma-separated.
 | `KANADE_MODULE_CHARACTER_DATA` | `0` | `0` or `1`. NEXON Open API data for linked roster characters (never sent to models, never in backups); startup refuses `1` without `KANADE_MODULE_ROSTER=1`. `1` serves `/api/admin/characters/{id}/link` and `/refresh` and the Add character lookup `/api/admin/characters/lookup` (shown only, never stored), makes a MapleSEA character create also ask its member to link it, runs the refresh/sweep task and adds Config's health block; `0` answers the routes `404` and opens no file. Read at startup. |
 | `KANADE_CHARACTER_DATA_DB_PATH` | unset | Required while character data is on: absolute path of its own SQLite file (directory created `0700`, file `0600`, owner lock in `KANADE_OWNER_LOCK_DIR`), on a volume of its own so `kanade backup` and the data-volume tarball never hold it. Ignored while off. |
 | `KANADE_NEXON_API_KEY_FILE` | unset | Optional secret file with the Open API key (one line, ≤ 4 KiB). Unset: the module runs with links refused (health `no_key`); set but unreadable: startup is refused. Ignored while off. |
-| `KANADE_SCOUTER_URL` | unset | Optional: the private scouter sidecar (a separate Compose project, no authentication, no secret), e.g. `http://scouter:8091`. Plain `http` to a loopback or private address or a single-label host only (no credentials, path or query); anything else refuses startup. Set: admins can run estimates (`/api/admin/estimates`, one lookup at a time, results kept 24 h in memory only; the scouter is sent roster IGNs only). Unset: estimates are off (routes `404`, health `off`). Ignored while character data is off. |
+| `KANADE_SCOUTER_URL` | unset | Optional: the private scouter sidecar (a separate Compose project, no authentication, no secret), e.g. `http://scouter:8091`. Plain `http` to a loopback or private address or a single-label host only (no credentials, path or query); anything else refuses startup. Set: admins (and members, for their own characters) can run estimates (`/api/admin/estimates`, `/api/public/me/estimates`, one lookup at a time); results are kept up to 30 days in the character-data file, and serve refreshes the party members of runs in the next 7 days whose estimate is missing or older than the saved `character_data.estimate_days` (default 7); the scouter is sent roster IGNs only. Unset: every estimate feature is off (routes `404`, no background refresh, health `off`) and the rest runs unchanged. Ignored while character data is off. |
 | `KANADE_MODULE_GUIDES` | `0` | `0` or `1`. The guide publisher: `1` serves the admin Guides routes (`/api/admin/guides…`) and runs the publish worker, which posts each guide to its channel as an ordered set of messages and edits them in place on later publishes; `0` answers the routes `404` and runs no worker. Read at startup; the guide tables and their rows stay either way. |
 
 Seeds apply per key only where the store has no row; an unset seed keeps
@@ -922,6 +927,7 @@ JSON lines on stderr (`level`, `event`, fields). None carries question or reply 
 
 | Event | Level | Fields | When |
 | --- | --- | --- | --- |
+| `server_started` | INFO | `mode` (`offline`/`live`), `bind`, `version` (the crate version) | each listener (admin, and public when set) is bound |
 | `backup_dir_unreadable` | WARN | no additional fields | checkpoints could not list `KANADE_BACKUP_DIR` (it lists no backups) |
 | `backup_manifests_skipped` | WARN | `unreadable`, `missing_snapshot` (counts), `truncated` (more than 4096 entries) | checkpoints skipped unreadable or foreign manifests or ones whose snapshot is gone |
 | `model_logs_pruned` | INFO | `cutoff` (ISO-8601 UTC), `extractions`, `chats`, `messages`, `notices`, `rewrites` (deleted counts) | each retention run of live serve (startup, then daily) |
@@ -945,3 +951,5 @@ JSON lines on stderr (`level`, `event`, fields). None carries question or reply 
 | `chat_cancelled` | INFO | `interaction_id`, `reason` (`deleted`/`shutdown`/`expired`/`not_admitted`/`not_ready`/`aborted`) | an admitted question ended without an answer |
 | `difficulty_marks` | INFO; WARN when a pill is missing | `missing` (pill names not found) | serve startup, after listing the application's emojis |
 | `difficulty_marks_unavailable` | WARN | `reason` (transport label or `timeout`) | serve startup when the emoji list failed; every difficulty is written out |
+| `estimate_refresh_pass` | INFO | `runs`, `due`, `queued`, `cap_left` (background lookups left today), `skipped` (why nothing was queued, e.g. `unreachable`, `verification_required`) | each background estimate refresh pass (with a scouter URL only: 10 minutes after start, then hourly) |
+| `estimate_finished` | INFO; WARN with a failure | `state` (`done`/`failed`), `source` (`manual`/`background`), `characters`, then `failed`, `total_failed`, `cache_hit` (done) or `code`, `detail`, `status` (failed); never an IGN or a result | an estimate lookup ended |

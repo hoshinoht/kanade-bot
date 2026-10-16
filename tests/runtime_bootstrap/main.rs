@@ -105,6 +105,18 @@ fn offline_server_healthcheck_and_sigterm_are_operational() {
         server.wait_timeout(Duration::from_secs(3)).is_some(),
         "server did not drain after termination"
     );
+    let mut logs = String::new();
+    server
+        .stderr
+        .take()
+        .unwrap()
+        .read_to_string(&mut logs)
+        .unwrap();
+    let started = format!(
+        "\"event\":\"server_started\",\"mode\":\"offline\",\"bind\":\"{address}\",\"version\":\"{}\"",
+        env!("CARGO_PKG_VERSION")
+    );
+    assert!(logs.contains(&started), "{logs}");
 }
 
 #[test]
@@ -147,6 +159,25 @@ fn healthcheck_fails_when_no_loopback_server_is_available() {
         .status()
         .unwrap();
     assert!(!status.success());
+}
+
+/// The release number is the crate version, printed even when the settings
+/// would refuse every other command.
+#[test]
+fn version_prints_the_crate_version_without_configuration() {
+    for flag in ["--version", "-V"] {
+        let output = Command::new(binary())
+            .arg(flag)
+            .env("KANADE_CONFIG", "/nonexistent/kanade.toml")
+            .env("KANADE_TIMEZONE", "not-a-timezone")
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "{flag}: {output:?}");
+        assert_eq!(
+            String::from_utf8(output.stdout).unwrap(),
+            concat!("kanade ", env!("CARGO_PKG_VERSION"), "\n")
+        );
+    }
 }
 
 /// `serve --offline` that must be refused with 78 (`EX_CONFIG`): its stderr.

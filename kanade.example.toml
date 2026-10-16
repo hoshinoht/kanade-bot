@@ -132,7 +132,10 @@ bossing_role_id = "223456789012345678"
 # nexon_key_file = "/run/secrets/nexon_api_key"
 # The private scouter sidecar for clear-time estimates (admins; members for
 # their own characters). Plain http to a loopback, private or single-label host;
-# no secret. Unset: estimates off.
+# no secret. Unset: every estimate feature is off and the rest runs unchanged.
+# Results are kept up to 30 days in db_path's file and refreshed in the
+# background for upcoming runs; Config › Character data saves how many days
+# old an estimate may get (no key here).
 # scouter_url = "http://scouter:8091"
 
 [models]

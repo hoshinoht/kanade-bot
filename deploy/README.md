@@ -437,9 +437,14 @@ and 5.
 SHA=$(git rev-parse --short HEAD)                 # what is being deployed
 # 1. Keep the running image for rollback (name it by the commit it was built from).
 docker tag kanade-v5:local kanade-v5:rollback-<old-sha>
-# 2. Build. With uncommitted work in the tree, build from the commit instead:
-#    git -C .. archive HEAD | docker build -f deploy/Dockerfile -t kanade-v5:local -
+# 2. Build, with the image labels (Reference → Image): version from
+#    Cargo.toml, revision = the commit.
+export KANADE_IMAGE_REVISION="$(git rev-parse HEAD)"
+export KANADE_IMAGE_VERSION="$(sed -n 's/^version = "\(.*\)"/\1/p' ../Cargo.toml)"
 docker compose build
+#    With uncommitted work in the tree, build from the commit instead:
+#    git -C .. archive HEAD | docker build -f deploy/Dockerfile \
+#      --build-arg KANADE_IMAGE_REVISION --build-arg KANADE_IMAGE_VERSION -t kanade-v5:local -
 # 3. Stop the bot (it owns the store).
 docker compose stop bot
 # 4. Whole-volume tarball (fallback), 0600: first, since it never changes the store.
@@ -452,9 +457,10 @@ docker run --rm -v kanade_v5_data:/data:ro -v "$BACKUPS:/backups" \
 #    would snapshot an already-migrated store.
 KANADE_BACKUP_IMAGE=kanade-v5:rollback-<old-sha> docker compose \
   --profile backup run --rm backup backup --name kanade-$STAMP-pre-$SHA.sqlite
-# 6. Start and check.
+# 6. Start and check (the version is the release in Cargo.toml).
 docker compose up -d
 docker exec kanade-v5 /usr/local/bin/kanade healthcheck
+docker exec kanade-v5 /usr/local/bin/kanade --version
 ```
 
 `kanade backup` refuses (exit 69, "stop the bot first") while the bot owns
@@ -712,18 +718,23 @@ Base images are pinned by digest; bump tag and digest together
 (`docker buildx imagetools inspect <image:tag>`). Nothing private is baked in:
 settings, personas, art, the store and secrets are mounted at runtime.
 
-Every image has OCI revision, version and source labels. Set them from the
-commit being built; Compose passes the same optional variables (from the
-shell or `.env`) through to its build:
+Every image has OCI revision, version and source labels. The version is the
+crate version in `Cargo.toml` (what `kanade --version` and the admin Account
+page show, also between tags, where `git describe` would name the previous
+release); the revision is the commit being built. Compose passes the same
+optional variables (from the shell or `.env`; unset: `dev` and `unknown`)
+through to its build:
 
 ```sh
 export KANADE_IMAGE_REVISION="$(git rev-parse HEAD)"
-export KANADE_IMAGE_VERSION="$(git describe --always --dirty)"
+export KANADE_IMAGE_VERSION="$(sed -n 's/^version = "\(.*\)"/\1/p' ../Cargo.toml)"
 docker compose build
 # or, from the repository root: docker build -f deploy/Dockerfile \
 #   --build-arg KANADE_IMAGE_REVISION="$(git rev-parse HEAD)" \
-#   --build-arg KANADE_IMAGE_VERSION="$(git describe --always --dirty)" \
+#   --build-arg KANADE_IMAGE_VERSION="$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml)" \
 #   -t kanade-v5:local .
+docker image inspect kanade-v5:local \
+  --format '{{index .Config.Labels "org.opencontainers.image.version"}}'   # 1.0.0-beta.8
 ```
 
 ### Host inputs
