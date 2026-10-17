@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import type { EstimateJob, EstimateStarted, Limits } from '@kanade/api-types';
 import type { Locator, Page } from '@playwright/test';
 import { boardExists, composite, diff, markdown, MOCKUPS, renderBoard, settle, skeleton } from './fidelity-kit';
+import { TEASE_PAIRS } from './fidelity-tease';
 import {
   ADMIN,
   expect,
@@ -1845,7 +1846,7 @@ const PAIRS: Pair[] = [
 test.describe('layout fidelity', () => {
   test.skip(!ENABLED, 'run with `bun run fidelity` (needs a KANADE_FIDELITY=1 build)');
 
-  for (const pair of [...PAIRS, ...DRAFT_PAIRS, ...GRAPH_PAIRS, ...PRESENCE_PAIRS, ...PUBLIC_PAIRS, ...MEMBER_CHAR_PAIRS, ...SHARE_PAIRS, ...BOSS_PICK_PAIRS].filter((p) => !ONLY.length || ONLY.includes(p.name))) {
+  for (const pair of [...PAIRS, ...DRAFT_PAIRS, ...GRAPH_PAIRS, ...PRESENCE_PAIRS, ...PUBLIC_PAIRS, ...MEMBER_CHAR_PAIRS, ...SHARE_PAIRS, ...BOSS_PICK_PAIRS, ...TEASE_PAIRS].filter((p) => !ONLY.length || ONLY.includes(p.name))) {
     test(pair.name, async ({ page, browser }) => {
       test.skip(!boardExists(pair.board), `no board ${pair.board}.dc.html under ${MOCKUPS}`);
       const dir = join(OUT, pair.name);
