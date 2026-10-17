@@ -23,13 +23,14 @@ use chrono_tz::Tz;
 use twilight_model::channel::message::Component;
 
 use super::cards::chart::{self, Chart, ChartRun};
-use super::cards::{CardContext, CardKit, HeaderContext, card_runs};
+use super::cards::{CardContext, CardKit, HeaderContext, Teasable, card_runs};
 use crate::bot::commands::text::{MONTH_NAMES, local_time, weekday_name};
 use crate::bot::transport::{OutgoingMessage, Upload, legacy_rows};
 use crate::chat::persona::NudgeMood;
 use crate::domain::catalog::BossTable;
 use crate::domain::characters::{PartyReads, PartyRoster, PartySlot};
 use crate::domain::chardata::PartyShares;
+use crate::domain::members::{Directory, MemberProfile};
 use crate::domain::notify::IntentContent;
 use crate::domain::schedule::{Run, RunStatus, ScheduleSnapshot};
 use crate::domain::settings::MessageStyle;
@@ -70,6 +71,7 @@ pub struct RunEstimate {
 }
 
 pub type EstimateFuture<'a> = Pin<Box<dyn Future<Output = Option<RunEstimate>> + Send + 'a>>;
+pub type IgnFuture<'a> = Pin<Box<dyn Future<Output = Option<Vec<String>>> + Send + 'a>>;
 
 /// Each run's stored estimates; `None` when the party can't be read or a
 /// lookup is still finding a member with no stored result (the card then
@@ -81,6 +83,11 @@ pub trait PartyEstimates: Send + Sync {
         schedule: &'a ScheduleSnapshot,
         catalog: &'a BossTable,
     ) -> EstimateFuture<'a>;
+
+    /// Every character's IGN (retired ones too) of `members`, which a
+    /// running-joke note must not carry (D10); `None` when the roster
+    /// can't be read.
+    fn igns<'a>(&'a self, members: &'a [String]) -> IgnFuture<'a>;
 }
 
 /// The serve port: the roster store and module `character_data`'s
@@ -121,6 +128,17 @@ impl<S: PartyReads + Send + Sync + ?Sized + 'static> PartyEstimates for CachedEs
             };
             let slots = roster.slots(run, &week, &schedule.fixed_runs, catalog);
             settled_estimate(run, &slots, estimates)
+        })
+    }
+
+    fn igns<'a>(&'a self, members: &'a [String]) -> IgnFuture<'a> {
+        Box::pin(async move {
+            let mut igns = Vec::new();
+            for member in members {
+                let characters = self.store.member_characters(member).await.ok()?;
+                igns.extend(characters.into_iter().map(|character| character.ign));
+            }
+            Some(igns)
         })
     }
 }
@@ -258,13 +276,16 @@ pub async fn chart_for(
 /// `header_estimates` switch on, and only from a fresh estimate of every
 /// run on the card ([`HeaderContext::build`]). The party's names and
 /// aliases come from `ctx.members` (refused raw in the line, never sent).
-/// `None` keeps today's prompt.
+/// With teasing on (D12), the party members who opted in are tease
+/// candidates; their notes are checked against the whole roster now
+/// ([`Teasable::of`]). `None` keeps today's prompt.
 pub async fn header_context(
     content: &IntentContent,
     ctx: &CardContext<'_>,
     kit: &CardKit,
 ) -> Option<HeaderContext> {
-    if ctx.style != MessageStyle::Redesigned || !kit.switches().estimates {
+    let switches = kit.switches();
+    if ctx.style != MessageStyle::Redesigned || !switches.estimates {
         return None;
     }
     let port = kit.estimates.as_deref()?;
@@ -276,17 +297,54 @@ pub async fn header_context(
     };
     let mut estimates = Vec::with_capacity(runs.len());
     let mut names = Vec::new();
+    let mut opted: Vec<MemberProfile> = Vec::new();
     for run in &runs {
         estimates.push(port.run(run, ctx.schedule, catalog).await?);
         for member in &run.participants {
             if let Some(profile) = ctx.members.profile(member) {
                 names.extend(profile.member.nickname.clone());
                 names.extend(profile.member.display_name.clone());
-                names.extend(profile.aliases);
+                names.extend(profile.aliases.iter().cloned());
+                if switches.teasing
+                    && profile.tease_ok
+                    && !opted.iter().any(|seen| seen.member.user_id == *member)
+                {
+                    opted.push(profile);
+                }
             }
         }
     }
-    HeaderContext::build(&estimates, NudgeMood::Playful, names)
+    let roster = if opted.iter().any(|profile| profile.running_joke.is_some()) {
+        roster_names(ctx.members, port).await
+    } else {
+        None
+    };
+    let teasable: Vec<Teasable> = opted
+        .iter()
+        .filter_map(|profile| Teasable::of(profile, roster.as_deref()))
+        .collect();
+    HeaderContext::build(&estimates, NudgeMood::Playful, names, &teasable)
+}
+
+/// Every roster member's display name, nickname and aliases and every
+/// character's IGN, as a running-joke note must not carry them (D10, the
+/// save-time list); `None` when either can't be read.
+async fn roster_names(
+    members: &(dyn Directory + Sync),
+    port: &dyn PartyEstimates,
+) -> Option<Vec<String>> {
+    let profiles = members.roster_profiles()?;
+    let ids: Vec<String> = profiles
+        .iter()
+        .map(|profile| profile.member.user_id.clone())
+        .collect();
+    let mut names = port.igns(&ids).await?;
+    for profile in profiles {
+        names.extend(profile.member.display_name);
+        names.extend(profile.member.nickname);
+        names.extend(profile.aliases);
+    }
+    Some(names)
 }
 
 /// One render at a time: a render that outlives its deadline keeps its

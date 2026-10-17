@@ -115,6 +115,13 @@ pub trait Directory {
             ..MemberProfile::default()
         })
     }
+
+    /// Every stored row when the directory holds the whole roster (a
+    /// running-joke note is checked against all of it); `None` when it
+    /// can't list them.
+    fn roster_profiles(&self) -> Option<Vec<MemberProfile>> {
+        None
+    }
 }
 
 /// A persisted `members` row: the roster entry plus what the portal edits
@@ -258,6 +265,10 @@ impl<T: Directory + ?Sized> Directory for &T {
     fn profile(&self, user_id: &str) -> Option<MemberProfile> {
         (**self).profile(user_id)
     }
+
+    fn roster_profiles(&self) -> Option<Vec<MemberProfile>> {
+        (**self).roster_profiles()
+    }
 }
 
 /// v4 `member_name`: nickname, display name, id, or `user <short id>`.
@@ -275,6 +286,8 @@ pub fn member_name(directory: &(impl Directory + ?Sized), user_id: &str) -> Stri
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Roster {
     members: BTreeMap<String, Member>,
+    /// The stored rows of members added with [`Self::upsert_profile`].
+    rows: BTreeMap<String, MemberProfile>,
     watched: BTreeSet<String>,
 }
 
@@ -285,6 +298,13 @@ impl Roster {
 
     pub fn upsert(&mut self, member: Member) {
         self.members.insert(member.user_id.clone(), member);
+    }
+
+    /// A member with their stored row (aliases, tease opt-in, …), which
+    /// [`Directory::profile`] then returns.
+    pub fn upsert_profile(&mut self, profile: MemberProfile) {
+        self.upsert(profile.member.clone());
+        self.rows.insert(profile.member.user_id.clone(), profile);
     }
 
     pub fn get(&self, user_id: &str) -> Option<&Member> {
@@ -327,5 +347,20 @@ impl Directory for Roster {
 
     fn display_name(&self, user_id: &str) -> Option<String> {
         self.get(user_id)?.name().map(str::to_owned)
+    }
+
+    fn profile(&self, user_id: &str) -> Option<MemberProfile> {
+        let member = self.get(user_id)?.clone();
+        let row = self.rows.get(user_id).cloned().unwrap_or_default();
+        Some(MemberProfile { member, ..row })
+    }
+
+    fn roster_profiles(&self) -> Option<Vec<MemberProfile>> {
+        Some(
+            self.members
+                .keys()
+                .filter_map(|user_id| self.profile(user_id))
+                .collect(),
+        )
     }
 }

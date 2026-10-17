@@ -25,7 +25,7 @@ pub use log::{
 };
 pub use prompt::{
     BossFigures, GENTLE_MOOD, HeaderFacts, NUDGE_REWRITE_INSTRUCTION, OfferedSlot, PLAYFUL_MOOD,
-    RewritePrompt, VOICE_LABEL,
+    RewritePrompt, TeaseSlot, VOICE_LABEL,
 };
 pub use rewrite::{
     CUSTOM_WORD, NoRewrite, NudgeRewriter, REWRITE_DEADLINE, Rejection, RewriteDetail,

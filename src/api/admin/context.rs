@@ -78,10 +78,12 @@ pub fn next_week(uri: &Uri) -> Result<bool, ApiError> {
     }
 }
 
+/// The members as a directory with their stored rows, so the reminder
+/// preview's `resolve_heading` sees each member's tease opt-in.
 pub fn roster(profiles: &[MemberProfile]) -> Roster {
     let mut roster = Roster::new();
     for profile in profiles {
-        roster.upsert(profile.member.clone());
+        roster.upsert_profile(profile.clone());
     }
     roster
 }

@@ -15,6 +15,7 @@ mod drafts;
 mod failures;
 mod guides;
 mod header_slots;
+mod header_tease;
 mod intercept;
 mod late_start;
 mod manual;

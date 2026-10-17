@@ -4,9 +4,12 @@
 //! the mood, and the seed line with its placeholders unfilled. They carry no
 //! member, channel or schedule data. A reminder header may also carry a
 //! [`HeaderFacts`] block right after the instruction: the party's estimate
-//! totals per boss (bosses numbered, never named) and the `{cN}` placeholders
-//! offered for top carriers with their share; never a name, IGN, alias or id.
-//! Without it the header prompt is exactly what it was before the block.
+//! totals per boss (bosses numbered, never named), the `{cN}` placeholders
+//! offered for top carriers with their share and, with teasing on, one more
+//! placeholder that may be teased lightly (share and the admins' running-joke
+//! note); never a name, IGN, alias or id. Without it the header prompt is
+//! exactly what it was before the block, and without a tease slot the block
+//! is exactly what it was before teasing.
 
 use crate::chat::persona::{CompiledPersona, NudgeMood, VoiceSource};
 use crate::infrastructure::llm::Message;
@@ -54,12 +57,28 @@ pub struct OfferedSlot {
     pub share: u32,
 }
 
-/// The estimate context of a reminder header rewrite (D2/D3/D7).
+/// The one member offered for light teasing (D11): opted in, in the party
+/// with an estimate, the lowest share among those who opted in.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TeaseSlot {
+    /// The next `{cN}` after the carriers'; code fills in the name.
+    pub placeholder: String,
+    /// Their whole-% share of the party's estimate on this card.
+    pub share: u32,
+    /// The admins' running-joke note, re-checked against the roster's
+    /// names just before the prompt is built (D10).
+    pub note: Option<String>,
+}
+
+/// The estimate context of a reminder header rewrite (D2/D3/D7/D11).
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct HeaderFacts {
     pub bosses: Vec<BossFigures>,
     /// Empty in the gentle mood: no call-outs.
     pub slots: Vec<OfferedSlot>,
+    /// Only with teasing on, never in the gentle mood; `None` leaves the
+    /// block exactly as it is without teasing.
+    pub tease: Option<TeaseSlot>,
 }
 
 impl HeaderFacts {
@@ -85,29 +104,31 @@ impl HeaderFacts {
             }
             lines.push(format!("- boss {}: {}", index + 1, parts.join(", ")));
         }
-        if self.slots.is_empty() {
-            lines.push(
+        let offered: Vec<String> = self
+            .slots
+            .iter()
+            .map(|slot| {
+                format!(
+                    "{} ({}% of the party's estimate)",
+                    slot.placeholder, slot.share
+                )
+            })
+            .collect();
+        match &self.tease {
+            None if self.slots.is_empty() => lines.push(
                 "Speak to the whole party; do not single anyone out and add no braces.".to_owned(),
-            );
-        } else {
-            let offered: Vec<String> = self
-                .slots
-                .iter()
-                .map(|slot| {
-                    format!(
-                        "{} ({}% of the party's estimate)",
-                        slot.placeholder, slot.share
-                    )
-                })
-                .collect();
-            lines.push(format!(
-                "Top carriers you may praise, by placeholder only: {}. Use none, one or both, each at most once, copied exactly; they are the only braces you may add.",
-                offered.join(", ")
-            ));
-            lines.push(
-                "Positive call-outs only: praise an offered placeholder or the whole party; never point at the lowest or at anyone else."
-                    .to_owned(),
-            );
+            ),
+            None => {
+                lines.push(format!(
+                    "Top carriers you may praise, by placeholder only: {}. Use none, one or both, each at most once, copied exactly; they are the only braces you may add.",
+                    offered.join(", ")
+                ));
+                lines.push(
+                    "Positive call-outs only: praise an offered placeholder or the whole party; never point at the lowest or at anyone else."
+                        .to_owned(),
+                );
+            }
+            Some(tease) => tease_lines(&mut lines, &offered, tease),
         }
         lines.push("Never restate a figure, a percentage, a number or a boss.".to_owned());
         if self
@@ -121,6 +142,36 @@ impl HeaderFacts {
             );
         }
         lines.join("\n")
+    }
+}
+
+/// The call-out lines with a tease slot: the carriers to praise, the one
+/// placeholder that may be teased (with its note), the two-slot cap and
+/// positive call-outs for everyone else.
+fn tease_lines(lines: &mut Vec<String>, offered: &[String], tease: &TeaseSlot) {
+    let slot = &tease.placeholder;
+    if !offered.is_empty() {
+        lines.push(format!(
+            "Top carriers you may praise, by placeholder only: {}. Use none, one or both, each at most once, copied exactly.",
+            offered.join(", ")
+        ));
+    }
+    let mut line = format!(
+        "{slot} ({}% of the party's estimate) has asked to be teased: you may tease {slot} lightly and kindly, by placeholder only, at most once, copied exactly.",
+        tease.share
+    );
+    if let Some(note) = &tease.note {
+        line.push_str(&format!(" Their running joke, for flavour: \"{note}\"."));
+    }
+    lines.push(line);
+    if offered.is_empty() {
+        lines.push(format!(
+            "{slot} is the only placeholder and the only brace you may add. Tease only {slot}; speak kindly to the rest of the party and single no one else out."
+        ));
+    } else {
+        lines.push(format!(
+            "Use at most two placeholders in all; they are the only braces you may add. Tease only {slot}: everyone else gets positive call-outs only, praise for a top carrier or the whole party; never point at anyone else."
+        ));
     }
 }
 
@@ -344,6 +395,7 @@ mod tests {
                     share: *share,
                 })
                 .collect(),
+            tease: None,
         }
     }
 
@@ -372,5 +424,63 @@ mod tests {
         assert!(hedged.contains("Hedge:"));
         assert!(hedged.contains("do not single anyone out"));
         assert!(!hedged.contains('{'));
+    }
+
+    /// Without a tease slot the call-out lines are exactly header-context's
+    /// (beta.9 before teasing), with carriers or without.
+    #[test]
+    fn without_a_tease_slot_the_block_is_unchanged() {
+        const BOSSES: &str = "Party estimate for this card, for tone only (never restate it):\n- boss 1: party total 112.4%, about 26.7 minutes to clear, a clear is technically possible\n- boss 2: party total 61.0%\n";
+        const TAIL: &str = "\nNever restate a figure, a percentage, a number or a boss.";
+        assert_eq!(
+            facts(&[("{c1}", 48), ("{c2}", 31)], false, true).block(),
+            format!(
+                "{BOSSES}Top carriers you may praise, by placeholder only: {{c1}} (48% of the party's estimate), {{c2}} (31% of the party's estimate). Use none, one or both, each at most once, copied exactly; they are the only braces you may add.\nPositive call-outs only: praise an offered placeholder or the whole party; never point at the lowest or at anyone else.{TAIL}"
+            )
+        );
+        assert_eq!(
+            facts(&[], false, true).block(),
+            format!(
+                "{BOSSES}Speak to the whole party; do not single anyone out and add no braces.{TAIL}"
+            )
+        );
+    }
+
+    /// A tease slot is offered after the carriers with its share and note,
+    /// teasing is allowed for that placeholder only, and the cap of two
+    /// placeholders is stated.
+    #[test]
+    fn a_tease_slot_is_the_only_one_that_may_be_teased() {
+        let tease = |note: Option<&str>| {
+            Some(TeaseSlot {
+                placeholder: "{c3}".into(),
+                share: 9,
+                note: note.map(str::to_owned),
+            })
+        };
+        let with = HeaderFacts {
+            tease: tease(Some("Always lost on the way to the portal")),
+            ..facts(&[("{c1}", 48), ("{c2}", 31)], false, true)
+        };
+        let block = with.block();
+        assert!(block.contains("{c1} (48% of the party's estimate), {c2} (31%"));
+        assert!(block.contains(
+            "{c3} (9% of the party's estimate) has asked to be teased: you may tease {c3} lightly"
+        ));
+        assert!(
+            block.contains("running joke, for flavour: \"Always lost on the way to the portal\"")
+        );
+        assert!(block.contains("Use at most two placeholders in all"));
+        assert!(block.contains("Tease only {c3}"));
+        assert!(!block.contains("never point at the lowest"));
+        // No carriers (an unsafe IGN): the tease slot is the only brace.
+        let alone = HeaderFacts {
+            tease: tease(None),
+            ..facts(&[], false, true)
+        }
+        .block();
+        assert!(alone.contains("{c3} is the only placeholder"));
+        assert!(!alone.contains("running joke") && !alone.contains("Top carriers"));
+        assert!(!alone.contains("add no braces"));
     }
 }

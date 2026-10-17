@@ -106,4 +106,8 @@ impl Directory for LiveRoster {
     fn profile(&self, user_id: &str) -> Option<MemberProfile> {
         LiveRoster::profile(self, user_id)
     }
+
+    fn roster_profiles(&self) -> Option<Vec<MemberProfile>> {
+        Some(self.profiles())
+    }
 }

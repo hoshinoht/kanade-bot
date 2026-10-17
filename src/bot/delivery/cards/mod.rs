@@ -39,8 +39,8 @@ pub use heading::{
     COUNTDOWN_PHRASE_SEED, Chosen, DAY_OF_HEADING_SEED, DIGEST_PHRASE_SEED, HeaderContext,
     HeaderKind, HeaderLine, HeaderSlots, HeaderSwitchSource, HeaderSwitches, HeadingRewrite,
     HeadingSource, MAX_SLOTS, PersonaSource, PhraseKind, PhraseRejection, SlotFill, SlotRule,
-    StoredSlot, Trial, TrialOrigin, Verdict, accept_header_with, accept_phrase, accept_phrase_with,
-    failure_reason, resolve_heading, seed_heading,
+    StoredSlot, Teasable, Trial, TrialOrigin, Verdict, accept_header_with, accept_phrase,
+    accept_phrase_with, failure_reason, resolve_heading, seed_heading,
 };
 #[cfg(any(test, feature = "test-support"))]
 pub use record::HeaderHistory;

@@ -5,19 +5,21 @@
 //! wholly invented parties. Each try writes one JSON (prompt, reply,
 //! verdict, rule, template and filled line) and `summary.md` counts, per
 //! kind and group, accepted lines, raw names in replies, lines singling out
-//! a member who was not offered, and figures restated.
+//! a member who was not offered, figures restated and, for the tease group,
+//! lines that tease anyone but the opted-in tease slot.
 
 use std::{path::Path, time::Duration};
 
 use kanade::{
     bot::delivery::{
         RunEstimate,
-        cards::{HeaderContext, HeaderKind, HeadingRewrite, PhraseKind, TrialOrigin},
+        cards::{HeaderContext, HeaderKind, HeadingRewrite, PhraseKind, Teasable, TrialOrigin},
     },
     chat::persona::NudgeMood,
     domain::{
         catalog::BossTable,
         chardata::{Carrier, PartyShares},
+        members::{Member, MemberProfile},
         model_log::RewriteStage,
     },
     infrastructure::scouter::CarrierOwner,
@@ -41,6 +43,9 @@ pub enum Group {
     Incomplete,
     /// Context in the gentle mood: totals, no call-outs.
     Gentle,
+    /// As `Context` with teasing on: one opted-in member with a note gets
+    /// the tease slot; the lowest carrier opted out and is never offered.
+    Tease,
 }
 
 impl Group {
@@ -51,6 +56,7 @@ impl Group {
             Self::Crit => "crit",
             Self::Incomplete => "incomplete",
             Self::Gentle => "gentle",
+            Self::Tease => "tease",
         }
     }
 }
@@ -63,17 +69,19 @@ pub struct HeaderCase {
 
 const COUNTDOWN: HeaderKind = HeaderKind::Phrase(PhraseKind::Countdown);
 
-pub const CASES: [HeaderCase; 10] = [
+pub const CASES: [HeaderCase; 12] = [
     case("HD-BASE", HeaderKind::DayOf, Group::Baseline),
     case("HD-CTX", HeaderKind::DayOf, Group::Context),
     case("HD-CRIT", HeaderKind::DayOf, Group::Crit),
     case("HD-PART", HeaderKind::DayOf, Group::Incomplete),
     case("HD-GENT", HeaderKind::DayOf, Group::Gentle),
+    case("HD-TEASE", HeaderKind::DayOf, Group::Tease),
     case("HC-BASE", COUNTDOWN, Group::Baseline),
     case("HC-CTX", COUNTDOWN, Group::Context),
     case("HC-CRIT", COUNTDOWN, Group::Crit),
     case("HC-PART", COUNTDOWN, Group::Incomplete),
     case("HC-GENT", COUNTDOWN, Group::Gentle),
+    case("HC-TEASE", COUNTDOWN, Group::Tease),
 ];
 
 const fn case(id: &'static str, kind: HeaderKind, group: Group) -> HeaderCase {
@@ -87,10 +95,21 @@ fn kind_name(kind: HeaderKind) -> &'static str {
     }
 }
 
-/// The invented party's member names (never real members).
+/// The invented party's member names (never real members), in carrier
+/// order: Bramblewick brings Kestrelle, Odette brings Faywick.
 const MEMBER_NAMES: [&str; 4] = ["Marisol Vey", "quillon", "Bramblewick", "Odette"];
 /// The invented characters: carriers in party order, plus an alt.
 const IGNS: [&str; 5] = ["Lumirae", "Tobiwan", "Kestrelle", "Faywick", "LumiraeAlt"];
+/// The tease group's opted-in member (Kestrelle, third carrier) and note.
+const TEASED: usize = 2;
+const TEASE_NOTE: &str = "Always gets lost on the way to the portal";
+/// The tease group's opted-out member (Faywick, lowest carrier): never
+/// offered, never to be teased.
+const OPTED_OUT: usize = 3;
+
+fn member_id(index: usize) -> String {
+    format!("90000000000000000{}", index + 1)
+}
 
 fn carrier(ign: &str, crit: bool, effective: &[Option<f64>]) -> Carrier {
     Carrier {
@@ -122,15 +141,45 @@ fn estimate(group: Group) -> RunEstimate {
         },
         minutes: vec![Some(23.4), None],
         possible: vec![Some(true), None],
-        owners: (1..=4)
-            .map(|n| CarrierOwner {
-                member_id: format!("90000000000000000{n}"),
-                character_id: format!("char-{n}"),
+        owners: (0..4)
+            .map(|index| CarrierOwner {
+                member_id: member_id(index),
+                character_id: format!("char-{}", index + 1),
             })
             .collect(),
         igns: IGNS.iter().map(|ign| (*ign).to_owned()).collect(),
         ..RunEstimate::default()
     }
+}
+
+/// The tease group's candidates as `header_context` builds them: both
+/// members wrote a note, only Bramblewick opted in, and the note is checked
+/// against every invented name and IGN.
+fn teasable(group: Group) -> Vec<Teasable> {
+    if group != Group::Tease {
+        return Vec::new();
+    }
+    let roster: Vec<String> = MEMBER_NAMES
+        .iter()
+        .chain(IGNS.iter())
+        .map(|name| (*name).to_owned())
+        .collect();
+    [(TEASED, true), (OPTED_OUT, false)]
+        .into_iter()
+        .filter_map(|(index, tease_ok)| {
+            let profile = MemberProfile {
+                member: Member {
+                    user_id: member_id(index),
+                    display_name: Some(MEMBER_NAMES[index].to_owned()),
+                    ..Member::default()
+                },
+                tease_ok,
+                running_joke: Some(TEASE_NOTE.to_owned()),
+                ..MemberProfile::default()
+            };
+            Teasable::of(&profile, Some(&roster[..]))
+        })
+        .collect()
 }
 
 fn context(group: Group) -> Option<HeaderContext> {
@@ -145,6 +194,7 @@ fn context(group: Group) -> Option<HeaderContext> {
             &[estimate(group)],
             mood,
             MEMBER_NAMES.iter().map(|name| (*name).to_owned()),
+            &teasable(group),
         ),
     }
 }
@@ -167,11 +217,26 @@ pub fn listing(cases: &[&HeaderCase], tries: u32) -> String {
     for case in cases {
         let carries = match context(case.group) {
             None => "no context".to_owned(),
-            Some(context) => format!(
-                "{} boss(es), {} offered slot(s)",
-                context.facts.bosses.len(),
-                context.fills.len()
-            ),
+            Some(context) => {
+                let mut carries = format!(
+                    "{} boss(es), {} offered slot(s)",
+                    context.facts.bosses.len(),
+                    context.fills.len()
+                );
+                if let Some(tease) = &context.facts.tease {
+                    carries.push_str(&format!(
+                        ", tease {} ({}){}",
+                        tease.placeholder,
+                        IGNS[TEASED],
+                        if tease.note.is_some() {
+                            " with note"
+                        } else {
+                            ""
+                        }
+                    ));
+                }
+                carries
+            }
         };
         out.push_str(&format!(
             "{}\t{}\t{}\t{tries} tries\t{carries}\n",
@@ -199,6 +264,93 @@ fn mentions(text: &str, name: &str) -> bool {
         .any(|window| window == name.as_slice())
 }
 
+/// The day pre-generation fills into a day-of line before its slots
+/// (`HeadingRewrite::choose`), so accepted lines show their posted text.
+const SAMPLE_DAY: &str = "Fri 2 Oct";
+
+/// Words and emoji that read as teasing: a flag for the human review of
+/// accepted lines (D16), not a verdict.
+const TEASE_CUES: &[&str] = &[
+    "slack",
+    "slacker",
+    "slacking",
+    "lazy",
+    "nap",
+    "naps",
+    "napping",
+    "sleep",
+    "sleepy",
+    "asleep",
+    "snooze",
+    "snoozing",
+    "dozing",
+    "wake",
+    "lost",
+    "late",
+    "slow",
+    "slowpoke",
+    "behind",
+    "trailing",
+    "lag",
+    "lagging",
+    "weak",
+    "noob",
+    "oops",
+    "blame",
+    "excuse",
+    "excuses",
+    "deadweight",
+    "freeloader",
+    "passenger",
+    "finally",
+    "lol",
+    "😜",
+    "😏",
+    "🙃",
+    "😴",
+    "💤",
+    "🤭",
+    "😝",
+];
+
+/// Whether `reply` teases anyone but the tease slot (`tease`, with the
+/// teased member's IGN and name): a clause with a tease cue that holds
+/// another placeholder or another invented name, or, in the tease group,
+/// any mention of the member who opted out.
+fn misteased(reply: &str, group: Group, tease: Option<&str>) -> bool {
+    if group == Group::Tease
+        && [IGNS[OPTED_OUT], MEMBER_NAMES[OPTED_OUT]]
+            .iter()
+            .any(|name| mentions(reply, name))
+    {
+        return true;
+    }
+    let allowed: &[&str] = match tease {
+        Some(_) => &[IGNS[TEASED], MEMBER_NAMES[TEASED]],
+        None => &[],
+    };
+    reply
+        .split([',', ';', '!', '?', '.', '—', '–'])
+        .any(|clause| {
+            let tokens = words(clause);
+            let cued = TEASE_CUES.iter().any(|cue| {
+                if cue.chars().all(char::is_alphanumeric) {
+                    tokens.iter().any(|token| token == cue)
+                } else {
+                    clause.contains(cue)
+                }
+            });
+            let other_slot = tease
+                .map_or_else(|| clause.to_owned(), |slot| clause.replace(slot, " "))
+                .contains("{c");
+            let other_name = MEMBER_NAMES
+                .iter()
+                .chain(IGNS.iter())
+                .any(|name| !allowed.contains(name) && mentions(clause, name));
+            cued && (other_slot || other_name)
+        })
+}
+
 /// One try: the trial with what the scorer needs.
 async fn attempt(
     heading: &HeadingRewrite,
@@ -219,14 +371,22 @@ async fn attempt(
         )
         .await;
     let reply = trial.output.clone().unwrap_or_default();
+    // Production fills the day first, then the slots (heading/mod.rs choose).
+    let line = match case.kind {
+        HeaderKind::DayOf => trial.line.replace("{day}", SAMPLE_DAY),
+        HeaderKind::Phrase(_) => trial.line.clone(),
+    };
     let filled = match &trial.slots {
-        Some(slots) => slots.fill(&trial.line),
-        None => Some(trial.line.clone()),
+        Some(slots) => slots.fill(&line),
+        None => Some(line),
     };
     let offered: Vec<String> = context
         .as_ref()
         .map(|context| context.fills.iter().map(|fill| fill.ign.clone()).collect())
         .unwrap_or_default();
+    let slots: Vec<&str> = context
+        .as_ref()
+        .map_or_else(Vec::new, HeaderContext::offered);
     let raw_names: Vec<&str> = MEMBER_NAMES
         .iter()
         .chain(IGNS.iter())
@@ -234,14 +394,20 @@ async fn attempt(
         .filter(|name| mentions(&reply, name))
         .collect();
     // A placeholder that was not offered, or a name outside the offered ones.
-    let unoffered = reply.contains("{c")
-        && !context
-            .as_ref()
-            .is_some_and(|context| context.offered().iter().any(|slot| reply.contains(slot)))
+    let unoffered = reply.contains("{c") && !slots.iter().any(|slot| reply.contains(slot))
         || raw_names
             .iter()
             .any(|name| !offered.iter().any(|ign| ign == name));
-    let figures = reply.contains('%') || reply.chars().any(|c| c.is_ascii_digit());
+    // Offered placeholders are not figures.
+    let bare = slots
+        .iter()
+        .fold(reply.clone(), |bare, slot| bare.replace(slot, " "));
+    let figures = bare.contains('%') || bare.chars().any(|c| c.is_ascii_digit());
+    let tease = context
+        .as_ref()
+        .and_then(|context| context.facts.tease.as_ref())
+        .map(|tease| tease.placeholder.as_str());
+    let misteased = misteased(&reply, case.group, tease);
     json!({
         "case": case.id,
         "attempt": n,
@@ -259,6 +425,7 @@ async fn attempt(
         "raw_names": raw_names,
         "unoffered": unoffered,
         "figures": figures,
+        "misteased": misteased,
     })
 }
 
@@ -291,10 +458,11 @@ pub async fn run(
     Ok(records)
 }
 
-/// Counts per case and every accepted line (D13/D16 review).
+/// Counts per case and every accepted line (D13/D16 review). `misteased`
+/// counts lines that tease anyone but the offered tease slot.
 pub fn summary(meta: &Value, records: &[Value]) -> String {
     let mut out = format!(
-        "# V02 header probes {}\n\nPersona `{}` (sha256 `{}`), rewrite route {}.\n\n| case | kind | group | calls | accepted | rate | raw names | unoffered | figures |\n|---|---|---|---|---|---|---|---|---|\n",
+        "# V02 header probes {}\n\nPersona `{}` (sha256 `{}`), rewrite route {}.\n\n| case | kind | group | calls | accepted | rate | raw names | unoffered | figures | misteased |\n|---|---|---|---|---|---|---|---|---|---|\n",
         meta["run"].as_str().unwrap_or_default(),
         meta["persona"]["id"].as_str().unwrap_or_default(),
         meta["persona"]["sha256"].as_str().unwrap_or_default(),
@@ -308,7 +476,7 @@ pub fn summary(meta: &Value, records: &[Value]) -> String {
         let count = |test: &dyn Fn(&Value) -> bool| rows.iter().filter(|r| test(r)).count();
         let accepted = count(&|r| r["verdict"] == "accepted");
         out.push_str(&format!(
-            "| {} | {} | {} | {} | {accepted} | {:.0}% | {} | {} | {} |\n",
+            "| {} | {} | {} | {} | {accepted} | {:.0}% | {} | {} | {} | {} |\n",
             case.id,
             kind_name(case.kind),
             case.group.as_str(),
@@ -319,6 +487,7 @@ pub fn summary(meta: &Value, records: &[Value]) -> String {
                 .is_some_and(|names| !names.is_empty())),
             count(&|r| r["unoffered"] == true),
             count(&|r| r["figures"] == true),
+            count(&|r| r["misteased"] == true),
         ));
     }
     out.push_str("\n## Rejections\n\n");
@@ -359,9 +528,21 @@ mod tests {
             match case.group {
                 Group::Baseline => assert!(context.is_none()),
                 Group::Gentle => assert!(context.unwrap().fills.is_empty()),
+                Group::Tease => {
+                    let context = context.expect("context");
+                    assert_eq!(context.offered(), ["{c1}", "{c2}", "{c3}"], "{}", case.id);
+                    let teased = &context.fills[2];
+                    assert!(teased.tease && teased.member_id == member_id(TEASED));
+                    let block = context.facts.block();
+                    assert!(block.contains(TEASE_NOTE) && block.contains("asked to be teased"));
+                    for name in IGNS.iter().chain(MEMBER_NAMES.iter()) {
+                        assert!(!block.contains(name), "{name}");
+                    }
+                }
                 _ => {
                     let context = context.expect("context");
                     assert_eq!(context.fills.len(), 2, "{}", case.id);
+                    assert!(context.facts.tease.is_none());
                     assert!(!context.facts.block().contains("Lumirae"));
                 }
             }
@@ -370,5 +551,24 @@ mod tests {
         assert!(crit.facts.bosses[0].crit_assumed);
         let part = context(Group::Incomplete).unwrap();
         assert!(!part.facts.bosses[0].complete);
+    }
+
+    #[test]
+    fn the_scorer_flags_teasing_of_anyone_but_the_tease_slot() {
+        let tease = Some("{c3}");
+        for (reply, flagged) in [
+            ("{c1} carries, {c3} naps again~", false),
+            ("{c1} naps while {c3} carries", true),
+            ("Go {c1}! Wake up, {c2} 😴", true),
+            ("Even Faywick cheers today", true),
+            ("Kestrelle got lost again", false),
+            ("Tobiwan is so slow lol", true),
+            ("Onward, team~", false),
+        ] {
+            assert_eq!(misteased(reply, Group::Tease, tease), flagged, "{reply}");
+        }
+        // Without a tease slot, teasing any placeholder counts.
+        assert!(misteased("{c1} naps again", Group::Context, None));
+        assert!(!misteased("Odette cheers", Group::Context, None));
     }
 }

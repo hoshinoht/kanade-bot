@@ -10,7 +10,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use kanade::bot::delivery::cards::{
     CardContext, CardKit, DifficultyMarks, HeaderSwitches, ReminderCardStore, resolve_heading,
 };
-use kanade::bot::delivery::{EstimateFuture, PartyEstimates, RunEstimate};
+use kanade::bot::delivery::{EstimateFuture, IgnFuture, PartyEstimates, RunEstimate};
 use kanade::domain::catalog::BossTable;
 use kanade::domain::chardata::{Carrier, PartyShares};
 use kanade::domain::notify::{DedupeKey, DeliveryTarget, IntentContent};
@@ -24,9 +24,11 @@ use crate::cards::{
     Script, Scripted, before_due, catalog, created, edits, kalos_countdown, pregen, redesigned,
     refresher, rewriting, shows_phrase, world,
 };
-use crate::scenarios::{self, now};
+use crate::scenarios::{self, World, now};
 
-struct Fixed(RunEstimate);
+/// A port answering one estimate for every run, and `igns` as every
+/// roster character's IGN.
+pub(crate) struct Fixed(pub(crate) RunEstimate, pub(crate) Vec<String>);
 
 impl PartyEstimates for Fixed {
     fn run<'a>(
@@ -38,16 +40,33 @@ impl PartyEstimates for Fixed {
         let found = self.0.clone();
         Box::pin(async move { Some(found) })
     }
+
+    fn igns<'a>(&'a self, _members: &'a [String]) -> IgnFuture<'a> {
+        let igns = self.1.clone();
+        Box::pin(async move { Some(igns) })
+    }
 }
 
-/// Invented carriers: 1001 brings Lumirae (most), 1002 Tobiwan.
-fn estimate(stale: bool) -> RunEstimate {
-    let carrier = |ign: &str, value: f64| Carrier {
+/// An invented carrier with one boss's effective %.
+pub(crate) fn carrier(ign: &str, value: f64) -> Carrier {
+    Carrier {
         ign: ign.into(),
         crit_assumed: false,
         effective: vec![Some(value)],
         per_boss: Vec::new(),
-    };
+    }
+}
+
+/// The carrier owner of member `id`.
+pub(crate) fn owner(id: &str) -> CarrierOwner {
+    CarrierOwner {
+        member_id: id.into(),
+        character_id: format!("char-{id}"),
+    }
+}
+
+/// Invented carriers: 1001 brings Lumirae (most), 1002 Tobiwan.
+pub(crate) fn estimate(stale: bool) -> RunEstimate {
     RunEstimate {
         party: PartyShares {
             bosses: vec!["XKalos".into()],
@@ -56,13 +75,7 @@ fn estimate(stale: bool) -> RunEstimate {
         },
         minutes: vec![Some(21.5)],
         possible: vec![Some(true)],
-        owners: ["1001", "1002"]
-            .iter()
-            .map(|id| CarrierOwner {
-                member_id: (*id).into(),
-                character_id: format!("char-{id}"),
-            })
-            .collect(),
+        owners: vec![owner("1001"), owner("1002")],
         igns: vec!["Lumirae".into(), "Tobiwan".into()],
         older_than: stale.then_some(7),
         ..RunEstimate::default()
@@ -72,7 +85,8 @@ fn estimate(stale: bool) -> RunEstimate {
 fn kit(rewriter: &Arc<Scripted>, on: &Arc<AtomicBool>, estimate: Option<RunEstimate>) -> CardKit {
     let on = Arc::clone(on);
     CardKit {
-        estimates: estimate.map(|estimate| Arc::new(Fixed(estimate)) as Arc<dyn PartyEstimates>),
+        estimates: estimate
+            .map(|estimate| Arc::new(Fixed(estimate, Vec::new())) as Arc<dyn PartyEstimates>),
         switches: Some(Arc::new(move || HeaderSwitches {
             estimates: on.load(Ordering::SeqCst),
             teasing: false,
@@ -84,9 +98,19 @@ fn kit(rewriter: &Arc<Scripted>, on: &Arc<AtomicBool>, estimate: Option<RunEstim
 /// The Kalos countdown (party 1001, 1002) after one pre-generation pass;
 /// returns the store, the run and the record key.
 async fn pregenerated(kit: &CardKit) -> (Arc<SqliteStore>, String, String) {
+    pregenerated_in(kit, &world(), &["1001", "1002"]).await
+}
+
+/// The Kalos countdown for `party` after one pre-generation pass over
+/// `world`'s roster; returns the store, the run and the record key.
+pub(crate) async fn pregenerated_in(
+    kit: &CardKit,
+    world: &World,
+    party: &[&str],
+) -> (Arc<SqliteStore>, String, String) {
     let store = Arc::new(SqliteStore::open_temp().await);
-    let run_id = kalos_countdown(&*store, &["1001", "1002"]).await;
-    pregen(&store, &world(), kit, before_due()).pass().await;
+    let run_id = kalos_countdown(&*store, party).await;
+    pregen(&store, world, kit, before_due()).pass().await;
     let schedule = store.load(&Scope::All).await.expect("schedule");
     let reminder = schedule
         .reminders

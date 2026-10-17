@@ -15,7 +15,7 @@ use tokio::sync::watch;
 
 pub use context::{
     HeaderContext, HeaderSlots, HeaderSwitchSource, HeaderSwitches, MAX_SLOTS, SlotFill,
-    StoredSlot, resolve_heading,
+    StoredSlot, Teasable, resolve_heading,
 };
 
 use crate::chat::nudge::{
@@ -257,6 +257,8 @@ pub enum SlotRule {
     UnknownSlot,
     /// An offered placeholder used twice.
     DuplicateSlot,
+    /// More than [`MAX_SLOTS`] placeholders, a tease slot included.
+    TooManySlots,
     /// A party member's name, alias or IGN written out.
     RawName,
     /// A digit in a day-of line while context was sent.
@@ -274,6 +276,7 @@ impl SlotRule {
         match self {
             Self::UnknownSlot => "unknown slot",
             Self::DuplicateSlot => "duplicate slot",
+            Self::TooManySlots => "too many slots",
             Self::RawName => "raw name",
             Self::Digits => "digits with estimates",
             Self::TooLongFilled => "too long after fill",
@@ -418,8 +421,9 @@ pub struct HeaderLine {
 }
 
 /// The header gate when estimate context was sent (D5). The offered `{cN}`
-/// placeholders are checked first (each at most once; an unknown one
-/// refuses) and taken out, then the stripped line must pass `kind`'s own
+/// placeholders are checked first (each at most once, at most
+/// [`MAX_SLOTS`] in all, a tease slot included; an unknown one refuses) and
+/// taken out, then the stripped line must pass `kind`'s own
 /// gate ([`accept_rewrite_with`] for day-of, [`accept_phrase_with`] for a
 /// phrase); a day-of line may hold no digit. The line must not carry any
 /// party name, alias or IGN raw. Filled with the IGNs, it must still pass
@@ -439,6 +443,9 @@ pub fn accept_header_with(
             SlotRejection::Duplicate => SlotRule::DuplicateSlot,
         })
     })?;
+    if used.len() > MAX_SLOTS {
+        return Err(Verdict::SlotRejected(SlotRule::TooManySlots));
+    }
     let seed = seed_of(kind);
     match kind {
         HeaderKind::DayOf => {
@@ -1009,12 +1016,25 @@ mod tests {
     }
 
     fn context() -> HeaderContext {
+        tease_context(&[])
+    }
+
+    /// [`context`] with `teasable` party members (teasing on).
+    fn tease_context(teasable: &[Teasable]) -> HeaderContext {
         HeaderContext::build(
             &[estimate(false)],
             NudgeMood::Playful,
             ["Mika Sora".to_owned(), "pellow".to_owned(), "Q".to_owned()],
+            teasable,
         )
         .expect("a fresh estimate gives context")
+    }
+
+    fn teasable(member: &str, note: Option<&str>) -> Teasable {
+        Teasable {
+            member_id: member.into(),
+            note: note.map(str::to_owned),
+        }
     }
 
     #[test]
@@ -1053,7 +1073,7 @@ mod tests {
             "too short to refuse"
         );
         // Gentle: totals only, no call-outs (D7).
-        let gentle = HeaderContext::build(&[estimate(true)], NudgeMood::Gentle, []).unwrap();
+        let gentle = HeaderContext::build(&[estimate(true)], NudgeMood::Gentle, [], &[]).unwrap();
         assert!(gentle.fills.is_empty() && gentle.facts.slots.is_empty());
         assert!(gentle.facts.bosses[0].crit_assumed);
         // Stale or missing: no context, so today's prompt (D2).
@@ -1061,8 +1081,8 @@ mod tests {
             older_than: Some(7),
             ..estimate(false)
         };
-        assert!(HeaderContext::build(&[stale], NudgeMood::Playful, []).is_none());
-        assert!(HeaderContext::build(&[], NudgeMood::Playful, []).is_none());
+        assert!(HeaderContext::build(&[stale], NudgeMood::Playful, [], &[]).is_none());
+        assert!(HeaderContext::build(&[], NudgeMood::Playful, [], &[]).is_none());
         let nobody = crate::bot::delivery::RunEstimate {
             party: crate::domain::chardata::PartyShares {
                 bosses: vec!["HKalos".into()],
@@ -1071,7 +1091,7 @@ mod tests {
             },
             ..crate::bot::delivery::RunEstimate::default()
         };
-        assert!(HeaderContext::build(&[nobody], NudgeMood::Playful, []).is_none());
+        assert!(HeaderContext::build(&[nobody], NudgeMood::Playful, [], &[]).is_none());
     }
 
     fn header(output: &str, kind: HeaderKind) -> Result<HeaderLine, Verdict> {
@@ -1134,6 +1154,7 @@ mod tests {
         for rule in [
             SlotRule::UnknownSlot,
             SlotRule::DuplicateSlot,
+            SlotRule::TooManySlots,
             SlotRule::RawName,
             SlotRule::Digits,
             SlotRule::TooLongFilled,
@@ -1173,5 +1194,123 @@ mod tests {
         assert_eq!(slots.fill("Go {c1} and {c2}!"), None);
         slots.slots[0].ign = "<@1>".into();
         assert_eq!(slots.fill("Go {c1}!"), None);
+    }
+
+    /// D11: the lowest share among opted-in party members with an estimate
+    /// who hold no carrier slot gets the next `{cN}`, with their note; the
+    /// facts are otherwise the ones without teasing.
+    #[test]
+    fn the_tease_slot_goes_to_the_lowest_opted_in_member() {
+        let plain = context();
+        // Tobiwan (2) is already a carrier; Kestrel (3) is the lowest.
+        let teased = tease_context(&[
+            teasable("2", None),
+            teasable("3", Some("Always lost on the way to the portal")),
+        ]);
+        let fill = teased.fills.last().expect("a tease fill");
+        assert_eq!(
+            (
+                fill.placeholder.as_str(),
+                fill.member_id.as_str(),
+                fill.ign.as_str(),
+                fill.tease
+            ),
+            ("{c3}", "3", "Kestrel", true)
+        );
+        assert_eq!(teased.offered(), ["{c1}", "{c2}", "{c3}"]);
+        let tease = teased.facts.tease.clone().expect("a tease slot");
+        assert_eq!(tease.placeholder, "{c3}");
+        assert!(tease.share < teased.facts.slots[1].share);
+        assert_eq!(
+            tease.note.as_deref(),
+            Some("Always lost on the way to the portal")
+        );
+        assert_eq!(teased.facts.slots, plain.facts.slots);
+        assert_eq!(teased.facts.bosses, plain.facts.bosses);
+        assert!(!teased.facts.block().contains("Kestrel"));
+        // Nobody else qualifies: a carrier only, a member with no estimate.
+        for who in [vec![teasable("1", None)], vec![teasable("9", None)], vec![]] {
+            let context = tease_context(&who);
+            assert_eq!(context, plain);
+            assert_eq!(context.facts.block(), plain.facts.block());
+        }
+        // Never in the gentle mood (D11).
+        let gentle = HeaderContext::build(
+            &[estimate(false)],
+            NudgeMood::Gentle,
+            [],
+            &[teasable("3", None)],
+        )
+        .unwrap();
+        assert!(gentle.fills.is_empty() && gentle.facts.tease.is_none());
+    }
+
+    /// A tease slot counts against the two-slot cap (D5) and is stored as
+    /// a tease slot.
+    #[test]
+    fn a_tease_slot_counts_against_the_slot_rules() {
+        let context = tease_context(&[teasable("3", None)]);
+        let countdown = HeaderKind::Phrase(PhraseKind::Countdown);
+        let gate =
+            |line: &str| accept_header_with(line, countdown, &context, None, WordFilter::builtin());
+        assert_eq!(
+            gate("{c1}, {c2} and sleepy {c3}!").map(|line| line.template),
+            Err(Verdict::SlotRejected(SlotRule::TooManySlots))
+        );
+        assert_eq!(
+            gate("{c3}, oh {c3}!").map(|line| line.template),
+            Err(Verdict::SlotRejected(SlotRule::DuplicateSlot))
+        );
+        let accepted = gate("{c1} carries, {c3} naps~").expect("two slots");
+        let slots = HeaderSlots::of(&context, &accepted.used);
+        assert_eq!(
+            slots
+                .slots
+                .iter()
+                .map(|slot| (slot.slot.as_str(), slot.tease))
+                .collect::<Vec<_>>(),
+            [("{c1}", false), ("{c3}", true)]
+        );
+        assert_eq!(
+            slots.fill(&accepted.template).as_deref(),
+            Some("Lumirae carries, Kestrel naps~")
+        );
+    }
+
+    /// D10 at prompt build: an opted-out member is no candidate, and a note
+    /// that now names someone on the roster (or can't be checked) is left
+    /// out while the opt-in still counts.
+    #[test]
+    fn a_note_is_rechecked_against_the_roster_now() {
+        use crate::domain::members::{Member, MemberProfile};
+        let profile = |tease_ok: bool, note: &str| MemberProfile {
+            member: Member {
+                user_id: "3".into(),
+                ..Member::default()
+            },
+            tease_ok,
+            running_joke: Some(note.into()),
+            ..MemberProfile::default()
+        };
+        let roster: &[String] = &["Aria".to_owned(), "Kestrel".to_owned()];
+        assert_eq!(
+            Teasable::of(&profile(false, "Naps a lot"), Some(roster)),
+            None
+        );
+        assert_eq!(
+            Teasable::of(&profile(true, "Naps a lot"), Some(roster)),
+            Some(teasable("3", Some("Naps a lot")))
+        );
+        for (note, names) in [
+            ("Naps more than aria", Some(roster)),
+            ("Naps a lot", None),
+            ("Naps in #general", Some(roster)),
+        ] {
+            assert_eq!(
+                Teasable::of(&profile(true, note), names),
+                Some(teasable("3", None)),
+                "{note}"
+            );
+        }
     }
 }

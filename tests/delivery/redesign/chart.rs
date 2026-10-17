@@ -14,8 +14,8 @@ use chrono::{TimeDelta, TimeZone, Utc};
 use kanade::bot::delivery::cards::chart::{self, Chart, ChartRun, SCALE};
 use kanade::bot::delivery::cards::{self, CardArt, CardContext, CardKit, V2Kit, redesign};
 use kanade::bot::delivery::{
-    CachedEstimates, EstimateFuture, MAX_ATTACHMENTS, PartyEstimates, RunEstimate, attach_chart,
-    chart_for, read_estimates,
+    CachedEstimates, EstimateFuture, IgnFuture, MAX_ATTACHMENTS, PartyEstimates, RunEstimate,
+    attach_chart, chart_for, read_estimates,
 };
 use kanade::bot::transport::{OutgoingMessage, Upload, legacy_rows};
 use kanade::domain::catalog::BossTable;
@@ -661,6 +661,11 @@ impl PartyEstimates for Fixed {
             .find(|(id, _)| *id == run.id)
             .map(|(_, estimate)| estimate.clone());
         Box::pin(async move { found })
+    }
+
+    /// Charts never read the roster's IGNs.
+    fn igns<'a>(&'a self, _: &'a [String]) -> IgnFuture<'a> {
+        Box::pin(async { None })
     }
 }
 
