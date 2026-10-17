@@ -50,7 +50,9 @@
       is kept in Kanade’s character-data file for up to 30 days, never in backups or exports, and refreshed automatically for party members of upcoming runs as often as the
       admins set (every 7 days unless changed). It is deleted when the character is retired or removed from the roster, or when you leave the server. Admins see every
       estimate; you see your own, and those of your party on runs you are on. Reminder cards show the party members’ IGNs and each one’s share of the estimate to everyone in
-      the card’s channel.
+      the card’s channel. When an admin turns it on, Kanade’s chat model words reminder headers from the party’s overall estimate per boss and the top two carriers’ shares;
+      Kanade adds character names afterwards, so they are never sent. If you allow teasing, your share of the estimate and any running-joke note an admin wrote may be sent,
+      never your name.
     </dd>
     <dt>As is</dt>
     <dd>

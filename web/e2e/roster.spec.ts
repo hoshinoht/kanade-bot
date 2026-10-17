@@ -39,7 +39,7 @@ test('roster: the tab lists the main first, the retired apart, and keeps the pro
   await expect(active.first()).toContainText('MikaNL');
   await expect(active.first()).toContainText('main');
   await expect(pane.getByRole('list', { name: "Mika's retired characters" })).toContainText('MikaHero');
-  await expect(pane.getByText('Characters are never sent to the chatbot.')).toBeVisible();
+  await expect(pane.getByText('Characters are never sent to the chatbot; reminder headers may use the party’s overall estimate (no names).')).toBeVisible();
   // The main's Retire and Delete wait, explained.
   await pane.getByRole('button', { name: 'More actions for MikaNL' }).press('Enter');
   const menu = pane.getByRole('menu', { name: 'MikaNL' });

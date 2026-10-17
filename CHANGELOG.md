@@ -6,6 +6,10 @@ What changed in each Kanade release, newest first. Upgrading across several rele
 
 _In development_
 
+### Changes
+
+- The Privacy page and the Characters notes in the admin app and the member portal now say that reminder headers may be worded from the party's overall estimate and the top two carriers' shares, never with a character name, and what teasing may send.
+
 ### Fixes
 
 - Fixed redesigned reminder cards posting without the ✅ and ❌ reactions while the portal was open: the bot adds them again beside "Open in portal".
