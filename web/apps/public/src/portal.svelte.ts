@@ -3,6 +3,7 @@ import { ApiRequestError, createClient, createLiveEvents, onUnauthenticated, typ
 import { MemberBosses } from './bosses/bosses.svelte';
 import { MemberCharacters } from './characters/characters.svelte';
 import type { Landing } from './landing';
+import { MemberPreferences } from './preferences/preferences.svelte';
 import { MemberRequestsList } from './requests/requests.svelte';
 import { MemberTimingsList } from './timings/timings.svelte';
 import { MemberWeeks } from './weeks.svelte';
@@ -59,6 +60,8 @@ export class Portal {
   readonly live: LiveEvents<MemberEventTopic> = createLiveEvents<MemberEventTopic>({ url: '/api/public/events' });
   /** The member's own characters, links and lookups (Account › Characters, a run's party), read when used. */
   readonly characters = new MemberCharacters(client, (error) => this.#gone(error));
+  /** The member's own preferences (Account › Profile's OK to be teased), read when Account opens. */
+  readonly preferences = new MemberPreferences(client, (error) => this.#gone(error));
   #landing: Landing;
   #refreshing: Promise<void> | null = null;
   #unfollow: (() => void) | null = null;
@@ -130,7 +133,13 @@ export class Portal {
       this.#gone(error);
       return;
     }
-    await Promise.all([this.loadDevices(), this.weeks.refresh(), this.timings.data ? this.timings.load() : null, this.requests.data ? this.requests.load() : null]);
+    await Promise.all([
+      this.loadDevices(),
+      this.weeks.refresh(),
+      this.timings.data ? this.timings.load() : null,
+      this.requests.data ? this.requests.load() : null,
+      this.preferences.data || this.preferences.error ? this.preferences.load() : null,
+    ]);
   }
 
   /** The bot identity is public on both origins; a failure renders the monogram. */
@@ -261,6 +270,7 @@ export class Portal {
     this.bosses.clear();
     this.requests.clear();
     this.characters.clear();
+    this.preferences.clear();
   }
 
   /** A closed portal or an ended session replaces the screen (401 arrives through `watch`). */

@@ -19,6 +19,7 @@
   import ChatbotSection from './ChatbotSection.svelte';
   import DigestSection from './DigestSection.svelte';
   import EnvSection from './EnvSection.svelte';
+  import HeaderSwitches from './HeaderSwitches.svelte';
   import HeaderTimeCard from './HeaderTimeCard.svelte';
   import RewriteHeadersCard from './RewriteHeadersCard.svelte';
   import MessageStyleCard from './MessageStyleCard.svelte';
@@ -559,6 +560,7 @@
                   >
                   <MessageStyleCard style={c.notifications.message_style} {save} />
                   <HeaderTimeCard time={c.notifications.header_generation_time ?? '00:00'} {save} />
+                  <HeaderSwitches estimates={c.notifications.header_estimates} teasing={c.notifications.header_teasing} {save} />
                   <p class="settings__box">Applies at once, with Undo for 10 s.</p>
                   <RewriteHeadersCard {toaster} />
                 </SettingsPanel>

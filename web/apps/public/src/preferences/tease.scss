@@ -1,0 +1,39 @@
+// Account › Profile: the running-joke line under OK to be teased (boards
+// M_ProfileTease…; the rest of the row is `_account.scss`'s).
+.account-row--sub.tease-joke {
+  gap: 12px;
+}
+
+.tease-joke__text {
+  color: var(--ink);
+  font-size: var(--fs-body-sm);
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.tease-joke__state {
+  flex: none;
+  max-width: 40%;
+  color: var(--dim-text);
+  font-size: var(--fs-small);
+  line-height: 1.3;
+  text-align: right;
+}
+
+// The off-for-everyone chip sits under the sub-line, at its start.
+.account-row__text > .status-chip {
+  align-self: flex-start;
+  margin-top: 4px;
+}
+
+// Phone: the line starts under the row's text and its state wraps below it.
+.account-window__panel--phone .account-row--sub.tease-joke {
+  flex-wrap: wrap;
+  row-gap: 2px;
+  padding-left: 62px;
+}
+
+.account-window__panel--phone .tease-joke__state {
+  max-width: none;
+  text-align: left;
+}

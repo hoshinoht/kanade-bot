@@ -20,6 +20,7 @@
   import { Avatar, dayTime, Icon, motionPreference, resetSpan, SessionList, SwitchRow, ThemeTiles, windowWords, type IconName, type Toaster } from '@kanade/ui';
   import { tick, untrack, type Snippet } from 'svelte';
   import CharactersTab from './characters/CharactersTab.svelte';
+  import TeaseRows from './preferences/TeaseRows.svelte';
   import type { Portal } from './portal.svelte';
   import type { Route } from './route.svelte';
 
@@ -66,10 +67,11 @@
   ]);
   // The server keeps at most ten sessions per member (D5-A): an 11th sign-in ends the oldest.
   const SESSION_LIMIT = 10;
-  // The allowance is read each time Account opens: it changes with every chat answer.
+  // The allowance is read each time Account opens: it changes with every chat answer; so can the admins' note and teasing's switch.
   $effect(() => {
     void untrack(() => portal.loadAllowance());
     void untrack(() => characters.load());
+    void untrack(() => portal.preferences.load());
   });
 
   const member = $derived(session.member);
@@ -237,11 +239,12 @@
     <section class="account-sec" aria-labelledby="acct-reach" data-fid="account-reach">
       <div class="account-sec__head">
         <h3 class="cap" id="acct-reach">How Kanade reaches you</h3>
-        {#if !phone}<span class="account-sec__end account-sec__note">These come with the next portal update</span>{/if}
+        {#if !phone}<span class="account-sec__end account-sec__note">Rows marked coming soon arrive with a later update</span>{/if}
       </div>
       <ul class="account-grp">
         {@render soonRow(zoneRow)}
         {@render soonRow(MENTIONS)}
+        <TeaseRows preferences={portal.preferences} {phone} {toaster} />
         {#if !phone}
           {@render soonRow(STYLE)}
           {@render allowance()}
