@@ -7,6 +7,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use chrono::TimeDelta;
 use kanade::bot::delivery::cards::redesign::OPEN_IN_PORTAL;
 use kanade::bot::delivery::cards::{CardKit, V2Kit};
+use kanade::bot::transport::Op;
 use kanade::domain::settings::MessageStyle;
 use kanade::infrastructure::store::SqliteStore;
 use twilight_model::channel::message::Component;
@@ -143,6 +144,11 @@ async fn refresh_adds_and_drops_the_portal_link_with_the_switch() {
     )];
     assert_eq!(links(&post.components), link);
     assert_eq!(post.embeds.len(), 2);
+    assert_eq!(
+        fake.count(Op::AddReaction),
+        2,
+        "✅ and ❌ seeded beside the link row"
+    );
 
     let refresh = refresher(&store, &fake, &world, cards);
     let rerender = async |minutes: i64, user: &str| {

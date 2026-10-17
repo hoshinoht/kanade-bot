@@ -19,7 +19,7 @@ use super::alerts::{AdminAlert, AlertSink, AlertThrottle};
 use crate::bot::gateway::DeliveryOperation;
 use crate::bot::ids::parse_id;
 use crate::bot::transport::{
-    DiscordTransport, MessageId, Outcome, OutgoingMessage, Presence, RejectionKind,
+    DiscordTransport, MessageId, Outcome, OutgoingMessage, Presence, RejectionKind, legacy_rows,
 };
 use crate::domain::notify::{
     AttemptId, Claim, DeliveryJournal, DeliveryWarning, EffectKind, JournalError, Lease,
@@ -348,7 +348,8 @@ where
                     message_id,
                     record_week,
                     now,
-                    message.components.is_empty(),
+                    message.components.is_empty()
+                        || legacy_rows(message.content.as_deref(), &message.components),
                 )
                 .await
                 .map_err(maybe),
@@ -402,7 +403,8 @@ where
     }
 
     /// `seed` is false for a Components V2 post: its buttons replace the
-    /// ✅/❌ reactions.
+    /// ✅/❌ reactions. A legacy body (text with link rows beneath, such as
+    /// "Open in portal") is still seeded.
     async fn bind(
         &self,
         intent: &NotificationIntent,

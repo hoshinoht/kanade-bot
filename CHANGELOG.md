@@ -6,6 +6,10 @@ What changed in each Kanade release, newest first. Upgrading across several rele
 
 _In development_
 
+### Fixes
+
+- Fixed redesigned reminder cards posting without the ✅ and ❌ reactions while the portal was open: the bot adds them again beside "Open in portal".
+
 ## 1.0.0-beta.8
 
 _17 Oct 2026_
