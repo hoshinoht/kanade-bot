@@ -43,6 +43,9 @@ export interface MemberPatch {
   ping_level?: PingLevel;
   /** Empty string clears back to the default style. */
   persona?: string;
+  tease_ok?: boolean;
+  /** The admins' running-joke note; empty string clears it. */
+  running_joke?: string;
 }
 
 export interface FixedRequest {

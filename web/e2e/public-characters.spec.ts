@@ -62,6 +62,7 @@ test('Characters tab: the link waiting for you first, the roster with link chips
     await expect(row(page, ign).locator('.status-chip')).toHaveText(chip);
   await expect(row(page, 'AsahiKanna').locator('.rosterrow__crown')).toHaveText('main');
   await expect(tab).toContainText('The same roster the admins see.');
+  await expect(tab).toContainText('Characters are never sent to the chatbot; reminder headers may use the party’s overall estimate (no names).');
   const data = tab.getByRole('region', { name: 'NEXON data' });
   await expect(data.getByRole('button', { name: 'My data…' })).toBeVisible();
   await expect(data.getByRole('link', { name: 'Privacy notice' })).toBeVisible();

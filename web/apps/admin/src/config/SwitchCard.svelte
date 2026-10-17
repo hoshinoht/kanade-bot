@@ -14,11 +14,13 @@
     stateOn = 'on',
     stateOff = 'off',
     confirm,
+    detail,
     confirmOn = false,
     action,
     apply,
     disabled = false,
     chip = true,
+    fid = 'cfg-card',
   }: {
     /** The card's title for each state, e.g. "Chatbot is on". */
     title: (on: boolean) => string;
@@ -28,6 +30,8 @@
     stateOff?: string;
     /** The question asked before the guarded direction; omit to never ask. */
     confirm?: string;
+    /** What the guarded change does, under the question (defaults to how to undo it). */
+    detail?: string;
     /** Ask before turning on instead of off (opening the public portal). */
     confirmOn?: boolean;
     /** The confirm button's words, e.g. "Turn the chatbot off". */
@@ -36,6 +40,8 @@
     disabled?: boolean;
     /** Show the on/off state chip after the title (the boards' Watching, Quiet mode). */
     chip?: boolean;
+    /** The card's fidelity tag; boards name the cards they add. */
+    fid?: string;
   } = $props();
   const uid = $props.id();
 
@@ -58,7 +64,7 @@
   }
 </script>
 
-<div class="settings__card settings__switchcard" data-fid="cfg-card">
+<div class="settings__card settings__switchcard" data-fid={fid}>
   <div class="settings__switchtext">
     <p class="settings__cardtitle" id="{uid}-t">
       {title(on)}
@@ -82,7 +88,7 @@
 
 {#if confirm}
   <Modal bind:open={asking} title={confirm} narrow>
-    <p>{confirmOn ? 'Members will see this as soon as it is on.' : 'You can undo it from the message that follows.'}</p>
+    <p>{detail ?? (confirmOn ? 'Members will see this as soon as it is on.' : 'You can undo it from the message that follows.')}</p>
     {#snippet footer(close)}
       <button class="btn" type="button" onclick={close}>Cancel</button>
       <button

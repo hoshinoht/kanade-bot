@@ -1,7 +1,7 @@
 <script lang="ts">
   import { tick } from 'svelte';
   import type { MemberCharacters, MemberPatch, MemberRow, Persona, PingLevel } from '@kanade/api-types';
-  import { Avatar, CharacterPanel, enter, Icon, Modal, Select, type Toaster } from '@kanade/ui';
+  import { Avatar, CharacterPanel, enter, Icon, Modal, Select, type Outcome, type Toaster } from '@kanade/ui';
   import '@kanade/ui/styles/core/select.scss';
   import { Resource, send } from '../resource.svelte';
   import { directory } from '../names/directory.svelte';
@@ -10,6 +10,8 @@
   import { adminCharacterKit } from './characterKit';
   import { dialogLayer } from './layer.svelte';
   import { ANSWER_WORDS, type MemberWeek } from './runs';
+  import type { KnownName } from './tease';
+  import TeaseSection from './TeaseSection.svelte';
 
   let {
     wide,
@@ -90,15 +92,26 @@
     }
   });
 
-  async function patch(change: MemberPatch, done: string) {
-    if (!member) return;
+  async function patch(change: MemberPatch, done: string, inline = false): Promise<Outcome<MemberRow>> {
     busy = true;
     const id = member.id;
     const result = await send((c) => c.patch<MemberRow>(`/api/admin/members/${encodeURIComponent(id)}`, change));
     busy = false;
-    notice = result.ok ? { ok: true, message: done } : { ok: false, message: result.message };
+    // An inline refusal is said by the field that caused it.
+    notice = result.ok ? { ok: true, message: done } : inline ? null : { ok: false, message: result.message };
     if (result.ok) onchange(result.value);
+    return result;
   }
+
+  // The names a running-joke note may not carry that this sheet has to hand; the server checks the whole roster.
+  const teaseNames: KnownName[] = $derived([
+    ...(characters?.data?.member_id === memberId ? characters.data.characters.map((c) => ({ text: c.ign, kind: 'IGN' as const })) : []),
+    ...members.flatMap((m) => [
+      { text: m.name, kind: 'name' as const },
+      ...(m.nickname ? [{ text: m.nickname, kind: 'name' as const }] : []),
+      ...m.aliases.map((a) => ({ text: a, kind: 'alias' as const })),
+    ]),
+  ]);
 
   async function addAlias(event: SubmitEvent) {
     event.preventDefault();
@@ -214,6 +227,8 @@
         <p class="status status--at_risk">“{member.persona}” is no longer offered; replies use the default.</p>
       {/if}
     </div>
+
+    <TeaseSection {member} name={memberName} names={teaseNames} {busy} {patch} />
 
     <div class="membersheet__section" data-fid="members-aliases">
       <p class="membersheet__label">Chat aliases</p>

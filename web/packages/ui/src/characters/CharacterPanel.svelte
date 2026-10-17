@@ -345,7 +345,8 @@
   {#if rows && (rows.length || !member)}
     <p class="rosterpanel__note" data-fid="roster-note">
       {#if member}The same roster the admins see. Kept when you leave the server; only an admin deletes a character. Your changes show in History as yours. Characters are never
-        sent to the chatbot.{:else}Kept when {memberName} leaves the server; only an admin deletes them. Characters are never sent to the chatbot.{/if}
+        sent to the chatbot; reminder headers may use the party’s overall estimate (no names).{:else}Kept when {memberName} leaves the server; only an admin deletes them.
+        Characters are never sent to the chatbot; reminder headers may use the party’s overall estimate (no names).{/if}
     </p>
   {/if}
 </div>

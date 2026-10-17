@@ -35,6 +35,11 @@ async function expectPrivacy(page: Page) {
     'the answer is kept in Kanade’s character-data file for up to 30 days, never in backups or exports, and refreshed automatically for party members of upcoming runs as often as the admins set (every 7 days unless changed). It is deleted when the character is retired or removed from the roster, or when you leave the server.',
   );
   await expect(dd('Estimates')).not.toContainText('in memory');
+  // D14: what reminder headers may send to the chat model, and never a name.
+  await expect(dd('Estimates')).toContainText(
+    'When an admin turns it on, Kanade’s chat model words reminder headers from the party’s overall estimate per boss and the top two carriers’ shares; Kanade adds character names afterwards, so they are never sent. If you allow teasing, your share of the estimate and any running-joke note an admin wrote may be sent, never your name.',
+  );
+  await expect(dd('Who sees it')).toContainText('never sent to chat models');
   await expect(page.getByRole('link', { name: 'developer privacy policy' })).toHaveAttribute('href', 'https://m.nexon.com/terms/1000');
   await expect(page.getByText('Data based on NEXON Open API', { exact: true })).toBeVisible();
   await expect(page.getByText('Notice 2 · 15 Oct 2026')).toBeVisible();

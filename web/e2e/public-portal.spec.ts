@@ -18,7 +18,7 @@ const ALLOWED: Record<string, true> = {
   '/api/public/sessions': true,
   '/api/identity': true,
 };
-/** Signed in, the member's own reads join them: the week, the allowance, their requests (the masthead's count), their characters (Account's tab), their change hints and boss art. */
+/** Signed in, the member's own reads join them: the week, the allowance, their requests (the masthead's count), their characters (Account's tab), their preferences (Account's OK to be teased), their change hints and boss art. */
 const memberRead = (request: string) => {
   const path = request.split(' ')[1]!;
   return (
@@ -27,6 +27,7 @@ const memberRead = (request: string) => {
     path === '/api/public/me/allowance' ||
     path === '/api/public/requests/mine' ||
     path === '/api/public/me/characters' ||
+    path === '/api/public/me/preferences' ||
     path === '/api/public/events' ||
     path.startsWith('/art/')
   );

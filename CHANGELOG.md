@@ -6,6 +6,16 @@ What changed in each Kanade release, newest first. Upgrading across several rele
 
 _In development_
 
+### New features
+
+- Members can now turn "OK to be teased" on or off on the member portal's Account › Profile, even while teasing is off for everyone, and see the admins' running-joke note there.
+- Admins can now set a member's "OK to be teased" and a short running-joke note in the Members sheet's new Reminder teasing section, which refuses a note that names anyone on the roster.
+- Added "Estimates in reminder headers" and "Teasing in reminder headers" switches to Config › Notifications; teasing can only be on while estimates are, and turning estimates off turns teasing off too.
+
+### Changes
+
+- The Privacy page and the Characters notes in the admin app and the member portal now say that reminder headers may be worded from the party's overall estimate and the top two carriers' shares, never with a character name, and what teasing may send.
+
 ### Fixes
 
 - Fixed redesigned reminder cards posting without the ✅ and ❌ reactions while the portal was open: the bot adds them again beside "Open in portal".
