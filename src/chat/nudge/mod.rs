@@ -14,7 +14,7 @@ mod safety;
 
 pub use compose::{
     EDIT_RUN_ACTION, LineSource, Nudge, NudgeFacts, Nudger, REQUEST_CHANGE_ACTION, SeedReason,
-    WordSource, action, mood_for, render,
+    WordSource, action, mood_for, render, safe_value,
 };
 pub use governed::{
     DynRewrite, GovernedRewriter, REWRITE_MAX_OUTPUT_TOKENS, RewriteReserve, SharedRewriter,
@@ -24,11 +24,13 @@ pub use log::{
     failure_verdict,
 };
 pub use prompt::{
-    GENTLE_MOOD, NUDGE_REWRITE_INSTRUCTION, PLAYFUL_MOOD, RewritePrompt, VOICE_LABEL,
+    BossFigures, GENTLE_MOOD, HeaderFacts, NUDGE_REWRITE_INSTRUCTION, OfferedSlot, PLAYFUL_MOOD,
+    RewritePrompt, VOICE_LABEL,
 };
 pub use rewrite::{
     CUSTOM_WORD, NoRewrite, NudgeRewriter, REWRITE_DEADLINE, Rejection, RewriteDetail,
-    RewriteFailure, RewriteOutcome, accept_rewrite, accept_rewrite_with,
+    RewriteFailure, RewriteOutcome, SlotRejection, accept_rewrite, accept_rewrite_with,
+    strip_slots,
 };
 pub use rotation::{MAX_CHANNELS, RECENT_PER_CHANNEL, SeedRotation};
 pub use safety::{

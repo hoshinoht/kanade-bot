@@ -13,8 +13,13 @@ use super::{
     models, settings, store,
 };
 use crate::{
-    bot::gateway::EventSource,
-    infrastructure::{llm::setup::ModelStack, store::SqliteStore},
+    api::admin::config::SettingsChanged,
+    bot::{delivery::cards::HeadingRewrite, gateway::EventSource},
+    chat::persona::CompiledPersona,
+    infrastructure::{
+        llm::{governor::Role, setup::ModelStack},
+        store::SqliteStore,
+    },
     runtime::{config::ServeConfig, error::Error},
 };
 
@@ -26,6 +31,39 @@ pub fn shared_models(config: &ServeConfig) -> Result<Option<Arc<ModelStack>>, Er
     let mut seeded = settings::seed(&config.seeds);
     models::seed_roles(&mut seeded, &config.models, &BTreeMap::new());
     api::model_stack(&config.models, &seeded)
+}
+
+/// The reminder header rewrite serve's card kit builds (`tick::card_kit`):
+/// the `rewrite` role over `models`, each request sized by the seeded
+/// context settings, voiced by `persona`; nothing logged. `None` without a
+/// rewrite alias. For the V02 header probes.
+pub fn header_rewrite(
+    config: &ServeConfig,
+    models: &Arc<ModelStack>,
+    persona: CompiledPersona,
+) -> Option<HeadingRewrite> {
+    if !models.has_role(Role::Rewrite) {
+        return None;
+    }
+    let mut seeded = settings::seed(&config.seeds);
+    models::seed_roles(&mut seeded, &config.models, &BTreeMap::new());
+    let (_, changes) = tokio::sync::watch::channel(SettingsChanged {
+        revision: 0,
+        section: None,
+        actor: None,
+        settings: Arc::new(seeded),
+    });
+    let resolve = super::context::resolver(Arc::clone(models), changes, Role::Rewrite);
+    let rewriter = super::tick::heading_rewriter(
+        Arc::clone(&models.client),
+        Arc::new(move |alias: &str| resolve(alias).reserve),
+    );
+    Some(HeadingRewrite {
+        rewriter: Some(rewriter),
+        persona: Some(Arc::new(move || Some(persona.clone()))),
+        words: None,
+        log: None,
+    })
 }
 
 /// Run `work` over the configured store before serve opens it.

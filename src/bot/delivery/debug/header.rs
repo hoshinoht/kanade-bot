@@ -16,7 +16,7 @@ pub fn verdict_text(trial: &Trial) -> String {
     let verdict = trial.verdict;
     match verdict {
         Verdict::Accepted => "accepted".to_owned(),
-        Verdict::Rejected(_) | Verdict::PhraseRejected(_) => {
+        Verdict::Rejected(_) | Verdict::PhraseRejected(_) | Verdict::SlotRejected(_) => {
             format!("rejected ({})", verdict.rule().unwrap_or("gate"))
         }
         Verdict::NoRewriter => "no rewriter".to_owned(),
@@ -32,7 +32,7 @@ pub fn verdict_text(trial: &Trial) -> String {
 fn mark(verdict: Verdict) -> &'static str {
     match verdict {
         Verdict::Accepted => "✅",
-        Verdict::Rejected(_) | Verdict::PhraseRejected(_) => "❌",
+        Verdict::Rejected(_) | Verdict::PhraseRejected(_) | Verdict::SlotRejected(_) => "❌",
         Verdict::Timeout => "⏱️",
         _ => "⚠️",
     }

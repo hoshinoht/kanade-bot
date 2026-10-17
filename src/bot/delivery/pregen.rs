@@ -508,7 +508,11 @@ where
         // (`shutdown`); the store work below finishes unless serve aborts the
         // worker at its shutdown cutoff, which rolls the save back whole.
         let chosen = match &candidate.header {
-            Header::DayOf { day } => heading.choose(day, key, stage, PREGEN_DEADLINE, stop).await,
+            Header::DayOf { day } => {
+                heading
+                    .choose(day, key, stage, PREGEN_DEADLINE, stop, None)
+                    .await
+            }
             Header::Countdown { .. } => {
                 heading
                     .choose_phrase(
@@ -518,6 +522,7 @@ where
                         stage,
                         PREGEN_DEADLINE,
                         stop,
+                        None,
                     )
                     .await
             }
@@ -530,6 +535,7 @@ where
                         stage,
                         PREGEN_DEADLINE,
                         stop,
+                        None,
                     )
                     .await
             }

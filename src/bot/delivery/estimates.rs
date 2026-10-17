@@ -34,7 +34,7 @@ use crate::domain::schedule::{Run, RunStatus, ScheduleSnapshot};
 use crate::domain::settings::MessageStyle;
 use crate::infrastructure::character_data::CharacterData;
 use crate::infrastructure::scouter::{
-    Estimates, Member, RosterIgn, SavedParty, Totals, saved_party,
+    CarrierOwner, Estimates, Member, RosterIgn, SavedParty, Totals, saved_party,
 };
 use crate::runtime::logging;
 
@@ -58,6 +58,14 @@ pub struct RunEstimate {
     /// The saved `estimate_days` while `oldest` is at least that old (the
     /// chart says "older than n days"); `None` while fresh.
     pub older_than: Option<u32>,
+    /// Each boss's "technically possible" from the same stored total as
+    /// `minutes`; read only by reminder header context.
+    pub possible: Vec<Option<bool>>,
+    /// Who each of `party.carriers` is (member and character ids).
+    pub owners: Vec<CarrierOwner>,
+    /// Every active character's IGN of the party, which a header line
+    /// must never carry raw.
+    pub igns: Vec<String>,
 }
 
 pub type EstimateFuture<'a> = Pin<Box<dyn Future<Output = Option<RunEstimate>> + Send + 'a>>;
@@ -159,9 +167,12 @@ fn settled_estimate(run: &Run, slots: &[PartySlot], estimates: &Estimates) -> Op
 fn estimate_of(saved: SavedParty) -> RunEstimate {
     RunEstimate {
         minutes: saved.minutes(),
+        possible: saved.possible(),
         party: saved.party,
         oldest: saved.oldest,
         older_than: None,
+        owners: saved.owners,
+        igns: saved.igns,
     }
 }
 

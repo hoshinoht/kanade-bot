@@ -670,6 +670,7 @@ fn estimate(time: ChartRun) -> RunEstimate {
         minutes: time.minutes,
         oldest: Some(Utc.with_ymd_and_hms(2026, 9, 9, 0, 41, 0).unwrap()),
         older_than: None,
+        ..RunEstimate::default()
     }
 }
 
@@ -984,6 +985,7 @@ async fn an_open_portal_post_carries_the_chart_beside_its_link_row() {
         minutes: vec![None; 9],
         oldest: None,
         older_than: None,
+        ..RunEstimate::default()
     };
     let port = Fixed(vec![(KALOS.into(), busy)]);
     let kit = CardKit {

@@ -22,6 +22,18 @@ pub struct SavedParty {
     pub totals: Vec<Option<Combined>>,
     /// When the oldest reading used (members' and totals) was fetched.
     pub oldest: Option<DateTime<Utc>>,
+    /// Who each carrier is, in carrier order.
+    pub owners: Vec<CarrierOwner>,
+    /// Every active character's IGN of every party member, in party order.
+    pub igns: Vec<String>,
+}
+
+/// The party member behind a carrier and the character their figures were
+/// read under (`Carrier::ign`).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct CarrierOwner {
+    pub member_id: String,
+    pub character_id: String,
 }
 
 impl SavedParty {
@@ -32,11 +44,26 @@ impl SavedParty {
             .map(|total| total.as_ref().and_then(|total| total.estimated_minutes))
             .collect()
     }
+
+    /// Each boss's "technically possible", from its stored whole-party total.
+    pub fn possible(&self) -> Vec<Option<bool>> {
+        self.totals
+            .iter()
+            .map(|total| total.as_ref().and_then(|total| total.technically_possible))
+            .collect()
+    }
 }
 
 /// The IGN a character is looked up under, when the scouter can take it.
 fn ign_of(character: Option<&Character>) -> Option<RosterIgn> {
     character.and_then(|character| RosterIgn::lookup(character).ok())
+}
+
+/// A brought character the scouter can take.
+fn scoutable<B>(found: Option<(&Character, B)>) -> Option<&Character> {
+    found
+        .map(|(character, _)| character)
+        .filter(|character| ign_of(Some(character)).is_some())
 }
 
 /// `slots` (of a run with `bosses`) read against the saved estimates
@@ -56,6 +83,15 @@ pub fn saved_party(
         ..PartyShares::default()
     };
     let mut oldest: Option<DateTime<Utc>> = None;
+    let mut owners = Vec::new();
+    let igns = slots
+        .iter()
+        .flat_map(|slot| {
+            slot.candidates
+                .iter()
+                .map(|character| character.ign.clone())
+        })
+        .collect();
     let mut seen = |at: DateTime<Utc>| oldest = Some(oldest.map_or(at, |was| was.min(at)));
     // Each boss's own party: the IGNs brought to it, and who brings none.
     let mut parties: Vec<(Vec<RosterIgn>, usize)> = vec![(Vec::new(), 0); bosses.len()];
@@ -69,12 +105,17 @@ pub fn saved_party(
                 None => parties[boss].1 += 1,
             }
         }
-        let Some(ign) = ign_of(slot.brought().map(|(character, _)| character))
-            .or_else(|| brought.iter().flatten().next().cloned())
-        else {
+        // The first boss's character, else the first one brought to any.
+        let first = scoutable(slot.brought())
+            .or_else(|| (0..bosses.len()).find_map(|boss| scoutable(slot.brought_to(boss))));
+        let (Some(character), Some(ign)) = (first, ign_of(first)) else {
             party.missing += 1;
             continue;
         };
+        owners.push(CarrierOwner {
+            member_id: slot.member_id.clone(),
+            character_id: character.id.clone(),
+        });
         let reading = cached(&ign);
         if let Some((_, fetched_at)) = &reading {
             seen(*fetched_at);
@@ -151,5 +192,7 @@ pub fn saved_party(
         party,
         totals,
         oldest,
+        owners,
+        igns,
     }
 }

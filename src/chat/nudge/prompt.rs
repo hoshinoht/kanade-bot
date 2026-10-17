@@ -2,7 +2,11 @@
 //! (`compact.nudge_rewrite` for nudges, `compact.header_rewrite` for reminder
 //! headers; else nothing beyond the voice cue), the member's profile voice,
 //! the mood, and the seed line with its placeholders unfilled. They carry no
-//! member, channel, boss or schedule data.
+//! member, channel or schedule data. A reminder header may also carry a
+//! [`HeaderFacts`] block right after the instruction: the party's estimate
+//! totals per boss (bosses numbered, never named) and the `{cN}` placeholders
+//! offered for top carriers with their share; never a name, IGN, alias or id.
+//! Without it the header prompt is exactly what it was before the block.
 
 use crate::chat::persona::{CompiledPersona, NudgeMood, VoiceSource};
 use crate::infrastructure::llm::Message;
@@ -24,6 +28,101 @@ pub const VOICE_LABEL: &str = "Voice: ";
 /// as a conversation turn, and a model then asks for the line instead of
 /// rewriting it (2026-10-08: 3 of 5 replies to a bare "Let's go!").
 pub const SEED_LABEL: &str = "Line to rewrite: ";
+
+/// One boss on a header's card as the model sees it: party-level figures
+/// only, numbered by its place on the card.
+#[derive(Clone, Debug, PartialEq)]
+pub struct BossFigures {
+    /// The party's combined estimate in %, shown with one decimal.
+    pub total: f64,
+    /// Estimated clear minutes, only from a stored whole-party total.
+    pub minutes: Option<f64>,
+    /// Some figure assumes a 100% critical rate.
+    pub crit_assumed: bool,
+    /// The stored whole-party total's verdict, when there is one.
+    pub possible: Option<bool>,
+    /// Every party member has an estimate for this boss.
+    pub complete: bool,
+}
+
+/// A placeholder the line may use for a top carrier, with their share.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct OfferedSlot {
+    /// `{c1}`, `{c2}`, …; code fills in the name after the gate.
+    pub placeholder: String,
+    /// Their whole-% share of the party's estimate on this card.
+    pub share: u32,
+}
+
+/// The estimate context of a reminder header rewrite (D2/D3/D7).
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct HeaderFacts {
+    pub bosses: Vec<BossFigures>,
+    /// Empty in the gentle mood: no call-outs.
+    pub slots: Vec<OfferedSlot>,
+}
+
+impl HeaderFacts {
+    /// The block placed after the header instruction.
+    pub fn block(&self) -> String {
+        let mut lines =
+            vec!["Party estimate for this card, for tone only (never restate it):".to_owned()];
+        for (index, boss) in self.bosses.iter().enumerate() {
+            let mut parts = vec![format!("party total {:.1}%", boss.total)];
+            if let Some(minutes) = boss.minutes {
+                parts.push(format!("about {minutes:.1} minutes to clear"));
+            }
+            match boss.possible {
+                Some(true) => parts.push("a clear is technically possible".to_owned()),
+                Some(false) => parts.push("a clear is not technically possible yet".to_owned()),
+                None => {}
+            }
+            if boss.crit_assumed {
+                parts.push("critical rate assumed".to_owned());
+            }
+            if !boss.complete {
+                parts.push("not complete: someone has no estimate".to_owned());
+            }
+            lines.push(format!("- boss {}: {}", index + 1, parts.join(", ")));
+        }
+        if self.slots.is_empty() {
+            lines.push(
+                "Speak to the whole party; do not single anyone out and add no braces.".to_owned(),
+            );
+        } else {
+            let offered: Vec<String> = self
+                .slots
+                .iter()
+                .map(|slot| {
+                    format!(
+                        "{} ({}% of the party's estimate)",
+                        slot.placeholder, slot.share
+                    )
+                })
+                .collect();
+            lines.push(format!(
+                "Top carriers you may praise, by placeholder only: {}. Use none, one or both, each at most once, copied exactly; they are the only braces you may add.",
+                offered.join(", ")
+            ));
+            lines.push(
+                "Positive call-outs only: praise an offered placeholder or the whole party; never point at the lowest or at anyone else."
+                    .to_owned(),
+            );
+        }
+        lines.push("Never restate a figure, a percentage, a number or a boss.".to_owned());
+        if self
+            .bosses
+            .iter()
+            .any(|boss| boss.crit_assumed || !boss.complete)
+        {
+            lines.push(
+                "Hedge: the estimate assumes a critical rate or misses someone, so sound hopeful, not certain."
+                    .to_owned(),
+            );
+        }
+        lines.join("\n")
+    }
+}
 
 #[derive(Clone, PartialEq, Eq)]
 pub struct RewritePrompt {
@@ -54,10 +153,21 @@ impl RewritePrompt {
     }
 
     /// A reminder header rewrite (day-of heading, countdown or digest
-    /// phrase), guided by `compact.header_rewrite`, else `nudge_rewrite`.
-    pub fn header(persona: &CompiledPersona, mood: NudgeMood, seed: &str) -> Self {
+    /// phrase), guided by `compact.header_rewrite`, else `nudge_rewrite`;
+    /// `facts` adds the estimate block after the instruction (`None`: the
+    /// prompt is exactly the context-free one).
+    pub fn header(
+        persona: &CompiledPersona,
+        mood: NudgeMood,
+        seed: &str,
+        facts: Option<&HeaderFacts>,
+    ) -> Self {
+        let instruction = match facts {
+            None => HEADER_REWRITE_INSTRUCTION.to_owned(),
+            Some(facts) => format!("{HEADER_REWRITE_INSTRUCTION}\n\n{}", facts.block()),
+        };
         Self::compose(
-            HEADER_REWRITE_INSTRUCTION,
+            &instruction,
             persona.prompt_compact().or_else(|| persona.nudge_rewrite()),
             persona,
             mood,
@@ -145,7 +255,7 @@ mod tests {
         .unwrap();
         let persona = CompiledPersona::compile(&bundle, None);
         for prompt in [
-            RewritePrompt::header(&persona, NudgeMood::Playful, "Let's go!"),
+            RewritePrompt::header(&persona, NudgeMood::Playful, "Let's go!", None),
             RewritePrompt::build(&persona, NudgeMood::Gentle, "Fix {boss} here."),
         ] {
             let messages = prompt.messages();
@@ -166,7 +276,7 @@ mod tests {
         )
         .unwrap();
         let persona = CompiledPersona::compile(&bundle, None);
-        let prompt = RewritePrompt::header(&persona, NudgeMood::Playful, "Let's go!");
+        let prompt = RewritePrompt::header(&persona, NudgeMood::Playful, "Let's go!", None);
         assert_eq!(
             prompt.transcript(),
             format!(
@@ -174,5 +284,93 @@ mod tests {
                 prompt.system()
             )
         );
+    }
+
+    fn kanade() -> CompiledPersona {
+        let bundle = parse_bundle(
+            include_str!("../../../config/personas/bundles/kanade.yaml"),
+            &PersonaId::parse("kanade").unwrap(),
+        )
+        .unwrap();
+        CompiledPersona::compile(&bundle, None)
+    }
+
+    /// Without estimate context the header prompt is byte for byte the one
+    /// sent before the context block existed (1.0.0-beta.8): the
+    /// instruction, the persona's header text, the voice cue and the mood.
+    #[test]
+    fn a_header_prompt_without_context_is_unchanged() {
+        const BETA8_INSTRUCTION: &str = "Rewrite the one reminder header line you are given so it sounds like the character described below. Keep it short (at most eight words besides any {day}), friendly and safe for work, whatever the character's style. Keep its meaning and its mood. Keep {day} exactly as written when the line has it and add no other braces. Add no dates, times, numbers, boss names or attendance news of your own. Reply with that one plain-text line only: no quotes, links, URLs, mentions, line breaks or markdown. Never use asterisks, underscores, backticks or other formatting, even if the character notes below ask for it.";
+        const BETA8_PLAYFUL: &str = "Mood: playful. Light teasing is fine.";
+        let persona = kanade();
+        let mut parts = vec![BETA8_INSTRUCTION.to_owned()];
+        if let Some(text) = persona.prompt_compact().or_else(|| persona.nudge_rewrite()) {
+            parts.push(text.trim().to_owned());
+        }
+        if persona.provenance().voice != VoiceSource::Default {
+            parts.push(format!("Voice: {}", persona.effective_voice()));
+        }
+        parts.push(BETA8_PLAYFUL.to_owned());
+        let golden = format!(
+            "[system]\n{}\n\n[user]\nLine to rewrite: Today — {{day}}",
+            parts.join("\n\n")
+        );
+        let prompt = RewritePrompt::header(&persona, NudgeMood::Playful, "Today — {day}", None);
+        assert_eq!(prompt.transcript(), golden);
+    }
+
+    fn facts(slots: &[(&str, u32)], crit: bool, complete: bool) -> HeaderFacts {
+        HeaderFacts {
+            bosses: vec![
+                BossFigures {
+                    total: 112.44,
+                    minutes: Some(26.7),
+                    crit_assumed: crit,
+                    possible: Some(true),
+                    complete,
+                },
+                BossFigures {
+                    total: 61.0,
+                    minutes: None,
+                    crit_assumed: false,
+                    possible: None,
+                    complete: true,
+                },
+            ],
+            slots: slots
+                .iter()
+                .map(|(placeholder, share)| OfferedSlot {
+                    placeholder: (*placeholder).to_owned(),
+                    share: *share,
+                })
+                .collect(),
+        }
+    }
+
+    /// The block follows the instruction, numbers the bosses, offers the
+    /// placeholders with their share and hedges only when asked to.
+    #[test]
+    fn the_estimate_block_follows_the_instruction() {
+        let persona = kanade();
+        let plain = RewritePrompt::header(&persona, NudgeMood::Playful, "Onward!", None);
+        let with = facts(&[("{c1}", 48), ("{c2}", 31)], false, true);
+        let prompt = RewritePrompt::header(&persona, NudgeMood::Playful, "Onward!", Some(&with));
+        let (instruction, rest) = plain.system().split_once("\n\n").unwrap();
+        assert_eq!(
+            prompt.system(),
+            format!("{instruction}\n\n{}\n\n{rest}", with.block())
+        );
+        let block = with.block();
+        assert!(block.contains(
+            "- boss 1: party total 112.4%, about 26.7 minutes to clear, a clear is technically possible"
+        ));
+        assert!(block.contains("- boss 2: party total 61.0%\n"));
+        assert!(block.contains("{c1} (48% of the party's estimate), {c2} (31%"));
+        assert!(!block.contains("Hedge"));
+        let hedged = facts(&[], true, false).block();
+        assert!(hedged.contains("critical rate assumed, not complete"));
+        assert!(hedged.contains("Hedge:"));
+        assert!(hedged.contains("do not single anyone out"));
+        assert!(!hedged.contains('{'));
     }
 }

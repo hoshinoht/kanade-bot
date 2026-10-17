@@ -189,3 +189,81 @@ pub fn accept_rewrite_with(
     }
     Ok(line.to_owned())
 }
+
+/// Why a header line's `{cN}` placeholders were refused.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SlotRejection {
+    /// A `{cN}` that was not offered.
+    Unknown,
+    /// An offered placeholder used twice.
+    Duplicate,
+}
+
+/// A header line's placeholder slots taken out: the line without them
+/// (whitespace collapsed) for the shared line, word and fact checks, and the
+/// placeholders it used, in order. Each `{c<digits>}` must be one of
+/// `offered`, at most once; other braces are left for the field checks.
+pub fn strip_slots(line: &str, offered: &[&str]) -> Result<(String, Vec<String>), SlotRejection> {
+    let mut stripped = String::with_capacity(line.len());
+    let mut used: Vec<String> = Vec::new();
+    let mut rest = line;
+    while let Some(start) = rest.find("{c") {
+        let after = &rest[start + 2..];
+        let digits = after.bytes().take_while(u8::is_ascii_digit).count();
+        if digits == 0 || !after[digits..].starts_with('}') {
+            stripped.push_str(&rest[..start + 2]);
+            rest = after;
+            continue;
+        }
+        let slot = &rest[start..start + 3 + digits];
+        if !offered.contains(&slot) {
+            return Err(SlotRejection::Unknown);
+        }
+        if used.iter().any(|seen| seen == slot) {
+            return Err(SlotRejection::Duplicate);
+        }
+        used.push(slot.to_owned());
+        stripped.push_str(&rest[..start]);
+        stripped.push(' ');
+        rest = &rest[start + 3 + digits..];
+    }
+    stripped.push_str(rest);
+    Ok((
+        stripped.split_whitespace().collect::<Vec<_>>().join(" "),
+        used,
+    ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn slots_are_taken_out_once_each_and_only_when_offered() {
+        let offered = ["{c1}", "{c2}"];
+        assert_eq!(
+            strip_slots("Go {c1}, carry us!", &offered),
+            Ok(("Go , carry us!".to_owned(), vec!["{c1}".to_owned()]))
+        );
+        assert_eq!(
+            strip_slots("{c2} and {c1} lead — {day}", &offered),
+            Ok((
+                "and lead — {day}".to_owned(),
+                vec!["{c2}".to_owned(), "{c1}".to_owned()]
+            ))
+        );
+        assert_eq!(
+            strip_slots("No slot {c} here {cat}", &offered),
+            Ok(("No slot {c} here {cat}".to_owned(), Vec::new()))
+        );
+        assert_eq!(
+            strip_slots("Go {c3}!", &offered),
+            Err(SlotRejection::Unknown)
+        );
+        assert_eq!(strip_slots("Go {c1}!", &[]), Err(SlotRejection::Unknown));
+        assert_eq!(
+            strip_slots("{c1}, {c1}!", &offered),
+            Err(SlotRejection::Duplicate)
+        );
+    }
+}

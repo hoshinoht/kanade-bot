@@ -329,7 +329,9 @@ fn safe_fill(template: &str, filled: &str, facts: &NudgeFacts<'_>) -> bool {
         && !safety::has_invite(filled)
 }
 
-fn safe_value(value: &str) -> bool {
+/// A value safe to fill into a line: no mention, link, markup, format or
+/// placeholder characters (nudge fields and header carrier IGNs alike).
+pub fn safe_value(value: &str) -> bool {
     let lower = value.to_lowercase();
     !value.trim().is_empty()
         && !value

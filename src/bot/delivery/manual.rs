@@ -401,7 +401,7 @@ where
                     ..
                 } => {
                     heading
-                        .choose(day, key, stage, PREGEN_DEADLINE, Some(stop))
+                        .choose(day, key, stage, PREGEN_DEADLINE, Some(stop), None)
                         .await
                 }
                 Target::Card { .. } | Target::Digest { .. } => {
@@ -411,7 +411,7 @@ where
                         PhraseKind::Countdown
                     };
                     heading
-                        .choose_phrase(kind, catalog, key, stage, PREGEN_DEADLINE, Some(stop))
+                        .choose_phrase(kind, catalog, key, stage, PREGEN_DEADLINE, Some(stop), None)
                         .await
                 }
             };

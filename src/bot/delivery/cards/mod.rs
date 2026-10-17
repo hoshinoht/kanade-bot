@@ -36,9 +36,10 @@ pub use countdown::countdown_card;
 pub use day_of::{card_runs, day_of_card};
 pub use digest::{DIGEST_EMPTY, DIGEST_FOOTER, digest_card};
 pub use heading::{
-    COUNTDOWN_PHRASE_SEED, Chosen, DAY_OF_HEADING_SEED, DIGEST_PHRASE_SEED, HeaderKind,
-    HeadingRewrite, HeadingSource, PersonaSource, PhraseKind, PhraseRejection, Trial, TrialOrigin,
-    Verdict, accept_phrase, accept_phrase_with, failure_reason, seed_heading,
+    COUNTDOWN_PHRASE_SEED, Chosen, DAY_OF_HEADING_SEED, DIGEST_PHRASE_SEED, HeaderContext,
+    HeaderKind, HeaderLine, HeaderSlots, HeadingRewrite, HeadingSource, MAX_SLOTS, PersonaSource,
+    PhraseKind, PhraseRejection, SlotFill, SlotRule, StoredSlot, Trial, TrialOrigin, Verdict,
+    accept_header_with, accept_phrase, accept_phrase_with, failure_reason, seed_heading,
 };
 #[cfg(any(test, feature = "test-support"))]
 pub use record::HeaderHistory;

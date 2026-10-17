@@ -11,11 +11,15 @@
 //!         --chat-alias A --chat-reasoning R --extract-alias A --extract-reasoning R
 //! Offline: … --example v02_quality -- --dry-run [--cases C01,E07] [--cap N]
 //! Rescore: … --example v02_quality -- --rescore <run-dir>
+//! Headers: … --example v02_quality -- --headers --rewrite-alias A
+//!         [--rewrite-reasoning R] [--tries N] [--cases HD-CTX,…] (or
+//!         --headers --dry-run to list the header cases without a call)
 
 mod attempt;
 mod cases;
 mod collect;
 mod dry;
+mod headers;
 mod output;
 mod persona;
 mod report;
@@ -61,7 +65,7 @@ const MODEL_ENV: [&str; 6] = [
     "KANADE_MODEL_CONTEXT",
 ];
 
-const USAGE: &str = "usage: v02_quality (--dry-run | --chat-alias A --chat-reasoning R --extract-alias A --extract-reasoning R) [--out DIR] [--cases C01,E07,…] [--cap N≤500] [--persona-bundle FILE]\n       v02_quality --rescore RUN_DIR [--persona-bundle FILE]";
+const USAGE: &str = "usage: v02_quality (--dry-run | --chat-alias A --chat-reasoning R --extract-alias A --extract-reasoning R) [--out DIR] [--cases C01,E07,…] [--cap N≤500] [--persona-bundle FILE]\n       v02_quality --headers (--dry-run | --rewrite-alias A [--rewrite-reasoning R]) [--tries N] [--cases HD-CTX,…] [--out DIR] [--persona-bundle FILE]\n       v02_quality --rescore RUN_DIR [--persona-bundle FILE]";
 
 #[derive(Default)]
 struct Args {
@@ -75,6 +79,10 @@ struct Args {
     extract_alias: Option<String>,
     extract_reasoning: Option<String>,
     persona_bundle: Option<PathBuf>,
+    headers: bool,
+    rewrite_alias: Option<String>,
+    rewrite_reasoning: Option<String>,
+    tries: Option<u32>,
 }
 
 fn parse(mut raw: impl Iterator<Item = String>) -> Result<Args, String> {
@@ -105,14 +113,28 @@ fn parse(mut raw: impl Iterator<Item = String>) -> Result<Args, String> {
             "--extract-alias" => args.extract_alias = Some(value()?),
             "--extract-reasoning" => args.extract_reasoning = Some(value()?),
             "--persona-bundle" => args.persona_bundle = Some(value()?.into()),
+            "--headers" => args.headers = true,
+            "--rewrite-alias" => args.rewrite_alias = Some(value()?),
+            "--rewrite-reasoning" => args.rewrite_reasoning = Some(value()?),
+            "--tries" => {
+                let tries: u32 = value()?.parse().map_err(|_| "--tries takes a number")?;
+                if !(1..=50).contains(&tries) {
+                    return Err("--tries must be 1..=50".into());
+                }
+                args.tries = Some(tries);
+            }
             "-h" | "--help" => return Err(USAGE.into()),
             other => return Err(format!("unknown argument {other}\n{USAGE}")),
         }
     }
     if let Some(ids) = &args.cases
-        && let Some(unknown) = ids
-            .iter()
-            .find(|id| !cases::CASES.iter().any(|case| case.id == id.as_str()))
+        && let Some(unknown) = ids.iter().find(|id| {
+            if args.headers {
+                !headers::known(id)
+            } else {
+                !cases::CASES.iter().any(|case| case.id == id.as_str())
+            }
+        })
     {
         return Err(format!("unknown case {unknown}"));
     }
@@ -238,6 +260,9 @@ async fn run() -> Result<ExitCode, String> {
     Detector::install(&persona.bundle);
     if let Some(dir) = &args.rescore {
         return rescore(dir, &persona);
+    }
+    if args.headers {
+        return run_headers(&args, persona).await;
     }
     tls::install_ring_provider().map_err(|e| e.to_string())?;
 
@@ -441,5 +466,100 @@ async fn run() -> Result<ExitCode, String> {
     if meta["aborted"] == true {
         return Ok(ExitCode::from(2));
     }
+    Ok(ExitCode::SUCCESS)
+}
+
+/// `--headers`: the live header rewrite probes (or, dry, their listing).
+async fn run_headers(args: &Args, persona: Arc<PersonaBundle>) -> Result<ExitCode, String> {
+    let cases = headers::selected(args.cases.as_deref());
+    let tries = args.tries.unwrap_or(headers::DEFAULT_TRIES);
+    if args.dry {
+        print!("{}", headers::listing(&cases, tries));
+        eprintln!(
+            "v02 headers: {} cases, {} calls planned (dry run: none sent)",
+            cases.len(),
+            cases.len() as u32 * tries
+        );
+        return Ok(ExitCode::SUCCESS);
+    }
+    tls::install_ring_provider().map_err(|e| e.to_string())?;
+    let mut mapping: BTreeMap<String, String> = [
+        ("KANADE_TIMEZONE", "Asia/Singapore".to_owned()),
+        ("KANADE_ADMIN_BIND", "127.0.0.1:0".to_owned()),
+        ("KANADE_GUILD_ID", world::GUILD.to_string()),
+        ("KANADE_BOSSING_ROLE_ID", world::BOSSING.to_string()),
+    ]
+    .into_iter()
+    .map(|(key, value)| (key.to_owned(), value))
+    .collect();
+    for key in MODEL_ENV {
+        if let Ok(value) = std::env::var(key) {
+            mapping.insert(key.into(), value);
+        }
+    }
+    if !mapping.contains_key("KANADE_MODEL_BASE_URL") {
+        return Err("KANADE_MODEL_BASE_URL is not set (or use --dry-run)".into());
+    }
+    let alias = args.rewrite_alias.clone().ok_or(format!(
+        "the live header run needs --rewrite-alias\n{USAGE}"
+    ))?;
+    mapping.insert("KANADE_REWRITE_MODEL".into(), alias);
+    if let Some(reasoning) = &args.rewrite_reasoning {
+        mapping.insert("KANADE_REWRITE_REASONING".into(), reasoning.clone());
+    }
+    let run_name = stamp();
+    let out = args
+        .out
+        .clone()
+        .unwrap_or_else(|| PathBuf::from("docs/notes/evidence/v02-headers").join(&run_name));
+    output::prepare(&out)?;
+    let scratch = TempDir::new("models").map_err(|e| e.to_string())?;
+    let config = attempt::config_in(&scratch.0, &mapping, &persona)?;
+    preflight(&config, &persona)?;
+    let models = harness::shared_models(&config)
+        .map_err(|e| e.to_string())?
+        .ok_or("no model stack (KANADE_MODEL_BASE_URL unset)")?;
+    drop(scratch);
+    let compiled = kanade::chat::persona::CompiledPersona::compile(&persona.bundle, None);
+    let heading = harness::header_rewrite(&config, &models, compiled)
+        .ok_or("the rewrite role has no alias")?;
+    let startup = models.check_startup().await;
+    let refresh = models.spawn_catalog_refresh();
+    let route = models.governor.route(Role::Rewrite).map(|route| {
+        json!({
+            "alias": route.alias,
+            "effort": route.effort.map(|e| e.as_str()),
+            "external": route.external,
+            "group": route.group,
+        })
+    });
+    let catalog = kanade::infrastructure::files::load_catalog(
+        &Path::new(env!("CARGO_MANIFEST_DIR")).join("boss/bosses.yaml"),
+    )
+    .map_err(|e| e.to_string())?;
+    let mut meta = json!({
+        "run": run_name,
+        "mode": "headers",
+        "route": route,
+        "listing": format!("{:?}", startup.listing),
+        "persona": persona_meta(&persona),
+        "cases": cases.iter().map(|case| case.id).collect::<Vec<_>>(),
+        "tries": tries,
+    });
+    write_json(&out.join("run.json"), &meta)?;
+    let records = headers::run(&heading, &catalog, &cases, tries, &out, write_json).await;
+    refresh.abort();
+    let records = records?;
+    meta["completed_attempts"] = json!(records.len());
+    write_json(&out.join("run.json"), &meta)?;
+    output::write(
+        &out.join("summary.md"),
+        headers::summary(&meta, &records).as_bytes(),
+    )?;
+    eprintln!(
+        "v02 headers: {} calls; summary {}",
+        records.len(),
+        out.join("summary.md").display()
+    );
     Ok(ExitCode::SUCCESS)
 }
