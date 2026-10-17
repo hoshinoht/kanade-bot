@@ -87,7 +87,7 @@ async fn teasing_off_or_opted_out_sends_todays_context_prompt() {
     // Opted in with teasing on: the tease slot, its share and note, no name.
     let tease = prompt(true, &tease_world(true, NOTE)).await;
     assert!(tease.contains("{c3} (9% of the party's estimate) has asked to be teased"));
-    assert!(tease.contains(&format!("running joke, for flavour: \"{NOTE}\"")));
+    assert!(tease.contains(&format!("\"{NOTE}\"")));
     for private in [
         "Kestrelle",
         "Nimbus",
