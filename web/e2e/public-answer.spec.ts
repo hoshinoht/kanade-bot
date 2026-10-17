@@ -1,4 +1,4 @@
-import type { Page } from '@playwright/test';
+import type { Locator, Page } from '@playwright/test';
 import { ADMIN, PUBLIC, csrf, expect, signInPublic, test } from './support';
 
 // The member's answer on their own run (member-writes contract Phase A,
@@ -142,4 +142,64 @@ test('phone: the run sheet answers with 44 px choices', async ({ page }) => {
   await group.getByRole('button', { name: /^Maybe/ }).click();
   await expect(group).toHaveAccessibleName('Your answer: Maybe');
   await expect.poll(() => saved(page)).toBe('maybe');
+});
+
+// One press, one morph (the user's "the animation plays twice"): a choice's
+// shape follows only the choice (the chosen pill), so the press does not
+// also step its corners down first. Counted from the press until the spring
+// has settled: corner transitions on the pressed choice, and any CSS
+// animation on the page (an own answer is no arrival: no mark, no pulse).
+async function motionOf(page: Page, button: Locator, press: () => Promise<void>): Promise<{ morphs: number; animations: string[] }> {
+  const seen = await button.evaluateHandle((el) => {
+    const seen = { morphs: 0, animations: [] as string[] };
+    el.addEventListener('transitionstart', (event) => {
+      if (event.target === el && event.propertyName === 'border-top-left-radius') seen.morphs += 1;
+    });
+    document.addEventListener('animationstart', (event) => seen.animations.push(event.animationName));
+    return seen;
+  });
+  await press();
+  await expect(button).toHaveAttribute('aria-pressed', 'true');
+  // Past the tap's lingering :active and the 250 ms spring.
+  await page.waitForTimeout(800);
+  return seen.jsonValue();
+}
+
+/** A deliberate mouse press: held 120 ms, as a hand does. */
+async function hold(page: Page, button: Locator): Promise<void> {
+  const box = (await button.boundingBox())!;
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.waitForTimeout(120);
+  await page.mouse.up();
+}
+
+test('one press on an answer morphs it once and marks nothing: run pane', async ({ page }) => {
+  await open(page);
+  const maybe = choice(page, 'Maybe');
+  expect(await motionOf(page, maybe, () => hold(page, maybe))).toEqual({ morphs: 1, animations: [] });
+  await expect.poll(() => saved(page)).toBe('maybe');
+});
+
+test('one press on an answer morphs it once and marks nothing: My runs', async ({ page }) => {
+  await signInPublic(page);
+  await page.goto(`${PUBLIC}/mine?sw=off`);
+  // My runs names each group with the run's boss tokens.
+  const maybe = page.getByRole('group', { name: /^Your answer, .* HCarling \+ HMaleficStar$/ }).getByRole('button', { name: /^Maybe/ });
+  await expect(maybe).toHaveAttribute('aria-pressed', 'false');
+  expect(await motionOf(page, maybe, () => hold(page, maybe))).toEqual({ morphs: 1, animations: [] });
+  await expect.poll(() => saved(page)).toBe('maybe');
+});
+
+test.describe('touch', () => {
+  test.use({ hasTouch: true, isMobile: true, viewport: { width: 390, height: 844 } });
+
+  test('one tap on an answer morphs it once and marks nothing: phone run', async ({ page }) => {
+    await signInPublic(page);
+    await page.goto(`${PUBLIC}/?run=r-carling&sw=off`);
+    const maybe = page.getByRole('group', { name: /^Your answer/ }).getByRole('button', { name: /^Maybe/ });
+    await expect(maybe).toHaveAttribute('aria-pressed', 'false');
+    expect(await motionOf(page, maybe, () => maybe.tap())).toEqual({ morphs: 1, animations: [] });
+    await expect.poll(() => saved(page)).toBe('maybe');
+  });
 });
