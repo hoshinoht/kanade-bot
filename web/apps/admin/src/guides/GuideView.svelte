@@ -14,6 +14,8 @@
   import type { BossRow, Channel, GuideBlock, GuideBlocksRefused, GuideDetail, GuidePlan, GuidePreview as Preview, GuidePublishResult, GuideRow, GuideRun, GuideSaved, Reminders } from '@kanade/api-types';
   import { ApiRequestError, createClient, newIdempotencyKey } from '@kanade/client';
   import { Icon, Modal, PendingLabel, Select, StatusChip, Toaster, WavyProgress } from '@kanade/ui';
+  // Config's save bar brings no styles of its own; they are Config's (`settings.scss`), lazy-loaded with it.
+  import '@kanade/ui/styles/screens/settings.scss';
   import { tick, untrack } from 'svelte';
   import SaveBar from '../config/SaveBar.svelte';
   import { editedAt } from '../drafts/drafts';
@@ -680,45 +682,49 @@
   {/if}
 {/if}
 
-<PublishPlan
-  bind:open={planOpen}
-  guide={id}
-  title={base?.guide.title ?? row.title}
-  {channelName}
-  {checkedAt}
-  onqueued={started}
-  onoffline={(message) => (offline = message)}
-  onstale={(message) => {
-    toaster.show({ message, tone: 'error' });
-    void detail.load();
-  }}
-/>
+<!-- The dialogs sit beside the shell, not inside the Guides window (as the boards draw them):
+     their host moves to the body once, before any of them opens. -->
+<div class="guide-dialogs" {@attach (host) => void document.body.append(host)}>
+  <PublishPlan
+    bind:open={planOpen}
+    guide={id}
+    title={base?.guide.title ?? row.title}
+    {channelName}
+    {checkedAt}
+    onqueued={started}
+    onoffline={(message) => (offline = message)}
+    onstale={(message) => {
+      toaster.show({ message, tone: 'error' });
+      void detail.load();
+    }}
+  />
 
-<Modal bind:open={markOpen} title="Mark message {(unknown?.position ?? 0) + 1} as not posted?" eyebrow="Guides · {title}" narrow alert describedby="{uid}-mark" fid="guide-unknown-confirm">
-  <p id="{uid}-mark">Kanade searched <span class="mono">{unknown ? channelName(unknown.channel_id) : ''}</span> and found no single copy of message {(unknown?.position ?? 0) + 1}. Marking it not posted lets the next publish post it again.</p>
-  <div class="flash flash--warn gplan__flash" role="note" data-fid="guide-unknown-warn"><b>If the first try did land,</b> members will see message {(unknown?.position ?? 0) + 1} twice. Delete the extra copy in Discord by hand.</div>
-  <p class="note">Kept in History. Kanade never resends it on its own.</p>
-  <p class="field__error" role="alert">{markError}</p>
-  {#snippet footer(close)}
-    <button class="btn" type="button" onclick={close}>Cancel</button>
-    <button class="btn btn--risk" type="button" data-fid="guide-unknown-mark-confirm" disabled={markBusy} onclick={() => void markNotPosted()}><PendingLabel pending={markBusy} label="Marking…">Mark as not posted</PendingLabel></button>
-  {/snippet}
-</Modal>
+  <Modal bind:open={markOpen} title="Mark message {(unknown?.position ?? 0) + 1} as not posted?" eyebrow="Guides · {title}" narrow alert describedby="{uid}-mark" fid="guide-unknown-confirm" fidParts={{}}>
+    <p id="{uid}-mark">Kanade searched <span class="mono">{unknown ? channelName(unknown.channel_id) : ''}</span> and found no single copy of message {(unknown?.position ?? 0) + 1}. Marking it not posted lets the next publish post it again.</p>
+    <div class="flash flash--warn gplan__flash" role="note" data-fid="guide-unknown-warn"><b>If the first try did land,</b> members will see message {(unknown?.position ?? 0) + 1} twice. Delete the extra copy in Discord by hand.</div>
+    <p class="note">Kept in History. Kanade never resends it on its own.</p>
+    <p class="field__error" role="alert">{markError}</p>
+    {#snippet footer(close)}
+      <button class="btn" type="button" onclick={close}>Cancel</button>
+      <button class="btn btn--risk" type="button" data-fid="guide-unknown-mark-confirm" disabled={markBusy} onclick={() => void markNotPosted()}><PendingLabel pending={markBusy} label="Marking…">Mark as not posted</PendingLabel></button>
+    {/snippet}
+  </Modal>
 
-<Modal bind:open={deleteOpen} title="Delete {base?.guide.title ?? row.title}?" eyebrow="Guides" narrow alert describedby="{uid}-del" fid={published ? 'guide-delete-dialog' : 'guide-delete-confirm'}>
-  {#if published}
-    <p id="{uid}-del">{base?.guide.title} still has <b>{plural(published, 'message')}</b> in <span class="mono">{channelName(detail.data?.slots[0]?.channel_id ?? channel)}</span>. Unpublish it first: Kanade deletes {published === 1 ? 'that message' : `those ${published} messages`}, newest first. Then you can delete the guide.</p>
-    <p class="note">Members stop seeing the guide as soon as its messages go. The draft stays until you delete it; History keeps the record.</p>
-  {:else}
-    <p id="{uid}-del">Nothing is posted any more. The draft and its {plural(base?.blocks.length ?? 0, 'block')} go; History keeps the record.</p>
-  {/if}
-  <p class="field__error" role="alert">{deleteError}</p>
-  {#snippet footer(close)}
-    <button class="btn" type="button" onclick={close}>Cancel</button>
+  <Modal bind:open={deleteOpen} title="Delete {base?.guide.title ?? row.title}?" eyebrow="Guides" narrow alert describedby="{uid}-del" fid={published ? 'guide-delete-dialog' : 'guide-delete-confirm'} fidParts={{}}>
     {#if published}
-      <button class="btn btn--risk" type="button" data-fid="guide-unpublish" disabled={deleteBusy || !unpublishPlan} onclick={() => void confirmDelete()}><PendingLabel pending={deleteBusy} label="Unpublishing…">Unpublish {plural(published, 'message')}</PendingLabel></button>
+      <p id="{uid}-del">{base?.guide.title} still has <b>{plural(published, 'message')}</b> in <span class="mono">{channelName(detail.data?.slots[0]?.channel_id ?? channel)}</span>. Unpublish it first: Kanade deletes {published === 1 ? 'that message' : `those ${published} messages`}, newest first. Then you can delete the guide.</p>
+      <p class="note">Members stop seeing the guide as soon as its messages go. The draft stays until you delete it; History keeps the record.</p>
     {:else}
-      <button class="btn btn--risk" type="button" disabled={deleteBusy} onclick={() => void confirmDelete()}><Icon name="trash-2" /><PendingLabel pending={deleteBusy} label="Deleting…">Delete guide</PendingLabel></button>
+      <p id="{uid}-del">Nothing is posted any more. The draft and its {plural(base?.blocks.length ?? 0, 'block')} go; History keeps the record.</p>
     {/if}
-  {/snippet}
-</Modal>
+    <p class="field__error" role="alert">{deleteError}</p>
+    {#snippet footer(close)}
+      <button class="btn" type="button" onclick={close}>Cancel</button>
+      {#if published}
+        <button class="btn btn--risk" type="button" data-fid="guide-unpublish" disabled={deleteBusy || !unpublishPlan} onclick={() => void confirmDelete()}><PendingLabel pending={deleteBusy} label="Unpublishing…">Unpublish {plural(published, 'message')}</PendingLabel></button>
+      {:else}
+        <button class="btn btn--risk" type="button" disabled={deleteBusy} onclick={() => void confirmDelete()}><Icon name="trash-2" /><PendingLabel pending={deleteBusy} label="Deleting…">Delete guide</PendingLabel></button>
+      {/if}
+    {/snippet}
+  </Modal>
+</div>

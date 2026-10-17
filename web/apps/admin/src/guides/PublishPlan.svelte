@@ -138,7 +138,7 @@
   }
 </script>
 
-<Modal bind:open title={plan?.needs.channel_move ? `Move ${title} to ${target}` : `Publish ${title}`} eyebrow="Guides · publish plan" className="gplan" fid="guide-plan">
+<Modal bind:open title={plan?.needs.channel_move ? `Move ${title} to ${target}` : `Publish ${title}`} eyebrow="Guides · publish plan" className="gplan" fid="guide-plan" fidParts={{}}>
   {#if readError}
     <p class="flash flash--error gplan__flash" role="alert">Couldn’t read the plan: {readError}</p>
   {:else if !plan}

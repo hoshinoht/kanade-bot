@@ -154,7 +154,7 @@
   <button class={where === 'bar' ? 'btn drafts__newbtn' : 'btn btn--primary drafts__notebtn'} type="button" onclick={askNew}><Icon name="plus" />New guide</button>
 {/snippet}
 
-<section data-fid={compact ? undefined : 'window'} class="card tabs drafts guides window-fill" class:drafts--compact={compact} aria-label="Guides">
+<section data-fid="window" class="card tabs drafts guides window-fill" class:drafts--compact={compact} aria-label="Guides">
   <div class="card__head tabs__strip" data-fid="window-bar">
     {#if chrome?.phone}<h2 class="vh">Guides</h2>{:else}<h2 class="card__title" data-fid="window-title">Guides</h2>{/if}
     {#if list.data}<div class="drafts__new" data-fid="guides-new">{@render newButton('bar')}</div>{/if}
@@ -173,7 +173,7 @@
         </StateNote>
       </div>
     {:else}
-      <div class="drafts__list" hidden={phone && Boolean(chosenId)}>
+      <div class="drafts__list" hidden={phone && Boolean(chosenId)} data-fid="guides-list">
         <OptionList
           bind:this={listRef}
           label="Guides"

@@ -99,6 +99,8 @@
 .gline--li { padding-left: 1.1em; text-indent: -0.7em; }
 .gline--li::before { content: "•"; display: inline-block; width: 0.7em; text-indent: 0; }
 .gline--blank { min-height: 1.375em; }
+// The dialogs' host, moved to the body: it adds no box of its own.
+.guide-dialogs { display: contents; }
 .guide-pane.drafts__pane .decision-card { margin-top: 0; }
 
 // The publish plan (RevertDialog's shape).

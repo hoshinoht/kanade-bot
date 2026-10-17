@@ -1874,10 +1874,276 @@ const PAIRS: Pair[] = [
   },
 ];
 
+// Guides (KANADE_MOCKUPS=docs/research/2026-10-16-guide-mockups): the 20 single-screen boards over the
+// guides board control (`/__e2e/guides/board`, examples/e2e_server/README.md), which draws G_List's six
+// guides: Kalos basics published, Radiant Malefic Star out of date (art changed), Black Mage prep
+// blocked (no Attach Files), Carling + Star night with message 4 unconfirmed, Limbo party roles
+// publishing with its next post held, Weekly bossing etiquette not published. The composites
+// G_EditorStates, G_PlanStates and G_RunStates are notes over fragments, left out (D19, lesson 92).
+const GUIDE = {
+  kalos: '5b1e8c2d-0f3a-4c6e-9d27-4a8b1c2d3e01',
+  star: '5b1e8c2d-0f3a-4c6e-9d27-4a8b1c2d3e02',
+  carling: '5b1e8c2d-0f3a-4c6e-9d27-4a8b1c2d3e03',
+  limbo: '3d0c5b8a-7e21-4f3a-b6d9-2a4c8e1f5a10',
+} as const;
+const guidesBoard = async (page: Page) => {
+  await control(page, 'guides/board');
+};
+/** The board state with Limbo party roles' held post let go, so its run finishes. */
+const guidesReleased = async (page: Page) => {
+  await guidesBoard(page);
+  await control(page, 'discord/guide', { script: 'release' });
+};
+const guidePane = (page: Page) => page.locator('.guide-pane');
+/** The guide boards leave the dropdown triggers they captured (the channel, Add boss) untagged; the app's Select tags each. */
+const guideBoard = (board: Page) =>
+  board.evaluate(() => {
+    for (const dd of document.querySelectorAll<HTMLElement>('button.dd:not([data-fid])')) dd.dataset.fid = 'dd-trigger';
+  });
+const animationsDone = (page: Page) => page.evaluate(() => Promise.all(document.getAnimations().map((a) => a.finished)));
+/** The list (phone: the list alone). */
+const guidesShown = async (page: Page) => {
+  await expect(page.getByRole('listbox', { name: 'Guides' })).toBeVisible();
+  await animationsDone(page);
+};
+/** The open guide's editor and, on wide screens, its pane. */
+const guideOpen = async (page: Page) => {
+  await expect(page.locator('.drafts__detail [data-fid="guide-editor"]')).toBeVisible();
+  if (page.viewportSize()!.width >= 600) await expect(guidePane(page).locator('.drafts__panehead')).toBeVisible();
+  await animationsDone(page);
+};
+const openGuideBlock = async (page: Page, n: number) => {
+  const summary = page.getByRole('button', { name: new RegExp(`^Edit block ${n}:`) });
+  if (await summary.isVisible()) await summary.click();
+};
+/** Kalos basics with G_Editor's two unsaved changes (block 2's text grows, a Clear times block is added), block 2 open. */
+const kalosEdited = async (page: Page) => {
+  await guideOpen(page);
+  await openGuideBlock(page, 2);
+  const text = page.getByLabel('Block 2 text, Discord Markdown');
+  await text.fill(`${await text.inputValue()}\n- Forgetting to answer the reminder, so the organiser cannot plan the party.`);
+  await page.locator('.gblocks__add').getByRole('button', { name: 'Text' }).click();
+  await page.getByLabel('Block 6 text, Discord Markdown').fill('## Clear times\nOur best Chaos clear this season is **14:52**. Post yours in #kalos-four after each run.');
+  await openGuideBlock(page, 2);
+  await expect(page.getByLabel('Block 2 text, Discord Markdown')).toBeVisible();
+};
+/** G_EditorBosses: the same edits with the bosses block open, both columns scrolled to it. */
+const kalosBosses = async (page: Page) => {
+  await kalosEdited(page);
+  await openGuideBlock(page, 3);
+  const open = page.locator('.gblock--open');
+  await expect(open.locator('[data-fid="guide-entry"]').first()).toBeVisible();
+  await open.evaluate((el) => el.scrollIntoView({ block: 'start' }));
+  await guidePane(page).locator('.gslot').nth(2).evaluate((el) => el.scrollIntoView({ block: 'start' }));
+};
+const saveGuide = async (page: Page) => {
+  await page.getByRole('button', { name: 'Save draft' }).click();
+  await expect(page.getByRole('button', { name: page.viewportSize()!.width < 600 ? 'Publish…' : 'Review and publish…' })).not.toHaveAttribute('aria-disabled', 'true');
+  // The boards draw no "saved" toast; one under the pointer stays (hover pauses it) and covers the phone's bar.
+  await page.mouse.move(1, 1);
+  await expect(page.locator('.toast')).toHaveCount(0, { timeout: 15_000 });
+};
+/** Kalos basics saved as G_Plan's version: block 2's text and Kalos's note change, Clear times is added. */
+const kalosSaved = async (page: Page) => {
+  await kalosEdited(page);
+  await openGuideBlock(page, 3);
+  const note = page.locator('.gblock--open .gentry__note textarea').first();
+  await note.fill(`${await note.inputValue()} Bring a spare buffer.`);
+  await saveGuide(page);
+};
+/** Radiant Malefic Star saved with its entry's large image, so messages 3–5 are posted again (G_PlanRepost). */
+const starImage = async (page: Page) => {
+  await guideOpen(page);
+  await openGuideBlock(page, 3);
+  await page.locator('.gblock--open .gentry__image').getByRole('checkbox').check();
+  await saveGuide(page);
+};
+const planOpen = async (page: Page, tick?: string) => {
+  await page.getByRole('button', { name: page.viewportSize()!.width < 600 ? 'Publish…' : 'Review and publish…' }).click();
+  const plan = page.getByRole('dialog', { name: /^(Publish|Move) / });
+  await expect(plan.locator('.gplan__counts')).toBeVisible();
+  if (tick) await plan.getByRole('checkbox', { name: tick }).check();
+  await animationsDone(page);
+};
+const dialogShown = async (page: Page, name: string | RegExp) => {
+  await expect(page.getByRole('alertdialog', { name })).toBeVisible();
+  await animationsDone(page);
+};
+const GUIDE_PAIRS: Pair[] = (<Pair[]>[
+  {
+    name: 'guides-list',
+    board: 'G_List',
+    path: `/guides?item=${GUIDE.kalos}`,
+    setup: guidesBoard,
+    ready: async (page) => {
+      await guideOpen(page);
+      await page.getByRole('button', { name: 'More, current page Guides' }).click();
+      await expect(page.getByRole('menu', { name: 'More destinations' })).toBeVisible();
+    },
+  },
+  { name: 'guides-list-dark', board: 'G_ListDark', path: `/guides?item=${GUIDE.kalos}`, theme: 'dark', setup: guidesBoard, ready: guideOpen },
+  { name: 'guides-editor', board: 'G_Editor', path: `/guides?item=${GUIDE.kalos}`, setup: guidesBoard, ready: kalosEdited },
+  { name: 'guides-editor-bosses', board: 'G_EditorBosses', path: `/guides?item=${GUIDE.kalos}`, setup: guidesBoard, ready: kalosBosses },
+  { name: 'guides-editor-dark', board: 'G_EditorDark', path: `/guides?item=${GUIDE.kalos}`, theme: 'dark', setup: guidesBoard, ready: kalosBosses },
+  {
+    name: 'guides-plan',
+    board: 'G_Plan',
+    path: `/guides?item=${GUIDE.kalos}`,
+    setup: guidesBoard,
+    ready: async (page) => {
+      await kalosSaved(page);
+      await planOpen(page);
+    },
+  },
+  {
+    name: 'guides-plan-repost',
+    board: 'G_PlanRepost',
+    path: `/guides?item=${GUIDE.star}`,
+    setup: guidesBoard,
+    ready: async (page) => {
+      await starImage(page);
+      await planOpen(page);
+    },
+  },
+  {
+    name: 'guides-plan-move',
+    board: 'G_PlanMove',
+    path: `/guides?item=${GUIDE.limbo}`,
+    setup: guidesReleased,
+    ready: async (page) => {
+      await guideOpen(page);
+      // Released before the page loaded: the finished run shows as the plain preview.
+      await expect(guidePane(page).locator('.drafts__panehead .cap')).toHaveText(/^Preview/, { timeout: 15_000 });
+      await choose(page.locator('.guide-channel').getByRole('combobox', { name: 'Channel' }), { label: /#guide-raids/ });
+      await saveGuide(page);
+      await planOpen(page);
+    },
+  },
+  {
+    name: 'guides-progress',
+    board: 'G_Progress',
+    path: `/guides?item=${GUIDE.limbo}`,
+    setup: guidesBoard,
+    ready: async (page) => {
+      await guideOpen(page);
+      await expect(page.locator('.guide-cancel')).toBeVisible();
+    },
+  },
+  {
+    name: 'guides-done',
+    board: 'G_Done',
+    path: `/guides?item=${GUIDE.limbo}`,
+    setup: guidesBoard,
+    ready: async (page) => {
+      await guideOpen(page);
+      // The run finishes with the page open, as the board's admin watched it.
+      await control(page, 'discord/guide', { script: 'release' });
+      await expect(guidePane(page).getByRole('link', { name: 'Open in Discord' })).toBeVisible({ timeout: 15_000 });
+      await animationsDone(page);
+    },
+  },
+  {
+    name: 'guides-unknown',
+    board: 'G_Unknown',
+    path: `/guides?item=${GUIDE.carling}`,
+    setup: guidesBoard,
+    ready: async (page) => {
+      await guideOpen(page);
+      await expect(page.locator('.guide-unknown')).toBeVisible();
+    },
+  },
+  {
+    name: 'guides-unknown-confirm',
+    board: 'G_UnknownConfirm',
+    path: `/guides?item=${GUIDE.carling}`,
+    setup: guidesBoard,
+    ready: async (page) => {
+      await guideOpen(page);
+      await page.getByRole('button', { name: 'Mark as not posted…' }).click();
+      await dialogShown(page, /^Mark message \d+ as not posted\?/);
+    },
+  },
+  {
+    name: 'guides-delete',
+    board: 'G_Delete',
+    path: `/guides?item=${GUIDE.kalos}`,
+    setup: guidesBoard,
+    ready: async (page) => {
+      await guideOpen(page);
+      await page.getByRole('button', { name: 'Delete guide…' }).click();
+      await dialogShown(page, 'Delete Kalos basics?');
+    },
+  },
+  {
+    name: 'guides-history',
+    board: 'G_History',
+    path: '/history',
+    setup: guidesBoard,
+    ready: async (page) => {
+      await page.locator('.history-row').filter({ hasText: 'Limbo party roles' }).filter({ hasText: 'publish requested' }).first().click();
+      await expect(page.locator('.side-pane--history').getByRole('heading', { name: 'Limbo party roles: publish requested' })).toBeVisible();
+      await animationsDone(page);
+    },
+  },
+  {
+    name: 'guides-module-off',
+    board: 'G_ModuleOff',
+    path: '/guides',
+    setup: () => setModules({ guides: false }),
+    ready: async (page) => {
+      await expect(page.getByRole('heading', { level: 1 })).toHaveText("That doesn't exist");
+      await page.getByRole('button', { name: 'More' }).click();
+      await expect(page.getByRole('menu', { name: 'More destinations' })).toBeVisible();
+    },
+  },
+  { name: 'guides-phone-list', board: 'G_PhoneList', path: '/guides', setup: guidesBoard, ready: guidesShown },
+  {
+    name: 'guides-phone-editor',
+    board: 'G_PhoneEditor',
+    path: `/guides?item=${GUIDE.kalos}`,
+    setup: guidesBoard,
+    ready: async (page) => {
+      await kalosEdited(page);
+      await page.locator('.gblock--open').evaluate((el) => el.scrollIntoView({ block: 'start' }));
+    },
+  },
+  {
+    name: 'guides-phone-preview',
+    board: 'G_PhonePreview',
+    path: `/guides?item=${GUIDE.kalos}`,
+    setup: guidesBoard,
+    ready: async (page) => {
+      await kalosEdited(page);
+      await page.locator('.guide-phonetabs').getByRole('tab', { name: /^Preview/ }).click();
+      await expect(page.locator('.gslot').first()).toBeVisible();
+    },
+  },
+  {
+    name: 'guides-phone-plan',
+    board: 'G_PhonePlan',
+    path: `/guides?item=${GUIDE.kalos}`,
+    setup: guidesBoard,
+    ready: async (page) => {
+      await kalosSaved(page);
+      await planOpen(page);
+    },
+  },
+  {
+    name: 'guides-phone-plan-repost',
+    board: 'G_PhonePlanRepost',
+    path: `/guides?item=${GUIDE.star}`,
+    setup: guidesBoard,
+    ready: async (page) => {
+      await starImage(page);
+      await planOpen(page, 'Delete and repost messages 3–5');
+    },
+  },
+]).map((pair) => ({ prepare: guideBoard, ...pair }));
+
 test.describe('layout fidelity', () => {
   test.skip(!ENABLED, 'run with `bun run fidelity` (needs a KANADE_FIDELITY=1 build)');
 
-  for (const pair of [...PAIRS, ...DRAFT_PAIRS, ...GRAPH_PAIRS, ...PRESENCE_PAIRS, ...PUBLIC_PAIRS, ...MEMBER_CHAR_PAIRS, ...SHARE_PAIRS, ...BOSS_PICK_PAIRS].filter((p) => !ONLY.length || ONLY.includes(p.name))) {
+  for (const pair of [...PAIRS, ...DRAFT_PAIRS, ...GRAPH_PAIRS, ...PRESENCE_PAIRS, ...PUBLIC_PAIRS, ...MEMBER_CHAR_PAIRS, ...SHARE_PAIRS, ...BOSS_PICK_PAIRS, ...GUIDE_PAIRS].filter((p) => !ONLY.length || ONLY.includes(p.name))) {
     test(pair.name, async ({ page, browser }) => {
       test.skip(!boardExists(pair.board), `no board ${pair.board}.dc.html under ${MOCKUPS}`);
       const dir = join(OUT, pair.name);
