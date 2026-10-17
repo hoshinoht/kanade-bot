@@ -17,6 +17,7 @@
     fresh,
     key = 'item',
     fid,
+    listFid,
     rowClass,
     activeClass,
     option,
@@ -31,6 +32,8 @@
     /** The option's id attribute, `data-<key>`. */
     key?: string;
     fid?: string;
+    /** The listbox's own layout-fidelity tag (`fid` tags each option). */
+    listFid?: string;
     rowClass: (item: T) => ClassValue;
     activeClass: string;
     option: Snippet<[T]>;
@@ -75,6 +78,7 @@
 
 <ListPane
   {label}
+  fid={listFid}
   activeDescendant={current ? `${uid}-${current}` : undefined}
   bind:element={listEl}
   onkeydown={onKeydown}

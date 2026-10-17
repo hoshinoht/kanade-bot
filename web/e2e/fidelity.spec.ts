@@ -1900,16 +1900,55 @@ const guideBoard = (board: Page) =>
   board.evaluate(() => {
     for (const dd of document.querySelectorAll<HTMLElement>('button.dd:not([data-fid])')) dd.dataset.fid = 'dd-trigger';
   });
+/** G_History is the captured History page with only its rows and pane tagged: its bar, tabs, filters, list, week heads and page line get the app's tags. */
+const guidesHistoryBoard = async (board: Page) => {
+  await guideBoard(board);
+  await board.evaluate(() => {
+    const tag = (selector: string, fid: string) => {
+      for (const el of document.querySelectorAll<HTMLElement>(selector)) el.dataset.fid ??= fid;
+    };
+    tag('.pageline', 'page-line');
+    tag('.history-window__head', 'window-bar');
+    tag('.history-window__head .tabs__tabs', 'window-tabs');
+    tag('.history-window__filters', 'window-filters');
+    tag('.history-list-region__scroll', 'history-list');
+    tag('.history-list-region__scroll .pane__section', 'history-group');
+    tag('button.datepick-trigger', 'dr-trigger');
+    tag('.history-detail__raw', 'history-raw');
+  });
+};
+/** Row order is data: the store lists guides by title, the boards attention-first (Needs attention, Blocked, Publishing, …), so rows never pair up. */
+const GUIDES_OMIT = ['guides-row'];
+/**
+ * Phones with a guide open: the window bar is hidden on both sides (the kit counts a hidden board
+ * region as missing in the app), and the board leaves the hidden list out of its DOM.
+ */
+const PHONE_GUIDE_OMIT = [...GUIDES_OMIT, 'window-bar', 'guides-list'];
+/**
+ * The preview's embeds are the server's render (the v4 aliases line, the e2e knowledge leads); the
+ * boards invent both, so the list's length and the note under it are data. Its first slots still pair.
+ */
+const PREVIEW_OMIT = [...GUIDES_OMIT, 'guide-preview-list', 'guide-preview-note'];
+/**
+ * The head's width follows its meta line: the boards name the published version ("published Mon 21:10
+ * (version 12)"), which the API doesn't carry (a run summary has no version), and other versions and times.
+ */
+const META_OMIT = ['guide-title', 'guide-meta'];
+/** The First Adversary has a knowledge lead in the e2e catalog where the boards draw none: the second entry's lead and the rows under it are data. */
+const ENTRY_OMIT = ['guide-entry-lead', 'guide-entry-note', 'guide-entry-image'];
 const animationsDone = (page: Page) => page.evaluate(() => Promise.all(document.getAnimations().map((a) => a.finished)));
 /** The list (phone: the list alone). */
 const guidesShown = async (page: Page) => {
   await expect(page.getByRole('listbox', { name: 'Guides' })).toBeVisible();
   await animationsDone(page);
 };
-/** The open guide's editor and, on wide screens, its pane. */
+/** The open guide's editor and, on wide screens, its pane with the preview or the run drawn. */
 const guideOpen = async (page: Page) => {
   await expect(page.locator('.drafts__detail [data-fid="guide-editor"]')).toBeVisible();
-  if (page.viewportSize()!.width >= 600) await expect(guidePane(page).locator('.drafts__panehead')).toBeVisible();
+  if (page.viewportSize()!.width >= 600) {
+    await expect(guidePane(page).locator('.drafts__panehead')).toBeVisible();
+    await expect(guidePane(page).locator('.gslot, .gplan__ops').first()).toBeVisible();
+  } else await expect(page.locator('.guide-phonetabs').getByRole('tab', { name: /^Preview/ })).toHaveText(/ [1-9]\d* messages?$/);
   await animationsDone(page);
 };
 const openGuideBlock = async (page: Page, n: number) => {
@@ -1950,6 +1989,17 @@ const kalosSaved = async (page: Page) => {
   const note = page.locator('.gblock--open .gentry__note textarea').first();
   await note.fill(`${await note.inputValue()} Bring a spare buffer.`);
   await saveGuide(page);
+  await reopened(page);
+};
+/** The saved guide reopened, as the plan boards draw it behind the dialog: no block open, the editor at its top. */
+const reopened = async (page: Page) => {
+  await page.reload();
+  await guideOpen(page);
+};
+/** Phones: block 2 open with the editor at its top (G_PhonePlan's backdrop). */
+const phoneBlock2 = async (page: Page) => {
+  await openGuideBlock(page, 2);
+  await page.locator('.guide-phone > .drafts__main').evaluate((el) => (el.scrollTop = 0));
 };
 /** Radiant Malefic Star saved with its entry's large image, so messages 3–5 are posted again (G_PlanRepost). */
 const starImage = async (page: Page) => {
@@ -1957,6 +2007,7 @@ const starImage = async (page: Page) => {
   await openGuideBlock(page, 3);
   await page.locator('.gblock--open .gentry__image').getByRole('checkbox').check();
   await saveGuide(page);
+  await reopened(page);
 };
 const planOpen = async (page: Page, tick?: string) => {
   await page.getByRole('button', { name: page.viewportSize()!.width < 600 ? 'Publish…' : 'Review and publish…' }).click();
@@ -1974,6 +2025,7 @@ const GUIDE_PAIRS: Pair[] = (<Pair[]>[
     name: 'guides-list',
     board: 'G_List',
     path: `/guides?item=${GUIDE.kalos}`,
+    omit: PREVIEW_OMIT,
     setup: guidesBoard,
     ready: async (page) => {
       await guideOpen(page);
@@ -1981,14 +2033,28 @@ const GUIDE_PAIRS: Pair[] = (<Pair[]>[
       await expect(page.getByRole('menu', { name: 'More destinations' })).toBeVisible();
     },
   },
-  { name: 'guides-list-dark', board: 'G_ListDark', path: `/guides?item=${GUIDE.kalos}`, theme: 'dark', setup: guidesBoard, ready: guideOpen },
-  { name: 'guides-editor', board: 'G_Editor', path: `/guides?item=${GUIDE.kalos}`, setup: guidesBoard, ready: kalosEdited },
-  { name: 'guides-editor-bosses', board: 'G_EditorBosses', path: `/guides?item=${GUIDE.kalos}`, setup: guidesBoard, ready: kalosBosses },
-  { name: 'guides-editor-dark', board: 'G_EditorDark', path: `/guides?item=${GUIDE.kalos}`, theme: 'dark', setup: guidesBoard, ready: kalosBosses },
+  { name: 'guides-list-dark', board: 'G_ListDark', path: `/guides?item=${GUIDE.kalos}`, theme: 'dark', omit: PREVIEW_OMIT, setup: guidesBoard, ready: guideOpen },
+  {
+    name: 'guides-editor',
+    board: 'G_Editor',
+    path: `/guides?item=${GUIDE.kalos}`,
+    omit: PREVIEW_OMIT,
+    setup: guidesBoard,
+    ready: async (page) => {
+      await kalosEdited(page);
+      // The board's editor sits at its top, its preview scrolled to message 2.
+      await page.locator('.guide-edit > .drafts__main').evaluate((el) => (el.scrollTop = 0));
+      await guidePane(page).locator('.gslot--here').evaluate((el) => el.scrollIntoView({ block: 'start' }));
+    },
+  },
+  { name: 'guides-editor-bosses', board: 'G_EditorBosses', path: `/guides?item=${GUIDE.kalos}`, omit: [...PREVIEW_OMIT, ...ENTRY_OMIT], setup: guidesBoard, ready: kalosBosses },
+  { name: 'guides-editor-dark', board: 'G_EditorDark', path: `/guides?item=${GUIDE.kalos}`, theme: 'dark', omit: [...PREVIEW_OMIT, ...ENTRY_OMIT], setup: guidesBoard, ready: kalosBosses },
   {
     name: 'guides-plan',
     board: 'G_Plan',
     path: `/guides?item=${GUIDE.kalos}`,
+    // The board's consequence counts the plan ("2 messages change, 1 is added"); the pane has no plan until the dialog reads one.
+    omit: [...PREVIEW_OMIT, ...META_OMIT, 'decision'],
     setup: guidesBoard,
     ready: async (page) => {
       await kalosSaved(page);
@@ -1999,6 +2065,7 @@ const GUIDE_PAIRS: Pair[] = (<Pair[]>[
     name: 'guides-plan-repost',
     board: 'G_PlanRepost',
     path: `/guides?item=${GUIDE.star}`,
+    omit: [...PREVIEW_OMIT, ...META_OMIT],
     setup: guidesBoard,
     ready: async (page) => {
       await starImage(page);
@@ -2009,6 +2076,7 @@ const GUIDE_PAIRS: Pair[] = (<Pair[]>[
     name: 'guides-plan-move',
     board: 'G_PlanMove',
     path: `/guides?item=${GUIDE.limbo}`,
+    omit: [...PREVIEW_OMIT, ...META_OMIT],
     setup: guidesReleased,
     ready: async (page) => {
       await guideOpen(page);
@@ -2033,6 +2101,9 @@ const GUIDE_PAIRS: Pair[] = (<Pair[]>[
     name: 'guides-done',
     board: 'G_Done',
     path: `/guides?item=${GUIDE.limbo}`,
+    // The board keeps G_Progress's "Publishing version 1" note after the run finished (one shared
+    // LIMBO_DETAIL); the app shows "Saving never posts" once it is done.
+    omit: [...GUIDES_OMIT, 'guide-live-note'],
     setup: guidesBoard,
     ready: async (page) => {
       await guideOpen(page);
@@ -2046,6 +2117,7 @@ const GUIDE_PAIRS: Pair[] = (<Pair[]>[
     name: 'guides-unknown',
     board: 'G_Unknown',
     path: `/guides?item=${GUIDE.carling}`,
+    omit: PREVIEW_OMIT,
     setup: guidesBoard,
     ready: async (page) => {
       await guideOpen(page);
@@ -2056,6 +2128,7 @@ const GUIDE_PAIRS: Pair[] = (<Pair[]>[
     name: 'guides-unknown-confirm',
     board: 'G_UnknownConfirm',
     path: `/guides?item=${GUIDE.carling}`,
+    omit: PREVIEW_OMIT,
     setup: guidesBoard,
     ready: async (page) => {
       await guideOpen(page);
@@ -2067,6 +2140,7 @@ const GUIDE_PAIRS: Pair[] = (<Pair[]>[
     name: 'guides-delete',
     board: 'G_Delete',
     path: `/guides?item=${GUIDE.kalos}`,
+    omit: PREVIEW_OMIT,
     setup: guidesBoard,
     ready: async (page) => {
       await guideOpen(page);
@@ -2079,9 +2153,15 @@ const GUIDE_PAIRS: Pair[] = (<Pair[]>[
     board: 'G_History',
     path: '/history',
     setup: guidesBoard,
+    prepare: guidesHistoryBoard,
+    // Rows and week heads are History's data: the e2e seed adds a "Boss week of Thu 1 Oct" group (#1 system
+    // (store)) above the guide rows, which the board's capture left out with its long seed rows, and the
+    // board orders and words its six invented guide rows its own way. The window, filters and pane pair up.
+    omit: [...GUIDES_OMIT, 'history-row', 'history-group'],
     ready: async (page) => {
       await page.locator('.history-row').filter({ hasText: 'Limbo party roles' }).filter({ hasText: 'publish requested' }).first().click();
       await expect(page.locator('.side-pane--history').getByRole('heading', { name: 'Limbo party roles: publish requested' })).toBeVisible();
+      await page.locator('.history-list-region__scroll').evaluate((el) => (el.scrollTop = 0));
       await animationsDone(page);
     },
   },
@@ -2096,11 +2176,12 @@ const GUIDE_PAIRS: Pair[] = (<Pair[]>[
       await expect(page.getByRole('menu', { name: 'More destinations' })).toBeVisible();
     },
   },
-  { name: 'guides-phone-list', board: 'G_PhoneList', path: '/guides', setup: guidesBoard, ready: guidesShown },
+  { name: 'guides-phone-list', board: 'G_PhoneList', path: '/guides', omit: GUIDES_OMIT, setup: guidesBoard, ready: guidesShown },
   {
     name: 'guides-phone-editor',
     board: 'G_PhoneEditor',
     path: `/guides?item=${GUIDE.kalos}`,
+    omit: [...PHONE_GUIDE_OMIT, ...META_OMIT],
     setup: guidesBoard,
     ready: async (page) => {
       await kalosEdited(page);
@@ -2111,6 +2192,7 @@ const GUIDE_PAIRS: Pair[] = (<Pair[]>[
     name: 'guides-phone-preview',
     board: 'G_PhonePreview',
     path: `/guides?item=${GUIDE.kalos}`,
+    omit: [...PHONE_GUIDE_OMIT, 'guide-preview-list', 'guide-preview-note'],
     setup: guidesBoard,
     ready: async (page) => {
       await kalosEdited(page);
@@ -2122,9 +2204,13 @@ const GUIDE_PAIRS: Pair[] = (<Pair[]>[
     name: 'guides-phone-plan',
     board: 'G_PhonePlan',
     path: `/guides?item=${GUIDE.kalos}`,
+    // Besides META_OMIT: the board's second op names which entry's note changed ("Gatekeeper Kalos: the
+    // note changes"), a third line at phone width; the plan's ops carry no entry-level change.
+    omit: [...PHONE_GUIDE_OMIT, ...META_OMIT, 'guide-plan-op'],
     setup: guidesBoard,
     ready: async (page) => {
       await kalosSaved(page);
+      await phoneBlock2(page);
       await planOpen(page);
     },
   },
@@ -2132,13 +2218,16 @@ const GUIDE_PAIRS: Pair[] = (<Pair[]>[
     name: 'guides-phone-plan-repost',
     board: 'G_PhonePlanRepost',
     path: `/guides?item=${GUIDE.star}`,
+    // The board draws Kalos basics' editor (PHONE_EDIT_MAIN) behind Radiant Malefic Star's plan.
+    omit: [...PHONE_GUIDE_OMIT, 'guide-editor'],
     setup: guidesBoard,
     ready: async (page) => {
       await starImage(page);
+      await phoneBlock2(page);
       await planOpen(page, 'Delete and repost messages 3–5');
     },
   },
-]).map((pair) => ({ prepare: guideBoard, ...pair }));
+]).map((pair) => ({ prepare: guideBoard, omit: GUIDES_OMIT, ...pair }));
 
 test.describe('layout fidelity', () => {
   test.skip(!ENABLED, 'run with `bun run fidelity` (needs a KANADE_FIDELITY=1 build)');

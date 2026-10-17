@@ -41,6 +41,9 @@
 // RevertDialog's acknowledgement row, for the plan's ticks and the entry's image box.
 .gplan .ack,
 .gentry .ack { display: flex; align-items: flex-start; gap: 0.4rem; }
+// A long label must not squeeze the box away on phones.
+.gplan .ack > input,
+.gentry .ack > input { flex: none; }
 .gblock__msgs { color: var(--dim-text); font-size: var(--fs-mini); white-space: nowrap; }
 .gblock__count { margin-left: auto; color: var(--dim-text); font-size: var(--fs-mini); font-weight: 600; white-space: nowrap; }
 .gblock__count--over { color: var(--risk-text); font-weight: 800; }
@@ -139,9 +142,9 @@
 .guide-run__note { color: var(--dim-text); font-size: var(--fs-small); margin: 0; line-height: 1.4; }
 .guide-run__summary { display: flex; flex-wrap: wrap; gap: 6px; margin: 0; }
 .guide-run__summary .icon { width: 13px; height: 13px; margin-right: 3px; }
-.guide-pane .drafts__panebody { display: flex; flex-direction: column; gap: 10px; }
-.guide-pane .gpreview.dcard { margin: -12px -12px 0; }
 .guide-pane .reminder-pane__note { margin: 0; }
+// The pane body spaces its children; the bar's own breathing room would double it.
+.guide-run__bar > .wavy { margin-block: 0; }
 
 // Phones: Edit / Preview tabs over one scroller, Drafts' bottom bar.
 .guide-phonetabs { flex: none; display: flex; margin: 0; padding: 8px 10px 0; background: var(--surface); }

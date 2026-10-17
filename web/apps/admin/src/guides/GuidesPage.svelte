@@ -173,7 +173,7 @@
         </StateNote>
       </div>
     {:else}
-      <div class="drafts__list" hidden={phone && Boolean(chosenId)} data-fid="guides-list">
+      <div class="drafts__list" hidden={phone && Boolean(chosenId)}>
         <OptionList
           bind:this={listRef}
           label="Guides"
@@ -183,6 +183,7 @@
           onpick={pick}
           fresh={list.fresh}
           fid="guides-row"
+          listFid="guides-list"
           rowClass={() => 'inbox__option inbox__option--art drafts__row'}
           activeClass="inbox__option--active"
         >

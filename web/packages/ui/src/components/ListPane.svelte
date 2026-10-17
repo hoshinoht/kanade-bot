@@ -7,6 +7,7 @@
     element = $bindable(),
     onkeydown,
     onclick,
+    fid,
     children,
   }: {
     label: string;
@@ -14,6 +15,8 @@
     element?: HTMLUListElement;
     onkeydown?: (event: KeyboardEvent) => void;
     onclick?: (event: MouseEvent) => void;
+    /** The listbox's layout-fidelity tag, from the app's call site (`e2e/fidelity.spec.ts`). */
+    fid?: string;
     children: Snippet;
   } = $props();
 </script>
@@ -24,6 +27,7 @@
     role="listbox"
     aria-label={label}
     tabindex="0"
+    data-fid={fid}
     aria-activedescendant={activeDescendant}
     bind:this={element}
     {onkeydown}
