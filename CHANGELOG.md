@@ -6,8 +6,14 @@ What changed in each Kanade release, newest first. Upgrading across several rele
 
 _In development_
 
+Reminder headers can now take their mood from the party's estimate, cheer on the top carriers by character name and lightly tease members who opted in, all behind two Config switches that start off. Without the switches, the scouter or the character-data module, headers are written exactly as before.
+
+> [!IMPORTANT]
+> This release adds the header placeholders and the teasing opt-in to the main store. Rolling back to an older image needs the pre-deploy backup restored with the bot stopped (deploy README, "Stop and roll back"); otherwise the older image refuses to start.
+
 ### New features
 
+- Day-of and countdown reminder headers can now be worded from the party's estimate per boss and cheer on the top carriers by character name, when an admin turns on "Estimates in reminder headers"; names are added by Kanade after the line is written, so the chat model never sees them.
 - Members can now turn "OK to be teased" on or off on the member portal's Account › Profile, even while teasing is off for everyone, and see the admins' running-joke note there.
 - Admins can now set a member's "OK to be teased" and a short running-joke note in the Members sheet's new Reminder teasing section, which refuses a note that names anyone on the roster.
 - Added "Estimates in reminder headers" and "Teasing in reminder headers" switches to Config › Notifications; teasing can only be on while estimates are, and turning estimates off turns teasing off too.
@@ -16,9 +22,15 @@ _In development_
 
 - The Privacy page and the Characters notes in the admin app and the member portal now say that reminder headers may be worded from the party's overall estimate and the top two carriers' shares, never with a character name, and what teasing may send.
 
+### Improvements
+
+- The Fixed editor's character pick on phones now opens as its own sheet beside the boss list, as designed.
+
 ### Fixes
 
 - Fixed redesigned reminder cards posting without the ✅ and ❌ reactions while the portal was open: the bot adds them again beside "Open in portal".
+- Fixed the Guides screen's save bar showing without its styles.
+- Fixed the "Large entry image" and plan checkboxes on phones being squeezed too small to tick in the Guides editor.
 
 ## 1.0.0-beta.8
 
