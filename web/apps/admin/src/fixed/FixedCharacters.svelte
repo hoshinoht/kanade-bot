@@ -660,8 +660,15 @@
 
 {#if !wide}
   <!-- The phone's pick sheet is a modal of its own beside the editor's sheet (B_PhoneFixedBossPick),
-       not nested in it: the host moves to the body once, before any sheet opens in it. -->
-  <div class="fixedready__sheethost" {@attach (host) => void document.body.append(host)}>
+       not nested in it: the host moves to the body once, before any sheet opens in it, and is removed
+       with the view (Svelte no longer finds it where it was drawn). -->
+  <div
+    class="fixedready__sheethost"
+    {@attach (host) => {
+      document.body.append(host);
+      return () => host.remove();
+    }}
+  >
     {#if sheetRow?.slot && sheetFor}
       {@const row = sheetRow}
       {@const slot = sheetRow.slot}
