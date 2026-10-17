@@ -335,7 +335,6 @@
       id="{uid}-panel"
       role={tabbed ? 'tabpanel' : undefined}
       aria-labelledby={tabbed ? `${uid}-tab-${tab}` : undefined}
-      data-fid={charsTab ? 'fixed-ready' : undefined}
     >
     {#if charsTab}
       <FixedCharacters

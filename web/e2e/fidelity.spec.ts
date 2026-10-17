@@ -1251,16 +1251,48 @@ const fixedBoss = (pick: boolean) => async (page: Page) => {
   const phone = page.viewportSize()!.width < 600;
   const editor = phone ? page.getByRole('dialog', { name: 'Tuesday 22:00 — HCarling + HMaleficStar' }) : page.getByRole('complementary', { name: 'Weekly timing details' });
   await editor.getByRole('tab', { name: /^Characters/ }).click();
-  // As B_FixedBoss2: Asahi's Per boss opened, Mika's list open with her HMaleficStar pick.
-  if (!phone) await editor.getByRole('button', { name: "Pick Asahi's character per boss" }).click();
+  // As B_FixedBoss2 and the phone boards: Asahi's Per boss opened, Mika's list open with her HMaleficStar pick.
+  await editor.getByRole('button', { name: "Pick Asahi's character per boss" }).click();
   const list = editor.locator('[data-fid="fixed-boss-picks"]').last();
   await expect(list).toBeVisible();
-  await list.evaluate((el) => el.scrollIntoView({ block: 'center' }));
+  // The phone boards scroll the sheet to Mika's row (`data-scroll-to=".fixedready__row:nth-child(3)"`);
+  // B_FixedBoss2 shows the pane from its top, B_FixedBoss2Pick scrolled to Mika's list.
+  if (phone) await editor.locator('.fixedready__row').nth(2).evaluate((el) => el.scrollIntoView({ block: 'start' }));
+  else if (pick) await list.evaluate((el) => el.scrollIntoView({ block: 'center' }));
   if (pick) {
     await list.getByRole('button', { name: /^Mika's character for HMaleficStar/ }).click();
     await expect(page.locator('[data-fid="fixed-pick-menu"]').first()).toBeVisible();
   }
 };
+/**
+ * The per-boss-picks boards leave the frame they captured untagged: the window's title bar
+ * and search, the list's column heads, every row but the open one (the app tags each row),
+ * on the phone boards the editor sheet's head and foot, and they tag readiness only where a
+ * per-boss list shows it: the single-character rows' basis, character, values and bosses, and
+ * the desktop pick menu's options, carry the app's tags here.
+ */
+const fixedBoard = (board: Page) =>
+  board.evaluate(() => {
+    const tag = (el: Element | null | undefined, fid: string) => el instanceof HTMLElement && !el.dataset.fid && (el.dataset.fid = fid);
+    const all = (selector: string, fid: string) => document.querySelectorAll(selector).forEach((el) => tag(el, fid));
+    tag(document.querySelector('.fixed-window__head'), 'window-bar');
+    tag(document.querySelector('.fixed-window__search'), 'window-search');
+    tag(document.querySelector('[data-fid="fixed-list"] tr[role="row"]:not(.expandable-row)'), 'fixed-head');
+    all('[data-fid="fixed-list"] tr.expandable-row', 'fixed-row');
+    const sheet = document.querySelector('dialog[data-fid="fixed-editor"]');
+    tag(sheet?.querySelector('.modal__head'), 'fixed-editor-head');
+    tag(sheet?.querySelector('.modal__foot'), 'fixed-editor-foot');
+    all('.fixedready__head .fixedready__basis', 'fixed-ready-basis');
+    all('.fixedready__head .slotchar__chip', 'fixed-ready-char');
+    all('.fixedready__row > .ready', 'fixed-ready-values');
+    all('.fixedready__row > .ready > .ready__bosses', 'fixed-ready-bosses');
+    all('[data-fid="fixed-pick-menu"] .charpick__option', 'fixed-pick-option');
+  });
+/**
+ * The phone boards' subject is the editor sheet: the list behind it (and its title bar) stands where
+ * the board's capture had scrolled it; desktop `fixed` (B_Fixed) compares the list.
+ */
+const PHONE_FIXED_OMIT = ['window-bar', 'fixed-list'];
 const fixedBossSetup = async (page: Page) => {
   const done = await page.request.put(`${ADMIN}/api/admin/fixed/f-carling/characters/${member(1003)}/bosses/MaleficStar`, { headers: await csrf(page.request), data: { character_id: 'ch-s2', version: 0 } });
   expect(done.ok(), await done.text()).toBe(true);
@@ -1272,11 +1304,11 @@ const BOSS_PICK_PAIRS: Pair[] = [
   { name: 'boss-grid-estimate', board: 'B_RunBossEstimate', path: '/', omit: STAGE_OMIT, scope: GRID_SCOPE, setup: bossPicked, ready: gridShown('estimate') },
   { name: 'phone-boss-grid', board: 'B_PhoneRunBossPicks', path: '/', omit: STAGE_OMIT, scope: GRID_SCOPE, setup: bossPicked, ready: gridShown() },
   { name: 'phone-boss-grid-estimate', board: 'B_PhoneRunBossEstimate', path: '/', omit: STAGE_OMIT, scope: GRID_SCOPE, setup: bossPicked, ready: gridShown('estimate') },
-  { name: 'fixed-boss', board: 'B_FixedBoss2', path: '/fixed', setup: fixedBossSetup, ready: fixedBoss(false) },
-  { name: 'fixed-boss-dark', board: 'B_FixedBoss2Dark', path: '/fixed', theme: 'dark', setup: fixedBossSetup, ready: fixedBoss(false) },
-  { name: 'fixed-boss-pick', board: 'B_FixedBoss2Pick', path: '/fixed', setup: fixedBossSetup, ready: fixedBoss(true) },
-  { name: 'phone-fixed-boss', board: 'B_PhoneFixedBoss', path: '/fixed', setup: fixedBossSetup, ready: fixedBoss(false) },
-  { name: 'phone-fixed-boss-pick', board: 'B_PhoneFixedBossPick', path: '/fixed', setup: fixedBossSetup, ready: fixedBoss(true) },
+  { name: 'fixed-boss', board: 'B_FixedBoss2', path: '/fixed', setup: fixedBossSetup, prepare: fixedBoard, ready: fixedBoss(false) },
+  { name: 'fixed-boss-dark', board: 'B_FixedBoss2Dark', path: '/fixed', theme: 'dark', setup: fixedBossSetup, prepare: fixedBoard, ready: fixedBoss(false) },
+  { name: 'fixed-boss-pick', board: 'B_FixedBoss2Pick', path: '/fixed', setup: fixedBossSetup, prepare: fixedBoard, ready: fixedBoss(true) },
+  { name: 'phone-fixed-boss', board: 'B_PhoneFixedBoss', path: '/fixed', omit: PHONE_FIXED_OMIT, setup: fixedBossSetup, prepare: fixedBoard, ready: fixedBoss(false) },
+  { name: 'phone-fixed-boss-pick', board: 'B_PhoneFixedBossPick', path: '/fixed', omit: PHONE_FIXED_OMIT, setup: fixedBossSetup, prepare: fixedBoard, ready: fixedBoss(true) },
   // The Party total (2026-10-16-party-polish v2): the admin grid's row, the portal's block.
   { name: 'party-total', board: 'B_PartyTotal', path: '/', omit: STAGE_OMIT, scope: GRID_SCOPE, setup: shareLookedUp('r-carling'), ready: gridShown() },
   { name: 'party-total-crit', board: 'B_PartyTotalCrit', path: '/', theme: 'dark', omit: STAGE_OMIT, scope: GRID_SCOPE, setup: shareLookedUp('r-carling'), ready: gridShown() },
