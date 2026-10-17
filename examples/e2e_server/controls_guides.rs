@@ -10,6 +10,8 @@
 //! - `GET /__e2e/discord/calls`: every call the fake Discord answered, in
 //!   order (`op`, `channel`, `message`, `outcome`, and for a post `silent`,
 //!   `embeds`, `files`).
+//! - `POST /__e2e/guides/board`: the guides boards' six guides and states
+//!   ([`guides::board`]). 204; 404 while the module is off.
 
 use std::sync::Arc;
 
@@ -22,12 +24,13 @@ use axum::{
 };
 use serde::Deserialize;
 
-use crate::controls::Shared;
+use crate::{controls::Shared, guides};
 
 pub fn routes<S: Clone + Send + Sync + 'static>(shared: &Arc<Shared>) -> Router<S> {
     Router::new()
         .route("/__e2e/discord/guide", post(script))
         .route("/__e2e/discord/calls", get(calls))
+        .route("/__e2e/guides/board", post(board))
         .with_state(Arc::clone(shared))
 }
 
@@ -65,5 +68,18 @@ async fn calls(State(shared): State<Arc<Shared>>) -> Response {
     match live.guides() {
         Some(side) => Json(side.calls()).into_response(),
         None => StatusCode::NOT_FOUND.into_response(),
+    }
+}
+
+async fn board(State(shared): State<Arc<Shared>>) -> Response {
+    let Some(live) = shared.live().await else {
+        return StatusCode::SERVICE_UNAVAILABLE.into_response();
+    };
+    let Some(side) = live.guides() else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+    match guides::board(side, live.store(), &live.live().state).await {
+        Ok(()) => StatusCode::NO_CONTENT.into_response(),
+        Err(error) => (StatusCode::INTERNAL_SERVER_ERROR, error.to_string()).into_response(),
     }
 }

@@ -1,7 +1,8 @@
 //! The gateway's guild cache, in place of the one `serve` fills from
 //! Discord: connected (unless `/__e2e/discord/guide {script: "offline"}`
-//! turned it off), with the seeded guild's channels and roles
-//! ([`seed::CHANNELS`], [`seed::ROLES`]) and the bot's own identity.
+//! turned it off), with the generation's channels ([`seed::GuildChannels`],
+//! the seeded [`seed::CHANNELS`] unless `/__e2e/guides/board` added some),
+//! the seeded roles ([`seed::ROLES`]) and the bot's own identity.
 
 use std::sync::{
     Arc,
@@ -19,11 +20,13 @@ const BOT_NAME: &str = "YuukiSakuna";
 pub struct Guild {
     /// Discord is "offline": the gateway is not connected.
     pub offline: Arc<AtomicBool>,
+    pub channels: seed::GuildChannels,
 }
 
 impl ChannelList for Guild {
     fn channels(&self) -> Vec<ChannelEntry> {
-        seed::CHANNELS
+        self.channels
+            .all()
             .iter()
             .map(|channel| ChannelEntry {
                 id: channel.id.into(),
@@ -57,7 +60,7 @@ impl ChannelList for Guild {
     }
 
     fn grants(&self, id: &str) -> Option<ChannelGrants> {
-        let channel = seed::CHANNELS.iter().find(|channel| channel.id == id)?;
+        let channel = self.channels.find(id)?;
         Some(ChannelGrants {
             send: channel.send,
             manage_messages: channel.manage,

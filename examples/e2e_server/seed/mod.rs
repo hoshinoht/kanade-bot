@@ -42,7 +42,8 @@ use kanade::{
 use crate::Fail;
 
 pub use members::{
-    BOSSING_ROLE, CHANNELS, PILOT_ROLE, ROLES, STAFF_ROLE, member_name, watched_ids,
+    BOSSING_ROLE, CHANNELS, GUIDE_BOARD_CHANNELS, GuildChannels, PILOT_ROLE, ROLES, STAFF_ROLE,
+    member_name, watched_ids,
 };
 pub use settings::persona_files;
 

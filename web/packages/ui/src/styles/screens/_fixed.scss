@@ -212,6 +212,8 @@ dialog.fixedsheet--tabbed .fixedsheet__content { padding: 12px; }
 .fixedready { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
 .fixedready > p { margin: 0; }
 .fixedready .ready__note, .fixedready .ready__estimate { margin: 0; }
+// The phone pick sheet's host, moved to the body: it adds no box of its own.
+.fixedready__sheethost { display: contents; }
 .fixedready__box { align-items: flex-start; }
 .fixedready__grow { flex: 1 1 auto; min-width: 0; }
 .fixedready__retry { flex: none; gap: 6px; min-height: 32px; border-radius: 16px; background: transparent; }

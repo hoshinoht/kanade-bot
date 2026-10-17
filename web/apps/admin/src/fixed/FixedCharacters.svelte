@@ -326,11 +326,13 @@
     return out;
   }
 
-  /** The picker's note (B_FixedReadyPick, B_FixedReadyStates "no main", B_FixedBoss2Pick). */
+  /** The picker's note (B_FixedReadyPick, B_FixedReadyStates "no main", B_FixedBoss2Pick; the phone's per boss B_PhoneFixedBossPick). */
   function pickWords(row: Row, slot: RunCharacterSlot, i: number): string {
     if (i > 0) {
       const back = shownCharacter(slot);
-      return `Saves at once. Runs made from this timing bring it to ${slot.bosses[i]?.boss ?? 'this boss'} unless the run has its own pick.${back ? ` ${wide ? 'Choosing ' : ''}${back.ign} goes back to ${firstBoss}’s character.` : ''}`;
+      const boss = slot.bosses[i]?.boss ?? 'this boss';
+      const lead = wide ? `Runs made from this timing bring it to ${boss} unless the run has its own pick.` : `Runs from this timing bring it to ${boss}.`;
+      return `Saves at once. ${lead}${back ? ` Choosing ${back.ign} goes back to ${firstBoss}’s character.` : ''}`;
     }
     const def = fallback(slot);
     if (!def) return `${row.name} has no main, so nothing is brought until you pick. This pick is for this timing only.`;
@@ -533,7 +535,7 @@
   {/if}
 {/snippet}
 
-<div class="fixedready" class:fixedready--wide={wide} bind:this={panel}>
+<div class="fixedready" class:fixedready--wide={wide} bind:this={panel} data-fid="fixed-ready">
   <ReadinessNote
     lead={wide ? ' · never blocks a pick or a save' : ' · never blocks'}
     attribution={ready.data?.nexon_data ? ready.data.attribution : null}
@@ -656,29 +658,42 @@
   <span class="vh" role="status" aria-live="polite" aria-atomic="true">{announcement}</span>
 </div>
 
-{#if !wide && sheetRow?.slot && sheetFor}
-  {@const row = sheetRow}
-  {@const slot = sheetRow.slot}
-  {@const i = sheetFor.i}
-  {@const entry = i > 0 ? slot.bosses[i] : null}
-  <CharacterPicker
-    variant="sheet"
-    what="timing"
-    fid="fixed-pick-menu"
-    optionFid="fixed-pick-option"
-    tagEveryOption
-    bind:open={sheetOpen}
-    {slot}
-    name={row.name}
-    {title}
-    {eyebrow}
-    {busy}
-    boss={entry ? { token: entry.boss, first: firstBoss, brings: entry.brings, picked: entry.picked } : null}
-    meta={(c) => meta(slot, i, c)}
-    under={(c) => under(c, entry?.key) !== null}
-    onpick={(id) => choose(row, i, id)}
-    returnFocus={() => trigger(row.id, i)}
+{#if !wide}
+  <!-- The phone's pick sheet is a modal of its own beside the editor's sheet (B_PhoneFixedBossPick),
+       not nested in it: the host moves to the body once, before any sheet opens in it, and is removed
+       with the view (Svelte no longer finds it where it was drawn). -->
+  <div
+    class="fixedready__sheethost"
+    {@attach (host) => {
+      document.body.append(host);
+      return () => host.remove();
+    }}
   >
-    {#snippet note()}{@render pickNote(row, slot, i)}{/snippet}
-  </CharacterPicker>
+    {#if sheetRow?.slot && sheetFor}
+      {@const row = sheetRow}
+      {@const slot = sheetRow.slot}
+      {@const i = sheetFor.i}
+      {@const entry = i > 0 ? slot.bosses[i] : null}
+      <CharacterPicker
+        variant="sheet"
+        what="timing"
+        fid="fixed-pick-menu"
+        optionFid="fixed-pick-option"
+        tagEveryOption
+        bind:open={sheetOpen}
+        {slot}
+        name={row.name}
+        {title}
+        {eyebrow}
+        {busy}
+        boss={entry ? { token: entry.boss, first: firstBoss, brings: entry.brings, picked: entry.picked } : null}
+        meta={(c) => meta(slot, i, c)}
+        under={(c) => under(c, entry?.key) !== null}
+        onpick={(id) => choose(row, i, id)}
+        returnFocus={() => trigger(row.id, i)}
+      >
+        {#snippet note()}{@render pickNote(row, slot, i)}{/snippet}
+      </CharacterPicker>
+    {/if}
+  </div>
 {/if}

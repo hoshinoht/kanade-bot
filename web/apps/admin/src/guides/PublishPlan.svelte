@@ -87,6 +87,10 @@
   const repostTo = $derived(plan ? Math.max(0, ...plan.ops.filter((op) => op.kind === 'delete' && op.channel_id === plan?.channel_id).map((op) => op.position + 1)) : 0);
   const changes = $derived(plan ? plan.counts.edit + plan.counts.create + plan.counts.delete : 0);
   const kept = $derived(plan ? keptPositions(plan).map((p) => p + 1) : []);
+  // A move (G_PlanMove) shows the new set and the old one as a row each; anything else is listed op by op.
+  const made = $derived(plan?.needs.channel_move ? plan.ops.filter((op) => op.kind === 'create') : []);
+  const old = $derived(plan?.needs.channel_move ? plan.ops.filter((op) => op.kind === 'delete' && op.channel_id === moveFrom) : []);
+  const listed = $derived((plan?.ops ?? []).filter((op) => !made.includes(op) && !old.includes(op)));
   const confirmed = $derived(Boolean(plan) && (plan!.needs.repost_from === null || repost) && (!plan!.needs.interleaved || interleaved));
   const runnable = $derived(Boolean(plan) && !plan!.blocked && !plan!.no_op && confirmed && !busy);
   const GRANT: Record<string, string> = { view: 'see', send: 'send messages', history: 'read the history', embed: 'embed links', attach: 'attach files' };
@@ -138,7 +142,7 @@
   }
 </script>
 
-<Modal bind:open title={plan?.needs.channel_move ? `Move ${title} to ${target}` : `Publish ${title}`} eyebrow="Guides · publish plan" className="gplan" fid="guide-plan">
+<Modal bind:open title={plan?.needs.channel_move ? `Move ${title} to ${target}` : `Publish ${title}`} eyebrow="Guides · publish plan" className="gplan" fid="guide-plan" fidParts={{}}>
   {#if readError}
     <p class="flash flash--error gplan__flash" role="alert">Couldn’t read the plan: {readError}</p>
   {:else if !plan}
@@ -204,7 +208,23 @@
       {/each}
       <h3 class="pane__section gplan__head">In this order</h3>
       <ol class="draftops gplan__ops" aria-label="Changes, in the order Kanade makes them">
-        {#each plan.ops as op, i (i)}
+        {#if made.length}
+          <li class="draftop gplan__op gplan__op--add" data-fid="guide-plan-op">
+            <span class="draftop__ord mono">1–{made.length}</span>
+            <span class="draftop__kind">Add</span>
+            <div class="draftop__text"><span class="draftop__what"><b>All {plural(made.length, 'message')} in {target}</b></span><span>In order, 1 to {made.length}.</span></div>
+            <span class="draftop__at mono">new</span>
+          </li>
+        {/if}
+        {#if old.length}
+          <li class="draftop gplan__op gplan__op--delete" data-fid="guide-plan-op">
+            <span class="draftop__ord mono">{old[0]!.position + 1}–{old.at(-1)!.position + 1}</span>
+            <span class="draftop__kind">Delete</span>
+            <div class="draftop__text"><span class="draftop__what"><b>The {plural(old.length, 'old message')} in {oldName}</b></span><span>Newest first, after all {made.length} are posted.</span></div>
+            <span class="draftop__at mono">{tail(old.at(-1)!.message_id)}–{tail(old[0]!.message_id).slice(1)}</span>
+          </li>
+        {/if}
+        {#each listed as op, i (i)}
           {@const kind = op.kind === 'create' ? 'add' : op.kind === 'forget' ? 'keep' : op.kind}
           <li class="draftop gplan__op gplan__op--{kind}" data-fid="guide-plan-op">
             <span class="draftop__ord mono">{op.position + 1}</span>
@@ -213,7 +233,9 @@
               <span class="draftop__what"><b>{opLabel(op)}</b></span>
               {#if op.channel_id !== plan.channel_id}<span>In {channelName(op.channel_id)}{op.kind === 'delete' ? ', after every new message is posted' : ''}.</span>
               {:else if op.kind === 'forget'}<span>Gone from Discord already; Kanade stops tracking it.</span>
-              {:else if op.kind === 'delete' && i === plan.ops.findIndex((o) => o.kind === 'delete')}<span>Newest first.</span>{/if}
+              {:else if op.kind === 'delete' && op === plan.ops.find((o) => o.kind === 'delete')}<span>Newest first.</span>
+              {:else if op.kind === 'edit'}<span>{op.block_kind === 'bosses' ? 'Same images, so an edit.' : 'The text changes.'}</span>
+              {:else if op.kind === 'create' && plan.needs.repost_from === null && posted && op.position === posted}<span>Posted after message {posted}, the guide’s last.</span>{/if}
             </div>
             <span class="draftop__at mono">{op.kind === 'create' ? 'new' : tail(op.message_id)}</span>
           </li>

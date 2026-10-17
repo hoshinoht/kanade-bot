@@ -14,6 +14,8 @@
   import type { BossRow, Channel, GuideBlock, GuideBlocksRefused, GuideDetail, GuidePlan, GuidePreview as Preview, GuidePublishResult, GuideRow, GuideRun, GuideSaved, Reminders } from '@kanade/api-types';
   import { ApiRequestError, createClient, newIdempotencyKey } from '@kanade/client';
   import { Icon, Modal, PendingLabel, Select, StatusChip, Toaster, WavyProgress } from '@kanade/ui';
+  // Config's save bar brings no styles of its own; they are Config's (`settings.scss`), lazy-loaded with it.
+  import '@kanade/ui/styles/screens/settings.scss';
   import { tick, untrack } from 'svelte';
   import SaveBar from '../config/SaveBar.svelte';
   import { editedAt } from '../drafts/drafts';
@@ -369,18 +371,31 @@
   const firstMessage = $derived((detail.data?.slots ?? []).find((s) => s.state === 'posted' && s.channel_id === run?.channel_id && s.position === 0)?.message_id ?? null);
   const discordUrl = $derived(guild && run && firstMessage ? `https://discord.com/channels/${guild}/${run.channel_id}/${firstMessage}` : null);
 
-  // Phones: Edit / Preview.
+  // Phones: Edit / Preview over one scroller, each tab keeping its own place (the preview opens at its top).
   let tab = $state<'edit' | 'preview'>('edit');
+  let panel = $state<HTMLDivElement>();
+  const scrolled = { edit: 0, preview: 0 };
+  async function showTab(next: 'edit' | 'preview') {
+    if (next === tab || !panel) return;
+    scrolled[tab] = panel.scrollTop;
+    tab = next;
+    await tick();
+    panel.scrollTop = scrolled[next];
+  }
   const meta = $derived.by(() => {
     const g = detail.data?.guide;
     if (!g || !base) return '';
-    const last = g.last_run?.state === 'done' && g.last_run.kind === 'publish' && g.last_run.finished_at ? `published ${at(g.last_run.finished_at)}` : g.messages ? 'published' : 'not published yet';
+    const run = g.last_run?.kind === 'publish' && g.last_run.finished_at ? g.last_run : null;
+    const last =
+      run?.state === 'done' ? `published ${at(run.finished_at!)}` : run && run.state !== 'running' ? `publishing stopped ${at(run.finished_at!)}` : g.messages ? 'published' : 'not published yet';
     return bar ? `version ${base.guide.version} · ${last}` : `${who(g.updated_by)} · saved ${at(g.updated_at)} · version ${base.guide.version} · ${last}`;
   });
   const portrait = $derived(row.portrait);
   const editForm = `${uid}-form`;
   const options = $derived(channelOptions(channels, rows, id));
-  const wasChannel = $derived(base?.guide.channel_id && channel && channel !== base.guide.channel_id ? channelName(base.guide.channel_id) : null);
+  // The channel the guide is posted in: another one, saved or not, moves it at the next publish (G_PlanMove).
+  const postedIn = $derived((detail.data?.slots ?? []).find((s) => s.state !== 'gone')?.channel_id ?? null);
+  const wasChannel = $derived(postedIn && channel && channel !== postedIn ? channelName(postedIn) : null);
   const runTotal = $derived(run?.progress.total ?? run?.ops.length ?? 0);
 
   let renaming = $state(false);
@@ -467,6 +482,7 @@
       <span class="decision__spacer" aria-hidden="true"></span>
       <div class="decision__footrow drafts__foot" data-fid="decision-foot">
         <button class="btn btn--ghost" type="button" onclick={() => (outcomeShown = false)}>Back to the preview</button>
+        {#if run.kind !== 'unpublish'}<button class="btn btn--danger decision__reject" data-fid="guide-delete" type="button" onclick={() => void askDelete()}>Delete guide…</button>{/if}
       </div>
     </aside>
   {:else}
@@ -584,7 +600,8 @@
   {/if}
   {#if live && run}
     <p class="drafts__live" data-fid="guide-live-note"><Icon name="clock" /><span><b>Publishing version {run.version}.</b> You can keep editing; changes wait for the next publish.</span></p>
-  {:else}
+  {:else if !bar}
+    <!-- Phones say it in the bottom bar ("Publish uses the saved draft"), as G_PhoneEditor draws it. -->
     <p class="drafts__live" data-fid="guide-live-note"><Icon name="eye-off" /><span><b>Saving never posts.</b> Members see changes only after you publish.</span></p>
   {/if}
   <div class="guide-channel" data-fid="guide-channel">
@@ -622,7 +639,7 @@
 
 {#snippet runBody(r: GuideRun)}
   {#if live}
-    <WavyProgress value={r.progress.done} max={Math.max(1, runTotal)} label="{r.kind === 'search' ? 'Searching' : 'Publishing'} {title}" text="{r.progress.done} of {runTotal} changes made" />
+    <div class="guide-run__bar" data-fid="guide-progress-bar"><WavyProgress value={r.progress.done} max={Math.max(1, runTotal)} label="{r.kind === 'search' ? 'Searching' : 'Publishing'} {title}" text="{r.progress.done} of {runTotal} changes made" /></div>
     <p class="guide-run__note">It carries on if you leave this page. Discord allows about 5 messages every 5 seconds per channel.</p>
   {:else if r.state === 'done'}
     <p class="guide-run__summary"><StatusChip tone="ok"><Icon name="check" />{runSummary(r)}</StatusChip><StatusChip tone="neutral">nobody pinged</StatusChip></p>
@@ -640,10 +657,10 @@
   {#if bar}
     <div class="drafts__view drafts__view--bar guide-phone">
       <div class="seg guide-phonetabs" role="tablist" aria-label={title} data-fid="guide-phone-tabs">
-        <button type="button" role="tab" id="{uid}-tab-edit" aria-selected={tab === 'edit'} aria-controls="{uid}-panel" onclick={() => (tab = 'edit')}>Edit</button>
-        <button type="button" role="tab" id="{uid}-tab-preview" aria-selected={tab === 'preview'} aria-controls="{uid}-panel" onclick={() => (tab = 'preview')}>Preview · {plural(preview?.slots.length ?? 0, 'message')}</button>
+        <button type="button" role="tab" id="{uid}-tab-edit" aria-selected={tab === 'edit'} aria-controls="{uid}-panel" onclick={() => void showTab('edit')}>Edit</button>
+        <button type="button" role="tab" id="{uid}-tab-preview" aria-selected={tab === 'preview'} aria-controls="{uid}-panel" onclick={() => void showTab('preview')}>Preview · {plural(preview?.slots.length ?? 0, 'message')}</button>
       </div>
-      <div class="drafts__main" id="{uid}-panel" role="tabpanel" tabindex="-1" aria-labelledby="{uid}-tab-{tab}" data-fid={tab === 'edit' ? 'guide-editor' : 'guide-preview'}>
+      <div class="drafts__main" id="{uid}-panel" role="tabpanel" tabindex="-1" aria-labelledby="{uid}-tab-{tab}" bind:this={panel} data-fid={tab === 'edit' ? 'guide-editor' : 'guide-preview'}>
         <form class="guide-phone__form" id={editForm} onsubmit={save}>
           {#if tab === 'edit'}{@render editor()}{:else if run && (live || outcomeShown)}{@render runBody(run)}{:else}{@render previewBody()}{/if}
         </form>
@@ -680,45 +697,58 @@
   {/if}
 {/if}
 
-<PublishPlan
-  bind:open={planOpen}
-  guide={id}
-  title={base?.guide.title ?? row.title}
-  {channelName}
-  {checkedAt}
-  onqueued={started}
-  onoffline={(message) => (offline = message)}
-  onstale={(message) => {
-    toaster.show({ message, tone: 'error' });
-    void detail.load();
+<!-- The dialogs sit beside the shell, not inside the Guides window (as the boards draw them): their
+     host moves to the body before any of them opens, and leaves with this view. It sits in a wrapper:
+     a moved root node would break Svelte's removal of this component's nodes (switching guides). -->
+<div class="guide-dialogs">
+<div
+  class="guide-dialogs"
+  {@attach (host) => {
+    document.body.append(host);
+    return () => host.remove();
   }}
-/>
+>
+  <PublishPlan
+    bind:open={planOpen}
+    guide={id}
+    title={base?.guide.title ?? row.title}
+    {channelName}
+    {checkedAt}
+    onqueued={started}
+    onoffline={(message) => (offline = message)}
+    onstale={(message) => {
+      toaster.show({ message, tone: 'error' });
+      void detail.load();
+    }}
+  />
 
-<Modal bind:open={markOpen} title="Mark message {(unknown?.position ?? 0) + 1} as not posted?" eyebrow="Guides · {title}" narrow alert describedby="{uid}-mark" fid="guide-unknown-confirm">
-  <p id="{uid}-mark">Kanade searched <span class="mono">{unknown ? channelName(unknown.channel_id) : ''}</span> and found no single copy of message {(unknown?.position ?? 0) + 1}. Marking it not posted lets the next publish post it again.</p>
-  <div class="flash flash--warn gplan__flash" role="note" data-fid="guide-unknown-warn"><b>If the first try did land,</b> members will see message {(unknown?.position ?? 0) + 1} twice. Delete the extra copy in Discord by hand.</div>
-  <p class="note">Kept in History. Kanade never resends it on its own.</p>
-  <p class="field__error" role="alert">{markError}</p>
-  {#snippet footer(close)}
-    <button class="btn" type="button" onclick={close}>Cancel</button>
-    <button class="btn btn--risk" type="button" data-fid="guide-unknown-mark-confirm" disabled={markBusy} onclick={() => void markNotPosted()}><PendingLabel pending={markBusy} label="Marking…">Mark as not posted</PendingLabel></button>
-  {/snippet}
-</Modal>
+  <Modal bind:open={markOpen} title="Mark message {(unknown?.position ?? 0) + 1} as not posted?" eyebrow="Guides · {title}" narrow alert describedby="{uid}-mark" fid="guide-unknown-confirm" fidParts={{}}>
+    <p id="{uid}-mark">Kanade searched <span class="mono">{unknown ? channelName(unknown.channel_id) : ''}</span> and found no single copy of message {(unknown?.position ?? 0) + 1}. Marking it not posted lets the next publish post it again.</p>
+    <div class="flash flash--warn gplan__flash" role="note" data-fid="guide-unknown-warn"><b>If the first try did land,</b> members will see message {(unknown?.position ?? 0) + 1} twice. Delete the extra copy in Discord by hand.</div>
+    <p class="note">Kept in History. Kanade never resends it on its own.</p>
+    <p class="field__error" role="alert">{markError}</p>
+    {#snippet footer(close)}
+      <button class="btn" type="button" onclick={close}>Cancel</button>
+      <button class="btn btn--risk" type="button" data-fid="guide-unknown-mark-confirm" disabled={markBusy} onclick={() => void markNotPosted()}><PendingLabel pending={markBusy} label="Marking…">Mark as not posted</PendingLabel></button>
+    {/snippet}
+  </Modal>
 
-<Modal bind:open={deleteOpen} title="Delete {base?.guide.title ?? row.title}?" eyebrow="Guides" narrow alert describedby="{uid}-del" fid={published ? 'guide-delete-dialog' : 'guide-delete-confirm'}>
-  {#if published}
-    <p id="{uid}-del">{base?.guide.title} still has <b>{plural(published, 'message')}</b> in <span class="mono">{channelName(detail.data?.slots[0]?.channel_id ?? channel)}</span>. Unpublish it first: Kanade deletes {published === 1 ? 'that message' : `those ${published} messages`}, newest first. Then you can delete the guide.</p>
-    <p class="note">Members stop seeing the guide as soon as its messages go. The draft stays until you delete it; History keeps the record.</p>
-  {:else}
-    <p id="{uid}-del">Nothing is posted any more. The draft and its {plural(base?.blocks.length ?? 0, 'block')} go; History keeps the record.</p>
-  {/if}
-  <p class="field__error" role="alert">{deleteError}</p>
-  {#snippet footer(close)}
-    <button class="btn" type="button" onclick={close}>Cancel</button>
+  <Modal bind:open={deleteOpen} title="Delete {base?.guide.title ?? row.title}?" eyebrow="Guides" narrow alert describedby="{uid}-del" fid={published ? 'guide-delete-dialog' : 'guide-delete-confirm'} fidParts={{}}>
     {#if published}
-      <button class="btn btn--risk" type="button" data-fid="guide-unpublish" disabled={deleteBusy || !unpublishPlan} onclick={() => void confirmDelete()}><PendingLabel pending={deleteBusy} label="Unpublishing…">Unpublish {plural(published, 'message')}</PendingLabel></button>
+      <p id="{uid}-del">{base?.guide.title} still has <b>{plural(published, 'message')}</b> in <span class="mono">{channelName(detail.data?.slots[0]?.channel_id ?? channel)}</span>. Unpublish it first: Kanade deletes {published === 1 ? 'that message' : `those ${published} messages`}, newest first. Then you can delete the guide.</p>
+      <p class="note">Members stop seeing the guide as soon as its messages go. The draft stays until you delete it; History keeps the record.</p>
     {:else}
-      <button class="btn btn--risk" type="button" disabled={deleteBusy} onclick={() => void confirmDelete()}><Icon name="trash-2" /><PendingLabel pending={deleteBusy} label="Deleting…">Delete guide</PendingLabel></button>
+      <p id="{uid}-del">Nothing is posted any more. The draft and its {plural(base?.blocks.length ?? 0, 'block')} go; History keeps the record.</p>
     {/if}
-  {/snippet}
-</Modal>
+    <p class="field__error" role="alert">{deleteError}</p>
+    {#snippet footer(close)}
+      <button class="btn" type="button" onclick={close}>Cancel</button>
+      {#if published}
+        <button class="btn btn--risk" type="button" data-fid="guide-unpublish" disabled={deleteBusy || !unpublishPlan} onclick={() => void confirmDelete()}><PendingLabel pending={deleteBusy} label="Unpublishing…">Unpublish {plural(published, 'message')}</PendingLabel></button>
+      {:else}
+        <button class="btn btn--risk" type="button" disabled={deleteBusy} onclick={() => void confirmDelete()}><Icon name="trash-2" /><PendingLabel pending={deleteBusy} label="Deleting…">Delete guide</PendingLabel></button>
+      {/if}
+    {/snippet}
+  </Modal>
+</div>
+</div>

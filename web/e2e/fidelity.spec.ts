@@ -1252,16 +1252,48 @@ const fixedBoss = (pick: boolean) => async (page: Page) => {
   const phone = page.viewportSize()!.width < 600;
   const editor = phone ? page.getByRole('dialog', { name: 'Tuesday 22:00 — HCarling + HMaleficStar' }) : page.getByRole('complementary', { name: 'Weekly timing details' });
   await editor.getByRole('tab', { name: /^Characters/ }).click();
-  // As B_FixedBoss2: Asahi's Per boss opened, Mika's list open with her HMaleficStar pick.
-  if (!phone) await editor.getByRole('button', { name: "Pick Asahi's character per boss" }).click();
+  // As B_FixedBoss2 and the phone boards: Asahi's Per boss opened, Mika's list open with her HMaleficStar pick.
+  await editor.getByRole('button', { name: "Pick Asahi's character per boss" }).click();
   const list = editor.locator('[data-fid="fixed-boss-picks"]').last();
   await expect(list).toBeVisible();
-  await list.evaluate((el) => el.scrollIntoView({ block: 'center' }));
+  // The phone boards scroll the sheet to Mika's row (`data-scroll-to=".fixedready__row:nth-child(3)"`);
+  // B_FixedBoss2 shows the pane from its top, B_FixedBoss2Pick scrolled to Mika's list.
+  if (phone) await editor.locator('.fixedready__row').nth(2).evaluate((el) => el.scrollIntoView({ block: 'start' }));
+  else if (pick) await list.evaluate((el) => el.scrollIntoView({ block: 'center' }));
   if (pick) {
     await list.getByRole('button', { name: /^Mika's character for HMaleficStar/ }).click();
     await expect(page.locator('[data-fid="fixed-pick-menu"]').first()).toBeVisible();
   }
 };
+/**
+ * The per-boss-picks boards leave the frame they captured untagged: the window's title bar
+ * and search, the list's column heads, every row but the open one (the app tags each row),
+ * on the phone boards the editor sheet's head and foot, and they tag readiness only where a
+ * per-boss list shows it: the single-character rows' basis, character, values and bosses, and
+ * the desktop pick menu's options, carry the app's tags here.
+ */
+const fixedBoard = (board: Page) =>
+  board.evaluate(() => {
+    const tag = (el: Element | null | undefined, fid: string) => el instanceof HTMLElement && !el.dataset.fid && (el.dataset.fid = fid);
+    const all = (selector: string, fid: string) => document.querySelectorAll(selector).forEach((el) => tag(el, fid));
+    tag(document.querySelector('.fixed-window__head'), 'window-bar');
+    tag(document.querySelector('.fixed-window__search'), 'window-search');
+    tag(document.querySelector('[data-fid="fixed-list"] tr[role="row"]:not(.expandable-row)'), 'fixed-head');
+    all('[data-fid="fixed-list"] tr.expandable-row', 'fixed-row');
+    const sheet = document.querySelector('dialog[data-fid="fixed-editor"]');
+    tag(sheet?.querySelector('.modal__head'), 'fixed-editor-head');
+    tag(sheet?.querySelector('.modal__foot'), 'fixed-editor-foot');
+    all('.fixedready__head .fixedready__basis', 'fixed-ready-basis');
+    all('.fixedready__head .slotchar__chip', 'fixed-ready-char');
+    all('.fixedready__row > .ready', 'fixed-ready-values');
+    all('.fixedready__row > .ready > .ready__bosses', 'fixed-ready-bosses');
+    all('[data-fid="fixed-pick-menu"] .charpick__option', 'fixed-pick-option');
+  });
+/**
+ * The phone boards' subject is the editor sheet: the list behind it (and its title bar) stands where
+ * the board's capture had scrolled it; desktop `fixed` (B_Fixed) compares the list.
+ */
+const PHONE_FIXED_OMIT = ['window-bar', 'fixed-list'];
 const fixedBossSetup = async (page: Page) => {
   const done = await page.request.put(`${ADMIN}/api/admin/fixed/f-carling/characters/${member(1003)}/bosses/MaleficStar`, { headers: await csrf(page.request), data: { character_id: 'ch-s2', version: 0 } });
   expect(done.ok(), await done.text()).toBe(true);
@@ -1273,11 +1305,11 @@ const BOSS_PICK_PAIRS: Pair[] = [
   { name: 'boss-grid-estimate', board: 'B_RunBossEstimate', path: '/', omit: STAGE_OMIT, scope: GRID_SCOPE, setup: bossPicked, ready: gridShown('estimate') },
   { name: 'phone-boss-grid', board: 'B_PhoneRunBossPicks', path: '/', omit: STAGE_OMIT, scope: GRID_SCOPE, setup: bossPicked, ready: gridShown() },
   { name: 'phone-boss-grid-estimate', board: 'B_PhoneRunBossEstimate', path: '/', omit: STAGE_OMIT, scope: GRID_SCOPE, setup: bossPicked, ready: gridShown('estimate') },
-  { name: 'fixed-boss', board: 'B_FixedBoss2', path: '/fixed', setup: fixedBossSetup, ready: fixedBoss(false) },
-  { name: 'fixed-boss-dark', board: 'B_FixedBoss2Dark', path: '/fixed', theme: 'dark', setup: fixedBossSetup, ready: fixedBoss(false) },
-  { name: 'fixed-boss-pick', board: 'B_FixedBoss2Pick', path: '/fixed', setup: fixedBossSetup, ready: fixedBoss(true) },
-  { name: 'phone-fixed-boss', board: 'B_PhoneFixedBoss', path: '/fixed', setup: fixedBossSetup, ready: fixedBoss(false) },
-  { name: 'phone-fixed-boss-pick', board: 'B_PhoneFixedBossPick', path: '/fixed', setup: fixedBossSetup, ready: fixedBoss(true) },
+  { name: 'fixed-boss', board: 'B_FixedBoss2', path: '/fixed', setup: fixedBossSetup, prepare: fixedBoard, ready: fixedBoss(false) },
+  { name: 'fixed-boss-dark', board: 'B_FixedBoss2Dark', path: '/fixed', theme: 'dark', setup: fixedBossSetup, prepare: fixedBoard, ready: fixedBoss(false) },
+  { name: 'fixed-boss-pick', board: 'B_FixedBoss2Pick', path: '/fixed', setup: fixedBossSetup, prepare: fixedBoard, ready: fixedBoss(true) },
+  { name: 'phone-fixed-boss', board: 'B_PhoneFixedBoss', path: '/fixed', omit: PHONE_FIXED_OMIT, setup: fixedBossSetup, prepare: fixedBoard, ready: fixedBoss(false) },
+  { name: 'phone-fixed-boss-pick', board: 'B_PhoneFixedBossPick', path: '/fixed', omit: PHONE_FIXED_OMIT, setup: fixedBossSetup, prepare: fixedBoard, ready: fixedBoss(true) },
   // The Party total (2026-10-16-party-polish v2): the admin grid's row, the portal's block.
   { name: 'party-total', board: 'B_PartyTotal', path: '/', omit: STAGE_OMIT, scope: GRID_SCOPE, setup: shareLookedUp('r-carling'), ready: gridShown() },
   { name: 'party-total-crit', board: 'B_PartyTotalCrit', path: '/', theme: 'dark', omit: STAGE_OMIT, scope: GRID_SCOPE, setup: shareLookedUp('r-carling'), ready: gridShown() },
@@ -1843,10 +1875,365 @@ const PAIRS: Pair[] = [
   },
 ];
 
+// Guides (KANADE_MOCKUPS=docs/research/2026-10-16-guide-mockups): the 20 single-screen boards over the
+// guides board control (`/__e2e/guides/board`, examples/e2e_server/README.md), which draws G_List's six
+// guides: Kalos basics published, Radiant Malefic Star out of date (art changed), Black Mage prep
+// blocked (no Attach Files), Carling + Star night with message 4 unconfirmed, Limbo party roles
+// publishing with its next post held, Weekly bossing etiquette not published. The composites
+// G_EditorStates, G_PlanStates and G_RunStates are notes over fragments, left out (D19, lesson 92).
+const GUIDE = {
+  kalos: '5b1e8c2d-0f3a-4c6e-9d27-4a8b1c2d3e01',
+  star: '5b1e8c2d-0f3a-4c6e-9d27-4a8b1c2d3e02',
+  carling: '5b1e8c2d-0f3a-4c6e-9d27-4a8b1c2d3e03',
+  limbo: '3d0c5b8a-7e21-4f3a-b6d9-2a4c8e1f5a10',
+} as const;
+const guidesBoard = async (page: Page) => {
+  await control(page, 'guides/board');
+};
+/** The board state with Limbo party roles' held post let go, so its run finishes. */
+const guidesReleased = async (page: Page) => {
+  await guidesBoard(page);
+  await control(page, 'discord/guide', { script: 'release' });
+};
+const guidePane = (page: Page) => page.locator('.guide-pane');
+/** The guide boards leave the dropdown triggers they captured (the channel, Add boss) untagged; the app's Select tags each. */
+const guideBoard = (board: Page) =>
+  board.evaluate(() => {
+    for (const dd of document.querySelectorAll<HTMLElement>('button.dd:not([data-fid])')) dd.dataset.fid = 'dd-trigger';
+  });
+/** G_History is the captured History page with only its rows and pane tagged: its bar, tabs, filters, list, week heads and page line get the app's tags. */
+const guidesHistoryBoard = async (board: Page) => {
+  await guideBoard(board);
+  await board.evaluate(() => {
+    const tag = (selector: string, fid: string) => {
+      for (const el of document.querySelectorAll<HTMLElement>(selector)) el.dataset.fid ??= fid;
+    };
+    tag('.pageline', 'page-line');
+    tag('.history-window__head', 'window-bar');
+    tag('.history-window__head .tabs__tabs', 'window-tabs');
+    tag('.history-window__filters', 'window-filters');
+    tag('.history-list-region__scroll', 'history-list');
+    tag('.history-list-region__scroll .pane__section', 'history-group');
+    tag('button.datepick-trigger', 'dr-trigger');
+    tag('.history-detail__raw', 'history-raw');
+  });
+};
+/** Row order is data: the store lists guides by title, the boards attention-first (Needs attention, Blocked, Publishing, …), so rows never pair up. */
+const GUIDES_OMIT = ['guides-row'];
+/**
+ * Phones with a guide open: the window bar is hidden on both sides (the kit counts a hidden board
+ * region as missing in the app), and the board leaves the hidden list out of its DOM.
+ */
+const PHONE_GUIDE_OMIT = [...GUIDES_OMIT, 'window-bar', 'guides-list'];
+/**
+ * The preview's embeds are the server's render (the v4 aliases line, the e2e knowledge leads); the
+ * boards invent both, so the list's length and the note under it are data. Its first slots still pair.
+ */
+const PREVIEW_OMIT = [...GUIDES_OMIT, 'guide-preview-list', 'guide-preview-note'];
+/**
+ * The head's width follows its meta line: the boards name the published version ("published Mon 21:10
+ * (version 12)"), which the API doesn't carry (a run summary has no version), and other versions and times.
+ */
+const META_OMIT = ['guide-title', 'guide-meta'];
+/** The First Adversary has a knowledge lead in the e2e catalog where the boards draw none: the second entry's lead and the rows under it are data. */
+const ENTRY_OMIT = ['guide-entry-lead', 'guide-entry-note', 'guide-entry-image'];
+const animationsDone = (page: Page) => page.evaluate(() => Promise.all(document.getAnimations().map((a) => a.finished)));
+/** The list (phone: the list alone). */
+const guidesShown = async (page: Page) => {
+  await expect(page.getByRole('listbox', { name: 'Guides' })).toBeVisible();
+  await animationsDone(page);
+};
+/** The open guide's editor and, on wide screens, its pane with the preview or the run drawn. */
+const guideOpen = async (page: Page) => {
+  await expect(page.locator('.drafts__detail [data-fid="guide-editor"]')).toBeVisible();
+  if (page.viewportSize()!.width >= 600) {
+    await expect(guidePane(page).locator('.drafts__panehead')).toBeVisible();
+    await expect(guidePane(page).locator('.gslot, .gplan__ops').first()).toBeVisible();
+  } else await expect(page.locator('.guide-phonetabs').getByRole('tab', { name: /^Preview/ })).toHaveText(/ [1-9]\d* messages?$/);
+  await animationsDone(page);
+};
+const openGuideBlock = async (page: Page, n: number) => {
+  const summary = page.getByRole('button', { name: new RegExp(`^Edit block ${n}:`) });
+  if (await summary.isVisible()) await summary.click();
+};
+/** Kalos basics with G_Editor's two unsaved changes (block 2's text grows, a Clear times block is added), block 2 open. */
+const kalosEdited = async (page: Page) => {
+  await guideOpen(page);
+  await openGuideBlock(page, 2);
+  const text = page.getByLabel('Block 2 text, Discord Markdown');
+  await text.fill(`${await text.inputValue()}\n- Forgetting to answer the reminder, so the organiser cannot plan the party.`);
+  await page.locator('.gblocks__add').getByRole('button', { name: 'Text' }).click();
+  await page.getByLabel('Block 6 text, Discord Markdown').fill('## Clear times\nOur best Chaos clear this season is **14:52**. Post yours in #kalos-four after each run.');
+  await openGuideBlock(page, 2);
+  await expect(page.getByLabel('Block 2 text, Discord Markdown')).toBeVisible();
+};
+/** G_EditorBosses: the same edits with the bosses block open, both columns scrolled to it. */
+const kalosBosses = async (page: Page) => {
+  await kalosEdited(page);
+  await openGuideBlock(page, 3);
+  const open = page.locator('.gblock--open');
+  await expect(open.locator('[data-fid="guide-entry"]').first()).toBeVisible();
+  await open.evaluate((el) => el.scrollIntoView({ block: 'start' }));
+  await guidePane(page).locator('.gslot').nth(2).evaluate((el) => el.scrollIntoView({ block: 'start' }));
+};
+const saveGuide = async (page: Page) => {
+  await page.getByRole('button', { name: 'Save draft' }).click();
+  await expect(page.getByRole('button', { name: page.viewportSize()!.width < 600 ? 'Publish…' : 'Review and publish…' })).not.toHaveAttribute('aria-disabled', 'true');
+  // The boards draw no "saved" toast; one under the pointer stays (hover pauses it) and covers the phone's bar.
+  await page.mouse.move(1, 1);
+  await expect(page.locator('.toast')).toHaveCount(0, { timeout: 15_000 });
+};
+/** Kalos basics saved as G_Plan's version: block 2's text and Kalos's note change, Clear times is added. */
+const kalosSaved = async (page: Page) => {
+  await kalosEdited(page);
+  await openGuideBlock(page, 3);
+  const note = page.locator('.gblock--open .gentry__note textarea').first();
+  await note.fill(`${await note.inputValue()} Bring a spare buffer.`);
+  await saveGuide(page);
+  await reopened(page);
+};
+/** The saved guide reopened, as the plan boards draw it behind the dialog: no block open, the editor at its top. */
+const reopened = async (page: Page) => {
+  await page.reload();
+  await guideOpen(page);
+};
+/** Phones: block 2 open with the editor at its top (G_PhonePlan's backdrop). */
+const phoneBlock2 = async (page: Page) => {
+  await openGuideBlock(page, 2);
+  await page.locator('.guide-phone > .drafts__main').evaluate((el) => (el.scrollTop = 0));
+};
+/** Radiant Malefic Star saved with its entry's large image, so messages 3–5 are posted again (G_PlanRepost). */
+const starImage = async (page: Page) => {
+  await guideOpen(page);
+  await openGuideBlock(page, 3);
+  await page.locator('.gblock--open .gentry__image').getByRole('checkbox').check();
+  await saveGuide(page);
+  await reopened(page);
+};
+const planOpen = async (page: Page, tick?: string) => {
+  await page.getByRole('button', { name: page.viewportSize()!.width < 600 ? 'Publish…' : 'Review and publish…' }).click();
+  const plan = page.getByRole('dialog', { name: /^(Publish|Move) / });
+  await expect(plan.locator('.gplan__counts')).toBeVisible();
+  if (tick) await plan.getByRole('checkbox', { name: tick }).check();
+  await animationsDone(page);
+};
+const dialogShown = async (page: Page, name: string | RegExp) => {
+  await expect(page.getByRole('alertdialog', { name })).toBeVisible();
+  await animationsDone(page);
+};
+const GUIDE_PAIRS: Pair[] = (<Pair[]>[
+  {
+    name: 'guides-list',
+    board: 'G_List',
+    path: `/guides?item=${GUIDE.kalos}`,
+    omit: PREVIEW_OMIT,
+    setup: guidesBoard,
+    ready: async (page) => {
+      await guideOpen(page);
+      await page.getByRole('button', { name: 'More, current page Guides' }).click();
+      await expect(page.getByRole('menu', { name: 'More destinations' })).toBeVisible();
+    },
+  },
+  { name: 'guides-list-dark', board: 'G_ListDark', path: `/guides?item=${GUIDE.kalos}`, theme: 'dark', omit: PREVIEW_OMIT, setup: guidesBoard, ready: guideOpen },
+  {
+    name: 'guides-editor',
+    board: 'G_Editor',
+    path: `/guides?item=${GUIDE.kalos}`,
+    omit: PREVIEW_OMIT,
+    setup: guidesBoard,
+    ready: async (page) => {
+      await kalosEdited(page);
+      // The board's editor sits at its top, its preview scrolled to message 2.
+      await page.locator('.guide-edit > .drafts__main').evaluate((el) => (el.scrollTop = 0));
+      await guidePane(page).locator('.gslot--here').evaluate((el) => el.scrollIntoView({ block: 'start' }));
+    },
+  },
+  { name: 'guides-editor-bosses', board: 'G_EditorBosses', path: `/guides?item=${GUIDE.kalos}`, omit: [...PREVIEW_OMIT, ...ENTRY_OMIT], setup: guidesBoard, ready: kalosBosses },
+  { name: 'guides-editor-dark', board: 'G_EditorDark', path: `/guides?item=${GUIDE.kalos}`, theme: 'dark', omit: [...PREVIEW_OMIT, ...ENTRY_OMIT], setup: guidesBoard, ready: kalosBosses },
+  {
+    name: 'guides-plan',
+    board: 'G_Plan',
+    path: `/guides?item=${GUIDE.kalos}`,
+    // The board's consequence counts the plan ("2 messages change, 1 is added"); the pane has no plan until the dialog reads one.
+    omit: [...PREVIEW_OMIT, ...META_OMIT, 'decision'],
+    setup: guidesBoard,
+    ready: async (page) => {
+      await kalosSaved(page);
+      await planOpen(page);
+    },
+  },
+  {
+    name: 'guides-plan-repost',
+    board: 'G_PlanRepost',
+    path: `/guides?item=${GUIDE.star}`,
+    omit: [...PREVIEW_OMIT, ...META_OMIT],
+    setup: guidesBoard,
+    ready: async (page) => {
+      await starImage(page);
+      await planOpen(page);
+    },
+  },
+  {
+    name: 'guides-plan-move',
+    board: 'G_PlanMove',
+    path: `/guides?item=${GUIDE.limbo}`,
+    omit: [...PREVIEW_OMIT, ...META_OMIT],
+    setup: guidesReleased,
+    ready: async (page) => {
+      await guideOpen(page);
+      // Released before the page loaded: the finished run shows as the plain preview.
+      await expect(guidePane(page).locator('.drafts__panehead .cap')).toHaveText(/^Preview/, { timeout: 15_000 });
+      await choose(page.locator('.guide-channel').getByRole('combobox', { name: 'Channel' }), { label: /#guide-raids/ });
+      await saveGuide(page);
+      await planOpen(page);
+    },
+  },
+  {
+    name: 'guides-progress',
+    board: 'G_Progress',
+    path: `/guides?item=${GUIDE.limbo}`,
+    setup: guidesBoard,
+    ready: async (page) => {
+      await guideOpen(page);
+      await expect(page.locator('.guide-cancel')).toBeVisible();
+    },
+  },
+  {
+    name: 'guides-done',
+    board: 'G_Done',
+    path: `/guides?item=${GUIDE.limbo}`,
+    // The board keeps G_Progress's "Publishing version 1" note after the run finished (one shared
+    // LIMBO_DETAIL); the app shows "Saving never posts" once it is done.
+    omit: [...GUIDES_OMIT, 'guide-live-note'],
+    setup: guidesBoard,
+    ready: async (page) => {
+      await guideOpen(page);
+      // The run finishes with the page open, as the board's admin watched it.
+      await control(page, 'discord/guide', { script: 'release' });
+      await expect(guidePane(page).getByRole('link', { name: 'Open in Discord' })).toBeVisible({ timeout: 15_000 });
+      await animationsDone(page);
+    },
+  },
+  {
+    name: 'guides-unknown',
+    board: 'G_Unknown',
+    path: `/guides?item=${GUIDE.carling}`,
+    omit: PREVIEW_OMIT,
+    setup: guidesBoard,
+    ready: async (page) => {
+      await guideOpen(page);
+      await expect(page.locator('.guide-unknown')).toBeVisible();
+    },
+  },
+  {
+    name: 'guides-unknown-confirm',
+    board: 'G_UnknownConfirm',
+    path: `/guides?item=${GUIDE.carling}`,
+    omit: PREVIEW_OMIT,
+    setup: guidesBoard,
+    ready: async (page) => {
+      await guideOpen(page);
+      await page.getByRole('button', { name: 'Mark as not posted…' }).click();
+      await dialogShown(page, /^Mark message \d+ as not posted\?/);
+    },
+  },
+  {
+    name: 'guides-delete',
+    board: 'G_Delete',
+    path: `/guides?item=${GUIDE.kalos}`,
+    omit: PREVIEW_OMIT,
+    setup: guidesBoard,
+    ready: async (page) => {
+      await guideOpen(page);
+      await page.getByRole('button', { name: 'Delete guide…' }).click();
+      await dialogShown(page, 'Delete Kalos basics?');
+    },
+  },
+  {
+    name: 'guides-history',
+    board: 'G_History',
+    path: '/history',
+    setup: guidesBoard,
+    prepare: guidesHistoryBoard,
+    // Rows and week heads are History's data: the e2e seed adds a "Boss week of Thu 1 Oct" group (#1 system
+    // (store)) above the guide rows, which the board's capture left out with its long seed rows, and the
+    // board orders and words its six invented guide rows its own way. The window, filters and pane pair up.
+    omit: [...GUIDES_OMIT, 'history-row', 'history-group'],
+    ready: async (page) => {
+      await page.locator('.history-row').filter({ hasText: 'Limbo party roles' }).filter({ hasText: 'publish requested' }).first().click();
+      await expect(page.locator('.side-pane--history').getByRole('heading', { name: 'Limbo party roles: publish requested' })).toBeVisible();
+      await page.locator('.history-list-region__scroll').evaluate((el) => (el.scrollTop = 0));
+      await animationsDone(page);
+    },
+  },
+  {
+    name: 'guides-module-off',
+    board: 'G_ModuleOff',
+    path: '/guides',
+    setup: () => setModules({ guides: false }),
+    ready: async (page) => {
+      await expect(page.getByRole('heading', { level: 1 })).toHaveText("That doesn't exist");
+      await page.getByRole('button', { name: 'More' }).click();
+      await expect(page.getByRole('menu', { name: 'More destinations' })).toBeVisible();
+    },
+  },
+  { name: 'guides-phone-list', board: 'G_PhoneList', path: '/guides', omit: GUIDES_OMIT, setup: guidesBoard, ready: guidesShown },
+  {
+    name: 'guides-phone-editor',
+    board: 'G_PhoneEditor',
+    path: `/guides?item=${GUIDE.kalos}`,
+    omit: [...PHONE_GUIDE_OMIT, ...META_OMIT],
+    setup: guidesBoard,
+    ready: async (page) => {
+      await kalosEdited(page);
+      await page.locator('.gblock--open').evaluate((el) => el.scrollIntoView({ block: 'start' }));
+    },
+  },
+  {
+    name: 'guides-phone-preview',
+    board: 'G_PhonePreview',
+    path: `/guides?item=${GUIDE.kalos}`,
+    omit: [...PHONE_GUIDE_OMIT, 'guide-preview-list', 'guide-preview-note'],
+    setup: guidesBoard,
+    ready: async (page) => {
+      await kalosEdited(page);
+      await page.locator('.guide-phonetabs').getByRole('tab', { name: /^Preview/ }).click();
+      await expect(page.locator('.gslot').first()).toBeVisible();
+    },
+  },
+  {
+    name: 'guides-phone-plan',
+    board: 'G_PhonePlan',
+    path: `/guides?item=${GUIDE.kalos}`,
+    // Besides META_OMIT: the board's second op names which entry's note changed ("Gatekeeper Kalos: the
+    // note changes"), a third line at phone width; the plan's ops carry no entry-level change.
+    omit: [...PHONE_GUIDE_OMIT, ...META_OMIT, 'guide-plan-op'],
+    setup: guidesBoard,
+    ready: async (page) => {
+      await kalosSaved(page);
+      await phoneBlock2(page);
+      await planOpen(page);
+    },
+  },
+  {
+    name: 'guides-phone-plan-repost',
+    board: 'G_PhonePlanRepost',
+    path: `/guides?item=${GUIDE.star}`,
+    // The board draws Kalos basics' editor (PHONE_EDIT_MAIN) behind Radiant Malefic Star's plan.
+    omit: [...PHONE_GUIDE_OMIT, 'guide-editor'],
+    setup: guidesBoard,
+    ready: async (page) => {
+      await starImage(page);
+      await phoneBlock2(page);
+      await planOpen(page, 'Delete and repost messages 3–5');
+    },
+  },
+]).map((pair) => ({ prepare: guideBoard, omit: GUIDES_OMIT, ...pair }));
+
 test.describe('layout fidelity', () => {
   test.skip(!ENABLED, 'run with `bun run fidelity` (needs a KANADE_FIDELITY=1 build)');
 
-  for (const pair of [...PAIRS, ...DRAFT_PAIRS, ...GRAPH_PAIRS, ...PRESENCE_PAIRS, ...PUBLIC_PAIRS, ...MEMBER_CHAR_PAIRS, ...SHARE_PAIRS, ...BOSS_PICK_PAIRS, ...TEASE_PAIRS].filter((p) => !ONLY.length || ONLY.includes(p.name))) {
+  for (const pair of [...PAIRS, ...DRAFT_PAIRS, ...GRAPH_PAIRS, ...PRESENCE_PAIRS, ...PUBLIC_PAIRS, ...MEMBER_CHAR_PAIRS, ...SHARE_PAIRS, ...BOSS_PICK_PAIRS, ...GUIDE_PAIRS, ...TEASE_PAIRS].filter((p) => !ONLY.length || ONLY.includes(p.name))) {
     test(pair.name, async ({ page, browser }) => {
       test.skip(!boardExists(pair.board), `no board ${pair.board}.dc.html under ${MOCKUPS}`);
       const dir = join(OUT, pair.name);
