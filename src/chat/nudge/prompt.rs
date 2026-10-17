@@ -145,25 +145,27 @@ impl HeaderFacts {
     }
 }
 
-/// The call-out lines with a tease slot: the carriers to praise, the one
-/// placeholder that may be teased (with its note), the two-slot cap and
-/// positive call-outs for everyone else.
+/// The call-out lines with a tease slot: the one placeholder to tease (with
+/// its note) as the line's aim, the carriers that may also be praised, the
+/// two-slot cap and positive call-outs for everyone else.
 fn tease_lines(lines: &mut Vec<String>, offered: &[String], tease: &TeaseSlot) {
     let slot = &tease.placeholder;
-    if !offered.is_empty() {
-        lines.push(format!(
-            "Top carriers you may praise, by placeholder only: {}. Use none, one or both, each at most once, copied exactly.",
-            offered.join(", ")
-        ));
-    }
     let mut line = format!(
-        "{slot} ({}% of the party's estimate) has asked to be teased: you may tease {slot} lightly and kindly, by placeholder only, at most once, copied exactly.",
+        "{slot} ({}% of the party's estimate) has asked to be teased and enjoys it: make this line a light, kind jab at {slot}, by placeholder only, at most once, copied exactly. Keep the jab to a few words and the line as short as the seed.",
         tease.share
     );
     if let Some(note) = &tease.note {
-        line.push_str(&format!(" Their running joke, for flavour: \"{note}\"."));
+        line.push_str(&format!(
+            " Hint at their running joke in a word or two, never quote it: \"{note}\"."
+        ));
     }
     lines.push(line);
+    if !offered.is_empty() {
+        lines.push(format!(
+            "You may also praise a top carrier, by placeholder only: {}. Optional, at most once each, copied exactly.",
+            offered.join(", ")
+        ));
+    }
     if offered.is_empty() {
         lines.push(format!(
             "{slot} is the only placeholder and the only brace you may add. Tease only {slot}; speak kindly to the rest of the party and single no one else out."
@@ -446,8 +448,8 @@ mod tests {
         );
     }
 
-    /// A tease slot is offered after the carriers with its share and note,
-    /// teasing is allowed for that placeholder only, and the cap of two
+    /// A tease slot is offered first, with its share and note, as the line's
+    /// aim; teasing is allowed for that placeholder only, and the cap of two
     /// placeholders is stated.
     #[test]
     fn a_tease_slot_is_the_only_one_that_may_be_teased() {
@@ -464,12 +466,9 @@ mod tests {
         };
         let block = with.block();
         assert!(block.contains("{c1} (48% of the party's estimate), {c2} (31%"));
-        assert!(block.contains(
-            "{c3} (9% of the party's estimate) has asked to be teased: you may tease {c3} lightly"
-        ));
-        assert!(
-            block.contains("running joke, for flavour: \"Always lost on the way to the portal\"")
-        );
+        assert!(block.contains("{c3} (9% of the party's estimate) has asked to be teased"));
+        assert!(block.contains("jab at {c3}"));
+        assert!(block.contains("\"Always lost on the way to the portal\""));
         assert!(block.contains("Use at most two placeholders in all"));
         assert!(block.contains("Tease only {c3}"));
         assert!(!block.contains("never point at the lowest"));
@@ -480,7 +479,7 @@ mod tests {
         }
         .block();
         assert!(alone.contains("{c3} is the only placeholder"));
-        assert!(!alone.contains("running joke") && !alone.contains("Top carriers"));
+        assert!(!alone.contains("running joke") && !alone.contains("top carrier"));
         assert!(!alone.contains("add no braces"));
     }
 }
