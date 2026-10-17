@@ -33,7 +33,10 @@ dialog.modal[open] {
 
 // Press shape-morph (Experiment D, approved on by default): key and connected
 // group buttons step their corners down while pressed and spring back on
-// release. Radius only; reduced motion keeps the shape still.
+// release. Radius only; reduced motion keeps the shape still. A connected
+// group's choices (its links, `aria-pressed`/`aria-selected` segments) morph
+// only to and from the chosen pill: stepping down as well played two morphs
+// for one press (a tap's `:active` outlasts its click).
 @include motion-ok {
   .btn--primary,
   .btn--key,
@@ -46,8 +49,7 @@ dialog.modal[open] {
   .btn--primary:active:not(:disabled, [aria-disabled="true"]),
   .btn--key:active:not(:disabled, [aria-disabled="true"]),
   .btn--risk:active:not(:disabled, [aria-disabled="true"]),
-  .seg a:active,
-  .seg button:active:not(:disabled, [aria-disabled="true"]) {
+  .seg button:active:not(:disabled, [aria-disabled="true"], [aria-pressed], [aria-selected]) {
     border-radius: 10px;
   }
 }

@@ -10,6 +10,10 @@ _In development_
 
 - Reminder cards now keep updating with ✅ and ❌ answers after a run starts, until the run's length in Config › Run lengths has passed; only then do they stay as the record.
 
+### Fixes
+
+- Fixed answers and other connected button choices in the member portal and the admin app changing shape twice on one press or tap (In / Maybe / Out on the run pane, the phone run screen and My runs); a choice now morphs once, straight to its selected shape.
+
 ## 1.0.0-beta.9
 
 _17 Oct 2026_
