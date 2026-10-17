@@ -4,7 +4,7 @@ What changed in each Kanade release, newest first. Upgrading across several rele
 
 ## 1.0.0-beta.9
 
-_In development_
+_17 Oct 2026_
 
 Reminder headers can now take their mood from the party's estimate, cheer on the top carriers by character name and lightly tease members who opted in, all behind two Config switches that start off. Without the switches, the scouter or the character-data module, headers are written exactly as before.
 

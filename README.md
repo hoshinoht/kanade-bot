@@ -6,7 +6,7 @@
 
 *One Rust binary for one Discord server: the bot, the reminders, an admin portal and a member portal, deployed with Docker Compose.*
 
-[![Version](https://img.shields.io/badge/version-1.0.0--beta.8-blue)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-1.0.0--beta.9-blue)](CHANGELOG.md)
 [![Rust](https://img.shields.io/badge/rust-1.98.1-orange)](rust-toolchain.toml)
 [![License](https://img.shields.io/badge/license-GPL--3.0--only-green)](LICENSE)
 [![CI](https://github.com/hoshinoht/kanade-bot/actions/workflows/ci.yml/badge.svg)](https://github.com/hoshinoht/kanade-bot/actions/workflows/ci.yml)
@@ -19,7 +19,7 @@
 > Character data and estimates are shown to help plan a party, never used to judge or block one.
 
 > [!NOTE]
-> Beta: `1.0.0-beta.8`, running live for one guild. Settings, the HTTP API and the store may still change between betas; read [CHANGELOG.md](CHANGELOG.md) before upgrading.
+> Beta: `1.0.0-beta.9`, running live for one guild. Settings, the HTTP API and the store may still change between betas; read [CHANGELOG.md](CHANGELOG.md) before upgrading.
 
 ## At a glance
 
@@ -69,7 +69,7 @@
 
 - **Roster:** each member's MapleSEA characters and which one they bring to a run (`modules.roster`).
 - **Character data:** NEXON Open API data for linked characters, after the member consents, in a separate SQLite file kept out of backups, logs and model prompts (`modules.character_data`).
-- **Scouter estimates:** clear-time estimates from a separate scouter sidecar that is not part of this repository; it is sent roster IGNs only (`character_data.scouter_url`).
+- **Scouter estimates:** clear-time estimates from a separate scouter sidecar that is not part of this repository; it is sent roster IGNs only (`character_data.scouter_url`). Two Config switches, off by default, let reminder headers be worded from the party's estimate and lightly tease members who opted in; the rewrite model then gets estimate shares and an admin's running-joke note, never a name or IGN.
 
 Full behaviour, settings and limits are in [docs/v5/runtime-bootstrap.md](docs/v5/runtime-bootstrap.md).
 
@@ -151,7 +151,7 @@ The admin portal is then at `http://localhost:8080` on the host; sign in with th
 > Admin routes are never mounted on the public listener: every `/api/admin/*` path and `/healthz` answers `404` there. Both listeners bind loopback only, or a private address with `KANADE_ALLOW_PRIVATE_BIND=1`; wildcard and public addresses are always refused.
 
 > [!WARNING]
-> Configured models receive raw member names, IDs, message text and URLs when present. There is no masking; a provider's retention policy does not limit what is sent. Roster and character data are never sent to models.
+> Configured models receive raw member names, IDs, message text and URLs when present. There is no masking; a provider's retention policy does not limit what is sent. Roster and character data are never sent to models, except that with the reminder-header switches on the rewrite model gets the party's estimate shares and, for members who opted in to teasing, an admin's running-joke note, never a name or IGN.
 
 > [!CAUTION]
 > Backups hold member data. Point `KANADE_BACKUP_RECIPIENTS_HOST_FILE` in `deploy/.env` (`backup.recipients_file` outside Compose) at age X25519 public keys and `kanade backup` writes encrypted snapshots ([runbook](deploy/README.md#encrypted-backups)); keep the private identity off the backup host. The character data file is never backed up.
