@@ -23,9 +23,10 @@ use chrono_tz::Tz;
 use twilight_model::channel::message::Component;
 
 use super::cards::chart::{self, Chart, ChartRun};
-use super::cards::{CardContext, CardKit, card_runs};
+use super::cards::{CardContext, CardKit, HeaderContext, card_runs};
 use crate::bot::commands::text::{MONTH_NAMES, local_time, weekday_name};
 use crate::bot::transport::{OutgoingMessage, Upload, legacy_rows};
+use crate::chat::persona::NudgeMood;
 use crate::domain::catalog::BossTable;
 use crate::domain::characters::{PartyReads, PartyRoster, PartySlot};
 use crate::domain::chardata::PartyShares;
@@ -250,6 +251,42 @@ pub async fn chart_for(
     }
     chart.as_of = stamp(oldest.unwrap_or(now), ctx.zone);
     Some(chart)
+}
+
+/// The estimate context of a day-of or countdown header rewrite (D1/D2):
+/// only with `kit`'s estimates port, the redesigned style and the
+/// `header_estimates` switch on, and only from a fresh estimate of every
+/// run on the card ([`HeaderContext::build`]). The party's names and
+/// aliases come from `ctx.members` (refused raw in the line, never sent).
+/// `None` keeps today's prompt.
+pub async fn header_context(
+    content: &IntentContent,
+    ctx: &CardContext<'_>,
+    kit: &CardKit,
+) -> Option<HeaderContext> {
+    if ctx.style != MessageStyle::Redesigned || !kit.switches().estimates {
+        return None;
+    }
+    let port = kit.estimates.as_deref()?;
+    let catalog = ctx.catalog?;
+    let runs: Vec<&Run> = match content {
+        IntentContent::DayOf { run_ids } => card_runs(ctx, run_ids),
+        IntentContent::Countdown { run_id, .. } => ctx.run(run_id).into_iter().collect(),
+        _ => return None,
+    };
+    let mut estimates = Vec::with_capacity(runs.len());
+    let mut names = Vec::new();
+    for run in &runs {
+        estimates.push(port.run(run, ctx.schedule, catalog).await?);
+        for member in &run.participants {
+            if let Some(profile) = ctx.members.profile(member) {
+                names.extend(profile.member.nickname.clone());
+                names.extend(profile.member.display_name.clone());
+                names.extend(profile.aliases);
+            }
+        }
+    }
+    HeaderContext::build(&estimates, NudgeMood::Playful, names)
 }
 
 /// One render at a time: a render that outlives its deadline keeps its

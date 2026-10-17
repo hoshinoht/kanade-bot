@@ -1,7 +1,8 @@
 //! `ReminderCardStore` over `reminder_cards` (migration 0014), joined to the
 //! journal's bound attempts and card→run rows for refreshes; digest phrases
 //! (0018) and manual header overrides (0028). Every heading or phrase read
-//! returns the key's latest override, else the original line.
+//! returns the key's latest override, else the original line, with that
+//! line's slot map (0043).
 
 use chrono::{DateTime, Utc};
 use sqlx::{Connection, Row, SqliteConnection};
@@ -12,24 +13,47 @@ use super::schedule::store_error;
 #[cfg(any(test, feature = "test-support"))]
 use crate::bot::delivery::cards::HeaderHistory;
 use crate::bot::delivery::cards::{
-    CardRecord, DigestPhraseStore, HeaderOverrideStore, PostedCard, ReminderCardStore,
+    CardRecord, DigestPhraseStore, HeaderOverrideStore, HeaderSlots, PostedCard, ReminderCardStore,
 };
 use crate::domain::scheduler::StoreError;
+
+/// The line in effect for a card (`c` = its `reminder_cards` row): the
+/// latest override's line and slot map, else the card's own.
+const IN_EFFECT: &str = "COALESCE((SELECT o.line FROM header_overrides o \
+     WHERE o.dedupe_key = c.dedupe_key ORDER BY o.seq DESC LIMIT 1), c.heading) AS heading, \
+     CASE WHEN EXISTS (SELECT 1 FROM header_overrides o WHERE o.dedupe_key = c.dedupe_key) \
+     THEN (SELECT o.slots FROM header_overrides o WHERE o.dedupe_key = c.dedupe_key \
+     ORDER BY o.seq DESC LIMIT 1) ELSE c.slots END AS slots";
+
+/// A stored slot map. An unreadable one reads as none: its line then keeps
+/// a placeholder, which `resolve_heading` never posts (the seed is used).
+fn slots_of(text: Option<String>) -> Option<HeaderSlots> {
+    serde_json::from_str(text.as_deref()?).ok()
+}
+
+fn slots_text(slots: Option<&HeaderSlots>) -> Result<Option<String>, StoreError> {
+    slots
+        .map(serde_json::to_string)
+        .transpose()
+        .map_err(|error| StoreError::Backend(format!("header slots: {error}")))
+}
 
 async fn record_in(
     conn: &mut SqliteConnection,
     dedupe_key: &str,
 ) -> Result<Option<CardRecord>, StoreError> {
-    let row: Option<(String, Option<String>)> = sqlx::query_as(
-        "SELECT kind, COALESCE(\
-         (SELECT line FROM header_overrides WHERE dedupe_key = ?1 ORDER BY seq DESC LIMIT 1), \
-         heading) FROM reminder_cards WHERE dedupe_key = ?1",
-    )
+    let row: Option<(String, Option<String>, Option<String>)> = sqlx::query_as(&format!(
+        "SELECT c.kind, {IN_EFFECT} FROM reminder_cards c WHERE c.dedupe_key = ?1"
+    ))
     .bind(dedupe_key)
     .fetch_optional(&mut *conn)
     .await
     .map_err(store_error)?;
-    Ok(row.map(|(kind, heading)| CardRecord { kind, heading }))
+    Ok(row.map(|(kind, heading, slots)| CardRecord {
+        kind,
+        heading,
+        slots: slots_of(slots),
+    }))
 }
 
 async fn phrase_in(
@@ -63,16 +87,18 @@ impl ReminderCardStore for SqliteStore {
         #[cfg(any(test, feature = "test-support"))]
         self.faults.card_record_write()?;
         let at = instant(&at)?;
+        let slots = slots_text(record.slots.as_ref())?;
         write_txn!(self, tx, async {
             sqlx::query(
                 // Not `OR IGNORE`, which would also swallow CHECK failures.
-                "INSERT INTO reminder_cards (dedupe_key, kind, heading, created_at) \
-                 VALUES (?1, ?2, ?3, ?4) ON CONFLICT (dedupe_key) DO NOTHING",
+                "INSERT INTO reminder_cards (dedupe_key, kind, heading, created_at, slots) \
+                 VALUES (?1, ?2, ?3, ?4, ?5) ON CONFLICT (dedupe_key) DO NOTHING",
             )
             .bind(dedupe_key)
             .bind(&record.kind)
             .bind(&record.heading)
             .bind(&at)
+            .bind(&slots)
             .execute(&mut *tx)
             .await
             .map_err(store_error)?;
@@ -84,16 +110,14 @@ impl ReminderCardStore for SqliteStore {
 
     async fn posted_cards(&self, run_id: &str) -> Result<Vec<PostedCard>, StoreError> {
         read_txn!(self, tx, async {
-            let rows = sqlx::query(
+            let rows = sqlx::query(&format!(
                 "SELECT a.attempt_id, a.channel_id, a.message_id, c.dedupe_key, c.kind, \
-                 COALESCE((SELECT o.line FROM header_overrides o \
-                   WHERE o.dedupe_key = c.dedupe_key ORDER BY o.seq DESC LIMIT 1), \
-                   c.heading) AS heading \
+                 {IN_EFFECT} \
                  FROM delivery_attempts a JOIN reminder_cards c ON c.dedupe_key = a.dedupe_key \
                  WHERE a.state = 'bound' AND a.effect_kind = 'reminder' \
                  AND a.attempt_id IN (SELECT attempt_id FROM delivery_card_runs WHERE run_id = ?1) \
                  ORDER BY a.message_id",
-            )
+            ))
             .bind(run_id)
             .fetch_all(&mut *tx)
             .await
@@ -115,6 +139,7 @@ impl ReminderCardStore for SqliteStore {
                     record: CardRecord {
                         kind: row.try_get("kind").map_err(store_error)?,
                         heading: row.try_get("heading").map_err(store_error)?,
+                        slots: slots_of(row.try_get("slots").map_err(store_error)?),
                     },
                     dedupe_key: Some(row.try_get("dedupe_key").map_err(store_error)?),
                     test: false,
@@ -140,6 +165,7 @@ impl ReminderCardStore for SqliteStore {
                         record: CardRecord {
                             kind,
                             heading: None,
+                            slots: None,
                         },
                         dedupe_key: None,
                         test: true,
@@ -190,19 +216,22 @@ impl HeaderOverrideStore for SqliteStore {
         &self,
         dedupe_key: &str,
         line: &str,
+        slots: Option<&HeaderSlots>,
         actor: &str,
         at: DateTime<Utc>,
     ) -> Result<(), StoreError> {
         let at = instant(&at)?;
+        let slots = slots_text(slots)?;
         write_txn!(self, tx, async {
             sqlx::query(
-                "INSERT INTO header_overrides (dedupe_key, line, actor, created_at) \
-                 VALUES (?1, ?2, ?3, ?4)",
+                "INSERT INTO header_overrides (dedupe_key, line, actor, created_at, slots) \
+                 VALUES (?1, ?2, ?3, ?4, ?5)",
             )
             .bind(dedupe_key)
             .bind(line)
             .bind(actor)
             .bind(&at)
+            .bind(&slots)
             .execute(&mut *tx)
             .await
             .map_err(store_error)?;

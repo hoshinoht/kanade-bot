@@ -44,6 +44,7 @@ pub async fn create(config: &SqliteStoreConfig) {
 /// request ids, the later web-session columns, and the tables and columns
 /// from settings changes to owner pins.
 pub const LATE_SCHEMA_DROPS: &str = "
+    ALTER TABLE reminder_cards DROP COLUMN slots;
     ALTER TABLE extractions DROP COLUMN session_id;
     ALTER TABLE extractions DROP COLUMN request_ids;
     ALTER TABLE chat_interactions DROP COLUMN session_id;

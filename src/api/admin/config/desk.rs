@@ -476,6 +476,7 @@ impl ConfigDesk {
                 header_generation_time: crate::api::dto::hhmm(
                     settings.notifications.header_generation_time,
                 ),
+                header_estimates: settings.notifications.header_estimates,
             },
             self_service: dto::self_service(settings),
             persona,

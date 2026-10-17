@@ -6,14 +6,79 @@
 //! [`HeaderFacts`]; the names behind the placeholders stay here, and code
 //! fills them in after the gate. A stale estimate, a missing one or a card
 //! with no total at all sends no context, so the rewrite is today's.
+//!
+//! Every reader of a stored heading goes through [`resolve_heading`]: it
+//! re-checks the live switch and the card's party at each render (D6) and
+//! fills the placeholders, or falls back to the kind's seed, so no output
+//! ever carries an unfilled `{cN}`.
 
 use std::collections::BTreeMap;
+use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 
+use super::super::{CardContext, CardRecord, card_runs};
 use crate::bot::delivery::RunEstimate;
 use crate::chat::nudge::{BossFigures, HeaderFacts, OfferedSlot, safe_value};
 use crate::chat::persona::NudgeMood;
+use crate::domain::notify::IntentContent;
+use crate::runtime::logging;
+
+/// The header switches as configured now (Config › Notifications), read at
+/// every rewrite and render.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct HeaderSwitches {
+    /// `notifications.header_estimates` (D8, default off).
+    pub estimates: bool,
+}
+
+/// The live switches; `None` in a kit is all off.
+pub type HeaderSwitchSource = Arc<dyn Fn() -> HeaderSwitches + Send + Sync>;
+
+/// The line `record` shows on the card of `content` now: its heading with
+/// any placeholders filled, or `None` for the kind's seed (what
+/// `cards::build` draws without a heading). The seed is used when the line
+/// was written with estimates and the switch is now off, a slotted member
+/// is no longer in the card's party, the map is missing or unreadable for a
+/// line with a placeholder, or anything is left unfilled.
+pub fn resolve_heading(
+    record: &CardRecord,
+    content: &IntentContent,
+    ctx: &CardContext<'_>,
+    switches: HeaderSwitches,
+) -> Option<String> {
+    let heading = record.heading.as_deref()?;
+    let seed = |reason: &str| {
+        logging::log!(info, "header_seed_at_render", reason = reason);
+        None
+    };
+    let Some(slots) = &record.slots else {
+        return if heading.contains('{') || heading.contains('}') {
+            seed("no_slot_map")
+        } else {
+            Some(heading.to_owned())
+        };
+    };
+    if slots.used_estimates && !switches.estimates {
+        return seed("estimates_off");
+    }
+    let runs = match content {
+        IntentContent::DayOf { run_ids } => card_runs(ctx, run_ids),
+        IntentContent::Countdown { run_id, .. } => ctx.run(run_id).into_iter().collect(),
+        _ => Vec::new(),
+    };
+    let in_party = |member: &str| {
+        runs.iter()
+            .any(|run| run.participants.iter().any(|id| id == member))
+    };
+    if !slots.slots.iter().all(|slot| in_party(&slot.member_id)) {
+        return seed("left_party");
+    }
+    match slots.fill(heading) {
+        Some(line) => Some(line),
+        None => seed("unfilled"),
+    }
+}
 
 /// Top carriers offered per card (D3).
 pub const MAX_SLOTS: usize = 2;

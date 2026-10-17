@@ -325,14 +325,15 @@ where
         };
         let lock = edit_lock(&posted.message_id);
         let _held = lock.lock().await;
-        let heading = match &posted.dedupe_key {
+        let record = match &posted.dedupe_key {
             Some(key) => match self.store.card_record(key).await {
-                Ok(Some(record)) => record.heading,
-                Ok(None) => posted.record.heading.clone(),
+                Ok(Some(record)) => record,
+                Ok(None) => posted.record.clone(),
                 Err(_) => return false,
             },
-            None => posted.record.heading.clone(),
+            None => posted.record.clone(),
         };
+        let heading = cards::resolve_heading(&record, &content, &ctx, self.cards.switches());
         let Some(mut card) = cards::build(&content, &ctx, heading.as_deref(), &mentioned) else {
             return false;
         };

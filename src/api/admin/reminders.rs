@@ -42,8 +42,9 @@ use crate::{
     bot::delivery::{
         CachedEstimates,
         cards::{
-            Card, CardContext,
+            Card, CardContext, HeaderSwitches,
             chart::{self, Chart},
+            resolve_heading,
         },
         draw,
         preview::{posted, record_key, reminder_card, reminder_chart, reminder_intent},
@@ -168,7 +169,7 @@ async fn read<'a>(site: &'a Site, id: &str) -> Result<Read<'a>, ApiError> {
             .any(|run| run.id == run_id && run.datetime > now)
     };
     let mut run_started = !ahead(&run.id);
-    // What the card is built from: content, mentions and the heading line.
+    // What the card is built from: content, mentions and the stored record.
     let source = match (&reminder.sent_at, &reminder.message_id) {
         // Past its grace (unsent or retired): the tick retires it without posting.
         _ if row_state == ReminderState::Stale => None,
@@ -186,7 +187,7 @@ async fn read<'a>(site: &'a Site, id: &str) -> Result<Read<'a>, ApiError> {
             }
             posted_card.and_then(|card| {
                 let (content, mentions) = posted(&card, &cards)?;
-                Some((content, mentions, card.record.heading))
+                Some((content, mentions, Some(card.record)))
             })
         }
         // Retired without posting: no card was sent and none will be.
@@ -204,28 +205,31 @@ async fn read<'a>(site: &'a Site, id: &str) -> Result<Read<'a>, ApiError> {
         ) {
             None => None,
             Some(intent) => {
-                let heading = match record_key(&intent) {
-                    Some(key) => state
-                        .store
-                        .card_record(key)
-                        .await
-                        .map_err(unavailable)?
-                        .and_then(|record| record.heading),
+                let record = match record_key(&intent) {
+                    Some(key) => state.store.card_record(key).await.map_err(unavailable)?,
                     None => None,
                 };
-                Some((intent.content, intent.mentions, heading))
+                Some((intent.content, intent.mentions, record))
             }
         },
     };
     let mut card = None;
     let mut chart = None;
-    if let Some((content, mentions, heading)) = source
-        && let Some(built) = reminder_card(&content, &mentions, &cards, heading.as_deref())
-    {
-        if let Some(port) = estimates(state) {
-            chart = reminder_chart(&built, &content, &cards, &port, now).await;
+    let switches = HeaderSwitches {
+        estimates: settings.notifications.header_estimates,
+    };
+    if let Some((content, mentions, record)) = source {
+        // The line as the tick or the refresh edit would post it now.
+        let heading = record
+            .as_ref()
+            .and_then(|record| resolve_heading(record, &content, &cards, switches));
+        let stored = record.is_some_and(|record| record.heading.is_some());
+        if let Some(built) = reminder_card(&content, &mentions, &cards, heading.as_deref()) {
+            if let Some(port) = estimates(state) {
+                chart = reminder_chart(&built, &content, &cards, &port, now).await;
+            }
+            card = Some((built, stored));
         }
-        card = Some((built, heading.is_some()));
     }
     Ok(Read {
         ctx,

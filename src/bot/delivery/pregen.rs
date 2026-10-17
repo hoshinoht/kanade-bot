@@ -37,9 +37,10 @@ use tokio::time::MissedTickBehavior;
 
 use super::card_records::{digest_phrase_key, record_kind};
 use super::cards::{
-    CardContext, CardKit, CardRecord, DAY_OF_KIND, DigestPhraseStore, HeadingSource, PhraseKind,
-    ReminderCardStore, card_runs,
+    CardContext, CardKit, CardRecord, DAY_OF_KIND, DigestPhraseStore, HeaderContext, HeadingSource,
+    PhraseKind, ReminderCardStore, card_runs,
 };
+use super::estimates::header_context;
 use super::preview::{record_key, reminder_intent};
 use super::refresh::Now;
 use crate::bot::commands::text::local_day;
@@ -100,6 +101,8 @@ struct Candidate {
     key: String,
     targets: Vec<DeliveryTarget>,
     header: Header,
+    /// The card's content (day-of and countdown), for estimate context.
+    content: Option<IntentContent>,
 }
 
 /// A digest week that has neither a posted card nor a marker at or past it.
@@ -393,6 +396,7 @@ where
                     key,
                     targets: vec![DeliveryTarget::Digest(next)],
                     header: Header::Digest { week: next },
+                    content: None,
                 });
             }
         }
@@ -445,6 +449,7 @@ where
             key,
             targets: intent.targets,
             header,
+            content: Some(intent.content),
         })
     }
 
@@ -494,6 +499,25 @@ where
         }
     }
 
+    /// The estimate context of a day-of or countdown card (see
+    /// [`header_context`]); `None` for a digest or on a read error.
+    async fn context_for(&self, candidate: &Candidate) -> Option<HeaderContext> {
+        let content = candidate.content.as_ref()?;
+        let schedule = self.store.load(&Scope::All).await.ok()?;
+        let ctx = CardContext {
+            schedule: &schedule,
+            attendance: self.policy.attendance,
+            zone: self.policy.zone(),
+            quiet: false,
+            members: &*self.members,
+            catalog: self.cards.catalog.as_deref(),
+            style: self.cards.style(),
+            marks: &self.cards.marks,
+            v2: None,
+        };
+        header_context(content, &ctx, &self.cards).await
+    }
+
     /// Rewrite and store insert-if-absent.
     async fn generate(
         &self,
@@ -504,13 +528,15 @@ where
         let heading = &self.cards.heading;
         let catalog = self.cards.catalog.as_deref();
         let key = candidate.key.as_str();
+        let context = self.context_for(candidate).await;
+        let context = context.as_ref();
         // Stop ends only the model call, inside the trial so its row is logged
         // (`shutdown`); the store work below finishes unless serve aborts the
         // worker at its shutdown cutoff, which rolls the save back whole.
         let chosen = match &candidate.header {
             Header::DayOf { day } => {
                 heading
-                    .choose(day, key, stage, PREGEN_DEADLINE, stop, None)
+                    .choose(day, key, stage, PREGEN_DEADLINE, stop, context)
                     .await
             }
             Header::Countdown { .. } => {
@@ -522,7 +548,7 @@ where
                         stage,
                         PREGEN_DEADLINE,
                         stop,
-                        None,
+                        context,
                     )
                     .await
             }
@@ -574,6 +600,7 @@ where
                 let record = CardRecord {
                     kind,
                     heading: Some(line),
+                    slots: chosen.slots,
                 };
                 self.store
                     .save_card_record(&candidate.key, &record, at)

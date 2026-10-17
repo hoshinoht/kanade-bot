@@ -291,6 +291,10 @@
               "description": "HH:MM in the guild's zone: when the daily reminder-header rewrite batch runs (default 00:00). Always sent by the server; optional so earlier fixtures stay valid.",
               "type": "string",
               "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$"
+            },
+            "header_estimates": {
+              "description": "Day-of and countdown header rewrites (redesigned style) may use the party's estimate totals and name top carriers through placeholders Kanade fills in afterwards (names are never sent to the model). Default false; turning it off makes every later render use the seed line. Always sent by the server; optional so earlier fixtures stay valid. Writable through PATCH notifications.header_estimates (boolean).",
+              "type": "boolean"
             }
           }
         },

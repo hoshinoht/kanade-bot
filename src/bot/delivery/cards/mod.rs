@@ -37,9 +37,10 @@ pub use day_of::{card_runs, day_of_card};
 pub use digest::{DIGEST_EMPTY, DIGEST_FOOTER, digest_card};
 pub use heading::{
     COUNTDOWN_PHRASE_SEED, Chosen, DAY_OF_HEADING_SEED, DIGEST_PHRASE_SEED, HeaderContext,
-    HeaderKind, HeaderLine, HeaderSlots, HeadingRewrite, HeadingSource, MAX_SLOTS, PersonaSource,
-    PhraseKind, PhraseRejection, SlotFill, SlotRule, StoredSlot, Trial, TrialOrigin, Verdict,
-    accept_header_with, accept_phrase, accept_phrase_with, failure_reason, seed_heading,
+    HeaderKind, HeaderLine, HeaderSlots, HeaderSwitchSource, HeaderSwitches, HeadingRewrite,
+    HeadingSource, MAX_SLOTS, PersonaSource, PhraseKind, PhraseRejection, SlotFill, SlotRule,
+    StoredSlot, Trial, TrialOrigin, Verdict, accept_header_with, accept_phrase, accept_phrase_with,
+    failure_reason, resolve_heading, seed_heading,
 };
 #[cfg(any(test, feature = "test-support"))]
 pub use record::HeaderHistory;
@@ -133,6 +134,8 @@ pub struct CardKit {
     /// The cached estimates behind the redesigned run cards' share chart;
     /// `None` (module `character_data` or its estimates off) posts none.
     pub estimates: Option<Arc<dyn crate::bot::delivery::PartyEstimates>>,
+    /// The live header switches (Config › Notifications); `None` is all off.
+    pub switches: Option<HeaderSwitchSource>,
 }
 
 impl CardKit {
@@ -141,6 +144,13 @@ impl CardKit {
         self.style
             .as_ref()
             .map_or(MessageStyle::Classic, |style| style())
+    }
+
+    /// The header switches as configured now.
+    pub fn switches(&self) -> HeaderSwitches {
+        self.switches
+            .as_ref()
+            .map_or_else(HeaderSwitches::default, |switches| switches())
     }
 
     /// When runs end now under `policy`; `None` without live run lengths.

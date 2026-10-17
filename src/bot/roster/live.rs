@@ -102,4 +102,8 @@ impl Directory for LiveRoster {
     fn is_watched(&self, channel_id: &str) -> bool {
         parse_id(channel_id).is_some_and(|id| self.cache.is_watched(id))
     }
+
+    fn profile(&self, user_id: &str) -> Option<MemberProfile> {
+        LiveRoster::profile(self, user_id)
+    }
 }

@@ -106,6 +106,15 @@ pub trait Directory {
     fn display_name(&self, user_id: &str) -> Option<String> {
         self.member(user_id)?.name().map(str::to_owned)
     }
+
+    /// The member's stored row when the directory holds one (aliases and
+    /// all), else just their roster entry.
+    fn profile(&self, user_id: &str) -> Option<MemberProfile> {
+        self.member(user_id).map(|member| MemberProfile {
+            member,
+            ..MemberProfile::default()
+        })
+    }
 }
 
 /// A persisted `members` row: the roster entry plus what the portal edits
@@ -235,6 +244,10 @@ impl<T: Directory + ?Sized> Directory for &T {
 
     fn display_name(&self, user_id: &str) -> Option<String> {
         (**self).display_name(user_id)
+    }
+
+    fn profile(&self, user_id: &str) -> Option<MemberProfile> {
+        (**self).profile(user_id)
     }
 }
 

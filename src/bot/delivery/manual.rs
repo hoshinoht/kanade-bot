@@ -24,11 +24,12 @@ use tokio::sync::{Notify, watch};
 
 use super::card_records::digest_phrase_key;
 use super::cards::{
-    DAY_OF_KIND, DigestPhraseStore, HeaderOverrideStore, HeadingSource, PhraseKind, PostedCard,
-    ReminderCardStore, card_runs,
+    DAY_OF_KIND, DigestPhraseStore, HeaderContext, HeaderOverrideStore, HeadingSource, PhraseKind,
+    PostedCard, ReminderCardStore, card_runs,
 };
+use super::estimates::header_context;
 use super::pregen::PREGEN_DEADLINE;
-use super::refresh::CardRefresh;
+use super::refresh::{CardRefresh, posted_content};
 use crate::bot::commands::text::local_day;
 use crate::bot::ids::parse_id;
 use crate::bot::mentions;
@@ -395,13 +396,18 @@ where
             }
             replied.store(false, Ordering::Relaxed);
             let key = target.key();
+            let context = match target {
+                Target::Card { card, .. } => self.context_for(card).await,
+                Target::Digest { .. } => None,
+            };
+            let context = context.as_ref();
             let chosen = match target {
                 Target::Card {
                     header: Header::DayOf { day },
                     ..
                 } => {
                     heading
-                        .choose(day, key, stage, PREGEN_DEADLINE, Some(stop), None)
+                        .choose(day, key, stage, PREGEN_DEADLINE, Some(stop), context)
                         .await
                 }
                 Target::Card { .. } | Target::Digest { .. } => {
@@ -411,7 +417,15 @@ where
                         PhraseKind::Countdown
                     };
                     heading
-                        .choose_phrase(kind, catalog, key, stage, PREGEN_DEADLINE, Some(stop), None)
+                        .choose_phrase(
+                            kind,
+                            catalog,
+                            key,
+                            stage,
+                            PREGEN_DEADLINE,
+                            Some(stop),
+                            context,
+                        )
                         .await
                 }
             };
@@ -431,7 +445,13 @@ where
             if self
                 .refresh
                 .store
-                .override_header(key, &chosen.line, &job.request.actor, at)
+                .override_header(
+                    key,
+                    &chosen.line,
+                    chosen.slots.as_ref(),
+                    &job.request.actor,
+                    at,
+                )
                 .await
                 .is_err()
             {
@@ -445,6 +465,15 @@ where
             }
         }
         report
+    }
+
+    /// The estimate context of a posted card's rewrite, as pre-generation
+    /// builds it ([`header_context`]); `None` on a read error.
+    async fn context_for(&self, card: &PostedCard) -> Option<HeaderContext> {
+        let content = posted_content(card)?;
+        let schedule = self.refresh.store.load(&Scope::All).await.ok()?;
+        let ctx = self.refresh.context(&schedule);
+        header_context(&content, &ctx, &self.refresh.cards).await
     }
 
     /// Edit the post through the refresh path, which re-reads the stored

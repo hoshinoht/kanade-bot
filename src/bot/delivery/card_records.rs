@@ -98,6 +98,7 @@ fn seed_record(
     Some(CardRecord {
         kind: kind.to_owned(),
         heading: Some(heading),
+        slots: None,
     })
 }
 

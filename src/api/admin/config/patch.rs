@@ -138,7 +138,7 @@ pub fn section(body: &Value) -> Result<(&str, &Map<String, Value>), PatchError> 
                 )
                 | (
                     "notifications",
-                    "quiet_mode" | "message_style" | "header_generation_time"
+                    "quiet_mode" | "message_style" | "header_generation_time" | "header_estimates"
                 )
                 | ("self_service", "mode" | "public_portal")
                 | ("persona", "active" | "visibility" | "role_profiles")
@@ -536,6 +536,9 @@ pub fn notifications(
             value,
             "The header generation time is HH:MM, for example 03:30.",
         )?;
+    }
+    if let Some(value) = body.get("header_estimates") {
+        next.header_estimates = flag(value, "notifications.header_estimates")?;
     }
     Ok(next)
 }

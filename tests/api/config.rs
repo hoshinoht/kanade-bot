@@ -2720,7 +2720,7 @@ async fn account_reply_style_shows_role_overrides_and_the_saved_public_choice() 
 #[tokio::test]
 async fn notification_fields_save_live_record_only_their_row_and_refuse_bad_values() {
     let config = Config::new().await;
-    let notifications = |quiet: bool, style: &str, header: &str| json!({"quiet_mode": quiet, "message_style": style, "header_generation_time": header});
+    let notifications = |quiet: bool, style: &str, header: &str| json!({"quiet_mode": quiet, "message_style": style, "header_generation_time": header, "header_estimates": false});
     let defaults = notifications(false, "classic", "00:00");
     assert_eq!(config.get().await["notifications"], defaults, "defaults");
     let clock = "The header generation time is HH:MM, for example 03:30.";
@@ -2784,6 +2784,33 @@ async fn notification_fields_save_live_record_only_their_row_and_refuse_bad_valu
     assert_eq!(
         back["notifications"],
         notifications(true, "classic", "03:30")
+    );
+    // Estimates in reminder headers: off by default, a boolean, saved live.
+    let mut changes = config.desk.subscribe();
+    let on = config
+        .patch(json!({"notifications": {"header_estimates": true}}))
+        .await;
+    assert_eq!(on["notifications"]["header_estimates"], true);
+    assert!(
+        changes
+            .borrow_and_update()
+            .settings
+            .notifications
+            .header_estimates
+    );
+    let recorded = &config.changes().await[0];
+    assert_eq!(
+        recorded.values.keys().collect::<Vec<_>>(),
+        [keys::HEADER_ESTIMATES]
+    );
+    for bad in [json!("yes"), json!(1)] {
+        config
+            .invalid(json!({"notifications": {"header_estimates": bad}}))
+            .await;
+    }
+    assert_eq!(
+        config.get().await["notifications"]["header_estimates"],
+        true
     );
 }
 

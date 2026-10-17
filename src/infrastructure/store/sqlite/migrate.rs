@@ -183,6 +183,10 @@ const MIGRATIONS: &[Migration] = &[
         version: 42,
         sql: include_str!("migrations/0042_guides.sql"),
     },
+    Migration {
+        version: 43,
+        sql: include_str!("migrations/0043_header_slots.sql"),
+    },
 ];
 
 /// The migration that adds `change_fields`, which is backfilled from the
@@ -340,7 +344,7 @@ mod tests {
             .connect()
             .await
             .expect("reopen");
-        assert_eq!(verify(&mut conn).await.expect("verified ledger"), 42);
+        assert_eq!(verify(&mut conn).await.expect("verified ledger"), 43);
         conn
     }
 
@@ -394,7 +398,7 @@ mod tests {
             "v35 refuses the new kind",
         )
         .await;
-        assert_eq!(apply(&mut conn).await.expect("0036"), 42);
+        assert_eq!(apply(&mut conn).await.expect("0036"), 43);
         let kept: Vec<String> = sqlx::query_scalar(
             "SELECT seq || '|' || at || '|' || realm || '|' || event || '|' \
              || coalesce(actor, '-') || '|' || coalesce(method, '-') || '|' \
@@ -466,7 +470,7 @@ mod tests {
         )
         .await
         .expect("v28 row");
-        assert_eq!(apply(&mut conn).await.expect("0029"), 42);
+        assert_eq!(apply(&mut conn).await.expect("0029"), 43);
         let old: Option<String> =
             sqlx::query_scalar("SELECT prompt FROM rewrites WHERE id = 'w-1'")
                 .fetch_one(&mut conn)
@@ -515,7 +519,7 @@ mod tests {
         )
         .await
         .expect("v27 rows");
-        assert_eq!(apply(&mut conn).await.expect("0028"), 42);
+        assert_eq!(apply(&mut conn).await.expect("0028"), 43);
         // Each row's columns, joined, as 0027 stored them.
         let kept: Vec<String> = sqlx::query_scalar(
             "SELECT id || '|' || stage || '|' || verdict || '|' || coalesce(rule, '-') || '|' \
@@ -585,7 +589,7 @@ mod tests {
         )
         .await
         .expect("v23 rows");
-        assert_eq!(apply(&mut conn).await.expect("additive"), 42);
+        assert_eq!(apply(&mut conn).await.expect("additive"), 43);
         let old: (
             Option<String>,
             Option<String>,
@@ -637,7 +641,7 @@ mod tests {
         let mut conn = memory_at(20, false).await;
         let insert = "INSERT INTO extractions (id, at, member_ids, model, reasoning, prompt, raw_response, request_count, outcome, guardrail, message_ids, proposal_ids";
         conn.execute(format!("{insert}) VALUES ('old', '2026-09-01T00:00:00+00:00', '[]', 'm', 'low', 'p', 'r', 1, 'unknown', '{{}}', '[]', '[]')").as_str()).await.expect("old row");
-        assert_eq!(apply(&mut conn).await.expect("additive"), 42);
+        assert_eq!(apply(&mut conn).await.expect("additive"), 43);
         let old: (String, Option<String>, Option<i64>) = sqlx::query_as("SELECT reasoning, reasoning_content, reasoning_tokens FROM extractions WHERE id = 'old'").fetch_one(&mut conn).await.expect("old row preserved");
         assert_eq!(old, ("low".into(), None, None));
         for (id, text, count, valid) in [
@@ -672,7 +676,7 @@ mod tests {
         )
         .await
         .expect("v14 rows");
-        assert_eq!(apply(&mut conn).await.expect("remaining migrations"), 42);
+        assert_eq!(apply(&mut conn).await.expect("remaining migrations"), 43);
         let kept = "SELECT COUNT(*) FROM extractions e JOIN extraction_members m \
                     ON m.extraction_id = e.id WHERE e.id = 'x-1' AND e.refusals = '[]'";
         assert_eq!(count(&mut conn, kept).await, 1);
@@ -719,7 +723,7 @@ mod tests {
         .await
         .expect("v17 cards");
 
-        assert_eq!(apply(&mut conn).await.expect("v18"), 42);
+        assert_eq!(apply(&mut conn).await.expect("v18"), 43);
         let rows: Vec<(String, Option<String>)> =
             sqlx::query_as("SELECT kind, heading FROM reminder_cards ORDER BY dedupe_key")
                 .fetch_all(&mut conn)
@@ -733,7 +737,7 @@ mod tests {
             ]
         );
         conn.execute(
-            "INSERT INTO reminder_cards VALUES \
+            "INSERT INTO reminder_cards (dedupe_key, kind, heading, created_at) VALUES \
              ('cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc', \
               'countdown_60', 'Onward!', 'then')",
         )
@@ -803,7 +807,7 @@ mod tests {
         .await
         .expect("v18 rows");
 
-        assert_eq!(apply(&mut conn).await.expect("v19"), 42);
+        assert_eq!(apply(&mut conn).await.expect("v19"), 43);
         let usage = "prompt_tokens IS NULL AND completion_tokens IS NULL \
             AND prompt_estimate IS NULL";
         let unreported: i64 = sqlx::query_scalar(&format!(
@@ -938,7 +942,7 @@ mod tests {
         )
         .await
         .expect("v15 rows");
-        assert_eq!(apply(&mut conn).await.expect("0016+"), 42);
+        assert_eq!(apply(&mut conn).await.expect("0016+"), 43);
         let row = sqlx::query(
             "SELECT c.persona, c.profile, c.profile_source, c.error_code, r.route, r.clean, \
              r.model FROM chat_interactions c JOIN chat_rounds r ON r.interaction_id = c.id",
@@ -1009,7 +1013,7 @@ mod tests {
         )
         .await
         .expect("v21 rows");
-        assert_eq!(apply(&mut conn).await.expect("0022"), 42);
+        assert_eq!(apply(&mut conn).await.expect("0022"), 43);
         let rows: Vec<(String, String, i64, i64, String, Option<String>)> = sqlx::query_as(
             "SELECT id, outcome, clean_retry, withheld, guardrail, persona \
              FROM chat_interactions ORDER BY id",
@@ -1115,7 +1119,7 @@ mod tests {
             .fetch_one(&mut conn)
             .await
             .expect("before");
-        assert_eq!(apply(&mut conn).await.expect("0041"), 42);
+        assert_eq!(apply(&mut conn).await.expect("0041"), 43);
         let after: String = sqlx::query_scalar(picks)
             .fetch_one(&mut conn)
             .await
@@ -1201,7 +1205,7 @@ mod tests {
             .fetch_one(&mut conn)
             .await
             .expect("before");
-        assert_eq!(apply(&mut conn).await.expect("0042"), 42);
+        assert_eq!(apply(&mut conn).await.expect("0042"), 43);
         let after: String = sqlx::query_scalar(kept)
             .fetch_one(&mut conn)
             .await
@@ -1304,12 +1308,60 @@ mod tests {
         no_fk_violations(&mut conn).await;
     }
 
+    /// 0043 gives card records and header overrides a nullable slot map:
+    /// existing rows keep their line with no map, and a map must be JSON.
+    #[tokio::test]
+    async fn migration_43_adds_header_slot_maps() {
+        let mut conn = memory_at(42, true).await;
+        let key = "a".repeat(64);
+        conn.execute(
+            format!(
+                "INSERT INTO reminder_cards (dedupe_key, kind, heading, created_at) \
+                 VALUES ('{key}', 'day_of', 'Today — Mon 31 Aug', 't');
+                 INSERT INTO header_overrides (dedupe_key, line, actor, created_at) \
+                 VALUES ('{key}', 'Rise — Mon 31 Aug', 'admin:token', 't');"
+            )
+            .as_str(),
+        )
+        .await
+        .expect("v42 rows");
+        assert_eq!(apply(&mut conn).await.expect("0043"), 43);
+        let kept = "SELECT (SELECT heading || '|' || coalesce(slots, '-') FROM reminder_cards) \
+                    || ';' || (SELECT line || '|' || coalesce(slots, '-') FROM header_overrides)";
+        let after: String = sqlx::query_scalar(kept)
+            .fetch_one(&mut conn)
+            .await
+            .expect("after");
+        assert_eq!(after, "Today — Mon 31 Aug|-;Rise — Mon 31 Aug|-");
+        let other = "b".repeat(64);
+        conn.execute(
+            format!(
+                "INSERT INTO reminder_cards (dedupe_key, kind, heading, created_at, slots) \
+                 VALUES ('{other}', 'countdown_60', 'Go {{c1}}!', 't', \
+                 '{{\"slots\":[],\"used_estimates\":true}}')"
+            )
+            .as_str(),
+        )
+        .await
+        .expect("a slot map");
+        refused(
+            &mut conn,
+            &format!(
+                "INSERT INTO header_overrides (dedupe_key, line, actor, created_at, slots) \
+                 VALUES ('{other}', 'Go {{c1}}!', 'a', 't', 'not json')"
+            ),
+            "a slot map is JSON",
+        )
+        .await;
+        no_fk_violations(&mut conn).await;
+    }
+
     /// Shipped migrations are frozen byte for byte: a deployed store refuses
     /// to open when an applied migration's checksum changes (a comment edit
     /// once took production down). Append new versions; never edit old ones.
     #[test]
     fn shipped_migrations_never_change() {
-        const SHIPPED: [&str; 42] = [
+        const SHIPPED: [&str; 43] = [
             "af627f54aca2d991cbf018410782ad8694b9a2d0ef681424e2e2c426d33884a1",
             "a73db1e033e3093c46928dde2f9bc8d97578b967acbc387d35a5224758237521",
             "4273dc1f916a8b2e36f3479b00aee8f3015ef5aacdd0f5a28d390011a2d7dda8",
@@ -1352,6 +1404,7 @@ mod tests {
             "3d08e71e52a20fb4e99014a94974327d7a69f5b7898883aa56e01c6e52d87902",
             "41fae3f4afe5d86075d759e1c98abe33fcaf68c64fbbd07519081c220ea7dfb2",
             "028dc55d5bf3f405d8a2ce1ba87ef5be4e03190d052fa8955d9b6bdb75c8c125",
+            "233c2c8e86bd54cfe686ecd943073175db873fcd37a564c7a38bdd4b90860088",
         ];
         // Index `i` holds version `i + 1`.
         for (version, sum) in (1_i64..).zip(SHIPPED) {

@@ -113,6 +113,9 @@ pub struct Notifications {
     /// `HH:MM` in the guild's zone: when the daily reminder-header rewrite
     /// batch runs.
     pub header_generation_time: String,
+    /// Day-of and countdown header rewrites may use the party's estimate
+    /// totals and name top carriers (filled in by Kanade, never sent).
+    pub header_estimates: bool,
 }
 
 #[derive(Clone, Debug, Serialize)]

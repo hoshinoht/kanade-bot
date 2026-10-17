@@ -208,6 +208,7 @@ async fn post_morning(
     let record = CardRecord {
         kind: "day_of".into(),
         heading: Some(heading.into()),
+        slots: None,
     };
     reads
         .store

@@ -30,7 +30,7 @@ pub use debug::{
 pub use declines::DeclineReport;
 pub use estimates::{
     CHART_DEADLINE, CachedEstimates, EstimateFuture, MAX_ATTACHMENTS, MAX_CHART_BYTES,
-    PartyEstimates, RunEstimate, attach_chart, chart_for, draw, read_estimates,
+    PartyEstimates, RunEstimate, attach_chart, chart_for, draw, header_context, read_estimates,
 };
 pub use executor::{Executor, Replacement, SendFailure, SendOutcome, SendReport};
 pub use manual::{ManualReport, ManualRequest, ManualRewrite, ManualStart};

@@ -3,12 +3,13 @@
 //! same card: its kind and saved header (day-of heading or short phrase).
 //! A manual rewrite appends an override (migration 0028): every read of a
 //! record or digest phrase returns the latest override instead of the
-//! original line, which is kept.
-
-use std::future::Future;
+//! original line, which is kept. A line written with estimate context keeps
+//! its `{cN}` placeholders and carries its slot map (migration 0043); only
+//! [`super::resolve_heading`] turns it into the posted line.
 
 use chrono::{DateTime, Utc};
 
+use super::HeaderSlots;
 use crate::domain::scheduler::StoreError;
 
 /// The record kind of a day-of card; countdowns use their reminder kind
@@ -20,8 +21,11 @@ pub struct CardRecord {
     /// `day_of` or `countdown_<minutes>`.
     pub kind: String,
     /// Day-of heading without framing, or the short countdown phrase; the
-    /// latest manual override when one exists.
+    /// latest manual override when one exists. May hold `{cN}`: read it
+    /// through [`super::resolve_heading`].
     pub heading: Option<String>,
+    /// The slot map stored with `heading` (the override's with an override).
+    pub slots: Option<HeaderSlots>,
 }
 
 /// A bound reminder card with a record.
@@ -83,11 +87,13 @@ pub trait DigestPhraseStore: Send + Sync {
 /// override of a key is what [`ReminderCardStore`] and [`DigestPhraseStore`]
 /// read back; the original line stays as history.
 pub trait HeaderOverrideStore: Send + Sync {
-    /// Append `line` (non-blank, at most 1 KiB) for `dedupe_key` by `actor`.
+    /// Append `line` (non-blank, at most 1 KiB) for `dedupe_key` by `actor`,
+    /// with the slot map of a line written with estimate context.
     fn override_header(
         &self,
         dedupe_key: &str,
         line: &str,
+        slots: Option<&HeaderSlots>,
         actor: &str,
         at: DateTime<Utc>,
     ) -> impl Future<Output = Result<(), StoreError>> + Send;

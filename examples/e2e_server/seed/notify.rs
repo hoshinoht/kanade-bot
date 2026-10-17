@@ -85,11 +85,13 @@ fn card_record(
             Some(CardRecord {
                 kind: DAY_OF_KIND.into(),
                 heading: Some(seed_heading(&local_day(first, seed.state.policy.zone()))),
+                slots: None,
             })
         }
         IntentContent::Countdown { minutes, .. } => Some(CardRecord {
             kind: format!("countdown_{minutes}"),
             heading: Some(PhraseKind::Countdown.seed().into()),
+            slots: None,
         }),
         _ => None,
     }

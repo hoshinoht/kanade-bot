@@ -29,7 +29,7 @@ type ClaimResultHook = Arc<dyn Fn() -> Pin<Box<dyn Future<Output = ()> + Send>> 
 
 use super::alerts::{AdminAlert, AlertSink, AlertThrottle};
 use super::card_records;
-use super::cards::{CardContext, CardKit, DigestPhraseStore, ReminderCardStore};
+use super::cards::{CardContext, CardKit, DigestPhraseStore, ReminderCardStore, resolve_heading};
 use super::estimates::attach_chart;
 use super::executor::{Executor, Replacement, SendFailure, SendOutcome, SendReport};
 use super::notices::NoticeReport;
@@ -1046,9 +1046,15 @@ where
                         report.deferred += 1;
                         continue;
                     };
-                    let heading = record.heading.as_deref();
-                    let mut message =
-                        render(&send.intent, &ctx, heading, self.cards.art.as_ref()).await;
+                    let heading =
+                        resolve_heading(&record, &send.intent.content, &ctx, self.cards.switches());
+                    let mut message = render(
+                        &send.intent,
+                        &ctx,
+                        heading.as_deref(),
+                        self.cards.art.as_ref(),
+                    )
+                    .await;
                     attach_chart(&mut message, &send.intent.content, &ctx, &self.cards, now).await;
                     message
                 }

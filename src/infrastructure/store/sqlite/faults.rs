@@ -282,6 +282,7 @@ mod tests {
         let record = CardRecord {
             kind: "day_of".into(),
             heading: None,
+            slots: None,
         };
         store.fail_next_card_record_read();
         store.fail_next_card_record_read();

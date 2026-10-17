@@ -243,6 +243,10 @@ pub struct Notifications {
     /// When the daily reminder-header rewrite batch runs, in the guild's
     /// zone (`v5.header_generation_time`, default 00:00).
     pub header_generation_time: NaiveTime,
+    /// Day-of and countdown header rewrites (redesigned style) may use the
+    /// party's estimate totals and name top carriers through placeholders
+    /// (`v5.header_estimates`, default off).
+    pub header_estimates: bool,
 }
 
 /// How the bot's Discord posts look (`v5.message_style`). Presentation only:

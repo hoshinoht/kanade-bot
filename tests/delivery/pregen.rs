@@ -353,6 +353,7 @@ async fn a_stored_line_is_never_rewritten() {
             &CardRecord {
                 kind: "countdown_15".into(),
                 heading: Some("Onward!".into()),
+                slots: None,
             },
             now(),
         )

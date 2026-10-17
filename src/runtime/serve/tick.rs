@@ -24,8 +24,8 @@ use crate::{
             DEFAULT_MAX_SENDS_PER_TICK, Delivery, DeliveryConfig, DeliveryError, LogAlerts,
             TickReport,
             cards::{
-                ArtSource, CardKit, DifficultyMarks, HeadingRewrite, PersonaSource, PortalSwitch,
-                StyleSource, V2Kit,
+                ArtSource, CardKit, DifficultyMarks, HeaderSwitchSource, HeaderSwitches,
+                HeadingRewrite, PersonaSource, PortalSwitch, StyleSource, V2Kit,
             },
         },
         gateway::DeliveryEligibility,
@@ -194,6 +194,11 @@ pub fn card_kit(
         Arc::new(move || portal.borrow().settings.self_service.public_portal);
     // The live run lengths, read per digest re-render (runs past their end).
     let lengths = settings.clone();
+    // The live header switches, read per rewrite and per render (D6/D8).
+    let switch = settings.clone();
+    let switches: HeaderSwitchSource = Arc::new(move || HeaderSwitches {
+        estimates: switch.borrow().settings.notifications.header_estimates,
+    });
     // The live profanity list, read per rewrite like chat reads it per question.
     let live = settings.clone();
     let words: WordSource = Arc::new(move || {
@@ -245,6 +250,7 @@ pub fn card_kit(
         })),
         // Set by the Discord side while both modules are on.
         estimates: None,
+        switches: Some(switches),
     }
 }
 

@@ -44,10 +44,12 @@ pub const MESSAGE_STYLE: &str = "v5.message_style";
 pub const HEADER_GENERATION_TIME: &str = "v5.header_generation_time";
 /// Days until a scouter estimate is stale (module `character_data`).
 pub const ESTIMATE_DAYS: &str = "v5.estimate_days";
+/// Day-of and countdown header rewrites may use party estimates (off).
+pub const HEADER_ESTIMATES: &str = "v5.header_estimates";
 
 /// Every settings key. Other `config` rows (the digest marker, v4
 /// bookkeeping) are never read or written through the settings port.
-pub const ALL: [&str; 34] = [
+pub const ALL: [&str; 35] = [
     DAY_OF_PING_TIME,
     COUNTDOWN_MINUTES,
     PAUSED,
@@ -82,6 +84,7 @@ pub const ALL: [&str; 34] = [
     MESSAGE_STYLE,
     HEADER_GENERATION_TIME,
     ESTIMATE_DAYS,
+    HEADER_ESTIMATES,
 ];
 
 pub fn is_setting(key: &str) -> bool {

@@ -13,7 +13,10 @@ use std::time::Duration;
 
 use tokio::sync::watch;
 
-pub use context::{HeaderContext, HeaderSlots, MAX_SLOTS, SlotFill, StoredSlot};
+pub use context::{
+    HeaderContext, HeaderSlots, HeaderSwitchSource, HeaderSwitches, MAX_SLOTS, SlotFill,
+    StoredSlot, resolve_heading,
+};
 
 use crate::chat::nudge::{
     NudgeRewriter, Rejection, RewriteAttempt, RewriteDetail, RewriteFailure, RewritePrompt,

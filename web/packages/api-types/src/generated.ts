@@ -1856,7 +1856,12 @@ export type Notifications = { quiet_mode: boolean, message_style: MessageStyle,
  * `HH:MM` in the guild's zone: when the daily reminder-header rewrite
  * batch runs.
  */
-header_generation_time: string, };
+header_generation_time: string, 
+/**
+ * Day-of and countdown header rewrites may use the party's estimate
+ * totals and name top carriers (filled in by Kanade, never sent).
+ */
+header_estimates: boolean, };
 
 export type SelfServiceSettings = { mode: SelfServiceMode, effective_mode: SelfServiceMode, public_portal: boolean, };
 

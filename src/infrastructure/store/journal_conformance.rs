@@ -720,6 +720,7 @@ async fn replay_cards_keep_all_mappings_but_select_fresh_evidence<
             &CardRecord {
                 kind: "day_of".into(),
                 heading: None,
+                slots: None,
             },
             at(7),
         )
@@ -962,6 +963,7 @@ async fn reminder_card_records_are_written_once_and_found_when_bound<
     let first = CardRecord {
         kind: "day_of".into(),
         heading: Some("Today — Mon 31 Aug".into()),
+        slots: None,
     };
     assert_eq!(store.card_record(key.as_str()).await.expect("read"), None);
     let saved = store
@@ -972,6 +974,7 @@ async fn reminder_card_records_are_written_once_and_found_when_bound<
     let second = CardRecord {
         kind: "day_of".into(),
         heading: Some("Rise and shine — Mon 31 Aug".into()),
+        slots: None,
     };
     assert_eq!(
         store
@@ -988,6 +991,7 @@ async fn reminder_card_records_are_written_once_and_found_when_bound<
             CardRecord {
                 kind: "digest".into(),
                 heading: None,
+                slots: None,
             },
         ),
     ] {
@@ -1000,6 +1004,7 @@ async fn reminder_card_records_are_written_once_and_found_when_bound<
     let countdown = CardRecord {
         kind: "countdown_60".into(),
         heading: Some("Onward!".into()),
+        slots: None,
     };
     assert_eq!(
         store
@@ -1011,6 +1016,7 @@ async fn reminder_card_records_are_written_once_and_found_when_bound<
     let changed_phrase = CardRecord {
         kind: "countdown_60".into(),
         heading: Some("Waku waku!".into()),
+        slots: None,
     };
     assert_eq!(
         store
@@ -1106,6 +1112,7 @@ async fn header_overrides_win_over_the_kept_original<
     let original = CardRecord {
         kind: "day_of".into(),
         heading: Some("Today — Mon 31 Aug".into()),
+        slots: None,
     };
     store
         .save_card_record(key, &original, at(8))
@@ -1117,13 +1124,14 @@ async fn header_overrides_win_over_the_kept_original<
     let rewritten = |line: &str| CardRecord {
         kind: "day_of".into(),
         heading: Some(line.into()),
+        slots: None,
     };
     store
-        .override_header(key, "Kanade is up — Mon 31 Aug", "admin:1", at(9))
+        .override_header(key, "Kanade is up — Mon 31 Aug", None, "admin:1", at(9))
         .await
         .expect("override");
     store
-        .override_header(key, "Up and at 'em — Mon 31 Aug", "member:2", at(9))
+        .override_header(key, "Up and at 'em — Mon 31 Aug", None, "member:2", at(9))
         .await
         .expect("second override");
     let latest = rewritten("Up and at 'em — Mon 31 Aug");
@@ -1155,7 +1163,7 @@ async fn header_overrides_win_over_the_kept_original<
     for (bad_key, line, actor) in &refused {
         assert!(
             store
-                .override_header(bad_key, line, actor, at(10))
+                .override_header(bad_key, line, None, actor, at(10))
                 .await
                 .is_err(),
             "{bad_key} {line:?} {actor:?} is refused"
@@ -1180,7 +1188,7 @@ async fn header_overrides_win_over_the_kept_original<
         .await
         .expect("phrase");
     store
-        .override_header(digest, "Waku waku!", "admin:1", at(9))
+        .override_header(digest, "Waku waku!", None, "admin:1", at(9))
         .await
         .expect("digest override");
     assert_eq!(
@@ -1204,7 +1212,7 @@ async fn header_overrides_win_over_the_kept_original<
     // A legacy digest posted before phrases existed reads its override.
     let legacy = "e".repeat(64);
     store
-        .override_header(&legacy, "Hello!", "admin:1", at(9))
+        .override_header(&legacy, "Hello!", None, "admin:1", at(9))
         .await
         .expect("legacy override");
     assert_eq!(

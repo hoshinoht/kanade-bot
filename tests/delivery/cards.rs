@@ -709,6 +709,16 @@ impl Scripted {
         self.calls.load(Ordering::SeqCst)
     }
 
+    /// Every system prompt sent, in order.
+    pub(crate) fn systems(&self) -> Vec<String> {
+        self.prompts
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|(system, _)| system.clone())
+            .collect()
+    }
+
     /// The first rewrite was seeded with `seed`, and neither its system
     /// prompt nor its seed carries any of `private`.
     pub(crate) fn assert_first_prompt(&self, seed: &str, private: &[&str]) {
