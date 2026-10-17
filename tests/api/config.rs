@@ -2720,7 +2720,7 @@ async fn account_reply_style_shows_role_overrides_and_the_saved_public_choice() 
 #[tokio::test]
 async fn notification_fields_save_live_record_only_their_row_and_refuse_bad_values() {
     let config = Config::new().await;
-    let notifications = |quiet: bool, style: &str, header: &str| json!({"quiet_mode": quiet, "message_style": style, "header_generation_time": header, "header_estimates": false});
+    let notifications = |quiet: bool, style: &str, header: &str| json!({"quiet_mode": quiet, "message_style": style, "header_generation_time": header, "header_estimates": false, "header_teasing": false});
     let defaults = notifications(false, "classic", "00:00");
     assert_eq!(config.get().await["notifications"], defaults, "defaults");
     let clock = "The header generation time is HH:MM, for example 03:30.";
@@ -2785,6 +2785,12 @@ async fn notification_fields_save_live_record_only_their_row_and_refuse_bad_valu
         back["notifications"],
         notifications(true, "classic", "03:30")
     );
+    // Teasing rides on the estimates: refused on while they are off.
+    let needs = "Turn on estimates in reminder headers before teasing.";
+    let refused = config
+        .invalid(json!({"notifications": {"header_teasing": true}}))
+        .await;
+    assert_eq!(refused, needs);
     // Estimates in reminder headers: off by default, a boolean, saved live.
     let mut changes = config.desk.subscribe();
     let on = config
@@ -2811,6 +2817,52 @@ async fn notification_fields_save_live_record_only_their_row_and_refuse_bad_valu
     assert_eq!(
         config.get().await["notifications"]["header_estimates"],
         true
+    );
+
+    // Teasing: on once estimates are, recorded alone; turning estimates off
+    // turns it off in the same save, both rows recorded.
+    let teasing = |value: &Value| {
+        (
+            value["notifications"]["header_estimates"].clone(),
+            value["notifications"]["header_teasing"].clone(),
+        )
+    };
+    let on = config
+        .patch(json!({"notifications": {"header_teasing": true}}))
+        .await;
+    assert_eq!(teasing(&on), (json!(true), json!(true)));
+    let recorded = &config.changes().await[0];
+    assert_eq!(
+        recorded.values.keys().collect::<Vec<_>>(),
+        [keys::HEADER_TEASING]
+    );
+    for bad in [json!("yes"), json!(1)] {
+        config
+            .invalid(json!({"notifications": {"header_teasing": bad}}))
+            .await;
+    }
+    let off = config
+        .patch(json!({"notifications": {"header_estimates": false}}))
+        .await;
+    assert_eq!(teasing(&off), (json!(false), json!(false)));
+    let recorded = &config.changes().await[0];
+    assert_eq!(
+        recorded.values.keys().collect::<Vec<_>>(),
+        [keys::HEADER_ESTIMATES, keys::HEADER_TEASING],
+        "both switches recorded in one save"
+    );
+    assert!(!config.desk.settings().await.notifications.teasing_enabled());
+    let refused = config
+        .invalid(json!({"notifications": {"header_estimates": false, "header_teasing": true}}))
+        .await;
+    assert_eq!(refused, needs, "on in a save that leaves estimates off");
+    let both = config
+        .patch(json!({"notifications": {"header_estimates": true, "header_teasing": true}}))
+        .await;
+    assert_eq!(
+        teasing(&both),
+        (json!(true), json!(true)),
+        "both in one save"
     );
 }
 

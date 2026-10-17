@@ -30,6 +30,9 @@ use crate::runtime::logging;
 pub struct HeaderSwitches {
     /// `notifications.header_estimates` (D8, default off).
     pub estimates: bool,
+    /// `notifications.header_teasing` (D12, default off; only on with
+    /// `estimates`).
+    pub teasing: bool,
 }
 
 /// The live switches; `None` in a kit is all off.

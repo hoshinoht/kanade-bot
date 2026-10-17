@@ -34,5 +34,6 @@ mod run_characters;
 mod schemas;
 mod sign_ins;
 mod support;
+mod tease;
 mod tonight;
 mod writes;

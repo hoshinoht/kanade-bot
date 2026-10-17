@@ -1,10 +1,11 @@
-//! Member edits (ping level, reply style, aliases). Members are not history
-//! rows: these go straight to the member store as one portal-only write,
-//! which a concurrent gateway update can never overwrite. The same write
-//! records an effective edit in History beside the Config saves (section
-//! `members`) and stores an `Idempotency-Key` replay (scope `config`): the
-//! same key and request answers the member's current row without writing
-//! again; the key of another live request is `422 idempotency_mismatch`.
+//! Member edits (ping level, reply style, aliases, the tease opt-in and the
+//! running-joke note). Members are not history rows: these go straight to
+//! the member store as one portal-only write, which a concurrent gateway
+//! update can never overwrite. The same write records an effective edit in
+//! History beside the Config saves (section `members`) and stores an
+//! `Idempotency-Key` replay (scope `config`): the same key and request
+//! answers the member's current row without writing again; the key of
+//! another live request is `422 idempotency_mismatch`.
 
 use std::sync::Arc;
 
@@ -33,6 +34,7 @@ use crate::{
     domain::{
         members::{MemberProfile, PingLevel, PortalEdit},
         scheduler::StoreError,
+        tease::{NoteProblem, note_problem},
     },
     infrastructure::store::replays::{PortalRecord, PortalWrite, ReplayScope},
 };
@@ -104,7 +106,8 @@ async fn apply(
     }
 }
 
-/// `MemberPatch`: `persona: ""` clears back to the default reply style.
+/// `MemberPatch`: `persona: ""` clears back to the default reply style and
+/// `running_joke: ""` clears the note.
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct MemberPatch {
@@ -112,6 +115,56 @@ pub struct MemberPatch {
     ping_level: Option<String>,
     #[serde(default)]
     persona: Option<String>,
+    #[serde(default)]
+    tease_ok: Option<bool>,
+    #[serde(default)]
+    running_joke: Option<String>,
+}
+
+/// Every name a running-joke note must not carry (D10): each member's
+/// display name, nickname and aliases, and with module `roster` every
+/// character's IGN (retired ones too).
+pub(crate) async fn roster_names(state: &ApiState) -> Result<Vec<String>, Refusal> {
+    let profiles = state.store.members().await.map_err(Refusal::unavailable)?;
+    let mut names = Vec::new();
+    for profile in &profiles {
+        let member = &profile.member;
+        names.extend(member.display_name.iter().cloned());
+        names.extend(member.nickname.iter().cloned());
+        names.extend(profile.aliases.iter().cloned());
+        if let Some(roster) = &state.characters {
+            let characters = roster
+                .member_characters(member.user_id.clone())
+                .await
+                .map_err(Refusal::unavailable)?;
+            names.extend(characters.into_iter().map(|character| character.ign));
+        }
+    }
+    Ok(names)
+}
+
+/// The note as stored (`None` clears it), or its `422`.
+async fn running_joke(state: &ApiState, text: &str) -> Result<Option<String>, Refusal> {
+    let note = text.trim();
+    if note.is_empty() {
+        return Ok(None);
+    }
+    let names = roster_names(state).await?;
+    match note_problem(note, names.iter().map(String::as_str)) {
+        None => Ok(Some(note.to_owned())),
+        Some(NoteProblem::TooLong) => Err(Refusal::unprocessable(
+            "note_too_long",
+            "Keep the running joke to 80 characters.",
+        )),
+        Some(NoteProblem::NotPlain) => Err(Refusal::unprocessable(
+            "note_not_plain",
+            "Write the running joke as plain text: no mentions, @ or # handles, links or formatting.",
+        )),
+        Some(NoteProblem::NamesMember) => Err(Refusal::unprocessable(
+            "note_names_member",
+            "The running joke can't name anyone on the roster, by name, alias or IGN.",
+        )),
+    }
 }
 
 pub async fn update(
@@ -139,9 +192,18 @@ pub async fn update(
         }
         Some(_) => return Err(Refusal::invalid("No such reply style.")),
     };
+    let note = match patch.running_joke.as_deref() {
+        None => None,
+        Some(text) => Some(running_joke(state, text).await?),
+    };
     let request = format!(
         "member.patch\u{1f}{user_id}\u{1f}{}",
-        json!({ "ping_level": patch.ping_level, "persona": patch.persona })
+        json!({
+            "ping_level": patch.ping_level,
+            "persona": patch.persona,
+            "tease_ok": patch.tease_ok,
+            "running_joke": patch.running_joke,
+        })
     );
     apply(
         state,
@@ -151,6 +213,8 @@ pub async fn update(
         PortalEdit {
             ping_level,
             reply_style,
+            tease_ok: patch.tease_ok,
+            running_joke: note,
             ..PortalEdit::default()
         },
         &request,

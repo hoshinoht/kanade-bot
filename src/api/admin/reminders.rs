@@ -217,6 +217,7 @@ async fn read<'a>(site: &'a Site, id: &str) -> Result<Read<'a>, ApiError> {
     let mut chart = None;
     let switches = HeaderSwitches {
         estimates: settings.notifications.header_estimates,
+        teasing: settings.notifications.teasing_enabled(),
     };
     if let Some((content, mentions, record)) = source {
         // The line as the tick or the refresh edit would post it now.

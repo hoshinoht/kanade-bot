@@ -17,7 +17,20 @@
         "persona": { "$ref": "common.json#/$defs/NullableString" },
         "persona_available": { "type": "boolean" },
         "bossing": { "type": "boolean" },
-        "access": { "enum": ["staff", "pilot", "none"] }
+        "access": { "enum": ["staff", "pilot", "none"] },
+        "tease_ok": { "type": "boolean", "description": "The member's \"OK to be teased\" opt-in (default false). Always sent by the server; optional so earlier fixtures stay valid." },
+        "running_joke": { "description": "The admins' running-joke note (1-80 characters of plain text), kept after an opt-out; null when none. Always sent by the server; optional so earlier fixtures stay valid.", "anyOf": [{ "type": "string", "minLength": 1, "maxLength": 80 }, { "type": "null" }] }
+      }
+    },
+    "MemberPatch": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Body of PATCH /api/admin/members/{id}; every field optional. `persona: \"\"` (or `default`) clears the reply style, `running_joke: \"\"` clears the note. The note is trimmed and refused with 422 `note_too_long` past 80 characters, `note_not_plain` with a mention, an @ or # handle, a link, markdown or a line break, and `note_names_member` when it contains any roster member's display name, nickname or alias or any roster character's IGN (case-insensitive, as a whole word).",
+      "properties": {
+        "ping_level": { "enum": ["essential", "all", "off"] },
+        "persona": { "type": "string" },
+        "tease_ok": { "type": "boolean" },
+        "running_joke": { "type": "string" }
       }
     },
     "MemberRows": { "type": "array", "items": { "$ref": "#/$defs/MemberRow" } },

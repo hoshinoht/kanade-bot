@@ -2,9 +2,10 @@
 //! only while the admin switch `self_service.public_portal` is on and the
 //! public Discord application is configured; then members sign in and see
 //! their own session and devices, the boss week, their weekly timings (and
-//! move their ownership), their chat allowance, boss guides and boss art;
-//! they answer and move their own runs and send and withdraw requests; an
-//! open page hears member-scoped change hints (`events`).
+//! move their ownership), their chat allowance, their preferences, boss
+//! guides and boss art; they answer and move their own runs and send and
+//! withdraw requests; an open page hears member-scoped change hints
+//! (`events`).
 //! Closed, the origin serves the shell, status and identity, sign-in answers
 //! `closed` and data and art answer `503 closed`. Every session route sits
 //! behind [`member::require_session`], the event stream behind its quiet form
@@ -18,6 +19,7 @@ mod bosses;
 mod characters;
 mod events;
 mod ownership;
+mod preferences;
 mod read;
 mod requests;
 mod runs;
@@ -96,6 +98,17 @@ pub fn routes(site: Arc<Site>) -> Router<Arc<Site>> {
         )
         .method_not_allowed_fallback(unmounted)
         .route_layer(from_fn_with_state(site.clone(), write::audit_refusals));
+    // The member's preferences: the read takes a read token, the write is
+    // audited as the writes above.
+    let preferences = Router::new()
+        .route(
+            "/api/public/me/preferences",
+            get(preferences::read)
+                .route_layer(from_fn_with_state(site.clone(), read_bucket))
+                .patch(preferences::update)
+                .route_layer(from_fn_with_state(site.clone(), write::audit_refusals)),
+        )
+        .method_not_allowed_fallback(unmounted);
     let art_slots = Arc::new(Semaphore::new(assets::ART_STREAMS));
     // Data, art and the member's writes: `closed` before the session check,
     // so a site without the member realm answers as the catch-alls do; other
@@ -103,6 +116,7 @@ pub fn routes(site: Arc<Site>) -> Router<Arc<Site>> {
     let reads = Router::new()
         .merge(data)
         .merge(writes)
+        .merge(preferences)
         .route(
             "/art/{*rest}",
             get(read::art)

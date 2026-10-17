@@ -247,6 +247,17 @@ pub struct Notifications {
     /// party's estimate totals and name top carriers through placeholders
     /// (`v5.header_estimates`, default off).
     pub header_estimates: bool,
+    /// The global teasing kill switch (`v5.header_teasing`, default off):
+    /// on, an opted-in member in the party may get a tease slot. Only on
+    /// while `header_estimates` is on (turning that off turns this off).
+    pub header_teasing: bool,
+}
+
+impl Notifications {
+    /// Teasing is in effect: its switch and the estimate switch it rides on.
+    pub fn teasing_enabled(&self) -> bool {
+        self.header_teasing && self.header_estimates
+    }
 }
 
 /// How the bot's Discord posts look (`v5.message_style`). Presentation only:

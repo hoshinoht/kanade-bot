@@ -40,6 +40,8 @@ Pointers are `<file>#/$defs/<Name>`.
 | `GET /api/public/auth/discord/start`, `/callback`; `POST /api/public/auth/logout` | redirects / landing page / `204`, not JSON |
 | `GET /api/public/week?week=` | `public.json#/$defs/MemberWeek` (absent/`this` or `next`, else 422 `invalid_query` as admin) |
 | `GET /api/public/me/allowance` | `public.json#/$defs/MemberAllowance` (the caller's own figures only) |
+| `GET /api/public/me/preferences` | `public.json#/$defs/MyPreferences` (the caller's own opt-in, the admins' note read-only, and whether teasing is switched on; a member read token) |
+| `PATCH /api/public/me/preferences` | body `public.json#/$defs/MyPreferencesPatch`; `public.json#/$defs/MyPreferences` (only `tease_ok`, any other field is 422 `invalid_body`; allowed while teasing is off; no fresh sign-in; Idempotency-Key replays the preferences as they are now, another request under it is 422 `idempotency_mismatch`; counts against the member write bucket (429 `rate_limited`); an effective edit adds a History settings row, section `members`, actor the member, surface `public_portal`) |
 | `GET /api/public/timings` | `public.json#/$defs/MemberTimings` (weekly timings the caller is on, with ownership) |
 | `POST /api/public/timings/{id}/owner` | body `public.json#/$defs/OwnerHandOff`; `public.json#/$defs/MemberTiming` (owner only; fresh sign-in, else 401 `reauth_required`) |
 | `POST /api/public/timings/{id}/owner-requests` | `public.json#/$defs/MemberOwnerRequest` (201; 200 for a retry with the same Idempotency-Key) |
@@ -85,7 +87,7 @@ Pointers are `<file>#/$defs/<Name>`.
 | `POST /api/admin/runs/{id}/reset` | `week.json#/$defs/RunResult` |
 | `POST /api/admin/runs/{id}/ping` | `common.json#/$defs/Message` |
 | `GET /api/admin/members` | `members.json#/$defs/MemberRows` |
-| `PATCH /api/admin/members/{id}` | `members.json#/$defs/MemberRow` (a retry with the same Idempotency-Key answers the member's current row, writing nothing; another request under it is 422 `idempotency_mismatch`; an effective edit adds a History settings row, section `members`) |
+| `PATCH /api/admin/members/{id}` | `members.json#/$defs/MemberRow` (body `members.json#/$defs/MemberPatch`; the running-joke note's 422 refusals are listed there; a retry with the same Idempotency-Key answers the member's current row, writing nothing; another request under it is 422 `idempotency_mismatch`; an effective edit adds a History settings row, section `members`) |
 | `POST /api/admin/members/{id}/aliases` | `members.json#/$defs/MemberRow` (Idempotency-Key and History as the PATCH) |
 | `DELETE /api/admin/members/{id}/aliases/{alias}` | `members.json#/$defs/MemberRow` (Idempotency-Key and History as the PATCH) |
 | `GET /api/admin/members/{id}/characters` | `characters.json#/$defs/MemberCharacters` (module `roster`: every character route answers the generic 404 while `modules.roster` is off; 404 `not_found` for a member never seen) |
@@ -364,3 +366,13 @@ Pointers are `<file>#/$defs/<Name>`.
   instead.
 - Guide publisher (2026-10-16): `guides.json` for the `/api/admin/guides…`
   routes (module `guides`), and `identity.json` `Session.guides`.
+- Tease opt-in (2026-10-17): `members.json` `MemberRow.tease_ok` and
+  `running_joke` (optional so earlier fixtures stay valid) and the body
+  `MemberPatch` (gains `tease_ok` and `running_joke`, with its 422
+  `note_too_long`, `note_not_plain` and `note_names_member`); `public.json`
+  `MyPreferences` and `MyPreferencesPatch` for
+  `GET`/`PATCH /api/public/me/preferences`; `config.json`
+  `notifications.header_teasing` (off by default, refused on while
+  `header_estimates` is off; turning `header_estimates` off turns it off in
+  the same save). The History `members` rows' JSON sides gain `tease_ok`
+  and `running_joke`.

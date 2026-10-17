@@ -138,7 +138,11 @@ pub fn section(body: &Value) -> Result<(&str, &Map<String, Value>), PatchError> 
                 )
                 | (
                     "notifications",
-                    "quiet_mode" | "message_style" | "header_generation_time" | "header_estimates"
+                    "quiet_mode"
+                        | "message_style"
+                        | "header_generation_time"
+                        | "header_estimates"
+                        | "header_teasing"
                 )
                 | ("self_service", "mode" | "public_portal")
                 | ("persona", "active" | "visibility" | "role_profiles")
@@ -539,6 +543,19 @@ pub fn notifications(
     }
     if let Some(value) = body.get("header_estimates") {
         next.header_estimates = flag(value, "notifications.header_estimates")?;
+    }
+    if let Some(value) = body.get("header_teasing") {
+        next.header_teasing = flag(value, "notifications.header_teasing")?;
+    }
+    // Teasing rides on the estimate context (D12): turning estimates off
+    // turns teasing off in the same save; teasing can't be on without them.
+    if next.header_teasing && !next.header_estimates {
+        if body.contains_key("header_teasing") {
+            return Err(PatchError::invalid(
+                "Turn on estimates in reminder headers before teasing.",
+            ));
+        }
+        next.header_teasing = false;
     }
     Ok(next)
 }

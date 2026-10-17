@@ -477,6 +477,7 @@ impl ConfigDesk {
                     settings.notifications.header_generation_time,
                 ),
                 header_estimates: settings.notifications.header_estimates,
+                header_teasing: settings.notifications.header_teasing,
             },
             self_service: dto::self_service(settings),
             persona,

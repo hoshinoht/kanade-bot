@@ -86,6 +86,7 @@ fn bindings() -> String {
         .add::<dto::public::MemberRun>()
         .add::<dto::public::MemberWeek>()
         .add::<dto::public::MemberAllowance>()
+        .add::<dto::public::MyPreferences>()
         .add::<dto::public::MemberOwnerRequest>()
         .add::<dto::public::MemberTiming>()
         .add::<dto::public::MemberTimings>()

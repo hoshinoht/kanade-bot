@@ -293,7 +293,11 @@
               "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$"
             },
             "header_estimates": {
-              "description": "Day-of and countdown header rewrites (redesigned style) may use the party's estimate totals and name top carriers through placeholders Kanade fills in afterwards (names are never sent to the model). Default false; turning it off makes every later render use the seed line. Always sent by the server; optional so earlier fixtures stay valid. Writable through PATCH notifications.header_estimates (boolean).",
+              "description": "Day-of and countdown header rewrites (redesigned style) may use the party's estimate totals and name top carriers through placeholders Kanade fills in afterwards (names are never sent to the model). Default false; turning it off makes every later render use the seed line and also turns header_teasing off in the same save (both recorded). Always sent by the server; optional so earlier fixtures stay valid. Writable through PATCH notifications.header_estimates (boolean).",
+              "type": "boolean"
+            },
+            "header_teasing": {
+              "description": "The global teasing kill switch: those header rewrites may lightly tease one opted-in member of the party (their share and the admins' note, never their name). Default false; turning it off makes every later render of a teasing line use the seed line, and members' opt-ins are kept. Only on while header_estimates is: turning it on while header_estimates is (or in the same save becomes) off is 422 `invalid`. Always sent by the server; optional so earlier fixtures stay valid. Writable through PATCH notifications.header_teasing (boolean).",
               "type": "boolean"
             }
           }

@@ -116,6 +116,9 @@ pub struct Notifications {
     /// Day-of and countdown header rewrites may use the party's estimate
     /// totals and name top carriers (filled in by Kanade, never sent).
     pub header_estimates: bool,
+    /// Opted-in members may be teased in those headers; only on while
+    /// `header_estimates` is.
+    pub header_teasing: bool,
 }
 
 #[derive(Clone, Debug, Serialize)]

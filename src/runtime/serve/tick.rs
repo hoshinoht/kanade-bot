@@ -196,8 +196,12 @@ pub fn card_kit(
     let lengths = settings.clone();
     // The live header switches, read per rewrite and per render (D6/D8).
     let switch = settings.clone();
-    let switches: HeaderSwitchSource = Arc::new(move || HeaderSwitches {
-        estimates: switch.borrow().settings.notifications.header_estimates,
+    let switches: HeaderSwitchSource = Arc::new(move || {
+        let notifications = switch.borrow().settings.notifications;
+        HeaderSwitches {
+            estimates: notifications.header_estimates,
+            teasing: notifications.teasing_enabled(),
+        }
     });
     // The live profanity list, read per rewrite like chat reads it per question.
     let live = settings.clone();

@@ -122,6 +122,16 @@ pub struct MemberAllowance {
     pub generated_at: String,
 }
 
+// The caller's own preferences: their tease opt-in, the admins' note
+// (read-only here) and whether teasing is switched on at all.
+#[derive(Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+pub struct MyPreferences {
+    pub tease_ok: bool,
+    pub running_joke: Option<String>,
+    pub teasing_enabled: bool,
+}
+
 /// One run as `user_id` sees it: the admin run's shared fields plus whether
 /// it is theirs. `can_edit` assumes this or next boss week; runs from other
 /// weeks go through [`member_run_in`]. A live run past its end is frozen

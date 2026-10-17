@@ -411,6 +411,7 @@ fn apply(out: &mut RuntimeSettings, key: &'static str, value: &str) -> Result<()
             out.notifications.header_generation_time = clock(key, value)?;
         }
         keys::HEADER_ESTIMATES => out.notifications.header_estimates = flag(key, value)?,
+        keys::HEADER_TEASING => out.notifications.header_teasing = flag(key, value)?,
         keys::SELF_SERVICE_MODE => {
             out.self_service.mode = SelfServiceMode::parse(value)
                 .ok_or_else(|| malformed(key, value, "unknown self-service mode"))?;
@@ -512,6 +513,10 @@ pub(super) fn encode(section: &Section) -> Rows {
                 (
                     keys::HEADER_ESTIMATES,
                     flag_text(notifications.header_estimates),
+                ),
+                (
+                    keys::HEADER_TEASING,
+                    flag_text(notifications.header_teasing),
                 ),
             ]
         }

@@ -39,6 +39,8 @@ export type MemberWeek = { starts: string, timezone: string, reset: string, days
 
 export type MemberAllowance = { allowance: Quota | null, used: number, resets_at: string | null, queue_position: number | null, bot_busy: boolean, generated_at: string, };
 
+export type MyPreferences = { tease_ok: boolean, running_joke: string | null, teasing_enabled: boolean, };
+
 export type MemberOwnerRequest = { id: string, requester: Member, created_at: string, expires_at: string, status: 'open' | 'accepted' | 'declined' | 'expired' | 'withdrawn' | 'superseded', mine: boolean, };
 
 export type MemberTiming = { id: string, bosses: Array<Boss>, weekday: number, time: string, party: Array<Member>, owner: Member, owner_pinned: boolean, you_own: boolean, requests: Array<MemberOwnerRequest>, };
@@ -290,7 +292,15 @@ export type SwapResult = { runs: [Run, Run], version: number, };
 
 export type PingResult = { message: string, };
 
-export type MemberRow = { id: string, name: string, nickname: string | null, aliases: Array<string>, runs_this_week: number, ping_level: PingLevel, persona: string | null, persona_available: boolean, bossing: boolean, access: 'staff' | 'pilot' | 'none', };
+export type MemberRow = { id: string, name: string, nickname: string | null, aliases: Array<string>, runs_this_week: number, ping_level: PingLevel, persona: string | null, persona_available: boolean, bossing: boolean, access: 'staff' | 'pilot' | 'none', 
+/**
+ * The member's "OK to be teased" opt-in.
+ */
+tease_ok: boolean, 
+/**
+ * The admins' running-joke note (kept after an opt-out).
+ */
+running_joke: string | null, };
 
 export type Persona = { key: string, name: string, 
 /**
@@ -1861,7 +1871,12 @@ header_generation_time: string,
  * Day-of and countdown header rewrites may use the party's estimate
  * totals and name top carriers (filled in by Kanade, never sent).
  */
-header_estimates: boolean, };
+header_estimates: boolean, 
+/**
+ * Opted-in members may be teased in those headers; only on while
+ * `header_estimates` is.
+ */
+header_teasing: boolean, };
 
 export type SelfServiceSettings = { mode: SelfServiceMode, effective_mode: SelfServiceMode, public_portal: boolean, };
 

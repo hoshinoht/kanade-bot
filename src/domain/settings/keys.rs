@@ -46,10 +46,12 @@ pub const HEADER_GENERATION_TIME: &str = "v5.header_generation_time";
 pub const ESTIMATE_DAYS: &str = "v5.estimate_days";
 /// Day-of and countdown header rewrites may use party estimates (off).
 pub const HEADER_ESTIMATES: &str = "v5.header_estimates";
+/// Opted-in members may be teased in those headers (off; needs estimates).
+pub const HEADER_TEASING: &str = "v5.header_teasing";
 
 /// Every settings key. Other `config` rows (the digest marker, v4
 /// bookkeeping) are never read or written through the settings port.
-pub const ALL: [&str; 35] = [
+pub const ALL: [&str; 36] = [
     DAY_OF_PING_TIME,
     COUNTDOWN_MINUTES,
     PAUSED,
@@ -85,6 +87,7 @@ pub const ALL: [&str; 35] = [
     HEADER_GENERATION_TIME,
     ESTIMATE_DAYS,
     HEADER_ESTIMATES,
+    HEADER_TEASING,
 ];
 
 pub fn is_setting(key: &str) -> bool {

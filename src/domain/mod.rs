@@ -29,5 +29,6 @@ pub mod requests;
 pub mod schedule;
 pub mod scheduler;
 pub mod settings;
+pub mod tease;
 pub mod time;
 pub mod weeks;

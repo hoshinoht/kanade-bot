@@ -75,6 +75,7 @@ fn kit(rewriter: &Arc<Scripted>, on: &Arc<AtomicBool>, estimate: Option<RunEstim
         estimates: estimate.map(|estimate| Arc::new(Fixed(estimate)) as Arc<dyn PartyEstimates>),
         switches: Some(Arc::new(move || HeaderSwitches {
             estimates: on.load(Ordering::SeqCst),
+            teasing: false,
         })),
         ..redesigned(rewriting(rewriter))
     }
@@ -178,7 +179,10 @@ async fn a_slotted_member_who_left_the_party_gets_the_seed() {
         run_id: run_id.clone(),
         minutes: 15,
     };
-    let switches = HeaderSwitches { estimates: true };
+    let switches = HeaderSwitches {
+        estimates: true,
+        teasing: false,
+    };
     let resolve = |schedule: &ScheduleSnapshot| {
         let ctx = CardContext {
             schedule,

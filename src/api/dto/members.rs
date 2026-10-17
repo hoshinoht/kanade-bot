@@ -23,6 +23,10 @@ pub struct MemberRow {
     pub bossing: bool,
     #[cfg_attr(test, ts(type = "'staff' | 'pilot' | 'none'"))]
     pub access: &'static str,
+    /// The member's "OK to be teased" opt-in.
+    pub tease_ok: bool,
+    /// The admins' running-joke note (kept after an opt-out).
+    pub running_joke: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -107,5 +111,7 @@ pub fn row(
             .is_none_or(|key| personas.iter().any(|option| option.key == *key)),
         bossing: bossing(profile),
         access: access.access(profile),
+        tease_ok: profile.tease_ok,
+        running_joke: profile.running_joke.clone(),
     }
 }
