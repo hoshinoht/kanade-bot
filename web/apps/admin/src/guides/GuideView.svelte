@@ -259,12 +259,13 @@
   async function search() {
     searchKey ||= newIdempotencyKey();
     const done = await send((c) => c.post<GuidePublishResult>(guidePath(id, '/search'), {}, { idempotencyKey: searchKey }));
-    searchKey = '';
     if (!done.ok) {
+      // Keep the key: a retry after a lost answer replays the same search.
       if (done.status === 503) offline = done.message;
       toaster.show({ message: done.message, tone: 'error' });
       return;
     }
+    searchKey = '';
     if (done.value.publish) started(done.value.publish);
   }
   $effect(() => {

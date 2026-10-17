@@ -31,6 +31,7 @@ Reminder headers can now take their mood from the party's estimate, cheer on the
 - Fixed redesigned reminder cards posting without the ✅ and ❌ reactions while the portal was open: the bot adds them again beside "Open in portal".
 - Fixed the Guides screen's save bar showing without its styles.
 - Fixed the "Large entry image" and plan checkboxes on phones being squeezed too small to tick in the Guides editor.
+- Fixed trying a guide's Search again a second time after it failed starting a new search instead of retrying the first.
 
 ## 1.0.0-beta.8
 
