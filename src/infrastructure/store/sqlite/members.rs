@@ -1,5 +1,5 @@
-//! `MemberStore` over `members` (0001 + 0010) and `member_aliases`: constant
-//! SQL, reads on a reader connection, one `BEGIN IMMEDIATE` per write.
+//! `MemberStore` over `members` (0001 + 0010 + 0044) and `member_aliases`:
+//! constant SQL, reads on a reader connection, one `BEGIN IMMEDIATE` per write.
 
 use sqlx::sqlite::SqliteRow;
 use sqlx::{Connection, Row, SqliteConnection};
@@ -14,7 +14,7 @@ use crate::domain::scheduler::StoreError;
 use crate::infrastructure::store::Written;
 
 const COLUMNS: &str = "user_id, display_name, nickname, has_role, is_bot, ping_level, aliases, \
-    reply_style, roles, is_guild_admin";
+    reply_style, roles, is_guild_admin, tease_ok, running_joke";
 
 fn corrupt(column: &str, detail: impl std::fmt::Display) -> StoreError {
     StoreError::Backend(format!("members.{column} is unreadable: {detail}"))
@@ -47,6 +47,8 @@ fn profile_of(row: &SqliteRow) -> Result<MemberProfile, StoreError> {
         reply_style: get(row, "reply_style")?,
         roles: json_list(row, "roles")?,
         is_guild_admin: get(row, "is_guild_admin")?,
+        tease_ok: get(row, "tease_ok")?,
+        running_joke: get(row, "running_joke")?,
     })
 }
 
@@ -84,13 +86,14 @@ async fn put(conn: &mut SqliteConnection, profile: &MemberProfile) -> Result<(),
     // An upsert, not a replace: a REPLACE would cascade-delete the aliases first.
     sqlx::query(
         "INSERT INTO members (user_id, display_name, nickname, has_role, is_bot, ping_level, \
-         aliases, reply_style, roles, is_guild_admin) \
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10) \
+         aliases, reply_style, roles, is_guild_admin, tease_ok, running_joke) \
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12) \
          ON CONFLICT (user_id) DO UPDATE SET display_name = excluded.display_name, \
          nickname = excluded.nickname, has_role = excluded.has_role, is_bot = excluded.is_bot, \
          ping_level = excluded.ping_level, aliases = excluded.aliases, \
          reply_style = excluded.reply_style, roles = excluded.roles, \
-         is_guild_admin = excluded.is_guild_admin",
+         is_guild_admin = excluded.is_guild_admin, tease_ok = excluded.tease_ok, \
+         running_joke = excluded.running_joke",
     )
     .bind(&member.user_id)
     .bind(&member.display_name)
@@ -102,6 +105,8 @@ async fn put(conn: &mut SqliteConnection, profile: &MemberProfile) -> Result<(),
     .bind(&profile.reply_style)
     .bind(list(&profile.roles))
     .bind(profile.is_guild_admin)
+    .bind(profile.tease_ok)
+    .bind(&profile.running_joke)
     .execute(&mut *conn)
     .await
     .map_err(store_error)?;
@@ -187,6 +192,12 @@ pub(super) async fn portal(
     if let Some(style) = &edit.reply_style {
         profile.reply_style.clone_from(style);
     }
+    if let Some(tease_ok) = edit.tease_ok {
+        profile.tease_ok = tease_ok;
+    }
+    if let Some(note) = &edit.running_joke {
+        profile.running_joke.clone_from(note);
+    }
     let mut added = None;
     if let Some(alias) = &edit.add_alias
         && !profile.aliases.contains(alias)
@@ -207,11 +218,14 @@ pub(super) async fn portal(
         removed = Some(alias);
     }
     sqlx::query(
-        "UPDATE members SET ping_level = ?1, reply_style = ?2, aliases = ?3 WHERE user_id = ?4",
+        "UPDATE members SET ping_level = ?1, reply_style = ?2, aliases = ?3, tease_ok = ?4, \
+         running_joke = ?5 WHERE user_id = ?6",
     )
     .bind(profile.member.ping_level.as_str())
     .bind(&profile.reply_style)
     .bind(list(&profile.aliases))
+    .bind(profile.tease_ok)
+    .bind(&profile.running_joke)
     .bind(user_id)
     .execute(&mut *conn)
     .await

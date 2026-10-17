@@ -1,5 +1,6 @@
 //! Member storage every store must keep: round trips, replace-in-place with
-//! the ping level and aliases, alias uniqueness and validity.
+//! the ping level and aliases, alias uniqueness and validity, the tease
+//! opt-in and running-joke note.
 
 use super::fixtures::{refused, refused_for};
 use crate::domain::members::{
@@ -12,6 +13,7 @@ pub async fn run_suite<S: MemberStore>(make: impl AsyncFn() -> S) {
     gateway_and_portal_writes_own_their_fields(make().await).await;
     interleaved_gateway_and_portal_writes_lose_nothing(make().await).await;
     portal_alias_removal_releases_the_alias(make().await).await;
+    tease_fields_default_off_and_round_trip(make().await).await;
 }
 
 pub(crate) fn gateway(user_id: &str, name: &str, roles: &[&str]) -> GatewayMember {
@@ -47,6 +49,7 @@ async fn gateway_and_portal_writes_own_their_fields<S: MemberStore>(store: S) {
                 reply_style: Some(Some("terse".into())),
                 add_alias: Some("ali".into()),
                 remove_alias: None,
+                ..PortalEdit::default()
             },
         )
         .await
@@ -247,6 +250,8 @@ pub fn profile(user_id: &str, name: &str) -> MemberProfile {
         reply_style: None,
         roles: Vec::new(),
         is_guild_admin: false,
+        tease_ok: false,
+        running_joke: None,
     }
 }
 
@@ -309,4 +314,83 @@ async fn aliases_are_unique_and_one_word<S: MemberStore>(store: S) {
             "{case}: nothing written"
         );
     }
+}
+
+/// The tease opt-in starts off with no note; a put, a portal edit and a
+/// gateway write each keep the other side's fields, and the note is refused
+/// past 80 characters with nothing written.
+async fn tease_fields_default_off_and_round_trip<S: MemberStore>(store: S) {
+    store
+        .apply_gateway(gateway("200", "Alice", &["20"]))
+        .await
+        .expect("gateway inserts");
+    let row = store.load_member("200").await.expect("load").expect("row");
+    assert_eq!(
+        (row.tease_ok, row.running_joke),
+        (false, None),
+        "default off"
+    );
+
+    let mut alice = profile("200", "Alice");
+    alice.aliases = vec!["ali".into()];
+    alice.tease_ok = true;
+    alice.running_joke = Some("Still owes the guild a Lucid clear".into());
+    store.put_member(alice.clone()).await.expect("put");
+    assert_eq!(
+        store.load_member("200").await.expect("load"),
+        Some(alice.clone()),
+        "round trip"
+    );
+    alice.member.nickname = Some("Al".into());
+    store.put_member(alice.clone()).await.expect("upsert");
+    let row = store.load_member("200").await.expect("load").expect("row");
+    assert_eq!(row, alice, "an upsert keeps the aliases and tease fields");
+
+    let edited = store
+        .apply_portal(
+            "200",
+            PortalEdit {
+                tease_ok: Some(false),
+                ..PortalEdit::default()
+            },
+        )
+        .await
+        .expect("portal")
+        .expect("row");
+    assert!(!edited.tease_ok);
+    assert_eq!(
+        (edited.running_joke.as_deref(), edited.aliases.clone()),
+        (alice.running_joke.as_deref(), vec!["ali".to_owned()]),
+        "an opt-out keeps the note and aliases"
+    );
+    store
+        .apply_gateway(gateway("200", "Alice B", &[]))
+        .await
+        .expect("gateway");
+    let row = store.load_member("200").await.expect("load").expect("row");
+    assert_eq!(
+        row.running_joke, alice.running_joke,
+        "gateway writes keep the note"
+    );
+
+    let long = PortalEdit {
+        running_joke: Some(Some("x".repeat(81))),
+        ..PortalEdit::default()
+    };
+    refused_for(
+        "an 81-character note",
+        store.apply_portal("200", long).await,
+    );
+    let cleared = store
+        .apply_portal(
+            "200",
+            PortalEdit {
+                running_joke: Some(None),
+                ..PortalEdit::default()
+            },
+        )
+        .await
+        .expect("portal")
+        .expect("row");
+    assert_eq!(cleared.running_joke, None, "Some(None) clears the note");
 }

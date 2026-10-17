@@ -287,6 +287,7 @@ mod tests {
                 Vec::new()
             },
             is_guild_admin: false,
+            ..MemberProfile::default()
         }
     }
 

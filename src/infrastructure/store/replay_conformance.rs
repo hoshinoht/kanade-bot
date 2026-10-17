@@ -222,6 +222,12 @@ async fn portal_edits_record_and_replay_in_one_write<
     assert!(row.to.contains(r#""ping_level":"off""#), "{name}: {row:?}");
     assert!(row.from.contains(r#""member":"Alice""#), "{name}: {row:?}");
     assert_ne!(row.from, row.to, "{name}");
+    for side in [&row.from, &row.to] {
+        assert!(
+            side.contains(r#""tease_ok":false"#) && side.contains(r#""running_joke":null"#),
+            "{name}: the tease fields are on both sides: {row:?}"
+        );
+    }
     assert!(
         store
             .replay(ReplayScope::Config, "admin:token", "k", at(2))
@@ -308,6 +314,31 @@ async fn portal_edits_record_and_replay_in_one_write<
         panic!("{name}: unkeyed not edited");
     };
     assert_eq!(saves().await.len(), 2, "{name}: unkeyed edit recorded");
+
+    // The tease opt-in and note are portal fields: an edit records them once,
+    // the same edit again records nothing.
+    let tease = || PortalEdit {
+        tease_ok: Some(true),
+        running_joke: Some(Some("Brings snacks to every Lotus run".into())),
+        ..PortalEdit::default()
+    };
+    for (key, request, recorded) in [("k-tease", 'f', 3), ("k-tease-again", '0', 3)] {
+        let PortalWrite::Edited(edited) = edit(tease(), key, request).await.expect("tease") else {
+            panic!("{name}: tease edit not answered");
+        };
+        assert!(edited.tease_ok, "{name}");
+        assert_eq!(saves().await.len(), recorded, "{name}: {key}");
+    }
+    let recorded = saves().await;
+    let row = recorded[0].values.get("member.200").expect("member row");
+    assert!(
+        row.from.contains(r#""tease_ok":false"#)
+            && row.to.contains(r#""tease_ok":true"#)
+            && row
+                .to
+                .contains(r#""running_joke":"Brings snacks to every Lotus run""#),
+        "{name}: newest first, the tease sides: {row:?}"
+    );
 }
 
 async fn settings_rows_record_and_replay_commit_together<S: ReplayStore + SettingsStore>(store: S) {

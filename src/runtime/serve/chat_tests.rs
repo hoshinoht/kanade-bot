@@ -931,6 +931,7 @@ async fn an_external_chat_route_sends_raw_member_data_without_opt_in_or_a_model_
             reply_style: None,
             roles: Vec::new(),
             is_guild_admin: false,
+            ..MemberProfile::default()
         })
         .await
         .unwrap();
@@ -998,6 +999,7 @@ fn alice(nickname: &str, aliases: &[&str]) -> crate::domain::members::MemberProf
         reply_style: None,
         roles: Vec::new(),
         is_guild_admin: false,
+        ..MemberProfile::default()
     }
 }
 

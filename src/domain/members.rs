@@ -131,6 +131,12 @@ pub struct MemberProfile {
     pub roles: Vec<String>,
     /// Discord's computed Administrator permission from the last gateway update.
     pub is_guild_admin: bool,
+    /// The member's "OK to be teased" opt-in (off by default); only a reminder
+    /// header with the global teasing switch on ever reads it.
+    pub tease_ok: bool,
+    /// An admin's running-joke note (1..=80 characters, never a name);
+    /// kept after an opt-out but only sent while opted in.
+    pub running_joke: Option<String>,
 }
 
 /// Persistence of the member table. Reads never take the writer.
@@ -203,6 +209,9 @@ pub struct PortalEdit {
     pub add_alias: Option<String>,
     /// Dropped when held (exact match); the other aliases keep their order.
     pub remove_alias: Option<String>,
+    pub tease_ok: Option<bool>,
+    /// `Some(None)` clears the note.
+    pub running_joke: Option<Option<String>>,
 }
 
 forward_store!(MemberStore for [arc] {

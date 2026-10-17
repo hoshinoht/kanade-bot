@@ -173,6 +173,8 @@ fn portal_fields(profile: &MemberProfile) -> String {
         "ping_level": profile.member.ping_level.as_str(),
         "reply_style": profile.reply_style,
         "aliases": profile.aliases,
+        "tease_ok": profile.tease_ok,
+        "running_joke": profile.running_joke,
     })
     .to_string()
 }

@@ -205,6 +205,7 @@ pub async fn seed(seed: &Seed<'_>) -> Result<(), Fail> {
                 reply_style: row.persona.map(str::to_owned),
                 roles,
                 is_guild_admin: false,
+                ..MemberProfile::default()
             })
             .await?;
     }
