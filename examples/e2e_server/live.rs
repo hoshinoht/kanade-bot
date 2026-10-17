@@ -228,11 +228,14 @@ impl World {
                 mut composition,
                 character_data,
             }) => {
+                // The generation's guild channels: the seed's until a control adds some.
+                let channels = seed::GuildChannels::seeded();
                 let guides = modules.guides.then(|| {
                     GuideSide::new(guides::Parts {
                         store: Arc::clone(&store),
                         discord: Arc::clone(&discord),
                         offline: Arc::clone(&self.offline),
+                        channels: channels.clone(),
                         state: &composition.admin.state,
                         boss_dir: config.runtime.http.boss_dir.as_deref(),
                         knowledge_dir: composition
@@ -249,7 +252,7 @@ impl World {
                 let port = guides.as_ref().map(GuideSide::port);
                 let installed = Arc::get_mut(&mut composition.admin.state)
                     .map(|state| {
-                        state.channels = Arc::new(Guild { offline });
+                        state.channels = Arc::new(Guild { offline, channels });
                         state.guides = port;
                     })
                     .is_some();

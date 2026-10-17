@@ -46,3 +46,9 @@ pub const BOSS_SCHEDULE: &str = "120000000000000010";
 /// The guide channels (module `guides`).
 pub const GUIDE_LIMBO: &str = "120000000000000011";
 pub const GUIDE_RAIDS: &str = "120000000000000012";
+/// The guides board's channels (`members::GUIDE_BOARD_CHANNELS`, added by
+/// `/__e2e/guides/board` only).
+pub const GUIDE_KALOS: &str = "120000000000000013";
+pub const GUIDE_STAR: &str = "120000000000000014";
+pub const GUIDE_CARLING: &str = "120000000000000015";
+pub const GUIDE_BM: &str = "120000000000000016";

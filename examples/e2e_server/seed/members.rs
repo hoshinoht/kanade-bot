@@ -2,6 +2,8 @@
 //! `seed::CHANNELS`, `/api/admin/roles`), and the fake Discord users
 //! `e2e/harness/member.spec` signs in as.
 
+use std::sync::{Arc, PoisonError, RwLock};
+
 use kanade::domain::members::{Member, MemberProfile, MemberStore, PingLevel};
 
 use super::{Seed, ids::*};
@@ -20,6 +22,7 @@ pub const ROLES: [(&str, &str, Option<u32>); 3] = [
 ];
 
 /// A guild text channel and what the bot may do there.
+#[derive(Clone, Copy)]
 pub struct Channel {
     pub id: &'static str,
     /// Its name, without the `#`.
@@ -28,6 +31,8 @@ pub struct Channel {
     pub watched: bool,
     pub send: bool,
     pub manage: bool,
+    /// Attach Files (a guide's boss art needs it).
+    pub attach: bool,
 }
 
 const fn party(id: &'static str, name: &'static str) -> Channel {
@@ -37,6 +42,7 @@ const fn party(id: &'static str, name: &'static str) -> Channel {
         watched: true,
         send: true,
         manage: true,
+        attach: true,
     }
 }
 
@@ -54,6 +60,7 @@ pub const CHANNELS: [Channel; 12] = [
         watched: false,
         send: false,
         manage: false,
+        attach: false,
         ..party(BM_TRIO, "bm-trio")
     },
     Channel {
@@ -73,6 +80,57 @@ pub const CHANNELS: [Channel; 12] = [
         ..party(GUIDE_RAIDS, "guide-raids")
     },
 ];
+
+/// The guides board's channels (`/__e2e/guides/board`): `#guide-bm` lacks
+/// Attach Files, so its guide is blocked.
+pub const GUIDE_BOARD_CHANNELS: [Channel; 4] = [
+    guide(GUIDE_KALOS, "guide-kalos"),
+    guide(GUIDE_STAR, "guide-star"),
+    guide(GUIDE_CARLING, "guide-carling"),
+    Channel {
+        attach: false,
+        ..guide(GUIDE_BM, "guide-bm")
+    },
+];
+
+const fn guide(id: &'static str, name: &'static str) -> Channel {
+    Channel {
+        watched: false,
+        ..party(id, name)
+    }
+}
+
+/// One generation's guild channels: [`CHANNELS`] until a control adds more
+/// (a reset or restart starts from [`CHANNELS`] again).
+#[derive(Clone)]
+pub struct GuildChannels(Arc<RwLock<Vec<Channel>>>);
+
+impl GuildChannels {
+    pub fn seeded() -> Self {
+        Self(Arc::new(RwLock::new(CHANNELS.to_vec())))
+    }
+
+    pub fn all(&self) -> Vec<Channel> {
+        self.0
+            .read()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+    }
+
+    pub fn find(&self, id: &str) -> Option<Channel> {
+        self.all().into_iter().find(|channel| channel.id == id)
+    }
+
+    /// Adds the channels not listed yet.
+    pub fn add(&self, more: &[Channel]) {
+        let mut list = self.0.write().unwrap_or_else(PoisonError::into_inner);
+        for channel in more {
+            if !list.iter().any(|listed| listed.id == channel.id) {
+                list.push(*channel);
+            }
+        }
+    }
+}
 
 /// A seeded channel's name (`#` included), else its id.
 pub fn channel_name(id: &str) -> String {
