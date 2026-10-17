@@ -6,6 +6,10 @@ What changed in each Kanade release, newest first. Upgrading across several rele
 
 _In development_
 
+### Changes
+
+- Reminder cards now keep updating with ✅ and ❌ answers after a run starts, until the run's length in Config › Run lengths has passed; only then do they stay as the record.
+
 ## 1.0.0-beta.9
 
 _17 Oct 2026_

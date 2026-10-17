@@ -3,7 +3,8 @@
 //! run ids ([`RefreshQueue`], fed by the store's run-write observer); one
 //! task ([`CardRefresh::run`]) drains them in coalesced batches, off the
 //! reaction worker and the tick. Per batch: each bound reminder card with a
-//! record naming a run still ahead is edited from current answers (same
+//! record naming a run that has not ended (v4: not started) is edited from
+//! current answers (same
 //! heading or phrase, the latest manual override when there is one; art
 //! referenced by its posted names, nothing uploaded, nobody notified), then
 //! the active digest of each touched week. Cards posted
@@ -146,15 +147,19 @@ where
         let Ok(schedule) = self.store.load(&Scope::All).await else {
             return 0;
         };
+        // v5: a started run's cards follow its answers until the run ends
+        // (its live run length); then they stay as the record. Without live
+        // run lengths, v4's rule: frozen at the start.
+        let ends = self.cards.run_ends(&self.policy);
         let mut seen = BTreeSet::new();
         let mut edited = 0;
         for run_id in run_ids {
-            // v4: a run that has started keeps its cards as a record.
-            let ahead = schedule
-                .runs
-                .iter()
-                .any(|run| &run.id == run_id && run.datetime > now);
-            if !ahead {
+            let open = schedule.runs.iter().any(|run| {
+                &run.id == run_id
+                    && (run.datetime > now
+                        || ends.as_ref().is_some_and(|ends| !ends.ended(run, now)))
+            });
+            if !open {
                 continue;
             }
             let Ok(posted) = self.store.posted_cards(run_id).await else {

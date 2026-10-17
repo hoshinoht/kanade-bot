@@ -33,7 +33,7 @@ use kanade::domain::schedule::{
     RunStatus,
 };
 use kanade::domain::scheduler::StoreError;
-use kanade::domain::settings::MessageStyle;
+use kanade::domain::settings::{MessageStyle, RunLengths};
 use kanade::infrastructure::files::BossArt;
 use kanade::infrastructure::store::SqliteStore;
 use tokio::sync::Notify;
@@ -1624,12 +1624,41 @@ async fn retries_and_reaction_edits_reuse_the_stored_heading() {
             .contains("Still to answer:")
     );
 
-    // A run that has started keeps its card as a record.
+    // Without live run lengths (v4), a started run keeps its card as a record.
     let later = CardRefresh {
         now: Arc::new(|| tonight() + TimeDelta::minutes(1)),
         ..refresh
     };
     assert_eq!(later.refresh(std::slice::from_ref(&star)).await, 0);
+
+    // v5: with live run lengths (default 30 minutes) a started run's card
+    // follows its answers until the run ends, then stays as the record.
+    let timed = |minutes: i64| CardRefresh {
+        now: Arc::new(move || tonight() + TimeDelta::minutes(minutes)),
+        cards: CardKit {
+            run_lengths: Some(Arc::new(RunLengths::default)),
+            ..later.cards.clone()
+        },
+        ..refresher(&store, &fake, &world, later.cards.clone())
+    };
+    answer(
+        &*store,
+        &star,
+        "1001",
+        false,
+        tonight() + TimeDelta::minutes(5),
+    )
+    .await;
+    assert_eq!(
+        timed(5).refresh(std::slice::from_ref(&star)).await,
+        1,
+        "started, not ended"
+    );
+    assert_eq!(
+        timed(31).refresh(std::slice::from_ref(&star)).await,
+        0,
+        "ended"
+    );
 }
 
 /// Counts lookups; every picture exists with fixed bytes.
