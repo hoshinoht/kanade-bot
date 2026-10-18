@@ -4,7 +4,9 @@ What changed in each Kanade release, newest first. Upgrading across several rele
 
 ## 1.0.0-beta.10
 
-_In development_
+_18 Oct 2026_
+
+A polish release: tidier admin and member portal screens, clear error states when the portal's week fails to load, larger tap targets, and reminder cards that keep counting answers until a run ends.
 
 ### Changes
 
