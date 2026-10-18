@@ -51,10 +51,12 @@
   background: var(--pane);
 }
 
+// The name column stops at 18rem so the stats sit beside the names on wide
+// screens; the reply style takes the slack (user report 2026-10-18).
 .memberlist__columns,
 .memberlist__row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 70px 96px 100px;
+  grid-template-columns: minmax(0, 18rem) 70px 96px minmax(100px, 1fr);
   gap: 10px;
   align-items: center;
 }
@@ -99,15 +101,15 @@
 .memberlist__who { display: flex; flex: 0 1 auto; align-items: baseline; gap: 0.5rem; min-width: 0; max-width: 100%; }
 .memberlist__name strong,
 .memberlist__name .id { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.memberlist__name strong { flex: none; max-width: 100%; font-size: var(--fs-small); font-weight: 700; }
+.memberlist__name strong { flex: none; max-width: 100%; font-size: var(--fs-body-sm); font-weight: 700; }
 .memberlist__name .id { flex: 0 1 auto; color: var(--dim-text); font-family: var(--mono); font-size: var(--fs-mini); }
 .memberlist__name .chip { flex: none; align-self: center; white-space: nowrap; }
 .memberlist__identity { display: flex; flex-direction: column; gap: 3px; padding-block: 8px; font-size: var(--fs-small); }
 .memberlist__identity .id { color: var(--dim-text); font-family: var(--mono); font-size: var(--fs-mini); }
 .memberlist__identity .chip { align-self: flex-start; }
-.memberlist__stat { font-size: var(--fs-small); font-weight: 600; white-space: nowrap; }
+.memberlist__stat { font-size: var(--fs-body-sm); font-weight: 600; white-space: nowrap; }
 .memberlist__preference,
-.memberlist__style { overflow: hidden; font-size: var(--fs-small); text-overflow: ellipsis; white-space: nowrap; }
+.memberlist__style { overflow: hidden; font-size: var(--fs-body-sm); text-overflow: ellipsis; white-space: nowrap; }
 .memberlist__style { color: var(--dim-text); font-size: var(--fs-mini); }
 
 /* ── the detail ───────────────────────────────────────────────────────────── */

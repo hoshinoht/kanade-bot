@@ -22,7 +22,7 @@
 </script>
 
 <article class="history-diff" data-fid={fid}>
-  {#if head}{@render head()}{:else}<p class="mono">{'id' in row.key ? `${row.key.table}/${row.key.id}` : `rsvps/${row.key.run_id}/${row.key.user_id}`}{#if !row.before} · created{:else if !row.after} · removed{/if}</p>{/if}
+  {#if head}{@render head()}{:else}<p class="mono">{'id' in row.key ? `${row.key.table}/${row.key.id}` : `rsvps/${row.key.run_id}/${row.key.user_id}`}{!row.before ? ' · created' : !row.after ? ' · removed' : ''}</p>{/if}
   <dl class="history-diff__fields">
     {#each fields as field (field.name)}
       <div class="history-diff__field">

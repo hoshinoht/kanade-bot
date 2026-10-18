@@ -186,7 +186,7 @@
       {/if}
       <div class="mydata__foot">
         <span>Unlink deletes that character’s NEXON data at once; shared cards then read “Character data removed”. Your roster characters keep their class and level.</span>
-        {#if data.privacy_url}<a href={data.privacy_url} target="_blank" rel="noreferrer" data-fid="mydata-privacy">Privacy notice</a>{/if}
+        {#if data.privacy_url}<a class="privacy-link" href={data.privacy_url} target="_blank" rel="noreferrer" data-fid="mydata-privacy">Privacy notice</a>{/if}
       </div>
       <p class="linknotice__attrib" data-fid="mydata-attrib">{data.attribution}</p>
     </div>

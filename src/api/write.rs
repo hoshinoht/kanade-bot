@@ -1008,5 +1008,3 @@ where
         })
     }
 }
-
-pub type SharedWriter = Arc<dyn Writer>;

@@ -285,8 +285,3 @@ pub fn fixed_line(world: &ToolWorld<'_>, fixed: &FixedRun) -> String {
 pub fn weekday_index(weekday: Weekday) -> u32 {
     weekday.num_days_from_monday()
 }
-
-/// The local date's weekday of an instant.
-pub fn local_weekday(at: &DateTime<Utc>, zone: Tz) -> Weekday {
-    local(at, zone).weekday()
-}

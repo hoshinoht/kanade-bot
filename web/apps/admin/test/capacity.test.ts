@@ -124,6 +124,16 @@ describe('model picker', () => {
     expect(reasoningChoices('extraction', required, 'low').map((c) => c.value)).toEqual(['low', 'high']);
     expect(reasoningChoices('extraction', catalog[0], 'low').map((c) => c.value)).toEqual(['off', 'low', 'high']);
   });
+
+  it('shows a stored off the model refuses as Off, marked with the level that runs', () => {
+    const required = withVariants.find((m) => m.id === 'r');
+    // As the e2e seed: extraction saved `off` on a model with no `none` (the server sends low).
+    const choices = reasoningChoices('extraction', required, 'off', 'off');
+    expect(choices[0]).toEqual({ value: 'off', label: 'Off (requires reasoning: runs low)' });
+    expect(choices.map((c) => c.value)).toEqual(['off', 'low', 'high']);
+    // A stored level the model allows adds nothing.
+    expect(reasoningChoices('extraction', required, 'low', 'low').map((c) => c.value)).toEqual(['low', 'high']);
+  });
 });
 
 describe('capacity summary', () => {

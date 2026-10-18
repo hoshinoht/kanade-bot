@@ -26,15 +26,6 @@
   margin-bottom: 0;
 }
 
-// One window per page: the spec's 20 px frame.
-.frame--rail .shell > .card {
-  border-radius: var(--r-win);
-}
-
-.frame--rail .shell > .card > .card__head {
-  border-radius: var(--r-win-in) var(--r-win-in) 0 0;
-}
-
 // Pane-level measures: prose and forms stop at a readable width while
 // tables, the board and lists use what the window has (screens add theirs).
 .frame--rail .pane__body > p,

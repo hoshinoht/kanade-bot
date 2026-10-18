@@ -42,8 +42,6 @@ export interface Outcome {
   swap?: { runId: string; withId: string };
 }
 
-export const SWAP_KEY = 'S';
-
 /** A step's announcement, plus the swap hint when another run is on that slot. */
 function landed(run: MovableRun, at: Slot, ctx: MoveContext): string {
   const here = ctx.occupant?.(at, run.id);

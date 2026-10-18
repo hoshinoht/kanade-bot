@@ -33,19 +33,21 @@ async function sendElsewhere(page: Page, body: Record<string, unknown>, key: str
   return sent.status();
 }
 
-async function sent(page: Page, title: string): Promise<void> {
+/** `title` is the form's (boss tokens, as Discord names them); `full` is My requests' (names and difficulty). */
+async function sent(page: Page, title: string, full: string): Promise<void> {
   await expect(toast(page).filter({ hasText: `Sent: ${title}. The admins review it; Discord tells you when one decides.` })).toBeVisible();
   await expect(page).toHaveURL(/\/requests\?open=[0-9a-f-]{36}$/);
   const detail = page.locator('.req-detail');
-  await expect(detail.getByRole('heading', { level: 2 })).toContainText(title);
+  await expect(detail.getByRole('heading', { level: 2 })).toContainText(full);
   await expect(detail.locator('.req-chip')).toHaveText('waiting');
   await expect(page.locator('.req-count')).toHaveText('2 of 3 open · 2 of 6 today');
 }
 
-const KINDS: { kind: string; title: string; fill: (page: Page) => Promise<void> }[] = [
+const KINDS: { kind: string; title: string; full: string; fill: (page: Page) => Promise<void> }[] = [
   {
     kind: 'Join a run',
     title: 'Join XBM',
+    full: 'Join Extreme Black Mage',
     fill: async (page) => {
       // Join lists only runs Asahi is not in.
       await expect(subject(page, 'HCarling + HMaleficStar')).toHaveCount(0);
@@ -55,6 +57,7 @@ const KINDS: { kind: string; title: string; fill: (page: Page) => Promise<void> 
   {
     kind: 'Leave a run',
     title: 'Leave HCarling + HMaleficStar',
+    full: 'Leave Hard Karling + Hard Radiant Malefic Star',
     fill: async (page) => {
       await subject(page, 'HCarling + HMaleficStar').first().click();
       await note(page).fill('Something came up on Tuesday evening.');
@@ -63,6 +66,7 @@ const KINDS: { kind: string; title: string; fill: (page: Page) => Promise<void> 
   {
     kind: 'Swap my place',
     title: 'Swap my place on HCarling + HMaleficStar',
+    full: 'Swap my place on Hard Karling + Hard Radiant Malefic Star',
     fill: async (page) => {
       await subject(page, 'HCarling + HMaleficStar').first().click();
       await choose(page.getByRole('combobox', { name: 'Who takes your place' }), { label: 'Kaito' });
@@ -72,6 +76,7 @@ const KINDS: { kind: string; title: string; fill: (page: Page) => Promise<void> 
   {
     kind: 'New weekly run',
     title: 'New weekly HLimbo',
+    full: 'New weekly Hard Limbo',
     fill: async (page) => {
       await page.getByRole('textbox', { name: 'Bosses' }).fill('HLimbo');
       await page.getByRole('radiogroup', { name: 'Day' }).getByRole('radio', { name: 'Sat' }).click();
@@ -82,6 +87,7 @@ const KINDS: { kind: string; title: string; fill: (page: Page) => Promise<void> 
   {
     kind: 'Change a weekly run',
     title: 'Change weekly NBaldrix',
+    full: 'Change weekly Normal Baldrix',
     fill: async (page) => {
       await subject(page, 'NBaldrix').click();
       await page.getByRole('spinbutton', { name: 'Time' }).fill('22:00');
@@ -91,7 +97,7 @@ const KINDS: { kind: string; title: string; fill: (page: Page) => Promise<void> 
   },
 ];
 
-for (const { kind, title, fill } of KINDS) {
+for (const { kind, title, full, fill } of KINDS) {
   test(`${kind}: the form sends it and My requests opens on it, waiting`, async ({ page }) => {
     await form(page);
     await page.getByRole('radio', { name: kind }).check();
@@ -100,7 +106,7 @@ for (const { kind, title, fill } of KINDS) {
     await expect(page.getByRole('heading', { level: 2, name: title })).toBeVisible();
     await expect(sendKey(page)).not.toHaveAttribute('aria-disabled', 'true');
     await sendKey(page).click();
-    await sent(page, title);
+    await sent(page, title, full);
   });
 }
 
@@ -148,7 +154,7 @@ test("a send older than the fresh window: Confirm it's you, back with the form k
   await expect(page.getByRole('radio', { name: 'Leave a run' })).toBeChecked();
   await expect(note(page)).toHaveValue('Something came up on Tuesday evening.');
   await sendKey(page).click();
-  await sent(page, 'Leave HCarling + HMaleficStar');
+  await sent(page, 'Leave HCarling + HMaleficStar', 'Leave Hard Karling + Hard Radiant Malefic Star');
   await expect(page.locator('.req-detail__note')).toHaveText('“Something came up on Tuesday evening.”');
 });
 
@@ -202,7 +208,7 @@ test('My requests: newest first, each state on its chip; the open one says where
     ['req-bellona-join', 'declined'],
     ['req-jupiter-new', 'withdrawn'],
   ]);
-  await expect(page.locator('.pageline__context')).toHaveText('· 1 waiting · 1 decided');
+  await expect(page.locator('.pageline__context')).toHaveText('1 waiting · 1 decided');
   // The first is open by default: waiting, with Withdraw….
   await expect(rows.first()).toHaveAttribute('aria-current', 'page');
   await expect(page.locator('.req-detail')).toContainText('Waiting on the admins. The weekly timing stays Fri 21:30 until one decides');
@@ -224,13 +230,13 @@ test('Withdraw… confirms first; Keep it changes nothing, Withdraw closes the r
   await page.goto(`${PUBLIC}/requests?sw=off`);
   await page.getByRole('button', { name: 'Withdraw…' }).click();
   const dialog = page.getByRole('dialog', { name: 'Withdraw this request?' });
-  await expect(dialog).toContainText("Change weekly XKalos stops waiting on the admins and nothing changes. It still counts toward today's 6.");
+  await expect(dialog).toContainText("Change weekly Extreme Gatekeeper Kalos stops waiting on the admins and nothing changes. It still counts toward today's 6.");
   await dialog.getByRole('button', { name: 'Keep it' }).click();
   await expect(dialog).toBeHidden();
   await expect(page.locator('[data-request="req-kalos-weekly"] .req-chip')).toHaveText('waiting');
   await page.getByRole('button', { name: 'Withdraw…' }).click();
   await dialog.getByRole('button', { name: 'Withdraw', exact: true }).click();
-  await expect(toast(page).filter({ hasText: 'Withdrawn: Change weekly XKalos. Nothing changed.' })).toBeVisible();
+  await expect(toast(page).filter({ hasText: 'Withdrawn: Change weekly Extreme Gatekeeper Kalos. Nothing changed.' })).toBeVisible();
   await expect(page.locator('[data-request="req-kalos-weekly"] .req-chip')).toHaveText('withdrawn');
   await expect(page.locator('[data-request="req-kalos-weekly"]')).toBeFocused();
   await expect(page.locator('.req-count')).toHaveText('0 of 3 open · 1 of 6 today');

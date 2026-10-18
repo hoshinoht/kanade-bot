@@ -4,15 +4,34 @@ What changed in each Kanade release, newest first. Upgrading across several rele
 
 ## 1.0.0-beta.10
 
-_In development_
+_18 Oct 2026_
+
+A polish release: tidier admin and member portal screens, clear error states when the portal's week fails to load, larger tap targets, and reminder cards that keep counting answers until a run ends.
 
 ### Changes
 
 - Reminder cards now keep updating with ✅ and ❌ answers after a run starts, until the run's length in Config › Run lengths has passed; only then do they stay as the record.
+- The Members roster now keeps each member's stats next to their name instead of across the screen, with names at the same size as the other admin tables.
+- Week › Runs on a phone now shows each run as a card that fits the screen, and History › Sign-ins and Reminders keep their first column in view while scrolling sideways.
+- Member portal windows now have the same rounder corners as the admin app's.
+- The member portal's Requests now name bosses with their portraits and difficulty pills instead of boss codes such as "XKalos".
+- The member portal now says "Not in this run · view only" the same way on the card, run pane, list, phone bar and Move screen.
+- The member portal's Account › This browser now uses the admin's two-column layout on wide screens, and its tab reads "Browser" on phones.
+- In the Fixed editor, a later boss's character picker now lists the character already picked for the first boss at the top.
+
+### Improvements
+
+- Party lines on the member portal's run cards and List tab now wrap instead of cutting names off.
+- The member portal's small links and fields (the Week footer links, boss names on Bosses, the Move day-and-time field, the privacy links) are now easier to tap, and History rows in the admin app are a little taller.
 
 ### Fixes
 
 - Fixed answers and other connected button choices in the member portal and the admin app changing shape twice on one press or tap (In / Maybe / Out on the run pane, the phone run screen and My runs); a choice now morphs once, straight to its selected shape.
+- Fixed the member portal's My runs showing "Loading your runs…" forever when the week fails to load; it now shows the error with Try again, and the status chip no longer says "Loading…".
+- Fixed History's change details squeezing the before and after values to nothing when a field name is long.
+- Fixed Config › Models showing a blank Reasoning box when the saved level isn't one the model offers; it now shows the saved level and what actually runs.
+- Fixed missing spaces around "·" in Extractions, Rewrites, Inbox, History and other admin lists.
+- Fixed the member portal's phone week list not always showing runs in time order.
 
 ## 1.0.0-beta.9
 

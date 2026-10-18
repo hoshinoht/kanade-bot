@@ -3,13 +3,13 @@
   the admin card's body (`RunCardBody`, `AnswerBar`). The member's own runs
   get the full treatment and a YOU chip beside the clock; everyone else's are
   drawn faded without opacity: a dashed border on the row tint, no art or
-  status stripe, outlined difficulty pills and "not in this run · view only".
+  status stripe, outlined difficulty pills and "Not in this run · view only".
   Both open the run (view only for the others).
 -->
 <script lang="ts">
   import type { MemberRun, MemberWeek } from '@kanade/api-types';
   import { AnswerBar, openPlaces, RunCardBody, runAccessibleName } from '@kanade/ui';
-  import { partyLine } from '../member';
+  import { partyLine, VIEW_ONLY } from '../member';
 
   let {
     run,
@@ -49,6 +49,6 @@
     {#snippet badge()}{#if run.mine}<span class="you-chip" aria-hidden="true">YOU</span>{/if}{/snippet}
   </RunCardBody>
   <span class="member-card__party" title={party}>{party}</span>
-  {#if !run.mine}<span class="member-card__view" aria-hidden="true">not in this run · view only</span>{/if}
+  {#if !run.mine}<span class="member-card__view" aria-hidden="true">{VIEW_ONLY}</span>{/if}
   <AnswerBar participants={run.participants} class="member-card__answers" />
 </button>

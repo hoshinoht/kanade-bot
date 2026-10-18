@@ -351,10 +351,10 @@
     {/if}
   </section>
 {:else}
-  <div class="pageline" data-fid="page-line">
+  <div class="pageline pageline--titled" data-fid="page-line">
     <div class="pageline__head">
       <h1 class="pageline__title">Ask for a change</h1>
-      <p class="pageline__context">· admins review every request</p>
+      <p class="pageline__context">admins review every request</p>
     </div>
   </div>
   {@render notice?.()}

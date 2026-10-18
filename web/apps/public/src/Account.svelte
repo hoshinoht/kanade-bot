@@ -305,30 +305,33 @@
   <p class="infobox"><Icon name="monitor" /><span>Kept in this browser only; nothing is sent to the server. Your other devices keep their own choice.</span></p>
 {/snippet}
 
+<!-- The admin's This browser layout (`BrowserTab.svelte`): the kept note, then Appearance beside Motion (one column below 1100 px). -->
 {#snippet browser()}
-  <div class="account-col">
-    {#if phone}{@render kept()}{/if}
-    <section class="account-sec" aria-labelledby="acct-look">
-      <div class="account-sec__head">
-        <h3 class="cap" id="acct-look" tabindex="-1">Appearance</h3>
-        {#if !phone}<span class="account-sec__end account-sec__note">Kept in this browser only</span>{/if}
+  <div class="account-browser">
+    {@render kept()}
+    <div class="account-browser__cols">
+      <div class="account-browser__col">
+        <section class="account-sec" aria-labelledby="acct-look">
+          <div class="account-sec__head"><h3 class="cap" id="acct-look" tabindex="-1">Appearance</h3></div>
+          <ThemeTiles />
+        </section>
       </div>
-      <ThemeTiles />
-    </section>
-    <section class="account-sec" aria-labelledby="acct-motion" data-fid="account-motion">
-      <div class="account-sec__head"><h3 class="cap" id="acct-motion">Motion</h3></div>
-      <div class="account-grp">
-        <SwitchRow
-          id="acct-reduce"
-          icon={phone ? undefined : 'sliders'}
-          title="Reduce motion"
-          note="Still shapes and flat bars, even if your system allows motion"
-          on={motionPreference.reduce}
-          onflip={() => motionPreference.set(!motionPreference.reduce)}
-        />
+      <div class="account-browser__col">
+        <section class="account-sec" aria-labelledby="acct-motion" data-fid="account-motion">
+          <div class="account-sec__head"><h3 class="cap" id="acct-motion">Motion</h3></div>
+          <div class="account-grp">
+            <SwitchRow
+              id="acct-reduce"
+              icon={phone ? undefined : 'sliders'}
+              title="Reduce motion"
+              note="Still shapes and flat bars, even if your system allows motion"
+              on={motionPreference.reduce}
+              onflip={() => motionPreference.set(!motionPreference.reduce)}
+            />
+          </div>
+        </section>
       </div>
-    </section>
-    {#if !phone}{@render kept()}{/if}
+    </div>
   </div>
 {/snippet}
 
@@ -349,7 +352,7 @@
           onclick={() => choose(t.id)}
           onkeydown={(event) => tabKey(event, index)}
           data-fid={t.id === 'characters' ? 'account-tab-characters' : undefined}
-          >{t.label}{#if t.id === 'devices' && rows}<span class="tabs__count">{rows.length}</span>{:else if t.id === 'characters' && activeCharacters !== null}<span class="tabs__count"
+          >{phone && t.id === 'browser' ? 'Browser' : t.label}{#if t.id === 'devices' && rows}<span class="tabs__count">{rows.length}</span>{:else if t.id === 'characters' && activeCharacters !== null}<span class="tabs__count"
               >{activeCharacters}</span
             >{/if}</button
         >
@@ -387,10 +390,10 @@
     </div>
   </section>
 {:else}
-  <div class="pageline" data-fid="page-line">
+  <div class="pageline pageline--titled" data-fid="page-line">
     <div class="pageline__head">
       <h1 class="pageline__title" id="acct-page" tabindex="-1">Account</h1>
-      <p class="pageline__context">· {member.display} · signed in with Discord</p>
+      <p class="pageline__context">{member.display} · signed in with Discord</p>
     </div>
   </div>
   {@render notice?.()}

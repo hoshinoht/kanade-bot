@@ -84,6 +84,17 @@
   text-overflow: ellipsis;
 }
 
+// The footer's text buttons (Show them, Your next) keep a 24 px target inside the 38 px row.
+.member-week .week-window__foot .linklike {
+  min-height: 24px;
+}
+
+// The failed week: its note centred in the window, as Requests' and Bosses' are.
+.member-week-failed {
+  display: flex;
+  flex-direction: column;
+}
+
 .member-board .board__runs > li {
   display: flex;
   flex-direction: column;
@@ -155,9 +166,15 @@
     0 0 0 3px var(--accent-fill);
 }
 
+// A long party wraps to a second line before it gives way (titled with the whole party).
 .member-card__party {
-  @include ellipsis;
+  display: -webkit-box;
+  overflow: clip;
   font-size: var(--fs-small);
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
 }
 
 .member-card__answers {
@@ -289,12 +306,6 @@
 
 .week-runs__day b {
   color: var(--ink);
-}
-
-.member-list__party {
-  flex-wrap: nowrap;
-  max-width: 16rem;
-  overflow: hidden;
 }
 
 /* ── panes: Your week, the open run ─────────────────────────────────── */
@@ -781,6 +792,16 @@ a.week-glance__fact {
 .member-run:first-child { border-radius: 16px 16px 6px 6px; }
 .member-run:last-child { border-radius: 6px 6px 16px 16px; }
 .member-run:only-child { border-radius: 16px; }
+
+// Long boss pairs ("Karling + Radiant Malefic Star") take two lines on a card, then give way.
+.member-run .boss-stack__names {
+  display: -webkit-box;
+  overflow: clip;
+  white-space: normal;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+}
 
 .member-run--done {
   background: var(--pane);

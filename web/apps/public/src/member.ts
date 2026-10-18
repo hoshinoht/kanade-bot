@@ -5,6 +5,9 @@
 import type { MemberRun, MemberWeek, Participant } from '@kanade/api-types';
 import { dateMinutes, sortRuns, spanWords, wallMinutes } from '@kanade/ui';
 
+/** How a run the member is not on is marked, everywhere it shows (card, list, pane, phone bar, Move). */
+export const VIEW_ONLY = 'Not in this run · view only';
+
 /** Done and cancelled runs: hidden on the board until asked for, as on the admin Week. */
 export const isPast = (run: Pick<MemberRun, 'status'>): boolean => run.status === 'done' || run.status === 'cancelled';
 

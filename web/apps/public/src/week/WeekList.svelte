@@ -9,7 +9,7 @@
 <script lang="ts">
   import type { MemberRun, MemberWeek } from '@kanade/api-types';
   import { ANSWER_MARKS, AnswerChip, BossStack, longDate, runFullTitle, sortRuns, StatusMark, twinName } from '@kanade/ui';
-  import { yours } from '../member';
+  import { VIEW_ONLY, yours } from '../member';
 
   let {
     week,
@@ -76,7 +76,7 @@
             <td class="week-runs__state"><StatusMark status={run.status} words /></td>
             <td class="mono week-runs__on">{run.tally.on}/{run.tally.total}</td>
             <td>
-              <span class="week-runs__party member-list__party">
+              <span class="week-runs__party">
                 {#each run.participants as p (p.id)}<AnswerChip participant={p} label={p.id === memberId ? 'You' : twinName(run.participants, p)} />{/each}
               </span>
             </td>
@@ -85,7 +85,7 @@
                 <span class="you-chip">YOU</span>
                 <span class="member-list__answer">{answer === 'waiting' ? 'not answered' : ANSWER_MARKS[answer].word}</span>
               {:else}
-                <span class="member-card__view">view only</span>
+                <span class="member-card__view">{VIEW_ONLY}</span>
               {/if}
             </td>
           </tr>

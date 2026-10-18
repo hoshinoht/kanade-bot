@@ -410,8 +410,7 @@
     <span class="share__sub">Look up party fills it in.</span>
   {:else if total?.as_of}
     <span class="share__sub" data-fid="party-total-asof"
-      >as of <span class="mono">{asOfTime(total.as_of, week.timezone)}</span>{#if total.stale}
-        · <span class="party-total__old">{olderThan(total.fresh_days).slice(3)}</span>{/if}</span
+      >as of <span class="mono">{asOfTime(total.as_of, week.timezone)}</span>{#if total.stale}&nbsp;· <span class="party-total__old">{olderThan(total.fresh_days).slice(3)}</span>{/if}</span
     >
   {/if}
 {/snippet}

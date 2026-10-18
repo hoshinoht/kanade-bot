@@ -56,7 +56,7 @@
         <StatusChip tone={chip.tone}>{chip.text}</StatusChip>{#if boss.scouter}{@const est = scouterChip(boss.scouter)}<span
             class="status-chip status-chip--neutral ready__scouter"
             title={est.assumed ? `${est.rating} · ${est.assumed}` : est.rating}
-            >{est.text}<span class="vh"> · {est.rating}{est.assumed ? ` · ${est.assumed}` : ''}</span></span
+            >{est.text}<span class="vh">&nbsp;· {est.rating}{est.assumed ? ` · ${est.assumed}` : ''}</span></span
           >{/if}
       </li>
     {/each}

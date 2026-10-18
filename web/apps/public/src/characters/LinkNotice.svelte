@@ -161,7 +161,7 @@
       {/each}
       <p class="linknotice__small" data-fid="link-notice-asis">
         {notice.as_is}
-        {#if notice.privacy_url}<a href={notice.privacy_url} target="_blank" rel="noreferrer" data-fid="link-notice-privacy">Privacy notice</a>{/if}
+        {#if notice.privacy_url}<a class="privacy-link" href={notice.privacy_url} target="_blank" rel="noreferrer" data-fid="link-notice-privacy">Privacy notice</a>{/if}
       </p>
       <p class="linknotice__attrib" data-fid="link-notice-attrib">{notice.attribution}</p>
       {#if problem}<p class="settings__box settings__box--risk settings__box--small" role="alert"><Icon name="alert-triangle" />{problem}</p>{/if}

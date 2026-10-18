@@ -141,17 +141,12 @@ pub struct ReactionResult {
     pub run_id: String,
     pub applied: bool,
     pub state: Option<RsvpState>,
-    pub old_status: RunStatus,
     pub new_status: RunStatus,
 }
 
 impl ReactionResult {
     pub fn declined(&self) -> bool {
         self.applied && self.state == Some(RsvpState::No)
-    }
-
-    pub fn status_changed(&self) -> bool {
-        self.applied && self.old_status != self.new_status
     }
 }
 
@@ -176,7 +171,6 @@ pub fn apply_reaction(
         run_id: run.id.clone(),
         applied: false,
         state: None,
-        old_status: run.status,
         new_status: run.status,
     };
     let Some(state) = state_for_emoji(emoji) else {

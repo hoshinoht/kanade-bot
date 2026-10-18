@@ -21,8 +21,6 @@ use super::{audit::AuditEvent, crypto, wire};
 pub const AUTHORIZE_URL: &str = "https://discord.com/oauth2/authorize";
 /// The admin origin's callback.
 pub const CALLBACK_PATH: &str = "/api/admin/auth/discord/callback";
-/// The public origin's callback (the member realm's own application, D2-A).
-pub const PUBLIC_CALLBACK_PATH: &str = "/api/public/auth/discord/callback";
 /// How long a started login may take to come back.
 pub const LOGIN_TTL: TimeDelta = TimeDelta::minutes(10);
 /// Bounds memory held for unfinished logins; when full, new logins are refused

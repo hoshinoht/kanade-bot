@@ -310,6 +310,27 @@ td.reminders-table__run a {
   }
 }
 
+// The phone frame: the table still scrolls sideways, under a pinned first
+// column (the time, with its head), so a row keeps its anchor; the day labels
+// stay in view too. The cell's own row fill (resting, hover, open) covers what
+// slides beneath it. -10px: flush with the list's edge, past its 10 px gutter.
+.frame--phone .reminder > :first-child {
+  position: sticky;
+  left: -10px;
+  z-index: 1;
+}
+
+.frame--phone .reminders-table th[scope="col"]:first-child {
+  left: -10px;
+  z-index: 2;
+}
+
+.frame--phone .reminders-table__day {
+  display: inline-block;
+  position: sticky;
+  left: 0;
+}
+
 /* ── the card preview (O9) ─────────────────────────────────────────────── */
 
 .side-pane--reminder { flex-basis: min(440px, 44vw); }

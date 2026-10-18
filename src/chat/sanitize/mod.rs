@@ -34,9 +34,6 @@ use regex::{Regex, RegexBuilder};
 /// The reply when generation fails.
 pub const FAILURE_REPLY: &str = "Sorry — I couldn't complete that just now. Try me again in a bit.";
 
-/// A strategy answer is unsafe when its checked-in grounding is unavailable.
-pub const STRATEGY_GROUNDING_FAILURE_REPLY: &str = "I couldn't load the checked-in strategy notes just now, so I can't safely give mechanics advice.";
-
 fn pattern(source: &str) -> Regex {
     Regex::new(source).unwrap_or_else(|error| panic!("invalid pattern {source:?}: {error}"))
 }

@@ -1,8 +1,9 @@
 <!--
   My requests (`/requests?open=<id>`; boards Requests, Requests-Expired,
   PhoneRequests): the member's own requests, newest first, each with its
-  state chip (waiting outlined and dashed, approved and declined washed,
-  withdrawn and expired plain), beside the open one: Sent → Admin review →
+  bosses by name and difficulty and its state chip (waiting outlined,
+  approved and declined washed, withdrawn and expired plain), beside the
+  open one: Sent → Admin review →
   Decided, what holds until an admin decides, the note, Withdraw… while it
   waits, the admin's reason when declined, a link to what changed when
   approved, and "Ask again" when it expired. On phones the open row unfolds
@@ -10,10 +11,10 @@
 -->
 <script lang="ts">
   import type { MemberRequest } from '@kanade/api-types';
-  import { Icon, LoadingState, Modal, StateNote, type Toaster } from '@kanade/ui';
+  import { BossStack, Icon, LoadingState, Modal, runFullTitle, StateNote, type Toaster } from '@kanade/ui';
   import { tick, untrack, type Snippet } from 'svelte';
   import type { Route } from '../route.svelte';
-  import { tokenWords, whenWords } from '../timings/ownership';
+  import { whenWords } from '../timings/ownership';
   import type { MemberTimingsList } from '../timings/timings.svelte';
   import type { MemberWeeks } from '../weeks.svelte';
   import { follow } from '../writes/follow';
@@ -61,7 +62,11 @@
   const waitingCount = $derived(list.filter((r) => r.state === 'waiting').length);
   const decidedCount = $derived(list.filter((r) => r.state === 'approved' || r.state === 'rejected').length);
 
-  const titleOf = (r: MemberRequest) => headline(r.kind, tokenWords({ bosses: r.bosses.length ? r.bosses : (r.run?.bosses ?? []) }));
+  // The request's bosses (its run's when it names none): by name and difficulty, never by token.
+  const bossesOf = (r: MemberRequest) => (r.bosses.length ? r.bosses : (r.run?.bosses ?? []));
+  const titleOf = (r: MemberRequest) => headline(r.kind, runFullTitle({ bosses: bossesOf(r) }));
+  /** "Change weekly", "Swap my place on": the row's verb before its bosses. */
+  const verbOf = (r: MemberRequest) => headline(r.kind, '').trim();
 
   /** When the subject happens: the run's day and time, or the weekly timing it proposes. */
   function whenOf(r: MemberRequest): string {
@@ -85,7 +90,7 @@
   /** An expired request's "Ask again": this week's run of the same weekly timing, when there is one. */
   function againOf(r: MemberRequest): { href: string; hint: string } {
     const run = r.fixed_id ? weeks.this?.runs.find((x) => x.fixed_id === r.fixed_id && x.status !== 'done' && x.status !== 'cancelled') : undefined;
-    if (run && weeks.this) return { href: `/requests/new?${new URLSearchParams({ run: run.id, kind: r.kind })}`, hint: `${tokenWords(run)} runs again ${runWhen(run, weeks.this)}.` };
+    if (run && weeks.this) return { href: `/requests/new?${new URLSearchParams({ run: run.id, kind: r.kind })}`, hint: `${runFullTitle(run)} runs again ${runWhen(run, weeks.this)}.` };
     return { href: `/requests/new?${new URLSearchParams({ kind: r.kind })}`, hint: '' };
   }
 
@@ -200,7 +205,8 @@
 
 {#snippet rowHead(r: MemberRequest)}
   {@const when = whenOf(r)}
-  <span class="req-row__top"><b class="req-row__title">{titleOf(r)}</b>{@render chip(r)}</span>
+  <span class="req-row__top"><b class="req-row__title">{verbOf(r)}</b>{@render chip(r)}</span>
+  <BossStack bosses={bossesOf(r)} />
   <span class="mono req-row__line">{when ? `${when} · ` : ''}{rowTail(r, timeZone, now)}</span>
 {/snippet}
 
@@ -259,10 +265,10 @@
     {/if}
   </section>
 {:else}
-  <div class="pageline" data-fid="page-line">
+  <div class="pageline pageline--titled" data-fid="page-line">
     <div class="pageline__head">
       <h1 class="pageline__title">My requests</h1>
-      {#if data}<p class="pageline__context">· {waitingCount} waiting · {decidedCount} decided</p>{/if}
+      {#if data}<p class="pageline__context">{waitingCount} waiting · {decidedCount} decided</p>{/if}
     </div>
     <div class="pageline__end"><a class="btn btn--primary" href="/requests/new" onclick={(event) => follow(route, event, '/requests/new')}>Ask for a change…</a></div>
   </div>

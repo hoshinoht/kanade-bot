@@ -19,16 +19,6 @@ pub enum ParseError {
     Invalid(Vec<FieldError>),
 }
 
-impl ParseError {
-    /// The v4 exception class: `ValueError` or pydantic's `ValidationError`.
-    pub fn error_class(&self) -> &'static str {
-        match self {
-            Self::Invalid(_) => "ValidationError",
-            Self::Empty | Self::NotJson(_) | Self::NotObject(_) => "ValueError",
-        }
-    }
-}
-
 impl fmt::Display for ParseError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {

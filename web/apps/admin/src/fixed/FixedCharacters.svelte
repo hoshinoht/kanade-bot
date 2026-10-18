@@ -154,6 +154,15 @@
     return slot.candidates.find((c) => c.role === 'main') ?? (slot.candidates.length === 1 ? slot.candidates[0]! : null);
   }
 
+  /**
+   * A later boss's picker lists the first boss's character first: choosing it goes back to the
+   * fallback ("same as HCarling", B_FixedBoss2Pick, B_PhoneFixedBossPick); the rest keep their order.
+   */
+  function pickSlot(slot: RunCharacterSlot, i: number): RunCharacterSlot {
+    const first = i > 0 ? slot.candidates.find((c) => c.id === slot.bosses[0]?.brings) : undefined;
+    return first ? { ...slot, candidates: [first, ...slot.candidates.filter((c) => c !== first)] } : slot;
+  }
+
   const BASIS_WORDS: Record<NonNullable<RunCharacterSlot['basis']>, string> = {
     run_pick: 'picked for this run',
     timing_pick: 'picked for this timing',
@@ -438,7 +447,7 @@
     fid="fixed-pick-menu"
     optionFid="fixed-pick-option"
     tagEveryOption
-    {...{ slot: s }}
+    {...{ slot: pickSlot(s, i) }}
     name={row.name}
     {title}
     {busy}
@@ -681,7 +690,7 @@
         optionFid="fixed-pick-option"
         tagEveryOption
         bind:open={sheetOpen}
-        {slot}
+        {...{ slot: pickSlot(slot, i) }}
         name={row.name}
         {title}
         {eyebrow}

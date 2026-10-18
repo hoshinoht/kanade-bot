@@ -63,7 +63,7 @@
   {#each groups as group (group.day)}
     <tbody>
       <tr class="reminders-table__group" data-fid="reminders-group">
-        <th scope="colgroup" colspan="7">{label(group.day, group.rows[0]!)} <span class="reminders-table__count">{group.rows.length}</span></th>
+        <th scope="colgroup" colspan="7"><span class="reminders-table__day">{label(group.day, group.rows[0]!)} <span class="reminders-table__count">{group.rows.length}</span></span></th>
       </tr>
       {#each group.rows as row (row.id)}
         {@const rest = row.party.slice(SHOWN)}

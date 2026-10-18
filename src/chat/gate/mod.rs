@@ -173,18 +173,6 @@ fn before_the_mention_check(
     None
 }
 
-/// Would this message reach the mention test? Asked before spending an API
-/// call resolving a reply.
-pub fn would_check_mention(
-    message: &IncomingMessage,
-    settings: &PilotSettings,
-    directory: &(impl ChannelDirectory + ?Sized),
-    bot_user_id: Option<&str>,
-    enabled: bool,
-) -> bool {
-    before_the_mention_check(message, settings, directory, bot_user_id, enabled).is_none()
-}
-
 /// The non-spending access checks.
 pub fn access_decide(
     message: &IncomingMessage,

@@ -132,7 +132,13 @@
 }
 
 // Ink with an accent underline: the ticked rows' wash leaves accent text under 4.5:1.
+// Its box reaches 24 px (padding the margin takes back, so the row does not move);
+// a press anywhere else on the row follows it too (BossGrid `forwardRowClicks`).
 a.bossrow__name {
+  display: inline-block;
+  min-height: 24px;
+  margin-block: -4px;
+  padding-block: 4px;
   color: var(--ink);
   text-decoration-color: var(--accent);
 }

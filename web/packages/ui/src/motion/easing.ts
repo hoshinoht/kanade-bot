@@ -3,10 +3,7 @@
 
 /** Standard easing for enter/forward motion. */
 export const STANDARD = 'cubic-bezier(0.2, 0, 0, 1)';
-/** Accelerating exit (M3 standard accelerate). */
-export const EXIT = 'cubic-bezier(0.3, 0, 1, 1)';
 export const ENTER_MS = 250;
-export const EXIT_MS = 200;
 
 /** Standard spatial spring (damping 0.9, stiffness 700), sampled; identical to `$spring`/`$spring-ms` in _easing.scss. */
 export const SPRING =

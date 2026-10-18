@@ -43,16 +43,6 @@ fn levels_text() -> String {
         .join(", ")
 }
 
-/// Validate a level typed by a person: trimmed and case-folded; `None` is refused.
-///
-/// # Errors
-/// [`PingError::InvalidLevel`] quoting the raw value in backticks, as v4.
-pub fn normalise_level(value: Option<&str>) -> Result<PingLevel, PingError> {
-    let level = pytext::strip(value.unwrap_or_default()).to_lowercase();
-    PingLevel::parse(&level)
-        .ok_or_else(|| PingError::InvalidLevel(format!("`{}`", value.unwrap_or("None"))))
-}
-
 /// Ping-level refusals, with v4's exact messages.
 #[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
 pub enum PingError {

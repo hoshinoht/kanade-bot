@@ -118,10 +118,10 @@
   fids={FIDS}
 >
   {#snippet pageLine()}
-    <div class="pageline" data-fid="page-line">
+    <div class="pageline pageline--titled" data-fid="page-line">
       <div class="pageline__head">
         <h1 class="pageline__title">Bosses</h1>
-        <p class="pageline__context">· guides for every boss, read-only</p>
+        <p class="pageline__context">guides for every boss, read-only</p>
       </div>
     </div>
   {/snippet}

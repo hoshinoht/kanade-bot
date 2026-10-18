@@ -18,6 +18,12 @@
   font-size: var(--fs-micro);
 }
 
+// "Privacy notice" inside a row's or a notice's words: an inline box padded to a
+// 24 px target without opening the line.
+.privacy-link {
+  padding-block: 4px;
+}
+
 /* ── The NEXON notice (Discord's v1 notice, as a dialog) ── */
 
 dialog.linknotice-dialog:not(.own-sheet) {

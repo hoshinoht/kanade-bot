@@ -264,12 +264,6 @@
 
 /* ── Chips and the stepper ── */
 
-// Waiting: the warn outline, dashed (a state still open).
-.req-chip--waiting {
-  box-shadow: none;
-  border: 1.5px dashed color-mix(in srgb, var(--warn) 55%, var(--surface));
-}
-
 .req-progress {
   display: flex;
   flex-direction: column;
