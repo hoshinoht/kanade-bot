@@ -32,7 +32,7 @@
         </table>
       {:else}<p class="note">No names were replaced.</p>{/if}
       {#each view.rounds as r (r.round)}
-        <h4 class="modelview__head">Round {r.round}{#if r.clean}<span class="note"> · clean retry</span>{/if}</h4>
+        <h4 class="modelview__head">Round {r.round}{#if r.clean}<span class="note">&nbsp;· clean retry</span>{/if}</h4>
         <h5 class="modelview__label">Request as sent</h5>
         <ol class="modelview__messages">
           {#each r.request as message, i (i)}

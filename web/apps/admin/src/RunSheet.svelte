@@ -831,7 +831,7 @@
             <div class="week-pane__lead">
             <p class="week-pane__when">
               <span class="week-pane__time mono">{run.status === 'otot' || !run.time ? 'own time' : run.time}</span>
-              <span class="cap week-pane__day">{dayLabel(week, run.day)}{#if countdown} · {countdown}{/if}</span>
+              <span class="cap week-pane__day">{dayLabel(week, run.day)}{countdown ? ` · ${countdown}` : ''}</span>
               {@render stagedWhen(run)}
             </p>
             {#if until}

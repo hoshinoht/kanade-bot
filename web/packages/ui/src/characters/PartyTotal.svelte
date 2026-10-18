@@ -47,8 +47,9 @@
       <span class="share__sub">{audience === 'admin' ? 'Look up party fills it in.' : 'Fills in after the next lookup.'}</span>
     {:else if total.as_of}
       <span class="share__sub" data-fid={fids.asOf}
-        >as of <span class="mono">{asOfTime(total.as_of, timeZone)}</span>{#if total.stale}
-          · <span class="party-total__old">{olderThan(total.fresh_days).slice(3)}</span>{/if}</span
+        >as of <span class="mono">{asOfTime(total.as_of, timeZone)}</span>{#if total.stale}&nbsp;· <span class="party-total__old"
+            >{olderThan(total.fresh_days).slice(3)}</span
+          >{/if}</span
       >
     {/if}
   </div>

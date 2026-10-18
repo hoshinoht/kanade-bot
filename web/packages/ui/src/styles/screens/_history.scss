@@ -32,7 +32,7 @@
 .history__week h3 { margin: 0; padding: 8px 6px 4px; font-size: var(--fs-body-sm); }
 .history-timeline { margin: 0; padding: 0; list-style: none; }
 // A row (mockup `.ev`): the dot, then the facts line over the one-line summary.
-.history-row { display: flex; gap: 12px; align-items: flex-start; width: 100%; padding: 10px 14px; border: 0; border-radius: 6px; background: var(--row); color: var(--ink); font: inherit; line-height: 1.35; text-align: left; cursor: pointer; }
+.history-row { display: flex; gap: 12px; align-items: flex-start; width: 100%; min-height: 44px; padding: 10px 14px; border: 0; border-radius: 6px; background: var(--row); color: var(--ink); font: inherit; line-height: 1.35; text-align: left; cursor: pointer; }
 .history-row__dot { flex: none; width: 10px; height: 10px; margin-top: 4px; border-radius: 50%; box-shadow: inset 0 0 0 2px var(--win); }
 .history-row--active .history-row__dot { background: var(--accent); box-shadow: none; }
 .history-row__text { display: flex; flex: 1 1 auto; flex-direction: column; gap: 3px; min-width: 0; }
@@ -87,8 +87,9 @@
 .history-diff { display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 14px; background: var(--row); box-shadow: inset 0 0 0 1.5px var(--line); }
 .history-diff > p { margin: 0; color: var(--dim); font-size: var(--fs-mini); line-height: 1.35; overflow-wrap: anywhere; }
 // One line per field (mockup `.drow`): the name, was → now; long values (a
-// roster of IDs, a timestamp) wrap inside their own column.
-.history-diff__fields { display: grid; grid-template-columns: minmax(64px, max-content) minmax(0, 1fr) 14px minmax(0, 1fr); gap: 4px 8px; margin: 0; }
+// roster of IDs, a timestamp) wrap inside their own column. The name column
+// stops at 40%, so a long field name wraps rather than squeezing was/now to 0.
+.history-diff__fields { display: grid; grid-template-columns: fit-content(40%) minmax(0, 1fr) 14px minmax(0, 1fr); gap: 4px 8px; margin: 0; }
 .history-diff__field { display: grid; grid-column: 1 / -1; grid-template-columns: subgrid; align-items: baseline; font-size: var(--fs-small); line-height: 1.35; }
 .history-diff__field dt, .history-diff__field dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
 .history-diff__field dt { color: var(--dim); font-size: var(--fs-micro); font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; }
@@ -134,6 +135,11 @@
 .history-backups thead th:first-child { left: 0; z-index: 2; }
 .history-backups tbody th { border-radius: 6px 0 0 6px; }
 .history-backups td:last-child { border-radius: 0 6px 6px 0; }
+// Sign-ins reuse the table, but their first column is the time: it is the
+// pinned one, under the pinned "When" head, so a scrolled row keeps its
+// anchor; the name is an ordinary cell there, not Checkpoints' pinned header.
+.history-signins__table tbody th { position: static; border-radius: 0; }
+.history-signins__table td:first-child { position: sticky; left: 0; z-index: 1; border-radius: 6px 0 0 6px; }
 .history-anchor { gap: 4px; }
 .history-anchor .icon { width: 13px; height: 13px; stroke-width: 3; }
 // Older schema: still anchored, but only restorable with that schema's image -- an outline, dashed.

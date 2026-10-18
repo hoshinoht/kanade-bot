@@ -505,19 +505,16 @@
   <dl class="graph-facts">
     <dt class="cap">Started on</dt>
     <dd
-      ><button type="button" class="linklike mono" onclick={() => (started ? (selected = { kind: 'change', seq: d.base }) : void goTo(d.base, true))}>#{d.base}</button>{#if started}
-        · {who(started)} · {localAt(started.at, timezone)}{/if}</dd
+      ><button type="button" class="linklike mono" onclick={() => (started ? (selected = { kind: 'change', seq: d.base }) : void goTo(d.base, true))}>#{d.base}</button>{#if started}&nbsp;· {who(started)} · {localAt(started.at, timezone)}{/if}</dd
     >
     {#if d.status === 'open'}
       <dt class="cap">Head</dt>
       <dd>
-        <span class="mono">#{headSeq}</span>{#if headSeq > d.base}
-          · {headSeq - d.base} change{headSeq - d.base === 1 ? '' : 's'} since{#if since.length}: {#each since as r, i (r.seq)}{i ? ', ' : ''}<span class="mono">#{r.seq}</span> {who(r)}{/each}{/if}{:else}
-          · up to date{/if}
+        <span class="mono">#{headSeq}</span>{#if headSeq > d.base}&nbsp;· {headSeq - d.base} change{headSeq - d.base === 1 ? '' : 's'} since{#if since.length}: {#each since as r, i (r.seq)}{i ? ', ' : ''}<span class="mono">#{r.seq}</span> {who(r)}{/each}{/if}{:else}&nbsp;· up to date{/if}
       </dd>
     {:else}
       <dt class="cap">{d.status === 'merged' ? 'Merged as' : 'Closed'}</dt>
-      <dd>{#if d.merged_seq !== null}<span class="mono">#{d.merged_seq}</span> · {/if}{closeWord(d)}{d.closed_by ? ` by ${d.closed_by.name}` : ''} · {localAt(d.updated_at, timezone)}</dd>
+      <dd>{#if d.merged_seq !== null}<span class="mono">#{d.merged_seq}</span> ·&nbsp;{/if}{closeWord(d)}{d.closed_by ? ` by ${d.closed_by.name}` : ''} · {localAt(d.updated_at, timezone)}</dd>
     {/if}
   </dl>
   {#if preview?.conflicts.length}

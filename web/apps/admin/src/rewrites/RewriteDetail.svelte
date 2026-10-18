@@ -69,7 +69,7 @@
         <span class="cap">Rewrite · #{data.short_id}</span>
         <h2 class="extract-detail__when" id="{uid}-title"><LogTime at={data.at} {timeZone} /></h2>
         <p class="extract-detail__meta">
-          <span class="mono">{data.model ?? 'no model call'}</span>{#if data.reasoning} · <span class="mono">{data.reasoning}</span>{/if} ·
+          <span class="mono">{data.model ?? 'no model call'}</span>{#if data.reasoning}&nbsp;· <span class="mono">{data.reasoning}</span>{/if} ·
           {KIND_LABEL[data.kind] ?? data.kind} · {STAGE_LABEL[data.stage] ?? data.stage} ·
           <span class="mono">{data.latency_ms !== null ? `${data.latency_ms.toLocaleString('en')} ms` : 'not called'}</span>
         </p>

@@ -1368,6 +1368,7 @@ const PAIRS: Pair[] = [
     ready: async (page) => {
       await (await newestChange(page)).click();
       await expect(page.getByRole('complementary', { name: 'Change details' })).toBeVisible();
+      await page.locator('.history-list-region__scroll').evaluate((el) => (el.scrollTop = 0));
     },
   },
   { name: 'history-ck', board: 'B_HistoryCk', path: '/history', ready: opens((page) => page.getByRole('tab', { name: 'Checkpoints' }), (page) => page.getByRole('table', { name: /Backups/ })) },

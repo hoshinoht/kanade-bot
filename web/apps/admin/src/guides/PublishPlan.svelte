@@ -152,7 +152,7 @@
     <p class="gplan__lead">
       {#if plan.needs.channel_move}Version {plan.version}. The guide is in <span class="mono">{oldName}</span> now and moves to <span class="mono">{target}</span>
       {:else if posted}Version {plan.version} against the {plural(posted, 'message')} in <span class="mono">{target}</span> now
-      {:else}Version {plan.version}, first publish to <span class="mono">{target}</span>{/if}{#if plan.checked} · checked {checked}.{:else}. Not checked against Discord.{/if}
+      {:else}Version {plan.version}, first publish to <span class="mono">{target}</span>{/if}{#if plan.checked}&nbsp;· checked {checked}.{:else}. Not checked against Discord.{/if}
     </p>
     {#if plan.no_op || noop}
       <div class="flash flash--ok gplan__flash" role="status" data-fid="guide-plan-noop"><b>Nothing to publish.</b> Discord already shows version {plan.version}.</div>

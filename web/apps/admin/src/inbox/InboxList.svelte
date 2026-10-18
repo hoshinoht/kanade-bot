@@ -52,7 +52,7 @@
       <span class="inbox__art" aria-hidden="true"><Portrait boss={p.bosses[0]} size="md" /></span>
     {/if}
     <RowContent expanded={p.id === selected}>
-      {#snippet compact()}<span class="inbox__what">{title(p)}</span> <span class="inbox__meta">· {who(p)} · {p.when}</span>{#if p.thread?.length}<span class="inbox__count"> · {p.thread.length} messages · {p.thread.filter((m) => m.used).length} used</span>{/if}{#each p.flags as flag (flag)} · {FLAG_LABEL[flag]}{/each}{#if p.is_question} · still a question{/if}{/snippet}
+      {#snippet compact()}<span class="inbox__what">{title(p)}</span> <span class="inbox__meta">· {who(p)} · {p.when}</span>{#if p.thread?.length}<span class="inbox__count">&nbsp;· {p.thread.length} messages · {p.thread.filter((m) => m.used).length} used</span>{/if}{#each p.flags as flag (flag)}&nbsp;· {FLAG_LABEL[flag]}{/each}{#if p.is_question}&nbsp;· still a question{/if}{/snippet}
       <span class="inbox__lines">
       <span class="inbox__what">{title(p)}</span>
       <span class="inbox__meta"><span>{who(p)}</span> · <span class="mono">{p.when}</span></span>

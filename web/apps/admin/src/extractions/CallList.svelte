@@ -53,8 +53,11 @@
     <span class="extract-row__line extract-row__meta">
       <span class="extract-row__channel">{#if row.channel_id}<Name kind="channel" id={row.channel_id} name={row.channel} plain />{:else}no channel{/if}</span>
       <span class="extract-row__facts mono"
-        >{row.messages} msg · {duration(row.latency_ms)}{#if row.prompt_tokens != null || row.completion_tokens != null}
-          · <TokenUsage prompt={row.prompt_tokens} completion={row.completion_tokens} reasoning={row.reasoning_tokens} />{/if}</span
+        >{row.messages} msg · {duration(row.latency_ms)}{#if row.prompt_tokens != null || row.completion_tokens != null}&nbsp;· <TokenUsage
+            prompt={row.prompt_tokens}
+            completion={row.completion_tokens}
+            reasoning={row.reasoning_tokens}
+          />{/if}</span
       >
     </span>
     {#if row.id === selected}<span class="vh">open</span>{/if}

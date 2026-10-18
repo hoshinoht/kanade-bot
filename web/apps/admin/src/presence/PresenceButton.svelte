@@ -85,7 +85,7 @@
         </span>
       {:else}
         <span class="presence__names">
-          {#each busy as entry, i (entry.id)}{#if i}<span> · </span>{/if}<b>{entry.name}</b> editing{/each}{@render viewers(busy.length ? ' · ' : '')}
+          {#each busy as entry, i (entry.id)}{#if i}<span>&nbsp;·&nbsp;</span>{/if}<b>{entry.name}</b> editing{/each}{@render viewers(busy.length ? ' · ' : '')}
         </span>
       {/if}
     </button>

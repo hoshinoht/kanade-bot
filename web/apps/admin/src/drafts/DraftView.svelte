@@ -284,8 +284,8 @@
             </div>
           {/if}
           <p class="drafts__meta" data-fid="drafts-meta">
-            {#if bar}{d.week ? `Boss week of ${shortDate(d.week)}` : 'Draft'} · {d.staged} staged · on <span class="mono">#{d.base}</span>{#if moved} · head <span class="mono">#{p?.head}</span>{/if}
-            {:else}{d.author.name} · edited {editedAt(d.updated_at, timeZone, week?.generated_at ?? '')} · on change <span class="mono">#{d.base}</span>{#if moved} · head <span class="mono">#{p?.head}</span>{/if}{/if}
+            {#if bar}{d.week ? `Boss week of ${shortDate(d.week)}` : 'Draft'} · {d.staged} staged · on <span class="mono">#{d.base}</span>{#if moved}&nbsp;· head <span class="mono">#{p?.head}</span>{/if}
+            {:else}{d.author.name} · edited {editedAt(d.updated_at, timeZone, week?.generated_at ?? '')} · on change <span class="mono">#{d.base}</span>{#if moved}&nbsp;· head <span class="mono">#{p?.head}</span>{/if}{/if}
           </p>
         </div>
       </header>

@@ -339,7 +339,7 @@
       </p>
     {/if}
     {#if p.preview.no_effect}<p class="note">Already in effect: approving would change nothing.</p>{/if}
-    {#if p.public_summary}<p class="note">The member sees: “{p.public_summary}”{#if p.expires_at && !expiry} · expires <span class="mono">{p.expires_at}</span>{/if}</p>{/if}
+    {#if p.public_summary}<p class="note">The member sees: “{p.public_summary}”{#if p.expires_at && !expiry}&nbsp;· expires <span class="mono">{p.expires_at}</span>{/if}</p>{/if}
     {#if expiry}
       <!-- Drains toward expiry; the last fifth turns the warning colour and says so. -->
       <div class="proposal__expiry" class:proposal__expiry--warn={expiry.warn} data-fid="inbox-expiry">

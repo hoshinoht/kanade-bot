@@ -51,11 +51,13 @@ export function reasoningChoices(
   // A model that requires reasoning never offers `off` (the server would refuse it).
   const off = model?.off_allowed === false ? [] : [{ value: 'off', label: 'Off' }];
   const choices = [...off, ...levels.map((e) => ({ value: e, label: e[0]!.toUpperCase() + e.slice(1) }))];
+  // A saved value the picker no longer offers stays selectable, marked, so a
+  // fail-closed admin sees what is stored rather than a blank box, and it is
+  // sent unchanged until another level is picked. A stored `off` the model
+  // refuses runs at the server's floor (`resetLevel`), so the mark says which.
+  if (current === 'off' && !choices.some((c) => c.value === 'off')) choices.unshift({ value: 'off', label: `Off (requires reasoning: runs ${resetLevel(model)})` });
+  else if (current && !choices.some((c) => c.value === current)) choices.push({ value: current, label: `${current} (not listed)` });
   if (role === 'extraction') return choices;
-  const values = new Map(choices.map((c) => [c.value, c.label] as const));
-  // A saved value the catalog no longer lists stays selectable, marked, so a
-  // fail-closed admin sees what is stored rather than a blank box.
-  if (current && !values.has(current)) choices.push({ value: current, label: `${current} (not listed)` });
   const inherit = isReasoningValid(model, extractionEffort);
   if (inherit) return [{ value: '', label: 'Same as extraction' }, ...choices];
   // Never a blank box: a stored inherit that no longer fits stays visible, marked.
