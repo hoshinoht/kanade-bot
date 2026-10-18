@@ -14,7 +14,7 @@
   import { ANSWER_MARKS, answerCounts, AnswerBar, BossArt, BossTag, dayLabel, enter, Icon, runCountdown, runFullTitle, StatusMark, WavyProgress } from '@kanade/ui';
   import { RunPartyView, type MemberCharacters } from '../characters/characters.svelte';
   import PartyCharacters from '../characters/PartyCharacters.svelte';
-  import { countdownWords, yours } from '../member';
+  import { countdownWords, VIEW_ONLY, yours } from '../member';
   import MemberMove from '../move/MemberMove.svelte';
   import type { Route } from '../route.svelte';
   import type { WeekKey } from '../weeks.svelte';
@@ -83,7 +83,7 @@
     {#if run.mine}
       <p class="member-pane__who"><span class="you-chip">YOU'RE IN</span> Your run</p>
     {:else}
-      <p class="member-pane__who"><span class="member-card__view">not in this run</span> View only</p>
+      <p class="member-pane__who"><span class="member-card__view">{VIEW_ONLY}</span></p>
     {/if}
     <button type="button" class="btn btn--ghost member-pane__close" aria-label="Close {title}" onclick={onclose}><Icon name="x" /></button>
   </div>

@@ -37,6 +37,17 @@
   color: var(--win-ink);
 }
 
+// A page's window (one per page, in both apps): the spec's 20 px frame and its
+// 18 px title bar. `.frame` keeps the admin rail's specificity; the phone frame
+// (`_topbar.scss`) narrows it to 18 / 16.
+.frame .shell > .card {
+  border-radius: var(--r-win);
+}
+
+.frame .shell > .card > .card__head {
+  border-radius: var(--r-win-in) var(--r-win-in) 0 0;
+}
+
 .empty {
   border: 2px dashed var(--line);
   border-radius: var(--r);

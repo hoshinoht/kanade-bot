@@ -132,7 +132,7 @@ const ALLOW: Allow[] = [
     screens: ['public/ signed in (Week)'],
     sizes: '*',
     kinds: ['ellipsis'],
-    reason: "a member card's one-line party gives way to the card's width (boards Main, PhoneWeek); titled with the whole party",
+    reason: "a member card's party wraps to two lines, then gives way to the card's width (boards Main, PhoneWeek); titled with the whole party",
   },
 ];
 

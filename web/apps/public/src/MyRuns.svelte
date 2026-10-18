@@ -13,7 +13,7 @@
 -->
 <script lang="ts">
   import type { MemberRun, MemberWeek, PublicSession, PublicSessionRow } from '@kanade/api-types';
-  import { ANSWER_MARKS, BossArt, BossStack, dayLabel, dayNumber, Icon, LoadingState, longDate, runTitle, sortRuns, STATUS_WORDS, type Toaster } from '@kanade/ui';
+  import { ANSWER_MARKS, BossArt, BossStack, dayLabel, dayNumber, Icon, LoadingState, longDate, runTitle, sortRuns, StateNote, STATUS_WORDS, type Toaster } from '@kanade/ui';
   import { tick, untrack, type Snippet } from 'svelte';
   import { answersOwed, countdownWords, isPast, youFirst, yours } from './member';
   import type { Route } from './route.svelte';
@@ -162,7 +162,16 @@
 {/snippet}
 
 {#snippet list()}
-  {#if !week}
+  {#if !week && weeks.error && !weeks.offline}
+    <div class="state-pane">
+      <StateNote icon="alert-circle" level={3} title="Your runs didn't load">
+        {weeks.error}
+        {#snippet actions()}
+          <button type="button" class="btn btn--primary" onclick={() => void weeks.refresh()}>Try again</button>
+        {/snippet}
+      </StateNote>
+    </div>
+  {:else if !week}
     <LoadingState text="Loading your runs…" />
   {:else if runs.length === 0}
     <p class="note member-runs__none">You're not in any run {which === 'next' ? 'next week' : 'this week'}.</p>
@@ -217,12 +226,10 @@
     </div>
   </section>
 {:else}
-  <div class="pageline" data-fid="page-line">
+  <div class="pageline pageline--titled" data-fid="page-line">
     <div class="pageline__head">
       <h1 class="pageline__title">My runs</h1>
-      <p class="pageline__context">
-        {#if week}· boss week <span class="mono">{range}</span> · <b class="mono">{owed.length}</b> answer{owed.length === 1 ? '' : 's'} owed{/if}
-      </p>
+      {#if week}<p class="pageline__context">boss week <span class="mono">{range}</span> · <b class="mono">{owed.length}</b> answer{owed.length === 1 ? '' : 's'} owed</p>{/if}
     </div>
   </div>
   {@render notice?.()}
@@ -239,18 +246,20 @@
       {#if tab !== 'timings'}
         <aside class="side-pane member-runs__aside" aria-label="Your runs" data-fid="myruns-aside">
           <p class="cap">{which === 'next' ? 'Next week' : 'This week'} · you</p>
-          <dl class="member-runs__tiles">
-            <div class="member-runs__tile">
-              <dt class="cap">Runs</dt>
-              <dd class="member-runs__value">{ahead.length} {which === 'next' ? 'planned' : 'left'}</dd>
-              <dd class="member-runs__sub">of {runs.length} {which === 'next' ? 'next week' : 'this week'}</dd>
-            </div>
-            <div class="member-runs__tile">
-              <dt class="cap">Answers owed</dt>
-              <dd class="member-runs__value">{owed.length}</dd>
-              <dd class="member-runs__sub">{owed[0] && week ? `${owed[0].bosses.map((b) => b.token).join(' + ')} · ${week.days[owed[0].day]?.dow ?? ''}` : 'none'}</dd>
-            </div>
-          </dl>
+          {#if week}
+            <dl class="member-runs__tiles">
+              <div class="member-runs__tile">
+                <dt class="cap">Runs</dt>
+                <dd class="member-runs__value">{ahead.length} {which === 'next' ? 'planned' : 'left'}</dd>
+                <dd class="member-runs__sub">of {runs.length} {which === 'next' ? 'next week' : 'this week'}</dd>
+              </div>
+              <div class="member-runs__tile">
+                <dt class="cap">Answers owed</dt>
+                <dd class="member-runs__value">{owed.length}</dd>
+                <dd class="member-runs__sub">{owed[0] ? `${owed[0].bosses.map((b) => b.token).join(' + ')} · ${week.days[owed[0].day]?.dow ?? ''}` : 'none'}</dd>
+              </div>
+            </dl>
+          {/if}
           <section class="account-sec" aria-labelledby="mine-calendar">
             <div class="account-sec__head">
               <h3 class="cap" id="mine-calendar">Calendar feed</h3>

@@ -31,6 +31,7 @@
   import RequestsPage from './requests/RequestsPage.svelte';
   import WeekPage from './week/WeekPage.svelte';
   import { landingOf, safeNext, withoutLoginError } from './landing';
+  import { VIEW_ONLY } from './member';
   import { Portal } from './portal.svelte';
   import { Route, type Page } from './route.svelte';
 
@@ -96,7 +97,8 @@
   // Freshness and "as of" follow the week; before one arrives, the session's read.
   const seen = $derived(weeks.updated ?? portal.updated);
   const updated = $derived(seen === null ? '' : new Date(seen).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }));
-  const freshness: FreshState = $derived(offline ? 'offline' : !weeks.this ? 'loading' : 'live');
+  // A read the server refused (online) says so, not "Loading…" forever.
+  const freshness: FreshState = $derived(offline ? 'offline' : weeks.error ? 'error' : !weeks.this ? 'loading' : 'live');
   const myRuns = $derived(weeks.this ? weeks.this.runs.filter((r) => r.mine).length : null);
   // The masthead's and the drawer's counts: My runs this week, Requests waiting on the admins.
   const counts: Partial<Record<Page, number | null>> = $derived({ mine: myRuns, requests: portal.requests.waiting });
@@ -219,7 +221,7 @@
       drawerId="portal-drawer"
       bind:menu={menuButton}
       back={phoneRun
-        ? { label: 'Week', chip: phoneRun.mine ? "YOU'RE IN" : 'not in this run · view only', mine: phoneRun.mine, onback: () => route.set({ run: '' }) }
+        ? { label: 'Week', chip: phoneRun.mine ? "YOU'RE IN" : VIEW_ONLY, mine: phoneRun.mine, onback: () => route.set({ run: '' }) }
         : page === 'bosses' && bossBack
           ? { label: bossBack.label, name: bossBack.name, onback: bossBack.go }
           : page === 'request'

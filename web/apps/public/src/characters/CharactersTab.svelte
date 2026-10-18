@@ -211,7 +211,7 @@
             <span class="account-row__title">What Kanade keeps for you</span>
             <span class="account-row__sub"
               >Everything kept, per character, with dates. Unlink deletes it at once; your roster characters keep their class and level.
-              {#if data.privacy_url}<a href={data.privacy_url} target="_blank" rel="noreferrer" data-fid="mychars-privacy">Privacy notice</a>{/if}</span
+              {#if data.privacy_url}<a class="privacy-link" href={data.privacy_url} target="_blank" rel="noreferrer" data-fid="mychars-privacy">Privacy notice</a>{/if}</span
             >
           </span>
           <button type="button" class="btn" data-fid="mychars-mydata-open" onclick={() => (dataOpen = true)}>My data…</button>

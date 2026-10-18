@@ -13,7 +13,7 @@
 -->
 <script lang="ts">
   import type { MemberRun, MemberWeek, PublicSession, PublicSessionRow } from '@kanade/api-types';
-  import { dayNumber, enter, flip, Icon, LoadingState, longDate, Presence, replay, StateNote, WavyProgress, weekProgress, type Toaster } from '@kanade/ui';
+  import { dayNumber, enter, flip, Icon, LoadingState, longDate, Presence, replay, sortRuns, StateNote, WavyProgress, weekProgress, type Toaster } from '@kanade/ui';
   import { tick, untrack, type Snippet } from 'svelte';
   import { countdownWords, isPast, nextOwn, shownRuns } from '../member';
   import type { Route } from '../route.svelte';
@@ -64,6 +64,8 @@
   let onlyMine = $state(false);
   let showPast = $state(false);
   const runs = $derived(week ? shownRuns(week.runs, { onlyMine, showPast }) : []);
+  // The phone list in board order, as the board, the list and My runs show it.
+  const phoneRuns = $derived(phone ? sortRuns(runs) : []);
   const hidden = $derived(week && !showPast ? week.runs.filter((r) => isPast(r) && (!onlyMine || r.mine)).length : 0);
 
   // Back from the fresh sign-in (`&answer=`): that answer picked on the open run until a press.
@@ -232,14 +234,16 @@
     onpress={() => (picked = null)}
   />
 {:else if !week && weeks.error && !weeks.offline}
-  <section class="card window-fill" aria-labelledby="{uid}-failed">
+  <section class="card window-fill member-week-failed" aria-labelledby="{uid}-failed">
     <div class="card__head"><h1 class="card__title" id="{uid}-failed">Week</h1></div>
-    <StateNote icon="alert-circle" level={2} title="The week didn't load">
-      {weeks.error}
-      {#snippet actions()}
-        <button type="button" class="btn btn--primary" onclick={() => void weeks.refresh()}>Try again</button>
-      {/snippet}
-    </StateNote>
+    <div class="state-pane">
+      <StateNote icon="alert-circle" level={2} title="The week didn't load">
+        {weeks.error}
+        {#snippet actions()}
+          <button type="button" class="btn btn--primary" onclick={() => void weeks.refresh()}>Try again</button>
+        {/snippet}
+      </StateNote>
+    </div>
   </section>
 {:else if phone}
   <h1 class="vh">Week</h1>
@@ -258,7 +262,7 @@
         {#if week}
           <div class="member-phone__list" data-fid="week-board">
             {#each week.days as day (day.index)}
-              {@const today = runs.filter((r) => r.day === day.index)}
+              {@const today = phoneRuns.filter((r) => r.day === day.index)}
               {#if today.length}
                 <h2 class="member-phone__day" class:member-phone__day--today={day.is_today} data-fid="week-day-head">
                   <span>{day.dow} {dayNumber(day.date)}{day.is_today ? ' · today' : ''}</span>

@@ -14,7 +14,7 @@
   import type { MemberMoveResult, MemberRun, PublicSession, PublicSessionRow } from '@kanade/api-types';
   import { BossArt, BossTag, dayLabel, Icon, LoadingState, runTitle, StateNote, STATUS_WORDS, weekStartLabel, type IconName, type Toaster } from '@kanade/ui';
   import { untrack } from 'svelte';
-  import { countdownWords, yours } from '../member';
+  import { countdownWords, VIEW_ONLY, yours } from '../member';
   import { weekly } from '../requests/form';
   import type { Route } from '../route.svelte';
   import type { MemberWeeks } from '../weeks.svelte';
@@ -128,7 +128,7 @@
         {#if w}<span class="cap">{dayLabel(w, shown.day)}{soon ? ` · ${soon}` : ''}</span>{/if}
         <span class="move-page__bosses">{#each shown.bosses as boss (boss.token)}<BossTag {boss} short />{/each}</span>
         {#if shape === 'not_in'}
-          <span class="member-card__view move-page__chip">{phone ? 'view only' : 'not in this run · view only'}</span>
+          <span class="member-card__view move-page__chip">{VIEW_ONLY}</span>
         {:else}
           <span class="status-chip move-page__chip" class:status-chip--risk={shown.status === 'at_risk'} class:status-chip--ok={shown.status === 'done' || shown.status === 'confirmed'}
             >{yours(shown, memberId) && shape !== 'move' ? "you're in · " : ''}{STATUS_WORDS[shown.status]} · {shown.tally.on} of {shown.tally.total} on</span

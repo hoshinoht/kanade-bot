@@ -508,6 +508,11 @@
   color: var(--dim);
 }
 
+// A link in the notice's words: an inline box padded to a 24 px target without opening the line.
+.privacy__list a {
+  padding-block: 4px;
+}
+
 .gate-card .privacy__list {
   grid-template-columns: minmax(0, 1fr);
   gap: 2px;
