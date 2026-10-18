@@ -1,10 +1,9 @@
-//! Per-channel history, the last card's focus, re-anchorable exchanges and
-//! the replied-author cache (v4 `ChatPilot._history`/`_focus`/`_anchors`/
-//! `_replied`).
+//! Per-channel history, the last card's focus and re-anchorable exchanges
+//! (v4 `ChatPilot._history`/`_focus`/`_anchors`).
 
 use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
 
-use super::{ANCHOR_CACHE, ChatTurn, HISTORY_EXCHANGES, REFERENCE_CACHE};
+use super::{ANCHOR_CACHE, ChatTurn, HISTORY_EXCHANGES};
 use crate::domain::pytext::strip;
 
 #[derive(Clone, Debug)]
@@ -38,7 +37,6 @@ pub struct Conversations {
     focus: HashMap<String, Focus>,
     /// Insertion-ordered, oldest first.
     anchors: Vec<(String, Anchor)>,
-    replied: Vec<(String, Option<String>)>,
     /// Message ids of withheld turns, oldest first, so a reply chain or a
     /// later remember never brings their text back; indexed for lookup.
     withheld: VecDeque<String>,
@@ -62,7 +60,6 @@ impl Conversations {
             history: HashMap::new(),
             focus: HashMap::new(),
             anchors: Vec::new(),
-            replied: Vec::new(),
             withheld: VecDeque::new(),
             withheld_index: HashSet::new(),
             excluded: VecDeque::new(),
@@ -290,25 +287,6 @@ impl Conversations {
             .filter(|turn| !seen_id(turn))
             .cloned()
             .collect()
-    }
-
-    /// Remember who wrote a replied-to message (`None`: unknown).
-    pub fn remember_reference(&mut self, message_id: &str, author_id: Option<String>) {
-        if self.replied.len() >= REFERENCE_CACHE {
-            self.replied.remove(0);
-        }
-        match self.replied.iter_mut().find(|(id, _)| id == message_id) {
-            Some(slot) => slot.1 = author_id,
-            None => self.replied.push((message_id.to_owned(), author_id)),
-        }
-    }
-
-    /// A remembered replied-to author: `Some(None)` when looked up and unknown.
-    pub fn replied_author(&self, message_id: &str) -> Option<Option<String>> {
-        self.replied
-            .iter()
-            .find(|(id, _)| id == message_id)
-            .map(|(_, author)| author.clone())
     }
 }
 

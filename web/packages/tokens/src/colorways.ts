@@ -6,8 +6,6 @@ export const COLORWAY_SETS = [
   { key: 'dynamic', name: 'Dynamic', note: "From the bot's avatar" },
 ] as const;
 
-export type ColorwaySet = (typeof COLORWAY_SETS)[number]['key'];
-
 /**
  * Appearance option keys; must match `_tokens.scss` selectors and theme-boot.js.
  * The four base keys predate their character names and stay as stored values.

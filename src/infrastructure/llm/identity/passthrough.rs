@@ -18,10 +18,6 @@ impl PassthroughSession {
         name.to_owned()
     }
 
-    pub fn member_ref(&mut self, user_id: &str) -> String {
-        user_id.to_owned()
-    }
-
     pub fn mention(&mut self, user_id: &str) -> String {
         format!("<@{user_id}>")
     }

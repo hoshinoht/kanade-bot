@@ -37,16 +37,6 @@ impl RateLimiter {
             .unwrap_or((self.count, self.window))
     }
 
-    /// Give one key its own allowance; hits already recorded still count.
-    pub fn set_override(&mut self, key: &str, count: usize, window: f64) {
-        self.overrides.insert(key.to_owned(), (count, window));
-    }
-
-    /// Put one key back on the shared allowance; `false` if it already was.
-    pub fn clear_override(&mut self, key: &str) -> bool {
-        self.overrides.remove(key).is_some()
-    }
-
     /// Swap the whole override map, as loading it from the store does.
     pub fn replace_overrides(&mut self, overrides: impl IntoIterator<Item = (String, usize, f64)>) {
         self.overrides = overrides

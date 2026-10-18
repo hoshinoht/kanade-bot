@@ -24,8 +24,6 @@ pub const HISTORY_EXCHANGES: usize = 6;
 pub const REPLY_CHAIN_DEPTH: usize = 4;
 /// Conversation tokens; the system prompt and tool results are separate.
 pub const CONVERSATION_BUDGET_TOKENS: usize = 2500;
-/// Replied-author lookups remembered.
-pub const REFERENCE_CACHE: usize = 256;
 /// Answered exchanges kept for re-anchoring a late reply.
 pub const ANCHOR_CACHE: usize = 64;
 /// Tokens held back so the model has room to reply.

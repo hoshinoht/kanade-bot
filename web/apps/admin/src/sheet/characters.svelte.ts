@@ -115,11 +115,6 @@ export function runBasisTag(basis: Basis, wide = true): string | null {
   }
 }
 
-/** "Shadower · Lv. 283"; either part may be missing. */
-export function choiceMeta(c: CharacterChoice): string {
-  return [c.class, c.level ? `Lv. ${c.level}` : null].filter(Boolean).join(' · ');
-}
-
 /** The other run in words: "Sat 3 21:00 NStar" (its shared bosses only). */
 export function clashRun(week: Week, clash: CharacterClash): string {
   return `${dayLabel(week, clash.day)} ${clash.time ?? 'own time'} ${clash.bosses.join(' + ')}`;

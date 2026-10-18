@@ -161,10 +161,6 @@ $pane: "week-pane" !default;
   outline-offset: -2px;
 }
 
-.week-surface--runs {
-  background: var(--pane);
-}
-
 .week-window .board {
   gap: 8px;
   min-height: 100%;

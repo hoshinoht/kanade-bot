@@ -30,13 +30,6 @@ export interface PublicRun {
 /** Enough of a week for the shared day and "when" labels. */
 export type WeekShape = Pick<Week, 'days' | 'timezone'>;
 
-export interface MoveRequest {
-  day: number;
-  time: string | null;
-  /** Optimistic concurrency: the week version the client moved from. */
-  version: number;
-}
-
 export type PingLevel = 'essential' | 'all' | 'off';
 
 export interface MemberPatch {
@@ -175,29 +168,6 @@ export type Channel = Member;
 
 export type SignInMethod = 'discord' | 'tailscale' | 'token';
 
-export interface StatusRequest {
-  status: RunStatus;
-  version: number;
-}
-
-export interface RsvpRequest {
-  member_id: string;
-  answer: 'yes' | 'no' | 'clear';
-  version: number;
-}
-
-export interface ParticipantsRequest {
-  add?: string;
-  remove?: string;
-  version: number;
-}
-
-/** `POST /api/admin/runs/{id}/swap`: exchange this run's slot with `with`. */
-export interface SwapRequest {
-  with: string;
-  version: number;
-}
-
 // ── Inbox ─────────────────────────────────────────────────────────────────
 
 /** A proposal's change kind, or a member request's type (`new_fixed` … `swap`). */
@@ -238,18 +208,6 @@ export type DraftOpBody =
   | { kind: 'status'; run: string; status: string }
   | { kind: 'party'; run: string; add?: string[]; remove?: string[] }
   | { kind: 'reset'; run: string };
-
-/** `POST /api/admin/drafts/{id}/rebase`: conflict key → keep or take. */
-export interface RebaseRequest {
-  version: number;
-  settle: Record<string, 'keep' | 'take'>;
-}
-
-/** `POST /api/admin/inbox/{id}/reject`: requests need `version` and a reason of 1–500 characters; proposals take no reason (422 `reason_not_applicable`). */
-export interface RejectRequest {
-  version?: number;
-  reason?: string;
-}
 
 // ── Extractions and rescans ───────────────────────────────────────────────
 
