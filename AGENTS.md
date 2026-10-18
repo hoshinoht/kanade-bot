@@ -100,4 +100,5 @@ Kanade is a MapleStory boss-party Discord bot: a Rust v5 crate at the root plus 
 New lessons land in this block; at cleanup, fold each into the section or nested guide it belongs to.
 
 <!-- recall:lessons:begin -->
+- CI's clippy and tests run only with `--all-features`, so code left used only by `test-support` items warns in the default (shipped) build without failing CI (an `Arc` import after the 2026-10-18 dead-code cleanup). After deleting or gating code, also run `cargo clippy --lib -- -D warnings`. `--all-targets` without features does not compile (unit tests need `test-support`), so don't use it as a check.
 <!-- recall:lessons:end -->
