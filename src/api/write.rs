@@ -7,11 +7,10 @@ use std::{
     fmt,
     future::Future,
     pin::Pin,
-    sync::Arc,
 };
 
 #[cfg(any(test, feature = "test-support"))]
-use std::sync::{Mutex as StdMutex, OnceLock};
+use std::sync::{Arc, Mutex as StdMutex, OnceLock};
 
 use chrono::{DateTime, Utc};
 use tokio::sync::Mutex;
