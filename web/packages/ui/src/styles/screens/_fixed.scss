@@ -272,7 +272,6 @@ dialog.fixedsheet--tabbed .fixedsheet__content { padding: 12px; }
 .bosspick__row .slotchar__btn { flex: 0 1 auto; min-height: 32px; }
 .bosspick__row .slotchar__btn--same { border-style: dashed; background: transparent; color: var(--dim-text); }
 .bosspick__chips { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px; }
-.bosspick__chips .status-chip { min-height: 20px; padding: 0 7px; font-size: 11px; }
 .bosspick__chars { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
 .bosspick__chars .ready__values b { margin-right: 6px; font-weight: 800; }
 .bosspick__toggle { flex: none; gap: 6px; min-height: 32px; padding: 0 12px; border-radius: 16px; font-size: var(--fs-small); }

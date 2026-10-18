@@ -1247,6 +1247,12 @@ const gridShown = (scroll?: 'estimate' | 'asahi-pick') => async (page: Page) => 
     await sheet.locator('[data-fid="estimate-panel"]').evaluate((el, block) => el.scrollIntoView({ block }), page.viewportSize()!.width < 600 ? ('end' as const) : ('start' as const));
   await sheet.evaluate((el) => Promise.all(el.getAnimations({ subtree: true }).map((a) => a.finished)));
 };
+/** A board's `data-scroll-to`: each box around `el`, outermost first, scrolled to put it 8 px under the box's top. */
+const scrollLikeBoard = (el: Element) => {
+  const boxes: Element[] = [];
+  for (let box = el.parentElement; box && box !== document.body; box = box.parentElement) boxes.unshift(box);
+  for (const box of boxes) box.scrollTop = el.getBoundingClientRect().top - box.getBoundingClientRect().top + box.scrollTop - 8;
+};
 const fixedBoss = (pick: boolean) => async (page: Page) => {
   await page.getByRole('button', { name: 'Edit Tuesday 22:00 — HCarling + HMaleficStar' }).click();
   const phone = page.viewportSize()!.width < 600;
@@ -1256,26 +1262,39 @@ const fixedBoss = (pick: boolean) => async (page: Page) => {
   await editor.getByRole('button', { name: "Pick Asahi's character per boss" }).click();
   const list = editor.locator('[data-fid="fixed-boss-picks"]').last();
   await expect(list).toBeVisible();
-  // The phone boards scroll the sheet to Mika's row (`data-scroll-to=".fixedready__row:nth-child(3)"`);
-  // B_FixedBoss2 shows the pane from its top, B_FixedBoss2Pick scrolled to Mika's list.
-  if (phone) await editor.locator('.fixedready__row').nth(2).evaluate((el) => el.scrollIntoView({ block: 'start' }));
-  else if (pick) await list.evaluate((el) => el.scrollIntoView({ block: 'center' }));
+  // The phone boards and B_FixedBoss2Pick scroll to Mika's row (`data-scroll-to=".fixedready__row:nth-child(3)"`);
+  // B_FixedBoss2 shows the pane from its top.
+  if (phone || pick) await editor.locator('.fixedready__row').nth(2).evaluate(scrollLikeBoard);
   if (pick) {
     await list.getByRole('button', { name: /^Mika's character for HMaleficStar/ }).click();
     await expect(page.locator('[data-fid="fixed-pick-menu"]').first()).toBeVisible();
   }
 };
+/** Run in a board: the app chrome its capture left untagged (the page line, the phone top bar) gets the app's tags. */
+const BOARD_CHROME = () => {
+  for (const [selector, fid] of [
+    ['.pageline', 'page-line'],
+    ['.topbar', 'topbar'],
+    ['.topbar__menu', 'topbar-menu'],
+    ['.topbar__title', 'topbar-title'],
+    ['.topbar__fresh', 'topbar-fresh'],
+    ['.topbar__inbox', 'topbar-inbox'],
+  ])
+    for (const el of document.querySelectorAll<HTMLElement>(selector)) el.dataset.fid ??= fid;
+};
 /**
- * The per-boss-picks boards leave the frame they captured untagged: the window's title bar
- * and search, the list's column heads, every row but the open one (the app tags each row),
- * on the phone boards the editor sheet's head and foot, and they tag readiness only where a
- * per-boss list shows it: the single-character rows' basis, character, values and bosses, and
- * the desktop pick menu's options, carry the app's tags here.
+ * The per-boss-picks boards leave the frame they captured untagged: the page line and its Add key,
+ * the phone top bar, the window's title bar and search, the list's column heads, every row but the
+ * open one (the app tags each row), on the phone boards the editor sheet's head and foot, and they
+ * tag readiness only where a per-boss list shows it: the single-character rows' basis, character,
+ * values and bosses, and the desktop pick menu's options, carry the app's tags here.
  */
-const fixedBoard = (board: Page) =>
-  board.evaluate(() => {
+const fixedBoard = async (board: Page) => {
+  await board.evaluate(BOARD_CHROME);
+  await board.evaluate(() => {
     const tag = (el: Element | null | undefined, fid: string) => el instanceof HTMLElement && !el.dataset.fid && (el.dataset.fid = fid);
     const all = (selector: string, fid: string) => document.querySelectorAll(selector).forEach((el) => tag(el, fid));
+    tag(document.querySelector('.pageline .fixed-add'), 'fixed-add');
     tag(document.querySelector('.fixed-window__head'), 'window-bar');
     tag(document.querySelector('.fixed-window__search'), 'window-search');
     tag(document.querySelector('[data-fid="fixed-list"] tr[role="row"]:not(.expandable-row)'), 'fixed-head');
@@ -1289,6 +1308,7 @@ const fixedBoard = (board: Page) =>
     all('.fixedready__row > .ready > .ready__bosses', 'fixed-ready-bosses');
     all('[data-fid="fixed-pick-menu"] .charpick__option', 'fixed-pick-option');
   });
+};
 /**
  * The phone boards' subject is the editor sheet: the list behind it (and its title bar) stands where
  * the board's capture had scrolled it; desktop `fixed` (B_Fixed) compares the list.
@@ -1896,11 +1916,16 @@ const guidesReleased = async (page: Page) => {
   await control(page, 'discord/guide', { script: 'release' });
 };
 const guidePane = (page: Page) => page.locator('.guide-pane');
-/** The guide boards leave the dropdown triggers they captured (the channel, Add boss) untagged; the app's Select tags each. */
-const guideBoard = (board: Page) =>
-  board.evaluate(() => {
+/**
+ * The guide boards leave the dropdown triggers they captured (the channel, Add boss) untagged; the app's
+ * Select tags each. G_ModuleOff's page line and the phone boards' top bar get the app's tags too.
+ */
+const guideBoard = async (board: Page) => {
+  await board.evaluate(BOARD_CHROME);
+  await board.evaluate(() => {
     for (const dd of document.querySelectorAll<HTMLElement>('button.dd:not([data-fid])')) dd.dataset.fid = 'dd-trigger';
   });
+};
 /** G_History is the captured History page with only its rows and pane tagged: its bar, tabs, filters, list, week heads and page line get the app's tags. */
 const guidesHistoryBoard = async (board: Page) => {
   await guideBoard(board);
@@ -1908,7 +1933,6 @@ const guidesHistoryBoard = async (board: Page) => {
     const tag = (selector: string, fid: string) => {
       for (const el of document.querySelectorAll<HTMLElement>(selector)) el.dataset.fid ??= fid;
     };
-    tag('.pageline', 'page-line');
     tag('.history-window__head', 'window-bar');
     tag('.history-window__head .tabs__tabs', 'window-tabs');
     tag('.history-window__filters', 'window-filters');
