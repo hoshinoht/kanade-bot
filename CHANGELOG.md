@@ -2,6 +2,10 @@
 
 What changed in each Kanade release, newest first. Upgrading across several releases? Read each one's upgrade notes on the way.
 
+## 1.0.0-beta.11
+
+_In development_
+
 ## 1.0.0-beta.10
 
 _18 Oct 2026_
