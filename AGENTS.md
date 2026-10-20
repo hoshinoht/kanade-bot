@@ -101,4 +101,6 @@ New lessons land in this block; at cleanup, fold each into the section or nested
 
 <!-- recall:lessons:begin -->
 - CI's clippy and tests run only with `--all-features`, so code left used only by `test-support` items warns in the default (shipped) build without failing CI (an `Arc` import after the 2026-10-18 dead-code cleanup). After deleting or gating code, also run `cargo clippy --lib -- -D warnings`. `--all-targets` without features does not compile (unit tests need `test-support`), so don't use it as a check.
+- A Config save that leaves every value unchanged writes no row (`api/admin/config/mod.rs`: only `next != current` saves), so a value still coming from a seed can't be pinned by re-saving it: change it and change it back (two History rows) before removing the seed. Check which seeded values lack rows on a store copy (`select key from config`), not from the API's `*_source` fields, which only some sections report.
+- Live rehearsals of `serve` over a copy of the store use FAKE secrets (Discord token, model key, NEXON key) and `KANADE_DISCORD_GATEWAY=0`, so the copy can never post to the guild or spend model calls; the admin session cookie is `Secure`, so curl over plain http drops it from a cookie jar: pass `Cookie:` from the sign-in's `Set-Cookie` by hand. Host ports 18090+ may be taken by Kanata; check `lsof` first.
 <!-- recall:lessons:end -->
