@@ -64,29 +64,31 @@ pub(crate) fn check(
     {
         return Err("response-format");
     }
-    if capabilities.sampling_controls {
-        if !(1..=MAX_OUTPUT_TOKENS).contains(&request.max_output_tokens) {
-            return Err("max-tokens");
+    if super::sent_max_tokens(request, capabilities)
+        .is_some_and(|tokens| !(1..=MAX_OUTPUT_TOKENS).contains(&tokens))
+    {
+        return Err("max-tokens");
+    }
+    if capabilities.sampling_controls
+        && let Some(sampling) = &request.sampling
+    {
+        if sampling
+            .temperature
+            .is_some_and(|value| !(value.is_finite() && (0.0..=2.0).contains(&value)))
+        {
+            return Err("temperature");
         }
-        if let Some(sampling) = &request.sampling {
-            if sampling
-                .temperature
-                .is_some_and(|value| !(value.is_finite() && (0.0..=2.0).contains(&value)))
-            {
-                return Err("temperature");
-            }
-            if sampling
-                .top_p
-                .is_some_and(|value| !(value.is_finite() && value > 0.0 && value <= 1.0))
-            {
-                return Err("top-p");
-            }
-            if sampling
-                .seed
-                .is_some_and(|seed| i64::try_from(seed).is_err())
-            {
-                return Err("seed");
-            }
+        if sampling
+            .top_p
+            .is_some_and(|value| !(value.is_finite() && value > 0.0 && value <= 1.0))
+        {
+            return Err("top-p");
+        }
+        if sampling
+            .seed
+            .is_some_and(|seed| i64::try_from(seed).is_err())
+        {
+            return Err("seed");
         }
     }
     Ok(())

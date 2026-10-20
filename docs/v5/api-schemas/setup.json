@@ -19,9 +19,9 @@
       "enum": ["environment", "file", "saved", "derived"]
     },
     "SetupReason": {
-      "description": "Why an item is not ok. gateway_off: KANADE_DISCORD_GATEWAY=0 or offline; connecting: connecting or reconnecting; gateway_closed: Discord ended the session for good (bad token or disallowed intent, until a restart); not_connected: the guild is not loaded, so permissions are unknown; unavailable: a fact could not be read within 5 s (Discord's application, module health); unreachable: the model gateway or scouter did not answer; not_running: a model is saved for the role but not running; env_missing: chat is on but missing_env lists what it needs; member_sign_in_missing: a public listener without the member Discord sign-in; nexon_no_key, nexon_key_refused, nexon_backoff: character data's NEXON state; verification_required: the scouter's.",
+      "description": "Why an item is not ok, or a note on an ok item. gateway_off: KANADE_DISCORD_GATEWAY=0 or offline; connecting: connecting or reconnecting; gateway_closed: Discord ended the session for good (bad token or disallowed intent, until a restart); not_connected: the guild is not loaded, so permissions are unknown; unavailable: a fact could not be read within 5 s (Discord's application, module health); unreachable: the model gateway or scouter did not answer; no_listing: model_gateway is ok but serves no model list, so the operator's declared models are used; not_running: a model is saved for the role but not running; env_missing: chat is on but missing_env lists what it needs; member_sign_in_missing: a public listener without the member Discord sign-in; nexon_no_key, nexon_key_refused, nexon_backoff: character data's NEXON state; verification_required: the scouter's.",
       "enum": [
-        "gateway_off", "connecting", "gateway_closed", "not_connected", "unavailable", "unreachable", "not_running",
+        "gateway_off", "connecting", "gateway_closed", "not_connected", "unavailable", "unreachable", "no_listing", "not_running",
         "env_missing", "member_sign_in_missing", "nexon_no_key", "nexon_key_refused", "nexon_backoff", "verification_required"
       ]
     },

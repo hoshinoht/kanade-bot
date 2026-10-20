@@ -1,5 +1,5 @@
 <!--
-  v5 Limits (B_LimitsLive and its tab boards): the Kanata gateway's backend
+  v5 Limits (B_LimitsLive and its tab boards): the model gateway's backend
   groups, the calls waiting for a permit, what the gateway refused, and the
   chat allowances, in one window with title-bar tabs. Backends stacks one
   row card per group in the configured order (phones: open, then half-open
@@ -235,7 +235,7 @@
       <div class="limits-window__summary" data-fid="limits-phone-head">
         <p>
           {#if tab === 'admission'}
-            Refused by the Kanata gateway in the <b>{limits.admission.window}</b>.
+            Refused by the model gateway in the <b>{limits.admission.window}</b>.
           {:else if tab === 'allowances'}
             {ALLOWANCE_NOTE}
           {:else if busiest}
@@ -283,7 +283,7 @@
         {:else if tab === 'queue'}
           {#if oldest}<span class="cap">Oldest</span> <b class="mono limits-window__big">{oldest.waiting_s} s</b>{phone ? '' : ` ${oldest.kind} · ${oldest.group}`}{:else}Nothing is waiting{/if}
         {:else if tab === 'admission'}
-          {#if phone}<b class="mono">{refused}</b> {plural(refused, 'refusal')}{:else}Refused by the Kanata gateway in the <b>{limits.admission.window}</b>.{/if}
+          {#if phone}<b class="mono">{refused}</b> {plural(refused, 'refusal')}{:else}Refused by the model gateway in the <b>{limits.admission.window}</b>.{/if}
         {:else if phone}
           <b class="mono">{limits.allowances.length}</b> {plural(limits.allowances.length, 'member')}
         {:else}

@@ -1,4 +1,4 @@
-//! `limits.json`: model backends behind the Kanata gateway, admission and
+//! `limits.json`: model backends behind the model gateway, admission and
 //! the chat allowances.
 
 use serde::Serialize;

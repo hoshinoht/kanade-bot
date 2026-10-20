@@ -1,6 +1,6 @@
 use serde_json::{Map, Value, json};
 
-use super::super::{ChatRequest, Effort, Message, ModelCapabilities, ToolCallRequest};
+use super::super::{ChatRequest, Effort, Message, ModelCapabilities, OutputLimit, ToolCallRequest};
 
 /// The OpenAI chat-completions body `capabilities` allow; unsupported optional
 /// fields are omitted, never sent as null.
@@ -43,17 +43,19 @@ pub(crate) fn chat_body(request: &ChatRequest, capabilities: &ModelCapabilities)
         );
     }
     if let Some(max_tokens) = sent_max_tokens(request, capabilities) {
-        body.insert("max_tokens".into(), json!(max_tokens));
-        if let Some(sampling) = &request.sampling {
-            if let Some(temperature) = sampling.temperature {
-                body.insert("temperature".into(), json!(temperature));
-            }
-            if let Some(seed) = sampling.seed {
-                body.insert("seed".into(), json!(seed));
-            }
-            if let Some(top_p) = sampling.top_p {
-                body.insert("top_p".into(), json!(top_p));
-            }
+        body.insert(size_field(capabilities).into(), json!(max_tokens));
+    }
+    if capabilities.sampling_controls
+        && let Some(sampling) = &request.sampling
+    {
+        if let Some(temperature) = sampling.temperature {
+            body.insert("temperature".into(), json!(temperature));
+        }
+        if let Some(seed) = sampling.seed {
+            body.insert("seed".into(), json!(seed));
+        }
+        if let Some(top_p) = sampling.top_p {
+            body.insert("top_p".into(), json!(top_p));
         }
     }
     if let Some(effort) = sent_effort(request, capabilities) {
@@ -62,15 +64,28 @@ pub(crate) fn chat_body(request: &ChatRequest, capabilities: &ModelCapabilities)
     Value::Object(body)
 }
 
-/// The `max_tokens` the body carries, if any: only with sampling controls.
-/// The runner records exactly this for the logs.
+/// The size (under [`size_field`]) the body carries, if any: with a declared
+/// `output_limit` always (none once omitted), else only with sampling
+/// controls. The runner records exactly this for the logs.
 pub(crate) fn sent_max_tokens(
     request: &ChatRequest,
     capabilities: &ModelCapabilities,
 ) -> Option<u32> {
+    match capabilities.output_limit {
+        None => capabilities
+            .sampling_controls
+            .then_some(request.max_output_tokens),
+        Some(OutputLimit::Omitted) => None,
+        Some(_) => Some(request.max_output_tokens),
+    }
+}
+
+/// `max_tokens` unless the operator declared `max_completion_tokens`.
+fn size_field(capabilities: &ModelCapabilities) -> &'static str {
     capabilities
-        .sampling_controls
-        .then_some(request.max_output_tokens)
+        .output_limit
+        .and_then(OutputLimit::field)
+        .unwrap_or("max_tokens")
 }
 
 /// The `reasoning_effort` the body carries, if any: only with reasoning
@@ -187,6 +202,44 @@ mod tests {
                 sent.map(|effort| json!(effort.wire_str())),
                 "{effort:?}"
             );
+        }
+    }
+
+    /// The size the logs record is exactly the one the body carries, under
+    /// the declared name; no declaration keeps `max_tokens` with sampling.
+    #[test]
+    fn the_sent_size_follows_the_declared_output_limit() {
+        let cases = [
+            (false, None, None),
+            (true, None, Some("max_tokens")),
+            (false, Some(OutputLimit::MaxTokens), Some("max_tokens")),
+            (
+                false,
+                Some(OutputLimit::MaxCompletionTokens),
+                Some("max_completion_tokens"),
+            ),
+            (
+                true,
+                Some(OutputLimit::MaxCompletionTokens),
+                Some("max_completion_tokens"),
+            ),
+            (true, Some(OutputLimit::Omitted), None),
+        ];
+        for (sampling, limit, field) in cases {
+            let mut capabilities = ModelCapabilities::minimal();
+            capabilities.sampling_controls = sampling;
+            capabilities.output_limit = limit;
+            let request = request(None);
+            let sent = sent_max_tokens(&request, &capabilities);
+            assert_eq!(sent, field.map(|_| 16), "{sampling} {limit:?}");
+            let body = chat_body(&request, &capabilities);
+            for name in ["max_tokens", "max_completion_tokens"] {
+                assert_eq!(
+                    body.get(name).cloned(),
+                    (field == Some(name)).then(|| json!(16)),
+                    "{sampling} {limit:?} {name}"
+                );
+            }
         }
     }
 }

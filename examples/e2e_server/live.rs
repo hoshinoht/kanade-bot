@@ -161,6 +161,12 @@ impl World {
         })
     }
 
+    /// How the fake model gateway lists its models; a generation composed
+    /// after this sees it from its first listing (`/__e2e/gateway`).
+    pub fn set_gateway(&self, mode: gateway::Mode) {
+        self.model.set_mode(mode);
+    }
+
     /// The modules the config turns on.
     pub fn modules(&self) -> Modules {
         Modules {

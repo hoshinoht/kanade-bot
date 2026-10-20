@@ -122,8 +122,9 @@ export function describe(item: SetupItem, context: CopyContext): SetupRow {
       if (state !== 'ok') return row('Pick the party channels the bot reads.', config('channels', 'Channels'));
       return row(`Reading ${plural(item.count ?? 0, 'watched channel or category', 'watched channels and categories')}.`);
     case 'model_gateway':
-      if (state === 'ok') return row('The Kanata gateway answers.');
-      if (state === 'warn') return row("The Kanata gateway didn't answer in time; check that it is running.", runbook());
+      if (reason === 'no_listing') return row('The model gateway answers; it lists no models, so the declared models are used.');
+      if (state === 'ok') return row('The model gateway answers.');
+      if (state === 'warn') return row("The model gateway didn't answer in time; check that it is running.", runbook());
       return row('No model gateway is set.', runbook());
     case 'extraction_model':
       if (state === 'ok') return row('A model is reading party chat.');

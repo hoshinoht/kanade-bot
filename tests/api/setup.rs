@@ -54,18 +54,21 @@ const ORDER: [&str; 16] = [
     "backups",
 ];
 
-/// A gateway that answers (or not) and runs the extraction role (or not).
+/// A gateway that answers (or not, or without a model list) and runs the
+/// extraction role (or not).
 struct Catalog {
     reachable: bool,
+    no_listing: bool,
     extraction: bool,
 }
 
 impl ModelCatalog for Catalog {
     fn read(&self) -> ConfigFuture<'_, CatalogRead> {
-        let reachable = self.reachable;
+        let (reachable, no_listing) = (self.reachable, self.no_listing);
         Box::pin(async move {
             CatalogRead {
                 reachable,
+                no_listing,
                 ..CatalogRead::default()
             }
         })
@@ -160,6 +163,7 @@ async fn items_come_in_order_with_their_facts_and_complete_needs_every_required_
         configured(),
         Some(Catalog {
             reachable: true,
+            no_listing: false,
             extraction: true,
         }),
         Some(discord.clone()),
@@ -246,6 +250,7 @@ async fn missing_intents_unreachable_models_and_saved_but_idle_roles_are_named()
         configured(),
         Some(Catalog {
             reachable: false,
+            no_listing: false,
             extraction: false,
         }),
         Some(discord),
@@ -280,6 +285,28 @@ async fn missing_intents_unreachable_models_and_saved_but_idle_roles_are_named()
         (&json!("warn"), &json!("not_running"))
     );
     assert_eq!(view["complete"], false);
+}
+
+/// A gateway without a model list is set up (declared models are used), with
+/// a note saying so; it never blocks `complete`.
+#[tokio::test]
+async fn a_gateway_without_a_model_list_is_ok_with_a_note() {
+    let reads = reads(
+        configured(),
+        Some(Catalog {
+            reachable: true,
+            no_listing: true,
+            extraction: true,
+        }),
+        Some(Arc::new(FakeDiscord::new())),
+        |_| {},
+    )
+    .await;
+    let view = reads.read(PATH, VIEW).await;
+    assert_eq!(
+        item(&view, "model_gateway"),
+        &json!({"id": "model_gateway", "required": true, "state": "ok", "reason": "no_listing"})
+    );
 }
 
 #[tokio::test]
@@ -428,6 +455,7 @@ async fn the_answer_carries_presence_only_and_needs_a_session() {
         configured(),
         Some(Catalog {
             reachable: true,
+            no_listing: false,
             extraction: true,
         }),
         Some(Arc::new(FakeDiscord::new())),

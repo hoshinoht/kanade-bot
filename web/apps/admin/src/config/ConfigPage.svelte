@@ -73,7 +73,7 @@
     { key: 'chatbot', label: 'Chatbot', group: 'Bot', terms: 'answer rate cap limits how often it answers per person' },
     { key: 'profanity', label: 'Profanity', group: 'Bot', terms: 'swear words blocked deny list deflection line allowed built-in questions replies check' },
     { key: 'persona', label: 'Persona', group: 'Bot', terms: 'active persona reply profiles visibility roles role overrides assignments' },
-    { key: 'models', label: 'Models', group: 'Bot', terms: 'roles reasoning context windows capacity groups kanata extraction rewrite' },
+    { key: 'models', label: 'Models', group: 'Bot', terms: 'roles reasoning context windows capacity groups model gateway kanata declared extraction rewrite' },
     { key: 'self-service', label: 'Self-service', group: 'Members', terms: 'public portal cards links how members are answered' },
     { key: 'notifications', label: 'Notifications', group: 'Members', terms: 'quiet mode pings discord message style classic redesigned header rewrites generation time' },
     { key: 'digest', label: 'Weekly digest', group: 'Members', terms: 'post channel week' },

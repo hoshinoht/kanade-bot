@@ -1162,7 +1162,7 @@ test('models: capacity groups read-only, one row per group, Kanata limits in wor
   await expect(inUse.getByRole('rowheader')).toHaveText(['kanata/chat', 'kanata/extract', 'kanata/rewrite-small']);
   await panel.getByText('Show all models').click();
   await expect(panel.getByRole('table', { name: 'What Kanata admits for every listed model' })).not.toContainText(':');
-  await expect(panel.getByText("Kanata publishes no limit for this key; it is shared with the owner's other clients.")).toHaveCount(1);
+  await expect(panel.getByText("The model gateway publishes no limit for this key; it is shared with the owner's other clients.")).toHaveCount(1);
   // The picker lists base models only; `off` is hidden where reasoning is required.
   await panel.getByRole('tab', { name: 'Roles' }).click();
   const models = panel.getByRole('combobox', { name: /^Model/ });

@@ -1,23 +1,24 @@
 //! `KANADE_MODEL_CAPABILITIES`: operator capability declarations per model
 //! alias, as a JSON object of alias → fields (`kanade.toml`
 //! `[models.capabilities."<alias>"]` arrives in this form). They are used only
-//! where the gateway publishes no metadata for the alias: Kanata's published
-//! metadata always wins. A field left out keeps the minimal profile's value;
-//! an unknown field or a value out of range refuses startup. Trust zones and
-//! admission limits are not declarable: routes stay external until a listing
-//! publishes a home zone, and capacity comes from permits or groups.
+//! where the gateway publishes no metadata for the alias (published metadata,
+//! such as Kanata's, always wins), and they also list models a gateway does
+//! not. A field left out keeps the minimal profile's value; an unknown field
+//! or a value out of range refuses startup. Trust zones and admission limits
+//! are not declarable: routes stay external until a listing publishes a home
+//! zone, and capacity comes from permits or groups.
 
 use std::collections::{BTreeMap, BTreeSet};
 
 use serde_json::Value;
 
 use super::{Error, models::is_alias, non_empty};
-use crate::infrastructure::llm::{Effort, MAX_OUTPUT_TOKENS, ModelCapabilities};
+use crate::infrastructure::llm::{Effort, MAX_OUTPUT_TOKENS, ModelCapabilities, OutputLimit};
 
 pub(super) const KEY: &str = "KANADE_MODEL_CAPABILITIES";
 
 const FIELDS: &str = "structured_output, function_tools, sampling_controls, reasoning_control, \
-                      reasoning_efforts, context_tokens or max_output_tokens";
+                      reasoning_efforts, context_tokens, max_output_tokens or output_limit";
 
 fn invalid(rule: &str) -> Error {
     Error::Configuration(format!("{KEY} {rule}"))
@@ -81,6 +82,14 @@ fn declaration(alias: &str, fields: &Value) -> Result<ModelCapabilities, Error> 
             }
             "context_tokens" => declared.context_tokens = Some(tokens(u32::MAX)?),
             "max_output_tokens" => declared.max_output_tokens = Some(tokens(MAX_OUTPUT_TOKENS)?),
+            // Sends the size under this name even without sampling controls.
+            "output_limit" => {
+                declared.output_limit = Some(match value.as_str() {
+                    Some("max_tokens") => OutputLimit::MaxTokens,
+                    Some("max_completion_tokens") => OutputLimit::MaxCompletionTokens,
+                    _ => return Err(wrong(field, "\"max_tokens\" or \"max_completion_tokens\"")),
+                });
+            }
             _ => {
                 return Err(invalid(&format!(
                     "`{alias}` has an unknown field `{field}`; declare {FIELDS}"
@@ -137,6 +146,8 @@ mod tests {
                 "reasoning_efforts": ["high", "off", "low"],
                 "context_tokens": 32768, "max_output_tokens": 4096
             },
+            "plain/reasoning": {"output_limit": "max_completion_tokens"},
+            "plain/sized": {"output_limit": "max_tokens"},
             "plain/bare": {}
         }"#)
         .unwrap();
@@ -153,6 +164,16 @@ mod tests {
                 ..ModelCapabilities::minimal()
             }
         );
+        assert_eq!(
+            declared["plain/reasoning"].output_limit,
+            Some(OutputLimit::MaxCompletionTokens)
+        );
+        assert_eq!(
+            declared["plain/sized"].output_limit,
+            Some(OutputLimit::MaxTokens)
+        );
+        // Absent: today's rule (`max_tokens` only with sampling controls).
+        assert_eq!(declared["plain/full"].output_limit, None);
         assert_eq!(declared["plain/bare"], ModelCapabilities::minimal());
         assert!(parse(&BTreeMap::new()).unwrap().is_empty());
         assert!(run("{}").unwrap().is_empty());
@@ -181,13 +202,23 @@ mod tests {
                 r#"{"m": {"streaming": true}}"#,
                 "KANADE_MODEL_CAPABILITIES `m` has an unknown field `streaming`; declare \
                  structured_output, function_tools, sampling_controls, reasoning_control, \
-                 reasoning_efforts, context_tokens or max_output_tokens",
+                 reasoning_efforts, context_tokens, max_output_tokens or output_limit",
             ),
             (
                 r#"{"m": {"trust_zone": "local"}}"#,
                 "KANADE_MODEL_CAPABILITIES `m` has an unknown field `trust_zone`; declare \
                  structured_output, function_tools, sampling_controls, reasoning_control, \
-                 reasoning_efforts, context_tokens or max_output_tokens",
+                 reasoning_efforts, context_tokens, max_output_tokens or output_limit",
+            ),
+            (
+                r#"{"m": {"output_limit": "omitted"}}"#,
+                "KANADE_MODEL_CAPABILITIES `m`.output_limit must be \"max_tokens\" or \
+                 \"max_completion_tokens\"",
+            ),
+            (
+                r#"{"m": {"output_limit": true}}"#,
+                "KANADE_MODEL_CAPABILITIES `m`.output_limit must be \"max_tokens\" or \
+                 \"max_completion_tokens\"",
             ),
             (
                 r#"{"m": {"function_tools": "yes"}}"#,

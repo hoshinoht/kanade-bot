@@ -283,6 +283,9 @@ pub struct ModelInfo {
     #[cfg_attr(test, ts(type = "'homelab' | 'external' | 'unknown'"))]
     pub trust_zone: &'static str,
     pub leaves_homelab: bool,
+    /// The gateway's listing names it; false for an operator-declared model
+    /// the listing omits (or every declared model when there is no listing).
+    pub listed: bool,
     pub function_tools: bool,
     pub structured_output: bool,
     pub sampling_controls: bool,
@@ -438,7 +441,7 @@ pub struct AliasLimit {
 #[derive(Clone, Copy, Debug, Serialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
 pub struct KeyLimits {
-    /// `None`: Kanata publishes no per-key limit.
+    /// `None`: the gateway publishes no per-key limit.
     pub max_in_flight: Option<u32>,
     pub shared: bool,
 }
@@ -457,7 +460,12 @@ pub struct CapacityCheck {
 #[derive(Clone, Debug, Serialize)]
 #[cfg_attr(test, derive(ts_rs::TS), ts(rename = "ModelSettings"))]
 pub struct Models {
+    /// The gateway answered the last model-list read: with a listing, or
+    /// with `no_listing`.
     pub reachable: bool,
+    /// The gateway serves no model list (`/models` answers 404 or 405); the
+    /// catalog then holds the operator's declared models only.
+    pub no_listing: bool,
     pub catalog: Vec<ModelInfo>,
     pub roles: Roles,
     pub groups: Vec<CapacityGroup>,
@@ -599,6 +607,7 @@ pub fn model_info(model: &CatalogModel, catalog: &CatalogSnapshot) -> ModelInfo 
         id: model.alias.clone(),
         trust_zone: trust_zone(model.trust_zone),
         leaves_homelab: model.leaves_homelab,
+        listed: model.listed,
         function_tools: model.function_tools,
         structured_output: model.structured_output,
         sampling_controls: model.sampling_controls,

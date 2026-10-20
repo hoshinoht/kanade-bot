@@ -150,6 +150,16 @@ export async function setLimitGroups(groups: 'three' | 'default'): Promise<void>
   expect(set.status).toBe(204);
 }
 
+/**
+ * How the fake model gateway lists its models, on a restart (`kanata`: with Kanata metadata, the reset's;
+ * `plain`: the same ids as a bare OpenAI listing; `no_listing`: `/v1/models` answers 404). The server
+ * declares every model's capabilities, so the plain modes run on the declarations.
+ */
+export async function setGateway(mode: 'kanata' | 'plain' | 'no_listing'): Promise<void> {
+  const set = await fetch(`${ADMIN}/__e2e/gateway`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ mode }) });
+  expect(set.status, await set.text()).toBe(204);
+}
+
 /** A harness control that answers 204 (`examples/e2e_server/controls_p5.rs`). */
 async function control(path: string, body: unknown): Promise<void> {
   const set = await fetch(`${ADMIN}${path}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });

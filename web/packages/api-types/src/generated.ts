@@ -1911,13 +1911,28 @@ export type RoleProfileView = { role_id: string, role_name: string | null, profi
 
 export type PersonaSettings = { active: string, personas: Array<PersonaEntry>, profiles: Array<ReplyProfile>, role_profiles: Array<RoleProfileView>, role_profiles_digest: string, };
 
-export type ModelSettings = { reachable: boolean, catalog: Array<ModelInfo>, roles: ModelRoles, groups: Array<CapacityGroup>, 
+export type ModelSettings = { 
+/**
+ * The gateway answered the last model-list read: with a listing, or
+ * with `no_listing`.
+ */
+reachable: boolean, 
+/**
+ * The gateway serves no model list (`/models` answers 404 or 405); the
+ * catalog then holds the operator's declared models only.
+ */
+no_listing: boolean, catalog: Array<ModelInfo>, roles: ModelRoles, groups: Array<CapacityGroup>, 
 /**
  * `default` (the one `gateway` group) or `config` (`[[models.groups]]`).
  */
 groups_source: 'default' | 'config', alias_limits: Array<AliasLimit>, key_limits: KeyLimits, capacity_check: Array<CapacityCheck>, pii_pseudonymise: boolean, context: ContextSettings, };
 
-export type ModelInfo = { id: string, trust_zone: 'homelab' | 'external' | 'unknown', leaves_homelab: boolean, function_tools: boolean, structured_output: boolean, sampling_controls: boolean, reasoning_control: boolean, reasoning_efforts: Array<string> | null, context_tokens?: number, max_output_tokens?: number, 
+export type ModelInfo = { id: string, trust_zone: 'homelab' | 'external' | 'unknown', leaves_homelab: boolean, 
+/**
+ * The gateway's listing names it; false for an operator-declared model
+ * the listing omits (or every declared model when there is no listing).
+ */
+listed: boolean, function_tools: boolean, structured_output: boolean, sampling_controls: boolean, reasoning_control: boolean, reasoning_efforts: Array<string> | null, context_tokens?: number, max_output_tokens?: number, 
 /**
  * False when the alias requires reasoning (a published list without `none`).
  */
@@ -1967,7 +1982,7 @@ export type AliasLimit = { alias: string, max_in_flight: number, adapter_max_in_
 
 export type KeyLimits = { 
 /**
- * `None`: Kanata publishes no per-key limit.
+ * `None`: the gateway publishes no per-key limit.
  */
 max_in_flight: number | null, shared: boolean, };
 
@@ -2087,9 +2102,9 @@ export type SetupState = "ok" | "missing" | "warn" | "off";
 export type SetupSource = "environment" | "file" | "saved" | "derived";
 
 /**
- * Why an item is not `ok`.
+ * Why an item is not `ok`; on an `ok` item, a note (`no_listing`).
  */
-export type SetupReason = "gateway_off" | "connecting" | "gateway_closed" | "not_connected" | "unavailable" | "unreachable" | "not_running" | "env_missing" | "member_sign_in_missing" | "nexon_no_key" | "nexon_key_refused" | "nexon_backoff" | "verification_required";
+export type SetupReason = "gateway_off" | "connecting" | "gateway_closed" | "not_connected" | "unavailable" | "unreachable" | "no_listing" | "not_running" | "env_missing" | "member_sign_in_missing" | "nexon_no_key" | "nexon_key_refused" | "nexon_backoff" | "verification_required";
 
 /**
  * A privileged gateway intent the bot needs (Developer Portal, Bot page).

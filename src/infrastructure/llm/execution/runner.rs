@@ -6,7 +6,7 @@ use super::super::{
     ChatRequest, CompletionResponse, ErrorCode, LlmError, LlmProvider, ModelCapabilities,
     ProviderFailureKind,
     governor::{CallKind, Outcome, Random, SentRequest, full_jitter},
-    http::KEY_EXPIRED,
+    http::{KEY_EXPIRED, QUOTA},
     shaping,
     wire::{sent_effort, sent_max_tokens},
 };
@@ -382,6 +382,7 @@ fn provider_error(kind: ProviderFailureKind, reason: &str) -> LlmError {
         // A Kanata route size rejection is a caller-side configuration/budget
         // fault, never an unsupported optional capability.
         ProviderFailureKind::Permanent if reason == "size-limit" => ErrorCode::RequestInvalid,
+        ProviderFailureKind::Permanent if reason == QUOTA => ErrorCode::QuotaExhausted,
         ProviderFailureKind::Authentication if reason == KEY_EXPIRED => ErrorCode::KeyExpired,
         ProviderFailureKind::Authentication => ErrorCode::ProviderAuthentication,
         ProviderFailureKind::InvalidOutput => ErrorCode::InvalidOutput,

@@ -34,7 +34,7 @@ roles (env seeds; saved settings are not read):
   chat codex-like effort=low (configured off) route=external_unmasked
   rewrite (not configured)
 warning: chat reasoning off is not allowed: codex-like requires reasoning; sending low
-warning: UNMASKED: chat model codex-like leaves the homelab; raw member names, IDs, messages, and complete URLs are sent to the provider. Kanata ZDR is operator-stated retention only and does not prevent transmission.
+warning: UNMASKED: chat model codex-like leaves the homelab; raw member names, IDs, messages, and complete URLs are sent to the provider. A provider's retention terms (such as zero data retention) do not prevent transmission.
 probe:
   extraction sumi-structured effort=off ok 412 ms finish=stop
   chat codex-like effort=low ok 412 ms finish=stop
@@ -175,18 +175,25 @@ deployment settings before a separately approved rollout; an old config must
 not silently switch formerly masked calls to raw traffic. Configured external
 roles send raw names, IDs, messages and URLs when present, with a warning that
 data leaves the homelab. Unknown or not-yet-listed aliases are treated as
-external until a successful listing establishes their zone. Kanata provider
-ZDR is operator-stated retention, not a limit on transmission.
+external until a successful listing establishes their zone. A provider's
+retention terms (such as Kanata's or another provider's zero data retention)
+concern retention, not transmission.
 
 ### Other OpenAI-compatible providers
 
-`KANADE_MODEL_BASE_URL` also accepts another OpenAI-compatible server: use
-HTTPS, or plain HTTP only for loopback, `localhost` or
-`host.docker.internal`, as above. The adapter appends `/models` and
-`/chat/completions` (so a `/v1` base uses `/v1/models`).
+`KANADE_MODEL_BASE_URL` also accepts another OpenAI-compatible server
+(vLLM, llama.cpp, LiteLLM, OpenRouter, OpenAI, Groq, Together, Azure OpenAI
+v1 and similar): use HTTPS, or plain HTTP only for loopback, `localhost` or
+`host.docker.internal`, as above. The adapter trims one trailing `/v1` from
+the base path and calls `<base>/v1/models` and `<base>/v1/chat/completions`
+(OpenRouter's `/api/v1` and Azure's `/openai/v1/` work). Not supported: a
+base on another version path (such as Gemini's `/v1beta/openai`, which would
+become `/v1beta/openai/v1/...`) and a base with a query string (classic Azure
+OpenAI's `?api-version=`; use its `/openai/v1/` endpoint instead).
 `KANADE_MODEL_KEY_FILE` / `models.key_file` points to a file containing the
 optional bearer key; when set, Kanade sends `Authorization: Bearer` on both
-requests. Keep the key itself out of TOML and environment variables.
+requests (there is no `api-key` header variant). Keep the key itself out of
+TOML and environment variables.
 
 Kanata can publish per-model capability metadata. Resolution per alias is
 published metadata, then the operator's declaration, then the minimal
@@ -206,23 +213,53 @@ reasoning_control = true     # send reasoning_effort
 reasoning_efforts = ["off", "low", "medium", "high"]  # optional; needs reasoning_control
 context_tokens = 32768       # the model's context window
 max_output_tokens = 4096     # caps each role's reserve; at most context_tokens
+output_limit = "max_completion_tokens"  # optional: the size field's name
 ```
 
-Omitted fields stay off (or unset). A declaration applies everywhere a
-published one would: request shaping, effort resolution (a role level the
-declared list does not accept falls back to `off` when listed, else the
-lowest listed level), the Config catalog view and model picker (a declared
-alias still shows trust zone `unknown`), the context window (source
-`catalog`) and the reserve
-clamp. A 400 whose `error.param` names `response_format`, a sampling field
-or `reasoning_effort` drops that capability for the alias until restart, as
-for Kanata. Trust zones and admission limits cannot be declared: plain
-routes stay external, and capacity comes from `models.permits` or
-`[[models.groups]]`. Declarations are operator-only (read once at startup,
-not editable in the Config API). `models.context.overrides` still sets a
-per-alias window, capped at a declared `context_tokens`; configure role
-`reserve` and optional `cap` values under `[models.context.chat]`,
-`[models.context.extraction]` and `[models.context.rewrite]`. See
+Omitted fields stay off (or unset). A declaration is used for request
+shaping, effort resolution (a role level the declared list does not accept
+falls back to `off` when listed, else the lowest listed level), the Config
+catalog view and model picker (a declared alias shows trust zone `unknown`
+and counts as external), `kanade models check`, the context window (source
+`catalog`) and the reserve clamp. This holds whether or not the server's
+model list names the alias: a declared model the list omits, or every
+declared model when the server has no list, is added to the catalog marked
+declared (`listed: false`; `declared` in `kanade models check`) and can be
+picked for a role. Only a listed base makes `<base>:<level>` variants.
+
+`output_limit` names the field that carries the role's reserve:
+`"max_tokens"` or `"max_completion_tokens"`. Without it, `max_tokens` is sent
+only with `sampling_controls` (Kanata's rule). With it, the reserve is always
+sent under that name, whether or not sampling fields are; OpenAI reasoning
+models, for example, need `output_limit = "max_completion_tokens"` and
+`sampling_controls = false`.
+
+A 400 whose `error.param` names `response_format`, a sampling field, the
+declared `output_limit` field or `reasoning_effort` drops that capability for
+the alias until restart (one resend without it), as for Kanata; rejecting the
+declared size field drops only the size field. A 400 that names no `param`
+(or names a field Kanade did not send) fails the call without a resend. With
+no `reasoning_efforts` list `off` is sent as `reasoning_effort: "none"`;
+declare the list if the server refuses `none`. A `429` whose `error.code` is
+`insufficient_quota` (an exhausted account) fails at once as
+`quota_exhausted`, a misconfiguration, and is never retried.
+
+A server whose `GET /v1/models` answers 404 or 405 has no model list: the
+listing is reported as `no-listing` (startup logs `models_degraded` with
+`reason: "no-listing"`; it is retried like any failed listing), the declared
+models are used, admin Config saves roles to them, Setup shows the model
+gateway as ready with a note, and `kanade models check` prints
+`catalog: no model list (declared models only)` without failing. Any other
+listing failure (unreachable, a 5xx, a timeout) still refuses model saves in
+Config until the server answers.
+
+Trust zones and admission limits cannot be declared: plain routes stay
+external, and capacity comes from `models.permits` or `[[models.groups]]`.
+Declarations are operator-only (read once at startup, not editable in the
+Config API). `models.context.overrides` still sets a per-alias window, capped
+at a declared `context_tokens`; configure role `reserve` and optional `cap`
+values under `[models.context.chat]`, `[models.context.extraction]` and
+`[models.context.rewrite]`. See
 [`kanade.openai-compatible.example.toml`](../../kanade.openai-compatible.example.toml).
 Omitting `[[models.groups]]` puts all model aliases in one shared `gateway`
 group.
@@ -355,11 +392,12 @@ never fatal), as JSON lines without the key or the gateway URL:
 {"level":"INFO","event":"model_role","role":"chat","alias":"gpt-6-luna","effort":"low","source":"floor","route":"homelab"}
 {"level":"INFO","event":"model_role","role":"rewrite","alias":"ext","effort":"low","source":"stored","route":"external_unmasked"}
 {"level":"INFO","event":"model_warning","kind":"unpublished_effort","message":"chat reasoning off is not allowed: gpt-6-luna requires reasoning; sending low"}
-{"level":"WARN","event":"model_warning","kind":"external_unmasked","message":"UNMASKED: rewrite model ext leaves the homelab; raw member names, IDs, messages, and complete URLs are sent to the provider. Kanata ZDR is operator-stated retention only and does not prevent transmission."}
+{"level":"WARN","event":"model_warning","kind":"external_unmasked","message":"UNMASKED: rewrite model ext leaves the homelab; raw member names, IDs, messages, and complete URLs are sent to the provider. A provider's retention terms (such as zero data retention) do not prevent transmission."}
 ```
 
 `models_degraded` (WARN, `reason`) replaces `models_listed` when the
-listing fails (every route then stays external until one succeeds);
+listing fails (every route then stays external until one succeeds;
+`reason: "no-listing"` is a server without a model list, see above);
 `models_disabled` is logged without `KANADE_MODEL_BASE_URL`. `source` is
 `fixed` (a `<base>:<level>` variant), `floor` (the configured level is not
 accepted; the lowest accepted one is used), `inherit` (extraction's level),
@@ -367,7 +405,7 @@ else where the role's own level came from: `stored`, `env` or `default`.
 `route` is currently `homelab` or `external_unmasked`; `external_masked` and
 `external_refused` are historical values only. Every external route, including
 an unknown alias until a listing classifies it, gets an `external_unmasked`
-WARN with the raw-data and ZDR-retention notice. `capacity` and `ungrouped`
+WARN with the raw-data and retention notice. `capacity` and `ungrouped`
 are WARN, `unpublished_effort` INFO. Each role whose route is local
 (`leaves_homelab` false) and whose effective context window is above 16,384
 adds one WARN line

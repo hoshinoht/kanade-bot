@@ -33,7 +33,7 @@ test('models config warns when raw member data leaves the homelab', async ({ pag
   const rewrite = panel.getByRole('group', { name: 'Rewrite' });
   const unlistedWarning = rewrite.locator('.settings__warn');
   await expect(unlistedWarning).toContainText('kanata/unlisted-synthetic');
-  await expect(unlistedWarning).toContainText(/not in Kanata's list, so its availability is unknown and it is treated as external/);
+  await expect(unlistedWarning).toContainText(/neither listed by the model gateway nor declared, so its availability is unknown and it is treated as\s*external/);
   await expect(unlistedWarning).toContainText(/raw member names, IDs,\s*messages, and URLs are sent outside the homelab/i);
   await expect(unlistedWarning).toContainText(/requests may fail if the alias is unavailable/i);
   await expect(panel).not.toContainText(/pseudonym|mask(?:ed|ing)?|provider testing|ALLOW_EXTERNAL_UNMASKED|PSEUDONYMIZE/i);

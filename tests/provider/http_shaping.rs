@@ -1,14 +1,14 @@
 use std::{collections::BTreeMap, sync::Arc};
 
 use kanade::infrastructure::llm::{
-    BearerKey, ChatRequest, CompletionRunner, Effort, ErrorCode, ExecutionLimits,
-    HttpProviderConfig, Message, ModelCapabilities, OpenAiCompatibleProvider, OutputSchema,
-    OutputValidation, Sampling, ToolDefinition, shape_request,
+    BearerKey, Capability, ChatRequest, CompletionRunner, Effort, ErrorCode, ExecutionLimits,
+    HttpProviderConfig, LlmProvider, Message, ModelCapabilities, OpenAiCompatibleProvider,
+    OutputSchema, OutputValidation, ProviderFailureKind, Sampling, ToolDefinition, shape_request,
 };
 use serde_json::{Value, json};
 
 use super::{
-    stub::{Reply, Stub, gateway, kanata_models, ollama_models},
+    stub::{Recorded, Reply, Stub, gateway, kanata_models, ollama_models},
     support::{default_retry, tool_schema},
 };
 
@@ -118,6 +118,138 @@ async fn kanata_metadata_model_gets_every_supported_field() {
         .collect();
     assert_eq!(listings.len(), 1);
     assert_eq!(listings[0].path, "/v1/models");
+
+    // Frozen Kanata baseline: the other fixture models' bodies and every 400
+    // shape's kind and reason code. Generic-server behaviour keys only on
+    // declarations, unlisted ids or a missing listing, so none of this moves.
+    let stub = Stub::start(gateway(kanata_models(), ANSWER)).await;
+    let kanata = self::provider(stub.url(), BTreeMap::new());
+    let kanata_runner = runner(kanata);
+    for (model, expected) in [
+        (
+            "glm-cloud",
+            json!({
+                "model": "glm-cloud",
+                "messages": messages(&format!("sys\n\n{INSTRUCTION}{SCHEMA_TEXT}")),
+                "max_tokens": 64,
+                "temperature": 0.25,
+                "seed": 7,
+                "top_p": 0.5
+            }),
+        ),
+        (
+            "plain-alias",
+            json!({
+                "model": "plain-alias",
+                "messages": messages(&format!("sys\n\n{INSTRUCTION}{SCHEMA_TEXT}")),
+            }),
+        ),
+    ] {
+        kanata_runner.complete(&structured(model)).await.unwrap();
+        let body = stub.chat_requests().last().unwrap().body.clone();
+        assert_eq!(body, expected, "{model}");
+    }
+
+    use ProviderFailureKind::{CapabilityRejected, Permanent};
+    let cases: [(&str, Option<&'static str>, u32, ProviderFailureKind, &str); 10] = [
+        (
+            "sumi-structured",
+            Some("max_tokens"),
+            64,
+            CapabilityRejected(Capability::SamplingControls),
+            "field-rejected",
+        ),
+        (
+            "sumi-structured",
+            Some("max_tokens"),
+            8_192,
+            Permanent,
+            "size-limit",
+        ),
+        (
+            "sumi-structured",
+            Some("max_completion_tokens"),
+            64,
+            Permanent,
+            "status",
+        ),
+        (
+            "sumi-structured",
+            Some("max_completion_tokens"),
+            8_192,
+            Permanent,
+            "status",
+        ),
+        (
+            "sumi-structured",
+            Some("response_format"),
+            64,
+            CapabilityRejected(Capability::StructuredOutput),
+            "field-rejected",
+        ),
+        (
+            "sumi-structured",
+            Some("reasoning_effort"),
+            64,
+            CapabilityRejected(Capability::ReasoningControl),
+            "field-rejected",
+        ),
+        (
+            "sumi-structured",
+            Some("frequency_penalty"),
+            64,
+            Permanent,
+            "status",
+        ),
+        ("sumi-structured", None, 64, Permanent, "status"),
+        (
+            "codex-like",
+            Some("max_tokens"),
+            64,
+            Permanent,
+            "field-rejected",
+        ),
+        (
+            "codex-like",
+            Some("temperature"),
+            64,
+            Permanent,
+            "field-rejected",
+        ),
+    ];
+    for (model, param, max_output_tokens, kind, reason_code) in cases {
+        let stub = Stub::start(move |request: &Recorded| {
+            if request.method == "GET" {
+                return Reply::Json(200, kanata_models());
+            }
+            let mut error = json!({
+                "message": "invalid request",
+                "type": "invalid_request_error",
+                "code": "invalid_request"
+            });
+            if let Some(param) = param {
+                error["param"] = json!(param);
+            }
+            Reply::Json(400, json!({"error": error}))
+        })
+        .await;
+        let kanata = self::provider(stub.url(), BTreeMap::new());
+        let mut request = structured(model);
+        request.max_output_tokens = max_output_tokens;
+        let failure = kanata.complete(&request).await.unwrap_err();
+        assert_eq!(
+            (failure.kind, failure.reason_code),
+            (kind, reason_code),
+            "{model} {param:?} {max_output_tokens}"
+        );
+        assert_eq!(stub.chat_requests().len(), 1);
+        assert!(
+            stub.chat_requests()[0]
+                .body
+                .get("max_completion_tokens")
+                .is_none()
+        );
+    }
 }
 
 #[tokio::test]

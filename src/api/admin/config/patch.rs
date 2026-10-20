@@ -82,7 +82,8 @@ fn read_only(section: &str, key: &str) -> Option<&'static str> {
         | ("self_service", "effective_mode")
         | (
             "models",
-            "reachable" | "catalog" | "groups_source" | "alias_limits" | "capacity_check",
+            "reachable" | "no_listing" | "catalog" | "groups_source" | "alias_limits"
+            | "capacity_check",
         )
         | ("persona", "personas" | "profiles" | "role_profiles_digest")
         | ("posting", "channel_id_source")

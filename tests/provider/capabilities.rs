@@ -48,6 +48,8 @@ fn kanata_listing_parses_metadata_and_tolerates_junk() {
                 queue_ms: Some(1_000),
                 adapter_max_in_flight: Some(2),
             }),
+            // Never published: only an operator declares it.
+            output_limit: None,
         }
     );
     assert_eq!(structured.admission.unwrap().concurrency(), 2);

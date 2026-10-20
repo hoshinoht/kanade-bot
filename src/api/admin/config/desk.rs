@@ -128,10 +128,13 @@ fn seeded_source(saved: &[&str], key: &str) -> &'static str {
 }
 
 /// One catalog read: `reachable` is false when this listing failed; the
-/// snapshot is then the last good one (empty before any).
+/// snapshot is then the last good one plus the declared models (only those
+/// before any listing). `no_listing`: the gateway answered that it serves no
+/// model list, which counts as reachable (declared models are saveable).
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct CatalogRead {
     pub reachable: bool,
+    pub no_listing: bool,
     pub snapshot: CatalogSnapshot,
 }
 
@@ -499,6 +502,7 @@ impl ConfigDesk {
             persona,
             models: dto::Models {
                 reachable: catalog.reachable,
+                no_listing: catalog.no_listing,
                 catalog: catalog
                     .snapshot
                     .models

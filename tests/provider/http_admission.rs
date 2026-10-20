@@ -48,16 +48,16 @@ async fn classify(
     status: u16,
     code: Option<&'static str>,
     retry_after: Option<&'static str>,
-) -> ProviderFailureKind {
+) -> (ProviderFailureKind, &'static str) {
     let stub = Stub::start(models_or(move |_| {
         Reply::Raw(raw(status, code, retry_after))
     }))
     .await;
-    declared(stub.url())
+    let failure = declared(stub.url())
         .complete(&structured())
         .await
-        .unwrap_err()
-        .kind
+        .unwrap_err();
+    (failure.kind, failure.reason_code)
 }
 
 /// Kanata's admission codes are admission refusals only with their own
@@ -78,48 +78,103 @@ async fn gateway_replies_are_classified_by_status_code_and_retry_after() {
     };
     let (queue_full, busy) = (Some("gateway_queue_full"), Some("gateway_busy"));
     let unavailable = Some("upstream_unavailable");
+    let (admission, server) = ("admission", "server-error");
     let cases = [
-        (429, queue_full, Some("3"), refused(Some(3))),
-        (429, Some("gateway_key_busy"), Some("3"), refused(Some(3))),
+        (429, queue_full, Some("3"), refused(Some(3)), admission),
+        (
+            429,
+            Some("gateway_key_busy"),
+            Some("3"),
+            refused(Some(3)),
+            admission,
+        ),
         (
             429,
             Some("gateway_key_rate_limited"),
             Some("3"),
             refused(Some(3)),
+            admission,
         ),
-        (503, busy, Some("3"), refused(Some(3))),
-        (429, queue_full, None, refused(None)),
+        (503, busy, Some("3"), refused(Some(3)), admission),
+        (429, queue_full, None, refused(None), admission),
         // An HTTP-date Retry-After is ignored; a huge one is capped.
         (
             503,
             busy,
             Some("Wed, 21 Oct 2026 07:28:00 GMT"),
             refused(None),
+            admission,
         ),
-        (503, busy, Some("999999999999"), refused(Some(3_600))),
+        (
+            503,
+            busy,
+            Some("999999999999"),
+            refused(Some(3_600)),
+            admission,
+        ),
         // Draining is a short requeue, not a backend failure.
-        (503, Some("server_draining"), None, refused(None)),
+        (
+            503,
+            Some("server_draining"),
+            None,
+            refused(None),
+            "draining",
+        ),
         // Admission codes count only with their own status.
-        (503, queue_full, None, Transient),
-        (503, Some("gateway_key_busy"), None, Transient),
-        (503, Some("gateway_key_rate_limited"), None, Transient),
-        (429, busy, None, Transient),
-        (429, Some("server_draining"), None, Transient),
-        (400, queue_full, Some("5"), Permanent),
-        (502, unavailable, None, Transient),
-        (503, unavailable, Some("30"), down(30)),
-        (503, unavailable, Some("5"), down(5)),
+        (503, queue_full, None, Transient, server),
+        (503, Some("gateway_key_busy"), None, Transient, server),
+        (
+            503,
+            Some("gateway_key_rate_limited"),
+            None,
+            Transient,
+            server,
+        ),
+        (429, busy, None, Transient, "rate-limited"),
+        (
+            429,
+            Some("server_draining"),
+            None,
+            Transient,
+            "rate-limited",
+        ),
+        (400, queue_full, Some("5"), Permanent, "status"),
+        (502, unavailable, None, Transient, server),
+        (
+            503,
+            unavailable,
+            Some("30"),
+            down(30),
+            "backend-unavailable",
+        ),
+        (503, unavailable, Some("5"), down(5), "backend-unavailable"),
         // Adapter down without Kanata's breaker counts toward our threshold.
-        (503, unavailable, None, Transient),
-        (504, Some("upstream_timeout"), Some("5"), UpstreamTimeout),
-        (504, None, Some("5"), UpstreamTimeout),
-        (429, Some("rate_limit_exceeded"), Some("5"), limited),
-        (429, None, Some("5"), limited),
-        (503, None, Some("5"), Transient),
+        (503, unavailable, None, Transient, "backend-unavailable"),
+        (
+            504,
+            Some("upstream_timeout"),
+            Some("5"),
+            UpstreamTimeout,
+            "upstream-timeout",
+        ),
+        (504, None, Some("5"), UpstreamTimeout, "upstream-timeout"),
+        (
+            429,
+            Some("rate_limit_exceeded"),
+            Some("5"),
+            limited,
+            "rate-limited",
+        ),
+        (429, None, Some("5"), limited, "rate-limited"),
+        (503, None, Some("5"), Transient, server),
     ];
-    for (status, code, retry_after, kind) in cases {
+    for (status, code, retry_after, kind, reason_code) in cases {
         let case = format!("{status} {code:?} {retry_after:?}");
-        assert_eq!(classify(status, code, retry_after).await, kind, "{case}");
+        assert_eq!(
+            classify(status, code, retry_after).await,
+            (kind, reason_code),
+            "{case}"
+        );
     }
 }
 

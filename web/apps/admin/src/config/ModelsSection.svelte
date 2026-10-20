@@ -1,9 +1,11 @@
 <!--
-  Three model roles, each a base model from Kanata's live list with a
+  Three model roles, each a base model from the model gateway's live list (or,
+  when the gateway serves no list, from the declared models) with a
   reasoning level resolved against its published efforts (every level when it
   publishes none; inherit only when the extraction effort fits; no `off` where
   the model requires reasoning). Capacity groups are read-only (kanade.toml):
-  one row per group, the server's startup check, and what Kanata admits.
+  one row per group, the server's startup check, and what Kanata admits
+  (admission limits are Kanata-only: published, never declared).
 -->
 <script lang="ts">
   import type { ConfigView, ModelInfo, ModelRole, RoleModel } from '@kanade/api-types';
@@ -75,7 +77,7 @@
   // The server runs the startup check on every read and save; it is the truth.
   // Groups are read-only (kanade.toml), so no unsaved edit changes them and the
   // saved verdicts are the whole story: each sits on its group's row, and
-  // cross-group ones (a role in no group, Kanata unreachable) under the table.
+  // cross-group ones (a role in no group, the model gateway unreachable) under the table.
   const checks = $derived(splitChecks(models.capacity_check, groups.map((g) => g.group)));
   const limits = $derived(kanataLimits(models));
   const permitsTotal = $derived(groups[0]?.permits ?? 0);
@@ -132,7 +134,7 @@
 </script>
 
 <SettingsPanel title="Models">
-  {#snippet lead()}Three roles, each a base model from Kanata’s live list.{/snippet}
+  {#snippet lead()}{models.no_listing ? 'Three roles, each a base model from the declared models.' : 'Three roles, each a base model from the model gateway’s live list.'}{/snippet}
   {#snippet tabs()}
     <PillTabs
       id={uid}
@@ -146,7 +148,11 @@
     />
   {/snippet}
   {#if !models.reachable}
-    <p class="settings__box settings__box--risk" role="alert">Kanata's model list is unreachable, so the saved choices are shown but cannot be changed.</p>
+    <p class="settings__box settings__box--risk" role="alert">The model list is unreachable, so the saved choices are shown but cannot be changed.</p>
+  {:else if models.no_listing}
+    <p class="settings__box">
+      <Icon name="info" /><span>The model gateway provides no model list, so roles are picked from the declared models (<span class="mono">[models.capabilities]</span> in kanade.toml).</span>
+    </p>
   {/if}
   <div class="settings__tabpanel" role="tabpanel" id="{uid}-panel-roles" aria-labelledby="{uid}-tab-roles" hidden={tab !== 'roles'}>
     <form class="models__roles" id="{uid}-roles" data-fid="cfg-roles" onsubmit={saveRoles}>
@@ -192,6 +198,10 @@
             {@const unzoned = chosen.trust_zone !== 'homelab' && chosen.trust_zone !== 'external'}
             {@const untrusted = chosen.leaves_homelab || chosen.trust_zone !== 'homelab' || chosen.id.endsWith('-cloud')}
             <ul class="settings__caps" aria-label="What {chosen.id} can do">
+              {#if !chosen.listed}
+                <!-- Declared by the operator, not in the gateway's list: nothing is published for it, so it is external. -->
+                <li class="capchip">Declared</li>
+              {/if}
               <li class="capchip capchip--{untrusted ? 'ext' : 'home'}">
                 {unzoned ? 'trust zone unknown' : untrusted ? 'leaves the homelab' : 'homelab'}
               </li>
@@ -228,8 +238,8 @@
             <p class="settings__box settings__box--warn settings__box--small settings__warn">
               <Icon name="alert-triangle" />
               <span>
-                <strong>{roles[role.id].alias}</strong> is not in Kanata's list, so its availability is unknown and it is treated as external. If
-                routed, raw member names, IDs, messages, and URLs are sent outside the homelab; requests may fail if the alias is unavailable.
+                <strong>{roles[role.id].alias}</strong> is neither listed by the model gateway nor declared, so its availability is unknown and it is treated as
+                external. If routed, raw member names, IDs, messages, and URLs are sent outside the homelab; requests may fail if the alias is unavailable.
               </span>
             </p>
           {/if}
@@ -246,7 +256,7 @@
     <section class="settings__card" data-fid="cfg-card" aria-labelledby="{uid}-groups">
       <div class="settings__cardhead">
         <h4 class="settings__cardtitle" id="{uid}-groups">Capacity groups</h4>
-        <span class="settings__cardnote">Each group shares its permits, held to the least Kanata admits for any of its models.</span>
+        <span class="settings__cardnote">Each group shares its permits, held to the least the model gateway admits for any of its models.</span>
       </div>
       <div class="models__wrap">
         <table class="settings__table models__groups">

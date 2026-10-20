@@ -60,6 +60,8 @@ struct Facts<'a> {
     application: Option<ApplicationInfo>,
     /// `None`: no gateway configured, or the read was cut off.
     reachable: Option<bool>,
+    /// The gateway answered that it serves no model list.
+    no_listing: bool,
     character_data: Option<Health>,
     latest_backup: Option<String>,
 }
@@ -98,7 +100,7 @@ async fn facts(site: &Site) -> Facts<'_> {
         },
         async {
             match desk.filter(|desk| desk.gateway_configured()) {
-                Some(desk) => bounded(desk.catalog()).await.map(|read| read.reachable),
+                Some(desk) => bounded(desk.catalog()).await,
                 None => None,
             }
         },
@@ -122,7 +124,8 @@ async fn facts(site: &Site) -> Facts<'_> {
         saved,
         gateway,
         application,
-        reachable: catalog,
+        reachable: catalog.as_ref().map(|read| read.reachable),
+        no_listing: catalog.is_some_and(|read| read.no_listing),
         character_data,
         latest_backup: latest_backup.map(iso_instant),
     }
@@ -285,8 +288,13 @@ fn watched(facts: &Facts<'_>) -> SetupItem {
     }
 }
 
+/// A gateway without a model list is a supported setup (declared models), so
+/// it is `ok`, with `no_listing` for the page to say so.
 fn model_gateway(facts: &Facts<'_>) -> SetupItem {
     match facts.reachable {
+        Some(true) if facts.no_listing => {
+            SetupItem::new(Id::ModelGateway, State::Ok).because(Reason::NoListing)
+        }
         Some(true) => SetupItem::new(Id::ModelGateway, State::Ok),
         Some(false) => SetupItem::new(Id::ModelGateway, State::Warn).because(Reason::Unreachable),
         // Configured, but the listing did not finish in time.

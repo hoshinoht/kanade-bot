@@ -353,10 +353,12 @@ async fn update(
                     "No model gateway is configured, so model settings cannot be checked.",
                 ));
             }
+            // A gateway that serves no model list still answered: its
+            // declared models are in the snapshot and can be saved.
             let read = desk.catalog().await;
             if !read.reachable {
                 return Err(models_unreachable(
-                    "Kanata is unreachable, so model settings cannot be checked; try again shortly.",
+                    "The model gateway is unreachable, so model settings cannot be checked; try again shortly.",
                 ));
             }
             let mut next = current.models.clone();

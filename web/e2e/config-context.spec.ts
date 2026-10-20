@@ -26,7 +26,7 @@ test('context windows: slider and exact field, keyboard, local warning, save and
   // kanata/chat publishes no window and stays in the homelab: the local default applies.
   await expect(effective.getByRole('row', { name: /^Chat/ })).toContainText('Local default');
   await expect(effective.getByRole('row', { name: /^Chat/ })).toContainText('8,192');
-  await expect(effective.getByRole('row', { name: /^Extraction/ })).toContainText('Published by Kanata');
+  await expect(effective.getByRole('row', { name: /^Extraction/ })).toContainText('Published or declared');
 
   const defaults = panel.getByRole('group', { name: 'Defaults' });
   const localSlider = defaults.getByRole('slider', { name: 'Local default' });
@@ -93,8 +93,8 @@ test('context windows: overrides held to the published max, local vs cloud, refu
   const think = overrides.getByRole('listitem').filter({ has: page.getByText('kanata/think', { exact: true }) });
   const thinkField = think.getByRole('spinbutton', { name: 'kanata/think window' });
   await expect(thinkField).toBeFocused();
-  await expect(think.getByRole('list', { name: 'What Kanata publishes for kanata/think' })).toContainText('published max 65,536');
-  await expect(think.getByRole('list', { name: 'What Kanata publishes for kanata/think' })).toContainText('max output 8,192');
+  await expect(think.getByRole('list', { name: 'What the model gateway publishes for kanata/think' })).toContainText('published max 65,536');
+  await expect(think.getByRole('list', { name: 'What the model gateway publishes for kanata/think' })).toContainText('max output 8,192');
   await expect(thinkField).toHaveAttribute('max', '65536');
   await thinkField.fill('12288');
   await expect(think.getByText(WARNING)).toHaveCount(0);
@@ -150,5 +150,5 @@ test('context windows: an override above the published window is refused by the 
   await overrides.getByRole('button', { name: 'Add override' }).click();
   await overrides.getByRole('spinbutton', { name: 'kanata/extract window' }).fill('20000');
   await panel.getByRole('button', { name: 'Save context windows' }).click();
-  await expect(panel.getByRole('alert').filter({ hasText: "models.context.overrides.kanata/extract exceeds Kanata's published context window (16384)." })).toBeVisible();
+  await expect(panel.getByRole('alert').filter({ hasText: "models.context.overrides.kanata/extract exceeds kanata/extract's published context window (16384)." })).toBeVisible();
 });

@@ -24,6 +24,9 @@ crate::domain::spelled! {
         UpstreamTimeout => "upstream_timeout",
         /// The gateway key has expired (Kanata `key_expired`); rotate it.
         KeyExpired => "key_expired",
+        /// The provider account is out of quota or credit (OpenAI's
+        /// `429 insufficient_quota`); an operator must top it up.
+        QuotaExhausted => "quota_exhausted",
     }
 }
 

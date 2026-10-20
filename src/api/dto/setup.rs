@@ -78,7 +78,7 @@ crate::domain::spelled! {
 }
 
 crate::domain::spelled! {
-    /// Why an item is not `ok`.
+    /// Why an item is not `ok`; on an `ok` item, a note (`no_listing`).
     #[derive(Serialize)]
     #[cfg_attr(test, derive(ts_rs::TS))]
     #[serde(rename_all = "snake_case")]
@@ -98,6 +98,9 @@ crate::domain::spelled! {
         Unavailable => "unavailable",
         /// The model gateway or the scouter did not answer.
         Unreachable => "unreachable",
+        /// `model_gateway` (state `ok`): the gateway serves no model list, so
+        /// the operator's declared models are used.
+        NoListing => "no_listing",
         /// A model is saved for the role but not running yet.
         NotRunning => "not_running",
         /// The chatbot is on but `missing_env` names settings it still needs.

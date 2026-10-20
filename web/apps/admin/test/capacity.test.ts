@@ -14,10 +14,10 @@ import {
 import type { ModelInfo } from '@kanade/api-types';
 
 const catalog: ModelInfo[] = [
-  { id: 'x', trust_zone: 'homelab', leaves_homelab: false, function_tools: false, structured_output: true, sampling_controls: true, reasoning_control: true, reasoning_efforts: ['low', 'high'], admission: { max_in_flight: 1, adapter_max_in_flight: 2 } },
-  { id: 'c', trust_zone: 'homelab', leaves_homelab: false, function_tools: true, structured_output: true, sampling_controls: true, reasoning_control: true, reasoning_efforts: ['low', 'medium'], admission: { max_in_flight: 4 } },
-  { id: 'd', trust_zone: 'external', leaves_homelab: true, function_tools: false, structured_output: false, sampling_controls: false, reasoning_control: false, reasoning_efforts: [], admission: { max_in_flight: 2 } },
-  { id: 'n', trust_zone: 'unknown', leaves_homelab: true, function_tools: false, structured_output: true, sampling_controls: true, reasoning_control: true, reasoning_efforts: null, admission: null },
+  { id: 'x', trust_zone: 'homelab', leaves_homelab: false, listed: true, function_tools: false, structured_output: true, sampling_controls: true, reasoning_control: true, reasoning_efforts: ['low', 'high'], admission: { max_in_flight: 1, adapter_max_in_flight: 2 } },
+  { id: 'c', trust_zone: 'homelab', leaves_homelab: false, listed: true, function_tools: true, structured_output: true, sampling_controls: true, reasoning_control: true, reasoning_efforts: ['low', 'medium'], admission: { max_in_flight: 4 } },
+  { id: 'd', trust_zone: 'external', leaves_homelab: true, listed: true, function_tools: false, structured_output: false, sampling_controls: false, reasoning_control: false, reasoning_efforts: [], admission: { max_in_flight: 2 } },
+  { id: 'n', trust_zone: 'unknown', leaves_homelab: true, listed: false, function_tools: false, structured_output: true, sampling_controls: true, reasoning_control: true, reasoning_efforts: null, admission: null },
 ] as ModelInfo[];
 const roles = {
   extraction: { alias: 'x', reasoning: 'low' },
@@ -48,7 +48,7 @@ describe('reasoning', () => {
     expect(reasoningChoices('chat', byId('c'), 'high').map((c) => c.value)).toEqual(['off', 'low', 'medium']);
     // Off is trivially valid everywhere.
     expect(reasoningChoices('chat', byId('c'), 'off')[0]).toEqual({ value: '', label: 'Same as extraction' });
-    // `null` efforts: Kanata restricts nothing, so every level is offered (and inherit fits any).
+    // `null` efforts: the model gateway restricts nothing, so every level is offered (and inherit fits any).
     expect(reasoningChoices('rewrite', byId('n'), 'medium').map((c) => c.value)).toEqual(['', 'off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']);
     expect(reasoningChoices('rewrite', byId('n'), 'xhigh')[0]).toEqual({ value: '', label: 'Same as extraction' });
     expect(isReasoningValid(byId('n'), 'max')).toBe(true);
@@ -139,6 +139,7 @@ describe('model picker', () => {
 describe('capacity summary', () => {
   const models = {
     reachable: true,
+    no_listing: false,
     catalog: [...catalog, { ...catalog[1]!, id: 'c:high', variant_of: 'c', fixed_effort: 'high' }] as ModelInfo[],
     roles,
     groups: [
@@ -172,7 +173,7 @@ describe('capacity summary', () => {
   });
 
   it('says the key limit once, in words', () => {
-    expect(keyLine({ max_in_flight: null, shared: true })).toBe("Kanata publishes no limit for this key; it is shared with the owner's other clients.");
+    expect(keyLine({ max_in_flight: null, shared: true })).toBe("The model gateway publishes no limit for this key; it is shared with the owner's other clients.");
     expect(keyLine({ max_in_flight: 8, shared: false })).toBe('Kanata admits 8 calls at a time for this key.');
   });
 });
@@ -180,9 +181,9 @@ describe('capacity summary', () => {
 describe('startup checks', () => {
   it('puts each group check on its row and keeps cross-group ones for the list, each once', () => {
     const over = { level: 'error' as const, message: 'Group over declares 3 permits but Kanata admits at most 2 (capped by a); the bot refuses to start.', group: 'over' };
-    const gone = { level: 'error' as const, message: 'Kanata does not list gone.', group: 'over' };
+    const gone = { level: 'error' as const, message: 'The model gateway does not list gone.', group: 'over' };
     const ungrouped = { level: 'warning' as const, message: 'The chat model b is in no capacity group; its calls are refused.', group: null };
-    const legacy = { level: 'warning' as const, message: 'Kanata is unreachable; capacity is checked again once it lists its models.' };
+    const legacy = { level: 'warning' as const, message: 'The model gateway is unreachable; capacity is checked again once it lists its models.' };
     const stray = { level: 'ok' as const, message: 'Group elsewhere: 1 permits.', group: 'elsewhere' };
     const split = splitChecks([ungrouped, over, gone, over, legacy, stray], ['over', 'open']);
     expect(split.byGroup.get('over')).toEqual([over, gone]);
@@ -193,7 +194,7 @@ describe('startup checks', () => {
   it('drops the group name the row already says', () => {
     expect(rowCheckText("Group gateway: 4 permits, matching Kanata's limit.", 'gateway')).toBe("4 permits, matching Kanata's limit.");
     expect(rowCheckText('Group local uses 2 of the 4 permits Kanata admits.', 'local')).toBe('Uses 2 of the 4 permits Kanata admits.');
-    expect(rowCheckText('Kanata does not list gone.', 'local')).toBe('Kanata does not list gone.');
+    expect(rowCheckText('The model gateway does not list gone.', 'local')).toBe('The model gateway does not list gone.');
     expect(rowCheckText('Group locality: 1 permits.', 'local')).toBe('Group locality: 1 permits.');
   });
 });

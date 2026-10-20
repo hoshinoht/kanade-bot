@@ -442,7 +442,7 @@ async fn external_models_report_raw_data_even_when_the_alias_is_unknown() {
         "IDs",
         "messages",
         "complete URLs",
-        "Kanata ZDR",
+        "do not prevent transmission",
     ] {
         assert!(warning.contains(detail), "missing {detail}: {warning}");
     }

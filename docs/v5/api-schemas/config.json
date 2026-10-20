@@ -60,13 +60,14 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "id", "trust_zone", "leaves_homelab", "function_tools", "structured_output",
+        "id", "trust_zone", "leaves_homelab", "listed", "function_tools", "structured_output",
         "sampling_controls", "reasoning_control", "reasoning_efforts", "admission"
       ],
       "properties": {
         "id": { "type": "string" },
         "trust_zone": { "enum": ["homelab", "external", "unknown"] },
         "leaves_homelab": { "type": "boolean" },
+        "listed": { "type": "boolean", "description": "The gateway's model list names it. False for an operator-declared model the list omits, or every declared model when the gateway serves no list (`models.no_listing`); such entries are unpublished and external." },
         "function_tools": { "type": "boolean" },
         "structured_output": { "type": "boolean" },
         "sampling_controls": { "type": "boolean" },
@@ -74,8 +75,8 @@
         "reasoning_efforts": {
           "anyOf": [{ "type": "array", "items": { "type": "string" } }, { "type": "null" }]
         },
-        "context_tokens": { "type": "integer", "minimum": 1, "description": "Published Kanata context window when present." },
-        "max_output_tokens": { "type": "integer", "minimum": 1, "description": "Published Kanata maximum completion size when present." },
+        "context_tokens": { "type": "integer", "minimum": 1, "description": "The model's context window when published by the gateway or declared by the operator." },
+        "max_output_tokens": { "type": "integer", "minimum": 1, "description": "The model's maximum completion size when published by the gateway or declared by the operator." },
         "off_allowed": {
           "type": "boolean",
           "description": "False when the alias requires reasoning (a published `reasoning_efforts` list without `none`): hide `off`; a stranded role falls back to the lowest published level."
@@ -167,7 +168,7 @@
       "additionalProperties": false,
       "required": ["max_in_flight", "shared"],
       "properties": {
-        "max_in_flight": { "type": ["integer", "null"], "minimum": 0, "description": "null: Kanata publishes no per-key limit." },
+        "max_in_flight": { "type": ["integer", "null"], "minimum": 0, "description": "null: the gateway publishes no per-key limit." },
         "shared": { "type": "boolean" }
       }
     },
@@ -200,7 +201,7 @@
       "properties": {
         "level": { "enum": ["ok", "warning", "error"] },
         "message": { "type": "string" },
-        "group": { "type": ["string", "null"], "description": "The capacity group (models.groups[].group) the check is about; null for checks spanning groups (a role in no group, Kanata unreachable). An alias Kanata does not list is reported once, under the first group naming it." }
+        "group": { "type": ["string", "null"], "description": "The capacity group (models.groups[].group) the check is about; null for checks spanning groups (a role in no group, the model gateway unreachable). An alias the gateway does not list (and the operator does not declare) is reported once, under the first group naming it." }
       }
     },
     "LastDigest": {
@@ -352,9 +353,10 @@
         "models": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["reachable", "catalog", "roles", "groups", "alias_limits", "key_limits", "capacity_check", "pii_pseudonymise", "context"],
+          "required": ["reachable", "no_listing", "catalog", "roles", "groups", "alias_limits", "key_limits", "capacity_check", "pii_pseudonymise", "context"],
           "properties": {
-            "reachable": { "type": "boolean" },
+            "reachable": { "type": "boolean", "description": "The model gateway answered the last model-list read, with a list or with no_listing. False: model saves are refused (503)." },
+            "no_listing": { "type": "boolean", "description": "The gateway serves no model list (`/models` answers 404 or 405): the catalog holds the operator's declared models only, and roles can be saved to them." },
             "catalog": { "type": "array", "items": { "$ref": "#/$defs/ModelInfo" } },
             "roles": {
               "type": "object",

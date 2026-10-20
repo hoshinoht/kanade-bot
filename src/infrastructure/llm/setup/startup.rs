@@ -85,8 +85,8 @@ impl fmt::Display for StartupWarning {
             Self::ExternalUnmasked { role, alias } => write!(
                 f,
                 "UNMASKED: {} model {alias} leaves the homelab; raw member names, IDs, \
-                 messages, and complete URLs are sent to the provider. Kanata ZDR is \
-                 operator-stated retention only and does not prevent transmission.",
+                 messages, and complete URLs are sent to the provider. A provider's \
+                 retention terms (such as zero data retention) do not prevent transmission.",
                 role.as_str()
             ),
         }

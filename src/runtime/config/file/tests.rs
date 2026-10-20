@@ -111,7 +111,12 @@ fn the_openai_compatible_fragment_declares_its_role_aliases() {
     let declared: Vec<_> = models.capabilities.keys().map(String::as_str).collect();
     assert_eq!(
         declared,
-        ["example-chat", "example-extract", "example-rewrite"]
+        [
+            "example-chat",
+            "example-extract",
+            "example-reasoning",
+            "example-rewrite"
+        ]
     );
     assert!(
         roles
@@ -120,6 +125,11 @@ fn the_openai_compatible_fragment_declares_its_role_aliases() {
     );
     assert!(models.capabilities["example-chat"].function_tools);
     assert!(models.capabilities["example-extract"].structured_output);
+    assert_eq!(models.capabilities["example-extract"].output_limit, None);
+    assert_eq!(
+        models.capabilities["example-reasoning"].output_limit,
+        Some(crate::infrastructure::llm::OutputLimit::MaxCompletionTokens)
+    );
 }
 
 /// Every key is documented: uncommenting the example's keys covers the table.
@@ -361,7 +371,7 @@ fn groups_feed_the_model_settings() {
 
 #[test]
 fn capability_declarations_feed_the_model_settings() {
-    use crate::infrastructure::llm::{Effort, ModelCapabilities};
+    use crate::infrastructure::llm::{Effort, ModelCapabilities, OutputLimit};
 
     let base = "[models]\nbase_url = \"https://llm.example/v1\"\n";
     let models = |tables: &str| {
@@ -373,7 +383,8 @@ fn capability_declarations_feed_the_model_settings() {
         "[models.capabilities.\"plain/chat\"]\nfunction_tools = true\nstructured_output = true\n\
          reasoning_control = true\nreasoning_efforts = [\"off\", \"medium\"]\n\
          context_tokens = 32768\nmax_output_tokens = 2048\n\
-         [models.capabilities.\"plain/extract\"]\nstructured_output = true\n",
+         [models.capabilities.\"plain/extract\"]\nstructured_output = true\n\
+         output_limit = \"max_completion_tokens\"\n",
     )
     .unwrap();
     assert_eq!(
@@ -395,6 +406,7 @@ fn capability_declarations_feed_the_model_settings() {
                 "plain/extract".to_owned(),
                 ModelCapabilities {
                     structured_output: true,
+                    output_limit: Some(OutputLimit::MaxCompletionTokens),
                     ..ModelCapabilities::minimal()
                 }
             ),
@@ -407,7 +419,13 @@ fn capability_declarations_feed_the_model_settings() {
         models("[models.capabilities.m]\nstreaming = true\n").unwrap_err(),
         "KANADE_MODEL_CAPABILITIES `m` has an unknown field `streaming`; declare \
          structured_output, function_tools, sampling_controls, reasoning_control, \
-         reasoning_efforts, context_tokens or max_output_tokens (kanade.toml `models.capabilities`)"
+         reasoning_efforts, context_tokens, max_output_tokens or output_limit \
+         (kanade.toml `models.capabilities`)"
+    );
+    assert_eq!(
+        models("[models.capabilities.m]\noutput_limit = \"max_output\"\n").unwrap_err(),
+        "KANADE_MODEL_CAPABILITIES `m`.output_limit must be \"max_tokens\" or \
+         \"max_completion_tokens\" (kanade.toml `models.capabilities`)"
     );
     assert_eq!(
         models("[models.capabilities.m]\nfunction_tools = \"sentinel-value\"\n").unwrap_err(),

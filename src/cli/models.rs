@@ -8,7 +8,7 @@ use std::{collections::BTreeMap, io::Write, sync::Arc};
 use crate::{
     domain::settings::{LOCAL_CONTEXT_WARNING, Models as StoredModels},
     infrastructure::llm::{
-        TrustZone,
+        NO_LISTING, TrustZone,
         governor::XorShift,
         setup::{
             CatalogModel, Listing, ModelRoles, ModelSetup, Models, PROBE_TIMEOUT, ProbeOutcome,
@@ -35,7 +35,8 @@ pub async fn run(args: Args, environment: &BTreeMap<String, String>) -> Result<(
     check(args, environment, &mut std::io::stdout()).await
 }
 
-/// Writes the report to `out`; fails when the listing or any probe fails.
+/// Writes the report to `out`; fails when the listing (other than a gateway
+/// that serves no model list) or any probe fails.
 pub async fn check(
     args: Args,
     environment: &BTreeMap<String, String>,
@@ -110,6 +111,9 @@ pub async fn check(
     let mut failures = Vec::new();
     match &report.listing {
         Listing::Listed { models } => writeln!(out, "catalog: {models} models").map_err(io)?,
+        Listing::Degraded { reason_code } if *reason_code == NO_LISTING => {
+            writeln!(out, "catalog: no model list (declared models only)").map_err(io)?;
+        }
         Listing::Degraded { reason_code } => {
             writeln!(out, "catalog: unavailable ({reason_code})").map_err(io)?;
             failures.push(format!("listing failed ({reason_code})"));
@@ -146,10 +150,10 @@ pub async fn check(
             writeln!(out, "  {} (not configured)", role.as_str()).map_err(io)?;
             continue;
         };
-        let listed = catalog
+        let entry = catalog
             .models
             .iter()
-            .any(|model| model.alias == route.alias);
+            .find(|model| model.alias == route.alias);
         let fixed = catalog.variant(&route.alias).is_some();
         let effort = efforts
             .get(&role)
@@ -172,10 +176,10 @@ pub async fn check(
             "  {} {}{} effort={effort} route={trust}",
             role.as_str(),
             route.alias,
-            if listed || !catalog.listed {
-                ""
-            } else {
-                " (not listed)"
+            match entry {
+                Some(model) if !model.listed => " (declared, not listed)",
+                None if catalog.listed => " (not listed)",
+                _ => "",
             },
         )
         .map_err(io)?;
@@ -275,6 +279,9 @@ fn describe(model: &CatalogModel) -> String {
             "stays"
         },
     );
+    if !model.listed {
+        line.push_str(" declared");
+    }
     if let Some(tokens) = model.context_tokens {
         line.push_str(&format!(" context={tokens}"));
     }

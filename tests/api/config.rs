@@ -58,6 +58,7 @@ fn model(
     CatalogModel {
         alias: alias.into(),
         published: true,
+        listed: true,
         trust_zone: zone,
         leaves_homelab: !matches!(zone, Some(TrustZone::Local)) || alias.ends_with("-cloud"),
         reasoning_control: efforts.is_none_or(|efforts| !efforts.is_empty()),
@@ -148,6 +149,18 @@ impl FakeCatalog {
 
     fn set_reachable(&self, reachable: bool) {
         self.0.lock().unwrap().reachable = reachable;
+    }
+
+    /// A gateway that answers `/models` with 404: only declared models.
+    fn set_no_listing(&self, declared: Vec<CatalogModel>) {
+        *self.0.lock().unwrap() = CatalogRead {
+            reachable: true,
+            no_listing: true,
+            snapshot: CatalogSnapshot {
+                listed: false,
+                models: declared,
+            },
+        };
     }
 
     fn remove(&self, alias: &str) {
@@ -358,6 +371,7 @@ impl Config {
         let catalog = Arc::new(FakeCatalog(
             Mutex::new(CatalogRead {
                 reachable: true,
+                no_listing: false,
                 snapshot: catalog(),
             }),
             Mutex::default(),
@@ -1308,7 +1322,7 @@ async fn capacity_refuses_a_change_that_would_stop_the_bot() {
             .unwrap()
             .iter()
             .any(|check| check["level"] == "error"
-                && check["message"] == "Kanata does not list kanata/chat.")
+                && check["message"] == "The model gateway does not list kanata/chat.")
     );
 }
 
@@ -1350,6 +1364,51 @@ async fn model_saves_need_a_reachable_gateway_other_sections_do_not() {
         "models_unreachable",
     )
     .await;
+}
+
+/// A gateway with no model list: declared models are shown unlisted and
+/// external and can be saved; anything else is still refused.
+#[tokio::test]
+async fn model_saves_use_declared_models_when_the_gateway_has_no_listing() {
+    let config = Config::new().await;
+    let declared = |alias: &str| CatalogModel {
+        published: false,
+        listed: false,
+        trust_zone: None,
+        leaves_homelab: true,
+        admission: None,
+        context_tokens: Some(32_768),
+        max_output_tokens: Some(4_096),
+        ..model(alias, None, true, None, None)
+    };
+    config
+        .catalog
+        .set_no_listing(vec![declared("plain/chat"), declared("plain/extract")]);
+    let view = config.get().await;
+    assert_eq!(view["models"]["reachable"], true);
+    assert_eq!(view["models"]["no_listing"], true);
+    let catalog = view["models"]["catalog"].as_array().unwrap();
+    assert_eq!(catalog.len(), 2);
+    for model in catalog {
+        assert_eq!(model["listed"], false);
+        assert_eq!(model["leaves_homelab"], true);
+        assert_eq!(model["context_tokens"], 32_768);
+    }
+    let saved = config
+        .patch(json!({"models": {"roles": {
+            "chat": {"alias": "plain/chat", "reasoning": "low"},
+            "extraction": {"alias": "plain/extract", "reasoning": "medium"}
+        }}}))
+        .await;
+    assert_eq!(saved["models"]["roles"]["chat"]["alias"], "plain/chat");
+    assert_eq!(config.catalog.applied().len(), 1);
+    config
+        .refused(
+            json!({"models": {"roles": {"chat": {"alias": "plain/unknown"}}}}),
+            422,
+            "invalid",
+        )
+        .await;
 }
 
 #[tokio::test]

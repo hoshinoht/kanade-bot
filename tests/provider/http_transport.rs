@@ -286,17 +286,22 @@ async fn unknown_unsent_or_repeated_rejections_do_not_loop() {
 
 #[tokio::test]
 async fn statuses_map_to_provider_failure_kinds() {
-    for (status, kind) in [
-        (401, ProviderFailureKind::Authentication),
-        (403, ProviderFailureKind::Authentication),
-        (429, ProviderFailureKind::Transient),
-        (500, ProviderFailureKind::Transient),
-        (502, ProviderFailureKind::Transient),
-        (503, ProviderFailureKind::Transient),
-        (504, ProviderFailureKind::UpstreamTimeout),
-        (400, ProviderFailureKind::Permanent),
-        (404, ProviderFailureKind::Permanent),
-        (422, ProviderFailureKind::Permanent),
+    for (status, kind, reason_code) in [
+        (401, ProviderFailureKind::Authentication, "authentication"),
+        (403, ProviderFailureKind::Authentication, "authentication"),
+        (429, ProviderFailureKind::Transient, "rate-limited"),
+        (500, ProviderFailureKind::Transient, "server-error"),
+        (502, ProviderFailureKind::Transient, "server-error"),
+        (503, ProviderFailureKind::Transient, "server-error"),
+        (
+            504,
+            ProviderFailureKind::UpstreamTimeout,
+            "upstream-timeout",
+        ),
+        (400, ProviderFailureKind::Permanent, "status"),
+        (404, ProviderFailureKind::Permanent, "status"),
+        (405, ProviderFailureKind::Permanent, "status"),
+        (422, ProviderFailureKind::Permanent, "status"),
     ] {
         let stub = Stub::start(models_or(move |_| {
             Reply::Json(status, json!({"error": {"message": KEY}}))
@@ -305,6 +310,7 @@ async fn statuses_map_to_provider_failure_kinds() {
         let provider = declared(stub.url());
         let failure = provider.complete(&structured()).await.unwrap_err();
         assert_eq!(failure.kind, kind, "{status}");
+        assert_eq!(failure.reason_code, reason_code, "{status}");
         assert!(!format!("{failure:?}").contains(KEY));
     }
 

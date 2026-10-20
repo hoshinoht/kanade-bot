@@ -1,6 +1,11 @@
-# Models-only fragment for a plain OpenAI-compatible server.
+# Models-only fragment for a plain OpenAI-compatible server (vLLM, llama.cpp,
+# LiteLLM, OpenRouter, OpenAI, Groq, Together, Azure OpenAI v1 and the like).
 # Merge these tables into your private kanade.toml; this is not a complete
 # runtime configuration. The key file contains the bearer key, never this file.
+#
+# base_url must end in /v1 (OpenRouter's /api/v1 and Azure's /openai/v1 work);
+# bases on another version path (Gemini's /v1beta/openai) and query strings
+# (classic Azure ?api-version=) are not supported. Auth is a Bearer key.
 
 [models]
 base_url = "https://llm.example/v1"
@@ -19,17 +24,25 @@ reasoning = "inherit"
 model = "example-rewrite"
 reasoning = "inherit"
 
-# The plain model list has no Kanata capability metadata, so each alias runs
+# A plain model list has no Kanata capability metadata, so each alias runs
 # on the minimal profile (no response_format, tools, max_tokens, sampling or
 # reasoning fields) unless declared here. Kanata's published metadata always
 # wins over a declaration. Omitted fields stay off; declare only what the
-# server really accepts. A 400 whose error.param names response_format, a
-# sampling field or reasoning_effort drops that capability for the alias
+# server really accepts. A declared model the server's /v1/models leaves out,
+# or every declared model when the server has no /v1/models (404 or 405), is
+# still offered by Config and `kanade models check`, marked declared. A 400
+# whose error.param names response_format, a sampling field, the declared
+# output_limit field or reasoning_effort drops that capability for the alias
 # until restart; other rejections fail the call. The chat role needs
 # function_tools = true. sampling_controls also sends max_tokens (the role's
-# reserve). reasoning_efforts lists the accepted levels (off, minimal, low,
-# medium, high, xhigh, max) and needs reasoning_control = true; a role level
-# outside it falls back to off when listed, else the lowest listed level.
+# reserve) unless output_limit is set: output_limit = "max_tokens" or
+# "max_completion_tokens" always sends the reserve under that name, with or
+# without sampling_controls (OpenAI reasoning models need
+# "max_completion_tokens" and no sampling fields). reasoning_efforts lists the
+# accepted levels (off, minimal, low, medium, high, xhigh, max) and needs
+# reasoning_control = true; a role level outside it falls back to off when
+# listed, else the lowest listed level. Without a list, off is sent as
+# reasoning_effort "none": declare the list if the server refuses that.
 # context_tokens is the window; max_output_tokens (1-1048576, at most
 # context_tokens) caps each role's reserve. Trust zones are not declarable:
 # these routes count as external (raw member data leaves the homelab).
@@ -48,6 +61,14 @@ context_tokens = 32768
 
 [models.capabilities."example-rewrite"]
 sampling_controls = true
+
+# A reasoning model that takes max_completion_tokens and no sampling fields.
+[models.capabilities."example-reasoning"]
+function_tools = true
+structured_output = true
+reasoning_control = true
+reasoning_efforts = ["low", "medium", "high"]
+output_limit = "max_completion_tokens"
 
 # Context windows and reserves budget each call. With context_tokens declared
 # the overrides below are optional; an override is capped at context_tokens.

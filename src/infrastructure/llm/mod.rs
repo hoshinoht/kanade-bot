@@ -16,8 +16,8 @@ mod wire;
 
 pub(crate) use capabilities::MAX_OUTPUT_TOKENS;
 pub use capabilities::{
-    AdmissionLimits, Capability, Effort, ListedModel, ModelCapabilities, TrustZone, off_allowed,
-    parse_models_list, reasoning_floor, resolve as resolve_capabilities,
+    AdmissionLimits, Capability, Effort, ListedModel, ModelCapabilities, OutputLimit, TrustZone,
+    off_allowed, parse_models_list, reasoning_floor, resolve as resolve_capabilities,
 };
 pub use error::{ErrorCode, LlmError};
 pub use execution::{
@@ -27,8 +27,8 @@ pub use execution::{
 #[cfg(any(test, feature = "test-support"))]
 pub use fake::{FakeAction, FakeProvider};
 pub use http::{
-    BearerKey, HttpConfigError, HttpLimits, HttpProviderConfig, OpenAiCompatibleProvider,
-    TrustRoots,
+    BearerKey, HttpConfigError, HttpLimits, HttpProviderConfig, NO_LISTING,
+    OpenAiCompatibleProvider, TrustRoots,
 };
 #[cfg(feature = "test-support")]
 pub use http::{RequestHook, SentRequest, set_request_hook};
