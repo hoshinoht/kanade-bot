@@ -88,7 +88,7 @@
       module: 'character_data',
     },
     { key: 'theme', label: 'Theme', group: 'Server', terms: 'colourway colorway mode system light dark' },
-    { key: 'env', label: 'Set in the environment', group: 'Read-only', terms: 'environment variables timezone' },
+    { key: 'env', label: 'Set in kanade.toml', group: 'Read-only', terms: 'kanade.toml deployment environment variables timezone' },
   ] as const;
   type Key = (typeof SECTIONS)[number]['key'];
 

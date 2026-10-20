@@ -49,10 +49,22 @@ COPY --from=rust --chown=65532:65532 /out/data /data
 # serve creates the module's private (0700) `db/` directory inside.
 COPY --from=rust --chown=65532:65532 /out/chardata /chardata
 
+# Every path inside the image (no kanade.toml key sets these). The data
+# volume root may come up 0755: serve creates `db/` and `run/` 0700. The
+# persona files, the backups directory and the secrets directory are mounted
+# by deploy/compose.yaml.
 ENV KANADE_WEB_DIR=/app/web \
     KANADE_BOSS_DIR=/app/boss \
+    KANADE_CATALOG_FILE=/app/boss/bosses.yaml \
+    KANADE_KNOWLEDGE_DIR=/app/boss/knowledge \
     KANADE_EMOJI_DIR=/app/assets/emojis \
-    KANADE_HEALTHCHECK_URL=http://127.0.0.1:8080/healthz
+    KANADE_PERSONA_DIR=/config/personas \
+    KANADE_DB_PATH=/data/db/kanade.sqlite \
+    KANADE_OWNER_LOCK_DIR=/data/run \
+    KANADE_IDENTITY_DIR=/data/identity \
+    KANADE_CHARACTER_DATA_DB_PATH=/chardata/db/chardata.sqlite \
+    KANADE_BACKUP_DIR=/backups \
+    KANADE_SECRETS_DIR=/run/secrets
 USER 65532:65532
 WORKDIR /data
 

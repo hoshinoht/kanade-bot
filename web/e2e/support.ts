@@ -88,7 +88,7 @@ async function whoami(): Promise<unknown> {
   return (await fetch(`${ADMIN}/__e2e/whoami`)).json();
 }
 
-/** The break-glass admin token (`KANADE_ADMIN_TOKEN_FILE`). */
+/** The break-glass admin token (the secrets file `admin_token`). */
 export async function adminToken(): Promise<string> {
   const token = field(field(await whoami(), 'break_glass'), 'token');
   if (typeof token !== 'string') throw new Error('whoami has no break-glass token');

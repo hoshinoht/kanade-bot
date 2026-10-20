@@ -78,8 +78,13 @@ async fn an_external_route_probe_sends_its_fixed_ping_without_opt_in() {
     );
 }
 
+/// The gateway at `url` and an empty secrets directory (no key), then `pairs`.
 fn env(url: &str, pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
-    let mut env = BTreeMap::from([("KANADE_MODEL_BASE_URL".to_owned(), url.to_owned())]);
+    let none = std::env::temp_dir().join(format!("kanade-no-secrets-{}", uuid::Uuid::new_v4()));
+    let mut env = BTreeMap::from([
+        ("KANADE_MODEL_BASE_URL".to_owned(), url.to_owned()),
+        ("KANADE_SECRETS_DIR".to_owned(), none.display().to_string()),
+    ]);
     env.extend(
         pairs
             .iter()
@@ -111,18 +116,21 @@ fn the_models_command_parses_check_and_probe() {
 #[tokio::test]
 async fn models_check_lists_the_catalog_and_routes_without_printing_the_key() {
     let stub = Stub::start(gateway(kanata_models(), "ok")).await;
-    let key = temp_file(format!("{KEY}\n").as_bytes());
+    let secrets = temp_file(b"");
+    std::fs::remove_file(&secrets).unwrap();
+    std::fs::create_dir(&secrets).unwrap();
+    std::fs::write(secrets.join("model_api_key"), format!("{KEY}\n")).unwrap();
     let env = env(
         &stub.url(),
         &[
-            ("KANADE_MODEL_KEY_FILE", key.to_str().unwrap()),
+            ("KANADE_SECRETS_DIR", secrets.to_str().unwrap()),
             ("KANADE_EXTRACT_MODEL", "sumi-structured"),
             ("KANADE_CHAT_MODEL", "codex-like"),
             ("KANADE_REWRITE_MODEL", "gone"),
         ],
     );
     let (out, result) = run(Args { probe: false }, &env).await;
-    std::fs::remove_file(key).unwrap();
+    std::fs::remove_dir_all(secrets).unwrap();
     result.unwrap();
     assert!(!out.contains(KEY));
     assert!(out.contains("(key: set, roots: webpki)"), "{out}");

@@ -29,8 +29,8 @@ pub struct ServeConfig {
     pub seeds: SettingSeeds,
     /// `KANADE_BACKUP_DIR`, listed read only by History checkpoints.
     pub backup_dir: Option<PathBuf>,
-    /// `KANADE_BACKUP_RECIPIENTS_FILE`, checked at startup so a broken key
-    /// file fails the deploy, not the next backup.
+    /// `<KANADE_BACKUP_DIR>/recipients`, checked at startup when present so
+    /// a broken key file fails the deploy, not the next backup.
     pub backup_recipients_file: Option<PathBuf>,
     pub modules: Modules,
     /// Module `character_data`'s file and key; `None` while it is off.
@@ -51,8 +51,9 @@ pub struct Modules {
     pub guides: bool,
 }
 
-/// Initial runtime settings; applied only where the store has none yet.
-/// `None` and empty lists keep the code default.
+/// Initial runtime settings from the `KANADE_*` seed variables (tests and
+/// harnesses; `kanade.toml` holds only the week reset); applied only where
+/// the store has none yet. `None` and empty lists keep the code default.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct SettingSeeds {
     pub post_channel_id: Option<u64>,
@@ -67,7 +68,7 @@ pub struct SettingSeeds {
     pub day_of_ping_time: Option<NaiveTime>,
     /// Largest first, no duplicates.
     pub countdown_minutes: Option<Vec<u32>>,
-    /// `[settings.run_lengths]`, used only while no saved row exists.
+    /// `KANADE_RUN_LENGTHS`, used only while no saved row exists.
     pub run_lengths: Option<RunLengths>,
 }
 
@@ -250,10 +251,7 @@ mod tests {
 
     const BASE: [(&str, &str); 6] = [
         ("KANADE_TIMEZONE", "Asia/Kuala_Lumpur"),
-        (
-            "KANADE_DISCORD_TOKEN_FILE",
-            "/run/secrets/kanade_discord_token",
-        ),
+        ("KANADE_SECRETS_DIR", "/run/secrets"),
         ("KANADE_GUILD_ID", "123456789012345678"),
         ("KANADE_BOSSING_ROLE_ID", "223456789012345678"),
         ("KANADE_DB_PATH", "/data/kanade.sqlite3"),
@@ -310,7 +308,7 @@ mod tests {
         assert!(!off.modules.character_data);
         assert_eq!(
             config(&[("KANADE_MODULE_CHARACTER_DATA", "1")]).unwrap_err(),
-            "KANADE_MODULE_CHARACTER_DATA needs the roster module (KANADE_MODULE_ROSTER=1)"
+            "KANADE_MODULE_CHARACTER_DATA needs the roster module on (KANADE_MODULE_ROSTER)"
         );
         let on = [
             ("KANADE_MODULE_ROSTER", "1"),
@@ -330,15 +328,10 @@ mod tests {
             settings.db_path,
             PathBuf::from("/chardata/db/chardata.sqlite")
         );
-        assert_eq!(settings.nexon_key_file, None, "the key is optional");
-        pairs.push(("KANADE_NEXON_API_KEY_FILE", "/run/secrets/nexon_api_key"));
         assert_eq!(
-            config(&pairs)
-                .unwrap()
-                .character_data
-                .unwrap()
-                .nexon_key_file,
-            Some(PathBuf::from("/run/secrets/nexon_api_key"))
+            settings.nexon_key.unwrap().path(),
+            std::path::Path::new("/run/secrets/nexon_api_key"),
+            "read at startup when present"
         );
         // Estimates: off without a scouter URL, refused for a public host.
         assert_eq!(settings.scouter_url, None, "estimates are optional");
@@ -360,7 +353,7 @@ mod tests {
     }
 
     #[test]
-    fn live_serve_needs_a_token_file_and_a_strict_gateway_flag() {
+    fn live_serve_names_its_token_file_and_takes_a_strict_gateway_flag() {
         for (value, gateway) in [("", true), ("1", true), ("0", false)] {
             let discord = config(&[("KANADE_DISCORD_GATEWAY", value)])
                 .unwrap()
@@ -372,14 +365,14 @@ mod tests {
             "KANADE_DISCORD_GATEWAY must be 0 or 1"
         );
         assert_eq!(
-            config(&[("KANADE_DISCORD_TOKEN_FILE", "")]).unwrap_err(),
-            "KANADE_DISCORD_TOKEN_FILE is required"
+            config(&[]).unwrap().discord.token.path(),
+            std::path::Path::new("/run/secrets/discord_token")
         );
         for plain in ["KANADE_DISCORD_TOKEN", "DISCORD_TOKEN"] {
             let error = config(&[(plain, "secret-token")]).unwrap_err();
             assert_eq!(
                 error,
-                format!("{plain} is not read; use KANADE_DISCORD_TOKEN_FILE")
+                format!("{plain} is not read; put it in the secrets directory as `discord_token`")
             );
         }
     }
@@ -557,7 +550,7 @@ mod tests {
         }
         assert_eq!(
             config(&[("KANADE_MODEL_KEY", "sk-secret")]).unwrap_err(),
-            "KANADE_MODEL_KEY is not read; use KANADE_MODEL_KEY_FILE"
+            "KANADE_MODEL_KEY is not read; put it in the secrets directory as `model_api_key`"
         );
         assert_eq!(
             config(&[("KANADE_CHAT_MODEL", "chat")]).unwrap_err(),
@@ -569,7 +562,6 @@ mod tests {
         );
         let models = config(&[
             ("KANADE_MODEL_BASE_URL", "https://gw.example"),
-            ("KANADE_MODEL_KEY_FILE", "/run/secrets/model"),
             ("KANADE_EXTRACT_MODEL", "extract"),
             ("KANADE_MODEL_PERMITS", "4"),
         ])
@@ -602,20 +594,54 @@ mod tests {
     }
 
     #[test]
-    fn loaded_secrets_never_reach_debug_output() {
-        let path = std::env::temp_dir().join(format!("kanade-bot-{}", uuid::Uuid::new_v4()));
-        std::fs::write(&path, "bot-token-value\n").unwrap();
-        let config = config(&[
-            ("KANADE_DISCORD_TOKEN_FILE", path.to_str().unwrap()),
+    fn the_secrets_directory_is_read_by_feature_and_never_echoed() {
+        let dir = std::env::temp_dir().join(format!("kanade-bot-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir(&dir).unwrap();
+        let at = |name: &str| dir.join(name);
+        std::fs::write(at("discord_token"), "bot-token-value\n").unwrap();
+        std::fs::write(at("model_api_key"), "model-key-value\n").unwrap();
+        let secrets = dir.to_str().unwrap();
+        let gateway = config(&[
+            ("KANADE_SECRETS_DIR", secrets),
             ("KANADE_MODEL_BASE_URL", "https://gw.example"),
-            ("KANADE_MODEL_KEY_FILE", path.to_str().unwrap()),
         ])
         .unwrap();
-        let token = config.discord.read_token().unwrap();
-        let key = config.models.read_key().unwrap().unwrap();
+        let token = gateway.discord.read_token().unwrap();
+        let key = gateway.models.read_key().unwrap().unwrap();
         assert_eq!(token.expose(), "bot-token-value");
-        let debug = format!("{token:?} {key:?} {config:?}");
-        assert!(!debug.contains("bot-token-value"));
-        std::fs::remove_file(path).unwrap();
+        assert_eq!(key.expose(), "model-key-value");
+        let debug = format!("{token:?} {key:?} {gateway:?}");
+        assert!(!debug.contains("bot-token-value") && !debug.contains("model-key-value"));
+        // The CA bundle is optional, used when present.
+        assert_eq!(gateway.models.ca_file().unwrap(), None);
+        std::fs::write(at("model_ca.pem"), "-----BEGIN CERTIFICATE-----\n").unwrap();
+        assert_eq!(gateway.models.ca_file().unwrap(), Some(at("model_ca.pem")));
+
+        // A file no feature uses is ignored: no gateway, no key read.
+        let keyless = config(&[("KANADE_SECRETS_DIR", secrets)]).unwrap();
+        assert_eq!(keyless.models.read_key().unwrap(), None);
+        assert_eq!(keyless.models.ca_file().unwrap(), None);
+
+        // A bad present file refuses by name; an absent required one too.
+        std::fs::write(at("model_api_key"), "two\nlines-sentinel\n").unwrap();
+        let error = gateway.models.read_key().unwrap_err().to_string();
+        assert_eq!(
+            error,
+            "secrets file `model_api_key` must contain one non-empty line"
+        );
+        std::fs::remove_file(at("model_api_key")).unwrap();
+        assert_eq!(
+            gateway.models.read_key().unwrap(),
+            None,
+            "a keyless gateway"
+        );
+        std::fs::remove_file(at("discord_token")).unwrap();
+        assert_eq!(
+            gateway.discord.read_token().unwrap_err().to_string(),
+            format!(
+                "secrets file `discord_token` is missing from {secrets}: the bot signs in to Discord with it"
+            )
+        );
+        std::fs::remove_dir_all(dir).unwrap();
     }
 }

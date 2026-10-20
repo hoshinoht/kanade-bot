@@ -114,7 +114,7 @@ pub enum Nexon {
 /// What a restart composes module `character_data` with.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Setup {
-    /// No `KANADE_NEXON_API_KEY_FILE`.
+    /// No `nexon_api_key` in the secrets directory.
     pub no_key: bool,
     /// No `KANADE_SCOUTER_URL`.
     pub no_scouter: bool,

@@ -611,12 +611,10 @@ async fn get_shows_settings_models_personas_and_env_facts() {
         view["self_service"],
         json!({"mode": "cards_and_link", "effective_mode": "cards_only", "public_portal": false})
     );
-    // The pilot role is set; chat categories are not.
-    assert_eq!(view["chatbot"]["configured"], false);
-    assert_eq!(
-        view["chatbot"]["missing_env"],
-        json!(["KANADE_CHAT_CATEGORY_IDS"])
-    );
+    // The pilot role and the gateway are set; the chat categories are
+    // Config's own (Channels), so they are not a deployment gap.
+    assert_eq!(view["chatbot"]["configured"], true);
+    assert_eq!(view["chatbot"]["missing_env"], json!([]));
     // The guild's limbo-trio is watched but may not tidy messages.
     assert_eq!(view["manage_messages"], json!({"missing": ["#limbo-trio"]}));
 
@@ -674,22 +672,28 @@ async fn get_shows_settings_models_personas_and_env_facts() {
             "retired key exposed in Config: {retired}"
         );
     }
-    assert_eq!(env("KANADE_TIMEZONE"), "Asia/Kuala_Lumpur");
-    assert_eq!(env("KANADE_MODEL_PERMITS"), "2");
-    assert_eq!(env("KANADE_BOSS_WEEK_RESET_WEEKDAY"), "Thu 00:00");
+    // The deployment panel names kanade.toml keys, never variables.
+    assert!(
+        env_rows
+            .iter()
+            .all(|row| !row["key"].as_str().unwrap().starts_with("KANADE_"))
+    );
+    assert_eq!(env("runtime.timezone"), "Asia/Kuala_Lumpur");
+    assert_eq!(env("models.permits"), "2");
+    assert_eq!(env("runtime.boss_week_reset_weekday"), "Thu 00:00");
     let copy = |key: &str| find(&view["env"], "key", key)["copy"].clone();
-    assert_eq!(copy("KANADE_TIMEZONE"), "Asia/Kuala_Lumpur");
-    assert_eq!(copy("KANADE_BOSS_WEEK_RESET_WEEKDAY"), "thu");
-    assert_eq!(copy("KANADE_MODEL_PERMITS"), "2");
-    assert_eq!(copy("KANADE_MODEL_BASE_URL"), "https://kanata.test/v1");
-    assert_eq!(copy("KANADE_CHAT_PILOT_ROLE_ID"), "30");
+    assert_eq!(copy("runtime.timezone"), "Asia/Kuala_Lumpur");
+    assert_eq!(copy("runtime.boss_week_reset_weekday"), "thu");
+    assert_eq!(copy("models.permits"), "2");
+    assert_eq!(copy("models.base_url"), "https://kanata.test/v1");
+    assert_eq!(copy("discord.chat_pilot_role_id"), "30");
     // The id lists left the env table for the Channels editor, the digest
     // channel for the Posting field.
     for moved in [
-        "KANADE_WATCH_CHANNEL_IDS",
-        "KANADE_WATCH_CATEGORY_IDS",
-        "KANADE_CHAT_CATEGORY_IDS",
-        "KANADE_POST_CHANNEL_ID",
+        "settings.watch_channel_ids",
+        "settings.watch_category_ids",
+        "settings.chat_category_ids",
+        "settings.post_channel_id",
     ] {
         assert!(!env_rows.iter().any(|row| row["key"] == moved), "{moved}");
     }
@@ -981,7 +985,6 @@ async fn unknown_read_only_and_bad_values_are_422_and_nothing_is_saved() {
         json!({"watching": {"paused": "yes"}}),
         json!({"chatbot": {"guild_rate": {"count": 0}}}),
         json!({"chatbot": {"member_rate": {"window_s": 5}}}),
-        json!({"chatbot": {"enabled": true}}),
         json!({"self_service": {"mode": "links"}}),
         json!({"persona": {"active": ""}}),
         json!({"persona": {"active": "ghost"}}),
@@ -1356,7 +1359,13 @@ async fn model_saves_need_a_reachable_gateway_other_sections_do_not() {
         view["chatbot"]["missing_env"]
             .as_array()
             .unwrap()
-            .contains(&json!("KANADE_MODEL_BASE_URL"))
+            .contains(&json!("models.base_url"))
+    );
+    // Turning the chatbot on names the kanade.toml key it still needs.
+    assert_eq!(
+        bare.refused(json!({"chatbot": {"enabled": true}}), 422, "invalid")
+            .await,
+        "The chatbot needs models.base_url set in kanade.toml first."
     );
     bare.refused(
         json!({"models": {"roles": {"chat": {"reasoning": "off"}}}}),
@@ -2079,18 +2088,10 @@ async fn declared_groups_are_listed_checked_per_group_and_summarised() {
             {"level": "warning", "message": "Group spare uses 3 of the 8 permits Kanata admits.", "group": "spare"},
         ])
     );
-    let row = find(
-        &view["env"],
-        "key",
-        "KANADE_MODEL_PERMITS / kanade.toml [[models.groups]]",
-    )
-    .clone();
+    let row = find(&view["env"], "key", "models.groups").clone();
     assert_eq!(row["value"], "2 groups: local 2, spare 3");
-    assert_eq!(row["copy"], Value::Null, "no single env value");
-    assert_eq!(
-        row["reason"],
-        "Set in kanade.toml ([[models.groups]]); restart to apply."
-    );
+    assert_eq!(row["copy"], Value::Null, "no single value");
+    assert_eq!(row["reason"], "Set as [[models.groups]]; restart to apply.");
     let message = config
         .refused(json!({"models": {"groups": []}}), 422, "read_only")
         .await;

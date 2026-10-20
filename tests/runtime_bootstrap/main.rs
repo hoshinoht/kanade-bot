@@ -204,31 +204,14 @@ fn refused_serve(env: &[(&str, &str)], toml: Option<&str>) -> String {
 
 type Env = Vec<(&'static str, &'static str)>;
 
-/// Bad settings are refused at startup, naming the key and never echoing a
-/// value: renamed and plain-secret variables, kanade.toml values, and member
-/// sign-in bounds, the order fresh <= idle <= absolute, partial Discord keys,
-/// a missing public host and a redirect other than
-/// `https://{public.host}/api/public/auth/discord/callback`.
+/// Bad settings are refused at startup, naming the kanade.toml key (the
+/// variable in brackets) and never echoing a value: renamed, removed and
+/// plain-secret variables, removed and secret-looking kanade.toml keys, bad
+/// values, member sign-in bounds, the order fresh <= idle <= absolute and a
+/// member sign-in or public host without what it needs.
 #[test]
 fn bad_settings_are_refused_at_startup_naming_the_key_without_the_value() {
     let _serial = serial();
-    let discord = [
-        ("KANADE_PUBLIC_HOST", "kanade-pub.test"),
-        ("KANADE_PUBLIC_DISCORD_CLIENT_ID", "1234567890"),
-        (
-            "KANADE_PUBLIC_DISCORD_CLIENT_SECRET_FILE",
-            "/nonexistent/public_discord_client_secret",
-        ),
-        (
-            "KANADE_PUBLIC_DISCORD_REDIRECT_URI",
-            "https://kanade-pub.test/api/public/auth/discord/callback",
-        ),
-    ];
-    let with_redirect = |uri: &'static str| {
-        let mut pairs = discord.to_vec();
-        pairs[3].1 = uri;
-        pairs
-    };
     let toml_secret =
         |table: &str| format!("[runtime]\ntimezone = \"UTC\"\n{table} = \"sentinel\"\n");
     // (variables, kanade.toml, expected message, text that must not be echoed)
@@ -242,19 +225,43 @@ fn bad_settings_are_refused_at_startup_naming_the_key_without_the_value() {
         (
             vec![("DISCORD_TOKEN", "plain-token-value")],
             None,
-            "DISCORD_TOKEN is not read; use KANADE_DISCORD_TOKEN_FILE",
+            "DISCORD_TOKEN is not read; put it in the secrets directory as `discord_token`",
             Some("plain-token-value"),
+        ),
+        (
+            vec![("KANADE_DISCORD_TOKEN_FILE", "/run/secrets/sentinel")],
+            None,
+            "KANADE_DISCORD_TOKEN_FILE was removed: put the token in the secrets directory as `discord_token`",
+            Some("sentinel"),
+        ),
+        (
+            vec![("KANADE_HEALTHCHECK_URL", "http://127.0.0.1:1/sentinel")],
+            None,
+            "KANADE_HEALTHCHECK_URL was removed: the healthcheck targets KANADE_ADMIN_BIND",
+            Some("sentinel"),
+        ),
+        (
+            Vec::new(),
+            Some(toml_secret("[admin]\ntoken_file")),
+            "kanade.toml `admin.token_file` was removed: put the token in the secrets directory as `admin_token`",
+            Some("sentinel"),
+        ),
+        (
+            Vec::new(),
+            Some(toml_secret("[settings]\npost_channel_id")),
+            "kanade.toml `settings.post_channel_id` was removed: set it in Config › Weekly digest",
+            Some("sentinel"),
         ),
         (
             vec![("KANADE_TIMEZONE", "not-a-timezone")],
             None,
-            "KANADE_TIMEZONE must be a valid IANA timezone",
+            "kanade.toml `runtime.timezone` [KANADE_TIMEZONE] must be a valid IANA timezone",
             Some("not-a-timezone"),
         ),
         (
             vec![("KANADE_TIMEZONE", "")],
             Some("[runtime]\ntimezone = \"Not/A-sentinel\"\n".into()),
-            "KANADE_TIMEZONE must be a valid IANA timezone (kanade.toml `runtime.timezone`)",
+            "kanade.toml `runtime.timezone` [KANADE_TIMEZONE] must be a valid IANA timezone",
             Some("sentinel"),
         ),
         (
@@ -272,19 +279,19 @@ fn bad_settings_are_refused_at_startup_naming_the_key_without_the_value() {
         (
             vec![("KANADE_PUBLIC_SESSION_IDLE_MINUTES", "61")],
             None,
-            "KANADE_PUBLIC_SESSION_IDLE_MINUTES must be between 5 and 60",
+            "kanade.toml `public.session_idle_minutes` [KANADE_PUBLIC_SESSION_IDLE_MINUTES] must be between 5 and 60",
             Some("61"),
         ),
         (
             vec![("KANADE_PUBLIC_SESSION_ABSOLUTE_HOURS", "25")],
             None,
-            "KANADE_PUBLIC_SESSION_ABSOLUTE_HOURS must be between 1 and 24",
+            "[KANADE_PUBLIC_SESSION_ABSOLUTE_HOURS] must be between 1 and 24",
             Some("25"),
         ),
         (
             vec![("KANADE_PUBLIC_FRESH_WRITE_MINUTES", "4")],
             None,
-            "KANADE_PUBLIC_FRESH_WRITE_MINUTES must be between 5 and 30",
+            "[KANADE_PUBLIC_FRESH_WRITE_MINUTES] must be between 5 and 30",
             None,
         ),
         (
@@ -293,33 +300,26 @@ fn bad_settings_are_refused_at_startup_naming_the_key_without_the_value() {
                 ("KANADE_PUBLIC_FRESH_WRITE_MINUTES", "15"),
             ],
             None,
-            "KANADE_PUBLIC_FRESH_WRITE_MINUTES must not exceed",
+            "[KANADE_PUBLIC_FRESH_WRITE_MINUTES] must not exceed",
             None,
         ),
         (
             vec![("KANADE_PUBLIC_DISCORD_CLIENT_SECRET", "plain-public-secret")],
             None,
-            "KANADE_PUBLIC_DISCORD_CLIENT_SECRET is not read; use KANADE_PUBLIC_DISCORD_CLIENT_SECRET_FILE",
+            "KANADE_PUBLIC_DISCORD_CLIENT_SECRET is not read; put it in the secrets directory as `public_discord_client_secret`",
             Some("plain-public-secret"),
         ),
-        (discord[..3].to_vec(), None, "member sign-in needs", None),
         (
-            discord[1..].to_vec(),
+            vec![("KANADE_PUBLIC_DISCORD_CLIENT_ID", "1234567890")],
             None,
-            "KANADE_PUBLIC_HOST is required for member sign-in",
+            "kanade.toml `public.host` [KANADE_PUBLIC_HOST] is required for member sign-in",
             None,
         ),
         (
-            with_redirect("https://evil.example/api/public/auth/discord/callback"),
+            vec![("KANADE_PUBLIC_HOST", "kanade-pub.test")],
             None,
-            "KANADE_PUBLIC_DISCORD_REDIRECT_URI must be https://KANADE_PUBLIC_HOST/api/public/auth/discord/callback",
-            Some("evil"),
-        ),
-        (
-            with_redirect("http://kanade-pub.test/api/public/auth/discord/callback"),
+            "KANADE_PUBLIC_BIND is required when kanade.toml `public.host` [KANADE_PUBLIC_HOST] is set",
             None,
-            "KANADE_PUBLIC_DISCORD_REDIRECT_URI must be",
-            Some("http://"),
         ),
     ];
     for (pairs, toml, expected, secret) in cases {

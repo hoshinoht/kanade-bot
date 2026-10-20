@@ -209,16 +209,14 @@ async fn items_come_in_order_with_their_facts_and_complete_needs_every_required_
         "bot_access is the one required item not ok"
     );
 
-    // Optional: chat lacks its pilot role and categories; nothing else is set up.
+    // Optional: chat lacks its pilot role (kanade.toml); nothing else is set
+    // up. The chat categories are Config's own, never a deployment gap.
     let chat = item(&view, "chat");
     assert_eq!(
         (&chat["state"], &chat["reason"]),
         (&json!("warn"), &json!("env_missing"))
     );
-    assert_eq!(
-        chat["missing_env"],
-        json!(["KANADE_CHAT_PILOT_ROLE_ID", "KANADE_CHAT_CATEGORY_IDS"])
-    );
+    assert_eq!(chat["missing_env"], json!(["discord.chat_pilot_role_id"]));
     assert_eq!(state("persona"), "ok");
     assert_eq!(state("admin_sign_in"), "missing", "break-glass alone");
     for off in [

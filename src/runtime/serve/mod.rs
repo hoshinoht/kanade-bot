@@ -31,9 +31,9 @@ use crate::{
     infrastructure::store::SqliteStore,
     runtime::{
         backup::crypt::Recipients,
-        config::{BACKUP_RECIPIENTS_KEY, ServeConfig},
+        config::{BACKUP_RECIPIENTS_LABEL, ServeConfig},
         error::Error,
-        logging,
+        logging, secrets,
     },
 };
 
@@ -240,8 +240,10 @@ pub async fn serve_until(
     // Checked now so a missing secret fails the deploy, not the gateway later.
     let token = config.discord.read_token()?;
     // Likewise a broken backup key file fails the deploy, not the next backup.
-    if let Some(path) = &config.backup_recipients_file {
-        Recipients::load(path, BACKUP_RECIPIENTS_KEY)?;
+    if let Some(path) = &config.backup_recipients_file
+        && secrets::present(path, BACKUP_RECIPIENTS_LABEL)?
+    {
+        Recipients::load(path, BACKUP_RECIPIENTS_LABEL)?;
     }
     if !config.discord.gateway {
         drop(token);

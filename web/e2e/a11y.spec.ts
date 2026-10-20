@@ -147,7 +147,7 @@ const WALK: { name: string; walk: (page: Page) => Promise<void> }[] = [
       await page.getByRole('tab', { name: 'Pings' }).click();
       await expect(page.getByRole('textbox', { name: 'Morning ping' })).toBeVisible();
       await serious(page, 'admin config pings');
-      await page.getByRole('tab', { name: 'Set in the environment' }).click();
+      await page.getByRole('tab', { name: 'Set in kanade.toml' }).click();
       await expect(page.getByRole('row', { name: /Timezone/ })).toBeVisible();
       await serious(page, 'admin config env');
       await page.getByRole('tab', { name: /^Channels/ }).click();

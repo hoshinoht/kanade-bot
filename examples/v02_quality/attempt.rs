@@ -113,7 +113,7 @@ pub fn config_in(
     persona: &PersonaBundle,
 ) -> Result<ServeConfig, String> {
     let path = |relative: &str| dir.join(relative).display().to_string();
-    fs::write(dir.join("token"), "v02-harness-fake-token\n").map_err(|e| e.to_string())?;
+    fs::write(dir.join("discord_token"), "v02-harness-fake-token\n").map_err(|e| e.to_string())?;
     let bundles = dir.join("personas/bundles");
     fs::create_dir_all(&bundles).map_err(|e| e.to_string())?;
     fs::copy(&persona.path, bundles.join(&persona.file_name))
@@ -127,8 +127,12 @@ pub fn config_in(
     )
     .map_err(|e| format!("persona catalog: {e}"))?;
     let mut values = mapping.clone();
+    // A live run passes the operator's secrets directory (the model key);
+    // otherwise the scratch directory is it. Neither token is ever sent.
+    values
+        .entry("KANADE_SECRETS_DIR".to_owned())
+        .or_insert_with(|| path(""));
     for (key, value) in [
-        ("KANADE_DISCORD_TOKEN_FILE", path("token")),
         ("KANADE_DB_PATH", path("db/kanade.sqlite3")),
         ("KANADE_OWNER_LOCK_DIR", path("locks")),
         ("KANADE_PERSONA_DIR", path("personas")),

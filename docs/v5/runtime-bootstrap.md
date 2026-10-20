@@ -18,7 +18,7 @@ switch) for the configured guild):
 kanade --version
 KANADE_TIMEZONE=Asia/Kuala_Lumpur kanade serve --offline
 kanade serve        # live: the "Serve environment" below is required
-KANADE_HEALTHCHECK_URL=http://127.0.0.1:8080/healthz kanade healthcheck
+kanade healthcheck  # the admin listener's /healthz (KANADE_ADMIN_BIND), or --url
 ```
 
 `kanade models check [--probe]` reads the model variables below (`KANADE_MODEL_*`, the role aliases and reasoning seeds); it cannot read the store while serve owns it, so its roles are what serve runs for a role with no saved alias or level (the `roles` header says so) and calls the live gateway: it prints the catalog (alias, trust zone, whether it leaves the homelab, reasoning efforts with `(off not allowed)` when the list lacks `none`, context, admitted concurrency; `<base>:<level>` variants are grouped under their base as `variants: high, low`) and each role's route and effective effort (`effort=low (configured off)` when the configured level is replaced, `effort=high (fixed)` on a variant); `--probe` sends one fixed, member-free `ping` through each configured role's governed route (128 tokens, 30 s) and prints `ok <ms> ms finish=<reason>`, `refused: …` or `failed: …`. A probe sends no member data; it is not a privacy test. The key is never printed. It exits `69` when the listing or any probe fails, `78` on a configuration error.
@@ -67,35 +67,31 @@ private address (RFC 1918, IPv4 link-local, IPv6 `fc00::/7` and `fe80::/10`)
 on a container network; wildcard (`0.0.0.0`, `::`) and public addresses
 are always refused. Runtime configuration comes from the process
 environment and, when `KANADE_CONFIG` names one, the `kanade.toml` file
-("Config file" below); `.env` is not loaded automatically. `healthcheck` accepts only a
-loopback `http://HOST:PORT/healthz` URL (or, with the opt-in, a private one:
-the container's own listener address) and has a bounded timeout.
+("Config file" below); `.env` is not loaded automatically. `healthcheck`
+targets `http://<KANADE_ADMIN_BIND>/healthz` (the same address rule), or a
+loopback `--url http://HOST:PORT/healthz` (with the opt-in, a private one),
+and has a bounded timeout.
 
 ### HTTP environment
 
 | Variable | Default | Meaning |
 |---|---|---|
 | `KANADE_ADMIN_BIND` | `127.0.0.1:8080` | Admin listener, loopback (or private with the opt-in). Replaces `KANADE_BIND`, which is now refused with a rename error. |
-| `KANADE_PUBLIC_BIND` | unset | Public listener, same address rule; it exists only when set and must differ from the admin bind. Requires `KANADE_PUBLIC_HOST` and `KANADE_CLOUDFLARED_PEER`. |
+| `KANADE_PUBLIC_BIND` | unset | Public listener, same address rule; used only while `KANADE_PUBLIC_HOST` is set (the host turns the listener on; Compose always sets `172.25.0.10:8081`), then required and must differ from the admin bind. Requires `KANADE_CLOUDFLARED_PEER` then. |
 | `KANADE_ALLOW_PRIVATE_BIND` | `0` | `1` lets both listeners bind a private address on an internal container network. Never wildcard or public. |
-| `KANADE_EDGE_SECRET_FILE` | unset | Shared secret (≥ 32 bytes, one line) the edge sends in `X-Kanade-Edge-Auth`; requires `KANADE_TRUSTED_PROXY`. See "Edge contract". |
+| `KANADE_SECRETS_DIR` | `/run/secrets` | The secrets directory ("Secrets directory" below). |
 | `KANADE_ADMIN_HOST` | unset | Exact `host[:port]` the admin listener serves; unset accepts only `localhost`, `127.0.0.1`, `[::1]` (any port). |
-| `KANADE_PUBLIC_HOST` | unset | Exact `host[:port]` of the public listener; required with `KANADE_PUBLIC_BIND`, must differ from the admin host. |
-| `KANADE_TRUSTED_PROXY` | unset | IP of the edge peer; only it may supply `X-Forwarded-*`/`Forwarded` headers to admin, and `Tailscale-*` only with the edge secret. With `KANADE_EDGE_SECRET_FILE` set it is trusted only when it presents the secret. |
+| `KANADE_PUBLIC_HOST` | unset | Exact `host[:port]` of the public listener; set, it turns the listener on (needs `KANADE_PUBLIC_BIND`); must differ from the admin host. |
+| `KANADE_TRUSTED_PROXY` | unset | IP of the edge peer; only it may supply `X-Forwarded-*`/`Forwarded` headers to admin, and `Tailscale-*` only with the edge secret. With the secrets file `edge_secret` present (≥ 32 bytes) it is trusted only when it presents that secret in `X-Kanade-Edge-Auth`. See "Edge contract". |
 | `KANADE_CLOUDFLARED_PEER` | unset | IP of the cloudflared peer; only it may supply `X-Forwarded-*` and `CF-*` headers (client IP from `CF-Connecting-IP`) to public. Required with `KANADE_PUBLIC_BIND`: without it every member would be the proxy's address (pooled sign-in limits, no client-change rotation), so startup refuses. A request from the peer without `CF-Connecting-IP` counts as the peer itself, so local runs and tests with no proxy name their own loopback (`127.0.0.1`). Compose fixes `172.25.0.3`, which also covers the tailnet test stage. |
 | `KANADE_WEB_DIR` | unset | Web workspace root (`web/`); serves `apps/admin/dist` and `apps/public/dist`. Unset serves no shell. |
 | `KANADE_BOSS_DIR` | unset | Private boss art root (`portraits/`, `portraits/icon/`, `artwork/entry/`). Unset or missing art is 404. |
 | `KANADE_IDENTITY_DIR` | unset | Cached `avatar.*`/`banner.*`; unset serves generated SVG stand-ins. With the gateway on, serve creates it (`0700`) and, after each `READY` and on the bot's own nickname/avatar/user changes, fetches the guild avatar (else user avatar) and banner from Discord's CDN (png/webp/gif/jpeg, ≤ 8 MiB, 20 s timeout, no redirects), replacing files by temp + rename; no avatar/banner removes the file (monogram/wash). Logs `identity_cached {avatar, banner}`; failures log WARN `identity_refresh_failed {kind, reason}` and keep the last files. Compose sets `/data/identity`. |
-| `KANADE_ADMIN_DISCORD_CLIENT_ID` | unset | Discord application id; the three Discord variables are all-or-none. |
-| `KANADE_ADMIN_DISCORD_CLIENT_SECRET_FILE` | unset | File holding the client secret (one line, ≤ 4 KiB). |
-| `KANADE_ADMIN_DISCORD_REDIRECT_URI` | unset | Exactly `https://KANADE_ADMIN_HOST/api/admin/auth/discord/callback` (`http:` only for loopback dev hosts); needs `KANADE_ADMIN_HOST`. |
-| `KANADE_ADMIN_TOKEN_FILE` | unset | Break-glass token file (≥ 32 bytes). Changing the token ends sessions made with the old one. |
-| `KANADE_ADMIN_TAILSCALE_LOGINS` | unset | Comma-separated Tailscale logins allowed to sign in via the edge; requires a non-loopback `KANADE_TRUSTED_PROXY` and `KANADE_EDGE_SECRET_FILE`. |
+| `KANADE_ADMIN_DISCORD_CLIENT_ID` | unset | Discord application id; set, it turns on admin Discord sign-in, needs `KANADE_ADMIN_HOST` and the secrets file `discord_client_secret`. The redirect URI is `https://KANADE_ADMIN_HOST/api/admin/auth/discord/callback` (`http:` for loopback dev hosts); register it with Discord. |
+| `KANADE_ADMIN_TAILSCALE_LOGINS` | unset | Comma-separated Tailscale logins allowed to sign in via the edge; requires a non-loopback `KANADE_TRUSTED_PROXY` and the secrets file `edge_secret`. |
 | `KANADE_ADMIN_SESSION_IDLE_MINUTES` | `60` | Idle timeout, 5–720, not above the absolute lifetime. |
 | `KANADE_ADMIN_SESSION_ABSOLUTE_HOURS` | `12` | Absolute session lifetime, 1–168. |
-| `KANADE_PUBLIC_DISCORD_CLIENT_ID` | unset | The public origin's own Discord application id (member sign-in); the three public Discord variables are all-or-none and need `KANADE_PUBLIC_HOST`. Without them the portal stays `closed`. |
-| `KANADE_PUBLIC_DISCORD_CLIENT_SECRET_FILE` | unset | File holding that application's secret (Compose secret `public_discord_client_secret`, `0600`). |
-| `KANADE_PUBLIC_DISCORD_REDIRECT_URI` | unset | Exactly `https://KANADE_PUBLIC_HOST/api/public/auth/discord/callback` (no `http:` exception). |
+| `KANADE_PUBLIC_DISCORD_CLIENT_ID` | unset | The public origin's own Discord application id (member sign-in); needs `KANADE_PUBLIC_HOST` and the secrets file `public_discord_client_secret`. The redirect URI is `https://KANADE_PUBLIC_HOST/api/public/auth/discord/callback` (no `http:` exception). Without it the portal stays `closed`. |
 | `KANADE_PUBLIC_SESSION_IDLE_MINUTES` | `30` | Member session idle timeout, 5–60. |
 | `KANADE_PUBLIC_SESSION_ABSOLUTE_HOURS` | `8` | Member session absolute lifetime, 1–24. |
 | `KANADE_PUBLIC_FRESH_WRITE_MINUTES` | `15` | How long after a Discord sign-in writes count as fresh, 5–30; fresh ≤ idle ≤ absolute. |
@@ -103,12 +99,14 @@ the container's own listener address) and has a bounded timeout.
 Empty values count as unset. Values are never echoed in errors or logs.
 Plain `KANADE_ADMIN_TOKEN` / `KANADE_ADMIN_DISCORD_CLIENT_SECRET` /
 `KANADE_PUBLIC_DISCORD_CLIENT_SECRET` are refused: secrets come only from
-files. `serve --offline` has no store, so it parses these but serves admin
-sign-in routes as `503 auth_unavailable` and keeps the public portal
+the secrets directory. The break-glass token is the secrets file
+`admin_token` (≥ 32 bytes) when present; changing it ends sessions made with
+the old one. `serve --offline` has no store, so it parses these but serves
+admin sign-in routes as `503 auth_unavailable` and keeps the public portal
 `closed`; live `serve` keeps sessions in its store. See `admin-api.md`
 "Sign-in and sessions". The public portal has no open key: live `serve`
 opens it while the admin Config switch `self_service.public_portal` is on
-(read per request) and the public Discord keys are set.
+(read per request) and member sign-in is configured.
 Idle timeouts count ordinary requests only: an open change-hint stream
 (`GET /api/admin/events`, `GET /api/public/events`), its heartbeats and its
 reconnects (the browser's, and the forced one after each stream lifetime)
@@ -125,27 +123,24 @@ lists are comma-separated.
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `KANADE_DISCORD_TOKEN_FILE` | required | Bot token file (one line, ≤ 4 KiB); read at startup (also with the gateway off), so a missing secret fails the deploy. Plain `KANADE_DISCORD_TOKEN`/`DISCORD_TOKEN` are refused by every command. |
-| `KANADE_DISCORD_GATEWAY` | `1` | `0` or `1`. `0` serves the admin API only: no gateway, roster sync or delivery tick (tests, maintenance). |
+| `KANADE_DISCORD_GATEWAY` | `1` | `0` or `1`. `0` serves the admin API only: no gateway, roster sync or delivery tick (tests, maintenance). The bot token is the secrets file `discord_token`, read at startup (also with the gateway off), so a missing secret fails the deploy. Plain `KANADE_DISCORD_TOKEN`/`DISCORD_TOKEN` are refused by every command. |
 | `KANADE_GUILD_ID`, `KANADE_BOSSING_ROLE_ID` | required | Snowflakes. |
 | `KANADE_ADMIN_ROLE_ID`, `KANADE_CHAT_PILOT_ROLE_ID` | unset | Snowflakes. |
 | `KANADE_DEBUG_USER_IDS` | empty | Snowflake list. |
 | `KANADE_TEST_CHANNEL_ID` | unset | Snowflake. Where `/debug ping` and `/debug header` post without `channel:`. Unset: a run's home channel (else the post channel); sample runs and `/debug header` use the invoking channel, the week's `digest` the post channel. A run's test card posted anywhere but its home channel is display only (reactions do nothing, never refreshed). |
-| `KANADE_DB_PATH`, `KANADE_OWNER_LOCK_DIR` | required | Absolute paths without `..`. The lock directory and the database's directory are created `0700` when absent (existing ones are never re-moded); ownership, symlink and mode checks run when the store opens. A second process on the same store is refused. |
-| `KANADE_BACKUP_DIR` | unset | Absolute path without `..`. Serve only reads it: History checkpoints (`GET /api/admin/history/checkpoints`) list the `kanade backup` manifests there on every request; unset reports `backup_dir_configured: false`. Compose mounts it read-only at `/backups`. |
-| `KANADE_BACKUP_RECIPIENTS_FILE` | unset | age X25519 public keys (`age1…`, one per line, blank lines and `#` comments allowed). Set: `kanade backup` writes `<name>.age` (encrypted) with a plaintext manifest, and checkpoints list it from that manifest without decrypting. Serve and `kanade backup` refuse an unreadable file, one with no keys, a line that is not a recipient, or a pasted private identity (exit `78`). Unset: plaintext snapshots. |
+| `KANADE_DB_PATH`, `KANADE_OWNER_LOCK_DIR` | required | Absolute paths without `..` (the image sets `/data/db/kanade.sqlite` and `/data/run`). The lock directory and the database's directory are created `0700` when absent (existing ones are never re-moded); ownership, symlink and mode checks run when the store opens. A second process on the same store is refused. |
+| `KANADE_BACKUP_DIR` | unset | Absolute path without `..` (the image sets `/backups`). Serve only reads it: History checkpoints (`GET /api/admin/history/checkpoints`) list the `kanade backup` manifests there on every request; unset reports `backup_dir_configured: false`. Compose mounts it read-only for serve. Its optional `recipients` file holds age X25519 public keys (`age1…`, one per line, blank lines and `#` comments allowed): while it is present `kanade backup` writes `<name>.age` (encrypted) with a plaintext manifest, and checkpoints list it from that manifest without decrypting. Serve and `kanade backup` refuse an unreadable file, one with no keys, a line that is not a recipient, or a pasted private identity (exit `78`). Absent: plaintext snapshots. |
 | `KANADE_CATALOG_FILE` | `boss/bosses.yaml` | Boss catalog. Read like a knowledge document (below). |
 | `KANADE_KNOWLEDGE_DIR` | unset | Boss knowledge root, validated once at startup (no reload). The directory and its `.yaml` documents must not be symlinks; each file (`schema.json`, `_meta.yaml`, documents) is opened without following a symlink or waiting on a FIFO and must then be a regular file with one hard link and at most 256 KiB. More than 256 documents (`*.yaml` not starting with `_`) fail startup. |
 | `KANADE_PERSONA_DIR` | `config/personas` | Persona layout root; file rules in `config/personas/README.md`. |
-| `KANADE_MODEL_BASE_URL` | unset | `https`, or `http` only to loopback, `localhost` or `host.docker.internal`; no userinfo or query. Unset disables models; the key, CA and alias variables then are refused. |
-| `KANADE_MODEL_KEY_FILE`, `KANADE_MODEL_CA_FILE` | unset | Bearer key file (plain `KANADE_MODEL_KEY` is refused) and a CA file (PEM bundle or one DER certificate) that replaces the compiled webpki roots. |
+| `KANADE_MODEL_BASE_URL` | unset | `https`, or `http` only to loopback, `localhost` or `host.docker.internal`; no userinfo or query. Unset disables models; the alias, group, capability and context variables then are refused. With it, the secrets files `model_api_key` (the bearer key; plain `KANADE_MODEL_KEY` is refused) and `model_ca.pem` (a PEM bundle or one DER certificate replacing the compiled webpki roots) are used when present. |
 | `KANADE_EXTRACT_MODEL`, `KANADE_CHAT_MODEL`, `KANADE_REWRITE_MODEL` | unset | Model aliases (printable ASCII, ≤ 200); seeds for a role with no saved alias. |
 | `KANADE_EXTRACT_REASONING`, `KANADE_CHAT_REASONING`, `KANADE_REWRITE_REASONING` | unset | Reasoning seeds (`off`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`; chat and rewrite also `inherit` = extraction's level): used only where no `extract_reasoning` / `chat_pilot_think` / `v5.rewrite_reasoning` row is saved (row → env → default: extraction `off`, chat/rewrite `inherit`). Need `KANADE_MODEL_BASE_URL`. |
 | `KANADE_MODEL_PERMITS` | `2` | Concurrent model calls in the single `gateway` group, 1–16. |
 | `KANADE_MODEL_GROUPS` | unset | Capacity groups as a JSON list of `{name, permits, aliases}` (normally `[[models.groups]]` in `kanade.toml`): names unique, ≤ 64 of `[A-Za-z0-9._-]`; permits 1–16; each alias in one group. Non-empty replaces the `gateway` group; exclusive with `KANADE_MODEL_PERMITS`; needs `KANADE_MODEL_BASE_URL`. A role whose alias is in no group starts with an `ungrouped` warning and its calls are refused; switching a role to such an alias in the config API is refused. Without groups, an alias a role is switched to live joins the `gateway` group. The admin config view reports the groups the governor runs (`models.groups`, read-only). |
-| `KANADE_MODEL_CONTEXT` | unset | JSON seed from `[models.context]`: cloud/local defaults, per-role `{reserve, cap?}` and alias overrides, all required except `cap` and `overrides`. Override keys match route aliases exactly, so an override on a base alias does not apply to its `<base>:<level>` variants. It applies only when `v5.model_context` is unsaved; the Config API is the live writer. A window (default, cap or override) above 131072 is clamped to 131072 and logged once when the seed applies (`model_context_clamped`, WARN, `fields`, `max`). A zero window or reserve, a reserve above 131072, an unknown field, a reserve not smaller than its role's seed window (its cap, else the smaller zone default), or a reserve of 15360 or more refuses startup naming the field: each model call reserves its prompt estimate (request bytes / 4) plus `max_tokens` out of a 16384-token call budget and must leave at least 1024 for the prompt, else every call fails before sending (`budget_exceeded`). A Config save of such a reserve answers 422 naming the role, reserve and budget. Needs `KANADE_MODEL_BASE_URL`. |
+| `KANADE_MODEL_CONTEXT` | unset | JSON context seed (tests and harnesses; no kanade.toml key): cloud/local defaults, per-role `{reserve, cap?}` and alias overrides, all required except `cap` and `overrides`. Override keys match route aliases exactly, so an override on a base alias does not apply to its `<base>:<level>` variants. It applies only when `v5.model_context` is unsaved; Config › Models is the live writer. A window (default, cap or override) above 131072 is clamped to 131072 and logged once when the seed applies (`model_context_clamped`, WARN, `fields`, `max`). A zero window or reserve, a reserve above 131072, an unknown field, a reserve not smaller than its role's seed window (its cap, else the smaller zone default), or a reserve of 15360 or more refuses startup naming the field: each model call reserves its prompt estimate (request bytes / 4) plus `max_tokens` out of a 16384-token call budget and must leave at least 1024 for the prompt, else every call fails before sending (`budget_exceeded`). A Config save of such a reserve answers 422 naming the role, reserve and budget. Needs `KANADE_MODEL_BASE_URL`. |
 | `KANADE_MODEL_CAPABILITIES` | unset | JSON object of model alias → capability fields (normally `[models.capabilities."<alias>"]` in `kanade.toml`), used only where the listing publishes no Kanata metadata for that alias; Kanata's published metadata always wins. Fields: `structured_output`, `function_tools`, `sampling_controls`, `reasoning_control` (booleans), `reasoning_efforts` (non-empty list of distinct `off` … `max` levels; needs `reasoning_control = true`), `context_tokens` (1–4294967295) and `max_output_tokens` (1–1048576, at most `context_tokens`); omitted fields keep the minimal profile's value (off/unset). Aliases follow the model alias rule (printable ASCII, ≤ 200). An unknown field (including `trust_zone`, `admission`, `streaming`), a wrong type or an out-of-range value refuses startup naming the alias and field. Needs `KANADE_MODEL_BASE_URL`; read once at startup and not editable in the Config API. |
-| `KANADE_RUN_LENGTHS` | unset | JSON seed from `[settings.run_lengths]`: `{default_minutes, overrides}`. It applies only when `v5.run_lengths` is unsaved; Config is the live writer. The default is 5-240 minutes; each `{boss, difficulty, minutes}` override is 5-480 and must name an exact catalog key and valid lowercase difficulty when saved through Config. Every admin run, including own-time runs, reports the sum across its bosses. |
+| `KANADE_RUN_LENGTHS` | unset | JSON run lengths seed (tests and harnesses; no kanade.toml key): `{default_minutes, overrides}`. It applies only when `v5.run_lengths` is unsaved; Config › Run lengths is the live writer. The default is 5-240 minutes; each `{boss, difficulty, minutes}` override is 5-480 and must name an exact catalog key and valid lowercase difficulty when saved through Config. Every admin run, including own-time runs, reports the sum across its bosses. |
 | `KANADE_TICK_SECONDS` | `30` | Scheduler tick, 5–300. |
 | `KANADE_INSTANCE_ID` | `kanade-<random>` | ≤ 64 of `[A-Za-z0-9._-]`. |
 | `KANADE_POST_CHANNEL_ID` | unset | Settings seed: snowflake. |
@@ -158,7 +153,7 @@ lists are comma-separated.
 | `KANADE_MODULE_ROSTER` | `0` | `0` or `1`. The manual character roster module (per-member characters; never sent to models): `1` serves its admin routes (`/api/admin/members/{id}/characters`, `/api/admin/characters/{id}`); `0` answers them `404`. Read at startup, so a change applies on restart; the `roster_characters` table and its rows stay either way. |
 | `KANADE_MODULE_CHARACTER_DATA` | `0` | `0` or `1`. NEXON Open API data for linked roster characters (never sent to models, never in backups); startup refuses `1` without `KANADE_MODULE_ROSTER=1`. `1` serves `/api/admin/characters/{id}/link` and `/refresh` and the Add character lookup `/api/admin/characters/lookup` (shown only, never stored), makes a MapleSEA character create also ask its member to link it, runs the refresh/sweep task and adds Config's health block; `0` answers the routes `404` and opens no file. Read at startup. |
 | `KANADE_CHARACTER_DATA_DB_PATH` | unset | Required while character data is on: absolute path of its own SQLite file (directory created `0700`, file `0600`, owner lock in `KANADE_OWNER_LOCK_DIR`), on a volume of its own so `kanade backup` and the data-volume tarball never hold it. Ignored while off. |
-| `KANADE_NEXON_API_KEY_FILE` | unset | Optional secret file with the Open API key (one line, ≤ 4 KiB). Unset: the module runs with links refused (health `no_key`); set but unreadable: startup is refused. Ignored while off. |
+| (secrets file `nexon_api_key`) | absent | The Open API key, read while the module is on. Absent: the module runs with links refused (health `no_key`); present but unreadable or bad: startup is refused. |
 | `KANADE_SCOUTER_URL` | unset | Optional: the private scouter sidecar (a separate Compose project, no authentication, no secret), e.g. `http://scouter:8091`. Plain `http` to a loopback or private address or a single-label host only (no credentials, path or query); anything else refuses startup. Set: admins (and members, for their own characters) can run estimates (`/api/admin/estimates`, `/api/public/me/estimates`, one lookup at a time); results are kept up to 30 days in the character-data file, and serve refreshes the party members of runs in the next 7 days whose estimate is missing or older than the saved `character_data.estimate_days` (default 7); the scouter is sent roster IGNs only. Unset: every estimate feature is off (routes `404`, no background refresh, health `off`) and the rest runs unchanged. Ignored while character data is off. |
 | `KANADE_MODULE_GUIDES` | `0` | `0` or `1`. The guide publisher: `1` serves the admin Guides routes (`/api/admin/guides…`) and runs the publish worker, which posts each guide to its channel as an ordered set of messages and edits them in place on later publishes; `0` answers the routes `404` and runs no worker. Read at startup; the guide tables and their rows stay either way. |
 
@@ -190,10 +185,10 @@ the base path and calls `<base>/v1/models` and `<base>/v1/chat/completions`
 base on another version path (such as Gemini's `/v1beta/openai`, which would
 become `/v1beta/openai/v1/...`) and a base with a query string (classic Azure
 OpenAI's `?api-version=`; use its `/openai/v1/` endpoint instead).
-`KANADE_MODEL_KEY_FILE` / `models.key_file` points to a file containing the
-optional bearer key; when set, Kanade sends `Authorization: Bearer` on both
-requests (there is no `api-key` header variant). Keep the key itself out of
-TOML and environment variables.
+The secrets file `model_api_key` holds the optional bearer key; when
+present, Kanade sends `Authorization: Bearer` on both requests (there is no
+`api-key` header variant). Keep the key itself out of TOML and environment
+variables.
 
 Kanata can publish per-model capability metadata. Resolution per alias is
 published metadata, then the operator's declaration, then the minimal
@@ -256,10 +251,9 @@ Config until the server answers.
 Trust zones and admission limits cannot be declared: plain routes stay
 external, and capacity comes from `models.permits` or `[[models.groups]]`.
 Declarations are operator-only (read once at startup, not editable in the
-Config API). `models.context.overrides` still sets a per-alias window, capped
-at a declared `context_tokens`; configure role `reserve` and optional `cap`
-values under `[models.context.chat]`, `[models.context.extraction]` and
-`[models.context.rewrite]`. See
+Config API). Config › Models sets a per-alias window (capped at a declared
+`context_tokens`), each role's `reserve` and optional `cap`, and the role
+models and reasoning. See
 [`kanade.openai-compatible.example.toml`](../../kanade.openai-compatible.example.toml).
 Omitting `[[models.groups]]` puts all model aliases in one shared `gateway`
 group.
@@ -275,22 +269,44 @@ server directly.
 `KANADE_CONFIG` names a TOML file (in Compose: the private, git-ignored
 `kanade.toml` at the checkout root, mounted read-only at
 `/config/kanade.toml`; the tracked `kanade.example.toml` documents every key)
-for non-secret settings. Unset or empty keeps the environment-only behaviour.
-Each key sets one variable below, whose rules apply unchanged
+for deployment settings. Unset or empty keeps the environment-only behaviour.
+Each key sets one variable, whose rules apply unchanged
 (`src/runtime/config/file/`); all commands (`serve`, `healthcheck`, `import`,
 `models check`, `backup`, `restore`, `portal`, `sessions`, `token`) read it.
 
-- Precedence: a non-empty `KANADE_*` environment variable (Compose
-  `environment:`) overrides its key; an empty one does not, so a blank
-  Compose variable cannot clear a file value.
+Each kind of value has one owner:
+
+| Kind | Owner | Examples |
+|---|---|---|
+| Paths inside the image | `deploy/Dockerfile` `ENV` | `KANADE_DB_PATH`, `KANADE_OWNER_LOCK_DIR`, `KANADE_IDENTITY_DIR`, `KANADE_WEB_DIR`, `KANADE_BOSS_DIR`, `KANADE_CATALOG_FILE`, `KANADE_KNOWLEDGE_DIR`, `KANADE_PERSONA_DIR`, `KANADE_EMOJI_DIR`, `KANADE_CHARACTER_DATA_DB_PATH`, `KANADE_BACKUP_DIR`, `KANADE_SECRETS_DIR` |
+| Network addresses | `deploy/compose.yaml` (and the override) `environment:` | `KANADE_ADMIN_BIND`, `KANADE_PUBLIC_BIND`, `KANADE_ALLOW_PRIVATE_BIND`, `KANADE_CLOUDFLARED_PEER`, `KANADE_TRUSTED_PROXY` |
+| Secrets | files with fixed names in the secrets directory ("Secrets directory" below) | `discord_token`, `admin_token`, `model_api_key` |
+| Deployment settings | `kanade.toml` (the table below) | timezone, Discord ids and roles, hosts, OAuth client ids, model gateway, modules |
+| Live settings | the store, written by Config and Setup | channels, switches, pings, run lengths, model roles and context, persona |
+
+- Precedence: for a key in the table, `kanade.toml` is the deployment's
+  value. A non-empty `KANADE_*` variable still overrides its key (the
+  interface of tests, harnesses and migration rehearsals); `serve` then logs
+  one WARN `config_shadowed` naming the shadowed keys (never the values). An
+  empty variable does not count, so a blank Compose variable cannot clear a
+  file value. The settings seed variables (`KANADE_POST_CHANNEL_ID`, the
+  channel and category lists, the switches, `KANADE_DAY_OF_PING_TIME`,
+  `KANADE_COUNTDOWN_MINUTES`, `KANADE_RUN_LENGTHS`, the role aliases and
+  reasoning levels, `KANADE_MODEL_CONTEXT`) have no key: Config owns those
+  values, and a seed applies only where no row is saved.
 - Secrets never go in the file: a key containing `token`, `secret`, `key`,
-  `password`, `passwd` or `credential` that does not end in `_file` stops
-  startup; `*_file` keys name the secret files.
+  `password`, `passwd` or `credential` stops startup.
+- Removed keys and variables stop startup naming where the value lives now,
+  never the value (``kanade.toml `discord.token_file` was removed: put the
+  token in the secrets directory as `discord_token` ``); the full list is
+  `RETIRED` in `src/runtime/config/file/keys.rs`. Blank removed variables do
+  not count.
 - Unknown keys or tables, wrong TOML types (e.g. `tick_seconds = "30"`) and
   syntax errors stop startup with exit `78`, naming the key (or the line for
-  syntax), never the value. A value that fails the variable's own rule names
-  both, e.g. ``KANADE_TIMEZONE must be a valid IANA timezone (kanade.toml
-  `runtime.timezone`)``. The file is at most 1 MiB.
+  syntax), never the value. Errors name the key of every variable they
+  mention, with the variable in brackets, e.g. ``kanade.toml
+  `runtime.timezone` [KANADE_TIMEZONE] must be a valid IANA timezone``. The
+  file is at most 1 MiB.
 - Booleans are `true`/`false` (written as `1`/`0`); lists are TOML arrays
   (joined with commas, so string items may not contain one); snowflakes may be
   strings or integers (strings keep ids above `i64` exact).
@@ -304,33 +320,9 @@ Each key sets one variable below, whose rules apply unchanged
 | `runtime.instance_id` | `KANADE_INSTANCE_ID` | string |
 | `runtime.tick_seconds` | `KANADE_TICK_SECONDS` | integer |
 | `runtime.shutdown_timeout_seconds` | `KANADE_SHUTDOWN_TIMEOUT_SECONDS` | integer |
-| `runtime.allow_private_bind` | `KANADE_ALLOW_PRIVATE_BIND` | bool |
-| `runtime.healthcheck_url` | `KANADE_HEALTHCHECK_URL` | string |
 | `runtime.healthcheck_timeout_seconds` | `KANADE_HEALTHCHECK_TIMEOUT_SECONDS` | integer |
-| `admin.bind` | `KANADE_ADMIN_BIND` | string |
-| `admin.host` | `KANADE_ADMIN_HOST` | string |
-| `admin.trusted_proxy` | `KANADE_TRUSTED_PROXY` | string |
-| `admin.edge_secret_file` | `KANADE_EDGE_SECRET_FILE` | string |
-| `admin.web_dir` | `KANADE_WEB_DIR` | string |
-| `admin.boss_dir` | `KANADE_BOSS_DIR` | string |
-| `admin.identity_dir` | `KANADE_IDENTITY_DIR` | string |
-| `admin.token_file` | `KANADE_ADMIN_TOKEN_FILE` | string |
-| `admin.discord_client_id` | `KANADE_ADMIN_DISCORD_CLIENT_ID` | snowflake (string or integer) |
-| `admin.discord_client_secret_file` | `KANADE_ADMIN_DISCORD_CLIENT_SECRET_FILE` | string |
-| `admin.discord_redirect_uri` | `KANADE_ADMIN_DISCORD_REDIRECT_URI` | string |
-| `admin.tailscale_logins` | `KANADE_ADMIN_TAILSCALE_LOGINS` | string list |
-| `admin.session_idle_minutes` | `KANADE_ADMIN_SESSION_IDLE_MINUTES` | integer |
-| `admin.session_absolute_hours` | `KANADE_ADMIN_SESSION_ABSOLUTE_HOURS` | integer |
-| `public.bind` | `KANADE_PUBLIC_BIND` | string |
-| `public.host` | `KANADE_PUBLIC_HOST` | string |
-| `public.cloudflared_peer` | `KANADE_CLOUDFLARED_PEER` | string |
-| `public.discord_client_id` | `KANADE_PUBLIC_DISCORD_CLIENT_ID` | snowflake |
-| `public.discord_client_secret_file` | `KANADE_PUBLIC_DISCORD_CLIENT_SECRET_FILE` | string |
-| `public.discord_redirect_uri` | `KANADE_PUBLIC_DISCORD_REDIRECT_URI` | string |
-| `public.session_idle_minutes` | `KANADE_PUBLIC_SESSION_IDLE_MINUTES` | integer |
-| `public.session_absolute_hours` | `KANADE_PUBLIC_SESSION_ABSOLUTE_HOURS` | integer |
-| `public.fresh_write_minutes` | `KANADE_PUBLIC_FRESH_WRITE_MINUTES` | integer |
-| `discord.token_file` | `KANADE_DISCORD_TOKEN_FILE` | string |
+| `runtime.boss_week_reset_weekday` | `KANADE_BOSS_WEEK_RESET_WEEKDAY` | string |
+| `runtime.boss_week_reset_time` | `KANADE_BOSS_WEEK_RESET_TIME` | string |
 | `discord.gateway` | `KANADE_DISCORD_GATEWAY` | bool |
 | `discord.guild_id` | `KANADE_GUILD_ID` | snowflake (string or integer) |
 | `discord.bossing_role_id` | `KANADE_BOSSING_ROLE_ID` | snowflake (string or integer) |
@@ -338,47 +330,56 @@ Each key sets one variable below, whose rules apply unchanged
 | `discord.chat_pilot_role_id` | `KANADE_CHAT_PILOT_ROLE_ID` | snowflake (string or integer) |
 | `discord.debug_user_ids` | `KANADE_DEBUG_USER_IDS` | snowflake list |
 | `discord.test_channel` | `KANADE_TEST_CHANNEL_ID` | snowflake (string or integer) |
-| `store.db_path` | `KANADE_DB_PATH` | string |
-| `store.owner_lock_dir` | `KANADE_OWNER_LOCK_DIR` | string |
-| `backup.recipients_file` | `KANADE_BACKUP_RECIPIENTS_FILE` | string |
-| `files.catalog_file` | `KANADE_CATALOG_FILE` | string |
-| `files.knowledge_dir` | `KANADE_KNOWLEDGE_DIR` | string |
-| `files.persona_dir` | `KANADE_PERSONA_DIR` | string |
+| `admin.host` | `KANADE_ADMIN_HOST` | string |
+| `admin.discord_client_id` | `KANADE_ADMIN_DISCORD_CLIENT_ID` | snowflake (string or integer) |
+| `admin.tailscale_logins` | `KANADE_ADMIN_TAILSCALE_LOGINS` | string list |
+| `admin.session_idle_minutes` | `KANADE_ADMIN_SESSION_IDLE_MINUTES` | integer |
+| `admin.session_absolute_hours` | `KANADE_ADMIN_SESSION_ABSOLUTE_HOURS` | integer |
+| `public.host` | `KANADE_PUBLIC_HOST` | string |
+| `public.discord_client_id` | `KANADE_PUBLIC_DISCORD_CLIENT_ID` | snowflake |
+| `public.session_idle_minutes` | `KANADE_PUBLIC_SESSION_IDLE_MINUTES` | integer |
+| `public.session_absolute_hours` | `KANADE_PUBLIC_SESSION_ABSOLUTE_HOURS` | integer |
+| `public.fresh_write_minutes` | `KANADE_PUBLIC_FRESH_WRITE_MINUTES` | integer |
 | `models.base_url` | `KANADE_MODEL_BASE_URL` | string |
-| `models.key_file` | `KANADE_MODEL_KEY_FILE` | string |
-| `models.ca_file` | `KANADE_MODEL_CA_FILE` | string |
 | `models.permits` | `KANADE_MODEL_PERMITS` | integer |
 | `models.groups` | `KANADE_MODEL_GROUPS` | array of tables |
-| `models.context` | `KANADE_MODEL_CONTEXT` | table |
 | `models.capabilities` | `KANADE_MODEL_CAPABILITIES` | table of alias tables |
-| `settings.run_lengths` | `KANADE_RUN_LENGTHS` | table |
-| `models.extraction.model` | `KANADE_EXTRACT_MODEL` | string |
-| `models.extraction.reasoning` | `KANADE_EXTRACT_REASONING` | string |
-| `models.chat.model` | `KANADE_CHAT_MODEL` | string |
-| `models.chat.reasoning` | `KANADE_CHAT_REASONING` | string |
-| `models.rewrite.model` | `KANADE_REWRITE_MODEL` | string |
-| `models.rewrite.reasoning` | `KANADE_REWRITE_REASONING` | string |
-| `settings.post_channel_id` | `KANADE_POST_CHANNEL_ID` | snowflake (string or integer) |
-| `settings.watch_channel_ids` | `KANADE_WATCH_CHANNEL_IDS` | snowflake list |
-| `settings.watch_category_ids` | `KANADE_WATCH_CATEGORY_IDS` | snowflake list |
-| `settings.chat_category_ids` | `KANADE_CHAT_CATEGORY_IDS` | snowflake list |
-| `settings.extraction_enabled` | `KANADE_EXTRACTION_ENABLED` | bool |
-| `settings.chat_enabled` | `KANADE_CHAT_ENABLED` | bool |
-| `settings.boss_week_reset_weekday` | `KANADE_BOSS_WEEK_RESET_WEEKDAY` | string |
-| `settings.boss_week_reset_time` | `KANADE_BOSS_WEEK_RESET_TIME` | string |
-| `settings.day_of_ping_time` | `KANADE_DAY_OF_PING_TIME` | string |
-| `settings.countdown_minutes` | `KANADE_COUNTDOWN_MINUTES` | integer list |
 | `modules.roster` | `KANADE_MODULE_ROSTER` | bool |
 | `modules.character_data` | `KANADE_MODULE_CHARACTER_DATA` | bool |
 | `modules.guides` | `KANADE_MODULE_GUIDES` | bool |
-| `character_data.db_path` | `KANADE_CHARACTER_DATA_DB_PATH` | string |
-| `character_data.nexon_key_file` | `KANADE_NEXON_API_KEY_FILE` | string |
 | `character_data.scouter_url` | `KANADE_SCOUTER_URL` | string |
 
-Variables without a key: `KANADE_CONFIG` itself; the refused plain
-secrets (`KANADE_DISCORD_TOKEN`, `KANADE_MODEL_KEY`, `KANADE_ADMIN_TOKEN`,
-`KANADE_ADMIN_DISCORD_CLIENT_SECRET`) and the renamed `KANADE_BIND` /
+Variables without a key: `KANADE_CONFIG` itself; the image paths and
+network addresses above; the settings seeds; the refused plain secrets
+(`KANADE_DISCORD_TOKEN`, `DISCORD_TOKEN`, `KANADE_MODEL_KEY`,
+`KANADE_ADMIN_TOKEN`, `KANADE_ADMIN_DISCORD_CLIENT_SECRET`,
+`KANADE_PUBLIC_DISCORD_CLIENT_SECRET`) and the renamed `KANADE_BIND` /
 `KANADE_PILOT_CHANNEL_IDS`.
+
+### Secrets directory
+
+Secrets are one-line files (at most 4 KiB) with fixed names in
+`KANADE_SECRETS_DIR` (default and image value `/run/secrets`; Compose binds
+the host's `~/.config/kanade/v5/secrets`, or `KANADE_SECRETS_HOST_DIR`, there
+read-only). Configuration only names them; startup reads them:
+
+| File | Used when | Absent |
+|---|---|---|
+| `discord_token` | always (`serve`, `kanade ctl emojis`) | refused |
+| `admin_token` | present: break-glass sign-in (at least 32 bytes); `kanade portal`/`sessions` sign in with it | no break-glass sign-in; the commands refuse |
+| `model_api_key` | `models.base_url` is set | no bearer key (a keyless gateway) |
+| `model_ca.pem` | `models.base_url` is set: a PEM bundle or one DER certificate replacing the compiled roots (any size) | the compiled webpki roots |
+| `discord_client_secret` | `admin.discord_client_id` is set | refused |
+| `public_discord_client_secret` | `public.discord_client_id` is set | refused |
+| `edge_secret` | `KANADE_TRUSTED_PROXY` is set (at least 32 bytes) | the proxy is trusted without it; `admin.tailscale_logins` refuses |
+| `nexon_api_key` | module `character_data` is on | links are refused (health `no_key`) |
+
+A refusal names the file, the directory and what needs it, never the
+contents. A present file that is empty, has more than one line, is over 4 KiB
+or cannot be read refuses as well, and so does a directory that cannot be
+searched (a missing file is the only "absent"). A file no feature uses is
+ignored. The backup encryption keys are not secrets: they are the
+`recipients` file in `KANADE_BACKUP_DIR` (see `KANADE_BACKUP_DIR`).
 
 ### Live serve
 
@@ -462,7 +463,7 @@ with …") and the view shows no `running` for it. `model_role` lines are
 startup-only.
 
 `serve` (`src/runtime/serve/`) reads the bot token file, checks
-`KANADE_BACKUP_RECIPIENTS_FILE` when set, opens and owns the store, loads
+the backups directory's `recipients` file when present, opens and owns the store, loads
 the catalog, knowledge and personas, resolves settings, then serves both
 listeners: one shared `SchedulerWriter`, `ApiState` (schedule policy from
 settings, one `GuildAccess` shared with the staff gate, guild id for card
@@ -721,9 +722,9 @@ older notices unsent at drain time, so the backlog written before serve
 first ticks (admin edits, an import) never floods the channels; serve builds
 it with that default. Still dropped: the inbox's Discord card refresh/close
 (and its superseded siblings' cards).
-Bot token (user decision 2026-09-25): `KANADE_DISCORD_TOKEN_FILE` (e.g.
-`/run/secrets/kanade_discord_token`, a Compose secret from a host file outside
-the repo); plain `KANADE_DISCORD_TOKEN`/`DISCORD_TOKEN` are refused at startup.
+Bot token (user decision 2026-09-25): the secrets file `discord_token`
+(`/run/secrets/discord_token` in the container, bound read-only from a host
+directory outside the repo); plain `KANADE_DISCORD_TOKEN`/`DISCORD_TOKEN` are refused at startup.
 Discord allows one gateway session per token, so never run two bots on one
 token, and v5 must act only in its
 configured guild: ignore every event from other guilds and register commands
@@ -742,7 +743,7 @@ For a reverse proxy in front of the admin origin (`deploy/README.md`
   because every local process shares the loopback address.
 - Shared secret: at least 32 random bytes (for example `openssl rand -base64
   48`), one line, stored as a secret file on both sides; kanade reads it from
-  `KANADE_EDGE_SECRET_FILE`. Rotate by replacing both files and restarting
+  the secrets file `edge_secret`. Rotate by replacing both files and restarting
   both services.
 - On every request it forwards to kanade, the edge must:
   1. remove any client-supplied `X-Kanade-Edge-Auth`, `Tailscale-User-*`,
@@ -762,7 +763,7 @@ For a reverse proxy in front of the admin origin (`deploy/README.md`
   otherwise kanade answers `400 bad_forwarding` rather than falling back to the
   edge's own address, which would pool every client into one rate-limit
   bucket (a misconfigured edge fails loudly).
-- Without `KANADE_EDGE_SECRET_FILE`, `KANADE_TRUSTED_PROXY` is trusted by
+- Without the `edge_secret` file, `KANADE_TRUSTED_PROXY` is trusted by
   address alone: any process that can connect from that address (on
   loopback, every local process) can set `X-Forwarded-For` and so choose the
   per-IP rate-limit bucket and the client IP in audit records. Configure the
@@ -786,7 +787,7 @@ extraction and the delivery tick, chat and extraction each behind its
 settings switch (see "Live serve"). There is no `export` command.
 `ctl emojis [--dry-run] [--dir PATH]` uploads the difficulty pills
 (`assets/emojis/diff_{n,h,c,x}.png`, drawn by `scripts/emojis/draw_pills.py`)
-as application emojis: it needs only `KANADE_DISCORD_TOKEN_FILE`, reads the
+as application emojis: it needs only the secrets file `discord_token`, reads the
 application from `GET /applications/@me`, lists its emojis and uploads only
 the fixed names `diff_n`, `diff_h`, `diff_c`, `diff_x` that are missing,
 from `PATH/<name>.png`. Without `--dir` it reads `KANADE_EMOJI_DIR` (the
@@ -814,7 +815,7 @@ first"); it writes `FILE` (a plain `[A-Za-z0-9._-]` name; default
 `FILE.manifest.json` (`created_at` added to `kanade.backup.v1`), never
 overwriting either (exit `78`), and prints the history head, revision and
 schema. Opening the store runs pending migrations, so run it with the image
-that last served the store. With `KANADE_BACKUP_RECIPIENTS_FILE` set, the
+that last served the store. With a `recipients` file in `KANADE_BACKUP_DIR`, the
 snapshot is encrypted with age to those X25519 recipients and published as
 `FILE.age` (0600) beside a plaintext `FILE.age.manifest.json` (metadata
 only); the plaintext copy exists only in the 0700 staging directory and is
@@ -822,7 +823,7 @@ deleted after encryption or with the directory on any failure. `--name`
 refuses `*.age`. Three key tools need no store or settings:
 `backup keygen --out PATH` writes a new identity (0600, never overwrites) and
 prints only its `age1…` public key on stdout; `backup encrypt [--recipients
-PATH]` (default: `KANADE_BACKUP_RECIPIENTS_FILE`) encrypts stdin to stdout;
+PATH]` (default: `KANADE_BACKUP_DIR/recipients`) encrypts stdin to stdout;
 `backup decrypt --identity PATH --in PATH --out PATH` writes a new 0600 file,
 refuses an existing `--out`, fails before writing on a wrong identity and
 removes a partial output when the input is damaged or truncated. Key and
@@ -859,7 +860,7 @@ talk to the running bot's admin API, never the store. The target is
 `KANADE_ADMIN_BIND` (or `--url http://HOST:PORT`): loopback, or the
 listener's private address with `KANADE_ALLOW_PRIVATE_BIND=1`, as for
 `healthcheck`. Each run signs in with the break-glass token from
-`KANADE_ADMIN_TOKEN_FILE` (`POST /api/admin/auth/token`; plain
+the secrets file `admin_token` (`POST /api/admin/auth/token`; plain
 `KANADE_ADMIN_TOKEN` is refused), keeps the session cookie and CSRF token in
 memory only, sends `Host`/`Origin` of the listener (`KANADE_ADMIN_HOST` with
 `https://`, else `localhost:PORT` with `http://`), and signs out
@@ -965,6 +966,7 @@ JSON lines on stderr (`level`, `event`, fields). None carries question or reply 
 
 | Event | Level | Fields | When |
 | --- | --- | --- | --- |
+| `config_shadowed` | WARN | `keys` (the `kanade.toml` keys, never the values) | `serve` start when a non-empty `KANADE_*` variable overrides a key the file sets |
 | `server_started` | INFO | `mode` (`offline`/`live`), `bind`, `version` (the crate version) | each listener (admin, and public when set) is bound |
 | `backup_dir_unreadable` | WARN | no additional fields | checkpoints could not list `KANADE_BACKUP_DIR` (it lists no backups) |
 | `backup_manifests_skipped` | WARN | `unreadable`, `missing_snapshot` (counts), `truncated` (more than 4096 entries) | checkpoints skipped unreadable or foreign manifests or ones whose snapshot is gone |

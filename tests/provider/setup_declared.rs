@@ -12,7 +12,7 @@ use kanade::infrastructure::llm::{
     parse_models_list,
     setup::{EffortStatus, ModelRoles, ModelStack, RoleEffort, RoleModel},
 };
-use kanade::runtime::config::{ModelSettings, resolve};
+use kanade::runtime::config::{ModelSettings, annotate, resolve};
 use serde_json::{Value, json};
 
 use super::setup::{ready, role, setup, temp_file};
@@ -29,7 +29,7 @@ fn settings(base_url: &str, tables: &str) -> ModelSettings {
     std::fs::remove_file(&path).unwrap();
     let resolved = resolved.unwrap();
     ModelSettings::from_mapping(&resolved.values)
-        .map_err(|error| resolved.annotate(error).to_string())
+        .map_err(|error| annotate(error).to_string())
         .unwrap()
 }
 

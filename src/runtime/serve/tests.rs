@@ -10,6 +10,7 @@ use chrono::{NaiveTime, Weekday};
 use super::*;
 use crate::domain::settings::{IdList, Section, SettingsStore, keys, save_section};
 
+/// A scratch root that is also the secrets directory.
 pub(super) struct Temp(pub(super) PathBuf);
 
 impl Temp {
@@ -17,7 +18,7 @@ impl Temp {
         let base = fs::canonicalize(std::env::temp_dir()).unwrap();
         let root = base.join(format!("kanade-serve-{}", uuid::Uuid::new_v4()));
         fs::DirBuilder::new().mode(0o700).create(&root).unwrap();
-        fs::write(root.join("token"), "bot-token-value\n").unwrap();
+        fs::write(root.join("discord_token"), "bot-token-value\n").unwrap();
         let bundles = root.join("Personas/bundles");
         fs::create_dir_all(&bundles).unwrap();
         fs::copy(
@@ -33,7 +34,7 @@ impl Temp {
         let mut values: BTreeMap<String, String> = [
             ("KANADE_TIMEZONE", "Asia/Kuala_Lumpur".to_owned()),
             ("KANADE_ADMIN_BIND", "127.0.0.1:0".to_owned()),
-            ("KANADE_DISCORD_TOKEN_FILE", path("token")),
+            ("KANADE_SECRETS_DIR", path("")),
             ("KANADE_GUILD_ID", "900".to_owned()),
             ("KANADE_BOSSING_ROLE_ID", "10".to_owned()),
             ("KANADE_DB_PATH", path("db/kanade.sqlite3")),
@@ -647,24 +648,16 @@ async fn compose_for_tests_serves_on_the_injected_clock_and_a_fake_discord() {
     // Admin sign-in builds its HTTPS client before the fake replaces it.
     let _ = crate::runtime::tls::install_ring_provider();
     let temp = Temp::new();
-    let secret = temp.0.join("token").display().to_string();
+    for name in ["discord_client_secret", "public_discord_client_secret"] {
+        fs::write(temp.0.join(name), "client-secret-value\n").unwrap();
+    }
     let config = temp.config(&[
         ("KANADE_ADMIN_HOST", "kanade.test"),
         ("KANADE_ADMIN_DISCORD_CLIENT_ID", "424242"),
-        ("KANADE_ADMIN_DISCORD_CLIENT_SECRET_FILE", &secret),
-        (
-            "KANADE_ADMIN_DISCORD_REDIRECT_URI",
-            "https://kanade.test/api/admin/auth/discord/callback",
-        ),
         ("KANADE_PUBLIC_BIND", "127.0.0.1:0"),
         ("KANADE_PUBLIC_HOST", "portal.kanade.test"),
         ("KANADE_CLOUDFLARED_PEER", "127.0.0.1"),
         ("KANADE_PUBLIC_DISCORD_CLIENT_ID", "424243"),
-        ("KANADE_PUBLIC_DISCORD_CLIENT_SECRET_FILE", &secret),
-        (
-            "KANADE_PUBLIC_DISCORD_REDIRECT_URI",
-            "https://portal.kanade.test/api/public/auth/discord/callback",
-        ),
     ]);
     let store = store::open(&config.store).await.unwrap();
     // Wednesday 10:00 in Kuala Lumpur, years before the wall clock.
@@ -782,7 +775,7 @@ async fn compose_for_tests_points_character_data_at_a_loopback_nexon() {
     });
 
     let temp = Temp::new();
-    let key = temp.0.join("token").display().to_string();
+    fs::write(temp.0.join("nexon_api_key"), "nexon-key-value\n").unwrap();
     let chardata = temp.0.join("chardata/chardata.sqlite3");
     let config = temp.config(&[
         ("KANADE_MODULE_ROSTER", "1"),
@@ -791,7 +784,6 @@ async fn compose_for_tests_points_character_data_at_a_loopback_nexon() {
             "KANADE_CHARACTER_DATA_DB_PATH",
             &chardata.display().to_string(),
         ),
-        ("KANADE_NEXON_API_KEY_FILE", &key),
     ]);
     let store = store::open(&config.store).await.unwrap();
     let composed = api::compose_for_tests(

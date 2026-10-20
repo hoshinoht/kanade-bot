@@ -24,11 +24,7 @@ use tokio::net::TcpStream;
 
 use crate::{
     api::auth::{csrf::CSRF_HEADER, wire::SESSION_COOKIE},
-    runtime::{
-        config::{ADMIN_TOKEN_FILE_KEY, AdminClientConfig},
-        error::Error,
-        secrets::Redacted,
-    },
+    runtime::{config::AdminClientConfig, error::Error, secrets::Redacted},
 };
 
 /// Per request, connect to last byte.
@@ -61,7 +57,7 @@ pub struct Session {
     csrf: String,
 }
 
-/// Sign in with the token from `KANADE_ADMIN_TOKEN_FILE`, run `work`, then
+/// Sign in with `admin_token` from the secrets directory, run `work`, then
 /// sign out, also when `work` failed or panicked (a panic is reported as a
 /// failure). Nothing is attempted when the sign-in fails. A failed sign-out
 /// after successful work is itself an error: the session then ends only at
@@ -75,7 +71,7 @@ pub async fn signed_in(
     config: &AdminClientConfig,
     work: impl AsyncFnOnce(&Session) -> Result<(), Error>,
 ) -> Result<(), Error> {
-    let token = Redacted::read(&config.token_file, ADMIN_TOKEN_FILE_KEY)?;
+    let token = config.read_token()?;
     let session = sign_in(config, &token)
         .await
         .map_err(|error| scrub(error, &[token.expose()]))?;
@@ -303,7 +299,7 @@ fn refused(what: &str, reply: &Reply) -> Error {
     }
     match status {
         StatusCode::UNAUTHORIZED if what == "sign-in" => Error::Configuration(format!(
-            "{detail}; check that {ADMIN_TOKEN_FILE_KEY} holds the bot's current token"
+            "{detail}; check that the secrets file `admin_token` holds the bot's current token"
         )),
         StatusCode::MISDIRECTED_REQUEST => Error::Configuration(format!(
             "{detail}; set KANADE_ADMIN_HOST to the bot's admin host"

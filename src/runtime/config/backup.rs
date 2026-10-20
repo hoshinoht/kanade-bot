@@ -1,44 +1,52 @@
-//! `KANADE_BACKUP_DIR`: where `kanade backup` writes snapshots and their
-//! manifests, and where serve lists them (read only) for History.
-//! `KANADE_BACKUP_RECIPIENTS_FILE` (`backup.recipients_file`): optional age
-//! public keys; when set, snapshots are written encrypted (`<name>.age`).
+//! `KANADE_BACKUP_DIR` (set by the image): where `kanade backup` writes
+//! snapshots and their manifests, and where serve lists them (read only) for
+//! History. Its optional `recipients` file holds age public keys; while it
+//! is present, snapshots are written encrypted (`<name>.age`).
 
 use std::{collections::BTreeMap, path::PathBuf};
 
-use super::{Error, StoreSettings, non_empty, store::absolute};
+use super::{
+    Error, StoreSettings,
+    layout::{BACKUP_DIR, absolute},
+    non_empty,
+};
 
-const KEY: &str = "KANADE_BACKUP_DIR";
-pub const RECIPIENTS_KEY: &str = "KANADE_BACKUP_RECIPIENTS_FILE";
+/// The age recipients' fixed name in the backup directory.
+const RECIPIENTS: &str = "recipients";
+/// How errors name the recipients file.
+pub const RECIPIENTS_LABEL: &str = "backups file `recipients`";
 
-/// `kanade backup`: the store paths, the backup directory and the optional
-/// recipients file only (no timezone, Discord, listeners or secrets).
+/// `kanade backup`: the store paths and the backup directory only (no
+/// timezone, Discord, listeners or secrets).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct BackupConfig {
     pub store: StoreSettings,
     pub dir: PathBuf,
-    /// [`RECIPIENTS_KEY`]; `None` writes plaintext snapshots.
-    pub recipients_file: Option<PathBuf>,
+    /// `<dir>/recipients`; absent writes plaintext snapshots.
+    pub recipients_file: PathBuf,
 }
 
 impl BackupConfig {
     pub fn from_mapping(values: &BTreeMap<String, String>) -> Result<Self, Error> {
+        let dir = absolute(values, BACKUP_DIR)?;
         Ok(Self {
             store: StoreSettings::from_mapping(values)?,
-            dir: absolute(values, KEY)?,
-            recipients_file: recipients_file(values),
+            recipients_file: dir.join(RECIPIENTS),
+            dir,
         })
     }
 }
 
-/// [`RECIPIENTS_KEY`] when set; serve only validates the file at startup.
+/// `<KANADE_BACKUP_DIR>/recipients` when the directory is set; whether the
+/// file is there is the caller's to check.
 pub fn recipients_file(values: &BTreeMap<String, String>) -> Option<PathBuf> {
-    non_empty(values, RECIPIENTS_KEY).map(PathBuf::from)
+    non_empty(values, BACKUP_DIR).map(|dir| PathBuf::from(dir).join(RECIPIENTS))
 }
 
 /// Optional for serve: unset lists no backups.
 pub(super) fn optional_dir(values: &BTreeMap<String, String>) -> Result<Option<PathBuf>, Error> {
-    non_empty(values, KEY)
-        .map(|_| absolute(values, KEY))
+    non_empty(values, BACKUP_DIR)
+        .map(|_| absolute(values, BACKUP_DIR))
         .transpose()
 }
 
@@ -66,7 +74,7 @@ mod tests {
             "KANADE_BACKUP_DIR is required"
         );
         let mut pairs = store.to_vec();
-        pairs.push((KEY, "backups"));
+        pairs.push((BACKUP_DIR, "backups"));
         assert_eq!(
             BackupConfig::from_mapping(&values(&pairs))
                 .unwrap_err()
@@ -74,28 +82,26 @@ mod tests {
             "KANADE_BACKUP_DIR must be an absolute path without `..`"
         );
         pairs.pop();
-        pairs.push((KEY, "/backups"));
+        pairs.push((BACKUP_DIR, "/backups"));
         let config = BackupConfig::from_mapping(&values(&pairs)).unwrap();
         assert_eq!(config.dir, PathBuf::from("/backups"));
         assert_eq!(config.store.owner_lock_dir, PathBuf::from("/data/run"));
-        assert_eq!(config.recipients_file, None);
-        pairs.push((RECIPIENTS_KEY, "/run/secrets/backup_recipients"));
+        assert_eq!(config.recipients_file, PathBuf::from("/backups/recipients"));
         assert_eq!(
-            BackupConfig::from_mapping(&values(&pairs))
-                .unwrap()
-                .recipients_file,
-            Some(PathBuf::from("/run/secrets/backup_recipients"))
+            recipients_file(&values(&pairs)),
+            Some(PathBuf::from("/backups/recipients"))
         );
+        assert_eq!(recipients_file(&values(&store)), None);
     }
 
     #[test]
     fn serve_treats_the_dir_as_optional() {
         assert_eq!(optional_dir(&values(&[])).unwrap(), None);
-        assert_eq!(optional_dir(&values(&[(KEY, "")])).unwrap(), None);
+        assert_eq!(optional_dir(&values(&[(BACKUP_DIR, "")])).unwrap(), None);
         assert_eq!(
-            optional_dir(&values(&[(KEY, "/backups")])).unwrap(),
+            optional_dir(&values(&[(BACKUP_DIR, "/backups")])).unwrap(),
             Some(PathBuf::from("/backups"))
         );
-        assert!(optional_dir(&values(&[(KEY, "/a/../b")])).is_err());
+        assert!(optional_dir(&values(&[(BACKUP_DIR, "/a/../b")])).is_err());
     }
 }

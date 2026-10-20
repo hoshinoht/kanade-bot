@@ -1095,7 +1095,7 @@ pub struct SetupFacts {
     pub member_sign_in: bool,
     /// `modules.*`, read once at startup.
     pub modules: crate::runtime::config::Modules,
-    /// `KANADE_BACKUP_RECIPIENTS_FILE` is set (snapshots are encrypted).
+    /// The backups directory holds `recipients` (snapshots are encrypted).
     pub backup_recipients: bool,
 }
 

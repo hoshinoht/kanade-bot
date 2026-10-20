@@ -231,9 +231,9 @@ async fn an_encrypted_snapshot_restores_only_with_its_identity() {
     let dir = TempDir::new();
     mark(&dir.store(), "snap").await;
     let (identity, recipients) = dir.keygen("backup.key");
+    std::fs::copy(&recipients, dir.backups().join("recipients")).unwrap();
     let made = dir
         .kanade(&["backup", "--name", "snap.sqlite"])
-        .env("KANADE_BACKUP_RECIPIENTS_FILE", &recipients)
         .output()
         .unwrap();
     assert_eq!(made.status.code(), Some(0), "{}", text(&made.stderr));

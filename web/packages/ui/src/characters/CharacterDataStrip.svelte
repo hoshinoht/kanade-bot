@@ -298,7 +298,7 @@
     </p>
   {:else if phase === 'not_connected'}
     <p class="chardata__msg" id="{uid}-why">
-      An operator sets the key in the environment and restarts Kanade.{#if kit.configHref}&nbsp;Status: <a href={kit.configHref}>Config › Character data</a>.{/if}
+      An operator adds the key to the secrets directory and restarts Kanade.{#if kit.configHref}&nbsp;Status: <a href={kit.configHref}>Config › Character data</a>.{/if}
     </p>
   {:else if phase === 'not_linked'}
     <p class="chardata__msg" id="{uid}-why">{linkOff || `Link… links it now and fetches its NEXON data; ${memberName} isn’t asked first.`}</p>

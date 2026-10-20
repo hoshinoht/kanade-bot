@@ -1,15 +1,15 @@
 //! `kanade portal …` and `kanade sessions …`: where the running bot's admin
 //! listener is, the `Host`/`Origin` it accepts and the break-glass token
-//! file to sign in with. Nothing else is read.
+//! (`admin_token` in the secrets directory) to sign in with. Nothing else is
+//! read.
 
-use std::{collections::BTreeMap, net::SocketAddr, path::PathBuf, str::FromStr};
+use std::{collections::BTreeMap, net::SocketAddr, str::FromStr};
 
 use super::{
     DEFAULT_BIND, Error, allow_private_bind, host, is_private, listener_bind, non_empty,
     refuse_plain,
 };
-
-pub const TOKEN_FILE_KEY: &str = "KANADE_ADMIN_TOKEN_FILE";
+use crate::runtime::secrets::{self, Redacted, SecretFile};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct AdminClientConfig {
@@ -22,7 +22,7 @@ pub struct AdminClientConfig {
     /// The listener's own origin: `https://` + the admin host, or `http://`
     /// + the loopback name.
     pub origin: String,
-    pub token_file: PathBuf,
+    pub token: SecretFile,
 }
 
 impl AdminClientConfig {
@@ -31,7 +31,7 @@ impl AdminClientConfig {
         url: Option<&str>,
     ) -> Result<Self, Error> {
         // Same rule as serve.
-        refuse_plain(values, "KANADE_ADMIN_TOKEN", TOKEN_FILE_KEY)?;
+        refuse_plain(values, "KANADE_ADMIN_TOKEN", secrets::ADMIN_TOKEN)?;
         let private = allow_private_bind(values)?;
         let target = match url {
             Some(url) => parse_url(url, private)?,
@@ -41,13 +41,7 @@ impl AdminClientConfig {
                 private,
             )?,
         };
-        let token_file = non_empty(values, TOKEN_FILE_KEY)
-            .map(PathBuf::from)
-            .ok_or_else(|| {
-                Error::Configuration(format!(
-                    "{TOKEN_FILE_KEY} is required: the break-glass token signs this command in"
-                ))
-            })?;
+        let token = SecretFile::named(values, secrets::ADMIN_TOKEN);
         let (authority, origin) = match host(values, "KANADE_ADMIN_HOST")? {
             Some(host) => {
                 let origin = format!("https://{host}");
@@ -63,8 +57,13 @@ impl AdminClientConfig {
             target,
             authority,
             origin,
-            token_file,
+            token,
         })
+    }
+
+    pub fn read_token(&self) -> Result<Redacted, Error> {
+        self.token
+            .read("this command signs in with the break-glass token")
     }
 }
 
@@ -96,7 +95,7 @@ mod tests {
         AdminClientConfig::from_mapping(&values, url).map_err(|error| error.to_string())
     }
 
-    const TOKEN: (&str, &str) = (TOKEN_FILE_KEY, "/run/secrets/kanade_admin_token");
+    const TOKEN: (&str, &str) = ("KANADE_SECRETS_DIR", "/run/secrets");
 
     #[test]
     fn defaults_to_the_admin_bind_with_a_loopback_origin() {
@@ -105,8 +104,8 @@ mod tests {
         assert_eq!(default.authority, "localhost:8080");
         assert_eq!(default.origin, "http://localhost:8080");
         assert_eq!(
-            default.token_file,
-            PathBuf::from("/run/secrets/kanade_admin_token")
+            default.token.path(),
+            std::path::Path::new("/run/secrets/admin_token")
         );
         let overridden = config(
             &[TOKEN, ("KANADE_ADMIN_BIND", "127.0.0.1:9000")],
@@ -138,9 +137,18 @@ mod tests {
     fn refuses_a_plain_token_a_missing_file_and_non_loopback_targets() {
         assert_eq!(
             config(&[TOKEN, ("KANADE_ADMIN_TOKEN", "hunter2")], None).unwrap_err(),
-            "KANADE_ADMIN_TOKEN is not read; use KANADE_ADMIN_TOKEN_FILE"
+            "KANADE_ADMIN_TOKEN is not read; put it in the secrets directory as `admin_token`"
         );
-        assert!(config(&[], None).unwrap_err().starts_with(TOKEN_FILE_KEY));
+        let empty = std::env::temp_dir().join(format!("kanade-none-{}", uuid::Uuid::new_v4()));
+        let missing = config(&[("KANADE_SECRETS_DIR", empty.to_str().unwrap())], None)
+            .unwrap()
+            .read_token()
+            .unwrap_err()
+            .to_string();
+        assert!(
+            missing.starts_with("secrets file `admin_token` is missing from"),
+            "{missing}"
+        );
         for url in [
             "http://10.0.0.1:8080",
             "https://127.0.0.1:8080",

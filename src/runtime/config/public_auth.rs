@@ -1,10 +1,11 @@
 //! Member sign-in settings for the public origin (`[public]`). The portal
 //! opens with the live admin switch `self_service.public_portal` (D7-B); there
-//! is no open key. Secrets are file paths only, as for admin.
+//! is no open key. Secrets are files in the secrets directory, as for admin.
 
 use std::{collections::BTreeMap, time::Duration};
 
 use super::{DiscordOAuthSettings, Error, HttpConfig, parse_bounded_u64, refuse_plain};
+use crate::runtime::secrets;
 
 /// The only callback path the public origin serves.
 const CALLBACK_PATH: &str = "/api/public/auth/discord/callback";
@@ -39,7 +40,7 @@ impl PublicAuthSettings {
         refuse_plain(
             values,
             "KANADE_PUBLIC_DISCORD_CLIENT_SECRET",
-            "KANADE_PUBLIC_DISCORD_CLIENT_SECRET_FILE",
+            secrets::PUBLIC_DISCORD_CLIENT_SECRET,
         )?;
         let idle = parse_bounded_u64(values, "KANADE_PUBLIC_SESSION_IDLE_MINUTES", 30, 5, 60)?;
         let absolute = parse_bounded_u64(values, "KANADE_PUBLIC_SESSION_ABSOLUTE_HOURS", 8, 1, 24)?;
@@ -68,24 +69,18 @@ fn discord(
     values: &BTreeMap<String, String>,
     http: &HttpConfig,
 ) -> Result<Option<DiscordOAuthSettings>, Error> {
-    let keys = [
+    DiscordOAuthSettings::from_id(
+        values,
         "KANADE_PUBLIC_DISCORD_CLIENT_ID",
-        "KANADE_PUBLIC_DISCORD_CLIENT_SECRET_FILE",
-        "KANADE_PUBLIC_DISCORD_REDIRECT_URI",
-    ];
-    let Some(settings) = DiscordOAuthSettings::from_keys(values, keys, "member sign-in")? else {
-        return Ok(None);
-    };
-    let public_host = http.public_host.as_deref().ok_or_else(|| {
-        Error::Configuration("KANADE_PUBLIC_HOST is required for member sign-in".into())
-    })?;
-    // Exact, and https only: the public origin is never a loopback dev host.
-    if settings.redirect_uri != format!("https://{public_host}{CALLBACK_PATH}") {
-        return Err(Error::Configuration(format!(
-            "KANADE_PUBLIC_DISCORD_REDIRECT_URI must be https://KANADE_PUBLIC_HOST{CALLBACK_PATH}"
-        )));
-    }
-    Ok(Some(settings))
+        secrets::PUBLIC_DISCORD_CLIENT_SECRET,
+        || {
+            let public_host = http.public_host.as_deref().ok_or_else(|| {
+                Error::Configuration("KANADE_PUBLIC_HOST is required for member sign-in".into())
+            })?;
+            // https only: the public origin is never a loopback dev host.
+            Ok(format!("https://{public_host}{CALLBACK_PATH}"))
+        },
+    )
 }
 
 #[cfg(test)]
@@ -93,27 +88,22 @@ mod tests {
     use super::super::RuntimeConfig;
 
     fn config(pairs: &[(&str, &str)]) -> Result<RuntimeConfig, String> {
-        let mut values = std::collections::BTreeMap::from([(
-            "KANADE_TIMEZONE".to_owned(),
-            "Asia/Kuala_Lumpur".to_owned(),
-        )]);
+        let mut values = std::collections::BTreeMap::from([
+            ("KANADE_TIMEZONE".to_owned(), "Asia/Kuala_Lumpur".to_owned()),
+            ("KANADE_SECRETS_DIR".to_owned(), "/run/secrets".to_owned()),
+            // Compose's fixed public listener; the host turns it on.
+            ("KANADE_PUBLIC_BIND".to_owned(), "127.0.0.1:8081".to_owned()),
+            ("KANADE_CLOUDFLARED_PEER".to_owned(), "127.0.0.1".to_owned()),
+        ]);
         for (key, value) in pairs {
             values.insert((*key).into(), (*value).into());
         }
         RuntimeConfig::from_mapping(&values).map_err(|error| error.to_string())
     }
 
-    const DISCORD: [(&str, &str); 4] = [
+    const DISCORD: [(&str, &str); 2] = [
         ("KANADE_PUBLIC_HOST", "kanade-pub.example"),
         ("KANADE_PUBLIC_DISCORD_CLIENT_ID", "1234567890"),
-        (
-            "KANADE_PUBLIC_DISCORD_CLIENT_SECRET_FILE",
-            "/run/secrets/public_discord_client_secret",
-        ),
-        (
-            "KANADE_PUBLIC_DISCORD_REDIRECT_URI",
-            "https://kanade-pub.example/api/public/auth/discord/callback",
-        ),
     ];
 
     #[test]
@@ -163,37 +153,32 @@ mod tests {
     }
 
     #[test]
-    fn discord_needs_all_parts_the_public_host_and_the_exact_callback() {
-        let auth = config(&DISCORD).unwrap().public_auth;
-        assert_eq!(auth.discord.unwrap().client_id, "1234567890");
-        assert!(config(&DISCORD[..3]).unwrap_err().contains("needs"));
+    fn the_client_id_turns_member_sign_in_on_with_the_computed_https_callback() {
+        let discord = config(&DISCORD).unwrap().public_auth.discord.unwrap();
+        assert_eq!(discord.client_id, "1234567890");
+        assert_eq!(
+            discord.redirect_uri,
+            "https://kanade-pub.example/api/public/auth/discord/callback"
+        );
+        assert_eq!(
+            discord.client_secret.path(),
+            std::path::Path::new("/run/secrets/public_discord_client_secret")
+        );
         assert!(
             config(&DISCORD[1..])
                 .unwrap_err()
                 .contains("KANADE_PUBLIC_HOST is required")
         );
-        for bad in [
-            "https://evil.example/api/public/auth/discord/callback",
-            "http://kanade-pub.example/api/public/auth/discord/callback",
-            "https://kanade-pub.example/api/admin/auth/discord/callback",
-            "https://kanade-pub.example/api/public/auth/discord/callback?x=1",
-            "https://kanade-pub.example/api/public/auth/discord/callback/",
-        ] {
-            let mut pairs = DISCORD.to_vec();
-            pairs[3].1 = bad;
-            let error = config(&pairs).unwrap_err();
-            assert!(error.contains("must be https://"), "{bad}");
-            assert!(!error.contains("evil"));
-        }
-        let mut local = DISCORD.to_vec();
-        local[0].1 = "localhost:4394";
-        local[3].1 = "http://localhost:4394/api/public/auth/discord/callback";
-        assert!(
-            config(&local).is_err(),
-            "no http exception on the public origin"
+        // No http exception on the public origin.
+        let local = config(&[("KANADE_PUBLIC_HOST", "localhost:4394"), DISCORD[1]]).unwrap();
+        assert_eq!(
+            local.public_auth.discord.unwrap().redirect_uri,
+            "https://localhost:4394/api/public/auth/discord/callback"
         );
-        let mut bad_id = DISCORD.to_vec();
-        bad_id[1].1 = "not-a-snowflake";
+        let bad_id = [
+            DISCORD[0],
+            ("KANADE_PUBLIC_DISCORD_CLIENT_ID", "not-a-snowflake"),
+        ];
         assert!(config(&bad_id).unwrap_err().contains("application id"));
     }
 
@@ -201,7 +186,7 @@ mod tests {
     fn a_plain_public_secret_is_refused() {
         assert_eq!(
             config(&[("KANADE_PUBLIC_DISCORD_CLIENT_SECRET", "hunter2")]).unwrap_err(),
-            "KANADE_PUBLIC_DISCORD_CLIENT_SECRET is not read; use KANADE_PUBLIC_DISCORD_CLIENT_SECRET_FILE"
+            "KANADE_PUBLIC_DISCORD_CLIENT_SECRET is not read; put it in the secrets directory as `public_discord_client_secret`"
         );
     }
 }

@@ -223,12 +223,11 @@ fn kanade(args: &[&str], env: &[(&str, &str)]) -> Run {
         .unwrap()
         .join(format!("kanade-operator-{}", uuid::Uuid::new_v4()));
     std::fs::create_dir(&root).unwrap();
-    let token = root.join("admin_token");
-    std::fs::write(&token, format!("{TOKEN}\n")).unwrap();
+    std::fs::write(root.join("admin_token"), format!("{TOKEN}\n")).unwrap();
     let output = Command::new(binary())
         .args(args)
         .env_clear()
-        .env("KANADE_ADMIN_TOKEN_FILE", &token)
+        .env("KANADE_SECRETS_DIR", &root)
         .envs(env.iter().copied())
         .output()
         .unwrap();
@@ -361,13 +360,15 @@ fn a_panicking_action_still_signs_out_once() {
         .join(format!("kanade-operator-{}", uuid::Uuid::new_v4()));
     std::fs::create_dir(&root).unwrap();
     let _dir = TokenDir(root.clone());
-    let token_file = root.join("admin_token");
-    std::fs::write(&token_file, format!("{TOKEN}\n")).unwrap();
+    std::fs::write(root.join("admin_token"), format!("{TOKEN}\n")).unwrap();
     let config = kanade::runtime::config::AdminClientConfig {
         target: format!("127.0.0.1:{}", stub.port).parse().unwrap(),
         authority: format!("localhost:{}", stub.port),
         origin: format!("http://localhost:{}", stub.port),
-        token_file,
+        token: kanade::runtime::secrets::SecretFile::new(
+            &root,
+            kanade::runtime::secrets::ADMIN_TOKEN,
+        ),
     };
     let outcome = tokio::runtime::Builder::new_current_thread()
         .enable_all()

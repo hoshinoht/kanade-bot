@@ -51,6 +51,8 @@ pub async fn check(
     let key = settings
         .read_key()?
         .map(|key| key.expose().as_bytes().to_vec());
+    let ca_file = settings.ca_file()?;
+    let (has_key, has_ca) = (key.is_some(), ca_file.is_some());
     // The store is owned by serve, so roles come from the env seeds alone:
     // what serve runs for any role without a saved row.
     let mut stored = StoredModels::default();
@@ -80,7 +82,7 @@ pub async fn check(
         base_url: Some(base_url.clone()),
         roles: ModelRoles::from(&stored),
         key,
-        ca_file: settings.ca_file.clone(),
+        ca_file,
         permits: u32::from(settings.permits),
         capabilities: std::mem::take(&mut settings.capabilities),
     };
@@ -94,16 +96,8 @@ pub async fn check(
     writeln!(
         out,
         "gateway: {base_url} (key: {}, roots: {})",
-        if settings.key_file.is_some() {
-            "set"
-        } else {
-            "none"
-        },
-        if settings.ca_file.is_some() {
-            "CA file"
-        } else {
-            "webpki"
-        }
+        if has_key { "set" } else { "none" },
+        if has_ca { "CA file" } else { "webpki" }
     )
     .map_err(io)?;
 

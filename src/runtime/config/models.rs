@@ -1,6 +1,7 @@
-//! Model gateway settings. The key is read from a file; the URL follows the
-//! provider's rule (https, or http only to loopback, `localhost` or
-//! `host.docker.internal`) so a bad value fails at startup, not first call.
+//! Model gateway settings. The key and an optional CA bundle are files in the
+//! secrets directory, used when present; the URL follows the provider's rule
+//! (https, or http only to loopback, `localhost` or `host.docker.internal`)
+//! so a bad value fails at startup, not first call.
 
 use std::{collections::BTreeMap, net::IpAddr, path::PathBuf};
 
@@ -10,10 +11,9 @@ use super::{Error, capabilities, groups, non_empty, parse_bounded_u64, refuse_pl
 use crate::{
     domain::settings::{ContextSettings, Reasoning},
     infrastructure::llm::{ModelCapabilities, setup::CapacityGroup},
-    runtime::secrets::Redacted,
+    runtime::secrets::{self, Redacted, SecretFile},
 };
 
-const KEY_FILE: &str = "KANADE_MODEL_KEY_FILE";
 const RETIRED_PRIVACY_KEYS: [&str; 2] = ["KANADE_ALLOW_EXTERNAL_UNMASKED", "KANADE_PSEUDONYMIZE"];
 const ALIASES: [&str; 3] = [
     "KANADE_EXTRACT_MODEL",
@@ -31,8 +31,11 @@ const CONTEXT: &str = super::context::KEY;
 pub struct ModelSettings {
     /// Unset disables every model feature.
     pub base_url: Option<String>,
-    pub key_file: Option<PathBuf>,
-    pub ca_file: Option<PathBuf>,
+    /// With a gateway: `model_api_key`, sent as the bearer key when present.
+    pub key: Option<SecretFile>,
+    /// With a gateway: `model_ca.pem`, replacing the compiled roots when
+    /// present.
+    pub ca: Option<SecretFile>,
     pub extract_model: Option<String>,
     pub chat_model: Option<String>,
     pub rewrite_model: Option<String>,
@@ -44,7 +47,8 @@ pub struct ModelSettings {
     pub permits: u16,
     /// Non-empty replaces the single gateway group of `permits`.
     pub groups: Vec<CapacityGroup>,
-    /// `[models.context]`, used only when no `v5.model_context` row is saved.
+    /// `KANADE_MODEL_CONTEXT`, used only when no `v5.model_context` row is
+    /// saved.
     pub context: Option<ContextSettings>,
     /// Seed windows clamped to the hard cap (`models.context.<path>`), logged
     /// when the seed is applied.
@@ -62,7 +66,7 @@ impl ModelSettings {
         {
             return Err(Error::Configuration(format!("{key} is retired; remove it")));
         }
-        refuse_plain(values, "KANADE_MODEL_KEY", KEY_FILE)?;
+        refuse_plain(values, "KANADE_MODEL_KEY", secrets::MODEL_API_KEY)?;
         let base_url = non_empty(values, "KANADE_MODEL_BASE_URL")
             .map(|url| {
                 valid_base_url(url).then(|| url.to_owned()).ok_or_else(|| {
@@ -82,9 +86,10 @@ impl ModelSettings {
             }
             None => (None, Vec::new()),
         };
+        let gateway = base_url.is_some();
         let settings = Self {
-            key_file: non_empty(values, KEY_FILE).map(PathBuf::from),
-            ca_file: non_empty(values, "KANADE_MODEL_CA_FILE").map(PathBuf::from),
+            key: gateway.then(|| SecretFile::named(values, secrets::MODEL_API_KEY)),
+            ca: gateway.then(|| SecretFile::named(values, secrets::MODEL_CA)),
             extract_model: extract_model?,
             chat_model: chat_model?,
             rewrite_model: rewrite_model?,
@@ -99,17 +104,12 @@ impl ModelSettings {
             base_url,
         };
         if settings.base_url.is_none() {
-            let dependent = [
-                KEY_FILE,
-                "KANADE_MODEL_CA_FILE",
-                groups::GROUPS,
-                capabilities::KEY,
-            ]
-            .into_iter()
-            .chain(ALIASES)
-            .chain(REASONING)
-            .chain([CONTEXT])
-            .find(|key| non_empty(values, key).is_some());
+            let dependent = [groups::GROUPS, capabilities::KEY]
+                .into_iter()
+                .chain(ALIASES)
+                .chain(REASONING)
+                .chain([CONTEXT])
+                .find(|key| non_empty(values, key).is_some());
             if let Some(key) = dependent {
                 return Err(Error::Configuration(format!(
                     "{key} requires KANADE_MODEL_BASE_URL"
@@ -119,11 +119,20 @@ impl ModelSettings {
         Ok(settings)
     }
 
+    /// The bearer key, when the file is present.
     pub fn read_key(&self) -> Result<Option<Redacted>, Error> {
-        self.key_file
-            .as_deref()
-            .map(|path| Redacted::read(path, KEY_FILE))
-            .transpose()
+        Ok(match &self.key {
+            Some(file) => file.read_optional()?,
+            None => None,
+        })
+    }
+
+    /// The CA bundle's path, when the file is present.
+    pub fn ca_file(&self) -> Result<Option<PathBuf>, Error> {
+        match &self.ca {
+            Some(file) if file.present()? => Ok(Some(file.path().to_owned())),
+            _ => Ok(None),
+        }
     }
 }
 

@@ -77,7 +77,7 @@ impl Fixture {
             web_dir: Some(self.root.join("web")),
             boss_dir: Some(self.root.join("boss")),
             identity_dir: None,
-            edge_secret_file: None,
+            edge_secret: None,
         }
     }
 

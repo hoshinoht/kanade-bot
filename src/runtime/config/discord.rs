@@ -1,15 +1,14 @@
 //! Bot token and the gateway switch.
 
-use std::{collections::BTreeMap, path::PathBuf};
+use std::collections::BTreeMap;
 
-use super::{Error, flag, non_empty, refuse_plain};
-use crate::runtime::secrets::Redacted;
-
-const TOKEN_FILE: &str = "KANADE_DISCORD_TOKEN_FILE";
+use super::{Error, flag, refuse_plain};
+use crate::runtime::secrets::{self, Redacted, SecretFile};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct DiscordSettings {
-    pub token_file: PathBuf,
+    /// `discord_token` in the secrets directory; required.
+    pub token: SecretFile,
     /// `KANADE_DISCORD_GATEWAY` (default `1`); `0` serves the admin API only,
     /// with no gateway, roster sync or delivery tick.
     pub gateway: bool,
@@ -18,22 +17,19 @@ pub struct DiscordSettings {
 impl DiscordSettings {
     pub fn from_mapping(values: &BTreeMap<String, String>) -> Result<Self, Error> {
         refuse_plain_token(values)?;
-        let gateway = flag(values, "KANADE_DISCORD_GATEWAY")?.unwrap_or(true);
-        let token_file = non_empty(values, TOKEN_FILE)
-            .ok_or_else(|| Error::Configuration(format!("{TOKEN_FILE} is required")))?;
         Ok(Self {
-            token_file: PathBuf::from(token_file),
-            gateway,
+            token: SecretFile::named(values, secrets::DISCORD_TOKEN),
+            gateway: flag(values, "KANADE_DISCORD_GATEWAY")?.unwrap_or(true),
         })
     }
 
     pub fn read_token(&self) -> Result<Redacted, Error> {
-        Redacted::read(&self.token_file, TOKEN_FILE)
+        self.token.read("the bot signs in to Discord with it")
     }
 }
 
 /// Refused in every command so a token never sits in the process environment.
 pub(super) fn refuse_plain_token(values: &BTreeMap<String, String>) -> Result<(), Error> {
-    refuse_plain(values, "KANADE_DISCORD_TOKEN", TOKEN_FILE)?;
-    refuse_plain(values, "DISCORD_TOKEN", TOKEN_FILE)
+    refuse_plain(values, "KANADE_DISCORD_TOKEN", secrets::DISCORD_TOKEN)?;
+    refuse_plain(values, "DISCORD_TOKEN", secrets::DISCORD_TOKEN)
 }

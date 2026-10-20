@@ -1,7 +1,8 @@
-//! `kanade.toml` (path in `KANADE_CONFIG`): non-secret settings flattened onto
-//! the `KANADE_*` names the typed configs already parse. A non-empty
-//! environment variable overrides its key. Unknown keys, wrong types and
-//! secret-looking keys stop startup naming the key, never the value.
+//! `kanade.toml` (path in `KANADE_CONFIG`): deployment settings flattened onto
+//! the `KANADE_*` names the typed configs parse. A non-empty environment
+//! variable still overrides its key (the interface of tests and harnesses);
+//! serve warns when one does. Unknown, removed and secret-looking keys and
+//! wrong types stop startup naming the key, never the value.
 
 mod keys;
 #[cfg(test)]
@@ -17,34 +18,50 @@ use super::{Error, non_empty};
 const CONFIG: &str = "KANADE_CONFIG";
 const MAX_BYTES: u64 = 1 << 20;
 
-/// The merged mapping, plus which variables came from the file.
+/// The merged mapping, plus the file's keys a variable overrode.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Resolved {
     pub values: BTreeMap<String, String>,
-    /// Env name → TOML key, only where the file's value is the one in use.
-    origins: BTreeMap<String, &'static str>,
+    /// `kanade.toml` keys whose value a non-empty variable replaced.
+    pub shadowed: Vec<&'static str>,
 }
 
-impl Resolved {
-    /// Points a configuration error about a file-supplied variable at its key.
-    pub fn annotate(&self, error: Error) -> Error {
-        let Error::Configuration(message) = error else {
-            return error;
-        };
-        let first = message.split([' ', ':']).next().unwrap_or_default();
-        match self.origins.get(first) {
-            Some(key) => Error::Configuration(format!("{message} (kanade.toml `{key}`)")),
-            None => Error::Configuration(message),
+/// Names the `kanade.toml` key, with the variable in brackets, wherever a
+/// configuration error mentions a variable that has one.
+pub fn annotate(error: Error) -> Error {
+    let Error::Configuration(message) = error else {
+        return error;
+    };
+    let mut out = String::with_capacity(message.len());
+    let mut rest = message.as_str();
+    while let Some(at) = rest.find("KANADE_") {
+        let word_start = rest[..at]
+            .chars()
+            .next_back()
+            .is_none_or(|before| !(before.is_ascii_alphanumeric() || before == '_'));
+        let end = rest[at..]
+            .find(|c: char| !(c.is_ascii_uppercase() || c.is_ascii_digit() || c == '_'))
+            .map_or(rest.len(), |length| at + length);
+        let name = &rest[at..end];
+        out.push_str(&rest[..at]);
+        match keys::key_of(name).filter(|_| word_start) {
+            Some(key) => out.push_str(&format!("kanade.toml `{key}` [{name}]")),
+            None => out.push_str(name),
         }
+        rest = &rest[end..];
     }
+    out.push_str(rest);
+    Error::Configuration(out)
 }
 
-/// Reads `KANADE_CONFIG` when set; otherwise the environment alone.
+/// Reads `KANADE_CONFIG` when set; otherwise the environment alone. Removed
+/// variables refuse either way.
 pub fn resolve(environment: BTreeMap<String, String>) -> Result<Resolved, Error> {
+    refuse_retired(&environment)?;
     let Some(path) = non_empty(&environment, CONFIG) else {
         return Ok(Resolved {
             values: environment,
-            origins: BTreeMap::new(),
+            shadowed: Vec::new(),
         });
     };
     let unreadable = || Error::Configuration(format!("{CONFIG} could not be read"));
@@ -58,6 +75,21 @@ pub fn resolve(environment: BTreeMap<String, String>) -> Result<Resolved, Error>
         )));
     }
     merge(&text, environment)
+}
+
+/// Blank variables (Compose passes unset ones as empty) do not count.
+fn refuse_retired(environment: &BTreeMap<String, String>) -> Result<(), Error> {
+    match keys::RETIRED
+        .iter()
+        .map(|(name, _)| *name)
+        .filter(|name| name.starts_with("KANADE_"))
+        .find(|name| non_empty(environment, name).is_some())
+    {
+        Some(name) => Err(Error::Configuration(
+            keys::retired(name).unwrap_or_default(),
+        )),
+        None => Ok(()),
+    }
 }
 
 fn merge(text: &str, environment: BTreeMap<String, String>) -> Result<Resolved, Error> {
@@ -76,12 +108,13 @@ fn merge(text: &str, environment: BTreeMap<String, String>) -> Result<Resolved, 
     flatten(&table, "", &mut file)?;
     let mut resolved = Resolved {
         values: environment,
-        origins: BTreeMap::new(),
+        shadowed: Vec::new(),
     };
     for (path, (env, value)) in file {
-        if non_empty(&resolved.values, env).is_none() {
+        if non_empty(&resolved.values, env).is_some() {
+            resolved.shadowed.push(path);
+        } else {
             resolved.values.insert(env.to_owned(), value);
-            resolved.origins.insert(env.to_owned(), path);
         }
     }
     Ok(resolved)
@@ -98,10 +131,8 @@ fn flatten(
         } else {
             format!("{prefix}.{name}")
         };
-        if keys::is_retired(&path) {
-            return Err(Error::Configuration(format!(
-                "kanade.toml key `{path}` is retired; remove it"
-            )));
+        if let Some(refusal) = keys::retired(&path) {
+            return Err(Error::Configuration(refusal));
         }
         if keys::looks_secret(name) {
             return Err(secret(&path));
@@ -124,7 +155,7 @@ fn flatten(
 
 fn secret(path: &str) -> Error {
     Error::Configuration(format!(
-        "kanade.toml `{path}` looks like a secret; put it in a file and name that file with a `*_file` key"
+        "kanade.toml `{path}` looks like a secret; put secrets in the secrets directory, never in this file"
     ))
 }
 
@@ -161,14 +192,7 @@ fn convert(value: &Value, kind: Kind, path: &str) -> Result<String, Error> {
                 .filter(|text| !text.contains(','))
                 .map(str::to_owned)
         }),
-        Kind::Ints => list("a list of non-negative integers", &integer),
         Kind::Groups => groups(value, path),
-        Kind::Context => {
-            serde_json::to_string(value).map_err(|_| wrong(path, "a context settings table"))
-        }
-        Kind::RunLengths => {
-            serde_json::to_string(value).map_err(|_| wrong(path, "a run lengths settings table"))
-        }
         Kind::Capabilities => value
             .as_table()
             .and_then(|_| serde_json::to_string(value).ok())

@@ -17,8 +17,15 @@ root's file.
 
 ## Quick start
 
-You need Docker with Compose, a Discord server you manage, and an
-OpenAI-compatible model gateway (Kanata or another server) with its key.
+You need Docker with Compose, a Discord server you manage and, for the
+chatbot and extraction, an OpenAI-compatible model gateway (Kanata or another
+server).
+
+Each kind of value has one home: paths inside the image are in the
+Dockerfile, network addresses in `compose.yaml` (and your override), secrets
+are files in the secrets directory, deployment settings in `kanade.toml`, and
+live settings (channels, switches, pings, run lengths, model roles, persona)
+are saved in the admin app's Config.
 
 ### 1. Discord application
 
@@ -50,17 +57,20 @@ $EDITOR kanade.toml
 ```
 
 Set the uncommented keys: `runtime.timezone`, `discord.guild_id`,
-`discord.bossing_role_id` and `models.base_url`. Keep the `*_file` paths as
-they are: Compose mounts the secrets there. Everything else is optional
-(key → variable table: `docs/v5/runtime-bootstrap.md` "Config file");
-`[settings]` only seeds values the admin Config page then owns. To use a
-model server other than Kanata, see `kanade.openai-compatible.example.toml`.
+`discord.bossing_role_id` and, for models, `models.base_url` (remove it to
+run without models). That is the whole requirement; everything else is an
+optional add-on (every key: `docs/v5/runtime-bootstrap.md` "Config file").
+To use a model server other than Kanata, see
+`kanade.openai-compatible.example.toml`.
 
 ### 3. Secrets and the backups directory
 
-One line per file. On a Linux host make the files readable, and the backups
-directory writable, by uid 65532 (the container user); Docker Desktop maps it
-to your user.
+Secrets are one-line files under fixed names in one directory, which
+Compose mounts read-only at `/run/secrets`; a file no feature uses is
+ignored, and a feature whose file is missing refuses to start, naming the
+file. On a Linux host make the directory searchable and the files readable,
+and the backups directory writable, by uid 65532 (the container user; for
+example with an ACL); Docker Desktop maps it to your user.
 
 ```sh
 SECRETS="$HOME/.config/kanade/v5/secrets"
@@ -69,11 +79,21 @@ chmod 700 "$SECRETS"
 (umask 077
  printf '%s\n' '<bot token>' > "$SECRETS/discord_token"
  openssl rand -base64 48 > "$SECRETS/admin_token"         # break-glass sign-in
- printf '%s\n' '<model gateway key>' > "$SECRETS/model_api_key")
+ printf '%s\n' '<model gateway key>' > "$SECRETS/model_api_key")  # if it has one
 ```
 
-Compose does not create the backups directory, and the bot does not start
-without it. Other locations go in `deploy/.env` (`KANADE_SECRETS_DIR`,
+| File | Needed for |
+|---|---|
+| `discord_token` | always |
+| `admin_token` | break-glass sign-in (at least 32 bytes), `kanade portal`/`sessions` |
+| `model_api_key`, `model_ca.pem` | the model gateway's key and a CA bundle, each only if it uses one |
+| `discord_client_secret` | [admin Discord sign-in](#admin-discord-sign-in) |
+| `public_discord_client_secret` | [member sign-in](#member-sign-in-public-discord-application) |
+| `edge_secret` | the [reverse proxy](#reverse-proxy)'s optional shared secret |
+| `nexon_api_key` | [character data](#character-data-and-nexon) |
+
+Compose creates neither directory, and the bot does not start without them.
+Other locations go in `deploy/.env` (`KANADE_SECRETS_HOST_DIR`,
 `KANADE_BACKUP_HOST_DIR`, `KANADE_CONFIG_FILE`; see `.env.example`).
 
 ### 4. Build and start
@@ -128,11 +148,23 @@ alone (no gateway, no tick); for the old shell-only mode set
 
 ## Add-ons
 
-Each add-on is off until you turn it on. Host-specific parts go in
-`compose.override.yaml` (copy `compose.override.example.yaml`, keep the
-parts you use, replace every placeholder), host paths in `.env`, and
-settings in `kanade.toml`. Check the merged result with `docker compose
-config`, then apply it with `docker compose up -d`.
+Each add-on is off until you turn it on, and needs a key or two in
+`kanade.toml`, sometimes one file in the secrets directory, and (for the
+reverse proxy) the addresses in `compose.override.yaml` (copy
+`compose.override.example.yaml`, keep the parts you use, replace every
+placeholder). Check the merged result with `docker compose config`, then
+apply it with `docker compose up -d --force-recreate bot` (a bind-mounted
+file may be replaced by an editor, so a restart is not enough).
+
+| Add-on | `kanade.toml` | Secrets file | Compose |
+|---|---|---|---|
+| Reverse proxy | `admin.host` | `edge_secret` (optional) | override: `KANADE_ADMIN_BIND`, `KANADE_TRUSTED_PROXY`, the network, `ports: !reset []` |
+| Admin Discord sign-in | `admin.discord_client_id` | `discord_client_secret` | — |
+| Public portal | `public.host` | — | the tunnel token file, profile `public` |
+| Member sign-in | `public.discord_client_id` | `public_discord_client_secret` | — |
+| Encrypted backups | — | `recipients` in the backups directory | — |
+| Character data | `[modules] roster`, `character_data` | `nexon_api_key` | — |
+| Scouter estimates | `character_data.scouter_url` | — | the scouter joins a network the bot is on |
 
 ### Reverse proxy
 
@@ -143,12 +175,12 @@ put it behind a reverse proxy that runs in its own Compose project:
    address on it.
 2. In `compose.override.yaml`, from the example: attach `bot` to that network
    (`networks: proxy:` with its `name:`) at a fixed `ipv4_address`, with an
-   alias for the proxy to use; set `KANADE_ADMIN_BIND` and
-   `KANADE_HEALTHCHECK_URL` to that address, `KANADE_ADMIN_HOST` to the name
-   the proxy serves (the listener then answers only that `Host`), and
-   `KANADE_TRUSTED_PROXY` to the proxy's address (the only peer whose
-   forwarding headers count). `ports: !reset []` drops the loopback port,
-   which no longer leads anywhere.
+   alias for the proxy to use; set `KANADE_ADMIN_BIND` to that address
+   (`kanade healthcheck` follows it) and `KANADE_TRUSTED_PROXY` to the
+   proxy's address (the only peer whose forwarding headers count).
+   `ports: !reset []` drops the loopback port, which no longer leads
+   anywhere. In `kanade.toml`, set `admin.host` to the name the proxy serves
+   (the listener then answers only that `Host`).
 3. Proxy `https://<admin-host>/` to `<alias>:8080` with the `Host` header
    passed through unchanged, and set `X-Forwarded-For` to the client address
    (kanade reads its last entry).
@@ -157,27 +189,25 @@ put it behind a reverse proxy that runs in its own Compose project:
 
 The bot stays on `kanade_admin` too. Client addresses are the proxy's unless
 it forwards them, so per-IP rate limits would pool. The optional shared edge
-secret (`KANADE_EDGE_SECRET_FILE`) and Tailscale identity sign-in are
-specified in `docs/v5/runtime-bootstrap.md` "Edge contract (admin origin)".
+secret (the secrets file `edge_secret`) and Tailscale identity sign-in
+(`admin.tailscale_logins`, which needs it) are specified in
+`docs/v5/runtime-bootstrap.md` "Edge contract (admin origin)".
 
 ### Admin Discord sign-in
 
 Admins (the admin role, Administrator or the server owner, once the roster
 is reconciled) sign in with Discord instead of the break-glass token.
 Discord needs an https redirect, so this needs the
-[reverse proxy](#reverse-proxy).
+[reverse proxy](#reverse-proxy) (and its `admin.host`).
 
 ```sh
 # 1. Developer Portal, the bot's application -> OAuth2 -> Redirects: exactly
 #    https://<admin-host>/api/admin/auth/discord/callback
 #    Reset Secret and save it (one line, 0600):
 #    $HOME/.config/kanade/v5/secrets/discord_client_secret
-# 2. compose.override.yaml, from the example: the kanade_discord_client_secret
-#    secret and KANADE_ADMIN_DISCORD_CLIENT_SECRET_FILE.
-# 3. kanade.toml (with admin.host, here or as KANADE_ADMIN_HOST):
+# 2. kanade.toml:
 #      [admin]
 #      discord_client_id = "<application id>"
-#      discord_redirect_uri = "https://<admin-host>/api/admin/auth/discord/callback"
 docker compose up -d --force-recreate bot
 ```
 
@@ -191,22 +221,22 @@ network. No port is published, no reverse proxy is involved, and the public
 listener mounts only public routes (`src/api/listeners.rs`): admin paths
 answer 404 there. The bot trusts `CF-*`/forwarding headers only from
 `172.25.0.3` (`KANADE_CLOUDFLARED_PEER`). The bot joins `kanade_public` on
-every `up`; the listener stays off until `[public] bind` is set.
+every `up`; the listener stays off until `kanade.toml` sets `public.host`.
 
 ```sh
 # 1. Cloudflare Zero Trust -> Networks -> Tunnels: create a cloudflared tunnel
 #    (remotely managed). Public hostname <public-host> -> service HTTP
 #    172.25.0.10:8081 (this also creates the DNS record). Keep cloudflared's
 #    default Host forwarding: the bot accepts only Host <public-host>.
-# 2. Token file, one line, 0600 (never an env var):
-#    $HOME/.config/kanade/v5/secrets/kanade-cloudflared
-#    (Compose secret kanade_cloudflared_token, read by cloudflared through
-#    --token-file). Without it the cloudflared container cannot be created;
-#    plain `up` and `config` do not need it.
-# 3. Open the listener in kanade.toml, then recreate the bot (a bind-mounted
-#    file may be replaced by an editor, so restart is not enough):
+# 2. Token file, one line, 0600 (never an env var), outside the bot's
+#    secrets directory: $HOME/.config/kanade/v5/cloudflared_token
+#    (or KANADE_CLOUDFLARED_TOKEN_HOST_FILE in .env; Compose secret
+#    kanade_cloudflared_token, read by cloudflared through --token-file).
+#    Without it the cloudflared container cannot be created; plain `up` and
+#    `config` do not need it.
+# 3. Turn the listener on in kanade.toml (Compose already fixes its address,
+#    172.25.0.10:8081), then recreate the bot:
 #      [public]
-#      bind = "172.25.0.10:8081"
 #      host = "<public-host>"
 docker compose up -d --force-recreate bot
 docker compose logs bot | grep server_started      # the admin address and 172.25.0.10:8081
@@ -226,7 +256,7 @@ running cloudflared reconnects to the same address (public requests fail with
 cloudflared is included.
 
 Take it down: `docker compose --profile public rm -sf cloudflared`, remove
-`[public] bind`/`host` from `kanade.toml` and recreate the bot, then delete
+`public.host` from `kanade.toml` and recreate the bot, then delete
 the public hostname (and its DNS record) or the whole tunnel in Cloudflare,
 and the token file. The empty `kanade_public` network can stay.
 
@@ -234,8 +264,9 @@ and the token file. The empty `kanade_public` network can stay.
 
 Members sign in on the public origin with their own Discord application
 (separate from admin sign-in), scope `identify` only. The portal is open only
-while the admin Config switch `self_service.public_portal` is on **and** these
-keys are set; otherwise `/api/public/status` answers `closed`.
+while the admin Config switch `self_service.public_portal` is on **and**
+`public.discord_client_id` is set; otherwise `/api/public/status` answers
+`closed`.
 
 ```sh
 # 1. Discord Developer Portal: a new application (no bot, no install link),
@@ -244,13 +275,9 @@ keys are set; otherwise `/api/public/status` answers `closed`.
 # 2. Secret file, one line, 0600 (never an env var:
 #    KANADE_PUBLIC_DISCORD_CLIENT_SECRET is refused):
 #    $HOME/.config/kanade/v5/secrets/public_discord_client_secret
-#    plus, from the example, the public_discord_client_secret secret in
-#    compose.override.yaml.
-# 3. kanade.toml:
+# 3. kanade.toml, beside public.host:
 #      [public]
 #      discord_client_id = "<application id>"
-#      discord_client_secret_file = "/run/secrets/public_discord_client_secret"
-#      discord_redirect_uri = "https://<public-host>/api/public/auth/discord/callback"
 #    Lifetimes default to 30 min idle / 8 h absolute / 15 min fresh writes
 #    (session_idle_minutes, session_absolute_hours, fresh_write_minutes).
 docker compose up -d --force-recreate bot
@@ -265,7 +292,8 @@ are kept but answer `503 closed` until they expire.
 ### Encrypted backups
 
 Backups are 0600 but otherwise readable by anything that can read the host
-directory. With a recipients file, `kanade backup` encrypts the snapshot with
+directory. With a `recipients` file in the backups directory, `kanade backup`
+encrypts the snapshot with
 [age](https://age-encryption.org) (X25519) and writes `<name>.age`; the
 plaintext copy exists only in a hidden 0700 staging directory beside it and is
 deleted after encryption (or with the directory when anything fails). The
@@ -281,22 +309,23 @@ release); on the host, keep the identity in a temporary directory and move it
 off straight away:
 
 ```sh
-SECRETS="${KANADE_SECRETS_DIR:-$HOME/.config/kanade/v5/secrets}"
+BACKUPS="${KANADE_BACKUP_HOST_DIR:-$HOME/.config/kanade/v5/backups}"
 KEYS=$(mktemp -d)                                  # 0700, not the backups directory
 # Writes the identity 0600 (never overwrites) and prints only the public key.
 (umask 077; docker run --rm --network none --user "$(id -u):$(id -g)" \
   -v "$KEYS:/keys" kanade-v5:local \
-  backup keygen --out /keys/kanade-backup.key > "$SECRETS/backup_recipients")
-cat "$SECRETS/backup_recipients"                   # age1…
+  backup keygen --out /keys/kanade-backup.key > "$BACKUPS/recipients")
+cat "$BACKUPS/recipients"                          # age1…
 # Store $KEYS/kanade-backup.key (three lines) in the password manager or on
 # another machine, check it is there, then:
 rm -rf "$KEYS"
-# Turn the feature on for every compose command (.env is git-ignored):
-echo "KANADE_BACKUP_RECIPIENTS_HOST_FILE=$SECRETS/backup_recipients" >> .env
 docker compose up -d --force-recreate bot          # validates the file
 ```
 
-`age-keygen -o <identity>` then `age-keygen -y <identity> > backup_recipients`
+The file is public keys only, so it sits beside the backups it encrypts:
+the `backup` service needs no secrets, and the bot reads it read-only.
+
+`age-keygen -o <identity>` then `age-keygen -y <identity> > recipients`
 works as well. More than one public key (a second, offline identity) may go in
 the recipients file; any one identity decrypts. Keep the identity out of the
 backups directory, the secrets directory, `deploy/`, every Compose service and
@@ -307,20 +336,20 @@ could not; the bot and the `backup` service still run as uid 65532 and must
 be able to read the recipients file (Docker Desktop maps it to your user).
 
 Deploy with encryption on (steps 1–3 and 6 of
-[Deploy an update](#deploy-an-update) unchanged); `.env` supplies the
-recipients path to Compose:
+[Deploy an update](#deploy-an-update) unchanged); the `backup` service finds
+the recipients in the backups directory it mounts:
 
 ```sh
 set -o pipefail
 STAMP=$(date -u +%Y%m%dT%H%M%SZ)
 BACKUPS="${KANADE_BACKUP_HOST_DIR:-$HOME/.config/kanade/v5/backups}"
-RECIPIENTS="$HOME/.config/kanade/v5/secrets/backup_recipients"   # as in .env
+RECIPIENTS="$BACKUPS/recipients"
 # 4. Whole-volume tarball, encrypted on its way to disk (the image's
 #    entrypoint is kanade, so the arguments start at `backup`).
 (umask 077; docker run --rm -v kanade_v5_data:/data:ro alpine tar -C /data -cz . \
   | docker run --rm -i --network none \
-      -v "$RECIPIENTS:/run/secrets/backup_recipients:ro" \
-      kanade-v5:local backup encrypt --recipients /run/secrets/backup_recipients \
+      -v "$RECIPIENTS:/keys/recipients:ro" \
+      kanade-v5:local backup encrypt --recipients /keys/recipients \
   > "$BACKUPS/kanade_v5_data-$STAMP-pre-$SHA.tar.gz.age") \
   || rm -f "$BACKUPS/kanade_v5_data-$STAMP-pre-$SHA.tar.gz.age"
 # 5. SQLite snapshot: the same command; it prints `backup kanade-…sqlite.age: …`.
@@ -329,23 +358,23 @@ KANADE_BACKUP_IMAGE=kanade-v5:rollback-<old-sha> docker compose \
 ls -l "$BACKUPS" | tail -3                          # .tar.gz.age, .sqlite.age, .sqlite.age.manifest.json
 ```
 
-An image older than encrypted backups ignores the recipients setting, so the
-first time step 5 with the rollback image prints a plain `.sqlite` name.
-Encrypt that pair with the new image, then delete the plaintext:
+An image older than encrypted backups ignores the recipients, so the first
+time step 5 with the rollback image prints a plain `.sqlite` name. Encrypt
+that pair with the new image, then delete the plaintext:
 
 ```sh
 NAME=kanade-$STAMP-pre-$SHA.sqlite
 (umask 077; docker run --rm -i --network none \
-  -v "$RECIPIENTS:/run/secrets/backup_recipients:ro" \
-  kanade-v5:local backup encrypt --recipients /run/secrets/backup_recipients \
+  -v "$RECIPIENTS:/keys/recipients:ro" \
+  kanade-v5:local backup encrypt --recipients /keys/recipients \
   < "$BACKUPS/$NAME" > "$BACKUPS/$NAME.age") &&
   mv "$BACKUPS/$NAME.manifest.json" "$BACKUPS/$NAME.age.manifest.json" &&
   rm "$BACKUPS/$NAME"
 ```
 
 Restoring an encrypted snapshot is under [Restore](#restore). Turn
-encryption off by removing the line from `.env` (and
-`backup.recipients_file`, if set, from `kanade.toml`) and recreating the bot.
+encryption off by moving `recipients` out of the backups directory and
+recreating the bot.
 
 ### Character data and NEXON
 
@@ -358,12 +387,10 @@ own volume on purpose: the whole-volume tarball of `kanade_v5_data` and
 `kanade backup` never hold NEXON data. Losing it loses links (members link
 again). Never tar, copy or back it up.
 
-The NEXON Open API key (one line, 0600) is optional: put its host path in
-`.env` as `KANADE_NEXON_API_KEY_HOST_FILE` (for example
-`$HOME/.config/kanade/v5/secrets/nexon_api_key`); Compose mounts it as the
-secret `nexon_api_key`. Unset: `/dev/null` stands in and the module runs with
-links refused (health `no_key`). Set but unreadable: the bot refuses to
-start. The key is personal to the registering NEXON ID; never share it. If it
+The NEXON Open API key (one line, 0600) is optional: put it in the secrets
+directory as `nexon_api_key`. Absent: the module runs with links refused
+(health `no_key`). Present but unreadable or bad: the bot refuses to start.
+The key is personal to the registering NEXON ID; never share it. If it
 leaks, rotate it in the Open API portal and tell help_openapi@nexon.co.kr
 within 24 hours.
 
@@ -397,8 +424,9 @@ are off (health `off`). No secret.
 #          external: true
 #    Its port stays published on 127.0.0.1 only; never proxy it. Then
 #    `docker compose up -d --build --wait` there.
-# 2. Set KANADE_SCOUTER_URL=http://scouter:8091 in deploy/.env (with
-#    [modules] character_data = true) and recreate the bot.
+# 2. kanade.toml (with [modules] character_data = true), then recreate the bot:
+#      [character_data]
+#      scouter_url = "http://scouter:8091"
 docker compose up -d --force-recreate bot
 # 3. Check: Config -> Character data shows Scouter "ok" (the bot probes
 #    /healthz at most once a minute). "unreachable": the network or alias is
@@ -420,7 +448,7 @@ old: background lookups wait behind every admin or member lookup, at least
 while the sidecar is unreachable or asks for a verification. Each pass logs
 `estimate_refresh_pass`.
 
-Kanade does not need the scouter: without `KANADE_SCOUTER_URL` every
+Kanade does not need the scouter: without `character_data.scouter_url` every
 estimate feature is off and the rest runs unchanged.
 
 ## Operations
@@ -518,6 +546,26 @@ or take the snapshot after the new bot has started (stop it again, run step
 5 without `KANADE_BACKUP_IMAGE`, start it). Before the first real deploy, a
 dry run of step 5 against the real bind mount (`--name dry-run.sqlite`, then
 delete the pair) confirms the container can write there.
+
+Upgrading to 1.0.0-beta.12 (one time): the image now sets every path, the
+secrets are files in one directory and the `backup` service passes no
+environment. The rollback image still needs its old variables, so step 5
+runs it directly, with the old paths and (with encryption on) the old
+recipients path, instead of through the `backup` service:
+
+```sh
+docker run --rm --network none --read-only --tmpfs /tmp \
+  -v kanade_v5_data:/data -v "$BACKUPS:/backups" \
+  -v "$BACKUPS/recipients:/run/secrets/backup_recipients:ro" \
+  -e KANADE_DB_PATH=/data/db/kanade.sqlite -e KANADE_OWNER_LOCK_DIR=/data/run \
+  -e KANADE_BACKUP_DIR=/backups \
+  -e KANADE_BACKUP_RECIPIENTS_FILE=/run/secrets/backup_recipients \
+  kanade-v5:rollback-<old-sha> backup --name kanade-$STAMP-pre-$SHA.sqlite
+```
+
+Drop the recipients mount and variable without encryption. Before `up`,
+move the private files to their new homes (the CHANGELOG lists every removed
+key; startup names any left behind and where it goes now).
 
 ### Restore
 
@@ -693,7 +741,7 @@ rename, never through a symlink), then recreate the bot so the bind-mounted
 secret is read again. Sessions signed in with the old token end.
 
 ```sh
-SECRETS="${KANADE_SECRETS_DIR:-$HOME/.config/kanade/v5/secrets}"
+SECRETS="${KANADE_SECRETS_HOST_DIR:-$HOME/.config/kanade/v5/secrets}"
 docker run --rm --network none --user "$(id -u):$(id -g)" -v "$SECRETS:/secrets" \
   kanade-v5:local token rotate --out /secrets/admin_token --force
 docker compose up -d --force-recreate bot
@@ -747,19 +795,20 @@ docker image inspect kanade-v5:local \
 
 | Input | Path | Notes |
 |---|---|---|
-| Settings | `../kanade.toml` (or `KANADE_CONFIG_FILE` in `.env`) | Private, git-ignored copy of the tracked `kanade.example.toml`, mounted read-only at `/config/kanade.toml` (`KANADE_CONFIG`); a missing file fails the start. Non-secret settings only. `compose.yaml`'s `environment:` fixes the listener addresses, cloudflared peer, healthcheck URL and container paths (store, files, secret files), so those keys in the file are overridden; `[public] bind`/`host` stay in the file (the public listener's opt-in). |
+| Settings | `../kanade.toml` (or `KANADE_CONFIG_FILE` in `.env`) | Private, git-ignored copy of the tracked `kanade.example.toml`, mounted read-only at `/config/kanade.toml` (`KANADE_CONFIG`); a missing file fails the start. Deployment settings only: the image's `ENV` sets every path, `compose.yaml`'s `environment:` the network addresses, and secrets are files (below). A removed key refuses startup naming its new home. |
 | Add-ons | `compose.override.yaml` | Optional, git-ignored; template `compose.override.example.yaml`. Compose merges it into every command run from `deploy/` without `-f`. |
 | Compose variables | `.env` | Optional, git-ignored; template `.env.example`. Host paths and image labels only. |
-| Secrets | `${KANADE_SECRETS_DIR:-$HOME/.config/kanade/v5/secrets}/` | One line per file: `discord_token`, `admin_token` (≥ 32 bytes, e.g. `openssl rand -base64 48`) and `model_api_key` (the bearer key for the model gateway). Add-ons: `discord_client_secret` (admin Discord sign-in), `public_discord_client_secret` (member sign-in), `kanade-cloudflared` (the tunnel token, profile `public` only). Docker Desktop lets uid 65532 read `0600` files; on a Linux host make them readable by uid 65532. |
+| Secrets | `${KANADE_SECRETS_HOST_DIR:-$HOME/.config/kanade/v5/secrets}/` | Must exist; bind mounted read-only at `/run/secrets` (`KANADE_SECRETS_DIR`). One line per file, fixed names: `discord_token`, `admin_token` (≥ 32 bytes, e.g. `openssl rand -base64 48`), `model_api_key`, `model_ca.pem`; add-ons `discord_client_secret`, `public_discord_client_secret`, `edge_secret`, `nexon_api_key`. A file no feature uses is ignored; a feature whose file is missing refuses to start. Docker Desktop lets uid 65532 read `0600` files; on a Linux host make the directory searchable and the files readable by uid 65532 (e.g. `setfacl -m u:65532:rx`). |
+| Tunnel token | `${KANADE_CLOUDFLARED_TOKEN_HOST_FILE:-$HOME/.config/kanade/v5/cloudflared_token}` | Profile `public` only: the Compose secret `kanade_cloudflared_token`, read by cloudflared. |
 | Personas | `../config/personas/` | Mounted read-only at `/config/personas`; the tracked Kanade bundle is the fallback (`config/personas/README.md`). |
 | Catalog | `boss/bosses.yaml` | Tracked and built into the image at `/app/boss/bosses.yaml` with `boss/knowledge`, so a catalog change needs a rebuild. |
 | Boss art | `../boss/portraits/`, `../boss/artwork/` | Private, mounted read-only over `/app/boss/*`. |
 | Store | Docker volume `kanade_v5_data` | Created by Compose, mounted at `/data`. Not a bind mount (SQLite on macOS file sharing is unsafe). The database is `/data/db/kanade.sqlite` with its owner lock dir `/data/run`; serve creates both directories `0700` on first start. The bot's cached avatar and banner live in `/data/identity` (`KANADE_IDENTITY_DIR`), created `0700` by the gateway side and refreshed from Discord's CDN after each `READY`; deleting it only brings back the monogram and wash until the next refresh. |
 | Backups | `${KANADE_BACKUP_HOST_DIR:-$HOME/.config/kanade/v5/backups}` | Must exist (Compose does not create it, and the bot then fails to start). Bind mounted **read-only** into `bot` at `/backups` (`KANADE_BACKUP_DIR`, listed by History → Checkpoints) and read-write only into the `backup` tool service. Docker Desktop's file sharing writes as the host user, so a `0700` directory you own works for uid 65532; on a Linux host it must be writable by uid 65532 (e.g. an ACL `setfacl -m u:65532:rwx`). The volume tarballs live here too; the listing ignores them. |
-| Backup recipients | `KANADE_BACKUP_RECIPIENTS_HOST_FILE` in `.env` | Optional: [Encrypted backups](#encrypted-backups). age **public** keys only, mounted as the Compose secret `backup_recipients` into `bot` (checked at startup: a bad or empty file refuses it) and `backup`. Unset: `/dev/null` stands in and backups are plaintext. |
-| Character data | Docker volume `kanade_v5_chardata`; `KANADE_NEXON_API_KEY_HOST_FILE` in `.env` | Optional: [Character data and NEXON](#character-data-and-nexon). |
-| Scouter | `KANADE_SCOUTER_URL` in `.env` | Optional: [Scouter estimates](#scouter-estimates). |
-| Networks | `kanade_admin` (`172.23.0.0/24`), `kanade_public` (internal, `172.25.0.0/24`), `kanade_tunnel_egress` (`172.24.0.0/24`) | Created by Compose with fixed subnets so the listeners bind fixed addresses: the bot at `172.23.0.10` (egress and the admin listener) and `172.25.0.10` (the public listener, unused until `[public] bind` is set); cloudflared (`172.25.0.3`, profile `public`) alone uses `kanade_tunnel_egress`. The subnets are not reserved: Docker can already have given an overlapping range to another network, and then Compose cannot create this one. If one overlaps a network on your host (`docker network inspect`), change it and its addresses in `compose.yaml`. |
+| Backup recipients | `recipients` in the backups directory | Optional: [Encrypted backups](#encrypted-backups). age **public** keys only, read by `bot` (checked at startup: a bad or empty file refuses it) and `backup`. Absent: backups are plaintext. |
+| Character data | Docker volume `kanade_v5_chardata`; the secrets file `nexon_api_key` | Optional: [Character data and NEXON](#character-data-and-nexon). |
+| Scouter | `character_data.scouter_url` in `kanade.toml` | Optional: [Scouter estimates](#scouter-estimates). |
+| Networks | `kanade_admin` (`172.23.0.0/24`), `kanade_public` (internal, `172.25.0.0/24`), `kanade_tunnel_egress` (`172.24.0.0/24`) | Created by Compose with fixed subnets so the listeners bind fixed addresses: the bot at `172.23.0.10` (egress and the admin listener) and `172.25.0.10` (the public listener, unused until `public.host` is set); cloudflared (`172.25.0.3`, profile `public`) alone uses `kanade_tunnel_egress`. The subnets are not reserved: Docker can already have given an overlapping range to another network, and then Compose cannot create this one. If one overlaps a network on your host (`docker network inspect`), change it and its addresses in `compose.yaml`. |
 
 ### Hardening
 

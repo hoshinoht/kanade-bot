@@ -7,21 +7,21 @@
 
   let { env, toaster }: { env: ConfigView['env']; toaster: Toaster } = $props();
 
-  // The raw env form (ids, `thu`, the URL), not the human value shown.
+  // The raw kanade.toml form (ids, `thu`, the URL), not the human value shown.
   async function copy(key: string, value: string) {
     if (await copyText(value)) toaster.show({ message: `Copied ${key}.`, tone: 'ok' });
     else toaster.show({ message: `Couldn't copy here; ${key} is ${value}`, tone: 'error' });
   }
 </script>
 
-<SettingsPanel title="Set in the environment">
-  {#snippet lead()}Read-only here: each needs an edit to the deployment's environment and a restart.{/snippet}
+<SettingsPanel title="Set in kanade.toml">
+  {#snippet lead()}Read-only here: each needs an edit to the deployment's kanade.toml and a restart.{/snippet}
   <div class="env">
     <table class="settings__table" data-fid="cfg-table">
-      <caption class="vh">Settings set in the environment</caption>
+      <caption class="vh">Settings set in kanade.toml</caption>
       <thead
         ><tr
-          ><th scope="col">Setting</th><th scope="col">Value</th><th scope="col">Why it is env-only</th><th scope="col" class="env__act"><span class="vh">Copy</span></th></tr
+          ><th scope="col">Setting</th><th scope="col">Value</th><th scope="col">Why it is deployment-only</th><th scope="col" class="env__act"><span class="vh">Copy</span></th></tr
         ></thead
       >
       <tbody>

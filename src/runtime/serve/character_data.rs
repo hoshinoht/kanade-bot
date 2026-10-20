@@ -43,12 +43,9 @@ use crate::{
         store::{SqliteCharData, SqliteStore, SqliteStoreConfig, SqliteStoreError},
     },
     runtime::{
-        config::{
-            CHARACTER_DATA_DB_PATH_KEY, NEXON_API_KEY_FILE_KEY, SCOUTER_URL_KEY, ServeConfig,
-        },
+        config::{CHARACTER_DATA_DB_PATH_KEY, SCOUTER_URL_KEY, ServeConfig},
         error::Error,
         logging,
-        secrets::Redacted,
     },
 };
 
@@ -112,11 +109,10 @@ pub(super) async fn start_with(
     let Some(settings) = &config.character_data else {
         return Ok(None);
     };
-    let key = settings
-        .nexon_key_file
-        .as_deref()
-        .map(|path| Redacted::read(path, NEXON_API_KEY_FILE_KEY))
-        .transpose()?;
+    let key = match &settings.nexon_key {
+        Some(file) => file.read_optional()?,
+        None => None,
+    };
     let nexon = match key {
         Some(key) => Some(nexon(ApiKey::new(key.expose())).ok_or_else(|| {
             Error::Startup("the Nexon client could not be built (no TLS provider)".into())

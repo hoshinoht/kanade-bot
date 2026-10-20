@@ -1662,7 +1662,7 @@ const PAIRS: Pair[] = [
       ['cfg-reread', 'B_CfgReread', 'rescan', 'Re-read the party channels'],
       ['cfg-access', 'B_CfgAccess', 'access', 'Channel access'],
       ['cfg-theme', 'B_CfgTheme', 'theme', 'Theme'],
-      ['cfg-env', 'B_CfgEnv', 'env', 'Set in the environment'],
+      ['cfg-env', 'B_CfgEnv', 'env', 'Set in kanade.toml'],
     ] as const
   ).map(([name, board, section, heading]) => ({
     name,
