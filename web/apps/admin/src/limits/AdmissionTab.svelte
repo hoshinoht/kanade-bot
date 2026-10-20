@@ -1,5 +1,5 @@
 <!--
-  Admission (B_LimitsAdmission): what the Kanata gateway refused in its
+  Admission (B_LimitsAdmission): what the model gateway refused in its
   window, grouped by scope — backend groups, then the gateway key — each row
   with its kind, scope chip, where, count and last time. Phones
   (B_PhoneLimitsAdmission) read each refusal as a two-line row.

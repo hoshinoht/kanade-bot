@@ -229,8 +229,8 @@ async fn every_external_route_reports_raw_data_and_a_zdr_transmission_warning() 
         "IDs",
         "messages",
         "complete URLs",
-        "Kanata ZDR",
-        "does not prevent transmission",
+        "retention terms",
+        "do not prevent transmission",
     ] {
         assert!(warning.contains(detail), "missing {detail}: {warning}");
     }

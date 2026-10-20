@@ -12,7 +12,7 @@ const EDGE_SECRET: &[u8] = b"edge-secret-shared-with-the-caddy-edge!!";
 const METHODS: [&str; 7] = ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"];
 
 /// Every admin path the PWA calls (docs/notes/admin-api.md) plus test/mock hooks.
-const ADMIN_PATHS: [&str; 56] = [
+const ADMIN_PATHS: [&str; 57] = [
     "/api/admin/week?week=next",
     "/api/admin/summary",
     "/api/admin/members",
@@ -60,6 +60,7 @@ const ADMIN_PATHS: [&str; 56] = [
     "/api/admin/members/1/avatar",
     "/api/admin/config",
     "/api/admin/config/profiles/reload",
+    "/api/admin/setup",
     "/api/admin/digest",
     "/api/admin/headers/rewrite",
     "/api/admin/access/recheck",

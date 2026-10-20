@@ -194,7 +194,7 @@
 <form class="ctx__form" id={form} onsubmit={submit} aria-label="Context windows">
   <fieldset class="settings__card">
     <legend class="settings__cardtitle">Defaults</legend>
-    <p class="note">Used when Kanata publishes no window for a model and it has no override.</p>
+    <p class="note">Used when a model has no published or declared window and no override.</p>
     <TokenSlider label="Cloud default" bind:value={draft.cloud} max={MAX_CONTEXT_TOKENS} disabled={!models.reachable} />
     <TokenSlider label="Local default" bind:value={draft.local} max={MAX_CONTEXT_TOKENS} local disabled={!models.reachable} />
   </fieldset>
@@ -217,7 +217,7 @@
 
   <fieldset class="settings__card">
     <legend class="settings__cardtitle">Per-model overrides</legend>
-    <p class="note">Replaces the published or default window for one exact alias; it cannot exceed what Kanata publishes.</p>
+    <p class="note">Replaces the published, declared or default window for one exact alias; it cannot exceed the published or declared window.</p>
     {#if draft.overrides.length}
       <ul class="ctx__overrides" bind:this={overrideList}>
         {#each draft.overrides as row, index (row.alias)}
@@ -227,13 +227,13 @@
               <strong class="mono">{row.alias}</strong>
               <button type="button" class="btn btn--ghost" aria-label="Remove the {row.alias} override" onclick={() => removeOverride(index)}>Remove</button>
             </div>
-            <ul class="settings__caps" aria-label="What Kanata publishes for {row.alias}">
+            <ul class="settings__caps" aria-label="What the model gateway publishes for {row.alias}">
               {#if model}
                 <li class="chip chip--mono">{model.context_tokens ? `published max ${tokens(model.context_tokens)}` : 'no published window'}</li>
                 <li class="chip chip--mono">{model.max_output_tokens ? `max output ${tokens(model.max_output_tokens)}` : 'no published max output'}</li>
                 <li class="chip">{isLocal(model) ? 'local' : 'cloud'}</li>
               {:else}
-                <li class="chip">not in Kanata's list</li>
+                <li class="chip">not listed or declared</li>
               {/if}
             </ul>
             <TokenSlider label="{row.alias} window" bind:value={row.window} max={overrideMax(model)} local={isLocal(model)} disabled={!models.reachable} />

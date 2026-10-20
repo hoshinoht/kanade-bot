@@ -24,6 +24,7 @@ pub mod public;
 pub mod readiness;
 pub mod reminders;
 pub mod rescan;
+pub mod setup;
 pub mod sign_ins;
 pub mod week;
 

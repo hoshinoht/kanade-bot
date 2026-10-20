@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kanade.invalid/api-schemas/setup.json",
+  "title": "Admin Setup checklist (GET /api/admin/setup)",
+  "$defs": {
+    "SetupItemId": {
+      "description": "Every item, in this order: required items first (discord_gateway … extraction_model), then optional ones.",
+      "enum": [
+        "discord_gateway", "discord_intents", "bot_access", "digest_channel", "watched_channels", "model_gateway", "extraction_model",
+        "chat", "persona", "admin_sign_in", "public_portal", "roster", "character_data", "guides", "scouter", "backups"
+      ]
+    },
+    "SetupState": {
+      "description": "`ok`; `missing` (not set up, or a required fact is unknown); `warn` (set up, but see `reason`); `off` (an optional feature this deployment leaves off).",
+      "enum": ["ok", "missing", "warn", "off"]
+    },
+    "SetupSource": {
+      "description": "Where the value comes from: `environment` (env or kanade.toml; a change needs a restart), `file`, `saved` (admin Config), `derived` (worked out live).",
+      "enum": ["environment", "file", "saved", "derived"]
+    },
+    "SetupReason": {
+      "description": "Why an item is not ok, or a note on an ok item. gateway_off: KANADE_DISCORD_GATEWAY=0 or offline; connecting: connecting or reconnecting; gateway_closed: Discord ended the session for good (bad token or disallowed intent, until a restart); not_connected: the guild is not loaded, so permissions are unknown; unavailable: a fact could not be read within 5 s (Discord's application, module health); unreachable: the model gateway or scouter did not answer; no_listing: model_gateway is ok but serves no model list, so the operator's declared models are used; not_running: a model is saved for the role but not running; env_missing: chat is on but missing_env lists what it needs; member_sign_in_missing: a public listener without the member Discord sign-in; nexon_no_key, nexon_key_refused, nexon_backoff: character data's NEXON state; verification_required: the scouter's.",
+      "enum": [
+        "gateway_off", "connecting", "gateway_closed", "not_connected", "unavailable", "unreachable", "no_listing", "not_running",
+        "env_missing", "member_sign_in_missing", "nexon_no_key", "nexon_key_refused", "nexon_backoff", "verification_required"
+      ]
+    },
+    "PrivilegedIntent": { "enum": ["server_members", "message_content"] },
+    "SetupItem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "required", "state"],
+      "properties": {
+        "id": { "$ref": "#/$defs/SetupItemId" },
+        "required": { "type": "boolean" },
+        "state": { "$ref": "#/$defs/SetupState" },
+        "source": { "$ref": "#/$defs/SetupSource" },
+        "reason": { "$ref": "#/$defs/SetupReason" },
+        "channel_id": { "type": "string", "minLength": 1, "description": "digest_channel: the channel set." },
+        "missing_intents": { "type": "array", "items": { "$ref": "#/$defs/PrivilegedIntent" }, "description": "discord_intents: the privileged intents still off in the Developer Portal (Application Flags bits 14/15 and 18/19); empty when both are on. Absent when the application could not be read." },
+        "missing_env": { "type": "array", "items": { "type": "string" }, "description": "chat: env keys the chatbot still needs (as config.json chatbot.missing_env)." },
+        "invite_url": { "type": "string", "description": "bot_access: https://discord.com/oauth2/authorize?client_id=<application id>&scope=bot+applications.commands&permissions=93248 (the access report's six permissions); absent when the application could not be read." },
+        "channels_lacking": { "type": "integer", "minimum": 0, "description": "bot_access: watched and digest channels missing any of the six permissions; absent while the guild is not loaded." },
+        "count": { "type": "integer", "minimum": 0, "description": "watched_channels: watched channels plus watched categories." },
+        "open": { "type": "boolean", "description": "public_portal: the live self_service.public_portal switch (only with a public listener)." },
+        "latest_backup_at": { "type": "string", "description": "backups: RFC 3339 UTC of the newest listed backup; absent when none." },
+        "recipients": { "type": "boolean", "description": "backups: KANADE_BACKUP_RECIPIENTS_FILE is set (snapshots are age-encrypted)." }
+      }
+    },
+    "SetupView": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["complete", "items"],
+      "properties": {
+        "complete": { "type": "boolean", "description": "Every required item is ok." },
+        "items": { "type": "array", "items": { "$ref": "#/$defs/SetupItem" }, "minItems": 16, "maxItems": 16 }
+      }
+    }
+  }
+}

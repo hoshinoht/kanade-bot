@@ -14,7 +14,7 @@ use super::{
     dto::{
         self, account, bosses, character_data, characters, config, drafts, estimates, events,
         fixed, guides, history, inbox, inbox_past, limits, logs, members, presence, readiness,
-        reminders, rescan, sign_ins, week,
+        reminders, rescan, setup, sign_ins, week,
     },
     error, public,
 };
@@ -277,6 +277,7 @@ fn bindings() -> String {
         .add::<config::Chatbot>()
         .add::<config::Notifications>()
         .add::<config::SelfService>()
+        .add::<config::Posting>()
         .add::<config::PersonaEntry>()
         .add::<config::ReplyProfile>()
         .add::<config::RoleProfile>()
@@ -302,6 +303,13 @@ fn bindings() -> String {
         .add::<config::LastDigest>()
         .add::<AccessReport>()
         .add::<AccessRow>()
+        .add::<setup::SetupView>()
+        .add::<setup::SetupItem>()
+        .add::<setup::SetupItemId>()
+        .add::<setup::SetupState>()
+        .add::<setup::SetupSource>()
+        .add::<setup::SetupReason>()
+        .add::<setup::PrivilegedIntent>()
         // Chat and Extractions logs, rescans
         .add::<logs::LogFacets>()
         .add::<logs::UsageSummary>()

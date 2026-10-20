@@ -12,15 +12,20 @@ pub enum Capability {
     StructuredOutput,
     SamplingControls,
     ReasoningControl,
+    /// A declared `output_limit` size field.
+    OutputLimit,
 }
 
-/// Optional wire fields a 400 `error.param` may name, and the capability each needs.
-const FIELDS: [(&str, Capability); 6] = [
+/// Optional wire fields a 400 `error.param` may name, and the capability each
+/// needs. `max_tokens` is `OutputLimit` instead where one is declared, and
+/// `max_completion_tokens` only counts when the body carried it.
+const FIELDS: [(&str, Capability); 7] = [
     ("response_format", Capability::StructuredOutput),
     ("temperature", Capability::SamplingControls),
     ("seed", Capability::SamplingControls),
     ("top_p", Capability::SamplingControls),
     ("max_tokens", Capability::SamplingControls),
+    ("max_completion_tokens", Capability::OutputLimit),
     ("reasoning_effort", Capability::ReasoningControl),
 ];
 

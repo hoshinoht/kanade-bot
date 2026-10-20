@@ -10,6 +10,7 @@ use super::desk::{CatalogRead, ConfigFuture, ModelCatalog};
 use crate::{
     domain::settings::Models,
     infrastructure::llm::{
+        NO_LISTING,
         governor::Role,
         setup::{ModelRoles, ModelStack, RoleSwap, RunningRole},
     },
@@ -21,8 +22,11 @@ impl ModelCatalog for ModelStack {
     fn read(&self) -> ConfigFuture<'_, CatalogRead> {
         Box::pin(async move {
             let listed = tokio::time::timeout(LISTING_TIMEOUT, self.provider.list_models()).await;
+            let no_listing =
+                matches!(&listed, Ok(Err(failure)) if failure.reason_code == NO_LISTING);
             CatalogRead {
-                reachable: matches!(listed, Ok(Ok(_))),
+                reachable: no_listing || matches!(listed, Ok(Ok(_))),
+                no_listing,
                 snapshot: self.catalog(),
             }
         })

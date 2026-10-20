@@ -349,6 +349,7 @@ mod tests {
             (ErrorCode::BackendUnavailable, "backend_unavailable"),
             (ErrorCode::UpstreamTimeout, "upstream_timeout"),
             (ErrorCode::KeyExpired, "key_expired"),
+            (ErrorCode::QuotaExhausted, "quota_exhausted"),
         ] {
             assert_eq!(
                 failed(SessionFailure::Model(LlmError::new(error, "test"))),

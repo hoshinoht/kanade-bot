@@ -42,12 +42,13 @@ use twilight_model::id::{
     Id,
     marker::{ApplicationMarker, GuildMarker, UserMarker},
 };
+use twilight_model::oauth::ApplicationFlags;
 use twilight_model::user::CurrentUser;
 
 use super::{
-    AmbiguousKind, ApplicationEmoji, COMPONENTS_V2, CREATE_FLAGS, ChannelId, DiscordTransport,
-    HistoryPage, InteractionRef, InteractionReply, MessageEdit, MessageId, Outcome,
-    OutgoingMessage, Presence, RejectionKind, classify_status, legacy_rows, v2_body_valid,
+    AmbiguousKind, ApplicationEmoji, ApplicationInfo, COMPONENTS_V2, CREATE_FLAGS, ChannelId,
+    DiscordTransport, HistoryPage, InteractionRef, InteractionReply, MessageEdit, MessageId,
+    Outcome, OutgoingMessage, Presence, RejectionKind, classify_status, legacy_rows, v2_body_valid,
 };
 use crate::api::auth::crypto::base64_standard;
 use crate::bot::mentions;
@@ -253,6 +254,15 @@ struct Created {
 struct Flagged {
     #[serde(default)]
     flags: Option<MessageFlags>,
+}
+
+/// The only fields read back from the application. Discord may omit
+/// `flags` (or send `null`): no flags then.
+#[derive(Deserialize)]
+struct Application {
+    id: Id<ApplicationMarker>,
+    #[serde(default)]
+    flags: Option<ApplicationFlags>,
 }
 
 fn application_emoji(emoji: Emoji) -> ApplicationEmoji {
@@ -714,6 +724,15 @@ impl DiscordTransport for TwilightTransport {
 
     async fn current_user(&self) -> Outcome<CurrentUser> {
         self.fetch(self.client.current_user()).await
+    }
+
+    async fn application_info(&self) -> Outcome<ApplicationInfo> {
+        self.fetch(self.client.current_user_application())
+            .await
+            .map(|app: Application| ApplicationInfo {
+                id: app.id,
+                flags: app.flags.unwrap_or(ApplicationFlags::empty()),
+            })
     }
 
     async fn application_emojis(&self) -> Outcome<Vec<ApplicationEmoji>> {

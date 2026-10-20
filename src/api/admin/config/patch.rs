@@ -10,7 +10,7 @@ use std::collections::BTreeSet;
 use serde_json::{Map, Value};
 
 use crate::{
-    api::admin::write::Refusal,
+    api::{admin::write::Refusal, state::ChannelList},
     chat::{
         nudge::{WordFilter, is_builtin_word},
         persona::ProfileId,
@@ -18,9 +18,9 @@ use crate::{
     domain::settings::{
         CharacterData, Chatbot, ContextSettings, ESTIMATE_DAYS, IdList, MAX_DEFLECTION_CHARS,
         MAX_PROFANITY_WORDS, MAX_ROLE_PROFILE_ASSIGNMENTS, MessageStyle, Notifications,
-        OVERRIDE_RUN_MINUTES, PROFANITY_WORD_CHARS, Persona, Pings, Profanity, RUN_MINUTES, Rate,
-        RoleProfileAssignment, RunLengthOverride, RunLengths, SelfService, SelfServiceMode,
-        Watching, is_profanity_word,
+        OVERRIDE_RUN_MINUTES, PROFANITY_WORD_CHARS, Persona, Pings, Posting, Profanity,
+        RUN_MINUTES, Rate, RoleProfileAssignment, RunLengthOverride, RunLengths, SelfService,
+        SelfServiceMode, Watching, is_profanity_word,
     },
 };
 
@@ -82,9 +82,11 @@ fn read_only(section: &str, key: &str) -> Option<&'static str> {
         | ("self_service", "effective_mode")
         | (
             "models",
-            "reachable" | "catalog" | "groups_source" | "alias_limits" | "capacity_check",
+            "reachable" | "no_listing" | "catalog" | "groups_source" | "alias_limits"
+            | "capacity_check",
         )
         | ("persona", "personas" | "profiles" | "role_profiles_digest")
+        | ("posting", "channel_id_source")
         | ("profanity", "builtin_words")
         | (
             "character_data",
@@ -112,7 +114,7 @@ pub fn section(body: &Value) -> Result<(&str, &Map<String, Value>), PatchError> 
     };
     match name.as_str() {
         "pings" | "watching" | "chatbot" | "notifications" | "self_service" | "persona"
-        | "models" | "run_lengths" | "profanity" | "character_data" => {}
+        | "models" | "run_lengths" | "profanity" | "character_data" | "posting" => {}
         "manage_messages" | "env" | "notices" => {
             return Err(PatchError::read_only(name, DEPLOYMENT));
         }
@@ -157,6 +159,7 @@ pub fn section(body: &Value) -> Result<(&str, &Map<String, Value>), PatchError> 
                         | "deflection_line"
                 )
                 | ("character_data", "estimate_days")
+                | ("posting", "channel_id")
         ) || (name == "persona"
             && key == "role_profiles_digest"
             && body.contains_key("role_profiles"));
@@ -598,6 +601,39 @@ pub fn character_data(
             })?;
     }
     Ok(next)
+}
+
+/// `posting.channel_id`: a canonical Discord id or `null` (no digest
+/// channel). While the guild is loaded the id must name one of its text
+/// channels; the saved channel itself is kept even if it is gone.
+pub fn posting(
+    current: &Posting,
+    body: &Map<String, Value>,
+    channels: &dyn ChannelList,
+) -> Result<Posting, PatchError> {
+    let channel_id = match &body["channel_id"] {
+        Value::Null => None,
+        value => Some(
+            value
+                .as_str()
+                .filter(|id| canonical_role_id(id))
+                .ok_or_else(|| {
+                    field_error(
+                        "posting.channel_id",
+                        "a canonical positive Discord id or null",
+                    )
+                })?
+                .to_owned(),
+        ),
+    };
+    if let Some(id) = &channel_id
+        && current.channel_id.as_ref() != Some(id)
+        && channels.connected()
+        && !channels.channels().iter().any(|channel| &channel.id == id)
+    {
+        return Err(PatchError::invalid("Pick a current Discord text channel."));
+    }
+    Ok(Posting { channel_id })
 }
 
 /// `persona.active`: a persona id (validated against the files by the caller).

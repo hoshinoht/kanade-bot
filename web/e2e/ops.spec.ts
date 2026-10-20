@@ -917,9 +917,9 @@ test.describe('config sections save', () => {
     await page.getByRole('tab', { name: 'Set in the environment' }).click();
     await expect(panel.getByRole('row', { name: /Timezone/ })).toContainText('Asia/Kuala_Lumpur');
     await expect(panel.getByRole('row', { name: /Timezone/ })).toContainText('a change needs a restart');
-    // The id lists moved to Channels, where the env values are only seeds.
+    // The id lists and the digest channel moved to Channels, where the env values are only seeds.
     await expect(panel.getByRole('row', { name: /Watched categories/ })).toHaveCount(0);
-    await expect(panel.getByRole('row', { name: /Digest channel/ })).toContainText('KANADE_POST_CHANNEL_ID');
+    await expect(panel.getByRole('row', { name: /Digest channel/ })).toHaveCount(0);
     await expect(panel.getByRole('row', { name: /Model gateway/ })).not.toContainText('secret');
     await expect(panel.locator('input, select, [role="combobox"]')).toHaveCount(0);
   });
@@ -1162,7 +1162,7 @@ test('models: capacity groups read-only, one row per group, Kanata limits in wor
   await expect(inUse.getByRole('rowheader')).toHaveText(['kanata/chat', 'kanata/extract', 'kanata/rewrite-small']);
   await panel.getByText('Show all models').click();
   await expect(panel.getByRole('table', { name: 'What Kanata admits for every listed model' })).not.toContainText(':');
-  await expect(panel.getByText("Kanata publishes no limit for this key; it is shared with the owner's other clients.")).toHaveCount(1);
+  await expect(panel.getByText("The model gateway publishes no limit for this key; it is shared with the owner's other clients.")).toHaveCount(1);
   // The picker lists base models only; `off` is hidden where reasoning is required.
   await panel.getByRole('tab', { name: 'Roles' }).click();
   const models = panel.getByRole('combobox', { name: /^Model/ });
@@ -1306,9 +1306,6 @@ test('env: copy buttons write the raw env value; none where it is unset', async 
   await panel.getByRole('button', { name: 'Copy KANADE_BOSS_WEEK_RESET_WEEKDAY' }).click();
   await expect(toast(page, 'Copied KANADE_BOSS_WEEK_RESET_WEEKDAY.')).toBeVisible();
   expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('thu');
-  await expect(panel.getByRole('row', { name: /Digest channel/ })).toContainText('#boss-schedule');
-  await panel.getByRole('button', { name: 'Copy KANADE_POST_CHANNEL_ID' }).click();
-  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('120000000000000010');
   // Unset values have nothing to copy.
   await expect(panel.getByRole('row', { name: /Chat pilot role/ }).getByRole('button')).toHaveCount(0);
   await expect(panel.getByRole('button', { name: 'Copy KANADE_CHAT_PILOT_ROLE_ID' })).toHaveCount(0);

@@ -114,6 +114,7 @@ impl SessionError {
                     | ErrorCode::UnsupportedCapability
                     | ErrorCode::ProviderAuthentication
                     | ErrorCode::KeyExpired
+                    | ErrorCode::QuotaExhausted
                     | ErrorCode::ModelMismatch
             ),
             _ => false,

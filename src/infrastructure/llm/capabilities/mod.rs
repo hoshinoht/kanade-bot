@@ -89,6 +89,29 @@ pub enum TrustZone {
     External,
 }
 
+/// The wire field that carries the completion size, declared per alias by the
+/// operator (never published). Absent: `max_tokens`, only with sampling
+/// controls (Kanata's rule).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum OutputLimit {
+    MaxTokens,
+    MaxCompletionTokens,
+    /// The provider rejected the declared field: no size field is sent.
+    Omitted,
+}
+
+impl OutputLimit {
+    /// The wire field name; `None` once omitted.
+    pub fn field(self) -> Option<&'static str> {
+        match self {
+            Self::MaxTokens => Some("max_tokens"),
+            Self::MaxCompletionTokens => Some("max_completion_tokens"),
+            Self::Omitted => None,
+        }
+    }
+}
+
 /// `off` needs no list (Kanata restricts nothing) or one naming `none`; without
 /// reasoning control nothing is sent, so `off` is trivially fine (user decision
 /// 2026-09-26: a list without `none` means the model requires reasoning).
@@ -127,6 +150,10 @@ pub struct ModelCapabilities {
     /// Gateway admission limits for capacity checks; never sent or enforced here.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub admission: Option<AdmissionLimits>,
+    /// Declared only: the size field is sent under this name whatever
+    /// `sampling_controls` says. `None` keeps `max_tokens` tied to sampling.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub output_limit: Option<OutputLimit>,
 }
 
 impl ModelCapabilities {
@@ -144,6 +171,7 @@ impl ModelCapabilities {
             context_tokens: None,
             max_output_tokens: None,
             admission: None,
+            output_limit: None,
         }
     }
 
@@ -168,6 +196,12 @@ impl ModelCapabilities {
             Capability::StructuredOutput => self.structured_output = false,
             Capability::SamplingControls => self.sampling_controls = false,
             Capability::ReasoningControl => self.reasoning_control = false,
+            // Only a declared field can be rejected; `None` keeps Kanata's rule.
+            Capability::OutputLimit => {
+                if self.output_limit.is_some() {
+                    self.output_limit = Some(OutputLimit::Omitted);
+                }
+            }
         }
         self
     }
@@ -187,6 +221,7 @@ impl fmt::Debug for ModelCapabilities {
             .field("context_tokens", &self.context_tokens)
             .field("max_output_tokens", &self.max_output_tokens)
             .field("admission", &self.admission)
+            .field("output_limit", &self.output_limit)
             .finish()
     }
 }

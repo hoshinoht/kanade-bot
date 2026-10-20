@@ -135,6 +135,8 @@ export const ALL_SECTIONS: Section[] = [
   // v4 "Audit", rebuilt on the git-style change history plus the Sign-ins
   // audit log; /audit redirects to /history?tab=sign-ins.
   { key: 'history', href: '/history', label: 'History', group: 'Operate', title: 'History', icon: 'history' },
+  // What this deployment still needs; its badge counts the required steps left.
+  { key: 'setup', href: '/setup', label: 'Setup', group: 'Operate', title: 'Setup', icon: 'plug', more: true },
 ];
 
 /** The destinations whose capability is on (and every one that names none). */

@@ -1,17 +1,20 @@
-//! The Kanata model gateway (`KANADE_MODEL_BASE_URL`): the mock's model
-//! catalog (`config::catalog`) with its Kanata metadata, and completions
-//! that stopped normally: a header or nudge rewrite answers its seed line
-//! unchanged (the rewrite gate accepts it, so it is stored) after
+//! The model gateway (`KANADE_MODEL_BASE_URL`): Kanata by default, the
+//! mock's model catalog (`config::catalog`) with its Kanata metadata, and
+//! completions that stopped normally: a header or nudge rewrite answers its
+//! seed line unchanged (the rewrite gate accepts it, so it is stored) after
 //! [`REWRITE_DELAY`], an extraction answers nothing after
 //! [`EXTRACT_DELAY`] (so a rescan is seen running), anything else answers
-//! nothing at once. Also the governor's view the Limits page shows (mock
-//! `limits::groups`), canned: the harness runs too few model calls to fill
-//! a real one.
+//! nothing at once. [`Mode`] (`/__e2e/gateway`) turns it into a plain
+//! OpenAI-compatible server: the same ids without `kanata` objects, or no
+//! model list at all (`/v1/models` 404); the server's capability
+//! declarations ([`declarations`]) then carry chat and extraction. Also the
+//! governor's view the Limits page shows (mock `limits::groups`), canned:
+//! the harness runs too few model calls to fill a real one.
 
 use std::{
     sync::{
         Arc, Mutex, PoisonError,
-        atomic::{AtomicUsize, Ordering},
+        atomic::{AtomicU8, AtomicUsize, Ordering},
     },
     time::Instant,
 };
@@ -19,6 +22,8 @@ use std::{
 use axum::{
     Json, Router,
     extract::State,
+    http::StatusCode,
+    response::{IntoResponse, Response},
     routing::{get, post},
 };
 use chrono::{DateTime, Duration, Utc};
@@ -36,16 +41,52 @@ const EXTRACT_DELAY: std::time::Duration = std::time::Duration::from_millis(300)
 /// What the rewrite prompt puts before the seed (`chat::nudge::prompt`).
 const SEED_LABEL: &str = "Line to rewrite: ";
 
-/// When completions were last asked for, and how many are in flight.
+/// When completions were last asked for, how many are in flight, and how
+/// `/v1/models` answers.
 #[derive(Default)]
 pub struct Activity {
     in_flight: AtomicUsize,
     last: Mutex<Option<Instant>>,
+    mode: AtomicU8,
+}
+
+/// How the gateway lists its models (`POST /__e2e/gateway {mode}`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Mode {
+    /// Kanata: every model with its `kanata` metadata (the default).
+    Kanata,
+    /// A plain OpenAI-compatible server: the same ids, no metadata.
+    Plain,
+    /// A server without a model list: `/v1/models` answers 404.
+    NoListing,
+}
+
+impl Mode {
+    pub fn parse(value: &str) -> Option<Self> {
+        match value {
+            "kanata" => Some(Self::Kanata),
+            "plain" => Some(Self::Plain),
+            "no_listing" => Some(Self::NoListing),
+            _ => None,
+        }
+    }
 }
 
 impl Activity {
     fn touch(&self) {
         *self.last.lock().unwrap_or_else(PoisonError::into_inner) = Some(Instant::now());
+    }
+
+    pub fn set_mode(&self, mode: Mode) {
+        self.mode.store(mode as u8, Ordering::SeqCst);
+    }
+
+    fn mode(&self) -> Mode {
+        match self.mode.load(Ordering::SeqCst) {
+            1 => Mode::Plain,
+            2 => Mode::NoListing,
+            _ => Mode::Kanata,
+        }
     }
 
     /// Resolves once no completion has been in flight or asked for during
@@ -74,12 +115,70 @@ impl Drop for InFlight<'_> {
 
 pub fn router(activity: Arc<Activity>) -> Router {
     Router::new()
-        .route("/v1/models", get(|| async { Json(catalog()) }))
+        .route("/v1/models", get(models))
         .route("/v1/chat/completions", post(complete))
         .with_state(activity)
 }
 
-fn catalog() -> Value {
+async fn models(State(activity): State<Arc<Activity>>) -> Response {
+    let listed = |kanata: bool| {
+        json!({
+            "object": "list",
+            "data": catalog()
+                .into_iter()
+                .map(|(id, meta)| if kanata {
+                    json!({"id": id, "object": "model", "kanata": meta})
+                } else {
+                    json!({"id": id, "object": "model", "owned_by": "e2e"})
+                })
+                .collect::<Vec<_>>(),
+        })
+    };
+    match activity.mode() {
+        Mode::Kanata => Json(listed(true)).into_response(),
+        Mode::Plain => Json(listed(false)).into_response(),
+        Mode::NoListing => (
+            StatusCode::NOT_FOUND,
+            Json(json!({"error": {"message": "Not Found", "type": "invalid_request_error"}})),
+        )
+            .into_response(),
+    }
+}
+
+/// The server's `KANADE_MODEL_CAPABILITIES`: every catalog model's
+/// declarable metadata (no trust zone or admission). Kanata's published
+/// metadata wins over it, so it only matters in the plain modes.
+pub fn declarations() -> String {
+    const DECLARABLE: [&str; 6] = [
+        "context_tokens",
+        "function_tools",
+        "max_output_tokens",
+        "reasoning_control",
+        "sampling_controls",
+        "structured_output",
+    ];
+    let declared: serde_json::Map<String, Value> = catalog()
+        .into_iter()
+        .map(|(id, meta)| {
+            let mut fields: serde_json::Map<String, Value> = DECLARABLE
+                .iter()
+                .filter_map(|&field| Some((field.to_owned(), meta.get(field)?.clone())))
+                .collect();
+            // Declared lists must be non-empty and need reasoning control.
+            if meta["reasoning_control"] == true
+                && let Some(efforts) = meta["reasoning_efforts"].as_array()
+                && !efforts.is_empty()
+            {
+                fields.insert("reasoning_efforts".into(), Value::Array(efforts.clone()));
+            }
+            (id.to_owned(), Value::Object(fields))
+        })
+        .collect();
+    Value::Object(declared).to_string()
+}
+
+/// Each model id with its Kanata metadata.
+fn catalog() -> [(&'static str, Value); 10] {
     let chat = json!({
         "admission": {"max_in_flight": 4, "adapter_max_in_flight": 8},
         "function_tools": true, "max_output_tokens": 8192,
@@ -92,7 +191,7 @@ fn catalog() -> Value {
         "reasoning_control": true, "reasoning_efforts": ["low", "medium", "high"],
         "sampling_controls": true, "structured_output": true, "trust_zone": "local",
     });
-    let models = [
+    [
         ("kanata/chat", chat.clone()),
         (
             "kanata/chat-cloud",
@@ -144,14 +243,7 @@ fn catalog() -> Value {
                 "sampling_controls": true, "structured_output": true, "trust_zone": "local",
             }),
         ),
-    ];
-    json!({
-        "object": "list",
-        "data": models
-            .into_iter()
-            .map(|(id, kanata)| json!({"id": id, "object": "model", "kanata": kanata}))
-            .collect::<Vec<_>>(),
-    })
+    ]
 }
 
 async fn complete(

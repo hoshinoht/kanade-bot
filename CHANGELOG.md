@@ -4,7 +4,22 @@ What changed in each Kanade release, newest first. Upgrading across several rele
 
 ## 1.0.0-beta.11
 
-_In development_
+_20 Oct 2026_
+
+Setup gets a checklist in the admin app, and Kanade now works with other OpenAI-compatible model servers, including ones that publish no model list.
+
+### New features
+
+- Added a Setup checklist to the admin app (More › Setup) that shows which required and optional setup steps are ready or missing, with a link to fix each one, an invite link with the right bot permissions, and a badge counting the required steps left.
+- Model servers that publish no model list are now supported: models declared in `[models.capabilities]` can be picked in Config › Models, are sized by their declared context window and show as Declared, and Setup reports the gateway as ready.
+- Added the `output_limit` model capability so operators can tell Kanade to send `max_completion_tokens` (as OpenAI's reasoning models require) instead of `max_tokens`.
+
+### Changes
+
+- The digest channel can now be picked in Config › Channels instead of only in the deployment's configuration.
+- Declared models now appear in Config › Models and `kanade models check` even when the server's model list leaves them out.
+- An exhausted provider quota now fails at once instead of being retried, and is reported as something the operator must fix.
+- The admin app, Setup and the startup warning now say "model gateway" instead of naming Kanata, except where they describe limits Kanata publishes.
 
 ## 1.0.0-beta.10
 

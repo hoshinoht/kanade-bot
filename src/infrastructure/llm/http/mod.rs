@@ -40,8 +40,8 @@ struct Catalog {
 /// A cache decision: `Some(Some)` fresh listing, `Some(None)` recent failure, `None` fetch.
 type Cached = Option<Option<Models>>;
 
-/// OpenAI-compatible `chat/completions` and `models` client for Kanata or a direct
-/// Ollama `/v1` endpoint. Request bodies follow each alias's effective capabilities.
+/// OpenAI-compatible `chat/completions` and `models` client for Kanata or any
+/// other `/v1` server. Request bodies follow each alias's effective capabilities.
 pub struct OpenAiCompatibleProvider {
     transport: Transport,
     declared: BTreeMap<String, ModelCapabilities>,
@@ -96,6 +96,7 @@ impl OpenAiCompatibleProvider {
     }
 
     /// `GET {base}/models`; a successful listing refreshes the capability catalog.
+    /// A 404 or 405 is [`NO_LISTING`]: the server serves no model list.
     pub async fn list_models(&self) -> Result<Vec<ListedModel>, ProviderFailure> {
         let reply = self
             .transport
@@ -108,8 +109,15 @@ impl OpenAiCompatibleProvider {
                 self.limits.error_body_bytes,
             )
             .await?;
-        if reply.status != StatusCode::OK {
-            return Err(status_failure(&reply));
+        match reply.status {
+            StatusCode::OK => {}
+            StatusCode::NOT_FOUND | StatusCode::METHOD_NOT_ALLOWED => {
+                return Err(ProviderFailure {
+                    kind: ProviderFailureKind::Permanent,
+                    reason_code: NO_LISTING,
+                });
+            }
+            _ => return Err(status_failure(&reply)),
         }
         let models = parse_models_list(&reply.body).ok_or(ProviderFailure {
             kind: ProviderFailureKind::InvalidOutput,
@@ -240,6 +248,13 @@ impl OpenAiCompatibleProvider {
                 })
             }
             Err(PostError::Rejected(field, capability)) if body.get(field).is_some() => {
+                // A declared size field is its own capability: rejecting it
+                // must not also drop sampling (Kanata never declares one).
+                let capability = if is_size_field(field) && capabilities.output_limit.is_some() {
+                    Capability::OutputLimit
+                } else {
+                    capability
+                };
                 self.downgrades.revoke(&request.model, capability);
                 Err(ProviderFailure {
                     kind: ProviderFailureKind::CapabilityRejected(capability),
@@ -274,7 +289,7 @@ impl OpenAiCompatibleProvider {
             .map_err(PostError::Failed)?;
         match reply.status {
             StatusCode::OK => Ok(reply),
-            StatusCode::BAD_REQUEST => match rejected_field(&reply.body) {
+            StatusCode::BAD_REQUEST => match rejected_field(&reply.body, body) {
                 Some((field, capability)) => Err(PostError::Rejected(field, capability)),
                 None => Err(PostError::Failed(status_failure(&reply))),
             },
@@ -352,9 +367,13 @@ fn catalog_of(models: &[ListedModel]) -> Models {
 }
 
 /// `error.param` of a 400 body when it names a known optional field.
-fn rejected_field(body: &[u8]) -> Option<(&'static str, Capability)> {
+/// `max_completion_tokens` counts only when `sent` carried it (a declared
+/// `output_limit`), so a gateway naming it otherwise, Kanata included, keeps
+/// the plain `status` failure.
+fn rejected_field(body: &[u8], sent: &Value) -> Option<(&'static str, Capability)> {
     let value: Value = serde_json::from_slice(body).ok()?;
-    field_capability(value.get("error")?.get("param")?.as_str()?)
+    let (field, capability) = field_capability(value.get("error")?.get("param")?.as_str()?)?;
+    (field != "max_completion_tokens" || sent.get(field).is_some()).then_some((field, capability))
 }
 
 fn is_size_field(field: &str) -> bool {
@@ -379,6 +398,13 @@ const ADMISSION_CODES: [(u16, &str); 4] = [
 /// Distinct from other 401s so operators can tell a rotated-out key.
 pub(crate) const KEY_EXPIRED: &str = "key-expired";
 
+/// OpenAI's `429 insufficient_quota`: the account is out of credit.
+pub(crate) const QUOTA: &str = "quota";
+
+/// A listing reason code: the server answered `/models` with 404 or 405, so it
+/// serves no model list (declared capabilities apply); Kanata always serves one.
+pub const NO_LISTING: &str = "no-listing";
+
 /// `error.code` of an OpenAI-style error body.
 fn gateway_code(body: &[u8]) -> Option<String> {
     let value: Value = serde_json::from_slice(body).ok()?;
@@ -393,6 +419,9 @@ fn status_failure(reply: &Reply) -> ProviderFailure {
     };
     let (kind, reason_code) = match (status, code.as_deref()) {
         (401, Some("key_expired")) => (ProviderFailureKind::Authentication, KEY_EXPIRED),
+        // An exhausted account never recovers by retrying: an operator must
+        // act, so it is permanent and breaker-neutral, not a rate limit.
+        (429, Some("insufficient_quota")) => (ProviderFailureKind::Permanent, QUOTA),
         (401 | 403, _) => (ProviderFailureKind::Authentication, "authentication"),
         (_, Some(code)) if ADMISSION_CODES.contains(&(status, code)) => (
             ProviderFailureKind::AdmissionRefused {

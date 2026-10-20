@@ -19,6 +19,10 @@ export const REAL_ART = process.env.KANADE_REAL_ART === '1';
 export const HEADING = { admin: '7 runs', public: 'Sign in to see the boss week' } as const;
 /** The member a public sign-in becomes, and the admin every spec browses as: the seed's Asahi. */
 export const ASAHI_SNOWFLAKE = '100000000000001001';
+/** The seed's required Setup steps left: the gateway never connects and one channel lacks a permission. */
+export const SETUP_LEFT = 2;
+/** The rail's More item by name: on one of its pages it names that page, and its badge adds "N waiting" (Setup's steps left). */
+export const moreNamed = (current?: string) => new RegExp(`^More${current ? `, current page ${current}` : ''}(, \\d+ waiting)?$`);
 
 /** The harness's fake Discord page (`examples/e2e_server/fakes/discord.rs`). */
 const FAKE_DISCORD_PATH = '/__e2e/discord';
@@ -144,6 +148,16 @@ export async function setModules(modules: { roster?: boolean; character_data?: b
 export async function setLimitGroups(groups: 'three' | 'default'): Promise<void> {
   const set = await fetch(`${ADMIN}/__e2e/limits`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ groups }) });
   expect(set.status).toBe(204);
+}
+
+/**
+ * How the fake model gateway lists its models, on a restart (`kanata`: with Kanata metadata, the reset's;
+ * `plain`: the same ids as a bare OpenAI listing; `no_listing`: `/v1/models` answers 404). The server
+ * declares every model's capabilities, so the plain modes run on the declarations.
+ */
+export async function setGateway(mode: 'kanata' | 'plain' | 'no_listing'): Promise<void> {
+  const set = await fetch(`${ADMIN}/__e2e/gateway`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ mode }) });
+  expect(set.status, await set.text()).toBe(204);
 }
 
 /** A harness control that answers 204 (`examples/e2e_server/controls_p5.rs`). */

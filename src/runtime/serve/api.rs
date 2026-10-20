@@ -25,7 +25,7 @@ use crate::{
         avatars::AvatarCache,
         events::Hub,
         server::LiveAdmin,
-        state::{ApiState, BackupDir, ChannelList, GuildAccess},
+        state::{ApiState, BackupDir, ChannelList, GuildAccess, SetupFacts},
         write::{ApiClock, SchedulerWriter},
     },
     bot::commands::AccessPolicy,
@@ -281,9 +281,20 @@ pub(super) async fn compose_with(
         decline_retraction: None,
         digest_post: None,
         header_rewrite: None,
+        // Serve's Discord side attaches it with the transport.
+        application: None,
         backups: BackupDir {
             dir: config.backup_dir.clone(),
             schema_version,
+        },
+        setup: SetupFacts {
+            public_listener: config.runtime.public_bind.is_some()
+                && config.runtime.http.public_host.is_some(),
+            member_sign_in: member
+                .as_ref()
+                .is_some_and(|member| member.discord().is_some()),
+            modules: config.modules,
+            backup_recipients: config.backup_recipients_file.is_some(),
         },
         avatars: Some(avatars),
         events,

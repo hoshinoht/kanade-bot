@@ -10,7 +10,8 @@ use super::super::{
     off_allowed, reasoning_floor,
 };
 
-/// Read-only view of the gateway's `GET /v1/models` for the config API.
+/// Read-only view of the gateway's `GET /v1/models` plus the operator's
+/// declared models it does not list, for the config API.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
 pub struct CatalogSnapshot {
     /// False until a listing has succeeded.
@@ -25,6 +26,9 @@ pub struct CatalogModel {
     pub alias: String,
     /// The entry carries a `kanata` metadata object.
     pub published: bool,
+    /// The gateway's listing names the alias; false for a declared model the
+    /// listing omits, or when the gateway serves no listing.
+    pub listed: bool,
     pub trust_zone: Option<TrustZone>,
     pub leaves_homelab: bool,
     pub reasoning_control: bool,
@@ -73,8 +77,11 @@ pub fn variant_of(alias: &str, listed: impl Fn(&str) -> bool) -> Option<Variant>
 }
 
 impl CatalogSnapshot {
+    /// Variants are a listing feature: only a listed base makes one.
     pub fn variant(&self, alias: &str) -> Option<Variant> {
-        variant_of(alias, |base| self.models.iter().any(|m| m.alias == base))
+        variant_of(alias, |base| {
+            self.models.iter().any(|m| m.listed && m.alias == base)
+        })
     }
 }
 
@@ -145,36 +152,45 @@ impl CatalogState {
             .clone()
     }
 
+    /// The listing's models, then every declared model it does not name (all
+    /// of them before a listing or without one) as unpublished and external,
+    /// so a declared window and output maximum apply either way.
     pub fn snapshot(&self) -> CatalogSnapshot {
-        let Some(listing) = self.listing() else {
-            return CatalogSnapshot::default();
+        let listing = self.listing();
+        let listed = listing.as_deref().unwrap_or_default();
+        let entry = |alias: &str, caps: Option<&ModelCapabilities>, listed: bool| {
+            let minimal = ModelCapabilities::minimal();
+            let shown = caps
+                .or_else(|| self.declared.get(alias))
+                .unwrap_or(&minimal);
+            CatalogModel {
+                alias: alias.to_owned(),
+                published: caps.is_some(),
+                listed,
+                trust_zone: shown.trust_zone,
+                leaves_homelab: leaves_homelab(alias, caps),
+                reasoning_control: shown.reasoning_control,
+                reasoning_efforts: shown.reasoning_efforts.clone(),
+                structured_output: shown.structured_output,
+                sampling_controls: shown.sampling_controls,
+                function_tools: shown.function_tools,
+                context_tokens: shown.context_tokens,
+                max_output_tokens: shown.max_output_tokens,
+                admission: shown.admission,
+            }
         };
-        let models = listing
+        let mut models: Vec<CatalogModel> = listed
             .iter()
-            .map(|model| {
-                let caps = model.capabilities.as_ref();
-                let minimal = ModelCapabilities::minimal();
-                let shown = caps
-                    .or_else(|| self.declared.get(&model.id))
-                    .unwrap_or(&minimal);
-                CatalogModel {
-                    alias: model.id.clone(),
-                    published: caps.is_some(),
-                    trust_zone: shown.trust_zone,
-                    leaves_homelab: leaves_homelab(&model.id, caps),
-                    reasoning_control: shown.reasoning_control,
-                    reasoning_efforts: shown.reasoning_efforts.clone(),
-                    structured_output: shown.structured_output,
-                    sampling_controls: shown.sampling_controls,
-                    function_tools: shown.function_tools,
-                    context_tokens: shown.context_tokens,
-                    max_output_tokens: shown.max_output_tokens,
-                    admission: shown.admission,
-                }
-            })
+            .map(|model| entry(&model.id, model.capabilities.as_ref(), true))
             .collect();
+        models.extend(
+            self.declared
+                .keys()
+                .filter(|alias| !listed.iter().any(|model| &model.id == *alias))
+                .map(|alias| entry(alias, None, false)),
+        );
         CatalogSnapshot {
-            listed: true,
+            listed: listing.is_some(),
             models,
         }
     }

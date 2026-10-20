@@ -17,8 +17,8 @@ export const ALL_EFFORTS = ['minimal', 'low', 'medium', 'high', 'xhigh', 'max'];
 
 /**
  * Whether an effort is legal for an alias: `off` unless the alias requires
- * reasoning (`off_allowed: false`); `null` efforts mean Kanata restricts
- * nothing, so every level is (admin-api "Config semantics").
+ * reasoning (`off_allowed: false`); `null` efforts mean the model gateway
+ * restricts nothing, so every level is (admin-api "Config semantics").
  */
 export function isReasoningValid(model: ModelInfo | undefined, effort: string): boolean {
   if (effort === 'off') return model?.off_allowed !== false;
@@ -145,7 +145,7 @@ export function wavingRows(rows: readonly GroupRow[]): Set<string> {
 /**
  * The least Kanata admits for any of a group's models (each alias's
  * `max_in_flight`, held to its adapter's), as the startup check counts it;
- * null when none of them publishes or declares a limit.
+ * null when none of them publishes a limit (admission is Kanata-only).
  */
 export function groupCap(models: ConfigView['models'], group: string): number | null {
   let cap: number | null = null;
@@ -218,11 +218,14 @@ export function kanataLimits(models: ConfigView['models']): KanataLimits {
   return { uniform: all.length && maxes.size === 1 ? all[0]!.max : null, inUse: all.filter((l) => used.has(l.alias)), all };
 }
 
-/** The key sentence, once: Kanata publishes no per-key limit today. */
+/**
+ * The key sentence, once. Only Kanata publishes a per-key limit, so a set
+ * one names it; any other gateway publishes none.
+ */
 export function keyLine(key: ConfigView['models']['key_limits']): string {
   const shared = key.shared ? "; it is shared with the owner's other clients" : '';
   return key.max_in_flight === null
-    ? `Kanata publishes no limit for this key${shared}.`
+    ? `The model gateway publishes no limit for this key${shared}.`
     : `Kanata admits ${key.max_in_flight} calls at a time for this key${shared}.`;
 }
 

@@ -6,7 +6,7 @@
 
 *One Rust binary for one Discord server: the bot, the reminders, an admin portal and a member portal, deployed with Docker Compose.*
 
-[![Version](https://img.shields.io/badge/version-1.0.0--beta.10-blue)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-1.0.0--beta.11-blue)](CHANGELOG.md)
 [![Rust](https://img.shields.io/badge/rust-1.98.1-orange)](rust-toolchain.toml)
 [![License](https://img.shields.io/badge/license-GPL--3.0--only-green)](LICENSE)
 [![CI](https://github.com/hoshinoht/kanade-bot/actions/workflows/ci.yml/badge.svg)](https://github.com/hoshinoht/kanade-bot/actions/workflows/ci.yml)
@@ -19,7 +19,7 @@
 > Character data and estimates are shown to help plan a party, never used to judge or block one.
 
 > [!NOTE]
-> Beta: `1.0.0-beta.10`, running live for one guild. Settings, the HTTP API and the store may still change between betas; read [CHANGELOG.md](CHANGELOG.md) before upgrading.
+> Beta: `1.0.0-beta.11`, running live for one guild. Settings, the HTTP API and the store may still change between betas; read [CHANGELOG.md](CHANGELOG.md) before upgrading.
 
 ## At a glance
 

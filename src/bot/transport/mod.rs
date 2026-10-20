@@ -22,16 +22,18 @@ use twilight_model::guild::Member;
 use twilight_model::id::{
     Id,
     marker::{
-        ChannelMarker, EmojiMarker, GuildMarker, InteractionMarker, MessageMarker, UserMarker,
+        ApplicationMarker, ChannelMarker, EmojiMarker, GuildMarker, InteractionMarker,
+        MessageMarker, UserMarker,
     },
 };
+use twilight_model::oauth::ApplicationFlags;
 use twilight_model::user::CurrentUser;
 
 pub use outcome::{AmbiguousKind, Outcome, RejectionKind, classify_status, codes};
 pub use twilight::{MAX_SENDS, TransportConfig, TwilightTransport};
 
 #[cfg(any(test, feature = "test-support"))]
-pub use fake::{Call, FakeDiscord, Hold, Op, Step};
+pub use fake::{Call, FAKE_APPLICATION_ID, FakeDiscord, Hold, Op, Step};
 
 /// Discord's page-size bounds; out-of-range limits are refused unsent
 /// (`RejectionKind::Invalid`).
@@ -344,6 +346,15 @@ impl ApplicationEmoji {
     }
 }
 
+/// The bot's application as `GET /applications/@me` describes it: its id
+/// (the invite link's `client_id`) and its public flags (which privileged
+/// gateway intents the Developer Portal has switched on).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ApplicationInfo {
+    pub id: Id<ApplicationMarker>,
+    pub flags: ApplicationFlags,
+}
+
 /// Discord operations with classified outcomes.
 ///
 /// Reactions are the bot's own and unicode-only.
@@ -538,6 +549,12 @@ pub trait DiscordTransport: Send + Sync {
     /// The bot's own user (`GET /users/@me`: the banner `READY` may omit).
     /// Test doubles that never refresh identity art may keep the default.
     fn current_user(&self) -> impl Future<Output = Outcome<CurrentUser>> + Send {
+        async { Outcome::DefinitelyRejected(RejectionKind::Invalid) }
+    }
+
+    /// The bot's own application (`GET /applications/@me`). Test doubles
+    /// that never show admin Setup may keep the default.
+    fn application_info(&self) -> impl Future<Output = Outcome<ApplicationInfo>> + Send {
         async { Outcome::DefinitelyRejected(RejectionKind::Invalid) }
     }
 

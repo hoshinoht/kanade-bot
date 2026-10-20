@@ -113,6 +113,7 @@ mod tests {
         CatalogModel {
             alias: "m".into(),
             published: true,
+            listed: true,
             trust_zone: None,
             leaves_homelab: !local,
             reasoning_control: false,

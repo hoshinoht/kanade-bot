@@ -100,6 +100,12 @@ pub(crate) struct Build {
     /// Module `guides` switched on with this port; the channel list then
     /// also holds [`GUIDE_CHANNELS`].
     pub(crate) guides: Option<Arc<dyn kanade::api::state::GuidePort>>,
+    /// Admin Setup's application read (serve attaches the transport's).
+    pub(crate) application: Option<kanade::api::state::ApplicationPort>,
+    /// Admin Setup's deployment facts.
+    pub(crate) setup: kanade::api::state::SetupFacts,
+    /// Extra unwatched text channels, after the usual three.
+    pub(crate) extra_channels: &'static [&'static str],
 }
 
 impl Default for Build {
@@ -117,6 +123,9 @@ impl Default for Build {
             character_data: None,
             run_ends: false,
             guides: None,
+            application: None,
+            setup: Default::default(),
+            extra_channels: &[],
         }
     }
 }
@@ -672,6 +681,9 @@ impl Reads {
             character_data,
             run_ends,
             guides,
+            application,
+            setup,
+            extra_channels,
         } = build;
         let dir = TempDir::new();
         let backup_dir = backup_dir.then(|| {
@@ -822,6 +834,7 @@ impl Reads {
                                 .into_iter()
                                 .flatten(),
                         )
+                        .chain(extra_channels.iter().map(|id| (*id, false)))
                         .map(|(id, watched)| ChannelEntry {
                             id: id.into(),
                             name: format!("#{id}"),
@@ -844,10 +857,12 @@ impl Reads {
             decline_retraction: Some(decline_retraction),
             digest_post: digest_delivery.then_some(digest_post),
             header_rewrite: digest_delivery.then_some(header_rewrite),
+            application,
             backups: BackupDir {
                 dir: backup_dir.clone(),
                 schema_version: store.schema_version().await.unwrap(),
             },
+            setup,
             avatars: Some(avatars),
             events: events.clone(),
             presence: Default::default(),
@@ -939,7 +954,9 @@ impl Reads {
             decline_retraction: old.decline_retraction.clone(),
             digest_post: old.digest_post.clone(),
             header_rewrite: old.header_rewrite.clone(),
+            application: old.application.clone(),
             backups: old.backups.clone(),
+            setup: old.setup,
             avatars: old.avatars.clone(),
             events: old.events.clone(),
             // In memory only: a restarted process starts with nobody here.

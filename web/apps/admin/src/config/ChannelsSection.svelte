@@ -1,16 +1,23 @@
 <!--
-  Config → Channels: where the bot reads and chats. Each list saves on its
-  own (an explicit list save); a list nobody saved follows its env seed.
+  Config → Channels: where the bot reads, chats and posts the digest. Each
+  list and the digest channel save on their own (an explicit save); one
+  nobody saved follows its env seed.
 -->
 <script lang="ts">
   import type { Channel, ConfigView } from '@kanade/api-types';
   import { Icon } from '@kanade/ui';
   import { Resource } from '../resource.svelte';
+  import DigestChannelCard from './DigestChannelCard.svelte';
   import IdListCard from './IdListCard.svelte';
   import type { Save } from './save';
   import SettingsPanel from './SettingsPanel.svelte';
 
-  let { watching, chatbot, save }: { watching: ConfigView['watching']; chatbot: ConfigView['chatbot']; save: Save } = $props();
+  let {
+    watching,
+    chatbot,
+    posting,
+    save,
+  }: { watching: ConfigView['watching']; chatbot: ConfigView['chatbot']; posting: ConfigView['posting']; save: Save } = $props();
 
   const directory = new Resource<Channel[]>('/api/admin/channels');
   $effect(() => void directory.load());
@@ -19,7 +26,7 @@
 </script>
 
 <SettingsPanel title="Channels">
-  {#snippet lead()}Where the bot reads party chat and where the chatbot answers.{/snippet}
+  {#snippet lead()}Where the bot reads party chat, where the chatbot answers and where the weekly digest posts.{/snippet}
   <IdListCard
     title="Watched channels"
     env="KANADE_WATCH_CHANNEL_IDS"
@@ -48,8 +55,14 @@
     save={(ids) => save({ chatbot: { category_ids: ids } }, `Chat categories saved (${count(ids.length, 'category', 'categories')}).`)}
     >The chatbot answers in every channel of these categories. Enter each category by its id.</IdListCard
   >
+  <DigestChannelCard
+    channelId={posting.channel_id}
+    source={posting.channel_id_source}
+    channels={directory.data}
+    save={(id) => save({ posting: { channel_id: id } }, id ? `Digest channel saved (${directory.data?.find((c) => c.id === id)?.name ?? id}).` : 'Digest channel cleared; no digest is posted.')}
+  />
   <p class="settings__box">
-    <Icon name="info" />The environment variables are only the starting values: a list nobody saved here follows its variable at every restart.
-    Saving a list here overrides its variable from then on. Each list saves on its own and applies at once.
+    <Icon name="info" />The environment variables are only the starting values: a setting nobody saved here follows its variable at every restart.
+    Saving it here overrides its variable from then on. Each saves on its own and applies at once.
   </p>
 </SettingsPanel>

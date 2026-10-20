@@ -91,6 +91,12 @@ Open `http://localhost:8080` on the host and sign in with the contents of
 cookie is `Secure`, which browsers accept on plain `http://localhost`. Other
 devices reach it through a [reverse proxy](#reverse-proxy).
 
+Then open **More › Setup**: a checklist of what is configured and what is
+still missing (Discord connection and intents, the bot's channel
+permissions with an invite link, the digest and watched channels, the model
+gateway, and the optional sign-in, portal, module and backup pieces), each
+with a link to where it is fixed. Its badge counts the required steps left.
+
 Optional, once: upload the difficulty pill emojis the redesigned cards use
 (`--dry-run` only lists; the upload never deletes or renames an emoji):
 

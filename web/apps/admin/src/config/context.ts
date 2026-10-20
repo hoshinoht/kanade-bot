@@ -51,14 +51,14 @@ export function isLocal(model: ModelInfo | undefined): boolean {
   return model !== undefined && !model.leaves_homelab;
 }
 
-/** An override may not exceed the alias's published window, nor the hard limit. */
+/** An override may not exceed the alias's published or declared window, nor the hard limit. */
 export function overrideMax(model: ModelInfo | undefined): number {
   return Math.min(model?.context_tokens ?? MAX_CONTEXT_TOKENS, MAX_CONTEXT_TOKENS);
 }
 
 export const SOURCE_LABELS: Record<ContextSource, string> = {
   override: 'Override',
-  catalog: 'Published by Kanata',
+  catalog: 'Published or declared',
   cloud_default: 'Cloud default',
   local_default: 'Local default',
 };

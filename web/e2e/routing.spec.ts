@@ -1,4 +1,4 @@
-import { ADMIN, expect, test, HEADING, choose } from './support';
+import { ADMIN, expect, moreNamed, test, HEADING, choose } from './support';
 
 const SECTIONS = {
   Schedule: ['Week', 'Fixed', 'Bosses', 'Drafts'],
@@ -6,7 +6,7 @@ const SECTIONS = {
   Operate: ['Members', 'Config', 'History'],
 };
 /** Rail option B: behind the More item, in its menu. */
-const MORE = ['Rewrites', 'Limits', 'Reminders', 'Guides'];
+const MORE = ['Rewrites', 'Limits', 'Reminders', 'Guides', 'Setup'];
 
 test('admin: grouped nav has every v4 section as a real route', async ({ page }) => {
   await page.goto(`${ADMIN}/?sw=off`);
@@ -15,9 +15,10 @@ test('admin: grouped nav has every v4 section as a real route', async ({ page })
     const links = nav.getByRole('group', { name: group });
     await expect(links.getByRole('link')).toHaveText(labels.map((l) => new RegExp(`^\\s*${l}`)));
   }
-  const more = nav.getByRole('button', { name: 'More', exact: true });
+  const more = nav.getByRole('button', { name: moreNamed() });
   await more.click();
-  await expect(page.getByRole('menu', { name: 'More destinations' }).getByRole('menuitem')).toHaveText(MORE);
+  // Setup's item carries its badge (the required steps left).
+  await expect(page.getByRole('menu', { name: 'More destinations' }).getByRole('menuitem')).toHaveText(MORE.map((l) => new RegExp(`^\\s*${l}`)));
   await page.keyboard.press('Escape');
   await expect(nav.getByRole('link', { name: 'Week' })).toHaveAttribute('aria-current', 'page');
 

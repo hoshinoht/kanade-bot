@@ -83,7 +83,7 @@ pub fn validate_context(
             && *window > maximum
         {
             return Err(PatchError::invalid(format!(
-                "models.context.overrides.{alias} exceeds Kanata's published context window ({maximum})."
+                "models.context.overrides.{alias} exceeds {alias}'s published context window ({maximum})."
             )));
         }
     }
@@ -144,7 +144,7 @@ fn find<'a>(catalog: &'a CatalogSnapshot, alias: &str) -> Option<&'a CatalogMode
 
 /// `off` unless the alias requires reasoning (a published list without
 /// `none`); otherwise the alias must be listed and publish the level (`null`
-/// efforts: Kanata restricts nothing). An unlisted alias takes only `off`.
+/// efforts: every level is accepted). An unlisted alias takes only `off`.
 fn legal(model: Option<&CatalogModel>, level: Reasoning) -> bool {
     let Some(model) = model else {
         return level == Reasoning::Off;
@@ -177,7 +177,7 @@ fn required_levels(model: &CatalogModel) -> String {
 
 fn accepted(alias: &str, model: Option<&CatalogModel>) -> String {
     let Some(model) = model else {
-        return format!("Kanata does not list {alias}, so only off is accepted");
+        return format!("The model gateway does not list {alias}, so only off is accepted");
     };
     match &model.reasoning_efforts {
         Some(efforts) => {
@@ -244,7 +244,7 @@ pub fn apply_roles(
                     // Only a changed alias is checked, so a vanished saved alias
                     // never blocks saving the other roles.
                     let model = find(catalog, alias).ok_or_else(|| {
-                        PatchError::invalid(format!("Kanata does not list {alias}."))
+                        PatchError::invalid(format!("The model gateway does not list {alias}."))
                     })?;
                     if role == Role::Chat && !model.function_tools {
                         return Err(PatchError::invalid(format!(
@@ -497,7 +497,8 @@ pub fn capacity(
     let Some(catalog) = catalog else {
         out.push(check(
             "warning",
-            "Kanata is unreachable; capacity is checked again once it lists its models.".into(),
+            "The model gateway is unreachable; capacity is checked again once it lists its models."
+                .into(),
             None,
         ));
         return out;
@@ -513,7 +514,7 @@ pub fn capacity(
                     if unlisted.insert(alias) {
                         out.push(check(
                             "error",
-                            format!("Kanata does not list {alias}."),
+                            format!("The model gateway does not list {alias}."),
                             Some(name),
                         ));
                     }
@@ -528,7 +529,7 @@ pub fn capacity(
                     None => out.push(check(
                         "warning",
                         format!(
-                            "Kanata publishes no limit for {alias}; its calls queue at the gateway."
+                            "The model gateway publishes no limit for {alias}; its calls queue at the gateway."
                         ),
                         Some(name),
                     )),
@@ -581,6 +582,7 @@ mod tests {
         CatalogModel {
             alias: alias.into(),
             published: true,
+            listed: true,
             trust_zone: None,
             leaves_homelab: false,
             reasoning_control: false,
@@ -668,7 +670,7 @@ mod tests {
                 ("ok", "Group equal: 2 permits, matching Kanata's limit."),
                 (
                     "warning",
-                    "Kanata publishes no limit for c; its calls queue at the gateway."
+                    "The model gateway publishes no limit for c; its calls queue at the gateway."
                 ),
             ]
         );
@@ -714,13 +716,13 @@ mod tests {
                     None
                 ),
                 // Unlisted in two groups: reported once, under the first.
-                ("Kanata does not list gone.", Some("over")),
+                ("The model gateway does not list gone.", Some("over")),
                 (
                     "Group over declares 3 permits but Kanata admits at most 2 (capped by a); the bot refuses to start.",
                     Some("over")
                 ),
                 (
-                    "Kanata publishes no limit for c; its calls queue at the gateway.",
+                    "The model gateway publishes no limit for c; its calls queue at the gateway.",
                     Some("open")
                 ),
             ]

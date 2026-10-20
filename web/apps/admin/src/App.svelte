@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { tick } from 'svelte';
+  import { tick, untrack } from 'svelte';
   import { MediaQuery, SvelteSet } from 'svelte/reactivity';
   import {
     AccountMenu,
@@ -42,6 +42,7 @@
   import { Staging } from './drafts/staging.svelte';
   import { reread } from './week/reread';
   import { followed, watchOutcomes } from './guides/outcome.svelte';
+  import { requiredLeft, setupStatus } from './setup/status.svelte';
 
   // Route-level code splitting: only the Week page (and the run sheet it
   // opens) is in the initial bundle; every other page loads on first visit.
@@ -67,6 +68,7 @@
     history: () => import('./history/HistoryPage.svelte'),
     drafts: () => import('./drafts/DraftsPage.svelte'),
     guides: () => import('./guides/GuidesPage.svelte'),
+    setup: () => import('./setup/SetupPage.svelte'),
   } as const;
 
   const router = new Router();
@@ -111,7 +113,7 @@
   const detail = $derived(DETAILS.find((d) => d.key === route?.key));
   const section = $derived(sections.find((s) => s.key === (detail?.section ?? route?.key)));
   // The rail's and drawer's attention badges; More sums those of the pages behind it.
-  const navBadges = $derived({ inbox: store.summary?.inbox ?? 0 });
+  const navBadges = $derived({ inbox: store.summary?.inbox ?? 0, setup: requiredLeft(setupStatus.data) });
   // A guide run this tab started toasts once it ends, on whatever page the admin is (Guides default 9).
   const following = $derived(followed.runs.length > 0);
   $effect(() => (following ? watchOutcomes(toaster) : undefined));
@@ -165,6 +167,10 @@
   // No polling behind the sign-in page; signing in starts it (and re-reads the session).
   const signingIn = $derived(route?.key === 'login');
   $effect(() => (signingIn ? undefined : store.start()));
+  // Setup's badge: read once per sign-in (each answer may wait on Discord and the gateway), never polled.
+  $effect(() => {
+    if (!signingIn) untrack(() => void setupStatus.load());
+  });
 
   // `/api/admin/me` names the member; before it answers (or on an older server) a Discord
   // sign-in's display name is the member's, when it names exactly one.
@@ -311,6 +317,8 @@
             void store.refresh();
           },
           onquiet: (on: boolean) => store.setQuiet(on),
+          // A save can settle a setup step: the badge follows without a visit to Setup.
+          onsaved: () => void setupStatus.refresh(),
           rescanOff: store.summary?.rescan_off ?? null,
           timeZone: store.week?.timezone ?? 'Asia/Kuala_Lumpur',
         };
@@ -330,6 +338,8 @@
       case 'members':
         // The session says whether the roster module is on; off, no Characters tab and no character requests.
         return { toaster, roster: store.session?.roster ?? false };
+      case 'setup':
+        return { timeZone: store.week?.timezone ?? 'Asia/Kuala_Lumpur' };
       default:
         return {};
     }

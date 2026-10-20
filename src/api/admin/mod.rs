@@ -22,6 +22,7 @@ mod presence;
 pub(crate) mod read;
 mod reminders;
 pub(crate) mod replay;
+mod setup;
 mod tonight;
 pub(crate) mod write;
 
@@ -63,6 +64,7 @@ pub fn routes() -> Router<Arc<Site>> {
         .merge(character_data::routes())
         .merge(guides::routes())
         .merge(presence::routes())
+        .merge(setup::routes())
         .merge(events::routes())
         .route_layer(axum::middleware::from_fn(etag::revalidate))
 }

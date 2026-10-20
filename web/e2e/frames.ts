@@ -35,6 +35,7 @@ export const SCREENS: [string, string, string][] = [
   ['admin', ADMIN, '/config?section=models'],
   ['admin', ADMIN, '/config?section=persona'],
   ['admin', ADMIN, '/config?section=profanity'],
+  ['admin', ADMIN, '/setup'],
   ['public', PUBLIC, '/'],
 ];
 

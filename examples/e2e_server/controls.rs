@@ -20,6 +20,11 @@
 //! - `POST /__e2e/limits` `{groups: "three" | "default"}`: the canned
 //!   governor Limits shows: the mock's declared cloud, local and legacy
 //!   groups, or the one gateway group (no real flow fills a governor).
+//! - `POST /__e2e/gateway` `{mode: "kanata" | "plain" | "no_listing"}`: how
+//!   the fake model gateway lists its models (Kanata metadata; the same ids
+//!   without it; `/v1/models` 404), then a restart over the live store so
+//!   the model stack starts from that listing. 204; a reset brings `kanata`
+//!   back.
 //! - `POST /__e2e/public/end`: ends every member-portal session through the
 //!   store's session API, as an expiry or a sign-out elsewhere would;
 //!   answers `{ended}`.
@@ -64,7 +69,7 @@ use serde_json::{Value, json};
 
 use crate::{
     EDGE_SECRET, Fail, TAILSCALE_LOGIN,
-    fakes::discord,
+    fakes::{discord, gateway},
     live::{AdminSessions, Generation, Modules, Routes, World},
 };
 
@@ -229,6 +234,7 @@ impl Shared {
         let mut slot = self.generation.lock().await;
         self.clock.reset();
         self.world.three_groups.store(false, Ordering::SeqCst);
+        self.world.set_gateway(gateway::Mode::Kanata);
         self.world.offline.store(false, Ordering::SeqCst);
         p5::reset(&self.world);
         slot.serial += 1;
@@ -357,6 +363,7 @@ pub fn router(shared: &Arc<Shared>, origin: Origin) -> Router {
         .route("/__e2e/chat-allowance", post(spend_chat))
         .route("/__e2e/modules", post(set_modules))
         .route("/__e2e/limits", post(set_limits))
+        .route("/__e2e/gateway", post(set_gateway))
         .route("/__e2e/public/end", post(end_member_sessions))
         .route(REPORTS, get(list).post(receive).delete(clear))
         .merge(discord::routes(Arc::clone(&shared.page)))
@@ -506,6 +513,30 @@ async fn set_limits(
         .three_groups
         .store(three, Ordering::SeqCst);
     StatusCode::NO_CONTENT
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct GatewayChange {
+    mode: String,
+}
+
+async fn set_gateway(
+    State(side): State<Side>,
+    body: Result<Json<GatewayChange>, JsonRejection>,
+) -> Response {
+    let Ok(Json(change)) = body else {
+        return StatusCode::BAD_REQUEST.into_response();
+    };
+    let Some(mode) = gateway::Mode::parse(&change.mode) else {
+        return StatusCode::UNPROCESSABLE_ENTITY.into_response();
+    };
+    side.shared.world.set_gateway(mode);
+    let modules = side.shared.generation.lock().await.modules;
+    match side.shared.restart(modules).await {
+        Ok(_) => StatusCode::NO_CONTENT.into_response(),
+        Err(error) => (StatusCode::INTERNAL_SERVER_ERROR, error.to_string()).into_response(),
+    }
 }
 
 async fn end_member_sessions(State(side): State<Side>) -> Response {

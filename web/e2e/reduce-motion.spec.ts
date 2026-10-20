@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test';
-import { ADMIN, PUBLIC, expect, signInPublic, test } from './support';
+import { ADMIN, PUBLIC, expect, moreNamed, signInPublic, test } from './support';
 
 // Account › This browser › "Reduce motion": on, the admin app moves exactly as
 // under the device's `prefers-reduced-motion: reduce`; off, it follows the
@@ -56,7 +56,7 @@ async function signature(page: Page): Promise<Signature> {
   await page.waitForTimeout(150); // "nothing starts" needs real time to pass
   const paneAnimations = await animated(page);
 
-  await nav.getByRole('button', { name: 'More', exact: true }).click();
+  await nav.getByRole('button', { name: moreNamed() }).click();
   await page.getByRole('menuitem', { name: 'Limits' }).click();
   const bars = page.getByRole('progressbar', { name: / permits in use$/ });
   await expect(bars.first()).toBeVisible();

@@ -103,6 +103,8 @@ fn metadata(meta: &Map<String, Value>) -> ModelCapabilities {
             .get("admission")
             .and_then(Value::as_object)
             .and_then(admission),
+        // Declared only; never read from a listing.
+        output_limit: None,
     }
 }
 

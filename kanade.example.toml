@@ -139,7 +139,8 @@ bossing_role_id = "223456789012345678"
 # scouter_url = "http://scouter:8091"
 
 [models]
-# The model gateway (required with Compose, which always sets key_file):
+# The OpenAI-compatible model gateway (Kanata or another server; required with
+# Compose, which always sets key_file):
 # https, or http only to loopback, localhost or host.docker.internal.
 base_url = "https://kanata.example/v1"
 # Bearer key file and an optional CA bundle replacing the compiled roots.
@@ -149,8 +150,9 @@ key_file = "/run/secrets/kanade_model_api_key"
 # with groups, which replace that group.
 # permits = 2
 # Configured external models receive raw member names, IDs, message text and
-# URLs. Kanata provider ZDR concerns retention, not transmission. The retired
-# pseudonymize and allow_external_unmasked keys are rejected if present.
+# URLs. A provider's retention terms (such as zero data retention) concern
+# retention, not transmission. The retired pseudonymize and
+# allow_external_unmasked keys are rejected if present.
 
 # Capacity groups: aliases sharing hardware share permits (1-16). A role
 # whose alias is in no group has its calls refused. The table form
@@ -159,9 +161,10 @@ key_file = "/run/secrets/kanade_model_api_key"
 
 # Capability declarations for aliases whose listing publishes no Kanata
 # metadata (another OpenAI-compatible server); Kanata's published metadata
-# always wins. Fields: structured_output, function_tools, sampling_controls,
-# reasoning_control, reasoning_efforts, context_tokens, max_output_tokens.
-# See kanade.openai-compatible.example.toml for the table form.
+# always wins. Declared models the server does not list are still offered.
+# Fields: structured_output, function_tools, sampling_controls,
+# reasoning_control, reasoning_efforts, context_tokens, max_output_tokens,
+# output_limit. See kanade.openai-compatible.example.toml for the table form.
 # capabilities = { "example-plain-model" = { structured_output = true, function_tools = true } }
 
 # Context seeds apply only until `v5.model_context` is saved through Config

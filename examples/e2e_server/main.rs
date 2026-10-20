@@ -273,11 +273,13 @@ fn config(
             "KANADE_MODEL_BASE_URL",
             format!("http://{}/v1", fakes.gateway),
         ),
-        // The mock's role aliases (published by the fake gateway's catalog)
-        // and its one permit.
+        // The mock's role aliases (published by the fake gateway's catalog),
+        // their declarations (used only once `/__e2e/gateway` drops the
+        // Kanata metadata) and its one permit.
         ("KANADE_EXTRACT_MODEL", "kanata/extract".to_owned()),
         ("KANADE_CHAT_MODEL", "kanata/chat".to_owned()),
         ("KANADE_REWRITE_MODEL", "kanata/rewrite-small".to_owned()),
+        ("KANADE_MODEL_CAPABILITIES", fakes::gateway::declarations()),
         ("KANADE_MODEL_PERMITS", "1".to_owned()),
         ("KANADE_SCOUTER_URL", format!("http://{}", fakes.scouter)),
     ]
