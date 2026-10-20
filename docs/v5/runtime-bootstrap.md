@@ -80,6 +80,8 @@ and has a bounded timeout.
 | `KANADE_PUBLIC_BIND` | unset | Public listener, same address rule; used only while `KANADE_PUBLIC_HOST` is set (the host turns the listener on; Compose always sets `172.25.0.10:8081`), then required and must differ from the admin bind. Requires `KANADE_CLOUDFLARED_PEER` then. |
 | `KANADE_ALLOW_PRIVATE_BIND` | `0` | `1` lets both listeners bind a private address on an internal container network. Never wildcard or public. |
 | `KANADE_SECRETS_DIR` | `/run/secrets` | The secrets directory ("Secrets directory" below). |
+| `KANADE_SAVED_SECRETS_DIR` | unset (image: `/data/secrets`) | Where admin Setup saves secrets; unset, nothing can be saved there ("Secrets directory" below). |
+| `KANADE_SUPERVISED` | `0` (Compose: `1`) | Something restarts the process after it exits, so Setup offers "Restart now". |
 | `KANADE_ADMIN_HOST` | unset | Exact `host[:port]` the admin listener serves; unset accepts only `localhost`, `127.0.0.1`, `[::1]` (any port). |
 | `KANADE_PUBLIC_HOST` | unset | Exact `host[:port]` of the public listener; set, it turns the listener on (needs `KANADE_PUBLIC_BIND`); must differ from the admin host. |
 | `KANADE_TRUSTED_PROXY` | unset | IP of the edge peer; only it may supply `X-Forwarded-*`/`Forwarded` headers to admin, and `Tailscale-*` only with the edge secret. With the secrets file `edge_secret` present (≥ 32 bytes) it is trusted only when it presents that secret in `X-Kanade-Edge-Auth`. See "Edge contract". |
@@ -278,7 +280,7 @@ Each kind of value has one owner:
 
 | Kind | Owner | Examples |
 |---|---|---|
-| Paths inside the image | `deploy/Dockerfile` `ENV` | `KANADE_DB_PATH`, `KANADE_OWNER_LOCK_DIR`, `KANADE_IDENTITY_DIR`, `KANADE_WEB_DIR`, `KANADE_BOSS_DIR`, `KANADE_CATALOG_FILE`, `KANADE_KNOWLEDGE_DIR`, `KANADE_PERSONA_DIR`, `KANADE_EMOJI_DIR`, `KANADE_CHARACTER_DATA_DB_PATH`, `KANADE_BACKUP_DIR`, `KANADE_SECRETS_DIR` |
+| Paths inside the image | `deploy/Dockerfile` `ENV` | `KANADE_DB_PATH`, `KANADE_OWNER_LOCK_DIR`, `KANADE_IDENTITY_DIR`, `KANADE_WEB_DIR`, `KANADE_BOSS_DIR`, `KANADE_CATALOG_FILE`, `KANADE_KNOWLEDGE_DIR`, `KANADE_PERSONA_DIR`, `KANADE_EMOJI_DIR`, `KANADE_CHARACTER_DATA_DB_PATH`, `KANADE_BACKUP_DIR`, `KANADE_SECRETS_DIR`, `KANADE_SAVED_SECRETS_DIR` |
 | Network addresses | `deploy/compose.yaml` (and the override) `environment:` | `KANADE_ADMIN_BIND`, `KANADE_PUBLIC_BIND`, `KANADE_ALLOW_PRIVATE_BIND`, `KANADE_CLOUDFLARED_PEER`, `KANADE_TRUSTED_PROXY` |
 | Secrets | files with fixed names in the secrets directory ("Secrets directory" below) | `discord_token`, `admin_token`, `model_api_key` |
 | Deployment settings | `kanade.toml` (the table below) | timezone, Discord ids and roles, hosts, OAuth client ids, model gateway, modules |
@@ -380,6 +382,22 @@ or cannot be read refuses as well, and so does a directory that cannot be
 searched (a missing file is the only "absent"). A file no feature uses is
 ignored. The backup encryption keys are not secrets: they are the
 `recipients` file in `KANADE_BACKUP_DIR` (see `KANADE_BACKUP_DIR`).
+
+Saved from Setup: `discord_token`, `model_api_key`, `discord_client_secret`,
+`public_discord_client_secret` and `nexon_api_key` may also be entered in
+the admin app's More › Setup, which writes them (0600, through a temporary
+file and a rename) into `KANADE_SAVED_SECRETS_DIR` (the image's
+`/data/secrets`, created 0700 on the first save and refused if it is a
+symlink or open to group or others). They are read after the secrets
+directory, so a host file always wins and Setup will not save over one;
+`admin_token`, `edge_secret` and `model_ca.pem` are host files only. Saving
+needs a sign-in from the last 15 minutes, is recorded in History (section
+`secrets`, "saved" or "replaced", never the value) and applies at the next
+start: with `KANADE_SUPERVISED` set, Setup's "Restart now" first checks the
+configuration and every secret the next start reads, then shuts down as a
+SIGTERM would. The saved files live on the data volume, so they are in the
+whole-volume tarball (encrypted with recipients) but not in `kanade backup`
+snapshots.
 
 ### Live serve
 

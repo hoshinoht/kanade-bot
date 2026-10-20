@@ -24,6 +24,9 @@ services:
     environment:
       KANADE_CONFIG: /config/kanade.toml
       KANADE_ALLOW_PRIVATE_BIND: "1"
+      # `restart: unless-stopped` below starts the bot again after Setup's
+      # "Restart now" exits it.
+      KANADE_SUPERVISED: "1"
       # The bot's fixed address on the admin network, published on the host's
       # loopback below. `kanade healthcheck` targets it.
       KANADE_ADMIN_BIND: 172.23.0.10:8080

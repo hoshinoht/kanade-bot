@@ -58,6 +58,13 @@ impl ApiError {
         error: "reauth_required",
         message: "Sign in with Discord again to make this change.",
     };
+    /// A sensitive admin change (saving a secret) after the admin session's
+    /// fresh window (`AdminSession::require_fresh`).
+    pub const ADMIN_REAUTH_REQUIRED: Self = Self {
+        status: StatusCode::UNAUTHORIZED,
+        error: "admin_reauth_required",
+        message: "Sign in again to make this change.",
+    };
     /// A mutation without this origin's markers or the session's CSRF token.
     pub const CSRF: Self = Self {
         status: StatusCode::FORBIDDEN,

@@ -302,6 +302,7 @@ pub(super) async fn compose_with(
                 None => false,
             },
         },
+        setup_secrets: super::setup_secrets::desk(config)?,
         avatars: Some(avatars),
         events,
         presence: Default::default(),
@@ -345,6 +346,11 @@ pub struct Overrides {
     /// Run the background estimate refresh on serve's schedule (10 minutes
     /// after start, then hourly); off, nothing looks up on its own.
     pub estimate_refresh: bool,
+    /// Setup's secret checks in place of Discord and the gateway (only with
+    /// a saved secrets directory).
+    pub secret_checks: Option<Arc<dyn crate::api::state::SecretChecks>>,
+    /// Setup's "Restart now" in place of a real shutdown.
+    pub restart: Option<crate::api::state::RestartPort>,
 }
 
 /// Test support: the composition and its running module `character_data`
@@ -376,6 +382,8 @@ pub async fn compose_for_tests(
         model_limits,
         nexon,
         estimate_refresh,
+        secret_checks,
+        restart,
     } = overrides;
     let mut composition = compose_with(
         config,
@@ -408,6 +416,14 @@ pub async fn compose_for_tests(
         Arc::get_mut(&mut admin.state)
             .ok_or_else(unshared)?
             .model_limits = model_limits;
+    }
+    if let Some(checks) = secret_checks {
+        let state = Arc::get_mut(&mut admin.state).ok_or_else(unshared)?;
+        if let Some(files) = state.setup_secrets.as_ref().map(|desk| desk.files.clone()) {
+            state.setup_secrets = Some(Arc::new(crate::api::state::SecretDesk::new(
+                files, checks, restart,
+            )));
+        }
     }
     let character_data = super::character_data::start_with(
         config,

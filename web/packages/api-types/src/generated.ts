@@ -2112,6 +2112,57 @@ export type SetupReason = "gateway_off" | "connecting" | "gateway_closed" | "not
 export type PrivilegedIntent = "server_members" | "message_content";
 
 /**
+ * `GET /api/admin/setup/secrets`: presence only, never a value.
+ */
+export type SetupSecrets = { secrets: Array<SetupSecret>, 
+/**
+ * A secret was saved since this process started: it is read at start.
+ */
+restart_pending: boolean, 
+/**
+ * "Restart now" is offered: a supervisor restarts the process.
+ */
+restart_available: boolean, };
+
+export type SetupSecret = { name: SecretName, source: SecretSource, 
+/**
+ * `POST …/check` can test a candidate value against its service.
+ */
+checkable: boolean, };
+
+/**
+ * A secret Setup may save (`runtime::secrets::SAVEABLE`, same order).
+ */
+export type SecretName = "discord_token" | "model_api_key" | "discord_client_secret" | "public_discord_client_secret" | "nexon_api_key";
+
+/**
+ * Where a secret is set.
+ */
+export type SecretSource = "absent" | "host" | "saved";
+
+/**
+ * `POST /api/admin/setup/secrets/{name}/check`. The candidate is not kept.
+ */
+export type SecretCheck = { result: SecretCheckResult, 
+/**
+ * `discord_token`: the bot's user name.
+ */
+bot_name?: string, 
+/**
+ * `discord_token`: privileged intents still off for that application.
+ */
+missing_intents?: Array<PrivilegedIntent>, 
+/**
+ * `model_api_key`: models the gateway lists (0 when it serves no list).
+ */
+models?: number, };
+
+/**
+ * What checking a candidate secret found.
+ */
+export type SecretCheckResult = "ok" | "refused" | "unreachable" | "not_checked";
+
+/**
  * What the log filters can offer (all values seen, not only the filtered rows').
  */
 export type LogFacets = { models: Array<string>, tools: Array<string>, outcomes: Array<string>, channels: Array<Member>, };

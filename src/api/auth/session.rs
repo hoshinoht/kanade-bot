@@ -31,7 +31,14 @@ pub struct AdminSession {
     pub avatar_hash: Option<String>,
     /// `None` for bearer (CLI) requests, which carry no ambient credential.
     session_id: Option<String>,
+    /// When the cookie session was signed in (`None` for bearer requests,
+    /// which present the break-glass token itself on every call).
+    signed_in_at: Option<chrono::DateTime<chrono::Utc>>,
 }
+
+/// How long after signing in an admin may make a sensitive change (saving a
+/// secret) without signing in again.
+pub const FRESH_WINDOW: chrono::TimeDelta = chrono::TimeDelta::minutes(15);
 
 impl AdminSession {
     pub fn csrf_token(&self) -> Option<String> {
@@ -42,6 +49,15 @@ impl AdminSession {
 
     pub(crate) fn session_id(&self) -> Option<&str> {
         self.session_id.as_deref()
+    }
+
+    /// `401 admin_reauth_required` once [`FRESH_WINDOW`] has passed since
+    /// sign-in; a bearer request is always fresh.
+    pub fn require_fresh(&self, now: chrono::DateTime<chrono::Utc>) -> Result<(), ApiError> {
+        match self.signed_in_at {
+            Some(at) if now - at >= FRESH_WINDOW => Err(ApiError::ADMIN_REAUTH_REQUIRED),
+            _ => Ok(()),
+        }
     }
 
     /// The Discord user id of a Discord sign-in (Tailscale and token
@@ -210,6 +226,7 @@ impl AdminAuth {
             display: session.display,
             avatar_hash: session.avatar_hash,
             session_id: Some(id),
+            signed_in_at: Some(session.created_at),
         })
     }
 
@@ -268,6 +285,7 @@ impl AdminAuth {
                 display: "Break-glass token".into(),
                 avatar_hash: None,
                 session_id: None,
+                signed_in_at: None,
             });
         }
         self.rate()

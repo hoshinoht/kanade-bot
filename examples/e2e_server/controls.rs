@@ -236,6 +236,7 @@ impl Shared {
         self.world.three_groups.store(false, Ordering::SeqCst);
         self.world.set_gateway(gateway::Mode::Kanata);
         self.world.offline.store(false, Ordering::SeqCst);
+        self.world.forget_saved_secrets();
         p5::reset(&self.world);
         slot.serial += 1;
         let path = self.db_dir.join(format!("live-{}.sqlite3", slot.serial));

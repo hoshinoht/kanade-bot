@@ -41,6 +41,44 @@ const REQUESTS_PER_MIN_PER_PERMIT: u32 = 60;
 
 pub type GatewayClient = ModelClient<OpenAiCompatibleProvider>;
 
+/// What a candidate gateway key got from the model list.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum KeyCheck {
+    /// Accepted; the models listed (0 when the gateway serves no list).
+    Accepted(usize),
+    /// The gateway refused the key.
+    Refused,
+    /// No answer, or one that says nothing about the key.
+    Unreachable,
+}
+
+/// One `GET /models` to `base_url` with a candidate `key` (and the CA bundle
+/// the gateway is trusted with), never kept: Setup's check before a save.
+pub async fn check_key(base_url: &str, ca_file: Option<&std::path::Path>, key: &str) -> KeyCheck {
+    let mut config = HttpProviderConfig::new(base_url);
+    let Ok(bearer) = BearerKey::from_bytes(key.as_bytes()) else {
+        return KeyCheck::Refused;
+    };
+    config.bearer_key = Some(bearer);
+    if let Some(path) = ca_file {
+        match ca::read(path) {
+            Ok(roots) => config.trust_roots = TrustRoots::Custom(roots),
+            Err(_) => return KeyCheck::Unreachable,
+        }
+    }
+    let Ok(provider) = OpenAiCompatibleProvider::new(config) else {
+        return KeyCheck::Unreachable;
+    };
+    match provider.list_models().await {
+        Ok(models) => KeyCheck::Accepted(models.len()),
+        Err(failure) if failure.reason_code == super::NO_LISTING => KeyCheck::Accepted(0),
+        Err(failure) if matches!(failure.kind, super::ProviderFailureKind::Authentication) => {
+            KeyCheck::Refused
+        }
+        Err(_) => KeyCheck::Unreachable,
+    }
+}
+
 /// A role's reasoning level; `Inherit` (chat and rewrite only) takes the
 /// extraction role's level.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]

@@ -165,6 +165,10 @@ Pointers are `<file>#/$defs/<Name>`.
 | `DELETE /api/admin/limits/windows/{id}` | `common.json#/$defs/Message` |
 | `GET`/`PATCH /api/admin/config` | `config.json#/$defs/ConfigView` (PATCH may add `notices`; both carry one while the saved models are not running; section `posting` edits the digest channel, see `ConfigView.posting`) |
 | `GET /api/admin/setup` | `setup.json#/$defs/SetupView` (admin origin only, any signed-in admin incl. break-glass; read-only, never 5xx for a missing fact: each of the 16 items, required first, is `ok`/`missing`/`warn`/`off` with typed facts only, no secret, path or URL of the deployment; Discord's application, the model catalog, module health and the backup directory are each read within 5 s, else `warn`/`unavailable`) |
+| `GET /api/admin/setup/secrets` | `setup.json#/$defs/SetupSecrets` (admin origin only; presence of each secret Setup may save, never a value; 409 `not_saveable` without a saved secrets directory) |
+| `PUT /api/admin/setup/secrets/{name}` | body `setup.json#/$defs/SecretCandidate`; `SetupSecrets` (write-only: saves the file 0600 in the saved directory, read after the host secrets directory at the next start; a sign-in older than 15 minutes answers 401 `admin_reauth_required`; 409 `on_host` while a host file sets it, 422 `invalid` for anything but one non-empty line of at most 4 KiB, 404 for another name; History records section `secrets`, key `secret.<name>`, `saved`/`replaced`, never the value) |
+| `POST /api/admin/setup/secrets/{name}/check` | body `SecretCandidate`; `setup.json#/$defs/SecretCheck` (tests a candidate bot token against Discord or a model key against the configured gateway within 10 s; the candidate is never kept; other secrets answer `not_checked`) |
+| `POST /api/admin/setup/restart` | `202`, no body (fresh sign-in as above; checks the configuration and secrets the next start reads, then shuts down gracefully for the supervisor to start again; 409 `not_supervised` without one, 422 `would_fail` naming what would fail) |
 | `POST /api/admin/config/profiles/reload` | `common.json#/$defs/ReloadResult` |
 | `POST /api/admin/digest` | `common.json#/$defs/Message` |
 | `POST /api/admin/headers/rewrite` | `202` `common.json#/$defs/Message` (the run continues in the background; `200` when nothing posted this boss week has a header; 409 `ApiError` `rewrite_running`/`rewrite_off`) |
@@ -382,3 +386,8 @@ Pointers are `<file>#/$defs/<Name>`.
   (`channel_id`, `channel_id_source`), writable through
   `PATCH /api/admin/config` section `posting`; the `KANADE_POST_CHANNEL_ID`
   row leaves `ConfigView.env`.
+- Setup secrets (2026-10-20): `setup.json` `SetupSecrets`, `SetupSecret`,
+  `SecretCheck`, the `SecretCandidate` body and their enums for
+  `GET /api/admin/setup/secrets`, `PUT …/{name}`, `POST …/{name}/check` and
+  `POST /api/admin/setup/restart`; `error.json` `ApiError.error` adds
+  `admin_reauth_required`.

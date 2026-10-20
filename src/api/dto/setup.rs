@@ -129,6 +129,29 @@ crate::domain::spelled! {
     }
 }
 
+impl PrivilegedIntent {
+    /// The intents an application's flags leave off. Discord's Application
+    /// Flags carry each in its 100+ servers form or the under-100 form the
+    /// Bot page switches on.
+    pub fn missing(flags: twilight_model::oauth::ApplicationFlags) -> Vec<Self> {
+        use twilight_model::oauth::ApplicationFlags as Flags;
+        [
+            (
+                Self::ServerMembers,
+                Flags::GATEWAY_GUILD_MEMBERS | Flags::GATEWAY_GUILD_MEMBERS_LIMITED,
+            ),
+            (
+                Self::MessageContent,
+                Flags::GATEWAY_MESSAGE_CONTENT | Flags::GATEWAY_MESSAGE_CONTENT_LIMITED,
+            ),
+        ]
+        .into_iter()
+        .filter(|(_, on)| !flags.intersects(*on))
+        .map(|(intent, _)| intent)
+        .collect()
+    }
+}
+
 /// `GET /api/admin/setup`.
 #[derive(Clone, Debug, Serialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
@@ -233,6 +256,102 @@ impl SetupItem {
     }
 }
 
+crate::domain::spelled! {
+    /// A secret Setup may save (`runtime::secrets::SAVEABLE`, same order).
+    #[derive(Serialize)]
+    #[cfg_attr(test, derive(ts_rs::TS))]
+    #[serde(rename_all = "snake_case")]
+    SecretName {
+        DiscordToken => "discord_token",
+        ModelApiKey => "model_api_key",
+        DiscordClientSecret => "discord_client_secret",
+        PublicDiscordClientSecret => "public_discord_client_secret",
+        NexonApiKey => "nexon_api_key",
+    }
+}
+
+crate::domain::spelled! {
+    /// Where a secret is set.
+    #[derive(Serialize)]
+    #[cfg_attr(test, derive(ts_rs::TS))]
+    #[serde(rename_all = "snake_case")]
+    SecretSource {
+        Absent => "absent",
+        /// A file in the host secrets directory: it wins and Setup cannot
+        /// replace it.
+        Host => "host",
+        /// Saved from Setup.
+        Saved => "saved",
+    }
+}
+
+crate::domain::spelled! {
+    /// What checking a candidate secret found.
+    #[derive(Serialize)]
+    #[cfg_attr(test, derive(ts_rs::TS))]
+    #[serde(rename_all = "snake_case")]
+    SecretCheckResult {
+        /// The service accepted it.
+        Ok => "ok",
+        /// The service refused it (wrong or revoked).
+        Refused => "refused",
+        /// The service did not answer in time; nothing is known.
+        Unreachable => "unreachable",
+        /// This secret has no check here (it is checked when used).
+        NotChecked => "not_checked",
+    }
+}
+
+/// `GET /api/admin/setup/secrets`: presence only, never a value.
+#[derive(Clone, Debug, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+pub struct SetupSecrets {
+    pub secrets: Vec<SetupSecret>,
+    /// A secret was saved since this process started: it is read at start.
+    pub restart_pending: bool,
+    /// "Restart now" is offered: a supervisor restarts the process.
+    pub restart_available: bool,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+pub struct SetupSecret {
+    pub name: SecretName,
+    pub source: SecretSource,
+    /// `POST …/check` can test a candidate value against its service.
+    pub checkable: bool,
+}
+
+/// `POST /api/admin/setup/secrets/{name}/check`. The candidate is not kept.
+#[derive(Clone, Debug, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+pub struct SecretCheck {
+    pub result: SecretCheckResult,
+    /// `discord_token`: the bot's user name.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub bot_name: Option<String>,
+    /// `discord_token`: privileged intents still off for that application.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub missing_intents: Option<Vec<PrivilegedIntent>>,
+    /// `model_api_key`: models the gateway lists (0 when it serves no list).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub models: Option<u32>,
+}
+
+impl SecretCheck {
+    pub fn new(result: SecretCheckResult) -> Self {
+        Self {
+            result,
+            bot_name: None,
+            missing_intents: None,
+            models: None,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -251,6 +370,15 @@ mod tests {
         check(SetupSource::ALL, SetupSource::as_str);
         check(SetupReason::ALL, SetupReason::as_str);
         check(PrivilegedIntent::ALL, PrivilegedIntent::as_str);
+        check(SecretName::ALL, SecretName::as_str);
+        check(SecretSource::ALL, SecretSource::as_str);
+        check(SecretCheckResult::ALL, SecretCheckResult::as_str);
+    }
+
+    #[test]
+    fn secret_names_are_the_saveable_files_in_order() {
+        let names: Vec<_> = SecretName::ALL.iter().map(|name| name.as_str()).collect();
+        assert_eq!(names, crate::runtime::secrets::SAVEABLE);
     }
 
     /// Complete once every required item is `ok`; optional ones never count.

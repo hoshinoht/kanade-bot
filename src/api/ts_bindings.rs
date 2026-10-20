@@ -310,6 +310,12 @@ fn bindings() -> String {
         .add::<setup::SetupSource>()
         .add::<setup::SetupReason>()
         .add::<setup::PrivilegedIntent>()
+        .add::<setup::SetupSecrets>()
+        .add::<setup::SetupSecret>()
+        .add::<setup::SecretName>()
+        .add::<setup::SecretSource>()
+        .add::<setup::SecretCheck>()
+        .add::<setup::SecretCheckResult>()
         // Chat and Extractions logs, rescans
         .add::<logs::LogFacets>()
         .add::<logs::UsageSummary>()

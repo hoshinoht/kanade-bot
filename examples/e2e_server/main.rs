@@ -198,6 +198,11 @@ fn config(
         ("KANADE_CLOUDFLARED_PEER", LOOPBACK.to_string()),
         ("KANADE_DISCORD_GATEWAY", "0".to_owned()),
         ("KANADE_SECRETS_DIR", root.display().to_string()),
+        // Setup saves into it; a reset empties it (`World::forget_saved_secrets`).
+        (
+            "KANADE_SAVED_SECRETS_DIR",
+            root.join("saved").display().to_string(),
+        ),
         // Tailscale sign-in behind an edge. Serve refuses a loopback edge, so
         // the config names a private one and `live::World` trusts the
         // browser's loopback peer instead, still only with the edge secret.

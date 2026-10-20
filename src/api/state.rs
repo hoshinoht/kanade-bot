@@ -1099,6 +1099,64 @@ pub struct SetupFacts {
     pub backup_recipients: bool,
 }
 
+/// Checks a candidate secret against its service without keeping it.
+pub trait SecretChecks: Send + Sync {
+    fn check<'a>(
+        &'a self,
+        name: super::dto::setup::SecretName,
+        value: &'a str,
+    ) -> Pin<Box<dyn Future<Output = super::dto::setup::SecretCheck> + Send + 'a>>;
+}
+
+/// Setup's "Restart now": checks the next start's configuration, then
+/// starts the graceful shutdown; the error names what would fail.
+pub type RestartPort = Arc<dyn Fn() -> Result<(), String> + Send + Sync>;
+
+/// Secrets an admin may save from Setup (present only with a saved
+/// directory), with their checks and the restart that applies them.
+pub struct SecretDesk {
+    pub files: Vec<crate::runtime::secrets::SecretFile>,
+    pub checks: Arc<dyn SecretChecks>,
+    /// `None` without a supervisor to start the process again.
+    pub restart: Option<RestartPort>,
+    /// Saved since this process started (read only at the next start).
+    saved: std::sync::Mutex<std::collections::BTreeSet<&'static str>>,
+}
+
+impl SecretDesk {
+    pub fn new(
+        files: Vec<crate::runtime::secrets::SecretFile>,
+        checks: Arc<dyn SecretChecks>,
+        restart: Option<RestartPort>,
+    ) -> Self {
+        Self {
+            files,
+            checks,
+            restart,
+            saved: Default::default(),
+        }
+    }
+
+    pub fn file(&self, name: &str) -> Option<&crate::runtime::secrets::SecretFile> {
+        self.files.iter().find(|file| file.name() == name)
+    }
+
+    pub fn mark_saved(&self, name: &'static str) {
+        self.saved
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .insert(name);
+    }
+
+    pub fn restart_pending(&self) -> bool {
+        !self
+            .saved
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .is_empty()
+    }
+}
+
 /// Everything the admin read routes compose.
 pub struct ApiState {
     pub store: Arc<dyn ReadStore>,
@@ -1138,6 +1196,8 @@ pub struct ApiState {
     pub backups: BackupDir,
     /// What admin Setup reports about the deployment.
     pub setup: SetupFacts,
+    /// Secrets saved from Setup; `None` without a saved directory.
+    pub setup_secrets: Option<Arc<SecretDesk>>,
     /// Member and admin portraits; `None` serves monograms only.
     pub avatars: Option<Arc<super::avatars::AvatarCache>>,
     /// Change hints for open admin pages (`GET /api/admin/events`), fed by

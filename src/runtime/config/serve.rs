@@ -8,7 +8,10 @@ use std::{
 
 use chrono::{NaiveTime, Weekday};
 
-use crate::domain::settings::{OVERRIDE_RUN_MINUTES, RUN_MINUTES, RunLengths};
+use crate::{
+    domain::settings::{OVERRIDE_RUN_MINUTES, RUN_MINUTES, RunLengths},
+    runtime::secrets::{self, SecretFile},
+};
 
 use super::{
     DiscordSettings, Error, FileSettings, GuildSettings, ModelSettings, RuntimeConfig,
@@ -35,6 +38,12 @@ pub struct ServeConfig {
     pub modules: Modules,
     /// Module `character_data`'s file and key; `None` while it is off.
     pub character_data: Option<CharacterDataSettings>,
+    /// The secrets Setup may save (empty without `KANADE_SAVED_SECRETS_DIR`),
+    /// in [`secrets::SAVEABLE`] order.
+    pub saveable_secrets: Vec<SecretFile>,
+    /// `KANADE_SUPERVISED`: something restarts the process after it exits,
+    /// so Setup may offer "Restart now".
+    pub supervised: bool,
 }
 
 /// Optional modules, read once at startup: a change applies on restart.
@@ -103,7 +112,39 @@ impl ServeConfig {
                 modules.roster,
             )?,
             modules,
+            saveable_secrets: secrets::SAVEABLE
+                .iter()
+                .map(|name| SecretFile::named(values, name))
+                .filter(SecretFile::saveable)
+                .collect(),
+            supervised: crate::runtime::serve::restart::supervised(values)?,
         })
+    }
+
+    /// Reads every secret this configuration needs, as startup will, so a
+    /// restart that would fail is refused while the bot still runs.
+    pub fn preflight(&self) -> Result<(), Error> {
+        self.discord.read_token()?;
+        self.runtime.admin_auth.token.read_optional()?;
+        for discord in [
+            &self.runtime.admin_auth.discord,
+            &self.runtime.public_auth.discord,
+        ]
+        .into_iter()
+        .flatten()
+        {
+            discord.client_secret.read("its Discord sign-in needs it")?;
+        }
+        self.models.read_key()?;
+        self.models.ca_file()?;
+        if let Some(nexon) = self
+            .character_data
+            .as_ref()
+            .and_then(|settings| settings.nexon_key.as_ref())
+        {
+            nexon.read_optional()?;
+        }
+        Ok(())
     }
 }
 

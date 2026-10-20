@@ -3,7 +3,11 @@
 //! (https, or http only to loopback, `localhost` or `host.docker.internal`)
 //! so a bad value fails at startup, not first call.
 
-use std::{collections::BTreeMap, net::IpAddr, path::PathBuf};
+use std::{
+    collections::BTreeMap,
+    net::IpAddr,
+    path::{Path, PathBuf},
+};
 
 use hyper::Uri;
 
@@ -130,8 +134,8 @@ impl ModelSettings {
     /// The CA bundle's path, when the file is present.
     pub fn ca_file(&self) -> Result<Option<PathBuf>, Error> {
         match &self.ca {
-            Some(file) if file.present()? => Ok(Some(file.path().to_owned())),
-            _ => Ok(None),
+            Some(file) => Ok(file.located()?.map(Path::to_owned)),
+            None => Ok(None),
         }
     }
 }

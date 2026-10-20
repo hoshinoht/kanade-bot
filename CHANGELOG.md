@@ -6,6 +6,10 @@ What changed in each Kanade release, newest first. Upgrading across several rele
 
 _In development_
 
+### New features
+
+- Admins can now enter the bot token, the model gateway key, both Discord sign-in client secrets and the NEXON key in More › Setup, check a bot token or model key before saving it, and restart Kanade from there to use them; secrets in the server's secrets folder still win and can't be replaced from the web, and saving needs a sign-in from the last 15 minutes.
+
 ## 1.0.0-beta.12
 
 _20 Oct 2026_
