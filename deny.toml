@@ -6,7 +6,12 @@ all-features = true
 [advisories]
 # Every RustSec advisory (vulnerability, unmaintained, unsound, yanked) fails;
 # an accepted exception goes in `ignore` with its reason.
-ignore = []
+ignore = [
+  # basic-toml unmaintained (2026-10-20): only age -> i18n-config, parsing age's
+  # own embedded i18n.toml at build time; no maintained version of that chain yet.
+  # Drop this when age stops depending on i18n-config.
+  { id = "RUSTSEC-2026-0374", reason = "unmaintained only; age's embedded i18n config, no upgrade available" },
+]
 yanked = "deny"
 
 [licenses]
