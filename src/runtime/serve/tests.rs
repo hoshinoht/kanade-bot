@@ -673,6 +673,8 @@ async fn compose_for_tests_serves_on_the_injected_clock_and_a_fake_discord() {
             model_limits: Some(Arc::new(|_| Vec::new())),
             nexon: None,
             estimate_refresh: false,
+            secret_checks: None,
+            restart: None,
         },
     )
     .await
@@ -796,6 +798,8 @@ async fn compose_for_tests_points_character_data_at_a_loopback_nexon() {
             model_limits: None,
             nexon: Some(address),
             estimate_refresh: false,
+            secret_checks: None,
+            restart: None,
         },
     )
     .await

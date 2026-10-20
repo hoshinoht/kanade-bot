@@ -213,7 +213,7 @@ fn non_empty<'a>(values: &'a BTreeMap<String, String>, key: &str) -> Option<&'a 
 }
 
 /// A `0`/`1` switch; unset or empty is `None`.
-fn flag(values: &BTreeMap<String, String>, key: &str) -> Result<Option<bool>, Error> {
+pub(crate) fn flag(values: &BTreeMap<String, String>, key: &str) -> Result<Option<bool>, Error> {
     match non_empty(values, key) {
         None => Ok(None),
         Some("0") => Ok(Some(false)),

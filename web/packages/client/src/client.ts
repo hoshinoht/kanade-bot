@@ -71,8 +71,11 @@ export function onUnauthenticated(handler: ((path: string) => void) | null): voi
   unauthenticated = handler;
 }
 
-/** The 401 code for "sign in with Discord again to make this change" (session kept). */
-const REAUTH_REQUIRED = 'reauth_required';
+/**
+ * The 401 codes for "sign in again to make this change" with the session
+ * kept: the member realm's (with Discord) and the admin's (a secret save).
+ */
+const REAUTH_REQUIRED: Record<string, true> = { reauth_required: true, admin_reauth_required: true };
 
 /** A fresh `Idempotency-Key` (1–128 of `[A-Za-z0-9-_.:]`): one per user action. */
 export function newIdempotencyKey(): string {
@@ -167,7 +170,7 @@ export function createClient(options: ClientOptions = {}): Client {
     }
     if (!response.ok) {
       const apiError = isApiError(parsed) ? parsed : null;
-      const reauth = response.status === 401 && apiError?.error === REAUTH_REQUIRED;
+      const reauth = response.status === 401 && REAUTH_REQUIRED[apiError?.error ?? ''] === true;
       if (response.status === 401 && !reauth) unauthenticated?.(path);
       throw new ApiRequestError(reauth ? 'reauth' : 'http', apiError?.message ?? `HTTP ${response.status}`, response.status, apiError);
     }

@@ -33,6 +33,7 @@ mod replays;
 mod run_characters;
 mod schemas;
 mod setup;
+mod setup_secrets;
 mod sign_ins;
 mod support;
 mod tease;

@@ -3,7 +3,16 @@
  * reasons, counts); this table turns each item into a name, one line for its
  * state and reason, and the one action that fixes it.
  */
-import type { PrivilegedIntent, SetupItem, SetupItemId, SetupSource, SetupState } from '@kanade/api-types';
+import type {
+  PrivilegedIntent,
+  SecretCheck,
+  SecretName,
+  SecretSource,
+  SetupItem,
+  SetupItemId,
+  SetupSource,
+  SetupState,
+} from '@kanade/api-types';
 import type { IconName } from '@kanade/ui';
 
 /** Never colour alone: each state has its word and glyph. */
@@ -178,4 +187,54 @@ export function describe(item: SetupItem, context: CopyContext): SetupRow {
 /** The page's headline: what is left of the required steps. */
 export function summary(left: number): string {
   return left === 0 ? 'Setup complete' : `${plural(left, 'required step', 'required steps')} left`;
+}
+
+/** Secrets Setup may save, by what an admin calls them. */
+export const SECRET_NAME: Record<SecretName, string> = {
+  discord_token: 'Bot token',
+  model_api_key: 'Model gateway key',
+  discord_client_secret: 'Admin sign-in client secret',
+  public_discord_client_secret: 'Member sign-in client secret',
+  nexon_api_key: 'NEXON API key',
+};
+
+/** Where the secret comes from; a host file can't be replaced here. */
+export const SECRET_SOURCE: Record<SecretSource, { label: string; tone: 'ok' | 'neutral'; icon: IconName }> = {
+  absent: { label: 'Not set', tone: 'neutral', icon: 'minus' },
+  host: { label: 'On the host', tone: 'ok', icon: 'check' },
+  saved: { label: 'Saved here', tone: 'ok', icon: 'check' },
+};
+
+export const SECRET_HOST_LINE = 'Set by a file in the secrets directory, which always wins; change it there.';
+
+/** What a check found, in one sentence. */
+export function checkLine(name: SecretName, check: SecretCheck): string {
+  switch (check.result) {
+    case 'ok':
+      if (name === 'discord_token') {
+        const missing = check.missing_intents ?? [];
+        const bot = check.bot_name ? `This is ${check.bot_name}` : 'Discord accepts this token';
+        return missing.length === 0
+          ? `${bot}; both privileged intents are on.`
+          : `${bot}, but turn on ${listed(missing.map((intent) => INTENT[intent]))} in the Developer Portal.`;
+      }
+      if (name === 'model_api_key') {
+        const models = check.models ?? 0;
+        return models === 0 ? 'The model gateway accepts this key; it lists no models.' : `The model gateway accepts this key and lists ${plural(models, 'model', 'models')}.`;
+      }
+      return 'Accepted.';
+    case 'refused':
+      return name === 'discord_token' ? 'Discord refused this token: copy it again from the Bot page.' : 'The model gateway refused this key.';
+    case 'unreachable':
+      return "Couldn't reach the service to check it; you can still save it.";
+    case 'not_checked':
+      return "This secret is checked when it's first used.";
+  }
+}
+
+/** The pending-restart note, with or without "Restart now". */
+export function restartLine(available: boolean): string {
+  return available
+    ? 'Saved secrets are read when Kanade starts: restart it to use them.'
+    : 'Saved secrets are read when Kanade starts: restart it (docker compose restart bot) to use them.';
 }

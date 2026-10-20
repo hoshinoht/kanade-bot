@@ -155,18 +155,21 @@ describe('member session (public origin)', () => {
     expect(sent.map((r) => r.headers['X-Kanade-CSRF'])).toEqual([undefined, undefined, 't2', 't3']);
   });
 
-  it('treats reauth_required as "confirm it is you", not as a session that ended', async () => {
+  it('treats reauth_required and admin_reauth_required as "confirm it is you", not as a session that ended', async () => {
     const seen: string[] = [];
     onUnauthenticated((path) => seen.push(path));
     try {
       const { client } = member(
         { status: 200, csrf: 't1' },
         { status: 401, body: '{"error":"reauth_required","message":"Sign in with Discord again to make this change."}' },
+        { status: 401, body: '{"error":"admin_reauth_required","message":"Sign in again to make this change."}' },
         { status: 401, body: '{"error":"unauthenticated","message":"Sign in to continue."}' },
       );
       await client.get('/api/public/session');
       const fresh = await client.post('/api/public/requests', {}).catch((e: unknown) => e);
       expect(fresh).toMatchObject({ kind: 'reauth', status: 401, body: { error: 'reauth_required' } });
+      const admin = await client.put('/api/public/requests', {}).catch((e: unknown) => e);
+      expect(admin).toMatchObject({ kind: 'reauth', status: 401, body: { error: 'admin_reauth_required' } });
       expect(seen).toEqual([]);
       await expect(client.get('/api/public/sessions')).rejects.toMatchObject({ kind: 'http', status: 401, body: { error: 'unauthenticated' } });
       expect(seen).toEqual(['/api/public/sessions']);

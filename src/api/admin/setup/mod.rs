@@ -8,7 +8,6 @@
 use std::{future::Future, sync::Arc, time::Duration};
 
 use axum::{Json, Router, extract, routing::get};
-use twilight_model::oauth::ApplicationFlags;
 
 use super::{
     config::{ConfigDesk, REPORTED, lacking},
@@ -36,8 +35,12 @@ use crate::{
     },
 };
 
+mod secrets;
+
 pub fn routes() -> Router<Arc<Site>> {
-    Router::new().route("/api/admin/setup", get(read))
+    Router::new()
+        .route("/api/admin/setup", get(read))
+        .merge(secrets::routes())
 }
 
 /// Each outside read (Discord's application, the model catalog, module
@@ -174,29 +177,11 @@ fn gateway(facts: &Facts<'_>) -> SetupItem {
     }
 }
 
-/// Discord's Application Flags: each intent in its 100+ servers form or the
-/// under-100 form the Bot page switches on.
 fn intents(application: Option<ApplicationInfo>) -> SetupItem {
     let Some(application) = application else {
         return SetupItem::new(Id::DiscordIntents, State::Warn).because(Reason::Unavailable);
     };
-    let has = |flags: ApplicationFlags| application.flags.intersects(flags);
-    let missing: Vec<PrivilegedIntent> = [
-        (
-            PrivilegedIntent::ServerMembers,
-            ApplicationFlags::GATEWAY_GUILD_MEMBERS
-                | ApplicationFlags::GATEWAY_GUILD_MEMBERS_LIMITED,
-        ),
-        (
-            PrivilegedIntent::MessageContent,
-            ApplicationFlags::GATEWAY_MESSAGE_CONTENT
-                | ApplicationFlags::GATEWAY_MESSAGE_CONTENT_LIMITED,
-        ),
-    ]
-    .into_iter()
-    .filter(|(_, flags)| !has(*flags))
-    .map(|(intent, _)| intent)
-    .collect();
+    let missing = PrivilegedIntent::missing(application.flags);
     let state = if missing.is_empty() {
         State::Ok
     } else {

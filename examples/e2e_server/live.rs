@@ -96,6 +96,44 @@ pub struct Modules {
     pub guides: bool,
 }
 
+/// Setup's secret checks without Discord or a gateway: a candidate starting
+/// `good-` is accepted (bot "Kanade" with every intent, or 3 models), `slow-`
+/// answers unreachable, anything else is refused.
+struct FakeSecretChecks;
+
+impl kanade::api::state::SecretChecks for FakeSecretChecks {
+    fn check<'a>(
+        &'a self,
+        name: kanade::api::dto::setup::SecretName,
+        value: &'a str,
+    ) -> std::pin::Pin<Box<dyn Future<Output = kanade::api::dto::setup::SecretCheck> + Send + 'a>>
+    {
+        use kanade::api::dto::setup::{SecretCheck, SecretCheckResult as Result, SecretName};
+        Box::pin(async move {
+            let result = if value.starts_with("good-") {
+                Result::Ok
+            } else if value.starts_with("slow-") {
+                Result::Unreachable
+            } else {
+                Result::Refused
+            };
+            match (name, result) {
+                (SecretName::DiscordToken, Result::Ok) => SecretCheck {
+                    bot_name: Some("Kanade".into()),
+                    missing_intents: Some(Vec::new()),
+                    ..SecretCheck::new(result)
+                },
+                (SecretName::ModelApiKey, Result::Ok) => SecretCheck {
+                    models: Some(3),
+                    ..SecretCheck::new(result)
+                },
+                (SecretName::DiscordToken | SecretName::ModelApiKey, _) => SecretCheck::new(result),
+                _ => SecretCheck::new(Result::NotChecked),
+            }
+        })
+    }
+}
+
 /// What each origin forwards to: the real listeners' routers.
 pub struct Routes {
     pub admin: MethodRouter,
@@ -226,6 +264,10 @@ impl World {
             nexon: Some(self.nexon),
             // Off: the browser e2e drives every lookup itself.
             estimate_refresh: false,
+            secret_checks: Some(Arc::new(FakeSecretChecks)),
+            // "Restart now" never stops the e2e server: it answers as a
+            // supervised serve would and the next start is not checked.
+            restart: Some(Arc::new(|| Ok(()))),
         };
         match compose_for_tests(&config, store.clone(), overrides).await {
             Ok(TestComposition {
@@ -318,6 +360,15 @@ impl World {
             return Err("the template store left a WAL behind".into());
         }
         Ok(admins)
+    }
+
+    /// Forgets every secret saved from Setup (a reset starts without them).
+    pub fn forget_saved_secrets(&self) {
+        for file in &self.config.saveable_secrets {
+            if let Some(path) = file.saved_path() {
+                let _ = std::fs::remove_file(path);
+            }
+        }
     }
 
     /// Copy the template's files to a generation at `to`.

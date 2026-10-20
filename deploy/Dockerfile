@@ -64,7 +64,8 @@ ENV KANADE_WEB_DIR=/app/web \
     KANADE_IDENTITY_DIR=/data/identity \
     KANADE_CHARACTER_DATA_DB_PATH=/chardata/db/chardata.sqlite \
     KANADE_BACKUP_DIR=/backups \
-    KANADE_SECRETS_DIR=/run/secrets
+    KANADE_SECRETS_DIR=/run/secrets \
+    KANADE_SAVED_SECRETS_DIR=/data/secrets
 USER 65532:65532
 WORKDIR /data
 

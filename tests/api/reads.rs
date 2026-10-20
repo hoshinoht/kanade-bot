@@ -104,6 +104,8 @@ pub(crate) struct Build {
     pub(crate) application: Option<kanade::api::state::ApplicationPort>,
     /// Admin Setup's deployment facts.
     pub(crate) setup: kanade::api::state::SetupFacts,
+    /// Admin Setup's saved secrets (serve composes one with a saved directory).
+    pub(crate) setup_secrets: Option<Arc<kanade::api::state::SecretDesk>>,
     /// Extra unwatched text channels, after the usual three.
     pub(crate) extra_channels: &'static [&'static str],
 }
@@ -125,6 +127,7 @@ impl Default for Build {
             guides: None,
             application: None,
             setup: Default::default(),
+            setup_secrets: None,
             extra_channels: &[],
         }
     }
@@ -683,6 +686,7 @@ impl Reads {
             guides,
             application,
             setup,
+            setup_secrets,
             extra_channels,
         } = build;
         let dir = TempDir::new();
@@ -863,6 +867,7 @@ impl Reads {
                 schema_version: store.schema_version().await.unwrap(),
             },
             setup,
+            setup_secrets,
             avatars: Some(avatars),
             events: events.clone(),
             presence: Default::default(),
@@ -957,6 +962,7 @@ impl Reads {
             application: old.application.clone(),
             backups: old.backups.clone(),
             setup: old.setup,
+            setup_secrets: old.setup_secrets.clone(),
             avatars: old.avatars.clone(),
             events: old.events.clone(),
             // In memory only: a restarted process starts with nobody here.

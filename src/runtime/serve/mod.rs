@@ -17,9 +17,11 @@ pub mod harness;
 mod health;
 pub mod models;
 mod persona_log;
+pub mod restart;
 mod retention;
 mod sessions;
 pub mod settings;
+mod setup_secrets;
 pub(crate) mod store;
 mod tick;
 
@@ -229,7 +231,13 @@ pub mod budget {
 }
 
 pub async fn run(config: ServeConfig) -> Result<(), Error> {
-    serve_until(config, server::wait_for_shutdown()).await
+    let shutdown = async {
+        tokio::select! {
+            () = server::wait_for_shutdown() => {}
+            () = restart::requested() => logging::log!(info, "restart_requested"),
+        }
+    };
+    serve_until(config, shutdown).await
 }
 
 /// [`run`] with the shutdown signal supplied (tests).

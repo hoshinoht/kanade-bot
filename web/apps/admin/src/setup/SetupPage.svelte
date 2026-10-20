@@ -8,12 +8,13 @@
 -->
 <script lang="ts">
   import type { Channel } from '@kanade/api-types';
-  import { Icon, LiveRegion, LoadError, LoadingState, StatusChip } from '@kanade/ui';
+  import { Icon, LiveRegion, LoadError, LoadingState, Modal, StatusChip } from '@kanade/ui';
   import { onMount } from 'svelte';
   import { localAt } from '../history/describe';
   import { Resource } from '../resource.svelte';
   import PageLine from '../shell/PageLine.svelte';
-  import { describe, SOURCE, STATE, summary } from './copy';
+  import { checkLine, describe, restartLine, SECRET_HOST_LINE, SECRET_NAME, SECRET_SOURCE, SOURCE, STATE, summary } from './copy';
+  import { SetupSecretsState } from './secrets.svelte';
   import { requiredLeft, setupStatus } from './status.svelte';
 
   let { timeZone = 'Asia/Kuala_Lumpur' }: { timeZone?: string } = $props();
@@ -22,6 +23,20 @@
   // The digest row names its channel.
   const channels = new Resource<Channel[]>('/api/admin/channels');
   let message = $state('');
+  const secrets = new SetupSecretsState();
+  let restarted = $state(false);
+
+  async function saveSecret() {
+    const name = secrets.editing;
+    if (name && (await secrets.save())) message = `${SECRET_NAME[name]} saved. It's used after a restart.`;
+  }
+
+  async function restartNow() {
+    if (await secrets.restart()) {
+      restarted = true;
+      message = 'Kanade is restarting.';
+    }
+  }
 
   async function refresh(announce: boolean) {
     if (setupStatus.loading) return;
@@ -35,6 +50,7 @@
   onMount(() => {
     void refresh(false);
     void channels.load();
+    void secrets.load();
   });
 
   const view = $derived(setupStatus.data);
@@ -108,6 +124,44 @@
           </ul>
         </section>
       {/each}
+      {#if secrets.available && secrets.view}
+        {@const saved = secrets.view}
+        <section class="setup__group" aria-labelledby="{uid}-secrets">
+          <h3 class="setup__grouphead" id="{uid}-secrets">
+            Secrets <span class="setup__count">entered here or on the host; never shown again</span>
+          </h3>
+          {#if saved.restart_pending}
+            <div class="flash setup__restart" role="status">
+              <p>{restarted ? 'Kanade is restarting; refresh this page in a few seconds.' : restartLine(saved.restart_available)}</p>
+              {#if saved.restart_available && !restarted}
+                <button class="btn btn--primary" type="button" aria-disabled={secrets.restarting} onclick={() => void restartNow()}
+                  ><Icon name="refresh-cw" />{secrets.restarting ? 'Restarting…' : 'Restart now'}</button
+                >
+              {/if}
+              {#if secrets.restartError}<p class="setup__restart-error" role="alert">{secrets.restartError}</p>{/if}
+            </div>
+          {/if}
+          <ul class="setup__list">
+            {#each saved.secrets as secret (secret.name)}
+              {@const source = SECRET_SOURCE[secret.source]}
+              <li class="setup-row" data-secret={secret.name}>
+                <span class="setup-row__state"><StatusChip tone={source.tone} data-source={secret.source}><Icon name={source.icon} />{source.label}</StatusChip></span>
+                <div class="setup-row__text">
+                  <p class="setup-row__name"><b>{SECRET_NAME[secret.name]}</b></p>
+                  {#if secret.source === 'host'}<p class="setup-row__line">{SECRET_HOST_LINE}</p>{/if}
+                </div>
+                {#if secret.source !== 'host'}
+                  <div class="setup-row__action">
+                    <button class="btn setup-row__go" type="button" onclick={() => secrets.open(secret.name)}
+                      >{secret.source === 'saved' ? 'Replace…' : 'Enter…'}<span class="vh">&nbsp;{SECRET_NAME[secret.name]}</span></button
+                    >
+                  </div>
+                {/if}
+              </li>
+            {/each}
+          </ul>
+        </section>
+      {/if}
     </div>
   {:else if setupStatus.error}
     <LoadError thing="the setup checklist" reason={setupStatus.error} onretry={() => void refresh(false)} level={3} />
@@ -116,6 +170,46 @@
   {/if}
 </section>
 <LiveRegion {message} />
+
+{#if secrets.editing}
+  {@const name = secrets.editing}
+  {@const checkable = secrets.view?.secrets.find((secret) => secret.name === name)?.checkable ?? false}
+  <Modal open={true} narrow title={SECRET_NAME[name]} onclose={() => secrets.close()}>
+    <form
+      class="secret-form"
+      onsubmit={(event) => {
+        event.preventDefault();
+        void saveSecret();
+      }}
+    >
+      <label class="secret-form__label" for="{uid}-value">Value</label>
+      <input
+        id="{uid}-value"
+        class="secret-form__input"
+        type="password"
+        autocomplete="off"
+        spellcheck="false"
+        bind:value={secrets.value}
+        oninput={() => (secrets.check = null)}
+      />
+      <p class="secret-form__hint">Saved as a private file on the server and never shown again. Kanade reads it at its next start.</p>
+      {#if secrets.check}<p class="secret-form__check" role="status" data-result={secrets.check.result}>{checkLine(name, secrets.check)}</p>{/if}
+      {#if secrets.reauth}
+        <p class="secret-form__error" role="alert">
+          Saving secrets needs a sign-in from the last 15 minutes. <a href="/login">Sign in again</a>, then enter it once more.
+        </p>
+      {:else if secrets.error}
+        <p class="secret-form__error" role="alert">{secrets.error}</p>
+      {/if}
+      <div class="secret-form__actions">
+        {#if checkable}
+          <button class="btn" type="button" aria-disabled={secrets.busy || !secrets.value.trim()} onclick={() => void secrets.runCheck()}>Check</button>
+        {/if}
+        <button class="btn btn--primary" type="submit" aria-disabled={secrets.busy || !secrets.value.trim()}>{secrets.busy ? 'Saving…' : 'Save'}</button>
+      </div>
+    </form>
+  </Modal>
+{/if}
 
 <style>
   .setup {
@@ -251,6 +345,71 @@
     max-width: 16rem;
     color: var(--dim-text);
     font-size: var(--fs-small);
+  }
+
+  .setup__restart {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 14px;
+    margin: 0;
+  }
+
+  .setup__restart p {
+    flex: 1 1 18rem;
+    margin: 0;
+  }
+
+  .setup__restart .btn {
+    gap: 6px;
+    min-height: 40px;
+  }
+
+  .setup__restart-error {
+    flex-basis: 100%;
+    color: var(--risk-text);
+  }
+
+  .secret-form {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .secret-form__label {
+    font-weight: 700;
+  }
+
+  .secret-form__input {
+    min-height: 44px;
+    font-family: var(--mono);
+  }
+
+  .secret-form__hint,
+  .secret-form__check,
+  .secret-form__error {
+    margin: 0;
+    font-size: var(--fs-body-sm);
+  }
+
+  .secret-form__hint {
+    color: var(--dim-text);
+  }
+
+  .secret-form__check[data-result='refused'],
+  .secret-form__error {
+    color: var(--risk-text);
+  }
+
+  .secret-form__actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 6px;
+  }
+
+  .secret-form__actions .btn {
+    min-height: 44px;
   }
 
   .setup-row__runbook :global(.icon) {

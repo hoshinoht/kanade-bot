@@ -28,7 +28,7 @@ CI runs the browser suite only from a manual "Run workflow" with `e2e` ticked: t
 Both origins unless noted; source in `controls.rs`, `controls_p5.rs`, `controls_p6.rs`, `controls_guides.rs`.
 
 - `GET /__e2e/whoami`: `{server, now, origin, admin_cookie, break_glass: {cookie, token}, tailscale: {login, edge_secret}}`.
-- `POST /__e2e/reset`: restart over a fresh template copy, clock back at its start, modules and fakes at their defaults; `{now}`.
+- `POST /__e2e/reset`: restart over a fresh template copy, clock back at its start, modules and fakes at their defaults, every secret saved from Setup forgotten; `{now}`.
 - `POST /__e2e/clock` `{at}` or `{advance_s}`: set or move the server clock; `{now}`.
 - `POST /__e2e/modules` `{roster?, character_data?, guides?}`: restart over the live store with those modules.
 - `POST /__e2e/limits` `{groups: "three" | "default"}`: the canned governor groups Limits shows.
@@ -49,4 +49,5 @@ Both origins unless noted; source in `controls.rs`, `controls_p5.rs`, `controls_
 - `GET /__e2e/discord/calls`: every call the generation's fake Discord answered, in order (`op`, `channel`, `message`, `outcome`; posts also `silent`, `embeds`, `files`).
 - `POST /__e2e/guides/board`: the guides boards' list (`G_List`) over the seed's two guides, through the store and the live publisher; the default seed stays as it is. It adds `#guide-kalos`, `#guide-star`, `#guide-carling` and `#guide-bm` (the generation's channel list; `#guide-bm` without Attach Files, a reset brings the seed's list back) and four guides: Kalos basics published (5 messages), Radiant Malefic Star published with art since replaced (Out of date), Black Mage prep refused for the missing grant (Blocked), Carling + Star night with message 4 unconfirmed (Needs attention); Limbo party roles is left publishing its seven-message version with its next post held (`{script: "release"}` lets it finish). 204; 404 while the module is off.
 - `GET /__e2e/discord/oauth2/authorize`: the fake Discord page; the `kanade_fake_discord` cookie picks the user (`eligible`, `partner`, `ineligible`, `bot`, a seeded snowflake) or `deny`.
+- Setup secrets (`/api/admin/setup/secrets…`): the secrets directory holds every seeded secret except `model_api_key`, so that one starts `absent` and the rest `host`; saves land in a `saved/` directory the server owns. Checks are fake: a candidate starting `good-` is accepted (`discord_token`: bot `Kanade`, every intent on; `model_api_key`: 3 models), `slow-` answers `unreachable`, anything else `refused`. "Restart now" answers `202` and does nothing.
 - `/__showcase/` (admin only): the core primitives showcase (`bun run showcase` in `web/`).
