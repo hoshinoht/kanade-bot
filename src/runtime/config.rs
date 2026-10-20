@@ -42,7 +42,7 @@ pub use files::FileSettings;
 pub use guild::GuildSettings;
 pub use models::ModelSettings;
 pub use public_auth::PublicAuthSettings;
-pub use serve::{ServeConfig, SettingSeeds};
+pub use serve::{Modules, ServeConfig, SettingSeeds};
 pub use store::StoreSettings;
 
 const DEFAULT_BIND: &str = "127.0.0.1:8080";

@@ -16,8 +16,8 @@ describe('capabilities', () => {
 });
 
 describe('More', () => {
-  it('holds Rewrites, Limits, Reminders and Guides in nav order', () => {
-    expect(MORE.map((s) => s.label)).toEqual(['Rewrites', 'Limits', 'Reminders', 'Guides']);
+  it('holds Rewrites, Limits, Reminders, Guides and Setup in nav order', () => {
+    expect(MORE.map((s) => s.label)).toEqual(['Rewrites', 'Limits', 'Reminders', 'Guides', 'Setup']);
     expect(MORE.find((s) => s.key === 'guides')).toMatchObject({ href: '/guides', icon: 'book-open', module: 'guides' });
   });
 
@@ -31,5 +31,6 @@ describe('More', () => {
   it("sums its destinations' badges and nobody else's", () => {
     expect(sumBadges(MORE, { inbox: 9 })).toBe(0);
     expect(sumBadges(MORE, { inbox: 9, limits: 2, reminders: 3 })).toBe(5);
+    expect(sumBadges(MORE, { inbox: 9, setup: 4 })).toBe(4);
   });
 });

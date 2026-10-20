@@ -29,6 +29,8 @@ export interface ConfigPatch {
   profanity?: Partial<Omit<ConfigView['profanity'], 'builtin_words'>>;
   /** Module `character_data`: its one writable field, 1 to 30 (422 outside). */
   character_data?: { estimate_days?: number | null };
+  /** The digest channel: a channel id, or `null` for none. */
+  posting?: { channel_id: string | null };
 }
 
 /** The opposite change, offered as Undo on the success toast (switches and visibility). */

@@ -8,6 +8,7 @@ use std::sync::Arc;
 use axum::{Json, extract::State, response::IntoResponse};
 use chrono::{DateTime, Datelike, TimeZone, Timelike, Weekday};
 use serde::Serialize;
+use twilight_model::guild::Permissions;
 
 use super::Reply;
 use crate::api::{
@@ -133,4 +134,31 @@ pub(super) fn missing_manage(channels: &dyn ChannelList, digest: Option<&str>) -
         .filter(|row| !row.manage_messages)
         .map(|row| row.name)
         .collect()
+}
+
+/// The six permissions the report checks (its `view` … `manage_messages`
+/// columns), as the invite link's `permissions` asks for them.
+pub(in crate::api::admin) const REPORTED: Permissions = Permissions::VIEW_CHANNEL
+    .union(Permissions::SEND_MESSAGES)
+    .union(Permissions::READ_MESSAGE_HISTORY)
+    .union(Permissions::EMBED_LINKS)
+    .union(Permissions::ADD_REACTIONS)
+    .union(Permissions::MANAGE_MESSAGES);
+
+/// How many of the report's channels lack any of [`REPORTED`]; `None`
+/// while the guild is not loaded, as the report then shows no rows.
+pub(in crate::api::admin) fn lacking(
+    channels: &dyn ChannelList,
+    digest: Option<&str>,
+) -> Option<u32> {
+    if !channels.connected() {
+        return None;
+    }
+    let lacking = rows(channels, digest)
+        .iter()
+        .filter(|row| {
+            !(row.view && row.send && row.history && row.embed && row.react && row.manage_messages)
+        })
+        .count();
+    Some(u32::try_from(lacking).unwrap_or(u32::MAX))
 }

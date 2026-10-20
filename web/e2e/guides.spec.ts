@@ -292,7 +292,7 @@ test('module off: no Guides under More, and /guides is not found', async ({ page
   await expect(page.getByRole('heading', { level: 1 })).toHaveText("That doesn't exist");
   await page.getByRole('button', { name: 'More' }).click();
   const menu = page.getByRole('menu', { name: 'More destinations' });
-  await expect(menu.getByRole('menuitem')).toHaveText(['Rewrites', 'Limits', 'Reminders']);
+  await expect(menu.getByRole('menuitem')).toHaveText(['Rewrites', 'Limits', 'Reminders', /^\s*Setup/]);
 });
 
 test('axe: the list, the editor and the plan', async ({ page }) => {

@@ -16,12 +16,13 @@ use twilight_model::id::{
     Id,
     marker::{GuildMarker, UserMarker},
 };
+use twilight_model::oauth::ApplicationFlags;
 
 use super::{
-    AmbiguousKind, ApplicationEmoji, COMPONENTS_V2, CREATE_FLAGS, ChannelId, DiscordTransport,
-    HistoryPage, InteractionRef, InteractionReply, MAX_MEMBERS_PAGE, MAX_MESSAGES_PAGE,
-    MessageEdit, MessageId, Outcome, OutgoingMessage, Presence, RejectionKind, legacy_rows,
-    v2_body_valid,
+    AmbiguousKind, ApplicationEmoji, ApplicationInfo, COMPONENTS_V2, CREATE_FLAGS, ChannelId,
+    DiscordTransport, HistoryPage, InteractionRef, InteractionReply, MAX_MEMBERS_PAGE,
+    MAX_MESSAGES_PAGE, MessageEdit, MessageId, Outcome, OutgoingMessage, Presence, RejectionKind,
+    legacy_rows, v2_body_valid,
 };
 
 #[cfg(any(test, feature = "test-support"))]
@@ -51,6 +52,7 @@ pub enum Op {
     ReactionUsers,
     ApplicationEmojis,
     CreateApplicationEmoji,
+    ApplicationInfo,
 }
 
 /// A scripted result for the next call of one [`Op`]. Unscripted calls
@@ -179,6 +181,9 @@ pub enum Call {
         png: Vec<u8>,
         outcome: Outcome<ApplicationEmoji>,
     },
+    ApplicationInfo {
+        outcome: Outcome<ApplicationInfo>,
+    },
 }
 
 impl Call {
@@ -205,6 +210,7 @@ impl Call {
             Self::Typing { .. } => Op::Typing,
             Self::ApplicationEmojis { .. } => Op::ApplicationEmojis,
             Self::CreateApplicationEmoji { .. } => Op::CreateApplicationEmoji,
+            Self::ApplicationInfo { .. } => Op::ApplicationInfo,
         }
     }
 }
@@ -267,6 +273,9 @@ struct State {
     next_emoji_id: u64,
     /// What [`DiscordTransport::retry_after`] answers.
     retry_after: Option<Duration>,
+    /// What [`DiscordTransport::application_info`] reports as the
+    /// application's flags; `None` is [`FakeDiscord::DEFAULT_FLAGS`].
+    application_flags: Option<ApplicationFlags>,
     #[cfg(any(test, feature = "test-support"))]
     reaction_pages: ScriptedReactionPages,
 }
@@ -275,6 +284,8 @@ struct State {
 const FIRST_MESSAGE_ID: u64 = 1_000_000_000_000_000_001;
 /// First application emoji id handed out.
 const FIRST_EMOJI_ID: u64 = 2_000_000_000_000_000_001;
+/// The application [`DiscordTransport::application_info`] names.
+pub const FAKE_APPLICATION_ID: u64 = 3_000_000_000_000_000_001;
 
 #[derive(Debug, Default)]
 pub struct FakeDiscord {
@@ -282,6 +293,11 @@ pub struct FakeDiscord {
 }
 
 impl FakeDiscord {
+    /// An application whose Server Members and Message Content intents are
+    /// on (the under-100-servers forms the Developer Portal's Bot page sets).
+    pub const DEFAULT_FLAGS: ApplicationFlags = ApplicationFlags::GATEWAY_GUILD_MEMBERS_LIMITED
+        .union(ApplicationFlags::GATEWAY_MESSAGE_CONTENT_LIMITED);
+
     pub fn new() -> Self {
         Self::default()
     }
@@ -495,6 +511,11 @@ impl FakeDiscord {
     /// (script the 429 itself with `Step::Reject(RateLimited)`).
     pub fn set_retry_after(&self, wait: Option<Duration>) {
         self.state().retry_after = wait;
+    }
+
+    /// The flags [`DiscordTransport::application_info`] reports from now on.
+    pub fn set_application_flags(&self, flags: ApplicationFlags) {
+        self.state().application_flags = Some(flags);
     }
 }
 
@@ -1021,6 +1042,19 @@ impl DiscordTransport for FakeDiscord {
         state.calls.push(Call::CreateApplicationEmoji {
             name: name.to_owned(),
             png: png.to_vec(),
+            outcome: outcome.clone(),
+        });
+        outcome
+    }
+
+    async fn application_info(&self) -> Outcome<ApplicationInfo> {
+        self.gate(Op::ApplicationInfo).await;
+        let mut state = self.state();
+        let outcome = state.read(Op::ApplicationInfo, true, |state| ApplicationInfo {
+            id: Id::new(FAKE_APPLICATION_ID),
+            flags: state.application_flags.unwrap_or(Self::DEFAULT_FLAGS),
+        });
+        state.calls.push(Call::ApplicationInfo {
             outcome: outcome.clone(),
         });
         outcome

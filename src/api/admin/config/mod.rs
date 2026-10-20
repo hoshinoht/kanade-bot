@@ -15,6 +15,7 @@ mod stack;
 
 #[cfg(test)]
 pub(crate) use access::{AccessReport, AccessRow};
+pub(in crate::api::admin) use access::{REPORTED, lacking};
 
 use std::{convert::Infallible, sync::Arc};
 
@@ -44,7 +45,7 @@ use crate::{
         history::Surface,
         settings::{
             LOCAL_CONTEXT_WARNING, Models, RuntimeSettings, Section, SettingsChange, SettingsError,
-            diff_rows,
+            diff_rows, keys,
         },
     },
     infrastructure::store::replays::{ReplayScope, StoredReplay},
@@ -132,16 +133,8 @@ async fn answer(
     };
     let channels = state.channels.channels();
     let last_digest = last_digest(state, &channels).await;
-    let saved = desk.saved_lists().await;
-    let mut view = desk.view(
-        settings,
-        catalog,
-        &channels,
-        &roles,
-        notices,
-        last_digest,
-        &saved,
-    );
+    let saved = desk.saved_keys().await;
+    let mut view = desk.view(settings, catalog, &roles, notices, last_digest, &saved);
     fill_in_use(state, &mut view.models.groups);
     view.manage_messages.missing = access::missing_manage(
         state.channels.as_ref(),
@@ -349,6 +342,11 @@ async fn update(
         "character_data" => {
             Section::CharacterData(patch::character_data(&current.character_data, fields)?)
         }
+        "posting" => Section::Posting(patch::posting(
+            &current.posting,
+            fields,
+            state.channels.as_ref(),
+        )?),
         _ => {
             if desk.models.is_none() {
                 return Err(models_unreachable(
@@ -442,8 +440,10 @@ async fn update(
         .await?;
         replay_saved = true;
     } else if next != *current {
-        let list = match &section {
-            Section::IdList(list, _) => Some(*list),
+        // A seeded key's save gives it a row, so it no longer follows its env seed.
+        let seeded = match &section {
+            Section::IdList(list, _) => Some(list.key()),
+            Section::Posting(_) => Some(keys::POST_CHANNEL),
             _ => None,
         };
         desk.store
@@ -451,8 +451,8 @@ async fn update(
             .await
             .map_err(stored)?;
         replay_saved = true;
-        if let Some(list) = list {
-            desk.note_saved(list);
+        if let Some(key) = seeded {
+            desk.note_saved(key);
         }
     }
     let saved_before = current.models.clone();
@@ -514,6 +514,7 @@ fn name_of(section: &str) -> &'static str {
         "run_lengths" => "run_lengths",
         "profanity" => "profanity",
         "character_data" => "character_data",
+        "posting" => "posting",
         _ => "models",
     }
 }

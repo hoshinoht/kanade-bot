@@ -893,6 +893,38 @@ async fn guild_channels_are_read() {
 }
 
 #[tokio::test]
+async fn the_application_is_read_with_its_flags_and_none_when_omitted() {
+    use twilight_model::oauth::ApplicationFlags;
+    let (stub, addr) = Stub::start(vec![
+        json_reply(
+            200,
+            json!({ "id": "4242", "name": "Kanade", "flags": (1 << 15) | (1 << 19) | (1 << 23) }),
+        ),
+        json_reply(200, json!({ "id": "4242", "flags": null })),
+    ])
+    .await;
+    let transport = quick(addr);
+    let Outcome::Delivered(first) = transport.application_info().await else {
+        panic!("application delivered");
+    };
+    assert_eq!(first.id, Id::new(4242));
+    assert_eq!(
+        first.flags,
+        ApplicationFlags::GATEWAY_GUILD_MEMBERS_LIMITED
+            | ApplicationFlags::GATEWAY_MESSAGE_CONTENT_LIMITED
+            | ApplicationFlags::APPLICATION_COMMAND_BADGE
+    );
+    let Outcome::Delivered(second) = transport.application_info().await else {
+        panic!("application delivered");
+    };
+    assert!(second.flags.is_empty());
+    assert_eq!(
+        stub.seen()[0].request_line,
+        "GET /api/v10/applications/@me HTTP/1.1"
+    );
+}
+
+#[tokio::test]
 async fn reads_are_classified_like_every_other_call() {
     let (stub, addr) = Stub::start(vec![
         json_reply(503, json!({ "code": 0, "message": "down" })),

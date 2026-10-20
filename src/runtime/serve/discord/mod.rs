@@ -45,8 +45,8 @@ use crate::{
         auth::Clock,
         rescan::RescanDesk,
         state::{
-            DeclineRetraction, DigestPost, DigestPostRequest, DigestPostResult, GuidePort,
-            GuildAccess, HeaderRewritePort, ProposalCardRefresh,
+            ApplicationPort, DeclineRetraction, DigestPost, DigestPostRequest, DigestPostResult,
+            GuidePort, GuildAccess, HeaderRewritePort, ProposalCardRefresh,
         },
         write::ApiClock,
     },
@@ -65,6 +65,7 @@ use crate::{
         handler::{Fanout, MessageCounts, Reactions, press_port},
         identity,
         roster::{LiveRoster, RosterTask},
+        transport::{DiscordTransport, Outcome},
     },
     chat::{driver::DriverConfig, nudge::StoreRewriteSink},
     domain::{ids::RandomIds, schedule::SchedulePolicy, scheduler::SchedulerService},
@@ -509,8 +510,25 @@ where
             Box::pin(async move { manual.start(request).await })
         })
     };
+    // Admin Setup's application read (intents, invite link), through the
+    // same shutdown-bounded transport.
+    let application: ApplicationPort = {
+        let transport = Arc::clone(&transport);
+        Arc::new(move || {
+            let transport = Arc::clone(&transport);
+            Box::pin(async move {
+                match transport.application_info().await {
+                    Outcome::Delivered(info) => Some(info),
+                    _ => None,
+                }
+            })
+        })
+    };
     match Arc::get_mut(&mut composition.admin.state) {
-        Some(state) => state.header_rewrite = Some(header_rewrite),
+        Some(state) => {
+            state.header_rewrite = Some(header_rewrite);
+            state.application = Some(application);
+        }
         None => {
             extraction.stop(&ShutdownClock::default()).await;
             return Err(Error::Startup(

@@ -60,6 +60,12 @@ pub(super) async fn list(dir: PathBuf) -> Vec<Found> {
     }
 }
 
+/// When the newest listed backup was taken (admin Setup); `None` when none
+/// is listed.
+pub(in crate::api::admin) async fn latest(dir: PathBuf) -> Option<DateTime<Utc>> {
+    list(dir).await.first().map(|backup| backup.created_at)
+}
+
 /// The listed backups, newest first. Blocking: run off the async workers.
 pub(super) fn scan(dir: &Path) -> Vec<Found> {
     let Ok(entries) = fs::read_dir(dir) else {

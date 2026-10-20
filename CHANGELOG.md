@@ -6,6 +6,14 @@ What changed in each Kanade release, newest first. Upgrading across several rele
 
 _In development_
 
+### New features
+
+- Added a Setup checklist to the admin app (More › Setup) that shows which required and optional setup steps are ready or missing, with a link to fix each one, an invite link with the right bot permissions, and a badge counting the required steps left.
+
+### Changes
+
+- The digest channel can now be picked in Config › Channels instead of only in the deployment's configuration.
+
 ## 1.0.0-beta.10
 
 _18 Oct 2026_

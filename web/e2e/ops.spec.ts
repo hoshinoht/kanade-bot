@@ -917,9 +917,9 @@ test.describe('config sections save', () => {
     await page.getByRole('tab', { name: 'Set in the environment' }).click();
     await expect(panel.getByRole('row', { name: /Timezone/ })).toContainText('Asia/Kuala_Lumpur');
     await expect(panel.getByRole('row', { name: /Timezone/ })).toContainText('a change needs a restart');
-    // The id lists moved to Channels, where the env values are only seeds.
+    // The id lists and the digest channel moved to Channels, where the env values are only seeds.
     await expect(panel.getByRole('row', { name: /Watched categories/ })).toHaveCount(0);
-    await expect(panel.getByRole('row', { name: /Digest channel/ })).toContainText('KANADE_POST_CHANNEL_ID');
+    await expect(panel.getByRole('row', { name: /Digest channel/ })).toHaveCount(0);
     await expect(panel.getByRole('row', { name: /Model gateway/ })).not.toContainText('secret');
     await expect(panel.locator('input, select, [role="combobox"]')).toHaveCount(0);
   });
@@ -1306,9 +1306,6 @@ test('env: copy buttons write the raw env value; none where it is unset', async 
   await panel.getByRole('button', { name: 'Copy KANADE_BOSS_WEEK_RESET_WEEKDAY' }).click();
   await expect(toast(page, 'Copied KANADE_BOSS_WEEK_RESET_WEEKDAY.')).toBeVisible();
   expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('thu');
-  await expect(panel.getByRole('row', { name: /Digest channel/ })).toContainText('#boss-schedule');
-  await panel.getByRole('button', { name: 'Copy KANADE_POST_CHANNEL_ID' }).click();
-  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('120000000000000010');
   // Unset values have nothing to copy.
   await expect(panel.getByRole('row', { name: /Chat pilot role/ }).getByRole('button')).toHaveCount(0);
   await expect(panel.getByRole('button', { name: 'Copy KANADE_CHAT_PILOT_ROLE_ID' })).toHaveCount(0);

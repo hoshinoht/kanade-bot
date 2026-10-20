@@ -104,6 +104,15 @@ pub type HeaderRewritePort = Arc<
         + Sync,
 >;
 
+/// The bot's application (`GET /applications/@me` through serve's
+/// transport) for admin Setup: `None` when Discord did not answer or
+/// refused. Absent while Discord is not composed.
+pub type ApplicationPort = Arc<
+    dyn Fn() -> Pin<Box<dyn Future<Output = Option<crate::bot::transport::ApplicationInfo>> + Send>>
+        + Send
+        + Sync,
+>;
+
 /// The delivery-owned guide publisher (`modules.guides`); the API never
 /// holds a transport. Runs are queued in the store
 /// ([`crate::domain::guides::GuideStore::request_publish`]) and Discord's
@@ -1076,6 +1085,20 @@ pub struct BackupDir {
     pub schema_version: i64,
 }
 
+/// Deployment facts admin Setup reports, fixed for the process and only as
+/// presence (never a value, a path or a secret).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct SetupFacts {
+    /// A public listener with a host: the member portal exists.
+    pub public_listener: bool,
+    /// The member realm's Discord sign-in (client id, secret, redirect).
+    pub member_sign_in: bool,
+    /// `modules.*`, read once at startup.
+    pub modules: crate::runtime::config::Modules,
+    /// `KANADE_BACKUP_RECIPIENTS_FILE` is set (snapshots are encrypted).
+    pub backup_recipients: bool,
+}
+
 /// Everything the admin read routes compose.
 pub struct ApiState {
     pub store: Arc<dyn ReadStore>,
@@ -1109,7 +1132,12 @@ pub struct ApiState {
     pub digest_post: Option<DigestPost>,
     /// The delivery-owned manual header rewrite, absent while Discord is offline.
     pub header_rewrite: Option<HeaderRewritePort>,
+    /// The bot's application for admin Setup, attached with serve's Discord
+    /// side; absent while Discord is offline.
+    pub application: Option<ApplicationPort>,
     pub backups: BackupDir,
+    /// What admin Setup reports about the deployment.
+    pub setup: SetupFacts,
     /// Member and admin portraits; `None` serves monograms only.
     pub avatars: Option<Arc<super::avatars::AvatarCache>>,
     /// Change hints for open admin pages (`GET /api/admin/events`), fed by

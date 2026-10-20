@@ -1,8 +1,9 @@
 //! The production transport, built once `READY` names the application.
 //! Nothing calls Discord before the gateway is ready (registration,
 //! interactions, roster paging and the tick all wait for it); a call that
-//! did is refused unsent. The one exception is the startup list of the
-//! application's emojis, which reads the application id over HTTP itself.
+//! did is refused unsent. The exceptions read the application over HTTP
+//! themselves: the startup list of its emojis and admin Setup's
+//! application read (`application_info`).
 //! Every trait method is delegated, including the ones with a default body
 //! (a missed one would be refused `Invalid`).
 
@@ -20,9 +21,9 @@ use twilight_model::id::{
 use twilight_model::user::CurrentUser;
 
 use crate::bot::transport::{
-    ApplicationEmoji, ChannelId, DiscordTransport, HistoryPage, InteractionRef, InteractionReply,
-    MessageEdit, MessageId, Outcome, OutgoingMessage, Presence, RejectionKind, TransportConfig,
-    TwilightTransport,
+    ApplicationEmoji, ApplicationInfo, ChannelId, DiscordTransport, HistoryPage, InteractionRef,
+    InteractionReply, MessageEdit, MessageId, Outcome, OutgoingMessage, Presence, RejectionKind,
+    TransportConfig, TwilightTransport,
 };
 use crate::runtime::secrets::Redacted;
 
@@ -217,6 +218,23 @@ impl DiscordTransport for LateTransport {
 
     async fn current_user(&self) -> Outcome<CurrentUser> {
         delegate!(self, current_user())
+    }
+
+    /// Before `READY` too: admin Setup reads the intent flags exactly when
+    /// the gateway could not come up (a disallowed intent closes it).
+    async fn application_info(&self) -> Outcome<ApplicationInfo> {
+        if let Some(inner) = self.inner.get() {
+            return inner.application_info().await;
+        }
+        // `/applications/@me` names no application, so the placeholder id
+        // is never sent; the early transport is dropped after the call.
+        TwilightTransport::new(
+            self.token.expose().to_owned(),
+            Id::new(1),
+            TransportConfig::default(),
+        )
+        .application_info()
+        .await
     }
 
     async fn application_emojis(&self) -> Outcome<Vec<ApplicationEmoji>> {

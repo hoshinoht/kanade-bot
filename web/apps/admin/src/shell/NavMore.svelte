@@ -45,6 +45,11 @@
   const name = $derived(
     [here ? `More, current page ${here.label}` : 'More', badge > 0 ? `${badge} waiting` : ''].filter(Boolean).join(', '),
   );
+  /** A badged destination's name, as NavList says it ("Setup 2 waiting"); unbadged links keep their text. */
+  const waiting = (section: { key: string; label: string }): string | undefined => {
+    const count = badges[section.key] ?? 0;
+    return count > 0 ? `${section.label} ${count} waiting` : undefined;
+  };
 
   let button = $state<HTMLButtonElement>();
   let menu = $state<HTMLDivElement>();
@@ -101,7 +106,7 @@
     {#if open}
       <div class="navmore__list" id="{uid}-list">
         {#each more as section (section.key)}
-          <a class="navlist__item" href={section.href} aria-current={section.key === active ? 'page' : undefined} onclick={onnavigate}
+          <a class="navlist__item" href={section.href} aria-current={section.key === active ? 'page' : undefined} aria-label={waiting(section)} onclick={onnavigate}
             ><span class="navlist__ind"><Icon name={section.icon} /></span><span class="navlist__label">{section.label}</span
             >{#if (badges[section.key] ?? 0) > 0}<span class="navlist__badge">{badges[section.key]}<span class="vh"> waiting</span></span
               >{:else if counts[section.key] !== undefined}<span class="navlist__count" aria-hidden="true">{counts[section.key]}</span>{/if}</a
@@ -133,6 +138,7 @@
             class="navmore__item"
             href={section.href}
             aria-current={section.key === active ? 'page' : undefined}
+            aria-label={waiting(section)}
             data-fid={section.key === 'guides' ? 'rail-more-guides' : undefined}
             onclick={() => hide(false)}
             ><Icon name={section.icon} /><span class="navmore__label">{section.label}</span>{#if (badges[section.key] ?? 0) > 0}<span class="navmore__badge"

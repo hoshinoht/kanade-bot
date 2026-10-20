@@ -261,6 +261,7 @@ struct Setup {
     two_admins: bool,
     role_directory_connected: bool,
     model_limits: Option<ModelLimits>,
+    extra_channels: &'static [&'static str],
 }
 
 impl Default for Setup {
@@ -272,6 +273,7 @@ impl Default for Setup {
             two_admins: false,
             role_directory_connected: true,
             model_limits: None,
+            extra_channels: &[],
         }
     }
 }
@@ -348,6 +350,7 @@ impl Config {
             two_admins,
             role_directory_connected,
             model_limits,
+            extra_channels,
         } = setup;
         let dir = PersonaDir::new();
         let root = PersonaRoot::open(&dir.0).unwrap();
@@ -380,6 +383,7 @@ impl Config {
                 b.model_limits = model_limits;
                 b.logins = two_admins;
                 b.role_directory_connected = role_directory_connected;
+                b.extra_channels = extra_channels;
             })
             .await
         };
@@ -665,18 +669,24 @@ async fn get_shows_settings_models_personas_and_env_facts() {
     assert_eq!(copy("KANADE_MODEL_PERMITS"), "2");
     assert_eq!(copy("KANADE_MODEL_BASE_URL"), "https://kanata.test/v1");
     assert_eq!(copy("KANADE_CHAT_PILOT_ROLE_ID"), "30");
-    // The id lists left the env table for the Channels editor.
+    // The id lists left the env table for the Channels editor, the digest
+    // channel for the Posting field.
     for moved in [
         "KANADE_WATCH_CHANNEL_IDS",
         "KANADE_WATCH_CATEGORY_IDS",
         "KANADE_CHAT_CATEGORY_IDS",
+        "KANADE_POST_CHANNEL_ID",
     ] {
         assert!(!env_rows.iter().any(|row| row["key"] == moved), "{moved}");
     }
     assert_eq!(view["chatbot"]["category_ids"], json!([]));
     assert_eq!(view["chatbot"]["category_ids_source"], "env");
     assert_eq!(view["watching"]["channel_ids_source"], "env");
-    assert_eq!(copy("KANADE_POST_CHANNEL_ID"), Value::Null, "unset");
+    assert_eq!(
+        view["posting"],
+        json!({"channel_id": null, "channel_id_source": "env"}),
+        "unset"
+    );
     assert_eq!(view["last_digest"], Value::Null, "no digest posted yet");
 
     let persona = &view["persona"];
@@ -2953,4 +2963,100 @@ async fn a_redesigned_day_of_previews_one_embed_per_run() {
         Value::Null,
         "entry art on the first run only"
     );
+}
+
+/// An unwatched text channel the guild lists for the digest.
+const DIGEST_CHANNEL: &str = "120000000000000010";
+
+#[tokio::test]
+async fn the_digest_channel_saves_live_with_a_history_row_and_refuses_unknown_channels() {
+    let mut config = Config::with(Setup {
+        extra_channels: &[DIGEST_CHANNEL],
+        ..Setup::default()
+    })
+    .await;
+    assert_eq!(
+        config
+            .invalid(json!({"posting": {"channel_id": "120000000000000099"}}))
+            .await,
+        "Pick a current Discord text channel."
+    );
+    for bad in [
+        json!(12),
+        json!("0"),
+        json!("012"),
+        json!("abc"),
+        json!(true),
+    ] {
+        config
+            .invalid(json!({"posting": {"channel_id": bad}}))
+            .await;
+    }
+    config
+        .refused(
+            json!({"posting": {"channel_id_source": "saved"}}),
+            422,
+            "read_only",
+        )
+        .await;
+    config
+        .refused(json!({"posting": {"channel": "1"}}), 422, "unknown_field")
+        .await;
+    assert!(config.changes().await.is_empty(), "refusals record nothing");
+
+    let view = config
+        .patch(json!({"posting": {"channel_id": DIGEST_CHANNEL}}))
+        .await;
+    assert_eq!(
+        view["posting"],
+        json!({"channel_id": DIGEST_CHANNEL, "channel_id_source": "saved"})
+    );
+    // Live for every reader of the desk (the access report marks it).
+    assert_eq!(
+        config.desk.settings().await.posting.channel_id.as_deref(),
+        Some(DIGEST_CHANNEL)
+    );
+    let access = config
+        .reads
+        .read(ACCESS, "config.json#/$defs/AccessReport")
+        .await;
+    assert_eq!(find(&access["rows"], "id", DIGEST_CHANNEL)["digest"], true);
+    let changes = config.changes().await;
+    assert_eq!(changes.len(), 1);
+    assert_eq!(changes[0].section, "posting");
+    let row = &changes[0].values[keys::POST_CHANNEL];
+    assert_eq!((row.from.as_str(), row.to.as_str()), ("", DIGEST_CHANNEL));
+    // The same channel again is a no-op and records nothing.
+    config
+        .patch(json!({"posting": {"channel_id": DIGEST_CHANNEL}}))
+        .await;
+    assert_eq!(config.changes().await.len(), 1);
+
+    // Cleared, it stays saved as "none" across a restart.
+    let view = config.patch(json!({"posting": {"channel_id": null}})).await;
+    assert_eq!(
+        view["posting"],
+        json!({"channel_id": null, "channel_id_source": "saved"})
+    );
+    config.restart(chrono::TimeDelta::zero()).await;
+    assert_eq!(
+        config.get().await["posting"],
+        json!({"channel_id": null, "channel_id_source": "saved"})
+    );
+    assert_eq!(config.changes().await.len(), 2);
+    let rows = config.reads.store.settings_rows().await.unwrap();
+    assert_eq!(rows[keys::POST_CHANNEL], "");
+}
+
+#[tokio::test]
+async fn without_a_loaded_guild_any_canonical_digest_channel_is_taken() {
+    let config = Config::with(Setup {
+        role_directory_connected: false,
+        ..Setup::default()
+    })
+    .await;
+    let view = config
+        .patch(json!({"posting": {"channel_id": "120000000000000099"}}))
+        .await;
+    assert_eq!(view["posting"]["channel_id"], "120000000000000099");
 }

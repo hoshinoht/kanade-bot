@@ -22,14 +22,14 @@ use super::{changes, models};
 use crate::{
     api::{
         dto::config::{self as dto, ConfigView, EnvRow, KeyLimits, ManageMessages},
-        state::{ChannelEntry, PersonaOption, RoleEntry},
+        state::{PersonaOption, RoleEntry},
     },
     chat::persona::{PersonaSnapshot, PersonaStore, ProfileId},
     domain::{
         scheduler::StoreError,
         settings::{
             IdList, Models, RuntimeSettings, Section, SettingsChange, SettingsError, SettingsStore,
-            save_section_recorded, stored_rows,
+            keys, save_section_recorded, stored_rows,
         },
     },
     infrastructure::{
@@ -54,9 +54,9 @@ pub trait SettingsPort: Send + Sync {
         replay: Option<StoredReplay>,
     ) -> ConfigFuture<'_, Result<(), SettingsError>>;
 
-    /// The id lists that have a stored row (an explicit list save); the
-    /// others follow their env seed.
-    fn saved_lists(&self) -> ConfigFuture<'_, Result<Vec<IdList>, SettingsError>>;
+    /// The env-seeded keys (the id lists and the digest channel) that have
+    /// explicit save); the others follow their env seed.
+    fn saved_keys(&self) -> ConfigFuture<'_, Result<Vec<&'static str>, SettingsError>>;
 
     /// The live Config PATCH replay of `actor`'s `key` at `now`.
     fn replay(
@@ -87,12 +87,12 @@ impl<T: SettingsStore + ReplayStore + Send + Sync> SettingsPort for T {
         })
     }
 
-    fn saved_lists(&self) -> ConfigFuture<'_, Result<Vec<IdList>, SettingsError>> {
+    fn saved_keys(&self) -> ConfigFuture<'_, Result<Vec<&'static str>, SettingsError>> {
         Box::pin(async move {
             let rows = self.settings_rows().await?;
-            Ok(IdList::ALL
+            Ok(SEEDED_KEYS
                 .into_iter()
-                .filter(|list| rows.contains_key(list.key()))
+                .filter(|key| rows.contains_key(*key))
                 .collect())
         })
     }
@@ -111,6 +111,20 @@ impl<T: SettingsStore + ReplayStore + Send + Sync> SettingsPort for T {
     fn put_replay(&self, replay: StoredReplay) -> ConfigFuture<'_, Result<(), StoreError>> {
         Box::pin(ReplayStore::put_replay(self, replay))
     }
+}
+
+/// Keys whose value follows an env seed until a save stores a row: the id
+/// lists and the digest channel. Their `*_source` is `saved` or `env`.
+const SEEDED_KEYS: [&str; 4] = [
+    keys::WATCHED_CHANNELS,
+    keys::WATCHED_CATEGORIES,
+    keys::CHAT_CATEGORIES,
+    keys::POST_CHANNEL,
+];
+
+/// `saved` when `key` has a stored row, else `env`.
+fn seeded_source(saved: &[&str], key: &str) -> &'static str {
+    if saved.contains(&key) { "saved" } else { "env" }
 }
 
 /// One catalog read: `reachable` is false when this listing failed; the
@@ -234,19 +248,19 @@ pub struct ConfigDesk {
     pub(super) facts: ConfigFacts,
     pub(super) personas: Option<PersonaFiles>,
     changes: watch::Sender<SettingsChanged>,
-    /// Which id lists have a stored row: read from the store once, then
+    /// Which seeded keys have a stored row: read from the store once, then
     /// kept by the saves (all settings writes go through this desk).
-    saved: Mutex<SavedLists>,
+    saved: Mutex<SavedKeys>,
     /// The last switch of the running roles failed: saved and running
     /// models differ until a retry ([`Self::apply_models`]) succeeds.
     models_unapplied: AtomicBool,
 }
 
-/// The cached saved-list set and a save count, so a store read that began
-/// before a list save never installs its older answer.
+/// The cached saved-key set and a save count, so a store read that began
+/// before a save never installs its older answer.
 #[derive(Default)]
-struct SavedLists {
-    lists: Option<Vec<IdList>>,
+struct SavedKeys {
+    keys: Option<Vec<&'static str>>,
     saves: u64,
 }
 
@@ -265,7 +279,7 @@ impl ConfigDesk {
             facts: inputs.facts,
             personas: inputs.personas,
             changes,
-            saved: Mutex::new(SavedLists::default()),
+            saved: Mutex::new(SavedKeys::default()),
             models_unapplied: AtomicBool::new(false),
         }
     }
@@ -335,22 +349,23 @@ impl ConfigDesk {
         revision
     }
 
-    /// The saved id lists. A failed first read never fails the page: it is
-    /// logged, every list shows `env` for this answer, and the next read retries.
-    pub(super) async fn saved_lists(&self) -> Vec<IdList> {
+    /// The seeded keys with a stored row. A failed first read never fails
+    /// the page: it is logged, every key shows `env` for this answer, and the
+    /// next read retries.
+    pub(in crate::api::admin) async fn saved_keys(&self) -> Vec<&'static str> {
         let saves = {
             let cached = self.saved.lock().unwrap_or_else(PoisonError::into_inner);
-            if let Some(lists) = &cached.lists {
-                return lists.clone();
+            if let Some(keys) = &cached.keys {
+                return keys.clone();
             }
             cached.saves
         };
-        match self.store.saved_lists().await {
+        match self.store.saved_keys().await {
             Ok(saved) => {
                 let mut cached = self.saved.lock().unwrap_or_else(PoisonError::into_inner);
                 // A save landed during the read: the answer may predate it.
                 if cached.saves == saves {
-                    cached.lists = Some(saved.clone());
+                    cached.keys = Some(saved.clone());
                 }
                 saved
             }
@@ -362,18 +377,23 @@ impl ConfigDesk {
         }
     }
 
-    /// A committed list save: that list now has a row.
-    pub(super) fn note_saved(&self, list: IdList) {
+    /// A committed save of a seeded key: it now has a row.
+    pub(super) fn note_saved(&self, key: &'static str) {
         let mut cached = self.saved.lock().unwrap_or_else(PoisonError::into_inner);
         cached.saves += 1;
-        if let Some(lists) = cached.lists.as_mut()
-            && !lists.contains(&list)
+        if let Some(keys) = cached.keys.as_mut()
+            && !keys.contains(&key)
         {
-            lists.push(list);
+            keys.push(key);
         }
     }
 
-    pub(super) async fn catalog(&self) -> CatalogRead {
+    /// A model gateway is configured (`KANADE_MODEL_BASE_URL`).
+    pub(in crate::api::admin) fn gateway_configured(&self) -> bool {
+        self.models.is_some()
+    }
+
+    pub(in crate::api::admin) async fn catalog(&self) -> CatalogRead {
         match &self.models {
             Some(models) => models.read().await,
             None => CatalogRead::default(),
@@ -422,24 +442,16 @@ impl ConfigDesk {
         missing
     }
 
-    #[allow(clippy::too_many_arguments)]
     pub(super) fn view(
         &self,
         settings: &RuntimeSettings,
         catalog: &CatalogRead,
-        channels: &[ChannelEntry],
         roles: &[RoleEntry],
         notices: Vec<String>,
         last_digest: Option<dto::LastDigest>,
-        saved: &[IdList],
+        saved: &[&'static str],
     ) -> ConfigView {
-        let source = |list: IdList| {
-            if saved.contains(&list) {
-                "saved"
-            } else {
-                "env"
-            }
-        };
+        let source = |list: IdList| seeded_source(saved, list.key());
         let missing_env = self.missing_env(settings);
         let choices = self.profile_choices_for(settings);
         let persona = dto::persona(
@@ -480,6 +492,10 @@ impl ConfigDesk {
                 header_teasing: settings.notifications.header_teasing,
             },
             self_service: dto::self_service(settings),
+            posting: dto::Posting {
+                channel_id: settings.posting.channel_id.clone(),
+                channel_id_source: seeded_source(saved, keys::POST_CHANNEL),
+            },
             persona,
             models: dto::Models {
                 reachable: catalog.reachable,
@@ -526,13 +542,13 @@ impl ConfigDesk {
                 missing: Vec::new(),
             },
             notices,
-            env: self.env(settings, channels),
+            env: self.env(settings),
             last_digest,
             character_data: None,
         }
     }
 
-    pub(super) fn running(&self) -> BTreeMap<Role, RunningRole> {
+    pub(in crate::api::admin) fn running(&self) -> BTreeMap<Role, RunningRole> {
         self.models
             .as_ref()
             .map(|models| models.running())
@@ -548,26 +564,9 @@ impl ConfigDesk {
         )
     }
 
-    fn env(&self, settings: &RuntimeSettings, channels: &[ChannelEntry]) -> Vec<EnvRow> {
+    fn env(&self, settings: &RuntimeSettings) -> Vec<EnvRow> {
         let facts = &self.facts;
         let set = |value: Option<&String>| value.cloned().unwrap_or_else(|| "not set".into());
-        let named = |ids: &[String]| {
-            if ids.is_empty() {
-                return "none".to_owned();
-            }
-            ids.iter()
-                .map(|id| {
-                    channels
-                        .iter()
-                        .find(|channel| &channel.id == id)
-                        .map_or_else(|| id.clone(), |channel| channel.name.clone())
-                })
-                .collect::<Vec<_>>()
-                .join(", ")
-        };
-        // The env form of an id list (`guild::list`); unset when empty.
-        let ids = |ids: &[String]| (!ids.is_empty()).then(|| ids.join(","));
-        let posting: Vec<String> = settings.posting.channel_id.iter().cloned().collect();
         vec![
             EnvRow {
                 key: "KANADE_TIMEZONE",
@@ -589,17 +588,6 @@ impl ConfigDesk {
                 copy: Some(
                     crate::api::dto::dow(settings.schedule.reset_weekday).to_ascii_lowercase(),
                 ),
-            },
-            EnvRow {
-                key: "KANADE_POST_CHANNEL_ID",
-                label: "Digest channel",
-                value: if posting.is_empty() {
-                    "not set".into()
-                } else {
-                    named(&posting)
-                },
-                reason: "Set with the guild's channel layout.",
-                copy: ids(&posting),
             },
             EnvRow {
                 key: "KANADE_CHAT_PILOT_ROLE_ID",
@@ -652,10 +640,10 @@ mod tests {
 
     use super::*;
 
-    /// A store whose list read waits for `gate`, to interleave a save.
+    /// A store whose key read waits for `gate`, to interleave a save.
     #[derive(Default)]
     struct Gated {
-        lists: Mutex<Vec<IdList>>,
+        keys: Mutex<Vec<&'static str>>,
         entered: Notify,
         gate: Notify,
     }
@@ -670,12 +658,12 @@ mod tests {
             Box::pin(async { Ok(()) })
         }
 
-        fn saved_lists(&self) -> ConfigFuture<'_, Result<Vec<IdList>, SettingsError>> {
+        fn saved_keys(&self) -> ConfigFuture<'_, Result<Vec<&'static str>, SettingsError>> {
             Box::pin(async move {
-                let lists = self.lists.lock().unwrap().clone();
+                let keys = self.keys.lock().unwrap().clone();
                 self.entered.notify_one();
                 self.gate.notified().await;
-                Ok(lists)
+                Ok(keys)
             })
         }
 
@@ -711,16 +699,16 @@ mod tests {
         });
         let save = async {
             store.entered.notified().await;
-            store.lists.lock().unwrap().push(IdList::ChatCategories);
-            desk.note_saved(IdList::ChatCategories);
+            store.keys.lock().unwrap().push(keys::CHAT_CATEGORIES);
+            desk.note_saved(keys::CHAT_CATEGORIES);
             store.gate.notify_one();
         };
-        let (stale, ()) = tokio::join!(desk.saved_lists(), save);
+        let (stale, ()) = tokio::join!(desk.saved_keys(), save);
         assert!(stale.is_empty(), "the read began before the save");
         // The stale answer was not kept: the next read asks the store again.
         store.gate.notify_one();
-        assert_eq!(desk.saved_lists().await, [IdList::ChatCategories]);
+        assert_eq!(desk.saved_keys().await, [keys::CHAT_CATEGORIES]);
         // Now cached: no store read (the gate holds no permit).
-        assert_eq!(desk.saved_lists().await, [IdList::ChatCategories]);
+        assert_eq!(desk.saved_keys().await, [keys::CHAT_CATEGORIES]);
     }
 }

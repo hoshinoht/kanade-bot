@@ -1,4 +1,4 @@
-import { ADMIN, choose, expect, test } from './support';
+import { ADMIN, choose, expect, moreNamed, test } from './support';
 
 // The Rewrites log: persona rewrites of reminder headers and nudges in the
 // Extractions list-detail layout, filtered server-side by stage and verdict,
@@ -11,7 +11,7 @@ test('rewrites: list, filter by stage and verdict, open an attempt', async ({ pa
   await expect(page).toHaveTitle(/^Rewrites — /);
   const nav = page.getByRole('navigation', { name: 'Sections' });
   // Rewrites is behind More, which takes its name and highlight here.
-  await expect(nav.getByRole('button', { name: 'More, current page Rewrites', exact: true })).toHaveText('Rewrites');
+  await expect(nav.getByRole('button', { name: moreNamed('Rewrites') }).locator('.navlist__label')).toHaveText('Rewrites');
   const list = page.getByRole('listbox', { name: /Rewrite attempts/ });
   await expect(list.getByRole('option')).toHaveCount(8);
   // Wide: the newest attempt is open from the start.

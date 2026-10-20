@@ -60,7 +60,7 @@
       <Select
         label="Channel"
         bind:value={channel}
-        options={[{ value: '', label: 'The digest channel (env)' }, ...(channels.data ?? []).map((c) => ({ value: c.id, label: c.name }))]}
+        options={[{ value: '', label: 'The digest channel (Channels)' }, ...(channels.data ?? []).map((c) => ({ value: c.id, label: c.name }))]}
         noun="channels"
       />
     </div>

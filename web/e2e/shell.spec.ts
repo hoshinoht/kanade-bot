@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test';
-import { ADMIN, expect, test, unconditional } from './support';
+import { ADMIN, expect, moreNamed, test, unconditional } from './support';
 
 // The M3E shell (docs/notes/m3e-rail-design-spec.md, gates G1, G2, G6, G7): the
 // navigation rail at ≥ 600 px, the 36 px page line, and on phones a 48 px top
@@ -70,7 +70,7 @@ for (const size of [
     await expect(rail.getByRole('link', { name: /^Inbox/ })).toHaveAttribute('aria-current', 'page');
     expect(await rail.evaluate((el) => el.scrollHeight - el.clientHeight)).toBeLessThanOrEqual(0);
     const nav = rail.getByRole('navigation');
-    for (const link of [...(await nav.getByRole('link').all()), nav.getByRole('button', { name: 'More', exact: true })]) {
+    for (const link of [...(await nav.getByRole('link').all()), nav.getByRole('button', { name: moreNamed() })]) {
       const box = (await link.boundingBox())!;
       expect(box.y + box.height).toBeLessThanOrEqual(size.height);
       // The whole item is the link: at least 44 px tall (spec "Accessibility").
@@ -81,11 +81,11 @@ for (const size of [
   });
 }
 
-test('rail: More is a keyboard menu of Rewrites, Limits, Reminders and Guides', async ({ page }) => {
+test('rail: More is a keyboard menu of Rewrites, Limits, Reminders, Guides and Setup', async ({ page }) => {
   await page.goto(`${ADMIN}/members?sw=off`);
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('15 bossers');
   const nav = page.locator('.navrail').getByRole('navigation', { name: 'Sections' });
-  const more = nav.getByRole('button', { name: 'More', exact: true });
+  const more = nav.getByRole('button', { name: moreNamed() });
   await expect(more).toHaveAttribute('aria-haspopup', 'menu');
   await expect(more).toHaveAttribute('aria-expanded', 'false');
   const menu = page.getByRole('menu', { name: 'More destinations' });
@@ -101,10 +101,11 @@ test('rail: More is a keyboard menu of Rewrites, Limits, Reminders and Guides', 
     ['ArrowDown', 'Limits'],
     ['ArrowDown', 'Reminders'],
     ['ArrowDown', 'Guides'],
+    ['ArrowDown', 'Setup'],
     ['ArrowDown', 'Rewrites'],
-    ['ArrowUp', 'Guides'],
+    ['ArrowUp', 'Setup'],
     ['Home', 'Rewrites'],
-    ['End', 'Guides'],
+    ['End', 'Setup'],
   ] as const) {
     await page.keyboard.press(key);
     await expect(item(name)).toBeFocused();
@@ -116,7 +117,7 @@ test('rail: More is a keyboard menu of Rewrites, Limits, Reminders and Guides', 
   await expect(more).toHaveAttribute('aria-expanded', 'false');
   // ↑ opens on the last item; Tab closes and moves on.
   await page.keyboard.press('ArrowUp');
-  await expect(item('Guides')).toBeFocused();
+  await expect(item('Setup')).toBeFocused();
   await page.keyboard.press('Tab');
   await expect(menu).toBeHidden();
   // Space opens too; a click elsewhere closes.
@@ -134,8 +135,8 @@ test('rail: More is a keyboard menu of Rewrites, Limits, Reminders and Guides', 
   await expect(page).toHaveURL(`${ADMIN}/limits`);
   await expect(menu).toBeHidden();
   await expect(page.locator('#main')).toBeFocused();
-  const here = nav.getByRole('button', { name: 'More, current page Limits', exact: true });
-  await expect(here).toHaveText('Limits');
+  const here = nav.getByRole('button', { name: moreNamed('Limits') });
+  await expect(here.locator('.navlist__label')).toHaveText('Limits');
   await expect(here).toHaveClass(/navlist__item--here/);
   await expect(here.locator('[data-icon="gauge"]')).toBeVisible();
   await expect(nav.locator('[aria-current="page"]')).toHaveCount(0);
@@ -146,7 +147,7 @@ test('rail: More is a keyboard menu of Rewrites, Limits, Reminders and Guides', 
 
   // Off its pages, More is More again.
   await nav.getByRole('link', { name: 'Week' }).click();
-  await expect(more).toHaveText('More');
+  await expect(more.locator('.navlist__label')).toHaveText('More');
   await expect(more).not.toHaveClass(/navlist__item--here/);
 });
 
@@ -268,11 +269,11 @@ test('phone: the drawer has a More row that opens in place', async ({ page }) =>
   const drawer = page.getByRole('dialog', { name: 'Navigation' });
   const more = drawer.getByRole('button', { name: /^More/ });
   await expect(more).toHaveAttribute('aria-expanded', 'false');
-  await expect(more).toContainText('Rewrites, Limits, Reminders, Guides');
+  await expect(more).toContainText('Rewrites, Limits, Reminders, Guides, Setup');
   await expect(drawer.getByRole('link', { name: 'Limits' })).toHaveCount(0);
   await more.click();
   await expect(more).toHaveAttribute('aria-expanded', 'true');
-  await expect(drawer.getByRole('link')).toContainText(['Rewrites', 'Limits', 'Reminders', 'Guides']);
+  await expect(drawer.getByRole('link')).toContainText(['Rewrites', 'Limits', 'Reminders', 'Guides', 'Setup']);
   await drawer.getByRole('link', { name: 'Limits' }).click();
   await expect(page).toHaveURL(`${ADMIN}/limits`);
   await expect(drawer).toBeHidden();
@@ -284,7 +285,7 @@ test('phone: the drawer has a More row that opens in place', async ({ page }) =>
   await expect(limits).toBeFocused();
   // Closed, the row takes the page's name and highlight.
   await more.click();
-  const here = drawer.getByRole('button', { name: 'More, current page Limits', exact: true });
+  const here = drawer.getByRole('button', { name: moreNamed('Limits') });
   await expect(here).toHaveAttribute('aria-expanded', 'false');
   await expect(here.locator('.navlist__label')).toHaveText('Limits');
   await expect(here).toHaveClass(/navlist__item--here/);

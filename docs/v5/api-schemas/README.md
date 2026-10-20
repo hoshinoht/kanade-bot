@@ -163,7 +163,8 @@ Pointers are `<file>#/$defs/<Name>`.
 | `GET /api/admin/rewrites/{id}` | `rewrites.json#/$defs/Rewrite` |
 | `GET /api/admin/limits` | `limits.json#/$defs/Limits` |
 | `DELETE /api/admin/limits/windows/{id}` | `common.json#/$defs/Message` |
-| `GET`/`PATCH /api/admin/config` | `config.json#/$defs/ConfigView` (PATCH may add `notices`; both carry one while the saved models are not running) |
+| `GET`/`PATCH /api/admin/config` | `config.json#/$defs/ConfigView` (PATCH may add `notices`; both carry one while the saved models are not running; section `posting` edits the digest channel, see `ConfigView.posting`) |
+| `GET /api/admin/setup` | `setup.json#/$defs/SetupView` (admin origin only, any signed-in admin incl. break-glass; read-only, never 5xx for a missing fact: each of the 16 items, required first, is `ok`/`missing`/`warn`/`off` with typed facts only, no secret, path or URL of the deployment; Discord's application, the model catalog, module health and the backup directory are each read within 5 s, else `warn`/`unavailable`) |
 | `POST /api/admin/config/profiles/reload` | `common.json#/$defs/ReloadResult` |
 | `POST /api/admin/digest` | `common.json#/$defs/Message` |
 | `POST /api/admin/headers/rewrite` | `202` `common.json#/$defs/Message` (the run continues in the background; `200` when nothing posted this boss week has a header; 409 `ApiError` `rewrite_running`/`rewrite_off`) |
@@ -184,7 +185,7 @@ Pointers are `<file>#/$defs/<Name>`.
 `public.json`, `week.json`, `members.json`, `characters.json`, `fixed.json`,
 `bosses.json`, `reminders.json`, `inbox.json`, `drafts.json`, `extractions.json`,
 `chat.json`, `rewrites.json`, `limits.json`, `history.json`, `config.json`,
-`presence.json`, `guides.json`.
+`presence.json`, `guides.json`, `setup.json`.
 
 ## Changes since A0
 
@@ -376,3 +377,8 @@ Pointers are `<file>#/$defs/<Name>`.
   `header_estimates` is off; turning `header_estimates` off turns it off in
   the same save). The History `members` rows' JSON sides gain `tease_ok`
   and `running_joke`.
+- Admin Setup (2026-10-19): `setup.json` (`SetupView`, `SetupItem` and its
+  enums) for `GET /api/admin/setup`; `config.json` `ConfigView.posting`
+  (`channel_id`, `channel_id_source`), writable through
+  `PATCH /api/admin/config` section `posting`; the `KANADE_POST_CHANNEL_ID`
+  row leaves `ConfigView.env`.

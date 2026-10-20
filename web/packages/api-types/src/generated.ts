@@ -1830,7 +1830,7 @@ consequence: string | null, };
  */
 export type DraftWritten = { id: string, version: number, status: 'open' | 'merged' | 'discarded' | 'expired', seq: number | null, message: string, };
 
-export type ConfigView = { pings: Pings, watching: Watching, chatbot: Chatbot, notifications: Notifications, self_service: SelfServiceSettings, persona: PersonaSettings, models: ModelSettings, run_lengths: RunLengths, profanity: ProfanitySettings, manage_messages: ManageMessages, notices: Array<string>, env: Array<EnvRow>, 
+export type ConfigView = { pings: Pings, watching: Watching, chatbot: Chatbot, notifications: Notifications, self_service: SelfServiceSettings, posting: PostingSettings, persona: PersonaSettings, models: ModelSettings, run_lengths: RunLengths, profanity: ProfanitySettings, manage_messages: ManageMessages, notices: Array<string>, env: Array<EnvRow>, 
 /**
  * `null` when no digest is active or the journal could not be read.
  */
@@ -1879,6 +1879,21 @@ header_estimates: boolean,
 header_teasing: boolean, };
 
 export type SelfServiceSettings = { mode: SelfServiceMode, effective_mode: SelfServiceMode, public_portal: boolean, };
+
+/**
+ * The digest channel (`v5.post_channel_id`), editable through PATCH
+ * `posting.channel_id`; the delivery tick reads it every tick.
+ */
+export type PostingSettings = { 
+/**
+ * `null` when no digest channel is set.
+ */
+channel_id: string | null, 
+/**
+ * `saved` once a Posting save stored the row, else `env`
+ * (`KANADE_POST_CHANNEL_ID`).
+ */
+channel_id_source: IdListSource, };
 
 export type PersonaEntry = { key: string, name: string, bundle: string, };
 
@@ -2002,6 +2017,84 @@ export type AccessReport = { connected: boolean,
 checked_at: string, rows: Array<AccessRow>, };
 
 export type AccessRow = { id: string, name: string, watched: boolean, digest: boolean, view: boolean, send: boolean, history: boolean, embed: boolean, react: boolean, manage_messages: boolean, };
+
+/**
+ * `GET /api/admin/setup`.
+ */
+export type SetupView = { 
+/**
+ * Every required item is `ok`.
+ */
+complete: boolean, 
+/**
+ * Every [`SetupItemId`], in its order.
+ */
+items: Array<SetupItem>, };
+
+/**
+ * One checklist item: its state plus the facts that item needs.
+ */
+export type SetupItem = { id: SetupItemId, required: boolean, state: SetupState, source?: SetupSource, reason?: SetupReason, 
+/**
+ * `digest_channel`: the channel set.
+ */
+channel_id?: string, 
+/**
+ * `discord_intents`: the intents still off (empty when all are on).
+ */
+missing_intents?: Array<PrivilegedIntent>, 
+/**
+ * `chat`: the env-only settings the chatbot still needs.
+ */
+missing_env?: Array<string>, 
+/**
+ * `bot_access`: the link that adds the bot with the six permissions
+ * the access report checks.
+ */
+invite_url?: string, 
+/**
+ * `bot_access`: watched and digest channels missing any of the six.
+ */
+channels_lacking?: number, 
+/**
+ * `watched_channels`: watched channels plus watched categories.
+ */
+count?: number, 
+/**
+ * `public_portal`: the live open switch (`self_service.public_portal`).
+ */
+open?: boolean, 
+/**
+ * `backups`: RFC 3339 UTC, the newest listed backup.
+ */
+latest_backup_at?: string, 
+/**
+ * `backups`: age recipients are configured (snapshots are encrypted).
+ */
+recipients?: boolean, };
+
+/**
+ * One checklist item; [`SetupItemId::ALL`] is the answer's order,
+ * required items first.
+ */
+export type SetupItemId = "discord_gateway" | "discord_intents" | "bot_access" | "digest_channel" | "watched_channels" | "model_gateway" | "extraction_model" | "chat" | "persona" | "admin_sign_in" | "public_portal" | "roster" | "character_data" | "guides" | "scouter" | "backups";
+
+export type SetupState = "ok" | "missing" | "warn" | "off";
+
+/**
+ * Where an item's value comes from.
+ */
+export type SetupSource = "environment" | "file" | "saved" | "derived";
+
+/**
+ * Why an item is not `ok`.
+ */
+export type SetupReason = "gateway_off" | "connecting" | "gateway_closed" | "not_connected" | "unavailable" | "unreachable" | "not_running" | "env_missing" | "member_sign_in_missing" | "nexon_no_key" | "nexon_key_refused" | "nexon_backoff" | "verification_required";
+
+/**
+ * A privileged gateway intent the bot needs (Developer Portal, Bot page).
+ */
+export type PrivilegedIntent = "server_members" | "message_content";
 
 /**
  * What the log filters can offer (all values seen, not only the filtered rows').

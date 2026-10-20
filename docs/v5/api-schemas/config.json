@@ -312,6 +312,16 @@
             "public_portal": { "type": "boolean" }
           }
         },
+        "posting": {
+          "description": "The digest channel (v5.post_channel_id; seeded by KANADE_POST_CHANNEL_ID until a save). PATCH {\"posting\": {\"channel_id\": \"<id>\" | null}}: a canonical positive Discord id, or null for no digest channel; while the guild is loaded it must be one of its text channels (else 422 invalid; the channel already saved is kept even if gone); channel_id_source is 422 read_only. An effective save adds a History settings row, section posting, key v5.post_channel_id. Live: the delivery tick reads it on its next tick (at most one tick period, 60 s), as do the manual digest and the access report. Always sent by the server; optional so earlier fixtures stay valid.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["channel_id", "channel_id_source"],
+          "properties": {
+            "channel_id": { "type": ["string", "null"], "minLength": 1 },
+            "channel_id_source": { "$ref": "#/$defs/IdListSource" }
+          }
+        },
         "persona": {
           "type": "object",
           "additionalProperties": false,

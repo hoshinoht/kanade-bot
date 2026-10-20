@@ -45,6 +45,7 @@
     onsection,
     onrunlengths,
     onquiet,
+    onsaved,
     rescanOff = null,
     timeZone = 'Asia/Kuala_Lumpur',
   }: {
@@ -55,6 +56,8 @@
     onrunlengths?: (defaultMinutes: number) => void;
     /** A save answered: the shell's quiet-mode chip follows the saved value at once. */
     onquiet?: (on: boolean) => void;
+    /** Any section saved (Setup's badge re-reads). */
+    onsaved?: () => void;
     /** Why Re-read is refused right now (the summary's `rescan_off`). */
     rescanOff?: string | null;
     /** The guild's time zone (the week's), for times in the health view. */
@@ -74,7 +77,7 @@
     { key: 'self-service', label: 'Self-service', group: 'Members', terms: 'public portal cards links how members are answered' },
     { key: 'notifications', label: 'Notifications', group: 'Members', terms: 'quiet mode pings discord message style classic redesigned header rewrites generation time' },
     { key: 'digest', label: 'Weekly digest', group: 'Members', terms: 'post channel week' },
-    { key: 'channels', label: 'Channels', group: 'Server', terms: 'watched channels categories chat categories ids environment seed' },
+    { key: 'channels', label: 'Channels', group: 'Server', terms: 'watched channels categories chat categories digest post channel ids environment seed' },
     { key: 'rescan', label: 'Re-read', group: 'Server', terms: 'channels extractor running' },
     { key: 'access', label: 'Channel access', group: 'Server', terms: 'manage messages permissions check' },
     {
@@ -293,6 +296,7 @@
         `${c.watching.channel_ids.length} watched channels`,
         `${c.watching.category_ids.length} watched categories`,
         `${c.chatbot.category_ids.length} chat categories`,
+        c.posting.channel_id ? 'Digest channel set' : 'No digest channel',
       ];
       case 'rescan': return [`${targets.data?.length ?? 0} available channels`];
       case 'access': return [`${missingManage.length} channels missing Manage Messages`];
@@ -318,6 +322,7 @@
     if (!result.ok) return result.message;
     config.data = result.value;
     onquiet?.(result.value.notifications.quiet_mode);
+    onsaved?.();
     const notes = result.value.notices ?? [];
     const message = notes.length ? `${done} ${notes.join(' ')}` : done;
     // Switches and visibility apply at once: their toast offers Undo (10 s by default).
@@ -344,6 +349,7 @@
     );
     if (!result.ok) return result;
     config.data = result.value;
+    onsaved?.();
     const notes = result.value.notices ?? [];
     toaster.show({ message: notes.length ? `Role assignments saved. ${notes.join(' ')}` : 'Role assignments saved.', tone: 'ok' });
     return result;
@@ -524,7 +530,7 @@
               {:else if item.key === 'chatbot'}
                 <ChatbotSection chatbot={c.chatbot} {save} />
               {:else if item.key === 'channels'}
-                <ChannelsSection watching={c.watching} chatbot={c.chatbot} {save} />
+                <ChannelsSection watching={c.watching} chatbot={c.chatbot} posting={c.posting} {save} />
               {:else if item.key === 'profanity'}
                 <ProfanitySection profanity={c.profanity} {save} />
               {:else if item.key === 'persona'}

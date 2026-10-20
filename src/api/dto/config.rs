@@ -36,6 +36,7 @@ pub struct ConfigView {
     pub chatbot: Chatbot,
     pub notifications: Notifications,
     pub self_service: SelfService,
+    pub posting: Posting,
     pub persona: Persona,
     pub models: Models,
     pub run_lengths: RunLengths,
@@ -72,6 +73,19 @@ pub struct Watching {
     pub category_ids: Vec<String>,
     #[cfg_attr(test, ts(type = "IdListSource"))]
     pub category_ids_source: &'static str,
+}
+
+/// The digest channel (`v5.post_channel_id`), editable through PATCH
+/// `posting.channel_id`; the delivery tick reads it every tick.
+#[derive(Clone, Debug, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(rename = "PostingSettings"))]
+pub struct Posting {
+    /// `null` when no digest channel is set.
+    pub channel_id: Option<String>,
+    /// `saved` once a Posting save stored the row, else `env`
+    /// (`KANADE_POST_CHANNEL_ID`).
+    #[cfg_attr(test, ts(type = "IdListSource"))]
+    pub channel_id_source: &'static str,
 }
 
 #[derive(Clone, Copy, Debug, Serialize)]

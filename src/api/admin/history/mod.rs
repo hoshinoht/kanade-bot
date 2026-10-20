@@ -4,7 +4,7 @@
 //! Reads use the store's readers; rollbacks and their previews go through
 //! the one scheduler writer.
 
-mod backups;
+pub(super) mod backups;
 pub(super) mod parse;
 mod rollback;
 mod settings;

@@ -258,7 +258,7 @@ test.describe('reduced motion', () => {
     await expect(row).toHaveAttribute('data-new', '', { timeout: 6_000 });
     expect(await row.evaluate((el) => getComputedStyle(el).animationName)).toBe('arrive-tint');
     // The badge's pulse is a scale: under reduced motion it stays still.
-    const badge = page.locator('.navrail .navlist__badge');
+    const badge = page.locator('.navrail a[href="/inbox"] .navlist__badge');
     await expect(badge).toHaveAttribute('data-tick', '');
     expect(await badge.evaluate((el) => getComputedStyle(el).animationName)).toBe('none');
   });

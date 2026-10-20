@@ -1,7 +1,7 @@
 import AxeBuilder from '@axe-core/playwright';
 import type { Page } from '@playwright/test';
 import { COLORWAYS } from '../packages/tokens/src/colorways';
-import { ADMIN, HEADING, PUBLIC, expect, settle, setPortal, signInPublic, test, choose, useLook } from './support';
+import { ADMIN, HEADING, PUBLIC, expect, moreNamed, settle, setPortal, signInPublic, test, choose, useLook } from './support';
 
 // Every test is independent (the fixture resets the server), so the looks spread across workers.
 test.describe.configure({ mode: 'parallel' });
@@ -240,7 +240,7 @@ const WALK: { name: string; walk: (page: Page) => Promise<void> }[] = [
       await expect(page.getByRole('complementary', { name: 'Member details' })).toBeVisible();
       await serious(page, 'admin member sheet');
       await page.keyboard.press('Escape');
-      await page.getByRole('button', { name: 'More', exact: true }).click();
+      await page.getByRole('button', { name: moreNamed() }).click();
       await page.getByRole('menuitem', { name: 'Reminders' }).click();
       await expect(page.getByRole('tab', { name: /^Queued/ })).toBeVisible();
       await serious(page, 'admin reminders');

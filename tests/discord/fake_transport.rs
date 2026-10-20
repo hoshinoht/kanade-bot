@@ -513,3 +513,41 @@ async fn a_hold_released_early_lets_the_call_through_and_a_cancelled_one_does_no
         "the hold was consumed by the cancelled call"
     );
 }
+
+#[tokio::test]
+async fn the_application_reports_settable_flags_and_scripted_failures() {
+    use kanade::bot::transport::FAKE_APPLICATION_ID;
+    use twilight_model::oauth::ApplicationFlags;
+    let fake = FakeDiscord::new();
+    let Outcome::Delivered(info) = fake.application_info().await else {
+        panic!("unscripted reads succeed");
+    };
+    assert_eq!(info.id, Id::new(FAKE_APPLICATION_ID));
+    assert_eq!(info.flags, FakeDiscord::DEFAULT_FLAGS);
+    assert!(info.flags.contains(
+        ApplicationFlags::GATEWAY_GUILD_MEMBERS_LIMITED
+            | ApplicationFlags::GATEWAY_MESSAGE_CONTENT_LIMITED
+    ));
+
+    fake.set_application_flags(ApplicationFlags::GATEWAY_MESSAGE_CONTENT);
+    fake.script(
+        Op::ApplicationInfo,
+        Step::Reject(RejectionKind::Unauthorized),
+    );
+    let refused = fake.application_info().await;
+    assert_eq!(
+        refused,
+        Outcome::DefinitelyRejected(RejectionKind::Unauthorized)
+    );
+    let Outcome::Delivered(info) = fake.application_info().await else {
+        panic!("the script is spent");
+    };
+    assert_eq!(info.flags, ApplicationFlags::GATEWAY_MESSAGE_CONTENT);
+    assert_eq!(fake.count(Op::ApplicationInfo), 3, "every read is recorded");
+    assert_eq!(
+        fake.calls().last(),
+        Some(&Call::ApplicationInfo {
+            outcome: Outcome::Delivered(info)
+        })
+    );
+}
