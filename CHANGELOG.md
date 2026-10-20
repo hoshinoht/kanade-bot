@@ -4,7 +4,7 @@ What changed in each Kanade release, newest first. Upgrading across several rele
 
 ## 1.0.0-beta.12
 
-_In development_
+_20 Oct 2026_
 
 Configuration now has one home per value: secrets are files in one secrets directory, the image and Compose own every path and address, and `kanade.toml` keeps only deployment settings.
 
