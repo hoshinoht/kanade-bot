@@ -1,7 +1,8 @@
 //! `kanade backup` end to end: the binary snapshots a stopped store into the
 //! backup directory and refuses while another process owns it; with a
-//! recipients file it publishes only the age-encrypted snapshot, and the
-//! `keygen`/`encrypt`/`decrypt` tools round-trip through the same binary.
+//! `recipients` file in that directory it publishes only the age-encrypted
+//! snapshot, and the `keygen`/`encrypt`/`decrypt` tools round-trip through
+//! the same binary.
 
 use std::{
     io::Write,
@@ -178,11 +179,8 @@ async fn an_encrypted_backup_decrypts_to_a_valid_snapshot() {
     assert_eq!(mode(&identity), 0o600);
 
     let name = "kanade-20261011T010203Z-pre-abc1234.sqlite";
-    let done = dir
-        .kanade(&["backup", "--name", name])
-        .env("KANADE_BACKUP_RECIPIENTS_FILE", &recipients)
-        .output()
-        .unwrap();
+    std::fs::copy(&recipients, dir.backups().join("recipients")).unwrap();
+    let done = dir.kanade(&["backup", "--name", name]).output().unwrap();
     assert_eq!(done.status.code(), Some(0), "{}", text(&done.stderr));
     assert!(
         text(&done.stdout).starts_with(&format!("backup {name}.age: history head 0 (")),
@@ -193,7 +191,11 @@ async fn an_encrypted_backup_decrypts_to_a_valid_snapshot() {
     let sealed = dir.backups().join(format!("{name}.age"));
     assert_eq!(
         names(&dir.backups()),
-        [format!("{name}.age"), format!("{name}.age.manifest.json")]
+        [
+            format!("{name}.age"),
+            format!("{name}.age.manifest.json"),
+            "recipients".to_owned()
+        ]
     );
     assert_eq!(mode(&sealed), 0o600);
     assert!(
@@ -257,15 +259,15 @@ async fn a_bad_recipients_file_refuses_the_backup() {
         .await
         .unwrap();
     let (identity, _) = dir.keygen("backup.key");
-    let recipients = dir.0.join("keys/bad.pub");
+    let recipients = dir.backups().join("recipients");
     for (contents, expected) in [
         (
             "# nothing here\n\n".to_owned(),
-            "KANADE_BACKUP_RECIPIENTS_FILE holds no age recipients",
+            "backups file `recipients` holds no age recipients",
         ),
         (
             "age1notakey\n".to_owned(),
-            "KANADE_BACKUP_RECIPIENTS_FILE: line 1 is not an age X25519 recipient",
+            "backups file `recipients`: line 1 is not an age X25519 recipient",
         ),
         // The private identity pasted in by mistake: refused, never echoed.
         (
@@ -274,28 +276,24 @@ async fn a_bad_recipients_file_refuses_the_backup() {
         ),
     ] {
         std::fs::write(&recipients, &contents).unwrap();
-        let refused = dir
-            .kanade(&["backup"])
-            .env("KANADE_BACKUP_RECIPIENTS_FILE", &recipients)
-            .output()
-            .unwrap();
+        let refused = dir.kanade(&["backup"]).output().unwrap();
         assert_eq!(refused.status.code(), Some(78), "{}", text(&refused.stderr));
         let stderr = text(&refused.stderr);
         assert!(stderr.contains(expected), "{stderr}");
         assert!(!stderr.contains("AGE-SECRET-KEY"), "{stderr}");
-        assert!(names(&dir.backups()).is_empty(), "nothing is written");
+        assert_eq!(names(&dir.backups()), ["recipients"], "nothing is written");
     }
-    let missing = dir
-        .kanade(&["backup"])
-        .env("KANADE_BACKUP_RECIPIENTS_FILE", dir.0.join("keys/absent"))
+    // Without the file the snapshot is plaintext.
+    std::fs::remove_file(&recipients).unwrap();
+    let plain = dir
+        .kanade(&["backup", "--name", "plain.sqlite"])
         .output()
         .unwrap();
-    assert_eq!(missing.status.code(), Some(78));
-    assert!(
-        text(&missing.stderr)
-            .contains("KANADE_BACKUP_RECIPIENTS_FILE must name a readable recipients file")
+    assert_eq!(plain.status.code(), Some(0), "{}", text(&plain.stderr));
+    assert_eq!(
+        names(&dir.backups()),
+        ["plain.sqlite", "plain.sqlite.manifest.json"]
     );
-    assert!(names(&dir.backups()).is_empty());
 }
 
 /// `backup encrypt …` with `input` on stdin; returns its output.
@@ -328,9 +326,8 @@ fn the_encrypt_filter_round_trips_arbitrary_bytes() {
         dir.kanade(&["backup", "encrypt", "--recipients", recipients_arg]),
         input.clone(),
     );
-    let mut by_setting = dir.kanade(&["backup", "encrypt"]);
-    by_setting.env("KANADE_BACKUP_RECIPIENTS_FILE", &recipients);
-    let by_setting = encrypt(by_setting, input.clone());
+    std::fs::copy(&recipients, dir.backups().join("recipients")).unwrap();
+    let by_setting = encrypt(dir.kanade(&["backup", "encrypt"]), input.clone());
     for (index, sealed) in [by_flag, by_setting].into_iter().enumerate() {
         assert_eq!(sealed.status.code(), Some(0), "{}", text(&sealed.stderr));
         assert!(sealed.stdout.starts_with(b"age-encryption.org/v1\n"));
@@ -342,8 +339,11 @@ fn the_encrypt_filter_round_trips_arbitrary_bytes() {
         assert_eq!(std::fs::read(&plain).unwrap(), input);
     }
 
-    // No recipients at all, or a bad file: refused before any output.
-    let none = encrypt(dir.kanade(&["backup", "encrypt"]), b"x".to_vec());
+    // No recipients at all (no backups directory), or a bad file: refused
+    // before any output.
+    let mut nowhere = dir.kanade(&["backup", "encrypt"]);
+    nowhere.env_remove("KANADE_BACKUP_DIR");
+    let none = encrypt(nowhere, b"x".to_vec());
     assert_eq!(none.status.code(), Some(64), "{}", text(&none.stderr));
     assert!(none.stdout.is_empty());
     let empty = dir.0.join("keys/empty.pub");

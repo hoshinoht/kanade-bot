@@ -1,4 +1,4 @@
-//! The `[models.context]` seed (`KANADE_MODEL_CONTEXT`): windows above the
+//! The context seed `KANADE_MODEL_CONTEXT` (tests and harnesses): windows above the
 //! hard cap are clamped (and reported so serve can log it); anything else
 //! invalid refuses startup, a reserve that leaves no prompt room in the
 //! call token budget included.

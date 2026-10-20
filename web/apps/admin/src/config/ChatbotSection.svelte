@@ -64,9 +64,8 @@
   {#snippet lead()}Its models are under <a href="/config?section=models">Models</a>; who it answers is on <a href="/members">Members</a>.{/snippet}
   {#if !chatbot.configured}
     <p class="settings__box settings__box--risk" role="alert">
-      Not configured — set {#each chatbot.missing_env as name, i (i)}{i > 0 ? ' and ' : ''}<code>{name}</code>{/each} in the
-      environment and restart. Until both are set the bot answers nobody.
-      {#if chatbot.missing_env.includes('KANADE_CHAT_CATEGORY_IDS')}Chat categories can also be saved in <a href="/config?section=channels">Channels</a>, with no restart.{/if}
+      Not configured — set {#each chatbot.missing_env as name, i (i)}{i > 0 ? ' and ' : ''}<code>{name}</code>{/each} in
+      kanade.toml and restart. Until then the bot answers nobody.
     </p>
   {/if}
   <SwitchCard

@@ -1,10 +1,9 @@
 //! Module `character_data` (`modules.character_data` /
 //! `KANADE_MODULE_CHARACTER_DATA`, default off, needs `modules.roster`):
-//! `character_data.db_path` / `KANADE_CHARACTER_DATA_DB_PATH`, the separate
-//! character-data file (required while on), the optional
-//! `character_data.nexon_key_file` / `KANADE_NEXON_API_KEY_FILE` (unset:
-//! the module runs with links refused; set but unreadable: startup is
-//! refused, checked by serve) and the optional
+//! `KANADE_CHARACTER_DATA_DB_PATH` (set by the image), the separate
+//! character-data file (required while on), the optional `nexon_api_key` in
+//! the secrets directory (absent: the module runs with links refused;
+//! present but bad: serve refuses to start) and the optional
 //! `character_data.scouter_url` / `KANADE_SCOUTER_URL` (the scouter
 //! sidecar; unset: estimates are off). Off, all are ignored and no file is
 //! opened.
@@ -13,17 +12,22 @@ use std::{collections::BTreeMap, net::IpAddr, path::PathBuf};
 
 use hyper::Uri;
 
-use super::{Error, is_private, non_empty, store::absolute};
+use super::{
+    Error, is_private,
+    layout::{CHARACTER_DATA_DB_PATH, absolute},
+    non_empty,
+};
+use crate::runtime::secrets::{self, SecretFile};
 
 pub const FLAG_KEY: &str = "KANADE_MODULE_CHARACTER_DATA";
-pub const DB_PATH_KEY: &str = "KANADE_CHARACTER_DATA_DB_PATH";
-pub const NEXON_KEY_FILE_KEY: &str = "KANADE_NEXON_API_KEY_FILE";
 pub const SCOUTER_URL_KEY: &str = "KANADE_SCOUTER_URL";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CharacterDataSettings {
     pub db_path: PathBuf,
-    pub nexon_key_file: Option<PathBuf>,
+    /// `nexon_api_key`, read when present; `None` only where a caller turns
+    /// the key off.
+    pub nexon_key: Option<SecretFile>,
     /// `http://host[:port]` of the scouter sidecar; `None`: estimates
     /// are off.
     pub scouter_url: Option<String>,
@@ -41,12 +45,12 @@ impl CharacterDataSettings {
         }
         if !roster {
             return Err(Error::Configuration(format!(
-                "{FLAG_KEY} needs the roster module (KANADE_MODULE_ROSTER=1)"
+                "{FLAG_KEY} needs the roster module on (KANADE_MODULE_ROSTER)"
             )));
         }
         Ok(Some(Self {
-            db_path: absolute(values, DB_PATH_KEY)?,
-            nexon_key_file: non_empty(values, NEXON_KEY_FILE_KEY).map(PathBuf::from),
+            db_path: absolute(values, CHARACTER_DATA_DB_PATH)?,
+            nexon_key: Some(SecretFile::named(values, secrets::NEXON_API_KEY)),
             scouter_url: non_empty(values, SCOUTER_URL_KEY)
                 .map(|url| {
                     scouter_url(url).ok_or_else(|| {

@@ -174,7 +174,7 @@ struct Holds {
 pub struct CharacterData {
     store: Arc<dyn CharDataStore>,
     roster: Arc<dyn RosterSide>,
-    /// `None` without `KANADE_NEXON_API_KEY_FILE` (`no_key`).
+    /// `None` without the secrets file `nexon_api_key` (`no_key`).
     nexon: Option<NexonClient>,
     clock: Clock,
     timing: Timing,

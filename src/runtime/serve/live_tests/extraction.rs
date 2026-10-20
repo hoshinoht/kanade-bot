@@ -170,9 +170,8 @@ fn harness_with(model: &Model, enabled: bool, extra: &[(&str, &str)]) -> Harness
     ];
     values.extend_from_slice(extra);
     let mut harness = Harness::with(&values);
-    let token = harness._temp.0.join("admin_token");
-    std::fs::write(&token, format!("{TOKEN}\n")).unwrap();
-    harness.config.runtime.admin_auth.token_file = Some(token);
+    // The harness root is the secrets directory: break-glass sign-in is on.
+    std::fs::write(harness._temp.0.join("admin_token"), format!("{TOKEN}\n")).unwrap();
     harness.timing = TIMING;
     harness.fake.seed_members(
         Id::new(GUILD),

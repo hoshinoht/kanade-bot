@@ -210,7 +210,7 @@ impl AvatarFetch for SlowCdn {
 // ---- Fixtures ----
 
 fn harness(model: &HangingModel) -> Harness {
-    let mut harness = Harness::with(&[
+    let harness = Harness::with(&[
         ("KANADE_MODEL_BASE_URL", model.url.as_str()),
         ("KANADE_CHAT_MODEL", ALIAS),
         ("KANADE_EXTRACT_MODEL", ALIAS),
@@ -223,9 +223,8 @@ fn harness(model: &HangingModel) -> Harness {
         ("KANADE_EXTRACTION_ENABLED", "1"),
         ("KANADE_ADMIN_HOST", HOST),
     ]);
-    let token = harness._temp.0.join("admin_token");
-    std::fs::write(&token, format!("{TOKEN}\n")).unwrap();
-    harness.config.runtime.admin_auth.token_file = Some(token);
+    // The harness root is the secrets directory: break-glass sign-in is on.
+    std::fs::write(harness._temp.0.join("admin_token"), format!("{TOKEN}\n")).unwrap();
     // Alice has a portrait for the admin app to fetch.
     let mut alice = member_json(ALICE, "alice", false, &[BOSSING, ADMIN_ROLE]);
     alice["user"]["avatar"] = json!("0123456789abcdef0123456789abcdef");
@@ -1257,10 +1256,8 @@ async fn sign_in_for_writes(address: SocketAddr) -> (String, String) {
 #[tokio::test]
 async fn a_manual_digest_in_flight_at_the_cutoff_is_journalled_before_the_store_closes() {
     logging::capture();
-    let mut harness = Harness::with(&[("KANADE_ADMIN_HOST", HOST)]);
-    let token = harness._temp.0.join("admin_token");
-    std::fs::write(&token, format!("{TOKEN}\n")).unwrap();
-    harness.config.runtime.admin_auth.token_file = Some(token);
+    let harness = Harness::with(&[("KANADE_ADMIN_HOST", HOST)]);
+    std::fs::write(harness._temp.0.join("admin_token"), format!("{TOKEN}\n")).unwrap();
     seed_discord_members(&harness);
     let policy = policy(&harness);
     let now = auth::system_now();

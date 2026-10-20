@@ -361,29 +361,31 @@ async fn a_backup_holds_no_character_data() {
     conn.close().await.unwrap();
 }
 
-/// Compose mounts the module's file on its own volume, which neither the
-/// data volume (tarballed by the runbook) nor the `backup` service holds.
+/// The image puts the module's file on its own volume, which Compose mounts
+/// and neither the data volume (tarballed by the runbook) nor the `backup`
+/// service holds; its key is a file in the secrets directory.
 #[test]
 fn compose_pins_the_separate_volume() {
-    let compose = std::fs::read_to_string(
-        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("deploy/compose.yaml"),
-    )
-    .unwrap();
-    assert!(compose.contains("KANADE_CHARACTER_DATA_DB_PATH: /chardata/db/chardata.sqlite"));
+    let read = |path: &str| {
+        std::fs::read_to_string(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(path))
+            .unwrap()
+    };
+    let compose = read("deploy/compose.yaml");
+    let dockerfile = read("deploy/Dockerfile");
+    assert!(dockerfile.contains("KANADE_CHARACTER_DATA_DB_PATH=/chardata/db/chardata.sqlite"));
+    assert!(dockerfile.contains("KANADE_SECRETS_DIR=/run/secrets"));
     assert!(compose.contains("      - chardata:/chardata\n"));
     assert!(compose.contains("  chardata:\n    name: kanade_v5_chardata\n"));
+    assert!(compose.contains("        target: /run/secrets\n"));
     let backup = compose
         .split("\n  backup:\n")
         .nth(1)
         .and_then(|rest| rest.split("\n  cloudflared:\n").next())
         .unwrap();
     assert!(
-        !backup.contains("chardata"),
-        "the backup service never mounts it"
+        !backup.contains("chardata") && !backup.contains("/run/secrets"),
+        "the backup service never mounts it or the secrets"
     );
-    assert!(compose.contains(
-        "KANADE_NEXON_API_KEY_FILE: ${KANADE_NEXON_API_KEY_HOST_FILE:+/run/secrets/nexon_api_key}"
-    ));
 }
 
 fn contains(haystack: &[u8], needle: &[u8]) -> bool {

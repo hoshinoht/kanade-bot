@@ -89,8 +89,8 @@ function serverEnv(): NodeJS.ProcessEnv {
     // Startup needs a trusted peer with a public bind; the browser connects from the loopback.
     KANADE_CLOUDFLARED_PEER: '127.0.0.1',
     KANADE_DISCORD_GATEWAY: '0',
-    KANADE_DISCORD_TOKEN_FILE: join(root, 'discord_token'),
-    KANADE_ADMIN_TOKEN_FILE: join(root, 'admin_token'),
+    // The root is the secrets directory (`discord_token`, `admin_token`).
+    KANADE_SECRETS_DIR: root,
     KANADE_GUILD_ID: '900',
     KANADE_BOSSING_ROLE_ID: '10',
     KANADE_ADMIN_ROLE_ID: '20',

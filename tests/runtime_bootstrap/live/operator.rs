@@ -9,10 +9,7 @@ fn cli(live: &Live, admin: SocketAddr, args: &[&str]) -> Output {
         .args(args)
         .args(["--url", &format!("http://{admin}")])
         .env_clear()
-        .env(
-            "KANADE_ADMIN_TOKEN_FILE",
-            live.root.join("admin_token").display().to_string(),
-        )
+        .env("KANADE_SECRETS_DIR", &live.root)
         .output()
         .unwrap();
     let all = format!(

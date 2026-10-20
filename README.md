@@ -6,7 +6,7 @@
 
 *One Rust binary for one Discord server: the bot, the reminders, an admin portal and a member portal, deployed with Docker Compose.*
 
-[![Version](https://img.shields.io/badge/version-1.0.0--beta.11-blue)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-1.0.0--beta.12-blue)](CHANGELOG.md)
 [![Rust](https://img.shields.io/badge/rust-1.98.1-orange)](rust-toolchain.toml)
 [![License](https://img.shields.io/badge/license-GPL--3.0--only-green)](LICENSE)
 [![CI](https://github.com/hoshinoht/kanade-bot/actions/workflows/ci.yml/badge.svg)](https://github.com/hoshinoht/kanade-bot/actions/workflows/ci.yml)
@@ -19,7 +19,7 @@
 > Character data and estimates are shown to help plan a party, never used to judge or block one.
 
 > [!NOTE]
-> Beta: `1.0.0-beta.11`, running live for one guild. Settings, the HTTP API and the store may still change between betas; read [CHANGELOG.md](CHANGELOG.md) before upgrading.
+> Beta: `1.0.0-beta.12`, running live for one guild. Settings, the HTTP API and the store may still change between betas; read [CHANGELOG.md](CHANGELOG.md) before upgrading.
 
 ## At a glance
 
@@ -154,10 +154,10 @@ The admin portal is then at `http://localhost:8080` on the host; sign in with th
 > Configured models receive raw member names, IDs, message text and URLs when present. There is no masking; a provider's retention policy does not limit what is sent. Roster and character data are never sent to models, except that with the reminder-header switches on the rewrite model gets the party's estimate shares and, for members who opted in to teasing, an admin's running-joke note, never a name or IGN.
 
 > [!CAUTION]
-> Backups hold member data. Point `KANADE_BACKUP_RECIPIENTS_HOST_FILE` in `deploy/.env` (`backup.recipients_file` outside Compose) at age X25519 public keys and `kanade backup` writes encrypted snapshots ([runbook](deploy/README.md#encrypted-backups)); keep the private identity off the backup host. The character data file is never backed up.
+> Backups hold member data. Put age X25519 public keys in the backups directory as `recipients` (`~/.config/kanade/v5/backups/recipients` with Compose) and `kanade backup` writes encrypted snapshots ([runbook](deploy/README.md#encrypted-backups)); keep the private identity off the backup host. The character data file is never backed up.
 
 - **Loopback by default:** the base Compose file publishes only the admin portal, on the host's `127.0.0.1:8080`; the public listener is reached through the Cloudflare tunnel only, never a published port.
-- **Secrets in files:** tokens, client secrets and keys are read only from `*_file` paths; plain `KANADE_DISCORD_TOKEN`, `KANADE_ADMIN_TOKEN` and similar variables, and secret-looking keys in `kanade.toml`, stop startup.
+- **Secrets in files:** tokens, client secrets and keys are read only from fixed file names in the secrets directory (`/run/secrets` in the image); plain `KANADE_DISCORD_TOKEN`, `KANADE_ADMIN_TOKEN` and similar variables, and secret-looking keys in `kanade.toml`, stop startup.
 - **Bounded sessions:** admin sessions expire after 5 to 720 idle minutes and 1 to 168 hours; member sessions after 5 to 60 minutes and 1 to 24 hours.
 - **One guild:** events from other guilds and DMs are dropped, and commands are registered to the configured guild only.
 

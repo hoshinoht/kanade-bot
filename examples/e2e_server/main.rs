@@ -166,6 +166,7 @@ fn config(
 ) -> Result<ServeConfig, Fail> {
     let repo = Path::new(env!("CARGO_MANIFEST_DIR"));
     let path = |relative: &str| root.join(relative).display().to_string();
+    // The root is the secrets directory: each secret under its fixed name.
     secret(
         &root.join("discord_token"),
         "e2e-discord-token-not-a-real-secret",
@@ -175,7 +176,11 @@ fn config(
         &root.join("discord_client_secret"),
         "e2e-fake-client-secret",
     )?;
-    secret(&root.join("nexon_key"), "e2e-fake-nexon-key")?;
+    secret(
+        &root.join("public_discord_client_secret"),
+        "e2e-fake-public-client-secret",
+    )?;
+    secret(&root.join("nexon_api_key"), "e2e-fake-nexon-key")?;
     secret(&root.join("edge_secret"), EDGE_SECRET)?;
     seed::persona_files(
         &root.join("Personas"),
@@ -192,13 +197,11 @@ fn config(
         // The browser is the edge's loopback peer.
         ("KANADE_CLOUDFLARED_PEER", LOOPBACK.to_string()),
         ("KANADE_DISCORD_GATEWAY", "0".to_owned()),
-        ("KANADE_DISCORD_TOKEN_FILE", path("discord_token")),
-        ("KANADE_ADMIN_TOKEN_FILE", path("admin_token")),
+        ("KANADE_SECRETS_DIR", root.display().to_string()),
         // Tailscale sign-in behind an edge. Serve refuses a loopback edge, so
         // the config names a private one and `live::World` trusts the
         // browser's loopback peer instead, still only with the edge secret.
         ("KANADE_TRUSTED_PROXY", "10.0.0.2".to_owned()),
-        ("KANADE_EDGE_SECRET_FILE", path("edge_secret")),
         ("KANADE_ADMIN_TAILSCALE_LOGINS", TAILSCALE_LOGIN.to_owned()),
         // The member realm's longest idle limit, as the mock's portal keeps
         // Asahi's 40-minutes-idle iPhone session live.
@@ -207,24 +210,10 @@ fn config(
         // stay within serve's caps.
         ("KANADE_ADMIN_SESSION_IDLE_MINUTES", "720".to_owned()),
         ("KANADE_ADMIN_SESSION_ABSOLUTE_HOURS", "24".to_owned()),
+        // Sign-in redirects follow the hosts: http for the loopback admin,
+        // https for the public origin (the fake page maps it back).
         ("KANADE_ADMIN_DISCORD_CLIENT_ID", "424242".to_owned()),
-        (
-            "KANADE_ADMIN_DISCORD_CLIENT_SECRET_FILE",
-            path("discord_client_secret"),
-        ),
-        (
-            "KANADE_ADMIN_DISCORD_REDIRECT_URI",
-            format!("http://{admin}/api/admin/auth/discord/callback"),
-        ),
         ("KANADE_PUBLIC_DISCORD_CLIENT_ID", "424243".to_owned()),
-        (
-            "KANADE_PUBLIC_DISCORD_CLIENT_SECRET_FILE",
-            path("discord_client_secret"),
-        ),
-        (
-            "KANADE_PUBLIC_DISCORD_REDIRECT_URI",
-            format!("https://{public}/api/public/auth/discord/callback"),
-        ),
         ("KANADE_GUILD_ID", "900".to_owned()),
         // The mock's guild roles (`seed::ROLES`): staff, bossers, pilots.
         ("KANADE_BOSSING_ROLE_ID", seed::BOSSING_ROLE.to_owned()),
@@ -246,7 +235,6 @@ fn config(
             "KANADE_CHARACTER_DATA_DB_PATH",
             path("db/template.chardata.sqlite3"),
         ),
-        ("KANADE_NEXON_API_KEY_FILE", path("nexon_key")),
         ("KANADE_DB_PATH", path("db/template.sqlite3")),
         // History → Checkpoints lists the manifests `seed::backups` writes.
         ("KANADE_BACKUP_DIR", path("backups")),

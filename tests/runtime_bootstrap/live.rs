@@ -39,9 +39,14 @@ impl Live {
             bundles.join("kanade.yaml"),
         )
         .unwrap();
+        // The root is the secrets directory.
         fs::write(root.join("discord_token"), "bot-token-value\n").unwrap();
         fs::write(root.join("admin_token"), format!("{ADMIN_TOKEN}\n")).unwrap();
-        fs::write(root.join("client_secret"), "discord-client-secret\n").unwrap();
+        fs::write(
+            root.join("discord_client_secret"),
+            "discord-client-secret\n",
+        )
+        .unwrap();
         Self { root }
     }
 
@@ -54,10 +59,9 @@ impl Live {
             .env_clear()
             .env("KANADE_TIMEZONE", "Asia/Kuala_Lumpur")
             .env("KANADE_ADMIN_BIND", format!("127.0.0.1:{admin}"))
-            .env("KANADE_DISCORD_TOKEN_FILE", path("discord_token"))
+            .env("KANADE_SECRETS_DIR", &self.root)
             // No gateway: these tests never contact Discord.
             .env("KANADE_DISCORD_GATEWAY", "0")
-            .env("KANADE_ADMIN_TOKEN_FILE", path("admin_token"))
             .env("KANADE_GUILD_ID", "900")
             .env("KANADE_BOSSING_ROLE_ID", "10")
             .env("KANADE_ADMIN_ROLE_ID", "20")
@@ -286,19 +290,14 @@ fn live_serve_builds_discord_sign_in_without_network() {
     let port = unused_loopback_port();
     let address = SocketAddr::from(([127, 0, 0, 1], port));
     let host = format!("localhost:{port}");
-    let mut command = live.command(port, None);
-    command
-        .env("KANADE_ADMIN_HOST", &host)
-        .env("KANADE_ADMIN_DISCORD_CLIENT_ID", "4242")
-        .env(
-            "KANADE_ADMIN_DISCORD_CLIENT_SECRET_FILE",
-            live.root.join("client_secret"),
-        )
-        .env(
-            "KANADE_ADMIN_DISCORD_REDIRECT_URI",
-            format!("http://{host}/api/admin/auth/discord/callback"),
-        );
-    let server = command.spawn().unwrap();
+    let discord = |live: &Live| {
+        let mut command = live.command(port, None);
+        command
+            .env("KANADE_ADMIN_HOST", &host)
+            .env("KANADE_ADMIN_DISCORD_CLIENT_ID", "4242");
+        command
+    };
+    let server = discord(&live).spawn().unwrap();
     assert!(ready(address).starts_with("HTTP/1.1 200"));
     let methods = request(address, &host, "/api/admin/auth/methods");
     assert!(methods.starts_with("HTTP/1.1 200"), "{methods}");
@@ -310,6 +309,19 @@ fn live_serve_builds_discord_sign_in_without_network() {
     assert!(output.status.success(), "{output:?}");
     let stderr = String::from_utf8(output.stderr).unwrap();
     assert!(!stderr.contains("discord-client-secret"), "{stderr}");
+
+    // The client id without its secret file refuses, naming the file and
+    // the key that needs it.
+    fs::remove_file(live.root.join("discord_client_secret")).unwrap();
+    let refused = discord(&live).output().unwrap();
+    assert_eq!(refused.status.code(), Some(78), "{refused:?}");
+    let stderr = String::from_utf8(refused.stderr).unwrap();
+    assert!(
+        stderr.contains("secrets file `discord_client_secret` is missing from")
+            && stderr
+                .contains("kanade.toml `admin.discord_client_id` turns on admin Discord sign-in"),
+        "{stderr}"
+    );
 }
 
 /// A missing bot token file or a bad backup recipients file is refused with
@@ -319,22 +331,23 @@ fn live_serve_refuses_bad_secret_files_before_opening_the_store() {
     let _serial = serial();
     for (recipients, expected) in [
         // No recipients file: the bot token file is removed instead.
-        (None, "KANADE_DISCORD_TOKEN_FILE"),
+        (None, "secrets file `discord_token` is missing from"),
         (
             Some("# no keys yet\n"),
-            "KANADE_BACKUP_RECIPIENTS_FILE holds no age recipients",
+            "backups file `recipients` holds no age recipients",
         ),
         (
             Some("age1notakey\n"),
-            "KANADE_BACKUP_RECIPIENTS_FILE: line 1 is not an age X25519 recipient",
+            "backups file `recipients`: line 1 is not an age X25519 recipient",
         ),
     ] {
         let live = Live::new();
         let mut command = live.command(unused_loopback_port(), None);
         if let Some(text) = recipients {
-            let path = live.root.join("backup_recipients");
-            fs::write(&path, text).unwrap();
-            command.env("KANADE_BACKUP_RECIPIENTS_FILE", path);
+            let backups = live.root.join("backups");
+            fs::create_dir(&backups).unwrap();
+            fs::write(backups.join("recipients"), text).unwrap();
+            command.env("KANADE_BACKUP_DIR", backups);
         } else {
             fs::remove_file(live.root.join("discord_token")).unwrap();
         }

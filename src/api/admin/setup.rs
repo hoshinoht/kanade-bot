@@ -326,7 +326,7 @@ fn chat(facts: &Facts<'_>) -> SetupItem {
     if !settings.chatbot.enabled {
         return SetupItem::new(Id::Chat, State::Off);
     }
-    let missing = desk.missing_env(settings);
+    let missing = desk.missing_env();
     if missing.is_empty() {
         SetupItem::new(Id::Chat, State::Ok)
     } else {

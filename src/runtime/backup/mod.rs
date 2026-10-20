@@ -1,7 +1,7 @@
 //! `kanade backup`: a store-owning snapshot (`VACUUM INTO`) plus its
 //! manifest, written into `KANADE_BACKUP_DIR` while serve is stopped. The
-//! owner lock refuses it while another process owns the store. With
-//! `KANADE_BACKUP_RECIPIENTS_FILE` set, the snapshot is published as
+//! owner lock refuses it while another process owns the store. With a
+//! `recipients` file in that directory, the snapshot is published as
 //! `<name>.age` (age, X25519) and only the manifest stays plaintext.
 //! Staging dirs left by a killed earlier backup (they can hold a plaintext
 //! snapshot) are removed once the lock is held.
@@ -16,8 +16,9 @@ use std::path::Path;
 use chrono::{DateTime, Datelike, Timelike, Utc};
 
 use super::{
-    config::{BACKUP_RECIPIENTS_KEY, BackupConfig},
+    config::{BACKUP_RECIPIENTS_LABEL, BackupConfig},
     error::Error,
+    secrets,
 };
 use crate::infrastructure::store::{
     BackupManifest, SqliteStore, SqliteStoreConfig, SqliteStoreError,
@@ -79,7 +80,8 @@ fn store_error(error: &SqliteStoreError) -> Error {
 }
 
 /// Snapshot the store as `name` (or [`default_name`] at `now`), encrypted
-/// to `config.recipients_file` as `<name>.age` when one is set.
+/// to the backup directory's `recipients` as `<name>.age` while that file
+/// is present.
 ///
 /// # Errors
 /// A bad recipients file (checked before the store is opened), no store at
@@ -91,11 +93,14 @@ pub async fn run(
     config: &BackupConfig,
     now: DateTime<Utc>,
 ) -> Result<Report, Error> {
-    let recipients = config
-        .recipients_file
-        .as_deref()
-        .map(|path| Recipients::load(path, BACKUP_RECIPIENTS_KEY))
-        .transpose()?;
+    let recipients = if secrets::present(&config.recipients_file, BACKUP_RECIPIENTS_LABEL)? {
+        Some(Recipients::load(
+            &config.recipients_file,
+            BACKUP_RECIPIENTS_LABEL,
+        )?)
+    } else {
+        None
+    };
     let mut file = name.unwrap_or_else(|| default_name(now));
     if recipients.is_some() {
         file.push_str(AGE_SUFFIX);
@@ -225,7 +230,7 @@ mod tests {
                 owner_lock_dir: store.owner_lock_dir.clone(),
             },
             dir: backups.clone(),
-            recipients_file: None,
+            recipients_file: backups.join("recipients"),
         };
 
         crate::runtime::logging::capture();

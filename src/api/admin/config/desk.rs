@@ -430,17 +430,14 @@ impl ConfigDesk {
         self.models_unapplied.load(Ordering::SeqCst)
     }
 
-    /// Env-only facts the chatbot needs before it can be turned on.
-    pub fn missing_env(&self, settings: &RuntimeSettings) -> Vec<String> {
+    /// `kanade.toml` keys the chatbot needs before it can be turned on.
+    pub fn missing_env(&self) -> Vec<String> {
         let mut missing = Vec::new();
         if self.facts.chat_pilot_role_id.is_none() {
-            missing.push("KANADE_CHAT_PILOT_ROLE_ID".to_owned());
-        }
-        if settings.chatbot.category_ids.is_empty() {
-            missing.push("KANADE_CHAT_CATEGORY_IDS".to_owned());
+            missing.push("discord.chat_pilot_role_id".to_owned());
         }
         if self.facts.model_gateway.is_none() {
-            missing.push("KANADE_MODEL_BASE_URL".to_owned());
+            missing.push("models.base_url".to_owned());
         }
         missing
     }
@@ -455,7 +452,7 @@ impl ConfigDesk {
         saved: &[&'static str],
     ) -> ConfigView {
         let source = |list: IdList| seeded_source(saved, list.key());
-        let missing_env = self.missing_env(settings);
+        let missing_env = self.missing_env();
         let choices = self.profile_choices_for(settings);
         let persona = dto::persona(
             &settings.persona.active,
@@ -573,14 +570,14 @@ impl ConfigDesk {
         let set = |value: Option<&String>| value.cloned().unwrap_or_else(|| "not set".into());
         vec![
             EnvRow {
-                key: "KANADE_TIMEZONE",
+                key: "runtime.timezone",
                 label: "Timezone",
                 value: facts.timezone.clone(),
                 reason: "Every stored time is converted with it; a change needs a restart.",
                 copy: Some(facts.timezone.clone()).filter(|zone| !zone.is_empty()),
             },
             EnvRow {
-                key: "KANADE_BOSS_WEEK_RESET_WEEKDAY",
+                key: "runtime.boss_week_reset_weekday",
                 label: "Boss week starts",
                 value: format!(
                     "{} {}",
@@ -588,20 +585,20 @@ impl ConfigDesk {
                     crate::api::dto::hhmm(settings.schedule.reset_time)
                 ),
                 reason: "Defines the boss-week boundaries of every stored run.",
-                // `mon`..`sun`; the reset time is KANADE_BOSS_WEEK_RESET_TIME.
+                // `mon`..`sun`; the reset time is runtime.boss_week_reset_time.
                 copy: Some(
                     crate::api::dto::dow(settings.schedule.reset_weekday).to_ascii_lowercase(),
                 ),
             },
             EnvRow {
-                key: "KANADE_CHAT_PILOT_ROLE_ID",
+                key: "discord.chat_pilot_role_id",
                 label: "Chat pilot role",
                 value: set(facts.chat_pilot_role_id.as_ref()),
                 reason: "Who may talk to the chatbot is a deployment decision.",
                 copy: facts.chat_pilot_role_id.clone(),
             },
             EnvRow {
-                key: "KANADE_MODEL_BASE_URL",
+                key: "models.base_url",
                 label: "Model gateway",
                 value: set(facts.model_gateway.as_ref()),
                 reason: "Repointing the gateway would redirect the bearer key, so only the operator changes it.",
@@ -609,18 +606,18 @@ impl ConfigDesk {
             },
             if facts.model_groups.is_empty() {
                 EnvRow {
-                    key: "KANADE_MODEL_PERMITS",
+                    key: "models.permits",
                     label: "Model permits",
                     value: facts.model_permits.to_string(),
-                    reason: "One capacity group shared by every model role; kanade.toml [[models.groups]] replaces it after a restart.",
+                    reason: "One capacity group shared by every model role; [[models.groups]] replaces it after a restart.",
                     copy: Some(facts.model_permits.to_string()),
                 }
             } else {
                 EnvRow {
-                    key: "KANADE_MODEL_PERMITS / kanade.toml [[models.groups]]",
+                    key: "models.groups",
                     label: "Model capacity groups",
                     value: groups_summary(&facts.model_groups),
-                    reason: "Set in kanade.toml ([[models.groups]]); restart to apply.",
+                    reason: "Set as [[models.groups]]; restart to apply.",
                     copy: None,
                 }
             },

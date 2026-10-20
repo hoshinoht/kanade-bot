@@ -5,8 +5,9 @@
 //! fixtures, and writes one JSON per attempt plus a scored `summary.md`.
 //! Explicit only: never part of the test suite or CI.
 //!
-//! Live:   KANADE_MODEL_BASE_URL=… KANADE_MODEL_KEY_FILE=… [KANADE_MODEL_CA_FILE=…]
-//!         [KANADE_MODEL_GROUPS=…] [KANADE_MODEL_PERMITS=…] [KANADE_MODEL_CONTEXT=…]
+//! Live:   KANADE_MODEL_BASE_URL=… KANADE_SECRETS_DIR=… (its `model_api_key`
+//!         and optional `model_ca.pem`) [KANADE_MODEL_GROUPS=…]
+//!         [KANADE_MODEL_PERMITS=…] [KANADE_MODEL_CONTEXT=…]
 //!         cargo run --features test-support --example v02_quality --
 //!         --chat-alias A --chat-reasoning R --extract-alias A --extract-reasoning R
 //! Offline: … --example v02_quality -- --dry-run [--cases C01,E07] [--cap N]
@@ -55,11 +56,11 @@ use requests::{HARD_CAP, Requests};
 use score::Detector;
 
 /// The serve environment keys passed through from the process environment;
-/// `KANADE_MODEL_CONTEXT` mirrors the deployed context windows and reserves.
-const MODEL_ENV: [&str; 6] = [
+/// `KANADE_MODEL_CONTEXT` mirrors the deployed context windows and reserves,
+/// `KANADE_SECRETS_DIR` holds the gateway's key (and CA bundle).
+const MODEL_ENV: [&str; 5] = [
     "KANADE_MODEL_BASE_URL",
-    "KANADE_MODEL_KEY_FILE",
-    "KANADE_MODEL_CA_FILE",
+    "KANADE_SECRETS_DIR",
     "KANADE_MODEL_GROUPS",
     "KANADE_MODEL_PERMITS",
     "KANADE_MODEL_CONTEXT",
@@ -365,7 +366,7 @@ async fn run() -> Result<ExitCode, String> {
         "listing": format!("{:?}", startup.listing),
         "warnings": startup.warnings.iter().map(ToString::to_string).collect::<Vec<_>>(),
         "groups": config.models.groups.iter().map(|g| g.name.clone()).collect::<Vec<_>>(),
-        "ca_file": config.models.ca_file.is_some(),
+        "ca_file": config.models.ca_file().map_err(|e| e.to_string())?.is_some(),
         "attendance": "V4_COMPAT",
         // No stored row: the code default (Classic) styles reminder cards.
         "message_style": settings::seed(&config.seeds).notifications.message_style.as_str(),

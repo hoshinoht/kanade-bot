@@ -16,7 +16,7 @@ pub enum Args {
     /// `backup keygen --out FILE`: a new identity (0600), public key on stdout.
     Keygen { out: PathBuf },
     /// `backup encrypt [--recipients FILE]`: stdin to stdout; the default is
-    /// `KANADE_BACKUP_RECIPIENTS_FILE`.
+    /// the `recipients` file in `KANADE_BACKUP_DIR`.
     Encrypt { recipients: Option<PathBuf> },
     /// `backup decrypt --identity FILE --in FILE --out FILE`.
     Decrypt {

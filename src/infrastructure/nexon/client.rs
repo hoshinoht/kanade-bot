@@ -28,7 +28,7 @@ pub const KEY_HEADER: &str = "x-nxopen-api-key";
 const TIMEOUT: Duration = Duration::from_secs(15);
 const MAX_BODY: usize = 256 * 1024;
 
-/// The Open API key, from `KANADE_NEXON_API_KEY_FILE`.
+/// The Open API key, from the secrets file `nexon_api_key`.
 #[derive(Clone)]
 pub struct ApiKey(Arc<str>);
 

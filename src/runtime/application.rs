@@ -10,7 +10,7 @@ use crate::{
 use super::{
     config::{self, BackupConfig, HealthcheckConfig, RuntimeConfig, ServeConfig, StoreSettings},
     error::Error,
-    restore, serve,
+    logging, restore, serve,
 };
 
 pub async fn run(
@@ -22,10 +22,15 @@ pub async fn run(
         println!("{}", cli::VERSION);
         return Ok(());
     }
-    let resolved = config::resolve(environment)?;
+    let resolved = config::resolve(environment).map_err(config::annotate)?;
+    // Names only: a variable silently beating the file is how a deploy ends
+    // up running a value nobody can see in kanade.toml.
+    if matches!(command, Command::Serve { .. }) && !resolved.shadowed.is_empty() {
+        logging::log!(warn, "config_shadowed", keys = resolved.shadowed);
+    }
     dispatch(command, &resolved.values)
         .await
-        .map_err(|error| resolved.annotate(error))
+        .map_err(config::annotate)
 }
 
 async fn dispatch(command: Command, environment: &BTreeMap<String, String>) -> Result<(), Error> {
@@ -84,12 +89,12 @@ async fn backup(
                 Some(path) => (path, "backup encrypt: --recipients"),
                 None => (
                     config::backup_recipients_file(environment).ok_or_else(|| {
-                        Error::Usage(format!(
-                            "backup encrypt needs --recipients FILE or {}",
-                            config::BACKUP_RECIPIENTS_KEY
-                        ))
+                        Error::Usage(
+                            "backup encrypt needs --recipients FILE or KANADE_BACKUP_DIR (its `recipients` file)"
+                                .into(),
+                        )
                     })?,
-                    config::BACKUP_RECIPIENTS_KEY,
+                    config::BACKUP_RECIPIENTS_LABEL,
                 ),
             };
             tokio::task::spawn_blocking(move || {

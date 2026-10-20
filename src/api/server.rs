@@ -53,8 +53,11 @@ pub async fn serve_bounded(
 ) -> Result<(), Error> {
     let mode = if live.is_some() { "live" } else { "offline" };
     let mut admin_site = Site::admin(&config.http);
-    if let Some(path) = &config.http.edge_secret_file {
-        admin_site.edge_secret = Some(Arc::new(auth::edge_secret(path)?));
+    if let Some(file) = &config.http.edge_secret {
+        // Tailscale logins trust the edge only with its secret.
+        let required = (!config.admin_auth.tailscale_logins.is_empty())
+            .then_some("kanade.toml `admin.tailscale_logins` trusts the edge only with it");
+        admin_site.edge_secret = auth::edge_secret(file, required)?.map(Arc::new);
     }
     admin_site.listener_ip = Some(config.admin_bind.ip());
     let bot = live.as_ref().map(|live| Arc::clone(&live.state.channels));
@@ -84,7 +87,7 @@ pub async fn serve_bounded(
         }
         (Some(_), None) => {
             return Err(Error::Configuration(
-                "KANADE_PUBLIC_HOST is required when KANADE_PUBLIC_BIND is set".into(),
+                "KANADE_PUBLIC_HOST is required for the public listener".into(),
             ));
         }
         (None, _) => None,

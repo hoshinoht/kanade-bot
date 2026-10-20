@@ -51,8 +51,8 @@ test('models config warns when raw member data leaves the homelab', async ({ pag
   const serious = axe.violations.filter((v) => v.impact === 'serious' || v.impact === 'critical' || v.id === 'target-size');
   expect(serious.map((v) => `${v.id}: ${v.nodes.map((n) => n.target.join(' ')).join(', ')}`)).toEqual([]);
 
-  await page.getByRole('tab', { name: 'Set in the environment' }).click();
-  const env = page.getByRole('tabpanel', { name: 'Set in the environment' });
-  await expect(env.getByText('KANADE_TIMEZONE')).toBeVisible();
+  await page.getByRole('tab', { name: 'Set in kanade.toml' }).click();
+  const env = page.getByRole('tabpanel', { name: 'Set in kanade.toml' });
+  await expect(env.getByText('runtime.timezone')).toBeVisible();
   await expect(env).not.toContainText(/KANADE_PSEUDONYMIZE|KANADE_ALLOW_EXTERNAL_UNMASKED|provider testing|pseudonymisation/i);
 });

@@ -1,9 +1,11 @@
-//! Admin sign-in settings. Secrets are file paths only; plain-value
-//! variables are refused so a secret never sits in the process environment.
+//! Admin sign-in settings. Secrets are files in the secrets directory only;
+//! plain-value variables are refused so a secret never sits in the process
+//! environment.
 
-use std::{collections::BTreeMap, path::PathBuf, time::Duration};
+use std::{collections::BTreeMap, path::Path, time::Duration};
 
 use super::{Error, HttpConfig, non_empty, parse_bounded_u64, refuse_plain};
+use crate::runtime::secrets::{self, DEFAULT_DIR, SecretFile};
 
 /// The only callback path the admin origin serves.
 const CALLBACK_PATH: &str = "/api/admin/auth/discord/callback";
@@ -11,28 +13,22 @@ const CALLBACK_PATH: &str = "/api/admin/auth/discord/callback";
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct DiscordOAuthSettings {
     pub client_id: String,
-    pub client_secret_file: PathBuf,
-    /// Exact redirect URI registered with Discord.
+    /// Required while the client id is set; read at startup.
+    pub client_secret: SecretFile,
+    /// The origin's own callback, registered with Discord.
     pub redirect_uri: String,
 }
 
 impl DiscordOAuthSettings {
-    /// The `[client id, secret file, redirect URI]` keys, all set or all unset;
-    /// `purpose` names the sign-in when only some are. The redirect URI is the
-    /// caller's to check.
-    pub(super) fn from_keys(
+    /// `None` without `id_key`; else its application id, the secret file
+    /// `secret` and `redirect_uri`.
+    pub(super) fn from_id(
         values: &BTreeMap<String, String>,
-        keys: [&str; 3],
-        purpose: &str,
+        id_key: &str,
+        secret: &'static str,
+        redirect_uri: impl FnOnce() -> Result<String, Error>,
     ) -> Result<Option<Self>, Error> {
-        let [id_key, secret_key, uri_key] = keys;
-        let parts = keys.map(|key| non_empty(values, key));
-        let [Some(client_id), Some(secret_file), Some(redirect_uri)] = parts else {
-            if parts.iter().any(Option::is_some) {
-                return Err(Error::Configuration(format!(
-                    "{purpose} needs {id_key}, {secret_key} and {uri_key}"
-                )));
-            }
+        let Some(client_id) = non_empty(values, id_key) else {
             return Ok(None);
         };
         if client_id.len() > 20 || !client_id.bytes().all(|byte| byte.is_ascii_digit()) {
@@ -42,8 +38,8 @@ impl DiscordOAuthSettings {
         }
         Ok(Some(Self {
             client_id: client_id.to_owned(),
-            client_secret_file: PathBuf::from(secret_file),
-            redirect_uri: redirect_uri.to_owned(),
+            client_secret: SecretFile::named(values, secret),
+            redirect_uri: redirect_uri()?,
         }))
     }
 }
@@ -51,7 +47,8 @@ impl DiscordOAuthSettings {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct AdminAuthSettings {
     pub discord: Option<DiscordOAuthSettings>,
-    pub token_file: Option<PathBuf>,
+    /// Break-glass sign-in while `admin_token` is present.
+    pub token: SecretFile,
     /// Lowercase Tailscale logins allowed to sign in through the edge.
     pub tailscale_logins: Vec<String>,
     pub session_idle: Duration,
@@ -62,7 +59,7 @@ impl Default for AdminAuthSettings {
     fn default() -> Self {
         Self {
             discord: None,
-            token_file: None,
+            token: SecretFile::new(Path::new(DEFAULT_DIR), secrets::ADMIN_TOKEN),
             tailscale_logins: Vec::new(),
             session_idle: Duration::from_secs(60 * 60),
             session_absolute: Duration::from_secs(12 * 60 * 60),
@@ -75,11 +72,11 @@ impl AdminAuthSettings {
         values: &BTreeMap<String, String>,
         http: &HttpConfig,
     ) -> Result<Self, Error> {
-        refuse_plain(values, "KANADE_ADMIN_TOKEN", "KANADE_ADMIN_TOKEN_FILE")?;
+        refuse_plain(values, "KANADE_ADMIN_TOKEN", secrets::ADMIN_TOKEN)?;
         refuse_plain(
             values,
             "KANADE_ADMIN_DISCORD_CLIENT_SECRET",
-            "KANADE_ADMIN_DISCORD_CLIENT_SECRET_FILE",
+            secrets::DISCORD_CLIENT_SECRET,
         )?;
         let tailscale_logins = tailscale_logins(values)?;
         if !tailscale_logins.is_empty() {
@@ -96,12 +93,8 @@ impl AdminAuthSettings {
                             .into(),
                     ));
                 }
+                // The edge secret it also needs is checked at startup.
                 Some(_) => {}
-            }
-            if http.edge_secret_file.is_none() {
-                return Err(Error::Configuration(
-                    "KANADE_ADMIN_TAILSCALE_LOGINS requires KANADE_EDGE_SECRET_FILE".into(),
-                ));
             }
         }
         let idle_minutes =
@@ -113,9 +106,20 @@ impl AdminAuthSettings {
                 "KANADE_ADMIN_SESSION_IDLE_MINUTES must not exceed the absolute lifetime".into(),
             ));
         }
+        let discord = DiscordOAuthSettings::from_id(
+            values,
+            "KANADE_ADMIN_DISCORD_CLIENT_ID",
+            secrets::DISCORD_CLIENT_SECRET,
+            || {
+                let host = http.admin_host.as_deref().ok_or_else(|| {
+                    Error::Configuration("KANADE_ADMIN_HOST is required for Discord sign-in".into())
+                })?;
+                Ok(redirect_uri(host))
+            },
+        )?;
         Ok(Self {
-            discord: discord(values, http)?,
-            token_file: non_empty(values, "KANADE_ADMIN_TOKEN_FILE").map(PathBuf::from),
+            discord,
+            token: SecretFile::named(values, secrets::ADMIN_TOKEN),
             tailscale_logins,
             session_idle: Duration::from_secs(idle_minutes * 60),
             session_absolute: Duration::from_secs(absolute_hours * 60 * 60),
@@ -143,38 +147,16 @@ fn tailscale_logins(values: &BTreeMap<String, String>) -> Result<Vec<String>, Er
         .collect()
 }
 
-fn discord(
-    values: &BTreeMap<String, String>,
-    http: &HttpConfig,
-) -> Result<Option<DiscordOAuthSettings>, Error> {
-    let keys = [
-        "KANADE_ADMIN_DISCORD_CLIENT_ID",
-        "KANADE_ADMIN_DISCORD_CLIENT_SECRET_FILE",
-        "KANADE_ADMIN_DISCORD_REDIRECT_URI",
-    ];
-    let Some(settings) = DiscordOAuthSettings::from_keys(values, keys, "Discord sign-in")? else {
-        return Ok(None);
-    };
-    let admin_host = http.admin_host.as_deref().ok_or_else(|| {
-        Error::Configuration("KANADE_ADMIN_HOST is required for Discord sign-in".into())
-    })?;
-    if !redirect_matches(&settings.redirect_uri, admin_host) {
-        return Err(Error::Configuration(format!(
-            "KANADE_ADMIN_DISCORD_REDIRECT_URI must be https://KANADE_ADMIN_HOST{CALLBACK_PATH}"
-        )));
-    }
-    Ok(Some(settings))
-}
-
-/// Exactly `https://{admin_host}{CALLBACK_PATH}`; `http:` only for loopback development hosts.
-fn redirect_matches(uri: &str, admin_host: &str) -> bool {
+/// `https://{admin_host}{CALLBACK_PATH}`; `http:` for loopback development
+/// hosts.
+fn redirect_uri(admin_host: &str) -> String {
     let loopback = ["localhost", "127.0.0.1", "[::1]"].iter().any(|name| {
         admin_host
             .strip_prefix(name)
             .is_some_and(|rest| rest.is_empty() || rest.starts_with(':'))
     });
-    uri == format!("https://{admin_host}{CALLBACK_PATH}")
-        || (loopback && uri == format!("http://{admin_host}{CALLBACK_PATH}"))
+    let scheme = if loopback { "http" } else { "https" };
+    format!("{scheme}://{admin_host}{CALLBACK_PATH}")
 }
 
 #[cfg(test)]
@@ -182,27 +164,19 @@ mod tests {
     use super::super::RuntimeConfig;
 
     fn config(pairs: &[(&str, &str)]) -> Result<RuntimeConfig, String> {
-        let mut values = std::collections::BTreeMap::from([(
-            "KANADE_TIMEZONE".to_owned(),
-            "Asia/Kuala_Lumpur".to_owned(),
-        )]);
+        let mut values = std::collections::BTreeMap::from([
+            ("KANADE_TIMEZONE".to_owned(), "Asia/Kuala_Lumpur".to_owned()),
+            ("KANADE_SECRETS_DIR".to_owned(), "/run/secrets".to_owned()),
+        ]);
         for (key, value) in pairs {
             values.insert((*key).into(), (*value).into());
         }
         RuntimeConfig::from_mapping(&values).map_err(|error| error.to_string())
     }
 
-    const DISCORD: [(&str, &str); 4] = [
+    const DISCORD: [(&str, &str); 2] = [
         ("KANADE_ADMIN_HOST", "kanade.example"),
         ("KANADE_ADMIN_DISCORD_CLIENT_ID", "1234567890"),
-        (
-            "KANADE_ADMIN_DISCORD_CLIENT_SECRET_FILE",
-            "/run/secrets/discord",
-        ),
-        (
-            "KANADE_ADMIN_DISCORD_REDIRECT_URI",
-            "https://kanade.example/api/admin/auth/discord/callback",
-        ),
     ];
 
     #[test]
@@ -210,36 +184,61 @@ mod tests {
         let auth = config(&[]).unwrap().admin_auth;
         assert_eq!(auth, super::AdminAuthSettings::default());
         assert_eq!(auth.session_idle.as_secs(), 3600);
+        assert_eq!(
+            auth.token.path(),
+            std::path::Path::new("/run/secrets/admin_token")
+        );
     }
 
     #[test]
-    fn discord_needs_all_parts_and_the_exact_admin_callback() {
-        let auth = config(&DISCORD).unwrap().admin_auth;
-        assert_eq!(auth.discord.unwrap().client_id, "1234567890");
-        assert!(config(&DISCORD[..3]).unwrap_err().contains("needs"));
-        for bad in [
-            "https://evil.example/api/admin/auth/discord/callback",
-            "http://kanade.example/api/admin/auth/discord/callback",
-            "https://kanade.example/api/admin/auth/discord/callback?x=1",
-            "https://kanade.example/other",
+    fn the_client_id_turns_discord_on_with_the_computed_admin_callback() {
+        let discord = config(&DISCORD).unwrap().admin_auth.discord.unwrap();
+        assert_eq!(discord.client_id, "1234567890");
+        assert_eq!(
+            discord.redirect_uri,
+            "https://kanade.example/api/admin/auth/discord/callback"
+        );
+        assert_eq!(
+            discord.client_secret.path(),
+            std::path::Path::new("/run/secrets/discord_client_secret")
+        );
+        assert_eq!(
+            config(&DISCORD[1..]).unwrap_err(),
+            "KANADE_ADMIN_HOST is required for Discord sign-in"
+        );
+        assert!(
+            config(&[DISCORD[0], ("KANADE_ADMIN_DISCORD_CLIENT_ID", "not-an-id")])
+                .unwrap_err()
+                .contains("application id")
+        );
+        for (host, uri) in [
+            (
+                "localhost:4393",
+                "http://localhost:4393/api/admin/auth/discord/callback",
+            ),
+            (
+                "127.0.0.1:4393",
+                "http://127.0.0.1:4393/api/admin/auth/discord/callback",
+            ),
+            (
+                "localhost.example",
+                "https://localhost.example/api/admin/auth/discord/callback",
+            ),
         ] {
-            let mut pairs = DISCORD.to_vec();
-            pairs[3].1 = bad;
-            let error = config(&pairs).unwrap_err();
-            assert!(error.contains("must be https://"), "{bad}");
-            assert!(!error.contains("evil"));
+            let local = config(&[("KANADE_ADMIN_HOST", host), DISCORD[1]]).unwrap();
+            assert_eq!(local.admin_auth.discord.unwrap().redirect_uri, uri);
         }
-        let mut local = DISCORD.to_vec();
-        local[0].1 = "localhost:4393";
-        local[3].1 = "http://localhost:4393/api/admin/auth/discord/callback";
-        assert!(config(&local).is_ok());
     }
 
     #[test]
     fn plain_secrets_and_orphan_tailscale_logins_are_refused() {
         assert_eq!(
             config(&[("KANADE_ADMIN_TOKEN", "hunter2")]).unwrap_err(),
-            "KANADE_ADMIN_TOKEN is not read; use KANADE_ADMIN_TOKEN_FILE"
+            "KANADE_ADMIN_TOKEN is not read; put it in the secrets directory as `admin_token`"
+        );
+        assert_eq!(
+            config(&[("KANADE_ADMIN_DISCORD_CLIENT_SECRET", "hunter2")]).unwrap_err(),
+            "KANADE_ADMIN_DISCORD_CLIENT_SECRET is not read; put it in the secrets directory as `discord_client_secret`"
         );
         assert!(
             config(&[("KANADE_ADMIN_TAILSCALE_LOGINS", "a@example.com")])
@@ -249,23 +248,13 @@ mod tests {
         assert_eq!(
             config(&[
                 ("KANADE_TRUSTED_PROXY", "127.0.0.1"),
-                ("KANADE_EDGE_SECRET_FILE", "/run/secrets/edge"),
                 ("KANADE_ADMIN_TAILSCALE_LOGINS", "a@example.com"),
             ])
             .unwrap_err(),
             "KANADE_ADMIN_TAILSCALE_LOGINS needs a non-loopback KANADE_TRUSTED_PROXY"
         );
-        assert_eq!(
-            config(&[
-                ("KANADE_TRUSTED_PROXY", "172.18.0.2"),
-                ("KANADE_ADMIN_TAILSCALE_LOGINS", "a@example.com"),
-            ])
-            .unwrap_err(),
-            "KANADE_ADMIN_TAILSCALE_LOGINS requires KANADE_EDGE_SECRET_FILE"
-        );
         let auth = config(&[
             ("KANADE_TRUSTED_PROXY", "172.18.0.2"),
-            ("KANADE_EDGE_SECRET_FILE", "/run/secrets/edge"),
             (
                 "KANADE_ADMIN_TAILSCALE_LOGINS",
                 " A@Example.com , b@github ",
@@ -277,7 +266,6 @@ mod tests {
         assert!(
             config(&[
                 ("KANADE_TRUSTED_PROXY", "172.18.0.2"),
-                ("KANADE_EDGE_SECRET_FILE", "/run/secrets/edge"),
                 ("KANADE_ADMIN_TAILSCALE_LOGINS", "not a login"),
             ])
             .is_err()

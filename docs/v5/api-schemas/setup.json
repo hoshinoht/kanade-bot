@@ -38,13 +38,13 @@
         "reason": { "$ref": "#/$defs/SetupReason" },
         "channel_id": { "type": "string", "minLength": 1, "description": "digest_channel: the channel set." },
         "missing_intents": { "type": "array", "items": { "$ref": "#/$defs/PrivilegedIntent" }, "description": "discord_intents: the privileged intents still off in the Developer Portal (Application Flags bits 14/15 and 18/19); empty when both are on. Absent when the application could not be read." },
-        "missing_env": { "type": "array", "items": { "type": "string" }, "description": "chat: env keys the chatbot still needs (as config.json chatbot.missing_env)." },
+        "missing_env": { "type": "array", "items": { "type": "string" }, "description": "chat: kanade.toml keys the chatbot still needs, e.g. discord.chat_pilot_role_id (as config.json chatbot.missing_env)." },
         "invite_url": { "type": "string", "description": "bot_access: https://discord.com/oauth2/authorize?client_id=<application id>&scope=bot+applications.commands&permissions=93248 (the access report's six permissions); absent when the application could not be read." },
         "channels_lacking": { "type": "integer", "minimum": 0, "description": "bot_access: watched and digest channels missing any of the six permissions; absent while the guild is not loaded." },
         "count": { "type": "integer", "minimum": 0, "description": "watched_channels: watched channels plus watched categories." },
         "open": { "type": "boolean", "description": "public_portal: the live self_service.public_portal switch (only with a public listener)." },
         "latest_backup_at": { "type": "string", "description": "backups: RFC 3339 UTC of the newest listed backup; absent when none." },
-        "recipients": { "type": "boolean", "description": "backups: KANADE_BACKUP_RECIPIENTS_FILE is set (snapshots are age-encrypted)." }
+        "recipients": { "type": "boolean", "description": "backups: the backups directory holds a `recipients` file (snapshots are age-encrypted)." }
       }
     },
     "SetupView": {

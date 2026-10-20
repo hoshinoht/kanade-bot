@@ -505,7 +505,7 @@ pub fn chatbot(
         next.enabled = flag(value, "chatbot.enabled")?;
         if next.enabled && !current.enabled && !missing_env.is_empty() {
             return Err(PatchError::invalid(format!(
-                "The chatbot needs {} set first.",
+                "The chatbot needs {} set in kanade.toml first.",
                 missing_env.join(", ")
             )));
         }

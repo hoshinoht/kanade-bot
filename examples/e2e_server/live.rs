@@ -132,12 +132,10 @@ impl World {
         // `Tailscale-*` headers count only with the edge secret, as behind
         // a real edge.
         admin.trusted_peer = Some(LOOPBACK);
-        admin.edge_secret = http
-            .edge_secret_file
-            .as_deref()
-            .map(auth::edge_secret)
-            .transpose()?
-            .map(Arc::new);
+        admin.edge_secret = match &http.edge_secret {
+            Some(file) => auth::edge_secret(file, None)?.map(Arc::new),
+            None => None,
+        };
         let mut public = Site::public(http).ok_or("no public host")?;
         public.listener_ip = Some(LOOPBACK);
         public.public_origin = config
@@ -210,7 +208,7 @@ impl World {
             settings.db_path = chardata(&path);
             let setup = self.chardata.setup();
             if setup.no_key {
-                settings.nexon_key_file = None;
+                settings.nexon_key = None;
             }
             if setup.no_scouter {
                 settings.scouter_url = None;

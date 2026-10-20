@@ -4,8 +4,8 @@
 //! `KANADE_EMOJI_DIR`, set to `/app/assets/emojis` in the image, else
 //! `assets/emojis` from the checkout). Idempotent; never deletes or renames
 //! an emoji; `--dry-run` only lists, but still says which PNGs it could not
-//! read. Live Discord HTTP with the bot token from `KANADE_DISCORD_TOKEN_FILE`;
-//! no gateway session.
+//! read. Live Discord HTTP with the bot token (`discord_token` in the secrets
+//! directory); no gateway session.
 
 use std::{collections::BTreeMap, io::Write, path::PathBuf};
 

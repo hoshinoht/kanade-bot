@@ -1,7 +1,7 @@
-//! Production construction: secrets come from files (Compose secrets), never
+//! Production construction: secrets come from the secrets directory, never
 //! from environment values, and errors never quote file contents.
 
-use std::{path::Path, sync::Arc};
+use std::sync::Arc;
 
 use chrono::TimeDelta;
 
@@ -18,23 +18,41 @@ use crate::{
     runtime::{
         config::{AdminAuthSettings, DiscordOAuthSettings, PublicAuthSettings},
         error::Error,
-        secrets::read_secret,
+        secrets::SecretFile,
     },
 };
 
 /// Break-glass tokens must be long enough that guessing is not a strategy.
 const MIN_TOKEN_BYTES: usize = 32;
 
-/// The secret the edge sends in `X-Kanade-Edge-Auth`, sealed for constant-time checks.
-pub fn edge_secret(path: &Path) -> Result<SealedSecret, Error> {
-    let secret = read_secret(path, "KANADE_EDGE_SECRET_FILE")?;
+/// The secret the edge sends in `X-Kanade-Edge-Auth`, sealed for
+/// constant-time checks; `None` while the file is absent, unless
+/// `required` says why it is needed.
+pub fn edge_secret(
+    file: &SecretFile,
+    required: Option<&str>,
+) -> Result<Option<SealedSecret>, Error> {
+    let secret = match required {
+        Some(why) => file.read(why)?,
+        None => match file.read_optional()? {
+            Some(secret) => secret,
+            None => return Ok(None),
+        },
+    };
+    long_enough(file, secret.expose())?;
+    SealedSecret::new(secret.expose().as_bytes())
+        .map(Some)
+        .ok_or_else(|| Error::Startup("system randomness is unavailable".into()))
+}
+
+fn long_enough(file: &SecretFile, secret: &str) -> Result<(), Error> {
     if secret.len() < MIN_TOKEN_BYTES {
         return Err(Error::Configuration(format!(
-            "KANADE_EDGE_SECRET_FILE must hold at least {MIN_TOKEN_BYTES} bytes"
+            "{} must hold at least {MIN_TOKEN_BYTES} bytes",
+            file.label()
         )));
     }
-    SealedSecret::new(secret.as_bytes())
-        .ok_or_else(|| Error::Startup("system randomness is unavailable".into()))
+    Ok(())
 }
 
 fn to_delta(duration: std::time::Duration) -> Result<TimeDelta, Error> {
@@ -42,16 +60,17 @@ fn to_delta(duration: std::time::Duration) -> Result<TimeDelta, Error> {
         .map_err(|_| Error::Configuration("session timeouts are out of range".into()))
 }
 
-/// A Discord login over HTTPS with the client secret read from its file.
-fn discord_login(settings: &DiscordOAuthSettings, secret_key: &str) -> Result<DiscordLogin, Error> {
-    let secret = read_secret(&settings.client_secret_file, secret_key)?;
+/// A Discord login over HTTPS with the client secret read from its file,
+/// which `why` needs.
+fn discord_login(settings: &DiscordOAuthSettings, why: &str) -> Result<DiscordLogin, Error> {
+    let secret = settings.client_secret.read(why)?;
     let api = HttpsDiscord::new().ok_or_else(|| {
         Error::Startup("the Rustls ring provider must be installed before sign-in".into())
     })?;
     Ok(DiscordLogin::new(
         DiscordClient {
             client_id: settings.client_id.clone(),
-            client_secret: Secret::new(secret),
+            client_secret: Secret::new(secret.expose().to_owned()),
             redirect_uri: settings.redirect_uri.clone(),
         },
         Arc::new(api),
@@ -73,18 +92,14 @@ pub fn from_settings(
     if let Some(discord) = &settings.discord {
         auth = auth.with_discord(discord_login(
             discord,
-            "KANADE_ADMIN_DISCORD_CLIENT_SECRET_FILE",
+            "kanade.toml `admin.discord_client_id` turns on admin Discord sign-in",
         )?);
     }
-    if let Some(path) = &settings.token_file {
-        let token = read_secret(path, "KANADE_ADMIN_TOKEN_FILE")?;
-        if token.len() < MIN_TOKEN_BYTES {
-            return Err(Error::Configuration(format!(
-                "KANADE_ADMIN_TOKEN_FILE must hold at least {MIN_TOKEN_BYTES} bytes"
-            )));
-        }
+    // Break-glass sign-in exists only while the file does.
+    if let Some(token) = settings.token.read_optional()? {
+        long_enough(&settings.token, token.expose())?;
         auth = auth
-            .with_breakglass(token.as_bytes())
+            .with_breakglass(token.expose().as_bytes())
             .ok_or_else(|| Error::Startup("system randomness is unavailable".into()))?;
     }
     Ok(auth)
@@ -108,7 +123,7 @@ pub fn member_from_settings(
     if let Some(discord) = &settings.discord {
         auth = auth.with_discord(discord_login(
             discord,
-            "KANADE_PUBLIC_DISCORD_CLIENT_SECRET_FILE",
+            "kanade.toml `public.discord_client_id` turns on member sign-in",
         )?);
     }
     Ok(auth)
@@ -128,62 +143,91 @@ mod tests {
         }
     }
 
-    async fn build(token: &str) -> Result<AdminAuth, Error> {
-        let path = std::env::temp_dir().join(format!("kanade-token-{}", uuid::Uuid::new_v4()));
-        std::fs::write(&path, token).unwrap();
+    struct Dir(std::path::PathBuf);
+
+    impl Dir {
+        fn new() -> Self {
+            let path = std::env::temp_dir().join(format!("kanade-auth-{}", uuid::Uuid::new_v4()));
+            std::fs::create_dir(&path).unwrap();
+            Self(path)
+        }
+
+        fn file(&self, name: &'static str) -> SecretFile {
+            SecretFile::new(&self.0, name)
+        }
+    }
+
+    impl Drop for Dir {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    async fn build(dir: &Dir, token: Option<&str>) -> Result<AdminAuth, Error> {
+        let file = dir.file(crate::runtime::secrets::ADMIN_TOKEN);
+        if let Some(token) = token {
+            std::fs::write(file.path(), token).unwrap();
+        }
         let settings = AdminAuthSettings {
-            token_file: Some(path.clone()),
+            token: file,
             ..AdminAuthSettings::default()
         };
-        let result = from_settings(
+        from_settings(
             &settings,
             Arc::new(SqliteStore::open_temp().await),
             Arc::new(Nobody),
-        );
-        std::fs::remove_file(path).unwrap();
-        result
+        )
     }
 
     #[tokio::test]
-    async fn token_files_are_trimmed_bounded_and_never_quoted() {
+    async fn token_files_are_trimmed_bounded_optional_and_never_quoted() {
+        let dir = Dir::new();
         let token = "x".repeat(40);
-        let auth = build(&format!("{token}\n")).await.unwrap();
+        let auth = build(&dir, Some(&format!("{token}\n"))).await.unwrap();
         assert!(auth.breakglass_matches(token.as_bytes()).is_some());
         assert!(!format!("{auth:?}").contains(&token));
 
-        let error = build("short-secret-value").await.unwrap_err().to_string();
-        assert_eq!(error, "KANADE_ADMIN_TOKEN_FILE must hold at least 32 bytes");
-        let error = build("").await.unwrap_err().to_string();
-        assert!(!error.contains("short"), "{error}");
-
-        let missing = AdminAuthSettings {
-            token_file: Some("/nonexistent/kanade/token".into()),
-            ..AdminAuthSettings::default()
-        };
-        let error = from_settings(
-            &missing,
-            Arc::new(SqliteStore::open_temp().await),
-            Arc::new(Nobody),
-        )
-        .unwrap_err()
-        .to_string();
+        let error = build(&dir, Some("short-secret-value"))
+            .await
+            .unwrap_err()
+            .to_string();
         assert_eq!(
             error,
-            "KANADE_ADMIN_TOKEN_FILE must name a readable secret file"
+            "secrets file `admin_token` must hold at least 32 bytes"
         );
+        let error = build(&dir, Some("")).await.unwrap_err().to_string();
+        assert!(!error.contains("short"), "{error}");
+
+        // Absent: no break-glass sign-in, and no refusal.
+        std::fs::remove_file(dir.file(crate::runtime::secrets::ADMIN_TOKEN).path()).unwrap();
+        let auth = build(&dir, None).await.unwrap();
+        assert!(auth.breakglass_matches(token.as_bytes()).is_none());
     }
 
     #[test]
-    fn edge_secrets_are_long_and_sealed() {
-        let path = std::env::temp_dir().join(format!("kanade-edge-{}", uuid::Uuid::new_v4()));
-        std::fs::write(&path, "too-short\n").unwrap();
-        let error = edge_secret(&path).unwrap_err().to_string();
-        assert_eq!(error, "KANADE_EDGE_SECRET_FILE must hold at least 32 bytes");
+    fn edge_secrets_are_long_sealed_and_required_only_when_asked() {
+        let dir = Dir::new();
+        let file = dir.file(crate::runtime::secrets::EDGE_SECRET);
+        assert!(edge_secret(&file, None).unwrap().is_none());
+        assert_eq!(
+            edge_secret(&file, Some("logins need it"))
+                .unwrap_err()
+                .to_string(),
+            format!(
+                "secrets file `edge_secret` is missing from {}: logins need it",
+                dir.0.display()
+            )
+        );
+        std::fs::write(file.path(), "too-short\n").unwrap();
+        let error = edge_secret(&file, None).unwrap_err().to_string();
+        assert_eq!(
+            error,
+            "secrets file `edge_secret` must hold at least 32 bytes"
+        );
         let secret = "e".repeat(48);
-        std::fs::write(&path, format!("{secret}\n")).unwrap();
-        let sealed = edge_secret(&path).unwrap();
+        std::fs::write(file.path(), format!("{secret}\n")).unwrap();
+        let sealed = edge_secret(&file, None).unwrap().unwrap();
         assert!(sealed.matches(secret.as_bytes()));
         assert!(!sealed.matches(b"e"));
-        std::fs::remove_file(path).unwrap();
     }
 }

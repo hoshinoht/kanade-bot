@@ -8,7 +8,10 @@ use std::{
 
 use chrono_tz::Tz;
 
-use super::error::Error;
+use super::{
+    error::Error,
+    secrets::{self, SecretFile},
+};
 
 mod admin_auth;
 mod admin_client;
@@ -18,32 +21,29 @@ mod character_data;
 mod context;
 mod discord;
 mod file;
-mod files;
 mod groups;
 mod guild;
+mod layout;
 mod models;
 mod public_auth;
 mod serve;
-mod store;
 
 pub use admin_auth::{AdminAuthSettings, DiscordOAuthSettings};
-pub use admin_client::{AdminClientConfig, TOKEN_FILE_KEY as ADMIN_TOKEN_FILE_KEY};
+pub use admin_client::AdminClientConfig;
 pub use backup::{
-    BackupConfig, RECIPIENTS_KEY as BACKUP_RECIPIENTS_KEY,
+    BackupConfig, RECIPIENTS_LABEL as BACKUP_RECIPIENTS_LABEL,
     recipients_file as backup_recipients_file,
 };
-pub use character_data::{
-    CharacterDataSettings, DB_PATH_KEY as CHARACTER_DATA_DB_PATH_KEY,
-    NEXON_KEY_FILE_KEY as NEXON_API_KEY_FILE_KEY, SCOUTER_URL_KEY,
-};
+pub use character_data::{CharacterDataSettings, SCOUTER_URL_KEY};
 pub use discord::DiscordSettings;
-pub use file::{Resolved, resolve};
-pub use files::FileSettings;
+pub use file::{Resolved, annotate, resolve};
 pub use guild::GuildSettings;
+pub use layout::{
+    CHARACTER_DATA_DB_PATH as CHARACTER_DATA_DB_PATH_KEY, FileSettings, StoreSettings,
+};
 pub use models::ModelSettings;
 pub use public_auth::PublicAuthSettings;
 pub use serve::{Modules, ServeConfig, SettingSeeds};
-pub use store::StoreSettings;
 
 const DEFAULT_BIND: &str = "127.0.0.1:8080";
 const DEFAULT_SHUTDOWN_SECONDS: u64 = 10;
@@ -52,7 +52,7 @@ const DEFAULT_HEALTHCHECK_TIMEOUT_SECONDS: u64 = 3;
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RuntimeConfig {
     pub admin_bind: SocketAddr,
-    /// The public listener exists only when this is set.
+    /// The public listener exists only when `KANADE_PUBLIC_HOST` is set.
     pub public_bind: Option<SocketAddr>,
     pub http: HttpConfig,
     pub admin_auth: AdminAuthSettings,
@@ -67,7 +67,7 @@ pub struct RuntimeConfig {
 pub struct HttpConfig {
     /// Lowercase `host[:port]`; unset admin accepts loopback names only.
     pub admin_host: Option<String>,
-    /// Required whenever the public listener is configured.
+    /// Turns the public listener on.
     pub public_host: Option<String>,
     /// Edge peer allowed to supply forwarding and Tailscale identity headers to admin.
     pub trusted_proxy: Option<IpAddr>,
@@ -77,9 +77,10 @@ pub struct HttpConfig {
     pub web_dir: Option<PathBuf>,
     pub boss_dir: Option<PathBuf>,
     pub identity_dir: Option<PathBuf>,
-    /// Secret the edge proves itself with (`X-Kanade-Edge-Auth`); when set,
-    /// admin trusts the proxy's headers only with it.
-    pub edge_secret_file: Option<PathBuf>,
+    /// With a trusted proxy: the secret the edge proves itself with
+    /// (`X-Kanade-Edge-Auth`); when the file is present, admin trusts the
+    /// proxy's headers only with it.
+    pub edge_secret: Option<SecretFile>,
 }
 
 impl RuntimeConfig {
@@ -97,32 +98,34 @@ impl RuntimeConfig {
             non_empty(values, "KANADE_ADMIN_BIND").unwrap_or(DEFAULT_BIND),
             private,
         )?;
-        let public_bind = non_empty(values, "KANADE_PUBLIC_BIND")
-            .map(|value| listener_bind("KANADE_PUBLIC_BIND", value, private))
-            .transpose()?;
-        if public_bind.is_some_and(|public| public == admin_bind && public.port() != 0) {
-            return Err(Error::Configuration(
-                "KANADE_PUBLIC_BIND must differ from KANADE_ADMIN_BIND".into(),
-            ));
-        }
+        let trusted_proxy = peer(values, "KANADE_TRUSTED_PROXY")?;
+        let (web_dir, boss_dir, identity_dir) = layout::web_dirs(values);
         let http = HttpConfig {
             admin_host: host(values, "KANADE_ADMIN_HOST")?,
             public_host: host(values, "KANADE_PUBLIC_HOST")?,
-            trusted_proxy: peer(values, "KANADE_TRUSTED_PROXY")?,
+            trusted_proxy,
             cloudflared_peer: peer(values, "KANADE_CLOUDFLARED_PEER")?,
-            web_dir: non_empty(values, "KANADE_WEB_DIR").map(PathBuf::from),
-            boss_dir: non_empty(values, "KANADE_BOSS_DIR").map(PathBuf::from),
-            identity_dir: non_empty(values, "KANADE_IDENTITY_DIR").map(PathBuf::from),
-            edge_secret_file: non_empty(values, "KANADE_EDGE_SECRET_FILE").map(PathBuf::from),
+            web_dir,
+            boss_dir,
+            identity_dir,
+            edge_secret: trusted_proxy.map(|_| SecretFile::named(values, secrets::EDGE_SECRET)),
         };
-        if http.edge_secret_file.is_some() && http.trusted_proxy.is_none() {
+        // The host turns the listener on; the bind is Compose's fixed address
+        // and is ignored while the listener is off.
+        let public_bind = match http.public_host {
+            Some(_) => {
+                let bind = non_empty(values, "KANADE_PUBLIC_BIND").ok_or_else(|| {
+                    Error::Configuration(
+                        "KANADE_PUBLIC_BIND is required when KANADE_PUBLIC_HOST is set".into(),
+                    )
+                })?;
+                Some(listener_bind("KANADE_PUBLIC_BIND", bind, private)?)
+            }
+            None => None,
+        };
+        if public_bind.is_some_and(|public| public == admin_bind && public.port() != 0) {
             return Err(Error::Configuration(
-                "KANADE_EDGE_SECRET_FILE requires KANADE_TRUSTED_PROXY".into(),
-            ));
-        }
-        if public_bind.is_some() && http.public_host.is_none() {
-            return Err(Error::Configuration(
-                "KANADE_PUBLIC_HOST is required when KANADE_PUBLIC_BIND is set".into(),
+                "KANADE_PUBLIC_BIND must differ from KANADE_ADMIN_BIND".into(),
             ));
         }
         // Without the peer no client address survives the proxy: every member
@@ -130,7 +133,7 @@ impl RuntimeConfig {
         // client-tag rotation never fires. Local runs name their loopback.
         if public_bind.is_some() && http.cloudflared_peer.is_none() {
             return Err(Error::Configuration(
-                "KANADE_CLOUDFLARED_PEER is required when KANADE_PUBLIC_BIND is set".into(),
+                "KANADE_CLOUDFLARED_PEER is required when KANADE_PUBLIC_HOST is set".into(),
             ));
         }
         if http.public_host.is_some() && http.public_host == http.admin_host {
@@ -166,20 +169,22 @@ pub struct HealthcheckConfig {
 }
 
 impl HealthcheckConfig {
+    /// `--url`, else the admin listener's own address.
     pub fn from_mapping(
         values: &BTreeMap<String, String>,
         url: Option<&str>,
     ) -> Result<Self, Error> {
-        let target = url
-            .map(str::to_owned)
-            .or_else(|| values.get("KANADE_HEALTHCHECK_URL").cloned())
-            .ok_or_else(|| {
-                Error::Configuration(
-                    "KANADE_HEALTHCHECK_URL or healthcheck --url is required".into(),
-                )
-            })?;
+        let private = allow_private_bind(values)?;
+        let target = match url {
+            Some(url) => parse_health_url(url, private)?,
+            None => listener_bind(
+                "KANADE_ADMIN_BIND",
+                non_empty(values, "KANADE_ADMIN_BIND").unwrap_or(DEFAULT_BIND),
+                private,
+            )?,
+        };
         Ok(Self {
-            target: parse_health_url(&target, allow_private_bind(values)?)?,
+            target,
             timeout: Duration::from_secs(parse_bounded_u64(
                 values,
                 "KANADE_HEALTHCHECK_TIMEOUT_SECONDS",
@@ -218,15 +223,12 @@ fn flag(values: &BTreeMap<String, String>, key: &str) -> Result<Option<bool>, Er
 }
 
 /// Secrets come only from files, so a secret never sits in the process
-/// environment: a set `plain` variable is refused in favour of `file_key`.
-fn refuse_plain(
-    values: &BTreeMap<String, String>,
-    plain: &str,
-    file_key: &str,
-) -> Result<(), Error> {
+/// environment: a set `plain` variable is refused in favour of the secrets
+/// directory's `file`.
+fn refuse_plain(values: &BTreeMap<String, String>, plain: &str, file: &str) -> Result<(), Error> {
     match non_empty(values, plain) {
         Some(_) => Err(Error::Configuration(format!(
-            "{plain} is not read; use {file_key}"
+            "{plain} is not read; put it in the secrets directory as `{file}`"
         ))),
         None => Ok(()),
     }
@@ -426,10 +428,14 @@ mod tests {
     }
 
     #[test]
-    fn public_listener_is_optional_but_needs_its_own_host() {
+    fn the_public_host_turns_the_public_listener_on() {
+        // Compose always passes the bind: without a host it is ignored.
+        let mut off = values();
+        off.insert("KANADE_PUBLIC_BIND".into(), "127.0.0.1:8081".into());
+        assert_eq!(RuntimeConfig::from_mapping(&off).unwrap().public_bind, None);
         assert_eq!(
-            error_for(&[("KANADE_PUBLIC_BIND", "127.0.0.1:8081")]),
-            "KANADE_PUBLIC_HOST is required when KANADE_PUBLIC_BIND is set"
+            error_for(&[("KANADE_PUBLIC_HOST", "pub.example")]),
+            "KANADE_PUBLIC_BIND is required when KANADE_PUBLIC_HOST is set"
         );
         assert_eq!(
             error_for(&[
@@ -440,6 +446,8 @@ mod tests {
         );
         assert_eq!(
             error_for(&[
+                ("KANADE_PUBLIC_BIND", "127.0.0.1:8081"),
+                ("KANADE_CLOUDFLARED_PEER", "127.0.0.1"),
                 ("KANADE_ADMIN_HOST", "Same.Example"),
                 ("KANADE_PUBLIC_HOST", "same.example"),
             ]),
@@ -450,7 +458,7 @@ mod tests {
                 ("KANADE_PUBLIC_BIND", "127.0.0.1:8081"),
                 ("KANADE_PUBLIC_HOST", "pub.example"),
             ]),
-            "KANADE_CLOUDFLARED_PEER is required when KANADE_PUBLIC_BIND is set"
+            "KANADE_CLOUDFLARED_PEER is required when KANADE_PUBLIC_HOST is set"
         );
 
         let mut input = values();
@@ -514,13 +522,35 @@ mod tests {
     }
 
     #[test]
-    fn healthcheck_rejects_non_loopback_urls() {
+    fn the_healthcheck_targets_the_admin_bind_unless_given_a_url() {
         let error = HealthcheckConfig::from_mapping(
             &BTreeMap::new(),
             Some("http://192.0.2.1:8080/healthz"),
         )
         .unwrap_err();
         assert_eq!(error.to_string(), "healthcheck target must be loopback");
+        let default = HealthcheckConfig::from_mapping(&BTreeMap::new(), None).unwrap();
+        assert_eq!(default.target, DEFAULT_BIND.parse().unwrap());
+        // Compose's fixed admin address on the admin network.
+        let compose = BTreeMap::from([
+            ("KANADE_ALLOW_PRIVATE_BIND".into(), "1".into()),
+            ("KANADE_ADMIN_BIND".into(), "172.23.0.10:8080".into()),
+        ]);
+        assert_eq!(
+            HealthcheckConfig::from_mapping(&compose, None)
+                .unwrap()
+                .target,
+            "172.23.0.10:8080".parse().unwrap()
+        );
+        assert_eq!(
+            HealthcheckConfig::from_mapping(
+                &BTreeMap::from([("KANADE_ADMIN_BIND".into(), "172.23.0.10:8080".into())]),
+                None
+            )
+            .unwrap_err()
+            .to_string(),
+            "KANADE_ADMIN_BIND must be a loopback address"
+        );
     }
 
     #[test]
@@ -574,10 +604,25 @@ mod tests {
     }
 
     #[test]
-    fn edge_secret_needs_a_trusted_proxy() {
+    fn the_edge_secret_is_named_only_behind_a_trusted_proxy() {
+        let mut input = values();
+        input.insert("KANADE_SECRETS_DIR".into(), "/run/secrets".into());
         assert_eq!(
-            error_for(&[("KANADE_EDGE_SECRET_FILE", "/run/secrets/edge")]),
-            "KANADE_EDGE_SECRET_FILE requires KANADE_TRUSTED_PROXY"
+            RuntimeConfig::from_mapping(&input)
+                .unwrap()
+                .http
+                .edge_secret,
+            None
+        );
+        input.insert("KANADE_TRUSTED_PROXY".into(), "172.18.0.2".into());
+        let edge = RuntimeConfig::from_mapping(&input)
+            .unwrap()
+            .http
+            .edge_secret
+            .unwrap();
+        assert_eq!(
+            edge.path(),
+            std::path::Path::new("/run/secrets/edge_secret")
         );
     }
 }

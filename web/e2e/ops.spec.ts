@@ -911,10 +911,10 @@ test.describe('config sections save', () => {
     await expect(panel.getByRole('alert')).toHaveCount(0);
   });
 
-  test('set in the environment: read-only values with reasons', async ({ page }) => {
+  test('set in kanade.toml: read-only values with reasons', async ({ page }) => {
     const panel = await config(page);
     // Read-only table: values, reasons, and no inputs at all.
-    await page.getByRole('tab', { name: 'Set in the environment' }).click();
+    await page.getByRole('tab', { name: 'Set in kanade.toml' }).click();
     await expect(panel.getByRole('row', { name: /Timezone/ })).toContainText('Asia/Kuala_Lumpur');
     await expect(panel.getByRole('row', { name: /Timezone/ })).toContainText('a change needs a restart');
     // The id lists and the digest channel moved to Channels, where the env values are only seeds.
@@ -1051,7 +1051,7 @@ test('re-read while the extractor is off: off before any press, with the server\
 test('config on a phone: the section strip scrolls itself, never the frame', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await go(page, '/config?section=env');
-  const tab = page.getByRole('tab', { name: 'Set in the environment' });
+  const tab = page.getByRole('tab', { name: 'Set in kanade.toml' });
   await expect(tab).toHaveAttribute('aria-selected', 'true');
   await expect(page.getByRole('tablist', { name: 'Settings sections' })).toHaveAttribute('aria-orientation', 'horizontal');
   await expect(tab).toBeInViewport({ ratio: 1 });
@@ -1288,32 +1288,32 @@ test('digest: the last posted card follows the API, and is omitted without one',
   await page.unroute(`${ADMIN}/api/admin/config`);
 });
 
-test('env: copy buttons write the raw env value; none where it is unset', async ({ page, context }) => {
+test('env: copy buttons write the raw kanade.toml value; none where it is unset', async ({ page, context }) => {
   await context.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: ADMIN });
   // The harness sets every env row (the pilot role too, unset on the mock): the
   // server's own unset row (`value: "not set"`, `copy: null`) stands in for it.
   await page.route(`${ADMIN}/api/admin/config`, async (route) => {
     const response = await route.fetch(unconditional(route));
     const body = await response.json();
-    const pilot = body.env.find((row: { key: string }) => row.key === 'KANADE_CHAT_PILOT_ROLE_ID');
+    const pilot = body.env.find((row: { key: string }) => row.key === 'discord.chat_pilot_role_id');
     Object.assign(pilot, { value: 'not set', copy: null });
     await route.fulfill({ response, json: body });
   });
   await go(page, '/config?section=env');
   const panel = page.locator('.settings__panel:not([hidden])');
-  // The row shows the human value; the copy is the env form.
+  // The row shows the human value; the copy is the kanade.toml form.
   await expect(panel.getByRole('row', { name: /Boss week starts/ })).toContainText('Thu 00:00');
-  await panel.getByRole('button', { name: 'Copy KANADE_BOSS_WEEK_RESET_WEEKDAY' }).click();
-  await expect(toast(page, 'Copied KANADE_BOSS_WEEK_RESET_WEEKDAY.')).toBeVisible();
+  await panel.getByRole('button', { name: 'Copy runtime.boss_week_reset_weekday' }).click();
+  await expect(toast(page, 'Copied runtime.boss_week_reset_weekday.')).toBeVisible();
   expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('thu');
   // Unset values have nothing to copy.
   await expect(panel.getByRole('row', { name: /Chat pilot role/ }).getByRole('button')).toHaveCount(0);
-  await expect(panel.getByRole('button', { name: 'Copy KANADE_CHAT_PILOT_ROLE_ID' })).toHaveCount(0);
+  await expect(panel.getByRole('button', { name: 'Copy discord.chat_pilot_role_id' })).toHaveCount(0);
 
   // Without a clipboard the toast says the value instead.
   await page.evaluate(() => {
     Object.defineProperty(navigator, 'clipboard', { value: { writeText: () => Promise.reject(new Error('denied')) }, configurable: true });
   });
-  await panel.getByRole('button', { name: 'Copy KANADE_TIMEZONE' }).click();
-  await expect(toast(page, "Couldn't copy here; KANADE_TIMEZONE is Asia/Kuala_Lumpur")).toBeVisible();
+  await panel.getByRole('button', { name: 'Copy runtime.timezone' }).click();
+  await expect(toast(page, "Couldn't copy here; runtime.timezone is Asia/Kuala_Lumpur")).toBeVisible();
 });

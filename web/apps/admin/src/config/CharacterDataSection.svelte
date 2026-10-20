@@ -2,8 +2,8 @@
   Config › Character data (module `character_data`; boards B_CfgCharHealth,
   …Alert, …Setup, …Refused and phone twins): health of the NEXON Open API
   (key, the 24-hour call budget, the daily batch, links), of the scouter,
-  and of the sweeper that strips shared Discord cards, plus what is set in
-  the environment. Health is informational: it never changes /healthz.
+  and of the sweeper that strips shared Discord cards, plus what the
+  deployment sets. Health is informational: it never changes /healthz.
   While estimates are on (a scouter URL is set) the Estimates card holds the
   section's one setting, how many days an estimate stays fresh (1 to 30,
   saved with the bar; a stale one reads "older than n days").
@@ -91,7 +91,7 @@
       </p>
     {:else if health.nexon === 'no_key'}
       <p class="chardata__msg">
-        No API key is set, so links are refused with “Character data isn’t connected yet”. Set <span class="mono">KANADE_NEXON_API_KEY_FILE</span> to the secret file and restart.
+        No API key is set, so links are refused with “Character data isn’t connected yet”. Put it in the secrets directory as <span class="mono">nexon_api_key</span> and restart.
       </p>
     {:else if health.nexon === 'key_refused'}
       <p class="chardata__msg">
@@ -140,7 +140,7 @@
   <section class="chardata-health__card chardata-health__card--{scouter.tone === 'risk' ? 'risk' : 'plain'}" aria-labelledby="chardata-scouter-h" data-fid="chardata-scouter-health">
     <div class="chardata-health__head"><h4 class="chardata-health__title" id="chardata-scouter-h">Scouter</h4><span class="chardata__grow"></span>{@render tagChip(scouter)}</div>
     {#if health.scouter.state === 'off'}
-      <p class="chardata__msg"><span class="mono">KANADE_SCOUTER_URL</span> is unset, so estimates are off and no Estimate rows are drawn.</p>
+      <p class="chardata__msg"><span class="mono">character_data.scouter_url</span> is unset, so estimates are off and no Estimate rows are drawn.</p>
     {:else}
       {#if health.scouter.state === 'verification_required'}
         <p class="chardata__msg">
@@ -226,16 +226,16 @@
 
 {#snippet envCard()}
   <section class="chardata-health__card chardata-health__env" aria-labelledby="chardata-env-h" data-fid="chardata-env">
-    <h4 class="chardata-health__title" id="chardata-env-h">Set in the environment</h4>
+    <h4 class="chardata-health__title" id="chardata-env-h">Set by the deployment</h4>
     <dl class="chardata-health__facts">
       <dt>Module</dt>
-      <dd><span class="mono">on</span><code class="capchip capchip--mono">KANADE_MODULE_CHARACTER_DATA</code></dd>
+      <dd><span class="mono">on</span><code class="capchip capchip--mono">modules.character_data</code></dd>
       <dt>NEXON key file</dt>
       <dd>
-        <span class="mono">{health.nexon === 'no_key' ? 'unset' : 'set (contents never shown)'}</span><code class="capchip capchip--mono">KANADE_NEXON_API_KEY_FILE</code>
+        <span class="mono">{health.nexon === 'no_key' ? 'unset' : 'set (contents never shown)'}</span><code class="capchip capchip--mono">nexon_api_key</code>
       </dd>
       <dt>Scouter URL</dt>
-      <dd><span class="mono">{health.scouter.url ?? 'unset'}</span><code class="capchip capchip--mono">KANADE_SCOUTER_URL</code></dd>
+      <dd><span class="mono">{health.scouter.url ?? 'unset'}</span><code class="capchip capchip--mono">character_data.scouter_url</code></dd>
     </dl>
   </section>
 {/snippet}

@@ -125,7 +125,7 @@ test('chardata strip: no key reads not connected with Link… off; module off dr
   await expect(strip).toContainText('Character data isn’t connected yet');
   const link = strip.getByRole('button', { name: 'Link…' });
   await expect(link).toHaveAttribute('aria-disabled', 'true');
-  await expect(link).toHaveAccessibleDescription(/An operator sets the key in the environment/);
+  await expect(link).toHaveAccessibleDescription(/An operator adds the key to the secrets directory/);
   // No scouter URL either: no estimate row.
   await expect(strip.locator('.estimate')).toHaveCount(0);
 
@@ -423,8 +423,8 @@ test('chardata health: ok, problems, no key and refused; module off hides the se
   await health(page, 'setup');
   await page.reload();
   await expect(panel.locator('[aria-labelledby="chardata-nexon-h"]')).toContainText('no_key');
-  await expect(panel.locator('[aria-labelledby="chardata-nexon-h"]')).toContainText('KANADE_NEXON_API_KEY_FILE');
-  await expect(panel.locator('[aria-labelledby="chardata-scouter-h"]')).toContainText('KANADE_SCOUTER_URL is unset');
+  await expect(panel.locator('[aria-labelledby="chardata-nexon-h"]')).toContainText('nexon_api_key');
+  await expect(panel.locator('[aria-labelledby="chardata-scouter-h"]')).toContainText('character_data.scouter_url is unset');
   await expect(panel.locator('[aria-labelledby="chardata-env-h"]')).toContainText('unset');
   // Estimates off: no setting, no save bar, the read-only lead.
   await expect(panel.getByRole('form', { name: 'Estimates' })).toHaveCount(0);

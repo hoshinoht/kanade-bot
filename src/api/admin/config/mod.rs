@@ -277,7 +277,7 @@ async fn update(
         "chatbot" => Section::Chatbot(patch::chatbot(
             &current.chatbot,
             fields,
-            &desk.missing_env(&current),
+            &desk.missing_env(),
         )?),
         "notifications" => {
             Section::Notifications(patch::notifications(&current.notifications, fields)?)

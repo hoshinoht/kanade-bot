@@ -123,7 +123,7 @@ pub(super) fn model_stack(
         key: models
             .read_key()?
             .map(|key| key.expose().as_bytes().to_vec()),
-        ca_file: models.ca_file.clone(),
+        ca_file: models.ca_file()?,
         roles: ModelRoles::from(&settings.models),
         permits: u32::from(models.permits),
         capabilities: models.capabilities.clone(),
@@ -294,7 +294,13 @@ pub(super) async fn compose_with(
                 .as_ref()
                 .is_some_and(|member| member.discord().is_some()),
             modules: config.modules,
-            backup_recipients: config.backup_recipients_file.is_some(),
+            backup_recipients: match &config.backup_recipients_file {
+                Some(path) => crate::runtime::secrets::present(
+                    path,
+                    crate::runtime::config::BACKUP_RECIPIENTS_LABEL,
+                )?,
+                None => false,
+            },
         },
         avatars: Some(avatars),
         events,

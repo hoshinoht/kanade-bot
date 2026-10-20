@@ -9,12 +9,12 @@ test('toasts: two at most, the newest on top', async ({ page, context }) => {
   const panel = page.locator('.settings__panel:not([hidden])');
   const live = page.locator('.toast:not(.is-leaving)');
   // Three copies, one more than the stack holds (any set key has a copy button).
-  for (const key of ['KANADE_BOSS_WEEK_RESET_WEEKDAY', 'KANADE_CHAT_PILOT_ROLE_ID', 'KANADE_TIMEZONE']) {
+  for (const key of ['runtime.boss_week_reset_weekday', 'discord.chat_pilot_role_id', 'runtime.timezone']) {
     await panel.getByRole('button', { name: `Copy ${key}` }).click();
     await expect(live.first()).toContainText(`Copied ${key}.`);
   }
   await expect(live).toHaveCount(2);
-  await expect(live).toHaveText([/Copied KANADE_TIMEZONE\./, /Copied KANADE_CHAT_PILOT_ROLE_ID\./]);
+  await expect(live).toHaveText([/Copied runtime\.timezone\./, /Copied discord\.chat_pilot_role_id\./]);
   // Newest on top on screen as well as in reading order.
   const [top, below] = await Promise.all([live.nth(0).boundingBox(), live.nth(1).boundingBox()]);
   expect(top!.y).toBeLessThan(below!.y);
@@ -24,8 +24,8 @@ test('toasts: success hides after 6 s; an error stays until dismissed', async ({
   await context.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: ADMIN });
   await page.clock.install();
   await page.goto(`${ADMIN}/config?section=env&sw=off`);
-  await page.locator('.settings__panel:not([hidden])').getByRole('button', { name: 'Copy KANADE_TIMEZONE' }).click();
-  const copied = page.getByRole('group', { name: 'Notification' }).filter({ hasText: 'Copied KANADE_TIMEZONE.' });
+  await page.locator('.settings__panel:not([hidden])').getByRole('button', { name: 'Copy runtime.timezone' }).click();
+  const copied = page.getByRole('group', { name: 'Notification' }).filter({ hasText: 'Copied runtime.timezone.' });
   await expect(copied).toBeVisible();
   await page.clock.runFor(5_000);
   await expect(copied).toBeVisible();
@@ -35,7 +35,7 @@ test('toasts: success hides after 6 s; an error stays until dismissed', async ({
   await page.evaluate(() => {
     Object.defineProperty(navigator, 'clipboard', { value: { writeText: () => Promise.reject(new Error('denied')) }, configurable: true });
   });
-  await page.locator('.settings__panel:not([hidden])').getByRole('button', { name: 'Copy KANADE_TIMEZONE' }).click();
+  await page.locator('.settings__panel:not([hidden])').getByRole('button', { name: 'Copy runtime.timezone' }).click();
   const error = page.getByRole('group', { name: 'Notification' }).filter({ hasText: "Couldn't copy here" });
   await expect(error).toBeVisible();
   await page.clock.runFor(30_000);

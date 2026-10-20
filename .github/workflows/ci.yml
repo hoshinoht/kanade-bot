@@ -58,8 +58,12 @@ jobs:
               - config/personas/**
               # The lib test checks the generated API types against the DTOs.
               - web/packages/api-types/**
-              # The store suite pins the character-data volume there.
+              # The config tests parse both (image ENV and Compose environment);
+              # the store suite pins the character-data volume there.
               - deploy/compose.yaml
+              - deploy/Dockerfile
+              # The config tests check its key table against the keys.
+              - docs/v5/runtime-bootstrap.md
             web:
               - .github/workflows/ci.yml
               - web/**
