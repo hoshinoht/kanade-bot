@@ -4,7 +4,9 @@ What changed in each Kanade release, newest first. Upgrading across several rele
 
 ## 1.0.0-beta.11
 
-_In development_
+_20 Oct 2026_
+
+Setup gets a checklist in the admin app, and Kanade now works with other OpenAI-compatible model servers, including ones that publish no model list.
 
 ### New features
 
