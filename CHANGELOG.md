@@ -6,6 +6,20 @@ What changed in each Kanade release, newest first. Upgrading across several rele
 
 _In development_
 
+Configuration now has one home per value: secrets are files in one secrets directory, the image and Compose own every path and address, and `kanade.toml` keeps only deployment settings.
+
+> [!IMPORTANT]
+> Removed settings stop the bot at startup and name where each one moved. Before upgrading: save any Config value that Setup shows as coming from the environment; in `kanade.toml`, delete every `*_file`, path, `bind`, `healthcheck_url`, `discord_redirect_uri`, `trusted_proxy` and `cloudflared_peer` key and the `[settings]`, `[store]`, `[files]`, `[backup]`, `[models.extraction]`, `[models.chat]`, `[models.rewrite]` and `[models.context]` tables, moving `boss_week_reset_weekday`/`_time` to `[runtime]`; put each secret in the secrets directory under its fixed name; move the backup age recipients to `recipients` in the backups directory and the tunnel token to `cloudflared_token`; remove the secret and healthcheck lines from `compose.override.yaml` and the variables from `.env`. Take this deploy's pre-deploy snapshot with the rollback image as `deploy/README.md` describes.
+
+### Changes
+
+- Secrets are now files with fixed names in one secrets directory that Compose mounts read-only, so turning on an add-on needs its file and no Compose changes.
+- `kanade.toml` now holds only deployment settings: the image sets every path, Compose sets every address, and channels, switches, pings, run lengths and model roles are set in Config.
+- The member portal now turns on with `public.host` alone, and the Discord sign-in redirects and the healthcheck target are worked out from the hosts and the admin address.
+- Startup errors now name the `kanade.toml` key, removed settings say where they moved, and the bot warns when an environment variable overrides a `kanade.toml` key.
+- Config's read-only panel is now "Set in kanade.toml" and lists `kanade.toml` keys, and the chatbot no longer reports missing chat categories as a deployment gap.
+- Encrypted backups now read their age keys from `recipients` in the backups directory.
+
 ## 1.0.0-beta.11
 
 _20 Oct 2026_

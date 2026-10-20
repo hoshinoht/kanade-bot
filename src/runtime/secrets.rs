@@ -55,12 +55,20 @@ pub fn read_secret(path: &Path, label: &str) -> Result<String, Error> {
 }
 
 /// Whether anything is at `path`. Only "not found" counts as absent: a file
-/// that cannot be checked (a directory without search permission) refuses
-/// instead of silently turning its feature off.
+/// that cannot be checked (a directory without search permission) or a
+/// symlink whose target is missing (it points outside the mounted directory)
+/// refuses instead of silently turning its feature off.
 pub fn present(path: &Path, label: &str) -> Result<bool, Error> {
     match std::fs::metadata(path) {
         Ok(_) => Ok(true),
-        Err(error) if error.kind() == ErrorKind::NotFound => Ok(false),
+        Err(error) if error.kind() == ErrorKind::NotFound => {
+            if std::fs::symlink_metadata(path).is_ok() {
+                return Err(Error::Configuration(format!(
+                    "{label} is a symlink to a missing file; use a regular file"
+                )));
+            }
+            Ok(false)
+        }
         Err(_) => Err(Error::Configuration(format!(
             "{label} could not be checked"
         ))),
@@ -238,6 +246,17 @@ mod tests {
         let error = file.read_optional().unwrap_err().to_string();
         assert_eq!(error, "secrets file `admin_token` could not be checked");
         assert!(!error.contains("sentinel"));
+    }
+
+    #[test]
+    fn a_dangling_symlink_refuses_instead_of_reading_as_absent() {
+        let dir = Dir::new();
+        let file = dir.file();
+        std::os::unix::fs::symlink(dir.0.join("elsewhere-on-the-host"), file.path()).unwrap();
+        assert_eq!(
+            file.read_optional().unwrap_err().to_string(),
+            "secrets file `admin_token` is a symlink to a missing file; use a regular file"
+        );
     }
 
     #[test]

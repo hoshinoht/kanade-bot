@@ -70,7 +70,9 @@ Compose mounts read-only at `/run/secrets`; a file no feature uses is
 ignored, and a feature whose file is missing refuses to start, naming the
 file. On a Linux host make the directory searchable and the files readable,
 and the backups directory writable, by uid 65532 (the container user; for
-example with an ACL); Docker Desktop maps it to your user.
+example with an ACL); Docker Desktop maps it to your user. Use regular files
+(or hard links), never symlinks: the container sees only the mounted
+directory, so a symlink to a file elsewhere on the host is a missing secret.
 
 ```sh
 SECRETS="$HOME/.config/kanade/v5/secrets"
