@@ -1,8 +1,7 @@
 # v5 runtime bootstrap
 
 `kanade` is the single Rust executable, version `1.0.0-beta.13` (the release
-label everywhere: Cargo, CHANGELOG and its `v1.0.0-beta.13` git tag once it
-is released; the last release is tagged `v1.0.0-beta.12`). The crate version
+label everywhere: Cargo, CHANGELOG and the `v1.0.0-beta.13` git tag). The crate version
 is the one source: `kanade --version` prints `kanade 1.0.0-beta.13` without
 reading any settings, and the `server_started` log line, the admin Account
 page and the image's OCI version label show the same number; the commit is

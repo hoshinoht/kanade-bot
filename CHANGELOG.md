@@ -4,7 +4,9 @@ What changed in each Kanade release, newest first. Upgrading across several rele
 
 ## 1.0.0-beta.13
 
-_In development_
+_20 Oct 2026_
+
+Secrets can now be entered, checked and applied from the admin app's Setup page instead of only as files on the server.
 
 ### New features
 
