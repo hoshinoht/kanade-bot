@@ -6,6 +6,10 @@ What changed in each Kanade release, newest first. Upgrading across several rele
 
 _In development_
 
+### Fixes
+
+- Kanade and its Cloudflare tunnel no longer trust certificates from the eMudhra certificate authorities whose private keys leaked in October 2026.
+
 ## 1.0.0-beta.13
 
 _20 Oct 2026_

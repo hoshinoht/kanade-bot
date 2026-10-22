@@ -28,7 +28,7 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
 
 # glibc runtime (Debian 13, matching the builder) with CA roots for the
 # platform TLS verifier; no shell or package manager.
-FROM gcr.io/distroless/cc-debian13:nonroot@sha256:54df941ed0d06a1bd95ef5e0ce391fd8d9f94b64782dc9a60062727849ee3f97
+FROM gcr.io/distroless/cc-debian13:nonroot@sha256:83b9b50586253821cf63ffcec87d3d94265a093ad30da232039af962dd8f4edf
 ARG KANADE_IMAGE_REVISION=unknown
 ARG KANADE_IMAGE_VERSION=dev
 ARG KANADE_IMAGE_SOURCE=https://github.com/hoshinoht/kanade-bot
