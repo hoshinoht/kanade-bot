@@ -33,7 +33,7 @@ pub(super) struct CharDataFaults {
 /// Take one armed failure from `count`.
 fn take(count: &AtomicUsize) -> bool {
     count
-        .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |n| n.checked_sub(1))
+        .try_update(Ordering::SeqCst, Ordering::SeqCst, |n| n.checked_sub(1))
         .is_ok()
 }
 

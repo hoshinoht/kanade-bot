@@ -40,7 +40,7 @@ impl ScheduleStore for Interfering {
     ) -> Result<Option<kanade::domain::scheduler::Committed>, StoreError> {
         if self
             .remaining
-            .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |n| n.checked_sub(1))
+            .try_update(Ordering::SeqCst, Ordering::SeqCst, |n| n.checked_sub(1))
             .is_ok()
         {
             let n = self.competitors.fetch_add(1, Ordering::SeqCst);

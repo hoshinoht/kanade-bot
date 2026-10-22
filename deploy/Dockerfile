@@ -2,8 +2,8 @@
 # Build from the repository root: docker build -f deploy/Dockerfile .
 # The context is an allow-list (deploy/Dockerfile.dockerignore).
 
-# Must match web/ CI (bun-version 1.4.0).
-FROM oven/bun:1.4.0-slim@sha256:e0ee68d16ccb9927bf02aa7dd8fd4bf3369ee6d46da04faa72b05ce8bfd135f6 AS web
+# Must match web/ CI (bun-version 1.4.4).
+FROM oven/bun:1.4.4-slim@sha256:1846adf22496bd711036aae8be147e57bdebbaea2e5264e3e0b5af1db187d9a4 AS web
 WORKDIR /web
 COPY web/package.json web/bun.lock web/tsconfig.base.json ./
 COPY web/packages ./packages
@@ -14,7 +14,7 @@ RUN bun run build
 
 # Must match rust-toolchain.toml; that file is not copied so rustup does not
 # fetch its dev-only components (clippy, rustfmt) here.
-FROM rust:1.98.1-slim-trixie@sha256:f47a8de237dcbb0b0ce1099901e60a89728e3d51f24e664b40e947171538ade7 AS rust
+FROM rust:1.99.1-slim-trixie@sha256:aab42391a986424e22d6a3ec14f37bc6dd3dacff4d457ca7cccd781e02297cc6 AS rust
 WORKDIR /build
 COPY Cargo.toml Cargo.lock ./
 COPY src ./src

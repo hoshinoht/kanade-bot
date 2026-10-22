@@ -760,8 +760,8 @@ and daily (`model_logs_pruned` log line with the counts).
 `deploy/Dockerfile` (context = repository root, allow-list in
 `deploy/Dockerfile.dockerignore`):
 
-- `oven/bun:1.4.0-slim` builds `web/apps/{admin,public}/dist`;
-- `rust:1.98.1-slim-trixie` runs `cargo build --locked --release` (keep in
+- `oven/bun:1.4.4-slim` builds `web/apps/{admin,public}/dist`;
+- `rust:1.99.1-slim-trixie` runs `cargo build --locked --release` (keep in
   step with `rust-toolchain.toml` and CI);
 - runtime `gcr.io/distroless/cc-debian13:nonroot`: the binary at
   `/usr/local/bin/kanade`, the web dists under `/app/web`, the tracked boss

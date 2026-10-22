@@ -7,7 +7,7 @@
 *One Rust binary for one Discord server: the bot, the reminders, an admin portal and a member portal, deployed with Docker Compose.*
 
 [![Version](https://img.shields.io/badge/version-1.0.0--beta.13-blue)](CHANGELOG.md)
-[![Rust](https://img.shields.io/badge/rust-1.98.1-orange)](rust-toolchain.toml)
+[![Rust](https://img.shields.io/badge/rust-1.99.1-orange)](rust-toolchain.toml)
 [![License](https://img.shields.io/badge/license-GPL--3.0--only-green)](LICENSE)
 [![CI](https://github.com/hoshinoht/kanade-bot/actions/workflows/ci.yml/badge.svg)](https://github.com/hoshinoht/kanade-bot/actions/workflows/ci.yml)
 
@@ -25,7 +25,7 @@
 
 | | |
 |---|---|
-| **Binary** | `kanade`, Rust edition 2024, toolchain pinned to 1.98.1 |
+| **Binary** | `kanade`, Rust edition 2024, toolchain pinned to 1.99.1 |
 | **Commands** | `serve [--offline]`, `healthcheck`, `models check`, `backup`, `restore`, `portal`, `sessions`, `token rotate`, `ctl emojis`, `--version` |
 | **Discord** | One gateway session for one configured guild; slash commands registered per guild, never globally |
 | **Storage** | SQLite with an owner lock (one process per store); the optional character data has its own file |

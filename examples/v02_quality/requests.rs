@@ -41,7 +41,7 @@ impl Requests {
         // Reserve a slot atomically so parallel requests never overshoot.
         let admitted = self
             .sent
-            .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |sent| {
+            .try_update(Ordering::SeqCst, Ordering::SeqCst, |sent| {
                 (sent < cap).then_some(sent + 1)
             })
             .is_ok();
