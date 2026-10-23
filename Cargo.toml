@@ -110,6 +110,12 @@ name = "v02_quality"
 path = "examples/v02_quality/main.rs"
 required-features = ["test-support"]
 
+# Thin LTO with one codegen unit: a 24% smaller binary for ~2.5 min more
+# release build time.
+[profile.release]
+lto = "thin"
+codegen-units = 1
+
 # The estimate chart's render and PNG encode, optimised in dev and test builds
 # too: unoptimised they take most of the 2 s CHART_DEADLINE on a 4-vCPU CI
 # runner, so parallel chart tests timed out (release renders are unaffected).
