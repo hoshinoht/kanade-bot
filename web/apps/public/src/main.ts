@@ -25,9 +25,11 @@ import '@kanade/ui/styles/core/loading.scss';
 import { guardWrites } from '@kanade/client';
 import { mount } from 'svelte';
 import App from './App.svelte';
+import { resumeDynamic } from '@kanade/ui';
 
 // Member writes carry the session's token (the newest any answer sent);
 // `GET /api/public/session` issues it.
 guardWrites('/api/public/session', (path) => path.startsWith('/api/public/'));
 
+resumeDynamic();
 mount(App, { target: document.getElementById('app')! });

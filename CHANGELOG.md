@@ -6,6 +6,10 @@ What changed in each Kanade release, newest first. Upgrading across several rele
 
 _In development_
 
+### Improvements
+
+- The member portal now opens faster: screens other than Week load the first time they are opened.
+
 ### Fixes
 
 - Kanade and its Cloudflare tunnel no longer trust certificates from the eMudhra certificate authorities whose private keys leaked in October 2026.

@@ -60,6 +60,7 @@ export {
   currentMode,
   openColorwaySets,
   refreshDynamic,
+  resumeDynamic,
   rememberColorwaySet,
   setOf,
   THEME_MODES,
