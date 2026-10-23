@@ -16,8 +16,9 @@ use chrono::{DateTime, Utc};
 use chrono_tz::Tz;
 
 pub use budget::{
-    CHARS_PER_TOKEN, CONTEXT_RESERVE, TOKENS_PER_ID, estimate_messages, estimate_tokens,
-    prompt_budget, prompt_budget_with_reserve, prompt_text, schema_instruction_tokens,
+    CHARS_PER_TOKEN, CONTEXT_RESERVE, TOKENS_PER_ID, TokenCounts, estimate_messages,
+    estimate_tokens, prompt_budget, prompt_budget_with_reserve, prompt_text,
+    schema_instruction_tokens,
 };
 pub use render::{member_name, named_bosses, relevant_roster};
 pub use system::SYSTEM_PROMPT;

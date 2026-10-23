@@ -1,3 +1,4 @@
+use std::ops::Add;
 use std::sync::LazyLock;
 
 use regex::Regex;
@@ -21,13 +22,57 @@ pub const CONTEXT_RESERVE: usize = 2500;
 /// Digit runs this long are ids, not times or levels.
 static ID: LazyLock<Regex> = LazyLock::new(|| pattern(r"\d{5,}"));
 
+/// What [`estimate_tokens`] counts in a text: its ids and the characters left
+/// beside them. Unlike the estimate, which truncates, the counts add over
+/// texts joined by a non-digit separator, since no id spans the seam.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct TokenCounts {
+    ids: usize,
+    rest: usize,
+}
+
+impl TokenCounts {
+    pub fn of(text: &str) -> Self {
+        let (ids, id_chars) = ID.find_iter(text).fold((0, 0), |(ids, chars), found| {
+            (ids + 1, chars + found.as_str().chars().count())
+        });
+        Self {
+            ids,
+            rest: text.chars().count() - id_chars,
+        }
+    }
+
+    /// `separators` blank-line (`"\n\n"`) seams on top.
+    #[must_use]
+    pub fn with_seams(self, separators: usize) -> Self {
+        Self {
+            rest: self.rest + 2 * separators,
+            ..self
+        }
+    }
+
+    /// [`estimate_tokens`] of the counted text.
+    pub fn tokens(self) -> usize {
+        // Truncation, as v4's `int()` of a non-negative float.
+        self.ids * TOKENS_PER_ID + (self.rest as f64 / CHARS_PER_TOKEN) as usize
+    }
+}
+
+impl Add for TokenCounts {
+    type Output = Self;
+
+    fn add(self, other: Self) -> Self {
+        Self {
+            ids: self.ids + other.ids,
+            rest: self.rest + other.rest,
+        }
+    }
+}
+
 /// Roughly what `text` costs the model, erring high: it decides whether a
 /// burst is split, so guessing low is the expensive mistake.
 pub fn estimate_tokens(text: &str) -> usize {
-    let ids = ID.find_iter(text).count();
-    let rest = ID.replace_all(text, "").chars().count();
-    // Truncation, as v4's `int()` of a non-negative float.
-    ids * TOKENS_PER_ID + (rest as f64 / CHARS_PER_TOKEN) as usize
+    TokenCounts::of(text).tokens()
 }
 
 /// Every message's content joined by blank lines, as v4 logs the prompt.
