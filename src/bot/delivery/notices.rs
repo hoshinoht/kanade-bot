@@ -24,11 +24,11 @@ use super::alerts::{AdminAlert, AlertSink};
 use super::cards::ReminderCardStore;
 use super::executor::{SendOutcome, SendReport};
 use super::notice_text::render_notice;
-use super::tick::{Delivery, DeliveryError, settle};
+use super::tick::{Delivery, DeliveryError, TickLease, settle};
 use crate::bot::transport::DiscordTransport;
 use crate::domain::drafts::ProposalStore;
 use crate::domain::history::Checkpoints;
-use crate::domain::notify::{DeliveryJournal, DrainReason, Lease, NoticeOutbox, plan_notice};
+use crate::domain::notify::{DeliveryJournal, DrainReason, NoticeOutbox, plan_notice};
 use crate::domain::scheduler::{IdSource, ScheduleStore, Scope};
 
 /// One drained (or retried) notice.
@@ -87,7 +87,7 @@ where
         &mut self,
         now: DateTime<Utc>,
     ) -> Result<NoticeReport, DeliveryError> {
-        self.leased(now, async move |this: &mut Self, lease: &Lease| {
+        self.leased(now, async move |this: &mut Self, lease: &TickLease| {
             this.notices_in(lease, now).await
         })
         .await
@@ -97,17 +97,16 @@ where
     /// claims per call.
     pub(super) async fn notices_in(
         &self,
-        lease: &Lease,
+        lease: &TickLease,
         now: DateTime<Utc>,
     ) -> Result<NoticeReport, DeliveryError> {
         let pending = self.store.pending_notices().await?;
-        let executor = self.executor(lease);
         let mut report = NoticeReport {
             undecodable: pending.undecodable.len(),
             ..NoticeReport::default()
         };
         for bad in pending.undecodable {
-            executor.raise(
+            self.raise(
                 AdminAlert::NoticeUndecodable {
                     source: bad.source,
                     ordinal: bad.ordinal,
@@ -128,6 +127,7 @@ where
             if now - row.created_at > self.config.max_notice_age {
                 let drained = self
                     .in_operation(async || {
+                        let lease = self.lease(lease).await?;
                         self.store
                             .mark_drained(lease, &row.source, row.ordinal, DrainReason::Stale, now)
                             .await
@@ -169,6 +169,7 @@ where
             ) else {
                 let drained = self
                     .in_operation(async || {
+                        let lease = self.lease(lease).await?;
                         self.store
                             .mark_drained(lease, &row.source, row.ordinal, DrainReason::Silent, now)
                             .await
@@ -181,10 +182,12 @@ where
                 report.silent += 1;
                 continue;
             };
+            let lease = self.lease(lease).await?;
             let Some(mut operation) = self.admit().await else {
                 break;
             };
-            let result = executor
+            let result = self
+                .executor(lease)
                 .execute_source_in_operation(
                     &mut operation,
                     &intent,
@@ -234,7 +237,7 @@ where
             });
         }
         if report.stale > 0 {
-            executor.raise(
+            self.raise(
                 AdminAlert::StaleNoticesRetired {
                     count: report.stale,
                 },

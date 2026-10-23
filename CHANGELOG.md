@@ -9,6 +9,7 @@ _In development_
 ### Improvements
 
 - The member portal now opens faster: screens other than Week load the first time they are opened.
+- Kanade's database no longer grows by a few megabytes a day while nothing is happening, and the daily cleanup now also removes the old delivery bookkeeping that made up most of the file; the operator guide explains how to shrink the file once afterwards.
 
 ### Fixes
 

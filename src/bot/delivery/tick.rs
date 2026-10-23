@@ -3,8 +3,9 @@
 //! their completion cutoff done, recount attendance (v5 mode only), expire
 //! past-week drafts and proposals past their TTL, drain the notice outbox,
 //! post ownership requests and run completion prompts, post the weekly
-//! digest, then dispatch due reminders. One clock reading and one journal
-//! lease per tick.
+//! digest, then dispatch due reminders. One clock reading and at most one
+//! journal lease per tick, begun by the first step that writes the journal:
+//! a tick with nothing to post writes no lease row.
 //!
 //! v5 deviation (user decision): the digest posts only when the current boss
 //! week is after the last recorded one. A clock that reads an earlier week
@@ -21,6 +22,7 @@ use std::sync::Arc;
 use std::{future::Future, pin::Pin};
 
 use chrono::{DateTime, TimeDelta, Utc};
+use std::sync::OnceLock;
 
 #[cfg(feature = "test-support")]
 type AdmissionHook = Arc<dyn Fn() -> Pin<Box<dyn Future<Output = ()> + Send>> + Send + Sync>;
@@ -51,9 +53,10 @@ use crate::domain::history::{
 };
 use crate::domain::members::Directory;
 use crate::domain::notify::{
-    ChannelDirectory, DeliveryJournal, DeliverySettings, DigestAction, DigestPostInput, DigestSend,
-    DispatchInput, JournalError, Lease, NoticeOutbox, NotificationIntent, Queued, RecordReason,
-    Recovery, SendDisposition, WeekReset, plan_digest_post, plan_digest_tick, plan_dispatch,
+    ChannelDirectory, DeliveryJournal, DeliverySettings, DigestAction, DigestLog, DigestPostInput,
+    DigestSend, DispatchInput, JournalError, Lease, NoticeOutbox, NotificationIntent, Queued,
+    RecordReason, Recovery, SendDisposition, WeekReset, plan_digest_post, plan_digest_tick,
+    plan_dispatch, retire_digests_before,
 };
 use crate::domain::ownership::OwnerRequestStore;
 use crate::domain::schedule::SchedulePolicy;
@@ -66,6 +69,23 @@ use crate::domain::time::{DateOutOfRange, from_iso};
 
 /// The lease operation kind every tick runs under.
 pub const TICK_OPERATION: &str = "scheduler_tick";
+
+/// One tick's journal lease, begun by [`Delivery::lease`] when a step first
+/// needs it and ended by [`Delivery::leased`] only if begun.
+pub(super) struct TickLease {
+    at: DateTime<Utc>,
+    lease: OnceLock<Lease>,
+}
+
+impl TickLease {
+    pub(super) fn new(at: DateTime<Utc>) -> Self {
+        Self {
+            at,
+            lease: OnceLock::new(),
+        }
+    }
+}
+
 /// Posts per tick; the rest wait for the next tick.
 pub const DEFAULT_MAX_SENDS_PER_TICK: usize = 20;
 
@@ -453,18 +473,39 @@ where
         }
     }
 
+    /// Pass `alert` on unless an identical one went out within the window.
+    pub(super) fn raise(&self, alert: AdminAlert, now: DateTime<Utc>) {
+        if self.throttle.admit(&alert, now) {
+            self.alerts.alert(alert);
+        }
+    }
+
+    /// The tick's lease, begun on first use; a failed begin is retried by
+    /// the next use. A tick's steps run one at a time, so no two begin it.
+    pub(super) async fn lease<'l>(&self, lease: &'l TickLease) -> Result<&'l Lease, JournalError> {
+        if let Some(begun) = lease.lease.get() {
+            return Ok(begun);
+        }
+        let begun = self
+            .store
+            .begin_lease(&self.config.instance_id, TICK_OPERATION, lease.at)
+            .await?;
+        Ok(lease.lease.get_or_init(|| begun))
+    }
+
     /// Post `message` once by its durable `source` key (ordinal 0) in a newly
     /// admitted operation. `None` when not admitted or the operation did not
     /// begin; otherwise the settled outcome with the operation still held, so
     /// the caller records a bound post before releasing it.
     pub(super) async fn post_source(
         &self,
-        lease: &Lease,
+        lease: &TickLease,
         intent: &NotificationIntent,
         message: &OutgoingMessage,
         source: &str,
         now: DateTime<Utc>,
     ) -> Result<Option<(DeliveryOperation, SendOutcome)>, DeliveryError> {
+        let lease = self.lease(lease).await?;
         let Some(mut operation) = self.admit().await else {
             return Ok(None);
         };
@@ -511,17 +552,31 @@ where
         )
     }
 
+    /// Run `work` with a tick lease it begins only if it needs one; a begun
+    /// lease is ended whatever `work` returned.
     pub(super) async fn leased<R>(
         &mut self,
         now: DateTime<Utc>,
-        work: impl AsyncFnOnce(&mut Self, &Lease) -> Result<R, DeliveryError>,
+        work: impl AsyncFnOnce(&mut Self, &TickLease) -> Result<R, DeliveryError>,
     ) -> Result<R, DeliveryError> {
-        let lease = self
-            .store
-            .begin_lease(&self.config.instance_id, TICK_OPERATION, now)
-            .await?;
+        let lease = TickLease::new(now);
         let result = work(self, &lease).await;
-        let ended = self.store.end_lease(&lease, now).await;
+        self.finish(lease, result).await
+    }
+
+    /// End `lease` if it was begun, then return `result` (its error first).
+    /// Callers whose work borrows its arguments use this directly: a
+    /// closure over them is not general enough for [`Self::leased`].
+    pub(super) async fn finish<R>(
+        &self,
+        lease: TickLease,
+        result: Result<R, DeliveryError>,
+    ) -> Result<R, DeliveryError> {
+        let at = lease.at;
+        let ended = match lease.lease.into_inner() {
+            Some(lease) => self.store.end_lease(&lease, at).await,
+            None => Ok(()),
+        };
         let value = result?;
         ended?;
         Ok(value)
@@ -530,7 +585,7 @@ where
     /// One tick at the clock's current reading.
     ///
     /// # Errors
-    /// The first failing step; the lease is ended regardless.
+    /// The first failing step; a begun lease is ended regardless.
     pub async fn tick(&mut self, clock: &impl Clock) -> Result<TickReport, DeliveryError>
     where
         S: DigestPhraseStore + OwnerRequestStore + RunPromptStore,
@@ -541,12 +596,12 @@ where
     /// One tick at `now`.
     ///
     /// # Errors
-    /// The first failing step; the lease is ended regardless.
+    /// The first failing step; a begun lease is ended regardless.
     pub async fn tick_at(&mut self, now: DateTime<Utc>) -> Result<TickReport, DeliveryError>
     where
         S: DigestPhraseStore + OwnerRequestStore + RunPromptStore,
     {
-        self.leased(now, async move |this: &mut Self, lease: &Lease| {
+        self.leased(now, async move |this: &mut Self, lease: &TickLease| {
             let current = this.config.reset().current_week(now)?;
             let materialised = if this.materialised_week == Some(current) {
                 Vec::new()
@@ -696,7 +751,7 @@ where
     where
         S: DigestPhraseStore,
     {
-        self.leased(now, async move |this: &mut Self, lease: &Lease| {
+        self.leased(now, async move |this: &mut Self, lease: &TickLease| {
             this.digest_in(lease, now).await
         })
         .await
@@ -715,22 +770,16 @@ where
     where
         S: DigestPhraseStore,
     {
-        let lease = self
-            .store
-            .begin_lease(&self.config.instance_id, TICK_OPERATION, now)
-            .await?;
+        let lease = TickLease::new(now);
         let result = self
             .requested_digest_in(&lease, now, week_start, explicit_channel)
             .await;
-        let ended = self.store.end_lease(&lease, now).await;
-        let value = result?;
-        ended?;
-        Ok(value)
+        self.finish(lease, result).await
     }
 
     async fn requested_digest_in(
         &self,
-        lease: &Lease,
+        lease: &TickLease,
         now: DateTime<Utc>,
         week_start: DateTime<Utc>,
         explicit_channel: Option<&str>,
@@ -760,19 +809,12 @@ where
             report.outcome = DigestOutcome::ClockRolledBack;
             return Ok(report);
         }
-        let retired = self
-            .in_operation(async || {
-                self.store
-                    .retire_digests_before(lease, week_start, now)
-                    .await
-            })
-            .await;
-        let Some(retired) = retired else {
+        let Some(retired) = self.retire_older_digests(lease, log, week_start, now).await else {
             report.outcome = DigestOutcome::Paused;
             return Ok(report);
         };
-        report.retired = retired?;
-        let log = self.store.load_digests().await?;
+        let (retired, log) = retired?;
+        report.retired = retired;
         let week = self.store.load(&Scope::Weeks(vec![week_start])).await?;
         let view = self.store.load_view().await?;
         let ends = self.run_ends();
@@ -803,16 +845,50 @@ where
         &mut self,
         now: DateTime<Utc>,
     ) -> Result<DispatchReport, DeliveryError> {
-        self.leased(now, async move |this: &mut Self, lease: &Lease| {
+        self.leased(now, async move |this: &mut Self, lease: &TickLease| {
             this.dispatch_in(lease, now).await
         })
         .await
     }
 
+    /// Retire the active digests of weeks before `week` in an admitted
+    /// operation, writing the journal (and so leasing) only when `log` holds
+    /// one. `None` when not admitted; else the count and the log to plan
+    /// from, re-read only when something was retired.
+    async fn retire_older_digests(
+        &self,
+        lease: &TickLease,
+        log: DigestLog,
+        week: DateTime<Utc>,
+        now: DateTime<Utc>,
+    ) -> Option<Result<(usize, DigestLog), DeliveryError>> {
+        let stale = !retire_digests_before(&log.digests, week).is_empty();
+        let retired = self
+            .in_operation(async || {
+                if stale {
+                    let lease = self.lease(lease).await?;
+                    self.store.retire_digests_before(lease, week, now).await
+                } else {
+                    Ok(0)
+                }
+            })
+            .await?;
+        Some(match retired {
+            Ok(0) => Ok((0, log)),
+            Ok(retired) => self
+                .store
+                .load_digests()
+                .await
+                .map(|log| (retired, log))
+                .map_err(DeliveryError::from),
+            Err(error) => Err(error.into()),
+        })
+    }
+
     /// v4 `_post_week_digest` with the monotone-week deviation.
     async fn digest_in(
         &self,
-        lease: &Lease,
+        lease: &TickLease,
         now: DateTime<Utc>,
     ) -> Result<DigestReport, DeliveryError>
     where
@@ -826,26 +902,23 @@ where
             outcome: DigestOutcome::UpToDate,
             send: None,
         };
-        let retired = self
-            .in_operation(async || {
-                self.store
-                    .retire_digests_before(lease, current_week, now)
-                    .await
-            })
-            .await;
-        let Some(retired) = retired else {
+        let log = self.store.load_digests().await?;
+        let Some(retired) = self
+            .retire_older_digests(lease, log, current_week, now)
+            .await
+        else {
             report.outcome = DigestOutcome::Paused;
             return Ok(report);
         };
-        report.retired = retired?;
-        let log = self.store.load_digests().await?;
+        let (retired, log) = retired?;
+        report.retired = retired;
         let last = log
             .last_digest_week
             .as_deref()
             .and_then(|text| from_iso(text).ok());
         if let Some(last) = last {
             if last > current_week {
-                self.executor(lease).raise(
+                self.raise(
                     AdminAlert::DigestClockRollback {
                         current_week,
                         last_digest_week: last,
@@ -870,6 +943,7 @@ where
             DigestAction::Record(reason) => {
                 let recorded = self
                     .in_operation(async || {
+                        let lease = self.lease(lease).await?;
                         self.store
                             .record_digest_week(lease, current_week, now)
                             .await
@@ -913,7 +987,7 @@ where
     /// so it never deletes), render and send.
     async fn post_digest(
         &self,
-        lease: &Lease,
+        lease: &TickLease,
         mut report: DigestReport,
         post: DigestSend,
         week: &ScheduleSnapshot,
@@ -922,7 +996,6 @@ where
     where
         S: DigestPhraseStore,
     {
-        let executor = self.executor(lease);
         let phrase = if post.send.disposition == SendDisposition::Send {
             let Some(phrase) =
                 card_records::prepare_digest(self.store, &self.cards, &post.send.intent, now).await
@@ -934,6 +1007,7 @@ where
         } else {
             None
         };
+        let executor = self.executor(self.lease(lease).await?);
         if post.send.disposition == SendDisposition::Send
             && let Some(old) = &post.replaces
         {
@@ -993,7 +1067,7 @@ where
     /// v4 `dispatch_reminders`: retire hopeless rows, then post the rest.
     async fn dispatch_in(
         &mut self,
-        lease: &Lease,
+        lease: &TickLease,
         now: DateTime<Utc>,
     ) -> Result<DispatchReport, DeliveryError> {
         let schedule = self.store.load(&Scope::All).await?;
@@ -1027,7 +1101,6 @@ where
             report.retired += 1;
         }
         let limit = self.config.max_sends_per_tick;
-        let executor = self.executor(lease);
         let mut claimed = 0;
         for send in plan.sends {
             // Only claimed sends use the cap; suppressed ones cost nothing.
@@ -1060,10 +1133,12 @@ where
                 }
                 SendDisposition::Suppressed => unrendered(),
             };
+            let lease = self.lease(lease).await?;
             let Some(permit) = self.admit().await else {
                 break;
             };
-            let result = executor
+            let result = self
+                .executor(lease)
                 .execute_admitted(permit, &send, &message, None, None, now)
                 .await;
             let result = match result {

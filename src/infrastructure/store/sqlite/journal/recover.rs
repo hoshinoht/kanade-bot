@@ -1,4 +1,4 @@
-//! Operation leases and start-up recovery.
+//! Operation leases, start-up recovery and lease retention.
 //!
 //! Minimal lease model: OPEN mode only, generation 0; a lease is proven by a
 //! random token whose SHA-256 is stored.
@@ -98,4 +98,30 @@ pub(super) async fn on_start(
         indeterminate: ids.into_iter().map(AttemptId).collect(),
         orphaned_leases: usize::try_from(orphaned).unwrap_or(usize::MAX),
     })
+}
+
+/// One batch of ended leases older than `before` that no attempt names (an
+/// attempt's `operation_id` is the only reference to a lease). No ORDER BY:
+/// a scan in insertion order meets the oldest rows first and stops at `size`.
+pub(super) async fn prune_leases(
+    tx: &mut SqliteConnection,
+    before: &str,
+    size: u32,
+) -> Result<u64, JournalError> {
+    Ok(sqlx::query(
+        "DELETE FROM maintenance_leases WHERE operation_id IN (
+             SELECT l.operation_id FROM maintenance_leases l
+             WHERE l.lifecycle IN ('retired', 'orphaned')
+               AND COALESCE(l.retired_at, l.orphaned_at) < ?1
+               AND NOT EXISTS (
+                   SELECT 1 FROM delivery_attempts a WHERE a.operation_id = l.operation_id
+               )
+             LIMIT ?2)",
+    )
+    .bind(before)
+    .bind(i64::from(size))
+    .execute(tx)
+    .await
+    .map_err(backend)?
+    .rows_affected())
 }

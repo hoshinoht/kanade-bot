@@ -517,6 +517,14 @@ pub trait DeliveryJournal {
         &self,
         at: DateTime<Utc>,
     ) -> impl Future<Output = Result<Recovery, JournalError>> + Send;
+
+    /// Retention: delete leases that ended (retired or orphaned) before
+    /// `before` and that no attempt names, in short batches, each its own
+    /// write. Live leases are never deleted. Returns how many went.
+    fn prune_leases(
+        &self,
+        before: DateTime<Utc>,
+    ) -> impl Future<Output = Result<u64, JournalError>> + Send;
 }
 
 #[cfg(test)]

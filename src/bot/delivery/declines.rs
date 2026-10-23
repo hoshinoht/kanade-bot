@@ -7,7 +7,7 @@ use super::alerts::AlertSink;
 use super::cards::redesign::decline_text;
 use super::cards::{CardKit, ReminderCardStore};
 use super::executor::SendReport;
-use super::tick::{Delivery, DeliveryError};
+use super::tick::{Delivery, DeliveryError, TickLease};
 use crate::bot::commands::text::{format_bosses, local_day, local_time};
 use crate::bot::ids::parse_id;
 use crate::bot::mentions::allow_users;
@@ -18,7 +18,7 @@ use crate::domain::members::Directory;
 use crate::domain::notify::PingKind;
 use crate::domain::notify::{
     DeclineNotice, DeclineNoticeStore, DeliveryJournal, DeliveryTarget, EffectKind, IntentContent,
-    Lease, NotificationIntent, PlannedSend, SendDisposition, audience,
+    NotificationIntent, PlannedSend, SendDisposition, audience,
 };
 use crate::domain::scheduler::{IdSource, ScheduleStore, Scope};
 use crate::domain::settings::MessageStyle;
@@ -106,7 +106,7 @@ where
         &mut self,
         now: DateTime<Utc>,
     ) -> Result<DeclineReport, DeliveryError> {
-        self.leased(now, async move |this, lease| {
+        self.leased(now, async move |this: &mut Self, lease: &TickLease| {
             this.declines_in(lease, now).await
         })
         .await
@@ -114,7 +114,7 @@ where
 
     async fn declines_in(
         &self,
-        lease: &Lease,
+        lease: &TickLease,
         now: DateTime<Utc>,
     ) -> Result<DeclineReport, DeliveryError> {
         let rows = self
@@ -172,7 +172,7 @@ where
                 disposition: SendDisposition::Send,
             };
             let outcome = super::tick::settle(
-                self.executor(lease)
+                self.executor(self.lease(lease).await?)
                     .execute(&send, &message, None, None, now)
                     .await,
             )?;
@@ -187,6 +187,7 @@ where
                         report.retracted += 1;
                     }
                 } else {
+                    let lease = self.lease(lease).await?;
                     self.store
                         .resolve_decline_retract_pending(lease, &bound.run_id, &bound.user_id, now)
                         .await?;
@@ -204,10 +205,7 @@ where
         user_id: &str,
         now: DateTime<Utc>,
     ) -> Result<bool, DeliveryError> {
-        let lease = self
-            .store
-            .begin_lease(&self.config.instance_id, super::tick::TICK_OPERATION, now)
-            .await?;
+        let lease = TickLease::new(now);
         let result = async {
             let Some(notice) = self.store.decline_notice(run_id, user_id).await? else {
                 return Ok(false);
@@ -222,15 +220,12 @@ where
             self.retract_decline_in(&lease, &notice, now).await
         }
         .await;
-        let ended = self.store.end_lease(&lease, now).await;
-        let value = result?;
-        ended?;
-        Ok(value)
+        self.finish(lease, result).await
     }
 
     async fn retract_decline_in(
         &self,
-        lease: &Lease,
+        lease: &TickLease,
         notice: &DeclineNotice,
         now: DateTime<Utc>,
     ) -> Result<bool, DeliveryError> {
@@ -255,6 +250,7 @@ where
         if !deleted {
             return Ok(false);
         }
+        let lease = self.lease(lease).await?;
         self.store
             .retire_decline_retraction(
                 lease,

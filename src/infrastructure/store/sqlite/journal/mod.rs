@@ -19,6 +19,7 @@ use chrono::{DateTime, Utc};
 use sqlx::{Connection, Row, SqliteConnection};
 
 use super::SqliteStore;
+use crate::domain::model_log::PRUNE_BATCH;
 use crate::domain::notify::{
     ActiveClaims, AttemptId, AttemptRecord, AttemptState, Claim, DIGEST_MARKER_KEY,
     DeliveryJournal, DeliveryTarget, DigestLog, DrainReason, JournalError, Lease, NoticeOutbox,
@@ -538,6 +539,18 @@ impl DeliveryJournal for SqliteStore {
 
     async fn recover_on_start(&self, at: DateTime<Utc>) -> Result<Recovery, JournalError> {
         write_tx!(self, tx => recover::on_start(&mut tx, at))
+    }
+
+    async fn prune_leases(&self, before: DateTime<Utc>) -> Result<u64, JournalError> {
+        let before = iso(&before)?;
+        let mut total = 0;
+        loop {
+            let done = write_tx!(self, tx => recover::prune_leases(&mut tx, &before, PRUNE_BATCH))?;
+            total += done;
+            if done < u64::from(PRUNE_BATCH) {
+                return Ok(total);
+            }
+        }
     }
 }
 
