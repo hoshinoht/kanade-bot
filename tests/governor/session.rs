@@ -587,3 +587,22 @@ async fn a_content_filter_is_charged_healthy_and_leaves_the_question_open() {
     assert_eq!(snapshot.counters.transient_failures, 0);
     assert_eq!(snapshot.counters.retries, 0);
 }
+
+/// One stable key per role and deployment scope; none without a scope.
+#[tokio::test(start_paused = true)]
+async fn sessions_name_one_prompt_cache_key_per_role_and_scope() {
+    let (_, _, plain) = setup(1, []);
+    assert_eq!(new_question(&plain, 1).await.cache_key(), None);
+    let governor = build(&roomy(1, 1));
+    let (_, scoped) = client(governor, []);
+    let scoped = scoped.with_cache_scope(123_456_789_012_345_678);
+    let question = new_question(&scoped, 1).await.cache_key();
+    let extraction = new_extraction(&scoped).await.cache_key();
+    let rewrite = scoped.open_rewrite("nudge", TIMEOUT).unwrap().cache_key();
+    assert_eq!(question.as_deref(), Some("kanade-chat-37f96542b663"));
+    assert_eq!(
+        extraction.as_deref(),
+        Some("kanade-extraction-37f96542b663")
+    );
+    assert_eq!(rewrite.as_deref(), Some("kanade-rewrite-37f96542b663"));
+}

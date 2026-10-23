@@ -14,7 +14,8 @@
 //! source, a notice left pending (released, failed or over the cap) holds
 //! back the source's later ordinals for the rest of the tick, so a merge's
 //! requester notice never overtakes its summary. Undecodable rows stay
-//! pending and are alerted, never fatal.
+//! pending and are alerted, never fatal. The outbox is read in keyset pages
+//! (`NOTICE_PAGE` rows), so a backlog is never held in memory whole.
 
 use std::collections::BTreeSet;
 
@@ -24,11 +25,11 @@ use super::alerts::{AdminAlert, AlertSink};
 use super::cards::ReminderCardStore;
 use super::executor::{SendOutcome, SendReport};
 use super::notice_text::render_notice;
-use super::tick::{Delivery, DeliveryError, settle};
+use super::tick::{Delivery, DeliveryError, TickLease, settle};
 use crate::bot::transport::DiscordTransport;
 use crate::domain::drafts::ProposalStore;
 use crate::domain::history::Checkpoints;
-use crate::domain::notify::{DeliveryJournal, DrainReason, Lease, NoticeOutbox, plan_notice};
+use crate::domain::notify::{DeliveryJournal, DrainReason, NoticeOutbox, plan_notice};
 use crate::domain::scheduler::{IdSource, ScheduleStore, Scope};
 
 /// One drained (or retried) notice.
@@ -66,6 +67,11 @@ fn drains(outcome: &SendOutcome) -> bool {
     !matches!(outcome, SendOutcome::Released(_) | SendOutcome::Failed(_))
 }
 
+/// Pending rows read per page. The drain still visits the whole backlog each
+/// call (stale retirement and the counts are not capped), but holds only one
+/// page of it; the cap on claims is `max_sends_per_tick`, not this.
+const NOTICE_PAGE: usize = 100;
+
 impl<S, I, T, A> Delivery<'_, S, I, T, A>
 where
     S: ScheduleStore
@@ -87,154 +93,178 @@ where
         &mut self,
         now: DateTime<Utc>,
     ) -> Result<NoticeReport, DeliveryError> {
-        self.leased(now, async move |this: &mut Self, lease: &Lease| {
+        self.leased(now, async move |this: &mut Self, lease: &TickLease| {
             this.notices_in(lease, now).await
         })
         .await
     }
 
     /// Send pending notices in write order, at most `max_sends_per_tick`
-    /// claims per call.
+    /// claims per call. Every pending row is still visited each call (stale
+    /// ones retire past the cap, the rest are counted), one page of
+    /// [`NOTICE_PAGE`] rows in memory at a time.
     pub(super) async fn notices_in(
         &self,
-        lease: &Lease,
+        lease: &TickLease,
         now: DateTime<Utc>,
     ) -> Result<NoticeReport, DeliveryError> {
-        let pending = self.store.pending_notices().await?;
-        let executor = self.executor(lease);
-        let mut report = NoticeReport {
-            undecodable: pending.undecodable.len(),
-            ..NoticeReport::default()
-        };
-        for bad in pending.undecodable {
-            executor.raise(
-                AdminAlert::NoticeUndecodable {
-                    source: bad.source,
-                    ordinal: bad.ordinal,
-                    detail: bad.detail,
-                },
-                now,
-            );
-        }
-        if pending.notices.is_empty() {
-            return Ok(report);
-        }
-        let schedule = self.store.load(&Scope::All).await?;
+        let mut report = NoticeReport::default();
         let limit = self.config.max_sends_per_tick;
         let zone = self.config.policy.zone();
+        let mut loaded = None;
         let mut claimed = 0;
         let mut held_back = BTreeSet::new();
-        for row in pending.notices {
-            if now - row.created_at > self.config.max_notice_age {
-                let drained = self
-                    .in_operation(async || {
-                        self.store
-                            .mark_drained(lease, &row.source, row.ordinal, DrainReason::Stale, now)
-                            .await
-                    })
-                    .await;
-                let Some(drained) = drained else {
-                    break;
-                };
-                drained?;
-                report.stale += 1;
-                continue;
-            }
-            if held_back.contains(&row.source) {
-                report.waiting += 1;
-                continue;
-            }
-            let Some(intent) = plan_notice(
-                &row.notice,
-                self.members,
-                self.channels,
-                self.config.settings(),
-            ) else {
-                report.unroutable += 1;
-                continue;
-            };
-            if claimed >= limit {
-                report.deferred += 1;
-                held_back.insert(row.source);
-                continue;
-            }
-            let Some(message) = render_notice(
-                &row.notice,
-                &intent,
-                &schedule,
-                self.members,
-                zone,
-                self.config.quiet_mode,
-                &self.cards,
-            ) else {
-                let drained = self
-                    .in_operation(async || {
-                        self.store
-                            .mark_drained(lease, &row.source, row.ordinal, DrainReason::Silent, now)
-                            .await
-                    })
-                    .await;
-                let Some(drained) = drained else {
-                    break;
-                };
-                drained?;
-                report.silent += 1;
-                continue;
-            };
-            let Some(mut operation) = self.admit().await else {
-                break;
-            };
-            let result = executor
-                .execute_source_in_operation(
-                    &mut operation,
-                    &intent,
-                    &message,
-                    &row.source,
-                    row.ordinal,
+        let mut after = None;
+        'drain: loop {
+            let page = self.store.pending_notices_after(after, NOTICE_PAGE).await?;
+            report.undecodable += page.undecodable.len();
+            for bad in page.undecodable {
+                self.raise(
+                    AdminAlert::NoticeUndecodable {
+                        source: bad.source,
+                        ordinal: bad.ordinal,
+                        detail: bad.detail,
+                    },
                     now,
-                )
-                .await;
-            let result = match result {
-                Ok(Some(outcome)) => Ok(outcome),
-                Ok(None) => break,
-                Err(failure) => Err(failure),
-            };
-            if matches!(&result, Err(failure) if failure.attempt.is_some())
-                || result.as_ref().is_ok_and(SendOutcome::claimed)
-            {
-                claimed += 1;
+                );
             }
-            let outcome = match settle(result) {
-                Ok(outcome) => outcome,
-                Err(error) => {
-                    operation.settle();
-                    return Err(error);
+            for row in page.notices {
+                if now - row.created_at > self.config.max_notice_age {
+                    let drained = self
+                        .in_operation(async || {
+                            let lease = self.lease(lease).await?;
+                            self.store
+                                .mark_drained(
+                                    lease,
+                                    &row.source,
+                                    row.ordinal,
+                                    DrainReason::Stale,
+                                    now,
+                                )
+                                .await
+                        })
+                        .await;
+                    let Some(drained) = drained else {
+                        break 'drain;
+                    };
+                    drained?;
+                    report.stale += 1;
+                    continue;
                 }
-            };
-            let drained = if drains(&outcome) {
+                if held_back.contains(&row.source) {
+                    report.waiting += 1;
+                    continue;
+                }
+                let Some(intent) = plan_notice(
+                    &row.notice,
+                    self.members,
+                    self.channels,
+                    self.config.settings(),
+                ) else {
+                    report.unroutable += 1;
+                    continue;
+                };
+                if claimed >= limit {
+                    report.deferred += 1;
+                    held_back.insert(row.source);
+                    continue;
+                }
+                // Loaded once per call, and only when a notice gets this far.
+                let schedule = match &loaded {
+                    Some(schedule) => schedule,
+                    None => &*loaded.insert(self.store.load(&Scope::All).await?),
+                };
+                let Some(message) = render_notice(
+                    &row.notice,
+                    &intent,
+                    schedule,
+                    self.members,
+                    zone,
+                    self.config.quiet_mode,
+                    &self.cards,
+                ) else {
+                    let drained = self
+                        .in_operation(async || {
+                            let lease = self.lease(lease).await?;
+                            self.store
+                                .mark_drained(
+                                    lease,
+                                    &row.source,
+                                    row.ordinal,
+                                    DrainReason::Silent,
+                                    now,
+                                )
+                                .await
+                        })
+                        .await;
+                    let Some(drained) = drained else {
+                        break 'drain;
+                    };
+                    drained?;
+                    report.silent += 1;
+                    continue;
+                };
+                let lease = self.lease(lease).await?;
+                let Some(mut operation) = self.admit().await else {
+                    break 'drain;
+                };
                 let result = self
-                    .store
-                    .mark_drained(lease, &row.source, row.ordinal, DrainReason::Journal, now)
+                    .executor(lease)
+                    .execute_source_in_operation(
+                        &mut operation,
+                        &intent,
+                        &message,
+                        &row.source,
+                        row.ordinal,
+                        now,
+                    )
                     .await;
-                operation.settle();
-                result?;
-                true
-            } else {
-                operation.settle();
-                false
-            };
-            if !drained {
-                held_back.insert(row.source.clone());
+                let result = match result {
+                    Ok(Some(outcome)) => Ok(outcome),
+                    Ok(None) => break 'drain,
+                    Err(failure) => Err(failure),
+                };
+                if matches!(&result, Err(failure) if failure.attempt.is_some())
+                    || result.as_ref().is_ok_and(SendOutcome::claimed)
+                {
+                    claimed += 1;
+                }
+                let outcome = match settle(result) {
+                    Ok(outcome) => outcome,
+                    Err(error) => {
+                        operation.settle();
+                        return Err(error);
+                    }
+                };
+                let drained = if drains(&outcome) {
+                    let result = self
+                        .store
+                        .mark_drained(lease, &row.source, row.ordinal, DrainReason::Journal, now)
+                        .await;
+                    operation.settle();
+                    result?;
+                    true
+                } else {
+                    operation.settle();
+                    false
+                };
+                if !drained {
+                    held_back.insert(row.source.clone());
+                }
+                report.sends.push(NoticeSend {
+                    source: row.source,
+                    ordinal: row.ordinal,
+                    send: SendReport { intent, outcome },
+                    drained,
+                });
             }
-            report.sends.push(NoticeSend {
-                source: row.source,
-                ordinal: row.ordinal,
-                send: SendReport { intent, outcome },
-                drained,
-            });
+            after = page.next;
+            if after.is_none() {
+                break;
+            }
         }
         if report.stale > 0 {
-            executor.raise(
+            self.raise(
                 AdminAlert::StaleNoticesRetired {
                     count: report.stale,
                 },

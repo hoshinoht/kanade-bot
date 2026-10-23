@@ -86,6 +86,7 @@ pub fn chat_json(row: &ChatInteraction) -> Value {
             "response": round.response,
             "latency_ms": round.latency_ms,
             "prompt_tokens": round.prompt_tokens,
+            "cached_tokens": round.cached_tokens,
             "completion_tokens": round.completion_tokens,
         })).collect::<Vec<_>>(),
     })
@@ -142,6 +143,7 @@ pub async fn extraction_logs(store: &SqliteStore) -> Vec<Value> {
                 "guardrail": log.guardrail,
                 "latency_ms": log.latency_ms,
                 "prompt_tokens": log.prompt_tokens,
+                "cached_tokens": log.cached_tokens,
                 "completion_tokens": log.completion_tokens,
                 "raw_response": log.raw_response,
                 "parsed": serde_json::from_str::<Value>(&log.raw_response).unwrap_or(Value::Null),

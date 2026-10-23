@@ -641,6 +641,7 @@ fn answered(content: &str, prompt_tokens: u32, completion_tokens: u32) -> FakeAc
         usage: Some(kanade::infrastructure::llm::Usage {
             prompt_tokens,
             completion_tokens,
+            cached_tokens: None,
         }),
     })
 }

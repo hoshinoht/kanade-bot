@@ -181,7 +181,7 @@ struct Loop<'q, 'g> {
 impl Loop<'_, '_> {
     fn request(
         &self,
-        alias: &str,
+        (alias, prompt_cache_key): (&str, Option<String>),
         messages: Vec<Message>,
         offer: &ToolOffer,
         offered: &[ToolName],
@@ -202,6 +202,7 @@ impl Loop<'_, '_> {
                 temperature: Some(temperature),
                 ..Sampling::default()
             }),
+            prompt_cache_key,
         }
     }
 
@@ -218,9 +219,9 @@ impl Loop<'_, '_> {
             Vec<String>,
         ),
     ) {
-        if let Some(usage) = &response.usage {
-            self.generation
-                .add_usage(usage.prompt_tokens, usage.completion_tokens);
+        let usage = response.usage.as_ref();
+        if let Some(usage) = usage {
+            self.generation.add_usage(usage);
         }
         self.generation.model_rounds.push(ModelRound {
             round,
@@ -236,14 +237,9 @@ impl Loop<'_, '_> {
             latency_ms,
             clean,
             sent,
-            prompt_tokens: response
-                .usage
-                .as_ref()
-                .map(|usage| u64::from(usage.prompt_tokens)),
-            completion_tokens: response
-                .usage
-                .as_ref()
-                .map(|usage| u64::from(usage.completion_tokens)),
+            prompt_tokens: usage.map(|usage| u64::from(usage.prompt_tokens)),
+            completion_tokens: usage.map(|usage| u64::from(usage.completion_tokens)),
+            cached_tokens: usage.and_then(|usage| usage.cached_tokens).map(u64::from),
             prompt_estimate: u64::try_from(estimate).ok(),
             request_ids,
         });
@@ -433,7 +429,8 @@ where
                 break None;
             }
         };
-        let request = state.request(&alias, outgoing.messages, &offer, &offered);
+        let route = (alias.as_str(), session.cache_key());
+        let request = state.request(route, outgoing.messages, &offer, &offered);
         let started = Instant::now();
         let first_id = session.request_ids().len();
         let sent = session.complete(&request).await;
@@ -729,7 +726,8 @@ async fn send_clean<P: LlmProvider>(
         block,
     )
     .map_err(|_| None)?;
-    let request = state.request(alias, outgoing.messages, &state.question.offer, &[]);
+    let route = (alias, session.cache_key());
+    let request = state.request(route, outgoing.messages, &state.question.offer, &[]);
     let started = Instant::now();
     let before = session.requests_used();
     let first_id = session.request_ids().len();

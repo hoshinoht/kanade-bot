@@ -113,6 +113,7 @@ impl<P: LlmProvider> NudgeRewriter for GovernedRewriter<P> {
             max_output_tokens,
             reasoning: route.effort,
             sampling: None,
+            prompt_cache_key: session.cache_key(),
         };
         let response = session.complete(&request).await;
         if let Some(sent) = session.last_sent() {

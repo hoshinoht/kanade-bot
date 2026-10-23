@@ -269,6 +269,13 @@ impl Turn {
             })
     }
 
+    /// Round `i`'s cached prompt tokens: the guide turn's later rounds reuse
+    /// the first round's prefix; every other round reports none.
+    fn cached(&self, i: u64) -> Option<u64> {
+        let reused = self.id == "c-guide" && i > 0 && self.usage(i).0.is_some();
+        reused.then_some(768)
+    }
+
     fn error_code(&self) -> Option<&'static str> {
         Some(match self.outcome {
             ChatOutcome::Timeout => "timeout",
@@ -343,6 +350,7 @@ impl Turn {
                     clean: (self.outcome == ChatOutcome::CleanRetry || reply_hit) && i == last,
                     prompt_tokens,
                     completion_tokens,
+                    cached_tokens: self.cached(i as u64),
                     prompt_estimate,
                     request_ids: match (guide, i) {
                         (true, 0) => {
@@ -374,6 +382,9 @@ impl Turn {
         // Nagi saved a reply profile; everyone else gets the default voice.
         let saved = self.member == NAGI;
         let (prompt_tokens, completion_tokens) = self.totals();
+        let cached_tokens = (0..self.models.len() as u64)
+            .filter_map(|i| self.cached(i))
+            .reduce(|sum, cached| sum + cached);
         ChatInteraction {
             id: self.id.into(),
             at: seed.hour(self.hour),
@@ -400,6 +411,7 @@ impl Turn {
             tools_ms: None,
             prompt_tokens,
             completion_tokens,
+            cached_tokens,
             rounds: self.rounds(),
             persona: (!limited).then(|| "kanade".into()),
             profile: saved.then(|| "gentle".into()),
@@ -634,6 +646,8 @@ impl Call {
             refusals: Vec::new(),
             prompt_tokens: self.usage.map(|usage| usage.0),
             completion_tokens: self.usage.map(|usage| usage.1),
+            // Extraction routes (Ollama) report no prompt cache.
+            cached_tokens: None,
             prompt_estimate: self.estimate,
             session_id: bm.then(|| "kanade-extraction-1a2b3c4d-3".into()),
             request_ids: if bm {
@@ -852,6 +866,7 @@ impl Attempt {
             reasoning: self.model.map(|_| "low".into()),
             prompt_tokens: self.usage.map(|usage| usage.0),
             completion_tokens: self.usage.map(|usage| usage.1),
+            cached_tokens: None,
             reasoning_tokens: self.reasoning_tokens,
             reservation: self.reserved.map(|reserved| reserved.0),
             budget: self.budget,

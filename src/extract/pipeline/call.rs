@@ -28,7 +28,7 @@ use crate::extract::resolve::Resolved;
 use crate::extract::schema::{AttemptOutcome, ExtractionAttempts, ExtractionCall, Next};
 use crate::infrastructure::llm::governor::{Refused, RoleRoute, SessionError, SessionFailure};
 use crate::infrastructure::llm::identity::{Member, PassthroughSession};
-use crate::infrastructure::llm::{Effort, ErrorCode, LlmProvider, Message, Usage};
+use crate::infrastructure::llm::{ChatRequest, Effort, ErrorCode, LlmProvider, Message, Usage};
 
 /// Why a call produced no answer.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -51,6 +51,8 @@ pub enum Failure {
 pub(crate) struct CallUsage {
     /// Prompt, completion and estimate over the attempts that reported usage.
     reported: Option<(u64, u64, u64)>,
+    /// Cached prompt tokens over the attempts that reported a cached count.
+    cached: Option<u64>,
     /// Estimate over every attempt that was sent.
     sent: Option<u64>,
 }
@@ -62,6 +64,10 @@ impl CallUsage {
             *prompt = prompt.saturating_add(u64::from(usage.prompt_tokens));
             *completion = completion.saturating_add(u64::from(usage.completion_tokens));
             *reported = reported.saturating_add(estimate);
+            if let Some(cached) = usage.cached_tokens {
+                let total = self.cached.get_or_insert(0);
+                *total = total.saturating_add(u64::from(cached));
+            }
         }
         if sent || usage.is_some() {
             let total = self.sent.get_or_insert(0);
@@ -75,6 +81,10 @@ impl CallUsage {
 
     pub fn completion_tokens(&self) -> Option<u64> {
         self.reported.map(|(_, completion, _)| completion)
+    }
+
+    pub fn cached_tokens(&self) -> Option<u64> {
+        self.cached
     }
 
     pub fn prompt_estimate(&self) -> Option<u64> {
@@ -526,12 +536,15 @@ where
         let mut failure = None;
         let mut first = true;
         let call: ExtractionCall = loop {
-            let request = extraction_request_with_reserve(
-                &alias,
-                attempts.messages().to_vec(),
-                record.reasoning,
-                u32::try_from(context.reserve).unwrap_or(u32::MAX),
-            );
+            let request = ChatRequest {
+                prompt_cache_key: session.cache_key(),
+                ..extraction_request_with_reserve(
+                    &alias,
+                    attempts.messages().to_vec(),
+                    record.reasoning,
+                    u32::try_from(context.reserve).unwrap_or(u32::MAX),
+                )
+            };
             let estimate = u64::try_from(estimate_messages(&request.messages)).unwrap_or(u64::MAX);
             let before = session.requests_used();
             let sending = async {

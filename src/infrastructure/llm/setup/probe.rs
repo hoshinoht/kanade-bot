@@ -72,6 +72,7 @@ impl ModelStack {
             max_output_tokens: PROBE_MAX_TOKENS,
             reasoning: Some(effort),
             sampling: None,
+            prompt_cache_key: self.client.cache_key(role),
         };
         let mut outcome = self.attempt(&route, &request, timeout).await;
         // Rewrites never wait for a rate token; the probes before this one may

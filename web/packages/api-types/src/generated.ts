@@ -2184,6 +2184,11 @@ export type ExtractionRow = { messages: number, changes: number, id: string, sho
  */
 prompt_tokens?: number | null, completion_tokens?: number | null, 
 /**
+ * The part of `prompt_tokens` served from the upstream prompt cache,
+ * over the attempts that reported it; null = not reported.
+ */
+cached_tokens?: number | null, 
+/**
  * Provider-reported reasoning tokens over reporting attempts; null = unknown.
  */
 reasoning_tokens?: number | null, };
@@ -2254,6 +2259,11 @@ request_ids?: Array<string>, id: string, short_id: string, at: string, model: st
  */
 prompt_tokens?: number | null, completion_tokens?: number | null, 
 /**
+ * The part of `prompt_tokens` served from the upstream prompt cache,
+ * over the attempts that reported it; null = not reported.
+ */
+cached_tokens?: number | null, 
+/**
  * Provider-reported reasoning tokens over reporting attempts; null = unknown.
  */
 reasoning_tokens?: number | null, };
@@ -2293,7 +2303,12 @@ reasoning: string | null,
 /**
  * Provider-reported tokens; null = not reported (never 0).
  */
-prompt_tokens: number | null, completion_tokens: number | null, reasoning_tokens: number | null, 
+prompt_tokens: number | null, completion_tokens: number | null, 
+/**
+ * The part of `prompt_tokens` served from the upstream prompt cache;
+ * null = not reported.
+ */
+cached_tokens: number | null, reasoning_tokens: number | null, 
 /**
  * The runner's token reservation the reported usage was checked against.
  */
@@ -2375,7 +2390,12 @@ reasoning: string | null,
 /**
  * Provider-reported tokens; null = not reported (never 0).
  */
-prompt_tokens: number | null, completion_tokens: number | null, reasoning_tokens: number | null, 
+prompt_tokens: number | null, completion_tokens: number | null, 
+/**
+ * The part of `prompt_tokens` served from the upstream prompt cache;
+ * null = not reported.
+ */
+cached_tokens: number | null, reasoning_tokens: number | null, 
 /**
  * The runner's token reservation the reported usage was checked against.
  */
@@ -2442,6 +2462,11 @@ models: Array<string>, latency_ms: number, outcome: ChatOutcome, asked: string, 
  */
 prompt_tokens?: number | null, completion_tokens?: number | null, 
 /**
+ * The part of `prompt_tokens` served from the upstream prompt cache,
+ * summed over the rounds that reported it; null = not reported.
+ */
+cached_tokens?: number | null, 
+/**
  * Sum of the rounds' reported reasoning counts; null = unknown.
  */
 reasoning_tokens?: number | null, };
@@ -2493,6 +2518,11 @@ latency_ms: number | null,
  * Provider-reported usage for this request (both or neither); null = not reported.
  */
 prompt_tokens?: number | null, completion_tokens?: number | null, 
+/**
+ * The part of `prompt_tokens` served from the upstream prompt cache;
+ * null = not reported.
+ */
+cached_tokens?: number | null, 
 /**
  * The context budget's estimate, completion reserve excluded.
  */
@@ -2606,6 +2636,11 @@ models: Array<string>, latency_ms: number, outcome: ChatOutcome, asked: string, 
  * Turn totals as logged (v4 imports may carry one); null = not reported.
  */
 prompt_tokens?: number | null, completion_tokens?: number | null, 
+/**
+ * The part of `prompt_tokens` served from the upstream prompt cache,
+ * summed over the rounds that reported it; null = not reported.
+ */
+cached_tokens?: number | null, 
 /**
  * Sum of the rounds' reported reasoning counts; null = unknown.
  */

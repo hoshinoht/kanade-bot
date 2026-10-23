@@ -6,7 +6,7 @@ use sqlx::{Row, SqliteConnection};
 
 use super::{backend, check_live, corrupt, iso, payload};
 use crate::domain::notify::{
-    DrainReason, JournalError, Lease, OutboxNotice, PendingNotices, UndecodableNotice,
+    DrainReason, JournalError, Lease, NoticeCursor, OutboxNotice, PendingNotices, UndecodableNotice,
 };
 use crate::domain::schedule::Notice;
 use crate::domain::scheduler::StoreError;
@@ -72,15 +72,26 @@ fn decode_row(row: &sqlx::sqlite::SqliteRow, key: (String, i64)) -> Result<Outbo
     })
 }
 
-pub(super) async fn pending(conn: &mut SqliteConnection) -> Result<PendingNotices, JournalError> {
+/// At most `limit` pending rows after `after`, by `id` (write order); the
+/// partial index `notice_outbox_pending (id)` serves the range and the order.
+pub(super) async fn pending(
+    conn: &mut SqliteConnection,
+    after: Option<NoticeCursor>,
+    limit: usize,
+) -> Result<PendingNotices, JournalError> {
     let rows = sqlx::query(&format!(
-        "SELECT {COLUMNS} FROM notice_outbox WHERE state = 'pending' ORDER BY id"
+        "SELECT id, {COLUMNS} FROM notice_outbox WHERE state = 'pending' AND id > ?1
+         ORDER BY id LIMIT ?2"
     ))
+    .bind(after.map_or(i64::MIN, |cursor| cursor.id))
+    .bind(i64::try_from(limit).unwrap_or(i64::MAX))
     .fetch_all(conn)
     .await
     .map_err(backend)?;
     let mut pending = PendingNotices::default();
+    let mut last: Option<i64> = None;
     for row in &rows {
+        last = Some(row.try_get("id").map_err(corrupt)?);
         let key = key_of(row)?;
         match decode_row(row, key.clone()) {
             Ok(notice) => pending.notices.push(notice),
@@ -90,6 +101,9 @@ pub(super) async fn pending(conn: &mut SqliteConnection) -> Result<PendingNotice
                 detail,
             }),
         }
+    }
+    if rows.len() == limit {
+        pending.next = last.map(|id| NoticeCursor { id });
     }
     Ok(pending)
 }

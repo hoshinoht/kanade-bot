@@ -37,7 +37,7 @@
   <p class="extract-outcome__facts">
     {plural(call.messages.length, 'message')} read · {plural(n, 'change')}<br />
     latency <span class="mono">{duration(call.latency_ms)}</span><br />
-    tokens <span class="mono"><TokenUsage prompt={call.prompt_tokens} completion={call.completion_tokens} reasoning={call.reasoning_tokens} /></span>
+    tokens <span class="mono"><TokenUsage prompt={call.prompt_tokens} cached={call.cached_tokens} completion={call.completion_tokens} reasoning={call.reasoning_tokens} /></span>
     {#if call.request_ids?.length}<br />request ids <span class="mono extract-outcome__ids">{call.request_ids.join(', ')}</span>{/if}
   </p>
   <span class="extract-outcome__gap"></span>

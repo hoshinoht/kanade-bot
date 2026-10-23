@@ -105,6 +105,8 @@ fn metadata(meta: &Map<String, Value>) -> ModelCapabilities {
             .and_then(admission),
         // Declared only; never read from a listing.
         output_limit: None,
+        // Any Kanata metadata means Kanata, which accepts the key on every route.
+        prompt_cache_key: true,
     }
 }
 

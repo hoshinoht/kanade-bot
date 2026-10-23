@@ -56,6 +56,7 @@ pub async fn run_suite<
     unsent_release_frees_the_target_for_a_fresh_claim(&make().await).await;
     digest_week_is_recorded_without_a_post(&make().await).await;
     older_digests_are_retired_and_kept(&make().await).await;
+    ended_unreferenced_leases_are_pruned(&make().await).await;
     reminder_card_records_are_written_once_and_found_when_bound(&make().await).await;
     digest_phrase_records_are_written_once(&make().await).await;
     header_overrides_win_over_the_kept_original(&make().await).await;
@@ -950,6 +951,48 @@ async fn older_digests_are_retired_and_kept<S: ScheduleStore + DeliveryJournal>(
         "attempts are left alone"
     );
     assert_eq!(state(store, &current).await, AttemptState::Bound);
+}
+
+/// Retention deletes leases retired or orphaned strictly before the cutoff
+/// that no attempt names; a lease an attempt names, a live one and a recent
+/// one stay. The counts pin which went: had the named lease gone first, the
+/// second prune would also take the unnamed one.
+async fn ended_unreferenced_leases_are_pruned<S: ScheduleStore + DeliveryJournal>(store: &S) {
+    seed(store).await;
+    let begin = async |hour: i64| {
+        store
+            .begin_lease(INSTANCE, "scheduler_tick", at(hour))
+            .await
+            .expect("lease begins")
+    };
+    let unnamed = begin(0).await;
+    store.end_lease(&unnamed, at(1)).await.expect("end");
+    let named = begin(0).await;
+    let attempt = fresh(store, &named, &intent(&["m-1"], HOME)).await;
+    store.end_lease(&named, at(1)).await.expect("end");
+    let recent = begin(0).await;
+    store.end_lease(&recent, at(5)).await.expect("end");
+    let _orphaned = begin(0).await;
+    let recovery = store.recover_on_start(at(2)).await.expect("recovery");
+    assert_eq!(recovery.orphaned_leases, 1);
+    let live = begin(3).await;
+
+    assert_eq!(
+        store.prune_leases(at(2)).await,
+        Ok(1),
+        "ended_unreferenced_leases_are_pruned: strictly before the cutoff, unnamed only"
+    );
+    assert_eq!(store.prune_leases(at(2)).await, Ok(0), "idempotent");
+    assert_eq!(
+        store.prune_leases(at(100)).await,
+        Ok(2),
+        "the orphaned and the recent lease, never the named or live one"
+    );
+    assert_eq!(state(store, &attempt).await, AttemptState::Indeterminate);
+    store
+        .end_lease(&live, at(100))
+        .await
+        .expect("the live lease is kept and still ends");
 }
 
 async fn reminder_card_records_are_written_once_and_found_when_bound<

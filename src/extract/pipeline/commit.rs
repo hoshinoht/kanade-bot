@@ -379,6 +379,7 @@ where
                 request_count: record.requests,
                 prompt_tokens: record.usage.prompt_tokens(),
                 completion_tokens: record.usage.completion_tokens(),
+                cached_tokens: record.usage.cached_tokens(),
                 prompt_estimate: record.usage.prompt_estimate(),
                 reasoning_content: record.reasoning_content.clone(),
                 reasoning_tokens: record.reasoning_tokens,

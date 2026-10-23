@@ -70,7 +70,7 @@
       <p class="chat-turn__meta">
         <span class="mono">{data.model}</span> · <Name kind="channel" id={data.channel_id} name={data.channel} /> · {OUTCOME_LABEL[data.outcome] ?? data.outcome}
         · <span class="mono">{duration(data.latency_ms)}</span> ·
-        <span class="mono"><TokenUsage prompt={data.prompt_tokens} completion={data.completion_tokens} reasoning={data.reasoning_tokens} /> tokens</span>
+        <span class="mono"><TokenUsage prompt={data.prompt_tokens} cached={data.cached_tokens} completion={data.completion_tokens} reasoning={data.reasoning_tokens} /> tokens</span>
       </p>
     </div>
     <!-- For agent debugging: the whole turn as one paste. -->

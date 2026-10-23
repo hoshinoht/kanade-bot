@@ -109,6 +109,10 @@ pub struct ChatRequest {
     pub reasoning: Option<Effort>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sampling: Option<Sampling>,
+    /// `prompt_cache_key`: routes requests sharing a prefix to one upstream
+    /// cache. Sent only where the capabilities accept it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prompt_cache_key: Option<String>,
 }
 
 impl fmt::Debug for Message {
@@ -180,6 +184,7 @@ impl fmt::Debug for ChatRequest {
             .field("max_output_tokens", &self.max_output_tokens)
             .field("reasoning", &self.reasoning)
             .field("sampling", &self.sampling)
+            .field("prompt_cache_key", &self.prompt_cache_key)
             .finish()
     }
 }

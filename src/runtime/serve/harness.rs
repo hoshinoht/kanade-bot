@@ -30,7 +30,7 @@ use crate::{
 pub fn shared_models(config: &ServeConfig) -> Result<Option<Arc<ModelStack>>, Error> {
     let mut seeded = settings::seed(&config.seeds);
     models::seed_roles(&mut seeded, &config.models, &BTreeMap::new());
-    api::model_stack(&config.models, &seeded)
+    api::model_stack(&config.models, &seeded, config.guild.guild_id)
 }
 
 /// The reminder header rewrite serve's card kit builds (`tick::card_kit`):

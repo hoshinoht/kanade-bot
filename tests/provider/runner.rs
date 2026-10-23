@@ -106,6 +106,7 @@ async fn missing_usage_is_accepted_but_model_and_usage_overflow_fail_closed() {
         usage: Some(Usage {
             prompt_tokens: u32::MAX,
             completion_tokens: 1,
+            cached_tokens: None,
         }),
         ..response()
     };
@@ -216,6 +217,7 @@ async fn a_cut_off_reply_names_its_counts_but_never_the_finish_text() {
         Some(Usage {
             prompt_tokens: 1,
             completion_tokens: 64,
+            cached_tokens: None,
         }),
         Some(60),
     );

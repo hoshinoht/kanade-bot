@@ -31,7 +31,7 @@ use crate::chat::tools::{ProposalCard, ToolContext, ToolOutcome};
 use crate::domain::catalog::BossTable;
 use crate::domain::members::{Directory, Member};
 use crate::infrastructure::llm::governor::{Charge, SentRequest, SessionError};
-use crate::infrastructure::llm::{Effort, Message};
+use crate::infrastructure::llm::{Effort, Message, Usage};
 
 /// v4's reply when a posted card could not be delivered.
 pub const CARD_NOT_POSTED: &str = "The change was recorded but the card could not be posted to the channel. Tell them to check with an admin.";
@@ -129,6 +129,9 @@ pub struct ModelRound {
     /// Provider-reported usage for this request; both or neither.
     pub prompt_tokens: Option<u64>,
     pub completion_tokens: Option<u64>,
+    /// The part of `prompt_tokens` served from the upstream prompt cache;
+    /// `None` when not reported.
+    pub cached_tokens: Option<u64>,
     /// The budget's prompt estimate for this request, completion reserve
     /// excluded.
     pub prompt_estimate: Option<u64>,
@@ -222,6 +225,8 @@ pub struct Generation {
     /// Summed; `None` when no round reported usage.
     pub prompt_tokens: Option<u64>,
     pub completion_tokens: Option<u64>,
+    /// Summed over the rounds that reported it; `None` when none did.
+    pub cached_tokens: Option<u64>,
     /// Provider requests sent (retries and requeues included).
     pub requests: u32,
     /// The question session's correlation stem, once it sent a tagged request.
@@ -261,9 +266,12 @@ impl Generation {
             && (self.blocked || self.failure == Some(AnswerFailure::ContentBlocked))
     }
 
-    fn add_usage(&mut self, prompt: u32, completion: u32) {
-        *self.prompt_tokens.get_or_insert(0) += u64::from(prompt);
-        *self.completion_tokens.get_or_insert(0) += u64::from(completion);
+    fn add_usage(&mut self, usage: &Usage) {
+        *self.prompt_tokens.get_or_insert(0) += u64::from(usage.prompt_tokens);
+        *self.completion_tokens.get_or_insert(0) += u64::from(usage.completion_tokens);
+        if let Some(cached) = usage.cached_tokens {
+            *self.cached_tokens.get_or_insert(0) += u64::from(cached);
+        }
     }
 
     /// `homelab` or `external_unmasked`.

@@ -61,6 +61,11 @@ pub(crate) fn chat_body(request: &ChatRequest, capabilities: &ModelCapabilities)
     if let Some(effort) = sent_effort(request, capabilities) {
         body.insert("reasoning_effort".into(), json!(effort.wire_str()));
     }
+    if capabilities.prompt_cache_key
+        && let Some(key) = &request.prompt_cache_key
+    {
+        body.insert("prompt_cache_key".into(), json!(key));
+    }
     Value::Object(body)
 }
 
@@ -168,6 +173,7 @@ mod tests {
             max_output_tokens: 16,
             reasoning,
             sampling: None,
+            prompt_cache_key: None,
         }
     }
 
@@ -241,5 +247,34 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// The key rides every body whose capabilities accept it (Kanata
+    /// metadata), verbatim; a declared or minimal profile never gets it.
+    #[test]
+    fn the_prompt_cache_key_goes_only_where_it_is_accepted() {
+        let listed = crate::infrastructure::llm::parse_models_list(
+            br#"{"data": [{"id": "m", "kanata": {"trust_zone": "external"}}]}"#,
+        )
+        .expect("listing")
+        .remove(0)
+        .capabilities
+        .expect("kanata metadata");
+        assert!(listed.prompt_cache_key);
+        for role in ["chat", "extraction", "rewrite"] {
+            let key = format!("kanade-{role}-37f96542b663");
+            let request = ChatRequest {
+                prompt_cache_key: Some(key.clone()),
+                ..request(None)
+            };
+            assert_eq!(chat_body(&request, &listed)["prompt_cache_key"], json!(key));
+            let plain = chat_body(&request, &ModelCapabilities::minimal());
+            assert_eq!(plain.get("prompt_cache_key"), None, "{role}");
+            assert_eq!(plain.get("store"), None);
+        }
+        assert_eq!(
+            chat_body(&request(None), &listed).get("prompt_cache_key"),
+            None
+        );
     }
 }

@@ -4,7 +4,15 @@ What changed in each Kanade release, newest first. Upgrading across several rele
 
 ## 1.0.0-beta.14
 
-_In development_
+_23 Oct 2026_
+
+Faster portal loads, a database that stops growing while idle, and prompt caching for model calls through Kanata.
+
+### Improvements
+
+- The member portal now opens faster: screens other than Week load the first time they are opened.
+- Kanade's database no longer grows by a few megabytes a day while nothing is happening, and the daily cleanup now also removes the old delivery bookkeeping that made up most of the file; the operator guide explains how to shrink the file once afterwards.
+- Kanade now asks Kanata to reuse its cached prompts for each kind of model call, and the admin Chat, Extractions and Rewrites views show how many prompt tokens came from that cache.
 
 ### Fixes
 

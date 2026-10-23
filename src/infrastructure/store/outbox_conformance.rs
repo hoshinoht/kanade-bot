@@ -1,7 +1,8 @@
 //! The notice outbox every store must keep: notices written in the deciding
 //! transaction (commit, merge, draft close, expiry), never on a replay or a
-//! refused write, drained once under a lease; and source-keyed journal
-//! claims that survive a new lease. Failures panic with the check name.
+//! refused write, drained once under a lease, and paged in write order; and
+//! source-keyed journal claims that survive a new lease. Failures panic with
+//! the check name.
 
 use chrono::{DateTime, TimeDelta, Utc};
 
@@ -14,15 +15,18 @@ use crate::domain::history::{Actor, ChangeHistory, ChangeMeta, Origin, Surface};
 use crate::domain::model_log::ModelLogStore;
 use crate::domain::notify::{
     Claim, DeliveryJournal, DeliveryTarget, DrainReason, EffectKind, IntentContent, JournalError,
-    Lease, NOT_SENT_ACTOR, NoticeOutbox, NotificationIntent, change_source, draft_source,
+    Lease, NOT_SENT_ACTOR, NoticeOutbox, NotificationIntent, PendingNotices, change_source,
+    draft_source,
 };
 use crate::domain::schedule::{
     Change, ChangeSet, Notice, NoticeChange, RequestDecision, Run, RunSource, RunStatus,
 };
 use crate::domain::scheduler::{Committed, ScheduleStore, Scope, StoreError};
 
-/// Run every check, each against a fresh store from `make`.
-pub async fn run_suite<S>(make: impl AsyncFn() -> S)
+/// Run every check, each against a fresh store from `make`. `undecodable`
+/// writes one pending row `(source, 0)` after every row so far, whose payload
+/// this build cannot decode (a store's API never writes one).
+pub async fn run_suite<S>(make: impl AsyncFn() -> S, undecodable: impl AsyncFn(&S, &str))
 where
     S: ScheduleStore
         + ChangeHistory
@@ -38,6 +42,7 @@ where
     closes_and_expiry_write_draft_notices(make().await).await;
     drained_is_final_and_needs_a_lease(make().await).await;
     retention_purges_only_old_drained_notices(make().await).await;
+    pending_pages_in_write_order(make().await, undecodable).await;
     source_claims_hold_across_leases(make().await).await;
 }
 
@@ -458,6 +463,84 @@ async fn retention_purges_only_old_drained_notices<
         "retention: pending rows are never purged"
     );
     assert_eq!(pending(&store).await, 1);
+}
+
+type Keys = Vec<(String, i64)>;
+
+/// One page's decoded and undecodable keys, and whether it has a next page.
+fn page_keys(page: &PendingNotices) -> (Keys, Keys, bool) {
+    let decoded = page.notices.iter();
+    let bad = page.undecodable.iter();
+    (
+        decoded
+            .map(|row| (row.source.clone(), row.ordinal))
+            .collect(),
+        bad.map(|row| (row.source.clone(), row.ordinal)).collect(),
+        page.next.is_some(),
+    )
+}
+
+async fn pending_pages_in_write_order<S: ScheduleStore + DeliveryJournal + NoticeOutbox>(
+    store: S,
+    undecodable: impl AsyncFn(&S, &str),
+) {
+    let three = meta(
+        "q-1",
+        notices(&[RunStatus::Cancelled, RunStatus::Done, RunStatus::Otot]),
+    );
+    let first = change_source(recorded(&store, puts("r-1", 10), three).await.seq);
+    let bad = "draft:undecodable";
+    undecodable(&store, bad).await;
+    let two = meta("q-2", notices(&[RunStatus::Cancelled, RunStatus::Done]));
+    let second = change_source(recorded(&store, puts("r-2", 11), two).await.seq);
+    let lease = lease(&store, "outbox", 5).await;
+    store
+        .mark_drained(&lease, &first, 1, DrainReason::Journal, at(5))
+        .await
+        .expect("drain");
+    // Pending in write order: first#0, first#2, bad#0, second#0, second#1.
+    let key = |source: &str, ordinal: i64| (source.to_owned(), ordinal);
+    let mut pages = Vec::new();
+    let mut after = None;
+    loop {
+        let page = store.pending_notices_after(after, 2).await.expect("page");
+        pages.push(page_keys(&page));
+        let Some(next) = page.next else { break };
+        after = Some(next);
+    }
+    assert_eq!(
+        pages,
+        [
+            (vec![key(&first, 0), key(&first, 2)], vec![], true),
+            (vec![key(&second, 0)], vec![key(bad, 0)], true),
+            (vec![key(&second, 1)], vec![], false),
+        ],
+        "paging: every pending row once, in write order, past an undecodable one"
+    );
+    // A page that ends exactly at the last row still has a next one: empty.
+    let all = store.pending_notices_after(None, 5).await.expect("page");
+    assert!(all.next.is_some(), "paging: a full page points on");
+    let rest = store.pending_notices_after(all.next, 5).await;
+    assert_eq!(
+        page_keys(&rest.expect("page")),
+        (vec![], vec![], false),
+        "paging: nothing after the last row"
+    );
+    let whole = store.pending_notices().await.expect("pending");
+    assert_eq!(
+        page_keys(&whole),
+        (
+            vec![
+                key(&first, 0),
+                key(&first, 2),
+                key(&second, 0),
+                key(&second, 1)
+            ],
+            vec![key(bad, 0)],
+            false
+        ),
+        "paging: the one-read view agrees"
+    );
 }
 
 async fn source_claims_hold_across_leases<S: ScheduleStore + DeliveryJournal>(store: S) {

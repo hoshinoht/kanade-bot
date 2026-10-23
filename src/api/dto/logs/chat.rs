@@ -61,6 +61,10 @@ pub struct ChatRow {
     pub prompt_tokens: Option<u64>,
     #[cfg_attr(test, ts(optional = nullable))]
     pub completion_tokens: Option<u64>,
+    /// The part of `prompt_tokens` served from the upstream prompt cache,
+    /// summed over the rounds that reported it; null = not reported.
+    #[cfg_attr(test, ts(optional = nullable))]
+    pub cached_tokens: Option<u64>,
     /// Sum of the rounds' reported reasoning counts; null = unknown.
     #[cfg_attr(test, ts(optional = nullable))]
     pub reasoning_tokens: Option<u64>,
@@ -121,6 +125,10 @@ pub struct ChatRoundFacts {
     pub prompt_tokens: Option<u64>,
     #[cfg_attr(test, ts(optional = nullable))]
     pub completion_tokens: Option<u64>,
+    /// The part of `prompt_tokens` served from the upstream prompt cache;
+    /// null = not reported.
+    #[cfg_attr(test, ts(optional = nullable))]
+    pub cached_tokens: Option<u64>,
     /// The context budget's estimate, completion reserve excluded.
     #[cfg_attr(test, ts(optional = nullable))]
     pub prompt_estimate: Option<u64>,
@@ -291,6 +299,7 @@ pub fn chat_row(names: &Names<'_>, chat: &ChatInteraction) -> ChatRow {
         // Turn totals as logged; counts only, so shown for withheld turns too.
         prompt_tokens: chat.prompt_tokens,
         completion_tokens: chat.completion_tokens,
+        cached_tokens: chat.cached_tokens,
         reasoning_tokens: chat
             .rounds
             .iter()
@@ -428,6 +437,7 @@ fn turn(
             latency_ms: round.latency_ms,
             prompt_tokens: round.prompt_tokens,
             completion_tokens: round.completion_tokens,
+            cached_tokens: round.cached_tokens,
             prompt_estimate: round.prompt_estimate,
             reasoning_content: round
                 .reasoning_content

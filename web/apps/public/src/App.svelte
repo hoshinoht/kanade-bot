@@ -17,23 +17,36 @@
   import { AccountMenu, Freshness, Icon, LoadingState, Masthead, NavDrawer, PHONE_QUERY, pulse, registerServiceWorker, SINGLE_PANE_QUERY, StateNote, ToastRegion, Toaster, type FreshState } from '@kanade/ui';
   import { tick, untrack } from 'svelte';
   import { MediaQuery } from 'svelte/reactivity';
-  import Account, { type AccountTab } from './Account.svelte';
+  import type { AccountTab } from './Account.svelte';
   import Closed from './Closed.svelte';
   import Denied from './Denied.svelte';
   import Ended from './Ended.svelte';
-  import MyRuns from './MyRuns.svelte';
-  import Privacy from './Privacy.svelte';
+  import Lazy from './Lazy.svelte';
   import SignIn from './SignIn.svelte';
   import TopBar from './TopBar.svelte';
-  import BossesPage from './bosses/BossesPage.svelte';
-  import MovePage from './move/MovePage.svelte';
-  import RequestForm from './requests/RequestForm.svelte';
-  import RequestsPage from './requests/RequestsPage.svelte';
   import WeekPage from './week/WeekPage.svelte';
   import { landingOf, safeNext, withoutLoginError } from './landing';
   import { VIEW_ONLY } from './member';
   import { Portal } from './portal.svelte';
   import { Route, type Page } from './route.svelte';
+
+  // Screen-level code splitting (as the admin's `PAGES`): only the Week, the
+  // landing screen, is in the initial bundle; every other screen loads on its
+  // first visit. One promise per screen, so `jump` waits on the very load
+  // Account renders from.
+  function once<T>(load: () => Promise<T>): () => Promise<T> {
+    let loading: Promise<T> | undefined;
+    return () => (loading ??= load());
+  }
+  const PAGES = {
+    account: once(() => import('./Account.svelte')),
+    mine: once(() => import('./MyRuns.svelte')),
+    privacy: once(() => import('./Privacy.svelte')),
+    bosses: once(() => import('./bosses/BossesPage.svelte')),
+    move: once(() => import('./move/MovePage.svelte')),
+    requests: once(() => import('./requests/RequestsPage.svelte')),
+    request: once(() => import('./requests/RequestForm.svelte')),
+  };
 
   const portal = new Portal(landingOf(location.search));
   const route = new Route();
@@ -171,6 +184,8 @@
   /** The account menu's Account and Appearance: open that tab and focus its heading. */
   async function jump(to: AccountTab, id: string) {
     route.go('/account', to === 'profile' ? {} : { tab: to });
+    // Account's first visit renders once its chunk arrives (a failed load shows Lazy's notice).
+    await PAGES.account().catch(() => null);
     await tick();
     const target = document.getElementById(id);
     target?.focus({ preventScroll: true });
@@ -326,7 +341,9 @@
   {/if}
   <main class="shell" class:shell--run={phoneRun !== null} id="main" tabindex="-1" bind:this={main}>
     {#if page === 'privacy'}
-      <Privacy {identity} {zone} {phone} />
+      <Lazy loader={PAGES.privacy}>
+        {#snippet children(Privacy)}<Privacy {identity} {zone} {phone} />{/snippet}
+      </Lazy>
     {:else if screen.kind === 'loading'}
       <div class="gate">
         <section class="card notice notice--loading" aria-busy="true" aria-labelledby="loading-title">
@@ -367,58 +384,80 @@
         notice={offlineNotice}
       />
     {:else if page === 'mine'}
-      <MyRuns
-        {weeks}
-        runs={portal.runs}
-        timings={portal.timings}
-        {route}
-        session={screen.session}
-        current={portal.devices?.sessions.find((s) => s.current) ?? null}
-        {toaster}
-        {phone}
-        notice={offlineNotice}
-      />
+      <Lazy loader={PAGES.mine}>
+        {#snippet children(MyRuns)}
+          <MyRuns
+            {weeks}
+            runs={portal.runs}
+            timings={portal.timings}
+            {route}
+            session={screen.session}
+            current={portal.devices?.sessions.find((s) => s.current) ?? null}
+            {toaster}
+            {phone}
+            notice={offlineNotice}
+          />
+        {/snippet}
+      </Lazy>
     {:else if page === 'bosses'}
-      <BossesPage bosses={portal.bosses} {route} {phone} onback={(step) => (bossBack = step)} />
+      <Lazy loader={PAGES.bosses}>
+        {#snippet children(BossesPage)}<BossesPage bosses={portal.bosses} {route} {phone} onback={(step) => (bossBack = step)} />{/snippet}
+      </Lazy>
     {:else if page === 'move'}
-      <MovePage
-        {route}
-        runs={portal.runs}
-        {weeks}
-        session={screen.session}
-        current={portal.devices?.sessions.find((s) => s.current) ?? null}
-        {toaster}
-        {phone}
-        {zone}
-      />
+      <Lazy loader={PAGES.move}>
+        {#snippet children(MovePage)}
+          <MovePage
+            {route}
+            runs={portal.runs}
+            {weeks}
+            session={screen.session}
+            current={portal.devices?.sessions.find((s) => s.current) ?? null}
+            {toaster}
+            {phone}
+            {zone}
+          />
+        {/snippet}
+      </Lazy>
     {:else if page === 'requests'}
-      <RequestsPage requests={portal.requests} {weeks} timings={portal.timings} {route} {toaster} {phone} {timeZone} notice={offlineNotice} />
+      <Lazy loader={PAGES.requests}>
+        {#snippet children(RequestsPage)}
+          <RequestsPage requests={portal.requests} {weeks} timings={portal.timings} {route} {toaster} {phone} {timeZone} notice={offlineNotice} />
+        {/snippet}
+      </Lazy>
     {:else if page === 'request'}
-      <RequestForm
-        requests={portal.requests}
-        {weeks}
-        timings={portal.timings}
-        {route}
-        session={screen.session}
-        current={portal.devices?.sessions.find((s) => s.current) ?? null}
-        {toaster}
-        {phone}
-        notice={offlineNotice}
-      />
+      <Lazy loader={PAGES.request}>
+        {#snippet children(RequestForm)}
+          <RequestForm
+            requests={portal.requests}
+            {weeks}
+            timings={portal.timings}
+            {route}
+            session={screen.session}
+            current={portal.devices?.sessions.find((s) => s.current) ?? null}
+            {toaster}
+            {phone}
+            notice={offlineNotice}
+          />
+        {/snippet}
+      </Lazy>
     {:else}
-      <Account
-        {portal}
-        session={screen.session}
-        current={portal.devices?.sessions.find((s) => s.current) ?? null}
-        {toaster}
-        {phone}
-        {zone}
-        {timeZone}
-        {tab}
-        {route}
-        ontab={showTab}
-        notice={offlineNotice}
-      />
+      <Lazy loader={PAGES.account}>
+        {#snippet children(Account)}
+          <Account
+            {portal}
+            session={screen.session}
+            current={portal.devices?.sessions.find((s) => s.current) ?? null}
+            {toaster}
+            {phone}
+            {zone}
+            {timeZone}
+            {tab}
+            {route}
+            ontab={showTab}
+            notice={offlineNotice}
+          />
+        {/snippet}
+      </Lazy>
     {/if}
   </main>
   <ToastRegion {toaster} />

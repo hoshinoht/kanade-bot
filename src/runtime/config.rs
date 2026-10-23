@@ -37,7 +37,7 @@ pub use backup::{
 pub use character_data::{CharacterDataSettings, SCOUTER_URL_KEY};
 pub use discord::DiscordSettings;
 pub use file::{Resolved, annotate, resolve};
-pub use guild::GuildSettings;
+pub use guild::{GuildSettings, guild_id};
 pub use layout::{
     CHARACTER_DATA_DB_PATH as CHARACTER_DATA_DB_PATH_KEY, FileSettings, StoreSettings,
 };

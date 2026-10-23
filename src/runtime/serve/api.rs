@@ -111,9 +111,11 @@ fn access(guild: &GuildSettings) -> GuildAccess {
     )
 }
 
+/// The model stack of `models`, its `prompt_cache_key`s scoped to `guild_id`.
 pub(super) fn model_stack(
     models: &ModelSettings,
     settings: &RuntimeSettings,
+    guild_id: u64,
 ) -> Result<Option<Arc<ModelStack>>, Error> {
     if models.base_url.is_none() {
         return Ok(None);
@@ -127,6 +129,7 @@ pub(super) fn model_stack(
         roles: ModelRoles::from(&settings.models),
         permits: u32::from(models.permits),
         capabilities: models.capabilities.clone(),
+        cache_scope: Some(guild_id),
     };
     let random = Arc::new(XorShift::new(uuid::Uuid::new_v4().as_u64_pair().0));
     match build_with_groups(setup, &models.groups, random) {
@@ -187,7 +190,7 @@ pub(super) async fn compose_with(
     let (models, model_tasks) = match shared {
         Some(stack) => (Some(stack), ModelTasks::default()),
         None => {
-            let models = model_stack(&config.models, &settings)?;
+            let models = model_stack(&config.models, &settings, config.guild.guild_id)?;
             let tasks =
                 model_report::start(models.as_ref(), sources, settings.models.context.clone());
             (models, tasks)

@@ -81,6 +81,7 @@ fn over_budget() -> RewriteOutcome {
             usage: Some(kanade::infrastructure::llm::Usage {
                 prompt_tokens: 300,
                 completion_tokens: 112,
+                cached_tokens: Some(256),
             }),
             reply: Some("Waku waku!".into()),
             reservation: Some(287),
@@ -241,8 +242,13 @@ async fn a_pregen_over_budget_logs_its_code_and_usage_and_stores_nothing() {
     assert_eq!(row.verdict, "unavailable");
     assert_eq!(row.code.as_deref(), Some("budget_exceeded"));
     assert_eq!(
-        (row.prompt_tokens, row.completion_tokens, row.reservation),
-        (Some(300), Some(112), Some(287)),
+        (
+            row.prompt_tokens,
+            row.completion_tokens,
+            row.cached_tokens,
+            row.reservation
+        ),
+        (Some(300), Some(112), Some(256), Some(287)),
         "used 412 > reserved 287"
     );
     assert_eq!(row.reply.as_deref(), Some("Waku waku!"));

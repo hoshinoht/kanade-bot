@@ -2,10 +2,11 @@
 //! result content is elided, until the whole request plus the completion
 //! reserve fits the model context.
 
+use serde::{Serialize, Serializer};
 use serde_json::{Value, json};
 
 use super::runs;
-use crate::extract::prompt::estimate_tokens;
+use crate::extract::prompt::{TokenCounts as Counts, estimate_tokens};
 use crate::infrastructure::llm::Message;
 
 /// The protected current turn alone does not fit the model context.
@@ -51,25 +52,20 @@ fn tool_suffix(messages: &[Message]) -> String {
 
 /// Elide one old result while keeping every assistant `tool_call` paired with
 /// a tool message. The latest tool round stays intact so the model can finish
-/// the work it most recently requested.
-fn elide_oldest_tool_result(messages: &mut [Message], current_user: usize) -> bool {
-    let Some(latest_round) = messages
+/// the work it most recently requested. Returns the elided message's index.
+fn elide_oldest_tool_result(messages: &mut [Message], current_user: usize) -> Option<usize> {
+    let latest_round = messages
         .iter()
-        .rposition(|message| matches!(message, Message::Assistant { tool_calls, .. } if !tool_calls.is_empty()))
-    else {
-        return false;
-    };
-    messages[current_user.saturating_add(1)..latest_round]
-        .iter_mut()
-        .find_map(|message| match message {
-            Message::Tool { content, .. } if content != ELIDED_TOOL_RESULT => Some(content),
-            _ => None,
-        })
-        .map(|content| {
-            content.clear();
-            content.push_str(ELIDED_TOOL_RESULT);
-        })
-        .is_some()
+        .rposition(|message| matches!(message, Message::Assistant { tool_calls, .. } if !tool_calls.is_empty()))?;
+    let from = current_user.saturating_add(1);
+    let at = from + messages[from..latest_round].iter().position(
+        |message| matches!(message, Message::Tool { content, .. } if content != ELIDED_TOOL_RESULT),
+    )?;
+    if let Message::Tool { content, .. } = &mut messages[at] {
+        content.clear();
+        content.push_str(ELIDED_TOOL_RESULT);
+    }
+    Some(at)
 }
 
 /// A request that fits: the messages to send and their estimate.
@@ -81,10 +77,19 @@ pub struct Budgeted {
     pub estimate: usize,
 }
 
+/// `messages` then `reminder` as one JSON array, without copying them.
+struct Outgoing<'a>(&'a [Message], &'a Message);
+
+impl Serialize for Outgoing<'_> {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_seq(self.0.iter().chain([self.1]))
+    }
+}
+
 /// What the runner reserves for `outgoing` beside `schemas`, before the
 /// completion: the encoded request's bytes / 4 (multi-byte text such as CJK
 /// costs it more than [`estimate_tokens`] says).
-fn runner_tokens(outgoing: &[Message], schemas: &str) -> usize {
+fn runner_tokens(outgoing: &Outgoing<'_>, schemas: &str) -> usize {
     serde_json::to_vec(outgoing)
         .map_or(usize::MAX, |bytes| bytes.len())
         .saturating_add(schemas.len())
@@ -120,26 +125,33 @@ pub fn budgeted(
     let reminder = Message::User {
         content: reminder.to_owned(),
     };
+    // The request text is every message and the reminder, then the tool
+    // calls, joined by blank lines; its counts are kept per piece and summed
+    // so a trim step recounts only what it changed.
+    let reminder_counts = Counts::of(reminder.text());
+    let mut counts: Vec<Counts> = messages.iter().map(|m| Counts::of(m.text())).collect();
+    let mut suffix_counts = Counts::of(&tool_suffix(messages));
     loop {
-        let mut outgoing = messages.clone();
-        outgoing.push(reminder.clone());
-        let material: Vec<&str> = outgoing.iter().map(Message::text).collect();
-        let request = estimate_tokens(&format!(
-            "{}\n\n{}",
-            material.join("\n\n"),
-            tool_suffix(messages)
-        ));
+        let request = counts
+            .iter()
+            .fold(reminder_counts + suffix_counts, |sum, &each| sum + each)
+            .with_seams(messages.len() + 1)
+            .tokens();
         let estimate = request + schema_tokens;
         let total = estimate + completion_reserve;
         let has_block = matches!(
             messages.first(),
             Some(Message::System { content }) if runs::has_block(content, run_context)
         );
+        let encoded = Outgoing(messages.as_slice(), &reminder);
         let over_call = || {
-            estimate.max(runner_tokens(&outgoing, schemas)) + completion_reserve
+            estimate.max(runner_tokens(&encoded, schemas)) + completion_reserve
                 > runs::call_window(model_context_tokens)
         };
         if total <= model_context_tokens && !(has_block && over_call()) {
+            let mut outgoing = Vec::with_capacity(messages.len() + 1);
+            outgoing.extend_from_slice(messages);
+            outgoing.push(reminder);
             return Ok(Budgeted {
                 messages: outgoing,
                 estimate,
@@ -148,14 +160,22 @@ pub fn budgeted(
         if let Some(Message::System { content }) = messages.first_mut()
             && runs::trim_block(content, run_context)
         {
+            counts[0] = Counts::of(content);
             continue;
         }
         if current_user > 1 {
-            messages.remove(1);
+            let removed = messages.remove(1);
+            counts.remove(1);
+            if let Message::Assistant { tool_calls, .. } = &removed
+                && !tool_calls.is_empty()
+            {
+                suffix_counts = Counts::of(&tool_suffix(messages));
+            }
             current_user -= 1;
             continue;
         }
-        if elide_oldest_tool_result(messages, current_user) {
+        if let Some(at) = elide_oldest_tool_result(messages, current_user) {
+            counts[at] = Counts::of(ELIDED_TOOL_RESULT);
             continue;
         }
         return Err(ContextBudgetError {
@@ -335,5 +355,98 @@ mod tests {
         assert_eq!(tool_result(&messages, "a1"), ELIDED_TOOL_RESULT);
         assert_eq!(tool_result(&messages, "b1"), bulk('b'));
         assert_paired(&messages);
+    }
+
+    const VOICE: &str = "voice 12345";
+
+    /// The estimate as the request text joined whole.
+    fn joined_estimate(messages: &[Message]) -> usize {
+        let mut material: Vec<&str> = messages.iter().map(Message::text).collect();
+        material.push(VOICE);
+        estimate_tokens(&format!(
+            "{}\n\n{}",
+            material.join("\n\n"),
+            tool_suffix(messages)
+        )) + estimate_tokens("[]")
+    }
+
+    /// Ids, multi-byte text, empty assistant turns and a tool round in prior
+    /// history, whose calls leave the tool-call suffix when it is dropped.
+    fn mixed() -> Vec<Message> {
+        let mut messages = vec![Message::System {
+            content: "system: Lotus 123456789012345678 ✨".into(),
+        }];
+        messages.extend(round("call_100000001", "hist 9876543210 カンナ".into()));
+        messages.push(user("Alvin <@123456789012345678>: and now?"));
+        messages.extend(round("call_200000002", "Lotus 1234567 at 20:30".into()));
+        messages.extend(round("call_300000003", "Will 55555 at 21:00".into()));
+        messages
+    }
+
+    #[test]
+    fn counts_add_over_blank_line_joins() {
+        let texts = [
+            "",
+            "abc",
+            "123456789012345678",
+            "a 1234 b 12345 c ✨カンナ 99999999x",
+            ELIDED_TOOL_RESULT,
+        ];
+        let summed = texts
+            .iter()
+            .map(|text| Counts::of(text))
+            .fold(Counts::default(), |sum, counts| sum + counts)
+            .with_seams(texts.len() - 1);
+        assert_eq!(summed, Counts::of(&texts.join("\n\n")));
+    }
+
+    #[test]
+    fn the_joined_estimate_is_the_fit_boundary() {
+        let reserve = 50;
+        let full = joined_estimate(&mixed());
+        // Summing per-message estimates would truncate each piece and move
+        // the boundary.
+        let suffix = tool_suffix(&mixed());
+        let pieces = mixed();
+        let pieces = pieces
+            .iter()
+            .map(Message::text)
+            .chain([VOICE, suffix.as_str(), "[]"]);
+        assert!(pieces.map(estimate_tokens).sum::<usize>() < full);
+
+        let mut messages = mixed();
+        let fits = budgeted(&mut messages, "[]", VOICE, full + reserve, reserve, "").expect("fits");
+        assert_eq!(fits.estimate, full);
+        assert!(messages == mixed(), "nothing trimmed at the boundary");
+
+        let mut messages = mixed();
+        let fits =
+            budgeted(&mut messages, "[]", VOICE, full + reserve - 1, reserve, "").expect("fits");
+        assert_eq!(
+            messages.len(),
+            mixed().len() - 1,
+            "one history turn dropped"
+        );
+        assert_eq!(fits.estimate, joined_estimate(&messages));
+    }
+
+    #[test]
+    fn every_trim_step_estimates_the_joined_request() {
+        let reserve = 50;
+        for window in 0..=joined_estimate(&mixed()) + reserve {
+            let mut messages = mixed();
+            match budgeted(&mut messages, "[]", VOICE, window, reserve, "") {
+                Ok(fits) => {
+                    assert_eq!(fits.estimate, joined_estimate(&messages), "window {window}");
+                    assert!(fits.estimate + reserve <= window);
+                    assert!(fits.messages[..messages.len()] == messages[..]);
+                    assert_eq!(fits.messages.last().map(Message::text), Some(VOICE));
+                }
+                Err(error) => {
+                    assert_eq!(error.estimate, joined_estimate(&messages) + reserve);
+                    assert!(error.estimate > window);
+                }
+            }
+        }
     }
 }

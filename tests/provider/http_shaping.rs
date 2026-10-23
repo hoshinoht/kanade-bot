@@ -51,6 +51,7 @@ fn structured(model: &str) -> ChatRequest {
             seed: Some(7),
             top_p: Some(0.5),
         }),
+        prompt_cache_key: None,
     }
 }
 
@@ -85,10 +86,11 @@ fn messages(system: &str) -> Value {
 async fn kanata_metadata_model_gets_every_supported_field() {
     let stub = Stub::start(gateway(kanata_models(), ANSWER)).await;
     let provider = provider(format!("{}/v1/", stub.url()), BTreeMap::new());
-    let completed = runner(provider)
-        .complete(&structured("sumi-structured"))
-        .await
-        .unwrap();
+    let keyed = ChatRequest {
+        prompt_cache_key: Some("kanade-extraction-37f96542b663".into()),
+        ..structured("sumi-structured")
+    };
+    let completed = runner(provider).complete(&keyed).await.unwrap();
     assert_eq!(completed.content.as_deref(), Some(ANSWER));
 
     let chats = stub.chat_requests();
@@ -108,7 +110,8 @@ async fn kanata_metadata_model_gets_every_supported_field() {
             "temperature": 0.25,
             "seed": 7,
             "top_p": 0.5,
-            "reasoning_effort": "high"
+            "reasoning_effort": "high",
+            "prompt_cache_key": "kanade-extraction-37f96542b663"
         })
     );
     let listings: Vec<_> = stub

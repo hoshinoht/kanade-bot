@@ -8,6 +8,7 @@
   import type { ChatTurn, RoundGuardrail } from '@kanade/api-types';
   import { StatusChip } from '@kanade/ui';
   import { took } from '../logs/format';
+  import TokenUsage from '../logs/TokenUsage.svelte';
   import { callTone, routeLabel, routeTone } from './facts';
   import { rounds } from './transcript';
   import { short, WITHHELD } from './trace';
@@ -36,6 +37,9 @@
           <div><dt class="cap">Finish</dt><dd class="mono">{r.finish || '—'}</dd></div>
           <div><dt class="cap">Requested tools</dt><dd class="mono">{r.requested_tools.join(', ') || 'none'}</dd></div>
           <div><dt class="cap">Guardrail</dt><dd>{flags(guard(r.round))}</dd></div>
+          {#if r.prompt_tokens != null || r.completion_tokens != null}
+            <div><dt class="cap">Tokens</dt><dd class="mono"><TokenUsage prompt={r.prompt_tokens} cached={r.cached_tokens} completion={r.completion_tokens} reasoning={r.reasoning_tokens} /></dd></div>
+          {/if}
           {#if r.request_ids.length}
             <div><dt class="cap">Request ids</dt><dd class="mono">{r.request_ids.join(', ')}</dd></div>
           {/if}

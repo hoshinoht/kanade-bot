@@ -308,6 +308,7 @@ pub(crate) fn extraction(id: &str, at: DateTime<Utc>) -> ExtractionLog {
         refusals: Vec::new(),
         prompt_tokens: None,
         completion_tokens: None,
+        cached_tokens: None,
         prompt_estimate: None,
         request_ids: Vec::new(),
         session_id: None,
@@ -330,6 +331,7 @@ fn round(model: &str, tools: &[&str]) -> ChatRound {
         clean: false,
         prompt_tokens: None,
         completion_tokens: None,
+        cached_tokens: None,
         prompt_estimate: None,
         request_ids: Vec::new(),
     }
@@ -355,6 +357,7 @@ pub(crate) fn chat(id: &str, at: DateTime<Utc>) -> ChatInteraction {
         tools_ms: Some(100),
         prompt_tokens: Some(1000),
         completion_tokens: Some(40),
+        cached_tokens: None,
         rounds: vec![round("kanata/chat", &[])],
         persona: None,
         profile: None,
@@ -821,6 +824,7 @@ async fn token_usage_round_trips_and_pairs_are_whole<S: ModelLogStore>(store: S)
     let mut reported = extraction("x-usage", utc(20, 12, 0));
     reported.prompt_tokens = Some(1200);
     reported.completion_tokens = Some(80);
+    reported.cached_tokens = Some(1024);
     reported.prompt_estimate = Some(1100);
     let unreported = extraction("x-none", utc(20, 11, 0));
     let mut estimated = extraction("x-estimate", utc(20, 10, 0));
@@ -837,6 +841,7 @@ async fn token_usage_round_trips_and_pairs_are_whole<S: ModelLogStore>(store: S)
         (
             log.prompt_tokens,
             log.completion_tokens,
+            log.cached_tokens,
             log.prompt_estimate,
         )
     };
@@ -852,19 +857,25 @@ async fn token_usage_round_trips_and_pairs_are_whole<S: ModelLogStore>(store: S)
         assert_eq!(
             page.items.iter().map(usage).collect::<Vec<_>>(),
             [
-                (Some(1200), Some(80), Some(1100)),
-                (None, None, None),
-                (None, None, Some(700)),
+                (Some(1200), Some(80), Some(1024), Some(1100)),
+                (None, None, None, None),
+                (None, None, None, Some(700)),
             ],
             "usage: extraction list keeps usage (omit_bodies {omit_bodies})"
         );
     }
-    for (n, (prompt, completion)) in [(Some(5), None), (None, Some(5))].into_iter().enumerate() {
+    let halves = [
+        (Some(5), None, None),
+        (None, Some(5), None),
+        (None, None, Some(5)),
+    ];
+    for (n, (prompt, completion, cached)) in halves.into_iter().enumerate() {
         let mut half = extraction(&format!("x-half-{n}"), utc(20, 13, 0));
         half.prompt_tokens = prompt;
         half.completion_tokens = completion;
+        half.cached_tokens = cached;
         refused_for(
-            "usage: a half extraction pair is refused",
+            "usage: a half extraction pair or a cached count without it is refused",
             store.record_extraction(half.clone()).await,
         );
         assert_eq!(store.load_extraction(&half.id).await.expect("load"), None);
@@ -876,10 +887,12 @@ async fn token_usage_round_trips_and_pairs_are_whole<S: ModelLogStore>(store: S)
     );
 
     let mut interaction = chat("c-usage", utc(20, 12, 0));
+    interaction.cached_tokens = Some(896);
     interaction.rounds = vec![
         ChatRound {
             prompt_tokens: Some(900),
             completion_tokens: Some(40),
+            cached_tokens: Some(896),
             prompt_estimate: Some(950),
             ..round("kanata/chat", &[])
         },
@@ -907,11 +920,12 @@ async fn token_usage_round_trips_and_pairs_are_whole<S: ModelLogStore>(store: S)
         [interaction],
         "usage: chat round list round trip"
     );
-    for (n, (prompt, completion)) in [(Some(5), None), (None, Some(5))].into_iter().enumerate() {
+    for (n, (prompt, completion, cached)) in halves.into_iter().enumerate() {
         let mut half = chat(&format!("c-half-{n}"), utc(20, 13, 0));
         half.rounds.push(ChatRound {
             prompt_tokens: prompt,
             completion_tokens: completion,
+            cached_tokens: cached,
             ..round("kanata/chat", &[])
         });
         refused_for(
@@ -1370,6 +1384,7 @@ pub(crate) fn rewrite(id: &str, at: DateTime<Utc>) -> RewriteLog {
         reasoning: Some("low".into()),
         prompt_tokens: Some(210),
         completion_tokens: Some(9),
+        cached_tokens: Some(192),
         reasoning_tokens: Some(4),
         reservation: Some(282),
         budget: None,
@@ -1400,7 +1415,11 @@ async fn rewrite_logs_round_trip_and_refuse_bad_rows<S: RewriteLogStore>(store: 
     failed.line = None;
     failed.reasoning_tokens = None;
     // Refused before sending: the reservation against the call budget.
-    (failed.prompt_tokens, failed.completion_tokens) = (None, None);
+    (
+        failed.prompt_tokens,
+        failed.completion_tokens,
+        failed.cached_tokens,
+    ) = (None, None, None);
     (failed.reservation, failed.budget) = (Some(17_000), Some(16_384));
     store.record_rewrite(failed.clone()).await.expect("record");
     let loaded = store.load_rewrite("r-1").await.expect("load").expect("row");
@@ -1415,10 +1434,13 @@ async fn rewrite_logs_round_trip_and_refuse_bad_rows<S: RewriteLogStore>(store: 
     assert_eq!(store.load_rewrite("r-2").await.expect("load"), Some(failed));
     assert_eq!(store.load_rewrite("r-9").await.expect("load"), None);
     type Spoil = fn(&mut RewriteLog);
-    let bad: [(&str, Spoil); 9] = [
+    let bad: [(&str, Spoil); 10] = [
         ("duplicate id", |_| {}),
         ("verdict", |log| log.verdict = "sent".into()),
         ("half pair", |log| log.completion_tokens = None),
+        ("cached without a pair", |log| {
+            (log.prompt_tokens, log.completion_tokens) = (None, None)
+        }),
         ("empty code", |log| log.code = Some(String::new())),
         ("long context", |log| log.context = Some("c".repeat(201))),
         ("long reply", |log| {

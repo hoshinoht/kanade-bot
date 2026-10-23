@@ -191,6 +191,14 @@ const MIGRATIONS: &[Migration] = &[
         version: 44,
         sql: include_str!("migrations/0044_member_tease.sql"),
     },
+    Migration {
+        version: 45,
+        sql: include_str!("migrations/0045_live_leases.sql"),
+    },
+    Migration {
+        version: 46,
+        sql: include_str!("migrations/0046_cached_tokens.sql"),
+    },
 ];
 
 /// The migration that adds `change_fields`, which is backfilled from the
@@ -348,7 +356,7 @@ mod tests {
             .connect()
             .await
             .expect("reopen");
-        assert_eq!(verify(&mut conn).await.expect("verified ledger"), 44);
+        assert_eq!(verify(&mut conn).await.expect("verified ledger"), 46);
         conn
     }
 
@@ -402,7 +410,7 @@ mod tests {
             "v35 refuses the new kind",
         )
         .await;
-        assert_eq!(apply(&mut conn).await.expect("0036"), 44);
+        assert_eq!(apply(&mut conn).await.expect("0036"), 46);
         let kept: Vec<String> = sqlx::query_scalar(
             "SELECT seq || '|' || at || '|' || realm || '|' || event || '|' \
              || coalesce(actor, '-') || '|' || coalesce(method, '-') || '|' \
@@ -474,7 +482,7 @@ mod tests {
         )
         .await
         .expect("v28 row");
-        assert_eq!(apply(&mut conn).await.expect("0029"), 44);
+        assert_eq!(apply(&mut conn).await.expect("0029"), 46);
         let old: Option<String> =
             sqlx::query_scalar("SELECT prompt FROM rewrites WHERE id = 'w-1'")
                 .fetch_one(&mut conn)
@@ -523,7 +531,7 @@ mod tests {
         )
         .await
         .expect("v27 rows");
-        assert_eq!(apply(&mut conn).await.expect("0028"), 44);
+        assert_eq!(apply(&mut conn).await.expect("0028"), 46);
         // Each row's columns, joined, as 0027 stored them.
         let kept: Vec<String> = sqlx::query_scalar(
             "SELECT id || '|' || stage || '|' || verdict || '|' || coalesce(rule, '-') || '|' \
@@ -593,7 +601,7 @@ mod tests {
         )
         .await
         .expect("v23 rows");
-        assert_eq!(apply(&mut conn).await.expect("additive"), 44);
+        assert_eq!(apply(&mut conn).await.expect("additive"), 46);
         let old: (
             Option<String>,
             Option<String>,
@@ -645,7 +653,7 @@ mod tests {
         let mut conn = memory_at(20, false).await;
         let insert = "INSERT INTO extractions (id, at, member_ids, model, reasoning, prompt, raw_response, request_count, outcome, guardrail, message_ids, proposal_ids";
         conn.execute(format!("{insert}) VALUES ('old', '2026-09-01T00:00:00+00:00', '[]', 'm', 'low', 'p', 'r', 1, 'unknown', '{{}}', '[]', '[]')").as_str()).await.expect("old row");
-        assert_eq!(apply(&mut conn).await.expect("additive"), 44);
+        assert_eq!(apply(&mut conn).await.expect("additive"), 46);
         let old: (String, Option<String>, Option<i64>) = sqlx::query_as("SELECT reasoning, reasoning_content, reasoning_tokens FROM extractions WHERE id = 'old'").fetch_one(&mut conn).await.expect("old row preserved");
         assert_eq!(old, ("low".into(), None, None));
         for (id, text, count, valid) in [
@@ -680,7 +688,7 @@ mod tests {
         )
         .await
         .expect("v14 rows");
-        assert_eq!(apply(&mut conn).await.expect("remaining migrations"), 44);
+        assert_eq!(apply(&mut conn).await.expect("remaining migrations"), 46);
         let kept = "SELECT COUNT(*) FROM extractions e JOIN extraction_members m \
                     ON m.extraction_id = e.id WHERE e.id = 'x-1' AND e.refusals = '[]'";
         assert_eq!(count(&mut conn, kept).await, 1);
@@ -727,7 +735,7 @@ mod tests {
         .await
         .expect("v17 cards");
 
-        assert_eq!(apply(&mut conn).await.expect("v18"), 44);
+        assert_eq!(apply(&mut conn).await.expect("v18"), 46);
         let rows: Vec<(String, Option<String>)> =
             sqlx::query_as("SELECT kind, heading FROM reminder_cards ORDER BY dedupe_key")
                 .fetch_all(&mut conn)
@@ -811,7 +819,7 @@ mod tests {
         .await
         .expect("v18 rows");
 
-        assert_eq!(apply(&mut conn).await.expect("v19"), 44);
+        assert_eq!(apply(&mut conn).await.expect("v19"), 46);
         let usage = "prompt_tokens IS NULL AND completion_tokens IS NULL \
             AND prompt_estimate IS NULL";
         let unreported: i64 = sqlx::query_scalar(&format!(
@@ -946,7 +954,7 @@ mod tests {
         )
         .await
         .expect("v15 rows");
-        assert_eq!(apply(&mut conn).await.expect("0016+"), 44);
+        assert_eq!(apply(&mut conn).await.expect("0016+"), 46);
         let row = sqlx::query(
             "SELECT c.persona, c.profile, c.profile_source, c.error_code, r.route, r.clean, \
              r.model FROM chat_interactions c JOIN chat_rounds r ON r.interaction_id = c.id",
@@ -1017,7 +1025,7 @@ mod tests {
         )
         .await
         .expect("v21 rows");
-        assert_eq!(apply(&mut conn).await.expect("0022"), 44);
+        assert_eq!(apply(&mut conn).await.expect("0022"), 46);
         let rows: Vec<(String, String, i64, i64, String, Option<String>)> = sqlx::query_as(
             "SELECT id, outcome, clean_retry, withheld, guardrail, persona \
              FROM chat_interactions ORDER BY id",
@@ -1123,7 +1131,7 @@ mod tests {
             .fetch_one(&mut conn)
             .await
             .expect("before");
-        assert_eq!(apply(&mut conn).await.expect("0041"), 44);
+        assert_eq!(apply(&mut conn).await.expect("0041"), 46);
         let after: String = sqlx::query_scalar(picks)
             .fetch_one(&mut conn)
             .await
@@ -1209,7 +1217,7 @@ mod tests {
             .fetch_one(&mut conn)
             .await
             .expect("before");
-        assert_eq!(apply(&mut conn).await.expect("0042"), 44);
+        assert_eq!(apply(&mut conn).await.expect("0042"), 46);
         let after: String = sqlx::query_scalar(kept)
             .fetch_one(&mut conn)
             .await
@@ -1329,7 +1337,7 @@ mod tests {
         )
         .await
         .expect("v42 rows");
-        assert_eq!(apply(&mut conn).await.expect("0043"), 44);
+        assert_eq!(apply(&mut conn).await.expect("0043"), 46);
         let kept = "SELECT (SELECT heading || '|' || coalesce(slots, '-') FROM reminder_cards) \
                     || ';' || (SELECT line || '|' || coalesce(slots, '-') FROM header_overrides)";
         let after: String = sqlx::query_scalar(kept)
@@ -1368,7 +1376,7 @@ mod tests {
         conn.execute("INSERT INTO members (user_id, display_name, aliases) VALUES ('200', 'Alice', '[\"ali\"]')")
             .await
             .expect("v43 row");
-        assert_eq!(apply(&mut conn).await.expect("0044"), 44);
+        assert_eq!(apply(&mut conn).await.expect("0044"), 46);
         let kept: String = sqlx::query_scalar(
             "SELECT display_name || '|' || aliases || '|' || tease_ok || '|' \
              || coalesce(running_joke, '-') FROM members",
@@ -1402,12 +1410,80 @@ mod tests {
         no_fk_violations(&mut conn).await;
     }
 
+    /// 0045 indexes the live leases, so start-up recovery's orphaning
+    /// update finds them without scanning every ended lease.
+    #[tokio::test]
+    async fn migration_45_indexes_live_leases() {
+        let mut conn = memory_at(44, true).await;
+        assert_eq!(apply(&mut conn).await.expect("0045"), 46);
+        let plan: Vec<String> = sqlx::query(
+            "EXPLAIN QUERY PLAN UPDATE maintenance_leases SET lifecycle = 'orphaned', \
+             orphaned_at = 'now' WHERE lifecycle = 'live'",
+        )
+        .fetch_all(&mut conn)
+        .await
+        .expect("plan")
+        .iter()
+        .map(|row| row.get("detail"))
+        .collect();
+        assert!(
+            plan.iter()
+                .any(|step| step.contains("INDEX maintenance_leases_live")),
+            "{plan:?}"
+        );
+    }
+
+    /// 0046 adds a nullable, non-negative cached count beside every stored
+    /// prompt count; older rows read NULL (not reported).
+    #[tokio::test]
+    async fn migration_46_adds_cached_tokens() {
+        let mut conn = memory_at(45, true).await;
+        conn.execute(
+            "INSERT INTO rewrites (id, at, kind, stage, context, verdict, latency_ms, model, \
+             prompt_tokens, completion_tokens, seed) VALUES ('w-1', \
+             '2026-09-01T00:00:00.000000+00:00', 'digest', 'catchup', 'week', 'accepted', 12, \
+             'kanata/rewrite', 5, 2, 'Raid at 9!')",
+        )
+        .await
+        .expect("v45 rewrite row");
+        assert_eq!(apply(&mut conn).await.expect("0046"), 46);
+        let old: Option<i64> =
+            sqlx::query_scalar("SELECT cached_tokens FROM rewrites WHERE id = 'w-1'")
+                .fetch_one(&mut conn)
+                .await
+                .expect("old row");
+        assert_eq!(old, None);
+        for table in [
+            "extractions",
+            "chat_interactions",
+            "chat_rounds",
+            "rewrites",
+        ] {
+            let columns: Vec<String> = sqlx::query_scalar(&format!(
+                "SELECT name FROM pragma_table_info('{table}') WHERE name = 'cached_tokens'"
+            ))
+            .fetch_all(&mut conn)
+            .await
+            .expect("columns");
+            assert_eq!(columns, ["cached_tokens"], "{table}");
+        }
+        refused(
+            &mut conn,
+            "INSERT INTO rewrites (id, at, kind, stage, verdict, seed, cached_tokens) VALUES \
+             ('w-2', '2026-09-01T00:00:00.000000+00:00', 'digest', 'catchup', 'accepted', \
+             'Raid at 9!', -1)",
+            "a negative cached count",
+        )
+        .await;
+        no_fk_violations(&mut conn).await;
+    }
+
     /// Shipped migrations are frozen byte for byte: a deployed store refuses
     /// to open when an applied migration's checksum changes (a comment edit
     /// once took production down). Append new versions; never edit old ones.
     #[test]
     fn shipped_migrations_never_change() {
-        const SHIPPED: [&str; 44] = [
+        const SHIPPED: [&str; 46] = [
             "af627f54aca2d991cbf018410782ad8694b9a2d0ef681424e2e2c426d33884a1",
             "a73db1e033e3093c46928dde2f9bc8d97578b967acbc387d35a5224758237521",
             "4273dc1f916a8b2e36f3479b00aee8f3015ef5aacdd0f5a28d390011a2d7dda8",
@@ -1452,6 +1528,8 @@ mod tests {
             "028dc55d5bf3f405d8a2ce1ba87ef5be4e03190d052fa8955d9b6bdb75c8c125",
             "233c2c8e86bd54cfe686ecd943073175db873fcd37a564c7a38bdd4b90860088",
             "1582b4e4012ddb0b459b93130329b63273921b8e1911b3a9aeda31808a399e83",
+            "5943013276a79a592bf23c15dc10db75495135bdc352c13f50dd381538b37e03",
+            "b28a255ebd55b265a815e7d50121c4f3fb1d0fa4a7b340dc2f91d8175b31635c",
         ];
         // Index `i` holds version `i + 1`.
         for (version, sum) in (1_i64..).zip(SHIPPED) {

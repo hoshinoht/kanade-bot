@@ -66,6 +66,17 @@ describe('chat transcript', () => {
     expect(json.rounds[1].reasoning_content).toBeNull();
     expect(json.rounds[1].reasoning_tokens).toBeNull();
   });
+  it('copies each round’s reported tokens with the cached part, leaving unreported rounds out', () => {
+    const t = turn();
+    Object.assign(t.rounds[0]!, { prompt_tokens: 4667, completion_tokens: 12, cached_tokens: 4480 });
+    Object.assign(t.rounds[1]!, { prompt_tokens: 4700, completion_tokens: 30 });
+    const md = transcriptMarkdown(t, { timeZone: 'UTC' });
+    expect(md).toContain('- Tokens: prompt 4667 (4480 cached), completion 12');
+    expect(md).toContain('- Tokens: prompt 4700, completion 30');
+    const json = JSON.parse(transcriptJson(t, { timeZone: 'UTC' }));
+    expect(json.rounds.map((r: { cached_tokens: number | null }) => r.cached_tokens)).toEqual([4480, null]);
+    expect(transcriptMarkdown(turn(), { timeZone: 'UTC' })).not.toContain('- Tokens:');
+  });
   it('copies the gateway session and each round’s request ids, empty when not recorded', () => {
     const t = turn({ session_id: 'kanade-chat-1a2b3c4d-7' });
     t.rounds[0]!.request_ids = ['kanade-chat-1a2b3c4d-7-1', 'kanade-chat-1a2b3c4d-7-2'];

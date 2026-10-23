@@ -17,7 +17,7 @@ use twilight_model::channel::message::component::ButtonStyle;
 use super::alerts::{AdminAlert, AlertSink};
 use super::cards::redesign::{ButtonId, action_row, button};
 use super::executor::SendOutcome;
-use super::tick::{Delivery, DeliveryError};
+use super::tick::{Delivery, DeliveryError, TickLease};
 use crate::bot::commands::text::{hhmm, weekday_name};
 use crate::bot::ids::{id_text, parse_id};
 use crate::bot::mentions;
@@ -26,8 +26,8 @@ use crate::domain::drafts::ProposalStore;
 use crate::domain::history::Checkpoints;
 use crate::domain::ids::short_id;
 use crate::domain::notify::{
-    ChannelChoice, DeliveryJournal, EffectKind, IntentContent, Lease, NoticeOutbox,
-    NotificationIntent, choose_channel,
+    ChannelChoice, DeliveryJournal, EffectKind, IntentContent, NoticeOutbox, NotificationIntent,
+    choose_channel,
 };
 use crate::domain::ownership::{OwnerRequest, OwnerRequestStatus, OwnerRequestStore};
 use crate::domain::schedule::FixedRun;
@@ -127,7 +127,7 @@ where
     /// [`DeliveryError`] from the journal, as the notice drain.
     pub(super) async fn owner_requests_in(
         &self,
-        lease: &Lease,
+        lease: &TickLease,
         now: DateTime<Utc>,
     ) -> Result<OwnerRequestReport, DeliveryError> {
         let mut report = OwnerRequestReport::default();
@@ -198,7 +198,7 @@ where
     /// Post one open request; `true` once bound.
     async fn post_owner_request(
         &self,
-        lease: &Lease,
+        lease: &TickLease,
         request: &OwnerRequest,
         fixed: &FixedRun,
         now: DateTime<Utc>,

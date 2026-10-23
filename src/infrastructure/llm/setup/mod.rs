@@ -146,6 +146,9 @@ pub struct ModelSetup {
     /// Operator capability declarations per alias, used where the listing
     /// publishes no metadata for it (published metadata wins).
     pub capabilities: BTreeMap<String, ModelCapabilities>,
+    /// The deployment's guild id, seeding each role's `prompt_cache_key`;
+    /// `None` sends no key.
+    pub cache_scope: Option<u64>,
 }
 
 /// Operator-declared backend group; aliases sharing hardware share its permits.
@@ -165,6 +168,7 @@ impl fmt::Debug for ModelSetup {
             .field("roles", &self.roles)
             .field("permits", &self.permits)
             .field("capabilities", &self.capabilities)
+            .field("cache_scope", &self.cache_scope)
             .finish()
     }
 }
@@ -250,13 +254,16 @@ pub fn build_with_groups(
         let (catalog, governor, roles) = (catalog.clone(), governor.clone(), roles.clone());
         provider.observe_listings(move |listed| roles.observe(listed, &governor, &catalog));
     }
-    let client = ModelClient::new(
+    let mut client = ModelClient::new(
         governor.clone(),
         provider.clone(),
         ExecutionLimits::default(),
         RetryPolicy::default(),
     )
     .map_err(SetupError::Client)?;
+    if let Some(scope) = setup.cache_scope {
+        client = client.with_cache_scope(scope);
+    }
     Ok(Models::Ready(Box::new(ModelStack {
         provider,
         governor,

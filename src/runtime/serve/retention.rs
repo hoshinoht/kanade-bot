@@ -1,8 +1,10 @@
 //! Model-log retention (user decision 2026-09-25: 90 days): serve prunes the
 //! extraction, chat and rewrite logs, processed cached messages and drained
-//! notices older than [`DEFAULT_LOG_RETENTION`] at startup and then every
-//! [`EVERY`], off the request path, on the store it owns, then checkpoints
-//! and truncates the store's WAL (user decision 2026-10-11). The period runs
+//! notices older than [`DEFAULT_LOG_RETENTION`], and the delivery journal's
+//! ended leases that no attempt names older than [`LEASE_RETENTION`], at
+//! startup and then every [`EVERY`],
+//! off the request path, on the store it owns, then checkpoints and
+//! truncates the store's WAL (user decision 2026-10-11). The period runs
 //! on tokio's monotonic clock, so a wall-clock step cannot skip or repeat a
 //! run; the cutoff comes from serve's injected wall clock. A run (prune and
 //! checkpoint together) is bounded by [`RUN_LIMIT`] (the store deletes in
@@ -18,6 +20,7 @@ use crate::{
     api::auth::Clock,
     domain::{
         model_log::{DEFAULT_LOG_RETENTION, ModelLogStore, PruneCounts, retention_cutoff},
+        notify::DeliveryJournal,
         scheduler::StoreError,
         time::to_iso,
     },
@@ -27,21 +30,35 @@ use crate::{
 
 pub(super) const EVERY: Duration = Duration::from_secs(24 * 60 * 60);
 pub(super) const RUN_LIMIT: Duration = Duration::from_secs(60);
+/// An ended lease no attempt names proves nothing once its operation is over.
+const LEASE_RETENTION: chrono::TimeDelta = chrono::TimeDelta::days(1);
 
-/// Prune what is older than the retention as of `now`.
-async fn prune<S: ModelLogStore>(
+/// Prune what is older than the retention as of `now`: the model logs, then
+/// the ended leases (their count is the second value).
+async fn prune<S: ModelLogStore + DeliveryJournal>(
     store: &S,
     now: chrono::DateTime<chrono::Utc>,
-) -> Result<PruneCounts, StoreError> {
-    match retention_cutoff(now, DEFAULT_LOG_RETENTION) {
-        Some(cutoff) => store.prune_model_logs(cutoff).await,
-        None => Ok(PruneCounts::default()),
-    }
+) -> Result<(PruneCounts, u64), StoreError> {
+    let logs = match retention_cutoff(now, DEFAULT_LOG_RETENTION) {
+        Some(cutoff) => store.prune_model_logs(cutoff).await?,
+        None => PruneCounts::default(),
+    };
+    let leases = match now.checked_sub_signed(LEASE_RETENTION) {
+        Some(cutoff) => store
+            .prune_leases(cutoff)
+            .await
+            .map_err(|error| StoreError::Backend(error.to_string()))?,
+        None => 0,
+    };
+    Ok((logs, leases))
 }
 
 /// One run: prune, then (unless the prune used up the limit) checkpoint,
 /// both within [`RUN_LIMIT`] of the start.
-async fn run<S: ModelLogStore + StoreMaintenance>(store: &S, now: chrono::DateTime<chrono::Utc>) {
+async fn run<S: ModelLogStore + DeliveryJournal + StoreMaintenance>(
+    store: &S,
+    now: chrono::DateTime<chrono::Utc>,
+) {
     let deadline = tokio::time::Instant::now() + RUN_LIMIT;
     let pruned = tokio::time::timeout_at(deadline, prune(store, now)).await;
     let cut = pruned.is_err();
@@ -61,7 +78,7 @@ impl Retention {
     /// Prune and checkpoint now, then every `every`, as of `clock`.
     pub(super) fn start<S>(store: Arc<S>, clock: Clock, every: Duration) -> Self
     where
-        S: ModelLogStore + StoreMaintenance + Send + Sync + 'static,
+        S: ModelLogStore + DeliveryJournal + StoreMaintenance + Send + Sync + 'static,
     {
         let (stop, mut stopped) = watch::channel(false);
         let task = tokio::spawn(async move {
@@ -88,13 +105,13 @@ impl Retention {
 }
 
 fn report(
-    outcome: Result<Result<PruneCounts, StoreError>, tokio::time::error::Elapsed>,
+    outcome: Result<Result<(PruneCounts, u64), StoreError>, tokio::time::error::Elapsed>,
     now: chrono::DateTime<chrono::Utc>,
 ) {
     let cutoff =
         retention_cutoff(now, DEFAULT_LOG_RETENTION).and_then(|cutoff| to_iso(&cutoff).ok());
     match outcome {
-        Ok(Ok(counts)) => logging::log!(
+        Ok(Ok((counts, leases))) => logging::log!(
             info,
             "model_logs_pruned",
             cutoff,
@@ -103,6 +120,7 @@ fn report(
             messages = counts.messages,
             notices = counts.notices,
             rewrites = counts.rewrites,
+            leases,
         ),
         // Store error text may carry paths.
         Ok(Err(_)) => logging::log!(warn, "model_logs_prune_failed"),
@@ -172,6 +190,11 @@ mod tests {
                 .await
                 .unwrap();
         }
+        let ended = store
+            .begin_lease("instance", "scheduler_tick", at(-92))
+            .await
+            .unwrap();
+        store.end_lease(&ended, at(-91)).await.unwrap();
         let day = Arc::new(AtomicI64::new(0));
         let clock: Clock = {
             let day = day.clone();
@@ -200,6 +223,7 @@ mod tests {
         assert!(pruned.len() >= 2, "{pruned:?}");
         assert_eq!(pruned[0]["level"], "INFO");
         assert_eq!(pruned[0]["extractions"], 1);
+        assert_eq!(pruned[0]["leases"], 1);
         assert_eq!(pruned[0]["cutoff"], to_iso(&at(-90)).unwrap());
 
         // Each run checkpoints right after its prune; stop may cut the last

@@ -42,6 +42,7 @@ fn extraction(id: &str) -> ExtractionLog {
         refusals: Vec::new(),
         prompt_tokens: None,
         completion_tokens: None,
+        cached_tokens: None,
         prompt_estimate: None,
         request_ids: Vec::new(),
         session_id: None,

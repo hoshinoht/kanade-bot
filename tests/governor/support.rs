@@ -106,6 +106,7 @@ pub fn ask(content: &str, max_output_tokens: u32) -> ChatRequest {
         max_output_tokens,
         reasoning: None,
         sampling: None,
+        prompt_cache_key: None,
     }
 }
 
@@ -121,6 +122,7 @@ pub fn reply(content: &str) -> CompletionResponse {
         usage: Some(Usage {
             prompt_tokens: 1,
             completion_tokens: 1,
+            cached_tokens: None,
         }),
     }
 }

@@ -154,6 +154,11 @@ pub struct ModelCapabilities {
     /// `sampling_controls` says. `None` keeps `max_tokens` tied to sampling.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub output_limit: Option<OutputLimit>,
+    /// Accepts `prompt_cache_key`: set by Kanata metadata (Kanata validates it
+    /// and forwards it only where the upstream uses it); never declared, so a
+    /// generic server that refuses unknown fields is never sent one.
+    #[serde(default)]
+    pub prompt_cache_key: bool,
 }
 
 impl ModelCapabilities {
@@ -172,6 +177,7 @@ impl ModelCapabilities {
             max_output_tokens: None,
             admission: None,
             output_limit: None,
+            prompt_cache_key: false,
         }
     }
 
@@ -222,6 +228,7 @@ impl fmt::Debug for ModelCapabilities {
             .field("max_output_tokens", &self.max_output_tokens)
             .field("admission", &self.admission)
             .field("output_limit", &self.output_limit)
+            .field("prompt_cache_key", &self.prompt_cache_key)
             .finish()
     }
 }

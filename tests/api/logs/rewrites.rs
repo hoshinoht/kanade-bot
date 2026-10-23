@@ -22,6 +22,7 @@ fn row(id: &str, at: chrono::DateTime<chrono::Utc>) -> RewriteLog {
         reasoning: Some("low".into()),
         prompt_tokens: Some(200),
         completion_tokens: Some(8),
+        cached_tokens: None,
         reasoning_tokens: None,
         reservation: Some(287),
         budget: None,
@@ -50,6 +51,7 @@ async fn seeded() -> Logs {
     over.code = Some("budget_exceeded".into());
     over.prompt_tokens = Some(300);
     over.completion_tokens = Some(112);
+    over.cached_tokens = Some(256);
     over.reply = Some("Waku waku!".into());
     over.line = Some("Onward!".into());
     over.seed = "Onward!".into();
@@ -113,8 +115,13 @@ async fn rewrites_list_newest_first_with_total_facets_and_summary() {
     let over = &all["rows"][0];
     assert_eq!(over["verdict"], "unavailable");
     assert_eq!(over["code"], "budget_exceeded");
-    let usage = ["prompt_tokens", "completion_tokens", "reservation"];
-    assert_eq!(fields(over, &usage), json!([300, 112, 287]));
+    let usage = [
+        "prompt_tokens",
+        "completion_tokens",
+        "cached_tokens",
+        "reservation",
+    ];
+    assert_eq!(fields(over, &usage), json!([300, 112, 256, 287]));
     assert_eq!(over["at"], "2026-09-29T02:00:00Z");
     assert!(
         over.get("reasoning_content").is_none(),
@@ -125,6 +132,7 @@ async fn rewrites_list_newest_first_with_total_facets_and_summary() {
     let nudge = &all["rows"][3];
     assert_eq!(nudge["model"], json!(null));
     assert_eq!(nudge["prompt_tokens"], json!(null), "unreported is null");
+    assert_eq!(nudge["cached_tokens"], json!(null));
     assert_eq!(
         all["summary"],
         json!([

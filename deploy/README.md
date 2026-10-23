@@ -569,6 +569,39 @@ Drop the recipients mount and variable without encryption. Before `up`,
 move the private files to their new homes (the CHANGELOG lists every removed
 key; startup names any left behind and where it goes now).
 
+Upgrading to 1.0.0-beta.14 (one time, optional): earlier images wrote a
+delivery-journal lease row on every 30 s tick and never deleted any, which
+left most of the store file as ended leases. Ticks with nothing to post now
+write none, and the retention pass (at startup, then daily) deletes ended
+leases older than a day that no post names; each pass logs the count as
+`leases` in its `model_logs_pruned` line (`docker compose logs bot | grep
+model_logs_pruned`; a `model_logs_prune_cut` line means the pass ran out of
+time and the next daily pass continues). SQLite reuses the freed pages, so
+the file only shrinks after a `VACUUM`: once a pass has logged the backlog
+gone (the first one after the upgrade, unless it was cut), reclaim the space
+once. There is no vacuum
+command, but a `kanade backup` snapshot is a compacted copy (`VACUUM INTO`),
+so restoring one taken from the stopped store does it. Without encryption:
+
+```sh
+docker compose stop bot
+STAMP=$(date -u +%Y%m%dT%H%M%SZ)
+docker compose --profile backup run --rm backup backup --name kanade-$STAMP-compact.sqlite
+docker compose --profile backup run --rm backup \
+  restore --from /backups/kanade-$STAMP-compact.sqlite --apply
+docker compose up -d
+docker exec kanade-v5 /usr/local/bin/kanade healthcheck
+# Once the bot runs well, delete the uncompacted side copy restore kept
+# (the bot never opens it):
+docker run --rm --user 65532:65532 -v kanade_v5_data:/data alpine \
+  sh -c 'rm -f /data/db/kanade.sqlite.pre-restore-* && ls -ln /data/db'
+```
+
+With encrypted backups on, the snapshot is `kanade-$STAMP-compact.sqlite.age`:
+restore it with the identity as under [Restore](#restore). The snapshot is
+the current store, so its manifest anchors the current history head and the
+`mismatch` note under Restore does not apply.
+
 ### Restore
 
 Restore a SQLite snapshot (instead of the whole tarball) with `kanade

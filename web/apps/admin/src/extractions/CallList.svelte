@@ -55,6 +55,7 @@
       <span class="extract-row__facts mono"
         >{row.messages} msg · {duration(row.latency_ms)}{#if row.prompt_tokens != null || row.completion_tokens != null}&nbsp;· <TokenUsage
             prompt={row.prompt_tokens}
+            cached={row.cached_tokens}
             completion={row.completion_tokens}
             reasoning={row.reasoning_tokens}
           />{/if}</span

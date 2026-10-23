@@ -369,6 +369,62 @@ async fn work_per_tick_is_bounded() {
     bounded(&SqliteStore::open_temp().await).await;
 }
 
+/// Journal leases by lifecycle, read straight from the store file.
+async fn leases(store: &SqliteStore) -> Vec<(String, i64)> {
+    let options =
+        sqlx::sqlite::SqliteConnectOptions::new().filename(store.temp_dir().config().db_path);
+    let mut conn = sqlx::ConnectOptions::connect(&options).await.expect("raw");
+    let rows = sqlx::query_as(
+        "SELECT lifecycle, count(*) FROM maintenance_leases GROUP BY lifecycle ORDER BY lifecycle",
+    )
+    .fetch_all(&mut conn)
+    .await
+    .expect("leases");
+    sqlx::Connection::close(conn).await.expect("close raw");
+    rows
+}
+
+/// A tick with nothing to post writes no lease; one that posts still runs
+/// under one lease and ends it.
+#[tokio::test]
+async fn only_a_tick_that_posts_takes_a_lease() {
+    let store = SqliteStore::open_temp().await;
+    let world = world();
+    let mut delivery = delivery(&store, &world, &world.fake);
+    let [first, idle, sending] = tick_times();
+    delivery.tick_at(first).await.expect("first tick");
+    let settled = leases(&store).await;
+    delivery.tick_at(idle).await.expect("idle tick");
+    assert_eq!(
+        leases(&store).await,
+        settled,
+        "an idle tick writes no lease"
+    );
+
+    due_countdown(&store, HOME).await;
+    let report = delivery.tick_at(sending).await.expect("sending tick");
+    assert!(
+        matches!(
+            report.dispatch.sends.as_slice(),
+            [send] if matches!(send.outcome, SendOutcome::Bound(_))
+        ),
+        "{report:?}"
+    );
+    let retired = |rows: &[(String, i64)]| {
+        rows.iter()
+            .find(|(lifecycle, _)| lifecycle == "retired")
+            .map_or(0, |(_, count)| *count)
+    };
+    let after = leases(&store).await;
+    assert_eq!(retired(&after), retired(&settled) + 1, "{after:?}");
+    assert!(
+        after.iter().all(|(lifecycle, _)| lifecycle == "retired"),
+        "the posting tick ended its lease: {after:?}"
+    );
+    drop(delivery);
+    store.close().await.expect("close");
+}
+
 async fn quiet<S: Store>(store: &S) {
     let world = world();
     due_countdown(store, HOME).await;

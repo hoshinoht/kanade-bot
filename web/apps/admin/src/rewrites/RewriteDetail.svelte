@@ -125,7 +125,7 @@
           <span class="cap extract-outcome__call">Call</span>
           <p class="extract-outcome__facts">
             latency <span class="mono">{duration(data.latency_ms)}</span><br />
-            tokens <span class="mono"><TokenUsage prompt={data.prompt_tokens} completion={data.completion_tokens} reasoning={data.reasoning_tokens} /></span><br />
+            tokens <span class="mono"><TokenUsage prompt={data.prompt_tokens} cached={data.cached_tokens} completion={data.completion_tokens} reasoning={data.reasoning_tokens} /></span><br />
             max tokens sent <span class="mono">{data.max_output_tokens ?? 'none'}</span> · prompt estimate <span class="mono">{data.prompt_estimate ?? '—'}</span>
             {#if data.context}<br />for <span class="mono rewrite-wrap">{data.context}</span>{/if}
             {#if data.request_id}<br />request id <span class="mono rewrite-wrap">{data.request_id}</span>{/if}

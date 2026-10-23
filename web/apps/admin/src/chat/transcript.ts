@@ -15,6 +15,10 @@ export interface Round {
   round: number;
   reasoning_content: string | null;
   reasoning_tokens: number | null;
+  /** Provider-reported usage; null when not reported. `cached_tokens` is the part of `prompt_tokens` served from the prompt cache. */
+  prompt_tokens: number | null;
+  completion_tokens: number | null;
+  cached_tokens: number | null;
   /** The alias the round's request named; null when not recorded. */
   model: string | null;
   effort: string | null;
@@ -38,6 +42,9 @@ export function rounds(turn: ChatTurn): Round[] {
     round: r.round,
     reasoning_content: r.reasoning_content ?? null,
     reasoning_tokens: r.reasoning_tokens ?? null,
+    prompt_tokens: r.prompt_tokens ?? null,
+    completion_tokens: r.completion_tokens ?? null,
+    cached_tokens: r.cached_tokens ?? null,
     model: r.model || (perRound ? turn.models[i]! : null),
     effort: r.effort ?? null,
     route: r.route ?? null,
@@ -115,6 +122,10 @@ export function transcriptMarkdown(turn: ChatTurn, ctx: TranscriptContext): stri
       `- Requested tools: ${r.requested_tools.join(', ') || 'none'}`,
     );
     if (r.request_ids.length) lines.push(`- Request ids: ${r.request_ids.join(', ')}`);
+    if (r.prompt_tokens !== null || r.completion_tokens !== null) {
+      const cached = r.cached_tokens !== null ? ` (${r.cached_tokens} cached)` : '';
+      lines.push(`- Tokens: prompt ${r.prompt_tokens ?? '—'}${cached}, completion ${r.completion_tokens ?? '—'}`);
+    }
     if (r.reasoning_tokens !== null) lines.push(`- Reasoning tokens: ${r.reasoning_tokens}`);
     if (r.reasoning_content) lines.push('', '### Reasoning', '', fence(r.reasoning_content));
     for (const c of r.calls) lines.push(...callLines(c));

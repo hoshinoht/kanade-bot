@@ -28,7 +28,7 @@ use super::cards::redesign::{
     subtext, text,
 };
 use super::executor::SendOutcome;
-use super::tick::{Delivery, DeliveryError};
+use super::tick::{Delivery, DeliveryError, TickLease};
 use crate::bot::commands::text::{format_bosses, local_day, local_time, status_label};
 use crate::bot::ids::{id_text, parse_id};
 use crate::bot::mentions;
@@ -41,8 +41,8 @@ use crate::domain::drafts::ProposalStore;
 use crate::domain::history::{Actor, Checkpoints, Origin, Surface};
 use crate::domain::ids::short_id;
 use crate::domain::notify::{
-    ChannelChoice, DeliveryJournal, EffectKind, IntentContent, Lease, NoticeOutbox,
-    NotificationIntent, choose_channel,
+    ChannelChoice, DeliveryJournal, EffectKind, IntentContent, NoticeOutbox, NotificationIntent,
+    choose_channel,
 };
 use crate::domain::schedule::{Run, RunStatus, SettleRun};
 use crate::domain::scheduler::{IdSource, ScheduleStore, SchedulerError, Scope};
@@ -368,7 +368,7 @@ where
     /// [`DeliveryError`] from the schedule read or the journal.
     pub(super) async fn run_prompts_in(
         &self,
-        lease: &Lease,
+        lease: &TickLease,
         now: DateTime<Utc>,
     ) -> Result<RunPromptReport, DeliveryError> {
         let mut report = RunPromptReport::default();
@@ -536,7 +536,7 @@ where
     /// Post one due ask; `true` once bound.
     async fn post_prompt(
         &self,
-        lease: &Lease,
+        lease: &TickLease,
         prompt: &RunPrompt,
         run: &Run,
         now: DateTime<Utc>,

@@ -63,16 +63,37 @@ pub struct UndecodableNotice {
     pub detail: String,
 }
 
-/// The pending rows, decoded one by one, in write order.
+/// A position in the outbox's write order: a keyset cursor for paging the
+/// pending rows.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct NoticeCursor {
+    pub id: i64,
+}
+
+/// Pending rows, decoded one by one, in write order.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct PendingNotices {
     pub notices: Vec<OutboxNotice>,
     pub undecodable: Vec<UndecodableNotice>,
+    /// Where the next page starts (pass it as `after`); `None` once a read
+    /// came back short of its limit: nothing further was pending.
+    pub next: Option<NoticeCursor>,
 }
 
 pub trait NoticeOutbox {
-    /// Undrained notices in write order; a row that does not decode is
-    /// reported in `undecodable` instead of failing the read.
+    /// At most `limit` undrained notices written after `after` (from the
+    /// first when `None`), in write order. A row that does not decode is
+    /// reported in `undecodable` instead of failing the read, and counts
+    /// toward `limit` and `next` like any other, so paging passes it.
+    fn pending_notices_after(
+        &self,
+        after: Option<NoticeCursor>,
+        limit: usize,
+    ) -> impl Future<Output = Result<PendingNotices, JournalError>> + Send;
+
+    /// Every undrained notice in one read, as [`Self::pending_notices_after`]
+    /// decodes them (checks and inspection; the drain pages instead, so a
+    /// backlog is never held whole).
     fn pending_notices(&self) -> impl Future<Output = Result<PendingNotices, JournalError>> + Send;
 
     /// Every notice, drained or not, in write order (admin reads and checks).

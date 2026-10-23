@@ -27,6 +27,7 @@ const rewrite = (over: Partial<Rewrite> = {}): Rewrite => ({
   reasoning: 'medium',
   prompt_tokens: 300,
   completion_tokens: 112,
+  cached_tokens: null,
   reasoning_tokens: 98,
   reservation: 287,
   budget: null,
@@ -113,6 +114,12 @@ describe('rewrite transcript', () => {
 
   it('fences a reply holding backticks with a longer fence', () => {
     expect(rewriteMarkdown(rewrite({ reply: 'a ``` b' }), UTC)).toContain('## Reply\n\n````\na ``` b\n````');
+  });
+
+  it('names the cached part of the prompt only when it was reported', () => {
+    expect(rewriteMarkdown(rewrite({ cached_tokens: 256 }), UTC)).toContain('- Tokens: prompt 300 (256 cached), completion 112\n');
+    expect(JSON.parse(rewriteJson(rewrite({ cached_tokens: 256 }), UTC)).cached_tokens).toBe(256);
+    expect(JSON.parse(rewriteJson(rewrite(), UTC)).cached_tokens).toBeNull();
   });
 });
 

@@ -119,8 +119,14 @@ export function refreshDynamic(): Promise<void> {
   return refreshing;
 }
 
-// A stored Dynamic choice: theme-boot painted the cached palette; check it against today's avatar.
-if (typeof document !== 'undefined' && document.documentElement.dataset.colorway === 'dynamic') void refreshDynamic();
+/**
+ * A stored Dynamic choice: theme-boot painted the cached palette; check it
+ * against today's avatar. Each app calls this at startup (a module-level call
+ * would be tree-shaken out of, or deferred with, the chunks that import it).
+ */
+export function resumeDynamic(): void {
+  if (document.documentElement.dataset.colorway === 'dynamic') void refreshDynamic();
+}
 
 export { COLORWAY_GROUPS, COLORWAYS, THEME_MODES };
 export type { Colorway, ThemeMode };

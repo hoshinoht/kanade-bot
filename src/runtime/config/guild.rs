@@ -28,6 +28,12 @@ impl GuildSettings {
     }
 }
 
+/// `KANADE_GUILD_ID` alone, for commands that need none of the other guild
+/// settings (`models check` scopes its probes' `prompt_cache_key` with it).
+pub fn guild_id(values: &BTreeMap<String, String>) -> Result<Option<u64>, Error> {
+    optional(values, "KANADE_GUILD_ID")
+}
+
 /// Canonical decimal: no sign, no leading zero, non-zero, fits `u64`.
 fn parse(value: &str) -> Option<u64> {
     let canonical = !value.is_empty()

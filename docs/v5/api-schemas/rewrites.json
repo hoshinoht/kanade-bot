@@ -188,6 +188,10 @@
         "completion_tokens": {
           "$ref": "#/$defs/TokenCount"
         },
+        "cached_tokens": {
+          "$ref": "#/$defs/TokenCount",
+          "description": "The part of `prompt_tokens` the upstream served from its prompt cache (`usage.prompt_tokens_details.cached_tokens`); null when not reported, never estimated. Always sent by the server; optional so earlier fixtures stay valid."
+        },
         "reasoning_tokens": {
           "$ref": "#/$defs/TokenCount"
         },
@@ -329,6 +333,10 @@
         },
         "completion_tokens": {
           "$ref": "#/$defs/TokenCount"
+        },
+        "cached_tokens": {
+          "$ref": "#/$defs/TokenCount",
+          "description": "As in `RewriteRow`."
         },
         "reasoning_tokens": {
           "$ref": "#/$defs/TokenCount"

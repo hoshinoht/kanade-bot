@@ -77,6 +77,7 @@ async fn every_public_debug_representation_redacts_nested_sentinels() {
         max_output_tokens: 1,
         reasoning: None,
         sampling: None,
+        prompt_cache_key: None,
     };
     let response = CompletionResponse {
         reasoning_content: None,

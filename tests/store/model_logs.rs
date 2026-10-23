@@ -47,6 +47,7 @@ async fn an_out_of_range_wire_reasoning_count_is_unknown_and_stored_as_null() {
         max_output_tokens: 16,
         reasoning: None,
         sampling: None,
+        prompt_cache_key: None,
     };
     let response = provider
         .complete_with(&request, &ModelCapabilities::minimal())
@@ -407,7 +408,7 @@ async fn rows_logged_before_context_facts_still_read_after_a_reopen() {
     let store = SqliteStore::open(&config)
         .await
         .expect("reopen after additive migration");
-    assert_eq!(store.schema_version().await.expect("version"), 44);
+    assert_eq!(store.schema_version().await.expect("version"), 46);
     let mut extraction = extraction;
     extraction.id = "x-reasoning".into();
     extraction.reasoning_content = Some("Stored extraction reasoning.".into());
@@ -471,7 +472,7 @@ async fn the_profanity_migration_keeps_existing_chat_rows_and_their_children() {
     )
     .await;
     let store = SqliteStore::open(&config).await.expect("migrates");
-    assert_eq!(store.schema_version().await.expect("version"), 44);
+    assert_eq!(store.schema_version().await.expect("version"), 46);
     let plain = store
         .load_chat("c-plain")
         .await

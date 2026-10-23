@@ -379,6 +379,7 @@ pub fn reply(content: &str) -> FakeAction {
         usage: Some(Usage {
             prompt_tokens: 1,
             completion_tokens: 1,
+            cached_tokens: None,
         }),
     })
 }
@@ -395,6 +396,7 @@ pub fn filtered() -> FakeAction {
         usage: Some(Usage {
             prompt_tokens: 1,
             completion_tokens: 1,
+            cached_tokens: None,
         }),
     })
 }
