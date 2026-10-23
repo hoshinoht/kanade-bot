@@ -6,9 +6,9 @@ use std::{
     io::{self, SeekFrom},
     path::{Path, PathBuf},
     pin::Pin,
-    sync::Arc,
+    sync::{Arc, Mutex, PoisonError},
     task::{self, Poll, ready},
-    time::{Duration, UNIX_EPOCH},
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 use axum::{
@@ -42,6 +42,65 @@ const ART_SUFFIXES: [&str; 4] = ["png", "webp", "jpg", "jpeg"];
 const VIDEO_SUFFIXES: [&str; 1] = ["mp4"];
 /// Cached identity art, in lookup order (`bot::identity` writes these).
 pub const IDENTITY_SUFFIXES: [&str; 5] = ["png", "webp", "jpg", "jpeg", "gif"];
+
+#[derive(Clone)]
+struct CachedIdentityImage {
+    path: PathBuf,
+    len: u64,
+    modified: SystemTime,
+    bytes: Bytes,
+    etag: String,
+}
+
+// The only cacheable paths are the current avatar and banner served below.
+static IDENTITY_IMAGE_CACHE: Mutex<[Option<CachedIdentityImage>; 2]> = Mutex::new([None, None]);
+
+fn identity_cache_slot(stem: &str) -> Option<usize> {
+    match stem {
+        "avatar" => Some(0),
+        "banner" => Some(1),
+        _ => None,
+    }
+}
+
+async fn cached_identity_image(path: &Path, stem: &str) -> io::Result<(Bytes, String)> {
+    let slot = identity_cache_slot(stem);
+    let stamp = match tokio::fs::metadata(path).await {
+        Ok(metadata) => metadata
+            .modified()
+            .ok()
+            .map(|modified| (metadata.len(), modified)),
+        Err(_) => None,
+    };
+    if let (Some(slot), Some((len, modified))) = (slot, stamp.as_ref()) {
+        let cached = IDENTITY_IMAGE_CACHE
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)[slot]
+            .as_ref()
+            .filter(|cached| {
+                cached.path.as_path() == path && cached.len == *len && cached.modified == *modified
+            })
+            .cloned();
+        if let Some(cached) = cached {
+            return Ok((cached.bytes, cached.etag));
+        }
+    }
+
+    let bytes = Bytes::from(tokio::fs::read(path).await?);
+    let etag = content_etag(&bytes);
+    if let (Some(slot), Some((len, modified))) = (slot, stamp) {
+        IDENTITY_IMAGE_CACHE
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)[slot] = Some(CachedIdentityImage {
+            path: path.to_owned(),
+            len,
+            modified,
+            bytes: bytes.clone(),
+            etag: etag.clone(),
+        });
+    }
+    Ok((bytes, etag))
+}
 
 #[derive(Serialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
@@ -130,20 +189,36 @@ fn escape(text: &str) -> String {
 
 /// Identity images with a content ETag; a matching `If-None-Match` is a 304.
 async fn identity_image(site: &Site, stem: &str, request: &HeaderMap) -> Response {
-    let (content_type, bytes) = match identity_file(site, stem) {
-        Some(path) => match tokio::fs::read(&path).await {
-            Ok(bytes) => (content_type(&path), bytes),
-            Err(_) => return ApiError::NOT_FOUND.into_response(),
+    match identity_file(site, stem) {
+        Some(path) => match cached_identity_image(&path, stem).await {
+            Ok((bytes, etag)) => etagged_with_etag(content_type(&path), bytes, etag, request),
+            Err(_) => ApiError::NOT_FOUND.into_response(),
         },
-        None if stem == "avatar" => ("image/svg+xml", monogram(&live_name(site)).into_bytes()),
-        None => ("image/svg+xml", WASH.as_bytes().to_vec()),
-    };
-    etagged(content_type, bytes, request)
+        None if stem == "avatar" => etagged(
+            "image/svg+xml",
+            monogram(&live_name(site)).into_bytes(),
+            request,
+        ),
+        None => etagged("image/svg+xml", WASH.as_bytes().to_vec(), request),
+    }
 }
 
 /// `bytes` with a content ETag; a matching `If-None-Match` is a 304.
 pub(crate) fn etagged(content_type: &str, bytes: Vec<u8>, request: &HeaderMap) -> Response {
-    let etag = format!("\"{}\"", hex(&digest(&SHA256, &bytes).as_ref()[..8]));
+    let etag = content_etag(&bytes);
+    etagged_with_etag(content_type, Bytes::from(bytes), etag, request)
+}
+
+fn content_etag(bytes: &[u8]) -> String {
+    format!("\"{}\"", hex(&digest(&SHA256, bytes).as_ref()[..8]))
+}
+
+fn etagged_with_etag(
+    content_type: &str,
+    bytes: Bytes,
+    etag: String,
+    request: &HeaderMap,
+) -> Response {
     let fresh = request
         .get(header::IF_NONE_MATCH)
         .and_then(|value| value.to_str().ok())
@@ -793,7 +868,11 @@ fn content_type(path: &Path) -> &'static str {
 mod tests {
     use std::sync::Arc;
 
-    use axum::{body::Body, response::Response};
+    use axum::{
+        body::Body,
+        http::{HeaderMap, StatusCode, header},
+        response::Response,
+    };
     use http_body_util::BodyExt;
     use tokio::{
         fs::File,
@@ -802,8 +881,8 @@ mod tests {
     };
 
     use super::{
-        ByteRange, CHUNK, PreviewImage, byte_range, file_body, held, origin_of, relative, reserved,
-        with_preview,
+        ByteRange, CHUNK, Origin, PreviewImage, Site, byte_range, file_body, held, identity_image,
+        origin_of, relative, reserved, with_preview,
     };
 
     fn temp_file(bytes: &[u8]) -> std::path::PathBuf {
@@ -977,5 +1056,61 @@ mod tests {
         for path in ["/", "/week", "/apis", "/artwork", "/runs/abc"] {
             assert!(!reserved(path), "{path}");
         }
+    }
+
+    #[tokio::test]
+    async fn a_changed_identity_image_is_served_with_its_new_etag() {
+        let dir = std::env::temp_dir().join(format!("kanade-identity-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir(&dir).unwrap();
+        let path = dir.join("avatar.png");
+        std::fs::write(&path, b"old image").unwrap();
+        let site = Site {
+            origin: Origin::Admin,
+            hosts: crate::api::listeners::HostPolicy::LoopbackNames,
+            trusted_peer: None,
+            app_dir: None,
+            boss_dir: None,
+            identity_dir: Some(dir.clone()),
+            identity_name: "Kanade".into(),
+            bot: None,
+            public_origin: None,
+            limits: crate::api::guard::limits::Limits::default(),
+            auth: None,
+            member: None,
+            edge_secret: None,
+            listener_ip: None,
+            state: None,
+            health: None,
+        };
+
+        let first = identity_image(&site, "avatar", &HeaderMap::new()).await;
+        assert_eq!(first.status(), StatusCode::OK);
+        let first_etag = first.headers()[header::ETAG].clone();
+        assert_eq!(
+            first
+                .into_body()
+                .collect()
+                .await
+                .unwrap()
+                .to_bytes()
+                .as_ref(),
+            b"old image"
+        );
+
+        std::fs::write(&path, b"fresh image bytes").unwrap();
+        let second = identity_image(&site, "avatar", &HeaderMap::new()).await;
+        assert_eq!(second.status(), StatusCode::OK);
+        assert_ne!(second.headers()[header::ETAG], first_etag);
+        assert_eq!(
+            second
+                .into_body()
+                .collect()
+                .await
+                .unwrap()
+                .to_bytes()
+                .as_ref(),
+            b"fresh image bytes"
+        );
+        std::fs::remove_dir_all(dir).unwrap();
     }
 }
