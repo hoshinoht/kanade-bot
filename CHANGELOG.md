@@ -4,7 +4,9 @@ What changed in each Kanade release, newest first. Upgrading across several rele
 
 ## 1.0.0-beta.14
 
-_In development_
+_23 Oct 2026_
+
+Faster portal loads, a database that stops growing while idle, and prompt caching for model calls through Kanata.
 
 ### Improvements
 
