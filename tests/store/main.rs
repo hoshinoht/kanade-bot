@@ -378,7 +378,19 @@ async fn sqlite_role_profiles_preserve_order_across_reopen() {
 
 #[tokio::test]
 async fn outbox_conforms() {
-    outbox_conformance::run_suite(SqliteStore::open_temp).await;
+    outbox_conformance::run_suite(
+        SqliteStore::open_temp,
+        async |store: &SqliteStore, source: &str| {
+            // A payload version this build does not read.
+            let sql = format!(
+                "INSERT INTO notice_outbox (source, ordinal, effect_kind, payload, created_at)
+                 VALUES ('{source}', 0, 'notice.run.status.cancelled', '{{\"v\":9}}',
+                         '2026-09-01T02:00:00+00:00')"
+            );
+            store.temp_dir().raw(&sql).await.expect("undecodable row");
+        },
+    )
+    .await;
 }
 
 #[tokio::test]

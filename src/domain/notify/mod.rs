@@ -43,7 +43,7 @@ pub use journal::{
 };
 pub use notice::plan_notice;
 pub use outbox::{
-    DEFAULT_MAX_NOTICE_AGE, DrainReason, NoticeOutbox, OutboxNotice, PendingNotices,
+    DEFAULT_MAX_NOTICE_AGE, DrainReason, NoticeCursor, NoticeOutbox, OutboxNotice, PendingNotices,
     UndecodableNotice, change_source, draft_source,
 };
 pub use policy::{AllowedMentions, PingKind, allowed_mentions, wants_mention};

@@ -22,8 +22,9 @@ use super::SqliteStore;
 use crate::domain::model_log::PRUNE_BATCH;
 use crate::domain::notify::{
     ActiveClaims, AttemptId, AttemptRecord, AttemptState, Claim, DIGEST_MARKER_KEY,
-    DeliveryJournal, DeliveryTarget, DigestLog, DrainReason, JournalError, Lease, NoticeOutbox,
-    NotificationIntent, OutboxNotice, PendingNotices, Receipt, Recovery, WeeklyDigest,
+    DeliveryJournal, DeliveryTarget, DigestLog, DrainReason, JournalError, Lease, NoticeCursor,
+    NoticeOutbox, NotificationIntent, OutboxNotice, PendingNotices, Receipt, Recovery,
+    WeeklyDigest,
 };
 use crate::domain::time::{from_iso, to_iso};
 use crate::infrastructure::store::Written;
@@ -555,9 +556,18 @@ impl DeliveryJournal for SqliteStore {
 }
 
 impl NoticeOutbox for SqliteStore {
+    async fn pending_notices_after(
+        &self,
+        after: Option<NoticeCursor>,
+        limit: usize,
+    ) -> Result<PendingNotices, JournalError> {
+        let mut conn = self.reader().await.map_err(backend)?;
+        outbox::pending(&mut conn, after, limit).await
+    }
+
     async fn pending_notices(&self) -> Result<PendingNotices, JournalError> {
         let mut conn = self.reader().await.map_err(backend)?;
-        outbox::pending(&mut conn).await
+        outbox::pending(&mut conn, None, usize::MAX).await
     }
 
     async fn outbox_notices(&self) -> Result<Vec<OutboxNotice>, JournalError> {
