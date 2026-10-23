@@ -11,6 +11,7 @@ use std::{
     time::Duration,
 };
 
+use ring::digest::{SHA256, digest};
 use tokio::time::Instant;
 
 use super::super::{
@@ -162,6 +163,16 @@ fn valid_timeout(timeout: Duration) -> bool {
     !timeout.is_zero() && timeout <= MAX_TIMEOUT
 }
 
+/// The deployment part of every `prompt_cache_key`: a 12-hex SHA-256 prefix
+/// of `scope` (the guild id), stable across restarts and never another
+/// deployment's, with nothing of the scope itself in it.
+fn cache_scope(scope: u64) -> String {
+    digest(&SHA256, scope.to_string().as_bytes()).as_ref()[..6]
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
+}
+
 /// Opens governed sessions over one provider.
 pub struct ModelClient<P> {
     governor: Arc<Governor>,
@@ -170,6 +181,8 @@ pub struct ModelClient<P> {
     /// Random per client so ids from different processes rarely collide in gateway logs.
     instance: u32,
     sessions: AtomicU64,
+    /// [`cache_scope`] of the deployment; `None` sends no `prompt_cache_key`.
+    cache_scope: Option<String>,
 }
 
 impl<P> fmt::Debug for ModelClient<P> {
@@ -197,7 +210,24 @@ impl<P: LlmProvider> ModelClient<P> {
             max_attempts,
             instance,
             sessions: AtomicU64::new(0),
+            cache_scope: None,
         })
+    }
+
+    /// Requests carry a `prompt_cache_key` per role scoped to `scope`
+    /// (see [`Self::cache_key`]).
+    pub fn with_cache_scope(mut self, scope: u64) -> Self {
+        self.cache_scope = Some(cache_scope(scope));
+        self
+    }
+
+    /// The `prompt_cache_key` every `role` request should carry,
+    /// `kanade-<role>-<scope hash>` (at most 30 printable ASCII bytes; Kanata
+    /// accepts 1–64): one upstream cache per role and deployment. `None`
+    /// without a cache scope.
+    pub fn cache_key(&self, role: Role) -> Option<String> {
+        let scope = self.cache_scope.as_deref()?;
+        Some(format!("kanade-{}-{scope}", role.as_str()))
     }
 
     /// `kanade-{kind}-{instance}-{sequence}`: always a valid `x-request-id` stem.
@@ -554,6 +584,11 @@ impl<P: LlmProvider> Session<'_, P> {
     /// The alias every request of this session must name.
     pub fn alias(&self) -> Option<&str> {
         self.permit.as_ref().map(Permit::alias)
+    }
+
+    /// [`ModelClient::cache_key`] for this session's role.
+    pub fn cache_key(&self) -> Option<String> {
+        self.client.cache_key(self.role)
     }
 
     /// One model round. A question keeps one request in reserve for

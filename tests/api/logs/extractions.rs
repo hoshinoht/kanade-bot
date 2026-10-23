@@ -62,13 +62,11 @@ async fn extractions_list_every_call_with_total_facets_and_the_current_model() {
     assert_eq!(failed["error"], "no answer");
     assert_eq!(failed["outcome"], "failed");
     assert_eq!(failed["reasoning_tokens"], json!(null));
+    let usage = ["prompt_tokens", "completion_tokens", "cached_tokens"];
+    assert_eq!(fields(newest, &usage), json!([1500, 60, 1280]));
     assert_eq!(
-        (&newest["prompt_tokens"], &newest["completion_tokens"]),
-        (&json!(1500), &json!(60))
-    );
-    assert_eq!(
-        (&failed["prompt_tokens"], &failed["completion_tokens"]),
-        (&json!(null), &json!(null)),
+        fields(failed, &usage),
+        json!([null, null, null]),
         "unreported is null, never 0"
     );
     assert_eq!(

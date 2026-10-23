@@ -31,6 +31,10 @@ impl FinishReason {
 pub struct Usage {
     pub prompt_tokens: u32,
     pub completion_tokens: u32,
+    /// `prompt_tokens_details.cached_tokens`: the part of `prompt_tokens` the
+    /// upstream served from its prompt cache; `None` when not reported, never estimated.
+    #[serde(default)]
+    pub cached_tokens: Option<u32>,
 }
 impl Usage {
     pub fn total(&self) -> Option<u32> {

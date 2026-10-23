@@ -38,6 +38,7 @@
       ],
       "properties": {
         "reasoning_tokens": { "$ref": "#/$defs/TokenCount", "description": "Sum of the rounds' reported reasoning counts; null when none reported. Additive, optional for older clients/fixtures." },
+        "cached_tokens": { "$ref": "#/$defs/TokenCount", "description": "The part of `prompt_tokens` the upstream served from its prompt cache (`usage.prompt_tokens_details.cached_tokens`), summed over the rounds that reported it; null when none did, never estimated. Additive, optional for older clients/fixtures." },
         "id": {
           "type": "string"
         },
@@ -211,6 +212,7 @@
       ],
       "properties": {
         "reasoning_tokens": { "$ref": "#/$defs/TokenCount" },
+        "cached_tokens": { "$ref": "#/$defs/TokenCount", "description": "As in `ChatRow`." },
         "id": {
           "type": "string"
         },
@@ -366,6 +368,7 @@
                 "$ref": "#/$defs/TokenCount",
                 "description": "Provider-reported completion tokens; null when not reported."
               },
+              "cached_tokens": { "$ref": "#/$defs/TokenCount", "description": "The part of this request's `prompt_tokens` the upstream served from its prompt cache; null when not reported, never estimated. Additive, optional for older clients/fixtures." },
               "prompt_estimate": {
                 "$ref": "#/$defs/TokenCount",
                 "description": "The local prompt-size estimate the context budget used for this request (completion reserve excluded); null for rows logged before it was."

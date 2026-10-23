@@ -27,6 +27,7 @@ function header(r: Rewrite, ctx: TranscriptContext) {
     latency_ms: r.latency_ms,
     prompt_tokens: r.prompt_tokens,
     completion_tokens: r.completion_tokens,
+    cached_tokens: r.cached_tokens ?? null,
     reasoning_tokens: r.reasoning_tokens,
     reservation: r.reservation,
     budget: r.budget,
@@ -51,7 +52,7 @@ export function rewriteMarkdown(r: Rewrite, ctx: TranscriptContext): string {
     `- Model: ${h.model ?? 'no model call'}`,
     `- Effort: ${h.effort ?? '—'}`,
     `- Latency: ${took(h.latency_ms)}`,
-    `- Tokens: prompt ${count(h.prompt_tokens)}, completion ${count(h.completion_tokens)}`,
+    `- Tokens: prompt ${count(h.prompt_tokens)}${h.cached_tokens !== null ? ` (${count(h.cached_tokens)} cached)` : ''}, completion ${count(h.completion_tokens)}`,
     ...(h.reasoning_tokens !== null ? [`- Reasoning tokens: ${count(h.reasoning_tokens)}`] : []),
     ...(h.token_check ? [`- Token check: ${h.token_check}`] : []),
     // Null: no `max_tokens` went out (nothing sent, or a route without sampling controls).

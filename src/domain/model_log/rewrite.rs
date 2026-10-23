@@ -109,6 +109,9 @@ pub struct RewriteLog {
     /// Provider-reported usage; both or neither.
     pub prompt_tokens: Option<u64>,
     pub completion_tokens: Option<u64>,
+    /// The part of `prompt_tokens` served from the upstream prompt cache;
+    /// `None` when not reported (only with the pair).
+    pub cached_tokens: Option<u64>,
     pub reasoning_tokens: Option<u64>,
     /// The runner's token reservation (prompt estimate + the requested
     /// reserve) the reported usage was checked against.
@@ -153,7 +156,9 @@ impl RewriteLog {
                 self.verdict
             )));
         }
-        if self.prompt_tokens.is_some() != self.completion_tokens.is_some() {
+        if self.prompt_tokens.is_some() != self.completion_tokens.is_some()
+            || (self.cached_tokens.is_some() && self.prompt_tokens.is_none())
+        {
             return Err(StoreError::Constraint(
                 "rewrite token usage is a pair".into(),
             ));

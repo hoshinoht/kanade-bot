@@ -64,6 +64,10 @@ pub struct ExtractionBase {
     pub prompt_tokens: Option<u64>,
     #[cfg_attr(test, ts(optional = nullable))]
     pub completion_tokens: Option<u64>,
+    /// The part of `prompt_tokens` served from the upstream prompt cache,
+    /// over the attempts that reported it; null = not reported.
+    #[cfg_attr(test, ts(optional = nullable))]
+    pub cached_tokens: Option<u64>,
     /// Provider-reported reasoning tokens over reporting attempts; null = unknown.
     #[cfg_attr(test, ts(optional = nullable))]
     pub reasoning_tokens: Option<u64>,
@@ -264,6 +268,7 @@ fn base(names: &Names<'_>, log: &ExtractionLog) -> ExtractionBase {
         outcome: log.outcome.as_str(),
         prompt_tokens: log.prompt_tokens,
         completion_tokens: log.completion_tokens,
+        cached_tokens: log.cached_tokens,
         reasoning_tokens: log.reasoning_tokens,
     }
 }

@@ -54,6 +54,7 @@
       <span class="extract-row__facts mono"
         >{row.stage} · {#if row.code ?? row.rule}{row.code ?? row.rule} ·&nbsp;{/if}{duration(row.latency_ms)}{#if row.prompt_tokens != null || row.completion_tokens != null}&nbsp;· <TokenUsage
             prompt={row.prompt_tokens}
+            cached={row.cached_tokens}
             completion={row.completion_tokens}
           />{/if}</span
       >

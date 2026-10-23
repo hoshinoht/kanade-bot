@@ -42,6 +42,7 @@ async fn individually_bounded_texts_and_schemas_still_obey_request_aggregate() {
         max_output_tokens: 1,
         reasoning: None,
         sampling: None,
+        prompt_cache_key: None,
     };
     let limits = ExecutionLimits {
         max_content_bytes: 64,
@@ -52,6 +53,39 @@ async fn individually_bounded_texts_and_schemas_still_obey_request_aggregate() {
     let output = text_reply(Some("not-called".into()));
     let outcome = run_once(&input, output, limits).await;
     assert_eq!(outcome, (Some(ErrorCode::RequestInvalid), 0));
+}
+
+/// A key outside Kanata's bound (1–64 printable ASCII bytes) is refused
+/// locally before anything is sent.
+#[tokio::test]
+async fn a_prompt_cache_key_outside_the_gateway_bound_is_refused_before_sending() {
+    let keyed = |key: String| ChatRequest {
+        prompt_cache_key: Some(key),
+        ..tiny_request()
+    };
+    for key in [
+        String::new(),
+        "k".repeat(65),
+        "kanade\tchat".into(),
+        "kanade-é".into(),
+    ] {
+        let outcome = run_once(
+            &keyed(key.clone()),
+            tiny_response("m"),
+            ExecutionLimits::default(),
+        )
+        .await;
+        assert_eq!(outcome, (Some(ErrorCode::RequestInvalid), 0), "{key:?}");
+    }
+    for key in ["k".repeat(64), "kanade chat".into()] {
+        let outcome = run_once(
+            &keyed(key.clone()),
+            tiny_response("m"),
+            ExecutionLimits::default(),
+        )
+        .await;
+        assert_eq!(outcome, (None, 1), "{key:?}");
+    }
 }
 
 #[tokio::test]

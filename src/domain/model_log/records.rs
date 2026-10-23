@@ -67,6 +67,9 @@ pub struct ExtractionLog {
     /// pair; both or neither (`None` when not reported).
     pub prompt_tokens: Option<u64>,
     pub completion_tokens: Option<u64>,
+    /// The part of `prompt_tokens` served from the upstream prompt cache,
+    /// summed over the attempts that reported it; `None` when none did.
+    pub cached_tokens: Option<u64>,
     /// The local prompt-size estimate, independent of the reported pair.
     pub prompt_estimate: Option<u64>,
     /// The governed session's correlation stem; `None` for rows written
@@ -133,6 +136,9 @@ pub struct ChatRound {
     /// Provider-reported usage for the round; both or neither.
     pub prompt_tokens: Option<u64>,
     pub completion_tokens: Option<u64>,
+    /// The part of `prompt_tokens` served from the upstream prompt cache;
+    /// `None` when not reported.
+    pub cached_tokens: Option<u64>,
     /// The local prompt-size estimate, independent of the reported pair.
     pub prompt_estimate: Option<u64>,
     /// Every `x-request-id` this round sent, in order (transient retries and
@@ -164,6 +170,8 @@ pub struct ChatInteraction {
     pub tools_ms: Option<u64>,
     pub prompt_tokens: Option<u64>,
     pub completion_tokens: Option<u64>,
+    /// Summed over the rounds that reported it; `None` when none did.
+    pub cached_tokens: Option<u64>,
     /// Model rounds in order.
     pub rounds: Vec<ChatRound>,
     /// Persona bundle id the turn answered as.
@@ -219,10 +227,11 @@ fn shape(ok: bool, what: &str) -> Result<(), StoreError> {
     }
 }
 
-/// A reported usage pair is all or nothing. Interaction totals are not
-/// checked: v4 imports carry half pairs there.
-fn usage_pair(prompt: Option<u64>, completion: Option<u64>) -> bool {
-    prompt.is_some() == completion.is_some()
+/// A reported usage pair is all or nothing, and a cached count comes only
+/// with it. Interaction totals are not checked: v4 imports carry half pairs
+/// there.
+fn usage_pair(prompt: Option<u64>, completion: Option<u64>, cached: Option<u64>) -> bool {
+    prompt.is_some() == completion.is_some() && (cached.is_none() || prompt.is_some())
 }
 
 /// The gateway's `x-request-id` alphabet: 1–128 of `[A-Za-z0-9_-]`.
@@ -255,7 +264,11 @@ impl ExtractionLog {
             "extraction request ids",
         )?;
         shape(
-            usage_pair(self.prompt_tokens, self.completion_tokens),
+            usage_pair(
+                self.prompt_tokens,
+                self.completion_tokens,
+                self.cached_tokens,
+            ),
             "extraction token usage",
         )
     }
@@ -293,7 +306,11 @@ impl ChatInteraction {
                 "chat round route",
             )?;
             shape(
-                usage_pair(round.prompt_tokens, round.completion_tokens),
+                usage_pair(
+                    round.prompt_tokens,
+                    round.completion_tokens,
+                    round.cached_tokens,
+                ),
                 "chat round token usage",
             )?;
         }
@@ -344,6 +361,7 @@ impl fmt::Debug for ExtractionLog {
             .field("latency_ms", &self.latency_ms)
             .field("prompt_tokens", &self.prompt_tokens)
             .field("completion_tokens", &self.completion_tokens)
+            .field("cached_tokens", &self.cached_tokens)
             .field("prompt_estimate", &self.prompt_estimate)
             .field("prompt_len", &self.prompt.len())
             .field("raw_response_len", &self.raw_response.len())
@@ -364,6 +382,7 @@ impl fmt::Debug for ChatRound {
             .field("tools", &self.tools)
             .field("prompt_tokens", &self.prompt_tokens)
             .field("completion_tokens", &self.completion_tokens)
+            .field("cached_tokens", &self.cached_tokens)
             .field("prompt_estimate", &self.prompt_estimate)
             .field("response_len", &self.response.as_ref().map(String::len))
             .field("request_ids", &self.request_ids)

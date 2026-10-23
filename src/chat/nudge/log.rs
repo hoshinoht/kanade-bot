@@ -65,13 +65,7 @@ impl RewriteAttempt {
     /// The stored row, every text within its column's bound.
     pub fn into_log(self, id: String, at: DateTime<Utc>) -> RewriteLog {
         let detail = self.detail;
-        let (prompt_tokens, completion_tokens) = match &detail.usage {
-            Some(usage) => (
-                Some(u64::from(usage.prompt_tokens)),
-                Some(u64::from(usage.completion_tokens)),
-            ),
-            None => (None, None),
-        };
+        let usage = detail.usage.as_ref();
         RewriteLog {
             id,
             at,
@@ -89,8 +83,9 @@ impl RewriteAttempt {
                 .map(|latency| u64::try_from(latency.as_millis()).unwrap_or(u64::MAX)),
             model: detail.alias,
             reasoning: detail.effort.map(|effort| effort.as_str().to_owned()),
-            prompt_tokens,
-            completion_tokens,
+            prompt_tokens: usage.map(|usage| u64::from(usage.prompt_tokens)),
+            completion_tokens: usage.map(|usage| u64::from(usage.completion_tokens)),
+            cached_tokens: usage.and_then(|usage| usage.cached_tokens).map(u64::from),
             reasoning_tokens: detail.reasoning_tokens,
             reservation: detail.reservation.map(u64::from),
             budget: detail.budget.map(u64::from),

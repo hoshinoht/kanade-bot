@@ -309,6 +309,7 @@ async fn fake_provider_captures_the_compiled_request() {
         max_output_tokens: 256,
         reasoning: None,
         sampling: None,
+        prompt_cache_key: None,
     };
     let provider = FakeProvider::new([]);
     let _ = provider.complete(&request).await;

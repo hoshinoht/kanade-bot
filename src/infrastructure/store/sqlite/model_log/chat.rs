@@ -19,12 +19,12 @@ use crate::infrastructure::store::sqlite::schedule::store_error;
 
 const COLUMNS: &str = "c.id, c.at, c.channel_id, c.message_id, c.member_id, c.question, \
     c.reply, c.outcome, c.error, c.clean_retry, c.withheld, c.guardrail, c.request_count, \
-    c.latency_ms, c.model_ms, c.tools_ms, c.prompt_tokens, c.completion_tokens, c.persona, \
-    c.profile, c.profile_source, c.error_code, c.session_id";
+    c.latency_ms, c.model_ms, c.tools_ms, c.prompt_tokens, c.completion_tokens, c.cached_tokens, \
+    c.persona, c.profile, c.profile_source, c.error_code, c.session_id";
 
 const ROUND_COLUMNS: &str = "model, reasoning, finish_reason, latency_ms, tool_bundles, tools, \
-    tool_calls, response, route, clean, prompt_tokens, completion_tokens, prompt_estimate, \
-    reasoning_content, reasoning_tokens, request_ids";
+    tool_calls, response, route, clean, prompt_tokens, completion_tokens, cached_tokens, \
+    prompt_estimate, reasoning_content, reasoning_tokens, request_ids";
 
 impl Keyed for ChatInteraction {
     fn cursor(&self) -> LogCursor {
@@ -64,6 +64,7 @@ fn interaction_of(row: &SqliteRow) -> Result<ChatInteraction, StoreError> {
         tools_ms: read_optional_u64(row, "tools_ms")?,
         prompt_tokens: read_optional_u64(row, "prompt_tokens")?,
         completion_tokens: read_optional_u64(row, "completion_tokens")?,
+        cached_tokens: read_optional_u64(row, "cached_tokens")?,
         rounds: Vec::new(),
         persona: optional_text(row, "persona")?,
         profile: optional_text(row, "profile")?,
@@ -91,6 +92,7 @@ fn round_of(row: &SqliteRow) -> Result<ChatRound, StoreError> {
             .map_err(|error| StoreError::Backend(format!("chat_rounds.clean: {error}")))?,
         prompt_tokens: read_optional_u64(row, "prompt_tokens")?,
         completion_tokens: read_optional_u64(row, "completion_tokens")?,
+        cached_tokens: read_optional_u64(row, "cached_tokens")?,
         prompt_estimate: read_optional_u64(row, "prompt_estimate")?,
         request_ids: read_optional_list(row, "request_ids")?,
     })
@@ -118,9 +120,9 @@ pub(super) async fn insert(
     sqlx::query(
         "INSERT INTO chat_interactions (id, at, channel_id, message_id, member_id, question, \
          reply, outcome, error, clean_retry, withheld, guardrail, request_count, latency_ms, \
-         model_ms, tools_ms, prompt_tokens, completion_tokens, persona, profile, profile_source, \
-         error_code, session_id) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, \
-         ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23)",
+         model_ms, tools_ms, prompt_tokens, completion_tokens, cached_tokens, persona, profile, \
+         profile_source, error_code, session_id) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, \
+         ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24)",
     )
     .bind(&chat.id)
     .bind(instant(&chat.at)?)
@@ -143,6 +145,7 @@ pub(super) async fn insert(
         chat.completion_tokens,
         "completion_tokens",
     )?)
+    .bind(optional_signed(chat.cached_tokens, "cached_tokens")?)
     .bind(&chat.persona)
     .bind(&chat.profile)
     .bind(&chat.profile_source)
@@ -155,9 +158,10 @@ pub(super) async fn insert(
         sqlx::query(
             "INSERT INTO chat_rounds (interaction_id, ord, model, reasoning, finish_reason, \
              latency_ms, tool_bundles, tools, tool_calls, response, route, clean, \
-             prompt_tokens, completion_tokens, prompt_estimate, reasoning_content, reasoning_tokens, \
-             request_ids) \
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18)",
+             prompt_tokens, completion_tokens, cached_tokens, prompt_estimate, reasoning_content, \
+             reasoning_tokens, request_ids) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, \
+             ?18, ?19)",
         )
         .bind(&chat.id)
         .bind(i64::try_from(ord).map_err(|_| StoreError::Constraint("too many rounds".into()))?)
@@ -176,6 +180,7 @@ pub(super) async fn insert(
             round.completion_tokens,
             "completion_tokens",
         )?)
+        .bind(optional_signed(round.cached_tokens, "cached_tokens")?)
         .bind(optional_signed(round.prompt_estimate, "prompt_estimate")?)
         .bind(&round.reasoning_content)
         .bind(optional_signed(round.reasoning_tokens, "reasoning_tokens")?)

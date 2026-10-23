@@ -54,6 +54,7 @@ fn request(alias: &str, effort: Option<Effort>) -> ChatRequest {
         max_output_tokens: 64,
         reasoning: effort,
         sampling: None,
+        prompt_cache_key: None,
     }
 }
 

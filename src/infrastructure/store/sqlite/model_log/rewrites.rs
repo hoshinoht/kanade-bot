@@ -14,13 +14,13 @@ use crate::infrastructure::store::sqlite::rows::{list as json_list, optional_ins
 use crate::infrastructure::store::sqlite::schedule::store_error;
 
 const COLUMNS: &str = "r.id, r.at, r.kind, r.stage, r.context, r.verdict, r.rule, r.code, \
-    r.latency_ms, r.model, r.reasoning, r.prompt_tokens, r.completion_tokens, \
+    r.latency_ms, r.model, r.reasoning, r.prompt_tokens, r.completion_tokens, r.cached_tokens, \
     r.reasoning_tokens, r.reservation, r.budget, r.max_output_tokens, r.seed, r.reply, \
     r.reasoning_content, r.line, r.request_id, r.prompt";
 
 /// [`COLUMNS`] without the reasoning and prompt texts (list pages).
 const LIST_COLUMNS: &str = "r.id, r.at, r.kind, r.stage, r.context, r.verdict, r.rule, r.code, \
-    r.latency_ms, r.model, r.reasoning, r.prompt_tokens, r.completion_tokens, \
+    r.latency_ms, r.model, r.reasoning, r.prompt_tokens, r.completion_tokens, r.cached_tokens, \
     r.reasoning_tokens, r.reservation, r.budget, r.max_output_tokens, r.seed, r.reply, \
     NULL AS reasoning_content, r.line, r.request_id, NULL AS prompt";
 
@@ -43,6 +43,7 @@ fn log_of(row: &SqliteRow) -> Result<RewriteLog, StoreError> {
         reasoning: optional_text(row, "reasoning")?,
         prompt_tokens: read_optional_u64(row, "prompt_tokens")?,
         completion_tokens: read_optional_u64(row, "completion_tokens")?,
+        cached_tokens: read_optional_u64(row, "cached_tokens")?,
         reasoning_tokens: read_optional_u64(row, "reasoning_tokens")?,
         reservation: read_optional_u64(row, "reservation")?,
         budget: read_optional_u64(row, "budget")?,
@@ -62,10 +63,11 @@ pub(super) async fn insert(
 ) -> Result<(), StoreError> {
     sqlx::query(
         "INSERT INTO rewrites (id, at, kind, stage, context, verdict, rule, code, latency_ms, \
-         model, reasoning, prompt_tokens, completion_tokens, reasoning_tokens, reservation, \
-         budget, max_output_tokens, seed, reply, reasoning_content, line, request_id, prompt) \
+         model, reasoning, prompt_tokens, completion_tokens, cached_tokens, reasoning_tokens, \
+         reservation, budget, max_output_tokens, seed, reply, reasoning_content, line, \
+         request_id, prompt) \
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, \
-         ?18, ?19, ?20, ?21, ?22, ?23)",
+         ?18, ?19, ?20, ?21, ?22, ?23, ?24)",
     )
     .bind(&log.id)
     .bind(instant(&log.at)?)
@@ -80,6 +82,7 @@ pub(super) async fn insert(
     .bind(&log.reasoning)
     .bind(optional_signed(log.prompt_tokens, "prompt_tokens")?)
     .bind(optional_signed(log.completion_tokens, "completion_tokens")?)
+    .bind(optional_signed(log.cached_tokens, "cached_tokens")?)
     .bind(optional_signed(log.reasoning_tokens, "reasoning_tokens")?)
     .bind(optional_signed(log.reservation, "reservation")?)
     .bind(optional_signed(log.budget, "budget")?)

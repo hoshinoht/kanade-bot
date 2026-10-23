@@ -23,6 +23,12 @@ pub(super) fn validate_request(
         return Err(LlmError::new(ErrorCode::RequestInvalid, "request-shape"));
     }
     request_text(&request.model, limits)?;
+    // Kanata's bound: 1–64 printable ASCII bytes (space included).
+    if request.prompt_cache_key.as_deref().is_some_and(|key| {
+        !(1..=64).contains(&key.len()) || !key.bytes().all(|byte| matches!(byte, b' '..=b'~'))
+    }) {
+        return Err(LlmError::new(ErrorCode::RequestInvalid, "prompt-cache-key"));
+    }
     if let Some(sampling) = &request.sampling {
         let temperature_ok = sampling
             .temperature

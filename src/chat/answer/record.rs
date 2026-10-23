@@ -147,6 +147,7 @@ pub fn interaction(
             clean: round.clean,
             prompt_tokens: round.prompt_tokens,
             completion_tokens: round.completion_tokens,
+            cached_tokens: round.cached_tokens,
             prompt_estimate: round.prompt_estimate,
             request_ids: round.request_ids.clone(),
         })
@@ -170,6 +171,7 @@ pub fn interaction(
         tools_ms: Some(generation.tools_ms),
         prompt_tokens: generation.prompt_tokens,
         completion_tokens: generation.completion_tokens,
+        cached_tokens: generation.cached_tokens,
         rounds,
         // The persona is the caller's to set (it resolved it).
         persona: None,

@@ -50,6 +50,8 @@ fn kanata_listing_parses_metadata_and_tolerates_junk() {
             }),
             // Never published: only an operator declares it.
             output_limit: None,
+            // Any Kanata metadata: Kanata accepts `prompt_cache_key`.
+            prompt_cache_key: true,
         }
     );
     assert_eq!(structured.admission.unwrap().concurrency(), 2);

@@ -88,6 +88,9 @@ pub struct RewriteRow {
     /// Provider-reported tokens; null = not reported (never 0).
     pub prompt_tokens: Option<u64>,
     pub completion_tokens: Option<u64>,
+    /// The part of `prompt_tokens` served from the upstream prompt cache;
+    /// null = not reported.
+    pub cached_tokens: Option<u64>,
     pub reasoning_tokens: Option<u64>,
     /// The runner's token reservation the reported usage was checked against.
     pub reservation: Option<u64>,
@@ -141,6 +144,7 @@ pub fn rewrite_row(log: &RewriteLog) -> RewriteRow {
         reasoning: log.reasoning.clone(),
         prompt_tokens: log.prompt_tokens,
         completion_tokens: log.completion_tokens,
+        cached_tokens: log.cached_tokens,
         reasoning_tokens: log.reasoning_tokens,
         reservation: log.reservation,
         budget: log.budget,

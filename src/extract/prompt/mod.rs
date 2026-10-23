@@ -206,6 +206,8 @@ pub fn extraction_request(
             seed: Some(0),
             top_p: None,
         }),
+        // The governed caller sets its session's key.
+        prompt_cache_key: None,
     }
 }
 

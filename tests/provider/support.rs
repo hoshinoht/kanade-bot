@@ -27,6 +27,7 @@ pub fn request() -> ChatRequest {
         max_output_tokens: 128,
         reasoning: None,
         sampling: None,
+        prompt_cache_key: None,
     }
 }
 
@@ -133,6 +134,7 @@ pub fn tiny_request() -> ChatRequest {
         max_output_tokens: 1,
         reasoning: None,
         sampling: None,
+        prompt_cache_key: None,
     }
 }
 
@@ -147,6 +149,7 @@ pub fn tiny_response(model: &str) -> CompletionResponse {
         usage: Some(Usage {
             prompt_tokens: 1,
             completion_tokens: 1,
+            cached_tokens: None,
         }),
     }
 }
@@ -175,6 +178,7 @@ pub fn tool_request() -> ChatRequest {
         max_output_tokens: 1,
         reasoning: None,
         sampling: None,
+        prompt_cache_key: None,
     }
 }
 

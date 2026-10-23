@@ -138,6 +138,7 @@ mod tests {
             tools_ms: Some(50),
             prompt_tokens: None,
             completion_tokens: None,
+            cached_tokens: None,
             rounds: Vec::new(),
             persona: None,
             profile: None,
@@ -186,6 +187,7 @@ mod tests {
             clean: false,
             prompt_tokens: None,
             completion_tokens: None,
+            cached_tokens: None,
             prompt_estimate: None,
             request_ids: vec![
                 "kanade-chat-0000abcd-9-1".into(),

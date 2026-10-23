@@ -707,14 +707,20 @@ async fn a_question_is_logged_as_one_interaction_with_its_rounds() {
     assert_eq!(row.rounds[1].response.as_deref(), Some("Three weeklies."));
 }
 
-/// `action`'s response with a reported usage pair.
-fn reported(action: FakeAction, prompt_tokens: u32, completion_tokens: u32) -> FakeAction {
+/// `action`'s response with a reported usage pair (and cached count).
+fn reported(
+    action: FakeAction,
+    prompt_tokens: u32,
+    completion_tokens: u32,
+    cached_tokens: Option<u32>,
+) -> FakeAction {
     let FakeAction::Response(mut response) = action else {
         panic!("a response");
     };
     response.usage = Some(kanade::infrastructure::llm::Usage {
         prompt_tokens,
         completion_tokens,
+        cached_tokens,
     });
     FakeAction::Response(response)
 }
@@ -751,7 +757,12 @@ fn estimate_of(request: &ChatRequest) -> Option<u64> {
 /// completion reserve; a round that reported nothing keeps an unset pair.
 #[tokio::test(start_paused = true)]
 async fn each_round_logs_its_reported_pair_and_prompt_estimate() {
-    let first = reported(wants(&[("l1", "list_fixed", json!({}))]), 900, 20);
+    let first = reported(
+        wants(&[("l1", "list_fixed", json!({}))]),
+        900,
+        20,
+        Some(768),
+    );
     let run = weeklies(Some(first), ToolOffer::dynamic([Bundle::Strategy], false)).await;
     let row = stored_row(&run, "chat-usage").await;
     assert_eq!(run.requests.len(), 2);
@@ -762,6 +773,7 @@ async fn each_round_logs_its_reported_pair_and_prompt_estimate() {
             (
                 round.prompt_tokens,
                 round.completion_tokens,
+                round.cached_tokens,
                 round.prompt_estimate,
             )
         })
@@ -769,8 +781,13 @@ async fn each_round_logs_its_reported_pair_and_prompt_estimate() {
     assert_eq!(
         usage,
         [
-            (Some(900), Some(20), estimate_of(&run.requests[0])),
-            (None, None, estimate_of(&run.requests[1])),
+            (
+                Some(900),
+                Some(20),
+                Some(768),
+                estimate_of(&run.requests[0])
+            ),
+            (None, None, None, estimate_of(&run.requests[1])),
         ]
     );
     let settings = settings(&run.input, 8);
@@ -780,8 +797,8 @@ async fn each_round_logs_its_reported_pair_and_prompt_estimate() {
         "the estimate leaves the completion reserve out"
     );
     assert_eq!(
-        (row.prompt_tokens, row.completion_tokens),
-        (Some(900), Some(20)),
+        (row.prompt_tokens, row.completion_tokens, row.cached_tokens),
+        (Some(900), Some(20), Some(768)),
         "turn totals sum the rounds that reported"
     );
 }
@@ -822,7 +839,7 @@ async fn reasoning_is_logged_per_round_but_never_enters_the_tool_loop() {
 
 #[tokio::test(start_paused = true)]
 async fn the_clean_retry_is_a_round_with_its_own_usage() {
-    let actions = vec![filtered(), reported(words("Here you go."), 300, 12)];
+    let actions = vec![filtered(), reported(words("Here you go."), 300, 12, None)];
     let run = ask(actions, ToolOffer::full_set(false), "what's on?").await;
     let rounds = &run.generation.model_rounds;
     assert_eq!(rounds.len(), 1, "the filtered request was never answered");
@@ -838,9 +855,11 @@ async fn the_clean_retry_is_a_round_with_its_own_usage() {
     assert_eq!(
         (
             run.generation.prompt_tokens,
-            run.generation.completion_tokens
+            run.generation.completion_tokens,
+            run.generation.cached_tokens
         ),
-        (Some(300), Some(12))
+        (Some(300), Some(12), None),
+        "no round reported a cached count"
     );
 }
 

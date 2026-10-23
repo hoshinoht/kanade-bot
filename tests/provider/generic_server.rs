@@ -110,6 +110,7 @@ fn request(alias: &str, effort: Option<Effort>) -> ChatRequest {
             seed: Some(7),
             top_p: Some(0.5),
         }),
+        prompt_cache_key: Some("kanade-chat-37f96542b663".into()),
     }
 }
 
@@ -195,6 +196,10 @@ async fn declared_models_apply_end_to_end_when_a_bare_listing_omits_them() {
     assert_eq!(body["temperature"], 0.25);
     assert_eq!(body["reasoning_effort"], "high");
     assert!(body.get("max_completion_tokens").is_none());
+    // Declarations never accept `prompt_cache_key`: a strict generic server
+    // could refuse the unknown field.
+    assert!(body.get("prompt_cache_key").is_none());
+    assert!(body.get("store").is_none());
 }
 
 #[tokio::test]

@@ -793,6 +793,7 @@ fn withheld_row(message_id: &str) -> ChatInteraction {
         tools_ms: None,
         prompt_tokens: None,
         completion_tokens: None,
+        cached_tokens: None,
         rounds: Vec::new(),
         persona: None,
         profile: None,

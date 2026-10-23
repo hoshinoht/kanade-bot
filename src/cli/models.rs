@@ -15,7 +15,10 @@ use crate::{
             build_with_groups, resolve_context,
         },
     },
-    runtime::{config::ModelSettings, error::Error},
+    runtime::{
+        config::{ModelSettings, guild_id},
+        error::Error,
+    },
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -85,6 +88,8 @@ pub async fn check(
         ca_file,
         permits: u32::from(settings.permits),
         capabilities: std::mem::take(&mut settings.capabilities),
+        // Probes share serve's cache keys where the guild is configured.
+        cache_scope: guild_id(environment)?,
     };
     let random = Arc::new(XorShift::new(uuid::Uuid::new_v4().as_u64_pair().0));
     let stack = match build_with_groups(setup, &settings.groups, random) {

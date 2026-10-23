@@ -25,7 +25,8 @@
         "error": { "$ref": "common.json#/$defs/NullableString" },
         "outcome": { "$ref": "#/$defs/ExtractionOutcome" },
         "prompt_tokens": { "$ref": "#/$defs/TokenCount", "description": "Provider-reported prompt tokens summed over the call's attempts that reported a pair; null when none did. Always sent by the server; optional so earlier fixtures stay valid." },
-        "completion_tokens": { "$ref": "#/$defs/TokenCount", "description": "As `prompt_tokens`, for completion tokens; the pair is all-or-nothing." }
+        "completion_tokens": { "$ref": "#/$defs/TokenCount", "description": "As `prompt_tokens`, for completion tokens; the pair is all-or-nothing." },
+        "cached_tokens": { "$ref": "#/$defs/TokenCount", "description": "The part of `prompt_tokens` the upstream served from its prompt cache (`usage.prompt_tokens_details.cached_tokens`), summed over the attempts that reported it; null when none did, never estimated. Additive, optional for older clients/fixtures." }
       }
     },
     "Extractions": {
@@ -66,6 +67,7 @@
         "outcome": { "$ref": "#/$defs/ExtractionOutcome" },
         "prompt_tokens": { "$ref": "#/$defs/TokenCount", "description": "Provider-reported prompt tokens summed over the call's attempts that reported a pair; null when none did. Always sent by the server; optional so earlier fixtures stay valid." },
         "completion_tokens": { "$ref": "#/$defs/TokenCount", "description": "As `prompt_tokens`, for completion tokens; the pair is all-or-nothing." },
+        "cached_tokens": { "$ref": "#/$defs/TokenCount", "description": "As in `ExtractionRow`." },
         "prompt_estimate": { "$ref": "#/$defs/TokenCount", "description": "The local prompt estimate over the attempts that reported usage, else over every sent attempt; null when nothing was sent. Always sent by the server; optional so earlier fixtures stay valid." },
         "context": {
           "description": "The context the call was budgeted for (logged `guardrail.context`); null for calls logged without one. Always sent by the server; optional so earlier fixtures stay valid.",

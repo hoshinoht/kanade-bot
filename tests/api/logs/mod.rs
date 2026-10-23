@@ -58,6 +58,7 @@ fn round(model: &str, tools: &[&str], calls: Value, response: Option<&str>) -> C
         clean: false,
         prompt_tokens: None,
         completion_tokens: None,
+        cached_tokens: None,
         prompt_estimate: None,
         request_ids: Vec::new(),
     }
@@ -94,6 +95,7 @@ fn chat(
         tools_ms: None,
         prompt_tokens: None,
         completion_tokens: None,
+        cached_tokens: None,
         rounds,
         persona: None,
         profile: None,
@@ -130,6 +132,7 @@ pub fn extraction(
         refusals: Vec::new(),
         prompt_tokens: None,
         completion_tokens: None,
+        cached_tokens: None,
         prompt_estimate: None,
         request_ids: Vec::new(),
         session_id: None,
@@ -173,8 +176,10 @@ async fn seed_chats(reads: &Reads) {
     answered.rounds[1].clean = true;
     // Usage: the first round reported, the clean retry only has its estimate.
     (answered.prompt_tokens, answered.completion_tokens) = (Some(1200), Some(30));
+    answered.cached_tokens = Some(1024);
     answered.rounds[0].prompt_tokens = Some(1200);
     answered.rounds[0].completion_tokens = Some(30);
+    answered.rounds[0].cached_tokens = Some(1024);
     answered.rounds[0].prompt_estimate = Some(1000);
     answered.rounds[0].reasoning_content = Some("Look up Kalos before answering.".into());
     answered.rounds[0].reasoning_tokens = Some(12);
@@ -326,6 +331,7 @@ async fn seed_extractions(reads: &Reads, proposal: &str) {
     newest.latency_ms = Some(12_000);
     newest.prompt_tokens = Some(1500);
     newest.completion_tokens = Some(60);
+    newest.cached_tokens = Some(1280);
     newest.prompt_estimate = Some(1200);
     newest.reasoning_content = Some("The party agreed on Wednesday.".into());
     newest.reasoning_tokens = Some(24);

@@ -71,6 +71,7 @@ fn request(alias: &str, effort: Option<Effort>) -> ChatRequest {
             seed: Some(7),
             top_p: Some(0.5),
         }),
+        prompt_cache_key: None,
     }
 }
 

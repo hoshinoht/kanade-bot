@@ -58,13 +58,14 @@ async fn chat_lists_every_row_newest_first_with_total_facets_and_summary() {
             "tools_used": ["schedule_read"],
             "prompt_tokens": 1200,
             "completion_tokens": 30,
+            "cached_tokens": 1024,
             "reasoning_tokens": 12,
         })
     );
     // Counts only: a withheld turn shows them; turn totals pass through as logged.
-    let tokens = ["prompt_tokens", "completion_tokens"];
-    assert_eq!(fields(&all["rows"][2], &tokens), json!([500, 20]));
-    assert_eq!(fields(&all["rows"][3], &tokens), json!([10, null]));
+    let tokens = ["prompt_tokens", "completion_tokens", "cached_tokens"];
+    assert_eq!(fields(&all["rows"][2], &tokens), json!([500, 20, null]));
+    assert_eq!(fields(&all["rows"][3], &tokens), json!([10, null, null]));
     // A rate-limited question ran no model.
     assert_eq!(all["rows"][3]["model"], "—");
     assert_eq!(all["rows"][3]["latency_ms"], 0);
@@ -242,13 +243,15 @@ async fn chat_detail_is_the_row_plus_the_turn_and_unknown_ids_are_404() {
         json!([
             {"round": 1, "requested_tools": ["schedule_read"], "finish": "tool_calls",
              "model": "kanata/chat", "effort": "low", "route": "homelab", "latency_ms": 1000,
-             "prompt_tokens": 1200, "completion_tokens": 30, "prompt_estimate": 1000,
+             "prompt_tokens": 1200, "completion_tokens": 30, "cached_tokens": 1024,
+             "prompt_estimate": 1000,
              "reasoning_content": "Look up Kalos before answering.", "reasoning_tokens": 12,
              "request_ids": ["kanade-chat-0000abcd-7-1", "kanade-chat-0000abcd-7-2"],
              "guardrail": clean},
             {"round": 2, "requested_tools": [], "finish": "stop", "model": "kanata/chat",
              "effort": null, "route": "external_masked", "latency_ms": null,
-             "prompt_tokens": null, "completion_tokens": null, "prompt_estimate": 1100,
+             "prompt_tokens": null, "completion_tokens": null, "cached_tokens": null,
+             "prompt_estimate": 1100,
              "reasoning_content": "Use the read result.", "reasoning_tokens": null,
              "request_ids": ["kanade-chat-0000abcd-7-3"],
              "guardrail": {"clean": true, "content_filter": false}},

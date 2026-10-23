@@ -14,6 +14,10 @@ use crate::fakes::{ALIAS, MY, World, after, local, message};
 const NOTHING: &str = r#"{"amendments": [], "summary": "no schedule change"}"#;
 
 fn answer(content: &str, usage: Option<(u32, u32)>) -> FakeAction {
+    cached_answer(content, usage, None)
+}
+
+fn cached_answer(content: &str, usage: Option<(u32, u32)>, cached: Option<u32>) -> FakeAction {
     FakeAction::Response(CompletionResponse {
         reasoning_content: None,
         reasoning_tokens: None,
@@ -24,6 +28,7 @@ fn answer(content: &str, usage: Option<(u32, u32)>) -> FakeAction {
         usage: usage.map(|(prompt_tokens, completion_tokens)| Usage {
             prompt_tokens,
             completion_tokens,
+            cached_tokens: cached,
         }),
     })
 }
@@ -84,6 +89,22 @@ async fn an_answer_retry_sums_both_reported_attempts() {
     let sent = estimates(&world);
     assert_eq!(sent.len(), 2);
     assert_eq!(usage, (Some(2100), Some(45), Some(sent[0] + sent[1])));
+}
+
+/// The cached count sums only the attempts that reported one; none reported
+/// stays null, never 0.
+#[tokio::test(start_paused = true)]
+async fn cached_tokens_sum_only_the_attempts_that_reported_them() {
+    let world = World::new(vec![
+        cached_answer("not json", Some((1000, 5)), Some(896)),
+        answer(NOTHING, Some((1100, 40))),
+    ])
+    .await;
+    one_call(&world).await;
+    assert_eq!(world.logs().await[0].cached_tokens, Some(896));
+    let world = World::new(vec![answer(NOTHING, Some((1200, 80)))]).await;
+    one_call(&world).await;
+    assert_eq!(world.logs().await[0].cached_tokens, None);
 }
 
 #[tokio::test(start_paused = true)]
