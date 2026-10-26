@@ -1,18 +1,14 @@
-//! Reminder and digest cards, ported from v4 `bot.agent.formatting`
-//! (`day_of_card`, `countdown_card`, `digest_card`) with the v5 attendance
-//! tally, and their redesigned forms (`redesign/`) when the
-//! message style asks for them. A [`Card`] is plain data; [`Card::message`]
-//! turns it into a post with its art uploaded, [`Card::edit`] into an edit
-//! that keeps the posted attachments. A card with a Components V2 layout
-//! (the redesigned digest) is posted and edited as that layout; its embed
-//! stays the fallback and the admin preview's rendering.
+//! Reminder and digest cards (v4 `bot.agent.formatting`'s `day_of_card`,
+//! `countdown_card`, `digest_card` with the v5 attendance tally, laid out by
+//! `redesign/`). A [`Card`] is plain data; [`Card::message`] turns it into a
+//! post with its art uploaded, [`Card::edit`] into an edit that keeps the
+//! posted attachments. A card with a Components V2 layout (the digest) is
+//! posted and edited as that layout; its embed stays the fallback and the
+//! admin preview's rendering.
 
 mod art;
 pub mod chart;
 mod common;
-mod countdown;
-mod day_of;
-mod digest;
 mod heading;
 mod record;
 pub mod redesign;
@@ -25,16 +21,10 @@ use twilight_model::channel::message::embed::{
 use twilight_model::channel::message::{Component, Embed};
 
 pub use art::{
-    ArtFile, ArtKind, ArtRef, ArtSource, CardArt, EmbedArt, IMAGE_PREFIX, MAX_ART_BYTES, Picture,
+    ArtFile, ArtRef, ArtSource, CardArt, EmbedArt, IMAGE_PREFIX, MAX_ART_BYTES, Picture,
     attachment_name, fetch_art, lead_entry_art, lead_portrait,
 };
-pub use common::{
-    COLOUR_ALL_SET, COLOUR_COUNTDOWN, COLOUR_DAY_OF, COLOUR_DIGEST, CardContext, People,
-    REACT_HINT, UNNAMED, format_offset, tally_text,
-};
-pub use countdown::countdown_card;
-pub use day_of::{card_runs, day_of_card};
-pub use digest::{DIGEST_EMPTY, DIGEST_FOOTER, digest_card};
+pub use common::{CardContext, People, REACT_HINT, UNNAMED, card_runs};
 pub use heading::{
     COUNTDOWN_PHRASE_SEED, Chosen, DAY_OF_HEADING_SEED, DIGEST_PHRASE_SEED, HeaderContext,
     HeaderKind, HeaderLine, HeaderSlots, HeaderSwitchSource, HeaderSwitches, HeadingRewrite,
@@ -47,23 +37,21 @@ pub use record::HeaderHistory;
 pub use record::{
     CardRecord, DAY_OF_KIND, DigestPhraseStore, HeaderOverrideStore, PostedCard, ReminderCardStore,
 };
-pub use redesign::{DifficultyMarks, PortalSwitch, StyleSource, V2Kit};
+pub use redesign::{DifficultyMarks, PortalSwitch, V2Kit};
 
 use crate::bot::commands::text::local_day;
 use crate::bot::mentions;
 use crate::bot::transport::{MessageEdit, OutgoingMessage, Upload};
 use crate::domain::catalog::BossTable;
 use crate::domain::notify::IntentContent;
-use crate::domain::settings::MessageStyle;
 
-/// A card as plain data (v4 `Card`); mentions live in `content` only. The
-/// classic style has exactly one embed. `components`, when set, is the
-/// Components V2 form that is sent instead of the content and embeds.
-/// `rows` are legacy button rows under the content and embeds: `Some` on
-/// run cards (day-of, countdown; the redesigned ones' "Open in portal"), so
-/// every edit sends them and a row the card no longer has (the portal
-/// closed, the style flipped to classic) is cleared; `None` elsewhere, and
-/// an edit leaves the message's components alone.
+/// A card as plain data (v4 `Card`); mentions live in `content` only.
+/// `components`, when set, is the Components V2 form that is sent instead
+/// of the content and embeds. `rows` are legacy button rows under the
+/// content and embeds: `Some` on run cards (day-of, countdown: "Open in
+/// portal"), so every edit sends them and a row the card no longer has
+/// (the portal closed) is cleared; `None` elsewhere, and an edit leaves the
+/// message's components alone.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Card {
     pub content: String,
@@ -96,7 +84,7 @@ pub struct CardField {
 }
 
 impl CardField {
-    /// A full-width field (every classic field).
+    /// A full-width field.
     pub fn wide(name: impl Into<String>, value: impl Into<String>) -> Self {
         Self {
             name: name.into(),
@@ -114,16 +102,13 @@ impl CardField {
 }
 
 /// What cards read besides the schedule: the catalog, the art, the header
-/// rewrite, the live message style, the difficulty marks and the
-/// Components V2 parts. The default uses fixed phrase fallbacks and the
-/// classic style.
+/// rewrite, the difficulty marks and the Components V2 parts. The default
+/// uses fixed phrase fallbacks.
 #[derive(Clone, Default)]
 pub struct CardKit {
     pub catalog: Option<Arc<BossTable>>,
     pub art: Option<Arc<dyn ArtSource>>,
     pub heading: HeadingRewrite,
-    /// Read per card; `None` is classic.
-    pub style: Option<StyleSource>,
     pub marks: DifficultyMarks,
     /// The avatar, portal origin and switch and which posted messages are
     /// V2; shared by every clone of the kit.
@@ -131,21 +116,14 @@ pub struct CardKit {
     /// v5: the live run lengths, read per digest re-render so a run past its
     /// end counts as ended; `None` keeps v4's counts.
     pub run_lengths: Option<crate::domain::completion::RunLengthsNow>,
-    /// The cached estimates behind the redesigned run cards' share chart;
-    /// `None` (module `character_data` or its estimates off) posts none.
+    /// The cached estimates behind the run cards' share chart; `None`
+    /// (module `character_data` or its estimates off) posts none.
     pub estimates: Option<Arc<dyn crate::bot::delivery::PartyEstimates>>,
     /// The live header switches (Config › Notifications); `None` is all off.
     pub switches: Option<HeaderSwitchSource>,
 }
 
 impl CardKit {
-    /// The message style cards are built in now.
-    pub fn style(&self) -> MessageStyle {
-        self.style
-            .as_ref()
-            .map_or(MessageStyle::Classic, |style| style())
-    }
-
     /// The header switches as configured now.
     pub fn switches(&self) -> HeaderSwitches {
         self.switches
@@ -173,24 +151,21 @@ impl std::fmt::Debug for CardKit {
             .field("catalog", &self.catalog.is_some())
             .field("art", &self.art.is_some())
             .field("heading", &self.heading)
-            .field("style", &self.style())
             .field("marks", &self.marks)
             .field("estimates", &self.estimates.is_some())
             .finish()
     }
 }
 
-/// The card for `content` in `ctx.style`; `None` for kinds rendered
-/// elsewhere. `header` is the stored day-of heading or countdown/digest
-/// phrase (classic countdown and digest show no phrase, as v4);
-/// `mentioned` is the allow-list, already quiet-gated.
+/// The card for `content`; `None` for kinds rendered elsewhere. `header`
+/// is the stored day-of heading or countdown/digest phrase; `mentioned` is
+/// the allow-list, already quiet-gated.
 pub fn build(
     content: &IntentContent,
     ctx: &CardContext<'_>,
     header: Option<&str>,
     mentioned: &[String],
 ) -> Option<Card> {
-    let redesigned = ctx.style == MessageStyle::Redesigned;
     let mut card = match content {
         IntentContent::DayOf { run_ids } => {
             let seed;
@@ -202,35 +177,22 @@ pub fn build(
                     &seed
                 }
             };
-            if redesigned {
-                redesign::day_of_card(ctx, run_ids, heading, mentioned)
-            } else {
-                day_of_card(ctx, run_ids, heading, mentioned)
-            }
+            redesign::day_of_card(ctx, run_ids, heading, mentioned)
         }
-        IntentContent::Countdown { run_id, minutes } => {
-            let run = ctx.run(run_id)?;
-            if redesigned {
-                redesign::countdown_card(ctx, run, mentioned, header)
-            } else {
-                countdown_card(ctx, run, *minutes, mentioned)
-            }
+        IntentContent::Countdown { run_id, .. } => {
+            redesign::countdown_card(ctx, ctx.run(run_id)?, mentioned, header)
         }
         IntentContent::Digest {
             week_start,
             inclusion,
         } => {
-            return Some(if redesigned {
-                redesign::digest_card(ctx, *week_start, inclusion, header)
-            } else {
-                digest_card(ctx, *week_start, inclusion)
-            });
+            return Some(redesign::digest_card(ctx, *week_start, inclusion, header));
         }
         IntentContent::Notice(_) | IntentContent::ProposalCard { .. } | IntentContent::Plain => {
             return None;
         }
     };
-    // A run card owns its rows in either style (none in the classic one).
+    // A run card owns its rows, so an edit clears a link it no longer has.
     card.rows.get_or_insert_default();
     Some(card)
 }
@@ -279,7 +241,7 @@ impl CardEmbed {
 }
 
 impl Card {
-    /// A one-embed card (the classic shape).
+    /// A one-embed card.
     pub fn single(content: String, embed: CardEmbed) -> Self {
         Self {
             content,

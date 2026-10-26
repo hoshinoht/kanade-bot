@@ -96,7 +96,7 @@ async fn offline_no_rejects_extraction_and_chat_without_stale_follow_up() {
             .await;
         assert_eq!(report.rejected, 1);
         assert_eq!(world.status(&id).await, DraftStatus::Rejected);
-        assert!(world.last_edit_content().ends_with("❌ rejected by Mylene"));
+        assert!(world.last_edit_content().contains("❌ Rejected by Mylene"));
         assert_eq!(world.creates().len(), 1, "no stale chat follow-up");
     }
 }
@@ -110,7 +110,7 @@ async fn offline_yes_approves_extraction_and_chat_through_scheduler() {
         let report = world.desk.replay_reactions(Id::new(SELF), || true).await;
         assert_eq!(report.approved, 1);
         assert_eq!(world.status(&id).await, DraftStatus::Merged);
-        assert!(world.last_edit_content().ends_with("✅ applied by Mylene"));
+        assert!(world.last_edit_content().contains("✅ Applied by Mylene"));
         assert_eq!(
             world.run_state().await.runs[0].datetime,
             local(9, 2, 21, 30)
@@ -313,7 +313,7 @@ async fn grouped_replay_combines_refusals_and_preserves_stale_line_after_conflic
         2,
         "one grouped apply-problem notice, not one per proposal"
     );
-    assert!(world.last_edit_content().ends_with("⚠️ out of date"));
+    assert!(world.last_edit_content().contains("⚠️ Out of date"));
     assert!(!world.last_edit_content().contains(OFFLINE_CONFLICT_NOTICE));
     for id in ids {
         assert_eq!(world.status(&id).await, DraftStatus::Submitted);
@@ -350,7 +350,7 @@ async fn batch_authority_keeps_reactor_order_and_lowest_authorised_attribution()
             .rejected,
         1
     );
-    assert!(world.last_edit_content().ends_with("❌ rejected by Mylene"));
+    assert!(world.last_edit_content().contains("❌ Rejected by Mylene"));
 }
 
 #[tokio::test]

@@ -6,8 +6,7 @@
 //! "Open in portal" goes to the run (the portal's root for several runs).
 
 use super::super::art::{lead_entry_art, lead_portrait};
-use super::super::common::{CardContext, People, everyone_on, lead_colour};
-use super::super::day_of::card_runs;
+use super::super::common::{CardContext, People, card_runs, everyone_on, lead_colour};
 use super::super::{Card, CardEmbed, CardField};
 use super::limits::{
     MAX_DESCRIPTION, MAX_EMBEDS, MAX_FIELD_VALUE, MAX_TITLE, MAX_TOTAL_CHARS, clip, clip_lines,

@@ -186,7 +186,7 @@ impl World {
             })
             .await
             .expect("run");
-        let desk = desk_with(&store, discord.clone(), &alerts, &ids, now());
+        let desk = desk_with(&store, discord.clone(), &alerts, &ids, now()).posting_legacy();
         Self {
             store,
             discord,
@@ -197,7 +197,8 @@ impl World {
         }
     }
 
-    /// Another desk on this world's store and fake Discord, clocked at `at`.
+    /// Another desk on this world's store and fake Discord, clocked at `at`,
+    /// posting the embed card with seeded ✅/❌ (the reaction path).
     fn desk_at(&self, at: DateTime<Utc>) -> Desk {
         desk_with(
             &self.store,
@@ -206,6 +207,7 @@ impl World {
             &self.ids,
             at,
         )
+        .posting_legacy()
     }
 
     /// A fresh desk, as after a restart.
@@ -404,17 +406,13 @@ async fn a_card_is_journalled_bound_and_mentions_nobody() {
         "nobody is pinged"
     );
     let content = message.content.as_deref().unwrap_or_default();
-    assert_eq!(content, "📋 Proposed change\nMylene");
-    let field = &message.embeds[0].fields[0];
-    assert!(
-        field
-            .name
-            .starts_with("move · Hard MaleficStar + Hard FA · `#")
-    );
     assert_eq!(
-        field.value,
-        "~~Mon 31 Aug 21:30~~ → **Wed 02 Sep 21:30**\nMylene\n_moving to wed_"
+        content,
+        "📋 **Move Hard MaleficStar + Hard FA?** moving to wed"
     );
+    let field = &message.embeds[0].fields[0];
+    assert_eq!(field.name, "From");
+    assert!(field.value.contains("Mon 31 Aug 21:30"), "{field:?}");
     let Outcome::Delivered(posted) = outcome else {
         panic!("delivered");
     };
@@ -518,11 +516,7 @@ async fn a_participant_approves_and_the_card_says_so() {
         world.run_state().await.runs[0].datetime,
         local(9, 2, 21, 30)
     );
-    assert!(
-        world
-            .last_edit_content()
-            .ends_with("\n✅ applied by Mylene")
-    );
+    assert!(world.last_edit_content().contains("✅ Applied by Mylene"));
     assert_eq!(
         world.answer(&message, MY, RsvpAnswer::Yes).await,
         CardReaction::Ignored,
@@ -542,7 +536,7 @@ async fn an_admin_rejects_and_the_card_says_so() {
         }
     );
     assert_eq!(world.status(&id).await, DraftStatus::Rejected);
-    assert!(world.last_edit_content().ends_with("\n❌ rejected by Boss"));
+    assert!(world.last_edit_content().contains("❌ Rejected by Boss"));
     assert!(
         world
             .desk
@@ -640,7 +634,7 @@ async fn a_newer_card_marks_the_retired_one_superseded() {
     assert!(
         world
             .last_edit_content()
-            .ends_with("\n↪ superseded by a newer card")
+            .contains("↪ Superseded by a newer card")
     );
 }
 
@@ -652,11 +646,14 @@ async fn a_restarted_desk_re_renders_a_card_from_its_stored_details() {
     let Some(Call::Edit { edit, .. }) = world.discord.calls().pop() else {
         panic!("an edit");
     };
-    assert_eq!(edit.content.as_deref(), Some("📋 Proposed change\nMylene"));
+    assert_eq!(
+        edit.content.as_deref(),
+        Some("📋 **Move Hard MaleficStar + Hard FA?** moving to wed")
+    );
     assert!(
         edit.embeds.expect("embed")[0].fields[0]
             .value
-            .contains("_moving to wed_")
+            .contains("Mon 31 Aug 21:30")
     );
 }
 
@@ -870,7 +867,7 @@ async fn a_hand_edited_run_leaves_the_card_out_of_date() {
              Check the run and ask again if it still needs changing."
         )
     );
-    assert!(world.last_edit_content().ends_with("\n⚠️ out of date"));
+    assert!(world.last_edit_content().contains("⚠️ Out of date"));
     assert_eq!(world.status(&id).await, DraftStatus::Submitted);
 }
 
@@ -953,7 +950,7 @@ async fn the_portal_refresh_port_re_renders_a_committed_card_on_fake_discord() {
         })
     };
     refresh(vec![id]).await;
-    assert!(world.last_edit_content().ends_with("\n✅ applied by Boss"));
+    assert!(world.last_edit_content().contains("✅ Applied by Boss"));
 }
 
 /// `FakeDiscord` whose creates orphan every live lease first (a restart

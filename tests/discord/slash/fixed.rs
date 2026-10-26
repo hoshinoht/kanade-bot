@@ -64,22 +64,20 @@ async fn owning_a_timing_without_being_on_it_is_not_mine() {
     let reply = slash
         .run_in(DAN, &[BOSSING_ROLE], LOUNGE, "schedule", json!([]))
         .await;
-    assert_eq!(
-        reply.embeds[0].description.as_deref(),
-        Some("You have nothing left this week. `/schedule scope:all` shows everyone's.")
+    let texts = super::super::support::v2_texts(&reply.components);
+    assert!(
+        texts.iter().any(|text| text
+            .contains("You have nothing left this week. `/schedule scope:all` shows everyone's.")),
+        "{texts:?}"
     );
     // Bob, on the new run, does see it as his.
     let reply = slash
         .run_in(BOB, &[BOSSING_ROLE], LOUNGE, "schedule", json!([]))
         .await;
-    let lines: Vec<&str> = reply.embeds[0]
-        .fields
-        .iter()
-        .map(|f| f.value.as_str())
-        .collect();
+    let texts = super::super::support::v2_texts(&reply.components);
     assert!(
-        lines.iter().any(|line| line.contains("HMaleficStar")),
-        "{lines:?}"
+        texts.iter().any(|text| text.contains("Malefic Star")),
+        "{texts:?}"
     );
 }
 

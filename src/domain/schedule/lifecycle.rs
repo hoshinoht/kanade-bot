@@ -35,24 +35,9 @@ pub fn is_past_slot(slot: &ZonedDateTime, now: DateTime<Utc>) -> Result<bool, Sc
     Ok(end < now)
 }
 
-/// Mark live runs whose slot has passed `done` and drop their unsent pings.
-/// Returns the ids that changed, in `(datetime, id)` order.
-pub fn mark_done(draft: &mut Draft, now: DateTime<Utc>) -> Vec<String> {
-    let mut changed = Vec::new();
-    for run in draft.runs(None) {
-        if !run.status.is_live() || !is_past(run.datetime, now) {
-            continue;
-        }
-        draft.set_run_status(&run.id, RunStatus::Done);
-        draft.delete_unsent_reminders(&run.id, &[]);
-        changed.push(run.id);
-    }
-    changed
-}
-
 /// v5 (run completion, user decision 2026-10-09): retire one live run as
-/// `done` at its completion cutoff and drop its unsent pings, as
-/// [`mark_done`] does; a run already done or cancelled is left as it is.
+/// `done` at its completion cutoff and drop its unsent pings; a run already
+/// done or cancelled is left as it is.
 /// `true` when it changed.
 ///
 /// # Errors

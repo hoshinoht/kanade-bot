@@ -1,7 +1,7 @@
 //! The estimate share chart: the SVG pinned against stored copies of the
 //! approved board's fixtures, the PNG decoded for size and palette, and the
-//! image on redesigned day-of and countdown posts (never classic, never on
-//! an edit, left off when anything fails).
+//! image on day-of and countdown posts (never on an edit, left off when
+//! anything fails).
 //!
 //! `KANADE_WRITE_CHART=1` rewrites the stored SVGs; `KANADE_CHART_PNG_DIR`
 //! also writes the rendered PNGs there for a visual check.
@@ -29,9 +29,7 @@ use kanade::infrastructure::store::{SqliteCharData, SqliteStore};
 use resvg::tiny_skia::Pixmap;
 
 use super::{KALOS, MALEFIC, countdown, day_of, members, redesigned_v5, week};
-use crate::cards::{
-    answer, art_dir, catalog, created, edits, kit, redesigned, refresher, seed_day_of, world,
-};
+use crate::cards::{answer, art_dir, catalog, created, edits, kit, refresher, seed_day_of, world};
 use crate::scenarios::{self, now};
 use crate::support;
 
@@ -782,24 +780,13 @@ async fn redesigned_day_of_and_countdown_posts_carry_the_chart() {
 }
 
 #[tokio::test]
-async fn classic_cards_unset_ports_and_failures_post_without_it() {
+async fn unset_ports_and_failures_post_without_it() {
     let (schedule, roster, table) = (week(), members(), catalog());
     let ctx = redesigned_v5(&schedule, &roster, &table);
     let at = Utc.with_ymd_and_hms(2026, 9, 9, 1, 0, 0).unwrap();
     let attached = |message: &OutgoingMessage| png_upload(message).is_some();
 
-    let classic = super::context(&schedule, &roster, &table, false);
     let mut message = post();
-    attach_chart(
-        &mut message,
-        &day_of(&[KALOS]),
-        &classic,
-        &charted(CardKit::default()),
-        at,
-    )
-    .await;
-    assert!(!attached(&message), "classic stays as it is");
-
     attach_chart(
         &mut message,
         &day_of(&[KALOS]),
@@ -1032,7 +1019,7 @@ async fn the_tick_posts_the_chart_and_refresh_never_uploads() {
             (star.clone(), estimate(carling())),
             (kalos_run.clone(), estimate(kalos())),
         ]))),
-        ..redesigned(kit(Some(&art)))
+        ..kit(Some(&art))
     };
     let mut delivery = scenarios::delivery(&*store, &world, &*fake).with_cards(cards.clone());
     delivery.dispatch_reminders(now()).await.expect("dispatch");

@@ -1,9 +1,7 @@
-//! The redesigned proposal card as Components V2: posted with Apply /
-//! Reject buttons instead of seeded ✅/❌, pressed through the same approval
-//! path as a reaction (directly and through the dispatcher), closed to one
-//! disabled button, never replayed from reactions, and kept V2 for good.
-
-use std::sync::atomic::AtomicBool;
+//! The proposal card as Components V2: posted with Apply / Reject buttons
+//! instead of seeded ✅/❌, pressed through the same approval path as a
+//! reaction (directly and through the dispatcher), closed to one disabled
+//! button, never replayed from reactions, and kept V2 for good.
 
 use kanade::bot::cards::{CLOSED_GREY, CardPress, Pressed};
 use kanade::bot::commands::{
@@ -14,7 +12,7 @@ use kanade::bot::transport::COMPONENTS_V2;
 use kanade::domain::ids::tag;
 use twilight_model::channel::message::Component;
 
-use super::styled::{redesigned, styled_desk};
+use super::styled::styled_desk;
 use super::*;
 use crate::support::{self, BOSSING_ROLE, button_interaction, v2_accent, v2_buttons, v2_texts};
 
@@ -70,11 +68,7 @@ fn open_buttons(id: &str) -> Vec<support::ButtonView> {
 #[tokio::test]
 async fn a_redesigned_card_is_posted_as_v2_with_buttons_instead_of_reactions() {
     let world = World::new().await;
-    let desk = styled_desk(
-        &world,
-        &redesigned(),
-        DifficultyMarks::new().with("h", HARD),
-    );
+    let desk = styled_desk(&world, DifficultyMarks::new().with("h", HARD));
     let (id, _) = v2_card(&world, &desk).await;
     let Some(Call::Create { message, .. }) = world.creates().pop() else {
         panic!("a post");
@@ -112,7 +106,7 @@ async fn a_redesigned_card_is_posted_as_v2_with_buttons_instead_of_reactions() {
 #[tokio::test]
 async fn apply_answers_like_a_tick_and_leaves_one_disabled_button() {
     let world = World::new().await;
-    let desk = styled_desk(&world, &redesigned(), DifficultyMarks::new());
+    let desk = styled_desk(&world, DifficultyMarks::new());
     let (id, message) = v2_card(&world, &desk).await;
     let pressed = desk
         .on_press(&press(&message, &id, MY, RsvpAnswer::Yes))
@@ -146,7 +140,7 @@ async fn apply_answers_like_a_tick_and_leaves_one_disabled_button() {
 #[tokio::test]
 async fn reject_answers_like_a_cross_and_greys_the_card() {
     let world = World::new().await;
-    let desk = styled_desk(&world, &redesigned(), DifficultyMarks::new());
+    let desk = styled_desk(&world, DifficultyMarks::new());
     let (id, message) = v2_card(&world, &desk).await;
     assert_eq!(
         desk.on_press(&press(&message, &id, ADMIN, RsvpAnswer::No))
@@ -168,7 +162,7 @@ async fn reject_answers_like_a_cross_and_greys_the_card() {
 #[tokio::test]
 async fn a_press_by_someone_who_may_not_answer_changes_nothing() {
     let world = World::new().await;
-    let desk = styled_desk(&world, &redesigned(), DifficultyMarks::new());
+    let desk = styled_desk(&world, DifficultyMarks::new());
     let (id, message) = v2_card(&world, &desk).await;
     for answer in [RsvpAnswer::Yes, RsvpAnswer::No] {
         assert_eq!(
@@ -184,7 +178,7 @@ async fn a_press_by_someone_who_may_not_answer_changes_nothing() {
 #[tokio::test]
 async fn a_button_naming_no_proposal_on_the_message_is_inactive() {
     let world = World::new().await;
-    let desk = styled_desk(&world, &redesigned(), DifficultyMarks::new());
+    let desk = styled_desk(&world, DifficultyMarks::new());
     let (id, message) = v2_card(&world, &desk).await;
     assert_eq!(
         desk.on_press(&press(&message, "elsewhere", MY, RsvpAnswer::Yes))
@@ -218,7 +212,7 @@ fn dispatcher(desk: Desk) -> Dispatcher {
 #[tokio::test]
 async fn presses_through_the_dispatcher_ack_at_once_and_answer_only_the_presser() {
     let world = World::new().await;
-    let desk = styled_desk(&world, &redesigned(), DifficultyMarks::new());
+    let desk = styled_desk(&world, DifficultyMarks::new());
     let (id, message) = v2_card(&world, &desk).await;
     let dispatcher = dispatcher(desk);
     let message_u64: u64 = message.parse().unwrap();
@@ -339,7 +333,7 @@ async fn reaction_replay_skips_v2_cards() {
     use twilight_model::channel::message::ReactionType;
 
     let world = World::new().await;
-    let desk = styled_desk(&world, &redesigned(), DifficultyMarks::new());
+    let desk = styled_desk(&world, DifficultyMarks::new());
     let (id, message) = v2_card(&world, &desk).await;
     // Someone reacts ✅ by hand while the bot is away.
     world.discord.seed_reactions(
@@ -353,7 +347,7 @@ async fn reaction_replay_skips_v2_cards() {
     assert_eq!(world.discord.count(Op::Flags), 0, "this process posted it");
 
     // A restarted desk does not know the card: it reads its flags once.
-    let restarted = styled_desk(&world, &redesigned(), DifficultyMarks::new());
+    let restarted = styled_desk(&world, DifficultyMarks::new());
     assert_eq!(restarted.replay_reactions(me, || true).await.approved, 0);
     assert_eq!(world.discord.count(Op::Flags), 1);
     assert_eq!(world.status(&id).await, DraftStatus::Submitted);
@@ -361,24 +355,11 @@ async fn reaction_replay_skips_v2_cards() {
 }
 
 #[tokio::test]
-async fn a_v2_card_stays_v2_after_the_style_flips_back() {
-    let world = World::new().await;
-    let style = Arc::new(AtomicBool::new(true));
-    let desk = styled_desk(&world, &style, DifficultyMarks::new());
-    let (id, message) = v2_card(&world, &desk).await;
-    style.store(false, Ordering::SeqCst);
-    assert!(desk.refresh(&message).await);
-    let layout = last_v2_edit(&world);
-    assert_eq!(v2_buttons(&layout), open_buttons(&id));
-    assert!(world.discord.is_v2(Id::new(message.parse().unwrap())));
-}
-
-#[tokio::test]
 async fn a_restarted_desk_learns_a_v2_card_from_the_refused_legacy_edit() {
     let world = World::new().await;
-    let desk = styled_desk(&world, &redesigned(), DifficultyMarks::new());
+    let desk = styled_desk(&world, DifficultyMarks::new());
     let (id, message) = v2_card(&world, &desk).await;
-    let restarted = styled_desk(&world, &redesigned(), DifficultyMarks::new());
+    let restarted = styled_desk(&world, DifficultyMarks::new());
     assert!(restarted.refresh(&message).await);
     let calls: Vec<Call> = world
         .discord

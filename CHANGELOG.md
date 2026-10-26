@@ -26,6 +26,7 @@ Rescheduling and reopening runs that already ended, with safer run controls in t
 ### Removed
 
 - Removed the attendance mode setting: v5 attendance is now the only behaviour, and a saved v4-compatible choice is ignored.
+- Removed the classic message style and its choice under Config › Notifications and in `/debug ping`: reminder, digest, notice and proposal cards always use the redesigned layout.
 
 ## 1.0.0-beta.14
 

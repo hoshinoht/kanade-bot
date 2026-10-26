@@ -518,10 +518,12 @@ async fn a_message_becomes_a_card_and_a_participants_check_moves_the_run() {
         let now = auth::system_now();
         let tomorrow = now.with_timezone(&zone).date_naive() + chrono::Days::new(1);
         let local = |hour| {
-            zone.from_local_datetime(&tomorrow.and_time(NaiveTime::from_hms_opt(hour, 0, 0).unwrap()))
-                .single()
-                .unwrap()
-                .with_timezone(&Utc)
+            zone.from_local_datetime(
+                &tomorrow.and_time(NaiveTime::from_hms_opt(hour, 0, 0).unwrap()),
+            )
+            .single()
+            .unwrap()
+            .with_timezone(&Utc)
         };
         let run = SchedulerService::new(&*ctx.store, RandomIds, FixedClock(now))
             .with_attendance(policy.attendance)
@@ -609,7 +611,7 @@ async fn a_message_becomes_a_card_and_a_participants_check_moves_the_run() {
                 && harness.fake.calls().iter().any(|call| matches!(
                     call,
                     Call::Edit { edit, .. }
-                        if edit.content.as_deref().is_some_and(|text| text.contains("✅ applied by"))
+                        if format!("{edit:?}").contains("✅ Applied by")
                 ))
         );
         let posts = harness.creates_in(HOME_A);

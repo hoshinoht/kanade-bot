@@ -1,7 +1,7 @@
-//! `/debug ping`'s channel, style, header, digest and sample options and
+//! `/debug ping`'s channel, header, digest and sample options and
 //! `/debug header`, through the real journal and the fake Discord: a test
 //! card outside the run's home channel is display only, samples and header
-//! trials store nothing, and overrides never touch settings or records.
+//! trials store nothing, and overrides never touch records.
 
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
@@ -23,11 +23,12 @@ use kanade::domain::ids::RandomIds;
 use kanade::domain::notify::{ActiveClaims, DedupeKey, DeliveryJournal, DeliveryTarget};
 use kanade::domain::schedule::{RunStatus, ScheduleSnapshot};
 use kanade::domain::scheduler::SchedulerService;
-use kanade::domain::settings::MessageStyle;
 use kanade::infrastructure::store::SqliteStore;
 use twilight_model::id::Id;
 
-use crate::cards::{Script, Scripted, allowed, created, kit, refresher, rewriting, tonight, world};
+use crate::cards::{
+    Script, Scripted, allowed, created, fields, kit, refresher, rewriting, tonight, world,
+};
 use crate::debug::{desk, star};
 use crate::scenarios::{self, HOME, POST, now, week};
 use crate::support::{self, Store, seed_digest};
@@ -111,8 +112,8 @@ async fn sandbox_posts_are_display_only<S: Store + DebugCardStore + 'static>(sto
     );
     let card = created(&fake).pop().expect("sandbox card");
     assert_eq!(
-        card.content.as_deref(),
-        Some(format!("{TEST_PREFIX}📅 **Today — Thu 10 Sep**\n<@1001> Bex").as_str()),
+        card.content.as_deref().and_then(|text| text.lines().next()),
+        Some(format!("{TEST_PREFIX}📅 **Today — Thu 10 Sep**").as_str()),
         "the real card's look"
     );
     assert!(allowed(&card).is_empty(), "pings nobody");
@@ -252,7 +253,7 @@ async fn the_test_channel_is_the_default_target() {
 }
 
 #[tokio::test(start_paused = true)]
-async fn style_and_header_overrides_touch_no_setting_or_record() {
+async fn header_overrides_touch_no_setting_or_record() {
     let store = Arc::new(SqliteStore::open_temp().await);
     let world = world();
     let fake = Arc::new(support::fake());
@@ -260,16 +261,12 @@ async fn style_and_header_overrides_touch_no_setting_or_record() {
     let reminder = support::snapshot(&*store).await.reminders[0].id.clone();
     let day_of_key = record_key(DeliveryTarget::Reminder(reminder));
     let shine = Scripted::new(Script::Reply("Rise and shine, it's {day}!"));
-    let cards = CardKit {
-        style: Some(Arc::new(|| MessageStyle::Classic)),
-        ..rewriting(&shine)
-    };
+    let cards = rewriting(&shine);
     let desk = desk(&store, &fake, &world, cards.clone(), &[HOME], None);
     let run = |kind| PingRequest::run(run_id.clone(), kind, "1002".into());
 
     let report = desk
         .ping(PingRequest {
-            style: Some(MessageStyle::Redesigned),
             rewrite: true,
             ..run(TestKind::DayOf)
         })
@@ -287,33 +284,27 @@ async fn style_and_header_overrides_touch_no_setting_or_record() {
             }),
         }
     );
-    let redesigned = content(&fake);
+    let rewritten = content(&fake);
     assert!(
-        redesigned.contains("Rise and shine, it's Thu 10 Sep!"),
-        "{redesigned}"
+        rewritten.contains("Rise and shine, it's Thu 10 Sep!"),
+        "{rewritten}"
     );
-    assert!(redesigned.contains("\n-# "), "redesigned: {redesigned}");
-    assert_eq!(
-        cards.style(),
-        MessageStyle::Classic,
-        "the setting is untouched"
-    );
+    assert!(rewritten.contains("\n-# "), "{rewritten}");
     assert_eq!(store.card_record(&day_of_key).await.expect("read"), None);
 
-    // Without overrides: the live style and the seed, no model call.
+    // Without overrides: the seed, no model call.
     desk.ping(run(TestKind::DayOf)).await.expect("ping");
     assert_eq!(
-        content(&fake),
-        format!("{TEST_PREFIX}📅 **Today — Thu 10 Sep**\n<@1001> Bex")
+        content(&fake).lines().next(),
+        Some(format!("{TEST_PREFIX}📅 **Today — Thu 10 Sep**").as_str())
     );
     assert_eq!(shine.calls(), 1);
 
-    // Countdown and digest phrases: only the redesigned style shows them.
+    // Countdown and digest phrases.
     let waku = Scripted::new(Script::Reply("Waku waku!"));
     let phrases = desk_with(&store, &fake, &world, rewriting(&waku));
     phrases
         .ping(PingRequest {
-            style: Some(MessageStyle::Redesigned),
             rewrite: true,
             ..run(TestKind::Countdown60)
         })
@@ -326,7 +317,6 @@ async fn style_and_header_overrides_touch_no_setting_or_record() {
     );
     phrases
         .ping(PingRequest {
-            style: Some(MessageStyle::Redesigned),
             rewrite: true,
             ..run(TestKind::Digest)
         })
@@ -377,8 +367,8 @@ async fn style_and_header_overrides_touch_no_setting_or_record() {
             })
         );
         assert_eq!(
-            content(&fake),
-            format!("{TEST_PREFIX}📅 **Today — Thu 10 Sep**\n<@1001> Bex")
+            content(&fake).lines().next(),
+            Some(format!("{TEST_PREFIX}📅 **Today — Thu 10 Sep**").as_str())
         );
     }
     assert_eq!(store.card_record(&day_of_key).await.expect("read"), None);
@@ -412,18 +402,9 @@ async fn the_week_digest_is_a_test_copy<S: Store + DebugCardStore + 'static>(sto
         "the real digest's channel"
     );
     let card = created(&fake).pop().expect("digest");
-    assert_eq!(
-        card.content.as_deref(),
-        Some(format!("{TEST_PREFIX}🗓️ Boss week of Wed 09 Sep").as_str())
-    );
-    let embed = &card.embeds[0];
-    assert!(
-        embed
-            .description
-            .as_deref()
-            .is_some_and(|text| text.starts_with("**0/1 Cleared**")),
-        "{embed:?}"
-    );
+    let texts = support::v2_texts(&card.components);
+    assert_eq!(texts[0], "-# 🧪 TEST", "{texts:?}");
+    assert!(texts[1].starts_with("## Boss week · "), "{texts:?}");
     assert!(allowed(&card).is_empty());
     assert_eq!(reactions(&fake), 0);
     assert!(
@@ -484,32 +465,38 @@ async fn samples_store_nothing<S: Store + DebugCardStore + 'static>(store: Arc<S
     assert_eq!(posts.len(), TestKind::ALL.len());
     let day_of = &posts[0];
     assert_eq!(
-        day_of.content.as_deref(),
-        Some(format!("{TEST_PREFIX}📅 **Today — Thu 10 Sep**\n<@1001> Bex <@1003>").as_str())
+        day_of
+            .content
+            .as_deref()
+            .and_then(|text| text.lines().next()),
+        Some(format!("{TEST_PREFIX}📅 **Today — Thu 10 Sep**").as_str())
     );
-    let field = &day_of.embeds[0].fields[0];
-    assert_eq!(field.name, "🕘 21:00  ·  HMaleficStar");
+    let embed = &day_of.embeds[0];
     assert!(
-        field.value.contains("✅ confirmed · 1/3 (1 out)"),
-        "{}",
-        field.value
+        embed
+            .description
+            .as_deref()
+            .is_some_and(|text| text.contains("waiting on 1")),
+        "{embed:?}"
+    );
+    assert_eq!(
+        fields(embed)
+            .into_iter()
+            .map(|(_, value)| value)
+            .collect::<Vec<_>>(),
+        ["<@1001>", "Bex", "<@1003>"],
+        "in, waiting, out"
     );
     assert!(
         posts[1]
             .content
             .as_deref()
-            .is_some_and(|text| text.contains("**HMaleficStar** in 1h")),
+            .is_some_and(|text| text.starts_with(&format!("{TEST_PREFIX}⏰ **"))),
         "{:?}",
         posts[1].content
     );
-    assert!(
-        posts[5].embeds[0]
-            .description
-            .as_deref()
-            .is_some_and(|text| text.starts_with("**0/1 Cleared** · 1 run(s) across 1 day(s)")),
-        "{:?}",
-        posts[5].embeds
-    );
+    let digest = support::v2_texts(&posts[5].components);
+    assert!(digest[1].starts_with("## Boss week · "), "{digest:?}");
     assert!(posts.iter().all(|post| allowed(post).is_empty()));
     assert_eq!(reactions(&fake), 0);
 

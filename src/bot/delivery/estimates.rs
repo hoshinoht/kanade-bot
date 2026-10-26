@@ -1,4 +1,4 @@
-//! The estimate share chart on redesigned day-of and countdown posts: each
+//! The estimate share chart on day-of and countdown posts: each
 //! run's party from the roster (as the admin and portal character reads
 //! resolve it, boss by boss: a member may bring another character to a
 //! later boss) and each character's stored scouter estimate, of any age,
@@ -33,7 +33,6 @@ use crate::domain::chardata::PartyShares;
 use crate::domain::members::{Directory, MemberProfile};
 use crate::domain::notify::IntentContent;
 use crate::domain::schedule::{Run, RunStatus, ScheduleSnapshot};
-use crate::domain::settings::MessageStyle;
 use crate::infrastructure::character_data::CharacterData;
 use crate::infrastructure::scouter::{
     CarrierOwner, Estimates, Member, RosterIgn, SavedParty, Totals, saved_party,
@@ -222,19 +221,16 @@ fn skipped(reason: &str) {
     kanade_log::log!(warn, "estimate_chart_skipped", reason = reason);
 }
 
-/// The chart for a card's runs: redesigned day-of and countdown cards
-/// only. `None` otherwise or when a party can't be read; nobody having an
-/// estimate still draws ("no estimate yet"). A stale oldest reading in any
-/// run marks the whole chart "older than n days".
+/// The chart for a card's runs: day-of and countdown cards only. `None`
+/// otherwise or when a party can't be read; nobody having an estimate
+/// still draws ("no estimate yet"). A stale oldest reading in any run
+/// marks the whole chart "older than n days".
 pub async fn chart_for(
     content: &IntentContent,
     ctx: &CardContext<'_>,
     port: &dyn PartyEstimates,
     now: DateTime<Utc>,
 ) -> Option<Chart> {
-    if ctx.style != MessageStyle::Redesigned {
-        return None;
-    }
     let catalog = ctx.catalog?;
     let runs: Vec<&Run> = match content {
         IntentContent::DayOf { run_ids } => card_runs(ctx, run_ids),
@@ -271,8 +267,8 @@ pub async fn chart_for(
 }
 
 /// The estimate context of a day-of or countdown header rewrite (D1/D2):
-/// only with `kit`'s estimates port, the redesigned style and the
-/// `header_estimates` switch on, and only from a fresh estimate of every
+/// only with `kit`'s estimates port and the `header_estimates` switch on,
+/// and only from a fresh estimate of every
 /// run on the card ([`HeaderContext::build`]). The party's names and
 /// aliases come from `ctx.members` (refused raw in the line, never sent).
 /// With teasing on (D12), the party members who opted in are tease
@@ -284,7 +280,7 @@ pub async fn header_context(
     kit: &CardKit,
 ) -> Option<HeaderContext> {
     let switches = kit.switches();
-    if ctx.style != MessageStyle::Redesigned || !switches.estimates {
+    if !switches.estimates {
         return None;
     }
     let port = kit.estimates.as_deref()?;

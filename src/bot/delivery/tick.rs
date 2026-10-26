@@ -12,10 +12,9 @@
 //! alerts and posts nothing; v4 compared for equality and re-posted.
 //!
 //! v5 deviation (user decisions 2026-10-09/10): v4 marked every live run
-//! done two hours after its start (`mark_done`); the tick now asks each
-//! run's channel half an hour after it ends
-//! and marks it done only when answered or at its cutoff
-//! (`run_prompts.rs`).
+//! done two hours after its start; the tick now asks each run's channel
+//! half an hour after it ends and marks it done only when answered or at
+//! its cutoff (`run_prompts.rs`).
 
 use std::sync::Arc;
 #[cfg(any(test, feature = "test-support"))]
@@ -402,7 +401,6 @@ where
             quiet: self.config.quiet_mode,
             members: self.members,
             catalog: self.cards.catalog.as_deref(),
-            style: self.cards.style(),
             marks: &self.cards.marks,
             v2: Some(&self.cards.v2),
         }
@@ -724,18 +722,6 @@ where
                 self.alerts.alert(alert);
             }
         }
-    }
-
-    /// Retire runs whose slot has passed.
-    ///
-    /// # Errors
-    /// The scheduler failed.
-    pub async fn mark_done(&mut self, now: DateTime<Utc>) -> Result<Vec<String>, DeliveryError> {
-        Ok(self
-            .service(now)
-            .as_origin(tick_origin())
-            .mark_done()
-            .await?)
     }
 
     /// The digest step alone, under its own lease.

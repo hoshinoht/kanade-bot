@@ -1040,8 +1040,7 @@ async fn a_header_rewrite_hanging_at_the_cutoff_still_ends_by_it() {
         .seed(async |store| {
             add_members(store).await;
             // A day-of reminder firing in 2 h: inside the pre-generation
-            // horizon, not yet due for the tick, and rewritten in every
-            // message style (classic countdowns carry no phrase).
+            // horizon and not yet due for the tick.
             let start = now + chrono::Duration::hours(3);
             let run = create_run(store, &policy, now, HOME_A, start).await;
             SchedulerService::new(store, RandomIds, FixedClock(now))

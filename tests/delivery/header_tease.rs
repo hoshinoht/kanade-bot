@@ -12,9 +12,7 @@ use kanade::bot::delivery::cards::{CardKit, HeaderSwitches, ReminderCardStore};
 use kanade::bot::delivery::{PartyEstimates, RunEstimate};
 use kanade::domain::members::{Member, MemberProfile, PingLevel};
 
-use crate::cards::{
-    Script, Scripted, created, edits, redesigned, refresher, rewriting, shows_phrase, world,
-};
+use crate::cards::{Script, Scripted, created, edits, refresher, rewriting, shows_phrase, world};
 use crate::header_slots::{Fixed, carrier, estimate, owner, pregenerated_in};
 use crate::scenarios::{self, World, now};
 
@@ -47,7 +45,7 @@ fn tease_kit(rewriter: &Arc<Scripted>, teasing: &Arc<AtomicBool>) -> CardKit {
             estimates: true,
             teasing: teasing.load(Ordering::SeqCst),
         })),
-        ..redesigned(rewriting(rewriter))
+        ..rewriting(rewriter)
     }
 }
 

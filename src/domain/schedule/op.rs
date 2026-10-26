@@ -8,9 +8,7 @@ use chrono_tz::Tz;
 use super::draft::Draft;
 use super::error::ScheduleError;
 use super::fixed_edit::{FixedEditRequest, apply_fixed_edit, apply_party_delta};
-use super::lifecycle::{
-    SettleRun, apply_fixed_to_runs, finish_run, mark_done, retire_fixed_run, settle_run,
-};
+use super::lifecycle::{SettleRun, apply_fixed_to_runs, finish_run, retire_fixed_run, settle_run};
 use super::materialise::{materialise_week, materialise_weeks};
 use super::mutate::{
     StatusChange, amend_run, reschedule_run, reset_to_fixed, set_status, swap_participants,
@@ -127,7 +125,6 @@ pub enum Op<'a> {
     ReconcileDayOf {
         policy: &'a ReminderPolicy,
     },
-    MarkDone,
     MaterialiseWeeks {
         policy: &'a SchedulePolicy,
     },
@@ -254,7 +251,7 @@ impl Op<'_> {
 pub enum OpResult {
     /// The id of the weekly timing or run created.
     Created(String),
-    /// Ids created (materialising, reminders) or runs retired (`mark_done`).
+    /// Ids created (materialising, reminders).
     Ids(Vec<String>),
     Done,
     Reaction(ReactionResult),
@@ -435,7 +432,6 @@ pub fn apply_op(
         Op::ReconcileDayOf { policy } => {
             quiet(OpResult::Count(reconcile_day_of(draft, policy, now)?))
         }
-        Op::MarkDone => quiet(OpResult::Ids(mark_done(draft, now))),
         Op::FinishRun { run_id } => quiet(OpResult::Changed(finish_run(draft, run_id)?)),
         Op::SettleRun { settle, policy } => quiet(OpResult::Changed(settle_run(
             draft, ids, settle, policy, now,

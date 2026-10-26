@@ -1,5 +1,5 @@
 //! Estimate-flavoured headers (beta.9 header-store): pre-generation sends
-//! estimate context only with the port, the redesigned style and the live
+//! estimate context only with the port and the live
 //! switch on; the line's `{cN}` is stored with its slot map and filled at
 //! every render, which falls back to the seed when the switch is off or a
 //! slotted member left the party. No render ever shows a brace.
@@ -16,13 +16,12 @@ use kanade::domain::chardata::{Carrier, PartyShares};
 use kanade::domain::notify::{DedupeKey, DeliveryTarget, IntentContent};
 use kanade::domain::schedule::{Run, ScheduleSnapshot};
 use kanade::domain::scheduler::{ScheduleStore, Scope};
-use kanade::domain::settings::MessageStyle;
 use kanade::infrastructure::scouter::CarrierOwner;
 use kanade::infrastructure::store::SqliteStore;
 
 use crate::cards::{
-    Script, Scripted, before_due, catalog, created, edits, kalos_countdown, pregen, redesigned,
-    refresher, rewriting, shows_phrase, world,
+    Script, Scripted, before_due, catalog, created, edits, kalos_countdown, pregen, refresher,
+    rewriting, shows_phrase, world,
 };
 use crate::scenarios::{self, World, now};
 
@@ -91,7 +90,7 @@ fn kit(rewriter: &Arc<Scripted>, on: &Arc<AtomicBool>, estimate: Option<RunEstim
             estimates: on.load(Ordering::SeqCst),
             teasing: false,
         })),
-        ..redesigned(rewriting(rewriter))
+        ..rewriting(rewriter)
     }
 }
 
@@ -214,7 +213,6 @@ async fn a_slotted_member_who_left_the_party_gets_the_seed() {
             quiet: false,
             members: &roster,
             catalog: Some(&catalog),
-            style: MessageStyle::Redesigned,
             marks: &marks,
             v2: None,
         };

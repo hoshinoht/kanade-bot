@@ -45,7 +45,7 @@ use kanade::domain::schedule::{
     Change, ChangeSet, FixedRun, ReminderPolicy, Run, RunSource, RunStatus, SchedulePolicy,
 };
 use kanade::domain::scheduler::{ScheduleStore, SchedulerService, Scope};
-use kanade::domain::settings::{MessageStyle, RuntimeSettings};
+use kanade::domain::settings::RuntimeSettings;
 use kanade::infrastructure::store::{SqliteStore, SqliteStoreConfig};
 
 use super::support::{ADMIN_ROLE, BOSSING_ROLE, GUILD, OWNER, guild, parse, role, user};
@@ -177,7 +177,7 @@ impl Drop for TempDir {
     }
 }
 
-fn profile_config(dir: &TempDir, store: Arc<SqliteStore>, style: MessageStyle) -> Arc<ConfigDesk> {
+fn profile_config(dir: &TempDir, store: Arc<SqliteStore>) -> Arc<ConfigDesk> {
     let root = dir.0.join("personas");
     std::fs::create_dir_all(root.join("bundles")).unwrap();
     std::fs::create_dir_all(root.join("profiles")).unwrap();
@@ -202,7 +202,6 @@ fn profile_config(dir: &TempDir, store: Arc<SqliteStore>, style: MessageStyle) -
     )));
     let mut settings = RuntimeSettings::default();
     settings.persona.profile_visibility = vec!["terse".into()];
-    settings.notifications.message_style = style;
     Arc::new(ConfigDesk::new(ConfigInputs {
         settings,
         store,
@@ -342,8 +341,6 @@ pub struct Ports {
     pub debug_cards: Option<Arc<dyn DebugCards>>,
     pub header_rewrite: Option<kanade::api::state::HeaderRewritePort>,
     pub closed: Vec<String>,
-    /// The saved message style (classic by default).
-    pub style: MessageStyle,
     /// Module `character_data`: `/character`'s parts over the store and
     /// the fake, registered after the retained commands.
     pub character: Option<CharacterMaker>,
@@ -411,7 +408,7 @@ impl Slash {
                 policy.clone(),
                 Some(PILOT_ROLE.to_string()),
             )),
-            config: Some(profile_config(&dir, store.clone(), ports.style)),
+            config: Some(profile_config(&dir, store.clone())),
             rescans: ports.rescans,
             allowance: ports.allowance,
             debug_cards: ports.debug_cards,

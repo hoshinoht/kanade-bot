@@ -189,6 +189,27 @@ async fn settings_conform() {
     settings_conformance::run_suite(SqliteStore::open_temp).await;
 }
 
+/// The retired `v5.message_style` row (live stores hold `redesigned`) is
+/// neither read nor refused, and saves cannot write it again.
+#[tokio::test]
+async fn a_retired_message_style_row_is_ignored() {
+    let store = SqliteStore::open_temp().await;
+    store
+        .temp_dir()
+        .raw("INSERT INTO config (key, value) VALUES ('v5.message_style', 'redesigned')")
+        .await
+        .expect("raw row");
+    assert!(store.settings_rows().await.unwrap().is_empty());
+    let seed = RuntimeSettings::default();
+    assert_eq!(load_settings(&store, &seed).await.unwrap(), seed);
+    assert!(
+        store
+            .put_settings_rows(vec![("v5.message_style".into(), "classic".into())])
+            .await
+            .is_err()
+    );
+}
+
 #[tokio::test]
 async fn replays_conform() {
     replay_conformance::run_suite(SqliteStore::open_temp).await;

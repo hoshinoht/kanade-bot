@@ -25,7 +25,6 @@ use crate::domain::history::{Actor, Origin, Surface};
 use crate::domain::members::{GatewayMember, MemberProfile, MemberStore, Roster};
 use crate::domain::schedule::{RunStatus, SchedulePolicy};
 use crate::domain::scheduler::StoreError;
-use crate::domain::settings::MessageStyle;
 
 pub type PortFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 
@@ -145,8 +144,6 @@ pub struct PingRequest {
     pub channel: Option<String>,
     /// Where the command was used (samples' default).
     pub invoked_in: Option<String>,
-    /// Overrides the live message style for this post only.
-    pub style: Option<MessageStyle>,
     /// Rewrite the header now instead of using the seed.
     pub rewrite: bool,
 }
@@ -160,7 +157,6 @@ impl PingRequest {
             requested_by,
             channel: None,
             invoked_in: None,
-            style: None,
             rewrite: false,
         }
     }

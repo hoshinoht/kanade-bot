@@ -413,27 +413,14 @@ fn header_generation_time_defaults_to_midnight_round_trips_and_refuses_bad_clock
 }
 
 #[test]
-fn message_style_round_trips_and_refuses_unknown_text() {
-    assert_eq!(
-        RuntimeSettings::default().notifications.message_style,
-        MessageStyle::Classic
-    );
-    for style in MessageStyle::ALL {
-        let section = Section::Notifications(Notifications {
-            quiet_mode: true,
-            message_style: style,
-            ..Notifications::default()
-        });
-        let written = encode_checked(&section).expect("stored form");
-        assert!(written.contains(&(keys::MESSAGE_STYLE, style.as_str().to_owned())));
-        let read = round_trip(&section);
-        assert_eq!(read.notifications.message_style, style);
-        assert!(read.notifications.quiet_mode);
-    }
-    assert_eq!(MessageStyle::Classic.as_str(), "classic");
-    assert_eq!(MessageStyle::Redesigned.as_str(), "redesigned");
-    let bad = ["", "Classic", "REDESIGNED", "fancy", " classic"];
-    refused_under(keys::MESSAGE_STYLE, &bad);
+fn the_retired_message_style_is_no_setting() {
+    assert!(!keys::is_setting("v5.message_style"));
+    let settings =
+        read(&[("v5.message_style", "classic"), (keys::QUIET_MODE, "1")]).expect("reads");
+    assert!(settings.notifications.quiet_mode);
+    let written =
+        encode_checked(&Section::Notifications(Notifications::default())).expect("stored form");
+    assert!(written.iter().all(|(key, _)| keys::is_setting(key)));
 }
 
 #[test]

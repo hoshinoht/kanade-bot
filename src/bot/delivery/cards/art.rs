@@ -9,6 +9,7 @@ use std::sync::Arc;
 
 use super::Card;
 use crate::domain::catalog::BossTable;
+use crate::domain::guides::ArtKind;
 
 /// v4 `IMAGE_PREFIX`: the entry art's attachment name, so it never collides
 /// with the portrait's.
@@ -18,14 +19,6 @@ pub const IMAGE_PREFIX: &str = "image-";
 /// post stays under ~3 MiB: small enough to upload well inside the 10 s
 /// attempt timeout, since a timed-out upload is ambiguous and never resent.
 pub const MAX_ART_BYTES: u64 = 3 * 512 * 1024;
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum ArtKind {
-    /// `boss/portraits/<portrait or key>.<ext>`.
-    Portrait,
-    /// `boss/artwork/entry/<key>.<ext>`.
-    Entry,
-}
 
 /// One picture a card wants: its kind and the catalog basename (exact case).
 #[derive(Clone, Debug, PartialEq, Eq)]

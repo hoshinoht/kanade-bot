@@ -1,5 +1,4 @@
-//! Delivery and confirmed retraction of durable decline notices, in the
-//! message style the card kit reads at send time.
+//! Delivery and confirmed retraction of durable decline notices.
 
 use chrono::{DateTime, Utc};
 
@@ -8,7 +7,6 @@ use super::cards::redesign::decline_text;
 use super::cards::{CardKit, ReminderCardStore};
 use super::executor::SendReport;
 use super::tick::{Delivery, DeliveryError, TickLease};
-use crate::bot::commands::text::{format_bosses, local_day, local_time};
 use crate::bot::ids::parse_id;
 use crate::bot::mentions::allow_users;
 use crate::bot::transport::{DiscordTransport, Outcome, OutgoingMessage, RejectionKind};
@@ -21,7 +19,6 @@ use crate::domain::notify::{
     NotificationIntent, PlannedSend, SendDisposition, audience,
 };
 use crate::domain::scheduler::{IdSource, ScheduleStore, Scope};
-use crate::domain::settings::MessageStyle;
 
 /// What the recovery drain did for decline notices.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -30,14 +27,12 @@ pub struct DeclineReport {
     pub retracted: usize,
 }
 
-/// The text and the users it may ping. Both styles tag the same people:
-/// classic names them first, redesigned leads with the decliner and moves
-/// them to a `for …` subtext line.
+/// The text and the users it may ping: it leads with the decliner and
+/// tags the rest of the party in a `for …` subtext line.
 fn render_notice(
     notice: &DeclineNotice,
     run: &crate::domain::schedule::Run,
     members: &dyn Directory,
-    zone: chrono_tz::Tz,
     kit: &CardKit,
 ) -> (String, Vec<String>) {
     let others: Vec<String> = run
@@ -63,27 +58,12 @@ fn render_notice(
         .collect::<Vec<_>>()
         .join(" ");
     let display_name = notice.display_name.as_deref().unwrap_or_default();
-    let text = match kit.style() {
-        MessageStyle::Classic => format!(
-            "{} {} can't make **{}** ({} {}) — reschedule? `/amend run_id:{} to:...`",
-            people,
-            display_name,
-            format_bosses(&run.bosses),
-            local_day(run.datetime, zone),
-            local_time(run.datetime, zone),
-            crate::domain::ids::short_id(&run.id),
-        )
-        .trim()
-        .to_owned(),
-        MessageStyle::Redesigned => {
-            let decliner = if display_name.is_empty() {
-                format!("<@{}>", notice.user_id)
-            } else {
-                display_name.to_owned()
-            };
-            decline_text(&decliner, run, &people, kit.catalog.as_deref(), &kit.marks)
-        }
+    let decliner = if display_name.is_empty() {
+        format!("<@{}>", notice.user_id)
+    } else {
+        display_name.to_owned()
     };
+    let text = decline_text(&decliner, run, &people, kit.catalog.as_deref(), &kit.marks);
     (text, audience.mentioned)
 }
 
@@ -140,13 +120,7 @@ where
             let Some(run) = snapshot.runs.iter().find(|run| run.id == notice.run_id) else {
                 continue;
             };
-            let (content, mentions) = render_notice(
-                &notice,
-                run,
-                self.members,
-                self.config.policy.zone(),
-                &self.cards,
-            );
+            let (content, mentions) = render_notice(&notice, run, self.members, &self.cards);
             let intent = NotificationIntent {
                 effect: EffectKind::Notice("decline.notice".into()),
                 effect_context: vec![notice.run_id.clone(), notice.user_id.clone()],

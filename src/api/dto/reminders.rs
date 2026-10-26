@@ -62,15 +62,15 @@ pub struct CardField {
 
 /// A reminder card as the bot posts it: the message text (mentions as
 /// `<@id>`), the estimate image beneath it, its first embed and any
-/// further ones (the redesigned day-of card has one per run). Art is a
-/// same-origin `/art/` URL.
+/// further ones (the day-of card has one per run). Art is a same-origin
+/// `/art/` URL.
 #[derive(Serialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
 pub struct CardPreview {
     pub content: String,
     /// The "Who carries" image a new post attaches between the text and
-    /// the embeds; `None` for classic cards, other kinds and while the
-    /// roster or cached estimates are off.
+    /// the embeds; `None` for other kinds and while the roster or cached
+    /// estimates are off.
     pub estimate: Option<EstimateImage>,
     /// `#rrggbb`, the embed's colour bar.
     pub color: String,

@@ -1,7 +1,7 @@
 // Generated from the Rust API DTOs by src/api/ts_bindings.rs; do not edit.
 // Regenerate: KANADE_WRITE_TS=1 cargo test --all-features --lib ts_bindings
 
-import type { ActorKind, Answer, ChangeRecord, ChatOutcome, ChatRoute, ContextSource, Difficulty, DifficultyName, ExtractionOutcome, IdListSource, KnowledgeDoc, MessageStyle, MissionSeries, PingLevel, ProposalKind, Refusal, RewriteKind, RewriteStage, RewriteVerdict, RowKey, RunStatus, SelfServiceMode, SignInEvent, SignInMethod, SignInRealm, Surface } from './manual';
+import type { ActorKind, Answer, ChangeRecord, ChatOutcome, ChatRoute, ContextSource, Difficulty, DifficultyName, ExtractionOutcome, IdListSource, KnowledgeDoc, MissionSeries, PingLevel, ProposalKind, Refusal, RewriteKind, RewriteStage, RewriteVerdict, RowKey, RunStatus, SelfServiceMode, SignInEvent, SignInMethod, SignInRealm, Surface } from './manual';
 
 /**
  * `common.json#/$defs/Boss`.
@@ -1474,14 +1474,14 @@ inline: boolean, };
 /**
  * A reminder card as the bot posts it: the message text (mentions as
  * `<@id>`), the estimate image beneath it, its first embed and any
- * further ones (the redesigned day-of card has one per run). Art is a
- * same-origin `/art/` URL.
+ * further ones (the day-of card has one per run). Art is a same-origin
+ * `/art/` URL.
  */
 export type CardPreview = { content: string, 
 /**
  * The "Who carries" image a new post attaches between the text and
- * the embeds; `None` for classic cards, other kinds and while the
- * roster or cached estimates are off.
+ * the embeds; `None` for other kinds and while the roster or cached
+ * estimates are off.
  */
 estimate: EstimateImage | null, 
 /**
@@ -1865,7 +1865,7 @@ export type Chatbot = { enabled: boolean, configured: boolean, missing_env: Arra
  */
 category_ids: Array<string>, category_ids_source: IdListSource, };
 
-export type Notifications = { quiet_mode: boolean, message_style: MessageStyle, 
+export type Notifications = { quiet_mode: boolean, 
 /**
  * `HH:MM` in the guild's zone: when the daily reminder-header rewrite
  * batch runs.

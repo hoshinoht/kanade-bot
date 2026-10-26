@@ -1,10 +1,9 @@
-//! The redesigned change and decline notices: plain text in one grammar
-//! (emoji, bosses, what happened, who) with everything else (old slot,
-//! source, quiet mode, react hint) in one `-#` subtext line. New times are
-//! full Discord timestamps; weekly timings read as their result. Who is
-//! tagged is the classic audience's choice and the allow-list stays the
-//! caller's; in quiet mode nobody is tagged and the names move to the
-//! subtext.
+//! The change and decline notices: plain text in one grammar (emoji,
+//! bosses, what happened, who) with everything else (old slot, source,
+//! quiet mode, react hint) in one `-#` subtext line. New times are full
+//! Discord timestamps; weekly timings read as their result. Who is tagged
+//! is v4's audience choice and the allow-list stays the caller's; in quiet
+//! mode nobody is tagged and the names move to the subtext.
 
 use chrono::{DateTime, NaiveTime, Timelike, Utc, Weekday};
 use chrono_tz::Tz;
@@ -104,9 +103,9 @@ fn weekly(weekday: Weekday, time: NaiveTime) -> String {
     )
 }
 
-/// The redesigned text for `notice`, or `None` when it posts nothing (a
-/// derived status, a vanished run or weekly timing). `who` is the classic
-/// audience: names, and the tags the mention policy chose.
+/// The text for `notice`, or `None` when it posts nothing (a derived
+/// status, a vanished run or weekly timing). `who` is v4's audience: names,
+/// and the tags the mention policy chose.
 pub fn notice_text(notice: &Notice, look: &NoticeLook<'_>, who: &Audience) -> Option<String> {
     let zone = look.zone;
     let label = |bosses: &[String]| boss_labels(bosses, look.catalog, look.marks);

@@ -22,7 +22,7 @@ use super::{
 const TARGET: &str = "web/packages/api-types/src/generated.ts";
 
 /// Hand-written vocabulary (`manual.ts`) the `#[ts(type)]` overrides name.
-const MANUAL: [&str; 26] = [
+const MANUAL: [&str; 25] = [
     "ActorKind",
     "Answer",
     "ChangeRecord",
@@ -34,7 +34,6 @@ const MANUAL: [&str; 26] = [
     "ExtractionOutcome",
     "IdListSource",
     "KnowledgeDoc",
-    "MessageStyle",
     "MissionSeries",
     "PingLevel",
     "ProposalKind",

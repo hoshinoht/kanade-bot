@@ -17,7 +17,6 @@ use kanade::chat::nudge::{
     NudgeRewriter, RewriteFailure, RewritePrompt, SharedRewriter, StoreRewriteSink,
 };
 use kanade::domain::model_log::{RewriteFilter, RewriteLogStore, RewriteStage};
-use kanade::domain::settings::MessageStyle;
 use kanade::infrastructure::store::SqliteStore;
 use tokio::sync::{Notify, watch};
 
@@ -76,27 +75,23 @@ impl NudgeRewriter for BySeed {
     }
 }
 
-/// A day-of card and this week's digest, posted with the seeds in `style`.
+/// A day-of card and this week's digest, posted with the seeds.
 struct Posted {
     store: Arc<SqliteStore>,
     logs: Arc<SqliteStore>,
     fake: Arc<FakeDiscord>,
     world: World,
     star: String,
-    style: MessageStyle,
 }
 
 impl Posted {
-    async fn new(style: MessageStyle) -> Self {
+    async fn new() -> Self {
         let store = Arc::new(SqliteStore::open_temp().await);
         let world = world();
         let fake = Arc::new(support::fake());
         let (star, _) = seed_day_of(&*store).await;
         mark_digest_week(&*store, previous_week(), now()).await;
-        let seeds = CardKit {
-            style: Some(Arc::new(move || style)),
-            ..kit(None)
-        };
+        let seeds = kit(None);
         let mut delivery = scenarios::delivery(&*store, &world, &*fake).with_cards(seeds);
         delivery.post_week_digest(now()).await.expect("digest");
         delivery.dispatch_reminders(now()).await.expect("dispatch");
@@ -107,12 +102,10 @@ impl Posted {
             fake,
             world,
             star,
-            style,
         }
     }
 
     fn refresh(&self, rewriter: &Arc<BySeed>) -> CardRefresh<SqliteStore, FakeDiscord> {
-        let style = self.style;
         let cards = CardKit {
             heading: HeadingRewrite {
                 rewriter: Some(SharedRewriter(rewriter.clone())),
@@ -123,7 +116,6 @@ impl Posted {
                     Arc::new(now),
                 ))),
             },
-            style: Some(Arc::new(move || style)),
             ..kit(None)
         };
         refresher(&self.store, &self.fake, &self.world, cards)
@@ -205,7 +197,7 @@ async fn run_once(
 
 #[tokio::test]
 async fn a_run_edits_the_posted_card_and_digest_in_place_and_a_refresh_keeps_it() {
-    let posted = Posted::new(MessageStyle::Redesigned).await;
+    let posted = Posted::new().await;
     let rewriter = BySeed::new(Ok("Rise and shine, it's {day}!"), "Waku waku!");
     let manual = posted.manual(&rewriter);
     let (started, report) = run_once(&manual).await;
@@ -278,28 +270,12 @@ async fn a_run_edits_the_posted_card_and_digest_in_place_and_a_refresh_keeps_it(
     );
 }
 
-#[tokio::test]
-async fn the_classic_style_rewrites_only_day_of_headings() {
-    let posted = Posted::new(MessageStyle::Classic).await;
-    let rewriter = BySeed::new(Ok("Rise and shine, it's {day}!"), "Waku waku!");
-    let (started, report) = run_once(&posted.manual(&rewriter)).await;
-    assert_eq!(started, ManualStart::Started(1));
-    assert_eq!(report.accepted, 1);
-    let [edit] = edits(&posted.fake).try_into().expect("one edit");
-    assert_eq!(
-        edit.content
-            .as_deref()
-            .map(|text| text.lines().next().unwrap_or_default()),
-        Some("📅 **Rise and shine, it's Thu 10 Sep!**")
-    );
-}
-
 /// A refresh whose card and digest edits are on the wire (old lines) when a
 /// manual run stores its overrides: the manual edits wait for them and land
 /// last, so the posts end with the new lines, never a stale render.
 #[tokio::test]
 async fn a_refresh_in_flight_never_lands_after_a_manual_edit() {
-    let posted = Posted::new(MessageStyle::Redesigned).await;
+    let posted = Posted::new().await;
     let rewriter = BySeed::new(Ok("Rise and shine, it's {day}!"), "Waku waku!");
     answer(
         &*posted.store,
@@ -369,11 +345,25 @@ async fn a_rejected_or_failed_rewrite_stores_and_edits_nothing() {
             },
         ),
     ] {
-        let posted = Posted::new(MessageStyle::Classic).await;
+        let posted = Posted::new().await;
         let rewriter = BySeed::new(day_of, "Waku waku!");
         let (_, report) = run_once(&posted.manual(&rewriter)).await;
-        assert_eq!(report, expected);
-        assert!(edits(&posted.fake).is_empty(), "the post is unchanged");
+        // The digest's phrase is still rewritten.
+        assert_eq!(
+            report,
+            ManualReport {
+                accepted: 1,
+                ..expected
+            }
+        );
+        assert!(
+            edits(&posted.fake).iter().all(|edit| !edit
+                .content
+                .as_deref()
+                .unwrap_or_default()
+                .starts_with("📅")),
+            "the card is unchanged"
+        );
         let key = posted.card_key().await;
         assert!(posted.overrides(&key).await.is_empty());
         assert_eq!(
@@ -385,25 +375,28 @@ async fn a_rejected_or_failed_rewrite_stores_and_edits_nothing() {
                 .and_then(|record| record.heading),
             Some("Today — Thu 10 Sep".into())
         );
-        assert_eq!(posted.stages().await, [RewriteStage::Manual]);
+        assert_eq!(
+            posted.stages().await,
+            [RewriteStage::Manual, RewriteStage::Manual]
+        );
     }
 }
 
 #[tokio::test]
 async fn a_second_trigger_while_a_run_is_active_is_refused() {
-    let posted = Posted::new(MessageStyle::Classic).await;
+    let posted = Posted::new().await;
     let rewriter = BySeed::gated("Rise and shine, it's {day}!");
     let manual = posted.manual(&rewriter);
     let (stop, worker) = spawn_worker(&manual);
     let mut finished = manual.finished();
-    assert_eq!(manual.start(request()).await, ManualStart::Started(1));
+    assert_eq!(manual.start(request()).await, ManualStart::Started(2));
     rewriter.started.notified().await;
     assert_eq!(manual.start(request()).await, ManualStart::Running);
     rewriter.release.notify_one();
     run_ends(&mut finished).await;
     assert_eq!(
         manual.start(request()).await,
-        ManualStart::Started(1),
+        ManualStart::Started(2),
         "free again once the run ended"
     );
     stop.send_replace(true);
@@ -417,7 +410,7 @@ async fn a_second_trigger_while_a_run_is_active_is_refused() {
 
 #[tokio::test]
 async fn a_stop_ends_the_call_in_flight_and_abandons_the_run() {
-    let posted = Posted::new(MessageStyle::Redesigned).await;
+    let posted = Posted::new().await;
     let rewriter = BySeed::gated("Rise and shine, it's {day}!");
     let manual = posted.manual(&rewriter);
     let (stop, worker) = spawn_worker(&manual);
@@ -456,7 +449,7 @@ async fn a_stop_ends_the_call_in_flight_and_abandons_the_run() {
 
 #[tokio::test]
 async fn without_a_rewriter_nothing_starts() {
-    let posted = Posted::new(MessageStyle::Classic).await;
+    let posted = Posted::new().await;
     let rewriter = BySeed::new(Ok("x {day}"), "Waku waku!");
     let mut refresh = posted.refresh(&rewriter);
     refresh.cards.heading.rewriter = None;

@@ -730,11 +730,6 @@ impl<S: ScheduleStore, I: IdSource, C: Clock> Attributed<'_, S, I, C> {
         Ok(count(self.apply(Scope::All, op).await?.value))
     }
 
-    /// Retire live runs whose slot has passed.
-    pub async fn mark_done(self) -> SchedulerResult<Vec<String>> {
-        Ok(ids(self.apply(Scope::All, Op::MarkDone).await?.value))
-    }
-
     /// v5 (run completion): mark one live run done at its cutoff, without a
     /// notice; `false` when it was no longer live.
     pub async fn finish_run(self, run_id: &str) -> SchedulerResult<bool> {
@@ -1447,7 +1442,6 @@ fn op_digest(op: &Op<'_>) -> SchedulerResult<String> {
             fire_at,
         } => digest("reschedule_unposted_reminder", &(reminder_id, fire_at)),
         Op::ReconcileDayOf { .. } => digest("reconcile_day_of", &()),
-        Op::MarkDone => digest("mark_done", &()),
         Op::MaterialiseWeeks { .. } => digest("materialise_weeks", &()),
         Op::SetStatus { run_id, change, .. } => digest("set_status", &(run_id, change)),
         Op::AmendRun { run_id, to, .. } => digest("amend_run", &(run_id, to)),
@@ -2120,10 +2114,6 @@ mod digest_pins {
             "6938945a3bedf7c921225746714f3bdc5ea7c3268cb5dd5852758a3880830f7e",
         ),
         (
-            "mark_done",
-            "79811cefc02062409da71783aa12d6630273c2e1146dbfea25fe47ceba08f244",
-        ),
-        (
             "materialise_weeks",
             "419ea541f49179228989b7a26e94d6cebcfbf9ef44e9682270668edb9b31350d",
         ),
@@ -2276,7 +2266,6 @@ mod digest_pins {
                 "reconcile_day_of",
                 Op::ReconcileDayOf { policy: &reminders },
             ),
-            ("mark_done", Op::MarkDone),
             (
                 "materialise_weeks",
                 Op::MaterialiseWeeks { policy: &schedule },

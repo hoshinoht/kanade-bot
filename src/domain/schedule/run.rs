@@ -45,7 +45,7 @@ spelled! {
 }
 
 impl RunStatus {
-    /// Still to come: `mark_done` retires these once their slot has passed.
+    /// Still to come: completion retires these once they are over.
     pub fn is_live(self) -> bool {
         matches!(
             self,

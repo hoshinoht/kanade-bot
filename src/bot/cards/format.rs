@@ -1,5 +1,5 @@
-//! Proposal card text (v4 `bot.agent.formatting`: `when_text`,
-//! `proposal_line`, `card_kind`, `proposal_card`, the card notices, and
+//! Proposal card wording shared by the card and its V2 layout (v4
+//! `bot.agent.formatting`: `when_text`, `card_kind`, the audience, and
 //! `Pipeline._unanswered`). Pure.
 
 use std::collections::BTreeMap;
@@ -7,16 +7,13 @@ use std::collections::BTreeMap;
 use chrono_tz::Tz;
 
 use crate::bot::commands::text::{WEEKDAY_NAMES, local_day, local_time, mention};
-use crate::domain::ids::short_id;
 use crate::domain::proposals::{CardDetails, ChangeKind};
-use crate::domain::schedule::{EMOJI_NO, EMOJI_YES, Run};
+use crate::domain::schedule::Run;
 
 pub const COLOUR_PROPOSAL: u32 = 0xEB459E;
 pub const COLOUR_SUGGESTION: u32 = 0xFAA61A;
 pub const COLOUR_FIXED: u32 = 0x9B59B6;
 pub const TBD: &str = "**TBD**";
-/// Put on a card a newer card (or an approved sibling) retired.
-pub const SUPERSEDED_NOTICE: &str = "↪ superseded by a newer card";
 
 const DIFFICULTY_WORDS: [(&str, &str); 5] = [
     ("e", "Easy"),
@@ -25,18 +22,6 @@ const DIFFICULTY_WORDS: [(&str, &str); 5] = [
     ("c", "Chaos"),
     ("x", "Extreme"),
 ];
-
-pub fn confirm_hint() -> String {
-    format!("React {EMOJI_YES} to confirm, {EMOJI_NO} to reject, or use `/amend` to edit.")
-}
-
-pub fn applied_notice(name: &str) -> String {
-    format!("✅ applied by {name}")
-}
-
-pub fn rejected_notice(name: &str) -> String {
-    format!("❌ rejected by {name}")
-}
 
 /// Who a card names, and which of them it may notify (v4 `Audience`).
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -82,14 +67,6 @@ pub fn boss_label(token: &str) -> String {
     }
 }
 
-pub fn boss_labels(bosses: &[String]) -> String {
-    if bosses.is_empty() {
-        return "(no bosses)".to_owned();
-    }
-    let labels: Vec<String> = bosses.iter().map(|token| boss_label(token)).collect();
-    labels.join(" + ")
-}
-
 pub(crate) fn kind_verb(kind: &str) -> &str {
     match kind {
         "add" => "new run",
@@ -120,172 +97,8 @@ pub(crate) fn weekday_name(weekday: u8) -> &'static str {
     WEEKDAY_NAMES[usize::from(weekday) % 7]
 }
 
-fn weekly_text(details: &CardDetails, zone: Tz) -> String {
-    let payload = &details.payload;
-    let when = match (payload.weekday, payload.time.as_deref()) {
-        (Some(weekday), Some(time)) if !time.is_empty() => {
-            format!("**every {} {time}**", weekday_name(weekday))
-        }
-        _ => format!("{} — **and every week after**", when_text(details, zone)),
-    };
-    format!(
-        "{when} — recurring from now on, not a one-off; \
-         this week's run is added if that night is still ahead"
-    )
-}
-
-fn weekly_change_text(details: &CardDetails, who: Option<&Audience>) -> Vec<String> {
-    let payload = &details.payload;
-    let was = payload
-        .weekly_when
-        .as_deref()
-        .filter(|text| !text.is_empty());
-    let mut lines = Vec::new();
-    match (payload.weekday, payload.time.as_deref()) {
-        (Some(weekday), Some(time)) if !time.is_empty() => {
-            let moved = format!("**every {} {time}**", weekday_name(weekday));
-            let head = match was {
-                Some(was) => format!("~~every {was}~~ → {moved}"),
-                None => moved,
-            };
-            lines.push(format!(
-                "{head} — the weekly timing itself, so every week from now on; \
-                 this week's run moves with it"
-            ));
-        }
-        _ => {
-            if let Some(was) = was {
-                lines.push(format!("**every {was}** — the night is unchanged"));
-            }
-        }
-    }
-    if !payload.participants.is_empty() {
-        lines.push(format!(
-            "{} → {}",
-            format_participants(&details.participants, who),
-            format_participants(&payload.participants, who)
-        ));
-    }
-    lines
-}
-
-/// `(field name, field value)` for one change on a card. A matched run's
-/// bosses head the line, beside its `#id`.
-pub fn proposal_line(
-    details: &CardDetails,
-    run: Option<&Run>,
-    zone: Tz,
-    who: Option<&Audience>,
-) -> (String, String) {
-    let kind = details.kind;
-    let bosses = boss_labels(run.map_or(&details.bosses, |run| &run.bosses));
-    let payload = &details.payload;
-    let op = payload.op.as_deref();
-    let removes_baseline = kind == ChangeKind::Fix && op == Some("remove");
-    let changes_baseline = kind == ChangeKind::Fix && op == Some("edit");
-    let verb = match (kind, op) {
-        (ChangeKind::Fix, Some("remove")) => "remove weekly",
-        (ChangeKind::Fix, Some("edit")) => "change weekly",
-        _ => kind_verb(kind.as_str()),
-    };
-    let mut name = format!("{verb} · {bosses}");
-    if let Some(run) = run {
-        name.push_str(&format!(" · `#{}`", short_id(&run.id)));
-    }
-
-    let mut lines: Vec<String> = Vec::new();
-    if removes_baseline {
-        let when = payload
-            .weekly_when
-            .as_deref()
-            .filter(|text| !text.is_empty())
-            .map(|when| format!(" ({when})"))
-            .unwrap_or_default();
-        lines.push(format!(
-            "**stop scheduling this every week**{when} — future weeks will not be \
-             scheduled, and this week's run is cancelled"
-        ));
-    } else if changes_baseline {
-        lines.extend(weekly_change_text(details, who));
-    } else {
-        match kind {
-            ChangeKind::Fix => lines.push(weekly_text(details, zone)),
-            ChangeKind::Move | ChangeKind::Add | ChangeKind::Split => {
-                let old = match run {
-                    Some(run) if kind == ChangeKind::Move => format!(
-                        "~~{} {}~~ → ",
-                        local_day(run.datetime, zone),
-                        local_time(run.datetime, zone)
-                    ),
-                    _ => String::new(),
-                };
-                lines.push(old + &when_text(details, zone));
-            }
-            ChangeKind::Cancel => lines.push("**off this week**".to_owned()),
-            ChangeKind::Otot => {
-                lines.push("**own time** — stays on the schedule, no countdown pings".to_owned())
-            }
-            ChangeKind::Sub => {
-                let out = if payload.remove.is_empty() {
-                    &details.participants
-                } else {
-                    &payload.remove
-                };
-                if payload.add.is_empty() {
-                    lines.push(format!(
-                        "{} **out this week**",
-                        format_participants(out, who)
-                    ));
-                } else {
-                    lines.push(format!(
-                        "{} out · {} in",
-                        format_participants(out, who),
-                        format_participants(&payload.add, who)
-                    ));
-                }
-            }
-            ChangeKind::Rsvp => lines.push(
-                match details.rsvp.as_deref() {
-                    Some("yes") => "**can make it**",
-                    Some("no") => "**can't make it**",
-                    Some("maybe") => "**not sure yet**",
-                    _ => "**answered**",
-                }
-                .to_owned(),
-            ),
-        }
-    }
-
-    let people: &[String] = if details.participants.is_empty() {
-        run.map_or(&[], |run| run.participants.as_slice())
-    } else {
-        &details.participants
-    };
-    // An edit that changes the party already showed old → new.
-    let party_shown = changes_baseline && !payload.participants.is_empty();
-    if !people.is_empty() && kind != ChangeKind::Sub && !party_shown {
-        lines.push(format_participants(people, who));
-    }
-    if let Some(summary) = details.summary.as_deref().filter(|text| !text.is_empty()) {
-        lines.push(format!("_{summary}_"));
-    }
-    if !details.also_mentioned.is_empty() {
-        let spoken: Vec<&str> = details
-            .also_mentioned
-            .iter()
-            .map(|kind| kind_verb(kind))
-            .collect();
-        lines.push(format!("(also mentioned: {})", spoken.join(", ")));
-    }
-    // v5: the self-service link rides on the card (N1 cards-and-link).
-    if let Some(line) = &details.self_service {
-        lines.push(line.clone());
-    }
-    (name, lines.join("\n"))
-}
-
 crate::domain::spelled! {
-    /// Which header a card gets.
+    /// Which mark a card gets.
     CardKind {
         Proposal => "proposal",
         Suggestion => "suggestion",
@@ -294,18 +107,13 @@ crate::domain::spelled! {
 }
 
 impl CardKind {
-    fn header(self) -> (&'static str, u32) {
-        match self {
-            Self::Proposal => ("📋 Proposed change", COLOUR_PROPOSAL),
-            Self::Suggestion => ("💡 Suggested amendment", COLOUR_SUGGESTION),
-            Self::Fix => ("📌 New fixed timing", COLOUR_FIXED),
-        }
-    }
-
-    /// The header's emoji and colour, for the redesigned card.
+    /// The card's emoji and colour.
     pub(crate) fn mark(self) -> (&'static str, u32) {
-        let (title, colour) = self.header();
-        (title.split(' ').next().unwrap_or(title), colour)
+        match self {
+            Self::Proposal => ("📋", COLOUR_PROPOSAL),
+            Self::Suggestion => ("💡", COLOUR_SUGGESTION),
+            Self::Fix => ("📌", COLOUR_FIXED),
+        }
     }
 }
 
@@ -342,69 +150,4 @@ pub fn unanswered(details: &[&CardDetails], runs: &[&Run]) -> Vec<String> {
         }
     }
     waiting
-}
-
-/// A rendered card (v4 `Card`, without artwork).
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct CardView {
-    pub content: String,
-    pub title: Option<String>,
-    pub description: Option<String>,
-    pub fields: Vec<(String, String)>,
-    pub footer: Option<String>,
-    pub colour: u32,
-    /// Who the post may notify (its allowed mentions).
-    pub mention_users: Vec<String>,
-}
-
-/// One card for a burst: one field per change, headed by its kind.
-pub fn proposal_card(
-    details: &[&CardDetails],
-    runs: &BTreeMap<String, &Run>,
-    zone: Tz,
-    unanswered: Option<&[String]>,
-    confidence: Option<f64>,
-    who: Option<&Audience>,
-) -> CardView {
-    let run_of =
-        |details: &CardDetails| details.run_id.as_ref().and_then(|id| runs.get(id).copied());
-    let (title, colour) = card_kind(details).header();
-    let mut mentioned: Vec<String> = Vec::new();
-    for change in details {
-        let people = if change.participants.is_empty() {
-            run_of(change).map_or(&[][..], |run| run.participants.as_slice())
-        } else {
-            change.participants.as_slice()
-        };
-        for uid in people {
-            if !mentioned.contains(uid) {
-                mentioned.push(uid.clone());
-            }
-        }
-    }
-    let content = if mentioned.is_empty() {
-        title.to_owned()
-    } else {
-        format!("{title}\n{}", format_participants(&mentioned, who))
-    };
-    let fields = details
-        .iter()
-        .map(|change| proposal_line(change, run_of(change), zone, who))
-        .collect();
-    let mut footer = confirm_hint();
-    if let Some(confidence) = confidence {
-        footer.push_str(&format!("  (confidence {confidence:.2})"));
-    }
-    let description = unanswered
-        .filter(|waiting| !waiting.is_empty())
-        .map(|waiting| format!("Not yet answered: {}", format_participants(waiting, who)));
-    CardView {
-        content,
-        title: None,
-        description,
-        fields,
-        footer: Some(footer),
-        colour,
-        mention_users: who.map(|who| who.mentioned.clone()).unwrap_or_default(),
-    }
 }

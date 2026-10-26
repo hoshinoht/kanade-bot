@@ -7,7 +7,8 @@ use std::fs;
 use std::io::Read;
 use std::path::PathBuf;
 
-use crate::bot::delivery::cards::{ArtFile, ArtKind, ArtSource, MAX_ART_BYTES};
+use crate::bot::delivery::cards::{ArtFile, ArtSource, MAX_ART_BYTES};
+use crate::domain::guides::ArtKind;
 
 /// Accepted extensions, in lookup order (as the portal's `/art`).
 const SUFFIXES: [&str; 4] = ["png", "webp", "jpg", "jpeg"];
@@ -38,18 +39,11 @@ fn plain(basename: &str) -> bool {
             .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_' || byte == b'-')
 }
 
-fn kind_name(kind: ArtKind) -> &'static str {
-    match kind {
-        ArtKind::Portrait => "portrait",
-        ArtKind::Entry => "entry",
-    }
-}
-
 fn skipped(kind: ArtKind, basename: &str, reason: &str) {
     kanade_log::log!(
         warn,
         "card_art_skipped",
-        kind = kind_name(kind),
+        kind = kind.as_str(),
         boss = basename,
         reason,
     );

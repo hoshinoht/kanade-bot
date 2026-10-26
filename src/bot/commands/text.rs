@@ -1,13 +1,11 @@
 //! v4 `bot.agent.formatting` texts the commands reply with, byte for byte.
 
-use std::collections::BTreeMap;
-
 use chrono::{DateTime, Datelike, NaiveTime, Timelike, Utc, Weekday};
 use chrono_tz::Tz;
 
 use crate::domain::catalog::BossTable;
 use crate::domain::ids::short_id;
-use crate::domain::schedule::{FixedRun, RsvpState, Run, RunStatus};
+use crate::domain::schedule::{FixedRun, RunStatus};
 
 pub const WEEKDAY_NAMES: [&str; 7] = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 pub const MONTH_NAMES: [&str; 12] = [
@@ -74,76 +72,6 @@ pub fn status_label(status: RunStatus) -> &'static str {
         RunStatus::Done => "🏁 done",
         RunStatus::Cancelled => "🚫 cancelled",
     }
-}
-
-/// v4 `rsvp_tally`, e.g. `1/3 ✅ · 1 ❌`.
-pub fn rsvp_tally(participants: &[String], rsvps: &BTreeMap<String, RsvpState>) -> String {
-    let count = |state| {
-        participants
-            .iter()
-            .filter(|uid| rsvps.get(*uid) == Some(&state))
-            .count()
-    };
-    let (yes, no) = (count(RsvpState::Yes), count(RsvpState::No));
-    let mut text = format!("{yes}/{} ✅", participants.len());
-    if no > 0 {
-        text.push_str(&format!(" · {no} ❌"));
-    }
-    text
-}
-
-/// v4 `roster_delta`: `this week: −MY +kanon`, or empty when unchanged.
-pub fn roster_delta(out: &[String], joined: &[String]) -> String {
-    if out.is_empty() && joined.is_empty() {
-        return String::new();
-    }
-    let bits: Vec<String> = out
-        .iter()
-        .map(|name| format!("\u{2212}{name}"))
-        .chain(joined.iter().map(|name| format!("+{name}")))
-        .collect();
-    format!("this week: {}", bits.join(" "))
-}
-
-/// v4 `schedule_line`.
-pub fn schedule_line(
-    run: &Run,
-    zone: Tz,
-    rsvps: &BTreeMap<String, RsvpState>,
-    delta: &str,
-) -> String {
-    let when = if run.status == RunStatus::Otot {
-        "own time".to_owned()
-    } else {
-        local_time(run.datetime, zone)
-    };
-    let mut parts = vec![
-        format!("`#{}`", short_id(&run.id)),
-        when,
-        format!("**{}**", format_bosses(&run.bosses)),
-        format_participants(&run.participants),
-        status_label(run.status).to_owned(),
-        rsvp_tally(&run.participants, rsvps),
-    ];
-    if !delta.is_empty() {
-        parts.push(format!("_{delta}_"));
-    }
-    parts.join(" · ")
-}
-
-/// v4 `group_by_day`: `(day heading, runs)` in time order.
-pub fn group_by_day<'a>(runs: &[&'a Run], zone: Tz) -> Vec<(String, Vec<&'a Run>)> {
-    let mut sorted = runs.to_vec();
-    sorted.sort_by_key(|run| run.datetime);
-    let mut groups: Vec<(String, Vec<&Run>)> = Vec::new();
-    for run in sorted {
-        let key = local_day(run.datetime, zone);
-        match groups.iter_mut().find(|(day, _)| *day == key) {
-            Some((_, runs)) => runs.push(run),
-            None => groups.push((key, vec![run])),
-        }
-    }
-    groups
 }
 
 /// v4 `fixed_run_line` with the boss table (every command passes one).

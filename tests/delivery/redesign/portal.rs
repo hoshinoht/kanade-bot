@@ -1,7 +1,7 @@
-//! "Open in portal" under the redesigned day-of and countdown cards: a
-//! legacy link row beside the text and embeds while the public portal is
-//! open, to the run's page (the root for several runs or an unsafe id);
-//! nothing when it is closed or unconfigured, and never in the classic style.
+//! "Open in portal" under the day-of and countdown cards: a legacy link
+//! row beside the text and embeds while the public portal is open, to the
+//! run's page (the root for several runs or an unsafe id); nothing when it
+//! is closed or unconfigured.
 
 use std::sync::Arc;
 
@@ -17,9 +17,7 @@ use kanade::domain::schedule::ScheduleSnapshot;
 use twilight_model::channel::message::component::{Button, ButtonStyle};
 use twilight_model::channel::message::{Component, MessageFlags};
 
-use super::{
-    KALOS, MALEFIC, art, context, countdown, day_of, kalos_copies, members, redesigned_v5, week,
-};
+use super::{KALOS, MALEFIC, art, countdown, day_of, kalos_copies, members, redesigned_v5, week};
 use crate::cards::catalog;
 
 const ORIGIN: &str = "https://portal.example";
@@ -148,27 +146,6 @@ async fn a_closed_or_unconfigured_portal_adds_nothing_and_an_edit_clears_the_row
             assert_eq!(edit.components, Some(Vec::new()), "a stale row is cleared");
             assert!(edit.valid() && edit.v2_components().is_none());
         }
-    }
-}
-
-#[tokio::test]
-async fn the_classic_style_never_links() {
-    let (schedule, roster, table) = (week(), members(), catalog());
-    let kit = portal(Some(ORIGIN), true);
-    let ctx = CardContext {
-        v2: Some(&kit),
-        ..context(&schedule, &roster, &table, false)
-    };
-    for content in [countdown(MALEFIC), day_of(&[MALEFIC])] {
-        let card = cards::build(&content, &ctx, None, &[]).unwrap();
-        assert_eq!(
-            card.rows,
-            Some(Vec::new()),
-            "a run card still owns its rows"
-        );
-        assert!(post(&card).await.components.is_empty());
-        let edit = card.edit(&CardArt::default());
-        assert_eq!(edit.components, Some(Vec::new()), "clears a redesigned row");
     }
 }
 

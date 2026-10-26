@@ -1,15 +1,16 @@
 //! What guide rendering reads from disk ([`GuideSources`]): boss art from
 //! the operator's boss directory (exact case, as cards, at most
-//! [`cards::MAX_ART_BYTES`]) and each boss's knowledge `lead`. The API
-//! preview and the publish worker must render with this one adapter, or
-//! their slot hashes (and so the confirmed plan hash) would differ.
+//! [`MAX_ART_BYTES`](crate::bot::delivery::cards::MAX_ART_BYTES)) and each
+//! boss's knowledge `lead`. The API preview and the publish worker must
+//! render with this one adapter, or their slot hashes (and so the
+//! confirmed plan hash) would differ.
 
 use std::path::{Path, PathBuf};
 
 use serde_json::Value;
 
 use super::{BossArt, read_document};
-use crate::bot::delivery::cards::{self, ArtSource};
+use crate::bot::delivery::cards::ArtSource;
 use crate::domain::guides::{ArtFile, ArtKind, GuideSources};
 
 /// The boss directory (`KANADE_BOSS_DIR`) and `boss/knowledge/`; either may
@@ -52,10 +53,6 @@ impl GuideSources for GuideFiles {
     }
 
     fn art(&self, kind: ArtKind, basename: &str) -> Option<ArtFile> {
-        let kind = match kind {
-            ArtKind::Portrait => cards::ArtKind::Portrait,
-            ArtKind::Entry => cards::ArtKind::Entry,
-        };
         let found = self.art.as_ref()?.find(kind, basename, true)?;
         Some(ArtFile {
             file_name: found.file_name,

@@ -1,8 +1,6 @@
 //! Reminder header pre-generation: the persona rewrite of each upcoming
 //! card's day-of heading or countdown/digest phrase, stored before its send
-//! under the key the send path reads (`card_records`). Classic countdown and
-//! digest cards show no phrase (v4), so while the live message style is
-//! classic only day-of headings are rewritten.
+//! under the key the send path reads (`card_records`).
 //!
 //! A daily batch at the configured guild-local time
 //! (`notifications.header_generation_time`, read live) rewrites every card
@@ -52,7 +50,6 @@ use crate::domain::notify::{
 };
 use crate::domain::schedule::{Reminder, SchedulePolicy, ScheduleSnapshot};
 use crate::domain::scheduler::{ScheduleStore, Scope};
-use crate::domain::settings::MessageStyle;
 use crate::domain::time::from_iso;
 
 /// Cards firing within this window are rewritten (by a batch or catch-up).
@@ -355,12 +352,10 @@ where
 
     /// Unsent cards firing in `(now, until]` and no journal claim, plus the
     /// coming boss week's digest when that week has no digest yet; earliest
-    /// first. Countdowns and the digest only in the redesigned style.
+    /// first.
     async fn candidates(&self, now: DateTime<Utc>, until: DateTime<Utc>) -> Option<Vec<Candidate>> {
         let schedule = self.store.load(&Scope::All).await.ok()?;
         let view = self.store.load_view().await.ok()?;
-        // Read live, as the cards do: classic shows no countdown/digest phrase.
-        let phrases = self.cards.style() == MessageStyle::Redesigned;
         let mut upcoming: Vec<&Reminder> = schedule
             .reminders
             .iter()
@@ -370,8 +365,7 @@ where
         let mut seen = HashSet::new();
         let mut out = Vec::new();
         for reminder in upcoming {
-            let Some(candidate) = self.reminder_candidate(&schedule, reminder, &view, phrases)
-            else {
+            let Some(candidate) = self.reminder_candidate(&schedule, reminder, &view) else {
                 continue;
             };
             if seen.insert(candidate.key.clone()) {
@@ -385,7 +379,7 @@ where
         };
         // The week starting at the first reset after `now`.
         let next = reset.current_week(now + TimeDelta::days(7)).ok()?;
-        if phrases && next > reset.current_week(now).ok()? && next <= until {
+        if next > reset.current_week(now).ok()? && next <= until {
             let log = self.store.load_digests().await.ok()?;
             if digest_open(&log, next)
                 && let Some(key) = digest_phrase_key(next)
@@ -408,7 +402,6 @@ where
         schedule: &ScheduleSnapshot,
         reminder: &Reminder,
         view: &impl JournalView,
-        phrases: bool,
     ) -> Option<Candidate> {
         // Only targets and grouping matter here, not channels or mentions.
         let settings = DeliverySettings {
@@ -429,7 +422,6 @@ where
                     quiet: false,
                     members: &*self.members,
                     catalog: self.cards.catalog.as_deref(),
-                    style: self.cards.style(),
                     marks: &self.cards.marks,
                     v2: None,
                 };
@@ -438,7 +430,7 @@ where
                     day: local_day(first, ctx.zone),
                 }
             }
-            IntentContent::Countdown { .. } if phrases => Header::Countdown { kind },
+            IntentContent::Countdown { .. } => Header::Countdown { kind },
             _ => return None,
         };
         Some(Candidate {
@@ -507,7 +499,6 @@ where
             quiet: false,
             members: &*self.members,
             catalog: self.cards.catalog.as_deref(),
-            style: self.cards.style(),
             marks: &self.cards.marks,
             v2: None,
         };

@@ -1,8 +1,7 @@
-//! The redesigned proposal card (`MessageStyle::Redesigned`): a verb-led
-//! question in the content, one field group per change (From / To / Party
-//! inline), who has not answered as subtext, and the run ids, confidence and
-//! how to answer in the footer. An outcome recolours the card and adds a
-//! subtext line. Classic cards stay in `format.rs`, byte-exact.
+//! The proposal card: a verb-led question in the content, one field group
+//! per change (From / To / Party inline), who has not answered as subtext,
+//! and the run ids, confidence and how to answer in the footer. An outcome
+//! recolours the card and adds a subtext line.
 
 use std::collections::BTreeMap;
 

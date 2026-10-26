@@ -1095,7 +1095,8 @@ async fn a_check_on_a_proposal_card_is_approved_through_the_desk_not_via_portal(
                 policy: policy.clone(),
                 instance_id: "seed".into(),
             },
-        );
+        )
+        .posting_legacy();
         let posted = desk
             .post_card(&Card {
                 channel_id: HOME_C.to_string(),
@@ -1181,7 +1182,7 @@ async fn a_check_on_a_proposal_card_is_approved_through_the_desk_not_via_portal(
             harness.fake.calls().iter().any(|call| matches!(
                 call,
                 Call::Edit { edit, .. }
-                    if edit.content.as_deref().is_some_and(|text| text.contains("✅ applied by"))
+                    if format!("{edit:?}").contains("✅ Applied by")
             ))
         );
     })
@@ -1382,7 +1383,9 @@ async fn retained_commands_and_their_autocomplete_dispatch_through_the_registry(
                 _ => None,
             })
             .unwrap();
-        assert!(!reply.content.is_empty() || !reply.embeds.is_empty());
+        assert!(
+            !reply.content.is_empty() || !reply.embeds.is_empty() || !reply.components.is_empty()
+        );
         assert_ne!(
             reply.content,
             crate::bot::commands::GENERIC_FAILURE,

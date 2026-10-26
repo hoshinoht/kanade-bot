@@ -154,7 +154,6 @@ async fn read<'a>(site: &'a Site, id: &str) -> Result<Read<'a>, ApiError> {
         quiet: settings.notifications.quiet_mode,
         members: &ctx.roster,
         catalog: Some(&state.catalog),
-        style: settings.notifications.message_style,
         marks: &state.marks,
         // The preview keeps the embed rendering of a V2 digest.
         v2: None,

@@ -74,7 +74,7 @@ fn reminder_rows(reminders: &[&Reminder], zone: chrono_tz::Tz) -> String {
         .join("\n")
 }
 
-/// The style and header notes after a ping's reply.
+/// The header note after a ping's reply.
 fn notes(request: &super::context::PingRequest, report: &TestReport) -> String {
     let mut text = String::new();
     if !matches!(
@@ -82,9 +82,6 @@ fn notes(request: &super::context::PingRequest, report: &TestReport) -> String {
         TestPosted::Posted { .. } | TestPosted::Sandboxed { .. }
     ) {
         return text;
-    }
-    if let Some(style) = request.style {
-        text.push_str(&format!(" Style: `{}` (this post only).", style.as_str()));
     }
     match &report.header {
         Some(note) if note.rewritten => text.push_str(" Header: fresh rewrite (not stored)."),

@@ -44,7 +44,7 @@
 
 ### Discord delivery
 
-- **Reminder cards:** a day-of card at the configured ping time and countdown pings at configured minutes before each run, in a classic or redesigned message style.
+- **Reminder cards:** a day-of card at the configured ping time and countdown pings at configured minutes before each run.
 - **Weekly digest:** one digest per boss week in the post channel, edited in place as the schedule changes.
 - **Slash commands:** `/schedule`, `/fixed`, `/amend`, `/status`, `/swap`, `/rsvp`, `/pings`, `/style`, `/limits`, `/rescan`, admin-only `/say`, `/nick` and `/debug`, and `/character` with the character data module.
 

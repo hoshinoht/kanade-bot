@@ -226,15 +226,19 @@ async fn cancelled_and_done_runs_keep_no_pending_reminders() {
             .unwrap(),
         2
     );
-    clock.set(kl(2026, 9, 2, 0, 0));
-    assert_eq!(
+    let first = state(&service)
+        .await
+        .runs
+        .into_iter()
+        .filter(|run| run.status.is_live())
+        .min_by_key(|run| run.datetime)
+        .unwrap();
+    assert!(
         service
             .as_origin(kanade::domain::history::Origin::for_tests())
-            .mark_done()
+            .finish_run(&first.id)
             .await
             .unwrap()
-            .len(),
-        1
     );
     let end = state(&service).await;
     for run in end.runs.iter().filter(|run| run.status.is_terminal()) {

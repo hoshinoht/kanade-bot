@@ -4,8 +4,7 @@
 //! and edits the posts in place, so nobody is pinged again, nothing is
 //! uploaded and ✅/❌ and the journal binding stay.
 //!
-//! The classic style shows no countdown or digest phrase, so only day-of
-//! headings are rewritten then. Calls are sequential through the shared
+//! Calls are sequential through the shared
 //! [`HeadingRewrite`](super::cards::HeadingRewrite) (each logged once in the
 //! Rewrites log, stage `manual`) with the pre-generation deadline. An
 //! accepted line is appended as an override (the original line is kept) and
@@ -40,7 +39,6 @@ use crate::chat::nudge::{
 use crate::domain::model_log::RewriteStage;
 use crate::domain::notify::{DeliveryJournal, WeekReset, WeeklyDigest};
 use crate::domain::scheduler::{ScheduleStore, Scope};
-use crate::domain::settings::MessageStyle;
 
 /// Who asked for a run and where its summary goes.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -309,9 +307,9 @@ where
         }
     }
 
-    /// Every bound card of this boss week naming a run still ahead (day-of
-    /// only in the classic style), earliest run first, then the week's
-    /// active digest (redesigned only); `None` on a store error.
+    /// Every bound card of this boss week naming a run still ahead,
+    /// earliest run first, then the week's active digest; `None` on a
+    /// store error.
     async fn plan(&self, now: DateTime<Utc>) -> Option<Vec<Target>> {
         let refresh = &*self.refresh;
         let policy = &refresh.policy;
@@ -321,7 +319,6 @@ where
             time: policy.reset_time,
         };
         let week = reset.current_week(now).ok()?;
-        let phrases = refresh.cards.style() == MessageStyle::Redesigned;
         let schedule = refresh.store.load(&Scope::All).await.ok()?;
         let mut runs: Vec<(DateTime<Utc>, String)> = schedule
             .runs
@@ -349,10 +346,8 @@ where
                         Header::DayOf {
                             day: local_day(first, ctx.zone),
                         }
-                    } else if phrases {
-                        Header::Countdown
                     } else {
-                        return None;
+                        Header::Countdown
                     };
                     Some(Target::Card {
                         key: card.dedupe_key.clone()?,
@@ -362,15 +357,13 @@ where
                 })
                 .collect::<Vec<_>>()
         };
-        if phrases {
-            let log = refresh.store.load_digests().await.ok()?;
-            let digest = log
-                .digests
-                .into_iter()
-                .find(|digest| digest.week_start == week && digest.retired_at.is_none());
-            if let (Some(digest), Some(key)) = (digest, digest_phrase_key(week)) {
-                targets.push(Target::Digest { digest, key });
-            }
+        let log = refresh.store.load_digests().await.ok()?;
+        let digest = log
+            .digests
+            .into_iter()
+            .find(|digest| digest.week_start == week && digest.retired_at.is_none());
+        if let (Some(digest), Some(key)) = (digest, digest_phrase_key(week)) {
+            targets.push(Target::Digest { digest, key });
         }
         Some(targets)
     }

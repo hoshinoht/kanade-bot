@@ -25,7 +25,7 @@ use crate::{
             TickReport,
             cards::{
                 ArtSource, CardKit, DifficultyMarks, HeaderSwitchSource, HeaderSwitches,
-                HeadingRewrite, PersonaSource, PortalSwitch, StyleSource, V2Kit,
+                HeadingRewrite, PersonaSource, PortalSwitch, V2Kit,
             },
         },
         gateway::DeliveryEligibility,
@@ -184,9 +184,6 @@ pub fn card_kit(
     settings: watch::Receiver<SettingsChanged>,
     log: SharedRewriteSink,
 ) -> CardKit {
-    // The live message style, read per card like quiet mode per tick.
-    let styles = settings.clone();
-    let style: StyleSource = Arc::new(move || styles.borrow().settings.notifications.message_style);
     // The live portal switch, read per digest and notice render: a closed
     // portal's tunnel is stopped, so its button or link would be dead.
     let portal = settings.clone();
@@ -242,7 +239,6 @@ pub fn card_kit(
             words: Some(words),
             log: Some(log),
         },
-        style: Some(style),
         marks,
         // The avatar and portal origin are filled in by the Discord side.
         v2: V2Kit {

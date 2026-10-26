@@ -1,9 +1,7 @@
-//! Message style: the classic cards pinned byte-exact, the redesigned
-//! day-of, countdown and digest cards over one fixed boss week, and change
-//! notices in both styles.
+//! The day-of, countdown and digest cards over one fixed boss week, and
+//! change notices.
 
 mod chart;
-mod classic;
 mod live;
 pub(crate) mod notices;
 mod portal;
@@ -14,16 +12,14 @@ use std::sync::Arc;
 use chrono::{DateTime, TimeDelta, TimeZone, Utc};
 use chrono_tz::Tz;
 use kanade::bot::delivery::cards::redesign::{DifficultyMarks, NO_MARKS};
-use kanade::bot::delivery::cards::{ArtFile, ArtKind, ArtSource, CardContext};
-use kanade::bot::transport::{MessageEdit, OutgoingMessage};
+use kanade::bot::delivery::cards::{ArtFile, ArtSource, CardContext};
 use kanade::domain::catalog::BossTable;
+use kanade::domain::guides::ArtKind;
 use kanade::domain::members::{Member, PingLevel, Roster};
 use kanade::domain::notify::{DigestInclusion, IntentContent, digest_inclusion};
 use kanade::domain::schedule::{
     Rsvp, RsvpSource, RsvpState, Run, RunSource, RunStatus, ScheduleSnapshot,
 };
-use kanade::domain::settings::MessageStyle;
-use serde_json::{Value, json};
 
 pub(crate) const ZONE: Tz = chrono_tz::Asia::Kuala_Lumpur;
 pub(crate) const MALEFIC: &str = "a1b2c3d4-0000-4000-8000-000000000001";
@@ -179,13 +175,12 @@ pub(crate) fn context<'a>(
         quiet,
         members,
         catalog: Some(catalog),
-        style: MessageStyle::Classic,
         marks: &NO_MARKS,
         v2: None,
     }
 }
 
-/// [`context`] in the redesigned style with `marks`.
+/// [`context`] with `marks`.
 pub(crate) fn redesigned<'a>(
     schedule: &'a ScheduleSnapshot,
     members: &'a Roster,
@@ -194,7 +189,6 @@ pub(crate) fn redesigned<'a>(
     marks: &'a DifficultyMarks,
 ) -> CardContext<'a> {
     CardContext {
-        style: MessageStyle::Redesigned,
         marks,
         ..context(schedule, members, catalog, quiet)
     }
@@ -263,27 +257,4 @@ impl ArtSource for AllArt {
 
 pub(crate) fn art() -> Arc<dyn ArtSource> {
     Arc::new(AllArt)
-}
-
-/// A post as JSON: content, the embeds as Discord receives them, uploads
-/// (name and bytes) and the allow-list.
-pub(crate) fn message_json(message: &OutgoingMessage) -> Value {
-    json!({
-        "content": message.content,
-        "embeds": message.embeds,
-        "attachments": message
-            .attachments
-            .iter()
-            .map(|upload| json!([upload.filename, String::from_utf8_lossy(&upload.bytes)]))
-            .collect::<Vec<_>>(),
-        "allowed_mentions": message.allowed_mentions,
-    })
-}
-
-pub(crate) fn edit_json(edit: &MessageEdit) -> Value {
-    json!({
-        "content": edit.content,
-        "embeds": edit.embeds,
-        "allowed_mentions": edit.allowed_mentions,
-    })
 }

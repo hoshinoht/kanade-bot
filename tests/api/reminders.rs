@@ -19,7 +19,6 @@ use kanade::{
         },
         schedule::{Change, Reminder, Run},
         scheduler::{ScheduleStore, Scope},
-        settings::MessageStyle,
     },
 };
 use serde_json::Value;
@@ -77,7 +76,6 @@ async fn tick_post(
         quiet: false,
         members: &members,
         catalog: Some(&reads.catalog()),
-        style: MessageStyle::Classic,
         marks: &NO_MARKS,
         v2: None,
     };
@@ -242,8 +240,11 @@ async fn post_morning(
     intent
 }
 
+/// The runs a day-of preview shows: one embed title per run.
 fn field_names(card: &Value) -> Vec<&str> {
-    strs(&card["fields"], "name")
+    let mut titles = vec![card["title"].as_str().unwrap_or_default()];
+    titles.extend(strs(&card["more_embeds"], "title"));
+    titles
 }
 
 #[tokio::test]
@@ -325,7 +326,7 @@ async fn a_late_same_day_run_never_joins_the_posted_card() {
     let preview = reads.read(&preview_path("m-kalos-day"), SCHEMA).await;
     let card = &preview["card"];
     assert_eq!(field_names(card).len(), 1, "{card}");
-    assert!(field_names(card)[0].contains("XKalos"));
+    assert!(field_names(card)[0].contains("Kalos"));
     assert!(card["content"].as_str().unwrap().contains(heading));
     assert_eq!(card["heading_final"], true);
 
@@ -382,8 +383,8 @@ async fn a_sibling_moved_after_posting_stays_on_the_posted_card() {
     let card = &preview["card"];
     let names = field_names(card);
     assert_eq!(names.len(), 2, "{names:?}");
-    assert!(names.iter().any(|name| name.contains("XKalos")));
-    assert!(names.iter().any(|name| name.contains("NMaleficStar")));
+    assert!(names.iter().any(|name| name.contains("Kalos")));
+    assert!(names.iter().any(|name| name.contains("Malefic Star")));
     assert!(card["content"].as_str().unwrap().contains(heading));
     assert_eq!(card["heading_final"], true);
 }

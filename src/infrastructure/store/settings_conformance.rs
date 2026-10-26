@@ -7,9 +7,9 @@ use chrono::{DateTime, NaiveTime, Utc, Weekday};
 use super::fixtures::refused_for;
 use crate::domain::history::{Actor, Surface};
 use crate::domain::settings::{
-    CharacterData, IdList, MessageStyle, Reasoning, RuntimeSettings, Section, SelfServiceMode,
-    SettingsChange, SettingsChangeQuery, SettingsError, SettingsStore, diff_rows, keys,
-    load_settings, save_section, save_section_recorded,
+    CharacterData, IdList, Reasoning, RuntimeSettings, Section, SelfServiceMode, SettingsChange,
+    SettingsChangeQuery, SettingsError, SettingsStore, diff_rows, keys, load_settings,
+    save_section, save_section_recorded,
 };
 
 pub async fn run_suite<S: SettingsStore>(make: impl AsyncFn() -> S) {
@@ -23,7 +23,7 @@ pub async fn run_suite<S: SettingsStore>(make: impl AsyncFn() -> S) {
     recorded_saves_append_one_change_with_their_rows(make().await).await;
     refused_recorded_saves_record_nothing(make().await).await;
     rowless_records_leave_the_settings_alone(make().await).await;
-    message_style_is_stored_as_text(make().await).await;
+    header_generation_time_is_stored_as_clock_text(make().await).await;
     estimate_days_are_stored_as_whole_days(make().await).await;
 }
 
@@ -66,41 +66,27 @@ async fn estimate_days_are_stored_as_whole_days<S: SettingsStore>(store: S) {
     ));
 }
 
-/// `v5.message_style` reads `classic` when unset, round-trips as text and
-/// refuses anything else; `v5.header_generation_time` is stored beside it.
-async fn message_style_is_stored_as_text<S: SettingsStore>(store: S) {
+/// `v5.header_generation_time` round-trips as `HH:MM` text.
+async fn header_generation_time_is_stored_as_clock_text<S: SettingsStore>(store: S) {
     let seed = RuntimeSettings::default();
-    let unset = load_settings(&store, &seed).await.expect("load");
-    assert_eq!(unset.notifications.message_style, MessageStyle::Classic);
-    let mut notifications = unset.notifications;
-    notifications.message_style = MessageStyle::Redesigned;
+    let mut notifications = load_settings(&store, &seed)
+        .await
+        .expect("load")
+        .notifications;
     notifications.header_generation_time = chrono::NaiveTime::from_hms_opt(3, 30, 0).unwrap();
     save_section(&store, &Section::Notifications(notifications))
         .await
         .expect("save");
     let rows = store.settings_rows().await.expect("rows");
     assert_eq!(
-        rows.get(keys::MESSAGE_STYLE).map(String::as_str),
-        Some("redesigned")
-    );
-    assert_eq!(
         rows.get(keys::HEADER_GENERATION_TIME).map(String::as_str),
         Some("03:30")
     );
     let loaded = load_settings(&store, &seed).await.expect("load");
-    assert_eq!(loaded.notifications.message_style, MessageStyle::Redesigned);
     assert_eq!(
         loaded.notifications.header_generation_time,
         notifications.header_generation_time
     );
-    store
-        .put_settings_rows(raw(&[(keys::MESSAGE_STYLE, "fancy")]))
-        .await
-        .expect("raw row");
-    assert!(matches!(
-        load_settings(&store, &seed).await,
-        Err(SettingsError::Malformed { key, .. }) if key == keys::MESSAGE_STYLE
-    ));
 }
 
 /// A Limits window clear: a `limits` record with no settings row.

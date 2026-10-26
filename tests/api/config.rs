@@ -2790,26 +2790,17 @@ async fn account_reply_style_shows_role_overrides_and_the_saved_public_choice() 
 #[tokio::test]
 async fn notification_fields_save_live_record_only_their_row_and_refuse_bad_values() {
     let config = Config::new().await;
-    let notifications = |quiet: bool, style: &str, header: &str| json!({"quiet_mode": quiet, "message_style": style, "header_generation_time": header, "header_estimates": false, "header_teasing": false});
-    let defaults = notifications(false, "classic", "00:00");
+    let notifications = |quiet: bool, header: &str| json!({"quiet_mode": quiet, "header_generation_time": header, "header_estimates": false, "header_teasing": false});
+    let defaults = notifications(false, "00:00");
     assert_eq!(config.get().await["notifications"], defaults, "defaults");
     let clock = "The header generation time is HH:MM, for example 03:30.";
-    let cases = [
-        (
-            "message_style",
-            keys::MESSAGE_STYLE,
-            ("classic", "redesigned"),
-            vec![json!("fancy"), json!("Classic"), json!(true)],
-            None,
-        ),
-        (
-            "header_generation_time",
-            keys::HEADER_GENERATION_TIME,
-            ("00:00", "03:30"),
-            vec![json!("3:30"), json!("24:00"), json!("03:61"), json!(330)],
-            Some(clock),
-        ),
-    ];
+    let cases = [(
+        "header_generation_time",
+        keys::HEADER_GENERATION_TIME,
+        ("00:00", "03:30"),
+        vec![json!("3:30"), json!("24:00"), json!("03:61"), json!(330)],
+        Some(clock),
+    )];
     for (field, key, (from, to), bad, message) in cases {
         let mut changes = config.desk.subscribe();
         let saved = config.patch(json!({"notifications": {field: to}})).await;
@@ -2844,17 +2835,15 @@ async fn notification_fields_save_live_record_only_their_row_and_refuse_bad_valu
     let quiet = config
         .patch(json!({"notifications": {"quiet_mode": true}}))
         .await;
-    assert_eq!(
-        quiet["notifications"],
-        notifications(true, "redesigned", "03:30")
-    );
-    let back = config
-        .patch(json!({"notifications": {"message_style": "classic"}}))
+    assert_eq!(quiet["notifications"], notifications(true, "03:30"));
+    // The retired message style is no field.
+    config
+        .refused(
+            json!({"notifications": {"message_style": "redesigned"}}),
+            422,
+            "unknown_field",
+        )
         .await;
-    assert_eq!(
-        back["notifications"],
-        notifications(true, "classic", "03:30")
-    );
     // Teasing rides on the estimates: refused on while they are off.
     let needs = "Turn on estimates in reminder headers before teasing.";
     let refused = config
@@ -2936,19 +2925,16 @@ async fn notification_fields_save_live_record_only_their_row_and_refuse_bad_valu
     );
 }
 
-/// The admin preview follows the saved style: a redesigned day-of card for
-/// two runs previews as two embeds, one per run in time order, with inline
-/// In / Waiting / Out fields and the entry art on the first only.
+/// A day-of card for two runs previews as two embeds, one per run in time
+/// order, with inline In / Waiting / Out fields and the entry art on the
+/// first only.
 #[tokio::test]
-async fn a_redesigned_day_of_previews_one_embed_per_run() {
+async fn a_day_of_previews_one_embed_per_run() {
     use chrono::{TimeZone, Utc};
     use kanade::domain::schedule::{Change, Reminder, Run};
     use kanade::domain::scheduler::{ScheduleStore, Scope};
 
     let config = Config::new().await;
-    config
-        .patch(json!({"notifications": {"message_style": "redesigned"}}))
-        .await;
     let store = &config.reads.store;
     let schedule = store.load(&Scope::All).await.unwrap();
     let kalos = schedule

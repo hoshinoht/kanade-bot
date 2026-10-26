@@ -149,5 +149,5 @@ async fn a_merged_notice_renders_its_title_and_runs() {
     )
     .expect("renders");
     let text = message.content.expect("text");
-    assert_eq!(text, "📝 Schedule updated: retime the raid\n_(via portal)_");
+    assert_eq!(text, "📝 Schedule updated: retime the raid\n-# via portal");
 }

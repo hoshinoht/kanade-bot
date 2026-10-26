@@ -18,7 +18,6 @@ use twilight_model::channel::message::Component;
 use twilight_model::channel::message::component::ButtonStyle;
 
 use super::super::common::CardContext;
-use super::super::digest::DIGEST_EMPTY;
 use super::super::heading::DIGEST_PHRASE_SEED;
 use super::super::{Card, CardEmbed, CardField};
 use super::limits::{MAX_FIELD_VALUE, clip_lines};
@@ -34,6 +33,8 @@ use crate::domain::notify::DigestInclusion;
 use crate::domain::schedule::{Run, RunStatus};
 
 pub const DIGEST_FOOTER: &str = "Edited live · /schedule scope:mine for just your runs";
+/// v4's empty-week description.
+pub const DIGEST_EMPTY: &str = "Nothing on the schedule yet. Add a baseline with `/fixed add`.";
 /// The V2 digest's buttons.
 pub const MY_RUNS: &str = "📋 My runs";
 pub const OPEN_PORTAL: &str = "Open portal";

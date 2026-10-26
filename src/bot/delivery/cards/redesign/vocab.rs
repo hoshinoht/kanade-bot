@@ -1,14 +1,12 @@
 //! Words, marks and colours every redesigned card shares.
 
 use std::collections::BTreeMap;
-use std::sync::Arc;
 
 use chrono::{DateTime, Utc};
 
 use crate::bot::cards::format;
 use crate::domain::attendance::AnswerState;
 use crate::domain::catalog::BossTable;
-use crate::domain::settings::MessageStyle;
 
 use super::super::common::People;
 
@@ -21,9 +19,6 @@ pub const SETTLED_GREEN: u32 = 0x3BA55C;
 pub const WAITING_AMBER: u32 = 0xF0B232;
 /// The run is at risk.
 pub const AT_RISK_RED: u32 = 0xDA373C;
-
-/// The live message style; serve reads the saved setting per card.
-pub type StyleSource = Arc<dyn Fn() -> MessageStyle + Send + Sync>;
 
 /// Difficulty letter (lowercase) → Discord emoji markup (`<:name:id>`).
 /// Empty until the application emojis are listed; a missing letter falls

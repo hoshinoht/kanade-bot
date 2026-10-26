@@ -10,7 +10,7 @@ use std::sync::{Arc, RwLock};
 
 use chrono::TimeDelta;
 use kanade::bot::commands::{DebugCards, TestKind, TestPosted};
-use kanade::bot::delivery::cards::{CardKit, REACT_HINT};
+use kanade::bot::delivery::cards::CardKit;
 use kanade::bot::delivery::{
     AlertThrottle, CardRefresh, DebugCardStore, DebugDesk, SendOutcome, StoreRef, TEST_PREFIX,
 };
@@ -112,18 +112,20 @@ async fn every_kind_posts_the_real_message_prefixed<S: Store + DebugCardStore + 
     assert_eq!(ping(&desk, &run_id, TestKind::DayOf, "1002").await, posted);
     let day_of = created(&fake).pop().expect("day-of");
     assert_eq!(
-        day_of.content.as_deref(),
-        Some(format!("{TEST_PREFIX}📅 **Today — Thu 10 Sep**\n<@1001> Bex").as_str()),
-        "v4's heading (no rewrite), the test audience"
+        day_of
+            .content
+            .as_deref()
+            .and_then(|text| text.lines().next()),
+        Some(format!("{TEST_PREFIX}📅 **Today — Thu 10 Sep**").as_str()),
+        "v4's heading (no rewrite)"
     );
     let embed = &day_of.embeds[0];
     assert_eq!(
-        fields(embed),
-        [(
-            "🕘 21:00  ·  HMaleficStar".to_owned(),
-            "**HMaleficStar** · Radiant Malefic Star (Hard, Lv280)\n⚠️ unconfirmed · 0/2\nStill to answer: <@1001> Bex"
-                .to_owned()
-        )]
+        fields(embed)
+            .into_iter()
+            .map(|(name, _)| name)
+            .collect::<Vec<_>>(),
+        ["In ✅", "Waiting", "Out ❌"]
     );
     assert_eq!(embed.color, Some(STAR_COLOUR));
     assert_eq!(
@@ -146,9 +148,11 @@ async fn every_kind_posts_the_real_message_prefixed<S: Store + DebugCardStore + 
         ping(&desk, &run_id, TestKind::Countdown60, "1002").await,
         posted
     );
-    assert_eq!(
-        content(&fake),
-        format!("{TEST_PREFIX}⏰ **HMaleficStar** in 1h (21:00) — <@1001> Bex")
+    let countdown60 = content(&fake);
+    assert!(
+        countdown60.starts_with(&format!("{TEST_PREFIX}⏰ **"))
+            && countdown60.contains("<@1001> Bex"),
+        "{countdown60}"
     );
     assert_eq!(
         ping(&desk, &run_id, TestKind::Countdown15, "1002").await,
@@ -156,37 +160,36 @@ async fn every_kind_posts_the_real_message_prefixed<S: Store + DebugCardStore + 
     );
     let countdown = created(&fake).pop().expect("countdown");
     assert!(
-        countdown.content.as_deref().is_some_and(
-            |text| text.starts_with(&format!("{TEST_PREFIX}⏰ **HMaleficStar** in 15m"))
-        ),
+        countdown
+            .content
+            .as_deref()
+            .is_some_and(|text| text.starts_with(&format!("{TEST_PREFIX}⏰ **"))),
         "{countdown:?}"
     );
     assert_eq!(pictures(&countdown.embeds[0]).1, None, "no entry art");
 
     assert_eq!(ping(&desk, &run_id, TestKind::Amend, "1002").await, posted);
     let amend = created(&fake).pop().expect("amend");
-    assert_eq!(
-        amend.content.as_deref(),
-        Some(
-            format!(
-                "{TEST_PREFIX}🔁 **HMaleficStar** moved: ~~Wed 09 Sep 21:00~~ → **Thu 10 Sep 21:00** \
-                 — <@1001> Bex\n{REACT_HINT}"
-            )
-            .as_str()
-        )
+    let moved = amend.content.as_deref().unwrap_or_default();
+    assert!(
+        moved.starts_with(&format!("{TEST_PREFIX}🔁 "))
+            && moved.contains(" moved to **<t:")
+            && moved.contains("— <@1001> Bex\n-# was Wed 09 Sep 21:00"),
+        "{moved}"
     );
     assert!(amend.embeds.is_empty() && amend.attachments.is_empty());
     assert_eq!(
         ping(&desk, &run_id, TestKind::Decline, "1002").await,
         posted
     );
-    assert_eq!(
-        content(&fake),
-        format!(
-            "{TEST_PREFIX}<@1001> Bex can't make **HMaleficStar** (Thu 10 Sep 21:00) — \
-             reschedule? `/amend run_id:{} to:...`",
-            short_id(&run_id)
-        )
+    let declined = content(&fake);
+    assert!(
+        declined.starts_with(&format!("{TEST_PREFIX}❌ **Bex** can't make "))
+            && declined.contains(&format!(
+                "-# for <@1001> · `/amend run_id:{}`",
+                short_id(&run_id)
+            )),
+        "{declined}"
     );
 
     // Every ping is its own post (v4 operation dedupe), bound and listed.
@@ -295,14 +298,15 @@ async fn reactions_and_refresh_follow_the_run<S: Store + DebugCardStore + 'stati
     assert_eq!(test_edits[0].0, messages[0]);
     let edit = &test_edits[0].1;
     assert_eq!(
-        edit.content.as_deref(),
-        Some(format!("{TEST_PREFIX}📅 **Today — Thu 10 Sep**\n<@1001> Bex").as_str())
+        edit.content.as_deref().and_then(|text| text.lines().next()),
+        Some(format!("{TEST_PREFIX}📅 **Today — Thu 10 Sep**").as_str())
     );
     // 1001 is still unknown inside the 12 h window: at risk.
     assert!(
-        edit.embeds.as_ref().expect("embed")[0].fields[0]
-            .value
-            .contains("❗ at risk · 1/2"),
+        edit.embeds.as_ref().expect("embed")[0]
+            .description
+            .as_deref()
+            .is_some_and(|text| text.contains("❗ at risk")),
         "{edit:?}"
     );
 }
@@ -419,7 +423,7 @@ async fn a_bound_test_card_never_holds_the_runs_real_reminder() {
 }
 
 #[tokio::test]
-async fn quiet_plain_test_texts_carry_v4s_quiet_line() {
+async fn quiet_plain_test_texts_tag_nobody() {
     let store = Arc::new(SqliteStore::open_temp().await);
     let world = world();
     let fake = Arc::new(support::fake());
@@ -428,28 +432,19 @@ async fn quiet_plain_test_texts_carry_v4s_quiet_line() {
         quiet: Arc::new(AtomicBool::new(true)),
         ..desk(&store, &fake, &world, kit(None), &[HOME], None)
     };
-    let note = "\n_🔕 quiet mode - nobody was notified_";
     ping(&quiet, &run_id, TestKind::Amend, "1002").await;
     let amend = created(&fake).pop().expect("amend");
-    assert_eq!(
-        amend.content.as_deref(),
-        Some(
-            format!(
-                "{TEST_PREFIX}🔁 **HMaleficStar** moved: ~~Wed 09 Sep 21:00~~ → **Thu 10 Sep 21:00** \
-                 — Aria Bex\n{REACT_HINT}{note}"
-            )
-            .as_str()
-        )
+    let moved = amend.content.as_deref().unwrap_or_default();
+    assert!(
+        moved.contains("🔕 quiet mode, nobody was pinged · Aria, Bex") && !moved.contains("<@"),
+        "{moved}"
     );
     assert!(allowed(&amend).is_empty());
     ping(&quiet, &run_id, TestKind::Decline, "1002").await;
-    assert_eq!(
-        content(&fake),
-        format!(
-            "{TEST_PREFIX}Aria Bex can't make **HMaleficStar** (Thu 10 Sep 21:00) — \
-             reschedule? `/amend run_id:{} to:...`{note}",
-            short_id(&run_id)
-        )
+    let declined = content(&fake);
+    assert!(
+        declined.contains("-# for Aria · ") && !declined.contains("<@"),
+        "{declined}"
     );
     // Cards announce nothing (v5 rule for embeds).
     ping(&quiet, &run_id, TestKind::DayOf, "1002").await;

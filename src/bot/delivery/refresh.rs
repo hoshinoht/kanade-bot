@@ -205,11 +205,10 @@ where
     /// (the latest manual override, else the original), read under the
     /// message's edit lock; whether it landed.
     ///
-    /// A redesigned digest is sent as Components V2, which converts a live
-    /// legacy digest on the first refresh after the style flips. Discord
-    /// cannot take the flag off again: while a V2 digest is live and the
-    /// card renders as an embed (the style flipped back to classic, or the
-    /// week outgrew the V2 budget), the digest is left as posted until next
+    /// A digest is sent as Components V2, which converts a live legacy
+    /// digest on the first refresh. Discord cannot take the flag off again:
+    /// while a V2 digest is live and the card renders as an embed (the week
+    /// outgrew the V2 budget), the digest is left as posted until next
     /// week's replaces it, noted once in the log. A V2 digest this process
     /// has not seen yet is found out by Discord refusing the embed edit.
     pub(super) async fn edit_digest(
@@ -285,7 +284,6 @@ where
                 info,
                 "digest_v2_left_as_posted",
                 week_start = digest.week_start.timestamp(),
-                style = self.cards.style().as_str(),
                 until = "next week's digest",
             );
         }
@@ -298,7 +296,6 @@ where
             quiet: self.quiet.load(Ordering::Relaxed),
             members: &*self.members,
             catalog: self.cards.catalog.as_deref(),
-            style: self.cards.style(),
             marks: &self.cards.marks,
             v2: Some(&self.cards.v2),
         }

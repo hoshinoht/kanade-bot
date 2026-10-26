@@ -10,9 +10,9 @@ use super::SettingsError;
 use super::keys;
 use super::model::{
     CharacterData, Chatbot, ContextSettings, ESTIMATE_DAYS, MAX_CONTEXT_TOKENS,
-    MAX_ROLE_PROFILE_ASSIGNMENTS, MessageStyle, Models, Notifications, OVERRIDE_RUN_MINUTES,
-    Persona, Pings, Posting, Profanity, RUN_MINUTES, Reasoning, RoleModel, RoleProfileAssignment,
-    RunLengths, RuntimeSettings, Schedule, SelfService, SelfServiceMode, Watching,
+    MAX_ROLE_PROFILE_ASSIGNMENTS, Models, Notifications, OVERRIDE_RUN_MINUTES, Persona, Pings,
+    Posting, Profanity, RUN_MINUTES, Reasoning, RoleModel, RoleProfileAssignment, RunLengths,
+    RuntimeSettings, Schedule, SelfService, SelfServiceMode, Watching,
 };
 use crate::domain::weeks::{parse_hhmm, parse_weekday};
 
@@ -395,10 +395,6 @@ fn apply(out: &mut RuntimeSettings, key: &'static str, value: &str) -> Result<()
         keys::CHAT_GLOBAL_RATE_COUNT => out.chatbot.guild_rate.count = count(key, value, 1)?,
         keys::CHAT_GLOBAL_RATE_WINDOW => out.chatbot.guild_rate.window_s = window(key, value)?,
         keys::QUIET_MODE => out.notifications.quiet_mode = flag(key, value)?,
-        keys::MESSAGE_STYLE => {
-            out.notifications.message_style = MessageStyle::parse(value)
-                .ok_or_else(|| malformed(key, value, "expected classic or redesigned"))?;
-        }
         keys::HEADER_GENERATION_TIME => {
             out.notifications.header_generation_time = clock(key, value)?;
         }
@@ -488,10 +484,6 @@ pub(super) fn encode(section: &Section) -> Rows {
         Section::Notifications(notifications) => {
             vec![
                 (keys::QUIET_MODE, flag_text(notifications.quiet_mode)),
-                (
-                    keys::MESSAGE_STYLE,
-                    notifications.message_style.as_str().to_owned(),
-                ),
                 (
                     keys::HEADER_GENERATION_TIME,
                     clock_text(notifications.header_generation_time),

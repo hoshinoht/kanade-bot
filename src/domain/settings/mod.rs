@@ -19,7 +19,7 @@ pub use model::{
     CharacterData, Chatbot, ContextRole, ContextSettings, DEFAULT_DEFLECTION_LINE,
     DEFAULT_ESTIMATE_DAYS, DEFAULT_RUN_MINUTES, ESTIMATE_DAYS, LOCAL_CONTEXT_WARNING,
     LOCAL_CONTEXT_WARNING_TOKENS, MAX_CONTEXT_TOKENS, MAX_DEFLECTION_CHARS, MAX_PROFANITY_WORDS,
-    MAX_ROLE_PROFILE_ASSIGNMENTS, MessageStyle, Models, Notifications, OVERRIDE_RUN_MINUTES,
+    MAX_ROLE_PROFILE_ASSIGNMENTS, Models, Notifications, OVERRIDE_RUN_MINUTES,
     PROFANITY_WORD_CHARS, Persona, Pings, Posting, Profanity, RUN_MINUTES, Rate, Reasoning,
     RoleModel, RoleProfileAssignment, RunLengthOverride, RunLengths, RuntimeSettings, Schedule,
     SelfService, SelfServiceMode, Watching, is_profanity_word,

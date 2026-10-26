@@ -38,7 +38,6 @@ pub const SELF_SERVICE_MODE: &str = "v5.self_service_mode";
 pub const PUBLIC_PORTAL: &str = "v5.public_portal";
 pub const PROFILE_VISIBILITY: &str = "v5.profile_visibility";
 pub const ROLE_PROFILES: &str = "v5.role_profiles";
-pub const MESSAGE_STYLE: &str = "v5.message_style";
 /// When the daily reminder-header rewrite batch runs, `HH:MM` guild time.
 pub const HEADER_GENERATION_TIME: &str = "v5.header_generation_time";
 /// Days until a scouter estimate is stale (module `character_data`).
@@ -49,9 +48,9 @@ pub const HEADER_ESTIMATES: &str = "v5.header_estimates";
 pub const HEADER_TEASING: &str = "v5.header_teasing";
 
 /// Every settings key. Other `config` rows (the digest marker, v4
-/// bookkeeping, the retired `v5.attendance_mode`) are never read or written
-/// through the settings port.
-pub const ALL: [&str; 35] = [
+/// bookkeeping, the retired `v5.attendance_mode` and `v5.message_style`) are
+/// never read or written through the settings port.
+pub const ALL: [&str; 34] = [
     DAY_OF_PING_TIME,
     COUNTDOWN_MINUTES,
     PAUSED,
@@ -82,7 +81,6 @@ pub const ALL: [&str; 35] = [
     PUBLIC_PORTAL,
     PROFILE_VISIBILITY,
     ROLE_PROFILES,
-    MESSAGE_STYLE,
     HEADER_GENERATION_TIME,
     ESTIMATE_DAYS,
     HEADER_ESTIMATES,

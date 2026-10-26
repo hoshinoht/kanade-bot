@@ -3,10 +3,10 @@
 //! Discord limits.
 
 use kanade::bot::delivery::cards::redesign::{
-    AT_RISK_RED, DifficultyMarks, INK_BLUE, MAX_EMBEDS, MAX_TOTAL_CHARS, NO_MARKS, SETTLED_GREEN,
-    WAITING_AMBER,
+    AT_RISK_RED, DIGEST_EMPTY, DifficultyMarks, INK_BLUE, MAX_EMBEDS, MAX_TOTAL_CHARS, NO_MARKS,
+    SETTLED_GREEN, WAITING_AMBER,
 };
-use kanade::bot::delivery::cards::{self, Card, DIGEST_EMPTY, REACT_HINT, fetch_art};
+use kanade::bot::delivery::cards::{self, Card, REACT_HINT, fetch_art};
 use kanade::bot::transport::OutgoingMessage;
 use kanade::domain::members::{Member, PingLevel};
 use kanade::domain::notify::IntentContent;
