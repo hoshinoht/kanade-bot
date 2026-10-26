@@ -5,7 +5,6 @@ use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 use chrono::{DateTime, TimeDelta, Utc};
-use kanade::domain::attendance::AttendancePolicy;
 use kanade::domain::drafts::{
     DraftCreated, DraftEvent, DraftEventKind, DraftOp, DraftStatus, DraftStore, DraftUpdate,
     DraftWrite, LoadedDraft, MergeCommit, MergeConflict, NewDraft, RequestLimit, StoredDraft,
@@ -250,7 +249,6 @@ async fn an_approved_request_merges_as_the_admin_and_tells_only_the_requester() 
     let settings = DeliverySettings {
         post_channel_id: None,
         quiet_mode: false,
-        attendance: AttendancePolicy::V4_COMPAT,
     };
     let intent = plan_notice(notice, &Guild, &AnyChannel, settings).unwrap();
     assert!(

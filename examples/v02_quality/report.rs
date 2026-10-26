@@ -50,7 +50,7 @@ pub fn summary(meta: &Value, attempts: &[Value]) -> String {
     let persona = &meta["persona"];
     let _ = writeln!(
         out,
-        "Mode **{}**. Wholly invented fixtures (draft §2); V4_COMPAT. Persona `{}` from `{}` (sha256 `{}`), default reply profile.\n",
+        "Mode **{}**. Wholly invented fixtures (draft §2). Persona `{}` from `{}` (sha256 `{}`), default reply profile.\n",
         meta["mode"].as_str().unwrap_or("?"),
         persona["id"].as_str().unwrap_or("?"),
         persona["bundle_file"].as_str().unwrap_or("?"),

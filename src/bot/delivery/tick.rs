@@ -1,6 +1,6 @@
 //! The scheduler tick (v4 `BossBot.tick`): materialise on a boss-week
 //! rollover (taking the week's automatic history checkpoint), mark runs past
-//! their completion cutoff done, recount attendance (v5 mode only), expire
+//! their completion cutoff done, recount attendance, expire
 //! past-week drafts and proposals past their TTL, drain the notice outbox,
 //! post ownership requests and run completion prompts, post the weekly
 //! digest, then dispatch due reminders. One clock reading and at most one
@@ -125,7 +125,6 @@ impl DeliveryConfig {
         DeliverySettings {
             post_channel_id: self.post_channel_id.as_deref(),
             quiet_mode: self.quiet_mode,
-            attendance: self.policy.attendance,
         }
     }
 }
@@ -237,8 +236,8 @@ pub struct TickReport {
     /// Runs created by a rollover materialisation.
     pub materialised: Vec<String>,
     pub done: Vec<String>,
-    /// v5 attendance: runs whose status the recount changed (e.g. at risk
-    /// once the unknown window opened); always empty in v4-compat mode.
+    /// Runs whose status the attendance recount changed (e.g. at risk once
+    /// the unknown window opened).
     pub recounted: Vec<String>,
     /// Outbox notices sent (or held) this tick.
     pub notices: NoticeReport,
@@ -399,7 +398,6 @@ where
     fn card_context<'s>(&'s self, schedule: &'s ScheduleSnapshot) -> CardContext<'s> {
         CardContext {
             schedule,
-            attendance: self.config.policy.attendance,
             zone: self.config.policy.zone(),
             quiet: self.config.quiet_mode,
             members: self.members,
@@ -678,7 +676,7 @@ where
         self.materialise_now(now).await
     }
 
-    /// v5 attendance: re-derive live runs' statuses at `now` so unknown
+    /// Re-derive live runs' statuses at `now` so unknown
     /// answers turn a run at risk as its window opens. A failure never aborts
     /// the tick: it is alerted (throttled) and the next tick retries.
     async fn recount_attendance(&mut self, now: DateTime<Utc>) -> Vec<String> {

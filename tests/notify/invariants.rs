@@ -122,7 +122,6 @@ fn notices_mention_only_listed_members_on_all_and_fall_back_or_drop() {
     let loud = DeliverySettings {
         post_channel_id: Some("555"),
         quiet_mode: false,
-        attendance: kanade::domain::attendance::AttendancePolicy::V4_COMPAT,
     };
     for roster in rosters() {
         let intent = plan_notice(&notice(Some("222")), &roster, &channels, loud).expect("home");

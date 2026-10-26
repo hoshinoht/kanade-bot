@@ -16,7 +16,6 @@ use chrono_tz::Tz;
 use kanade::bot::delivery::cards::redesign::{DifficultyMarks, NO_MARKS};
 use kanade::bot::delivery::cards::{ArtFile, ArtKind, ArtSource, CardContext};
 use kanade::bot::transport::{MessageEdit, OutgoingMessage};
-use kanade::domain::attendance::AttendancePolicy;
 use kanade::domain::catalog::BossTable;
 use kanade::domain::members::{Member, PingLevel, Roster};
 use kanade::domain::notify::{DigestInclusion, IntentContent, digest_inclusion};
@@ -172,12 +171,10 @@ pub(crate) fn context<'a>(
     schedule: &'a ScheduleSnapshot,
     members: &'a Roster,
     catalog: &'a BossTable,
-    attendance: AttendancePolicy,
     quiet: bool,
 ) -> CardContext<'a> {
     CardContext {
         schedule,
-        attendance,
         zone: ZONE,
         quiet,
         members,
@@ -193,31 +190,23 @@ pub(crate) fn redesigned<'a>(
     schedule: &'a ScheduleSnapshot,
     members: &'a Roster,
     catalog: &'a BossTable,
-    attendance: AttendancePolicy,
     quiet: bool,
     marks: &'a DifficultyMarks,
 ) -> CardContext<'a> {
     CardContext {
         style: MessageStyle::Redesigned,
         marks,
-        ..context(schedule, members, catalog, attendance, quiet)
+        ..context(schedule, members, catalog, quiet)
     }
 }
 
-/// [`redesigned`] under v5 attendance, not quiet, with no difficulty marks.
+/// [`redesigned`], not quiet, with no difficulty marks.
 pub(crate) fn redesigned_v5<'a>(
     schedule: &'a ScheduleSnapshot,
     members: &'a Roster,
     catalog: &'a BossTable,
 ) -> CardContext<'a> {
-    redesigned(
-        schedule,
-        members,
-        catalog,
-        AttendancePolicy::V5,
-        false,
-        &NO_MARKS,
-    )
+    redesigned(schedule, members, catalog, false, &NO_MARKS)
 }
 
 /// Replace the week's runs with `count` copies of its Extreme Kalos run ten

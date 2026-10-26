@@ -919,7 +919,6 @@ async fn the_tick_sends_due_work_once_and_never_resends_an_interrupted_send() {
                 DeliverySettings {
                     post_channel_id: None,
                     quiet_mode: false,
-                    attendance: policy.attendance,
                 },
             )
             .unwrap();

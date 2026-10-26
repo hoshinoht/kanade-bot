@@ -466,12 +466,12 @@ async fn the_inbox_lists_both_proposal_sources_and_every_request_type() {
     );
     assert_eq!(join["when"], "Tue 29 Sep 21:00");
     assert_eq!(join["expires_at"], "Thu 01 Oct 00:00");
+    // Bob said no, so the move already re-derived the run at risk; a
+    // newcomer without an answer keeps it there.
     assert_eq!(
         join["preview"]["changes"],
         json!([
             {"field": "participants", "from": "Alice, Bobby, Dan", "to": "Alice, Bobby, Dan, Finn"},
-            // Bob said no; a newcomer without an answer re-derives the status.
-            {"field": "status", "from": "planned", "to": "at_risk"},
         ])
     );
     // Gus lost the bossing role, so the swap no longer applies as asked.

@@ -11,7 +11,7 @@ use super::reminders::{ReminderPolicy, refresh_run_reminders};
 use super::roster::{RunState, named, run_state, validate_participants};
 use super::rsvp::recompute_after_roster_change;
 use super::run::{Run, RunStatus};
-use crate::domain::attendance::{AttendanceMode, StatusPin};
+use crate::domain::attendance::StatusPin;
 use crate::domain::ids::{IdGenerator, short_id};
 use crate::domain::members::Directory;
 use crate::domain::time::{AwareDateTime, DateOutOfRange};
@@ -96,18 +96,14 @@ pub fn set_status(
     }
     let run = draft.require_run(run_id)?;
     let previous = run.status;
-    // v5: a hand-set planned or confirmed is pinned (kept by derivation);
-    // setting it again re-pins, other statuses clear the pin. In every mode
-    // one set after the run ended is pinned: it reopens the run
-    // (`completion::reopened`), so it is neither frozen nor auto-done.
-    let ended = draft.run_ends().is_some_and(|ends| ends.ended(&run, now));
-    let pin = ((draft.attendance().mode == AttendanceMode::V5 || ended)
-        && matches!(status, RunStatus::Planned | RunStatus::Confirmed))
-    .then_some(StatusPin { status, at: now });
+    // A hand-set planned or confirmed is pinned (kept by derivation); setting
+    // it again re-pins, other statuses clear the pin. One set at or after the
+    // run's end reopens it (`completion::reopened`), so it is neither frozen
+    // nor auto-done.
+    let pin = matches!(status, RunStatus::Planned | RunStatus::Confirmed)
+        .then_some(StatusPin { status, at: now });
     if previous == status {
-        // Setting an ended run's own planned/confirmed again reopens it.
-        if (draft.attendance().mode == AttendanceMode::V5 || pin.is_some()) && run.status_pin != pin
-        {
+        if run.status_pin != pin {
             draft.set_run_pin(run_id, pin);
         }
         return Ok(Outcome::quiet(run_state(draft, run_id)?));
@@ -123,9 +119,7 @@ pub fn set_status(
         }
     }
     draft.set_run_status(run_id, status);
-    if draft.attendance().mode == AttendanceMode::V5 || pin.is_some() || run.status_pin.is_some() {
-        draft.set_run_pin(run_id, pin);
-    }
+    draft.set_run_pin(run_id, pin);
     refresh_run_reminders(draft, ids, run_id, policy, now)?;
     let state = run_state(draft, run_id)?;
     let notices = if announce {
@@ -344,7 +338,7 @@ pub fn swap_run_slots(
 }
 
 /// The amend status rule on the run's current status, plus a reminder rebuild.
-/// v5: a move ends the pin and re-derives.
+/// A move ends the pin (and with it a reopen) and re-derives.
 fn settle_after_move(
     draft: &mut Draft,
     ids: &mut impl IdGenerator,
@@ -356,9 +350,8 @@ fn settle_after_move(
     if matches!(status, RunStatus::Confirmed | RunStatus::AtRisk) {
         draft.set_run_status(run_id, RunStatus::Planned);
     }
-    // A move ends the pin (and with it a reopen) in every mode.
     draft.set_run_pin(run_id, None);
-    if draft.attendance().mode == AttendanceMode::V5 && status.is_live() {
+    if status.is_live() {
         recompute_after_roster_change(draft, run_id, now)?;
     }
     refresh_run_reminders(draft, ids, run_id, policy, now)

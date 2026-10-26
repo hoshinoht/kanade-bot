@@ -18,8 +18,7 @@ use super::intent::{
 };
 use super::policy::{PingKind, allowed_mentions};
 use crate::domain::attendance::{
-    AnswerState, AttendanceMode, AttendancePolicy, countdown_mentions, morning_mentions,
-    snapshot_states,
+    AnswerState, countdown_mentions, morning_mentions, snapshot_states,
 };
 use crate::domain::members::Directory;
 use crate::domain::pytext;
@@ -106,9 +105,6 @@ pub fn due_reminders(reminders: &[Reminder], now: DateTime<Utc>) -> Vec<&Reminde
 pub struct DeliverySettings<'a> {
     pub post_channel_id: Option<&'a str>,
     pub quiet_mode: bool,
-    /// Who the morning ping names (v5: unknown answers only) and how cards
-    /// show answers; `SchedulePolicy.attendance`.
-    pub attendance: AttendancePolicy,
 }
 
 /// Everything one dispatch pass reads.
@@ -180,7 +176,7 @@ fn destination(
 }
 
 fn states(input: &DispatchInput<'_>, run: &Run) -> Vec<(String, AnswerState)> {
-    snapshot_states(input.schedule, run, input.settings.attendance.mode)
+    snapshot_states(input.schedule, run)
 }
 
 fn gate(input: &DispatchInput<'_>, card_mentions: &[String]) -> Vec<String> {
@@ -201,7 +197,7 @@ fn countdown(
         });
         return;
     };
-    // v4: everyone not declined (in v4-compat mode exactly `not_declined`).
+    // v4: everyone not declined.
     let candidates = countdown_mentions(&states(input, run));
     let mentions = resolve_mentions(input.members, &candidates, &PingKind::Countdown);
     let intent = NotificationIntent {
@@ -235,19 +231,13 @@ fn day_of(
         });
         return;
     };
-    let people = everyone_on(runs.iter().map(|run| run.participants.as_slice()));
-    let mentions = match input.settings.attendance.mode {
-        AttendanceMode::V4Compat => resolve_mentions(input.members, &people, &PingKind::DayOf),
-        // v5: the morning ping names only members whose answer is unknown.
-        AttendanceMode::V5 => {
-            let unknown: Vec<Vec<String>> = runs
-                .iter()
-                .map(|run| morning_mentions(&states(input, run)))
-                .collect();
-            let candidates = everyone_on(unknown.iter().map(Vec::as_slice));
-            resolve_mentions(input.members, &candidates, &PingKind::DayOf)
-        }
-    };
+    // The morning ping names only members whose answer is unknown.
+    let unknown: Vec<Vec<String>> = runs
+        .iter()
+        .map(|run| morning_mentions(&states(input, run)))
+        .collect();
+    let candidates = everyone_on(unknown.iter().map(Vec::as_slice));
+    let mentions = resolve_mentions(input.members, &candidates, &PingKind::DayOf);
     let intent = NotificationIntent {
         effect: EffectKind::Reminder,
         effect_context: Vec::new(),

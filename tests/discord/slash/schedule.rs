@@ -137,10 +137,11 @@ async fn a_one_week_stand_in_shows_its_roster_delta() {
     let reply = slash
         .run_in(ALICE, &[BOSSING_ROLE], KALOS, "schedule", json!([]))
         .await;
-    // Bob's nickname is what v4 `_member_name` shows.
+    // Bob's nickname is what v4 `_member_name` shows. Dan is still unknown
+    // inside the 12 h window: at risk.
     assert_eq!(
         reply.embeds[0].fields[0].value,
-        "`#11111111` · 22:00 · **XKalos** · <@1001> <@1004> · ⚠️ unconfirmed · 1/2 ✅ · \
+        "`#11111111` · 22:00 · **XKalos** · <@1001> <@1004> · ❗ at risk · 1/2 ✅ · \
          _this week: −Bobby +Dan_"
     );
 }
@@ -258,7 +259,7 @@ async fn the_redesign_names_a_one_week_stand_in() {
         .await;
     assert_eq!(
         only_v2(&reply)[1],
-        "### Tue 29 Sep\n⚠️ `22:00`  Extreme Gatekeeper Kalos\n\
+        "### Tue 29 Sep\n❗ `22:00`  Extreme Gatekeeper Kalos\n\
          -#   In Alice · Waiting Dan · Dan standing in for Bobby · #11111111"
     );
 }

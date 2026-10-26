@@ -5,7 +5,6 @@
 use chrono::{DateTime, NaiveTime, Utc, Weekday};
 
 use super::fixtures::refused_for;
-use crate::domain::attendance::AttendanceMode;
 use crate::domain::history::{Actor, Surface};
 use crate::domain::settings::{
     CharacterData, IdList, MessageStyle, Reasoning, RuntimeSettings, Section, SelfServiceMode,
@@ -263,7 +262,6 @@ async fn sections_round_trip_and_keep_other_rows<S: SettingsStore>(store: S) {
         },
     ];
     wanted.schedule.reset_time = time(3, 30);
-    wanted.schedule.attendance = AttendanceMode::V5;
     wanted.posting.channel_id = Some("77".into());
     for section in [
         Section::Chatbot(wanted.chatbot.clone()),

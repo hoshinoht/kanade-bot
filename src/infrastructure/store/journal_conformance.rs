@@ -395,7 +395,6 @@ async fn suppressed_digest_never_touches_replaces<S: ScheduleStore + DeliveryJou
         settings: DeliverySettings {
             post_channel_id: Some(HOME),
             quiet_mode: false,
-            attendance: crate::domain::attendance::AttendancePolicy::V4_COMPAT,
         },
         channels: &channels,
         journal: &view,

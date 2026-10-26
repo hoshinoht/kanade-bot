@@ -14,7 +14,6 @@ use super::model::{
     Persona, Pings, Posting, Profanity, RUN_MINUTES, Reasoning, RoleModel, RoleProfileAssignment,
     RunLengths, RuntimeSettings, Schedule, SelfService, SelfServiceMode, Watching,
 };
-use crate::domain::attendance::AttendanceMode;
 use crate::domain::weeks::{parse_hhmm, parse_weekday};
 
 /// One section written whole in one transaction (the config API's
@@ -292,13 +291,6 @@ fn reasoning(key: &'static str, value: &str, inherit: bool) -> Result<Reasoning,
     }
 }
 
-fn attendance_text(mode: AttendanceMode) -> &'static str {
-    match mode {
-        AttendanceMode::V4Compat => "v4_compat",
-        AttendanceMode::V5 => "v5",
-    }
-}
-
 /// `seed` with every stored settings row applied. A blank model alias row
 /// is unset (v4 kept the seed), so the seed's alias stays.
 pub(super) fn resolve(
@@ -439,12 +431,6 @@ fn apply(out: &mut RuntimeSettings, key: &'static str, value: &str) -> Result<()
                 parse_weekday(value).map_err(|error| malformed(key, value, error.to_string()))?;
         }
         keys::RESET_TIME => out.schedule.reset_time = clock(key, value)?,
-        keys::ATTENDANCE_MODE => {
-            out.schedule.attendance = [AttendanceMode::V4Compat, AttendanceMode::V5]
-                .into_iter()
-                .find(|mode| attendance_text(*mode) == value)
-                .ok_or_else(|| malformed(key, value, "expected v4_compat or v5"))?;
-        }
         keys::POST_CHANNEL => out.posting.channel_id = id(key, value)?,
         _ => {}
     }
@@ -576,10 +562,6 @@ pub(super) fn encode(section: &Section) -> Rows {
         Section::Schedule(schedule) => vec![
             (keys::RESET_WEEKDAY, weekday_text(schedule.reset_weekday)),
             (keys::RESET_TIME, clock_text(schedule.reset_time)),
-            (
-                keys::ATTENDANCE_MODE,
-                attendance_text(schedule.attendance).to_owned(),
-            ),
         ],
         Section::Posting(posting) => {
             vec![(

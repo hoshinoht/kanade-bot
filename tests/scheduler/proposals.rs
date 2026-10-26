@@ -3,7 +3,6 @@
 //! when the schedule moved, attendance rules and TTL expiry.
 
 use chrono::{DateTime, FixedOffset, NaiveTime, TimeZone, Utc, Weekday};
-use kanade::domain::attendance::AttendancePolicy;
 use kanade::domain::drafts::{
     DraftEventKind, DraftOp, DraftStatus, DraftStore, LoadedDraft, ProposalSource, ProposalStore,
     RequestLimit, Target,
@@ -53,10 +52,6 @@ fn kl(month: u32, day: u32, hour: u32, minute: u32) -> DateTime<FixedOffset> {
         .unwrap()
 }
 
-fn policy(attendance: AttendancePolicy) -> SchedulePolicy {
-    support::policy().with_attendance(attendance)
-}
-
 fn member(id: &str) -> Approver {
     Approver {
         user_id: id.into(),
@@ -76,12 +71,11 @@ struct Fixture {
     timing_run: String,
 }
 
-async fn fixture(attendance: AttendancePolicy) -> Fixture {
+async fn fixture() -> Fixture {
     let clock = TestClock::new(kl(8, 27, 1, 0));
-    let policy = policy(attendance);
+    let policy = support::policy();
     let mut service =
-        SchedulerService::new(SqliteStore::open_temp().await, RandomIds, clock.clone())
-            .with_attendance(attendance);
+        SchedulerService::new(SqliteStore::open_temp().await, RandomIds, clock.clone());
     let week = utc(kl(8, 27, 0, 0));
     let run = by_tests(&mut service)
         .create_run(NewRun {
@@ -234,7 +228,7 @@ impl Fixture {
 
 #[tokio::test]
 async fn a_participant_approves_through_the_source_surface_quietly() {
-    let mut f = fixture(AttendancePolicy::V4_COMPAT).await;
+    let mut f = fixture().await;
     let id = f.propose(cancel(&f.run.clone(), "222")).await;
     let approved = f.approve(&id, &member("1002")).await.unwrap();
     assert_eq!(f.run_status(&f.run.clone()).await, RunStatus::Cancelled);
@@ -262,7 +256,7 @@ async fn a_participant_approves_through_the_source_surface_quietly() {
 
 #[tokio::test]
 async fn only_participants_admins_and_the_owner_may_answer() {
-    let mut f = fixture(AttendancePolicy::V4_COMPAT).await;
+    let mut f = fixture().await;
     let run = f.run.clone();
     let id = f.propose(cancel(&run, "222")).await;
     let before = snapshot(&f.service).await;
@@ -303,7 +297,7 @@ async fn only_participants_admins_and_the_owner_may_answer() {
 
 #[tokio::test]
 async fn a_repeated_approval_applies_once_and_posts_nothing() {
-    let mut f = fixture(AttendancePolicy::V4_COMPAT).await;
+    let mut f = fixture().await;
     let run = f.run.clone();
     let id = f.propose(cancel(&run, "222")).await;
     let first = f.approve(&id, &member("1002")).await.unwrap();
@@ -324,7 +318,7 @@ async fn a_repeated_approval_applies_once_and_posts_nothing() {
 
 #[tokio::test]
 async fn a_newer_proposal_supersedes_the_live_one_for_its_target() {
-    let mut f = fixture(AttendancePolicy::V4_COMPAT).await;
+    let mut f = fixture().await;
     let run = f.run.clone();
     let older = f.propose(cancel(&run, "222")).await;
     let elsewhere = f.propose(cancel(&run, "444")).await;
@@ -356,7 +350,7 @@ async fn a_newer_proposal_supersedes_the_live_one_for_its_target() {
 
 #[tokio::test]
 async fn approving_retires_the_sibling_proposals() {
-    let mut f = fixture(AttendancePolicy::V4_COMPAT).await;
+    let mut f = fixture().await;
     let run = f.run.clone();
     let mut ids = Vec::new();
     for change in [cancel(&run, "222"), answer(&run, "1001", RsvpState::Yes)] {
@@ -374,7 +368,7 @@ async fn approving_retires_the_sibling_proposals() {
 
 #[tokio::test]
 async fn an_unappliable_change_is_refused_up_front_and_writes_nothing() {
-    let mut f = fixture(AttendancePolicy::V4_COMPAT).await;
+    let mut f = fixture().await;
     let run = f.run.clone();
     let before = snapshot(&f.service).await;
     let refused = f
@@ -410,7 +404,7 @@ async fn an_unappliable_change_is_refused_up_front_and_writes_nothing() {
 
 #[tokio::test]
 async fn an_answer_for_someone_swapped_off_meanwhile_is_refused_at_approval() {
-    let mut f = fixture(AttendancePolicy::V4_COMPAT).await;
+    let mut f = fixture().await;
     let run = f.run.clone();
     let id = f.propose(answer(&run, "1003", RsvpState::Yes)).await;
     f.swap(&run, "1003", "1004").await;
@@ -425,7 +419,7 @@ async fn an_answer_for_someone_swapped_off_meanwhile_is_refused_at_approval() {
 
 #[tokio::test]
 async fn proposed_answers_recount_but_never_end_a_pin_or_move_a_started_run() {
-    let mut f = fixture(AttendancePolicy::V5).await;
+    let mut f = fixture().await;
     let run = f.run.clone();
     f.hand_set(&run, RunStatus::Confirmed).await;
     let id = f.propose(answer(&run, "1001", RsvpState::No)).await;
@@ -470,7 +464,7 @@ async fn proposed_answers_recount_but_never_end_a_pin_or_move_a_started_run() {
 
 #[tokio::test]
 async fn a_proposed_answer_recounts_an_unpinned_run() {
-    let mut f = fixture(AttendancePolicy::V4_COMPAT).await;
+    let mut f = fixture().await;
     let run = f.run.clone();
     let id = f.propose(answer(&run, "1003", RsvpState::No)).await;
     f.approve(&id, &member("1001")).await.unwrap();
@@ -479,7 +473,7 @@ async fn a_proposed_answer_recounts_an_unpinned_run() {
 
 #[tokio::test]
 async fn a_stranger_on_a_past_ttl_proposal_changes_nothing() {
-    let mut f = fixture(AttendancePolicy::V4_COMPAT).await;
+    let mut f = fixture().await;
     let run = f.run.clone();
     let id = f.propose(cancel(&run, "222")).await;
     f.clock.set(kl(8, 28, 1, 0));
@@ -501,7 +495,7 @@ async fn a_stranger_on_a_past_ttl_proposal_changes_nothing() {
 
 #[tokio::test]
 async fn a_proposal_past_its_ttl_is_refused_and_closed() {
-    let mut f = fixture(AttendancePolicy::V4_COMPAT).await;
+    let mut f = fixture().await;
     let run = f.run.clone();
     let id = f.propose(cancel(&run, "222")).await;
     f.clock.set(kl(8, 28, 1, 0));
@@ -519,7 +513,7 @@ async fn a_proposal_past_its_ttl_is_refused_and_closed() {
 
 #[tokio::test]
 async fn proposals_leave_member_request_limits_alone() {
-    let mut f = fixture(AttendancePolicy::V4_COMPAT).await;
+    let mut f = fixture().await;
     let run = f.run.clone();
     let mut timing_runs: Vec<_> = snapshot(&f.service)
         .await
@@ -595,7 +589,7 @@ async fn a_cancel_or_otot_target_wins_over_a_status_that_moved_meanwhile() {
         (ChangeKind::Cancel, RunStatus::Cancelled),
         (ChangeKind::Otot, RunStatus::Otot),
     ] {
-        let mut f = fixture(AttendancePolicy::V4_COMPAT).await;
+        let mut f = fixture().await;
         let run = f.run.clone();
         let id = f
             .propose(ProposedChange {
@@ -612,7 +606,7 @@ async fn a_cancel_or_otot_target_wins_over_a_status_that_moved_meanwhile() {
 
 #[tokio::test]
 async fn a_proposed_answer_recounts_against_the_status_at_approval() {
-    let mut f = fixture(AttendancePolicy::V4_COMPAT).await;
+    let mut f = fixture().await;
     let run = f.run.clone();
     for user in ["1002", "1003"] {
         f.react(&run, user, "\u{2705}").await;
@@ -636,7 +630,7 @@ async fn a_proposed_answer_recounts_against_the_status_at_approval() {
 
 #[tokio::test]
 async fn other_upstream_changes_still_conflict() {
-    let mut f = fixture(AttendancePolicy::V4_COMPAT).await;
+    let mut f = fixture().await;
     let run = f.run.clone();
     let id = f.propose(move_to(&run, utc(kl(9, 1, 21, 30)))).await;
     f.amend(&run, kl(9, 2, 21, 0)).await;
@@ -651,7 +645,7 @@ async fn other_upstream_changes_still_conflict() {
 #[tokio::test]
 async fn a_proposed_move_revives_a_cancelled_or_otot_run() {
     for status in [RunStatus::Cancelled, RunStatus::Otot] {
-        let mut f = fixture(AttendancePolicy::V4_COMPAT).await;
+        let mut f = fixture().await;
         let run = f.run.clone();
         f.react(&run, "1001", "\u{2705}").await;
         f.hand_set(&run, status).await;
@@ -683,7 +677,7 @@ async fn in_v5_a_revived_run_is_rederived_unpinned_or_kept_once_started() {
         (kl(9, 1, 21, 30), RunStatus::AtRisk),
         (kl(8, 27, 0, 30), RunStatus::Planned),
     ] {
-        let mut f = fixture(AttendancePolicy::V5).await;
+        let mut f = fixture().await;
         let run = f.run.clone();
         f.react(&run, "1003", "\u{274c}").await;
         f.hand_set(&run, RunStatus::Confirmed).await;
@@ -697,7 +691,7 @@ async fn in_v5_a_revived_run_is_rederived_unpinned_or_kept_once_started() {
 
 #[tokio::test]
 async fn an_admin_amend_leaves_a_cancelled_run_cancelled() {
-    let mut f = fixture(AttendancePolicy::V4_COMPAT).await;
+    let mut f = fixture().await;
     let run = f.run.clone();
     f.hand_set(&run, RunStatus::Cancelled).await;
     f.amend(&run, kl(9, 1, 21, 30)).await;
@@ -706,7 +700,7 @@ async fn an_admin_amend_leaves_a_cancelled_run_cancelled() {
 
 #[tokio::test]
 async fn a_repeated_approval_never_retires_a_newer_sibling() {
-    let mut f = fixture(AttendancePolicy::V4_COMPAT).await;
+    let mut f = fixture().await;
     let run = f.run.clone();
     let id = f.propose(cancel(&run, "222")).await;
     f.approve(&id, &member("1001")).await.unwrap();
@@ -733,7 +727,7 @@ async fn a_repeated_approval_never_retires_a_newer_sibling() {
 
 #[tokio::test]
 async fn drafts_and_requests_refuse_proposal_only_operations() {
-    let mut f = fixture(AttendancePolicy::V4_COMPAT).await;
+    let mut f = fixture().await;
     let run = Target::Existing(f.run.clone());
     let internal = [
         DraftOp::SetRunBosses {
@@ -827,7 +821,7 @@ async fn drafts_and_requests_refuse_proposal_only_operations() {
 
 #[tokio::test]
 async fn an_approver_taken_off_the_run_meanwhile_is_refused() {
-    let mut f = fixture(AttendancePolicy::V4_COMPAT).await;
+    let mut f = fixture().await;
     let run = f.run.clone();
     let id = f.propose(cancel(&run, "222")).await;
     f.swap(&run, "1003", "1004").await;
@@ -881,7 +875,7 @@ impl Fixture {
 
 #[tokio::test]
 async fn an_edited_approval_merges_one_record_at_the_new_time() {
-    let mut f = fixture(AttendancePolicy::V4_COMPAT).await;
+    let mut f = fixture().await;
     let run = f.run.clone();
     let id = f.propose(move_to(&run, utc(kl(9, 1, 21, 30)))).await;
     let head = f.head().await;
@@ -933,7 +927,7 @@ async fn an_edited_approval_merges_one_record_at_the_new_time() {
 
 #[tokio::test]
 async fn an_edit_equal_to_the_proposed_time_is_a_plain_approval() {
-    let mut f = fixture(AttendancePolicy::V4_COMPAT).await;
+    let mut f = fixture().await;
     let run = f.run.clone();
     let to = utc(kl(9, 1, 21, 30));
     let id = f.propose(move_to(&run, to)).await;
@@ -950,7 +944,7 @@ async fn an_edit_equal_to_the_proposed_time_is_a_plain_approval() {
 
 #[tokio::test]
 async fn an_add_takes_the_edited_slot_and_its_boss_week() {
-    let mut f = fixture(AttendancePolicy::V4_COMPAT).await;
+    let mut f = fixture().await;
     let id = f
         .propose(ProposedChange {
             kind: ChangeKind::Add,
@@ -972,7 +966,7 @@ async fn an_add_takes_the_edited_slot_and_its_boss_week() {
 
 #[tokio::test]
 async fn an_edit_needs_a_timed_change_and_a_current_week() {
-    let mut f = fixture(AttendancePolicy::V4_COMPAT).await;
+    let mut f = fixture().await;
     let run = f.run.clone();
     let before = snapshot(&f.service).await;
     let cancelled = f.propose(cancel(&run, "222")).await;
@@ -995,7 +989,7 @@ async fn an_edit_needs_a_timed_change_and_a_current_week() {
 
 #[tokio::test]
 async fn an_edited_approval_keeps_the_authority_conflict_and_refusal_rules() {
-    let mut f = fixture(AttendancePolicy::V4_COMPAT).await;
+    let mut f = fixture().await;
     let run = f.run.clone();
     let id = f.propose(move_to(&run, utc(kl(9, 1, 21, 30)))).await;
     let edit = utc(kl(9, 2, 20, 0));
@@ -1024,7 +1018,7 @@ async fn an_edited_approval_keeps_the_authority_conflict_and_refusal_rules() {
 
 #[tokio::test]
 async fn previewing_a_proposal_writes_nothing() {
-    let mut f = fixture(AttendancePolicy::V4_COMPAT).await;
+    let mut f = fixture().await;
     let run = f.run.clone();
     let id = f.propose(move_to(&run, utc(kl(9, 1, 21, 30)))).await;
     let head = f.head().await;
@@ -1053,7 +1047,7 @@ async fn previewing_a_proposal_writes_nothing() {
 
 #[tokio::test]
 async fn a_plain_approval_after_ones_own_edited_one_is_a_repeat() {
-    let mut f = fixture(AttendancePolicy::V4_COMPAT).await;
+    let mut f = fixture().await;
     let run = f.run.clone();
     let id = f.propose(move_to(&run, utc(kl(9, 1, 21, 30)))).await;
     let approved = f
@@ -1082,7 +1076,7 @@ async fn a_plain_approval_after_ones_own_edited_one_is_a_repeat() {
 
 #[tokio::test]
 async fn an_edited_retry_after_the_reset_answers_its_first_result() {
-    let mut f = fixture(AttendancePolicy::V4_COMPAT).await;
+    let mut f = fixture().await;
     let run = f.run.clone();
     let id = f.propose(move_to(&run, utc(kl(9, 1, 21, 30)))).await;
     let edit = utc(kl(9, 2, 20, 0));
@@ -1111,7 +1105,7 @@ async fn an_edited_retry_after_the_reset_answers_its_first_result() {
 #[tokio::test]
 async fn an_approved_move_announces_the_move_and_nothing_else() {
     for via_portal in [false, true] {
-        let mut f = fixture(AttendancePolicy::V4_COMPAT).await;
+        let mut f = fixture().await;
         let run = f.run.clone();
         let from = f.run_row(&run).await.datetime;
         let to = utc(kl(9, 1, 21, 30));

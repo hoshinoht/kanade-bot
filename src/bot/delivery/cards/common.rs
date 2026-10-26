@@ -5,9 +5,7 @@ use std::collections::BTreeMap;
 use chrono_tz::Tz;
 
 use crate::bot::commands::text;
-use crate::domain::attendance::{
-    AnswerState, AttendanceMode, AttendancePolicy, Tally, snapshot_states, status_label,
-};
+use crate::domain::attendance::{AnswerState, Tally, snapshot_states, status_label};
 use crate::domain::catalog::BossTable;
 use crate::domain::members::Directory;
 use crate::domain::notify::display_names;
@@ -31,7 +29,6 @@ pub const COLOUR_DIGEST: u32 = 0x5865F2;
 #[derive(Clone, Copy)]
 pub struct CardContext<'a> {
     pub schedule: &'a ScheduleSnapshot,
-    pub attendance: AttendancePolicy,
     pub zone: Tz,
     pub quiet: bool,
     pub members: &'a (dyn Directory + Sync),
@@ -53,7 +50,7 @@ impl CardContext<'_> {
     }
 
     pub fn states(&self, run: &Run) -> Vec<(String, AnswerState)> {
-        snapshot_states(self.schedule, run, self.attendance.mode)
+        snapshot_states(self.schedule, run)
     }
 }
 
@@ -88,40 +85,22 @@ pub fn lead_colour(bosses: &[String], catalog: Option<&BossTable>, default: u32)
         .unwrap_or(default)
 }
 
-/// v4 `rsvp_tally`: explicit ✅ over the party, then the ❌ count if any.
-fn rsvp_tally(states: &[(String, AnswerState)]) -> String {
-    let yes = count(states, |state| *state == AnswerState::Confirmed);
-    let no = count(states, |state| *state == AnswerState::Declined);
-    let mut text = format!("{yes}/{} \u{2705}", states.len());
-    if no > 0 {
-        text.push_str(&format!(" · {no} \u{274c}"));
-    }
-    text
-}
-
-fn count(states: &[(String, AnswerState)], keep: impl Fn(&AnswerState) -> bool) -> usize {
-    states.iter().filter(|(_, state)| keep(state)).count()
-}
-
 /// `4/4 (2 assumed)`, then the status label: `, expected` when a
 /// confirmation rests on assumed answers, `, confirmed (set by admin)` for
-/// a hand-set status (v5 only).
-pub fn tally_text(schedule: &ScheduleSnapshot, run: &Run, attendance: AttendancePolicy) -> String {
-    let states = snapshot_states(schedule, run, attendance.mode);
+/// a hand-set status.
+pub fn tally_text(schedule: &ScheduleSnapshot, run: &Run) -> String {
+    let states = snapshot_states(schedule, run);
     let tally = Tally::of(states.iter().map(|(_, state)| state));
-    match status_label(run.status, run.status_pin, &tally, attendance.mode) {
+    match status_label(run.status, run.status_pin, &tally) {
         Some(label) => format!("{tally}, {label}"),
         None => tally.to_string(),
     }
 }
 
-/// A run's answers as a card shows them: v4's `rsvp_tally` in v4-compat
-/// mode, the v5 tally (assumed answers, `expected`) otherwise.
+/// A run's answers as a card shows them: the tally (assumed answers,
+/// `expected`).
 pub fn answers_text(ctx: &CardContext<'_>, run: &Run) -> String {
-    match ctx.attendance.mode {
-        AttendanceMode::V4Compat => rsvp_tally(&ctx.states(run)),
-        AttendanceMode::V5 => tally_text(ctx.schedule, run, ctx.attendance),
-    }
+    tally_text(ctx.schedule, run)
 }
 
 /// v4 `status_line`.
@@ -133,8 +112,8 @@ pub fn status_line(ctx: &CardContext<'_>, run: &Run) -> String {
     )
 }
 
-/// Participants whose answer is unknown (v4 `unanswered`: no ✅/❌; in v5
-/// an assumed answer counts as answered).
+/// Participants whose answer is unknown (v4 `unanswered`: no ✅/❌; an
+/// assumed answer counts as answered).
 pub fn unanswered(states: &[(String, AnswerState)]) -> Vec<String> {
     pick(states, |state| *state == AnswerState::Unknown)
 }
@@ -246,21 +225,18 @@ mod tests {
     }
 
     #[test]
-    fn a_pinned_status_reads_set_by_admin_in_v5_only() {
+    fn a_pinned_status_reads_set_by_admin() {
         let pin = Some(StatusPin {
             status: RunStatus::Confirmed,
             at: Utc.with_ymd_and_hms(2026, 9, 10, 0, 0, 0).unwrap(),
         });
         let pinned = schedule(pin);
         assert_eq!(
-            tally_text(&pinned, &pinned.runs[0], AttendancePolicy::V5),
+            tally_text(&pinned, &pinned.runs[0]),
             "0/2, confirmed (set by admin)"
         );
         let plain = schedule(None);
-        assert_eq!(
-            tally_text(&plain, &plain.runs[0], AttendancePolicy::V5),
-            "0/2"
-        );
+        assert_eq!(tally_text(&plain, &plain.runs[0]), "0/2");
     }
 
     #[test]

@@ -490,7 +490,7 @@ async fn samples_store_nothing<S: Store + DebugCardStore + 'static>(store: Arc<S
     let field = &day_of.embeds[0].fields[0];
     assert_eq!(field.name, "🕘 21:00  ·  HMaleficStar");
     assert!(
-        field.value.contains("✅ confirmed · 1/3 ✅ · 1 ❌"),
+        field.value.contains("✅ confirmed · 1/3 (1 out)"),
         "{}",
         field.value
     );

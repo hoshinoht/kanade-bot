@@ -9,9 +9,7 @@ use chrono::{DateTime, Utc};
 use super::ports::{
     AttendanceHistory, Clock, Committed, IdSource, ScheduleStore, Scope, StoreError,
 };
-use crate::domain::attendance::{
-    self, AttendanceActor, AttendanceMode, AttendancePolicy, AttendanceRefusal,
-};
+use crate::domain::attendance::{self, AttendanceActor, AttendancePolicy, AttendanceRefusal};
 use crate::domain::completion::{RunEnds, RunEndsSource};
 use crate::domain::history::{
     Actor, ChangeFilter, ChangeHistory, ChangeMeta, ChangeQuery, ChangeRecord, ChangeRef,
@@ -91,7 +89,7 @@ pub struct SchedulerService<S, I, C> {
     pub(super) ids: I,
     pub(super) clock: C,
     /// The attendance rules every status recount follows; set it from the
-    /// guild's `SchedulePolicy.attendance` (v4-compatible by default).
+    /// guild's `SchedulePolicy.attendance`.
     pub(super) attendance: AttendancePolicy,
     /// v5: when runs end, read once per operation; `None` keeps v4's rules
     /// (nothing frozen, slots past 2 h after their start).
@@ -131,7 +129,7 @@ impl<S: ScheduleStore, I: IdSource, C: Clock> SchedulerService<S, I, C> {
             store,
             ids,
             clock,
-            attendance: AttendancePolicy::V4_COMPAT,
+            attendance: AttendancePolicy::V5,
             run_ends: None,
         }
     }
@@ -1075,13 +1073,10 @@ impl<S: ScheduleStore, I: IdSource, C: Clock> Attributed<'_, S, I, C> {
         }
     }
 
-    /// v5 attendance: re-derive live runs' statuses now (the tick's step, so
-    /// a run turns at risk when its unknown window opens). Returns the runs
-    /// whose status changed; nothing in v4-compat mode.
+    /// Re-derive live runs' statuses now (the tick's step, so a run turns at
+    /// risk when its unknown window opens). Returns the runs whose status
+    /// changed.
     pub async fn recount_attendance(self) -> SchedulerResult<Vec<String>> {
-        if self.service.attendance.mode == AttendanceMode::V4Compat {
-            return Ok(Vec::new());
-        }
         Ok(ids(self
             .apply(Scope::All, Op::RecountAttendance)
             .await?

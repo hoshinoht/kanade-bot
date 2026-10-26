@@ -708,18 +708,24 @@ async fn no_op_edits_report_only_deleted_targets<
     let target = BlameTarget::Run(run.clone());
     let note = expect_seen(&store, &timing, "note").await;
     let slot = expect_seen(&store, &target, "slot").await;
-    // Another editor moves the run; a same-value status edit declaring the
-    // stale slot still succeeds (nothing to write, nothing lost).
+    // Another editor moves the run and sets it to own time; a same-value
+    // status edit declaring the stale slot still succeeds (nothing to write,
+    // nothing lost). Own time, since a hand-set planned or confirmed re-pins.
     editor(&store)
         .as_origin(admin("a"))
         .amend_run(&run, utc(29, 21), &policy())
         .await
         .expect("no_op: move");
+    editor(&store)
+        .as_origin(admin("a"))
+        .set_status(&run, status(RunStatus::Otot), &policy().reminders)
+        .await
+        .expect("no_op: own time");
     let tip = head(&store).await;
     editor(&store)
         .as_origin(admin("b"))
         .expecting(Expect::fields([slot]))
-        .set_status(&run, status(RunStatus::Planned), &policy().reminders)
+        .set_status(&run, status(RunStatus::Otot), &policy().reminders)
         .await
         .expect("no_op: same value");
     assert_eq!(head(&store).await, tip, "no_op: nothing written");

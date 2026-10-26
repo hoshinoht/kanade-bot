@@ -15,7 +15,7 @@ use super::limits::{
 };
 use super::portal::add_portal_button;
 use super::vocab::{INK_BLUE, boss_labels, names, relative_time, roster, short_time, subtext};
-use crate::domain::attendance::{AttendanceMode, Tally, status_label};
+use crate::domain::attendance::{Tally, status_label};
 use crate::domain::ids::short_id;
 use crate::domain::schedule::{Run, RunStatus};
 
@@ -35,10 +35,10 @@ pub fn day_of_card(
         .filter(|user| !ctx.quiet && mentioned.contains(user))
         .cloned()
         .collect();
-    let line = match (pinged.is_empty(), ctx.attendance.mode) {
-        (true, _) => REACT.to_owned(),
-        (false, AttendanceMode::V5) => format!("Waiting on {} · {REACT}", who.list(&pinged)),
-        (false, AttendanceMode::V4Compat) => format!("{} · {REACT}", who.list(&pinged)),
+    let line = if pinged.is_empty() {
+        REACT.to_owned()
+    } else {
+        format!("Waiting on {} · {REACT}", who.list(&pinged))
     };
     let full: Vec<CardEmbed> = runs
         .iter()
@@ -56,7 +56,7 @@ pub fn day_of_card(
     }
 }
 
-/// `✅ all in`, `⚠️ waiting on 2`, …, then the v5 status label if any.
+/// `✅ all in`, `⚠️ waiting on 2`, …, then the status label if any.
 fn state(ctx: &CardContext<'_>, run: &Run) -> String {
     let states = ctx.states(run);
     let tally = Tally::of(states.iter().map(|(_, state)| state));
@@ -72,7 +72,7 @@ fn state(ctx: &CardContext<'_>, run: &Run) -> String {
             tally.declined
         ),
     };
-    if let Some(label) = status_label(run.status, run.status_pin, &tally, ctx.attendance.mode) {
+    if let Some(label) = status_label(run.status, run.status_pin, &tally) {
         text.push_str(&format!(" · {label}"));
     }
     text

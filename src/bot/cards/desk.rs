@@ -353,7 +353,7 @@ where
         &self,
         now: DateTime<Utc>,
     ) -> SchedulerService<StoreRef<'_, S>, I, FixedClock> {
-        // The service refuses a policy whose attendance mode differs from its own.
+        // The service refuses a policy whose attendance rules differ from its own.
         let service =
             SchedulerService::new(StoreRef(&*self.store), self.ids.clone(), FixedClock(now))
                 .with_attendance(self.settings.policy.attendance);

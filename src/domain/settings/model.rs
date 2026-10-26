@@ -7,7 +7,6 @@ use std::collections::BTreeMap;
 use chrono::{NaiveTime, Weekday};
 use chrono_tz::Tz;
 
-use crate::domain::attendance::{AttendanceMode, AttendancePolicy};
 use crate::domain::schedule::{ReminderPolicy, SchedulePolicy};
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -261,7 +260,7 @@ impl Notifications {
 }
 
 /// How the bot's Discord posts look (`v5.message_style`). Presentation only:
-/// the attendance mode still decides tallies, assumed answers and pings.
+/// tallies, assumed answers and pings are the same in every style.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum MessageStyle {
     /// The v4 layouts, byte for byte.
@@ -470,7 +469,6 @@ impl Reasoning {
 pub struct Schedule {
     pub reset_weekday: Weekday,
     pub reset_time: NaiveTime,
-    pub attendance: AttendanceMode,
 }
 
 impl Default for Schedule {
@@ -478,7 +476,6 @@ impl Default for Schedule {
         Self {
             reset_weekday: Weekday::Thu,
             reset_time: NaiveTime::MIN,
-            attendance: AttendanceMode::V4Compat,
         }
     }
 }
@@ -520,9 +517,5 @@ impl RuntimeSettings {
             self.schedule.reset_weekday,
             self.schedule.reset_time,
         )
-        .with_attendance(AttendancePolicy {
-            mode: self.schedule.attendance,
-            unknown_window: AttendancePolicy::DEFAULT_UNKNOWN_WINDOW,
-        })
     }
 }

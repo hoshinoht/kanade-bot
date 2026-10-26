@@ -12,8 +12,8 @@ use super::roster::{RunState, run_state};
 use super::rsvp::{answer_states, derive_run_status};
 use super::run::FixedRun;
 use crate::domain::attendance::{
-    AttendanceActor, AttendanceDefault, AttendanceMode, AttendanceRecord, StandingAnswer,
-    check_attendance, recorded_or_prefill,
+    AttendanceActor, AttendanceDefault, AttendanceRecord, StandingAnswer, check_attendance,
+    recorded_or_prefill,
 };
 
 fn timing(draft: &Draft, fixed_id: &str) -> Result<FixedRun, ScheduleError> {
@@ -64,13 +64,9 @@ pub fn set_standing_answer(
     Ok(Outcome::quiet(timing(draft, fixed_id)?))
 }
 
-/// v5: re-derive the status of every live, not-yet-started run (of one
-/// timing, or all) at `now`; returns the runs that changed. Nothing in
-/// v4-compat mode.
+/// Re-derive the status of every live, not-yet-started run (of one timing,
+/// or all) at `now`; returns the runs that changed.
 fn rederive(draft: &mut Draft, fixed_id: Option<&str>, now: DateTime<Utc>) -> Vec<String> {
-    if draft.attendance().mode == AttendanceMode::V4Compat {
-        return Vec::new();
-    }
     let mut changed = Vec::new();
     for run in draft.runs(None) {
         let of_timing = fixed_id.is_none_or(|id| run.fixed_run_id.as_deref() == Some(id));
@@ -137,16 +133,16 @@ pub fn record_attendance(
     Ok(Outcome::quiet(run_state(draft, run_id)?))
 }
 
-/// v5: re-derive every live run's status under the draft's attendance rules
-/// at `now` (the tick runs this so unknown answers make a run at risk once
-/// its window opens, and assumed ones confirm it). Returns the runs whose
-/// status changed. A no-op in v4-compat mode.
+/// Re-derive every live run's status under the draft's attendance rules at
+/// `now` (the tick runs this so unknown answers make a run at risk once its
+/// window opens, and assumed ones confirm it). Returns the runs whose
+/// status changed.
 pub fn recount_attendance(draft: &mut Draft, now: DateTime<Utc>) -> Vec<String> {
     rederive(draft, None, now)
 }
 
-/// Set a weekly timing's attendance default; in v5 its live, not-yet-started
-/// runs are re-derived at `now` in the same change.
+/// Set a weekly timing's attendance default; its live, not-yet-started runs
+/// are re-derived at `now` in the same change.
 ///
 /// # Errors
 /// [`ScheduleError::UnknownFixedRun`].

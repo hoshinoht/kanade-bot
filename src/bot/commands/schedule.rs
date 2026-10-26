@@ -171,7 +171,6 @@ impl ScheduleCommand {
                     _ => ScheduleScope::Channel(name.as_deref()),
                 },
                 zone: self.ctx.policy.zone(),
-                attendance: self.ctx.policy.attendance.mode,
                 catalog: Some(self.ctx.catalog.as_ref()),
                 marks: &NO_MARKS,
                 empty: empty_text(scope),

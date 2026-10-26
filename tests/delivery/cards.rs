@@ -293,11 +293,6 @@ pub(crate) async fn seed_day_of<S: Store>(store: &S) -> (String, String) {
 const DAY_OF_CONTENT: &str = "📅 **Today — Thu 10 Sep**\n<@1001> Bex";
 
 async fn day_of_card_labels_waiting_members<S: Store>(store: &S) {
-    assert_eq!(
-        scenarios::config().policy.attendance.mode,
-        kanade::domain::attendance::AttendanceMode::V4Compat,
-        "the named card-text difference applies even in V4_COMPAT"
-    );
     let art = art_dir();
     let world = world();
     seed_day_of(store).await;
@@ -318,12 +313,12 @@ async fn day_of_card_labels_waiting_members<S: Store>(store: &S) {
         [
             (
                 "🕘 21:00  ·  HMaleficStar".to_owned(),
-                "**HMaleficStar** · Radiant Malefic Star (Hard, Lv280)\n⚠️ unconfirmed · 0/2 ✅\nStill to answer: <@1001> Bex"
+                "**HMaleficStar** · Radiant Malefic Star (Hard, Lv280)\n⚠️ unconfirmed · 0/2\nStill to answer: <@1001> Bex"
                     .to_owned()
             ),
             (
                 "🕒 own time  ·  XKalos".to_owned(),
-                "**XKalos** · Gatekeeper Kalos (Extreme, Lv265)\n🕒 own time · 0/1 ✅\nStill to answer: <@1001>"
+                "**XKalos** · Gatekeeper Kalos (Extreme, Lv265)\n🕒 own time · 0/1\nStill to answer: <@1001>"
                     .to_owned()
             ),
         ]
@@ -354,7 +349,7 @@ async fn day_of_card_labels_waiting_members<S: Store>(store: &S) {
 }
 
 #[tokio::test]
-async fn day_of_card_labels_waiting_even_in_v4_compat() {
+async fn day_of_card_labels_waiting() {
     day_of_card_labels_waiting_members(&SqliteStore::open_temp().await).await;
 }
 
@@ -442,8 +437,7 @@ async fn countdown_states_match_v4<S: Store>(store: &S) {
     assert_eq!(
         embed.description.as_deref(),
         Some(
-            format!("{KALOS_DETAIL}\n⚠️ unconfirmed · 0/2 ✅\nStill to answer: <@1001> Bex")
-                .as_str()
+            format!("{KALOS_DETAIL}\n⚠️ unconfirmed · 0/2\nStill to answer: <@1001> Bex").as_str()
         )
     );
     assert_eq!(
@@ -476,7 +470,7 @@ async fn countdown_states_match_v4<S: Store>(store: &S) {
     let embed = &out.embeds[0];
     assert_eq!(
         embed.description.as_deref(),
-        Some(format!("{KALOS_DETAIL}\n❗ at risk · 1/2 ✅ · 1 ❌").as_str())
+        Some(format!("{KALOS_DETAIL}\n❗ at risk · 1/2 (1 out)").as_str())
     );
     assert_eq!(embed.footer, None, "nothing left to ask");
     assert_eq!(embed.color, Some(COLOUR_COUNTDOWN), "not settled either");
@@ -496,7 +490,7 @@ async fn countdown_states_match_v4<S: Store>(store: &S) {
     let embed = &set.embeds[0];
     assert_eq!(
         embed.description.as_deref(),
-        Some(format!("{KALOS_DETAIL}\n✅ confirmed · 2/2 ✅").as_str())
+        Some(format!("{KALOS_DETAIL}\n✅ confirmed · 2/2").as_str())
     );
     assert_eq!(embed.footer, None);
     assert_eq!(embed.color, Some(COLOUR_ALL_SET));
@@ -541,14 +535,14 @@ async fn digest_matches_v4<S: Store>(store: &S) {
             (
                 "Thu 10 Sep".to_owned(),
                 format!(
-                    "**XKalos** · ⚠️ **Planned**\n`21:00` · 0/1 ✅ · <#{HOME}> · `#{}`",
+                    "**XKalos** · ⚠️ **Planned**\n`21:00` · 0/1 · <#{HOME}> · `#{}`",
                     short_id(&kalos)
                 )
             ),
             (
                 "Sat 12 Sep".to_owned(),
                 format!(
-                    "**HMaleficStar** · 🕒 **Own time**\n`own time` · 0/1 ✅ · <#{HOME}> · `#{}`",
+                    "**HMaleficStar** · 🕒 **Own time**\n`own time` · 0/1 · <#{HOME}> · `#{}`",
                     short_id(&star)
                 )
             ),
@@ -1589,8 +1583,9 @@ async fn retries_and_reaction_edits_reuse_the_stored_heading() {
     };
     assert_eq!(edit.content.as_deref(), Some(expected));
     let embed = &edit.embeds.as_ref().expect("embed")[0];
+    // 1001 is still unknown inside the 12 h window: at risk.
     assert!(
-        embed.fields[0].value.contains("⚠️ unconfirmed · 1/2 ✅"),
+        embed.fields[0].value.contains("❗ at risk · 1/2"),
         "{:?}",
         embed.fields[0]
     );
@@ -1808,14 +1803,13 @@ async fn store_writes_drive_the_refresh_task_for_cards_and_the_digest() {
                 .join("\n")
         })
         .collect();
+    // 1001 is still unknown inside the 12 h window: at risk.
     assert!(
-        texts
-            .iter()
-            .any(|text| text.contains("⚠️ unconfirmed · 1/2 ✅")),
+        texts.iter().any(|text| text.contains("❗ at risk · 1/2")),
         "the morning card: {texts:?}"
     );
     assert!(
-        texts.iter().any(|text| text.contains("`21:00` · 1/2 ✅")),
+        texts.iter().any(|text| text.contains("`21:00` · 1/2 ·")),
         "the week's digest: {texts:?}"
     );
     stop.send_replace(true);

@@ -11,7 +11,7 @@ use chrono_tz::Tz;
 use twilight_model::channel::message::embed::{EmbedField, EmbedFooter};
 use twilight_model::channel::message::{Component, Embed};
 
-use crate::domain::attendance::{AnswerState, AttendanceMode, snapshot_states};
+use crate::domain::attendance::{AnswerState, snapshot_states};
 use crate::domain::catalog::BossTable;
 use crate::domain::ids::short_id;
 use crate::domain::schedule::{Run, RunStatus, ScheduleSnapshot};
@@ -44,7 +44,6 @@ pub struct ScheduleWeek<'a> {
     pub next: bool,
     pub scope: ScheduleScope<'a>,
     pub zone: Tz,
-    pub attendance: AttendanceMode,
     pub catalog: Option<&'a BossTable>,
     pub marks: &'a DifficultyMarks,
     /// Said when nothing in scope is left to show.
@@ -156,7 +155,7 @@ fn run_lines(week: &ScheduleWeek<'_>, run: &Run, name: &dyn Fn(&str) -> String) 
         format!("`{}`", local_time(run.datetime, week.zone))
     };
     let (mut in_, mut waiting, mut out) = (Vec::new(), Vec::new(), Vec::new());
-    for (user, state) in snapshot_states(week.snapshot, run, week.attendance) {
+    for (user, state) in snapshot_states(week.snapshot, run) {
         let who = name(&user);
         match state {
             AnswerState::Confirmed => in_.push(who),
@@ -334,7 +333,6 @@ mod tests {
             next: false,
             scope: ScheduleScope::All,
             zone,
-            attendance: AttendanceMode::V4Compat,
             catalog: None,
             marks: &super::super::NO_MARKS,
             empty: "",

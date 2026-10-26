@@ -121,7 +121,7 @@ async fn every_kind_posts_the_real_message_prefixed<S: Store + DebugCardStore + 
         fields(embed),
         [(
             "🕘 21:00  ·  HMaleficStar".to_owned(),
-            "**HMaleficStar** · Radiant Malefic Star (Hard, Lv280)\n⚠️ unconfirmed · 0/2 ✅\nStill to answer: <@1001> Bex"
+            "**HMaleficStar** · Radiant Malefic Star (Hard, Lv280)\n⚠️ unconfirmed · 0/2\nStill to answer: <@1001> Bex"
                 .to_owned()
         )]
     );
@@ -298,10 +298,12 @@ async fn reactions_and_refresh_follow_the_run<S: Store + DebugCardStore + 'stati
         edit.content.as_deref(),
         Some(format!("{TEST_PREFIX}📅 **Today — Thu 10 Sep**\n<@1001> Bex").as_str())
     );
+    // 1001 is still unknown inside the 12 h window: at risk.
     assert!(
         edit.embeds.as_ref().expect("embed")[0].fields[0]
             .value
-            .contains("⚠️ unconfirmed · 1/2 ✅")
+            .contains("❗ at risk · 1/2"),
+        "{edit:?}"
     );
 }
 

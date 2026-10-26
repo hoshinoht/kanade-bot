@@ -415,7 +415,6 @@ where
         let settings = DeliverySettings {
             post_channel_id: None,
             quiet_mode: false,
-            attendance: self.policy.attendance,
         };
         let intent = reminder_intent(schedule, &reminder.id, &*self.members, settings)?;
         if intent.targets.iter().any(|target| view.holds(target)) {
@@ -427,7 +426,6 @@ where
             IntentContent::DayOf { run_ids } => {
                 let ctx = CardContext {
                     schedule,
-                    attendance: self.policy.attendance,
                     zone: self.policy.zone(),
                     quiet: false,
                     members: &*self.members,
@@ -506,7 +504,6 @@ where
         let schedule = self.store.load(&Scope::All).await.ok()?;
         let ctx = CardContext {
             schedule: &schedule,
-            attendance: self.policy.attendance,
             zone: self.policy.zone(),
             quiet: false,
             members: &*self.members,

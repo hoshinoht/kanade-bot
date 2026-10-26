@@ -210,7 +210,6 @@ async fn a_slotted_member_who_left_the_party_gets_the_seed() {
     let resolve = |schedule: &ScheduleSnapshot| {
         let ctx = CardContext {
             schedule,
-            attendance: policy.attendance,
             zone: policy.zone(),
             quiet: false,
             members: &roster,

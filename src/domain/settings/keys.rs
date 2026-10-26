@@ -34,7 +34,6 @@ pub const WATCHED_CATEGORIES: &str = "v5.watched_category_ids";
 pub const CHAT_CATEGORIES: &str = "v5.chat_category_ids";
 pub const RESET_WEEKDAY: &str = "v5.reset_weekday";
 pub const RESET_TIME: &str = "v5.reset_time";
-pub const ATTENDANCE_MODE: &str = "v5.attendance_mode";
 pub const SELF_SERVICE_MODE: &str = "v5.self_service_mode";
 pub const PUBLIC_PORTAL: &str = "v5.public_portal";
 pub const PROFILE_VISIBILITY: &str = "v5.profile_visibility";
@@ -50,8 +49,9 @@ pub const HEADER_ESTIMATES: &str = "v5.header_estimates";
 pub const HEADER_TEASING: &str = "v5.header_teasing";
 
 /// Every settings key. Other `config` rows (the digest marker, v4
-/// bookkeeping) are never read or written through the settings port.
-pub const ALL: [&str; 36] = [
+/// bookkeeping, the retired `v5.attendance_mode`) are never read or written
+/// through the settings port.
+pub const ALL: [&str; 35] = [
     DAY_OF_PING_TIME,
     COUNTDOWN_MINUTES,
     PAUSED,
@@ -78,7 +78,6 @@ pub const ALL: [&str; 36] = [
     CHAT_CATEGORIES,
     RESET_WEEKDAY,
     RESET_TIME,
-    ATTENDANCE_MODE,
     SELF_SERVICE_MODE,
     PUBLIC_PORTAL,
     PROFILE_VISIBILITY,

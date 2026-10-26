@@ -2,9 +2,6 @@
 //! derived answer states, status and ping rules, tallies and recorded
 //! attendance. Pure rules only; storage and the write path build on these.
 //! Contract: `docs/notes/attendance.md`.
-//!
-//! In [`AttendanceMode::V4Compat`] there are no standing answers and every
-//! timing is opt-in, so every rule reduces exactly to v4's.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
@@ -13,19 +10,9 @@ use chrono::{DateTime, TimeDelta, Utc};
 
 use crate::domain::schedule::{FixedRun, RsvpState, Run, RunStatus, ScheduleSnapshot};
 
-/// Whether the v5 attendance rules apply.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum AttendanceMode {
-    /// v4 exactly: no standing answers, every timing opt-in, status from
-    /// explicit answers only.
-    V4Compat,
-    V5,
-}
-
 /// Attendance settings of a schedule policy.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct AttendancePolicy {
-    pub mode: AttendanceMode,
     /// Unknown members make a run at risk this long (elapsed time, not
     /// wall-clock) before it starts. Default 12 h.
     pub unknown_window: TimeDelta,
@@ -34,14 +21,7 @@ pub struct AttendancePolicy {
 impl AttendancePolicy {
     pub const DEFAULT_UNKNOWN_WINDOW: TimeDelta = TimeDelta::hours(12);
 
-    /// v4 behaviour.
-    pub const V4_COMPAT: Self = Self {
-        mode: AttendanceMode::V4Compat,
-        unknown_window: Self::DEFAULT_UNKNOWN_WINDOW,
-    };
-
     pub const V5: Self = Self {
-        mode: AttendanceMode::V5,
         unknown_window: Self::DEFAULT_UNKNOWN_WINDOW,
     };
 }
@@ -99,16 +79,12 @@ pub struct AnswerFacts {
 }
 
 /// THE derivation: an explicit reaction always wins; then a standing
-/// answer; then an assume-coming timing; otherwise unknown. In v4-compat
-/// mode only explicit answers count.
-pub fn answer_state(facts: AnswerFacts, mode: AttendanceMode) -> AnswerState {
+/// answer; then an assume-coming timing; otherwise unknown.
+pub fn answer_state(facts: AnswerFacts) -> AnswerState {
     match facts.explicit {
         Some(RsvpState::Yes) => return AnswerState::Confirmed,
         Some(RsvpState::No) => return AnswerState::Declined,
         _ => {}
-    }
-    if mode == AttendanceMode::V4Compat {
-        return AnswerState::Unknown;
     }
     if facts.standing {
         AnswerState::Assumed(AssumedSource::Standing)
@@ -125,7 +101,6 @@ pub fn run_states(
     explicit: &BTreeMap<String, RsvpState>,
     standing: &BTreeSet<String>,
     default: Option<AttendanceDefault>,
-    mode: AttendanceMode,
 ) -> Vec<(String, AnswerState)> {
     participants
         .iter()
@@ -135,7 +110,7 @@ pub fn run_states(
                 standing: standing.contains(user),
                 default,
             };
-            (user.clone(), answer_state(facts, mode))
+            (user.clone(), answer_state(facts))
         })
         .collect()
 }
@@ -147,7 +122,6 @@ pub fn states_of(
     run: &Run,
     explicit: &BTreeMap<String, RsvpState>,
     timing: Option<&FixedRun>,
-    mode: AttendanceMode,
 ) -> Vec<(String, AnswerState)> {
     let standing: BTreeSet<String> = timing
         .map(|timing| {
@@ -163,16 +137,11 @@ pub fn states_of(
         explicit,
         &standing,
         timing.map(|timing| timing.attendance_default),
-        mode,
     )
 }
 
 /// [`states_of`] over a loaded snapshot.
-pub fn snapshot_states(
-    snapshot: &ScheduleSnapshot,
-    run: &Run,
-    mode: AttendanceMode,
-) -> Vec<(String, AnswerState)> {
+pub fn snapshot_states(snapshot: &ScheduleSnapshot, run: &Run) -> Vec<(String, AnswerState)> {
     let explicit: BTreeMap<String, RsvpState> = snapshot
         .rsvps
         .iter()
@@ -183,7 +152,7 @@ pub fn snapshot_states(
         .fixed_run_id
         .as_deref()
         .and_then(|id| snapshot.fixed_runs.iter().find(|row| row.id == id));
-    states_of(run, &explicit, timing, mode)
+    states_of(run, &explicit, timing)
 }
 
 /// Counts for cards, digest, board and API.
@@ -249,13 +218,11 @@ fn is_sticky(status: RunStatus) -> bool {
 
 /// Derive a run's status from its participants' states.
 ///
-/// Sticky statuses are kept. At risk only from an explicit ❌ or, in v5
-/// mode, from unknown members once `now` is within `unknown_window` of the
-/// start. Confirmed when every participant is confirmed or assumed
-/// (`expected` if any is assumed); otherwise planned: in v5 status is fully
-/// derived, while v4 keeps a confirmation through silence. In v4-compat
-/// mode this is exactly v4's
-/// [`compute_status`](crate::domain::schedule::compute_status).
+/// Sticky statuses are kept. At risk from an explicit ❌ or from unknown
+/// members once `now` is within `unknown_window` of the start. Confirmed
+/// when every participant is confirmed or assumed (`expected` if any is
+/// assumed); otherwise planned: status is fully derived, so a confirmation
+/// resting on withdrawn assumptions does not linger.
 pub fn derive_status(
     current: RunStatus,
     states: &[AnswerState],
@@ -273,10 +240,7 @@ pub fn derive_status(
     if states.contains(&AnswerState::Declined) {
         return plain(RunStatus::AtRisk);
     }
-    if policy.mode == AttendanceMode::V5
-        && states.contains(&AnswerState::Unknown)
-        && now >= start - policy.unknown_window
-    {
+    if states.contains(&AnswerState::Unknown) && now >= start - policy.unknown_window {
         return plain(RunStatus::AtRisk);
     }
     let coming =
@@ -289,15 +253,7 @@ pub fn derive_status(
                 .any(|state| matches!(state, AnswerState::Assumed(_))),
         };
     }
-    // v4 keeps a confirmation through silence; v5 derives status fully, so
-    // a confirmation resting on withdrawn assumptions does not linger.
-    plain(
-        if policy.mode == AttendanceMode::V4Compat && current == RunStatus::Confirmed {
-            RunStatus::Confirmed
-        } else {
-            RunStatus::Planned
-        },
-    )
+    plain(RunStatus::Planned)
 }
 
 /// The morning ping mentions only members whose answer is unknown.
@@ -411,7 +367,7 @@ pub struct StatusPin {
     pub at: DateTime<Utc>,
 }
 
-/// How a card qualifies a run's status (v5 only).
+/// How a card qualifies a run's status.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum StatusLabel {
     /// Confirmed on assumed answers.
@@ -430,16 +386,12 @@ impl fmt::Display for StatusLabel {
 }
 
 /// The label a card shows beside a run's tally: a pin wins over
-/// "expected". `None` in v4-compat mode.
+/// "expected".
 pub fn status_label(
     status: RunStatus,
     pin: Option<StatusPin>,
     tally: &Tally,
-    mode: AttendanceMode,
 ) -> Option<StatusLabel> {
-    if mode == AttendanceMode::V4Compat {
-        return None;
-    }
     match pin {
         Some(pin) if pin.status == status => Some(StatusLabel::SetByAdmin(status)),
         _ if status == RunStatus::Confirmed && tally.assumed > 0 => Some(StatusLabel::Expected),
@@ -551,7 +503,6 @@ mod tests {
     use chrono::TimeZone;
 
     use super::*;
-    use crate::domain::schedule::compute_status;
 
     fn facts(
         explicit: Option<RsvpState>,
@@ -573,7 +524,6 @@ mod tests {
         let assume = Some(AttendanceDefault::AssumeComing);
         let yes = Some(RsvpState::Yes);
         let no = Some(RsvpState::No);
-        let v5 = AttendanceMode::V5;
         let cases = [
             // An explicit reaction always wins.
             (facts(yes, true, assume), Confirmed),
@@ -590,72 +540,14 @@ mod tests {
             (facts(None, false, None), Unknown),
         ];
         for (input, expected) in cases {
-            assert_eq!(answer_state(input, v5), expected, "{input:?}");
+            assert_eq!(answer_state(input), expected, "{input:?}");
         }
-        // v4-compat: explicit answers only.
-        assert_eq!(
-            answer_state(facts(None, true, assume), AttendanceMode::V4Compat),
-            Unknown
-        );
-        assert_eq!(
-            answer_state(facts(yes, true, assume), AttendanceMode::V4Compat),
-            Confirmed
-        );
         // Removing a reaction reverts to the assumed or unknown state.
-        assert_eq!(answer_state(facts(None, true, None), v5), Assumed(Standing));
+        assert_eq!(answer_state(facts(None, true, None)), Assumed(Standing));
     }
 
     fn at(hour: u32) -> DateTime<Utc> {
         Utc.with_ymd_and_hms(2026, 9, 5, hour, 0, 0).unwrap()
-    }
-
-    #[test]
-    fn v4_compat_status_is_exactly_compute_status() {
-        let answers = [None, Some(RsvpState::Yes), Some(RsvpState::No)];
-        let statuses = [
-            RunStatus::Planned,
-            RunStatus::Confirmed,
-            RunStatus::AtRisk,
-            RunStatus::Cancelled,
-            RunStatus::Otot,
-            RunStatus::Done,
-        ];
-        let party = vec!["1".to_owned(), "2".to_owned()];
-        for current in statuses {
-            for first in answers {
-                for second in answers {
-                    let mut explicit = BTreeMap::new();
-                    for (user, answer) in party.iter().zip([first, second]) {
-                        if let Some(answer) = answer {
-                            explicit.insert(user.clone(), answer);
-                        }
-                    }
-                    let states: Vec<AnswerState> = run_states(
-                        &party,
-                        &explicit,
-                        &BTreeSet::from(["1".to_owned()]),
-                        Some(AttendanceDefault::AssumeComing),
-                        AttendanceMode::V4Compat,
-                    )
-                    .into_iter()
-                    .map(|(_, state)| state)
-                    .collect();
-                    let derived = derive_status(
-                        current,
-                        &states,
-                        at(20),
-                        at(19),
-                        AttendancePolicy::V4_COMPAT,
-                    );
-                    assert_eq!(
-                        derived.status,
-                        compute_status(current, &party, &explicit),
-                        "{current:?} {first:?} {second:?}"
-                    );
-                    assert!(!derived.expected);
-                }
-            }
-        }
     }
 
     #[test]
@@ -697,23 +589,11 @@ mod tests {
                 expected: true
             }
         );
-        // No sticky confirmation in v5: withdrawn assumptions un-confirm.
+        // No sticky confirmation: withdrawn assumptions un-confirm.
         let unknown = [Confirmed, Unknown];
         assert_eq!(
             derive_status(RunStatus::Confirmed, &unknown, start, early, policy).status,
             RunStatus::Planned
-        );
-        assert_eq!(
-            derive_status(
-                RunStatus::Confirmed,
-                &unknown,
-                start,
-                early,
-                AttendancePolicy::V4_COMPAT
-            )
-            .status,
-            RunStatus::Confirmed,
-            "v4 keeps it"
         );
         // Sticky statuses are kept.
         assert_eq!(

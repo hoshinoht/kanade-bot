@@ -332,7 +332,9 @@ async fn reset_restores_the_weekly_slot_party_and_channel() {
     assert_eq!(state.run.datetime, utc(kl(7, 21, 30)));
     assert_eq!(state.run.participants, ["1001", "1002"]);
     assert_eq!(state.run.channel_id.as_deref(), Some("222"));
-    assert_eq!(state.run.status, RunStatus::Planned, "amend status rule");
+    // The amend status rule, then a re-derive: 1002 is unknown inside the
+    // 12 h window.
+    assert_eq!(state.run.status, RunStatus::AtRisk, "re-derived");
     assert_eq!(
         state.rsvps.keys().collect::<Vec<_>>(),
         ["1001"],

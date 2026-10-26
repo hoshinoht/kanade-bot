@@ -12,7 +12,6 @@ use kanade::{
         render,
     },
     domain::{
-        attendance::AttendancePolicy,
         history::ChangeHistory,
         notify::{
             Claim, DedupeKey, DeliveryJournal, DeliverySettings, DeliveryTarget, DispatchInput,
@@ -56,7 +55,6 @@ async fn tick_post(
     let settings = DeliverySettings {
         post_channel_id: None,
         quiet_mode: false,
-        attendance: AttendancePolicy::V4_COMPAT,
     };
     let plan = plan_dispatch(&DispatchInput {
         now: at,
@@ -75,7 +73,6 @@ async fn tick_post(
         .expect("the tick posts it");
     let ctx = CardContext {
         schedule: &schedule,
-        attendance: AttendancePolicy::V4_COMPAT,
         zone: chrono_tz::Asia::Kuala_Lumpur,
         quiet: false,
         members: &members,

@@ -14,18 +14,17 @@ pub struct SchedulePolicy {
     pub reminders: ReminderPolicy,
     pub reset_weekday: Weekday,
     pub reset_time: NaiveTime,
-    /// v4-compatible unless opted in ([`Self::with_attendance`]).
     pub attendance: AttendancePolicy,
 }
 
 impl SchedulePolicy {
-    /// A policy with v4 attendance ([`AttendancePolicy::V4_COMPAT`]).
+    /// A policy with the default attendance rules ([`AttendancePolicy::V5`]).
     pub fn new(reminders: ReminderPolicy, reset_weekday: Weekday, reset_time: NaiveTime) -> Self {
         Self {
             reminders,
             reset_weekday,
             reset_time,
-            attendance: AttendancePolicy::V4_COMPAT,
+            attendance: AttendancePolicy::V5,
         }
     }
 

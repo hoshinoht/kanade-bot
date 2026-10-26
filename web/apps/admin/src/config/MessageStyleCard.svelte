@@ -34,7 +34,7 @@
   <div class="settings__switchtext">
     <p class="settings__cardtitle" id="{uid}-t">Discord message style</p>
     <p class="settings__cardnote" id="{uid}-d">
-      How reminder and digest cards look in Discord; the attendance mode still decides who is pinged.
+      How reminder and digest cards look in Discord; who is pinged stays the same.
     </p>
     {#if error}<p class="field__error" role="alert">{error}</p>{/if}
   </div>

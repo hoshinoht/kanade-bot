@@ -27,7 +27,7 @@ use super::cards::{
 use super::debug::{TEST_PREFIX, test_mentions};
 use crate::bot::ids::parse_id;
 use crate::bot::transport::DiscordTransport;
-use crate::domain::attendance::{AttendanceMode, countdown_mentions, morning_mentions};
+use crate::domain::attendance::{countdown_mentions, morning_mentions};
 use crate::domain::members::Directory;
 use crate::domain::notify::{
     DeliveryJournal, IntentContent, PingKind, WeeklyDigest, countdown_minutes, digest_inclusion,
@@ -295,7 +295,6 @@ where
     pub(super) fn context<'s>(&'s self, schedule: &'s ScheduleSnapshot) -> CardContext<'s> {
         CardContext {
             schedule,
-            attendance: self.policy.attendance,
             zone: self.policy.zone(),
             quiet: self.quiet.load(Ordering::Relaxed),
             members: &*self.members,
@@ -378,18 +377,11 @@ pub fn posted_mentions(ctx: &CardContext<'_>, content: &IntentContent) -> Vec<St
     match content {
         IntentContent::DayOf { run_ids } => {
             let runs = cards::card_runs(ctx, run_ids);
-            let candidates = match ctx.attendance.mode {
-                AttendanceMode::V4Compat => {
-                    everyone_on(runs.iter().map(|run| run.participants.as_slice()))
-                }
-                AttendanceMode::V5 => {
-                    let unknown: Vec<Vec<String>> = runs
-                        .iter()
-                        .map(|run| morning_mentions(&ctx.states(run)))
-                        .collect();
-                    everyone_on(unknown.iter().map(Vec::as_slice))
-                }
-            };
+            let unknown: Vec<Vec<String>> = runs
+                .iter()
+                .map(|run| morning_mentions(&ctx.states(run)))
+                .collect();
+            let candidates = everyone_on(unknown.iter().map(Vec::as_slice));
             resolve_mentions(members, &candidates, &PingKind::DayOf)
         }
         IntentContent::Countdown { run_id, .. } => match ctx.run(run_id) {

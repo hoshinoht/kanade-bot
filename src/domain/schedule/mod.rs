@@ -49,8 +49,8 @@ pub use reminders::{
 };
 pub use roster::{RosterChange, RunState, run_state, validate_channel, validate_participants};
 pub use rsvp::{
-    EMOJI_NO, EMOJI_YES, ReactionResult, answer_states, apply_reaction, compute_status,
-    derive_run_status, is_frozen, recompute_after_roster_change, state_for_emoji,
+    EMOJI_NO, EMOJI_YES, ReactionResult, answer_states, apply_reaction, derive_run_status,
+    is_frozen, recompute_after_roster_change, state_for_emoji,
 };
 pub use run::{
     FixedField, FixedRun, FixedRunPatch, NewFixedRun, NewRun, Reminder, Rsvp, RsvpSource,

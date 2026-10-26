@@ -364,7 +364,6 @@ where
     ) -> Result<OutgoingMessage, String> {
         let ctx = CardContext {
             schedule: shown.schedule,
-            attendance: self.policy.attendance,
             zone: self.policy.zone(),
             quiet,
             members: &*self.members,

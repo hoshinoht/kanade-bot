@@ -6,8 +6,7 @@
 //! the `(run_id, kind)` uniqueness then ignores.
 
 use crate::domain::attendance::{
-    AttendanceDefault, AttendanceMode, AttendancePolicy, AttendanceRecord, StandingAnswer,
-    StatusPin,
+    AttendanceDefault, AttendancePolicy, AttendanceRecord, StandingAnswer, StatusPin,
 };
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -33,7 +32,7 @@ pub struct Draft {
     runs: BTreeMap<String, Run>,
     reminders: BTreeMap<String, Reminder>,
     rsvps: BTreeMap<RsvpKey, Rsvp>,
-    /// The attendance rules status recounts follow (v4 unless set).
+    /// The attendance rules status recounts follow.
     attendance: AttendancePolicy,
     /// v5: when runs end ([`RunEnds`]); `None` keeps v4's rules (the vector
     /// replays): nothing is frozen and a slot is past 2 h after its start.
@@ -52,7 +51,7 @@ impl Draft {
             reminders: keyed(&base.reminders, |row| row.id.clone()),
             rsvps: keyed(&base.rsvps, rsvp_key),
             base,
-            attendance: AttendancePolicy::V4_COMPAT,
+            attendance: AttendancePolicy::V5,
             ends: None,
             revived: BTreeMap::new(),
         }
@@ -81,7 +80,7 @@ impl Draft {
     }
 
     /// A live run past its end, frozen ([`RunEnds::frozen`]); never under
-    /// v4 rules. Not [`super::is_frozen`], the v5 status hold from the start.
+    /// v4 rules. Not [`super::is_frozen`], the status hold from the start.
     /// A run revived in this draft is judged on its status before.
     pub fn ended(&self, run: &Run, now: DateTime<Utc>) -> bool {
         let Some(ends) = &self.ends else {
@@ -341,11 +340,10 @@ impl Draft {
         participants: Vec<String>,
         now: DateTime<Utc>,
     ) {
-        let v5 = self.attendance.mode == AttendanceMode::V5;
         if let Some(run) = self.runs.get_mut(id) {
             run.attendance
                 .retain(|record| participants.contains(&record.user_id));
-            if v5 && run.participants != participants && now < run.datetime {
+            if run.participants != participants && now < run.datetime {
                 run.status_pin = None;
             }
             run.participants = participants;

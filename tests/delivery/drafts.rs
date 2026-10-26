@@ -134,7 +134,6 @@ async fn a_merged_notice_renders_its_title_and_runs() {
         DeliverySettings {
             post_channel_id: None,
             quiet_mode: false,
-            attendance: kanade::domain::attendance::AttendancePolicy::V4_COMPAT,
         },
     )
     .expect("plannable");

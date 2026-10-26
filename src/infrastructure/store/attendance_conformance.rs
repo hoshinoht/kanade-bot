@@ -8,7 +8,7 @@ use std::collections::BTreeSet;
 use chrono::{DateTime, Utc, Weekday};
 
 use super::fixtures::{self, Ids, Stopped, admin, member, policy_in, utc2026};
-use crate::domain::attendance::{AttendanceDefault, AttendancePolicy, AttendanceRefusal, Patterns};
+use crate::domain::attendance::{AttendanceDefault, AttendanceRefusal, Patterns};
 use crate::domain::history::{
     ATTENDANCE_DEFAULT_FIELD, Actor, BlameIndex, BlameTarget, ChangeHistory, Expect, Origin,
     Precondition, RowValue, STATUS_PIN_FIELD, Surface, attended_field, blame, standing_field,
@@ -822,8 +822,7 @@ async fn status_pins_are_recorded_blamed_and_guarded<
 >(
     store: S,
 ) {
-    let (service, _) = fixture(store).await;
-    let mut service = service.with_attendance(AttendancePolicy::V5);
+    let (mut service, _) = fixture(store).await;
     let run = runs(&service).await[0].id.clone();
     let target = BlameTarget::Run(run.clone());
     let confirm = StatusChange {

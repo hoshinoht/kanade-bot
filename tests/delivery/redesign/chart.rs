@@ -788,13 +788,7 @@ async fn classic_cards_unset_ports_and_failures_post_without_it() {
     let at = Utc.with_ymd_and_hms(2026, 9, 9, 1, 0, 0).unwrap();
     let attached = |message: &OutgoingMessage| png_upload(message).is_some();
 
-    let classic = super::context(
-        &schedule,
-        &roster,
-        &table,
-        kanade::domain::attendance::AttendancePolicy::V5,
-        false,
-    );
+    let classic = super::context(&schedule, &roster, &table, false);
     let mut message = post();
     attach_chart(
         &mut message,

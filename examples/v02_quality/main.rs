@@ -367,7 +367,6 @@ async fn run() -> Result<ExitCode, String> {
         "warnings": startup.warnings.iter().map(ToString::to_string).collect::<Vec<_>>(),
         "groups": config.models.groups.iter().map(|g| g.name.clone()).collect::<Vec<_>>(),
         "ca_file": config.models.ca_file().map_err(|e| e.to_string())?.is_some(),
-        "attendance": "V4_COMPAT",
         // No stored row: the code default (Classic) styles reminder cards.
         "message_style": settings::seed(&config.seeds).notifications.message_style.as_str(),
         "persona": persona_meta(&persona),

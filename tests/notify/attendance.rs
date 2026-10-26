@@ -1,11 +1,10 @@
 //! v5 attendance in dispatch planning: the morning ping names only unknown
-//! members, countdowns keep v4 (everyone not declined); v4-compat mode
-//! plans exactly v4's mentions for the same schedule.
+//! members, countdowns keep v4 (everyone not declined).
 
 use std::collections::BTreeSet;
 
 use chrono::{DateTime, NaiveTime, TimeZone, Utc, Weekday};
-use kanade::domain::attendance::{AttendanceDefault, AttendancePolicy, StandingAnswer};
+use kanade::domain::attendance::{AttendanceDefault, StandingAnswer};
 use kanade::domain::members::{Member, PingLevel, Roster};
 use kanade::domain::notify::{
     DeliverySettings, DeliveryTarget, DispatchInput, IntentContent, plan_dispatch,
@@ -98,10 +97,7 @@ fn schedule(default: AttendanceDefault) -> ScheduleSnapshot {
 }
 
 /// `(day-of mentions, countdown mentions)`.
-fn mentions(
-    schedule: &ScheduleSnapshot,
-    attendance: AttendancePolicy,
-) -> (Vec<String>, Vec<String>) {
+fn mentions(schedule: &ScheduleSnapshot) -> (Vec<String>, Vec<String>) {
     let roster = roster();
     let channels: BTreeSet<String> = ["222".to_owned()].into();
     let journal: BTreeSet<DeliveryTarget> = BTreeSet::new();
@@ -114,7 +110,6 @@ fn mentions(
         settings: DeliverySettings {
             post_channel_id: None,
             quiet_mode: false,
-            attendance,
         },
     });
     let of = |day_of: bool| {
@@ -130,27 +125,18 @@ fn mentions(
 }
 
 #[test]
-fn the_morning_ping_names_unknown_members_only_in_v5() {
+fn the_morning_ping_names_unknown_members_only() {
     let schedule = schedule(AttendanceDefault::OptIn);
-    let all = ["1001", "1002", "1003", "1004"];
     let not_declined = ["1001", "1002", "1003"];
     assert_eq!(
-        mentions(&schedule, AttendancePolicy::V4_COMPAT),
-        (
-            all.map(str::to_owned).to_vec(),
-            not_declined.map(str::to_owned).to_vec()
-        ),
-        "v4-compat: v4 exactly"
-    );
-    assert_eq!(
-        mentions(&schedule, AttendancePolicy::V5),
+        mentions(&schedule),
         (
             vec!["1003".to_owned()],
             not_declined.map(str::to_owned).to_vec()
         ),
-        "v5: only the unknown member in the morning"
+        "only the unknown member in the morning"
     );
     // An assume-coming timing leaves nobody unknown.
     let assumed = self::schedule(AttendanceDefault::AssumeComing);
-    assert!(mentions(&assumed, AttendancePolicy::V5).0.is_empty());
+    assert!(mentions(&assumed).0.is_empty());
 }

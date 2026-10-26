@@ -8,6 +8,9 @@ _In development_
 
 Rescheduling and reopening runs that already ended, with safer run controls in the admin app.
 
+> [!IMPORTANT]
+> Guilds still on v4-compatible attendance switch to v5 attendance on upgrade: cards show tallies and who is expected, the morning ping mentions only members who haven't answered, a run's status holds from its start, and a Planned or Confirmed set by hand is kept until someone answers or the run changes.
+
 ### New features
 
 - Admins can now move a done or cancelled run from its run sheet, and Kanade asks whether to set it back to Planned (suggested when the new time is still ahead), which clears its answers and posts one "back on the schedule" notice.
@@ -19,6 +22,10 @@ Rescheduling and reopening runs that already ended, with safer run controls in t
 ### Fixes
 
 - Setting a done run back to Planned after it ended now keeps it open: Kanade no longer marks it done again at its cutoff, and it can be moved to a new time, after which it is completed as usual.
+
+### Removed
+
+- Removed the attendance mode setting: v5 attendance is now the only behaviour, and a saved v4-compatible choice is ignored.
 
 ## 1.0.0-beta.14
 

@@ -4,7 +4,7 @@ use chrono::{NaiveTime, Weekday};
 
 use super::codec::{encode_checked, resolve};
 use super::*;
-use crate::domain::attendance::{AttendanceMode, AttendancePolicy};
+use crate::domain::attendance::AttendancePolicy;
 
 fn rows(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
     pairs
@@ -84,7 +84,6 @@ fn every_section_round_trips_through_its_rows() {
     settings.profanity.allowed_words = vec!["babi".into()];
     settings.profanity.check_replies = false;
     settings.schedule.reset_weekday = Weekday::Wed;
-    settings.schedule.attendance = AttendanceMode::V5;
     settings.posting.channel_id = Some("99".into());
     settings.character_data.estimate_days = 14;
     let sections = [
@@ -291,7 +290,6 @@ fn malformed_values_name_their_key() {
         ("chat_pilot_think", "loud"),
         ("v5.watched_channel_ids", "12,general"),
         ("v5.reset_weekday", "someday"),
-        ("v5.attendance_mode", "V5"),
         ("v5.profile_visibility", "../private"),
     ] {
         refused_under(key, &[value]);
@@ -327,15 +325,23 @@ fn schedule_policy_comes_from_settings() {
     settings.pings.day_of_ping_time = time(8, 0);
     settings.schedule.reset_weekday = Weekday::Mon;
     settings.schedule.reset_time = time(2, 0);
-    settings.schedule.attendance = AttendanceMode::V5;
     let policy = settings.schedule_policy(chrono_tz::Asia::Kuala_Lumpur);
     assert_eq!(policy.reminders.ping_time, time(8, 0));
     assert_eq!(policy.reminders.countdowns, [60]);
     assert_eq!(policy.reset_weekday, Weekday::Mon);
     assert_eq!(policy.reset_time, time(2, 0));
     assert_eq!(policy.attendance, AttendancePolicy::V5);
-    let default_policy = RuntimeSettings::default().schedule_policy(chrono_tz::UTC);
-    assert_eq!(default_policy.attendance, AttendancePolicy::V4_COMPAT);
+}
+
+#[test]
+fn a_retired_attendance_mode_row_is_ignored() {
+    for value in ["v4_compat", "v5", "garbage"] {
+        assert_eq!(
+            read(&[("v5.attendance_mode", value)]).expect("reads"),
+            RuntimeSettings::default()
+        );
+    }
+    assert!(!keys::is_setting("v5.attendance_mode"));
 }
 
 #[test]

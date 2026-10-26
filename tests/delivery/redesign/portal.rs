@@ -10,7 +10,6 @@ use kanade::bot::delivery::cards::redesign::{
 };
 use kanade::bot::delivery::cards::{self, Card, CardArt, CardContext, V2Kit, fetch_art};
 use kanade::bot::transport::{COMPONENTS_V2, OutgoingMessage, legacy_rows, v2_body_valid};
-use kanade::domain::attendance::AttendancePolicy;
 use kanade::domain::catalog::BossTable;
 use kanade::domain::members::Roster;
 use kanade::domain::notify::IntentContent;
@@ -158,7 +157,7 @@ async fn the_classic_style_never_links() {
     let kit = portal(Some(ORIGIN), true);
     let ctx = CardContext {
         v2: Some(&kit),
-        ..context(&schedule, &roster, &table, AttendancePolicy::V5, false)
+        ..context(&schedule, &roster, &table, false)
     };
     for content in [countdown(MALEFIC), day_of(&[MALEFIC])] {
         let card = cards::build(&content, &ctx, None, &[]).unwrap();

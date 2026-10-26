@@ -1,11 +1,10 @@
 //! The classic style is byte-exact: day-of, countdown and digest posts and a
-//! day-of edit in both attendance modes, quiet and not, with art, against
+//! day-of edit, quiet and not, with art, against
 //! `classic_cards.json` (captured from the cards before message styles
 //! existed; the countdown and digest persona phrase was removed since, as v4
 //! never showed one, so a stored phrase must not appear).
 
 use kanade::bot::delivery::cards::{self, Card, fetch_art};
-use kanade::domain::attendance::AttendancePolicy;
 use kanade::domain::notify::IntentContent;
 use serde_json::{Map, Value};
 
@@ -74,24 +73,19 @@ async fn cases() -> Map<String, Value> {
         ("digest_empty", empty, None, vec![]),
     ];
     let mut out = Map::new();
-    for (mode, attendance) in [
-        ("v4", AttendancePolicy::V4_COMPAT),
-        ("v5", AttendancePolicy::V5),
-    ] {
-        for quiet in [false, true] {
-            let ctx = context(&schedule, &roster, &table, attendance, quiet);
-            for (name, content, header, mentioned) in &cases {
-                let mentioned: Vec<String> = mentioned.iter().map(|id| (*id).to_owned()).collect();
-                let card: Card = cards::build(content, &ctx, *header, &mentioned).expect("a card");
-                let posted = fetch_art(Some(&art), &card, true).await;
-                let referenced = fetch_art(Some(&art), &card, false).await;
-                let key = format!("{mode}/{}/{name}", if quiet { "quiet" } else { "loud" });
-                out.insert(
-                    format!("{key}/post"),
-                    message_json(&card.message(&mentioned, &posted)),
-                );
-                out.insert(format!("{key}/edit"), edit_json(&card.edit(&referenced)));
-            }
+    for quiet in [false, true] {
+        let ctx = context(&schedule, &roster, &table, quiet);
+        for (name, content, header, mentioned) in &cases {
+            let mentioned: Vec<String> = mentioned.iter().map(|id| (*id).to_owned()).collect();
+            let card: Card = cards::build(content, &ctx, *header, &mentioned).expect("a card");
+            let posted = fetch_art(Some(&art), &card, true).await;
+            let referenced = fetch_art(Some(&art), &card, false).await;
+            let key = format!("v5/{}/{name}", if quiet { "quiet" } else { "loud" });
+            out.insert(
+                format!("{key}/post"),
+                message_json(&card.message(&mentioned, &posted)),
+            );
+            out.insert(format!("{key}/edit"), edit_json(&card.edit(&referenced)));
         }
     }
     out

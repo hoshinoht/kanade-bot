@@ -1,6 +1,6 @@
 //! Reminder and digest cards, ported from v4 `bot.agent.formatting`
 //! (`day_of_card`, `countdown_card`, `digest_card`) with the v5 attendance
-//! tally in v5 mode, and their redesigned forms (`redesign/`) when the
+//! tally, and their redesigned forms (`redesign/`) when the
 //! message style asks for them. A [`Card`] is plain data; [`Card::message`]
 //! turns it into a post with its art uploaded, [`Card::edit`] into an edit
 //! that keeps the posted attachments. A card with a Components V2 layout

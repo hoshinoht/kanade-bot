@@ -150,7 +150,6 @@ async fn read<'a>(site: &'a Site, id: &str) -> Result<Read<'a>, ApiError> {
     };
     let cards = CardContext {
         schedule: &snapshot,
-        attendance: state.policy.attendance,
         zone: state.policy.zone(),
         quiet: settings.notifications.quiet_mode,
         members: &ctx.roster,
@@ -200,7 +199,6 @@ async fn read<'a>(site: &'a Site, id: &str) -> Result<Read<'a>, ApiError> {
             DeliverySettings {
                 post_channel_id: settings.posting.channel_id.as_deref(),
                 quiet_mode: settings.notifications.quiet_mode,
-                attendance: state.policy.attendance,
             },
         ) {
             None => None,

@@ -187,8 +187,7 @@ pub struct Run {
     pub source: RunSource,
     /// v5 attendance recorded on a done run, by user id.
     pub attendance: Vec<AttendanceRecord>,
-    /// v5: a hand-set status derivation keeps (never written in v4-compat
-    /// mode).
+    /// v5: a hand-set status derivation keeps.
     pub status_pin: Option<StatusPin>,
 }
 

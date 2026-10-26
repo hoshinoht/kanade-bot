@@ -75,7 +75,6 @@ async fn claim_then_crash<S: Store>(store: &S, world: &World, bind: bool) {
     let settings = DeliverySettings {
         post_channel_id: Some(POST),
         quiet_mode: false,
-        attendance: config().policy.attendance,
     };
     let intent =
         plan_notice(&row.notice, &world.roster, &world.channels, settings).expect("routed");

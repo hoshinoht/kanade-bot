@@ -125,7 +125,6 @@ async fn reminders(seed: &Seed<'_>) -> Result<(), Fail> {
             DeliverySettings {
                 post_channel_id: settings.posting.channel_id.as_deref(),
                 quiet_mode: settings.notifications.quiet_mode,
-                attendance: seed.state.policy.attendance,
             },
         )
         .ok_or_else(|| format!("the tick would post no card for reminder {}", next.id))?;

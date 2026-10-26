@@ -1,12 +1,10 @@
 //! v5 attendance through the tick on the SQLite store: the unknown-window
 //! recount, morning mentions of unknown members only, and tallies on cards
-//! and the digest; the same schedule in v4-compat mode renders and pings as
-//! v4.
+//! and the digest.
 
 use chrono::{DateTime, NaiveTime, TimeDelta, TimeZone, Utc, Weekday};
 use kanade::bot::delivery::Delivery;
 use kanade::bot::transport::Call;
-use kanade::domain::attendance::AttendancePolicy;
 use kanade::domain::history::{Actor, Origin, Surface};
 use kanade::domain::ids::RandomIds;
 use kanade::domain::schedule::{EMOJI_YES, NewFixedRun, RunStatus};
@@ -64,11 +62,11 @@ async fn run_status<S: Store>(store: &S, run: &str) -> RunStatus {
 
 /// Weekly Sat 21:00 with 1001 ("always in") and 1002 (no answer); the
 /// previous week's digest is recorded so this week's posts.
-async fn seed<S: Store>(store: &S, attendance: AttendancePolicy) -> String {
+async fn seed<S: Store>(store: &S) -> String {
     let mut ids = RandomIds;
     // Seed data is historical, not an admin action the tick should announce.
     let admin = Origin::new(Actor::system("seed"), Surface::Import);
-    let mut service = service(store, &mut ids, now()).with_attendance(attendance);
+    let mut service = service(store, &mut ids, now());
     let fixed = service
         .as_origin(admin)
         .add_fixed_run(NewFixedRun {
@@ -93,11 +91,8 @@ async fn seed<S: Store>(store: &S, attendance: AttendancePolicy) -> String {
 }
 
 async fn v5_tick_recounts_pings_unknowns_and_shows_tallies<S: Store>(store: &S) {
-    let attendance = AttendancePolicy::V5;
-    seed(store, attendance).await;
+    seed(store).await;
     let world = world();
-    let mut config = config();
-    config.policy = config.policy.with_attendance(attendance);
     let mut delivery = Delivery::new(
         store,
         RandomIds,
@@ -105,7 +100,7 @@ async fn v5_tick_recounts_pings_unknowns_and_shows_tallies<S: Store>(store: &S) 
         &world.alerts,
         &world.roster,
         &world.channels,
-        config,
+        config(),
     );
     // First tick: materialise, and the digest lists the run with its tally.
     let first = delivery.tick_at(now()).await.expect("tick");
@@ -154,7 +149,6 @@ async fn v5_tick_recounts_pings_unknowns_and_shows_tallies<S: Store>(store: &S) 
     // 1002 answers: confirmed, and cards say "expected" (1001 is assumed).
     let mut ids = RandomIds;
     let answered = service(store, &mut ids, start() - TimeDelta::hours(2))
-        .with_attendance(attendance)
         .as_origin(Origin::new(Actor::member("1002"), Surface::Discord))
         .apply_reaction(&run, "1002", EMOJI_YES, true)
         .await
@@ -175,54 +169,7 @@ async fn v5_tick_recounts_pings_unknowns_and_shows_tallies<S: Store>(store: &S) 
     assert_eq!(countdown.1, ["1001", "1002"], "countdowns keep v4");
 }
 
-async fn v4_compat_tick_is_unchanged<S: Store>(store: &S) {
-    seed(store, AttendancePolicy::V4_COMPAT).await;
-    let world = world();
-    let mut delivery = Delivery::new(
-        store,
-        RandomIds,
-        &world.fake,
-        &world.alerts,
-        &world.roster,
-        &world.channels,
-        config(),
-    );
-    delivery.tick_at(now()).await.expect("tick");
-    let digest = posts(&world.fake.calls());
-    assert_eq!(digest.len(), 1);
-    assert!(
-        digest[0].0 == "🗓️ Boss week of Wed 09 Sep" && digest[0].2.contains("`21:00` · 0/2 ✅"),
-        "v4 digest card: {:?}",
-        digest[0]
-    );
-    let opened = delivery
-        .tick_at(start() - TimeDelta::hours(12))
-        .await
-        .expect("tick");
-    assert!(opened.recounted.is_empty(), "no recount in v4-compat mode");
-    let morning = posts(&world.fake.calls()).pop().expect("morning ping");
-    assert!(
-        morning.2.contains("⚠️ unconfirmed · 0/2 ✅") && !morning.2.contains("assumed"),
-        "v4 tally: {morning:?}"
-    );
-    assert_eq!(morning.1, ["1001", "1002"], "v4 names everyone");
-    let run = snapshot(store)
-        .await
-        .runs
-        .iter()
-        .find(|row| row.datetime == start())
-        .expect("run")
-        .id
-        .clone();
-    assert_eq!(run_status(store, &run).await, RunStatus::Planned);
-}
-
 #[tokio::test]
 async fn v5_attendance_through_the_tick() {
     v5_tick_recounts_pings_unknowns_and_shows_tallies(&SqliteStore::open_temp().await).await;
-}
-
-#[tokio::test]
-async fn v4_compat_attendance_through_the_tick() {
-    v4_compat_tick_is_unchanged(&SqliteStore::open_temp().await).await;
 }

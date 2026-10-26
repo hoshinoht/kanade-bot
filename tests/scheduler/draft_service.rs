@@ -6,7 +6,6 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use chrono::{DateTime, FixedOffset, TimeDelta, TimeZone, Utc, Weekday};
-use kanade::domain::attendance::AttendancePolicy;
 use kanade::domain::drafts::{
     DraftCreated, DraftEvent, DraftEventKind, DraftKind, DraftOp, DraftScope, DraftStatus,
     DraftStore, DraftUpdate, DraftWrite, Field, LoadedDraft, MergeAnalysis, MergeCommit,
@@ -272,7 +271,6 @@ async fn merge_posts_one_notice_per_channel_and_advances_history() {
         let settings = DeliverySettings {
             post_channel_id: None,
             quiet_mode: false,
-            attendance: AttendancePolicy::V4_COMPAT,
         };
         let intent = plan_notice(notice, &Guild, &AnyChannel, settings).expect("plannable");
         assert_eq!(Some(intent.channel_id.clone()), notice.channel_id);
