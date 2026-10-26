@@ -83,8 +83,8 @@ kanade_domain::spelled! {
     #[cfg_attr(test, derive(ts_rs::TS))]
     #[serde(rename_all = "snake_case")]
     SetupReason {
-        /// The Discord gateway is switched off (`KANADE_DISCORD_GATEWAY=0`)
-        /// or the server runs offline.
+        /// The bot does not run on this server (`runtime.components` has no
+        /// `bot`) or the server runs offline.
         GatewayOff => "gateway_off",
         /// The gateway is connecting or reconnecting.
         Connecting => "connecting",

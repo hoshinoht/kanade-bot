@@ -48,9 +48,15 @@ pub fn store_closed(closed: bool) {
     }));
 }
 
-/// Live serve runs without the Discord gateway (`KANADE_DISCORD_GATEWAY=0`).
+/// Live serve runs without the `bot` component (`runtime.components`).
 pub fn discord_disabled() {
     emit(&serde_json::json!({"level":"INFO", "event":"discord_disabled"}));
+}
+
+/// Live serve runs without the `web` component: the admin listener answers
+/// only `/healthz`.
+pub fn web_disabled() {
+    emit(&serde_json::json!({"level":"INFO", "event":"web_disabled"}));
 }
 
 pub fn shutdown_started() {

@@ -1,17 +1,15 @@
-//! Bot token and the gateway switch.
+//! The bot token.
 
 use std::collections::BTreeMap;
 
-use super::{Error, flag, refuse_plain};
+use super::{Error, refuse_plain};
 use crate::runtime::secrets::{self, Redacted, SecretFile};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct DiscordSettings {
-    /// `discord_token` in the secrets directory; required.
+    /// `discord_token` in the secrets directory; required while the `bot`
+    /// component runs.
     pub token: SecretFile,
-    /// `KANADE_DISCORD_GATEWAY` (default `1`); `0` serves the admin API only,
-    /// with no gateway, roster sync or delivery tick.
-    pub gateway: bool,
 }
 
 impl DiscordSettings {
@@ -19,7 +17,6 @@ impl DiscordSettings {
         refuse_plain_token(values)?;
         Ok(Self {
             token: SecretFile::named(values, secrets::DISCORD_TOKEN),
-            gateway: flag(values, "KANADE_DISCORD_GATEWAY")?.unwrap_or(true),
         })
     }
 

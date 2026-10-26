@@ -722,6 +722,10 @@ impl DiscordTransport for TwilightTransport {
         self.fetch(self.client.guild_channels(guild)).await
     }
 
+    async fn guild(&self, guild: Id<GuildMarker>) -> Outcome<twilight_model::guild::Guild> {
+        self.fetch(self.client.guild(guild)).await
+    }
+
     async fn current_user(&self) -> Outcome<CurrentUser> {
         self.fetch(self.client.current_user()).await
     }

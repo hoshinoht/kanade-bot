@@ -312,7 +312,7 @@ impl Harness {
     fn with(extra: &[(&str, &str)]) -> Self {
         let temp = Temp::new();
         let mut values = vec![
-            ("KANADE_DISCORD_GATEWAY", "1"),
+            ("KANADE_COMPONENTS", "bot,web"),
             ("KANADE_ADMIN_ROLE_ID", "20"),
         ];
         values.extend_from_slice(extra);
@@ -1395,7 +1395,9 @@ async fn retained_commands_and_their_autocomplete_dispatch_through_the_registry(
     finish(&harness, ctx).await;
 }
 
+mod bot_only;
 mod extraction;
 mod outage;
 mod replay;
 mod shutdown;
+mod web_only;

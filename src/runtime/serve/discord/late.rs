@@ -216,6 +216,10 @@ impl DiscordTransport for LateTransport {
         delegate!(self, guild_channels(guild))
     }
 
+    async fn guild(&self, guild: Id<GuildMarker>) -> Outcome<twilight_model::guild::Guild> {
+        delegate!(self, guild(guild))
+    }
+
     async fn current_user(&self) -> Outcome<CurrentUser> {
         delegate!(self, current_user())
     }

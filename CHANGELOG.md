@@ -10,10 +10,13 @@ Rescheduling and reopening runs that already ended, with safer run controls in t
 
 > [!IMPORTANT]
 > Guilds still on v4-compatible attendance switch to v5 attendance on upgrade: cards show tallies and who is expected, the morning ping mentions only members who haven't answered, a run's status holds from its start, and a Planned or Confirmed set by hand is kept until someone answers or the run changes.
+>
+> `discord.gateway` in kanade.toml (and `KANADE_DISCORD_GATEWAY`) now refuses to start: use `runtime.components` instead, where `["web"]` runs the admin app and portal without the bot.
 
 ### New features
 
 - Admins can now move a done or cancelled run from its run sheet, and Kanade asks whether to set it back to Planned (suggested when the new time is still ahead), which clears its answers and posts one "back on the schedule" notice.
+- Operators can now run only the Discord bot or only the admin and member portal with `runtime.components` in kanade.toml.
 
 ### Changes
 

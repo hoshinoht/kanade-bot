@@ -11,6 +11,11 @@
 #   value. docs/v5/runtime-bootstrap.md lists every key.
 
 [runtime]
+# What this server runs: "bot" (the Discord bot) and "web" (the admin app and
+# the member portal); default both. ["web"] runs the admin app and portal
+# without the bot; ["bot"] runs the bot with only /healthz on the admin
+# listener.
+# components = ["bot", "web"]
 # IANA timezone.
 timezone = "Asia/Kuala_Lumpur"
 # At most 64 of [A-Za-z0-9._-]; default kanade-<random>.
@@ -31,8 +36,6 @@ timezone = "Asia/Kuala_Lumpur"
 # strings (or integers). The bot token is the secrets file `discord_token`.
 guild_id = "123456789012345678"
 bossing_role_id = "223456789012345678"
-# false serves the admin API only (no gateway, roster sync or tick).
-# gateway = true
 # admin_role_id = "323456789012345678"
 # chat_pilot_role_id = "423456789012345678"
 # debug_user_ids = []

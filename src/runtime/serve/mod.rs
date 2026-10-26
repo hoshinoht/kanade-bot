@@ -1,7 +1,8 @@
-//! Live `serve`: owns the SQLite store, serves the admin and public routers
-//! against it and, unless `KANADE_DISCORD_GATEWAY=0`, runs the Discord
-//! gateway, roster sync, extraction and delivery tick for the configured
-//! guild.
+//! Live `serve`: owns the SQLite store and runs the components
+//! `runtime.components` lists. `web` serves the admin and public routers
+//! against the store; `bot` runs the Discord gateway, roster sync,
+//! extraction and delivery tick for the configured guild. Without `web` the
+//! admin listener answers only `/healthz`.
 
 pub mod api;
 mod character_data;
@@ -15,6 +16,7 @@ pub mod extract;
 #[cfg(feature = "test-support")]
 pub mod harness;
 mod health;
+mod healthz;
 pub mod models;
 mod persona_log;
 pub mod restart;
@@ -27,9 +29,14 @@ mod tick;
 
 use std::{future::Future, sync::Arc, time::Duration};
 
+use twilight_model::id::Id;
+
 use crate::{
-    api::{auth, server, state::StaticChannels},
-    bot::gateway::{EventSource, shard},
+    api::{auth, server},
+    bot::{
+        gateway::{EventSource, shard},
+        guild_cache::GuildCache,
+    },
     infrastructure::store::SqliteStore,
     runtime::{
         backup::crypt::Recipients,
@@ -245,22 +252,28 @@ pub async fn serve_until(
     config: ServeConfig,
     shutdown: impl Future<Output = ()>,
 ) -> Result<(), Error> {
-    // Checked now so a missing secret fails the deploy, not the gateway later.
-    let token = config.discord.read_token()?;
-    // Likewise a broken backup key file fails the deploy, not the next backup.
+    // Checked now so a broken backup key file fails the deploy, not the
+    // next backup.
     if let Some(path) = &config.backup_recipients_file
         && secrets::present(path, BACKUP_RECIPIENTS_LABEL)?
     {
         Recipients::load(path, BACKUP_RECIPIENTS_LABEL)?;
     }
-    if !config.discord.gateway {
-        drop(token);
+    // Likewise a bad token fails the deploy, not the gateway later. The web
+    // component alone reads the guild with it when present.
+    if !config.components.bot {
+        let rest = config
+            .discord
+            .token
+            .read_optional()?
+            .map(|token| (Arc::new(LateTransport::new(token)), discord::rest::EVERY));
         let store = store::open(&config.store).await?;
         let clock = budget::ShutdownClock::default();
-        let served = serve_store(&config, store.clone(), shutdown, &clock).await;
+        let served = serve_store(&config, store.clone(), shutdown, &clock, rest).await;
         store::close(store, clock.store(CLOSE_WAIT)).await;
         return served;
     }
+    let token = config.discord.read_token()?;
     let wiring = Wiring {
         source: shard(token.expose().to_owned()),
         transport: Arc::new(LateTransport::new(token)),
@@ -272,7 +285,9 @@ pub async fn serve_until(
 }
 
 /// Live serve over any gateway source and transport; closes the store it
-/// opens, after everything that used it has stopped.
+/// opens, after everything that used it has stopped. Without the `bot`
+/// component the source is unused and the transport only reads the guild
+/// ([`discord::rest`]).
 pub async fn serve_with<S, T>(
     config: &ServeConfig,
     shutdown: impl Future<Output = ()>,
@@ -284,28 +299,56 @@ where
 {
     let store = store::open(&config.store).await?;
     let clock = budget::ShutdownClock::default();
-    let served = serve_live(config, store.clone(), shutdown, wiring, &clock).await;
+    let served = if config.components.bot {
+        serve_live(config, store.clone(), shutdown, wiring, &clock).await
+    } else {
+        let rest = Some((wiring.transport, discord::rest::EVERY));
+        serve_store(config, store.clone(), shutdown, &clock, rest).await
+    };
     store::close(store, clock.store(CLOSE_WAIT)).await;
     served
 }
 
-async fn serve_store(
+/// The `web` component alone: the admin and public routers over the store;
+/// with `rest` (a bot token), the guild is read over REST every period.
+async fn serve_store<T: GatewayTransport>(
     config: &ServeConfig,
     store: Arc<SqliteStore>,
     shutdown: impl Future<Output = ()>,
     clock: &budget::ShutdownClock,
+    rest: Option<(Arc<T>, Duration)>,
 ) -> Result<(), Error> {
-    // No guild cache without the gateway: channel pickers are empty.
+    // Empty and never available without the REST reader: channel pickers
+    // are empty and permissions unknown.
+    let cache = Arc::new(GuildCache::new(Id::new(config.guild.guild_id)));
     let health = LiveHealth::new(store.clone());
-    let mut composition = api::compose(
-        config,
-        store.clone(),
-        Arc::new(StaticChannels(Vec::new())),
-        health,
-    )
-    .await?;
+    let mut composition = api::compose(config, store.clone(), cache.clone(), health).await?;
     let character_data =
         character_data::start(config, &store, &mut composition, Arc::new(auth::system_now)).await?;
+    let rest = match rest {
+        Some((transport, every)) => {
+            let started = discord::rest::RestGuild::start(
+                config,
+                store.clone(),
+                &mut composition,
+                cache,
+                transport,
+                every,
+            )
+            .await;
+            match started {
+                Ok(rest) => Some(rest),
+                Err(error) => {
+                    if let Some(module) = character_data {
+                        drop(composition);
+                        module.stop(CLOSE_WAIT).await;
+                    }
+                    return Err(error);
+                }
+            }
+        }
+        None => None,
+    };
     logging::discord_disabled();
     let prune =
         sessions::SessionPrune::start(composition.admin.member.clone(), sessions::PRUNE_EVERY);
@@ -317,6 +360,9 @@ async fn serve_store(
         clock.clone()
     };
     let served = server::serve_bounded(&config.runtime, Some(composition.admin), shutdown).await;
+    if let Some(rest) = rest {
+        rest.stop(clock).await;
+    }
     if let Some(prune) = prune {
         prune.stop().await;
     }
@@ -366,17 +412,28 @@ where
         discord.until(shutdown).await;
         clock.clone()
     };
-    let prune =
-        sessions::SessionPrune::start(composition.admin.member.clone(), sessions::PRUNE_EVERY);
-    let served = clock
-        .refusing_reads(
-            &store,
-            server::serve_bounded(&config.runtime, Some(composition.admin), stopped),
-        )
-        .await;
-    if let Some(prune) = prune {
-        prune.stop().await;
-    }
+    let served = if config.components.web {
+        let prune =
+            sessions::SessionPrune::start(composition.admin.member.clone(), sessions::PRUNE_EVERY);
+        let served = clock
+            .refusing_reads(
+                &store,
+                server::serve_bounded(&config.runtime, Some(composition.admin), stopped),
+            )
+            .await;
+        if let Some(prune) = prune {
+            prune.stop().await;
+        }
+        served
+    } else {
+        // Bot only: no admin or public router (nor sessions to prune); the
+        // admin state stays with the Discord side, which reads it.
+        logging::web_disabled();
+        let health = Arc::clone(&composition.admin.health);
+        clock
+            .refusing_reads(&store, healthz::serve(&config.runtime, health, stopped))
+            .await
+    };
     retention.stop().await;
     discord.stop().await;
     if let Some(module) = character_data {

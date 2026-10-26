@@ -33,7 +33,7 @@ axum = { version = "=0.8.9", default-features = false, features = ["http1", "jso
 chrono.workspace = true
 chrono-tz.workspace = true
 http-body-util = "=0.1.5"
-hyper = { version = "=1.11.1", default-features = false, features = ["client", "http1"] }
+hyper = { version = "=1.11.1", default-features = false, features = ["client", "http1", "server"] }
 hyper-util = { version = "=0.1.20", default-features = false, features = ["client-legacy", "tokio"] }
 rustls = { version = "=0.23.46", default-features = false, features = ["ring", "std", "tls12"] }
 serde = { workspace = true, features = ["derive"] }

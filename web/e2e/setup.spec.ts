@@ -43,7 +43,7 @@ test('setup: the seed’s checklist, grouped, worded and counted', async ({ page
   await expect(state(page, 'discord_gateway').locator('[data-icon="x"]')).toBeVisible();
 
   // One line of the app's own copy per item; the source when the API names one.
-  await expect(row(page, 'discord_gateway')).toContainText('Not connected to Discord: check the bot token and guild, then restart the bot.');
+  await expect(row(page, 'discord_gateway')).toContainText('The bot isn\'t running on this server: add "bot" to runtime.components in kanade.toml and restart.');
   await expect(row(page, 'discord_gateway').locator('.setup-row__runbook')).toHaveText('Set in kanade.toml / the deploy runbook');
   await expect(row(page, 'discord_intents')).toContainText('Server Members Intent and Message Content Intent are on.');
   await expect(row(page, 'bot_access')).toContainText('1 channel lacks a permission the bot needs');

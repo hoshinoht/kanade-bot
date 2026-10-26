@@ -50,7 +50,7 @@ group('setup copy', () => {
 
   // Every reason the API can send, with each item that sends it (src/api/admin/setup.rs), says its own line.
   const BY_REASON: Record<SetupReason, [Pick<SetupItem, 'id' | 'state'> & Partial<SetupItem>, string][]> = {
-    gateway_off: [[{ id: 'discord_gateway', state: 'missing' }, 'Not connected to Discord: check the bot token and guild, then restart the bot.']],
+    gateway_off: [[{ id: 'discord_gateway', state: 'missing' }, 'The bot isn\'t running on this server: add "bot" to runtime.components in kanade.toml and restart.']],
     connecting: [[{ id: 'discord_gateway', state: 'missing' }, 'Connecting to Discord; refresh in a minute.']],
     gateway_closed: [[{ id: 'discord_gateway', state: 'missing' }, 'Discord closed the connection, usually over a missing intent; fix that, then restart the bot.']],
     not_connected: [[{ id: 'bot_access', state: 'missing' }, 'Checked once the bot is connected to Discord.']],

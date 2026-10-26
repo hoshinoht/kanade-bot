@@ -157,4 +157,8 @@ where
         // A stored permit: a wake before the worker waits is not lost.
         self.wake.notify_one();
     }
+
+    fn publishing(&self) -> bool {
+        true
+    }
 }

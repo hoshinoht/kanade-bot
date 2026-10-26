@@ -15,6 +15,7 @@
 
 mod late;
 mod ports;
+pub mod rest;
 mod stop_aware;
 
 use std::future::Future;

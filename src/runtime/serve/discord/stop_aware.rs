@@ -303,6 +303,10 @@ impl<T: DiscordTransport> DiscordTransport for StopAware<T> {
         self.race(false, self.inner.guild_channels(guild)).await
     }
 
+    async fn guild(&self, guild: Id<GuildMarker>) -> Outcome<twilight_model::guild::Guild> {
+        self.race(false, self.inner.guild(guild)).await
+    }
+
     async fn current_user(&self) -> Outcome<CurrentUser> {
         self.race(false, self.inner.current_user()).await
     }

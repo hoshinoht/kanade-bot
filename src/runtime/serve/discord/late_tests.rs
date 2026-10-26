@@ -56,6 +56,7 @@ fn every_default_bodied_method_is_delegated() {
             "defer_update",
             "followup",
             "autocomplete",
+            "guild",
             "current_user",
             "application_info",
             "application_emojis",
@@ -195,6 +196,7 @@ async fn defaults_reach_discord_once_ready_and_are_refused_unsent_before() {
     not_invalid(late.defer_update(&interaction).await.failure_label());
     not_invalid(late.followup(&interaction, &reply).await.failure_label());
     not_invalid(late.autocomplete(&interaction, &[]).await.failure_label());
+    not_invalid(late.guild(Id::new(900)).await.failure_label());
     not_invalid(late.current_user().await.failure_label());
     not_invalid(late.application_info().await.failure_label());
     not_invalid(late.application_emojis().await.failure_label());
@@ -205,7 +207,7 @@ async fn defaults_reach_discord_once_ready_and_are_refused_unsent_before() {
     );
     assert_eq!(
         seen.load(Ordering::SeqCst),
-        11,
+        12,
         "every default-bodied call was sent"
     );
 }

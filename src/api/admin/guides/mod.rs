@@ -2,7 +2,10 @@
 //! guides as blocks, preview them as Discord shows them and publish them to
 //! one channel. While the module is off (`modules.guides`, read at startup;
 //! serve attaches [`GuidePort`] only then) every route answers the generic
-//! `404` before the session is checked, as an unmounted path does. Writes
+//! `404` before the session is checked, as an unmounted path does. Without
+//! the bot (the `web` component alone) the port is
+//! [`crate::api::state::OfflineGuides`]: guides stay editable and every run
+//! refuses `discord_offline`. Writes
 //! take the session's CSRF token and replay an `Idempotency-Key` (scope
 //! `config`, identity = the full normalized request) in the same
 //! transaction; History rows (section `guides`) are the store's, written
@@ -93,6 +96,12 @@ impl Guides {
             .await
             .map_err(Refusal::unavailable)?
             .ok_or_else(not_found)
+    }
+
+    /// A worker claims runs and the guild is loaded; otherwise publish,
+    /// unpublish and "Search again" refuse `discord_offline`.
+    fn can_publish(&self) -> bool {
+        self.port.publishing() && self.state.channels.connected()
     }
 }
 

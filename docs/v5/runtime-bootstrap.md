@@ -54,8 +54,9 @@ or chat never started, `idle`, `busy` while any channel is answering,
 the pilot role or a chat category, or while the clean-retry storm guard is
 suspended; chat never decides `status`). `status` is `ok` (HTTP 200) only when storage is ok,
 Discord is `ready` and the scheduler `running`; otherwise `degraded` (503).
-With `KANADE_DISCORD_GATEWAY=0`, `scheduler`/`discord` are `disabled` and
-only storage decides. The live gateway also reports `extraction`
+With `web` alone (`KANADE_COMPONENTS=web`), `scheduler`/`discord` are
+`disabled` and only storage decides; with `bot` alone the admin listener
+serves this document and nothing else. The live gateway also reports `extraction`
 (informational, never degrades `status`): `disabled` (switched off or
 paused), `degraded` (on, but no model gateway or extraction model, or the
 latest extraction call `failed` or was `turned_away`), `running` (a rescan
@@ -125,7 +126,8 @@ lists are comma-separated.
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `KANADE_DISCORD_GATEWAY` | `1` | `0` or `1`. `0` serves the admin API only: no gateway, roster sync or delivery tick (tests, maintenance). The bot token is the secrets file `discord_token`, read at startup (also with the gateway off), so a missing secret fails the deploy. Plain `KANADE_DISCORD_TOKEN`/`DISCORD_TOKEN` are refused by every command. |
+| `KANADE_COMPONENTS` | `bot,web` (every component the build has) | What `serve` runs: `bot` (the Discord gateway, roster sync, delivery tick, chat and extraction) and `web` (the admin app and the member portal), each at most once. `web` alone serves the admin app and portal without the bot: no gateway or tick; with the bot token present it reads the guild over Discord's REST API every 5 minutes (see "Web only"). `bot` alone serves no admin or public routes: the admin listener answers only `/healthz` (else `404`), the public listener is not bound and cards carry no portal button. A name the build lacks, a duplicate or an empty entry refuses startup; `serve --offline` needs `web` (usage error otherwise). Replaces `KANADE_DISCORD_GATEWAY` / `discord.gateway`, which now refuse startup. |
+| (secrets file `discord_token`) | required with `bot` | The bot token, read at startup while `bot` runs (a missing secret fails the deploy); optional with `web` alone. Plain `KANADE_DISCORD_TOKEN`/`DISCORD_TOKEN` are refused by every command. |
 | `KANADE_GUILD_ID`, `KANADE_BOSSING_ROLE_ID` | required | Snowflakes. |
 | `KANADE_ADMIN_ROLE_ID`, `KANADE_CHAT_PILOT_ROLE_ID` | unset | Snowflakes. |
 | `KANADE_DEBUG_USER_IDS` | empty | Snowflake list. |
@@ -175,6 +177,25 @@ data leaves the homelab. Unknown or not-yet-listed aliases are treated as
 external until a successful listing establishes their zone. A provider's
 retention terms (such as Kanata's or another provider's zero data retention)
 concern retention, not transmission.
+
+### Web only
+
+With `KANADE_COMPONENTS=web` there is no gateway, roster task or delivery
+tick. When the secrets file `discord_token` is present, serve reads the
+guild over Discord's REST API at startup and every 5 minutes: the bot's
+user (`GET /users/@me`), the guild's owner and roles (`GET /guilds/{id}`),
+its channels, and every member page. The channel pickers, role names and
+Setup's access report read that view; the roster is reconciled as the bot
+does on `GUILD_CREATE` (rows pruned of deleted roles, members who left or
+lost the bossing role marked so, their admin and portal sessions ended), and
+a page that fails concludes no departures (logged WARN
+`rest_guild_read_failed {step, outcome}`; a complete pass logs
+`rest_guild_read`). Setup's application read and the preview's difficulty
+marks use the same token. It never posts or reads messages. Guides stay
+editable but publish, unpublish and "Search again" answer `503
+discord_offline`. Without the token nothing contacts Discord: pickers are
+empty and permissions unknown. `/healthz` reports `discord` and `scheduler`
+`disabled`.
 
 ### Other OpenAI-compatible providers
 
@@ -318,6 +339,7 @@ Each kind of value has one owner:
 
 | Key | Variable | TOML type |
 |---|---|---|
+| `runtime.components` | `KANADE_COMPONENTS` | non-empty string list |
 | `runtime.timezone` | `KANADE_TIMEZONE` | string |
 | `runtime.instance_id` | `KANADE_INSTANCE_ID` | string |
 | `runtime.tick_seconds` | `KANADE_TICK_SECONDS` | integer |
@@ -325,7 +347,6 @@ Each kind of value has one owner:
 | `runtime.healthcheck_timeout_seconds` | `KANADE_HEALTHCHECK_TIMEOUT_SECONDS` | integer |
 | `runtime.boss_week_reset_weekday` | `KANADE_BOSS_WEEK_RESET_WEEKDAY` | string |
 | `runtime.boss_week_reset_time` | `KANADE_BOSS_WEEK_RESET_TIME` | string |
-| `discord.gateway` | `KANADE_DISCORD_GATEWAY` | bool |
 | `discord.guild_id` | `KANADE_GUILD_ID` | snowflake (string or integer) |
 | `discord.bossing_role_id` | `KANADE_BOSSING_ROLE_ID` | snowflake (string or integer) |
 | `discord.admin_role_id` | `KANADE_ADMIN_ROLE_ID` | snowflake (string or integer) |

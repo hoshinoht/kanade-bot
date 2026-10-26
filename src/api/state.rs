@@ -127,6 +127,29 @@ pub trait GuidePort: Send + Sync {
     ) -> Pin<Box<dyn Future<Output = Option<kanade_domain::guides::Inspection>> + Send + '_>>;
     /// Wake the single-flight worker to claim queued runs (of any guide).
     fn wake(&self);
+    /// A worker runs to claim queued runs; without one, publish, unpublish
+    /// and "Search again" refuse `discord_offline` and nothing is queued.
+    fn publishing(&self) -> bool;
+}
+
+/// The guide port while the bot is not composed (the `web` component alone):
+/// guides stay editable, plans read "Unchecked" and nothing publishes.
+pub struct OfflineGuides;
+
+impl GuidePort for OfflineGuides {
+    fn inspect(
+        &self,
+        _channel_id: String,
+        _slots: Vec<kanade_domain::guides::PublishedSlot>,
+    ) -> Pin<Box<dyn Future<Output = Option<kanade_domain::guides::Inspection>> + Send + '_>> {
+        Box::pin(std::future::ready(None))
+    }
+
+    fn wake(&self) {}
+
+    fn publishing(&self) -> bool {
+        false
+    }
 }
 
 /// Live governor snapshots for the Limits page. `None` means model serving is

@@ -36,6 +36,7 @@ pub async fn run(
 async fn dispatch(command: Command, environment: &BTreeMap<String, String>) -> Result<(), Error> {
     match command {
         Command::Serve { offline: true } => {
+            config::Components::from_mapping(environment)?.offline_allowed()?;
             server::serve_offline(RuntimeConfig::from_mapping(environment)?).await
         }
         Command::Serve { offline: false } => {

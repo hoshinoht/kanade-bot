@@ -419,7 +419,7 @@ async fn live_with_role_profiles(
     }
     let url = stub.url();
     let mut values = vec![
-        ("KANADE_DISCORD_GATEWAY", "1"),
+        ("KANADE_COMPONENTS", "bot,web"),
         ("KANADE_CHAT_ENABLED", "1"),
         ("KANADE_CHAT_CATEGORY_IDS", "40"),
         ("KANADE_CHAT_PILOT_ROLE_ID", "30"),

@@ -546,6 +546,17 @@ pub trait DiscordTransport: Send + Sync {
         guild: Id<GuildMarker>,
     ) -> impl Future<Output = Outcome<Vec<Channel>>> + Send;
 
+    /// The guild itself (`GET /guilds/{id}`: owner and roles; no channels or
+    /// members), for the REST view of a server without the gateway. Test
+    /// doubles that never read it may keep the default.
+    fn guild(
+        &self,
+        guild: Id<GuildMarker>,
+    ) -> impl Future<Output = Outcome<twilight_model::guild::Guild>> + Send {
+        let _ = guild;
+        async { Outcome::DefinitelyRejected(RejectionKind::Invalid) }
+    }
+
     /// The bot's own user (`GET /users/@me`: the banner `READY` may omit).
     /// Test doubles that never refresh identity art may keep the default.
     fn current_user(&self) -> impl Future<Output = Outcome<CurrentUser>> + Send {

@@ -489,7 +489,7 @@ pub(super) async fn publish(
     if let Some(answer) = answered {
         return Ok(answer);
     }
-    if !guides.state.channels.connected() {
+    if !guides.can_publish() {
         return Err(discord_offline());
     }
     let guide = guides.guide(&id).await?;
@@ -583,7 +583,7 @@ pub(super) async fn unpublish(
             "Confirm deleting this guide's messages from Discord.",
         ));
     }
-    if !guides.state.channels.connected() {
+    if !guides.can_publish() {
         return Err(discord_offline());
     }
     let guide = guides.guide(&id).await?;
@@ -622,7 +622,7 @@ pub(super) async fn search(
     if let Some(answer) = answered {
         return Ok(answer);
     }
-    if !guides.state.channels.connected() {
+    if !guides.can_publish() {
         return Err(discord_offline());
     }
     let guide = guides.guide(&id).await?;

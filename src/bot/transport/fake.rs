@@ -11,12 +11,13 @@ use twilight_model::application::command::{Command, CommandOptionChoice};
 use twilight_model::channel::message::MessageFlags;
 use twilight_model::channel::message::ReactionType;
 use twilight_model::channel::{Channel, Message};
-use twilight_model::guild::Member;
+use twilight_model::guild::{Guild, Member};
 use twilight_model::id::{
     Id,
     marker::{GuildMarker, UserMarker},
 };
 use twilight_model::oauth::ApplicationFlags;
+use twilight_model::user::CurrentUser;
 
 use super::{
     AmbiguousKind, ApplicationEmoji, ApplicationInfo, COMPONENTS_V2, CREATE_FLAGS, ChannelId,
@@ -53,6 +54,8 @@ pub enum Op {
     ApplicationEmojis,
     CreateApplicationEmoji,
     ApplicationInfo,
+    Guild,
+    CurrentUser,
 }
 
 /// A scripted result for the next call of one [`Op`]. Unscripted calls
@@ -184,6 +187,14 @@ pub enum Call {
     ApplicationInfo {
         outcome: Outcome<ApplicationInfo>,
     },
+    /// Boxed: a guild dwarfs every other recorded outcome.
+    Guild {
+        guild: Id<GuildMarker>,
+        outcome: Outcome<Box<Guild>>,
+    },
+    CurrentUser {
+        outcome: Outcome<CurrentUser>,
+    },
 }
 
 impl Call {
@@ -211,6 +222,8 @@ impl Call {
             Self::ApplicationEmojis { .. } => Op::ApplicationEmojis,
             Self::CreateApplicationEmoji { .. } => Op::CreateApplicationEmoji,
             Self::ApplicationInfo { .. } => Op::ApplicationInfo,
+            Self::Guild { .. } => Op::Guild,
+            Self::CurrentUser { .. } => Op::CurrentUser,
         }
     }
 }
@@ -276,6 +289,11 @@ struct State {
     /// What [`DiscordTransport::application_info`] reports as the
     /// application's flags; `None` is [`FakeDiscord::DEFAULT_FLAGS`].
     application_flags: Option<ApplicationFlags>,
+    /// What [`DiscordTransport::guild`] serves; an unseeded guild is a 404.
+    guilds: BTreeMap<Id<GuildMarker>, Guild>,
+    /// What [`DiscordTransport::current_user`] serves; unseeded, the call
+    /// is refused unsent as the trait's default is.
+    current_user: Option<CurrentUser>,
     #[cfg(any(test, feature = "test-support"))]
     reaction_pages: ScriptedReactionPages,
 }
@@ -495,6 +513,16 @@ impl FakeDiscord {
     /// Channels [`DiscordTransport::guild_channels`] returns.
     pub fn seed_channels(&self, guild: Id<GuildMarker>, channels: Vec<Channel>) {
         self.state().channels.insert(guild, channels);
+    }
+
+    /// The guild [`DiscordTransport::guild`] returns (owner and roles).
+    pub fn seed_guild(&self, guild: Guild) {
+        self.state().guilds.insert(guild.id, guild);
+    }
+
+    /// The bot user [`DiscordTransport::current_user`] returns.
+    pub fn seed_current_user(&self, user: CurrentUser) {
+        self.state().current_user = Some(user);
     }
 
     /// Application emojis that already exist remotely.
@@ -1055,6 +1083,45 @@ impl DiscordTransport for FakeDiscord {
             flags: state.application_flags.unwrap_or(Self::DEFAULT_FLAGS),
         });
         state.calls.push(Call::ApplicationInfo {
+            outcome: outcome.clone(),
+        });
+        outcome
+    }
+
+    async fn guild(&self, guild: Id<GuildMarker>) -> Outcome<Guild> {
+        self.gate(Op::Guild).await;
+        let mut state = self.state();
+        let outcome = match state.read(Op::Guild, true, |state| state.guilds.get(&guild).cloned()) {
+            Outcome::Delivered(Some(found)) => Outcome::Delivered(found),
+            Outcome::Delivered(None) => Outcome::DefinitelyRejected(RejectionKind::Http {
+                status: 404,
+                code: Some(10004),
+            }),
+            Outcome::DefinitelyRejected(kind) => Outcome::DefinitelyRejected(kind),
+            Outcome::Ambiguous(kind) => Outcome::Ambiguous(kind),
+        };
+        let recorded = match &outcome {
+            Outcome::Delivered(found) => Outcome::Delivered(Box::new(found.clone())),
+            Outcome::DefinitelyRejected(kind) => Outcome::DefinitelyRejected(kind.clone()),
+            Outcome::Ambiguous(kind) => Outcome::Ambiguous(*kind),
+        };
+        state.calls.push(Call::Guild {
+            guild,
+            outcome: recorded,
+        });
+        outcome
+    }
+
+    /// Unseeded, refused unsent and unrecorded, as the trait's default, so
+    /// call lists of tests that never seed a user stay as they were.
+    async fn current_user(&self) -> Outcome<CurrentUser> {
+        let Some(user) = self.state().current_user.clone() else {
+            return Outcome::DefinitelyRejected(RejectionKind::Invalid);
+        };
+        self.gate(Op::CurrentUser).await;
+        let mut state = self.state();
+        let outcome = state.read(Op::CurrentUser, true, |_| user);
+        state.calls.push(Call::CurrentUser {
             outcome: outcome.clone(),
         });
         outcome

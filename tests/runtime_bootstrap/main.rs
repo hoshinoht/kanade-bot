@@ -253,6 +253,24 @@ fn bad_settings_are_refused_at_startup_naming_the_key_without_the_value() {
             Some("sentinel"),
         ),
         (
+            vec![("KANADE_DISCORD_GATEWAY", "0")],
+            None,
+            "KANADE_DISCORD_GATEWAY was removed: replaced by kanade.toml `runtime.components` [KANADE_COMPONENTS]",
+            None,
+        ),
+        (
+            Vec::new(),
+            Some("[runtime]\ntimezone = \"UTC\"\n[discord]\ngateway = false\n".into()),
+            "kanade.toml `discord.gateway` was removed: replaced by `runtime.components`",
+            None,
+        ),
+        (
+            vec![("KANADE_COMPONENTS", "web,sentinel")],
+            None,
+            "kanade.toml `runtime.components` [KANADE_COMPONENTS]: this build has no such component",
+            Some("sentinel"),
+        ),
+        (
             vec![("KANADE_TIMEZONE", "not-a-timezone")],
             None,
             "kanade.toml `runtime.timezone` [KANADE_TIMEZONE] must be a valid IANA timezone",
@@ -332,6 +350,25 @@ fn bad_settings_are_refused_at_startup_naming_the_key_without_the_value() {
             );
         }
     }
+}
+
+/// `serve --offline` is the admin app's shell, so a bot-only list refuses
+/// it as a usage error (64).
+#[test]
+fn offline_serve_needs_the_web_component() {
+    let output = Command::new(binary())
+        .args(["serve", "--offline"])
+        .env("KANADE_TIMEZONE", "Asia/Kuala_Lumpur")
+        .env("KANADE_ADMIN_BIND", "127.0.0.1:0")
+        .env("KANADE_COMPONENTS", "bot")
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(64), "{output:?}");
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(
+        stderr.contains("serve --offline needs the `web` component"),
+        "{stderr}"
+    );
 }
 
 trait ChildTimeout {

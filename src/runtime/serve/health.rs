@@ -1,7 +1,7 @@
 //! Live `/healthz`: the store answers a read, the gateway is ready and the
 //! delivery tick keeps completing; `extraction` is informational and never
-//! degrades the status. With `KANADE_DISCORD_GATEWAY=0` Discord
-//! and the scheduler report `disabled` and only storage decides.
+//! degrades the status. Without the `bot` component Discord and the
+//! scheduler report `disabled` and only storage decides.
 
 use std::sync::Arc;
 

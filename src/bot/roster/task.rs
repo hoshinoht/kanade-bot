@@ -261,6 +261,19 @@ impl<K: RosterSink, T: DiscordTransport> RosterTask<K, T> {
         pruned && recorded
     }
 
+    /// One full pass outside the gateway (a server without the bot reading
+    /// the guild over REST): prune roles the guild no longer has, record its
+    /// owner and Administrator roles, then page every member and apply the
+    /// difference, sessions included. `false` when a step failed; a failed
+    /// page concludes no departures.
+    pub async fn reconcile_now(
+        &mut self,
+        owner_id: Id<UserMarker>,
+        admin_roles: &AdminRoles,
+    ) -> bool {
+        self.reconcile_generation(owner_id, admin_roles).await
+    }
+
     async fn reconcile_generation(
         &mut self,
         owner_id: Id<UserMarker>,
@@ -316,6 +329,14 @@ impl<K: RosterSink, T: DiscordTransport> RosterTask<K, T> {
                 }
             };
         self.cache.replace_member_avatars(&fetched);
+        // The bot's own roles decide its channel permissions.
+        if let Some(me) = self
+            .cache
+            .self_id()
+            .and_then(|me| fetched.iter().find(|member| member.user.id == me))
+        {
+            self.cache.member_roles(me.user.id, &me.roles);
+        }
         let stored = match self.sink.members().await {
             Ok(rows) => rows,
             Err(error) => {

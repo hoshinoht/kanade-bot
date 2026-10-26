@@ -88,8 +88,9 @@ function serverEnv(): NodeJS.ProcessEnv {
     KANADE_PUBLIC_HOST: `127.0.0.1:${publicPort}`,
     // Startup needs a trusted peer with a public bind; the browser connects from the loopback.
     KANADE_CLOUDFLARED_PEER: '127.0.0.1',
-    KANADE_DISCORD_GATEWAY: '0',
-    // The root is the secrets directory (`discord_token`, `admin_token`).
+    // The web component alone, with no bot token: nothing contacts Discord.
+    KANADE_COMPONENTS: 'web',
+    // The root is the secrets directory (`admin_token`).
     KANADE_SECRETS_DIR: root,
     KANADE_GUILD_ID: '900',
     KANADE_BOSSING_ROLE_ID: '10',
@@ -157,7 +158,6 @@ async function main(): Promise<void> {
   await chmod(root, 0o700);
   await secureDir(join(root, 'db'));
   await secureDir(join(root, 'locks'));
-  await secret(join(root, 'discord_token'), 'e2e-discord-token-not-a-real-secret');
   await secret(join(root, 'admin_token'), adminToken);
   await writePersona();
   await seed();

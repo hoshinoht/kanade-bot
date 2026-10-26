@@ -8,6 +8,7 @@ use std::{
 use chrono::{NaiveTime, Weekday};
 
 use super::*;
+use crate::api::state::StaticChannels;
 use kanade_domain::settings::{IdList, Section, SettingsStore, keys, save_section};
 
 /// A scratch root that is also the secrets directory.
@@ -44,7 +45,7 @@ impl Temp {
                 repo("boss/bosses.yaml").display().to_string(),
             ),
             ("KANADE_PERSONA_DIR", path("Personas")),
-            ("KANADE_DISCORD_GATEWAY", "0".to_owned()),
+            ("KANADE_COMPONENTS", "web".to_owned()),
         ]
         .into_iter()
         .map(|(key, value)| (key.to_owned(), value))

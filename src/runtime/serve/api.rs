@@ -312,8 +312,11 @@ pub(super) async fn compose_with(
         marks: Default::default(),
         characters,
         character_data: None,
-        // Module `guides`: serve attaches its port while `modules.guides` is on.
-        guides: None,
+        // Module `guides`: editable without the bot; serve's Discord side
+        // replaces the port with its publisher.
+        guides: config.modules.guides.then(|| {
+            Arc::new(crate::api::state::OfflineGuides) as Arc<dyn crate::api::state::GuidePort>
+        }),
     };
     Ok(Composition {
         admin: LiveAdmin {
