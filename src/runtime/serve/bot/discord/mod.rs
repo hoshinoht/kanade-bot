@@ -13,9 +13,7 @@
 //! header rewrite in flight is abandoned) → the running tick finishes (polled throughout) →
 //! (caller) HTTP drain → store close.
 
-mod late;
 mod ports;
-pub mod rest;
 mod stop_aware;
 
 use std::future::Future;
@@ -26,66 +24,64 @@ use std::time::Duration;
 
 use tokio::sync::{mpsc, oneshot, watch};
 use tokio::task::JoinHandle;
-use twilight_model::id::Id;
 
 use stop_aware::StopAware;
 
+#[cfg(feature = "web")]
+use crate::api::state::ApplicationPort;
+#[cfg(feature = "web")]
+use crate::app::{
+    ports::{DigestPost, DigestPostRequest, DigestPostResult, GuidePort, ProposalCardRefresh},
+    rescan::RescanDesk,
+};
+#[cfg(feature = "web")]
+use crate::bot::delivery::DigestOutcome;
+#[cfg(feature = "web")]
+use crate::discord::transport::{DiscordTransport, Outcome};
 use crate::runtime::serve::{
     bot::{
         chat::{self, ChatInputs, ChatRuntime, ServeAnswerer},
         chat_cards::ChatDesk,
         commands,
         extract::{self, Extraction, ExtractionStatus, Timing},
-        tick::{self, TickLoop, TickStatus, card_kit, delivery_config, watch_list},
+        health::GatewayProbe,
+        tick::{self, TickLoop, TickStatus, card_kit, delivery_config},
     },
     budget::ShutdownClock,
-    health::GatewayProbe,
-    web::api::Composition,
+    composition::Composition,
+    guild::{StoreRoster, difficulty_marks, scope, watch_list},
+    late::GatewayTransport,
 };
 use crate::{
-    api::state::ApplicationPort,
     app::{
         clock::Clock,
-        config::SettingsChanged,
         guild::GuildAccess,
-        ports::{
-            DeclineRetraction, DigestPost, DigestPostRequest, DigestPostResult, GuidePort,
-            HeaderRewritePort, ManualRequest, ProposalCardRefresh,
-        },
-        rescan::RescanDesk,
+        ports::{DeclineRetraction, HeaderRewritePort, ManualRequest},
         write::ApiClock,
     },
     bot::{
         cards::{CardDesk, CardSettings, DeskDeps},
         chardata::DiscordPosts,
         commands::CharacterParts,
-        delivery::{
-            CardRefresh, Delivery, DigestOutcome, HeaderPregen, LogAlerts, ManualRewrite,
-            RefreshQueue,
-        },
-        events::{GuildScope, ReactionRouter, Router},
+        delivery::{CardRefresh, Delivery, HeaderPregen, LogAlerts, ManualRewrite, RefreshQueue},
+        events::{ReactionRouter, Router},
         gateway::{ConnectionStatus, EventSource, GatewayError, Live, RunExit, run_live},
         guides::{GuideChannels, Pauses, Publisher, PublisherParts},
         handler::{Fanout, MessageCounts, Reactions, press_port},
-        roster::{LiveRoster, RosterTask},
+        roster::RosterTask,
     },
     cards::{
         CardKit,
         estimates::{CachedEstimates, PartyEstimates},
     },
     chat::{driver::DriverConfig, nudge::StoreRewriteSink},
-    discord::{
-        guild_cache::GuildCache,
-        identity,
-        transport::{DiscordTransport, Outcome},
-    },
+    discord::{guild_cache::GuildCache, identity, roster::LiveRoster},
     infrastructure::{character_data::PostDesk, files::GuideFiles, store::SqliteStore},
     runtime::{config::ServeConfig, error::Error},
 };
 use kanade_domain::{ids::RandomIds, schedule::SchedulePolicy, scheduler::SchedulerService};
 
-pub use late::{GatewayTransport, LateTransport};
-use ports::{StaffAuthority, StoreIndex, StoreRoster};
+use ports::{StaffAuthority, StoreIndex};
 
 /// How long the gateway waits for its close handshake on shutdown.
 pub const DRAIN_TIMEOUT: Duration = Duration::from_secs(5);
@@ -130,14 +126,6 @@ pub fn prepare(config: &ServeConfig, tick: Duration) -> Prepared {
             router,
             status: connection,
         },
-    }
-}
-
-fn scope(config: &ServeConfig) -> GuildScope {
-    // Snowflakes are validated non-zero by the config parser.
-    GuildScope {
-        guild_id: Id::new(config.guild.guild_id),
-        bossing_role_id: Id::new(config.guild.bossing_role_id),
     }
 }
 
@@ -201,8 +189,9 @@ fn card_desk<T: GatewayTransport>(
 
 /// Recover the delivery journal, list the application's emojis for the
 /// difficulty marks, then start everything. Nothing else calls Discord
-/// until the gateway task first polls the source. Attaches the rescan
-/// runner and the marks to the API state, so call it before HTTP serves.
+/// until the gateway task first polls the source. With the `web` feature it
+/// attaches the rescan runner, the marks and its other ports to the API
+/// state, so call it before HTTP serves.
 pub async fn start<S, T>(
     config: &ServeConfig,
     store: Arc<SqliteStore>,
@@ -218,7 +207,7 @@ where
     // as soon as the gateway is up, not only the tick.
     tick::recover(&store, (wiring.clock)()).await?;
     // Read once, before the card kit and the admin preview are composed.
-    let marks = tick::difficulty_marks(&*wiring.transport).await;
+    let marks = difficulty_marks(&*wiring.transport).await;
     let Prepared {
         cache,
         tick_status,
@@ -239,7 +228,7 @@ where
     let connection = live.status.clone();
     let scope = scope(config);
     let access = Arc::clone(&composition.access);
-    let policy = composition.admin.state.policy.clone();
+    let policy = composition.policy.clone();
     cache.set_watch(watch_list(&composition.settings));
     let roster = Arc::new(LiveRoster::new(Arc::clone(&cache)));
     let (stop_workers, stopped) = watch::channel(false);
@@ -248,7 +237,7 @@ where
     let roster_task = RosterTask::new(
         StoreRoster {
             store: Arc::clone(&store),
-            hooks: composition.admin.roster_hooks(),
+            hooks: composition.roster_hooks(),
             access: Arc::clone(&access),
         },
         Arc::clone(&transport),
@@ -295,11 +284,11 @@ where
     // are Components V2.
     let mut kit = card_kit(
         config.runtime.http.boss_dir.as_deref(),
-        Arc::clone(&composition.admin.state.catalog),
+        Arc::clone(&composition.catalog),
         marks.clone(),
         composition.models.as_ref(),
         Arc::clone(&composition.personas),
-        settings_changes(composition),
+        composition.config.subscribe(),
         Arc::new(StoreRewriteSink::new(
             Arc::clone(&store),
             Arc::clone(&wiring.clock),
@@ -322,11 +311,11 @@ where
     kit.v2.portal = portal.clone();
     // The redesigned run cards' share chart reads the roster and the
     // estimates memory, so it needs both modules and a scouter URL.
-    let state = &composition.admin.state;
-    kit.estimates = state
-        .character_data
+    // The Discord side is the service's last holder besides the API.
+    let character_data = composition.character_data.take();
+    kit.estimates = character_data
         .clone()
-        .filter(|module| state.characters.is_some() && module.estimates().is_some())
+        .filter(|module| composition.characters.is_some() && module.estimates().is_some())
         .map(|module| {
             Arc::new(CachedEstimates::new(Arc::clone(&store), module)) as Arc<dyn PartyEstimates>
         });
@@ -346,25 +335,28 @@ where
             Some(Arc::clone(&decline_retraction)),
             cards.clone(),
         )
-        .with_run_ends(composition.admin.state.run_ends_source()),
+        .with_run_ends(composition.run_ends_source()),
     );
-    let proposal_refresh: ProposalCardRefresh = {
-        let desk = Arc::clone(&desk);
-        Arc::new(move |proposal_ids| {
+    #[cfg(feature = "web")]
+    {
+        let proposal_refresh: ProposalCardRefresh = {
             let desk = Arc::clone(&desk);
-            Box::pin(async move { desk.refresh_proposals(&proposal_ids).await })
-        })
-    };
-    match Arc::get_mut(&mut composition.admin.state) {
-        Some(state) => {
-            state.proposal_refresh = Some(proposal_refresh);
-            state.decline_retraction = Some(decline_retraction);
-            state.marks = marks;
-        }
-        None => {
-            return Err(Error::Startup(
-                "the proposal-card refresh could not be attached".into(),
-            ));
+            Arc::new(move |proposal_ids| {
+                let desk = Arc::clone(&desk);
+                Box::pin(async move { desk.refresh_proposals(&proposal_ids).await })
+            })
+        };
+        match Arc::get_mut(&mut composition.admin.state) {
+            Some(state) => {
+                state.proposal_refresh = Some(proposal_refresh);
+                state.decline_retraction = Some(Arc::clone(&decline_retraction));
+                state.marks = marks;
+            }
+            None => {
+                return Err(Error::Startup(
+                    "the proposal-card refresh could not be attached".into(),
+                ));
+            }
         }
     }
     let rsvp = ReactionRouter::new(
@@ -375,7 +367,7 @@ where
             ApiClock(Arc::clone(&wiring.clock)),
         )
         .with_attendance(policy.attendance)
-        .with_run_ends(composition.admin.state.run_ends_source()),
+        .with_run_ends(composition.run_ends_source()),
     );
     let rsvp_replay = crate::bot::rsvp_replay::RsvpReplay::new(
         Arc::clone(&store),
@@ -388,17 +380,16 @@ where
     let (press_jobs, press_queue) = mpsc::unbounded_channel();
 
     let (guild_ready, ready) = watch::channel(false);
-    let state = &composition.admin.state;
     let mut extraction = extract::start(extract::Inputs {
         store: Arc::clone(&store),
         models: composition.models.clone(),
         settings: composition.settings.clone(),
-        changes: state.config.as_ref().map(|desk| desk.subscribe()),
+        changes: Some(composition.config.subscribe()),
         desk: Arc::clone(&desk),
         transport: Arc::clone(&transport),
         cache: Arc::clone(&cache),
         roster: Arc::clone(&roster),
-        bosses: Arc::clone(&state.catalog),
+        bosses: Arc::clone(&composition.catalog),
         policy: policy.clone(),
         zone: config.runtime.timezone,
         clock: Arc::clone(&wiring.clock),
@@ -406,9 +397,10 @@ where
         timing: wiring.extraction,
         guild_ready: ready.clone(),
         portal,
-        run_ends: state.run_ends_source(),
+        run_ends: composition.run_ends_source(),
     });
     // Nothing has cloned the state yet: compose returned the only handle.
+    #[cfg(feature = "web")]
     match Arc::get_mut(&mut composition.admin.state) {
         Some(state) => {
             state.rescans = extraction
@@ -428,67 +420,71 @@ where
         composition.settings.notifications.quiet_mode,
     ));
     let post_channel = Arc::new(RwLock::new(composition.settings.posting.channel_id.clone()));
-    let digest_post: DigestPost = {
-        let store = Arc::clone(&store);
-        let transport = Arc::clone(&transport);
-        let roster = Arc::clone(&roster);
-        let cache = Arc::clone(&cache);
-        let cards = cards.clone();
-        let post_channel = Arc::clone(&post_channel);
-        let delivery = delivery_config(&config.instance_id, policy.clone(), &composition.settings);
-        let connection = connection.clone();
-        Arc::new(move |request: DigestPostRequest| {
+    #[cfg(feature = "web")]
+    {
+        let digest_post: DigestPost = {
             let store = Arc::clone(&store);
             let transport = Arc::clone(&transport);
             let roster = Arc::clone(&roster);
             let cache = Arc::clone(&cache);
             let cards = cards.clone();
             let post_channel = Arc::clone(&post_channel);
-            let mut delivery_config = delivery.clone();
+            let delivery =
+                delivery_config(&config.instance_id, policy.clone(), &composition.settings);
             let connection = connection.clone();
-            Box::pin(async move {
-                delivery_config.post_channel_id = post_channel
-                    .read()
-                    .unwrap_or_else(std::sync::PoisonError::into_inner)
-                    .clone();
-                let alerts = LogAlerts;
-                let mut delivery = Delivery::new(
-                    &*store,
-                    RandomIds,
-                    &*transport,
-                    &alerts,
-                    &*roster,
-                    &*cache,
-                    delivery_config,
-                )
-                .with_cards(cards)
-                .with_admission_gate(move || connection.delivery_eligibility());
-                match delivery
-                    .post_requested_digest(
-                        request.at,
-                        request.week_start,
-                        request.channel_id.as_deref(),
+            Arc::new(move |request: DigestPostRequest| {
+                let store = Arc::clone(&store);
+                let transport = Arc::clone(&transport);
+                let roster = Arc::clone(&roster);
+                let cache = Arc::clone(&cache);
+                let cards = cards.clone();
+                let post_channel = Arc::clone(&post_channel);
+                let mut delivery_config = delivery.clone();
+                let connection = connection.clone();
+                Box::pin(async move {
+                    delivery_config.post_channel_id = post_channel
+                        .read()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner)
+                        .clone();
+                    let alerts = LogAlerts;
+                    let mut delivery = Delivery::new(
+                        &*store,
+                        RandomIds,
+                        &*transport,
+                        &alerts,
+                        &*roster,
+                        &*cache,
+                        delivery_config,
                     )
-                    .await
-                {
-                    Ok(report) if report.outcome == DigestOutcome::ClockRolledBack => {
-                        DigestPostResult::NewerWeekAlreadyPosted
+                    .with_cards(cards)
+                    .with_admission_gate(move || connection.delivery_eligibility());
+                    match delivery
+                        .post_requested_digest(
+                            request.at,
+                            request.week_start,
+                            request.channel_id.as_deref(),
+                        )
+                        .await
+                    {
+                        Ok(report) if report.outcome == DigestOutcome::ClockRolledBack => {
+                            DigestPostResult::NewerWeekAlreadyPosted
+                        }
+                        Ok(report) if report.outcome == DigestOutcome::Attempted => {
+                            DigestPostResult::Completed
+                        }
+                        Ok(_) | Err(_) => DigestPostResult::Unavailable,
                     }
-                    Ok(report) if report.outcome == DigestOutcome::Attempted => {
-                        DigestPostResult::Completed
-                    }
-                    Ok(_) | Err(_) => DigestPostResult::Unavailable,
-                }
+                })
             })
-        })
-    };
-    match Arc::get_mut(&mut composition.admin.state) {
-        Some(state) => state.digest_post = Some(digest_post),
-        None => {
-            extraction.stop(&ShutdownClock::default()).await;
-            return Err(Error::Startup(
-                "the manual digest post could not be attached".into(),
-            ));
+        };
+        match Arc::get_mut(&mut composition.admin.state) {
+            Some(state) => state.digest_post = Some(digest_post),
+            None => {
+                extraction.stop(&ShutdownClock::default()).await;
+                return Err(Error::Startup(
+                    "the manual digest post could not be attached".into(),
+                ));
+            }
         }
     }
     let debug = commands::DebugParts {
@@ -518,30 +514,33 @@ where
             Box::pin(async move { manual.start(request).await })
         })
     };
-    // Admin Setup's application read (intents, invite link), through the
-    // same shutdown-bounded transport.
-    let application: ApplicationPort = {
-        let transport = Arc::clone(&transport);
-        Arc::new(move || {
+    #[cfg(feature = "web")]
+    {
+        // Admin Setup's application read (intents, invite link), through the
+        // same shutdown-bounded transport.
+        let application: ApplicationPort = {
             let transport = Arc::clone(&transport);
-            Box::pin(async move {
-                match transport.application_info().await {
-                    Outcome::Delivered(info) => Some(info),
-                    _ => None,
-                }
+            Arc::new(move || {
+                let transport = Arc::clone(&transport);
+                Box::pin(async move {
+                    match transport.application_info().await {
+                        Outcome::Delivered(info) => Some(info),
+                        _ => None,
+                    }
+                })
             })
-        })
-    };
-    match Arc::get_mut(&mut composition.admin.state) {
-        Some(state) => {
-            state.header_rewrite = Some(header_rewrite);
-            state.application = Some(application);
-        }
-        None => {
-            extraction.stop(&ShutdownClock::default()).await;
-            return Err(Error::Startup(
-                "the manual header rewrite could not be attached".into(),
-            ));
+        };
+        match Arc::get_mut(&mut composition.admin.state) {
+            Some(state) => {
+                state.header_rewrite = Some(Arc::clone(&header_rewrite));
+                state.application = Some(application);
+            }
+            None => {
+                extraction.stop(&ShutdownClock::default()).await;
+                return Err(Error::Startup(
+                    "the manual header rewrite could not be attached".into(),
+                ));
+            }
         }
     }
     // Module `guides`: the single-flight publish worker, rendering through
@@ -551,7 +550,7 @@ where
             store: Arc::clone(&store),
             transport: Arc::clone(&transport),
             channels: Arc::clone(&cache) as Arc<dyn GuideChannels>,
-            catalog: Arc::clone(&composition.admin.state.catalog),
+            catalog: Arc::clone(&composition.catalog),
             sources: Arc::new(GuideFiles::new(
                 config.runtime.http.boss_dir.as_deref(),
                 composition
@@ -568,6 +567,7 @@ where
             pauses: Pauses::default(),
         }))
     });
+    #[cfg(feature = "web")]
     if let Some(guides) = &guides {
         match Arc::get_mut(&mut composition.admin.state) {
             Some(state) => state.guides = Some(Arc::clone(guides) as Arc<dyn GuidePort>),
@@ -587,7 +587,7 @@ where
     // Persona headers are rewritten ahead of their sends (a daily batch and
     // catch-up), never on them.
     // The daily batch time is read live, like the message style.
-    let header_time = settings_changes(composition);
+    let header_time = composition.config.subscribe();
     let pregen = HeaderPregen::new(
         Arc::clone(&store),
         roster.clone(),
@@ -622,30 +622,36 @@ where
     };
     // Module `character_data`: share cards are posted and stripped through
     // this transport; the `CharacterData` task strips due ones through it.
-    let character = composition
-        .admin
-        .state
-        .character_data
-        .as_ref()
-        .map(|service| {
-            let posts = Arc::new(DiscordPosts {
-                transport: Arc::clone(&transport),
-                self_id: {
-                    let cache = Arc::clone(&cache);
-                    Arc::new(move || cache.self_id())
-                },
-                search_pause: Duration::from_secs(1),
-            });
-            service.attach_posts(Arc::clone(&posts) as Arc<dyn PostDesk>);
-            CharacterParts {
-                service: Arc::clone(service),
-                posts,
-                privacy_url,
-            }
+    let character = character_data.as_ref().map(|service| {
+        let posts = Arc::new(DiscordPosts {
+            transport: Arc::clone(&transport),
+            self_id: {
+                let cache = Arc::clone(&cache);
+                Arc::new(move || cache.self_id())
+            },
+            search_pause: Duration::from_secs(1),
         });
+        service.attach_posts(Arc::clone(&posts) as Arc<dyn PostDesk>);
+        CharacterParts {
+            service: Arc::clone(service),
+            posts,
+            privacy_url,
+        }
+    });
     let dispatcher = match commands::factory(
-        Arc::clone(&composition.admin.state),
-        Arc::clone(&store),
+        commands::Shared {
+            store: Arc::clone(&store),
+            writer: Arc::clone(&composition.writer),
+            policy: composition.policy.clone(),
+            catalog: Arc::clone(&composition.catalog),
+            access: Arc::clone(&composition.access),
+            config: Arc::clone(&composition.config),
+            rescans: extraction.rescans.clone(),
+            chat: composition.health.chat(),
+            decline_retraction: Arc::clone(&decline_retraction),
+            header_rewrite,
+            clock: Arc::clone(&composition.clock),
+        },
         Arc::clone(&cache),
         Arc::clone(&transport),
         debug,
@@ -682,26 +688,19 @@ where
             store: Arc::clone(&store),
             models: composition.models.clone(),
             personas: Arc::clone(&composition.personas),
-            config: Arc::clone(
-                composition
-                    .admin
-                    .state
-                    .config
-                    .as_ref()
-                    .expect("serve always composes config settings"),
-            ),
-            settings: settings_changes(composition),
+            config: Arc::clone(&composition.config),
+            settings: composition.config.subscribe(),
             cache: Arc::clone(&cache),
-            catalog: Arc::clone(&composition.admin.state.catalog),
+            catalog: Arc::clone(&composition.catalog),
             guides: composition.knowledge.clone(),
-            policy: composition.admin.state.policy.clone(),
+            policy: composition.policy.clone(),
             guild_id: config.guild.guild_id.to_string(),
             pilot_role: access.pilot_role.clone(),
             clock: Arc::clone(&wiring.clock),
             desk: Arc::clone(&desk),
         },
         transport: Arc::clone(&transport),
-        handle: composition.admin.state.chat.clone(),
+        handle: Some(composition.health.chat()),
         roster: chat_roster,
         access: Arc::clone(&access),
     })
@@ -724,7 +723,7 @@ where
                 rsvp,
                 rsvp_replay: Some(rsvp_replay),
                 follow_up: Some(follow_up),
-                decline_retraction: composition.admin.state.decline_retraction.clone(),
+                decline_retraction: Some(decline_retraction),
                 clock: Arc::clone(&wiring.clock),
             }
             .run_with_replay(
@@ -791,22 +790,6 @@ where
         steps: Vec::new(),
         shutdown,
     })
-}
-
-/// Live settings for chat: the config desk's changes, else the startup values.
-fn settings_changes(composition: &Composition) -> watch::Receiver<SettingsChanged> {
-    match &composition.admin.state.config {
-        Some(desk) => desk.subscribe(),
-        None => {
-            watch::channel(SettingsChanged {
-                revision: 0,
-                section: None,
-                actor: None,
-                settings: Arc::new(composition.settings.clone()),
-            })
-            .1
-        }
-    }
 }
 
 fn gateway_error(error: GatewayError) {

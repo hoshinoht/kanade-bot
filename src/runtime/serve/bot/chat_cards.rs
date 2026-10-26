@@ -31,7 +31,7 @@ use kanade_domain::{
     proposals::{ChangeKind, Payload, ProposalCardStore, ProposedChange},
 };
 
-use crate::runtime::serve::bot::discord::GatewayTransport;
+use crate::runtime::serve::late::GatewayTransport;
 
 pub type ChatDesk<T> = CardDesk<SqliteStore, T, RandomIds, LogAlerts>;
 

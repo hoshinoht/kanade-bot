@@ -12,8 +12,11 @@ use super::{
 use crate::{
     app::roster::RosterHooks,
     runtime::{
-        application::HealthProbe, config::RuntimeConfig, error::Error, logging,
-        serve::budget::ShutdownClock,
+        application::HealthProbe,
+        config::RuntimeConfig,
+        error::Error,
+        logging,
+        serve::{budget::ShutdownClock, wait_for_shutdown},
     },
 };
 
@@ -170,22 +173,4 @@ async fn run(
         let _ = stopped.changed().await;
     })
     .await
-}
-
-/// `SIGINT` or `SIGTERM`.
-pub async fn wait_for_shutdown() {
-    let ctrl_c = async {
-        let _ = tokio::signal::ctrl_c().await;
-    };
-    #[cfg(unix)]
-    let terminate = async {
-        if let Ok(mut signal) =
-            tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
-        {
-            signal.recv().await;
-        }
-    };
-    #[cfg(not(unix))]
-    let terminate = std::future::pending::<()>();
-    tokio::select! { () = ctrl_c => {}, () = terminate => {} }
 }

@@ -9,7 +9,14 @@ use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, RwLock};
 
 use crate::{
-    api::state::ApiState,
+    app::{
+        clock::Clock,
+        config::ConfigDesk,
+        guild::GuildAccess,
+        ports::{DeclineRetraction, HeaderRewritePort},
+        rescan::RescanRunner,
+        write::Writer,
+    },
     bot::{
         commands::{
             CardPresses, CharacterParts, ChatAllowance, CommandContext, DebugCards, Dispatcher,
@@ -17,20 +24,38 @@ use crate::{
         },
         delivery::{AlertThrottle, DebugDesk},
         handler::CommandsFn,
-        roster::LiveRoster,
     },
     cards::CardKit,
-    discord::guild_cache::GuildCache,
+    chat::driver::ChatHandle,
+    discord::{guild_cache::GuildCache, roster::LiveRoster},
     infrastructure::store::SqliteStore,
     runtime::error::Error,
 };
+use kanade_domain::{catalog::BossTable, schedule::SchedulePolicy};
 
-use crate::runtime::serve::bot::discord::GatewayTransport;
+use crate::runtime::serve::late::GatewayTransport;
 
-/// Everything a dispatcher is built from, shared with `ApiState`.
+/// What the commands share with the rest of serve (and the API).
+pub struct Shared {
+    pub store: Arc<SqliteStore>,
+    /// The one scheduler writer.
+    pub writer: Arc<dyn Writer>,
+    pub policy: SchedulePolicy,
+    pub catalog: Arc<BossTable>,
+    pub access: Arc<GuildAccess>,
+    pub config: Arc<ConfigDesk>,
+    /// Rescan jobs; `None` while extraction has no runner.
+    pub rescans: Option<Arc<dyn RescanRunner>>,
+    /// The chat pilot's allowance.
+    pub chat: Arc<ChatHandle>,
+    pub decline_retraction: DeclineRetraction,
+    pub header_rewrite: HeaderRewritePort,
+    pub clock: Clock,
+}
+
+/// Everything a dispatcher is built from.
 struct Commands<T> {
-    state: Arc<ApiState>,
-    members: Arc<SqliteStore>,
+    shared: Shared,
     channels: Arc<GuildCache>,
     transport: Arc<T>,
     debug: Arc<dyn DebugCards>,
@@ -54,31 +79,28 @@ pub struct DebugParts {
 
 impl<T: GatewayTransport> Commands<T> {
     fn build(&self, bot_name: Option<String>) -> Result<Dispatcher, DuplicateCommand> {
-        let state = &self.state;
-        let members: Arc<dyn MemberRows> = self.members.clone();
+        let shared = &self.shared;
+        let members: Arc<dyn MemberRows> = shared.store.clone();
         let ctx = Arc::new(CommandContext {
-            store: Arc::clone(&state.store),
-            writer: Arc::clone(&state.writer),
+            store: shared.store.clone(),
+            writer: Arc::clone(&shared.writer),
             members,
-            run_prompts: self.members.clone(),
-            policy: state.policy.clone(),
-            catalog: Arc::clone(&state.catalog),
+            run_prompts: shared.store.clone(),
+            policy: shared.policy.clone(),
+            catalog: Arc::clone(&shared.catalog),
             channels: self.channels.clone(),
-            access: Arc::clone(&state.access),
-            config: state.config.clone(),
-            rescans: state.rescans.as_ref().map(|desk| Arc::clone(&desk.runner)),
-            allowance: state
-                .chat
-                .clone()
-                .map(|chat| chat as Arc<dyn ChatAllowance>),
+            access: Arc::clone(&shared.access),
+            config: Some(Arc::clone(&shared.config)),
+            rescans: shared.rescans.clone(),
+            allowance: Some(Arc::clone(&shared.chat) as Arc<dyn ChatAllowance>),
             debug_cards: Some(Arc::clone(&self.debug)),
-            decline_retraction: state.decline_retraction.clone(),
-            header_rewrite: state.header_rewrite.clone(),
+            decline_retraction: Some(Arc::clone(&shared.decline_retraction)),
+            header_rewrite: Some(Arc::clone(&shared.header_rewrite)),
             bot_name,
-            clock: Arc::clone(&state.clock),
+            clock: Arc::clone(&shared.clock),
         });
         let retained = register_retained(
-            Dispatcher::new(state.access.policy.clone())
+            Dispatcher::new(shared.access.policy.clone())
                 .with_card_presses(Arc::clone(&self.presses)),
             &ctx,
             Arc::clone(&self.transport),
@@ -93,8 +115,7 @@ impl<T: GatewayTransport> Commands<T> {
 /// A dispatcher factory for the gateway handler, checked once now so a
 /// registry error fails startup rather than the first `READY`.
 pub fn factory<T: GatewayTransport>(
-    state: Arc<ApiState>,
-    members: Arc<SqliteStore>,
+    shared: Shared,
     channels: Arc<GuildCache>,
     transport: Arc<T>,
     debug: DebugParts,
@@ -102,22 +123,21 @@ pub fn factory<T: GatewayTransport>(
     character: Option<CharacterParts<T>>,
 ) -> Result<CommandsFn, Error> {
     let desk: Arc<dyn DebugCards> = Arc::new(DebugDesk {
-        store: Arc::clone(&members),
+        store: Arc::clone(&shared.store),
         transport: Arc::clone(&transport),
         members: debug.roster,
         channels: Arc::clone(&channels) as _,
         cards: debug.cards,
-        policy: state.policy.clone(),
+        policy: shared.policy.clone(),
         quiet: debug.quiet,
         post_channel: debug.post_channel,
         test_channel: debug.test_channel,
         instance_id: debug.instance_id,
-        now: Arc::clone(&state.clock),
+        now: Arc::clone(&shared.clock),
         throttle: AlertThrottle::new(),
     });
     let commands = Commands {
-        state,
-        members,
+        shared,
         channels,
         transport,
         debug: desk,

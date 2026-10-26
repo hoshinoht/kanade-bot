@@ -10,7 +10,6 @@ mod access;
 mod changes;
 mod models;
 mod patch;
-mod stack;
 mod view;
 
 #[cfg(test)]

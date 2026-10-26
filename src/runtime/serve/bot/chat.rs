@@ -26,7 +26,6 @@ use crate::{
         chat_feed::{ChatFeed, DiscordSurface, StaffFn},
         commands::ChatAllowance,
         delivery::FixedClock,
-        roster::LiveRoster,
     },
     chat::{
         answer::{AnswerDeps, Generation, GuildView, ProfanityGuard, answer},
@@ -44,7 +43,7 @@ use crate::{
             read::{EventBoss, GuideError, StrategyGuides, render_guide},
         },
     },
-    discord::guild_cache::GuildCache,
+    discord::{guild_cache::GuildCache, roster::LiveRoster},
     infrastructure::{
         files::KnowledgeDir,
         llm::{
@@ -68,8 +67,8 @@ use kanade_domain::{
 };
 
 use crate::runtime::serve::bot::chat_cards::{self as cards, ChatDesk};
-use crate::runtime::serve::bot::discord::GatewayTransport;
 use crate::runtime::serve::chat_log;
+use crate::runtime::serve::late::GatewayTransport;
 
 /// Checked-in strategy guides over the startup-validated knowledge
 /// directory, re-read per call like the admin API.

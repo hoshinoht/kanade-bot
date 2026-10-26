@@ -25,7 +25,7 @@ use crate::runtime::serve::{
         discord::{self, Discord, Wiring},
         extract,
     },
-    web::api::{self, Composition},
+    composition::{self, Composition},
 };
 use crate::{
     app::clock,
@@ -454,9 +454,10 @@ async fn live_with_role_profiles(
     let prepared = discord::prepare(&config, Duration::from_millis(50));
     let health = LiveHealth::new(store.clone())
         .with_discord(prepared.probe.clone(), prepared.tick_status.clone());
-    let mut composition = api::compose(&config, store.clone(), prepared.cache.clone(), health)
-        .await
-        .unwrap();
+    let mut composition =
+        composition::compose(&config, store.clone(), prepared.cache.clone(), health)
+            .await
+            .unwrap();
     let models = composition.models.clone().expect("model stack");
     eventually!("the model listing", models.catalog().listed);
     let fake = Arc::new(FakeDiscord::new());

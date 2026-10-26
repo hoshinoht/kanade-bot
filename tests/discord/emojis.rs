@@ -5,7 +5,7 @@
 
 use std::path::{Path, PathBuf};
 
-use kanade::bot::cards::emojis::{self, PILLS};
+use kanade::cards::emojis::{self, PILLS};
 use kanade::cli::emojis::sync;
 use kanade::discord::transport::{
     ApplicationEmoji, Call, FakeDiscord, Op, Outcome, RejectionKind, Step,

@@ -11,20 +11,24 @@ use std::time::Duration;
 use tokio::sync::watch;
 use tokio::task::JoinHandle;
 
-use crate::runtime::serve::bot::discord::{GatewayTransport, ports::StoreRoster, scope};
 use crate::{
     api::state::ApplicationPort,
-    bot::{
-        events::{GuildRoles, GuildScope},
-        gateway::ConnectionStatus,
-        roster::{LiveRoster, RosterTask},
+    discord::{
+        guild::{GuildRoles, GuildScope},
+        guild_cache::GuildCache,
+        roster::{LiveRoster, RosterSync},
+        transport::Outcome,
     },
-    discord::{guild_cache::GuildCache, transport::Outcome},
     infrastructure::store::SqliteStore,
     runtime::{
         config::ServeConfig,
         error::Error,
-        serve::{bot::tick, budget::ShutdownClock, web::api::Composition},
+        serve::{
+            budget::ShutdownClock,
+            composition::Composition,
+            guild::{StoreRoster, difficulty_marks, scope, watch_list},
+            late::GatewayTransport,
+        },
     },
 };
 
@@ -52,7 +56,7 @@ impl RestGuild {
         transport: Arc<T>,
         every: Duration,
     ) -> Result<Self, Error> {
-        let marks = tick::difficulty_marks(&*transport).await;
+        let marks = difficulty_marks(&*transport).await;
         let application: ApplicationPort = {
             let transport = Arc::clone(&transport);
             Arc::new(move || {
@@ -76,22 +80,19 @@ impl RestGuild {
                 ));
             }
         }
-        cache.set_watch(tick::watch_list(&composition.settings));
+        cache.set_watch(watch_list(&composition.settings));
         let scope = scope(config);
         let (stop, stopped) = watch::channel(false);
-        let roster = RosterTask::new(
+        let roster = RosterSync::new(
             StoreRoster {
                 store,
-                hooks: composition.admin.roster_hooks(),
+                hooks: composition.roster_hooks(),
                 access: Arc::clone(&composition.access),
             },
             Arc::clone(&transport),
             Arc::clone(&cache),
             scope,
             Arc::new(LiveRoster::new(Arc::clone(&cache))),
-            // No gateway: only the one-shot reconcile is used, never its
-            // generation gating.
-            ConnectionStatus::new(),
             stopped.clone(),
         );
         let reader = Reader {
@@ -125,7 +126,7 @@ struct Reader<T: GatewayTransport> {
     transport: Arc<T>,
     cache: Arc<GuildCache>,
     scope: GuildScope,
-    roster: RosterTask<StoreRoster, T>,
+    roster: RosterSync<StoreRoster, T>,
     /// The transport knows the application (it is built from it).
     ready: bool,
 }

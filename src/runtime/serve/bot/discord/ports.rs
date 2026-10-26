@@ -1,67 +1,17 @@
-//! The store, sessions and access policy behind the bot's ports.
+//! The store and access policy behind the bot's card ports.
 
 use std::sync::Arc;
 
-use twilight_model::id::{Id, marker::UserMarker};
-
 use crate::{
-    app::{
-        guild::GuildAccess,
-        ids::id_text,
-        roster::{AdminRoles, RosterHooks, RosterUpdate, on_guild_available, on_roster_update},
-    },
-    bot::{
-        cards::Authority,
-        roster::{LiveRoster, RosterSink},
-    },
+    app::{guild::GuildAccess, ids::id_text},
+    bot::cards::Authority,
+    discord::roster::LiveRoster,
     infrastructure::store::SqliteStore,
 };
 use kanade_domain::{
-    members::{GatewayMember, MemberProfile, MemberStore},
     notify::{CardIndex, LookupError},
     proposals::Approver,
-    scheduler::StoreError,
 };
-
-/// Roster writes on the store, each followed by the web side's session
-/// re-checks.
-pub struct StoreRoster {
-    pub store: Arc<SqliteStore>,
-    pub hooks: Arc<dyn RosterHooks>,
-    pub access: Arc<GuildAccess>,
-}
-
-impl RosterSink for StoreRoster {
-    async fn members(&self) -> Result<Vec<MemberProfile>, StoreError> {
-        self.store.list_members().await
-    }
-
-    async fn update(&self, update: &RosterUpdate) -> Result<u64, StoreError> {
-        on_roster_update(&*self.hooks, &*self.store, update).await
-    }
-
-    async fn prune(&self, member: GatewayMember) -> Result<u64, StoreError> {
-        let user_id = member.user_id.clone();
-        let eligible = member.has_role && !member.is_bot;
-        self.store.apply_gateway(member).await?;
-        Ok(self.hooks.changed(&user_id, eligible).await)
-    }
-
-    async fn guild_available(
-        &self,
-        owner_id: Id<UserMarker>,
-        admin_roles: &AdminRoles,
-    ) -> Result<u64, StoreError> {
-        on_guild_available(
-            &*self.hooks,
-            &self.access,
-            &*self.store,
-            owner_id,
-            admin_roles,
-        )
-        .await
-    }
-}
 
 /// A ✅ on a card is the member's own, never `via_portal`; staff (the staff
 /// rule over the stored gateway view, or the owner) approve anything.

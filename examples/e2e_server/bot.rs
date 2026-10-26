@@ -24,7 +24,7 @@ use kanade::{
                 discord::{self, Wiring},
                 extract::Timing,
             },
-            web::api::Composition,
+            composition::Composition,
         },
     },
 };

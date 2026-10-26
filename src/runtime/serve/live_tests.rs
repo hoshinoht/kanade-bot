@@ -23,7 +23,7 @@ use crate::runtime::serve::{
         discord::{self, Discord, Wiring},
         extract,
     },
-    web::api::{self, Composition},
+    composition::{self, Composition},
 };
 use crate::{
     api::auth::staff::{GuildStaffGate, StaffCheck, StaffGate, StoreGuildMembers},
@@ -32,10 +32,10 @@ use crate::{
         cards::{Authority, CardDesk, CardSettings, DeskDeps},
         delivery::{FixedClock, LogAlerts},
         gateway::{Connection, ConnectionStatus, DeliveryEligibility, EventSource, GatewayError},
-        roster::LiveRoster,
     },
     discord::{
         guild_cache::GuildCache,
+        roster::LiveRoster,
         transport::{Call, FakeDiscord, Op, RejectionKind, Step},
     },
     extract::{
@@ -340,7 +340,7 @@ impl Harness {
             .with_discord(prepared.probe.clone(), prepared.tick_status.clone())
             .with_extraction(prepared.extraction.clone());
         let mut composition =
-            api::compose(&self.config, store.clone(), prepared.cache.clone(), health)
+            composition::compose(&self.config, store.clone(), prepared.cache.clone(), health)
                 .await
                 .unwrap();
         let (events, source) = script();

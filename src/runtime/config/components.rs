@@ -1,6 +1,7 @@
 //! `KANADE_COMPONENTS` (`runtime.components`): which parts of the one binary
 //! `serve` runs. `bot` is the Discord side (gateway, roster, tick, chat,
-//! extraction); `web` the admin app and the member portal.
+//! extraction); `web` the admin app and the member portal. Each exists only
+//! when the build has the cargo feature of the same name.
 
 use std::collections::BTreeMap;
 
@@ -9,7 +10,11 @@ use super::{Error, non_empty};
 const KEY: &str = "KANADE_COMPONENTS";
 
 /// Every component this build has, as refusals name them.
-const COMPILED: &str = "`bot` and `web`";
+const COMPILED: &str = match (cfg!(feature = "bot"), cfg!(feature = "web")) {
+    (true, true) => "`bot` and `web`",
+    (true, false) => "`bot`",
+    _ => "`web`",
+};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Components {
@@ -21,8 +26,8 @@ impl Default for Components {
     /// Everything this build has.
     fn default() -> Self {
         Self {
-            bot: true,
-            web: true,
+            bot: cfg!(feature = "bot"),
+            web: cfg!(feature = "web"),
         }
     }
 }
@@ -40,8 +45,9 @@ impl Components {
         };
         for name in list.split(',').map(str::trim) {
             let slot = match name {
-                "bot" => &mut chosen.bot,
-                "web" => &mut chosen.web,
+                "bot" if cfg!(feature = "bot") => &mut chosen.bot,
+                "web" if cfg!(feature = "web") => &mut chosen.web,
+                "bot" | "web" => return Err(Self::missing(name)),
                 "" => {
                     return Err(Error::Configuration(format!(
                         "{KEY} must list `bot`, `web` or both"
@@ -59,6 +65,13 @@ impl Components {
             }
         }
         Ok(chosen)
+    }
+
+    /// The refusal of a component this build was compiled without.
+    pub fn missing(name: &str) -> Error {
+        Error::Configuration(format!(
+            "{KEY}: this build has no `{name}` component (it has {COMPILED})"
+        ))
     }
 
     /// `serve --offline` is the admin app's shell alone, so it needs `web`.

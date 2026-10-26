@@ -24,12 +24,18 @@ license.workspace = true
 publish.workspace = true
 
 [features]
+# `bot`: the Discord gateway side (`src/bot`, serve's `bot` component);
+# `web`: the admin app and member portal (`src/api`, the `web` component).
+# Each `runtime.components` entry needs its feature; a build needs at least one.
+default = ["bot", "web"]
+bot = ["dep:twilight-gateway"]
+web = ["dep:axum"]
 test-support = ["tokio/test-util", "kanade-domain/test-support", "kanade-log/test-support"]
 
 [dependencies]
 # Backup encryption to X25519 recipients (`kanade backup`); no plugin/ssh/armor.
 age = { version = "=0.12.1", default-features = false }
-axum = { version = "=0.8.9", default-features = false, features = ["http1", "json", "tokio"] }
+axum = { version = "=0.8.9", default-features = false, features = ["http1", "json", "tokio"], optional = true }
 chrono.workspace = true
 chrono-tz.workspace = true
 http-body-util = "=0.1.5"
@@ -53,7 +59,7 @@ thiserror.workspace = true
 tokio = { version = "=1.53.1", features = ["io-util", "macros", "net", "rt-multi-thread", "signal", "sync", "time"] }
 tokio-rustls = { version = "=0.26.5", default-features = false }
 toml = { version = "=1.1.6", default-features = false, features = ["std", "parse", "serde"] }
-twilight-gateway = { version = "=0.17.1", default-features = false, features = ["rustls-platform-verifier"] }
+twilight-gateway = { version = "=0.17.1", default-features = false, features = ["rustls-platform-verifier"], optional = true }
 twilight-http = { version = "=0.17.1", default-features = false, features = ["rustls-platform-verifier"] }
 twilight-model = { version = "=0.17.1", default-features = false }
 uuid.workspace = true
@@ -72,7 +78,7 @@ required-features = ["test-support"]
 [[example]]
 name = "e2e_server"
 path = "examples/e2e_server/main.rs"
-required-features = ["test-support"]
+required-features = ["test-support", "bot", "web"]
 
 [[test]]
 name = "provider_contract"
@@ -82,7 +88,7 @@ required-features = ["test-support"]
 [[test]]
 name = "governor"
 path = "tests/governor/main.rs"
-required-features = ["test-support"]
+required-features = ["test-support", "web"]
 
 [[test]]
 name = "scheduler"
@@ -92,7 +98,7 @@ required-features = ["test-support"]
 [[test]]
 name = "store"
 path = "tests/store/main.rs"
-required-features = ["test-support"]
+required-features = ["test-support", "web"]
 
 [[test]]
 name = "notify"
@@ -102,12 +108,12 @@ required-features = ["test-support"]
 [[test]]
 name = "discord"
 path = "tests/discord/main.rs"
-required-features = ["test-support"]
+required-features = ["test-support", "bot", "web"]
 
 [[test]]
 name = "delivery"
 path = "tests/delivery/main.rs"
-required-features = ["test-support"]
+required-features = ["test-support", "bot"]
 
 [[test]]
 name = "extract"
@@ -117,18 +123,23 @@ required-features = ["test-support"]
 [[test]]
 name = "api"
 path = "tests/api/main.rs"
-required-features = ["test-support"]
+required-features = ["test-support", "web"]
 
 [[test]]
 name = "chat"
 path = "tests/chat/main.rs"
+required-features = ["test-support", "bot", "web"]
+
+[[test]]
+name = "serve_modes"
+path = "tests/serve_modes/main.rs"
 required-features = ["test-support"]
 
 # The V02 live quality harness; run explicitly, never by the suite or CI.
 [[example]]
 name = "v02_quality"
 path = "examples/v02_quality/main.rs"
-required-features = ["test-support"]
+required-features = ["test-support", "bot", "web"]
 
 # Thin LTO with one codegen unit: a 24% smaller binary for ~2.5 min more
 # release build time.

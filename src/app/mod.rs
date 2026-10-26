@@ -9,6 +9,7 @@ pub mod config;
 pub mod crypto;
 pub mod guild;
 pub mod ids;
+mod model_catalog;
 pub mod ownership;
 pub mod ports;
 pub mod read;

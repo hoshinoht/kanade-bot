@@ -92,6 +92,21 @@ jobs:
         run: cargo test --locked --workspace --all-targets --all-features
       - name: Release build
         run: cargo build --locked --release
+      # Cargo features `bot` and `web` (default both): each side builds and
+      # lints alone, without the other side's crate.
+      - name: Bot-only and web-only builds
+        run: |
+          cargo build --locked --no-default-features --features bot
+          cargo build --locked --no-default-features --features web
+      - name: Bot-only and web-only lint
+        run: |
+          cargo clippy --locked -p kanade --no-default-features --features bot -- -D warnings
+          cargo clippy --locked -p kanade --no-default-features --features web -- -D warnings
+      # `cargo tree -i` exits non-zero when the crate is not in the graph.
+      - name: No axum in the bot-only build
+        run: "! cargo tree --locked -p kanade --no-default-features --features bot -e normal -i axum"
+      - name: No twilight-gateway in the web-only build
+        run: "! cargo tree --locked -p kanade --no-default-features --features web -e normal -i twilight-gateway"
 
   # Advisories, licences (GPL-3.0-only compatible), bans (no OpenSSL family or
   # aws-lc) and sources for the shipped crate graph (deny.toml).

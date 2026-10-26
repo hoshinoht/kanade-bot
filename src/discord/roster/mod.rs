@@ -1,7 +1,10 @@
-//! Guild members as roster updates (v4 `_track_member`) and the startup
-//! reconciliation of the member list.
+//! Guild members as roster updates (v4 `_track_member`), the in-memory
+//! snapshot serve reads synchronously, the startup reconciliation of the
+//! member list and the store pass both the gateway and REST readers run.
 
+mod live;
 mod reconcile;
+mod sync;
 
 use twilight_model::gateway::payload::incoming::MemberUpdate;
 use twilight_model::guild::Member as GuildMember;
@@ -11,7 +14,9 @@ use twilight_model::user::User;
 use crate::app::ids::id_text;
 use crate::app::roster::{AdminRoles, RosterUpdate};
 
+pub use live::LiveRoster;
 pub use reconcile::{ReconcileError, ReconcileReport, diff, fetch_members};
+pub use sync::{RosterSink, RosterSync, prune_roles};
 
 /// discord.py `Member.display_name`: nickname, global name, then username,
 /// skipping empty text.

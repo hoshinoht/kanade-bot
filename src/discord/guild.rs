@@ -1,5 +1,7 @@
-//! The guild facts the staff rule needs: the owner and which roles grant
-//! Administrator, kept from `GUILD_CREATE`, `GUILD_UPDATE` and role events.
+//! The configured guild: which guild and bossing role serve uses, and the
+//! facts the staff rule needs (the owner and which roles grant
+//! Administrator), kept from `GUILD_CREATE`, `GUILD_UPDATE` and role events
+//! or read over REST.
 
 use std::collections::HashMap;
 
@@ -10,6 +12,13 @@ use twilight_model::id::{
 };
 
 use crate::app::{ids::id_text, roster::AdminRoles};
+
+/// Which guild the adapter serves, and its bossing role.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct GuildScope {
+    pub guild_id: Id<GuildMarker>,
+    pub bossing_role_id: Id<RoleMarker>,
+}
 
 /// Role permissions and owner of the configured guild. Empty until the guild
 /// becomes available, so nothing computes as Administrator before then.

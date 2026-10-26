@@ -1,11 +1,9 @@
 //! Extraction proposal cards (slice E5): the card (`styled`, wording in
 //! `crate::cards::format`) and its Components V2 layout (`v2`), posting and
 //! refreshing through the delivery journal (`desk`), ✅/❌ and button
-//! approval (`react`), the extract `Outbox` (`outbox`) and the
-//! difficulty-pill application emojis (`emojis`).
+//! approval (`react`) and the extract `Outbox` (`outbox`).
 
 mod desk;
-pub mod emojis;
 mod outbox;
 mod react;
 mod replay;

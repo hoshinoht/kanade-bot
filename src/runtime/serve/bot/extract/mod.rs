@@ -38,9 +38,8 @@ use crate::{
         cards::{CardDesk, CardOutbox},
         delivery::LogAlerts,
         extract_feed::{DiscordHistory, Feed, MessageFeed},
-        roster::LiveRoster,
     },
-    discord::guild_cache::GuildCache,
+    discord::{guild_cache::GuildCache, roster::LiveRoster},
     extract::{
         pipeline::{
             CallContext, DEFAULT_DEBOUNCE, DEFAULT_DRAIN_INTERVAL, Deps, Extractor, Pipeline,
@@ -61,9 +60,9 @@ use kanade_domain::{
     settings::{RuntimeSettings, SelfService},
 };
 
-use crate::runtime::serve::bot::discord::GatewayTransport;
-use crate::runtime::serve::bot::tick::watch_list;
 use crate::runtime::serve::budget::ShutdownClock;
+use crate::runtime::serve::guild::watch_list;
+use crate::runtime::serve::late::GatewayTransport;
 use ports::{ExtractorCache, LiveGuild, StoreProposer};
 pub use runner::STARTUP_WINDOW;
 use runner::{Gated, Startup};

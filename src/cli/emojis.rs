@@ -10,7 +10,7 @@
 use std::{collections::BTreeMap, io::Write, path::PathBuf};
 
 use crate::{
-    bot::cards::emojis::{self, PillStep},
+    cards::emojis::{self, PillStep},
     discord::transport::{DiscordTransport, Outcome, TransportConfig, TwilightTransport},
     runtime::{config::DiscordSettings, error::Error},
 };

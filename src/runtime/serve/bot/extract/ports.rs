@@ -5,8 +5,8 @@ use std::sync::Arc;
 
 use crate::{
     app::{clock::Clock, ids::parse_id, write::ApiClock},
-    bot::{extract_feed::StaleCache, roster::LiveRoster},
-    discord::guild_cache::GuildCache,
+    bot::extract_feed::StaleCache,
+    discord::{guild_cache::GuildCache, roster::LiveRoster},
     extract::pipeline::{Guild, IncomingMessage, Outbox, Proposer},
     infrastructure::{
         llm::{LlmProvider, identity::Member},

@@ -3,9 +3,9 @@
 //! digests and expiry all run inside `Delivery::tick_at` in v4's order.
 //! A tick is never cancelled midway: stopping waits for the running one.
 //! Cards read the boss catalog, art and the difficulty marks listed at
-//! startup ([`difficulty_marks`]); their persona headers are rewritten
-//! ahead of the send by the `HeaderPregen` worker through the `rewrite`
-//! model role ([`card_kit`]).
+//! startup (`serve::guild::difficulty_marks`); their persona headers are
+//! rewritten ahead of the send by the `HeaderPregen` worker through the
+//! `rewrite` model role ([`card_kit`]).
 
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
@@ -15,17 +15,15 @@ use std::time::Duration;
 use tokio::sync::watch;
 use tokio::time::{Instant, MissedTickBehavior};
 
-use crate::runtime::serve::settings;
+use crate::runtime::serve::{guild::watch_list, settings};
 use crate::{
-    app::{clock::Clock, config::SettingsChanged, ids::parse_id},
+    app::{clock::Clock, config::SettingsChanged},
     bot::{
-        cards::emojis::{self, PILLS},
         delivery::{
             DEFAULT_MAX_SENDS_PER_TICK, Delivery, DeliveryConfig, DeliveryError, LogAlerts,
             TickReport,
         },
         gateway::DeliveryEligibility,
-        roster::LiveRoster,
     },
     cards::{
         CardKit, DifficultyMarks, HeaderSwitchSource, HeaderSwitches, HeadingRewrite,
@@ -38,10 +36,7 @@ use crate::{
         },
         persona::{CompiledPersona, PersonaStore},
     },
-    discord::{
-        guild_cache::{GuildCache, WatchList},
-        transport::{DiscordTransport, Outcome},
-    },
+    discord::{guild_cache::GuildCache, roster::LiveRoster, transport::DiscordTransport},
     infrastructure::{
         files::BossArt,
         llm::{
@@ -144,31 +139,6 @@ pub fn heading_rewriter<P: LlmProvider + 'static>(
     SharedRewriter(Arc::new(
         GovernedRewriter::new(client).with_reserve(reserve),
     ))
-}
-
-/// How long serve waits at startup for the application's emoji list.
-const MARKS_TIMEOUT: Duration = Duration::from_secs(15);
-
-/// The difficulty pills among the application's emojis, listed once at
-/// startup. A missing pill, or any failure, leaves that label written out.
-pub async fn difficulty_marks<T: DiscordTransport>(transport: &T) -> DifficultyMarks {
-    let listed = tokio::time::timeout(MARKS_TIMEOUT, emojis::difficulty_marks(transport)).await;
-    let reason = match listed {
-        Ok(Outcome::Delivered(marks)) => {
-            let missing: Vec<&str> = PILLS
-                .iter()
-                .filter(|(letter, _)| marks.get(letter).is_none())
-                .map(|(_, name)| *name)
-                .collect();
-            let level = if missing.is_empty() { "INFO" } else { "WARN" };
-            kanade_log::log!(level, "difficulty_marks", missing);
-            return marks;
-        }
-        Ok(failed) => failed.failure_label().unwrap_or_default(),
-        Err(_) => "timeout".to_owned(),
-    };
-    kanade_log::log!(warn, "difficulty_marks_unavailable", reason);
-    DifficultyMarks::default()
 }
 
 /// Card inputs for the tick and card edits: the catalog, the boss art
@@ -275,15 +245,6 @@ pub fn delivery_config(
         max_notice_age: DEFAULT_MAX_NOTICE_AGE,
         run_lengths: settings.run_lengths.clone(),
         freeze_ended: true,
-    }
-}
-
-/// The extractor's watch list from settings; unparsable ids are skipped.
-pub fn watch_list(settings: &RuntimeSettings) -> WatchList {
-    let ids = |list: &[String]| list.iter().filter_map(|id| parse_id(id)).collect();
-    WatchList {
-        channel_ids: ids(&settings.watching.channel_ids),
-        category_ids: ids(&settings.watching.category_ids),
     }
 }
 

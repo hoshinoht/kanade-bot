@@ -2,8 +2,9 @@
 //! digest cards (v4 `bot.agent.formatting`'s `day_of_card`,
 //! `countdown_card`, `digest_card` with the v5 attendance tally, laid out by
 //! `redesign/`), their headings, art and estimate chart, the proposal-card
-//! wording (`format`), the character-data board copy (`chardata`) and the
-//! shared date and boss text (`text`). A [`Card`] is plain data;
+//! wording (`format`), the character-data board copy (`chardata`), the
+//! difficulty-pill application emojis (`emojis`) and the shared date and
+//! boss text (`text`). A [`Card`] is plain data;
 //! [`Card::message`] turns it into a post with its art uploaded,
 //! [`Card::edit`] into an edit that keeps the posted attachments. A card
 //! with a Components V2 layout (the digest) is posted and edited as that
@@ -13,6 +14,7 @@ mod art;
 pub mod chardata;
 pub mod chart;
 mod common;
+pub mod emojis;
 pub mod estimates;
 pub mod format;
 mod heading;

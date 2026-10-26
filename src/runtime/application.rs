@@ -2,13 +2,12 @@ use std::{collections::BTreeMap, future::Future, pin::Pin};
 
 use serde::Serialize;
 
-use crate::{
-    api::server,
-    cli::{self, Command, healthcheck},
-};
+#[cfg(feature = "web")]
+use crate::api::server;
+use crate::cli::{self, Command, healthcheck};
 
 use super::{
-    config::{self, BackupConfig, HealthcheckConfig, RuntimeConfig, ServeConfig, StoreSettings},
+    config::{self, BackupConfig, HealthcheckConfig, ServeConfig, StoreSettings},
     error::Error,
     restore, serve,
 };
@@ -35,9 +34,16 @@ pub async fn run(
 
 async fn dispatch(command: Command, environment: &BTreeMap<String, String>) -> Result<(), Error> {
     match command {
+        #[cfg(feature = "web")]
         Command::Serve { offline: true } => {
             config::Components::from_mapping(environment)?.offline_allowed()?;
-            server::serve_offline(RuntimeConfig::from_mapping(environment)?).await
+            server::serve_offline(config::RuntimeConfig::from_mapping(environment)?).await
+        }
+        // The offline shell is the admin app's: refused as `--offline`
+        // without `web` is anywhere else.
+        #[cfg(not(feature = "web"))]
+        Command::Serve { offline: true } => {
+            config::Components::from_mapping(environment)?.offline_allowed()
         }
         Command::Serve { offline: false } => {
             serve::run(ServeConfig::from_mapping(environment)?).await
@@ -56,6 +62,7 @@ async fn dispatch(command: Command, environment: &BTreeMap<String, String>) -> R
             print!("{report}");
             Ok(())
         }
+        #[cfg(feature = "web")]
         Command::Admin(args) => cli::admin::run(args, environment).await,
         Command::TokenRotate(args) => {
             println!("{}", cli::token::rotate(&args)?);

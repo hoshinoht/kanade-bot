@@ -1,3 +1,6 @@
+// Runs the binary with each component and the admin CLI client.
+#![cfg(all(feature = "bot", feature = "web"))]
+
 mod backup;
 mod live;
 mod operator;

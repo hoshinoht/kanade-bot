@@ -19,7 +19,8 @@ use twilight_model::id::{
     marker::{GuildMarker, RoleMarker, UserMarker},
 };
 
-use kanade::bot::events::{BotEvent, GuildScope, Router};
+use kanade::bot::events::{BotEvent, Router};
+use kanade::discord::guild::GuildScope;
 
 pub const GUILD: u64 = 100;
 pub const OTHER_GUILD: u64 = 200;

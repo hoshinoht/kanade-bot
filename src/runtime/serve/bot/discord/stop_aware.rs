@@ -39,8 +39,8 @@ use crate::discord::transport::{
     InteractionRef, InteractionReply, MessageEdit, MessageId, Outcome, OutgoingMessage, Presence,
     RejectionKind,
 };
-use crate::runtime::serve::bot::discord::GatewayTransport;
 use crate::runtime::serve::budget::ShutdownClock;
+use crate::runtime::serve::late::GatewayTransport;
 use twilight_model::application::command::{Command, CommandOptionChoice};
 
 pub struct StopAware<T> {

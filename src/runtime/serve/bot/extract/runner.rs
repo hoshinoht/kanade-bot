@@ -9,8 +9,8 @@ use tokio::sync::watch;
 use crate::runtime::serve::bot::extract::status::ExtractionStatus;
 use crate::{
     app::rescan::{RescanFuture, RescanRunner, RescanView},
-    bot::{commands::GuildChannels, roster::LiveRoster},
-    discord::guild_cache::GuildCache,
+    bot::commands::GuildChannels,
+    discord::{guild_cache::GuildCache, roster::LiveRoster},
     extract::rescan::{RescanError, RescanRequest},
     infrastructure::llm::setup::ModelStack,
 };

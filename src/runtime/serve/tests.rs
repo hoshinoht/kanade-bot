@@ -7,6 +7,7 @@ use std::{
 
 use chrono::{NaiveTime, Weekday};
 
+use super::web::api;
 use super::*;
 use crate::app::guild::StaticChannels;
 use kanade_domain::settings::{IdList, Section, SettingsStore, keys, save_section};
@@ -245,7 +246,7 @@ async fn compose_builds_the_model_stack_and_seeds_unset_role_aliases_from_env() 
     with_rows(&config, &[(keys::CHAT_MODEL, "kanata/stored")]).await;
     let store = store::open(&config.store).await.unwrap();
     let health = LiveHealth::new(store.clone());
-    let composition = api::compose(
+    let composition = composition::compose(
         &config,
         store.clone(),
         Arc::new(StaticChannels(Vec::new())),
@@ -299,7 +300,7 @@ async fn compose_context(
     let store = store::open(&config.store).await.unwrap();
     let health = LiveHealth::new(store.clone());
     kanade_log::capture();
-    let mut composition = api::compose(
+    let mut composition = composition::compose(
         config,
         store.clone(),
         Arc::new(StaticChannels(Vec::new())),

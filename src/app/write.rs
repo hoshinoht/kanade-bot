@@ -4,7 +4,6 @@
 
 use std::{
     collections::{BTreeMap, BTreeSet},
-    fmt,
     future::Future,
     pin::Pin,
 };
@@ -60,7 +59,8 @@ pub struct WriteContext {
 pub struct FixedPatchReplay(String);
 
 impl FixedPatchReplay {
-    pub(crate) fn from_normalized(identity: impl fmt::Debug) -> Self {
+    #[cfg(feature = "web")]
+    pub(crate) fn from_normalized(identity: impl std::fmt::Debug) -> Self {
         Self(format!("{identity:?}"))
     }
 

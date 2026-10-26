@@ -67,7 +67,7 @@ pub fn boss_label(token: &str) -> String {
     }
 }
 
-pub(crate) fn kind_verb(kind: &str) -> &str {
+pub fn kind_verb(kind: &str) -> &str {
     match kind {
         "add" => "new run",
         "otot" => "own time",
@@ -93,7 +93,7 @@ pub fn when_text(details: &CardDetails, zone: Tz) -> String {
     }
 }
 
-pub(crate) fn weekday_name(weekday: u8) -> &'static str {
+pub fn weekday_name(weekday: u8) -> &'static str {
     WEEKDAY_NAMES[usize::from(weekday) % 7]
 }
 
@@ -108,7 +108,7 @@ kanade_domain::spelled! {
 
 impl CardKind {
     /// The card's emoji and colour.
-    pub(crate) fn mark(self) -> (&'static str, u32) {
+    pub fn mark(self) -> (&'static str, u32) {
         match self {
             Self::Proposal => ("📋", COLOUR_PROPOSAL),
             Self::Suggestion => ("💡", COLOUR_SUGGESTION),

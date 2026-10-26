@@ -18,7 +18,8 @@ use twilight_gateway::{CloseFrame, Event, Shard};
 use super::close::CloseReason;
 use super::intents::WANTED_EVENTS;
 use super::status::ConnectionStatus;
-use crate::bot::events::{EventHandler, GuildScope, Router};
+use crate::bot::events::{EventHandler, Router};
+use crate::discord::guild::GuildScope;
 
 /// A receive failure with the payload stripped: Twilight's own error text can
 /// quote a whole undecodable event.

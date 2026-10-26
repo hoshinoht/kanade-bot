@@ -1,5 +1,5 @@
 //! The `web` component alone with a bot token: the guild read over REST
-//! (`discord::rest`) into the cache the API lists, and the roster brought in
+//! (`web::rest`) into the cache the API lists, and the roster brought in
 //! line, sessions included, without a gateway.
 
 use twilight_model::guild::Guild;
@@ -10,7 +10,7 @@ use crate::{
     infrastructure::store::web_sessions::{
         LoginMethod, SessionOrigin, WebSession, WebSessionStore,
     },
-    runtime::serve::{bot::discord::rest::RestGuild, budget::ShutdownClock},
+    runtime::serve::{budget::ShutdownClock, web::rest::RestGuild},
 };
 
 /// Long enough that only the startup pass runs during a test.
@@ -115,7 +115,7 @@ async fn live(store: &SqliteStore, fill: char) -> bool {
 async fn start(harness: &Harness) -> (Arc<SqliteStore>, Composition, RestGuild) {
     let store = store::open(&harness.config.store).await.unwrap();
     let cache = Arc::new(GuildCache::new(Id::new(GUILD)));
-    let mut composition = api::compose(
+    let mut composition = composition::compose(
         &harness.config,
         store.clone(),
         cache.clone(),

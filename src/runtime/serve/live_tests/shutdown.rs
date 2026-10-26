@@ -387,7 +387,7 @@ async fn serve_live(
             .with_discord(prepared.probe.clone(), prepared.tick_status.clone())
             .with_extraction(prepared.extraction.clone());
         let mut composition =
-            api::compose(config, store.clone(), prepared.cache.clone(), health).await?;
+            composition::compose(config, store.clone(), prepared.cache.clone(), health).await?;
         // Test-only: routes stay external until the startup listing names
         // their zone (as in the extraction suite).
         composition.model_tasks.report_done().await;
