@@ -18,10 +18,8 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use chrono::TimeDelta;
-use kanade::{
-    cards::chardata::notice_text,
-    infrastructure::{character_data::CharacterData, scouter::JobState},
-};
+use kanade::cards::chardata::notice_text;
+use kanade_chardata::{character_data::CharacterData, scouter::JobState};
 use kanade_domain::{
     chardata::{CharDataStore, ConsentSurface, Link, LinkPut, LinkStatus, NOTICE_VERSION},
     history::{Actor, Surface},

@@ -23,8 +23,8 @@ use super::invocation::Invocation;
 use crate::app::access::Gate;
 use crate::app::ids::id_text;
 use crate::discord::transport::{DiscordTransport, InteractionReply};
-use crate::infrastructure::character_data::{CharacterData, MemberCharacter};
 use crate::{bot::chardata::DiscordPosts, cards::chardata};
+use kanade_chardata::character_data::{CharacterData, MemberCharacter};
 use kanade_domain::characters::ign_key;
 use kanade_domain::chardata::LinkStatus;
 

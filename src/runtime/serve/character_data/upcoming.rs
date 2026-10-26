@@ -12,11 +12,9 @@ use chrono::{DateTime, Utc};
 use chrono_tz::Tz;
 use tokio::sync::watch;
 
-use crate::{
-    app::{config::SettingsChanged, read::ReadStore},
-    infrastructure::scouter::{
-        Upcoming, UpcomingFuture, UpcomingParties, UpcomingRun, party_subjects, refresh::in_horizon,
-    },
+use crate::app::{config::SettingsChanged, read::ReadStore};
+use kanade_chardata::scouter::{
+    Upcoming, UpcomingFuture, UpcomingParties, UpcomingRun, party_subjects, refresh::in_horizon,
 };
 use kanade_domain::{
     catalog::BossTable,

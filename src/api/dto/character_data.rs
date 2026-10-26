@@ -5,7 +5,7 @@
 use serde::Serialize;
 
 use super::{history::SettingsActor, iso_instant};
-use crate::infrastructure::character_data::{Found, Health, LinkView};
+use kanade_chardata::character_data::{Found, Health, LinkView};
 use kanade_domain::chardata::{
     ATTRIBUTION, ConsentSurface, Link, LinkStatus, NOTICE_VERSION, SNAPSHOT_TTL, Snapshot,
     date_text,

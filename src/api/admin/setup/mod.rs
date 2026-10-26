@@ -28,10 +28,10 @@ use crate::{
         state::{ApiState, SetupFacts},
     },
     discord::transport::ApplicationInfo,
-    infrastructure::{
-        character_data::{Health, NexonState},
-        scouter::ScouterState,
-    },
+};
+use kanade_chardata::{
+    character_data::{Health, NexonState},
+    scouter::ScouterState,
 };
 use kanade_domain::settings::{RuntimeSettings, keys};
 use kanade_llm::governor::Role;

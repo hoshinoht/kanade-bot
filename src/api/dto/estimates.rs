@@ -11,7 +11,7 @@ use std::collections::BTreeMap;
 use serde::Serialize;
 
 use super::{history::SettingsActor, iso_instant};
-use crate::infrastructure::scouter::{
+use kanade_chardata::scouter::{
     BossParty, Card, Combined, Estimates, Failure, FailureKind, Found, Job, Member, Subject,
     Target, catalog_token, saved_party, scouter_keys,
 };

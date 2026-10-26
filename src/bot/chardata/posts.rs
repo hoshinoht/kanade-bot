@@ -17,7 +17,7 @@ use crate::discord::mentions;
 use crate::discord::transport::{
     DiscordTransport, HistoryPage, MessageEdit, Outcome, OutgoingMessage, RejectionKind,
 };
-use crate::infrastructure::character_data::{DeskFuture, Located, PostDesk, Stripped};
+use kanade_chardata::character_data::{DeskFuture, Located, PostDesk, Stripped};
 
 /// The bot's own user id once `READY` arrived (serve: the guild cache).
 pub type SelfId = Arc<dyn Fn() -> Option<Id<UserMarker>> + Send + Sync>;

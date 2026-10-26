@@ -6,7 +6,7 @@ use chrono::{DateTime, Utc};
 use serde_json::json;
 
 use super::{CharacterData, log};
-use crate::infrastructure::nexon::{CallError, NexonClient};
+use crate::nexon::{CallError, NexonClient};
 use kanade_domain::chardata::{
     DAILY_CALLS, Failure, MAINTENANCE_AGAIN, MAINTENANCE_FIRST, RATE_LIMIT_TRIES, rate_limit_delay,
 };

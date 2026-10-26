@@ -172,7 +172,7 @@ pub struct ApiState {
     pub characters: Option<Arc<dyn CharacterRoster>>,
     /// Character data (`modules.character_data`, read at startup); `None`
     /// answers its routes `404` and leaves Config without its health block.
-    pub character_data: Option<Arc<crate::infrastructure::character_data::CharacterData>>,
+    pub character_data: Option<Arc<kanade_chardata::character_data::CharacterData>>,
     /// The guide publisher (`modules.guides`, read at startup), attached by
     /// serve with its worker; `None` answers every guide route `404`.
     pub guides: Option<Arc<dyn GuidePort>>,

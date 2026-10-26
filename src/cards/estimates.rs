@@ -27,8 +27,8 @@ use crate::cards::text::{MONTH_NAMES, local_time, weekday_name};
 use crate::cards::{CardContext, CardKit, HeaderContext, Teasable, card_runs};
 use crate::chat::persona::NudgeMood;
 use crate::discord::transport::{OutgoingMessage, Upload, legacy_rows};
-use crate::infrastructure::character_data::CharacterData;
-use crate::infrastructure::scouter::{
+use kanade_chardata::character_data::CharacterData;
+use kanade_chardata::scouter::{
     CarrierOwner, Estimates, Member, RosterIgn, SavedParty, Totals, saved_party,
 };
 use kanade_domain::catalog::BossTable;
@@ -415,7 +415,7 @@ mod tests {
     use chrono::{TimeDelta, TimeZone};
 
     use super::*;
-    use crate::infrastructure::scouter::{JobRequest, ScouterClient, Start, Subject, Target};
+    use kanade_chardata::scouter::{JobRequest, ScouterClient, Start, Subject, Target};
     use kanade_domain::characters::{Basis, Character, CharacterRole};
     use kanade_domain::chardata::CharDataStore;
     use kanade_domain::history::Actor;

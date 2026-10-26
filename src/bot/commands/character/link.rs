@@ -14,7 +14,7 @@ use crate::app::ids::id_text;
 use crate::cards::chardata;
 use crate::cards::redesign::ButtonId;
 use crate::discord::transport::{DiscordTransport, InteractionReply};
-use crate::infrastructure::character_data::{ConfirmOutcome, FetchState};
+use kanade_chardata::character_data::{ConfirmOutcome, FetchState};
 use kanade_domain::chardata::{LINK_REGION, LinkStatus, NOTICE_VERSION, UnlinkReason};
 use kanade_domain::history::{Actor, Surface};
 

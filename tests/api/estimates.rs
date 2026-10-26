@@ -23,7 +23,7 @@ use axum::{
     routing::get,
 };
 use chrono::TimeDelta;
-use kanade::infrastructure::{
+use kanade_chardata::{
     character_data::{CharacterData, ConfirmOutcome},
     scouter::{MAX_QUEUED, TIMEOUT},
 };

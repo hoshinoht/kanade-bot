@@ -9,7 +9,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use kanade::cards::estimates::{EstimateFuture, IgnFuture, PartyEstimates, RunEstimate};
 use kanade::cards::{CardContext, CardKit, DifficultyMarks, HeaderSwitches, resolve_heading};
-use kanade::infrastructure::scouter::CarrierOwner;
+use kanade_chardata::scouter::CarrierOwner;
 use kanade_domain::catalog::BossTable;
 use kanade_domain::chardata::{Carrier, PartyShares};
 use kanade_domain::notify::{DedupeKey, DeliveryTarget, IntentContent, ReminderCardStore};

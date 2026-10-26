@@ -764,7 +764,7 @@ async fn compose_for_tests_serves_on_the_injected_clock_and_a_fake_discord() {
 async fn compose_for_tests_points_character_data_at_a_loopback_nexon() {
     use std::sync::atomic::{AtomicUsize, Ordering};
 
-    use crate::infrastructure::character_data::LookupOutcome;
+    use kanade_chardata::character_data::LookupOutcome;
     use kanade_domain::history::Actor;
 
     // A NEXON that knows no name: every call answers an empty body.

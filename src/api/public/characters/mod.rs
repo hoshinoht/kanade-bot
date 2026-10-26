@@ -33,8 +33,8 @@ use super::{closed, read_bucket, unmounted, write::audit_refusals};
 use crate::{
     api::{admin::write::Refusal, auth::member, error::ApiError, listeners::Site, state::ApiState},
     app::read::CharacterRoster,
-    infrastructure::character_data::CharacterData,
 };
+use kanade_chardata::character_data::CharacterData;
 use kanade_domain::characters::Character;
 
 /// Each path is mounted once; its reads take the member's read token, and

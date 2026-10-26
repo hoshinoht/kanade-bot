@@ -11,5 +11,4 @@ pub mod chat;
 pub mod cli;
 pub mod discord;
 pub mod extract;
-pub mod infrastructure;
 pub mod runtime;

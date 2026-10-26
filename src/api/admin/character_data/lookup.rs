@@ -17,14 +17,12 @@ use serde::Deserialize;
 
 use super::super::write::{Body, Refusal};
 use super::{Module, not_connected};
-use crate::{
-    api::{
-        auth::AdminSession,
-        dto::character_data::{LookupStatus, lookup},
-        listeners::Site,
-    },
-    infrastructure::character_data::LookupOutcome,
+use crate::api::{
+    auth::AdminSession,
+    dto::character_data::{LookupStatus, lookup},
+    listeners::Site,
 };
+use kanade_chardata::character_data::LookupOutcome;
 use kanade_domain::{
     characters::{DEFAULT_WORLD, parse_ign, parse_world},
     chardata::LINK_REGION,

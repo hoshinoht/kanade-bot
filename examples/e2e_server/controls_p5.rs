@@ -42,14 +42,12 @@ use axum::{
     routing::post,
 };
 use chrono::{DateTime, Duration as Span, Utc};
-use kanade::{
-    api::state::ApiState,
-    infrastructure::{
-        character_data::CharacterData,
-        scouter::{
-            BossParty, Estimates, JobRequest, JobState, Missing, RosterIgn, Start, Subject, Target,
-            party_subjects,
-        },
+use kanade::api::state::ApiState;
+use kanade_chardata::{
+    character_data::CharacterData,
+    scouter::{
+        BossParty, Estimates, JobRequest, JobState, Missing, RosterIgn, Start, Subject, Target,
+        party_subjects,
     },
 };
 use kanade_domain::{

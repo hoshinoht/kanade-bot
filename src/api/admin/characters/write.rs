@@ -28,8 +28,8 @@ use crate::{
         state::ApiState,
     },
     app::read::CharacterRoster,
-    infrastructure::character_data::AdminLinkOutcome,
 };
+use kanade_chardata::character_data::AdminLinkOutcome;
 use kanade_domain::{
     characters::{
         Character, CharacterChange, CharacterEdit, CharacterRecord, CharacterRole, CharacterWrite,

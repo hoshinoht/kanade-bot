@@ -63,7 +63,7 @@ use super::{
     scouter_keys,
     wire::{Combined, Member},
 };
-use crate::infrastructure::character_data::{Clock, error_kind};
+use crate::character_data::{Clock, error_kind};
 use kanade_domain::{
     chardata::{CharDataStore, ESTIMATE_TTL, MemberEstimate, PartyEstimate, estimate_kept},
     history::Actor,

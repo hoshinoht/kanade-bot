@@ -1700,6 +1700,7 @@ dependencies = [
  "hyper",
  "hyper-util",
  "jsonschema",
+ "kanade-chardata",
  "kanade-domain",
  "kanade-files",
  "kanade-llm",
@@ -1722,6 +1723,29 @@ dependencies = [
  "twilight-gateway",
  "twilight-http",
  "twilight-model",
+ "uuid",
+ "webpki-roots",
+]
+
+[[package]]
+name = "kanade-chardata"
+version = "1.0.0-beta.15"
+dependencies = [
+ "axum",
+ "chrono",
+ "http-body-util",
+ "hyper",
+ "hyper-util",
+ "kanade-domain",
+ "kanade-files",
+ "kanade-log",
+ "kanade-store",
+ "ring",
+ "rustls",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tokio-rustls",
  "uuid",
  "webpki-roots",
 ]

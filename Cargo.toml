@@ -8,6 +8,7 @@ license = "GPL-3.0-only"
 publish = false
 
 [workspace.dependencies]
+axum = { version = "=0.8.9", default-features = false }
 chrono = { version = "=0.4.45", default-features = false }
 chrono-tz = "=0.10.4"
 http-body-util = "=0.1.5"
@@ -41,12 +42,12 @@ publish.workspace = true
 default = ["bot", "web"]
 bot = ["dep:twilight-gateway"]
 web = ["dep:axum"]
-test-support = ["tokio/test-util", "kanade-domain/test-support", "kanade-llm/test-support", "kanade-log/test-support", "kanade-store/test-support"]
+test-support = ["tokio/test-util", "kanade-chardata/test-support", "kanade-domain/test-support", "kanade-llm/test-support", "kanade-log/test-support", "kanade-store/test-support"]
 
 [dependencies]
 # Backup encryption to X25519 recipients (`kanade backup`); no plugin/ssh/armor.
 age = { version = "=0.12.1", default-features = false }
-axum = { version = "=0.8.9", default-features = false, features = ["http1", "json", "tokio"], optional = true }
+axum = { workspace = true, features = ["http1", "json", "tokio"], optional = true }
 chrono.workspace = true
 chrono-tz.workspace = true
 http-body-util.workspace = true
@@ -56,6 +57,7 @@ rustls = { workspace = true, features = ["ring", "std", "tls12"] }
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 jsonschema.workspace = true
+kanade-chardata = { path = "crates/kanade-chardata" }
 kanade-domain = { path = "crates/kanade-domain" }
 kanade-files = { path = "crates/kanade-files" }
 kanade-llm = { path = "crates/kanade-llm" }

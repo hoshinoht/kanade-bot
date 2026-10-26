@@ -80,7 +80,7 @@ pub type CharacterDataMaker = Box<
     dyn FnOnce(
             Arc<SqliteStore>,
             kanade::app::clock::Clock,
-        ) -> Arc<kanade::infrastructure::character_data::CharacterData>
+        ) -> Arc<kanade_chardata::character_data::CharacterData>
         + Send,
 >;
 

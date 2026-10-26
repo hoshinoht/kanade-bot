@@ -183,7 +183,7 @@ The Rust suite is offline (fake Discord and model providers, temporary stores). 
 | `src/bot/` | Discord commands, cards, delivery and the chat and extraction feeds |
 | `src/api/` | Admin and public HTTP routers, authentication and guards |
 | `crates/kanade-domain/`, `src/extract/`, `src/chat/` | Scheduling rules, extraction rules, chat tools, prompts and personas |
-| `src/infrastructure/` | SQLite store, model client, character data store, NEXON and scouter clients |
+| `crates/kanade-store/`, `crates/kanade-llm/`, `crates/kanade-chardata/` | SQLite store, model client, character data service, NEXON and scouter clients |
 | `tests/` | Integration suites, one directory per target |
 | `web/` | Bun workspace: `apps/admin`, `apps/public` and shared `packages/` |
 | `examples/e2e_server/` | Dev and browser e2e server for the web apps (`--features test-support`, never shipped) |

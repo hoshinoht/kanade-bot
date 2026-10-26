@@ -32,12 +32,12 @@ use crate::{
         state::ApiState,
     },
     app::read::CharacterRoster,
-    infrastructure::{
-        character_data::CharacterData,
-        scouter::{
-            BossParty, Estimates, JobRequest, MAX_BATCH, MAX_QUEUED, Missing, MissingReason,
-            RosterIgn, Start, Subject, Target, party_subjects, push_subject,
-        },
+};
+use kanade_chardata::{
+    character_data::CharacterData,
+    scouter::{
+        BossParty, Estimates, JobRequest, MAX_BATCH, MAX_QUEUED, Missing, MissingReason, RosterIgn,
+        Start, Subject, Target, party_subjects, push_subject,
     },
 };
 use kanade_domain::characters::Character;

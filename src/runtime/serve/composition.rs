@@ -27,12 +27,12 @@ use crate::{
         write::{ApiClock, SchedulerWriter, Writer},
     },
     chat::persona::{PersonaStore, load_personas},
-    infrastructure::character_data::CharacterData,
     runtime::{
         config::{GuildSettings, ModelSettings, ServeConfig},
         error::Error,
     },
 };
+use kanade_chardata::character_data::CharacterData;
 use kanade_domain::{
     catalog::BossTable,
     ids::RandomIds,

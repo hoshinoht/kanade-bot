@@ -203,10 +203,8 @@ pub async fn compose_for_tests(
     store: Arc<SqliteStore>,
     overrides: Overrides,
 ) -> Result<TestComposition, Error> {
-    use crate::{
-        api::auth::discord::DiscordLogin, app::guild::StaticChannels,
-        infrastructure::nexon::NexonClient,
-    };
+    use crate::{api::auth::discord::DiscordLogin, app::guild::StaticChannels};
+    use kanade_chardata::nexon::NexonClient;
 
     let Overrides {
         clock,

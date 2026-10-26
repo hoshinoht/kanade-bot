@@ -9,7 +9,7 @@ use serde_json::json;
 
 use super::calls::{Batch, CallFailed};
 use super::{BatchReport, CharacterData, log};
-use crate::infrastructure::nexon::Basic;
+use crate::nexon::Basic;
 use kanade_domain::characters::{Character, ign_key};
 use kanade_domain::chardata::{
     FUTURE_SKEW, Failure, Link, LinkPut, LinkStatus, MAX_TEXT_CHARS, MAX_URL_CHARS,

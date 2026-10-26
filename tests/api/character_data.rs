@@ -17,16 +17,14 @@ use std::{
 
 use axum::Router;
 use chrono::TimeDelta;
-use kanade::{
-    app::{
-        clock::Clock,
-        config::{ConfigDesk, ConfigFacts, ConfigInputs},
-    },
-    infrastructure::{
-        character_data::{CharacterData, ConfirmOutcome, RosterSide, Timing},
-        nexon::{ApiKey, NexonClient},
-        scouter::{Estimates, ScouterClient},
-    },
+use kanade::app::{
+    clock::Clock,
+    config::{ConfigDesk, ConfigFacts, ConfigInputs},
+};
+use kanade_chardata::{
+    character_data::{CharacterData, ConfirmOutcome, RosterSide, Timing},
+    nexon::{ApiKey, NexonClient},
+    scouter::{Estimates, ScouterClient},
 };
 use kanade_domain::{
     chardata::NOTICE_VERSION,

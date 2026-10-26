@@ -18,8 +18,8 @@ use kanade::cards::estimates::{
 };
 use kanade::cards::{self, CardArt, CardContext, CardKit, V2Kit, redesign};
 use kanade::discord::transport::{OutgoingMessage, Upload, legacy_rows};
-use kanade::infrastructure::character_data::{CharacterData, RosterSide, Timing};
-use kanade::infrastructure::scouter::{Card, Combined, Member};
+use kanade_chardata::character_data::{CharacterData, RosterSide, Timing};
+use kanade_chardata::scouter::{Card, Combined, Member};
 use kanade_domain::catalog::BossTable;
 use kanade_domain::characters::{Basis, BossSlot, Character, CharacterRole, PartySlot};
 use kanade_domain::chardata::{BossCarrier, Carrier, CharDataStore, PartyShares};

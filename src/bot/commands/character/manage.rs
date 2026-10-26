@@ -10,8 +10,8 @@ use super::super::options::Args;
 use super::{CharacterCommand, reply, resolve, store_failed};
 use crate::app::ids::id_text;
 use crate::discord::transport::{DiscordTransport, InteractionReply, RejectionKind};
-use crate::infrastructure::character_data::Tracked;
 use crate::{bot::chardata::Sent, cards::chardata};
+use kanade_chardata::character_data::Tracked;
 use kanade_domain::chardata::{LinkStatus, UnlinkReason};
 use kanade_domain::history::{Actor, Surface};
 

@@ -75,8 +75,8 @@ mod tests {
     use kanade_files::load_catalog;
 
     fn tracked() -> BossTable {
-        load_catalog(&std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("boss/bosses.yaml"))
-            .expect("tracked catalog")
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../boss/bosses.yaml");
+        load_catalog(std::path::Path::new(path)).expect("tracked catalog")
     }
 
     #[test]

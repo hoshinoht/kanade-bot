@@ -16,8 +16,8 @@ use kanade::{
         estimates::RunEstimate, fill_slots,
     },
     chat::persona::NudgeMood,
-    infrastructure::scouter::CarrierOwner,
 };
+use kanade_chardata::scouter::CarrierOwner;
 use kanade_domain::{
     catalog::BossTable,
     chardata::{Carrier, PartyShares},

@@ -36,8 +36,8 @@ pub use member::{MemberCharacter, MemberLink};
 pub use posts::{DeskFuture, Located, PostDesk, PostIssue, StripReport, Stripped, Tracked};
 pub use refresh::{FetchState, RefreshOutcome};
 
-use crate::infrastructure::nexon::{Limiter, NexonClient, SPACING};
-use crate::infrastructure::scouter::Estimates;
+use crate::nexon::{Limiter, NexonClient, SPACING};
+use crate::scouter::Estimates;
 use kanade_domain::characters::{
     Character, CharacterChange, CharacterRecord, CharacterStore, CharacterWrite,
 };

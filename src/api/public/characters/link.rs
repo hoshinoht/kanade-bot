@@ -51,8 +51,8 @@ use crate::{
         state::ApiState,
     },
     cards::chardata::{NoticePart, notice_text},
-    infrastructure::character_data::{CharacterData, ConfirmOutcome, FetchState, LinkView},
 };
+use kanade_chardata::character_data::{CharacterData, ConfirmOutcome, FetchState, LinkView};
 use kanade_domain::{
     characters::{Character, parse_ign},
     chardata::{

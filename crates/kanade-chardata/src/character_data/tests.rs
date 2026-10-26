@@ -18,8 +18,8 @@ use axum::{
 use chrono::{DateTime, TimeDelta, TimeZone, Utc};
 
 use super::*;
-use crate::infrastructure::nexon::{ApiKey, KEY_HEADER};
-use crate::infrastructure::scouter::{RosterIgn, ScouterClient};
+use crate::nexon::{ApiKey, KEY_HEADER};
+use crate::scouter::{RosterIgn, ScouterClient};
 use kanade_domain::characters::{CharacterChange, CharacterRecord, CharacterRole, CharacterWrite};
 use kanade_domain::chardata::{
     CharDataStore, ConsentSurface, DAILY_CALLS, Link, LinkStatus, MemberEstimate, NOTICE_VERSION,

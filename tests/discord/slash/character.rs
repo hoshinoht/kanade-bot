@@ -23,10 +23,10 @@ use twilight_model::id::Id;
 use kanade::bot::chardata::DiscordPosts;
 use kanade::bot::commands::CharacterParts;
 use kanade::discord::transport::{Call, InteractionReply, Op, RejectionKind, Step};
-use kanade::infrastructure::character_data::{
+use kanade_chardata::character_data::{
     AdminLinkOutcome, CharacterData, FetchState, RosterSide, Timing,
 };
-use kanade::infrastructure::nexon::{ApiKey, NexonClient};
+use kanade_chardata::nexon::{ApiKey, NexonClient};
 use kanade_domain::characters::{
     Character, CharacterChange, CharacterRecord, CharacterRole, CharacterStore,
 };

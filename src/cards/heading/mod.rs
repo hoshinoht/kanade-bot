@@ -987,7 +987,7 @@ mod tests {
     /// An invented party: Lumirae carries most, then Tobiwan, then Kestrel;
     /// Pellow brings no character.
     fn estimate(crit: bool) -> crate::cards::estimates::RunEstimate {
-        use crate::infrastructure::scouter::CarrierOwner;
+        use kanade_chardata::scouter::CarrierOwner;
         let owner = |member: &str, character: &str| CarrierOwner {
             member_id: member.into(),
             character_id: character.into(),

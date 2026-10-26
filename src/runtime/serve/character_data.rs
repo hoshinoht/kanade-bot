@@ -37,15 +37,15 @@ use super::store::create_private_dir;
 use crate::runtime::serve::composition::Composition;
 use crate::{
     app::clock::Clock,
-    infrastructure::{
-        character_data::{CharacterData, RosterSide, Timing},
-        nexon::{ApiKey, NexonClient},
-        scouter::{Estimates, ScouterClient, UpcomingParties},
-    },
     runtime::{
         config::{CHARACTER_DATA_DB_PATH_KEY, SCOUTER_URL_KEY, ServeConfig},
         error::Error,
     },
+};
+use kanade_chardata::{
+    character_data::{CharacterData, RosterSide, Timing},
+    nexon::{ApiKey, NexonClient},
+    scouter::{Estimates, ScouterClient, UpcomingParties},
 };
 use kanade_domain::chardata::{CharDataStore, next_batch};
 use kanade_store::{SqliteCharData, SqliteStore, SqliteStoreConfig, SqliteStoreError};

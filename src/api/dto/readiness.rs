@@ -13,7 +13,7 @@ use super::{
     characters::{CharacterChoice, choice},
     iso_instant,
 };
-use crate::infrastructure::scouter::{Estimates, Member, RosterIgn, scouter_keys};
+use kanade_chardata::scouter::{Estimates, Member, RosterIgn, scouter_keys};
 use kanade_domain::{
     characters::{Basis, Character},
     chardata::{ATTRIBUTION, LevelSource, LevelVerdict, Readiness, Requirement, date_text},
