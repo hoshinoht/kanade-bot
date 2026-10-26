@@ -15,7 +15,6 @@ use crate::domain::model_log::{
     capped_reasoning, capped_reply, is_correlation_id,
 };
 use crate::domain::scheduler::StoreError;
-use crate::runtime::logging;
 
 /// A row write gives up after this, so a busy store never holds the caller.
 pub const LOG_WRITE_DEADLINE: Duration = Duration::from_secs(2);
@@ -138,7 +137,7 @@ impl<S: RewriteLogStore + Send + Sync> RewriteSink for StoreRewriteSink<S> {
                 Ok(Err(_)) => "backend",
                 Err(_) => "timeout",
             };
-            logging::log!(warn, "rewrite_log_failed", error = failure);
+            kanade_log::log!(warn, "rewrite_log_failed", error = failure);
         })
     }
 }

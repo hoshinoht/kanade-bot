@@ -64,7 +64,7 @@ use crate::{
         },
         store::SqliteStore,
     },
-    runtime::{error::Error, logging},
+    runtime::error::Error,
 };
 
 use super::chat_cards::{self as cards, ChatDesk};
@@ -83,7 +83,7 @@ impl StrategyGuides for LiveStrategyGuides<'_> {
         let unreadable = |error: String| {
             // The model is told the guide is unreadable; the operator sees why
             // (a tracked repo path and parse problem, never file content).
-            logging::log!(warn, "chat_guide_unreadable", boss = reference.short, error,);
+            kanade_log::log!(warn, "chat_guide_unreadable", boss = reference.short, error,);
             GuideError::Unreadable
         };
         let (document, researched) = self
@@ -247,7 +247,7 @@ impl<T: GatewayTransport> Answerer for ServeAnswerer<T> {
         let members = match self.store.list_members().await {
             Ok(members) => members,
             Err(_) => {
-                logging::log!(warn, "chat_members_unreadable");
+                kanade_log::log!(warn, "chat_members_unreadable");
                 Vec::new()
             }
         };
@@ -319,7 +319,7 @@ impl<T: GatewayTransport> Answerer for ServeAnswerer<T> {
             .await
             .unwrap_or_else(|_| {
                 // The question still goes ahead: its tools read the schedule.
-                logging::log!(warn, "chat_run_context_unreadable");
+                kanade_log::log!(warn, "chat_run_context_unreadable");
                 RunContext::default()
             });
         Some(Prepared {
@@ -416,7 +416,7 @@ impl<T: GatewayTransport> Answerer for ServeAnswerer<T> {
 
     async fn record(&self, row: ChatInteraction) {
         if self.store.record_chat(row).await.is_err() {
-            logging::log!(warn, "chat_log_failed");
+            kanade_log::log!(warn, "chat_log_failed");
         }
     }
 
@@ -428,7 +428,7 @@ impl<T: GatewayTransport> Answerer for ServeAnswerer<T> {
     }
 
     fn storm(&self, alert: &StormAlert) {
-        logging::log!(
+        kanade_log::log!(
             warn,
             "admin_alert",
             kind = "clean_retry_storm",

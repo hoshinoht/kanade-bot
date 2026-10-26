@@ -29,7 +29,6 @@ use crate::domain::members::MemberProfile;
 use crate::domain::schedule::{RsvpState, Run, ScheduleSnapshot};
 use crate::domain::scheduler::Scope;
 use crate::domain::settings::MessageStyle;
-use crate::runtime::logging;
 
 /// discord.py `Colour.blurple()`.
 const BLURPLE: u32 = 0x5865F2;
@@ -181,7 +180,7 @@ impl ScheduleCommand {
             if within_budget(&components) {
                 return Ok(InteractionReply::v2(components, false));
             }
-            logging::log!(
+            kanade_log::log!(
                 warn,
                 "schedule_v2_over_budget",
                 components = component_count(&components),

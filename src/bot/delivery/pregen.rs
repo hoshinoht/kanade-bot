@@ -54,7 +54,6 @@ use crate::domain::schedule::{Reminder, SchedulePolicy, ScheduleSnapshot};
 use crate::domain::scheduler::{ScheduleStore, Scope};
 use crate::domain::settings::MessageStyle;
 use crate::domain::time::from_iso;
-use crate::runtime::logging;
 
 /// Cards firing within this window are rewritten (by a batch or catch-up).
 pub const HEADER_HORIZON: TimeDelta = TimeDelta::hours(24);
@@ -260,7 +259,7 @@ where
         let now = (self.now)();
         let batch = self.batch_due(now);
         let Some(candidates) = self.candidates(now, now + SEEN_HORIZON).await else {
-            logging::log!(warn, "header_pregen_failed", operation = "plan");
+            kanade_log::log!(warn, "header_pregen_failed", operation = "plan");
             return report;
         };
         let due: Vec<&Candidate> = candidates
@@ -609,7 +608,7 @@ where
             Ok(true) => Done::Stored,
             Ok(false) => Done::Lost,
             Err(_) => {
-                logging::log!(warn, "header_pregen_failed", operation = "write");
+                kanade_log::log!(warn, "header_pregen_failed", operation = "write");
                 Done::Failed { busy: false }
             }
         }

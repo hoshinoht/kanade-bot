@@ -297,7 +297,7 @@ async fn compose_context(
 ) {
     let store = store::open(&config.store).await.unwrap();
     let health = LiveHealth::new(store.clone());
-    crate::runtime::logging::capture();
+    kanade_log::capture();
     let mut composition = api::compose(
         config,
         store.clone(),
@@ -307,7 +307,7 @@ async fn compose_context(
     .await
     .unwrap();
     composition.model_tasks.report_done().await;
-    let lines = crate::runtime::logging::captured();
+    let lines = kanade_log::captured();
     let context = composition.settings.models.context.clone();
     drop(composition);
     store::close(store, Duration::ZERO).await;

@@ -171,7 +171,7 @@ pub struct LogAlerts;
 
 impl AlertSink for LogAlerts {
     fn alert(&self, alert: AdminAlert) {
-        crate::runtime::logging::log!(warn, "admin_alert", key = alert.key());
+        kanade_log::log!(warn, "admin_alert", key = alert.key());
     }
 }
 

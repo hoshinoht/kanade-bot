@@ -25,7 +25,6 @@ use crate::domain::history::{BlameIndex, ChangeHistory};
 use crate::domain::notify::DeliveryJournal;
 use crate::domain::proposals::ProposalCardStore;
 use crate::domain::scheduler::{IdSource, ScheduleStore};
-use crate::runtime::logging;
 use twilight_model::id::{Id, marker::UserMarker};
 
 /// What one reaction did, for tests and logs.
@@ -132,7 +131,7 @@ where
                     crate::bot::events::RouteError::Lookup(_) => "lookup",
                     crate::bot::events::RouteError::Scheduler(_) => "scheduler",
                 };
-                logging::log!(warn, "rsvp_failed", kind);
+                kanade_log::log!(warn, "rsvp_failed", kind);
                 Reacted::Failed
             }
         }

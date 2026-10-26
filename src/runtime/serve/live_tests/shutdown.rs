@@ -29,7 +29,7 @@ use crate::{
     },
     domain::model_log::{ChatFilter, ExtractionFilter, ExtractionOutcome, ModelLogStore},
     extract::pipeline::CALL_CANCELLED,
-    runtime::{error::Error, logging, serve::budget},
+    runtime::{error::Error, serve::budget},
 };
 
 /// deploy/compose.yaml `stop_grace_period`: SIGKILL follows SIGTERM after it.
@@ -64,7 +64,7 @@ struct Timeline(Arc<Mutex<Vec<(String, Instant)>>>);
 
 impl Timeline {
     fn scan(&self) {
-        let lines = logging::captured();
+        let lines = kanade_log::captured();
         let mut seen = self.0.lock().unwrap();
         let now = Instant::now();
         for line in &lines[seen.len()..] {
@@ -121,11 +121,11 @@ impl Timeline {
 
 /// A point of the test's own, in the log sequence.
 fn mark(event: &'static str) {
-    logging::log!(info, event);
+    kanade_log::log!(info, event);
 }
 
 fn logged(event: &str) -> Vec<Value> {
-    logging::captured()
+    kanade_log::captured()
         .into_iter()
         .filter(|line| line["event"] == event)
         .collect()
@@ -588,7 +588,7 @@ async fn add_members(store: &SqliteStore) {
 
 #[tokio::test]
 async fn shutdown_with_everything_in_flight_is_ordered_and_inside_the_stop_grace() {
-    logging::capture();
+    kanade_log::capture();
     let model = HangingModel::start().await;
     let harness = harness(&model);
     let policy = policy(&harness);
@@ -824,7 +824,7 @@ async fn shutdown_with_everything_in_flight_is_ordered_and_inside_the_stop_grace
 /// and serve still returns `Ok` inside it, the store closed.
 #[tokio::test]
 async fn shutdown_with_nothing_letting_go_ends_inside_the_budget() {
-    logging::capture();
+    kanade_log::capture();
     let model = HangingModel::start().await;
     let harness = harness(&model);
     let policy = policy(&harness);
@@ -949,7 +949,7 @@ async fn shutdown_with_nothing_letting_go_ends_inside_the_budget() {
 /// nothing keeps the store from closing.
 #[tokio::test]
 async fn chat_stop_with_the_budget_spent_still_settles_its_questions() {
-    logging::capture();
+    kanade_log::capture();
     let model = HangingModel::start().await;
     let harness = harness(&model);
     let timeline = Timeline::default();
@@ -1021,7 +1021,7 @@ async fn chat_stop_with_the_budget_spent_still_settles_its_questions() {
 /// the tick with the reserve intact.
 #[tokio::test]
 async fn a_header_rewrite_hanging_at_the_cutoff_still_ends_by_it() {
-    logging::capture();
+    kanade_log::capture();
     let model = HangingModel::start().await;
     // No extraction: every call without tools is the header rewrite.
     let harness = Harness::with(&[
@@ -1114,7 +1114,7 @@ async fn hold_readers(pool: &sqlx::SqlitePool) -> Vec<sqlx::pool::PoolConnection
 /// timeout, then answers the generic 503 `unavailable`, with no store detail.
 #[tokio::test]
 async fn an_admin_read_with_every_reader_busy_answers_unavailable() {
-    logging::capture();
+    kanade_log::capture();
     let model = HangingModel::start().await;
     let harness = harness(&model);
     let (pools, pool) = std::sync::mpsc::channel();
@@ -1161,7 +1161,7 @@ async fn an_admin_read_with_every_reader_busy_answers_unavailable() {
 /// go through) and the store closes after it, with the reserve intact.
 #[tokio::test]
 async fn shutdown_with_every_reader_held_ends_inside_the_budget() {
-    logging::capture();
+    kanade_log::capture();
     let harness = Harness::new();
     seed_discord_members(&harness);
     let policy = policy(&harness);
@@ -1255,7 +1255,7 @@ async fn sign_in_for_writes(address: SocketAddr) -> (String, String) {
 /// then does the store close: nothing is left claimed or dropped.
 #[tokio::test]
 async fn a_manual_digest_in_flight_at_the_cutoff_is_journalled_before_the_store_closes() {
-    logging::capture();
+    kanade_log::capture();
     let harness = Harness::with(&[("KANADE_ADMIN_HOST", HOST)]);
     std::fs::write(harness._temp.0.join("admin_token"), format!("{TOKEN}\n")).unwrap();
     seed_discord_members(&harness);

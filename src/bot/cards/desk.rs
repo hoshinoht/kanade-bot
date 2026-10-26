@@ -54,7 +54,6 @@ use crate::domain::scheduler::{
 };
 use crate::domain::settings::MessageStyle;
 use crate::extract::pipeline::{CardEntry, PostResult, Redirected};
-use crate::runtime::logging;
 
 /// The reacting member's standing, from the gateway (roles, Administrator,
 /// guild owner) and the roster.
@@ -829,7 +828,7 @@ where
     ) -> Outcome<()> {
         if layout == Layout::V2 && card.components.is_empty() {
             if self.cards.v2.formats.first_note(&id_text(message)) {
-                logging::log!(
+                kanade_log::log!(
                     warn,
                     "proposal_card_v2_over_budget",
                     message_id = id_text(message),

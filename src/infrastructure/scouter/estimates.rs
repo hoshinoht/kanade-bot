@@ -1116,14 +1116,14 @@ impl Shared {
 
 /// A result kept in memory that the file did not take.
 fn unsaved(kind: &'static str, error: &StoreError) {
-    crate::runtime::logging::log!(warn, "estimate_unsaved", kind, error = error_kind(error));
+    kanade_log::log!(warn, "estimate_unsaved", kind, error = error_kind(error));
 }
 
 /// Codes and counts only: never an IGN or a result.
 fn log(outcome: &Result<Found, Failure>, source: JobSource, characters: usize, failed: usize) {
     let source = source.as_str();
     match outcome {
-        Ok(found) => crate::runtime::logging::log!(
+        Ok(found) => kanade_log::log!(
             if failed > 0 || found.total_failure.is_some() {
                 "WARN"
             } else {
@@ -1140,7 +1140,7 @@ fn log(outcome: &Result<Found, Failure>, source: JobSource, characters: usize, f
                 .map(|failure| failure.kind.as_str()),
             cache_hit = found.cache_hit,
         ),
-        Err(failure) => crate::runtime::logging::log!(
+        Err(failure) => kanade_log::log!(
             warn,
             "estimate_finished",
             state = "failed",
@@ -1175,7 +1175,7 @@ impl Pass {
     }
 
     fn log(&self) {
-        crate::runtime::logging::log!(
+        kanade_log::log!(
             info,
             "estimate_refresh_pass",
             runs = self.runs,
@@ -1285,7 +1285,7 @@ impl Estimates {
         let stored = match store.estimates(now, limit).await {
             Ok(stored) => stored,
             Err(error) => {
-                crate::runtime::logging::log!(
+                kanade_log::log!(
                     warn,
                     "estimates_loaded",
                     members = 0,
@@ -1326,7 +1326,7 @@ impl Estimates {
             );
         }
         drop(inner);
-        crate::runtime::logging::log!(info, "estimates_loaded", members, parties);
+        kanade_log::log!(info, "estimates_loaded", members, parties);
     }
 
     /// Queue a job (or answer it from memory at once while every result it

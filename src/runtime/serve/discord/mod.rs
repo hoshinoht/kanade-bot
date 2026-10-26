@@ -70,7 +70,7 @@ use crate::{
     chat::{driver::DriverConfig, nudge::StoreRewriteSink},
     domain::{ids::RandomIds, schedule::SchedulePolicy, scheduler::SchedulerService},
     infrastructure::{character_data::PostDesk, files::GuideFiles, store::SqliteStore},
-    runtime::{config::ServeConfig, error::Error, logging},
+    runtime::{config::ServeConfig, error::Error},
 };
 
 pub use late::{GatewayTransport, LateTransport};
@@ -802,7 +802,7 @@ fn settings_changes(composition: &Composition) -> watch::Receiver<SettingsChange
 }
 
 fn gateway_error(error: GatewayError) {
-    logging::log!(warn, "gateway_receive_failed", error = format!("{error:?}"));
+    kanade_log::log!(warn, "gateway_receive_failed", error = format!("{error:?}"));
 }
 
 impl Discord {
@@ -886,14 +886,14 @@ impl Discord {
                         {
                             *exit = Some(Err(()));
                         } else {
-                            logging::log!(warn, "gateway_aborted");
+                            kanade_log::log!(warn, "gateway_aborted");
                         }
                     }
                 }
             }
             if !steps.contains(&"gateway_closed") {
                 steps.push("gateway_closed");
-                logging::log!(info, "gateway_closed", exit = format!("{:?}", exit));
+                kanade_log::log!(info, "gateway_closed", exit = format!("{:?}", exit));
             }
             // No message can reach chat or extraction any more; their cards
             // and replies go out before the workers stop.
@@ -907,7 +907,7 @@ impl Discord {
                 if end.is_some_and(|end| tokio::time::Instant::now() >= end) {
                     clock.cut("chat");
                 }
-                logging::log!(info, "chat_stopped");
+                kanade_log::log!(info, "chat_stopped");
                 steps.push("chat_stopped");
             }
             extraction.stop(clock).await;
@@ -952,7 +952,7 @@ impl Discord {
     async fn closed_for_good(&mut self) {
         self.connection.closed();
         if let Some(Ok(RunExit::Closed { reason })) = self.exit {
-            logging::log!(
+            kanade_log::log!(
                 error,
                 "gateway_closed_for_good",
                 code = reason.code(),

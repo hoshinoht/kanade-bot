@@ -38,7 +38,6 @@ use crate::infrastructure::character_data::CharacterData;
 use crate::infrastructure::scouter::{
     CarrierOwner, Estimates, Member, RosterIgn, SavedParty, Totals, saved_party,
 };
-use crate::runtime::logging;
 
 /// How long drawing may take before the card posts without it.
 pub const CHART_DEADLINE: Duration = Duration::from_secs(2);
@@ -122,7 +121,7 @@ impl<S: PartyReads + Send + Sync + ?Sized + 'static> PartyEstimates for CachedEs
             let roster = match PartyRoster::load(self.store.as_ref(), run, &week).await {
                 Ok(roster) => roster,
                 Err(_) => {
-                    logging::log!(warn, "estimate_chart_skipped", reason = "roster_unreadable");
+                    kanade_log::log!(warn, "estimate_chart_skipped", reason = "roster_unreadable");
                     return None;
                 }
             };
@@ -220,7 +219,7 @@ fn stamp(at: DateTime<Utc>, zone: Tz) -> String {
 }
 
 fn skipped(reason: &str) {
-    logging::log!(warn, "estimate_chart_skipped", reason = reason);
+    kanade_log::log!(warn, "estimate_chart_skipped", reason = reason);
 }
 
 /// The chart for a card's runs: redesigned day-of and countdown cards
@@ -555,7 +554,7 @@ mod tests {
     /// lookup includes a member with no stored result there is no chart.
     #[tokio::test]
     async fn a_party_with_a_lookup_still_running_has_no_chart() {
-        logging::capture();
+        kanade_log::capture();
         let estimates = offline();
         let run = run();
         let slots = [slot("1001", "MikaBish"), slot("1002", "RenShade")];
@@ -578,7 +577,7 @@ mod tests {
         assert!(matches!(started, Start::Started(_)));
 
         assert_eq!(settled_estimate(&run, &slots, &estimates), None);
-        let lines = logging::captured();
+        let lines = kanade_log::captured();
         assert_eq!(lines.len(), 1, "{lines:?}");
         assert_eq!(lines[0]["event"], "estimate_chart_skipped");
         assert_eq!(lines[0]["reason"], "lookup_running");
@@ -586,7 +585,7 @@ mod tests {
         // A party nobody is looking up draws from what is stored.
         let other = settled_estimate(&run, &slots[..1], &estimates).expect("a chart");
         assert_eq!(other.party.carriers.len(), 1);
-        assert_eq!(logging::captured().len(), 1, "nothing more logged");
+        assert_eq!(kanade_log::captured().len(), 1, "nothing more logged");
     }
 
     /// A refresh (manual or background) of members who all have a stored
@@ -612,14 +611,14 @@ mod tests {
             &[("1001", "MikaBish"), ("1002", "RenShade")],
         );
         assert!(estimates.looking_up(&[brought_ign(&slots[0]).unwrap()]));
-        logging::capture();
+        kanade_log::capture();
 
         let drawn = settled_estimate(&run, &slots, &estimates).expect("a chart");
         assert_eq!(drawn.party.carriers.len(), 2);
         assert_eq!(drawn.party.missing, 0);
         assert_eq!(drawn.oldest, Some(days_ago(3)), "the party total's time");
         assert_eq!(drawn.older_than, None, "fresh");
-        assert!(logging::captured().is_empty(), "nothing skipped");
+        assert!(kanade_log::captured().is_empty(), "nothing skipped");
     }
 
     /// Only a member with no stored result holds the chart back while
@@ -635,20 +634,20 @@ mod tests {
             Target::Characters(vec!["ch-MikaBish".into()]),
             &[("1001", "MikaBish")],
         );
-        logging::capture();
+        kanade_log::capture();
         let drawn = settled_estimate(&run, &slots, &estimates).expect("a chart");
         assert_eq!(drawn.party.carriers.len(), 2, "RenShade: no estimate yet");
         assert_eq!(drawn.oldest, Some(days_ago(1)), "MikaBish's reading only");
-        assert!(logging::captured().is_empty());
+        assert!(kanade_log::captured().is_empty());
 
         refresh(
             &estimates,
             Target::Characters(vec!["ch-RenShade".into()]),
             &[("1002", "RenShade")],
         );
-        logging::capture();
+        kanade_log::capture();
         assert_eq!(settled_estimate(&run, &slots, &estimates), None);
-        let lines = logging::captured();
+        let lines = kanade_log::captured();
         assert_eq!(lines.len(), 1, "{lines:?}");
         assert_eq!(lines[0]["event"], "estimate_chart_skipped");
         assert_eq!(lines[0]["reason"], "lookup_running");

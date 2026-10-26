@@ -9,7 +9,6 @@ use crate::{
         scouter::{Card, UpcomingRun},
         store::SqliteCharData,
     },
-    runtime::logging,
 };
 
 type Now = Arc<Mutex<DateTime<Utc>>>;
@@ -129,7 +128,7 @@ fn hit(start: Start) -> Found {
 
 /// `event`'s captured lines.
 fn lines(event: &str) -> Vec<serde_json::Value> {
-    logging::captured()
+    kanade_log::captured()
         .into_iter()
         .filter(|line| line["event"] == event)
         .collect()
@@ -204,7 +203,7 @@ async fn a_party_total_is_read_by_its_exact_ign_set_and_shares_use_effective_onl
 /// Config save applies to the next lookup.
 #[tokio::test(start_paused = true)]
 async fn a_stale_result_is_looked_up_again() {
-    logging::capture();
+    kanade_log::capture();
     let now = Arc::new(Mutex::new(at(4)));
     let (days, saved) = tokio::sync::watch::channel(7_u32);
     let estimates = estimates(Arc::clone(&now)).with_fresh_days(Arc::new(move || *saved.borrow()));
@@ -251,7 +250,7 @@ async fn a_stale_result_is_looked_up_again() {
 /// arrives; a restart loads them, and they answer as before.
 #[tokio::test(start_paused = true)]
 async fn results_are_written_through_and_loaded_after_a_restart() {
-    logging::capture();
+    kanade_log::capture();
     let file = Arc::new(SqliteCharData::open_temp().await);
     let now = Arc::new(Mutex::new(at(4)));
     let estimates =
@@ -313,7 +312,7 @@ async fn results_are_written_through_and_loaded_after_a_restart() {
 /// memory.
 #[tokio::test(start_paused = true)]
 async fn a_failed_write_keeps_the_result_in_memory() {
-    logging::capture();
+    kanade_log::capture();
     let file = Arc::new(SqliteCharData::open_temp().await);
     file.temp_dir()
         .raw(
@@ -846,7 +845,7 @@ fn aoi() -> Subject {
 /// background jobs still waiting.
 #[tokio::test(start_paused = true)]
 async fn manual_jobs_run_before_waiting_background_jobs() {
-    logging::capture();
+    kanade_log::capture();
     let (fake, url) = Fake::start(false).await;
     let estimates = at_url(&url);
     healthy(&estimates);
@@ -885,7 +884,7 @@ async fn manual_jobs_run_before_waiting_background_jobs() {
 /// the manual queue: it runs next, with no gap.
 #[tokio::test(start_paused = true)]
 async fn a_manual_lookup_of_a_waiting_background_run_moves_it_up() {
-    logging::capture();
+    kanade_log::capture();
     let (fake, url) = Fake::start(false).await;
     let estimates = at_url(&url);
     healthy(&estimates);
@@ -988,7 +987,7 @@ async fn background_jobs_keep_a_gap_that_manual_jobs_skip() {
 /// queue nothing more until lookups leave the 24-hour window.
 #[tokio::test(start_paused = true)]
 async fn the_cap_stops_further_background_lookups() {
-    logging::capture();
+    kanade_log::capture();
     let (fake, url) = Fake::start(false).await;
     let estimates = at_url(&url);
     let spend = |count: usize| {
@@ -1031,7 +1030,7 @@ async fn the_cap_stops_further_background_lookups() {
 /// No pass while the sidecar is unreachable or asks for a verification.
 #[tokio::test(start_paused = true)]
 async fn a_pass_is_skipped_while_the_sidecar_is_unhealthy() {
-    logging::capture();
+    kanade_log::capture();
     let estimates = estimates(Arc::new(Mutex::new(at(4))));
     let parties = Parties(vec![upcoming("r1", 2, vec![ren()])]);
     // Nothing listens: the probe finds it unreachable.
@@ -1071,7 +1070,7 @@ async fn an_unreachable_sidecar_drops_the_waiting_background_jobs() {
 /// A run whose background job failed is not queued again for 24 hours.
 #[tokio::test(start_paused = true)]
 async fn a_failed_background_run_is_left_alone_for_a_day() {
-    logging::capture();
+    kanade_log::capture();
     let (fake, url) = Fake::start(true).await;
     fake.fail.store(true, Ordering::SeqCst);
     let estimates = at_url(&url);
@@ -1124,7 +1123,7 @@ async fn a_waiting_background_run_is_joined_with_the_manual_queue_full() {
 /// still answers at once) and a pass does nothing.
 #[tokio::test(start_paused = true)]
 async fn nothing_starts_after_stop() {
-    logging::capture();
+    kanade_log::capture();
     let estimates = estimates(Arc::new(Mutex::new(at(4))));
     estimates.stop().await;
     let Start::Started(job) = estimates.start(characters_target(&ren())) else {

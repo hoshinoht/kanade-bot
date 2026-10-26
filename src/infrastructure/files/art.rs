@@ -8,7 +8,6 @@ use std::io::Read;
 use std::path::PathBuf;
 
 use crate::bot::delivery::cards::{ArtFile, ArtKind, ArtSource, MAX_ART_BYTES};
-use crate::runtime::logging;
 
 /// Accepted extensions, in lookup order (as the portal's `/art`).
 const SUFFIXES: [&str; 4] = ["png", "webp", "jpg", "jpeg"];
@@ -47,7 +46,7 @@ fn kind_name(kind: ArtKind) -> &'static str {
 }
 
 fn skipped(kind: ArtKind, basename: &str, reason: &str) {
-    logging::log!(
+    kanade_log::log!(
         warn,
         "card_art_skipped",
         kind = kind_name(kind),
@@ -152,14 +151,14 @@ mod tests {
         let fits = vec![0_u8; usize::try_from(MAX_ART_BYTES).unwrap()];
         fs::write(root.join("artwork/entry/Seren.png"), fits).unwrap();
         let art = BossArt::new(&root);
-        crate::runtime::logging::capture();
+        kanade_log::capture();
         assert_eq!(art.find(ArtKind::Portrait, "Seren", false), None);
         assert!(
-            crate::runtime::logging::captured().is_empty(),
+            kanade_log::captured().is_empty(),
             "an edit's lookup logs nothing"
         );
         assert_eq!(art.find(ArtKind::Portrait, "Seren", true), None);
-        let lines = crate::runtime::logging::captured();
+        let lines = kanade_log::captured();
         assert_eq!(lines.len(), 1, "{lines:?}");
         assert_eq!(lines[0]["event"], "card_art_skipped");
         assert_eq!(lines[0]["reason"], "too_large");

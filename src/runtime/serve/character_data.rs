@@ -45,7 +45,6 @@ use crate::{
     runtime::{
         config::{CHARACTER_DATA_DB_PATH_KEY, SCOUTER_URL_KEY, ServeConfig},
         error::Error,
-        logging,
     },
 };
 
@@ -178,7 +177,7 @@ pub(super) async fn start_with(
         ));
     };
     state.character_data = Some(Arc::clone(&service));
-    logging::log!(
+    kanade_log::log!(
         info,
         "character_data_started",
         connected = service.connected(),
@@ -248,7 +247,7 @@ async fn close(mut file: Arc<SqliteCharData>, wait: Duration) {
         match Arc::try_unwrap(file) {
             Ok(owned) => {
                 let closed = owned.close().await.is_ok();
-                logging::log!(
+                kanade_log::log!(
                     if closed { "INFO" } else { "WARN" },
                     "character_data_closed",
                     closed,
@@ -260,7 +259,7 @@ async fn close(mut file: Arc<SqliteCharData>, wait: Duration) {
                 tokio::time::sleep(Duration::from_millis(20)).await;
             }
             Err(_) => {
-                logging::log!(warn, "character_data_closed", closed = false);
+                kanade_log::log!(warn, "character_data_closed", closed = false);
                 return;
             }
         }

@@ -374,7 +374,7 @@ impl ConfigDesk {
             }
             // Store error text may carry paths, so only the event is logged.
             Err(_) => {
-                crate::runtime::logging::log!(warn, "config_saved_lists_unreadable");
+                kanade_log::log!(warn, "config_saved_lists_unreadable");
                 Vec::new()
             }
         }

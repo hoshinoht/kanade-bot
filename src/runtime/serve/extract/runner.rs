@@ -12,7 +12,6 @@ use crate::{
     bot::{commands::GuildChannels, guild_cache::GuildCache, roster::LiveRoster},
     extract::rescan::{RescanError, RescanRequest},
     infrastructure::llm::setup::ModelStack,
-    runtime::logging,
 };
 
 /// The startup rescan's window (automated jobs are capped at 48 h anyway).
@@ -93,12 +92,12 @@ impl Startup {
             },
         }
         if !self.status.enabled() {
-            logging::log!(info, "startup_rescan_skipped", reason = "disabled");
+            kanade_log::log!(info, "startup_rescan_skipped", reason = "disabled");
             return;
         }
         let channels = GuildChannels::watched(&*self.cache);
         if channels.is_empty() {
-            logging::log!(info, "startup_rescan_skipped", reason = "no_channels");
+            kanade_log::log!(info, "startup_rescan_skipped", reason = "no_channels");
             return;
         }
         let count = channels.len();
@@ -111,14 +110,14 @@ impl Startup {
             unprocessed_only: true,
         };
         match self.runner.submit(request).await {
-            Ok(view) => logging::log!(
+            Ok(view) => kanade_log::log!(
                 info,
                 "startup_rescan_queued",
                 job = view.job.id,
                 channels = count,
             ),
             // Store text can carry paths; the kind is enough.
-            Err(error) => logging::log!(
+            Err(error) => kanade_log::log!(
                 warn,
                 "startup_rescan_failed",
                 kind = match error {

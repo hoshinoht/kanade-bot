@@ -165,12 +165,12 @@ fn remove_stale_partials(dir: &Path) {
         match fs::remove_dir_all(entry.path()) {
             Ok(()) => removed.push(name.to_owned()),
             // Error text carries the path; the name alone identifies it.
-            Err(_) => crate::runtime::logging::log!(warn, "backup_partial_not_removed", dir = name),
+            Err(_) => kanade_log::log!(warn, "backup_partial_not_removed", dir = name),
         }
     }
     if !removed.is_empty() {
         removed.sort();
-        crate::runtime::logging::log!(info, "backup_partials_removed", dirs = removed);
+        kanade_log::log!(info, "backup_partials_removed", dirs = removed);
     }
 }
 
@@ -233,10 +233,10 @@ mod tests {
             recipients_file: backups.join("recipients"),
         };
 
-        crate::runtime::logging::capture();
+        kanade_log::capture();
         let at = Utc.with_ymd_and_hms(2026, 10, 11, 3, 0, 0).unwrap();
         let report = run(Some("snap.sqlite".into()), &config, at).await;
-        let lines = crate::runtime::logging::captured();
+        let lines = kanade_log::captured();
         let mut left: Vec<String> = fs::read_dir(&backups)
             .expect("list")
             .map(|entry| {

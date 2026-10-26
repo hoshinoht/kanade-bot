@@ -72,7 +72,7 @@ fn ready_cache() -> GuildCache {
 }
 
 fn events() -> Vec<(String, serde_json::Value)> {
-    logging::captured()
+    kanade_log::captured()
         .into_iter()
         .map(|line| (line["event"].as_str().unwrap_or_default().to_owned(), line))
         .collect()
@@ -80,7 +80,7 @@ fn events() -> Vec<(String, serde_json::Value)> {
 
 #[tokio::test]
 async fn refresh_writes_both_images_and_replaces_a_stale_extension() {
-    logging::capture();
+    kanade_log::capture();
     let dir = TempDir::new();
     fs::write(dir.0.join("avatar.webp"), b"old").unwrap();
     let stub = Stub {
@@ -116,7 +116,7 @@ async fn refresh_writes_both_images_and_replaces_a_stale_extension() {
 
 #[tokio::test]
 async fn guild_avatar_wins_and_a_missing_banner_falls_back_to_the_wash() {
-    logging::capture();
+    kanade_log::capture();
     let dir = TempDir::new();
     fs::write(dir.0.join("banner.png"), b"old banner").unwrap();
     let cache = ready_cache();
@@ -138,7 +138,7 @@ async fn guild_avatar_wins_and_a_missing_banner_falls_back_to_the_wash() {
 
 #[tokio::test]
 async fn failures_keep_the_last_files_and_are_logged() {
-    logging::capture();
+    kanade_log::capture();
     let dir = TempDir::new();
     fs::write(dir.0.join("avatar.png"), b"kept").unwrap();
     fs::write(dir.0.join("banner.png"), b"kept too").unwrap();

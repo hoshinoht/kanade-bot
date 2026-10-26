@@ -1,12 +1,25 @@
-[package]
-name = "kanade"
+[workspace]
+members = ["crates/*"]
+
+[workspace.package]
 version = "1.0.0-beta.15"
 edition = "2024"
 license = "GPL-3.0-only"
 publish = false
 
+[workspace.dependencies]
+serde = "=1.0.229"
+serde_json = "=1.0.151"
+
+[package]
+name = "kanade"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
 [features]
-test-support = ["tokio/test-util"]
+test-support = ["tokio/test-util", "kanade-log/test-support"]
 
 [dependencies]
 # Backup encryption to X25519 recipients (`kanade backup`); no plugin/ssh/armor.
@@ -18,9 +31,10 @@ http-body-util = "=0.1.5"
 hyper = { version = "=1.11.1", default-features = false, features = ["client", "http1"] }
 hyper-util = { version = "=0.1.20", default-features = false, features = ["client-legacy", "tokio"] }
 rustls = { version = "=0.23.46", default-features = false, features = ["ring", "std", "tls12"] }
-serde = { version = "=1.0.229", features = ["derive"] }
-serde_json = "=1.0.151"
+serde = { workspace = true, features = ["derive"] }
+serde_json.workspace = true
 jsonschema = { version = "=0.40.0", default-features = false }
+kanade-log = { path = "crates/kanade-log" }
 libc = { version = "=0.2.189", default-features = false }
 regex = { version = "=1.13.1", default-features = false, features = ["std", "unicode-case", "unicode-perl"] }
 # The reminder cards' estimate share chart: SVG → PNG with bundled fonts only

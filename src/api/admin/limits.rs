@@ -71,7 +71,7 @@ pub(super) fn actor(session: &AdminSession) -> String {
 pub(super) async fn record_after_effect(state: &ApiState, replay: StoredReplay) {
     // Store error text may carry paths, so only the event is logged.
     if state.store.put_replay(replay).await.is_err() {
-        crate::runtime::logging::log!(warn, "idempotency_replay_unrecorded");
+        kanade_log::log!(warn, "idempotency_replay_unrecorded");
     }
 }
 

@@ -21,7 +21,6 @@ use crate::{
         iso_instant,
     },
     infrastructure::store::BackupManifest,
-    runtime::logging,
 };
 
 const SUFFIX: &str = ".manifest.json";
@@ -46,7 +45,7 @@ enum Skip {
 }
 
 fn dir_unreadable() {
-    logging::log!(warn, "backup_dir_unreadable");
+    kanade_log::log!(warn, "backup_dir_unreadable");
 }
 
 /// [`scan`] on the blocking pool; a failed scan task lists nothing.
@@ -99,7 +98,7 @@ pub(super) fn scan(dir: &Path) -> Vec<Found> {
     }
     if unreadable > 0 || missing > 0 || truncated {
         // Counts only: names and error text may carry paths.
-        logging::log!(
+        kanade_log::log!(
             warn,
             "backup_manifests_skipped",
             unreadable,
@@ -202,9 +201,9 @@ mod tests {
         fs::write(dir.join("snap.sqlite.manifest.json"), valid).unwrap();
         std::os::unix::fs::symlink(root.join("s.sqlite"), dir.join("snap.sqlite")).unwrap();
 
-        logging::capture();
+        kanade_log::capture();
         let found = scan(&dir);
-        let lines = logging::captured();
+        let lines = kanade_log::captured();
         let _ = fs::remove_dir_all(&root);
         assert_eq!(
             found.iter().map(|b| b.file.as_str()).collect::<Vec<_>>(),
@@ -224,10 +223,10 @@ mod tests {
 
     #[test]
     fn a_missing_dir_lists_nothing_and_warns() {
-        logging::capture();
+        kanade_log::capture();
         let dir = std::env::temp_dir().join(format!("kanade-no-backups-{}", uuid::Uuid::new_v4()));
         assert!(scan(&dir).is_empty());
-        let lines = logging::captured();
+        let lines = kanade_log::captured();
         assert_eq!(lines.len(), 1);
         assert_eq!(lines[0]["event"], "backup_dir_unreadable");
         assert_eq!(lines[0].as_object().map(serde_json::Map::len), Some(2));

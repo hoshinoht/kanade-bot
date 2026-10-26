@@ -17,7 +17,6 @@ use super::cards::{
 };
 use crate::bot::commands::text::local_day;
 use crate::domain::notify::{DedupeKey, DeliveryTarget, IntentContent, NotificationIntent};
-use crate::runtime::logging;
 
 static PREPARATION_LOCKS: OnceLock<Mutex<HashMap<String, Weak<AsyncMutex<()>>>>> = OnceLock::new();
 
@@ -60,7 +59,7 @@ pub async fn prepare<S: ReminderCardStore>(
         Ok(Some(record)) => return Some(record),
         Ok(None) => {}
         Err(_) => {
-            logging::log!(warn, "card_record_failed", operation = "read");
+            kanade_log::log!(warn, "card_record_failed", operation = "read");
             if !matches!(&intent.content, IntentContent::DayOf { .. }) {
                 return None;
             }
@@ -70,7 +69,7 @@ pub async fn prepare<S: ReminderCardStore>(
     match store.save_card_record(key.as_str(), &record, now).await {
         Ok(stored) => Some(stored),
         Err(_) => {
-            logging::log!(warn, "card_record_failed", operation = "write");
+            kanade_log::log!(warn, "card_record_failed", operation = "write");
             (record.kind == DAY_OF_KIND).then_some(record)
         }
     }
@@ -133,7 +132,7 @@ pub async fn prepare_digest<S: DigestPhraseStore>(
         Ok(Some(phrase)) => return Some(phrase),
         Ok(None) => {}
         Err(_) => {
-            logging::log!(warn, "digest_phrase_failed", operation = "read");
+            kanade_log::log!(warn, "digest_phrase_failed", operation = "read");
             return None;
         }
     }
@@ -144,7 +143,7 @@ pub async fn prepare_digest<S: DigestPhraseStore>(
     match store.save_digest_phrase(&key, phrase, now).await {
         Ok(stored) => Some(stored),
         Err(_) => {
-            logging::log!(warn, "digest_phrase_failed", operation = "write");
+            kanade_log::log!(warn, "digest_phrase_failed", operation = "write");
             None
         }
     }

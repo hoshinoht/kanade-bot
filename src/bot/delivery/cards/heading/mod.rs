@@ -26,7 +26,6 @@ use crate::chat::nudge::{
 use crate::chat::persona::{CompiledPersona, MAX_NUDGE_CHARS, NudgeMood, check_nudge_line};
 use crate::domain::catalog::BossTable;
 use crate::domain::model_log::{RewriteKind, RewriteStage};
-use crate::runtime::logging;
 
 /// v4's heading, with the day left for after the rewrite.
 pub const DAY_OF_HEADING_SEED: &str = "Today — {day}";
@@ -614,7 +613,7 @@ impl HeadingRewrite {
         let trial = self
             .trial_until(HeaderKind::DayOf, None, deadline, &origin, stop, context)
             .await;
-        logging::log!(
+        kanade_log::log!(
             info,
             "day_of_heading",
             stage = stage.as_str(),
@@ -656,7 +655,7 @@ impl HeadingRewrite {
                 context,
             )
             .await;
-        logging::log!(
+        kanade_log::log!(
             info,
             "reminder_header_phrase",
             stage = stage.as_str(),
@@ -684,14 +683,14 @@ impl HeadingRewrite {
             "not_ready"
         };
         match kind {
-            None => logging::log!(
+            None => kanade_log::log!(
                 info,
                 "day_of_heading",
                 stage = "send",
                 source = "seed",
                 reason
             ),
-            Some(kind) => logging::log!(
+            Some(kind) => kanade_log::log!(
                 info,
                 "reminder_header_phrase",
                 stage = "send",

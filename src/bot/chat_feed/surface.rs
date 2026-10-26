@@ -12,13 +12,12 @@ use crate::bot::transport::{
     DiscordTransport, MessageEdit, Outcome, OutgoingMessage, RejectionKind, SILENT,
 };
 use crate::chat::driver::{Effect, Post, Surface};
-use crate::runtime::logging;
 
 pub struct DiscordSurface<T>(pub Arc<T>);
 
 fn failed<T>(event: &'static str, outcome: &Outcome<T>) {
     if let Some(label) = outcome.failure_label() {
-        logging::log!(warn, event, outcome = label);
+        kanade_log::log!(warn, event, outcome = label);
     }
 }
 

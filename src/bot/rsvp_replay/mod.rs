@@ -26,7 +26,6 @@ use crate::domain::history::{
 use crate::domain::ids::RandomIds;
 use crate::domain::schedule::{Rsvp, RsvpSource, Run, RunStatus};
 use crate::domain::scheduler::{Clock, ScheduleStore, SchedulerError, SchedulerService};
-use crate::runtime::logging;
 
 const MAX_AGE: TimeDelta = TimeDelta::days(7);
 const MAX_MESSAGES: usize = 40;
@@ -272,7 +271,7 @@ where
 
     fn aborted(&self, mut report: ReplayReport, started: Instant, reason: &str) -> ReplayReport {
         report.aborted = true;
-        logging::log!(warn, "rsvp_replay_aborted", reason);
+        kanade_log::log!(warn, "rsvp_replay_aborted", reason);
         finished(&report, started);
         report
     }
@@ -415,7 +414,7 @@ where
             let remote = plan::remote(cards, user);
             if remote == plan::RemoteDecision::Conflict {
                 input.report.conflicts += 1;
-                logging::log!(
+                kanade_log::log!(
                     warn,
                     "rsvp_replay_conflict",
                     run_id = prepared.run.id,
@@ -529,7 +528,7 @@ where
             {
                 Ok(result) if result.applied => {
                     input.report.applied += 1;
-                    logging::log!(
+                    kanade_log::log!(
                         info,
                         "rsvp_replay_applied",
                         run_id = prepared.run.id,
@@ -603,15 +602,15 @@ fn eligible(run: &Run, now: DateTime<Utc>) -> bool {
 }
 
 fn skipped(run_id: &str, reason: &str) {
-    logging::log!(info, "rsvp_replay_skipped", run_id, reason);
+    kanade_log::log!(info, "rsvp_replay_skipped", run_id, reason);
 }
 
 fn skipped_card(run_id: &str, message_id: &str, reason: &str) {
-    logging::log!(warn, "rsvp_replay_skipped", run_id, message_id, reason);
+    kanade_log::log!(warn, "rsvp_replay_skipped", run_id, message_id, reason);
 }
 
 fn finished(report: &ReplayReport, started: Instant) {
-    logging::log!(
+    kanade_log::log!(
         if report.aborted { "WARN" } else { "INFO" },
         if report.aborted {
             "rsvp_replay_aborted"

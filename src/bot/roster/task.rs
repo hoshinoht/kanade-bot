@@ -20,7 +20,6 @@ use crate::bot::ids::id_text;
 use crate::bot::transport::DiscordTransport;
 use crate::domain::members::{GatewayMember, MemberProfile};
 use crate::domain::scheduler::StoreError;
-use crate::runtime::logging;
 
 const RECONCILE_RETRY_MAX_SECONDS: u64 = 60;
 
@@ -307,7 +306,7 @@ impl<K: RosterSink, T: DiscordTransport> RosterTask<K, T> {
             match fetch_members(&*self.transport, self.scope.guild_id, || *stop.borrow()).await {
                 Ok(fetched) => fetched,
                 Err(error) => {
-                    logging::log!(
+                    kanade_log::log!(
                         warn,
                         "roster_reconcile_failed",
                         read = error.read,
@@ -352,7 +351,7 @@ impl<K: RosterSink, T: DiscordTransport> RosterTask<K, T> {
         if !complete {
             return false;
         }
-        logging::log!(
+        kanade_log::log!(
             info,
             "roster_reconciled",
             members = report.members,
@@ -376,7 +375,7 @@ fn failed(step: &'static str, error: &StoreError) {
         StoreError::Constraint(_) => "constraint",
         _ => "backend",
     };
-    logging::log!(warn, "roster_write_failed", step, kind);
+    kanade_log::log!(warn, "roster_write_failed", step, kind);
 }
 
 #[cfg(test)]

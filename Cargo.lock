@@ -1700,6 +1700,7 @@ dependencies = [
  "hyper",
  "hyper-util",
  "jsonschema",
+ "kanade-log",
  "libc",
  "regex",
  "resvg",
@@ -1719,6 +1720,14 @@ dependencies = [
  "twilight-model",
  "uuid",
  "webpki-roots",
+]
+
+[[package]]
+name = "kanade-log"
+version = "1.0.0-beta.15"
+dependencies = [
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

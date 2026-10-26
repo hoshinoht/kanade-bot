@@ -54,7 +54,7 @@ pub mod budget {
 
     use tokio::{sync::watch, time::Instant};
 
-    use crate::{infrastructure::store::SqliteStore, runtime::logging};
+    use crate::infrastructure::store::SqliteStore;
 
     /// Total from the signal to `serve` returning: deploy/compose.yaml
     /// `stop_grace_period` (30 s) minus a 5 s margin. Keep them coupled.
@@ -167,7 +167,7 @@ pub mod budget {
         /// One structured line per phase the deadline cut.
         pub fn cut(&self, phase: &'static str) {
             let elapsed = self.elapsed().unwrap_or_default();
-            logging::log!(
+            kanade_log::log!(
                 warn,
                 "shutdown_deadline_cut",
                 phase,
@@ -184,7 +184,7 @@ pub mod budget {
             let cutoff = async {
                 self.expired().await;
                 store.refuse_reads();
-                logging::log!(warn, "store_reads_refused");
+                kanade_log::log!(warn, "store_reads_refused");
                 std::future::pending::<()>().await;
             };
             tokio::select! {
@@ -234,7 +234,7 @@ pub async fn run(config: ServeConfig) -> Result<(), Error> {
     let shutdown = async {
         tokio::select! {
             () = server::wait_for_shutdown() => {}
-            () = restart::requested() => logging::log!(info, "restart_requested"),
+            () = restart::requested() => kanade_log::log!(info, "restart_requested"),
         }
     };
     serve_until(config, shutdown).await

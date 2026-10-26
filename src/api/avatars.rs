@@ -288,7 +288,7 @@ impl AvatarCache {
                 Some(portrait)
             }
             Err(reason) => {
-                crate::runtime::logging::log!(warn, "avatar_fetch_failed", reason);
+                kanade_log::log!(warn, "avatar_fetch_failed", reason);
                 let mut failed = self.failures();
                 if failed.len() >= MAX_FAILURES {
                     failed.clear();

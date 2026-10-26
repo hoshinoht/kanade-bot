@@ -23,7 +23,6 @@ use crate::domain::guides::{
 use crate::domain::notify::{
     DeliveryJournal, EffectKind, IntentContent, Lease, NotificationIntent,
 };
-use crate::runtime::logging;
 
 /// What follows an op.
 pub(super) enum Next {
@@ -129,7 +128,7 @@ where
                 .record_op(self.publish.id.clone(), pending)
                 .await
             {
-                logging::log!(warn, "guide_op_record_failed", error = error.to_string());
+                kanade_log::log!(warn, "guide_op_record_failed", error = error.to_string());
                 return self
                     .end(PublishState::Stopped, Some(StopReason::Interrupted))
                     .await;
@@ -208,7 +207,7 @@ where
             )
             .await;
         if let Err(error) = stored {
-            logging::log!(
+            kanade_log::log!(
                 warn,
                 "guide_op_settle_failed",
                 publish = self.publish.id.as_str(),
@@ -272,7 +271,7 @@ where
             {
                 Ok(lease) => self.lease = Some(lease),
                 Err(error) => {
-                    logging::log!(warn, "guide_lease_failed", error = error.to_string());
+                    kanade_log::log!(warn, "guide_lease_failed", error = error.to_string());
                 }
             }
         }

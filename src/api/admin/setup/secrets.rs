@@ -170,9 +170,9 @@ async fn save(
         .await
         .is_err()
     {
-        crate::runtime::logging::log!(warn, "secret_save_unrecorded", secret = name.as_str());
+        kanade_log::log!(warn, "secret_save_unrecorded", secret = name.as_str());
     }
-    crate::runtime::logging::log!(info, "secret_saved", secret = name.as_str());
+    kanade_log::log!(info, "secret_saved", secret = name.as_str());
     Ok(Json(view(desk)?).into_response())
 }
 

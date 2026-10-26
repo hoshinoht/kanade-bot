@@ -356,7 +356,7 @@ fn nexon_free(text: &str) {
 /// member confirmation, and fetches.
 #[tokio::test]
 async fn an_admin_link_is_active_at_once_and_fetches() {
-    crate::runtime::logging::capture();
+    kanade_log::capture();
     let rig = rig().await;
     let admin = Actor::admin("token");
     let admin_link = async |id: &str, version: u32| {
@@ -441,7 +441,7 @@ async fn an_admin_link_is_active_at_once_and_fetches() {
     {
         nexon_free(&format!("{change:?}"));
     }
-    for line in crate::runtime::logging::captured() {
+    for line in kanade_log::captured() {
         nexon_free(&line.to_string());
     }
 }
@@ -801,7 +801,7 @@ async fn an_admin_refresh_runs_at_once_until_the_budget_stops_it() {
 
 #[tokio::test]
 async fn unlink_deletes_at_once_and_makes_posts_due() {
-    crate::runtime::logging::capture();
+    kanade_log::capture();
     let rig = rig().await;
     rig.confirm().await;
     let post = Post::new("abc123".into(), "900".into(), "c1".into(), at(11, 0));
@@ -836,7 +836,7 @@ async fn unlink_deletes_at_once_and_makes_posts_due() {
             "admin:token".into()
         )
     );
-    for line in crate::runtime::logging::captured() {
+    for line in kanade_log::captured() {
         nexon_free(&line.to_string());
     }
 }
@@ -1058,7 +1058,7 @@ async fn a_failed_unlink_after_an_ign_edit_never_serves_data() {
 /// character, and is done (with its row) by the next sweep.
 #[tokio::test]
 async fn a_failed_reconsent_audit_is_retried_by_the_next_sweep() {
-    crate::runtime::logging::capture();
+    kanade_log::capture();
     let rig = rig().await;
     rig.confirm().await;
     rig.older_notice("c1").await;
@@ -1068,7 +1068,7 @@ async fn a_failed_reconsent_audit_is_retried_by_the_next_sweep() {
     let report = rig.service.sweep().await;
     assert_eq!(report.reconsent, 0);
     assert_eq!(rig.link("c1").await.unwrap().status, LinkStatus::Active);
-    let warned = crate::runtime::logging::captured()
+    let warned = kanade_log::captured()
         .into_iter()
         .any(|line| line["event"] == "chardata_reconsent_unrecorded" && line["character"] == "c1");
     assert!(warned);
@@ -1093,7 +1093,7 @@ async fn a_failed_reconsent_audit_is_retried_by_the_next_sweep() {
 /// failure is logged, and the retry appends no second History row.
 #[tokio::test]
 async fn a_failed_repend_write_serves_nothing_and_audits_once() {
-    crate::runtime::logging::capture();
+    kanade_log::capture();
     let rig = rig().await;
     rig.confirm().await;
     rig.older_notice("c1").await;
@@ -1112,7 +1112,7 @@ async fn a_failed_repend_write_serves_nothing_and_audits_once() {
     );
     rig.service.refresh_due().await;
     assert_eq!(rig.fake.calls().len(), calls, "no Nexon call");
-    let warned = crate::runtime::logging::captured()
+    let warned = kanade_log::captured()
         .into_iter()
         .any(|line| line["event"] == "chardata_reconsent_unwritten" && line["character"] == "c1");
     assert!(warned);
@@ -1147,7 +1147,7 @@ impl PostDesk for Desk {
 /// Tracking and stripping share cards log refs, channels and counts only.
 #[tokio::test]
 async fn the_post_pipeline_logs_no_nexon_field() {
-    crate::runtime::logging::capture();
+    kanade_log::capture();
     let rig = rig().await;
     rig.confirm().await;
     let Tracked::Ready(post, snapshot) = rig.service.track_post("c1", "900").await.unwrap() else {
@@ -1173,7 +1173,7 @@ async fn the_post_pipeline_logs_no_nexon_field() {
     assert_eq!(report.stuck, 1);
     let health = rig.service.health().await;
     assert_eq!(health.post_issues.len(), 2);
-    for line in crate::runtime::logging::captured() {
+    for line in kanade_log::captured() {
         nexon_free(&line.to_string());
     }
     // Unlinked data is never tracked.

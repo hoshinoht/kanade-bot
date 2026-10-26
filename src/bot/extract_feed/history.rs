@@ -13,7 +13,6 @@ use crate::bot::ids::{id_text, parse_id};
 use crate::bot::transport::{DiscordTransport, HistoryPage, MAX_MESSAGES_PAGE, MessageId, Outcome};
 use crate::extract::pipeline::{IncomingMessage, MessageOrigin};
 use crate::extract::rescan::{Backfilled, History};
-use crate::runtime::logging;
 
 /// Discord's snowflake epoch (2015-01-01), in Unix milliseconds.
 const DISCORD_EPOCH_MS: i64 = 1_420_070_400_000;
@@ -99,7 +98,7 @@ impl<T: DiscordTransport> History for DiscordHistory<T> {
             match self.read(thread, channel, since).await {
                 Ok(more) => messages.extend(more),
                 Err(kind) => {
-                    logging::log!(
+                    kanade_log::log!(
                         warn,
                         "thread_history_skipped",
                         thread_id = id_text(thread),

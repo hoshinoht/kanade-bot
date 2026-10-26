@@ -55,7 +55,7 @@ use crate::{
         },
         store::SqliteStore,
     },
-    runtime::{config::SettingSeeds, error::Error, logging},
+    runtime::{config::SettingSeeds, error::Error},
 };
 use chrono::{DateTime, Utc};
 
@@ -160,13 +160,13 @@ pub async fn difficulty_marks<T: DiscordTransport>(transport: &T) -> DifficultyM
                 .map(|(_, name)| *name)
                 .collect();
             let level = if missing.is_empty() { "INFO" } else { "WARN" };
-            logging::log!(level, "difficulty_marks", missing);
+            kanade_log::log!(level, "difficulty_marks", missing);
             return marks;
         }
         Ok(failed) => failed.failure_label().unwrap_or_default(),
         Err(_) => "timeout".to_owned(),
     };
-    logging::log!(warn, "difficulty_marks_unavailable", reason);
+    kanade_log::log!(warn, "difficulty_marks_unavailable", reason);
     DifficultyMarks::default()
 }
 
@@ -227,7 +227,7 @@ pub fn card_kit(
         Some(CompiledPersona::compile(&active.bundle.value, None))
     });
     let art = boss_dir.map(|dir| Arc::new(BossArt::new(dir)) as Arc<dyn ArtSource>);
-    logging::log!(
+    kanade_log::log!(
         info,
         "cards_ready",
         art = art.is_some(),
@@ -345,7 +345,7 @@ impl<T: DiscordTransport> TickLoop<T> {
             }
         }
         self.status.set(STOPPED);
-        logging::log!(info, "tick_stopped");
+        kanade_log::log!(info, "tick_stopped");
     }
 
     /// Settings and members edited through the portal take effect on the
@@ -377,7 +377,7 @@ impl<T: DiscordTransport> TickLoop<T> {
 pub async fn recover(store: &SqliteStore, now: DateTime<Utc>) -> Result<(), Error> {
     match store.recover_on_start(now).await {
         Ok(recovery) => {
-            logging::log!(
+            kanade_log::log!(
                 info,
                 "delivery_recovered",
                 indeterminate = recovery.indeterminate.len(),
@@ -399,7 +399,7 @@ fn tick_failed(step: &'static str, error: &DeliveryError) {
         DeliveryError::Scheduler(_) => "scheduler",
         DeliveryError::Date(_) => "date",
     };
-    logging::log!(warn, "tick_failed", step, kind);
+    kanade_log::log!(warn, "tick_failed", step, kind);
 }
 
 fn log_report(report: &TickReport) {
@@ -411,7 +411,7 @@ fn log_report(report: &TickReport) {
     {
         return;
     }
-    logging::log!(
+    kanade_log::log!(
         info,
         "tick",
         materialised = report.materialised.len(),

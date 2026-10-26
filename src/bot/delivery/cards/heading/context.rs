@@ -27,7 +27,6 @@ use crate::chat::persona::NudgeMood;
 use crate::domain::members::MemberProfile;
 use crate::domain::notify::IntentContent;
 use crate::domain::tease::note_problem;
-use crate::runtime::logging;
 
 /// The header switches as configured now (Config › Notifications), read at
 /// every rewrite and render.
@@ -58,7 +57,7 @@ pub fn resolve_heading(
 ) -> Option<String> {
     let heading = record.heading.as_deref()?;
     let seed = |reason: &str| {
-        logging::log!(info, "header_seed_at_render", reason = reason);
+        kanade_log::log!(info, "header_seed_at_render", reason = reason);
         None
     };
     let Some(slots) = &record.slots else {

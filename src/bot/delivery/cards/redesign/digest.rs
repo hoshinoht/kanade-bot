@@ -32,7 +32,6 @@ use crate::bot::commands::text::{local_day, local_time};
 use crate::domain::attendance::Tally;
 use crate::domain::notify::DigestInclusion;
 use crate::domain::schedule::{Run, RunStatus};
-use crate::runtime::logging;
 
 pub const DIGEST_FOOTER: &str = "Edited live · /schedule scope:mine for just your runs";
 /// The V2 digest's buttons.
@@ -134,7 +133,7 @@ fn v2_or_nothing(
         .formats
         .first_note(&format!("digest-budget:{}", week_start.timestamp()))
     {
-        logging::log!(
+        kanade_log::log!(
             warn,
             "digest_v2_over_budget",
             week_start = week_start.timestamp(),

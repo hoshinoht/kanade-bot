@@ -281,5 +281,5 @@ impl CharacterData {
 
 /// One structured log line with codes and counts only.
 fn log(level: &'static str, event: &'static str, fields: serde_json::Value) {
-    crate::runtime::logging::event(level, event, fields);
+    kanade_log::event(level, event, fields);
 }

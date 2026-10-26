@@ -10,7 +10,7 @@ use crate::{
 use super::{
     config::{self, BackupConfig, HealthcheckConfig, RuntimeConfig, ServeConfig, StoreSettings},
     error::Error,
-    logging, restore, serve,
+    restore, serve,
 };
 
 pub async fn run(
@@ -26,7 +26,7 @@ pub async fn run(
     // Names only: a variable silently beating the file is how a deploy ends
     // up running a value nobody can see in kanade.toml.
     if matches!(command, Command::Serve { .. }) && !resolved.shadowed.is_empty() {
-        logging::log!(warn, "config_shadowed", keys = resolved.shadowed);
+        kanade_log::log!(warn, "config_shadowed", keys = resolved.shadowed);
     }
     dispatch(command, &resolved.values)
         .await

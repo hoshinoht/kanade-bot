@@ -317,7 +317,7 @@ impl UpcomingParties for Parties {
 }
 
 fn passes() -> usize {
-    crate::runtime::logging::captured()
+    kanade_log::captured()
         .iter()
         .filter(|line| line["event"] == "estimate_refresh_pass")
         .count()
@@ -329,7 +329,7 @@ fn passes() -> usize {
 async fn the_refresh_passes_ten_minutes_after_start_then_hourly() {
     use std::time::Duration;
 
-    crate::runtime::logging::capture();
+    kanade_log::capture();
     // Nothing listens: each pass is skipped, and still logged.
     let rig = rig_with(Some("127.0.0.1:9".parse().unwrap())).await;
     let parties: Arc<dyn UpcomingParties> = Arc::new(Parties(Vec::new()));

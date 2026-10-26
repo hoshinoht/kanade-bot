@@ -19,7 +19,6 @@ use twilight_model::util::ImageHash;
 
 use crate::bot::guild_cache::{GuildCache, SelfAvatar};
 use crate::bot::transport::{DiscordTransport, Outcome};
-use crate::runtime::logging;
 
 pub use cdn::Cdn;
 
@@ -81,7 +80,7 @@ fn file(hash: ImageHash) -> String {
 }
 
 fn failed(kind: &'static str, reason: &'static str) {
-    logging::log!(warn, "identity_refresh_failed", kind, reason);
+    kanade_log::log!(warn, "identity_refresh_failed", kind, reason);
 }
 
 /// One refresh: guild avatar else user avatar (none: the monogram), and the
@@ -123,7 +122,7 @@ pub async fn refresh(source: &impl IdentitySource, cache: &GuildCache, dir: &Pat
             failed(stem, "write");
         }
     }
-    logging::log!(
+    kanade_log::log!(
         info,
         "identity_cached",
         avatar = files::cached(dir, "avatar"),

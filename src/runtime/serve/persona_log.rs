@@ -3,10 +3,7 @@
 
 use serde_json::{Value, json};
 
-use crate::{
-    chat::persona::{PersonaSnapshot, ProfileSet, Provenance, SelectionSource},
-    runtime::logging,
-};
+use crate::chat::persona::{PersonaSnapshot, ProfileSet, Provenance, SelectionSource};
 
 fn source(source: SelectionSource) -> &'static str {
     match source {
@@ -33,7 +30,7 @@ fn emit(provenance: &Provenance, profiles: Option<&ProfileSet>) {
         })
         .collect();
     let Some(effective) = &provenance.effective else {
-        logging::log!(
+        kanade_log::log!(
             error,
             "persona_unavailable",
             configured = provenance.configured.as_ref().map(ToString::to_string),
@@ -55,7 +52,7 @@ fn emit(provenance: &Provenance, profiles: Option<&ProfileSet>) {
         || !issues.is_empty()
         || !unreadable.is_empty()
         || provenance.profiles_issue.is_some();
-    logging::log!(
+    kanade_log::log!(
         if warn { "WARN" } else { "INFO" },
         "persona_selected",
         configured = provenance.configured.as_ref().map(ToString::to_string),
@@ -84,7 +81,7 @@ mod tests {
 
     #[test]
     fn fallback_and_profiles_issue_warn_with_fields() {
-        logging::capture();
+        kanade_log::capture();
         let provenance = Provenance {
             configured: Some(id("aria")),
             effective: Some(id("kanade")),
@@ -100,7 +97,7 @@ mod tests {
             profiles_issue: Some(PersonaError::Symlink),
         };
         emit(&provenance, Some(&ProfileSet::default()));
-        let lines = logging::captured();
+        let lines = kanade_log::captured();
         assert_eq!(lines.len(), 1);
         let line = &lines[0];
         assert_eq!(line["level"], "WARN");
@@ -117,7 +114,7 @@ mod tests {
 
     #[test]
     fn configured_selection_is_info() {
-        logging::capture();
+        kanade_log::capture();
         let provenance = Provenance {
             configured: Some(id("kanade")),
             effective: Some(id("kanade")),
@@ -127,12 +124,12 @@ mod tests {
             profiles_issue: None,
         };
         emit(&provenance, Some(&ProfileSet::default()));
-        assert_eq!(logging::captured()[0]["level"], "INFO");
+        assert_eq!(kanade_log::captured()[0]["level"], "INFO");
     }
 
     #[test]
     fn nothing_valid_is_persona_unavailable() {
-        logging::capture();
+        kanade_log::capture();
         let provenance = Provenance {
             configured: None,
             effective: None,
@@ -145,7 +142,7 @@ mod tests {
             profiles_issue: None,
         };
         emit(&provenance, None);
-        let line = &logging::captured()[0];
+        let line = &kanade_log::captured()[0];
         assert_eq!(line["level"], "ERROR");
         assert_eq!(line["event"], "persona_unavailable");
         assert_eq!(line["issues"][0]["candidate"], "catalog");

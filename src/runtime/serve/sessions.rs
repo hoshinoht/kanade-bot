@@ -8,7 +8,7 @@ use tokio::{sync::watch, task::JoinHandle};
 
 use crate::{
     api::auth::member::MemberAuth, domain::scheduler::StoreError,
-    infrastructure::store::web_sessions::SessionOrigin, runtime::logging,
+    infrastructure::store::web_sessions::SessionOrigin,
 };
 
 pub(super) const PRUNE_EVERY: Duration = Duration::from_secs(60 * 60);
@@ -38,9 +38,9 @@ impl SessionPrune {
             loop {
                 match prune(&member).await {
                     Ok(0) => {}
-                    Ok(count) => logging::log!(info, "sessions_pruned", count),
+                    Ok(count) => kanade_log::log!(info, "sessions_pruned", count),
                     // Store error text may carry paths.
-                    Err(_) => logging::log!(warn, "sessions_prune_failed"),
+                    Err(_) => kanade_log::log!(warn, "sessions_prune_failed"),
                 }
                 tokio::select! {
                     () = tokio::time::sleep(every) => {}

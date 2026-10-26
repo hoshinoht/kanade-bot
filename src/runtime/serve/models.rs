@@ -17,7 +17,7 @@ use crate::{
             resolve_context,
         },
     },
-    runtime::{config::ModelSettings, logging},
+    runtime::config::ModelSettings,
 };
 
 crate::domain::spelled! {
@@ -80,7 +80,7 @@ pub fn seed_roles(
     {
         settings.models.context = context.clone();
         if !models.context_clamped.is_empty() {
-            logging::log!(
+            kanade_log::log!(
                 warn,
                 "model_context_clamped",
                 fields = models
@@ -123,7 +123,7 @@ pub fn start(
     context: ContextSettings,
 ) -> ModelTasks {
     let Some(stack) = stack else {
-        logging::log!(info, "models_disabled");
+        kanade_log::log!(info, "models_disabled");
         return ModelTasks::default();
     };
     let refresh = stack.spawn_catalog_refresh();
@@ -131,7 +131,7 @@ pub fn start(
     let report = tokio::spawn(async move {
         let report = stack.check_startup().await;
         for (level, event, fields) in lines(&stack, &report, &sources, &context) {
-            logging::event(level, event, fields);
+            kanade_log::event(level, event, fields);
         }
     });
     ModelTasks(vec![refresh, report])

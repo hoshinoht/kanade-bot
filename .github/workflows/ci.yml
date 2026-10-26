@@ -45,6 +45,7 @@ jobs:
             rust:
               - .github/workflows/ci.yml
               - src/**
+              - crates/**
               - tests/**
               # Built by clippy and test --all-targets (the V02 harness).
               - examples/**
@@ -84,11 +85,11 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@1.99.1
       - name: Format
-        run: cargo fmt --check
+        run: cargo fmt --all --check
       - name: Lint
-        run: cargo clippy --all-targets --all-features -- -D warnings
+        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
       - name: Tests
-        run: cargo test --locked --all-targets --all-features
+        run: cargo test --locked --workspace --all-targets --all-features
       - name: Release build
         run: cargo build --locked --release
 

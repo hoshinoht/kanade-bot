@@ -312,7 +312,7 @@ impl<S: AuthAuditStore + Send + Sync + 'static> AuditSink for StoreAudit<S> {
             let written = tokio::time::timeout(AUDIT_WRITE_DEADLINE, store.append_audit(row)).await;
             if !matches!(written, Ok(Ok(_))) {
                 // Store error text may carry paths, so only the event is logged.
-                crate::runtime::logging::log!(warn, "audit_unrecorded");
+                kanade_log::log!(warn, "audit_unrecorded");
             }
         });
     }

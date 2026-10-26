@@ -41,7 +41,6 @@ use crate::domain::model_log::RewriteStage;
 use crate::domain::notify::{DeliveryJournal, WeekReset, WeeklyDigest};
 use crate::domain::scheduler::{ScheduleStore, Scope};
 use crate::domain::settings::MessageStyle;
-use crate::runtime::logging;
 
 /// Who asked for a run and where its summary goes.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -212,7 +211,7 @@ where
         } else {
             match self.plan((self.refresh.now)()).await {
                 None => {
-                    logging::log!(warn, "manual_rewrite_failed", operation = "plan");
+                    kanade_log::log!(warn, "manual_rewrite_failed", operation = "plan");
                     ManualStart::Unavailable
                 }
                 Some(targets) if targets.is_empty() => ManualStart::Nothing,
@@ -231,7 +230,7 @@ where
                         ManualStart::Unavailable
                     } else {
                         self.wake.notify_one();
-                        logging::log!(info, "manual_rewrite_started", headers = count);
+                        kanade_log::log!(info, "manual_rewrite_started", headers = count);
                         return ManualStart::Started(count);
                     }
                 }
@@ -260,7 +259,7 @@ where
                 continue;
             };
             let report = self.execute(&job, &stop).await;
-            logging::log!(
+            kanade_log::log!(
                 info,
                 "manual_rewrite_done",
                 accepted = report.accepted,
@@ -287,7 +286,7 @@ where
                     .await
                     .is_delivered()
                 {
-                    logging::log!(warn, "manual_rewrite_failed", operation = "summary");
+                    kanade_log::log!(warn, "manual_rewrite_failed", operation = "summary");
                 }
             }
             self.busy.store(false, Ordering::Release);
@@ -455,7 +454,7 @@ where
                 .await
                 .is_err()
             {
-                logging::log!(warn, "manual_rewrite_failed", operation = "write");
+                kanade_log::log!(warn, "manual_rewrite_failed", operation = "write");
                 report.failed += 1;
                 continue;
             }

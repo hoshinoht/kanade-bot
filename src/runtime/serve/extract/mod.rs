@@ -59,7 +59,6 @@ use crate::{
         llm::{governor::Role, setup::ModelStack},
         store::SqliteStore,
     },
-    runtime::logging,
 };
 
 use super::budget::ShutdownClock;
@@ -201,7 +200,7 @@ pub fn start<T: GatewayTransport>(mut inputs: Inputs<T>) -> Extraction {
         .filter(|stack| stack.has_role(Role::Extraction))
     else {
         extraction.settings = follow_with(None, changes);
-        logging::log!(
+        kanade_log::log!(
             info,
             "extraction_unavailable",
             reason = "no extraction model",
@@ -296,8 +295,8 @@ pub fn start<T: GatewayTransport>(mut inputs: Inputs<T>) -> Extraction {
     extraction.worker = Some(tokio::spawn(async move {
         match worker.recover().await {
             Ok(0) => {}
-            Ok(jobs) => logging::log!(info, "rescans_interrupted", jobs),
-            Err(_) => logging::log!(warn, "rescans_recover_failed"),
+            Ok(jobs) => kanade_log::log!(info, "rescans_interrupted", jobs),
+            Err(_) => kanade_log::log!(warn, "rescans_recover_failed"),
         }
         worker.run().await;
     }));
@@ -352,7 +351,7 @@ async fn follow(
         cache.set_watch(watch_list(&settings));
         let on = switched_on(&settings);
         if status.set_enabled(on) != on {
-            logging::log!(info, "extraction_switched", enabled = on);
+            kanade_log::log!(info, "extraction_switched", enabled = on);
             if !on && let Some(switched_off) = &switched_off {
                 switched_off().await;
             }
@@ -396,7 +395,7 @@ impl Extraction {
         if let Some(cancel) = cancel {
             cancel();
         }
-        logging::log!(warn, "extraction_calls_cancelled");
+        kanade_log::log!(warn, "extraction_calls_cancelled");
         if clock
             .bounded("extraction_cancel", CANCEL_GRACE, settle(&mut running))
             .await
@@ -405,7 +404,7 @@ impl Extraction {
             for task in &running {
                 task.abort();
             }
-            logging::log!(warn, "extraction_aborted", tasks = running.len());
+            kanade_log::log!(warn, "extraction_aborted", tasks = running.len());
             settle(&mut running).await;
         }
     }

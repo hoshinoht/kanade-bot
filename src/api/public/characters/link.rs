@@ -444,7 +444,7 @@ pub(super) async fn unlink_all(
         .is_err()
     {
         // A retry finds nothing left and answers an empty list.
-        crate::runtime::logging::log!(warn, "idempotency_replay_unrecorded");
+        kanade_log::log!(warn, "idempotency_replay_unrecorded");
     }
     Ok(Json(body).into_response())
 }
