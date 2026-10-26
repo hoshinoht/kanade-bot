@@ -9,8 +9,8 @@ use super::{
     prompt::RewritePrompt,
     rewrite::{NudgeRewriter, RewriteDetail, RewriteFailure, RewriteOutcome},
 };
-use crate::infrastructure::llm::governor::{ModelClient, Role, SessionError, SessionFailure};
-use crate::infrastructure::llm::{ChatRequest, ErrorCode, LlmProvider};
+use kanade_llm::governor::{ModelClient, Role, SessionError, SessionFailure};
+use kanade_llm::{ChatRequest, ErrorCode, LlmProvider};
 
 /// One short line; a few tokens of slack for the model's wording. The
 /// default rewrite reserve when no live context resolver is attached.

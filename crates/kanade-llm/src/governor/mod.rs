@@ -41,7 +41,7 @@ pub use snapshot::{
     BreakerView, GroupSnapshot, HeldPermit, PermitUsage, QueuedCall, RateLevel, RetryLevel,
 };
 
-pub(in crate::infrastructure::llm) use jitter::full as full_jitter;
+pub(crate) use jitter::full as full_jitter;
 
 use group::Group;
 

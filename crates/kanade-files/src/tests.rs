@@ -6,7 +6,7 @@ use std::{
 use super::{knowledge::MAX_KNOWLEDGE_FILES, load_catalog, load_knowledge_dir};
 
 fn repo(path: &str) -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join(path)
+    Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../..")).join(path)
 }
 
 struct Temp(PathBuf);

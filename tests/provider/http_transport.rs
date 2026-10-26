@@ -4,7 +4,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use kanade::infrastructure::llm::{
+use kanade_llm::{
     BearerKey, ChatRequest, CompletionRunner, ErrorCode, ExecutionLimits, HttpConfigError,
     HttpLimits, HttpProviderConfig, LlmProvider, ModelCapabilities, OpenAiCompatibleProvider,
     OutputSchema, OutputValidation, ProviderFailure, ProviderFailureKind, Sampling, TrustRoots,

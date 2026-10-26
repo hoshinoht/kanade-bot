@@ -25,7 +25,7 @@ use crate::chat::pilot::{
 };
 use crate::chat::sanitize::{reply_parts, schedule_defaults, schedule_people};
 use crate::chat::tools::ToolContext;
-use crate::infrastructure::llm::governor::{Charge, SessionError, SessionFailure};
+use kanade_llm::governor::{Charge, SessionError, SessionFailure};
 
 use super::position_reaction;
 

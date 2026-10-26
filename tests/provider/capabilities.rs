@@ -1,4 +1,4 @@
-use kanade::infrastructure::llm::{
+use kanade_llm::{
     AdmissionLimits, Effort, ModelCapabilities, TrustZone, parse_models_list, resolve_capabilities,
 };
 

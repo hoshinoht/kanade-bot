@@ -32,7 +32,6 @@ use crate::{
     bot::gateway::{EventSource, GatewayError},
     chat::tools::read::{GuideError, StrategyGuides},
     discord::transport::{Call, FakeDiscord, Op, Outcome},
-    infrastructure::files::{load_catalog, load_knowledge_dir},
     runtime::application::HealthProbe,
 };
 use kanade_domain::{
@@ -41,6 +40,7 @@ use kanade_domain::{
     model_log::{ChatFilter, ChatInteraction, ChatOutcome, ModelLogStore},
     settings::{SettingsStore, keys},
 };
+use kanade_files::{load_catalog, load_knowledge_dir};
 use kanade_store::SqliteStore;
 
 const GUILD: u64 = 900;

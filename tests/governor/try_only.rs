@@ -4,7 +4,7 @@
 use std::{sync::Arc, time::Duration};
 
 use chrono::TimeDelta;
-use kanade::infrastructure::llm::governor::{
+use kanade_llm::governor::{
     BreakerState, CallKind, Governor, GovernorConfig, GovernorPolicy, GroupSnapshot, Outcome,
     Refused, Role, RoleConfig,
 };
@@ -41,7 +41,7 @@ fn small(governor: &Governor) -> GroupSnapshot {
         .expect("small group")
 }
 
-fn rewrite(governor: &Governor) -> Result<kanade::infrastructure::llm::governor::Permit, Refused> {
+fn rewrite(governor: &Governor) -> Result<kanade_llm::governor::Permit, Refused> {
     governor.try_acquire(Role::Rewrite, CallKind::Rewrite, "nudge")
 }
 

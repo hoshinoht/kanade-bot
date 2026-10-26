@@ -44,13 +44,6 @@ use crate::{
         },
     },
     discord::{guild_cache::GuildCache, roster::LiveRoster},
-    infrastructure::{
-        files::KnowledgeDir,
-        llm::{
-            governor::Role,
-            setup::{ModelStack, resolve_context},
-        },
-    },
     runtime::error::Error,
 };
 use kanade_domain::{
@@ -63,6 +56,11 @@ use kanade_domain::{
     schedule::SchedulePolicy,
     scheduler::{ScheduleStore, SchedulerService, Scope},
     settings::RuntimeSettings,
+};
+use kanade_files::KnowledgeDir;
+use kanade_llm::{
+    governor::Role,
+    setup::{ModelStack, resolve_context},
 };
 use kanade_store::SqliteStore;
 

@@ -7,12 +7,12 @@ use std::time::Duration;
 use std::collections::BTreeMap;
 
 use crate::app::config::{CatalogRead, ConfigFuture, ModelCatalog};
-use crate::infrastructure::llm::{
+use kanade_domain::settings::Models;
+use kanade_llm::{
     NO_LISTING,
     governor::Role,
     setup::{ModelRoles, ModelStack, RoleSwap, RunningRole},
 };
-use kanade_domain::settings::Models;
 
 const LISTING_TIMEOUT: Duration = Duration::from_secs(5);
 

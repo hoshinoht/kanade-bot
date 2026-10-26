@@ -1,4 +1,4 @@
-use kanade::infrastructure::llm::{ErrorCode, ExecutionLimits, FinishReason};
+use kanade_llm::{ErrorCode, ExecutionLimits, FinishReason};
 use serde_json::{Value, json};
 
 use super::support::{

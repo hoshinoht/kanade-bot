@@ -27,14 +27,7 @@ use crate::{
         write::{ApiClock, SchedulerWriter, Writer},
     },
     chat::persona::{PersonaStore, load_personas},
-    infrastructure::{
-        character_data::CharacterData,
-        files::{KnowledgeDir, LoadError, load_catalog, load_knowledge_dir},
-        llm::{
-            governor::XorShift,
-            setup::{ModelRoles, ModelSetup, ModelStack, Models, build_with_groups},
-        },
-    },
+    infrastructure::character_data::CharacterData,
     runtime::{
         config::{GuildSettings, ModelSettings, ServeConfig},
         error::Error,
@@ -46,6 +39,11 @@ use kanade_domain::{
     schedule::SchedulePolicy,
     scheduler::SchedulerService,
     settings::{RuntimeSettings, SettingsStore},
+};
+use kanade_files::{KnowledgeDir, LoadError, load_catalog, load_knowledge_dir};
+use kanade_llm::{
+    governor::XorShift,
+    setup::{ModelRoles, ModelSetup, ModelStack, Models, build_with_groups},
 };
 use kanade_store::SqliteStore;
 

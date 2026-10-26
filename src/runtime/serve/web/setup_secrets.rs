@@ -12,9 +12,9 @@ use crate::{
         state::{RestartPort, SecretChecks, SecretDesk},
     },
     discord::transport::{DiscordTransport, Outcome, TransportConfig, TwilightTransport},
-    infrastructure::llm::setup::{KeyCheck, check_key},
     runtime::{config::ServeConfig, error::Error},
 };
+use kanade_llm::setup::{KeyCheck, check_key};
 
 use crate::runtime::serve::restart;
 

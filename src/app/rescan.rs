@@ -11,17 +11,15 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use crate::{
-    extract::{
-        pipeline::{Outbox, Proposer},
-        rescan::{History, JobView, RescanError, RescanRequest, Rescans},
-    },
-    infrastructure::llm::LlmProvider,
+use crate::extract::{
+    pipeline::{Outbox, Proposer},
+    rescan::{History, JobView, RescanError, RescanRequest, Rescans},
 };
 use kanade_domain::{
     model_log::{ModelLogStore, RescanJob},
     scheduler::ScheduleStore,
 };
+use kanade_llm::LlmProvider;
 
 pub type RescanFuture<'a, T> = Pin<Box<dyn Future<Output = Result<T, RescanError>> + Send + 'a>>;
 

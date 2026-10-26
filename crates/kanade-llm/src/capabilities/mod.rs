@@ -10,7 +10,7 @@ pub(crate) use downgrade::{DowngradeCache, field_capability};
 pub use listing::{ListedModel, parse_models_list};
 
 /// Kanata's limit on published output tokens (`max_tokens`).
-pub(crate) const MAX_OUTPUT_TOKENS: u32 = 1_048_576;
+pub const MAX_OUTPUT_TOKENS: u32 = 1_048_576;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -47,7 +47,7 @@ impl Effort {
         }
     }
 
-    pub(crate) fn parse(value: &str) -> Option<Self> {
+    pub fn parse(value: &str) -> Option<Self> {
         match value {
             "off" | "none" => Some(Self::Off),
             "minimal" => Some(Self::Minimal),

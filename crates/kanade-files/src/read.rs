@@ -14,7 +14,7 @@ use super::LoadError;
 
 /// Why a file was refused; each caller words it for its own error type.
 #[derive(Debug)]
-pub(crate) enum Refusal {
+pub enum Refusal {
     Symlink,
     NotRegular,
     /// More than one hard link: the same file is reachable from elsewhere.
@@ -25,7 +25,7 @@ pub(crate) enum Refusal {
 
 /// Opens `path` read-only and checks the opened file: regular, one link and
 /// at most `max` bytes. The metadata is that of the opened descriptor.
-pub(crate) fn open_regular(path: &Path, max: u64) -> Result<(File, Metadata), Refusal> {
+pub fn open_regular(path: &Path, max: u64) -> Result<(File, Metadata), Refusal> {
     // O_NONBLOCK: opening a FIFO with no writer would otherwise wait forever.
     // Regular files, the only ones read past the checks, ignore it.
     let file = OpenOptions::new()
@@ -50,7 +50,7 @@ pub(crate) fn open_regular(path: &Path, max: u64) -> Result<(File, Metadata), Re
 }
 
 /// Reads at most `max` bytes; a file that grew past it since the open is refused.
-pub(crate) fn read_capped(file: File, max: u64) -> Result<Vec<u8>, Refusal> {
+pub fn read_capped(file: File, max: u64) -> Result<Vec<u8>, Refusal> {
     let mut bytes = Vec::new();
     file.take(max + 1)
         .read_to_end(&mut bytes)

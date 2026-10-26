@@ -10,11 +10,11 @@ use kanade::extract::backlog::BacklogEntry;
 use kanade::extract::pipeline::{
     AuthorKind, CallContext, LiveContext, MessageEvent, extraction_outcome,
 };
-use kanade::infrastructure::llm::setup::check_reasoning_effort;
-use kanade::infrastructure::llm::{Effort, FakeAction, ModelCapabilities};
 use kanade_domain::drafts::{DraftStatus, ProposalStore};
 use kanade_domain::model_log::{ExtractionOutcome, ExtractionRefusal, ModelLogStore};
 use kanade_domain::schedule::RsvpState;
+use kanade_llm::setup::check_reasoning_effort;
+use kanade_llm::{Effort, FakeAction, ModelCapabilities};
 
 use crate::fakes::{
     ALIAS, ALVIN, CHANNEL, KANON, MY, OTHER, PRIYA, STRANGER, World, after, filtered, local,
@@ -590,7 +590,7 @@ async fn an_edit_during_an_in_flight_read_drops_the_stale_answer() {
 
 #[tokio::test(start_paused = true)]
 async fn an_external_ungrouped_route_fails_without_retry_or_disclosure() {
-    use kanade::infrastructure::llm::governor::Role;
+    use kanade_llm::governor::Role;
 
     let world = World::ungrouped(vec![moved("9:30pm", "101")]).await;
     assert!(world.client.governor().set_external(Role::Extraction, true));
@@ -621,7 +621,7 @@ async fn a_content_filter_is_logged_as_content_blocked_without_a_retry() {
 
 #[tokio::test(start_paused = true)]
 async fn an_external_timeout_after_admission_marks_disclosure() {
-    use kanade::infrastructure::llm::governor::Role;
+    use kanade_llm::governor::Role;
 
     let world = World::new(vec![FakeAction::UpstreamTimeout]).await;
     assert!(world.client.governor().set_external(Role::Extraction, true));
@@ -707,7 +707,7 @@ fn an_unpublished_extraction_effort_is_caught_at_startup() {
 
 #[tokio::test(start_paused = true)]
 async fn external_extraction_sends_raw_names_ids_urls_and_answer_retry_without_opt_in() {
-    use kanade::infrastructure::llm::governor::Role;
+    use kanade_llm::governor::Role;
     let world = World::new(vec![reply("not json"), nothing()]).await;
     let governor = world.client.governor();
     governor.set_external(Role::Extraction, true);
@@ -818,7 +818,7 @@ async fn without_a_live_resolver_the_configured_context_is_sent_and_logged() {
 
 #[tokio::test(start_paused = true)]
 async fn a_model_switch_mid_pass_keeps_the_pass_on_its_model_and_context() {
-    use kanade::infrastructure::llm::governor::{GroupConfig, Role, RouteTarget};
+    use kanade_llm::governor::{GroupConfig, Role, RouteTarget};
     const OTHER_MODEL: &str = "other-model";
     let live: LiveContext = std::sync::Arc::new(|alias: &str| {
         if alias == ALIAS {

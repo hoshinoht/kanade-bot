@@ -1,6 +1,6 @@
 use std::{path::PathBuf, sync::Arc};
 
-use kanade::infrastructure::llm::{
+use kanade_llm::{
     Effort, HttpConfigError,
     governor::{Role, XorShift},
     setup::{

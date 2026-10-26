@@ -15,10 +15,10 @@ use crate::chat::context::{QuestionMessage, RunContext};
 use crate::chat::gate::{ChannelDirectory, IncomingMessage, PilotSettings};
 use crate::chat::persona::CompiledPersona;
 use crate::chat::pilot::StormAlert;
-use crate::infrastructure::llm::{Effort, governor::RoleRoute};
 use kanade_domain::catalog::BossTable;
 use kanade_domain::members::{Directory, MemberProfile};
 use kanade_domain::model_log::ChatInteraction;
+use kanade_llm::{Effort, governor::RoleRoute};
 
 /// One member message as the adapter hands it over.
 #[derive(Clone)]

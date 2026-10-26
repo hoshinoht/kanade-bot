@@ -32,13 +32,13 @@ use super::{
         run_time, tally,
     },
 };
-use crate::infrastructure::llm::governor::{CallKind, GroupSnapshot};
 use kanade_domain::{
     completion::RunEnds,
     history::Actor,
     ownership::OwnerRequest,
     schedule::{FixedRun, Run, ScheduleSnapshot},
 };
+use kanade_llm::governor::{CallKind, GroupSnapshot};
 
 #[derive(Serialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]

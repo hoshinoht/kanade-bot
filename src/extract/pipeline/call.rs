@@ -21,14 +21,14 @@ use crate::extract::prompt::{
 };
 use crate::extract::resolve::Resolved;
 use crate::extract::schema::{AttemptOutcome, ExtractionAttempts, ExtractionCall, Next};
-use crate::infrastructure::llm::governor::{Refused, RoleRoute, SessionError, SessionFailure};
-use crate::infrastructure::llm::identity::{Member, PassthroughSession};
-use crate::infrastructure::llm::{ChatRequest, Effort, ErrorCode, LlmProvider, Message, Usage};
 use kanade_domain::catalog::BossTable;
 use kanade_domain::model_log::{ModelLogStore, ReadMessage, WatchedMessage};
 use kanade_domain::schedule::{FixedRun, Run, ScheduleSnapshot};
 use kanade_domain::scheduler::ScheduleStore;
 use kanade_domain::weeks;
+use kanade_llm::governor::{Refused, RoleRoute, SessionError, SessionFailure};
+use kanade_llm::identity::{Member, PassthroughSession};
+use kanade_llm::{ChatRequest, Effort, ErrorCode, LlmProvider, Message, Usage};
 
 /// Why a call produced no answer.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

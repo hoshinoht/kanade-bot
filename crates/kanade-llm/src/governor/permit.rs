@@ -135,10 +135,7 @@ impl Permit {
     /// Asks the retry gate before backing off: refused unless the breaker admits
     /// work (only a closed one when `closed_only`) and retry budget remains.
     /// `begin_retry` still re-checks and spends.
-    pub(in crate::infrastructure::llm) fn check_retry(
-        &self,
-        closed_only: bool,
-    ) -> Result<(), Refused> {
+    pub(crate) fn check_retry(&self, closed_only: bool) -> Result<(), Refused> {
         let now = Instant::now();
         let mut state = self.group.lock();
         state.breaker.refresh(now);

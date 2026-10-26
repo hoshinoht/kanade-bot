@@ -13,9 +13,9 @@ use tokio::sync::Notify;
 use super::read::{Pace, Reader, expected};
 use super::{History, RescanError, RescanRequest, resolve_window};
 use crate::extract::pipeline::{Extractor, Outbox, Proposer};
-use crate::infrastructure::llm::LlmProvider;
 use kanade_domain::model_log::{ModelLogStore, RescanJob, RescanStatus};
 use kanade_domain::scheduler::ScheduleStore;
+use kanade_llm::LlmProvider;
 
 /// Finished jobs kept in memory for progress polling (v4 `KEEP_JOBS`); the
 /// store keeps them all.

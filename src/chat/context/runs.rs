@@ -13,10 +13,10 @@ use chrono_tz::Tz;
 
 use crate::chat::tools::read::format::{boss_labels, when_label};
 use crate::extract::prompt::estimate_tokens;
-use crate::infrastructure::llm::CALL_TOKEN_BUDGET;
 use kanade_domain::ids::short_id;
 use kanade_domain::requests::is_hidden_char;
 use kanade_domain::schedule::Run;
+use kanade_llm::CALL_TOKEN_BUDGET;
 
 /// Opens the block. Its leading label is also what `strip_context_copies`
 /// (`D-PERSONAL-CONTEXT`) removes from replies.

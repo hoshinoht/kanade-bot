@@ -51,7 +51,7 @@ pub(crate) struct Cutoff {
 }
 
 impl LlmError {
-    pub(crate) fn new(code: ErrorCode, safe_reason: &str) -> Self {
+    pub fn new(code: ErrorCode, safe_reason: &str) -> Self {
         Self {
             code,
             digest: digest(safe_reason),

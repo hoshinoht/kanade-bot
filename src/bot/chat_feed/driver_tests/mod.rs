@@ -26,10 +26,10 @@ use crate::chat::sanitize::{FAILURE_REPLY, schedule_defaults};
 use crate::chat::tools::ToolContext;
 use crate::discord::mentions;
 use crate::discord::transport::{Call, FakeDiscord, Op};
-use crate::infrastructure::llm::Message;
 use kanade_domain::catalog::BossTable;
 use kanade_domain::members::{Directory, Member, Roster};
 use kanade_domain::model_log::{ChatInteraction, ChatOutcome, ModelLogStore};
+use kanade_llm::Message;
 use kanade_store::SqliteStore;
 
 const GUILD: &str = "900";
@@ -49,7 +49,7 @@ fn kanade() -> CompiledPersona {
 
 fn catalog() -> Arc<BossTable> {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("boss/bosses.yaml");
-    Arc::new(crate::infrastructure::files::load_catalog(&path).expect("shipped catalog"))
+    Arc::new(kanade_files::load_catalog(&path).expect("shipped catalog"))
 }
 
 /// The tracked persona's staging line for the test question ("when is").

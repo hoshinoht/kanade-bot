@@ -37,10 +37,8 @@ use std::{
 };
 
 use chrono::{DateTime, Datelike, Timelike, Utc};
-use kanade::{
-    infrastructure::llm::governor::Role,
-    runtime::{serve::harness, tls},
-};
+use kanade::runtime::{serve::harness, tls};
+use kanade_llm::governor::Role;
 use serde_json::{Value, json};
 
 use attempt::{Shared, TempDir};
@@ -528,10 +526,9 @@ async fn run_headers(args: &Args, persona: Arc<PersonaBundle>) -> Result<ExitCod
             "group": route.group,
         })
     });
-    let catalog = kanade::infrastructure::files::load_catalog(
-        &Path::new(env!("CARGO_MANIFEST_DIR")).join("boss/bosses.yaml"),
-    )
-    .map_err(|e| e.to_string())?;
+    let catalog =
+        kanade_files::load_catalog(&Path::new(env!("CARGO_MANIFEST_DIR")).join("boss/bosses.yaml"))
+            .map_err(|e| e.to_string())?;
     let mut meta = json!({
         "run": run_name,
         "mode": "headers",

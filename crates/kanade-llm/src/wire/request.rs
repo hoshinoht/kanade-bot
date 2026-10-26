@@ -253,7 +253,7 @@ mod tests {
     /// metadata), verbatim; a declared or minimal profile never gets it.
     #[test]
     fn the_prompt_cache_key_goes_only_where_it_is_accepted() {
-        let listed = crate::infrastructure::llm::parse_models_list(
+        let listed = crate::parse_models_list(
             br#"{"data": [{"id": "m", "kanata": {"trust_zone": "external"}}]}"#,
         )
         .expect("listing")

@@ -24,15 +24,15 @@ use kanade::{
         PersonaId, PersonaRoot, PersonaSnapshot, PersonaStore, ProfileId, ProfileQuery,
         ProfileSource,
     },
-    infrastructure::llm::{
-        AdmissionLimits, Effort, TrustZone,
-        governor::Role,
-        setup::{CapacityGroup, CatalogModel, CatalogSnapshot, RoleSwap, RunningRole},
-    },
 };
 use kanade_domain::settings::{
     Models, Reasoning, RoleModel, RoleProfileAssignment, RuntimeSettings, SettingsChange,
     SettingsStore, keys, load_settings,
+};
+use kanade_llm::{
+    AdmissionLimits, Effort, TrustZone,
+    governor::Role,
+    setup::{CapacityGroup, CatalogModel, CatalogSnapshot, RoleSwap, RunningRole},
 };
 use kanade_store::SqliteStore;
 use serde_json::{Value, json};

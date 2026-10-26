@@ -14,13 +14,13 @@ use kanade::chat::sanitize::shape_reply;
 use kanade::chat::tools::bundles::{Bundle, NO_ROUND_LEFT, ToolOffer};
 use kanade::chat::tools::propose::Proposer;
 use kanade::chat::tools::{REFUSED, ToolContext, UNKNOWN};
-use kanade::infrastructure::llm::governor::{DEFAULT_TOOL_ROUNDS, Governor, Role};
-use kanade::infrastructure::llm::{ChatRequest, Effort, FakeAction, FakeProvider, Message};
 use kanade_domain::drafts::{DraftStatus, ProposalSource, ProposalStore, SUPERSEDED};
 use kanade_domain::model_log::{ChatInteraction, ChatOutcome, ModelLogStore};
 use kanade_domain::proposals::{ChangeKind, ProposedChange};
 use kanade_domain::scheduler::Clock;
 use kanade_domain::scheduler::{ProposalRequest, SchedulerService, Supersede};
+use kanade_llm::governor::{DEFAULT_TOOL_ROUNDS, Governor, Role};
+use kanade_llm::{ChatRequest, Effort, FakeAction, FakeProvider, Message};
 use serde_json::{Value, json};
 
 use crate::looping::{Ports, V4_TOOL_ROUNDS, said, settings};
@@ -605,7 +605,7 @@ async fn external_chat_rounds_tools_and_clean_retry_send_raw_synthetic_data() {
 
 #[tokio::test(start_paused = true)]
 async fn an_external_pre_admission_refusal_does_not_claim_disclosure() {
-    use kanade::infrastructure::llm::governor::{Refused, SessionError, SessionFailure};
+    use kanade_llm::governor::{Refused, SessionError, SessionFailure};
 
     let input = world_input();
     let mut world = World::new(&input).await;
@@ -717,7 +717,7 @@ fn reported(
     let FakeAction::Response(mut response) = action else {
         panic!("a response");
     };
-    response.usage = Some(kanade::infrastructure::llm::Usage {
+    response.usage = Some(kanade_llm::Usage {
         prompt_tokens,
         completion_tokens,
         cached_tokens,
@@ -805,8 +805,8 @@ async fn each_round_logs_its_reported_pair_and_prompt_estimate() {
 
 #[tokio::test(start_paused = true)]
 async fn reasoning_is_logged_per_round_but_never_enters_the_tool_loop() {
-    use kanade::infrastructure::llm::wire_body;
     use kanade_domain::model_log::{REASONING_CAP, REASONING_TRUNCATED};
+    use kanade_llm::wire_body;
     let FakeAction::Response(mut first) = wants(&[("r1", "list_fixed", json!({}))]) else {
         panic!("response")
     };
@@ -880,7 +880,7 @@ fn numbered(session: &str, n: usize) -> Vec<String> {
 
 #[tokio::test(start_paused = true)]
 async fn logged_request_ids_are_exactly_the_ids_sent_across_rounds_and_retries() {
-    use kanade::infrastructure::llm::LlmProvider as _;
+    use kanade_llm::LlmProvider as _;
     // Round 1 answers at once; round 2's first request fails transiently and
     // its retry answers.
     let run = ask(

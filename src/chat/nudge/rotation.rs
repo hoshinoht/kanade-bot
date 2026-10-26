@@ -6,7 +6,7 @@ use std::{
     sync::{Arc, Mutex, PoisonError},
 };
 
-use crate::infrastructure::llm::governor::Random;
+use kanade_llm::governor::Random;
 
 /// Lines remembered per channel; short pools exclude fewer so a choice remains.
 pub const RECENT_PER_CHANNEL: usize = 3;

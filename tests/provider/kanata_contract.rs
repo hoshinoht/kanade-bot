@@ -4,7 +4,7 @@
 
 use std::time::Duration;
 
-use kanade::infrastructure::llm::{
+use kanade_llm::{
     ChatRequest, Effort, ErrorCode, Message, ModelCapabilities, OutputSchema, OutputValidation,
     Sampling, ToolCallRequest, ToolDefinition, governor::QuestionLimits, wire_body,
 };

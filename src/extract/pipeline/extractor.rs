@@ -20,12 +20,12 @@ use crate::extract::gate::{self, BossLexicon, GateResult};
 use crate::extract::prompt::{estimate_messages, schema_instruction_tokens};
 use crate::extract::schema::extraction_schema;
 use crate::extract::window::split_until;
-use crate::infrastructure::llm::LlmProvider;
-use crate::infrastructure::llm::governor::{ModelClient, Role, RoleRoute};
-use crate::infrastructure::llm::identity::PassthroughSession;
 use kanade_domain::model_log::{MessageUpsert, ModelLogStore, ReadMessage, WatchedMessage};
 use kanade_domain::scheduler::{Clock, IdSource, ScheduleStore, Scope, StoreError};
 use kanade_domain::weeks;
+use kanade_llm::LlmProvider;
+use kanade_llm::governor::{ModelClient, Role, RoleRoute};
+use kanade_llm::identity::PassthroughSession;
 
 /// Logged (and shown by the admin portal) when the schedule store fails;
 /// store text can carry paths, so it goes only to the server log.

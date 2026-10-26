@@ -1,12 +1,10 @@
 //! Adversarial profiles change presentation only, never code-owned policy.
 
-use kanade::{
-    chat::{
-        persona::{CompiledPersona, PersonaError, YamlIssue, parse_bundle, parse_profile},
-        prompts,
-    },
-    infrastructure::llm::Message,
+use kanade::chat::{
+    persona::{CompiledPersona, PersonaError, YamlIssue, parse_bundle, parse_profile},
+    prompts,
 };
+use kanade_llm::Message;
 
 use crate::{
     prompt_cases::{cases, expected, turn},

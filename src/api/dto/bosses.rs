@@ -7,8 +7,8 @@ use serde::Serialize;
 use serde_json::Value;
 
 use super::{Art, hue};
-use crate::infrastructure::files::read_document;
 use kanade_domain::{catalog::BossTable, schedule::FixedRun};
+use kanade_files::read_document;
 
 const LETTERS: [&str; 5] = ["e", "n", "h", "c", "x"];
 

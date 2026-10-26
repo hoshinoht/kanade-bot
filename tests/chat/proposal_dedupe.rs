@@ -7,8 +7,6 @@ use kanade::chat::answer::{AnswerDeps, AnswerFailure, AnswerSettings, Question, 
 use kanade::chat::tools::bundles::ToolOffer;
 use kanade::chat::tools::propose::Proposer;
 use kanade::chat::tools::{ToolContext, ToolOutcome};
-use kanade::infrastructure::llm::FakeAction;
-use kanade::infrastructure::llm::identity::PassthroughSession;
 use kanade_domain::drafts::{
     DraftChange, DraftStatus, DraftStore, DraftUpdate, ProposalSource, ProposalStore, StoredDraft,
 };
@@ -20,6 +18,8 @@ use kanade_domain::proposals::{
     Approver, CardDetails, ChangeKind, ProposalCardStore, ProposedChange,
 };
 use kanade_domain::scheduler::{Clock, ProposalRequest, SchedulerService, Supersede};
+use kanade_llm::FakeAction;
+use kanade_llm::identity::PassthroughSession;
 use serde_json::{Value, json};
 
 use crate::common::utc;

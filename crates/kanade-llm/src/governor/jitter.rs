@@ -47,6 +47,6 @@ pub(super) fn unit(random: &dyn Random) -> f64 {
 }
 
 /// Full jitter: uniform in [0, `cap`).
-pub(in crate::infrastructure::llm) fn full(random: &dyn Random, cap: Duration) -> Duration {
+pub(crate) fn full(random: &dyn Random, cap: Duration) -> Duration {
     cap.mul_f64(unit(random))
 }

@@ -15,11 +15,11 @@ use crate::extract::window::{
     BURST_GAP, MAX_BURST_MESSAGES, group_for_rescan, previous_week_start, should_widen,
     window_since,
 };
-use crate::infrastructure::llm::LlmProvider;
 use kanade_domain::model_log::{MessageUpsert, ModelLogStore};
 use kanade_domain::scheduler::ScheduleStore;
 use kanade_domain::time::to_iso;
 use kanade_domain::weeks;
+use kanade_llm::LlmProvider;
 
 /// Where a window read at `now` starts.
 fn window_start(

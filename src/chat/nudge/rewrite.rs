@@ -8,7 +8,7 @@ use super::{
     safety::{self, Hit, WordFilter},
 };
 use crate::chat::persona::{NUDGE_FIELDS, check_nudge_line};
-use crate::infrastructure::llm::{Effort, Usage};
+use kanade_llm::{Effort, Usage};
 
 /// User decision: the rewrite gets ~2 s, then the seed line is used.
 pub const REWRITE_DEADLINE: Duration = Duration::from_secs(2);

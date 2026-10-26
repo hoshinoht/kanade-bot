@@ -21,10 +21,10 @@ use kanade::chat::pilot::{
 use kanade::chat::sanitize::FAILURE_REPLY;
 use kanade::chat::tools::bundles::{Bundle, CardContext, ToolOffer};
 use kanade::chat::tools::{ToolContext, ToolName};
-use kanade::infrastructure::llm::governor::{Charge, Refused, SessionError, SessionFailure};
-use kanade::infrastructure::llm::{FakeAction, FakeProvider};
 use kanade_domain::model_log::ModelLogStore;
 use kanade_domain::model_log::{AllowanceOverride, ChatOutcome};
+use kanade_llm::governor::{Charge, Refused, SessionError, SessionFailure};
+use kanade_llm::{FakeAction, FakeProvider};
 use kanade_store::SqliteStore;
 use serde_json::json;
 

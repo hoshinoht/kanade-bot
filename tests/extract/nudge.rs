@@ -24,11 +24,11 @@ use kanade::chat::persona::{
     CompiledPersona, NudgeMood, NudgePurpose, NudgeSource, PersonaId, ProfileId, parse_bundle,
     parse_profile,
 };
-use kanade::infrastructure::llm::governor::{
+use kanade_domain::notify::WeekReset;
+use kanade_llm::governor::{
     CallKind, Governor, GovernorConfig, GovernorPolicy, GroupConfig, Outcome, Random, Role,
     RoleConfig, XorShift,
 };
-use kanade_domain::notify::WeekReset;
 use kanade_store::SqliteStore;
 use tokio::time::Instant;
 

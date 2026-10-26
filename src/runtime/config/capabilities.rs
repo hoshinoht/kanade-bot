@@ -13,7 +13,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use serde_json::Value;
 
 use super::{Error, models::is_alias, non_empty};
-use crate::infrastructure::llm::{Effort, MAX_OUTPUT_TOKENS, ModelCapabilities, OutputLimit};
+use kanade_llm::{Effort, MAX_OUTPUT_TOKENS, ModelCapabilities, OutputLimit};
 
 pub(super) const KEY: &str = "KANADE_MODEL_CAPABILITIES";
 

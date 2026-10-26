@@ -7,7 +7,7 @@ use std::{
     time::Duration,
 };
 
-use kanade::infrastructure::llm::governor::{BreakerState, CallKind, Outcome, Priority, Role};
+use kanade_llm::governor::{BreakerState, CallKind, Outcome, Priority, Role};
 use tokio::time::Instant;
 
 use crate::support::{LONG, governor, settle, snap, ticket};

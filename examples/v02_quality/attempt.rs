@@ -18,7 +18,6 @@ use chrono::{DateTime, Utc};
 use kanade::{
     bot::gateway::{EventSource, GatewayError},
     discord::transport::{FakeDiscord, Op},
-    infrastructure::llm::setup::ModelStack,
     runtime::{
         config::ServeConfig,
         serve::{
@@ -31,6 +30,7 @@ use kanade_domain::{
     model_log::ModelLogStore,
     settings::{SettingsStore, keys},
 };
+use kanade_llm::setup::ModelStack;
 use kanade_store::SqliteStore;
 use serde_json::{Value, json};
 use tokio::sync::{mpsc, oneshot};

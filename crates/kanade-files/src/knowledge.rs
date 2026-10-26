@@ -19,7 +19,7 @@ const SCHEMA_VERSION: u64 = 2;
 pub(super) const MAX_KNOWLEDGE_FILES: usize = 256;
 
 /// One knowledge document as the API reads it.
-pub(crate) fn read_document(path: &Path) -> Result<Value, LoadError> {
+pub fn read_document(path: &Path) -> Result<Value, LoadError> {
     let text = read_text(path, MAX_KNOWLEDGE_BYTES)?;
     serde_saphyr::from_str(&text)
         .map_err(|error| LoadError::new(path, format!("invalid YAML: {error}")))

@@ -32,9 +32,9 @@ pub use view::{ChatHandle, ChatView};
 use crate::chat::gate::{CHANNEL_BUSY_REACTION, ChatDecision, RATE_LIMITED_REACTION, Summons};
 use crate::chat::pilot::{Admission, ChatPilot, GuardLimits, LimitsView, LogFacts, TrafficLimits};
 use crate::chat::tools::ToolContext;
-use crate::infrastructure::llm::governor::MAX_TOOL_ROUNDS;
 use kanade_domain::model_log::{AllowanceOverride, ModelLogStore};
 use kanade_domain::scheduler::StoreError;
+use kanade_llm::governor::MAX_TOOL_ROUNDS;
 
 /// v4 `CHAT_PILOT_TIMEOUT`: one question, queueing for a permit included.
 pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(60);
@@ -72,7 +72,7 @@ impl Default for DriverConfig {
             guard: GuardLimits::default(),
             history_ttl_s: DEFAULT_HISTORY_TTL_S,
             timeout: DEFAULT_TIMEOUT,
-            tool_rounds: crate::infrastructure::llm::governor::DEFAULT_TOOL_ROUNDS,
+            tool_rounds: kanade_llm::governor::DEFAULT_TOOL_ROUNDS,
             // With the gateway close (5 s) and the HTTP drain (10 s) the whole
             // shutdown stays well inside Compose's 30 s stop grace.
             stop_grace: Duration::from_secs(3),

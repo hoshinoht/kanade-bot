@@ -15,7 +15,7 @@ use crate::support::{LATE_SCHEMA_DROPS, TempDir, connect, create, raw, tamper};
 #[tokio::test]
 async fn an_out_of_range_wire_reasoning_count_is_unknown_and_stored_as_null() {
     use axum::{Json, Router, routing::post};
-    use kanade::infrastructure::llm::{
+    use kanade_llm::{
         ChatRequest, HttpProviderConfig, LlmProvider, Message, ModelCapabilities,
         OpenAiCompatibleProvider,
     };

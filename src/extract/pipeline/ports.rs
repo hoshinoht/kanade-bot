@@ -12,11 +12,11 @@ use crate::chat::nudge::{LineSource, Nudger, SharedRewriter};
 use crate::chat::persona::CompiledPersona;
 use crate::extract::AmendmentKind;
 use crate::extract::redirect::{PortalLinks, RedirectLink};
-use crate::infrastructure::llm::identity::Member;
 use kanade_domain::catalog::BossTable;
 use kanade_domain::proposals::ProposedChange;
 use kanade_domain::schedule::RsvpState;
 use kanade_domain::scheduler::{ProposalRequest, ProposalResult, Proposed, SupersedeScope};
+use kanade_llm::identity::Member;
 
 /// Who wrote a message. Only members' messages are ever stored or read; the
 /// rest are the loop guard (bot, webhook and the bot's own posts).

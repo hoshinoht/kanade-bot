@@ -1,10 +1,10 @@
 //! `propose_*` tools through the dispatcher and the scheduler's propose API.
 
 use kanade::chat::tools::REFUSED;
-use kanade::infrastructure::llm::identity::PassthroughSession;
 use kanade_domain::drafts::ProposalStore;
 use kanade_domain::proposals::Refusal;
 use kanade_domain::schedule::Change;
+use kanade_llm::identity::PassthroughSession;
 use serde_json::json;
 
 use crate::support::world_input;

@@ -1,6 +1,6 @@
 //! Pure context-window resolution over saved settings and the cached catalog.
 
-use crate::infrastructure::llm::governor::Role;
+use crate::governor::Role;
 use kanade_domain::settings::{
     ContextRole, ContextSettings, LOCAL_CONTEXT_WARNING_TOKENS, MAX_CONTEXT_TOKENS,
 };
@@ -105,7 +105,7 @@ pub fn resolve_context(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::infrastructure::llm::setup::CatalogModel;
+    use crate::setup::CatalogModel;
 
     fn model(context: Option<u32>, output: Option<u32>, local: bool) -> CatalogModel {
         CatalogModel {

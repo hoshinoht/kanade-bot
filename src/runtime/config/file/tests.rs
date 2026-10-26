@@ -197,7 +197,7 @@ fn the_openai_compatible_fragment_declares_its_models() {
     assert_eq!(models.capabilities["example-extract"].output_limit, None);
     assert_eq!(
         models.capabilities["example-reasoning"].output_limit,
-        Some(crate::infrastructure::llm::OutputLimit::MaxCompletionTokens)
+        Some(kanade_llm::OutputLimit::MaxCompletionTokens)
     );
 }
 
@@ -600,7 +600,7 @@ fn groups_feed_the_model_settings() {
 
 #[test]
 fn capability_declarations_feed_the_model_settings() {
-    use crate::infrastructure::llm::{Effort, ModelCapabilities, OutputLimit};
+    use kanade_llm::{Effort, ModelCapabilities, OutputLimit};
 
     let base = "[models]\nbase_url = \"https://llm.example/v1\"\n";
     let models = |tables: &str| {

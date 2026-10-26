@@ -8,11 +8,11 @@ use std::time::Duration;
 
 use kanade::chat::answer::{AnswerDeps, Generation, Question, answer};
 use kanade::chat::tools::bundles::ToolOffer;
-use kanade::infrastructure::llm::governor::{
+use kanade_llm::governor::{
     Governor, GovernorConfig, GovernorPolicy, GroupConfig, ModelClient, Role, RoleConfig,
     RoleRoute, RouteTarget, XorShift,
 };
-use kanade::infrastructure::llm::{
+use kanade_llm::{
     ChatRequest, Effort, ExecutionLimits, FakeAction, FakeProvider, Message, RetryPolicy,
 };
 

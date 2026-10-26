@@ -37,9 +37,9 @@ use crate::{
         state::ApiState,
     },
     app::{ports::GuidePort, read::GuideBook},
-    infrastructure::files::GuideFiles,
 };
 use kanade_domain::guides::{Block, BlockError, Guide, Rendered, render};
+use kanade_files::GuideFiles;
 
 pub fn routes() -> Router<Arc<Site>> {
     Router::new()

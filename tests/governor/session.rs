@@ -4,7 +4,7 @@
 
 use std::{sync::Arc, time::Duration};
 
-use kanade::infrastructure::llm::{
+use kanade_llm::{
     ChatRequest, CompletionResponse, ErrorCode, FakeAction, FakeProvider, FinishReason,
     governor::{
         BreakerState, CallKind, Charge, DEFAULT_TOOL_ROUNDS, Governor, ModelClient, QuestionLimits,

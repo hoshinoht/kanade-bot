@@ -106,14 +106,12 @@ mod tests {
     use serde_json::json;
 
     use super::*;
-    use crate::{
-        chat::{
-            answer::Generation,
-            persona::{CompileProvenance, ExampleSource, PersonaId, ProfileId, VoiceSource},
-        },
-        infrastructure::llm::Effort,
+    use crate::chat::{
+        answer::Generation,
+        persona::{CompileProvenance, ExampleSource, PersonaId, ProfileId, VoiceSource},
     };
     use kanade_domain::model_log::{ChatInteraction, ChatOutcome};
+    use kanade_llm::Effort;
 
     fn row() -> ChatInteraction {
         ChatInteraction {

@@ -2,17 +2,15 @@
 
 use std::collections::BTreeSet;
 
-use kanade::{
-    chat::{
-        persona::{
-            CompiledPersona, ExampleSource, PersonaSnapshot, PersonaStore, ProfileQuery,
-            ProfileSource, ReloadError, RoleAssignment, RoleId, SelectionSource, VoiceSource,
-            parse_bundle, parse_profile,
-        },
-        prompts,
+use kanade::chat::{
+    persona::{
+        CompiledPersona, ExampleSource, PersonaSnapshot, PersonaStore, ProfileQuery, ProfileSource,
+        ReloadError, RoleAssignment, RoleId, SelectionSource, VoiceSource, parse_bundle,
+        parse_profile,
     },
-    infrastructure::llm::Message,
+    prompts,
 };
+use kanade_llm::Message;
 use serde_json::Value;
 
 use crate::{
@@ -257,7 +255,7 @@ fn tool_round() -> Vec<Message> {
         },
         Message::Assistant {
             content: None,
-            tool_calls: vec![kanade::infrastructure::llm::ToolCallRequest {
+            tool_calls: vec![kanade_llm::ToolCallRequest {
                 id: "call-1".into(),
                 name: "get_schedule".into(),
                 arguments: "{}".into(),
@@ -296,7 +294,7 @@ fn the_voice_reminder_is_the_final_user_message_after_tool_results() {
 #[cfg(feature = "test-support")]
 #[tokio::test]
 async fn fake_provider_captures_the_compiled_request() {
-    use kanade::infrastructure::llm::{ChatRequest, FakeProvider, LlmProvider};
+    use kanade_llm::{ChatRequest, FakeProvider, LlmProvider};
 
     let case = prompt_case("bundle-default-with-focus");
     let expected = expected(&case);

@@ -9,7 +9,7 @@ pub struct LoadError {
 }
 
 impl LoadError {
-    pub(crate) fn new(file: &Path, problem: impl Into<String>) -> Self {
+    pub fn new(file: &Path, problem: impl Into<String>) -> Self {
         Self {
             file: file.display().to_string(),
             problem: problem.into(),

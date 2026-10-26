@@ -17,14 +17,14 @@ use kanade::chat::context::{
 use kanade::chat::tools::REFUSED;
 use kanade::chat::tools::bundles::ToolOffer;
 use kanade::extract::prompt::estimate_tokens;
-use kanade::infrastructure::llm::identity::PassthroughSession;
-use kanade::infrastructure::llm::{CALL_TOKEN_BUDGET, FakeAction, Message};
 use kanade::runtime::serve::bot::chat::run_context;
 use kanade_domain::notify::{
     Claim, DeliveryJournal, DeliveryTarget, EffectKind, IntentContent, NotificationIntent, Receipt,
 };
 use kanade_domain::proposals::{CardDetails, CardPayload, ChangeKind, ProposalCardStore};
 use kanade_domain::scheduler::Clock;
+use kanade_llm::identity::PassthroughSession;
+use kanade_llm::{CALL_TOKEN_BUDGET, FakeAction, Message};
 use serde_json::{Value, json};
 
 use crate::common::utc;

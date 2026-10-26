@@ -19,10 +19,10 @@ use crate::chat::persona::{
     CompiledPersona, NudgeMood, NudgePurpose, NudgeSource, check_nudge_line, fill_nudge,
 };
 use crate::chat::prompts::builtin_nudges;
-use crate::infrastructure::llm::governor::Random;
 use kanade_domain::model_log::{ModelLogStore, RewriteKind, RewriteStage};
 use kanade_domain::notify::WeekReset;
 use kanade_domain::scheduler::StoreError;
+use kanade_llm::governor::Random;
 
 pub const EDIT_RUN_ACTION: &str = "edit the run";
 pub const REQUEST_CHANGE_ACTION: &str = "request a change";

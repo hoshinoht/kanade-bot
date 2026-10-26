@@ -10,7 +10,7 @@ use std::time::Duration;
 
 use super::{Extraction, parse_response};
 use crate::extract::prompt::prompt_text;
-use crate::infrastructure::llm::Message;
+use kanade_llm::Message;
 
 /// v4 `RETRY_INSTRUCTION`, sent after the first answer fails to validate.
 pub fn retry_instruction(error: &str) -> String {

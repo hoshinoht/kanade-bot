@@ -88,9 +88,8 @@ impl GuidePort for OfflineGuides {
 
 /// Live governor snapshots for the Limits page. `None` means model serving is
 /// not composed; allowance rows still remain useful.
-pub type ModelLimits = Arc<
-    dyn Fn(DateTime<Utc>) -> Vec<crate::infrastructure::llm::governor::GroupSnapshot> + Send + Sync,
->;
+pub type ModelLimits =
+    Arc<dyn Fn(DateTime<Utc>) -> Vec<kanade_llm::governor::GroupSnapshot> + Send + Sync>;
 
 /// Who asked for a run and where its summary goes.
 #[derive(Clone, Debug, PartialEq, Eq)]

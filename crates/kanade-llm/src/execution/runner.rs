@@ -27,21 +27,21 @@ pub struct CompletionRunner<P> {
     random: Arc<dyn Random>,
 }
 
-pub(in crate::infrastructure::llm) enum RunError {
+pub(crate) enum RunError {
     /// The gate refused the first request; nothing was sent.
     Denied(Denied),
     Failed(RunFailure),
 }
 
-pub(in crate::infrastructure::llm) struct RunFailure {
-    pub(in crate::infrastructure::llm) error: LlmError,
-    pub(in crate::infrastructure::llm) cause: Cause,
+pub(crate) struct RunFailure {
+    pub(crate) error: LlmError,
+    pub(crate) cause: Cause,
     /// The backend may have worked for this call (a reply arrived or a request timed out).
-    pub(in crate::infrastructure::llm) charged: bool,
+    pub(crate) charged: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(in crate::infrastructure::llm) enum Cause {
+pub(crate) enum Cause {
     Admission { retry_after: Option<Duration> },
     Timeout,
     Other,
@@ -56,7 +56,7 @@ fn failed(error: LlmError, charged: bool) -> RunError {
 }
 
 impl<P: LlmProvider> CompletionRunner<P> {
-    pub(in crate::infrastructure::llm) fn new(
+    pub(crate) fn new(
         provider: Arc<P>,
         limits: ExecutionLimits,
         retry: RetryPolicy,
@@ -72,7 +72,7 @@ impl<P: LlmProvider> CompletionRunner<P> {
         })
     }
 
-    pub(in crate::infrastructure::llm) fn random(&self) -> &Arc<dyn Random> {
+    pub(crate) fn random(&self) -> &Arc<dyn Random> {
         &self.random
     }
 
@@ -111,7 +111,7 @@ impl<P: LlmProvider> CompletionRunner<P> {
             })
     }
 
-    pub(in crate::infrastructure::llm) async fn run(
+    pub(crate) async fn run(
         &self,
         request: &ChatRequest,
         gate: &mut Gate<'_>,

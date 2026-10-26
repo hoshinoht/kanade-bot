@@ -6,9 +6,9 @@ use std::path::Path;
 use kanade::chat::sanitize::schedule_defaults;
 use kanade::chat::tools::ToolOutcome;
 use kanade::chat::tools::read::render_guide;
-use kanade::infrastructure::files::{load_catalog, load_knowledge_dir};
-use kanade::infrastructure::llm::identity::PassthroughSession;
 use kanade_domain::catalog::BossReference;
+use kanade_files::{load_catalog, load_knowledge_dir};
+use kanade_llm::identity::PassthroughSession;
 use serde_json::{Value, json};
 
 use crate::common::instant;

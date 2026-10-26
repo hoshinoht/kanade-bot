@@ -27,7 +27,7 @@ use axum::{
     routing::{get, post},
 };
 use chrono::{DateTime, Duration, Utc};
-use kanade::infrastructure::llm::governor::{
+use kanade_llm::governor::{
     BreakerState, BreakerView, CallKind, Counters, GroupSnapshot, PermitUsage, QueuedCall,
     RateLevel, RetryLevel,
 };

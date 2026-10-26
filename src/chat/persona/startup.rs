@@ -3,7 +3,7 @@
 use std::path::Path;
 
 use super::{PersonaId, PersonaRoot, PersonaSnapshot};
-use crate::infrastructure::files::LoadError;
+use kanade_files::LoadError;
 
 /// A reply-style profile members may choose.
 #[derive(Clone, Debug, PartialEq, Eq)]

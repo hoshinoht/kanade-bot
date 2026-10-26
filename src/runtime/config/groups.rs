@@ -7,7 +7,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use serde::Deserialize;
 
 use super::{Error, non_empty};
-use crate::infrastructure::llm::setup::CapacityGroup;
+use kanade_llm::setup::CapacityGroup;
 
 pub(super) const GROUPS: &str = "KANADE_MODEL_GROUPS";
 const MAX_PERMITS: u32 = 16;

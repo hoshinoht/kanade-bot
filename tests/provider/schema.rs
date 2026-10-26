@@ -1,6 +1,4 @@
-use kanade::infrastructure::llm::{
-    CompletionResponse, ErrorCode, ExecutionLimits, FakeAction, OutputValidation,
-};
+use kanade_llm::{CompletionResponse, ErrorCode, ExecutionLimits, FakeAction, OutputValidation};
 use serde_json::json;
 
 use super::support::{

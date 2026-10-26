@@ -9,14 +9,12 @@ use std::{
 };
 
 use chrono::{DateTime, NaiveTime, TimeDelta, Utc};
-use kanade::{
-    api::auth::{audit::AuditEvent, rate::MEMBER_READ_ROUTE},
-    infrastructure::llm::governor::{CallKind, GroupSnapshot, QueuedCall},
-};
+use kanade::api::auth::{audit::AuditEvent, rate::MEMBER_READ_ROUTE};
 use kanade_domain::{
     members::MemberStore,
     schedule::{Change, Run, RunSource, RunStatus},
 };
+use kanade_llm::governor::{CallKind, GroupSnapshot, QueuedCall};
 use serde_json::{Value, json};
 
 use super::{

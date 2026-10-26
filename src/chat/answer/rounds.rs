@@ -23,17 +23,17 @@ use crate::chat::tools::propose::{ProposalCard, Proposer};
 use crate::chat::tools::read::resolve::Heard;
 use crate::chat::tools::read::{PendingCard, ToolWorld};
 use crate::chat::tools::{FAILED, LOOKUP_FAILED, REFUSED, ToolName, ToolOutcome};
-use crate::infrastructure::llm::governor::{SentRequest, Session, SessionError, SessionFailure};
-use crate::infrastructure::llm::identity::PassthroughSession;
-use crate::infrastructure::llm::{
-    ChatRequest, CompletionResponse, ErrorCode, LlmProvider, Message, Sampling, ToolCallRequest,
-    ToolDefinition,
-};
 use kanade_domain::drafts::ProposalStore;
 use kanade_domain::members::member_name;
 use kanade_domain::pytext::strip;
 use kanade_domain::schedule::ScheduleSnapshot;
 use kanade_domain::scheduler::{Clock, IdSource, ScheduleStore, Scope};
+use kanade_llm::governor::{SentRequest, Session, SessionError, SessionFailure};
+use kanade_llm::identity::PassthroughSession;
+use kanade_llm::{
+    ChatRequest, CompletionResponse, ErrorCode, LlmProvider, Message, Sampling, ToolCallRequest,
+    ToolDefinition,
+};
 
 /// Why the reserved clean retry is spent.
 #[derive(Clone, Copy)]

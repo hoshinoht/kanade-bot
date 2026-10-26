@@ -13,9 +13,9 @@ use super::{
     CallError, FAILED, LOOKUP_FAILED, ProposalCard, READ_ONLY_TURN, REFUSED, ToolContext,
     ToolOutcome, UNKNOWN, UNKNOWN_TOOL,
 };
-use crate::infrastructure::llm::identity::PassthroughSession;
 use kanade_domain::drafts::ProposalStore;
 use kanade_domain::scheduler::{Clock, IdSource, ScheduleStore};
+use kanade_llm::identity::PassthroughSession;
 
 /// One dispatched call.
 #[derive(Clone, Debug, PartialEq)]

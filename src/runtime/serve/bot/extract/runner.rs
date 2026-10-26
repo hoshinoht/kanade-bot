@@ -12,8 +12,8 @@ use crate::{
     bot::commands::GuildChannels,
     discord::{guild_cache::GuildCache, roster::LiveRoster},
     extract::rescan::{RescanError, RescanRequest},
-    infrastructure::llm::setup::ModelStack,
 };
+use kanade_llm::setup::ModelStack;
 
 /// The startup rescan's window (automated jobs are capped at 48 h anyway).
 pub const STARTUP_WINDOW: &str = "24h";

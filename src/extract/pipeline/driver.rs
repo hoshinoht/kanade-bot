@@ -15,9 +15,9 @@ use super::extractor::{Extractor, PassReport};
 use super::ports::{BacklogDrop, IncomingMessage, MessageEvent, MessageOrigin, Outbox, Proposer};
 use crate::extract::backlog::{Backlog, BacklogEntry};
 use crate::extract::gate;
-use crate::infrastructure::llm::LlmProvider;
 use kanade_domain::model_log::{MessageUpsert, ModelLogStore};
 use kanade_domain::scheduler::ScheduleStore;
+use kanade_llm::LlmProvider;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Source {

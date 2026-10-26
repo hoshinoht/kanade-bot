@@ -72,7 +72,7 @@ fn known(token: &str, catalog: &BossTable) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::infrastructure::files::load_catalog;
+    use kanade_files::load_catalog;
 
     fn tracked() -> BossTable {
         load_catalog(&std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("boss/bosses.yaml"))

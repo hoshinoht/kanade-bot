@@ -30,11 +30,11 @@ use crate::{
     discord::transport::ApplicationInfo,
     infrastructure::{
         character_data::{Health, NexonState},
-        llm::governor::Role,
         scouter::ScouterState,
     },
 };
 use kanade_domain::settings::{RuntimeSettings, keys};
+use kanade_llm::governor::Role;
 
 mod secrets;
 

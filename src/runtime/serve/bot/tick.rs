@@ -37,20 +37,18 @@ use crate::{
         persona::{CompiledPersona, PersonaStore},
     },
     discord::{guild_cache::GuildCache, roster::LiveRoster, transport::DiscordTransport},
-    infrastructure::{
-        files::BossArt,
-        llm::{
-            LlmProvider,
-            governor::{ModelClient, Role},
-            setup::ModelStack,
-        },
-    },
     runtime::{config::SettingSeeds, error::Error},
 };
 use chrono::{DateTime, Utc};
 use kanade_domain::{
     art::ArtSource, catalog::BossTable, ids::RandomIds, members::MemberStore,
     notify::DEFAULT_MAX_NOTICE_AGE, notify::DeliveryJournal, settings::RuntimeSettings,
+};
+use kanade_files::BossArt;
+use kanade_llm::{
+    LlmProvider,
+    governor::{ModelClient, Role},
+    setup::ModelStack,
 };
 use kanade_store::SqliteStore;
 
@@ -391,10 +389,10 @@ mod tests {
     use super::*;
     use crate::chat::nudge::{NudgeRewriter, RewritePrompt};
     use crate::chat::persona::{NudgeMood, PersonaId, parse_bundle};
-    use crate::infrastructure::llm::governor::{
+    use kanade_llm::governor::{
         Governor, GovernorConfig, GovernorPolicy, GroupConfig, RoleConfig, XorShift,
     };
-    use crate::infrastructure::llm::{
+    use kanade_llm::{
         CompletionResponse, ExecutionLimits, FakeAction, FakeProvider, FinishReason, RetryPolicy,
     };
 

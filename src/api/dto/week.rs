@@ -7,7 +7,7 @@ use chrono_tz::Tz;
 use serde::Serialize;
 
 use super::{Art, Boss, Named, bosses, dow, hhmm, iso_date, iso_instant};
-use crate::{app::guild::ChannelEntry, infrastructure::llm::governor::GroupSnapshot};
+use crate::app::guild::ChannelEntry;
 use kanade_domain::{
     catalog::BossTable,
     completion::RunEnds,
@@ -18,6 +18,7 @@ use kanade_domain::{
         is_stale,
     },
 };
+use kanade_llm::governor::GroupSnapshot;
 
 /// What every projection reads besides the rows themselves.
 pub struct Context<'a> {

@@ -14,7 +14,7 @@ use super::{
     id::{EXAMPLE_PROFILE, PersonaId, ProfileId},
     schema::{Bundle, Catalog, Profile, parse_bundle, parse_catalog, parse_profile},
 };
-use crate::infrastructure::files::{Refusal, open_regular, read_capped};
+use kanade_files::{Refusal, open_regular, read_capped};
 
 const CATALOG_FILE: &str = "catalog.yaml";
 const BUNDLES_DIR: &str = "bundles";

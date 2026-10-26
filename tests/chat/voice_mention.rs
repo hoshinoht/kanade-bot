@@ -19,11 +19,9 @@ use kanade::chat::pilot::ChatPilot;
 use kanade::chat::prompts::REMINDER_PREFIX;
 use kanade::chat::sanitize::{ScheduleDefaults, schedule_defaults};
 use kanade::extract::prompt::estimate_tokens;
-use kanade::infrastructure::llm::governor::{DEFAULT_TOOL_ROUNDS, Governor, Role};
-use kanade::infrastructure::llm::{
-    ChatRequest, Effort, FakeAction, FakeProvider, Message, wire_body,
-};
 use kanade_domain::scheduler::Clock;
+use kanade_llm::governor::{DEFAULT_TOOL_ROUNDS, Governor, Role};
+use kanade_llm::{ChatRequest, Effort, FakeAction, FakeProvider, Message, wire_body};
 use serde_json::{Value, json};
 
 use crate::looping::{Ports, said, settings};

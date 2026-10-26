@@ -17,16 +17,16 @@ use kanade::extract::AmendmentKind;
 use kanade::extract::pipeline::MessageEvent;
 use kanade::extract::pipeline::Proposer;
 use kanade::extract::redirect::SelfServiceMode;
-use kanade::infrastructure::llm::governor::{
-    BreakerState, CallKind, Governor, GovernorConfig, GovernorPolicy, GroupConfig, ModelClient,
-    Outcome, Random, Role, RoleConfig,
-};
-use kanade::infrastructure::llm::{FakeAction, FakeProvider, Message};
 use kanade_domain::drafts::ProposalSource;
 use kanade_domain::model_log::{ExtractionOutcome, ModelLogStore};
 use kanade_domain::notify::WeekReset;
 use kanade_domain::proposals::{ChangeKind, ProposedChange};
 use kanade_domain::scheduler::{ProposalRequest, Supersede};
+use kanade_llm::governor::{
+    BreakerState, CallKind, Governor, GovernorConfig, GovernorPolicy, GroupConfig, ModelClient,
+    Outcome, Random, Role, RoleConfig,
+};
+use kanade_llm::{FakeAction, FakeProvider, Message};
 use serde_json::json;
 use tokio::time::Instant;
 
@@ -51,9 +51,7 @@ fn rewrite_prompt() -> RewritePrompt {
     )
 }
 
-fn adapter<P: kanade::infrastructure::llm::LlmProvider>(
-    client: Arc<ModelClient<P>>,
-) -> GovernedRewriter<P> {
+fn adapter<P: kanade_llm::LlmProvider>(client: Arc<ModelClient<P>>) -> GovernedRewriter<P> {
     GovernedRewriter::new(client)
 }
 
@@ -472,9 +470,7 @@ async fn a_refused_proposal_posts_no_card_or_link_and_spends_no_tip() {
     assert!(world.store.claim_tip(MY, week, now()).await.unwrap());
 }
 
-fn group(
-    client: &ModelClient<FakeProvider>,
-) -> kanade::infrastructure::llm::governor::GroupSnapshot {
+fn group(client: &ModelClient<FakeProvider>) -> kanade_llm::governor::GroupSnapshot {
     let wall = chrono::DateTime::<chrono::Utc>::from_timestamp(1_790_000_000, 0).unwrap();
     client.governor().snapshot(wall).remove(0)
 }
@@ -631,14 +627,14 @@ async fn each_rewrite_reads_the_live_reserve_and_a_rewrite_in_flight_keeps_its_o
 }
 
 fn answered(content: &str, prompt_tokens: u32, completion_tokens: u32) -> FakeAction {
-    FakeAction::Response(kanade::infrastructure::llm::CompletionResponse {
+    FakeAction::Response(kanade_llm::CompletionResponse {
         reasoning_content: Some("Keep it short.".into()),
         reasoning_tokens: Some(3),
         model: ALIAS.into(),
         content: Some(content.to_owned()),
         tool_calls: Vec::new(),
-        finish_reason: kanade::infrastructure::llm::FinishReason::Stop,
-        usage: Some(kanade::infrastructure::llm::Usage {
+        finish_reason: kanade_llm::FinishReason::Stop,
+        usage: Some(kanade_llm::Usage {
             prompt_tokens,
             completion_tokens,
             cached_tokens: None,
@@ -710,7 +706,7 @@ async fn a_cut_off_rewrite_is_incomplete_and_keeps_its_usage() {
     let FakeAction::Response(mut cut) = answered("Waku", 40, REWRITE_MAX_OUTPUT_TOKENS) else {
         unreachable!("answered is a response")
     };
-    cut.finish_reason = kanade::infrastructure::llm::FinishReason::Length;
+    cut.finish_reason = kanade_llm::FinishReason::Length;
     let (provider, client) = client(vec![FakeAction::Response(cut)], true);
     let outcome = adapter(client)
         .rewrite_detailed(&rewrite_prompt(), DEADLINE)
@@ -745,7 +741,7 @@ async fn a_refused_rewrite_carries_the_governor_code() {
 /// shows "reserved N > budget 16384".
 #[tokio::test(start_paused = true)]
 async fn a_reservation_over_the_call_budget_is_refused_before_sending() {
-    use kanade::infrastructure::llm::CALL_TOKEN_BUDGET;
+    use kanade_llm::CALL_TOKEN_BUDGET;
 
     let (provider, client) = client(vec![reply("unused")], true);
     let rewriter = GovernedRewriter::new(client).with_reserve(Arc::new(|_: &str| 16_384));
@@ -767,8 +763,8 @@ async fn a_reservation_over_the_call_budget_is_refused_before_sending() {
 #[tokio::test(start_paused = true)]
 async fn a_rewrite_row_records_max_tokens_only_when_the_route_sends_it() {
     use kanade::chat::nudge::StoreRewriteSink;
-    use kanade::infrastructure::llm::ModelCapabilities;
     use kanade_domain::model_log::{RewriteFilter, RewriteLogStore};
+    use kanade_llm::ModelCapabilities;
     use kanade_store::SqliteStore;
 
     let mut rows = Vec::new();

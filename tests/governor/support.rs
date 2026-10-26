@@ -1,7 +1,7 @@
 use std::{collections::BTreeMap, sync::Arc, time::Duration};
 
 use chrono::{DateTime, Utc};
-use kanade::infrastructure::llm::{
+use kanade_llm::{
     ChatRequest, CompletionResponse, ExecutionLimits, FakeAction, FakeProvider, FinishReason,
     Message, RetryPolicy, Usage,
     governor::{

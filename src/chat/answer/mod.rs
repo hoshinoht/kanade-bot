@@ -28,10 +28,10 @@ use crate::chat::gate::{ChannelDirectory, PilotSettings};
 use crate::chat::tools::bundles::ToolOffer;
 use crate::chat::tools::read::{PendingCard, StrategyGuides};
 use crate::chat::tools::{ProposalCard, ToolContext, ToolOutcome};
-use crate::infrastructure::llm::governor::{Charge, SentRequest, SessionError};
-use crate::infrastructure::llm::{Effort, Message, Usage};
 use kanade_domain::catalog::BossTable;
 use kanade_domain::members::{Directory, Member};
+use kanade_llm::governor::{Charge, SentRequest, SessionError};
+use kanade_llm::{Effort, Message, Usage};
 
 /// v4's reply when a posted card could not be delivered.
 pub const CARD_NOT_POSTED: &str = "The change was recorded but the card could not be posted to the channel. Tell them to check with an admin.";
@@ -292,8 +292,8 @@ impl Generation {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::infrastructure::llm::governor::{Refused, SessionFailure};
-    use crate::infrastructure::llm::{ErrorCode, LlmError};
+    use kanade_llm::governor::{Refused, SessionFailure};
+    use kanade_llm::{ErrorCode, LlmError};
 
     /// The chat log's codes, byte-identical to the table they had before
     /// `SessionError::code` became their single source.

@@ -4,7 +4,8 @@ use chrono::{DateTime, TimeZone};
 use chrono_tz::Tz;
 
 use super::compiler::{CompiledPersona, join_parts};
-use crate::{chat::prompts, infrastructure::llm::Message};
+use crate::chat::prompts;
+use kanade_llm::Message;
 
 /// Trusted per-turn context lines built by code, never by persona files.
 #[derive(Clone, Debug, PartialEq, Eq)]

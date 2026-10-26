@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use kanade::infrastructure::llm::{
+use kanade_llm::{
     AdmissionLimits,
     governor::{
         CallKind, ConfigError, ConfigWarning, Governor, GovernorConfig, GovernorPolicy, Priority,

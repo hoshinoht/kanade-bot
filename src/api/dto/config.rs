@@ -11,11 +11,6 @@ use serde::Serialize;
 use crate::{
     app::guild::{ChannelEntry, RoleEntry},
     chat::persona::{PersonaSnapshot, ProfileId},
-    infrastructure::llm::{
-        TrustZone,
-        governor::Role,
-        setup::{CatalogModel, CatalogSnapshot, RunningRole, resolve_context},
-    },
 };
 use kanade_domain::{
     notify::WeeklyDigest,
@@ -26,6 +21,11 @@ use kanade_domain::{
         RuntimeSettings,
     },
     time::ZonedDateTime,
+};
+use kanade_llm::{
+    TrustZone,
+    governor::Role,
+    setup::{CatalogModel, CatalogSnapshot, RunningRole, resolve_context},
 };
 
 const SUMMARY_CHARS: usize = 140;

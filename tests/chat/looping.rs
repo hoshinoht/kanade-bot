@@ -10,7 +10,7 @@ use kanade::chat::context::COMPLETION_RESERVE_TOKENS;
 use kanade::chat::tools::bundles::ToolOffer;
 use kanade::chat::tools::read::PendingCard;
 use kanade::chat::tools::{ProposalCard, ToolContext};
-use kanade::infrastructure::llm::{CompletionResponse, FakeAction, FinishReason, Message};
+use kanade_llm::{CompletionResponse, FakeAction, FinishReason, Message};
 use serde_json::Value;
 
 use crate::common::text;

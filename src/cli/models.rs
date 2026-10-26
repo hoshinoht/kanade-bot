@@ -5,21 +5,19 @@
 
 use std::{collections::BTreeMap, io::Write, sync::Arc};
 
-use crate::{
-    infrastructure::llm::{
-        NO_LISTING, TrustZone,
-        governor::XorShift,
-        setup::{
-            CatalogModel, Listing, ModelRoles, ModelSetup, Models, PROBE_TIMEOUT, ProbeOutcome,
-            build_with_groups, resolve_context,
-        },
-    },
-    runtime::{
-        config::{ModelSettings, guild_id},
-        error::Error,
-    },
+use crate::runtime::{
+    config::{ModelSettings, guild_id},
+    error::Error,
 };
 use kanade_domain::settings::{LOCAL_CONTEXT_WARNING, Models as StoredModels};
+use kanade_llm::{
+    NO_LISTING, TrustZone,
+    governor::XorShift,
+    setup::{
+        CatalogModel, Listing, ModelRoles, ModelSetup, Models, PROBE_TIMEOUT, ProbeOutcome,
+        build_with_groups, resolve_context,
+    },
+};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Args {

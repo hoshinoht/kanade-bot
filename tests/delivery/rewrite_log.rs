@@ -79,7 +79,7 @@ fn over_budget() -> RewriteOutcome {
         detail: RewriteDetail {
             code: Some("budget_exceeded"),
             alias: Some("kanata/rewrite".into()),
-            usage: Some(kanade::infrastructure::llm::Usage {
+            usage: Some(kanade_llm::Usage {
                 prompt_tokens: 300,
                 completion_tokens: 112,
                 cached_tokens: Some(256),

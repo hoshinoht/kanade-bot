@@ -5,7 +5,7 @@ use regex::Regex;
 use serde_json::Value;
 
 use crate::extract::text::pattern;
-use crate::infrastructure::llm::{Message, schema_instruction};
+use kanade_llm::{Message, schema_instruction};
 
 /// Characters per token for this prompt: dense timestamps, boss names and
 /// punctuation measure nearer 3 than prose's 4 against `gpt-oss:20b`.

@@ -18,7 +18,6 @@ use kanade::chat::persona::{CompiledPersona, PersonaId, PersonaRoot, parse_bundl
 use kanade::discord::transport::{
     Call, FakeDiscord, MessageEdit, Op, OutgoingMessage, RejectionKind, Step,
 };
-use kanade::infrastructure::files::BossArt;
 use kanade_domain::art::{ArtFile, ArtSource};
 use kanade_domain::catalog::{BossSpec, BossTable, CatalogSpec, DifficultySpec, GuideSpec};
 use kanade_domain::drafts::{DraftCreated, DraftKind, DraftStore, MergeCommit, NewDraft};
@@ -34,6 +33,7 @@ use kanade_domain::schedule::{
 };
 use kanade_domain::scheduler::StoreError;
 use kanade_domain::settings::RunLengths;
+use kanade_files::BossArt;
 use kanade_store::SqliteStore;
 use tokio::sync::Notify;
 use twilight_model::channel::message::Embed;

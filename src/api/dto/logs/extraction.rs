@@ -182,7 +182,7 @@ pub const CALL_FAILED: &str = "The call failed; the server log has the detail.";
 /// Fixed texts the extractor logs (its own sentences, governor refusals,
 /// session failures, schema and date errors).
 fn fixed_failures() -> Vec<String> {
-    use crate::infrastructure::llm::governor::Refused;
+    use kanade_llm::governor::Refused;
     let refused = [
         Refused::UnknownRole,
         Refused::Ungrouped,

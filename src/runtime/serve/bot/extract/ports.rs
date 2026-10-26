@@ -8,7 +8,6 @@ use crate::{
     bot::extract_feed::StaleCache,
     discord::{guild_cache::GuildCache, roster::LiveRoster},
     extract::pipeline::{Guild, IncomingMessage, Outbox, Proposer},
-    infrastructure::llm::{LlmProvider, identity::Member},
 };
 use kanade_domain::{
     catalog::BossTable,
@@ -16,6 +15,7 @@ use kanade_domain::{
     schedule::SchedulePolicy,
     scheduler::{ProposalRequest, ProposalResult, Proposed, SchedulerService, SupersedeScope},
 };
+use kanade_llm::{LlmProvider, identity::Member};
 use kanade_store::SqliteStore;
 
 use crate::extract::pipeline::Extractor;

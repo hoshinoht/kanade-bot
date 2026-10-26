@@ -20,14 +20,6 @@ use kanade::extract::pipeline::{
 };
 use kanade::extract::redirect::PublicPortalLinks;
 use kanade::extract::rescan::{Backfilled, History, Rescans};
-use kanade::infrastructure::llm::governor::{
-    Governor, GovernorConfig, GovernorPolicy, GroupConfig, ModelClient, Random, Role, RoleConfig,
-};
-use kanade::infrastructure::llm::identity::Member;
-use kanade::infrastructure::llm::{
-    CapabilityFuture, ChatRequest, CompletionFuture, CompletionResponse, ExecutionLimits,
-    FakeAction, FakeProvider, FinishReason, LlmProvider, ModelCapabilities, RetryPolicy, Usage,
-};
 use kanade_domain::catalog::BossTable;
 use kanade_domain::drafts::{ProposalStore, StoredProposal};
 use kanade_domain::history::Origin;
@@ -39,6 +31,14 @@ use kanade_domain::schedule::{NewRun, ReminderPolicy, RunSource, RunStatus, Sche
 use kanade_domain::scheduler::{
     ProposalApproved, ProposalError, ProposalRequest, ProposalResult, Proposed, SchedulerService,
     StoreRef, SupersedeScope,
+};
+use kanade_llm::governor::{
+    Governor, GovernorConfig, GovernorPolicy, GroupConfig, ModelClient, Random, Role, RoleConfig,
+};
+use kanade_llm::identity::Member;
+use kanade_llm::{
+    CapabilityFuture, ChatRequest, CompletionFuture, CompletionResponse, ExecutionLimits,
+    FakeAction, FakeProvider, FinishReason, LlmProvider, ModelCapabilities, RetryPolicy, Usage,
 };
 use kanade_store::SqliteStore;
 use tokio::sync::mpsc;

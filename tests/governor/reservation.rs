@@ -3,9 +3,7 @@
 
 use std::{sync::Arc, time::Duration};
 
-use kanade::infrastructure::llm::governor::{
-    BreakerState, CallKind, Governor, Outcome, Permit, Refused, Role,
-};
+use kanade_llm::governor::{BreakerState, CallKind, Governor, Outcome, Permit, Refused, Role};
 
 use crate::support::{LONG, build, settle, single, snap};
 

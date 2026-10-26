@@ -12,11 +12,9 @@ use std::{
 use hyper::Uri;
 
 use super::{Error, capabilities, groups, non_empty, parse_bounded_u64, refuse_plain};
-use crate::{
-    infrastructure::llm::{ModelCapabilities, setup::CapacityGroup},
-    runtime::secrets::{self, Redacted, SecretFile},
-};
+use crate::runtime::secrets::{self, Redacted, SecretFile};
 use kanade_domain::settings::{ContextSettings, Reasoning};
+use kanade_llm::{ModelCapabilities, setup::CapacityGroup};
 
 const RETIRED_PRIVACY_KEYS: [&str; 2] = ["KANADE_ALLOW_EXTERNAL_UNMASKED", "KANADE_PSEUDONYMIZE"];
 const ALIASES: [&str; 3] = [
@@ -176,7 +174,7 @@ pub(super) fn is_alias(name: &str) -> bool {
     !name.is_empty() && name.len() <= 200 && name.bytes().all(|byte| byte.is_ascii_graphic())
 }
 
-/// Mirrors `infrastructure::llm` endpoint parsing.
+/// Mirrors `kanade_llm` endpoint parsing.
 fn valid_base_url(url: &str) -> bool {
     let Ok(uri) = url.parse::<Uri>() else {
         return false;

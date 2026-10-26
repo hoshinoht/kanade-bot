@@ -1106,12 +1106,8 @@ fn run<'a>(week: &'a Value, id: &str) -> &'a Value {
 
 /// A healthy governor group with `in_use` of `total` permits, nothing
 /// queued or held.
-pub(crate) fn snapshot(
-    name: &str,
-    in_use: u32,
-    total: u32,
-) -> kanade::infrastructure::llm::governor::GroupSnapshot {
-    use kanade::infrastructure::llm::governor::{
+pub(crate) fn snapshot(name: &str, in_use: u32, total: u32) -> kanade_llm::governor::GroupSnapshot {
+    use kanade_llm::governor::{
         BreakerState, BreakerView, Counters, GroupSnapshot, PermitUsage, RateLevel, RetryLevel,
     };
     GroupSnapshot {
@@ -1272,7 +1268,7 @@ async fn stats_summary_and_reminders() {
 
 #[tokio::test]
 async fn summary_reports_a_full_governor_group_and_a_switched_off_rescan() {
-    use kanade::infrastructure::llm::governor::{CallKind, GroupSnapshot, HeldPermit};
+    use kanade_llm::governor::{CallKind, GroupSnapshot, HeldPermit};
     let held = |kind: CallKind, held_s: u64| HeldPermit {
         kind,
         who: "someone".into(),

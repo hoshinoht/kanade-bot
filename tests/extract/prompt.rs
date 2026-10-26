@@ -1,10 +1,10 @@
 use chrono::{DateTime, NaiveTime, Weekday};
 use kanade::extract::prompt::{PromptContext, PromptMessage, build_messages, extraction_request};
 use kanade::extract::schema::{AttemptOutcome, ExtractionAttempts, Next};
-use kanade::infrastructure::llm::identity::{Member, PassthroughSession};
 use kanade_domain::attendance::AttendanceDefault;
 use kanade_domain::catalog::BossTable;
 use kanade_domain::schedule::{FixedRun, Run};
+use kanade_llm::identity::{Member, PassthroughSession};
 
 use crate::support::fixture_catalog;
 

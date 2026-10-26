@@ -6,8 +6,8 @@ use chrono::{NaiveTime, TimeDelta, Weekday};
 use chrono_tz::Tz;
 
 use crate::extract::redirect::{SelfServiceMode, effective_mode};
-use crate::infrastructure::llm::Effort;
 use kanade_domain::notify::WeekReset;
+use kanade_llm::Effort;
 
 /// v4 `EXTRACT_DEBOUNCE_SECONDS`.
 pub const DEFAULT_DEBOUNCE: Duration = Duration::from_secs(90);

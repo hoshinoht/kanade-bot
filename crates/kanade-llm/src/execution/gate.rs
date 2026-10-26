@@ -6,7 +6,7 @@ use super::super::governor::{Attempt, CallKind, Outcome, Permit, Random, Refused
 /// Admission for one runner call: every provider request passes the permit's
 /// rate ceiling, breaker and (for retries) retry budget, and is capped by the
 /// session's request count.
-pub(in crate::infrastructure::llm) struct Gate<'a> {
+pub(crate) struct Gate<'a> {
     permit: Option<&'a Permit>,
     kind: CallKind,
     deadline: Option<Instant>,
@@ -32,13 +32,13 @@ pub(in crate::infrastructure::llm) struct Gate<'a> {
 }
 
 /// What [`Gate::take_measured`] hands the session.
-pub(in crate::infrastructure::llm) struct Measured {
-    pub(in crate::infrastructure::llm) reservation: Option<u32>,
-    pub(in crate::infrastructure::llm) refused: Option<CompletionResponse>,
-    pub(in crate::infrastructure::llm) budget: Option<u32>,
+pub(crate) struct Measured {
+    pub(crate) reservation: Option<u32>,
+    pub(crate) refused: Option<CompletionResponse>,
+    pub(crate) budget: Option<u32>,
 }
 
-pub(in crate::infrastructure::llm) enum Denied {
+pub(crate) enum Denied {
     Governor(Refused),
     RequestLimit,
 }
@@ -46,7 +46,7 @@ pub(in crate::infrastructure::llm) enum Denied {
 impl<'a> Gate<'a> {
     /// Admits while `*used < cap`; `retry_first` makes the first request spend
     /// retry budget (requeue, clean retry).
-    pub(in crate::infrastructure::llm) fn governed(
+    pub(crate) fn governed(
         permit: &'a Permit,
         kind: CallKind,
         deadline: Instant,
@@ -74,11 +74,7 @@ impl<'a> Gate<'a> {
     }
 
     /// Tags each request `{tag}-{n}` and appends every id sent to `sent_ids`.
-    pub(in crate::infrastructure::llm) fn tagged(
-        mut self,
-        tag: &'a str,
-        sent_ids: &'a mut Vec<String>,
-    ) -> Self {
+    pub(crate) fn tagged(mut self, tag: &'a str, sent_ids: &'a mut Vec<String>) -> Self {
         self.tag = Some(tag);
         self.sent_ids = Some(sent_ids);
         self
@@ -110,7 +106,7 @@ impl<'a> Gate<'a> {
 
     /// The last request's reservation; if its reply was refused, that reply;
     /// if it was refused before sending, the budget it exceeded.
-    pub(in crate::infrastructure::llm) fn take_measured(&mut self) -> Measured {
+    pub(crate) fn take_measured(&mut self) -> Measured {
         Measured {
             reservation: self.reservation.take(),
             refused: self.refused.take(),
@@ -119,7 +115,7 @@ impl<'a> Gate<'a> {
     }
 
     /// What the last admitted request sent (alias, reasoning effort, `max_tokens`).
-    pub(in crate::infrastructure::llm) fn take_sent(&mut self) -> Option<SentRequest> {
+    pub(crate) fn take_sent(&mut self) -> Option<SentRequest> {
         self.sent.take()
     }
 

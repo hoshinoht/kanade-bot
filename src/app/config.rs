@@ -20,19 +20,17 @@ use chrono::{DateTime, Utc};
 use serde_json::{Value, json};
 use tokio::sync::{MutexGuard, watch};
 
-use crate::{
-    chat::persona::{PersonaOption, PersonaSnapshot, PersonaStore, ProfileId},
-    infrastructure::llm::{
-        governor::Role,
-        setup::{CapacityGroup, CatalogSnapshot, RoleSwap, RunningRole},
-    },
-};
+use crate::chat::persona::{PersonaOption, PersonaSnapshot, PersonaStore, ProfileId};
 use kanade_domain::{
     scheduler::StoreError,
     settings::{
         Models, RuntimeSettings, Section, SettingsChange, SettingsError, SettingsStore, keys,
         save_section_recorded, stored_rows,
     },
+};
+use kanade_llm::{
+    governor::Role,
+    setup::{CapacityGroup, CatalogSnapshot, RoleSwap, RunningRole},
 };
 use kanade_store::replays::{ReplayScope, ReplayStore, StoredReplay};
 

@@ -8,12 +8,12 @@ use std::sync::Arc;
 use tokio::sync::watch;
 
 use crate::app::config::SettingsChanged;
+use kanade_domain::settings::RuntimeSettings;
 #[cfg(feature = "bot")]
-use crate::infrastructure::llm::{
+use kanade_llm::{
     governor::Role,
     setup::{ContextResolution, ModelStack, resolve_context},
 };
-use kanade_domain::settings::RuntimeSettings;
 
 /// Resolves `role`'s context for an alias from the latest saved settings.
 #[cfg(feature = "bot")]

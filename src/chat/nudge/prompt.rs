@@ -12,7 +12,7 @@
 //! is exactly what it was before teasing.
 
 use crate::chat::persona::{CompiledPersona, NudgeMood, VoiceSource};
-use crate::infrastructure::llm::Message;
+use kanade_llm::Message;
 
 /// Code-owned; persona files cannot loosen it (SFW and brevity hold for every profile).
 pub const NUDGE_REWRITE_INSTRUCTION: &str = "Rewrite the one line you are given so it sounds like the character described below. Keep it short, friendly and safe for work, whatever the character's style. Keep its meaning and its mood. Keep every {boss}, {day} and {time} exactly as written and add no other braces. Reply with that one line only, at most 140 characters: no quotes, links, URLs, mentions or markdown.";

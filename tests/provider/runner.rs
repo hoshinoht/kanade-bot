@@ -1,6 +1,6 @@
 use std::{sync::Arc, time::Duration};
 
-use kanade::infrastructure::llm::{
+use kanade_llm::{
     ChatRequest, CompletionResponse, CompletionRunner, ErrorCode, ExecutionLimits, FakeAction,
     FakeProvider, FinishReason, Message, RetryPolicy, ToolDefinition, Usage,
 };

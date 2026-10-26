@@ -3,8 +3,8 @@
 //! proposals when handled messages are read again.
 
 use kanade::extract::rescan::{JobView, RescanError, RescanRequest};
-use kanade::infrastructure::llm::FakeAction;
 use kanade_domain::model_log::{ExtractionOutcome, ModelLogStore, RescanJob, RescanStatus};
+use kanade_llm::FakeAction;
 use serde_json::Value;
 
 use crate::fakes::{

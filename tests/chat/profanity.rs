@@ -11,9 +11,9 @@ use kanade::chat::answer::{
 };
 use kanade::chat::nudge::{WordFilter, builtin_words};
 use kanade::chat::tools::bundles::ToolOffer;
-use kanade::infrastructure::llm::{ChatRequest, FakeAction, FakeProvider};
 use kanade_domain::model_log::ChatOutcome;
 use kanade_domain::settings::{DEFAULT_DEFLECTION_LINE, Profanity};
+use kanade_llm::{ChatRequest, FakeAction, FakeProvider};
 use serde_json::json;
 
 use crate::looping::{Ports, conversation, said, settings};
@@ -195,10 +195,10 @@ async fn run_allowed(guard: &ProfanityGuard) -> Run {
 #[test]
 fn boss_names_aliases_and_the_bot_name_pass_the_built_in_list() {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
-    let catalog = kanade::infrastructure::files::load_catalog(&root.join("boss/bosses.yaml"))
-        .expect("tracked catalog");
-    let knowledge = kanade::infrastructure::files::load_knowledge_dir(&root.join("boss/knowledge"))
-        .expect("tracked knowledge");
+    let catalog =
+        kanade_files::load_catalog(&root.join("boss/bosses.yaml")).expect("tracked catalog");
+    let knowledge =
+        kanade_files::load_knowledge_dir(&root.join("boss/knowledge")).expect("tracked knowledge");
     let mut names = vec!["Kanade".to_owned(), "OtonoseKanade".to_owned()];
     for boss in catalog.bosses() {
         names.push(boss.short().to_owned());

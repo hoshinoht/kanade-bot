@@ -3,7 +3,7 @@
 
 use std::time::Duration;
 
-use kanade::infrastructure::llm::{
+use kanade_llm::{
     ChatRequest, ErrorCode, FakeAction,
     governor::{CallKind, Outcome, Refused, Role, RoleConfig, SessionError, SessionFailure},
 };

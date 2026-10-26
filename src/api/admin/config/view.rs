@@ -8,9 +8,9 @@ use crate::{
         config::{CatalogRead, ConfigDesk},
         guild::RoleEntry,
     },
-    infrastructure::llm::setup::CapacityGroup,
 };
 use kanade_domain::settings::{IdList, RuntimeSettings, keys};
+use kanade_llm::setup::CapacityGroup;
 
 /// `saved` when `key` has a stored row, else `env`.
 fn seeded_source(saved: &[&str], key: &str) -> &'static str {

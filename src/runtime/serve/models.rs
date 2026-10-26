@@ -6,18 +6,15 @@ use std::{collections::BTreeMap, sync::Arc};
 use serde_json::json;
 use tokio::task::JoinHandle;
 
-use crate::{
-    infrastructure::llm::{
-        governor::{ConfigWarning, Role},
-        setup::{
-            Listing, ModelRoles, ModelStack, RoleEffort, StartupReport, StartupWarning,
-            resolve_context,
-        },
-    },
-    runtime::config::ModelSettings,
-};
+use crate::runtime::config::ModelSettings;
 use kanade_domain::settings::{
     ContextSettings, LOCAL_CONTEXT_WARNING, MAX_CONTEXT_TOKENS, RuntimeSettings, keys,
+};
+use kanade_llm::{
+    governor::{ConfigWarning, Role},
+    setup::{
+        Listing, ModelRoles, ModelStack, RoleEffort, StartupReport, StartupWarning, resolve_context,
+    },
 };
 
 kanade_domain::spelled! {

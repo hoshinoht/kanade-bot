@@ -1701,6 +1701,8 @@ dependencies = [
  "hyper-util",
  "jsonschema",
  "kanade-domain",
+ "kanade-files",
+ "kanade-llm",
  "kanade-log",
  "kanade-store",
  "libc",
@@ -1735,6 +1737,41 @@ dependencies = [
  "serde_json",
  "thiserror 2.0.21",
  "uuid",
+]
+
+[[package]]
+name = "kanade-files"
+version = "1.0.0-beta.15"
+dependencies = [
+ "jsonschema",
+ "kanade-domain",
+ "kanade-log",
+ "libc",
+ "serde",
+ "serde-saphyr",
+ "serde_json",
+ "thiserror 2.0.21",
+ "uuid",
+]
+
+[[package]]
+name = "kanade-llm"
+version = "1.0.0-beta.15"
+dependencies = [
+ "chrono",
+ "http-body-util",
+ "hyper",
+ "hyper-util",
+ "jsonschema",
+ "kanade-domain",
+ "ring",
+ "rustls",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+ "tokio",
+ "tokio-rustls",
+ "webpki-roots",
 ]
 
 [[package]]

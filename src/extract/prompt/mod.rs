@@ -27,12 +27,10 @@ pub use system::SYSTEM_PROMPT;
 const CHANNEL_SCOPE: &str = "this channel";
 
 use crate::extract::schema::extraction_schema;
-use crate::infrastructure::llm::identity::{Member, PassthroughSession};
-use crate::infrastructure::llm::{
-    ChatRequest, Effort, Message, OutputSchema, OutputValidation, Sampling,
-};
 use kanade_domain::catalog::BossTable;
 use kanade_domain::schedule::{FixedRun, Run};
+use kanade_llm::identity::{Member, PassthroughSession};
+use kanade_llm::{ChatRequest, Effort, Message, OutputSchema, OutputValidation, Sampling};
 
 /// One chat message as the prompt shows it.
 #[derive(Clone, Debug, PartialEq, Eq)]

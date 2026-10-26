@@ -4,7 +4,7 @@
 
 use std::time::Duration;
 
-use kanade::infrastructure::llm::{
+use kanade_llm::{
     Effort, FakeAction,
     governor::{GovernorConfig, Priority, QuestionLimits, Refused, Role, RouteTarget},
 };

@@ -7,7 +7,7 @@ use serde_json::{Value, json};
 
 use super::runs;
 use crate::extract::prompt::{TokenCounts as Counts, estimate_tokens};
-use crate::infrastructure::llm::Message;
+use kanade_llm::Message;
 
 /// The protected current turn alone does not fit the model context.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, thiserror::Error)]
@@ -189,7 +189,7 @@ pub fn budgeted(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::infrastructure::llm::ToolCallRequest;
+    use kanade_llm::ToolCallRequest;
 
     /// About 1000 estimated tokens of letters (digits would count as ids).
     fn bulk(letter: char) -> String {
