@@ -27,23 +27,23 @@ use crate::{
         commands::ChatAllowance,
         delivery::FixedClock,
     },
-    chat::{
-        answer::{AnswerDeps, Generation, GuildView, ProfanityGuard, answer},
-        context::{RunContext, run_block},
-        driver::{
-            Answerer, Asked, ChatDriver, ChatEvent, ChatHandle, DriverConfig, FollowUpRequest, Job,
-            Prepared, RejectionFollowUp, Setup,
-        },
-        gate::{ChannelDirectory, PilotSettings},
-        pilot::{AllowanceSnapshot, StormAlert},
-        tools::{
-            bundles::Bundle,
-            propose::Proposer,
-            read::{EventBoss, GuideError, StrategyGuides, render_guide},
-        },
-    },
     discord::{guild_cache::GuildCache, roster::LiveRoster},
     runtime::error::Error,
+};
+use kanade_chat::{
+    answer::{AnswerDeps, Generation, GuildView, ProfanityGuard, answer},
+    context::{RunContext, run_block},
+    driver::{
+        Answerer, Asked, ChatDriver, ChatEvent, ChatHandle, DriverConfig, FollowUpRequest, Job,
+        Prepared, RejectionFollowUp, Setup,
+    },
+    gate::{ChannelDirectory, PilotSettings},
+    pilot::{AllowanceSnapshot, StormAlert},
+    tools::{
+        bundles::Bundle,
+        propose::Proposer,
+        read::{EventBoss, GuideError, StrategyGuides, render_guide},
+    },
 };
 use kanade_domain::{
     catalog::{BossReference, BossTable},

@@ -10,7 +10,7 @@
 
 use std::path::Path;
 
-use kanade::chat::pilot::staging_line;
+use kanade_chat::pilot::staging_line;
 use kanade_domain::catalog::BossTable;
 use kanade_files::load_catalog;
 use kanade_voice::persona::Staging;

@@ -30,10 +30,10 @@ use crate::runtime::serve::{
 use crate::{
     app::clock,
     bot::gateway::{EventSource, GatewayError},
-    chat::tools::read::{GuideError, StrategyGuides},
     discord::transport::{Call, FakeDiscord, Op, Outcome},
     runtime::application::HealthProbe,
 };
+use kanade_chat::tools::read::{GuideError, StrategyGuides};
 use kanade_domain::{
     catalog::BossReference,
     members::{Member, MemberProfile, MemberStore},

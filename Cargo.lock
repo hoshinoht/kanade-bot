@@ -1701,7 +1701,9 @@ dependencies = [
  "hyper-util",
  "jsonschema",
  "kanade-chardata",
+ "kanade-chat",
  "kanade-domain",
+ "kanade-extract",
  "kanade-files",
  "kanade-llm",
  "kanade-log",
@@ -1752,6 +1754,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "kanade-chat"
+version = "1.0.0-beta.15"
+dependencies = [
+ "chrono",
+ "chrono-tz",
+ "kanade-domain",
+ "kanade-extract",
+ "kanade-llm",
+ "kanade-voice",
+ "regex",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
 name = "kanade-domain"
 version = "1.0.0-beta.15"
 dependencies = [
@@ -1762,6 +1782,21 @@ dependencies = [
  "serde_json",
  "thiserror 2.0.21",
  "uuid",
+]
+
+[[package]]
+name = "kanade-extract"
+version = "1.0.0-beta.15"
+dependencies = [
+ "chrono",
+ "chrono-tz",
+ "kanade-domain",
+ "kanade-llm",
+ "kanade-voice",
+ "regex",
+ "serde_json",
+ "thiserror 2.0.21",
+ "tokio",
 ]
 
 [[package]]

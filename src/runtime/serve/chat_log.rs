@@ -1,7 +1,7 @@
 //! Chat lifecycle log lines ([`ChatEvent`] → JSON). Never question or reply
 //! text, never member ids.
 
-use crate::chat::driver::ChatEvent;
+use kanade_chat::driver::ChatEvent;
 use kanade_voice::persona::ProfileSource;
 
 /// Why chat cannot answer now, for `chat_setup_changed`.
@@ -107,7 +107,7 @@ mod tests {
     use serde_json::json;
 
     use super::*;
-    use crate::chat::answer::Generation;
+    use kanade_chat::answer::Generation;
     use kanade_domain::model_log::{ChatInteraction, ChatOutcome};
     use kanade_llm::Effort;
     use kanade_voice::persona::{
@@ -233,7 +233,7 @@ mod tests {
 
     #[test]
     fn an_external_failure_is_labeled_unmasked() {
-        use crate::chat::answer::AnswerFailure;
+        use kanade_chat::answer::AnswerFailure;
         kanade_log::capture();
         let (mut row, provenance) = (row(), provenance());
         // The failed request answered no round: only the session list names it.

@@ -1,4 +1,4 @@
-use kanade::extract::gate::{self, BossLexicon};
+use kanade_extract::gate::{self, BossLexicon};
 
 use crate::support::fixture_catalog;
 

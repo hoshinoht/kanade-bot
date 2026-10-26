@@ -1,7 +1,7 @@
 //! The full-set tool surface keeps v4's twelve tools in order.
 
-use kanade::chat::tools::ToolName;
-use kanade::chat::tools::bundles::ToolOffer;
+use kanade_chat::tools::ToolName;
+use kanade_chat::tools::bundles::ToolOffer;
 
 #[test]
 fn the_full_set_is_v4s_twelve_in_order() {

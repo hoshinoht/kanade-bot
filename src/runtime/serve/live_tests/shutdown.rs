@@ -25,10 +25,10 @@ use crate::{
         avatars::{AvatarCache, AvatarFetch, FetchFuture},
         transport::{Hold, TransportConfig},
     },
-    extract::pipeline::CALL_CANCELLED,
     runtime::{error::Error, serve::budget},
 };
 use kanade_domain::model_log::{ChatFilter, ExtractionFilter, ExtractionOutcome, ModelLogStore};
+use kanade_extract::pipeline::CALL_CANCELLED;
 
 /// deploy/compose.yaml `stop_grace_period`: SIGKILL follows SIGTERM after it.
 const COMPOSE_STOP_GRACE: Duration = Duration::from_secs(30);
@@ -433,7 +433,7 @@ fn left_at_close(clock: &budget::ShutdownClock, closing: Instant) -> Duration {
 /// tolerance covers the already-cut phases returning (abort, join, an
 /// instant timeout each) after the spill; it is milliseconds in practice.
 fn close_floor() -> Duration {
-    budget::STORE_RESERVE - crate::chat::driver::LOG_BUDGET - Duration::from_millis(100)
+    budget::STORE_RESERVE - kanade_chat::driver::LOG_BUDGET - Duration::from_millis(100)
 }
 
 /// A future's panic as its output, so the caller can still wind serve down.

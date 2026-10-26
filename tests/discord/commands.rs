@@ -478,7 +478,7 @@ fn feeding_fanout(
 async fn fanout_stamps_received_messages_with_the_injected_clock() {
     use kanade::bot::events::GuildMessage;
     use kanade::bot::extract_feed::{FeedItem, origin};
-    use kanade::extract::pipeline::MessageOrigin;
+    use kanade_extract::pipeline::MessageOrigin;
 
     // `message_json` is posted at 2026-09-25 12:00:00 UTC.
     let at = |seconds| {

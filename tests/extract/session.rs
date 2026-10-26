@@ -4,9 +4,9 @@
 
 use std::{sync::Arc, time::Duration};
 
-use kanade::extract::AmendmentKind;
-use kanade::extract::prompt::extraction_request;
-use kanade::extract::schema::{AttemptOutcome, ExtractionAttempts, ExtractionCall, Next};
+use kanade_extract::AmendmentKind;
+use kanade_extract::prompt::extraction_request;
+use kanade_extract::schema::{AttemptOutcome, ExtractionAttempts, ExtractionCall, Next};
 use kanade_llm::governor::{Governor, ModelClient};
 use kanade_llm::{FakeProvider, Message, OutputValidation};
 

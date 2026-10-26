@@ -1,12 +1,10 @@
 use chrono::Utc;
-use kanade::{
-    api::dto::rescan::{BACKFILL_FAILED, CHANNEL_FAILED, OTHER_FAILED},
-    extract::{
-        rescan::{ResolvedWindow, resolve_window},
-        window::window_since,
-    },
-};
+use kanade::api::dto::rescan::{BACKFILL_FAILED, CHANNEL_FAILED, OTHER_FAILED};
 use kanade_domain::{model_log::RescanStatus, schedule::utc_instant};
+use kanade_extract::{
+    rescan::{ResolvedWindow, resolve_window},
+    window::window_since,
+};
 use serde_json::{Value, json};
 
 use super::{ERROR, Logs, ORIGIN, policy, utc};

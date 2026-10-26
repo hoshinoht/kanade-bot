@@ -32,8 +32,8 @@ use crate::{
         state::ApiState,
     },
     app::ports::{DigestPostRequest, DigestPostResult},
-    chat::pilot::{Allowance, AllowanceSnapshot, MemberUsage},
 };
+use kanade_chat::pilot::{Allowance, AllowanceSnapshot, MemberUsage};
 use kanade_domain::{
     members::MemberProfile,
     settings::{RowDiff, SettingsChange},

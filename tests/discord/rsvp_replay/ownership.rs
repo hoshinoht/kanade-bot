@@ -1,7 +1,7 @@
 use kanade::discord::transport::DiscordTransport;
-use kanade::extract::pipeline::{ChatAnswer, Outbox};
 use kanade_domain::history::{Actor, ChangeHistory, Origin, Surface};
 use kanade_domain::schedule::{RsvpSource, RsvpState};
+use kanade_extract::pipeline::{ChatAnswer, Outbox};
 use twilight_model::id::Id;
 
 use super::support::*;

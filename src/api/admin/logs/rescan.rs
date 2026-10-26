@@ -26,9 +26,9 @@ use crate::{
         state::ApiState,
     },
     app::rescan::{RescanDesk, RescanView},
-    extract::rescan::{API_WINDOWS, RescanError, RescanRequest},
 };
 use kanade_domain::history::Surface;
+use kanade_extract::rescan::{API_WINDOWS, RescanError, RescanRequest};
 use kanade_store::replays::{ReplayScope, StoredReplay};
 
 use super::super::write::{bad_body, origin};
@@ -177,7 +177,7 @@ pub async fn submit(
 
     if !API_WINDOWS.contains(&body.window.as_str()) {
         return Err(refused(RescanError::Window(
-            crate::extract::window::WindowError::Unknown {
+            kanade_extract::window::WindowError::Unknown {
                 window: body.window,
             },
         )));

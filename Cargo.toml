@@ -16,6 +16,7 @@ hyper = { version = "=1.11.1", default-features = false }
 hyper-util = { version = "=0.1.20", default-features = false }
 jsonschema = { version = "=0.40.0", default-features = false }
 libc = { version = "=0.2.189", default-features = false }
+regex = { version = "=1.13.1", default-features = false }
 ring = { version = "=0.17.14", default-features = false }
 rustls = { version = "=0.23.46", default-features = false }
 serde = "=1.0.229"
@@ -42,7 +43,7 @@ publish.workspace = true
 default = ["bot", "web"]
 bot = ["dep:twilight-gateway"]
 web = ["dep:axum"]
-test-support = ["tokio/test-util", "kanade-chardata/test-support", "kanade-domain/test-support", "kanade-llm/test-support", "kanade-log/test-support", "kanade-store/test-support"]
+test-support = ["tokio/test-util", "kanade-chardata/test-support", "kanade-chat/test-support", "kanade-domain/test-support", "kanade-llm/test-support", "kanade-log/test-support", "kanade-store/test-support"]
 
 [dependencies]
 # Backup encryption to X25519 recipients (`kanade backup`); no plugin/ssh/armor.
@@ -58,14 +59,16 @@ serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 jsonschema.workspace = true
 kanade-chardata = { path = "crates/kanade-chardata" }
+kanade-chat = { path = "crates/kanade-chat" }
 kanade-domain = { path = "crates/kanade-domain" }
+kanade-extract = { path = "crates/kanade-extract" }
 kanade-files = { path = "crates/kanade-files" }
 kanade-llm = { path = "crates/kanade-llm" }
 kanade-log = { path = "crates/kanade-log" }
 kanade-store = { path = "crates/kanade-store" }
 kanade-voice = { path = "crates/kanade-voice" }
 libc.workspace = true
-regex = { version = "=1.13.1", default-features = false, features = ["std", "unicode-case", "unicode-perl"] }
+regex = { workspace = true, features = ["std", "unicode-case", "unicode-perl"] }
 # The reminder cards' estimate share chart: SVG → PNG with bundled fonts only
 # (no system fonts, mmap, svgz or raster-image decoders).
 resvg = { version = "=0.48.1", default-features = false, features = ["text"] }

@@ -14,9 +14,9 @@ use crate::app::access::Gate;
 use crate::app::ids::id_text;
 use crate::app::rescan::{RescanRunner, RescanView};
 use crate::discord::transport::InteractionReply;
-use crate::extract::rescan::{RescanError, RescanRequest};
-use crate::extract::window::{DEFAULT_WINDOW, WINDOWS};
 use kanade_domain::ids::short_id;
+use kanade_extract::rescan::{RescanError, RescanRequest};
+use kanade_extract::window::{DEFAULT_WINDOW, WINDOWS};
 
 /// Until the extractor's rescan runner is wired into `serve`.
 pub const RESCAN_UNAVAILABLE: &str = "Rescans aren't available right now.";

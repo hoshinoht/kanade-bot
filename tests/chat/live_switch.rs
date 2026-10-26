@@ -6,8 +6,8 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::Duration;
 
-use kanade::chat::answer::{AnswerDeps, Generation, Question, answer};
-use kanade::chat::tools::bundles::ToolOffer;
+use kanade_chat::answer::{AnswerDeps, Generation, Question, answer};
+use kanade_chat::tools::bundles::ToolOffer;
 use kanade_llm::governor::{
     Governor, GovernorConfig, GovernorPolicy, GroupConfig, ModelClient, Role, RoleConfig,
     RoleRoute, RouteTarget, XorShift,

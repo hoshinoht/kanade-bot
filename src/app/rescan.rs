@@ -11,13 +11,13 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use crate::extract::{
-    pipeline::{Outbox, Proposer},
-    rescan::{History, JobView, RescanError, RescanRequest, Rescans},
-};
 use kanade_domain::{
     model_log::{ModelLogStore, RescanJob},
     scheduler::ScheduleStore,
+};
+use kanade_extract::{
+    pipeline::{Outbox, Proposer},
+    rescan::{History, JobView, RescanError, RescanRequest, Rescans},
 };
 use kanade_llm::LlmProvider;
 

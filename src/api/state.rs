@@ -132,7 +132,7 @@ pub struct ApiState {
     pub config: Option<Arc<ConfigDesk>>,
     /// The chat pilot's Limits view and status (for A8); empty until serve
     /// starts chat.
-    pub chat: Option<Arc<crate::chat::driver::ChatHandle>>,
+    pub chat: Option<Arc<kanade_chat::driver::ChatHandle>>,
     /// Live model-governor groups for the Limits page.
     pub model_limits: Option<ModelLimits>,
     /// Bounded idempotency memory for Limits and manual digest operations.

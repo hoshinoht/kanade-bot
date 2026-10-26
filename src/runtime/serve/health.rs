@@ -6,10 +6,8 @@
 
 use std::{future::Future, pin::Pin, sync::Arc};
 
-use crate::{
-    chat::driver::ChatHandle,
-    runtime::application::{DroppedHealth, Health, HealthFuture, HealthProbe},
-};
+use crate::runtime::application::{DroppedHealth, Health, HealthFuture, HealthProbe};
+use kanade_chat::driver::ChatHandle;
 use kanade_store::SqliteStore;
 
 /// The gateway and the delivery tick, as health reads them.

@@ -40,20 +40,20 @@ use crate::{
         extract_feed::{DiscordHistory, Feed, MessageFeed},
     },
     discord::{guild_cache::GuildCache, roster::LiveRoster},
-    extract::{
-        pipeline::{
-            CallContext, DEFAULT_DEBOUNCE, DEFAULT_DRAIN_INTERVAL, Deps, Extractor, Pipeline,
-            PipelineConfig, SelfServiceConfig, SelfServiceDeps,
-        },
-        redirect::PublicPortalLinks,
-        rescan::Rescans,
-    },
 };
 use kanade_domain::{
     catalog::BossTable,
     ids::RandomIds,
     schedule::SchedulePolicy,
     settings::{RuntimeSettings, SelfService},
+};
+use kanade_extract::{
+    pipeline::{
+        CallContext, DEFAULT_DEBOUNCE, DEFAULT_DRAIN_INTERVAL, Deps, Extractor, Pipeline,
+        PipelineConfig, SelfServiceConfig, SelfServiceDeps,
+    },
+    redirect::PublicPortalLinks,
+    rescan::Rescans,
 };
 use kanade_llm::{governor::Role, setup::ModelStack};
 use kanade_store::SqliteStore;
@@ -413,7 +413,7 @@ mod tests {
     use chrono::{NaiveTime, TimeZone, Utc, Weekday};
 
     use super::self_service;
-    use crate::extract::redirect::FixedChange;
+    use kanade_extract::redirect::FixedChange;
 
     #[test]
     fn serve_links_open_the_move_page_and_the_request_form() {

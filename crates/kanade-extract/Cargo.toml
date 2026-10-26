@@ -1,0 +1,17 @@
+[package]
+name = "kanade-extract"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+chrono.workspace = true
+chrono-tz.workspace = true
+kanade-domain = { path = "../kanade-domain" }
+kanade-llm = { path = "../kanade-llm" }
+kanade-voice = { path = "../kanade-voice" }
+regex = { workspace = true, features = ["std", "unicode-case", "unicode-perl"] }
+serde_json.workspace = true
+thiserror.workspace = true
+tokio = { workspace = true, features = ["macros", "rt", "sync", "time"] }

@@ -70,7 +70,11 @@ mod tests {
     fn chat_and_extraction_never_read_character_data() {
         let root = Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../.."));
         let mut hits = Vec::new();
-        for dir in ["src/chat", "src/extract", "crates/kanade-voice/src"] {
+        for dir in [
+            "crates/kanade-chat/src",
+            "crates/kanade-extract/src",
+            "crates/kanade-voice/src",
+        ] {
             naming(&root.join(dir), &mut hits);
         }
         assert!(hits.is_empty(), "character data named in {hits:?}");

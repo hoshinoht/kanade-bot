@@ -6,21 +6,21 @@
 use std::sync::{Arc, Mutex};
 
 use chrono::{TimeZone, Utc};
-use kanade::chat::answer::{
+use kanade_chat::answer::{
     AnswerDeps, AnswerFailure, Generation, ProfanityGuard, ProfanityHit, ProfanitySide, Question,
     answer,
 };
-use kanade::chat::context::{ChatTurn, QuestionMessage, Reference, WITHHELD, build_turns};
-use kanade::chat::gate::{
+use kanade_chat::context::{ChatTurn, QuestionMessage, Reference, WITHHELD, build_turns};
+use kanade_chat::gate::{
     Author, ChannelInfo, ChatDecision, IncomingMessage, RATE_LIMITED, Summons, decide,
 };
-use kanade::chat::pilot::{
+use kanade_chat::pilot::{
     Admission, CONTENT_BLOCKED_REPLY, ChatPilot, Concluded, Finished, GuardLimits, LogFacts,
     ReplyPort, TrafficLimits,
 };
-use kanade::chat::sanitize::FAILURE_REPLY;
-use kanade::chat::tools::bundles::{Bundle, CardContext, ToolOffer};
-use kanade::chat::tools::{ToolContext, ToolName};
+use kanade_chat::sanitize::FAILURE_REPLY;
+use kanade_chat::tools::bundles::{Bundle, CardContext, ToolOffer};
+use kanade_chat::tools::{ToolContext, ToolName};
 use kanade_domain::model_log::ModelLogStore;
 use kanade_domain::model_log::{AllowanceOverride, ChatOutcome};
 use kanade_llm::governor::{Charge, Refused, SessionError, SessionFailure};
@@ -377,7 +377,7 @@ fn message(
         content: content.into(),
         reference: reply_to.map(|(parent, parent_author, text)| Reference {
             message_id: Some(parent.into()),
-            resolved: Some(Box::new(kanade::chat::context::Parent {
+            resolved: Some(Box::new(kanade_chat::context::Parent {
                 id: parent.into(),
                 author_id: Some(parent_author.into()),
                 content: Some(text.into()),

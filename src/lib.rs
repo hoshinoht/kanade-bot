@@ -7,8 +7,6 @@ pub mod app;
 #[cfg(feature = "bot")]
 pub mod bot;
 pub mod cards;
-pub mod chat;
 pub mod cli;
 pub mod discord;
-pub mod extract;
 pub mod runtime;

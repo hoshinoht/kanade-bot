@@ -25,11 +25,6 @@ use kanade::discord::transport::{
     InteractionReply, MessageEdit, MessageId, Op, Outcome, OutgoingMessage, Presence,
     RejectionKind, Step,
 };
-use kanade::extract::AmendmentKind;
-use kanade::extract::pipeline::{
-    BacklogDrop, Card, CardEntry, ChatAnswer, Outbox, PostResult, Redirected, SelfServiceTip,
-};
-use kanade::extract::redirect::RedirectLink;
 use kanade_domain::drafts::{DraftStatus, ProposalSource, ProposalStore};
 use kanade_domain::history::Origin;
 use kanade_domain::history::{Actor, Surface};
@@ -44,6 +39,11 @@ use kanade_domain::schedule::{
 use kanade_domain::scheduler::{
     ProposalRequest, ScheduleStore, SchedulerService, Scope, StoreRef, Supersede, SupersedeScope,
 };
+use kanade_extract::AmendmentKind;
+use kanade_extract::pipeline::{
+    BacklogDrop, Card, CardEntry, ChatAnswer, Outbox, PostResult, Redirected, SelfServiceTip,
+};
+use kanade_extract::redirect::RedirectLink;
 use kanade_store::SqliteStore;
 use kanade_voice::persona::NudgePurpose;
 use twilight_model::application::command::Command;

@@ -38,7 +38,7 @@ const TICK: Duration = Duration::from_secs(60);
 /// One burst per half second (serve: 15 s), so a rescan of the seeded
 /// channels runs for a few seconds, long enough to be seen running.
 const EXTRACTION: Timing = Timing {
-    debounce: kanade::extract::pipeline::DEFAULT_DEBOUNCE,
+    debounce: kanade_extract::pipeline::DEFAULT_DEBOUNCE,
     drain_interval: Duration::from_millis(500),
 };
 

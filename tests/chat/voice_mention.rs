@@ -8,14 +8,14 @@
 use std::sync::Arc;
 
 use chrono::Utc;
-use kanade::chat::answer::{AnswerDeps, Generation, Question, answer};
-use kanade::chat::context::{
+use kanade_chat::answer::{AnswerDeps, Generation, Question, answer};
+use kanade_chat::context::{
     Conversations, Parent, QuestionMessage, Reference, assemble, build_turns, system_prompt,
 };
-use kanade::chat::pilot::ChatPilot;
-use kanade::chat::sanitize::{ScheduleDefaults, schedule_defaults};
-use kanade::extract::prompt::estimate_tokens;
+use kanade_chat::pilot::ChatPilot;
+use kanade_chat::sanitize::{ScheduleDefaults, schedule_defaults};
 use kanade_domain::scheduler::Clock;
+use kanade_extract::prompt::estimate_tokens;
 use kanade_llm::governor::{DEFAULT_TOOL_ROUNDS, Governor, Role};
 use kanade_llm::{ChatRequest, Effort, FakeAction, FakeProvider, Message, wire_body};
 use kanade_voice::persona::{

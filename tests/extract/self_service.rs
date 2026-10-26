@@ -8,15 +8,15 @@ use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
 
-use kanade::extract::AmendmentKind;
-use kanade::extract::pipeline::MessageEvent;
-use kanade::extract::pipeline::Proposer;
-use kanade::extract::redirect::SelfServiceMode;
 use kanade_domain::drafts::ProposalSource;
 use kanade_domain::model_log::{ExtractionOutcome, ModelLogStore};
 use kanade_domain::notify::WeekReset;
 use kanade_domain::proposals::{ChangeKind, ProposedChange};
 use kanade_domain::scheduler::{ProposalRequest, Supersede};
+use kanade_extract::AmendmentKind;
+use kanade_extract::pipeline::MessageEvent;
+use kanade_extract::pipeline::Proposer;
+use kanade_extract::redirect::SelfServiceMode;
 use kanade_llm::governor::{
     BreakerState, CallKind, Governor, GovernorConfig, GovernorPolicy, GroupConfig, ModelClient,
     Outcome, Random, Role, RoleConfig,

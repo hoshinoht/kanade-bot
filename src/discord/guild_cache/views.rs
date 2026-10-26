@@ -8,8 +8,8 @@ use twilight_model::id::{Id, marker::ChannelMarker};
 
 use crate::app::guild::{ChannelEntry, ChannelGrants, ChannelList, RoleEntry};
 use crate::app::ids::{id_text, parse_id};
-use crate::chat::gate::{ChannelDirectory, ChannelInfo};
 use crate::discord::guild_cache::{CachedChannel, GuildCache};
+use kanade_chat::gate::{ChannelDirectory, ChannelInfo};
 use kanade_domain::notify::ChannelDirectory as PostDirectory;
 
 /// The extractor's watched channels and categories (v4 `is_watched`): a

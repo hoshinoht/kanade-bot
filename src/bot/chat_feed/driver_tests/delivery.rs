@@ -2,8 +2,8 @@
 //! shutdown and panics, over the shared rig's `FakeDiscord`.
 
 use super::*;
-use crate::chat::sanitize::reply_parts;
 use crate::discord::transport::{AmbiguousKind, RejectionKind, SILENT, Step as Discord};
+use kanade_chat::sanitize::reply_parts;
 use twilight_model::channel::message::MessageFlags;
 
 fn leak(text: String) -> &'static str {

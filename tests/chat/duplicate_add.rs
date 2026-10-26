@@ -4,8 +4,8 @@
 //! `propose_move`; `extra: true` is the model's way past it once the asker
 //! clearly wants a second run. Weekly adds are unchanged.
 
-use kanade::chat::answer::Generation;
-use kanade::chat::tools::REFUSED;
+use kanade_chat::answer::Generation;
+use kanade_chat::tools::REFUSED;
 use kanade_domain::proposals::ChangeKind;
 use kanade_llm::FakeAction;
 use serde_json::{Value, json};
@@ -106,7 +106,7 @@ async fn ask(world: &mut World, call: Value) -> (Generation, Ports) {
     (generation, ports)
 }
 
-fn outcome(generation: &Generation) -> &kanade::chat::tools::ToolOutcome {
+fn outcome(generation: &Generation) -> &kanade_chat::tools::ToolOutcome {
     &generation
         .outcomes
         .iter()

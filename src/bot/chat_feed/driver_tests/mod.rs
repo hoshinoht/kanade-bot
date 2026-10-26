@@ -13,18 +13,18 @@ use serde_json::json;
 use tokio::sync::Notify;
 
 use super::DiscordSurface;
-use crate::chat::answer::Generation;
-use crate::chat::context::{Parent, QuestionMessage, Reference, TurnRole, WITHHELD};
-use crate::chat::driver::*;
-use crate::chat::gate::{
+use crate::discord::mentions;
+use crate::discord::transport::{Call, FakeDiscord, Op};
+use kanade_chat::answer::Generation;
+use kanade_chat::context::{Parent, QuestionMessage, Reference, TurnRole, WITHHELD};
+use kanade_chat::driver::*;
+use kanade_chat::gate::{
     Author, CHANNEL_BUSY_REACTION, ChannelDirectory, ChannelInfo, IncomingMessage, PilotSettings,
     RATE_LIMITED_REACTION, SEEN_REACTION,
 };
-use crate::chat::pilot::TrafficLimits;
-use crate::chat::sanitize::{FAILURE_REPLY, schedule_defaults};
-use crate::chat::tools::ToolContext;
-use crate::discord::mentions;
-use crate::discord::transport::{Call, FakeDiscord, Op};
+use kanade_chat::pilot::TrafficLimits;
+use kanade_chat::sanitize::{FAILURE_REPLY, schedule_defaults};
+use kanade_chat::tools::ToolContext;
 use kanade_domain::catalog::BossTable;
 use kanade_domain::members::{Directory, Member, Roster};
 use kanade_domain::model_log::{ChatInteraction, ChatOutcome, ModelLogStore};
@@ -156,7 +156,7 @@ struct Fake {
     panic_directory: AtomicBool,
     panic_directory_always: AtomicBool,
     /// The live guardrail each `prepare` reads, like serve's settings watch.
-    profanity: Mutex<crate::chat::answer::ProfanityGuard>,
+    profanity: Mutex<kanade_chat::answer::ProfanityGuard>,
 }
 
 impl Fake {
@@ -182,7 +182,19 @@ fn when() -> chrono::DateTime<Utc> {
     Utc.with_ymd_and_hms(2026, 9, 9, 4, 0, 0).unwrap()
 }
 
-impl Answerer for Arc<Fake> {
+/// The driver's answerer, sharing the test's `Fake` (`Answerer` and `Arc`
+/// are both foreign here, so the impl needs a local type).
+struct Answers(Arc<Fake>);
+
+impl std::ops::Deref for Answers {
+    type Target = Fake;
+
+    fn deref(&self) -> &Fake {
+        &self.0
+    }
+}
+
+impl Answerer for Answers {
     fn setup(&self) -> Setup {
         Setup {
             enabled: self.enabled.load(Ordering::SeqCst),
@@ -225,7 +237,7 @@ impl Answerer for Arc<Fake> {
             model: "chat-model".into(),
             reasoning: None,
             context_window: DEFAULT_CONTEXT_TOKENS,
-            max_output_tokens: crate::chat::context::COMPLETION_RESERVE_TOKENS as u32,
+            max_output_tokens: kanade_chat::context::COMPLETION_RESERVE_TOKENS as u32,
             context_source: "local_default",
             route: None,
             now: when(),
@@ -254,8 +266,8 @@ impl Answerer for Arc<Fake> {
             Some(Step::Replaced(line)) => {
                 return Generation {
                     reply: line.into(),
-                    profanity: Some(crate::chat::answer::ProfanityHit {
-                        side: crate::chat::answer::ProfanitySide::Reply,
+                    profanity: Some(kanade_chat::answer::ProfanityHit {
+                        side: kanade_chat::answer::ProfanitySide::Reply,
                         word: "shit".into(),
                         sent: Some(line.into()),
                     }),
@@ -283,7 +295,7 @@ impl Answerer for Arc<Fake> {
         self.rows.lock().unwrap().push(row);
     }
 
-    fn storm(&self, _alert: &crate::chat::pilot::StormAlert) {}
+    fn storm(&self, _alert: &kanade_chat::pilot::StormAlert) {}
 
     fn observe(&self, event: &ChatEvent<'_>) {
         let line = match event {
@@ -428,7 +440,7 @@ impl Surface for Recorder {
 type Clock = Arc<Mutex<f64>>;
 
 struct Rig {
-    driver: ChatDriver<Arc<Fake>, Recorder>,
+    driver: ChatDriver<Answers, Recorder>,
     fake: Arc<Fake>,
     surface: Recorder,
     clock: Clock,
@@ -441,7 +453,7 @@ async fn rig_with(fake: Fake, config: DriverConfig, log: &SqliteStore) -> Rig {
     let reading = Arc::clone(&clock);
     let driver = ChatDriver::start(
         config,
-        Arc::clone(&fake),
+        Answers(Arc::clone(&fake)),
         surface.clone(),
         log,
         Arc::new(move || *reading.lock().unwrap()),
@@ -844,7 +856,7 @@ async fn the_question_timeout_must_stay_below_the_clean_retry_window() {
     assert!(DriverConfig::default().timeout < Duration::from_secs(600));
     let started = ChatDriver::start(
         too_long,
-        Arc::new(Fake::new(Vec::new())),
+        Answers(Arc::new(Fake::new(Vec::new()))),
         Recorder::default(),
         &SqliteStore::open_temp().await,
         Arc::new(|| 0.0),
@@ -1412,7 +1424,7 @@ async fn a_replaced_follow_up_reply_stays_out_of_context() {
     let turns = rig.driver.with_conversations(|conversations| {
         assert!(conversations.history(CHANNEL, 10.0).is_empty());
         assert!(conversations.is_excluded("5001"));
-        crate::chat::context::build_turns(
+        kanade_chat::context::build_turns(
             conversations,
             &reply,
             CHANNEL,
@@ -1568,7 +1580,7 @@ async fn a_saved_profanity_change_applies_to_the_next_question() {
     rig.settle().await;
     assert_eq!(rig.rows()[0].outcome, ChatOutcome::Answered);
     *rig.fake.profanity.lock().unwrap() =
-        crate::chat::answer::ProfanityGuard::new(&kanade_domain::settings::Profanity {
+        kanade_chat::answer::ProfanityGuard::new(&kanade_domain::settings::Profanity {
             extra_words: vec!["frick".into()],
             deflection_line: "Language, please!".into(),
             ..kanade_domain::settings::Profanity::default()
@@ -1583,7 +1595,7 @@ async fn a_saved_profanity_change_applies_to_the_next_question() {
     assert_eq!(rows[1].guardrail["profanity"]["word"], "frick");
     assert_eq!(rig.fake.seen.lock().unwrap().conversations.len(), 1);
     *rig.fake.profanity.lock().unwrap() =
-        crate::chat::answer::ProfanityGuard::new(&kanade_domain::settings::Profanity {
+        kanade_chat::answer::ProfanityGuard::new(&kanade_domain::settings::Profanity {
             check_questions: false,
             ..kanade_domain::settings::Profanity::default()
         });

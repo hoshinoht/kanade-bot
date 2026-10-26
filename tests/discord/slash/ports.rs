@@ -12,11 +12,11 @@ use kanade::bot::commands::{
     PingRequest, PortFuture, STAFF_LIMITS_REPLY, SampleRun, TestKind, TestPosted, TestReport,
     TestSubject,
 };
-use kanade::chat::pilot::{AllowanceSnapshot, MemberUsage, PoolUsage};
 use kanade::discord::transport::{Call, Op, RejectionKind, Step};
-use kanade::extract::rescan::RescanRequest;
+use kanade_chat::pilot::{AllowanceSnapshot, MemberUsage, PoolUsage};
 use kanade_domain::model_log::{RescanJob, RescanStatus};
 use kanade_domain::schedule::RunStatus;
+use kanade_extract::rescan::RescanRequest;
 
 use super::super::support::{ADMIN_ROLE, BOSSING_ROLE};
 use super::{ALICE, BOB, DAN, KALOS, LOUNGE, Ports, R_KALOS, Slash, now, opt, sub};

@@ -6,11 +6,11 @@ use std::sync::Arc;
 use twilight_model::channel::message::MessageFlags;
 
 use super::DiscordSurface;
-use crate::chat::driver::{Effect, Post, Surface};
 use crate::discord::mentions;
 use crate::discord::transport::{
     AmbiguousKind, Call, FakeDiscord, Op, RejectionKind, SILENT, Step,
 };
+use kanade_chat::driver::{Effect, Post, Surface};
 
 const CHANNEL: &str = "900";
 const ASKED: &str = "777";

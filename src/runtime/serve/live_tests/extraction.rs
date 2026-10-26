@@ -17,12 +17,12 @@ use crate::{
     api::{auth::wire::SESSION_COOKIE, listeners},
     bot::extract_feed::snowflake_before,
     discord::transport::HistoryPage,
-    extract::rescan::{RescanError, RescanRequest},
 };
 use kanade_domain::{
     model_log::{ExtractionFilter, ExtractionOutcome, ModelLogStore, RescanJob, RescanStatus},
     proposals::ProposalCardStore,
 };
+use kanade_extract::rescan::{RescanError, RescanRequest};
 
 const ALIAS: &str = "kanata-extract";
 const TOKEN: &str = "extraction-break-glass-token-0123456789abcdef";
@@ -1168,7 +1168,7 @@ async fn shutdown_cuts_hanging_extraction_calls_and_stays_bounded() {
         assert_eq!(row.outcome, ExtractionOutcome::Failed);
         assert_eq!(
             row.error.as_deref(),
-            Some(crate::extract::pipeline::CALL_CANCELLED)
+            Some(kanade_extract::pipeline::CALL_CANCELLED)
         );
     }
     let live = rows
@@ -1245,7 +1245,7 @@ async fn switching_off_mid_rescan_cuts_the_call_and_cancels_every_job() {
             assert_eq!(ended.status, RescanStatus::Cancelled, "{ended:?}");
             assert_eq!(
                 ended.error.as_deref(),
-                Some(crate::extract::rescan::SWITCHED_OFF)
+                Some(kanade_extract::rescan::SWITCHED_OFF)
             );
         }
         sleep(Duration::from_millis(900)).await;
@@ -1255,7 +1255,7 @@ async fn switching_off_mid_rescan_cuts_the_call_and_cancels_every_job() {
         assert_eq!(rows[0].outcome, ExtractionOutcome::Failed);
         assert_eq!(
             rows[0].error.as_deref(),
-            Some(crate::extract::pipeline::CALL_SWITCHED_OFF)
+            Some(kanade_extract::pipeline::CALL_SWITCHED_OFF)
         );
         assert_eq!(creates(&harness.fake), before, "no card");
         assert_eq!(ctx.health.health().await.extraction, Some("disabled"));
@@ -1419,7 +1419,7 @@ async fn stale_jobs_are_interrupted_and_system_messages_never_read() {
         assert_eq!(ended.status, RescanStatus::Cancelled);
         assert_eq!(
             ended.error.as_deref(),
-            Some(crate::extract::rescan::INTERRUPTED)
+            Some(kanade_extract::rescan::INTERRUPTED)
         );
         connect(&ctx).await;
         startup_rescan_ended(&ctx).await;

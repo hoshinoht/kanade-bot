@@ -1,4 +1,4 @@
-use kanade::extract::{Amendment, AmendmentKind, merge};
+use kanade_extract::{Amendment, AmendmentKind, merge};
 
 #[test]
 fn the_latest_explicit_value_wins_and_evidence_is_pooled() {

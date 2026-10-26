@@ -7,10 +7,7 @@ use serde::Serialize;
 use serde_json::Value;
 
 use super::{LogFacets, Names, UsageSummary, UsageTally};
-use crate::{
-    api::dto::iso_instant,
-    extract::pipeline::{HISTORY_UNREADABLE, SCHEDULE_UNREADABLE},
-};
+use crate::api::dto::iso_instant;
 use kanade_domain::{
     drafts::{DraftStatus, LoadedDraft},
     ids::short_id,
@@ -18,6 +15,7 @@ use kanade_domain::{
     model_log::{ExtractionLog, WatchedMessage},
     proposals::StoredCard,
 };
+use kanade_extract::pipeline::{HISTORY_UNREADABLE, SCHEDULE_UNREADABLE};
 
 /// Query params of `GET /api/admin/extractions`, all optional and
 /// combinable: `model`, `from`/`to` (guild-local YYYY-MM-DD), `outcome`

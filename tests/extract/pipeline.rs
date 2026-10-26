@@ -5,14 +5,14 @@
 use std::sync::atomic::Ordering;
 use std::time::Duration;
 
-use kanade::extract::AmendmentKind;
-use kanade::extract::backlog::BacklogEntry;
-use kanade::extract::pipeline::{
-    AuthorKind, CallContext, LiveContext, MessageEvent, extraction_outcome,
-};
 use kanade_domain::drafts::{DraftStatus, ProposalStore};
 use kanade_domain::model_log::{ExtractionOutcome, ExtractionRefusal, ModelLogStore};
 use kanade_domain::schedule::RsvpState;
+use kanade_extract::AmendmentKind;
+use kanade_extract::backlog::BacklogEntry;
+use kanade_extract::pipeline::{
+    AuthorKind, CallContext, LiveContext, MessageEvent, extraction_outcome,
+};
 use kanade_llm::setup::check_reasoning_effort;
 use kanade_llm::{Effort, FakeAction, ModelCapabilities};
 
@@ -670,7 +670,7 @@ async fn a_backlogged_message_edited_live_is_read_once_by_its_burst() {
 
 #[test]
 fn outcomes_are_derived_from_the_call_then_what_it_created() {
-    use kanade::extract::pipeline::Failure;
+    use kanade_extract::pipeline::Failure;
     let away = Some(Failure::TurnedAway { retry_at: None });
     assert_eq!(
         extraction_outcome(away, 0, 0),

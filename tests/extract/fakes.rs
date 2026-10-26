@@ -13,13 +13,6 @@ use std::time::Duration;
 
 use chrono::{DateTime, NaiveTime, TimeZone, Utc, Weekday};
 use chrono_tz::Tz;
-use kanade::extract::pipeline::{
-    AuthorKind, BacklogDrop, Card, ChatAnswer, Deps, Extractor, Guild, IncomingMessage, LeadIns,
-    LiveContext, MessageEvent, MessageOrigin, Outbox, Personas, Pipeline, PipelineConfig,
-    PostResult, Proposer, Redirected, SelfServiceDeps,
-};
-use kanade::extract::redirect::PublicPortalLinks;
-use kanade::extract::rescan::{Backfilled, History, Rescans};
 use kanade_domain::catalog::BossTable;
 use kanade_domain::drafts::{ProposalStore, StoredProposal};
 use kanade_domain::history::Origin;
@@ -32,6 +25,13 @@ use kanade_domain::scheduler::{
     ProposalApproved, ProposalError, ProposalRequest, ProposalResult, Proposed, SchedulerService,
     StoreRef, SupersedeScope,
 };
+use kanade_extract::pipeline::{
+    AuthorKind, BacklogDrop, Card, ChatAnswer, Deps, Extractor, Guild, IncomingMessage, LeadIns,
+    LiveContext, MessageEvent, MessageOrigin, Outbox, Personas, Pipeline, PipelineConfig,
+    PostResult, Proposer, Redirected, SelfServiceDeps,
+};
+use kanade_extract::redirect::PublicPortalLinks;
+use kanade_extract::rescan::{Backfilled, History, Rescans};
 use kanade_llm::governor::{
     Governor, GovernorConfig, GovernorPolicy, GroupConfig, ModelClient, Random, Role, RoleConfig,
 };

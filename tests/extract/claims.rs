@@ -8,9 +8,9 @@ use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
 
-use kanade::extract::pipeline::{CALL_CANCELLED, MESSAGES_UNWRITABLE, MessageEvent};
-use kanade::extract::rescan::RescanRequest;
 use kanade_domain::model_log::{ExtractionOutcome, ModelLogStore};
+use kanade_extract::pipeline::{CALL_CANCELLED, MESSAGES_UNWRITABLE, MessageEvent};
+use kanade_extract::rescan::RescanRequest;
 use kanade_llm::FakeAction;
 use serde_json::Value;
 
@@ -52,7 +52,7 @@ fn slow(seconds: u64, action: FakeAction) -> FakeAction {
 
 /// Model calls stay inside the fake client's 30 s deadline, so the live
 /// burst comes due while a rescan call is still in flight.
-fn quick_debounce(config: &mut kanade::extract::pipeline::PipelineConfig) {
+fn quick_debounce(config: &mut kanade_extract::pipeline::PipelineConfig) {
     config.debounce = Duration::from_secs(5);
 }
 

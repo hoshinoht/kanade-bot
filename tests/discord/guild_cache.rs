@@ -8,8 +8,8 @@ use twilight_model::id::Id;
 
 use kanade::app::guild::{ChannelEntry, ChannelList};
 use kanade::bot::events::Router;
-use kanade::chat::gate::{ChannelDirectory, ChannelInfo};
 use kanade::discord::guild_cache::{GuildCache, WatchList};
+use kanade_chat::gate::{ChannelDirectory, ChannelInfo};
 use kanade_domain::notify::ChannelDirectory as PostDirectory;
 
 use super::support::*;

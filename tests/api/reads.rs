@@ -35,16 +35,16 @@ use kanade::{
         rescan::RescanDesk,
         write::{ApiClock, SchedulerWriter},
     },
-    chat::{
-        driver::{ChatHandle, ChatView},
-        pilot::{
-            ChatPilot, DEFAULT_MEMBER_ALLOWANCE, DEFAULT_POOL_ALLOWANCE, GuardLimits, LimitsView,
-            TrafficLimits,
-        },
-    },
     discord::{
         avatars::{AvatarCache, AvatarFetch, FetchFuture},
         identity::Image,
+    },
+};
+use kanade_chat::{
+    driver::{ChatHandle, ChatView},
+    pilot::{
+        ChatPilot, DEFAULT_MEMBER_ALLOWANCE, DEFAULT_POOL_ALLOWANCE, GuardLimits, LimitsView,
+        TrafficLimits,
     },
 };
 use kanade_domain::{

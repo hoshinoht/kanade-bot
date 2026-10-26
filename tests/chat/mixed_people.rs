@@ -10,10 +10,10 @@
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use kanade::chat::answer::{AnswerDeps, Generation, Question, answer};
-use kanade::chat::pilot::ChatPilot;
-use kanade::chat::sanitize::schedule_people;
-use kanade::chat::tools::ToolContext;
+use kanade_chat::answer::{AnswerDeps, Generation, Question, answer};
+use kanade_chat::pilot::ChatPilot;
+use kanade_chat::sanitize::schedule_people;
+use kanade_chat::tools::ToolContext;
 use kanade_domain::members::MemberProfile;
 use kanade_llm::governor::DEFAULT_TOOL_ROUNDS;
 use kanade_llm::{ChatRequest, FakeAction, FakeProvider, Message};

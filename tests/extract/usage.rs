@@ -5,8 +5,8 @@
 
 use std::time::Duration;
 
-use kanade::extract::pipeline::MessageEvent;
-use kanade::extract::prompt::estimate_messages;
+use kanade_extract::pipeline::MessageEvent;
+use kanade_extract::prompt::estimate_messages;
 use kanade_llm::{CompletionResponse, FakeAction, FinishReason, Usage};
 
 use crate::fakes::{ALIAS, MY, World, after, local, message};
@@ -303,8 +303,8 @@ async fn a_failed_sent_attempt_keeps_only_the_estimate() {
 
 #[tokio::test(start_paused = true)]
 async fn a_reply_cut_off_at_the_token_limit_logs_its_counts_without_an_answer_retry() {
-    use kanade::extract::prompt::CONTEXT_RESERVE;
     use kanade_domain::model_log::ExtractionOutcome;
+    use kanade_extract::prompt::CONTEXT_RESERVE;
 
     let limit = u32::try_from(CONTEXT_RESERVE).expect("small constant");
     let FakeAction::Response(mut cut) = answer(r#"{"amendments": ["#, Some((40, limit))) else {

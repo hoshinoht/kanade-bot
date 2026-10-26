@@ -8,21 +8,19 @@ use std::collections::BTreeSet;
 use chrono::{DateTime, Utc};
 
 use super::super::write::Refusal;
-use crate::{
-    api::{
-        dto::{
-            inbox::{Evidence, Said, ThreadMessage, message_url},
-            week::Context,
-            when,
-        },
-        state::ApiState,
+use crate::api::{
+    dto::{
+        inbox::{Evidence, Said, ThreadMessage, message_url},
+        week::Context,
+        when,
     },
-    extract::{
-        pipeline::{CONTEXT_WINDOW, DEFAULT_CONTEXT_MESSAGES},
-        window::MAX_BURST_MESSAGES,
-    },
+    state::ApiState,
 };
 use kanade_domain::{model_log::WatchedMessage, proposals::StoredCard};
+use kanade_extract::{
+    pipeline::{CONTEXT_WINDOW, DEFAULT_CONTEXT_MESSAGES},
+    window::MAX_BURST_MESSAGES,
+};
 
 /// At most what one extraction call reads: its context before the burst
 /// plus a whole burst.

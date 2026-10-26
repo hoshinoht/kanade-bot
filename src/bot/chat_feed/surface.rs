@@ -7,11 +7,11 @@
 use std::sync::Arc;
 
 use crate::app::ids::{id_text, parse_id};
-use crate::chat::driver::{Effect, Post, Surface};
 use crate::discord::mentions;
 use crate::discord::transport::{
     DiscordTransport, MessageEdit, Outcome, OutgoingMessage, RejectionKind, SILENT,
 };
+use kanade_chat::driver::{Effect, Post, Surface};
 
 pub struct DiscordSurface<T>(pub Arc<T>);
 

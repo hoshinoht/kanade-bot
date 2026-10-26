@@ -38,10 +38,6 @@ use crate::{
         roster::LiveRoster,
         transport::{Call, FakeDiscord, Op, RejectionKind, Step},
     },
-    extract::{
-        AmendmentKind,
-        pipeline::{Card, CardEntry, PostResult},
-    },
     runtime::{application::HealthProbe, config::ServeConfig},
 };
 use kanade_domain::{
@@ -56,6 +52,10 @@ use kanade_domain::{
     proposals::{Approver, ChangeKind, ProposedChange},
     schedule::{NewRun, RsvpState, RunSource, RunStatus, SchedulePolicy, StatusChange},
     scheduler::{ProposalRequest, ScheduleStore, SchedulerService, Scope, StoreRef, Supersede},
+};
+use kanade_extract::{
+    AmendmentKind,
+    pipeline::{Card, CardEntry, PostResult},
 };
 use kanade_store::SqliteStore;
 

@@ -9,13 +9,13 @@ use chrono::{DateTime, NaiveTime, Timelike, Utc, Weekday};
 use chrono_tz::Tz;
 
 use crate::cards::format::{Audience, format_participants};
-use crate::extract::redirect::is_link_id;
 use kanade_domain::catalog::BossTable;
 use kanade_domain::ids::short_id;
 use kanade_domain::schedule::{
     EMOJI_NO, EMOJI_YES, FixedField, Notice, NoticeChange, RequestDecision, Run, RunStatus,
     ScheduleSnapshot,
 };
+use kanade_extract::redirect::is_link_id;
 
 use crate::cards::redesign::vocab::{
     DifficultyMarks, boss_labels, full_time, relative_time, subtext,

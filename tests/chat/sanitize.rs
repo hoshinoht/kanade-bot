@@ -1,9 +1,7 @@
 //! Reply shaping, member-facing rewrites and schedule regrounding.
 
-use kanade::chat::sanitize::{
-    self, ground_schedule_reply, member_facing, reply_parts, shape_reply,
-};
-use kanade::chat::tools::ToolOutcome;
+use kanade_chat::sanitize::{self, ground_schedule_reply, member_facing, reply_parts, shape_reply};
+use kanade_chat::tools::ToolOutcome;
 use serde_json::Map;
 
 /// `D-CODE-FENCES`: fenced code survives shaping byte for byte.

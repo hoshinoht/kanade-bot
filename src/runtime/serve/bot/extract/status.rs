@@ -2,11 +2,11 @@
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use crate::extract::pipeline::{CALL_CANCELLED, CALL_SWITCHED_OFF};
 use kanade_domain::{
     model_log::{ExtractionFilter, ExtractionOutcome, ModelLogStore},
     settings::RuntimeSettings,
 };
+use kanade_extract::pipeline::{CALL_CANCELLED, CALL_SWITCHED_OFF};
 use kanade_store::SqliteStore;
 
 /// `extract_enabled` and not `paused`, as last published; `composed` once

@@ -6,10 +6,10 @@
 use std::sync::Arc;
 
 use chrono::{TimeZone, Utc};
-use kanade::chat::answer::{
+use kanade_chat::answer::{
     AnswerDeps, Generation, ProfanityGuard, Question, answer, chat_outcome, interaction,
 };
-use kanade::chat::tools::bundles::ToolOffer;
+use kanade_chat::tools::bundles::ToolOffer;
 use kanade_domain::model_log::ChatOutcome;
 use kanade_domain::settings::{DEFAULT_DEFLECTION_LINE, Profanity};
 use kanade_llm::{ChatRequest, FakeAction, FakeProvider};
@@ -86,7 +86,7 @@ async fn run_in(
 
 fn logged(generation: &Generation) -> serde_json::Value {
     let at = Utc.with_ymd_and_hms(2026, 9, 9, 4, 0, 0).unwrap();
-    let ctx = kanade::chat::tools::ToolContext::new("11", "900", "1001", at);
+    let ctx = kanade_chat::tools::ToolContext::new("11", "900", "1001", at);
     let row = interaction(
         "c-1".into(),
         at,

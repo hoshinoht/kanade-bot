@@ -11,23 +11,23 @@ use serde_json::{Map, Value, json};
 use crate::{
     bot::{cards::CardDesk, delivery::LogAlerts},
     cards::format::when_text,
-    chat::{
-        answer::ChatPorts,
-        tools::{
-            ProposalCard,
-            propose::{FIX_EDIT, FIX_REMOVE, kind_label},
-            read::PendingCard,
-        },
-    },
-    extract::{
-        AmendmentKind,
-        pipeline::{Card, CardEntry, PostResult},
+};
+use kanade_chat::{
+    answer::ChatPorts,
+    tools::{
+        ProposalCard,
+        propose::{FIX_EDIT, FIX_REMOVE, kind_label},
+        read::PendingCard,
     },
 };
 use kanade_domain::{
     drafts::ProposalStore,
     ids::{RandomIds, short_id},
     proposals::{ChangeKind, Payload, ProposalCardStore, ProposedChange},
+};
+use kanade_extract::{
+    AmendmentKind,
+    pipeline::{Card, CardEntry, PostResult},
 };
 use kanade_store::SqliteStore;
 

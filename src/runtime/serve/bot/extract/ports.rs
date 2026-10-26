@@ -7,7 +7,6 @@ use crate::{
     app::{clock::Clock, ids::parse_id, write::ApiClock},
     bot::extract_feed::StaleCache,
     discord::{guild_cache::GuildCache, roster::LiveRoster},
-    extract::pipeline::{Guild, IncomingMessage, Outbox, Proposer},
 };
 use kanade_domain::{
     catalog::BossTable,
@@ -15,11 +14,12 @@ use kanade_domain::{
     schedule::SchedulePolicy,
     scheduler::{ProposalRequest, ProposalResult, Proposed, SchedulerService, SupersedeScope},
 };
+use kanade_extract::pipeline::{Guild, IncomingMessage, Outbox, Proposer};
 use kanade_llm::{LlmProvider, identity::Member};
 use kanade_store::SqliteStore;
 
-use crate::extract::pipeline::Extractor;
 use crate::runtime::serve::bot::extract::status::ExtractionStatus;
+use kanade_extract::pipeline::Extractor;
 
 pub struct LiveGuild {
     pub status: Arc<ExtractionStatus>,

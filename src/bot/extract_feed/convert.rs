@@ -9,7 +9,7 @@ use twilight_model::id::{
 use twilight_model::util::Timestamp;
 
 use crate::app::ids::id_text;
-use crate::extract::pipeline::{AuthorKind, IncomingMessage, MessageOrigin};
+use kanade_extract::pipeline::{AuthorKind, IncomingMessage, MessageOrigin};
 
 /// A message (or edit) older than this when the gateway hands it over is
 /// history (a RESUME replay, a late delivery), not live chat.

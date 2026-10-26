@@ -6,10 +6,8 @@ use serde::Serialize;
 use serde_json::Value;
 
 use super::{LogFacets, Names, UsageSummary, UsageTally};
-use crate::{
-    api::dto::{Named, iso_instant},
-    chat::context::WITHHELD,
-};
+use crate::api::dto::{Named, iso_instant};
+use kanade_chat::context::WITHHELD;
 use kanade_domain::{
     members::Directory,
     model_log::{ChatInteraction, ChatOutcome, MaskedTurn},

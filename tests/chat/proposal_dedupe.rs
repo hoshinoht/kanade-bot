@@ -3,10 +3,10 @@
 
 use std::{sync::Arc, time::Duration};
 
-use kanade::chat::answer::{AnswerDeps, AnswerFailure, AnswerSettings, Question, answer};
-use kanade::chat::tools::bundles::ToolOffer;
-use kanade::chat::tools::propose::Proposer;
-use kanade::chat::tools::{ToolContext, ToolOutcome};
+use kanade_chat::answer::{AnswerDeps, AnswerFailure, AnswerSettings, Question, answer};
+use kanade_chat::tools::bundles::ToolOffer;
+use kanade_chat::tools::propose::Proposer;
+use kanade_chat::tools::{ToolContext, ToolOutcome};
 use kanade_domain::drafts::{
     DraftChange, DraftStatus, DraftStore, DraftUpdate, ProposalSource, ProposalStore, StoredDraft,
 };

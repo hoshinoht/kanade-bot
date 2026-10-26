@@ -1,5 +1,5 @@
 use chrono::{DateTime, TimeDelta, Utc};
-use kanade::extract::window;
+use kanade_extract::window;
 
 #[test]
 fn bursts_split_at_pauses_longer_than_the_gap() {

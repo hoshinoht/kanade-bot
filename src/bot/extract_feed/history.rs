@@ -13,8 +13,8 @@ use crate::discord::guild_cache::GuildCache;
 use crate::discord::transport::{
     DiscordTransport, HistoryPage, MAX_MESSAGES_PAGE, MessageId, Outcome,
 };
-use crate::extract::pipeline::{IncomingMessage, MessageOrigin};
-use crate::extract::rescan::{Backfilled, History};
+use kanade_extract::pipeline::{IncomingMessage, MessageOrigin};
+use kanade_extract::rescan::{Backfilled, History};
 
 /// Discord's snowflake epoch (2015-01-01), in Unix milliseconds.
 const DISCORD_EPOCH_MS: i64 = 1_420_070_400_000;

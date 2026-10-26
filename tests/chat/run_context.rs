@@ -9,20 +9,20 @@
 //! words fit.
 
 use chrono::Utc;
-use kanade::chat::answer::Generation;
-use kanade::chat::context::{
+use kanade::runtime::serve::bot::chat::run_context;
+use kanade_chat::answer::Generation;
+use kanade_chat::context::{
     ChatTurn, FIELD_LIMIT, RUN_CONTEXT_HEADER, RUN_CONTEXT_LIMIT, RunContext, TurnRole, assemble,
     budgeted, run_block, system_prompt,
 };
-use kanade::chat::tools::REFUSED;
-use kanade::chat::tools::bundles::ToolOffer;
-use kanade::extract::prompt::estimate_tokens;
-use kanade::runtime::serve::bot::chat::run_context;
+use kanade_chat::tools::REFUSED;
+use kanade_chat::tools::bundles::ToolOffer;
 use kanade_domain::notify::{
     Claim, DeliveryJournal, DeliveryTarget, EffectKind, IntentContent, NotificationIntent, Receipt,
 };
 use kanade_domain::proposals::{CardDetails, CardPayload, ChangeKind, ProposalCardStore};
 use kanade_domain::scheduler::Clock;
+use kanade_extract::prompt::estimate_tokens;
 use kanade_llm::identity::PassthroughSession;
 use kanade_llm::{CALL_TOKEN_BUDGET, FakeAction, Message};
 use serde_json::{Value, json};

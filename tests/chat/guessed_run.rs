@@ -4,8 +4,8 @@
 //! vague `run_query` gets. Words that single the run out, a typed id, and a
 //! follow-up answer to the bot's own question still produce the card.
 
-use kanade::chat::answer::Generation;
-use kanade::chat::tools::REFUSED;
+use kanade_chat::answer::Generation;
+use kanade_chat::tools::REFUSED;
 use kanade_domain::schedule::{Change, Run, RunSource, RunStatus};
 use kanade_llm::{FakeAction, Message};
 use serde_json::{Value, json};
@@ -114,7 +114,7 @@ async fn ask(
 fn write_outcome<'g>(
     generation: &'g Generation,
     tool: &str,
-) -> &'g kanade::chat::tools::ToolOutcome {
+) -> &'g kanade_chat::tools::ToolOutcome {
     &generation
         .outcomes
         .iter()

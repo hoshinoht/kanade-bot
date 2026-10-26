@@ -26,10 +26,10 @@ use crate::{
         handler::CommandsFn,
     },
     cards::CardKit,
-    chat::driver::ChatHandle,
     discord::{guild_cache::GuildCache, roster::LiveRoster},
     runtime::error::Error,
 };
+use kanade_chat::driver::ChatHandle;
 use kanade_domain::{catalog::BossTable, schedule::SchedulePolicy};
 use kanade_store::SqliteStore;
 

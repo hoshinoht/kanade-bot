@@ -33,7 +33,6 @@ use crate::discord::mentions;
 use crate::discord::transport::{
     ChannelId, DiscordTransport, MessageEdit, MessageId, Outcome, OutgoingMessage, RejectionKind,
 };
-use crate::extract::pipeline::{CardEntry, PostResult, Redirected};
 use kanade_domain::drafts::{DraftStatus, ProposalStore, SUPERSEDED};
 use kanade_domain::history::Actor;
 use kanade_domain::members::Directory;
@@ -48,6 +47,7 @@ use kanade_domain::schedule::{Run, SchedulePolicy};
 use kanade_domain::scheduler::{
     Clock, IdSource, ScheduleStore, SchedulerService, Scope, StoreError, StoreRef,
 };
+use kanade_extract::pipeline::{CardEntry, PostResult, Redirected};
 
 /// The reacting member's standing, from the gateway (roles, Administrator,
 /// guild owner) and the roster.
@@ -585,7 +585,7 @@ where
     /// Save the new proposals' card details and post one card for them (after
     /// any stranded card in the channel, as v4), then mark the retired
     /// proposals' cards superseded.
-    pub async fn post_card(&self, card: &crate::extract::pipeline::Card) -> PostResult {
+    pub async fn post_card(&self, card: &kanade_extract::pipeline::Card) -> PostResult {
         let now = self.now();
         let channel = &card.channel_id;
         let mut saved = true;

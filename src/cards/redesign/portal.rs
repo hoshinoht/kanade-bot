@@ -6,7 +6,7 @@
 
 use twilight_model::channel::message::Component;
 
-use crate::extract::redirect::is_link_id;
+use kanade_extract::redirect::is_link_id;
 
 use crate::cards::redesign::live::V2Kit;
 use crate::cards::redesign::v2::{action_row, link_button};
