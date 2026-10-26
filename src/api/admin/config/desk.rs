@@ -22,9 +22,9 @@ use super::{changes, models};
 use crate::{
     api::{
         dto::config::{self as dto, ConfigView, EnvRow, KeyLimits, ManageMessages},
-        state::{PersonaOption, RoleEntry},
+        state::RoleEntry,
     },
-    chat::persona::{PersonaSnapshot, PersonaStore, ProfileId},
+    chat::persona::{PersonaOption, PersonaSnapshot, PersonaStore, ProfileId},
     domain::{
         scheduler::StoreError,
         settings::{

@@ -7,7 +7,7 @@ use std::fs;
 use std::io::Read;
 use std::path::PathBuf;
 
-use crate::bot::delivery::cards::{ArtFile, ArtSource, MAX_ART_BYTES};
+use crate::domain::art::{ArtFile, ArtSource, MAX_ART_BYTES};
 use crate::domain::guides::ArtKind;
 
 /// Accepted extensions, in lookup order (as the portal's `/art`).

@@ -13,7 +13,6 @@ use std::time::Duration;
 
 use chrono::{DateTime, NaiveTime, TimeZone, Utc, Weekday};
 use chrono_tz::Tz;
-use kanade::bot::delivery::StoreRef;
 use kanade::domain::catalog::BossTable;
 use kanade::domain::drafts::{ProposalStore, StoredProposal};
 use kanade::domain::history::Origin;
@@ -24,7 +23,7 @@ use kanade::domain::proposals::Approver;
 use kanade::domain::schedule::{NewRun, ReminderPolicy, RunSource, RunStatus, SchedulePolicy};
 use kanade::domain::scheduler::{
     ProposalApproved, ProposalError, ProposalRequest, ProposalResult, Proposed, SchedulerService,
-    SupersedeScope,
+    StoreRef, SupersedeScope,
 };
 use kanade::extract::pipeline::{
     AuthorKind, BacklogDrop, Card, ChatAnswer, Deps, Extractor, Guild, IncomingMessage, LeadIns,

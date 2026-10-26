@@ -27,7 +27,7 @@ use super::{
 
 pub use catalog::{CatalogModel, CatalogSnapshot, Variant, leaves_homelab, variant_of};
 pub use context::{ContextResolution, ContextSource, resolve_context};
-pub use effort::EffortStatus;
+pub use effort::{EffortStatus, UnpublishedEffort, check_reasoning_effort};
 pub use live::{RoleSwap, RunningRole};
 pub use probe::{PROBE_TIMEOUT, ProbeOutcome, ProbeResult};
 pub use startup::{Listing, StartupReport, StartupWarning};

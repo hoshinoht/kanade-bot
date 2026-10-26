@@ -13,6 +13,7 @@ mod resolver;
 mod schema;
 mod snapshot;
 mod staging;
+mod startup;
 
 pub use compiler::{CompileProvenance, CompiledPersona, ExampleSource, NudgeSeeds, VoiceSource};
 pub use error::{PersonaError, YamlIssue};
@@ -36,5 +37,6 @@ pub use snapshot::{
     ResolvedPersona,
 };
 pub use staging::{BOSS_FIELD, MAX_RENDERED_STAGING_CHARS, MAX_STAGING_CHARS, StagingState};
+pub use startup::{PersonaLoad, PersonaOption, load_personas};
 
 pub(crate) use markdown::split_lines;

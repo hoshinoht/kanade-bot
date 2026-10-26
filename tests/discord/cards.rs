@@ -18,7 +18,7 @@ use kanade::api::state::ProposalCardRefresh;
 use kanade::bot::cards::CardOutbox;
 use kanade::bot::cards::{Authority, CardDesk, CardReaction, CardSettings, DeskDeps};
 use kanade::bot::delivery::AdminAlert;
-use kanade::bot::delivery::{AlertRecorder, FixedClock, StoreRef};
+use kanade::bot::delivery::{AlertRecorder, FixedClock};
 use kanade::bot::events::RsvpAnswer;
 use kanade::bot::transport::{
     AmbiguousKind, Call, ChannelId, DiscordTransport, FakeDiscord, InteractionRef,
@@ -38,7 +38,7 @@ use kanade::domain::schedule::{
     NewRun, ReminderPolicy, RsvpState, RunSource, RunStatus, SchedulePolicy,
 };
 use kanade::domain::scheduler::{
-    ProposalRequest, ScheduleStore, SchedulerService, Scope, Supersede, SupersedeScope,
+    ProposalRequest, ScheduleStore, SchedulerService, Scope, StoreRef, Supersede, SupersedeScope,
 };
 use kanade::extract::AmendmentKind;
 use kanade::extract::pipeline::{

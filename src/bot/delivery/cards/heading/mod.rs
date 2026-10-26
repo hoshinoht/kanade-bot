@@ -4,7 +4,7 @@
 //! the model and uses the stored line or the seed. A day-of or countdown
 //! rewrite may carry estimate context ([`HeaderContext`]); its line then goes
 //! through [`accept_header_with`] and may hold `{cN}` placeholders that only
-//! [`HeaderSlots::fill`] turns into names.
+//! [`fill_slots`] turns into names.
 
 mod context;
 
@@ -14,8 +14,8 @@ use std::time::Duration;
 use tokio::sync::watch;
 
 pub use context::{
-    HeaderContext, HeaderSlots, HeaderSwitchSource, HeaderSwitches, MAX_SLOTS, SlotFill,
-    StoredSlot, Teasable, resolve_heading,
+    HeaderContext, HeaderSwitchSource, HeaderSwitches, MAX_SLOTS, SlotFill, Teasable, fill_slots,
+    resolve_heading,
 };
 
 use crate::chat::nudge::{
@@ -26,6 +26,7 @@ use crate::chat::nudge::{
 use crate::chat::persona::{CompiledPersona, MAX_NUDGE_CHARS, NudgeMood, check_nudge_line};
 use crate::domain::catalog::BossTable;
 use crate::domain::model_log::{RewriteKind, RewriteStage};
+use crate::domain::notify::HeaderSlots;
 
 /// v4's heading, with the day left for after the rewrite.
 pub const DAY_OF_HEADING_SEED: &str = "Today — {day}";
@@ -167,7 +168,7 @@ const FACT_WORDS: &[&str] = &[
 pub type PersonaSource = Arc<dyn Fn() -> Option<CompiledPersona> + Send + Sync>;
 
 /// A header rewritten ahead of its send: the line (the day filled in for
-/// day-of; `{cN}` left for [`HeaderSlots::fill`]), where it came from, the
+/// day-of; `{cN}` left for [`fill_slots`]), where it came from, the
 /// failure code behind a seed and the slot map of a line written with
 /// estimate context.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -838,7 +839,7 @@ impl HeadingRewrite {
         let words = self.words();
         let accepted = match (kind, context) {
             (_, Some(context)) => accept_header_with(&text, kind, context, catalog, &words)
-                .map(|line| (line.template, Some(HeaderSlots::of(context, &line.used)))),
+                .map(|line| (line.template, Some(context.slots_for(&line.used)))),
             (HeaderKind::DayOf, None) => accept_rewrite_with(&text, seed, &words)
                 .map(|line| (line, None))
                 .map_err(Verdict::Rejected),
@@ -1109,9 +1110,9 @@ mod tests {
         let accepted = header("Go {c1}, carry us home~", countdown).expect("accepted");
         assert_eq!(accepted.template, "Go {c1}, carry us home~");
         assert_eq!(accepted.used, ["{c1}"]);
-        let slots = HeaderSlots::of(&context(), &accepted.used);
+        let slots = context().slots_for(&accepted.used);
         assert_eq!(
-            slots.fill(&accepted.template).as_deref(),
+            fill_slots(&slots, &accepted.template).as_deref(),
             Some("Go Lumirae, carry us home~")
         );
         assert_eq!(slots.slots[0].character_id, "l-1");
@@ -1188,11 +1189,14 @@ mod tests {
 
     #[test]
     fn a_stored_map_fills_only_safe_names_and_leaves_no_brace() {
-        let mut slots = HeaderSlots::of(&context(), &["{c1}".to_owned()]);
-        assert_eq!(slots.fill("Go {c1}!").as_deref(), Some("Go Lumirae!"));
-        assert_eq!(slots.fill("Go {c1} and {c2}!"), None);
+        let mut slots = context().slots_for(&["{c1}".to_owned()]);
+        assert_eq!(
+            fill_slots(&slots, "Go {c1}!").as_deref(),
+            Some("Go Lumirae!")
+        );
+        assert_eq!(fill_slots(&slots, "Go {c1} and {c2}!"), None);
         slots.slots[0].ign = "<@1>".into();
-        assert_eq!(slots.fill("Go {c1}!"), None);
+        assert_eq!(fill_slots(&slots, "Go {c1}!"), None);
     }
 
     /// D11: the lowest share among opted-in party members with an estimate
@@ -1261,7 +1265,7 @@ mod tests {
             Err(Verdict::SlotRejected(SlotRule::DuplicateSlot))
         );
         let accepted = gate("{c1} carries, {c3} naps~").expect("two slots");
-        let slots = HeaderSlots::of(&context, &accepted.used);
+        let slots = context.slots_for(&accepted.used);
         assert_eq!(
             slots
                 .slots
@@ -1271,7 +1275,7 @@ mod tests {
             [("{c1}", false), ("{c3}", true)]
         );
         assert_eq!(
-            slots.fill(&accepted.template).as_deref(),
+            fill_slots(&slots, &accepted.template).as_deref(),
             Some("Lumirae carries, Kestrel naps~")
         );
     }

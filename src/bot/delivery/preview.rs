@@ -16,13 +16,13 @@ use std::collections::BTreeSet;
 use chrono::{DateTime, Utc};
 
 use super::cards::chart::Chart;
-use super::cards::{self, Card, CardContext, PostedCard};
+use super::cards::{self, Card, CardContext};
 use super::estimates::{PartyEstimates, chart_for, shows_files};
 use super::refresh::{posted_content, posted_mentions};
 use crate::domain::members::Directory;
 use crate::domain::notify::{
     ChannelDirectory, DedupeKey, DeliverySettings, DeliveryTarget, DispatchInput, IntentContent,
-    NotificationIntent, plan_dispatch,
+    NotificationIntent, PostedCard, plan_dispatch,
 };
 use crate::domain::schedule::ScheduleSnapshot;
 

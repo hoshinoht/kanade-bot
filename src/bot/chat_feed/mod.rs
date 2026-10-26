@@ -2,6 +2,8 @@
 //! driver's [`Asked`] (resolved lists only; nothing is fetched), a deletion
 //! cancels its question. `surface.rs` is the driver's Discord side.
 
+#[cfg(test)]
+mod driver_tests;
 mod surface;
 #[cfg(test)]
 mod surface_tests;

@@ -10,6 +10,7 @@ pub(crate) use forward::forward_boxed;
 mod spelled;
 pub(crate) use spelled::spelled;
 
+pub mod art;
 pub mod attendance;
 pub mod catalog;
 pub mod characters;

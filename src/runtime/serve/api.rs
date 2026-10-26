@@ -29,14 +29,14 @@ use crate::{
         write::{ApiClock, SchedulerWriter},
     },
     bot::commands::AccessPolicy,
-    chat::persona::PersonaStore,
+    chat::persona::{PersonaStore, load_personas},
     domain::{
         ids::RandomIds,
         scheduler::SchedulerService,
         settings::{RuntimeSettings, SettingsStore},
     },
     infrastructure::{
-        files::{KnowledgeDir, LoadError, load_catalog, load_knowledge_dir, load_personas},
+        files::{KnowledgeDir, LoadError, load_catalog, load_knowledge_dir},
         llm::{
             governor::XorShift,
             setup::{ModelRoles, ModelSetup, ModelStack, Models, build_with_groups},

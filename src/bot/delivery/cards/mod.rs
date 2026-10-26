@@ -10,7 +10,6 @@ mod art;
 pub mod chart;
 mod common;
 mod heading;
-mod record;
 pub mod redesign;
 
 use std::sync::Arc;
@@ -21,27 +20,23 @@ use twilight_model::channel::message::embed::{
 use twilight_model::channel::message::{Component, Embed};
 
 pub use art::{
-    ArtFile, ArtRef, ArtSource, CardArt, EmbedArt, IMAGE_PREFIX, MAX_ART_BYTES, Picture,
-    attachment_name, fetch_art, lead_entry_art, lead_portrait,
+    ArtRef, CardArt, EmbedArt, IMAGE_PREFIX, Picture, attachment_name, fetch_art, lead_entry_art,
+    lead_portrait,
 };
 pub use common::{CardContext, People, REACT_HINT, UNNAMED, card_runs};
 pub use heading::{
     COUNTDOWN_PHRASE_SEED, Chosen, DAY_OF_HEADING_SEED, DIGEST_PHRASE_SEED, HeaderContext,
-    HeaderKind, HeaderLine, HeaderSlots, HeaderSwitchSource, HeaderSwitches, HeadingRewrite,
-    HeadingSource, MAX_SLOTS, PersonaSource, PhraseKind, PhraseRejection, SlotFill, SlotRule,
-    StoredSlot, Teasable, Trial, TrialOrigin, Verdict, accept_header_with, accept_phrase,
-    accept_phrase_with, failure_reason, resolve_heading, seed_heading,
-};
-#[cfg(any(test, feature = "test-support"))]
-pub use record::HeaderHistory;
-pub use record::{
-    CardRecord, DAY_OF_KIND, DigestPhraseStore, HeaderOverrideStore, PostedCard, ReminderCardStore,
+    HeaderKind, HeaderLine, HeaderSwitchSource, HeaderSwitches, HeadingRewrite, HeadingSource,
+    MAX_SLOTS, PersonaSource, PhraseKind, PhraseRejection, SlotFill, SlotRule, Teasable, Trial,
+    TrialOrigin, Verdict, accept_header_with, accept_phrase, accept_phrase_with, failure_reason,
+    fill_slots, resolve_heading, seed_heading,
 };
 pub use redesign::{DifficultyMarks, PortalSwitch, V2Kit};
 
 use crate::bot::commands::text::local_day;
 use crate::bot::mentions;
 use crate::bot::transport::{MessageEdit, OutgoingMessage, Upload};
+use crate::domain::art::ArtSource;
 use crate::domain::catalog::BossTable;
 use crate::domain::notify::IntentContent;
 

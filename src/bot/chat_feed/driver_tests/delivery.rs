@@ -497,10 +497,11 @@ async fn t20_a_deletion_after_part_two_of_three_stops_there() {
     // Every delivered part is withheld from later context.
     assert!(rig.driver.offer(asked("1002", "12", CHANNEL, &[ROLE])));
     rig.settle().await;
-    let state = rig.driver.state();
-    for id in ["1001", "5001", "5002"] {
-        assert!(state.pilot.conversations.is_withheld(id), "{id}");
-    }
+    rig.driver.with_conversations(|conversations| {
+        for id in ["1001", "5001", "5002"] {
+            assert!(conversations.is_withheld(id), "{id}");
+        }
+    });
 }
 
 #[tokio::test]
@@ -697,7 +698,7 @@ async fn t28_shed_and_limited_questions_never_get_a_placeholder() {
 
 /// Wait until `stop` has passed its grace and cut running answers.
 async fn cut_sent(rig: &Rig) {
-    while !*rig.driver.shared.cut.borrow() {
+    while !rig.driver.is_cut() {
         tokio::time::sleep(Duration::from_millis(5)).await;
     }
 }
@@ -795,7 +796,7 @@ async fn an_abort_after_a_deletion_withdraws_the_placeholder_from_the_guard() {
     assert!(rig.driver.offer(asked("1001", "11", CHANNEL, &[ROLE])));
     rig.settle().await;
     assert_eq!(rig.effects(), [placeholder()]);
-    let running: Vec<_> = std::mem::take(&mut *rig.driver.tasks());
+    let running = rig.driver.take_tasks();
     // No await between: the worker is not polled after the deletion.
     rig.driver.deleted(&["1001".into()]);
     for task in &running {

@@ -8,40 +8,19 @@
 use std::sync::Arc;
 
 use super::Card;
+use crate::domain::art::ArtSource;
 use crate::domain::catalog::BossTable;
 use crate::domain::guides::ArtKind;
 
 /// v4 `IMAGE_PREFIX`: the entry art's attachment name, so it never collides
 /// with the portrait's.
 pub const IMAGE_PREFIX: &str = "image-";
-/// Largest art file uploaded; bigger files are skipped and logged. The
-/// shipped art peaks at ~1.2 MB (entry) and ~0.2 MB (portraits), so a day-of
-/// post stays under ~3 MiB: small enough to upload well inside the 10 s
-/// attempt timeout, since a timed-out upload is ambiguous and never resent.
-pub const MAX_ART_BYTES: u64 = 3 * 512 * 1024;
 
 /// One picture a card wants: its kind and the catalog basename (exact case).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ArtRef {
     pub kind: ArtKind,
     pub basename: String,
-}
-
-/// One located picture: its file name (`<basename>.<ext>`) and, when read,
-/// its bytes.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct ArtFile {
-    pub file_name: String,
-    pub bytes: Option<Vec<u8>>,
-}
-
-/// Where boss art is read from (the configured boss directory in serve).
-/// Lookups are exact-case on every platform.
-pub trait ArtSource: Send + Sync {
-    /// Blocking: resolve the art once and, with `read`, read it. `None` if it
-    /// is not a regular file of at most [`MAX_ART_BYTES`]. Call through
-    /// [`fetch_art`].
-    fn find(&self, kind: ArtKind, basename: &str, read: bool) -> Option<ArtFile>;
 }
 
 /// A picture resolved for one card: its attachment name and, for a post,

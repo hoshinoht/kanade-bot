@@ -3,9 +3,10 @@
 
 use std::sync::Arc;
 
-use super::cards::{self, ArtSource, CardContext, fetch_art};
+use super::cards::{self, CardContext, fetch_art};
 use crate::bot::mentions;
 use crate::bot::transport::OutgoingMessage;
+use crate::domain::art::ArtSource;
 use crate::domain::notify::NotificationIntent;
 
 /// The message for `intent`. `heading` is a day-of card's stored heading

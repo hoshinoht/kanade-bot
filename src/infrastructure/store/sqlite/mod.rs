@@ -205,7 +205,11 @@ struct UnclosedWarning {
 impl Drop for UnclosedWarning {
     fn drop(&mut self) {
         if self.armed {
-            crate::runtime::logging::store_dropped_unclosed(&self.db_path);
+            kanade_log::emit(&serde_json::json!({
+                "level": "WARN",
+                "event": "store_dropped_unclosed",
+                "db_path": self.db_path.display().to_string(),
+            }));
         }
     }
 }

@@ -26,8 +26,7 @@ use crate::bot::commands::text::{hhmm, weekday_name};
 use crate::bot::delivery::cards::CardKit;
 use crate::bot::delivery::cards::redesign::learn_after_refusal;
 use crate::bot::delivery::{
-    AdminAlert, AlertSink, AlertThrottle, Executor, FixedClock, SendFailure, SendOutcome, StoreRef,
-    edit_lock,
+    AdminAlert, AlertSink, AlertThrottle, Executor, FixedClock, SendFailure, SendOutcome, edit_lock,
 };
 use crate::bot::ids::{id_text, parse_id};
 use crate::bot::mentions;
@@ -46,7 +45,7 @@ use crate::domain::proposals::{
 };
 use crate::domain::schedule::{Run, SchedulePolicy};
 use crate::domain::scheduler::{
-    Clock, IdSource, ScheduleStore, SchedulerService, Scope, StoreError,
+    Clock, IdSource, ScheduleStore, SchedulerService, Scope, StoreError, StoreRef,
 };
 use crate::extract::pipeline::{CardEntry, PostResult, Redirected};
 

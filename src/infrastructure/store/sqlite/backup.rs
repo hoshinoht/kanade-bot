@@ -371,7 +371,7 @@ impl BackupManifest {
 }
 
 /// The wall clock in whole seconds (chrono's `clock` feature is off).
-fn now_seconds() -> DateTime<Utc> {
+pub(super) fn now_seconds() -> DateTime<Utc> {
     let since = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default();

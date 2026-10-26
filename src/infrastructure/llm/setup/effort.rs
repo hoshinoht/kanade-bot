@@ -2,7 +2,43 @@ use std::collections::BTreeMap;
 
 use super::super::{Effort, ModelCapabilities, governor::Role};
 use super::{ModelRoles, RoleEffort};
-use crate::extract::pipeline::check_reasoning_effort;
+
+/// The configured extraction effort is one the model does not publish, so
+/// every call would be refused before sending (`D-SHAPING`: refused, never
+/// silently dropped).
+#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
+#[error("extraction reasoning {} is not published by {alias}", .effort.as_str())]
+pub struct UnpublishedEffort {
+    pub alias: String,
+    pub effort: Effort,
+}
+
+/// Startup/config-change check mirroring the runner's shaping rule: an effort
+/// other than `off` on a model with reasoning control and a published list
+/// must be in that list.
+// TODO(config slice): run at startup and on every extraction alias/effort
+// change once runtime config resolves capabilities from `/v1/models`.
+pub fn check_reasoning_effort(
+    alias: &str,
+    effort: Option<Effort>,
+    capabilities: &ModelCapabilities,
+) -> Result<(), UnpublishedEffort> {
+    let Some(effort) = effort.filter(|effort| *effort != Effort::Off) else {
+        return Ok(());
+    };
+    let refused = capabilities.reasoning_control
+        && capabilities
+            .reasoning_efforts
+            .as_ref()
+            .is_some_and(|published| !published.contains(&effort));
+    if refused {
+        return Err(UnpublishedEffort {
+            alias: alias.to_owned(),
+            effort,
+        });
+    }
+    Ok(())
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct EffortStatus {

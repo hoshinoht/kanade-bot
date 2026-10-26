@@ -18,14 +18,12 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
-use serde::{Deserialize, Serialize};
-
-use super::super::{CardContext, CardRecord, card_runs};
+use super::super::{CardContext, card_runs};
 use crate::bot::delivery::RunEstimate;
 use crate::chat::nudge::{BossFigures, HeaderFacts, OfferedSlot, TeaseSlot, safe_value};
 use crate::chat::persona::NudgeMood;
 use crate::domain::members::MemberProfile;
-use crate::domain::notify::IntentContent;
+use crate::domain::notify::{CardRecord, HeaderSlots, IntentContent, StoredSlot};
 use crate::domain::tease::note_problem;
 
 /// The header switches as configured now (Config › Notifications), read at
@@ -94,7 +92,7 @@ pub fn resolve_heading(
             return seed("tease_opt_out");
         }
     }
-    match slots.fill(heading) {
+    match fill_slots(slots, heading) {
         Some(line) => Some(line),
         None => seed("unfilled"),
     }
@@ -329,43 +327,14 @@ impl HeaderContext {
             .map(|fill| fill.placeholder.as_str())
             .collect()
     }
-}
 
-/// One filled placeholder of a stored line (migration 0043).
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct StoredSlot {
-    /// `{c1}`.
-    pub slot: String,
-    pub member_id: String,
-    pub character_id: String,
-    pub ign: String,
-    /// A tease slot (D11): posted only while teasing is on and the member
-    /// still opts in.
-    pub tease: bool,
-}
-
-/// The slot map stored beside a header line written with estimate context:
-/// the placeholders the line uses and whether context was sent, so every
-/// render can re-check the switch and the party before filling (D6).
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct HeaderSlots {
-    pub slots: Vec<StoredSlot>,
-    pub used_estimates: bool,
-}
-
-impl HeaderSlots {
-    /// The map of a line accepted with `context`, using `used`.
-    pub fn of(context: &HeaderContext, used: &[String]) -> Self {
-        Self {
+    /// The slot map of a line accepted with this context, using `used`.
+    pub fn slots_for(&self, used: &[String]) -> HeaderSlots {
+        HeaderSlots {
             slots: used
                 .iter()
                 .filter_map(|slot| {
-                    let fill = context
-                        .fills
-                        .iter()
-                        .find(|fill| &fill.placeholder == slot)?;
+                    let fill = self.fills.iter().find(|fill| &fill.placeholder == slot)?;
                     Some(StoredSlot {
                         slot: fill.placeholder.clone(),
                         member_id: fill.member_id.clone(),
@@ -378,20 +347,20 @@ impl HeaderSlots {
             used_estimates: true,
         }
     }
+}
 
-    /// `template` with each slot's IGN; `None` when an IGN is unsafe or any
-    /// brace is left (an unfilled `{cN}` never reaches a reader). Day-of
-    /// templates are stored with their day already filled.
-    pub fn fill(&self, template: &str) -> Option<String> {
-        let mut line = template.to_owned();
-        for slot in &self.slots {
-            if !safe_value(&slot.ign) {
-                return None;
-            }
-            line = line.replace(&slot.slot, &slot.ign);
+/// `template` with each of `slots`' IGNs; `None` when an IGN is unsafe or
+/// any brace is left (an unfilled `{cN}` never reaches a reader). Day-of
+/// templates are stored with their day already filled.
+pub fn fill_slots(slots: &HeaderSlots, template: &str) -> Option<String> {
+    let mut line = template.to_owned();
+    for slot in &slots.slots {
+        if !safe_value(&slot.ign) {
+            return None;
         }
-        (!line.contains('{') && !line.contains('}')).then_some(line)
+        line = line.replace(&slot.slot, &slot.ign);
     }
+    (!line.contains('{') && !line.contains('}')).then_some(line)
 }
 
 /// Whether `line` carries any of `names` as whole words (case-insensitive;

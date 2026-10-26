@@ -1,8 +1,6 @@
 //! Posted test cards (migration 0017 `debug_cards`): claimed with the
 //! journal attempt, bound to the message, cleared by `/debug clear_test`.
 
-use std::future::Future;
-
 use chrono::{DateTime, Utc};
 
 use crate::domain::scheduler::StoreError;

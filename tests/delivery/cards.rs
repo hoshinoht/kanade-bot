@@ -8,9 +8,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use chrono::{DateTime, TimeDelta, TimeZone, Utc};
-use kanade::bot::delivery::cards::{
-    ArtFile, ArtSource, CardKit, HeadingRewrite, PersonaSource, ReminderCardStore, UNNAMED,
-};
+use kanade::bot::delivery::cards::{CardKit, HeadingRewrite, PersonaSource, UNNAMED};
 use kanade::bot::delivery::{
     CardRefresh, HeaderPregen, MAX_PENDING_RUNS, PREGEN_DEADLINE, PregenReport, RefreshQueue,
     SendOutcome,
@@ -20,6 +18,7 @@ use kanade::bot::transport::{
 };
 use kanade::chat::nudge::{NudgeRewriter, RewriteFailure, RewritePrompt, SharedRewriter};
 use kanade::chat::persona::{CompiledPersona, PersonaId, PersonaRoot, parse_bundle};
+use kanade::domain::art::{ArtFile, ArtSource};
 use kanade::domain::catalog::{BossSpec, BossTable, CatalogSpec, DifficultySpec, GuideSpec};
 use kanade::domain::drafts::{DraftCreated, DraftKind, DraftStore, MergeCommit, NewDraft};
 use kanade::domain::guides::ArtKind;
@@ -27,7 +26,7 @@ use kanade::domain::history::{Actor, Origin, Surface};
 use kanade::domain::history::{BlameTarget, ChangeHistory, ChangeMeta, Expect, Precondition};
 use kanade::domain::ids::RandomIds;
 use kanade::domain::members::{Member, PingLevel, Roster};
-use kanade::domain::notify::{DedupeKey, DeliveryJournal, DeliveryTarget};
+use kanade::domain::notify::{DedupeKey, DeliveryJournal, DeliveryTarget, ReminderCardStore};
 use kanade::domain::schedule::{
     Change, ChangeSet, EMOJI_NO, EMOJI_YES, NewRun, Rsvp, RsvpSource, RsvpState, Run, RunSource,
     RunStatus,

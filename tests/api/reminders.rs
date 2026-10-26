@@ -8,14 +8,14 @@ use std::collections::BTreeSet;
 use chrono::{DateTime, TimeZone, Utc};
 use kanade::{
     bot::delivery::{
-        cards::{CardContext, CardRecord, ReminderCardStore, redesign::NO_MARKS},
+        cards::{CardContext, redesign::NO_MARKS},
         render,
     },
     domain::{
         history::ChangeHistory,
         notify::{
-            Claim, DedupeKey, DeliveryJournal, DeliverySettings, DeliveryTarget, DispatchInput,
-            NotificationIntent, Receipt, plan_dispatch,
+            CardRecord, Claim, DedupeKey, DeliveryJournal, DeliverySettings, DeliveryTarget,
+            DispatchInput, NotificationIntent, Receipt, ReminderCardStore, plan_dispatch,
         },
         schedule::{Change, Reminder, Run},
         scheduler::{ScheduleStore, Scope},

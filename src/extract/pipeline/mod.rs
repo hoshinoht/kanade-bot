@@ -25,7 +25,7 @@ pub use config::{
     CONTEXT_WINDOW, CallContext, DEFAULT_BACKLOG_CAPACITY, DEFAULT_CALL_TIMEOUT,
     DEFAULT_CONTEXT_MESSAGES, DEFAULT_CONTEXT_TOKENS, DEFAULT_DEBOUNCE, DEFAULT_DRAIN_INTERVAL,
     DEFAULT_MIN_CONFIDENCE, DEFAULT_PERMIT_WAIT, LiveContext, LiveSelfService, PipelineConfig,
-    RECENT_SCHEDULING, SelfServiceConfig, UnpublishedEffort, check_reasoning_effort,
+    RECENT_SCHEDULING, SelfServiceConfig,
 };
 pub use debounce::Bursts;
 pub use driver::Pipeline;

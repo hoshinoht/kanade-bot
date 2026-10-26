@@ -34,10 +34,7 @@ use tokio::sync::watch;
 use tokio::time::MissedTickBehavior;
 
 use super::card_records::{digest_phrase_key, record_kind};
-use super::cards::{
-    CardContext, CardKit, CardRecord, DAY_OF_KIND, DigestPhraseStore, HeaderContext, HeadingSource,
-    PhraseKind, ReminderCardStore, card_runs,
-};
+use super::cards::{CardContext, CardKit, HeaderContext, HeadingSource, PhraseKind, card_runs};
 use super::estimates::header_context;
 use super::preview::{record_key, reminder_intent};
 use super::refresh::Now;
@@ -45,8 +42,8 @@ use crate::bot::commands::text::local_day;
 use crate::domain::members::Directory;
 use crate::domain::model_log::RewriteStage;
 use crate::domain::notify::{
-    DeliveryJournal, DeliverySettings, DeliveryTarget, DigestLog, IntentContent, JournalView,
-    WeekReset,
+    CardRecord, DAY_OF_KIND, DeliveryJournal, DeliverySettings, DeliveryTarget, DigestLog,
+    DigestPhraseStore, IntentContent, JournalView, ReminderCardStore, WeekReset,
 };
 use crate::domain::schedule::{Reminder, SchedulePolicy, ScheduleSnapshot};
 use crate::domain::scheduler::{ScheduleStore, Scope};

@@ -4,7 +4,6 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use chrono::{DateTime, FixedOffset, NaiveTime, TimeZone, Utc, Weekday};
-use kanade::bot::delivery::StoreRef;
 use kanade::domain::drafts::{
     DraftCreated, DraftEvent, DraftStatus, DraftStore, DraftUpdate, DraftWrite, LoadedDraft,
     MergeCommit, NewDraft, NewProposal, ProposalCreated, ProposalInfo, ProposalSource,
@@ -17,7 +16,7 @@ use kanade::domain::proposals::{Approver, ChangeKind, Payload, ProposedChange};
 use kanade::domain::schedule::{ChangeSet, Notice, NoticeChange, ScheduleSnapshot};
 use kanade::domain::scheduler::{
     Committed, DraftError, ProposalError, ProposalRequest, RecordedRequest, ScheduleStore,
-    SchedulerService, Scope, StoreError, Supersede,
+    SchedulerService, Scope, StoreError, StoreRef, Supersede,
 };
 use kanade::infrastructure::store::SqliteStore;
 

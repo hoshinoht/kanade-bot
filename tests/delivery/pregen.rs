@@ -9,7 +9,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use chrono::{DateTime, NaiveTime, TimeDelta, TimeZone, Utc};
-use kanade::bot::delivery::cards::{CardKit, CardRecord, ReminderCardStore};
+use kanade::bot::delivery::cards::CardKit;
 use kanade::bot::delivery::{
     HEADER_HORIZON, HeaderPregen, MAX_ATTEMPTS_PER_KEY, MAX_BUSY_RETRIES, MAX_CATCHUP_PER_TICK,
     PREGEN_DEADLINE, PregenReport, SEEN_HORIZON,
@@ -21,7 +21,7 @@ use kanade::chat::nudge::{
 use kanade::domain::history::Origin;
 use kanade::domain::ids::RandomIds;
 use kanade::domain::model_log::{RewriteFilter, RewriteLogStore, RewriteStage};
-use kanade::domain::notify::{DedupeKey, DeliveryTarget};
+use kanade::domain::notify::{CardRecord, DedupeKey, DeliveryTarget, ReminderCardStore};
 use kanade::infrastructure::store::SqliteStore;
 use tokio::sync::watch;
 

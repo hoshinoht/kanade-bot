@@ -1,14 +1,12 @@
 //! SQLite-only journal behaviour: the card index and recovery across a real
 //! close and reopen.
 
-use kanade::bot::events::CardIndex;
 use kanade::domain::notify::{
-    AttemptState, Claim, DeliveryJournal, DeliveryTarget, EffectKind, IntentContent,
+    AttemptState, CardIndex, Claim, DeliveryJournal, DeliveryTarget, EffectKind, IntentContent,
     NotificationIntent, Receipt,
 };
 use kanade::domain::scheduler::{ScheduleStore, Scope};
 use kanade::infrastructure::store::SqliteStore;
-use twilight_model::id::Id;
 
 use crate::support::{TempDir, at, seed};
 
@@ -54,7 +52,7 @@ async fn card_index_finds_runs_by_the_bound_message_in_any_channel() {
     unsent(&store).await;
     assert!(
         store
-            .runs_for_message(Id::new(4242))
+            .runs_for_message("4242")
             .await
             .expect("lookup")
             .is_empty()
@@ -80,12 +78,12 @@ async fn card_index_finds_runs_by_the_bound_message_in_any_channel() {
         .await
         .expect("bind");
     assert_eq!(
-        store.runs_for_message(Id::new(5001)).await.expect("lookup"),
+        store.runs_for_message("5001").await.expect("lookup"),
         ["r-1"]
     );
     assert!(
         store
-            .runs_for_message(Id::new(5002))
+            .runs_for_message("5002")
             .await
             .expect("lookup")
             .is_empty()

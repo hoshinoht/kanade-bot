@@ -5,11 +5,11 @@
 //! record or digest phrase returns the latest override instead of the
 //! original line, which is kept. A line written with estimate context keeps
 //! its `{cN}` placeholders and carries its slot map (migration 0043); only
-//! [`super::resolve_heading`] turns it into the posted line.
+//! the cards' `resolve_heading` turns it into the posted line.
 
 use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
 
-use super::HeaderSlots;
 use crate::domain::scheduler::StoreError;
 
 /// The record kind of a day-of card; countdowns use their reminder kind
@@ -22,10 +22,34 @@ pub struct CardRecord {
     pub kind: String,
     /// Day-of heading without framing, or the short countdown phrase; the
     /// latest manual override when one exists. May hold `{cN}`: read it
-    /// through [`super::resolve_heading`].
+    /// through the cards' `resolve_heading`.
     pub heading: Option<String>,
     /// The slot map stored with `heading` (the override's with an override).
     pub slots: Option<HeaderSlots>,
+}
+
+/// One filled placeholder of a stored line (migration 0043).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct StoredSlot {
+    /// `{c1}`.
+    pub slot: String,
+    pub member_id: String,
+    pub character_id: String,
+    pub ign: String,
+    /// A tease slot (D11): posted only while teasing is on and the member
+    /// still opts in.
+    pub tease: bool,
+}
+
+/// The slot map stored beside a header line written with estimate context:
+/// the placeholders the line uses and whether context was sent, so every
+/// render can re-check the switch and the party before filling (D6).
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct HeaderSlots {
+    pub slots: Vec<StoredSlot>,
+    pub used_estimates: bool,
 }
 
 /// A bound reminder card with a record.

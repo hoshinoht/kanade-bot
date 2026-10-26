@@ -15,7 +15,6 @@ use twilight_model::id::{
 use crate::api::auth::Clock as WallClock;
 use crate::bot::cards::ReplayLive;
 use crate::bot::delivery::{AdminAlert, AlertSink, AlertThrottle};
-use crate::bot::events::{ReplayCard, ReplayCards, ReplayRunCards};
 use crate::bot::ids::parse_id;
 use crate::bot::reaction_read;
 use crate::bot::transport::DiscordTransport;
@@ -24,6 +23,7 @@ use crate::domain::history::{
     Surface, Versioned, rsvp_field,
 };
 use crate::domain::ids::RandomIds;
+use crate::domain::notify::{ReplayCard, ReplayCards, ReplayRunCards};
 use crate::domain::schedule::{Rsvp, RsvpSource, Run, RunStatus};
 use crate::domain::scheduler::{Clock, ScheduleStore, SchedulerError, SchedulerService};
 

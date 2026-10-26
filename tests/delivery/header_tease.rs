@@ -8,9 +8,10 @@
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use kanade::bot::delivery::cards::{CardKit, HeaderSwitches, ReminderCardStore};
+use kanade::bot::delivery::cards::{CardKit, HeaderSwitches};
 use kanade::bot::delivery::{PartyEstimates, RunEstimate};
 use kanade::domain::members::{Member, MemberProfile, PingLevel};
+use kanade::domain::notify::ReminderCardStore;
 
 use crate::cards::{Script, Scripted, created, edits, refresher, rewriting, shows_phrase, world};
 use crate::header_slots::{Fixed, carrier, estimate, owner, pregenerated_in};

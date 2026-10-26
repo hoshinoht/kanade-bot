@@ -22,7 +22,6 @@
 
 mod header;
 mod sample;
-mod store;
 mod text;
 
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -33,7 +32,6 @@ use tokio::time::Instant;
 
 pub use header::{code_span, verdict_text};
 pub use sample::{SAMPLE_RUN_ID, sample_schedule};
-pub use store::{DebugCardStore, PostedDebugCard};
 
 use super::alerts::{AlertThrottle, LogAlerts};
 use super::cards::{
@@ -54,9 +52,9 @@ use crate::bot::transport::{DiscordTransport, Outcome, OutgoingMessage, Rejectio
 use crate::domain::members::Directory;
 use crate::domain::model_log::RewriteStage;
 use crate::domain::notify::{
-    ChannelChoice, ChannelDirectory, DeliveryJournal, DeliveryTarget, EffectKind, IntentContent,
-    NotificationIntent, PingKind, PlannedSend, SendDisposition, WeekReset, choose_channel,
-    digest_inclusion, resolve_mentions, sandbox_kind,
+    ChannelChoice, ChannelDirectory, DebugCardStore, DeliveryJournal, DeliveryTarget, EffectKind,
+    IntentContent, NotificationIntent, PingKind, PlannedSend, SendDisposition, WeekReset,
+    choose_channel, digest_inclusion, resolve_mentions, sandbox_kind,
 };
 use crate::domain::schedule::{Run, SchedulePolicy, ScheduleSnapshot};
 use crate::domain::scheduler::{ScheduleStore, Scope};

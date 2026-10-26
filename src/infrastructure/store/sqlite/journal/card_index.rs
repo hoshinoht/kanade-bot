@@ -7,18 +7,13 @@
 
 use chrono::{DateTime, Utc};
 use sqlx::Row;
-use twilight_model::id::Id;
-use twilight_model::id::marker::MessageMarker;
 
 use super::super::SqliteStore;
-use crate::bot::events::{CardIndex, LookupError, ReplayCard, ReplayCards, ReplayRunCards};
+use crate::domain::notify::{CardIndex, LookupError, ReplayCard, ReplayCards, ReplayRunCards};
 use crate::domain::time::{from_iso, to_iso};
 
 impl CardIndex for SqliteStore {
-    async fn runs_for_message(
-        &self,
-        message: Id<MessageMarker>,
-    ) -> Result<Vec<String>, LookupError> {
+    async fn runs_for_message(&self, message_id: &str) -> Result<Vec<String>, LookupError> {
         let lookup = |error: sqlx::Error| LookupError(error.to_string());
         let mut conn = self.reader().await.map_err(lookup)?;
         sqlx::query_scalar(
@@ -27,7 +22,7 @@ impl CardIndex for SqliteStore {
              SELECT run_id FROM reminders WHERE message_id = ?1
              ORDER BY 1",
         )
-        .bind(message.get().to_string())
+        .bind(message_id)
         .fetch_all(&mut *conn)
         .await
         .map_err(lookup)

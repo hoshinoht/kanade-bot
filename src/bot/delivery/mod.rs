@@ -24,9 +24,7 @@ mod run_prompts;
 mod tick;
 
 pub use alerts::{ALERT_WINDOW, AdminAlert, AlertRecorder, AlertSink, AlertThrottle, LogAlerts};
-pub use debug::{
-    DebugCardStore, DebugDesk, MAX_HEADER_TRIES, PostedDebugCard, SAMPLE_RUN_ID, TEST_PREFIX,
-};
+pub use debug::{DebugDesk, MAX_HEADER_TRIES, SAMPLE_RUN_ID, TEST_PREFIX};
 pub use declines::DeclineReport;
 pub use estimates::{
     CHART_DEADLINE, CachedEstimates, EstimateFuture, IgnFuture, MAX_ATTACHMENTS, MAX_CHART_BYTES,
@@ -37,7 +35,7 @@ pub use manual::{ManualReport, ManualRequest, ManualRewrite, ManualStart};
 pub use notice_text::render_notice;
 pub use notices::{NoticeReport, NoticeSend};
 pub use owner_requests::{OWNER_REQUEST_EFFECT, OwnerRequestReport, decided_text, request_text};
-pub use ports::{FixedClock, IdsRef, StoreRef};
+pub use ports::{FixedClock, IdsRef};
 pub use pregen::{
     HEADER_HORIZON, HeaderPregen, HeaderTime, MAX_ATTEMPTS_PER_KEY, MAX_BUSY_RETRIES,
     MAX_CATCHUP_PER_TICK, PREGEN_DEADLINE, PREGEN_INTERVAL, PregenReport, SEEN_HORIZON,

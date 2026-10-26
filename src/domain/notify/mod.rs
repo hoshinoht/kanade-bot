@@ -5,6 +5,9 @@
 //! never send, write or read a clock. Executing intents belongs to the journal.
 
 mod audience;
+mod card_index;
+mod cards;
+mod debug_cards;
 mod decline;
 mod digest;
 mod dispatch;
@@ -17,6 +20,14 @@ mod policy;
 pub use audience::{
     Audience, audience, display_names, everyone_on, not_declined, resolve_mentions, swap_audience,
 };
+pub use card_index::{CardIndex, LookupError, ReplayCard, ReplayCards, ReplayRunCards};
+#[cfg(any(test, feature = "test-support"))]
+pub use cards::HeaderHistory;
+pub use cards::{
+    CardRecord, DAY_OF_KIND, DigestPhraseStore, HeaderOverrideStore, HeaderSlots, PostedCard,
+    ReminderCardStore, StoredSlot,
+};
+pub use debug_cards::{DebugCardStore, PostedDebugCard};
 pub use decline::{
     DECLINE_NOTICE_COOLDOWN, DeclineNotice, DeclineNoticeStore, MAX_PENDING_DECLINE_NOTICES,
 };

@@ -13,7 +13,10 @@ use std::{path::Path, time::Duration};
 use kanade::{
     bot::delivery::{
         RunEstimate,
-        cards::{HeaderContext, HeaderKind, HeadingRewrite, PhraseKind, Teasable, TrialOrigin},
+        cards::{
+            HeaderContext, HeaderKind, HeadingRewrite, PhraseKind, Teasable, TrialOrigin,
+            fill_slots,
+        },
     },
     chat::persona::NudgeMood,
     domain::{
@@ -377,7 +380,7 @@ async fn attempt(
         HeaderKind::Phrase(_) => trial.line.clone(),
     };
     let filled = match &trial.slots {
-        Some(slots) => slots.fill(&line),
+        Some(slots) => fill_slots(slots, &line),
         None => Some(line),
     };
     let offered: Vec<String> = context

@@ -7,6 +7,7 @@ mod proposal_lookup;
 mod proposals;
 mod requests;
 mod service;
+mod store_ref;
 
 pub use cherry_pick::{PickError, PickPreview, PickResult, Picked};
 pub use drafts::{
@@ -27,3 +28,4 @@ pub use service::{
     Attributed, COMMIT_ATTEMPTS, DeclineNoticeContext, DeclineRsvpResult, SchedulerError,
     SchedulerResult, SchedulerService,
 };
+pub use store_ref::StoreRef;

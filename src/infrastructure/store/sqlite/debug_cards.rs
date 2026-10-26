@@ -7,7 +7,7 @@ use sqlx::Connection;
 use super::SqliteStore;
 use super::rows::instant;
 use super::schedule::store_error;
-use crate::bot::delivery::{DebugCardStore, PostedDebugCard};
+use crate::domain::notify::{DebugCardStore, PostedDebugCard};
 use crate::domain::scheduler::StoreError;
 
 impl DebugCardStore for SqliteStore {

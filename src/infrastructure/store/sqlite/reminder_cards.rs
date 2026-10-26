@@ -11,8 +11,8 @@ use super::SqliteStore;
 use super::rows::instant;
 use super::schedule::store_error;
 #[cfg(any(test, feature = "test-support"))]
-use crate::bot::delivery::cards::HeaderHistory;
-use crate::bot::delivery::cards::{
+use crate::domain::notify::HeaderHistory;
+use crate::domain::notify::{
     CardRecord, DigestPhraseStore, HeaderOverrideStore, HeaderSlots, PostedCard, ReminderCardStore,
 };
 use crate::domain::scheduler::StoreError;

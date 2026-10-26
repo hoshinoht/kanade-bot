@@ -4,7 +4,8 @@ use chrono::{DateTime, Utc};
 use serde::Serialize;
 
 use crate::{
-    api::state::{GuildAccess, PersonaOption},
+    api::state::GuildAccess,
+    chat::persona::PersonaOption,
     domain::{members::MemberProfile, schedule::ScheduleSnapshot},
 };
 

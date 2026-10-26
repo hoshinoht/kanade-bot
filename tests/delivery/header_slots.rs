@@ -8,12 +8,12 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use kanade::bot::delivery::cards::{
-    CardContext, CardKit, DifficultyMarks, HeaderSwitches, ReminderCardStore, resolve_heading,
+    CardContext, CardKit, DifficultyMarks, HeaderSwitches, resolve_heading,
 };
 use kanade::bot::delivery::{EstimateFuture, IgnFuture, PartyEstimates, RunEstimate};
 use kanade::domain::catalog::BossTable;
 use kanade::domain::chardata::{Carrier, PartyShares};
-use kanade::domain::notify::{DedupeKey, DeliveryTarget, IntentContent};
+use kanade::domain::notify::{DedupeKey, DeliveryTarget, IntentContent, ReminderCardStore};
 use kanade::domain::schedule::{Run, ScheduleSnapshot};
 use kanade::domain::scheduler::{ScheduleStore, Scope};
 use kanade::infrastructure::scouter::CarrierOwner;

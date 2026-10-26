@@ -11,8 +11,9 @@ use kanade::domain::schedule::RsvpState;
 use kanade::extract::AmendmentKind;
 use kanade::extract::backlog::BacklogEntry;
 use kanade::extract::pipeline::{
-    AuthorKind, CallContext, LiveContext, MessageEvent, check_reasoning_effort, extraction_outcome,
+    AuthorKind, CallContext, LiveContext, MessageEvent, extraction_outcome,
 };
+use kanade::infrastructure::llm::setup::check_reasoning_effort;
 use kanade::infrastructure::llm::{Effort, FakeAction, ModelCapabilities};
 
 use crate::fakes::{

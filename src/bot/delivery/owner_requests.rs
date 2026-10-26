@@ -106,7 +106,7 @@ where
         + NoticeOutbox
         + Checkpoints
         + ProposalStore
-        + super::cards::ReminderCardStore
+        + crate::domain::notify::ReminderCardStore
         + OwnerRequestStore
         + Sync,
     I: IdSource,

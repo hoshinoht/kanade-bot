@@ -3,14 +3,12 @@
 use std::collections::BTreeMap;
 
 use chrono::{DateTime, TimeZone, Utc};
-use twilight_model::id::{Id, marker::MessageMarker};
+use twilight_model::id::Id;
 
-use kanade::bot::events::{
-    BotEvent, CardIndex, LookupError, ReactionRouter, RouteError, RsvpAnswer, rsvp_reaction,
-};
+use kanade::bot::events::{BotEvent, ReactionRouter, RouteError, RsvpAnswer, rsvp_reaction};
 use kanade::domain::ids::RandomIds;
 use kanade::domain::members::{Member, Roster};
-use kanade::domain::notify::DeclineNoticeStore;
+use kanade::domain::notify::{CardIndex, DeclineNoticeStore, LookupError};
 use kanade::domain::schedule::{NewRun, RsvpState, RunSource, RunStatus};
 use kanade::domain::scheduler::{Clock, SchedulerService};
 use kanade::infrastructure::store::SqliteStore;
@@ -121,19 +119,16 @@ impl Clock for FixedClock {
 
 #[derive(Default)]
 struct Cards {
-    runs: BTreeMap<Id<MessageMarker>, Vec<String>>,
+    runs: BTreeMap<String, Vec<String>>,
     fail: bool,
 }
 
 impl CardIndex for Cards {
-    async fn runs_for_message(
-        &self,
-        message: Id<MessageMarker>,
-    ) -> Result<Vec<String>, LookupError> {
+    async fn runs_for_message(&self, message_id: &str) -> Result<Vec<String>, LookupError> {
         if self.fail {
             return Err(LookupError("store offline".into()));
         }
-        Ok(self.runs.get(&message).cloned().unwrap_or_default())
+        Ok(self.runs.get(message_id).cloned().unwrap_or_default())
     }
 }
 
@@ -180,9 +175,10 @@ fn alice_yes() -> kanade::bot::events::RsvpReaction {
 async fn card_reaction_reaches_the_scheduler() {
     let (service, run_id) = service_with_run(&[ALICE]).await;
     let mut cards = Cards::default();
-    cards
-        .runs
-        .insert(Id::new(MESSAGE), vec!["deleted-run".into(), run_id.clone()]);
+    cards.runs.insert(
+        MESSAGE.to_string(),
+        vec!["deleted-run".into(), run_id.clone()],
+    );
     let mut router = ReactionRouter::new(cards, service);
 
     let results = router.route(&alice_yes()).await.expect("routed");
@@ -197,7 +193,7 @@ async fn card_reaction_reaches_the_scheduler() {
 async fn a_decline_reaction_commits_its_reply_candidate() {
     let (service, run_id) = service_with_run(&[ALICE, BOB]).await;
     let mut cards = Cards::default();
-    cards.runs.insert(Id::new(MESSAGE), vec![run_id.clone()]);
+    cards.runs.insert(MESSAGE.to_string(), vec![run_id.clone()]);
     let mut router = ReactionRouter::new(cards, service);
     let decline = rsvp_from(
         reaction_add(reaction(

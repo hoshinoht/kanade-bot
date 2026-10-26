@@ -12,21 +12,23 @@ use chrono::{NaiveTime, TimeZone, Utc, Weekday};
 use serde_json::json;
 use tokio::sync::Notify;
 
-use super::*;
-use crate::bot::chat_feed::DiscordSurface;
+use super::DiscordSurface;
 use crate::bot::mentions;
 use crate::bot::transport::{Call, FakeDiscord, Op};
 use crate::chat::answer::Generation;
 use crate::chat::context::{Parent, QuestionMessage, Reference, TurnRole, WITHHELD};
+use crate::chat::driver::*;
 use crate::chat::gate::{
-    Author, ChannelDirectory, ChannelInfo, IncomingMessage, PilotSettings, SEEN_REACTION,
+    Author, CHANNEL_BUSY_REACTION, ChannelDirectory, ChannelInfo, IncomingMessage, PilotSettings,
+    RATE_LIMITED_REACTION, SEEN_REACTION,
 };
 use crate::chat::persona::{CompiledPersona, PersonaId, PersonaRoot};
+use crate::chat::pilot::TrafficLimits;
 use crate::chat::sanitize::{FAILURE_REPLY, schedule_defaults};
 use crate::chat::tools::ToolContext;
 use crate::domain::catalog::BossTable;
 use crate::domain::members::{Directory, Member, Roster};
-use crate::domain::model_log::{ChatInteraction, ChatOutcome};
+use crate::domain::model_log::{ChatInteraction, ChatOutcome, ModelLogStore};
 use crate::infrastructure::llm::Message;
 use crate::infrastructure::store::SqliteStore;
 
@@ -1373,8 +1375,9 @@ async fn a_rejected_chat_card_gets_one_read_only_generic_reply_and_remembers_onl
     let rows = rig.rows();
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].guardrail["kind"], "rejection_followup");
-    let mut state = rig.driver.state();
-    let history = state.pilot.conversations.history(CHANNEL, 10.0);
+    let history = rig
+        .driver
+        .with_conversations(|conversations| conversations.history(CHANNEL, 10.0));
     assert_eq!(history.len(), 1);
     assert_eq!(history[0].role, TurnRole::Assistant);
     assert!(!history[0].content.contains("Note from the scheduler"));
@@ -1392,10 +1395,6 @@ async fn a_replaced_follow_up_reply_stays_out_of_context() {
         rig.effects()
             .contains(&"edit 5001: Language, please!".to_owned())
     );
-    let mut state = rig.driver.state();
-    let conversations = &mut state.pilot.conversations;
-    assert!(conversations.history(CHANNEL, 10.0).is_empty());
-    assert!(conversations.is_excluded("5001"));
     let reply = QuestionMessage {
         id: "1002".into(),
         author_id: "11".into(),
@@ -1410,15 +1409,19 @@ async fn a_replaced_follow_up_reply_stays_out_of_context() {
             })),
         }),
     };
-    let turns = crate::chat::context::build_turns(
-        conversations,
-        &reply,
-        CHANNEL,
-        11.0,
-        BOT,
-        None,
-        &Roster::new(),
-    );
+    let turns = rig.driver.with_conversations(|conversations| {
+        assert!(conversations.history(CHANNEL, 10.0).is_empty());
+        assert!(conversations.is_excluded("5001"));
+        crate::chat::context::build_turns(
+            conversations,
+            &reply,
+            CHANNEL,
+            11.0,
+            BOT,
+            None,
+            &Roster::new(),
+        )
+    });
     assert_eq!(turns.len(), 1, "only the new question: {turns:?}");
 }
 
@@ -1452,7 +1455,7 @@ async fn rejected_cards_share_a_thirty_second_channel_cooldown_and_shutdown_drai
     rig.settle().await;
     assert_eq!(rig.fake.seen.lock().unwrap().conversations.len(), 1);
     rig.driver.stop().await;
-    assert!(rig.driver.shared.tasks.lock().unwrap().is_empty());
+    assert!(rig.driver.take_tasks().is_empty());
 }
 
 #[tokio::test]
@@ -1480,7 +1483,7 @@ async fn a_panicking_rejection_follow_up_logs_and_releases_its_channel() {
         Some("failed: the question stopped unexpectedly")
     );
     assert!(
-        !rig.driver.state().rejection_followups.contains(CHANNEL),
+        !rig.driver.follow_up_held(CHANNEL),
         "the aborted task released the channel"
     );
 
@@ -1511,10 +1514,10 @@ async fn a_hard_shutdown_abort_of_a_rejection_follow_up_logs_and_joins_it() {
         Some("cancelled: serve shut down; incomplete: delivered 0 of 1 parts")
     );
     assert!(
-        !rig.driver.state().rejection_followups.contains(CHANNEL),
+        !rig.driver.follow_up_held(CHANNEL),
         "the abort release ran before stop returned"
     );
-    assert!(rig.driver.shared.tasks.lock().unwrap().is_empty());
+    assert!(rig.driver.take_tasks().is_empty());
 }
 
 fn asking(id: &str, content: &str) -> Asked {

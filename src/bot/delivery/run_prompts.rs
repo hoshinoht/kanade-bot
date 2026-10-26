@@ -203,7 +203,7 @@ where
         + NoticeOutbox
         + Checkpoints
         + ProposalStore
-        + super::cards::ReminderCardStore
+        + crate::domain::notify::ReminderCardStore
         + RunPromptStore
         + Sync,
     I: IdSource,

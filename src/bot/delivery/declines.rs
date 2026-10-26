@@ -3,8 +3,8 @@
 use chrono::{DateTime, Utc};
 
 use super::alerts::AlertSink;
+use super::cards::CardKit;
 use super::cards::redesign::decline_text;
-use super::cards::{CardKit, ReminderCardStore};
 use super::executor::SendReport;
 use super::tick::{Delivery, DeliveryError, TickLease};
 use crate::bot::ids::parse_id;
@@ -13,11 +13,11 @@ use crate::bot::transport::{DiscordTransport, Outcome, OutgoingMessage, Rejectio
 use crate::domain::drafts::ProposalStore;
 use crate::domain::history::Checkpoints;
 use crate::domain::members::Directory;
-use crate::domain::notify::PingKind;
 use crate::domain::notify::{
     DeclineNotice, DeclineNoticeStore, DeliveryJournal, DeliveryTarget, EffectKind, IntentContent,
     NotificationIntent, PlannedSend, SendDisposition, audience,
 };
+use crate::domain::notify::{PingKind, ReminderCardStore};
 use crate::domain::scheduler::{IdSource, ScheduleStore, Scope};
 
 /// What the recovery drain did for decline notices.

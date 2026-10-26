@@ -8,15 +8,14 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
 use chrono::TimeDelta;
-use kanade::bot::delivery::cards::{
-    CardKit, HeaderHistory, HeaderOverrideStore, HeadingRewrite, ReminderCardStore,
-};
+use kanade::bot::delivery::cards::{CardKit, HeadingRewrite};
 use kanade::bot::delivery::{CardRefresh, ManualReport, ManualRequest, ManualRewrite, ManualStart};
 use kanade::bot::transport::{FakeDiscord, MessageEdit, Op};
 use kanade::chat::nudge::{
     NudgeRewriter, RewriteFailure, RewritePrompt, SharedRewriter, StoreRewriteSink,
 };
 use kanade::domain::model_log::{RewriteFilter, RewriteLogStore, RewriteStage};
+use kanade::domain::notify::{HeaderHistory, HeaderOverrideStore, ReminderCardStore};
 use kanade::infrastructure::store::SqliteStore;
 use tokio::sync::{Notify, watch};
 

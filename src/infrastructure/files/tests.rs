@@ -3,7 +3,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use super::{knowledge::MAX_KNOWLEDGE_FILES, load_catalog, load_knowledge_dir, load_personas};
+use super::{knowledge::MAX_KNOWLEDGE_FILES, load_catalog, load_knowledge_dir};
 
 fn repo(path: &str) -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join(path)
@@ -367,49 +367,4 @@ fn knowledge_over_the_file_cap_fails_the_whole_load() {
         error.problem,
         format!("more than {MAX_KNOWLEDGE_FILES} knowledge documents")
     );
-}
-
-/// `Personas/` holding only the tracked `kanade` bundle.
-fn personas_root(temp: &Temp) -> PathBuf {
-    let bundle = temp.write("Personas/bundles/kanade.yaml", "");
-    fs::copy(repo("config/personas/bundles/kanade.yaml"), bundle).expect("bundle");
-    temp.0.join("Personas")
-}
-
-#[test]
-fn personas_fall_back_to_tracked_kanade_without_private_files() {
-    let temp = Temp::new();
-    let root = personas_root(&temp);
-    let load = load_personas(&root, None).expect("personas");
-    let active = load.snapshot.active().expect("fallback active");
-    assert_eq!(active.bundle.value.id.to_string(), "kanade");
-    assert!(load.options.is_empty());
-}
-
-#[test]
-fn personas_list_readable_profiles_but_never_the_example() {
-    let temp = Temp::new();
-    let root = personas_root(&temp);
-    fs::create_dir_all(root.join("profiles")).expect("dir");
-    fs::copy(
-        repo("config/personas/catalog.example.yaml"),
-        root.join("catalog.yaml"),
-    )
-    .expect("catalog");
-    let example =
-        fs::read_to_string(repo("config/personas/profiles/example.yaml")).expect("example");
-    fs::write(root.join("profiles/example.yaml"), &example).expect("example");
-    fs::write(
-        root.join("profiles/calm.yaml"),
-        example.replace("id: example", "id: calm"),
-    )
-    .expect("calm");
-    fs::write(root.join("profiles/broken.yaml"), "id: [\n").expect("broken");
-    let load = load_personas(&root, None).expect("personas");
-    let keys: Vec<_> = load
-        .options
-        .iter()
-        .map(|option| option.key.as_str())
-        .collect();
-    assert_eq!(keys, ["calm"]);
 }

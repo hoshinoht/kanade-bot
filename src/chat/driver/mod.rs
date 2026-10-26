@@ -13,9 +13,6 @@ mod ports;
 mod run;
 mod view;
 
-#[cfg(test)]
-mod tests;
-
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
@@ -573,6 +570,35 @@ impl<A: Answerer, S: Surface> ChatDriver<A, S> {
     pub fn spend_allowance(&self, member_id: &str) -> bool {
         let now = self.now();
         self.state().pilot.allowance.spend(member_id, now)
+    }
+
+    /// Test support: runs `read` over the channels' conversation state
+    /// under the driver's lock.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn with_conversations<T>(
+        &self,
+        read: impl FnOnce(&mut crate::chat::context::Conversations) -> T,
+    ) -> T {
+        read(&mut self.state().pilot.conversations)
+    }
+
+    /// Test support: whether a rejection follow-up holds the channel.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn follow_up_held(&self, channel_id: &str) -> bool {
+        self.state().rejection_followups.contains(channel_id)
+    }
+
+    /// Test support: takes the spawned tasks out of the driver.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn take_tasks(&self) -> Vec<JoinHandle<()>> {
+        std::mem::take(&mut *self.tasks())
+    }
+
+    /// Test support: whether `stop` has passed its grace and cut running
+    /// answers.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn is_cut(&self) -> bool {
+        *self.shared.cut.borrow()
     }
 
     /// `disabled`, `idle`, `busy` or `degraded` (enabled but unable to

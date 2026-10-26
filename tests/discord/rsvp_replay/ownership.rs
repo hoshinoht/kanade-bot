@@ -129,7 +129,7 @@ async fn guard_g_a_nonreaction_answer_is_not_removed_when_remote_is_absent() {
 /// mapping cleared by `/debug clear_test` is still read for that safety.
 #[tokio::test]
 async fn guard_g_b_unreadable_mapped_card_prevents_removal_even_once_cleared() {
-    use kanade::bot::delivery::DebugCardStore;
+    use kanade::domain::notify::DebugCardStore;
 
     for cleared in [false, true] {
         let world = World::new().await;

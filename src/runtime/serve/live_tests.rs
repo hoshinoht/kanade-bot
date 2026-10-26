@@ -35,7 +35,7 @@ use crate::{
     },
     bot::{
         cards::{Authority, CardDesk, CardSettings, DeskDeps},
-        delivery::{FixedClock, LogAlerts, StoreRef},
+        delivery::{FixedClock, LogAlerts},
         gateway::{Connection, ConnectionStatus, DeliveryEligibility, EventSource, GatewayError},
         guild_cache::GuildCache,
         roster::LiveRoster,
@@ -52,7 +52,7 @@ use crate::{
         },
         proposals::{Approver, ChangeKind, ProposedChange},
         schedule::{NewRun, RsvpState, RunSource, RunStatus, SchedulePolicy, StatusChange},
-        scheduler::{ProposalRequest, ScheduleStore, SchedulerService, Scope, Supersede},
+        scheduler::{ProposalRequest, ScheduleStore, SchedulerService, Scope, StoreRef, Supersede},
     },
     extract::{
         AmendmentKind,

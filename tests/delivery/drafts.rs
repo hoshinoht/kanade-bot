@@ -1,11 +1,11 @@
 //! The tick expires past-week drafts and never fails when expiry does.
 
 use chrono::TimeDelta;
-use kanade::bot::delivery::{AdminAlert, FixedClock, StoreRef};
+use kanade::bot::delivery::{AdminAlert, FixedClock};
 use kanade::domain::drafts::{DraftChange, DraftEventKind, DraftStatus, DraftUpdate, DraftWrite};
 use kanade::domain::history::Actor;
 use kanade::domain::ids::IdGenerator;
-use kanade::domain::scheduler::SchedulerService;
+use kanade::domain::scheduler::{SchedulerService, StoreRef};
 use kanade::infrastructure::store::SqliteStore;
 
 use crate::scenarios::{delivery, now, previous_week, week, world};

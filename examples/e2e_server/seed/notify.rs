@@ -6,13 +6,14 @@
 use chrono::{DateTime, Datelike, Duration, Utc};
 use kanade::{
     bot::delivery::{
-        cards::{CardRecord, DAY_OF_KIND, PhraseKind, ReminderCardStore, seed_heading},
+        cards::{PhraseKind, seed_heading},
         preview::{record_key, reminder_intent},
     },
     domain::{
         notify::{
-            Claim, DeliveryJournal, DeliverySettings, DeliveryTarget, DigestInclusion, EffectKind,
-            IntentContent, NotificationIntent, Receipt,
+            CardRecord, Claim, DAY_OF_KIND, DeliveryJournal, DeliverySettings, DeliveryTarget,
+            DigestInclusion, EffectKind, IntentContent, NotificationIntent, Receipt,
+            ReminderCardStore,
         },
         scheduler::{ScheduleStore, Scope},
     },

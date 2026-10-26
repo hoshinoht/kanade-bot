@@ -24,8 +24,8 @@ use crate::{
             DEFAULT_MAX_SENDS_PER_TICK, Delivery, DeliveryConfig, DeliveryError, LogAlerts,
             TickReport,
             cards::{
-                ArtSource, CardKit, DifficultyMarks, HeaderSwitchSource, HeaderSwitches,
-                HeadingRewrite, PersonaSource, PortalSwitch, V2Kit,
+                CardKit, DifficultyMarks, HeaderSwitchSource, HeaderSwitches, HeadingRewrite,
+                PersonaSource, PortalSwitch, V2Kit,
             },
         },
         gateway::DeliveryEligibility,
@@ -43,8 +43,8 @@ use crate::{
     },
     domain::notify::DeliveryJournal,
     domain::{
-        catalog::BossTable, ids::RandomIds, members::MemberStore, notify::DEFAULT_MAX_NOTICE_AGE,
-        settings::RuntimeSettings,
+        art::ArtSource, catalog::BossTable, ids::RandomIds, members::MemberStore,
+        notify::DEFAULT_MAX_NOTICE_AGE, settings::RuntimeSettings,
     },
     infrastructure::{
         files::BossArt,

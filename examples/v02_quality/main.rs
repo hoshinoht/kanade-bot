@@ -45,7 +45,7 @@ use serde_json::{Value, json};
 
 use attempt::{Shared, TempDir};
 use kanade::{
-    chat::persona::SelectionSource, infrastructure::files::load_personas,
+    chat::persona::{SelectionSource, load_personas},
     runtime::config::ServeConfig,
 };
 use persona::PersonaBundle;

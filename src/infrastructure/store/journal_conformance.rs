@@ -6,16 +6,14 @@ use std::collections::BTreeSet;
 
 use chrono::{DateTime, TimeDelta, TimeZone, Utc};
 
-use crate::bot::delivery::cards::{
-    CardRecord, DigestPhraseStore, HeaderHistory, HeaderOverrideStore, PostedCard,
-    ReminderCardStore,
-};
-use crate::bot::delivery::{DebugCardStore, PostedDebugCard};
-use crate::bot::events::{CardIndex, ReplayCards};
 use crate::domain::notify::{
     AttemptId, AttemptState, Claim, DedupeKey, DeliverySettings, DeliveryTarget, DigestPostInput,
     EffectKind, IntentContent, JournalError, JournalView, Lease, NotificationIntent, PlannedSend,
     REJECTED_ACTOR, Receipt, SendDisposition, WeeklyDigest, plan_digest_post,
+};
+use crate::domain::notify::{
+    CardIndex, CardRecord, DebugCardStore, DigestPhraseStore, HeaderHistory, HeaderOverrideStore,
+    PostedCard, PostedDebugCard, ReminderCardStore, ReplayCards,
 };
 use crate::domain::notify::{
     DeliveryJournal, DigestAction, NOT_SENT_ACTOR, WeekReset, plan_digest_tick,
@@ -680,14 +678,12 @@ async fn unproven_digest_raises_the_marker<S: DeliveryJournal>(store: &S) {
 async fn card_runs_survive_a_reminder_rebuild<S: ScheduleStore + DeliveryJournal + CardIndex>(
     store: &S,
 ) {
-    use twilight_model::id::Id;
-
     seed(store).await;
     let lease = lease(store).await;
     let attempt = fresh(store, &lease, &intent(&["m-1", "m-2"], FALLBACK)).await;
     bound(store, &lease, &attempt, FALLBACK, "5001", 8).await;
-    let runs = |message| store.runs_for_message(Id::new(message));
-    assert_eq!(runs(5001).await.expect("lookup"), ["r-1"]);
+    let runs = |message: &'static str| store.runs_for_message(message);
+    assert_eq!(runs("5001").await.expect("lookup"), ["r-1"]);
     commit(
         store,
         vec![
@@ -698,11 +694,11 @@ async fn card_runs_survive_a_reminder_rebuild<S: ScheduleStore + DeliveryJournal
     )
     .await;
     assert_eq!(
-        runs(5001).await.expect("lookup"),
+        runs("5001").await.expect("lookup"),
         ["r-1"],
         "card_runs_survive_a_reminder_rebuild"
     );
-    assert!(runs(5002).await.expect("lookup").is_empty());
+    assert!(runs("5002").await.expect("lookup").is_empty());
 }
 
 async fn replay_cards_keep_all_mappings_but_select_fresh_evidence<
@@ -1328,12 +1324,8 @@ async fn test_cards_are_per_operation_registered_and_cleared<
         before,
         "reminder rows untouched"
     );
-    let message = |id: &str| twilight_model::id::Id::new(id.parse::<u64>().expect("id"));
     assert_eq!(
-        store
-            .runs_for_message(message("7003"))
-            .await
-            .expect("index"),
+        store.runs_for_message("7003").await.expect("index"),
         ["r-1"],
         "reactions on a test card reach its run"
     );
@@ -1397,8 +1389,6 @@ async fn test_cards_are_per_operation_registered_and_cleared<
 /// `test_retire_bound_attempt` (`sqlite/faults.rs`) over a real binding.
 #[cfg(test)]
 mod sqlite_shortcuts {
-    use twilight_model::id::Id;
-
     use super::*;
     use crate::infrastructure::store::SqliteStore;
 
@@ -1411,7 +1401,7 @@ mod sqlite_shortcuts {
         bound(&store, &lease, &attempt, HOME, "5001", 8).await;
         store.test_map_card_run("5001", "r-2").await;
         store.test_map_card_run("5001", "r-2").await;
-        let runs = store.runs_for_message(Id::new(5001)).await.expect("lookup");
+        let runs = store.runs_for_message("5001").await.expect("lookup");
         assert_eq!(runs, ["r-1", "r-2"], "mapped once");
 
         store.test_retire_bound_attempt(&attempt).await;

@@ -30,12 +30,12 @@ type ClaimResultHook = Arc<dyn Fn() -> Pin<Box<dyn Future<Output = ()> + Send>> 
 
 use super::alerts::{AdminAlert, AlertSink, AlertThrottle};
 use super::card_records;
-use super::cards::{CardContext, CardKit, DigestPhraseStore, ReminderCardStore, resolve_heading};
+use super::cards::{CardContext, CardKit, resolve_heading};
 use super::estimates::attach_chart;
 use super::executor::{Executor, Replacement, SendFailure, SendOutcome, SendReport};
 use super::notices::NoticeReport;
 use super::owner_requests::OwnerRequestReport;
-use super::ports::{FixedClock, IdsRef, StoreRef};
+use super::ports::{FixedClock, IdsRef};
 use super::render::{render, unrendered};
 use super::run_prompts::RunPromptReport;
 use crate::bot::{
@@ -52,16 +52,17 @@ use crate::domain::history::{
 };
 use crate::domain::members::Directory;
 use crate::domain::notify::{
-    ChannelDirectory, DeliveryJournal, DeliverySettings, DigestAction, DigestLog, DigestPostInput,
-    DigestSend, DispatchInput, JournalError, Lease, NoticeOutbox, NotificationIntent, Queued,
-    RecordReason, Recovery, SendDisposition, WeekReset, plan_digest_post, plan_digest_tick,
-    plan_dispatch, retire_digests_before,
+    ChannelDirectory, DeliveryJournal, DeliverySettings, DigestAction, DigestLog,
+    DigestPhraseStore, DigestPostInput, DigestSend, DispatchInput, JournalError, Lease,
+    NoticeOutbox, NotificationIntent, Queued, RecordReason, Recovery, ReminderCardStore,
+    SendDisposition, WeekReset, plan_digest_post, plan_digest_tick, plan_dispatch,
+    retire_digests_before,
 };
 use crate::domain::ownership::OwnerRequestStore;
 use crate::domain::schedule::SchedulePolicy;
 use crate::domain::schedule::ScheduleSnapshot;
 use crate::domain::scheduler::{
-    Clock, IdSource, ScheduleStore, SchedulerError, SchedulerService, Scope, StoreError,
+    Clock, IdSource, ScheduleStore, SchedulerError, SchedulerService, Scope, StoreError, StoreRef,
 };
 use crate::domain::settings::RunLengths;
 use crate::domain::time::{DateOutOfRange, from_iso};

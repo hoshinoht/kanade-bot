@@ -20,18 +20,16 @@ use tokio::sync::{Mutex as AsyncMutex, Notify, watch};
 
 use super::card_records;
 use super::cards::redesign::learn_after_refusal;
-use super::cards::{
-    self, CardArt, CardContext, CardKit, DAY_OF_KIND, DigestPhraseStore, PostedCard,
-    ReminderCardStore, fetch_art,
-};
+use super::cards::{self, CardArt, CardContext, CardKit, fetch_art};
 use super::debug::{TEST_PREFIX, test_mentions};
 use crate::bot::ids::parse_id;
 use crate::bot::transport::DiscordTransport;
 use crate::domain::attendance::{countdown_mentions, morning_mentions};
 use crate::domain::members::Directory;
 use crate::domain::notify::{
-    DeliveryJournal, IntentContent, PingKind, WeeklyDigest, countdown_minutes, digest_inclusion,
-    everyone_on, resolve_mentions,
+    DAY_OF_KIND, DeliveryJournal, DigestPhraseStore, IntentContent, PingKind, PostedCard,
+    ReminderCardStore, WeeklyDigest, countdown_minutes, digest_inclusion, everyone_on,
+    resolve_mentions,
 };
 use crate::domain::schedule::{SchedulePolicy, ScheduleSnapshot};
 use crate::domain::scheduler::{ScheduleStore, Scope};

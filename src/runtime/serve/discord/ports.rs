@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use twilight_model::id::{Id, marker::MessageMarker, marker::UserMarker};
+use twilight_model::id::{Id, marker::UserMarker};
 
 use crate::{
     api::{
@@ -16,12 +16,13 @@ use crate::{
     },
     bot::{
         cards::Authority,
-        events::{AdminRoles, CardIndex, LookupError, RosterUpdate},
+        events::{AdminRoles, RosterUpdate},
         ids::id_text,
         roster::{LiveRoster, RosterSink},
     },
     domain::{
         members::{GatewayMember, MemberProfile, MemberStore},
+        notify::{CardIndex, LookupError},
         proposals::Approver,
         scheduler::StoreError,
     },
@@ -112,10 +113,7 @@ impl Authority for StaffAuthority {
 pub struct StoreIndex(pub Arc<SqliteStore>);
 
 impl CardIndex for StoreIndex {
-    async fn runs_for_message(
-        &self,
-        message: Id<MessageMarker>,
-    ) -> Result<Vec<String>, LookupError> {
-        self.0.runs_for_message(message).await
+    async fn runs_for_message(&self, message_id: &str) -> Result<Vec<String>, LookupError> {
+        self.0.runs_for_message(message_id).await
     }
 }

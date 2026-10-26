@@ -210,7 +210,7 @@ impl SqliteStore {
 
     async fn retire_bound_attempt(&self, attempt: &AttemptId) -> Result<(), JournalError> {
         // Test retirement needs only a timestamp for the recorded transition.
-        let now = crate::api::auth::system_now();
+        let now = super::backup::now_seconds();
         write_txn!(JournalError, journal::backend; self, tx,
             journal::release_and_retire(&mut tx, attempt, "test", "test retirement", now)
         )
@@ -234,10 +234,12 @@ mod tests {
     use chrono::{DateTime, TimeZone, Utc};
 
     use super::*;
-    use crate::bot::delivery::cards::{CardRecord, DigestPhraseStore, ReminderCardStore};
     use crate::domain::chardata::CharDataStore;
     use crate::domain::model_log::ModelLogStore;
-    use crate::domain::notify::{DeclineNoticeStore, DedupeKey, DeliveryTarget};
+    use crate::domain::notify::{
+        CardRecord, DeclineNoticeStore, DedupeKey, DeliveryTarget, DigestPhraseStore,
+        ReminderCardStore,
+    };
     use crate::domain::schedule::ChangeSet;
     use crate::domain::scheduler::ScheduleStore;
     use crate::infrastructure::store::chardata_conformance::active;

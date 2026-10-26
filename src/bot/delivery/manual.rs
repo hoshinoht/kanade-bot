@@ -22,10 +22,7 @@ use chrono::{DateTime, Utc};
 use tokio::sync::{Notify, watch};
 
 use super::card_records::digest_phrase_key;
-use super::cards::{
-    DAY_OF_KIND, DigestPhraseStore, HeaderContext, HeaderOverrideStore, HeadingSource, PhraseKind,
-    PostedCard, ReminderCardStore, card_runs,
-};
+use super::cards::{HeaderContext, HeadingSource, PhraseKind, card_runs};
 use super::estimates::header_context;
 use super::pregen::PREGEN_DEADLINE;
 use super::refresh::{CardRefresh, posted_content};
@@ -37,7 +34,10 @@ use crate::chat::nudge::{
     NudgeRewriter, RewriteFailure, RewriteOutcome, RewritePrompt, SharedRewriter,
 };
 use crate::domain::model_log::RewriteStage;
-use crate::domain::notify::{DeliveryJournal, WeekReset, WeeklyDigest};
+use crate::domain::notify::{
+    DAY_OF_KIND, DeliveryJournal, DigestPhraseStore, HeaderOverrideStore, PostedCard,
+    ReminderCardStore, WeekReset, WeeklyDigest,
+};
 use crate::domain::scheduler::{ScheduleStore, Scope};
 
 /// Who asked for a run and where its summary goes.

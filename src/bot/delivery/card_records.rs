@@ -11,12 +11,12 @@ use std::sync::{Arc, Mutex, OnceLock, PoisonError, Weak};
 use chrono::{DateTime, Utc};
 use tokio::sync::Mutex as AsyncMutex;
 
-use super::cards::{
-    CardContext, CardKit, CardRecord, DAY_OF_KIND, DigestPhraseStore, PhraseKind,
-    ReminderCardStore, card_runs, seed_heading,
-};
+use super::cards::{CardContext, CardKit, PhraseKind, card_runs, seed_heading};
 use crate::bot::commands::text::local_day;
-use crate::domain::notify::{DedupeKey, DeliveryTarget, IntentContent, NotificationIntent};
+use crate::domain::notify::{
+    CardRecord, DAY_OF_KIND, DedupeKey, DeliveryTarget, DigestPhraseStore, IntentContent,
+    NotificationIntent, ReminderCardStore,
+};
 
 static PREPARATION_LOCKS: OnceLock<Mutex<HashMap<String, Weak<AsyncMutex<()>>>>> = OnceLock::new();
 

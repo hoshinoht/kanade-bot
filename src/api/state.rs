@@ -15,10 +15,8 @@ use twilight_model::id::{Id, marker::UserMarker};
 
 use super::auth::Clock;
 use crate::{
-    bot::{
-        commands::{AccessPolicy, Invoker},
-        delivery::cards::{CardRecord, PostedCard, ReminderCardStore},
-    },
+    bot::commands::{AccessPolicy, Invoker},
+    chat::persona::PersonaOption,
     domain::{
         catalog::BossTable,
         characters::{
@@ -44,7 +42,7 @@ use crate::{
             MaskedTurn, ModelLogStore, RewriteFacets, RewriteFilter, RewriteLog, RewriteLogStore,
             WatchedMessage,
         },
-        notify::{DeliveryJournal, WeeklyDigest},
+        notify::{CardRecord, DeliveryJournal, PostedCard, ReminderCardStore, WeeklyDigest},
         ownership::{OwnerRequest, OwnerRequestStatus, OwnerRequestStore},
         proposals::{ProposalCardStore, StoredCard},
         schedule::{SchedulePolicy, ScheduleSnapshot},
@@ -995,15 +993,6 @@ impl ChannelList for StaticChannels {
     fn channels(&self) -> Vec<ChannelEntry> {
         self.0.clone()
     }
-}
-
-/// A reply-style profile members may choose.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct PersonaOption {
-    pub key: String,
-    pub name: String,
-    /// The profile's one-line voice; empty when it has none.
-    pub voice: String,
 }
 
 /// The bot's staff rule plus the facts it reads that are not member rows:

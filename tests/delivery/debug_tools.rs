@@ -12,17 +12,17 @@ use kanade::bot::commands::{
     DebugCards, HeaderNote, HeaderRequest, HeaderTrialKind, HeaderTrials, PingRequest, SampleRun,
     TestKind, TestPosted, TestReport, TestSubject,
 };
-use kanade::bot::delivery::cards::{CardKit, ReminderCardStore};
-use kanade::bot::delivery::{
-    CardRefresh, DebugCardStore, DebugDesk, FixedClock, SAMPLE_RUN_ID, StoreRef, TEST_PREFIX,
-};
+use kanade::bot::delivery::cards::CardKit;
+use kanade::bot::delivery::{CardRefresh, DebugDesk, FixedClock, SAMPLE_RUN_ID, TEST_PREFIX};
 use kanade::bot::events::{ReactionRouter, RsvpAnswer, RsvpReaction};
 use kanade::bot::transport::{Call, FakeDiscord, Outcome};
 use kanade::chat::nudge::{NudgeRewriter, RewriteFailure, RewritePrompt};
 use kanade::domain::ids::RandomIds;
-use kanade::domain::notify::{ActiveClaims, DedupeKey, DeliveryJournal, DeliveryTarget};
+use kanade::domain::notify::{
+    ActiveClaims, DebugCardStore, DedupeKey, DeliveryJournal, DeliveryTarget, ReminderCardStore,
+};
 use kanade::domain::schedule::{RunStatus, ScheduleSnapshot};
-use kanade::domain::scheduler::SchedulerService;
+use kanade::domain::scheduler::{SchedulerService, StoreRef};
 use kanade::infrastructure::store::SqliteStore;
 use twilight_model::id::Id;
 
@@ -152,7 +152,7 @@ async fn sandbox_posts_are_display_only<S: Store + DebugCardStore + 'static>(sto
     assert_eq!(support::snapshot(&*store).await.rsvps, before);
     assert!(
         store
-            .runs_for_message(Id::new(ids[0]))
+            .runs_for_message(&ids[0].to_string())
             .await
             .expect("index")
             .is_empty()
@@ -515,7 +515,7 @@ async fn samples_store_nothing<S: Store + DebugCardStore + 'static>(store: Arc<S
     for id in posted_ids(&fake) {
         assert!(
             store
-                .runs_for_message(Id::new(id))
+                .runs_for_message(&id.to_string())
                 .await
                 .expect("index")
                 .is_empty()

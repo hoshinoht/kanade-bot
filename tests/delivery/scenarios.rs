@@ -6,7 +6,7 @@ use std::time::Duration;
 use chrono::{DateTime, NaiveTime, TimeZone, Utc, Weekday};
 use kanade::bot::delivery::{
     AdminAlert, AlertRecorder, DEFAULT_MAX_SENDS_PER_TICK, Delivery, DeliveryConfig, DigestOutcome,
-    FixedClock, SendOutcome, StoreRef,
+    FixedClock, SendOutcome,
 };
 use kanade::bot::events::{ReactionRouter, RsvpAnswer, RsvpReaction};
 use kanade::bot::transport::{Call, DiscordTransport, FakeDiscord, Op, RejectionKind, Step};
@@ -16,7 +16,7 @@ use kanade::domain::notify::{AttemptState, EffectKind};
 use kanade::domain::schedule::{
     NewRun, ReminderPolicy, RsvpState, RunSource, RunStatus, SchedulePolicy,
 };
-use kanade::domain::scheduler::SchedulerService;
+use kanade::domain::scheduler::{SchedulerService, StoreRef};
 use kanade::infrastructure::store::SqliteStore;
 use twilight_model::id::Id;
 
@@ -326,7 +326,10 @@ async fn fallback_binds_and_maps_reactions<S: Store>(store: &S) {
     assert_eq!(world.fake.count(Op::AddReaction), 2, "✅ and ❌ added");
 
     assert_eq!(
-        store.runs_for_message(message).await.expect("index"),
+        store
+            .runs_for_message(&message.get().to_string())
+            .await
+            .expect("index"),
         vec![run.clone()]
     );
     let sink = SchedulerService::new(StoreRef(store), RandomIds, FixedClock(now()));

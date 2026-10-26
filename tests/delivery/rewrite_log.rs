@@ -9,7 +9,7 @@ use std::time::Duration;
 
 use kanade::bot::commands::{DebugCards, HeaderTrialKind, HeaderTrials, PingRequest, TestKind};
 use kanade::bot::delivery::DebugDesk;
-use kanade::bot::delivery::cards::{CardKit, ReminderCardStore};
+use kanade::bot::delivery::cards::CardKit;
 use kanade::bot::transport::FakeDiscord;
 use kanade::chat::nudge::{
     NudgeRewriter, RewriteDetail, RewriteFailure, RewriteOutcome, RewritePrompt, SharedRewriteSink,
@@ -18,6 +18,7 @@ use kanade::chat::nudge::{
 use kanade::domain::model_log::{
     LogPage, RewriteFacets, RewriteFilter, RewriteKind, RewriteLog, RewriteLogStore, RewriteStage,
 };
+use kanade::domain::notify::ReminderCardStore;
 use kanade::domain::scheduler::StoreError;
 use kanade::infrastructure::store::SqliteStore;
 

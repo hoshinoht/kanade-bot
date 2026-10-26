@@ -14,7 +14,7 @@ use crate::api::state::DeclineRetraction;
 use crate::bot::cards::{CardDesk, CardPress, CardReaction, Pressed, ReplayLive, ReplayReport};
 use crate::bot::commands::CardPresses;
 use crate::bot::delivery::AlertSink;
-use crate::bot::events::{CardIndex, ReactionRouter, ReactionSink, RsvpReaction};
+use crate::bot::events::{ReactionRouter, ReactionSink, RsvpReaction};
 use crate::bot::gateway::ConnectionStatus;
 use crate::bot::ids::id_text;
 use crate::bot::rsvp_replay::RsvpReplay;
@@ -22,7 +22,7 @@ use crate::bot::transport::DiscordTransport;
 use crate::chat::driver::{FollowUpCard, FollowUpRequest, RejectionFollowUp};
 use crate::domain::drafts::ProposalStore;
 use crate::domain::history::{BlameIndex, ChangeHistory};
-use crate::domain::notify::DeliveryJournal;
+use crate::domain::notify::{CardIndex, DeliveryJournal};
 use crate::domain::proposals::ProposalCardStore;
 use crate::domain::scheduler::{IdSource, ScheduleStore};
 use twilight_model::id::{Id, marker::UserMarker};
@@ -74,7 +74,7 @@ where
     S: ScheduleStore
         + ChangeHistory
         + BlameIndex
-        + crate::bot::events::ReplayCards
+        + crate::domain::notify::ReplayCards
         + crate::domain::notify::DeclineNoticeStore
         + ProposalStore
         + ProposalCardStore
@@ -259,7 +259,7 @@ where
     S: ScheduleStore
         + ChangeHistory
         + BlameIndex
-        + crate::bot::events::ReplayCards
+        + crate::domain::notify::ReplayCards
         + crate::domain::notify::DeclineNoticeStore
         + ProposalStore
         + ProposalCardStore

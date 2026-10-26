@@ -40,16 +40,6 @@ pub fn server_started(mode: &'static str, bind: &str) {
     });
 }
 
-/// A store was dropped without `close()`, so ownership may have been
-/// released while SQLite connections were still closing.
-pub fn store_dropped_unclosed(db_path: &std::path::Path) {
-    emit(&serde_json::json!({
-        "level": "WARN",
-        "event": "store_dropped_unclosed",
-        "db_path": db_path.display().to_string(),
-    }));
-}
-
 /// `closed` is false when closing failed or the store was still shared.
 pub fn store_closed(closed: bool) {
     emit(&serde_json::json!({

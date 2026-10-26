@@ -25,7 +25,6 @@ use crate::{
         chat_feed::{ChatFeed, DiscordSurface, StaffFn},
         commands::{ChatAllowance, Invoker},
         delivery::FixedClock,
-        events::CardIndex,
         guild_cache::GuildCache,
         roster::LiveRoster,
     },
@@ -50,7 +49,7 @@ use crate::{
         ids::RandomIds,
         members::{MemberStore, Roster},
         model_log::{ChatInteraction, ModelLogStore},
-        notify::{DeliveryJournal, digest_inclusion},
+        notify::{CardIndex, DeliveryJournal, digest_inclusion},
         proposals::ProposalCardStore,
         schedule::SchedulePolicy,
         scheduler::{ScheduleStore, SchedulerService, Scope},
@@ -181,7 +180,10 @@ where
     }) else {
         return Ok(RunContext::default());
     };
-    let mut about = store.runs_for_message(id).await.map_err(|error| error.0)?;
+    let mut about = store
+        .runs_for_message(&id.get().to_string())
+        .await
+        .map_err(|error| error.0)?;
     let cards = store
         .cards_on_message(message)
         .await
