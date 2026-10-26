@@ -28,12 +28,10 @@ use super::{
     tests::Temp,
 };
 use crate::{
-    api::auth,
-    bot::{
-        gateway::{EventSource, GatewayError},
-        transport::{Call, FakeDiscord, Op, Outcome},
-    },
+    app::clock,
+    bot::gateway::{EventSource, GatewayError},
     chat::tools::read::{GuideError, StrategyGuides},
+    discord::transport::{Call, FakeDiscord, Op, Outcome},
     infrastructure::{
         files::{load_catalog, load_knowledge_dir},
         store::SqliteStore,
@@ -466,7 +464,7 @@ async fn live_with_role_profiles(
     let wiring = Wiring {
         source: Script(receiver, false),
         transport: Arc::clone(&fake),
-        clock: Arc::new(auth::system_now),
+        clock: Arc::new(clock::system_now),
         tick: Duration::from_millis(50),
         extraction: extract::Timing::default(),
     };
@@ -862,7 +860,7 @@ async fn chat_resolves_live_discord_roles_before_saved_style_without_granting_ac
 
 #[tokio::test]
 async fn a_saved_model_switch_reaches_the_next_question_without_a_restart() {
-    use crate::api::admin::config::ModelCatalog;
+    use crate::app::config::ModelCatalog;
     use kanade_domain::settings::Reasoning;
 
     let stub = ModelStub::start("local", "Lotus is at nine tonight.").await;

@@ -58,7 +58,7 @@ async fn morning_handled<S: Store>(store: &S, run: &str) -> bool {
 }
 
 /// Each post's leading emoji: 📅 morning card, ⏰ countdown.
-fn posted(fake: &kanade::bot::transport::FakeDiscord) -> Vec<String> {
+fn posted(fake: &kanade::discord::transport::FakeDiscord) -> Vec<String> {
     created(fake)
         .iter()
         .map(|post| {

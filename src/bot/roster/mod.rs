@@ -3,9 +3,7 @@
 //! snapshot the tick, cards and reactions read synchronously.
 
 mod live;
-mod reconcile;
 mod task;
 
 pub use live::LiveRoster;
-pub use reconcile::{ReconcileError, ReconcileReport, diff, fetch_members};
 pub use task::{RosterJob, RosterSink, RosterTask, prune_roles};

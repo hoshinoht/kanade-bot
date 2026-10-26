@@ -13,8 +13,9 @@ use super::{
     models, settings, store,
 };
 use crate::{
-    api::admin::config::SettingsChanged,
-    bot::{delivery::cards::HeadingRewrite, gateway::EventSource},
+    app::config::SettingsChanged,
+    bot::gateway::EventSource,
+    cards::HeadingRewrite,
     chat::persona::CompiledPersona,
     infrastructure::{
         llm::{governor::Role, setup::ModelStack},
@@ -111,7 +112,7 @@ where
         prepared.cache.clone(),
         health,
         models,
-        Arc::new(crate::api::auth::system_now),
+        Arc::new(crate::app::clock::system_now),
     )
     .await;
     let mut composition = match composed {

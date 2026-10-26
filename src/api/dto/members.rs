@@ -3,7 +3,7 @@
 use chrono::{DateTime, Utc};
 use serde::Serialize;
 
-use crate::{api::state::GuildAccess, chat::persona::PersonaOption};
+use crate::{app::guild::GuildAccess, chat::persona::PersonaOption};
 use kanade_domain::{members::MemberProfile, schedule::ScheduleSnapshot};
 
 #[derive(Serialize)]

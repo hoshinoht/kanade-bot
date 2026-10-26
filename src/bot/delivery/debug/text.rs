@@ -3,9 +3,9 @@
 
 use chrono::TimeDelta;
 
-use crate::bot::cards::format::Audience;
-use crate::bot::delivery::cards::redesign::{self, NoticeLook};
-use crate::bot::delivery::cards::{CardContext, People};
+use crate::cards::format::Audience;
+use crate::cards::redesign::{self, NoticeLook};
+use crate::cards::{CardContext, People};
 use kanade_domain::notify::display_names;
 use kanade_domain::schedule::{Notice, NoticeChange, Run};
 

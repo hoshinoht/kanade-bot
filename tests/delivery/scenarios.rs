@@ -9,7 +9,7 @@ use kanade::bot::delivery::{
     FixedClock, SendOutcome,
 };
 use kanade::bot::events::{ReactionRouter, RsvpAnswer, RsvpReaction};
-use kanade::bot::transport::{Call, DiscordTransport, FakeDiscord, Op, RejectionKind, Step};
+use kanade::discord::transport::{Call, DiscordTransport, FakeDiscord, Op, RejectionKind, Step};
 use kanade::infrastructure::store::SqliteStore;
 use kanade_domain::ids::RandomIds;
 use kanade_domain::members::{Member, PingLevel, Roster};

@@ -23,7 +23,7 @@ use super::{
 };
 use crate::{
     api::{auth::AdminSession, error::ApiError, listeners::Site},
-    bot::delivery::{ManualRequest, ManualStart},
+    app::ports::{ManualRequest, ManualStart},
     infrastructure::store::replays::ReplayScope,
 };
 

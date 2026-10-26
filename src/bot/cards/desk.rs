@@ -17,20 +17,20 @@ use chrono_tz::Tz;
 use twilight_model::channel::message::embed::{EmbedField, EmbedFooter};
 use twilight_model::channel::message::{Component, Embed};
 
-use super::format::{Audience, unanswered};
 use super::react::OUT_OF_DATE_NOTICE;
 use super::styled::{CardState, Closure, Look, StyledCard, styled_card};
 use super::v2::card_components;
-use crate::api::state::DeclineRetraction;
-use crate::bot::commands::text::{hhmm, weekday_name};
-use crate::bot::delivery::cards::CardKit;
-use crate::bot::delivery::cards::redesign::learn_after_refusal;
+use crate::app::ids::{id_text, parse_id};
+use crate::app::ports::DeclineRetraction;
 use crate::bot::delivery::{
     AdminAlert, AlertSink, AlertThrottle, Executor, FixedClock, SendFailure, SendOutcome, edit_lock,
 };
-use crate::bot::ids::{id_text, parse_id};
-use crate::bot::mentions;
-use crate::bot::transport::{
+use crate::cards::CardKit;
+use crate::cards::format::{Audience, unanswered};
+use crate::cards::redesign::learn_after_refusal;
+use crate::cards::text::{hhmm, weekday_name};
+use crate::discord::mentions;
+use crate::discord::transport::{
     ChannelId, DiscordTransport, MessageEdit, MessageId, Outcome, OutgoingMessage, RejectionKind,
 };
 use crate::extract::pipeline::{CardEntry, PostResult, Redirected};

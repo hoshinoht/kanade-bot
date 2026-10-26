@@ -8,16 +8,16 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use chrono::{DateTime, TimeDelta, TimeZone, Utc};
-use kanade::bot::delivery::cards::{CardKit, HeadingRewrite, PersonaSource, UNNAMED};
 use kanade::bot::delivery::{
     CardRefresh, HeaderPregen, MAX_PENDING_RUNS, PREGEN_DEADLINE, PregenReport, RefreshQueue,
     SendOutcome,
 };
-use kanade::bot::transport::{
-    Call, FakeDiscord, MessageEdit, Op, OutgoingMessage, RejectionKind, Step,
-};
+use kanade::cards::{CardKit, HeadingRewrite, PersonaSource, UNNAMED};
 use kanade::chat::nudge::{NudgeRewriter, RewriteFailure, RewritePrompt, SharedRewriter};
 use kanade::chat::persona::{CompiledPersona, PersonaId, PersonaRoot, parse_bundle};
+use kanade::discord::transport::{
+    Call, FakeDiscord, MessageEdit, Op, OutgoingMessage, RejectionKind, Step,
+};
 use kanade::infrastructure::files::BossArt;
 use kanade::infrastructure::store::SqliteStore;
 use kanade_domain::art::{ArtFile, ArtSource};

@@ -4,7 +4,7 @@
 
 use chrono::{DateTime, Duration, Utc};
 use kanade::{
-    api::auth::crypto,
+    app::crypto,
     infrastructure::store::{
         SqliteStore,
         web_sessions::{LoginMethod, SessionOrigin, WebSession, WebSessionStore},

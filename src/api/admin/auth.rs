@@ -23,7 +23,6 @@ use crate::{
         auth::{
             AdminAuth, AdminSession, SignIn,
             audit::{AuditContext, AuditEvent},
-            crypto,
             csrf::{self, CSRF_HEADER},
             device,
             discord::{BeginError, DiscordLogin},
@@ -34,6 +33,7 @@ use crate::{
         error::ApiError,
         listeners::Site,
     },
+    app::crypto,
     infrastructure::store::web_sessions::LoginMethod,
 };
 

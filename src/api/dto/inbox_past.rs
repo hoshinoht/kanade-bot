@@ -11,7 +11,7 @@ use super::{
     iso_instant,
     week::Context,
 };
-use crate::api::state::ClosedItem;
+use crate::app::read::ClosedItem;
 use kanade_domain::{
     drafts::{DraftStatus, SUPERSEDED},
     history::Actor,

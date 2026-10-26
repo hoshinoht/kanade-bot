@@ -5,7 +5,7 @@
 use crate::chat::tools::read::roster::{bossers, resolve_participant_text};
 use kanade_domain::members::{Member, MemberProfile};
 
-use super::text::mention;
+use crate::cards::text::mention;
 
 /// The ids for a party, or v4's `; `-joined problems.
 ///

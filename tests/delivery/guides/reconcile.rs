@@ -4,7 +4,7 @@
 
 use std::sync::Arc;
 
-use kanade::bot::transport::{AmbiguousKind, Op, Step};
+use kanade::discord::transport::{AmbiguousKind, Op, Step};
 use kanade_domain::guides::{
     Blocked, Confirmations, GuideGrants, GuideStore, OpKind, OpOutcome, PlanOp, PublishKind,
     PublishOp, PublishState, SlotState, StopReason,

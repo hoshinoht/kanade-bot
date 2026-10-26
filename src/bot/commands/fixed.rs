@@ -5,7 +5,6 @@ use std::sync::Arc;
 
 use twilight_model::application::command::{Command, CommandOption};
 
-use super::access::{Gate, Invoker};
 use super::build::{choices, command, picked, subcommand, text, text_channel, user};
 use super::context::CommandContext;
 use super::dispatch::{ChoicesFuture, CommandError, CommandFuture, SlashCommand};
@@ -13,10 +12,11 @@ use super::invocation::Invocation;
 use super::lookup::{can_modify_fixed, fixed_choices, on_fixed, refused, resolve};
 use super::options::Args;
 use super::participants::resolve_participants;
-use super::text::fixed_run_line;
-use crate::api::write::WriteContext;
-use crate::bot::ids::id_text;
-use crate::bot::transport::InteractionReply;
+use crate::app::access::{Gate, Invoker};
+use crate::app::ids::id_text;
+use crate::app::write::WriteContext;
+use crate::cards::text::fixed_run_line;
+use crate::discord::transport::InteractionReply;
 use kanade_domain::history::{Expect, Origin, RowKey};
 use kanade_domain::ids::short_id;
 use kanade_domain::schedule::{

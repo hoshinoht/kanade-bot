@@ -9,14 +9,14 @@ use std::{
 use twilight_model::id::{Id, marker::UserMarker};
 
 use super::{
-    crypto,
     discord::{
         AccessToken, CodeExchange, DiscordApi, DiscordClient, DiscordError, DiscordFuture,
         DiscordUser, TokenGrant,
     },
     staff::{GateFuture, GuildMembers},
 };
-use crate::bot::commands::Invoker;
+use crate::app::access::Invoker;
+use crate::app::crypto;
 
 struct Grant {
     user: DiscordUser,

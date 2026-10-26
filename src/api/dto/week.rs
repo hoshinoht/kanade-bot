@@ -7,7 +7,7 @@ use chrono_tz::Tz;
 use serde::Serialize;
 
 use super::{Art, Boss, Named, bosses, dow, hhmm, iso_date, iso_instant};
-use crate::{api::state::ChannelEntry, infrastructure::llm::governor::GroupSnapshot};
+use crate::{app::guild::ChannelEntry, infrastructure::llm::governor::GroupSnapshot};
 use kanade_domain::{
     catalog::BossTable,
     completion::RunEnds,

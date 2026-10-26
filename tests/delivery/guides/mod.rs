@@ -17,7 +17,7 @@ use twilight_model::channel::Message;
 use twilight_model::id::Id;
 
 use kanade::bot::guides::{ChannelView, GuideChannels, Pauses, Publisher, PublisherParts};
-use kanade::bot::transport::{Call, FakeDiscord, Op};
+use kanade::discord::transport::{Call, FakeDiscord, Op};
 use kanade::infrastructure::store::SqliteStore;
 use kanade_domain::catalog::{BossSpec, BossTable, CatalogSpec, DifficultySpec, GuideSpec};
 use kanade_domain::guides::{

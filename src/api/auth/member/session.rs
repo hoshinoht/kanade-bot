@@ -21,13 +21,13 @@ use crate::{
         auth::{
             TOUCH_EVERY, actor_id,
             audit::{AuditContext, AuditEvent},
-            crypto,
             csrf::{self, CSRF_HEADER},
             wire::{self, MEMBER_SESSION_COOKIE},
         },
         error::ApiError,
         listeners::Site,
     },
+    app::crypto,
     infrastructure::store::web_sessions::{LoginMethod, SessionOrigin, WebSession},
 };
 

@@ -13,7 +13,7 @@ use chrono_tz::Tz;
 use tokio::sync::watch;
 
 use crate::{
-    api::{admin::config::SettingsChanged, state::ReadStore},
+    app::{config::SettingsChanged, read::ReadStore},
     infrastructure::{
         scouter::{
             Upcoming, UpcomingFuture, UpcomingParties, UpcomingRun, party_subjects,

@@ -13,8 +13,8 @@ use tokio::sync::watch;
 use super::execute::after;
 use super::inspect::deadline;
 use super::{Publisher, SEARCH_DEPTH, SEARCHES, payload};
-use crate::bot::ids::{id_text, parse_id};
-use crate::bot::transport::{DiscordTransport, HistoryPage, Outcome};
+use crate::app::ids::{id_text, parse_id};
+use crate::discord::transport::{DiscordTransport, HistoryPage, Outcome};
 use kanade_domain::guides::{
     Guide, GuideStore, Inspection, OpOutcome, PlanOp, Publish, PublishOp, PublishState,
     PublishedSlot, RenderedSlot, SlotEffect, SlotState, StopReason, UploadRef,

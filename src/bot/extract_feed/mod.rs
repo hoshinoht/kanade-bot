@@ -19,8 +19,8 @@ use chrono::{DateTime, Utc};
 use tokio::sync::mpsc;
 use twilight_model::id::{Id, marker::UserMarker};
 
+use crate::app::ids::id_text;
 use crate::bot::events::{DeletedMessages, GuildMessage};
-use crate::bot::ids::id_text;
 use crate::extract::pipeline::{IncomingMessage, MessageEvent, MessageOrigin};
 
 pub use convert::{STALE_AFTER, author_kind, extractable, incoming, origin, utc};

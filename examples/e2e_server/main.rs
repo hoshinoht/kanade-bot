@@ -39,11 +39,8 @@ use std::{
 
 use chrono::{DateTime, Utc};
 use kanade::{
-    api::{
-        auth::{crypto, fake::FakeDiscord},
-        listeners::Origin,
-        server::wait_for_shutdown,
-    },
+    api::{auth::fake::FakeDiscord, listeners::Origin, server::wait_for_shutdown},
+    app::crypto,
     runtime::config::ServeConfig,
 };
 use tokio::{net::TcpListener, sync::watch};

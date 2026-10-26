@@ -6,10 +6,10 @@ use std::sync::Arc;
 
 use twilight_model::id::Id;
 
-use kanade::api::state::{ChannelEntry, ChannelList};
+use kanade::app::guild::{ChannelEntry, ChannelList};
 use kanade::bot::events::Router;
-use kanade::bot::guild_cache::{GuildCache, WatchList};
 use kanade::chat::gate::{ChannelDirectory, ChannelInfo};
+use kanade::discord::guild_cache::{GuildCache, WatchList};
 use kanade_domain::notify::ChannelDirectory as PostDirectory;
 
 use super::support::*;

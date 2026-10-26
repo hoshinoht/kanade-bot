@@ -11,15 +11,15 @@ use std::sync::Arc;
 use chrono::{DateTime, Utc};
 use twilight_model::id::{Id, marker::InteractionMarker};
 
-use super::access::Invoker;
 use super::dispatch::CommandError;
-use crate::api::admin::config::ConfigDesk;
-use crate::api::rescan::RescanRunner;
-use crate::api::state::{DeclineRetraction, GuildAccess, ReadStore};
-use crate::api::write::{WriteContext, Writer};
-use crate::bot::guild_cache::GuildCache;
-use crate::bot::ids::{id_text, parse_id};
+use crate::app::access::Invoker;
+use crate::app::config::ConfigDesk;
+use crate::app::ids::{id_text, parse_id};
+use crate::app::rescan::RescanRunner;
+use crate::app::write::{WriteContext, Writer};
+use crate::app::{guild::GuildAccess, ports::DeclineRetraction, read::ReadStore};
 use crate::chat::pilot::AllowanceSnapshot;
+use crate::discord::guild_cache::GuildCache;
 use kanade_domain::catalog::BossTable;
 use kanade_domain::history::{Actor, Origin, Surface};
 use kanade_domain::members::{GatewayMember, MemberProfile, MemberStore, Roster};
@@ -279,7 +279,7 @@ pub struct CommandContext {
     /// Live best-effort decline retraction; absent in offline composition.
     pub decline_retraction: Option<DeclineRetraction>,
     /// `/debug rewrite`'s manual header rewrite; absent offline.
-    pub header_rewrite: Option<crate::api::state::HeaderRewritePort>,
+    pub header_rewrite: Option<crate::app::ports::HeaderRewritePort>,
     /// The bot's own name for access problems (v4 falls back to "the bot").
     pub bot_name: Option<String>,
     pub clock: Clock,

@@ -8,8 +8,8 @@
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use kanade::bot::delivery::cards::{CardKit, HeaderSwitches};
-use kanade::bot::delivery::{PartyEstimates, RunEstimate};
+use kanade::cards::estimates::{PartyEstimates, RunEstimate};
+use kanade::cards::{CardKit, HeaderSwitches};
 use kanade_domain::members::{Member, MemberProfile, PingLevel};
 use kanade_domain::notify::ReminderCardStore;
 

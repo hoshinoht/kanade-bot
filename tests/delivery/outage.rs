@@ -8,9 +8,9 @@ use std::{
 };
 
 use chrono::{DateTime, Utc};
+use kanade::app::ids::parse_id;
 use kanade::bot::delivery::{DigestOutcome, SendOutcome};
-use kanade::bot::ids::parse_id;
-use kanade::bot::transport::{AmbiguousKind, FakeDiscord, Op, Outcome};
+use kanade::discord::transport::{AmbiguousKind, FakeDiscord, Op, Outcome};
 use kanade::infrastructure::store::SqliteStore;
 use kanade_domain::history::Origin;
 use kanade_domain::ids::RandomIds;

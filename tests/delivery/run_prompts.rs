@@ -3,7 +3,7 @@
 //! Lumpur). Without a catalog every boss lasts the default 30 minutes.
 
 use chrono::{DateTime, TimeDelta, Utc};
-use kanade::bot::transport::Call;
+use kanade::discord::transport::Call;
 use kanade::infrastructure::store::SqliteStore;
 use kanade_domain::completion::{PromptClose, PromptOutcome, RunPrompt};
 use kanade_domain::history::{Actor, ChangeHistory, Origin};

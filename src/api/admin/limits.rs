@@ -29,8 +29,9 @@ use crate::{
         },
         error::ApiError,
         listeners::Site,
-        state::{ApiState, DigestPostRequest, DigestPostResult},
+        state::ApiState,
     },
+    app::ports::{DigestPostRequest, DigestPostResult},
     chat::pilot::{Allowance, AllowanceSnapshot, MemberUsage},
     infrastructure::store::replays::{ReplayScope, StoredReplay},
 };

@@ -2,7 +2,7 @@
 //! shared by the Components V2 card tests (`v2.rs`).
 
 use super::*;
-use kanade::bot::delivery::cards::{CardKit, DifficultyMarks};
+use kanade::cards::{CardKit, DifficultyMarks};
 use kanade_domain::catalog::{BossSpec, BossTable, CatalogSpec, DifficultySpec};
 
 fn catalog() -> BossTable {

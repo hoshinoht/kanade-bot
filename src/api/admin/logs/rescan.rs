@@ -23,9 +23,9 @@ use crate::{
         dto::{Named, rescan::job},
         error::ApiError,
         listeners::Site,
-        rescan::{RescanDesk, RescanView},
         state::ApiState,
     },
+    app::rescan::{RescanDesk, RescanView},
     extract::rescan::{API_WINDOWS, RescanError, RescanRequest},
     infrastructure::store::replays::{ReplayScope, StoredReplay},
 };

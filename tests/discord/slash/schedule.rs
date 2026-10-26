@@ -3,8 +3,8 @@
 //! answers the presser alone.
 
 use kanade::bot::commands::Disposition;
-use kanade::bot::delivery::cards::redesign::{INK_BLUE, SCHEDULE_FOOTER, SCHEDULE_FOOTER_HIDDEN};
-use kanade::bot::transport::InteractionReply;
+use kanade::cards::redesign::{INK_BLUE, SCHEDULE_FOOTER, SCHEDULE_FOOTER_HIDDEN};
+use kanade::discord::transport::InteractionReply;
 use kanade_domain::schedule::{Change, Run, RunSource, RunStatus};
 use serde_json::json;
 

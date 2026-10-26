@@ -12,11 +12,11 @@ use kanade::bot::commands::{
     DebugCards, HeaderNote, HeaderRequest, HeaderTrialKind, HeaderTrials, PingRequest, SampleRun,
     TestKind, TestPosted, TestReport, TestSubject,
 };
-use kanade::bot::delivery::cards::CardKit;
 use kanade::bot::delivery::{CardRefresh, DebugDesk, FixedClock, SAMPLE_RUN_ID, TEST_PREFIX};
 use kanade::bot::events::{ReactionRouter, RsvpAnswer, RsvpReaction};
-use kanade::bot::transport::{Call, FakeDiscord, Outcome};
+use kanade::cards::CardKit;
 use kanade::chat::nudge::{NudgeRewriter, RewriteFailure, RewritePrompt};
+use kanade::discord::transport::{Call, FakeDiscord, Outcome};
 use kanade::infrastructure::store::SqliteStore;
 use kanade_domain::ids::RandomIds;
 use kanade_domain::notify::{

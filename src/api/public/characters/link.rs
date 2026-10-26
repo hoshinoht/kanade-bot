@@ -50,7 +50,7 @@ use crate::{
         public::write::{admit, invalid_body, path_id},
         state::ApiState,
     },
-    bot::chardata::copy::{NoticePart, notice_text},
+    cards::chardata::{NoticePart, notice_text},
     infrastructure::{
         character_data::{CharacterData, ConfirmOutcome, FetchState, LinkView},
         store::replays::ReplayScope,

@@ -52,7 +52,7 @@ async fn dispatch(command: Command, environment: &BTreeMap<String, String>) -> R
         Command::Backup(args) => backup(args, environment).await,
         Command::Restore(options) => {
             let settings = StoreSettings::from_mapping(environment)?;
-            let report = restore::run(&options, &settings, crate::api::auth::system_now()).await?;
+            let report = restore::run(&options, &settings, crate::app::clock::system_now()).await?;
             print!("{report}");
             Ok(())
         }
@@ -75,7 +75,7 @@ async fn backup(
     match args {
         cli::backup::Args::Snapshot { name } => {
             let config = BackupConfig::from_mapping(environment)?;
-            let report = super::backup::run(name, &config, crate::api::auth::system_now()).await?;
+            let report = super::backup::run(name, &config, crate::app::clock::system_now()).await?;
             print!("{report}");
             Ok(())
         }

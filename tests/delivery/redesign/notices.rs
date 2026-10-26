@@ -7,10 +7,10 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use chrono::{DateTime, NaiveTime, TimeZone, Utc, Weekday};
-use kanade::bot::delivery::cards::CardKit;
-use kanade::bot::delivery::cards::redesign::{DifficultyMarks, via_portal_mark};
 use kanade::bot::delivery::render_notice;
-use kanade::bot::transport::OutgoingMessage;
+use kanade::cards::CardKit;
+use kanade::cards::redesign::{DifficultyMarks, via_portal_mark};
+use kanade::discord::transport::OutgoingMessage;
 use kanade::infrastructure::store::SqliteStore;
 use kanade_domain::history::Origin;
 use kanade_domain::ids::RandomIds;

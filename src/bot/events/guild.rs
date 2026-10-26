@@ -1,7 +1,7 @@
 //! The guild facts the staff rule needs: the owner and which roles grant
 //! Administrator, kept from `GUILD_CREATE`, `GUILD_UPDATE` and role events.
 
-use std::collections::{BTreeSet, HashMap};
+use std::collections::HashMap;
 
 use twilight_model::guild::{Permissions, Role};
 use twilight_model::id::{
@@ -9,23 +9,7 @@ use twilight_model::id::{
     marker::{GuildMarker, RoleMarker, UserMarker},
 };
 
-use crate::bot::ids::id_text;
-
-/// The roles whose permissions include Administrator, as domain role ids.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct AdminRoles {
-    /// `@everyone` grants it, so every member holds it.
-    pub everyone: bool,
-    pub roles: BTreeSet<String>,
-}
-
-impl AdminRoles {
-    /// Discord's computed Administrator for a member holding `roles`. A role
-    /// id the cache has not seen never grants it.
-    pub fn grants(&self, roles: &[String]) -> bool {
-        self.everyone || roles.iter().any(|role| self.roles.contains(role))
-    }
-}
+use crate::app::{ids::id_text, roster::AdminRoles};
 
 /// Role permissions and owner of the configured guild. Empty until the guild
 /// becomes available, so nothing computes as Administrator before then.

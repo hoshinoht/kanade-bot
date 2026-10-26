@@ -3,7 +3,6 @@
 
 mod dropped;
 mod guild;
-mod members;
 mod messages;
 mod reactions;
 
@@ -20,12 +19,17 @@ use twilight_model::id::{
     marker::{ApplicationMarker, GuildMarker, RoleMarker, UserMarker},
 };
 
-use super::guild_cache::GuildCache;
-use super::ids::id_text;
+use crate::app::{
+    ids::id_text,
+    roster::{AdminRoles, RosterUpdate},
+};
+use crate::discord::{
+    guild_cache::GuildCache,
+    roster::{member_update, roster_update},
+};
 
 pub use dropped::{DroppedCounts, DroppedEvents};
-pub use guild::{AdminRoles, GuildRoles};
-pub use members::{RosterUpdate, member_update, roster_update};
+pub use guild::GuildRoles;
 pub use messages::{DeletedMessages, GuildMessage};
 pub use reactions::{
     ReactionRouter, ReactionSink, RouteError, RsvpAnswer, RsvpReaction, rsvp_reaction,

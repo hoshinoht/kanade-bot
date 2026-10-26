@@ -34,11 +34,11 @@ use std::time::Duration;
 use chrono::{DateTime, Utc};
 use tokio::sync::Notify;
 
-use crate::api::auth::Clock;
-use crate::api::state::GuidePort;
+use crate::app::clock::Clock;
+use crate::app::ports::GuidePort;
 use crate::bot::chardata::SelfId;
 use crate::bot::delivery::AlertThrottle;
-use crate::bot::transport::DiscordTransport;
+use crate::discord::transport::DiscordTransport;
 use kanade_domain::catalog::BossTable;
 use kanade_domain::guides::{GuideSources, GuideStore, Inspection, PublishedSlot};
 use kanade_domain::notify::DeliveryJournal;

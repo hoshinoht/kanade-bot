@@ -21,11 +21,13 @@ use super::{
     },
     refusal,
 };
-use crate::api::{
-    auth::AdminSession,
-    dto::inbox::{self, OwnerRequestDto},
-    listeners::Site,
-    ownership::{self, OwnerDesk},
+use crate::{
+    api::{
+        auth::AdminSession,
+        dto::inbox::{self, OwnerRequestDto},
+        listeners::Site,
+    },
+    app::ownership::{self, OwnerDesk},
 };
 use kanade_domain::{ids::short_id, ownership::OwnerRequestStatus};
 

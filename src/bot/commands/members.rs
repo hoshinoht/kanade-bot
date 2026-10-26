@@ -7,7 +7,6 @@ use std::sync::Arc;
 
 use twilight_model::application::command::Command;
 
-use super::access::Gate;
 use super::build::{choices, command, picked, text, user};
 use super::context::{CommandContext, store_failed};
 use super::dispatch::{
@@ -15,9 +14,10 @@ use super::dispatch::{
 };
 use super::invocation::Invocation;
 use super::options::Args;
-use super::text::mention;
-use crate::bot::ids::id_text;
-use crate::bot::transport::InteractionReply;
+use crate::app::access::Gate;
+use crate::app::ids::id_text;
+use crate::cards::text::mention;
+use crate::discord::transport::InteractionReply;
 use crate::infrastructure::store::replays::{PortalRecord, PortalWrite};
 use kanade_domain::members::{GatewayMember, MemberProfile, PingLevel, PortalEdit, is_valid_alias};
 use kanade_domain::scheduler::StoreError;

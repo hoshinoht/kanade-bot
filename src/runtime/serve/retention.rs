@@ -17,7 +17,7 @@ use std::{sync::Arc, time::Duration};
 use tokio::{sync::watch, task::JoinHandle};
 
 use crate::{
-    api::auth::Clock,
+    app::clock::Clock,
     infrastructure::store::maintenance::{StoreMaintenance, WalCheckpoint},
 };
 use kanade_domain::{

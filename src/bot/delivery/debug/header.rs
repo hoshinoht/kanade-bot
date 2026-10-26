@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use super::TEST_PREFIX;
 use crate::bot::commands::{CONTENT_LIMIT, HeaderTrialKind};
-use crate::bot::delivery::cards::{Trial, Verdict};
+use crate::cards::{Trial, Verdict};
 
 /// Shown characters of one try's line.
 const LINE_CHARS: usize = 200;

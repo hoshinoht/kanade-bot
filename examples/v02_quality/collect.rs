@@ -6,7 +6,7 @@ use std::collections::BTreeMap;
 
 use chrono::{DateTime, Datelike, Timelike, Utc};
 use kanade::{
-    bot::transport::{Call, FakeDiscord, Outcome},
+    discord::transport::{Call, FakeDiscord, Outcome},
     infrastructure::store::SqliteStore,
 };
 use kanade_domain::{

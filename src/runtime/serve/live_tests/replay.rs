@@ -1,5 +1,5 @@
 use super::*;
-use crate::bot::transport::MessageId;
+use crate::discord::transport::MessageId;
 use kanade_domain::proposals::ProposalCardStore;
 use twilight_model::channel::message::ReactionType;
 

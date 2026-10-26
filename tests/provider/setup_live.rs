@@ -4,7 +4,7 @@
 
 use std::{sync::Arc, time::Duration};
 
-use kanade::api::admin::config::ModelCatalog;
+use kanade::app::config::ModelCatalog;
 use kanade::infrastructure::llm::{
     ChatRequest, Effort, Message,
     governor::{QuestionLimits, Refused, Role, SessionFailure, XorShift},

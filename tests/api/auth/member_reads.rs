@@ -429,7 +429,7 @@ async fn set_roles(reads: &Reads, id: u64, roles: &[&str]) {
 #[tokio::test]
 async fn the_allowance_is_the_callers_own() {
     let busy = Arc::new(Mutex::new(false));
-    let limits: kanade::api::state::ModelLimits = {
+    let limits: kanade::app::ports::ModelLimits = {
         let busy = busy.clone();
         Arc::new(move |_| {
             vec![

@@ -18,12 +18,12 @@ use twilight_model::id::{
 
 pub use surface::DiscordSurface;
 
+use crate::app::ids::id_text;
 use crate::bot::events::{DeletedMessages, GuildMessage};
-use crate::bot::guild_cache::GuildCache;
-use crate::bot::ids::id_text;
 use crate::chat::context::{Parent, QuestionMessage, Reference};
 use crate::chat::driver::{Answerer, Asked, ChatDriver, Surface};
 use crate::chat::gate::{Author, ChannelDirectory, ChannelInfo, IncomingMessage};
+use crate::discord::guild_cache::GuildCache;
 
 /// Where offered messages go (the chat driver).
 pub trait ChatSink: Send + Sync {

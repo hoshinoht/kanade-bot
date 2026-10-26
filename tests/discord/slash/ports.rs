@@ -5,15 +5,15 @@ use std::sync::{Arc, Mutex};
 
 use serde_json::json;
 
-use kanade::api::rescan::{RescanFuture, RescanRunner, RescanView};
+use kanade::app::ports::{ManualRequest, ManualStart};
+use kanade::app::rescan::{RescanFuture, RescanRunner, RescanView};
 use kanade::bot::commands::{
     ChatAllowance, DebugCards, HeaderNote, HeaderRequest, HeaderTrialKind, HeaderTrials,
     PingRequest, PortFuture, STAFF_LIMITS_REPLY, SampleRun, TestKind, TestPosted, TestReport,
     TestSubject,
 };
-use kanade::bot::delivery::{ManualRequest, ManualStart};
-use kanade::bot::transport::{Call, Op, RejectionKind, Step};
 use kanade::chat::pilot::{AllowanceSnapshot, MemberUsage, PoolUsage};
+use kanade::discord::transport::{Call, Op, RejectionKind, Step};
 use kanade::extract::rescan::RescanRequest;
 use kanade_domain::model_log::{RescanJob, RescanStatus};
 use kanade_domain::schedule::RunStatus;
@@ -514,7 +514,7 @@ async fn debug_rewrite_starts_one_run_through_the_port_and_reports_refusals() {
         ManualStart::Running,
         ManualStart::Started(4),
     ]));
-    let port: kanade::api::state::HeaderRewritePort = {
+    let port: kanade::app::ports::HeaderRewritePort = {
         let (calls, answers) = (Arc::clone(&calls), Arc::clone(&answers));
         Arc::new(move |request: ManualRequest| {
             calls.lock().unwrap().push(request);

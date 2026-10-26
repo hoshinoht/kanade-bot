@@ -19,14 +19,16 @@ use super::{
     refusal::{Refusal, scheduler},
     state, write_context,
 };
-use crate::api::{
-    admin::context::{context, frames, roster, run_ends, weeks},
-    auth::AdminSession,
-    dto::{self, Art},
-    error::ApiError,
-    listeners::Site,
-    state::ApiState,
-    write::{FixedPatchReplay, WriteContext},
+use crate::{
+    api::{
+        admin::context::{context, frames, roster, run_ends, weeks},
+        auth::AdminSession,
+        dto::{self, Art},
+        error::ApiError,
+        listeners::Site,
+        state::ApiState,
+    },
+    app::write::{FixedPatchReplay, WriteContext},
 };
 use kanade_domain::{
     history::{Actor, BlameTarget, ChangeRecord, Origin, RowKey},
@@ -263,7 +265,7 @@ pub async fn update(
     let origin = origin(&session, &headers)?;
     let first = recorded(state, &origin).await?.is_some();
     #[cfg(any(test, feature = "test-support"))]
-    let lost_channel = crate::api::write::hold_fixed_patch_after_lookup(&origin).await;
+    let lost_channel = crate::app::write::hold_fixed_patch_after_lookup(&origin).await;
     // Keep the established fresh-request refusal order, while letting a used
     // key compare its complete identity before version-dependent handling.
     let version = if first {

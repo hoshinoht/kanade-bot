@@ -6,7 +6,7 @@ use std::time::Duration;
 
 use std::collections::BTreeMap;
 
-use super::desk::{CatalogRead, ConfigFuture, ModelCatalog};
+use crate::app::config::{CatalogRead, ConfigFuture, ModelCatalog};
 use crate::infrastructure::llm::{
     NO_LISTING,
     governor::Role,

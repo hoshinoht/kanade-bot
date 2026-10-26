@@ -20,9 +20,9 @@ use super::invocation::Invocation;
 use super::lookup::{everything, refused};
 use super::options::Args;
 use super::runs::RunCommand;
-use super::text::{local_time, status_label};
-use crate::bot::ids::id_text;
-use crate::bot::transport::InteractionReply;
+use crate::app::ids::id_text;
+use crate::cards::text::{local_time, status_label};
+use crate::discord::transport::InteractionReply;
 use kanade_domain::completion::{
     ASK_AGAIN_AFTER, PromptClose, PromptOutcome, RunPrompt, pressed_request_id, run_minutes,
 };

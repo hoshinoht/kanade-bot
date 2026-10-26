@@ -11,11 +11,12 @@ use axum::{
 use super::{
     AdminAuth, TAILSCALE_LOGIN, TAILSCALE_NAME, TOUCH_EVERY, actor_id,
     audit::{AuditContext, AuditEvent},
-    crypto, csrf,
+    csrf,
     rate::Route,
     staff::StaffCheck,
     wire::{self, SESSION_COOKIE},
 };
+use crate::app::crypto;
 use crate::{
     api::{error::ApiError, guard::proxy::Peer, listeners::Site},
     infrastructure::store::web_sessions::{LoginMethod, SessionOrigin, WebSession},

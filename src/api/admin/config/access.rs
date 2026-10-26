@@ -11,11 +11,9 @@ use serde::Serialize;
 use twilight_model::guild::Permissions;
 
 use super::Reply;
-use crate::api::{
-    admin::write::state,
-    auth::AdminSession,
-    listeners::Site,
-    state::{ApiState, ChannelGrants, ChannelList},
+use crate::{
+    api::{admin::write::state, auth::AdminSession, listeners::Site, state::ApiState},
+    app::guild::{ChannelGrants, ChannelList},
 };
 
 #[derive(Debug, Serialize)]

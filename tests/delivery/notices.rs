@@ -3,7 +3,7 @@
 //! a real close and reopen).
 
 use kanade::bot::delivery::SendOutcome;
-use kanade::bot::transport::{Op, RejectionKind, Step};
+use kanade::discord::transport::{Op, RejectionKind, Step};
 use kanade::infrastructure::store::SqliteStore;
 use kanade_domain::history::Origin;
 use kanade_domain::ids::RandomIds;

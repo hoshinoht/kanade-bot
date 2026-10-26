@@ -4,7 +4,7 @@ use chrono::{DateTime, NaiveTime, TimeZone, Utc, Weekday};
 use kanade::bot::cards::{Authority, CardDesk, CardOutbox, CardSettings, DeskDeps};
 use kanade::bot::delivery::{AlertRecorder, FixedClock};
 use kanade::bot::rsvp_replay::{ReplayReport, RsvpReplay};
-use kanade::bot::transport::{FakeDiscord, MessageId};
+use kanade::discord::transport::{FakeDiscord, MessageId};
 use kanade::infrastructure::store::SqliteStore;
 use kanade_domain::history::{Actor, ChangeMeta, Origin, Surface};
 use kanade_domain::ids::RandomIds;
@@ -83,7 +83,7 @@ impl TestClock {
     pub fn set(&self, at: DateTime<Utc>) {
         *self.0.lock().unwrap() = at;
     }
-    pub fn wall(&self) -> kanade::api::auth::Clock {
+    pub fn wall(&self) -> kanade::app::clock::Clock {
         let clock = self.clone();
         Arc::new(move || clock.get())
     }

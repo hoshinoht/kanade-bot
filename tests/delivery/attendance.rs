@@ -4,7 +4,7 @@
 
 use chrono::{DateTime, NaiveTime, TimeDelta, TimeZone, Utc, Weekday};
 use kanade::bot::delivery::Delivery;
-use kanade::bot::transport::Call;
+use kanade::discord::transport::Call;
 use kanade::infrastructure::store::SqliteStore;
 use kanade_domain::history::{Actor, Origin, Surface};
 use kanade_domain::ids::RandomIds;

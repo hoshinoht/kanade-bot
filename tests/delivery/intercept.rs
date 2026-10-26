@@ -4,7 +4,7 @@
 use std::future::Future;
 use std::pin::Pin;
 
-use kanade::bot::transport::{
+use kanade::discord::transport::{
     ChannelId, DiscordTransport, FakeDiscord, InteractionRef, InteractionReply, MessageEdit,
     MessageId, Outcome, OutgoingMessage, Presence,
 };
@@ -146,7 +146,7 @@ impl DiscordTransport for Intercept<'_> {
     fn channel_messages(
         &self,
         channel: ChannelId,
-        page: kanade::bot::transport::HistoryPage,
+        page: kanade::discord::transport::HistoryPage,
         limit: u16,
     ) -> impl Future<Output = Outcome<Vec<twilight_model::channel::Message>>> + Send {
         self.fake.channel_messages(channel, page, limit)

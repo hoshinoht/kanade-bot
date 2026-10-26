@@ -13,11 +13,9 @@
 use std::{future::pending, sync::Arc, time::Duration};
 
 use kanade::{
-    api::auth::Clock,
-    bot::{
-        gateway::{EventSource, GatewayError},
-        transport::FakeDiscord,
-    },
+    app::clock::Clock,
+    bot::gateway::{EventSource, GatewayError},
+    discord::transport::FakeDiscord,
     infrastructure::store::SqliteStore,
     runtime::{
         config::ServeConfig,

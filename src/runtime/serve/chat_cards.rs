@@ -9,10 +9,8 @@ use chrono_tz::Tz;
 use serde_json::{Map, Value, json};
 
 use crate::{
-    bot::{
-        cards::{CardDesk, when_text},
-        delivery::LogAlerts,
-    },
+    bot::{cards::CardDesk, delivery::LogAlerts},
+    cards::format::when_text,
     chat::{
         answer::ChatPorts,
         tools::{

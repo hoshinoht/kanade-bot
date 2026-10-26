@@ -18,9 +18,9 @@ use std::{
 use axum::Router;
 use chrono::TimeDelta;
 use kanade::{
-    api::{
-        admin::config::{ConfigDesk, ConfigFacts, ConfigInputs},
-        auth::Clock,
+    app::{
+        clock::Clock,
+        config::{ConfigDesk, ConfigFacts, ConfigInputs},
     },
     infrastructure::{
         character_data::{CharacterData, ConfirmOutcome, RosterSide, Timing},
@@ -349,7 +349,7 @@ async fn without_a_key_links_are_refused_and_health_says_no_key() {
 async fn an_admin_link_is_active_at_once_and_fetches() {
     let (address, calls) = fake_nexon().await;
     let (reads, service) = on(address, Some(config())).await;
-    let head = kanade::api::state::ReadStore::head(reads.store.as_ref())
+    let head = kanade::app::read::ReadStore::head(reads.store.as_ref())
         .await
         .unwrap();
     // A MapleSEA create links at once; its answer is the row after the
@@ -489,7 +489,7 @@ async fn an_admin_link_is_active_at_once_and_fetches() {
             assert!(!text.contains(fixture), "{fixture} in {text}");
         }
     }
-    let after = kanade::api::state::ReadStore::head(reads.store.as_ref())
+    let after = kanade::app::read::ReadStore::head(reads.store.as_ref())
         .await
         .unwrap();
     // Roster writes are outside the chain too: nothing moved it.
@@ -689,7 +689,7 @@ async fn a_create_links_only_maplesea_and_keeps_manual_values_elsewhere() {
     // A crash after the roster commit leaves the replay at `link: null`.
     // The retry resumes: with the link on file it answers `linked` and
     // links nothing; with none on file it links once now.
-    use kanade::api::state::ReadStore;
+    use kanade::app::read::ReadStore;
     use kanade::infrastructure::store::replays::ReplayScope;
     let crashed = |reads: &Reads| {
         let store = reads.store.clone();

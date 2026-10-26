@@ -7,10 +7,8 @@
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use kanade::bot::delivery::cards::{
-    CardContext, CardKit, DifficultyMarks, HeaderSwitches, resolve_heading,
-};
-use kanade::bot::delivery::{EstimateFuture, IgnFuture, PartyEstimates, RunEstimate};
+use kanade::cards::estimates::{EstimateFuture, IgnFuture, PartyEstimates, RunEstimate};
+use kanade::cards::{CardContext, CardKit, DifficultyMarks, HeaderSwitches, resolve_heading};
 use kanade::infrastructure::scouter::CarrierOwner;
 use kanade::infrastructure::store::SqliteStore;
 use kanade_domain::catalog::BossTable;

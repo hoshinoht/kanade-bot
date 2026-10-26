@@ -99,7 +99,7 @@ async fn sent_morning_card_is_never_reposted<S: Store>(store: &S) {
 }
 
 /// Each post's leading emoji: 📅 morning card, ⏰ countdown, 🔁 move notice.
-fn posted(fake: &kanade::bot::transport::FakeDiscord) -> Vec<String> {
+fn posted(fake: &kanade::discord::transport::FakeDiscord) -> Vec<String> {
     created(fake)
         .iter()
         .map(|post| {

@@ -3,7 +3,7 @@
 //! [`EVERY`], so channel pickers, the access report and the roster stay
 //! current (a member who left or lost the bossing role has their admin and
 //! portal sessions ended, as the bot would). It never posts or reads
-//! messages; guides still cannot publish ([`crate::api::state::OfflineGuides`]).
+//! messages; guides still cannot publish ([`crate::app::ports::OfflineGuides`]).
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -17,10 +17,9 @@ use crate::{
     bot::{
         events::{GuildRoles, GuildScope},
         gateway::ConnectionStatus,
-        guild_cache::GuildCache,
         roster::{LiveRoster, RosterTask},
-        transport::Outcome,
     },
+    discord::{guild_cache::GuildCache, transport::Outcome},
     infrastructure::store::SqliteStore,
     runtime::{
         config::ServeConfig,
@@ -83,10 +82,8 @@ impl RestGuild {
         let roster = RosterTask::new(
             StoreRoster {
                 store,
-                auth: Arc::clone(&composition.admin.auth),
-                member: composition.admin.member.clone(),
+                hooks: composition.admin.roster_hooks(),
                 access: Arc::clone(&composition.access),
-                avatars: composition.admin.state.avatars.clone(),
             },
             Arc::clone(&transport),
             Arc::clone(&cache),

@@ -13,21 +13,25 @@ use std::{
 };
 
 use kanade::{
-    api::admin::config::{
-        CatalogRead, ConfigDesk, ConfigFacts, ConfigFuture, ConfigInputs, ModelCatalog,
-        PersonaFiles,
+    app::{
+        config::{
+            CatalogRead, ConfigDesk, ConfigFacts, ConfigFuture, ConfigInputs, ModelCatalog,
+            PersonaFiles,
+        },
+        ports::ModelLimits,
     },
-    api::state::ModelLimits,
     chat::persona::{
         PersonaId, PersonaRoot, PersonaSnapshot, PersonaStore, ProfileId, ProfileQuery,
         ProfileSource,
     },
-    infrastructure::llm::{
-        AdmissionLimits, Effort, TrustZone,
-        governor::Role,
-        setup::{CapacityGroup, CatalogModel, CatalogSnapshot, RoleSwap, RunningRole},
+    infrastructure::{
+        llm::{
+            AdmissionLimits, Effort, TrustZone,
+            governor::Role,
+            setup::{CapacityGroup, CatalogModel, CatalogSnapshot, RoleSwap, RunningRole},
+        },
+        store::SqliteStore,
     },
-    infrastructure::store::SqliteStore,
 };
 use kanade_domain::settings::{
     Models, Reasoning, RoleModel, RoleProfileAssignment, RuntimeSettings, SettingsChange,
@@ -1056,7 +1060,7 @@ async fn visibility_delta_is_live_for_admin_members_and_chat_resolution() {
     assert_eq!(member["persona"], "calm");
     assert_eq!(member["persona_available"], true);
     let calm = ProfileId::parse("calm").unwrap();
-    let resolution = |choices: &kanade::api::admin::config::LiveProfileChoices| {
+    let resolution = |choices: &kanade::app::config::LiveProfileChoices| {
         let query = ProfileQuery {
             member_roles: &[],
             role_assignments: &[],

@@ -23,16 +23,16 @@ use twilight_model::channel::message::Component;
 use twilight_model::channel::message::component::ButtonStyle;
 
 use super::alerts::{AdminAlert, AlertSink};
-use super::cards::redesign::{
+use super::executor::SendOutcome;
+use super::tick::{Delivery, DeliveryError, TickLease};
+use crate::app::ids::{id_text, parse_id};
+use crate::cards::redesign::{
     AT_RISK_RED, ButtonId, INK_BLUE, SETTLED_GREEN, WAITING_AMBER, action_row, button, container,
     subtext, text,
 };
-use super::executor::SendOutcome;
-use super::tick::{Delivery, DeliveryError, TickLease};
-use crate::bot::commands::text::{format_bosses, local_day, local_time, status_label};
-use crate::bot::ids::{id_text, parse_id};
-use crate::bot::mentions;
-use crate::bot::transport::{DiscordTransport, MessageEdit, OutgoingMessage};
+use crate::cards::text::{format_bosses, local_day, local_time, status_label};
+use crate::discord::mentions;
+use crate::discord::transport::{DiscordTransport, MessageEdit, OutgoingMessage};
 use kanade_domain::completion::{
     ASK_AGAIN_AFTER, CompletionPlan, PromptClose, PromptOutcome, RunPrompt, RunPromptStore,
     auto_request_id, plan, pressed_request_id, reopened, run_minutes,

@@ -32,14 +32,14 @@ use twilight_model::user::CurrentUser;
 
 use super::super::budget::ShutdownClock;
 use super::GatewayTransport;
-use crate::bot::delivery::cards::CardKit;
-use crate::bot::transport::{
+use crate::cards::CardKit;
+use crate::chat::nudge::{
+    NudgeRewriter, RewriteDetail, RewriteFailure, RewriteOutcome, RewritePrompt, SharedRewriter,
+};
+use crate::discord::transport::{
     AmbiguousKind, ApplicationEmoji, ApplicationInfo, ChannelId, DiscordTransport, HistoryPage,
     InteractionRef, InteractionReply, MessageEdit, MessageId, Outcome, OutgoingMessage, Presence,
     RejectionKind,
-};
-use crate::chat::nudge::{
-    NudgeRewriter, RewriteDetail, RewriteFailure, RewriteOutcome, RewritePrompt, SharedRewriter,
 };
 use twilight_model::application::command::{Command, CommandOptionChoice};
 
@@ -333,13 +333,13 @@ mod tests {
 
     use super::super::super::budget::{SEND_FINALISE, STORE_RESERVE, TOTAL};
     use super::*;
-    use crate::bot::transport::{FakeDiscord, Op};
+    use crate::discord::transport::{FakeDiscord, Op};
 
     fn message() -> OutgoingMessage {
         OutgoingMessage {
             content: Some("synthetic".into()),
             embeds: Vec::new(),
-            allowed_mentions: crate::bot::mentions::none(),
+            allowed_mentions: crate::discord::mentions::none(),
             reply_to: None,
             attachments: Vec::new(),
             components: Vec::new(),
@@ -360,7 +360,7 @@ mod tests {
     /// `shutdown`, and one begun after it never reaches the model.
     #[tokio::test(start_paused = true)]
     async fn a_rewrite_cut_by_shutdown_says_so() {
-        use crate::bot::delivery::cards::{CardKit, HeadingRewrite};
+        use crate::cards::{CardKit, HeadingRewrite};
         use crate::chat::persona::{CompiledPersona, NudgeMood, PersonaId, parse_bundle};
 
         let clock = ShutdownClock::default();

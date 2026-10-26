@@ -34,21 +34,21 @@ pub use header::{code_span, verdict_text};
 pub use sample::{SAMPLE_RUN_ID, sample_schedule};
 
 use super::alerts::{AlertThrottle, LogAlerts};
-use super::cards::{
-    self, CardContext, CardKit, HeaderKind, PhraseKind, TrialOrigin, Verdict, fetch_art,
-};
-use super::estimates::attach_chart;
 use super::executor::{Executor, SendOutcome};
 use super::pregen::PREGEN_DEADLINE;
 use super::refresh::Now;
-use crate::bot::commands::text::local_day;
+use crate::app::ids::parse_id;
 use crate::bot::commands::{
     DebugCards, HeaderNote, HeaderRequest, HeaderTrialKind, HeaderTrials, PingRequest, PortFuture,
     TestKind, TestPosted, TestReport, TestSubject,
 };
-use crate::bot::ids::parse_id;
-use crate::bot::mentions;
-use crate::bot::transport::{DiscordTransport, Outcome, OutgoingMessage, RejectionKind};
+use crate::cards::estimates::attach_chart;
+use crate::cards::text::local_day;
+use crate::cards::{
+    self, CardContext, CardKit, HeaderKind, PhraseKind, TrialOrigin, Verdict, fetch_art,
+};
+use crate::discord::mentions;
+use crate::discord::transport::{DiscordTransport, Outcome, OutgoingMessage, RejectionKind};
 use kanade_domain::members::Directory;
 use kanade_domain::model_log::RewriteStage;
 use kanade_domain::notify::{

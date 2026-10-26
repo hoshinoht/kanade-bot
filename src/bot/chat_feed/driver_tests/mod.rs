@@ -13,8 +13,6 @@ use serde_json::json;
 use tokio::sync::Notify;
 
 use super::DiscordSurface;
-use crate::bot::mentions;
-use crate::bot::transport::{Call, FakeDiscord, Op};
 use crate::chat::answer::Generation;
 use crate::chat::context::{Parent, QuestionMessage, Reference, TurnRole, WITHHELD};
 use crate::chat::driver::*;
@@ -26,6 +24,8 @@ use crate::chat::persona::{CompiledPersona, PersonaId, PersonaRoot};
 use crate::chat::pilot::TrafficLimits;
 use crate::chat::sanitize::{FAILURE_REPLY, schedule_defaults};
 use crate::chat::tools::ToolContext;
+use crate::discord::mentions;
+use crate::discord::transport::{Call, FakeDiscord, Op};
 use crate::infrastructure::llm::Message;
 use crate::infrastructure::store::SqliteStore;
 use kanade_domain::catalog::BossTable;
@@ -356,7 +356,7 @@ fn effects(fake: &FakeDiscord) -> Vec<String> {
                 let silent = flags
                     .next()
                     .expect("flags")
-                    .contains(crate::bot::transport::SILENT);
+                    .contains(crate::discord::transport::SILENT);
                 let to = message
                     .reply_to
                     .map(|id| format!(" ^{id}"))

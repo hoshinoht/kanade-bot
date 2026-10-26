@@ -20,15 +20,17 @@ pub(crate) use session::SESSION_SAME_SITE;
 pub use session::{MemberSession, require_session};
 
 use super::{
-    Clock, actor_id,
+    actor_id,
     audit::{AuditContext, AuditEvent, AuditRecord, AuditSink, Realm, StderrAudit},
-    crypto::{self, TagKey},
     discord::{DiscordLogin, DiscordUser},
     rate::RateLimits,
-    system_now,
+};
+use crate::app::{
+    clock::{Clock, system_now},
+    crypto::{self, TagKey},
 };
 use crate::{
-    api::avatars::AvatarCache,
+    discord::avatars::AvatarCache,
     infrastructure::store::web_sessions::{
         LoginMethod, SessionOrigin, WebSession, WebSessionStore,
     },

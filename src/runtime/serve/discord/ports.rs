@@ -5,19 +5,13 @@ use std::sync::Arc;
 use twilight_model::id::{Id, marker::UserMarker};
 
 use crate::{
-    api::{
-        auth::{
-            AdminAuth,
-            member::MemberAuth,
-            roster::{on_guild_available, on_roster_update},
-        },
-        avatars::AvatarCache,
-        state::GuildAccess,
+    app::{
+        guild::GuildAccess,
+        ids::id_text,
+        roster::{AdminRoles, RosterHooks, RosterUpdate, on_guild_available, on_roster_update},
     },
     bot::{
         cards::Authority,
-        events::{AdminRoles, RosterUpdate},
-        ids::id_text,
         roster::{LiveRoster, RosterSink},
     },
     infrastructure::store::SqliteStore,
@@ -29,14 +23,12 @@ use kanade_domain::{
     scheduler::StoreError,
 };
 
-/// Roster writes on the store, each followed by both realms' session re-checks.
+/// Roster writes on the store, each followed by the web side's session
+/// re-checks.
 pub struct StoreRoster {
     pub store: Arc<SqliteStore>,
-    pub auth: Arc<AdminAuth>,
-    /// The public portal's realm; `None` without a public listener.
-    pub member: Option<Arc<MemberAuth>>,
+    pub hooks: Arc<dyn RosterHooks>,
     pub access: Arc<GuildAccess>,
-    pub avatars: Option<Arc<AvatarCache>>,
 }
 
 impl RosterSink for StoreRoster {
@@ -45,25 +37,14 @@ impl RosterSink for StoreRoster {
     }
 
     async fn update(&self, update: &RosterUpdate) -> Result<u64, StoreError> {
-        on_roster_update(
-            &self.auth,
-            self.member.as_deref(),
-            &*self.store,
-            self.avatars.as_deref(),
-            update,
-        )
-        .await
+        on_roster_update(&*self.hooks, &*self.store, update).await
     }
 
     async fn prune(&self, member: GatewayMember) -> Result<u64, StoreError> {
         let user_id = member.user_id.clone();
         let eligible = member.has_role && !member.is_bot;
         self.store.apply_gateway(member).await?;
-        let public = match &self.member {
-            Some(realm) => realm.member_changed(&user_id, eligible).await,
-            None => 0,
-        };
-        Ok(self.auth.member_changed(&user_id).await + public)
+        Ok(self.hooks.changed(&user_id, eligible).await)
     }
 
     async fn guild_available(
@@ -72,7 +53,7 @@ impl RosterSink for StoreRoster {
         admin_roles: &AdminRoles,
     ) -> Result<u64, StoreError> {
         on_guild_available(
-            &self.auth,
+            &*self.hooks,
             &self.access,
             &*self.store,
             owner_id,

@@ -3,13 +3,13 @@
 use chrono::{DateTime, Utc};
 
 use super::alerts::AlertSink;
-use super::cards::CardKit;
-use super::cards::redesign::decline_text;
 use super::executor::SendReport;
 use super::tick::{Delivery, DeliveryError, TickLease};
-use crate::bot::ids::parse_id;
-use crate::bot::mentions::allow_users;
-use crate::bot::transport::{DiscordTransport, Outcome, OutgoingMessage, RejectionKind};
+use crate::app::ids::parse_id;
+use crate::cards::CardKit;
+use crate::cards::redesign::decline_text;
+use crate::discord::mentions::allow_users;
+use crate::discord::transport::{DiscordTransport, Outcome, OutgoingMessage, RejectionKind};
 use kanade_domain::drafts::ProposalStore;
 use kanade_domain::history::Checkpoints;
 use kanade_domain::members::Directory;

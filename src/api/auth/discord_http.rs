@@ -18,13 +18,13 @@ use tokio::net::TcpStream;
 use tokio_rustls::TlsConnector;
 
 use super::{
-    crypto,
     discord::{
         AccessToken, CodeExchange, DiscordApi, DiscordClient, DiscordError, DiscordFuture,
         DiscordUser, TokenGrant,
     },
     wire,
 };
+use crate::app::crypto;
 
 const HOST_NAME: &str = "discord.com";
 const TOKEN_PATH: &str = "/api/v10/oauth2/token";

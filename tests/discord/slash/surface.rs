@@ -120,7 +120,7 @@ async fn a_discord_fixed_edit_announces_nothing_and_a_portal_edit_does() {
 async fn a_discord_swap_is_unmarked_and_a_portal_swap_is_marked() {
     use std::sync::Arc;
 
-    use kanade::api::write::{ApiClock, RunWrite, SchedulerWriter, WriteContext, Writer};
+    use kanade::app::write::{ApiClock, RunWrite, SchedulerWriter, WriteContext, Writer};
     use kanade_domain::history::Expect;
     use kanade_domain::members::Member;
 

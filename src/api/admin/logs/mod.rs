@@ -16,10 +16,9 @@ use super::{
     context::roster,
     write::{Refusal, state},
 };
-use crate::api::{
-    dto::logs::Names,
-    listeners::Site,
-    state::{ApiState, ChannelEntry, ReadFuture},
+use crate::{
+    api::{dto::logs::Names, listeners::Site, state::ApiState},
+    app::{guild::ChannelEntry, read::ReadFuture},
 };
 use kanade_domain::{
     members::Roster,

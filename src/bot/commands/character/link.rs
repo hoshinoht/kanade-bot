@@ -10,10 +10,10 @@ use super::super::dispatch::CommandError;
 use super::super::invocation::Invocation;
 use super::super::options::Args;
 use super::{CharacterCommand, reply, resolve};
-use crate::bot::chardata::copy;
-use crate::bot::delivery::cards::redesign::ButtonId;
-use crate::bot::ids::id_text;
-use crate::bot::transport::{DiscordTransport, InteractionReply};
+use crate::app::ids::id_text;
+use crate::cards::chardata;
+use crate::cards::redesign::ButtonId;
+use crate::discord::transport::{DiscordTransport, InteractionReply};
 use crate::infrastructure::character_data::{ConfirmOutcome, FetchState};
 use kanade_domain::chardata::{LINK_REGION, LinkStatus, NOTICE_VERSION, UnlinkReason};
 use kanade_domain::history::{Actor, Surface};
@@ -30,26 +30,26 @@ impl<T: DiscordTransport> CharacterCommand<T> {
         invocation: &Invocation,
     ) -> Result<InteractionReply, CommandError> {
         if !self.service.connected() {
-            return reply(copy::NOT_CONNECTED);
+            return reply(chardata::NOT_CONNECTED);
         }
         let typed = Args(&invocation.options).text("character").unwrap_or("");
         let characters = self.mine(invocation).await?;
         let Some(entry) = resolve(&characters, typed) else {
-            return reply(copy::not_on_roster(typed));
+            return reply(chardata::not_on_roster(typed));
         };
         let character = &entry.character;
         if character.world != LINK_REGION {
-            return reply(copy::OTHER_REGION);
+            return reply(chardata::OTHER_REGION);
         }
         if !character.is_active() {
-            return reply(copy::retired(&character.ign));
+            return reply(chardata::retired(&character.ign));
         }
         if entry
             .link
             .as_ref()
             .is_some_and(|link| link.link.status == LinkStatus::Active)
         {
-            return reply(copy::already_linked(&character.ign));
+            return reply(chardata::already_linked(&character.ign));
         }
         let link_id = ButtonId::CharacterLink {
             character_id: character.id.clone(),
@@ -59,7 +59,7 @@ impl<T: DiscordTransport> CharacterCommand<T> {
         .custom_id();
         let cancel_id = ButtonId::CharacterCancel(character.id.clone()).custom_id();
         Ok(InteractionReply::v2(
-            copy::notice(
+            chardata::notice(
                 &character.ign,
                 self.privacy_url.as_deref(),
                 link_id,
@@ -84,16 +84,16 @@ impl<T: DiscordTransport> CharacterCommand<T> {
             .and_then(|text| text.parse::<i64>().ok())
             .and_then(|seconds| chrono::DateTime::from_timestamp(seconds, 0));
         let (Some(notice), Some(issued)) = (notice, issued) else {
-            return reply(copy::EXPIRED);
+            return reply(chardata::EXPIRED);
         };
         let age = self.ctx.now() - issued;
         if age > NOTICE_LIFE || age < -NOTICE_SKEW {
-            return reply(copy::EXPIRED);
+            return reply(chardata::EXPIRED);
         }
         let member = id_text(invocation.invoker.user_id);
         let characters = self.mine(invocation).await?;
         let Some(entry) = characters.iter().find(|entry| entry.character.id == id) else {
-            return reply(copy::not_on_roster(id));
+            return reply(chardata::not_on_roster(id));
         };
         let ign = entry.character.ign.as_str();
         let outcome = self
@@ -109,11 +109,15 @@ impl<T: DiscordTransport> CharacterCommand<T> {
         match outcome {
             ConfirmOutcome::Linked(_, FetchState::Stored) => {
                 match self.service.data(id).await.map_err(super::store_failed)? {
-                    Some(snapshot) => Ok(InteractionReply::v2(copy::linked(ign, &snapshot), true)),
-                    None => reply(copy::linked_later(ign)),
+                    Some(snapshot) => {
+                        Ok(InteractionReply::v2(chardata::linked(ign, &snapshot), true))
+                    }
+                    None => reply(chardata::linked_later(ign)),
                 }
             }
-            ConfirmOutcome::Linked(_, FetchState::Failed { .. }) => reply(copy::linked_later(ign)),
+            ConfirmOutcome::Linked(_, FetchState::Failed { .. }) => {
+                reply(chardata::linked_later(ign))
+            }
             // NEXON has no such character: nothing is kept, not even the link.
             ConfirmOutcome::Linked(_, FetchState::Stale) => {
                 self.service
@@ -126,17 +130,17 @@ impl<T: DiscordTransport> CharacterCommand<T> {
                     )
                     .await
                     .map_err(super::store_failed)?;
-                reply(copy::not_found(ign))
+                reply(chardata::not_found(ign))
             }
             ConfirmOutcome::Linked(_, FetchState::Unlinked) => Err(CommandError::Internal(
                 "the link changed during its first fetch".into(),
             )),
-            ConfirmOutcome::NotConnected => reply(copy::NOT_CONNECTED),
-            ConfirmOutcome::NoticeOutdated | ConfirmOutcome::Conflict => reply(copy::EXPIRED),
-            ConfirmOutcome::NotEligible => reply(copy::not_on_roster(ign)),
-            ConfirmOutcome::AlreadyLinked => reply(copy::already_linked(ign)),
-            ConfirmOutcome::Busy => reply(copy::BUSY),
-            ConfirmOutcome::Unavailable(_) => reply(copy::UNAVAILABLE),
+            ConfirmOutcome::NotConnected => reply(chardata::NOT_CONNECTED),
+            ConfirmOutcome::NoticeOutdated | ConfirmOutcome::Conflict => reply(chardata::EXPIRED),
+            ConfirmOutcome::NotEligible => reply(chardata::not_on_roster(ign)),
+            ConfirmOutcome::AlreadyLinked => reply(chardata::already_linked(ign)),
+            ConfirmOutcome::Busy => reply(chardata::BUSY),
+            ConfirmOutcome::Unavailable(_) => reply(chardata::UNAVAILABLE),
         }
     }
 
@@ -145,6 +149,6 @@ impl<T: DiscordTransport> CharacterCommand<T> {
         &self,
         _invocation: &Invocation,
     ) -> Result<InteractionReply, CommandError> {
-        reply(copy::NOTHING_LINKED)
+        reply(chardata::NOTHING_LINKED)
     }
 }

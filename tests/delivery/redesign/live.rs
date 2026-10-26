@@ -5,9 +5,9 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use chrono::TimeDelta;
-use kanade::bot::delivery::cards::redesign::OPEN_IN_PORTAL;
-use kanade::bot::delivery::cards::{CardKit, V2Kit};
-use kanade::bot::transport::Op;
+use kanade::cards::redesign::OPEN_IN_PORTAL;
+use kanade::cards::{CardKit, V2Kit};
+use kanade::discord::transport::Op;
 use kanade::infrastructure::store::SqliteStore;
 use twilight_model::channel::message::Component;
 

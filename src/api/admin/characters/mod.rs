@@ -31,12 +31,15 @@ use axum::{
 };
 
 use super::write::{Refusal, state};
-use crate::api::{
-    auth::AdminSession,
-    dto::characters::{MemberCharacters, row},
-    error::ApiError,
-    listeners::Site,
-    state::{ApiState, CharacterRoster},
+use crate::{
+    api::{
+        auth::AdminSession,
+        dto::characters::{MemberCharacters, row},
+        error::ApiError,
+        listeners::Site,
+        state::ApiState,
+    },
+    app::read::CharacterRoster,
 };
 
 pub fn routes() -> Router<Arc<Site>> {

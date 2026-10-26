@@ -15,13 +15,13 @@ use twilight_model::channel::message::Component;
 use twilight_model::channel::message::component::ButtonStyle;
 
 use super::alerts::{AdminAlert, AlertSink};
-use super::cards::redesign::{ButtonId, action_row, button};
 use super::executor::SendOutcome;
 use super::tick::{Delivery, DeliveryError, TickLease};
-use crate::bot::commands::text::{hhmm, weekday_name};
-use crate::bot::ids::{id_text, parse_id};
-use crate::bot::mentions;
-use crate::bot::transport::{DiscordTransport, MessageEdit, OutgoingMessage};
+use crate::app::ids::{id_text, parse_id};
+use crate::cards::redesign::{ButtonId, action_row, button};
+use crate::cards::text::{hhmm, weekday_name};
+use crate::discord::mentions;
+use crate::discord::transport::{DiscordTransport, MessageEdit, OutgoingMessage};
 use kanade_domain::drafts::ProposalStore;
 use kanade_domain::history::Checkpoints;
 use kanade_domain::ids::short_id;

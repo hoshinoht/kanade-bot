@@ -20,7 +20,7 @@ use twilight_model::id::{
 };
 use twilight_model::user::CurrentUser;
 
-use crate::bot::transport::{
+use crate::discord::transport::{
     ApplicationEmoji, ApplicationInfo, ChannelId, DiscordTransport, HistoryPage, InteractionRef,
     InteractionReply, MessageEdit, MessageId, Outcome, OutgoingMessage, Presence, RejectionKind,
     TransportConfig, TwilightTransport,
@@ -33,7 +33,7 @@ pub trait GatewayTransport: DiscordTransport + 'static {
 }
 
 #[cfg(any(test, feature = "test-support"))]
-impl GatewayTransport for crate::bot::transport::FakeDiscord {}
+impl GatewayTransport for crate::discord::transport::FakeDiscord {}
 
 pub struct LateTransport {
     token: Redacted,

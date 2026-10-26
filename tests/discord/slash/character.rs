@@ -22,7 +22,7 @@ use twilight_model::id::Id;
 
 use kanade::bot::chardata::DiscordPosts;
 use kanade::bot::commands::CharacterParts;
-use kanade::bot::transport::{Call, InteractionReply, Op, RejectionKind, Step};
+use kanade::discord::transport::{Call, InteractionReply, Op, RejectionKind, Step};
 use kanade::infrastructure::character_data::{
     AdminLinkOutcome, CharacterData, FetchState, RosterSide, Timing,
 };
@@ -135,7 +135,7 @@ async fn rig_with(connected: bool, character_module: bool) -> Rig {
         let (file, clock, slot) = (Arc::clone(&file), Arc::clone(&clock), Arc::clone(&slot));
         Box::new(
             move |store: Arc<kanade::infrastructure::store::SqliteStore>,
-                  discord: Arc<kanade::bot::transport::FakeDiscord>| {
+                  discord: Arc<kanade::discord::transport::FakeDiscord>| {
                 let service = Arc::new(CharacterData::new(
                     file as Arc<dyn CharDataStore>,
                     store as Arc<dyn RosterSide>,

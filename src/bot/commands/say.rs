@@ -8,16 +8,16 @@ use std::sync::{Arc, LazyLock};
 use regex::Regex;
 use twilight_model::application::command::Command;
 
-use super::access::Gate;
 use super::build::{command, text, text_channel};
 use super::context::CommandContext;
 use super::dispatch::{CommandError, CommandFuture, SlashCommand};
 use super::invocation::Invocation;
 use super::options::Args;
 use super::split::{CONTENT_LIMIT, units};
-use crate::bot::ids::{id_text, parse_id};
-use crate::bot::mentions;
-use crate::bot::transport::{
+use crate::app::access::Gate;
+use crate::app::ids::{id_text, parse_id};
+use crate::discord::mentions;
+use crate::discord::transport::{
     DiscordTransport, InteractionReply, Outcome, OutgoingMessage, RejectionKind,
 };
 

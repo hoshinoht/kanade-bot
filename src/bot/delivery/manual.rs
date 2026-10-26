@@ -22,47 +22,25 @@ use chrono::{DateTime, Utc};
 use tokio::sync::{Notify, watch};
 
 use super::card_records::digest_phrase_key;
-use super::cards::{HeaderContext, HeadingSource, PhraseKind, card_runs};
-use super::estimates::header_context;
 use super::pregen::PREGEN_DEADLINE;
-use super::refresh::{CardRefresh, posted_content};
-use crate::bot::commands::text::local_day;
-use crate::bot::ids::parse_id;
-use crate::bot::mentions;
-use crate::bot::transport::{DiscordTransport, OutgoingMessage};
+use super::refresh::CardRefresh;
+use crate::app::ids::parse_id;
+use crate::app::ports::{ManualRequest, ManualStart};
+use crate::cards::estimates::header_context;
+use crate::cards::preview::posted_content;
+use crate::cards::text::local_day;
+use crate::cards::{HeaderContext, HeadingSource, PhraseKind, card_runs};
 use crate::chat::nudge::{
     NudgeRewriter, RewriteFailure, RewriteOutcome, RewritePrompt, SharedRewriter,
 };
+use crate::discord::mentions;
+use crate::discord::transport::{DiscordTransport, OutgoingMessage};
 use kanade_domain::model_log::RewriteStage;
 use kanade_domain::notify::{
     DAY_OF_KIND, DeliveryJournal, DigestPhraseStore, HeaderOverrideStore, PostedCard,
     ReminderCardStore, WeekReset, WeeklyDigest,
 };
 use kanade_domain::scheduler::{ScheduleStore, Scope};
-
-/// Who asked for a run and where its summary goes.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct ManualRequest {
-    /// Recorded with each override: `member:<id>` or the admin session's actor.
-    pub actor: String,
-    /// A channel to post the summary in when the run ends (`/debug rewrite`).
-    pub report_to: Option<String>,
-}
-
-/// The answer to a trigger, given before any model call.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum ManualStart {
-    /// Queued: this many headers will be rewritten.
-    Started(usize),
-    /// Another manual run is queued or running.
-    Running,
-    /// No rewrite model or persona.
-    Disabled,
-    /// Nothing posted this boss week has a header to rewrite.
-    Nothing,
-    /// The store could not be read, or the worker has stopped.
-    Unavailable,
-}
 
 /// What a finished run did.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]

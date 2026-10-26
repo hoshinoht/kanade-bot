@@ -11,7 +11,7 @@ use axum::{
     response::{IntoResponse, Response},
 };
 
-use crate::api::{auth::crypto::sha256_hex, error::ApiError};
+use crate::{api::error::ApiError, app::crypto::sha256_hex};
 
 /// Admin JSON reads are small; a larger (or unsized) body is passed through
 /// untagged, never buffered.

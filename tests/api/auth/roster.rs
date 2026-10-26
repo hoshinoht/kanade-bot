@@ -1,16 +1,12 @@
 //! Gateway roster and guild-access events against the store-backed staff
 //! gate: persisted roles and Administrator, and sessions ended on loss.
 
+use std::sync::Arc;
+
 use kanade::{
-    api::{
-        auth::{
-            audit::AuditEvent,
-            roster::{on_guild_available, on_roster_update},
-            wire,
-        },
-        avatars::AvatarCache,
-    },
-    bot::events::{AdminRoles, RosterUpdate},
+    api::auth::{audit::AuditEvent, roster::SessionHooks, wire},
+    app::roster::{AdminRoles, RosterUpdate, on_guild_available, on_roster_update},
+    discord::avatars::AvatarCache,
 };
 use kanade_domain::members::MemberStore;
 use twilight_model::id::Id;
@@ -37,17 +33,24 @@ fn admin_roles(roles: &[u64]) -> AdminRoles {
     }
 }
 
+/// The admin realm's hooks alone (no portal, no portrait cache).
+fn hooks(harness: &Harness) -> SessionHooks {
+    SessionHooks {
+        auth: harness.site.auth.clone().unwrap(),
+        member: None,
+        avatars: None,
+    }
+}
+
 async fn apply(harness: &Harness, update: RosterUpdate) -> u64 {
-    let auth = harness.site.auth.clone().unwrap();
-    on_roster_update(&auth, None, &*harness.store, None, &update)
+    on_roster_update(&hooks(harness), &*harness.store, &update)
         .await
         .unwrap()
 }
 
 async fn guild(harness: &Harness, owner: u64, admin: &[u64]) -> u64 {
-    let auth = harness.site.auth.clone().unwrap();
     on_guild_available(
-        &auth,
+        &hooks(harness),
         &harness.access,
         &*harness.store,
         Id::new(owner),
@@ -140,7 +143,7 @@ async fn guild_access_revokes_lost_administrator_and_a_replaced_owner() {
 async fn leaving_purges_the_members_cached_portraits() {
     let harness = Harness::store_gated().await;
     let dir = std::env::temp_dir().join(format!("kanade-avatars-{}", uuid::Uuid::new_v4()));
-    let avatars = AvatarCache::new(Some(dir.clone()), None);
+    let avatars = Arc::new(AvatarCache::new(Some(dir.clone()), None));
     let hash = "0123456789abcdef0123456789abcdef";
     for name in [
         format!("111-{hash}.png"),
@@ -150,21 +153,16 @@ async fn leaving_purges_the_members_cached_portraits() {
     ] {
         std::fs::write(dir.join(name), b"x").unwrap();
     }
-    let auth = harness.site.auth.clone().unwrap();
+    let hooks = SessionHooks {
+        avatars: Some(avatars),
+        ..hooks(&harness)
+    };
+    on_roster_update(&hooks, &*harness.store, &seen(222, &[BOSSING], false))
+        .await
+        .unwrap();
     on_roster_update(
-        &auth,
-        None,
+        &hooks,
         &*harness.store,
-        Some(&avatars),
-        &seen(222, &[BOSSING], false),
-    )
-    .await
-    .unwrap();
-    on_roster_update(
-        &auth,
-        None,
-        &*harness.store,
-        Some(&avatars),
         &RosterUpdate::Left {
             user_id: "111".into(),
         },

@@ -5,8 +5,8 @@
 
 use std::path::Path;
 
-use crate::bot::delivery::cards::DifficultyMarks;
-use crate::bot::transport::{ApplicationEmoji, DiscordTransport, Outcome};
+use crate::cards::DifficultyMarks;
+use crate::discord::transport::{ApplicationEmoji, DiscordTransport, Outcome};
 
 /// Difficulty letter → application emoji name, in display order. The PNGs
 /// are `assets/emojis/<name>.png`.

@@ -56,11 +56,8 @@ use axum::{
 };
 use chrono::{DateTime, Datelike, TimeDelta, Timelike, Utc};
 use kanade::{
-    api::{
-        auth::{Clock, system_now},
-        guard::headers::CSP,
-        listeners::Origin,
-    },
+    api::{guard::headers::CSP, listeners::Origin},
+    app::clock::{Clock, system_now},
     infrastructure::store::web_sessions::{LoginMethod, SessionOrigin, WebSessionStore},
 };
 use kanade_domain::members::MemberStore;

@@ -12,12 +12,15 @@ use tokio::time::{Instant, sleep_until};
 use twilight_model::id::{Id, marker::UserMarker};
 
 use super::live::LiveRoster;
-use super::reconcile::{ReconcileReport, diff, fetch_members};
-use crate::bot::events::{AdminRoles, GuildScope, RosterUpdate};
+use crate::app::ids::id_text;
 use crate::bot::gateway::ConnectionStatus;
-use crate::bot::guild_cache::GuildCache;
-use crate::bot::ids::id_text;
-use crate::bot::transport::DiscordTransport;
+use crate::discord::guild_cache::GuildCache;
+use crate::discord::roster::{ReconcileReport, diff, fetch_members};
+use crate::discord::transport::DiscordTransport;
+use crate::{
+    app::roster::{AdminRoles, RosterUpdate},
+    bot::events::GuildScope,
+};
 use kanade_domain::members::{GatewayMember, MemberProfile};
 use kanade_domain::scheduler::StoreError;
 
@@ -413,12 +416,10 @@ mod tests {
     use twilight_model::id::{Id, marker::RoleMarker};
 
     use super::{RosterSink, RosterTask, reconcile_retry_delay};
-    use crate::bot::{
-        events::{GuildScope, RosterUpdate},
-        gateway::ConnectionStatus,
-        guild_cache::GuildCache,
-        roster::LiveRoster,
-        transport::FakeDiscord,
+    use crate::{
+        app::roster::RosterUpdate,
+        bot::{events::GuildScope, gateway::ConnectionStatus, roster::LiveRoster},
+        discord::{guild_cache::GuildCache, transport::FakeDiscord},
     };
     use kanade_domain::{
         members::{GatewayMember, Member, MemberProfile},
@@ -458,7 +459,7 @@ mod tests {
         async fn guild_available(
             &self,
             _: Id<twilight_model::id::marker::UserMarker>,
-            _: &crate::bot::events::AdminRoles,
+            _: &crate::app::roster::AdminRoles,
         ) -> Result<u64, StoreError> {
             Ok(0)
         }

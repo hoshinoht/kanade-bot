@@ -5,7 +5,7 @@
 use std::sync::Arc;
 
 use crate::bot::delivery::{AdminAlert, AlertSink};
-use crate::bot::transport::DiscordTransport;
+use crate::discord::transport::DiscordTransport;
 use crate::extract::pipeline::{BacklogDrop, Card, ChatAnswer, Outbox, PostResult, Redirected};
 use kanade_domain::drafts::ProposalStore;
 use kanade_domain::history::{Actor, Origin, Surface};

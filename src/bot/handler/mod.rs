@@ -18,14 +18,14 @@ use twilight_model::id::{
     marker::{ApplicationMarker, GuildMarker, UserMarker},
 };
 
-use crate::api::auth::Clock;
+use crate::app::clock::Clock;
 use crate::bot::chat_feed::ChatFeed;
 use crate::bot::commands::{Dispatcher, Disposition};
 use crate::bot::events::{BotEvent, EventHandler, RsvpReaction, rsvp_reaction};
 use crate::bot::extract_feed::{FeedItem, MessageFeed};
 use crate::bot::gateway::ConnectionStatus;
 use crate::bot::roster::RosterJob;
-use crate::bot::transport::{DiscordTransport, Outcome};
+use crate::discord::transport::{DiscordTransport, Outcome};
 use kanade_domain::members::Directory;
 
 pub use reactions::{PressJob, Reacted, Reactions, press_port};

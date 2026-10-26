@@ -21,16 +21,16 @@ use std::sync::Arc;
 use chrono::TimeDelta;
 use twilight_model::application::command::Command;
 
-use super::access::Gate;
 use super::build::{command, picked, subcommand};
 use super::context::{CommandContext, TestKind, TestPosted, TestReport, TestSubject};
 use super::dispatch::{ChoicesFuture, CommandError, CommandFuture, SlashCommand};
 use super::invocation::Invocation;
 use super::lookup::{RunPicker, everything, refused, run_choices};
 use super::options::Args;
-use super::text::{format_bosses, local_day, local_time};
-use crate::bot::ids::id_text;
-use crate::bot::transport::InteractionReply;
+use crate::app::access::Gate;
+use crate::app::ids::id_text;
+use crate::cards::text::{format_bosses, local_day, local_time};
+use crate::discord::transport::InteractionReply;
 use kanade_domain::ids::{resolve_id, short_id};
 use kanade_domain::schedule::Reminder;
 

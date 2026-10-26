@@ -4,7 +4,7 @@ use twilight_model::application::interaction::application_command::{
     CommandDataOption, CommandOptionValue,
 };
 
-use crate::bot::ids::id_text;
+use crate::app::ids::id_text;
 
 /// A leaf command's options by name; Discord has already checked their types.
 #[derive(Clone, Copy, Debug)]

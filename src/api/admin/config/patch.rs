@@ -10,7 +10,8 @@ use std::collections::BTreeSet;
 use serde_json::{Map, Value};
 
 use crate::{
-    api::{admin::write::Refusal, state::ChannelList},
+    api::admin::write::Refusal,
+    app::guild::ChannelList,
     chat::{
         nudge::{WordFilter, is_builtin_word},
         persona::ProfileId,

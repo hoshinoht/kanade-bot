@@ -145,7 +145,7 @@ async fn a_merged_notice_renders_its_title_and_runs() {
         &world.roster,
         chrono_tz::Asia::Kuala_Lumpur,
         false,
-        &kanade::bot::delivery::cards::CardKit::default(),
+        &kanade::cards::CardKit::default(),
     )
     .expect("renders");
     let text = message.content.expect("text");

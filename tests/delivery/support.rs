@@ -4,7 +4,7 @@ use std::path::PathBuf;
 
 use chrono::{DateTime, Utc};
 use kanade::bot::delivery::{FixedClock, IdsRef};
-use kanade::bot::transport::FakeDiscord;
+use kanade::discord::transport::FakeDiscord;
 use kanade::infrastructure::store::{SqliteStore, SqliteStoreConfig};
 use kanade_domain::ids::IdGenerator;
 use kanade_domain::notify::{
@@ -92,9 +92,9 @@ impl Drop for TempDir {
 }
 
 /// A send that timed out, after Discord did (`applied`) or did not apply it.
-pub fn timed_out(applied: bool) -> kanade::bot::transport::Step {
-    kanade::bot::transport::Step::Ambiguous {
-        kind: kanade::bot::transport::AmbiguousKind::Timeout,
+pub fn timed_out(applied: bool) -> kanade::discord::transport::Step {
+    kanade::discord::transport::Step::Ambiguous {
+        kind: kanade::discord::transport::AmbiguousKind::Timeout,
         applied,
     }
 }

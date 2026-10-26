@@ -19,8 +19,8 @@ use crate::{
             write::Refusal,
         },
         error::ApiError,
-        state::CharacterRoster,
     },
+    app::read::CharacterRoster,
     infrastructure::store::replays::KeyedWrite,
 };
 use kanade_domain::{

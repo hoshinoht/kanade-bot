@@ -4,7 +4,7 @@
 
 use chrono::{DateTime, TimeDelta, Utc};
 use kanade::bot::delivery::{AdminAlert, Delivery, SendOutcome};
-use kanade::bot::transport::{Call, Op, RejectionKind, Step};
+use kanade::discord::transport::{Call, Op, RejectionKind, Step};
 use kanade::infrastructure::store::SqliteStore;
 use kanade_domain::history::{Actor, ChangeMeta, Origin, Surface};
 use kanade_domain::ids::RandomIds;

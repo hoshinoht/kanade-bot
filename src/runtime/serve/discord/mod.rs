@@ -41,14 +41,16 @@ use super::{
     tick::{self, TickLoop, TickStatus, card_kit, delivery_config, watch_list},
 };
 use crate::{
-    api::{
-        admin::config::SettingsChanged,
-        auth::Clock,
-        rescan::RescanDesk,
-        state::{
-            ApplicationPort, DeclineRetraction, DigestPost, DigestPostRequest, DigestPostResult,
-            GuidePort, GuildAccess, HeaderRewritePort, ProposalCardRefresh,
+    api::state::ApplicationPort,
+    app::{
+        clock::Clock,
+        config::SettingsChanged,
+        guild::GuildAccess,
+        ports::{
+            DeclineRetraction, DigestPost, DigestPostRequest, DigestPostResult, GuidePort,
+            HeaderRewritePort, ManualRequest, ProposalCardRefresh,
         },
+        rescan::RescanDesk,
         write::ApiClock,
     },
     bot::{
@@ -56,19 +58,25 @@ use crate::{
         chardata::DiscordPosts,
         commands::CharacterParts,
         delivery::{
-            CachedEstimates, CardRefresh, Delivery, DigestOutcome, HeaderPregen, LogAlerts,
-            ManualRequest, ManualRewrite, PartyEstimates, RefreshQueue, cards::CardKit,
+            CardRefresh, Delivery, DigestOutcome, HeaderPregen, LogAlerts, ManualRewrite,
+            RefreshQueue,
         },
         events::{GuildScope, ReactionRouter, Router},
         gateway::{ConnectionStatus, EventSource, GatewayError, Live, RunExit, run_live},
         guides::{GuideChannels, Pauses, Publisher, PublisherParts},
-        guild_cache::GuildCache,
         handler::{Fanout, MessageCounts, Reactions, press_port},
-        identity,
         roster::{LiveRoster, RosterTask},
-        transport::{DiscordTransport, Outcome},
+    },
+    cards::{
+        CardKit,
+        estimates::{CachedEstimates, PartyEstimates},
     },
     chat::{driver::DriverConfig, nudge::StoreRewriteSink},
+    discord::{
+        guild_cache::GuildCache,
+        identity,
+        transport::{DiscordTransport, Outcome},
+    },
     infrastructure::{character_data::PostDesk, files::GuideFiles, store::SqliteStore},
     runtime::{config::ServeConfig, error::Error},
 };
@@ -229,7 +237,6 @@ where
     let connection = live.status.clone();
     let scope = scope(config);
     let access = Arc::clone(&composition.access);
-    let auth = Arc::clone(&composition.admin.auth);
     let policy = composition.admin.state.policy.clone();
     cache.set_watch(watch_list(&composition.settings));
     let roster = Arc::new(LiveRoster::new(Arc::clone(&cache)));
@@ -239,10 +246,8 @@ where
     let roster_task = RosterTask::new(
         StoreRoster {
             store: Arc::clone(&store),
-            auth,
-            member: composition.admin.member.clone(),
+            hooks: composition.admin.roster_hooks(),
             access: Arc::clone(&access),
-            avatars: composition.admin.state.avatars.clone(),
         },
         Arc::clone(&transport),
         Arc::clone(&cache),

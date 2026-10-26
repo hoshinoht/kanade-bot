@@ -46,7 +46,7 @@ fn bot_user() -> CurrentUser {
 }
 
 fn web_session(fill: char, origin: SessionOrigin, subject: u64) -> WebSession {
-    let now = auth::system_now();
+    let now = clock::system_now();
     WebSession {
         id_hash: fill.to_string().repeat(64),
         origin,

@@ -8,7 +8,7 @@ use twilight_model::id::{
     marker::{ChannelMarker, MessageMarker},
 };
 
-use crate::bot::guild_cache::GuildCache;
+use crate::discord::guild_cache::GuildCache;
 
 /// A created or edited message. `Debug` omits the content.
 #[derive(Clone, PartialEq)]

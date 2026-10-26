@@ -13,7 +13,7 @@ use twilight_model::id::{
     marker::{ChannelMarker, MessageMarker, UserMarker},
 };
 
-use crate::bot::ids::id_text;
+use crate::app::ids::id_text;
 use kanade_domain::history::{Actor, Origin, Surface};
 use kanade_domain::members::Directory;
 use kanade_domain::notify::{CardIndex, LookupError};

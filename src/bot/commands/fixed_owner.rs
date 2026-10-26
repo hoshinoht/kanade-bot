@@ -3,15 +3,15 @@
 //! (user decision 2026-10-10). Rules and writes are `api::ownership`; the
 //! request's message is posted by the delivery tick.
 
-use super::access::Invoker;
 use super::dispatch::CommandError;
 use super::fixed::FixedCommand;
 use super::invocation::Invocation;
 use super::lookup::resolve;
 use super::options::Args;
-use crate::api::ownership::{self, OwnershipError};
-use crate::bot::ids::id_text;
-use crate::bot::transport::InteractionReply;
+use crate::app::access::Invoker;
+use crate::app::ids::id_text;
+use crate::app::ownership::{self, OwnershipError};
+use crate::discord::transport::InteractionReply;
 use kanade_domain::ids::short_id;
 use kanade_domain::ownership::OwnershipRefusal;
 use kanade_domain::scheduler::SchedulerError;

@@ -8,8 +8,9 @@ use tokio::sync::watch;
 
 use super::status::ExtractionStatus;
 use crate::{
-    api::rescan::{RescanFuture, RescanRunner, RescanView},
-    bot::{commands::GuildChannels, guild_cache::GuildCache, roster::LiveRoster},
+    app::rescan::{RescanFuture, RescanRunner, RescanView},
+    bot::{commands::GuildChannels, roster::LiveRoster},
+    discord::guild_cache::GuildCache,
     extract::rescan::{RescanError, RescanRequest},
     infrastructure::llm::setup::ModelStack,
 };

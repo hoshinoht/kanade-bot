@@ -1,6 +1,6 @@
 //! The signed-in member's weekly timings and their ownership actions (user
 //! decision 2026-10-10): hand off, ask, accept, decline and withdraw. Rules
-//! and writes are [`crate::api::ownership`], shared with Discord; on this
+//! and writes are [`crate::app::ownership`], shared with Discord; on this
 //! origin nobody acts as staff. Every write is admitted by [`super::write`]
 //! (a member-write token and a required `Idempotency-Key`, request id
 //! `public:<key>`) and, when it changes the owner, needs a fresh sign-in.
@@ -18,20 +18,22 @@ use axum::{
 use serde::Deserialize;
 
 use super::write::{admit, invalid_body, keyed_id, origin, path_id, snowflake};
-use crate::api::{
-    admin::{
-        context::{context, roster, unavailable, weeks},
-        write::{Refusal, scheduler, state, write_context},
+use crate::{
+    api::{
+        admin::{
+            context::{context, roster, unavailable, weeks},
+            write::{Refusal, scheduler, state, write_context},
+        },
+        auth::{audit::AuditContext, member::MemberSession},
+        dto::public::{
+            MemberOwnerRequest, MemberTiming, MemberTimings, member_owner_request, member_timing,
+            member_timings,
+        },
+        error::ApiError,
+        listeners::Site,
+        state::ApiState,
     },
-    auth::{audit::AuditContext, member::MemberSession},
-    dto::public::{
-        MemberOwnerRequest, MemberTiming, MemberTimings, member_owner_request, member_timing,
-        member_timings,
-    },
-    error::ApiError,
-    listeners::Site,
-    ownership::{self, OwnerDesk, OwnershipError},
-    state::ApiState,
+    app::ownership::{self, OwnerDesk, OwnershipError},
 };
 use kanade_domain::{
     ownership::{OwnerRequest, OwnerRequestStatus, OwnershipRefusal},

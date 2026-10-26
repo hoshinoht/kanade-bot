@@ -12,10 +12,12 @@ use std::{
 
 use tokio::sync::{Mutex, oneshot};
 
-use crate::bot::{
-    delivery::{DEFAULT_MAX_SENDS_PER_TICK, Delivery, DeliveryConfig, SendOutcome, SendReport},
-    gateway::ConnectionStatus,
-    transport::{
+use crate::{
+    bot::{
+        delivery::{DEFAULT_MAX_SENDS_PER_TICK, Delivery, DeliveryConfig, SendOutcome, SendReport},
+        gateway::ConnectionStatus,
+    },
+    discord::transport::{
         ChannelId, DiscordTransport, HistoryPage, InteractionRef, InteractionReply, MessageEdit,
         MessageId, Op, Outcome, OutgoingMessage, Presence,
     },
@@ -350,7 +352,7 @@ async fn assert_retry_skips_held(store: &SqliteStore, retry: &[SendReport], held
 #[tokio::test]
 async fn cancelling_after_a_committed_claim_releases_only_the_slot() {
     let harness = Harness::new();
-    let now = auth::system_now();
+    let now = clock::system_now();
     let store = open_recovered_store(&harness, now).await;
     let gate = Gate::new(policy(&harness));
     let first = add_due_reminder(&store, &gate.policy, now).await;
@@ -391,7 +393,7 @@ async fn cancelling_after_a_committed_claim_releases_only_the_slot() {
 #[tokio::test]
 async fn cancelling_a_blocked_create_keeps_its_target_held_and_admits_another() {
     let harness = Harness::new();
-    let now = auth::system_now();
+    let now = clock::system_now();
     let store = open_recovered_store(&harness, now).await;
     let gate = Gate::new(policy(&harness));
     let first = add_due_reminder(&store, &gate.policy, now).await;
@@ -478,7 +480,7 @@ async fn seed_digest(
 #[tokio::test]
 async fn cancelling_a_blocked_digest_delete_keeps_the_old_claim_and_admits_another() {
     let harness = Harness::new();
-    let now = auth::system_now();
+    let now = clock::system_now();
     let store = open_recovered_store(&harness, now).await;
     let gate = Gate::new(policy(&harness));
     let week = week_of(&gate.policy, now);
@@ -492,8 +494,8 @@ async fn cancelling_a_blocked_digest_delete_keeps_the_old_claim_and_admits_anoth
     .await;
     let reminder = add_due_reminder(&store, &gate.policy, now).await;
     harness.fake.seed_message(
-        crate::bot::ids::parse_id(HOME_C.to_string().as_str()).unwrap(),
-        crate::bot::ids::parse_id("900000000000000001").unwrap(),
+        crate::app::ids::parse_id(HOME_C.to_string().as_str()).unwrap(),
+        crate::app::ids::parse_id("900000000000000001").unwrap(),
     );
     let (transport, reached) = BlockedTransport::new(&harness.fake, Op::Delete);
     let mut delivery = gate.delivery(&store, &transport, Some(HOME_C.to_string()));
@@ -566,7 +568,7 @@ async fn claims_pause_until_fresh_ready_reconciles_and_resume_restores_them() {
             ctx.connection.get() == Connection::Disconnected
         );
         let policy = policy(&harness);
-        add_due_reminder(&ctx.store, &policy, auth::system_now()).await;
+        add_due_reminder(&ctx.store, &policy, clock::system_now()).await;
         sleep(TICK * 4).await;
         assert_eq!(
             fake.count(Op::Create),
@@ -605,7 +607,7 @@ async fn claims_pause_until_fresh_ready_reconciles_and_resume_restores_them() {
             "second gateway disconnect",
             ctx.connection.get() == Connection::Disconnected
         );
-        add_due_reminder(&ctx.store, &policy, auth::system_now()).await;
+        add_due_reminder(&ctx.store, &policy, clock::system_now()).await;
         sleep(TICK * 4).await;
         assert_eq!(fake.count(Op::Create), 1, "second reminder stays pending");
         let roster_pages = fake.count(Op::ListMembers);

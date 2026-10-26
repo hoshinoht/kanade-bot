@@ -14,20 +14,23 @@ use axum::{
     response::{IntoResponse, Response},
 };
 
-use crate::api::{
-    auth::{
-        actor_id,
-        audit::{AuditContext, AuditEvent},
-        crypto, csrf, device,
-        discord::{BeginError, DiscordLogin},
-        member::{Eligibility, MemberAuth, SESSION_SAME_SITE, StartError},
-        rate::Route,
-        wire::{self, MEMBER_LOGIN_COOKIE, MEMBER_SESSION_COOKIE, landing, see_other},
-    },
-    error::ApiError,
-    listeners::Site,
-};
 use crate::infrastructure::store::web_sessions::{LoginMethod, SessionOrigin};
+use crate::{
+    api::{
+        auth::{
+            actor_id,
+            audit::{AuditContext, AuditEvent},
+            csrf, device,
+            discord::{BeginError, DiscordLogin},
+            member::{Eligibility, MemberAuth, SESSION_SAME_SITE, StartError},
+            rate::Route,
+            wire::{self, MEMBER_LOGIN_COOKIE, MEMBER_SESSION_COOKIE, landing, see_other},
+        },
+        error::ApiError,
+        listeners::Site,
+    },
+    app::crypto,
+};
 
 /// The pre-auth cookie must survive Discord's cross-site redirect back.
 const LOGIN_SAME_SITE: &str = "Lax";

@@ -9,7 +9,7 @@ use std::sync::{
     atomic::{AtomicBool, Ordering},
 };
 
-use kanade::api::state::{ChannelEntry, ChannelGrants, ChannelList, RoleEntry};
+use kanade::app::guild::{ChannelEntry, ChannelGrants, ChannelList, RoleEntry};
 
 use crate::seed;
 

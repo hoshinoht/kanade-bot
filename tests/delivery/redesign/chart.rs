@@ -11,13 +11,13 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use chrono::{TimeDelta, TimeZone, Utc};
-use kanade::bot::delivery::cards::chart::{self, Chart, ChartRun, SCALE};
-use kanade::bot::delivery::cards::{self, CardArt, CardContext, CardKit, V2Kit, redesign};
-use kanade::bot::delivery::{
+use kanade::cards::chart::{self, Chart, ChartRun, SCALE};
+use kanade::cards::estimates::{
     CachedEstimates, EstimateFuture, IgnFuture, MAX_ATTACHMENTS, PartyEstimates, RunEstimate,
     attach_chart, chart_for, read_estimates,
 };
-use kanade::bot::transport::{OutgoingMessage, Upload, legacy_rows};
+use kanade::cards::{self, CardArt, CardContext, CardKit, V2Kit, redesign};
+use kanade::discord::transport::{OutgoingMessage, Upload, legacy_rows};
 use kanade::infrastructure::character_data::{CharacterData, RosterSide, Timing};
 use kanade::infrastructure::scouter::{Card, Combined, Member};
 use kanade::infrastructure::store::{SqliteCharData, SqliteStore};
@@ -697,7 +697,7 @@ fn post() -> OutgoingMessage {
     OutgoingMessage {
         content: Some("📅 **Today**".into()),
         embeds: Vec::new(),
-        allowed_mentions: kanade::bot::mentions::none(),
+        allowed_mentions: kanade::discord::mentions::none(),
         reply_to: None,
         attachments: Vec::new(),
         components: Vec::new(),
@@ -767,7 +767,7 @@ async fn redesigned_day_of_and_countdown_posts_carry_the_chart() {
         },
         ..kit.clone()
     };
-    let ctx_portal = kanade::bot::delivery::cards::CardContext {
+    let ctx_portal = kanade::cards::CardContext {
         v2: Some(&portal.v2),
         ..ctx
     };
@@ -999,7 +999,7 @@ async fn an_open_portal_post_carries_the_chart_beside_its_link_row() {
     // A V2 layout (no text, components only): left off as before.
     let mut v2 = OutgoingMessage::v2(
         vec![redesign::container(0, vec![redesign::text("📅 **Today**")])],
-        kanade::bot::mentions::none(),
+        kanade::discord::mentions::none(),
     );
     attach_chart(&mut v2, &content, &ctx, &kit, at).await;
     assert!(png_upload(&v2).is_none(), "a V2 layout shows no file");

@@ -29,8 +29,9 @@ use crate::{
         dto::estimates::{EstimateStarted, EstimateStatus, job},
         error::ApiError,
         listeners::Site,
-        state::{ApiState, CharacterRoster},
+        state::ApiState,
     },
+    app::read::CharacterRoster,
     infrastructure::{
         character_data::CharacterData,
         scouter::{

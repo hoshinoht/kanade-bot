@@ -31,8 +31,8 @@ use crate::{
         error::ApiError,
         listeners::Site,
         state::ApiState,
-        write::{DraftCommand, DraftDone},
     },
+    app::write::{DraftCommand, DraftDone},
     infrastructure::store::replays::ReplayScope,
 };
 use kanade_domain::{

@@ -5,11 +5,11 @@
 
 use std::sync::Arc;
 
-use kanade::bot::delivery::cards::redesign::{
+use kanade::cards::redesign::{
     MAX_COMPONENTS, MAX_EMBEDS, MAX_ROW_BUTTONS, MAX_ROWS, OPEN_IN_PORTAL, component_count,
 };
-use kanade::bot::delivery::cards::{self, Card, CardArt, CardContext, V2Kit, fetch_art};
-use kanade::bot::transport::{COMPONENTS_V2, OutgoingMessage, legacy_rows, v2_body_valid};
+use kanade::cards::{self, Card, CardArt, CardContext, V2Kit, fetch_art};
+use kanade::discord::transport::{COMPONENTS_V2, OutgoingMessage, legacy_rows, v2_body_valid};
 use kanade_domain::catalog::BossTable;
 use kanade_domain::members::Roster;
 use kanade_domain::notify::IntentContent;

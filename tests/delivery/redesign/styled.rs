@@ -2,12 +2,12 @@
 //! content and subtext, per-run embeds, colours, timestamps, art and the
 //! Discord limits.
 
-use kanade::bot::delivery::cards::redesign::{
+use kanade::cards::redesign::{
     AT_RISK_RED, DIGEST_EMPTY, DifficultyMarks, INK_BLUE, MAX_EMBEDS, MAX_TOTAL_CHARS, NO_MARKS,
     SETTLED_GREEN, WAITING_AMBER,
 };
-use kanade::bot::delivery::cards::{self, Card, REACT_HINT, fetch_art};
-use kanade::bot::transport::OutgoingMessage;
+use kanade::cards::{self, Card, REACT_HINT, fetch_art};
+use kanade::discord::transport::OutgoingMessage;
 use kanade_domain::members::{Member, PingLevel};
 use kanade_domain::notify::IntentContent;
 use kanade_domain::schedule::{RunStatus, ScheduleSnapshot};

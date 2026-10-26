@@ -4,7 +4,7 @@
 //! serve attaches [`GuidePort`] only then) every route answers the generic
 //! `404` before the session is checked, as an unmounted path does. Without
 //! the bot (the `web` component alone) the port is
-//! [`crate::api::state::OfflineGuides`]: guides stay editable and every run
+//! [`crate::app::ports::OfflineGuides`]: guides stay editable and every run
 //! refuses `discord_offline`. Writes
 //! take the session's CSRF token and replay an `Idempotency-Key` (scope
 //! `config`, identity = the full normalized request) in the same
@@ -34,8 +34,9 @@ use crate::{
         dto::guides::{GuideBlocksRefused, problems},
         error::ApiError,
         listeners::Site,
-        state::{ApiState, GuideBook, GuidePort},
+        state::ApiState,
     },
+    app::{ports::GuidePort, read::GuideBook},
     infrastructure::files::GuideFiles,
 };
 use kanade_domain::guides::{Block, BlockError, Guide, Rendered, render};

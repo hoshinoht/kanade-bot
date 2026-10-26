@@ -7,8 +7,8 @@ use std::time::Duration;
 use tokio::time::Instant;
 use twilight_model::id::Id;
 
-use kanade::bot::mentions;
-use kanade::bot::transport::{
+use kanade::discord::mentions;
+use kanade::discord::transport::{
     AmbiguousKind, Call, DiscordTransport, Op, RejectionKind, SILENT, Step,
 };
 use kanade_domain::guides::{

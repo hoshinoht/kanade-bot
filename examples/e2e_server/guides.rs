@@ -21,13 +21,11 @@ use std::{
 };
 
 use kanade::{
-    api::{
-        auth::Clock,
-        state::{ApiState, GuidePort},
-    },
-    bot::{
-        guides::{ChannelView, GuideChannels, Pauses, Publisher, PublisherParts},
-        transport::{AmbiguousKind, Call, FakeDiscord, Hold, Op, Outcome, RejectionKind, Step},
+    api::state::ApiState,
+    app::{clock::Clock, ports::GuidePort},
+    bot::guides::{ChannelView, GuideChannels, Pauses, Publisher, PublisherParts},
+    discord::transport::{
+        AmbiguousKind, Call, FakeDiscord, Hold, Op, Outcome, RejectionKind, Step,
     },
     infrastructure::{files::GuideFiles, store::SqliteStore},
 };

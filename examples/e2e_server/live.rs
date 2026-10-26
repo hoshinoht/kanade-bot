@@ -30,13 +30,14 @@ use kanade::{
     api::{
         assets,
         auth::{
-            self, Clock, crypto,
+            self,
             fake::FakeDiscord,
             wire::{self, query_pairs, query_value},
         },
         listeners::{Site, router},
         server::LiveAdmin,
     },
+    app::{clock::Clock, crypto},
     infrastructure::store::{SqliteStore, SqliteStoreConfig},
     runtime::{
         config::ServeConfig,
@@ -147,7 +148,7 @@ pub struct Generation {
     character_data: Option<CharacterDataModule>,
     bot: Option<Bot>,
     /// This generation's fake Discord (the Discord side's transport).
-    discord: Arc<kanade::bot::transport::FakeDiscord>,
+    discord: Arc<kanade::discord::transport::FakeDiscord>,
     /// Module `guides`: its publisher over `discord`.
     guides: Option<GuideSide>,
 }

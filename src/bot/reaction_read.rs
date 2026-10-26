@@ -5,7 +5,9 @@ use std::collections::BTreeSet;
 use twilight_model::channel::message::ReactionType;
 use twilight_model::id::{Id, marker::UserMarker};
 
-use crate::bot::transport::{ChannelId, DiscordTransport, MAX_REACTIONS_PAGE, MessageId, Outcome};
+use crate::discord::transport::{
+    ChannelId, DiscordTransport, MAX_REACTIONS_PAGE, MessageId, Outcome,
+};
 
 /// A complete snapshot of the two RSVP reaction sides.
 #[derive(Clone, Debug, Default)]

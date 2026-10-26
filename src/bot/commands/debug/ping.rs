@@ -11,7 +11,7 @@ use super::super::invocation::Invocation;
 use super::super::lookup::everything;
 use super::super::options::Args;
 use super::super::say::mentioned_users;
-use crate::bot::ids::id_text;
+use crate::app::ids::id_text;
 use kanade_domain::ids::resolve_id;
 use kanade_domain::schedule::RunStatus;
 

@@ -5,15 +5,15 @@ use std::sync::Arc;
 
 use twilight_model::application::command::Command;
 
-use super::access::Gate;
 use super::build::command;
 use super::context::CommandContext;
 use super::dispatch::{CommandError, CommandFuture, SlashCommand};
 use super::invocation::Invocation;
-use crate::bot::ids::id_text;
-use crate::bot::transport::InteractionReply;
+use crate::app::access::Gate;
+use crate::app::ids::id_text;
 use crate::chat::gate::retry_note;
 use crate::chat::pilot::AllowanceSnapshot;
+use crate::discord::transport::InteractionReply;
 
 pub const STAFF_LIMITS_REPLY: &str = "No limits for staff — fire away! 🎀🐾";
 /// A zero allowance with no override of their own.

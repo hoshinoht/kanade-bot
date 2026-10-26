@@ -4,7 +4,7 @@
 use axum::http::StatusCode as S;
 
 use super::super::write::{Refusal, scheduler};
-use crate::api::{error::ApiError, ownership::OwnershipError};
+use crate::{api::error::ApiError, app::ownership::OwnershipError};
 use kanade_domain::{
     drafts::{MergeConflict, ReplayError},
     requests::RequestRefusal,

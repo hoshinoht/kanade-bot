@@ -1,8 +1,8 @@
 //! Durable decline notice delivery and retraction on the SQLite store.
 
 use chrono::Duration;
-use kanade::bot::mentions::allow_users;
-use kanade::bot::transport::{
+use kanade::discord::mentions::allow_users;
+use kanade::discord::transport::{
     AmbiguousKind, Call, FakeDiscord, MessageId, Op, Outcome, RejectionKind,
 };
 use kanade::infrastructure::store::SqliteStore;

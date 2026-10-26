@@ -9,7 +9,7 @@ use ring::digest::{SHA256, digest};
 use serde::Serialize;
 
 use crate::{
-    api::state::{ChannelEntry, RoleEntry},
+    app::guild::{ChannelEntry, RoleEntry},
     chat::persona::{PersonaSnapshot, ProfileId},
     infrastructure::llm::{
         TrustZone,

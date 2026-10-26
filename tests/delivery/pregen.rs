@@ -9,11 +9,11 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use chrono::{DateTime, NaiveTime, TimeDelta, TimeZone, Utc};
-use kanade::bot::delivery::cards::CardKit;
 use kanade::bot::delivery::{
     HEADER_HORIZON, HeaderPregen, MAX_ATTEMPTS_PER_KEY, MAX_BUSY_RETRIES, MAX_CATCHUP_PER_TICK,
     PREGEN_DEADLINE, PregenReport, SEEN_HORIZON,
 };
+use kanade::cards::CardKit;
 use kanade::chat::nudge::{
     NudgeRewriter, RewriteAttempt, RewriteDetail, RewriteFailure, RewriteOutcome, RewritePrompt,
     RewriteSink, StoreRewriteSink,

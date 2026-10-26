@@ -12,24 +12,26 @@ use super::{
 };
 use crate::{
     api::{
-        admin::{
-            config::{ConfigDesk, ConfigFacts, ConfigInputs, ModelCatalog, PersonaFiles},
-            limits::LimitsDesk,
-        },
+        admin::limits::LimitsDesk,
         auth::{
-            self, AdminAuth, Clock,
+            self, AdminAuth,
             audit::StoreAudit,
             member::{MemberAuth, PortalOpen, StoreEligibility},
             staff::{GuildStaffGate, StoreGuildMembers},
         },
-        avatars::AvatarCache,
         events::Hub,
         server::LiveAdmin,
-        state::{ApiState, BackupDir, ChannelList, GuildAccess, SetupFacts},
+        state::{ApiState, BackupDir, SetupFacts},
+    },
+    app::{
+        access::AccessPolicy,
+        clock::{self, Clock},
+        config::{ConfigDesk, ConfigFacts, ConfigInputs, ModelCatalog, PersonaFiles},
+        guild::{ChannelList, GuildAccess},
         write::{ApiClock, SchedulerWriter},
     },
-    bot::commands::AccessPolicy,
     chat::persona::{PersonaStore, load_personas},
+    discord::avatars::AvatarCache,
     infrastructure::{
         files::{KnowledgeDir, LoadError, load_catalog, load_knowledge_dir},
         llm::{
@@ -151,7 +153,7 @@ pub async fn compose(
         channels,
         health,
         None,
-        Arc::new(auth::system_now),
+        Arc::new(clock::system_now),
     )
     .await
 }
@@ -261,7 +263,7 @@ pub(super) async fn compose_with(
     let characters = config
         .modules
         .roster
-        .then(|| store.clone() as Arc<dyn crate::api::state::CharacterRoster>);
+        .then(|| store.clone() as Arc<dyn crate::app::read::CharacterRoster>);
     let state = ApiState {
         store,
         writer: Arc::new(writer),
@@ -277,7 +279,7 @@ pub(super) async fn compose_with(
         chat: Some(health.chat()),
         model_limits: models.as_ref().map(|stack| {
             let governor = Arc::clone(&stack.governor);
-            Arc::new(move |at| governor.snapshot(at)) as crate::api::state::ModelLimits
+            Arc::new(move |at| governor.snapshot(at)) as crate::app::ports::ModelLimits
         }),
         limits: Arc::new(LimitsDesk::default()),
         proposal_refresh: None,
@@ -315,7 +317,7 @@ pub(super) async fn compose_with(
         // Module `guides`: editable without the bot; serve's Discord side
         // replaces the port with its publisher.
         guides: config.modules.guides.then(|| {
-            Arc::new(crate::api::state::OfflineGuides) as Arc<dyn crate::api::state::GuidePort>
+            Arc::new(crate::app::ports::OfflineGuides) as Arc<dyn crate::app::ports::GuidePort>
         }),
     };
     Ok(Composition {
@@ -346,7 +348,7 @@ pub struct Overrides {
     /// Both realms' authorization page (the fake Discord's).
     pub authorize_url: Option<String>,
     /// Governor snapshots in place of the model stack's.
-    pub model_limits: Option<crate::api::state::ModelLimits>,
+    pub model_limits: Option<crate::app::ports::ModelLimits>,
     /// A loopback fake NEXON Open API (plain HTTP) for module `character_data`.
     pub nexon: Option<std::net::SocketAddr>,
     /// Run the background estimate refresh on serve's schedule (10 minutes
@@ -377,7 +379,7 @@ pub async fn compose_for_tests(
     overrides: Overrides,
 ) -> Result<TestComposition, Error> {
     use crate::{
-        api::{auth::discord::DiscordLogin, state::StaticChannels},
+        api::auth::discord::DiscordLogin, app::guild::StaticChannels,
         infrastructure::nexon::NexonClient,
     };
 

@@ -8,7 +8,7 @@ use twilight_model::channel::message::Component;
 use twilight_model::channel::message::component::ButtonStyle;
 
 use super::styled::StyledCard;
-use crate::bot::delivery::cards::redesign::{
+use crate::cards::redesign::{
     ButtonId, CARD_CLOSED, action_row, button, container, subtext, text, within_budget,
 };
 

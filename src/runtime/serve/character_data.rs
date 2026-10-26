@@ -34,7 +34,7 @@ use tokio::{sync::watch, task::JoinHandle};
 use self::upcoming::StoreParties;
 use super::{api::Composition, store::create_private_dir};
 use crate::{
-    api::auth::Clock,
+    app::clock::Clock,
     infrastructure::{
         character_data::{CharacterData, RosterSide, Timing},
         nexon::{ApiKey, NexonClient},
@@ -205,7 +205,7 @@ pub(super) fn privacy_url(config: &ServeConfig) -> Option<String> {
         .runtime
         .public_bind
         .and(config.runtime.http.public_host.as_deref())
-        .map(|host| format!("https://{host}{}", crate::bot::chardata::copy::PRIVACY_PATH))
+        .map(|host| format!("https://{host}{}", crate::cards::chardata::PRIVACY_PATH))
 }
 
 /// Create the file's directory 0700 when absent (Compose: `/chardata/db`

@@ -4,11 +4,12 @@
 //! button, never replayed from reactions, and kept V2 for good.
 
 use kanade::bot::cards::{CLOSED_GREY, CardPress, Pressed};
-use kanade::bot::commands::{
-    AccessPolicy, CardPresses, Dispatcher, Disposition, INACTIVE, NOT_YOURS,
+use kanade::cards::DifficultyMarks;
+use kanade::discord::transport::COMPONENTS_V2;
+use kanade::{
+    app::access::AccessPolicy,
+    bot::commands::{CardPresses, Dispatcher, Disposition, INACTIVE, NOT_YOURS},
 };
-use kanade::bot::delivery::cards::DifficultyMarks;
-use kanade::bot::transport::COMPONENTS_V2;
 use kanade_domain::ids::tag;
 use twilight_model::channel::message::Component;
 

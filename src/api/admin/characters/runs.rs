@@ -31,19 +31,22 @@ use super::{
     },
     write::record,
 };
-use crate::api::{
-    admin::{
-        context::{context, run_ends, weeks},
-        write::{Body, Refusal, load_run, state},
+use crate::{
+    api::{
+        admin::{
+            context::{context, run_ends, weeks},
+            write::{Body, Refusal, load_run, state},
+        },
+        auth::AdminSession,
+        dto::{
+            characters::{RunCharacterSlot, RunCharacters, run_slot},
+            estimates::party_total,
+        },
+        error::ApiError,
+        listeners::Site,
+        state::ApiState,
     },
-    auth::AdminSession,
-    dto::{
-        characters::{RunCharacterSlot, RunCharacters, run_slot},
-        estimates::party_total,
-    },
-    error::ApiError,
-    listeners::Site,
-    state::{ApiState, CharacterRoster},
+    app::read::CharacterRoster,
 };
 use kanade_domain::{
     characters::{PartyRoster, PartySlot, PickScope, pick_version},

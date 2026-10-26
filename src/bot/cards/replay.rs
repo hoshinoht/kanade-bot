@@ -8,12 +8,12 @@ use twilight_model::id::{Id, marker::UserMarker};
 
 use super::react::{CHANGED_SINCE_CARD, OUT_OF_DATE_NOTICE};
 use super::{CardDesk, CardReaction};
+use crate::app::ids::{id_text, parse_id};
 use crate::bot::delivery::AlertSink;
-use crate::bot::delivery::cards::redesign::known_or_fetched;
 use crate::bot::events::RsvpAnswer;
-use crate::bot::ids::{id_text, parse_id};
 use crate::bot::reaction_read;
-use crate::bot::transport::DiscordTransport;
+use crate::cards::redesign::known_or_fetched;
+use crate::discord::transport::DiscordTransport;
 use kanade_domain::drafts::{DraftStatus, ProposalStore};
 use kanade_domain::notify::{DeclineNoticeStore, DeliveryJournal};
 use kanade_domain::proposals::{ProposalCardStore, StoredCard};

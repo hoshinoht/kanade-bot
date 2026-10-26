@@ -7,7 +7,7 @@ use std::sync::Arc;
 use tokio::sync::watch;
 
 use crate::{
-    api::admin::config::SettingsChanged,
+    app::config::SettingsChanged,
     infrastructure::llm::{
         governor::Role,
         setup::{ContextResolution, ModelStack, resolve_context},

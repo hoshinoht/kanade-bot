@@ -676,7 +676,7 @@ async fn only_writes_are_audited_and_identical_refusals_are_coalesced() {
 /// off the run after the handler's checks is refused and nothing is written.
 #[tokio::test]
 async fn the_writer_refuses_a_member_taken_off_after_the_checks() {
-    use kanade::api::write::{RunWrite, WriteContext};
+    use kanade::app::write::{RunWrite, WriteContext};
     use kanade_domain::{
         history::{Expect, Origin},
         members::Roster,

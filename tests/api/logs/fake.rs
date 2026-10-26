@@ -9,7 +9,7 @@ use std::{
 
 use chrono::{DateTime, Utc};
 use kanade::{
-    api::rescan::{RescanFuture, RescanRunner, RescanView},
+    app::rescan::{RescanFuture, RescanRunner, RescanView},
     extract::rescan::{RescanError, RescanRequest},
 };
 use kanade_domain::model_log::{RescanJob, RescanStatus};

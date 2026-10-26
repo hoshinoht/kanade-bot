@@ -7,13 +7,11 @@ use std::{collections::BTreeMap, sync::Arc};
 
 use kanade::{
     api::{
-        admin::config::{
-            CatalogRead, ConfigDesk, ConfigFacts, ConfigFuture, ConfigInputs, ModelCatalog,
-        },
         listeners::Site,
         state::{ApplicationPort, SetupFacts},
     },
-    bot::transport::{DiscordTransport, FAKE_APPLICATION_ID, FakeDiscord, Outcome},
+    app::config::{CatalogRead, ConfigDesk, ConfigFacts, ConfigFuture, ConfigInputs, ModelCatalog},
+    discord::transport::{DiscordTransport, FAKE_APPLICATION_ID, FakeDiscord, Outcome},
     infrastructure::{
         llm::{governor::Role, setup::RunningRole},
         store::SqliteStore,
@@ -235,7 +233,7 @@ async fn items_come_in_order_with_their_facts_and_complete_needs_every_required_
 
     // One application read per answer.
     assert_eq!(
-        discord.count(kanade::bot::transport::Op::ApplicationInfo),
+        discord.count(kanade::discord::transport::Op::ApplicationInfo),
         1
     );
 }
@@ -311,9 +309,9 @@ async fn a_gateway_without_a_model_list_is_ok_with_a_note() {
 async fn a_refused_application_read_warns_and_drops_the_invite() {
     let discord = Arc::new(FakeDiscord::new());
     discord.set_default(
-        kanade::bot::transport::Op::ApplicationInfo,
-        Some(kanade::bot::transport::Step::Reject(
-            kanade::bot::transport::RejectionKind::Unauthorized,
+        kanade::discord::transport::Op::ApplicationInfo,
+        Some(kanade::discord::transport::Step::Reject(
+            kanade::discord::transport::RejectionKind::Unauthorized,
         )),
     );
     let reads = reads(configured(), None, Some(discord), |_| {}).await;

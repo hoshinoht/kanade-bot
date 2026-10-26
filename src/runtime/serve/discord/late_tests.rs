@@ -12,12 +12,12 @@ use twilight_http::Client;
 use twilight_model::id::Id;
 
 use super::*;
-use crate::bot::mentions;
+use crate::discord::mentions;
 
 /// Trait methods of `DiscordTransport` that have a default body, read from
 /// the trait's source: a signature line ending `+ Send {`.
 fn default_bodied() -> Vec<String> {
-    let source = include_str!("../../../bot/transport/mod.rs");
+    let source = include_str!("../../../discord/transport/mod.rs");
     let start = source
         .find("pub trait DiscordTransport")
         .expect("the trait");
@@ -169,7 +169,7 @@ async fn defaults_reach_discord_once_ready_and_are_refused_unsent_before() {
     // Each must be sent (counted by the stub), never refused locally.
     let not_invalid = |label: Option<String>| assert_ne!(label.as_deref(), Some("invalid"));
     not_invalid(
-        late.create_flagged_message(channel, &message, crate::bot::transport::SILENT)
+        late.create_flagged_message(channel, &message, crate::discord::transport::SILENT)
             .await
             .failure_label(),
     );

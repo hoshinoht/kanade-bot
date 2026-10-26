@@ -20,10 +20,12 @@ use axum::{
 
 use axum::response::IntoResponse;
 
-use crate::api::{
-    auth::crypto,
-    error::ApiError,
-    listeners::{Origin, Site},
+use crate::{
+    api::{
+        error::ApiError,
+        listeners::{Origin, Site},
+    },
+    app::crypto,
 };
 
 /// Header carrying the edge's shared secret; never reaches a handler.

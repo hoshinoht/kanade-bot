@@ -9,8 +9,8 @@ use twilight_model::channel::message::Embed;
 use twilight_model::channel::message::embed::{EmbedImage, EmbedThumbnail};
 use twilight_model::id::{Id, marker::UserMarker};
 
-use crate::bot::mentions;
-use crate::bot::transport::{MessageEdit, OutgoingMessage, Upload};
+use crate::discord::mentions;
+use crate::discord::transport::{MessageEdit, OutgoingMessage, Upload};
 use kanade_domain::guides::{GuideEmbed, RenderedSlot};
 
 fn embed(embed: &GuideEmbed) -> Embed {

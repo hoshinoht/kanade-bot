@@ -83,20 +83,22 @@ async fn distributed_guessing_never_locks_out_the_right_token() {
 #[tokio::test]
 async fn roster_events_persist_members_and_end_sessions() {
     use kanade::{
-        api::{
-            auth::roster::{on_guild_available, on_roster_update},
-            state::GuildAccess,
-        },
-        bot::{
-            commands::AccessPolicy,
-            events::{AdminRoles, RosterUpdate},
+        api::auth::roster::SessionHooks,
+        app::{
+            access::AccessPolicy,
+            guild::GuildAccess,
+            roster::{AdminRoles, RosterUpdate, on_guild_available, on_roster_update},
         },
     };
     use kanade_domain::members::{MemberProfile, MemberStore};
     use twilight_model::id::Id;
 
     let harness = Harness::new().await;
-    let auth = harness.site.auth.clone().unwrap();
+    let hooks = SessionHooks {
+        auth: harness.site.auth.clone().unwrap(),
+        member: None,
+        avatars: None,
+    };
     harness.guild.put(member(111, &[ADMIN_ROLE], false));
     let login = harness.discord_login(user(111, "Alice"), "%2F").await;
     let (name, value) = cookie(&login.cookie(wire::SESSION_COOKIE).unwrap());
@@ -116,7 +118,7 @@ async fn roster_events_persist_members_and_end_sessions() {
         is_guild_admin: false,
     };
     assert_eq!(
-        on_roster_update(&auth, None, &*harness.store, None, &seen)
+        on_roster_update(&hooks, &*harness.store, &seen)
             .await
             .unwrap(),
         0
@@ -140,7 +142,7 @@ async fn roster_events_persist_members_and_end_sessions() {
         user_id: "111".into(),
     };
     assert_eq!(
-        on_roster_update(&auth, None, &*harness.store, None, &left)
+        on_roster_update(&hooks, &*harness.store, &left)
             .await
             .unwrap(),
         1
@@ -165,7 +167,7 @@ async fn roster_events_persist_members_and_end_sessions() {
     );
     assert_eq!(
         on_guild_available(
-            &auth,
+            &hooks,
             &access,
             &*harness.store,
             Id::new(42),

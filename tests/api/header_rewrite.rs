@@ -2,7 +2,7 @@
 //! `202` at once from the delivery port, idempotent replay, and refusals
 //! while a run is active, without rewrites set up or offline.
 
-use kanade::bot::delivery::ManualStart;
+use kanade::app::ports::ManualStart;
 
 use crate::{
     reads::Reads,

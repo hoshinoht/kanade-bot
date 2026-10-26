@@ -8,7 +8,7 @@
 
 use crate::bot::delivery::{AdminAlert, AlertSink};
 use crate::bot::events::RsvpAnswer;
-use crate::bot::transport::DiscordTransport;
+use crate::discord::transport::DiscordTransport;
 use kanade_domain::drafts::{ProposalSource, ProposalStore};
 use kanade_domain::notify::DeliveryJournal;
 use kanade_domain::proposals::{ProposalCardStore, StoredCard};

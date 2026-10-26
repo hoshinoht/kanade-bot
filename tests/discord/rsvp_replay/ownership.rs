@@ -1,4 +1,4 @@
-use kanade::bot::transport::DiscordTransport;
+use kanade::discord::transport::DiscordTransport;
 use kanade::extract::pipeline::{ChatAnswer, Outbox};
 use kanade_domain::history::{Actor, ChangeHistory, Origin, Surface};
 use kanade_domain::schedule::{RsvpSource, RsvpState};

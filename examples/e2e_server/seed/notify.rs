@@ -4,9 +4,10 @@
 //! cards and this week's digest (mock `config::last_digest`).
 
 use chrono::{DateTime, Datelike, Duration, Utc};
-use kanade::bot::delivery::{
-    cards::{PhraseKind, seed_heading},
+use kanade::cards::{
+    PhraseKind,
     preview::{record_key, reminder_intent},
+    seed_heading,
 };
 use kanade_domain::{
     notify::{

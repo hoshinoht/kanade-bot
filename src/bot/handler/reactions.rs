@@ -9,17 +9,17 @@ use std::sync::Arc;
 
 use tokio::sync::{mpsc, oneshot, watch};
 
-use crate::api::auth::Clock;
-use crate::api::state::DeclineRetraction;
+use crate::app::clock::Clock;
+use crate::app::ids::id_text;
+use crate::app::ports::DeclineRetraction;
 use crate::bot::cards::{CardDesk, CardPress, CardReaction, Pressed, ReplayLive, ReplayReport};
 use crate::bot::commands::CardPresses;
 use crate::bot::delivery::AlertSink;
 use crate::bot::events::{ReactionRouter, ReactionSink, RsvpReaction};
 use crate::bot::gateway::ConnectionStatus;
-use crate::bot::ids::id_text;
 use crate::bot::rsvp_replay::RsvpReplay;
-use crate::bot::transport::DiscordTransport;
 use crate::chat::driver::{FollowUpCard, FollowUpRequest, RejectionFollowUp};
+use crate::discord::transport::DiscordTransport;
 use kanade_domain::drafts::ProposalStore;
 use kanade_domain::history::{BlameIndex, ChangeHistory};
 use kanade_domain::notify::{CardIndex, DeliveryJournal};

@@ -11,12 +11,9 @@
 use std::{path::Path, time::Duration};
 
 use kanade::{
-    bot::delivery::{
-        RunEstimate,
-        cards::{
-            HeaderContext, HeaderKind, HeadingRewrite, PhraseKind, Teasable, TrialOrigin,
-            fill_slots,
-        },
+    cards::{
+        HeaderContext, HeaderKind, HeadingRewrite, PhraseKind, Teasable, TrialOrigin,
+        estimates::RunEstimate, fill_slots,
     },
     chat::persona::NudgeMood,
     infrastructure::scouter::CarrierOwner,

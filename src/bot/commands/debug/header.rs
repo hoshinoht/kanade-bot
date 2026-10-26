@@ -8,9 +8,9 @@ use super::super::context::{CommandContext, HeaderRequest, HeaderTrialKind, Head
 use super::super::dispatch::CommandError;
 use super::super::invocation::Invocation;
 use super::super::options::Args;
+use crate::app::ids::id_text;
 use crate::bot::delivery::MAX_HEADER_TRIES;
-use crate::bot::ids::id_text;
-use crate::bot::transport::InteractionReply;
+use crate::discord::transport::InteractionReply;
 
 const DEFAULT_TRIES: u8 = 3;
 

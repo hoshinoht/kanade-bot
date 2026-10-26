@@ -3,7 +3,7 @@
 //! send, edited to the decision without buttons, and expired after 24 hours.
 
 use chrono::{NaiveTime, Weekday};
-use kanade::bot::transport::{Call, Op};
+use kanade::discord::transport::{Call, Op};
 use kanade::infrastructure::store::SqliteStore;
 use kanade_domain::history::Origin;
 use kanade_domain::ids::RandomIds;

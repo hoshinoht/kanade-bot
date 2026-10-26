@@ -32,11 +32,10 @@ use std::{future::Future, sync::Arc, time::Duration};
 use twilight_model::id::Id;
 
 use crate::{
-    api::{auth, server},
-    bot::{
-        gateway::{EventSource, shard},
-        guild_cache::GuildCache,
-    },
+    api::server,
+    app::clock,
+    bot::gateway::{EventSource, shard},
+    discord::guild_cache::GuildCache,
     infrastructure::store::SqliteStore,
     runtime::{
         backup::crypt::Recipients,
@@ -277,7 +276,7 @@ pub async fn serve_until(
     let wiring = Wiring {
         source: shard(token.expose().to_owned()),
         transport: Arc::new(LateTransport::new(token)),
-        clock: Arc::new(auth::system_now),
+        clock: Arc::new(clock::system_now),
         tick: config.tick,
         extraction: extract::Timing::default(),
     };
@@ -323,8 +322,13 @@ async fn serve_store<T: GatewayTransport>(
     let cache = Arc::new(GuildCache::new(Id::new(config.guild.guild_id)));
     let health = LiveHealth::new(store.clone());
     let mut composition = api::compose(config, store.clone(), cache.clone(), health).await?;
-    let character_data =
-        character_data::start(config, &store, &mut composition, Arc::new(auth::system_now)).await?;
+    let character_data = character_data::start(
+        config,
+        &store,
+        &mut composition,
+        Arc::new(clock::system_now),
+    )
+    .await?;
     let rest = match rest {
         Some((transport, every)) => {
             let started = discord::rest::RestGuild::start(
@@ -353,7 +357,7 @@ async fn serve_store<T: GatewayTransport>(
     let prune =
         sessions::SessionPrune::start(composition.admin.member.clone(), sessions::PRUNE_EVERY);
     let retention =
-        retention::Retention::start(store, Arc::new(auth::system_now), retention::EVERY);
+        retention::Retention::start(store, Arc::new(clock::system_now), retention::EVERY);
     let shutdown = async {
         shutdown.await;
         clock.start();

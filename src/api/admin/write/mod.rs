@@ -28,8 +28,9 @@ use axum::{
 use serde::de::DeserializeOwned;
 
 use super::context::roster;
-use crate::api::{
-    auth::AdminSession, error::ApiError, listeners::Site, state::ApiState, write::WriteContext,
+use crate::{
+    api::{auth::AdminSession, error::ApiError, listeners::Site, state::ApiState},
+    app::write::WriteContext,
 };
 use kanade_domain::{
     history::{ChangeRecord, Origin},

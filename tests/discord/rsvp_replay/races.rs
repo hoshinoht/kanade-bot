@@ -3,7 +3,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use kanade::bot::cards::ReplayLive;
-use kanade::bot::transport::Op;
+use kanade::discord::transport::Op;
 use kanade_domain::history::{Actor, Origin, Surface};
 use kanade_domain::schedule::RunStatus;
 use twilight_model::id::Id;

@@ -16,15 +16,15 @@ use std::sync::Arc;
 
 use twilight_model::application::command::{Command, CommandOptionChoice};
 
-use super::access::Gate;
 use super::build::{command, picked, subcommand};
 use super::context::{CommandContext, store_failed};
 use super::dispatch::{ChoicesFuture, CommandError, CommandFuture, SlashCommand, choice};
 use super::invocation::Invocation;
-use crate::bot::chardata::{DiscordPosts, copy};
-use crate::bot::ids::id_text;
-use crate::bot::transport::{DiscordTransport, InteractionReply};
+use crate::app::access::Gate;
+use crate::app::ids::id_text;
+use crate::discord::transport::{DiscordTransport, InteractionReply};
 use crate::infrastructure::character_data::{CharacterData, MemberCharacter};
+use crate::{bot::chardata::DiscordPosts, cards::chardata};
 use kanade_domain::characters::ign_key;
 use kanade_domain::chardata::LinkStatus;
 
@@ -176,7 +176,7 @@ impl<T> CharacterCommand<T> {
             .iter()
             .filter(|entry| entry.character.ign.to_ascii_lowercase().contains(&typed));
         let label = |entry: &MemberCharacter, state: &str| {
-            copy::pick_other(
+            chardata::pick_other(
                 &entry.character.ign,
                 entry.character.class.as_deref(),
                 state,
@@ -224,7 +224,7 @@ impl<T> CharacterCommand<T> {
                     out.push(choice(&label(entry, state), entry.character.id.clone()));
                 }
                 if !linked.is_empty() {
-                    out.push(choice("All", copy::ALL));
+                    out.push(choice("All", chardata::ALL));
                 }
             }
             Some("share") => {

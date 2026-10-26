@@ -1,6 +1,9 @@
 //! Guild owner and role permissions: computed Administrator on roster updates.
 
-use kanade::bot::events::{AdminRoles, BotEvent, RosterUpdate, Router};
+use kanade::{
+    app::roster::{AdminRoles, RosterUpdate},
+    bot::events::{BotEvent, Router},
+};
 
 use super::support::*;
 

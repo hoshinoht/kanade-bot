@@ -16,16 +16,16 @@ use twilight_model::id::Id;
 use twilight_model::id::marker::MessageMarker;
 
 use crate::{
-    api::{
-        admin::config::{ConfigDesk, SettingsChanged},
-        auth::Clock,
-        state::GuildAccess,
+    app::{
+        access::Invoker,
+        clock::Clock,
+        config::{ConfigDesk, SettingsChanged},
+        guild::GuildAccess,
     },
     bot::{
         chat_feed::{ChatFeed, DiscordSurface, StaffFn},
-        commands::{ChatAllowance, Invoker},
+        commands::ChatAllowance,
         delivery::FixedClock,
-        guild_cache::GuildCache,
         roster::LiveRoster,
     },
     chat::{
@@ -44,6 +44,7 @@ use crate::{
             read::{EventBoss, GuideError, StrategyGuides, render_guide},
         },
     },
+    discord::guild_cache::GuildCache,
     infrastructure::{
         files::KnowledgeDir,
         llm::{

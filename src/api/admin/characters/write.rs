@@ -25,8 +25,9 @@ use crate::{
         auth::AdminSession,
         dto::characters::{CharacterCreated, row},
         listeners::Site,
-        state::{ApiState, CharacterRoster},
+        state::ApiState,
     },
+    app::read::CharacterRoster,
     infrastructure::{
         character_data::AdminLinkOutcome,
         store::replays::{KeyedWrite, ReplayScope, StoredReplay},

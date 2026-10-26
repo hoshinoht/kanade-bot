@@ -6,19 +6,19 @@ use std::sync::Arc;
 
 use twilight_model::application::command::Command;
 
-use super::access::Gate;
 use super::build::{choices, command, flag};
 use super::context::{CommandContext, store_failed};
 use super::dispatch::{CommandError, CommandFuture, SlashCommand};
 use super::invocation::Invocation;
 use super::lookup::{materialised_weeks, on_run};
 use super::options::Args;
-use crate::bot::delivery::cards::redesign::{
+use crate::app::access::Gate;
+use crate::app::ids::id_text;
+use crate::cards::redesign::{
     NO_MARKS, ScheduleScope, ScheduleWeek, component_count, schedule_components, schedule_embed,
     text_chars, within_budget,
 };
-use crate::bot::ids::id_text;
-use crate::bot::transport::InteractionReply;
+use crate::discord::transport::InteractionReply;
 use kanade_domain::completion::RunEnds;
 use kanade_domain::members::MemberProfile;
 use kanade_domain::schedule::Run;

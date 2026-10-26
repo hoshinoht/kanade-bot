@@ -30,17 +30,17 @@ type ClaimResultHook = Arc<dyn Fn() -> Pin<Box<dyn Future<Output = ()> + Send>> 
 
 use super::alerts::{AdminAlert, AlertSink, AlertThrottle};
 use super::card_records;
-use super::cards::{CardContext, CardKit, resolve_heading};
-use super::estimates::attach_chart;
 use super::executor::{Executor, Replacement, SendFailure, SendOutcome, SendReport};
 use super::notices::NoticeReport;
 use super::owner_requests::OwnerRequestReport;
 use super::ports::{FixedClock, IdsRef};
-use super::render::{render, unrendered};
 use super::run_prompts::RunPromptReport;
-use crate::bot::{
-    gateway::{DeliveryEligibility, DeliveryOperation},
-    transport::{
+use crate::cards::estimates::attach_chart;
+use crate::cards::render::{render, unrendered};
+use crate::cards::{CardContext, CardKit, resolve_heading};
+use crate::{
+    bot::gateway::{DeliveryEligibility, DeliveryOperation},
+    discord::transport::{
         ChannelId, DiscordTransport, MessageEdit, MessageId, Outcome, OutgoingMessage,
         RejectionKind,
     },

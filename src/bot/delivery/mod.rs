@@ -6,10 +6,8 @@
 
 mod alerts;
 mod card_records;
-pub mod cards;
 pub mod debug;
 mod declines;
-mod estimates;
 mod executor;
 mod manual;
 mod notice_text;
@@ -17,21 +15,15 @@ mod notices;
 mod owner_requests;
 mod ports;
 mod pregen;
-pub mod preview;
 mod refresh;
-mod render;
 mod run_prompts;
 mod tick;
 
 pub use alerts::{ALERT_WINDOW, AdminAlert, AlertRecorder, AlertSink, AlertThrottle, LogAlerts};
 pub use debug::{DebugDesk, MAX_HEADER_TRIES, SAMPLE_RUN_ID, TEST_PREFIX};
 pub use declines::DeclineReport;
-pub use estimates::{
-    CHART_DEADLINE, CachedEstimates, EstimateFuture, IgnFuture, MAX_ATTACHMENTS, MAX_CHART_BYTES,
-    PartyEstimates, RunEstimate, attach_chart, chart_for, draw, header_context, read_estimates,
-};
 pub use executor::{Executor, Replacement, SendFailure, SendOutcome, SendReport};
-pub use manual::{ManualReport, ManualRequest, ManualRewrite, ManualStart};
+pub use manual::{ManualReport, ManualRewrite};
 pub use notice_text::render_notice;
 pub use notices::{NoticeReport, NoticeSend};
 pub use owner_requests::{OWNER_REQUEST_EFFECT, OwnerRequestReport, decided_text, request_text};
@@ -42,7 +34,6 @@ pub use pregen::{
 };
 pub(crate) use refresh::edit_lock;
 pub use refresh::{CardRefresh, MAX_PENDING_RUNS, Now, RefreshQueue};
-pub use render::render;
 pub use run_prompts::{
     DIDNT_HAPPEN, DONE, NOT_YET, RUN_PROMPT_EFFECT, RunPromptReport, outcome_components,
     outcome_text, prompt_components,

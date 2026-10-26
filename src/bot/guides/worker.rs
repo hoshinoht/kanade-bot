@@ -10,7 +10,7 @@ use tokio::sync::watch;
 
 use super::Publisher;
 use super::execute::Run;
-use crate::bot::transport::DiscordTransport;
+use crate::discord::transport::DiscordTransport;
 use kanade_domain::guides::{
     Blocked, Guide, GuideStore, Inspection, OpKind, PlanOp, Publish, PublishKind, PublishState,
     PublishedSlot, RenderedSlot, StopReason, plan, plan_unpublish, render,

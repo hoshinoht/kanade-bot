@@ -2,7 +2,8 @@
 //! staying out of logs and responses.
 
 use kanade::{
-    api::auth::{audit::AuditEvent, crypto, wire},
+    api::auth::{audit::AuditEvent, wire},
+    app::crypto,
     infrastructure::store::web_sessions::{LoginMethod, WebSessionStore},
 };
 

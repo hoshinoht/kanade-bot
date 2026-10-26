@@ -10,10 +10,10 @@ use std::sync::{Arc, RwLock};
 
 use chrono::TimeDelta;
 use kanade::bot::commands::{DebugCards, TestKind, TestPosted};
-use kanade::bot::delivery::cards::CardKit;
 use kanade::bot::delivery::{AlertThrottle, CardRefresh, DebugDesk, SendOutcome, TEST_PREFIX};
 use kanade::bot::events::{ReactionRouter, RsvpAnswer, RsvpReaction};
-use kanade::bot::transport::{Call, FakeDiscord, Op, Outcome, RejectionKind, Step};
+use kanade::cards::CardKit;
+use kanade::discord::transport::{Call, FakeDiscord, Op, Outcome, RejectionKind, Step};
 use kanade::infrastructure::store::SqliteStore;
 use kanade_domain::ids::{RandomIds, short_id};
 use kanade_domain::notify::{DebugCardStore, DeliveryJournal};

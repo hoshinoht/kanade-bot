@@ -5,8 +5,8 @@ use std::collections::BTreeSet;
 use serde_json::json;
 use twilight_model::id::{Id, marker::UserMarker};
 
-use kanade::bot::ids::parse_id;
-use kanade::bot::mentions;
+use kanade::app::ids::parse_id;
+use kanade::discord::mentions;
 use kanade_domain::notify::AllowedMentions as Policy;
 
 /// Hostile and malformed entries mixed into generated lists.

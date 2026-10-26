@@ -6,7 +6,7 @@ use std::{future::Future, pin::Pin, sync::Arc};
 
 use twilight_model::id::{Id, marker::UserMarker};
 
-use crate::bot::commands::{AccessPolicy, Invoker};
+use crate::app::access::{AccessPolicy, Invoker};
 
 pub type GateFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 
@@ -46,11 +46,11 @@ impl GuildStaffGate {
 /// roles and computed Administrator) and the owner the gateway reported.
 pub struct StoreGuildMembers<S> {
     store: S,
-    access: Arc<crate::api::state::GuildAccess>,
+    access: Arc<crate::app::guild::GuildAccess>,
 }
 
 impl<S> StoreGuildMembers<S> {
-    pub fn new(store: S, access: Arc<crate::api::state::GuildAccess>) -> Self {
+    pub fn new(store: S, access: Arc<crate::app::guild::GuildAccess>) -> Self {
         Self { store, access }
     }
 }
@@ -66,7 +66,7 @@ impl<S: kanade_domain::members::MemberStore + Send + Sync> GuildMembers for Stor
             // Departures clear the stored roles, so a former admin no longer qualifies.
             Ok(profile
                 .as_ref()
-                .and_then(crate::api::state::GuildAccess::invoker))
+                .and_then(crate::app::guild::GuildAccess::invoker))
         })
     }
 

@@ -313,7 +313,7 @@ async fn timing_picker_lists_the_invokers_timings() {
 /// over Discord's 2,000, so the deferred reply was never completed.
 #[tokio::test]
 async fn a_long_list_is_split_into_follow_ups_at_line_boundaries() {
-    use kanade::bot::transport::Call;
+    use kanade::discord::transport::Call;
     use kanade_domain::attendance::AttendanceDefault;
     use kanade_domain::schedule::{Change, FixedRun};
 

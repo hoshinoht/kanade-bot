@@ -25,7 +25,7 @@ use super::alerts::{AdminAlert, AlertSink};
 use super::executor::{SendOutcome, SendReport};
 use super::notice_text::render_notice;
 use super::tick::{Delivery, DeliveryError, TickLease, settle};
-use crate::bot::transport::DiscordTransport;
+use crate::discord::transport::DiscordTransport;
 use kanade_domain::drafts::ProposalStore;
 use kanade_domain::history::Checkpoints;
 use kanade_domain::notify::{

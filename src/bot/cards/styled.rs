@@ -8,12 +8,10 @@ use std::collections::BTreeMap;
 use chrono::{DateTime, Utc};
 use chrono_tz::Tz;
 
-use super::format::{Audience, card_kind, kind_verb, weekday_name, when_text};
-use crate::bot::commands::text::{local_day, local_time};
-use crate::bot::delivery::cards::CardField;
-use crate::bot::delivery::cards::redesign::{
-    DifficultyMarks, SETTLED_GREEN, boss_labels, full_time, subtext,
-};
+use crate::cards::CardField;
+use crate::cards::format::{Audience, card_kind, kind_verb, weekday_name, when_text};
+use crate::cards::redesign::{DifficultyMarks, SETTLED_GREEN, boss_labels, full_time, subtext};
+use crate::cards::text::{local_day, local_time};
 use kanade_domain::catalog::BossTable;
 use kanade_domain::ids::tag;
 use kanade_domain::proposals::{CardDetails, ChangeKind};

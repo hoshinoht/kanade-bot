@@ -14,18 +14,18 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use chrono::{DateTime, NaiveTime, TimeZone, Utc, Weekday};
-use kanade::api::state::ProposalCardRefresh;
+use kanade::app::ports::ProposalCardRefresh;
 use kanade::bot::cards::CardOutbox;
 use kanade::bot::cards::{Authority, CardDesk, CardReaction, CardSettings, DeskDeps};
 use kanade::bot::delivery::AdminAlert;
 use kanade::bot::delivery::{AlertRecorder, FixedClock};
 use kanade::bot::events::RsvpAnswer;
-use kanade::bot::transport::{
+use kanade::chat::persona::NudgePurpose;
+use kanade::discord::transport::{
     AmbiguousKind, Call, ChannelId, DiscordTransport, FakeDiscord, InteractionRef,
     InteractionReply, MessageEdit, MessageId, Op, Outcome, OutgoingMessage, Presence,
     RejectionKind, Step,
 };
-use kanade::chat::persona::NudgePurpose;
 use kanade::extract::AmendmentKind;
 use kanade::extract::pipeline::{
     BacklogDrop, Card, CardEntry, ChatAnswer, Outbox, PostResult, Redirected, SelfServiceTip,
@@ -1058,7 +1058,7 @@ impl DiscordTransport for LeaseLost {
     fn channel_messages(
         &self,
         channel: ChannelId,
-        page: kanade::bot::transport::HistoryPage,
+        page: kanade::discord::transport::HistoryPage,
         limit: u16,
     ) -> impl std::future::Future<Output = Outcome<Vec<twilight_model::channel::Message>>> + Send
     {

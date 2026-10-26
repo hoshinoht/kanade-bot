@@ -11,10 +11,10 @@ use twilight_model::channel::Message;
 use twilight_model::channel::message::Component;
 use twilight_model::id::{Id, marker::UserMarker};
 
-use super::copy;
-use crate::bot::ids::{id_text, parse_id};
-use crate::bot::mentions;
-use crate::bot::transport::{
+use crate::app::ids::{id_text, parse_id};
+use crate::cards::chardata;
+use crate::discord::mentions;
+use crate::discord::transport::{
     DiscordTransport, HistoryPage, MessageEdit, Outcome, OutgoingMessage, RejectionKind,
 };
 use crate::infrastructure::character_data::{DeskFuture, Located, PostDesk, Stripped};
@@ -95,7 +95,7 @@ impl<T: DiscordTransport> DiscordPosts<T> {
         let (Some(channel), Some(me)) = (parse_id(channel_id), (self.self_id)()) else {
             return Located::Unreadable;
         };
-        let footer = copy::share_footer(reference);
+        let footer = chardata::share_footer(reference);
         match self
             .transport
             .channel_messages(channel, HistoryPage::Latest, SEARCH_DEPTH)
@@ -115,7 +115,7 @@ impl<T: DiscordTransport> DiscordPosts<T> {
         let (Some(channel), Some(message)) = (parse_id(channel_id), parse_id(message_id)) else {
             return Stripped::Stuck;
         };
-        let edit = MessageEdit::v2(copy::stub(), mentions::none());
+        let edit = MessageEdit::v2(chardata::stub(), mentions::none());
         match self.transport.edit_message(channel, message, &edit).await {
             Outcome::Delivered(()) => Stripped::Done,
             Outcome::DefinitelyRejected(

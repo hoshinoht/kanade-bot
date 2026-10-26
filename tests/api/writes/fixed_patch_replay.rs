@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use chrono::{NaiveTime, TimeZone, Utc};
-use kanade::api::write::FixedPatchLookupGate;
+use kanade::app::write::FixedPatchLookupGate;
 use kanade_domain::{
     history::{Actor, Origin, Surface},
     members::Roster,

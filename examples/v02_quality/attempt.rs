@@ -16,10 +16,8 @@ use std::{
 
 use chrono::{DateTime, Utc};
 use kanade::{
-    bot::{
-        gateway::{EventSource, GatewayError},
-        transport::{FakeDiscord, Op},
-    },
+    bot::gateway::{EventSource, GatewayError},
+    discord::transport::{FakeDiscord, Op},
     infrastructure::{llm::setup::ModelStack, store::SqliteStore},
     runtime::{
         config::ServeConfig,

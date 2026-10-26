@@ -8,7 +8,7 @@ use std::{
 use chrono::{NaiveTime, Weekday};
 
 use super::*;
-use crate::api::state::StaticChannels;
+use crate::app::guild::StaticChannels;
 use kanade_domain::settings::{IdList, Section, SettingsStore, keys, save_section};
 
 /// A scratch root that is also the secrets directory.
@@ -636,7 +636,10 @@ async fn get(
 async fn compose_for_tests_serves_on_the_injected_clock_and_a_fake_discord() {
     use chrono::TimeZone;
 
-    use crate::api::{auth::fake::FakeDiscord, listeners, write::ApiClock};
+    use crate::{
+        api::{auth::fake::FakeDiscord, listeners},
+        app::write::ApiClock,
+    };
     use kanade_domain::{
         history::{Actor, Origin, Surface},
         ids::RandomIds,
@@ -792,7 +795,7 @@ async fn compose_for_tests_points_character_data_at_a_loopback_nexon() {
         &config,
         store.clone(),
         api::Overrides {
-            clock: Arc::new(auth::system_now),
+            clock: Arc::new(clock::system_now),
             discord: None,
             authorize_url: None,
             model_limits: None,

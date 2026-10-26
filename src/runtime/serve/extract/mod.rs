@@ -28,9 +28,9 @@ use tokio::sync::{mpsc, watch};
 use tokio::task::JoinHandle;
 
 use crate::{
-    api::{
-        admin::config::SettingsChanged,
-        auth::Clock,
+    app::{
+        clock::Clock,
+        config::SettingsChanged,
         rescan::{RescanRunner, RescanService},
         write::ApiClock,
     },
@@ -38,9 +38,9 @@ use crate::{
         cards::{CardDesk, CardOutbox},
         delivery::LogAlerts,
         extract_feed::{DiscordHistory, Feed, MessageFeed},
-        guild_cache::GuildCache,
         roster::LiveRoster,
     },
+    discord::guild_cache::GuildCache,
     extract::{
         pipeline::{
             CallContext, DEFAULT_DEBOUNCE, DEFAULT_DRAIN_INTERVAL, Deps, Extractor, Pipeline,

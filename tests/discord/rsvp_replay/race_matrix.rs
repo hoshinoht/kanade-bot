@@ -1,5 +1,5 @@
 use kanade::bot::rsvp_replay::ReplayReport;
-use kanade::bot::transport::{Hold, Op};
+use kanade::discord::transport::{Hold, Op};
 use kanade_domain::history::{Actor, Origin, Surface};
 use kanade_domain::schedule::{RsvpSource, RsvpState, RunStatus, StatusChange};
 use kanade_domain::scheduler::{ScheduleStore, Scope};

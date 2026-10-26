@@ -47,7 +47,9 @@ async fn row_25_old_mapped_card_is_still_read_for_guarded_removal() {
     assert_eq!((report.messages, report.applied), (2, 1));
     assert!(world.snapshot(&run).await.rsvps.is_empty());
     assert_eq!(
-        world.fake.count(kanade::bot::transport::Op::ReactionUsers),
+        world
+            .fake
+            .count(kanade::discord::transport::Op::ReactionUsers),
         8
     );
 }

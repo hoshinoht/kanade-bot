@@ -19,7 +19,7 @@ use axum::{
 };
 use chrono::TimeDelta;
 use kanade::{
-    bot::chardata::copy::notice_text,
+    cards::chardata::notice_text,
     infrastructure::{character_data::CharacterData, scouter::JobState, store::SqliteCharData},
 };
 use kanade_domain::{

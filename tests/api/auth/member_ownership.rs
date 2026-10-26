@@ -701,7 +701,7 @@ async fn a_stranger_cannot_finish_an_ask_whose_requester_already_owns_it() {
 /// or party change overtook is refused and nothing is written.
 #[tokio::test]
 async fn the_writer_refuses_an_owner_change_an_admin_overtook() {
-    use kanade::api::write::WriteContext;
+    use kanade::app::write::WriteContext;
     use kanade_domain::{
         members::Roster,
         ownership::{OwnerPin, OwnershipRefusal},
@@ -788,7 +788,7 @@ async fn the_writer_refuses_an_owner_change_an_admin_overtook() {
 /// lost its follow-up steps.
 struct Backstage {
     state: std::sync::Arc<kanade::api::state::ApiState>,
-    ctx: kanade::api::write::WriteContext,
+    ctx: kanade::app::write::WriteContext,
 }
 
 impl Backstage {
@@ -799,7 +799,7 @@ impl Backstage {
         for profile in state.store.members().await.unwrap() {
             directory.upsert(profile.member);
         }
-        let ctx = kanade::api::write::WriteContext {
+        let ctx = kanade::app::write::WriteContext {
             policy: state.policy.clone(),
             directory,
         };
@@ -950,7 +950,7 @@ async fn a_discord_staff_accept_is_not_finished_as_staff_on_the_portal() {
 /// answers the request as it now is.
 #[tokio::test]
 async fn an_accept_racing_a_withdraw_still_reports_the_new_owner() {
-    use kanade::api::ownership::after_accept_pin;
+    use kanade::app::ownership::after_accept_pin;
     use kanade_domain::ownership::{OwnerRequestStatus, OwnerRequestStore};
     let portal = Portal::new().await;
     let [aki, ben, cho] = portal.harness.sign_ins([AKI, BEN, CHO]).await;

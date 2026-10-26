@@ -11,8 +11,8 @@ use std::sync::Arc;
 
 use chrono::{DateTime, TimeDelta, TimeZone, Utc};
 use chrono_tz::Tz;
-use kanade::bot::delivery::cards::CardContext;
-use kanade::bot::delivery::cards::redesign::{DifficultyMarks, NO_MARKS};
+use kanade::cards::CardContext;
+use kanade::cards::redesign::{DifficultyMarks, NO_MARKS};
 use kanade_domain::art::{ArtFile, ArtSource};
 use kanade_domain::catalog::BossTable;
 use kanade_domain::guides::ArtKind;

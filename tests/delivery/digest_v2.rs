@@ -8,9 +8,9 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use chrono::TimeDelta;
-use kanade::bot::delivery::cards::CardKit;
-use kanade::bot::delivery::cards::redesign::{MY_RUNS, OPEN_PORTAL};
-use kanade::bot::transport::{Call, FakeDiscord, MessageId, Op, Outcome, RejectionKind};
+use kanade::cards::CardKit;
+use kanade::cards::redesign::{MY_RUNS, OPEN_PORTAL};
+use kanade::discord::transport::{Call, FakeDiscord, MessageId, Op, Outcome, RejectionKind};
 use kanade::infrastructure::store::SqliteStore;
 use kanade_domain::schedule::RunStatus;
 use twilight_model::channel::message::Component;

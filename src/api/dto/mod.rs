@@ -225,7 +225,7 @@ pub struct RoleRow {
     pub color: Option<String>,
 }
 
-pub fn roles(roles: &[crate::api::state::RoleEntry]) -> Vec<RoleRow> {
+pub fn roles(roles: &[crate::app::guild::RoleEntry]) -> Vec<RoleRow> {
     roles
         .iter()
         .map(|role| RoleRow {

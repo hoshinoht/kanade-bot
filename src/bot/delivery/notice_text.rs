@@ -12,11 +12,11 @@ use std::collections::BTreeMap;
 
 use chrono_tz::Tz;
 
-use super::cards::CardKit;
-use super::cards::redesign::{self, NoticeLook};
-use crate::bot::cards::format::Audience;
-use crate::bot::mentions;
-use crate::bot::transport::OutgoingMessage;
+use crate::cards::CardKit;
+use crate::cards::format::Audience;
+use crate::cards::redesign::{self, NoticeLook};
+use crate::discord::mentions;
+use crate::discord::transport::OutgoingMessage;
 use kanade_domain::members::Directory;
 use kanade_domain::notify::{NotificationIntent, PingKind, display_names, resolve_mentions};
 use kanade_domain::schedule::{Notice, ScheduleSnapshot};

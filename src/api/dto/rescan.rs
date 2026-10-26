@@ -12,7 +12,7 @@ use serde::Serialize;
 use serde_json::Value;
 
 use super::iso_instant;
-use crate::api::rescan::RescanView;
+use crate::app::rescan::RescanView;
 use kanade_domain::model_log::RescanStatus;
 
 pub const CHANNEL_FAILED: &str = "This channel could not be read.";

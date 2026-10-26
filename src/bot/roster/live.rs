@@ -5,8 +5,8 @@ use std::sync::{Arc, OnceLock, PoisonError, RwLock};
 
 use tokio::sync::watch;
 
-use crate::bot::guild_cache::GuildCache;
-use crate::bot::ids::parse_id;
+use crate::app::ids::parse_id;
+use crate::discord::guild_cache::GuildCache;
 use kanade_domain::members::{Directory, Member, MemberProfile};
 
 /// A snapshot of the `members` table plus the guild cache's watch list.

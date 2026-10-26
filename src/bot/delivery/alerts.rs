@@ -5,7 +5,7 @@ use std::sync::{Mutex, PoisonError};
 
 use chrono::{DateTime, TimeDelta, Utc};
 
-use crate::bot::transport::RejectionKind;
+use crate::discord::transport::RejectionKind;
 use kanade_domain::notify::{AttemptId, EffectKind};
 
 /// Identical alerts (same [`AdminAlert::key`]) pass at most once per window.

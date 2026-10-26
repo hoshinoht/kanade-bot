@@ -4,11 +4,11 @@
 use chrono::{DateTime, Utc};
 use twilight_model::application::command::CommandOptionChoice;
 
-use super::access::Invoker;
 use super::context::{CommandContext, store_failed};
 use super::dispatch::{CommandError, MAX_CHOICES, choice};
-use super::text::{format_bosses, hhmm, local_day, local_time, weekday_name};
-use crate::bot::ids::id_text;
+use crate::app::access::Invoker;
+use crate::app::ids::id_text;
+use crate::cards::text::{format_bosses, hhmm, local_day, local_time, weekday_name};
 use kanade_domain::ids::{IdError, resolve_id, short_id};
 use kanade_domain::schedule::{
     FixedRun, Run, RunStatus, ScheduleError, ScheduleSnapshot, utc_instant,

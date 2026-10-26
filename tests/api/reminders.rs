@@ -6,10 +6,7 @@
 use std::collections::BTreeSet;
 
 use chrono::{DateTime, TimeZone, Utc};
-use kanade::bot::delivery::{
-    cards::{CardContext, redesign::NO_MARKS},
-    render,
-};
+use kanade::cards::{CardContext, redesign::NO_MARKS, render::render};
 use kanade_domain::{
     history::ChangeHistory,
     notify::{
@@ -39,7 +36,10 @@ async fn tick_post(
     reminder_id: &str,
     at: DateTime<Utc>,
     heading: Option<&str>,
-) -> (NotificationIntent, kanade::bot::transport::OutgoingMessage) {
+) -> (
+    NotificationIntent,
+    kanade::discord::transport::OutgoingMessage,
+) {
     let mut schedule = reads.store.load(&Scope::All).await.unwrap();
     // As at its fire time: not yet posted.
     for row in &mut schedule.reminders {
@@ -81,7 +81,7 @@ async fn tick_post(
     (intent, message)
 }
 
-fn assert_same(card: &Value, message: &kanade::bot::transport::OutgoingMessage) {
+fn assert_same(card: &Value, message: &kanade::discord::transport::OutgoingMessage) {
     let embed = &message.embeds[0];
     assert_eq!(card["content"], message.content.clone().unwrap());
     assert_eq!(

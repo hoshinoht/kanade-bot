@@ -11,7 +11,7 @@ use crate::{
         dto::setup::{PrivilegedIntent, SecretCheck, SecretCheckResult as Result, SecretName},
         state::{RestartPort, SecretChecks, SecretDesk},
     },
-    bot::transport::{DiscordTransport, Outcome, TransportConfig, TwilightTransport},
+    discord::transport::{DiscordTransport, Outcome, TransportConfig, TwilightTransport},
     infrastructure::llm::setup::{KeyCheck, check_key},
     runtime::{config::ServeConfig, error::Error},
 };

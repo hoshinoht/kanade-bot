@@ -31,16 +31,19 @@ use super::{
     },
     write::record,
 };
-use crate::api::{
-    admin::{
-        context::weeks,
-        write::{Body, Refusal, state},
+use crate::{
+    api::{
+        admin::{
+            context::weeks,
+            write::{Body, Refusal, state},
+        },
+        auth::AdminSession,
+        dto::characters::{RunCharacterSlot, TimingCharacters, slot},
+        error::ApiError,
+        listeners::Site,
+        state::ApiState,
     },
-    auth::AdminSession,
-    dto::characters::{RunCharacterSlot, TimingCharacters, slot},
-    error::ApiError,
-    listeners::Site,
-    state::{ApiState, CharacterRoster},
+    app::read::CharacterRoster,
 };
 use kanade_domain::{
     catalog::BossTable,

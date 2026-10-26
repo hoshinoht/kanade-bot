@@ -6,10 +6,7 @@
 use serde_json::{Map, Value, json};
 
 use super::models::LocalContextWarning;
-use crate::{
-    chat::persona::PersonaSnapshot,
-    infrastructure::llm::setup::{RoleSwap, RunningRole},
-};
+use crate::chat::persona::PersonaSnapshot;
 use kanade_domain::settings::{LOCAL_CONTEXT_WARNING, RuntimeSettings, diff_rows};
 
 /// `{key: {"from", "to"}}` for every stored row that differs.
@@ -56,33 +53,6 @@ pub(super) fn local_context_warnings(warnings: &[LocalContextWarning]) {
             surface = "admin_portal",
         );
     }
-}
-
-fn running(running: Option<&RunningRole>) -> Value {
-    running.map_or(Value::Null, |running| {
-        json!({
-            "alias": running.alias,
-            "effort": running.effort.map(|effort| effort.as_str()),
-        })
-    })
-}
-
-/// One line per role whose running alias or effort changed; the next
-/// session of that role opens with `to`.
-pub(super) fn models_applied(swaps: &[RoleSwap]) {
-    for swap in swaps {
-        kanade_log::log!(
-            info,
-            "model_role_switched",
-            role = swap.role.as_str(),
-            from = running(swap.before.as_ref()),
-            to = running(swap.after.as_ref()),
-        );
-    }
-}
-
-pub(super) fn models_apply_failed(error: &str) {
-    kanade_log::log!(warn, "model_roles_not_applied", error);
 }
 
 fn profile_count(snapshot: &PersonaSnapshot) -> usize {

@@ -26,19 +26,16 @@ use super::{
     tests::Temp,
 };
 use crate::{
-    api::{
-        auth::{
-            self,
-            staff::{GuildStaffGate, StaffCheck, StaffGate, StoreGuildMembers},
-        },
-        state::GuildAccess,
-    },
+    api::auth::staff::{GuildStaffGate, StaffCheck, StaffGate, StoreGuildMembers},
+    app::{clock, guild::GuildAccess},
     bot::{
         cards::{Authority, CardDesk, CardSettings, DeskDeps},
         delivery::{FixedClock, LogAlerts},
         gateway::{Connection, ConnectionStatus, DeliveryEligibility, EventSource, GatewayError},
-        guild_cache::GuildCache,
         roster::LiveRoster,
+    },
+    discord::{
+        guild_cache::GuildCache,
         transport::{Call, FakeDiscord, Op, RejectionKind, Step},
     },
     extract::{
@@ -332,10 +329,10 @@ impl Harness {
     }
 
     async fn start(&self) -> (Discord, Ctx) {
-        self.start_with_clock(Arc::new(auth::system_now)).await
+        self.start_with_clock(Arc::new(clock::system_now)).await
     }
 
-    async fn start_with_clock(&self, clock: auth::Clock) -> (Discord, Ctx) {
+    async fn start_with_clock(&self, clock: clock::Clock) -> (Discord, Ctx) {
         let store = store::open(&self.config.store).await.unwrap();
         let prepared = discord::prepare(&self.config, TICK);
         let connection = prepared.probe.connection.clone();
@@ -386,7 +383,7 @@ impl Harness {
                 } if to.get() == channel => Some((
                     message.content.unwrap_or_default(),
                     match outcome {
-                        crate::bot::transport::Outcome::Delivered(id) => Some(id.get()),
+                        crate::discord::transport::Outcome::Delivered(id) => Some(id.get()),
                         _ => None,
                     },
                 )),
@@ -791,7 +788,7 @@ fn cache_with_test_channel() -> Arc<GuildCache> {
 async fn first_tick_waits_for_roster_reconciliation_before_sending() {
     let harness = Harness::new();
     let policy = policy(&harness);
-    let now = auth::system_now();
+    let now = clock::system_now();
     let store = store::open(&harness.config.store).await.unwrap();
     let start = now + chrono::Duration::seconds(59 * 60 + 30);
     let run = create_run(&store, &policy, now, HOME_C, start).await;
@@ -843,7 +840,7 @@ async fn first_tick_waits_for_roster_reconciliation_before_sending() {
 async fn stop_interrupts_a_tick_waiting_for_reconciliation() {
     let harness = Harness::new();
     let policy = policy(&harness);
-    let now = auth::system_now();
+    let now = clock::system_now();
     let store = store::open(&harness.config.store).await.unwrap();
     super::tick::recover(&store, now).await.unwrap();
 
@@ -877,7 +874,7 @@ async fn the_tick_sends_due_work_once_and_never_resends_an_interrupted_send() {
         .fake
         .script(Op::ListMembers, Step::Reject(RejectionKind::MissingAccess));
     let policy = policy(&harness);
-    let now = auth::system_now();
+    let now = clock::system_now();
     let mut due_run = String::new();
     harness
         .seed(async |store| {
@@ -934,7 +931,7 @@ async fn the_tick_sends_due_work_once_and_never_resends_an_interrupted_send() {
         })
         .await;
 
-    let pill = crate::bot::transport::ApplicationEmoji {
+    let pill = crate::discord::transport::ApplicationEmoji {
         id: Id::new(7),
         name: "diff_h".into(),
         animated: false,
@@ -952,7 +949,7 @@ async fn the_tick_sends_due_work_once_and_never_resends_an_interrupted_send() {
         // could send: nothing is left in flight to recover now.
         let again = ctx
             .store
-            .recover_on_start(auth::system_now())
+            .recover_on_start(clock::system_now())
             .await
             .unwrap();
         assert!(again.indeterminate.is_empty() && again.orphaned_leases == 0);
@@ -960,7 +957,7 @@ async fn the_tick_sends_due_work_once_and_never_resends_an_interrupted_send() {
         assert_eq!(
             harness.fake.calls(),
             [Call::ApplicationEmojis {
-                outcome: crate::bot::transport::Outcome::Delivered(vec![pill]),
+                outcome: crate::discord::transport::Outcome::Delivered(vec![pill]),
             }],
             "nothing but the startup emoji list before the gateway is ready"
         );
@@ -1046,7 +1043,7 @@ async fn a_check_on_a_proposal_card_is_approved_through_the_desk_not_via_portal(
     let policy = policy(&harness);
     let (mut discord, ctx) = harness.start().await;
     drive(&mut discord, async {
-        let now = auth::system_now();
+        let now = clock::system_now();
         let at = now + chrono::Duration::hours(30);
         let run = create_run(&ctx.store, &policy, now, HOME_C, at).await;
         let mut roster = Roster::new();
@@ -1207,7 +1204,7 @@ async fn a_disallowed_intents_close_keeps_serving_http_without_reconnecting() {
     let wiring = Wiring {
         source,
         transport: Arc::clone(&harness.fake),
-        clock: Arc::new(auth::system_now),
+        clock: Arc::new(clock::system_now),
         tick: TICK,
         extraction: extract::Timing::default(),
     };
@@ -1233,7 +1230,7 @@ async fn serve_prunes_model_logs_past_retention_and_stops_the_task_on_shutdown()
     use kanade_domain::model_log::ModelLogStore;
 
     let harness = Harness::new();
-    let now = auth::system_now() + chrono::TimeDelta::days(400);
+    let now = clock::system_now() + chrono::TimeDelta::days(400);
     harness
         .seed(async |store| {
             for (id, days) in [("x-old", 91), ("x-recent", 89)] {

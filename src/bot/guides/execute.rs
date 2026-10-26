@@ -11,9 +11,9 @@ use uuid::Uuid;
 use super::inspect::deadline;
 use super::reconcile::Found;
 use super::{CALL_DEADLINE, GUIDE_PUBLISH_OPERATION, Publisher, payload};
+use crate::app::ids::{id_text, parse_id};
 use crate::bot::delivery::{Executor, LogAlerts, SendOutcome};
-use crate::bot::ids::{id_text, parse_id};
-use crate::bot::transport::{
+use crate::discord::transport::{
     ChannelId, DiscordTransport, Outcome, Presence, RejectionKind, SILENT,
 };
 use kanade_domain::guides::{

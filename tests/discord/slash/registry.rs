@@ -3,7 +3,7 @@
 use serde_json::{Value, json};
 
 use kanade::bot::commands::Disposition;
-use kanade::bot::transport::{Call, DiscordTransport, Outcome};
+use kanade::discord::transport::{Call, DiscordTransport, Outcome};
 use kanade_domain::history::ChangeHistory;
 
 use super::super::support::{ADMIN_ROLE, BOSSING_ROLE, guild};

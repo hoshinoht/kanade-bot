@@ -18,15 +18,18 @@ use axum::{
 };
 
 use super::{context::state, write::Body};
-use crate::api::{
-    auth::{AdminSession, crypto, wire},
-    dto::{
-        events::Topic,
-        presence::{CheckIn, PresenceHere, PresenceList},
+use crate::{
+    api::{
+        auth::{AdminSession, wire},
+        dto::{
+            events::Topic,
+            presence::{CheckIn, PresenceHere, PresenceList},
+        },
+        error::ApiError,
+        listeners::Site,
+        presence::{CHECK_IN, LIFETIME, Place, Visitor},
     },
-    error::ApiError,
-    listeners::Site,
-    presence::{CHECK_IN, LIFETIME, Place, Visitor},
+    app::crypto,
 };
 
 pub fn routes() -> Router<Arc<Site>> {

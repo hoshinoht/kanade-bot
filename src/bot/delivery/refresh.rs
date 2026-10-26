@@ -19,17 +19,18 @@ use chrono::{DateTime, Utc};
 use tokio::sync::{Mutex as AsyncMutex, Notify, watch};
 
 use super::card_records;
-use super::cards::redesign::learn_after_refusal;
-use super::cards::{self, CardArt, CardContext, CardKit, fetch_art};
 use super::debug::{TEST_PREFIX, test_mentions};
-use crate::bot::ids::parse_id;
-use crate::bot::transport::DiscordTransport;
-use kanade_domain::attendance::{countdown_mentions, morning_mentions};
+use crate::app::ids::parse_id;
+use crate::cards::redesign::learn_after_refusal;
+use crate::cards::{
+    self, CardArt, CardContext, CardKit, fetch_art,
+    preview::{posted_content, posted_mentions},
+};
+use crate::discord::transport::DiscordTransport;
 use kanade_domain::members::Directory;
 use kanade_domain::notify::{
-    DAY_OF_KIND, DeliveryJournal, DigestPhraseStore, IntentContent, PingKind, PostedCard,
-    ReminderCardStore, WeeklyDigest, countdown_minutes, digest_inclusion, everyone_on,
-    resolve_mentions,
+    DeliveryJournal, DigestPhraseStore, IntentContent, PostedCard, ReminderCardStore, WeeklyDigest,
+    digest_inclusion,
 };
 use kanade_domain::schedule::{SchedulePolicy, ScheduleSnapshot};
 use kanade_domain::scheduler::{ScheduleStore, Scope};
@@ -344,48 +345,5 @@ where
             .edit_message(channel, message, &edit)
             .await
             .is_delivered()
-    }
-}
-
-/// What a posted card shows: its record's kind over the runs it was posted
-/// for (its card→run rows), never the runs' current grouping.
-pub fn posted_content(posted: &PostedCard) -> Option<IntentContent> {
-    if posted.record.kind == DAY_OF_KIND {
-        return Some(IntentContent::DayOf {
-            run_ids: posted.run_ids.clone(),
-        });
-    }
-    Some(IntentContent::Countdown {
-        run_id: posted.run_ids.first()?.clone(),
-        minutes: countdown_minutes(&posted.record.kind)?,
-    })
-}
-
-/// Who the card names as a mention, planned as dispatch plans it, so an
-/// edit reads like a fresh post (it notifies nobody either way).
-pub fn posted_mentions(ctx: &CardContext<'_>, content: &IntentContent) -> Vec<String> {
-    if ctx.quiet {
-        return Vec::new();
-    }
-    let members: &dyn Directory = ctx.members;
-    match content {
-        IntentContent::DayOf { run_ids } => {
-            let runs = cards::card_runs(ctx, run_ids);
-            let unknown: Vec<Vec<String>> = runs
-                .iter()
-                .map(|run| morning_mentions(&ctx.states(run)))
-                .collect();
-            let candidates = everyone_on(unknown.iter().map(Vec::as_slice));
-            resolve_mentions(members, &candidates, &PingKind::DayOf)
-        }
-        IntentContent::Countdown { run_id, .. } => match ctx.run(run_id) {
-            Some(run) => resolve_mentions(
-                members,
-                &countdown_mentions(&ctx.states(run)),
-                &PingKind::Countdown,
-            ),
-            None => Vec::new(),
-        },
-        _ => Vec::new(),
     }
 }

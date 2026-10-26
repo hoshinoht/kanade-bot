@@ -16,7 +16,8 @@ use std::{
 
 use chrono::{DateTime, TimeDelta, Utc};
 
-use super::{audit::AuditEvent, crypto, wire};
+use super::{audit::AuditEvent, wire};
+use crate::app::crypto;
 
 pub const AUTHORIZE_URL: &str = "https://discord.com/oauth2/authorize";
 /// The admin origin's callback.

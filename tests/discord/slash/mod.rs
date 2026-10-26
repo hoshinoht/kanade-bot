@@ -26,17 +26,20 @@ use twilight_model::application::command::CommandOptionChoiceValue;
 use twilight_model::application::interaction::message_component::MessageComponentInteractionData;
 use twilight_model::application::interaction::{Interaction, InteractionData, InteractionType};
 
-use kanade::api::admin::config::{ConfigDesk, ConfigFacts, ConfigInputs, PersonaFiles};
-use kanade::api::rescan::RescanRunner;
-use kanade::api::state::GuildAccess;
-use kanade::api::write::{ApiClock, SchedulerWriter};
-use kanade::bot::commands::{
-    AccessPolicy, CharacterParts, ChatAllowance, CommandContext, DebugCards, Dispatcher,
-    Disposition, GuildChannels, register_character, register_retained,
-};
-use kanade::bot::transport::{Call, FakeDiscord, InteractionReply, Outcome};
+use kanade::app::config::{ConfigDesk, ConfigFacts, ConfigInputs, PersonaFiles};
+use kanade::app::guild::GuildAccess;
+use kanade::app::rescan::RescanRunner;
+use kanade::app::write::{ApiClock, SchedulerWriter};
 use kanade::chat::persona::{PersonaRoot, PersonaSnapshot, PersonaStore};
+use kanade::discord::transport::{Call, FakeDiscord, InteractionReply, Outcome};
 use kanade::infrastructure::store::{SqliteStore, SqliteStoreConfig};
+use kanade::{
+    app::access::AccessPolicy,
+    bot::commands::{
+        CharacterParts, ChatAllowance, CommandContext, DebugCards, Dispatcher, Disposition,
+        GuildChannels, register_character, register_retained,
+    },
+};
 use kanade_domain::attendance::AttendanceDefault;
 use kanade_domain::catalog::{BossSpec, BossTable, CatalogSpec, DifficultySpec};
 use kanade_domain::history::{Actor, ChangeMeta, Origin, Surface};
@@ -339,7 +342,7 @@ pub struct Ports {
     pub rescans: Option<Arc<dyn RescanRunner>>,
     pub allowance: Option<Arc<dyn ChatAllowance>>,
     pub debug_cards: Option<Arc<dyn DebugCards>>,
-    pub header_rewrite: Option<kanade::api::state::HeaderRewritePort>,
+    pub header_rewrite: Option<kanade::app::ports::HeaderRewritePort>,
     pub closed: Vec<String>,
     /// Module `character_data`: `/character`'s parts over the store and
     /// the fake, registered after the retained commands.

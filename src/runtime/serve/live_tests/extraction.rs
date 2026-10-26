@@ -15,7 +15,8 @@ use twilight_model::gateway::payload::incoming::MessageCreate;
 use super::*;
 use crate::{
     api::{auth::wire::SESSION_COOKIE, listeners},
-    bot::{extract_feed::snowflake_before, transport::HistoryPage},
+    bot::extract_feed::snowflake_before,
+    discord::transport::HistoryPage,
     extract::rescan::{RescanError, RescanRequest},
 };
 use kanade_domain::{
@@ -460,7 +461,7 @@ async fn extraction_off_records_watched_messages_but_never_calls_the_model() {
     let (mut discord, ctx) = started(&harness).await;
     drive(&mut discord, async {
         connect(&ctx).await;
-        let now = auth::system_now();
+        let now = clock::system_now();
         let id = snowflake(now, 1);
         ctx.events
             .send(posted(id, HOME_A, ALICE, "nkalos amend to 10pm @here", now))
@@ -515,7 +516,7 @@ async fn a_message_becomes_a_card_and_a_participants_check_moves_the_run() {
     let zone = harness.config.runtime.timezone;
     let (mut discord, ctx) = started(&harness).await;
     drive(&mut discord, async {
-        let now = auth::system_now();
+        let now = clock::system_now();
         let tomorrow = now.with_timezone(&zone).date_naive() + chrono::Days::new(1);
         let local = |hour| {
             zone.from_local_datetime(
@@ -628,7 +629,7 @@ async fn a_thread_under_a_watched_category_is_read_under_its_parent_channel() {
     let (mut discord, ctx) = started(&harness).await;
     drive(&mut discord, async {
         connect(&ctx).await;
-        let now = auth::system_now();
+        let now = clock::system_now();
         let (in_thread, unwatched) = (snowflake(now, 1), snowflake(now, 2));
         ctx.events
             .send(posted(
@@ -667,7 +668,7 @@ async fn stale_history_is_cached_for_rescans_but_makes_no_card() {
     let (mut discord, ctx) = started(&harness).await;
     drive(&mut discord, async {
         connect(&ctx).await;
-        let old = auth::system_now() - chrono::Duration::minutes(10);
+        let old = clock::system_now() - chrono::Duration::minutes(10);
         let id = snowflake(old, 1);
         ctx.events
             .send(posted(id, HOME_A, ALICE, "nkalos amend to 10pm @here", old))
@@ -685,7 +686,7 @@ async fn stale_history_is_cached_for_rescans_but_makes_no_card() {
 async fn rescans_page_discord_history_from_startup_the_api_and_the_slash_command() {
     let model = Model::start("local").await;
     let harness = harness(&model, true);
-    let now = auth::system_now();
+    let now = clock::system_now();
     // 130 chatty messages over the last hour (two pages), one gated one, and
     // one from a month ago (outside every window read here).
     let mut history: Vec<twilight_model::channel::Message> = (0..130u64)
@@ -835,7 +836,7 @@ async fn an_external_extraction_route_sends_raw_data_without_opt_in() {
     let (mut discord, ctx) = started(&harness).await;
     drive(&mut discord, async {
         connect(&ctx).await;
-        let now = auth::system_now();
+        let now = clock::system_now();
         let message_id = snowflake(now, 1);
         let url = "https://synthetic.invalid/party?member=fixture#week";
         let content = format!("nkalos amend to 10pm SyntheticParticipant 999000111222333444 {url}");
@@ -877,7 +878,7 @@ async fn saved_settings_switch_extraction_live() {
     drive(&mut discord, async {
         connect(&ctx).await;
         let admin = Admin::start(&ctx, &harness).await;
-        let now = auth::system_now();
+        let now = clock::system_now();
         ctx.events
             .send(posted(
                 snowflake(now, 1),
@@ -902,7 +903,7 @@ async fn saved_settings_switch_extraction_live() {
             "the switch",
             ctx.health.health().await.extraction == Some("idle")
         );
-        let now = auth::system_now();
+        let now = clock::system_now();
         ctx.events
             .send(posted(
                 snowflake(now, 2),
@@ -926,7 +927,7 @@ async fn saved_settings_switch_extraction_live() {
             "paused",
             ctx.health.health().await.extraction == Some("disabled")
         );
-        let now = auth::system_now();
+        let now = clock::system_now();
         ctx.events
             .send(posted(
                 snowflake(now, 3),
@@ -954,7 +955,7 @@ async fn a_saved_reasoning_level_reaches_the_next_extraction_call() {
     drive(&mut discord, async {
         connect(&ctx).await;
         let admin = Admin::start(&ctx, &harness).await;
-        let now = auth::system_now();
+        let now = clock::system_now();
         ctx.events
             .send(posted(
                 snowflake(now, 1),
@@ -979,7 +980,7 @@ async fn a_saved_reasoning_level_reaches_the_next_extraction_call() {
             body["models"]["roles"]["extraction"]["running"],
             json!({"alias": ALIAS, "reasoning": "high"})
         );
-        let now = auth::system_now();
+        let now = clock::system_now();
         ctx.events
             .send(posted(
                 snowflake(now, 2),
@@ -1008,7 +1009,7 @@ async fn shutdown_stops_rescans_before_the_store_closes() {
     let model = Model::start("local").await;
     *model.delay.lock().unwrap() = Duration::from_millis(800);
     let harness = harness(&model, true);
-    let at = auth::system_now() - chrono::Duration::minutes(5);
+    let at = clock::system_now() - chrono::Duration::minutes(5);
     harness.fake.seed_history(vec![parse(message_json(
         snowflake(at, 1),
         HOME_A,
@@ -1080,7 +1081,7 @@ async fn a_chat_question_in_the_watched_chat_category_is_never_extracted() {
     let (mut discord, ctx) = started(&harness).await;
     drive(&mut discord, async {
         connect(&ctx).await;
-        let now = auth::system_now();
+        let now = clock::system_now();
         let asked = snowflake(now, 1);
         let text = format!("<@{SELF}> nkalos amend to 10pm");
         ctx.events
@@ -1093,7 +1094,7 @@ async fn a_chat_question_in_the_watched_chat_category_is_never_extracted() {
         // Its edit stays chat's too.
         let mut edited = question(asked, PARTY, &format!("{text} pls"), now);
         edited["edited_timestamp"] = json!(
-            twilight_model::util::Timestamp::from_micros(auth::system_now().timestamp_micros())
+            twilight_model::util::Timestamp::from_micros(clock::system_now().timestamp_micros())
                 .unwrap()
                 .iso_8601()
                 .to_string()
@@ -1106,14 +1107,14 @@ async fn a_chat_question_in_the_watched_chat_category_is_never_extracted() {
         assert_eq!(model.chats(), 1, "the chat answer only");
 
         // The same words without the mention are party chat: extracted.
-        let plain = snowflake(auth::system_now(), 2);
+        let plain = snowflake(clock::system_now(), 2);
         ctx.events
             .send(posted(
                 plain,
                 PARTY,
                 ALICE,
                 "nkalos amend to 10pm",
-                auth::system_now(),
+                clock::system_now(),
             ))
             .unwrap();
         eventually!("the extraction", !logs(&ctx).await.is_empty());
@@ -1130,7 +1131,7 @@ async fn shutdown_cuts_hanging_extraction_calls_and_stays_bounded() {
     *model.delay.lock().unwrap() = Duration::from_secs(120);
     // One permit: the live burst waits behind the hanging rescan call.
     let harness = harness_with(&model, true, &[("KANADE_MODEL_PERMITS", "1")]);
-    let at = auth::system_now() - chrono::Duration::minutes(5);
+    let at = clock::system_now() - chrono::Duration::minutes(5);
     harness.fake.seed_history(vec![parse(message_json(
         snowflake(at, 1),
         HOME_A,
@@ -1143,7 +1144,7 @@ async fn shutdown_cuts_hanging_extraction_calls_and_stays_bounded() {
     drive(&mut discord, async {
         connect(&ctx).await;
         eventually!("the rescan call", model.chats() == 1);
-        let now = auth::system_now();
+        let now = clock::system_now();
         let live = snowflake(now, 5);
         ctx.events
             .send(posted(live, PARTY, ALICE, "nkalos amend to 10pm", now))
@@ -1186,7 +1187,7 @@ fn snowflake_of(row: &kanade_domain::model_log::ExtractionLog) -> u64 {
 }
 
 fn creates(fake: &FakeDiscord) -> usize {
-    fake.count(crate::bot::transport::Op::Create)
+    fake.count(crate::discord::transport::Op::Create)
 }
 
 #[tokio::test]
@@ -1195,7 +1196,7 @@ async fn switching_off_mid_rescan_cuts_the_call_and_cancels_every_job() {
     // Far longer than the test waits: only a cut ends the call in flight.
     *model.delay.lock().unwrap() = Duration::from_secs(30);
     let harness = harness(&model, true);
-    let now = auth::system_now();
+    let now = clock::system_now();
     // Three conversations (gaps over 3 h): three calls if nothing stopped it.
     harness.fake.seed_history(
         [20, 15, 10]
@@ -1279,7 +1280,7 @@ async fn a_restart_neither_reposts_cards_nor_extracts_chat_questions() {
     );
     let policy = policy(&harness);
     let zone = harness.config.runtime.timezone;
-    let now = auth::system_now();
+    let now = clock::system_now();
     let tomorrow = now.with_timezone(&zone).date_naive() + chrono::Days::new(1);
     let at = zone
         .from_local_datetime(&tomorrow.and_time(NaiveTime::from_hms_opt(20, 0, 0).unwrap()))
@@ -1395,8 +1396,8 @@ async fn stale_jobs_are_interrupted_and_system_messages_never_read() {
         automated: false,
         requested_by: None,
         status: RescanStatus::Running,
-        created_at: auth::system_now() - chrono::Duration::hours(1),
-        started_at: Some(auth::system_now() - chrono::Duration::hours(1)),
+        created_at: clock::system_now() - chrono::Duration::hours(1),
+        started_at: Some(clock::system_now() - chrono::Duration::hours(1)),
         finished_at: None,
         results: json!([]),
         error: None,
@@ -1424,7 +1425,7 @@ async fn stale_jobs_are_interrupted_and_system_messages_never_read() {
         startup_rescan_ended(&ctx).await;
         assert_eq!(ctx.health.health().await.extraction, Some("idle"));
         // A thread's creation notice carries its name as content.
-        let now = auth::system_now();
+        let now = clock::system_now();
         let id = snowflake(now, 3);
         let mut notice = message_json(id, HOME_A, (ALICE, false), "nkalos wed 10pm", now);
         notice["type"] = json!(18);

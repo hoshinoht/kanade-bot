@@ -19,12 +19,10 @@ use twilight_model::gateway::payload::incoming::MessageCreate;
 
 use super::*;
 use crate::{
-    api::{
+    api::server,
+    bot::extract_feed::snowflake_before,
+    discord::{
         avatars::{AvatarCache, AvatarFetch, FetchFuture},
-        server,
-    },
-    bot::{
-        extract_feed::snowflake_before,
         transport::{Hold, TransportConfig},
     },
     extract::pipeline::CALL_CANCELLED,
@@ -257,7 +255,7 @@ fn guild() -> Event {
 
 /// Alice (bossing role, which is also the chat pilot role) posts `content`.
 fn message(n: u64, channel: u64, content: &str, to_bot: bool) -> Event {
-    let now = auth::system_now();
+    let now = clock::system_now();
     let mentions = if to_bot {
         let mut bot = user_json(SELF, "kanade", true);
         bot["public_flags"] = json!(0);
@@ -475,7 +473,7 @@ fn launch<'a>(
     let wiring = Wiring {
         source,
         transport: Arc::clone(&harness.fake),
-        clock: Arc::new(auth::system_now),
+        clock: Arc::new(clock::system_now),
         tick: TICK,
         extraction: TIMING,
     };
@@ -592,7 +590,7 @@ async fn shutdown_with_everything_in_flight_is_ordered_and_inside_the_stop_grace
     let model = HangingModel::start().await;
     let harness = harness(&model);
     let policy = policy(&harness);
-    let now = auth::system_now();
+    let now = clock::system_now();
     harness
         .seed(async |store| {
             add_members(store).await;
@@ -828,7 +826,7 @@ async fn shutdown_with_nothing_letting_go_ends_inside_the_budget() {
     let model = HangingModel::start().await;
     let harness = harness(&model);
     let policy = policy(&harness);
-    let now = auth::system_now();
+    let now = clock::system_now();
     harness
         .seed(async |store| {
             add_members(store).await;
@@ -933,7 +931,7 @@ async fn shutdown_with_nothing_letting_go_ends_inside_the_budget() {
     assert_eq!(pending.notices.len(), 1, "{breakdown}");
     assert!(
         store
-            .recover_on_start(auth::system_now())
+            .recover_on_start(clock::system_now())
             .await
             .unwrap()
             .indeterminate
@@ -1035,7 +1033,7 @@ async fn a_header_rewrite_hanging_at_the_cutoff_still_ends_by_it() {
     ]);
     seed_discord_members(&harness);
     let policy = policy(&harness);
-    let now = auth::system_now();
+    let now = clock::system_now();
     harness
         .seed(async |store| {
             add_members(store).await;
@@ -1164,7 +1162,7 @@ async fn shutdown_with_every_reader_held_ends_inside_the_budget() {
     let harness = Harness::new();
     seed_discord_members(&harness);
     let policy = policy(&harness);
-    let now = auth::system_now();
+    let now = clock::system_now();
     harness
         .seed(async |store| {
             add_members(store).await;
@@ -1259,7 +1257,7 @@ async fn a_manual_digest_in_flight_at_the_cutoff_is_journalled_before_the_store_
     std::fs::write(harness._temp.0.join("admin_token"), format!("{TOKEN}\n")).unwrap();
     seed_discord_members(&harness);
     let policy = policy(&harness);
-    let now = auth::system_now();
+    let now = clock::system_now();
     harness
         .seed(async |store| {
             add_members(store).await;

@@ -56,7 +56,7 @@ async fn bot_only_serves_healthz_alone_and_stops_inside_the_budget() {
     let wiring = Wiring {
         source,
         transport: Arc::clone(&harness.fake),
-        clock: Arc::new(auth::system_now),
+        clock: Arc::new(clock::system_now),
         tick: TICK,
         extraction: extract::Timing::default(),
     };
@@ -122,7 +122,7 @@ async fn countdown_cards_link_the_portal_only_while_web_runs() {
         extra.extend(public_listener("127.0.0.1:0"));
         let harness = Harness::with(&extra);
         let policy = policy(&harness);
-        let now = auth::system_now();
+        let now = clock::system_now();
         let mut due_run = String::new();
         harness
             .seed(async |store| {

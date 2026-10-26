@@ -7,7 +7,6 @@
 //! only the primitives below and never an admin credential.
 
 pub mod audit;
-pub mod crypto;
 pub mod csrf;
 pub mod device;
 pub mod discord;
@@ -32,16 +31,17 @@ pub use session::AdminSession;
 
 use self::{
     audit::{AuditContext, AuditEvent, AuditRecord, AuditSink, Realm, StderrAudit},
-    crypto::SealedSecret,
     discord::DiscordLogin,
     rate::RateLimits,
     staff::{StaffCheck, StaffGate},
 };
+use crate::app::{
+    clock::{Clock, system_now},
+    crypto::{self, SealedSecret},
+};
 use crate::infrastructure::store::web_sessions::{
     LoginMethod, SessionOrigin, WebSession, WebSessionStore,
 };
-
-pub type Clock = Arc<dyn Fn() -> DateTime<Utc> + Send + Sync>;
 
 /// Tailscale login header the edge sets after `whois` (v4 `HEADER_LOGIN`).
 pub const TAILSCALE_LOGIN: &str = "tailscale-user-login";
@@ -332,18 +332,6 @@ pub(crate) struct SignIn<'a> {
     pub avatar_hash: Option<&'a str>,
     /// The sign-in request's [`device::label`].
     pub device: Option<String>,
-}
-
-/// Wall clock without chrono's `clock` feature; before the epoch reads as the epoch.
-pub fn system_now() -> DateTime<Utc> {
-    let since = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default();
-    DateTime::from_timestamp(
-        i64::try_from(since.as_secs()).unwrap_or(i64::MAX),
-        since.subsec_nanos(),
-    )
-    .unwrap_or(DateTime::UNIX_EPOCH)
 }
 
 /// History actor id: `discord:<user id>`, `tailscale:<login>` or `token`.
