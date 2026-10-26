@@ -10,7 +10,8 @@ export async function busyWeek(page: Page) {
   await page.route(`${ADMIN}/api/admin/week*`, async (route) => {
     const response = await route.fetch(unconditional(route));
     const week = (await response.json()) as Week;
-    const base = week.runs.find((r) => r.status !== 'done' && r.status !== 'cancelled')!;
+    // An open run: an ended one (past its end at the pinned clock) is frozen and has no grip.
+    const base = week.runs.find((r) => !r.ended && r.status !== 'done' && r.status !== 'cancelled')!;
     const like = base.bosses[0]!;
     const boss = (key: string, name: string): Boss => ({ ...like, key, name, token: `N${key}`, difficulty: 'n', art: null, animated: null });
     // The live report: "NCarling NORMAL" over "NMaleficStar NORMAL", the long token last, beside the grip.

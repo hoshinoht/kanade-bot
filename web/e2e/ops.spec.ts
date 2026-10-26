@@ -578,11 +578,12 @@ test('history: seeded timeline, strict revert, conflicts and force', async ({ pa
   await expect(dialog.getByRole('alert')).toContainText('#3: XKalos');
   // A strict refusal plans no rows; the dialog shows what forcing would do instead.
   // Force puts r-kalos back to #3's recorded `before` (`domain/history/revert.rs`):
-  // #4 already left it unconfirmed, so no status line, but #4's move to 22:00 is
-  // undone, its reminders follow the slot, and Tsubame's answer goes.
+  // #4's move re-derived it from Tsubame's no (at risk), so it goes back to
+  // unconfirmed, #4's move to 22:00 is undone, its reminders follow the slot,
+  // and Tsubame's answer goes.
   await expect(dialog.getByRole('heading', { name: 'Would change', exact: true })).toHaveCount(0);
   await expect(dialog.getByRole('heading', { name: 'Forcing it would change' })).toBeVisible();
-  await expect(dialog.locator('.plan li')).toHaveText(['XKalos: Fri 25 22:00 → Fri 25 21:30', 'XKalos: 1 reminder re-placed', 'Tsubame → no answer for XKalos (was out)']);
+  await expect(dialog.locator('.plan li')).toHaveText(['XKalos: Fri 25 22:00 → Fri 25 21:30', 'XKalos: at risk → unconfirmed', 'XKalos: 1 reminder re-placed', 'Tsubame → no answer for XKalos (was out)']);
   await expect(dialog.getByRole('button', { name: 'Force revert' })).toBeDisabled();
   await dialog.getByRole('checkbox', { name: /Force it/ }).check();
   await dialog.getByRole('button', { name: 'Force revert' }).click();
