@@ -42,10 +42,8 @@ use kanade_llm::governor::Role;
 use serde_json::{Value, json};
 
 use attempt::{Shared, TempDir};
-use kanade::{
-    chat::persona::{SelectionSource, load_personas},
-    runtime::config::ServeConfig,
-};
+use kanade::runtime::config::ServeConfig;
+use kanade_voice::persona::{SelectionSource, load_personas};
 use persona::PersonaBundle;
 use requests::{HARD_CAP, Requests};
 use score::Detector;
@@ -513,7 +511,7 @@ async fn run_headers(args: &Args, persona: Arc<PersonaBundle>) -> Result<ExitCod
         .map_err(|e| e.to_string())?
         .ok_or("no model stack (KANADE_MODEL_BASE_URL unset)")?;
     drop(scratch);
-    let compiled = kanade::chat::persona::CompiledPersona::compile(&persona.bundle, None);
+    let compiled = kanade_voice::persona::CompiledPersona::compile(&persona.bundle, None);
     let heading = harness::header_rewrite(&config, &models, compiled)
         .ok_or("the rewrite role has no alias")?;
     let startup = models.check_startup().await;

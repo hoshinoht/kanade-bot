@@ -30,7 +30,6 @@ use kanade::app::config::{ConfigDesk, ConfigFacts, ConfigInputs, PersonaFiles};
 use kanade::app::guild::GuildAccess;
 use kanade::app::rescan::RescanRunner;
 use kanade::app::write::{ApiClock, SchedulerWriter};
-use kanade::chat::persona::{PersonaRoot, PersonaSnapshot, PersonaStore};
 use kanade::discord::transport::{Call, FakeDiscord, InteractionReply, Outcome};
 use kanade::{
     app::access::AccessPolicy,
@@ -50,6 +49,7 @@ use kanade_domain::schedule::{
 use kanade_domain::scheduler::{ScheduleStore, SchedulerService, Scope};
 use kanade_domain::settings::RuntimeSettings;
 use kanade_store::{SqliteStore, SqliteStoreConfig};
+use kanade_voice::persona::{PersonaRoot, PersonaSnapshot, PersonaStore};
 
 use super::support::{ADMIN_ROLE, BOSSING_ROLE, GUILD, OWNER, guild, parse, role, user};
 

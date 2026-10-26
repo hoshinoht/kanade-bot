@@ -10,10 +10,6 @@ use std::time::Duration;
 use kanade::bot::commands::{DebugCards, HeaderTrialKind, HeaderTrials, PingRequest, TestKind};
 use kanade::bot::delivery::DebugDesk;
 use kanade::cards::CardKit;
-use kanade::chat::nudge::{
-    NudgeRewriter, RewriteDetail, RewriteFailure, RewriteOutcome, RewritePrompt, SharedRewriteSink,
-    StoreRewriteSink,
-};
 use kanade::discord::transport::FakeDiscord;
 use kanade_domain::model_log::{
     LogPage, RewriteFacets, RewriteFilter, RewriteKind, RewriteLog, RewriteLogStore, RewriteStage,
@@ -21,6 +17,10 @@ use kanade_domain::model_log::{
 use kanade_domain::notify::ReminderCardStore;
 use kanade_domain::scheduler::StoreError;
 use kanade_store::SqliteStore;
+use kanade_voice::nudge::{
+    NudgeRewriter, RewriteDetail, RewriteFailure, RewriteOutcome, RewritePrompt, SharedRewriteSink,
+    StoreRewriteSink,
+};
 
 use crate::cards::{before_due, created, pregen, rewriting, seed_day_of, world};
 use crate::debug::{desk, star};

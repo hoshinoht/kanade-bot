@@ -7,7 +7,7 @@ use super::{
     prompt::RewritePrompt,
     safety::{self, Hit, WordFilter},
 };
-use crate::chat::persona::{NUDGE_FIELDS, check_nudge_line};
+use crate::persona::{NUDGE_FIELDS, check_nudge_line};
 use kanade_llm::{Effort, Usage};
 
 /// User decision: the rewrite gets ~2 s, then the seed line is used.

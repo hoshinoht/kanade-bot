@@ -63,6 +63,7 @@ kanade-files = { path = "crates/kanade-files" }
 kanade-llm = { path = "crates/kanade-llm" }
 kanade-log = { path = "crates/kanade-log" }
 kanade-store = { path = "crates/kanade-store" }
+kanade-voice = { path = "crates/kanade-voice" }
 libc.workspace = true
 regex = { version = "=1.13.1", default-features = false, features = ["std", "unicode-case", "unicode-perl"] }
 # The reminder cards' estimate share chart: SVG → PNG with bundled fonts only

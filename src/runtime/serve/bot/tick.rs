@@ -29,13 +29,6 @@ use crate::{
         CardKit, DifficultyMarks, HeaderSwitchSource, HeaderSwitches, HeadingRewrite,
         PersonaSource, PortalSwitch, V2Kit,
     },
-    chat::{
-        nudge::{
-            GovernedRewriter, RewriteReserve, SharedRewriteSink, SharedRewriter, WordFilter,
-            WordSource,
-        },
-        persona::{CompiledPersona, PersonaStore},
-    },
     discord::{guild_cache::GuildCache, roster::LiveRoster, transport::DiscordTransport},
     runtime::{config::SettingSeeds, error::Error},
 };
@@ -51,6 +44,12 @@ use kanade_llm::{
     setup::ModelStack,
 };
 use kanade_store::SqliteStore;
+use kanade_voice::{
+    nudge::{
+        GovernedRewriter, RewriteReserve, SharedRewriteSink, SharedRewriter, WordFilter, WordSource,
+    },
+    persona::{CompiledPersona, PersonaStore},
+};
 
 const STARTING: u8 = 0;
 const RUNNING: u8 = 1;
@@ -387,14 +386,14 @@ mod tests {
     use std::collections::BTreeMap;
 
     use super::*;
-    use crate::chat::nudge::{NudgeRewriter, RewritePrompt};
-    use crate::chat::persona::{NudgeMood, PersonaId, parse_bundle};
     use kanade_llm::governor::{
         Governor, GovernorConfig, GovernorPolicy, GroupConfig, RoleConfig, XorShift,
     };
     use kanade_llm::{
         CompletionResponse, ExecutionLimits, FakeAction, FakeProvider, FinishReason, RetryPolicy,
     };
+    use kanade_voice::nudge::{NudgeRewriter, RewritePrompt};
+    use kanade_voice::persona::{NudgeMood, PersonaId, parse_bundle};
 
     const ALIAS: &str = "rewriter";
 

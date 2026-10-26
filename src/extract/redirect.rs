@@ -1,15 +1,15 @@
 //! Self-service redirect (user decision 2026-09-24): classify a detected
 //! change and decide whether its ✅ card is kept and which pre-filled public
 //! portal link goes with it. Pure: the caller supplies the clock, the target
-//! run and the configured mode; the weekly tip is claimed by `chat::nudge`.
+//! run and the configured mode; the weekly tip is claimed by `kanade_voice::nudge`.
 
 use chrono::{DateTime, Datelike, NaiveTime, Timelike, Utc, Weekday};
 
-use crate::chat::nudge::render;
-use crate::chat::persona::NudgePurpose;
 use kanade_domain::notify::WeekReset;
 use kanade_domain::proposals::{ChangeKind, Payload, ProposedChange};
 use kanade_domain::schedule::Run;
+use kanade_voice::nudge::render;
+use kanade_voice::persona::NudgePurpose;
 
 /// Admin setting `self_service.mode` (guild-wide): `CardsAndLink` (launch
 /// default: the card stays and the link is added), `LinkFirst`

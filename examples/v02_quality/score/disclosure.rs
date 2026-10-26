@@ -9,7 +9,7 @@
 
 use std::{collections::BTreeSet, sync::OnceLock};
 
-use kanade::chat::{
+use kanade_voice::{
     persona::{Bundle, CompiledPersona},
     prompts,
 };

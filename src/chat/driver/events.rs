@@ -6,9 +6,9 @@
 
 use crate::chat::answer::Generation;
 use crate::chat::gate::{ChatDecision, POOL_SPENT, RATE_LIMITED, STAFF_ONLY};
-use crate::chat::persona::CompileProvenance;
 use kanade_domain::model_log::ChatInteraction;
 use kanade_llm::Effort;
+use kanade_voice::persona::CompileProvenance;
 
 use super::Setup;
 

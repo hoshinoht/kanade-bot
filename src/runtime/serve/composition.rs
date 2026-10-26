@@ -26,7 +26,6 @@ use crate::{
         roster::RosterHooks,
         write::{ApiClock, SchedulerWriter, Writer},
     },
-    chat::persona::{PersonaStore, load_personas},
     runtime::{
         config::{GuildSettings, ModelSettings, ServeConfig},
         error::Error,
@@ -46,6 +45,7 @@ use kanade_llm::{
     setup::{ModelRoles, ModelSetup, ModelStack, Models, build_with_groups},
 };
 use kanade_store::SqliteStore;
+use kanade_voice::persona::{PersonaStore, load_personas};
 
 /// Everything later wiring (gateway, roster, tick, chat, the API) shares.
 pub struct Composition {

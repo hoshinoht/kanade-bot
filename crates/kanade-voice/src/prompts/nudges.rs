@@ -1,7 +1,7 @@
 //! Neutral self-service lead-ins used when neither profile nor bundle has a pool.
 //! Code appends the action text and link; these never carry either.
 
-use crate::chat::persona::{NudgeMood, NudgePurpose};
+use crate::persona::{NudgeMood, NudgePurpose};
 
 const SELF_SERVICE_PLAYFUL: &[&str] = &[
     "You can change this one yourself.",

@@ -13,9 +13,9 @@ use super::listing::Block;
 use super::personal::{split, strip_context_copies};
 use super::tidy::SCHEDULE_RUN_LINE;
 use super::{pattern, pattern_i};
-use crate::chat::persona::split_lines;
 use crate::chat::tools::{ToolName, ToolOutcome};
 use kanade_domain::pytext::strip;
+use kanade_voice::persona::split_lines;
 
 static RECORD_ID: LazyLock<Regex> = LazyLock::new(|| pattern(r"`?\[[0-9a-fA-F]{8}\]`?"));
 static PRIMARY_LINE: LazyLock<Regex> =

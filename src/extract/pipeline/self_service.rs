@@ -7,12 +7,12 @@ use chrono::{DateTime, Datelike, Timelike, Utc};
 use super::call::Kept;
 use super::extractor::Extractor;
 use super::ports::{Outbox, Proposer, SelfServiceTip};
-use crate::chat::nudge::{NudgeFacts, mood_for};
 use crate::extract::redirect::{RedirectFacts, RedirectLink, SelfServiceMode, plan};
 use kanade_domain::model_log::ModelLogStore;
 use kanade_domain::proposals::{Payload, ProposedChange};
 use kanade_domain::scheduler::ScheduleStore;
 use kanade_llm::LlmProvider;
+use kanade_voice::nudge::{NudgeFacts, mood_for};
 
 /// A link that will be posted, and whether its card stays.
 #[derive(Clone, Debug)]

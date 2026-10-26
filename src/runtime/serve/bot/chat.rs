@@ -35,7 +35,6 @@ use crate::{
             Prepared, RejectionFollowUp, Setup,
         },
         gate::{ChannelDirectory, PilotSettings},
-        persona::{PersonaStore, ProfileId, ProfileQuery, RoleAssignment, RoleId},
         pilot::{AllowanceSnapshot, StormAlert},
         tools::{
             bundles::Bundle,
@@ -63,6 +62,7 @@ use kanade_llm::{
     setup::{ModelStack, resolve_context},
 };
 use kanade_store::SqliteStore;
+use kanade_voice::persona::{PersonaStore, ProfileId, ProfileQuery, RoleAssignment, RoleId};
 
 use crate::runtime::serve::bot::chat_cards::{self as cards, ChatDesk};
 use crate::runtime::serve::chat_log;

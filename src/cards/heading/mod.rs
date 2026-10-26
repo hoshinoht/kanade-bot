@@ -18,15 +18,15 @@ pub use context::{
     resolve_heading,
 };
 
-use crate::chat::nudge::{
+use kanade_domain::catalog::BossTable;
+use kanade_domain::model_log::{RewriteKind, RewriteStage};
+use kanade_domain::notify::HeaderSlots;
+use kanade_voice::nudge::{
     NudgeRewriter, Rejection, RewriteAttempt, RewriteDetail, RewriteFailure, RewritePrompt,
     SharedRewriteSink, SharedRewriter, SlotRejection, WordFilter, WordSource, accept_rewrite_with,
     failure_verdict, has_format_char, has_invite, has_markup, safe_value, strip_slots,
 };
-use crate::chat::persona::{CompiledPersona, MAX_NUDGE_CHARS, NudgeMood, check_nudge_line};
-use kanade_domain::catalog::BossTable;
-use kanade_domain::model_log::{RewriteKind, RewriteStage};
-use kanade_domain::notify::HeaderSlots;
+use kanade_voice::persona::{CompiledPersona, MAX_NUDGE_CHARS, NudgeMood, check_nudge_line};
 
 /// v4's heading, with the day left for after the rewrite.
 pub const DAY_OF_HEADING_SEED: &str = "Today — {day}";

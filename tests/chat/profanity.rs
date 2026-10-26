@@ -9,11 +9,11 @@ use chrono::{TimeZone, Utc};
 use kanade::chat::answer::{
     AnswerDeps, Generation, ProfanityGuard, Question, answer, chat_outcome, interaction,
 };
-use kanade::chat::nudge::{WordFilter, builtin_words};
 use kanade::chat::tools::bundles::ToolOffer;
 use kanade_domain::model_log::ChatOutcome;
 use kanade_domain::settings::{DEFAULT_DEFLECTION_LINE, Profanity};
 use kanade_llm::{ChatRequest, FakeAction, FakeProvider};
+use kanade_voice::nudge::{WordFilter, builtin_words};
 use serde_json::json;
 
 use crate::looping::{Ports, conversation, said, settings};

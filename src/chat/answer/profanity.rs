@@ -5,8 +5,8 @@
 use serde_json::{Value, json};
 
 use super::Generation;
-use crate::chat::nudge::WordFilter;
 use kanade_domain::settings::Profanity;
+use kanade_voice::nudge::WordFilter;
 
 /// Which text hit the list.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -348,7 +348,7 @@ mod tests {
     /// words and names they collide with; none may hit.
     #[test]
     fn known_common_forms_stay_clean() {
-        use crate::chat::nudge::{EXACT_ONLY, RUN_STRICT, builtin_words};
+        use kanade_voice::nudge::{EXACT_ONLY, RUN_STRICT, builtin_words};
         const COMMON: &[&str] = &[
             "bob", "bobs", "bobby", "bobbie", "bobbing", "bobbed", "tais", "asus", "cumin", "hoey",
             "hoed", "cocky", "cocker", "cocking", "titer", "titter", "kuya", "yedi", "dikes",

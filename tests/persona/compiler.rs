@@ -2,7 +2,8 @@
 
 use std::collections::BTreeSet;
 
-use kanade::chat::{
+use kanade_llm::Message;
+use kanade_voice::{
     persona::{
         CompiledPersona, ExampleSource, PersonaSnapshot, PersonaStore, ProfileQuery, ProfileSource,
         ReloadError, RoleAssignment, RoleId, SelectionSource, VoiceSource, parse_bundle,
@@ -10,7 +11,6 @@ use kanade::chat::{
     },
     prompts,
 };
-use kanade_llm::Message;
 use serde_json::Value;
 
 use crate::{
@@ -21,7 +21,7 @@ use crate::{
 #[test]
 fn clock_header_ends_the_boss_week_seven_wall_clock_days_later_across_dst() {
     use chrono::DateTime;
-    use kanade::chat::persona::TurnContext;
+    use kanade_voice::persona::TurnContext;
 
     let header = |now: &str, week: &str| {
         let now = DateTime::parse_from_rfc3339(now).unwrap();
@@ -66,7 +66,7 @@ staging:            # partial allowed — missing keys fall back to bundle defau
   generic: I-I'm thinking! Stop staring at me!
 "#;
 
-fn kanade() -> kanade::chat::persona::Bundle {
+fn kanade() -> kanade_voice::persona::Bundle {
     parse_bundle(&tracked("bundles/kanade.yaml"), &pid("kanade")).unwrap()
 }
 

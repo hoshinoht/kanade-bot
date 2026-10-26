@@ -1,6 +1,6 @@
 use std::collections::BTreeSet;
 
-use kanade::chat::persona::{
+use kanade_voice::persona::{
     PersonaSnapshot, PersonaStore, ProfileId, ProfileQuery, ProfileSource, RoleAssignment, RoleId,
 };
 

@@ -1,8 +1,8 @@
 //! What the member reads when there is no answer.
 
 use crate::chat::answer::Generation;
-use crate::chat::persona::CompiledPersona;
 use crate::chat::sanitize::FAILURE_REPLY;
+use kanade_voice::persona::CompiledPersona;
 
 /// Code-owned default for a content-filtered answer when the persona has
 /// no `failures.content_blocked` line; never the provider's refusal text.

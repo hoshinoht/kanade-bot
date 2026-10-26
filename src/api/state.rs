@@ -6,22 +6,20 @@ use std::{future::Future, path::PathBuf, pin::Pin, sync::Arc};
 
 use chrono::{DateTime, Utc};
 
-use crate::{
-    app::{
-        clock::Clock,
-        config::ConfigDesk,
-        guild::{ChannelList, GuildAccess},
-        ports::{
-            DeclineRetraction, DigestPost, GuidePort, HeaderRewritePort, ModelLimits,
-            ProposalCardRefresh,
-        },
-        read::{CharacterRoster, ReadStore},
-        rescan::RescanDesk,
-        write::Writer,
+use crate::app::{
+    clock::Clock,
+    config::ConfigDesk,
+    guild::{ChannelList, GuildAccess},
+    ports::{
+        DeclineRetraction, DigestPost, GuidePort, HeaderRewritePort, ModelLimits,
+        ProposalCardRefresh,
     },
-    chat::persona::PersonaOption,
+    read::{CharacterRoster, ReadStore},
+    rescan::RescanDesk,
+    write::Writer,
 };
 use kanade_domain::{catalog::BossTable, schedule::SchedulePolicy};
+use kanade_voice::persona::PersonaOption;
 
 /// The bot's application (`GET /applications/@me` through serve's
 /// transport) for admin Setup: `None` when Discord did not answer or

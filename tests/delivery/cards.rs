@@ -13,8 +13,6 @@ use kanade::bot::delivery::{
     SendOutcome,
 };
 use kanade::cards::{CardKit, HeadingRewrite, PersonaSource, UNNAMED};
-use kanade::chat::nudge::{NudgeRewriter, RewriteFailure, RewritePrompt, SharedRewriter};
-use kanade::chat::persona::{CompiledPersona, PersonaId, PersonaRoot, parse_bundle};
 use kanade::discord::transport::{
     Call, FakeDiscord, MessageEdit, Op, OutgoingMessage, RejectionKind, Step,
 };
@@ -35,6 +33,8 @@ use kanade_domain::scheduler::StoreError;
 use kanade_domain::settings::RunLengths;
 use kanade_files::BossArt;
 use kanade_store::SqliteStore;
+use kanade_voice::nudge::{NudgeRewriter, RewriteFailure, RewritePrompt, SharedRewriter};
+use kanade_voice::persona::{CompiledPersona, PersonaId, PersonaRoot, parse_bundle};
 use tokio::sync::Notify;
 use twilight_model::channel::message::Embed;
 use twilight_model::id::Id;
@@ -620,7 +620,7 @@ async fn failure_timeout_rejection_or_no_rewriter_keep_the_v4_heading() {
 /// allowed again passes.
 #[tokio::test(start_paused = true)]
 async fn heading_rewrites_follow_the_live_profanity_list() {
-    use kanade::chat::nudge::WordFilter;
+    use kanade_voice::nudge::WordFilter;
 
     let live = Arc::new(Mutex::new(Arc::new(WordFilter::new(
         &["shine".into()],

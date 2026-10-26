@@ -1,6 +1,6 @@
 use std::{fs, path::Path};
 
-use kanade::chat::persona::{PersonaSnapshot, SelectionSource};
+use kanade_voice::persona::{PersonaSnapshot, SelectionSource};
 
 use crate::support::{Fixture, pid, tracked};
 
@@ -43,10 +43,10 @@ fn rust_sources(dir: &Path, out: &mut Vec<(String, String)>) {
 #[test]
 fn runtime_names_no_legacy_persona_paths() {
     let mut sources = Vec::new();
-    rust_sources(
-        &Path::new(env!("CARGO_MANIFEST_DIR")).join("src"),
-        &mut sources,
-    );
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    for dir in ["src", "crates/kanade-voice/src"] {
+        rust_sources(&root.join(dir), &mut sources);
+    }
     assert!(sources.iter().any(|(path, _)| path.ends_with("loader.rs")));
     for (path, text) in sources {
         for needle in [

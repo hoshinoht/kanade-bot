@@ -30,9 +30,6 @@ use crate::cards::estimates::header_context;
 use crate::cards::preview::posted_content;
 use crate::cards::text::local_day;
 use crate::cards::{HeaderContext, HeadingSource, PhraseKind, card_runs};
-use crate::chat::nudge::{
-    NudgeRewriter, RewriteFailure, RewriteOutcome, RewritePrompt, SharedRewriter,
-};
 use crate::discord::mentions;
 use crate::discord::transport::{DiscordTransport, OutgoingMessage};
 use kanade_domain::model_log::RewriteStage;
@@ -41,6 +38,9 @@ use kanade_domain::notify::{
     ReminderCardStore, WeekReset, WeeklyDigest,
 };
 use kanade_domain::scheduler::{ScheduleStore, Scope};
+use kanade_voice::nudge::{
+    NudgeRewriter, RewriteFailure, RewriteOutcome, RewritePrompt, SharedRewriter,
+};
 
 /// What a finished run did.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]

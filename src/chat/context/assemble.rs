@@ -11,13 +11,13 @@ use super::{
     CONVERSATION_BUDGET_TOKENS, CONVERSATION_FLOOR_TOKENS, ChatTurn, Conversations,
     REPLY_CHAIN_DEPTH, TurnRole, runs,
 };
-use crate::chat::persona::{CompiledPersona, TurnContext};
 use crate::chat::sanitize::defuse_notes;
 use crate::extract::prompt::estimate_tokens;
 use kanade_domain::members::{Directory, member_name};
 use kanade_domain::pytext::strip;
 use kanade_domain::weeks::week_start;
 use kanade_llm::Message;
+use kanade_voice::persona::{CompiledPersona, TurnContext};
 
 /// A replied-to message as the gateway cache resolved it.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]

@@ -1,7 +1,8 @@
 //! Chat lifecycle log lines ([`ChatEvent`] → JSON). Never question or reply
 //! text, never member ids.
 
-use crate::chat::{driver::ChatEvent, persona::ProfileSource};
+use crate::chat::driver::ChatEvent;
+use kanade_voice::persona::ProfileSource;
 
 /// Why chat cannot answer now, for `chat_setup_changed`.
 pub(super) struct Readiness {
@@ -106,12 +107,12 @@ mod tests {
     use serde_json::json;
 
     use super::*;
-    use crate::chat::{
-        answer::Generation,
-        persona::{CompileProvenance, ExampleSource, PersonaId, ProfileId, VoiceSource},
-    };
+    use crate::chat::answer::Generation;
     use kanade_domain::model_log::{ChatInteraction, ChatOutcome};
     use kanade_llm::Effort;
+    use kanade_voice::persona::{
+        CompileProvenance, ExampleSource, PersonaId, ProfileId, VoiceSource,
+    };
 
     fn row() -> ChatInteraction {
         ChatInteraction {

@@ -20,7 +20,6 @@ use kanade::bot::cards::{Authority, CardDesk, CardReaction, CardSettings, DeskDe
 use kanade::bot::delivery::AdminAlert;
 use kanade::bot::delivery::{AlertRecorder, FixedClock};
 use kanade::bot::events::RsvpAnswer;
-use kanade::chat::persona::NudgePurpose;
 use kanade::discord::transport::{
     AmbiguousKind, Call, ChannelId, DiscordTransport, FakeDiscord, InteractionRef,
     InteractionReply, MessageEdit, MessageId, Op, Outcome, OutgoingMessage, Presence,
@@ -46,6 +45,7 @@ use kanade_domain::scheduler::{
     ProposalRequest, ScheduleStore, SchedulerService, Scope, StoreRef, Supersede, SupersedeScope,
 };
 use kanade_store::SqliteStore;
+use kanade_voice::persona::NudgePurpose;
 use twilight_model::application::command::Command;
 use twilight_model::id::{Id, marker::GuildMarker};
 

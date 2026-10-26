@@ -5,12 +5,12 @@ use chrono::{DateTime, Utc};
 use serde_json::{Value, json};
 
 use super::{AnswerFailure, Generation};
-use crate::chat::persona::{CompileProvenance, ProfileSource};
 use crate::chat::sanitize::looks_like_clarification;
 use crate::chat::tools::{REFUSED, ToolContext, ToolName};
 use kanade_domain::model_log::{ChatInteraction, ChatOutcome, ChatRound};
 use kanade_llm::governor::{Refused, SessionFailure};
 use kanade_llm::{Effort, ErrorCode};
+use kanade_voice::persona::{CompileProvenance, ProfileSource};
 
 /// How the question ended. `rate_limited` and `withheld` are decided before
 /// the loop runs (gate, pre-screen) and are the caller's to record.

@@ -1,10 +1,10 @@
 //! Nudge seed pools and `compact.nudge_rewrite`: schema and precedence only.
 
-use kanade::chat::persona::{
+use kanade_voice::persona::{
     CompiledPersona, MAX_NUDGE_CHARS, NudgeMood, NudgePurpose, NudgeSource, PersonaError,
     YamlIssue, check_nudge_line, fill_nudge, parse_bundle, parse_profile,
 };
-use kanade::chat::prompts::builtin_nudges;
+use kanade_voice::prompts::builtin_nudges;
 
 use crate::support::{bundle, pid, prof, profile};
 
@@ -19,7 +19,7 @@ fn with_nudges(section: &str) -> String {
     format!("{}nudges:\n{section}", bundle("alpha", "Alpha"))
 }
 
-fn parse(section: &str) -> Result<kanade::chat::persona::Bundle, PersonaError> {
+fn parse(section: &str) -> Result<kanade_voice::persona::Bundle, PersonaError> {
     parse_bundle(&with_nudges(section), &pid("alpha"))
 }
 
@@ -214,7 +214,7 @@ fn nudge_rewrite_is_an_optional_compact_sibling() {
     }
     // The tracked Kanade bundle carries a nudge_rewrite and its own
     // request-form pools, so "fix it yourself" lines never front a request.
-    let root = kanade::chat::persona::PersonaRoot::open(&crate::support::tracked_dir()).unwrap();
+    let root = kanade_voice::persona::PersonaRoot::open(&crate::support::tracked_dir()).unwrap();
     let kanade = root.load_bundle(&pid("kanade")).unwrap().value;
     let compiled = CompiledPersona::compile(&kanade, None);
     assert!(

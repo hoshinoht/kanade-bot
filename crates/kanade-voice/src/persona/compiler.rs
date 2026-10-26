@@ -13,7 +13,7 @@ use super::{
     snapshot::ResolvedPersona,
     staging::stripped,
 };
-use crate::chat::prompts;
+use crate::prompts;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum VoiceSource {

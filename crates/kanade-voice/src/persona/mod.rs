@@ -20,6 +20,7 @@ pub use error::{PersonaError, YamlIssue};
 pub use failures::{Failures, MAX_FAILURE_CHARS, check_failure_line};
 pub use id::{EXAMPLE_PROFILE, FALLBACK_PERSONA, PersonaId, ProfileId, RoleId};
 pub use loader::{Loaded, MAX_PROFILE_FILES, PersonaRoot, ProfileIssue, ProfileSet, Source};
+pub use markdown::split_lines;
 pub use nudges::{
     MAX_NUDGE_CHARS, MAX_NUDGE_LINES, MIN_NUDGE_LINES, MoodPools, NUDGE_FIELDS, NudgeMood,
     NudgePurpose, NudgeSource, Nudges, check_nudge_line, fill_nudge,
@@ -38,5 +39,3 @@ pub use snapshot::{
 };
 pub use staging::{BOSS_FIELD, MAX_RENDERED_STAGING_CHARS, MAX_STAGING_CHARS, StagingState};
 pub use startup::{PersonaLoad, PersonaOption, load_personas};
-
-pub(crate) use markdown::split_lines;

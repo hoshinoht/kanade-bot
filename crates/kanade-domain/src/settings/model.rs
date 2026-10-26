@@ -29,7 +29,7 @@ pub struct RuntimeSettings {
 /// the code-owned deny-list minus `allowed_words` plus `extra_words`, checked
 /// on member questions and on finished replies; `deflection_line` is sent
 /// instead. Whether an allowed word is a built-in and whether the line passes
-/// the list are checked at the API (the list lives in `chat::nudge`).
+/// the list are checked at the API (the list lives in `kanade_voice::nudge`).
 #[derive(Clone, Debug, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Profanity {

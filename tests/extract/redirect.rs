@@ -2,7 +2,6 @@
 //! cards-only while the public portal is closed) and pre-filled link contents.
 
 use chrono::{DateTime, NaiveTime, TimeZone, Utc, Weekday};
-use kanade::chat::persona::NudgePurpose;
 use kanade::extract::redirect::{
     FixedChange, PortalLinks, PublicPortalLinks, RedirectCase, RedirectFacts, RedirectLink,
     SelfServiceMode, classify, effective_mode, is_link_id, plan,
@@ -10,6 +9,7 @@ use kanade::extract::redirect::{
 use kanade_domain::notify::WeekReset;
 use kanade_domain::proposals::{ChangeKind, Payload, ProposedChange};
 use kanade_domain::schedule::{Run, RunSource, RunStatus};
+use kanade_voice::persona::NudgePurpose;
 
 const AUTHOR: &str = "111111111111111111";
 const OTHER: &str = "222222222222222222";

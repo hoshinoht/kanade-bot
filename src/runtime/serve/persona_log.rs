@@ -3,7 +3,7 @@
 
 use serde_json::{Value, json};
 
-use crate::chat::persona::{PersonaSnapshot, ProfileSet, Provenance, SelectionSource};
+use kanade_voice::persona::{PersonaSnapshot, ProfileSet, Provenance, SelectionSource};
 
 fn source(source: SelectionSource) -> &'static str {
     match source {
@@ -73,7 +73,7 @@ fn emit(provenance: &Provenance, profiles: Option<&ProfileSet>) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::chat::persona::{CandidateIssue, PersonaError, PersonaId, Source};
+    use kanade_voice::persona::{CandidateIssue, PersonaError, PersonaId, Source};
 
     fn id(text: &str) -> PersonaId {
         PersonaId::parse(text).expect("id")

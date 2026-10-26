@@ -27,11 +27,11 @@ fn naming(dir: &Path, names: &[&str], hits: &mut Vec<String>) {
 /// builds model prompts must not read it.
 #[test]
 fn chat_and_extraction_never_read_guides() {
-    let src = Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../../src"));
+    let root = Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../.."));
     let mut hits = Vec::new();
-    for dir in ["chat", "extract"] {
+    for dir in ["src/chat", "src/extract", "crates/kanade-voice/src"] {
         naming(
-            &src.join(dir),
+            &root.join(dir),
             &[
                 "domain::guides",
                 "GuideStore",

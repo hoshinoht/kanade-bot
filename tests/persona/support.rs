@@ -5,7 +5,7 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use kanade::chat::persona::{PersonaId, PersonaRoot, ProfileId};
+use kanade_voice::persona::{PersonaId, PersonaRoot, ProfileId};
 
 static NEXT: AtomicU64 = AtomicU64::new(0);
 

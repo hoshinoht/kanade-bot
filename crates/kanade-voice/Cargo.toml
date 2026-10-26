@@ -1,0 +1,22 @@
+[package]
+name = "kanade-voice"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+chrono.workspace = true
+chrono-tz.workspace = true
+kanade-domain = { path = "../kanade-domain" }
+kanade-files = { path = "../kanade-files" }
+kanade-llm = { path = "../kanade-llm" }
+kanade-log = { path = "../kanade-log" }
+ring.workspace = true
+serde = { workspace = true, features = ["derive"] }
+serde-saphyr = { workspace = true, features = ["deserialize"] }
+thiserror.workspace = true
+tokio = { workspace = true, features = ["time"] }
+
+[dev-dependencies]
+uuid.workspace = true

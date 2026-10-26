@@ -34,10 +34,7 @@ use super::{
     replay::Keyed,
     write::{Refusal, bad_body, origin, state},
 };
-use crate::{
-    api::{auth::AdminSession, error::ApiError, listeners::Site, state::ApiState},
-    chat::persona::{FALLBACK_PERSONA, PersonaId, PersonaRoot, ProfileId, ReloadError},
-};
+use crate::api::{auth::AdminSession, error::ApiError, listeners::Site, state::ApiState};
 use kanade_domain::{
     history::Surface,
     settings::{
@@ -46,6 +43,7 @@ use kanade_domain::{
     },
 };
 use kanade_store::replays::{ReplayScope, StoredReplay};
+use kanade_voice::persona::{FALLBACK_PERSONA, PersonaId, PersonaRoot, ProfileId, ReloadError};
 
 /// The stored body of a keyed PATCH: the notices it answered with.
 #[derive(Deserialize)]

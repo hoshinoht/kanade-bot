@@ -8,10 +8,7 @@ use chrono_tz::Tz;
 use ring::digest::{SHA256, digest};
 use serde::Serialize;
 
-use crate::{
-    app::guild::{ChannelEntry, RoleEntry},
-    chat::persona::{PersonaSnapshot, ProfileId},
-};
+use crate::app::guild::{ChannelEntry, RoleEntry};
 use kanade_domain::{
     notify::WeeklyDigest,
     settings::{
@@ -27,6 +24,7 @@ use kanade_llm::{
     governor::Role,
     setup::{CatalogModel, CatalogSnapshot, RunningRole, resolve_context},
 };
+use kanade_voice::persona::{PersonaSnapshot, ProfileId};
 
 const SUMMARY_CHARS: usize = 140;
 
@@ -183,7 +181,7 @@ pub fn profanity(settings: &StoredProfanity) -> Profanity {
         check_questions: settings.check_questions,
         check_replies: settings.check_replies,
         deflection_line: settings.deflection_line.clone(),
-        builtin_words: crate::chat::nudge::builtin_words(),
+        builtin_words: kanade_voice::nudge::builtin_words(),
     }
 }
 

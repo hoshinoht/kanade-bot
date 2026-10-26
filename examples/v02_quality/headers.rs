@@ -10,12 +10,9 @@
 
 use std::{path::Path, time::Duration};
 
-use kanade::{
-    cards::{
-        HeaderContext, HeaderKind, HeadingRewrite, PhraseKind, Teasable, TrialOrigin,
-        estimates::RunEstimate, fill_slots,
-    },
-    chat::persona::NudgeMood,
+use kanade::cards::{
+    HeaderContext, HeaderKind, HeadingRewrite, PhraseKind, Teasable, TrialOrigin,
+    estimates::RunEstimate, fill_slots,
 };
 use kanade_chardata::scouter::CarrierOwner;
 use kanade_domain::{
@@ -24,6 +21,7 @@ use kanade_domain::{
     members::{Member, MemberProfile},
     model_log::RewriteStage,
 };
+use kanade_voice::persona::NudgeMood;
 use serde_json::{Value, json};
 
 /// One rewrite's budget, as pre-generation gives it.

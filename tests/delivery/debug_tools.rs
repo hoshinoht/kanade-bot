@@ -15,7 +15,6 @@ use kanade::bot::commands::{
 use kanade::bot::delivery::{CardRefresh, DebugDesk, FixedClock, SAMPLE_RUN_ID, TEST_PREFIX};
 use kanade::bot::events::{ReactionRouter, RsvpAnswer, RsvpReaction};
 use kanade::cards::CardKit;
-use kanade::chat::nudge::{NudgeRewriter, RewriteFailure, RewritePrompt};
 use kanade::discord::transport::{Call, FakeDiscord, Outcome};
 use kanade_domain::ids::RandomIds;
 use kanade_domain::notify::{
@@ -24,6 +23,7 @@ use kanade_domain::notify::{
 use kanade_domain::schedule::{RunStatus, ScheduleSnapshot};
 use kanade_domain::scheduler::{SchedulerService, StoreRef};
 use kanade_store::SqliteStore;
+use kanade_voice::nudge::{NudgeRewriter, RewriteFailure, RewritePrompt};
 use twilight_model::id::Id;
 
 use crate::cards::{

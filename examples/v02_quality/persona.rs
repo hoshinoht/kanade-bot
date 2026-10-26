@@ -4,7 +4,7 @@
 
 use std::path::{Path, PathBuf};
 
-use kanade::chat::persona::{Bundle, PersonaId, parse_bundle};
+use kanade_voice::persona::{Bundle, PersonaId, parse_bundle};
 
 pub struct PersonaBundle {
     pub path: PathBuf,

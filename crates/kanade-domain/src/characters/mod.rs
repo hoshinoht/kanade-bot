@@ -64,10 +64,10 @@ mod tests {
     /// builds model prompts must not read it.
     #[test]
     fn chat_and_extraction_never_read_the_roster() {
-        let src = Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../../src"));
+        let root = Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../.."));
         let mut hits = Vec::new();
-        for dir in ["chat", "extract"] {
-            naming_characters(&src.join(dir), &mut hits);
+        for dir in ["src/chat", "src/extract", "crates/kanade-voice/src"] {
+            naming_characters(&root.join(dir), &mut hits);
         }
         assert!(hits.is_empty(), "roster characters named in {hits:?}");
     }

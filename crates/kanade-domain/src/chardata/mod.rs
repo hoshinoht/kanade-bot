@@ -68,10 +68,10 @@ mod tests {
     /// builds prompts names none of the character-data paths.
     #[test]
     fn chat_and_extraction_never_read_character_data() {
-        let src = Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../../src"));
+        let root = Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../.."));
         let mut hits = Vec::new();
-        for dir in ["chat", "extract"] {
-            naming(&src.join(dir), &mut hits);
+        for dir in ["src/chat", "src/extract", "crates/kanade-voice/src"] {
+            naming(&root.join(dir), &mut hits);
         }
         assert!(hits.is_empty(), "character data named in {hits:?}");
     }

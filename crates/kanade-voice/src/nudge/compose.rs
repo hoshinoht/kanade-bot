@@ -15,10 +15,10 @@ use super::{
     rotation::SeedRotation,
     safety::{self, WordFilter},
 };
-use crate::chat::persona::{
+use crate::persona::{
     CompiledPersona, NudgeMood, NudgePurpose, NudgeSource, check_nudge_line, fill_nudge,
 };
-use crate::chat::prompts::builtin_nudges;
+use crate::prompts::builtin_nudges;
 use kanade_domain::model_log::{ModelLogStore, RewriteKind, RewriteStage};
 use kanade_domain::notify::WeekReset;
 use kanade_domain::scheduler::StoreError;

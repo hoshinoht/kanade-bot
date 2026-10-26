@@ -38,7 +38,7 @@ use serde_json::{Value, json};
 const REWRITE_DELAY: std::time::Duration = std::time::Duration::from_millis(750);
 /// How long one extraction call takes.
 const EXTRACT_DELAY: std::time::Duration = std::time::Duration::from_millis(300);
-/// What the rewrite prompt puts before the seed (`chat::nudge::prompt`).
+/// What the rewrite prompt puts before the seed (`kanade_voice::nudge::prompt`).
 const SEED_LABEL: &str = "Line to rewrite: ";
 
 /// When completions were last asked for, how many are in flight, and how

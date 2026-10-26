@@ -8,11 +8,6 @@ use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
 
-use kanade::chat::nudge::{
-    GovernedRewriter, LineSource, NudgeFacts, NudgeRewriter, Nudger, RewriteFailure, RewritePrompt,
-    SeedReason,
-};
-use kanade::chat::persona::{NudgeMood, NudgePurpose};
 use kanade::extract::AmendmentKind;
 use kanade::extract::pipeline::MessageEvent;
 use kanade::extract::pipeline::Proposer;
@@ -27,6 +22,11 @@ use kanade_llm::governor::{
     Outcome, Random, Role, RoleConfig,
 };
 use kanade_llm::{FakeAction, FakeProvider, Message};
+use kanade_voice::nudge::{
+    GovernedRewriter, LineSource, NudgeFacts, NudgeRewriter, Nudger, RewriteFailure, RewritePrompt,
+    SeedReason,
+};
+use kanade_voice::persona::{NudgeMood, NudgePurpose};
 use serde_json::json;
 use tokio::time::Instant;
 
@@ -646,7 +646,7 @@ fn answered(content: &str, prompt_tokens: u32, completion_tokens: u32) -> FakeAc
 /// usage was checked against, the reply and its reasoning.
 #[tokio::test(start_paused = true)]
 async fn the_detailed_rewrite_reports_route_usage_and_reservation() {
-    use kanade::chat::nudge::REWRITE_MAX_OUTPUT_TOKENS;
+    use kanade_voice::nudge::REWRITE_MAX_OUTPUT_TOKENS;
 
     let (_, client) = client(vec![answered("Fine. Fix it yourself.", 40, 6)], true);
     let outcome = adapter(client)
@@ -701,7 +701,7 @@ async fn a_reply_over_its_reservation_is_unavailable_with_budget_exceeded_and_it
 /// a retry; the detail keeps what the model reported.
 #[tokio::test(start_paused = true)]
 async fn a_cut_off_rewrite_is_incomplete_and_keeps_its_usage() {
-    use kanade::chat::nudge::REWRITE_MAX_OUTPUT_TOKENS;
+    use kanade_voice::nudge::REWRITE_MAX_OUTPUT_TOKENS;
 
     let FakeAction::Response(mut cut) = answered("Waku", 40, REWRITE_MAX_OUTPUT_TOKENS) else {
         unreachable!("answered is a response")
@@ -762,10 +762,10 @@ async fn a_reservation_over_the_call_budget_is_refused_before_sending() {
 /// with them.
 #[tokio::test(start_paused = true)]
 async fn a_rewrite_row_records_max_tokens_only_when_the_route_sends_it() {
-    use kanade::chat::nudge::StoreRewriteSink;
     use kanade_domain::model_log::{RewriteFilter, RewriteLogStore};
     use kanade_llm::ModelCapabilities;
     use kanade_store::SqliteStore;
+    use kanade_voice::nudge::StoreRewriteSink;
 
     let mut rows = Vec::new();
     for sampling_controls in [false, true] {

@@ -14,7 +14,7 @@ fn strip_start(text: &str) -> &str {
 }
 
 /// Python `str.splitlines()` boundaries (`\r\n` counts once).
-pub(crate) fn split_lines(text: &str) -> Vec<&str> {
+pub fn split_lines(text: &str) -> Vec<&str> {
     let mut lines = Vec::new();
     let mut start = 0;
     let mut chars = text.char_indices().peekable();

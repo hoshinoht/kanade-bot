@@ -11,7 +11,7 @@
 //! exactly what it was before the block, and without a tease slot the block
 //! is exactly what it was before teasing.
 
-use crate::chat::persona::{CompiledPersona, NudgeMood, VoiceSource};
+use crate::persona::{CompiledPersona, NudgeMood, VoiceSource};
 use kanade_llm::Message;
 
 /// Code-owned; persona files cannot loosen it (SFW and brevity hold for every profile).
@@ -295,14 +295,14 @@ impl RewritePrompt {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::chat::persona::{PersonaId, parse_bundle};
+    use crate::persona::{PersonaId, parse_bundle};
 
     /// The model is told which text is the line, so a short seed that reads
     /// like a chat turn is not answered as one; the seed itself stays bare.
     #[test]
     fn the_request_labels_the_line_to_rewrite() {
         let bundle = parse_bundle(
-            include_str!("../../../config/personas/bundles/kanade.yaml"),
+            include_str!("../../../../config/personas/bundles/kanade.yaml"),
             &PersonaId::parse("kanade").unwrap(),
         )
         .unwrap();
@@ -324,7 +324,7 @@ mod tests {
     #[test]
     fn the_transcript_is_the_sent_messages_under_role_labels() {
         let bundle = parse_bundle(
-            include_str!("../../../config/personas/bundles/kanade.yaml"),
+            include_str!("../../../../config/personas/bundles/kanade.yaml"),
             &PersonaId::parse("kanade").unwrap(),
         )
         .unwrap();
@@ -341,7 +341,7 @@ mod tests {
 
     fn kanade() -> CompiledPersona {
         let bundle = parse_bundle(
-            include_str!("../../../config/personas/bundles/kanade.yaml"),
+            include_str!("../../../../config/personas/bundles/kanade.yaml"),
             &PersonaId::parse("kanade").unwrap(),
         )
         .unwrap();

@@ -1,11 +1,9 @@
 //! Runtime settings at startup: stored rows over the environment seeds.
 
-use crate::{
-    chat::persona::PersonaId,
-    runtime::{config::SettingSeeds, error::Error},
-};
+use crate::runtime::{config::SettingSeeds, error::Error};
 use kanade_domain::settings::{RuntimeSettings, SettingsError, keys, load_settings};
 use kanade_store::SqliteStore;
+use kanade_voice::persona::PersonaId;
 
 /// Code defaults with the environment applied; unset seeds keep the default.
 pub fn seed(seeds: &SettingSeeds) -> RuntimeSettings {

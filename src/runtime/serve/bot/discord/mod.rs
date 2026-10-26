@@ -74,7 +74,7 @@ use crate::{
         CardKit,
         estimates::{CachedEstimates, PartyEstimates},
     },
-    chat::{driver::DriverConfig, nudge::StoreRewriteSink},
+    chat::driver::DriverConfig,
     discord::{guild_cache::GuildCache, identity, roster::LiveRoster},
     runtime::{config::ServeConfig, error::Error},
 };
@@ -82,6 +82,7 @@ use kanade_chardata::character_data::PostDesk;
 use kanade_domain::{ids::RandomIds, schedule::SchedulePolicy, scheduler::SchedulerService};
 use kanade_files::GuideFiles;
 use kanade_store::SqliteStore;
+use kanade_voice::nudge::StoreRewriteSink;
 
 use ports::{StaffAuthority, StoreIndex};
 

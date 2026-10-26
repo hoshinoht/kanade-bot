@@ -1706,6 +1706,7 @@ dependencies = [
  "kanade-llm",
  "kanade-log",
  "kanade-store",
+ "kanade-voice",
  "libc",
  "regex",
  "resvg",
@@ -1819,6 +1820,24 @@ dependencies = [
  "serde",
  "serde_json",
  "sqlx",
+ "thiserror 2.0.21",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
+name = "kanade-voice"
+version = "1.0.0-beta.15"
+dependencies = [
+ "chrono",
+ "chrono-tz",
+ "kanade-domain",
+ "kanade-files",
+ "kanade-llm",
+ "kanade-log",
+ "ring",
+ "serde",
+ "serde-saphyr",
  "thiserror 2.0.21",
  "tokio",
  "uuid",

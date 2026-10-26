@@ -9,20 +9,17 @@ use std::collections::BTreeSet;
 
 use serde_json::{Map, Value};
 
-use crate::{
-    api::admin::write::Refusal,
-    app::guild::ChannelList,
-    chat::{
-        nudge::{WordFilter, is_builtin_word},
-        persona::ProfileId,
-    },
-};
+use crate::{api::admin::write::Refusal, app::guild::ChannelList};
 use kanade_domain::settings::{
     CharacterData, Chatbot, ContextSettings, ESTIMATE_DAYS, IdList, MAX_DEFLECTION_CHARS,
     MAX_PROFANITY_WORDS, MAX_ROLE_PROFILE_ASSIGNMENTS, Notifications, OVERRIDE_RUN_MINUTES,
     PROFANITY_WORD_CHARS, Persona, Pings, Posting, Profanity, RUN_MINUTES, Rate,
     RoleProfileAssignment, RunLengthOverride, RunLengths, SelfService, SelfServiceMode, Watching,
     is_profanity_word,
+};
+use kanade_voice::{
+    nudge::{WordFilter, is_builtin_word},
+    persona::ProfileId,
 };
 
 pub const MAX_COUNTDOWNS: usize = 4;

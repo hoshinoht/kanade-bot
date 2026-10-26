@@ -20,7 +20,6 @@ use crate::chat::gate::{
     Author, CHANNEL_BUSY_REACTION, ChannelDirectory, ChannelInfo, IncomingMessage, PilotSettings,
     RATE_LIMITED_REACTION, SEEN_REACTION,
 };
-use crate::chat::persona::{CompiledPersona, PersonaId, PersonaRoot};
 use crate::chat::pilot::TrafficLimits;
 use crate::chat::sanitize::{FAILURE_REPLY, schedule_defaults};
 use crate::chat::tools::ToolContext;
@@ -31,6 +30,7 @@ use kanade_domain::members::{Directory, Member, Roster};
 use kanade_domain::model_log::{ChatInteraction, ChatOutcome, ModelLogStore};
 use kanade_llm::Message;
 use kanade_store::SqliteStore;
+use kanade_voice::persona::{CompiledPersona, PersonaId, PersonaRoot};
 
 const GUILD: &str = "900";
 const ROLE: &str = "10";

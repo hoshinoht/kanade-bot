@@ -20,7 +20,6 @@ use chrono::{DateTime, Utc};
 use serde_json::{Value, json};
 use tokio::sync::{MutexGuard, watch};
 
-use crate::chat::persona::{PersonaOption, PersonaSnapshot, PersonaStore, ProfileId};
 use kanade_domain::{
     scheduler::StoreError,
     settings::{
@@ -33,6 +32,7 @@ use kanade_llm::{
     setup::{CapacityGroup, CatalogSnapshot, RoleSwap, RunningRole},
 };
 use kanade_store::replays::{ReplayScope, ReplayStore, StoredReplay};
+use kanade_voice::persona::{PersonaOption, PersonaSnapshot, PersonaStore, ProfileId};
 
 pub type ConfigFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 

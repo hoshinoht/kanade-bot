@@ -20,11 +20,11 @@ use std::sync::Arc;
 
 use crate::cards::estimates::RunEstimate;
 use crate::cards::{CardContext, card_runs};
-use crate::chat::nudge::{BossFigures, HeaderFacts, OfferedSlot, TeaseSlot, safe_value};
-use crate::chat::persona::NudgeMood;
 use kanade_domain::members::MemberProfile;
 use kanade_domain::notify::{CardRecord, HeaderSlots, IntentContent, StoredSlot};
 use kanade_domain::tease::note_problem;
+use kanade_voice::nudge::{BossFigures, HeaderFacts, OfferedSlot, TeaseSlot, safe_value};
+use kanade_voice::persona::NudgeMood;
 
 /// The header switches as configured now (Config › Notifications), read at
 /// every rewrite and render.

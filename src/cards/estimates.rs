@@ -25,7 +25,6 @@ use twilight_model::channel::message::Component;
 use crate::cards::chart::{self, Chart, ChartRun};
 use crate::cards::text::{MONTH_NAMES, local_time, weekday_name};
 use crate::cards::{CardContext, CardKit, HeaderContext, Teasable, card_runs};
-use crate::chat::persona::NudgeMood;
 use crate::discord::transport::{OutgoingMessage, Upload, legacy_rows};
 use kanade_chardata::character_data::CharacterData;
 use kanade_chardata::scouter::{
@@ -37,6 +36,7 @@ use kanade_domain::chardata::PartyShares;
 use kanade_domain::members::{Directory, MemberProfile};
 use kanade_domain::notify::IntentContent;
 use kanade_domain::schedule::{Run, RunStatus, ScheduleSnapshot};
+use kanade_voice::persona::NudgeMood;
 
 /// How long drawing may take before the card posts without it.
 pub const CHART_DEADLINE: Duration = Duration::from_secs(2);

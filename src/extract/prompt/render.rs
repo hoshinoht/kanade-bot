@@ -6,7 +6,6 @@ use chrono_tz::Tz;
 use regex::Regex;
 
 use super::{PromptContext, PromptMessage};
-use crate::chat::persona::split_lines;
 use crate::extract::gate::{BossLexicon, find_bosses};
 use crate::extract::text::pattern;
 use kanade_domain::catalog::BossTable;
@@ -14,6 +13,7 @@ use kanade_domain::ids::short_id;
 use kanade_domain::pytext::strip;
 use kanade_domain::schedule::{FixedRun, Run, RunStatus};
 use kanade_llm::identity::{Member, PassthroughSession};
+use kanade_voice::persona::split_lines;
 
 static MENTION: LazyLock<Regex> = LazyLock::new(|| pattern(r"<@!?(\d+)>"));
 

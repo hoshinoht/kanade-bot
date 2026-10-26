@@ -6,8 +6,8 @@
 use std::collections::{BTreeMap, HashSet};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
-use kanade::chat::nudge::{GovernedRewriter, Nudger, SharedRewriter};
-use kanade::chat::persona::{CompiledPersona, PersonaId, parse_bundle};
+use kanade_voice::nudge::{GovernedRewriter, Nudger, SharedRewriter};
+use kanade_voice::persona::{CompiledPersona, PersonaId, parse_bundle};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 

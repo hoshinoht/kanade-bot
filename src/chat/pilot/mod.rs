@@ -29,7 +29,6 @@ use crate::chat::context::{
     ChatTurn, Conversations, QuestionMessage, TurnRole, WITHHELD_CACHE, question_turn,
 };
 use crate::chat::gate::ChatDecision;
-use crate::chat::persona::CompiledPersona;
 use crate::chat::tools::ToolContext;
 use crate::chat::tools::bundles::{CardContext, Signals, ToolOffer, select};
 use kanade_domain::members::Directory;
@@ -37,6 +36,7 @@ use kanade_domain::model_log::{ChatFilter, ChatInteraction, ChatOutcome, MAX_PAG
 use kanade_domain::scheduler::StoreError;
 use kanade_llm::Effort;
 use kanade_llm::governor::Charge;
+use kanade_voice::persona::CompiledPersona;
 
 /// Where the answer is posted (the Discord adapter implements it later).
 pub trait ReplyPort {

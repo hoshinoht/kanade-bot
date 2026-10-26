@@ -12,16 +12,16 @@ use kanade::chat::answer::{AnswerDeps, Generation, Question, answer};
 use kanade::chat::context::{
     Conversations, Parent, QuestionMessage, Reference, assemble, build_turns, system_prompt,
 };
-use kanade::chat::persona::{
-    CompiledPersona, PersonaId, PersonaRoot, ProfileId, VoiceSource, parse_profile,
-};
 use kanade::chat::pilot::ChatPilot;
-use kanade::chat::prompts::REMINDER_PREFIX;
 use kanade::chat::sanitize::{ScheduleDefaults, schedule_defaults};
 use kanade::extract::prompt::estimate_tokens;
 use kanade_domain::scheduler::Clock;
 use kanade_llm::governor::{DEFAULT_TOOL_ROUNDS, Governor, Role};
 use kanade_llm::{ChatRequest, Effort, FakeAction, FakeProvider, Message, wire_body};
+use kanade_voice::persona::{
+    CompiledPersona, PersonaId, PersonaRoot, ProfileId, VoiceSource, parse_profile,
+};
+use kanade_voice::prompts::REMINDER_PREFIX;
 use serde_json::{Value, json};
 
 use crate::looping::{Ports, said, settings};

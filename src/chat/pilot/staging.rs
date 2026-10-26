@@ -9,9 +9,9 @@ use std::sync::LazyLock;
 
 use regex::{Regex, RegexBuilder};
 
-use crate::chat::persona::{Staging, StagingState};
 use kanade_domain::catalog::{BossReference, BossTable};
 use kanade_domain::pytext::strip;
+use kanade_voice::persona::{Staging, StagingState};
 
 /// v4 grounds at most this many bosses at once; more is unresolved.
 const MAX_BOSSES: usize = 3;

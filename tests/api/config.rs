@@ -12,18 +12,12 @@ use std::{
     },
 };
 
-use kanade::{
-    app::{
-        config::{
-            CatalogRead, ConfigDesk, ConfigFacts, ConfigFuture, ConfigInputs, ModelCatalog,
-            PersonaFiles,
-        },
-        ports::ModelLimits,
+use kanade::app::{
+    config::{
+        CatalogRead, ConfigDesk, ConfigFacts, ConfigFuture, ConfigInputs, ModelCatalog,
+        PersonaFiles,
     },
-    chat::persona::{
-        PersonaId, PersonaRoot, PersonaSnapshot, PersonaStore, ProfileId, ProfileQuery,
-        ProfileSource,
-    },
+    ports::ModelLimits,
 };
 use kanade_domain::settings::{
     Models, Reasoning, RoleModel, RoleProfileAssignment, RuntimeSettings, SettingsChange,
@@ -35,6 +29,9 @@ use kanade_llm::{
     setup::{CapacityGroup, CatalogModel, CatalogSnapshot, RoleSwap, RunningRole},
 };
 use kanade_store::SqliteStore;
+use kanade_voice::persona::{
+    PersonaId, PersonaRoot, PersonaSnapshot, PersonaStore, ProfileId, ProfileQuery, ProfileSource,
+};
 use serde_json::{Value, json};
 
 use crate::{

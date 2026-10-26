@@ -31,9 +31,6 @@ use twilight_model::id::{
 use twilight_model::user::CurrentUser;
 
 use crate::cards::CardKit;
-use crate::chat::nudge::{
-    NudgeRewriter, RewriteDetail, RewriteFailure, RewriteOutcome, RewritePrompt, SharedRewriter,
-};
 use crate::discord::transport::{
     AmbiguousKind, ApplicationEmoji, ApplicationInfo, ChannelId, DiscordTransport, HistoryPage,
     InteractionRef, InteractionReply, MessageEdit, MessageId, Outcome, OutgoingMessage, Presence,
@@ -41,6 +38,9 @@ use crate::discord::transport::{
 };
 use crate::runtime::serve::budget::ShutdownClock;
 use crate::runtime::serve::late::GatewayTransport;
+use kanade_voice::nudge::{
+    NudgeRewriter, RewriteDetail, RewriteFailure, RewriteOutcome, RewritePrompt, SharedRewriter,
+};
 use twilight_model::application::command::{Command, CommandOptionChoice};
 
 pub struct StopAware<T> {
@@ -361,7 +361,7 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn a_rewrite_cut_by_shutdown_says_so() {
         use crate::cards::{CardKit, HeadingRewrite};
-        use crate::chat::persona::{CompiledPersona, NudgeMood, PersonaId, parse_bundle};
+        use kanade_voice::persona::{CompiledPersona, NudgeMood, PersonaId, parse_bundle};
 
         let clock = ShutdownClock::default();
         let kit = cards(
