@@ -9,14 +9,14 @@ use std::sync::{Arc, Mutex};
 use chrono::{DateTime, TimeDelta, TimeZone, Utc};
 
 use super::*;
-use crate::infrastructure::store::chardata_conformance::{active, snapshot};
-use crate::infrastructure::store::members_conformance::gateway;
-use crate::infrastructure::store::{SqliteCharData, SqliteStore};
 use kanade_domain::characters::CharacterStore;
 use kanade_domain::characters::{Character, CharacterChange, CharacterRecord, CharacterRole};
 use kanade_domain::chardata::UnlinkReason;
 use kanade_domain::history::{Actor, Surface};
 use kanade_domain::members::MemberStore;
+use kanade_store::chardata_conformance::{active, snapshot};
+use kanade_store::members_conformance::gateway;
+use kanade_store::{SqliteCharData, SqliteStore};
 
 fn at(day: u32, hour: u32) -> DateTime<Utc> {
     Utc.with_ymd_and_hms(2026, 10, day, hour, 0, 0).unwrap()

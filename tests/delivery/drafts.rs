@@ -2,11 +2,11 @@
 
 use chrono::TimeDelta;
 use kanade::bot::delivery::{AdminAlert, FixedClock};
-use kanade::infrastructure::store::SqliteStore;
 use kanade_domain::drafts::{DraftChange, DraftEventKind, DraftStatus, DraftUpdate, DraftWrite};
 use kanade_domain::history::Actor;
 use kanade_domain::ids::IdGenerator;
 use kanade_domain::scheduler::{SchedulerService, StoreRef};
+use kanade_store::SqliteStore;
 
 use crate::scenarios::{delivery, now, previous_week, week, world};
 use crate::support::Store;

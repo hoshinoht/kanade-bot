@@ -27,7 +27,6 @@ use kanade::infrastructure::character_data::{
     AdminLinkOutcome, CharacterData, FetchState, RosterSide, Timing,
 };
 use kanade::infrastructure::nexon::{ApiKey, NexonClient};
-use kanade::infrastructure::store::SqliteCharData;
 use kanade_domain::characters::{
     Character, CharacterChange, CharacterRecord, CharacterRole, CharacterStore,
 };
@@ -36,6 +35,7 @@ use kanade_domain::chardata::{
 };
 use kanade_domain::history::{Actor, Surface};
 use kanade_domain::settings::{SettingsChangeQuery, SettingsStore};
+use kanade_store::SqliteCharData;
 
 use super::super::support::{
     BOSSING_ROLE, message_json, parse, parse_message, user_json, v2_buttons, v2_texts as texts,
@@ -113,7 +113,7 @@ fn character(id: &str, ign: &str, world: &str, class: &str, role: CharacterRole)
     }
 }
 
-async fn seed_character(store: &kanade::infrastructure::store::SqliteStore, row: Character) {
+async fn seed_character(store: &kanade_store::SqliteStore, row: Character) {
     let record = CharacterRecord {
         at: now(),
         actor: Actor::admin("seed"),
@@ -134,7 +134,7 @@ async fn rig_with(connected: bool, character_module: bool) -> Rig {
     let maker = {
         let (file, clock, slot) = (Arc::clone(&file), Arc::clone(&clock), Arc::clone(&slot));
         Box::new(
-            move |store: Arc<kanade::infrastructure::store::SqliteStore>,
+            move |store: Arc<kanade_store::SqliteStore>,
                   discord: Arc<kanade::discord::transport::FakeDiscord>| {
                 let service = Arc::new(CharacterData::new(
                     file as Arc<dyn CharDataStore>,

@@ -33,12 +33,12 @@ use crate::{
         state::ApiState,
     },
     app::write::{DraftCommand, DraftDone},
-    infrastructure::store::replays::ReplayScope,
 };
 use kanade_domain::{
     drafts::{DraftStatus, StoredDraft},
     scheduler::{DraftError, Scope},
 };
+use kanade_store::replays::ReplayScope;
 
 type Reply = Result<Response, Refusal>;
 

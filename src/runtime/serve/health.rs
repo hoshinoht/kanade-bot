@@ -8,9 +8,9 @@ use std::{future::Future, pin::Pin, sync::Arc};
 
 use crate::{
     chat::driver::ChatHandle,
-    infrastructure::store::SqliteStore,
     runtime::application::{DroppedHealth, Health, HealthFuture, HealthProbe},
 };
+use kanade_store::SqliteStore;
 
 /// The gateway and the delivery tick, as health reads them.
 pub trait DiscordHealth: Send + Sync {

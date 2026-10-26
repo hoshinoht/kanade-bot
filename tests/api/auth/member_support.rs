@@ -34,12 +34,12 @@ use kanade::{
         state::ApiState,
     },
     app::access::AccessPolicy,
-    infrastructure::store::{
-        SqliteStore,
-        web_sessions::{LoginMethod, SessionOrigin, WebSession, WebSessionStore},
-    },
 };
 use kanade_domain::members::{GatewayMember, MemberStore};
+use kanade_store::{
+    SqliteStore,
+    web_sessions::{LoginMethod, SessionOrigin, WebSession, WebSessionStore},
+};
 use twilight_model::id::Id;
 
 use super::TOKEN;

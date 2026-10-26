@@ -5,7 +5,6 @@
 
 use chrono::{DateTime, FixedOffset, NaiveTime, TimeDelta, TimeZone, Utc, Weekday};
 use chrono_tz::Asia::Kuala_Lumpur;
-use kanade::infrastructure::store::SqliteStore;
 use kanade_domain::drafts::{DraftOp, Target};
 use kanade_domain::history::Origin;
 use kanade_domain::ids::{IdGenerator, RandomIds};
@@ -16,6 +15,7 @@ use kanade_domain::schedule::{
     ScheduleSnapshot,
 };
 use kanade_domain::scheduler::{Attributed, Clock, ScheduleStore, SchedulerService, Scope};
+use kanade_store::SqliteStore;
 
 use crate::common::TestClock;
 

@@ -42,7 +42,6 @@ use crate::{
         AmendmentKind,
         pipeline::{Card, CardEntry, PostResult},
     },
-    infrastructure::store::SqliteStore,
     runtime::{application::HealthProbe, config::ServeConfig},
 };
 use kanade_domain::{
@@ -58,6 +57,7 @@ use kanade_domain::{
     schedule::{NewRun, RsvpState, RunSource, RunStatus, SchedulePolicy, StatusChange},
     scheduler::{ProposalRequest, ScheduleStore, SchedulerService, Scope, StoreRef, Supersede},
 };
+use kanade_store::SqliteStore;
 
 const GUILD: u64 = 900;
 const OTHER_GUILD: u64 = 901;
@@ -1226,8 +1226,8 @@ async fn a_disallowed_intents_close_keeps_serving_http_without_reconnecting() {
 async fn serve_prunes_model_logs_past_retention_and_stops_the_task_on_shutdown() {
     use sqlx::{ConnectOptions, Connection, sqlite::SqliteConnectOptions};
 
-    use crate::infrastructure::store::model_log_conformance::extraction;
     use kanade_domain::model_log::ModelLogStore;
+    use kanade_store::model_log_conformance::extraction;
 
     let harness = Harness::new();
     let now = clock::system_now() + chrono::TimeDelta::days(400);

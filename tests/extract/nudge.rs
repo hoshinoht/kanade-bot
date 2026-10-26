@@ -28,8 +28,8 @@ use kanade::infrastructure::llm::governor::{
     CallKind, Governor, GovernorConfig, GovernorPolicy, GroupConfig, Outcome, Random, Role,
     RoleConfig, XorShift,
 };
-use kanade::infrastructure::store::SqliteStore;
 use kanade_domain::notify::WeekReset;
+use kanade_store::SqliteStore;
 use tokio::time::Instant;
 
 const CHANNEL: &str = "900000000000000001";

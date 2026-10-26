@@ -5,12 +5,12 @@
 use std::collections::BTreeSet;
 
 use chrono::{DateTime, FixedOffset, TimeZone, Utc, Weekday};
-use kanade::infrastructure::store::SqliteStore;
 use kanade_domain::history::{
     Actor, ChangeHistory, Origin, RevertMode, RevertOutcome, RowChange, RowKey, Surface,
 };
 use kanade_domain::schedule::{RsvpSource, RsvpState, SchedulePolicy};
 use kanade_domain::scheduler::SchedulerService;
+use kanade_store::SqliteStore;
 
 use crate::common::TestClock;
 use crate::support::{self, CountingIds, hm, snapshot, weekly};

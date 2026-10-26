@@ -545,11 +545,11 @@ docker run --rm --user 65532:65532 -v kanade_v5_chardata:/c alpine \
 A rollback image that predates `kanade backup` cannot run step 5, so step 5
 can then only use the new image (`KANADE_BACKUP_IMAGE` unset). That is safe
 only when the release adds no store migration. Migrations are the
-`src/infrastructure/store/sqlite/migrations/*.sql` files registered in
-`MIGRATIONS` in `src/infrastructure/store/sqlite/migrate.rs`; check with:
+`crates/kanade-store/src/sqlite/migrations/*.sql` files registered in
+`MIGRATIONS` in `crates/kanade-store/src/sqlite/migrate.rs`; check with:
 
 ```sh
-git diff --stat <old-sha> HEAD -- ../src/infrastructure/store/sqlite/migrations ../src/infrastructure/store/sqlite/migrate.rs
+git diff --stat <old-sha> HEAD -- ../crates/kanade-store/src/sqlite/migrations ../crates/kanade-store/src/sqlite/migrate.rs
 ```
 
 If it lists changes, do not run `kanade backup` with the new image before

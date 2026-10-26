@@ -44,7 +44,6 @@ use crate::{
             governor::{ModelClient, Role},
             setup::ModelStack,
         },
-        store::SqliteStore,
     },
     runtime::{config::SettingSeeds, error::Error},
 };
@@ -53,6 +52,7 @@ use kanade_domain::{
     art::ArtSource, catalog::BossTable, ids::RandomIds, members::MemberStore,
     notify::DEFAULT_MAX_NOTICE_AGE, notify::DeliveryJournal, settings::RuntimeSettings,
 };
+use kanade_store::SqliteStore;
 
 const STARTING: u8 = 0;
 const RUNNING: u8 = 1;

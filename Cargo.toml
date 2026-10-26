@@ -10,10 +10,13 @@ publish = false
 [workspace.dependencies]
 chrono = { version = "=0.4.45", default-features = false }
 chrono-tz = "=0.10.4"
+libc = { version = "=0.2.189", default-features = false }
 ring = { version = "=0.17.14", default-features = false }
 serde = "=1.0.229"
 serde_json = "=1.0.151"
+sqlx = { version = "=0.8.6", default-features = false, features = ["sqlite", "runtime-tokio"] }
 thiserror = "=2.0.21"
+tokio = "=1.53.1"
 uuid = { version = "=1.26.1", default-features = false, features = ["v4"] }
 
 [package]
@@ -30,7 +33,7 @@ publish.workspace = true
 default = ["bot", "web"]
 bot = ["dep:twilight-gateway"]
 web = ["dep:axum"]
-test-support = ["tokio/test-util", "kanade-domain/test-support", "kanade-log/test-support"]
+test-support = ["tokio/test-util", "kanade-domain/test-support", "kanade-log/test-support", "kanade-store/test-support"]
 
 [dependencies]
 # Backup encryption to X25519 recipients (`kanade backup`); no plugin/ssh/armor.
@@ -47,16 +50,16 @@ serde_json.workspace = true
 jsonschema = { version = "=0.40.0", default-features = false }
 kanade-domain = { path = "crates/kanade-domain" }
 kanade-log = { path = "crates/kanade-log" }
-libc = { version = "=0.2.189", default-features = false }
+kanade-store = { path = "crates/kanade-store" }
+libc.workspace = true
 regex = { version = "=1.13.1", default-features = false, features = ["std", "unicode-case", "unicode-perl"] }
 # The reminder cards' estimate share chart: SVG → PNG with bundled fonts only
 # (no system fonts, mmap, svgz or raster-image decoders).
 resvg = { version = "=0.48.1", default-features = false, features = ["text"] }
 ring.workspace = true
 serde-saphyr = { version = "=1.3.0", default-features = false, features = ["deserialize"] }
-sqlx = { version = "=0.8.6", default-features = false, features = ["sqlite", "runtime-tokio"] }
 thiserror.workspace = true
-tokio = { version = "=1.53.1", features = ["io-util", "macros", "net", "rt-multi-thread", "signal", "sync", "time"] }
+tokio = { workspace = true, features = ["io-util", "macros", "net", "rt-multi-thread", "signal", "sync", "time"] }
 tokio-rustls = { version = "=0.26.5", default-features = false }
 toml = { version = "=1.1.6", default-features = false, features = ["std", "parse", "serde"] }
 twilight-gateway = { version = "=0.17.1", default-features = false, features = ["rustls-platform-verifier"], optional = true }
@@ -66,6 +69,8 @@ uuid.workspace = true
 webpki-roots = { version = "=1.0.10", default-features = false }
 
 [dev-dependencies]
+# Raw SQL in tests that inspect or tamper with a store (runtime unit tests, tests/, examples/).
+sqlx.workspace = true
 # Generates web/packages/api-types/src/generated.ts from the API DTOs (unit test only).
 ts-rs = { version = "=12.0.1", default-features = false, features = ["serde-compat"] }
 

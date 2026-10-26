@@ -2,10 +2,10 @@
 
 use crate::{
     chat::persona::PersonaId,
-    infrastructure::store::SqliteStore,
     runtime::{config::SettingSeeds, error::Error},
 };
 use kanade_domain::settings::{RuntimeSettings, SettingsError, keys, load_settings};
+use kanade_store::SqliteStore;
 
 /// Code defaults with the environment applied; unset seeds keep the default.
 pub fn seed(seeds: &SettingSeeds) -> RuntimeSettings {

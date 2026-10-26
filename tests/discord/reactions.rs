@@ -6,12 +6,12 @@ use chrono::{DateTime, TimeZone, Utc};
 use twilight_model::id::Id;
 
 use kanade::bot::events::{BotEvent, ReactionRouter, RouteError, RsvpAnswer, rsvp_reaction};
-use kanade::infrastructure::store::SqliteStore;
 use kanade_domain::ids::RandomIds;
 use kanade_domain::members::{Member, Roster};
 use kanade_domain::notify::{CardIndex, DeclineNoticeStore, LookupError};
 use kanade_domain::schedule::{NewRun, RsvpState, RunSource, RunStatus};
 use kanade_domain::scheduler::{Clock, SchedulerService};
+use kanade_store::SqliteStore;
 
 use super::support::*;
 

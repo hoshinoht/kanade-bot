@@ -27,9 +27,9 @@ use crate::{
     },
     app::rescan::{RescanDesk, RescanView},
     extract::rescan::{API_WINDOWS, RescanError, RescanRequest},
-    infrastructure::store::replays::{ReplayScope, StoredReplay},
 };
 use kanade_domain::history::Surface;
+use kanade_store::replays::{ReplayScope, StoredReplay};
 
 use super::super::write::{bad_body, origin};
 

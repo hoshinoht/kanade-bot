@@ -41,7 +41,6 @@ use crate::{
         character_data::{CharacterData, RosterSide, Timing},
         nexon::{ApiKey, NexonClient},
         scouter::{Estimates, ScouterClient, UpcomingParties},
-        store::{SqliteCharData, SqliteStore, SqliteStoreConfig, SqliteStoreError},
     },
     runtime::{
         config::{CHARACTER_DATA_DB_PATH_KEY, SCOUTER_URL_KEY, ServeConfig},
@@ -49,6 +48,7 @@ use crate::{
     },
 };
 use kanade_domain::chardata::{CharDataStore, next_batch};
+use kanade_store::{SqliteCharData, SqliteStore, SqliteStoreConfig, SqliteStoreError};
 
 pub(super) const SWEEP_EVERY: Duration = Duration::from_secs(60 * 60);
 /// The shortest wait before a retry pass, so a retry time that cannot move

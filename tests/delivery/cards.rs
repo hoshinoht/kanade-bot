@@ -19,7 +19,6 @@ use kanade::discord::transport::{
     Call, FakeDiscord, MessageEdit, Op, OutgoingMessage, RejectionKind, Step,
 };
 use kanade::infrastructure::files::BossArt;
-use kanade::infrastructure::store::SqliteStore;
 use kanade_domain::art::{ArtFile, ArtSource};
 use kanade_domain::catalog::{BossSpec, BossTable, CatalogSpec, DifficultySpec, GuideSpec};
 use kanade_domain::drafts::{DraftCreated, DraftKind, DraftStore, MergeCommit, NewDraft};
@@ -35,6 +34,7 @@ use kanade_domain::schedule::{
 };
 use kanade_domain::scheduler::StoreError;
 use kanade_domain::settings::RunLengths;
+use kanade_store::SqliteStore;
 use tokio::sync::Notify;
 use twilight_model::channel::message::Embed;
 use twilight_model::id::Id;
@@ -1562,7 +1562,7 @@ async fn store_writes_drive_the_refresh_task_for_cards_and_the_digest() {
 
 type Seen = Arc<Mutex<Vec<Vec<String>>>>;
 
-fn recorder() -> (Seen, kanade::infrastructure::store::RunObserver) {
+fn recorder() -> (Seen, kanade_store::RunObserver) {
     let seen: Seen = Arc::default();
     let sink = Arc::clone(&seen);
     (

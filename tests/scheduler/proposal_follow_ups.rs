@@ -4,7 +4,6 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use chrono::{DateTime, FixedOffset, NaiveTime, TimeZone, Utc, Weekday};
-use kanade::infrastructure::store::SqliteStore;
 use kanade_domain::drafts::{
     DraftCreated, DraftEvent, DraftStatus, DraftStore, DraftUpdate, DraftWrite, LoadedDraft,
     MergeCommit, NewDraft, NewProposal, ProposalCreated, ProposalInfo, ProposalSource,
@@ -19,6 +18,7 @@ use kanade_domain::scheduler::{
     Committed, DraftError, ProposalError, ProposalRequest, RecordedRequest, ScheduleStore,
     SchedulerService, Scope, StoreError, StoreRef, Supersede,
 };
+use kanade_store::SqliteStore;
 
 use crate::common::TestClock;
 use crate::support;

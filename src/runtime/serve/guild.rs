@@ -23,7 +23,6 @@ use crate::{
         roster::RosterSink,
         transport::{DiscordTransport, Outcome},
     },
-    infrastructure::store::SqliteStore,
     runtime::config::ServeConfig,
 };
 use kanade_domain::{
@@ -31,6 +30,7 @@ use kanade_domain::{
     scheduler::StoreError,
     settings::RuntimeSettings,
 };
+use kanade_store::SqliteStore;
 
 /// How long serve waits at startup for the application's emoji list.
 const MARKS_TIMEOUT: Duration = Duration::from_secs(15);

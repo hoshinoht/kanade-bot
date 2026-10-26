@@ -416,12 +416,12 @@ mod tests {
 
     use super::*;
     use crate::infrastructure::scouter::{JobRequest, ScouterClient, Start, Subject, Target};
-    use crate::infrastructure::store::SqliteCharData;
-    use crate::infrastructure::store::chardata_conformance::{member_estimate, party_estimate};
     use kanade_domain::characters::{Basis, Character, CharacterRole};
     use kanade_domain::chardata::CharDataStore;
     use kanade_domain::history::Actor;
     use kanade_domain::schedule::RunSource;
+    use kanade_store::SqliteCharData;
+    use kanade_store::chardata_conformance::{member_estimate, party_estimate};
 
     fn at() -> DateTime<Utc> {
         Utc.with_ymd_and_hms(2026, 9, 29, 4, 0, 0).unwrap()

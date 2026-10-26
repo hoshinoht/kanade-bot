@@ -14,7 +14,6 @@ use axum::{
     response::{IntoResponse, Response},
 };
 
-use crate::infrastructure::store::web_sessions::{LoginMethod, SessionOrigin};
 use crate::{
     api::{
         auth::{
@@ -31,6 +30,7 @@ use crate::{
     },
     app::crypto,
 };
+use kanade_store::web_sessions::{LoginMethod, SessionOrigin};
 
 /// The pre-auth cookie must survive Discord's cross-site redirect back.
 const LOGIN_SAME_SITE: &str = "Lax";

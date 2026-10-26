@@ -20,12 +20,12 @@ use kanade::cards::{self, CardArt, CardContext, CardKit, V2Kit, redesign};
 use kanade::discord::transport::{OutgoingMessage, Upload, legacy_rows};
 use kanade::infrastructure::character_data::{CharacterData, RosterSide, Timing};
 use kanade::infrastructure::scouter::{Card, Combined, Member};
-use kanade::infrastructure::store::{SqliteCharData, SqliteStore};
 use kanade_domain::catalog::BossTable;
 use kanade_domain::characters::{Basis, BossSlot, Character, CharacterRole, PartySlot};
 use kanade_domain::chardata::{BossCarrier, Carrier, CharDataStore, PartyShares};
 use kanade_domain::history::Actor;
 use kanade_domain::schedule::{Run, ScheduleSnapshot};
+use kanade_store::{SqliteCharData, SqliteStore};
 use resvg::tiny_skia::Pixmap;
 
 use super::{KALOS, MALEFIC, countdown, day_of, members, redesigned_v5, week};

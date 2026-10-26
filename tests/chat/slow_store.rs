@@ -6,7 +6,6 @@ use std::future::Future;
 use std::time::Duration;
 
 use chrono::{DateTime, Utc};
-use kanade::infrastructure::store::SqliteStore;
 use kanade_domain::drafts::{
     DraftCreated, DraftEvent, DraftStatus, DraftStore, DraftUpdate, DraftWrite, LoadedDraft,
     MergeCommit, NewDraft, NewProposal, ProposalCreated, ProposalInfo, ProposalStore, StoredDraft,
@@ -15,6 +14,7 @@ use kanade_domain::drafts::{
 use kanade_domain::history::{Actor, ChangeMeta, ChangeRecord, ChangeRef};
 use kanade_domain::schedule::{ChangeSet, ScheduleSnapshot};
 use kanade_domain::scheduler::{Committed, RecordedRequest, ScheduleStore, Scope, StoreError};
+use kanade_store::SqliteStore;
 
 pub struct SlowStore<'a> {
     pub inner: &'a SqliteStore,

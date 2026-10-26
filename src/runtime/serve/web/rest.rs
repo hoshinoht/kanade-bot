@@ -19,7 +19,6 @@ use crate::{
         roster::{LiveRoster, RosterSync},
         transport::Outcome,
     },
-    infrastructure::store::SqliteStore,
     runtime::{
         config::ServeConfig,
         error::Error,
@@ -31,6 +30,7 @@ use crate::{
         },
     },
 };
+use kanade_store::SqliteStore;
 
 /// How often the guild is read again.
 pub const EVERY: Duration = Duration::from_secs(5 * 60);

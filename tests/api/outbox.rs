@@ -1,10 +1,10 @@
 //! A4 and A5 writes leave their notices in the store's outbox, written with
 //! the change itself; an idempotent retry adds none.
 
-use kanade::infrastructure::store::SqliteStore;
 use kanade_domain::history::ChangeHistory;
 use kanade_domain::notify::{NoticeOutbox, change_source};
 use kanade_domain::schedule::{Notice, NoticeChange};
+use kanade_store::SqliteStore;
 use serde_json::json;
 
 use crate::reads::Reads;

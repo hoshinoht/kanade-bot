@@ -3,9 +3,9 @@
 
 use std::time::Duration;
 
-use kanade::infrastructure::store::SqliteStore;
 use kanade_domain::schedule::{Change, ChangeSet};
 use kanade_domain::scheduler::{ScheduleStore, Scope, StoreError};
+use kanade_store::SqliteStore;
 
 use crate::support::{TempDir, commit, connect, create, fixed, seed, tamper};
 
@@ -63,7 +63,7 @@ async fn a_transaction_sqlite_rolled_back_keeps_its_error_and_the_writer_recover
                 ChangeSet {
                     changes: vec![Change::PutFixedRun(fixed("boom"))],
                 },
-                kanade::infrastructure::store::conformance::meta(),
+                kanade_store::conformance::meta(),
             )
             .await;
         assert!(
@@ -101,7 +101,7 @@ async fn cancelled_commits_land_whole_or_not_at_all() {
             store.commit(
                 before.revision,
                 ChangeSet { changes },
-                kanade::infrastructure::store::conformance::meta(),
+                kanade_store::conformance::meta(),
             ),
         )
         .await;
@@ -122,7 +122,7 @@ async fn cancelled_commits_land_whole_or_not_at_all() {
                 .commit(
                     revision,
                     follow_up.clone(),
-                    kanade::infrastructure::store::conformance::meta(),
+                    kanade_store::conformance::meta(),
                 )
                 .await
             {
@@ -167,7 +167,7 @@ async fn a_busy_begin_is_returned_and_the_next_commit_reconnects() {
             ChangeSet {
                 changes: vec![Change::PutFixedRun(fixed("blocked"))],
             },
-            kanade::infrastructure::store::conformance::meta(),
+            kanade_store::conformance::meta(),
         )
         .await;
     assert!(

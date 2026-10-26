@@ -18,9 +18,9 @@ use crate::app::access::Gate;
 use crate::app::ids::id_text;
 use crate::cards::text::mention;
 use crate::discord::transport::InteractionReply;
-use crate::infrastructure::store::replays::{PortalRecord, PortalWrite};
 use kanade_domain::members::{GatewayMember, MemberProfile, PingLevel, PortalEdit, is_valid_alias};
 use kanade_domain::scheduler::StoreError;
+use kanade_store::replays::{PortalRecord, PortalWrite};
 
 /// v4 `PING_LEVEL_HELP`, in the command's own words.
 pub fn ping_help(level: PingLevel) -> &'static str {

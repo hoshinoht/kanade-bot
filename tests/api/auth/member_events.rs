@@ -7,7 +7,7 @@
 use std::time::Duration;
 
 use chrono::TimeDelta;
-use kanade::infrastructure::store::web_sessions::WebSession;
+use kanade_store::web_sessions::WebSession;
 use serde_json::{Value, json};
 use tokio::time::Instant;
 

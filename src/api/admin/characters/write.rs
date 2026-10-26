@@ -28,10 +28,7 @@ use crate::{
         state::ApiState,
     },
     app::read::CharacterRoster,
-    infrastructure::{
-        character_data::AdminLinkOutcome,
-        store::replays::{KeyedWrite, ReplayScope, StoredReplay},
-    },
+    infrastructure::character_data::AdminLinkOutcome,
 };
 use kanade_domain::{
     characters::{
@@ -42,6 +39,7 @@ use kanade_domain::{
     history::Actor,
     ids::{IdGenerator, RandomIds},
 };
+use kanade_store::replays::{KeyedWrite, ReplayScope, StoredReplay};
 
 fn not_found() -> Refusal {
     Refusal::not_found("not_found", "That character is not on the roster.")

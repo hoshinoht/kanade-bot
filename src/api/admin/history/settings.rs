@@ -5,13 +5,10 @@
 
 use chrono::{DateTime, Duration, Utc};
 
-use crate::{
-    api::{
-        dto::history::{SettingRowDiff, SettingsActor, SettingsChangeRow},
-        error::ApiError,
-        state::ApiState,
-    },
-    infrastructure::store::snapshots::HistoryView,
+use crate::api::{
+    dto::history::{SettingRowDiff, SettingsActor, SettingsChangeRow},
+    error::ApiError,
+    state::ApiState,
 };
 use kanade_domain::{
     history::{Actor, ChangeFilter},
@@ -19,6 +16,7 @@ use kanade_domain::{
     settings::{SettingsChange, SettingsChangeQuery},
     time::to_iso,
 };
+use kanade_store::snapshots::HistoryView;
 
 /// The filter's actor and boss week; `None` for a run's log, which settings
 /// never touch.

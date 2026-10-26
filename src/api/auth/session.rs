@@ -16,12 +16,10 @@ use super::{
     staff::StaffCheck,
     wire::{self, SESSION_COOKIE},
 };
+use crate::api::{error::ApiError, guard::proxy::Peer, listeners::Site};
 use crate::app::crypto;
-use crate::{
-    api::{error::ApiError, guard::proxy::Peer, listeners::Site},
-    infrastructure::store::web_sessions::{LoginMethod, SessionOrigin, WebSession},
-};
 use kanade_domain::history::{Actor, Origin, Surface};
+use kanade_store::web_sessions::{LoginMethod, SessionOrigin, WebSession};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct AdminSession {

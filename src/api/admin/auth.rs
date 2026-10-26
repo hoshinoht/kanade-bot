@@ -34,8 +34,8 @@ use crate::{
         listeners::Site,
     },
     app::crypto,
-    infrastructure::store::web_sessions::LoginMethod,
 };
+use kanade_store::web_sessions::LoginMethod;
 
 const SESSION_SAME_SITE: &str = "Strict";
 /// The pre-auth cookie must survive Discord's cross-site redirect back.

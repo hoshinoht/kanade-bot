@@ -8,8 +8,8 @@
 use std::{fs, path::Path};
 
 use chrono::{DateTime, Datelike, Timelike, Utc};
-use kanade::infrastructure::store::sqlite::BACKUP_MANIFEST_FORMAT;
 use kanade_domain::history::ChangeHistory;
+use kanade_store::sqlite::BACKUP_MANIFEST_FORMAT;
 use serde_json::json;
 
 use super::{ScheduleStore, Scope, Seed};

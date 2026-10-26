@@ -76,10 +76,11 @@ use crate::{
     },
     chat::{driver::DriverConfig, nudge::StoreRewriteSink},
     discord::{guild_cache::GuildCache, identity, roster::LiveRoster},
-    infrastructure::{character_data::PostDesk, files::GuideFiles, store::SqliteStore},
+    infrastructure::{character_data::PostDesk, files::GuideFiles},
     runtime::{config::ServeConfig, error::Error},
 };
 use kanade_domain::{ids::RandomIds, schedule::SchedulePolicy, scheduler::SchedulerService};
+use kanade_store::SqliteStore;
 
 use ports::{StaffAuthority, StoreIndex};
 

@@ -10,7 +10,6 @@ use kanade::bot::delivery::{
 };
 use kanade::bot::events::{ReactionRouter, RsvpAnswer, RsvpReaction};
 use kanade::discord::transport::{Call, DiscordTransport, FakeDiscord, Op, RejectionKind, Step};
-use kanade::infrastructure::store::SqliteStore;
 use kanade_domain::ids::RandomIds;
 use kanade_domain::members::{Member, PingLevel, Roster};
 use kanade_domain::notify::{AttemptState, EffectKind};
@@ -18,6 +17,7 @@ use kanade_domain::schedule::{
     NewRun, ReminderPolicy, RsvpState, RunSource, RunStatus, SchedulePolicy,
 };
 use kanade_domain::scheduler::{SchedulerService, StoreRef};
+use kanade_store::SqliteStore;
 use twilight_model::id::Id;
 
 use crate::intercept::Intercept;

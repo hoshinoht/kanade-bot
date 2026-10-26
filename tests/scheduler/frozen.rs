@@ -5,7 +5,6 @@
 //! as cleared. Each case runs the same run just before and just after its end.
 
 use chrono::{DateTime, NaiveTime, TimeZone, Utc, Weekday};
-use kanade::infrastructure::store::SqliteStore;
 use kanade_domain::completion::{RunEnds, RunEndsSource};
 use kanade_domain::members::Roster;
 use kanade_domain::notify::digest_inclusion;
@@ -18,6 +17,7 @@ use kanade_domain::scheduler::{
     Attributed, DeclineNoticeContext, ScheduleStore, SchedulerError, SchedulerService, Scope,
 };
 use kanade_domain::settings::RunLengths;
+use kanade_store::SqliteStore;
 
 use crate::common::{SeqIds, TestClock};
 use crate::support::by_tests;

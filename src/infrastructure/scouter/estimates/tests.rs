@@ -3,11 +3,9 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use chrono::TimeZone;
 
 use super::*;
-use crate::infrastructure::{
-    scouter::{Card, UpcomingRun},
-    store::SqliteCharData,
-};
+use crate::infrastructure::scouter::{Card, UpcomingRun};
 use kanade_domain::characters::{Character, CharacterRole};
+use kanade_store::SqliteCharData;
 
 type Now = Arc<Mutex<DateTime<Utc>>>;
 

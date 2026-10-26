@@ -9,10 +9,8 @@ use std::{
     time::{Duration, Instant},
 };
 
-use crate::{
-    infrastructure::store::{SqliteStore, SqliteStoreConfig, SqliteStoreError},
-    runtime::{config::StoreSettings, error::Error, logging},
-};
+use crate::runtime::{config::StoreSettings, error::Error, logging};
+use kanade_store::{SqliteStore, SqliteStoreConfig, SqliteStoreError};
 
 /// Takes ownership of the store [`prepare`]d from `settings`.
 pub async fn open(settings: &StoreSettings) -> Result<Arc<SqliteStore>, Error> {

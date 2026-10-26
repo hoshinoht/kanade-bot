@@ -33,12 +33,12 @@ use crate::{
     },
     app::ports::{DigestPostRequest, DigestPostResult},
     chat::pilot::{Allowance, AllowanceSnapshot, MemberUsage},
-    infrastructure::store::replays::{ReplayScope, StoredReplay},
 };
 use kanade_domain::{
     members::MemberProfile,
     settings::{RowDiff, SettingsChange},
 };
+use kanade_store::replays::{ReplayScope, StoredReplay};
 
 /// One lock for the keyed effects that are not schedule writes (window
 /// clears, the manual digest and header rewrite), held across the replay

@@ -24,19 +24,17 @@ use kanade::{
         PersonaId, PersonaRoot, PersonaSnapshot, PersonaStore, ProfileId, ProfileQuery,
         ProfileSource,
     },
-    infrastructure::{
-        llm::{
-            AdmissionLimits, Effort, TrustZone,
-            governor::Role,
-            setup::{CapacityGroup, CatalogModel, CatalogSnapshot, RoleSwap, RunningRole},
-        },
-        store::SqliteStore,
+    infrastructure::llm::{
+        AdmissionLimits, Effort, TrustZone,
+        governor::Role,
+        setup::{CapacityGroup, CatalogModel, CatalogSnapshot, RoleSwap, RunningRole},
     },
 };
 use kanade_domain::settings::{
     Models, Reasoning, RoleModel, RoleProfileAssignment, RuntimeSettings, SettingsChange,
     SettingsStore, keys, load_settings,
 };
+use kanade_store::SqliteStore;
 use serde_json::{Value, json};
 
 use crate::{
@@ -1493,7 +1491,7 @@ async fn a_keyed_patch_replays_across_a_restart_and_expires() {
     refused(&other, 422, "idempotency_mismatch", "reused key");
 
     config
-        .restart(kanade::infrastructure::store::replays::REPLAY_TTL + chrono::TimeDelta::hours(1))
+        .restart(kanade_store::replays::REPLAY_TTL + chrono::TimeDelta::hours(1))
         .await;
     let paused = json!({"watching": {"paused": true}});
     let anew = config.keyed("cfg-r", &paused).await;

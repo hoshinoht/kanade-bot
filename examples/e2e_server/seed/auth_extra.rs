@@ -3,12 +3,10 @@
 //! Sessions lists three, as the mock does.
 
 use chrono::{DateTime, Duration, Utc};
-use kanade::{
-    app::crypto,
-    infrastructure::store::{
-        SqliteStore,
-        web_sessions::{LoginMethod, SessionOrigin, WebSession, WebSessionStore},
-    },
+use kanade::app::crypto;
+use kanade_store::{
+    SqliteStore,
+    web_sessions::{LoginMethod, SessionOrigin, WebSession, WebSessionStore},
 };
 
 use super::ids::ASAHI;

@@ -4,14 +4,12 @@
 //! is kept to show.
 
 use super::{MemberAuth, MemberSession};
-use crate::{
-    api::auth::{
-        actor_id,
-        audit::{AuditContext, AuditEvent},
-        own,
-    },
-    infrastructure::store::web_sessions::{LoginMethod, SessionOrigin, WebSession},
+use crate::api::auth::{
+    actor_id,
+    audit::{AuditContext, AuditEvent},
+    own,
 };
+use kanade_store::web_sessions::{LoginMethod, SessionOrigin, WebSession};
 
 pub struct MemberDevice {
     pub handle: String,

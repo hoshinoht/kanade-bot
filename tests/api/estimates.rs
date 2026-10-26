@@ -26,8 +26,8 @@ use chrono::TimeDelta;
 use kanade::infrastructure::{
     character_data::{CharacterData, ConfirmOutcome},
     scouter::{MAX_QUEUED, TIMEOUT},
-    store::SqliteCharData,
 };
+use kanade_store::SqliteCharData;
 use serde_json::{Value, json};
 use tokio::sync::Notify;
 

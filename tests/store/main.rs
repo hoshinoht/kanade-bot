@@ -17,14 +17,6 @@ mod support;
 
 use chrono::{DateTime, NaiveTime, TimeZone, Utc, Weekday};
 use chrono_tz::Asia::Kuala_Lumpur;
-use kanade::infrastructure::store::{
-    SqliteCharData, SqliteStore, attendance_conformance, auth_audit_conformance, card_conformance,
-    characters_conformance, chardata_conformance, cherry_pick_conformance, conformance,
-    decline_conformance, draft_conformance, guides_conformance, history_conformance,
-    journal_conformance, members_conformance, model_log_conformance, outbox_conformance,
-    owner_request_conformance, picks_conformance, precondition_conformance, proposal_conformance,
-    replay_conformance, run_prompt_conformance, settings_conformance, web_sessions_conformance,
-};
 use kanade_domain::settings::{
     RoleProfileAssignment, RuntimeSettings, Section, SettingsStore, keys, load_settings,
     save_section,
@@ -35,6 +27,14 @@ use kanade_domain::{
     notify::NoticeOutbox,
     schedule::{NewRun, ReminderPolicy, RunSource, RunStatus, ScheduleError, SchedulePolicy},
     scheduler::{Clock, ScheduleStore, SchedulerError, SchedulerService},
+};
+use kanade_store::{
+    SqliteCharData, SqliteStore, attendance_conformance, auth_audit_conformance, card_conformance,
+    characters_conformance, chardata_conformance, cherry_pick_conformance, conformance,
+    decline_conformance, draft_conformance, guides_conformance, history_conformance,
+    journal_conformance, members_conformance, model_log_conformance, outbox_conformance,
+    owner_request_conformance, picks_conformance, precondition_conformance, proposal_conformance,
+    replay_conformance, run_prompt_conformance, settings_conformance, web_sessions_conformance,
 };
 
 #[derive(Clone, Copy)]
@@ -471,7 +471,7 @@ async fn history_conforms() {
 
 #[tokio::test]
 async fn write_hints_conform() {
-    use kanade::infrastructure::store::hints_conformance::run_suite;
+    use kanade_store::hints_conformance::run_suite;
     let store = SqliteStore::open_temp().await;
     run_suite(&store, |store, observer| store.observe_writes(observer)).await;
     store.close().await.expect("store closes");

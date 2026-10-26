@@ -27,7 +27,7 @@ use kanade::{
     discord::transport::{
         AmbiguousKind, Call, FakeDiscord, Hold, Op, Outcome, RejectionKind, Step,
     },
-    infrastructure::{files::GuideFiles, store::SqliteStore},
+    infrastructure::files::GuideFiles,
 };
 use kanade_domain::{
     guides::{
@@ -37,6 +37,7 @@ use kanade_domain::{
     },
     history::{Actor, Surface},
 };
+use kanade_store::SqliteStore;
 use serde_json::{Value, json};
 use tokio::{sync::watch, task::JoinHandle};
 use twilight_model::{channel::message::MessageFlags, id::Id};

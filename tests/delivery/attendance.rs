@@ -5,10 +5,10 @@
 use chrono::{DateTime, NaiveTime, TimeDelta, TimeZone, Utc, Weekday};
 use kanade::bot::delivery::Delivery;
 use kanade::discord::transport::Call;
-use kanade::infrastructure::store::SqliteStore;
 use kanade_domain::history::{Actor, Origin, Surface};
 use kanade_domain::ids::RandomIds;
 use kanade_domain::schedule::{EMOJI_YES, NewFixedRun, RunStatus};
+use kanade_store::SqliteStore;
 
 use crate::scenarios::{HOME, config, now, previous_week, world};
 use crate::support::{Store, mark_digest_week, service, snapshot};

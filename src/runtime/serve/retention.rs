@@ -16,16 +16,14 @@ use std::{sync::Arc, time::Duration};
 
 use tokio::{sync::watch, task::JoinHandle};
 
-use crate::{
-    app::clock::Clock,
-    infrastructure::store::maintenance::{StoreMaintenance, WalCheckpoint},
-};
+use crate::app::clock::Clock;
 use kanade_domain::{
     model_log::{DEFAULT_LOG_RETENTION, ModelLogStore, PruneCounts, retention_cutoff},
     notify::DeliveryJournal,
     scheduler::StoreError,
     time::to_iso,
 };
+use kanade_store::maintenance::{StoreMaintenance, WalCheckpoint};
 
 pub(super) const EVERY: Duration = Duration::from_secs(24 * 60 * 60);
 pub(super) const RUN_LIMIT: Duration = Duration::from_secs(60);
@@ -159,7 +157,7 @@ mod tests {
     use chrono::{DateTime, TimeDelta, TimeZone, Utc};
 
     use super::*;
-    use crate::infrastructure::store::{SqliteStore, model_log_conformance::extraction};
+    use kanade_store::{SqliteStore, model_log_conformance::extraction};
 
     fn at(day: i64) -> DateTime<Utc> {
         Utc.with_ymd_and_hms(2026, 10, 11, 0, 0, 0).unwrap() + TimeDelta::days(day)

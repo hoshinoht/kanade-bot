@@ -46,7 +46,6 @@ use kanade::{
         avatars::{AvatarCache, AvatarFetch, FetchFuture},
         identity::Image,
     },
-    infrastructure::store::{SqliteStore, SqliteStoreConfig},
 };
 use kanade_domain::{
     attendance::AttendanceDefault,
@@ -64,6 +63,7 @@ use kanade_domain::{
     scheduler::{ScheduleStore, Scope},
     settings::RunLengths,
 };
+use kanade_store::{SqliteStore, SqliteStoreConfig};
 use serde_json::{Value, json};
 use twilight_model::id::Id;
 

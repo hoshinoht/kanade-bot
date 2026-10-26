@@ -4,11 +4,11 @@
 
 use chrono::{NaiveTime, Weekday};
 use kanade::discord::transport::{Call, Op};
-use kanade::infrastructure::store::SqliteStore;
 use kanade_domain::history::Origin;
 use kanade_domain::ids::RandomIds;
 use kanade_domain::ownership::{OwnerRequest, OwnerRequestStatus, OwnerRequestStore};
 use kanade_domain::schedule::NewFixedRun;
+use kanade_store::SqliteStore;
 use twilight_model::channel::message::Component;
 
 use crate::scenarios::{HOME, delivery, now, world};

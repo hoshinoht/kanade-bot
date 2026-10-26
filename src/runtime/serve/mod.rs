@@ -42,7 +42,6 @@ use crate::bot::gateway::{EventSource, shard};
 use crate::{api::server, discord::guild_cache::GuildCache};
 use crate::{
     app::clock,
-    infrastructure::store::SqliteStore,
     runtime::{
         backup::crypt::Recipients,
         config::{BACKUP_RECIPIENTS_LABEL, ServeConfig},
@@ -50,6 +49,7 @@ use crate::{
         logging, secrets,
     },
 };
+use kanade_store::SqliteStore;
 
 #[cfg(feature = "bot")]
 use bot::discord::{self, Wiring};
@@ -75,7 +75,7 @@ pub mod budget {
 
     use tokio::{sync::watch, time::Instant};
 
-    use crate::infrastructure::store::SqliteStore;
+    use kanade_store::SqliteStore;
 
     /// Total from the signal to `serve` returning: deploy/compose.yaml
     /// `stop_grace_period` (30 s) minus a 5 s margin. Keep them coupled.

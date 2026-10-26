@@ -16,8 +16,6 @@ use kanade::chat::tools::read::resolve::Heard;
 use kanade::chat::tools::read::{GuideError, StrategyGuides, ToolWorld};
 use kanade::chat::tools::{ToolContext, ToolOutcome};
 use kanade::infrastructure::llm::identity::PassthroughSession;
-use kanade::infrastructure::store::SqliteStore;
-use kanade::infrastructure::store::conformance::meta;
 use kanade_domain::catalog::{BossReference, BossSpec, BossTable, CatalogSpec, DifficultySpec};
 use kanade_domain::members::{Directory, Member};
 use kanade_domain::schedule::{
@@ -25,6 +23,8 @@ use kanade_domain::schedule::{
     RunStatus, SchedulePolicy, ScheduleSnapshot,
 };
 use kanade_domain::scheduler::{Clock, ScheduleStore, Scope};
+use kanade_store::SqliteStore;
+use kanade_store::conformance::meta;
 use serde_json::{Value, json};
 
 use crate::common::{self, SeqIds, TestClock, clock_time, strings, text, utc, weekday, zone};

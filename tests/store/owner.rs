@@ -5,10 +5,10 @@ use std::fs::{self, File, OpenOptions};
 use std::os::unix::fs::{MetadataExt, PermissionsExt, symlink};
 use std::path::Path;
 
-use kanade::infrastructure::store::{SqliteStore, SqliteStoreConfig, SqliteStoreError};
 use kanade_domain::notify::{DeliveryJournal, JournalError};
 use kanade_domain::schedule::{Change, ChangeSet};
 use kanade_domain::scheduler::{ScheduleStore, Scope, StoreError};
+use kanade_store::{SqliteStore, SqliteStoreConfig, SqliteStoreError};
 
 use crate::support::{TempDir, at, fixed, private_dir, seed};
 
@@ -174,7 +174,7 @@ async fn writes_are_refused_once_the_database_file_is_swapped() {
             ChangeSet {
                 changes: vec![Change::PutFixedRun(fixed("after-swap"))],
             },
-            kanade::infrastructure::store::conformance::meta(),
+            kanade_store::conformance::meta(),
         )
         .await;
     assert!(
@@ -194,7 +194,7 @@ async fn writes_are_refused_once_the_database_file_is_swapped() {
             ChangeSet {
                 changes: vec![Change::PutFixedRun(fixed("after-removal"))],
             },
-            kanade::infrastructure::store::conformance::meta(),
+            kanade_store::conformance::meta(),
         )
         .await;
     assert!(
@@ -209,7 +209,7 @@ async fn writes_are_refused_once_the_database_file_is_swapped() {
             ChangeSet {
                 changes: vec![Change::PutFixedRun(fixed("restored"))],
             },
-            kanade::infrastructure::store::conformance::meta(),
+            kanade_store::conformance::meta(),
         )
         .await
         .expect("writes resume once the owned file is back");
@@ -231,7 +231,7 @@ async fn a_symlink_to_the_owned_file_still_refuses_writes() {
             ChangeSet {
                 changes: vec![Change::PutFixedRun(fixed("via-link"))],
             },
-            kanade::infrastructure::store::conformance::meta(),
+            kanade_store::conformance::meta(),
         )
         .await;
     assert!(

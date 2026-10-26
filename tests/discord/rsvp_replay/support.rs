@@ -5,7 +5,6 @@ use kanade::bot::cards::{Authority, CardDesk, CardOutbox, CardSettings, DeskDeps
 use kanade::bot::delivery::{AlertRecorder, FixedClock};
 use kanade::bot::rsvp_replay::{ReplayReport, RsvpReplay};
 use kanade::discord::transport::{FakeDiscord, MessageId};
-use kanade::infrastructure::store::SqliteStore;
 use kanade_domain::history::{Actor, ChangeMeta, Origin, Surface};
 use kanade_domain::ids::RandomIds;
 use kanade_domain::members::{Directory, Member};
@@ -19,6 +18,7 @@ use kanade_domain::schedule::{
     SchedulePolicy,
 };
 use kanade_domain::scheduler::{ScheduleStore, SchedulerService};
+use kanade_store::SqliteStore;
 use twilight_model::channel::message::ReactionType;
 use twilight_model::id::Id;
 

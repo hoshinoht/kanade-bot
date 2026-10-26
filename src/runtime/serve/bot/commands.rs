@@ -28,10 +28,10 @@ use crate::{
     cards::CardKit,
     chat::driver::ChatHandle,
     discord::{guild_cache::GuildCache, roster::LiveRoster},
-    infrastructure::store::SqliteStore,
     runtime::error::Error,
 };
 use kanade_domain::{catalog::BossTable, schedule::SchedulePolicy};
+use kanade_store::SqliteStore;
 
 use crate::runtime::serve::late::GatewayTransport;
 

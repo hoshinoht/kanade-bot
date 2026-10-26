@@ -3,7 +3,6 @@
 //! when the schedule moved, attendance rules and TTL expiry.
 
 use chrono::{DateTime, FixedOffset, NaiveTime, TimeZone, Utc, Weekday};
-use kanade::infrastructure::store::SqliteStore;
 use kanade_domain::drafts::{
     DraftEventKind, DraftOp, DraftStatus, DraftStore, LoadedDraft, ProposalSource, ProposalStore,
     RequestLimit, Target,
@@ -21,6 +20,7 @@ use kanade_domain::scheduler::{
     DraftError, ProposalApproved, ProposalError, ProposalPreview, ProposalRequest, RequestError,
     SchedulerService, Supersede,
 };
+use kanade_store::SqliteStore;
 
 use crate::common::TestClock;
 use crate::support::{self, by_tests, snapshot, utc};

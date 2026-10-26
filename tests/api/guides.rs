@@ -18,7 +18,7 @@ use chrono::{DateTime, TimeZone, Utc};
 use kanade::{
     api::listeners::Site,
     app::ports::{GuidePort, OfflineGuides},
-    infrastructure::{files::GuideFiles, store::SqliteStore},
+    infrastructure::files::GuideFiles,
 };
 use kanade_domain::{
     catalog::BossTable,
@@ -28,6 +28,7 @@ use kanade_domain::{
     },
     settings::{SettingsChangeQuery, SettingsStore},
 };
+use kanade_store::SqliteStore;
 use serde_json::{Value, json};
 
 use crate::{

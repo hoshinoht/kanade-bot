@@ -4,12 +4,12 @@
 
 use chrono::{DateTime, TimeDelta, Utc};
 use kanade::discord::transport::Call;
-use kanade::infrastructure::store::SqliteStore;
 use kanade_domain::completion::{PromptClose, PromptOutcome, RunPrompt};
 use kanade_domain::history::{Actor, ChangeHistory, Origin};
 use kanade_domain::ids::RandomIds;
 use kanade_domain::schedule::{NewRun, RunSource, RunStatus, StatusChange};
 use kanade_domain::scheduler::Scope;
+use kanade_store::SqliteStore;
 use twilight_model::channel::message::Component;
 
 use crate::scenarios::{HOME, config, delivery, now, week, world};

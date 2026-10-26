@@ -12,8 +12,8 @@ use std::{
 };
 
 use chrono::{DateTime, Utc};
-use kanade::infrastructure::store::{SqliteStore, SqliteStoreConfig};
 use kanade_domain::model_log::{ExtractionLog, ExtractionOutcome, ModelLogStore};
+use kanade_store::{SqliteStore, SqliteStoreConfig};
 use sqlx::{ConnectOptions, Connection, sqlite::SqliteConnectOptions};
 
 use super::backup::{TempDir, mode, names, text};

@@ -7,9 +7,9 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use chrono::TimeDelta;
 use kanade::bot::delivery::{ALERT_WINDOW, AdminAlert, AlertThrottle, DigestOutcome, SendOutcome};
 use kanade::discord::transport::{Op, Outcome, RejectionKind, Step};
-use kanade::infrastructure::store::SqliteStore;
 use kanade_domain::ids::RandomIds;
 use kanade_domain::notify::{AttemptState, DeliveryTarget, EffectKind};
+use kanade_store::SqliteStore;
 
 use crate::intercept::Intercept;
 use crate::scenarios::{

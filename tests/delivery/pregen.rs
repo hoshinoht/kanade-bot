@@ -18,11 +18,11 @@ use kanade::chat::nudge::{
     NudgeRewriter, RewriteAttempt, RewriteDetail, RewriteFailure, RewriteOutcome, RewritePrompt,
     RewriteSink, StoreRewriteSink,
 };
-use kanade::infrastructure::store::SqliteStore;
 use kanade_domain::history::Origin;
 use kanade_domain::ids::RandomIds;
 use kanade_domain::model_log::{RewriteFilter, RewriteLogStore, RewriteStage};
 use kanade_domain::notify::{CardRecord, DedupeKey, DeliveryTarget, ReminderCardStore};
+use kanade_store::SqliteStore;
 use tokio::sync::watch;
 
 use crate::cards::{

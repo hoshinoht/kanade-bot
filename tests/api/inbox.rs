@@ -4,7 +4,6 @@
 //! against the contract schemas.
 
 use chrono::{DateTime, NaiveTime, Utc, Weekday};
-use kanade::infrastructure::store::SqliteStore;
 use kanade_domain::{
     drafts::{DraftEventKind, DraftStatus, DraftStore, LoadedDraft, ProposalSource},
     history::{Actor, ChangeHistory, ChangeRecord, Origin, Surface},
@@ -15,6 +14,7 @@ use kanade_domain::{
     schedule::{FixedEdit, NewFixedRun, NewRun, RunSource, RunStatus},
     scheduler::{ProposalRequest, Supersede},
 };
+use kanade_store::SqliteStore;
 use serde_json::{Value, json};
 
 use crate::{

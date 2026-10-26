@@ -4,7 +4,6 @@
 
 use kanade::bot::delivery::SendOutcome;
 use kanade::discord::transport::{Op, RejectionKind, Step};
-use kanade::infrastructure::store::SqliteStore;
 use kanade_domain::history::Origin;
 use kanade_domain::ids::RandomIds;
 use kanade_domain::notify::{
@@ -12,6 +11,7 @@ use kanade_domain::notify::{
 };
 use kanade_domain::schedule::{NewRun, RunSource, RunStatus, StatusChange};
 use kanade_domain::scheduler::SchedulerError;
+use kanade_store::SqliteStore;
 
 use crate::scenarios::{HOME, POST, World, config, delivery, now, week, world};
 use crate::support::{self, INSTANCE, Store, TempDir};

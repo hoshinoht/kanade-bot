@@ -28,8 +28,8 @@ use crate::{
         listeners::Site,
     },
     app::crypto,
-    infrastructure::store::web_sessions::{LoginMethod, SessionOrigin, WebSession},
 };
+use kanade_store::web_sessions::{LoginMethod, SessionOrigin, WebSession};
 
 /// The member cookie's `SameSite`: never sent on a cross-site request.
 pub(crate) const SESSION_SAME_SITE: &str = "Strict";

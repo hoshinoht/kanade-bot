@@ -34,7 +34,6 @@ use crate::{
             governor::XorShift,
             setup::{ModelRoles, ModelSetup, ModelStack, Models, build_with_groups},
         },
-        store::SqliteStore,
     },
     runtime::{
         config::{GuildSettings, ModelSettings, ServeConfig},
@@ -48,6 +47,7 @@ use kanade_domain::{
     scheduler::SchedulerService,
     settings::{RuntimeSettings, SettingsStore},
 };
+use kanade_store::SqliteStore;
 
 /// Everything later wiring (gateway, roster, tick, chat, the API) shares.
 pub struct Composition {

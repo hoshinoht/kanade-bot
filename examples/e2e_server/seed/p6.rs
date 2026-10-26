@@ -13,10 +13,7 @@
 use std::{fmt::Debug, sync::Arc};
 
 use chrono::{Duration, Weekday};
-use kanade::{
-    api::{dto::events::Topic, state::ApiState},
-    infrastructure::store::SqliteStore,
-};
+use kanade::api::{dto::events::Topic, state::ApiState};
 use kanade_domain::{
     drafts::{DraftOp, DraftStore, ProposalSource, Target},
     history::{Actor, ChangeHistory, Origin, Surface},
@@ -32,6 +29,7 @@ use kanade_domain::{
     },
     scheduler::{ProposalRequest, ScheduleStore, Scope, Supersede},
 };
+use kanade_store::SqliteStore;
 use serde_json::{Map, Value};
 
 use super::{Seed, ids::*};

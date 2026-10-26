@@ -6,12 +6,12 @@
 use std::sync::Arc;
 
 use chrono::{DateTime, Utc};
-use kanade::infrastructure::store::SqliteStore;
 use kanade_domain::{
     history::{Actor, ChangeHistory, Origin, Surface},
     notify::NoticeOutbox,
     scheduler::{ScheduleStore, Scope},
 };
+use kanade_store::SqliteStore;
 use serde_json::{Value, json};
 
 use crate::{

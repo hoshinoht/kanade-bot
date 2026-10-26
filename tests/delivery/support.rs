@@ -5,7 +5,6 @@ use std::path::PathBuf;
 use chrono::{DateTime, Utc};
 use kanade::bot::delivery::{FixedClock, IdsRef};
 use kanade::discord::transport::FakeDiscord;
-use kanade::infrastructure::store::{SqliteStore, SqliteStoreConfig};
 use kanade_domain::ids::IdGenerator;
 use kanade_domain::notify::{
     CardIndex, Claim, DeliveryJournal, DeliveryTarget, DigestInclusion, EffectKind, IntentContent,
@@ -13,6 +12,7 @@ use kanade_domain::notify::{
 };
 use kanade_domain::schedule::ScheduleSnapshot;
 use kanade_domain::scheduler::{ScheduleStore, SchedulerService, Scope, StoreRef};
+use kanade_store::{SqliteStore, SqliteStoreConfig};
 use twilight_model::channel::message::Component;
 
 /// v4's first stub message id.

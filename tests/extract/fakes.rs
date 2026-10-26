@@ -28,7 +28,6 @@ use kanade::infrastructure::llm::{
     CapabilityFuture, ChatRequest, CompletionFuture, CompletionResponse, ExecutionLimits,
     FakeAction, FakeProvider, FinishReason, LlmProvider, ModelCapabilities, RetryPolicy, Usage,
 };
-use kanade::infrastructure::store::SqliteStore;
 use kanade_domain::catalog::BossTable;
 use kanade_domain::drafts::{ProposalStore, StoredProposal};
 use kanade_domain::history::Origin;
@@ -41,6 +40,7 @@ use kanade_domain::scheduler::{
     ProposalApproved, ProposalError, ProposalRequest, ProposalResult, Proposed, SchedulerService,
     StoreRef, SupersedeScope,
 };
+use kanade_store::SqliteStore;
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 

@@ -21,17 +21,15 @@ use axum::{
 };
 
 use super::context::{state, unavailable};
-use crate::{
-    api::{
-        auth::{AdminSession, wire},
-        dto::history as dto,
-        error::ApiError,
-        listeners::Site,
-        state::ApiState,
-    },
-    infrastructure::store::snapshots::HistoryViewQuery,
+use crate::api::{
+    auth::{AdminSession, wire},
+    dto::history as dto,
+    error::ApiError,
+    listeners::Site,
+    state::ApiState,
 };
 use kanade_domain::history::{ChangeFilter, ChangeRef};
+use kanade_store::snapshots::HistoryViewQuery;
 
 pub fn routes() -> Router<Arc<Site>> {
     Router::new()

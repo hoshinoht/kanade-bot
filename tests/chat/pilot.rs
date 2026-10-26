@@ -23,9 +23,9 @@ use kanade::chat::tools::bundles::{Bundle, CardContext, ToolOffer};
 use kanade::chat::tools::{ToolContext, ToolName};
 use kanade::infrastructure::llm::governor::{Charge, Refused, SessionError, SessionFailure};
 use kanade::infrastructure::llm::{FakeAction, FakeProvider};
-use kanade::infrastructure::store::SqliteStore;
 use kanade_domain::model_log::ModelLogStore;
 use kanade_domain::model_log::{AllowanceOverride, ChatOutcome};
+use kanade_store::SqliteStore;
 use serde_json::json;
 
 use crate::looping::{Ports, conversation, settings};

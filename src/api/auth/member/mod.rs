@@ -29,12 +29,8 @@ use crate::app::{
     clock::{Clock, system_now},
     crypto::{self, TagKey},
 };
-use crate::{
-    discord::avatars::AvatarCache,
-    infrastructure::store::web_sessions::{
-        LoginMethod, SessionOrigin, WebSession, WebSessionStore,
-    },
-};
+use crate::discord::avatars::AvatarCache;
+use kanade_store::web_sessions::{LoginMethod, SessionOrigin, WebSession, WebSessionStore};
 
 /// Live portal switch: `self_service.public_portal`, read per request
 /// (built in serve composition like the digest's `PortalSwitch`).

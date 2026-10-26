@@ -51,10 +51,7 @@ use crate::{
         state::ApiState,
     },
     cards::chardata::{NoticePart, notice_text},
-    infrastructure::{
-        character_data::{CharacterData, ConfirmOutcome, FetchState, LinkView},
-        store::replays::ReplayScope,
-    },
+    infrastructure::character_data::{CharacterData, ConfirmOutcome, FetchState, LinkView},
 };
 use kanade_domain::{
     characters::{Character, parse_ign},
@@ -64,6 +61,7 @@ use kanade_domain::{
     },
     history::{Actor, Surface},
 };
+use kanade_store::replays::ReplayScope;
 
 type Reply = Result<Response, Refusal>;
 

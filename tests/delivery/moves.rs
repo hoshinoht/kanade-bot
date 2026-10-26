@@ -5,10 +5,10 @@
 //! slot still ahead is posted when due.
 
 use chrono::{DateTime, TimeDelta, TimeZone, Utc};
-use kanade::infrastructure::store::SqliteStore;
 use kanade_domain::history::Origin;
 use kanade_domain::ids::RandomIds;
 use kanade_domain::schedule::{NewRun, RunSource, RunStatus};
+use kanade_store::SqliteStore;
 
 use crate::cards::{created, world};
 use crate::scenarios::{HOME, config, delivery, now, week};

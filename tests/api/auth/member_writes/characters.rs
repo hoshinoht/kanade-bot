@@ -20,13 +20,14 @@ use axum::{
 use chrono::TimeDelta;
 use kanade::{
     cards::chardata::notice_text,
-    infrastructure::{character_data::CharacterData, scouter::JobState, store::SqliteCharData},
+    infrastructure::{character_data::CharacterData, scouter::JobState},
 };
 use kanade_domain::{
     chardata::{CharDataStore, ConsentSurface, Link, LinkPut, LinkStatus, NOTICE_VERSION},
     history::{Actor, Surface},
     settings::{SettingsChangeQuery, SettingsStore},
 };
+use kanade_store::SqliteCharData;
 use serde_json::{Value, json};
 
 use super::{ALICE, BOB, CARA, Portal, refused};

@@ -15,13 +15,11 @@ use std::{
 
 use chrono::{DateTime, Utc};
 
-use crate::{
-    api::dto::{
-        history::{BackupAnchor, BackupRow},
-        iso_instant,
-    },
-    infrastructure::store::BackupManifest,
+use crate::api::dto::{
+    history::{BackupAnchor, BackupRow},
+    iso_instant,
 };
+use kanade_store::BackupManifest;
 
 const SUFFIX: &str = ".manifest.json";
 /// Directory entries examined per request.
@@ -157,7 +155,7 @@ pub(super) fn row(backup: &Found, anchored: bool, store_schema: i64) -> BackupRo
     let manifest = &backup.manifest;
     BackupRow {
         file: backup.file.clone(),
-        format: crate::infrastructure::store::sqlite::BACKUP_MANIFEST_FORMAT,
+        format: kanade_store::sqlite::BACKUP_MANIFEST_FORMAT,
         created_at: iso_instant(backup.created_at),
         history_head: (&manifest.history_head).into(),
         revision: manifest.revision,

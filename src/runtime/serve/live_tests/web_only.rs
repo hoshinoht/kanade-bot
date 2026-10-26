@@ -6,12 +6,8 @@ use twilight_model::guild::Guild;
 use twilight_model::user::CurrentUser;
 
 use super::*;
-use crate::{
-    infrastructure::store::web_sessions::{
-        LoginMethod, SessionOrigin, WebSession, WebSessionStore,
-    },
-    runtime::serve::{budget::ShutdownClock, web::rest::RestGuild},
-};
+use crate::runtime::serve::{budget::ShutdownClock, web::rest::RestGuild};
+use kanade_store::web_sessions::{LoginMethod, SessionOrigin, WebSession, WebSessionStore};
 
 /// Long enough that only the startup pass runs during a test.
 const NEVER_AGAIN: Duration = Duration::from_secs(3600);

@@ -331,7 +331,7 @@ async fn admin_cookies_and_bearers_mean_nothing_on_the_public_listener() {
 
 #[tokio::test]
 async fn token_rotation_ends_sessions_made_with_the_old_token() {
-    let store = Arc::new(kanade::infrastructure::store::SqliteStore::open_temp().await);
+    let store = Arc::new(kanade_store::SqliteStore::open_temp().await);
     let before = Harness::sharing(None, TOKEN, store.clone()).await;
     let (id, _) = before.token_login().await;
     let after = Harness::sharing(None, "a-completely-different-break-glass-token!!", store).await;

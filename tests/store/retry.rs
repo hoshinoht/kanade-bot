@@ -3,12 +3,12 @@
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use chrono::{DateTime, NaiveTime, Utc, Weekday};
-use kanade::infrastructure::store::SqliteStore;
 use kanade_domain::ids::IdGenerator;
 use kanade_domain::schedule::{Change, ChangeSet, NewFixedRun, ScheduleSnapshot};
 use kanade_domain::scheduler::{
     COMMIT_ATTEMPTS, Clock, ScheduleStore, SchedulerError, SchedulerService, Scope, StoreError,
 };
+use kanade_store::SqliteStore;
 
 use crate::support::{TempDir, at, fixed};
 
@@ -52,7 +52,7 @@ impl ScheduleStore for Interfering {
                     ChangeSet {
                         changes: vec![Change::PutFixedRun(competitor)],
                     },
-                    kanade::infrastructure::store::conformance::meta(),
+                    kanade_store::conformance::meta(),
                 )
                 .await?;
         }

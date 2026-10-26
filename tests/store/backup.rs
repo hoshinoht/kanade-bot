@@ -8,11 +8,11 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use kanade::infrastructure::store::{BackupManifest, Seal, SqliteStore, SqliteStoreError};
 use kanade_domain::model_log::ModelLogStore;
 use kanade_domain::notify::DeclineNoticeStore;
 use kanade_domain::schedule::{Change, ScheduleSnapshot};
 use kanade_domain::scheduler::{ScheduleStore, Scope};
+use kanade_store::{BackupManifest, Seal, SqliteStore, SqliteStoreError};
 
 use crate::support::{LATE_SCHEMA_DROPS, TempDir, commit, create, fixed, partials, seed, tamper};
 

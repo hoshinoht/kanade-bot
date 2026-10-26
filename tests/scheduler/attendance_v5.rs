@@ -5,7 +5,6 @@
 
 use chrono::{DateTime, FixedOffset, NaiveTime, TimeDelta, TimeZone, Utc, Weekday};
 use chrono_tz::Asia::Kuala_Lumpur;
-use kanade::infrastructure::store::SqliteStore;
 use kanade_domain::attendance::{
     AnswerState, AssumedSource, AttendanceDefault, AttendancePolicy, StatusLabel, Tally,
     snapshot_states, status_label,
@@ -19,6 +18,7 @@ use kanade_domain::schedule::{
     ScheduleError, SchedulePolicy, StatusChange,
 };
 use kanade_domain::scheduler::{DraftError, PickError, SchedulerError, SchedulerService};
+use kanade_store::SqliteStore;
 
 use crate::common::TestClock;
 use crate::support::{CountingIds, hm, snapshot, swap, weekly};

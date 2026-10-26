@@ -6,12 +6,12 @@ use crate::{
     app::{guild::GuildAccess, ids::id_text},
     bot::cards::Authority,
     discord::roster::LiveRoster,
-    infrastructure::store::SqliteStore,
 };
 use kanade_domain::{
     notify::{CardIndex, LookupError},
     proposals::Approver,
 };
+use kanade_store::SqliteStore;
 
 /// A ✅ on a card is the member's own, never `via_portal`; staff (the staff
 /// rule over the stored gateway view, or the owner) approve anything.

@@ -22,12 +22,9 @@ use tokio::sync::{MutexGuard, watch};
 
 use crate::{
     chat::persona::{PersonaOption, PersonaSnapshot, PersonaStore, ProfileId},
-    infrastructure::{
-        llm::{
-            governor::Role,
-            setup::{CapacityGroup, CatalogSnapshot, RoleSwap, RunningRole},
-        },
-        store::replays::{ReplayScope, ReplayStore, StoredReplay},
+    infrastructure::llm::{
+        governor::Role,
+        setup::{CapacityGroup, CatalogSnapshot, RoleSwap, RunningRole},
     },
 };
 use kanade_domain::{
@@ -37,6 +34,7 @@ use kanade_domain::{
         save_section_recorded, stored_rows,
     },
 };
+use kanade_store::replays::{ReplayScope, ReplayStore, StoredReplay};
 
 pub type ConfigFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 

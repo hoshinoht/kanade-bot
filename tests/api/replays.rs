@@ -6,8 +6,8 @@
 //! expired rows are pruned.
 
 use chrono::{DateTime, TimeDelta, TimeZone, Utc};
-use kanade::infrastructure::store::replays::{REPLAY_TTL, ReplayScope, ReplayStore};
 use kanade_domain::settings::{SettingsChangeQuery, SettingsStore};
+use kanade_store::replays::{REPLAY_TTL, ReplayScope, ReplayStore};
 use serde_json::{Value, json};
 use sqlx::{ConnectOptions, Connection, sqlite::SqliteConnectOptions};
 

@@ -6,7 +6,6 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use chrono::{DateTime, FixedOffset, TimeDelta, TimeZone, Utc, Weekday};
-use kanade::infrastructure::store::SqliteStore;
 use kanade_domain::drafts::{
     DraftCreated, DraftEvent, DraftEventKind, DraftKind, DraftOp, DraftScope, DraftStatus,
     DraftStore, DraftUpdate, DraftWrite, Field, LoadedDraft, MergeAnalysis, MergeCommit,
@@ -26,6 +25,7 @@ use kanade_domain::scheduler::{
     Committed, DraftError, DraftResult, MergeOutcome, RecordedRequest, ScheduleStore,
     SchedulerService, Scope, StoreError,
 };
+use kanade_store::SqliteStore;
 
 use crate::common::TestClock;
 use crate::support::{

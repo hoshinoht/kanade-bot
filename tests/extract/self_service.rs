@@ -768,8 +768,8 @@ async fn a_reservation_over_the_call_budget_is_refused_before_sending() {
 async fn a_rewrite_row_records_max_tokens_only_when_the_route_sends_it() {
     use kanade::chat::nudge::StoreRewriteSink;
     use kanade::infrastructure::llm::ModelCapabilities;
-    use kanade::infrastructure::store::SqliteStore;
     use kanade_domain::model_log::{RewriteFilter, RewriteLogStore};
+    use kanade_store::SqliteStore;
 
     let mut rows = Vec::new();
     for sampling_controls in [false, true] {

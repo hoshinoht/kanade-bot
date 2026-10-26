@@ -4,7 +4,6 @@
 use std::collections::BTreeMap;
 
 use chrono::{DateTime, TimeDelta, Utc, Weekday};
-use kanade::infrastructure::store::SqliteStore;
 use kanade_domain::history::Origin;
 use kanade_domain::notify::NoticeOutbox;
 use kanade_domain::schedule::{
@@ -13,6 +12,7 @@ use kanade_domain::schedule::{
     ScheduleSnapshot, StatusChange,
 };
 use kanade_domain::scheduler::{SchedulerError, SchedulerResult, SchedulerService};
+use kanade_store::SqliteStore;
 
 use crate::common::{TestClock, assert_sound};
 use crate::support::{

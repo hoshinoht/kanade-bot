@@ -9,14 +9,12 @@ use chrono::{DateTime, Days, NaiveDate, NaiveTime, TimeZone, Utc};
 use chrono_tz::Tz;
 
 use super::super::{history::parse::date, write::Refusal};
-use crate::{
-    api::auth::wire,
-    infrastructure::store::auth_audit::{AUDIT_PAGE_MAX, AuditFilter, AuditKind, AuditRealm},
-};
+use crate::api::auth::wire;
 use kanade_domain::model_log::{
     ChatFilter, ChatOutcome, ExtractionFilter, ExtractionOutcome, MAX_PAGE, REWRITE_VERDICTS,
     RewriteFilter, RewriteKind, RewriteStage,
 };
+use kanade_store::auth_audit::{AUDIT_PAGE_MAX, AuditFilter, AuditKind, AuditRealm};
 
 const COMMON: [&str; 7] = ["model", "from", "to", "outcome", "channel", "member", "q"];
 const CHAT_ONLY: [&str; 2] = ["tool", "min_ms"];

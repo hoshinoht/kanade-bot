@@ -18,7 +18,6 @@ use twilight_model::id::Id;
 
 use kanade::bot::guides::{ChannelView, GuideChannels, Pauses, Publisher, PublisherParts};
 use kanade::discord::transport::{Call, FakeDiscord, Op};
-use kanade::infrastructure::store::SqliteStore;
 use kanade_domain::catalog::{BossSpec, BossTable, CatalogSpec, DifficultySpec, GuideSpec};
 use kanade_domain::guides::{
     ArtFile, ArtKind, Block, BossEntry, Confirmations, GuideChange, GuideGrants, GuideRecord,
@@ -26,6 +25,7 @@ use kanade_domain::guides::{
     PublishRequested, PublishState, PublishedSlot, RenderedSlot, plan, plan_unpublish, render,
 };
 use kanade_domain::history::{Actor, Surface};
+use kanade_store::SqliteStore;
 
 pub const GUIDE: &str = "00000000-0000-4000-8000-00000000aaaa";
 pub const CHANNEL: &str = "200000000000000001";

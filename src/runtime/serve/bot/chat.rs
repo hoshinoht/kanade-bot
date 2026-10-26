@@ -50,7 +50,6 @@ use crate::{
             governor::Role,
             setup::{ModelStack, resolve_context},
         },
-        store::SqliteStore,
     },
     runtime::error::Error,
 };
@@ -65,6 +64,7 @@ use kanade_domain::{
     scheduler::{ScheduleStore, SchedulerService, Scope},
     settings::RuntimeSettings,
 };
+use kanade_store::SqliteStore;
 
 use crate::runtime::serve::bot::chat_cards::{self as cards, ChatDesk};
 use crate::runtime::serve::chat_log;

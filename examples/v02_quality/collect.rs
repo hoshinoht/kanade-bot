@@ -5,16 +5,14 @@
 use std::collections::BTreeMap;
 
 use chrono::{DateTime, Datelike, Timelike, Utc};
-use kanade::{
-    discord::transport::{Call, FakeDiscord, Outcome},
-    infrastructure::store::SqliteStore,
-};
+use kanade::discord::transport::{Call, FakeDiscord, Outcome};
 use kanade_domain::{
     drafts::ProposalStore,
     model_log::{ChatFilter, ChatInteraction, ExtractionFilter, ModelLogStore},
     proposals::ProposalCardStore,
     scheduler::{ScheduleStore, Scope},
 };
+use kanade_store::SqliteStore;
 use serde_json::{Value, json};
 use twilight_model::channel::message::Embed;
 

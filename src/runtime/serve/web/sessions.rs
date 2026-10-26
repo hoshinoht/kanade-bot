@@ -6,8 +6,9 @@ use std::{sync::Arc, time::Duration};
 
 use tokio::{sync::watch, task::JoinHandle};
 
-use crate::{api::auth::member::MemberAuth, infrastructure::store::web_sessions::SessionOrigin};
+use crate::api::auth::member::MemberAuth;
 use kanade_domain::scheduler::StoreError;
+use kanade_store::web_sessions::SessionOrigin;
 
 pub(in crate::runtime::serve) const PRUNE_EVERY: Duration = Duration::from_secs(60 * 60);
 
@@ -67,12 +68,10 @@ mod tests {
     use chrono::{DateTime, TimeDelta, TimeZone, Utc};
 
     use super::*;
-    use crate::{
-        api::auth::member::StoreEligibility,
-        infrastructure::store::{
-            SqliteStore,
-            web_sessions::{LoginMethod, WebSession, WebSessionStore},
-        },
+    use crate::api::auth::member::StoreEligibility;
+    use kanade_store::{
+        SqliteStore,
+        web_sessions::{LoginMethod, WebSession, WebSessionStore},
     };
 
     fn at(minutes: i64) -> DateTime<Utc> {

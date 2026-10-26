@@ -21,20 +21,17 @@ use super::{
     read::{PlanKind, Planned},
     stale,
 };
-use crate::{
-    api::{
-        admin::{
-            replay::{Keyed, mismatch, replayed},
-            write::Body,
-        },
-        auth::AdminSession,
-        dto::{
-            guides::{self as dto, GuideBlock, GuideConfirmations, GuideNeedsConfirmation},
-            iso_instant,
-        },
-        listeners::Site,
+use crate::api::{
+    admin::{
+        replay::{Keyed, mismatch, replayed},
+        write::Body,
     },
-    infrastructure::store::replays::KeyedWrite,
+    auth::AdminSession,
+    dto::{
+        guides::{self as dto, GuideBlock, GuideConfirmations, GuideNeedsConfirmation},
+        iso_instant,
+    },
+    listeners::Site,
 };
 use kanade_domain::{
     guides::{
@@ -43,6 +40,7 @@ use kanade_domain::{
     },
     ids::{IdGenerator, RandomIds},
 };
+use kanade_store::replays::KeyedWrite;
 
 /// Who writes at `now`, for the History record.
 fn record(session: &AdminSession, now: DateTime<Utc>) -> GuideRecord {

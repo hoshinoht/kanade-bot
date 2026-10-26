@@ -8,7 +8,6 @@ use crate::{
         events::DroppedEvents,
         gateway::{Connection, ConnectionStatus},
     },
-    infrastructure::store::SqliteStore,
     runtime::{
         application::DroppedHealth,
         serve::{
@@ -17,6 +16,7 @@ use crate::{
         },
     },
 };
+use kanade_store::SqliteStore;
 
 /// What the gateway shares with health.
 #[derive(Clone, Debug)]

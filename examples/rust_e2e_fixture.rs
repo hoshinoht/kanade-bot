@@ -12,7 +12,6 @@ use std::{
 
 use chrono::{DateTime, Duration, NaiveTime, Utc, Weekday};
 use chrono_tz::Tz;
-use kanade::infrastructure::store::{SqliteStore, SqliteStoreConfig};
 use kanade_domain::{
     history::{Actor, Origin, Surface},
     ids::RandomIds,
@@ -20,6 +19,7 @@ use kanade_domain::{
     scheduler::{Clock, SchedulerService},
     settings::RuntimeSettings,
 };
+use kanade_store::{SqliteStore, SqliteStoreConfig};
 
 #[derive(Debug)]
 struct Args {

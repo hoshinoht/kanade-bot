@@ -48,10 +48,7 @@ use crate::{
         redirect::PublicPortalLinks,
         rescan::Rescans,
     },
-    infrastructure::{
-        llm::{governor::Role, setup::ModelStack},
-        store::SqliteStore,
-    },
+    infrastructure::llm::{governor::Role, setup::ModelStack},
 };
 use kanade_domain::{
     catalog::BossTable,
@@ -59,6 +56,7 @@ use kanade_domain::{
     schedule::SchedulePolicy,
     settings::{RuntimeSettings, SelfService},
 };
+use kanade_store::SqliteStore;
 
 use crate::runtime::serve::budget::ShutdownClock;
 use crate::runtime::serve::guild::watch_list;

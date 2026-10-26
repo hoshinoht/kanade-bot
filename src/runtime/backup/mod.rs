@@ -20,10 +20,8 @@ use super::{
     error::Error,
     secrets,
 };
-use crate::infrastructure::store::{
-    BackupManifest, SqliteStore, SqliteStoreConfig, SqliteStoreError,
-};
 use crypt::Recipients;
+use kanade_store::{BackupManifest, SqliteStore, SqliteStoreConfig, SqliteStoreError};
 
 /// Appended to the snapshot's name when it is encrypted.
 pub const AGE_SUFFIX: &str = ".age";

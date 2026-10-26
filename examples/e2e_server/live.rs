@@ -38,7 +38,6 @@ use kanade::{
         server::LiveAdmin,
     },
     app::{clock::Clock, crypto},
-    infrastructure::store::{SqliteStore, SqliteStoreConfig},
     runtime::{
         config::ServeConfig,
         serve::{
@@ -48,6 +47,7 @@ use kanade::{
         },
     },
 };
+use kanade_store::{SqliteStore, SqliteStoreConfig};
 use tokio::net::{TcpListener, TcpStream};
 
 use crate::{

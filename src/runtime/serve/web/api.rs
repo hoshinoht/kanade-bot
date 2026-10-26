@@ -24,10 +24,11 @@ use crate::{
         write::Writer,
     },
     discord::avatars::AvatarCache,
-    infrastructure::{files::KnowledgeDir, llm::setup::ModelStack, store::SqliteStore},
+    infrastructure::{files::KnowledgeDir, llm::setup::ModelStack},
     runtime::{config::ServeConfig, error::Error, serve::health::LiveHealth},
 };
 use kanade_domain::{catalog::BossTable, schedule::SchedulePolicy};
+use kanade_store::SqliteStore;
 
 #[cfg(any(test, feature = "test-support"))]
 use crate::runtime::serve::composition::{Composition, compose_with};

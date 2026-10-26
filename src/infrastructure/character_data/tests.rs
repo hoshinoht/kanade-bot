@@ -20,8 +20,6 @@ use chrono::{DateTime, TimeDelta, TimeZone, Utc};
 use super::*;
 use crate::infrastructure::nexon::{ApiKey, KEY_HEADER};
 use crate::infrastructure::scouter::{RosterIgn, ScouterClient};
-use crate::infrastructure::store::members_conformance::gateway;
-use crate::infrastructure::store::{SqliteCharData, SqliteStore};
 use kanade_domain::characters::{CharacterChange, CharacterRecord, CharacterRole, CharacterWrite};
 use kanade_domain::chardata::{
     CharDataStore, ConsentSurface, DAILY_CALLS, Link, LinkStatus, MemberEstimate, NOTICE_VERSION,
@@ -29,6 +27,8 @@ use kanade_domain::chardata::{
 };
 use kanade_domain::history::{Actor, Surface};
 use kanade_domain::settings::SettingsChangeQuery;
+use kanade_store::members_conformance::gateway;
+use kanade_store::{SqliteCharData, SqliteStore};
 
 const IGN: &str = "Wisteria";
 const OCID: &str = "ocid-invented-0001";

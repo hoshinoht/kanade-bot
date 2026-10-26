@@ -11,7 +11,6 @@ use kanade::bot::delivery::render_notice;
 use kanade::cards::CardKit;
 use kanade::cards::redesign::{DifficultyMarks, via_portal_mark};
 use kanade::discord::transport::OutgoingMessage;
-use kanade::infrastructure::store::SqliteStore;
 use kanade_domain::history::Origin;
 use kanade_domain::ids::RandomIds;
 use kanade_domain::members::{Member, PingLevel, Roster};
@@ -20,6 +19,7 @@ use kanade_domain::schedule::{
     FixedField, FixedRun, NewRun, Notice, NoticeChange, RequestDecision, Run, RunSource, RunStatus,
     ScheduleSnapshot, StatusChange,
 };
+use kanade_store::SqliteStore;
 
 use super::ZONE;
 use crate::cards::{created, kit, world};

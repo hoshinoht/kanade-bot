@@ -7,13 +7,11 @@
 use std::os::unix::fs::PermissionsExt;
 
 use chrono::TimeDelta;
-use kanade::infrastructure::store::chardata_conformance::{
-    active, at, member_estimate, party_estimate, snapshot,
-};
-use kanade::infrastructure::store::{SqliteCharData, SqliteStoreError};
 use kanade_domain::chardata::{
     CharDataStore, ConsentSurface, DAILY_CALLS, ESTIMATE_TTL, Post, RefreshState,
 };
+use kanade_store::chardata_conformance::{active, at, member_estimate, party_estimate, snapshot};
+use kanade_store::{SqliteCharData, SqliteStoreError};
 use sqlx::{ConnectOptions, Connection, sqlite::SqliteConnectOptions};
 
 use crate::support::TempDir;
@@ -336,7 +334,7 @@ async fn an_unlink_leaves_no_byte_of_the_data() {
 #[tokio::test]
 async fn a_backup_holds_no_character_data() {
     let dir = TempDir::new();
-    let main = kanade::infrastructure::store::SqliteStore::open(&dir.config("kanade"))
+    let main = kanade_store::SqliteStore::open(&dir.config("kanade"))
         .await
         .unwrap();
     let file = SqliteCharData::open(&dir.config("chardata")).await.unwrap();

@@ -14,12 +14,8 @@ use tokio::sync::watch;
 
 use crate::{
     app::{config::SettingsChanged, read::ReadStore},
-    infrastructure::{
-        scouter::{
-            Upcoming, UpcomingFuture, UpcomingParties, UpcomingRun, party_subjects,
-            refresh::in_horizon,
-        },
-        store::SqliteStore,
+    infrastructure::scouter::{
+        Upcoming, UpcomingFuture, UpcomingParties, UpcomingRun, party_subjects, refresh::in_horizon,
     },
 };
 use kanade_domain::{
@@ -28,6 +24,7 @@ use kanade_domain::{
     schedule::{Run, utc_instant},
     scheduler::Scope,
 };
+use kanade_store::SqliteStore;
 
 pub(super) struct StoreParties {
     store: Arc<SqliteStore>,

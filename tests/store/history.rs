@@ -3,15 +3,13 @@
 
 use std::collections::BTreeSet;
 
-use kanade::infrastructure::store::{
-    BackupManifest, SqliteStore, SqliteStoreConfig, SqliteStoreError,
-};
 use kanade_domain::history::{
     BrokenLink, ChangeFilter, ChangeHistory, ChangeQuery, CheckedChange, HistoryRefusal,
     RevertMode, RevertOutcome, RowKey,
 };
 use kanade_domain::schedule::{Change, ReminderPolicy};
 use kanade_domain::scheduler::{ScheduleStore, SchedulerError, Scope};
+use kanade_store::{BackupManifest, SqliteStore, SqliteStoreConfig, SqliteStoreError};
 
 use crate::support::{TempDir, commit, create, fixed, raw, seed, tamper};
 

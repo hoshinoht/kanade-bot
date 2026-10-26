@@ -58,9 +58,9 @@ use chrono::{DateTime, Datelike, TimeDelta, Timelike, Utc};
 use kanade::{
     api::{guard::headers::CSP, listeners::Origin},
     app::clock::{Clock, system_now},
-    infrastructure::store::web_sessions::{LoginMethod, SessionOrigin, WebSessionStore},
 };
 use kanade_domain::members::MemberStore;
+use kanade_store::web_sessions::{LoginMethod, SessionOrigin, WebSessionStore};
 use serde::Deserialize;
 use serde_json::{Value, json};
 

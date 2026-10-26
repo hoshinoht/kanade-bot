@@ -21,8 +21,8 @@ use super::{
 use crate::{
     api::{auth::AdminSession, state::ApiState},
     app::{crypto::sha256_hex, read::ReadStore},
-    infrastructure::store::replays::{ReplayScope, StoredReplay},
 };
+use kanade_store::replays::{ReplayScope, StoredReplay};
 
 pub(crate) fn mismatch() -> Refusal {
     Refusal::unprocessable(

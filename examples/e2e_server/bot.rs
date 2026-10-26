@@ -16,7 +16,6 @@ use kanade::{
     app::clock::Clock,
     bot::gateway::{EventSource, GatewayError},
     discord::transport::FakeDiscord,
-    infrastructure::store::SqliteStore,
     runtime::{
         config::ServeConfig,
         serve::{
@@ -28,6 +27,7 @@ use kanade::{
         },
     },
 };
+use kanade_store::SqliteStore;
 use tokio::{sync::oneshot, task::JoinHandle};
 use twilight_gateway::Event;
 

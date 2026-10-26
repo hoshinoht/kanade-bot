@@ -38,7 +38,6 @@ pub use refresh::{FetchState, RefreshOutcome};
 
 use crate::infrastructure::nexon::{Limiter, NexonClient, SPACING};
 use crate::infrastructure::scouter::Estimates;
-use crate::infrastructure::store::replays::{ReplayStore, StoredReplay};
 use kanade_domain::characters::{
     Character, CharacterChange, CharacterRecord, CharacterStore, CharacterWrite,
 };
@@ -46,6 +45,7 @@ use kanade_domain::chardata::{CharDataStore, StoreFuture};
 use kanade_domain::history::Actor;
 use kanade_domain::members::{MemberProfile, MemberStore};
 use kanade_domain::settings::{SettingsChange, SettingsChangeQuery, SettingsStore};
+use kanade_store::replays::{ReplayStore, StoredReplay};
 pub use roster_sync::NEXON_ACTOR;
 pub(crate) use sweep::error_kind;
 pub use sweep::{SWEEPER, SweepReport};

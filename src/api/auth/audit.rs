@@ -15,7 +15,7 @@ use chrono::{DateTime, Utc};
 use serde::Serialize;
 
 use crate::api::guard::proxy::{ClientIp, RequestId};
-use crate::infrastructure::store::auth_audit::{AuditKind, AuditRealm, AuditRow, AuthAuditStore};
+use kanade_store::auth_audit::{AuditKind, AuditRealm, AuditRow, AuthAuditStore};
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 #[serde(tag = "event", rename_all = "snake_case")]

@@ -16,12 +16,10 @@ use crate::{
     bot::gateway::EventSource,
     cards::HeadingRewrite,
     chat::persona::CompiledPersona,
-    infrastructure::{
-        llm::{governor::Role, setup::ModelStack},
-        store::SqliteStore,
-    },
+    infrastructure::llm::{governor::Role, setup::ModelStack},
     runtime::{config::ServeConfig, error::Error},
 };
+use kanade_store::SqliteStore;
 
 /// The model stack serve would compose over an empty store: env seeds fill
 /// every role (`seed_roles`), then the same provider, governor and groups.

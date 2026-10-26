@@ -39,9 +39,7 @@ use crate::app::{
     clock::{Clock, system_now},
     crypto::{self, SealedSecret},
 };
-use crate::infrastructure::store::web_sessions::{
-    LoginMethod, SessionOrigin, WebSession, WebSessionStore,
-};
+use kanade_store::web_sessions::{LoginMethod, SessionOrigin, WebSession, WebSessionStore};
 
 /// Tailscale login header the edge sets after `whois` (v4 `HEADER_LOGIN`).
 pub const TAILSCALE_LOGIN: &str = "tailscale-user-login";

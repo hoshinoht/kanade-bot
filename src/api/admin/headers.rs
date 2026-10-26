@@ -24,8 +24,8 @@ use super::{
 use crate::{
     api::{auth::AdminSession, error::ApiError, listeners::Site},
     app::ports::{ManualRequest, ManualStart},
-    infrastructure::store::replays::ReplayScope,
 };
+use kanade_store::replays::ReplayScope;
 
 /// The whole request: the route takes no body.
 const REQUEST: &str = "headers.rewrite";

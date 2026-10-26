@@ -3,11 +3,11 @@
 //! more than one bounded batch.
 
 use chrono::{TimeZone, Utc};
-use kanade::infrastructure::store::{SqliteStore, SqliteStoreConfig};
 use kanade_domain::model_log::{
     ChatFilter, ExtractionFilter, ModelLogStore, PRUNE_BATCH, PruneCounts, WatchedMessage,
 };
 use kanade_domain::scheduler::StoreError;
+use kanade_store::{SqliteStore, SqliteStoreConfig};
 use sqlx::Connection;
 
 use crate::support::{LATE_SCHEMA_DROPS, TempDir, connect, create, raw, tamper};

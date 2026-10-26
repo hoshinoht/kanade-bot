@@ -2,10 +2,10 @@
 
 use serde_json::json;
 
-use kanade::infrastructure::store::replays::MEMBERS_SECTION;
 use kanade_domain::history::{Actor, Surface};
 use kanade_domain::members::{MemberStore, PingLevel};
 use kanade_domain::settings::{SettingsChangeQuery, SettingsStore};
+use kanade_store::replays::MEMBERS_SECTION;
 
 use super::super::support::{ADMIN_ROLE, BOSSING_ROLE};
 use super::{ALICE, BOB, CARA, DAN, KALOS, PILOT_ROLE, Slash, focused, opt, user_opt};

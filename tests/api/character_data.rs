@@ -26,13 +26,13 @@ use kanade::{
         character_data::{CharacterData, ConfirmOutcome, RosterSide, Timing},
         nexon::{ApiKey, NexonClient},
         scouter::{Estimates, ScouterClient},
-        store::SqliteCharData,
     },
 };
 use kanade_domain::{
     chardata::NOTICE_VERSION,
     settings::{RuntimeSettings, SettingsChangeQuery, SettingsStore, keys},
 };
+use kanade_store::SqliteCharData;
 use serde_json::{Value, json};
 
 use crate::{
@@ -690,7 +690,7 @@ async fn a_create_links_only_maplesea_and_keeps_manual_values_elsewhere() {
     // The retry resumes: with the link on file it answers `linked` and
     // links nothing; with none on file it links once now.
     use kanade::app::read::ReadStore;
-    use kanade::infrastructure::store::replays::ReplayScope;
+    use kanade_store::replays::ReplayScope;
     let crashed = |reads: &Reads| {
         let store = reads.store.clone();
         async move {

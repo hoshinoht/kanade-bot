@@ -3,7 +3,6 @@
 
 use chrono::{DateTime, FixedOffset, NaiveTime, TimeDelta, TimeZone, Utc, Weekday};
 use chrono_tz::{America::New_York, Asia::Kuala_Lumpur, Tz};
-use kanade::infrastructure::store::SqliteStore;
 use kanade_domain::{
     schedule::{
         COUNTDOWN_GRACE, DAY_OF, DAY_OF_GRACE, NewFixedRun, NewRun, ReminderPolicy, RunSource,
@@ -11,6 +10,7 @@ use kanade_domain::{
     },
     scheduler::{ScheduleStore, SchedulerService, Scope},
 };
+use kanade_store::SqliteStore;
 
 use crate::common::TestClock;
 use crate::support::{CountingIds, by_tests, hm};

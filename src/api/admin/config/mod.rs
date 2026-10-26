@@ -37,7 +37,6 @@ use super::{
 use crate::{
     api::{auth::AdminSession, error::ApiError, listeners::Site, state::ApiState},
     chat::persona::{FALLBACK_PERSONA, PersonaId, PersonaRoot, ProfileId, ReloadError},
-    infrastructure::store::replays::{ReplayScope, StoredReplay},
 };
 use kanade_domain::{
     history::Surface,
@@ -46,6 +45,7 @@ use kanade_domain::{
         diff_rows, keys,
     },
 };
+use kanade_store::replays::{ReplayScope, StoredReplay};
 
 /// The stored body of a keyed PATCH: the notices it answered with.
 #[derive(Deserialize)]

@@ -44,8 +44,8 @@ use kanade::{
         crypto::SealedSecret,
         guild::GuildAccess,
     },
-    infrastructure::store::SqliteStore,
 };
+use kanade_store::SqliteStore;
 use twilight_model::id::Id;
 
 use crate::support::{self, ADMIN_HOST, Fixture, Reply, request, send, spawn_router};

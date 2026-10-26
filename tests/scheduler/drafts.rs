@@ -4,7 +4,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use chrono::{DateTime, TimeZone, Utc, Weekday};
-use kanade::infrastructure::store::SqliteStore;
 use kanade_domain::{
     drafts::{
         DRAFT_OP_FORMAT, DraftOp, Entity, Field, FieldValue, MergeAnalysis, MergeConflict, Removal,
@@ -20,6 +19,7 @@ use kanade_domain::{
     },
     scheduler::SchedulerService,
 };
+use kanade_store::SqliteStore;
 use serde_json::{Value, json};
 
 use crate::common::TestClock;

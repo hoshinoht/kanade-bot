@@ -6,10 +6,10 @@
 //! the card of a run that has started is retired unsent.
 
 use chrono::{DateTime, TimeDelta, TimeZone, Utc};
-use kanade::infrastructure::store::SqliteStore;
 use kanade_domain::history::Origin;
 use kanade_domain::ids::RandomIds;
 use kanade_domain::schedule::{DAY_OF, NewRun, RunSource, RunStatus};
+use kanade_store::SqliteStore;
 
 use crate::cards::{created, world};
 use crate::scenarios::{HOME, config, delivery, week};

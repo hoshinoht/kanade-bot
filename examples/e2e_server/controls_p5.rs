@@ -50,7 +50,6 @@ use kanade::{
             BossParty, Estimates, JobRequest, JobState, Missing, RosterIgn, Start, Subject, Target,
             party_subjects,
         },
-        store::SqliteStore,
     },
 };
 use kanade_domain::{
@@ -64,6 +63,7 @@ use kanade_domain::{
     history::{Actor, Surface},
     scheduler::{ScheduleStore, Scope},
 };
+use kanade_store::SqliteStore;
 use serde::Deserialize;
 
 use super::{Shared, Side};

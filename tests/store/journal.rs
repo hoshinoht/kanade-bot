@@ -1,12 +1,12 @@
 //! SQLite-only journal behaviour: the card index and recovery across a real
 //! close and reopen.
 
-use kanade::infrastructure::store::SqliteStore;
 use kanade_domain::notify::{
     AttemptState, CardIndex, Claim, DeliveryJournal, DeliveryTarget, EffectKind, IntentContent,
     NotificationIntent, Receipt,
 };
 use kanade_domain::scheduler::{ScheduleStore, Scope};
+use kanade_store::SqliteStore;
 
 use crate::support::{TempDir, at, seed};
 
@@ -36,7 +36,7 @@ async fn unsent(store: &SqliteStore) {
             kanade_domain::schedule::ChangeSet {
                 changes: vec![kanade_domain::schedule::Change::PutReminder(row)],
             },
-            kanade::infrastructure::store::conformance::meta(),
+            kanade_store::conformance::meta(),
         )
         .await
         .expect("commit");
@@ -173,7 +173,7 @@ async fn a_cancelled_journal_write_leaves_the_next_one_working() {
             .commit(
                 revision,
                 ChangeSet { changes },
-                kanade::infrastructure::store::conformance::meta(),
+                kanade_store::conformance::meta(),
             )
             .await
             .expect("seed reminders");

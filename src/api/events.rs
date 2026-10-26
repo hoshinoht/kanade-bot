@@ -15,7 +15,7 @@ use std::{
 use tokio::sync::{OwnedSemaphorePermit, Semaphore, broadcast, watch};
 
 use super::dto::events::{EventHint, Topic};
-use crate::infrastructure::store::{WriteObserver, Written};
+use kanade_store::{WriteObserver, Written};
 
 /// Hints a slow stream may fall behind by before it skips ahead (the client
 /// sees the `seq` gap and re-reads everything).

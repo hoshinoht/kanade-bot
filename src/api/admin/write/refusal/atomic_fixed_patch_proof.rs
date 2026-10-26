@@ -9,7 +9,6 @@ use chrono_tz::Asia::Kuala_Lumpur;
 use http_body_util::BodyExt;
 use serde_json::Value;
 
-use crate::infrastructure::store::SqliteStore;
 use kanade_domain::{
     history::{
         Actor, BlameTarget, ChangeFilter, ChangeHistory, ChangeMeta, ChangeQuery, ChangeRecord,
@@ -27,6 +26,7 @@ use kanade_domain::{
         StoreError,
     },
 };
+use kanade_store::SqliteStore;
 
 const REQUEST_ID: &str = "fixed-patch-no-op-race";
 const FIXED_TIME: NaiveTime = NaiveTime::from_hms_opt(21, 0, 0).unwrap();

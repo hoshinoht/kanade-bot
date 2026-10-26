@@ -3,7 +3,6 @@
 //! directory.
 
 use chrono::{NaiveTime, TimeZone, Utc, Weekday};
-use kanade::infrastructure::store::{SqliteStore, SqliteStoreConfig};
 use kanade_domain::drafts::{DraftOp, DraftStatus, DraftStore, LoadedDraft, Target};
 use kanade_domain::history::{ChangeHistory, HistoryGap, Origin, Surface};
 use kanade_domain::ids::IdGenerator;
@@ -13,6 +12,7 @@ use kanade_domain::schedule::{NewFixedRun, ReminderPolicy, SchedulePolicy};
 use kanade_domain::scheduler::{
     DraftError, DraftResult, MergeOutcome, ScheduleStore, SchedulerService, Scope,
 };
+use kanade_store::{SqliteStore, SqliteStoreConfig};
 
 use crate::support::{TempDir, raw, tamper};
 

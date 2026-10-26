@@ -27,10 +27,10 @@ use crate::chat::tools::ToolContext;
 use crate::discord::mentions;
 use crate::discord::transport::{Call, FakeDiscord, Op};
 use crate::infrastructure::llm::Message;
-use crate::infrastructure::store::SqliteStore;
 use kanade_domain::catalog::BossTable;
 use kanade_domain::members::{Directory, Member, Roster};
 use kanade_domain::model_log::{ChatInteraction, ChatOutcome, ModelLogStore};
+use kanade_store::SqliteStore;
 
 const GUILD: &str = "900";
 const ROLE: &str = "10";

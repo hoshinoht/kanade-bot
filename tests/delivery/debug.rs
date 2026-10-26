@@ -14,11 +14,11 @@ use kanade::bot::delivery::{AlertThrottle, CardRefresh, DebugDesk, SendOutcome, 
 use kanade::bot::events::{ReactionRouter, RsvpAnswer, RsvpReaction};
 use kanade::cards::CardKit;
 use kanade::discord::transport::{Call, FakeDiscord, Op, Outcome, RejectionKind, Step};
-use kanade::infrastructure::store::SqliteStore;
 use kanade_domain::ids::{RandomIds, short_id};
 use kanade_domain::notify::{DebugCardStore, DeliveryJournal};
 use kanade_domain::schedule::{RsvpState, RunStatus};
 use kanade_domain::scheduler::{SchedulerService, StoreRef};
+use kanade_store::SqliteStore;
 use twilight_model::id::Id;
 
 use crate::cards::{

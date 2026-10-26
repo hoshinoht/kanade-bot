@@ -17,13 +17,13 @@ use kanade::bot::events::{ReactionRouter, RsvpAnswer, RsvpReaction};
 use kanade::cards::CardKit;
 use kanade::chat::nudge::{NudgeRewriter, RewriteFailure, RewritePrompt};
 use kanade::discord::transport::{Call, FakeDiscord, Outcome};
-use kanade::infrastructure::store::SqliteStore;
 use kanade_domain::ids::RandomIds;
 use kanade_domain::notify::{
     ActiveClaims, DebugCardStore, DedupeKey, DeliveryJournal, DeliveryTarget, ReminderCardStore,
 };
 use kanade_domain::schedule::{RunStatus, ScheduleSnapshot};
 use kanade_domain::scheduler::{SchedulerService, StoreRef};
+use kanade_store::SqliteStore;
 use twilight_model::id::Id;
 
 use crate::cards::{

@@ -11,7 +11,6 @@ use serde_json::json;
 
 use super::refresh::FetchState;
 use super::{CharacterData, log};
-use crate::infrastructure::store::replays::StoredReplay;
 use kanade_domain::characters::{Character, ign_key};
 use kanade_domain::chardata::{
     CALL_WINDOW, ConsentSurface, DAILY_CALLS, LINK_REGION, Link, LinkPut, LinkStatus,
@@ -19,6 +18,7 @@ use kanade_domain::chardata::{
 };
 use kanade_domain::history::{Actor, Surface};
 use kanade_domain::scheduler::StoreError;
+use kanade_store::replays::StoredReplay;
 
 /// `id` + `basic` + `stat`: what a first fetch needs from the budget.
 const FIRST_FETCH_CALLS: u32 = 3;

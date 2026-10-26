@@ -23,13 +23,13 @@ use crate::{
         AmendmentKind,
         pipeline::{Card, CardEntry, PostResult},
     },
-    infrastructure::store::SqliteStore,
 };
 use kanade_domain::{
     drafts::ProposalStore,
     ids::{RandomIds, short_id},
     proposals::{ChangeKind, Payload, ProposalCardStore, ProposedChange},
 };
+use kanade_store::SqliteStore;
 
 use crate::runtime::serve::late::GatewayTransport;
 

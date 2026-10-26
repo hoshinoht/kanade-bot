@@ -12,13 +12,11 @@ use kanade::{
     },
     app::config::{CatalogRead, ConfigDesk, ConfigFacts, ConfigFuture, ConfigInputs, ModelCatalog},
     discord::transport::{DiscordTransport, FAKE_APPLICATION_ID, FakeDiscord, Outcome},
-    infrastructure::{
-        llm::{governor::Role, setup::RunningRole},
-        store::SqliteStore,
-    },
+    infrastructure::llm::{governor::Role, setup::RunningRole},
     runtime::config::Modules,
 };
 use kanade_domain::settings::RuntimeSettings;
+use kanade_store::SqliteStore;
 use serde_json::{Value, json};
 use twilight_model::oauth::ApplicationFlags;
 

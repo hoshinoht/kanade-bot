@@ -5,7 +5,6 @@ use kanade::discord::mentions::allow_users;
 use kanade::discord::transport::{
     AmbiguousKind, Call, FakeDiscord, MessageId, Op, Outcome, RejectionKind,
 };
-use kanade::infrastructure::store::SqliteStore;
 use kanade_domain::history::{ChangeHistory, ChangeMeta, Origin};
 use kanade_domain::ids::RandomIds;
 use kanade_domain::notify::DeclineNotice;
@@ -13,6 +12,7 @@ use kanade_domain::schedule::{
     Change, ChangeSet, Rsvp, RsvpSource, RsvpState, Run, RunSource, RunStatus,
 };
 use kanade_domain::scheduler::{DeclineNoticeContext, Scope};
+use kanade_store::SqliteStore;
 
 use crate::intercept::Intercept;
 use crate::scenarios::{HOME, delivery, now, week, world};

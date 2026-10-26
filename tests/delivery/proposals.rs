@@ -3,13 +3,13 @@
 
 use chrono::TimeDelta;
 use kanade::bot::delivery::FixedClock;
-use kanade::infrastructure::store::SqliteStore;
 use kanade_domain::drafts::{DraftEventKind, DraftStatus, ProposalSource};
 use kanade_domain::history::{Actor, Origin};
 use kanade_domain::ids::RandomIds;
 use kanade_domain::proposals::{ChangeKind, ProposedChange};
 use kanade_domain::schedule::{NewRun, RunSource, RunStatus};
 use kanade_domain::scheduler::{ProposalRequest, SchedulerService, StoreRef, Supersede};
+use kanade_store::SqliteStore;
 
 use crate::scenarios::{HOME, config, delivery, now, week, world};
 use crate::support::Store;

@@ -8,7 +8,7 @@ use chrono::TimeDelta;
 use kanade::cards::redesign::OPEN_IN_PORTAL;
 use kanade::cards::{CardKit, V2Kit};
 use kanade::discord::transport::Op;
-use kanade::infrastructure::store::SqliteStore;
+use kanade_store::SqliteStore;
 use twilight_model::channel::message::Component;
 
 use crate::cards::{answer, art_dir, created, edits, kit, pictures, refresher, seed_day_of, world};
