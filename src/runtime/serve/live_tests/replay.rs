@@ -1,6 +1,6 @@
 use super::*;
 use crate::bot::transport::MessageId;
-use crate::domain::proposals::ProposalCardStore;
+use kanade_domain::proposals::ProposalCardStore;
 use twilight_model::channel::message::ReactionType;
 
 fn now() -> DateTime<Utc> {
@@ -12,7 +12,7 @@ async fn pending(harness: &Harness, ctx: &Ctx, source: ProposalSource) -> (Strin
     let at = now() + chrono::Duration::hours(30);
     let run = create_run(&ctx.store, &policy, now(), HOME_C, at).await;
     let mut roster = Roster::new();
-    roster.upsert(crate::domain::members::Member {
+    roster.upsert(kanade_domain::members::Member {
         user_id: ALICE.to_string(),
         has_role: true,
         ..Default::default()

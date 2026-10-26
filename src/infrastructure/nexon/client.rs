@@ -21,7 +21,7 @@ use tokio::net::TcpStream;
 use tokio_rustls::TlsConnector;
 
 use super::wire::{Basic, IdBody, StatBody, combat_power, error_code};
-use crate::domain::chardata::Failure;
+use kanade_domain::chardata::Failure;
 
 pub const HOST_NAME: &str = "open.api.nexon.com";
 pub const KEY_HEADER: &str = "x-nxopen-api-key";

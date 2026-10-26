@@ -10,9 +10,9 @@ use std::{
 use kanade::chat::tools::read::{
     EventBoss, GuideError, StrategyGuides, get_boss_strategy, list_bosses, render_guide,
 };
-use kanade::domain::catalog::{BossReference, BossTable};
-use kanade::domain::schedule::ScheduleSnapshot;
 use kanade::infrastructure::files::{KnowledgeDir, load_catalog, load_knowledge_dir};
+use kanade_domain::catalog::{BossReference, BossTable};
+use kanade_domain::schedule::ScheduleSnapshot;
 use serde_json::{Map, Value, json};
 
 use crate::support::world_input;

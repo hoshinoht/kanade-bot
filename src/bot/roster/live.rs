@@ -7,7 +7,7 @@ use tokio::sync::watch;
 
 use crate::bot::guild_cache::GuildCache;
 use crate::bot::ids::parse_id;
-use crate::domain::members::{Directory, Member, MemberProfile};
+use kanade_domain::members::{Directory, Member, MemberProfile};
 
 /// A snapshot of the `members` table plus the guild cache's watch list.
 /// Refreshed by the roster task after its writes and by the tick before

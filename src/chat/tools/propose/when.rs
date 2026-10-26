@@ -19,11 +19,11 @@ use chrono_tz::Tz;
 use regex::{Regex, RegexBuilder};
 
 use crate::chat::tools::read::format::local;
-use crate::domain::pytext::{split_whitespace, strip};
-use crate::domain::schedule::utc_instant;
-use crate::domain::time::ZonedDateTime;
-use crate::domain::weeks::parse_hhmm;
 use crate::extract::resolve::{parse_clock, resolve};
+use kanade_domain::pytext::{split_whitespace, strip};
+use kanade_domain::schedule::utc_instant;
+use kanade_domain::time::ZonedDateTime;
+use kanade_domain::weeks::parse_hhmm;
 
 /// A misreading, not a plan (how a bare `2300` once became the year 2300).
 const MAX_HORIZON_DAYS: i64 = 400;

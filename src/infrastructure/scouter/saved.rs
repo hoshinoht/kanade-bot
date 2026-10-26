@@ -8,8 +8,8 @@
 use chrono::{DateTime, Utc};
 
 use super::{Combined, Member, RosterIgn, Totals, scouter_keys};
-use crate::domain::characters::{Character, PartySlot};
-use crate::domain::chardata::{BossCarrier, Carrier, PartyShares};
+use kanade_domain::characters::{Character, PartySlot};
+use kanade_domain::chardata::{BossCarrier, Carrier, PartyShares};
 
 /// What the saved estimates say about a run's party.
 #[derive(Clone, Debug, Default, PartialEq)]

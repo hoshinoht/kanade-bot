@@ -5,10 +5,10 @@ use sqlx::SqliteConnection;
 use sqlx::sqlite::SqliteRow;
 
 use super::{instant, optional_text, read_instant, read_optional_instant, text};
-use crate::domain::model_log::{MessageUpsert, ReadMessage, WatchedMessage, in_order};
-use crate::domain::scheduler::StoreError;
 use crate::infrastructure::store::sqlite::rows::optional_instant;
 use crate::infrastructure::store::sqlite::schedule::store_error;
+use kanade_domain::model_log::{MessageUpsert, ReadMessage, WatchedMessage, in_order};
+use kanade_domain::scheduler::StoreError;
 
 const COLUMNS: &str = "id, channel_id, author_id, created_at, edited_at, content, processed_at";
 

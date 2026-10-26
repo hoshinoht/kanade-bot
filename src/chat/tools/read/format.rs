@@ -8,10 +8,10 @@ use chrono_tz::Tz;
 
 use super::ToolWorld;
 use crate::chat::gate::ChannelDirectory;
-use crate::domain::ids::short_id;
-use crate::domain::members::member_name;
-use crate::domain::schedule::{FixedRun, Run, RunStatus};
-use crate::domain::time::AwareDateTime;
+use kanade_domain::ids::short_id;
+use kanade_domain::members::member_name;
+use kanade_domain::schedule::{FixedRun, Run, RunStatus};
+use kanade_domain::time::AwareDateTime;
 
 /// v4 `DIFFICULTY_WORDS`: labels recoverable from a stored token alone.
 const DIFFICULTY_WORDS: [(&str, &str); 5] = [

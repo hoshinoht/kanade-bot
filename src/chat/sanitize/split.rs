@@ -7,7 +7,7 @@ use std::ops::Range;
 
 use super::fence::fenced;
 use crate::chat::tools::MAX_MEMBER_REPLY;
-use crate::domain::pytext::strip;
+use kanade_domain::pytext::strip;
 
 /// Most messages one reply posts.
 pub const MAX_REPLY_PARTS: usize = 4;

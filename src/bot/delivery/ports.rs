@@ -1,10 +1,10 @@
 //! Adapters that let one tick share its id source and clock reading with a
-//! short-lived [`SchedulerService`](crate::domain::scheduler::SchedulerService);
-//! the store is shared through [`StoreRef`](crate::domain::scheduler::StoreRef).
+//! short-lived [`SchedulerService`](kanade_domain::scheduler::SchedulerService);
+//! the store is shared through [`StoreRef`](kanade_domain::scheduler::StoreRef).
 
 use chrono::{DateTime, Utc};
 
-use crate::domain::scheduler::{Clock, IdSource};
+use kanade_domain::scheduler::{Clock, IdSource};
 
 /// A borrowed id source.
 #[derive(Debug)]

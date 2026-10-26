@@ -6,17 +6,15 @@ use chrono::{DateTime, Utc};
 use serde::Serialize;
 
 use super::{MemberRun, RunWeek, actor_label, member_run_in};
-use crate::{
-    api::dto::{
-        Boss, Named, hhmm, iso_instant,
-        week::{Context, WeekFrame},
-    },
-    domain::{
-        completion::RunEnds,
-        drafts::{DraftOp, DraftStatus, LoadedDraft, StoredDraft},
-        requests::{RequestEdit, RequestType, Subject, public_summary},
-        schedule::{SchedulePolicy, ScheduleSnapshot, utc_instant},
-    },
+use crate::api::dto::{
+    Boss, Named, hhmm, iso_instant,
+    week::{Context, WeekFrame},
+};
+use kanade_domain::{
+    completion::RunEnds,
+    drafts::{DraftOp, DraftStatus, LoadedDraft, StoredDraft},
+    requests::{RequestEdit, RequestType, Subject, public_summary},
+    schedule::{SchedulePolicy, ScheduleSnapshot, utc_instant},
 };
 
 #[derive(Serialize)]

@@ -13,12 +13,10 @@ use super::{
     characters::{CharacterChoice, choice},
     iso_instant,
 };
-use crate::{
-    domain::{
-        characters::{Basis, Character},
-        chardata::{ATTRIBUTION, LevelSource, LevelVerdict, Readiness, Requirement, date_text},
-    },
-    infrastructure::scouter::{Estimates, Member, RosterIgn, scouter_keys},
+use crate::infrastructure::scouter::{Estimates, Member, RosterIgn, scouter_keys};
+use kanade_domain::{
+    characters::{Basis, Character},
+    chardata::{ATTRIBUTION, LevelSource, LevelVerdict, Readiness, Requirement, date_text},
 };
 
 #[derive(Serialize)]

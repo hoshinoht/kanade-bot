@@ -8,7 +8,7 @@ use tokio::sync::watch;
 use twilight_gateway::Event;
 use twilight_model::id::{Id, marker::UserMarker};
 
-crate::domain::spelled! {
+kanade_domain::spelled! {
     /// Where the session stands.
     Connection {
         /// Before the first `READY`, or reconnecting after a fresh identify.

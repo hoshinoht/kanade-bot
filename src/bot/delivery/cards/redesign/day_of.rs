@@ -14,9 +14,9 @@ use super::limits::{
 };
 use super::portal::add_portal_button;
 use super::vocab::{INK_BLUE, boss_labels, names, relative_time, roster, short_time, subtext};
-use crate::domain::attendance::{Tally, status_label};
-use crate::domain::ids::short_id;
-use crate::domain::schedule::{Run, RunStatus};
+use kanade_domain::attendance::{Tally, status_label};
+use kanade_domain::ids::short_id;
+use kanade_domain::schedule::{Run, RunStatus};
 
 const REACT: &str = "react ✅ in / ❌ out";
 

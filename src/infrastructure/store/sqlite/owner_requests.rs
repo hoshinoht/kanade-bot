@@ -7,8 +7,8 @@ use sqlx::{Connection, Row, SqliteConnection, sqlite::SqliteRow};
 use super::SqliteStore;
 use super::rows::instant;
 use super::schedule::store_error;
-use crate::domain::ownership::{OwnerRequest, OwnerRequestStatus, OwnerRequestStore};
-use crate::domain::scheduler::StoreError;
+use kanade_domain::ownership::{OwnerRequest, OwnerRequestStatus, OwnerRequestStore};
+use kanade_domain::scheduler::StoreError;
 
 const COLUMNS: &str = "id, fixed_run_id, requester, channel_id, message_id, created_at, \
      expires_at, status, decided_by, decided_at, message_settled";
@@ -25,7 +25,7 @@ fn decode(row: &SqliteRow) -> Result<OwnerRequest, StoreError> {
         row.try_get(column).map_err(|error| corrupt(column, error))
     };
     let at = |text: String, column: &str| {
-        crate::domain::time::from_iso(&text).map_err(|error| corrupt(column, error))
+        kanade_domain::time::from_iso(&text).map_err(|error| corrupt(column, error))
     };
     let status = text("status")?;
     Ok(OwnerRequest {

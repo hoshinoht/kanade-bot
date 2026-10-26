@@ -8,15 +8,15 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use chrono::{DateTime, TimeDelta, Utc, Weekday};
 
 use super::fixtures::{Ids, Stopped, delivery, member, status, timing, utc2026};
-use crate::domain::history::{
+use kanade_domain::history::{
     Actor, BlameIndex, BlameTarget, ChangeHistory, ChangeMeta, ChangeRef, EDIT_OVERRIDE, Expect,
     Origin, Precondition, PreconditionError, RowValue, Surface, Via, blame, rsvp_field,
 };
-use crate::domain::schedule::{
+use kanade_domain::schedule::{
     Change, ChangeSet, FixedEdit, RsvpSource, RsvpState, RunStatus, SchedulePolicy,
     ScheduleSnapshot,
 };
-use crate::domain::scheduler::{
+use kanade_domain::scheduler::{
     Committed, RecordedRequest, ScheduleStore, SchedulerError, SchedulerService, Scope, StoreError,
 };
 
@@ -237,7 +237,7 @@ async fn different_fields_of_one_run_both_apply<
 async fn upstream_edit<S: ScheduleStore>(
     store: &S,
     run: &str,
-    edit: impl FnOnce(&mut crate::domain::schedule::Run),
+    edit: impl FnOnce(&mut kanade_domain::schedule::Run),
 ) -> Result<(), StoreError> {
     let snapshot = store.load(&Scope::All).await?;
     let mut row = snapshot
@@ -547,7 +547,7 @@ async fn retired_timings_and_cancelled_runs_are_stale<
                 note: Some("late".into()),
                 ..FixedEdit::default()
             },
-            &crate::domain::members::Roster::new(),
+            &kanade_domain::members::Roster::new(),
             &policy(),
         )
         .await;
@@ -741,11 +741,11 @@ async fn no_op_edits_report_only_deleted_targets<
         .expecting(Expect::fields([note]))
         .edit_fixed_run(
             &fixed,
-            crate::domain::schedule::FixedRunPatch {
+            kanade_domain::schedule::FixedRunPatch {
                 note: Some("late".into()),
                 ..Default::default()
             },
-            &[crate::domain::schedule::FixedField::Note],
+            &[kanade_domain::schedule::FixedField::Note],
             &weeks,
             &policy().reminders,
         )

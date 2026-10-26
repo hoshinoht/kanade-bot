@@ -6,7 +6,6 @@
 use std::{collections::BTreeMap, io::Write, sync::Arc};
 
 use crate::{
-    domain::settings::{LOCAL_CONTEXT_WARNING, Models as StoredModels},
     infrastructure::llm::{
         NO_LISTING, TrustZone,
         governor::XorShift,
@@ -20,6 +19,7 @@ use crate::{
         error::Error,
     },
 };
+use kanade_domain::settings::{LOCAL_CONTEXT_WARNING, Models as StoredModels};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Args {

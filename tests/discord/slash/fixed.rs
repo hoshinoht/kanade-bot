@@ -3,9 +3,9 @@
 use chrono::Timelike;
 use serde_json::json;
 
-use kanade::domain::history::{ChangeHistory, Surface};
-use kanade::domain::schedule::RunStatus;
-use kanade::domain::scheduler::{ScheduleStore, Scope};
+use kanade_domain::history::{ChangeHistory, Surface};
+use kanade_domain::schedule::RunStatus;
+use kanade_domain::scheduler::{ScheduleStore, Scope};
 
 use super::super::support::{ADMIN_ROLE, BOSSING_ROLE};
 use super::{
@@ -314,8 +314,8 @@ async fn timing_picker_lists_the_invokers_timings() {
 #[tokio::test]
 async fn a_long_list_is_split_into_follow_ups_at_line_boundaries() {
     use kanade::bot::transport::Call;
-    use kanade::domain::attendance::AttendanceDefault;
-    use kanade::domain::schedule::{Change, FixedRun};
+    use kanade_domain::attendance::AttendanceDefault;
+    use kanade_domain::schedule::{Change, FixedRun};
 
     let slash = Slash::new().await;
     let party: Vec<String> = [ALICE, BOB, DAN, 1_010, 1_011, 1_012]

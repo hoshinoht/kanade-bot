@@ -3,7 +3,7 @@
 
 use serde_json::Value;
 
-use crate::domain::catalog::{BossReference, BossTable};
+use kanade_domain::catalog::{BossReference, BossTable};
 
 fn strings<'a>(document: &'a Value, field: &str) -> Option<Vec<&'a str>> {
     document

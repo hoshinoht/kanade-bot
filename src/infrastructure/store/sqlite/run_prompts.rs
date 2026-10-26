@@ -6,10 +6,10 @@ use sqlx::{Connection, Row, SqliteConnection, sqlite::SqliteRow};
 use super::SqliteStore;
 use super::rows::instant;
 use super::schedule::store_error;
-use crate::domain::completion::{
+use kanade_domain::completion::{
     PromptClose, PromptFuture, PromptOutcome, RunPrompt, RunPromptStore,
 };
-use crate::domain::scheduler::StoreError;
+use kanade_domain::scheduler::StoreError;
 
 const COLUMNS: &str = "run_id, ask, ends_at, due_at, cutoff_at, channel_id, message_id, \
      outcome, decided_by, decided_at, message_settled";
@@ -26,7 +26,7 @@ fn decode(row: &SqliteRow) -> Result<RunPrompt, StoreError> {
         row.try_get(column).map_err(|error| corrupt(column, error))
     };
     let at = |column: &str| {
-        crate::domain::time::from_iso(&text(column)?).map_err(|error| corrupt(column, error))
+        kanade_domain::time::from_iso(&text(column)?).map_err(|error| corrupt(column, error))
     };
     let ask: i64 = row.try_get("ask").map_err(|error| corrupt("ask", error))?;
     Ok(RunPrompt {
@@ -42,7 +42,7 @@ fn decode(row: &SqliteRow) -> Result<RunPrompt, StoreError> {
             .transpose()?,
         decided_by: optional("decided_by")?,
         decided_at: optional("decided_at")?
-            .map(|text| crate::domain::time::from_iso(&text))
+            .map(|text| kanade_domain::time::from_iso(&text))
             .transpose()
             .map_err(|error| corrupt("decided_at", error))?,
         message_settled: row

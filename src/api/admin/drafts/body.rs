@@ -8,13 +8,11 @@ use serde::Deserialize;
 use std::collections::BTreeMap;
 
 use super::super::write::{Refusal, SlotError, slot, strict_time};
-use crate::{
-    api::{auth::wire, dto::week::Context, error::ApiError},
-    domain::{
-        drafts::{DraftOp, Settle, Target},
-        schedule::{
-            FixedEdit, FixedEditChoices, RunStatus, SchedulePolicy, ScheduleSnapshot, StatusChange,
-        },
+use crate::api::{auth::wire, dto::week::Context, error::ApiError};
+use kanade_domain::{
+    drafts::{DraftOp, Settle, Target},
+    schedule::{
+        FixedEdit, FixedEditChoices, RunStatus, SchedulePolicy, ScheduleSnapshot, StatusChange,
     },
 };
 

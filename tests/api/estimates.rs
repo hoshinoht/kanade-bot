@@ -1481,7 +1481,7 @@ async fn the_party_total_reads_the_saved_estimates_like_the_reminder_image() {
 /// minutes of that party's saved total.
 #[tokio::test]
 async fn each_bosss_party_total_is_its_own_partys() {
-    use kanade::domain::schedule::{Change, Run, RunSource, RunStatus};
+    use kanade_domain::schedule::{Change, Run, RunSource, RunStatus};
     let (address, fake) = fake_scouter().await;
     let reads = on(Some(address)).await;
     character(&reads, "1001", "MikaHero").await;

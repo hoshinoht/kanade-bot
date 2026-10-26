@@ -24,12 +24,12 @@ use kanade::chat::persona::{
     CompiledPersona, NudgeMood, NudgePurpose, NudgeSource, PersonaId, ProfileId, parse_bundle,
     parse_profile,
 };
-use kanade::domain::notify::WeekReset;
 use kanade::infrastructure::llm::governor::{
     CallKind, Governor, GovernorConfig, GovernorPolicy, GroupConfig, Outcome, Random, Role,
     RoleConfig, XorShift,
 };
 use kanade::infrastructure::store::SqliteStore;
+use kanade_domain::notify::WeekReset;
 use tokio::time::Instant;
 
 const CHANNEL: &str = "900000000000000001";
@@ -991,7 +991,7 @@ fn the_rotation_remembers_a_bounded_number_of_channels() {
 #[tokio::test(start_paused = true)]
 async fn each_lead_in_logs_one_member_free_rewrite_row() {
     use kanade::chat::nudge::StoreRewriteSink;
-    use kanade::domain::model_log::{RewriteFilter, RewriteKind, RewriteLogStore, RewriteStage};
+    use kanade_domain::model_log::{RewriteFilter, RewriteKind, RewriteLogStore, RewriteStage};
 
     let logs = Arc::new(SqliteStore::open_temp().await);
     let at = utc(20, 12);

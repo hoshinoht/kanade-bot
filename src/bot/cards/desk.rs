@@ -33,21 +33,21 @@ use crate::bot::mentions;
 use crate::bot::transport::{
     ChannelId, DiscordTransport, MessageEdit, MessageId, Outcome, OutgoingMessage, RejectionKind,
 };
-use crate::domain::drafts::{DraftStatus, ProposalStore, SUPERSEDED};
-use crate::domain::history::Actor;
-use crate::domain::members::Directory;
-use crate::domain::notify::{
+use crate::extract::pipeline::{CardEntry, PostResult, Redirected};
+use kanade_domain::drafts::{DraftStatus, ProposalStore, SUPERSEDED};
+use kanade_domain::history::Actor;
+use kanade_domain::members::Directory;
+use kanade_domain::notify::{
     DeliveryJournal, DeliveryTarget, EffectKind, IntentContent, JournalView, NotificationIntent,
     PlannedSend, SendDisposition,
 };
-use crate::domain::proposals::{
+use kanade_domain::proposals::{
     Approver, CardDetails, CardPayload, Payload, ProposalCardStore, StoredCard,
 };
-use crate::domain::schedule::{Run, SchedulePolicy};
-use crate::domain::scheduler::{
+use kanade_domain::schedule::{Run, SchedulePolicy};
+use kanade_domain::scheduler::{
     Clock, IdSource, ScheduleStore, SchedulerService, Scope, StoreError, StoreRef,
 };
-use crate::extract::pipeline::{CardEntry, PostResult, Redirected};
 
 /// The reacting member's standing, from the gateway (roles, Administrator,
 /// guild owner) and the roster.
@@ -92,7 +92,7 @@ pub struct CardDesk<S, T, I, A> {
     /// Rebuilt from HTTP on each fresh session; retained across other refreshes.
     pub(super) replay_conflicts: Mutex<BTreeSet<String>>,
     /// v5: approvals refuse runs past their end (`None`: v4 rules).
-    pub(super) run_ends: Option<crate::domain::completion::RunEndsSource>,
+    pub(super) run_ends: Option<kanade_domain::completion::RunEndsSource>,
     /// Post new cards as the embed card, as an over-budget card goes out
     /// (`posting_legacy`, tests of the ✅/❌ path).
     legacy_posts: bool,
@@ -256,7 +256,7 @@ enum Layout {
 impl<S, T, I, A> CardDesk<S, T, I, A>
 where
     S: ScheduleStore
-        + crate::domain::notify::DeclineNoticeStore
+        + kanade_domain::notify::DeclineNoticeStore
         + ProposalStore
         + ProposalCardStore
         + DeliveryJournal
@@ -303,7 +303,7 @@ where
 
     /// Freeze runs past their end in approvals and answers.
     #[must_use]
-    pub fn with_run_ends(mut self, source: crate::domain::completion::RunEndsSource) -> Self {
+    pub fn with_run_ends(mut self, source: kanade_domain::completion::RunEndsSource) -> Self {
         self.run_ends = Some(source);
         self
     }

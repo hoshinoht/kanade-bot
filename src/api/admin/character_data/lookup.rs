@@ -23,11 +23,11 @@ use crate::{
         dto::character_data::{LookupStatus, lookup},
         listeners::Site,
     },
-    domain::{
-        characters::{DEFAULT_WORLD, parse_ign, parse_world},
-        chardata::LINK_REGION,
-    },
     infrastructure::character_data::LookupOutcome,
+};
+use kanade_domain::{
+    characters::{DEFAULT_WORLD, parse_ign, parse_world},
+    chardata::LINK_REGION,
 };
 
 pub fn routes() -> Router<Arc<Site>> {

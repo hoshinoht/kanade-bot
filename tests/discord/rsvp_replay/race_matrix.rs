@@ -1,8 +1,8 @@
 use kanade::bot::rsvp_replay::ReplayReport;
 use kanade::bot::transport::{Hold, Op};
-use kanade::domain::history::{Actor, Origin, Surface};
-use kanade::domain::schedule::{RsvpSource, RsvpState, RunStatus, StatusChange};
-use kanade::domain::scheduler::{ScheduleStore, Scope};
+use kanade_domain::history::{Actor, Origin, Surface};
+use kanade_domain::schedule::{RsvpSource, RsvpState, RunStatus, StatusChange};
+use kanade_domain::scheduler::{ScheduleStore, Scope};
 use tokio::task::JoinHandle;
 use twilight_model::id::Id;
 

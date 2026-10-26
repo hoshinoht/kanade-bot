@@ -30,11 +30,6 @@ use crate::{
     },
     bot::commands::AccessPolicy,
     chat::persona::{PersonaStore, load_personas},
-    domain::{
-        ids::RandomIds,
-        scheduler::SchedulerService,
-        settings::{RuntimeSettings, SettingsStore},
-    },
     infrastructure::{
         files::{KnowledgeDir, LoadError, load_catalog, load_knowledge_dir},
         llm::{
@@ -47,6 +42,11 @@ use crate::{
         config::{GuildSettings, ModelSettings, ServeConfig},
         error::Error,
     },
+};
+use kanade_domain::{
+    ids::RandomIds,
+    scheduler::SchedulerService,
+    settings::{RuntimeSettings, SettingsStore},
 };
 
 /// Everything later wiring (gateway, roster, tick, chat) shares with the API.
@@ -74,8 +74,8 @@ fn file_error(error: LoadError) -> Error {
 /// keys and difficulties need the catalog, so reject them after it has loaded
 /// and only when no saved row takes precedence.
 fn validate_run_lengths_seed(
-    seed: Option<&crate::domain::settings::RunLengths>,
-    catalog: &crate::domain::catalog::BossTable,
+    seed: Option<&kanade_domain::settings::RunLengths>,
+    catalog: &kanade_domain::catalog::BossTable,
 ) -> Result<(), Error> {
     let Some(seed) = seed else {
         return Ok(());
@@ -183,7 +183,7 @@ pub(super) async fn compose_with(
         .await
         .map_err(|_| Error::Startup("runtime settings could not be read".into()))?;
     // An unsaved seed was applied by `load`; refuse it before anything uses it.
-    if !stored.contains_key(crate::domain::settings::keys::RUN_LENGTHS) {
+    if !stored.contains_key(kanade_domain::settings::keys::RUN_LENGTHS) {
         validate_run_lengths_seed(config.seeds.run_lengths.as_ref(), &catalog)?;
     }
     let sources = model_report::seed_roles(&mut settings, &config.models, &stored);

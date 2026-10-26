@@ -3,8 +3,8 @@
 
 use chrono::TimeDelta;
 use kanade::bot::delivery::AdminAlert;
-use kanade::domain::history::{Actor, ChangeHistory, CheckpointKind, Checkpoints};
 use kanade::infrastructure::store::SqliteStore;
+use kanade_domain::history::{Actor, ChangeHistory, CheckpointKind, Checkpoints};
 
 use crate::scenarios::{delivery, now, week, world};
 use crate::support::Store;

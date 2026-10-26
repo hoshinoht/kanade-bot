@@ -8,10 +8,10 @@
 use chrono::TimeDelta;
 use serde_json::json;
 
-use kanade::domain::completion::{PromptOutcome, RunPrompt, RunPromptStore};
-use kanade::domain::history::{Actor, ChangeHistory, Surface};
-use kanade::domain::notify::NoticeOutbox;
-use kanade::domain::schedule::RunStatus;
+use kanade_domain::completion::{PromptOutcome, RunPrompt, RunPromptStore};
+use kanade_domain::history::{Actor, ChangeHistory, Surface};
+use kanade_domain::notify::NoticeOutbox;
+use kanade_domain::schedule::RunStatus;
 
 use super::super::support::{ADMIN_ROLE, BOSSING_ROLE};
 use super::{ALICE, BOB, DAN, R_KALOS, R_NEXT, Slash, now, opt, utc};

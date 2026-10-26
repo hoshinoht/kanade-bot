@@ -10,7 +10,7 @@ use std::{
 };
 
 use chrono::TimeDelta;
-use kanade::domain::history::ChangeHistory;
+use kanade_domain::history::ChangeHistory;
 use serde_json::{Value, json};
 
 use crate::{

@@ -5,7 +5,7 @@
 use kanade::bot::commands::Disposition;
 use kanade::bot::delivery::cards::redesign::{INK_BLUE, SCHEDULE_FOOTER, SCHEDULE_FOOTER_HIDDEN};
 use kanade::bot::transport::InteractionReply;
-use kanade::domain::schedule::{Change, Run, RunSource, RunStatus};
+use kanade_domain::schedule::{Change, Run, RunSource, RunStatus};
 use serde_json::json;
 
 use super::super::support::{BOSSING_ROLE, button_interaction, v2_accent, v2_texts};

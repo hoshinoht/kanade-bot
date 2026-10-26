@@ -7,7 +7,7 @@ use twilight_model::id::{Id, marker::UserMarker};
 
 use kanade::bot::ids::parse_id;
 use kanade::bot::mentions;
-use kanade::domain::notify::AllowedMentions as Policy;
+use kanade_domain::notify::AllowedMentions as Policy;
 
 /// Hostile and malformed entries mixed into generated lists.
 const NOISE: &[&str] = &[
@@ -117,7 +117,7 @@ fn snowflake_parsing_is_canonical() {
 
 #[test]
 fn intent_allow_list_is_its_mentions_only() {
-    use kanade::domain::notify::{EffectKind, IntentContent, NotificationIntent};
+    use kanade_domain::notify::{EffectKind, IntentContent, NotificationIntent};
     let intent = NotificationIntent {
         effect: EffectKind::Reminder,
         effect_context: Vec::new(),

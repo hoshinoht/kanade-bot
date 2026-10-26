@@ -6,23 +6,23 @@ use std::collections::BTreeSet;
 
 use chrono::{DateTime, TimeDelta, TimeZone, Utc};
 
-use crate::domain::notify::{
+use kanade_domain::notify::{
     AttemptId, AttemptState, Claim, DedupeKey, DeliverySettings, DeliveryTarget, DigestPostInput,
     EffectKind, IntentContent, JournalError, JournalView, Lease, NotificationIntent, PlannedSend,
     REJECTED_ACTOR, Receipt, SendDisposition, WeeklyDigest, plan_digest_post,
 };
-use crate::domain::notify::{
+use kanade_domain::notify::{
     CardIndex, CardRecord, DebugCardStore, DigestPhraseStore, HeaderHistory, HeaderOverrideStore,
     PostedCard, PostedDebugCard, ReminderCardStore, ReplayCards,
 };
-use crate::domain::notify::{
+use kanade_domain::notify::{
     DeliveryJournal, DigestAction, NOT_SENT_ACTOR, WeekReset, plan_digest_tick,
 };
-use crate::domain::schedule::{
+use kanade_domain::schedule::{
     Change, ChangeSet, Draft, Reminder, Run, RunSource, RunStatus, ScheduleSnapshot,
 };
-use crate::domain::scheduler::{ScheduleStore, Scope};
-use crate::domain::time::to_iso;
+use kanade_domain::scheduler::{ScheduleStore, Scope};
+use kanade_domain::time::to_iso;
 
 /// Run every check, each against a fresh store from `make`.
 pub async fn run_suite<
@@ -430,7 +430,7 @@ async fn replacement_requires_a_matching_bound_claim<S: ScheduleStore + Delivery
     let log = store.load_digests().await.expect("digests");
     assert_eq!(
         log.last_digest_week,
-        Some(crate::domain::time::to_iso(&week()).unwrap())
+        Some(kanade_domain::time::to_iso(&week()).unwrap())
     );
     let card = log.digests[0].clone();
     assert_eq!(

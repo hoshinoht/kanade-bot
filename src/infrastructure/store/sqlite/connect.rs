@@ -167,7 +167,7 @@ mod tests {
         use std::os::unix::fs::DirBuilderExt;
 
         use super::super::{SqliteStore, SqliteStoreConfig};
-        use crate::domain::history::ChangeHistory;
+        use kanade_domain::history::ChangeHistory;
 
         let root = std::fs::canonicalize(std::env::temp_dir()).expect("temp dir");
         let dir = root.join(format!("kanade-close-{}", uuid::Uuid::new_v4()));

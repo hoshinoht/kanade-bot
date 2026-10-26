@@ -14,10 +14,10 @@ use crate::bot::delivery::cards::CardField;
 use crate::bot::delivery::cards::redesign::{
     DifficultyMarks, SETTLED_GREEN, boss_labels, full_time, subtext,
 };
-use crate::domain::catalog::BossTable;
-use crate::domain::ids::tag;
-use crate::domain::proposals::{CardDetails, ChangeKind};
-use crate::domain::schedule::{EMOJI_NO, EMOJI_YES, Run};
+use kanade_domain::catalog::BossTable;
+use kanade_domain::ids::tag;
+use kanade_domain::proposals::{CardDetails, ChangeKind};
+use kanade_domain::schedule::{EMOJI_NO, EMOJI_YES, Run};
 
 /// A closed card: rejected, superseded or out of date.
 pub const CLOSED_GREY: u32 = 0x4E5058;

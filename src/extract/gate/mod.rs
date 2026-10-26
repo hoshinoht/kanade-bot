@@ -18,7 +18,7 @@ pub use scan::{find_days, find_mentions, find_times};
 
 use super::text::pattern;
 
-crate::domain::spelled! {
+kanade_domain::spelled! {
     /// One gate signal; variants are in name order so sets sort like v4's reasons.
     Signal {
         Agree => "agree",

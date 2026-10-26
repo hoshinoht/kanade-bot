@@ -61,9 +61,9 @@ use kanade::{
         guard::headers::CSP,
         listeners::Origin,
     },
-    domain::members::MemberStore,
     infrastructure::store::web_sessions::{LoginMethod, SessionOrigin, WebSessionStore},
 };
+use kanade_domain::members::MemberStore;
 use serde::Deserialize;
 use serde_json::{Value, json};
 

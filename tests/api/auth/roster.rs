@@ -11,8 +11,8 @@ use kanade::{
         avatars::AvatarCache,
     },
     bot::events::{AdminRoles, RosterUpdate},
-    domain::members::MemberStore,
 };
+use kanade_domain::members::MemberStore;
 use twilight_model::id::Id;
 
 use super::{ADMIN_ROLE, Harness, cookie, user};

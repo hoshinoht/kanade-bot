@@ -10,8 +10,8 @@ use kanade::chat::tools::bundles::{
 };
 use kanade::chat::tools::dispatch::Dispatched;
 use kanade::chat::tools::{READ_ONLY_TURN, REFUSED, ToolContext, ToolName, UNKNOWN};
-use kanade::domain::drafts::ProposalStore;
 use kanade::infrastructure::llm::identity::PassthroughSession;
+use kanade_domain::drafts::ProposalStore;
 use serde_json::{Value, json};
 
 use crate::support::world_input;

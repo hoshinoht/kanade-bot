@@ -12,7 +12,7 @@ use twilight_model::id::{
 use crate::bot::events::{AdminRoles, RosterUpdate, roster_update};
 use crate::bot::ids::id_text;
 use crate::bot::transport::{DiscordTransport, MAX_MEMBERS_PAGE, Outcome};
-use crate::domain::members::MemberProfile;
+use kanade_domain::members::MemberProfile;
 
 /// A page could not be read; nothing may be concluded about departures.
 #[derive(Clone, Debug, PartialEq, Eq)]

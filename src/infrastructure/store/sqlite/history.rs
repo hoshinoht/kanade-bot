@@ -10,19 +10,19 @@ use sqlx::{Connection, Row, SqliteConnection};
 
 use super::SqliteStore;
 use super::rows::{self, FIXED_COLUMNS, REMINDER_COLUMNS, RSVP_COLUMNS, RUN_COLUMNS};
-use crate::domain::history::{
+use crate::infrastructure::store::history::{changed_rows, touched_weeks};
+use kanade_domain::history::{
     Actor, ChangeFilter, ChangeHistory, ChangeMeta, ChangePage, ChangeQuery, ChangeRecord,
     ChangeRef, CheckedChange, HistoryVerification, RowKey, RowValue, verify_chain,
 };
-use crate::domain::history::{
+use kanade_domain::history::{
     BlameIndex, BlameTarget, BrokenLink, Checkpoint, CheckpointCreated, CheckpointKind,
     Checkpoints, FieldNow, LastChange, NewCheckpoint, PreconditionError, Versioned, changed_fields,
     check_checkpoint, check_field, target_key, validate_fields,
 };
-use crate::domain::notify::change_source;
-use crate::domain::scheduler::{Committed, RecordedRequest, StoreError};
-use crate::domain::time::from_iso;
-use crate::infrastructure::store::history::{changed_rows, touched_weeks};
+use kanade_domain::notify::change_source;
+use kanade_domain::scheduler::{Committed, RecordedRequest, StoreError};
+use kanade_domain::time::from_iso;
 // History maps every sqlx error to a backend error, transactions included.
 use self::backend as store_error;
 

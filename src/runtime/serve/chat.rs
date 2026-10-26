@@ -44,17 +44,6 @@ use crate::{
             read::{EventBoss, GuideError, StrategyGuides, render_guide},
         },
     },
-    domain::{
-        catalog::{BossReference, BossTable},
-        ids::RandomIds,
-        members::{MemberStore, Roster},
-        model_log::{ChatInteraction, ModelLogStore},
-        notify::{CardIndex, DeliveryJournal, digest_inclusion},
-        proposals::ProposalCardStore,
-        schedule::SchedulePolicy,
-        scheduler::{ScheduleStore, SchedulerService, Scope},
-        settings::RuntimeSettings,
-    },
     infrastructure::{
         files::KnowledgeDir,
         llm::{
@@ -64,6 +53,17 @@ use crate::{
         store::SqliteStore,
     },
     runtime::error::Error,
+};
+use kanade_domain::{
+    catalog::{BossReference, BossTable},
+    ids::RandomIds,
+    members::{MemberStore, Roster},
+    model_log::{ChatInteraction, ModelLogStore},
+    notify::{CardIndex, DeliveryJournal, digest_inclusion},
+    proposals::ProposalCardStore,
+    schedule::SchedulePolicy,
+    scheduler::{ScheduleStore, SchedulerService, Scope},
+    settings::RuntimeSettings,
 };
 
 use super::chat_cards::{self as cards, ChatDesk};

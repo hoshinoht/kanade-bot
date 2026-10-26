@@ -14,9 +14,9 @@ use crate::bot::chardata::copy;
 use crate::bot::delivery::cards::redesign::ButtonId;
 use crate::bot::ids::id_text;
 use crate::bot::transport::{DiscordTransport, InteractionReply};
-use crate::domain::chardata::{LINK_REGION, LinkStatus, NOTICE_VERSION, UnlinkReason};
-use crate::domain::history::{Actor, Surface};
 use crate::infrastructure::character_data::{ConfirmOutcome, FetchState};
+use kanade_domain::chardata::{LINK_REGION, LinkStatus, NOTICE_VERSION, UnlinkReason};
+use kanade_domain::history::{Actor, Surface};
 
 /// How long the notice's buttons work (an interaction token's life).
 const NOTICE_LIFE: TimeDelta = TimeDelta::minutes(15);
@@ -102,7 +102,7 @@ impl<T: DiscordTransport> CharacterCommand<T> {
                 &member,
                 id,
                 notice,
-                crate::domain::chardata::ConsentSurface::Discord,
+                kanade_domain::chardata::ConsentSurface::Discord,
             )
             .await
             .map_err(super::store_failed)?;

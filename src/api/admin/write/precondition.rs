@@ -10,10 +10,8 @@
 use serde::Deserialize;
 
 use super::refusal::Refusal;
-use crate::{
-    api::state::ReadStore,
-    domain::history::{BlameTarget, ChangeRef, Expect, Precondition},
-};
+use crate::api::state::ReadStore;
+use kanade_domain::history::{BlameTarget, ChangeRef, Expect, Precondition};
 
 /// Optional explicit preconditions (admin-api "Edit preconditions"): used
 /// instead of the version-derived ones when present.

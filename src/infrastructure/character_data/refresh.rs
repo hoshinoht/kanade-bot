@@ -9,13 +9,13 @@ use serde_json::json;
 
 use super::calls::{Batch, CallFailed};
 use super::{BatchReport, CharacterData, log};
-use crate::domain::characters::{Character, ign_key};
-use crate::domain::chardata::{
+use crate::infrastructure::nexon::Basic;
+use kanade_domain::characters::{Character, ign_key};
+use kanade_domain::chardata::{
     FUTURE_SKEW, Failure, Link, LinkPut, LinkStatus, MAX_TEXT_CHARS, MAX_URL_CHARS,
     OCID_RENEW_AFTER, PREPARING_RETRY, REFRESH_AGE, RefreshState, Snapshot, parse_date,
 };
-use crate::domain::scheduler::StoreError;
-use crate::infrastructure::nexon::Basic;
+use kanade_domain::scheduler::StoreError;
 
 /// How a fetch ended.
 #[derive(Clone, Debug, PartialEq, Eq)]

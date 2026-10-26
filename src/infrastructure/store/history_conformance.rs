@@ -9,25 +9,25 @@ use chrono::{DateTime, NaiveTime, TimeDelta, Utc, Weekday};
 use super::fixtures::{
     Ids, TestClock, admin, delivery, member, policy_in, status, timing, utc2026,
 };
-use crate::domain::history::{
+use crate::infrastructure::store::snapshots::{HistoryViewQuery, SnapshotReads};
+use kanade_domain::history::{
     Actor, ChangeFilter, ChangeHistory, ChangeMeta, ChangeQuery, ChangeRecord, GENESIS_PREV_HASH,
     HistoryRefusal, Origin, RevertMode, RevertOutcome, RowKey, Surface,
 };
-use crate::domain::history::{
+use kanade_domain::history::{
     Blame, BlameIndex, BlameTarget, CheckpointCreated, CheckpointKind, Checkpoints, NewCheckpoint,
     Via, auto_checkpoint_name, blame,
 };
-use crate::domain::members::{Member, Roster};
-use crate::domain::notify::due_reminders;
-use crate::domain::schedule::{
+use kanade_domain::members::{Member, Roster};
+use kanade_domain::notify::due_reminders;
+use kanade_domain::schedule::{
     Change, ChangeSet, EMOJI_YES, FixedEdit, NewRun, NoticeChange, RsvpSource, RsvpState,
     RunSource, RunStatus, SchedulePolicy, ScheduleSnapshot, StatusChange,
 };
-use crate::domain::scheduler::{
+use kanade_domain::scheduler::{
     Clock, Committed, ScheduleStore, SchedulerError, SchedulerService, Scope, StoreError,
 };
-use crate::domain::settings::{RowDiff, SettingsChange, SettingsChangeQuery, SettingsStore};
-use crate::infrastructure::store::snapshots::{HistoryViewQuery, SnapshotReads};
+use kanade_domain::settings::{RowDiff, SettingsChange, SettingsChangeQuery, SettingsStore};
 
 /// Run every check, each against a fresh store from `make`.
 pub async fn run_suite<
@@ -333,7 +333,7 @@ async fn chain_stays_intact_and_pages<S: ScheduleStore + ChangeHistory + Sync>(s
             .await
             .expect("anchor")
     );
-    let forged = crate::domain::history::ChangeRef {
+    let forged = kanade_domain::history::ChangeRef {
         seq: head.seq,
         hash: "0".repeat(64),
     };
@@ -1392,7 +1392,7 @@ async fn rollback_notices_go_to_each_channel<S: ScheduleStore + ChangeHistory>(s
     assert_eq!(latest(service.store()).await.notices.len(), 3);
 }
 
-fn line<'a>(blame: &'a Blame, field: &str) -> Option<&'a crate::domain::history::Attribution> {
+fn line<'a>(blame: &'a Blame, field: &str) -> Option<&'a kanade_domain::history::Attribution> {
     blame
         .lines
         .iter()

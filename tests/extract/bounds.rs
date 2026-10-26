@@ -6,13 +6,13 @@
 use std::collections::{HashMap, HashSet};
 
 use chrono::{DateTime, NaiveDate, NaiveTime, Utc, Weekday};
-use kanade::domain::history::Origin;
-use kanade::domain::schedule::{NewRun, Run, RunSource, RunStatus};
-use kanade::domain::scheduler::{ScheduleStore, Scope};
 use kanade::extract::backlog::BacklogEntry;
 use kanade::extract::plan::{BurstInputs, Plan, plan_burst};
 use kanade::extract::schema::{Extraction, parse_response};
 use kanade::extract::{Amendment, AmendmentKind};
+use kanade_domain::history::Origin;
+use kanade_domain::schedule::{NewRun, Run, RunSource, RunStatus};
+use kanade_domain::scheduler::{ScheduleStore, Scope};
 
 use crate::fakes::{ALVIN, CHANNEL, MY, World, local, message, reply, zone};
 

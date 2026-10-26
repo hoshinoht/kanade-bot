@@ -3,11 +3,11 @@
 use std::path::{Path, PathBuf};
 
 use chrono::{DateTime, NaiveTime, TimeZone, Utc, Weekday};
-use kanade::domain::schedule::{
+use kanade::infrastructure::store::{SqliteStore, SqliteStoreConfig};
+use kanade_domain::schedule::{
     Change, ChangeSet, FixedRun, Reminder, Rsvp, RsvpSource, RsvpState, Run, RunSource, RunStatus,
 };
-use kanade::domain::scheduler::{ScheduleStore, Scope};
-use kanade::infrastructure::store::{SqliteStore, SqliteStoreConfig};
+use kanade_domain::scheduler::{ScheduleStore, Scope};
 use sqlx::sqlite::SqliteConnectOptions;
 use sqlx::{ConnectOptions, Connection};
 

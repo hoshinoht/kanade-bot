@@ -7,11 +7,11 @@ use sqlx::{Connection, Row, SqliteConnection};
 use super::SqliteStore;
 use super::rows::list;
 use super::schedule::store_error;
-use crate::domain::members::{
+use crate::infrastructure::store::Written;
+use kanade_domain::members::{
     GatewayMember, Member, MemberProfile, MemberStore, PingLevel, PortalEdit, is_valid_alias,
 };
-use crate::domain::scheduler::StoreError;
-use crate::infrastructure::store::Written;
+use kanade_domain::scheduler::StoreError;
 
 const COLUMNS: &str = "user_id, display_name, nickname, has_role, is_bot, ping_level, aliases, \
     reply_style, roles, is_guild_admin, tease_ok, running_joke";

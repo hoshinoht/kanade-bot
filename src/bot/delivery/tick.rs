@@ -45,27 +45,27 @@ use crate::bot::{
         RejectionKind,
     },
 };
-use crate::domain::completion::{RunEnds, RunEndsSource, RunPromptStore};
-use crate::domain::drafts::ProposalStore;
-use crate::domain::history::{
+use kanade_domain::completion::{RunEnds, RunEndsSource, RunPromptStore};
+use kanade_domain::drafts::ProposalStore;
+use kanade_domain::history::{
     Actor, CheckpointKind, Checkpoints, NewCheckpoint, Origin, Surface, auto_checkpoint_name,
 };
-use crate::domain::members::Directory;
-use crate::domain::notify::{
+use kanade_domain::members::Directory;
+use kanade_domain::notify::{
     ChannelDirectory, DeliveryJournal, DeliverySettings, DigestAction, DigestLog,
     DigestPhraseStore, DigestPostInput, DigestSend, DispatchInput, JournalError, Lease,
     NoticeOutbox, NotificationIntent, Queued, RecordReason, Recovery, ReminderCardStore,
     SendDisposition, WeekReset, plan_digest_post, plan_digest_tick, plan_dispatch,
     retire_digests_before,
 };
-use crate::domain::ownership::OwnerRequestStore;
-use crate::domain::schedule::SchedulePolicy;
-use crate::domain::schedule::ScheduleSnapshot;
-use crate::domain::scheduler::{
+use kanade_domain::ownership::OwnerRequestStore;
+use kanade_domain::schedule::SchedulePolicy;
+use kanade_domain::schedule::ScheduleSnapshot;
+use kanade_domain::scheduler::{
     Clock, IdSource, ScheduleStore, SchedulerError, SchedulerService, Scope, StoreError, StoreRef,
 };
-use crate::domain::settings::RunLengths;
-use crate::domain::time::{DateOutOfRange, from_iso};
+use kanade_domain::settings::RunLengths;
+use kanade_domain::time::{DateOutOfRange, from_iso};
 
 /// The lease operation kind every tick runs under.
 pub const TICK_OPERATION: &str = "scheduler_tick";
@@ -101,7 +101,7 @@ pub struct DeliveryConfig {
     /// cap of the same size.
     pub max_sends_per_tick: usize,
     /// Outbox notices older than this at drain time are retired `stale`
-    /// unsent ([`crate::domain::notify::DEFAULT_MAX_NOTICE_AGE`]).
+    /// unsent ([`kanade_domain::notify::DEFAULT_MAX_NOTICE_AGE`]).
     pub max_notice_age: TimeDelta,
     /// Run lengths (`v5.run_lengths`) for completion prompts; live like the
     /// post channel.

@@ -18,12 +18,12 @@ use kanade::chat::persona::{
 use kanade::chat::pilot::ChatPilot;
 use kanade::chat::prompts::REMINDER_PREFIX;
 use kanade::chat::sanitize::{ScheduleDefaults, schedule_defaults};
-use kanade::domain::scheduler::Clock;
 use kanade::extract::prompt::estimate_tokens;
 use kanade::infrastructure::llm::governor::{DEFAULT_TOOL_ROUNDS, Governor, Role};
 use kanade::infrastructure::llm::{
     ChatRequest, Effort, FakeAction, FakeProvider, Message, wire_body,
 };
+use kanade_domain::scheduler::Clock;
 use serde_json::{Value, json};
 
 use crate::looping::{Ports, said, settings};

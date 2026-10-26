@@ -27,16 +27,16 @@ use super::cards::{CardContext, CardKit, HeaderContext, Teasable, card_runs};
 use crate::bot::commands::text::{MONTH_NAMES, local_time, weekday_name};
 use crate::bot::transport::{OutgoingMessage, Upload, legacy_rows};
 use crate::chat::persona::NudgeMood;
-use crate::domain::catalog::BossTable;
-use crate::domain::characters::{PartyReads, PartyRoster, PartySlot};
-use crate::domain::chardata::PartyShares;
-use crate::domain::members::{Directory, MemberProfile};
-use crate::domain::notify::IntentContent;
-use crate::domain::schedule::{Run, RunStatus, ScheduleSnapshot};
 use crate::infrastructure::character_data::CharacterData;
 use crate::infrastructure::scouter::{
     CarrierOwner, Estimates, Member, RosterIgn, SavedParty, Totals, saved_party,
 };
+use kanade_domain::catalog::BossTable;
+use kanade_domain::characters::{PartyReads, PartyRoster, PartySlot};
+use kanade_domain::chardata::PartyShares;
+use kanade_domain::members::{Directory, MemberProfile};
+use kanade_domain::notify::IntentContent;
+use kanade_domain::schedule::{Run, RunStatus, ScheduleSnapshot};
 
 /// How long drawing may take before the card posts without it.
 pub const CHART_DEADLINE: Duration = Duration::from_secs(2);
@@ -415,13 +415,13 @@ mod tests {
     use chrono::{TimeDelta, TimeZone};
 
     use super::*;
-    use crate::domain::characters::{Basis, Character, CharacterRole};
-    use crate::domain::chardata::CharDataStore;
-    use crate::domain::history::Actor;
-    use crate::domain::schedule::RunSource;
     use crate::infrastructure::scouter::{JobRequest, ScouterClient, Start, Subject, Target};
     use crate::infrastructure::store::SqliteCharData;
     use crate::infrastructure::store::chardata_conformance::{member_estimate, party_estimate};
+    use kanade_domain::characters::{Basis, Character, CharacterRole};
+    use kanade_domain::chardata::CharDataStore;
+    use kanade_domain::history::Actor;
+    use kanade_domain::schedule::RunSource;
 
     fn at() -> DateTime<Utc> {
         Utc.with_ymd_and_hms(2026, 9, 29, 4, 0, 0).unwrap()

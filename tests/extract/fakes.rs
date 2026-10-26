@@ -13,18 +13,6 @@ use std::time::Duration;
 
 use chrono::{DateTime, NaiveTime, TimeZone, Utc, Weekday};
 use chrono_tz::Tz;
-use kanade::domain::catalog::BossTable;
-use kanade::domain::drafts::{ProposalStore, StoredProposal};
-use kanade::domain::history::Origin;
-use kanade::domain::ids::IdGenerator;
-use kanade::domain::members::{self, Directory};
-use kanade::domain::model_log::{ExtractionFilter, ExtractionLog, ModelLogStore};
-use kanade::domain::proposals::Approver;
-use kanade::domain::schedule::{NewRun, ReminderPolicy, RunSource, RunStatus, SchedulePolicy};
-use kanade::domain::scheduler::{
-    ProposalApproved, ProposalError, ProposalRequest, ProposalResult, Proposed, SchedulerService,
-    StoreRef, SupersedeScope,
-};
 use kanade::extract::pipeline::{
     AuthorKind, BacklogDrop, Card, ChatAnswer, Deps, Extractor, Guild, IncomingMessage, LeadIns,
     LiveContext, MessageEvent, MessageOrigin, Outbox, Personas, Pipeline, PipelineConfig,
@@ -41,6 +29,18 @@ use kanade::infrastructure::llm::{
     FakeAction, FakeProvider, FinishReason, LlmProvider, ModelCapabilities, RetryPolicy, Usage,
 };
 use kanade::infrastructure::store::SqliteStore;
+use kanade_domain::catalog::BossTable;
+use kanade_domain::drafts::{ProposalStore, StoredProposal};
+use kanade_domain::history::Origin;
+use kanade_domain::ids::IdGenerator;
+use kanade_domain::members::{self, Directory};
+use kanade_domain::model_log::{ExtractionFilter, ExtractionLog, ModelLogStore};
+use kanade_domain::proposals::Approver;
+use kanade_domain::schedule::{NewRun, ReminderPolicy, RunSource, RunStatus, SchedulePolicy};
+use kanade_domain::scheduler::{
+    ProposalApproved, ProposalError, ProposalRequest, ProposalResult, Proposed, SchedulerService,
+    StoreRef, SupersedeScope,
+};
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 

@@ -5,7 +5,7 @@
 use chrono::{DateTime, TimeZone, Utc};
 
 use super::fixtures::{refused, refused_for};
-use crate::domain::completion::{PromptClose, PromptOutcome, RunPrompt, RunPromptStore};
+use kanade_domain::completion::{PromptClose, PromptOutcome, RunPrompt, RunPromptStore};
 
 pub async fn run_suite<S: RunPromptStore>(make: impl AsyncFn() -> S) {
     asks_round_trip_and_list_open_by_due_time(make().await).await;

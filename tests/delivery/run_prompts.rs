@@ -4,12 +4,12 @@
 
 use chrono::{DateTime, TimeDelta, Utc};
 use kanade::bot::transport::Call;
-use kanade::domain::completion::{PromptClose, PromptOutcome, RunPrompt};
-use kanade::domain::history::{Actor, ChangeHistory, Origin};
-use kanade::domain::ids::RandomIds;
-use kanade::domain::schedule::{NewRun, RunSource, RunStatus, StatusChange};
-use kanade::domain::scheduler::Scope;
 use kanade::infrastructure::store::SqliteStore;
+use kanade_domain::completion::{PromptClose, PromptOutcome, RunPrompt};
+use kanade_domain::history::{Actor, ChangeHistory, Origin};
+use kanade_domain::ids::RandomIds;
+use kanade_domain::schedule::{NewRun, RunSource, RunStatus, StatusChange};
+use kanade_domain::scheduler::Scope;
 use twilight_model::channel::message::Component;
 
 use crate::scenarios::{HOME, config, delivery, now, week, world};
@@ -175,7 +175,7 @@ async fn pressed_edits_without_a_notice<S: Store>(store: &S) {
     support::service(store, &mut ids, now())
         .as_origin(Origin::new(
             Actor::member("1002"),
-            kanade::domain::history::Surface::Discord,
+            kanade_domain::history::Surface::Discord,
         ))
         .set_status(
             &id,
@@ -451,10 +451,10 @@ async fn cutoff_then_press_guard<S: Store>(store: &S) {
     let settled = support::service(store, &mut ids, cutoff())
         .as_origin(Origin::new(
             Actor::member("1001"),
-            kanade::domain::history::Surface::Discord,
+            kanade_domain::history::Surface::Discord,
         ))
         .settle_run(
-            kanade::domain::schedule::SettleRun {
+            kanade_domain::schedule::SettleRun {
                 run_id: id.clone(),
                 status: RunStatus::Cancelled,
                 datetime: seen.datetime,
@@ -475,7 +475,7 @@ async fn a_press_landing_after_the_cutoff_leaves_the_run_done() {
 }
 
 async fn bound_post_is_recovered<S: Store>(store: &S) {
-    use kanade::domain::notify::{Claim, EffectKind, IntentContent, NotificationIntent, Receipt};
+    use kanade_domain::notify::{Claim, EffectKind, IntentContent, NotificationIntent, Receipt};
     let world = world();
     let id = run(store, RunStatus::Planned, started()).await;
     // A previous process posted and bound ask 0, then died before recording it.
@@ -550,8 +550,8 @@ async fn a_run_live_again_after_its_prompt_closed_is_asked_again() {
 /// planned past its cutoff and can be moved; the move ends the reopen, so
 /// the moved run is completed as usual.
 async fn reopened_after_auto_done_stays_open<S: Store>(store: &S) {
-    use kanade::domain::completion::RunEndsSource;
-    use kanade::domain::settings::RunLengths;
+    use kanade_domain::completion::RunEndsSource;
+    use kanade_domain::settings::RunLengths;
 
     let world = world();
     let id = run(store, RunStatus::Planned, started()).await;
@@ -611,8 +611,8 @@ async fn a_run_reopened_after_auto_done_stays_open_until_moved() {
 /// An ended run still planned is reopened by setting Planned again: it is
 /// not marked done at its cutoff.
 async fn same_status_reopens_an_ended_run<S: Store>(store: &S) {
-    use kanade::domain::completion::RunEndsSource;
-    use kanade::domain::settings::RunLengths;
+    use kanade_domain::completion::RunEndsSource;
+    use kanade_domain::settings::RunLengths;
 
     let world = world();
     let id = run(store, RunStatus::Planned, started()).await;

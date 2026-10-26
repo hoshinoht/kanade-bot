@@ -43,11 +43,11 @@ use crate::{
         listeners::Site,
         public::write::{invalid_body, path_id},
     },
-    domain::history::Actor,
     infrastructure::scouter::{
         Estimates, Job, JobRequest, JobState, MAX_QUEUED, Start, Subject, Target,
     },
 };
+use kanade_domain::history::Actor;
 
 type Reply = Result<Response, Refusal>;
 

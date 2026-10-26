@@ -19,13 +19,13 @@ use kanade::{
         },
     },
     chat::persona::NudgeMood,
-    domain::{
-        catalog::BossTable,
-        chardata::{Carrier, PartyShares},
-        members::{Member, MemberProfile},
-        model_log::RewriteStage,
-    },
     infrastructure::scouter::CarrierOwner,
+};
+use kanade_domain::{
+    catalog::BossTable,
+    chardata::{Carrier, PartyShares},
+    members::{Member, MemberProfile},
+    model_log::RewriteStage,
 };
 use serde_json::{Value, json};
 

@@ -1,4 +1,4 @@
-use kanade::domain::schedule::RunStatus;
+use kanade_domain::schedule::RunStatus;
 
 use super::support::*;
 

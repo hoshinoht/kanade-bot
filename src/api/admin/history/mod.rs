@@ -29,9 +29,9 @@ use crate::{
         listeners::Site,
         state::ApiState,
     },
-    domain::history::{ChangeFilter, ChangeRef},
     infrastructure::store::snapshots::HistoryViewQuery,
 };
+use kanade_domain::history::{ChangeFilter, ChangeRef};
 
 pub fn routes() -> Router<Arc<Site>> {
     Router::new()
@@ -189,7 +189,7 @@ async fn checkpoints(State(site): State<Arc<Site>>, _: AdminSession) -> Reply {
     }
     let head = verification.head.clone().unwrap_or(ChangeRef {
         seq: 0,
-        hash: crate::domain::history::GENESIS_PREV_HASH.to_owned(),
+        hash: kanade_domain::history::GENESIS_PREV_HASH.to_owned(),
     });
     Ok(Json(dto::Checkpoints {
         verified: dto::Verified {

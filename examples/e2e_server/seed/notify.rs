@@ -4,19 +4,16 @@
 //! cards and this week's digest (mock `config::last_digest`).
 
 use chrono::{DateTime, Datelike, Duration, Utc};
-use kanade::{
-    bot::delivery::{
-        cards::{PhraseKind, seed_heading},
-        preview::{record_key, reminder_intent},
+use kanade::bot::delivery::{
+    cards::{PhraseKind, seed_heading},
+    preview::{record_key, reminder_intent},
+};
+use kanade_domain::{
+    notify::{
+        CardRecord, Claim, DAY_OF_KIND, DeliveryJournal, DeliverySettings, DeliveryTarget,
+        DigestInclusion, EffectKind, IntentContent, NotificationIntent, Receipt, ReminderCardStore,
     },
-    domain::{
-        notify::{
-            CardRecord, Claim, DAY_OF_KIND, DeliveryJournal, DeliverySettings, DeliveryTarget,
-            DigestInclusion, EffectKind, IntentContent, NotificationIntent, Receipt,
-            ReminderCardStore,
-        },
-        scheduler::{ScheduleStore, Scope},
-    },
+    scheduler::{ScheduleStore, Scope},
 };
 
 use super::{Seed, ids::BOSS_SCHEDULE};
@@ -74,7 +71,7 @@ fn local_day(at: DateTime<Utc>, zone: chrono_tz::Tz) -> String {
 fn card_record(
     seed: &Seed<'_>,
     intent: &NotificationIntent,
-    runs: &[kanade::domain::schedule::Run],
+    runs: &[kanade_domain::schedule::Run],
 ) -> Option<CardRecord> {
     match &intent.content {
         IntentContent::DayOf { run_ids } => {

@@ -8,8 +8,8 @@ use sqlx::Connection;
 
 use super::schedule::store_error;
 use super::{SqliteCharData, SqliteStore, journal};
-use crate::domain::notify::{AttemptId, JournalError};
-use crate::domain::scheduler::StoreError;
+use kanade_domain::notify::{AttemptId, JournalError};
+use kanade_domain::scheduler::StoreError;
 
 /// The armed faults of one [`SqliteStore`].
 #[derive(Default)]
@@ -234,16 +234,16 @@ mod tests {
     use chrono::{DateTime, TimeZone, Utc};
 
     use super::*;
-    use crate::domain::chardata::CharDataStore;
-    use crate::domain::model_log::ModelLogStore;
-    use crate::domain::notify::{
+    use crate::infrastructure::store::chardata_conformance::active;
+    use crate::infrastructure::store::conformance::meta;
+    use kanade_domain::chardata::CharDataStore;
+    use kanade_domain::model_log::ModelLogStore;
+    use kanade_domain::notify::{
         CardRecord, DeclineNoticeStore, DedupeKey, DeliveryTarget, DigestPhraseStore,
         ReminderCardStore,
     };
-    use crate::domain::schedule::ChangeSet;
-    use crate::domain::scheduler::ScheduleStore;
-    use crate::infrastructure::store::chardata_conformance::active;
-    use crate::infrastructure::store::conformance::meta;
+    use kanade_domain::schedule::ChangeSet;
+    use kanade_domain::scheduler::ScheduleStore;
 
     fn at() -> DateTime<Utc> {
         Utc.with_ymd_and_hms(2026, 8, 31, 8, 0, 0)

@@ -5,8 +5,8 @@ use std::collections::BTreeSet;
 
 use chrono::{DateTime, Utc};
 
-use crate::domain::history::{RowChange, RowKey, RowValue};
-use crate::domain::schedule::{Change, ChangeSet};
+use kanade_domain::history::{RowChange, RowKey, RowValue};
+use kanade_domain::schedule::{Change, ChangeSet};
 
 /// Every key a change set touches.
 pub(crate) fn touched_keys(changes: &ChangeSet) -> BTreeSet<RowKey> {

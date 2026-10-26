@@ -3,7 +3,7 @@ use kanade::bot::cards::OFFLINE_CONFLICT_NOTICE;
 use kanade::bot::events::{ReactionRouter, RsvpReaction};
 use kanade::bot::handler::Reactions;
 use kanade::chat::driver::{FollowUpRequest, RejectionFollowUp};
-use kanade::domain::notify::{CardIndex, LookupError};
+use kanade_domain::notify::{CardIndex, LookupError};
 use std::{future::Future, pin::Pin, sync::Mutex};
 use tokio::sync::mpsc;
 use twilight_model::channel::message::ReactionType;

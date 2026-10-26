@@ -31,8 +31,8 @@ use super::options::Args;
 use super::text::{format_bosses, local_day, local_time};
 use crate::bot::ids::id_text;
 use crate::bot::transport::InteractionReply;
-use crate::domain::ids::{resolve_id, short_id};
-use crate::domain::schedule::Reminder;
+use kanade_domain::ids::{resolve_id, short_id};
+use kanade_domain::schedule::Reminder;
 
 pub use crate::bot::delivery::TEST_PREFIX;
 /// Until test cards have a delivery path.

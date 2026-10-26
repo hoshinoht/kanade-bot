@@ -13,7 +13,7 @@ use super::{
     week::{Context, WeekFrame},
     weekday_name, when,
 };
-use crate::domain::{
+use kanade_domain::{
     drafts::{
         DraftOp, FieldValue, LoadedDraft, MergeAnalysis, MergeConflict, ProposalInfo,
         ProposalSource as Staged, Removal, Target,
@@ -569,7 +569,7 @@ pub struct Common<'a> {
     pub frames: &'a [WeekFrame; 2],
     /// When runs end: a run past its end is frozen, never an amended run
     /// a weekly-timing change asks about.
-    pub ends: std::sync::Arc<crate::domain::completion::RunEnds>,
+    pub ends: std::sync::Arc<kanade_domain::completion::RunEnds>,
 }
 
 impl Common<'_> {

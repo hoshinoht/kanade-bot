@@ -12,12 +12,12 @@ use std::collections::BTreeMap;
 use chrono::{DateTime, TimeDelta, TimeZone, Utc};
 
 use super::fixtures::{refused, refused_for};
-use crate::domain::chardata::{
+use kanade_domain::chardata::{
     CharDataStore, ConsentSurface, DeletedEstimates, ESTIMATE_TTL, Link, LinkPut, LinkStatus,
     MemberEstimate, NOTICE_VERSION, PartyEstimate, Post, PostState, RefreshState, STRIP_AFTER,
     Snapshot, StoredCard, StoredCombined, StoredEstimates, StoredMember, estimate_kept,
 };
-use crate::domain::history::Actor;
+use kanade_domain::history::Actor;
 
 pub async fn run_suite<S: CharDataStore>(make: impl AsyncFn() -> S) {
     links_are_versioned(make().await).await;

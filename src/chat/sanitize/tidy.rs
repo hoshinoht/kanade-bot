@@ -7,7 +7,7 @@ use regex::Regex;
 use super::fence::map_prose;
 use super::pattern;
 use crate::chat::tools::MAX_MEMBER_REPLY;
-use crate::domain::pytext::strip;
+use kanade_domain::pytext::strip;
 
 /// A list marker glued to its heading.
 const GLUED_BULLET: &str = ": - ";

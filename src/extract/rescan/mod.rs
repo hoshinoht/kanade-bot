@@ -13,9 +13,9 @@ use chrono::{DateTime, Utc};
 
 pub use jobs::{INTERRUPTED, JobView, KEEP_JOBS, Rescans, SWITCHED_OFF};
 
-use crate::domain::scheduler::StoreError;
 use crate::extract::pipeline::IncomingMessage;
 use crate::extract::window::{WindowError, clamp_window};
+use kanade_domain::scheduler::StoreError;
 
 /// Admin API spellings (`docs/notes/admin-api.md`), mapped onto v4's windows.
 pub const API_WINDOWS: [&str; 3] = ["week", "since_reset", "two_weeks"];

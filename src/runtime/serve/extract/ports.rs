@@ -6,17 +6,17 @@ use std::sync::Arc;
 use crate::{
     api::{auth::Clock, write::ApiClock},
     bot::{extract_feed::StaleCache, guild_cache::GuildCache, ids::parse_id, roster::LiveRoster},
-    domain::{
-        catalog::BossTable,
-        ids::RandomIds,
-        schedule::SchedulePolicy,
-        scheduler::{ProposalRequest, ProposalResult, Proposed, SchedulerService, SupersedeScope},
-    },
     extract::pipeline::{Guild, IncomingMessage, Outbox, Proposer},
     infrastructure::{
         llm::{LlmProvider, identity::Member},
         store::SqliteStore,
     },
+};
+use kanade_domain::{
+    catalog::BossTable,
+    ids::RandomIds,
+    schedule::SchedulePolicy,
+    scheduler::{ProposalRequest, ProposalResult, Proposed, SchedulerService, SupersedeScope},
 };
 
 use super::status::ExtractionStatus;
@@ -79,7 +79,7 @@ pub struct StoreProposer {
     pub clock: Clock,
     pub policy: SchedulePolicy,
     pub directory: Arc<LiveRoster>,
-    pub run_ends: crate::domain::completion::RunEndsSource,
+    pub run_ends: kanade_domain::completion::RunEndsSource,
 }
 
 impl StoreProposer {

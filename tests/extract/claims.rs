@@ -8,10 +8,10 @@ use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
 
-use kanade::domain::model_log::{ExtractionOutcome, ModelLogStore};
 use kanade::extract::pipeline::{CALL_CANCELLED, MESSAGES_UNWRITABLE, MessageEvent};
 use kanade::extract::rescan::RescanRequest;
 use kanade::infrastructure::llm::FakeAction;
+use kanade_domain::model_log::{ExtractionOutcome, ModelLogStore};
 use serde_json::Value;
 
 use crate::fakes::{

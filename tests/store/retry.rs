@@ -3,12 +3,12 @@
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use chrono::{DateTime, NaiveTime, Utc, Weekday};
-use kanade::domain::ids::IdGenerator;
-use kanade::domain::schedule::{Change, ChangeSet, NewFixedRun, ScheduleSnapshot};
-use kanade::domain::scheduler::{
+use kanade::infrastructure::store::SqliteStore;
+use kanade_domain::ids::IdGenerator;
+use kanade_domain::schedule::{Change, ChangeSet, NewFixedRun, ScheduleSnapshot};
+use kanade_domain::scheduler::{
     COMMIT_ATTEMPTS, Clock, ScheduleStore, SchedulerError, SchedulerService, Scope, StoreError,
 };
-use kanade::infrastructure::store::SqliteStore;
 
 use crate::support::{TempDir, at, fixed};
 
@@ -22,9 +22,9 @@ struct Interfering {
 impl ScheduleStore for Interfering {
     async fn recorded_request(
         &self,
-        actor: &kanade::domain::history::Actor,
+        actor: &kanade_domain::history::Actor,
         request_id: &str,
-    ) -> Result<Option<kanade::domain::scheduler::RecordedRequest>, StoreError> {
+    ) -> Result<Option<kanade_domain::scheduler::RecordedRequest>, StoreError> {
         self.inner.recorded_request(actor, request_id).await
     }
 
@@ -36,8 +36,8 @@ impl ScheduleStore for Interfering {
         &self,
         expected_revision: u64,
         changes: ChangeSet,
-        meta: kanade::domain::history::ChangeMeta,
-    ) -> Result<Option<kanade::domain::scheduler::Committed>, StoreError> {
+        meta: kanade_domain::history::ChangeMeta,
+    ) -> Result<Option<kanade_domain::scheduler::Committed>, StoreError> {
         if self
             .remaining
             .try_update(Ordering::SeqCst, Ordering::SeqCst, |n| n.checked_sub(1))
@@ -118,7 +118,7 @@ async fn conflict_is_replanned_on_a_fresh_snapshot() {
     let dir = TempDir::new();
     let mut service = service(&dir, COMMIT_ATTEMPTS - 1).await;
     let id = service
-        .as_origin(kanade::domain::history::Origin::for_tests())
+        .as_origin(kanade_domain::history::Origin::for_tests())
         .add_fixed_run(new_fixed())
         .await
         .expect("retried");
@@ -133,7 +133,7 @@ async fn conflict_after_every_attempt_is_returned() {
     let dir = TempDir::new();
     let mut service = service(&dir, COMMIT_ATTEMPTS).await;
     let result = service
-        .as_origin(kanade::domain::history::Origin::for_tests())
+        .as_origin(kanade_domain::history::Origin::for_tests())
         .add_fixed_run(new_fixed())
         .await;
     assert_eq!(

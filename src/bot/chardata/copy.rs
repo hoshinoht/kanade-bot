@@ -13,7 +13,7 @@ use twilight_model::channel::message::component::ButtonStyle;
 use crate::bot::delivery::cards::redesign::{
     action_row, button, container, section_with_thumbnail, text, within_budget,
 };
-use crate::domain::chardata::{ATTRIBUTION, NOTICE_VERSION, Snapshot};
+use kanade_domain::chardata::{ATTRIBUTION, NOTICE_VERSION, Snapshot};
 
 /// The blossom edge of cards with data; the stub's grey one.
 const BLOSSOM: u32 = 0xa3_4e_68;

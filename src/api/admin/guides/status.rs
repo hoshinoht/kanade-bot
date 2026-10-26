@@ -6,22 +6,20 @@
 use serde_json::Value;
 
 use super::{Guides, Refusal, Renderer};
-use crate::{
-    api::{
-        dto::{
-            Art,
-            guides::{GuideRow, GuideStatus, RunProgress, StatusReason, actor, settled, summary},
-            iso_instant,
-        },
-        listeners::Site,
-        state::ApiState,
+use crate::api::{
+    dto::{
+        Art,
+        guides::{GuideRow, GuideStatus, RunProgress, StatusReason, actor, settled, summary},
+        iso_instant,
     },
-    domain::{
-        guides::{
-            Block, BlockError, Guide, Publish, PublishedSlot, Rendered, SlotState, StopReason, plan,
-        },
-        settings::SettingsChangeQuery,
+    listeners::Site,
+    state::ApiState,
+};
+use kanade_domain::{
+    guides::{
+        Block, BlockError, Guide, Publish, PublishedSlot, Rendered, SlotState, StopReason, plan,
     },
+    settings::SettingsChangeQuery,
 };
 
 /// What one guide's row is built from.

@@ -9,7 +9,7 @@
 use std::fmt;
 use std::sync::{Arc, OnceLock};
 
-use crate::domain::schedule::{Change, ChangeSet};
+use kanade_domain::schedule::{Change, ChangeSet};
 
 pub type RunObserver = Arc<dyn Fn(&[String]) + Send + Sync>;
 

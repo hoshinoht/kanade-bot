@@ -19,25 +19,23 @@ use super::{
     refusal::{Refusal, scheduler},
     state, write_context,
 };
-use crate::{
-    api::{
-        admin::context::{context, frames, roster, run_ends, weeks},
-        auth::AdminSession,
-        dto::{self, Art},
-        error::ApiError,
-        listeners::Site,
-        state::ApiState,
-        write::{FixedPatchReplay, WriteContext},
+use crate::api::{
+    admin::context::{context, frames, roster, run_ends, weeks},
+    auth::AdminSession,
+    dto::{self, Art},
+    error::ApiError,
+    listeners::Site,
+    state::ApiState,
+    write::{FixedPatchReplay, WriteContext},
+};
+use kanade_domain::{
+    history::{Actor, BlameTarget, ChangeRecord, Origin, RowKey},
+    members::{Member, MemberProfile, Roster},
+    schedule::{
+        AmendedRunChoice, FixedEdit, FixedEditChoices, FixedEditRequest, NewFixedRun,
+        ScheduleError, validate_channel, validate_participants,
     },
-    domain::{
-        history::{Actor, BlameTarget, ChangeRecord, Origin, RowKey},
-        members::{Member, MemberProfile, Roster},
-        schedule::{
-            AmendedRunChoice, FixedEdit, FixedEditChoices, FixedEditRequest, NewFixedRun,
-            ScheduleError, validate_channel, validate_participants,
-        },
-        scheduler::SchedulerError,
-    },
+    scheduler::SchedulerError,
 };
 
 mod choices;
@@ -90,7 +88,7 @@ struct Checked {
 
 /// The form's weekday (0 = Monday) and `HH:MM` time.
 fn slot(weekday: u8, time: &str) -> Result<(Weekday, NaiveTime), Refusal> {
-    let weekday = crate::domain::weeks::weekday_from_index(i64::from(weekday))
+    let weekday = kanade_domain::weeks::weekday_from_index(i64::from(weekday))
         .ok()
         .filter(|_| weekday <= 6)
         .ok_or_else(|| Refusal::invalid("Pick a weekday."))?;

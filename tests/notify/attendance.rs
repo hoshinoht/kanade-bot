@@ -4,12 +4,12 @@
 use std::collections::BTreeSet;
 
 use chrono::{DateTime, NaiveTime, TimeZone, Utc, Weekday};
-use kanade::domain::attendance::{AttendanceDefault, StandingAnswer};
-use kanade::domain::members::{Member, PingLevel, Roster};
-use kanade::domain::notify::{
+use kanade_domain::attendance::{AttendanceDefault, StandingAnswer};
+use kanade_domain::members::{Member, PingLevel, Roster};
+use kanade_domain::notify::{
     DeliverySettings, DeliveryTarget, DispatchInput, IntentContent, plan_dispatch,
 };
-use kanade::domain::schedule::{
+use kanade_domain::schedule::{
     FixedRun, Reminder, Rsvp, RsvpSource, RsvpState, Run, RunSource, RunStatus, ScheduleSnapshot,
 };
 

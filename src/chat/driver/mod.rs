@@ -32,9 +32,9 @@ pub use view::{ChatHandle, ChatView};
 use crate::chat::gate::{CHANNEL_BUSY_REACTION, ChatDecision, RATE_LIMITED_REACTION, Summons};
 use crate::chat::pilot::{Admission, ChatPilot, GuardLimits, LimitsView, LogFacts, TrafficLimits};
 use crate::chat::tools::ToolContext;
-use crate::domain::model_log::{AllowanceOverride, ModelLogStore};
-use crate::domain::scheduler::StoreError;
 use crate::infrastructure::llm::governor::MAX_TOOL_ROUNDS;
+use kanade_domain::model_log::{AllowanceOverride, ModelLogStore};
+use kanade_domain::scheduler::StoreError;
 
 /// v4 `CHAT_PILOT_TIMEOUT`: one question, queueing for a permit included.
 pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(60);

@@ -1,4 +1,4 @@
-use kanade::domain::model_log::{RewriteKind, RewriteLog, RewriteLogStore, RewriteStage};
+use kanade_domain::model_log::{RewriteKind, RewriteLog, RewriteLogStore, RewriteStage};
 use serde_json::json;
 
 use super::{ERROR, Logs, ids, utc};

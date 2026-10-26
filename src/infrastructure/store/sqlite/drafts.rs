@@ -10,17 +10,17 @@ use super::SqliteStore;
 use super::history::{self, COLUMNS};
 use super::rows;
 use super::schedule::{Collapsed, load, read_revision, store_error, write};
-use crate::domain::drafts::{
+use crate::infrastructure::store::Written;
+use crate::infrastructure::store::history::touched_keys;
+use kanade_domain::drafts::{
     DraftChange, DraftCreated, DraftEvent, DraftEventKind, DraftKind, DraftScope, DraftStale,
     DraftStatus, DraftUpdate, DraftWrite, LoadedDraft, MergeCommit, NewDraft, RequestLimit,
     RequestLimits, StagedOp, StoredDraft, decode, encode,
 };
-use crate::domain::history::{Actor, ChangeMeta, ChangeRecord, ChangeRef};
-use crate::domain::notify::draft_source;
-use crate::domain::schedule::Notice;
-use crate::domain::scheduler::{Committed, StoreError};
-use crate::infrastructure::store::Written;
-use crate::infrastructure::store::history::touched_keys;
+use kanade_domain::history::{Actor, ChangeMeta, ChangeRecord, ChangeRef};
+use kanade_domain::notify::draft_source;
+use kanade_domain::schedule::Notice;
+use kanade_domain::scheduler::{Committed, StoreError};
 
 /// Selected `FROM drafts` (unaliased): a `draft_proposals` row (0007) makes
 /// a stored `admin` draft a proposal.
@@ -58,7 +58,7 @@ pub(super) fn instant(
     text: &str,
     column: &str,
 ) -> Result<chrono::DateTime<chrono::Utc>, StoreError> {
-    crate::domain::time::from_iso(text)
+    kanade_domain::time::from_iso(text)
         .map_err(|error| StoreError::Backend(format!("drafts.{column}: {error}")))
 }
 
@@ -442,7 +442,7 @@ pub(super) async fn insert_ops(
 pub(super) async fn update_in(
     conn: &mut SqliteConnection,
     update: &DraftUpdate,
-) -> Result<crate::domain::drafts::DraftWrite, StoreError> {
+) -> Result<kanade_domain::drafts::DraftWrite, StoreError> {
     let Some(mut loaded) = load_in(conn, &update.draft_id).await? else {
         return Ok(DraftWrite::Stale(DraftStale::Missing));
     };
@@ -623,7 +623,7 @@ pub(super) async fn update_in(
 async fn commit_merge_in(
     conn: &mut SqliteConnection,
     expected_revision: u64,
-    changes: crate::domain::schedule::ChangeSet,
+    changes: kanade_domain::schedule::ChangeSet,
     meta: ChangeMeta,
     draft_id: &str,
     expected_version: u64,
@@ -744,12 +744,12 @@ async fn expire_in(
     Ok(rows)
 }
 
-impl crate::domain::drafts::DraftStore for SqliteStore {
+impl kanade_domain::drafts::DraftStore for SqliteStore {
     async fn snapshot_with_head(
         &self,
-    ) -> Result<(crate::domain::schedule::ScheduleSnapshot, ChangeRef), StoreError> {
+    ) -> Result<(kanade_domain::schedule::ScheduleSnapshot, ChangeRef), StoreError> {
         read_txn!(self, tx, async {
-            let snapshot = load(&mut tx, &crate::domain::scheduler::Scope::All).await?;
+            let snapshot = load(&mut tx, &kanade_domain::scheduler::Scope::All).await?;
             let head = history::head(&mut tx)
                 .await?
                 .ok_or_else(|| StoreError::Backend("the history has no genesis record".into()))?;
@@ -777,7 +777,7 @@ impl crate::domain::drafts::DraftStore for SqliteStore {
                 // An unparseable row is a tampered link: its stored bytes,
                 // hash or indexed columns disagree.
                 let (record, _) = history::stored(row, None).map_err(|(seq, _)| {
-                    StoreError::HistoryGap(crate::domain::history::HistoryGap::Tampered { seq })
+                    StoreError::HistoryGap(kanade_domain::history::HistoryGap::Tampered { seq })
                 })?;
                 records.push(record);
             }
@@ -858,7 +858,7 @@ impl crate::domain::drafts::DraftStore for SqliteStore {
     async fn draft_events(
         &self,
         id: &str,
-    ) -> Result<Vec<crate::domain::drafts::DraftEvent>, StoreError> {
+    ) -> Result<Vec<kanade_domain::drafts::DraftEvent>, StoreError> {
         read_txn!(self, tx, async {
             let rows = sqlx::query(
                 "SELECT id, draft_id, version, kind, actor_kind, actor_id, at, detail \
@@ -875,7 +875,7 @@ impl crate::domain::drafts::DraftStore for SqliteStore {
     async fn update_draft(
         &self,
         update: DraftUpdate,
-    ) -> Result<crate::domain::drafts::DraftWrite, StoreError> {
+    ) -> Result<kanade_domain::drafts::DraftWrite, StoreError> {
         let result = write_txn!(self, tx, update_in(&mut tx, &update));
         self.written().after_if(Written::Inbox, result, |write| {
             matches!(write, DraftWrite::Written(_))
@@ -885,7 +885,7 @@ impl crate::domain::drafts::DraftStore for SqliteStore {
     async fn commit_merge(
         &self,
         expected_revision: u64,
-        changes: crate::domain::schedule::ChangeSet,
+        changes: kanade_domain::schedule::ChangeSet,
         meta: ChangeMeta,
         draft_id: &str,
         expected_version: u64,

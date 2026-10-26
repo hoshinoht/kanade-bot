@@ -3,8 +3,8 @@
 //! invalid refuses startup, a reserve that leaves no prompt room in the
 //! call token budget included.
 
-use crate::domain::settings::{ContextRole, ContextSettings, MAX_CONTEXT_TOKENS};
 use crate::infrastructure::llm::{CALL_TOKEN_BUDGET, PROMPT_FLOOR_TOKENS, RESERVE_LIMIT};
+use kanade_domain::settings::{ContextRole, ContextSettings, MAX_CONTEXT_TOKENS};
 
 use super::Error;
 

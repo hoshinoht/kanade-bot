@@ -8,10 +8,8 @@ use std::{
 
 use chrono::{NaiveTime, Weekday};
 
-use crate::{
-    domain::settings::{OVERRIDE_RUN_MINUTES, RUN_MINUTES, RunLengths},
-    runtime::secrets::{self, SecretFile},
-};
+use crate::runtime::secrets::{self, SecretFile};
+use kanade_domain::settings::{OVERRIDE_RUN_MINUTES, RUN_MINUTES, RunLengths};
 
 use super::{
     DiscordSettings, Error, FileSettings, GuildSettings, ModelSettings, RuntimeConfig,

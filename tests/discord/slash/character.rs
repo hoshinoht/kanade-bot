@@ -23,19 +23,19 @@ use twilight_model::id::Id;
 use kanade::bot::chardata::DiscordPosts;
 use kanade::bot::commands::CharacterParts;
 use kanade::bot::transport::{Call, InteractionReply, Op, RejectionKind, Step};
-use kanade::domain::characters::{
-    Character, CharacterChange, CharacterRecord, CharacterRole, CharacterStore,
-};
-use kanade::domain::chardata::{
-    CharDataStore, Link, LinkPut, LinkStatus, NOTICE_VERSION, Post, PostState,
-};
-use kanade::domain::history::{Actor, Surface};
-use kanade::domain::settings::{SettingsChangeQuery, SettingsStore};
 use kanade::infrastructure::character_data::{
     AdminLinkOutcome, CharacterData, FetchState, RosterSide, Timing,
 };
 use kanade::infrastructure::nexon::{ApiKey, NexonClient};
 use kanade::infrastructure::store::SqliteCharData;
+use kanade_domain::characters::{
+    Character, CharacterChange, CharacterRecord, CharacterRole, CharacterStore,
+};
+use kanade_domain::chardata::{
+    CharDataStore, Link, LinkPut, LinkStatus, NOTICE_VERSION, Post, PostState,
+};
+use kanade_domain::history::{Actor, Surface};
+use kanade_domain::settings::{SettingsChangeQuery, SettingsStore};
 
 use super::super::support::{
     BOSSING_ROLE, message_json, parse, parse_message, user_json, v2_buttons, v2_texts as texts,
@@ -901,7 +901,7 @@ async fn strips_finish_on_404_delete_on_403_and_stick_when_both_are_refused() {
     assert_eq!(posts[0].state, PostState::Stuck);
     let health = rig.service.health().await;
     assert_eq!(health.posts.unwrap().stuck, 1);
-    let settings = kanade::domain::settings::CharacterData::default();
+    let settings = kanade_domain::settings::CharacterData::default();
     let dto = kanade::api::dto::character_data::health(&health, Some("100"), settings);
     let item = &dto.posts.unwrap().items[0];
     assert_eq!(item.state, "stuck");

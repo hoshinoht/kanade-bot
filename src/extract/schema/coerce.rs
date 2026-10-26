@@ -7,9 +7,9 @@ use serde_json::{Map, Value};
 
 use super::Extraction;
 use super::pyvalue::py_str;
-use crate::domain::pytext::strip;
-use crate::domain::schedule::RsvpState;
 use crate::extract::{Amendment, AmendmentKind};
+use kanade_domain::pytext::strip;
+use kanade_domain::schedule::RsvpState;
 
 /// Strings a small model reaches for when it means "nothing here".
 const NULLISH: [&str; 9] = ["", "null", "none", "n/a", "na", "unknown", "tbd", "-", "?"];

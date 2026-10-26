@@ -3,9 +3,9 @@
 use chrono::{DateTime, Datelike, NaiveTime, Timelike, Utc, Weekday};
 use chrono_tz::Tz;
 
-use crate::domain::catalog::BossTable;
-use crate::domain::ids::short_id;
-use crate::domain::schedule::{FixedRun, RunStatus};
+use kanade_domain::catalog::BossTable;
+use kanade_domain::ids::short_id;
+use kanade_domain::schedule::{FixedRun, RunStatus};
 
 pub const WEEKDAY_NAMES: [&str; 7] = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 pub const MONTH_NAMES: [&str; 12] = [

@@ -33,20 +33,20 @@ use crate::bot::commands::text::{format_bosses, local_day, local_time, status_la
 use crate::bot::ids::{id_text, parse_id};
 use crate::bot::mentions;
 use crate::bot::transport::{DiscordTransport, MessageEdit, OutgoingMessage};
-use crate::domain::completion::{
+use kanade_domain::completion::{
     ASK_AGAIN_AFTER, CompletionPlan, PromptClose, PromptOutcome, RunPrompt, RunPromptStore,
     auto_request_id, plan, pressed_request_id, reopened, run_minutes,
 };
-use crate::domain::drafts::ProposalStore;
-use crate::domain::history::{Actor, Checkpoints, Origin, Surface};
-use crate::domain::ids::short_id;
-use crate::domain::notify::{
+use kanade_domain::drafts::ProposalStore;
+use kanade_domain::history::{Actor, Checkpoints, Origin, Surface};
+use kanade_domain::ids::short_id;
+use kanade_domain::notify::{
     ChannelChoice, DeliveryJournal, EffectKind, IntentContent, NoticeOutbox, NotificationIntent,
     choose_channel,
 };
-use crate::domain::schedule::{Run, RunStatus, SettleRun};
-use crate::domain::scheduler::{IdSource, ScheduleStore, SchedulerError, Scope};
-use crate::domain::time::DateOutOfRange;
+use kanade_domain::schedule::{Run, RunStatus, SettleRun};
+use kanade_domain::scheduler::{IdSource, ScheduleStore, SchedulerError, Scope};
+use kanade_domain::time::DateOutOfRange;
 
 /// The post's journal effect kind.
 pub const RUN_PROMPT_EFFECT: &str = "notice.run.prompt";
@@ -203,7 +203,7 @@ where
         + NoticeOutbox
         + Checkpoints
         + ProposalStore
-        + crate::domain::notify::ReminderCardStore
+        + kanade_domain::notify::ReminderCardStore
         + RunPromptStore
         + Sync,
     I: IdSource,

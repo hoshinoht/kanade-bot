@@ -10,16 +10,16 @@ use serde_json::{Value, json};
 use tokio::time::{Instant, sleep_until};
 
 use super::{History, ResolvedWindow, TURNED_AWAY_ATTEMPTS};
-use crate::domain::model_log::{MessageUpsert, ModelLogStore};
-use crate::domain::scheduler::ScheduleStore;
-use crate::domain::time::to_iso;
-use crate::domain::weeks;
 use crate::extract::pipeline::{CallRecord, Extractor, Failure, Outbox, PipelineConfig, Proposer};
 use crate::extract::window::{
     BURST_GAP, MAX_BURST_MESSAGES, group_for_rescan, previous_week_start, should_widen,
     window_since,
 };
 use crate::infrastructure::llm::LlmProvider;
+use kanade_domain::model_log::{MessageUpsert, ModelLogStore};
+use kanade_domain::scheduler::ScheduleStore;
+use kanade_domain::time::to_iso;
+use kanade_domain::weeks;
 
 /// Where a window read at `now` starts.
 fn window_start(

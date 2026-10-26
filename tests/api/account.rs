@@ -2,7 +2,7 @@
 //! neutral, and gives a Discord session its access, named roles and the same
 //! allowance row Limits shows. Admin-only: the public listener never mounts it.
 
-use kanade::domain::members::MemberStore;
+use kanade_domain::members::MemberStore;
 use serde_json::{Value, json};
 
 use crate::{

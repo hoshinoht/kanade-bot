@@ -1,7 +1,7 @@
 //! The only name the scouter is ever sent.
 
 use super::MissingReason;
-use crate::domain::characters::{Character, DEFAULT_WORLD};
+use kanade_domain::characters::{Character, DEFAULT_WORLD};
 
 /// A roster character's IGN, as an admin entered it on the roster, within
 /// the scouter's rule (1-32 letters or digits; roster IGNs are ASCII).

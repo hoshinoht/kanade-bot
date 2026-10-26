@@ -6,9 +6,9 @@
 use sqlx::SqliteConnection;
 
 use super::instant;
-use crate::domain::model_log::PruneCounts;
-use crate::domain::scheduler::StoreError;
 use crate::infrastructure::store::sqlite::schedule::store_error;
+use kanade_domain::model_log::PruneCounts;
+use kanade_domain::scheduler::StoreError;
 
 const OLD_EXTRACTIONS: &str = "SELECT id FROM extractions WHERE at < ?1 ORDER BY at, id LIMIT ?2";
 const OLD_CHATS: &str = "SELECT id FROM chat_interactions WHERE at < ?1 ORDER BY at, id LIMIT ?2";

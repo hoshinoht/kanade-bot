@@ -19,15 +19,15 @@ use chrono::{DateTime, Utc};
 use sqlx::{Connection, Row, SqliteConnection};
 
 use super::SqliteStore;
-use crate::domain::model_log::PRUNE_BATCH;
-use crate::domain::notify::{
+use crate::infrastructure::store::Written;
+use kanade_domain::model_log::PRUNE_BATCH;
+use kanade_domain::notify::{
     ActiveClaims, AttemptId, AttemptRecord, AttemptState, Claim, DIGEST_MARKER_KEY,
     DeliveryJournal, DeliveryTarget, DigestLog, DrainReason, JournalError, Lease, NoticeCursor,
     NoticeOutbox, NotificationIntent, OutboxNotice, PendingNotices, Receipt, Recovery,
     WeeklyDigest,
 };
-use crate::domain::time::{from_iso, to_iso};
-use crate::infrastructure::store::Written;
+use kanade_domain::time::{from_iso, to_iso};
 
 pub(super) fn backend(error: sqlx::Error) -> JournalError {
     JournalError::Backend(error.to_string())
@@ -47,7 +47,7 @@ fn corrupt(detail: impl std::fmt::Display) -> JournalError {
 
 /// `(binding_type, key_primary, key_secondary)` for a native target.
 fn encode(target: &DeliveryTarget) -> Result<(String, String, String), JournalError> {
-    crate::domain::notify::claim_key(target).map_err(Into::into)
+    kanade_domain::notify::claim_key(target).map_err(Into::into)
 }
 
 /// Target families this journal plans; debug cards are operation-scoped.
@@ -328,8 +328,8 @@ impl DeliveryJournal for SqliteStore {
         &self,
         source: &str,
         ordinal: i64,
-    ) -> Result<Option<crate::domain::notify::Receipt>, JournalError> {
-        let key = crate::domain::notify::DedupeKey::source(source, ordinal);
+    ) -> Result<Option<kanade_domain::notify::Receipt>, JournalError> {
+        let key = kanade_domain::notify::DedupeKey::source(source, ordinal);
         let mut conn = self.reader().await.map_err(backend)?;
         let row = sqlx::query(
             "SELECT channel_id, message_id FROM delivery_attempts
@@ -343,7 +343,7 @@ impl DeliveryJournal for SqliteStore {
         let Some(row) = row else {
             return Ok(None);
         };
-        Ok(Some(crate::domain::notify::Receipt {
+        Ok(Some(kanade_domain::notify::Receipt {
             channel_id: row
                 .try_get::<Option<String>, _>("channel_id")
                 .map_err(corrupt)?

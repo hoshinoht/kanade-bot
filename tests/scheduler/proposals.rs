@@ -3,24 +3,24 @@
 //! when the schedule moved, attendance rules and TTL expiry.
 
 use chrono::{DateTime, FixedOffset, NaiveTime, TimeZone, Utc, Weekday};
-use kanade::domain::drafts::{
+use kanade::infrastructure::store::SqliteStore;
+use kanade_domain::drafts::{
     DraftEventKind, DraftOp, DraftStatus, DraftStore, LoadedDraft, ProposalSource, ProposalStore,
     RequestLimit, Target,
 };
-use kanade::domain::history::{Actor, ChangeHistory, ChangeRecord, Surface};
-use kanade::domain::ids::RandomIds;
-use kanade::domain::members::{Directory, Member};
-use kanade::domain::proposals::{Approver, ChangeKind, ProposedChange, Refusal};
-use kanade::domain::requests::{NoFreezes, RequestSpec, Subject};
-use kanade::domain::schedule::{
+use kanade_domain::history::{Actor, ChangeHistory, ChangeRecord, Surface};
+use kanade_domain::ids::RandomIds;
+use kanade_domain::members::{Directory, Member};
+use kanade_domain::proposals::{Approver, ChangeKind, ProposedChange, Refusal};
+use kanade_domain::requests::{NoFreezes, RequestSpec, Subject};
+use kanade_domain::schedule::{
     NewFixedRun, NewRun, NoticeChange, RsvpState, Run, RunSource, RunStatus, SchedulePolicy,
     StatusChange,
 };
-use kanade::domain::scheduler::{
+use kanade_domain::scheduler::{
     DraftError, ProposalApproved, ProposalError, ProposalPreview, ProposalRequest, RequestError,
     SchedulerService, Supersede,
 };
-use kanade::infrastructure::store::SqliteStore;
 
 use crate::common::TestClock;
 use crate::support::{self, by_tests, snapshot, utc};

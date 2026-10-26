@@ -17,12 +17,12 @@ use crate::{
         },
         state::ApiState,
     },
-    domain::{model_log::WatchedMessage, proposals::StoredCard},
     extract::{
         pipeline::{CONTEXT_WINDOW, DEFAULT_CONTEXT_MESSAGES},
         window::MAX_BURST_MESSAGES,
     },
 };
+use kanade_domain::{model_log::WatchedMessage, proposals::StoredCard};
 
 /// At most what one extraction call reads: its context before the burst
 /// plus a whole burst.

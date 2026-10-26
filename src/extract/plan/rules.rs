@@ -4,11 +4,11 @@ use chrono::{DateTime, Datelike, NaiveDate, NaiveTime, TimeDelta, Utc};
 use chrono_tz::Tz;
 
 use super::{Payload, Planned};
-use crate::domain::completion::RunEnds;
-use crate::domain::schedule::{RUN_DONE_AFTER, Run, RunStatus};
-use crate::domain::time::{DateOutOfRange, ZonedDateTime};
 use crate::extract::resolve::{Bound, Resolved, Side};
 use crate::extract::{Amendment, AmendmentKind};
+use kanade_domain::completion::RunEnds;
+use kanade_domain::schedule::{RUN_DONE_AFTER, Run, RunStatus};
+use kanade_domain::time::{DateOutOfRange, ZonedDateTime};
 
 /// How far into the past a proposed time may point: live chat routinely
 /// settles a run just after it was due ("start now lah"), a rescan does not.

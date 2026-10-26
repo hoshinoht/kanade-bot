@@ -17,13 +17,13 @@ use super::text::fixed_run_line;
 use crate::api::write::WriteContext;
 use crate::bot::ids::id_text;
 use crate::bot::transport::InteractionReply;
-use crate::domain::history::{Expect, Origin, RowKey};
-use crate::domain::ids::short_id;
-use crate::domain::schedule::{
+use kanade_domain::history::{Expect, Origin, RowKey};
+use kanade_domain::ids::short_id;
+use kanade_domain::schedule::{
     FixedEdit, FixedEditChoices, FixedEditRequest, FixedRun, NewFixedRun,
 };
-use crate::domain::scheduler::{SchedulerError, Scope};
-use crate::domain::weeks::{parse_hhmm, parse_weekday};
+use kanade_domain::scheduler::{SchedulerError, Scope};
+use kanade_domain::weeks::{parse_hhmm, parse_weekday};
 
 const DAYS: [(&str, &str); 7] = [
     ("Mon", "mon"),

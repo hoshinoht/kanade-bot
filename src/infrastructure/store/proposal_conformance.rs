@@ -6,19 +6,19 @@
 use chrono::{DateTime, TimeDelta, TimeZone, Utc};
 
 use super::fixtures::{refused, refused_for};
-use crate::domain::drafts::{
+use crate::infrastructure::store::snapshots::SnapshotReads;
+use kanade_domain::drafts::{
     DEFAULT_PROPOSAL_TTL, DraftEventKind, DraftKind, DraftStatus, MergeCommit, NewDraft,
     NewProposal, ProposalCreated, ProposalSource, ProposalStore, ProposalSubmission, SUPERSEDED,
     StagedOp, Target,
 };
-use crate::domain::history::{Actor, ChangeHistory, ChangeMeta, ChangeRef, Origin, Surface};
-use crate::domain::notify::{
+use kanade_domain::history::{Actor, ChangeHistory, ChangeMeta, ChangeRef, Origin, Surface};
+use kanade_domain::notify::{
     Claim, DeliveryJournal, DeliveryTarget, EffectKind, IntentContent, NotificationIntent, Receipt,
 };
-use crate::domain::proposals::{CardDetails, ChangeKind, ProposalCardStore, ProposalSubject};
-use crate::domain::schedule::{Change, ChangeSet, Run, RunSource, RunStatus};
-use crate::domain::scheduler::{CARDLESS_CHAT_GRACE, ScheduleStore, Scope};
-use crate::infrastructure::store::snapshots::SnapshotReads;
+use kanade_domain::proposals::{CardDetails, ChangeKind, ProposalCardStore, ProposalSubject};
+use kanade_domain::schedule::{Change, ChangeSet, Run, RunSource, RunStatus};
+use kanade_domain::scheduler::{CARDLESS_CHAT_GRACE, ScheduleStore, Scope};
 
 /// Run every check, each against a fresh store from `make`.
 pub async fn run_suite<
@@ -74,7 +74,7 @@ fn proposal(id: &str, base: &(ChangeRef, u64), key: Option<&str>) -> NewProposal
         at: utc(20, 12, 0),
         ops: vec![StagedOp {
             ord: 0,
-            op: crate::domain::drafts::DraftOp::ResetToFixed {
+            op: kanade_domain::drafts::DraftOp::ResetToFixed {
                 run: Target::Existing("run-1".into()),
             },
             author: extractor(),
@@ -297,10 +297,10 @@ async fn the_inbox_count_is_live_proposals_and_submitted_requests<
         submit,
     };
     let submitted = || {
-        Some(crate::domain::drafts::Submission {
+        Some(kanade_domain::drafts::Submission {
             ops: Vec::new(),
             expires_week: None,
-            limits: crate::domain::requests::DEFAULT_LIMITS,
+            limits: kanade_domain::requests::DEFAULT_LIMITS,
         })
     };
     store
@@ -447,7 +447,7 @@ fn run_move(
         .encode(),
     );
     new.ops[0].author = new.author.clone();
-    new.ops[0].op = crate::domain::drafts::DraftOp::AmendRun {
+    new.ops[0].op = kanade_domain::drafts::DraftOp::AmendRun {
         run: Target::Existing("run-1".into()),
         to: utc(21, 22, 0),
     };

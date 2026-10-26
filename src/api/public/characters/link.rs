@@ -51,18 +51,18 @@ use crate::{
         state::ApiState,
     },
     bot::chardata::copy::{NoticePart, notice_text},
-    domain::{
-        characters::{Character, parse_ign},
-        chardata::{
-            ATTRIBUTION, ConsentSurface, LINK_REGION, LinkStatus, NOTICE_VERSION, PENDING_TTL,
-            UnlinkReason,
-        },
-        history::{Actor, Surface},
-    },
     infrastructure::{
         character_data::{CharacterData, ConfirmOutcome, FetchState, LinkView},
         store::replays::ReplayScope,
     },
+};
+use kanade_domain::{
+    characters::{Character, parse_ign},
+    chardata::{
+        ATTRIBUTION, ConsentSurface, LINK_REGION, LinkStatus, NOTICE_VERSION, PENDING_TTL,
+        UnlinkReason,
+    },
+    history::{Actor, Surface},
 };
 
 type Reply = Result<Response, Refusal>;

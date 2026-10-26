@@ -33,11 +33,11 @@ use crate::{
         state::ApiState,
         write::{DraftCommand, DraftDone},
     },
-    domain::{
-        drafts::{DraftStatus, StoredDraft},
-        scheduler::{DraftError, Scope},
-    },
     infrastructure::store::replays::ReplayScope,
+};
+use kanade_domain::{
+    drafts::{DraftStatus, StoredDraft},
+    scheduler::{DraftError, Scope},
 };
 
 type Reply = Result<Response, Refusal>;

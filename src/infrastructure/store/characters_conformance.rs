@@ -9,15 +9,15 @@
 use chrono::{DateTime, TimeZone, Timelike, Utc};
 
 use super::fixtures::refused;
-use crate::domain::characters::{
+use crate::infrastructure::store::members_conformance::gateway;
+use crate::infrastructure::store::replays::{KeyedWrite, ReplayScope, ReplayStore, StoredReplay};
+use kanade_domain::characters::{
     CHARACTERS_SECTION, Character, CharacterChange, CharacterEdit, CharacterRecord, CharacterRole,
     CharacterStore, CharacterWrite,
 };
-use crate::domain::history::{Actor, Surface};
-use crate::domain::members::MemberStore;
-use crate::domain::settings::{SettingsChange, SettingsChangeQuery, SettingsStore};
-use crate::infrastructure::store::members_conformance::gateway;
-use crate::infrastructure::store::replays::{KeyedWrite, ReplayScope, ReplayStore, StoredReplay};
+use kanade_domain::history::{Actor, Surface};
+use kanade_domain::members::MemberStore;
+use kanade_domain::settings::{SettingsChange, SettingsChangeQuery, SettingsStore};
 
 pub async fn run_suite<S: CharacterStore + ReplayStore + SettingsStore + MemberStore>(
     make: impl AsyncFn() -> S,

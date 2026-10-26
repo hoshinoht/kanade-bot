@@ -10,7 +10,7 @@ use regex::Regex;
 use super::pattern_i;
 use crate::chat::tools::read::format::CONTEXT_LABEL;
 use crate::chat::tools::{ToolName, ToolOutcome};
-use crate::domain::pytext::strip;
+use kanade_domain::pytext::strip;
 
 /// The label however a reply dresses it: any case, markup, brackets or
 /// separator, with or without the leading `Context`.

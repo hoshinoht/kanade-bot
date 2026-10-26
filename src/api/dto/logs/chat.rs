@@ -9,11 +9,11 @@ use super::{LogFacets, Names, UsageSummary, UsageTally};
 use crate::{
     api::dto::{Named, iso_instant},
     chat::context::WITHHELD,
-    domain::{
-        members::Directory,
-        model_log::{ChatInteraction, ChatOutcome, MaskedTurn},
-        proposals::StoredCard,
-    },
+};
+use kanade_domain::{
+    members::Directory,
+    model_log::{ChatInteraction, ChatOutcome, MaskedTurn},
+    proposals::StoredCard,
 };
 
 /// No model ran (a rate-limited question has no rounds).

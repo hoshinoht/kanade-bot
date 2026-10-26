@@ -4,10 +4,10 @@
 use chrono::{DateTime, Utc};
 
 use super::CharacterData;
-use crate::domain::chardata::{CALL_WINDOW, DAILY_CALLS, LinkStatus, PostState};
 use crate::infrastructure::scouter::ScouterHealth;
+use kanade_domain::chardata::{CALL_WINDOW, DAILY_CALLS, LinkStatus, PostState};
 
-crate::domain::spelled! {
+kanade_domain::spelled! {
     NexonState {
         NoKey => "no_key",
         Ok => "ok",

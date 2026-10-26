@@ -10,9 +10,9 @@ use std::collections::HashSet;
 use chrono::{DateTime, NaiveDate, Utc};
 use chrono_tz::Tz;
 
-use crate::domain::ids::{canonical, short_id};
-use crate::domain::schedule::Run;
 use crate::extract::{Amendment, AmendmentKind};
+use kanade_domain::ids::{canonical, short_id};
+use kanade_domain::schedule::Run;
 
 /// `reason_code` for "bosses were named and nothing here runs them": with a
 /// day and time the caller turns it into an `add`, otherwise it is dropped.

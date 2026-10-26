@@ -22,18 +22,18 @@ use crate::chat::tools::read::participants::{
 };
 use crate::chat::tools::read::resolve::{listing, require_heard, resolve_fixed, resolve_run};
 use crate::chat::tools::{CallError, ToolContext, ToolError};
-use crate::domain::drafts::{ProposalSource, ProposalStore};
-use crate::domain::ids::short_id;
-use crate::domain::members::member_name;
-use crate::domain::proposals::{ChangeKind, Payload, ProposedChange};
-use crate::domain::pytext::strip;
-use crate::domain::schedule::{RsvpState, Run, RunStatus, SchedulePolicy, utc_instant};
-use crate::domain::scheduler::{
+use card::{card_party, card_when, names};
+use kanade_domain::drafts::{ProposalSource, ProposalStore};
+use kanade_domain::ids::short_id;
+use kanade_domain::members::member_name;
+use kanade_domain::proposals::{ChangeKind, Payload, ProposedChange};
+use kanade_domain::pytext::strip;
+use kanade_domain::schedule::{RsvpState, Run, RunStatus, SchedulePolicy, utc_instant};
+use kanade_domain::scheduler::{
     ChatProposed, Clock, IdSource, ProposalError, ProposalRequest, ScheduleStore, SchedulerService,
     Supersede, SupersedeScope,
 };
-use crate::domain::weeks::{parse_hhmm, parse_weekday, week_start};
-use card::{card_party, card_when, names};
+use kanade_domain::weeks::{parse_hhmm, parse_weekday, week_start};
 
 /// The scheduler refused the change (v4 would have carded it and failed at ✅).
 const REFUSED_UP_FRONT: &str = "That cannot be proposed: {reason}. No card went up -- tell them why in your own words, and never say a card is up.";

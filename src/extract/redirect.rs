@@ -7,14 +7,14 @@ use chrono::{DateTime, Datelike, NaiveTime, Timelike, Utc, Weekday};
 
 use crate::chat::nudge::render;
 use crate::chat::persona::NudgePurpose;
-use crate::domain::notify::WeekReset;
-use crate::domain::proposals::{ChangeKind, Payload, ProposedChange};
-use crate::domain::schedule::Run;
+use kanade_domain::notify::WeekReset;
+use kanade_domain::proposals::{ChangeKind, Payload, ProposedChange};
+use kanade_domain::schedule::Run;
 
 /// Admin setting `self_service.mode` (guild-wide): `CardsAndLink` (launch
 /// default: the card stays and the link is added), `LinkFirst`
 /// (self-serviceable moves get only the link) or `CardsOnly` (v4 behaviour).
-pub use crate::domain::settings::SelfServiceMode;
+pub use kanade_domain::settings::SelfServiceMode;
 
 /// No links while the public portal is closed, whatever is configured.
 pub fn effective_mode(configured: SelfServiceMode, public_portal_open: bool) -> SelfServiceMode {

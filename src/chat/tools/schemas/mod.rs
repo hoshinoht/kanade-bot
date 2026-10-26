@@ -6,7 +6,7 @@ mod text;
 
 use serde_json::Value;
 
-crate::domain::spelled! {
+kanade_domain::spelled! {
     /// Every tool the model may call, in v4's canonical order, then v5's
     /// `request_tools`.
     ToolName {

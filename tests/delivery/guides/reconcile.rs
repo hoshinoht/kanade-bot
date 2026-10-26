@@ -5,11 +5,11 @@
 use std::sync::Arc;
 
 use kanade::bot::transport::{AmbiguousKind, Op, Step};
-use kanade::domain::guides::{
+use kanade_domain::guides::{
     Blocked, Confirmations, GuideGrants, GuideStore, OpKind, OpOutcome, PlanOp, PublishKind,
     PublishOp, PublishState, SlotState, StopReason,
 };
-use kanade::domain::notify::{
+use kanade_domain::notify::{
     Claim, DeliveryJournal, EffectKind, IntentContent, NotificationIntent, Receipt,
 };
 

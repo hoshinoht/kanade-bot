@@ -8,9 +8,9 @@ use kanade::bot::delivery::cards::redesign::{
 };
 use kanade::bot::delivery::cards::{self, Card, REACT_HINT, fetch_art};
 use kanade::bot::transport::OutgoingMessage;
-use kanade::domain::members::{Member, PingLevel};
-use kanade::domain::notify::IntentContent;
-use kanade::domain::schedule::{RunStatus, ScheduleSnapshot};
+use kanade_domain::members::{Member, PingLevel};
+use kanade_domain::notify::IntentContent;
+use kanade_domain::schedule::{RunStatus, ScheduleSnapshot};
 use twilight_model::channel::message::Embed;
 
 use super::{

@@ -26,10 +26,10 @@ use crate::{
         rescan::{RescanDesk, RescanView},
         state::ApiState,
     },
-    domain::history::Surface,
     extract::rescan::{API_WINDOWS, RescanError, RescanRequest},
     infrastructure::store::replays::{ReplayScope, StoredReplay},
 };
+use kanade_domain::history::Surface;
 
 use super::super::write::{bad_body, origin};
 

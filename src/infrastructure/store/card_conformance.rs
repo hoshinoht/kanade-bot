@@ -5,17 +5,17 @@
 use chrono::{DateTime, TimeZone, Utc};
 
 use super::fixtures::refused_for;
-use crate::domain::drafts::{
+use kanade_domain::drafts::{
     DEFAULT_PROPOSAL_TTL, DraftChange, DraftStatus, DraftUpdate, NewProposal, ProposalSource,
     ProposalStore, StagedOp, Target,
 };
-use crate::domain::history::{Actor, ChangeHistory};
-use crate::domain::notify::{
+use kanade_domain::history::{Actor, ChangeHistory};
+use kanade_domain::notify::{
     Claim, DeliveryJournal, DeliveryTarget, EffectKind, IntentContent, JournalError, Lease,
     NotificationIntent, Receipt,
 };
-use crate::domain::proposals::{CardDetails, CardPayload, ChangeKind, ProposalCardStore};
-use crate::domain::scheduler::{ScheduleStore, Scope};
+use kanade_domain::proposals::{CardDetails, CardPayload, ChangeKind, ProposalCardStore};
+use kanade_domain::scheduler::{ScheduleStore, Scope};
 
 const CHANNEL: &str = "900";
 
@@ -69,7 +69,7 @@ async fn propose<S: ScheduleStore + ChangeHistory + ProposalStore>(store: &S, id
             at: utc(12),
             ops: vec![StagedOp {
                 ord: 0,
-                op: crate::domain::drafts::DraftOp::ResetToFixed {
+                op: kanade_domain::drafts::DraftOp::ResetToFixed {
                     run: Target::Existing("run-1".into()),
                 },
                 author,

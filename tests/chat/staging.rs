@@ -12,8 +12,8 @@ use std::path::Path;
 
 use kanade::chat::persona::Staging;
 use kanade::chat::pilot::staging_line;
-use kanade::domain::catalog::BossTable;
 use kanade::infrastructure::files::load_catalog;
+use kanade_domain::catalog::BossTable;
 use serde_json::json;
 
 use crate::wire::kanade;

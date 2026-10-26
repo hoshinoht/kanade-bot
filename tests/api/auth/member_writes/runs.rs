@@ -7,12 +7,12 @@ use kanade::{
         audit::{AuditEvent, Realm},
         rate::MEMBER_WRITE_ROUTE,
     },
-    domain::{
-        history::{Actor, Surface},
-        schedule::{Change, RunStatus},
-        scheduler::{ScheduleStore, Scope},
-    },
     infrastructure::store::auth_audit::AuditKind,
+};
+use kanade_domain::{
+    history::{Actor, Surface},
+    schedule::{Change, RunStatus},
+    scheduler::{ScheduleStore, Scope},
 };
 use serde_json::{Value, json};
 
@@ -162,7 +162,7 @@ impl Portal {
         value
     }
 
-    async fn stored(&self, id: &str) -> kanade::domain::schedule::Run {
+    async fn stored(&self, id: &str) -> kanade_domain::schedule::Run {
         self.reads
             .store
             .load(&Scope::Run(id.into()))
@@ -676,14 +676,12 @@ async fn only_writes_are_audited_and_identical_refusals_are_coalesced() {
 /// off the run after the handler's checks is refused and nothing is written.
 #[tokio::test]
 async fn the_writer_refuses_a_member_taken_off_after_the_checks() {
-    use kanade::{
-        api::write::{RunWrite, WriteContext},
-        domain::{
-            history::{Expect, Origin},
-            members::Roster,
-            schedule::{MemberRunRefusal, RsvpState, ScheduleError},
-            scheduler::{DeclineNoticeContext, SchedulerError},
-        },
+    use kanade::api::write::{RunWrite, WriteContext};
+    use kanade_domain::{
+        history::{Expect, Origin},
+        members::Roster,
+        schedule::{MemberRunRefusal, RsvpState, ScheduleError},
+        scheduler::{DeclineNoticeContext, SchedulerError},
     };
     let portal = portal().await;
     let v = portal.version().await;

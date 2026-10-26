@@ -11,17 +11,17 @@ use super::super::rows::list;
 use super::super::schedule::store_error;
 use super::rows::{member_estimate, party_estimate};
 use super::{SqliteCharData, instant};
-use crate::domain::chardata::{
+use kanade_domain::chardata::{
     DeletedEstimates, ESTIMATE_TTL, FUTURE_SKEW, MemberEstimate, PartyEstimate, StoredEstimates,
 };
-use crate::domain::scheduler::StoreError;
+use kanade_domain::scheduler::StoreError;
 
 fn encode(value: &impl Serialize) -> Result<String, StoreError> {
     serde_json::to_string(value)
         .map_err(|_| StoreError::Constraint("estimate result does not encode".into()))
 }
 
-/// The bounds of [`crate::domain::chardata::estimate_kept`] at `now`: kept
+/// The bounds of [`kanade_domain::chardata::estimate_kept`] at `now`: kept
 /// rows are stamped after the first and at or before the second.
 fn window(now: DateTime<Utc>) -> Result<(String, String), StoreError> {
     Ok((

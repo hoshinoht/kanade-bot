@@ -6,7 +6,7 @@ use std::{future::Future, pin::Pin};
 
 use chrono::{DateTime, Utc};
 
-use crate::domain::scheduler::StoreError;
+use kanade_domain::scheduler::StoreError;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum SessionOrigin {
@@ -32,7 +32,7 @@ impl SessionOrigin {
     }
 }
 
-crate::domain::spelled! {
+kanade_domain::spelled! {
     LoginMethod {
         Discord => "discord",
         Tailscale => "tailscale",

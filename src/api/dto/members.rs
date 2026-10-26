@@ -3,11 +3,8 @@
 use chrono::{DateTime, Utc};
 use serde::Serialize;
 
-use crate::{
-    api::state::GuildAccess,
-    chat::persona::PersonaOption,
-    domain::{members::MemberProfile, schedule::ScheduleSnapshot},
-};
+use crate::{api::state::GuildAccess, chat::persona::PersonaOption};
+use kanade_domain::{members::MemberProfile, schedule::ScheduleSnapshot};
 
 #[derive(Serialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]

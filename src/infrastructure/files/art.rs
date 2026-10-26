@@ -7,8 +7,8 @@ use std::fs;
 use std::io::Read;
 use std::path::PathBuf;
 
-use crate::domain::art::{ArtFile, ArtSource, MAX_ART_BYTES};
-use crate::domain::guides::ArtKind;
+use kanade_domain::art::{ArtFile, ArtSource, MAX_ART_BYTES};
+use kanade_domain::guides::ArtKind;
 
 /// Accepted extensions, in lookup order (as the portal's `/art`).
 const SUFFIXES: [&str; 4] = ["png", "webp", "jpg", "jpeg"];

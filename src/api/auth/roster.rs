@@ -11,10 +11,10 @@ use crate::{
         events::{AdminRoles, RosterUpdate},
         ids::id_text,
     },
-    domain::{
-        members::{GatewayMember, MemberStore},
-        scheduler::StoreError,
-    },
+};
+use kanade_domain::{
+    members::{GatewayMember, MemberStore},
+    scheduler::StoreError,
 };
 
 /// Persist the update as v4's `upsert_member` did (names and role flag; the

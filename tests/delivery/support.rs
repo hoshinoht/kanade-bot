@@ -5,14 +5,14 @@ use std::path::PathBuf;
 use chrono::{DateTime, Utc};
 use kanade::bot::delivery::{FixedClock, IdsRef};
 use kanade::bot::transport::FakeDiscord;
-use kanade::domain::ids::IdGenerator;
-use kanade::domain::notify::{
+use kanade::infrastructure::store::{SqliteStore, SqliteStoreConfig};
+use kanade_domain::ids::IdGenerator;
+use kanade_domain::notify::{
     CardIndex, Claim, DeliveryJournal, DeliveryTarget, DigestInclusion, EffectKind, IntentContent,
     Lease, NotificationIntent, Receipt,
 };
-use kanade::domain::schedule::ScheduleSnapshot;
-use kanade::domain::scheduler::{ScheduleStore, SchedulerService, Scope, StoreRef};
-use kanade::infrastructure::store::{SqliteStore, SqliteStoreConfig};
+use kanade_domain::schedule::ScheduleSnapshot;
+use kanade_domain::scheduler::{ScheduleStore, SchedulerService, Scope, StoreRef};
 use twilight_model::channel::message::Component;
 
 /// v4's first stub message id.
@@ -24,14 +24,14 @@ pub trait Store:
     ScheduleStore
     + DeliveryJournal
     + CardIndex
-    + kanade::domain::notify::NoticeOutbox
-    + kanade::domain::notify::DeclineNoticeStore
-    + kanade::domain::history::Checkpoints
-    + kanade::domain::drafts::ProposalStore
-    + kanade::domain::notify::ReminderCardStore
-    + kanade::domain::notify::DigestPhraseStore
-    + kanade::domain::ownership::OwnerRequestStore
-    + kanade::domain::completion::RunPromptStore
+    + kanade_domain::notify::NoticeOutbox
+    + kanade_domain::notify::DeclineNoticeStore
+    + kanade_domain::history::Checkpoints
+    + kanade_domain::drafts::ProposalStore
+    + kanade_domain::notify::ReminderCardStore
+    + kanade_domain::notify::DigestPhraseStore
+    + kanade_domain::ownership::OwnerRequestStore
+    + kanade_domain::completion::RunPromptStore
     + Sync
 {
 }
@@ -40,14 +40,14 @@ impl<S> Store for S where
     S: ScheduleStore
         + DeliveryJournal
         + CardIndex
-        + kanade::domain::notify::NoticeOutbox
-        + kanade::domain::notify::DeclineNoticeStore
-        + kanade::domain::history::Checkpoints
-        + kanade::domain::drafts::ProposalStore
-        + kanade::domain::notify::ReminderCardStore
-        + kanade::domain::notify::DigestPhraseStore
-        + kanade::domain::ownership::OwnerRequestStore
-        + kanade::domain::completion::RunPromptStore
+        + kanade_domain::notify::NoticeOutbox
+        + kanade_domain::notify::DeclineNoticeStore
+        + kanade_domain::history::Checkpoints
+        + kanade_domain::drafts::ProposalStore
+        + kanade_domain::notify::ReminderCardStore
+        + kanade_domain::notify::DigestPhraseStore
+        + kanade_domain::ownership::OwnerRequestStore
+        + kanade_domain::completion::RunPromptStore
         + Sync
 {
 }
@@ -144,10 +144,10 @@ pub async fn mark_digest_week<S: Store>(store: &S, week: DateTime<Utc>, now: Dat
 
 /// The stored digest phrase for the boss week starting at `week`.
 pub async fn week_phrase(
-    store: &impl kanade::domain::notify::DigestPhraseStore,
+    store: &impl kanade_domain::notify::DigestPhraseStore,
     week: DateTime<Utc>,
 ) -> Option<String> {
-    let key = kanade::domain::notify::DedupeKey::native(&[DeliveryTarget::Digest(week)])
+    let key = kanade_domain::notify::DedupeKey::native(&[DeliveryTarget::Digest(week)])
         .expect("digest key");
     store.digest_phrase(key.as_str()).await.expect("phrase")
 }

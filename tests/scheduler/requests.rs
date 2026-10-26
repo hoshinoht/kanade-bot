@@ -5,27 +5,27 @@ use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 use chrono::{DateTime, TimeDelta, Utc};
-use kanade::domain::drafts::{
+use kanade::infrastructure::store::SqliteStore;
+use kanade_domain::drafts::{
     DraftCreated, DraftEvent, DraftEventKind, DraftOp, DraftStatus, DraftStore, DraftUpdate,
     DraftWrite, LoadedDraft, MergeCommit, MergeConflict, NewDraft, RequestLimit, StoredDraft,
     Target,
 };
-use kanade::domain::history::{
+use kanade_domain::history::{
     Actor, BlameTarget, ChangeHistory, ChangeMeta, ChangeRecord, ChangeRef, Origin, Surface, Via,
     blame,
 };
-use kanade::domain::ids::RandomIds;
-use kanade::domain::notify::{DeliverySettings, NoticeOutbox, draft_source, plan_notice};
-use kanade::domain::requests::{MemberGate, NoFreezes, RequestRefusal, RequestSpec, Subject};
-use kanade::domain::schedule::{
+use kanade_domain::ids::RandomIds;
+use kanade_domain::notify::{DeliverySettings, NoticeOutbox, draft_source, plan_notice};
+use kanade_domain::requests::{MemberGate, NoFreezes, RequestRefusal, RequestSpec, Subject};
+use kanade_domain::schedule::{
     AmendedRunChoice, Change, ChangeSet, FixedEdit, FixedEditChoices, Notice, NoticeChange,
     RequestDecision, RsvpSource, RsvpState, Run, ScheduleSnapshot,
 };
-use kanade::domain::scheduler::{
+use kanade_domain::scheduler::{
     Approved, Committed, DraftError, MergeWarning, RecordedRequest, RequestError, RequestPreview,
     RequestResult, ScheduleStore, SchedulerService, Scope, SkipReason, StoreError,
 };
-use kanade::infrastructure::store::SqliteStore;
 
 use crate::common::TestClock;
 use crate::support::{

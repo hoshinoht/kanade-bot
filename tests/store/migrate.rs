@@ -1,9 +1,9 @@
 //! Embedded migrations: fresh files, idempotent reopen and refusals.
 
-use kanade::domain::notify::DeclineNoticeStore;
-use kanade::domain::schedule::{Change, ChangeSet};
-use kanade::domain::scheduler::{ScheduleStore, Scope, StoreError};
 use kanade::infrastructure::store::{SqliteStore, SqliteStoreConfig, SqliteStoreError};
+use kanade_domain::notify::DeclineNoticeStore;
+use kanade_domain::schedule::{Change, ChangeSet};
+use kanade_domain::scheduler::{ScheduleStore, Scope, StoreError};
 use sqlx::{Connection, Row, SqliteConnection};
 
 use crate::support::{LATE_SCHEMA_DROPS, TempDir, connect, create, reminder, seed, tamper};
@@ -333,8 +333,8 @@ async fn a_version_one_store_gains_the_later_tables_on_open() {
 /// refuse UPDATE and DELETE.
 #[tokio::test]
 async fn upgrading_from_v22_adds_append_only_settings_changes() {
-    use kanade::domain::history::{Actor, Surface};
-    use kanade::domain::settings::{
+    use kanade_domain::history::{Actor, Surface};
+    use kanade_domain::settings::{
         RowDiff, SettingsChange, SettingsChangeQuery, SettingsStore, keys,
     };
 
@@ -645,8 +645,8 @@ async fn assert_checks_refuse(config: &SqliteStoreConfig, table: &str, cases: &[
 #[tokio::test]
 async fn upgrading_from_v30_adds_replays() {
     use chrono::{TimeZone, Utc};
-    use kanade::domain::settings::{SettingsStore, keys};
     use kanade::infrastructure::store::replays::{ReplayScope, ReplayStore, StoredReplay};
+    use kanade_domain::settings::{SettingsStore, keys};
 
     let dir = TempDir::new();
     let config = dir.config("v30-replays");
@@ -702,7 +702,7 @@ async fn upgrading_from_v30_adds_replays() {
 #[tokio::test]
 async fn upgrading_from_v34_adds_run_prompts_that_close_once() {
     use chrono::{TimeZone, Utc};
-    use kanade::domain::completion::{PromptClose, PromptOutcome, RunPrompt, RunPromptStore};
+    use kanade_domain::completion::{PromptClose, PromptOutcome, RunPrompt, RunPromptStore};
 
     let dir = TempDir::new();
     let config = dir.config("v34-run-prompts");

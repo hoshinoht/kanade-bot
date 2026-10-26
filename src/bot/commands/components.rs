@@ -32,7 +32,7 @@ use crate::bot::cards::{CardPress, CardReaction, Pressed};
 use crate::bot::events::RsvpAnswer;
 use crate::bot::ids::id_text;
 use crate::bot::transport::InteractionRef;
-use crate::domain::completion::PromptOutcome;
+use kanade_domain::completion::PromptOutcome;
 
 /// The answer to a stale, forged or unknown button.
 pub const INACTIVE: &str = "This button is no longer active.";

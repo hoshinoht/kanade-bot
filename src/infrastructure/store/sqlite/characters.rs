@@ -10,13 +10,13 @@ use super::SqliteStore;
 use super::rows::instant;
 use super::schedule::store_error;
 use super::{picks, settings};
-use crate::domain::characters::{
+use crate::infrastructure::store::Written;
+use kanade_domain::characters::{
     Character, CharacterChange, CharacterRecord, CharacterRole, CharacterStore, CharacterWrite,
     Pick, PickChange, PickScope, PickWrite, plan,
 };
-use crate::domain::history::Actor;
-use crate::domain::scheduler::StoreError;
-use crate::infrastructure::store::Written;
+use kanade_domain::history::Actor;
+use kanade_domain::scheduler::StoreError;
 
 const COLUMNS: &str = "id, member_id, ign, world, class, level, role, retired_at, created_at, \
      updated_at, updated_by_kind, updated_by_id, version";
@@ -35,7 +35,7 @@ fn decode(row: &SqliteRow) -> Result<Character, StoreError> {
         row.try_get(column).map_err(|error| corrupt(column, error))
     };
     let at = |text: &str, column: &str| {
-        crate::domain::time::from_iso(text).map_err(|error| corrupt(column, error))
+        kanade_domain::time::from_iso(text).map_err(|error| corrupt(column, error))
     };
     let level: Option<i64> = row
         .try_get("level")

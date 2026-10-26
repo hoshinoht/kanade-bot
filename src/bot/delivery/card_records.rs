@@ -13,7 +13,7 @@ use tokio::sync::Mutex as AsyncMutex;
 
 use super::cards::{CardContext, CardKit, PhraseKind, card_runs, seed_heading};
 use crate::bot::commands::text::local_day;
-use crate::domain::notify::{
+use kanade_domain::notify::{
     CardRecord, DAY_OF_KIND, DedupeKey, DeliveryTarget, DigestPhraseStore, IntentContent,
     NotificationIntent, ReminderCardStore,
 };

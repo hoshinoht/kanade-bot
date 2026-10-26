@@ -11,14 +11,14 @@ use kanade::bot::mentions;
 use kanade::bot::transport::{
     AmbiguousKind, Call, DiscordTransport, Op, RejectionKind, SILENT, Step,
 };
-use kanade::domain::guides::{
+use kanade_domain::guides::{
     Blocked, Confirmations, Grant, GuideGrants, GuideStore, OpKind, OpOutcome, PublishKind,
     PublishState, SlotState, StopReason,
 };
 
 use super::{ALL, CHANNEL, GUIDE, OLD, Rig, bosses, labels, spacer, text};
 
-fn outcomes(ops: &[kanade::domain::guides::PublishOp]) -> Vec<(OpKind, u32, OpOutcome)> {
+fn outcomes(ops: &[kanade_domain::guides::PublishOp]) -> Vec<(OpKind, u32, OpOutcome)> {
     ops.iter()
         .map(|op| (op.op.kind(), op.op.position(), op.outcome))
         .collect()
@@ -312,7 +312,7 @@ async fn a_cancel_ends_the_run_between_ops() {
             .unwrap();
         assert!(matches!(
             asked,
-            kanade::domain::guides::CancelRequest::Requested(_)
+            kanade_domain::guides::CancelRequest::Requested(_)
         ));
         hold.release();
     };

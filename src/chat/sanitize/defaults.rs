@@ -6,7 +6,7 @@ use std::sync::LazyLock;
 use regex::Regex;
 
 use super::{pattern, pattern_i};
-use crate::domain::members::MemberProfile;
+use kanade_domain::members::MemberProfile;
 
 /// Carried into the tool context for the whole answer.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -216,7 +216,7 @@ pub fn schedule_people<'a>(
             .into_iter()
             .flatten()
             .chain(profile.aliases.iter().map(String::as_str))
-            .map(|name| crate::domain::pytext::strip(name).to_lowercase())
+            .map(|name| kanade_domain::pytext::strip(name).to_lowercase())
             .filter(|name| !name.is_empty())
             .filter_map(|name| names_word(&lowered, &name))
             .min();
@@ -236,7 +236,7 @@ pub fn schedule_defaults(
 ) -> ScheduleDefaults {
     let cleaned = without_bot(text, bot_user_id, self_role_id);
     let cleaned = TRAILING_PUNCTUATION.replace(&cleaned, "");
-    let cleaned = crate::domain::pytext::strip(&cleaned);
+    let cleaned = kanade_domain::pytext::strip(&cleaned);
     let all_channels = ALL_CHANNELS.is_match(cleaned);
     let whole_group = WHOLE_GROUP.is_match(cleaned);
     let complete_question = SCHEDULE_QUESTION.is_match(cleaned);

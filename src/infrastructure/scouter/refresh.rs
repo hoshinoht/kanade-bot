@@ -15,7 +15,7 @@ use super::{
     BossParty, MAX_BATCH, Missing, RosterIgn, Subject,
     estimates::{characters, set_key},
 };
-use crate::domain::schedule::RunStatus;
+use kanade_domain::schedule::RunStatus;
 
 /// How far ahead a run's party is kept fresh.
 pub const HORIZON: TimeDelta = TimeDelta::days(7);

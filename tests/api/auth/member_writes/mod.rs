@@ -13,7 +13,7 @@ mod runs;
 use std::collections::BTreeSet;
 
 use chrono::{DateTime, Utc};
-use kanade::domain::{
+use kanade_domain::{
     history::{ChangeHistory, ChangeRecord},
     schedule::{Change, Run, RunSource, RunStatus},
 };

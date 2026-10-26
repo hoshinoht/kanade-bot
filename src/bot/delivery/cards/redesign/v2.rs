@@ -10,7 +10,7 @@ use twilight_model::channel::message::component::{
     TextDisplay, Thumbnail, UnfurledMediaItem,
 };
 
-use crate::domain::completion::PromptOutcome;
+use kanade_domain::completion::PromptOutcome;
 
 /// Components per message, nested ones (and a section's accessory) counted.
 pub const MAX_COMPONENTS: usize = 40;

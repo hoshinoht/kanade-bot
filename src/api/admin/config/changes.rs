@@ -8,9 +8,9 @@ use serde_json::{Map, Value, json};
 use super::models::LocalContextWarning;
 use crate::{
     chat::persona::PersonaSnapshot,
-    domain::settings::{LOCAL_CONTEXT_WARNING, RuntimeSettings, diff_rows},
     infrastructure::llm::setup::{RoleSwap, RunningRole},
 };
+use kanade_domain::settings::{LOCAL_CONTEXT_WARNING, RuntimeSettings, diff_rows};
 
 /// `{key: {"from", "to"}}` for every stored row that differs.
 pub(super) fn diff(before: &RuntimeSettings, after: &RuntimeSettings) -> Map<String, Value> {

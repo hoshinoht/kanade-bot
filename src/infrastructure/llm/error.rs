@@ -1,6 +1,6 @@
 use std::fmt;
 
-crate::domain::spelled! {
+kanade_domain::spelled! {
     /// `as_str`: a stable snake-case name for logs and transcripts.
     ErrorCode {
         RequestInvalid => "request_invalid",

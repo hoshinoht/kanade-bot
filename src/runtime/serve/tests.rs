@@ -8,7 +8,7 @@ use std::{
 use chrono::{NaiveTime, Weekday};
 
 use super::*;
-use crate::domain::settings::{IdList, Section, SettingsStore, keys, save_section};
+use kanade_domain::settings::{IdList, Section, SettingsStore, keys, save_section};
 
 /// A scratch root that is also the secrets directory.
 pub(super) struct Temp(pub(super) PathBuf);
@@ -138,7 +138,7 @@ async fn seeds_apply_under_stored_rows_and_category_lists_round_trip() {
     let defaults = settings::seed(&temp.config(&[]).seeds);
     assert_eq!(
         defaults,
-        crate::domain::settings::RuntimeSettings::default()
+        kanade_domain::settings::RuntimeSettings::default()
     );
 }
 
@@ -292,7 +292,7 @@ async fn compose_and_report(config: &ServeConfig) -> Vec<serde_json::Value> {
 async fn compose_context(
     config: &ServeConfig,
 ) -> (
-    crate::domain::settings::ContextSettings,
+    kanade_domain::settings::ContextSettings,
     Vec<serde_json::Value>,
 ) {
     let store = store::open(&config.store).await.unwrap();
@@ -509,7 +509,7 @@ async fn a_context_seed_applies_only_while_unsaved_and_clamps_past_the_hard_cap(
         ("KANADE_MODEL_BASE_URL", "http://127.0.0.1:9/v1"),
         ("KANADE_MODEL_CONTEXT", seed.as_str()),
     ]);
-    let saved = crate::domain::settings::ContextSettings {
+    let saved = kanade_domain::settings::ContextSettings {
         local_default: 12_000,
         ..Default::default()
     };
@@ -635,14 +635,12 @@ async fn get(
 async fn compose_for_tests_serves_on_the_injected_clock_and_a_fake_discord() {
     use chrono::TimeZone;
 
-    use crate::{
-        api::{auth::fake::FakeDiscord, listeners, write::ApiClock},
-        domain::{
-            history::{Actor, Origin, Surface},
-            ids::RandomIds,
-            schedule::{NewRun, RunSource, RunStatus, utc_instant},
-            scheduler::SchedulerService,
-        },
+    use crate::api::{auth::fake::FakeDiscord, listeners, write::ApiClock};
+    use kanade_domain::{
+        history::{Actor, Origin, Surface},
+        ids::RandomIds,
+        schedule::{NewRun, RunSource, RunStatus, utc_instant},
+        scheduler::SchedulerService,
     };
 
     // Admin sign-in builds its HTTPS client before the fake replaces it.
@@ -761,7 +759,8 @@ async fn compose_for_tests_serves_on_the_injected_clock_and_a_fake_discord() {
 async fn compose_for_tests_points_character_data_at_a_loopback_nexon() {
     use std::sync::atomic::{AtomicUsize, Ordering};
 
-    use crate::{domain::history::Actor, infrastructure::character_data::LookupOutcome};
+    use crate::infrastructure::character_data::LookupOutcome;
+    use kanade_domain::history::Actor;
 
     // A NEXON that knows no name: every call answers an empty body.
     let calls = Arc::new(AtomicUsize::new(0));

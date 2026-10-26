@@ -22,16 +22,16 @@ use kanade::{
         PersonaId, PersonaRoot, PersonaSnapshot, PersonaStore, ProfileId, ProfileQuery,
         ProfileSource,
     },
-    domain::settings::{
-        Models, Reasoning, RoleModel, RoleProfileAssignment, RuntimeSettings, SettingsChange,
-        SettingsStore, keys, load_settings,
-    },
     infrastructure::llm::{
         AdmissionLimits, Effort, TrustZone,
         governor::Role,
         setup::{CapacityGroup, CatalogModel, CatalogSnapshot, RoleSwap, RunningRole},
     },
     infrastructure::store::SqliteStore,
+};
+use kanade_domain::settings::{
+    Models, Reasoning, RoleModel, RoleProfileAssignment, RuntimeSettings, SettingsChange,
+    SettingsStore, keys, load_settings,
 };
 use serde_json::{Value, json};
 
@@ -1576,7 +1576,7 @@ async fn profanity_is_validated_saved_and_published_live() {
     assert_eq!(profanity["allowed_words"], json!([]));
     assert_eq!(
         profanity["deflection_line"],
-        kanade::domain::settings::DEFAULT_DEFLECTION_LINE
+        kanade_domain::settings::DEFAULT_DEFLECTION_LINE
     );
     let builtin: Vec<&str> = profanity["builtin_words"]
         .as_array()
@@ -1839,7 +1839,7 @@ const RECHECK: &str = "/api/admin/access/recheck";
 #[tokio::test]
 async fn the_last_posted_digest_is_shown_with_its_channel_and_link() {
     use chrono::{TimeZone, Utc};
-    use kanade::domain::notify::{
+    use kanade_domain::notify::{
         Claim, DeliveryJournal, DeliveryTarget, EffectKind, IntentContent, NotificationIntent,
         Receipt,
     };
@@ -2699,7 +2699,7 @@ async fn a_config_save_hints_settings_to_open_event_streams() {
 /// through the Members edit. A role may point at a private profile.
 #[tokio::test]
 async fn account_reply_style_shows_role_overrides_and_the_saved_public_choice() {
-    use kanade::domain::members::MemberStore;
+    use kanade_domain::members::MemberStore;
 
     let config = Config::with_two_admins().await;
     config.dir.profile("bold");
@@ -2931,8 +2931,8 @@ async fn notification_fields_save_live_record_only_their_row_and_refuse_bad_valu
 #[tokio::test]
 async fn a_day_of_previews_one_embed_per_run() {
     use chrono::{TimeZone, Utc};
-    use kanade::domain::schedule::{Change, Reminder, Run};
-    use kanade::domain::scheduler::{ScheduleStore, Scope};
+    use kanade_domain::schedule::{Change, Reminder, Run};
+    use kanade_domain::scheduler::{ScheduleStore, Scope};
 
     let config = Config::new().await;
     let store = &config.reads.store;

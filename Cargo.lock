@@ -1700,6 +1700,7 @@ dependencies = [
  "hyper",
  "hyper-util",
  "jsonschema",
+ "kanade-domain",
  "kanade-log",
  "libc",
  "regex",
@@ -1720,6 +1721,19 @@ dependencies = [
  "twilight-model",
  "uuid",
  "webpki-roots",
+]
+
+[[package]]
+name = "kanade-domain"
+version = "1.0.0-beta.15"
+dependencies = [
+ "chrono",
+ "chrono-tz",
+ "ring",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+ "uuid",
 ]
 
 [[package]]

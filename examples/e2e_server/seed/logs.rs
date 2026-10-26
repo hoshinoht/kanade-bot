@@ -4,7 +4,7 @@
 //! the persona rewriter record them.
 
 use chrono::{DateTime, Duration, Utc};
-use kanade::domain::model_log::{
+use kanade_domain::model_log::{
     ChatInteraction, ChatOutcome, ChatRound, ExtractionLog, ExtractionOutcome, MaskedName,
     MaskedRound, MaskedTurn, ModelLogStore, RewriteKind, RewriteLog, RewriteLogStore, RewriteStage,
     WatchedMessage,

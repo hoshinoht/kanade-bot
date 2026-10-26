@@ -4,9 +4,9 @@
 //! a link that no longer matches its character is never shown.
 
 use super::CharacterData;
-use crate::domain::characters::Character;
-use crate::domain::chardata::{LINK_REGION, Link, Post, Snapshot};
-use crate::domain::scheduler::StoreError;
+use kanade_domain::characters::Character;
+use kanade_domain::chardata::{LINK_REGION, Link, Post, Snapshot};
+use kanade_domain::scheduler::StoreError;
 
 /// A link as its member sees it.
 #[derive(Clone, Debug, PartialEq, Eq)]

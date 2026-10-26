@@ -18,14 +18,14 @@ use kanade::bot::delivery::{
     attach_chart, chart_for, read_estimates,
 };
 use kanade::bot::transport::{OutgoingMessage, Upload, legacy_rows};
-use kanade::domain::catalog::BossTable;
-use kanade::domain::characters::{Basis, BossSlot, Character, CharacterRole, PartySlot};
-use kanade::domain::chardata::{BossCarrier, Carrier, CharDataStore, PartyShares};
-use kanade::domain::history::Actor;
-use kanade::domain::schedule::{Run, ScheduleSnapshot};
 use kanade::infrastructure::character_data::{CharacterData, RosterSide, Timing};
 use kanade::infrastructure::scouter::{Card, Combined, Member};
 use kanade::infrastructure::store::{SqliteCharData, SqliteStore};
+use kanade_domain::catalog::BossTable;
+use kanade_domain::characters::{Basis, BossSlot, Character, CharacterRole, PartySlot};
+use kanade_domain::chardata::{BossCarrier, Carrier, CharDataStore, PartyShares};
+use kanade_domain::history::Actor;
+use kanade_domain::schedule::{Run, ScheduleSnapshot};
 use resvg::tiny_skia::Pixmap;
 
 use super::{KALOS, MALEFIC, countdown, day_of, members, redesigned_v5, week};
@@ -846,7 +846,7 @@ async fn unset_ports_and_failures_post_without_it() {
     assert!(!attached(&full));
 
     // Kinds without runs never chart.
-    let digest = kanade::domain::notify::IntentContent::Plain;
+    let digest = kanade_domain::notify::IntentContent::Plain;
     assert!(chart_for(&digest, &ctx, &*port(), at).await.is_none());
 }
 
@@ -900,7 +900,7 @@ async fn a_stale_reading_marks_the_posted_chart_and_its_description() {
 
 /// The description of the chart a new post of `content` carries.
 async fn described(
-    content: &kanade::domain::notify::IntentContent,
+    content: &kanade_domain::notify::IntentContent,
     ctx: &CardContext<'_>,
     kit: &CardKit,
     at: chrono::DateTime<Utc>,

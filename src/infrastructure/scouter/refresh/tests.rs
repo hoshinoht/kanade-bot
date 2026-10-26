@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use chrono::TimeZone;
 
 use super::*;
-use crate::domain::{
+use kanade_domain::{
     characters::{Character, CharacterRole},
     history::Actor,
 };

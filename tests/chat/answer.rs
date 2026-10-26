@@ -14,13 +14,13 @@ use kanade::chat::sanitize::shape_reply;
 use kanade::chat::tools::bundles::{Bundle, NO_ROUND_LEFT, ToolOffer};
 use kanade::chat::tools::propose::Proposer;
 use kanade::chat::tools::{REFUSED, ToolContext, UNKNOWN};
-use kanade::domain::drafts::{DraftStatus, ProposalSource, ProposalStore, SUPERSEDED};
-use kanade::domain::model_log::{ChatInteraction, ChatOutcome, ModelLogStore};
-use kanade::domain::proposals::{ChangeKind, ProposedChange};
-use kanade::domain::scheduler::Clock;
-use kanade::domain::scheduler::{ProposalRequest, SchedulerService, Supersede};
 use kanade::infrastructure::llm::governor::{DEFAULT_TOOL_ROUNDS, Governor, Role};
 use kanade::infrastructure::llm::{ChatRequest, Effort, FakeAction, FakeProvider, Message};
+use kanade_domain::drafts::{DraftStatus, ProposalSource, ProposalStore, SUPERSEDED};
+use kanade_domain::model_log::{ChatInteraction, ChatOutcome, ModelLogStore};
+use kanade_domain::proposals::{ChangeKind, ProposedChange};
+use kanade_domain::scheduler::Clock;
+use kanade_domain::scheduler::{ProposalRequest, SchedulerService, Supersede};
 use serde_json::{Value, json};
 
 use crate::looping::{Ports, V4_TOOL_ROUNDS, said, settings};
@@ -805,8 +805,8 @@ async fn each_round_logs_its_reported_pair_and_prompt_estimate() {
 
 #[tokio::test(start_paused = true)]
 async fn reasoning_is_logged_per_round_but_never_enters_the_tool_loop() {
-    use kanade::domain::model_log::{REASONING_CAP, REASONING_TRUNCATED};
     use kanade::infrastructure::llm::wire_body;
+    use kanade_domain::model_log::{REASONING_CAP, REASONING_TRUNCATED};
     let FakeAction::Response(mut first) = wants(&[("r1", "list_fixed", json!({}))]) else {
         panic!("response")
     };
@@ -974,7 +974,7 @@ async fn a_logged_call_keeps_its_result_and_wall_time_through_the_store_and_the_
     store.record_chat(row.clone()).await.expect("recorded");
     let stored = store.load_chat("chat-t").await.expect("load").expect("row");
     assert_eq!(stored, row);
-    let roster = kanade::domain::members::Roster::new();
+    let roster = kanade_domain::members::Roster::new();
     let channels = std::collections::BTreeMap::new();
     let names = Names {
         roster: &roster,

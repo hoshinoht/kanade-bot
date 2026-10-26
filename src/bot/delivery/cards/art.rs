@@ -8,9 +8,9 @@
 use std::sync::Arc;
 
 use super::Card;
-use crate::domain::art::ArtSource;
-use crate::domain::catalog::BossTable;
-use crate::domain::guides::ArtKind;
+use kanade_domain::art::ArtSource;
+use kanade_domain::catalog::BossTable;
+use kanade_domain::guides::ArtKind;
 
 /// v4 `IMAGE_PREFIX`: the entry art's attachment name, so it never collides
 /// with the portrait's.

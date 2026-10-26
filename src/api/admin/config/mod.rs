@@ -41,14 +41,14 @@ use super::{
 use crate::{
     api::{auth::AdminSession, error::ApiError, listeners::Site, state::ApiState},
     chat::persona::{FALLBACK_PERSONA, PersonaId, PersonaRoot, ProfileId, ReloadError},
-    domain::{
-        history::Surface,
-        settings::{
-            LOCAL_CONTEXT_WARNING, Models, RuntimeSettings, Section, SettingsChange, SettingsError,
-            diff_rows, keys,
-        },
-    },
     infrastructure::store::replays::{ReplayScope, StoredReplay},
+};
+use kanade_domain::{
+    history::Surface,
+    settings::{
+        LOCAL_CONTEXT_WARNING, Models, RuntimeSettings, Section, SettingsChange, SettingsError,
+        diff_rows, keys,
+    },
 };
 
 /// The stored body of a keyed PATCH: the notices it answered with.

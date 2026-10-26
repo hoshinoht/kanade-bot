@@ -3,9 +3,9 @@
 
 use std::time::Duration;
 
-use kanade::domain::schedule::{Change, ChangeSet};
-use kanade::domain::scheduler::{ScheduleStore, Scope, StoreError};
 use kanade::infrastructure::store::SqliteStore;
+use kanade_domain::schedule::{Change, ChangeSet};
+use kanade_domain::scheduler::{ScheduleStore, Scope, StoreError};
 
 use crate::support::{TempDir, commit, connect, create, fixed, seed, tamper};
 

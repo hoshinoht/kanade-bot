@@ -49,8 +49,8 @@ use crate::{
         draw,
         preview::{posted, record_key, reminder_card, reminder_chart, reminder_intent},
     },
-    domain::{notify::DeliverySettings, settings::RuntimeSettings},
 };
+use kanade_domain::{notify::DeliverySettings, settings::RuntimeSettings};
 
 pub fn routes() -> Router<Arc<Site>> {
     Router::new()

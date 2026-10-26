@@ -14,16 +14,16 @@ use twilight_model::id::{
 };
 
 use crate::bot::ids::id_text;
-use crate::domain::history::{Actor, Origin, Surface};
-use crate::domain::members::Directory;
-use crate::domain::notify::{CardIndex, LookupError};
-use crate::domain::schedule::{
+use kanade_domain::history::{Actor, Origin, Surface};
+use kanade_domain::members::Directory;
+use kanade_domain::notify::{CardIndex, LookupError};
+use kanade_domain::schedule::{
     EMOJI_NO, EMOJI_YES, ReactionResult, RsvpState, ScheduleError, state_for_emoji,
 };
-use crate::domain::scheduler::{
+use kanade_domain::scheduler::{
     Clock, IdSource, ScheduleStore, SchedulerError, SchedulerResult, SchedulerService,
 };
-use crate::domain::scheduler::{DeclineNoticeContext, DeclineRsvpResult};
+use kanade_domain::scheduler::{DeclineNoticeContext, DeclineRsvpResult};
 
 /// The two answers a card reaction can give.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -123,7 +123,7 @@ pub trait ReactionSink: Send {
 
 impl<S, I, C> ReactionSink for SchedulerService<S, I, C>
 where
-    S: ScheduleStore + crate::domain::notify::DeclineNoticeStore + Send + Sync,
+    S: ScheduleStore + kanade_domain::notify::DeclineNoticeStore + Send + Sync,
     I: IdSource + Send,
     C: Clock + Send + Sync,
 {

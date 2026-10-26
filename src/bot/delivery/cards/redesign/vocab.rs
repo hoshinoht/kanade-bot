@@ -5,8 +5,8 @@ use std::collections::BTreeMap;
 use chrono::{DateTime, Utc};
 
 use crate::bot::cards::format;
-use crate::domain::attendance::AnswerState;
-use crate::domain::catalog::BossTable;
+use kanade_domain::attendance::AnswerState;
+use kanade_domain::catalog::BossTable;
 
 use super::super::common::People;
 
@@ -139,7 +139,7 @@ mod tests {
     use chrono::TimeZone;
 
     use super::*;
-    use crate::domain::catalog::{BossSpec, CatalogSpec, DifficultySpec};
+    use kanade_domain::catalog::{BossSpec, CatalogSpec, DifficultySpec};
 
     fn catalog() -> BossTable {
         let difficulty = |prefix: &str, label: &str| DifficultySpec {

@@ -5,8 +5,8 @@
 use crate::chat::gate::{ChannelDirectory, PilotSettings, is_chat_channel};
 use crate::chat::tools::read::format::channel_reference;
 use crate::chat::tools::{ToolError, ToolResult};
-use crate::domain::ids::short_id;
-use crate::domain::schedule::{FixedRun, Run, ScheduleSnapshot};
+use kanade_domain::ids::short_id;
+use kanade_domain::schedule::{FixedRun, Run, ScheduleSnapshot};
 
 /// A change to somebody else's run; names the run and nobody on it.
 const NOT_THEIRS_RUN: &str = "They are not on run {sid} and do not own the weekly timing behind it, so it is not theirs to change. Say that only the people on a run -- or the owner of the weekly timing it comes from -- can propose a change to it, and that putting somebody on a run is not something you can do. Do not name anybody on it.";

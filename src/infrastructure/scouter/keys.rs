@@ -7,7 +7,7 @@
 //! and a token the running catalog lacks are dropped: estimates show
 //! catalog bosses only.
 
-use crate::domain::catalog::BossTable;
+use kanade_domain::catalog::BossTable;
 
 /// `(scouter key, catalog token)`. The scouter spells Baldrix both ways
 /// (`bardrix` on its cards, `baldrix` in its party-size mapping).

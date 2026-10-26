@@ -1,8 +1,8 @@
 //! The structured extraction-log entry for a change refused up front.
 
-use crate::domain::model_log::ExtractionRefusal;
-use crate::domain::proposals::Refusal;
-use crate::domain::scheduler::ProposalError;
+use kanade_domain::model_log::ExtractionRefusal;
+use kanade_domain::proposals::Refusal;
+use kanade_domain::scheduler::ProposalError;
 
 /// A stable snake_case code for filtering and the admin portal; the message
 /// keeps v4's words.
@@ -56,7 +56,7 @@ pub fn refusal(change: &str, error: &ProposalError) -> ExtractionRefusal {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::scheduler::{DraftError, StoreError};
+    use kanade_domain::scheduler::{DraftError, StoreError};
 
     #[test]
     fn a_store_failure_is_logged_without_its_backend_text() {

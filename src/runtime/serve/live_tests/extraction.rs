@@ -16,11 +16,11 @@ use super::*;
 use crate::{
     api::{auth::wire::SESSION_COOKIE, listeners},
     bot::{extract_feed::snowflake_before, transport::HistoryPage},
-    domain::{
-        model_log::{ExtractionFilter, ExtractionOutcome, ModelLogStore, RescanJob, RescanStatus},
-        proposals::ProposalCardStore,
-    },
     extract::rescan::{RescanError, RescanRequest},
+};
+use kanade_domain::{
+    model_log::{ExtractionFilter, ExtractionOutcome, ModelLogStore, RescanJob, RescanStatus},
+    proposals::ProposalCardStore,
 };
 
 const ALIAS: &str = "kanata-extract";
@@ -270,7 +270,7 @@ fn posted(id: u64, channel: u64, author: u64, content: &str, at: DateTime<Utc>) 
     ))))
 }
 
-async fn cached(ctx: &Ctx, id: u64) -> Option<crate::domain::model_log::WatchedMessage> {
+async fn cached(ctx: &Ctx, id: u64) -> Option<kanade_domain::model_log::WatchedMessage> {
     ctx.store
         .messages_by_ids(&[id.to_string()])
         .await
@@ -278,7 +278,7 @@ async fn cached(ctx: &Ctx, id: u64) -> Option<crate::domain::model_log::WatchedM
         .pop()
 }
 
-async fn logs(ctx: &Ctx) -> Vec<crate::domain::model_log::ExtractionLog> {
+async fn logs(ctx: &Ctx) -> Vec<kanade_domain::model_log::ExtractionLog> {
     let mut items = ctx
         .store
         .list_extractions(&ExtractionFilter {
@@ -1052,11 +1052,11 @@ fn question(id: u64, channel: u64, content: &str, at: DateTime<Utc>) -> Value {
 
 const PILOT: u64 = 30;
 
-async fn chat_rows(ctx: &Ctx) -> Vec<crate::domain::model_log::ChatInteraction> {
+async fn chat_rows(ctx: &Ctx) -> Vec<kanade_domain::model_log::ChatInteraction> {
     ctx.store
-        .list_chats(&crate::domain::model_log::ChatFilter {
+        .list_chats(&kanade_domain::model_log::ChatFilter {
             limit: 50,
-            ..crate::domain::model_log::ChatFilter::default()
+            ..kanade_domain::model_log::ChatFilter::default()
         })
         .await
         .unwrap()
@@ -1181,7 +1181,7 @@ async fn shutdown_cuts_hanging_extraction_calls_and_stays_bounded() {
     finish(&harness, ctx).await;
 }
 
-fn snowflake_of(row: &crate::domain::model_log::ExtractionLog) -> u64 {
+fn snowflake_of(row: &kanade_domain::model_log::ExtractionLog) -> u64 {
     row.message_ids[0].parse().unwrap()
 }
 

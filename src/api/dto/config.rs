@@ -11,19 +11,21 @@ use serde::Serialize;
 use crate::{
     api::state::{ChannelEntry, RoleEntry},
     chat::persona::{PersonaSnapshot, ProfileId},
-    domain::notify::WeeklyDigest,
-    domain::settings::{
-        ContextRole as StoredContextRole, Profanity as StoredProfanity, Rate as StoredRate,
-        RoleModel as StoredRole, RoleProfileAssignment as StoredRoleProfile,
-        RunLengthOverride as StoredRunLengthOverride, RunLengths as StoredRunLengths,
-        RuntimeSettings,
-    },
-    domain::time::ZonedDateTime,
     infrastructure::llm::{
         TrustZone,
         governor::Role,
         setup::{CatalogModel, CatalogSnapshot, RunningRole, resolve_context},
     },
+};
+use kanade_domain::{
+    notify::WeeklyDigest,
+    settings::{
+        ContextRole as StoredContextRole, Profanity as StoredProfanity, Rate as StoredRate,
+        RoleModel as StoredRole, RoleProfileAssignment as StoredRoleProfile,
+        RunLengthOverride as StoredRunLengthOverride, RunLengths as StoredRunLengths,
+        RuntimeSettings,
+    },
+    time::ZonedDateTime,
 };
 
 const SUMMARY_CHARS: usize = 140;
@@ -574,7 +576,7 @@ pub fn roles(
     }
 }
 
-pub fn context_settings(settings: &crate::domain::settings::ContextSettings) -> ContextSettings {
+pub fn context_settings(settings: &kanade_domain::settings::ContextSettings) -> ContextSettings {
     let role = |role: &StoredContextRole| ContextRole {
         reserve: role.reserve,
         cap: role.cap,

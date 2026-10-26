@@ -14,14 +14,14 @@ use super::outcome::extraction_outcome;
 use super::ports::{Card, CardEntry, ChatAnswer, Outbox, PostResult, Proposer, Redirected};
 use super::refusal::refusal;
 use super::self_service::LinkPlan;
-use crate::domain::drafts::ProposalSource;
-use crate::domain::model_log::{ExtractionLog, ModelLogStore};
-use crate::domain::proposals::{ChangeKind, Payload as ChangePayload, ProposedChange};
-use crate::domain::schedule::RsvpState;
-use crate::domain::scheduler::{ProposalRequest, ScheduleStore, Supersede, SupersedeScope};
 use crate::extract::AmendmentKind;
 use crate::extract::plan::{Payload, consolidate};
 use crate::infrastructure::llm::LlmProvider;
+use kanade_domain::drafts::ProposalSource;
+use kanade_domain::model_log::{ExtractionLog, ModelLogStore};
+use kanade_domain::proposals::{ChangeKind, Payload as ChangePayload, ProposedChange};
+use kanade_domain::schedule::RsvpState;
+use kanade_domain::scheduler::{ProposalRequest, ScheduleStore, Supersede, SupersedeScope};
 
 fn change_kind(kind: AmendmentKind) -> ChangeKind {
     ChangeKind::parse(kind.as_str()).expect("amendment and change kinds share names")

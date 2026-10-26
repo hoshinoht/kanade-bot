@@ -11,11 +11,11 @@ use chrono_tz::Tz;
 use super::super::{history::parse::date, write::Refusal};
 use crate::{
     api::auth::wire,
-    domain::model_log::{
-        ChatFilter, ChatOutcome, ExtractionFilter, ExtractionOutcome, MAX_PAGE, REWRITE_VERDICTS,
-        RewriteFilter, RewriteKind, RewriteStage,
-    },
     infrastructure::store::auth_audit::{AUDIT_PAGE_MAX, AuditFilter, AuditKind, AuditRealm},
+};
+use kanade_domain::model_log::{
+    ChatFilter, ChatOutcome, ExtractionFilter, ExtractionOutcome, MAX_PAGE, REWRITE_VERDICTS,
+    RewriteFilter, RewriteKind, RewriteStage,
 };
 
 const COMMON: [&str; 7] = ["model", "from", "to", "outcome", "channel", "member", "q"];

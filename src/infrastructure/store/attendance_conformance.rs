@@ -8,17 +8,17 @@ use std::collections::BTreeSet;
 use chrono::{DateTime, Utc, Weekday};
 
 use super::fixtures::{self, Ids, Stopped, admin, member, policy_in, utc2026};
-use crate::domain::attendance::{AttendanceDefault, AttendanceRefusal, Patterns};
-use crate::domain::history::{
+use kanade_domain::attendance::{AttendanceDefault, AttendanceRefusal, Patterns};
+use kanade_domain::history::{
     ATTENDANCE_DEFAULT_FIELD, Actor, BlameIndex, BlameTarget, ChangeHistory, Expect, Origin,
     Precondition, RowValue, STATUS_PIN_FIELD, Surface, attended_field, blame, standing_field,
 };
-use crate::domain::members::{Member, Roster};
-use crate::domain::schedule::{
+use kanade_domain::members::{Member, Roster};
+use kanade_domain::schedule::{
     EMOJI_NO, FixedEdit, FixedRun, RsvpSource, RsvpState, Run, RunStatus, ScheduleError,
     SchedulePolicy, StatusChange,
 };
-use crate::domain::scheduler::{
+use kanade_domain::scheduler::{
     AttendanceHistory, ScheduleStore, SchedulerError, SchedulerService, Scope,
 };
 

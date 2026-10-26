@@ -3,11 +3,11 @@
 //! key a plain create recorded still replays.
 
 use chrono::{FixedOffset, TimeZone, Weekday};
-use kanade::domain::history::{ChangeHistory, Origin, RowKey};
-use kanade::domain::ids::RandomIds;
-use kanade::domain::schedule::NewFixedRun;
-use kanade::domain::scheduler::{ScheduleStore, SchedulerError, SchedulerService, Scope};
 use kanade::infrastructure::store::SqliteStore;
+use kanade_domain::history::{ChangeHistory, Origin, RowKey};
+use kanade_domain::ids::RandomIds;
+use kanade_domain::schedule::NewFixedRun;
+use kanade_domain::scheduler::{ScheduleStore, SchedulerError, SchedulerService, Scope};
 
 use crate::common::TestClock;
 use crate::support::{by_tests, hm, policy, weekly};

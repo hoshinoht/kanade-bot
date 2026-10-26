@@ -11,11 +11,11 @@ use super::SqliteStore;
 use super::rows::instant;
 use super::schedule::store_error;
 #[cfg(any(test, feature = "test-support"))]
-use crate::domain::notify::HeaderHistory;
-use crate::domain::notify::{
+use kanade_domain::notify::HeaderHistory;
+use kanade_domain::notify::{
     CardRecord, DigestPhraseStore, HeaderOverrideStore, HeaderSlots, PostedCard, ReminderCardStore,
 };
-use crate::domain::scheduler::StoreError;
+use kanade_domain::scheduler::StoreError;
 
 /// The line in effect for a card (`c` = its `reminder_cards` row): the
 /// latest override's line and slot map, else the card's own.

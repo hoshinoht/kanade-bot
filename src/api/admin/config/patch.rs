@@ -15,13 +15,13 @@ use crate::{
         nudge::{WordFilter, is_builtin_word},
         persona::ProfileId,
     },
-    domain::settings::{
-        CharacterData, Chatbot, ContextSettings, ESTIMATE_DAYS, IdList, MAX_DEFLECTION_CHARS,
-        MAX_PROFANITY_WORDS, MAX_ROLE_PROFILE_ASSIGNMENTS, Notifications, OVERRIDE_RUN_MINUTES,
-        PROFANITY_WORD_CHARS, Persona, Pings, Posting, Profanity, RUN_MINUTES, Rate,
-        RoleProfileAssignment, RunLengthOverride, RunLengths, SelfService, SelfServiceMode,
-        Watching, is_profanity_word,
-    },
+};
+use kanade_domain::settings::{
+    CharacterData, Chatbot, ContextSettings, ESTIMATE_DAYS, IdList, MAX_DEFLECTION_CHARS,
+    MAX_PROFANITY_WORDS, MAX_ROLE_PROFILE_ASSIGNMENTS, Notifications, OVERRIDE_RUN_MINUTES,
+    PROFANITY_WORD_CHARS, Persona, Pings, Posting, Profanity, RUN_MINUTES, Rate,
+    RoleProfileAssignment, RunLengthOverride, RunLengths, SelfService, SelfServiceMode, Watching,
+    is_profanity_word,
 };
 
 pub const MAX_COUNTDOWNS: usize = 4;
@@ -229,7 +229,7 @@ pub fn context(value: &Value) -> Result<ContextSettings, PatchError> {
 pub fn run_lengths(
     current: &RunLengths,
     body: &Map<String, Value>,
-    catalog: &crate::domain::catalog::BossTable,
+    catalog: &kanade_domain::catalog::BossTable,
 ) -> Result<RunLengths, PatchError> {
     let mut next = current.clone();
     if let Some(value) = body.get("default_minutes") {

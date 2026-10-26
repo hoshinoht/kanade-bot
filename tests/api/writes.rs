@@ -3,7 +3,7 @@
 //! weekly timing `f-kalos`). Every response is validated against A0.
 
 use chrono::{TimeZone, Utc};
-use kanade::domain::{
+use kanade_domain::{
     history::{BlameTarget, ChangeHistory, ChangeMeta, Origin, Surface, changed_fields},
     members::MemberStore,
     notify::{DeclineNotice, DeclineNoticeStore, NoticeOutbox},
@@ -826,7 +826,7 @@ async fn weekly_timings_create_edit_with_decisions_and_retire() {
     assert_valid("fixed.json#/$defs/FixedRequest", "create", &create);
     let key = [("Idempotency-Key", "new-timing")];
     let head = || async {
-        kanade::domain::history::ChangeHistory::history_head(&*reads.store)
+        kanade_domain::history::ChangeHistory::history_head(&*reads.store)
             .await
             .unwrap()
             .seq

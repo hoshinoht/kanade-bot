@@ -12,8 +12,8 @@ use std::sync::{Mutex, MutexGuard, PoisonError};
 
 use tokio::sync::mpsc;
 
-use crate::domain::model_log::{ReadMessage, WatchedMessage};
 use crate::extract::backlog::BacklogEntry;
+use kanade_domain::model_log::{ReadMessage, WatchedMessage};
 
 /// Claims held at once; past it new rows are deferred (fail closed).
 pub const CLAIM_CAPACITY: usize = 10_000;

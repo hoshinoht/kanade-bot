@@ -9,8 +9,8 @@ use chrono::{DateTime, Utc};
 use sqlx::Row;
 
 use super::super::SqliteStore;
-use crate::domain::notify::{CardIndex, LookupError, ReplayCard, ReplayCards, ReplayRunCards};
-use crate::domain::time::{from_iso, to_iso};
+use kanade_domain::notify::{CardIndex, LookupError, ReplayCard, ReplayCards, ReplayRunCards};
+use kanade_domain::time::{from_iso, to_iso};
 
 impl CardIndex for SqliteStore {
     async fn runs_for_message(&self, message_id: &str) -> Result<Vec<String>, LookupError> {

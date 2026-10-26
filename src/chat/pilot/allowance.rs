@@ -9,7 +9,7 @@ use crate::chat::gate::{
     Budgets, ChatDecision, GLOBAL_KEY, POOL_SPENT, POOL_SPENT_REPLY, RATE_LIMITED_REPLY,
     RateLimiter, retry_note,
 };
-use crate::domain::model_log::AllowanceOverride;
+use kanade_domain::model_log::AllowanceOverride;
 
 /// v4 defaults: 4 answers per 300 s each, 12 per 900 s for the guild.
 pub const DEFAULT_MEMBER_ALLOWANCE: (usize, f64) = (4, 300.0);

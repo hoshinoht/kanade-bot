@@ -36,9 +36,9 @@ pub use redesign::{DifficultyMarks, PortalSwitch, V2Kit};
 use crate::bot::commands::text::local_day;
 use crate::bot::mentions;
 use crate::bot::transport::{MessageEdit, OutgoingMessage, Upload};
-use crate::domain::art::ArtSource;
-use crate::domain::catalog::BossTable;
-use crate::domain::notify::IntentContent;
+use kanade_domain::art::ArtSource;
+use kanade_domain::catalog::BossTable;
+use kanade_domain::notify::IntentContent;
 
 /// A card as plain data (v4 `Card`); mentions live in `content` only.
 /// `components`, when set, is the Components V2 form that is sent instead
@@ -110,7 +110,7 @@ pub struct CardKit {
     pub v2: V2Kit,
     /// v5: the live run lengths, read per digest re-render so a run past its
     /// end counts as ended; `None` keeps v4's counts.
-    pub run_lengths: Option<crate::domain::completion::RunLengthsNow>,
+    pub run_lengths: Option<kanade_domain::completion::RunLengthsNow>,
     /// The cached estimates behind the run cards' share chart; `None`
     /// (module `character_data` or its estimates off) posts none.
     pub estimates: Option<Arc<dyn crate::bot::delivery::PartyEstimates>>,
@@ -129,10 +129,10 @@ impl CardKit {
     /// When runs end now under `policy`; `None` without live run lengths.
     pub fn run_ends(
         &self,
-        policy: &crate::domain::schedule::SchedulePolicy,
-    ) -> Option<crate::domain::completion::RunEnds> {
+        policy: &kanade_domain::schedule::SchedulePolicy,
+    ) -> Option<kanade_domain::completion::RunEnds> {
         let lengths = self.run_lengths.as_ref()?;
-        Some(crate::domain::completion::RunEnds::new(
+        Some(kanade_domain::completion::RunEnds::new(
             lengths(),
             self.catalog.clone(),
             policy.clone(),

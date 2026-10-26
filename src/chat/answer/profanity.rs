@@ -6,7 +6,7 @@ use serde_json::{Value, json};
 
 use super::Generation;
 use crate::chat::nudge::WordFilter;
-use crate::domain::settings::Profanity;
+use kanade_domain::settings::Profanity;
 
 /// Which text hit the list.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

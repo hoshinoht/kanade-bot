@@ -14,10 +14,10 @@ use crate::bot::events::RsvpAnswer;
 use crate::bot::ids::{id_text, parse_id};
 use crate::bot::reaction_read;
 use crate::bot::transport::DiscordTransport;
-use crate::domain::drafts::{DraftStatus, ProposalStore};
-use crate::domain::notify::{DeclineNoticeStore, DeliveryJournal};
-use crate::domain::proposals::{ProposalCardStore, StoredCard};
-use crate::domain::scheduler::{IdSource, ScheduleStore};
+use kanade_domain::drafts::{DraftStatus, ProposalStore};
+use kanade_domain::notify::{DeclineNoticeStore, DeliveryJournal};
+use kanade_domain::proposals::{ProposalCardStore, StoredCard};
+use kanade_domain::scheduler::{IdSource, ScheduleStore};
 
 pub const OFFLINE_CONFLICT_NOTICE: &str = "⚠️ Both ✅ and ❌ were added while Kanade was offline. An approver should remove and re-add the intended one.";
 

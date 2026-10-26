@@ -7,9 +7,6 @@ use serde_json::json;
 use tokio::task::JoinHandle;
 
 use crate::{
-    domain::settings::{
-        ContextSettings, LOCAL_CONTEXT_WARNING, MAX_CONTEXT_TOKENS, RuntimeSettings, keys,
-    },
     infrastructure::llm::{
         governor::{ConfigWarning, Role},
         setup::{
@@ -19,8 +16,11 @@ use crate::{
     },
     runtime::config::ModelSettings,
 };
+use kanade_domain::settings::{
+    ContextSettings, LOCAL_CONTEXT_WARNING, MAX_CONTEXT_TOKENS, RuntimeSettings, keys,
+};
 
-crate::domain::spelled! {
+kanade_domain::spelled! {
     /// Where a role's reasoning setting came from (`model_role.source`).
     Source {
         Stored => "stored",

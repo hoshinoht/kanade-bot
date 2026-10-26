@@ -2,7 +2,7 @@
 //! closed first, with outcome, decider, reason and History link; paged by
 //! the last id shown.
 
-use kanade::domain::drafts::{DraftChange, DraftUpdate, DraftWrite, SUPERSEDED};
+use kanade_domain::drafts::{DraftChange, DraftUpdate, DraftWrite, SUPERSEDED};
 
 use super::*;
 

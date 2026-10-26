@@ -6,7 +6,7 @@
 //! deciding admin wrote it, at the mock's times.
 
 use chrono::{DateTime, Duration, Utc, Weekday};
-use kanade::domain::{
+use kanade_domain::{
     drafts::{DraftOp, ProposalSource, Target},
     history::Actor,
     model_log::{ModelLogStore, WatchedMessage},

@@ -195,7 +195,7 @@ pub fn find_times(text: &str) -> Vec<String> {
     let mut spans: Vec<(usize, usize, String)> = Vec::new();
     for (index, time) in patterns.iter().enumerate() {
         for found in time.find_iter(&masked) {
-            let literal = crate::domain::pytext::strip(found.as_str());
+            let literal = kanade_domain::pytext::strip(found.as_str());
             if index == patterns.len() - 1 && !plausible_compact(literal) {
                 continue;
             }

@@ -16,11 +16,11 @@ use crate::bot::ids::{id_text, parse_id};
 use crate::bot::transport::{
     ChannelId, DiscordTransport, Outcome, Presence, RejectionKind, SILENT,
 };
-use crate::domain::guides::{
+use kanade_domain::guides::{
     GuideStore, OpOutcome, PlanOp, Publish, PublishOp, PublishState, PublishedSlot, RenderedSlot,
     SlotEffect, SlotState, StopReason,
 };
-use crate::domain::notify::{
+use kanade_domain::notify::{
     DeliveryJournal, EffectKind, IntentContent, Lease, NotificationIntent,
 };
 

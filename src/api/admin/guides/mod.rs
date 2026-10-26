@@ -33,9 +33,9 @@ use crate::{
         listeners::Site,
         state::{ApiState, GuideBook, GuidePort},
     },
-    domain::guides::{Block, BlockError, Guide, Rendered, render},
     infrastructure::files::GuideFiles,
 };
+use kanade_domain::guides::{Block, BlockError, Guide, Rendered, render};
 
 pub fn routes() -> Router<Arc<Site>> {
     Router::new()
@@ -142,7 +142,7 @@ fn blocks_refused(error: &'static str, errors: &[BlockError]) -> Response {
 /// What rendering reads: the catalog, the boss directory and knowledge.
 #[derive(Clone)]
 struct Renderer {
-    catalog: Arc<crate::domain::catalog::BossTable>,
+    catalog: Arc<kanade_domain::catalog::BossTable>,
     files: GuideFiles,
 }
 

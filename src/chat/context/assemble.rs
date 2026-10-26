@@ -13,11 +13,11 @@ use super::{
 };
 use crate::chat::persona::{CompiledPersona, TurnContext};
 use crate::chat::sanitize::defuse_notes;
-use crate::domain::members::{Directory, member_name};
-use crate::domain::pytext::strip;
-use crate::domain::weeks::week_start;
 use crate::extract::prompt::estimate_tokens;
 use crate::infrastructure::llm::Message;
+use kanade_domain::members::{Directory, member_name};
+use kanade_domain::pytext::strip;
+use kanade_domain::weeks::week_start;
 
 /// A replied-to message as the gateway cache resolved it.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]

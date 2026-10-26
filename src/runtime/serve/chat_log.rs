@@ -111,9 +111,9 @@ mod tests {
             answer::Generation,
             persona::{CompileProvenance, ExampleSource, PersonaId, ProfileId, VoiceSource},
         },
-        domain::model_log::{ChatInteraction, ChatOutcome},
         infrastructure::llm::Effort,
     };
+    use kanade_domain::model_log::{ChatInteraction, ChatOutcome};
 
     fn row() -> ChatInteraction {
         ChatInteraction {
@@ -169,7 +169,7 @@ mod tests {
         kanade_log::capture();
         let (mut row, provenance) = (row(), provenance());
         row.session_id = Some("kanade-chat-0000abcd-9".into());
-        row.rounds = vec![crate::domain::model_log::ChatRound {
+        row.rounds = vec![kanade_domain::model_log::ChatRound {
             model: "chat-model".into(),
             reasoning: None,
             reasoning_content: None,

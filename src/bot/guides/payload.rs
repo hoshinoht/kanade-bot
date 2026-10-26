@@ -11,7 +11,7 @@ use twilight_model::id::{Id, marker::UserMarker};
 
 use crate::bot::mentions;
 use crate::bot::transport::{MessageEdit, OutgoingMessage, Upload};
-use crate::domain::guides::{GuideEmbed, RenderedSlot};
+use kanade_domain::guides::{GuideEmbed, RenderedSlot};
 
 fn embed(embed: &GuideEmbed) -> Embed {
     let url = |name: &str| format!("attachment://{name}");

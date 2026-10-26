@@ -6,8 +6,8 @@
 
 use kanade::chat::answer::Generation;
 use kanade::chat::tools::REFUSED;
-use kanade::domain::proposals::ChangeKind;
 use kanade::infrastructure::llm::FakeAction;
+use kanade_domain::proposals::ChangeKind;
 use serde_json::{Value, json};
 
 use crate::looping::{Ports, ask_full_set, conversation, said};

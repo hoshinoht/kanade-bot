@@ -15,16 +15,16 @@ use kanade::chat::tools::propose::Proposer;
 use kanade::chat::tools::read::resolve::Heard;
 use kanade::chat::tools::read::{GuideError, StrategyGuides, ToolWorld};
 use kanade::chat::tools::{ToolContext, ToolOutcome};
-use kanade::domain::catalog::{BossReference, BossSpec, BossTable, CatalogSpec, DifficultySpec};
-use kanade::domain::members::{Directory, Member};
-use kanade::domain::schedule::{
-    Change, ChangeSet, FixedRun, ReminderPolicy, Rsvp, RsvpSource, RsvpState, Run, RunSource,
-    RunStatus, SchedulePolicy, ScheduleSnapshot,
-};
-use kanade::domain::scheduler::{Clock, ScheduleStore, Scope};
 use kanade::infrastructure::llm::identity::PassthroughSession;
 use kanade::infrastructure::store::SqliteStore;
 use kanade::infrastructure::store::conformance::meta;
+use kanade_domain::catalog::{BossReference, BossSpec, BossTable, CatalogSpec, DifficultySpec};
+use kanade_domain::members::{Directory, Member};
+use kanade_domain::schedule::{
+    Change, ChangeSet, FixedRun, ReminderPolicy, Rsvp, RsvpSource, RsvpState, Run, RunSource,
+    RunStatus, SchedulePolicy, ScheduleSnapshot,
+};
+use kanade_domain::scheduler::{Clock, ScheduleStore, Scope};
 use serde_json::{Value, json};
 
 use crate::common::{self, SeqIds, TestClock, clock_time, strings, text, utc, weekday, zone};

@@ -8,7 +8,7 @@ mod raster;
 mod svg;
 mod theme;
 
-use crate::domain::chardata::PartyShares;
+use kanade_domain::chardata::PartyShares;
 
 pub use raster::{RasterError, SCALE, png};
 pub use svg::{Drawn, MAX_BARS, WIDTH, svg};

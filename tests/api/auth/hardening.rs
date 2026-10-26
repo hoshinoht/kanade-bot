@@ -91,8 +91,8 @@ async fn roster_events_persist_members_and_end_sessions() {
             commands::AccessPolicy,
             events::{AdminRoles, RosterUpdate},
         },
-        domain::members::{MemberProfile, MemberStore},
     };
+    use kanade_domain::members::{MemberProfile, MemberStore};
     use twilight_model::id::Id;
 
     let harness = Harness::new().await;

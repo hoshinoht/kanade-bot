@@ -2,13 +2,13 @@
 
 use super::{AnswerFailure, ChatPorts, Generation, GuildView, Question, run_question};
 use crate::chat::tools::propose::Proposer;
-use crate::domain::drafts::ProposalStore;
-use crate::domain::scheduler::{Clock, IdSource, ScheduleStore};
 use crate::infrastructure::llm::LlmProvider;
 use crate::infrastructure::llm::governor::{
     Charge, ModelClient, QuestionLimits, Refused, Role, RoleRoute, SessionError, SessionFailure,
 };
 use crate::infrastructure::llm::identity::PassthroughSession;
+use kanade_domain::drafts::ProposalStore;
+use kanade_domain::scheduler::{Clock, IdSource, ScheduleStore};
 
 /// The model side of a question.
 pub struct AnswerDeps<'a, P> {

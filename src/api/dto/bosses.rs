@@ -7,10 +7,8 @@ use serde::Serialize;
 use serde_json::Value;
 
 use super::{Art, hue};
-use crate::{
-    domain::{catalog::BossTable, schedule::FixedRun},
-    infrastructure::files::read_document,
-};
+use crate::infrastructure::files::read_document;
+use kanade_domain::{catalog::BossTable, schedule::FixedRun};
 
 const LETTERS: [&str; 5] = ["e", "n", "h", "c", "x"];
 

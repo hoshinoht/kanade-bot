@@ -22,12 +22,12 @@ use super::owner::StoreOwner;
 use super::schedule::store_error;
 use super::writer::{LeaseError, Writer, WriterLease};
 use super::{SqliteStoreConfig, SqliteStoreError, connect};
-use crate::domain::chardata::{
+use kanade_domain::chardata::{
     CALL_WINDOW, CharDataStore, ConsentSurface, DeletedEstimates, FUTURE_SKEW, Link, LinkPut,
     LinkStatus, MemberEstimate, PartyEstimate, Post, PostState, RefreshState, Snapshot,
     StoreFuture, StoredEstimates, date_text,
 };
-use crate::domain::scheduler::StoreError;
+use kanade_domain::scheduler::StoreError;
 use rows::{LINK_COLUMNS, POST_COLUMNS, SNAPSHOT_COLUMNS, at, link, post, snapshot};
 
 /// The owning handle on the character-data file. Call [`Self::close`].
@@ -120,7 +120,7 @@ impl SqliteCharData {
 }
 
 fn instant(at: &DateTime<Utc>) -> Result<String, StoreError> {
-    crate::domain::time::to_iso(at).map_err(|error| StoreError::Constraint(error.to_string()))
+    kanade_domain::time::to_iso(at).map_err(|error| StoreError::Constraint(error.to_string()))
 }
 
 impl SqliteCharData {
@@ -491,7 +491,7 @@ impl SqliteCharData {
 }
 
 impl CharDataStore for SqliteCharData {
-    crate::domain::forward_boxed! {
+    kanade_domain::forward_boxed! {
         fn link(&self, character_id: String) -> StoreFuture<'_, Option<Link>> = Self::link_row;
         fn links(&self) -> StoreFuture<'_, Vec<Link>> = Self::link_rows;
         fn put_link(&self, link: Link, expected: u32) -> StoreFuture<'_, LinkPut> =

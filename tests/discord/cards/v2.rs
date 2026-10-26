@@ -9,7 +9,7 @@ use kanade::bot::commands::{
 };
 use kanade::bot::delivery::cards::DifficultyMarks;
 use kanade::bot::transport::COMPONENTS_V2;
-use kanade::domain::ids::tag;
+use kanade_domain::ids::tag;
 use twilight_model::channel::message::Component;
 
 use super::styled::styled_desk;

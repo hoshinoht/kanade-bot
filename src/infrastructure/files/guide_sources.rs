@@ -1,6 +1,6 @@
 //! What guide rendering reads from disk ([`GuideSources`]): boss art from
 //! the operator's boss directory (exact case, as cards, at most
-//! [`MAX_ART_BYTES`](crate::domain::art::MAX_ART_BYTES)) and each
+//! [`MAX_ART_BYTES`](kanade_domain::art::MAX_ART_BYTES)) and each
 //! boss's knowledge `lead`. The API preview and the publish worker must
 //! render with this one adapter, or their slot hashes (and so the
 //! confirmed plan hash) would differ.
@@ -10,8 +10,8 @@ use std::path::{Path, PathBuf};
 use serde_json::Value;
 
 use super::{BossArt, read_document};
-use crate::domain::art::ArtSource;
-use crate::domain::guides::{ArtFile, ArtKind, GuideSources};
+use kanade_domain::art::ArtSource;
+use kanade_domain::guides::{ArtFile, ArtKind, GuideSources};
 
 /// The boss directory (`KANADE_BOSS_DIR`) and `boss/knowledge/`; either may
 /// be absent, which renders without pictures or leads.

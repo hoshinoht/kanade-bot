@@ -124,9 +124,9 @@ impl ExtractionAttempts {
             AttemptOutcome::Misconfigured { detail } => return self.done(None, Some(detail), true),
             AttemptOutcome::Failed { detail } => return self.done(None, Some(detail), false),
         };
-        self.raw = crate::domain::pytext::strip(content.as_deref().unwrap_or_default()).to_owned();
+        self.raw = kanade_domain::pytext::strip(content.as_deref().unwrap_or_default()).to_owned();
         self.thinking =
-            crate::domain::pytext::strip(reasoning.as_deref().unwrap_or_default()).to_owned();
+            kanade_domain::pytext::strip(reasoning.as_deref().unwrap_or_default()).to_owned();
         let parsed = parse_response(&self.raw).map_err(|error| error.to_string());
         let error = match parsed {
             Ok(extraction) => return self.done(Some(extraction), None, false),

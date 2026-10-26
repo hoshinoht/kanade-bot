@@ -7,11 +7,11 @@ use sqlx::{Connection, Row, SqliteConnection, sqlite::SqliteRow};
 use super::SqliteStore;
 use super::rows::instant;
 use super::schedule::store_error;
-use crate::domain::scheduler::StoreError;
 use crate::infrastructure::store::auth_audit::{
     AUDIT_PRUNE_BATCH, AUDIT_RETENTION, AuditFilter, AuditKind, AuditRealm, AuditRow,
     AuthAuditStore,
 };
+use kanade_domain::scheduler::StoreError;
 
 fn corrupt(column: &str, detail: impl std::fmt::Display) -> StoreError {
     StoreError::Backend(format!("auth_audit.{column} is unreadable: {detail}"))
@@ -28,7 +28,7 @@ fn decode(row: &SqliteRow) -> Result<AuditRow, StoreError> {
     let event = text("event")?;
     Ok(AuditRow {
         seq: row.try_get("seq").map_err(|error| corrupt("seq", error))?,
-        at: crate::domain::time::from_iso(&text("at")?).map_err(|error| corrupt("at", error))?,
+        at: kanade_domain::time::from_iso(&text("at")?).map_err(|error| corrupt("at", error))?,
         realm: AuditRealm::parse(&realm).ok_or_else(|| corrupt("realm", realm))?,
         event: AuditKind::parse(&event).ok_or_else(|| corrupt("event", event))?,
         actor: optional("actor")?,

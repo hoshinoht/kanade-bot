@@ -7,9 +7,9 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use chrono::TimeDelta;
 use kanade::bot::delivery::{ALERT_WINDOW, AdminAlert, AlertThrottle, DigestOutcome, SendOutcome};
 use kanade::bot::transport::{Op, Outcome, RejectionKind, Step};
-use kanade::domain::ids::RandomIds;
-use kanade::domain::notify::{AttemptState, DeliveryTarget, EffectKind};
 use kanade::infrastructure::store::SqliteStore;
+use kanade_domain::ids::RandomIds;
+use kanade_domain::notify::{AttemptState, DeliveryTarget, EffectKind};
 
 use crate::intercept::Intercept;
 use crate::scenarios::{
@@ -66,7 +66,7 @@ async fn failure_is_isolated<S: Store>(store: &S) {
             }
             let mut ids = RandomIds;
             support::service(store, &mut ids, now())
-                .as_origin(kanade::domain::history::Origin::for_tests())
+                .as_origin(kanade_domain::history::Origin::for_tests())
                 .mark_reminder_sent(&first, Some("999"))
                 .await
                 .expect("bound elsewhere");
@@ -127,7 +127,7 @@ async fn bind_failure<S: Store>(store: &S) {
         Box::pin(async move {
             let mut ids = RandomIds;
             support::service(store, &mut ids, now())
-                .as_origin(kanade::domain::history::Origin::for_tests())
+                .as_origin(kanade_domain::history::Origin::for_tests())
                 .mark_reminder_sent(&reminder, None)
                 .await
                 .expect("row changes under the send");

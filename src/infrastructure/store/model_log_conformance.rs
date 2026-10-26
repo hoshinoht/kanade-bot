@@ -7,7 +7,7 @@ use chrono::{DateTime, TimeZone, Utc};
 use serde_json::json;
 
 use super::fixtures::{refused, refused_for};
-use crate::domain::model_log::{
+use kanade_domain::model_log::{
     AllowanceOverride, ChatFilter, ChatInteraction, ChatOutcome, ChatRound, ExtractionFilter,
     ExtractionLog, ExtractionOutcome, ExtractionRefusal, LogFacets, MaskedName, MaskedRound,
     MaskedTurn, MessageUpsert, ModelLogStore, PROMPT_CAP, REPLY_CAP, ReadMessage, RescanJob,
@@ -65,7 +65,7 @@ async fn retention_prunes_old_logs_and_processed_messages<S: ModelLogStore>(stor
         .expect("processed");
     assert_eq!(
         store.prune_model_logs(cutoff).await.expect("prune"),
-        crate::domain::model_log::PruneCounts {
+        kanade_domain::model_log::PruneCounts {
             extractions: 1,
             chats: 1,
             messages: 1,
@@ -97,7 +97,7 @@ async fn retention_prunes_old_logs_and_processed_messages<S: ModelLogStore>(stor
     assert_eq!(ids(&left, |m| &m.id), ["m-pending", "m-new"]);
     assert_eq!(
         store.prune_model_logs(cutoff).await.expect("again"),
-        crate::domain::model_log::PruneCounts::default()
+        kanade_domain::model_log::PruneCounts::default()
     );
 }
 
@@ -141,7 +141,7 @@ async fn reasoning_round_trips_with_independent_nulls_and_row_retention<S: Model
     );
     for text in [
         String::new(),
-        "奏".repeat(crate::domain::model_log::REASONING_CAP),
+        "奏".repeat(kanade_domain::model_log::REASONING_CAP),
     ] {
         let mut bad = log.clone();
         bad.id = "x-bad".into();
@@ -1614,7 +1614,7 @@ async fn retention_prunes_rewrites<S: ModelLogStore + RewriteLogStore>(store: S)
     }
     assert_eq!(
         store.prune_model_logs(cutoff).await.expect("prune"),
-        crate::domain::model_log::PruneCounts {
+        kanade_domain::model_log::PruneCounts {
             rewrites: 1,
             ..Default::default()
         }

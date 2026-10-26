@@ -36,9 +36,9 @@ use crate::{
         auth::AdminSession, dto::character_data::link, error::ApiError, listeners::Site,
         state::ApiState,
     },
-    domain::chardata::UnlinkReason,
     infrastructure::character_data::{AdminLinkOutcome, CharacterData, RefreshOutcome},
 };
+use kanade_domain::chardata::UnlinkReason;
 
 pub fn routes() -> Router<Arc<Site>> {
     Router::new()

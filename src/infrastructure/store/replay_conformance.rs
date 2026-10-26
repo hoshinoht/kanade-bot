@@ -6,13 +6,13 @@
 use chrono::{DateTime, TimeDelta, TimeZone, Utc};
 
 use super::fixtures::{refused, refused_for};
-use crate::domain::history::{Actor, Surface};
-use crate::domain::members::{MemberStore, PingLevel, PortalEdit};
-use crate::domain::settings::{RowDiff, SettingsChange, SettingsChangeQuery, SettingsStore, keys};
 use crate::infrastructure::store::members_conformance::gateway;
 use crate::infrastructure::store::replays::{
     MEMBERS_SECTION, PortalRecord, PortalWrite, REPLAY_TTL, ReplayScope, ReplayStore, StoredReplay,
 };
+use kanade_domain::history::{Actor, Surface};
+use kanade_domain::members::{MemberStore, PingLevel, PortalEdit};
+use kanade_domain::settings::{RowDiff, SettingsChange, SettingsChangeQuery, SettingsStore, keys};
 
 pub async fn run_suite<S: ReplayStore + SettingsStore + MemberStore>(make: impl AsyncFn() -> S) {
     replays_round_trip_per_scope_actor_and_key(make().await).await;

@@ -24,9 +24,9 @@ use crate::chat::nudge::{
     failure_verdict, has_format_char, has_invite, has_markup, safe_value, strip_slots,
 };
 use crate::chat::persona::{CompiledPersona, MAX_NUDGE_CHARS, NudgeMood, check_nudge_line};
-use crate::domain::catalog::BossTable;
-use crate::domain::model_log::{RewriteKind, RewriteStage};
-use crate::domain::notify::HeaderSlots;
+use kanade_domain::catalog::BossTable;
+use kanade_domain::model_log::{RewriteKind, RewriteStage};
+use kanade_domain::notify::HeaderSlots;
 
 /// v4's heading, with the day left for after the rewrite.
 pub const DAY_OF_HEADING_SEED: &str = "Today — {day}";
@@ -179,7 +179,7 @@ pub struct Chosen {
     pub slots: Option<HeaderSlots>,
 }
 
-crate::domain::spelled! {
+kanade_domain::spelled! {
     /// Where a heading came from, for the `day_of_heading` log line.
     HeadingSource {
         Rewrite => "rewrite",
@@ -187,7 +187,7 @@ crate::domain::spelled! {
     }
 }
 
-crate::domain::spelled! {
+kanade_domain::spelled! {
     PhraseKind {
         Countdown => "countdown",
         Digest => "digest",
@@ -886,7 +886,7 @@ fn shutdown_trial(kind: HeaderKind) -> Trial {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::catalog::{BossSpec, CatalogSpec, DifficultySpec};
+    use kanade_domain::catalog::{BossSpec, CatalogSpec, DifficultySpec};
 
     fn catalog() -> BossTable {
         BossTable::from_spec(&CatalogSpec {
@@ -975,8 +975,8 @@ mod tests {
         }
     }
 
-    fn carrier(ign: &str, crit: bool, effective: &[f64]) -> crate::domain::chardata::Carrier {
-        crate::domain::chardata::Carrier {
+    fn carrier(ign: &str, crit: bool, effective: &[f64]) -> kanade_domain::chardata::Carrier {
+        kanade_domain::chardata::Carrier {
             ign: ign.into(),
             crit_assumed: crit,
             effective: effective.iter().copied().map(Some).collect(),
@@ -993,7 +993,7 @@ mod tests {
             character_id: character.into(),
         };
         crate::bot::delivery::RunEstimate {
-            party: crate::domain::chardata::PartyShares {
+            party: kanade_domain::chardata::PartyShares {
                 bosses: vec!["HKalos".into(), "HLimbo".into()],
                 carriers: vec![
                     carrier("Kestrel", false, &[10.0, 8.0]),
@@ -1084,7 +1084,7 @@ mod tests {
         assert!(HeaderContext::build(&[stale], NudgeMood::Playful, [], &[]).is_none());
         assert!(HeaderContext::build(&[], NudgeMood::Playful, [], &[]).is_none());
         let nobody = crate::bot::delivery::RunEstimate {
-            party: crate::domain::chardata::PartyShares {
+            party: kanade_domain::chardata::PartyShares {
                 bosses: vec!["HKalos".into()],
                 carriers: Vec::new(),
                 missing: 2,
@@ -1285,7 +1285,7 @@ mod tests {
     /// out while the opt-in still counts.
     #[test]
     fn a_note_is_rechecked_against_the_roster_now() {
-        use crate::domain::members::{Member, MemberProfile};
+        use kanade_domain::members::{Member, MemberProfile};
         let profile = |tease_ok: bool, note: &str| MemberProfile {
             member: Member {
                 user_id: "3".into(),

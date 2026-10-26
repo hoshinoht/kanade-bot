@@ -34,15 +34,14 @@ use crate::{
         },
         listeners::Site,
     },
-    domain::{
-        guides::{
-            Block, Confirmations, Guide, GuideChange, GuideRecord, GuideWrite, NotPosted,
-            PlanCounts, Publish, PublishKind, PublishRequest, PublishRequested, PublishState,
-            SlotState, plan_hash,
-        },
-        ids::{IdGenerator, RandomIds},
-    },
     infrastructure::store::replays::KeyedWrite,
+};
+use kanade_domain::{
+    guides::{
+        Block, Confirmations, Guide, GuideChange, GuideRecord, GuideWrite, NotPosted, PlanCounts,
+        Publish, PublishKind, PublishRequest, PublishRequested, PublishState, SlotState, plan_hash,
+    },
+    ids::{IdGenerator, RandomIds},
 };
 
 /// Who writes at `now`, for the History record.
@@ -427,14 +426,14 @@ fn runnable(planned: &Planned, plan_hash: &str) -> Result<(), Refusal> {
     }
     if let Some(blocked) = &plan.blocked {
         let message = match blocked {
-            crate::domain::guides::Blocked::UnknownSlot { position, .. } => format!(
+            kanade_domain::guides::Blocked::UnknownSlot { position, .. } => format!(
                 "Message {} may or may not have posted: settle it first.",
                 position + 1
             ),
-            crate::domain::guides::Blocked::ChannelMissing => {
+            kanade_domain::guides::Blocked::ChannelMissing => {
                 "The channel is gone or the bot cannot see it; choose another.".to_owned()
             }
-            crate::domain::guides::Blocked::Grants(grants) => format!(
+            kanade_domain::guides::Blocked::Grants(grants) => format!(
                 "The bot is missing permissions in the channel: {}.",
                 grants
                     .iter()
@@ -696,9 +695,9 @@ pub(super) async fn cancel(
         .await
         .map_err(Refusal::unavailable)?;
     match settled(outcome)? {
-        Ok(crate::domain::guides::CancelRequest::Requested(_)) => Ok(Json(body).into_response()),
-        Ok(crate::domain::guides::CancelRequest::Finished(_)) => Err(finished()),
-        Ok(crate::domain::guides::CancelRequest::Missing) => Err(gone()),
+        Ok(kanade_domain::guides::CancelRequest::Requested(_)) => Ok(Json(body).into_response()),
+        Ok(kanade_domain::guides::CancelRequest::Finished(_)) => Err(finished()),
+        Ok(kanade_domain::guides::CancelRequest::Missing) => Err(gone()),
         Err(replay) => Ok(replay),
     }
 }

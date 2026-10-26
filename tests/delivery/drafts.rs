@@ -2,11 +2,11 @@
 
 use chrono::TimeDelta;
 use kanade::bot::delivery::{AdminAlert, FixedClock};
-use kanade::domain::drafts::{DraftChange, DraftEventKind, DraftStatus, DraftUpdate, DraftWrite};
-use kanade::domain::history::Actor;
-use kanade::domain::ids::IdGenerator;
-use kanade::domain::scheduler::{SchedulerService, StoreRef};
 use kanade::infrastructure::store::SqliteStore;
+use kanade_domain::drafts::{DraftChange, DraftEventKind, DraftStatus, DraftUpdate, DraftWrite};
+use kanade_domain::history::Actor;
+use kanade_domain::ids::IdGenerator;
+use kanade_domain::scheduler::{SchedulerService, StoreRef};
 
 use crate::scenarios::{delivery, now, previous_week, week, world};
 use crate::support::Store;
@@ -111,8 +111,8 @@ async fn a_failed_expiry_never_aborts_the_tick() {
 #[tokio::test]
 async fn a_merged_notice_renders_its_title_and_runs() {
     use kanade::bot::delivery::render_notice;
-    use kanade::domain::notify::{DeliverySettings, plan_notice};
-    use kanade::domain::schedule::{Notice, NoticeChange};
+    use kanade_domain::notify::{DeliverySettings, plan_notice};
+    use kanade_domain::schedule::{Notice, NoticeChange};
 
     let world = world();
     let notice = Notice {
@@ -141,7 +141,7 @@ async fn a_merged_notice_renders_its_title_and_runs() {
     let message = render_notice(
         &notice,
         &intent,
-        &kanade::domain::schedule::ScheduleSnapshot::default(),
+        &kanade_domain::schedule::ScheduleSnapshot::default(),
         &world.roster,
         chrono_tz::Asia::Kuala_Lumpur,
         false,

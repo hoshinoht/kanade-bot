@@ -18,7 +18,7 @@ use tokio::sync::Mutex;
 use tokio::sync::Notify;
 
 use super::{auth::Clock as ApiClockFn, state::ReadStore};
-use crate::domain::{
+use kanade_domain::{
     drafts::{DraftOp, DraftStatus, ProposalStore, Settle, StoredDraft},
     history::{
         Actor, ChangeHistory, Expect, HeldReminders, Origin, RevertMode, RevertOutcome, Surface,
@@ -508,8 +508,8 @@ pub struct SchedulerWriter<S, I, C> {
     service: Mutex<SchedulerService<S, I, C>>,
     /// The same store, for previews outside the writer lock.
     reader: S,
-    attendance: crate::domain::attendance::AttendancePolicy,
-    run_ends: Option<crate::domain::completion::RunEndsSource>,
+    attendance: kanade_domain::attendance::AttendancePolicy,
+    run_ends: Option<kanade_domain::completion::RunEndsSource>,
 }
 
 impl<S: ScheduleStore + Clone, I: IdSource, C: Clock> SchedulerWriter<S, I, C> {
@@ -719,7 +719,7 @@ where
             let weeks = ctx
                 .policy
                 .materialised_weeks(now)
-                .map_err(crate::domain::schedule::ScheduleError::from)?;
+                .map_err(kanade_domain::schedule::ScheduleError::from)?;
             service
                 .as_origin(origin)
                 .retire_fixed_run(fixed_id, &weeks, &ctx.policy.reminders)

@@ -1,9 +1,9 @@
 use chrono::{DateTime, Datelike, FixedOffset, NaiveTime, TimeDelta, Weekday};
 use chrono_tz::Tz;
 
-use crate::domain::pytext::{repr, strip};
-use crate::domain::time::{DateOutOfRange, ZonedDateTime};
-use crate::domain::weeks;
+use kanade_domain::pytext::{repr, strip};
+use kanade_domain::time::{DateOutOfRange, ZonedDateTime};
+use kanade_domain::weeks;
 
 /// What `/rescan window:` offers, longest first.
 pub const WINDOWS: [&str; 4] = ["week", "2weeks", "48h", "24h"];

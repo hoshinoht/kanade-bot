@@ -55,7 +55,7 @@ fn the_surface_enum_is_the_domains() {
         .iter()
         .map(|value| value.as_str().unwrap())
         .collect();
-    let domain: Vec<&str> = kanade::domain::history::Surface::ALL
+    let domain: Vec<&str> = kanade_domain::history::Surface::ALL
         .iter()
         .map(|surface| surface.as_str())
         .collect();

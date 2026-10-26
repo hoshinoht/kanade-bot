@@ -6,9 +6,9 @@ use sqlx::Connection;
 
 use super::schedule::store_error;
 use super::{SqliteStore, history, schedule, settings};
-use crate::domain::history::{ChangeFilter, ChangeQuery};
-use crate::domain::scheduler::{Scope, StoreError};
 use crate::infrastructure::store::snapshots::{HistoryView, HistoryViewQuery, SnapshotReads};
+use kanade_domain::history::{ChangeFilter, ChangeQuery};
+use kanade_domain::scheduler::{Scope, StoreError};
 
 /// Test support: a composed read stopped after its first statement (its
 /// snapshot taken). `reached` fires there; the read goes on once `resume`

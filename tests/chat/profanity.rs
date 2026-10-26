@@ -11,9 +11,9 @@ use kanade::chat::answer::{
 };
 use kanade::chat::nudge::{WordFilter, builtin_words};
 use kanade::chat::tools::bundles::ToolOffer;
-use kanade::domain::model_log::ChatOutcome;
-use kanade::domain::settings::{DEFAULT_DEFLECTION_LINE, Profanity};
 use kanade::infrastructure::llm::{ChatRequest, FakeAction, FakeProvider};
+use kanade_domain::model_log::ChatOutcome;
+use kanade_domain::settings::{DEFAULT_DEFLECTION_LINE, Profanity};
 use serde_json::json;
 
 use crate::looping::{Ports, conversation, said, settings};

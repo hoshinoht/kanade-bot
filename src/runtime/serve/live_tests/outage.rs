@@ -12,21 +12,19 @@ use std::{
 
 use tokio::sync::{Mutex, oneshot};
 
-use crate::{
-    bot::{
-        delivery::{DEFAULT_MAX_SENDS_PER_TICK, Delivery, DeliveryConfig, SendOutcome, SendReport},
-        gateway::ConnectionStatus,
-        transport::{
-            ChannelId, DiscordTransport, HistoryPage, InteractionRef, InteractionReply,
-            MessageEdit, MessageId, Op, Outcome, OutgoingMessage, Presence,
-        },
+use crate::bot::{
+    delivery::{DEFAULT_MAX_SENDS_PER_TICK, Delivery, DeliveryConfig, SendOutcome, SendReport},
+    gateway::ConnectionStatus,
+    transport::{
+        ChannelId, DiscordTransport, HistoryPage, InteractionRef, InteractionReply, MessageEdit,
+        MessageId, Op, Outcome, OutgoingMessage, Presence,
     },
-    domain::{
-        members::Roster,
-        notify::{
-            Claim, DeliveryTarget, DigestInclusion, EffectKind, IntentContent, NotificationIntent,
-            Receipt,
-        },
+};
+use kanade_domain::{
+    members::Roster,
+    notify::{
+        Claim, DeliveryTarget, DigestInclusion, EffectKind, IntentContent, NotificationIntent,
+        Receipt,
     },
 };
 
@@ -92,8 +90,8 @@ impl Gate {
             post_channel_id,
             quiet_mode: false,
             max_sends_per_tick: DEFAULT_MAX_SENDS_PER_TICK,
-            max_notice_age: crate::domain::notify::DEFAULT_MAX_NOTICE_AGE,
-            run_lengths: crate::domain::settings::RunLengths::default(),
+            max_notice_age: kanade_domain::notify::DEFAULT_MAX_NOTICE_AGE,
+            run_lengths: kanade_domain::settings::RunLengths::default(),
             freeze_ended: true,
         };
         let connection = self.connection.clone();
@@ -436,7 +434,7 @@ async fn seed_digest(
     previous_week: DateTime<Utc>,
     message: &str,
     now: DateTime<Utc>,
-) -> crate::domain::notify::AttemptId {
+) -> kanade_domain::notify::AttemptId {
     let lease = store
         .begin_lease("cancel-safety-test", "seed_digest", now)
         .await
@@ -512,7 +510,7 @@ async fn cancelling_a_blocked_digest_delete_keeps_the_old_claim_and_admits_anoth
     transport.assert_dropped();
 
     let old = store.load_attempt(&old_claim).await.unwrap().unwrap();
-    assert_eq!(old.state, crate::domain::notify::AttemptState::Bound);
+    assert_eq!(old.state, kanade_domain::notify::AttemptState::Bound);
     assert!(old.targets.contains(&DeliveryTarget::Digest(week)));
     assert!(
         store

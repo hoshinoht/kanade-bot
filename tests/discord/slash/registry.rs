@@ -4,7 +4,7 @@ use serde_json::{Value, json};
 
 use kanade::bot::commands::Disposition;
 use kanade::bot::transport::{Call, DiscordTransport, Outcome};
-use kanade::domain::history::ChangeHistory;
+use kanade_domain::history::ChangeHistory;
 
 use super::super::support::{ADMIN_ROLE, BOSSING_ROLE, guild};
 use super::{ALICE, KALOS, R_KALOS, Slash, opt};

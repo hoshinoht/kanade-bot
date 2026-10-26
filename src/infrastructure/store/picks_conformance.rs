@@ -15,13 +15,13 @@ use std::collections::BTreeMap;
 use chrono::{DateTime, TimeZone, Utc};
 
 use super::fixtures::refused;
-use crate::domain::characters::{
+use crate::infrastructure::store::replays::{KeyedWrite, ReplayScope, ReplayStore, StoredReplay};
+use kanade_domain::characters::{
     CHARACTERS_SECTION, Character, CharacterChange, CharacterEdit, CharacterRecord, CharacterRole,
     CharacterStore, Pick, PickChange, PickScope, PickWrite,
 };
-use crate::domain::history::{Actor, Surface};
-use crate::domain::settings::{SettingsChange, SettingsChangeQuery, SettingsStore};
-use crate::infrastructure::store::replays::{KeyedWrite, ReplayScope, ReplayStore, StoredReplay};
+use kanade_domain::history::{Actor, Surface};
+use kanade_domain::settings::{SettingsChange, SettingsChangeQuery, SettingsStore};
 
 const SCOPES: [PickScope; 2] = [PickScope::Run, PickScope::Timing];
 

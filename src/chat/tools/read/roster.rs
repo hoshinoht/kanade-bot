@@ -5,8 +5,8 @@ use std::sync::LazyLock;
 
 use regex::Regex;
 
-use crate::domain::members::Member;
-use crate::domain::pytext::strip;
+use kanade_domain::members::Member;
+use kanade_domain::pytext::strip;
 
 static MENTION: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"<@!?(\d+)>").expect("pattern"));
 static BARE_ID: LazyLock<Regex> =

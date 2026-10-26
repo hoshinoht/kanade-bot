@@ -5,13 +5,13 @@ use sqlx::sqlite::SqliteRow;
 
 use super::extractions::{Keyed, distinct, page};
 use super::{instant, optional_signed, optional_text, read_instant, read_optional_u64, text};
-use crate::domain::model_log::{
+use crate::infrastructure::store::sqlite::rows::{list as json_list, optional_instant};
+use crate::infrastructure::store::sqlite::schedule::store_error;
+use kanade_domain::model_log::{
     LogCursor, LogPage, RewriteFacets, RewriteFilter, RewriteKind, RewriteLog, RewriteStage,
     page_size,
 };
-use crate::domain::scheduler::StoreError;
-use crate::infrastructure::store::sqlite::rows::{list as json_list, optional_instant};
-use crate::infrastructure::store::sqlite::schedule::store_error;
+use kanade_domain::scheduler::StoreError;
 
 const COLUMNS: &str = "r.id, r.at, r.kind, r.stage, r.context, r.verdict, r.rule, r.code, \
     r.latency_ms, r.model, r.reasoning, r.prompt_tokens, r.completion_tokens, r.cached_tokens, \

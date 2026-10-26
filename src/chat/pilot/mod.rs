@@ -32,11 +32,11 @@ use crate::chat::gate::ChatDecision;
 use crate::chat::persona::CompiledPersona;
 use crate::chat::tools::ToolContext;
 use crate::chat::tools::bundles::{CardContext, Signals, ToolOffer, select};
-use crate::domain::members::Directory;
-use crate::domain::model_log::{ChatFilter, ChatInteraction, ChatOutcome, MAX_PAGE, ModelLogStore};
-use crate::domain::scheduler::StoreError;
 use crate::infrastructure::llm::Effort;
 use crate::infrastructure::llm::governor::Charge;
+use kanade_domain::members::Directory;
+use kanade_domain::model_log::{ChatFilter, ChatInteraction, ChatOutcome, MAX_PAGE, ModelLogStore};
+use kanade_domain::scheduler::StoreError;
 
 /// Where the answer is posted (the Discord adapter implements it later).
 pub trait ReplyPort {

@@ -33,12 +33,12 @@ use kanade::{
         state::ApiState,
     },
     bot::commands::AccessPolicy,
-    domain::members::{GatewayMember, MemberStore},
     infrastructure::store::{
         SqliteStore,
         web_sessions::{LoginMethod, SessionOrigin, WebSession, WebSessionStore},
     },
 };
+use kanade_domain::members::{GatewayMember, MemberStore};
 use twilight_model::id::Id;
 
 use super::TOKEN;

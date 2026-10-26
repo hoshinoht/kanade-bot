@@ -17,17 +17,6 @@ mod support;
 
 use chrono::{DateTime, NaiveTime, TimeZone, Utc, Weekday};
 use chrono_tz::Asia::Kuala_Lumpur;
-use kanade::domain::settings::{
-    RoleProfileAssignment, RuntimeSettings, Section, SettingsStore, keys, load_settings,
-    save_section,
-};
-use kanade::domain::{
-    history::{BlameTarget, ChangeHistory, Origin, changed_fields},
-    ids::RandomIds,
-    notify::NoticeOutbox,
-    schedule::{NewRun, ReminderPolicy, RunSource, RunStatus, ScheduleError, SchedulePolicy},
-    scheduler::{Clock, ScheduleStore, SchedulerError, SchedulerService},
-};
 use kanade::infrastructure::store::{
     SqliteCharData, SqliteStore, attendance_conformance, auth_audit_conformance, card_conformance,
     characters_conformance, chardata_conformance, cherry_pick_conformance, conformance,
@@ -35,6 +24,17 @@ use kanade::infrastructure::store::{
     journal_conformance, members_conformance, model_log_conformance, outbox_conformance,
     owner_request_conformance, picks_conformance, precondition_conformance, proposal_conformance,
     replay_conformance, run_prompt_conformance, settings_conformance, web_sessions_conformance,
+};
+use kanade_domain::settings::{
+    RoleProfileAssignment, RuntimeSettings, Section, SettingsStore, keys, load_settings,
+    save_section,
+};
+use kanade_domain::{
+    history::{BlameTarget, ChangeHistory, Origin, changed_fields},
+    ids::RandomIds,
+    notify::NoticeOutbox,
+    schedule::{NewRun, ReminderPolicy, RunSource, RunStatus, ScheduleError, SchedulePolicy},
+    scheduler::{Clock, ScheduleStore, SchedulerError, SchedulerService},
 };
 
 #[derive(Clone, Copy)]
@@ -254,11 +254,11 @@ async fn guides_conform() {
 /// reopen, and the character's delete after the reopen still drops both.
 #[tokio::test]
 async fn sqlite_picks_survive_reopen() {
-    use kanade::domain::characters::{
+    use kanade_domain::characters::{
         Character, CharacterChange, CharacterRecord, CharacterRole, CharacterStore, PickChange,
         PickScope, PickWrite,
     };
-    use kanade::domain::history::{Actor, Surface};
+    use kanade_domain::history::{Actor, Surface};
 
     let dir = support::TempDir::new();
     let config = dir.config("picks-reopen");

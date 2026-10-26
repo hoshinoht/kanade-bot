@@ -17,24 +17,20 @@ use super::{
     },
     messages::said,
 };
-use crate::{
-    api::{
-        auth::AdminSession,
-        dto::{
-            inbox::{self, Choice, Common},
-            iso_date, when,
-        },
-        error::ApiError,
-        listeners::Site,
+use crate::api::{
+    auth::AdminSession,
+    dto::{
+        inbox::{self, Choice, Common},
+        iso_date, when,
     },
-    domain::{
-        drafts::{DraftOp, LoadedDraft, Target},
-        proposals::ProposalSubject,
-        schedule::{
-            AmendedRunChoice, Draft, FixedEditChoices, ScheduleSnapshot, preview_fixed_edit,
-        },
-        scheduler::{DraftError, ProposalError, RequestError, Scope},
-    },
+    error::ApiError,
+    listeners::Site,
+};
+use kanade_domain::{
+    drafts::{DraftOp, LoadedDraft, Target},
+    proposals::ProposalSubject,
+    schedule::{AmendedRunChoice, Draft, FixedEditChoices, ScheduleSnapshot, preview_fixed_edit},
+    scheduler::{DraftError, ProposalError, RequestError, Scope},
 };
 
 /// A backend failure fails the list; anything else only blocks its item.

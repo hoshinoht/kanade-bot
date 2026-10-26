@@ -58,7 +58,7 @@ pub use snapshots::ReadPause;
 #[cfg(any(test, feature = "test-support"))]
 pub use temp::TempStoreDir;
 
-use crate::domain::history::{ChangeHistory, ChangeRef};
+use kanade_domain::history::{ChangeHistory, ChangeRef};
 use writer::Writer;
 
 /// How long [`SqliteStore::close`] waits for readers handed back late.

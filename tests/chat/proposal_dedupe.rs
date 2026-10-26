@@ -7,19 +7,19 @@ use kanade::chat::answer::{AnswerDeps, AnswerFailure, AnswerSettings, Question, 
 use kanade::chat::tools::bundles::ToolOffer;
 use kanade::chat::tools::propose::Proposer;
 use kanade::chat::tools::{ToolContext, ToolOutcome};
-use kanade::domain::drafts::{
-    DraftChange, DraftStatus, DraftStore, DraftUpdate, ProposalSource, ProposalStore, StoredDraft,
-};
-use kanade::domain::history::Actor;
-use kanade::domain::notify::{
-    Claim, DeliveryJournal, DeliveryTarget, EffectKind, IntentContent, NotificationIntent, Receipt,
-};
-use kanade::domain::proposals::{
-    Approver, CardDetails, ChangeKind, ProposalCardStore, ProposedChange,
-};
-use kanade::domain::scheduler::{Clock, ProposalRequest, SchedulerService, Supersede};
 use kanade::infrastructure::llm::FakeAction;
 use kanade::infrastructure::llm::identity::PassthroughSession;
+use kanade_domain::drafts::{
+    DraftChange, DraftStatus, DraftStore, DraftUpdate, ProposalSource, ProposalStore, StoredDraft,
+};
+use kanade_domain::history::Actor;
+use kanade_domain::notify::{
+    Claim, DeliveryJournal, DeliveryTarget, EffectKind, IntentContent, NotificationIntent, Receipt,
+};
+use kanade_domain::proposals::{
+    Approver, CardDetails, ChangeKind, ProposalCardStore, ProposedChange,
+};
+use kanade_domain::scheduler::{Clock, ProposalRequest, SchedulerService, Supersede};
 use serde_json::{Value, json};
 
 use crate::common::utc;
@@ -89,7 +89,7 @@ async fn seed(world: &mut World, source: ProposalSource, kind: ChangeKind) -> St
     }
     if kind == ChangeKind::Rsvp {
         change.participants = vec!["101".into()];
-        change.rsvp = Some(kanade::domain::schedule::RsvpState::Yes);
+        change.rsvp = Some(kanade_domain::schedule::RsvpState::Yes);
     }
     propose(world, change, source, "invented-source").await
 }
@@ -257,7 +257,7 @@ async fn rejected_discarded_and_approved_proposals_do_not_block_new_chat_proposa
                 .unwrap();
             // A later legitimate move restores the target's starting state.
             world
-                .put(kanade::domain::schedule::Change::PutRun(original))
+                .put(kanade_domain::schedule::Change::PutRun(original))
                 .await;
         } else {
             world

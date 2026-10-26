@@ -13,11 +13,11 @@ use tokio::time::{Instant, sleep_until};
 use super::debounce::Bursts;
 use super::extractor::{Extractor, PassReport};
 use super::ports::{BacklogDrop, IncomingMessage, MessageEvent, MessageOrigin, Outbox, Proposer};
-use crate::domain::model_log::{MessageUpsert, ModelLogStore};
-use crate::domain::scheduler::ScheduleStore;
 use crate::extract::backlog::{Backlog, BacklogEntry};
 use crate::extract::gate;
 use crate::infrastructure::llm::LlmProvider;
+use kanade_domain::model_log::{MessageUpsert, ModelLogStore};
+use kanade_domain::scheduler::ScheduleStore;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Source {

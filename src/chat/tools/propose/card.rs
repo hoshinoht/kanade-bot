@@ -6,11 +6,11 @@ use serde_json::{Map, Value};
 
 use crate::chat::tools::read::ToolWorld;
 use crate::chat::tools::read::format::{boss_labels, weekday_name, when_label};
-use crate::domain::ids::short_id;
-use crate::domain::members::member_name;
-use crate::domain::proposals::ChangeKind;
-use crate::domain::schedule::{RsvpState, Run};
-use crate::domain::weeks::weekday_from_index;
+use kanade_domain::ids::short_id;
+use kanade_domain::members::member_name;
+use kanade_domain::proposals::ChangeKind;
+use kanade_domain::schedule::{RsvpState, Run};
+use kanade_domain::weeks::weekday_from_index;
 
 /// v4 `FIX_EDIT` / `FIX_REMOVE` payload markers.
 pub const FIX_EDIT: &str = "edit";
@@ -179,7 +179,7 @@ pub fn card_ready(card: &ProposalCard) -> String {
 }
 
 pub(super) fn already_proposed(
-    existing: &crate::domain::drafts::ExistingProposal,
+    existing: &kanade_domain::drafts::ExistingProposal,
     guild_id: &str,
 ) -> String {
     let location = match &existing.message_id {

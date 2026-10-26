@@ -5,14 +5,14 @@
 use chrono::{DateTime, TimeDelta, Utc};
 use kanade::bot::delivery::{AdminAlert, Delivery, SendOutcome};
 use kanade::bot::transport::{Call, Op, RejectionKind, Step};
-use kanade::domain::history::{Actor, ChangeMeta, Origin, Surface};
-use kanade::domain::ids::RandomIds;
-use kanade::domain::notify::{DEFAULT_MAX_NOTICE_AGE, DrainReason, change_source};
-use kanade::domain::schedule::{
+use kanade::infrastructure::store::SqliteStore;
+use kanade_domain::history::{Actor, ChangeMeta, Origin, Surface};
+use kanade_domain::ids::RandomIds;
+use kanade_domain::notify::{DEFAULT_MAX_NOTICE_AGE, DrainReason, change_source};
+use kanade_domain::schedule::{
     Change, ChangeSet, Notice, NoticeChange, RequestDecision, Run, RunSource, RunStatus,
 };
-use kanade::domain::scheduler::Scope;
-use kanade::infrastructure::store::SqliteStore;
+use kanade_domain::scheduler::Scope;
 
 use crate::scenarios::{HOME, World, config, delivery, now, week, world};
 use crate::support::{Store, TempDir};

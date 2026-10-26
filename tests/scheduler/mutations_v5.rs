@@ -4,15 +4,15 @@
 use std::collections::BTreeMap;
 
 use chrono::{DateTime, TimeDelta, Utc, Weekday};
-use kanade::domain::history::Origin;
-use kanade::domain::notify::NoticeOutbox;
-use kanade::domain::schedule::{
+use kanade::infrastructure::store::SqliteStore;
+use kanade_domain::history::Origin;
+use kanade_domain::notify::NoticeOutbox;
+use kanade_domain::schedule::{
     AmendedRunChoice, EMOJI_NO, EMOJI_YES, FixedEdit, FixedEditChoices, FixedEditRequest, FixedRun,
     NewRun, NoticeChange, Outcome, Reminder, RunSource, RunState, RunStatus, ScheduleError,
     ScheduleSnapshot, StatusChange,
 };
-use kanade::domain::scheduler::{SchedulerError, SchedulerResult, SchedulerService};
-use kanade::infrastructure::store::SqliteStore;
+use kanade_domain::scheduler::{SchedulerError, SchedulerResult, SchedulerService};
 
 use crate::common::{TestClock, assert_sound};
 use crate::support::{

@@ -1,7 +1,7 @@
 //! The extraction log outcome of one call (`docs/notes/admin-api.md` filters).
 
 use super::call::Failure;
-use crate::domain::model_log::ExtractionOutcome;
+use kanade_domain::model_log::ExtractionOutcome;
 
 /// A failed call is turned away / content-blocked / failed; an answered one
 /// is proposed when any proposal was created, a self-service link when the

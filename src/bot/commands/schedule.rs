@@ -19,10 +19,10 @@ use crate::bot::delivery::cards::redesign::{
 };
 use crate::bot::ids::id_text;
 use crate::bot::transport::InteractionReply;
-use crate::domain::completion::RunEnds;
-use crate::domain::members::MemberProfile;
-use crate::domain::schedule::Run;
-use crate::domain::scheduler::Scope;
+use kanade_domain::completion::RunEnds;
+use kanade_domain::members::MemberProfile;
+use kanade_domain::schedule::Run;
+use kanade_domain::scheduler::Scope;
 
 fn empty_text(scope: &str) -> &'static str {
     match scope {

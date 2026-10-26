@@ -16,15 +16,15 @@ use kanade::chat::context::{
 };
 use kanade::chat::tools::REFUSED;
 use kanade::chat::tools::bundles::ToolOffer;
-use kanade::domain::notify::{
-    Claim, DeliveryJournal, DeliveryTarget, EffectKind, IntentContent, NotificationIntent, Receipt,
-};
-use kanade::domain::proposals::{CardDetails, CardPayload, ChangeKind, ProposalCardStore};
-use kanade::domain::scheduler::Clock;
 use kanade::extract::prompt::estimate_tokens;
 use kanade::infrastructure::llm::identity::PassthroughSession;
 use kanade::infrastructure::llm::{CALL_TOKEN_BUDGET, FakeAction, Message};
 use kanade::runtime::serve::chat::run_context;
+use kanade_domain::notify::{
+    Claim, DeliveryJournal, DeliveryTarget, EffectKind, IntentContent, NotificationIntent, Receipt,
+};
+use kanade_domain::proposals::{CardDetails, CardPayload, ChangeKind, ProposalCardStore};
+use kanade_domain::scheduler::Clock;
 use serde_json::{Value, json};
 
 use crate::common::utc;

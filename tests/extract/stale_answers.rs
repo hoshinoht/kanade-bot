@@ -3,15 +3,15 @@
 use std::sync::Arc;
 
 use chrono::{DateTime, NaiveTime, Utc, Weekday};
-use kanade::domain::history::Origin;
-use kanade::domain::model_log::{ModelLogStore, RescanStatus};
-use kanade::domain::schedule::{NewRun, RsvpState, Run, RunSource, RunStatus};
-use kanade::domain::scheduler::{ScheduleStore, Scope};
 use kanade::extract::matching::{TERMINAL_HINT, match_run};
 use kanade::extract::plan::{BurstInputs, Plan, plan_burst};
 use kanade::extract::rescan::{RescanRequest, Rescans};
 use kanade::extract::schema::{Extraction, parse_response};
 use kanade::extract::{Amendment, AmendmentKind};
+use kanade_domain::history::Origin;
+use kanade_domain::model_log::{ModelLogStore, RescanStatus};
+use kanade_domain::schedule::{NewRun, RsvpState, Run, RunSource, RunStatus};
+use kanade_domain::scheduler::{ScheduleStore, Scope};
 
 use crate::fakes::{
     ALVIN, CHANNEL, FakeHistory, KANON, MY, PRIYA, World, after, local, message, reply, zone,

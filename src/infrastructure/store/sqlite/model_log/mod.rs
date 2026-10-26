@@ -20,13 +20,13 @@ use sqlx::{Connection, Row};
 use super::SqliteStore;
 use super::rows;
 use super::schedule::store_error;
-use crate::domain::model_log::{
+use crate::infrastructure::store::Written;
+use kanade_domain::model_log::{
     AllowanceOverride, ChatFilter, ChatInteraction, ExtractionFilter, ExtractionLog, LogFacets,
     LogPage, MaskedTurn, MessageUpsert, ModelLogStore, PRUNE_BATCH, PruneCounts, ReadMessage,
     RescanJob, RewriteFacets, RewriteFilter, RewriteLog, RewriteLogStore, WatchedMessage,
 };
-use crate::domain::scheduler::StoreError;
-use crate::infrastructure::store::Written;
+use kanade_domain::scheduler::StoreError;
 
 fn corrupt(table: &str, detail: impl std::fmt::Display) -> StoreError {
     StoreError::Backend(format!("{table} row is unreadable: {detail}"))
@@ -41,7 +41,7 @@ fn optional_text(row: &SqliteRow, column: &str) -> Result<Option<String>, StoreE
 }
 
 fn read_instant(row: &SqliteRow, column: &str) -> Result<DateTime<Utc>, StoreError> {
-    crate::domain::time::from_iso(&text(row, column)?).map_err(|error| corrupt(column, error))
+    kanade_domain::time::from_iso(&text(row, column)?).map_err(|error| corrupt(column, error))
 }
 
 fn read_optional_instant(
@@ -49,7 +49,7 @@ fn read_optional_instant(
     column: &str,
 ) -> Result<Option<DateTime<Utc>>, StoreError> {
     optional_text(row, column)?
-        .map(|value| crate::domain::time::from_iso(&value).map_err(|error| corrupt(column, error)))
+        .map(|value| kanade_domain::time::from_iso(&value).map_err(|error| corrupt(column, error)))
         .transpose()
 }
 

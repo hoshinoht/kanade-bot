@@ -3,7 +3,7 @@
 //! opt-in and running-joke note.
 
 use super::fixtures::{refused, refused_for};
-use crate::domain::members::{
+use kanade_domain::members::{
     GatewayMember, Member, MemberProfile, MemberStore, PingLevel, PortalEdit,
 };
 

@@ -3,7 +3,7 @@
 //! public listener, cache the CDN image by hash (ETag/304), and answer the
 //! monogram when there is no avatar or the CDN fails.
 
-use kanade::domain::members::MemberStore;
+use kanade_domain::members::MemberStore;
 
 use crate::{
     reads::{PNG, Reads, avatar_hash},

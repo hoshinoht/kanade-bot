@@ -21,14 +21,12 @@ use crate::{
         error::ApiError,
         state::CharacterRoster,
     },
-    domain::{
-        catalog::BossTable,
-        characters::{
-            Character, CharacterRecord, PartySlot, Pick, PickChange, PickScope, PickWrite,
-        },
-        history::Actor,
-    },
     infrastructure::store::replays::KeyedWrite,
+};
+use kanade_domain::{
+    catalog::BossTable,
+    characters::{Character, CharacterRecord, PartySlot, Pick, PickChange, PickScope, PickWrite},
+    history::Actor,
 };
 
 /// What the slot is on, for the stale message.

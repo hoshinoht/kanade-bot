@@ -24,15 +24,15 @@ use super::cards::{self, CardArt, CardContext, CardKit, fetch_art};
 use super::debug::{TEST_PREFIX, test_mentions};
 use crate::bot::ids::parse_id;
 use crate::bot::transport::DiscordTransport;
-use crate::domain::attendance::{countdown_mentions, morning_mentions};
-use crate::domain::members::Directory;
-use crate::domain::notify::{
+use kanade_domain::attendance::{countdown_mentions, morning_mentions};
+use kanade_domain::members::Directory;
+use kanade_domain::notify::{
     DAY_OF_KIND, DeliveryJournal, DigestPhraseStore, IntentContent, PingKind, PostedCard,
     ReminderCardStore, WeeklyDigest, countdown_minutes, digest_inclusion, everyone_on,
     resolve_mentions,
 };
-use crate::domain::schedule::{SchedulePolicy, ScheduleSnapshot};
-use crate::domain::scheduler::{ScheduleStore, Scope};
+use kanade_domain::schedule::{SchedulePolicy, ScheduleSnapshot};
+use kanade_domain::scheduler::{ScheduleStore, Scope};
 
 pub type Now = Arc<dyn Fn() -> DateTime<Utc> + Send + Sync>;
 

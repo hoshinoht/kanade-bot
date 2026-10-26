@@ -11,8 +11,8 @@ use super::ToolWorld;
 use super::format::boss_label;
 use super::roster::{bossers, resolve_participant_text};
 use crate::chat::tools::{ToolContext, ToolError, ToolResult};
-use crate::domain::pytext::strip;
-use crate::domain::schedule::validate_participants as roster_gate;
+use kanade_domain::pytext::strip;
+use kanade_domain::schedule::validate_participants as roster_gate;
 
 static TOKENISH: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"\b[A-Za-z][A-Za-z0-9]+\b").expect("pattern"));

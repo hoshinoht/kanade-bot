@@ -26,26 +26,26 @@ use kanade::bot::transport::{
     RejectionKind, Step,
 };
 use kanade::chat::persona::NudgePurpose;
-use kanade::domain::drafts::{DraftStatus, ProposalSource, ProposalStore};
-use kanade::domain::history::Origin;
-use kanade::domain::history::{Actor, Surface};
-use kanade::domain::ids::IdGenerator;
-use kanade::domain::members::{Directory, Member};
-use kanade::domain::notify::{DeclineNoticeStore, DeliveryJournal};
-use kanade::domain::proposals::{Approver, ChangeKind, ProposalCardStore, ProposedChange};
-use kanade::domain::schedule::RsvpSource;
-use kanade::domain::schedule::{
-    NewRun, ReminderPolicy, RsvpState, RunSource, RunStatus, SchedulePolicy,
-};
-use kanade::domain::scheduler::{
-    ProposalRequest, ScheduleStore, SchedulerService, Scope, StoreRef, Supersede, SupersedeScope,
-};
 use kanade::extract::AmendmentKind;
 use kanade::extract::pipeline::{
     BacklogDrop, Card, CardEntry, ChatAnswer, Outbox, PostResult, Redirected, SelfServiceTip,
 };
 use kanade::extract::redirect::RedirectLink;
 use kanade::infrastructure::store::SqliteStore;
+use kanade_domain::drafts::{DraftStatus, ProposalSource, ProposalStore};
+use kanade_domain::history::Origin;
+use kanade_domain::history::{Actor, Surface};
+use kanade_domain::ids::IdGenerator;
+use kanade_domain::members::{Directory, Member};
+use kanade_domain::notify::{DeclineNoticeStore, DeliveryJournal};
+use kanade_domain::proposals::{Approver, ChangeKind, ProposalCardStore, ProposedChange};
+use kanade_domain::schedule::RsvpSource;
+use kanade_domain::schedule::{
+    NewRun, ReminderPolicy, RsvpState, RunSource, RunStatus, SchedulePolicy,
+};
+use kanade_domain::scheduler::{
+    ProposalRequest, ScheduleStore, SchedulerService, Scope, StoreRef, Supersede, SupersedeScope,
+};
 use twilight_model::application::command::Command;
 use twilight_model::id::{Id, marker::GuildMarker};
 
@@ -300,7 +300,7 @@ impl World {
         self.desk.on_reaction(message, user, answer, true).await
     }
 
-    async fn run_state(&self) -> kanade::domain::schedule::ScheduleSnapshot {
+    async fn run_state(&self) -> kanade_domain::schedule::ScheduleSnapshot {
         self.store
             .load(&Scope::Run(self.run.clone()))
             .await
@@ -494,7 +494,7 @@ async fn a_participant_approves_and_the_card_says_so() {
     assert_eq!(world.status(&id).await, DraftStatus::Merged);
     // The merge's notices were written to the outbox with it.
     let outbox = || async {
-        kanade::domain::notify::NoticeOutbox::outbox_notices(&*world.store)
+        kanade_domain::notify::NoticeOutbox::outbox_notices(&*world.store)
             .await
             .expect("outbox")
     };
@@ -502,7 +502,7 @@ async fn a_participant_approves_and_the_card_says_so() {
     assert!(!written.is_empty());
     assert!(
         written.iter().all(|row| {
-            row.source == kanade::domain::notify::change_source(approved[0].merge.seq)
+            row.source == kanade_domain::notify::change_source(approved[0].merge.seq)
         })
     );
     assert_eq!(

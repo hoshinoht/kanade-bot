@@ -5,14 +5,14 @@ use chrono::{DateTime, NaiveTime, Timelike, Utc, Weekday};
 use sqlx::Row;
 use sqlx::sqlite::SqliteRow;
 
-use crate::domain::attendance::{
+use kanade_domain::attendance::{
     AttendanceDefault, AttendanceRecord, PastRun, StandingAnswer, StatusPin,
 };
-use crate::domain::schedule::{
+use kanade_domain::schedule::{
     FixedRun, Reminder, Rsvp, RsvpSource, RsvpState, Run, RunSource, RunStatus,
 };
-use crate::domain::scheduler::StoreError;
-use crate::domain::time::{from_iso, to_iso};
+use kanade_domain::scheduler::StoreError;
+use kanade_domain::time::{from_iso, to_iso};
 
 pub(super) const FIXED_COLUMNS: &str = "id, owner_id, channel_id, bosses, weekday, time, \
      participants, note, attendance_default, owner_pinned";

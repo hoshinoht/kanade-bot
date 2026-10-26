@@ -2,7 +2,7 @@
 
 use serde_json::{Number, Value};
 
-use crate::domain::pytext::repr;
+use kanade_domain::pytext::repr;
 
 /// `type(value).__name__` after `json.loads`.
 pub(super) fn type_name(value: &Value) -> &'static str {

@@ -30,11 +30,11 @@ use crate::{
         listeners::Site,
         state::ApiState,
     },
-    domain::{
-        history::{Actor, Surface},
-        members::{MemberProfile, PortalEdit},
-    },
     infrastructure::store::replays::{PortalRecord, PortalWrite, ReplayScope},
+};
+use kanade_domain::{
+    history::{Actor, Surface},
+    members::{MemberProfile, PortalEdit},
 };
 
 type Reply = Result<Response, Refusal>;

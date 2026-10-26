@@ -1,0 +1,19 @@
+[package]
+name = "kanade-domain"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[features]
+# `for_tests` constructors and test-only reads for other crates' tests.
+test-support = []
+
+[dependencies]
+chrono.workspace = true
+chrono-tz.workspace = true
+ring.workspace = true
+serde = { workspace = true, features = ["derive"] }
+serde_json.workspace = true
+thiserror.workspace = true
+uuid.workspace = true

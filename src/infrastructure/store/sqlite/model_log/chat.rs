@@ -9,13 +9,13 @@ use super::{
     instant, json_text, optional_list, optional_signed, optional_text, read_instant, read_json,
     read_list, read_optional_list, read_optional_u64, read_u64, text,
 };
-use crate::domain::model_log::{
+use crate::infrastructure::store::sqlite::rows::{list as json_list, optional_instant};
+use crate::infrastructure::store::sqlite::schedule::store_error;
+use kanade_domain::model_log::{
     ChatFilter, ChatInteraction, ChatOutcome, ChatRound, LogCursor, LogFacets, LogPage, MaskedTurn,
     page_size,
 };
-use crate::domain::scheduler::StoreError;
-use crate::infrastructure::store::sqlite::rows::{list as json_list, optional_instant};
-use crate::infrastructure::store::sqlite::schedule::store_error;
+use kanade_domain::scheduler::StoreError;
 
 const COLUMNS: &str = "c.id, c.at, c.channel_id, c.message_id, c.member_id, c.question, \
     c.reply, c.outcome, c.error, c.clean_retry, c.withheld, c.guardrail, c.request_count, \

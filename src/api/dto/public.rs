@@ -32,14 +32,12 @@ use super::{
         run_time, tally,
     },
 };
-use crate::{
-    domain::{
-        completion::RunEnds,
-        history::Actor,
-        ownership::OwnerRequest,
-        schedule::{FixedRun, Run, ScheduleSnapshot},
-    },
-    infrastructure::llm::governor::{CallKind, GroupSnapshot},
+use crate::infrastructure::llm::governor::{CallKind, GroupSnapshot};
+use kanade_domain::{
+    completion::RunEnds,
+    history::Actor,
+    ownership::OwnerRequest,
+    schedule::{FixedRun, Run, ScheduleSnapshot},
 };
 
 #[derive(Serialize)]

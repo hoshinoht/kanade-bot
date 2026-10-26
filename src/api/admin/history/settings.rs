@@ -11,13 +11,13 @@ use crate::{
         error::ApiError,
         state::ApiState,
     },
-    domain::{
-        history::{Actor, ChangeFilter},
-        schedule::utc_instant,
-        settings::{SettingsChange, SettingsChangeQuery},
-        time::to_iso,
-    },
     infrastructure::store::snapshots::HistoryView,
+};
+use kanade_domain::{
+    history::{Actor, ChangeFilter},
+    schedule::utc_instant,
+    settings::{SettingsChange, SettingsChangeQuery},
+    time::to_iso,
 };
 
 /// The filter's actor and boss week; `None` for a run's log, which settings

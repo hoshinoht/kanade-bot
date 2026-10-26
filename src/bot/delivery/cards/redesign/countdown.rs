@@ -11,7 +11,7 @@ use super::portal::add_portal_button;
 use super::vocab::{
     AT_RISK_RED, SETTLED_GREEN, WAITING_AMBER, boss_labels, relative_time, short_time,
 };
-use crate::domain::schedule::{Run, RunStatus};
+use kanade_domain::schedule::{Run, RunStatus};
 
 pub fn countdown_card(
     ctx: &CardContext<'_>,

@@ -5,20 +5,20 @@
 
 use chrono::{DateTime, FixedOffset, NaiveTime, TimeDelta, TimeZone, Utc, Weekday};
 use chrono_tz::Asia::Kuala_Lumpur;
-use kanade::domain::attendance::{
+use kanade::infrastructure::store::SqliteStore;
+use kanade_domain::attendance::{
     AnswerState, AssumedSource, AttendanceDefault, AttendancePolicy, StatusLabel, Tally,
     snapshot_states, status_label,
 };
-use kanade::domain::history::{
+use kanade_domain::history::{
     Actor, Attribution, BlameTarget, ChangeHistory, Origin, PickMode, PickRefusal, Surface, blame,
 };
-use kanade::domain::members::{Directory, Member};
-use kanade::domain::schedule::{
+use kanade_domain::members::{Directory, Member};
+use kanade_domain::schedule::{
     EMOJI_NO, EMOJI_YES, FixedEdit, ReminderPolicy, RsvpSource, RsvpState, Run, RunStatus,
     ScheduleError, SchedulePolicy, StatusChange,
 };
-use kanade::domain::scheduler::{DraftError, PickError, SchedulerError, SchedulerService};
-use kanade::infrastructure::store::SqliteStore;
+use kanade_domain::scheduler::{DraftError, PickError, SchedulerError, SchedulerService};
 
 use crate::common::TestClock;
 use crate::support::{CountingIds, hm, snapshot, swap, weekly};

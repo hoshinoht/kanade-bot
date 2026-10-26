@@ -20,13 +20,13 @@ use crate::{
         ids::id_text,
         roster::{LiveRoster, RosterSink},
     },
-    domain::{
-        members::{GatewayMember, MemberProfile, MemberStore},
-        notify::{CardIndex, LookupError},
-        proposals::Approver,
-        scheduler::StoreError,
-    },
     infrastructure::store::SqliteStore,
+};
+use kanade_domain::{
+    members::{GatewayMember, MemberProfile, MemberStore},
+    notify::{CardIndex, LookupError},
+    proposals::Approver,
+    scheduler::StoreError,
 };
 
 /// Roster writes on the store, each followed by both realms' session re-checks.

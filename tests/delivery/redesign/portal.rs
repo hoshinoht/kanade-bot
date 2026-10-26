@@ -10,10 +10,10 @@ use kanade::bot::delivery::cards::redesign::{
 };
 use kanade::bot::delivery::cards::{self, Card, CardArt, CardContext, V2Kit, fetch_art};
 use kanade::bot::transport::{COMPONENTS_V2, OutgoingMessage, legacy_rows, v2_body_valid};
-use kanade::domain::catalog::BossTable;
-use kanade::domain::members::Roster;
-use kanade::domain::notify::IntentContent;
-use kanade::domain::schedule::ScheduleSnapshot;
+use kanade_domain::catalog::BossTable;
+use kanade_domain::members::Roster;
+use kanade_domain::notify::IntentContent;
+use kanade_domain::schedule::ScheduleSnapshot;
 use twilight_model::channel::message::component::{Button, ButtonStyle};
 use twilight_model::channel::message::{Component, MessageFlags};
 

@@ -13,11 +13,11 @@ use serde_json::json;
 
 use super::sweep::error_kind;
 use super::{CharacterData, log};
-use crate::domain::characters::{
+use kanade_domain::characters::{
     Character, CharacterChange, CharacterRecord, CharacterWrite, LEVELS, ign_key, parse_class,
 };
-use crate::domain::chardata::{Link, LinkStatus, Snapshot};
-use crate::domain::history::{Actor, Surface};
+use kanade_domain::chardata::{Link, LinkStatus, Snapshot};
+use kanade_domain::history::{Actor, Surface};
 
 /// The History actor of a roster write whose values come from NEXON.
 pub const NEXON_ACTOR: &str = "nexon";

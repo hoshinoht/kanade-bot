@@ -3,10 +3,10 @@
 
 use chrono::{DateTime, Utc};
 
-use crate::domain::drafts::{DraftScope, DraftStatus, NewDraft, StoredDraft};
-use crate::domain::notify::DeclineNotice;
-use crate::domain::scheduler::StoreError;
-use crate::domain::settings::keys;
+use kanade_domain::drafts::{DraftScope, DraftStatus, NewDraft, StoredDraft};
+use kanade_domain::notify::DeclineNotice;
+use kanade_domain::scheduler::StoreError;
+use kanade_domain::settings::keys;
 
 /// Nothing is written when any key is not an allowlisted setting.
 pub(crate) fn refuse_unknown_settings(rows: &[(String, String)]) -> Result<(), StoreError> {

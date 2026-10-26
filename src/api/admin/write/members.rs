@@ -31,12 +31,12 @@ use crate::{
         listeners::Site,
         state::ApiState,
     },
-    domain::{
-        members::{MemberProfile, PingLevel, PortalEdit},
-        scheduler::StoreError,
-        tease::{NoteProblem, note_problem},
-    },
     infrastructure::store::replays::{PortalRecord, PortalWrite, ReplayScope},
+};
+use kanade_domain::{
+    members::{MemberProfile, PingLevel, PortalEdit},
+    scheduler::StoreError,
+    tease::{NoteProblem, note_problem},
 };
 
 type Reply = Result<Response, Refusal>;

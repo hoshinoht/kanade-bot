@@ -41,11 +41,6 @@ use crate::{
         },
         persona::{CompiledPersona, PersonaStore},
     },
-    domain::notify::DeliveryJournal,
-    domain::{
-        art::ArtSource, catalog::BossTable, ids::RandomIds, members::MemberStore,
-        notify::DEFAULT_MAX_NOTICE_AGE, settings::RuntimeSettings,
-    },
     infrastructure::{
         files::BossArt,
         llm::{
@@ -58,6 +53,10 @@ use crate::{
     runtime::{config::SettingSeeds, error::Error},
 };
 use chrono::{DateTime, Utc};
+use kanade_domain::{
+    art::ArtSource, catalog::BossTable, ids::RandomIds, members::MemberStore,
+    notify::DEFAULT_MAX_NOTICE_AGE, notify::DeliveryJournal, settings::RuntimeSettings,
+};
 
 const STARTING: u8 = 0;
 const RUNNING: u8 = 1;
@@ -258,7 +257,7 @@ pub fn card_kit(
 /// startup) and the post channel and quiet mode from `settings`.
 pub fn delivery_config(
     instance_id: &str,
-    policy: crate::domain::schedule::SchedulePolicy,
+    policy: kanade_domain::schedule::SchedulePolicy,
     settings: &RuntimeSettings,
 ) -> DeliveryConfig {
     DeliveryConfig {

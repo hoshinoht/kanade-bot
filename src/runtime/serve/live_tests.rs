@@ -41,25 +41,25 @@ use crate::{
         roster::LiveRoster,
         transport::{Call, FakeDiscord, Op, RejectionKind, Step},
     },
-    domain::{
-        drafts::{DraftStatus, ProposalSource, ProposalStore},
-        history::Origin,
-        ids::RandomIds,
-        members::{GatewayMember, MemberStore, Roster},
-        notify::{
-            Claim, DeliveryJournal, DeliverySettings, DeliveryTarget, EffectKind, IntentContent,
-            NoticeOutbox, NotificationIntent, Receipt, WeekReset, plan_notice,
-        },
-        proposals::{Approver, ChangeKind, ProposedChange},
-        schedule::{NewRun, RsvpState, RunSource, RunStatus, SchedulePolicy, StatusChange},
-        scheduler::{ProposalRequest, ScheduleStore, SchedulerService, Scope, StoreRef, Supersede},
-    },
     extract::{
         AmendmentKind,
         pipeline::{Card, CardEntry, PostResult},
     },
     infrastructure::store::SqliteStore,
     runtime::{application::HealthProbe, config::ServeConfig},
+};
+use kanade_domain::{
+    drafts::{DraftStatus, ProposalSource, ProposalStore},
+    history::Origin,
+    ids::RandomIds,
+    members::{GatewayMember, MemberStore, Roster},
+    notify::{
+        Claim, DeliveryJournal, DeliverySettings, DeliveryTarget, EffectKind, IntentContent,
+        NoticeOutbox, NotificationIntent, Receipt, WeekReset, plan_notice,
+    },
+    proposals::{Approver, ChangeKind, ProposedChange},
+    schedule::{NewRun, RsvpState, RunSource, RunStatus, SchedulePolicy, StatusChange},
+    scheduler::{ProposalRequest, ScheduleStore, SchedulerService, Scope, StoreRef, Supersede},
 };
 
 const GUILD: u64 = 900;
@@ -1050,7 +1050,7 @@ async fn a_check_on_a_proposal_card_is_approved_through_the_desk_not_via_portal(
         let at = now + chrono::Duration::hours(30);
         let run = create_run(&ctx.store, &policy, now, HOME_C, at).await;
         let mut roster = Roster::new();
-        roster.upsert(crate::domain::members::Member {
+        roster.upsert(kanade_domain::members::Member {
             user_id: ALICE.to_string(),
             display_name: Some("alice".into()),
             has_role: true,
@@ -1120,7 +1120,7 @@ async fn a_check_on_a_proposal_card_is_approved_through_the_desk_not_via_portal(
             .await;
         assert_eq!(posted, PostResult::Posted);
         drop(desk);
-        let message = crate::domain::proposals::ProposalCardStore::load_cards(
+        let message = kanade_domain::proposals::ProposalCardStore::load_cards(
             &*ctx.store,
             std::slice::from_ref(&proposal),
         )
@@ -1229,9 +1229,8 @@ async fn a_disallowed_intents_close_keeps_serving_http_without_reconnecting() {
 async fn serve_prunes_model_logs_past_retention_and_stops_the_task_on_shutdown() {
     use sqlx::{ConnectOptions, Connection, sqlite::SqliteConnectOptions};
 
-    use crate::{
-        domain::model_log::ModelLogStore, infrastructure::store::model_log_conformance::extraction,
-    };
+    use crate::infrastructure::store::model_log_conformance::extraction;
+    use kanade_domain::model_log::ModelLogStore;
 
     let harness = Harness::new();
     let now = auth::system_now() + chrono::TimeDelta::days(400);

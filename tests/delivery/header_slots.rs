@@ -11,13 +11,13 @@ use kanade::bot::delivery::cards::{
     CardContext, CardKit, DifficultyMarks, HeaderSwitches, resolve_heading,
 };
 use kanade::bot::delivery::{EstimateFuture, IgnFuture, PartyEstimates, RunEstimate};
-use kanade::domain::catalog::BossTable;
-use kanade::domain::chardata::{Carrier, PartyShares};
-use kanade::domain::notify::{DedupeKey, DeliveryTarget, IntentContent, ReminderCardStore};
-use kanade::domain::schedule::{Run, ScheduleSnapshot};
-use kanade::domain::scheduler::{ScheduleStore, Scope};
 use kanade::infrastructure::scouter::CarrierOwner;
 use kanade::infrastructure::store::SqliteStore;
+use kanade_domain::catalog::BossTable;
+use kanade_domain::chardata::{Carrier, PartyShares};
+use kanade_domain::notify::{DedupeKey, DeliveryTarget, IntentContent, ReminderCardStore};
+use kanade_domain::schedule::{Run, ScheduleSnapshot};
+use kanade_domain::scheduler::{ScheduleStore, Scope};
 
 use crate::cards::{
     Script, Scripted, before_due, catalog, created, edits, kalos_countdown, pregen, refresher,

@@ -14,9 +14,9 @@ use kanade::bot::commands::{
 use kanade::bot::delivery::{ManualRequest, ManualStart};
 use kanade::bot::transport::{Call, Op, RejectionKind, Step};
 use kanade::chat::pilot::{AllowanceSnapshot, MemberUsage, PoolUsage};
-use kanade::domain::model_log::{RescanJob, RescanStatus};
-use kanade::domain::schedule::RunStatus;
 use kanade::extract::rescan::RescanRequest;
+use kanade_domain::model_log::{RescanJob, RescanStatus};
+use kanade_domain::schedule::RunStatus;
 
 use super::super::support::{ADMIN_ROLE, BOSSING_ROLE};
 use super::{ALICE, BOB, DAN, KALOS, LOUNGE, Ports, R_KALOS, Slash, now, opt, sub};

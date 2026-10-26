@@ -5,9 +5,9 @@
 
 use chrono::{DateTime, Utc};
 
-use crate::domain::history::{ChangeFilter, ChangeRecord, ChangeRef};
-use crate::domain::scheduler::StoreError;
-use crate::domain::settings::{SettingsChange, SettingsChangeQuery};
+use kanade_domain::history::{ChangeFilter, ChangeRecord, ChangeRef};
+use kanade_domain::scheduler::StoreError;
+use kanade_domain::settings::{SettingsChange, SettingsChangeQuery};
 
 /// One History page to read.
 #[derive(Clone, Debug, PartialEq, Eq)]

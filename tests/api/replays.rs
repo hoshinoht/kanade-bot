@@ -6,8 +6,8 @@
 //! expired rows are pruned.
 
 use chrono::{DateTime, TimeDelta, TimeZone, Utc};
-use kanade::domain::settings::{SettingsChangeQuery, SettingsStore};
 use kanade::infrastructure::store::replays::{REPLAY_TTL, ReplayScope, ReplayStore};
+use kanade_domain::settings::{SettingsChangeQuery, SettingsStore};
 use serde_json::{Value, json};
 use sqlx::{ConnectOptions, Connection, sqlite::SqliteConnectOptions};
 
@@ -250,7 +250,7 @@ async fn expired_replays_are_pruned() {
     );
 }
 
-async fn member_records(reads: &Reads) -> Vec<kanade::domain::settings::SettingsChange> {
+async fn member_records(reads: &Reads) -> Vec<kanade_domain::settings::SettingsChange> {
     reads
         .store
         .settings_changes(SettingsChangeQuery::default())
@@ -266,7 +266,7 @@ async fn member_records(reads: &Reads) -> Vec<kanade::domain::settings::Settings
 /// writes do.
 #[tokio::test]
 async fn member_edits_are_recorded_and_replay_across_a_restart() {
-    use kanade::domain::members::{MemberStore, PingLevel};
+    use kanade_domain::members::{MemberStore, PingLevel};
 
     let mut reads = Reads::new().await;
     let alice = "/api/admin/members/1001";
@@ -287,7 +287,7 @@ async fn member_edits_are_recorded_and_replay_across_a_restart() {
         .store
         .apply_portal(
             "1001",
-            kanade::domain::members::PortalEdit {
+            kanade_domain::members::PortalEdit {
                 ping_level: Some(PingLevel::All),
                 ..Default::default()
             },

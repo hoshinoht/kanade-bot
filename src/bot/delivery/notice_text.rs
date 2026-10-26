@@ -17,9 +17,9 @@ use super::cards::redesign::{self, NoticeLook};
 use crate::bot::cards::format::Audience;
 use crate::bot::mentions;
 use crate::bot::transport::OutgoingMessage;
-use crate::domain::members::Directory;
-use crate::domain::notify::{NotificationIntent, PingKind, display_names, resolve_mentions};
-use crate::domain::schedule::{Notice, ScheduleSnapshot};
+use kanade_domain::members::Directory;
+use kanade_domain::notify::{NotificationIntent, PingKind, display_names, resolve_mentions};
+use kanade_domain::schedule::{Notice, ScheduleSnapshot};
 
 /// v4 `pings.audience(repo, listed, kind)`.
 fn audience(notice: &Notice, members: &dyn Directory) -> Audience {
@@ -68,9 +68,9 @@ mod tests {
     use chrono::{NaiveTime, TimeZone, Utc, Weekday};
 
     use super::*;
-    use crate::domain::members::{Member, PingLevel, Roster};
-    use crate::domain::notify::{EffectKind, IntentContent};
-    use crate::domain::schedule::{FixedField, FixedRun, NoticeChange, Run, RunSource, RunStatus};
+    use kanade_domain::members::{Member, PingLevel, Roster};
+    use kanade_domain::notify::{EffectKind, IntentContent};
+    use kanade_domain::schedule::{FixedField, FixedRun, NoticeChange, Run, RunSource, RunStatus};
 
     fn zone() -> Tz {
         chrono_tz::Asia::Kuala_Lumpur

@@ -15,12 +15,12 @@ use super::inspect::deadline;
 use super::{Publisher, SEARCH_DEPTH, SEARCHES, payload};
 use crate::bot::ids::{id_text, parse_id};
 use crate::bot::transport::{DiscordTransport, HistoryPage, Outcome};
-use crate::domain::guides::{
+use kanade_domain::guides::{
     Guide, GuideStore, Inspection, OpOutcome, PlanOp, Publish, PublishOp, PublishState,
     PublishedSlot, RenderedSlot, SlotEffect, SlotState, StopReason, UploadRef,
 };
-use crate::domain::notify::DeliveryJournal;
-use crate::domain::scheduler::StoreError;
+use kanade_domain::notify::DeliveryJournal;
+use kanade_domain::scheduler::StoreError;
 
 /// What a search found.
 #[derive(Clone, Debug, PartialEq, Eq)]

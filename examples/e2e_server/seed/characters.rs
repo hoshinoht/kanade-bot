@@ -3,7 +3,7 @@
 //! (mock `character_data::seed`), all invented.
 
 use chrono::{DateTime, Duration, Utc};
-use kanade::domain::{
+use kanade_domain::{
     characters::{
         Character, CharacterChange, CharacterRecord, CharacterRole, CharacterStore, PickChange,
         PickScope,
@@ -244,7 +244,7 @@ async fn picks(seed: &Seed<'_>) -> Result<(), Fail> {
 }
 
 async fn put_link(
-    store: &dyn kanade::domain::chardata::CharDataStore,
+    store: &dyn kanade_domain::chardata::CharDataStore,
     link: Link,
     expected: u32,
 ) -> Result<(), Fail> {
@@ -256,7 +256,7 @@ async fn put_link(
 
 async fn links(
     seed: &Seed<'_>,
-    store: &dyn kanade::domain::chardata::CharDataStore,
+    store: &dyn kanade_domain::chardata::CharDataStore,
 ) -> Result<(), Fail> {
     // AsahiDK: waiting 20 minutes for Asahi to confirm (the sweeper's
     // re-pend after a new notice; admins' links are active at once).

@@ -7,13 +7,13 @@ use std::collections::BTreeMap;
 use chrono::{DateTime, Datelike, Timelike, Utc};
 use kanade::{
     bot::transport::{Call, FakeDiscord, Outcome},
-    domain::{
-        drafts::ProposalStore,
-        model_log::{ChatFilter, ChatInteraction, ExtractionFilter, ModelLogStore},
-        proposals::ProposalCardStore,
-        scheduler::{ScheduleStore, Scope},
-    },
     infrastructure::store::SqliteStore,
+};
+use kanade_domain::{
+    drafts::ProposalStore,
+    model_log::{ChatFilter, ChatInteraction, ExtractionFilter, ModelLogStore},
+    proposals::ProposalCardStore,
+    scheduler::{ScheduleStore, Scope},
 };
 use serde_json::{Value, json};
 use twilight_model::channel::message::Embed;

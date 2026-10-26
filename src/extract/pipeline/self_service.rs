@@ -8,11 +8,11 @@ use super::call::Kept;
 use super::extractor::Extractor;
 use super::ports::{Outbox, Proposer, SelfServiceTip};
 use crate::chat::nudge::{NudgeFacts, mood_for};
-use crate::domain::model_log::ModelLogStore;
-use crate::domain::proposals::{Payload, ProposedChange};
-use crate::domain::scheduler::ScheduleStore;
 use crate::extract::redirect::{RedirectFacts, RedirectLink, SelfServiceMode, plan};
 use crate::infrastructure::llm::LlmProvider;
+use kanade_domain::model_log::ModelLogStore;
+use kanade_domain::proposals::{Payload, ProposedChange};
+use kanade_domain::scheduler::ScheduleStore;
 
 /// A link that will be posted, and whether its card stays.
 #[derive(Clone, Debug)]

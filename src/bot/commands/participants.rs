@@ -3,7 +3,7 @@
 //! scheduler validates the result again on write.
 
 use crate::chat::tools::read::roster::{bossers, resolve_participant_text};
-use crate::domain::members::{Member, MemberProfile};
+use kanade_domain::members::{Member, MemberProfile};
 
 use super::text::mention;
 

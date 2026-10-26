@@ -10,7 +10,7 @@ use kanade::api::state::{ChannelEntry, ChannelList};
 use kanade::bot::events::Router;
 use kanade::bot::guild_cache::{GuildCache, WatchList};
 use kanade::chat::gate::{ChannelDirectory, ChannelInfo};
-use kanade::domain::notify::ChannelDirectory as PostDirectory;
+use kanade_domain::notify::ChannelDirectory as PostDirectory;
 
 use super::support::*;
 

@@ -7,14 +7,12 @@ use std::collections::BTreeSet;
 use serde::Deserialize;
 
 use super::super::write::invalid_body;
-use crate::{
-    api::admin::write::{Refusal, strict_time},
-    domain::{
-        catalog::BossTable,
-        requests::{RequestSpec, RequestType, Subject, is_hidden_char},
-        schedule::{FixedEdit, NewFixedRun},
-        weeks::weekday_from_index,
-    },
+use crate::api::admin::write::{Refusal, strict_time};
+use kanade_domain::{
+    catalog::BossTable,
+    requests::{RequestSpec, RequestType, Subject, is_hidden_char},
+    schedule::{FixedEdit, NewFixedRun},
+    weeks::weekday_from_index,
 };
 
 /// The longest note, in characters: it is stored as the request's title.

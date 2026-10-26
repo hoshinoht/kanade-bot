@@ -14,9 +14,9 @@ use super::options::Args;
 use crate::api::rescan::{RescanRunner, RescanView};
 use crate::bot::ids::id_text;
 use crate::bot::transport::InteractionReply;
-use crate::domain::ids::short_id;
 use crate::extract::rescan::{RescanError, RescanRequest};
 use crate::extract::window::{DEFAULT_WINDOW, WINDOWS};
+use kanade_domain::ids::short_id;
 
 /// Until the extractor's rescan runner is wired into `serve`.
 pub const RESCAN_UNAVAILABLE: &str = "Rescans aren't available right now.";

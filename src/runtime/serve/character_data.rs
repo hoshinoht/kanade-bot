@@ -35,7 +35,6 @@ use self::upcoming::StoreParties;
 use super::{api::Composition, store::create_private_dir};
 use crate::{
     api::auth::Clock,
-    domain::chardata::{CharDataStore, next_batch},
     infrastructure::{
         character_data::{CharacterData, RosterSide, Timing},
         nexon::{ApiKey, NexonClient},
@@ -47,6 +46,7 @@ use crate::{
         error::Error,
     },
 };
+use kanade_domain::chardata::{CharDataStore, next_batch};
 
 pub(super) const SWEEP_EVERY: Duration = Duration::from_secs(60 * 60);
 /// The shortest wait before a retry pass, so a retry time that cannot move

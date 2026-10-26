@@ -232,7 +232,7 @@ async fn absent_reasoning_stays_null_and_text_only_stays_unknown() {
 
 #[tokio::test(start_paused = true)]
 async fn a_truncated_attempt_is_not_appended_again_and_token_sums_stay_storable() {
-    use kanade::domain::model_log::{REASONING_CAP, REASONING_TRUNCATED, capped_reasoning};
+    use kanade_domain::model_log::{REASONING_CAP, REASONING_TRUNCATED, capped_reasoning};
 
     let text = "奏".repeat(REASONING_CAP);
     let FakeAction::Response(mut first) = answer("not json", None) else {
@@ -303,8 +303,8 @@ async fn a_failed_sent_attempt_keeps_only_the_estimate() {
 
 #[tokio::test(start_paused = true)]
 async fn a_reply_cut_off_at_the_token_limit_logs_its_counts_without_an_answer_retry() {
-    use kanade::domain::model_log::ExtractionOutcome;
     use kanade::extract::prompt::CONTEXT_RESERVE;
+    use kanade_domain::model_log::ExtractionOutcome;
 
     let limit = u32::try_from(CONTEXT_RESERVE).expect("small constant");
     let FakeAction::Response(mut cut) = answer(r#"{"amendments": ["#, Some((40, limit))) else {

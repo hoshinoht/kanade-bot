@@ -12,15 +12,13 @@ use std::{
 
 use chrono::{DateTime, Duration, NaiveTime, Utc, Weekday};
 use chrono_tz::Tz;
-use kanade::{
-    domain::{
-        history::{Actor, Origin, Surface},
-        ids::RandomIds,
-        schedule::{NewRun, RunSource, RunStatus, SchedulePolicy, utc_instant},
-        scheduler::{Clock, SchedulerService},
-        settings::RuntimeSettings,
-    },
-    infrastructure::store::{SqliteStore, SqliteStoreConfig},
+use kanade::infrastructure::store::{SqliteStore, SqliteStoreConfig};
+use kanade_domain::{
+    history::{Actor, Origin, Surface},
+    ids::RandomIds,
+    schedule::{NewRun, RunSource, RunStatus, SchedulePolicy, utc_instant},
+    scheduler::{Clock, SchedulerService},
+    settings::RuntimeSettings,
 };
 
 #[derive(Debug)]

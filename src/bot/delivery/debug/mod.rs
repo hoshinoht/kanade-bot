@@ -49,16 +49,16 @@ use crate::bot::commands::{
 use crate::bot::ids::parse_id;
 use crate::bot::mentions;
 use crate::bot::transport::{DiscordTransport, Outcome, OutgoingMessage, RejectionKind};
-use crate::domain::members::Directory;
-use crate::domain::model_log::RewriteStage;
-use crate::domain::notify::{
+use kanade_domain::members::Directory;
+use kanade_domain::model_log::RewriteStage;
+use kanade_domain::notify::{
     ChannelChoice, ChannelDirectory, DebugCardStore, DeliveryJournal, DeliveryTarget, EffectKind,
     IntentContent, NotificationIntent, PingKind, PlannedSend, SendDisposition, WeekReset,
     choose_channel, digest_inclusion, resolve_mentions, sandbox_kind,
 };
-use crate::domain::schedule::{Run, SchedulePolicy, ScheduleSnapshot};
-use crate::domain::scheduler::{ScheduleStore, Scope};
-use crate::domain::time::to_iso;
+use kanade_domain::schedule::{Run, SchedulePolicy, ScheduleSnapshot};
+use kanade_domain::scheduler::{ScheduleStore, Scope};
+use kanade_domain::time::to_iso;
 
 /// v4 `TEST_PREFIX`.
 pub const TEST_PREFIX: &str = "🧪 TEST — ";

@@ -10,15 +10,15 @@ use super::tick::{Delivery, DeliveryError, TickLease};
 use crate::bot::ids::parse_id;
 use crate::bot::mentions::allow_users;
 use crate::bot::transport::{DiscordTransport, Outcome, OutgoingMessage, RejectionKind};
-use crate::domain::drafts::ProposalStore;
-use crate::domain::history::Checkpoints;
-use crate::domain::members::Directory;
-use crate::domain::notify::{
+use kanade_domain::drafts::ProposalStore;
+use kanade_domain::history::Checkpoints;
+use kanade_domain::members::Directory;
+use kanade_domain::notify::{
     DeclineNotice, DeclineNoticeStore, DeliveryJournal, DeliveryTarget, EffectKind, IntentContent,
     NotificationIntent, PlannedSend, SendDisposition, audience,
 };
-use crate::domain::notify::{PingKind, ReminderCardStore};
-use crate::domain::scheduler::{IdSource, ScheduleStore, Scope};
+use kanade_domain::notify::{PingKind, ReminderCardStore};
+use kanade_domain::scheduler::{IdSource, ScheduleStore, Scope};
 
 /// What the recovery drain did for decline notices.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -31,7 +31,7 @@ pub struct DeclineReport {
 /// tags the rest of the party in a `for …` subtext line.
 fn render_notice(
     notice: &DeclineNotice,
-    run: &crate::domain::schedule::Run,
+    run: &kanade_domain::schedule::Run,
     members: &dyn Directory,
     kit: &CardKit,
 ) -> (String, Vec<String>) {
@@ -72,7 +72,7 @@ where
     S: ScheduleStore
         + DeliveryJournal
         + DeclineNoticeStore
-        + crate::domain::notify::NoticeOutbox
+        + kanade_domain::notify::NoticeOutbox
         + Checkpoints
         + ProposalStore
         + ReminderCardStore
@@ -99,7 +99,7 @@ where
     ) -> Result<DeclineReport, DeliveryError> {
         let rows = self
             .store
-            .pending_decline_notices(crate::domain::notify::MAX_PENDING_DECLINE_NOTICES)
+            .pending_decline_notices(kanade_domain::notify::MAX_PENDING_DECLINE_NOTICES)
             .await?;
         let snapshot = self.store.load(&Scope::All).await?;
         let mut report = DeclineReport::default();

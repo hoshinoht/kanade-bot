@@ -11,10 +11,10 @@ use chrono_tz::Tz;
 use twilight_model::channel::message::embed::{EmbedField, EmbedFooter};
 use twilight_model::channel::message::{Component, Embed};
 
-use crate::domain::attendance::{AnswerState, snapshot_states};
-use crate::domain::catalog::BossTable;
-use crate::domain::ids::short_id;
-use crate::domain::schedule::{Run, RunStatus, ScheduleSnapshot};
+use kanade_domain::attendance::{AnswerState, snapshot_states};
+use kanade_domain::catalog::BossTable;
+use kanade_domain::ids::short_id;
+use kanade_domain::schedule::{Run, RunStatus, ScheduleSnapshot};
 
 use super::v2::{container, separator, text};
 use super::vocab::{DifficultyMarks, INK_BLUE, boss_labels, subtext};
@@ -317,7 +317,7 @@ mod tests {
             bosses: vec!["Kalos".into()],
             participants: vec!["1001".into()],
             status: RunStatus::Planned,
-            source: crate::domain::schedule::RunSource::Amend,
+            source: kanade_domain::schedule::RunSource::Amend,
             attendance: Vec::new(),
             status_pin: None,
         };

@@ -6,12 +6,12 @@ use chrono::{DateTime, TimeZone, Utc};
 use twilight_model::id::Id;
 
 use kanade::bot::events::{BotEvent, ReactionRouter, RouteError, RsvpAnswer, rsvp_reaction};
-use kanade::domain::ids::RandomIds;
-use kanade::domain::members::{Member, Roster};
-use kanade::domain::notify::{CardIndex, DeclineNoticeStore, LookupError};
-use kanade::domain::schedule::{NewRun, RsvpState, RunSource, RunStatus};
-use kanade::domain::scheduler::{Clock, SchedulerService};
 use kanade::infrastructure::store::SqliteStore;
+use kanade_domain::ids::RandomIds;
+use kanade_domain::members::{Member, Roster};
+use kanade_domain::notify::{CardIndex, DeclineNoticeStore, LookupError};
+use kanade_domain::schedule::{NewRun, RsvpState, RunSource, RunStatus};
+use kanade_domain::scheduler::{Clock, SchedulerService};
 
 use super::support::*;
 
@@ -142,7 +142,7 @@ async fn service_with_run(participants: &[u64]) -> (Service, String) {
         FixedClock(Utc.with_ymd_and_hms(2026, 9, 25, 12, 0, 0).unwrap()),
     );
     let run_id = service
-        .as_origin(kanade::domain::history::Origin::for_tests())
+        .as_origin(kanade_domain::history::Origin::for_tests())
         .create_run(NewRun {
             fixed_run_id: None,
             channel_id: Some(CHANNEL.to_string()),

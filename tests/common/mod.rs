@@ -7,14 +7,14 @@ use std::sync::{Arc, Mutex};
 
 use chrono::{DateTime, FixedOffset, NaiveTime, Utc};
 use chrono_tz::Tz;
-use kanade::domain::{
+use kanade::infrastructure::store::SqliteStore;
+use kanade_domain::{
     ids::IdGenerator,
     schedule::ScheduleSnapshot,
     scheduler::{Clock, ScheduleStore, SchedulerService, Scope},
     time::{IsoDateTime, to_iso},
     weeks,
 };
-use kanade::infrastructure::store::SqliteStore;
 use serde_json::Value;
 
 pub type Service<S = SqliteStore> = SchedulerService<S, SeqIds, TestClock>;

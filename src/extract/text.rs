@@ -8,7 +8,7 @@
 
 use regex::Regex;
 
-use crate::domain::pytext::decimal;
+use kanade_domain::pytext::decimal;
 
 pub(super) const SPACE: &str = r"[\s\x1C-\x1F]";
 pub(super) const NON_SPACE: &str = r"[^\s\x1C-\x1F]";

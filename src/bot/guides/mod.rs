@@ -4,7 +4,7 @@
 //! runs the confirmed plan only if its hash still matches, one op at a time.
 //!
 //! - Creates are journalled by a durable `guide-post:<op uuid>` source
-//!   ([`EffectKind::GuideSlot`](crate::domain::notify::EffectKind)) through
+//!   ([`EffectKind::GuideSlot`](kanade_domain::notify::EffectKind)) through
 //!   the delivery [`Executor`](crate::bot::delivery::Executor), `SILENT`,
 //!   mentioning nobody, with the slot's files. An unconfirmed create is
 //!   never sent again: the channel's recent history is searched for it
@@ -39,9 +39,9 @@ use crate::api::state::GuidePort;
 use crate::bot::chardata::SelfId;
 use crate::bot::delivery::AlertThrottle;
 use crate::bot::transport::DiscordTransport;
-use crate::domain::catalog::BossTable;
-use crate::domain::guides::{GuideSources, GuideStore, Inspection, PublishedSlot};
-use crate::domain::notify::DeliveryJournal;
+use kanade_domain::catalog::BossTable;
+use kanade_domain::guides::{GuideSources, GuideStore, Inspection, PublishedSlot};
+use kanade_domain::notify::DeliveryJournal;
 
 pub use inspect::{ChannelView, GuideChannels};
 

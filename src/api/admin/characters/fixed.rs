@@ -31,25 +31,21 @@ use super::{
     },
     write::record,
 };
-use crate::{
-    api::{
-        admin::{
-            context::weeks,
-            write::{Body, Refusal, state},
-        },
-        auth::AdminSession,
-        dto::characters::{RunCharacterSlot, TimingCharacters, slot},
-        error::ApiError,
-        listeners::Site,
-        state::{ApiState, CharacterRoster},
+use crate::api::{
+    admin::{
+        context::weeks,
+        write::{Body, Refusal, state},
     },
-    domain::{
-        catalog::BossTable,
-        characters::{
-            Character, PartySlot, Pick, PickScope, StoredPicks, pick_version, timing_slots,
-        },
-        schedule::FixedRun,
-    },
+    auth::AdminSession,
+    dto::characters::{RunCharacterSlot, TimingCharacters, slot},
+    error::ApiError,
+    listeners::Site,
+    state::{ApiState, CharacterRoster},
+};
+use kanade_domain::{
+    catalog::BossTable,
+    characters::{Character, PartySlot, Pick, PickScope, StoredPicks, pick_version, timing_slots},
+    schedule::FixedRun,
 };
 
 /// The roster's store while both modules are on; the generic `404`

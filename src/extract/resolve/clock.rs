@@ -3,8 +3,8 @@ use std::sync::LazyLock;
 use chrono::NaiveTime;
 use regex::{Captures, Regex};
 
-use crate::domain::pytext::strip;
 use crate::extract::text::{SPACE, int, pattern, split_tail};
+use kanade_domain::pytext::strip;
 
 /// Bare hours at or below this are read as pm: this guild's runs are evening
 /// runs, so `930`, `10` and `at 11` mean 21:30, 22:00 and 23:00. A four-digit

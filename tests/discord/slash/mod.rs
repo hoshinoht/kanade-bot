@@ -36,17 +36,17 @@ use kanade::bot::commands::{
 };
 use kanade::bot::transport::{Call, FakeDiscord, InteractionReply, Outcome};
 use kanade::chat::persona::{PersonaRoot, PersonaSnapshot, PersonaStore};
-use kanade::domain::attendance::AttendanceDefault;
-use kanade::domain::catalog::{BossSpec, BossTable, CatalogSpec, DifficultySpec};
-use kanade::domain::history::{Actor, ChangeMeta, Origin, Surface};
-use kanade::domain::ids::RandomIds;
-use kanade::domain::members::{Member, MemberProfile, MemberStore, PingLevel};
-use kanade::domain::schedule::{
+use kanade::infrastructure::store::{SqliteStore, SqliteStoreConfig};
+use kanade_domain::attendance::AttendanceDefault;
+use kanade_domain::catalog::{BossSpec, BossTable, CatalogSpec, DifficultySpec};
+use kanade_domain::history::{Actor, ChangeMeta, Origin, Surface};
+use kanade_domain::ids::RandomIds;
+use kanade_domain::members::{Member, MemberProfile, MemberStore, PingLevel};
+use kanade_domain::schedule::{
     Change, ChangeSet, FixedRun, ReminderPolicy, Run, RunSource, RunStatus, SchedulePolicy,
 };
-use kanade::domain::scheduler::{ScheduleStore, SchedulerService, Scope};
-use kanade::domain::settings::RuntimeSettings;
-use kanade::infrastructure::store::{SqliteStore, SqliteStoreConfig};
+use kanade_domain::scheduler::{ScheduleStore, SchedulerService, Scope};
+use kanade_domain::settings::RuntimeSettings;
 
 use super::support::{ADMIN_ROLE, BOSSING_ROLE, GUILD, OWNER, guild, parse, role, user};
 

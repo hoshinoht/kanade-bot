@@ -7,8 +7,8 @@ use std::collections::BTreeMap;
 use chrono_tz::Tz;
 
 use crate::bot::commands::text::{WEEKDAY_NAMES, local_day, local_time, mention};
-use crate::domain::proposals::{CardDetails, ChangeKind};
-use crate::domain::schedule::Run;
+use kanade_domain::proposals::{CardDetails, ChangeKind};
+use kanade_domain::schedule::Run;
 
 pub const COLOUR_PROPOSAL: u32 = 0xEB459E;
 pub const COLOUR_SUGGESTION: u32 = 0xFAA61A;
@@ -97,7 +97,7 @@ pub(crate) fn weekday_name(weekday: u8) -> &'static str {
     WEEKDAY_NAMES[usize::from(weekday) % 7]
 }
 
-crate::domain::spelled! {
+kanade_domain::spelled! {
     /// Which mark a card gets.
     CardKind {
         Proposal => "proposal",

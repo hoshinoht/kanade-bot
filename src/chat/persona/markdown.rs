@@ -2,8 +2,8 @@
 //! the `# Persona:` name and `Good` example extraction. Hand-written matchers
 //! mirror the v4 regular expressions.
 
-use crate::domain::pytext::is_space;
-pub(crate) use crate::domain::pytext::strip;
+use kanade_domain::pytext::is_space;
+pub(crate) use kanade_domain::pytext::strip;
 
 fn strip_end(text: &str) -> &str {
     text.trim_end_matches(is_space)

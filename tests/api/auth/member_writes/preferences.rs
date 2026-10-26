@@ -3,7 +3,7 @@
 //! is switched on; never another member's, the note never writable, keyed
 //! and bucketed as the other member writes, and allowed while teasing is off.
 
-use kanade::domain::{
+use kanade_domain::{
     history::{Actor, Surface},
     members::MemberStore,
     settings::{SettingsChangeQuery, SettingsStore},

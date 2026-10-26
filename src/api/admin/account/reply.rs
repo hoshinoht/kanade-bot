@@ -12,8 +12,8 @@ use crate::{
     chat::persona::{
         ProfileId, ProfileQuery, ProfileSet, ProfileSource, RoleAssignment, RoleId, resolve_profile,
     },
-    domain::members::MemberProfile,
 };
+use kanade_domain::members::MemberProfile;
 
 fn named(
     profiles: &ProfileSet,

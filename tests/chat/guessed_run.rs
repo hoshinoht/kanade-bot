@@ -6,8 +6,8 @@
 
 use kanade::chat::answer::Generation;
 use kanade::chat::tools::REFUSED;
-use kanade::domain::schedule::{Change, Run, RunSource, RunStatus};
 use kanade::infrastructure::llm::{FakeAction, Message};
+use kanade_domain::schedule::{Change, Run, RunSource, RunStatus};
 use serde_json::{Value, json};
 
 use crate::common::utc;

@@ -199,7 +199,7 @@ fn carry_time_across_moves(candidates: &mut [Amendment]) {
         if amendment.kind != AmendmentKind::Move {
             continue;
         }
-        let day = crate::domain::pytext::strip(amendment.day_ref.as_deref().unwrap_or_default())
+        let day = kanade_domain::pytext::strip(amendment.day_ref.as_deref().unwrap_or_default())
             .to_lowercase();
         if day.is_empty() {
             continue;

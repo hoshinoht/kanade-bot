@@ -2,8 +2,8 @@
 
 use super::SqliteStore;
 use super::schedule::store_error;
-use crate::domain::scheduler::StoreError;
 use crate::infrastructure::store::maintenance::{StoreMaintenance, WalCheckpoint};
+use kanade_domain::scheduler::StoreError;
 
 impl StoreMaintenance for SqliteStore {
     async fn checkpoint_wal(&self) -> Result<WalCheckpoint, StoreError> {
@@ -30,9 +30,9 @@ impl StoreMaintenance for SqliteStore {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::model_log::ModelLogStore;
     use crate::infrastructure::store::SqliteStoreConfig;
     use crate::infrastructure::store::model_log_conformance::extraction;
+    use kanade_domain::model_log::ModelLogStore;
 
     #[tokio::test]
     async fn checkpoint_truncates_the_wal() {

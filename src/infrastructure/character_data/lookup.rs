@@ -10,9 +10,9 @@ use serde_json::json;
 use super::calls::CallFailed;
 use super::refresh::{facts, invalid_identifier, no_such_name};
 use super::{CharacterData, log};
-use crate::domain::chardata::{CALL_WINDOW, DAILY_CALLS};
-use crate::domain::history::Actor;
-use crate::domain::scheduler::StoreError;
+use kanade_domain::chardata::{CALL_WINDOW, DAILY_CALLS};
+use kanade_domain::history::Actor;
+use kanade_domain::scheduler::StoreError;
 
 /// `id` + `basic`: what a lookup needs from the budget.
 const LOOKUP_CALLS: u32 = 2;

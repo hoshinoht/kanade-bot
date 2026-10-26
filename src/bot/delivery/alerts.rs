@@ -6,7 +6,7 @@ use std::sync::{Mutex, PoisonError};
 use chrono::{DateTime, TimeDelta, Utc};
 
 use crate::bot::transport::RejectionKind;
-use crate::domain::notify::{AttemptId, EffectKind};
+use kanade_domain::notify::{AttemptId, EffectKind};
 
 /// Identical alerts (same [`AdminAlert::key`]) pass at most once per window.
 pub const ALERT_WINDOW: TimeDelta = TimeDelta::hours(1);

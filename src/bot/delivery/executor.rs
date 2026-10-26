@@ -21,11 +21,11 @@ use crate::bot::ids::parse_id;
 use crate::bot::transport::{
     DiscordTransport, MessageId, Outcome, OutgoingMessage, Presence, RejectionKind, legacy_rows,
 };
-use crate::domain::notify::{
+use kanade_domain::notify::{
     AttemptId, Claim, DeliveryJournal, DeliveryWarning, EffectKind, JournalError, Lease,
     NotificationIntent, PlannedSend, Receipt, SendDisposition, WeeklyDigest,
 };
-use crate::domain::schedule::{EMOJI_NO, EMOJI_YES};
+use kanade_domain::schedule::{EMOJI_NO, EMOJI_YES};
 
 /// What happened to one planned send.
 #[derive(Clone, Debug, PartialEq, Eq)]

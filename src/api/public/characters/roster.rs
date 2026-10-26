@@ -37,13 +37,13 @@ use crate::{
         listeners::Site,
         public::write::{admit, invalid_body, path_id},
     },
-    domain::{
-        characters::{Character, CharacterChange, CharacterRecord, CharacterWrite},
-        chardata::{LINK_REGION, Link, LinkStatus, NOTICE_VERSION, PENDING_TTL},
-        history::{Actor, Surface},
-        members::MemberProfile,
-    },
     infrastructure::store::replays::ReplayScope,
+};
+use kanade_domain::{
+    characters::{Character, CharacterChange, CharacterRecord, CharacterWrite},
+    chardata::{LINK_REGION, Link, LinkStatus, NOTICE_VERSION, PENDING_TTL},
+    history::{Actor, Surface},
+    members::MemberProfile,
 };
 
 type Reply = Result<Response, Refusal>;

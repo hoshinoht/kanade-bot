@@ -27,20 +27,19 @@ use crate::{
         listeners::Site,
         state::{ApiState, CharacterRoster},
     },
-    domain::{
-        characters::{
-            Character, CharacterChange, CharacterEdit, CharacterRecord, CharacterRole,
-            CharacterWrite, DEFAULT_WORLD, new_role, parse_class, parse_ign, parse_level,
-            parse_role, parse_world,
-        },
-        chardata::LINK_REGION,
-        history::Actor,
-        ids::{IdGenerator, RandomIds},
-    },
     infrastructure::{
         character_data::AdminLinkOutcome,
         store::replays::{KeyedWrite, ReplayScope, StoredReplay},
     },
+};
+use kanade_domain::{
+    characters::{
+        Character, CharacterChange, CharacterEdit, CharacterRecord, CharacterRole, CharacterWrite,
+        DEFAULT_WORLD, new_role, parse_class, parse_ign, parse_level, parse_role, parse_world,
+    },
+    chardata::LINK_REGION,
+    history::Actor,
+    ids::{IdGenerator, RandomIds},
 };
 
 fn not_found() -> Refusal {

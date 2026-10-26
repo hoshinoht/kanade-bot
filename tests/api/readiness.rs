@@ -9,10 +9,8 @@
 use std::sync::{Arc, Mutex, OnceLock};
 
 use chrono::TimeDelta;
-use kanade::{
-    domain::settings::{SettingsChangeQuery, SettingsStore},
-    infrastructure::character_data::{CharacterData, ConfirmOutcome},
-};
+use kanade::infrastructure::character_data::{CharacterData, ConfirmOutcome};
+use kanade_domain::settings::{SettingsChangeQuery, SettingsStore};
 use serde_json::{Value, json};
 
 use crate::{

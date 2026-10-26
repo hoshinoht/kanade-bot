@@ -18,23 +18,23 @@ use kanade::bot::transport::{
 };
 use kanade::chat::nudge::{NudgeRewriter, RewriteFailure, RewritePrompt, SharedRewriter};
 use kanade::chat::persona::{CompiledPersona, PersonaId, PersonaRoot, parse_bundle};
-use kanade::domain::art::{ArtFile, ArtSource};
-use kanade::domain::catalog::{BossSpec, BossTable, CatalogSpec, DifficultySpec, GuideSpec};
-use kanade::domain::drafts::{DraftCreated, DraftKind, DraftStore, MergeCommit, NewDraft};
-use kanade::domain::guides::ArtKind;
-use kanade::domain::history::{Actor, Origin, Surface};
-use kanade::domain::history::{BlameTarget, ChangeHistory, ChangeMeta, Expect, Precondition};
-use kanade::domain::ids::RandomIds;
-use kanade::domain::members::{Member, PingLevel, Roster};
-use kanade::domain::notify::{DedupeKey, DeliveryJournal, DeliveryTarget, ReminderCardStore};
-use kanade::domain::schedule::{
+use kanade::infrastructure::files::BossArt;
+use kanade::infrastructure::store::SqliteStore;
+use kanade_domain::art::{ArtFile, ArtSource};
+use kanade_domain::catalog::{BossSpec, BossTable, CatalogSpec, DifficultySpec, GuideSpec};
+use kanade_domain::drafts::{DraftCreated, DraftKind, DraftStore, MergeCommit, NewDraft};
+use kanade_domain::guides::ArtKind;
+use kanade_domain::history::{Actor, Origin, Surface};
+use kanade_domain::history::{BlameTarget, ChangeHistory, ChangeMeta, Expect, Precondition};
+use kanade_domain::ids::RandomIds;
+use kanade_domain::members::{Member, PingLevel, Roster};
+use kanade_domain::notify::{DedupeKey, DeliveryJournal, DeliveryTarget, ReminderCardStore};
+use kanade_domain::schedule::{
     Change, ChangeSet, EMOJI_NO, EMOJI_YES, NewRun, Rsvp, RsvpSource, RsvpState, Run, RunSource,
     RunStatus,
 };
-use kanade::domain::scheduler::StoreError;
-use kanade::domain::settings::RunLengths;
-use kanade::infrastructure::files::BossArt;
-use kanade::infrastructure::store::SqliteStore;
+use kanade_domain::scheduler::StoreError;
+use kanade_domain::settings::RunLengths;
 use tokio::sync::Notify;
 use twilight_model::channel::message::Embed;
 use twilight_model::id::Id;

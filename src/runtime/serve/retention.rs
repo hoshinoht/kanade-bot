@@ -18,13 +18,13 @@ use tokio::{sync::watch, task::JoinHandle};
 
 use crate::{
     api::auth::Clock,
-    domain::{
-        model_log::{DEFAULT_LOG_RETENTION, ModelLogStore, PruneCounts, retention_cutoff},
-        notify::DeliveryJournal,
-        scheduler::StoreError,
-        time::to_iso,
-    },
     infrastructure::store::maintenance::{StoreMaintenance, WalCheckpoint},
+};
+use kanade_domain::{
+    model_log::{DEFAULT_LOG_RETENTION, ModelLogStore, PruneCounts, retention_cutoff},
+    notify::DeliveryJournal,
+    scheduler::StoreError,
+    time::to_iso,
 };
 
 pub(super) const EVERY: Duration = Duration::from_secs(24 * 60 * 60);

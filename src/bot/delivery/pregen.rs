@@ -39,15 +39,15 @@ use super::estimates::header_context;
 use super::preview::{record_key, reminder_intent};
 use super::refresh::Now;
 use crate::bot::commands::text::local_day;
-use crate::domain::members::Directory;
-use crate::domain::model_log::RewriteStage;
-use crate::domain::notify::{
+use kanade_domain::members::Directory;
+use kanade_domain::model_log::RewriteStage;
+use kanade_domain::notify::{
     CardRecord, DAY_OF_KIND, DeliveryJournal, DeliverySettings, DeliveryTarget, DigestLog,
     DigestPhraseStore, IntentContent, JournalView, ReminderCardStore, WeekReset,
 };
-use crate::domain::schedule::{Reminder, SchedulePolicy, ScheduleSnapshot};
-use crate::domain::scheduler::{ScheduleStore, Scope};
-use crate::domain::time::from_iso;
+use kanade_domain::schedule::{Reminder, SchedulePolicy, ScheduleSnapshot};
+use kanade_domain::scheduler::{ScheduleStore, Scope};
+use kanade_domain::time::from_iso;
 
 /// Cards firing within this window are rewritten (by a batch or catch-up).
 pub const HEADER_HORIZON: TimeDelta = TimeDelta::hours(24);

@@ -4,11 +4,11 @@ use std::collections::BTreeMap;
 
 use chrono_tz::Tz;
 
-use crate::domain::attendance::{AnswerState, snapshot_states};
-use crate::domain::catalog::BossTable;
-use crate::domain::members::Directory;
-use crate::domain::notify::display_names;
-use crate::domain::schedule::{Run, ScheduleSnapshot};
+use kanade_domain::attendance::{AnswerState, snapshot_states};
+use kanade_domain::catalog::BossTable;
+use kanade_domain::members::Directory;
+use kanade_domain::notify::display_names;
+use kanade_domain::schedule::{Run, ScheduleSnapshot};
 
 use super::redesign::{DifficultyMarks, V2Kit};
 
@@ -148,7 +148,7 @@ impl People {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::schedule::{EMOJI_NO, EMOJI_YES};
+    use kanade_domain::schedule::{EMOJI_NO, EMOJI_YES};
 
     #[test]
     fn v4_constants() {

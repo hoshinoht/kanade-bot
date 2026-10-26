@@ -5,7 +5,7 @@
 //! Invented IGNs only.
 
 use chrono::TimeDelta;
-use kanade::domain::{
+use kanade_domain::{
     characters::CharacterStore,
     members::MemberStore,
     settings::{SettingsChange, SettingsChangeQuery, SettingsStore},

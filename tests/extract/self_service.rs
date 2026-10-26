@@ -13,11 +13,6 @@ use kanade::chat::nudge::{
     SeedReason,
 };
 use kanade::chat::persona::{NudgeMood, NudgePurpose};
-use kanade::domain::drafts::ProposalSource;
-use kanade::domain::model_log::{ExtractionOutcome, ModelLogStore};
-use kanade::domain::notify::WeekReset;
-use kanade::domain::proposals::{ChangeKind, ProposedChange};
-use kanade::domain::scheduler::{ProposalRequest, Supersede};
 use kanade::extract::AmendmentKind;
 use kanade::extract::pipeline::MessageEvent;
 use kanade::extract::pipeline::Proposer;
@@ -27,6 +22,11 @@ use kanade::infrastructure::llm::governor::{
     Outcome, Random, Role, RoleConfig,
 };
 use kanade::infrastructure::llm::{FakeAction, FakeProvider, Message};
+use kanade_domain::drafts::ProposalSource;
+use kanade_domain::model_log::{ExtractionOutcome, ModelLogStore};
+use kanade_domain::notify::WeekReset;
+use kanade_domain::proposals::{ChangeKind, ProposedChange};
+use kanade_domain::scheduler::{ProposalRequest, Supersede};
 use serde_json::json;
 use tokio::time::Instant;
 
@@ -767,9 +767,9 @@ async fn a_reservation_over_the_call_budget_is_refused_before_sending() {
 #[tokio::test(start_paused = true)]
 async fn a_rewrite_row_records_max_tokens_only_when_the_route_sends_it() {
     use kanade::chat::nudge::StoreRewriteSink;
-    use kanade::domain::model_log::{RewriteFilter, RewriteLogStore};
     use kanade::infrastructure::llm::ModelCapabilities;
     use kanade::infrastructure::store::SqliteStore;
+    use kanade_domain::model_log::{RewriteFilter, RewriteLogStore};
 
     let mut rows = Vec::new();
     for sampling_controls in [false, true] {

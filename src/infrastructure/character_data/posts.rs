@@ -13,8 +13,8 @@ use chrono::{DateTime, TimeDelta, Utc};
 use serde_json::json;
 
 use super::{CharacterData, log};
-use crate::domain::chardata::{Post, PostState, STRIP_RETRY_AGAIN, STRIP_RETRY_FIRST, Snapshot};
-use crate::domain::scheduler::StoreError;
+use kanade_domain::chardata::{Post, PostState, STRIP_RETRY_AGAIN, STRIP_RETRY_FIRST, Snapshot};
+use kanade_domain::scheduler::StoreError;
 
 pub type DeskFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 

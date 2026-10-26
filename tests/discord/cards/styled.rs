@@ -3,7 +3,7 @@
 
 use super::*;
 use kanade::bot::delivery::cards::{CardKit, DifficultyMarks};
-use kanade::domain::catalog::{BossSpec, BossTable, CatalogSpec, DifficultySpec};
+use kanade_domain::catalog::{BossSpec, BossTable, CatalogSpec, DifficultySpec};
 
 fn catalog() -> BossTable {
     let boss = |short: &str, full: &str| BossSpec {

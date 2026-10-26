@@ -5,7 +5,7 @@ use serde_json::Value;
 use super::Extraction;
 use super::coerce::{self, FieldError};
 use super::pyvalue::type_name;
-use crate::domain::pytext::strip;
+use kanade_domain::pytext::strip;
 
 /// Why one raw model response was rejected. `Display` is what v4 logs and
 /// sends back in the retry; only the envelope is portable (the JSON decoder

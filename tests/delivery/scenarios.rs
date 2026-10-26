@@ -10,14 +10,14 @@ use kanade::bot::delivery::{
 };
 use kanade::bot::events::{ReactionRouter, RsvpAnswer, RsvpReaction};
 use kanade::bot::transport::{Call, DiscordTransport, FakeDiscord, Op, RejectionKind, Step};
-use kanade::domain::ids::RandomIds;
-use kanade::domain::members::{Member, PingLevel, Roster};
-use kanade::domain::notify::{AttemptState, EffectKind};
-use kanade::domain::schedule::{
+use kanade::infrastructure::store::SqliteStore;
+use kanade_domain::ids::RandomIds;
+use kanade_domain::members::{Member, PingLevel, Roster};
+use kanade_domain::notify::{AttemptState, EffectKind};
+use kanade_domain::schedule::{
     NewRun, ReminderPolicy, RsvpState, RunSource, RunStatus, SchedulePolicy,
 };
-use kanade::domain::scheduler::{SchedulerService, StoreRef};
-use kanade::infrastructure::store::SqliteStore;
+use kanade_domain::scheduler::{SchedulerService, StoreRef};
 use twilight_model::id::Id;
 
 use crate::intercept::Intercept;
@@ -55,8 +55,8 @@ pub(crate) fn config() -> DeliveryConfig {
         post_channel_id: Some(POST.into()),
         quiet_mode: false,
         max_sends_per_tick: DEFAULT_MAX_SENDS_PER_TICK,
-        max_notice_age: kanade::domain::notify::DEFAULT_MAX_NOTICE_AGE,
-        run_lengths: kanade::domain::settings::RunLengths::default(),
+        max_notice_age: kanade_domain::notify::DEFAULT_MAX_NOTICE_AGE,
+        run_lengths: kanade_domain::settings::RunLengths::default(),
         freeze_ended: true,
     }
 }
@@ -118,7 +118,7 @@ pub(crate) async fn due_countdown_at<S: Store>(
     let mut ids = RandomIds;
     let mut service = support::service(store, &mut ids, now());
     let run = service
-        .as_origin(kanade::domain::history::Origin::for_tests())
+        .as_origin(kanade_domain::history::Origin::for_tests())
         .create_run(NewRun {
             fixed_run_id: None,
             channel_id: Some(channel.into()),
@@ -132,7 +132,7 @@ pub(crate) async fn due_countdown_at<S: Store>(
         .await
         .expect("run");
     let reminder = service
-        .as_origin(kanade::domain::history::Origin::for_tests())
+        .as_origin(kanade_domain::history::Origin::for_tests())
         .add_reminder(
             &run,
             "countdown_15",
@@ -148,7 +148,7 @@ pub(crate) async fn due_countdown_at<S: Store>(
 pub(crate) async fn reminder_row<S: Store>(
     store: &S,
     id: &str,
-) -> kanade::domain::schedule::Reminder {
+) -> kanade_domain::schedule::Reminder {
     support::snapshot(store)
         .await
         .reminders

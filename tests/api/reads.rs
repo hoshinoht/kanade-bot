@@ -38,23 +38,23 @@ use kanade::{
             TrafficLimits,
         },
     },
-    domain::{
-        attendance::AttendanceDefault,
-        catalog::{BossSpec, BossTable, CatalogSpec, DifficultySpec, GuideSpec},
-        completion::RunEndsSource,
-        history::{Actor, ChangeMeta, Origin, Surface},
-        ids::RandomIds,
-        members::{Member, MemberProfile, MemberStore, PingLevel, Roster},
-        model_log::AllowanceOverride,
-        schedule::{
-            Change, ChangeSet, FixedRun, Reminder, ReminderPolicy, Rsvp, RsvpSource, RsvpState,
-            Run, RunSource, RunStatus, SchedulePolicy,
-        },
-        scheduler::SchedulerService,
-        scheduler::{ScheduleStore, Scope},
-        settings::RunLengths,
-    },
     infrastructure::store::{SqliteStore, SqliteStoreConfig},
+};
+use kanade_domain::{
+    attendance::AttendanceDefault,
+    catalog::{BossSpec, BossTable, CatalogSpec, DifficultySpec, GuideSpec},
+    completion::RunEndsSource,
+    history::{Actor, ChangeMeta, Origin, Surface},
+    ids::RandomIds,
+    members::{Member, MemberProfile, MemberStore, PingLevel, Roster},
+    model_log::AllowanceOverride,
+    schedule::{
+        Change, ChangeSet, FixedRun, Reminder, ReminderPolicy, Rsvp, RsvpSource, RsvpState, Run,
+        RunSource, RunStatus, SchedulePolicy,
+    },
+    scheduler::SchedulerService,
+    scheduler::{ScheduleStore, Scope},
+    settings::RunLengths,
 };
 use serde_json::{Value, json};
 use twilight_model::id::Id;

@@ -33,12 +33,12 @@ use crate::bot::transport::{DiscordTransport, OutgoingMessage};
 use crate::chat::nudge::{
     NudgeRewriter, RewriteFailure, RewriteOutcome, RewritePrompt, SharedRewriter,
 };
-use crate::domain::model_log::RewriteStage;
-use crate::domain::notify::{
+use kanade_domain::model_log::RewriteStage;
+use kanade_domain::notify::{
     DAY_OF_KIND, DeliveryJournal, DigestPhraseStore, HeaderOverrideStore, PostedCard,
     ReminderCardStore, WeekReset, WeeklyDigest,
 };
-use crate::domain::scheduler::{ScheduleStore, Scope};
+use kanade_domain::scheduler::{ScheduleStore, Scope};
 
 /// Who asked for a run and where its summary goes.
 #[derive(Clone, Debug, PartialEq, Eq)]

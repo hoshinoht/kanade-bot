@@ -8,7 +8,7 @@ use super::{
     attempt_targets, backend, bump_revision, check_live, iso, raise_marker, require_intent,
     state_changed,
 };
-use crate::domain::notify::{
+use kanade_domain::notify::{
     AttemptId, DeliveryTarget, JournalError, Lease, Receipt, is_sandbox_kind,
 };
 

@@ -11,16 +11,14 @@ use axum::{
 
 use super::{Directory, Reply, every, filter, state};
 use crate::api::admin::write::Refusal;
-use crate::{
-    api::{
-        auth::AdminSession,
-        dto::logs::{Extractions, Proposed, extraction, extraction_row, extraction_summary},
-        error::ApiError,
-        listeners::Site,
-        state::ApiState,
-    },
-    domain::model_log::ExtractionFilter,
+use crate::api::{
+    auth::AdminSession,
+    dto::logs::{Extractions, Proposed, extraction, extraction_row, extraction_summary},
+    error::ApiError,
+    listeners::Site,
+    state::ApiState,
 };
+use kanade_domain::model_log::ExtractionFilter;
 
 /// The newest call's alias until runtime settings name the configured one.
 async fn current_model(state: &ApiState) -> Result<String, Refusal> {

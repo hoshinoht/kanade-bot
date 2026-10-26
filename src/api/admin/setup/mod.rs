@@ -27,13 +27,13 @@ use crate::{
         state::{ApiState, SetupFacts},
     },
     bot::transport::ApplicationInfo,
-    domain::settings::{RuntimeSettings, keys},
     infrastructure::{
         character_data::{Health, NexonState},
         llm::governor::Role,
         scouter::ScouterState,
     },
 };
+use kanade_domain::settings::{RuntimeSettings, keys};
 
 mod secrets;
 

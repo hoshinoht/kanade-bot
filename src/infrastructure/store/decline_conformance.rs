@@ -3,11 +3,11 @@
 use chrono::{DateTime, TimeDelta, TimeZone, Utc};
 
 use super::fixtures::refused;
-use crate::domain::notify::{DECLINE_NOTICE_COOLDOWN, DeclineNotice, DeclineNoticeStore};
-use crate::domain::schedule::{
+use kanade_domain::notify::{DECLINE_NOTICE_COOLDOWN, DeclineNotice, DeclineNoticeStore};
+use kanade_domain::schedule::{
     Change, ChangeSet, Reminder, Rsvp, RsvpSource, RsvpState, Run, RunSource, RunStatus,
 };
-use crate::domain::scheduler::{ScheduleStore, StoreError};
+use kanade_domain::scheduler::{ScheduleStore, StoreError};
 
 /// Run decline-notice checks against a fresh store each time.
 pub async fn run_suite<S: ScheduleStore + DeclineNoticeStore>(make: impl AsyncFn() -> S) {
@@ -120,8 +120,8 @@ async fn candidates_commit_atomically_and_replay_is_inert<S: ScheduleStore + Dec
         "a refused schedule write has no candidate"
     );
 
-    let meta = crate::domain::history::ChangeMeta {
-        origin: crate::domain::history::Origin::for_tests().with_request_id("decline-candidate"),
+    let meta = kanade_domain::history::ChangeMeta {
+        origin: kanade_domain::history::Origin::for_tests().with_request_id("decline-candidate"),
         request_digest: Some("candidate-a".into()),
         ..super::conformance::meta()
     };
@@ -181,7 +181,7 @@ async fn candidates_require_display_names<S: ScheduleStore + DeclineNoticeStore>
     );
     assert_eq!(
         store
-            .load(&crate::domain::scheduler::Scope::All)
+            .load(&kanade_domain::scheduler::Scope::All)
             .await
             .expect("load")
             .revision,

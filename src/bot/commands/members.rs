@@ -18,9 +18,9 @@ use super::options::Args;
 use super::text::mention;
 use crate::bot::ids::id_text;
 use crate::bot::transport::InteractionReply;
-use crate::domain::members::{GatewayMember, MemberProfile, PingLevel, PortalEdit, is_valid_alias};
-use crate::domain::scheduler::StoreError;
 use crate::infrastructure::store::replays::{PortalRecord, PortalWrite};
+use kanade_domain::members::{GatewayMember, MemberProfile, PingLevel, PortalEdit, is_valid_alias};
+use kanade_domain::scheduler::StoreError;
 
 /// v4 `PING_LEVEL_HELP`, in the command's own words.
 pub fn ping_help(level: PingLevel) -> &'static str {

@@ -20,7 +20,7 @@ pub use bound::{Bound, Side};
 pub use clock::{PM_CUTOFF, parse_clock};
 pub use day::WEEKDAY_ALIASES;
 
-use crate::domain::time::{AwareDateTime, DateOutOfRange, ZonedDateTime};
+use kanade_domain::time::{AwareDateTime, DateOutOfRange, ZonedDateTime};
 
 /// What could be pinned down. `at` is set only when both a day and a clock
 /// time are known, so a day-only reference reads "Wed — time TBD".

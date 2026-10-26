@@ -11,8 +11,8 @@ use chrono::TimeDelta;
 use kanade::bot::delivery::cards::CardKit;
 use kanade::bot::delivery::cards::redesign::{MY_RUNS, OPEN_PORTAL};
 use kanade::bot::transport::{Call, FakeDiscord, MessageId, Op, Outcome, RejectionKind};
-use kanade::domain::schedule::RunStatus;
 use kanade::infrastructure::store::SqliteStore;
+use kanade_domain::schedule::RunStatus;
 use twilight_model::channel::message::Component;
 use twilight_model::channel::message::component::ButtonStyle;
 

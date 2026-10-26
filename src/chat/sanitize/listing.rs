@@ -10,7 +10,7 @@ use std::sync::LazyLock;
 use regex::Regex;
 
 use super::{pattern, pattern_i};
-use crate::domain::pytext::strip;
+use kanade_domain::pytext::strip;
 
 static RUN_ID: LazyLock<Regex> = LazyLock::new(|| pattern(r"\[([0-9a-fA-F]{8})\]"));
 static OMITTED: LazyLock<Regex> = LazyLock::new(|| pattern_i(r"^\s*\*?\(and (\d+) more\)\*?\s*$"));

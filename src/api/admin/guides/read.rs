@@ -15,20 +15,17 @@ use super::{
     Guides, Refusal, Renderer, Reply, blocks_refused,
     status::{self, Facts},
 };
-use crate::{
-    api::{
-        admin::write::Body,
-        auth::{AdminSession, wire},
-        dto::guides::{
-            self as dto, GuideBlock, GuideDetail, GuideList, GuidePlan, GuidePlanBlocked,
-            GuidePreview,
-        },
-        error::ApiError,
-        listeners::Site,
+use crate::api::{
+    admin::write::Body,
+    auth::{AdminSession, wire},
+    dto::guides::{
+        self as dto, GuideBlock, GuideDetail, GuideList, GuidePlan, GuidePlanBlocked, GuidePreview,
     },
-    domain::guides::{
-        Block, Blocked, Guide, Plan, PublishedSlot, Rendered, plan as slot_plan, plan_unpublish,
-    },
+    error::ApiError,
+    listeners::Site,
+};
+use kanade_domain::guides::{
+    Block, Blocked, Guide, Plan, PublishedSlot, Rendered, plan as slot_plan, plan_unpublish,
 };
 
 /// `GET /api/admin/guides`: every guide by title, with its chip.

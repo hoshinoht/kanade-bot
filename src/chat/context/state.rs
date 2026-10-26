@@ -4,7 +4,7 @@
 use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
 
 use super::{ANCHOR_CACHE, ChatTurn, HISTORY_EXCHANGES};
-use crate::domain::pytext::strip;
+use kanade_domain::pytext::strip;
 
 #[derive(Clone, Debug)]
 struct Focus {

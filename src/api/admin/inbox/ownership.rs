@@ -21,15 +21,13 @@ use super::{
     },
     refusal,
 };
-use crate::{
-    api::{
-        auth::AdminSession,
-        dto::inbox::{self, OwnerRequestDto},
-        listeners::Site,
-        ownership::{self, OwnerDesk},
-    },
-    domain::{ids::short_id, ownership::OwnerRequestStatus},
+use crate::api::{
+    auth::AdminSession,
+    dto::inbox::{self, OwnerRequestDto},
+    listeners::Site,
+    ownership::{self, OwnerDesk},
 };
+use kanade_domain::{ids::short_id, ownership::OwnerRequestStatus};
 
 type Reply = Result<Response, Refusal>;
 

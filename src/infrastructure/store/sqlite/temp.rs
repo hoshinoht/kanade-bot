@@ -10,7 +10,7 @@ use sqlx::{ConnectOptions, Connection};
 use tokio::sync::OnceCell;
 
 use super::{SqliteCharData, SqliteStore, SqliteStoreConfig, migrate};
-use crate::domain::history::ChangeRecord;
+use kanade_domain::history::ChangeRecord;
 
 fn temp_root() -> PathBuf {
     std::fs::canonicalize(std::env::temp_dir()).expect("temp dir resolves")
@@ -249,7 +249,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_temp_store_is_its_own_copy_of_the_migrated_template() {
-        use crate::domain::history::ChangeHistory;
+        use kanade_domain::history::ChangeHistory;
         use std::os::unix::fs::MetadataExt;
 
         let store = SqliteStore::open_temp().await;

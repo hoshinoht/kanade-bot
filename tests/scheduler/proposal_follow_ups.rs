@@ -4,21 +4,21 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use chrono::{DateTime, FixedOffset, NaiveTime, TimeZone, Utc, Weekday};
-use kanade::domain::drafts::{
+use kanade::infrastructure::store::SqliteStore;
+use kanade_domain::drafts::{
     DraftCreated, DraftEvent, DraftStatus, DraftStore, DraftUpdate, DraftWrite, LoadedDraft,
     MergeCommit, NewDraft, NewProposal, ProposalCreated, ProposalInfo, ProposalSource,
     ProposalStore, StoredDraft, StoredProposal,
 };
-use kanade::domain::history::{Actor, ChangeHistory, ChangeMeta, ChangeRecord, ChangeRef};
-use kanade::domain::ids::RandomIds;
-use kanade::domain::members::{Directory, Member};
-use kanade::domain::proposals::{Approver, ChangeKind, Payload, ProposedChange};
-use kanade::domain::schedule::{ChangeSet, Notice, NoticeChange, ScheduleSnapshot};
-use kanade::domain::scheduler::{
+use kanade_domain::history::{Actor, ChangeHistory, ChangeMeta, ChangeRecord, ChangeRef};
+use kanade_domain::ids::RandomIds;
+use kanade_domain::members::{Directory, Member};
+use kanade_domain::proposals::{Approver, ChangeKind, Payload, ProposedChange};
+use kanade_domain::schedule::{ChangeSet, Notice, NoticeChange, ScheduleSnapshot};
+use kanade_domain::scheduler::{
     Committed, DraftError, ProposalError, ProposalRequest, RecordedRequest, ScheduleStore,
     SchedulerService, Scope, StoreError, StoreRef, Supersede,
 };
-use kanade::infrastructure::store::SqliteStore;
 
 use crate::common::TestClock;
 use crate::support;
@@ -137,7 +137,7 @@ impl DraftStore for Flaky {
         week: DateTime<Utc>,
         at: DateTime<Utc>,
         actor: &Actor,
-        notices: Vec<(String, kanade::domain::schedule::Notice)>,
+        notices: Vec<(String, kanade_domain::schedule::Notice)>,
     ) -> Result<Vec<String>, StoreError> {
         self.inner.expire_drafts(week, at, actor, notices).await
     }
@@ -148,7 +148,7 @@ impl ProposalStore for Flaky {
         &self,
         new: NewProposal,
         current_week: DateTime<Utc>,
-    ) -> Result<kanade::domain::drafts::ProposalSubmission, StoreError> {
+    ) -> Result<kanade_domain::drafts::ProposalSubmission, StoreError> {
         self.inner
             .create_proposal_or_existing(new, current_week)
             .await

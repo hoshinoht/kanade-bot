@@ -6,10 +6,8 @@ use std::{sync::Arc, time::Duration};
 
 use tokio::{sync::watch, task::JoinHandle};
 
-use crate::{
-    api::auth::member::MemberAuth, domain::scheduler::StoreError,
-    infrastructure::store::web_sessions::SessionOrigin,
-};
+use crate::{api::auth::member::MemberAuth, infrastructure::store::web_sessions::SessionOrigin};
+use kanade_domain::scheduler::StoreError;
 
 pub(super) const PRUNE_EVERY: Duration = Duration::from_secs(60 * 60);
 

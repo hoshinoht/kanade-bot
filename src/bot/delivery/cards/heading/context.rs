@@ -22,9 +22,9 @@ use super::super::{CardContext, card_runs};
 use crate::bot::delivery::RunEstimate;
 use crate::chat::nudge::{BossFigures, HeaderFacts, OfferedSlot, TeaseSlot, safe_value};
 use crate::chat::persona::NudgeMood;
-use crate::domain::members::MemberProfile;
-use crate::domain::notify::{CardRecord, HeaderSlots, IntentContent, StoredSlot};
-use crate::domain::tease::note_problem;
+use kanade_domain::members::MemberProfile;
+use kanade_domain::notify::{CardRecord, HeaderSlots, IntentContent, StoredSlot};
+use kanade_domain::tease::note_problem;
 
 /// The header switches as configured now (Config › Notifications), read at
 /// every rewrite and render.

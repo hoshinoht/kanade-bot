@@ -6,12 +6,12 @@ use sqlx::{Connection, Row, SqliteConnection};
 
 use super::SqliteStore;
 use super::schedule::store_error;
-use crate::domain::notify::{
-    DECLINE_NOTICE_COOLDOWN, DeclineNotice, DeclineNoticeStore, MAX_PENDING_DECLINE_NOTICES,
-};
-use crate::domain::scheduler::{Committed, StoreError};
 use crate::infrastructure::store::rules::check_decline_candidate;
 use crate::infrastructure::store::sqlite::rows;
+use kanade_domain::notify::{
+    DECLINE_NOTICE_COOLDOWN, DeclineNotice, DeclineNoticeStore, MAX_PENDING_DECLINE_NOTICES,
+};
+use kanade_domain::scheduler::{Committed, StoreError};
 
 const COLUMNS: &str = "run_id, user_id, channel_id, reference_id, display_name, message_id, notified_at, retract_pending";
 
@@ -21,7 +21,7 @@ fn decode(row: &sqlx::sqlite::SqliteRow) -> Result<DeclineNotice, StoreError> {
     let optional_text = |column: &str| -> Result<Option<String>, StoreError> {
         row.try_get(column).map_err(store_error)
     };
-    let notified_at = crate::domain::time::from_iso(&text("notified_at")?).map_err(|error| {
+    let notified_at = kanade_domain::time::from_iso(&text("notified_at")?).map_err(|error| {
         StoreError::Backend(format!("stored decline notice is unreadable: {error}"))
     })?;
     let retract_pending: i64 = row.try_get("retract_pending").map_err(store_error)?;
@@ -116,8 +116,8 @@ impl DeclineNoticeStore for SqliteStore {
     async fn commit_with_decline_notices(
         &self,
         expected_revision: u64,
-        changes: crate::domain::schedule::ChangeSet,
-        meta: crate::domain::history::ChangeMeta,
+        changes: kanade_domain::schedule::ChangeSet,
+        meta: kanade_domain::history::ChangeMeta,
         candidates: Vec<DeclineNotice>,
         retractions: Vec<(String, String)>,
     ) -> Result<Option<Committed>, StoreError> {

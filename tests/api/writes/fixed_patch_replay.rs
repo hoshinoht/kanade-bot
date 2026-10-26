@@ -1,14 +1,12 @@
 use std::sync::Arc;
 
 use chrono::{NaiveTime, TimeZone, Utc};
-use kanade::{
-    api::write::FixedPatchLookupGate,
-    domain::{
-        history::{Actor, Origin, Surface},
-        members::Roster,
-        notify::NoticeOutbox,
-        schedule::{FixedEdit, FixedEditChoices, FixedEditRequest},
-    },
+use kanade::api::write::FixedPatchLookupGate;
+use kanade_domain::{
+    history::{Actor, Origin, Surface},
+    members::Roster,
+    notify::NoticeOutbox,
+    schedule::{FixedEdit, FixedEditChoices, FixedEditRequest},
 };
 use serde_json::{Value, json};
 use tokio::task::JoinHandle;

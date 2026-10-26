@@ -19,7 +19,7 @@ use super::RoundOutcome;
 use crate::chat::tools::read::participants::py_text;
 use crate::chat::tools::read::{ToolWorld, get_schedule, schedule_subject};
 use crate::chat::tools::{REFUSED, ToolContext, ToolName, ToolOutcome};
-use crate::domain::pytext::strip;
+use kanade_domain::pytext::strip;
 
 fn outcome(arguments: Map<String, Value>, result: Result<String, String>) -> ToolOutcome {
     let (output, error) = match result {

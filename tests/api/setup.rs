@@ -14,13 +14,13 @@ use kanade::{
         state::{ApplicationPort, SetupFacts},
     },
     bot::transport::{DiscordTransport, FAKE_APPLICATION_ID, FakeDiscord, Outcome},
-    domain::settings::RuntimeSettings,
     infrastructure::{
         llm::{governor::Role, setup::RunningRole},
         store::SqliteStore,
     },
     runtime::config::Modules,
 };
+use kanade_domain::settings::RuntimeSettings;
 use serde_json::{Value, json};
 use twilight_model::oauth::ApplicationFlags;
 

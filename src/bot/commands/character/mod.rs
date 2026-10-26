@@ -24,9 +24,9 @@ use super::invocation::Invocation;
 use crate::bot::chardata::{DiscordPosts, copy};
 use crate::bot::ids::id_text;
 use crate::bot::transport::{DiscordTransport, InteractionReply};
-use crate::domain::characters::ign_key;
-use crate::domain::chardata::LinkStatus;
 use crate::infrastructure::character_data::{CharacterData, MemberCharacter};
+use kanade_domain::characters::ign_key;
+use kanade_domain::chardata::LinkStatus;
 
 /// The notice's buttons, as internal subcommands.
 pub const LINK_PRESS: &str = "link_press";

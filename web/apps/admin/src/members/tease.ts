@@ -2,7 +2,7 @@
 // server answers only the rule (`note_too_long`, `note_not_plain`,
 // `note_names_member`); the sheet names the offending word when it knows it
 // (the roster's names and aliases, this member's IGNs), with the same
-// whole-word match as the server (`src/domain/tease.rs`).
+// whole-word match as the server (`crates/kanade-domain/src/tease.rs`).
 
 export const NOTE_MAX = 80;
 

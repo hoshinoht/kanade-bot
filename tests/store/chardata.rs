@@ -7,13 +7,13 @@
 use std::os::unix::fs::PermissionsExt;
 
 use chrono::TimeDelta;
-use kanade::domain::chardata::{
-    CharDataStore, ConsentSurface, DAILY_CALLS, ESTIMATE_TTL, Post, RefreshState,
-};
 use kanade::infrastructure::store::chardata_conformance::{
     active, at, member_estimate, party_estimate, snapshot,
 };
 use kanade::infrastructure::store::{SqliteCharData, SqliteStoreError};
+use kanade_domain::chardata::{
+    CharDataStore, ConsentSurface, DAILY_CALLS, ESTIMATE_TTL, Post, RefreshState,
+};
 use sqlx::{ConnectOptions, Connection, sqlite::SqliteConnectOptions};
 
 use crate::support::TempDir;
@@ -129,7 +129,7 @@ async fn a_version_one_file_reads_its_links_without_a_surface() {
     let old = store.link("c1".into()).await.unwrap().unwrap();
     assert_eq!(old.consent_surface, None);
     assert_eq!(old.consent_version, Some(1));
-    let portal = kanade::domain::chardata::Link {
+    let portal = kanade_domain::chardata::Link {
         consent_surface: Some(ConsentSurface::Portal),
         ..active("c2")
     };

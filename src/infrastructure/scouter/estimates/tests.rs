@@ -3,13 +3,11 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use chrono::TimeZone;
 
 use super::*;
-use crate::{
-    domain::characters::{Character, CharacterRole},
-    infrastructure::{
-        scouter::{Card, UpcomingRun},
-        store::SqliteCharData,
-    },
+use crate::infrastructure::{
+    scouter::{Card, UpcomingRun},
+    store::SqliteCharData,
 };
+use kanade_domain::characters::{Character, CharacterRole};
 
 type Now = Arc<Mutex<DateTime<Utc>>>;
 
@@ -779,7 +777,7 @@ fn upcoming(id: &str, hours: i64, subjects: Vec<Subject>) -> UpcomingRun {
     UpcomingRun {
         run_id: id.into(),
         bosses: vec!["HLimbo".into()],
-        status: crate::domain::schedule::RunStatus::Planned,
+        status: kanade_domain::schedule::RunStatus::Planned,
         datetime: at(4) + TimeDelta::hours(hours),
         week_start: at(0),
         subjects,

@@ -12,15 +12,15 @@ use chrono::{DateTime, TimeZone, Utc};
 use serde_json::{Value, json};
 
 use super::fixtures::{refused, refused_for};
-use crate::domain::guides::{
+use crate::infrastructure::store::replays::{KeyedWrite, ReplayScope, ReplayStore, StoredReplay};
+use kanade_domain::guides::{
     Block, CancelRequest, Confirmations, GUIDES_SECTION, Guide, GuideChange, GuideRecord,
     GuideStore, GuideWrite, NotPosted, OpOutcome, PlanCounts, PlanOp, Publish, PublishKind,
     PublishOp, PublishRequest, PublishRequested, PublishState, PublishedSlot, SlotEffect,
     SlotState, StopReason, UploadRef,
 };
-use crate::domain::history::{Actor, Surface};
-use crate::domain::settings::{SettingsChange, SettingsChangeQuery, SettingsStore};
-use crate::infrastructure::store::replays::{KeyedWrite, ReplayScope, ReplayStore, StoredReplay};
+use kanade_domain::history::{Actor, Surface};
+use kanade_domain::settings::{SettingsChange, SettingsChangeQuery, SettingsStore};
 
 const GUIDE: &str = "00000000-0000-4000-8000-000000000001";
 const OTHER: &str = "00000000-0000-4000-8000-000000000002";

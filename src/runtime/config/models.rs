@@ -13,10 +13,10 @@ use hyper::Uri;
 
 use super::{Error, capabilities, groups, non_empty, parse_bounded_u64, refuse_plain};
 use crate::{
-    domain::settings::{ContextSettings, Reasoning},
     infrastructure::llm::{ModelCapabilities, setup::CapacityGroup},
     runtime::secrets::{self, Redacted, SecretFile},
 };
+use kanade_domain::settings::{ContextSettings, Reasoning};
 
 const RETIRED_PRIVACY_KEYS: [&str; 2] = ["KANADE_ALLOW_EXTERNAL_UNMASKED", "KANADE_PSEUDONYMIZE"];
 const ALIASES: [&str; 3] = [

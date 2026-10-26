@@ -3,16 +3,16 @@
 //! directory.
 
 use chrono::{NaiveTime, TimeZone, Utc, Weekday};
-use kanade::domain::drafts::{DraftOp, DraftStatus, DraftStore, LoadedDraft, Target};
-use kanade::domain::history::{ChangeHistory, HistoryGap, Origin, Surface};
-use kanade::domain::ids::IdGenerator;
-use kanade::domain::members::{Directory, Member};
-use kanade::domain::notify::DeliveryJournal;
-use kanade::domain::schedule::{NewFixedRun, ReminderPolicy, SchedulePolicy};
-use kanade::domain::scheduler::{
+use kanade::infrastructure::store::{SqliteStore, SqliteStoreConfig};
+use kanade_domain::drafts::{DraftOp, DraftStatus, DraftStore, LoadedDraft, Target};
+use kanade_domain::history::{ChangeHistory, HistoryGap, Origin, Surface};
+use kanade_domain::ids::IdGenerator;
+use kanade_domain::members::{Directory, Member};
+use kanade_domain::notify::DeliveryJournal;
+use kanade_domain::schedule::{NewFixedRun, ReminderPolicy, SchedulePolicy};
+use kanade_domain::scheduler::{
     DraftError, DraftResult, MergeOutcome, ScheduleStore, SchedulerService, Scope,
 };
-use kanade::infrastructure::store::{SqliteStore, SqliteStoreConfig};
 
 use crate::support::{TempDir, raw, tamper};
 
@@ -66,7 +66,7 @@ type Service = SchedulerService<SqliteStore, CountingIds, TestClock>;
 #[derive(Clone)]
 struct TestClock;
 
-impl kanade::domain::scheduler::Clock for TestClock {
+impl kanade_domain::scheduler::Clock for TestClock {
     fn now(&self) -> chrono::DateTime<Utc> {
         at(27, 1)
     }

@@ -31,7 +31,6 @@ use crate::{
         listeners::Site,
         state::{ApiState, CharacterRoster},
     },
-    domain::characters::Character,
     infrastructure::{
         character_data::CharacterData,
         scouter::{
@@ -40,6 +39,7 @@ use crate::{
         },
     },
 };
+use kanade_domain::characters::Character;
 
 pub fn routes() -> Router<Arc<Site>> {
     Router::new()

@@ -17,43 +17,43 @@ use super::auth::Clock;
 use crate::{
     bot::commands::{AccessPolicy, Invoker},
     chat::persona::PersonaOption,
-    domain::{
-        catalog::BossTable,
-        characters::{
-            Character, CharacterChange, CharacterRecord, CharacterStore, CharacterWrite,
-            PartyReads, Pick, PickChange, PickScope, PickWrite,
-        },
-        drafts::{
-            DraftEvent, DraftKind, DraftStatus, DraftStore, LoadedDraft, ProposalInfo,
-            ProposalStore, StoredDraft, StoredProposal,
-        },
-        forward_boxed,
-        guides::{
-            CancelRequest, GuideChange, GuideRecord, GuideStore, GuideWrite, NotPosted,
-            PublishRequest, PublishRequested,
-        },
-        history::{
-            Actor, BlameIndex, BlameTarget, ChangeFilter, ChangeHistory, ChangeQuery, ChangeRecord,
-            ChangeRef, HeldReminders, HistoryVerification, JournalHeld, changed_fields,
-        },
-        members::{MemberProfile, MemberStore, PortalEdit},
-        model_log::{
-            ChatFilter, ChatInteraction, ExtractionFilter, ExtractionLog, LogFacets, LogPage,
-            MaskedTurn, ModelLogStore, RewriteFacets, RewriteFilter, RewriteLog, RewriteLogStore,
-            WatchedMessage,
-        },
-        notify::{CardRecord, DeliveryJournal, PostedCard, ReminderCardStore, WeeklyDigest},
-        ownership::{OwnerRequest, OwnerRequestStatus, OwnerRequestStore},
-        proposals::{ProposalCardStore, StoredCard},
-        schedule::{SchedulePolicy, ScheduleSnapshot},
-        scheduler::{ScheduleStore, Scope, StoreError},
-        settings::{SettingsChange, SettingsChangeQuery, SettingsStore},
-    },
     infrastructure::store::{
         auth_audit::{AuditFilter, AuditRow, AuthAuditStore},
         replays::{KeyedWrite, PortalRecord, PortalWrite, ReplayScope, ReplayStore, StoredReplay},
         snapshots::{HistoryView, HistoryViewQuery, SnapshotReads},
     },
+};
+use kanade_domain::{
+    catalog::BossTable,
+    characters::{
+        Character, CharacterChange, CharacterRecord, CharacterStore, CharacterWrite, PartyReads,
+        Pick, PickChange, PickScope, PickWrite,
+    },
+    drafts::{
+        DraftEvent, DraftKind, DraftStatus, DraftStore, LoadedDraft, ProposalInfo, ProposalStore,
+        StoredDraft, StoredProposal,
+    },
+    forward_boxed,
+    guides::{
+        CancelRequest, GuideChange, GuideRecord, GuideStore, GuideWrite, NotPosted, PublishRequest,
+        PublishRequested,
+    },
+    history::{
+        Actor, BlameIndex, BlameTarget, ChangeFilter, ChangeHistory, ChangeQuery, ChangeRecord,
+        ChangeRef, HeldReminders, HistoryVerification, JournalHeld, changed_fields,
+    },
+    members::{MemberProfile, MemberStore, PortalEdit},
+    model_log::{
+        ChatFilter, ChatInteraction, ExtractionFilter, ExtractionLog, LogFacets, LogPage,
+        MaskedTurn, ModelLogStore, RewriteFacets, RewriteFilter, RewriteLog, RewriteLogStore,
+        WatchedMessage,
+    },
+    notify::{CardRecord, DeliveryJournal, PostedCard, ReminderCardStore, WeeklyDigest},
+    ownership::{OwnerRequest, OwnerRequestStatus, OwnerRequestStore},
+    proposals::{ProposalCardStore, StoredCard},
+    schedule::{SchedulePolicy, ScheduleSnapshot},
+    scheduler::{ScheduleStore, Scope, StoreError},
+    settings::{SettingsChange, SettingsChangeQuery, SettingsStore},
 };
 
 pub type ReadFuture<'a, T> = Pin<Box<dyn Future<Output = Result<T, StoreError>> + Send + 'a>>;
@@ -113,18 +113,18 @@ pub type ApplicationPort = Arc<
 
 /// The delivery-owned guide publisher (`modules.guides`); the API never
 /// holds a transport. Runs are queued in the store
-/// ([`crate::domain::guides::GuideStore::request_publish`]) and Discord's
+/// ([`kanade_domain::guides::GuideStore::request_publish`]) and Discord's
 /// availability is [`ChannelList::connected`].
 pub trait GuidePort: Send + Sync {
     /// Read the channel for a plan (4.4): which of `slots` are gone, its
     /// newest message and the bot's grants, within
-    /// [`crate::domain::guides::INSPECT_BUDGET`]; `None` when Discord did
+    /// [`kanade_domain::guides::INSPECT_BUDGET`]; `None` when Discord did
     /// not answer in time (the plan is then "Unchecked").
     fn inspect(
         &self,
         channel_id: String,
-        slots: Vec<crate::domain::guides::PublishedSlot>,
-    ) -> Pin<Box<dyn Future<Output = Option<crate::domain::guides::Inspection>> + Send + '_>>;
+        slots: Vec<kanade_domain::guides::PublishedSlot>,
+    ) -> Pin<Box<dyn Future<Output = Option<kanade_domain::guides::Inspection>> + Send + '_>>;
     /// Wake the single-flight worker to claim queued runs (of any guide).
     fn wake(&self);
 }
@@ -1235,10 +1235,10 @@ impl ApiState {
     }
 
     /// When runs end, live from the config desk (defaults without one).
-    pub fn run_ends_source(&self) -> crate::domain::completion::RunEndsSource {
+    pub fn run_ends_source(&self) -> kanade_domain::completion::RunEndsSource {
         match &self.config {
             Some(desk) => desk.run_ends(Arc::clone(&self.catalog), self.policy.clone()),
-            None => crate::domain::completion::RunEndsSource::fixed(
+            None => kanade_domain::completion::RunEndsSource::fixed(
                 Default::default(),
                 Some(Arc::clone(&self.catalog)),
                 self.policy.clone(),

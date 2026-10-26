@@ -12,9 +12,9 @@ use super::options::Args;
 use crate::api::ownership::{self, OwnershipError};
 use crate::bot::ids::id_text;
 use crate::bot::transport::InteractionReply;
-use crate::domain::ids::short_id;
-use crate::domain::ownership::OwnershipRefusal;
-use crate::domain::scheduler::SchedulerError;
+use kanade_domain::ids::short_id;
+use kanade_domain::ownership::OwnershipRefusal;
+use kanade_domain::scheduler::SchedulerError;
 
 /// Internal path of a request button press (never registered).
 pub const OWNER_PRESS: &str = "owner-press";

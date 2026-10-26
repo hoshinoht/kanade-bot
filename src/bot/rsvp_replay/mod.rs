@@ -18,14 +18,14 @@ use crate::bot::delivery::{AdminAlert, AlertSink, AlertThrottle};
 use crate::bot::ids::parse_id;
 use crate::bot::reaction_read;
 use crate::bot::transport::DiscordTransport;
-use crate::domain::history::{
+use kanade_domain::history::{
     Actor, BlameIndex, BlameTarget, ChangeHistory, Expect, Origin, Precondition, RowKey, RowValue,
     Surface, Versioned, rsvp_field,
 };
-use crate::domain::ids::RandomIds;
-use crate::domain::notify::{ReplayCard, ReplayCards, ReplayRunCards};
-use crate::domain::schedule::{Rsvp, RsvpSource, Run, RunStatus};
-use crate::domain::scheduler::{Clock, ScheduleStore, SchedulerError, SchedulerService};
+use kanade_domain::ids::RandomIds;
+use kanade_domain::notify::{ReplayCard, ReplayCards, ReplayRunCards};
+use kanade_domain::schedule::{Rsvp, RsvpSource, Run, RunStatus};
+use kanade_domain::scheduler::{Clock, ScheduleStore, SchedulerError, SchedulerService};
 
 const MAX_AGE: TimeDelta = TimeDelta::days(7);
 const MAX_MESSAGES: usize = 40;

@@ -21,16 +21,16 @@ use crate::{
             read::PendingCard,
         },
     },
-    domain::{
-        drafts::ProposalStore,
-        ids::{RandomIds, short_id},
-        proposals::{ChangeKind, Payload, ProposalCardStore, ProposedChange},
-    },
     extract::{
         AmendmentKind,
         pipeline::{Card, CardEntry, PostResult},
     },
     infrastructure::store::SqliteStore,
+};
+use kanade_domain::{
+    drafts::ProposalStore,
+    ids::{RandomIds, short_id},
+    proposals::{ChangeKind, Payload, ProposalCardStore, ProposedChange},
 };
 
 use super::discord::GatewayTransport;

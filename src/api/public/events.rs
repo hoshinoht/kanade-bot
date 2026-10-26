@@ -53,11 +53,11 @@ use crate::{
         sse::{self, data},
         state::ApiState,
     },
-    domain::{
-        history::{ChangeFilter, MAX_PAGE, RowChange, RowKey, RowValue},
-        scheduler::{Scope, StoreError},
-    },
     infrastructure::store::web_sessions::{LoginMethod, SessionOrigin},
+};
+use kanade_domain::{
+    history::{ChangeFilter, MAX_PAGE, RowChange, RowKey, RowValue},
+    scheduler::{Scope, StoreError},
 };
 
 pub(super) async fn events(

@@ -25,19 +25,19 @@ use crate::{
         state::RoleEntry,
     },
     chat::persona::{PersonaOption, PersonaSnapshot, PersonaStore, ProfileId},
-    domain::{
-        scheduler::StoreError,
-        settings::{
-            IdList, Models, RuntimeSettings, Section, SettingsChange, SettingsError, SettingsStore,
-            keys, save_section_recorded, stored_rows,
-        },
-    },
     infrastructure::{
         llm::{
             governor::Role,
             setup::{CapacityGroup, CatalogSnapshot, RoleSwap, RunningRole},
         },
         store::replays::{ReplayScope, ReplayStore, StoredReplay},
+    },
+};
+use kanade_domain::{
+    scheduler::StoreError,
+    settings::{
+        IdList, Models, RuntimeSettings, Section, SettingsChange, SettingsError, SettingsStore,
+        keys, save_section_recorded, stored_rows,
     },
 };
 
@@ -303,11 +303,11 @@ impl ConfigDesk {
     /// When runs end, read live from the saved `v5.run_lengths`.
     pub fn run_ends(
         &self,
-        catalog: Arc<crate::domain::catalog::BossTable>,
-        policy: crate::domain::schedule::SchedulePolicy,
-    ) -> crate::domain::completion::RunEndsSource {
+        catalog: Arc<kanade_domain::catalog::BossTable>,
+        policy: kanade_domain::schedule::SchedulePolicy,
+    ) -> kanade_domain::completion::RunEndsSource {
         let changes = self.subscribe();
-        crate::domain::completion::RunEndsSource::new(
+        kanade_domain::completion::RunEndsSource::new(
             Arc::new(move || changes.borrow().settings.run_lengths.clone()),
             Some(catalog),
             policy,

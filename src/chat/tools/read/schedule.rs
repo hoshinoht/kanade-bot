@@ -13,12 +13,12 @@ use super::participants::py_text;
 use super::resolve::RELATIVE_DAYS;
 use super::roster::{bossers, resolve_participant_text};
 use crate::chat::tools::{MAX_MEMBER_REPLY, MAX_RUNS, ToolContext, ToolError, ToolResult};
-use crate::domain::members::member_name;
-use crate::domain::pytext::strip;
-use crate::domain::schedule::{Run, RunStatus, utc_instant};
-use crate::domain::time::ZonedDateTime;
-use crate::domain::weeks::{calendar_week_end, calendar_week_start, week_end, week_start};
 use crate::extract::resolve::WEEKDAY_ALIASES;
+use kanade_domain::members::member_name;
+use kanade_domain::pytext::strip;
+use kanade_domain::schedule::{Run, RunStatus, utc_instant};
+use kanade_domain::time::ZonedDateTime;
+use kanade_domain::weeks::{calendar_week_end, calendar_week_start, week_end, week_start};
 
 type Interval = (ZonedDateTime, ZonedDateTime, Option<BTreeSet<NaiveDate>>);
 

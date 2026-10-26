@@ -7,7 +7,7 @@ use chrono::{DateTime, Utc};
 use sqlx::SqliteConnection;
 
 use super::{backend, check_live, iso};
-use crate::domain::notify::{AttemptId, JournalError, Lease, Recovery, check_resolution};
+use kanade_domain::notify::{AttemptId, JournalError, Lease, Recovery, check_resolution};
 
 const LEASE_END_ACTOR: &str = "service:lease-end";
 const LEASE_END_REASON: &str = "operation finished";

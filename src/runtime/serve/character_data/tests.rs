@@ -9,14 +9,14 @@ use std::sync::{Arc, Mutex};
 use chrono::{DateTime, TimeDelta, TimeZone, Utc};
 
 use super::*;
-use crate::domain::characters::CharacterStore;
-use crate::domain::characters::{Character, CharacterChange, CharacterRecord, CharacterRole};
-use crate::domain::chardata::UnlinkReason;
-use crate::domain::history::{Actor, Surface};
-use crate::domain::members::MemberStore;
 use crate::infrastructure::store::chardata_conformance::{active, snapshot};
 use crate::infrastructure::store::members_conformance::gateway;
 use crate::infrastructure::store::{SqliteCharData, SqliteStore};
+use kanade_domain::characters::CharacterStore;
+use kanade_domain::characters::{Character, CharacterChange, CharacterRecord, CharacterRole};
+use kanade_domain::chardata::UnlinkReason;
+use kanade_domain::history::{Actor, Surface};
+use kanade_domain::members::MemberStore;
 
 fn at(day: u32, hour: u32) -> DateTime<Utc> {
     Utc.with_ymd_and_hms(2026, 10, day, hour, 0, 0).unwrap()
@@ -358,8 +358,8 @@ async fn the_refresh_passes_ten_minutes_after_start_then_hourly() {
 async fn stop_joins_with_background_lookups_waiting() {
     use std::time::Duration;
 
-    use crate::domain::schedule::RunStatus;
     use crate::infrastructure::scouter::{RosterIgn, Subject, UpcomingRun};
+    use kanade_domain::schedule::RunStatus;
 
     // Up, but never answers a lookup.
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();

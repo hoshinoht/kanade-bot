@@ -9,12 +9,12 @@ use chrono::{DateTime, Utc};
 
 use super::prompt::RewritePrompt;
 use super::rewrite::{RewriteDetail, RewriteFailure};
-use crate::domain::ids::{IdGenerator, RandomIds};
-use crate::domain::model_log::{
+use kanade_domain::ids::{IdGenerator, RandomIds};
+use kanade_domain::model_log::{
     CONTEXT_CAP, LINE_CAP, RewriteKind, RewriteLog, RewriteLogStore, RewriteStage, capped_prompt,
     capped_reasoning, capped_reply, is_correlation_id,
 };
-use crate::domain::scheduler::StoreError;
+use kanade_domain::scheduler::StoreError;
 
 /// A row write gives up after this, so a busy store never holds the caller.
 pub const LOG_WRITE_DEADLINE: Duration = Duration::from_secs(2);

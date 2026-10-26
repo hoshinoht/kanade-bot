@@ -1,6 +1,6 @@
-use crate::domain::schedule::RsvpState;
+use kanade_domain::schedule::RsvpState;
 
-crate::domain::spelled! {
+kanade_domain::spelled! {
     /// What an amendment changes, in the order the v4 prompt lists them.
     AmendmentKind {
         Move => "move",

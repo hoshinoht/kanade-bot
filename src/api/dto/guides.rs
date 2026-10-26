@@ -7,7 +7,7 @@
 use serde::{Deserialize, Serialize};
 
 use super::{history::SettingsActor, iso_instant};
-use crate::domain::guides::{
+use kanade_domain::guides::{
     Block, BlockError, BossEntry, Confirmations, GuideEmbed, OpKind, OpOutcome, Plan, PlanCounts,
     PlanOp, Publish, PublishOp, PublishState, PublishedSlot, RenderWarning, RenderedSlot,
     StopReason, units,
@@ -850,7 +850,7 @@ fn slot_summary(slot: &RenderedSlot) -> Option<String> {
     slot.content
         .lines()
         .map(str::trim)
-        .find(|line| !line.is_empty() && *line != crate::domain::guides::SPACER)
+        .find(|line| !line.is_empty() && *line != kanade_domain::guides::SPACER)
         .map(str::to_owned)
         .or_else(|| slot.embeds.first().map(|embed| embed.title.clone()))
 }

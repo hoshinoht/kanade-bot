@@ -9,18 +9,18 @@ use serde_json::Value;
 use super::patch::{PatchError, field_error, object};
 use crate::{
     api::dto::config::CapacityCheck,
-    domain::settings::{ContextSettings, MAX_CONTEXT_TOKENS, Models, Reasoning, RoleModel},
     infrastructure::llm::{
         CALL_TOKEN_BUDGET, Effort, PROMPT_FLOOR_TOKENS, RESERVE_LIMIT,
         governor::Role as LiveRole,
         setup::{CapacityGroup, CatalogModel, CatalogSnapshot, resolve_context},
     },
 };
+use kanade_domain::settings::{ContextSettings, MAX_CONTEXT_TOKENS, Models, Reasoning, RoleModel};
 
 /// Matches the model stack's one backend group (`setup::build`).
 pub const GROUP: &str = "gateway";
 
-crate::domain::spelled! {
+kanade_domain::spelled! {
     Role {
         Extraction => "extraction",
         Chat => "chat",

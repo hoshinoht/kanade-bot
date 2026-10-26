@@ -1,7 +1,7 @@
 //! Store upkeep serve runs off the request path, after each daily log
 //! retention run (user decision 2026-10-11).
 
-use crate::domain::scheduler::StoreError;
+use kanade_domain::scheduler::StoreError;
 
 /// What one `PRAGMA wal_checkpoint(TRUNCATE)` reported: `busy` when a
 /// reader or writer kept it from finishing, and the WAL's frame counts

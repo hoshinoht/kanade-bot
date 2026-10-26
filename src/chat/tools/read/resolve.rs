@@ -9,11 +9,11 @@ use regex::Regex;
 use super::ToolWorld;
 use super::format::{fixed_line, local, run_line};
 use crate::chat::tools::{MAX_RUNS, ToolError, ToolResult};
-use crate::domain::ids::resolve_id;
-use crate::domain::pytext::strip;
-use crate::domain::schedule::{FixedRun, Run, RunStatus, utc_instant};
-use crate::domain::weeks::materialised_week_starts;
 use crate::extract::resolve::WEEKDAY_ALIASES;
+use kanade_domain::ids::resolve_id;
+use kanade_domain::pytext::strip;
+use kanade_domain::schedule::{FixedRun, Run, RunStatus, utc_instant};
+use kanade_domain::weeks::materialised_week_starts;
 
 /// Day words `get_run` and `get_schedule` read besides weekdays.
 pub(super) const RELATIVE_DAYS: [(&str, i64); 5] = [

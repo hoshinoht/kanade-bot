@@ -18,9 +18,9 @@ use super::{
 };
 use crate::{
     api::{error::ApiError, guard::proxy::Peer, listeners::Site},
-    domain::history::{Actor, Origin, Surface},
     infrastructure::store::web_sessions::{LoginMethod, SessionOrigin, WebSession},
 };
+use kanade_domain::history::{Actor, Origin, Surface};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct AdminSession {

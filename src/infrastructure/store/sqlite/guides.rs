@@ -17,16 +17,16 @@ use super::SqliteStore;
 use super::rows::instant;
 use super::schedule::store_error;
 use super::settings;
-use crate::domain::guides::{
+use crate::infrastructure::store::Written;
+use kanade_domain::guides::{
     CancelRequest, Confirmations, GUIDES_SECTION, Guide, GuideChange, GuideRecord, GuideStore,
     GuideWrite, NotPosted, OpKind, OpOutcome, PlanOp, Publish, PublishKind, PublishOp,
     PublishRequest, PublishRequested, PublishState, PublishedSlot, SlotEffect, SlotState,
     StopReason, StoreFuture,
 };
-use crate::domain::history::{Actor, Surface};
-use crate::domain::scheduler::StoreError;
-use crate::domain::settings::{RowDiff, SettingsChange};
-use crate::infrastructure::store::Written;
+use kanade_domain::history::{Actor, Surface};
+use kanade_domain::scheduler::StoreError;
+use kanade_domain::settings::{RowDiff, SettingsChange};
 
 const GUIDE_COLUMNS: &str =
     "id, title, channel_id, blocks, version, created_at, created_by, updated_at, updated_by";
@@ -81,14 +81,14 @@ impl Columns<'_> {
     }
 
     fn at(&self, column: &str) -> Result<DateTime<Utc>, StoreError> {
-        crate::domain::time::from_iso(&self.text(column)?)
+        kanade_domain::time::from_iso(&self.text(column)?)
             .map_err(|error| self.corrupt(column, error))
     }
 
     fn optional_at(&self, column: &str) -> Result<Option<DateTime<Utc>>, StoreError> {
         self.optional(column)?
             .map(|text| {
-                crate::domain::time::from_iso(&text).map_err(|error| self.corrupt(column, error))
+                kanade_domain::time::from_iso(&text).map_err(|error| self.corrupt(column, error))
             })
             .transpose()
     }

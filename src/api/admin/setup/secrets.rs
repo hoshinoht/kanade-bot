@@ -26,9 +26,9 @@ use crate::{
         listeners::Site,
         state::{ApiState, SecretDesk},
     },
-    domain::settings::{RowDiff, SettingsChange},
     runtime::secrets::{SaveError, Source},
 };
+use kanade_domain::settings::{RowDiff, SettingsChange};
 
 pub fn routes() -> Router<Arc<Site>> {
     Router::new()

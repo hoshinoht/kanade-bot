@@ -4,7 +4,7 @@
 use chrono::{DateTime, TimeZone, Utc};
 
 use super::fixtures::refused_for;
-use crate::domain::ownership::{
+use kanade_domain::ownership::{
     OWNER_REQUEST_TTL, OwnerRequest, OwnerRequestStatus, OwnerRequestStore,
 };
 

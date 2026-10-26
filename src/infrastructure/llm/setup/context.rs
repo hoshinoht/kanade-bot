@@ -1,15 +1,13 @@
 //! Pure context-window resolution over saved settings and the cached catalog.
 
-use crate::{
-    domain::settings::{
-        ContextRole, ContextSettings, LOCAL_CONTEXT_WARNING_TOKENS, MAX_CONTEXT_TOKENS,
-    },
-    infrastructure::llm::governor::Role,
+use crate::infrastructure::llm::governor::Role;
+use kanade_domain::settings::{
+    ContextRole, ContextSettings, LOCAL_CONTEXT_WARNING_TOKENS, MAX_CONTEXT_TOKENS,
 };
 
 use super::CatalogSnapshot;
 
-crate::domain::spelled! {
+kanade_domain::spelled! {
     ContextSource {
         Override => "override",
         Catalog => "catalog",

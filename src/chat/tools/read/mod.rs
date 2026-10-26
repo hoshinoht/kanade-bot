@@ -20,11 +20,11 @@ pub use schedule::{get_schedule, schedule_subject};
 
 use crate::chat::gate::{ChannelDirectory, PilotSettings};
 use crate::chat::tools::{MAX_RUNS, ToolContext, ToolError, ToolResult};
-use crate::domain::catalog::{BossReference, BossTable};
-use crate::domain::members::{Directory, Member};
-use crate::domain::pytext::strip;
-use crate::domain::schedule::ScheduleSnapshot;
 use format::{boss_label, boss_labels, fixed_line, run_detail};
+use kanade_domain::catalog::{BossReference, BossTable};
+use kanade_domain::members::{Directory, Member};
+use kanade_domain::pytext::strip;
+use kanade_domain::schedule::ScheduleSnapshot;
 use resolve::resolve_run;
 
 /// Why [`StrategyGuides::render`] has no guide text.
@@ -75,9 +75,9 @@ pub struct ToolWorld<'a> {
     pub pending: &'a [PendingCard],
     /// `None` when strategy knowledge is unavailable.
     pub guides: Option<&'a (dyn StrategyGuides + Sync)>,
-    /// v5: when runs end ([`RunEnds`](crate::domain::completion::RunEnds));
+    /// v5: when runs end ([`RunEnds`](kanade_domain::completion::RunEnds));
     /// `None` keeps v4's reading, a run being over once it started.
-    pub run_ends: Option<&'a crate::domain::completion::RunEnds>,
+    pub run_ends: Option<&'a kanade_domain::completion::RunEnds>,
     /// The asker's own words, which the question loop reads from the
     /// conversation; the run-taking writes check their choice against them.
     pub heard: resolve::Heard<'a>,

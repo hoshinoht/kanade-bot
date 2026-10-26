@@ -7,7 +7,7 @@ use std::sync::{Arc, Mutex};
 use chrono::{TimeZone, Utc};
 
 use super::{WriteObserver, Written, conformance, members_conformance, model_log_conformance};
-use crate::domain::{
+use kanade_domain::{
     members::{MemberStore, PortalEdit},
     model_log::{ModelLogStore, RewriteLogStore},
     schedule::{Change, ChangeSet},

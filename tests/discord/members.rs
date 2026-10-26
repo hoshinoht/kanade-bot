@@ -1,7 +1,7 @@
 //! Member events as roster updates.
 
 use kanade::bot::events::{BotEvent, RosterUpdate};
-use kanade::domain::members::{Directory, Member, PingLevel, Roster};
+use kanade_domain::members::{Directory, Member, PingLevel, Roster};
 
 use super::support::*;
 

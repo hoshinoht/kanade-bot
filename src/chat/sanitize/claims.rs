@@ -6,7 +6,7 @@ use regex::Regex;
 
 use super::pattern_i;
 use crate::chat::persona::split_lines;
-use crate::domain::pytext::strip;
+use kanade_domain::pytext::strip;
 
 /// A write claim that must never survive a refusal.
 static WRITE_CLAIM: LazyLock<Regex> = LazyLock::new(|| pattern_i(r"card'?s up|\bposted\b|✅"));

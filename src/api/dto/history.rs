@@ -8,7 +8,7 @@ use std::collections::BTreeSet;
 use serde::Serialize;
 use serde_json::Value;
 
-use crate::domain::history::{
+use kanade_domain::history::{
     ChangeRecord, ChangeRef, RecordError, RevertOutcome, RowChange as Change,
     RowConflict as Conflict, RowValue, SkippedRow,
 };

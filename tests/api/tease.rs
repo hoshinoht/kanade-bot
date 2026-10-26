@@ -2,7 +2,7 @@
 //! opt-in and the running-joke note, refuses a note that is long, not plain
 //! text or names anyone on the roster, and keys both into its replay.
 
-use kanade::domain::members::MemberStore;
+use kanade_domain::members::MemberStore;
 use serde_json::json;
 
 use crate::reads::Reads;

@@ -5,9 +5,6 @@
 use std::sync::atomic::Ordering;
 use std::time::Duration;
 
-use kanade::domain::drafts::{DraftStatus, ProposalStore};
-use kanade::domain::model_log::{ExtractionOutcome, ExtractionRefusal, ModelLogStore};
-use kanade::domain::schedule::RsvpState;
 use kanade::extract::AmendmentKind;
 use kanade::extract::backlog::BacklogEntry;
 use kanade::extract::pipeline::{
@@ -15,6 +12,9 @@ use kanade::extract::pipeline::{
 };
 use kanade::infrastructure::llm::setup::check_reasoning_effort;
 use kanade::infrastructure::llm::{Effort, FakeAction, ModelCapabilities};
+use kanade_domain::drafts::{DraftStatus, ProposalStore};
+use kanade_domain::model_log::{ExtractionOutcome, ExtractionRefusal, ModelLogStore};
+use kanade_domain::schedule::RsvpState;
 
 use crate::fakes::{
     ALIAS, ALVIN, CHANNEL, KANON, MY, OTHER, PRIYA, STRANGER, World, after, filtered, local,

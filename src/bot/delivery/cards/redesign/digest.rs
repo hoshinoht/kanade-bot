@@ -28,9 +28,9 @@ use super::v2::{
 };
 use super::vocab::{INK_BLUE, boss_labels};
 use crate::bot::commands::text::{local_day, local_time};
-use crate::domain::attendance::Tally;
-use crate::domain::notify::DigestInclusion;
-use crate::domain::schedule::{Run, RunStatus};
+use kanade_domain::attendance::Tally;
+use kanade_domain::notify::DigestInclusion;
+use kanade_domain::schedule::{Run, RunStatus};
 
 pub const DIGEST_FOOTER: &str = "Edited live · /schedule scope:mine for just your runs";
 /// v4's empty-week description.

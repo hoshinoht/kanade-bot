@@ -7,7 +7,7 @@ use super::{
     week::{CardKind, CardState, Context, card_label, card_state, message_url},
     when,
 };
-use crate::domain::{
+use kanade_domain::{
     ids::short_id,
     schedule::{Reminder, Run, ScheduleSnapshot},
 };

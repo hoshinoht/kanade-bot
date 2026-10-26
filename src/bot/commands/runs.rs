@@ -19,11 +19,11 @@ use crate::api::write::RunWrite;
 use crate::bot::ids::id_text;
 use crate::bot::transport::InteractionReply;
 use crate::chat::tools::propose::when::parse_when;
-use crate::domain::history::Expect;
-use crate::domain::ids::short_id;
-use crate::domain::members::member_name;
-use crate::domain::schedule::{RsvpState, Run, RunStatus, StatusChange};
-use crate::domain::scheduler::{DeclineNoticeContext, SchedulerError};
+use kanade_domain::history::Expect;
+use kanade_domain::ids::short_id;
+use kanade_domain::members::member_name;
+use kanade_domain::schedule::{RsvpState, Run, RunStatus, StatusChange};
+use kanade_domain::scheduler::{DeclineNoticeContext, SchedulerError};
 
 const PICK_RUN: &str = "Pick from the dropdown, or paste an id like `a1b2c3d4`";
 

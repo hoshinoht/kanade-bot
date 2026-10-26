@@ -15,22 +15,22 @@ use std::{fmt::Debug, sync::Arc};
 use chrono::{Duration, Weekday};
 use kanade::{
     api::{dto::events::Topic, state::ApiState},
-    domain::{
-        drafts::{DraftOp, DraftStore, ProposalSource, Target},
-        history::{Actor, ChangeHistory, Origin, Surface},
-        members::MemberStore,
-        model_log::{
-            ChatInteraction, ChatOutcome, ExtractionLog, ExtractionOutcome, ModelLogStore,
-            WatchedMessage,
-        },
-        proposals::{CardDetails, CardPayload, ChangeKind, ProposalCardStore, ProposedChange},
-        schedule::{
-            Change, FixedEdit, FixedEditChoices, NewRun, Rsvp, RsvpSource, RsvpState, RunSource,
-            RunStatus, StatusChange, utc_instant,
-        },
-        scheduler::{ProposalRequest, ScheduleStore, Scope, Supersede},
-    },
     infrastructure::store::SqliteStore,
+};
+use kanade_domain::{
+    drafts::{DraftOp, DraftStore, ProposalSource, Target},
+    history::{Actor, ChangeHistory, Origin, Surface},
+    members::MemberStore,
+    model_log::{
+        ChatInteraction, ChatOutcome, ExtractionLog, ExtractionOutcome, ModelLogStore,
+        WatchedMessage,
+    },
+    proposals::{CardDetails, CardPayload, ChangeKind, ProposalCardStore, ProposedChange},
+    schedule::{
+        Change, FixedEdit, FixedEditChoices, NewRun, Rsvp, RsvpSource, RsvpState, RunSource,
+        RunStatus, StatusChange, utc_instant,
+    },
+    scheduler::{ProposalRequest, ScheduleStore, Scope, Supersede},
 };
 use serde_json::{Map, Value};
 

@@ -12,15 +12,15 @@ use std::{
 };
 
 use crate::{
-    domain::{
-        model_log::{ModelLogStore, RescanJob},
-        scheduler::ScheduleStore,
-    },
     extract::{
         pipeline::{Outbox, Proposer},
         rescan::{History, JobView, RescanError, RescanRequest, Rescans},
     },
     infrastructure::llm::LlmProvider,
+};
+use kanade_domain::{
+    model_log::{ModelLogStore, RescanJob},
+    scheduler::ScheduleStore,
 };
 
 pub type RescanFuture<'a, T> = Pin<Box<dyn Future<Output = Result<T, RescanError>> + Send + 'a>>;

@@ -15,12 +15,12 @@ use kanade::chat::nudge::{
     NudgeRewriter, RewriteDetail, RewriteFailure, RewriteOutcome, RewritePrompt, SharedRewriteSink,
     StoreRewriteSink,
 };
-use kanade::domain::model_log::{
+use kanade::infrastructure::store::SqliteStore;
+use kanade_domain::model_log::{
     LogPage, RewriteFacets, RewriteFilter, RewriteKind, RewriteLog, RewriteLogStore, RewriteStage,
 };
-use kanade::domain::notify::ReminderCardStore;
-use kanade::domain::scheduler::StoreError;
-use kanade::infrastructure::store::SqliteStore;
+use kanade_domain::notify::ReminderCardStore;
+use kanade_domain::scheduler::StoreError;
 
 use crate::cards::{before_due, created, pregen, rewriting, seed_day_of, world};
 use crate::debug::{desk, star};

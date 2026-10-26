@@ -35,7 +35,7 @@ use chrono_tz::Tz;
 use serde::Serialize;
 
 use super::assets::art_file;
-use crate::domain::catalog::BossTable;
+use kanade_domain::catalog::BossTable;
 
 const MONTHS: [&str; 12] = [
     "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",

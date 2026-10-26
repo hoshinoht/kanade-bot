@@ -15,8 +15,8 @@ use crate::chat::gate::{ChannelInfo, IncomingMessage, is_chat_channel};
 use crate::chat::pilot::{ChatPilot, failure_reply};
 use crate::chat::sanitize::reply_parts;
 use crate::chat::tools::ToolContext;
-use crate::domain::members::member_name;
-use crate::domain::model_log::ChatInteraction;
+use kanade_domain::members::member_name;
+use kanade_domain::model_log::ChatInteraction;
 
 /// One rejected proposal's server-side card facts. They never come from a
 /// Discord message, so a reactor cannot steer the prompt by editing text.

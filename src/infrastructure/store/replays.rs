@@ -12,17 +12,17 @@ use std::collections::BTreeMap;
 use chrono::{DateTime, TimeDelta, Utc};
 use serde_json::json;
 
-use crate::domain::characters::{
+use kanade_domain::characters::{
     CharacterChange, CharacterRecord, CharacterWrite, PickChange, PickWrite,
 };
-use crate::domain::guides::{
+use kanade_domain::guides::{
     CancelRequest, GuideChange, GuideRecord, GuideWrite, NotPosted, PublishRequest,
     PublishRequested,
 };
-use crate::domain::history::{Actor, Surface};
-use crate::domain::members::{MemberProfile, PortalEdit};
-use crate::domain::scheduler::StoreError;
-use crate::domain::settings::{RowDiff, SettingsChange};
+use kanade_domain::history::{Actor, Surface};
+use kanade_domain::members::{MemberProfile, PortalEdit};
+use kanade_domain::scheduler::StoreError;
+use kanade_domain::settings::{RowDiff, SettingsChange};
 
 /// How long a key replays. The in-memory maps this replaces had no time
 /// limit, only a count, so a key lived until the process restarted (days in
@@ -33,7 +33,7 @@ pub const REPLAY_TTL: TimeDelta = TimeDelta::hours(24);
 /// The longest stored body: notices or a job id, never a whole view.
 pub const MAX_BODY: usize = 16 * 1024;
 
-crate::domain::spelled! {
+kanade_domain::spelled! {
     /// Keys are scoped per desk: the same key reused across a desk's routes (a
     /// digest key sent to a window clear) is a different request, not a new one.
     ReplayScope {
@@ -122,7 +122,7 @@ impl StoredReplay {
         }
         // As SQLite's `to_iso`: instants outside years 1..=9999 are refused.
         for at in [&self.created_at, &self.expires_at] {
-            crate::domain::time::to_iso(at)
+            kanade_domain::time::to_iso(at)
                 .map_err(|error| StoreError::Constraint(format!("{at:?}: {error}")))?;
         }
         Ok(())

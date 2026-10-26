@@ -8,10 +8,10 @@ use super::{
     instant, json_text, optional_text, read_instant, read_json, read_list, read_optional_instant,
     read_u64, signed, text,
 };
-use crate::domain::model_log::{AllowanceOverride, RescanJob, RescanStatus};
-use crate::domain::scheduler::StoreError;
 use crate::infrastructure::store::sqlite::rows::{list as json_list, optional_instant};
 use crate::infrastructure::store::sqlite::schedule::store_error;
+use kanade_domain::model_log::{AllowanceOverride, RescanJob, RescanStatus};
+use kanade_domain::scheduler::StoreError;
 
 const RESCAN_COLUMNS: &str = "id, channels, \"window\", source, automated, requested_by, status, \
     created_at, started_at, finished_at, results, error";

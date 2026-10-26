@@ -6,20 +6,18 @@
 use std::collections::BTreeSet;
 
 use chrono::{DateTime, TimeZone, Utc};
-use kanade::{
-    bot::delivery::{
-        cards::{CardContext, redesign::NO_MARKS},
-        render,
+use kanade::bot::delivery::{
+    cards::{CardContext, redesign::NO_MARKS},
+    render,
+};
+use kanade_domain::{
+    history::ChangeHistory,
+    notify::{
+        CardRecord, Claim, DedupeKey, DeliveryJournal, DeliverySettings, DeliveryTarget,
+        DispatchInput, NotificationIntent, Receipt, ReminderCardStore, plan_dispatch,
     },
-    domain::{
-        history::ChangeHistory,
-        notify::{
-            CardRecord, Claim, DedupeKey, DeliveryJournal, DeliverySettings, DeliveryTarget,
-            DispatchInput, NotificationIntent, Receipt, ReminderCardStore, plan_dispatch,
-        },
-        schedule::{Change, Reminder, Run},
-        scheduler::{ScheduleStore, Scope},
-    },
+    schedule::{Change, Reminder, Run},
+    scheduler::{ScheduleStore, Scope},
 };
 use serde_json::Value;
 

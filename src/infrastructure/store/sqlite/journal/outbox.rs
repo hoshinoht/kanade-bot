@@ -5,14 +5,14 @@ use chrono::{DateTime, Utc};
 use sqlx::{Row, SqliteConnection};
 
 use super::{backend, check_live, corrupt, iso, payload};
-use crate::domain::notify::{
-    DrainReason, JournalError, Lease, NoticeCursor, OutboxNotice, PendingNotices, UndecodableNotice,
-};
-use crate::domain::schedule::Notice;
-use crate::domain::scheduler::StoreError;
-use crate::domain::time::from_iso;
 use crate::infrastructure::store::sqlite::rows;
 use crate::infrastructure::store::sqlite::schedule::store_error;
+use kanade_domain::notify::{
+    DrainReason, JournalError, Lease, NoticeCursor, OutboxNotice, PendingNotices, UndecodableNotice,
+};
+use kanade_domain::schedule::Notice;
+use kanade_domain::scheduler::StoreError;
+use kanade_domain::time::from_iso;
 
 /// Write `notices` as `(source, 0..)`, inside the caller's transaction.
 pub(in crate::infrastructure::store::sqlite) async fn enqueue(

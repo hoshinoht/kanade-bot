@@ -8,10 +8,10 @@ use sqlx::{Connection, Row, SqliteConnection};
 use super::SqliteStore;
 use super::rows::instant;
 use super::schedule::store_error;
-use crate::domain::scheduler::StoreError;
 use crate::infrastructure::store::web_sessions::{
     LoginMethod, SessionFuture, SessionOrigin, WebSession, WebSessionStore,
 };
+use kanade_domain::scheduler::StoreError;
 
 const COLUMNS: &str = "id_hash, origin, method, subject, display, created_at, last_seen_at, \
     checked_at, expires_at, avatar_hash, device, client_tag, superseded_until";
@@ -25,7 +25,7 @@ fn text(row: &SqliteRow, column: &str) -> Result<String, StoreError> {
 }
 
 fn at(row: &SqliteRow, column: &str) -> Result<DateTime<Utc>, StoreError> {
-    crate::domain::time::from_iso(&text(row, column)?).map_err(|error| corrupt(column, error))
+    kanade_domain::time::from_iso(&text(row, column)?).map_err(|error| corrupt(column, error))
 }
 
 fn session_of(row: &SqliteRow) -> Result<WebSession, StoreError> {
@@ -54,7 +54,7 @@ fn session_of(row: &SqliteRow) -> Result<WebSession, StoreError> {
             .try_get::<Option<String>, _>("superseded_until")
             .map_err(|error| corrupt("superseded_until", error))?
             .map(|value| {
-                crate::domain::time::from_iso(&value)
+                kanade_domain::time::from_iso(&value)
                     .map_err(|error| corrupt("superseded_until", error))
             })
             .transpose()?,

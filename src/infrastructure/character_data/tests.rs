@@ -18,17 +18,17 @@ use axum::{
 use chrono::{DateTime, TimeDelta, TimeZone, Utc};
 
 use super::*;
-use crate::domain::characters::{CharacterChange, CharacterRecord, CharacterRole, CharacterWrite};
-use crate::domain::chardata::{
-    CharDataStore, ConsentSurface, DAILY_CALLS, Link, LinkStatus, MemberEstimate, NOTICE_VERSION,
-    PartyEstimate, Post, StoredMember,
-};
-use crate::domain::history::{Actor, Surface};
-use crate::domain::settings::SettingsChangeQuery;
 use crate::infrastructure::nexon::{ApiKey, KEY_HEADER};
 use crate::infrastructure::scouter::{RosterIgn, ScouterClient};
 use crate::infrastructure::store::members_conformance::gateway;
 use crate::infrastructure::store::{SqliteCharData, SqliteStore};
+use kanade_domain::characters::{CharacterChange, CharacterRecord, CharacterRole, CharacterWrite};
+use kanade_domain::chardata::{
+    CharDataStore, ConsentSurface, DAILY_CALLS, Link, LinkStatus, MemberEstimate, NOTICE_VERSION,
+    PartyEstimate, Post, StoredMember,
+};
+use kanade_domain::history::{Actor, Surface};
+use kanade_domain::settings::SettingsChangeQuery;
 
 const IGN: &str = "Wisteria";
 const OCID: &str = "ocid-invented-0001";
@@ -163,7 +163,7 @@ async fn rig_with(connected: bool) -> Rig {
     ] {
         roster
             .apply_character(
-                CharacterChange::Create(crate::domain::characters::Character {
+                CharacterChange::Create(kanade_domain::characters::Character {
                     id: id.into(),
                     member_id: member.into(),
                     ign: ign.into(),
@@ -231,21 +231,21 @@ impl RosterSide for FlakyRoster {
     fn character(
         &self,
         id: String,
-    ) -> StoreFuture<'_, Option<crate::domain::characters::Character>> {
+    ) -> StoreFuture<'_, Option<kanade_domain::characters::Character>> {
         RosterSide::character(&*self.inner, id)
     }
 
     fn member(
         &self,
         user_id: String,
-    ) -> StoreFuture<'_, Option<crate::domain::members::MemberProfile>> {
+    ) -> StoreFuture<'_, Option<kanade_domain::members::MemberProfile>> {
         RosterSide::member(&*self.inner, user_id)
     }
 
     fn member_characters(
         &self,
         member_id: String,
-    ) -> StoreFuture<'_, Vec<crate::domain::characters::Character>> {
+    ) -> StoreFuture<'_, Vec<kanade_domain::characters::Character>> {
         RosterSide::member_characters(&*self.inner, member_id)
     }
 
@@ -253,18 +253,18 @@ impl RosterSide for FlakyRoster {
         &self,
         change: CharacterChange,
         record: CharacterRecord,
-    ) -> StoreFuture<'_, crate::domain::characters::CharacterWrite> {
+    ) -> StoreFuture<'_, kanade_domain::characters::CharacterWrite> {
         RosterSide::write_character(&*self.inner, change, record)
     }
 
     fn record(
         &self,
-        change: crate::domain::settings::SettingsChange,
+        change: kanade_domain::settings::SettingsChange,
         replay: Option<StoredReplay>,
     ) -> StoreFuture<'_, ()> {
         if self.fail_records.load(std::sync::atomic::Ordering::SeqCst) {
             return Box::pin(async {
-                Err(crate::domain::scheduler::StoreError::Backend("down".into()))
+                Err(kanade_domain::scheduler::StoreError::Backend("down".into()))
             });
         }
         RosterSide::record(&*self.inner, change, replay)
@@ -274,7 +274,7 @@ impl RosterSide for FlakyRoster {
         &self,
         character_id: String,
         actor: Actor,
-    ) -> StoreFuture<'_, Option<crate::domain::settings::SettingsChange>> {
+    ) -> StoreFuture<'_, Option<kanade_domain::settings::SettingsChange>> {
         RosterSide::last_link_audit(&*self.inner, character_id, actor)
     }
 }
@@ -310,7 +310,7 @@ impl Rig {
                 "1001",
                 "c1",
                 NOTICE_VERSION,
-                crate::domain::chardata::ConsentSurface::Discord,
+                kanade_domain::chardata::ConsentSurface::Discord,
             )
             .await
             .unwrap()
@@ -641,7 +641,7 @@ async fn a_second_429_ends_the_batch_for_the_day() {
                 member,
                 id,
                 NOTICE_VERSION,
-                crate::domain::chardata::ConsentSurface::Discord,
+                kanade_domain::chardata::ConsentSurface::Discord,
             )
             .await
             .unwrap();
@@ -812,7 +812,7 @@ async fn unlink_deletes_at_once_and_makes_posts_due() {
             "c1",
             &Actor::admin("token"),
             Surface::AdminPortal,
-            crate::domain::chardata::UnlinkReason::Requested,
+            kanade_domain::chardata::UnlinkReason::Requested,
             None,
         )
         .await
@@ -850,7 +850,7 @@ async fn roster_edits_unlink_and_the_orphan_pass_catches_the_rest() {
             "1001",
             "c2",
             NOTICE_VERSION,
-            crate::domain::chardata::ConsentSurface::Discord,
+            kanade_domain::chardata::ConsentSurface::Discord,
         )
         .await
         .unwrap();
@@ -907,7 +907,7 @@ async fn roster_edits_unlink_and_the_orphan_pass_catches_the_rest() {
 }
 
 /// Rename the roster character `id` to `ign` in the main store.
-async fn rename(rig: &Rig, id: &str, ign: &str) -> crate::domain::characters::Character {
+async fn rename(rig: &Rig, id: &str, ign: &str) -> kanade_domain::characters::Character {
     let current = CharacterStore::character(&*rig.roster, id)
         .await
         .unwrap()
@@ -946,7 +946,7 @@ async fn a_retired_character_keeps_its_data_until_it_expires() {
             "1001",
             "c2",
             NOTICE_VERSION,
-            crate::domain::chardata::ConsentSurface::Discord,
+            kanade_domain::chardata::ConsentSurface::Discord,
         )
         .await
         .unwrap()
@@ -1183,7 +1183,7 @@ async fn the_post_pipeline_logs_no_nexon_field() {
             "c1",
             &Actor::member("1001"),
             Surface::Discord,
-            crate::domain::chardata::UnlinkReason::Requested,
+            kanade_domain::chardata::UnlinkReason::Requested,
             None,
         )
         .await
@@ -1210,7 +1210,7 @@ async fn a_confirmation_nexon_cannot_serve_writes_nothing() {
 }
 
 /// The roster row `id` as stored now.
-async fn roster_row(rig: &Rig, id: &str) -> crate::domain::characters::Character {
+async fn roster_row(rig: &Rig, id: &str) -> kanade_domain::characters::Character {
     CharacterStore::character(&*rig.roster, id)
         .await
         .unwrap()
@@ -1218,7 +1218,7 @@ async fn roster_row(rig: &Rig, id: &str) -> crate::domain::characters::Character
 }
 
 /// The History rows of roster writes whose values come from NEXON.
-async fn nexon_rows(rig: &Rig) -> Vec<crate::domain::settings::SettingsChange> {
+async fn nexon_rows(rig: &Rig) -> Vec<kanade_domain::settings::SettingsChange> {
     rig.roster
         .settings_changes(SettingsChangeQuery {
             actor: Some(Actor::system(NEXON_ACTOR)),
@@ -1232,8 +1232,8 @@ async fn nexon_rows(rig: &Rig) -> Vec<crate::domain::settings::SettingsChange> {
 async fn edit(
     rig: &Rig,
     id: &str,
-    change: impl FnOnce(&mut crate::domain::characters::Character),
-) -> crate::domain::characters::Character {
+    change: impl FnOnce(&mut kanade_domain::characters::Character),
+) -> kanade_domain::characters::Character {
     let current = roster_row(rig, id).await;
     let mut after = current.clone();
     change(&mut after);
@@ -1395,7 +1395,7 @@ async fn values_nexon_lacks_or_the_roster_refuses_are_not_copied() {
 /// character's expired link.
 #[tokio::test]
 async fn copied_values_stay_after_unlink_and_expiry() {
-    let copied = |row: crate::domain::characters::Character| (row.class, row.level);
+    let copied = |row: kanade_domain::characters::Character| (row.class, row.level);
     let expected = (Some("Bishop".to_owned()), Some(271));
 
     let rig = rig().await;
@@ -1405,7 +1405,7 @@ async fn copied_values_stay_after_unlink_and_expiry() {
             "c1",
             &Actor::member("1001"),
             Surface::Discord,
-            crate::domain::chardata::UnlinkReason::Requested,
+            kanade_domain::chardata::UnlinkReason::Requested,
             None,
         )
         .await
@@ -1571,7 +1571,7 @@ async fn put_pending(rig: &Rig, id: &str, by: Actor) {
     };
     assert_eq!(
         rig.file.put_link(pending, 0).await.unwrap(),
-        crate::domain::chardata::LinkPut::Written
+        kanade_domain::chardata::LinkPut::Written
     );
 }
 
@@ -1685,7 +1685,7 @@ fn scouted(ign: &str) -> StoredMember {
 
 /// The roster IGN `name`, as the scouter is sent it.
 fn scouter_ign(name: &str) -> RosterIgn {
-    RosterIgn::of(&crate::domain::characters::Character {
+    RosterIgn::of(&kanade_domain::characters::Character {
         id: "c0".into(),
         member_id: "1001".into(),
         ign: name.into(),
@@ -1902,7 +1902,7 @@ async fn a_nexon_unlink_keeps_estimates() {
             "c1",
             &Actor::admin("token"),
             Surface::AdminPortal,
-            crate::domain::chardata::UnlinkReason::Requested,
+            kanade_domain::chardata::UnlinkReason::Requested,
             None,
         )
         .await

@@ -1,12 +1,12 @@
 //! SQLite-only journal behaviour: the card index and recovery across a real
 //! close and reopen.
 
-use kanade::domain::notify::{
+use kanade::infrastructure::store::SqliteStore;
+use kanade_domain::notify::{
     AttemptState, CardIndex, Claim, DeliveryJournal, DeliveryTarget, EffectKind, IntentContent,
     NotificationIntent, Receipt,
 };
-use kanade::domain::scheduler::{ScheduleStore, Scope};
-use kanade::infrastructure::store::SqliteStore;
+use kanade_domain::scheduler::{ScheduleStore, Scope};
 
 use crate::support::{TempDir, at, seed};
 
@@ -33,8 +33,8 @@ async fn unsent(store: &SqliteStore) {
     store
         .commit(
             state.revision,
-            kanade::domain::schedule::ChangeSet {
-                changes: vec![kanade::domain::schedule::Change::PutReminder(row)],
+            kanade_domain::schedule::ChangeSet {
+                changes: vec![kanade_domain::schedule::Change::PutReminder(row)],
             },
             kanade::infrastructure::store::conformance::meta(),
         )
@@ -136,7 +136,7 @@ async fn an_intent_left_by_a_crash_is_indeterminate_after_reopen() {
 
 #[tokio::test]
 async fn a_cancelled_journal_write_leaves_the_next_one_working() {
-    use kanade::domain::schedule::{Change, ChangeSet, Reminder};
+    use kanade_domain::schedule::{Change, ChangeSet, Reminder};
     use std::time::Duration;
 
     let dir = TempDir::new();

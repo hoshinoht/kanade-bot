@@ -5,16 +5,16 @@
 use chrono::{DateTime, Utc, Weekday};
 
 use super::fixtures::{Ids, TestClock, admin, refused, timing, utc2026};
-use crate::domain::drafts::{
+use kanade_domain::drafts::{
     DraftChange, DraftCreated, DraftEvent, DraftEventKind, DraftScope, DraftStale, DraftStatus,
     DraftStore, DraftUpdate, DraftWrite, LoadedDraft, MergeCommit, NewDraft, StoredDraft,
     closed_at,
 };
-use crate::domain::history::{Actor, ChangeHistory, ChangeMeta, ChangeRef, Origin, Surface};
-use crate::domain::schedule::{
+use kanade_domain::history::{Actor, ChangeHistory, ChangeMeta, ChangeRef, Origin, Surface};
+use kanade_domain::schedule::{
     Change, ChangeSet, NewFixedRun, Run, RunSource, RunStatus, ScheduleSnapshot,
 };
-use crate::domain::scheduler::{ScheduleStore, SchedulerService, Scope, StoreError};
+use kanade_domain::scheduler::{ScheduleStore, SchedulerService, Scope, StoreError};
 
 /// Run every check, each against a fresh store from `make`.
 pub async fn run_suite<S: ScheduleStore + ChangeHistory + DraftStore + Sync>(
@@ -157,7 +157,7 @@ async fn committed<S: ScheduleStore + DraftStore>(
     meta: ChangeMeta,
     draft: &str,
     check: &str,
-) -> crate::domain::scheduler::Committed {
+) -> kanade_domain::scheduler::Committed {
     match merge(service, revision, run_9(), meta, draft, 1).await {
         Ok(MergeCommit::Committed(committed)) => committed,
         other => panic!("{check}: not committed: {other:?}"),
@@ -179,7 +179,7 @@ async fn create<S: ScheduleStore + DraftStore>(
 fn draft(base: &ChangeRef, revision: u64) -> NewDraft {
     NewDraft {
         id: "draft-1".into(),
-        kind: crate::domain::drafts::DraftKind::Admin,
+        kind: kanade_domain::drafts::DraftKind::Admin,
         title: "retime the raid".into(),
         author: Actor::admin("root"),
         base: base.clone(),
@@ -261,7 +261,7 @@ async fn create_request_ids_replay_or_mismatch<S: ScheduleStore + ChangeHistory 
     let request = |digest: &str| {
         let mut new = draft(&base, revision);
         new.id = "draft-r".into();
-        new.request = Some(crate::domain::drafts::DraftRequest {
+        new.request = Some(kanade_domain::drafts::DraftRequest {
             request_id: "create-1".into(),
             digest: digest.into(),
         });
@@ -287,10 +287,10 @@ async fn op_edits_bump_the_version_and_refuse_stale_writes<
 ) {
     let (service, base, revision) = started(store).await;
     let created = create(&service, draft(&base, revision), "op_edits").await;
-    let staged = |ord: usize| crate::domain::drafts::StagedOp {
+    let staged = |ord: usize| kanade_domain::drafts::StagedOp {
         ord,
-        op: crate::domain::drafts::DraftOp::ResetToFixed {
-            run: crate::domain::drafts::Target::Existing("run-1".into()),
+        op: kanade_domain::drafts::DraftOp::ResetToFixed {
+            run: kanade_domain::drafts::Target::Existing("run-1".into()),
         },
         author: Actor::admin("root"),
         added_at: utc(27, 1, 30),
@@ -370,10 +370,10 @@ async fn rebase_moves_the_base_and_close_is_final<S: ScheduleStore + ChangeHisto
         ("weekend reshuffle", 3, &tip)
     );
     // A settling rebase replaces the operations in the same write.
-    let staged = crate::domain::drafts::StagedOp {
+    let staged = kanade_domain::drafts::StagedOp {
         ord: 5,
-        op: crate::domain::drafts::DraftOp::ResetToFixed {
-            run: crate::domain::drafts::Target::Existing("run-1".into()),
+        op: kanade_domain::drafts::DraftOp::ResetToFixed {
+            run: kanade_domain::drafts::Target::Existing("run-1".into()),
         },
         author: Actor::admin("root"),
         added_at: at,
@@ -389,7 +389,7 @@ async fn rebase_moves_the_base_and_close_is_final<S: ScheduleStore + ChangeHisto
     let loaded = loaded(&service, id).await;
     assert_eq!(
         loaded.ops,
-        [crate::domain::drafts::StagedOp { ord: 0, ..staged }],
+        [kanade_domain::drafts::StagedOp { ord: 0, ..staged }],
         "the rebase renumbers the operations it stores"
     );
     assert_eq!(loaded.draft.title, "weekend reshuffle");
@@ -658,7 +658,7 @@ async fn snapshot_with_head_covers_the_snapshot<S: ScheduleStore + ChangeHistory
 fn request(base: &ChangeRef, id: &str, at: DateTime<Utc>) -> NewDraft {
     NewDraft {
         id: id.into(),
-        kind: crate::domain::drafts::DraftKind::Request,
+        kind: kanade_domain::drafts::DraftKind::Request,
         title: "join".into(),
         author: Actor::member("1"),
         base: base.clone(),
@@ -667,10 +667,10 @@ fn request(base: &ChangeRef, id: &str, at: DateTime<Utc>) -> NewDraft {
         subject: Some("run:r-1".into()),
         at,
         request: None,
-        submit: Some(crate::domain::drafts::Submission {
+        submit: Some(kanade_domain::drafts::Submission {
             ops: Vec::new(),
             expires_week: None,
-            limits: crate::domain::requests::DEFAULT_LIMITS,
+            limits: kanade_domain::requests::DEFAULT_LIMITS,
         }),
     }
 }
@@ -691,7 +691,7 @@ async fn request_limits_are_counted_inside_the_insert<
 >(
     store: S,
 ) {
-    use crate::domain::drafts::RequestLimit;
+    use kanade_domain::drafts::RequestLimit;
 
     let service = service(store).await;
     let base = head(&service).await;

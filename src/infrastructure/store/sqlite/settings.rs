@@ -11,12 +11,12 @@ use sqlx::{Connection, Row, SqliteConnection};
 use super::SqliteStore;
 use super::rows::{instant, optional_instant};
 use super::schedule::store_error;
-use crate::domain::history::{Actor, Surface};
-use crate::domain::scheduler::StoreError;
-use crate::domain::settings::{RowDiff, SettingsChange, SettingsChangeQuery, SettingsStore, keys};
-use crate::domain::time::from_iso;
 use crate::infrastructure::store::Written;
 use crate::infrastructure::store::rules::refuse_unknown_settings;
+use kanade_domain::history::{Actor, Surface};
+use kanade_domain::scheduler::StoreError;
+use kanade_domain::settings::{RowDiff, SettingsChange, SettingsChangeQuery, SettingsStore, keys};
+use kanade_domain::time::from_iso;
 
 fn key_list() -> String {
     serde_json::Value::from(keys::ALL.to_vec()).to_string()

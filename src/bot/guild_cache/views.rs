@@ -10,7 +10,7 @@ use super::{CachedChannel, GuildCache};
 use crate::api::state::{ChannelEntry, ChannelGrants, ChannelList, RoleEntry};
 use crate::bot::ids::{id_text, parse_id};
 use crate::chat::gate::{ChannelDirectory, ChannelInfo};
-use crate::domain::notify::ChannelDirectory as PostDirectory;
+use kanade_domain::notify::ChannelDirectory as PostDirectory;
 
 /// The extractor's watched channels and categories (v4 `is_watched`): a
 /// channel is watched when listed, under a listed category, or a thread of

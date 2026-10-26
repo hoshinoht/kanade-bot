@@ -40,15 +40,15 @@ use crate::{
         listeners::Site,
         public::write::path_id,
     },
-    domain::{
-        catalog::BossTable,
-        characters::{Character, PartySlot},
-        chardata::{ATTRIBUTION, Requirement, date_text},
-    },
     infrastructure::{
         character_data::CharacterData,
         scouter::{Estimates, RosterIgn},
     },
+};
+use kanade_domain::{
+    catalog::BossTable,
+    characters::{Character, PartySlot},
+    chardata::{ATTRIBUTION, Requirement, date_text},
 };
 
 /// `character` as the party sees it: the caller's own with their fresh

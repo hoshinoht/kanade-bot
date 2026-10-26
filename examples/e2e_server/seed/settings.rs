@@ -4,7 +4,7 @@
 use std::{fs, io, path::Path};
 
 use chrono::NaiveTime;
-use kanade::domain::settings::{
+use kanade_domain::settings::{
     Chatbot, Notifications, Persona, Pings, Profanity, RoleProfileAssignment, Section, SelfService,
     save_section,
 };

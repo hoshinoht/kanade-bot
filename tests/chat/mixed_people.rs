@@ -14,9 +14,9 @@ use kanade::chat::answer::{AnswerDeps, Generation, Question, answer};
 use kanade::chat::pilot::ChatPilot;
 use kanade::chat::sanitize::schedule_people;
 use kanade::chat::tools::ToolContext;
-use kanade::domain::members::MemberProfile;
 use kanade::infrastructure::llm::governor::DEFAULT_TOOL_ROUNDS;
 use kanade::infrastructure::llm::{ChatRequest, FakeAction, FakeProvider, Message};
+use kanade_domain::members::MemberProfile;
 use serde_json::{Value, json};
 
 use crate::looping::{Ports, conversation, said, settings};

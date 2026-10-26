@@ -31,7 +31,7 @@ use kanade::bot::transport::{
     AmbiguousKind, Call, DiscordTransport, FakeDiscord, InteractionReply, Op, Outcome,
     RejectionKind, Step,
 };
-use kanade::domain::members::Roster;
+use kanade_domain::members::Roster;
 
 use super::support::*;
 

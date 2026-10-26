@@ -241,7 +241,7 @@ fn an_unusable_ca_file_is_refused() {
 
 #[test]
 fn stored_settings_map_onto_setup_roles() {
-    use kanade::domain::settings::{
+    use kanade_domain::settings::{
         ContextSettings, Models as Stored, Reasoning, RoleModel as StoredRole,
     };
     let stored = Stored {

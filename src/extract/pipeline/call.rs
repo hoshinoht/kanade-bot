@@ -12,11 +12,6 @@ use tokio::time::Instant;
 use super::config::CallContext;
 use super::extractor::{CALL_SWITCHED_OFF, Extractor, utc};
 use super::ports::{Outbox, Proposer};
-use crate::domain::catalog::BossTable;
-use crate::domain::model_log::{ModelLogStore, ReadMessage, WatchedMessage};
-use crate::domain::schedule::{FixedRun, Run, ScheduleSnapshot};
-use crate::domain::scheduler::ScheduleStore;
-use crate::domain::weeks;
 use crate::extract::Amendment;
 use crate::extract::AmendmentKind;
 use crate::extract::plan::{BurstInputs, Payload, Planned, plan_burst};
@@ -29,6 +24,11 @@ use crate::extract::schema::{AttemptOutcome, ExtractionAttempts, ExtractionCall,
 use crate::infrastructure::llm::governor::{Refused, RoleRoute, SessionError, SessionFailure};
 use crate::infrastructure::llm::identity::{Member, PassthroughSession};
 use crate::infrastructure::llm::{ChatRequest, Effort, ErrorCode, LlmProvider, Message, Usage};
+use kanade_domain::catalog::BossTable;
+use kanade_domain::model_log::{ModelLogStore, ReadMessage, WatchedMessage};
+use kanade_domain::schedule::{FixedRun, Run, ScheduleSnapshot};
+use kanade_domain::scheduler::ScheduleStore;
+use kanade_domain::weeks;
 
 /// Why a call produced no answer.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -187,7 +187,7 @@ pub(crate) struct CallRecord {
     pub dropped: usize,
     pub stale: usize,
     pub proposal_ids: Vec<String>,
-    pub refusals: Vec<crate::domain::model_log::ExtractionRefusal>,
+    pub refusals: Vec<kanade_domain::model_log::ExtractionRefusal>,
     pub redirected: usize,
     /// How each lead-in of this call was made (`LineSource::as_str`), for the log.
     pub nudges: Vec<&'static str>,
@@ -595,7 +595,7 @@ where
                     .filter(|text| !text.is_empty())
                     .filter(|_| {
                         record.reasoning_content.as_deref().is_none_or(|previous| {
-                            !previous.ends_with(crate::domain::model_log::REASONING_TRUNCATED)
+                            !previous.ends_with(kanade_domain::model_log::REASONING_TRUNCATED)
                         })
                     })
                 {
@@ -603,7 +603,7 @@ where
                         Some(previous) => format!("{previous}\n\n{text}"),
                         None => text.to_owned(),
                     };
-                    record.reasoning_content = crate::domain::model_log::capped_reasoning(&joined);
+                    record.reasoning_content = kanade_domain::model_log::capped_reasoning(&joined);
                 }
                 if let Some(tokens) = response.reasoning_tokens {
                     record.reasoning_tokens = Some(

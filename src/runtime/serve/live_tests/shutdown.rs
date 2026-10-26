@@ -27,10 +27,10 @@ use crate::{
         extract_feed::snowflake_before,
         transport::{Hold, TransportConfig},
     },
-    domain::model_log::{ChatFilter, ExtractionFilter, ExtractionOutcome, ModelLogStore},
     extract::pipeline::CALL_CANCELLED,
     runtime::{error::Error, serve::budget},
 };
+use kanade_domain::model_log::{ChatFilter, ExtractionFilter, ExtractionOutcome, ModelLogStore};
 
 /// deploy/compose.yaml `stop_grace_period`: SIGKILL follows SIGTERM after it.
 const COMPOSE_STOP_GRACE: Duration = Duration::from_secs(30);
@@ -927,7 +927,7 @@ async fn shutdown_with_nothing_letting_go_ends_inside_the_budget() {
     // The cut send was uncertain: its notice is drained, never re-sent (a
     // `NotSent` would have left it pending). The second notice, refused
     // unsent at the deadline, waits for the next start.
-    let pending = crate::domain::notify::NoticeOutbox::pending_notices(&*store)
+    let pending = kanade_domain::notify::NoticeOutbox::pending_notices(&*store)
         .await
         .unwrap();
     assert_eq!(pending.notices.len(), 1, "{breakdown}");

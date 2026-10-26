@@ -3,12 +3,12 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::{
-    domain::{
-        model_log::{ExtractionFilter, ExtractionOutcome, ModelLogStore},
-        settings::RuntimeSettings,
-    },
     extract::pipeline::{CALL_CANCELLED, CALL_SWITCHED_OFF},
     infrastructure::store::SqliteStore,
+};
+use kanade_domain::{
+    model_log::{ExtractionFilter, ExtractionOutcome, ModelLogStore},
+    settings::RuntimeSettings,
 };
 
 /// `extract_enabled` and not `paused`, as last published; `composed` once

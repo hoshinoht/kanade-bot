@@ -4,8 +4,8 @@
 use chrono::{DateTime, NaiveTime, Timelike, Utc, Weekday};
 use serde_json::{Value, json};
 
-use crate::domain::schedule::{FixedField, Notice, NoticeChange, RequestDecision, RunStatus};
-use crate::domain::time::{from_iso, to_iso};
+use kanade_domain::schedule::{FixedField, Notice, NoticeChange, RequestDecision, RunStatus};
+use kanade_domain::time::{from_iso, to_iso};
 
 const V1: i64 = 1;
 const V2: i64 = 2;

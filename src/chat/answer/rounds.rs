@@ -23,17 +23,17 @@ use crate::chat::tools::propose::{ProposalCard, Proposer};
 use crate::chat::tools::read::resolve::Heard;
 use crate::chat::tools::read::{PendingCard, ToolWorld};
 use crate::chat::tools::{FAILED, LOOKUP_FAILED, REFUSED, ToolName, ToolOutcome};
-use crate::domain::drafts::ProposalStore;
-use crate::domain::members::member_name;
-use crate::domain::pytext::strip;
-use crate::domain::schedule::ScheduleSnapshot;
-use crate::domain::scheduler::{Clock, IdSource, ScheduleStore, Scope};
 use crate::infrastructure::llm::governor::{SentRequest, Session, SessionError, SessionFailure};
 use crate::infrastructure::llm::identity::PassthroughSession;
 use crate::infrastructure::llm::{
     ChatRequest, CompletionResponse, ErrorCode, LlmProvider, Message, Sampling, ToolCallRequest,
     ToolDefinition,
 };
+use kanade_domain::drafts::ProposalStore;
+use kanade_domain::members::member_name;
+use kanade_domain::pytext::strip;
+use kanade_domain::schedule::ScheduleSnapshot;
+use kanade_domain::scheduler::{Clock, IdSource, ScheduleStore, Scope};
 
 /// Why the reserved clean retry is spent.
 #[derive(Clone, Copy)]
@@ -228,7 +228,7 @@ impl Loop<'_, '_> {
             reasoning_content: response
                 .reasoning_content
                 .as_deref()
-                .and_then(crate::domain::model_log::capped_reasoning),
+                .and_then(kanade_domain::model_log::capped_reasoning),
             reasoning_tokens: response.reasoning_tokens,
             content: response.content.clone(),
             requested_tools: response.tool_calls.iter().map(|c| c.name.clone()).collect(),

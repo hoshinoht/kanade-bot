@@ -5,8 +5,8 @@
 use chrono::{DateTime, NaiveTime, Utc, Weekday};
 
 use super::fixtures::refused_for;
-use crate::domain::history::{Actor, Surface};
-use crate::domain::settings::{
+use kanade_domain::history::{Actor, Surface};
+use kanade_domain::settings::{
     CharacterData, IdList, Reasoning, RuntimeSettings, Section, SelfServiceMode, SettingsChange,
     SettingsChangeQuery, SettingsError, SettingsStore, diff_rows, keys, load_settings,
     save_section, save_section_recorded,
@@ -103,7 +103,7 @@ async fn rowless_records_leave_the_settings_alone<S: SettingsStore>(store: S) {
         revision: 0,
         values: [(
             "window.1004".to_owned(),
-            crate::domain::settings::RowDiff {
+            kanade_domain::settings::RowDiff {
                 from: r#"{"used":3}"#.into(),
                 to: r#"{"used":0}"#.into(),
             },
@@ -209,11 +209,11 @@ async fn role_profiles_round_trip_in_order<S: SettingsStore>(store: S) {
     assert_eq!(
         loaded.persona.role_profiles,
         [
-            crate::domain::settings::RoleProfileAssignment {
+            kanade_domain::settings::RoleProfileAssignment {
                 role_id: "700".into(),
                 profile: "quiet".into(),
             },
-            crate::domain::settings::RoleProfileAssignment {
+            kanade_domain::settings::RoleProfileAssignment {
                 role_id: "701".into(),
                 profile: "warm".into(),
             },
@@ -238,11 +238,11 @@ async fn sections_round_trip_and_keep_other_rows<S: SettingsStore>(store: S) {
     wanted.self_service.public_portal = true;
     wanted.persona.profile_visibility = vec!["terse".into(), "calm".into()];
     wanted.persona.role_profiles = vec![
-        crate::domain::settings::RoleProfileAssignment {
+        kanade_domain::settings::RoleProfileAssignment {
             role_id: "700".into(),
             profile: "terse".into(),
         },
-        crate::domain::settings::RoleProfileAssignment {
+        kanade_domain::settings::RoleProfileAssignment {
             role_id: "701".into(),
             profile: "calm".into(),
         },

@@ -9,7 +9,7 @@ use twilight_model::channel::message::AllowedMentions;
 use twilight_model::id::{Id, marker::UserMarker};
 
 use super::ids::parse_id;
-use crate::domain::notify::{self, NotificationIntent};
+use kanade_domain::notify::{self, NotificationIntent};
 
 /// Allow exactly these users; unparsable ids are dropped, never widened.
 /// The list is sorted and deduplicated to match the journal's canonical form.

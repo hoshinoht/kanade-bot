@@ -34,17 +34,17 @@ use crate::{
         transport::{Call, FakeDiscord, Op, Outcome},
     },
     chat::tools::read::{GuideError, StrategyGuides},
-    domain::{
-        catalog::BossReference,
-        members::{Member, MemberProfile, MemberStore},
-        model_log::{ChatFilter, ChatInteraction, ChatOutcome, ModelLogStore},
-        settings::{SettingsStore, keys},
-    },
     infrastructure::{
         files::{load_catalog, load_knowledge_dir},
         store::SqliteStore,
     },
     runtime::application::HealthProbe,
+};
+use kanade_domain::{
+    catalog::BossReference,
+    members::{Member, MemberProfile, MemberStore},
+    model_log::{ChatFilter, ChatInteraction, ChatOutcome, ModelLogStore},
+    settings::{SettingsStore, keys},
 };
 
 const GUILD: u64 = 900;
@@ -863,7 +863,7 @@ async fn chat_resolves_live_discord_roles_before_saved_style_without_granting_ac
 #[tokio::test]
 async fn a_saved_model_switch_reaches_the_next_question_without_a_restart() {
     use crate::api::admin::config::ModelCatalog;
-    use crate::domain::settings::Reasoning;
+    use kanade_domain::settings::Reasoning;
 
     let stub = ModelStub::start("local", "Lotus is at nine tonight.").await;
     let (live, discord) = live(&stub, &[("KANADE_CHAT_REASONING", "low")]).await;
@@ -915,7 +915,7 @@ async fn a_saved_model_switch_reaches_the_next_question_without_a_restart() {
 
 #[tokio::test]
 async fn an_external_chat_route_sends_raw_member_data_without_opt_in_or_a_model_view() {
-    use crate::domain::members::{Member, MemberProfile, MemberStore};
+    use kanade_domain::members::{Member, MemberProfile, MemberStore};
     let stub = ModelStub::start("external", "Lotus is at nine tonight.").await;
     let (live, discord) = live(&stub, &[]).await;
     live.store
@@ -985,8 +985,8 @@ async fn an_external_chat_route_sends_raw_member_data_without_opt_in_or_a_model_
     .await;
 }
 
-fn alice(nickname: &str, aliases: &[&str]) -> crate::domain::members::MemberProfile {
-    use crate::domain::members::{Member, MemberProfile};
+fn alice(nickname: &str, aliases: &[&str]) -> kanade_domain::members::MemberProfile {
+    use kanade_domain::members::{Member, MemberProfile};
     MemberProfile {
         member: Member {
             user_id: ALICE.to_string(),
@@ -1007,7 +1007,7 @@ fn alice(nickname: &str, aliases: &[&str]) -> crate::domain::members::MemberProf
 /// receives its original text even after the current member profile changes.
 #[tokio::test]
 async fn renamed_member_names_in_chat_history_are_sent_unchanged() {
-    use crate::domain::members::MemberStore;
+    use kanade_domain::members::MemberStore;
     let stub = ModelStub::start("external", "Sure Oldnick, Lotus is at nine.").await;
     let (live, discord) = live(&stub, &[]).await;
     live.store
@@ -1052,7 +1052,7 @@ fn last_body(stub: &ModelStub) -> String {
 
 #[tokio::test]
 async fn a_deflected_question_and_its_line_never_reach_the_next_prompt() {
-    let line = crate::domain::settings::DEFAULT_DEFLECTION_LINE;
+    let line = kanade_domain::settings::DEFAULT_DEFLECTION_LINE;
     let stub = ModelStub::start("local", "Lotus is at nine tonight.").await;
     let (live, discord) = live(&stub, &[]).await;
     drive(live, discord, async |live| {
@@ -1089,7 +1089,7 @@ async fn a_deflected_question_and_its_line_never_reach_the_next_prompt() {
 
 #[tokio::test]
 async fn a_replaced_reply_stays_out_and_a_recovered_one_stays_in() {
-    let line = crate::domain::settings::DEFAULT_DEFLECTION_LINE;
+    let line = kanade_domain::settings::DEFAULT_DEFLECTION_LINE;
     for (retry, kept) in [("Shit, nine.", false), ("Kalos is at nine.", true)] {
         let stub = ModelStub::scripted(
             "local",

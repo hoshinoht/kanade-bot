@@ -1,6 +1,6 @@
-//! The snapshot order every store returns (see [`crate::domain::scheduler::ScheduleStore`]).
+//! The snapshot order every store returns (see [`kanade_domain::scheduler::ScheduleStore`]).
 
-use crate::domain::schedule::ScheduleSnapshot;
+use kanade_domain::schedule::ScheduleSnapshot;
 
 pub(crate) fn sort_snapshot(snapshot: &mut ScheduleSnapshot) {
     snapshot.sort();

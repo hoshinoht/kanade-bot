@@ -1,7 +1,7 @@
 //! Event bosses: knowledge documents outside the catalog, named by their key
 //! or an alias, optionally with a difficulty word around the name.
 
-use crate::domain::catalog::BossTable;
+use kanade_domain::catalog::BossTable;
 
 /// One event boss a guide store can render.
 #[derive(Clone, Debug, PartialEq, Eq)]

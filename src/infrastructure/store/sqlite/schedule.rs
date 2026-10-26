@@ -14,14 +14,14 @@ use sqlx::{Connection, Row, SqliteConnection};
 use super::journal::UNPROVEN_REMINDER;
 use super::rows::{self, FIXED_COLUMNS, REMINDER_COLUMNS, RSVP_COLUMNS, RUN_COLUMNS};
 use super::{SqliteStore, history};
-use crate::domain::attendance::PastRun;
-use crate::domain::history::{Actor, ChangeMeta};
-use crate::domain::schedule::{Change, ChangeSet, FixedRun, Reminder, Rsvp, Run, ScheduleSnapshot};
-use crate::domain::scheduler::{
-    AttendanceHistory, Committed, RecordedRequest, ScheduleStore, Scope, StoreError,
-};
 use crate::infrastructure::store::history::touched_keys;
 use crate::infrastructure::store::order::sort_snapshot;
+use kanade_domain::attendance::PastRun;
+use kanade_domain::history::{Actor, ChangeMeta};
+use kanade_domain::schedule::{Change, ChangeSet, FixedRun, Reminder, Rsvp, Run, ScheduleSnapshot};
+use kanade_domain::scheduler::{
+    AttendanceHistory, Committed, RecordedRequest, ScheduleStore, Scope, StoreError,
+};
 
 /// `SQLITE_CONSTRAINT_TRIGGER` (a trigger's `RAISE`): sqlx 0.8.6 reports it
 /// as `ErrorKind::Other`, so it is matched by extended code.
@@ -353,7 +353,7 @@ async fn commit_on(
     expected_revision: u64,
     changes: ChangeSet,
     meta: ChangeMeta,
-    candidates: &[crate::domain::notify::DeclineNotice],
+    candidates: &[kanade_domain::notify::DeclineNotice],
     retractions: &[(String, String)],
 ) -> (Result<Option<Committed>, StoreError>, bool) {
     // A failed BEGIN (busy, or a worker that ran it but never answered)
@@ -415,7 +415,7 @@ impl SqliteStore {
         expected_revision: u64,
         changes: ChangeSet,
         meta: ChangeMeta,
-        candidates: &[crate::domain::notify::DeclineNotice],
+        candidates: &[kanade_domain::notify::DeclineNotice],
         retractions: &[(String, String)],
     ) -> Result<Option<Committed>, StoreError> {
         #[cfg(any(test, feature = "test-support"))]

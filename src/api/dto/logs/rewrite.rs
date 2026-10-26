@@ -6,12 +6,10 @@ use std::collections::BTreeSet;
 use serde::Serialize;
 
 use super::{UsageSummary, UsageTally};
-use crate::{
-    api::dto::iso_instant,
-    domain::{
-        ids::short_id,
-        model_log::{RewriteFacets as Facets, RewriteLog},
-    },
+use crate::api::dto::iso_instant;
+use kanade_domain::{
+    ids::short_id,
+    model_log::{RewriteFacets as Facets, RewriteLog},
 };
 
 /// Query params of `GET /api/admin/rewrites`, all optional and combinable:

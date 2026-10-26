@@ -5,12 +5,12 @@
 
 use std::sync::Arc;
 
-use kanade::domain::drafts::{DraftKind, DraftStore, NewDraft, Submission};
-use kanade::domain::history::{Actor, ChangeFilter, ChangeHistory};
-use kanade::domain::requests::DEFAULT_LIMITS;
-use kanade::domain::schedule::Change;
 use kanade::infrastructure::store::SqliteStore;
 use kanade::infrastructure::store::snapshots::{HistoryViewQuery, SnapshotReads};
+use kanade_domain::drafts::{DraftKind, DraftStore, NewDraft, Submission};
+use kanade_domain::history::{Actor, ChangeFilter, ChangeHistory};
+use kanade_domain::requests::DEFAULT_LIMITS;
+use kanade_domain::schedule::Change;
 
 use crate::support::{TempDir, commit, fixed, seed};
 

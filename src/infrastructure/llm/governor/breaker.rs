@@ -7,7 +7,7 @@ use super::{
     jitter::{Random, unit},
 };
 
-crate::domain::spelled! {
+kanade_domain::spelled! {
     BreakerState {
         Closed => "closed",
         HalfOpen => "half_open",

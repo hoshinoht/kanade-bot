@@ -5,14 +5,14 @@ use kanade::bot::mentions::allow_users;
 use kanade::bot::transport::{
     AmbiguousKind, Call, FakeDiscord, MessageId, Op, Outcome, RejectionKind,
 };
-use kanade::domain::history::{ChangeHistory, ChangeMeta, Origin};
-use kanade::domain::ids::RandomIds;
-use kanade::domain::notify::DeclineNotice;
-use kanade::domain::schedule::{
+use kanade::infrastructure::store::SqliteStore;
+use kanade_domain::history::{ChangeHistory, ChangeMeta, Origin};
+use kanade_domain::ids::RandomIds;
+use kanade_domain::notify::DeclineNotice;
+use kanade_domain::schedule::{
     Change, ChangeSet, Rsvp, RsvpSource, RsvpState, Run, RunSource, RunStatus,
 };
-use kanade::domain::scheduler::{DeclineNoticeContext, Scope};
-use kanade::infrastructure::store::SqliteStore;
+use kanade_domain::scheduler::{DeclineNoticeContext, Scope};
 
 use crate::intercept::Intercept;
 use crate::scenarios::{HOME, delivery, now, week, world};

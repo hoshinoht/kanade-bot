@@ -7,7 +7,7 @@ use twilight_model::user::User;
 
 use super::guild::AdminRoles;
 use crate::bot::ids::id_text;
-use crate::domain::members::{Member, Roster};
+use kanade_domain::members::{Member, Roster};
 
 /// A roster change seen on the gateway. Bots never produce one: a bot holding
 /// the role must never become a participant or be pinged.

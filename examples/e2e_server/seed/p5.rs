@@ -4,7 +4,7 @@
 
 use super::Seed;
 use crate::Fail;
-use kanade::domain::chardata::DAILY_CALLS;
+use kanade_domain::chardata::DAILY_CALLS;
 
 const CALLS: i64 = 162;
 

@@ -5,7 +5,7 @@
 //! each change by the actor and surface that made it, ending in a rollback.
 
 use chrono::{DateTime, Duration, Utc, Weekday};
-use kanade::domain::{
+use kanade_domain::{
     attendance::AttendanceDefault,
     history::{Actor, Surface},
     schedule::{

@@ -63,14 +63,12 @@ use super::{
     scouter_keys,
     wire::{Combined, Member},
 };
-use crate::{
-    domain::{
-        chardata::{CharDataStore, ESTIMATE_TTL, MemberEstimate, PartyEstimate, estimate_kept},
-        history::Actor,
-        scheduler::StoreError,
-        settings::DEFAULT_ESTIMATE_DAYS,
-    },
-    infrastructure::character_data::{Clock, error_kind},
+use crate::infrastructure::character_data::{Clock, error_kind};
+use kanade_domain::{
+    chardata::{CharDataStore, ESTIMATE_TTL, MemberEstimate, PartyEstimate, estimate_kept},
+    history::Actor,
+    scheduler::StoreError,
+    settings::DEFAULT_ESTIMATE_DAYS,
 };
 
 /// How long a result is kept in memory: the character-data file's
@@ -114,7 +112,7 @@ pub struct Subject {
     pub ign: RosterIgn,
 }
 
-crate::domain::spelled! {
+kanade_domain::spelled! {
     /// Why a party member is not looked up. They are listed as missing, never
     /// counted as 0%.
     MissingReason {
@@ -229,7 +227,7 @@ pub struct Found {
     pub cache_hit: bool,
 }
 
-crate::domain::spelled! {
+kanade_domain::spelled! {
     /// The drawn error states.
     FailureKind {
         /// 429: the scouter stayed busy past the job's deadline, or was
@@ -302,7 +300,7 @@ impl Failure {
     }
 }
 
-crate::domain::spelled! {
+kanade_domain::spelled! {
     JobState {
         Queued => "queued",
         Running => "running",
@@ -366,7 +364,7 @@ pub enum Start {
     Full,
 }
 
-crate::domain::spelled! {
+kanade_domain::spelled! {
     /// Who a job is for (the `source` of its `estimate_finished` line).
     JobSource {
         /// An admin's lookup (a background job one joined included).
@@ -376,7 +374,7 @@ crate::domain::spelled! {
     }
 }
 
-crate::domain::spelled! {
+kanade_domain::spelled! {
     ScouterState {
         /// No `KANADE_SCOUTER_URL`: estimates are off.
         Off => "off",

@@ -12,14 +12,14 @@ use super::drafts::{
 };
 use super::rows;
 use super::schedule::store_error;
-use crate::domain::drafts::{
+use crate::infrastructure::store::Written;
+use kanade_domain::drafts::{
     DraftChange, DraftEventKind, DraftKind, DraftStatus, DraftUpdate, DraftWrite, ExistingProposal,
     LoadedDraft, NewDraft, NewProposal, ProposalCreated, ProposalInfo, ProposalSource,
     ProposalSubmission, SUPERSEDED, StoredProposal, check_new_proposal,
 };
-use crate::domain::history::Actor;
-use crate::domain::scheduler::{CARDLESS_CHAT_GRACE, StoreError, same_run_proposal};
-use crate::infrastructure::store::Written;
+use kanade_domain::history::Actor;
+use kanade_domain::scheduler::{CARDLESS_CHAT_GRACE, StoreError, same_run_proposal};
 
 const INFO_COLUMNS: &str = "source, source_id, supersede_key, expires_at";
 
@@ -178,7 +178,7 @@ async fn expire_in(
     Ok(due)
 }
 
-impl crate::domain::drafts::ProposalStore for SqliteStore {
+impl kanade_domain::drafts::ProposalStore for SqliteStore {
     async fn create_proposal_or_existing(
         &self,
         new: NewProposal,

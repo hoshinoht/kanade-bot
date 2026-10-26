@@ -26,11 +26,11 @@ use crate::chat::persona::{CompiledPersona, PersonaId, PersonaRoot};
 use crate::chat::pilot::TrafficLimits;
 use crate::chat::sanitize::{FAILURE_REPLY, schedule_defaults};
 use crate::chat::tools::ToolContext;
-use crate::domain::catalog::BossTable;
-use crate::domain::members::{Directory, Member, Roster};
-use crate::domain::model_log::{ChatInteraction, ChatOutcome, ModelLogStore};
 use crate::infrastructure::llm::Message;
 use crate::infrastructure::store::SqliteStore;
+use kanade_domain::catalog::BossTable;
+use kanade_domain::members::{Directory, Member, Roster};
+use kanade_domain::model_log::{ChatInteraction, ChatOutcome, ModelLogStore};
 
 const GUILD: &str = "900";
 const ROLE: &str = "10";
@@ -911,7 +911,7 @@ async fn a_zero_member_allowance_ignores_members_silently_but_not_staff_or_overr
     assert!(rig.driver.offer(staff));
     rig.settle().await;
     rig.driver
-        .set_overrides(vec![crate::domain::model_log::AllowanceOverride {
+        .set_overrides(vec![kanade_domain::model_log::AllowanceOverride {
             member_id: "13".into(),
             count: 2,
             window_ms: 300_000,
@@ -1529,7 +1529,7 @@ fn asking(id: &str, content: &str) -> Asked {
 #[tokio::test]
 async fn a_listed_word_in_the_question_is_deflected_without_a_model_call_and_charged() {
     let rig = rig(vec![Step::Forever]).await;
-    let line = crate::domain::settings::DEFAULT_DEFLECTION_LINE;
+    let line = kanade_domain::settings::DEFAULT_DEFLECTION_LINE;
     assert!(
         rig.driver
             .offer(asking("1001", "when is the fucking lotus run?"))
@@ -1568,10 +1568,10 @@ async fn a_saved_profanity_change_applies_to_the_next_question() {
     rig.settle().await;
     assert_eq!(rig.rows()[0].outcome, ChatOutcome::Answered);
     *rig.fake.profanity.lock().unwrap() =
-        crate::chat::answer::ProfanityGuard::new(&crate::domain::settings::Profanity {
+        crate::chat::answer::ProfanityGuard::new(&kanade_domain::settings::Profanity {
             extra_words: vec!["frick".into()],
             deflection_line: "Language, please!".into(),
-            ..crate::domain::settings::Profanity::default()
+            ..kanade_domain::settings::Profanity::default()
         });
     rig.advance(1.0);
     assert!(rig.driver.offer(asking("1002", "frick, when is lotus?")));
@@ -1583,9 +1583,9 @@ async fn a_saved_profanity_change_applies_to_the_next_question() {
     assert_eq!(rows[1].guardrail["profanity"]["word"], "frick");
     assert_eq!(rig.fake.seen.lock().unwrap().conversations.len(), 1);
     *rig.fake.profanity.lock().unwrap() =
-        crate::chat::answer::ProfanityGuard::new(&crate::domain::settings::Profanity {
+        crate::chat::answer::ProfanityGuard::new(&kanade_domain::settings::Profanity {
             check_questions: false,
-            ..crate::domain::settings::Profanity::default()
+            ..kanade_domain::settings::Profanity::default()
         });
     rig.fake
         .steps

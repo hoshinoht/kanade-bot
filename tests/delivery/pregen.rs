@@ -18,11 +18,11 @@ use kanade::chat::nudge::{
     NudgeRewriter, RewriteAttempt, RewriteDetail, RewriteFailure, RewriteOutcome, RewritePrompt,
     RewriteSink, StoreRewriteSink,
 };
-use kanade::domain::history::Origin;
-use kanade::domain::ids::RandomIds;
-use kanade::domain::model_log::{RewriteFilter, RewriteLogStore, RewriteStage};
-use kanade::domain::notify::{CardRecord, DedupeKey, DeliveryTarget, ReminderCardStore};
 use kanade::infrastructure::store::SqliteStore;
+use kanade_domain::history::Origin;
+use kanade_domain::ids::RandomIds;
+use kanade_domain::model_log::{RewriteFilter, RewriteLogStore, RewriteStage};
+use kanade_domain::notify::{CardRecord, DedupeKey, DeliveryTarget, ReminderCardStore};
 use tokio::sync::watch;
 
 use crate::cards::{
@@ -108,7 +108,7 @@ fn logged(rewriter: &Arc<Scripted>, logs: &Arc<SqliteStore>) -> CardKit {
     cards
 }
 
-async fn logged_rows(logs: &SqliteStore) -> Vec<kanade::domain::model_log::RewriteLog> {
+async fn logged_rows(logs: &SqliteStore) -> Vec<kanade_domain::model_log::RewriteLog> {
     logs.list_rewrites(&RewriteFilter {
         limit: 100,
         ..RewriteFilter::default()

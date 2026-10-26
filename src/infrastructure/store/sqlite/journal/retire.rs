@@ -8,7 +8,7 @@ use super::{
     attempt_state, attempt_targets, backend, bump_revision, check_live, iso, release_and_retire,
     require_intent, state_changed, suppress_natives,
 };
-use crate::domain::notify::{
+use kanade_domain::notify::{
     AttemptId, DECLINE_RETRACTION_ACTOR, DECLINE_RETRACTION_REASON, DIGEST_REPLACEMENT_ACTOR,
     DIGEST_REPLACEMENT_REASON, EffectKind, JournalError, Lease, NOT_SENT_ACTOR, REJECTED_ACTOR,
     WeeklyDigest, check_resolution,

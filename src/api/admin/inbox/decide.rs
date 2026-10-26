@@ -21,18 +21,16 @@ use super::{
         self, discord_session_required, edit_not_applicable, not_found, stale, unprocessable,
     },
 };
-use crate::{
-    api::{auth::AdminSession, dto::inbox::kind_label, listeners::Site, state::ApiState},
-    domain::{
-        drafts::{DraftKind, DraftOp, DraftStatus, LoadedDraft},
-        history::Actor,
-        ids::short_id,
-        members::MemberProfile,
-        proposals::{Approver, ProposalSubject},
-        requests::{ChangeId, RequestEdit, RequestRefusal, RequestType, check_reason},
-        schedule::{AmendedRunChoice, FixedEditChoices, utc_instant},
-        scheduler::{DraftError, ProposalError, RequestError},
-    },
+use crate::api::{auth::AdminSession, dto::inbox::kind_label, listeners::Site, state::ApiState};
+use kanade_domain::{
+    drafts::{DraftKind, DraftOp, DraftStatus, LoadedDraft},
+    history::Actor,
+    ids::short_id,
+    members::MemberProfile,
+    proposals::{Approver, ProposalSubject},
+    requests::{ChangeId, RequestEdit, RequestRefusal, RequestType, check_reason},
+    schedule::{AmendedRunChoice, FixedEditChoices, utc_instant},
+    scheduler::{DraftError, ProposalError, RequestError},
 };
 
 type Reply = Result<Response, Refusal>;

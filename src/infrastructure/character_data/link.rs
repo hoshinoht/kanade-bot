@@ -11,14 +11,14 @@ use serde_json::json;
 
 use super::refresh::FetchState;
 use super::{CharacterData, log};
-use crate::domain::characters::{Character, ign_key};
-use crate::domain::chardata::{
+use crate::infrastructure::store::replays::StoredReplay;
+use kanade_domain::characters::{Character, ign_key};
+use kanade_domain::chardata::{
     CALL_WINDOW, ConsentSurface, DAILY_CALLS, LINK_REGION, Link, LinkPut, LinkStatus,
     NOTICE_VERSION, RefreshState, Snapshot, UnlinkReason, link_change, same_identity,
 };
-use crate::domain::history::{Actor, Surface};
-use crate::domain::scheduler::StoreError;
-use crate::infrastructure::store::replays::StoredReplay;
+use kanade_domain::history::{Actor, Surface};
+use kanade_domain::scheduler::StoreError;
 
 /// `id` + `basic` + `stat`: what a first fetch needs from the budget.
 const FIRST_FETCH_CALLS: u32 = 3;

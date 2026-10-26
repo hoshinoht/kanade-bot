@@ -28,10 +28,10 @@ use crate::chat::gate::{ChannelDirectory, PilotSettings};
 use crate::chat::tools::bundles::ToolOffer;
 use crate::chat::tools::read::{PendingCard, StrategyGuides};
 use crate::chat::tools::{ProposalCard, ToolContext, ToolOutcome};
-use crate::domain::catalog::BossTable;
-use crate::domain::members::{Directory, Member};
 use crate::infrastructure::llm::governor::{Charge, SentRequest, SessionError};
 use crate::infrastructure::llm::{Effort, Message, Usage};
+use kanade_domain::catalog::BossTable;
+use kanade_domain::members::{Directory, Member};
 
 /// v4's reply when a posted card could not be delivered.
 pub const CARD_NOT_POSTED: &str = "The change was recorded but the card could not be posted to the channel. Tell them to check with an admin.";
@@ -66,7 +66,7 @@ pub struct GuildView<'a> {
     pub reset_time: NaiveTime,
     pub guides: Option<&'a (dyn StrategyGuides + Sync)>,
     /// v5: when runs end; `None` keeps v4's reading (over once started).
-    pub run_ends: Option<&'a crate::domain::completion::RunEnds>,
+    pub run_ends: Option<&'a kanade_domain::completion::RunEnds>,
 }
 
 /// Per-question model settings.

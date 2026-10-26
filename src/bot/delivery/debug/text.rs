@@ -6,8 +6,8 @@ use chrono::TimeDelta;
 use crate::bot::cards::format::Audience;
 use crate::bot::delivery::cards::redesign::{self, NoticeLook};
 use crate::bot::delivery::cards::{CardContext, People};
-use crate::domain::notify::display_names;
-use crate::domain::schedule::{Notice, NoticeChange, Run};
+use kanade_domain::notify::display_names;
+use kanade_domain::schedule::{Notice, NoticeChange, Run};
 
 /// The move notice for `run` from a day earlier, naming its party.
 pub fn amend_text(ctx: &CardContext<'_>, run: &Run, mentioned: &[String]) -> Option<String> {

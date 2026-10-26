@@ -32,11 +32,11 @@ use crate::{
         state::{ApiState, DigestPostRequest, DigestPostResult},
     },
     chat::pilot::{Allowance, AllowanceSnapshot, MemberUsage},
-    domain::{
-        members::MemberProfile,
-        settings::{RowDiff, SettingsChange},
-    },
     infrastructure::store::replays::{ReplayScope, StoredReplay},
+};
+use kanade_domain::{
+    members::MemberProfile,
+    settings::{RowDiff, SettingsChange},
 };
 
 /// One lock for the keyed effects that are not schedule writes (window

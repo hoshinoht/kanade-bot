@@ -20,15 +20,15 @@ use kanade::{
         gateway::{EventSource, GatewayError},
         transport::{FakeDiscord, Op},
     },
-    domain::{
-        model_log::ModelLogStore,
-        settings::{SettingsStore, keys},
-    },
     infrastructure::{llm::setup::ModelStack, store::SqliteStore},
     runtime::{
         config::ServeConfig,
         serve::{discord::Wiring, extract::Timing, harness, settings},
     },
+};
+use kanade_domain::{
+    model_log::ModelLogStore,
+    settings::{SettingsStore, keys},
 };
 use serde_json::{Value, json};
 use tokio::sync::{mpsc, oneshot};

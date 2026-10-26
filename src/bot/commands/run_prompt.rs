@@ -23,13 +23,13 @@ use super::runs::RunCommand;
 use super::text::{local_time, status_label};
 use crate::bot::ids::id_text;
 use crate::bot::transport::InteractionReply;
-use crate::domain::completion::{
+use kanade_domain::completion::{
     ASK_AGAIN_AFTER, PromptClose, PromptOutcome, RunPrompt, pressed_request_id, run_minutes,
 };
-use crate::domain::history::{Actor, Origin, Surface};
-use crate::domain::ids::short_id;
-use crate::domain::schedule::{RunStatus, SettleRun};
-use crate::domain::scheduler::SchedulerError;
+use kanade_domain::history::{Actor, Origin, Surface};
+use kanade_domain::ids::short_id;
+use kanade_domain::schedule::{RunStatus, SettleRun};
+use kanade_domain::scheduler::SchedulerError;
 
 /// Internal path of a prompt button press (never registered).
 pub const PROMPT_PRESS: &str = "prompt-press";
@@ -94,7 +94,7 @@ impl RunCommand {
             None => Default::default(),
         };
         let minutes = run_minutes(&lengths, Some(&ctx.catalog), &run.bosses);
-        let moved = crate::domain::completion::plan(&run, minutes, &ctx.policy)
+        let moved = kanade_domain::completion::plan(&run, minutes, &ctx.policy)
             .map_or(true, |plan| plan.ends_at != prompt.ends_at);
         if moved {
             return Err(CommandError::User(RUN_CHANGED.into()));

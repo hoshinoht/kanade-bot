@@ -4,14 +4,12 @@
 use axum::http::StatusCode as S;
 
 use super::super::write::{Refusal, scheduler};
-use crate::{
-    api::{error::ApiError, ownership::OwnershipError},
-    domain::{
-        drafts::{MergeConflict, ReplayError},
-        requests::RequestRefusal,
-        schedule::ScheduleError,
-        scheduler::{DraftError, ProposalError, RequestError, SchedulerError},
-    },
+use crate::api::{error::ApiError, ownership::OwnershipError};
+use kanade_domain::{
+    drafts::{MergeConflict, ReplayError},
+    requests::RequestRefusal,
+    schedule::ScheduleError,
+    scheduler::{DraftError, ProposalError, RequestError, SchedulerError},
 };
 
 pub fn not_found() -> Refusal {
@@ -183,7 +181,7 @@ pub fn edit_not_applicable() -> Refusal {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::{drafts::DraftStatus, proposals::Refusal as V4, scheduler::StoreError};
+    use kanade_domain::{drafts::DraftStatus, proposals::Refusal as V4, scheduler::StoreError};
 
     #[test]
     fn every_inbox_error_has_a_fixed_status_and_code() {

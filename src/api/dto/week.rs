@@ -7,19 +7,16 @@ use chrono_tz::Tz;
 use serde::Serialize;
 
 use super::{Art, Boss, Named, bosses, dow, hhmm, iso_date, iso_instant};
-use crate::{
-    api::state::ChannelEntry,
-    domain::{
-        catalog::BossTable,
-        completion::RunEnds,
-        ids::short_id,
-        members::{Roster, member_name},
-        schedule::{
-            DAY_OF, FixedRun, Reminder, RsvpState, Run, RunStatus, ScheduleSnapshot,
-            countdown_kind, is_stale,
-        },
+use crate::{api::state::ChannelEntry, infrastructure::llm::governor::GroupSnapshot};
+use kanade_domain::{
+    catalog::BossTable,
+    completion::RunEnds,
+    ids::short_id,
+    members::{Roster, member_name},
+    schedule::{
+        DAY_OF, FixedRun, Reminder, RsvpState, Run, RunStatus, ScheduleSnapshot, countdown_kind,
+        is_stale,
     },
-    infrastructure::llm::governor::GroupSnapshot,
 };
 
 /// What every projection reads besides the rows themselves.

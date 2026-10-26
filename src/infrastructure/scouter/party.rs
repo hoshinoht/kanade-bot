@@ -5,7 +5,7 @@
 //! party" and the background refresh resolve parties the same way.
 
 use super::{Missing, MissingReason, RosterIgn, Subject};
-use crate::domain::characters::{Character, PartySlot};
+use kanade_domain::characters::{Character, PartySlot};
 
 /// The characters one or more of a run's bosses bring: the job's subjects
 /// that party is made of, in party order, and how many of its members

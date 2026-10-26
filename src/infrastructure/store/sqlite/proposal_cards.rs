@@ -9,8 +9,8 @@ use super::SqliteStore;
 use super::drafts::instant as read_instant;
 use super::rows::instant;
 use super::schedule::store_error;
-use crate::domain::proposals::{CardDetails, ProposalCardStore, StoredCard};
-use crate::domain::scheduler::StoreError;
+use kanade_domain::proposals::{CardDetails, ProposalCardStore, StoredCard};
+use kanade_domain::scheduler::StoreError;
 
 const COLUMNS: &str = "draft_id, channel_id, details, message_id, posted_at";
 

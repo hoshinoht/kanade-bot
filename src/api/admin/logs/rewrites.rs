@@ -11,15 +11,13 @@ use axum::{
 
 use super::{Reply, every, filter, state};
 use crate::api::admin::write::Refusal;
-use crate::{
-    api::{
-        auth::AdminSession,
-        dto::logs::{RewriteFacets, Rewrites, rewrite, rewrite_row, rewrite_summary},
-        error::ApiError,
-        listeners::Site,
-    },
-    domain::model_log::RewriteFilter,
+use crate::api::{
+    auth::AdminSession,
+    dto::logs::{RewriteFacets, Rewrites, rewrite, rewrite_row, rewrite_summary},
+    error::ApiError,
+    listeners::Site,
 };
+use kanade_domain::model_log::RewriteFilter;
 
 pub async fn list(State(site): State<Arc<Site>>, _: AdminSession, uri: Uri) -> Reply {
     let state = state(&site)?;

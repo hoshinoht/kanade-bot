@@ -15,7 +15,7 @@ pub enum Priority {
     FollowUp,
 }
 
-crate::domain::spelled! {
+kanade_domain::spelled! {
     CallKind {
         Chat => "chat",
         Extraction => "extraction",

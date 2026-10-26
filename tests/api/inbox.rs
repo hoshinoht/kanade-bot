@@ -4,18 +4,16 @@
 //! against the contract schemas.
 
 use chrono::{DateTime, NaiveTime, Utc, Weekday};
-use kanade::{
-    domain::{
-        drafts::{DraftEventKind, DraftStatus, DraftStore, LoadedDraft, ProposalSource},
-        history::{Actor, ChangeHistory, ChangeRecord, Origin, Surface},
-        members::{MemberStore, Roster},
-        model_log::{ModelLogStore, WatchedMessage},
-        proposals::{CardDetails, CardPayload, ChangeKind, ProposalCardStore, ProposedChange},
-        requests::{NoFreezes, RequestSpec, Subject},
-        schedule::{FixedEdit, NewFixedRun, NewRun, RunSource, RunStatus},
-        scheduler::{ProposalRequest, Supersede},
-    },
-    infrastructure::store::SqliteStore,
+use kanade::infrastructure::store::SqliteStore;
+use kanade_domain::{
+    drafts::{DraftEventKind, DraftStatus, DraftStore, LoadedDraft, ProposalSource},
+    history::{Actor, ChangeHistory, ChangeRecord, Origin, Surface},
+    members::{MemberStore, Roster},
+    model_log::{ModelLogStore, WatchedMessage},
+    proposals::{CardDetails, CardPayload, ChangeKind, ProposalCardStore, ProposedChange},
+    requests::{NoFreezes, RequestSpec, Subject},
+    schedule::{FixedEdit, NewFixedRun, NewRun, RunSource, RunStatus},
+    scheduler::{ProposalRequest, Supersede},
 };
 use serde_json::{Value, json};
 
@@ -111,7 +109,7 @@ async fn seeded() -> Inbox {
     let reads = Reads::with_logins().await;
     let store = reads.store.clone();
     for (id, name) in [("1007", "Finn"), ("1008", "Gus")] {
-        let mut profile = kanade::domain::members::MemberProfile::default();
+        let mut profile = kanade_domain::members::MemberProfile::default();
         profile.member.user_id = id.into();
         profile.member.display_name = Some(name.into());
         profile.member.has_role = true;
@@ -957,9 +955,9 @@ async fn an_edited_approval_moves_to_the_admins_time_in_one_record() {
     let body = json!({"day": 6, "time": "20:00"});
     let first = ok(&inbox.discord(&approve, body.clone(), &key).await);
     assert_eq!(inbox.head().await, head + 1, "one record");
-    let snapshot = kanade::domain::scheduler::ScheduleStore::load(
+    let snapshot = kanade_domain::scheduler::ScheduleStore::load(
         inbox.reads.store.as_ref(),
-        &kanade::domain::scheduler::Scope::All,
+        &kanade_domain::scheduler::Scope::All,
     )
     .await
     .unwrap();
@@ -1016,17 +1014,17 @@ async fn an_edited_approval_still_blocks_on_conflicts() {
     );
 }
 
-fn decided(notice: &kanade::domain::schedule::Notice) -> Option<(String, &'static str)> {
+fn decided(notice: &kanade_domain::schedule::Notice) -> Option<(String, &'static str)> {
     match &notice.change {
-        kanade::domain::schedule::NoticeChange::RequestDecided {
+        kanade_domain::schedule::NoticeChange::RequestDecided {
             request, decision, ..
         } => Some((request.clone(), decision.as_str())),
         _ => None,
     }
 }
 
-async fn draft_notices(store: &SqliteStore, id: &str) -> Vec<kanade::domain::schedule::Notice> {
-    use kanade::domain::notify::{NoticeOutbox, draft_source};
+async fn draft_notices(store: &SqliteStore, id: &str) -> Vec<kanade_domain::schedule::Notice> {
+    use kanade_domain::notify::{NoticeOutbox, draft_source};
     let source = draft_source(id);
     store
         .outbox_notices()
@@ -1040,7 +1038,7 @@ async fn draft_notices(store: &SqliteStore, id: &str) -> Vec<kanade::domain::sch
 
 #[tokio::test]
 async fn request_decisions_enqueue_merge_and_requester_notices_with_the_decision() {
-    use kanade::domain::notify::NoticeOutbox;
+    use kanade_domain::notify::NoticeOutbox;
     let inbox = seeded().await;
     let ids = &inbox.ids;
     let store = &inbox.reads.store;
@@ -1107,7 +1105,7 @@ async fn proposal_approvals_enqueue_their_merge_notices() {
         assert_eq!(
             written
                 .iter()
-                .map(kanade::domain::schedule::Notice::effect_kind)
+                .map(kanade_domain::schedule::Notice::effect_kind)
                 .collect::<Vec<_>>(),
             record.notices,
             "{id}"
@@ -1177,8 +1175,8 @@ async fn timing_and_party(inbox: &Inbox, title: &str) -> String {
 /// the approval lands, and then it says what was not approved.
 #[tokio::test]
 async fn an_approval_with_changes_retimes_leaves_out_and_tells_the_member() {
-    use kanade::domain::notify::NoticeOutbox;
-    use kanade::domain::scheduler::ScheduleStore;
+    use kanade_domain::notify::NoticeOutbox;
+    use kanade_domain::scheduler::ScheduleStore;
     let inbox = seeded().await;
     let store = &inbox.reads.store;
     let id = timing_and_party(&inbox, "Saturdays suit everyone better.").await;
@@ -1236,7 +1234,7 @@ async fn an_approval_with_changes_retimes_leaves_out_and_tells_the_member() {
     );
     assert_eq!(inbox.head().await, head + 1);
     let fixed = store
-        .load(&kanade::domain::scheduler::Scope::All)
+        .load(&kanade_domain::scheduler::Scope::All)
         .await
         .unwrap()
         .fixed_runs
@@ -1253,8 +1251,8 @@ async fn an_approval_with_changes_retimes_leaves_out_and_tells_the_member() {
     assert!(
         matches!(
             &told.change,
-            kanade::domain::schedule::NoticeChange::RequestDecided {
-                decision: kanade::domain::schedule::RequestDecision::Approved,
+            kanade_domain::schedule::NoticeChange::RequestDecided {
+                decision: kanade_domain::schedule::RequestDecision::Approved,
                 edited: Some(left_out),
                 ..
             } if left_out == &["the party change".to_owned()]
@@ -1266,7 +1264,7 @@ async fn an_approval_with_changes_retimes_leaves_out_and_tells_the_member() {
     assert_eq!(loaded.draft.status, DraftStatus::Merged);
     assert!(matches!(
         &loaded.ops[0].op,
-        kanade::domain::drafts::DraftOp::ApplyFixedEdit { edit, .. }
+        kanade_domain::drafts::DraftOp::ApplyFixedEdit { edit, .. }
             if edit.participants.as_ref().is_some_and(|party| party.contains(&"1004".to_owned()))
     ));
 

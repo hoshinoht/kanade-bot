@@ -14,7 +14,7 @@ const MAX_RETRY_FLOOR: u32 = 10;
 const MAX_COOLDOWN: Duration = Duration::from_secs(3_600);
 const MAX_WINDOW: Duration = Duration::from_secs(3_600);
 
-crate::domain::spelled! {
+kanade_domain::spelled! {
     Role {
         Extraction => "extraction",
         Chat => "chat",

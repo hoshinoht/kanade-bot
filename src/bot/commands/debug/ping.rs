@@ -12,8 +12,8 @@ use super::super::lookup::everything;
 use super::super::options::Args;
 use super::super::say::mentioned_users;
 use crate::bot::ids::id_text;
-use crate::domain::ids::resolve_id;
-use crate::domain::schedule::RunStatus;
+use kanade_domain::ids::resolve_id;
+use kanade_domain::schedule::RunStatus;
 
 /// A sample run's default start, in minutes from now.
 const SAMPLE_MINUTES: i64 = 120;

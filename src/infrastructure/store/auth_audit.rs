@@ -5,7 +5,7 @@
 
 use chrono::{DateTime, TimeDelta, Utc};
 
-use crate::domain::scheduler::StoreError;
+use kanade_domain::scheduler::StoreError;
 
 /// How long a row is kept.
 pub const AUDIT_RETENTION: TimeDelta = TimeDelta::days(90);
@@ -16,7 +16,7 @@ pub const AUDIT_PRUNE_BATCH: i64 = 500;
 /// The longest page a list returns.
 pub const AUDIT_PAGE_MAX: u32 = 200;
 
-crate::domain::spelled! {
+kanade_domain::spelled! {
     /// Which sign-in realm a row belongs to.
     AuditRealm {
         Admin => "admin",
@@ -24,7 +24,7 @@ crate::domain::spelled! {
     }
 }
 
-crate::domain::spelled! {
+kanade_domain::spelled! {
     /// The audited event.
     AuditKind {
         LoginSucceeded => "login_succeeded",
@@ -84,7 +84,7 @@ impl AuditRow {
                 "audit request_id is at most 128 bytes".into(),
             ));
         }
-        crate::domain::time::to_iso(&self.at)
+        kanade_domain::time::to_iso(&self.at)
             .map_err(|error| StoreError::Constraint(format!("{:?}: {error}", self.at)))?;
         Ok(())
     }

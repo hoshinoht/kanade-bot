@@ -18,8 +18,8 @@ use crate::bot::gateway::ConnectionStatus;
 use crate::bot::guild_cache::GuildCache;
 use crate::bot::ids::id_text;
 use crate::bot::transport::DiscordTransport;
-use crate::domain::members::{GatewayMember, MemberProfile};
-use crate::domain::scheduler::StoreError;
+use kanade_domain::members::{GatewayMember, MemberProfile};
+use kanade_domain::scheduler::StoreError;
 
 const RECONCILE_RETRY_MAX_SECONDS: u64 = 60;
 
@@ -399,7 +399,7 @@ mod tests {
         roster::LiveRoster,
         transport::FakeDiscord,
     };
-    use crate::domain::{
+    use kanade_domain::{
         members::{GatewayMember, Member, MemberProfile},
         scheduler::StoreError,
     };

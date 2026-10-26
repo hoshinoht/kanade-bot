@@ -5,7 +5,7 @@ use sqlx::SqliteConnection;
 use sqlx::error::ErrorKind;
 
 use super::{backend, check_live, encode, iso};
-use crate::domain::notify::{
+use kanade_domain::notify::{
     AttemptId, Claim, DedupeKey, DeliveryTarget, JournalError, Lease, NotificationIntent,
     REQUEST_FINGERPRINT_VERSION, claim_key, effect_ordinal, is_sandbox_kind, request_fingerprint,
 };
@@ -51,7 +51,7 @@ async fn held(
 }
 
 /// v4 `unproven_retirement_exists` for one reminder, excluding releases the
-/// transport proved unsent ([`crate::domain::notify::NOT_SENT_ACTOR`]).
+/// transport proved unsent ([`kanade_domain::notify::NOT_SENT_ACTOR`]).
 pub(in crate::infrastructure::store::sqlite) const UNPROVEN_REMINDER: &str =
     "EXISTS (SELECT 1 FROM delivery_attempt_targets AS ut
      JOIN delivery_attempts AS ua ON ua.attempt_id = ut.attempt_id

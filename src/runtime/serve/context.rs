@@ -8,12 +8,12 @@ use tokio::sync::watch;
 
 use crate::{
     api::admin::config::SettingsChanged,
-    domain::settings::RuntimeSettings,
     infrastructure::llm::{
         governor::Role,
         setup::{ContextResolution, ModelStack, resolve_context},
     },
 };
+use kanade_domain::settings::RuntimeSettings;
 
 /// Resolves `role`'s context for an alias from the latest saved settings.
 pub type Resolver = Arc<dyn Fn(&str) -> ContextResolution + Send + Sync>;

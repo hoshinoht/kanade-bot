@@ -26,7 +26,7 @@ use crate::bot::extract_feed::{FeedItem, MessageFeed};
 use crate::bot::gateway::ConnectionStatus;
 use crate::bot::roster::RosterJob;
 use crate::bot::transport::{DiscordTransport, Outcome};
-use crate::domain::members::Directory;
+use kanade_domain::members::Directory;
 
 pub use reactions::{PressJob, Reacted, Reactions, press_port};
 

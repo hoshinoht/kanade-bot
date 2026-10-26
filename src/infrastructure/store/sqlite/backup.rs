@@ -20,8 +20,8 @@ use chrono::{DateTime, Utc};
 
 use super::owner::{self, StoreOwner};
 use super::{SqliteStore, SqliteStoreConfig, SqliteStoreError, migrate};
-use crate::domain::history::ChangeRef;
-use crate::domain::time::{from_iso, to_iso};
+use kanade_domain::history::ChangeRef;
+use kanade_domain::time::{from_iso, to_iso};
 
 /// A private sibling directory holding one staged file; removed on drop.
 struct Staging {

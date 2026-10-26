@@ -5,10 +5,10 @@ use std::fs::{self, File, OpenOptions};
 use std::os::unix::fs::{MetadataExt, PermissionsExt, symlink};
 use std::path::Path;
 
-use kanade::domain::notify::{DeliveryJournal, JournalError};
-use kanade::domain::schedule::{Change, ChangeSet};
-use kanade::domain::scheduler::{ScheduleStore, Scope, StoreError};
 use kanade::infrastructure::store::{SqliteStore, SqliteStoreConfig, SqliteStoreError};
+use kanade_domain::notify::{DeliveryJournal, JournalError};
+use kanade_domain::schedule::{Change, ChangeSet};
+use kanade_domain::scheduler::{ScheduleStore, Scope, StoreError};
 
 use crate::support::{TempDir, at, fixed, private_dir, seed};
 

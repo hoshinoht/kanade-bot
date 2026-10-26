@@ -9,7 +9,7 @@
 //! Invented IGNs only.
 
 use chrono::{DateTime, TimeDelta, TimeZone, Utc};
-use kanade::domain::{
+use kanade_domain::{
     characters::{CharacterStore, PickScope},
     schedule::{Change, Run, RunSource, RunStatus},
     settings::{SettingsChange, SettingsChangeQuery, SettingsStore},
@@ -87,7 +87,7 @@ pub(crate) async fn assert_pick_refusals(
 /// linked it, and the first fetch copied NEXON's class and level in).
 pub(crate) async fn retire(reads: &Reads, character: &str) {
     let version =
-        kanade::domain::characters::CharacterStore::character(reads.store.as_ref(), character)
+        kanade_domain::characters::CharacterStore::character(reads.store.as_ref(), character)
             .await
             .unwrap()
             .expect("on the roster")

@@ -8,17 +8,17 @@ use std::collections::BTreeSet;
 use chrono::{DateTime, NaiveTime, Utc, Weekday};
 
 use super::fixtures::{Ids, Stopped, admin, delivery, policy_in, timing, utc2026};
-use crate::domain::history::{
+use kanade_domain::history::{
     Actor, BlameIndex, BlameTarget, ChangeHistory, ChangeRef, EDIT_OVERRIDE, Expect,
     HistoryRefusal, Origin, PickMode, PickRefusal, PickStep, RevertMode, Surface, Via, blame,
 };
-use crate::domain::members::{Member, Roster};
-use crate::domain::notify::DeliveryJournal;
-use crate::domain::schedule::{
+use kanade_domain::members::{Member, Roster};
+use kanade_domain::notify::DeliveryJournal;
+use kanade_domain::schedule::{
     EMOJI_NO, EMOJI_YES, NewFixedRun, NewRun, RsvpSource, RsvpState, RunSource, RunStatus,
     SchedulePolicy, ScheduleSnapshot, StatusChange,
 };
-use crate::domain::scheduler::{PickError, ScheduleStore, SchedulerService, Scope};
+use kanade_domain::scheduler::{PickError, ScheduleStore, SchedulerService, Scope};
 
 /// Run every check, each against a fresh store from `make`.
 pub async fn run_suite<S: ScheduleStore + ChangeHistory + BlameIndex + DeliveryJournal + Sync>(
@@ -130,7 +130,7 @@ async fn pick<S: ScheduleStore + ChangeHistory + BlameIndex>(
     seq: u64,
     target: DateTime<Utc>,
     mode: PickMode,
-) -> Result<crate::domain::scheduler::Picked, PickError> {
+) -> Result<kanade_domain::scheduler::Picked, PickError> {
     service
         .cherry_pick("root", request_id, seq, target, mode, &policy(), &roster())
         .await
@@ -975,7 +975,7 @@ impl<S: ScheduleStore + Sync> Racing<'_, S> {
             .expect("race: run")
             .clone();
         row.datetime -= chrono::TimeDelta::hours(1);
-        let meta = crate::domain::history::ChangeMeta {
+        let meta = kanade_domain::history::ChangeMeta {
             origin: admin(),
             at: utc(3, 19, 1, 0),
             notices: Vec::new(),
@@ -987,8 +987,8 @@ impl<S: ScheduleStore + Sync> Racing<'_, S> {
         self.inner
             .commit(
                 state.revision,
-                crate::domain::schedule::ChangeSet {
-                    changes: vec![crate::domain::schedule::Change::PutRun(row)],
+                kanade_domain::schedule::ChangeSet {
+                    changes: vec![kanade_domain::schedule::Change::PutRun(row)],
                 },
                 meta,
             )
@@ -1001,7 +1001,7 @@ impl<S: ScheduleStore + Sync> ScheduleStore for Racing<'_, S> {
     async fn load(
         &self,
         scope: &Scope,
-    ) -> Result<ScheduleSnapshot, crate::domain::scheduler::StoreError> {
+    ) -> Result<ScheduleSnapshot, kanade_domain::scheduler::StoreError> {
         self.inner.load(scope).await
     }
 
@@ -1010,8 +1010,8 @@ impl<S: ScheduleStore + Sync> ScheduleStore for Racing<'_, S> {
         actor: &Actor,
         request_id: &str,
     ) -> Result<
-        Option<crate::domain::scheduler::RecordedRequest>,
-        crate::domain::scheduler::StoreError,
+        Option<kanade_domain::scheduler::RecordedRequest>,
+        kanade_domain::scheduler::StoreError,
     > {
         self.inner.recorded_request(actor, request_id).await
     }
@@ -1019,9 +1019,9 @@ impl<S: ScheduleStore + Sync> ScheduleStore for Racing<'_, S> {
     async fn commit(
         &self,
         expected_revision: u64,
-        changes: crate::domain::schedule::ChangeSet,
-        meta: crate::domain::history::ChangeMeta,
-    ) -> Result<Option<crate::domain::scheduler::Committed>, crate::domain::scheduler::StoreError>
+        changes: kanade_domain::schedule::ChangeSet,
+        meta: kanade_domain::history::ChangeMeta,
+    ) -> Result<Option<kanade_domain::scheduler::Committed>, kanade_domain::scheduler::StoreError>
     {
         if self.race == Race::BeforeCommit && !meta.expect.is_empty() {
             self.fire().await;
@@ -1034,7 +1034,7 @@ impl<S: ChangeHistory + Sync> ChangeHistory for Racing<'_, S> {
     async fn load_change(
         &self,
         seq: u64,
-    ) -> Result<Option<crate::domain::history::ChangeRecord>, crate::domain::scheduler::StoreError>
+    ) -> Result<Option<kanade_domain::history::ChangeRecord>, kanade_domain::scheduler::StoreError>
     {
         self.inner.load_change(seq).await
     }
@@ -1042,32 +1042,32 @@ impl<S: ChangeHistory + Sync> ChangeHistory for Racing<'_, S> {
     async fn load_checked(
         &self,
         seq: u64,
-    ) -> Result<crate::domain::history::CheckedChange, crate::domain::scheduler::StoreError> {
+    ) -> Result<kanade_domain::history::CheckedChange, kanade_domain::scheduler::StoreError> {
         self.inner.load_checked(seq).await
     }
 
     async fn list_changes(
         &self,
-        query: &crate::domain::history::ChangeQuery,
-    ) -> Result<crate::domain::history::ChangePage, crate::domain::scheduler::StoreError> {
+        query: &kanade_domain::history::ChangeQuery,
+    ) -> Result<kanade_domain::history::ChangePage, kanade_domain::scheduler::StoreError> {
         self.inner.list_changes(query).await
     }
 
     async fn count_changes(
         &self,
-        filter: &crate::domain::history::ChangeFilter,
-    ) -> Result<u64, crate::domain::scheduler::StoreError> {
+        filter: &kanade_domain::history::ChangeFilter,
+    ) -> Result<u64, kanade_domain::scheduler::StoreError> {
         self.inner.count_changes(filter).await
     }
 
     async fn verify_history(
         &self,
-    ) -> Result<crate::domain::history::HistoryVerification, crate::domain::scheduler::StoreError>
+    ) -> Result<kanade_domain::history::HistoryVerification, kanade_domain::scheduler::StoreError>
     {
         self.inner.verify_history().await
     }
 
-    async fn history_head(&self) -> Result<ChangeRef, crate::domain::scheduler::StoreError> {
+    async fn history_head(&self) -> Result<ChangeRef, kanade_domain::scheduler::StoreError> {
         self.inner.history_head().await
     }
 }
@@ -1076,7 +1076,7 @@ impl<S: ScheduleStore + BlameIndex + Sync> BlameIndex for Racing<'_, S> {
     async fn last_changes(
         &self,
         target: &BlameTarget,
-    ) -> Result<std::collections::BTreeMap<String, u64>, crate::domain::scheduler::StoreError> {
+    ) -> Result<std::collections::BTreeMap<String, u64>, kanade_domain::scheduler::StoreError> {
         if self.race == Race::BeforeVersions {
             self.fire().await;
         }
@@ -1086,7 +1086,7 @@ impl<S: ScheduleStore + BlameIndex + Sync> BlameIndex for Racing<'_, S> {
     async fn read_versioned(
         &self,
         targets: &[BlameTarget],
-    ) -> Result<Vec<crate::domain::history::Versioned>, crate::domain::scheduler::StoreError> {
+    ) -> Result<Vec<kanade_domain::history::Versioned>, kanade_domain::scheduler::StoreError> {
         self.inner.read_versioned(targets).await
     }
 }
@@ -1128,7 +1128,7 @@ async fn a_preview_reads_values_and_versions_consistently<
     // The value the admin sees and the version they echo are the newest.
     assert_eq!(
         preview.plan.conflicts[0].current,
-        crate::domain::history::PickValue::Slot(utc(3, 28, 17, 0)),
+        kanade_domain::history::PickValue::Slot(utc(3, 28, 17, 0)),
         "race: current value"
     );
     assert_eq!(

@@ -4,8 +4,8 @@
 
 use serde_json::json;
 
-use kanade::domain::ownership::{OwnerRequestStatus, OwnerRequestStore};
-use kanade::domain::scheduler::{ScheduleStore, Scope};
+use kanade_domain::ownership::{OwnerRequestStatus, OwnerRequestStore};
+use kanade_domain::scheduler::{ScheduleStore, Scope};
 
 use super::{ALICE, BOB, DAN, F_KALOS, Slash, opt, sub, user_opt};
 

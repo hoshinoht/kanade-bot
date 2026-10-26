@@ -10,11 +10,11 @@ use chrono::{DateTime, Utc};
 use serde_json::json;
 
 use super::{CharacterData, StripReport, log};
-use crate::domain::chardata::{
+use kanade_domain::chardata::{
     CALL_WINDOW, LinkStatus, Orphan, UnlinkReason, estimates_orphaned, orphan, pending_expired,
 };
-use crate::domain::history::{Actor, Surface};
-use crate::domain::scheduler::StoreError;
+use kanade_domain::history::{Actor, Surface};
+use kanade_domain::scheduler::StoreError;
 
 /// What one sweep did; `None` for a step whose store call failed.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -142,7 +142,7 @@ impl CharacterData {
                                 continue;
                             }
                         };
-                    let change = crate::domain::chardata::link_change(
+                    let change = kanade_domain::chardata::link_change(
                         &id,
                         Some(link.status),
                         Some(LinkStatus::Pending),
@@ -167,9 +167,9 @@ impl CharacterData {
                     pending.requested_by = actor.clone();
                     pending.requested_at = now;
                     match self.store.put_link(pending, link.version).await {
-                        Ok(crate::domain::chardata::LinkPut::Written) => report.reconsent += 1,
+                        Ok(kanade_domain::chardata::LinkPut::Written) => report.reconsent += 1,
                         // Changed concurrently (a fresh confirm): nothing to do.
-                        Ok(crate::domain::chardata::LinkPut::Stale(_)) => {}
+                        Ok(kanade_domain::chardata::LinkPut::Stale(_)) => {}
                         Err(error) => warn("chardata_reconsent_unwritten", &error),
                     }
                 }

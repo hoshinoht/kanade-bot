@@ -7,21 +7,21 @@
 use chrono::{DateTime, TimeDelta, Utc};
 
 use super::fixtures::utc2026;
-use crate::domain::drafts::{
+use kanade_domain::drafts::{
     DraftChange, DraftCreated, DraftEventKind, DraftKind, DraftStore, DraftUpdate, DraftWrite,
     MergeCommit, NewDraft,
 };
-use crate::domain::history::{Actor, ChangeHistory, ChangeMeta, Origin, Surface};
-use crate::domain::model_log::ModelLogStore;
-use crate::domain::notify::{
+use kanade_domain::history::{Actor, ChangeHistory, ChangeMeta, Origin, Surface};
+use kanade_domain::model_log::ModelLogStore;
+use kanade_domain::notify::{
     Claim, DeliveryJournal, DeliveryTarget, DrainReason, EffectKind, IntentContent, JournalError,
     Lease, NOT_SENT_ACTOR, NoticeOutbox, NotificationIntent, PendingNotices, change_source,
     draft_source,
 };
-use crate::domain::schedule::{
+use kanade_domain::schedule::{
     Change, ChangeSet, Notice, NoticeChange, RequestDecision, Run, RunSource, RunStatus,
 };
-use crate::domain::scheduler::{Committed, ScheduleStore, Scope, StoreError};
+use kanade_domain::scheduler::{Committed, ScheduleStore, Scope, StoreError};
 
 /// Run every check, each against a fresh store from `make`. `undecodable`
 /// writes one pending row `(source, 0)` after every row so far, whose payload
@@ -234,7 +234,7 @@ async fn refused_commits_write_nothing<S: ScheduleStore + NoticeOutbox>(store: S
     );
     // A reminder without a run breaks an invariant: the whole commit goes.
     let orphan = ChangeSet {
-        changes: vec![Change::PutReminder(crate::domain::schedule::Reminder {
+        changes: vec![Change::PutReminder(kanade_domain::schedule::Reminder {
             id: "m-1".into(),
             run_id: "absent".into(),
             kind: "countdown_15".into(),
@@ -334,7 +334,7 @@ fn update(draft: &str, version: u64, change: DraftChange) -> DraftUpdate {
 
 fn close(draft: &str, version: u64) -> DraftUpdate {
     let change = DraftChange::Close {
-        status: crate::domain::drafts::DraftStatus::Rejected,
+        status: kanade_domain::drafts::DraftStatus::Rejected,
         reason: Some("no".into()),
         notices: vec![decided(draft)],
     };

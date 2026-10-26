@@ -44,17 +44,6 @@ use axum::{
 use chrono::{DateTime, Duration as Span, Utc};
 use kanade::{
     api::state::ApiState,
-    domain::{
-        characters::{
-            Character, CharacterChange, CharacterRecord, CharacterRole, CharacterStore, PartyRoster,
-        },
-        chardata::{
-            CharDataStore, ConsentSurface, DAILY_CALLS, Link, LinkPut, LinkStatus, NOTICE_VERSION,
-            Post, PostState, STRIP_AFTER, Snapshot,
-        },
-        history::{Actor, Surface},
-        scheduler::{ScheduleStore, Scope},
-    },
     infrastructure::{
         character_data::CharacterData,
         scouter::{
@@ -63,6 +52,17 @@ use kanade::{
         },
         store::SqliteStore,
     },
+};
+use kanade_domain::{
+    characters::{
+        Character, CharacterChange, CharacterRecord, CharacterRole, CharacterStore, PartyRoster,
+    },
+    chardata::{
+        CharDataStore, ConsentSurface, DAILY_CALLS, Link, LinkPut, LinkStatus, NOTICE_VERSION,
+        Post, PostState, STRIP_AFTER, Snapshot,
+    },
+    history::{Actor, Surface},
+    scheduler::{ScheduleStore, Scope},
 };
 use serde::Deserialize;
 

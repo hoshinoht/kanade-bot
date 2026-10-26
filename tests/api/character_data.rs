@@ -22,16 +22,16 @@ use kanade::{
         admin::config::{ConfigDesk, ConfigFacts, ConfigInputs},
         auth::Clock,
     },
-    domain::{
-        chardata::NOTICE_VERSION,
-        settings::{RuntimeSettings, SettingsChangeQuery, SettingsStore, keys},
-    },
     infrastructure::{
         character_data::{CharacterData, ConfirmOutcome, RosterSide, Timing},
         nexon::{ApiKey, NexonClient},
         scouter::{Estimates, ScouterClient},
         store::SqliteCharData,
     },
+};
+use kanade_domain::{
+    chardata::NOTICE_VERSION,
+    settings::{RuntimeSettings, SettingsChangeQuery, SettingsStore, keys},
 };
 use serde_json::{Value, json};
 
@@ -186,7 +186,7 @@ async fn on(nexon: SocketAddr, config: Option<ConfigMaker>) -> (Reads, Arc<Chara
 
 /// `member` confirms the link from Discord (S3's /character link).
 pub(crate) async fn confirm(service: &CharacterData, member: &str, id: &str) -> ConfirmOutcome {
-    let surface = kanade::domain::chardata::ConsentSurface::Discord;
+    let surface = kanade_domain::chardata::ConsentSurface::Discord;
     let confirmed = service.confirm_link(member, id, NOTICE_VERSION, surface);
     confirmed.await.unwrap()
 }

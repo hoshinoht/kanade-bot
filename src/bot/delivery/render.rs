@@ -6,8 +6,8 @@ use std::sync::Arc;
 use super::cards::{self, CardContext, fetch_art};
 use crate::bot::mentions;
 use crate::bot::transport::OutgoingMessage;
-use crate::domain::art::ArtSource;
-use crate::domain::notify::NotificationIntent;
+use kanade_domain::art::ArtSource;
+use kanade_domain::notify::NotificationIntent;
 
 /// The message for `intent`. `heading` is a day-of card's stored heading
 /// line (v4's when `None`). Kinds rendered elsewhere come back empty.

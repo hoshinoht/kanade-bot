@@ -20,11 +20,11 @@ use crate::api::write::{WriteContext, Writer};
 use crate::bot::guild_cache::GuildCache;
 use crate::bot::ids::{id_text, parse_id};
 use crate::chat::pilot::AllowanceSnapshot;
-use crate::domain::catalog::BossTable;
-use crate::domain::history::{Actor, Origin, Surface};
-use crate::domain::members::{GatewayMember, MemberProfile, MemberStore, Roster};
-use crate::domain::schedule::{RunStatus, SchedulePolicy};
-use crate::domain::scheduler::StoreError;
+use kanade_domain::catalog::BossTable;
+use kanade_domain::history::{Actor, Origin, Surface};
+use kanade_domain::members::{GatewayMember, MemberProfile, MemberStore, Roster};
+use kanade_domain::schedule::{RunStatus, SchedulePolicy};
+use kanade_domain::scheduler::StoreError;
 
 pub type PortFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 
@@ -98,7 +98,7 @@ pub trait ChatAllowance: Send + Sync {
     fn snapshot(&self) -> AllowanceSnapshot;
 }
 
-crate::domain::spelled! {
+kanade_domain::spelled! {
     /// Which test message `/debug ping` posts (v4's kinds plus `digest`).
     TestKind {
         DayOf => "day_of",
@@ -191,7 +191,7 @@ pub struct TestReport {
     pub header: Option<HeaderNote>,
 }
 
-crate::domain::spelled! {
+kanade_domain::spelled! {
     /// Which header `/debug header` rewrites.
     HeaderTrialKind {
         DayOf => "day_of",
@@ -262,7 +262,7 @@ pub struct CommandContext {
     pub writer: Arc<dyn Writer>,
     pub members: Arc<dyn MemberRows>,
     /// Run completion prompts, which their buttons answer.
-    pub run_prompts: Arc<dyn crate::domain::completion::RunPromptStore>,
+    pub run_prompts: Arc<dyn kanade_domain::completion::RunPromptStore>,
     pub policy: SchedulePolicy,
     pub catalog: Arc<BossTable>,
     pub channels: Arc<dyn GuildChannels>,

@@ -3,11 +3,11 @@
 //! more than one bounded batch.
 
 use chrono::{TimeZone, Utc};
-use kanade::domain::model_log::{
+use kanade::infrastructure::store::{SqliteStore, SqliteStoreConfig};
+use kanade_domain::model_log::{
     ChatFilter, ExtractionFilter, ModelLogStore, PRUNE_BATCH, PruneCounts, WatchedMessage,
 };
-use kanade::domain::scheduler::StoreError;
-use kanade::infrastructure::store::{SqliteStore, SqliteStoreConfig};
+use kanade_domain::scheduler::StoreError;
 use sqlx::Connection;
 
 use crate::support::{LATE_SCHEMA_DROPS, TempDir, connect, create, raw, tamper};
@@ -446,7 +446,7 @@ async fn rows_logged_before_context_facts_still_read_after_a_reopen() {
 /// view survive the reopen, and `profanity` rows can then be written.
 #[tokio::test]
 async fn the_profanity_migration_keeps_existing_chat_rows_and_their_children() {
-    use kanade::domain::model_log::ChatOutcome;
+    use kanade_domain::model_log::ChatOutcome;
 
     let dir = TempDir::new();
     let config = dir.config("pre-profanity");

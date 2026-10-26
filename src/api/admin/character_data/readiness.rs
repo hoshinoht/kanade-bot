@@ -43,15 +43,15 @@ use crate::{
         listeners::Site,
         state::ApiState,
     },
-    domain::{
-        catalog::BossTable,
-        characters::{Character, PartySlot},
-        chardata::{Requirement, Subject, readiness},
-    },
     infrastructure::{
         character_data::CharacterData,
         scouter::{Estimates, RosterIgn},
     },
+};
+use kanade_domain::{
+    catalog::BossTable,
+    characters::{Character, PartySlot},
+    chardata::{Requirement, Subject, readiness},
 };
 
 pub fn routes() -> Router<Arc<Site>> {

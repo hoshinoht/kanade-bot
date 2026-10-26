@@ -19,12 +19,12 @@ use super::cards::chart::Chart;
 use super::cards::{self, Card, CardContext};
 use super::estimates::{PartyEstimates, chart_for, shows_files};
 use super::refresh::{posted_content, posted_mentions};
-use crate::domain::members::Directory;
-use crate::domain::notify::{
+use kanade_domain::members::Directory;
+use kanade_domain::notify::{
     ChannelDirectory, DedupeKey, DeliverySettings, DeliveryTarget, DispatchInput, IntentContent,
     NotificationIntent, PostedCard, plan_dispatch,
 };
-use crate::domain::schedule::ScheduleSnapshot;
+use kanade_domain::schedule::ScheduleSnapshot;
 
 /// Every channel reachable: the preview shows the card, not where it lands.
 struct AnyChannel;

@@ -2,9 +2,9 @@
 //! before reading, v4 widening, cancellation between bursts, and no duplicate
 //! proposals when handled messages are read again.
 
-use kanade::domain::model_log::{ExtractionOutcome, ModelLogStore, RescanJob, RescanStatus};
 use kanade::extract::rescan::{JobView, RescanError, RescanRequest};
 use kanade::infrastructure::llm::FakeAction;
+use kanade_domain::model_log::{ExtractionOutcome, ModelLogStore, RescanJob, RescanStatus};
 use serde_json::Value;
 
 use crate::fakes::{

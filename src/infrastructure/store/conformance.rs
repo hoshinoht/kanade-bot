@@ -7,12 +7,12 @@
 use chrono::{DateTime, NaiveTime, TimeZone, Utc, Weekday};
 
 use super::fixtures::refused_for;
-use crate::domain::history::{Actor, ChangeMeta, Origin, Surface};
-use crate::domain::schedule::{
+use kanade_domain::history::{Actor, ChangeMeta, Origin, Surface};
+use kanade_domain::schedule::{
     Change, ChangeSet, FixedRun, Reminder, Rsvp, RsvpSource, RsvpState, Run, RunSource, RunStatus,
     ScheduleSnapshot,
 };
-use crate::domain::scheduler::{ScheduleStore, Scope, StoreError};
+use kanade_domain::scheduler::{ScheduleStore, Scope, StoreError};
 
 /// Run every check, each against a fresh store from `make`.
 pub async fn run_suite<S: ScheduleStore>(make: impl AsyncFn() -> S) {

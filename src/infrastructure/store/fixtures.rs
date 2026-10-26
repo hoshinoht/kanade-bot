@@ -6,12 +6,12 @@ use std::sync::{Arc, Mutex, PoisonError};
 
 use chrono::{DateTime, NaiveTime, TimeDelta, TimeZone, Utc, Weekday};
 
-use crate::domain::history::{Actor, Origin, Surface};
-use crate::domain::ids::IdGenerator;
-use crate::domain::schedule::{
+use kanade_domain::history::{Actor, Origin, Surface};
+use kanade_domain::ids::IdGenerator;
+use kanade_domain::schedule::{
     NewFixedRun, ReminderPolicy, RunStatus, SchedulePolicy, StatusChange,
 };
-use crate::domain::scheduler::{Clock, StoreError};
+use kanade_domain::scheduler::{Clock, StoreError};
 
 /// `id-0001`, `id-0002`, … shared by every clone.
 #[derive(Clone, Default)]

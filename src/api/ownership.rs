@@ -7,12 +7,12 @@ use chrono::{DateTime, Utc};
 
 use crate::api::state::ReadStore;
 use crate::api::write::{WriteContext, Writer};
-use crate::domain::history::{ChangeRecord, Origin};
-use crate::domain::ownership::{
+use kanade_domain::history::{ChangeRecord, Origin};
+use kanade_domain::ownership::{
     self, OwnerPin, OwnerRequest, OwnerRequestStatus, OwnershipRefusal,
 };
-use crate::domain::schedule::{FixedRun, ScheduleError};
-use crate::domain::scheduler::{SchedulerError, Scope, StoreError};
+use kanade_domain::schedule::{FixedRun, ScheduleError};
+use kanade_domain::scheduler::{SchedulerError, Scope, StoreError};
 
 #[derive(Debug, thiserror::Error)]
 pub enum OwnershipError {

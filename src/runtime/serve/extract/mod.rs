@@ -41,12 +41,6 @@ use crate::{
         guild_cache::GuildCache,
         roster::LiveRoster,
     },
-    domain::{
-        catalog::BossTable,
-        ids::RandomIds,
-        schedule::SchedulePolicy,
-        settings::{RuntimeSettings, SelfService},
-    },
     extract::{
         pipeline::{
             CallContext, DEFAULT_DEBOUNCE, DEFAULT_DRAIN_INTERVAL, Deps, Extractor, Pipeline,
@@ -59,6 +53,12 @@ use crate::{
         llm::{governor::Role, setup::ModelStack},
         store::SqliteStore,
     },
+};
+use kanade_domain::{
+    catalog::BossTable,
+    ids::RandomIds,
+    schedule::SchedulePolicy,
+    settings::{RuntimeSettings, SelfService},
 };
 
 use super::budget::ShutdownClock;
@@ -126,7 +126,7 @@ pub struct Inputs<T> {
     /// configured; cards link into it.
     pub portal: Option<String>,
     /// When runs end (live run lengths): proposals and "already passed".
-    pub run_ends: crate::domain::completion::RunEndsSource,
+    pub run_ends: kanade_domain::completion::RunEndsSource,
 }
 
 /// The planner's view of the saved `self_service` section.

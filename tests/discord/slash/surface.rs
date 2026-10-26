@@ -7,14 +7,14 @@ use chrono::{NaiveTime, Weekday};
 use serde_json::json;
 
 use kanade::bot::delivery::FixedClock;
-use kanade::domain::history::{Actor, ChangeHistory, Origin, Surface};
-use kanade::domain::ids::RandomIds;
-use kanade::domain::members::Roster;
-use kanade::domain::notify::{NoticeOutbox, OutboxNotice};
-use kanade::domain::schedule::{
+use kanade_domain::history::{Actor, ChangeHistory, Origin, Surface};
+use kanade_domain::ids::RandomIds;
+use kanade_domain::members::Roster;
+use kanade_domain::notify::{NoticeOutbox, OutboxNotice};
+use kanade_domain::schedule::{
     FixedEdit, FixedEditChoices, FixedEditRequest, NoticeChange, ReminderPolicy, SchedulePolicy,
 };
-use kanade::domain::scheduler::SchedulerService;
+use kanade_domain::scheduler::SchedulerService;
 
 use super::{ALICE, BOB, F_KALOS, R_KALOS, Slash, now, opt, sub, utc};
 
@@ -121,8 +121,8 @@ async fn a_discord_swap_is_unmarked_and_a_portal_swap_is_marked() {
     use std::sync::Arc;
 
     use kanade::api::write::{ApiClock, RunWrite, SchedulerWriter, WriteContext, Writer};
-    use kanade::domain::history::Expect;
-    use kanade::domain::members::Member;
+    use kanade_domain::history::Expect;
+    use kanade_domain::members::Member;
 
     let slash = Slash::new().await;
     slash

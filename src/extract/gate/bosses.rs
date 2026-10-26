@@ -1,4 +1,4 @@
-use crate::domain::catalog::{Boss, BossTable};
+use kanade_domain::catalog::{Boss, BossTable};
 
 /// Difficulty spelled out, as it turns up in chat: `exkalos`, `hardstar`.
 /// Tried in this order.

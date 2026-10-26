@@ -3,7 +3,7 @@
 
 use super::super::Effort;
 use super::{ModelRoles, RoleEffort, RoleModel};
-use crate::domain::settings::{self, Reasoning};
+use kanade_domain::settings::{self, Reasoning};
 
 impl From<&settings::Models> for ModelRoles {
     fn from(models: &settings::Models) -> Self {

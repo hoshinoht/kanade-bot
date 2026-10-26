@@ -11,11 +11,11 @@ use tokio::sync::watch;
 use super::Publisher;
 use super::execute::Run;
 use crate::bot::transport::DiscordTransport;
-use crate::domain::guides::{
+use kanade_domain::guides::{
     Blocked, Guide, GuideStore, Inspection, OpKind, PlanOp, Publish, PublishKind, PublishState,
     PublishedSlot, RenderedSlot, StopReason, plan, plan_unpublish, render,
 };
-use crate::domain::notify::{DeliveryJournal, Lease};
+use kanade_domain::notify::{DeliveryJournal, Lease};
 
 impl<S, T> Publisher<S, T>
 where

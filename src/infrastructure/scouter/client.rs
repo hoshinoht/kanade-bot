@@ -266,7 +266,7 @@ mod tests {
     use chrono::{TimeZone, Utc};
 
     use super::*;
-    use crate::domain::{
+    use kanade_domain::{
         characters::{Character, CharacterRole},
         history::Actor,
     };

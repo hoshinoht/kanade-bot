@@ -6,12 +6,12 @@ use serde::de::DeserializeOwned;
 use sqlx::Row;
 use sqlx::sqlite::SqliteRow;
 
-use crate::domain::chardata::{
+use kanade_domain::chardata::{
     ConsentSurface, Link, LinkStatus, MemberEstimate, PartyEstimate, Post, PostState, Snapshot,
     parse_date,
 };
-use crate::domain::history::Actor;
-use crate::domain::scheduler::StoreError;
+use kanade_domain::history::Actor;
+use kanade_domain::scheduler::StoreError;
 
 pub(super) const LINK_COLUMNS: &str = "character_id, member_id, ign_key, region, status, \
      requested_by_kind, requested_by_id, requested_at, consent_version, consented_at, \
@@ -27,7 +27,7 @@ fn corrupt(column: &str) -> StoreError {
 }
 
 pub(super) fn at(text: &str) -> Result<DateTime<Utc>, StoreError> {
-    crate::domain::time::from_iso(text).map_err(|_| corrupt("timestamp"))
+    kanade_domain::time::from_iso(text).map_err(|_| corrupt("timestamp"))
 }
 
 fn get<'r, T: sqlx::Decode<'r, sqlx::Sqlite> + sqlx::Type<sqlx::Sqlite>>(

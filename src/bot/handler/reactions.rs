@@ -20,11 +20,11 @@ use crate::bot::ids::id_text;
 use crate::bot::rsvp_replay::RsvpReplay;
 use crate::bot::transport::DiscordTransport;
 use crate::chat::driver::{FollowUpCard, FollowUpRequest, RejectionFollowUp};
-use crate::domain::drafts::ProposalStore;
-use crate::domain::history::{BlameIndex, ChangeHistory};
-use crate::domain::notify::{CardIndex, DeliveryJournal};
-use crate::domain::proposals::ProposalCardStore;
-use crate::domain::scheduler::{IdSource, ScheduleStore};
+use kanade_domain::drafts::ProposalStore;
+use kanade_domain::history::{BlameIndex, ChangeHistory};
+use kanade_domain::notify::{CardIndex, DeliveryJournal};
+use kanade_domain::proposals::ProposalCardStore;
+use kanade_domain::scheduler::{IdSource, ScheduleStore};
 use twilight_model::id::{Id, marker::UserMarker};
 
 /// What one reaction did, for tests and logs.
@@ -74,8 +74,8 @@ where
     S: ScheduleStore
         + ChangeHistory
         + BlameIndex
-        + crate::domain::notify::ReplayCards
-        + crate::domain::notify::DeclineNoticeStore
+        + kanade_domain::notify::ReplayCards
+        + kanade_domain::notify::DeclineNoticeStore
         + ProposalStore
         + ProposalCardStore
         + DeliveryJournal
@@ -259,8 +259,8 @@ where
     S: ScheduleStore
         + ChangeHistory
         + BlameIndex
-        + crate::domain::notify::ReplayCards
-        + crate::domain::notify::DeclineNoticeStore
+        + kanade_domain::notify::ReplayCards
+        + kanade_domain::notify::DeclineNoticeStore
         + ProposalStore
         + ProposalCardStore
         + DeliveryJournal

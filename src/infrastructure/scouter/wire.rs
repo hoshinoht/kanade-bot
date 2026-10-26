@@ -10,7 +10,7 @@ use std::collections::BTreeMap;
 use serde::Deserialize;
 
 use super::scouter_keys;
-use crate::domain::chardata::{StoredCard, StoredCombined, StoredMember};
+use kanade_domain::chardata::{StoredCard, StoredCombined, StoredMember};
 
 /// One character: the `ign=` answer, or one of a batch's `members`.
 #[derive(Clone, Debug, Deserialize, PartialEq)]

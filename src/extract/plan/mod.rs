@@ -14,10 +14,6 @@ pub use rules::{
     volunteers_for,
 };
 
-use crate::domain::catalog::BossTable;
-use crate::domain::schedule::Run;
-use crate::domain::time::DateOutOfRange;
-use crate::domain::weeks;
 use crate::extract::matching::{
     NO_BOSS_OVERLAP, TERMINAL_HINT, match_run, needs_run, reachable, refuse_terminal_hint,
     runs_spanned,
@@ -26,6 +22,10 @@ use crate::extract::merge::merge;
 use crate::extract::resolve::{Resolved, Side, resolve};
 use crate::extract::schema::Extraction;
 use crate::extract::{Amendment, AmendmentKind};
+use kanade_domain::catalog::BossTable;
+use kanade_domain::schedule::Run;
+use kanade_domain::time::DateOutOfRange;
+use kanade_domain::weeks;
 
 /// What committing one planned change needs beyond the amendment.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -109,7 +109,7 @@ pub struct BurstInputs<'i, 'a> {
     pub boss_table: Option<&'i BossTable>,
     /// v5: a matched run past its end is already over; `None` keeps v4's
     /// 2 h after its start.
-    pub run_ends: Option<&'i crate::domain::completion::RunEnds>,
+    pub run_ends: Option<&'i kanade_domain::completion::RunEnds>,
 }
 
 /// Kinds that can be about several runs at once, one candidate per run.

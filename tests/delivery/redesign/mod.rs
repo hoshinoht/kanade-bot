@@ -13,12 +13,12 @@ use chrono::{DateTime, TimeDelta, TimeZone, Utc};
 use chrono_tz::Tz;
 use kanade::bot::delivery::cards::CardContext;
 use kanade::bot::delivery::cards::redesign::{DifficultyMarks, NO_MARKS};
-use kanade::domain::art::{ArtFile, ArtSource};
-use kanade::domain::catalog::BossTable;
-use kanade::domain::guides::ArtKind;
-use kanade::domain::members::{Member, PingLevel, Roster};
-use kanade::domain::notify::{DigestInclusion, IntentContent, digest_inclusion};
-use kanade::domain::schedule::{
+use kanade_domain::art::{ArtFile, ArtSource};
+use kanade_domain::catalog::BossTable;
+use kanade_domain::guides::ArtKind;
+use kanade_domain::members::{Member, PingLevel, Roster};
+use kanade_domain::notify::{DigestInclusion, IntentContent, digest_inclusion};
+use kanade_domain::schedule::{
     Rsvp, RsvpSource, RsvpState, Run, RunSource, RunStatus, ScheduleSnapshot,
 };
 

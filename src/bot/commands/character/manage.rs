@@ -11,9 +11,9 @@ use super::{CharacterCommand, reply, resolve, store_failed};
 use crate::bot::chardata::{Sent, copy};
 use crate::bot::ids::id_text;
 use crate::bot::transport::{DiscordTransport, InteractionReply, RejectionKind};
-use crate::domain::chardata::{LinkStatus, UnlinkReason};
-use crate::domain::history::{Actor, Surface};
 use crate::infrastructure::character_data::Tracked;
+use kanade_domain::chardata::{LinkStatus, UnlinkReason};
+use kanade_domain::history::{Actor, Surface};
 
 impl<T: DiscordTransport> CharacterCommand<T> {
     pub(super) async fn unlink(

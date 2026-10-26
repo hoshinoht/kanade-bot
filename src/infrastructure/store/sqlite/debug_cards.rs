@@ -7,8 +7,8 @@ use sqlx::Connection;
 use super::SqliteStore;
 use super::rows::instant;
 use super::schedule::store_error;
-use crate::domain::notify::{DebugCardStore, PostedDebugCard};
-use crate::domain::scheduler::StoreError;
+use kanade_domain::notify::{DebugCardStore, PostedDebugCard};
+use kanade_domain::scheduler::StoreError;
 
 impl DebugCardStore for SqliteStore {
     async fn debug_cards_in(
@@ -35,7 +35,7 @@ impl DebugCardStore for SqliteStore {
                         message_id,
                         run_id,
                         kind,
-                        posted_at: crate::domain::time::from_iso(&posted_at).map_err(|error| {
+                        posted_at: kanade_domain::time::from_iso(&posted_at).map_err(|error| {
                             StoreError::Backend(format!("debug_cards.posted_at: {error}"))
                         })?,
                     })

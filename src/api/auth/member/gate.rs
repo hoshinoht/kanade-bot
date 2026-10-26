@@ -5,7 +5,8 @@
 
 use twilight_model::id::{Id, marker::UserMarker};
 
-use crate::{api::auth::staff::GateFuture, domain::members::MemberStore};
+use crate::api::auth::staff::GateFuture;
+use kanade_domain::members::MemberStore;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Eligibility {

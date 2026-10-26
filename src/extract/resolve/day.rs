@@ -4,9 +4,9 @@ use chrono::{Datelike, NaiveDate, TimeDelta, Weekday};
 use regex::Regex;
 
 use super::bound::BOUND_WORDS;
-use crate::domain::pytext::strip;
-use crate::domain::time::DateOutOfRange;
 use crate::extract::text::{int, pattern};
+use kanade_domain::pytext::strip;
+use kanade_domain::time::DateOutOfRange;
 
 /// Every weekday spelling this guild uses (v4 `resolve.WEEKDAY_ALIASES`).
 pub const WEEKDAY_ALIASES: [(&str, Weekday); 19] = [

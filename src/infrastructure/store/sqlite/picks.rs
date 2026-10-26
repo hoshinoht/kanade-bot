@@ -11,11 +11,11 @@ use sqlx::{Row, SqliteConnection, sqlite::SqliteRow};
 use super::rows::instant;
 use super::schedule::store_error;
 use super::{characters, settings};
-use crate::domain::characters::{
+use kanade_domain::characters::{
     CharacterRecord, Pick, PickChange, PickScope, PickWrite, plan_pick, plan_same,
 };
-use crate::domain::history::Actor;
-use crate::domain::scheduler::StoreError;
+use kanade_domain::history::Actor;
+use kanade_domain::scheduler::StoreError;
 
 /// One table: its name and every statement over it, all constant. A
 /// per-boss table's `load`, `put` and `delete` take the boss third.
@@ -132,7 +132,7 @@ fn decode(scope: PickScope, per_boss: bool, row: &SqliteRow) -> Result<Pick, Sto
             .try_get("boss")
             .map_err(|error| corrupt("boss", &error))?,
         character_id: text("character_id")?,
-        picked_at: crate::domain::time::from_iso(&text("picked_at")?)
+        picked_at: kanade_domain::time::from_iso(&text("picked_at")?)
             .map_err(|error| corrupt("picked_at", &error))?,
         picked_by: Actor::from_parts(&kind, &text("picked_by_id")?)
             .ok_or_else(|| corrupt("picked_by_kind", &kind))?,

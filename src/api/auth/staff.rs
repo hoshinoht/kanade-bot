@@ -55,7 +55,7 @@ impl<S> StoreGuildMembers<S> {
     }
 }
 
-impl<S: crate::domain::members::MemberStore + Send + Sync> GuildMembers for StoreGuildMembers<S> {
+impl<S: kanade_domain::members::MemberStore + Send + Sync> GuildMembers for StoreGuildMembers<S> {
     fn member(&self, user_id: Id<UserMarker>) -> GateFuture<'_, Result<Option<Invoker>, ()>> {
         Box::pin(async move {
             let profile = self

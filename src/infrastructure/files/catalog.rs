@@ -9,7 +9,7 @@ use serde::{
 use serde_saphyr::{DuplicateKeyPolicy, MergeKeyPolicy};
 
 use super::{LoadError, read::read_text};
-use crate::domain::catalog::{BossSpec, BossTable, CatalogSpec, DifficultySpec, GuideSpec};
+use kanade_domain::catalog::{BossSpec, BossTable, CatalogSpec, DifficultySpec, GuideSpec};
 
 const MAX_CATALOG_BYTES: u64 = 256 * 1024;
 
