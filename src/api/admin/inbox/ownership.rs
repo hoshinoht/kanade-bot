@@ -1,6 +1,6 @@
 //! The Inbox Ownership tab: open weekly-timing ownership requests, oldest
 //! first, accepted or declined by any admin session acting as staff through
-//! `api::ownership` (user decision 2026-10-10). The `Idempotency-Key` is
+//! `app::ownership` (user decision 2026-10-10). The `Idempotency-Key` is
 //! validated, not stored: a retry of this admin's own decision answers as the
 //! first did, and accepting pins under the request's own id.
 

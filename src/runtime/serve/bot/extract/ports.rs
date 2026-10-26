@@ -20,8 +20,8 @@ use kanade_domain::{
     scheduler::{ProposalRequest, ProposalResult, Proposed, SchedulerService, SupersedeScope},
 };
 
-use super::status::ExtractionStatus;
 use crate::extract::pipeline::Extractor;
+use crate::runtime::serve::bot::extract::status::ExtractionStatus;
 
 pub struct LiveGuild {
     pub status: Arc<ExtractionStatus>,

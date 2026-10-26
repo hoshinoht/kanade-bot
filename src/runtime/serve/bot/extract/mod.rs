@@ -61,9 +61,9 @@ use kanade_domain::{
     settings::{RuntimeSettings, SelfService},
 };
 
-use super::budget::ShutdownClock;
-use super::discord::GatewayTransport;
-use super::tick::watch_list;
+use crate::runtime::serve::bot::discord::GatewayTransport;
+use crate::runtime::serve::bot::tick::watch_list;
+use crate::runtime::serve::budget::ShutdownClock;
 use ports::{ExtractorCache, LiveGuild, StoreProposer};
 pub use runner::STARTUP_WINDOW;
 use runner::{Gated, Startup};
@@ -246,9 +246,9 @@ pub fn start<T: GatewayTransport>(mut inputs: Inputs<T>) -> Extraction {
             tuning,
         )
         .with_live_context({
-            let resolve = super::context::resolver(
+            let resolve = crate::runtime::serve::context::resolver(
                 Arc::clone(&stack),
-                super::context::changes_or(changes.clone(), &inputs.settings),
+                crate::runtime::serve::context::changes_or(changes.clone(), &inputs.settings),
                 Role::Extraction,
             );
             Arc::new(move |alias: &str| {
@@ -261,7 +261,8 @@ pub fn start<T: GatewayTransport>(mut inputs: Inputs<T>) -> Extraction {
             })
         })
         .with_live_self_service({
-            let saved = super::context::changes_or(changes.clone(), &inputs.settings);
+            let saved =
+                crate::runtime::serve::context::changes_or(changes.clone(), &inputs.settings);
             Arc::new(move || self_service_config(&saved.borrow().settings.self_service))
         })
         .with_run_ends(inputs.run_ends.clone()),

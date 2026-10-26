@@ -17,7 +17,7 @@ use crate::discord::mentions;
 /// Trait methods of `DiscordTransport` that have a default body, read from
 /// the trait's source: a signature line ending `+ Send {`.
 fn default_bodied() -> Vec<String> {
-    let source = include_str!("../../../discord/transport/mod.rs");
+    let source = include_str!("../../../../discord/transport/mod.rs");
     let start = source
         .find("pub trait DiscordTransport")
         .expect("the trait");

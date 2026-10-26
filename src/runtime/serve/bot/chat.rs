@@ -67,15 +67,15 @@ use kanade_domain::{
     settings::RuntimeSettings,
 };
 
-use super::chat_cards::{self as cards, ChatDesk};
-use super::chat_log;
-use super::discord::GatewayTransport;
+use crate::runtime::serve::bot::chat_cards::{self as cards, ChatDesk};
+use crate::runtime::serve::bot::discord::GatewayTransport;
+use crate::runtime::serve::chat_log;
 
 /// Checked-in strategy guides over the startup-validated knowledge
 /// directory, re-read per call like the admin API.
-pub(super) struct LiveStrategyGuides<'a> {
-    pub(super) knowledge: &'a KnowledgeDir,
-    pub(super) catalog: &'a BossTable,
+pub(in crate::runtime::serve) struct LiveStrategyGuides<'a> {
+    pub(in crate::runtime::serve) knowledge: &'a KnowledgeDir,
+    pub(in crate::runtime::serve) catalog: &'a BossTable,
 }
 
 impl StrategyGuides for LiveStrategyGuides<'_> {

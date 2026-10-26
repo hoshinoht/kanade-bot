@@ -1,5 +1,5 @@
 //! Members' avatar hashes from the gateway (join, update, `GUILD_CREATE`) and
-//! the startup member list, for the admin portraits (`api::avatars`). Held in
+//! the startup member list, for the admin portraits (`discord::avatars`). Held in
 //! memory only: the reconcile after each `READY` lists every member again.
 
 use twilight_model::guild::Member;

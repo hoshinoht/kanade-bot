@@ -1,6 +1,6 @@
 //! `/fixed owner`: hand a weekly timing to another party member (`to:`), or
 //! ask to own it; and the Accept/Decline presses on the posted request
-//! (user decision 2026-10-10). Rules and writes are `api::ownership`; the
+//! (user decision 2026-10-10). Rules and writes are `app::ownership`; the
 //! request's message is posted by the delivery tick.
 
 use super::dispatch::CommandError;

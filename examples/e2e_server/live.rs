@@ -43,7 +43,7 @@ use kanade::{
         config::ServeConfig,
         serve::{
             CharacterDataModule,
-            api::{Composition, Overrides, TestComposition, compose_for_tests},
+            web::api::{Composition, Overrides, TestComposition, compose_for_tests},
         },
     },
 };

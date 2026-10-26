@@ -10,7 +10,7 @@ use crate::{
     infrastructure::store::web_sessions::{
         LoginMethod, SessionOrigin, WebSession, WebSessionStore,
     },
-    runtime::serve::{budget::ShutdownClock, discord::rest::RestGuild},
+    runtime::serve::{bot::discord::rest::RestGuild, budget::ShutdownClock},
 };
 
 /// Long enough that only the startup pass runs during a test.

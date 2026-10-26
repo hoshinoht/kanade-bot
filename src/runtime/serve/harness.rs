@@ -5,12 +5,10 @@
 
 use std::{collections::BTreeMap, sync::Arc, time::Duration};
 
-use super::{
-    CLOSE_WAIT, api,
-    budget::ShutdownClock,
-    discord::{self, Discord, GatewayTransport, Wiring},
-    health::LiveHealth,
-    models, settings, store,
+use super::{CLOSE_WAIT, budget::ShutdownClock, health::LiveHealth, models, settings, store};
+use crate::runtime::serve::{
+    bot::discord::{self, Discord, GatewayTransport, Wiring},
+    web::api,
 };
 use crate::{
     app::config::SettingsChanged,

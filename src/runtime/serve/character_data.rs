@@ -32,7 +32,8 @@ use chrono::{DateTime, Utc};
 use tokio::{sync::watch, task::JoinHandle};
 
 use self::upcoming::StoreParties;
-use super::{api::Composition, store::create_private_dir};
+use super::store::create_private_dir;
+use crate::runtime::serve::web::api::Composition;
 use crate::{
     app::clock::Clock,
     infrastructure::{

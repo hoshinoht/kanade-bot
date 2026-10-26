@@ -1,18 +1,15 @@
 //! Live `serve`: owns the SQLite store and runs the components
-//! `runtime.components` lists. `web` serves the admin and public routers
-//! against the store; `bot` runs the Discord gateway, roster sync,
-//! extraction and delivery tick for the configured guild. Without `web` the
-//! admin listener answers only `/healthz`.
+//! `runtime.components` lists. `web/` composes the admin and public routers
+//! against the store; `bot/` wires the Discord gateway, roster sync,
+//! extraction, chat and delivery tick for the configured guild and hands the
+//! web side its ports. The core here (store, settings, models, health,
+//! retention, character data, the shutdown budget) serves both. Without
+//! `web` the admin listener answers only `/healthz`.
 
-pub mod api;
+pub mod bot;
 mod character_data;
-pub mod chat;
-mod chat_cards;
 mod chat_log;
-mod commands;
 mod context;
-pub mod discord;
-pub mod extract;
 #[cfg(feature = "test-support")]
 pub mod harness;
 mod health;
@@ -21,11 +18,9 @@ pub mod models;
 mod persona_log;
 pub mod restart;
 mod retention;
-mod sessions;
 pub mod settings;
-mod setup_secrets;
 pub(crate) mod store;
-mod tick;
+pub mod web;
 
 use std::{future::Future, sync::Arc, time::Duration};
 
@@ -45,10 +40,15 @@ use crate::{
     },
 };
 
+use bot::discord::{self, GatewayTransport, LateTransport, Wiring};
+use bot::extract;
+// The harness and the serve tests reach the tick as `super::tick`.
+#[cfg(any(test, feature = "test-support"))]
+use bot::tick;
 #[cfg(any(test, feature = "test-support"))]
 pub use character_data::Module as CharacterDataModule;
-use discord::{GatewayTransport, LateTransport, Wiring};
 use health::LiveHealth;
+use web::{api, sessions};
 
 /// How long closing waits for connections a timed-out drain left behind.
 const CLOSE_WAIT: Duration = Duration::from_secs(5);

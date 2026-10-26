@@ -25,7 +25,7 @@ use crate::{
     runtime::error::Error,
 };
 
-use super::discord::GatewayTransport;
+use crate::runtime::serve::bot::discord::GatewayTransport;
 
 /// Everything a dispatcher is built from, shared with `ApiState`.
 struct Commands<T> {

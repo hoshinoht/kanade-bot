@@ -6,7 +6,7 @@ use std::time::Duration;
 
 use tokio::sync::watch;
 
-use super::status::ExtractionStatus;
+use crate::runtime::serve::bot::extract::status::ExtractionStatus;
 use crate::{
     app::rescan::{RescanFuture, RescanRunner, RescanView},
     bot::{commands::GuildChannels, roster::LiveRoster},

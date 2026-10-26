@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use twilight_model::id::Id;
 
-use super::{
+use crate::runtime::serve::{
     health::LiveHealth,
     models::{self as model_report, ModelTasks},
     settings,
@@ -114,7 +114,7 @@ fn access(guild: &GuildSettings) -> GuildAccess {
 }
 
 /// The model stack of `models`, its `prompt_cache_key`s scoped to `guild_id`.
-pub(super) fn model_stack(
+pub(in crate::runtime::serve) fn model_stack(
     models: &ModelSettings,
     settings: &RuntimeSettings,
     guild_id: u64,
@@ -161,7 +161,7 @@ pub async fn compose(
 /// [`compose`] on `clock` (the writer's, the API's and both sign-in realms'
 /// sessions); a `shared` model stack (built once by the caller from the same
 /// config) replaces building one, and its listing and refresh stay the caller's.
-pub(super) async fn compose_with(
+pub(in crate::runtime::serve) async fn compose_with(
     config: &ServeConfig,
     store: Arc<SqliteStore>,
     channels: Arc<dyn ChannelList>,
@@ -203,7 +203,7 @@ pub(super) async fn compose_with(
         settings::persona(&settings)?.as_ref(),
     )
     .map_err(file_error)?;
-    super::persona_log::persona_selected(&personas.snapshot);
+    crate::runtime::serve::persona_log::persona_selected(&personas.snapshot);
     let policy = settings.schedule_policy(config.runtime.timezone);
 
     let access = Arc::new(access(&config.guild));
@@ -366,7 +366,7 @@ pub struct Overrides {
 #[cfg(any(test, feature = "test-support"))]
 pub struct TestComposition {
     pub composition: Composition,
-    pub character_data: Option<super::CharacterDataModule>,
+    pub character_data: Option<crate::runtime::serve::CharacterDataModule>,
 }
 
 /// Test support: compose as serve does without the gateway (no guild cache,
@@ -433,7 +433,7 @@ pub async fn compose_for_tests(
             )));
         }
     }
-    let character_data = super::character_data::start_with(
+    let character_data = crate::runtime::serve::character_data::start_with(
         config,
         &store,
         &mut composition,
@@ -442,7 +442,7 @@ pub async fn compose_for_tests(
             Some(address) => Some(NexonClient::plain(address, key)),
             None => NexonClient::new(key),
         },
-        estimate_refresh.then_some(super::character_data::REFRESH),
+        estimate_refresh.then_some(crate::runtime::serve::character_data::REFRESH),
     )
     .await?;
     Ok(TestComposition {

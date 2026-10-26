@@ -30,8 +30,6 @@ use twilight_model::id::{
 };
 use twilight_model::user::CurrentUser;
 
-use super::super::budget::ShutdownClock;
-use super::GatewayTransport;
 use crate::cards::CardKit;
 use crate::chat::nudge::{
     NudgeRewriter, RewriteDetail, RewriteFailure, RewriteOutcome, RewritePrompt, SharedRewriter,
@@ -41,6 +39,8 @@ use crate::discord::transport::{
     InteractionRef, InteractionReply, MessageEdit, MessageId, Outcome, OutgoingMessage, Presence,
     RejectionKind,
 };
+use crate::runtime::serve::bot::discord::GatewayTransport;
+use crate::runtime::serve::budget::ShutdownClock;
 use twilight_model::application::command::{Command, CommandOptionChoice};
 
 pub struct StopAware<T> {
@@ -331,9 +331,9 @@ mod tests {
 
     use tokio::time::Instant;
 
-    use super::super::super::budget::{SEND_FINALISE, STORE_RESERVE, TOTAL};
     use super::*;
     use crate::discord::transport::{FakeDiscord, Op};
+    use crate::runtime::serve::budget::{SEND_FINALISE, STORE_RESERVE, TOTAL};
 
     fn message() -> OutgoingMessage {
         OutgoingMessage {
@@ -375,7 +375,7 @@ mod tests {
             clock.clone(),
         );
         let rewriter = kit.heading.rewriter.expect("wrapped");
-        let text = include_str!("../../../../config/personas/bundles/kanade.yaml");
+        let text = include_str!("../../../../../config/personas/bundles/kanade.yaml");
         let bundle = parse_bundle(text, &PersonaId::parse("kanade").unwrap()).unwrap();
         let prompt = RewritePrompt::build(
             &CompiledPersona::compile(&bundle, None),

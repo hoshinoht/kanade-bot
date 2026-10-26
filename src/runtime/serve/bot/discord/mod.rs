@@ -30,15 +30,17 @@ use twilight_model::id::Id;
 
 use stop_aware::StopAware;
 
-use super::{
-    api::Composition,
+use crate::runtime::serve::{
+    bot::{
+        chat::{self, ChatInputs, ChatRuntime, ServeAnswerer},
+        chat_cards::ChatDesk,
+        commands,
+        extract::{self, Extraction, ExtractionStatus, Timing},
+        tick::{self, TickLoop, TickStatus, card_kit, delivery_config, watch_list},
+    },
     budget::ShutdownClock,
-    chat::{self, ChatInputs, ChatRuntime, ServeAnswerer},
-    chat_cards::ChatDesk,
-    commands,
-    extract::{self, Extraction, ExtractionStatus, Timing},
     health::GatewayProbe,
-    tick::{self, TickLoop, TickStatus, card_kit, delivery_config, watch_list},
+    web::api::Composition,
 };
 use crate::{
     api::state::ApplicationPort,
@@ -328,7 +330,7 @@ where
         .map(|module| {
             Arc::new(CachedEstimates::new(Arc::clone(&store), module)) as Arc<dyn PartyEstimates>
         });
-    let privacy_url = super::character_data::privacy_url(config);
+    let privacy_url = crate::runtime::serve::character_data::privacy_url(config);
     let cards = stop_aware::cards(kit, shutdown.clone());
     // One desk for extraction cards, chat cards and the reaction worker's
     // ✅/❌, which all read the same stored cards.

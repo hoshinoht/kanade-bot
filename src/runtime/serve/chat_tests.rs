@@ -18,14 +18,14 @@ use tokio::time::{Instant, sleep};
 use twilight_gateway::Event;
 use twilight_model::gateway::payload::incoming::{GuildCreate, MessageCreate};
 
-use super::{
-    api::{self, Composition},
-    chat::LiveStrategyGuides,
-    discord::{self, Discord, Wiring},
-    extract,
-    health::LiveHealth,
-    store,
-    tests::Temp,
+use super::{health::LiveHealth, store, tests::Temp};
+use crate::runtime::serve::{
+    bot::{
+        chat::LiveStrategyGuides,
+        discord::{self, Discord, Wiring},
+        extract,
+    },
+    web::api::{self, Composition},
 };
 use crate::{
     app::clock,

@@ -1,7 +1,7 @@
 //! `GET /api/admin/reminders/{id}/preview`: one reminder's card as the bot
 //! posts it (unsent: the tick's planner) or edits it (posted: the refresh
 //! worker's content), through the delivery card builder
-//! (`bot::delivery::preview`). A row retired without posting has no card. Read only: no record is written, no heading
+//! (`cards::preview`). A row retired without posting has no card. Read only: no record is written, no heading
 //! is generated, no art is read and nothing goes to Discord. Difficulty marks are the ones serve listed at startup.
 //!
 //! `GET /api/admin/reminders/{id}/estimate.png`: the "Who carries" image a

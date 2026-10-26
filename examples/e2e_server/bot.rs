@@ -20,9 +20,11 @@ use kanade::{
     runtime::{
         config::ServeConfig,
         serve::{
-            api::Composition,
-            discord::{self, Wiring},
-            extract::Timing,
+            bot::{
+                discord::{self, Wiring},
+                extract::Timing,
+            },
+            web::api::Composition,
         },
     },
 };

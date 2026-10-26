@@ -19,7 +19,7 @@ use kanade::chat::tools::bundles::ToolOffer;
 use kanade::extract::prompt::estimate_tokens;
 use kanade::infrastructure::llm::identity::PassthroughSession;
 use kanade::infrastructure::llm::{CALL_TOKEN_BUDGET, FakeAction, Message};
-use kanade::runtime::serve::chat::run_context;
+use kanade::runtime::serve::bot::chat::run_context;
 use kanade_domain::notify::{
     Claim, DeliveryJournal, DeliveryTarget, EffectKind, IntentContent, NotificationIntent, Receipt,
 };

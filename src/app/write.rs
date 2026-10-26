@@ -299,7 +299,7 @@ pub trait Writer: Send + Sync {
         ctx: &'a WriteContext,
     ) -> WriteFuture<'a, ()>;
 
-    /// Pin a weekly timing's new owner (`api::ownership`), refused inside
+    /// Pin a weekly timing's new owner (`app::ownership`), refused inside
     /// the commit unless `pin` holds on the committed timing.
     fn pin_owner<'a>(
         &'a self,

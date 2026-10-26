@@ -9,11 +9,11 @@ use tokio::{sync::watch, task::JoinHandle};
 use crate::{api::auth::member::MemberAuth, infrastructure::store::web_sessions::SessionOrigin};
 use kanade_domain::scheduler::StoreError;
 
-pub(super) const PRUNE_EVERY: Duration = Duration::from_secs(60 * 60);
+pub(in crate::runtime::serve) const PRUNE_EVERY: Duration = Duration::from_secs(60 * 60);
 
 /// Delete the public sessions past their absolute expiry, idle past the
 /// member policy or superseded with their grace over; admin rows stay.
-pub(super) async fn prune(member: &MemberAuth) -> Result<u64, StoreError> {
+pub(in crate::runtime::serve) async fn prune(member: &MemberAuth) -> Result<u64, StoreError> {
     let now = member.now();
     member
         .sessions()
@@ -22,14 +22,17 @@ pub(super) async fn prune(member: &MemberAuth) -> Result<u64, StoreError> {
 }
 
 /// The running prune loop.
-pub(super) struct SessionPrune {
+pub(in crate::runtime::serve) struct SessionPrune {
     stop: watch::Sender<bool>,
     task: JoinHandle<()>,
 }
 
 impl SessionPrune {
     /// Prune now, then every `every`; `None` without a member realm.
-    pub(super) fn start(member: Option<Arc<MemberAuth>>, every: Duration) -> Option<Self> {
+    pub(in crate::runtime::serve) fn start(
+        member: Option<Arc<MemberAuth>>,
+        every: Duration,
+    ) -> Option<Self> {
         let member = member?;
         let (stop, mut stopped) = watch::channel(false);
         let task = tokio::spawn(async move {
@@ -51,7 +54,7 @@ impl SessionPrune {
 
     /// Stop the loop; a prune already running finishes first, so no write is
     /// cut off before the store closes.
-    pub(super) async fn stop(self) {
+    pub(in crate::runtime::serve) async fn stop(self) {
         let _ = self.stop.send(true);
         let _ = self.task.await;
     }

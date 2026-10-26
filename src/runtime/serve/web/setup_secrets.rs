@@ -16,10 +16,12 @@ use crate::{
     runtime::{config::ServeConfig, error::Error},
 };
 
-use super::restart;
+use crate::runtime::serve::restart;
 
 /// The desk Setup saves into; `None` without a saved directory.
-pub(super) fn desk(config: &ServeConfig) -> std::result::Result<Option<Arc<SecretDesk>>, Error> {
+pub(in crate::runtime::serve) fn desk(
+    config: &ServeConfig,
+) -> std::result::Result<Option<Arc<SecretDesk>>, Error> {
     if config.saveable_secrets.is_empty() {
         return Ok(None);
     }

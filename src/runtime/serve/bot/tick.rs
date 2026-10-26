@@ -15,7 +15,7 @@ use std::time::Duration;
 use tokio::sync::watch;
 use tokio::time::{Instant, MissedTickBehavior};
 
-use super::settings;
+use crate::runtime::serve::settings;
 use crate::{
     app::{clock::Clock, config::SettingsChanged, ids::parse_id},
     bot::{
@@ -126,7 +126,8 @@ pub struct TickLoop<T> {
     pub seeds: SettingSeeds,
     pub config: DeliveryConfig,
     pub status: Arc<TickStatus>,
-    pub(super) claim_gate: Arc<dyn Fn() -> Option<DeliveryEligibility> + Send + Sync>,
+    pub(in crate::runtime::serve) claim_gate:
+        Arc<dyn Fn() -> Option<DeliveryEligibility> + Send + Sync>,
     pub cards: CardKit,
     /// Shared with the reaction worker's card edits.
     pub quiet: Arc<AtomicBool>,
@@ -212,7 +213,11 @@ pub fn card_kit(
     let rewriter = models
         .filter(|stack| stack.has_role(Role::Rewrite))
         .map(|stack| {
-            let resolve = super::context::resolver(Arc::clone(stack), settings, Role::Rewrite);
+            let resolve = crate::runtime::serve::context::resolver(
+                Arc::clone(stack),
+                settings,
+                Role::Rewrite,
+            );
             heading_rewriter(
                 Arc::clone(&stack.client),
                 Arc::new(move |alias: &str| resolve(alias).reserve),
@@ -478,7 +483,7 @@ mod tests {
     }
 
     fn persona() -> CompiledPersona {
-        let text = include_str!("../../../config/personas/bundles/kanade.yaml");
+        let text = include_str!("../../../../config/personas/bundles/kanade.yaml");
         let bundle = parse_bundle(text, &PersonaId::parse("kanade").unwrap()).unwrap();
         CompiledPersona::compile(&bundle, None)
     }

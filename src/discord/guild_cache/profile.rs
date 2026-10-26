@@ -1,5 +1,5 @@
 //! The bot's own display name and avatar hashes, for the admin masthead and
-//! the identity art refresh (`bot::identity`).
+//! the identity art refresh (`discord::identity`).
 
 use tokio::sync::watch;
 use twilight_model::id::{Id, marker::UserMarker};

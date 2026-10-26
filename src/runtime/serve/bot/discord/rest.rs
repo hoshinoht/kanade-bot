@@ -11,7 +11,7 @@ use std::time::Duration;
 use tokio::sync::watch;
 use tokio::task::JoinHandle;
 
-use super::{GatewayTransport, ports::StoreRoster, scope};
+use crate::runtime::serve::bot::discord::{GatewayTransport, ports::StoreRoster, scope};
 use crate::{
     api::state::ApplicationPort,
     bot::{
@@ -24,7 +24,7 @@ use crate::{
     runtime::{
         config::ServeConfig,
         error::Error,
-        serve::{api::Composition, budget::ShutdownClock, tick},
+        serve::{bot::tick, budget::ShutdownClock, web::api::Composition},
     },
 };
 

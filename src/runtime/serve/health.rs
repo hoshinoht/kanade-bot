@@ -5,7 +5,7 @@
 
 use std::sync::Arc;
 
-use super::{extract::ExtractionStatus, tick::TickStatus};
+use crate::runtime::serve::bot::{extract::ExtractionStatus, tick::TickStatus};
 use crate::{
     bot::{
         events::DroppedEvents,

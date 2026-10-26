@@ -21,7 +21,10 @@ use kanade::{
     infrastructure::{llm::setup::ModelStack, store::SqliteStore},
     runtime::{
         config::ServeConfig,
-        serve::{discord::Wiring, extract::Timing, harness, settings},
+        serve::{
+            bot::{discord::Wiring, extract::Timing},
+            harness, settings,
+        },
     },
 };
 use kanade_domain::{
