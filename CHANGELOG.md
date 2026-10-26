@@ -6,6 +6,20 @@ What changed in each Kanade release, newest first. Upgrading across several rele
 
 _In development_
 
+Rescheduling and reopening runs that already ended, with safer run controls in the admin app.
+
+### New features
+
+- Admins can now move a done or cancelled run from its run sheet, and Kanade asks whether to set it back to Planned (suggested when the new time is still ahead), which clears its answers and posts one "back on the schedule" notice.
+
+### Changes
+
+- The admin run sheet and Week board now disable moving, swapping, roster and answer changes on a run that has ended, leaving only its status to set, and disable swapping for done and cancelled runs.
+
+### Fixes
+
+- Setting a done run back to Planned after it ended now keeps it open: Kanade no longer marks it done again at its cutoff, and it can be moved to a new time, after which it is completed as usual.
+
 ## 1.0.0-beta.14
 
 _23 Oct 2026_

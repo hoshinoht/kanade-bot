@@ -21,7 +21,7 @@ use super::{
 };
 use crate::{
     api::{
-        admin::context::{context, roster, run_lengths},
+        admin::context::{context, roster, run_ends},
         auth::AdminSession,
         dto::{
             hhmm,
@@ -80,8 +80,8 @@ async fn after(
         .find(|run| run.id == run_id)
         .ok_or_else(|| Refusal::from(ApiError::UNAVAILABLE))?;
     let start = ctx.local_date(run.week_start);
-    let run_lengths = run_lengths(state).await;
-    Ok((run_dto(&ctx, &snapshot, start, run, &run_lengths), version))
+    let ends = run_ends(state).await;
+    Ok((run_dto(&ctx, &snapshot, start, run, &ends), version))
 }
 
 /// Run one edit through the writer; a replayed Idempotency-Key answers the
@@ -135,6 +135,9 @@ pub struct MoveRequest {
     day: u8,
     time: Option<String>,
     version: u64,
+    /// A done or cancelled run goes back to planned with the move.
+    #[serde(default)]
+    reopen: bool,
     #[serde(default)]
     expect: Option<Vec<SeenField>>,
     #[serde(default, rename = "override")]
@@ -158,12 +161,9 @@ pub async fn move_run(
         .iter()
         .find(|run| run.id == run_id)
         .ok_or_else(|| Refusal::from(ApiError::NOT_FOUND))?;
-    // The scheduler would move them; the portal keeps them as the record (mock contract).
-    if run.status.is_terminal() {
-        return Err(Refusal::invalid(
-            "Finished and cancelled runs stay where they were.",
-        ));
-    }
+    // A done or cancelled run may move: as the record (`reopen` false) or
+    // back to planned in the same commit.
+    let reopen = request.reopen && run.status.is_terminal();
     let ctx = context(&site, state, roster(&[]), state.now());
     let previous = Previous::of(&ctx, run);
     let to = slot(
@@ -184,14 +184,22 @@ pub async fn move_run(
             }
         })
     })?;
+    let (fields, write) = if reopen {
+        (
+            vec!["slot".to_owned(), "status".to_owned()],
+            RunWrite::Reschedule { to },
+        )
+    } else {
+        (vec!["slot".to_owned()], RunWrite::Move { to })
+    };
     let (run, version) = edit(
         &site,
         &session,
         &headers,
         &run_id,
-        &["slot".to_owned()],
+        &fields,
         declared(request.version, request.expect, request.overrides),
-        RunWrite::Move { to },
+        write,
     )
     .await?;
     Ok(Json(MoveResult {

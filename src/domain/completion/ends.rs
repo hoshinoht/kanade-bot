@@ -2,13 +2,15 @@
 //! its start plus its length, as the completion prompt plans it; an own-time
 //! run at the boss reset. A live run past its end is frozen until its prompt
 //! is answered or its cutoff marks it done: settling works, edits do not, and
-//! every view reads it as ended. The stored status never changes for it.
+//! every view reads it as ended. The stored status never changes for it. A
+//! run staff reopened after its end ([`reopened`]) is never frozen.
 
 use std::sync::Arc;
 
 use chrono::{DateTime, TimeDelta, Utc};
 
 use super::plan::{plan, run_minutes};
+use super::reopened;
 use crate::domain::catalog::BossTable;
 use crate::domain::schedule::{Run, RunStatus, SchedulePolicy};
 use crate::domain::settings::RunLengths;
@@ -61,9 +63,13 @@ impl RunEnds {
         self.ends_at(run).is_ok_and(|end| end <= now)
     }
 
-    /// A live run whose end has passed: frozen and shown as ended.
+    /// A live run whose end has passed: frozen and shown as ended, unless
+    /// staff reopened it after that end.
     pub fn frozen(&self, run: &Run, now: DateTime<Utc>) -> bool {
-        run.status.is_live() && self.ended(run, now)
+        run.status.is_live()
+            && self
+                .ends_at(run)
+                .is_ok_and(|end| end <= now && !reopened(run, end))
     }
 
     /// Whether a weekly slot at `at` for `bosses` (a planned run, not yet
@@ -187,5 +193,23 @@ mod tests {
         for status in [RunStatus::Done, RunStatus::Cancelled] {
             assert!(!ends().frozen(&run(status, &["Kalos"]), utc(20, 0, 0)));
         }
+    }
+
+    #[test]
+    fn a_run_reopened_after_its_end_is_not_frozen() {
+        let end = ends()
+            .ends_at(&run(RunStatus::Planned, &["Kalos"]))
+            .unwrap();
+        let pinned = |at| Run {
+            status_pin: Some(crate::domain::attendance::StatusPin {
+                status: RunStatus::Planned,
+                at,
+            }),
+            ..run(RunStatus::Planned, &["Kalos"])
+        };
+        let later = end + TimeDelta::hours(3);
+        assert!(!ends().frozen(&pinned(end), later));
+        // A pin set before the run ended is an ordinary hand-set status.
+        assert!(ends().frozen(&pinned(end - TimeDelta::seconds(1)), later));
     }
 }

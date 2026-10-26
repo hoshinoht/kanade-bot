@@ -361,25 +361,37 @@ export class AdminWeek {
     this.week = { ...this.week, runs: this.week.runs.map((r) => runs.find((n) => n.id === r.id) ?? r) };
   }
 
-  async move(runId: string, to: Slot, { recordUndo = true } = {}): Promise<MoveOutcome> {
+  /**
+   * `reopen` moves a done or cancelled run back to planned in the same commit.
+   * It records no Undo: undoing would put a planned run back in the past.
+   */
+  async move(runId: string, to: Slot, { recordUndo = true, reopen = false } = {}): Promise<MoveOutcome> {
     if (this.mutating) return { ok: false, message: 'Saving the last change…' };
     const week = this.week;
     const run = this.run(runId);
     if (!week || !run) return { ok: false, message: 'That run is no longer on the board.' };
     const from = { day: run.day, time: run.time };
 
-    this.#replace({ ...run, day: to.day, time: run.status === 'otot' ? run.time : to.time });
+    this.#replace({ ...run, day: to.day, time: run.status === 'otot' ? run.time : to.time, ...(reopen ? { status: 'planned' as const } : {}) });
     this.#pendingMoves += 1;
     try {
       const result = await this.#client.post<MoveResult>(`/api/admin/runs/${encodeURIComponent(runId)}/move`, {
         day: to.day,
         time: to.time,
         version: week.version,
+        ...(reopen ? { reopen: true } : {}),
       });
       this.#replace(result.run);
       if (this.week) this.week = { ...this.week, version: result.version };
+      const when = whenLabel(week, result.run.day, result.run.time);
+      if (reopen) {
+        // An older undo entry for this run would now move a planned run back as well.
+        const last = this.lastMove;
+        if (last && (last.runId === runId || (last.kind === 'swap' && last.withId === runId))) this.lastMove = null;
+        return { ok: true, message: `${runTitle(result.run)} moved to ${when} and set back to planned.` };
+      }
       if (recordUndo) this.lastMove = { kind: 'move', revision: this.#nextUndoRevision++, runId, from, to };
-      const label = `${runTitle(result.run)} to ${whenLabel(week, result.run.day, result.run.time)}`;
+      const label = `${runTitle(result.run)} to ${when}`;
       return { ok: true, message: recordUndo ? `Moved ${label}.` : `Move undone: ${label}.` };
     } catch (error) {
       this.#replace(run);

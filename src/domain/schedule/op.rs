@@ -13,7 +13,8 @@ use super::lifecycle::{
 };
 use super::materialise::{materialise_week, materialise_weeks};
 use super::mutate::{
-    StatusChange, amend_run, reset_to_fixed, set_status, swap_participants, swap_run_slots,
+    StatusChange, amend_run, reschedule_run, reset_to_fixed, set_status, swap_participants,
+    swap_run_slots,
 };
 use super::notice::{Notice, NoticeChange, Outcome};
 use super::policy::SchedulePolicy;
@@ -140,6 +141,13 @@ pub enum Op<'a> {
         to: DateTime<Utc>,
         policy: &'a SchedulePolicy,
     },
+    /// Move a done or cancelled run to `to` and put it back to `planned` in
+    /// one commit, announced once as back on the schedule.
+    RescheduleRun {
+        run_id: String,
+        to: DateTime<Utc>,
+        policy: &'a SchedulePolicy,
+    },
     SwapRunSlots {
         run_id: String,
         with_id: String,
@@ -231,6 +239,7 @@ impl Op<'_> {
             Self::MaterialiseWeeks { policy }
             | Self::AddFixedRunMaterialised { policy, .. }
             | Self::AmendRun { policy, .. }
+            | Self::RescheduleRun { policy, .. }
             | Self::SwapRunSlots { policy, .. }
             | Self::ApplyFixedEdit { policy, .. }
             | Self::ResetToFixed { policy, .. }
@@ -441,6 +450,9 @@ pub fn apply_op(
         } => run(set_status(draft, ids, run_id, *change, policy, now)?),
         Op::AmendRun { run_id, to, policy } => {
             run(amend_run(draft, ids, run_id, *to, policy, now)?)
+        }
+        Op::RescheduleRun { run_id, to, policy } => {
+            run(reschedule_run(draft, ids, run_id, *to, policy, now)?)
         }
         Op::SwapRunSlots {
             run_id,

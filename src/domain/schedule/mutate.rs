@@ -97,12 +97,17 @@ pub fn set_status(
     let run = draft.require_run(run_id)?;
     let previous = run.status;
     // v5: a hand-set planned or confirmed is pinned (kept by derivation);
-    // setting it again re-pins, other statuses clear the pin.
-    let pin = (draft.attendance().mode == AttendanceMode::V5
+    // setting it again re-pins, other statuses clear the pin. In every mode
+    // one set after the run ended is pinned: it reopens the run
+    // (`completion::reopened`), so it is neither frozen nor auto-done.
+    let ended = draft.run_ends().is_some_and(|ends| ends.ended(&run, now));
+    let pin = ((draft.attendance().mode == AttendanceMode::V5 || ended)
         && matches!(status, RunStatus::Planned | RunStatus::Confirmed))
     .then_some(StatusPin { status, at: now });
     if previous == status {
-        if draft.attendance().mode == AttendanceMode::V5 && run.status_pin != pin {
+        // Setting an ended run's own planned/confirmed again reopens it.
+        if (draft.attendance().mode == AttendanceMode::V5 || pin.is_some()) && run.status_pin != pin
+        {
             draft.set_run_pin(run_id, pin);
         }
         return Ok(Outcome::quiet(run_state(draft, run_id)?));
@@ -118,7 +123,7 @@ pub fn set_status(
         }
     }
     draft.set_run_status(run_id, status);
-    if draft.attendance().mode == AttendanceMode::V5 {
+    if draft.attendance().mode == AttendanceMode::V5 || pin.is_some() || run.status_pin.is_some() {
         draft.set_run_pin(run_id, pin);
     }
     refresh_run_reminders(draft, ids, run_id, policy, now)?;
@@ -188,6 +193,47 @@ pub fn amend_run(
             run_id: run_id.to_owned(),
             from: run.datetime,
             to: state.run.datetime,
+        },
+        state.run.participants.clone(),
+        true,
+    );
+    Ok(Outcome {
+        value: state,
+        notices: vec![intent],
+    })
+}
+
+/// Reschedule a done or cancelled run: back to `planned` (answers cleared,
+/// as [`set_status`] does) and moved to `to` ([`amend_run`]), announced once
+/// as back on the schedule at its new slot. A run still live is only moved.
+///
+/// # Errors
+/// As [`amend_run`].
+pub fn reschedule_run(
+    draft: &mut Draft,
+    ids: &mut impl IdGenerator,
+    run_id: &str,
+    to: DateTime<Utc>,
+    policy: &SchedulePolicy,
+    now: DateTime<Utc>,
+) -> Result<Outcome<RunState>, ScheduleError> {
+    let previous = draft.require_run(run_id)?.status;
+    if !previous.is_terminal() {
+        return amend_run(draft, ids, run_id, to, policy, now);
+    }
+    let reopen = StatusChange {
+        status: RunStatus::Planned,
+        announce: false,
+        via_portal: true,
+    };
+    set_status(draft, ids, run_id, reopen, &policy.reminders, now)?;
+    let state = amend_run(draft, ids, run_id, to, policy, now)?.value;
+    let intent = notice(
+        &state.run,
+        NoticeChange::RunStatus {
+            run_id: run_id.to_owned(),
+            from: previous,
+            to: RunStatus::Planned,
         },
         state.run.participants.clone(),
         true,
@@ -310,11 +356,10 @@ fn settle_after_move(
     if matches!(status, RunStatus::Confirmed | RunStatus::AtRisk) {
         draft.set_run_status(run_id, RunStatus::Planned);
     }
-    if draft.attendance().mode == AttendanceMode::V5 {
-        draft.set_run_pin(run_id, None);
-        if status.is_live() {
-            recompute_after_roster_change(draft, run_id, now)?;
-        }
+    // A move ends the pin (and with it a reopen) in every mode.
+    draft.set_run_pin(run_id, None);
+    if draft.attendance().mode == AttendanceMode::V5 && status.is_live() {
+        recompute_after_roster_change(draft, run_id, now)?;
     }
     refresh_run_reminders(draft, ids, run_id, policy, now)
 }

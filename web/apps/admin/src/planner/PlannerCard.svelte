@@ -45,7 +45,8 @@
     selected?: boolean;
   } = $props();
 
-  const movable = $derived(run.status !== 'done' && run.status !== 'cancelled');
+  // Finished, cancelled and ended (frozen) runs stay put on the board; the sheet can still move a finished one.
+  const movable = $derived(run.status !== 'done' && run.status !== 'cancelled' && !run.ended);
   const NOOP = () => {};
   // The attachment's identity follows the engine: cards mounted before it
   // hydrates bind when it arrives, not only if it won the race to mount.

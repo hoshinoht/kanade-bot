@@ -547,7 +547,6 @@ async fn run_edits_refuse_with_the_table_codes() {
         ("PATCH", "r-kalos/status", json!({"status": "at_risk"})),
         ("POST", "r-kalos/move", json!({"day": 7, "time": "21:00"})),
         ("POST", "r-kalos/move", json!({"day": 1, "time": "9pm"})),
-        ("POST", "r-star/move", json!({"day": 1, "time": "21:00"})),
         ("PATCH", "r-kalos/participants", json!({"add": "1006"})),
         ("PATCH", "r-kalos/participants", json!({})),
     ]
@@ -585,6 +584,35 @@ async fn run_edits_refuse_with_the_table_codes() {
         );
     }
     assert_eq!(reads.version().await, v, "nothing was written");
+}
+
+/// A done run moves as the record, or with `reopen` goes back to planned in
+/// the same commit: answers cleared, one status notice.
+#[tokio::test]
+async fn a_done_run_moves_as_the_record_or_back_to_planned() {
+    let reads = Reads::new().await;
+    let path = "/api/admin/runs/r-star/move";
+    let body = json!({"day": 3, "time": "21:00", "version": reads.version().await});
+    let kept = reads.ok("POST", path, body, MOVE_RESULT).await;
+    assert_eq!(
+        (&kept["run"]["day"], &kept["run"]["status"]),
+        (&json!(3), &json!("done"))
+    );
+
+    let body = json!({"day": 6, "time": "21:00", "version": kept["version"], "reopen": true});
+    let reopened = reads.ok("POST", path, body, MOVE_RESULT).await;
+    let run = &reopened["run"];
+    assert_eq!(
+        (&run["day"], &run["time"], &run["status"], &run["ended"]),
+        (&json!(6), &json!("21:00"), &json!("planned"), &json!(false))
+    );
+    assert_eq!(
+        run["participants"][0]["answer"], "waiting",
+        "answers cleared"
+    );
+    let seq = reopened["version"].as_u64().unwrap();
+    let record = reads.store.load_change(seq).await.unwrap().unwrap();
+    assert_eq!(record.notices.len(), 1, "{:?}", record.notices);
 }
 
 #[tokio::test]

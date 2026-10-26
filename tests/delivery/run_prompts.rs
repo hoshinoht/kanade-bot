@@ -546,6 +546,108 @@ async fn a_run_live_again_after_its_prompt_closed_is_asked_again() {
     reopened_run_is_asked_again(&SqliteStore::open_temp().await).await;
 }
 
+/// Staff reopening a run after it was marked done automatically: it stays
+/// planned past its cutoff and can be moved; the move ends the reopen, so
+/// the moved run is completed as usual.
+async fn reopened_after_auto_done_stays_open<S: Store>(store: &S) {
+    use kanade::domain::completion::RunEndsSource;
+    use kanade::domain::settings::RunLengths;
+
+    let world = world();
+    let id = run(store, RunStatus::Planned, started()).await;
+    let mut delivery = delivery(store, &world, &world.fake);
+    delivery.tick_at(now()).await.expect("tick");
+    delivery.tick_at(cutoff()).await.expect("tick");
+    assert_eq!(status(store, &id).await, RunStatus::Done);
+
+    let policy = config().policy;
+    let ends = RunEndsSource::fixed(RunLengths::default(), None, policy.clone());
+    let reopen_at = cutoff() + TimeDelta::minutes(1);
+    let mut ids = RandomIds;
+    support::service(store, &mut ids, reopen_at)
+        .with_run_ends(ends.clone())
+        .as_origin(Origin::for_tests())
+        .set_status(
+            &id,
+            StatusChange {
+                status: RunStatus::Planned,
+                announce: true,
+                via_portal: true,
+            },
+            &policy.reminders,
+        )
+        .await
+        .expect("reopened");
+    let report = delivery
+        .tick_at(reopen_at + TimeDelta::hours(2))
+        .await
+        .expect("tick");
+    assert!(report.done.is_empty(), "not marked done again");
+    assert_eq!(status(store, &id).await, RunStatus::Planned);
+
+    let to = now() + TimeDelta::days(1);
+    support::service(store, &mut ids, reopen_at + TimeDelta::hours(2))
+        .with_run_ends(ends)
+        .as_origin(Origin::for_tests())
+        .amend_run(&id, to, &policy)
+        .await
+        .expect("a reopened run moves");
+    let report = delivery
+        .tick_at(cutoff() + TimeDelta::days(1))
+        .await
+        .expect("tick");
+    assert_eq!(
+        report.done,
+        std::slice::from_ref(&id),
+        "done at its new cutoff"
+    );
+}
+
+#[tokio::test]
+async fn a_run_reopened_after_auto_done_stays_open_until_moved() {
+    reopened_after_auto_done_stays_open(&SqliteStore::open_temp().await).await;
+}
+
+/// An ended run still planned is reopened by setting Planned again: it is
+/// not marked done at its cutoff.
+async fn same_status_reopens_an_ended_run<S: Store>(store: &S) {
+    use kanade::domain::completion::RunEndsSource;
+    use kanade::domain::settings::RunLengths;
+
+    let world = world();
+    let id = run(store, RunStatus::Planned, started()).await;
+    let mut delivery = delivery(store, &world, &world.fake);
+    delivery.tick_at(now()).await.expect("tick");
+    let policy = config().policy;
+    let mut ids = RandomIds;
+    support::service(store, &mut ids, now())
+        .with_run_ends(RunEndsSource::fixed(
+            RunLengths::default(),
+            None,
+            policy.clone(),
+        ))
+        .as_origin(Origin::for_tests())
+        .set_status(
+            &id,
+            StatusChange {
+                status: RunStatus::Planned,
+                announce: false,
+                via_portal: true,
+            },
+            &policy.reminders,
+        )
+        .await
+        .expect("reopened");
+    let report = delivery.tick_at(cutoff()).await.expect("tick");
+    assert!(report.done.is_empty(), "not marked done");
+    assert_eq!(status(store, &id).await, RunStatus::Planned);
+}
+
+#[tokio::test]
+async fn setting_an_ended_runs_own_status_again_reopens_it() {
+    same_status_reopens_an_ended_run(&SqliteStore::open_temp().await).await;
+}
+
 async fn after_midnight_end<S: Store>(store: &S) {
     let world = world();
     // Thu 23:30 local: ends Fri 00:00, prompt Fri 00:30, cutoff Sat 00:00.

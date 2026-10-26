@@ -9,6 +9,7 @@ const run = (id: string, day: number): Run => ({
   day,
   time: '21:00',
   status: 'planned',
+  ended: false,
   short_id: 'abc',
   bosses: [
     { token: 'HFA', key: 'FA', name: 'The First Adversary', difficulty: 'h', level: 270, portrait: null, portrait_sm: null, art: null, animated: null, hue: 0 },
@@ -281,6 +282,61 @@ describe('AdminWeek: swaps', () => {
     await expect(pending).resolves.toMatchObject({ ok: false });
     expect(store.mutating).toBe(false);
     expect(slots(store)).toEqual(['r1 0 21:00', 'r2 3 23:30']);
+  });
+});
+
+describe('AdminWeek: moving a done run', () => {
+  const done = (day: number): Run => ({ ...run('r1', day), status: 'done' });
+
+  function serveMove(answer: (body: Record<string, unknown>) => Response) {
+    const posts: Record<string, unknown>[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string, init?: RequestInit) => {
+        const path = url.split('?')[0]!;
+        if (init?.method === 'POST' && path.endsWith('/move')) {
+          const body = JSON.parse(String(init.body)) as Record<string, unknown>;
+          posts.push(body);
+          return answer(body);
+        }
+        const reply = path.endsWith('/week') ? { ...week(1), runs: [done(0)] } : [];
+        return new Response(JSON.stringify(reply), { status: 200 });
+      }),
+    );
+    return posts;
+  }
+
+  it('reopen: sends reopen, shows it planned at once, says it is back on the schedule and records no undo', async () => {
+    const posts = serveMove(() => new Response(JSON.stringify({ run: { ...run('r1', 4), time: '20:00' }, version: 2 }), { status: 200 }));
+    const store = new AdminWeek();
+    await store.refresh();
+    // An older undo entry for this run would now move a planned run back.
+    store.lastMove = { kind: 'move', revision: 9, runId: 'r1', from: { day: 1, time: '21:00' }, to: { day: 0, time: '21:00' } };
+    const pending = store.move('r1', { day: 4, time: '20:00' }, { reopen: true });
+    expect(store.week?.runs[0]).toMatchObject({ day: 4, time: '20:00', status: 'planned' });
+    expect(await pending).toMatchObject({ ok: true, message: expect.stringMatching(/^HFA moved to .+ and set back to planned\.$/) });
+    expect(posts).toEqual([{ day: 4, time: '20:00', version: 1, reopen: true }]);
+    expect(store.lastMove).toBeNull();
+  });
+
+  it('keep: sends no reopen, stays done and can be undone', async () => {
+    const posts = serveMove(() => new Response(JSON.stringify({ run: { ...done(4), time: '20:00' }, version: 2 }), { status: 200 }));
+    const store = new AdminWeek();
+    await store.refresh();
+    const pending = store.move('r1', { day: 4, time: '20:00' });
+    expect(store.week?.runs[0]).toMatchObject({ day: 4, status: 'done' });
+    expect(await pending).toMatchObject({ ok: true, message: expect.stringMatching(/^Moved HFA to /) });
+    expect(posts).toEqual([{ day: 4, time: '20:00', version: 1 }]);
+    expect(store.lastMove).toMatchObject({ kind: 'move', runId: 'r1' });
+  });
+
+  it('a refused reopen puts the run back as it was, done', async () => {
+    serveMove(() => new Response(JSON.stringify({ error: 'stale', message: 'The week changed since it was loaded.' }), { status: 409 }));
+    const store = new AdminWeek();
+    await store.refresh();
+    const outcome = await store.move('r1', { day: 4, time: '20:00' }, { reopen: true });
+    expect(outcome).toMatchObject({ ok: false });
+    expect(store.week?.runs[0]).toMatchObject({ day: 0, time: '21:00', status: 'done' });
   });
 });
 

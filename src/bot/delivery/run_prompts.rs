@@ -35,7 +35,7 @@ use crate::bot::mentions;
 use crate::bot::transport::{DiscordTransport, MessageEdit, OutgoingMessage};
 use crate::domain::completion::{
     ASK_AGAIN_AFTER, CompletionPlan, PromptClose, PromptOutcome, RunPrompt, RunPromptStore,
-    auto_request_id, plan, pressed_request_id, run_minutes,
+    auto_request_id, plan, pressed_request_id, reopened, run_minutes,
 };
 use crate::domain::drafts::ProposalStore;
 use crate::domain::history::{Actor, Checkpoints, Origin, Surface};
@@ -276,8 +276,9 @@ where
     }
 
     /// Mark every live run past its cutoff done, as Kanade, without a notice
-    /// (own-time runs at the reset); its open ask closes as automatic. A
-    /// failing run is alerted and retried next tick.
+    /// (own-time runs at the reset); its open ask closes as automatic. A run
+    /// staff reopened after its end is left alone. A failing run is alerted
+    /// and retried next tick.
     ///
     /// # Errors
     /// The schedule could not be read.
@@ -295,6 +296,9 @@ where
                     continue;
                 }
             };
+            if reopened(run, plan.ends_at) {
+                continue;
+            }
             if asked(run) {
                 self.finish_pressed(run, plan.ends_at, now).await;
             }
@@ -480,7 +484,7 @@ where
     /// Open the first ask of every asked run whose prompt is due and not yet
     /// cut off. A run already asked keeps its asks: one closed by a press
     /// or automatically is never asked again unless the run moves (a new
-    /// end), so a run reopened by hand is left to its cutoff.
+    /// end), so a run reopened by hand stays open until it moves.
     async fn open_first_asks(
         &self,
         runs: &[Run],

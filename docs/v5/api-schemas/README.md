@@ -79,7 +79,7 @@ Pointers are `<file>#/$defs/<Name>`.
 | `GET /api/admin/auth/tonight` (no session) | `week.json#/$defs/Tonight` |
 | `GET /api/admin/week?week=` | `week.json#/$defs/Week` |
 | `GET /api/admin/summary` | `week.json#/$defs/Summary` |
-| `POST /api/admin/runs/{id}/move` | `week.json#/$defs/MoveResult` |
+| `POST /api/admin/runs/{id}/move` | `week.json#/$defs/MoveResult` (body `{day, time, version, reopen?}`; a done or cancelled run moves as the record, or with `reopen: true` goes back to `planned` in the same commit, answers cleared and announced once as back on the schedule; 409 `run_ended` for an ended live run) |
 | `POST /api/admin/runs/{id}/swap` | `week.json#/$defs/SwapResult` |
 | `PATCH /api/admin/runs/{id}/status` | `week.json#/$defs/RunResult` |
 | `POST /api/admin/runs/{id}/rsvp` | `week.json#/$defs/RunResult` |

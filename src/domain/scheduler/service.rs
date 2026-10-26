@@ -404,6 +404,7 @@ fn on_surface(op: &Op<'_>, surface: Surface, mut outcome: Outcome<OpResult>) -> 
     match op {
         Op::ApplyFixedEdit { .. } if discord => outcome.notices.clear(),
         Op::AmendRun { .. }
+        | Op::RescheduleRun { .. }
         | Op::SwapRunSlots { .. }
         | Op::ApplyFixedEdit { .. }
         | Op::FixedParticipants { .. }
@@ -799,6 +800,22 @@ impl<S: ScheduleStore, I: IdSource, C: Clock> Attributed<'_, S, I, C> {
             policy,
         };
         // The target week's runs decide conflicts, so the whole schedule is read.
+        Ok(run_state(self.apply(Scope::All, op).await?))
+    }
+
+    /// Move a done or cancelled run to `to` and put it back to `planned`
+    /// in one commit (the admin board's reschedule); a live run only moves.
+    pub async fn reschedule_run(
+        self,
+        run_id: &str,
+        to: DateTime<Utc>,
+        policy: &SchedulePolicy,
+    ) -> SchedulerResult<Outcome<RunState>> {
+        let op = Op::RescheduleRun {
+            run_id: run_id.to_owned(),
+            to,
+            policy,
+        };
         Ok(run_state(self.apply(Scope::All, op).await?))
     }
 
@@ -1439,6 +1456,7 @@ fn op_digest(op: &Op<'_>) -> SchedulerResult<String> {
         Op::MaterialiseWeeks { .. } => digest("materialise_weeks", &()),
         Op::SetStatus { run_id, change, .. } => digest("set_status", &(run_id, change)),
         Op::AmendRun { run_id, to, .. } => digest("amend_run", &(run_id, to)),
+        Op::RescheduleRun { run_id, to, .. } => digest("reschedule_run", &(run_id, to)),
         Op::SwapRunSlots {
             run_id,
             with_id,

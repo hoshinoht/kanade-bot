@@ -132,6 +132,7 @@ fn the_public_contract_is_closed() {
         "short_id",
         "channel_id",
         "cards",
+        "ended",
         "amended",
         "roster_change",
     ] {

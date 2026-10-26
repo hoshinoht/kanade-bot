@@ -12,9 +12,7 @@ use axum::{
     routing::get,
 };
 
-use super::context::{
-    context, frames, next_week, roster, run_ends, run_lengths, state, unavailable, weeks,
-};
+use super::context::{context, frames, next_week, roster, run_ends, state, unavailable, weeks};
 use crate::api::{
     auth::AdminSession,
     dto::{self, Art, Named},
@@ -51,15 +49,8 @@ async fn week(State(site): State<Arc<Site>>, _: AdminSession, uri: Uri) -> Reply
     let snapshot = weeks(state, vec![frame.start]).await?;
     let profiles = state.store.members().await.map_err(unavailable)?;
     let ctx = context(&site, state, roster(&profiles), now);
-    let run_lengths = run_lengths(state).await;
-    Ok(Json(dto::week::week(
-        &ctx,
-        &snapshot,
-        &frame,
-        version,
-        &run_lengths,
-    ))
-    .into_response())
+    let ends = run_ends(state).await;
+    Ok(Json(dto::week::week(&ctx, &snapshot, &frame, version, &ends)).into_response())
 }
 
 async fn summary(State(site): State<Arc<Site>>, _: AdminSession) -> Reply {

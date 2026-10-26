@@ -173,6 +173,10 @@ pub enum RunWrite {
     Move {
         to: DateTime<Utc>,
     },
+    /// Move a done or cancelled run and put it back to planned, in one commit.
+    Reschedule {
+        to: DateTime<Utc>,
+    },
     /// The origin's member moves their own run (public portal): the same
     /// move, refused inside the commit unless it is theirs to move now.
     MemberMove {
@@ -552,6 +556,10 @@ where
             // Notices are already in the store's outbox, written with the change.
             match write {
                 RunWrite::Move { to } => handle.amend_run(run_id, to, &ctx.policy).await.map(drop),
+                RunWrite::Reschedule { to } => handle
+                    .reschedule_run(run_id, to, &ctx.policy)
+                    .await
+                    .map(drop),
                 RunWrite::MemberMove { to } => handle
                     .member_amend_run(&member, run_id, to, &ctx.policy)
                     .await

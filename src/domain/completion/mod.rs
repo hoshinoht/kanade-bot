@@ -13,6 +13,15 @@ pub use ends::{RunEnds, RunEndsSource, RunLengthsNow};
 pub use plan::{ASK_AGAIN_AFTER, CompletionPlan, PROMPT_DELAY, plan, run_minutes};
 pub use prompt::{PromptClose, PromptFuture, PromptOutcome, RunPrompt, RunPromptStore};
 
+use crate::domain::schedule::Run;
+
+/// A live run staff set back to planned or confirmed at or after its end
+/// (`ends_at`), as its status pin records: reopened by hand, so it is never
+/// frozen nor marked done at its cutoff. A move clears the pin.
+pub fn reopened(run: &Run, ends_at: chrono::DateTime<chrono::Utc>) -> bool {
+    run.status.is_live() && run.status_pin.is_some_and(|pin| pin.at >= ends_at)
+}
+
 /// The request id that marks a press's status change in History:
 /// `run-outcome:<run>:<ask>:done|didnt-happen`. A redelivered press replays.
 pub fn pressed_request_id(run_id: &str, ask: u32, outcome: PromptOutcome) -> String {
@@ -25,7 +34,7 @@ pub fn pressed_request_id(run_id: &str, ask: u32, outcome: PromptOutcome) -> Str
 
 /// The request id that marks an automatic done in History:
 /// `run-outcome:<run>:auto-done:<unix seconds>`. The instant keeps a run
-/// reopened by hand and cut off again from replaying the first record.
+/// reopened, moved and cut off again from replaying the first record.
 pub fn auto_request_id(run_id: &str, at: chrono::DateTime<chrono::Utc>) -> String {
     format!("run-outcome:{run_id}:auto-done:{}", at.timestamp())
 }

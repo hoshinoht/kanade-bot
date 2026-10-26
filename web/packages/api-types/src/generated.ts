@@ -219,7 +219,11 @@ export type Run = { id: string, day: number, time: string | null,
 /**
  * Derived from every boss even when an own-time run has no start clock.
  */
-minutes: number, status: RunStatus, bosses: Array<Boss>, tally: Tally, short_id: string, participants: Array<Participant>, party: string, channel_id: string, channel: string, cards: Array<ReminderCard>, fixed_id: string | null, amended: boolean, roster_change: RosterChange | null, };
+minutes: number, status: RunStatus, 
+/**
+ * A live run past its end (frozen): only its status may change.
+ */
+ended: boolean, bosses: Array<Boss>, tally: Tally, short_id: string, participants: Array<Participant>, party: string, channel_id: string, channel: string, cards: Array<ReminderCard>, fixed_id: string | null, amended: boolean, roster_change: RosterChange | null, };
 
 export type Week = { starts: string, timezone: string, reset: string, days: Array<WeekDay>, runs: Array<Run>, 
 /**
