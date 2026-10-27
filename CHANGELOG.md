@@ -2,11 +2,11 @@
 
 What changed in each Kanade release, newest first. Upgrading across several releases? Read each one's upgrade notes on the way.
 
-## 1.0.0-beta.15
+## 1.0.0
 
-_In development_
+_27 Oct 2026_
 
-Rescheduling and reopening runs that already ended, with safer run controls in the admin app.
+The first stable release: rescheduling and reopening runs that already ended, safer run controls in the admin app, and a smaller admin app with the rarely used Drafts page and History graph removed.
 
 > [!IMPORTANT]
 > Guilds still on v4-compatible attendance switch to v5 attendance on upgrade: cards show tallies and who is expected, the morning ping mentions only members who haven't answered, a run's status holds from its start, and a Planned or Confirmed set by hand is kept until someone answers or the run changes.

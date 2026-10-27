@@ -6,7 +6,7 @@
 
 *One Rust binary for one Discord server: the bot, the reminders, an admin portal and a member portal, deployed with Docker Compose.*
 
-[![Version](https://img.shields.io/badge/version-1.0.0--beta.14-blue)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-1.0.0-blue)](CHANGELOG.md)
 [![Rust](https://img.shields.io/badge/rust-1.99.1-orange)](rust-toolchain.toml)
 [![License](https://img.shields.io/badge/license-GPL--3.0--only-green)](LICENSE)
 [![CI](https://github.com/hoshinoht/kanade-bot/actions/workflows/ci.yml/badge.svg)](https://github.com/hoshinoht/kanade-bot/actions/workflows/ci.yml)
@@ -19,7 +19,7 @@
 > Character data and estimates are shown to help plan a party, never used to judge or block one.
 
 > [!NOTE]
-> Beta: `1.0.0-beta.14`, running live for one guild. Settings, the HTTP API and the store may still change between betas; read [CHANGELOG.md](CHANGELOG.md) before upgrading.
+> Stable: `1.0.0`, running live for one guild. Read each release's upgrade notes in [CHANGELOG.md](CHANGELOG.md) before upgrading.
 
 ## At a glance
 
@@ -57,8 +57,8 @@
 ### Admin portal
 
 - **Week board and run sheet:** a seven-day planner with drag and keyboard moves, and a full sheet per run for its party, answers, status and history.
-- **Inbox and drafts:** approve or edit extracted proposals and member requests; stage changes in a draft, settle conflicts and merge them as one change.
-- **History, Config and Limits:** a revertible change history with backup checkpoints, live settings, and the model permits, queue and chat allowances.
+- **Inbox:** approve or edit extracted proposals and member requests.
+- **History, Config and Limits:** a revertible, tamper-evident change history with its backups, live settings, and the model permits, queue and chat allowances.
 
 ### Public member portal
 
@@ -149,7 +149,7 @@ The admin portal is then at `http://localhost:8080` on the host; sign in with th
 | Commands, health, listeners and operator commands | [docs/v5/runtime-bootstrap.md](docs/v5/runtime-bootstrap.md) |
 | Point Kanade at another OpenAI-compatible server | [kanade.openai-compatible.example.toml](kanade.openai-compatible.example.toml) |
 | Write or select a persona | [config/personas/README.md](config/personas/README.md) |
-| What changed in each beta | [CHANGELOG.md](CHANGELOG.md) |
+| What changed in each release | [CHANGELOG.md](CHANGELOG.md) |
 
 ## Security
 
