@@ -20,22 +20,20 @@ use super::{
     body::{query_param, seq_range},
     refusal::{Doing, draft as refused, not_found},
 };
-use crate::{
-    api::{
-        auth::AdminSession,
-        dto::{
-            drafts::{self, DraftGraph, DraftList, GraphDraft},
-            iso_instant,
-        },
-        error::ApiError,
-        listeners::Site,
-        state::ApiState,
+use crate::api::{
+    auth::AdminSession,
+    dto::{
+        drafts::{self, DraftGraph, DraftList, GraphDraft},
+        iso_instant,
     },
-    domain::{
-        drafts::{DraftStatus, LoadedDraft, closed_at},
-        schedule::ScheduleSnapshot,
-        scheduler::Scope,
-    },
+    error::ApiError,
+    listeners::Site,
+    state::ApiState,
+};
+use kanade_domain::{
+    drafts::{DraftStatus, LoadedDraft, closed_at},
+    schedule::ScheduleSnapshot,
+    scheduler::Scope,
 };
 
 type Reply = Result<Response, Refusal>;
@@ -53,7 +51,7 @@ pub async fn own(
         .map_err(Refusal::unavailable)?
     {
         Some(loaded)
-            if loaded.draft.kind == crate::domain::drafts::DraftKind::Admin
+            if loaded.draft.kind == kanade_domain::drafts::DraftKind::Admin
                 && loaded.draft.author == session.actor =>
         {
             Ok(loaded)

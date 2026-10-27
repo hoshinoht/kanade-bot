@@ -3,7 +3,7 @@ use std::sync::{
     atomic::{AtomicUsize, Ordering},
 };
 
-use kanade::infrastructure::llm::{
+use kanade_llm::{
     Effort, TrustZone,
     governor::{ConfigWarning, Role},
     setup::{
@@ -42,7 +42,7 @@ fn external(stack: &ModelStack, role: Role) -> bool {
 
 #[test]
 fn only_a_published_home_zone_without_a_cloud_suffix_stays_home() {
-    use kanade::infrastructure::llm::ModelCapabilities;
+    use kanade_llm::ModelCapabilities;
     let zoned = |zone| ModelCapabilities {
         trust_zone: zone,
         ..ModelCapabilities::minimal()

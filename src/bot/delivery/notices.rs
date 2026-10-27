@@ -22,15 +22,16 @@ use std::collections::BTreeSet;
 use chrono::{DateTime, Utc};
 
 use super::alerts::{AdminAlert, AlertSink};
-use super::cards::ReminderCardStore;
 use super::executor::{SendOutcome, SendReport};
 use super::notice_text::render_notice;
 use super::tick::{Delivery, DeliveryError, TickLease, settle};
-use crate::bot::transport::DiscordTransport;
-use crate::domain::drafts::ProposalStore;
-use crate::domain::history::Checkpoints;
-use crate::domain::notify::{DeliveryJournal, DrainReason, NoticeOutbox, plan_notice};
-use crate::domain::scheduler::{IdSource, ScheduleStore, Scope};
+use crate::discord::transport::DiscordTransport;
+use kanade_domain::drafts::ProposalStore;
+use kanade_domain::history::Checkpoints;
+use kanade_domain::notify::{
+    DeliveryJournal, DrainReason, NoticeOutbox, ReminderCardStore, plan_notice,
+};
+use kanade_domain::scheduler::{IdSource, ScheduleStore, Scope};
 
 /// One drained (or retried) notice.
 #[derive(Clone, Debug, PartialEq, Eq)]

@@ -8,7 +8,7 @@ use super::{
     iso_instant,
     week::{Context, day_index, run_time},
 };
-use crate::domain::{
+use kanade_domain::{
     characters::{BossSlot, Character, Clash, PartySlot, Pick},
     ids::short_id,
     schedule::Run,

@@ -1,4 +1,4 @@
-use kanade::infrastructure::llm::{
+use kanade_llm::{
     ChatRequest, ErrorCode, ExecutionLimits, FinishReason, Message, ToolCallRequest, ToolDefinition,
 };
 use serde_json::json;

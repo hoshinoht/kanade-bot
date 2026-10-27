@@ -11,8 +11,8 @@ use twilight_model::id::{
     marker::{ChannelMarker, GuildMarker, UserMarker},
 };
 
-use super::access::Invoker;
-use crate::bot::transport::InteractionRef;
+use crate::app::access::Invoker;
+use crate::discord::transport::InteractionRef;
 
 /// One guild slash-command invocation.
 #[derive(Clone, Debug, PartialEq)]

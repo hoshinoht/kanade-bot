@@ -41,15 +41,14 @@ use crate::{
         dto::characters::{RunCharacterSlot, TimingCharacters, slot},
         error::ApiError,
         listeners::Site,
-        state::{ApiState, CharacterRoster},
+        state::ApiState,
     },
-    domain::{
-        catalog::BossTable,
-        characters::{
-            Character, PartySlot, Pick, PickScope, StoredPicks, pick_version, timing_slots,
-        },
-        schedule::FixedRun,
-    },
+    app::read::CharacterRoster,
+};
+use kanade_domain::{
+    catalog::BossTable,
+    characters::{Character, PartySlot, Pick, PickScope, StoredPicks, pick_version, timing_slots},
+    schedule::FixedRun,
 };
 
 /// The roster's store while both modules are on; the generic `404`

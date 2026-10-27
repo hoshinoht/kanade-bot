@@ -8,10 +8,10 @@
 use chrono::TimeDelta;
 use serde_json::json;
 
-use kanade::domain::completion::{PromptOutcome, RunPrompt, RunPromptStore};
-use kanade::domain::history::{Actor, ChangeHistory, Surface};
-use kanade::domain::notify::NoticeOutbox;
-use kanade::domain::schedule::RunStatus;
+use kanade_domain::completion::{PromptOutcome, RunPrompt, RunPromptStore};
+use kanade_domain::history::{Actor, ChangeHistory, Surface};
+use kanade_domain::notify::NoticeOutbox;
+use kanade_domain::schedule::RunStatus;
 
 use super::super::support::{ADMIN_ROLE, BOSSING_ROLE};
 use super::{ALICE, BOB, DAN, R_KALOS, R_NEXT, Slash, now, opt, utc};
@@ -243,11 +243,14 @@ async fn a_press_after_a_move_elsewhere_changes_nothing() {
             json!([opt("run_id", R_KALOS), opt("to", "tue 23:00")]),
         )
         .await;
+    // The move re-derived the status (unknown answers inside the window).
+    let moved = slash.run_row(R_KALOS).await.status;
+    assert_eq!(moved, RunStatus::AtRisk);
     assert_eq!(
         slash.press(BOB, &button("done", 0)).await,
         "❌ That run changed before your answer landed; nothing was recorded."
     );
-    assert_eq!(slash.run_row(R_KALOS).await.status, RunStatus::Planned);
+    assert_eq!(slash.run_row(R_KALOS).await.status, moved);
     assert!(ask(&slash, 0).await.is_open(), "the tick re-plans it");
 }
 

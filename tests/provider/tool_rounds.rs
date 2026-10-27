@@ -3,7 +3,7 @@
 //! kind stays strict.
 
 use super::support::{build_runner, calls_reply, response_call as call, text_reply, tool_request};
-use kanade::infrastructure::llm::{
+use kanade_llm::{
     ChatRequest, ErrorCode, FakeAction, Message, ToolCall, ToolCallRequest, ToolCallValidation,
     governor::CallKind,
 };

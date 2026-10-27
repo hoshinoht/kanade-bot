@@ -7,12 +7,12 @@ use std::{
     sync::atomic::{AtomicUsize, Ordering},
 };
 
-use kanade::chat::tools::read::{
+use kanade_chat::tools::read::{
     EventBoss, GuideError, StrategyGuides, get_boss_strategy, list_bosses, render_guide,
 };
-use kanade::domain::catalog::{BossReference, BossTable};
-use kanade::domain::schedule::ScheduleSnapshot;
-use kanade::infrastructure::files::{KnowledgeDir, load_catalog, load_knowledge_dir};
+use kanade_domain::catalog::{BossReference, BossTable};
+use kanade_domain::schedule::ScheduleSnapshot;
+use kanade_files::{KnowledgeDir, load_catalog, load_knowledge_dir};
 use serde_json::{Map, Value, json};
 
 use crate::support::world_input;
@@ -171,7 +171,7 @@ async fn strategy_with(extra: &[(&str, &str)], args: Value) -> Result<String, St
     };
     let world = World::new(&world_input()).await;
     let snapshot = ScheduleSnapshot::default();
-    let tools = kanade::chat::tools::read::ToolWorld {
+    let tools = kanade_chat::tools::read::ToolWorld {
         catalog: &catalog,
         guides: Some(&guides),
         ..world.tool_world(&snapshot)
@@ -206,13 +206,13 @@ async fn d_seasonal_list_appends_tracked_guides_after_the_unchanged_catalog_bloc
     };
     let world = World::new(&world_input()).await;
     let snapshot = ScheduleSnapshot::default();
-    let catalog_world = kanade::chat::tools::read::ToolWorld {
+    let catalog_world = kanade_chat::tools::read::ToolWorld {
         catalog: &catalog,
         guides: None,
         ..world.tool_world(&snapshot)
     };
     let catalog_only = list_bosses(&catalog_world);
-    let tool_world = kanade::chat::tools::read::ToolWorld {
+    let tool_world = kanade_chat::tools::read::ToolWorld {
         guides: Some(&guides),
         ..catalog_world
     };

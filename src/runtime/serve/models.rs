@@ -6,21 +6,18 @@ use std::{collections::BTreeMap, sync::Arc};
 use serde_json::json;
 use tokio::task::JoinHandle;
 
-use crate::{
-    domain::settings::{
-        ContextSettings, LOCAL_CONTEXT_WARNING, MAX_CONTEXT_TOKENS, RuntimeSettings, keys,
+use crate::runtime::config::ModelSettings;
+use kanade_domain::settings::{
+    ContextSettings, LOCAL_CONTEXT_WARNING, MAX_CONTEXT_TOKENS, RuntimeSettings, keys,
+};
+use kanade_llm::{
+    governor::{ConfigWarning, Role},
+    setup::{
+        Listing, ModelRoles, ModelStack, RoleEffort, StartupReport, StartupWarning, resolve_context,
     },
-    infrastructure::llm::{
-        governor::{ConfigWarning, Role},
-        setup::{
-            Listing, ModelRoles, ModelStack, RoleEffort, StartupReport, StartupWarning,
-            resolve_context,
-        },
-    },
-    runtime::{config::ModelSettings, logging},
 };
 
-crate::domain::spelled! {
+kanade_domain::spelled! {
     /// Where a role's reasoning setting came from (`model_role.source`).
     Source {
         Stored => "stored",
@@ -80,7 +77,7 @@ pub fn seed_roles(
     {
         settings.models.context = context.clone();
         if !models.context_clamped.is_empty() {
-            logging::log!(
+            kanade_log::log!(
                 warn,
                 "model_context_clamped",
                 fields = models
@@ -123,7 +120,7 @@ pub fn start(
     context: ContextSettings,
 ) -> ModelTasks {
     let Some(stack) = stack else {
-        logging::log!(info, "models_disabled");
+        kanade_log::log!(info, "models_disabled");
         return ModelTasks::default();
     };
     let refresh = stack.spawn_catalog_refresh();
@@ -131,7 +128,7 @@ pub fn start(
     let report = tokio::spawn(async move {
         let report = stack.check_startup().await;
         for (level, event, fields) in lines(&stack, &report, &sources, &context) {
-            logging::event(level, event, fields);
+            kanade_log::event(level, event, fields);
         }
     });
     ModelTasks(vec![refresh, report])

@@ -11,15 +11,13 @@ use axum::{
 
 use super::{Directory, Reply, every, filter, state};
 use crate::api::admin::write::Refusal;
-use crate::{
-    api::{
-        auth::AdminSession,
-        dto::logs::{Chat, chat_row, chat_summary, chat_turn, created_proposals},
-        error::ApiError,
-        listeners::Site,
-    },
-    domain::model_log::{ChatFilter, ChatInteraction},
+use crate::api::{
+    auth::AdminSession,
+    dto::logs::{Chat, chat_row, chat_summary, chat_turn, created_proposals},
+    error::ApiError,
+    listeners::Site,
 };
+use kanade_domain::model_log::{ChatFilter, ChatInteraction};
 
 /// A withheld question must not be found by its text either: those rows
 /// match `q` on the reply alone (the store searches both).

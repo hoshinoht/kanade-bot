@@ -7,17 +7,15 @@ use serde::Serialize;
 use serde_json::Value;
 
 use super::{LogFacets, Names, UsageSummary, UsageTally};
-use crate::{
-    api::dto::iso_instant,
-    domain::{
-        drafts::{DraftStatus, LoadedDraft},
-        ids::short_id,
-        members::member_name,
-        model_log::{ExtractionLog, WatchedMessage},
-        proposals::StoredCard,
-    },
-    extract::pipeline::{HISTORY_UNREADABLE, SCHEDULE_UNREADABLE},
+use crate::api::dto::iso_instant;
+use kanade_domain::{
+    drafts::{DraftStatus, LoadedDraft},
+    ids::short_id,
+    members::member_name,
+    model_log::{ExtractionLog, WatchedMessage},
+    proposals::StoredCard,
 };
+use kanade_extract::pipeline::{HISTORY_UNREADABLE, SCHEDULE_UNREADABLE};
 
 /// Query params of `GET /api/admin/extractions`, all optional and
 /// combinable: `model`, `from`/`to` (guild-local YYYY-MM-DD), `outcome`
@@ -182,7 +180,7 @@ pub const CALL_FAILED: &str = "The call failed; the server log has the detail.";
 /// Fixed texts the extractor logs (its own sentences, governor refusals,
 /// session failures, schema and date errors).
 fn fixed_failures() -> Vec<String> {
-    use crate::infrastructure::llm::governor::Refused;
+    use kanade_llm::governor::Refused;
     let refused = [
         Refused::UnknownRole,
         Refused::Ungrouped,
@@ -210,7 +208,7 @@ fn fixed_failures() -> Vec<String> {
     .into_iter()
     .map(str::to_owned)
     .chain(refused.iter().map(ToString::to_string))
-    .chain([crate::domain::time::DateOutOfRange.to_string()])
+    .chain([kanade_domain::time::DateOutOfRange.to_string()])
     .collect()
 }
 
@@ -306,7 +304,7 @@ fn proposal_status(loaded: Option<&LoadedDraft>) -> &'static str {
         DraftStatus::Expired => "expired",
         DraftStatus::Withdrawn => "withdrawn",
         DraftStatus::Discarded
-            if loaded.draft.close_reason.as_deref() == Some(crate::domain::drafts::SUPERSEDED) =>
+            if loaded.draft.close_reason.as_deref() == Some(kanade_domain::drafts::SUPERSEDED) =>
         {
             "superseded"
         }
@@ -325,7 +323,7 @@ fn amendment(zone: chrono_tz::Tz, proposed: &Proposed<'_>) -> Amendment {
         let kind = proposed
             .draft
             .and_then(|loaded| loaded.draft.subject.as_deref())
-            .and_then(crate::domain::proposals::ProposalSubject::parse)
+            .and_then(kanade_domain::proposals::ProposalSubject::parse)
             .map_or_else(
                 || "change".to_owned(),
                 |subject| subject.kind.as_str().to_owned(),
@@ -407,7 +405,7 @@ pub fn extraction(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::scheduler::StoreError;
+    use kanade_domain::scheduler::StoreError;
 
     #[test]
     fn only_known_typed_failures_are_shown() {

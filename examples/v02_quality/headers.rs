@@ -10,20 +10,18 @@
 
 use std::{path::Path, time::Duration};
 
-use kanade::{
-    bot::delivery::{
-        RunEstimate,
-        cards::{HeaderContext, HeaderKind, HeadingRewrite, PhraseKind, Teasable, TrialOrigin},
-    },
-    chat::persona::NudgeMood,
-    domain::{
-        catalog::BossTable,
-        chardata::{Carrier, PartyShares},
-        members::{Member, MemberProfile},
-        model_log::RewriteStage,
-    },
-    infrastructure::scouter::CarrierOwner,
+use kanade::cards::{
+    HeaderContext, HeaderKind, HeadingRewrite, PhraseKind, Teasable, TrialOrigin,
+    estimates::RunEstimate, fill_slots,
 };
+use kanade_chardata::scouter::CarrierOwner;
+use kanade_domain::{
+    catalog::BossTable,
+    chardata::{Carrier, PartyShares},
+    members::{Member, MemberProfile},
+    model_log::RewriteStage,
+};
+use kanade_voice::persona::NudgeMood;
 use serde_json::{Value, json};
 
 /// One rewrite's budget, as pre-generation gives it.
@@ -377,7 +375,7 @@ async fn attempt(
         HeaderKind::Phrase(_) => trial.line.clone(),
     };
     let filled = match &trial.slots {
-        Some(slots) => slots.fill(&line),
+        Some(slots) => fill_slots(slots, &line),
         None => Some(line),
     };
     let offered: Vec<String> = context

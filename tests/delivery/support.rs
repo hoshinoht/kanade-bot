@@ -3,17 +3,16 @@
 use std::path::PathBuf;
 
 use chrono::{DateTime, Utc};
-use kanade::bot::delivery::{FixedClock, IdsRef, StoreRef};
-use kanade::bot::events::CardIndex;
-use kanade::bot::transport::FakeDiscord;
-use kanade::domain::ids::IdGenerator;
-use kanade::domain::notify::{
-    Claim, DeliveryJournal, DeliveryTarget, DigestInclusion, EffectKind, IntentContent, Lease,
-    NotificationIntent, Receipt,
+use kanade::bot::delivery::{FixedClock, IdsRef};
+use kanade::discord::transport::FakeDiscord;
+use kanade_domain::ids::IdGenerator;
+use kanade_domain::notify::{
+    CardIndex, Claim, DeliveryJournal, DeliveryTarget, DigestInclusion, EffectKind, IntentContent,
+    Lease, NotificationIntent, Receipt,
 };
-use kanade::domain::schedule::ScheduleSnapshot;
-use kanade::domain::scheduler::{ScheduleStore, SchedulerService, Scope};
-use kanade::infrastructure::store::{SqliteStore, SqliteStoreConfig};
+use kanade_domain::schedule::ScheduleSnapshot;
+use kanade_domain::scheduler::{ScheduleStore, SchedulerService, Scope, StoreRef};
+use kanade_store::{SqliteStore, SqliteStoreConfig};
 use twilight_model::channel::message::Component;
 
 /// v4's first stub message id.
@@ -25,14 +24,14 @@ pub trait Store:
     ScheduleStore
     + DeliveryJournal
     + CardIndex
-    + kanade::domain::notify::NoticeOutbox
-    + kanade::domain::notify::DeclineNoticeStore
-    + kanade::domain::history::Checkpoints
-    + kanade::domain::drafts::ProposalStore
-    + kanade::bot::delivery::cards::ReminderCardStore
-    + kanade::bot::delivery::cards::DigestPhraseStore
-    + kanade::domain::ownership::OwnerRequestStore
-    + kanade::domain::completion::RunPromptStore
+    + kanade_domain::notify::NoticeOutbox
+    + kanade_domain::notify::DeclineNoticeStore
+    + kanade_domain::history::Checkpoints
+    + kanade_domain::drafts::ProposalStore
+    + kanade_domain::notify::ReminderCardStore
+    + kanade_domain::notify::DigestPhraseStore
+    + kanade_domain::ownership::OwnerRequestStore
+    + kanade_domain::completion::RunPromptStore
     + Sync
 {
 }
@@ -41,14 +40,14 @@ impl<S> Store for S where
     S: ScheduleStore
         + DeliveryJournal
         + CardIndex
-        + kanade::domain::notify::NoticeOutbox
-        + kanade::domain::notify::DeclineNoticeStore
-        + kanade::domain::history::Checkpoints
-        + kanade::domain::drafts::ProposalStore
-        + kanade::bot::delivery::cards::ReminderCardStore
-        + kanade::bot::delivery::cards::DigestPhraseStore
-        + kanade::domain::ownership::OwnerRequestStore
-        + kanade::domain::completion::RunPromptStore
+        + kanade_domain::notify::NoticeOutbox
+        + kanade_domain::notify::DeclineNoticeStore
+        + kanade_domain::history::Checkpoints
+        + kanade_domain::drafts::ProposalStore
+        + kanade_domain::notify::ReminderCardStore
+        + kanade_domain::notify::DigestPhraseStore
+        + kanade_domain::ownership::OwnerRequestStore
+        + kanade_domain::completion::RunPromptStore
         + Sync
 {
 }
@@ -93,9 +92,9 @@ impl Drop for TempDir {
 }
 
 /// A send that timed out, after Discord did (`applied`) or did not apply it.
-pub fn timed_out(applied: bool) -> kanade::bot::transport::Step {
-    kanade::bot::transport::Step::Ambiguous {
-        kind: kanade::bot::transport::AmbiguousKind::Timeout,
+pub fn timed_out(applied: bool) -> kanade::discord::transport::Step {
+    kanade::discord::transport::Step::Ambiguous {
+        kind: kanade::discord::transport::AmbiguousKind::Timeout,
         applied,
     }
 }
@@ -145,10 +144,10 @@ pub async fn mark_digest_week<S: Store>(store: &S, week: DateTime<Utc>, now: Dat
 
 /// The stored digest phrase for the boss week starting at `week`.
 pub async fn week_phrase(
-    store: &impl kanade::bot::delivery::cards::DigestPhraseStore,
+    store: &impl kanade_domain::notify::DigestPhraseStore,
     week: DateTime<Utc>,
 ) -> Option<String> {
-    let key = kanade::domain::notify::DedupeKey::native(&[DeliveryTarget::Digest(week)])
+    let key = kanade_domain::notify::DedupeKey::native(&[DeliveryTarget::Digest(week)])
         .expect("digest key");
     store.digest_phrase(key.as_str()).await.expect("phrase")
 }

@@ -13,15 +13,14 @@ use tokio::sync::watch;
 use super::execute::after;
 use super::inspect::deadline;
 use super::{Publisher, SEARCH_DEPTH, SEARCHES, payload};
-use crate::bot::ids::{id_text, parse_id};
-use crate::bot::transport::{DiscordTransport, HistoryPage, Outcome};
-use crate::domain::guides::{
+use crate::app::ids::{id_text, parse_id};
+use crate::discord::transport::{DiscordTransport, HistoryPage, Outcome};
+use kanade_domain::guides::{
     Guide, GuideStore, Inspection, OpOutcome, PlanOp, Publish, PublishOp, PublishState,
     PublishedSlot, RenderedSlot, SlotEffect, SlotState, StopReason, UploadRef,
 };
-use crate::domain::notify::DeliveryJournal;
-use crate::domain::scheduler::StoreError;
-use crate::runtime::logging;
+use kanade_domain::notify::DeliveryJournal;
+use kanade_domain::scheduler::StoreError;
 
 /// What a search found.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -106,7 +105,7 @@ where
                 .filter(|receipt| receipt.channel_id == pending.channel_id)
                 .map(|receipt| receipt.message_id),
             Err(error) => {
-                logging::log!(warn, "guide_bound_source_failed", error = error.to_string());
+                kanade_log::log!(warn, "guide_bound_source_failed", error = error.to_string());
                 None
             }
         };
@@ -166,7 +165,7 @@ where
         let slots = match self.store.slots(publish.guide_id.clone()).await {
             Ok(slots) => slots,
             Err(error) => {
-                logging::log!(warn, "guide_read_failed", error = error.to_string());
+                kanade_log::log!(warn, "guide_read_failed", error = error.to_string());
                 return self.stopped(publish, StopReason::Interrupted, None).await;
             }
         };
@@ -223,7 +222,7 @@ where
                 at: self.now(),
             };
             if let Err(error) = self.store.record_op(publish.id.clone(), op).await {
-                logging::log!(warn, "guide_op_record_failed", error = error.to_string());
+                kanade_log::log!(warn, "guide_op_record_failed", error = error.to_string());
                 return self.stopped(publish, StopReason::Interrupted, None).await;
             }
             let pending = Pending {
@@ -239,7 +238,7 @@ where
                 Ok(posted) => unresolved |= !posted,
                 Err(error) => {
                     // Left pending: the next start reconciles it.
-                    logging::log!(warn, "guide_op_settle_failed", error = error.to_string());
+                    kanade_log::log!(warn, "guide_op_settle_failed", error = error.to_string());
                     return publish.clone();
                 }
             }
@@ -261,7 +260,7 @@ where
         let runs = match self.store.interrupted_on_start(self.now()).await {
             Ok(runs) => runs,
             Err(error) => {
-                logging::log!(warn, "guide_recovery_failed", error = error.to_string());
+                kanade_log::log!(warn, "guide_recovery_failed", error = error.to_string());
                 return;
             }
         };
@@ -312,11 +311,11 @@ where
                     }
                 };
                 if let Err(error) = settled {
-                    logging::log!(warn, "guide_recovery_failed", error = error.to_string());
+                    kanade_log::log!(warn, "guide_recovery_failed", error = error.to_string());
                 }
             }
             self.stopped(&publish, StopReason::Interrupted, None).await;
-            logging::log!(
+            kanade_log::log!(
                 info,
                 "guide_publish_recovered",
                 publish = publish.id.as_str()

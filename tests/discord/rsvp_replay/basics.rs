@@ -1,5 +1,5 @@
-use kanade::domain::history::{Actor, ChangeHistory, Surface};
-use kanade::domain::schedule::{RsvpSource, RsvpState};
+use kanade_domain::history::{Actor, ChangeHistory, Surface};
+use kanade_domain::schedule::{RsvpSource, RsvpState};
 
 use super::support::*;
 

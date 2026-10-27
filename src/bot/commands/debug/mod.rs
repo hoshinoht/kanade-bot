@@ -21,18 +21,18 @@ use std::sync::Arc;
 use chrono::TimeDelta;
 use twilight_model::application::command::Command;
 
-use super::access::Gate;
 use super::build::{command, picked, subcommand};
 use super::context::{CommandContext, TestKind, TestPosted, TestReport, TestSubject};
 use super::dispatch::{ChoicesFuture, CommandError, CommandFuture, SlashCommand};
 use super::invocation::Invocation;
 use super::lookup::{RunPicker, everything, refused, run_choices};
 use super::options::Args;
-use super::text::{format_bosses, local_day, local_time};
-use crate::bot::ids::id_text;
-use crate::bot::transport::InteractionReply;
-use crate::domain::ids::{resolve_id, short_id};
-use crate::domain::schedule::Reminder;
+use crate::app::access::Gate;
+use crate::app::ids::id_text;
+use crate::cards::text::{format_bosses, local_day, local_time};
+use crate::discord::transport::InteractionReply;
+use kanade_domain::ids::{resolve_id, short_id};
+use kanade_domain::schedule::Reminder;
 
 pub use crate::bot::delivery::TEST_PREFIX;
 /// Until test cards have a delivery path.
@@ -74,7 +74,7 @@ fn reminder_rows(reminders: &[&Reminder], zone: chrono_tz::Tz) -> String {
         .join("\n")
 }
 
-/// The style and header notes after a ping's reply.
+/// The header note after a ping's reply.
 fn notes(request: &super::context::PingRequest, report: &TestReport) -> String {
     let mut text = String::new();
     if !matches!(
@@ -82,9 +82,6 @@ fn notes(request: &super::context::PingRequest, report: &TestReport) -> String {
         TestPosted::Posted { .. } | TestPosted::Sandboxed { .. }
     ) {
         return text;
-    }
-    if let Some(style) = request.style {
-        text.push_str(&format!(" Style: `{}` (this post only).", style.as_str()));
     }
     match &report.header {
         Some(note) if note.rewritten => text.push_str(" Header: fresh rewrite (not stored)."),

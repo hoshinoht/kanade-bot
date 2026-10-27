@@ -4,7 +4,7 @@
 
 use std::sync::{Arc, PoisonError, RwLock};
 
-use kanade::domain::members::{Member, MemberProfile, MemberStore, PingLevel};
+use kanade_domain::members::{Member, MemberProfile, MemberStore, PingLevel};
 
 use super::{Seed, ids::*};
 use crate::{Fail, fakes::discord};

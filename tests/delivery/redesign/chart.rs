@@ -1,7 +1,7 @@
 //! The estimate share chart: the SVG pinned against stored copies of the
 //! approved board's fixtures, the PNG decoded for size and palette, and the
-//! image on redesigned day-of and countdown posts (never classic, never on
-//! an edit, left off when anything fails).
+//! image on day-of and countdown posts (never on an edit, left off when
+//! anything fails).
 //!
 //! `KANADE_WRITE_CHART=1` rewrites the stored SVGs; `KANADE_CHART_PNG_DIR`
 //! also writes the rendered PNGs there for a visual check.
@@ -11,27 +11,25 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use chrono::{TimeDelta, TimeZone, Utc};
-use kanade::bot::delivery::cards::chart::{self, Chart, ChartRun, SCALE};
-use kanade::bot::delivery::cards::{self, CardArt, CardContext, CardKit, V2Kit, redesign};
-use kanade::bot::delivery::{
+use kanade::cards::chart::{self, Chart, ChartRun, SCALE};
+use kanade::cards::estimates::{
     CachedEstimates, EstimateFuture, IgnFuture, MAX_ATTACHMENTS, PartyEstimates, RunEstimate,
     attach_chart, chart_for, read_estimates,
 };
-use kanade::bot::transport::{OutgoingMessage, Upload, legacy_rows};
-use kanade::domain::catalog::BossTable;
-use kanade::domain::characters::{Basis, BossSlot, Character, CharacterRole, PartySlot};
-use kanade::domain::chardata::{BossCarrier, Carrier, CharDataStore, PartyShares};
-use kanade::domain::history::Actor;
-use kanade::domain::schedule::{Run, ScheduleSnapshot};
-use kanade::infrastructure::character_data::{CharacterData, RosterSide, Timing};
-use kanade::infrastructure::scouter::{Card, Combined, Member};
-use kanade::infrastructure::store::{SqliteCharData, SqliteStore};
+use kanade::cards::{self, CardArt, CardContext, CardKit, V2Kit, redesign};
+use kanade::discord::transport::{OutgoingMessage, Upload, legacy_rows};
+use kanade_chardata::character_data::{CharacterData, RosterSide, Timing};
+use kanade_chardata::scouter::{Card, Combined, Member};
+use kanade_domain::catalog::BossTable;
+use kanade_domain::characters::{Basis, BossSlot, Character, CharacterRole, PartySlot};
+use kanade_domain::chardata::{BossCarrier, Carrier, CharDataStore, PartyShares};
+use kanade_domain::history::Actor;
+use kanade_domain::schedule::{Run, ScheduleSnapshot};
+use kanade_store::{SqliteCharData, SqliteStore};
 use resvg::tiny_skia::Pixmap;
 
 use super::{KALOS, MALEFIC, countdown, day_of, members, redesigned_v5, week};
-use crate::cards::{
-    answer, art_dir, catalog, created, edits, kit, redesigned, refresher, seed_day_of, world,
-};
+use crate::cards::{answer, art_dir, catalog, created, edits, kit, refresher, seed_day_of, world};
 use crate::scenarios::{self, now};
 use crate::support;
 
@@ -699,7 +697,7 @@ fn post() -> OutgoingMessage {
     OutgoingMessage {
         content: Some("📅 **Today**".into()),
         embeds: Vec::new(),
-        allowed_mentions: kanade::bot::mentions::none(),
+        allowed_mentions: kanade::discord::mentions::none(),
         reply_to: None,
         attachments: Vec::new(),
         components: Vec::new(),
@@ -769,7 +767,7 @@ async fn redesigned_day_of_and_countdown_posts_carry_the_chart() {
         },
         ..kit.clone()
     };
-    let ctx_portal = kanade::bot::delivery::cards::CardContext {
+    let ctx_portal = kanade::cards::CardContext {
         v2: Some(&portal.v2),
         ..ctx
     };
@@ -782,30 +780,13 @@ async fn redesigned_day_of_and_countdown_posts_carry_the_chart() {
 }
 
 #[tokio::test]
-async fn classic_cards_unset_ports_and_failures_post_without_it() {
+async fn unset_ports_and_failures_post_without_it() {
     let (schedule, roster, table) = (week(), members(), catalog());
     let ctx = redesigned_v5(&schedule, &roster, &table);
     let at = Utc.with_ymd_and_hms(2026, 9, 9, 1, 0, 0).unwrap();
     let attached = |message: &OutgoingMessage| png_upload(message).is_some();
 
-    let classic = super::context(
-        &schedule,
-        &roster,
-        &table,
-        kanade::domain::attendance::AttendancePolicy::V5,
-        false,
-    );
     let mut message = post();
-    attach_chart(
-        &mut message,
-        &day_of(&[KALOS]),
-        &classic,
-        &charted(CardKit::default()),
-        at,
-    )
-    .await;
-    assert!(!attached(&message), "classic stays as it is");
-
     attach_chart(
         &mut message,
         &day_of(&[KALOS]),
@@ -865,7 +846,7 @@ async fn classic_cards_unset_ports_and_failures_post_without_it() {
     assert!(!attached(&full));
 
     // Kinds without runs never chart.
-    let digest = kanade::domain::notify::IntentContent::Plain;
+    let digest = kanade_domain::notify::IntentContent::Plain;
     assert!(chart_for(&digest, &ctx, &*port(), at).await.is_none());
 }
 
@@ -919,7 +900,7 @@ async fn a_stale_reading_marks_the_posted_chart_and_its_description() {
 
 /// The description of the chart a new post of `content` carries.
 async fn described(
-    content: &kanade::domain::notify::IntentContent,
+    content: &kanade_domain::notify::IntentContent,
     ctx: &CardContext<'_>,
     kit: &CardKit,
     at: chrono::DateTime<Utc>,
@@ -1018,7 +999,7 @@ async fn an_open_portal_post_carries_the_chart_beside_its_link_row() {
     // A V2 layout (no text, components only): left off as before.
     let mut v2 = OutgoingMessage::v2(
         vec![redesign::container(0, vec![redesign::text("📅 **Today**")])],
-        kanade::bot::mentions::none(),
+        kanade::discord::mentions::none(),
     );
     attach_chart(&mut v2, &content, &ctx, &kit, at).await;
     assert!(png_upload(&v2).is_none(), "a V2 layout shows no file");
@@ -1038,7 +1019,7 @@ async fn the_tick_posts_the_chart_and_refresh_never_uploads() {
             (star.clone(), estimate(carling())),
             (kalos_run.clone(), estimate(kalos())),
         ]))),
-        ..redesigned(kit(Some(&art)))
+        ..kit(Some(&art))
     };
     let mut delivery = scenarios::delivery(&*store, &world, &*fake).with_cards(cards.clone());
     delivery.dispatch_reminders(now()).await.expect("dispatch");

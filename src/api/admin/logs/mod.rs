@@ -17,15 +17,12 @@ use super::{
     write::{Refusal, state},
 };
 use crate::{
-    api::{
-        dto::logs::Names,
-        listeners::Site,
-        state::{ApiState, ChannelEntry, ReadFuture},
-    },
-    domain::{
-        members::Roster,
-        model_log::{LogCursor, LogPage},
-    },
+    api::{dto::logs::Names, listeners::Site, state::ApiState},
+    app::{guild::ChannelEntry, read::ReadFuture},
+};
+use kanade_domain::{
+    members::Roster,
+    model_log::{LogCursor, LogPage},
 };
 
 pub fn routes() -> Router<Arc<Site>> {

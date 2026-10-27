@@ -9,10 +9,8 @@
 use std::sync::{Arc, Mutex, OnceLock};
 
 use chrono::TimeDelta;
-use kanade::{
-    domain::settings::{SettingsChangeQuery, SettingsStore},
-    infrastructure::character_data::{CharacterData, ConfirmOutcome},
-};
+use kanade_chardata::character_data::{CharacterData, ConfirmOutcome};
+use kanade_domain::settings::{SettingsChangeQuery, SettingsStore};
 use serde_json::{Value, json};
 
 use crate::{
@@ -95,7 +93,7 @@ async fn readiness_judges_each_slot_per_boss_and_writes_nothing() {
         .await
         .unwrap()
         .len();
-    let head = kanade::api::state::ReadStore::head(reads.store.as_ref())
+    let head = kanade::app::read::ReadStore::head(reads.store.as_ref())
         .await
         .unwrap();
     let ready = reads.read(KALOS, READY).await;
@@ -178,7 +176,7 @@ async fn readiness_judges_each_slot_per_boss_and_writes_nothing() {
         changes
     );
     assert_eq!(
-        kanade::api::state::ReadStore::head(reads.store.as_ref())
+        kanade::app::read::ReadStore::head(reads.store.as_ref())
             .await
             .unwrap(),
         head

@@ -6,42 +6,41 @@
 use std::collections::{BTreeMap, HashSet};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
-use kanade::chat::nudge::{GovernedRewriter, Nudger, SharedRewriter};
-use kanade::chat::persona::{CompiledPersona, PersonaId, parse_bundle};
+use kanade_voice::nudge::{GovernedRewriter, Nudger, SharedRewriter};
+use kanade_voice::persona::{CompiledPersona, PersonaId, parse_bundle};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use chrono::{DateTime, NaiveTime, TimeZone, Utc, Weekday};
 use chrono_tz::Tz;
-use kanade::bot::delivery::StoreRef;
-use kanade::domain::catalog::BossTable;
-use kanade::domain::drafts::{ProposalStore, StoredProposal};
-use kanade::domain::history::Origin;
-use kanade::domain::ids::IdGenerator;
-use kanade::domain::members::{self, Directory};
-use kanade::domain::model_log::{ExtractionFilter, ExtractionLog, ModelLogStore};
-use kanade::domain::proposals::Approver;
-use kanade::domain::schedule::{NewRun, ReminderPolicy, RunSource, RunStatus, SchedulePolicy};
-use kanade::domain::scheduler::{
+use kanade_domain::catalog::BossTable;
+use kanade_domain::drafts::{ProposalStore, StoredProposal};
+use kanade_domain::history::Origin;
+use kanade_domain::ids::IdGenerator;
+use kanade_domain::members::{self, Directory};
+use kanade_domain::model_log::{ExtractionFilter, ExtractionLog, ModelLogStore};
+use kanade_domain::proposals::Approver;
+use kanade_domain::schedule::{NewRun, ReminderPolicy, RunSource, RunStatus, SchedulePolicy};
+use kanade_domain::scheduler::{
     ProposalApproved, ProposalError, ProposalRequest, ProposalResult, Proposed, SchedulerService,
-    SupersedeScope,
+    StoreRef, SupersedeScope,
 };
-use kanade::extract::pipeline::{
+use kanade_extract::pipeline::{
     AuthorKind, BacklogDrop, Card, ChatAnswer, Deps, Extractor, Guild, IncomingMessage, LeadIns,
     LiveContext, MessageEvent, MessageOrigin, Outbox, Personas, Pipeline, PipelineConfig,
     PostResult, Proposer, Redirected, SelfServiceDeps,
 };
-use kanade::extract::redirect::PublicPortalLinks;
-use kanade::extract::rescan::{Backfilled, History, Rescans};
-use kanade::infrastructure::llm::governor::{
+use kanade_extract::redirect::PublicPortalLinks;
+use kanade_extract::rescan::{Backfilled, History, Rescans};
+use kanade_llm::governor::{
     Governor, GovernorConfig, GovernorPolicy, GroupConfig, ModelClient, Random, Role, RoleConfig,
 };
-use kanade::infrastructure::llm::identity::Member;
-use kanade::infrastructure::llm::{
+use kanade_llm::identity::Member;
+use kanade_llm::{
     CapabilityFuture, ChatRequest, CompletionFuture, CompletionResponse, ExecutionLimits,
     FakeAction, FakeProvider, FinishReason, LlmProvider, ModelCapabilities, RetryPolicy, Usage,
 };
-use kanade::infrastructure::store::SqliteStore;
+use kanade_store::SqliteStore;
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 

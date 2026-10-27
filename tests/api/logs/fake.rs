@@ -8,11 +8,9 @@ use std::{
 };
 
 use chrono::{DateTime, Utc};
-use kanade::{
-    api::rescan::{RescanFuture, RescanRunner, RescanView},
-    domain::model_log::{RescanJob, RescanStatus},
-    extract::rescan::{RescanError, RescanRequest},
-};
+use kanade::app::rescan::{RescanFuture, RescanRunner, RescanView};
+use kanade_domain::model_log::{RescanJob, RescanStatus};
+use kanade_extract::rescan::{RescanError, RescanRequest};
 use serde_json::{Value, json};
 use tokio::sync::{Semaphore, mpsc};
 

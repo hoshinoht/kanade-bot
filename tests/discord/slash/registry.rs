@@ -3,8 +3,8 @@
 use serde_json::{Value, json};
 
 use kanade::bot::commands::Disposition;
-use kanade::bot::transport::{Call, DiscordTransport, Outcome};
-use kanade::domain::history::ChangeHistory;
+use kanade::discord::transport::{Call, DiscordTransport, Outcome};
+use kanade_domain::history::ChangeHistory;
 
 use super::super::support::{ADMIN_ROLE, BOSSING_ROLE, guild};
 use super::{ALICE, KALOS, R_KALOS, Slash, opt};
@@ -65,15 +65,14 @@ async fn only_the_retained_commands_are_registered_for_the_guild() {
     assert_eq!(
         names(ping),
         [
-            "kind", "run_id", "channel", "style", "header", "bosses", "time", "party", "in", "out",
-            "status"
+            "kind", "run_id", "channel", "header", "bosses", "time", "party", "in", "out", "status"
         ]
     );
     assert_eq!(ping[0]["required"], json!(true));
     for option in ping.as_array().unwrap().iter().skip(1) {
         assert!(option.get("required").is_none(), "{option}");
     }
-    assert_eq!(ping[6]["min_value"], json!(-1440));
+    assert_eq!(ping[5]["min_value"], json!(-1440));
     assert_eq!(
         names(&debug["options"][4]["options"]),
         ["kind", "tries", "channel"]

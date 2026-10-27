@@ -12,14 +12,13 @@ use kanade::{
             audit::AuditEvent,
             csrf,
             member::{Eligibility, MemberSession, require_session},
-            roster::on_roster_update,
             wire,
         },
         error::ApiError,
         guard::proxy,
         listeners::Site,
     },
-    bot::events::RosterUpdate,
+    app::roster::{RosterUpdate, on_roster_update},
 };
 
 use super::member_support::{Browser, MIKAN, MemberHarness, PUB_ORIGIN, cookie, discord_user};
@@ -134,18 +133,13 @@ async fn losing_the_role_or_leaving_ends_sessions_through_the_roster_hook() {
         roles: Vec::new(),
         is_guild_admin: false,
     };
+    let hooks = harness.roster_hooks();
     let hook = |update: RosterUpdate| {
-        let harness = &harness;
+        let (harness, hooks) = (&harness, &hooks);
         async move {
-            on_roster_update(
-                &harness.admin_auth,
-                Some(&harness.member),
-                &*harness.store,
-                None,
-                &update,
-            )
-            .await
-            .unwrap()
+            on_roster_update(hooks, &*harness.store, &update)
+                .await
+                .unwrap()
         }
     };
     assert_eq!(hook(seen(true)).await, 0, "still eligible");

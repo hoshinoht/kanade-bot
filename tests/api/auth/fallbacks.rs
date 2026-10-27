@@ -2,9 +2,10 @@
 //! staying out of logs and responses.
 
 use kanade::{
-    api::auth::{audit::AuditEvent, crypto, wire},
-    infrastructure::store::web_sessions::{LoginMethod, WebSessionStore},
+    api::auth::{audit::AuditEvent, wire},
+    app::crypto,
 };
+use kanade_store::web_sessions::{LoginMethod, WebSessionStore};
 
 use super::{
     ADMIN_ROLE, CLIENT_SECRET, EDGE_AUTH, EDGE_XFF, Harness, ORIGIN, TAILSCALE_ADMIN, TOKEN,

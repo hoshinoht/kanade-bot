@@ -1,43 +1,28 @@
-//! `/schedule`: a boss week's runs as a public embed that pings nobody
-//! (v4 `commands.schedule`), or, while the live message style is
-//! `redesigned`, the redesigned layout as one Components V2 container
-//! (`delivery::cards::redesign::schedule_components`); a week over the V2
-//! budget gets the redesigned embed (`schedule_embed`) instead.
+//! `/schedule`: a boss week's runs as one public Components V2 container
+//! that pings nobody (`delivery::cards::redesign::schedule_components`); a
+//! week over the V2 budget gets the embed (`schedule_embed`) instead.
 
 use std::sync::Arc;
 
 use twilight_model::application::command::Command;
-use twilight_model::channel::message::Embed;
-use twilight_model::channel::message::embed::{EmbedField, EmbedFooter};
 
-use super::access::Gate;
 use super::build::{choices, command, flag};
 use super::context::{CommandContext, store_failed};
 use super::dispatch::{CommandError, CommandFuture, SlashCommand};
 use super::invocation::Invocation;
 use super::lookup::{materialised_weeks, on_run};
 use super::options::Args;
-use super::text::{group_by_day, local_day, roster_delta, schedule_line};
-use crate::bot::delivery::cards::redesign::{
+use crate::app::access::Gate;
+use crate::app::ids::id_text;
+use crate::cards::redesign::{
     NO_MARKS, ScheduleScope, ScheduleWeek, component_count, schedule_components, schedule_embed,
     text_chars, within_budget,
 };
-use crate::bot::ids::id_text;
-use crate::bot::transport::InteractionReply;
-use crate::domain::completion::RunEnds;
-use crate::domain::members::MemberProfile;
-use crate::domain::schedule::{RsvpState, Run, ScheduleSnapshot};
-use crate::domain::scheduler::Scope;
-use crate::domain::settings::MessageStyle;
-use crate::runtime::logging;
-
-/// discord.py `Colour.blurple()`.
-const BLURPLE: u32 = 0x5865F2;
-const FOOTER: &str = "✅/❌ react on a reminder to RSVP · /amend to move a run";
-
-fn hidden_note(hidden: usize) -> String {
-    format!("{hidden} past/cancelled run(s) hidden — `show_past:True` to see them")
-}
+use crate::discord::transport::InteractionReply;
+use kanade_domain::completion::RunEnds;
+use kanade_domain::members::MemberProfile;
+use kanade_domain::schedule::Run;
+use kanade_domain::scheduler::Scope;
 
 fn empty_text(scope: &str) -> &'static str {
     match scope {
@@ -65,30 +50,6 @@ fn member_name(profiles: &[MemberProfile], user_id: &str) -> String {
         .unwrap_or_else(|| user_id.to_owned())
 }
 
-/// v4 `_roster_delta`: this week's party against its weekly timing.
-fn delta(snapshot: &ScheduleSnapshot, run: &Run, profiles: &[MemberProfile]) -> String {
-    let Some(fixed) = run
-        .fixed_run_id
-        .as_deref()
-        .and_then(|id| snapshot.fixed_runs.iter().find(|fixed| fixed.id == id))
-    else {
-        return String::new();
-    };
-    let out: Vec<String> = fixed
-        .participants
-        .iter()
-        .filter(|uid| !run.participants.contains(uid))
-        .map(|uid| member_name(profiles, uid))
-        .collect();
-    let joined: Vec<String> = run
-        .participants
-        .iter()
-        .filter(|uid| !fixed.participants.contains(uid))
-        .map(|uid| member_name(profiles, uid))
-        .collect();
-    roster_delta(&out, &joined)
-}
-
 pub struct ScheduleCommand {
     ctx: Arc<CommandContext>,
 }
@@ -96,20 +57,6 @@ pub struct ScheduleCommand {
 impl ScheduleCommand {
     pub fn new(ctx: Arc<CommandContext>) -> Self {
         Self { ctx }
-    }
-
-    /// The live message style (the saved setting, read per command).
-    fn style(&self) -> MessageStyle {
-        self.ctx
-            .config
-            .as_ref()
-            .map_or(MessageStyle::Classic, |desk| {
-                desk.subscribe()
-                    .borrow()
-                    .settings
-                    .notifications
-                    .message_style
-            })
     }
 
     /// When runs end now: the saved run lengths (defaults without a desk).
@@ -157,100 +104,37 @@ impl ScheduleCommand {
             .filter(|run| ends.frozen(run, now))
             .map(|run| run.id.clone())
             .collect();
-        if self.style() == MessageStyle::Redesigned {
-            let name = self.ctx.channels.name(&channel);
-            let view = ScheduleWeek {
-                snapshot: &snapshot,
-                runs: &everything,
-                show_past,
-                week_start: week,
-                next: args.text("week") == Some("next"),
-                scope: match scope {
-                    "mine" => ScheduleScope::Mine,
-                    "all" => ScheduleScope::All,
-                    _ => ScheduleScope::Channel(name.as_deref()),
-                },
-                zone: self.ctx.policy.zone(),
-                attendance: self.ctx.policy.attendance.mode,
-                catalog: Some(self.ctx.catalog.as_ref()),
-                marks: &NO_MARKS,
-                empty: empty_text(scope),
-                ended: &ended,
-            };
-            let name = |user: &str| member_name(&profiles, user);
-            let components = schedule_components(&view, &name);
-            if within_budget(&components) {
-                return Ok(InteractionReply::v2(components, false));
-            }
-            logging::log!(
-                warn,
-                "schedule_v2_over_budget",
-                components = component_count(&components),
-                chars = text_chars(&components),
-                fallback = "embed",
-            );
-            let embed = schedule_embed(&view, &name);
-            return Ok(InteractionReply::public("").with_embed(embed));
-        }
-        let runs: Vec<&Run> = everything
-            .iter()
-            .copied()
-            .filter(|run| show_past || (run.status.is_live() && !ended.contains(&run.id)))
-            .collect();
-        let hidden = everything.len() - runs.len();
-
-        let zone = self.ctx.policy.zone();
-        let mut embed = Embed {
-            author: None,
-            color: Some(BLURPLE),
-            description: None,
-            fields: Vec::new(),
-            footer: None,
-            image: None,
-            kind: "rich".to_owned(),
-            provider: None,
-            thumbnail: None,
-            timestamp: None,
-            title: Some(format!("Boss week of {} ({scope})", local_day(week, zone))),
-            url: None,
-            video: None,
+        let name = self.ctx.channels.name(&channel);
+        let view = ScheduleWeek {
+            snapshot: &snapshot,
+            runs: &everything,
+            show_past,
+            week_start: week,
+            next: args.text("week") == Some("next"),
+            scope: match scope {
+                "mine" => ScheduleScope::Mine,
+                "all" => ScheduleScope::All,
+                _ => ScheduleScope::Channel(name.as_deref()),
+            },
+            zone: self.ctx.policy.zone(),
+            catalog: Some(self.ctx.catalog.as_ref()),
+            marks: &NO_MARKS,
+            empty: empty_text(scope),
+            ended: &ended,
         };
-        if runs.is_empty() {
-            let mut text = empty_text(scope).to_owned();
-            if hidden > 0 {
-                text.push_str(&format!("\n{}", hidden_note(hidden)));
-            }
-            embed.description = Some(text);
-        } else {
-            for (heading, day_runs) in group_by_day(&runs, zone) {
-                let lines: Vec<String> = day_runs
-                    .iter()
-                    .map(|run| {
-                        let rsvps: std::collections::BTreeMap<String, RsvpState> = snapshot
-                            .rsvps
-                            .iter()
-                            .filter(|rsvp| rsvp.run_id == run.id)
-                            .map(|rsvp| (rsvp.user_id.clone(), rsvp.state))
-                            .collect();
-                        schedule_line(run, zone, &rsvps, &delta(&snapshot, run, &profiles))
-                    })
-                    .collect();
-                embed.fields.push(EmbedField {
-                    inline: false,
-                    name: heading,
-                    value: lines.join("\n"),
-                });
-            }
-            let mut footer = FOOTER.to_owned();
-            if hidden > 0 {
-                footer.push_str(&format!(" · {}", hidden_note(hidden)));
-            }
-            embed.footer = Some(EmbedFooter {
-                icon_url: None,
-                proxy_icon_url: None,
-                text: footer,
-            });
+        let name = |user: &str| member_name(&profiles, user);
+        let components = schedule_components(&view, &name);
+        if within_budget(&components) {
+            return Ok(InteractionReply::v2(components, false));
         }
+        kanade_log::log!(
+            warn,
+            "schedule_v2_over_budget",
+            components = component_count(&components),
+            chars = text_chars(&components),
+            fallback = "embed",
+        );
+        let embed = schedule_embed(&view, &name);
         Ok(InteractionReply::public("").with_embed(embed))
     }
 }

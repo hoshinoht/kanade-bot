@@ -6,8 +6,8 @@
 use twilight_model::channel::message::embed::EmbedField;
 use twilight_model::channel::message::{Component, Embed};
 
-use crate::bot::delivery::cards::redesign::within_budget;
-use crate::bot::transport::InteractionReply;
+use crate::cards::redesign::within_budget;
+use crate::discord::transport::InteractionReply;
 
 pub const CONTENT_LIMIT: usize = 2000;
 const TITLE_LIMIT: usize = 256;

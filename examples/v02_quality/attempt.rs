@@ -16,20 +16,22 @@ use std::{
 
 use chrono::{DateTime, Utc};
 use kanade::{
-    bot::{
-        gateway::{EventSource, GatewayError},
-        transport::{FakeDiscord, Op},
-    },
-    domain::{
-        model_log::ModelLogStore,
-        settings::{SettingsStore, keys},
-    },
-    infrastructure::{llm::setup::ModelStack, store::SqliteStore},
+    bot::gateway::{EventSource, GatewayError},
+    discord::transport::{FakeDiscord, Op},
     runtime::{
         config::ServeConfig,
-        serve::{discord::Wiring, extract::Timing, harness, settings},
+        serve::{
+            bot::{discord::Wiring, extract::Timing},
+            harness, settings,
+        },
     },
 };
+use kanade_domain::{
+    model_log::ModelLogStore,
+    settings::{SettingsStore, keys},
+};
+use kanade_llm::setup::ModelStack;
+use kanade_store::SqliteStore;
 use serde_json::{Value, json};
 use tokio::sync::{mpsc, oneshot};
 use tokio::time::{Instant, sleep};

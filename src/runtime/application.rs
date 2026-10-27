@@ -2,15 +2,14 @@ use std::{collections::BTreeMap, future::Future, pin::Pin};
 
 use serde::Serialize;
 
-use crate::{
-    api::server,
-    cli::{self, Command, healthcheck},
-};
+#[cfg(feature = "web")]
+use crate::api::server;
+use crate::cli::{self, Command, healthcheck};
 
 use super::{
-    config::{self, BackupConfig, HealthcheckConfig, RuntimeConfig, ServeConfig, StoreSettings},
+    config::{self, BackupConfig, HealthcheckConfig, ServeConfig, StoreSettings},
     error::Error,
-    logging, restore, serve,
+    restore, serve,
 };
 
 pub async fn run(
@@ -26,7 +25,7 @@ pub async fn run(
     // Names only: a variable silently beating the file is how a deploy ends
     // up running a value nobody can see in kanade.toml.
     if matches!(command, Command::Serve { .. }) && !resolved.shadowed.is_empty() {
-        logging::log!(warn, "config_shadowed", keys = resolved.shadowed);
+        kanade_log::log!(warn, "config_shadowed", keys = resolved.shadowed);
     }
     dispatch(command, &resolved.values)
         .await
@@ -35,8 +34,16 @@ pub async fn run(
 
 async fn dispatch(command: Command, environment: &BTreeMap<String, String>) -> Result<(), Error> {
     match command {
+        #[cfg(feature = "web")]
         Command::Serve { offline: true } => {
-            server::serve_offline(RuntimeConfig::from_mapping(environment)?).await
+            config::Components::from_mapping(environment)?.offline_allowed()?;
+            server::serve_offline(config::RuntimeConfig::from_mapping(environment)?).await
+        }
+        // The offline shell is the admin app's: refused as `--offline`
+        // without `web` is anywhere else.
+        #[cfg(not(feature = "web"))]
+        Command::Serve { offline: true } => {
+            config::Components::from_mapping(environment)?.offline_allowed()
         }
         Command::Serve { offline: false } => {
             serve::run(ServeConfig::from_mapping(environment)?).await
@@ -51,10 +58,11 @@ async fn dispatch(command: Command, environment: &BTreeMap<String, String>) -> R
         Command::Backup(args) => backup(args, environment).await,
         Command::Restore(options) => {
             let settings = StoreSettings::from_mapping(environment)?;
-            let report = restore::run(&options, &settings, crate::api::auth::system_now()).await?;
+            let report = restore::run(&options, &settings, crate::app::clock::system_now()).await?;
             print!("{report}");
             Ok(())
         }
+        #[cfg(feature = "web")]
         Command::Admin(args) => cli::admin::run(args, environment).await,
         Command::TokenRotate(args) => {
             println!("{}", cli::token::rotate(&args)?);
@@ -74,7 +82,7 @@ async fn backup(
     match args {
         cli::backup::Args::Snapshot { name } => {
             let config = BackupConfig::from_mapping(environment)?;
-            let report = super::backup::run(name, &config, crate::api::auth::system_now()).await?;
+            let report = super::backup::run(name, &config, crate::app::clock::system_now()).await?;
             print!("{report}");
             Ok(())
         }

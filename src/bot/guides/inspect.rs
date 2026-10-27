@@ -7,13 +7,13 @@
 use std::collections::{BTreeSet, HashSet};
 
 use super::{CALL_DEADLINE, INSPECT_PAGE, Publisher};
-use crate::api::state::{ChannelGrants, ChannelList};
-use crate::bot::guild_cache::GuildCache;
-use crate::bot::ids::{id_text, parse_id};
-use crate::bot::transport::{
+use crate::app::guild::{ChannelGrants, ChannelList};
+use crate::app::ids::{id_text, parse_id};
+use crate::discord::guild_cache::GuildCache;
+use crate::discord::transport::{
     AmbiguousKind, DiscordTransport, HistoryPage, MessageId, Outcome, Presence, RejectionKind,
 };
-use crate::domain::guides::{GuideGrants, INSPECT_BUDGET, Inspection, PublishedSlot, SlotState};
+use kanade_domain::guides::{GuideGrants, INSPECT_BUDGET, Inspection, PublishedSlot, SlotState};
 
 /// What the gateway cache knows of a channel.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

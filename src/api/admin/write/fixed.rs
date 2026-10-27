@@ -27,17 +27,17 @@ use crate::{
         error::ApiError,
         listeners::Site,
         state::ApiState,
-        write::{FixedPatchReplay, WriteContext},
     },
-    domain::{
-        history::{Actor, BlameTarget, ChangeRecord, Origin, RowKey},
-        members::{Member, MemberProfile, Roster},
-        schedule::{
-            AmendedRunChoice, FixedEdit, FixedEditChoices, FixedEditRequest, NewFixedRun,
-            ScheduleError, validate_channel, validate_participants,
-        },
-        scheduler::SchedulerError,
+    app::write::{FixedPatchReplay, WriteContext},
+};
+use kanade_domain::{
+    history::{Actor, BlameTarget, ChangeRecord, Origin, RowKey},
+    members::{Member, MemberProfile, Roster},
+    schedule::{
+        AmendedRunChoice, FixedEdit, FixedEditChoices, FixedEditRequest, NewFixedRun,
+        ScheduleError, validate_channel, validate_participants,
     },
+    scheduler::SchedulerError,
 };
 
 mod choices;
@@ -90,7 +90,7 @@ struct Checked {
 
 /// The form's weekday (0 = Monday) and `HH:MM` time.
 fn slot(weekday: u8, time: &str) -> Result<(Weekday, NaiveTime), Refusal> {
-    let weekday = crate::domain::weeks::weekday_from_index(i64::from(weekday))
+    let weekday = kanade_domain::weeks::weekday_from_index(i64::from(weekday))
         .ok()
         .filter(|_| weekday <= 6)
         .ok_or_else(|| Refusal::invalid("Pick a weekday."))?;
@@ -265,7 +265,7 @@ pub async fn update(
     let origin = origin(&session, &headers)?;
     let first = recorded(state, &origin).await?.is_some();
     #[cfg(any(test, feature = "test-support"))]
-    let lost_channel = crate::api::write::hold_fixed_patch_after_lookup(&origin).await;
+    let lost_channel = crate::app::write::hold_fixed_patch_after_lookup(&origin).await;
     // Keep the established fresh-request refusal order, while letting a used
     // key compare its complete identity before version-dependent handling.
     let version = if first {

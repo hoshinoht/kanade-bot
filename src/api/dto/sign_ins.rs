@@ -5,7 +5,7 @@
 use serde::Serialize;
 
 use super::iso_instant;
-use crate::infrastructure::store::auth_audit::AuditRow;
+use kanade_store::auth_audit::AuditRow;
 
 /// One audited event, newest first.
 #[derive(Serialize)]

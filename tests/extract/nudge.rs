@@ -13,23 +13,23 @@ use std::{
 };
 
 use chrono::{DateTime, TimeZone, Utc};
-use kanade::chat::nudge::{
+use kanade_domain::notify::WeekReset;
+use kanade_llm::governor::{
+    CallKind, Governor, GovernorConfig, GovernorPolicy, GroupConfig, Outcome, Random, Role,
+    RoleConfig, XorShift,
+};
+use kanade_store::SqliteStore;
+use kanade_voice::nudge::{
     DENY_INSIDE, DENY_SEA, DENY_SOUNDALIKE, EDIT_RUN_ACTION, GENTLE_MOOD, LineSource, MAX_CHANNELS,
     NUDGE_REWRITE_INSTRUCTION, NoRewrite, Nudge, NudgeFacts, NudgeRewriter, Nudger, PLAYFUL_MOOD,
     RECENT_PER_CHANNEL, REQUEST_CHANGE_ACTION, Rejection, RewriteFailure, RewritePrompt,
     SeedReason, SeedRotation, WordFilter, accept_rewrite, accept_rewrite_with, denied_word,
     has_invite, has_markup, mood_for, render,
 };
-use kanade::chat::persona::{
+use kanade_voice::persona::{
     CompiledPersona, NudgeMood, NudgePurpose, NudgeSource, PersonaId, ProfileId, parse_bundle,
     parse_profile,
 };
-use kanade::domain::notify::WeekReset;
-use kanade::infrastructure::llm::governor::{
-    CallKind, Governor, GovernorConfig, GovernorPolicy, GroupConfig, Outcome, Random, Role,
-    RoleConfig, XorShift,
-};
-use kanade::infrastructure::store::SqliteStore;
 use tokio::time::Instant;
 
 const CHANNEL: &str = "900000000000000001";
@@ -503,7 +503,7 @@ fn the_effective_list_adds_extra_words_and_allows_built_ins_again() {
     let words = WordFilter::new(&["frick".into()], &["babi".into(), "shit".into()]);
     assert_eq!(
         accept_rewrite_with("Move {boss} yourself, frickin slowpoke.", seed, &words),
-        Err(Rejection::Denied(kanade::chat::nudge::CUSTOM_WORD))
+        Err(Rejection::Denied(kanade_voice::nudge::CUSTOM_WORD))
     );
     assert!(accept_rewrite_with("Move {boss} yourself, babi.", seed, &words).is_ok());
     // Allowing a word takes it off the inside list too.
@@ -622,7 +622,7 @@ async fn unsafe_filled_values_fall_back_to_the_seed_then_a_field_free_line() {
             "{boss:?} {day:?} {time:?}"
         );
         assert!(
-            kanade::chat::persona::check_nudge_line(&nudge.lead_in).is_ok(),
+            kanade_voice::persona::check_nudge_line(&nudge.lead_in).is_ok(),
             "{:?}",
             nudge.lead_in
         );
@@ -739,7 +739,7 @@ async fn the_rewrite_prompt_carries_no_member_channel_or_run_data() {
     assert_eq!(prompt.messages().len(), 2);
 }
 
-fn profile(yaml_extra: &str) -> kanade::chat::persona::Profile {
+fn profile(yaml_extra: &str) -> kanade_voice::persona::Profile {
     let text = format!(
         "schema_version: 1
 id: senpai
@@ -990,8 +990,8 @@ fn the_rotation_remembers_a_bounded_number_of_channels() {
 /// and the unfilled line used (no boss, day or time values).
 #[tokio::test(start_paused = true)]
 async fn each_lead_in_logs_one_member_free_rewrite_row() {
-    use kanade::chat::nudge::StoreRewriteSink;
-    use kanade::domain::model_log::{RewriteFilter, RewriteKind, RewriteLogStore, RewriteStage};
+    use kanade_domain::model_log::{RewriteFilter, RewriteKind, RewriteLogStore, RewriteStage};
+    use kanade_voice::nudge::StoreRewriteSink;
 
     let logs = Arc::new(SqliteStore::open_temp().await);
     let at = utc(20, 12);
@@ -1083,7 +1083,7 @@ async fn each_lead_in_logs_one_member_free_rewrite_row() {
             .expect("the sent prompt");
         assert_eq!(
             prompt,
-            kanade::chat::nudge::RewritePrompt::build(&persona, NudgeMood::Playful, &row.seed)
+            kanade_voice::nudge::RewritePrompt::build(&persona, NudgeMood::Playful, &row.seed)
                 .transcript()
         );
         for value in ["Hard Lucid", "Sat", "21:00", MEMBER, CHANNEL] {

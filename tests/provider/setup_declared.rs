@@ -5,14 +5,14 @@
 
 use std::{collections::BTreeMap, time::Duration};
 
-use kanade::infrastructure::llm::{
+use kanade::runtime::config::{ModelSettings, annotate, resolve};
+use kanade_llm::{
     ChatRequest, Effort, Message, ModelCapabilities, OutputSchema, OutputValidation, Sampling,
     ToolDefinition,
     governor::{QuestionLimits, Role},
     parse_models_list,
     setup::{EffortStatus, ModelRoles, ModelStack, RoleEffort, RoleModel},
 };
-use kanade::runtime::config::{ModelSettings, annotate, resolve};
 use serde_json::{Value, json};
 
 use super::setup::{ready, role, setup, temp_file};

@@ -31,7 +31,7 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "id", "day", "time", "minutes", "status", "bosses", "tally",
+        "id", "day", "time", "minutes", "status", "ended", "bosses", "tally",
         "short_id", "participants", "party", "channel_id", "channel", "cards", "fixed_id", "amended", "roster_change"
       ],
       "properties": {
@@ -40,6 +40,7 @@
         "time": { "$ref": "#/$defs/RunTime" },
         "minutes": { "type": "integer", "minimum": 1, "description": "Configured sum of the run's boss durations, including own-time runs." },
         "status": { "$ref": "common.json#/$defs/RunStatus" },
+        "ended": { "type": "boolean", "description": "A live run past its end (an own-time run: the boss reset), frozen: every edit but a status change is 409 `run_ended`. Never true for a done or cancelled run, nor for a run staff set back to planned after it ended (reopened)." },
         "bosses": { "$ref": "common.json#/$defs/Bosses" },
         "tally": { "$ref": "common.json#/$defs/Tally" },
         "short_id": { "type": "string" },

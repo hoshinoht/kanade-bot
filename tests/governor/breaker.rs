@@ -4,7 +4,7 @@ use std::{
 };
 
 use chrono::TimeDelta;
-use kanade::infrastructure::llm::governor::{
+use kanade_llm::governor::{
     BreakerState, CallKind, Governor, Outcome, Permit, Priority, Refused, Role,
 };
 use tokio::time::Instant;

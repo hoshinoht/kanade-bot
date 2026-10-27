@@ -2,9 +2,9 @@
 
 use std::sync::Arc;
 
-use kanade::api::{
-    listeners::Site,
-    state::{ChannelEntry, ChannelList},
+use kanade::{
+    api::listeners::Site,
+    app::guild::{ChannelEntry, ChannelList},
 };
 
 use crate::support::{self, ADMIN_HOST, Fixture, PUBLIC_HOST, SECRET, get, read, request};

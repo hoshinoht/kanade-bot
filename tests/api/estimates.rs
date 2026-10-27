@@ -23,11 +23,11 @@ use axum::{
     routing::get,
 };
 use chrono::TimeDelta;
-use kanade::infrastructure::{
+use kanade_chardata::{
     character_data::{CharacterData, ConfirmOutcome},
     scouter::{MAX_QUEUED, TIMEOUT},
-    store::SqliteCharData,
 };
+use kanade_store::SqliteCharData;
 use serde_json::{Value, json};
 use tokio::sync::Notify;
 
@@ -1292,28 +1292,17 @@ async fn raw_get(reads: &Reads, path: &str) -> crate::support::Reply {
     .await
 }
 
-/// The reminder preview carries the redesigned countdown's "Who carries"
-/// image (`m-kalos-15`, `r-kalos` 22:00 XKalos), drawn at its own route by
-/// the delivery chart code from the estimates cached now, never a lookup.
-/// Classic cards, estimates off and unknown reminders have none.
+/// The reminder preview carries the countdown's "Who carries" image
+/// (`m-kalos-15`, `r-kalos` 22:00 XKalos), drawn at its own route by the
+/// delivery chart code from the estimates cached now, never a lookup.
+/// Estimates off and unknown reminders have none.
 #[tokio::test]
 async fn the_reminder_preview_shows_the_estimate_image_from_cached_readings() {
     const CARD: &str = "/api/admin/reminders/m-kalos-15/preview";
     const PNG: &str = "/api/admin/reminders/m-kalos-15/estimate.png";
-    let redesigned = json!({"notifications": {"message_style": "redesigned"}});
     let (address, fake) = fake_scouter().await;
     let reads = on(Some(address)).await;
 
-    // Classic (the default): no image and no PNG.
-    let classic = reads.read(CARD, PREVIEW).await;
-    assert_eq!(classic["card"]["estimate"], Value::Null);
-    assert_eq!(
-        raw_get(&reads, PNG).await.error(),
-        (404, "not_found".into())
-    );
-
-    let saved = reads.call("PATCH", "/api/admin/config", redesigned.clone(), &[]);
-    assert_eq!(saved.await.status, 200);
     // Nobody has a character yet: drawn as "no estimate yet".
     let none = reads.read(CARD, PREVIEW).await;
     assert_eq!(
@@ -1350,8 +1339,6 @@ async fn the_reminder_preview_shows_the_estimate_image_from_cached_readings() {
 
     // Estimates off (no scouter URL): the card stays, without the image.
     let off = on(None).await;
-    let saved = off.call("PATCH", "/api/admin/config", redesigned, &[]);
-    assert_eq!(saved.await.status, 200);
     let preview = off.read(CARD, PREVIEW).await;
     assert!(preview["card"]["content"].is_string());
     assert_eq!(preview["card"]["estimate"], Value::Null);
@@ -1368,9 +1355,6 @@ async fn the_reminder_preview_has_no_estimate_image_while_its_party_is_looked_up
     const PNG: &str = "/api/admin/reminders/m-kalos-15/estimate.png";
     let (address, fake) = fake_scouter().await;
     let reads = on_gated(address).await;
-    let redesigned = json!({"notifications": {"message_style": "redesigned"}});
-    let saved = reads.call("PATCH", "/api/admin/config", redesigned, &[]);
-    assert_eq!(saved.await.status, 200);
     character(&reads, "1001", "MikaBish").await;
     let gate = character(&reads, "1002", "GateAa").await;
 
@@ -1497,7 +1481,7 @@ async fn the_party_total_reads_the_saved_estimates_like_the_reminder_image() {
 /// minutes of that party's saved total.
 #[tokio::test]
 async fn each_bosss_party_total_is_its_own_partys() {
-    use kanade::domain::schedule::{Change, Run, RunSource, RunStatus};
+    use kanade_domain::schedule::{Change, Run, RunSource, RunStatus};
     let (address, fake) = fake_scouter().await;
     let reads = on(Some(address)).await;
     character(&reads, "1001", "MikaHero").await;

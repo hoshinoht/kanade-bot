@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use kanade::infrastructure::llm::governor::{CallKind, Outcome, Priority, Refused, Role};
+use kanade_llm::governor::{CallKind, Outcome, Priority, Refused, Role};
 use tokio::time::Instant;
 
 use crate::support::{LONG, build, governor, single, snap, ticket};

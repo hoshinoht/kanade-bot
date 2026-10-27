@@ -5,10 +5,10 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::Duration;
 
-use kanade::infrastructure::llm::governor::{
+use kanade_llm::governor::{
     Governor, GovernorConfig, GovernorPolicy, GroupConfig, ModelClient, Random, Role, RoleConfig,
 };
-use kanade::infrastructure::llm::{
+use kanade_llm::{
     CapabilityFuture, ChatRequest, CompletionFuture, CompletionResponse, Effort, ExecutionLimits,
     FakeAction, FakeProvider, FinishReason, LlmProvider, ModelCapabilities, RetryPolicy, ToolCall,
 };

@@ -1,42 +1,44 @@
 //! Live `/healthz`: the store answers a read, the gateway is ready and the
 //! delivery tick keeps completing; `extraction` is informational and never
-//! degrades the status. With `KANADE_DISCORD_GATEWAY=0` Discord
-//! and the scheduler report `disabled` and only storage decides.
+//! degrades the status. Without the `bot` component Discord and the
+//! scheduler report `disabled` and only storage decides. The bot half
+//! supplies its probes ([`DiscordHealth`], [`ExtractionHealth`]).
 
-use std::sync::Arc;
+use std::{future::Future, pin::Pin, sync::Arc};
 
-use super::{extract::ExtractionStatus, tick::TickStatus};
-use crate::{
-    bot::{
-        events::DroppedEvents,
-        gateway::{Connection, ConnectionStatus},
-    },
-    chat::driver::ChatHandle,
-    infrastructure::store::SqliteStore,
-    runtime::application::{DroppedHealth, Health, HealthFuture, HealthProbe},
-};
+use crate::runtime::application::{DroppedHealth, Health, HealthFuture, HealthProbe};
+use kanade_chat::driver::ChatHandle;
+use kanade_store::SqliteStore;
 
-/// What the gateway shares with health.
-#[derive(Clone, Debug)]
-pub struct GatewayProbe {
-    pub connection: ConnectionStatus,
-    pub dropped: DroppedEvents,
+/// The gateway and the delivery tick, as health reads them.
+pub trait DiscordHealth: Send + Sync {
+    /// The connection's state, whether it counts as ready, and the events
+    /// refused for another guild or no guild.
+    fn gateway(&self) -> (&'static str, bool, DroppedHealth);
+    /// The tick's state and the seconds since its last completed tick.
+    fn scheduler(&self) -> (&'static str, Option<u64>);
+}
+
+/// Extraction's state, as health reads it.
+pub trait ExtractionHealth: Send + Sync {
+    fn state<'a>(
+        &'a self,
+        store: &'a SqliteStore,
+    ) -> Pin<Box<dyn Future<Output = &'static str> + Send + 'a>>;
 }
 
 pub struct LiveHealth {
     store: Arc<SqliteStore>,
-    gateway: Option<GatewayProbe>,
-    tick: Option<Arc<TickStatus>>,
+    discord: Option<Arc<dyn DiscordHealth>>,
     chat: Arc<ChatHandle>,
-    extraction: Option<Arc<ExtractionStatus>>,
+    extraction: Option<Arc<dyn ExtractionHealth>>,
 }
 
 impl LiveHealth {
     pub fn new(store: Arc<SqliteStore>) -> Self {
         Self {
             store,
-            gateway: None,
-            tick: None,
+            discord: None,
             chat: Arc::default(),
             extraction: None,
         }
@@ -47,14 +49,21 @@ impl LiveHealth {
         Arc::clone(&self.chat)
     }
 
-    pub fn with_discord(mut self, gateway: GatewayProbe, tick: Arc<TickStatus>) -> Self {
-        self.gateway = Some(gateway);
-        self.tick = Some(tick);
+    #[cfg(feature = "bot")]
+    pub(in crate::runtime::serve) fn probing_discord(
+        mut self,
+        probe: Arc<dyn DiscordHealth>,
+    ) -> Self {
+        self.discord = Some(probe);
         self
     }
 
-    pub fn with_extraction(mut self, extraction: Arc<ExtractionStatus>) -> Self {
-        self.extraction = Some(extraction);
+    #[cfg(feature = "bot")]
+    pub(in crate::runtime::serve) fn probing_extraction(
+        mut self,
+        probe: Arc<dyn ExtractionHealth>,
+    ) -> Self {
+        self.extraction = Some(probe);
         self
     }
 }
@@ -69,26 +78,18 @@ impl HealthProbe for LiveHealth {
     fn health(&self) -> HealthFuture<'_> {
         Box::pin(async move {
             let storage_ok = self.store.schema_version().await.is_ok();
-            let (discord, discord_ok, dropped_events) = match &self.gateway {
+            let (discord, discord_ok, dropped_events) = match &self.discord {
                 None => ("disabled", true, None),
-                Some(gateway) => {
-                    let connection = gateway.connection.get();
-                    let counts = gateway.dropped.counts();
-                    (
-                        connection.as_str(),
-                        connection == Connection::Ready,
-                        Some(DroppedHealth {
-                            other_guild: counts.other_guild,
-                            no_guild: counts.no_guild,
-                        }),
-                    )
+                Some(probe) => {
+                    let (state, ready, dropped) = probe.gateway();
+                    (state, ready, Some(dropped))
                 }
             };
-            let (scheduler, scheduler_ok, last_tick_age_seconds) = match &self.tick {
+            let (scheduler, scheduler_ok, last_tick_age_seconds) = match &self.discord {
                 None => ("disabled", true, None),
-                Some(tick) => {
-                    let state = tick.state();
-                    (state, state == "running", tick.last_age_seconds())
+                Some(probe) => {
+                    let (state, age) = probe.scheduler();
+                    (state, state == "running", age)
                 }
             };
             let extraction = match &self.extraction {

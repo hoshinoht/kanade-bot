@@ -6,14 +6,14 @@
 use std::sync::Arc;
 
 use chrono::{TimeZone, Utc};
-use kanade::chat::answer::{
+use kanade_chat::answer::{
     AnswerDeps, Generation, ProfanityGuard, Question, answer, chat_outcome, interaction,
 };
-use kanade::chat::nudge::{WordFilter, builtin_words};
-use kanade::chat::tools::bundles::ToolOffer;
-use kanade::domain::model_log::ChatOutcome;
-use kanade::domain::settings::{DEFAULT_DEFLECTION_LINE, Profanity};
-use kanade::infrastructure::llm::{ChatRequest, FakeAction, FakeProvider};
+use kanade_chat::tools::bundles::ToolOffer;
+use kanade_domain::model_log::ChatOutcome;
+use kanade_domain::settings::{DEFAULT_DEFLECTION_LINE, Profanity};
+use kanade_llm::{ChatRequest, FakeAction, FakeProvider};
+use kanade_voice::nudge::{WordFilter, builtin_words};
 use serde_json::json;
 
 use crate::looping::{Ports, conversation, said, settings};
@@ -86,7 +86,7 @@ async fn run_in(
 
 fn logged(generation: &Generation) -> serde_json::Value {
     let at = Utc.with_ymd_and_hms(2026, 9, 9, 4, 0, 0).unwrap();
-    let ctx = kanade::chat::tools::ToolContext::new("11", "900", "1001", at);
+    let ctx = kanade_chat::tools::ToolContext::new("11", "900", "1001", at);
     let row = interaction(
         "c-1".into(),
         at,
@@ -195,10 +195,10 @@ async fn run_allowed(guard: &ProfanityGuard) -> Run {
 #[test]
 fn boss_names_aliases_and_the_bot_name_pass_the_built_in_list() {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
-    let catalog = kanade::infrastructure::files::load_catalog(&root.join("boss/bosses.yaml"))
-        .expect("tracked catalog");
-    let knowledge = kanade::infrastructure::files::load_knowledge_dir(&root.join("boss/knowledge"))
-        .expect("tracked knowledge");
+    let catalog =
+        kanade_files::load_catalog(&root.join("boss/bosses.yaml")).expect("tracked catalog");
+    let knowledge =
+        kanade_files::load_knowledge_dir(&root.join("boss/knowledge")).expect("tracked knowledge");
     let mut names = vec!["Kanade".to_owned(), "OtonoseKanade".to_owned()];
     for boss in catalog.bosses() {
         names.push(boss.short().to_owned());

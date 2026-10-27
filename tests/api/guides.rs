@@ -16,17 +16,19 @@ use std::{
 
 use chrono::{DateTime, TimeZone, Utc};
 use kanade::{
-    api::{listeners::Site, state::GuidePort},
-    domain::{
-        catalog::BossTable,
-        guides::{
-            GuideGrants, GuideStore, Inspection, OpOutcome, PlanOp, PublishOp, PublishState,
-            PublishedSlot, SlotEffect, SlotState, plan, plan_unpublish, render,
-        },
-        settings::{SettingsChangeQuery, SettingsStore},
-    },
-    infrastructure::{files::GuideFiles, store::SqliteStore},
+    api::listeners::Site,
+    app::ports::{GuidePort, OfflineGuides},
 };
+use kanade_domain::{
+    catalog::BossTable,
+    guides::{
+        GuideGrants, GuideStore, Inspection, OpOutcome, PlanOp, PublishOp, PublishState,
+        PublishedSlot, SlotEffect, SlotState, plan, plan_unpublish, render,
+    },
+    settings::{SettingsChangeQuery, SettingsStore},
+};
+use kanade_files::GuideFiles;
+use kanade_store::SqliteStore;
 use serde_json::{Value, json};
 
 use crate::{
@@ -84,6 +86,10 @@ impl GuidePort for StubPort {
 
     fn wake(&self) {
         self.wakes.fetch_add(1, Ordering::SeqCst);
+    }
+
+    fn publishing(&self) -> bool {
+        true
     }
 }
 
@@ -670,6 +676,39 @@ async fn publishing_needs_discord() {
     }
     assert_eq!(history(&reads).await, before);
     assert_eq!(port.wakes.load(Ordering::SeqCst), 0);
+}
+
+/// The `web` component alone: guides are drafted and saved as usual, but
+/// with no worker every run refuses `discord_offline`, even while the guild
+/// is read (the REST sync fills the channel list).
+#[tokio::test]
+async fn without_the_bot_guides_are_editable_and_never_publish() {
+    let reads = Reads::build(|b| {
+        b.guides = Some(Arc::new(OfflineGuides));
+        b.role_directory_connected = true;
+    })
+    .await;
+    let id = drafted(&reads).await;
+    let planned = plan_of(&reads, &id, "").await;
+    assert_eq!(planned["checked"], false, "no channel read without the bot");
+    let before = history(&reads).await;
+    for (path, body) in [
+        (
+            "publish",
+            json!({"version": 2, "plan_hash": planned["plan_hash"]}),
+        ),
+        (
+            "unpublish",
+            json!({"plan_hash": planned["plan_hash"], "confirm": true}),
+        ),
+        ("search", json!({})),
+    ] {
+        let refused = reads
+            .call("POST", &format!("{}/{path}", guide(&id)), body, &[])
+            .await;
+        assert_eq!(refused.error(), (503, "discord_offline".into()), "{path}");
+    }
+    assert_eq!(history(&reads).await, before);
 }
 
 #[tokio::test]

@@ -1,10 +1,8 @@
 //! Chat lifecycle log lines ([`ChatEvent`] → JSON). Never question or reply
 //! text, never member ids.
 
-use crate::{
-    chat::{driver::ChatEvent, persona::ProfileSource},
-    runtime::logging,
-};
+use kanade_chat::driver::ChatEvent;
+use kanade_voice::persona::ProfileSource;
 
 /// Why chat cannot answer now, for `chat_setup_changed`.
 pub(super) struct Readiness {
@@ -29,7 +27,7 @@ pub(super) fn observe(event: &ChatEvent<'_>, readiness: impl FnOnce() -> Readine
             interaction_id,
             thread,
             position,
-        } => logging::log!(
+        } => kanade_log::log!(
             info,
             "chat_admitted",
             interaction_id,
@@ -37,12 +35,12 @@ pub(super) fn observe(event: &ChatEvent<'_>, readiness: impl FnOnce() -> Readine
             position,
         ),
         ChatEvent::Ignored { reason } => {
-            logging::log!(info, "chat_ignored", reason);
+            kanade_log::log!(info, "chat_ignored", reason);
         }
         ChatEvent::Cancelled {
             interaction_id,
             reason,
-        } => logging::log!(info, "chat_cancelled", interaction_id, reason),
+        } => kanade_log::log!(info, "chat_cancelled", interaction_id, reason),
         ChatEvent::Finished {
             interaction,
             generation,
@@ -52,7 +50,7 @@ pub(super) fn observe(event: &ChatEvent<'_>, readiness: impl FnOnce() -> Readine
         } => {
             let failed = generation.failure.is_some();
             let (source, saved_unavailable) = profile_source(persona.profile_source);
-            logging::log!(
+            kanade_log::log!(
                 if failed { "WARN" } else { "INFO" },
                 if failed {
                     "chat_failed"
@@ -92,7 +90,7 @@ pub(super) fn observe(event: &ChatEvent<'_>, readiness: impl FnOnce() -> Readine
                     not_ready.push("no_persona");
                 }
             }
-            logging::log!(
+            kanade_log::log!(
                 if *enabled && !ready { "WARN" } else { "INFO" },
                 "chat_setup_changed",
                 enabled,
@@ -109,13 +107,11 @@ mod tests {
     use serde_json::json;
 
     use super::*;
-    use crate::{
-        chat::{
-            answer::Generation,
-            persona::{CompileProvenance, ExampleSource, PersonaId, ProfileId, VoiceSource},
-        },
-        domain::model_log::{ChatInteraction, ChatOutcome},
-        infrastructure::llm::Effort,
+    use kanade_chat::answer::Generation;
+    use kanade_domain::model_log::{ChatInteraction, ChatOutcome};
+    use kanade_llm::Effort;
+    use kanade_voice::persona::{
+        CompileProvenance, ExampleSource, PersonaId, ProfileId, VoiceSource,
     };
 
     fn row() -> ChatInteraction {
@@ -169,10 +165,10 @@ mod tests {
 
     #[test]
     fn chat_answered_names_persona_profile_and_model_without_content() {
-        logging::capture();
+        kanade_log::capture();
         let (mut row, provenance) = (row(), provenance());
         row.session_id = Some("kanade-chat-0000abcd-9".into());
-        row.rounds = vec![crate::domain::model_log::ChatRound {
+        row.rounds = vec![kanade_domain::model_log::ChatRound {
             model: "chat-model".into(),
             reasoning: None,
             reasoning_content: None,
@@ -213,7 +209,7 @@ mod tests {
             },
             unready,
         );
-        let line = logging::captured().remove(0);
+        let line = kanade_log::captured().remove(0);
         assert_eq!(line["level"], "INFO");
         assert_eq!(line["event"], "chat_answered");
         assert_eq!(line["interaction_id"], "row-1");
@@ -237,8 +233,8 @@ mod tests {
 
     #[test]
     fn an_external_failure_is_labeled_unmasked() {
-        use crate::chat::answer::AnswerFailure;
-        logging::capture();
+        use kanade_chat::answer::AnswerFailure;
+        kanade_log::capture();
         let (mut row, provenance) = (row(), provenance());
         // The failed request answered no round: only the session list names it.
         row.session_id = Some("kanade-chat-0000abcd-a".into());
@@ -259,7 +255,7 @@ mod tests {
             },
             unready,
         );
-        let line = logging::captured().remove(0);
+        let line = kanade_log::captured().remove(0);
         assert_eq!(line["event"], "chat_failed");
         assert_eq!(line["route"], "external_unmasked");
         assert_eq!(line["session_id"], "kanade-chat-0000abcd-a");
@@ -273,7 +269,7 @@ mod tests {
 
     #[test]
     fn setup_changed_says_why_chat_is_not_ready() {
-        logging::capture();
+        kanade_log::capture();
         observe(
             &ChatEvent::SetupChanged {
                 enabled: true,
@@ -281,7 +277,7 @@ mod tests {
             },
             unready,
         );
-        let line = logging::captured().remove(0);
+        let line = kanade_log::captured().remove(0);
         assert_eq!(line["level"], "WARN");
         assert_eq!(line["event"], "chat_setup_changed");
         assert_eq!(line["not_ready"], json!(["no_model_route"]));

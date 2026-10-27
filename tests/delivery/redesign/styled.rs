@@ -2,16 +2,15 @@
 //! content and subtext, per-run embeds, colours, timestamps, art and the
 //! Discord limits.
 
-use kanade::bot::delivery::cards::redesign::{
-    AT_RISK_RED, DifficultyMarks, INK_BLUE, MAX_EMBEDS, MAX_TOTAL_CHARS, NO_MARKS, SETTLED_GREEN,
-    WAITING_AMBER,
+use kanade::cards::redesign::{
+    AT_RISK_RED, DIGEST_EMPTY, DifficultyMarks, INK_BLUE, MAX_EMBEDS, MAX_TOTAL_CHARS, NO_MARKS,
+    SETTLED_GREEN, WAITING_AMBER,
 };
-use kanade::bot::delivery::cards::{self, Card, DIGEST_EMPTY, REACT_HINT, fetch_art};
-use kanade::bot::transport::OutgoingMessage;
-use kanade::domain::attendance::AttendancePolicy;
-use kanade::domain::members::{Member, PingLevel};
-use kanade::domain::notify::IntentContent;
-use kanade::domain::schedule::{RunStatus, ScheduleSnapshot};
+use kanade::cards::{self, Card, REACT_HINT, fetch_art};
+use kanade::discord::transport::OutgoingMessage;
+use kanade_domain::members::{Member, PingLevel};
+use kanade_domain::notify::IntentContent;
+use kanade_domain::schedule::{RunStatus, ScheduleSnapshot};
 use twilight_model::channel::message::Embed;
 
 use super::{
@@ -130,32 +129,9 @@ async fn a_v5_day_of_has_one_embed_per_run_and_pings_the_waiting_in_subtext() {
 }
 
 #[tokio::test]
-async fn v4_compat_names_the_pinged_party_and_quiet_pings_nobody() {
+async fn a_quiet_day_of_pings_nobody() {
     let (schedule, roster, table) = (week(), members(), catalog());
-    let loud = redesigned(
-        &schedule,
-        &roster,
-        &table,
-        AttendancePolicy::V4_COMPAT,
-        false,
-        &NO_MARKS,
-    );
-    let mentioned = ids(&["1001", "1003"]);
-    let card = cards::build(&day_of(&[MALEFIC]), &loud, Some("Tonight!"), &mentioned).unwrap();
-    assert_eq!(
-        card.content,
-        "📅 **Tonight!**\n-# <@1001> <@1003> · react ✅ in / ❌ out"
-    );
-    assert_eq!(card.embeds.len(), 1);
-
-    let quiet = redesigned(
-        &schedule,
-        &roster,
-        &table,
-        AttendancePolicy::V4_COMPAT,
-        true,
-        &NO_MARKS,
-    );
+    let quiet = redesigned(&schedule, &roster, &table, true, &NO_MARKS);
     let card = cards::build(&day_of(&[MALEFIC]), &quiet, Some("Tonight!"), &[]).unwrap();
     assert_eq!(card.content, "📅 **Tonight!**\n-# react ✅ in / ❌ out");
     let message = post(&card, &[]).await;
@@ -167,14 +143,7 @@ async fn v4_compat_names_the_pinged_party_and_quiet_pings_nobody() {
 async fn difficulty_marks_replace_the_written_difficulty() {
     let (schedule, roster, table) = (week(), members(), catalog());
     let marks = DifficultyMarks::new().with("h", "<:diff_h:123>");
-    let ctx = redesigned(
-        &schedule,
-        &roster,
-        &table,
-        AttendancePolicy::V5,
-        false,
-        &marks,
-    );
+    let ctx = redesigned(&schedule, &roster, &table, false, &marks);
     let card = cards::build(&day_of(&[MALEFIC, KALOS]), &ctx, None, &[]).unwrap();
     assert_eq!(
         card.embeds[0].title.as_deref(),

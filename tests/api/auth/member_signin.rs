@@ -8,14 +8,15 @@ use chrono::TimeDelta;
 use kanade::{
     api::auth::{
         audit::{AuditEvent, Realm},
-        crypto,
         discord::LOGIN_TTL,
         member::Eligibility,
         rate::{Limits, Route, Rule},
-        roster::on_roster_update,
         wire,
     },
-    bot::events::RosterUpdate,
+    app::{
+        crypto,
+        roster::{RosterUpdate, on_roster_update},
+    },
 };
 
 use super::member_support::{
@@ -327,13 +328,10 @@ async fn unavailable_member_data_refuses_sign_in_without_denying() {
 /// Run `update` through the real roster hook right after the callback's
 /// gate check passed, before its session insert.
 fn roster_during_sign_in(harness: &MemberHarness, update: RosterUpdate) {
-    let admin = harness.admin_auth.clone();
-    let member = harness.member.clone();
+    let hooks = harness.roster_hooks();
     let store = harness.store.clone();
     harness.gate.after_next_check(async move {
-        on_roster_update(&admin, Some(&member), &*store, None, &update)
-            .await
-            .unwrap();
+        on_roster_update(&hooks, &*store, &update).await.unwrap();
     });
 }
 
@@ -493,12 +491,11 @@ async fn a_capped_sign_in_with_unavailable_member_data_hands_out_the_new_session
 async fn a_role_loss_after_the_second_check_refuses_the_cookie_on_first_use() {
     let harness = MemberHarness::new().await;
     let gate = harness.gate.clone();
-    let admin = harness.admin_auth.clone();
-    let member = harness.member.clone();
+    let hooks = harness.roster_hooks();
     let store = harness.store.clone();
     harness.gate.after_next_check(async move {
         gate.after_next_check(async move {
-            on_roster_update(&admin, Some(&member), &*store, None, &role_lost())
+            on_roster_update(&hooks, &*store, &role_lost())
                 .await
                 .unwrap();
         });

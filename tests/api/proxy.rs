@@ -6,10 +6,12 @@ use std::sync::Arc;
 use axum::{
     Extension, Json, Router, http::HeaderMap, middleware::from_fn_with_state, routing::get,
 };
-use kanade::api::{
-    auth::crypto::SealedSecret,
-    guard::proxy::{self, ClientIp, Peer},
-    listeners::Site,
+use kanade::{
+    api::{
+        guard::proxy::{self, ClientIp, Peer},
+        listeners::Site,
+    },
+    app::crypto::SealedSecret,
 };
 use serde_json::{Value, json};
 

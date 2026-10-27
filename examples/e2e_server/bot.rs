@@ -13,21 +13,21 @@
 use std::{future::pending, sync::Arc, time::Duration};
 
 use kanade::{
-    api::auth::Clock,
-    bot::{
-        gateway::{EventSource, GatewayError},
-        transport::FakeDiscord,
-    },
-    infrastructure::store::SqliteStore,
+    app::clock::Clock,
+    bot::gateway::{EventSource, GatewayError},
+    discord::transport::FakeDiscord,
     runtime::{
         config::ServeConfig,
         serve::{
-            api::Composition,
-            discord::{self, Wiring},
-            extract::Timing,
+            bot::{
+                discord::{self, Wiring},
+                extract::Timing,
+            },
+            composition::Composition,
         },
     },
 };
+use kanade_store::SqliteStore;
 use tokio::{sync::oneshot, task::JoinHandle};
 use twilight_gateway::Event;
 
@@ -38,7 +38,7 @@ const TICK: Duration = Duration::from_secs(60);
 /// One burst per half second (serve: 15 s), so a rescan of the seeded
 /// channels runs for a few seconds, long enough to be seen running.
 const EXTRACTION: Timing = Timing {
-    debounce: kanade::extract::pipeline::DEFAULT_DEBOUNCE,
+    debounce: kanade_extract::pipeline::DEFAULT_DEBOUNCE,
     drain_interval: Duration::from_millis(500),
 };
 

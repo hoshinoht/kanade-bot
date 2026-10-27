@@ -5,13 +5,19 @@ use tokio::{net::TcpListener, sync::watch, time::timeout};
 
 use super::{
     assets,
-    auth::{self, AdminAuth, member::MemberAuth},
+    auth::{self, AdminAuth, member::MemberAuth, roster::SessionHooks},
     listeners::{self, Site},
     state::ApiState,
 };
-use crate::runtime::{
-    application::HealthProbe, config::RuntimeConfig, error::Error, logging,
-    serve::budget::ShutdownClock,
+use crate::{
+    app::roster::RosterHooks,
+    runtime::{
+        application::HealthProbe,
+        config::RuntimeConfig,
+        error::Error,
+        logging,
+        serve::{budget::ShutdownClock, wait_for_shutdown},
+    },
 };
 
 /// What a live server serves beyond the offline shell.
@@ -21,6 +27,18 @@ pub struct LiveAdmin {
     pub health: Arc<dyn HealthProbe>,
     /// Member sign-in for the public listener; `None` keeps the portal closed.
     pub member: Option<Arc<MemberAuth>>,
+}
+
+impl LiveAdmin {
+    /// Both realms' session re-checks and the portrait purge, for the bot's
+    /// roster events.
+    pub fn roster_hooks(&self) -> Arc<dyn RosterHooks> {
+        Arc::new(SessionHooks {
+            auth: Arc::clone(&self.auth),
+            member: self.member.clone(),
+            avatars: self.state.avatars.clone(),
+        })
+    }
 }
 
 pub async fn serve_offline(config: RuntimeConfig) -> Result<(), Error> {
@@ -155,22 +173,4 @@ async fn run(
         let _ = stopped.changed().await;
     })
     .await
-}
-
-/// `SIGINT` or `SIGTERM`.
-pub async fn wait_for_shutdown() {
-    let ctrl_c = async {
-        let _ = tokio::signal::ctrl_c().await;
-    };
-    #[cfg(unix)]
-    let terminate = async {
-        if let Ok(mut signal) =
-            tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
-        {
-            signal.recv().await;
-        }
-    };
-    #[cfg(not(unix))]
-    let terminate = std::future::pending::<()>();
-    tokio::select! { () = ctrl_c => {}, () = terminate => {} }
 }

@@ -119,10 +119,8 @@ async fn sign_ins_are_stored_and_listed_newest_first_with_filters() {
 #[tokio::test]
 async fn refused_member_writes_are_listed_with_route_and_reason() {
     use chrono::{TimeZone, Utc};
-    use kanade::{
-        api::auth::audit::{AuditContext, AuditEvent, AuditRecord, Realm},
-        infrastructure::store::auth_audit::AuthAuditStore,
-    };
+    use kanade::api::auth::audit::{AuditContext, AuditEvent, AuditRecord, Realm};
+    use kanade_store::auth_audit::AuthAuditStore;
     let reads = Reads::new().await;
     let mut record = AuditRecord::new(
         Realm::Member,

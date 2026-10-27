@@ -3,15 +3,15 @@
 use std::sync::Arc;
 
 use chrono::{DateTime, NaiveTime, Utc, Weekday};
-use kanade::domain::history::Origin;
-use kanade::domain::model_log::{ModelLogStore, RescanStatus};
-use kanade::domain::schedule::{NewRun, RsvpState, Run, RunSource, RunStatus};
-use kanade::domain::scheduler::{ScheduleStore, Scope};
-use kanade::extract::matching::{TERMINAL_HINT, match_run};
-use kanade::extract::plan::{BurstInputs, Plan, plan_burst};
-use kanade::extract::rescan::{RescanRequest, Rescans};
-use kanade::extract::schema::{Extraction, parse_response};
-use kanade::extract::{Amendment, AmendmentKind};
+use kanade_domain::history::Origin;
+use kanade_domain::model_log::{ModelLogStore, RescanStatus};
+use kanade_domain::schedule::{NewRun, RsvpState, Run, RunSource, RunStatus};
+use kanade_domain::scheduler::{ScheduleStore, Scope};
+use kanade_extract::matching::{TERMINAL_HINT, match_run};
+use kanade_extract::plan::{BurstInputs, Plan, plan_burst};
+use kanade_extract::rescan::{RescanRequest, Rescans};
+use kanade_extract::schema::{Extraction, parse_response};
+use kanade_extract::{Amendment, AmendmentKind};
 
 use crate::fakes::{
     ALVIN, CHANNEL, FakeHistory, KANON, MY, PRIYA, World, after, local, message, reply, zone,
@@ -587,7 +587,7 @@ async fn pipeline_threads_each_cited_message_time_not_the_latest_burst_time() {
     let mut burst = Vec::new();
     for message in &messages {
         world.extractor.store_message(message).await.expect("cache");
-        burst.push(kanade::extract::backlog::BacklogEntry {
+        burst.push(kanade_extract::backlog::BacklogEntry {
             channel_id: CHANNEL.into(),
             message_id: message.id.clone(),
             created_at: message.created_at,

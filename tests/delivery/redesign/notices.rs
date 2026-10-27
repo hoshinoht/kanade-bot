@@ -1,27 +1,25 @@
-//! Change notices in both message styles: every kind in the redesigned
-//! grammar (emoji, bosses, what happened, who; the rest in one subtext
-//! line), the classic texts unchanged, and the same allow-list either way,
-//! rendered directly and drained by the tick; and the "via portal" mark as a
-//! link into the public portal while it is open.
+//! Change notices: every kind in one grammar (emoji, bosses, what
+//! happened, who; the rest in one subtext line), rendered directly and
+//! drained by the tick; and the "via portal" mark as a link into the
+//! public portal while it is open.
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use chrono::{DateTime, NaiveTime, TimeZone, Utc, Weekday};
-use kanade::bot::delivery::cards::CardKit;
-use kanade::bot::delivery::cards::redesign::{DifficultyMarks, via_portal_mark};
 use kanade::bot::delivery::render_notice;
-use kanade::bot::transport::OutgoingMessage;
-use kanade::domain::history::Origin;
-use kanade::domain::ids::RandomIds;
-use kanade::domain::members::{Member, PingLevel, Roster};
-use kanade::domain::notify::{EffectKind, IntentContent, NotificationIntent};
-use kanade::domain::schedule::{
+use kanade::cards::CardKit;
+use kanade::cards::redesign::{DifficultyMarks, via_portal_mark};
+use kanade::discord::transport::OutgoingMessage;
+use kanade_domain::history::Origin;
+use kanade_domain::ids::RandomIds;
+use kanade_domain::members::{Member, PingLevel, Roster};
+use kanade_domain::notify::{EffectKind, IntentContent, NotificationIntent};
+use kanade_domain::schedule::{
     FixedField, FixedRun, NewRun, Notice, NoticeChange, RequestDecision, Run, RunSource, RunStatus,
     ScheduleSnapshot, StatusChange,
 };
-use kanade::domain::settings::MessageStyle;
-use kanade::infrastructure::store::SqliteStore;
+use kanade_store::SqliteStore;
 
 use super::ZONE;
 use crate::cards::{created, kit, world};
@@ -30,14 +28,6 @@ use crate::support;
 
 fn utc(day: u32, hour: u32, minute: u32) -> DateTime<Utc> {
     Utc.with_ymd_and_hms(2026, 9, day, hour, minute, 0).unwrap()
-}
-
-/// The test catalog in `style`, read live like serve reads the setting.
-pub(crate) fn styled(style: MessageStyle) -> CardKit {
-    CardKit {
-        style: Some(Arc::new(move || style)),
-        ..kit(None)
-    }
 }
 
 /// Alvin is named (no pings), kanon wants pings, 1003 is a nameless
@@ -122,7 +112,6 @@ struct Case {
     listed: &'static [&'static str],
     via_portal: bool,
     quiet: bool,
-    classic: &'static str,
     redesigned: &'static str,
 }
 
@@ -170,15 +159,14 @@ fn edited(left_out: &[&str]) -> NoticeChange {
     }
 }
 
-/// Every notice kind; the classic column is today's text, byte for byte.
+/// Every notice kind.
 fn cases() -> Vec<Case> {
-    let case = |name, change, listed, classic, redesigned| Case {
+    let case = |name, change, listed, redesigned| Case {
         name,
         change,
         listed,
         via_portal: false,
         quiet: false,
-        classic,
         redesigned,
     };
     vec![
@@ -186,7 +174,6 @@ fn cases() -> Vec<Case> {
             "cancel",
             status(RunStatus::Cancelled),
             &PARTY,
-            "🚫 **HMaleficStar** (Thu 10 Sep) is cancelled — Alvin <@1002> <@1003>",
             "🚫 Hard Radiant Malefic Star is cancelled — Alvin <@1002> <@1003>\n\
              -# Thu 10 Sep 21:30",
         ),
@@ -194,8 +181,6 @@ fn cases() -> Vec<Case> {
             "own time",
             status(RunStatus::Otot),
             &PARTY,
-            "🕒 **HMaleficStar** is own-time this week (Thu 10 Sep) — it stays in the morning \
-             ping, but there are no countdowns. Alvin <@1002> <@1003>",
             "🕒 Hard Radiant Malefic Star is own time this week — Alvin <@1002> <@1003>\n\
              -# Thu 10 Sep · still in the morning ping, no countdowns",
         ),
@@ -203,15 +188,12 @@ fn cases() -> Vec<Case> {
             "cleared",
             status(RunStatus::Done),
             &PARTY,
-            "🏁 **HMaleficStar** cleared — Alvin <@1002> <@1003>",
             "🏁 Hard Radiant Malefic Star cleared — Alvin <@1002> <@1003>\n-# Thu 10 Sep 21:30",
         ),
         case(
             "back on",
             status(RunStatus::Planned),
             &PARTY,
-            "🔁 **HMaleficStar** is back on the schedule (Thu 10 Sep 21:30) — Alvin <@1002> \
-             <@1003>\nReact ✅ if you're on, ❌ if not.",
             "🔁 Hard Radiant Malefic Star is back on for **<t:1789047000:F>** — Alvin <@1002> \
              <@1003>\n-# react ✅/❌ here",
         ),
@@ -219,7 +201,6 @@ fn cases() -> Vec<Case> {
             "confirmed",
             status(RunStatus::Confirmed),
             &PARTY,
-            "✅ **HMaleficStar** is confirmed for Thu 10 Sep 21:30 — Alvin <@1002> <@1003>",
             "✅ Hard Radiant Malefic Star is confirmed for **<t:1789047000:F>** — Alvin <@1002> \
              <@1003>",
         ),
@@ -229,8 +210,6 @@ fn cases() -> Vec<Case> {
                 "moved",
                 moved(),
                 &PARTY,
-                "🔁 **HMaleficStar** moved: ~~Wed 09 Sep 21:00~~ → **Thu 10 Sep 21:30** — Alvin \
-                 <@1002> <@1003>\nReact ✅ if you're on, ❌ if not.\n_(via portal)_",
                 "🔁 Hard Radiant Malefic Star moved to **<t:1789047000:F>** — Alvin <@1002> \
                  <@1003>\n-# was Wed 09 Sep 21:00 · via portal · react ✅/❌ here",
             )
@@ -242,9 +221,6 @@ fn cases() -> Vec<Case> {
                 "moved quietly",
                 moved(),
                 &PARTY,
-                "🔁 **HMaleficStar** moved: ~~Wed 09 Sep 21:00~~ → **Thu 10 Sep 21:30** — Alvin \
-                 <@1002> <@1003>\nReact ✅ if you're on, ❌ if not.\n_(via portal)_\n\
-                 _🔕 quiet mode - nobody was notified_",
                 "🔁 Hard Radiant Malefic Star moved to **<t:1789047000:F>**\n\
                  -# was Wed 09 Sep 21:00 · via portal · react ✅/❌ here · 🔕 quiet mode, \
                  nobody was pinged · Alvin, kanon, <@1003>",
@@ -259,8 +235,6 @@ fn cases() -> Vec<Case> {
                 joining: ids(&["1002"]),
             },
             &PARTY,
-            "🔁 **HMaleficStar** (Thu 10 Sep 21:30): Alvin out · <@1002> in this week — the \
-             weekly timing is unchanged.",
             "🔁 Hard Radiant Malefic Star this week: <@1002> in for Alvin\n\
              -# Thu 10 Sep 21:30 · weekly party unchanged",
         ),
@@ -268,7 +242,6 @@ fn cases() -> Vec<Case> {
             "weekly timing changed",
             fixed_changed(),
             &WEEKLY,
-            "📌 Weekly timing changed: **HMaleficStar** · Wed 21:30 · Alvin <@1002>",
             "📌 Hard Radiant Malefic Star is now every **Wednesday 21:30** — Alvin <@1002>",
         ),
         Case {
@@ -277,8 +250,6 @@ fn cases() -> Vec<Case> {
                 "weekly timing changed quietly",
                 fixed_changed(),
                 &WEEKLY,
-                "📌 Weekly timing changed: **HMaleficStar** · Wed 21:30 · Alvin <@1002>\n\
-                 _🔕 quiet mode - nobody was notified_",
                 "📌 Hard Radiant Malefic Star is now every **Wednesday 21:30**\n\
                  -# 🔕 quiet mode, nobody was pinged · Alvin, kanon",
             )
@@ -293,7 +264,6 @@ fn cases() -> Vec<Case> {
                 participants: ids(&WEEKLY),
             },
             &WEEKLY,
-            "📌 Weekly timing added: **HMaleficStar** · Wed 21:30 · Alvin <@1002>",
             "📌 Hard Radiant Malefic Star is now every **Wednesday 21:30** — Alvin <@1002>\n\
              -# new weekly timing",
         ),
@@ -308,7 +278,6 @@ fn cases() -> Vec<Case> {
                 cancelled_runs: 2,
             },
             &WEEKLY,
-            "🗑️ Weekly timing removed: **HMaleficStar** · Wed 21:30 · Alvin <@1002>",
             "🗑️ Hard Radiant Malefic Star no longer runs every **Wednesday 21:30** — Alvin \
              <@1002>\n-# 2 runs cancelled",
         ),
@@ -320,8 +289,6 @@ fn cases() -> Vec<Case> {
                 to: utc(10, 13, 30),
             },
             &PARTY,
-            "🔁 **HMaleficStar** is back on its weekly timing: ~~Wed 09 Sep 21:00~~ → **Thu 10 \
-             Sep 21:30** — Alvin <@1002> <@1003>\nReact ✅ if you're on, ❌ if not.",
             "🔁 Hard Radiant Malefic Star is back on its weekly timing: **<t:1789047000:F>** — \
              Alvin <@1002> <@1003>\n-# was Wed 09 Sep 21:00 · react ✅/❌ here",
         ),
@@ -334,8 +301,6 @@ fn cases() -> Vec<Case> {
                 checkpoint: Some("before-raid".into()),
             },
             &[],
-            "↩️ Schedule restored to checkpoint **before-raid**\n• **HMaleficStar** Thu 10 Sep \
-             21:30",
             "↩️ Schedule restored to checkpoint **before-raid**\n\
              • Hard Radiant Malefic Star · <t:1789047000:F>\n-# 2 changes undone",
         ),
@@ -350,8 +315,6 @@ fn cases() -> Vec<Case> {
                     checkpoint: None,
                 },
                 &[],
-                "↩️ Schedule rolled back (1 change(s) undone)\n• **HMaleficStar** Thu 10 Sep \
-                 21:30\n_(via portal)_",
                 "↩️ Schedule rolled back\n• Hard Radiant Malefic Star · <t:1789047000:F>\n\
                  -# 1 change undone · via portal",
             )
@@ -366,7 +329,6 @@ fn cases() -> Vec<Case> {
                 fixed_ids: Vec::new(),
             },
             &[],
-            "📝 Schedule updated: retime the raid\n• **HMaleficStar** Thu 10 Sep 21:30",
             "📝 Schedule updated: retime the raid\n• Hard Radiant Malefic Star · \
              <t:1789047000:F>",
         ),
@@ -374,35 +336,30 @@ fn cases() -> Vec<Case> {
             "request approved",
             request(RequestDecision::Approved, None),
             &["1002"],
-            "📨 <@1002> your request was approved.",
             "📨 Request approved — <@1002>",
         ),
         case(
             "request approved with changes",
             edited(&["the party change"]),
             &["1002"],
-            "📨 <@1002> your request was approved with changes by an admin. Not approved: the party change.",
             "📨 Request approved with changes by an admin — <@1002>\n-# Not approved: the party change",
         ),
         case(
             "request approved with a new time only",
             edited(&[]),
             &["1002"],
-            "📨 <@1002> your request was approved with changes by an admin.",
             "📨 Request approved with changes by an admin — <@1002>",
         ),
         case(
             "request rejected",
             request(RequestDecision::Rejected, Some("the party is full")),
             &["1002"],
-            "📨 <@1002> your request was rejected: the party is full",
             "📨 Request rejected: the party is full — <@1002>",
         ),
         case(
             "request expired",
             request(RequestDecision::Expired, None),
             &["1002"],
-            "📨 <@1002> your request was expired.",
             "📨 Request expired — <@1002>",
         ),
     ]
@@ -428,8 +385,8 @@ fn render(case: &Case, kit: &CardKit) -> OutgoingMessage {
 }
 
 #[test]
-fn every_notice_kind_reads_in_the_redesigned_grammar() {
-    let kit = styled(MessageStyle::Redesigned);
+fn every_notice_kind_reads_in_one_grammar() {
+    let kit = kit(None);
     for case in cases() {
         let message = render(&case, &kit);
         assert_eq!(
@@ -443,27 +400,10 @@ fn every_notice_kind_reads_in_the_redesigned_grammar() {
 }
 
 #[test]
-fn classic_notices_are_unchanged_and_both_styles_ping_the_same_people() {
-    let classic = styled(MessageStyle::Classic);
-    let redesigned = styled(MessageStyle::Redesigned);
-    for case in cases() {
-        let old = render(&case, &classic);
-        assert_eq!(old.content.as_deref(), Some(case.classic), "{}", case.name);
-        assert_eq!(old, render(&case, &CardKit::default()), "{}", case.name);
-        assert_eq!(
-            old.allowed_mentions,
-            render(&case, &redesigned).allowed_mentions,
-            "{}",
-            case.name
-        );
-    }
-}
-
-#[test]
 fn difficulty_marks_label_the_bosses() {
     let kit = CardKit {
         marks: DifficultyMarks::new().with("h", "<:diff_h:77>"),
-        ..styled(MessageStyle::Redesigned)
+        ..kit(None)
     };
     assert_eq!(
         render(&cases()[0], &kit).content.as_deref(),
@@ -515,33 +455,26 @@ async fn drained_cancel(kit: CardKit) -> (String, OutgoingMessage) {
     (run, post)
 }
 
-/// A cancellation's outbox notice drained by the tick in each style: the
-/// redesigned text, the same allow-list.
+/// A cancellation's outbox notice drained by the tick.
 #[tokio::test]
-async fn the_tick_drains_notices_in_the_live_style() {
-    let (_, classic) = drained_cancel(styled(MessageStyle::Classic)).await;
-    let (_, redesigned) = drained_cancel(styled(MessageStyle::Redesigned)).await;
+async fn the_tick_drains_notices() {
+    let (_, drained) = drained_cancel(kit(None)).await;
     assert_eq!(
-        classic.content.as_deref(),
-        Some("🚫 **HKalos** (Thu 10 Sep) is cancelled — <@1001> Bex\n_(via portal)_")
-    );
-    assert_eq!(
-        redesigned.content.as_deref(),
+        drained.content.as_deref(),
         Some(
             "🚫 Hard Gatekeeper Kalos is cancelled — <@1001> Bex\n\
              -# Thu 10 Sep 23:00 · via portal"
         )
     );
-    assert_eq!(classic.allowed_mentions, redesigned.allowed_mentions);
 }
 
 const PORTAL: &str = "https://kanade-pub.example";
 
-/// `style` with the public portal origin, open while `open` is set (read
+/// The cards with the public portal origin, open while `open` is set (read
 /// live per render, like the digest's "Open portal" button).
-fn with_portal(style: MessageStyle, open: &Arc<AtomicBool>) -> CardKit {
+fn with_portal(open: &Arc<AtomicBool>) -> CardKit {
     let open = Arc::clone(open);
-    let mut kit = styled(style);
+    let mut kit = kit(None);
     kit.v2.portal = Some(PORTAL.into());
     kit.v2.portal_open = Some(Arc::new(move || open.load(Ordering::SeqCst)));
     kit
@@ -565,52 +498,28 @@ fn target(change: &NoticeChange) -> String {
 fn the_via_portal_mark_links_into_the_open_portal() {
     let open = Arc::new(AtomicBool::new(true));
     let closed = Arc::new(AtomicBool::new(false));
-    for style in [MessageStyle::Classic, MessageStyle::Redesigned] {
-        for case in cases() {
-            let case = Case {
-                via_portal: true,
-                ..case
-            };
-            let plain = render(&case, &styled(style));
-            // Closed (or no public origin): today's text, byte for byte.
-            assert_eq!(
-                render(&case, &with_portal(style, &closed)),
-                plain,
-                "{style:?} {}",
-                case.name
-            );
-            let text = plain.content.as_deref().expect("text");
-            let link = format!("[via portal](<{}>)", target(&case.change));
-            let linked = OutgoingMessage {
-                content: Some(text.replacen("via portal", &link, 1)),
-                ..plain.clone()
-            };
-            assert_eq!(
-                render(&case, &with_portal(style, &open)),
-                linked,
-                "{style:?} {}",
-                case.name
-            );
-        }
+    for case in cases() {
+        let case = Case {
+            via_portal: true,
+            ..case
+        };
+        let plain = render(&case, &kit(None));
+        // Closed (or no public origin): today's text, byte for byte.
+        assert_eq!(render(&case, &with_portal(&closed)), plain, "{}", case.name);
+        let text = plain.content.as_deref().expect("text");
+        let link = format!("[via portal](<{}>)", target(&case.change));
+        let linked = OutgoingMessage {
+            content: Some(text.replacen("via portal", &link, 1)),
+            ..plain.clone()
+        };
+        assert_eq!(render(&case, &with_portal(&open)), linked, "{}", case.name);
     }
 
     // The run link and the weekly-timing link, spelled out.
     let moved = &cases()[5];
     assert_eq!(moved.name, "moved");
     assert_eq!(
-        render(moved, &with_portal(MessageStyle::Classic, &open))
-            .content
-            .as_deref(),
-        Some(
-            "🔁 **HMaleficStar** moved: ~~Wed 09 Sep 21:00~~ → **Thu 10 Sep 21:30** — Alvin \
-             <@1002> <@1003>\nReact ✅ if you're on, ❌ if not.\n\
-             _([via portal](<https://kanade-pub.example/?run=r>))_"
-        )
-    );
-    assert_eq!(
-        render(moved, &with_portal(MessageStyle::Redesigned, &open))
-            .content
-            .as_deref(),
+        render(moved, &with_portal(&open)).content.as_deref(),
         Some(
             "🔁 Hard Radiant Malefic Star moved to **<t:1789047000:F>** — Alvin <@1002> \
              <@1003>\n-# was Wed 09 Sep 21:00 · [via portal](<https://kanade-pub.example/?run=r>) \
@@ -623,18 +532,7 @@ fn the_via_portal_mark_links_into_the_open_portal() {
     };
     assert_eq!(timing.name, "weekly timing changed");
     assert_eq!(
-        render(&timing, &with_portal(MessageStyle::Classic, &open))
-            .content
-            .as_deref(),
-        Some(
-            "📌 Weekly timing changed: **HMaleficStar** · Wed 21:30 · Alvin <@1002>\n\
-             _([via portal](<https://kanade-pub.example/mine?week=timings>))_"
-        )
-    );
-    assert_eq!(
-        render(&timing, &with_portal(MessageStyle::Redesigned, &open))
-            .content
-            .as_deref(),
+        render(&timing, &with_portal(&open)).content.as_deref(),
         Some(
             "📌 Hard Radiant Malefic Star is now every **Wednesday 21:30** — Alvin <@1002>\n\
              -# [via portal](<https://kanade-pub.example/mine?week=timings>)"
@@ -642,31 +540,27 @@ fn the_via_portal_mark_links_into_the_open_portal() {
     );
 
     // An open switch without a public origin keeps the plain mark.
-    for style in [MessageStyle::Classic, MessageStyle::Redesigned] {
-        let mut kit = with_portal(style, &open);
-        kit.v2.portal = None;
-        assert_eq!(render(moved, &kit), render(moved, &styled(style)));
-    }
+    let mut kit = with_portal(&open);
+    kit.v2.portal = None;
+    assert_eq!(render(moved, &kit), render(moved, &crate::cards::kit(None)));
 }
 
 #[test]
 fn flipping_the_portal_switch_between_renders_changes_the_mark() {
     let open = Arc::new(AtomicBool::new(false));
     let moved = &cases()[5];
-    for style in [MessageStyle::Classic, MessageStyle::Redesigned] {
-        let kit = with_portal(style, &open);
-        open.store(false, Ordering::SeqCst);
-        let closed = render(moved, &kit).content.expect("text");
-        open.store(true, Ordering::SeqCst);
-        let opened = render(moved, &kit).content.expect("text");
-        assert!(!closed.contains(PORTAL), "{style:?}: {closed}");
-        assert!(
-            opened.contains("[via portal](<https://kanade-pub.example/?run=r>)"),
-            "{style:?}: {opened}"
-        );
-        open.store(false, Ordering::SeqCst);
-        assert_eq!(render(moved, &kit).content.expect("text"), closed);
-    }
+    let kit = with_portal(&open);
+    open.store(false, Ordering::SeqCst);
+    let closed = render(moved, &kit).content.expect("text");
+    open.store(true, Ordering::SeqCst);
+    let opened = render(moved, &kit).content.expect("text");
+    assert!(!closed.contains(PORTAL), "{closed}");
+    assert!(
+        opened.contains("[via portal](<https://kanade-pub.example/?run=r>)"),
+        "{opened}"
+    );
+    open.store(false, Ordering::SeqCst);
+    assert_eq!(render(moved, &kit).content.expect("text"), closed);
 }
 
 /// An id that is unsafe in a URL path or query links the portal root.
@@ -685,24 +579,22 @@ fn a_run_id_unsafe_in_a_link_falls_back_to_the_root() {
         listed: ids(&PARTY),
         via_portal: true,
     };
-    for style in [MessageStyle::Classic, MessageStyle::Redesigned] {
-        let text = render_notice(
-            &notice,
-            &intent(),
-            &schedule,
-            &roster(),
-            ZONE,
-            false,
-            &with_portal(style, &open),
-        )
-        .and_then(|message| message.content)
-        .expect("text");
-        assert!(
-            text.contains("[via portal](<https://kanade-pub.example/>)"),
-            "{style:?}: {text}"
-        );
-        assert!(!text.contains("?run="), "{style:?}: {text}");
-    }
+    let text = render_notice(
+        &notice,
+        &intent(),
+        &schedule,
+        &roster(),
+        ZONE,
+        false,
+        &with_portal(&open),
+    )
+    .and_then(|message| message.content)
+    .expect("text");
+    assert!(
+        text.contains("[via portal](<https://kanade-pub.example/>)"),
+        "{text}"
+    );
+    assert!(!text.contains("?run="), "{text}");
     assert_eq!(
         via_portal_mark(&notice.change, Some(PORTAL)),
         "[via portal](<https://kanade-pub.example/>)"
@@ -715,15 +607,7 @@ fn a_run_id_unsafe_in_a_link_falls_back_to_the_root() {
 #[tokio::test]
 async fn the_tick_links_the_run_while_the_portal_is_open() {
     let open = Arc::new(AtomicBool::new(true));
-    let (run, classic) = drained_cancel(with_portal(MessageStyle::Classic, &open)).await;
-    assert_eq!(
-        classic.content,
-        Some(format!(
-            "🚫 **HKalos** (Thu 10 Sep) is cancelled — <@1001> Bex\n\
-             _([via portal](<{PORTAL}/?run={run}>))_"
-        ))
-    );
-    let (run, redesigned) = drained_cancel(with_portal(MessageStyle::Redesigned, &open)).await;
+    let (run, redesigned) = drained_cancel(with_portal(&open)).await;
     assert_eq!(
         redesigned.content,
         Some(format!(

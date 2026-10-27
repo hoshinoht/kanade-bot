@@ -6,26 +6,26 @@
 use std::sync::{Arc, Mutex};
 
 use chrono::{TimeZone, Utc};
-use kanade::chat::answer::{
+use kanade_chat::answer::{
     AnswerDeps, AnswerFailure, Generation, ProfanityGuard, ProfanityHit, ProfanitySide, Question,
     answer,
 };
-use kanade::chat::context::{ChatTurn, QuestionMessage, Reference, WITHHELD, build_turns};
-use kanade::chat::gate::{
+use kanade_chat::context::{ChatTurn, QuestionMessage, Reference, WITHHELD, build_turns};
+use kanade_chat::gate::{
     Author, ChannelInfo, ChatDecision, IncomingMessage, RATE_LIMITED, Summons, decide,
 };
-use kanade::chat::pilot::{
+use kanade_chat::pilot::{
     Admission, CONTENT_BLOCKED_REPLY, ChatPilot, Concluded, Finished, GuardLimits, LogFacts,
     ReplyPort, TrafficLimits,
 };
-use kanade::chat::sanitize::FAILURE_REPLY;
-use kanade::chat::tools::bundles::{Bundle, CardContext, ToolOffer};
-use kanade::chat::tools::{ToolContext, ToolName};
-use kanade::domain::model_log::ModelLogStore;
-use kanade::domain::model_log::{AllowanceOverride, ChatOutcome};
-use kanade::infrastructure::llm::governor::{Charge, Refused, SessionError, SessionFailure};
-use kanade::infrastructure::llm::{FakeAction, FakeProvider};
-use kanade::infrastructure::store::SqliteStore;
+use kanade_chat::sanitize::FAILURE_REPLY;
+use kanade_chat::tools::bundles::{Bundle, CardContext, ToolOffer};
+use kanade_chat::tools::{ToolContext, ToolName};
+use kanade_domain::model_log::ModelLogStore;
+use kanade_domain::model_log::{AllowanceOverride, ChatOutcome};
+use kanade_llm::governor::{Charge, Refused, SessionError, SessionFailure};
+use kanade_llm::{FakeAction, FakeProvider};
+use kanade_store::SqliteStore;
 use serde_json::json;
 
 use crate::looping::{Ports, conversation, settings};
@@ -377,7 +377,7 @@ fn message(
         content: content.into(),
         reference: reply_to.map(|(parent, parent_author, text)| Reference {
             message_id: Some(parent.into()),
-            resolved: Some(Box::new(kanade::chat::context::Parent {
+            resolved: Some(Box::new(kanade_chat::context::Parent {
                 id: parent.into(),
                 author_id: Some(parent_author.into()),
                 content: Some(text.into()),
@@ -790,9 +790,9 @@ impl ReplyPort for ReplyTo {
 const LINE: &str = "Language, please!";
 
 fn line_guard() -> ProfanityGuard {
-    ProfanityGuard::new(&kanade::domain::settings::Profanity {
+    ProfanityGuard::new(&kanade_domain::settings::Profanity {
         deflection_line: LINE.into(),
-        ..kanade::domain::settings::Profanity::default()
+        ..kanade_domain::settings::Profanity::default()
     })
 }
 

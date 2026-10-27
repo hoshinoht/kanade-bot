@@ -3,10 +3,9 @@
 use chrono::{DateTime, Utc};
 use serde::Serialize;
 
-use crate::{
-    api::state::{GuildAccess, PersonaOption},
-    domain::{members::MemberProfile, schedule::ScheduleSnapshot},
-};
+use crate::app::guild::GuildAccess;
+use kanade_domain::{members::MemberProfile, schedule::ScheduleSnapshot};
+use kanade_voice::persona::PersonaOption;
 
 #[derive(Serialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]

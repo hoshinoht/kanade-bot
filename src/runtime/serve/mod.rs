@@ -1,36 +1,47 @@
-//! Live `serve`: owns the SQLite store, serves the admin and public routers
-//! against it and, unless `KANADE_DISCORD_GATEWAY=0`, runs the Discord
-//! gateway, roster sync, extraction and delivery tick for the configured
-//! guild.
+//! Live `serve`: owns the SQLite store and runs the components
+//! `runtime.components` lists, each only when the build has its feature.
+//! `composition` composes what both share; `web/` (feature `web`) the admin
+//! and public routers against the store and, without the bot, the guild read
+//! over REST; `bot/` (feature `bot`) wires the Discord gateway, roster sync,
+//! extraction, chat and delivery tick for the configured guild and hands the
+//! web side its ports. The core here (store, settings, models, health,
+//! retention, character data, the guild's REST reads, the shutdown budget)
+//! serves both. Without `web` the admin listener answers only `/healthz`.
 
-pub mod api;
+#[cfg(feature = "bot")]
+pub mod bot;
 mod character_data;
-pub mod chat;
-mod chat_cards;
+#[cfg(feature = "bot")]
 mod chat_log;
-mod commands;
+pub mod composition;
 mod context;
-pub mod discord;
-pub mod extract;
-#[cfg(feature = "test-support")]
+pub mod guild;
+#[cfg(all(feature = "test-support", feature = "bot"))]
 pub mod harness;
 mod health;
+#[cfg(feature = "bot")]
+mod healthz;
+pub mod late;
 pub mod models;
 mod persona_log;
 pub mod restart;
 mod retention;
-mod sessions;
 pub mod settings;
-mod setup_secrets;
 pub(crate) mod store;
-mod tick;
+#[cfg(feature = "web")]
+pub mod web;
 
 use std::{future::Future, sync::Arc, time::Duration};
 
+#[cfg(feature = "web")]
+use twilight_model::id::Id;
+
+#[cfg(feature = "bot")]
+use crate::bot::gateway::{EventSource, shard};
+#[cfg(feature = "web")]
+use crate::{api::server, discord::guild_cache::GuildCache};
 use crate::{
-    api::{auth, server, state::StaticChannels},
-    bot::gateway::{EventSource, shard},
-    infrastructure::store::SqliteStore,
+    app::clock,
     runtime::{
         backup::crypt::Recipients,
         config::{BACKUP_RECIPIENTS_LABEL, ServeConfig},
@@ -38,11 +49,21 @@ use crate::{
         logging, secrets,
     },
 };
+use kanade_store::SqliteStore;
 
+#[cfg(feature = "bot")]
+use bot::discord::{self, Wiring};
+#[cfg(feature = "bot")]
+use bot::extract;
+// The harness and the serve tests reach the tick as `super::tick`.
+#[cfg(all(feature = "bot", any(test, feature = "test-support")))]
+use bot::tick;
 #[cfg(any(test, feature = "test-support"))]
 pub use character_data::Module as CharacterDataModule;
-use discord::{GatewayTransport, LateTransport, Wiring};
 use health::LiveHealth;
+use late::{GatewayTransport, LateTransport};
+#[cfg(feature = "web")]
+use web::sessions;
 
 /// How long closing waits for connections a timed-out drain left behind.
 const CLOSE_WAIT: Duration = Duration::from_secs(5);
@@ -54,7 +75,7 @@ pub mod budget {
 
     use tokio::{sync::watch, time::Instant};
 
-    use crate::{infrastructure::store::SqliteStore, runtime::logging};
+    use kanade_store::SqliteStore;
 
     /// Total from the signal to `serve` returning: deploy/compose.yaml
     /// `stop_grace_period` (30 s) minus a 5 s margin. Keep them coupled.
@@ -167,7 +188,7 @@ pub mod budget {
         /// One structured line per phase the deadline cut.
         pub fn cut(&self, phase: &'static str) {
             let elapsed = self.elapsed().unwrap_or_default();
-            logging::log!(
+            kanade_log::log!(
                 warn,
                 "shutdown_deadline_cut",
                 phase,
@@ -184,7 +205,7 @@ pub mod budget {
             let cutoff = async {
                 self.expired().await;
                 store.refuse_reads();
-                logging::log!(warn, "store_reads_refused");
+                kanade_log::log!(warn, "store_reads_refused");
                 std::future::pending::<()>().await;
             };
             tokio::select! {
@@ -233,11 +254,29 @@ pub mod budget {
 pub async fn run(config: ServeConfig) -> Result<(), Error> {
     let shutdown = async {
         tokio::select! {
-            () = server::wait_for_shutdown() => {}
-            () = restart::requested() => logging::log!(info, "restart_requested"),
+            () = wait_for_shutdown() => {}
+            () = restart::requested() => kanade_log::log!(info, "restart_requested"),
         }
     };
     serve_until(config, shutdown).await
+}
+
+/// `SIGINT` or `SIGTERM`.
+pub async fn wait_for_shutdown() {
+    let ctrl_c = async {
+        let _ = tokio::signal::ctrl_c().await;
+    };
+    #[cfg(unix)]
+    let terminate = async {
+        if let Ok(mut signal) =
+            tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+        {
+            signal.recv().await;
+        }
+    };
+    #[cfg(not(unix))]
+    let terminate = std::future::pending::<()>();
+    tokio::select! { () = ctrl_c => {}, () = terminate => {} }
 }
 
 /// [`run`] with the shutdown signal supplied (tests).
@@ -245,34 +284,64 @@ pub async fn serve_until(
     config: ServeConfig,
     shutdown: impl Future<Output = ()>,
 ) -> Result<(), Error> {
-    // Checked now so a missing secret fails the deploy, not the gateway later.
-    let token = config.discord.read_token()?;
-    // Likewise a broken backup key file fails the deploy, not the next backup.
+    // Checked now so a broken backup key file fails the deploy, not the
+    // next backup.
     if let Some(path) = &config.backup_recipients_file
         && secrets::present(path, BACKUP_RECIPIENTS_LABEL)?
     {
         Recipients::load(path, BACKUP_RECIPIENTS_LABEL)?;
     }
-    if !config.discord.gateway {
-        drop(token);
+    // Likewise a bad token fails the deploy, not the gateway later. The web
+    // component alone reads the guild with it when present.
+    if !config.components.bot {
+        let rest = config
+            .discord
+            .token
+            .read_optional()?
+            .map(|token| (Arc::new(LateTransport::new(token)), web_rest_every()));
         let store = store::open(&config.store).await?;
         let clock = budget::ShutdownClock::default();
-        let served = serve_store(&config, store.clone(), shutdown, &clock).await;
+        let served = serve_store(&config, store.clone(), shutdown, &clock, rest).await;
         store::close(store, clock.store(CLOSE_WAIT)).await;
         return served;
     }
+    serve_bot(&config, shutdown).await
+}
+
+#[cfg(feature = "bot")]
+async fn serve_bot(config: &ServeConfig, shutdown: impl Future<Output = ()>) -> Result<(), Error> {
+    let token = config.discord.read_token()?;
     let wiring = Wiring {
         source: shard(token.expose().to_owned()),
         transport: Arc::new(LateTransport::new(token)),
-        clock: Arc::new(auth::system_now),
+        clock: Arc::new(clock::system_now),
         tick: config.tick,
         extraction: extract::Timing::default(),
     };
-    serve_with(&config, shutdown, wiring).await
+    serve_with(config, shutdown, wiring).await
+}
+
+/// Never reached: the configuration refuses a component the build lacks.
+#[cfg(not(feature = "bot"))]
+async fn serve_bot(_: &ServeConfig, _: impl Future<Output = ()>) -> Result<(), Error> {
+    Err(crate::runtime::config::Components::missing("bot"))
+}
+
+#[cfg(feature = "web")]
+fn web_rest_every() -> Duration {
+    web::rest::EVERY
+}
+
+#[cfg(not(feature = "web"))]
+fn web_rest_every() -> Duration {
+    Duration::ZERO
 }
 
 /// Live serve over any gateway source and transport; closes the store it
-/// opens, after everything that used it has stopped.
+/// opens, after everything that used it has stopped. Without the `bot`
+/// component the source is unused and the transport only reads the guild
+/// (`web::rest`).
+#[cfg(feature = "bot")]
 pub async fn serve_with<S, T>(
     config: &ServeConfig,
     shutdown: impl Future<Output = ()>,
@@ -284,39 +353,77 @@ where
 {
     let store = store::open(&config.store).await?;
     let clock = budget::ShutdownClock::default();
-    let served = serve_live(config, store.clone(), shutdown, wiring, &clock).await;
+    let served = if config.components.bot {
+        serve_live(config, store.clone(), shutdown, wiring, &clock).await
+    } else {
+        let rest = Some((wiring.transport, web_rest_every()));
+        serve_store(config, store.clone(), shutdown, &clock, rest).await
+    };
     store::close(store, clock.store(CLOSE_WAIT)).await;
     served
 }
 
-async fn serve_store(
+/// The `web` component alone: the admin and public routers over the store;
+/// with `rest` (a bot token), the guild is read over REST every period.
+#[cfg(feature = "web")]
+async fn serve_store<T: GatewayTransport>(
     config: &ServeConfig,
     store: Arc<SqliteStore>,
     shutdown: impl Future<Output = ()>,
     clock: &budget::ShutdownClock,
+    rest: Option<(Arc<T>, Duration)>,
 ) -> Result<(), Error> {
-    // No guild cache without the gateway: channel pickers are empty.
+    // Empty and never available without the REST reader: channel pickers
+    // are empty and permissions unknown.
+    let cache = Arc::new(GuildCache::new(Id::new(config.guild.guild_id)));
     let health = LiveHealth::new(store.clone());
-    let mut composition = api::compose(
+    let mut composition =
+        composition::compose(config, store.clone(), cache.clone(), health).await?;
+    let character_data = character_data::start(
         config,
-        store.clone(),
-        Arc::new(StaticChannels(Vec::new())),
-        health,
+        &store,
+        &mut composition,
+        Arc::new(clock::system_now),
     )
     .await?;
-    let character_data =
-        character_data::start(config, &store, &mut composition, Arc::new(auth::system_now)).await?;
+    let rest = match rest {
+        Some((transport, every)) => {
+            let started = web::rest::RestGuild::start(
+                config,
+                store.clone(),
+                &mut composition,
+                cache,
+                transport,
+                every,
+            )
+            .await;
+            match started {
+                Ok(rest) => Some(rest),
+                Err(error) => {
+                    if let Some(module) = character_data {
+                        drop(composition);
+                        module.stop(CLOSE_WAIT).await;
+                    }
+                    return Err(error);
+                }
+            }
+        }
+        None => None,
+    };
     logging::discord_disabled();
     let prune =
         sessions::SessionPrune::start(composition.admin.member.clone(), sessions::PRUNE_EVERY);
     let retention =
-        retention::Retention::start(store, Arc::new(auth::system_now), retention::EVERY);
+        retention::Retention::start(store, Arc::new(clock::system_now), retention::EVERY);
     let shutdown = async {
         shutdown.await;
         clock.start();
         clock.clone()
     };
     let served = server::serve_bounded(&config.runtime, Some(composition.admin), shutdown).await;
+    if let Some(rest) = rest {
+        rest.stop(clock).await;
+    }
     if let Some(prune) = prune {
         prune.stop().await;
     }
@@ -327,6 +434,19 @@ async fn serve_store(
     served
 }
 
+/// Never reached: the configuration refuses a component the build lacks.
+#[cfg(not(feature = "web"))]
+async fn serve_store<T: GatewayTransport>(
+    _: &ServeConfig,
+    _: Arc<SqliteStore>,
+    _: impl Future<Output = ()>,
+    _: &budget::ShutdownClock,
+    _: Option<(Arc<T>, Duration)>,
+) -> Result<(), Error> {
+    Err(crate::runtime::config::Components::missing("web"))
+}
+
+#[cfg(feature = "bot")]
 async fn serve_live<S, T>(
     config: &ServeConfig,
     store: Arc<SqliteStore>,
@@ -344,7 +464,7 @@ where
         .with_discord(prepared.probe.clone(), prepared.tick_status.clone())
         .with_extraction(prepared.extraction.clone());
     let mut composition =
-        api::compose(config, store.clone(), prepared.cache.clone(), health).await?;
+        composition::compose(config, store.clone(), prepared.cache.clone(), health).await?;
     let retention_clock = Arc::clone(&wiring.clock);
     let character_data =
         character_data::start(config, &store, &mut composition, Arc::clone(&wiring.clock)).await?;
@@ -366,17 +486,35 @@ where
         discord.until(shutdown).await;
         clock.clone()
     };
-    let prune =
-        sessions::SessionPrune::start(composition.admin.member.clone(), sessions::PRUNE_EVERY);
-    let served = clock
-        .refusing_reads(
-            &store,
-            server::serve_bounded(&config.runtime, Some(composition.admin), stopped),
-        )
-        .await;
-    if let Some(prune) = prune {
-        prune.stop().await;
-    }
+    let served = match config.components.web {
+        #[cfg(feature = "web")]
+        true => {
+            let prune = sessions::SessionPrune::start(
+                composition.admin.member.clone(),
+                sessions::PRUNE_EVERY,
+            );
+            let served = clock
+                .refusing_reads(
+                    &store,
+                    server::serve_bounded(&config.runtime, Some(composition.admin), stopped),
+                )
+                .await;
+            if let Some(prune) = prune {
+                prune.stop().await;
+            }
+            served
+        }
+        // Bot only: no admin or public router (nor sessions to prune); the
+        // composition stays with the Discord side, which reads it.
+        _ => {
+            logging::web_disabled();
+            let health: Arc<dyn crate::runtime::application::HealthProbe> =
+                composition.health.clone();
+            clock
+                .refusing_reads(&store, healthz::serve(&config.runtime, health, stopped))
+                .await
+        }
+    };
     retention.stop().await;
     discord.stop().await;
     if let Some(module) = character_data {
@@ -385,9 +523,9 @@ where
     discord.result().and(served)
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "bot", feature = "web"))]
 mod chat_tests;
-#[cfg(test)]
+#[cfg(all(test, feature = "bot", feature = "web"))]
 mod live_tests;
-#[cfg(test)]
+#[cfg(all(test, feature = "bot", feature = "web"))]
 mod tests;

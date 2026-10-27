@@ -48,7 +48,7 @@
         "content": { "type": "string" },
         "estimate": {
           "oneOf": [{ "$ref": "#/$defs/EstimateImage" }, { "type": "null" }],
-          "description": "The \"Who carries\" image a new post attaches between the text and the embeds (redesigned day-of and countdown cards). null: classic style, another kind, or the roster or cached estimates off."
+          "description": "The \"Who carries\" image a new post attaches between the text and the embeds (day-of and countdown cards). null: another kind, or the roster or cached estimates off."
         },
         "color": { "type": "string", "pattern": "^#[0-9a-f]{6}$" },
         "title": { "$ref": "common.json#/$defs/NullableString" },

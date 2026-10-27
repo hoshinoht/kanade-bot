@@ -3,7 +3,7 @@
 
 use std::sync::Arc;
 
-use kanade::api::{auth::crypto::SealedSecret, listeners::Site};
+use kanade::{api::listeners::Site, app::crypto::SealedSecret};
 
 use crate::support::{self, ADMIN_HOST, Fixture, PUBLIC_HOST, get, raw, request};
 

@@ -1,8 +1,9 @@
 # v5 runtime bootstrap
 
-`kanade` is the single Rust executable, version `1.0.0-beta.14` (the release
-label everywhere: Cargo, CHANGELOG and the `v1.0.0-beta.14` git tag). The crate version
-is the one source: `kanade --version` prints `kanade 1.0.0-beta.14` without
+`kanade` is the single Rust executable, version `1.0.0-beta.15` (the release
+label everywhere: Cargo, CHANGELOG and its `v1.0.0-beta.15` git tag once it
+is released; the last release is tagged `v1.0.0-beta.14`). The crate version
+is the one source: `kanade --version` prints `kanade 1.0.0-beta.15` without
 reading any settings, and the `server_started` log line, the admin Account
 page and the image's OCI version label show the same number; the commit is
 only in the image's revision label.
@@ -53,8 +54,9 @@ or chat never started, `idle`, `busy` while any channel is answering,
 the pilot role or a chat category, or while the clean-retry storm guard is
 suspended; chat never decides `status`). `status` is `ok` (HTTP 200) only when storage is ok,
 Discord is `ready` and the scheduler `running`; otherwise `degraded` (503).
-With `KANADE_DISCORD_GATEWAY=0`, `scheduler`/`discord` are `disabled` and
-only storage decides. The live gateway also reports `extraction`
+With `web` alone (`KANADE_COMPONENTS=web`), `scheduler`/`discord` are
+`disabled` and only storage decides; with `bot` alone the admin listener
+serves this document and nothing else. The live gateway also reports `extraction`
 (informational, never degrades `status`): `disabled` (switched off or
 paused), `degraded` (on, but no model gateway or extraction model, or the
 latest extraction call `failed` or was `turned_away`), `running` (a rescan
@@ -124,7 +126,8 @@ lists are comma-separated.
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `KANADE_DISCORD_GATEWAY` | `1` | `0` or `1`. `0` serves the admin API only: no gateway, roster sync or delivery tick (tests, maintenance). The bot token is the secrets file `discord_token`, read at startup (also with the gateway off), so a missing secret fails the deploy. Plain `KANADE_DISCORD_TOKEN`/`DISCORD_TOKEN` are refused by every command. |
+| `KANADE_COMPONENTS` | `bot,web` (every component the build has) | What `serve` runs: `bot` (the Discord gateway, roster sync, delivery tick, chat and extraction) and `web` (the admin app and the member portal), each at most once. `web` alone serves the admin app and portal without the bot: no gateway or tick; with the bot token present it reads the guild over Discord's REST API every 5 minutes (see "Web only"). `bot` alone serves no admin or public routes: the admin listener answers only `/healthz` (else `404`), the public listener is not bound and cards carry no portal button. A name the build lacks, a duplicate or an empty entry refuses startup; `serve --offline` needs `web` (usage error otherwise). Replaces `KANADE_DISCORD_GATEWAY` / `discord.gateway`, which now refuse startup. |
+| (secrets file `discord_token`) | required with `bot` | The bot token, read at startup while `bot` runs (a missing secret fails the deploy); optional with `web` alone. Plain `KANADE_DISCORD_TOKEN`/`DISCORD_TOKEN` are refused by every command. |
 | `KANADE_GUILD_ID`, `KANADE_BOSSING_ROLE_ID` | required | Snowflakes. |
 | `KANADE_ADMIN_ROLE_ID`, `KANADE_CHAT_PILOT_ROLE_ID` | unset | Snowflakes. |
 | `KANADE_DEBUG_USER_IDS` | empty | Snowflake list. |
@@ -174,6 +177,25 @@ data leaves the homelab. Unknown or not-yet-listed aliases are treated as
 external until a successful listing establishes their zone. A provider's
 retention terms (such as Kanata's or another provider's zero data retention)
 concern retention, not transmission.
+
+### Web only
+
+With `KANADE_COMPONENTS=web` there is no gateway, roster task or delivery
+tick. When the secrets file `discord_token` is present, serve reads the
+guild over Discord's REST API at startup and every 5 minutes: the bot's
+user (`GET /users/@me`), the guild's owner and roles (`GET /guilds/{id}`),
+its channels, and every member page. The channel pickers, role names and
+Setup's access report read that view; the roster is reconciled as the bot
+does on `GUILD_CREATE` (rows pruned of deleted roles, members who left or
+lost the bossing role marked so, their admin and portal sessions ended), and
+a page that fails concludes no departures (logged WARN
+`rest_guild_read_failed {step, outcome}`; a complete pass logs
+`rest_guild_read`). Setup's application read and the preview's difficulty
+marks use the same token. It never posts or reads messages. Guides stay
+editable but publish, unpublish and "Search again" answer `503
+discord_offline`. Without the token nothing contacts Discord: pickers are
+empty and permissions unknown. `/healthz` reports `discord` and `scheduler`
+`disabled`.
 
 ### Other OpenAI-compatible providers
 
@@ -317,6 +339,7 @@ Each kind of value has one owner:
 
 | Key | Variable | TOML type |
 |---|---|---|
+| `runtime.components` | `KANADE_COMPONENTS` | non-empty string list |
 | `runtime.timezone` | `KANADE_TIMEZONE` | string |
 | `runtime.instance_id` | `KANADE_INSTANCE_ID` | string |
 | `runtime.tick_seconds` | `KANADE_TICK_SECONDS` | integer |
@@ -324,7 +347,6 @@ Each kind of value has one owner:
 | `runtime.healthcheck_timeout_seconds` | `KANADE_HEALTHCHECK_TIMEOUT_SECONDS` | integer |
 | `runtime.boss_week_reset_weekday` | `KANADE_BOSS_WEEK_RESET_WEEKDAY` | string |
 | `runtime.boss_week_reset_time` | `KANADE_BOSS_WEEK_RESET_TIME` | string |
-| `discord.gateway` | `KANADE_DISCORD_GATEWAY` | bool |
 | `discord.guild_id` | `KANADE_GUILD_ID` | snowflake (string or integer) |
 | `discord.bossing_role_id` | `KANADE_BOSSING_ROLE_ID` | snowflake (string or integer) |
 | `discord.admin_role_id` | `KANADE_ADMIN_ROLE_ID` | snowflake (string or integer) |
@@ -719,10 +741,12 @@ harden-and-package revisits connection limits.
 
 `serve --offline` builds neither `AdminAuth` nor `ApiState`, so admin reads
 answer `503 auth_unavailable`. Live `serve` composes both (above) with
-the gateway's `GuildCache` as the channel list. Gateway wiring (see
-"Live serve"): `BotEvent::Roster` → `api::auth::roster::on_roster_update`,
-`BotEvent::GuildAvailable` → role pruning then `on_guild_available`, both on
-one sequential roster task with startup reconciliation, so the Discord
+the `GuildCache` as the channel list, fed by the gateway (or, with `web`
+alone, by the REST guild sync). Roster wiring: member updates and guild
+availability reach `app::roster` (store side) on one sequential roster task
+with startup reconciliation, and its `RosterHooks` end sessions and drop
+portraits through the web side (`api::auth::roster`; a no-op without `web`,
+where the web side's 5-minute re-check ends them later), so the Discord
 sign-in preconditions (ordering, reconciliation, admin-role deletion) hold.
 Rescans (A7): live serve builds the extractor's `Rescans` queue (Discord
 `History` backfill, `Extractor` over the governed model client, the
@@ -917,65 +941,63 @@ them, so the production graph has no SQLx MySQL/RSA path from the spike.
 
 ## Source layout
 
-The bootstrap is organized by responsibility rather than a flat source
-directory:
+The repository is a Cargo workspace: one `kanade` binary (the root package)
+over library crates in `crates/`, one `Cargo.lock`, shared exact pins in
+`[workspace.dependencies]`. Each crate builds and tests on its own
+(`cargo test -p kanade-store`); the root `test-support` feature turns on every
+crate's.
+
+| Crate | Holds | Depends on |
+|---|---|---|
+| `kanade-log` | JSON log lines (`log!`, `event`, `emit`) | — |
+| `kanade-domain` | pure rules: scheduling, attendance, completion, notify planning, settings, history | — |
+| `kanade-store` | SQLite store and delivery journal, both migration sets | domain, log |
+| `kanade-llm` | OpenAI-compatible model gateway and governor | domain |
+| `kanade-files` | boss catalog, boss knowledge, art and guide source loaders | domain, log |
+| `kanade-chardata` | NEXON client, scouter client, character data service | domain, store, log |
+| `kanade-voice` | persona bundles, policy prompts, nudge rewrites | domain, llm, files, log |
+| `kanade-extract` | extraction rules and pipeline, rescans | domain, llm, voice |
+| `kanade-chat` | chatbot driver, tools, context, gate | domain, llm, voice, extract |
+
+The root package keeps what composes them:
 
 ```text
 src/
-├── lib.rs
-├── main.rs
-├── api/
-│   ├── mod.rs
-│   ├── server.rs        # binding, both listeners, graceful drain
-│   ├── listeners.rs     # per-origin Site policy and router assembly
-│   ├── admin/           # admin-only routes (auth.rs: sign-in, session, logout)
-│   ├── auth/            # sessions, CSRF, Discord OAuth, Tailscale, break-glass, staff gate
-│   ├── public/mod.rs    # public-only routes (closed portal)
-│   ├── guard/           # host, proxy, headers, limits
-│   ├── assets.rs        # shell, art, identity
-│   └── error.rs         # ApiError
-├── cli/
-│   ├── mod.rs
-│   ├── admin/           # `portal`/`sessions`: arguments, client.rs (signed-in loopback admin API calls)
-│   ├── backup.rs        # `backup` snapshot and age tool arguments
-│   ├── restore.rs       # `restore` arguments
-│   ├── token.rs         # `token rotate`
-│   └── healthcheck.rs
+├── main.rs        # crypto provider, process inputs, exit codes
+├── lib.rs         # module groups; `api` needs feature `web`, `bot` feature `bot`
+├── app/           # shared by both sides: scheduler writer, store reads, guild facts,
+│                  #   staff rule, settings desk, rescans, roster persistence, ports
+├── discord/       # Discord REST transport, mentions, guild cache, identity, reconcile (no gateway)
+├── cards/         # card rendering, previews, wording, estimate chart
+├── bot/           # the Discord gateway bot (feature `bot`)
+├── api/           # admin and public HTTP APIs (feature `web`)
+├── cli/           # command-line parsing, healthcheck, `portal`/`sessions` client (web)
 └── runtime/
-    ├── mod.rs
-    ├── application.rs   # command dispatch, `/healthz` document
-    ├── backup/          # `kanade backup`: snapshot, age keys (crypt.rs), keygen/encrypt/decrypt (tools.rs)
-    ├── restore.rs       # `kanade restore`: owner check, staged validation, side copy and swap
-    ├── serve/           # live serve: store, settings, API composition, health, retention, discord/ (gateway, roster, tick)
-    ├── config.rs
-    ├── error.rs
-    ├── logging.rs
-    └── tls.rs
-
-tests/
-├── api/                 # listeners, guards, headers, static serving
-└── runtime_bootstrap/
-    └── main.rs
+    ├── application.rs, config/, secrets.rs, error.rs, logging.rs, tls.rs, backup/, restore.rs
+    └── serve/     # shared core (store, settings, health, retention, character data)
+        ├── bot/   # gateway, tick, chat, extraction, commands (feature `bot`)
+        └── web/   # listeners, sessions, setup secrets, REST guild sync (feature `web`)
 ```
 
-`main.rs` remains the entrypoint: it installs the crypto provider, captures
-process inputs, delegates to the runtime application, and maps failures to
-exit codes. `lib.rs` only declares the top-level module groups. The nested
-module paths are canonical; the former flat paths are not re-exported.
+`src/bot` and `src/api` never import each other; what both need lives in
+`app`, `discord` or `cards`. Integration suites stay in the root `tests/`,
+each with the features it needs (`required-features` in `Cargo.toml`).
 
-### Feature-boundary roadmap
+### Bot and web as separate builds
 
-Future implementation directories will be added with their first real module;
-the bootstrap does not create empty placeholders:
+The root features `bot` and `web` (default both) choose what the binary can
+run; `runtime.components` chooses what a `serve` runs. A bot-only build has no
+HTTP framework and no `src/api`; a web-only build has no gateway crate and no
+`src/bot`. Naming a component the build lacks refuses startup.
 
-- `bot/` — Discord client, commands, cards, and workers.
-- `chat/` — conversation tools, prompts, and safety.
-- `extract/` — extraction pipeline.
-- `domain/` — pure scheduling rules.
-- `infrastructure/` — persistence and external integrations.
-- `api/` — routes, authentication, and wire types.
-- `runtime/` — process start, configuration, and lifecycle.
-- `cli/` — operational commands and outbound healthcheck client.
+```sh
+cargo build --release --no-default-features --features bot   # Discord bot only
+cargo build --release --no-default-features --features web   # admin app and portal only
+```
+
+The image is built with both. One `serve` owns a store (a second process is
+refused), so bot and web on the same data always run in one process; pick
+the components per deployment, not per process on a shared store.
 
 ## Log events
 

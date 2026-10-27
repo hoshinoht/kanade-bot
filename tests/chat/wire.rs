@@ -1,6 +1,6 @@
 //! The tracked Kanade persona.
 
-use kanade::chat::persona::{CompiledPersona, PersonaId, PersonaRoot};
+use kanade_voice::persona::{CompiledPersona, PersonaId, PersonaRoot};
 
 /// v4's tracked public Kanade bundle with no reply profile.
 pub fn kanade() -> CompiledPersona {

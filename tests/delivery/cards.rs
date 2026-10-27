@@ -8,34 +8,33 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use chrono::{DateTime, TimeDelta, TimeZone, Utc};
-use kanade::bot::delivery::cards::{
-    ArtFile, ArtKind, ArtSource, COLOUR_ALL_SET, COLOUR_COUNTDOWN, COLOUR_DIGEST, CardKit,
-    DIGEST_FOOTER, HeadingRewrite, PersonaSource, REACT_HINT, ReminderCardStore, UNNAMED,
-};
 use kanade::bot::delivery::{
     CardRefresh, HeaderPregen, MAX_PENDING_RUNS, PREGEN_DEADLINE, PregenReport, RefreshQueue,
     SendOutcome,
 };
-use kanade::bot::transport::{
+use kanade::cards::{CardKit, HeadingRewrite, PersonaSource, UNNAMED};
+use kanade::discord::transport::{
     Call, FakeDiscord, MessageEdit, Op, OutgoingMessage, RejectionKind, Step,
 };
-use kanade::chat::nudge::{NudgeRewriter, RewriteFailure, RewritePrompt, SharedRewriter};
-use kanade::chat::persona::{CompiledPersona, PersonaId, PersonaRoot, parse_bundle};
-use kanade::domain::catalog::{BossSpec, BossTable, CatalogSpec, DifficultySpec, GuideSpec};
-use kanade::domain::drafts::{DraftCreated, DraftKind, DraftStore, MergeCommit, NewDraft};
-use kanade::domain::history::{Actor, Origin, Surface};
-use kanade::domain::history::{BlameTarget, ChangeHistory, ChangeMeta, Expect, Precondition};
-use kanade::domain::ids::{RandomIds, short_id};
-use kanade::domain::members::{Member, PingLevel, Roster};
-use kanade::domain::notify::{DedupeKey, DeliveryJournal, DeliveryTarget};
-use kanade::domain::schedule::{
+use kanade_domain::art::{ArtFile, ArtSource};
+use kanade_domain::catalog::{BossSpec, BossTable, CatalogSpec, DifficultySpec, GuideSpec};
+use kanade_domain::drafts::{DraftCreated, DraftKind, DraftStore, MergeCommit, NewDraft};
+use kanade_domain::guides::ArtKind;
+use kanade_domain::history::{Actor, Origin, Surface};
+use kanade_domain::history::{BlameTarget, ChangeHistory, ChangeMeta, Expect, Precondition};
+use kanade_domain::ids::RandomIds;
+use kanade_domain::members::{Member, PingLevel, Roster};
+use kanade_domain::notify::{DedupeKey, DeliveryJournal, DeliveryTarget, ReminderCardStore};
+use kanade_domain::schedule::{
     Change, ChangeSet, EMOJI_NO, EMOJI_YES, NewRun, Rsvp, RsvpSource, RsvpState, Run, RunSource,
     RunStatus,
 };
-use kanade::domain::scheduler::StoreError;
-use kanade::domain::settings::{MessageStyle, RunLengths};
-use kanade::infrastructure::files::BossArt;
-use kanade::infrastructure::store::SqliteStore;
+use kanade_domain::scheduler::StoreError;
+use kanade_domain::settings::RunLengths;
+use kanade_files::BossArt;
+use kanade_store::SqliteStore;
+use kanade_voice::nudge::{NudgeRewriter, RewriteFailure, RewritePrompt, SharedRewriter};
+use kanade_voice::persona::{CompiledPersona, PersonaId, PersonaRoot, parse_bundle};
 use tokio::sync::Notify;
 use twilight_model::channel::message::Embed;
 use twilight_model::id::Id;
@@ -101,16 +100,7 @@ pub(crate) fn kit(art: Option<&TempDir>) -> CardKit {
     }
 }
 
-/// `cards` in the redesigned style, the only one whose countdown and digest
-/// show a persona phrase (classic is v4-exact).
-pub(crate) fn redesigned(cards: CardKit) -> CardKit {
-    CardKit {
-        style: Some(Arc::new(|| MessageStyle::Redesigned)),
-        ..cards
-    }
-}
-
-/// Whether a redesigned countdown's content carries `phrase` after its
+/// Whether a countdown's content carries `phrase` after its
 /// live countdown (`⏰ **…** <t:…:R> · {phrase} …`).
 pub(crate) fn shows_phrase(content: Option<&str>, phrase: &str) -> bool {
     content.is_some_and(|content| {
@@ -290,124 +280,12 @@ pub(crate) async fn seed_day_of<S: Store>(store: &S) -> (String, String) {
     (star, kalos)
 }
 
-const DAY_OF_CONTENT: &str = "📅 **Today — Thu 10 Sep**\n<@1001> Bex";
+/// The day-of heading line; the tallies and mentions follow it.
+const DAY_OF_CONTENT: &str = "📅 **Today — Thu 10 Sep**";
 
-async fn day_of_card_labels_waiting_members<S: Store>(store: &S) {
-    assert_eq!(
-        scenarios::config().policy.attendance.mode,
-        kanade::domain::attendance::AttendanceMode::V4Compat,
-        "the named card-text difference applies even in V4_COMPAT"
-    );
-    let art = art_dir();
-    let world = world();
-    seed_day_of(store).await;
-    let mut delivery = scenarios::delivery(store, &world, &world.fake).with_cards(kit(Some(&art)));
-    let report = delivery.dispatch_reminders(now()).await.expect("dispatch");
-    assert!(matches!(
-        report.sends.as_slice(),
-        [send] if matches!(send.outcome, SendOutcome::Bound(_))
-    ));
-    let posts = created(&world.fake);
-    let [message] = posts.as_slice() else {
-        panic!("one morning card: {posts:?}");
-    };
-    assert_eq!(message.content.as_deref(), Some(DAY_OF_CONTENT));
-    let embed = &message.embeds[0];
-    assert_eq!(
-        fields(embed),
-        [
-            (
-                "🕘 21:00  ·  HMaleficStar".to_owned(),
-                "**HMaleficStar** · Radiant Malefic Star (Hard, Lv280)\n⚠️ unconfirmed · 0/2 ✅\nStill to answer: <@1001> Bex"
-                    .to_owned()
-            ),
-            (
-                "🕒 own time  ·  XKalos".to_owned(),
-                "**XKalos** · Gatekeeper Kalos (Extreme, Lv265)\n🕒 own time · 0/1 ✅\nStill to answer: <@1001>"
-                    .to_owned()
-            ),
-        ]
-    );
-    assert_eq!(embed.description, None);
-    assert_eq!(
-        embed.footer.as_ref().map(|f| f.text.as_str()),
-        Some(REACT_HINT)
-    );
-    assert_eq!(embed.color, Some(STAR_COLOUR), "the lead boss's colour");
-    assert_eq!(
-        pictures(embed),
-        (
-            Some("attachment://MaleficStar.png".to_owned()),
-            Some("attachment://image-MaleficStar.png".to_owned())
-        ),
-        "mixed-case art keys resolve to exact-case files"
-    );
-    assert_eq!(
-        uploads(message),
-        [
-            ("MaleficStar.png".to_owned(), b"star-portrait".to_vec()),
-            ("image-MaleficStar.png".to_owned(), b"star-entry".to_vec()),
-        ]
-    );
-    assert_eq!(allowed(message), ["1001"], "the allow-list is the intent's");
-    assert_eq!(report.sends[0].intent.mentions, ["1001"]);
-}
-
-#[tokio::test]
-async fn day_of_card_labels_waiting_even_in_v4_compat() {
-    day_of_card_labels_waiting_members(&SqliteStore::open_temp().await).await;
-}
-
-async fn day_of_waiting_matches_answers<S: Store>(store: &S, second_yes: bool, quiet: bool) {
-    let mut world = world();
-    world.roster.upsert(Member {
-        user_id: "1003".into(),
-        display_name: Some("SampleThird".into()),
-        has_role: true,
-        ping_level: PingLevel::Off,
-        ..Member::default()
-    });
-    let id = run(
-        store,
-        &["HMaleficStar"],
-        &["1001", "1002", "1003"],
-        tonight(),
-        RunStatus::Planned,
-    )
-    .await;
-    answer(store, &id, "1001", true, now() - TimeDelta::minutes(5)).await;
-    answer(
-        store,
-        &id,
-        "1002",
-        second_yes,
-        now() - TimeDelta::minutes(5),
-    )
-    .await;
-    due(store, &id, "day_of").await;
-    let mut delivery = scenarios::delivery(store, &world, &world.fake).with_cards(kit(None));
-    delivery.config.quiet_mode = quiet;
-    delivery.dispatch_reminders(now()).await.expect("day-of");
-    let message = created(&world.fake).pop().expect("posted");
-    let top = message.content.as_deref().expect("top ping line");
-    assert!(top.contains("Bex") && top.contains("SampleThird"), "{top}");
-    let field = &message.embeds[0].fields[0].value;
-    assert!(
-        field.contains(if second_yes { "2/3" } else { "1/3" }),
-        "{field}"
-    );
-    assert!(field.ends_with("Still to answer: SampleThird"), "{field}");
-    assert!(!field.contains("Aria") && !field.contains("Bex"), "{field}");
-    if quiet {
-        assert!(!top.contains("<@") && !field.contains("<@"));
-        assert!(allowed(&message).is_empty());
-    }
-}
-
-#[tokio::test]
-async fn day_of_tally_names_only_the_waiting_member() {
-    day_of_waiting_matches_answers(&SqliteStore::open_temp().await, true, false).await;
-    day_of_waiting_matches_answers(&SqliteStore::open_temp().await, false, true).await;
+/// A post's first line: the day-of heading.
+fn heading(content: Option<&str>) -> Option<&str> {
+    content.and_then(|text| text.lines().next())
 }
 
 /// A countdown for a fresh Kalos run 14 minutes out with `answers`.
@@ -425,152 +303,6 @@ async fn countdown<S: Store>(
     let mut delivery = scenarios::delivery(store, world, &world.fake).with_cards(kit);
     delivery.dispatch_reminders(now()).await.expect("dispatch");
     created(&world.fake).pop().expect("countdown posted")
-}
-
-const KALOS_DETAIL: &str = "**XKalos** · Gatekeeper Kalos (Extreme, Lv265)";
-
-async fn countdown_states_match_v4<S: Store>(store: &S) {
-    let art = art_dir();
-    let world = world();
-
-    let pending = countdown(store, &world, kit(Some(&art)), &[]).await;
-    assert_eq!(
-        pending.content.as_deref(),
-        Some("⏰ **XKalos** in 15m (20:14) — <@1001> Bex")
-    );
-    let embed = &pending.embeds[0];
-    assert_eq!(
-        embed.description.as_deref(),
-        Some(
-            format!("{KALOS_DETAIL}\n⚠️ unconfirmed · 0/2 ✅\nStill to answer: <@1001> Bex")
-                .as_str()
-        )
-    );
-    assert_eq!(
-        embed.footer.as_ref().map(|f| f.text.as_str()),
-        Some(REACT_HINT)
-    );
-    assert_eq!(embed.color, Some(COLOUR_COUNTDOWN));
-    assert_eq!(
-        pictures(embed),
-        (Some("attachment://Kalos.webp".to_owned()), None),
-        "a thumbnail only; no entry art on countdowns"
-    );
-    assert_eq!(
-        uploads(&pending),
-        [("Kalos.webp".to_owned(), b"kalos-portrait".to_vec())]
-    );
-    assert_eq!(allowed(&pending), ["1001"]);
-
-    let out = countdown(
-        store,
-        &world,
-        kit(Some(&art)),
-        &[("1001", true), ("1002", false)],
-    )
-    .await;
-    assert_eq!(
-        out.content.as_deref(),
-        Some("⏰ **XKalos** in 15m (20:14) — <@1001> · Bex out")
-    );
-    let embed = &out.embeds[0];
-    assert_eq!(
-        embed.description.as_deref(),
-        Some(format!("{KALOS_DETAIL}\n❗ at risk · 1/2 ✅ · 1 ❌").as_str())
-    );
-    assert_eq!(embed.footer, None, "nothing left to ask");
-    assert_eq!(embed.color, Some(COLOUR_COUNTDOWN), "not settled either");
-    assert_eq!(allowed(&out), ["1001"], "the decliner is not pinged");
-
-    let set = countdown(
-        store,
-        &world,
-        kit(Some(&art)),
-        &[("1001", true), ("1002", true)],
-    )
-    .await;
-    assert_eq!(
-        set.content.as_deref(),
-        Some("⏰ **XKalos** in 15m (20:14) — everyone's confirmed ✅")
-    );
-    let embed = &set.embeds[0];
-    assert_eq!(
-        embed.description.as_deref(),
-        Some(format!("{KALOS_DETAIL}\n✅ confirmed · 2/2 ✅").as_str())
-    );
-    assert_eq!(embed.footer, None);
-    assert_eq!(embed.color, Some(COLOUR_ALL_SET));
-}
-
-#[tokio::test]
-async fn countdown_cards_pin_pending_out_and_all_set() {
-    countdown_states_match_v4(&SqliteStore::open_temp().await).await;
-}
-
-async fn digest_matches_v4<S: Store>(store: &S) {
-    let art = art_dir();
-    let world = world();
-    let kalos = run(store, &["XKalos"], &["1001"], tonight(), RunStatus::Planned).await;
-    let star = run(
-        store,
-        &["HMaleficStar"],
-        &["1002"],
-        tonight() + TimeDelta::days(2),
-        RunStatus::Otot,
-    )
-    .await;
-    mark_digest_week(store, previous_week(), now()).await;
-    let mut delivery = scenarios::delivery(store, &world, &world.fake).with_cards(kit(Some(&art)));
-    delivery.post_week_digest(now()).await.expect("digest");
-    let posts = created(&world.fake);
-    let [message] = posts.as_slice() else {
-        panic!("one digest: {posts:?}");
-    };
-    assert_eq!(
-        message.content.as_deref(),
-        Some("🗓️ Boss week of Wed 09 Sep")
-    );
-    let embed = &message.embeds[0];
-    assert_eq!(
-        embed.description.as_deref(),
-        Some("**0/2 Cleared** · 2 run(s) across 2 day(s) · **1** still unconfirmed ⚠️")
-    );
-    assert_eq!(
-        fields(embed),
-        [
-            (
-                "Thu 10 Sep".to_owned(),
-                format!(
-                    "**XKalos** · ⚠️ **Planned**\n`21:00` · 0/1 ✅ · <#{HOME}> · `#{}`",
-                    short_id(&kalos)
-                )
-            ),
-            (
-                "Sat 12 Sep".to_owned(),
-                format!(
-                    "**HMaleficStar** · 🕒 **Own time**\n`own time` · 0/1 ✅ · <#{HOME}> · `#{}`",
-                    short_id(&star)
-                )
-            ),
-        ]
-    );
-    assert_eq!(
-        embed.footer.as_ref().map(|f| f.text.as_str()),
-        Some(DIGEST_FOOTER)
-    );
-    assert_eq!(embed.color, Some(COLOUR_DIGEST));
-    assert_eq!(
-        pictures(embed),
-        (None, None),
-        "v4: the digest carries no art"
-    );
-    assert!(message.attachments.is_empty());
-    assert!(allowed(message).is_empty(), "the digest names, never pings");
-}
-
-#[tokio::test]
-async fn digest_card_pins_v4_summary_and_days() {
-    digest_matches_v4(&SqliteStore::open_temp().await).await;
 }
 
 #[tokio::test]
@@ -604,9 +336,12 @@ async fn a_legacy_digest_replacement_keeps_the_fixed_phrase_on_delete_failure() 
     fake.script(Op::Edit, Step::Succeed);
     let refresh = refresher(&store, &fake, &world, cards);
     assert_eq!(refresh.refresh(std::slice::from_ref(&run_id)).await, 1);
+    let edited = edits(&fake);
+    let layout = edited.last().and_then(|edit| edit.components.as_deref());
     assert_eq!(
-        edits(&fake).last().and_then(|edit| edit.content.as_deref()),
-        Some("🗓️ Boss week of Wed 09 Sep")
+        layout.and_then(support::v2_digest_phrase).as_deref(),
+        Some("Let's go!"),
+        "the refresh converts it to V2 with the saved phrase"
     );
     assert_eq!(
         rewriter.calls(),
@@ -664,9 +399,10 @@ async fn quiet_cards_tag_nobody<S: Store>(store: &S) {
     delivery.config.quiet_mode = true;
     delivery.dispatch_reminders(now()).await.expect("dispatch");
     let message = created(&world.fake).pop().expect("posted");
-    assert_eq!(
-        message.content.as_deref(),
-        Some(format!("⏰ **XKalos** in 15m (20:14) — Aria {UNNAMED}").as_str())
+    let content = message.content.as_deref().unwrap_or_default();
+    assert!(
+        content.contains(&format!("Aria {UNNAMED}")) && !content.contains("<@"),
+        "{content}"
     );
     let description = message.embeds[0].description.clone().unwrap_or_default();
     assert!(!description.contains("<@"), "{description}");
@@ -819,9 +555,10 @@ async fn morning(kit: CardKit) -> (Option<String>, PregenReport, Duration) {
         sending.elapsed().is_zero(),
         "a send never waits on the model"
     );
+    // The heading line only: the tallies and mentions follow it.
     let content = created(&world.fake)
         .pop()
-        .and_then(|message| message.content);
+        .and_then(|message| Some(message.content?.lines().next()?.to_owned()));
     (content, report, elapsed)
 }
 
@@ -835,7 +572,7 @@ async fn an_accepted_rewrite_replaces_the_heading_with_the_day_filled_in() {
     let content = morning_content(rewriting(&rewriter)).await;
     assert_eq!(
         content.as_deref(),
-        Some("📅 **Rise and shine, it's Thu 10 Sep!**\n<@1001> Bex")
+        Some("📅 **Rise and shine, it's Thu 10 Sep!**")
     );
     assert_eq!(rewriter.calls(), 1);
     // The day is left for the model.
@@ -883,7 +620,7 @@ async fn failure_timeout_rejection_or_no_rewriter_keep_the_v4_heading() {
 /// allowed again passes.
 #[tokio::test(start_paused = true)]
 async fn heading_rewrites_follow_the_live_profanity_list() {
-    use kanade::chat::nudge::WordFilter;
+    use kanade_voice::nudge::WordFilter;
 
     let live = Arc::new(Mutex::new(Arc::new(WordFilter::new(
         &["shine".into()],
@@ -916,12 +653,12 @@ async fn heading_rewrites_follow_the_live_profanity_list() {
     *live.lock().unwrap() = Arc::new(WordFilter::new(&[], &["babi".into()]));
     assert_eq!(
         morning_content(with_words(&babi)).await.as_deref(),
-        Some("📅 **Babi, it's Thu 10 Sep!**\n<@1001> Bex"),
+        Some("📅 **Babi, it's Thu 10 Sep!**"),
         "a built-in allowed again is accepted"
     );
     assert_eq!(
         morning_content(with_words(&shine)).await.as_deref(),
-        Some("📅 **Rise and shine, it's Thu 10 Sep!**\n<@1001> Bex"),
+        Some("📅 **Rise and shine, it's Thu 10 Sep!**"),
         "the extra word was removed live"
     );
 }
@@ -954,7 +691,7 @@ async fn countdown_header_rewrites_persona_phrases_and_keeps_facts_out_of_the_pr
         (Script::Hang, "Onward!", 1),
     ] {
         let rewriter = Scripted::new(script);
-        let message = pregenerated_countdown(redesigned(rewriting(&rewriter))).await;
+        let message = pregenerated_countdown(rewriting(&rewriter)).await;
         assert!(
             shows_phrase(message.content.as_deref(), phrase),
             "{phrase}: {:?}",
@@ -979,17 +716,8 @@ async fn countdown_header_rewrites_persona_phrases_and_keeps_facts_out_of_the_pr
             );
         }
     }
-    let message = pregenerated_countdown(redesigned(kit(None))).await;
+    let message = pregenerated_countdown(kit(None)).await;
     assert!(shows_phrase(message.content.as_deref(), "Onward!"));
-
-    // Classic is v4-exact: no phrase, so nothing to rewrite.
-    let rewriter = Scripted::new(Script::Reply("Waku waku!"));
-    let message = pregenerated_countdown(rewriting(&rewriter)).await;
-    assert_eq!(
-        message.content.as_deref(),
-        Some("⏰ **XKalos** in 15m (20:14) — <@1001> Bex")
-    );
-    assert_eq!(rewriter.calls(), 0);
 }
 
 /// Every header rewrite sends the bundle's `compact.header_rewrite` (its
@@ -1004,7 +732,7 @@ async fn header_rewrites_send_the_bundle_header_prompt_not_its_nudge_prompt() {
     let day_of = Scripted::new(Script::Reply("Rise and shine, it's {day}!"));
     morning_content(rewriting(&day_of)).await;
     let phrase = Scripted::new(Script::Reply("Waku waku!"));
-    pregenerated_countdown(redesigned(rewriting(&phrase))).await;
+    pregenerated_countdown(rewriting(&phrase)).await;
     for rewriter in [&day_of, &phrase] {
         let prompts = rewriter.prompts.lock().unwrap().clone();
         let [(system, _)] = prompts.as_slice() else {
@@ -1052,7 +780,7 @@ async fn digest_header_rewrite_has_only_persona_and_seed_and_refresh_keeps_facts
     let run_id = kalos(&*store, &["1001"], tonight()).await;
     mark_digest_week(&*store, previous_week(), now()).await;
     let rewriter = Scripted::new(Script::Reply("Waku waku!"));
-    let cards = redesigned(rewriting(&rewriter));
+    let cards = rewriting(&rewriter);
     // The pass before the reset writes the coming week's phrase.
     let report = pregen(&store, &world, &cards, week() - TimeDelta::minutes(1))
         .pass()
@@ -1200,7 +928,7 @@ async fn day_of_record_store_errors_still_send_with_the_seed_heading() {
     assert_eq!(report.sends.len(), 1, "day-of still claims and sends");
     let posts = created(&read_world.fake);
     assert_eq!(posts.len(), 1);
-    assert_eq!(posts[0].content.as_deref(), Some(DAY_OF_CONTENT));
+    assert_eq!(heading(posts[0].content.as_deref()), Some(DAY_OF_CONTENT));
     assert_eq!(fresh_rewriter.calls(), 0, "a send never calls the model");
 
     let existing = SqliteStore::open_temp().await;
@@ -1241,7 +969,7 @@ async fn day_of_record_store_errors_still_send_with_the_seed_heading() {
         .expect("day-of write failure is isolated");
     assert_eq!(report.sends.len(), 1, "day-of write failure still sends");
     assert_eq!(
-        created(&failed_write_world.fake)[0].content.as_deref(),
+        heading(created(&failed_write_world.fake)[0].content.as_deref()),
         Some(DAY_OF_CONTENT)
     );
     assert_eq!(rewriter.calls(), 0);
@@ -1318,7 +1046,7 @@ async fn a_send_during_a_pregeneration_uses_the_seed_which_then_wins() {
     let fake = Arc::new(support::fake());
     let (run_id, key) = countdown_key(&store).await;
     let rewriter = GateRewriter::new();
-    let cards = redesigned(rewriting(&rewriter));
+    let cards = rewriting(&rewriter);
     let worker = pregen(&store, &world, &cards, before_due());
     let mut pass = Box::pin(worker.pass());
     until_gated(&rewriter, &mut pass).await;
@@ -1380,10 +1108,12 @@ async fn a_card_posted_without_its_record_during_a_pregeneration_keeps_the_seed(
     let mut delivery = scenarios::delivery(&*store, &world, &*fake).with_cards(cards.clone());
     delivery.dispatch_reminders(now()).await.expect("dispatch");
     assert_eq!(
-        created(&fake)
-            .pop()
-            .and_then(|message| message.content)
-            .as_deref(),
+        heading(
+            created(&fake)
+                .pop()
+                .and_then(|message| message.content)
+                .as_deref()
+        ),
         Some(DAY_OF_CONTENT)
     );
     rewriter.release.notify_one();
@@ -1420,7 +1150,7 @@ async fn a_digest_posted_during_a_pregeneration_keeps_the_seed() {
     kalos(&*store, &["1001"], tonight()).await;
     mark_digest_week(&*store, previous_week(), now()).await;
     let rewriter = GateRewriter::new();
-    let cards = redesigned(rewriting(&rewriter));
+    let cards = rewriting(&rewriter);
     let worker = pregen(&store, &world, &cards, week() - TimeDelta::minutes(1));
     let mut pass = Box::pin(worker.pass());
     until_gated(&rewriter, &mut pass).await;
@@ -1447,7 +1177,7 @@ async fn a_cancelled_pregeneration_stores_nothing_and_a_later_pass_retries() {
     let world = world();
     let (_, key) = countdown_key(&store).await;
     let rewriter = GateRewriter::new();
-    let cards = redesigned(rewriting(&rewriter));
+    let cards = rewriting(&rewriter);
     let worker = pregen(&store, &world, &cards, before_due());
     {
         let mut pass = Box::pin(worker.pass());
@@ -1479,7 +1209,7 @@ async fn countdown_phrase_survives_not_sent_restart_and_refresh_without_rewrite(
     let fake = Arc::new(support::fake());
     let run_id = kalos_countdown(&*store, &["1001", "1002"]).await;
     let rewriter = Scripted::new(Script::Reply("Waku waku!"));
-    let cards = redesigned(rewriting(&rewriter));
+    let cards = rewriting(&rewriter);
     assert_eq!(
         pregen(&store, &world, &cards, before_due())
             .pass()
@@ -1560,7 +1290,7 @@ async fn retries_and_reaction_edits_reuse_the_stored_heading() {
         art: Some(Arc::new(BossArt::new(art.path()))),
         ..rewriting(&rewriter)
     };
-    let expected = "📅 **Rise and shine, it's Thu 10 Sep!**\n<@1001> Bex";
+    let expected = "📅 **Rise and shine, it's Thu 10 Sep!**";
     pregen(&store, &world, &cards, before_due()).pass().await;
     // The first send never reaches Discord; the retry posts.
     fake.script(Op::Create, Step::Reject(RejectionKind::NotSent));
@@ -1575,7 +1305,7 @@ async fn retries_and_reaction_edits_reuse_the_stored_heading() {
     assert!(
         posts
             .iter()
-            .all(|post| post.content.as_deref() == Some(expected))
+            .all(|post| heading(post.content.as_deref()) == Some(expected))
     );
     assert_eq!(rewriter.calls(), 1, "one rewrite per card");
 
@@ -1587,17 +1317,19 @@ async fn retries_and_reaction_edits_reuse_the_stored_heading() {
     let [edit] = edited.as_slice() else {
         panic!("one edit: {edited:?}");
     };
-    assert_eq!(edit.content.as_deref(), Some(expected));
+    assert_eq!(heading(edit.content.as_deref()), Some(expected));
     let embed = &edit.embeds.as_ref().expect("embed")[0];
+    // 1001 is still unknown inside the 12 h window: at risk.
     assert!(
-        embed.fields[0].value.contains("⚠️ unconfirmed · 1/2 ✅"),
-        "{:?}",
-        embed.fields[0]
+        embed
+            .description
+            .as_deref()
+            .is_some_and(|text| text.contains("❗ at risk")),
+        "{embed:?}"
     );
     assert!(
-        embed.fields[0].value.ends_with("Still to answer: <@1001>"),
-        "{:?}",
-        embed.fields[0]
+        fields(embed).contains(&("Waiting".to_owned(), "<@1001>".to_owned())),
+        "{embed:?}"
     );
     assert_eq!(
         pictures(embed),
@@ -1702,10 +1434,10 @@ async fn art_is_resolved_once_per_picture_and_never_for_suppressed_sends() {
             art.finds.load(Ordering::SeqCst),
             art.reads.load(Ordering::SeqCst)
         ),
-        (2, 2),
-        "portrait and entry art, each found and read in one lookup"
+        (3, 3),
+        "each run's portrait and the first run's entry art, each found and read in one lookup"
     );
-    assert_eq!(uploads(&created(&world.fake)[0]).len(), 2);
+    assert_eq!(uploads(&created(&world.fake)[0]).len(), 3);
     let report = delivery
         .dispatch_reminders(retry_at())
         .await
@@ -1720,7 +1452,7 @@ async fn art_is_resolved_once_per_picture_and_never_for_suppressed_sends() {
     );
     assert_eq!(
         art.finds.load(Ordering::SeqCst),
-        2,
+        3,
         "no art for a held send"
     );
 }
@@ -1797,27 +1529,30 @@ async fn store_writes_drive_the_refresh_task_for_cards_and_the_digest() {
     })
     .await
     .expect("both cards edited");
-    let texts: Vec<String> = edited
+    let card = edited
         .iter()
-        .map(|edit| {
-            let embed = &edit.embeds.as_ref().expect("embed")[0];
-            fields(embed)
-                .into_iter()
-                .map(|(_, value)| value)
-                .collect::<Vec<_>>()
-                .join("\n")
-        })
-        .collect();
+        .find_map(|edit| edit.embeds.as_ref())
+        .expect("the morning card's embed edit");
+    // 1001 is still unknown inside the 12 h window: at risk.
     assert!(
-        texts
+        card[0]
+            .description
+            .as_deref()
+            .is_some_and(|text| text.contains("❗ at risk")),
+        "the morning card: {card:?}"
+    );
+    assert!(
+        fields(&card[0])
             .iter()
-            .any(|text| text.contains("⚠️ unconfirmed · 1/2 ✅")),
-        "the morning card: {texts:?}"
+            .any(|(name, value)| name.starts_with("In") && value.contains("Bex")),
+        "the morning card: {card:?}"
     );
-    assert!(
-        texts.iter().any(|text| text.contains("`21:00` · 1/2 ✅")),
-        "the week's digest: {texts:?}"
-    );
+    let digest = edited
+        .iter()
+        .find_map(|edit| edit.components.as_deref().filter(|rows| !rows.is_empty()))
+        .expect("the week's digest V2 edit");
+    let texts = support::v2_texts(digest);
+    assert!(texts[1].contains("· 1 in"), "the week's digest: {texts:?}");
     stop.send_replace(true);
     tokio::time::timeout(Duration::from_secs(1), task)
         .await
@@ -1827,7 +1562,7 @@ async fn store_writes_drive_the_refresh_task_for_cards_and_the_digest() {
 
 type Seen = Arc<Mutex<Vec<Vec<String>>>>;
 
-fn recorder() -> (Seen, kanade::infrastructure::store::RunObserver) {
+fn recorder() -> (Seen, kanade_store::RunObserver) {
     let seen: Seen = Arc::default();
     let sink = Arc::clone(&seen);
     (

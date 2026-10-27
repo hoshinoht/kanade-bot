@@ -3,8 +3,8 @@
 //! starts Thu 24 Sep 00:00 KL = 2026-09-23T16:00:00Z). Every response is
 //! validated against the (A5-extended) schemas.
 
-use kanade::domain::history::{ChangeHistory, Surface};
-use kanade::domain::scheduler::ScheduleStore;
+use kanade_domain::history::{ChangeHistory, Surface};
+use kanade_domain::scheduler::ScheduleStore;
 use serde_json::{Value, json};
 use sqlx::ConnectOptions;
 
@@ -168,8 +168,8 @@ async fn pages_newest_first_with_filters_totals_and_records() {
 #[tokio::test]
 async fn config_saves_interleave_by_time_and_appear_on_exactly_one_page() {
     use chrono::{DateTime, Duration, Utc};
-    use kanade::domain::history::Actor;
-    use kanade::domain::settings::{RowDiff, SettingsChange, SettingsStore};
+    use kanade_domain::history::Actor;
+    use kanade_domain::settings::{RowDiff, SettingsChange, SettingsStore};
 
     let reads = Reads::new().await;
     reads.move_kalos(6, "21:00").await;
@@ -343,7 +343,7 @@ async fn a_run_log_pages_every_record_touching_one_run() {
     assert!(
         reads
             .store
-            .load(&kanade::domain::scheduler::Scope::Run("n-star".into()))
+            .load(&kanade_domain::scheduler::Scope::Run("n-star".into()))
             .await
             .unwrap()
             .runs
@@ -820,19 +820,19 @@ async fn strict_conflicts_list_all_selected_records() {
         .commit(
             reads
                 .store
-                .load(&kanade::domain::scheduler::Scope::All)
+                .load(&kanade_domain::scheduler::Scope::All)
                 .await
                 .unwrap()
                 .revision,
-            kanade::domain::schedule::ChangeSet {
-                changes: vec![kanade::domain::schedule::Change::DeleteRsvp {
+            kanade_domain::schedule::ChangeSet {
+                changes: vec![kanade_domain::schedule::Change::DeleteRsvp {
                     run_id: "r-kalos".into(),
                     user_id: "1004".into(),
                 }],
             },
-            kanade::domain::history::ChangeMeta {
-                origin: kanade::domain::history::Origin::new(
-                    kanade::domain::history::Actor::member("1004"),
+            kanade_domain::history::ChangeMeta {
+                origin: kanade_domain::history::Origin::new(
+                    kanade_domain::history::Actor::member("1004"),
                     Surface::Discord,
                 ),
                 at: chrono::DateTime::UNIX_EPOCH + chrono::TimeDelta::days(20_725),

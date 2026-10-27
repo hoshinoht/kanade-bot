@@ -5,16 +5,14 @@
 //! hand-off names its receiver by one.
 
 use chrono::{NaiveTime, TimeDelta, TimeZone, Utc, Weekday};
-use kanade::{
-    api::auth::{audit::AuditEvent, rate::MEMBER_WRITE_ROUTE},
-    domain::{
-        attendance::AttendanceDefault,
-        history::{Actor, Origin, Surface},
-        members::{GatewayMember, MemberStore},
-        ownership::OwnerPin,
-        schedule::{Change, FixedRun},
-        scheduler::{ScheduleStore, Scope},
-    },
+use kanade::api::auth::{audit::AuditEvent, rate::MEMBER_WRITE_ROUTE};
+use kanade_domain::{
+    attendance::AttendanceDefault,
+    history::{Actor, Origin, Surface},
+    members::{GatewayMember, MemberStore},
+    ownership::OwnerPin,
+    schedule::{Change, FixedRun},
+    scheduler::{ScheduleStore, Scope},
 };
 use serde_json::{Value, json};
 
@@ -703,14 +701,12 @@ async fn a_stranger_cannot_finish_an_ask_whose_requester_already_owns_it() {
 /// or party change overtook is refused and nothing is written.
 #[tokio::test]
 async fn the_writer_refuses_an_owner_change_an_admin_overtook() {
-    use kanade::{
-        api::write::WriteContext,
-        domain::{
-            members::Roster,
-            ownership::{OwnerPin, OwnershipRefusal},
-            schedule::ScheduleError,
-            scheduler::SchedulerError,
-        },
+    use kanade::app::write::WriteContext;
+    use kanade_domain::{
+        members::Roster,
+        ownership::{OwnerPin, OwnershipRefusal},
+        schedule::ScheduleError,
+        scheduler::SchedulerError,
     };
     let portal = Portal::new().await;
     let state = portal.reads.site.state.clone().unwrap();
@@ -792,18 +788,18 @@ async fn the_writer_refuses_an_owner_change_an_admin_overtook() {
 /// lost its follow-up steps.
 struct Backstage {
     state: std::sync::Arc<kanade::api::state::ApiState>,
-    ctx: kanade::api::write::WriteContext,
+    ctx: kanade::app::write::WriteContext,
 }
 
 impl Backstage {
     /// The writer's context as the handlers build it (members in the roster).
     async fn new(portal: &Portal) -> Self {
         let state = portal.reads.site.state.clone().unwrap();
-        let mut directory = kanade::domain::members::Roster::new();
+        let mut directory = kanade_domain::members::Roster::new();
         for profile in state.store.members().await.unwrap() {
             directory.upsert(profile.member);
         }
-        let ctx = kanade::api::write::WriteContext {
+        let ctx = kanade::app::write::WriteContext {
             policy: state.policy.clone(),
             directory,
         };
@@ -811,7 +807,7 @@ impl Backstage {
     }
 
     /// A pin that committed while the call that made it lost what followed.
-    async fn pin(&self, origin: Origin, change: kanade::domain::ownership::OwnerPin<'_>) {
+    async fn pin(&self, origin: Origin, change: kanade_domain::ownership::OwnerPin<'_>) {
         self.state
             .writer
             .pin_owner(origin, FIXED, change, &self.ctx)
@@ -847,14 +843,14 @@ impl Backstage {
 
     /// An ask on `f-own` stored directly, opened `minutes` from now.
     async fn ask(&self, portal: &Portal, request: &str, member: u64, minutes: i64) {
-        let request = kanade::domain::ownership::OwnerRequest::open(
+        let request = kanade_domain::ownership::OwnerRequest::open(
             request.into(),
             FIXED.into(),
             id(member),
             None,
             self.state.now() + TimeDelta::minutes(minutes),
         );
-        kanade::domain::ownership::OwnerRequestStore::create_owner_request(
+        kanade_domain::ownership::OwnerRequestStore::create_owner_request(
             &*portal.reads.store,
             request,
         )
@@ -866,8 +862,8 @@ impl Backstage {
 async fn ask_status(
     portal: &Portal,
     request: &str,
-) -> kanade::domain::ownership::OwnerRequestStatus {
-    kanade::domain::ownership::OwnerRequestStore::owner_request(&*portal.reads.store, request)
+) -> kanade_domain::ownership::OwnerRequestStatus {
+    kanade_domain::ownership::OwnerRequestStore::owner_request(&*portal.reads.store, request)
         .await
         .unwrap()
         .unwrap()
@@ -884,7 +880,7 @@ fn portal_accept() -> Origin {
 /// asks opened before its pin; a newer one stays for the new owner.
 #[tokio::test]
 async fn a_hand_off_retry_finishes_only_the_asks_its_pin_superseded() {
-    use kanade::domain::ownership::OwnerRequestStatus;
+    use kanade_domain::ownership::OwnerRequestStatus;
     let portal = Portal::new().await;
     let aki = portal.sign_in(AKI).await;
     let backstage = Backstage::new(&portal).await;
@@ -910,7 +906,7 @@ async fn a_hand_off_retry_finishes_only_the_asks_its_pin_superseded() {
 /// retry closes nothing, not even asks older than the pin.
 #[tokio::test]
 async fn a_stale_hand_off_retry_closes_nothing() {
-    use kanade::domain::ownership::OwnerRequestStatus;
+    use kanade_domain::ownership::OwnerRequestStatus;
     let portal = Portal::new().await;
     let aki = portal.sign_in(AKI).await;
     let backstage = Backstage::new(&portal).await;
@@ -932,7 +928,7 @@ async fn a_stale_hand_off_retry_closes_nothing() {
 /// public origin, where the same member is not staff.
 #[tokio::test]
 async fn a_discord_staff_accept_is_not_finished_as_staff_on_the_portal() {
-    use kanade::domain::ownership::OwnerRequestStatus;
+    use kanade_domain::ownership::OwnerRequestStatus;
     let portal = Portal::new().await;
     let (ben, dee) = (portal.sign_in(BEN).await, portal.sign_in(DEE).await);
     let bens = portal.ask(&ben, "ben-1").await;
@@ -954,10 +950,8 @@ async fn a_discord_staff_accept_is_not_finished_as_staff_on_the_portal() {
 /// answers the request as it now is.
 #[tokio::test]
 async fn an_accept_racing_a_withdraw_still_reports_the_new_owner() {
-    use kanade::{
-        api::ownership::after_accept_pin,
-        domain::ownership::{OwnerRequestStatus, OwnerRequestStore},
-    };
+    use kanade::app::ownership::after_accept_pin;
+    use kanade_domain::ownership::{OwnerRequestStatus, OwnerRequestStore};
     let portal = Portal::new().await;
     let [aki, ben, cho] = portal.harness.sign_ins([AKI, BEN, CHO]).await;
     let bens = portal.ask(&ben, "ben-1").await;
@@ -999,7 +993,7 @@ async fn an_accept_racing_a_withdraw_still_reports_the_new_owner() {
 /// opened before the pin close, a newer one stays for the new owner.
 #[tokio::test]
 async fn an_accept_retry_after_a_lost_close_finishes_the_supersede() {
-    use kanade::domain::ownership::OwnerRequestStatus;
+    use kanade_domain::ownership::OwnerRequestStatus;
     let portal = Portal::new().await;
     let aki = portal.sign_in(AKI).await;
     let backstage = Backstage::new(&portal).await;
@@ -1030,7 +1024,7 @@ async fn an_accept_retry_after_a_lost_close_finishes_the_supersede() {
 /// never accepted it still finds no such request.
 #[tokio::test]
 async fn a_former_owners_accept_retry_answers_the_request_as_it_is() {
-    use kanade::domain::ownership::{OwnerRequestStatus, OwnerRequestStore};
+    use kanade_domain::ownership::{OwnerRequestStatus, OwnerRequestStore};
     let portal = Portal::new().await;
     let (aki, cho) = (portal.sign_in(AKI).await, portal.sign_in(CHO).await);
     let backstage = Backstage::new(&portal).await;

@@ -8,13 +8,11 @@ use axum::{
 };
 use serde::Serialize;
 
-use crate::{
-    api::error::ApiError,
-    domain::{
-        history::PreconditionError,
-        schedule::{MemberRunRefusal, ScheduleError},
-        scheduler::{SchedulerError, StoreError},
-    },
+use crate::api::error::ApiError;
+use kanade_domain::{
+    history::PreconditionError,
+    schedule::{MemberRunRefusal, ScheduleError},
+    scheduler::{SchedulerError, StoreError},
 };
 
 #[derive(Debug, PartialEq, Eq)]
@@ -190,7 +188,7 @@ mod atomic_fixed_patch_proof;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::history::BlameTarget;
+    use kanade_domain::history::BlameTarget;
 
     #[test]
     fn every_scheduler_error_has_a_fixed_status_and_code() {

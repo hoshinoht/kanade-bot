@@ -26,18 +26,19 @@ use kanade::{
             fake::{FakeDiscord, FakeGuild},
             member::{Eligibility, EligibilityGate, MemberAuth, StoreEligibility},
             rate::{Limits, RateLimits},
+            roster::SessionHooks,
             staff::{GateFuture, GuildStaffGate},
             wire,
         },
         listeners::Site,
         state::ApiState,
     },
-    bot::commands::AccessPolicy,
-    domain::members::{GatewayMember, MemberStore},
-    infrastructure::store::{
-        SqliteStore,
-        web_sessions::{LoginMethod, SessionOrigin, WebSession, WebSessionStore},
-    },
+    app::access::AccessPolicy,
+};
+use kanade_domain::members::{GatewayMember, MemberStore};
+use kanade_store::{
+    SqliteStore,
+    web_sessions::{LoginMethod, SessionOrigin, WebSession, WebSessionStore},
 };
 use twilight_model::id::Id;
 
@@ -168,6 +169,15 @@ pub fn discord_user(id: u64, name: &str) -> DiscordUser {
 }
 
 impl MemberHarness {
+    /// Both realms' roster hooks, as serve composes them (no portrait cache).
+    pub fn roster_hooks(&self) -> SessionHooks {
+        SessionHooks {
+            auth: self.admin_auth.clone(),
+            member: Some(self.member.clone()),
+            avatars: None,
+        }
+    }
+
     pub async fn new() -> Self {
         Self::with(Options::default()).await
     }

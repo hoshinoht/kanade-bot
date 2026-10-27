@@ -50,20 +50,18 @@ use crate::{
         public::write::{admit, invalid_body, path_id},
         state::ApiState,
     },
-    bot::chardata::copy::{NoticePart, notice_text},
-    domain::{
-        characters::{Character, parse_ign},
-        chardata::{
-            ATTRIBUTION, ConsentSurface, LINK_REGION, LinkStatus, NOTICE_VERSION, PENDING_TTL,
-            UnlinkReason,
-        },
-        history::{Actor, Surface},
-    },
-    infrastructure::{
-        character_data::{CharacterData, ConfirmOutcome, FetchState, LinkView},
-        store::replays::ReplayScope,
-    },
+    cards::chardata::{NoticePart, notice_text},
 };
+use kanade_chardata::character_data::{CharacterData, ConfirmOutcome, FetchState, LinkView};
+use kanade_domain::{
+    characters::{Character, parse_ign},
+    chardata::{
+        ATTRIBUTION, ConsentSurface, LINK_REGION, LinkStatus, NOTICE_VERSION, PENDING_TTL,
+        UnlinkReason,
+    },
+    history::{Actor, Surface},
+};
+use kanade_store::replays::ReplayScope;
 
 type Reply = Result<Response, Refusal>;
 
@@ -444,7 +442,7 @@ pub(super) async fn unlink_all(
         .is_err()
     {
         // A retry finds nothing left and answers an empty list.
-        crate::runtime::logging::log!(warn, "idempotency_replay_unrecorded");
+        kanade_log::log!(warn, "idempotency_replay_unrecorded");
     }
     Ok(Json(body).into_response())
 }

@@ -11,6 +11,11 @@ ignore = [
   # own embedded i18n.toml at build time; no maintained version of that chain yet.
   # Drop this when age stops depending on i18n-config.
   { id = "RUSTSEC-2026-0374", reason = "unmaintained only; age's embedded i18n config, no upgrade available" },
+  # crypto-bigint 0.5 timing variability (2026-10-27): only age -> p256/hpke, the
+  # P-256 path of age's hybrid recipients; Kanade encrypts and decrypts with
+  # X25519 keys only (src/runtime/backup/crypt.rs), so no P-256 operation runs.
+  # The fix is crypto-bigint 0.7, which no p256 0.13 or age release uses yet.
+  { id = "RUSTSEC-2026-0387", reason = "P-256 code in age never runs: X25519 recipients only; no age release on crypto-bigint 0.7" },
 ]
 yanked = "deny"
 

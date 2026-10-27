@@ -12,26 +12,25 @@ use std::{
     },
 };
 
-use kanade::{
-    api::admin::config::{
+use kanade::app::{
+    config::{
         CatalogRead, ConfigDesk, ConfigFacts, ConfigFuture, ConfigInputs, ModelCatalog,
         PersonaFiles,
     },
-    api::state::ModelLimits,
-    chat::persona::{
-        PersonaId, PersonaRoot, PersonaSnapshot, PersonaStore, ProfileId, ProfileQuery,
-        ProfileSource,
-    },
-    domain::settings::{
-        Models, Reasoning, RoleModel, RoleProfileAssignment, RuntimeSettings, SettingsChange,
-        SettingsStore, keys, load_settings,
-    },
-    infrastructure::llm::{
-        AdmissionLimits, Effort, TrustZone,
-        governor::Role,
-        setup::{CapacityGroup, CatalogModel, CatalogSnapshot, RoleSwap, RunningRole},
-    },
-    infrastructure::store::SqliteStore,
+    ports::ModelLimits,
+};
+use kanade_domain::settings::{
+    Models, Reasoning, RoleModel, RoleProfileAssignment, RuntimeSettings, SettingsChange,
+    SettingsStore, keys, load_settings,
+};
+use kanade_llm::{
+    AdmissionLimits, Effort, TrustZone,
+    governor::Role,
+    setup::{CapacityGroup, CatalogModel, CatalogSnapshot, RoleSwap, RunningRole},
+};
+use kanade_store::SqliteStore;
+use kanade_voice::persona::{
+    PersonaId, PersonaRoot, PersonaSnapshot, PersonaStore, ProfileId, ProfileQuery, ProfileSource,
 };
 use serde_json::{Value, json};
 
@@ -1056,7 +1055,7 @@ async fn visibility_delta_is_live_for_admin_members_and_chat_resolution() {
     assert_eq!(member["persona"], "calm");
     assert_eq!(member["persona_available"], true);
     let calm = ProfileId::parse("calm").unwrap();
-    let resolution = |choices: &kanade::api::admin::config::LiveProfileChoices| {
+    let resolution = |choices: &kanade::app::config::LiveProfileChoices| {
         let query = ProfileQuery {
             member_roles: &[],
             role_assignments: &[],
@@ -1489,7 +1488,7 @@ async fn a_keyed_patch_replays_across_a_restart_and_expires() {
     refused(&other, 422, "idempotency_mismatch", "reused key");
 
     config
-        .restart(kanade::infrastructure::store::replays::REPLAY_TTL + chrono::TimeDelta::hours(1))
+        .restart(kanade_store::replays::REPLAY_TTL + chrono::TimeDelta::hours(1))
         .await;
     let paused = json!({"watching": {"paused": true}});
     let anew = config.keyed("cfg-r", &paused).await;
@@ -1576,7 +1575,7 @@ async fn profanity_is_validated_saved_and_published_live() {
     assert_eq!(profanity["allowed_words"], json!([]));
     assert_eq!(
         profanity["deflection_line"],
-        kanade::domain::settings::DEFAULT_DEFLECTION_LINE
+        kanade_domain::settings::DEFAULT_DEFLECTION_LINE
     );
     let builtin: Vec<&str> = profanity["builtin_words"]
         .as_array()
@@ -1839,7 +1838,7 @@ const RECHECK: &str = "/api/admin/access/recheck";
 #[tokio::test]
 async fn the_last_posted_digest_is_shown_with_its_channel_and_link() {
     use chrono::{TimeZone, Utc};
-    use kanade::domain::notify::{
+    use kanade_domain::notify::{
         Claim, DeliveryJournal, DeliveryTarget, EffectKind, IntentContent, NotificationIntent,
         Receipt,
     };
@@ -2699,7 +2698,7 @@ async fn a_config_save_hints_settings_to_open_event_streams() {
 /// through the Members edit. A role may point at a private profile.
 #[tokio::test]
 async fn account_reply_style_shows_role_overrides_and_the_saved_public_choice() {
-    use kanade::domain::members::MemberStore;
+    use kanade_domain::members::MemberStore;
 
     let config = Config::with_two_admins().await;
     config.dir.profile("bold");
@@ -2790,26 +2789,17 @@ async fn account_reply_style_shows_role_overrides_and_the_saved_public_choice() 
 #[tokio::test]
 async fn notification_fields_save_live_record_only_their_row_and_refuse_bad_values() {
     let config = Config::new().await;
-    let notifications = |quiet: bool, style: &str, header: &str| json!({"quiet_mode": quiet, "message_style": style, "header_generation_time": header, "header_estimates": false, "header_teasing": false});
-    let defaults = notifications(false, "classic", "00:00");
+    let notifications = |quiet: bool, header: &str| json!({"quiet_mode": quiet, "header_generation_time": header, "header_estimates": false, "header_teasing": false});
+    let defaults = notifications(false, "00:00");
     assert_eq!(config.get().await["notifications"], defaults, "defaults");
     let clock = "The header generation time is HH:MM, for example 03:30.";
-    let cases = [
-        (
-            "message_style",
-            keys::MESSAGE_STYLE,
-            ("classic", "redesigned"),
-            vec![json!("fancy"), json!("Classic"), json!(true)],
-            None,
-        ),
-        (
-            "header_generation_time",
-            keys::HEADER_GENERATION_TIME,
-            ("00:00", "03:30"),
-            vec![json!("3:30"), json!("24:00"), json!("03:61"), json!(330)],
-            Some(clock),
-        ),
-    ];
+    let cases = [(
+        "header_generation_time",
+        keys::HEADER_GENERATION_TIME,
+        ("00:00", "03:30"),
+        vec![json!("3:30"), json!("24:00"), json!("03:61"), json!(330)],
+        Some(clock),
+    )];
     for (field, key, (from, to), bad, message) in cases {
         let mut changes = config.desk.subscribe();
         let saved = config.patch(json!({"notifications": {field: to}})).await;
@@ -2844,17 +2834,15 @@ async fn notification_fields_save_live_record_only_their_row_and_refuse_bad_valu
     let quiet = config
         .patch(json!({"notifications": {"quiet_mode": true}}))
         .await;
-    assert_eq!(
-        quiet["notifications"],
-        notifications(true, "redesigned", "03:30")
-    );
-    let back = config
-        .patch(json!({"notifications": {"message_style": "classic"}}))
+    assert_eq!(quiet["notifications"], notifications(true, "03:30"));
+    // The retired message style is no field.
+    config
+        .refused(
+            json!({"notifications": {"message_style": "redesigned"}}),
+            422,
+            "unknown_field",
+        )
         .await;
-    assert_eq!(
-        back["notifications"],
-        notifications(true, "classic", "03:30")
-    );
     // Teasing rides on the estimates: refused on while they are off.
     let needs = "Turn on estimates in reminder headers before teasing.";
     let refused = config
@@ -2936,19 +2924,16 @@ async fn notification_fields_save_live_record_only_their_row_and_refuse_bad_valu
     );
 }
 
-/// The admin preview follows the saved style: a redesigned day-of card for
-/// two runs previews as two embeds, one per run in time order, with inline
-/// In / Waiting / Out fields and the entry art on the first only.
+/// A day-of card for two runs previews as two embeds, one per run in time
+/// order, with inline In / Waiting / Out fields and the entry art on the
+/// first only.
 #[tokio::test]
-async fn a_redesigned_day_of_previews_one_embed_per_run() {
+async fn a_day_of_previews_one_embed_per_run() {
     use chrono::{TimeZone, Utc};
-    use kanade::domain::schedule::{Change, Reminder, Run};
-    use kanade::domain::scheduler::{ScheduleStore, Scope};
+    use kanade_domain::schedule::{Change, Reminder, Run};
+    use kanade_domain::scheduler::{ScheduleStore, Scope};
 
     let config = Config::new().await;
-    config
-        .patch(json!({"notifications": {"message_style": "redesigned"}}))
-        .await;
     let store = &config.reads.store;
     let schedule = store.load(&Scope::All).await.unwrap();
     let kalos = schedule

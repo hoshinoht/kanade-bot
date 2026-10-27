@@ -10,52 +10,60 @@ use std::{
 use chrono::{DateTime, NaiveTime, TimeDelta, TimeZone, Utc, Weekday};
 use kanade::{
     api::{
-        admin::{config::ConfigDesk, limits::LimitsDesk},
+        admin::limits::LimitsDesk,
         auth::{
             AdminAuth,
             audit::StoreAudit,
-            crypto::SealedSecret,
             discord::{DiscordClient, DiscordLogin, DiscordUser, Secret},
             fake::FakeDiscord,
             staff::{GuildStaffGate, StoreGuildMembers},
             wire,
         },
-        avatars::{AvatarCache, AvatarFetch, AvatarRef, FetchFuture},
         events::{EventsConfig, Hub},
         listeners::Site,
-        rescan::RescanDesk,
-        state::{
-            ApiState, BackupDir, ChannelEntry, ChannelGrants, ChannelList, DeclineRetraction,
-            GuildAccess, ProposalCardRefresh, RoleEntry, StaticChannels,
+        state::{ApiState, BackupDir},
+    },
+    app::{
+        access::AccessPolicy,
+        config::ConfigDesk,
+        crypto::SealedSecret,
+        guild::{
+            AvatarRef, ChannelEntry, ChannelGrants, ChannelList, GuildAccess, RoleEntry,
+            StaticChannels,
         },
+        ports::{DeclineRetraction, ProposalCardRefresh},
+        rescan::RescanDesk,
         write::{ApiClock, SchedulerWriter},
     },
-    bot::{commands::AccessPolicy, identity::Image},
-    chat::{
-        driver::{ChatHandle, ChatView},
-        pilot::{
-            ChatPilot, DEFAULT_MEMBER_ALLOWANCE, DEFAULT_POOL_ALLOWANCE, GuardLimits, LimitsView,
-            TrafficLimits,
-        },
+    discord::{
+        avatars::{AvatarCache, AvatarFetch, FetchFuture},
+        identity::Image,
     },
-    domain::{
-        attendance::AttendanceDefault,
-        catalog::{BossSpec, BossTable, CatalogSpec, DifficultySpec, GuideSpec},
-        completion::RunEndsSource,
-        history::{Actor, ChangeMeta, Origin, Surface},
-        ids::RandomIds,
-        members::{Member, MemberProfile, MemberStore, PingLevel, Roster},
-        model_log::AllowanceOverride,
-        schedule::{
-            Change, ChangeSet, FixedRun, Reminder, ReminderPolicy, Rsvp, RsvpSource, RsvpState,
-            Run, RunSource, RunStatus, SchedulePolicy,
-        },
-        scheduler::SchedulerService,
-        scheduler::{ScheduleStore, Scope},
-        settings::RunLengths,
-    },
-    infrastructure::store::{SqliteStore, SqliteStoreConfig},
 };
+use kanade_chat::{
+    driver::{ChatHandle, ChatView},
+    pilot::{
+        ChatPilot, DEFAULT_MEMBER_ALLOWANCE, DEFAULT_POOL_ALLOWANCE, GuardLimits, LimitsView,
+        TrafficLimits,
+    },
+};
+use kanade_domain::{
+    attendance::AttendanceDefault,
+    catalog::{BossSpec, BossTable, CatalogSpec, DifficultySpec, GuideSpec},
+    completion::RunEndsSource,
+    history::{Actor, ChangeMeta, Origin, Surface},
+    ids::RandomIds,
+    members::{Member, MemberProfile, MemberStore, PingLevel, Roster},
+    model_log::AllowanceOverride,
+    schedule::{
+        Change, ChangeSet, FixedRun, Reminder, ReminderPolicy, Rsvp, RsvpSource, RsvpState, Run,
+        RunSource, RunStatus, SchedulePolicy,
+    },
+    scheduler::SchedulerService,
+    scheduler::{ScheduleStore, Scope},
+    settings::RunLengths,
+};
+use kanade_store::{SqliteStore, SqliteStoreConfig};
 use serde_json::{Value, json};
 use twilight_model::id::Id;
 
@@ -71,8 +79,8 @@ pub type ConfigMaker = Box<dyn FnOnce(Arc<SqliteStore>) -> Arc<ConfigDesk> + Sen
 pub type CharacterDataMaker = Box<
     dyn FnOnce(
             Arc<SqliteStore>,
-            kanade::api::auth::Clock,
-        ) -> Arc<kanade::infrastructure::character_data::CharacterData>
+            kanade::app::clock::Clock,
+        ) -> Arc<kanade_chardata::character_data::CharacterData>
         + Send,
 >;
 
@@ -87,7 +95,7 @@ pub(crate) struct Build {
     pub(crate) digest_delivery: bool,
     /// `KANADE_BACKUP_DIR` set (an empty directory).
     pub(crate) backup_dir: bool,
-    pub(crate) model_limits: Option<kanade::api::state::ModelLimits>,
+    pub(crate) model_limits: Option<kanade::app::ports::ModelLimits>,
     /// A rescan runner composed (the fake); `false` is serve without an extractor.
     pub(crate) rescans: bool,
     /// The roster module switched on (`modules.roster`).
@@ -99,7 +107,7 @@ pub(crate) struct Build {
     pub(crate) run_ends: bool,
     /// Module `guides` switched on with this port; the channel list then
     /// also holds [`GUIDE_CHANNELS`].
-    pub(crate) guides: Option<Arc<dyn kanade::api::state::GuidePort>>,
+    pub(crate) guides: Option<Arc<dyn kanade::app::ports::GuidePort>>,
     /// Admin Setup's application read (serve attaches the transport's).
     pub(crate) application: Option<kanade::api::state::ApplicationPort>,
     /// Admin Setup's deployment facts.
@@ -260,10 +268,10 @@ pub struct Reads {
     /// The post-commit decline-retraction port's calls.
     pub decline_retractions: Arc<Mutex<Vec<(String, String)>>>,
     pub chat: Arc<FakeChat>,
-    pub digest_posts: Arc<Mutex<Vec<kanade::api::state::DigestPostRequest>>>,
+    pub digest_posts: Arc<Mutex<Vec<kanade::app::ports::DigestPostRequest>>>,
     /// The manual header rewrite port's calls, answered with `header_rewrite_answer`.
-    pub header_rewrites: Arc<Mutex<Vec<kanade::bot::delivery::ManualRequest>>>,
-    pub header_rewrite_answer: Arc<Mutex<kanade::bot::delivery::ManualStart>>,
+    pub header_rewrites: Arc<Mutex<Vec<kanade::app::ports::ManualRequest>>>,
+    pub header_rewrite_answer: Arc<Mutex<kanade::app::ports::ManualStart>>,
     /// `KANADE_BACKUP_DIR`, an empty directory unless built `without_backup_dir`.
     pub backup_dir: Option<PathBuf>,
     /// The store's SQLite file, for tests that alter rows behind the API.
@@ -634,7 +642,7 @@ impl Reads {
     }
 
     /// With live governor snapshots and no config desk.
-    pub async fn with_model_limits(model_limits: kanade::api::state::ModelLimits) -> Self {
+    pub async fn with_model_limits(model_limits: kanade::app::ports::ModelLimits) -> Self {
         Self::build(|b| b.model_limits = Some(model_limits)).await
     }
 
@@ -789,20 +797,20 @@ impl Reads {
         let chat_handle = Arc::new(ChatHandle::default());
         chat_handle.set(chat.clone());
         let digest_posts = Arc::new(Mutex::new(Vec::new()));
-        let digest_post: kanade::api::state::DigestPost = {
+        let digest_post: kanade::app::ports::DigestPost = {
             let posts = Arc::clone(&digest_posts);
             Arc::new(move |request| {
                 let posts = Arc::clone(&posts);
                 Box::pin(async move {
                     posts.lock().unwrap().push(request);
-                    kanade::api::state::DigestPostResult::Completed
+                    kanade::app::ports::DigestPostResult::Completed
                 })
             })
         };
         let header_rewrites = Arc::new(Mutex::new(Vec::new()));
         let header_rewrite_answer =
-            Arc::new(Mutex::new(kanade::bot::delivery::ManualStart::Started(3)));
-        let header_rewrite: kanade::api::state::HeaderRewritePort = {
+            Arc::new(Mutex::new(kanade::app::ports::ManualStart::Started(3)));
+        let header_rewrite: kanade::app::ports::HeaderRewritePort = {
             let calls = Arc::clone(&header_rewrites);
             let answer = Arc::clone(&header_rewrite_answer);
             Arc::new(move |request| {
@@ -872,9 +880,9 @@ impl Reads {
             events: events.clone(),
             presence: Default::default(),
             // As serve would list them: only the Normal pill uploaded.
-            marks: kanade::bot::delivery::cards::DifficultyMarks::new().with("n", NORMAL_PILL),
+            marks: kanade::cards::DifficultyMarks::new().with("n", NORMAL_PILL),
             characters: characters
-                .then(|| store.clone() as Arc<dyn kanade::api::state::CharacterRoster>),
+                .then(|| store.clone() as Arc<dyn kanade::app::read::CharacterRoster>),
             character_data: character_data
                 .map(|make| make(store.clone(), Arc::new(move || pinned))),
             guides,
@@ -1098,12 +1106,8 @@ fn run<'a>(week: &'a Value, id: &str) -> &'a Value {
 
 /// A healthy governor group with `in_use` of `total` permits, nothing
 /// queued or held.
-pub(crate) fn snapshot(
-    name: &str,
-    in_use: u32,
-    total: u32,
-) -> kanade::infrastructure::llm::governor::GroupSnapshot {
-    use kanade::infrastructure::llm::governor::{
+pub(crate) fn snapshot(name: &str, in_use: u32, total: u32) -> kanade_llm::governor::GroupSnapshot {
+    use kanade_llm::governor::{
         BreakerState, BreakerView, Counters, GroupSnapshot, PermitUsage, RateLevel, RetryLevel,
     };
     GroupSnapshot {
@@ -1264,7 +1268,7 @@ async fn stats_summary_and_reminders() {
 
 #[tokio::test]
 async fn summary_reports_a_full_governor_group_and_a_switched_off_rescan() {
-    use kanade::infrastructure::llm::governor::{CallKind, GroupSnapshot, HeldPermit};
+    use kanade_llm::governor::{CallKind, GroupSnapshot, HeldPermit};
     let held = |kind: CallKind, held_s: u64| HeldPermit {
         kind,
         who: "someone".into(),
@@ -1275,7 +1279,7 @@ async fn summary_reports_a_full_governor_group_and_a_switched_off_rescan() {
         ..snapshot(name, in_use, total)
     };
     let busy = Arc::new(Mutex::new(false));
-    let limits: kanade::api::state::ModelLimits = {
+    let limits: kanade::app::ports::ModelLimits = {
         let busy = busy.clone();
         Arc::new(move |_| {
             let full = *busy.lock().unwrap();

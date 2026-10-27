@@ -3,7 +3,7 @@
 
 use chrono::{DateTime, NaiveDate, NaiveDateTime, NaiveTime, TimeZone, Utc};
 
-use crate::domain::{
+use kanade_domain::{
     history::Actor,
     schedule::{SchedulePolicy, utc_instant},
 };
@@ -98,7 +98,7 @@ mod tests {
     use chrono::{NaiveTime, Weekday};
 
     use super::*;
-    use crate::domain::schedule::ReminderPolicy;
+    use kanade_domain::schedule::ReminderPolicy;
 
     fn policy() -> SchedulePolicy {
         SchedulePolicy::new(

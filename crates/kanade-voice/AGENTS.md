@@ -1,0 +1,5 @@
+# Voice guide
+
+- Crate `kanade-voice` (`kanade_voice`): the bot's voice, `persona/` (persona bundles and reply profiles under `config/personas/`, compiled into chat prompts), `prompts/` (code-owned policy prompts) and `nudge/` (nudge lines and their rewrites); own contracts in `docs/v5/`. Depends only on `kanade-domain`, `kanade-llm`, `kanade-files` and `kanade-log` among workspace crates; the root `kanade` and its tests import it as `kanade_voice::…`. Items the root uses are `pub`; keep the rest `pub(crate)`.
+- `nudge/`: rewriters implement `NudgeRewriter::rewrite_detailed` (code, route, usage vs the runner's reservation, reply, reasoning); every wrapper (`&T`, `DynRewrite`/`SharedRewriter`, serve's stop-aware one) must forward it. Call sites log one row per attempt through a `RewriteSink` (`StoreRewriteSink`: bounded write, a failure is a WARN and never changes the outcome), passing the `RewritePrompt` they sent (`RewriteAttempt.prompt`, stored as `RewritePrompt::transcript`); rows carry the persona prompt, seed and model text only, never member names or ids.
+- Check: `cargo test -p kanade-voice` (unit tests) and `cargo test --all-features --test persona`.

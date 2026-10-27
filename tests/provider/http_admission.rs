@@ -10,7 +10,7 @@ use std::{
     time::Duration,
 };
 
-use kanade::infrastructure::llm::{
+use kanade_llm::{
     ErrorCode, ExecutionLimits, LlmProvider, OpenAiCompatibleProvider, ProviderFailure,
     ProviderFailureKind,
     governor::{

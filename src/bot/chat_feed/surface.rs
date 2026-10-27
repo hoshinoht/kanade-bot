@@ -6,19 +6,18 @@
 
 use std::sync::Arc;
 
-use crate::bot::ids::{id_text, parse_id};
-use crate::bot::mentions;
-use crate::bot::transport::{
+use crate::app::ids::{id_text, parse_id};
+use crate::discord::mentions;
+use crate::discord::transport::{
     DiscordTransport, MessageEdit, Outcome, OutgoingMessage, RejectionKind, SILENT,
 };
-use crate::chat::driver::{Effect, Post, Surface};
-use crate::runtime::logging;
+use kanade_chat::driver::{Effect, Post, Surface};
 
 pub struct DiscordSurface<T>(pub Arc<T>);
 
 fn failed<T>(event: &'static str, outcome: &Outcome<T>) {
     if let Some(label) = outcome.failure_label() {
-        logging::log!(warn, event, outcome = label);
+        kanade_log::log!(warn, event, outcome = label);
     }
 }
 

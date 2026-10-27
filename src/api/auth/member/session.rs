@@ -21,15 +21,15 @@ use crate::{
         auth::{
             TOUCH_EVERY, actor_id,
             audit::{AuditContext, AuditEvent},
-            crypto,
             csrf::{self, CSRF_HEADER},
             wire::{self, MEMBER_SESSION_COOKIE},
         },
         error::ApiError,
         listeners::Site,
     },
-    infrastructure::store::web_sessions::{LoginMethod, SessionOrigin, WebSession},
+    app::crypto,
 };
+use kanade_store::web_sessions::{LoginMethod, SessionOrigin, WebSession};
 
 /// The member cookie's `SameSite`: never sent on a cross-site request.
 pub(crate) const SESSION_SAME_SITE: &str = "Strict";

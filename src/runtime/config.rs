@@ -18,6 +18,7 @@ mod admin_client;
 mod backup;
 mod capabilities;
 mod character_data;
+mod components;
 mod context;
 mod discord;
 mod file;
@@ -35,6 +36,7 @@ pub use backup::{
     recipients_file as backup_recipients_file,
 };
 pub use character_data::{CharacterDataSettings, SCOUTER_URL_KEY};
+pub use components::Components;
 pub use discord::DiscordSettings;
 pub use file::{Resolved, annotate, resolve};
 pub use guild::{GuildSettings, guild_id};

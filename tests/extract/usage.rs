@@ -5,9 +5,9 @@
 
 use std::time::Duration;
 
-use kanade::extract::pipeline::MessageEvent;
-use kanade::extract::prompt::estimate_messages;
-use kanade::infrastructure::llm::{CompletionResponse, FakeAction, FinishReason, Usage};
+use kanade_extract::pipeline::MessageEvent;
+use kanade_extract::prompt::estimate_messages;
+use kanade_llm::{CompletionResponse, FakeAction, FinishReason, Usage};
 
 use crate::fakes::{ALIAS, MY, World, after, local, message};
 
@@ -109,7 +109,7 @@ async fn cached_tokens_sum_only_the_attempts_that_reported_them() {
 
 #[tokio::test(start_paused = true)]
 async fn logged_request_ids_are_exactly_the_ids_sent_across_retries() {
-    use kanade::infrastructure::llm::ModelCapabilities;
+    use kanade_llm::ModelCapabilities;
     // A transient failure retried, a bad answer, then the answer retry.
     let world = World::new(vec![
         FakeAction::Transient,
@@ -150,7 +150,7 @@ async fn untagged_calls_log_no_correlation() {
 /// has no sampling controls (the body omits it), the reserve with them.
 #[tokio::test(start_paused = true)]
 async fn the_row_records_the_max_tokens_actually_sent_apart_from_the_reserve() {
-    use kanade::infrastructure::llm::ModelCapabilities;
+    use kanade_llm::ModelCapabilities;
     for (sampling_controls, sent) in [(false, false), (true, true)] {
         let world = World::new(vec![answer(NOTHING, None)]).await;
         *world.model.caps.lock().unwrap() = Some(ModelCapabilities {
@@ -175,7 +175,7 @@ async fn the_row_records_the_max_tokens_actually_sent_apart_from_the_reserve() {
 
 #[tokio::test(start_paused = true)]
 async fn reasoning_attempts_are_retained_summed_and_not_sent_back() {
-    use kanade::infrastructure::llm::{ModelCapabilities, wire_body};
+    use kanade_llm::{ModelCapabilities, wire_body};
     let with_reasoning = |content: &str, text: &str, tokens: Option<u64>| {
         let FakeAction::Response(mut response) = answer(content, None) else {
             panic!("response")
@@ -232,7 +232,7 @@ async fn absent_reasoning_stays_null_and_text_only_stays_unknown() {
 
 #[tokio::test(start_paused = true)]
 async fn a_truncated_attempt_is_not_appended_again_and_token_sums_stay_storable() {
-    use kanade::domain::model_log::{REASONING_CAP, REASONING_TRUNCATED, capped_reasoning};
+    use kanade_domain::model_log::{REASONING_CAP, REASONING_TRUNCATED, capped_reasoning};
 
     let text = "奏".repeat(REASONING_CAP);
     let FakeAction::Response(mut first) = answer("not json", None) else {
@@ -303,8 +303,8 @@ async fn a_failed_sent_attempt_keeps_only_the_estimate() {
 
 #[tokio::test(start_paused = true)]
 async fn a_reply_cut_off_at_the_token_limit_logs_its_counts_without_an_answer_retry() {
-    use kanade::domain::model_log::ExtractionOutcome;
-    use kanade::extract::prompt::CONTEXT_RESERVE;
+    use kanade_domain::model_log::ExtractionOutcome;
+    use kanade_extract::prompt::CONTEXT_RESERVE;
 
     let limit = u32::try_from(CONTEXT_RESERVE).expect("small constant");
     let FakeAction::Response(mut cut) = answer(r#"{"amendments": ["#, Some((40, limit))) else {
@@ -335,7 +335,7 @@ async fn a_reply_cut_off_at_the_token_limit_logs_its_counts_without_an_answer_re
 
 #[tokio::test(start_paused = true)]
 async fn a_call_turned_away_before_sending_logs_no_usage() {
-    use kanade::infrastructure::llm::governor::Role;
+    use kanade_llm::governor::Role;
 
     let world = World::ungrouped(vec![answer(NOTHING, Some((1, 1)))]).await;
     assert!(world.client.governor().set_external(Role::Extraction, true));

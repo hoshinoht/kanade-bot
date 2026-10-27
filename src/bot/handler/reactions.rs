@@ -9,23 +9,22 @@ use std::sync::Arc;
 
 use tokio::sync::{mpsc, oneshot, watch};
 
-use crate::api::auth::Clock;
-use crate::api::state::DeclineRetraction;
+use crate::app::clock::Clock;
+use crate::app::ids::id_text;
+use crate::app::ports::DeclineRetraction;
 use crate::bot::cards::{CardDesk, CardPress, CardReaction, Pressed, ReplayLive, ReplayReport};
 use crate::bot::commands::CardPresses;
 use crate::bot::delivery::AlertSink;
-use crate::bot::events::{CardIndex, ReactionRouter, ReactionSink, RsvpReaction};
+use crate::bot::events::{ReactionRouter, ReactionSink, RsvpReaction};
 use crate::bot::gateway::ConnectionStatus;
-use crate::bot::ids::id_text;
 use crate::bot::rsvp_replay::RsvpReplay;
-use crate::bot::transport::DiscordTransport;
-use crate::chat::driver::{FollowUpCard, FollowUpRequest, RejectionFollowUp};
-use crate::domain::drafts::ProposalStore;
-use crate::domain::history::{BlameIndex, ChangeHistory};
-use crate::domain::notify::DeliveryJournal;
-use crate::domain::proposals::ProposalCardStore;
-use crate::domain::scheduler::{IdSource, ScheduleStore};
-use crate::runtime::logging;
+use crate::discord::transport::DiscordTransport;
+use kanade_chat::driver::{FollowUpCard, FollowUpRequest, RejectionFollowUp};
+use kanade_domain::drafts::ProposalStore;
+use kanade_domain::history::{BlameIndex, ChangeHistory};
+use kanade_domain::notify::{CardIndex, DeliveryJournal};
+use kanade_domain::proposals::ProposalCardStore;
+use kanade_domain::scheduler::{IdSource, ScheduleStore};
 use twilight_model::id::{Id, marker::UserMarker};
 
 /// What one reaction did, for tests and logs.
@@ -75,8 +74,8 @@ where
     S: ScheduleStore
         + ChangeHistory
         + BlameIndex
-        + crate::bot::events::ReplayCards
-        + crate::domain::notify::DeclineNoticeStore
+        + kanade_domain::notify::ReplayCards
+        + kanade_domain::notify::DeclineNoticeStore
         + ProposalStore
         + ProposalCardStore
         + DeliveryJournal
@@ -132,7 +131,7 @@ where
                     crate::bot::events::RouteError::Lookup(_) => "lookup",
                     crate::bot::events::RouteError::Scheduler(_) => "scheduler",
                 };
-                logging::log!(warn, "rsvp_failed", kind);
+                kanade_log::log!(warn, "rsvp_failed", kind);
                 Reacted::Failed
             }
         }
@@ -260,8 +259,8 @@ where
     S: ScheduleStore
         + ChangeHistory
         + BlameIndex
-        + crate::bot::events::ReplayCards
-        + crate::domain::notify::DeclineNoticeStore
+        + kanade_domain::notify::ReplayCards
+        + kanade_domain::notify::DeclineNoticeStore
         + ProposalStore
         + ProposalCardStore
         + DeliveryJournal

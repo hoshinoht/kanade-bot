@@ -4,14 +4,14 @@
 
 use std::collections::BTreeSet;
 
-use kanade::chat::tools::bundles::{
+use kanade_chat::tools::bundles::{
     Bundle, CardContext, DEFAULT_TOOL_ROUNDS, Intent, Signals, TOOL_ROUNDS, ToolOffer,
     V4_MAX_TOOL_ROUNDS, select,
 };
-use kanade::chat::tools::dispatch::Dispatched;
-use kanade::chat::tools::{READ_ONLY_TURN, REFUSED, ToolContext, ToolName, UNKNOWN};
-use kanade::domain::drafts::ProposalStore;
-use kanade::infrastructure::llm::identity::PassthroughSession;
+use kanade_chat::tools::dispatch::Dispatched;
+use kanade_chat::tools::{READ_ONLY_TURN, REFUSED, ToolContext, ToolName, UNKNOWN};
+use kanade_domain::drafts::ProposalStore;
+use kanade_llm::identity::PassthroughSession;
 use serde_json::{Value, json};
 
 use crate::support::world_input;
@@ -136,7 +136,7 @@ fn unavailable_strategy_is_hidden_from_the_dynamic_surface() {
     assert_eq!(&offer.schema(ToolName::RequestTools), request);
     assert_eq!(
         offer.request(Some("strategy")),
-        kanade::chat::tools::bundles::Requested::Refused(
+        kanade_chat::tools::bundles::Requested::Refused(
             "Call request_tools with {\"bundle\": \"run_changes\"}; bundle must be one of: run_changes, weekly_changes.".into()
         )
     );

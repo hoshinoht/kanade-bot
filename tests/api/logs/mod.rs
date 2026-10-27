@@ -10,7 +10,7 @@ mod rescan;
 mod rewrites;
 
 use chrono::{DateTime, Utc};
-use kanade::domain::{
+use kanade_domain::{
     drafts::ProposalSource,
     model_log::{
         ChatInteraction, ChatOutcome, ChatRound, ExtractionLog, ExtractionOutcome,

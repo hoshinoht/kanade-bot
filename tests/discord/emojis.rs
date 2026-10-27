@@ -5,11 +5,11 @@
 
 use std::path::{Path, PathBuf};
 
-use kanade::bot::cards::emojis::{self, PILLS};
-use kanade::bot::transport::{
+use kanade::cards::emojis::{self, PILLS};
+use kanade::cli::emojis::sync;
+use kanade::discord::transport::{
     ApplicationEmoji, Call, FakeDiscord, Op, Outcome, RejectionKind, Step,
 };
-use kanade::cli::emojis::sync;
 use twilight_model::id::Id;
 
 fn assets() -> PathBuf {

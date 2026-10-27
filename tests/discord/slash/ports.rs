@@ -5,19 +5,18 @@ use std::sync::{Arc, Mutex};
 
 use serde_json::json;
 
-use kanade::api::rescan::{RescanFuture, RescanRunner, RescanView};
+use kanade::app::ports::{ManualRequest, ManualStart};
+use kanade::app::rescan::{RescanFuture, RescanRunner, RescanView};
 use kanade::bot::commands::{
     ChatAllowance, DebugCards, HeaderNote, HeaderRequest, HeaderTrialKind, HeaderTrials,
     PingRequest, PortFuture, STAFF_LIMITS_REPLY, SampleRun, TestKind, TestPosted, TestReport,
     TestSubject,
 };
-use kanade::bot::delivery::{ManualRequest, ManualStart};
-use kanade::bot::transport::{Call, Op, RejectionKind, Step};
-use kanade::chat::pilot::{AllowanceSnapshot, MemberUsage, PoolUsage};
-use kanade::domain::model_log::{RescanJob, RescanStatus};
-use kanade::domain::schedule::RunStatus;
-use kanade::domain::settings::MessageStyle;
-use kanade::extract::rescan::RescanRequest;
+use kanade::discord::transport::{Call, Op, RejectionKind, Step};
+use kanade_chat::pilot::{AllowanceSnapshot, MemberUsage, PoolUsage};
+use kanade_domain::model_log::{RescanJob, RescanStatus};
+use kanade_domain::schedule::RunStatus;
+use kanade_extract::rescan::RescanRequest;
 
 use super::super::support::{ADMIN_ROLE, BOSSING_ROLE};
 use super::{ALICE, BOB, DAN, KALOS, LOUNGE, Ports, R_KALOS, Slash, now, opt, sub};
@@ -330,7 +329,7 @@ async fn debug_ping_options_reach_the_port_and_shape_the_reply() {
             .expect("a ping")
     };
 
-    // Another channel, a style override and a rewrite that fell back.
+    // Another channel and a rewrite that fell back.
     *cards.reply.lock().unwrap() = Some(TestReport {
         posted: TestPosted::Sandboxed {
             channel_id: LOUNGE.to_string(),
@@ -344,19 +343,16 @@ async fn debug_ping_options_reach_the_port_and_shape_the_reply() {
         opt("kind", "day_of"),
         opt("run_id", R_KALOS),
         channel_opt("channel", LOUNGE),
-        opt("style", "redesigned"),
         opt("header", "rewrite"),
     ]))
     .await;
     assert_eq!(
         reply,
         "✅ Posted a sandbox `day_of` test for run `#11111111` in <#302> (display only: nothing \
-         is stored for it and reactions do nothing here). Style: `redesigned` (this post only). \
-         Header: the seed (rejected (markup))."
+         is stored for it and reactions do nothing here). Header: the seed (rejected (markup))."
     );
     let request = last();
     assert_eq!(request.channel.as_deref(), Some("302"));
-    assert_eq!(request.style, Some(MessageStyle::Redesigned));
     assert!(request.rewrite);
 
     // A sample run from options; nobody named in `party` means the invoker.
@@ -518,7 +514,7 @@ async fn debug_rewrite_starts_one_run_through_the_port_and_reports_refusals() {
         ManualStart::Running,
         ManualStart::Started(4),
     ]));
-    let port: kanade::api::state::HeaderRewritePort = {
+    let port: kanade::app::ports::HeaderRewritePort = {
         let (calls, answers) = (Arc::clone(&calls), Arc::clone(&answers));
         Arc::new(move |request: ManualRequest| {
             calls.lock().unwrap().push(request);

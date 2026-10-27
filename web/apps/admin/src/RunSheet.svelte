@@ -11,7 +11,7 @@
   import type { Member, Participant, Run, RunCharacters, RunStatus, Week } from '@kanade/api-types';
   import '@kanade/ui/styles/screens/run-sheet.scss';
   import '@kanade/ui/styles/core/select.scss';
-  import { ANSWER_MARKS, AnswerBar, AnswerChip, BossArt, BossTag, enter, Icon, liveRuns, LiveRegion, Modal, MovePicker, namesIn, pickerRun, Select, StatusMark, WavyProgress, dayLabel, runCountdown, runTitle, sortRuns, whenLabel, type Slot } from '@kanade/ui';
+  import { ANSWER_MARKS, AnswerBar, AnswerChip, BossArt, BossTag, dateMinutes, enter, Icon, liveRuns, LiveRegion, Modal, MovePicker, namesIn, pickerRun, Select, StatusMark, WavyProgress, dayLabel, runCountdown, runTitle, sortRuns, wallMinutes, whenLabel, type Slot } from '@kanade/ui';
   import { swapSlots } from './planner/dropTime';
   import { directory, memberLabel } from './names/directory.svelte';
   import Name from './names/Name.svelte';
@@ -59,7 +59,8 @@
     run: Run | null;
     week: Week;
     members: Member[];
-    onmove: (runId: string, to: Slot) => Promise<MoveOutcome>;
+    /** `reopen` answers the ask for a done or cancelled run: back to planned with the move. */
+    onmove: (runId: string, to: Slot, opts?: { reopen?: boolean }) => Promise<MoveOutcome>;
     /** Exchange this run's slot with another run of the same boss week. */
     onswap: (runId: string, withId: string) => Promise<MoveOutcome>;
     onstatus: (runId: string, status: RunStatus) => Promise<MoveOutcome>;
@@ -129,6 +130,17 @@
   let moveButton = $state<HTMLButtonElement>();
   const field = $derived(liveRuns(week.runs));
   const names = $derived(namesIn(week.runs));
+  // A live run past its end is frozen (`run.ended`): the server takes only a status change,
+  // so Move, Swap, the party, answers and Reset are off and say why.
+  const ENDED = 'This run has ended.';
+  const frozen = $derived(Boolean(run?.ended));
+  const endedTitle = $derived(frozen ? ENDED : undefined);
+  // Moving a done or cancelled run live asks first whether it goes back to Planned, inline
+  // like the swap review (a modal dialog would make the page's toasts inert). `kept` is
+  // read at ask time: the optimistic reopen turns the run planned while the answer is sent.
+  let reopenAsk = $state<{ slot: Slot; when: string; upcoming: boolean; kept: string } | null>(null);
+  let reopenBox = $state<HTMLElement>();
+  let pickSet = $state<HTMLFieldSetElement>();
 
   function popOut() {
     // The pane's tab opens the matching window tab.
@@ -155,7 +167,7 @@
   let adding = $state('');
   let swapButton: HTMLButtonElement | undefined = $state();
   const swapChoices = $derived(
-    run ? sortRuns(week.runs.filter((r) => r.id !== run.id && r.status !== 'done' && r.status !== 'cancelled')) : [],
+    run ? sortRuns(week.runs.filter((r) => r.id !== run.id && r.status !== 'done' && r.status !== 'cancelled' && !r.ended)) : [],
   );
   const swapOther = $derived(swapChoices.find((r) => r.id === swapWith) ?? null);
   const swapPreview = $derived.by(() => {
@@ -173,6 +185,7 @@
     if (open && run && seeded !== run.id) {
       seeded = run.id;
       moving = false;
+      reopenAsk = null;
       error = '';
       notice = null;
       swapping = false;
@@ -186,6 +199,7 @@
       seeded = null;
       popped = false;
       moving = false;
+      reopenAsk = null;
     }
   });
 
@@ -194,8 +208,8 @@
     const count = (answer: Participant['answer']) => all.filter((p) => p.answer === answer).length;
     return { on: count('yes'), out: count('no'), maybe: count('maybe'), waiting: count('waiting'), total: all.length };
   });
-  // Unsaved input: the Move view or the swap picker is open.
-  const dirty = $derived(moving || swapping);
+  // Unsaved input: the Move view, the reopen ask or the swap picker is open.
+  const dirty = $derived(moving || swapping || reopenAsk !== null);
   // The identity card's art: one picture, or angled slices in run order (lead
   // first), at most three; any further bosses show as their portraits only.
   const artBosses = $derived(run ? run.bosses.filter((b) => b.art).slice(0, 3) : []);
@@ -226,10 +240,13 @@
   // Status changes are reversible, so they get Undo here rather than v4's confirm dialog;
   // a staged one is undone by removing it from the draft.
   function setStatus(status: RunStatus) {
-    if (!run || run.status === status) return;
+    if (!run) return;
+    // An ended run takes its own status again: Planned or Confirmed reopens it.
+    const again = run.status === status;
+    if (again && !run.ended) return;
     const id = run.id;
     const before = run.status;
-    void act(() => onstatus(id, status), before === 'at_risk' || stagingOn ? undefined : () => onstatus(id, before));
+    void act(() => onstatus(id, status), again || before === 'at_risk' || stagingOn ? undefined : () => onstatus(id, before));
   }
 
   // The picker takes focus (its first choice), as a dialog does; Cancel and Escape return it.
@@ -261,15 +278,60 @@
     moveButton?.focus({ preventScroll: true });
   }
 
+  // A live move of a done or cancelled run waits on the reopen ask; staging posts it as before.
   async function move(slot: Slot) {
     if (!run || saving) return;
+    if (!stagingOn && (run.status === 'done' || run.status === 'cancelled')) await askReopen(slot);
+    else await send(slot);
+  }
+
+  async function send(slot: Slot, reopen = false): Promise<boolean> {
+    if (!run || saving) return false;
     const id = run.id;
     error = '';
     busy = true;
-    const outcome = await onmove(id, slot).finally(() => (busy = false));
+    const outcome = await onmove(id, slot, { reopen }).finally(() => (busy = false));
     if (!outcome.ok) error = outcome.message;
-    else if (wide) closeMove();
+    else if (wide) void closeMove();
     else open = false;
+    return outcome.ok;
+  }
+
+  // The ask takes focus on its default: Planned when the slot is still ahead of the
+  // server's clock, else keeping the run as it is.
+  async function askReopen(slot: Slot) {
+    if (!run) return;
+    const day = week.days[slot.day];
+    const start = day ? dateMinutes(day.date, slot.time ?? '23:59') : null;
+    const now = wallMinutes(week.generated_at, week.timezone);
+    error = '';
+    reopenAsk = {
+      slot,
+      when: whenLabel(week, slot.day, slot.time),
+      upcoming: start !== null && now !== null && start > now,
+      kept: STATUS_LABELS[run.status as keyof typeof STATUS_LABELS] ?? run.status,
+    };
+    await tick();
+    reopenBox?.querySelector<HTMLElement>('.btn--primary')?.focus({ preventScroll: true });
+    reopenBox?.scrollIntoView({ block: 'nearest' });
+  }
+
+  async function answerReopen(reopen: boolean) {
+    if (!reopenAsk) return;
+    const ok = await send(reopenAsk.slot, reopen);
+    reopenAsk = null;
+    if (!ok) await focusPick();
+  }
+
+  // Back from the ask (or Escape in it): the picker keeps its pick and takes focus on Move.
+  async function closeReopen() {
+    reopenAsk = null;
+    await focusPick();
+  }
+
+  async function focusPick() {
+    await tick();
+    pickSet?.querySelector<HTMLElement>('.movepick__go')?.focus({ preventScroll: true });
   }
 
   function openMove() {
@@ -286,6 +348,7 @@
 
   // Back from the Move view: focus returns to the Move… key.
   async function closeMove() {
+    reopenAsk = null;
     if (!moving) return;
     moving = false;
     await tick();
@@ -383,7 +446,8 @@
           type="button"
           class="chip__x"
           aria-label="Take {who(person)} off this run for this week only"
-          disabled={busy}
+          title={endedTitle}
+          disabled={busy || frozen}
           onclick={() => void act(() => onroster(run.id, { remove: person.id }))}>×</button
         >
       </AnswerChip>
@@ -396,7 +460,8 @@
         options={addOptions}
         placeholder="+ add…"
         noun="members"
-        disabled={busy}
+        disabled={busy || frozen}
+        describedby={frozen ? `${uid}-ended` : undefined}
         onchange={add}
       />
     {/if}
@@ -495,30 +560,71 @@
 
 {#snippet picker(run: Run, variant: 'pane' | 'phone', view = false)}
   {@const own = { day: run.day, time: run.status === 'otot' ? null : run.time }}
-  <!-- A fresh pick per run and slot; a failed move keeps it. -->
-  {#key `${run.id}@${run.day}@${own.time}`}
-    <MovePicker
-      fids={{ picker: 'move-picker', type: 'move-type', error: 'move-error', suggest: 'move-suggest', clash: 'move-clash', result: 'move-result', submit: 'move-submit' }}
-      days={week.days}
-      subject={pickerRun(run)}
-      {own}
-      {field}
-      {names}
-      {step}
-      {variant}
-      legend={variant === 'phone' ? 'Day' : stagingOn ? 'Stage a move to' : 'Move to'}
-      submitLabel={stagingOn ? 'Stage move' : 'Move'}
-      aside={variant === 'phone'
-        ? `boss week · ${dayLabel(week, 0)} – ${dayLabel(week, week.days.length - 1)}`
-        : `from ${dayLabel(week, run.day)} · ${own.time ?? 'own time'}`}
-      busy={busy || saving}
-      foot
-      fill={view}
-      autofocus={view}
-      onsubmit={(slot) => void move(slot)}
-      oncancel={view ? () => void closeMove() : undefined}
-    />
-  {/key}
+  <!-- Off as a whole for an ended run, and while the reopen ask waits (it keeps the pick); the fieldset draws no box. -->
+  <fieldset class="runsheet__pick" disabled={frozen || reopenAsk !== null} title={endedTitle} bind:this={pickSet}>
+    <!-- A fresh pick per run and slot; a failed move keeps it. -->
+    {#key `${run.id}@${run.day}@${own.time}`}
+      <MovePicker
+        fids={{ picker: 'move-picker', type: 'move-type', error: 'move-error', suggest: 'move-suggest', clash: 'move-clash', result: 'move-result', submit: 'move-submit' }}
+        days={week.days}
+        subject={pickerRun(run)}
+        {own}
+        {field}
+        {names}
+        {step}
+        {variant}
+        legend={variant === 'phone' ? 'Day' : stagingOn ? 'Stage a move to' : 'Move to'}
+        submitLabel={stagingOn ? 'Stage move' : 'Move'}
+        aside={variant === 'phone'
+          ? `boss week · ${dayLabel(week, 0)} – ${dayLabel(week, week.days.length - 1)}`
+          : `from ${dayLabel(week, run.day)} · ${own.time ?? 'own time'}`}
+        busy={busy || saving}
+        foot
+        fill={view}
+        autofocus={view}
+        onsubmit={(slot) => void move(slot)}
+        oncancel={view ? () => void closeMove() : undefined}
+      />
+    {/key}
+  </fieldset>
+  {@render reopenStep(run)}
+{/snippet}
+
+<!-- A live move of a done or cancelled run: back to Planned, or keep it as it is. The order
+     stays put; the default (primary, focused) follows whether the slot is still ahead. -->
+{#snippet reopenStep(run: Run)}
+  {#if reopenAsk}
+    {@const ask = reopenAsk}
+    <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+    <div
+      class="swap reopen"
+      role="group"
+      aria-labelledby="{uid}-reopen-title"
+      aria-describedby="{uid}-reopen-text"
+      data-fid="move-reopen"
+      bind:this={reopenBox}
+      onkeydown={(event) => {
+        if (event.key !== 'Escape' || event.defaultPrevented) return;
+        event.preventDefault();
+        event.stopPropagation();
+        void closeReopen();
+      }}
+    >
+      <p class="swap__title" id="{uid}-reopen-title">{runTitle(run)} is {ask.kept.toLowerCase()}. Set it back to Planned?</p>
+      <p class="swap__preview" id="{uid}-reopen-text">
+        {#if ask.upcoming}
+          <strong>{ask.when}</strong> is upcoming. Planned puts it back on the schedule: its answers are cleared and Discord is told. There is no Undo.
+        {:else}
+          <strong>{ask.when}</strong> has already passed, so it can stay {ask.kept.toLowerCase()}. Planned would clear its answers and tell Discord.
+        {/if}
+      </p>
+      <div class="swap__actions">
+        <button class="btn" class:btn--primary={ask.upcoming} type="button" disabled={busy || saving} onclick={() => void answerReopen(true)}>Move and set to Planned</button>
+        <button class="btn" class:btn--primary={!ask.upcoming} type="button" disabled={busy || saving} onclick={() => void answerReopen(false)}>Move, keep {ask.kept}</button>
+        <button class="btn" type="button" disabled={busy} onclick={() => void closeReopen()}>Back</button>
+      </div>
+    </div>
+  {/if}
 {/snippet}
 
 {#snippet moveKey(run: Run, more = false)}
@@ -528,7 +634,8 @@
       class="btn btn--primary btn--key"
       bind:this={moveButton}
       aria-label="{stagingOn ? 'Stage a move of' : 'Move'} {runTitle(run)}…"
-      disabled={busy || saving}
+      disabled={busy || saving || frozen}
+      title={endedTitle}
       onclick={openMove}
       ><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"
         ><path d="M5 12h14M13 6l6 6-6 6" /></svg
@@ -571,11 +678,11 @@
       class="btn"
       type="button"
       bind:this={swapButton}
-      disabled={busy || saving || swapChoices.length === 0}
+      disabled={busy || saving || frozen || swapChoices.length === 0}
       aria-expanded={swapping}
       aria-controls="{uid}-swap"
       aria-label={wide ? (stagingOn ? 'Stage swap timing with…' : 'Swap timing with…') : undefined}
-      title={wide ? (stagingOn ? 'Stage swap timing with…' : 'Swap timing with…') : undefined}
+      title={frozen ? ENDED : wide ? (stagingOn ? 'Stage swap timing with…' : 'Swap timing with…') : undefined}
       onclick={() => (swapping ? void closeSwap() : void openSwap())}>{stagingOn ? (wide ? 'Stage swap…' : 'Stage a timing swap…') : wide ? 'Swap…' : 'Swap timing with…'}</button
     >
   {/if}
@@ -584,7 +691,7 @@
   >
   {#if run.fixed_id && run.amended && !['done', 'cancelled'].includes(run.status)}
     <!-- v5: undo this week's amendments in one step (day, time and roster). -->
-    <button class="btn" type="button" disabled={busy} title={stagingOn ? 'Stage putting this run back on its weekly timing' : 'Put this run back on its weekly timing'}
+    <button class="btn" type="button" disabled={busy || frozen} title={frozen ? ENDED : stagingOn ? 'Stage putting this run back on its weekly timing' : 'Put this run back on its weekly timing'}
       onclick={() => void act(() => onreset(run.id))}>{stagingOn ? 'Stage reset' : 'Reset to fixed'}</button
     >
   {/if}
@@ -652,7 +759,9 @@
         >
       {/each}
     </div>
-    {#if run.status === 'at_risk'}
+    {#if run.ended}
+      <span class="statusbar__note" id="{uid}-ended">this run has ended — set a status to settle it, or Planned to reopen it</span>
+    {:else if run.status === 'at_risk'}
       <span class="statusbar__note">someone said no — pick a status to settle it</span>
     {/if}
   </div>
@@ -724,7 +833,11 @@
 {/snippet}
 
 {#snippet answerRows(run: Run)}
-  <p class="answers__hint">Records the answer as if they had reacted — the run's cards update in Discord.</p>
+  {#if frozen}
+    <p class="answers__hint">This run has ended, so its answers stay as they are; set its status to settle it.</p>
+  {:else}
+    <p class="answers__hint">Records the answer as if they had reacted — the run's cards update in Discord.</p>
+  {/if}
   {#each run.participants as person (person.id)}
     <div class="answers__row">
       <span class="answers__who"><Name kind="member" id={person.id} name={who(person)} /></span>
@@ -734,7 +847,8 @@
             type="button"
             class="seg__btn"
             aria-pressed={value === 'clear' ? false : person.answer === value}
-            disabled={busy || (value === 'clear' && person.answer === 'waiting')}
+            title={endedTitle}
+            disabled={busy || frozen || (value === 'clear' && person.answer === 'waiting')}
             onclick={() => void act(() => onrsvp(run.id, person.id, value))}>{label}</button
           >
         {/each}
@@ -1034,7 +1148,8 @@
                         options={addOptions}
                         placeholder="Add someone…"
                         noun="members"
-                        disabled={busy}
+                        disabled={busy || frozen}
+                        describedby={frozen ? `${uid}-ended` : undefined}
                         onchange={add}
                       />
                     </span>
@@ -1088,7 +1203,8 @@
                           type="button"
                           class="chip__x slot__x"
                           aria-label="Take {who(person)} off this run for this week only"
-                          disabled={busy}
+                          title={endedTitle}
+                          disabled={busy || frozen}
                           onclick={() => void act(() => onroster(run.id, { remove: person.id }))}>×</button
                         >
                       </span>
@@ -1175,6 +1291,27 @@
     display: flex;
     flex-wrap: wrap;
     gap: 0.4rem;
+  }
+
+  /* The Move picker's fieldset only disables it, so it draws no box; in the pane the
+     picker stays full bleed under the run's card, as _week.scss draws it there. */
+  .runsheet__pick {
+    display: contents;
+  }
+
+  .week-pane__body > .runsheet__pick > :global(.movepick) {
+    margin: -12px -14px 0;
+    border-bottom: 1.5px solid var(--line);
+  }
+
+  /* The reopen ask under the picker: inset on the phone's edge-to-edge Move screen,
+     the picker's own column in the sheet's Move window. */
+  .runsheet__move > .reopen {
+    margin: 0 16px 8px;
+  }
+
+  .runsheet__panel--move > .reopen {
+    width: min(100%, 560px);
   }
 
   .run__error:empty {

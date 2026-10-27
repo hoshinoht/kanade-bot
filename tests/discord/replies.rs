@@ -7,13 +7,16 @@ use twilight_model::application::command::{Command, CommandOptionChoiceValue};
 use twilight_model::channel::message::Embed;
 use twilight_model::channel::message::embed::EmbedField;
 
-use kanade::bot::commands::{
-    AccessPolicy, COMPLETION_FALLBACK, CONTENT_LIMIT, ChoicesFuture, CommandFuture, Dispatcher,
-    Disposition, Gate, Invocation, SlashCommand, choice,
-};
 use kanade::bot::handler::handled_fields;
-use kanade::bot::transport::{
+use kanade::discord::transport::{
     AmbiguousKind, Call, FakeDiscord, InteractionReply, Op, Outcome, RejectionKind, Step,
+};
+use kanade::{
+    app::access::{AccessPolicy, Gate},
+    bot::commands::{
+        COMPLETION_FALLBACK, CONTENT_LIMIT, ChoicesFuture, CommandFuture, Dispatcher, Disposition,
+        Invocation, SlashCommand, choice,
+    },
 };
 
 use super::support::*;

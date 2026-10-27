@@ -1,11 +1,7 @@
 //! The member roster in serve: one sequential task applies every gateway
-//! roster change and the startup reconciliation, and keeps an in-memory
-//! snapshot the tick, cards and reactions read synchronously.
+//! roster change and the reconciliation of each fresh session, over the
+//! shared store pass and snapshot in `crate::discord::roster`.
 
-mod live;
-mod reconcile;
 mod task;
 
-pub use live::LiveRoster;
-pub use reconcile::{ReconcileError, ReconcileReport, diff, fetch_members};
-pub use task::{RosterJob, RosterSink, RosterTask, prune_roles};
+pub use task::{RosterJob, RosterTask};

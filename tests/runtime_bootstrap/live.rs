@@ -1,6 +1,6 @@
-//! Live `serve` with the gateway off (`KANADE_DISCORD_GATEWAY=0`): a temp
-//! store, break-glass sign-in and the admin API over real state, run as the
-//! shipped binary.
+//! Live `serve` with the `web` component alone (`KANADE_COMPONENTS=web`): a
+//! temp store, break-glass sign-in and the admin API over real state, run as
+//! the shipped binary.
 
 mod operator;
 mod restore;
@@ -39,8 +39,8 @@ impl Live {
             bundles.join("kanade.yaml"),
         )
         .unwrap();
-        // The root is the secrets directory.
-        fs::write(root.join("discord_token"), "bot-token-value\n").unwrap();
+        // The root is the secrets directory. No bot token: without one a
+        // web-only serve never contacts Discord.
         fs::write(root.join("admin_token"), format!("{ADMIN_TOKEN}\n")).unwrap();
         fs::write(
             root.join("discord_client_secret"),
@@ -60,8 +60,8 @@ impl Live {
             .env("KANADE_TIMEZONE", "Asia/Kuala_Lumpur")
             .env("KANADE_ADMIN_BIND", format!("127.0.0.1:{admin}"))
             .env("KANADE_SECRETS_DIR", &self.root)
-            // No gateway: these tests never contact Discord.
-            .env("KANADE_DISCORD_GATEWAY", "0")
+            // No bot: these tests never contact Discord.
+            .env("KANADE_COMPONENTS", "web")
             .env("KANADE_GUILD_ID", "900")
             .env("KANADE_BOSSING_ROLE_ID", "10")
             .env("KANADE_ADMIN_ROLE_ID", "20")
@@ -265,7 +265,7 @@ fn live_serve_signs_in_with_the_token_and_reads_the_real_store() {
     let stderr = String::from_utf8(output.stderr).unwrap();
     assert!(stderr.contains(r#""event":"store_closed""#), "{stderr}");
     assert!(!stderr.contains("store_dropped_unclosed"), "{stderr}");
-    assert!(!stderr.contains(ADMIN_TOKEN) && !stderr.contains("bot-token-value"));
+    assert!(!stderr.contains(ADMIN_TOKEN));
 
     // The lock went with the process; sessions survived in the store.
     let port = unused_loopback_port();
@@ -324,13 +324,13 @@ fn live_serve_builds_discord_sign_in_without_network() {
     );
 }
 
-/// A missing bot token file or a bad backup recipients file is refused with
-/// 78 before the store is opened.
+/// With the bot, a missing bot token file is refused with 78 before the
+/// store is opened; so is a bad backup recipients file, whatever runs.
 #[test]
 fn live_serve_refuses_bad_secret_files_before_opening_the_store() {
     let _serial = serial();
     for (recipients, expected) in [
-        // No recipients file: the bot token file is removed instead.
+        // No recipients file: the bot runs, without its token file.
         (None, "secrets file `discord_token` is missing from"),
         (
             Some("# no keys yet\n"),
@@ -349,7 +349,7 @@ fn live_serve_refuses_bad_secret_files_before_opening_the_store() {
             fs::write(backups.join("recipients"), text).unwrap();
             command.env("KANADE_BACKUP_DIR", backups);
         } else {
-            fs::remove_file(live.root.join("discord_token")).unwrap();
+            command.env("KANADE_COMPONENTS", "bot,web");
         }
         let output = command.output().unwrap();
         assert_eq!(output.status.code(), Some(78), "{output:?}");

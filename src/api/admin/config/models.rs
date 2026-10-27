@@ -7,20 +7,18 @@ use std::collections::BTreeSet;
 use serde_json::Value;
 
 use super::patch::{PatchError, field_error, object};
-use crate::{
-    api::dto::config::CapacityCheck,
-    domain::settings::{ContextSettings, MAX_CONTEXT_TOKENS, Models, Reasoning, RoleModel},
-    infrastructure::llm::{
-        CALL_TOKEN_BUDGET, Effort, PROMPT_FLOOR_TOKENS, RESERVE_LIMIT,
-        governor::Role as LiveRole,
-        setup::{CapacityGroup, CatalogModel, CatalogSnapshot, resolve_context},
-    },
+use crate::api::dto::config::CapacityCheck;
+use kanade_domain::settings::{ContextSettings, MAX_CONTEXT_TOKENS, Models, Reasoning, RoleModel};
+use kanade_llm::{
+    CALL_TOKEN_BUDGET, Effort, PROMPT_FLOOR_TOKENS, RESERVE_LIMIT,
+    governor::Role as LiveRole,
+    setup::{CapacityGroup, CatalogModel, CatalogSnapshot, resolve_context},
 };
 
 /// Matches the model stack's one backend group (`setup::build`).
 pub const GROUP: &str = "gateway";
 
-crate::domain::spelled! {
+kanade_domain::spelled! {
     Role {
         Extraction => "extraction",
         Chat => "chat",
@@ -408,9 +406,9 @@ pub fn ungrouped(current: &Models, next: &Models, declared: &[CapacityGroup]) ->
 pub fn awaiting_restart(
     before: &Models,
     after: &Models,
-    waiting: &[crate::infrastructure::llm::governor::Role],
+    waiting: &[kanade_llm::governor::Role],
 ) -> Vec<String> {
-    use crate::infrastructure::llm::governor::Role as Live;
+    use kanade_llm::governor::Role as Live;
     waiting
         .iter()
         .filter_map(|&role| {
@@ -576,7 +574,7 @@ pub fn new_errors(before: &[CapacityCheck], after: &[CapacityCheck]) -> Vec<Stri
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::infrastructure::llm::AdmissionLimits;
+    use kanade_llm::AdmissionLimits;
 
     fn listed(alias: &str, limit: Option<u32>) -> CatalogModel {
         CatalogModel {

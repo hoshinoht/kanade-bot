@@ -101,10 +101,11 @@ test('a stale move keeps the pick in the form and says what changed', async ({ p
   await signInPublic(page);
   await link(page, 'r-carling');
   await expect(page.getByRole('button', { name: 'Move it' })).toBeEnabled();
-  // An admin moves it after the page read the week.
+  // An admin moves it after the page read the week. Moved to 23:00, it starts within 12 h of the
+  // pinned noon with Tsubame unanswered, so it re-derives as at risk.
   await adminMove(page, 'r-carling', 5, '23:00');
   await page.getByRole('button', { name: 'Move it' }).click();
-  await expect(toast(page).filter({ hasText: 'HCarling + HMaleficStar changed meanwhile: it moved to Tue 29 23:00. Nothing was moved; your pick (Wed 30 21:30) is still in the form.' })).toBeVisible();
+  await expect(toast(page).filter({ hasText: 'HCarling + HMaleficStar changed meanwhile: it moved to Tue 29 23:00, it is now at risk. Nothing was moved; your pick (Wed 30 21:30) is still in the form.' })).toBeVisible();
   await expect(form(page).locator('.movepick__result')).toContainText('Wed 30 21:30');
   expect(await slot(page)).toEqual({ day: 5, time: '23:00' });
   // The pick still moves it, against the week as it is now.

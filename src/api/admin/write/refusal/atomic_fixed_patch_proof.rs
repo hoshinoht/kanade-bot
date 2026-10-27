@@ -9,26 +9,24 @@ use chrono_tz::Asia::Kuala_Lumpur;
 use http_body_util::BodyExt;
 use serde_json::Value;
 
-use crate::{
-    domain::{
-        history::{
-            Actor, BlameTarget, ChangeFilter, ChangeHistory, ChangeMeta, ChangeQuery, ChangeRecord,
-            Expect, Origin, Precondition, Surface, changed_fields,
-        },
-        ids::IdGenerator,
-        members::Roster,
-        notify::{NoticeOutbox, OutboxNotice},
-        schedule::{
-            ChangeSet, FixedEdit, FixedEditChoices, FixedEditRequest, FixedRun, NewFixedRun,
-            ReminderPolicy, SchedulePolicy, ScheduleSnapshot,
-        },
-        scheduler::{
-            Clock, Committed, RecordedRequest, ScheduleStore, SchedulerError, SchedulerService,
-            Scope, StoreError,
-        },
+use kanade_domain::{
+    history::{
+        Actor, BlameTarget, ChangeFilter, ChangeHistory, ChangeMeta, ChangeQuery, ChangeRecord,
+        Expect, Origin, Precondition, Surface, changed_fields,
     },
-    infrastructure::store::SqliteStore,
+    ids::IdGenerator,
+    members::Roster,
+    notify::{NoticeOutbox, OutboxNotice},
+    schedule::{
+        ChangeSet, FixedEdit, FixedEditChoices, FixedEditRequest, FixedRun, NewFixedRun,
+        ReminderPolicy, SchedulePolicy, ScheduleSnapshot,
+    },
+    scheduler::{
+        Clock, Committed, RecordedRequest, ScheduleStore, SchedulerError, SchedulerService, Scope,
+        StoreError,
+    },
 };
+use kanade_store::SqliteStore;
 
 const REQUEST_ID: &str = "fixed-patch-no-op-race";
 const FIXED_TIME: NaiveTime = NaiveTime::from_hms_opt(21, 0, 0).unwrap();
@@ -131,7 +129,7 @@ async fn apply_fixed_patch<S: ScheduleStore, I: IdGenerator, C: Clock>(
     clock: C,
     attempt: PatchAttempt<'_>,
     directory: &Roster,
-) -> Result<crate::domain::schedule::Outcome<FixedRun>, SchedulerError> {
+) -> Result<kanade_domain::schedule::Outcome<FixedRun>, SchedulerError> {
     let mut service = SchedulerService::new(store, ids, clock);
     service
         .as_origin(attempt.origin)

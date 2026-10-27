@@ -5,7 +5,7 @@ use serde::Serialize;
 use serde_json::Value;
 
 use super::{Named, iso_instant};
-use crate::infrastructure::llm::governor::GroupSnapshot;
+use kanade_llm::governor::GroupSnapshot;
 
 #[derive(Serialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]

@@ -10,9 +10,10 @@ use std::{future::Future, sync::Arc, time::Duration};
 use axum::{Json, Router, extract, routing::get};
 
 use super::{
-    config::{ConfigDesk, REPORTED, lacking},
+    config::{REPORTED, lacking},
     history::backups,
 };
+use crate::app::config::ConfigDesk;
 use crate::{
     api::{
         auth::AdminSession,
@@ -26,14 +27,14 @@ use crate::{
         listeners::Site,
         state::{ApiState, SetupFacts},
     },
-    bot::transport::ApplicationInfo,
-    domain::settings::{RuntimeSettings, keys},
-    infrastructure::{
-        character_data::{Health, NexonState},
-        llm::governor::Role,
-        scouter::ScouterState,
-    },
+    discord::transport::ApplicationInfo,
 };
+use kanade_chardata::{
+    character_data::{Health, NexonState},
+    scouter::ScouterState,
+};
+use kanade_domain::settings::{RuntimeSettings, keys};
+use kanade_llm::governor::Role;
 
 mod secrets;
 

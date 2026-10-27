@@ -11,16 +11,14 @@ use super::{
     iso_instant,
     week::Context,
 };
-use crate::{
-    api::state::ClosedItem,
-    domain::{
-        drafts::{DraftStatus, SUPERSEDED},
-        history::Actor,
-        ids::short_id,
-        members::Directory,
-        proposals::{ProposalSubject, StoredCard},
-        requests::RequestType,
-    },
+use crate::app::read::ClosedItem;
+use kanade_domain::{
+    drafts::{DraftStatus, SUPERSEDED},
+    history::Actor,
+    ids::short_id,
+    members::Directory,
+    proposals::{ProposalSubject, StoredCard},
+    requests::RequestType,
 };
 
 /// Who closed it; `name` is ready to show (system actors read as Kanade).

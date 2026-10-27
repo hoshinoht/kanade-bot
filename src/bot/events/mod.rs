@@ -2,8 +2,6 @@
 //! adapter events.
 
 mod dropped;
-mod guild;
-mod members;
 mod messages;
 mod reactions;
 
@@ -17,27 +15,24 @@ use twilight_model::gateway::GatewayReaction;
 use twilight_model::gateway::payload::incoming::GuildCreate;
 use twilight_model::id::{
     Id,
-    marker::{ApplicationMarker, GuildMarker, RoleMarker, UserMarker},
+    marker::{ApplicationMarker, UserMarker},
 };
 
-use super::guild_cache::GuildCache;
-use super::ids::id_text;
+use crate::app::{
+    ids::id_text,
+    roster::{AdminRoles, RosterUpdate},
+};
+use crate::discord::{
+    guild::{GuildRoles, GuildScope},
+    guild_cache::GuildCache,
+    roster::{member_update, roster_update},
+};
 
 pub use dropped::{DroppedCounts, DroppedEvents};
-pub use guild::{AdminRoles, GuildRoles};
-pub use members::{RosterUpdate, member_update, roster_update};
 pub use messages::{DeletedMessages, GuildMessage};
 pub use reactions::{
-    CardIndex, LookupError, ReactionRouter, ReactionSink, ReplayCard, ReplayCards, ReplayRunCards,
-    RouteError, RsvpAnswer, RsvpReaction, rsvp_reaction,
+    ReactionRouter, ReactionSink, RouteError, RsvpAnswer, RsvpReaction, rsvp_reaction,
 };
-
-/// Which guild the adapter serves, and its bossing role.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct GuildScope {
-    pub guild_id: Id<GuildMarker>,
-    pub bossing_role_id: Id<RoleMarker>,
-}
 
 /// An event for the configured guild. `Debug` omits the interaction token.
 #[derive(Clone, PartialEq)]

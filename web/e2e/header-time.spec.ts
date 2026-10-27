@@ -9,7 +9,8 @@ test('header generation time: saves, refuses a bad clock, undoes', async ({ page
   const card = page.getByRole('form', { name: 'Reminder header rewrites' });
   await expect(card).toContainText('Lines for the next 24 h are written then; runs added or moved later get theirs when first seen.');
   const field = card.getByRole('textbox', { name: /Generate daily at/ });
-  await expect(field).toHaveValue('00:00');
+  // The seed's 18:00 (after the pinned noon, so no batch runs behind the specs).
+  await expect(field).toHaveValue('18:00');
   // The whole HH:MM shows; the field never scrolls its own text.
   await field.fill('23:59');
   expect(await field.evaluate((el: HTMLInputElement) => el.scrollWidth <= el.clientWidth)).toBe(true);
@@ -27,8 +28,8 @@ test('header generation time: saves, refuses a bad clock, undoes', async ({ page
 
   // Undo restores the previous time, on screen and on the server.
   await saved.getByRole('button', { name: 'Undo' }).click();
-  await expect(page.getByText('Back to 00:00.')).toBeVisible();
-  await expect(field).toHaveValue('00:00');
+  await expect(page.getByText('Back to 18:00.')).toBeVisible();
+  await expect(field).toHaveValue('18:00');
   await page.reload();
-  await expect(page.getByRole('form', { name: 'Reminder header rewrites' }).getByRole('textbox')).toHaveValue('00:00');
+  await expect(page.getByRole('form', { name: 'Reminder header rewrites' }).getByRole('textbox')).toHaveValue('18:00');
 });

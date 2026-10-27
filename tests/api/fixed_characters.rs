@@ -8,7 +8,7 @@
 //! timing or the editor's form. Invented IGNs.
 
 use chrono::TimeDelta;
-use kanade::domain::{
+use kanade_domain::{
     characters::{CharacterStore, PickScope},
     settings::{SettingsChange, SettingsChangeQuery, SettingsStore},
 };

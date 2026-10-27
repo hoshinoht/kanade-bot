@@ -4,13 +4,11 @@ use chrono::{DateTime, Utc};
 use serde::Serialize;
 
 use super::MemberRun;
-use crate::{
-    api::{
-        admin::write::Previous,
-        dto::{hhmm, week::WeekFrame},
-    },
-    domain::schedule::FixedRun,
+use crate::api::{
+    admin::write::Previous,
+    dto::{hhmm, week::WeekFrame},
 };
+use kanade_domain::schedule::FixedRun;
 
 #[derive(Serialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
@@ -66,7 +64,7 @@ pub struct MemberRunLink {
     pub generated_at: String,
 }
 
-crate::domain::spelled! {
+kanade_domain::spelled! {
     /// A run's boss week relative to now.
     RunWeek {
         Current => "current",

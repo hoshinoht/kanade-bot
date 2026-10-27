@@ -2,9 +2,9 @@
 //! before reading, v4 widening, cancellation between bursts, and no duplicate
 //! proposals when handled messages are read again.
 
-use kanade::domain::model_log::{ExtractionOutcome, ModelLogStore, RescanJob, RescanStatus};
-use kanade::extract::rescan::{JobView, RescanError, RescanRequest};
-use kanade::infrastructure::llm::FakeAction;
+use kanade_domain::model_log::{ExtractionOutcome, ModelLogStore, RescanJob, RescanStatus};
+use kanade_extract::rescan::{JobView, RescanError, RescanRequest};
+use kanade_llm::FakeAction;
 use serde_json::Value;
 
 use crate::fakes::{
@@ -31,10 +31,7 @@ fn request(channels: &[&str], window: &str) -> RescanRequest {
     }
 }
 
-fn history(
-    channel: &str,
-    messages: Vec<kanade::extract::pipeline::IncomingMessage>,
-) -> FakeHistory {
+fn history(channel: &str, messages: Vec<kanade_extract::pipeline::IncomingMessage>) -> FakeHistory {
     let history = FakeHistory::default();
     let mut messages = messages;
     for message in &mut messages {
@@ -84,7 +81,7 @@ async fn a_job_backfills_then_reads_each_channel_in_turn() {
     );
     source.messages.lock().unwrap().insert(
         OTHER.into(),
-        vec![kanade::extract::pipeline::IncomingMessage {
+        vec![kanade_extract::pipeline::IncomingMessage {
             channel_id: OTHER.into(),
             ..message("201", MY, local(8, 30, 13, 2), "hstar wed?")
         }],
@@ -138,7 +135,7 @@ async fn a_job_counts_each_channel_s_window_when_it_starts() {
         message("2", MY, local(8, 29, 20, 0), "good night everyone"),
         message("3", STRANGER, local(8, 29, 21, 0), "carling tue 10pm?"),
         message("4", MY, local(8, 25, 20, 0), "lotus thu 9pm?"),
-        kanade::extract::pipeline::IncomingMessage {
+        kanade_extract::pipeline::IncomingMessage {
             channel_id: OTHER.into(),
             ..message("5", MY, local(8, 25, 21, 0), "hstar wed 9pm?")
         },

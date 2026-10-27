@@ -2,16 +2,14 @@
 
 use std::collections::BTreeSet;
 
-use kanade::{
-    chat::{
-        persona::{
-            CompiledPersona, ExampleSource, PersonaSnapshot, PersonaStore, ProfileQuery,
-            ProfileSource, ReloadError, RoleAssignment, RoleId, SelectionSource, VoiceSource,
-            parse_bundle, parse_profile,
-        },
-        prompts,
+use kanade_llm::Message;
+use kanade_voice::{
+    persona::{
+        CompiledPersona, ExampleSource, PersonaSnapshot, PersonaStore, ProfileQuery, ProfileSource,
+        ReloadError, RoleAssignment, RoleId, SelectionSource, VoiceSource, parse_bundle,
+        parse_profile,
     },
-    infrastructure::llm::Message,
+    prompts,
 };
 use serde_json::Value;
 
@@ -23,7 +21,7 @@ use crate::{
 #[test]
 fn clock_header_ends_the_boss_week_seven_wall_clock_days_later_across_dst() {
     use chrono::DateTime;
-    use kanade::chat::persona::TurnContext;
+    use kanade_voice::persona::TurnContext;
 
     let header = |now: &str, week: &str| {
         let now = DateTime::parse_from_rfc3339(now).unwrap();
@@ -68,7 +66,7 @@ staging:            # partial allowed — missing keys fall back to bundle defau
   generic: I-I'm thinking! Stop staring at me!
 "#;
 
-fn kanade() -> kanade::chat::persona::Bundle {
+fn kanade() -> kanade_voice::persona::Bundle {
     parse_bundle(&tracked("bundles/kanade.yaml"), &pid("kanade")).unwrap()
 }
 
@@ -257,7 +255,7 @@ fn tool_round() -> Vec<Message> {
         },
         Message::Assistant {
             content: None,
-            tool_calls: vec![kanade::infrastructure::llm::ToolCallRequest {
+            tool_calls: vec![kanade_llm::ToolCallRequest {
                 id: "call-1".into(),
                 name: "get_schedule".into(),
                 arguments: "{}".into(),
@@ -296,7 +294,7 @@ fn the_voice_reminder_is_the_final_user_message_after_tool_results() {
 #[cfg(feature = "test-support")]
 #[tokio::test]
 async fn fake_provider_captures_the_compiled_request() {
-    use kanade::infrastructure::llm::{ChatRequest, FakeProvider, LlmProvider};
+    use kanade_llm::{ChatRequest, FakeProvider, LlmProvider};
 
     let case = prompt_case("bundle-default-with-focus");
     let expected = expected(&case);

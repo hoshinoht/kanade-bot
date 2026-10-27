@@ -8,12 +8,12 @@ use super::super::dispatch::CommandError;
 use super::super::invocation::Invocation;
 use super::super::options::Args;
 use super::{CharacterCommand, reply, resolve, store_failed};
-use crate::bot::chardata::{Sent, copy};
-use crate::bot::ids::id_text;
-use crate::bot::transport::{DiscordTransport, InteractionReply, RejectionKind};
-use crate::domain::chardata::{LinkStatus, UnlinkReason};
-use crate::domain::history::{Actor, Surface};
-use crate::infrastructure::character_data::Tracked;
+use crate::app::ids::id_text;
+use crate::discord::transport::{DiscordTransport, InteractionReply, RejectionKind};
+use crate::{bot::chardata::Sent, cards::chardata};
+use kanade_chardata::character_data::Tracked;
+use kanade_domain::chardata::{LinkStatus, UnlinkReason};
+use kanade_domain::history::{Actor, Surface};
 
 impl<T: DiscordTransport> CharacterCommand<T> {
     pub(super) async fn unlink(
@@ -32,7 +32,7 @@ impl<T: DiscordTransport> CharacterCommand<T> {
                     .map_err(store_failed)
             }
         };
-        if typed.trim().eq_ignore_ascii_case(copy::ALL) {
+        if typed.trim().eq_ignore_ascii_case(chardata::ALL) {
             let mut names = Vec::new();
             for entry in characters.iter().filter(|entry| entry.link.is_some()) {
                 if unlink(entry.character.id.clone()).await?.is_some() {
@@ -40,26 +40,26 @@ impl<T: DiscordTransport> CharacterCommand<T> {
                 }
             }
             if names.is_empty() {
-                return reply(copy::NOTHING_KEPT);
+                return reply(chardata::NOTHING_KEPT);
             }
-            return reply(copy::unlinked_all(&names));
+            return reply(chardata::unlinked_all(&names));
         }
         let Some(entry) = resolve(&characters, typed) else {
-            return reply(copy::not_on_roster(typed));
+            return reply(chardata::not_on_roster(typed));
         };
         let ign = entry.character.ign.as_str();
         let Some(link) = &entry.link else {
-            return reply(copy::not_linked(ign));
+            return reply(chardata::not_linked(ign));
         };
         if unlink(entry.character.id.clone()).await?.is_none() {
-            return reply(copy::not_linked(ign));
+            return reply(chardata::not_linked(ign));
         }
         let cards: Vec<&str> = link
             .posts
             .iter()
             .map(|post| post.channel_id.as_str())
             .collect();
-        reply(copy::unlinked(ign, &cards))
+        reply(chardata::unlinked(ign, &cards))
     }
 
     pub(super) async fn data(
@@ -68,15 +68,15 @@ impl<T: DiscordTransport> CharacterCommand<T> {
     ) -> Result<InteractionReply, CommandError> {
         let characters = self.mine(invocation).await?;
         if characters.iter().all(|entry| entry.link.is_none()) {
-            return reply(copy::NOTHING_KEPT);
+            return reply(chardata::NOTHING_KEPT);
         }
-        let entries: Vec<copy::DataEntry<'_>> = characters
+        let entries: Vec<chardata::DataEntry<'_>> = characters
             .iter()
             .filter_map(|entry| {
                 let ign = entry.character.ign.as_str();
                 Some(match &entry.link {
                     Some(link) => match link.link.status {
-                        LinkStatus::Active => copy::DataEntry::Linked {
+                        LinkStatus::Active => chardata::DataEntry::Linked {
                             ign,
                             snapshot: link.snapshot.as_ref(),
                             linked_at: link.link.linked_at,
@@ -92,19 +92,19 @@ impl<T: DiscordTransport> CharacterCommand<T> {
                                 .collect(),
                             retired: !entry.character.is_active(),
                         },
-                        LinkStatus::Pending => copy::DataEntry::Pending {
+                        LinkStatus::Pending => chardata::DataEntry::Pending {
                             ign,
                             requested_at: link.link.requested_at,
                         },
-                        LinkStatus::Stale => copy::DataEntry::Stale { ign },
+                        LinkStatus::Stale => chardata::DataEntry::Stale { ign },
                     },
-                    None if entry.linkable() => copy::DataEntry::NotLinked { ign },
+                    None if entry.linkable() => chardata::DataEntry::NotLinked { ign },
                     None => return None,
                 })
             })
             .collect();
         Ok(InteractionReply::v2(
-            copy::data(&entries, self.privacy_url.as_deref()),
+            chardata::data(&entries, self.privacy_url.as_deref()),
             true,
         ))
     }
@@ -119,7 +119,7 @@ impl<T: DiscordTransport> CharacterCommand<T> {
         let typed = Args(&invocation.options).text("character").unwrap_or("");
         let characters = self.mine(invocation).await?;
         let Some(entry) = resolve(&characters, typed) else {
-            return reply(copy::not_on_roster(typed));
+            return reply(chardata::not_on_roster(typed));
         };
         let ign = entry.character.ign.as_str();
         let linked = entry
@@ -127,10 +127,10 @@ impl<T: DiscordTransport> CharacterCommand<T> {
             .as_ref()
             .is_some_and(|link| link.link.status == LinkStatus::Active);
         if !linked || !entry.linkable() {
-            return reply(copy::share_not_linked(ign));
+            return reply(chardata::share_not_linked(ign));
         }
         if !self.ctx.channels.can_send(&channel) {
-            return reply(copy::cant_post(&channel));
+            return reply(chardata::cant_post(&channel));
         }
         let (post, snapshot) = match self
             .service
@@ -139,15 +139,15 @@ impl<T: DiscordTransport> CharacterCommand<T> {
             .map_err(store_failed)?
         {
             Tracked::Ready(post, snapshot) => (post, snapshot),
-            Tracked::NoData => return reply(copy::share_no_data(ign)),
+            Tracked::NoData => return reply(chardata::share_no_data(ign)),
         };
         let owner = invocation.invoker_name.as_deref().unwrap_or("A member");
-        let card = copy::share_card(owner, ign, &snapshot, &post.reference);
+        let card = chardata::share_card(owner, ign, &snapshot, &post.reference);
         match self.posts.send(&channel, card, &post.reference).await {
             Sent::Posted(message_id) => {
                 // Unrecorded, the strip finds it again by its ref.
                 let _ = self.service.post_sent(&post.reference, &message_id).await;
-                reply(copy::posted(&channel))
+                reply(chardata::posted(&channel))
             }
             Sent::Refused(kind) => {
                 self.service
@@ -157,7 +157,7 @@ impl<T: DiscordTransport> CharacterCommand<T> {
                 match kind {
                     RejectionKind::MissingAccess
                     | RejectionKind::MissingPermissions
-                    | RejectionKind::UnknownChannel => reply(copy::cant_post(&channel)),
+                    | RejectionKind::UnknownChannel => reply(chardata::cant_post(&channel)),
                     other => Err(CommandError::Internal(format!(
                         "share card refused: {other:?}"
                     ))),
@@ -168,7 +168,7 @@ impl<T: DiscordTransport> CharacterCommand<T> {
                     .post_unknown(&post)
                     .await
                     .map_err(store_failed)?;
-                reply(copy::unconfirmed(&channel))
+                reply(chardata::unconfirmed(&channel))
             }
         }
     }

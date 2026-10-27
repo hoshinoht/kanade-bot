@@ -1,24 +1,21 @@
-//! The redesigned proposal card (`MessageStyle::Redesigned`): a verb-led
-//! question in the content, one field group per change (From / To / Party
-//! inline), who has not answered as subtext, and the run ids, confidence and
-//! how to answer in the footer. An outcome recolours the card and adds a
-//! subtext line. Classic cards stay in `format.rs`, byte-exact.
+//! The proposal card: a verb-led question in the content, one field group
+//! per change (From / To / Party inline), who has not answered as subtext,
+//! and the run ids, confidence and how to answer in the footer. An outcome
+//! recolours the card and adds a subtext line.
 
 use std::collections::BTreeMap;
 
 use chrono::{DateTime, Utc};
 use chrono_tz::Tz;
 
-use super::format::{Audience, card_kind, kind_verb, weekday_name, when_text};
-use crate::bot::commands::text::{local_day, local_time};
-use crate::bot::delivery::cards::CardField;
-use crate::bot::delivery::cards::redesign::{
-    DifficultyMarks, SETTLED_GREEN, boss_labels, full_time, subtext,
-};
-use crate::domain::catalog::BossTable;
-use crate::domain::ids::tag;
-use crate::domain::proposals::{CardDetails, ChangeKind};
-use crate::domain::schedule::{EMOJI_NO, EMOJI_YES, Run};
+use crate::cards::CardField;
+use crate::cards::format::{Audience, card_kind, kind_verb, weekday_name, when_text};
+use crate::cards::redesign::{DifficultyMarks, SETTLED_GREEN, boss_labels, full_time, subtext};
+use crate::cards::text::{local_day, local_time};
+use kanade_domain::catalog::BossTable;
+use kanade_domain::ids::tag;
+use kanade_domain::proposals::{CardDetails, ChangeKind};
+use kanade_domain::schedule::{EMOJI_NO, EMOJI_YES, Run};
 
 /// A closed card: rejected, superseded or out of date.
 pub const CLOSED_GREY: u32 = 0x4E5058;

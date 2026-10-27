@@ -1,6 +1,6 @@
 //! The signed-in member's weekly timings and their ownership actions (user
 //! decision 2026-10-10): hand off, ask, accept, decline and withdraw. Rules
-//! and writes are [`crate::api::ownership`], shared with Discord; on this
+//! and writes are [`crate::app::ownership`], shared with Discord; on this
 //! origin nobody acts as staff. Every write is admitted by [`super::write`]
 //! (a member-write token and a required `Idempotency-Key`, request id
 //! `public:<key>`) and, when it changes the owner, needs a fresh sign-in.
@@ -31,13 +31,13 @@ use crate::{
         },
         error::ApiError,
         listeners::Site,
-        ownership::{self, OwnerDesk, OwnershipError},
         state::ApiState,
     },
-    domain::{
-        ownership::{OwnerRequest, OwnerRequestStatus, OwnershipRefusal},
-        schedule::FixedRun,
-    },
+    app::ownership::{self, OwnerDesk, OwnershipError},
+};
+use kanade_domain::{
+    ownership::{OwnerRequest, OwnerRequestStatus, OwnershipRefusal},
+    schedule::FixedRun,
 };
 
 #[derive(Deserialize)]

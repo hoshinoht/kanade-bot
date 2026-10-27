@@ -19,23 +19,21 @@ use chrono::{DateTime, Utc};
 use tokio::sync::{Mutex as AsyncMutex, Notify, watch};
 
 use super::card_records;
-use super::cards::redesign::learn_after_refusal;
-use super::cards::{
-    self, CardArt, CardContext, CardKit, DAY_OF_KIND, DigestPhraseStore, PostedCard,
-    ReminderCardStore, fetch_art,
-};
 use super::debug::{TEST_PREFIX, test_mentions};
-use crate::bot::ids::parse_id;
-use crate::bot::transport::DiscordTransport;
-use crate::domain::attendance::{AttendanceMode, countdown_mentions, morning_mentions};
-use crate::domain::members::Directory;
-use crate::domain::notify::{
-    DeliveryJournal, IntentContent, PingKind, WeeklyDigest, countdown_minutes, digest_inclusion,
-    everyone_on, resolve_mentions,
+use crate::app::ids::parse_id;
+use crate::cards::redesign::learn_after_refusal;
+use crate::cards::{
+    self, CardArt, CardContext, CardKit, fetch_art,
+    preview::{posted_content, posted_mentions},
 };
-use crate::domain::schedule::{SchedulePolicy, ScheduleSnapshot};
-use crate::domain::scheduler::{ScheduleStore, Scope};
-use crate::runtime::logging;
+use crate::discord::transport::DiscordTransport;
+use kanade_domain::members::Directory;
+use kanade_domain::notify::{
+    DeliveryJournal, DigestPhraseStore, IntentContent, PostedCard, ReminderCardStore, WeeklyDigest,
+    digest_inclusion,
+};
+use kanade_domain::schedule::{SchedulePolicy, ScheduleSnapshot};
+use kanade_domain::scheduler::{ScheduleStore, Scope};
 
 pub type Now = Arc<dyn Fn() -> DateTime<Utc> + Send + Sync>;
 
@@ -88,7 +86,7 @@ impl RefreshQueue {
             }
         }
         if dropped > 0 {
-            logging::log!(warn, "card_refresh_dropped", runs = dropped);
+            kanade_log::log!(warn, "card_refresh_dropped", runs = dropped);
         }
         self.wake.notify_one();
     }
@@ -206,11 +204,10 @@ where
     /// (the latest manual override, else the original), read under the
     /// message's edit lock; whether it landed.
     ///
-    /// A redesigned digest is sent as Components V2, which converts a live
-    /// legacy digest on the first refresh after the style flips. Discord
-    /// cannot take the flag off again: while a V2 digest is live and the
-    /// card renders as an embed (the style flipped back to classic, or the
-    /// week outgrew the V2 budget), the digest is left as posted until next
+    /// A digest is sent as Components V2, which converts a live legacy
+    /// digest on the first refresh. Discord cannot take the flag off again:
+    /// while a V2 digest is live and the card renders as an embed (the week
+    /// outgrew the V2 budget), the digest is left as posted until next
     /// week's replaces it, noted once in the log. A V2 digest this process
     /// has not seen yet is found out by Discord refusing the embed edit.
     pub(super) async fn edit_digest(
@@ -244,7 +241,7 @@ where
         let phrase = match self.store.digest_phrase(&key).await {
             Ok(phrase) => phrase,
             Err(_) => {
-                logging::log!(warn, "digest_phrase_failed", operation = "read");
+                kanade_log::log!(warn, "digest_phrase_failed", operation = "read");
                 return false;
             }
         };
@@ -282,11 +279,10 @@ where
     /// A live V2 digest that renders as an embed now stays as posted.
     fn left_as_posted(&self, digest: &WeeklyDigest) {
         if self.cards.v2.formats.first_note(&digest.message_id) {
-            logging::log!(
+            kanade_log::log!(
                 info,
                 "digest_v2_left_as_posted",
                 week_start = digest.week_start.timestamp(),
-                style = self.cards.style().as_str(),
                 until = "next week's digest",
             );
         }
@@ -295,12 +291,10 @@ where
     pub(super) fn context<'s>(&'s self, schedule: &'s ScheduleSnapshot) -> CardContext<'s> {
         CardContext {
             schedule,
-            attendance: self.policy.attendance,
             zone: self.policy.zone(),
             quiet: self.quiet.load(Ordering::Relaxed),
             members: &*self.members,
             catalog: self.cards.catalog.as_deref(),
-            style: self.cards.style(),
             marks: &self.cards.marks,
             v2: Some(&self.cards.v2),
         }
@@ -351,55 +345,5 @@ where
             .edit_message(channel, message, &edit)
             .await
             .is_delivered()
-    }
-}
-
-/// What a posted card shows: its record's kind over the runs it was posted
-/// for (its card→run rows), never the runs' current grouping.
-pub fn posted_content(posted: &PostedCard) -> Option<IntentContent> {
-    if posted.record.kind == DAY_OF_KIND {
-        return Some(IntentContent::DayOf {
-            run_ids: posted.run_ids.clone(),
-        });
-    }
-    Some(IntentContent::Countdown {
-        run_id: posted.run_ids.first()?.clone(),
-        minutes: countdown_minutes(&posted.record.kind)?,
-    })
-}
-
-/// Who the card names as a mention, planned as dispatch plans it, so an
-/// edit reads like a fresh post (it notifies nobody either way).
-pub fn posted_mentions(ctx: &CardContext<'_>, content: &IntentContent) -> Vec<String> {
-    if ctx.quiet {
-        return Vec::new();
-    }
-    let members: &dyn Directory = ctx.members;
-    match content {
-        IntentContent::DayOf { run_ids } => {
-            let runs = cards::card_runs(ctx, run_ids);
-            let candidates = match ctx.attendance.mode {
-                AttendanceMode::V4Compat => {
-                    everyone_on(runs.iter().map(|run| run.participants.as_slice()))
-                }
-                AttendanceMode::V5 => {
-                    let unknown: Vec<Vec<String>> = runs
-                        .iter()
-                        .map(|run| morning_mentions(&ctx.states(run)))
-                        .collect();
-                    everyone_on(unknown.iter().map(Vec::as_slice))
-                }
-            };
-            resolve_mentions(members, &candidates, &PingKind::DayOf)
-        }
-        IntentContent::Countdown { run_id, .. } => match ctx.run(run_id) {
-            Some(run) => resolve_mentions(
-                members,
-                &countdown_mentions(&ctx.states(run)),
-                &PingKind::Countdown,
-            ),
-            None => Vec::new(),
-        },
-        _ => Vec::new(),
     }
 }

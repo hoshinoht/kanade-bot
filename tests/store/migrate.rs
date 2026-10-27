@@ -1,9 +1,9 @@
 //! Embedded migrations: fresh files, idempotent reopen and refusals.
 
-use kanade::domain::notify::DeclineNoticeStore;
-use kanade::domain::schedule::{Change, ChangeSet};
-use kanade::domain::scheduler::{ScheduleStore, Scope, StoreError};
-use kanade::infrastructure::store::{SqliteStore, SqliteStoreConfig, SqliteStoreError};
+use kanade_domain::notify::DeclineNoticeStore;
+use kanade_domain::schedule::{Change, ChangeSet};
+use kanade_domain::scheduler::{ScheduleStore, Scope, StoreError};
+use kanade_store::{SqliteStore, SqliteStoreConfig, SqliteStoreError};
 use sqlx::{Connection, Row, SqliteConnection};
 
 use crate::support::{LATE_SCHEMA_DROPS, TempDir, connect, create, reminder, seed, tamper};
@@ -91,7 +91,7 @@ async fn assert_orphans_refused(store: &SqliteStore, id: &str) {
         .commit(
             before.revision,
             ChangeSet { changes },
-            kanade::infrastructure::store::conformance::meta(),
+            kanade_store::conformance::meta(),
         )
         .await;
     assert!(
@@ -333,8 +333,8 @@ async fn a_version_one_store_gains_the_later_tables_on_open() {
 /// refuse UPDATE and DELETE.
 #[tokio::test]
 async fn upgrading_from_v22_adds_append_only_settings_changes() {
-    use kanade::domain::history::{Actor, Surface};
-    use kanade::domain::settings::{
+    use kanade_domain::history::{Actor, Surface};
+    use kanade_domain::settings::{
         RowDiff, SettingsChange, SettingsChangeQuery, SettingsStore, keys,
     };
 
@@ -408,9 +408,7 @@ async fn upgrading_from_v22_adds_append_only_settings_changes() {
 /// its hash across a reopen, and malformed hashes are refused.
 #[tokio::test]
 async fn upgrading_from_v24_keeps_sessions_and_adds_the_avatar_hash() {
-    use kanade::infrastructure::store::web_sessions::{
-        LoginMethod, SessionOrigin, WebSession, WebSessionStore,
-    };
+    use kanade_store::web_sessions::{LoginMethod, SessionOrigin, WebSession, WebSessionStore};
 
     let dir = TempDir::new();
     let config = dir.config("v24-sessions");
@@ -485,7 +483,7 @@ async fn upgrading_from_v24_keeps_sessions_and_adds_the_avatar_hash() {
 /// reopen, and an empty or over-long label is refused.
 #[tokio::test]
 async fn upgrading_from_v25_keeps_sessions_and_adds_the_device() {
-    use kanade::infrastructure::store::web_sessions::{WebSession, WebSessionStore};
+    use kanade_store::web_sessions::{WebSession, WebSessionStore};
 
     let dir = TempDir::new();
     let config = dir.config("v25-sessions");
@@ -546,7 +544,7 @@ async fn upgrading_from_v25_keeps_sessions_and_adds_the_device() {
 #[tokio::test]
 async fn upgrading_from_v29_keeps_sessions_and_adds_rotation_grace() {
     use chrono::{TimeDelta, TimeZone, Utc};
-    use kanade::infrastructure::store::web_sessions::{SessionOrigin, WebSession, WebSessionStore};
+    use kanade_store::web_sessions::{SessionOrigin, WebSession, WebSessionStore};
 
     let dir = TempDir::new();
     let config = dir.config("v29-sessions");
@@ -645,8 +643,8 @@ async fn assert_checks_refuse(config: &SqliteStoreConfig, table: &str, cases: &[
 #[tokio::test]
 async fn upgrading_from_v30_adds_replays() {
     use chrono::{TimeZone, Utc};
-    use kanade::domain::settings::{SettingsStore, keys};
-    use kanade::infrastructure::store::replays::{ReplayScope, ReplayStore, StoredReplay};
+    use kanade_domain::settings::{SettingsStore, keys};
+    use kanade_store::replays::{ReplayScope, ReplayStore, StoredReplay};
 
     let dir = TempDir::new();
     let config = dir.config("v30-replays");
@@ -702,7 +700,7 @@ async fn upgrading_from_v30_adds_replays() {
 #[tokio::test]
 async fn upgrading_from_v34_adds_run_prompts_that_close_once() {
     use chrono::{TimeZone, Utc};
-    use kanade::domain::completion::{PromptClose, PromptOutcome, RunPrompt, RunPromptStore};
+    use kanade_domain::completion::{PromptClose, PromptOutcome, RunPrompt, RunPromptStore};
 
     let dir = TempDir::new();
     let config = dir.config("v34-run-prompts");
@@ -769,9 +767,7 @@ async fn upgrading_from_v34_adds_run_prompts_that_close_once() {
 #[tokio::test]
 async fn upgrading_from_v35_keeps_audit_rows_and_stores_refused_writes() {
     use chrono::{TimeZone, Utc};
-    use kanade::infrastructure::store::auth_audit::{
-        AuditFilter, AuditKind, AuditRealm, AuditRow, AuthAuditStore,
-    };
+    use kanade_store::auth_audit::{AuditFilter, AuditKind, AuditRealm, AuditRow, AuthAuditStore};
 
     let at = |hour| Utc.with_ymd_and_hms(2026, 10, 10, hour, 0, 0).unwrap();
     let row = |hour, realm, event, client: &str| AuditRow {
@@ -814,7 +810,7 @@ async fn upgrading_from_v35_keeps_audit_rows_and_stores_refused_writes() {
              {ROSTER_DROPS}
              DELETE FROM schema_migrations WHERE version >= 36;
              UPDATE store_meta SET schema_version = 35;",
-            include_str!("../../src/infrastructure/store/sqlite/migrations/0032_auth_audit.sql")
+            include_str!("../../crates/kanade-store/src/sqlite/migrations/0032_auth_audit.sql")
         ),
     )
     .await;

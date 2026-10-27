@@ -2,7 +2,7 @@
 
 use std::collections::BTreeSet;
 
-use crate::domain::schedule::RsvpState;
+use kanade_domain::schedule::RsvpState;
 
 #[derive(Clone, Debug, Default)]
 pub(crate) struct CardAnswer {

@@ -11,13 +11,11 @@ use std::collections::BTreeMap;
 use serde::Serialize;
 
 use super::{history::SettingsActor, iso_instant};
-use crate::{
-    domain::{catalog::BossTable, characters::PartySlot},
-    infrastructure::scouter::{
-        BossParty, Card, Combined, Estimates, Failure, FailureKind, Found, Job, Member, Subject,
-        Target, catalog_token, saved_party, scouter_keys,
-    },
+use kanade_chardata::scouter::{
+    BossParty, Card, Combined, Estimates, Failure, FailureKind, Found, Job, Member, Subject,
+    Target, catalog_token, saved_party, scouter_keys,
 };
+use kanade_domain::{catalog::BossTable, characters::PartySlot};
 
 pub const LABEL: &str = "Clear-time estimate";
 pub const NOTE: &str = "For planning only, not eligibility";

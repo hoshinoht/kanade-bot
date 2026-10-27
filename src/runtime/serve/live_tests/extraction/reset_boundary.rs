@@ -2,10 +2,8 @@ use chrono::TimeZone;
 use chrono_tz::Asia::Kuala_Lumpur;
 use serde_json::Value;
 
-use crate::{
-    domain::schedule::Run,
-    extract::{matching::reachable, resolve::resolve},
-};
+use kanade_domain::schedule::Run;
+use kanade_extract::{matching::reachable, resolve::resolve};
 
 use super::{ALICE, HOME_A, RunSource, RunStatus, Utc, moved};
 

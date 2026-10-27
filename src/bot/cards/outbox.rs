@@ -5,21 +5,21 @@
 use std::sync::Arc;
 
 use crate::bot::delivery::{AdminAlert, AlertSink};
-use crate::bot::transport::DiscordTransport;
-use crate::domain::drafts::ProposalStore;
-use crate::domain::history::{Actor, Origin, Surface};
-use crate::domain::notify::DeliveryJournal;
-use crate::domain::proposals::ProposalCardStore;
-use crate::domain::schedule::{EMOJI_NO, EMOJI_YES, RsvpSource, RsvpState};
-use crate::domain::scheduler::{DeclineNoticeContext, IdSource, ScheduleStore};
-use crate::extract::pipeline::{BacklogDrop, Card, ChatAnswer, Outbox, PostResult, Redirected};
+use crate::discord::transport::DiscordTransport;
+use kanade_domain::drafts::ProposalStore;
+use kanade_domain::history::{Actor, Origin, Surface};
+use kanade_domain::notify::DeliveryJournal;
+use kanade_domain::proposals::ProposalCardStore;
+use kanade_domain::schedule::{EMOJI_NO, EMOJI_YES, RsvpSource, RsvpState};
+use kanade_domain::scheduler::{DeclineNoticeContext, IdSource, ScheduleStore};
+use kanade_extract::pipeline::{BacklogDrop, Card, ChatAnswer, Outbox, PostResult, Redirected};
 
 use super::desk::CardDesk;
 
 impl<S, T, I, A> CardDesk<S, T, I, A>
 where
     S: ScheduleStore
-        + crate::domain::notify::DeclineNoticeStore
+        + kanade_domain::notify::DeclineNoticeStore
         + ProposalStore
         + ProposalCardStore
         + DeliveryJournal
@@ -30,7 +30,7 @@ where
     A: AlertSink,
 {
     /// v4 extraction `_apply_rsvp`: this is fed only by
-    /// [`crate::extract::pipeline::Outbox::answers`], never proposal-card
+    /// [`kanade_extract::pipeline::Outbox::answers`], never proposal-card
     /// approval. The member's ✅/❌ is applied first, then recorded as chat;
     /// an extraction decline enters the durable delivery drain.
     pub async fn apply_answers(&self, answers: &[ChatAnswer]) -> usize {
@@ -94,7 +94,7 @@ pub struct CardOutbox<S, T, I, A>(pub Arc<CardDesk<S, T, I, A>>);
 impl<S, T, I, A> Outbox for CardOutbox<S, T, I, A>
 where
     S: ScheduleStore
-        + crate::domain::notify::DeclineNoticeStore
+        + kanade_domain::notify::DeclineNoticeStore
         + ProposalStore
         + ProposalCardStore
         + DeliveryJournal

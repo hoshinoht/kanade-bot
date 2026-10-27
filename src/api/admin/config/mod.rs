@@ -8,10 +8,9 @@
 
 mod access;
 mod changes;
-mod desk;
 mod models;
 mod patch;
-mod stack;
+mod view;
 
 #[cfg(test)]
 pub(crate) use access::{AccessReport, AccessRow};
@@ -29,27 +28,22 @@ use axum::{
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-pub use desk::{
-    CatalogRead, ConfigDesk, ConfigFacts, ConfigFuture, ConfigInputs, LiveProfileChoices,
-    ModelCatalog, PersonaFiles, SettingsChanged, SettingsPort,
-};
+use crate::app::config::{CatalogRead, ConfigDesk};
 
 use super::{
     replay::Keyed,
     write::{Refusal, bad_body, origin, state},
 };
-use crate::{
-    api::{auth::AdminSession, error::ApiError, listeners::Site, state::ApiState},
-    chat::persona::{FALLBACK_PERSONA, PersonaId, PersonaRoot, ProfileId, ReloadError},
-    domain::{
-        history::Surface,
-        settings::{
-            LOCAL_CONTEXT_WARNING, Models, RuntimeSettings, Section, SettingsChange, SettingsError,
-            diff_rows, keys,
-        },
+use crate::api::{auth::AdminSession, error::ApiError, listeners::Site, state::ApiState};
+use kanade_domain::{
+    history::Surface,
+    settings::{
+        LOCAL_CONTEXT_WARNING, Models, RuntimeSettings, Section, SettingsChange, SettingsError,
+        diff_rows, keys,
     },
-    infrastructure::store::replays::{ReplayScope, StoredReplay},
 };
+use kanade_store::replays::{ReplayScope, StoredReplay};
+use kanade_voice::persona::{FALLBACK_PERSONA, PersonaId, PersonaRoot, ProfileId, ReloadError};
 
 /// The stored body of a keyed PATCH: the notices it answered with.
 #[derive(Deserialize)]
@@ -134,7 +128,15 @@ async fn answer(
     let channels = state.channels.channels();
     let last_digest = last_digest(state, &channels).await;
     let saved = desk.saved_keys().await;
-    let mut view = desk.view(settings, catalog, &roles, notices, last_digest, &saved);
+    let mut view = view::view(
+        desk,
+        settings,
+        catalog,
+        &roles,
+        notices,
+        last_digest,
+        &saved,
+    );
     fill_in_use(state, &mut view.models.groups);
     view.manage_messages.missing = access::missing_manage(
         state.channels.as_ref(),
@@ -168,13 +170,13 @@ fn fill_in_use(state: &ApiState, groups: &mut [crate::api::dto::config::Capacity
 /// A failed journal read leaves the field empty rather than failing the page.
 async fn last_digest(
     state: &ApiState,
-    channels: &[crate::api::state::ChannelEntry],
+    channels: &[crate::app::guild::ChannelEntry],
 ) -> Option<crate::api::dto::config::LastDigest> {
     let digests = match state.store.digests().await {
         Ok(digests) => digests,
         // Store error text may carry paths, so only the event is logged.
         Err(_) => {
-            crate::runtime::logging::log!(warn, "config_digest_unreadable");
+            kanade_log::log!(warn, "config_digest_unreadable");
             return None;
         }
     };
@@ -381,7 +383,7 @@ async fn update(
             let declared = !desk.facts.model_groups.is_empty();
             let before = models::capacity(
                 &current.models,
-                &desk.groups(&current),
+                &view::groups(desk, &current),
                 declared,
                 Some(&read.snapshot),
             );
@@ -389,7 +391,7 @@ async fn update(
             proposed.models = next.clone();
             let after = models::capacity(
                 &next,
-                &desk.groups(&proposed),
+                &view::groups(desk, &proposed),
                 declared,
                 Some(&read.snapshot),
             );
@@ -495,7 +497,7 @@ async fn update(
         && desk.store.put_replay(replay).await.is_err()
     {
         // Store error text may carry paths, so only the event is logged.
-        crate::runtime::logging::log!(warn, "idempotency_replay_unrecorded");
+        kanade_log::log!(warn, "idempotency_replay_unrecorded");
     }
     drop(current);
     let catalog = match catalog {

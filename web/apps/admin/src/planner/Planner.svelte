@@ -57,6 +57,8 @@
 
   // Runs that can still clash: finished and cancelled ones are left out.
   const ACTIVE = (run: Run) => run.status !== 'done' && run.status !== 'cancelled';
+  // Runs a swap may land on: an ended (frozen) run refuses every edit but its status.
+  const SWAPPABLE = (run: Run) => ACTIVE(run) && !run.ended;
   // A member who answered no is not playing, so they cannot clash.
   function timed(run: Run, slot?: Slot): TimedRun {
     return {
@@ -75,7 +77,7 @@
     step,
     others: (d: number) => timedOthers(active, d, lift.kind === 'lifted' ? lift.runId : ''),
     occupant: (slot: Slot, movingId: string) => {
-      const here = everyRun.find((r) => ACTIVE(r) && r.id !== movingId && r.day === slot.day && r.time === slot.time);
+      const here = everyRun.find((r) => SWAPPABLE(r) && r.id !== movingId && r.day === slot.day && r.time === slot.time);
       return here ? { id: here.id, label: runTitle(here) } : null;
     },
   });
@@ -320,7 +322,7 @@
       pointer.y,
       cards.map((card, i) => {
         const box = card.getBoundingClientRect();
-        return { id: card.dataset.run!, top: box.top, height: box.height, swappable: !!runs[i] && ACTIVE(runs[i]) };
+        return { id: card.dataset.run!, top: box.top, height: box.height, swappable: !!runs[i] && SWAPPABLE(runs[i]) };
       }),
     );
     if (zone.kind === 'swap') {

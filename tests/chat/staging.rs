@@ -10,10 +10,10 @@
 
 use std::path::Path;
 
-use kanade::chat::persona::Staging;
-use kanade::chat::pilot::staging_line;
-use kanade::domain::catalog::BossTable;
-use kanade::infrastructure::files::load_catalog;
+use kanade_chat::pilot::staging_line;
+use kanade_domain::catalog::BossTable;
+use kanade_files::load_catalog;
+use kanade_voice::persona::Staging;
 use serde_json::json;
 
 use crate::wire::kanade;

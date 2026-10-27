@@ -2,13 +2,12 @@
 //! send → bind or resolve, through the delivery [`Executor`]); an ambiguous
 //! send stays held and is never replayed. A card is re-rendered from its
 //! stored details and its proposals' states, so it can be refreshed after a
-//! restart; allowed mentions are empty (names only). The message style is
-//! read per render from the card kit: classic is v4's card, redesigned is
-//! `styled.rs`, posted as its Components V2 layout (`v2.rs`, Apply/Reject
-//! buttons instead of seeded ✅/❌; the embed when the layout does not fit).
-//! A card keeps the format it was posted in: a V2 card is re-rendered as V2
-//! whatever the style (Discord cannot take the flag off), a legacy one as
-//! the style's embed card (it keeps its reactions).
+//! restart; allowed mentions are empty (names only). A card is `styled.rs`,
+//! posted as its Components V2 layout (`v2.rs`, Apply/Reject buttons
+//! instead of seeded ✅/❌; the embed when the layout does not fit). A card
+//! keeps the format it was posted in: a V2 card is re-rendered as V2
+//! (Discord cannot take the flag off), a legacy one as the embed card (it
+//! keeps its reactions).
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{Arc, Mutex, PoisonError};
@@ -18,43 +17,37 @@ use chrono_tz::Tz;
 use twilight_model::channel::message::embed::{EmbedField, EmbedFooter};
 use twilight_model::channel::message::{Component, Embed};
 
-use super::format::{
-    Audience, CardView, SUPERSEDED_NOTICE, applied_notice, proposal_card, rejected_notice,
-    unanswered,
-};
 use super::react::OUT_OF_DATE_NOTICE;
 use super::styled::{CardState, Closure, Look, StyledCard, styled_card};
 use super::v2::card_components;
-use crate::api::state::DeclineRetraction;
-use crate::bot::commands::text::{hhmm, weekday_name};
-use crate::bot::delivery::cards::CardKit;
-use crate::bot::delivery::cards::redesign::learn_after_refusal;
+use crate::app::ids::{id_text, parse_id};
+use crate::app::ports::DeclineRetraction;
 use crate::bot::delivery::{
-    AdminAlert, AlertSink, AlertThrottle, Executor, FixedClock, SendFailure, SendOutcome, StoreRef,
-    edit_lock,
+    AdminAlert, AlertSink, AlertThrottle, Executor, FixedClock, SendFailure, SendOutcome, edit_lock,
 };
-use crate::bot::ids::{id_text, parse_id};
-use crate::bot::mentions;
-use crate::bot::transport::{
+use crate::cards::CardKit;
+use crate::cards::format::{Audience, unanswered};
+use crate::cards::redesign::learn_after_refusal;
+use crate::cards::text::{hhmm, weekday_name};
+use crate::discord::mentions;
+use crate::discord::transport::{
     ChannelId, DiscordTransport, MessageEdit, MessageId, Outcome, OutgoingMessage, RejectionKind,
 };
-use crate::domain::drafts::{DraftStatus, ProposalStore, SUPERSEDED};
-use crate::domain::history::Actor;
-use crate::domain::members::Directory;
-use crate::domain::notify::{
+use kanade_domain::drafts::{DraftStatus, ProposalStore, SUPERSEDED};
+use kanade_domain::history::Actor;
+use kanade_domain::members::Directory;
+use kanade_domain::notify::{
     DeliveryJournal, DeliveryTarget, EffectKind, IntentContent, JournalView, NotificationIntent,
     PlannedSend, SendDisposition,
 };
-use crate::domain::proposals::{
+use kanade_domain::proposals::{
     Approver, CardDetails, CardPayload, Payload, ProposalCardStore, StoredCard,
 };
-use crate::domain::schedule::{Run, SchedulePolicy};
-use crate::domain::scheduler::{
-    Clock, IdSource, ScheduleStore, SchedulerService, Scope, StoreError,
+use kanade_domain::schedule::{Run, SchedulePolicy};
+use kanade_domain::scheduler::{
+    Clock, IdSource, ScheduleStore, SchedulerService, Scope, StoreError, StoreRef,
 };
-use crate::domain::settings::MessageStyle;
-use crate::extract::pipeline::{CardEntry, PostResult, Redirected};
-use crate::runtime::logging;
+use kanade_extract::pipeline::{CardEntry, PostResult, Redirected};
 
 /// The reacting member's standing, from the gateway (roles, Administrator,
 /// guild owner) and the roster.
@@ -94,13 +87,15 @@ pub struct CardDesk<S, T, I, A> {
     pub(super) decline_retraction: Option<DeclineRetraction>,
     throttle: AlertThrottle,
     pub(super) settings: CardSettings,
-    /// The live message style, the catalog, the difficulty marks and which
-    /// posted cards are V2.
+    /// The catalog, the difficulty marks and which posted cards are V2.
     pub(super) cards: CardKit,
     /// Rebuilt from HTTP on each fresh session; retained across other refreshes.
     pub(super) replay_conflicts: Mutex<BTreeSet<String>>,
     /// v5: approvals refuse runs past their end (`None`: v4 rules).
-    pub(super) run_ends: Option<crate::domain::completion::RunEndsSource>,
+    pub(super) run_ends: Option<kanade_domain::completion::RunEndsSource>,
+    /// Post new cards as the embed card, as an over-budget card goes out
+    /// (`posting_legacy`, tests of the ✅/❌ path).
+    legacy_posts: bool,
 }
 
 impl<S, T, I, A> std::fmt::Debug for CardDesk<S, T, I, A> {
@@ -156,25 +151,6 @@ fn rich(
     }
 }
 
-fn embed(view: &CardView) -> Embed {
-    let fields = view
-        .fields
-        .iter()
-        .map(|(name, value)| EmbedField {
-            inline: false,
-            name: name.clone(),
-            value: value.clone(),
-        })
-        .collect();
-    rich(
-        view.colour,
-        view.title.clone(),
-        view.description.clone(),
-        fields,
-        view.footer.clone(),
-    )
-}
-
 fn styled_embed(card: &StyledCard) -> Embed {
     let fields = card
         .fields
@@ -194,20 +170,9 @@ fn styled_embed(card: &StyledCard) -> Embed {
     )
 }
 
-fn with_notices(content: &str, notices: &[String]) -> String {
-    let mut text = content.to_owned();
-    for notice in notices {
-        text.push('\n');
-        text.push_str(notice);
-    }
-    text
-}
-
-/// What has been decided on a card, for either style: classic's appended
-/// notice lines, and the redesigned outcomes and extra subtext lines.
+/// What has been decided on a card: the outcomes and extra subtext lines.
 #[derive(Debug, Default)]
 struct Decisions {
-    notices: Vec<String>,
     closures: Vec<Closure>,
     notes: Vec<String>,
     /// Some change on the card still waits for an answer.
@@ -222,12 +187,6 @@ impl Decisions {
         }
     }
 
-    fn notice(&mut self, notice: String) {
-        if !self.notices.contains(&notice) {
-            self.notices.push(notice);
-        }
-    }
-
     fn close(&mut self, closure: Closure) {
         if !self.closures.contains(&closure) {
             self.closures.push(closure);
@@ -237,13 +196,9 @@ impl Decisions {
     /// A line beyond the proposals' own states (the offline conflict, a
     /// refused ✅'s out-of-date note).
     fn extra(&mut self, line: &str) {
-        if self.notices.iter().any(|notice| notice == line) {
-            return;
-        }
-        self.notices.push(line.to_owned());
         if line == OUT_OF_DATE_NOTICE {
             self.close(Closure::Stale);
-        } else {
+        } else if !self.notes.iter().any(|note| note == line) {
             self.notes.push(line.to_owned());
         }
     }
@@ -292,16 +247,16 @@ impl Rendered {
 /// Which layout a render is for.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Layout {
-    /// The live style's embed card (classic or redesigned).
+    /// The embed card.
     Legacy,
-    /// The redesigned card as Components V2, whatever the live style.
+    /// The card as Components V2.
     V2,
 }
 
 impl<S, T, I, A> CardDesk<S, T, I, A>
 where
     S: ScheduleStore
-        + crate::domain::notify::DeclineNoticeStore
+        + kanade_domain::notify::DeclineNoticeStore
         + ProposalStore
         + ProposalCardStore
         + DeliveryJournal
@@ -326,20 +281,29 @@ where
             cards: CardKit::default(),
             replay_conflicts: Mutex::default(),
             run_ends: None,
+            legacy_posts: false,
         }
     }
 
-    /// Render with this kit's live style, catalog and difficulty marks
-    /// (default: classic).
+    /// Render with this kit's catalog and difficulty marks.
     #[must_use]
     pub fn with_cards(mut self, cards: CardKit) -> Self {
         self.cards = cards;
         self
     }
 
+    /// Post every new card as the embed card with seeded ✅/❌, the path an
+    /// over-budget card (and every card posted before Components V2) takes.
+    #[cfg(any(test, feature = "test-support"))]
+    #[must_use]
+    pub fn posting_legacy(mut self) -> Self {
+        self.legacy_posts = true;
+        self
+    }
+
     /// Freeze runs past their end in approvals and answers.
     #[must_use]
-    pub fn with_run_ends(mut self, source: crate::domain::completion::RunEndsSource) -> Self {
+    pub fn with_run_ends(mut self, source: kanade_domain::completion::RunEndsSource) -> Self {
         self.run_ends = Some(source);
         self
     }
@@ -353,7 +317,7 @@ where
         &self,
         now: DateTime<Utc>,
     ) -> SchedulerService<StoreRef<'_, S>, I, FixedClock> {
-        // The service refuses a policy whose attendance mode differs from its own.
+        // The service refuses a policy whose attendance rules differ from its own.
         let service =
             SchedulerService::new(StoreRef(&*self.store), self.ids.clone(), FixedClock(now))
                 .with_attendance(self.settings.policy.attendance);
@@ -479,8 +443,8 @@ where
     }
 
     /// The card for these proposals against the runs as they stand now: the
-    /// live style's embed card, or the V2 layout (`None` components when it
-    /// does not fit).
+    /// embed card, or the V2 layout (`None` components when it does not
+    /// fit).
     async fn render(
         &self,
         cards: &[StoredCard],
@@ -509,22 +473,6 @@ where
                 Some(low.map_or(value, |low| low.min(value)))
             });
         let who = self.audience(cards, &runs);
-        if layout == Layout::Legacy && self.cards.style() == MessageStyle::Classic {
-            let view = proposal_card(
-                &details,
-                &by_id,
-                self.settings.zone,
-                Some(&waiting),
-                confidence,
-                Some(&who),
-            );
-            return Ok(Rendered {
-                content: with_notices(&view.content, &decisions.notices),
-                embed: embed(&view),
-                mention_users: view.mention_users,
-                components: Vec::new(),
-            });
-        }
         let look = Look {
             zone: self.settings.zone,
             catalog: self.cards.catalog.as_deref(),
@@ -600,11 +548,12 @@ where
         cards: &[StoredCard],
         now: DateTime<Utc>,
     ) -> PostResult {
-        // A redesigned card goes out as V2 when it fits; otherwise (and in
-        // the classic style) as the embed card with seeded reactions.
-        let layout = match self.cards.style() {
-            MessageStyle::Classic => Layout::Legacy,
-            MessageStyle::Redesigned => Layout::V2,
+        // A card goes out as V2 when it fits; otherwise as the embed card
+        // with seeded reactions.
+        let layout = if self.legacy_posts {
+            Layout::Legacy
+        } else {
+            Layout::V2
         };
         let Ok(card) = self.render(cards, &Decisions::fresh(), layout).await else {
             return PostResult::NotPosted;
@@ -636,7 +585,7 @@ where
     /// Save the new proposals' card details and post one card for them (after
     /// any stranded card in the channel, as v4), then mark the retired
     /// proposals' cards superseded.
-    pub async fn post_card(&self, card: &crate::extract::pipeline::Card) -> PostResult {
+    pub async fn post_card(&self, card: &kanade_extract::pipeline::Card) -> PostResult {
         let now = self.now();
         let channel = &card.channel_id;
         let mut saved = true;
@@ -717,9 +666,8 @@ where
         }
     }
 
-    /// Re-render one posted card from its details, with a line per decision
-    /// taken on it (classic: v4's appended "applied by" / "rejected by" /
-    /// superseded; redesigned: a recolour and an outcome subtext line).
+    /// Re-render one posted card from its details, recoloured with an
+    /// outcome subtext line per decision taken on it.
     /// `false` when it could not be edited.
     pub async fn refresh(&self, message_id: &str) -> bool {
         self.refresh_with(message_id, &[]).await
@@ -762,16 +710,13 @@ where
                 DraftStatus::Submitted => decisions.open = true,
                 DraftStatus::Merged => {
                     let by = self.actor_name(draft.closed_by.as_ref());
-                    decisions.notice(applied_notice(&by));
                     decisions.close(Closure::Applied { by, at });
                 }
                 DraftStatus::Rejected => {
                     let by = self.actor_name(draft.closed_by.as_ref());
-                    decisions.notice(rejected_notice(&by));
                     decisions.close(Closure::Rejected { by, at });
                 }
                 DraftStatus::Discarded if draft.close_reason.as_deref() == Some(SUPERSEDED) => {
-                    decisions.notice(SUPERSEDED_NOTICE.to_owned());
                     decisions.close(Closure::Superseded);
                 }
                 _ => {}
@@ -829,7 +774,7 @@ where
     ) -> Outcome<()> {
         if layout == Layout::V2 && card.components.is_empty() {
             if self.cards.v2.formats.first_note(&id_text(message)) {
-                logging::log!(
+                kanade_log::log!(
                     warn,
                     "proposal_card_v2_over_budget",
                     message_id = id_text(message),

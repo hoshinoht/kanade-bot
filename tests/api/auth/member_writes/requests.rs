@@ -2,7 +2,7 @@
 //! admin's decision in the Inbox reaching the requester's list.
 
 use chrono::TimeDelta;
-use kanade::domain::{
+use kanade_domain::{
     drafts::DraftStore,
     requests::{NoFreezes, RequestSpec, Subject},
     schedule::{Change, RunStatus},

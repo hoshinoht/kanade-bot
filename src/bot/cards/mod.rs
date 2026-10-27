@@ -1,12 +1,9 @@
-//! Extraction proposal cards (slice E5): v4's card text (`format`), the
-//! redesigned card (`styled`) and its Components V2 layout (`v2`), posting
-//! and refreshing through the delivery journal (`desk`), ✅/❌ and button
-//! approval (`react`), the extract `Outbox` (`outbox`) and the
-//! difficulty-pill application emojis (`emojis`).
+//! Extraction proposal cards (slice E5): the card (`styled`, wording in
+//! `crate::cards::format`) and its Components V2 layout (`v2`), posting and
+//! refreshing through the delivery journal (`desk`), ✅/❌ and button
+//! approval (`react`) and the extract `Outbox` (`outbox`).
 
 mod desk;
-pub mod emojis;
-pub mod format;
 mod outbox;
 mod react;
 mod replay;
@@ -14,11 +11,6 @@ mod styled;
 mod v2;
 
 pub use desk::{Authority, CardDesk, CardSettings, DeskDeps};
-pub use format::{
-    Audience, CardKind, CardView, SUPERSEDED_NOTICE, TBD, applied_notice, boss_label, boss_labels,
-    card_kind, confirm_hint, format_participants, proposal_card, proposal_line, rejected_notice,
-    unanswered, when_text,
-};
 pub use outbox::CardOutbox;
 pub use react::{CardFollowUp, CardPress, CardReaction, FollowUpCard, Pressed};
 pub use replay::ReplayLive;

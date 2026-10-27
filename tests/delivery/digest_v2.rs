@@ -1,40 +1,24 @@
-//! The redesigned weekly digest as Components V2: converted in place on the
-//! first refresh after the style flips to redesigned, left as posted once
-//! the style flips back (Discord cannot take the flag off), sent as the
-//! embed when the week is over the V2 budget, and linking the portal only
-//! while it has a public origin and is open.
+//! The weekly digest as Components V2: a legacy digest converted in place
+//! on its first refresh, a V2 digest left as posted once the week outgrows
+//! the V2 budget (Discord cannot take the flag off), sent as the embed when
+//! the week is over the budget, and linking the portal only while it has a
+//! public origin and is open.
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use chrono::TimeDelta;
-use kanade::bot::delivery::cards::CardKit;
-use kanade::bot::delivery::cards::redesign::{MY_RUNS, OPEN_PORTAL};
-use kanade::bot::transport::{Call, FakeDiscord, MessageId, Op, Outcome, RejectionKind};
-use kanade::domain::schedule::RunStatus;
-use kanade::domain::settings::MessageStyle;
-use kanade::infrastructure::store::SqliteStore;
+use kanade::cards::CardKit;
+use kanade::cards::redesign::{MY_RUNS, OPEN_PORTAL};
+use kanade::discord::transport::{Call, FakeDiscord, MessageId, Op, Outcome, RejectionKind};
+use kanade_domain::schedule::RunStatus;
+use kanade_store::SqliteStore;
 use twilight_model::channel::message::Component;
 use twilight_model::channel::message::component::ButtonStyle;
 
 use crate::cards::{answer, created, edits, kit, refresher, run, tonight, world};
-use crate::scenarios::{self, now, previous_week};
+use crate::scenarios::{self, HOME, now, previous_week};
 use crate::support::{self, mark_digest_week};
-
-/// `kit(None)` in the redesigned style while `redesign` is set, read live.
-fn switchable(redesign: &Arc<AtomicBool>) -> CardKit {
-    let redesign = Arc::clone(redesign);
-    CardKit {
-        style: Some(Arc::new(move || {
-            if redesign.load(Ordering::SeqCst) {
-                MessageStyle::Redesigned
-            } else {
-                MessageStyle::Classic
-            }
-        })),
-        ..kit(None)
-    }
-}
 
 struct Week {
     store: Arc<SqliteStore>,
@@ -97,17 +81,15 @@ impl Week {
 }
 
 #[tokio::test]
-async fn a_classic_digest_turns_v2_on_the_first_refresh_after_the_switch() {
+async fn a_legacy_digest_turns_v2_on_its_first_refresh() {
     let week = Week::new(1).await;
-    let style = Arc::new(AtomicBool::new(false));
-    let cards = switchable(&style);
-    let digest = week.post(&cards).await;
-    let [post] = created(&week.fake).try_into().expect("one post");
-    assert!(post.components.is_empty(), "classic is an embed");
+    let digest = MessageId::new(7001);
+    week.fake
+        .seed_message(twilight_model::id::Id::new(HOME.parse().unwrap()), digest);
+    support::seed_digest(&*week.store, scenarios::week(), HOME, "7001", now()).await;
     assert!(!week.fake.is_v2(digest));
 
-    style.store(true, Ordering::SeqCst);
-    assert_eq!(week.refresh(&cards).await, 1);
+    assert_eq!(week.refresh(&kit(None)).await, 1);
     let [edit] = edits(&week.fake).try_into().expect("one edit");
     let layout = edit.components.as_deref().expect("a V2 edit");
     let texts = support::v2_texts(layout);
@@ -115,26 +97,29 @@ async fn a_classic_digest_turns_v2_on_the_first_refresh_after_the_switch() {
     assert!(texts[1].contains("· 1 in"), "{texts:?}");
     assert_eq!((edit.content, edit.embeds), (None, None));
     assert!(week.fake.is_v2(digest), "converted in place");
-    assert_eq!(created(&week.fake).len(), 1, "no new post");
+    assert!(created(&week.fake).is_empty(), "no new post");
 }
 
 #[tokio::test]
-async fn a_v2_digest_is_left_as_posted_after_the_style_flips_back() {
+async fn a_v2_digest_is_left_as_posted_once_the_week_outgrows_the_budget() {
     let week = Week::new(1).await;
-    let style = Arc::new(AtomicBool::new(true));
-    let cards = switchable(&style);
+    let cards = kit(None);
     let digest = week.post(&cards).await;
     assert!(week.fake.is_v2(digest));
+    // Sixty runs on one day: the render falls back to the embed.
+    for n in 1..60 {
+        let at = tonight() + TimeDelta::minutes(n);
+        run(&*week.store, &["XKalos"], &["1001"], at, RunStatus::Planned).await;
+    }
 
     // This process posted it: no edit is even tried.
-    style.store(false, Ordering::SeqCst);
     assert_eq!(week.refresh(&cards).await, 0);
     assert!(edits(&week.fake).is_empty());
     assert_eq!(week.fake.count(Op::Flags), 0);
 
     // A restarted process does not know: Discord refuses the embed edit,
     // one flags read tells why, and later refreshes leave it alone.
-    let restarted = switchable(&style);
+    let restarted = kit(None);
     assert_eq!(week.refresh(&restarted).await, 0);
     let [refused] = week
         .fake
@@ -162,11 +147,11 @@ async fn a_v2_digest_is_left_as_posted_after_the_style_flips_back() {
 }
 
 #[tokio::test]
-async fn a_week_over_the_v2_budget_posts_the_redesigned_embed() {
+async fn a_week_over_the_v2_budget_posts_the_embed() {
     // Sixty runs on one day: that day's text would pass Discord's 2,000
     // bytes per text display.
     let week = Week::new(60).await;
-    let cards = switchable(&Arc::new(AtomicBool::new(true)));
+    let cards = kit(None);
     let digest = week.post(&cards).await;
     let [post] = created(&week.fake).try_into().expect("one post");
     assert!(post.components.is_empty(), "no V2 layout");
@@ -207,11 +192,11 @@ fn buttons(components: &[Component]) -> Vec<(String, Option<String>)> {
     out
 }
 
-/// `switchable` in the redesigned style with a public portal origin, the
-/// portal open while `open` is set, read live.
+/// `kit(None)` with a public portal origin, the portal open while `open`
+/// is set, read live.
 fn with_portal(open: &Arc<AtomicBool>) -> CardKit {
     let open = Arc::clone(open);
-    let mut cards = switchable(&Arc::new(AtomicBool::new(true)));
+    let mut cards = kit(None);
     cards.v2.portal = Some(PORTAL.into());
     cards.v2.portal_open = Some(Arc::new(move || open.load(Ordering::SeqCst)));
     cards

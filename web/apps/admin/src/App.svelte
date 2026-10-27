@@ -436,9 +436,11 @@
     plannerUndoToast = report(outcome, () => void undo(entry.revision));
   }
 
-  async function move(runId: string, to: Slot): Promise<MoveOutcome> {
-    const outcome = await store.move(runId, to);
-    reportPlanner(outcome);
+  async function move(runId: string, to: Slot, { reopen = false } = {}): Promise<MoveOutcome> {
+    const outcome = await store.move(runId, to, { reopen });
+    // A reopen earns no undo entry, so its toast carries none (not even an older move's).
+    if (reopen) report(outcome);
+    else reportPlanner(outcome);
     return outcome;
   }
 
@@ -577,7 +579,7 @@
       {wide}
       countdown={store.summary?.next?.run_id === sheetRunId ? store.summary.next.countdown : null}
       onclose={closePane}
-      onmove={(runId, to) => (staging.draft ? stage(runId, (run, week) => staging.move(run, to, week), true) : move(runId, to))}
+      onmove={(runId, to, opts) => (staging.draft ? stage(runId, (run, week) => staging.move(run, to, week), true) : move(runId, to, opts))}
       onswap={(runId, withId) => {
         const other = store.run(withId);
         return staging.draft && other ? stage(runId, (run, week) => staging.swap(run, other, week), true) : swap(runId, withId);

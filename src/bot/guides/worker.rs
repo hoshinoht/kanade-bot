@@ -10,13 +10,12 @@ use tokio::sync::watch;
 
 use super::Publisher;
 use super::execute::Run;
-use crate::bot::transport::DiscordTransport;
-use crate::domain::guides::{
+use crate::discord::transport::DiscordTransport;
+use kanade_domain::guides::{
     Blocked, Guide, GuideStore, Inspection, OpKind, PlanOp, Publish, PublishKind, PublishState,
     PublishedSlot, RenderedSlot, StopReason, plan, plan_unpublish, render,
 };
-use crate::domain::notify::{DeliveryJournal, Lease};
-use crate::runtime::logging;
+use kanade_domain::notify::{DeliveryJournal, Lease};
 
 impl<S, T> Publisher<S, T>
 where
@@ -50,12 +49,12 @@ where
         let publish = match self.store.claim_next(self.now()).await {
             Ok(publish) => publish?,
             Err(error) => {
-                logging::log!(warn, "guide_claim_failed", error = error.to_string());
+                kanade_log::log!(warn, "guide_claim_failed", error = error.to_string());
                 return None;
             }
         };
         let ended = self.execute(publish, stop).await;
-        logging::log!(
+        kanade_log::log!(
             info,
             "guide_publish_ended",
             publish = ended.id.as_str(),
@@ -70,7 +69,7 @@ where
         let guide = match self.store.guide(publish.guide_id.clone()).await {
             Ok(guide) => guide,
             Err(error) => {
-                logging::log!(warn, "guide_read_failed", error = error.to_string());
+                kanade_log::log!(warn, "guide_read_failed", error = error.to_string());
                 return self.stopped(&publish, StopReason::Interrupted, None).await;
             }
         };
@@ -93,7 +92,7 @@ where
         let slots = match self.store.slots(guide.id.clone()).await {
             Ok(slots) => slots,
             Err(error) => {
-                logging::log!(warn, "guide_read_failed", error = error.to_string());
+                kanade_log::log!(warn, "guide_read_failed", error = error.to_string());
                 return self.stopped(&publish, StopReason::Interrupted, None).await;
             }
         };
@@ -229,7 +228,7 @@ where
         {
             Ok(ended) => ended,
             Err(error) => {
-                logging::log!(
+                kanade_log::log!(
                     warn,
                     "guide_finish_failed",
                     publish = publish.id.as_str(),

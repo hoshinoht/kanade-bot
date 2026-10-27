@@ -2,12 +2,12 @@ use std::collections::BTreeMap;
 
 use kanade::{
     cli::models::{Args, check, parse},
-    infrastructure::llm::{
-        Effort,
-        governor::Role,
-        setup::{ModelRoles, ProbeOutcome, RoleEffort},
-    },
     runtime::error::Error,
+};
+use kanade_llm::{
+    Effort,
+    governor::Role,
+    setup::{ModelRoles, ProbeOutcome, RoleEffort},
 };
 use serde_json::json;
 use std::time::Duration;

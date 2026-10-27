@@ -20,9 +20,9 @@ test('pill profiles: chat, extractions, inbox, planner sheet and config share on
   // No neutral `expired` pill: the real scheduler refuses the mock's p-kalos-expired, so no item expires this week.
 
   await page.goto(`${ADMIN}/?sw=off`);
-  await page.locator('[data-run="r-kalos"] .plan-card__open').click();
-  // The real approval of c-kalos-move left XKalos unconfirmed (planned: warning), not the mock's at risk.
-  await expect(page.getByRole('complementary', { name: 'XKalos' }).locator('.tone--warning', { hasText: /^\s*Unconfirmed\s*$/i }).first()).toBeVisible();
+  await page.locator('[data-run="r-bm"] .plan-card__open').click();
+  // XBM is still unconfirmed (planned: warning). XKalos is at risk since its move re-derived it from Tsubame's no.
+  await expect(page.getByRole('complementary', { name: 'XBM' }).locator('.tone--warning', { hasText: /^\s*Unconfirmed\s*$/i }).first()).toBeVisible();
   await page.keyboard.press('Escape');
 
   await page.goto(`${ADMIN}/config?section=models&sw=off`);

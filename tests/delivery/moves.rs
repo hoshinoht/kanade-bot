@@ -5,10 +5,10 @@
 //! slot still ahead is posted when due.
 
 use chrono::{DateTime, TimeDelta, TimeZone, Utc};
-use kanade::domain::history::Origin;
-use kanade::domain::ids::RandomIds;
-use kanade::domain::schedule::{NewRun, RunSource, RunStatus};
-use kanade::infrastructure::store::SqliteStore;
+use kanade_domain::history::Origin;
+use kanade_domain::ids::RandomIds;
+use kanade_domain::schedule::{NewRun, RunSource, RunStatus};
+use kanade_store::SqliteStore;
 
 use crate::cards::{created, world};
 use crate::scenarios::{HOME, config, delivery, now, week};
@@ -99,7 +99,7 @@ async fn sent_morning_card_is_never_reposted<S: Store>(store: &S) {
 }
 
 /// Each post's leading emoji: 📅 morning card, ⏰ countdown, 🔁 move notice.
-fn posted(fake: &kanade::bot::transport::FakeDiscord) -> Vec<String> {
+fn posted(fake: &kanade::discord::transport::FakeDiscord) -> Vec<String> {
     created(fake)
         .iter()
         .map(|post| {

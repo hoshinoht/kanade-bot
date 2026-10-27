@@ -9,14 +9,14 @@ use std::sync::{Arc, Mutex};
 use chrono::{DateTime, TimeDelta, TimeZone, Utc};
 
 use super::*;
-use crate::domain::characters::CharacterStore;
-use crate::domain::characters::{Character, CharacterChange, CharacterRecord, CharacterRole};
-use crate::domain::chardata::UnlinkReason;
-use crate::domain::history::{Actor, Surface};
-use crate::domain::members::MemberStore;
-use crate::infrastructure::store::chardata_conformance::{active, snapshot};
-use crate::infrastructure::store::members_conformance::gateway;
-use crate::infrastructure::store::{SqliteCharData, SqliteStore};
+use kanade_domain::characters::CharacterStore;
+use kanade_domain::characters::{Character, CharacterChange, CharacterRecord, CharacterRole};
+use kanade_domain::chardata::UnlinkReason;
+use kanade_domain::history::{Actor, Surface};
+use kanade_domain::members::MemberStore;
+use kanade_store::chardata_conformance::{active, snapshot};
+use kanade_store::members_conformance::gateway;
+use kanade_store::{SqliteCharData, SqliteStore};
 
 fn at(day: u32, hour: u32) -> DateTime<Utc> {
     Utc.with_ymd_and_hms(2026, 10, day, hour, 0, 0).unwrap()
@@ -262,7 +262,7 @@ async fn stop_cancels_and_joins_a_running_estimate_lookup() {
 
     use tokio::io::AsyncReadExt;
 
-    use crate::infrastructure::scouter::{JobRequest, RosterIgn, Start, Subject, Target};
+    use kanade_chardata::scouter::{JobRequest, RosterIgn, Start, Subject, Target};
 
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let rig = rig_with(Some(listener.local_addr().unwrap())).await;
@@ -302,13 +302,13 @@ async fn stop_cancels_and_joins_a_running_estimate_lookup() {
 }
 
 /// The refresh's schedule, as a pass reads it: these runs.
-struct Parties(Vec<crate::infrastructure::scouter::UpcomingRun>);
+struct Parties(Vec<kanade_chardata::scouter::UpcomingRun>);
 
 impl UpcomingParties for Parties {
-    fn upcoming(&self, _: DateTime<Utc>) -> crate::infrastructure::scouter::UpcomingFuture<'_> {
+    fn upcoming(&self, _: DateTime<Utc>) -> kanade_chardata::scouter::UpcomingFuture<'_> {
         let runs = self.0.clone();
         Box::pin(async move {
-            Some(crate::infrastructure::scouter::Upcoming {
+            Some(kanade_chardata::scouter::Upcoming {
                 current_week: at(8, 0),
                 runs,
             })
@@ -317,7 +317,7 @@ impl UpcomingParties for Parties {
 }
 
 fn passes() -> usize {
-    crate::runtime::logging::captured()
+    kanade_log::captured()
         .iter()
         .filter(|line| line["event"] == "estimate_refresh_pass")
         .count()
@@ -329,7 +329,7 @@ fn passes() -> usize {
 async fn the_refresh_passes_ten_minutes_after_start_then_hourly() {
     use std::time::Duration;
 
-    crate::runtime::logging::capture();
+    kanade_log::capture();
     // Nothing listens: each pass is skipped, and still logged.
     let rig = rig_with(Some("127.0.0.1:9".parse().unwrap())).await;
     let parties: Arc<dyn UpcomingParties> = Arc::new(Parties(Vec::new()));
@@ -358,8 +358,8 @@ async fn the_refresh_passes_ten_minutes_after_start_then_hourly() {
 async fn stop_joins_with_background_lookups_waiting() {
     use std::time::Duration;
 
-    use crate::domain::schedule::RunStatus;
-    use crate::infrastructure::scouter::{RosterIgn, Subject, UpcomingRun};
+    use kanade_chardata::scouter::{RosterIgn, Subject, UpcomingRun};
+    use kanade_domain::schedule::RunStatus;
 
     // Up, but never answers a lookup.
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();

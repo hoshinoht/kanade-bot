@@ -22,9 +22,9 @@ use kanade::{
         listeners::Site,
         state::{RestartPort, SecretChecks, SecretDesk},
     },
-    domain::settings::{SettingsChangeQuery, SettingsStore},
     runtime::secrets::{self, SecretFile},
 };
+use kanade_domain::settings::{SettingsChangeQuery, SettingsStore};
 use serde_json::Value;
 
 use crate::{

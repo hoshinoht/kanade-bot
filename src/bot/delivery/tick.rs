@@ -1,6 +1,6 @@
 //! The scheduler tick (v4 `BossBot.tick`): materialise on a boss-week
 //! rollover (taking the week's automatic history checkpoint), mark runs past
-//! their completion cutoff done, recount attendance (v5 mode only), expire
+//! their completion cutoff done, recount attendance, expire
 //! past-week drafts and proposals past their TTL, drain the notice outbox,
 //! post ownership requests and run completion prompts, post the weekly
 //! digest, then dispatch due reminders. One clock reading and at most one
@@ -12,10 +12,9 @@
 //! alerts and posts nothing; v4 compared for equality and re-posted.
 //!
 //! v5 deviation (user decisions 2026-10-09/10): v4 marked every live run
-//! done two hours after its start (`mark_done`); the tick now asks each
-//! run's channel half an hour after it ends
-//! and marks it done only when answered or at its cutoff
-//! (`run_prompts.rs`).
+//! done two hours after its start; the tick now asks each run's channel
+//! half an hour after it ends and marks it done only when answered or at
+//! its cutoff (`run_prompts.rs`).
 
 use std::sync::Arc;
 #[cfg(any(test, feature = "test-support"))]
@@ -31,41 +30,42 @@ type ClaimResultHook = Arc<dyn Fn() -> Pin<Box<dyn Future<Output = ()> + Send>> 
 
 use super::alerts::{AdminAlert, AlertSink, AlertThrottle};
 use super::card_records;
-use super::cards::{CardContext, CardKit, DigestPhraseStore, ReminderCardStore, resolve_heading};
-use super::estimates::attach_chart;
 use super::executor::{Executor, Replacement, SendFailure, SendOutcome, SendReport};
 use super::notices::NoticeReport;
 use super::owner_requests::OwnerRequestReport;
-use super::ports::{FixedClock, IdsRef, StoreRef};
-use super::render::{render, unrendered};
+use super::ports::{FixedClock, IdsRef};
 use super::run_prompts::RunPromptReport;
-use crate::bot::{
-    gateway::{DeliveryEligibility, DeliveryOperation},
-    transport::{
+use crate::cards::estimates::attach_chart;
+use crate::cards::render::{render, unrendered};
+use crate::cards::{CardContext, CardKit, resolve_heading};
+use crate::{
+    bot::gateway::{DeliveryEligibility, DeliveryOperation},
+    discord::transport::{
         ChannelId, DiscordTransport, MessageEdit, MessageId, Outcome, OutgoingMessage,
         RejectionKind,
     },
 };
-use crate::domain::completion::{RunEnds, RunEndsSource, RunPromptStore};
-use crate::domain::drafts::ProposalStore;
-use crate::domain::history::{
+use kanade_domain::completion::{RunEnds, RunEndsSource, RunPromptStore};
+use kanade_domain::drafts::ProposalStore;
+use kanade_domain::history::{
     Actor, CheckpointKind, Checkpoints, NewCheckpoint, Origin, Surface, auto_checkpoint_name,
 };
-use crate::domain::members::Directory;
-use crate::domain::notify::{
-    ChannelDirectory, DeliveryJournal, DeliverySettings, DigestAction, DigestLog, DigestPostInput,
-    DigestSend, DispatchInput, JournalError, Lease, NoticeOutbox, NotificationIntent, Queued,
-    RecordReason, Recovery, SendDisposition, WeekReset, plan_digest_post, plan_digest_tick,
-    plan_dispatch, retire_digests_before,
+use kanade_domain::members::Directory;
+use kanade_domain::notify::{
+    ChannelDirectory, DeliveryJournal, DeliverySettings, DigestAction, DigestLog,
+    DigestPhraseStore, DigestPostInput, DigestSend, DispatchInput, JournalError, Lease,
+    NoticeOutbox, NotificationIntent, Queued, RecordReason, Recovery, ReminderCardStore,
+    SendDisposition, WeekReset, plan_digest_post, plan_digest_tick, plan_dispatch,
+    retire_digests_before,
 };
-use crate::domain::ownership::OwnerRequestStore;
-use crate::domain::schedule::SchedulePolicy;
-use crate::domain::schedule::ScheduleSnapshot;
-use crate::domain::scheduler::{
-    Clock, IdSource, ScheduleStore, SchedulerError, SchedulerService, Scope, StoreError,
+use kanade_domain::ownership::OwnerRequestStore;
+use kanade_domain::schedule::SchedulePolicy;
+use kanade_domain::schedule::ScheduleSnapshot;
+use kanade_domain::scheduler::{
+    Clock, IdSource, ScheduleStore, SchedulerError, SchedulerService, Scope, StoreError, StoreRef,
 };
-use crate::domain::settings::RunLengths;
-use crate::domain::time::{DateOutOfRange, from_iso};
+use kanade_domain::settings::RunLengths;
+use kanade_domain::time::{DateOutOfRange, from_iso};
 
 /// The lease operation kind every tick runs under.
 pub const TICK_OPERATION: &str = "scheduler_tick";
@@ -101,7 +101,7 @@ pub struct DeliveryConfig {
     /// cap of the same size.
     pub max_sends_per_tick: usize,
     /// Outbox notices older than this at drain time are retired `stale`
-    /// unsent ([`crate::domain::notify::DEFAULT_MAX_NOTICE_AGE`]).
+    /// unsent ([`kanade_domain::notify::DEFAULT_MAX_NOTICE_AGE`]).
     pub max_notice_age: TimeDelta,
     /// Run lengths (`v5.run_lengths`) for completion prompts; live like the
     /// post channel.
@@ -125,7 +125,6 @@ impl DeliveryConfig {
         DeliverySettings {
             post_channel_id: self.post_channel_id.as_deref(),
             quiet_mode: self.quiet_mode,
-            attendance: self.policy.attendance,
         }
     }
 }
@@ -237,8 +236,8 @@ pub struct TickReport {
     /// Runs created by a rollover materialisation.
     pub materialised: Vec<String>,
     pub done: Vec<String>,
-    /// v5 attendance: runs whose status the recount changed (e.g. at risk
-    /// once the unknown window opened); always empty in v4-compat mode.
+    /// Runs whose status the attendance recount changed (e.g. at risk once
+    /// the unknown window opened).
     pub recounted: Vec<String>,
     /// Outbox notices sent (or held) this tick.
     pub notices: NoticeReport,
@@ -399,12 +398,10 @@ where
     fn card_context<'s>(&'s self, schedule: &'s ScheduleSnapshot) -> CardContext<'s> {
         CardContext {
             schedule,
-            attendance: self.config.policy.attendance,
             zone: self.config.policy.zone(),
             quiet: self.config.quiet_mode,
             members: self.members,
             catalog: self.cards.catalog.as_deref(),
-            style: self.cards.style(),
             marks: &self.cards.marks,
             v2: Some(&self.cards.v2),
         }
@@ -678,7 +675,7 @@ where
         self.materialise_now(now).await
     }
 
-    /// v5 attendance: re-derive live runs' statuses at `now` so unknown
+    /// Re-derive live runs' statuses at `now` so unknown
     /// answers turn a run at risk as its window opens. A failure never aborts
     /// the tick: it is alerted (throttled) and the next tick retries.
     async fn recount_attendance(&mut self, now: DateTime<Utc>) -> Vec<String> {
@@ -726,18 +723,6 @@ where
                 self.alerts.alert(alert);
             }
         }
-    }
-
-    /// Retire runs whose slot has passed.
-    ///
-    /// # Errors
-    /// The scheduler failed.
-    pub async fn mark_done(&mut self, now: DateTime<Utc>) -> Result<Vec<String>, DeliveryError> {
-        Ok(self
-            .service(now)
-            .as_origin(tick_origin())
-            .mark_done()
-            .await?)
     }
 
     /// The digest step alone, under its own lease.

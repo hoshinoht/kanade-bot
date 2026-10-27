@@ -3,8 +3,9 @@
 //! file (its directory created 0700, owned under the main store's lock
 //! directory), load the scouter's stored estimates (with a scouter URL; they
 //! are written through to the file from then on and answer lookups for the
-//! live `estimate_days`), attach the service to the admin API and run the
-//! joined `CharacterData` task. Off, none of this runs and no file is
+//! live `estimate_days`), attach the service to the admin API (with the
+//! `web` feature) and the Discord side (with the `bot` component) and run
+//! the joined `CharacterData` task. Off, none of this runs and no file is
 //! created.
 //!
 //! The task sweeps at startup (after that first sweep, admin requests left
@@ -32,22 +33,22 @@ use chrono::{DateTime, Utc};
 use tokio::{sync::watch, task::JoinHandle};
 
 use self::upcoming::StoreParties;
-use super::{api::Composition, store::create_private_dir};
+use super::store::create_private_dir;
+use crate::runtime::serve::composition::Composition;
 use crate::{
-    api::auth::Clock,
-    domain::chardata::{CharDataStore, next_batch},
-    infrastructure::{
-        character_data::{CharacterData, RosterSide, Timing},
-        nexon::{ApiKey, NexonClient},
-        scouter::{Estimates, ScouterClient, UpcomingParties},
-        store::{SqliteCharData, SqliteStore, SqliteStoreConfig, SqliteStoreError},
-    },
+    app::clock::Clock,
     runtime::{
         config::{CHARACTER_DATA_DB_PATH_KEY, SCOUTER_URL_KEY, ServeConfig},
         error::Error,
-        logging,
     },
 };
+use kanade_chardata::{
+    character_data::{CharacterData, RosterSide, Timing},
+    nexon::{ApiKey, NexonClient},
+    scouter::{Estimates, ScouterClient, UpcomingParties},
+};
+use kanade_domain::chardata::{CharDataStore, next_batch};
+use kanade_store::{SqliteCharData, SqliteStore, SqliteStoreConfig, SqliteStoreError};
 
 pub(super) const SWEEP_EVERY: Duration = Duration::from_secs(60 * 60);
 /// The shortest wait before a retry pass, so a retry time that cannot move
@@ -77,7 +78,7 @@ pub struct Module {
     task: Task,
 }
 
-/// Open the module when it is on and attach it to `composition`'s API.
+/// Open the module when it is on and attach it to `composition`.
 pub(super) async fn start(
     config: &ServeConfig,
     store: &Arc<SqliteStore>,
@@ -140,19 +141,12 @@ pub(super) async fn start_with(
     if let Some(estimates) = scouter {
         // The saved `estimate_days` and reset: the startup values, then each
         // Config save.
-        let saved = super::context::changes_or(
-            composition
-                .admin
-                .state
-                .config
-                .as_ref()
-                .map(|desk| desk.subscribe()),
-            &composition.settings,
-        );
+        let saved =
+            super::context::changes_or(Some(composition.config.subscribe()), &composition.settings);
         parties = refresh.map(|refresh| {
             let port: Arc<dyn UpcomingParties> = Arc::new(StoreParties::new(
                 Arc::clone(store),
-                Arc::clone(&composition.admin.state.catalog),
+                Arc::clone(&composition.catalog),
                 saved.clone(),
                 config.runtime.timezone,
             ));
@@ -170,15 +164,21 @@ pub(super) async fn start_with(
         service = service.with_privacy_url(url);
     }
     let service = Arc::new(service);
-    let Some(state) = Arc::get_mut(&mut composition.admin.state) else {
-        drop(service);
-        close(file, Duration::ZERO).await;
-        return Err(Error::Startup(
-            "character data could not be attached to the API".into(),
-        ));
-    };
-    state.character_data = Some(Arc::clone(&service));
-    logging::log!(
+    #[cfg(feature = "web")]
+    {
+        let Some(state) = Arc::get_mut(&mut composition.admin.state) else {
+            drop(service);
+            close(file, Duration::ZERO).await;
+            return Err(Error::Startup(
+                "character data could not be attached to the API".into(),
+            ));
+        };
+        state.character_data = Some(Arc::clone(&service));
+    }
+    if config.components.bot {
+        composition.character_data = Some(Arc::clone(&service));
+    }
+    kanade_log::log!(
         info,
         "character_data_started",
         connected = service.connected(),
@@ -206,7 +206,7 @@ pub(super) fn privacy_url(config: &ServeConfig) -> Option<String> {
         .runtime
         .public_bind
         .and(config.runtime.http.public_host.as_deref())
-        .map(|host| format!("https://{host}{}", crate::bot::chardata::copy::PRIVACY_PATH))
+        .map(|host| format!("https://{host}{}", crate::cards::chardata::PRIVACY_PATH))
 }
 
 /// Create the file's directory 0700 when absent (Compose: `/chardata/db`
@@ -248,7 +248,7 @@ async fn close(mut file: Arc<SqliteCharData>, wait: Duration) {
         match Arc::try_unwrap(file) {
             Ok(owned) => {
                 let closed = owned.close().await.is_ok();
-                logging::log!(
+                kanade_log::log!(
                     if closed { "INFO" } else { "WARN" },
                     "character_data_closed",
                     closed,
@@ -260,7 +260,7 @@ async fn close(mut file: Arc<SqliteCharData>, wait: Duration) {
                 tokio::time::sleep(Duration::from_millis(20)).await;
             }
             Err(_) => {
-                logging::log!(warn, "character_data_closed", closed = false);
+                kanade_log::log!(warn, "character_data_closed", closed = false);
                 return;
             }
         }

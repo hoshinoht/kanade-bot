@@ -5,12 +5,12 @@
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use kanade::chat::answer::{AnswerDeps, AnswerSettings, ChatPorts, Generation, Question, answer};
-use kanade::chat::context::COMPLETION_RESERVE_TOKENS;
-use kanade::chat::tools::bundles::ToolOffer;
-use kanade::chat::tools::read::PendingCard;
-use kanade::chat::tools::{ProposalCard, ToolContext};
-use kanade::infrastructure::llm::{CompletionResponse, FakeAction, FinishReason, Message};
+use kanade_chat::answer::{AnswerDeps, AnswerSettings, ChatPorts, Generation, Question, answer};
+use kanade_chat::context::COMPLETION_RESERVE_TOKENS;
+use kanade_chat::tools::bundles::ToolOffer;
+use kanade_chat::tools::read::PendingCard;
+use kanade_chat::tools::{ProposalCard, ToolContext};
+use kanade_llm::{CompletionResponse, FakeAction, FinishReason, Message};
 use serde_json::Value;
 
 use crate::common::text;

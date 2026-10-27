@@ -1,12 +1,12 @@
 //! The tick expires past-week drafts and never fails when expiry does.
 
 use chrono::TimeDelta;
-use kanade::bot::delivery::{AdminAlert, FixedClock, StoreRef};
-use kanade::domain::drafts::{DraftChange, DraftEventKind, DraftStatus, DraftUpdate, DraftWrite};
-use kanade::domain::history::Actor;
-use kanade::domain::ids::IdGenerator;
-use kanade::domain::scheduler::SchedulerService;
-use kanade::infrastructure::store::SqliteStore;
+use kanade::bot::delivery::{AdminAlert, FixedClock};
+use kanade_domain::drafts::{DraftChange, DraftEventKind, DraftStatus, DraftUpdate, DraftWrite};
+use kanade_domain::history::Actor;
+use kanade_domain::ids::IdGenerator;
+use kanade_domain::scheduler::{SchedulerService, StoreRef};
+use kanade_store::SqliteStore;
 
 use crate::scenarios::{delivery, now, previous_week, week, world};
 use crate::support::Store;
@@ -111,8 +111,8 @@ async fn a_failed_expiry_never_aborts_the_tick() {
 #[tokio::test]
 async fn a_merged_notice_renders_its_title_and_runs() {
     use kanade::bot::delivery::render_notice;
-    use kanade::domain::notify::{DeliverySettings, plan_notice};
-    use kanade::domain::schedule::{Notice, NoticeChange};
+    use kanade_domain::notify::{DeliverySettings, plan_notice};
+    use kanade_domain::schedule::{Notice, NoticeChange};
 
     let world = world();
     let notice = Notice {
@@ -134,7 +134,6 @@ async fn a_merged_notice_renders_its_title_and_runs() {
         DeliverySettings {
             post_channel_id: None,
             quiet_mode: false,
-            attendance: kanade::domain::attendance::AttendancePolicy::V4_COMPAT,
         },
     )
     .expect("plannable");
@@ -142,13 +141,13 @@ async fn a_merged_notice_renders_its_title_and_runs() {
     let message = render_notice(
         &notice,
         &intent,
-        &kanade::domain::schedule::ScheduleSnapshot::default(),
+        &kanade_domain::schedule::ScheduleSnapshot::default(),
         &world.roster,
         chrono_tz::Asia::Kuala_Lumpur,
         false,
-        &kanade::bot::delivery::cards::CardKit::default(),
+        &kanade::cards::CardKit::default(),
     )
     .expect("renders");
     let text = message.content.expect("text");
-    assert_eq!(text, "📝 Schedule updated: retime the raid\n_(via portal)_");
+    assert_eq!(text, "📝 Schedule updated: retime the raid\n-# via portal");
 }

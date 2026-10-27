@@ -211,14 +211,8 @@ test('reminders: a reminder retired without posting has no card', async ({ page 
   await expect(pane.getByRole('article')).toHaveCount(0);
 });
 
-test('reminders: the redesigned message style previews one embed per run with inline answers', async ({ page }) => {
+test('reminders: a morning card previews one embed per run with inline answers', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
-  await page.goto(`${ADMIN}/config?section=notifications&sw=off`);
-  const style = page.getByRole('group', { name: 'Discord message style' });
-  await expect(style.getByRole('button', { name: 'Classic' })).toHaveAttribute('aria-pressed', 'true');
-  await style.getByRole('button', { name: 'Redesigned' }).click();
-  await expect(style.getByRole('button', { name: 'Redesigned' })).toHaveAttribute('aria-pressed', 'true');
-
   await page.goto(`${ADMIN}/reminders?sw=off`);
   const morning = queuedRows(page).filter({ has: page.locator('td.reminders-table__kind', { hasText: 'morning' }) }).first();
   await morning.locator('.reminder__open').click();

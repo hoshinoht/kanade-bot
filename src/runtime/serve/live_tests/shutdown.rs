@@ -19,18 +19,16 @@ use twilight_model::gateway::payload::incoming::MessageCreate;
 
 use super::*;
 use crate::{
-    api::{
+    api::server,
+    bot::extract_feed::snowflake_before,
+    discord::{
         avatars::{AvatarCache, AvatarFetch, FetchFuture},
-        server,
-    },
-    bot::{
-        extract_feed::snowflake_before,
         transport::{Hold, TransportConfig},
     },
-    domain::model_log::{ChatFilter, ExtractionFilter, ExtractionOutcome, ModelLogStore},
-    extract::pipeline::CALL_CANCELLED,
-    runtime::{error::Error, logging, serve::budget},
+    runtime::{error::Error, serve::budget},
 };
+use kanade_domain::model_log::{ChatFilter, ExtractionFilter, ExtractionOutcome, ModelLogStore};
+use kanade_extract::pipeline::CALL_CANCELLED;
 
 /// deploy/compose.yaml `stop_grace_period`: SIGKILL follows SIGTERM after it.
 const COMPOSE_STOP_GRACE: Duration = Duration::from_secs(30);
@@ -64,7 +62,7 @@ struct Timeline(Arc<Mutex<Vec<(String, Instant)>>>);
 
 impl Timeline {
     fn scan(&self) {
-        let lines = logging::captured();
+        let lines = kanade_log::captured();
         let mut seen = self.0.lock().unwrap();
         let now = Instant::now();
         for line in &lines[seen.len()..] {
@@ -121,11 +119,11 @@ impl Timeline {
 
 /// A point of the test's own, in the log sequence.
 fn mark(event: &'static str) {
-    logging::log!(info, event);
+    kanade_log::log!(info, event);
 }
 
 fn logged(event: &str) -> Vec<Value> {
-    logging::captured()
+    kanade_log::captured()
         .into_iter()
         .filter(|line| line["event"] == event)
         .collect()
@@ -257,7 +255,7 @@ fn guild() -> Event {
 
 /// Alice (bossing role, which is also the chat pilot role) posts `content`.
 fn message(n: u64, channel: u64, content: &str, to_bot: bool) -> Event {
-    let now = auth::system_now();
+    let now = clock::system_now();
     let mentions = if to_bot {
         let mut bot = user_json(SELF, "kanade", true);
         bot["public_flags"] = json!(0);
@@ -389,7 +387,7 @@ async fn serve_live(
             .with_discord(prepared.probe.clone(), prepared.tick_status.clone())
             .with_extraction(prepared.extraction.clone());
         let mut composition =
-            api::compose(config, store.clone(), prepared.cache.clone(), health).await?;
+            composition::compose(config, store.clone(), prepared.cache.clone(), health).await?;
         // Test-only: routes stay external until the startup listing names
         // their zone (as in the extraction suite).
         composition.model_tasks.report_done().await;
@@ -435,7 +433,7 @@ fn left_at_close(clock: &budget::ShutdownClock, closing: Instant) -> Duration {
 /// tolerance covers the already-cut phases returning (abort, join, an
 /// instant timeout each) after the spill; it is milliseconds in practice.
 fn close_floor() -> Duration {
-    budget::STORE_RESERVE - crate::chat::driver::LOG_BUDGET - Duration::from_millis(100)
+    budget::STORE_RESERVE - kanade_chat::driver::LOG_BUDGET - Duration::from_millis(100)
 }
 
 /// A future's panic as its output, so the caller can still wind serve down.
@@ -475,7 +473,7 @@ fn launch<'a>(
     let wiring = Wiring {
         source,
         transport: Arc::clone(&harness.fake),
-        clock: Arc::new(auth::system_now),
+        clock: Arc::new(clock::system_now),
         tick: TICK,
         extraction: TIMING,
     };
@@ -588,11 +586,11 @@ async fn add_members(store: &SqliteStore) {
 
 #[tokio::test]
 async fn shutdown_with_everything_in_flight_is_ordered_and_inside_the_stop_grace() {
-    logging::capture();
+    kanade_log::capture();
     let model = HangingModel::start().await;
     let harness = harness(&model);
     let policy = policy(&harness);
-    let now = auth::system_now();
+    let now = clock::system_now();
     harness
         .seed(async |store| {
             add_members(store).await;
@@ -824,11 +822,11 @@ async fn shutdown_with_everything_in_flight_is_ordered_and_inside_the_stop_grace
 /// and serve still returns `Ok` inside it, the store closed.
 #[tokio::test]
 async fn shutdown_with_nothing_letting_go_ends_inside_the_budget() {
-    logging::capture();
+    kanade_log::capture();
     let model = HangingModel::start().await;
     let harness = harness(&model);
     let policy = policy(&harness);
-    let now = auth::system_now();
+    let now = clock::system_now();
     harness
         .seed(async |store| {
             add_members(store).await;
@@ -927,13 +925,13 @@ async fn shutdown_with_nothing_letting_go_ends_inside_the_budget() {
     // The cut send was uncertain: its notice is drained, never re-sent (a
     // `NotSent` would have left it pending). The second notice, refused
     // unsent at the deadline, waits for the next start.
-    let pending = crate::domain::notify::NoticeOutbox::pending_notices(&*store)
+    let pending = kanade_domain::notify::NoticeOutbox::pending_notices(&*store)
         .await
         .unwrap();
     assert_eq!(pending.notices.len(), 1, "{breakdown}");
     assert!(
         store
-            .recover_on_start(auth::system_now())
+            .recover_on_start(clock::system_now())
             .await
             .unwrap()
             .indeterminate
@@ -949,7 +947,7 @@ async fn shutdown_with_nothing_letting_go_ends_inside_the_budget() {
 /// nothing keeps the store from closing.
 #[tokio::test]
 async fn chat_stop_with_the_budget_spent_still_settles_its_questions() {
-    logging::capture();
+    kanade_log::capture();
     let model = HangingModel::start().await;
     let harness = harness(&model);
     let timeline = Timeline::default();
@@ -1021,7 +1019,7 @@ async fn chat_stop_with_the_budget_spent_still_settles_its_questions() {
 /// the tick with the reserve intact.
 #[tokio::test]
 async fn a_header_rewrite_hanging_at_the_cutoff_still_ends_by_it() {
-    logging::capture();
+    kanade_log::capture();
     let model = HangingModel::start().await;
     // No extraction: every call without tools is the header rewrite.
     let harness = Harness::with(&[
@@ -1035,13 +1033,12 @@ async fn a_header_rewrite_hanging_at_the_cutoff_still_ends_by_it() {
     ]);
     seed_discord_members(&harness);
     let policy = policy(&harness);
-    let now = auth::system_now();
+    let now = clock::system_now();
     harness
         .seed(async |store| {
             add_members(store).await;
             // A day-of reminder firing in 2 h: inside the pre-generation
-            // horizon, not yet due for the tick, and rewritten in every
-            // message style (classic countdowns carry no phrase).
+            // horizon and not yet due for the tick.
             let start = now + chrono::Duration::hours(3);
             let run = create_run(store, &policy, now, HOME_A, start).await;
             SchedulerService::new(store, RandomIds, FixedClock(now))
@@ -1114,7 +1111,7 @@ async fn hold_readers(pool: &sqlx::SqlitePool) -> Vec<sqlx::pool::PoolConnection
 /// timeout, then answers the generic 503 `unavailable`, with no store detail.
 #[tokio::test]
 async fn an_admin_read_with_every_reader_busy_answers_unavailable() {
-    logging::capture();
+    kanade_log::capture();
     let model = HangingModel::start().await;
     let harness = harness(&model);
     let (pools, pool) = std::sync::mpsc::channel();
@@ -1161,11 +1158,11 @@ async fn an_admin_read_with_every_reader_busy_answers_unavailable() {
 /// go through) and the store closes after it, with the reserve intact.
 #[tokio::test]
 async fn shutdown_with_every_reader_held_ends_inside_the_budget() {
-    logging::capture();
+    kanade_log::capture();
     let harness = Harness::new();
     seed_discord_members(&harness);
     let policy = policy(&harness);
-    let now = auth::system_now();
+    let now = clock::system_now();
     harness
         .seed(async |store| {
             add_members(store).await;
@@ -1255,12 +1252,12 @@ async fn sign_in_for_writes(address: SocketAddr) -> (String, String) {
 /// then does the store close: nothing is left claimed or dropped.
 #[tokio::test]
 async fn a_manual_digest_in_flight_at_the_cutoff_is_journalled_before_the_store_closes() {
-    logging::capture();
+    kanade_log::capture();
     let harness = Harness::with(&[("KANADE_ADMIN_HOST", HOST)]);
     std::fs::write(harness._temp.0.join("admin_token"), format!("{TOKEN}\n")).unwrap();
     seed_discord_members(&harness);
     let policy = policy(&harness);
-    let now = auth::system_now();
+    let now = clock::system_now();
     harness
         .seed(async |store| {
             add_members(store).await;

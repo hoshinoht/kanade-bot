@@ -8,20 +8,21 @@ use std::{
 
 use chrono::{NaiveTime, Weekday};
 
-use crate::{
-    domain::settings::{OVERRIDE_RUN_MINUTES, RUN_MINUTES, RunLengths},
-    runtime::secrets::{self, SecretFile},
-};
+use crate::runtime::secrets::{self, SecretFile};
+use kanade_domain::settings::{OVERRIDE_RUN_MINUTES, RUN_MINUTES, RunLengths};
 
 use super::{
-    DiscordSettings, Error, FileSettings, GuildSettings, ModelSettings, RuntimeConfig,
+    Components, DiscordSettings, Error, FileSettings, GuildSettings, ModelSettings, RuntimeConfig,
     StoreSettings, character_data::CharacterDataSettings, flag, guild, non_empty,
     parse_bounded_u64,
 };
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ServeConfig {
+    /// `public_bind` is `None` while the `web` component is off: nothing
+    /// listens publicly and no card links the portal.
     pub runtime: RuntimeConfig,
+    pub components: Components,
     pub discord: DiscordSettings,
     pub guild: GuildSettings,
     pub store: StoreSettings,
@@ -88,8 +89,14 @@ impl ServeConfig {
             character_data: flag(values, super::character_data::FLAG_KEY)?.unwrap_or(false),
             guides: flag(values, "KANADE_MODULE_GUIDES")?.unwrap_or(false),
         };
+        let components = Components::from_mapping(values)?;
+        let mut runtime = RuntimeConfig::from_mapping(values)?;
+        if !components.web {
+            runtime.public_bind = None;
+        }
         Ok(Self {
-            runtime: RuntimeConfig::from_mapping(values)?,
+            runtime,
+            components,
             discord: DiscordSettings::from_mapping(values)?,
             guild: GuildSettings::from_mapping(values)?,
             store: StoreSettings::from_mapping(values)?,
@@ -124,7 +131,11 @@ impl ServeConfig {
     /// Reads every secret this configuration needs, as startup will, so a
     /// restart that would fail is refused while the bot still runs.
     pub fn preflight(&self) -> Result<(), Error> {
-        self.discord.read_token()?;
+        if self.components.bot {
+            self.discord.read_token()?;
+        } else {
+            self.discord.token.read_optional()?;
+        }
         self.runtime.admin_auth.token.read_optional()?;
         for discord in [
             &self.runtime.admin_auth.discord,
@@ -394,16 +405,28 @@ mod tests {
     }
 
     #[test]
-    fn live_serve_names_its_token_file_and_takes_a_strict_gateway_flag() {
-        for (value, gateway) in [("", true), ("1", true), ("0", false)] {
-            let discord = config(&[("KANADE_DISCORD_GATEWAY", value)])
-                .unwrap()
-                .discord;
-            assert_eq!(discord.gateway, gateway);
-        }
+    fn live_serve_names_its_token_file_and_runs_the_listed_components() {
+        let both = config(&[]).unwrap();
+        assert!(both.components.bot && both.components.web);
+        let public = [
+            ("KANADE_PUBLIC_HOST", "portal.example"),
+            ("KANADE_PUBLIC_BIND", "127.0.0.1:8081"),
+            ("KANADE_CLOUDFLARED_PEER", "127.0.0.1"),
+        ];
+        let mut web = public.to_vec();
+        web.push(("KANADE_COMPONENTS", "web"));
+        let web = config(&web).unwrap();
+        assert!(!web.components.bot && web.components.web);
+        assert!(web.runtime.public_bind.is_some());
+        // Without `web` nothing listens publicly, so nothing links the portal.
+        let mut bot = public.to_vec();
+        bot.push(("KANADE_COMPONENTS", "bot"));
+        let bot = config(&bot).unwrap();
+        assert!(bot.components.bot && !bot.components.web);
+        assert_eq!(bot.runtime.public_bind, None);
         assert_eq!(
-            config(&[("KANADE_DISCORD_GATEWAY", "off")]).unwrap_err(),
-            "KANADE_DISCORD_GATEWAY must be 0 or 1"
+            config(&[("KANADE_COMPONENTS", "bot,bot")]).unwrap_err(),
+            "KANADE_COMPONENTS lists `bot` twice"
         );
         assert_eq!(
             config(&[]).unwrap().discord.token.path(),

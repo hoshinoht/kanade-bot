@@ -2,6 +2,35 @@
 
 What changed in each Kanade release, newest first. Upgrading across several releases? Read each one's upgrade notes on the way.
 
+## 1.0.0-beta.15
+
+_In development_
+
+Rescheduling and reopening runs that already ended, with safer run controls in the admin app.
+
+> [!IMPORTANT]
+> Guilds still on v4-compatible attendance switch to v5 attendance on upgrade: cards show tallies and who is expected, the morning ping mentions only members who haven't answered, a run's status holds from its start, and a Planned or Confirmed set by hand is kept until someone answers or the run changes.
+>
+> `discord.gateway` in kanade.toml (and `KANADE_DISCORD_GATEWAY`) now refuses to start: use `runtime.components` instead, where `["web"]` runs the admin app and portal without the bot.
+
+### New features
+
+- Admins can now move a done or cancelled run from its run sheet, and Kanade asks whether to set it back to Planned (suggested when the new time is still ahead), which clears its answers and posts one "back on the schedule" notice.
+- Operators can now run only the Discord bot or only the admin and member portal with `runtime.components` in kanade.toml.
+
+### Changes
+
+- The admin run sheet and Week board now disable moving, swapping, roster and answer changes on a run that has ended, leaving only its status to set, and disable swapping for done and cancelled runs.
+
+### Fixes
+
+- Setting a done run back to Planned after it ended now keeps it open: Kanade no longer marks it done again at its cutoff, and it can be moved to a new time, after which it is completed as usual.
+
+### Removed
+
+- Removed the attendance mode setting: v5 attendance is now the only behaviour, and a saved v4-compatible choice is ignored.
+- Removed the classic message style and its choice under Config › Notifications and in `/debug ping`: reminder, digest, notice and proposal cards always use the redesigned layout.
+
 ## 1.0.0-beta.14
 
 _23 Oct 2026_

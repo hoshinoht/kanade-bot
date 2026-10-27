@@ -23,30 +23,30 @@ use twilight_model::channel::message::Component;
 use twilight_model::channel::message::component::ButtonStyle;
 
 use super::alerts::{AdminAlert, AlertSink};
-use super::cards::redesign::{
+use super::executor::SendOutcome;
+use super::tick::{Delivery, DeliveryError, TickLease};
+use crate::app::ids::{id_text, parse_id};
+use crate::cards::redesign::{
     AT_RISK_RED, ButtonId, INK_BLUE, SETTLED_GREEN, WAITING_AMBER, action_row, button, container,
     subtext, text,
 };
-use super::executor::SendOutcome;
-use super::tick::{Delivery, DeliveryError, TickLease};
-use crate::bot::commands::text::{format_bosses, local_day, local_time, status_label};
-use crate::bot::ids::{id_text, parse_id};
-use crate::bot::mentions;
-use crate::bot::transport::{DiscordTransport, MessageEdit, OutgoingMessage};
-use crate::domain::completion::{
+use crate::cards::text::{format_bosses, local_day, local_time, status_label};
+use crate::discord::mentions;
+use crate::discord::transport::{DiscordTransport, MessageEdit, OutgoingMessage};
+use kanade_domain::completion::{
     ASK_AGAIN_AFTER, CompletionPlan, PromptClose, PromptOutcome, RunPrompt, RunPromptStore,
-    auto_request_id, plan, pressed_request_id, run_minutes,
+    auto_request_id, plan, pressed_request_id, reopened, run_minutes,
 };
-use crate::domain::drafts::ProposalStore;
-use crate::domain::history::{Actor, Checkpoints, Origin, Surface};
-use crate::domain::ids::short_id;
-use crate::domain::notify::{
+use kanade_domain::drafts::ProposalStore;
+use kanade_domain::history::{Actor, Checkpoints, Origin, Surface};
+use kanade_domain::ids::short_id;
+use kanade_domain::notify::{
     ChannelChoice, DeliveryJournal, EffectKind, IntentContent, NoticeOutbox, NotificationIntent,
     choose_channel,
 };
-use crate::domain::schedule::{Run, RunStatus, SettleRun};
-use crate::domain::scheduler::{IdSource, ScheduleStore, SchedulerError, Scope};
-use crate::domain::time::DateOutOfRange;
+use kanade_domain::schedule::{Run, RunStatus, SettleRun};
+use kanade_domain::scheduler::{IdSource, ScheduleStore, SchedulerError, Scope};
+use kanade_domain::time::DateOutOfRange;
 
 /// The post's journal effect kind.
 pub const RUN_PROMPT_EFFECT: &str = "notice.run.prompt";
@@ -203,7 +203,7 @@ where
         + NoticeOutbox
         + Checkpoints
         + ProposalStore
-        + super::cards::ReminderCardStore
+        + kanade_domain::notify::ReminderCardStore
         + RunPromptStore
         + Sync,
     I: IdSource,
@@ -276,8 +276,9 @@ where
     }
 
     /// Mark every live run past its cutoff done, as Kanade, without a notice
-    /// (own-time runs at the reset); its open ask closes as automatic. A
-    /// failing run is alerted and retried next tick.
+    /// (own-time runs at the reset); its open ask closes as automatic. A run
+    /// staff reopened after its end is left alone. A failing run is alerted
+    /// and retried next tick.
     ///
     /// # Errors
     /// The schedule could not be read.
@@ -295,6 +296,9 @@ where
                     continue;
                 }
             };
+            if reopened(run, plan.ends_at) {
+                continue;
+            }
             if asked(run) {
                 self.finish_pressed(run, plan.ends_at, now).await;
             }
@@ -480,7 +484,7 @@ where
     /// Open the first ask of every asked run whose prompt is due and not yet
     /// cut off. A run already asked keeps its asks: one closed by a press
     /// or automatically is never asked again unless the run moves (a new
-    /// end), so a run reopened by hand is left to its cutoff.
+    /// end), so a run reopened by hand stays open until it moves.
     async fn open_first_asks(
         &self,
         runs: &[Run],

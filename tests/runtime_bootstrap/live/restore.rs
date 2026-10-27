@@ -3,16 +3,14 @@
 use std::{os::unix::fs::PermissionsExt, time::SystemTime};
 
 use chrono::{DateTime, Duration as TimeDelta, NaiveTime, Utc, Weekday};
-use kanade::{
-    domain::{
-        history::{Actor, ChangeHistory, ChangeRef, Origin, Surface},
-        ids::RandomIds,
-        schedule::{NewRun, RunSource, RunStatus, utc_instant},
-        scheduler::{Clock, ScheduleStore, SchedulerService, Scope},
-        settings::RuntimeSettings,
-    },
-    infrastructure::store::{BackupManifest, SqliteStore, SqliteStoreConfig},
+use kanade_domain::{
+    history::{Actor, ChangeHistory, ChangeRef, Origin, Surface},
+    ids::RandomIds,
+    schedule::{NewRun, RunSource, RunStatus, utc_instant},
+    scheduler::{Clock, ScheduleStore, SchedulerService, Scope},
+    settings::RuntimeSettings,
 };
+use kanade_store::{BackupManifest, SqliteStore, SqliteStoreConfig};
 
 use super::*;
 

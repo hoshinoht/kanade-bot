@@ -2,10 +2,10 @@
 //! pickers first, then typed names, with v4's problem wording. The
 //! scheduler validates the result again on write.
 
-use crate::chat::tools::read::roster::{bossers, resolve_participant_text};
-use crate::domain::members::{Member, MemberProfile};
+use kanade_chat::tools::read::roster::{bossers, resolve_participant_text};
+use kanade_domain::members::{Member, MemberProfile};
 
-use super::text::mention;
+use crate::cards::text::mention;
 
 /// The ids for a party, or v4's `; `-joined problems.
 ///

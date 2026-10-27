@@ -9,7 +9,7 @@ use super::{
     reminders::{classified, is_upcoming},
     week::Context,
 };
-use crate::domain::schedule::{Run, RunStatus, ScheduleSnapshot};
+use kanade_domain::schedule::{Run, RunStatus, ScheduleSnapshot};
 
 /// `None` when approving changes nothing worth a line.
 pub fn consequence(

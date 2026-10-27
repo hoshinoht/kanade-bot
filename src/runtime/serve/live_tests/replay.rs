@@ -1,6 +1,6 @@
 use super::*;
-use crate::bot::transport::MessageId;
-use crate::domain::proposals::ProposalCardStore;
+use crate::discord::transport::MessageId;
+use kanade_domain::proposals::ProposalCardStore;
 use twilight_model::channel::message::ReactionType;
 
 fn now() -> DateTime<Utc> {
@@ -12,7 +12,7 @@ async fn pending(harness: &Harness, ctx: &Ctx, source: ProposalSource) -> (Strin
     let at = now() + chrono::Duration::hours(30);
     let run = create_run(&ctx.store, &policy, now(), HOME_C, at).await;
     let mut roster = Roster::new();
-    roster.upsert(crate::domain::members::Member {
+    roster.upsert(kanade_domain::members::Member {
         user_id: ALICE.to_string(),
         has_role: true,
         ..Default::default()
@@ -58,26 +58,27 @@ async fn pending(harness: &Harness, ctx: &Ctx, source: ProposalSource) -> (Strin
         },
     );
     assert_eq!(
-        desk.post_card(&Card {
-            channel_id: HOME_C.to_string(),
-            superseded: Vec::new(),
-            entries: vec![CardEntry {
-                proposal_id: id.clone(),
-                change,
-                kind: AmendmentKind::Move,
-                run_id: Some(run),
-                summary: "an hour later".into(),
-                is_question: false,
-                needs_answer: false,
-                confidence: 0.9,
-                also_mentioned: Vec::new(),
-                day_ref: None,
-                time_ref: None,
-                evidence_message_ids: vec!["101".into()],
-                self_service: None,
-            }],
-        })
-        .await,
+        desk.posting_legacy()
+            .post_card(&Card {
+                channel_id: HOME_C.to_string(),
+                superseded: Vec::new(),
+                entries: vec![CardEntry {
+                    proposal_id: id.clone(),
+                    change,
+                    kind: AmendmentKind::Move,
+                    run_id: Some(run),
+                    summary: "an hour later".into(),
+                    is_question: false,
+                    needs_answer: false,
+                    confidence: 0.9,
+                    also_mentioned: Vec::new(),
+                    day_ref: None,
+                    time_ref: None,
+                    evidence_message_ids: vec!["101".into()],
+                    self_service: None,
+                }],
+            })
+            .await,
         PostResult::Posted
     );
     let message = ctx
@@ -127,7 +128,7 @@ async fn offline_cards_replay_after_startup_and_second_ready_only_after_current_
             assert_eq!(status(&ctx, &id).await, DraftStatus::Submitted);
             roster.release();
             eventually!("offline rejection", status(&ctx, &id).await == DraftStatus::Rejected);
-            eventually!("card refreshed", harness.fake.calls().iter().any(|call| matches!(call, Call::Edit { message: edited, edit, .. } if *edited == message && edit.content.as_deref().is_some_and(|text| text.contains("❌ rejected by alice")))));
+            eventually!("card refreshed", harness.fake.calls().iter().any(|call| matches!(call, Call::Edit { message: edited, edit, .. } if *edited == message && edit.content.as_deref().is_some_and(|text| text.contains("❌ Rejected by alice")))));
         }
         assert_eq!(harness.fake.count(Op::Create), 2, "no stale chat follow-up");
         let (id, message) = pending(&harness, &ctx, ProposalSource::Chat).await;

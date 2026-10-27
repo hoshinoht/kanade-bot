@@ -8,7 +8,7 @@
 //! character brought to it. Invented IGNs.
 
 use chrono::{DateTime, NaiveTime, TimeZone, Utc, Weekday};
-use kanade::domain::{
+use kanade_domain::{
     attendance::AttendanceDefault,
     characters::{CharacterStore, PickScope},
     schedule::{Change, FixedRun, Run, RunSource, RunStatus},

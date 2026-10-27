@@ -29,17 +29,18 @@ use crate::{
         dto::estimates::{EstimateStarted, EstimateStatus, job},
         error::ApiError,
         listeners::Site,
-        state::{ApiState, CharacterRoster},
+        state::ApiState,
     },
-    domain::characters::Character,
-    infrastructure::{
-        character_data::CharacterData,
-        scouter::{
-            BossParty, Estimates, JobRequest, MAX_BATCH, MAX_QUEUED, Missing, MissingReason,
-            RosterIgn, Start, Subject, Target, party_subjects, push_subject,
-        },
+    app::read::CharacterRoster,
+};
+use kanade_chardata::{
+    character_data::CharacterData,
+    scouter::{
+        BossParty, Estimates, JobRequest, MAX_BATCH, MAX_QUEUED, Missing, MissingReason, RosterIgn,
+        Start, Subject, Target, party_subjects, push_subject,
     },
 };
+use kanade_domain::characters::Character;
 
 pub fn routes() -> Router<Arc<Site>> {
     Router::new()

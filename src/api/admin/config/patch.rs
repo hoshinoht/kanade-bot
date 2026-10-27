@@ -9,19 +9,17 @@ use std::collections::BTreeSet;
 
 use serde_json::{Map, Value};
 
-use crate::{
-    api::{admin::write::Refusal, state::ChannelList},
-    chat::{
-        nudge::{WordFilter, is_builtin_word},
-        persona::ProfileId,
-    },
-    domain::settings::{
-        CharacterData, Chatbot, ContextSettings, ESTIMATE_DAYS, IdList, MAX_DEFLECTION_CHARS,
-        MAX_PROFANITY_WORDS, MAX_ROLE_PROFILE_ASSIGNMENTS, MessageStyle, Notifications,
-        OVERRIDE_RUN_MINUTES, PROFANITY_WORD_CHARS, Persona, Pings, Posting, Profanity,
-        RUN_MINUTES, Rate, RoleProfileAssignment, RunLengthOverride, RunLengths, SelfService,
-        SelfServiceMode, Watching, is_profanity_word,
-    },
+use crate::{api::admin::write::Refusal, app::guild::ChannelList};
+use kanade_domain::settings::{
+    CharacterData, Chatbot, ContextSettings, ESTIMATE_DAYS, IdList, MAX_DEFLECTION_CHARS,
+    MAX_PROFANITY_WORDS, MAX_ROLE_PROFILE_ASSIGNMENTS, Notifications, OVERRIDE_RUN_MINUTES,
+    PROFANITY_WORD_CHARS, Persona, Pings, Posting, Profanity, RUN_MINUTES, Rate,
+    RoleProfileAssignment, RunLengthOverride, RunLengths, SelfService, SelfServiceMode, Watching,
+    is_profanity_word,
+};
+use kanade_voice::{
+    nudge::{WordFilter, is_builtin_word},
+    persona::ProfileId,
 };
 
 pub const MAX_COUNTDOWNS: usize = 4;
@@ -140,11 +138,7 @@ pub fn section(body: &Value) -> Result<(&str, &Map<String, Value>), PatchError> 
                 )
                 | (
                     "notifications",
-                    "quiet_mode"
-                        | "message_style"
-                        | "header_generation_time"
-                        | "header_estimates"
-                        | "header_teasing"
+                    "quiet_mode" | "header_generation_time" | "header_estimates" | "header_teasing"
                 )
                 | ("self_service", "mode" | "public_portal")
                 | ("persona", "active" | "visibility" | "role_profiles")
@@ -233,7 +227,7 @@ pub fn context(value: &Value) -> Result<ContextSettings, PatchError> {
 pub fn run_lengths(
     current: &RunLengths,
     body: &Map<String, Value>,
-    catalog: &crate::domain::catalog::BossTable,
+    catalog: &kanade_domain::catalog::BossTable,
 ) -> Result<RunLengths, PatchError> {
     let mut next = current.clone();
     if let Some(value) = body.get("default_minutes") {
@@ -531,12 +525,6 @@ pub fn notifications(
     let mut next = *current;
     if let Some(value) = body.get("quiet_mode") {
         next.quiet_mode = flag(value, "notifications.quiet_mode")?;
-    }
-    if let Some(value) = body.get("message_style") {
-        next.message_style = value
-            .as_str()
-            .and_then(MessageStyle::parse)
-            .ok_or_else(|| PatchError::invalid("Message style is classic or redesigned."))?;
     }
     if let Some(value) = body.get("header_generation_time") {
         next.header_generation_time = clock_as(

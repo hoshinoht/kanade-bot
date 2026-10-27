@@ -30,28 +30,26 @@ use super::{
     },
     Module, Reply,
 };
-use crate::{
-    api::{
-        auth::AdminSession,
-        dto::{
-            self, Art,
-            bosses::entry_levels,
-            character_data::link_state,
-            readiness::{Cached, Judged, ReadinessSlot},
-        },
-        error::ApiError,
-        listeners::Site,
-        state::ApiState,
+use crate::api::{
+    auth::AdminSession,
+    dto::{
+        self, Art,
+        bosses::entry_levels,
+        character_data::link_state,
+        readiness::{Cached, Judged, ReadinessSlot},
     },
-    domain::{
-        catalog::BossTable,
-        characters::{Character, PartySlot},
-        chardata::{Requirement, Subject, readiness},
-    },
-    infrastructure::{
-        character_data::CharacterData,
-        scouter::{Estimates, RosterIgn},
-    },
+    error::ApiError,
+    listeners::Site,
+    state::ApiState,
+};
+use kanade_chardata::{
+    character_data::CharacterData,
+    scouter::{Estimates, RosterIgn},
+};
+use kanade_domain::{
+    catalog::BossTable,
+    characters::{Character, PartySlot},
+    chardata::{Requirement, Subject, readiness},
 };
 
 pub fn routes() -> Router<Arc<Site>> {

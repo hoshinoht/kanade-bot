@@ -1,6 +1,6 @@
 use std::{fs, os::unix::fs::symlink, process::Command};
 
-use kanade::chat::persona::{MAX_PROFILE_FILES, PersonaError, PersonaRoot};
+use kanade_voice::persona::{MAX_PROFILE_FILES, PersonaError, PersonaRoot};
 
 use crate::support::{Fixture, bundle, catalog, pid, prof, profile};
 
@@ -125,7 +125,7 @@ fn escapes_are_impossible_through_ids() {
     // Paths come only from validated slugs, so traversal never reaches the filesystem.
     for id in ["../outside", "..", "bundles/../x", "/etc/passwd"] {
         assert_eq!(
-            kanade::chat::persona::PersonaId::parse(id),
+            kanade_voice::persona::PersonaId::parse(id),
             Err(PersonaError::UnsafeId)
         );
     }

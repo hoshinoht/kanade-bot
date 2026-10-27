@@ -29,15 +29,16 @@ use crate::{
         },
         error::ApiError,
         listeners::Site,
-        state::{ApiState, DigestPostRequest, DigestPostResult},
+        state::ApiState,
     },
-    chat::pilot::{Allowance, AllowanceSnapshot, MemberUsage},
-    domain::{
-        members::MemberProfile,
-        settings::{RowDiff, SettingsChange},
-    },
-    infrastructure::store::replays::{ReplayScope, StoredReplay},
+    app::ports::{DigestPostRequest, DigestPostResult},
 };
+use kanade_chat::pilot::{Allowance, AllowanceSnapshot, MemberUsage};
+use kanade_domain::{
+    members::MemberProfile,
+    settings::{RowDiff, SettingsChange},
+};
+use kanade_store::replays::{ReplayScope, StoredReplay};
 
 /// One lock for the keyed effects that are not schedule writes (window
 /// clears, the manual digest and header rewrite), held across the replay
@@ -71,7 +72,7 @@ pub(super) fn actor(session: &AdminSession) -> String {
 pub(super) async fn record_after_effect(state: &ApiState, replay: StoredReplay) {
     // Store error text may carry paths, so only the event is logged.
     if state.store.put_replay(replay).await.is_err() {
-        crate::runtime::logging::log!(warn, "idempotency_replay_unrecorded");
+        kanade_log::log!(warn, "idempotency_replay_unrecorded");
     }
 }
 

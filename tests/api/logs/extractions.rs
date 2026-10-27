@@ -1,11 +1,9 @@
-use kanade::{
-    api::dto::logs::CALL_FAILED,
-    domain::{
-        model_log::{ExtractionOutcome, ModelLogStore},
-        scheduler::StoreError,
-    },
-    extract::pipeline::SCHEDULE_UNREADABLE,
+use kanade::api::dto::logs::CALL_FAILED;
+use kanade_domain::{
+    model_log::{ExtractionOutcome, ModelLogStore},
+    scheduler::StoreError,
 };
+use kanade_extract::pipeline::SCHEDULE_UNREADABLE;
 use serde_json::json;
 
 use super::{ERROR, Logs, extraction as log_row, ids, utc};

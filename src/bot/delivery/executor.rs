@@ -16,16 +16,16 @@ use chrono::{DateTime, Utc};
 use twilight_model::channel::message::MessageFlags;
 
 use super::alerts::{AdminAlert, AlertSink, AlertThrottle};
+use crate::app::ids::parse_id;
 use crate::bot::gateway::DeliveryOperation;
-use crate::bot::ids::parse_id;
-use crate::bot::transport::{
+use crate::discord::transport::{
     DiscordTransport, MessageId, Outcome, OutgoingMessage, Presence, RejectionKind, legacy_rows,
 };
-use crate::domain::notify::{
+use kanade_domain::notify::{
     AttemptId, Claim, DeliveryJournal, DeliveryWarning, EffectKind, JournalError, Lease,
     NotificationIntent, PlannedSend, Receipt, SendDisposition, WeeklyDigest,
 };
-use crate::domain::schedule::{EMOJI_NO, EMOJI_YES};
+use kanade_domain::schedule::{EMOJI_NO, EMOJI_YES};
 
 /// What happened to one planned send.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -234,7 +234,7 @@ where
     /// Post `message` once by its durable `(source, ordinal)` key under the
     /// executor's lease, outside the gateway's operation admission (the guide
     /// publisher's own single-flight worker). `flags` within
-    /// [`crate::bot::transport::CREATE_FLAGS`] (e.g. `SILENT`) go out through
+    /// [`crate::discord::transport::CREATE_FLAGS`] (e.g. `SILENT`) go out through
     /// `create_flagged_message`; empty is a plain create, as every other path.
     ///
     /// # Errors

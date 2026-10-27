@@ -8,22 +8,20 @@
 use std::sync::Arc;
 
 use chrono::Utc;
-use kanade::chat::answer::{AnswerDeps, Generation, Question, answer};
-use kanade::chat::context::{
+use kanade_chat::answer::{AnswerDeps, Generation, Question, answer};
+use kanade_chat::context::{
     Conversations, Parent, QuestionMessage, Reference, assemble, build_turns, system_prompt,
 };
-use kanade::chat::persona::{
+use kanade_chat::pilot::ChatPilot;
+use kanade_chat::sanitize::{ScheduleDefaults, schedule_defaults};
+use kanade_domain::scheduler::Clock;
+use kanade_extract::prompt::estimate_tokens;
+use kanade_llm::governor::{DEFAULT_TOOL_ROUNDS, Governor, Role};
+use kanade_llm::{ChatRequest, Effort, FakeAction, FakeProvider, Message, wire_body};
+use kanade_voice::persona::{
     CompiledPersona, PersonaId, PersonaRoot, ProfileId, VoiceSource, parse_profile,
 };
-use kanade::chat::pilot::ChatPilot;
-use kanade::chat::prompts::REMINDER_PREFIX;
-use kanade::chat::sanitize::{ScheduleDefaults, schedule_defaults};
-use kanade::domain::scheduler::Clock;
-use kanade::extract::prompt::estimate_tokens;
-use kanade::infrastructure::llm::governor::{DEFAULT_TOOL_ROUNDS, Governor, Role};
-use kanade::infrastructure::llm::{
-    ChatRequest, Effort, FakeAction, FakeProvider, Message, wire_body,
-};
+use kanade_voice::prompts::REMINDER_PREFIX;
 use serde_json::{Value, json};
 
 use crate::looping::{Ports, said, settings};

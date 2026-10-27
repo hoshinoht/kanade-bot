@@ -7,20 +7,18 @@ use chrono_tz::Tz;
 use serde::Serialize;
 
 use super::{Art, Boss, Named, bosses, dow, hhmm, iso_date, iso_instant};
-use crate::{
-    api::state::ChannelEntry,
-    domain::{
-        catalog::BossTable,
-        ids::short_id,
-        members::{Roster, member_name},
-        schedule::{
-            DAY_OF, FixedRun, Reminder, RsvpState, Run, RunStatus, ScheduleSnapshot,
-            countdown_kind, is_stale,
-        },
-        settings::RunLengths,
+use crate::app::guild::ChannelEntry;
+use kanade_domain::{
+    catalog::BossTable,
+    completion::RunEnds,
+    ids::short_id,
+    members::{Roster, member_name},
+    schedule::{
+        DAY_OF, FixedRun, Reminder, RsvpState, Run, RunStatus, ScheduleSnapshot, countdown_kind,
+        is_stale,
     },
-    infrastructure::llm::governor::GroupSnapshot,
 };
+use kanade_llm::governor::GroupSnapshot;
 
 /// What every projection reads besides the rows themselves.
 pub struct Context<'a> {
@@ -151,6 +149,8 @@ pub struct RunDto {
     pub minutes: u32,
     #[cfg_attr(test, ts(type = "RunStatus"))]
     pub status: &'static str,
+    /// A live run past its end (frozen): only its status may change.
+    pub ended: bool,
     pub bosses: Vec<Boss>,
     pub tally: Tally,
     pub short_id: String,
@@ -286,7 +286,7 @@ pub fn run_dto(
     snapshot: &ScheduleSnapshot,
     start_date: NaiveDate,
     run: &Run,
-    run_lengths: &RunLengths,
+    ends: &RunEnds,
 ) -> RunDto {
     let participants = participants(ctx, snapshot, run);
     let fixed = run
@@ -319,8 +319,9 @@ pub fn run_dto(
         id: run.id.clone(),
         day: day_index(ctx, start_date, run.datetime),
         time: run_time(ctx, run),
-        minutes: run_lengths.minutes_for(ctx.catalog, &run.bosses),
+        minutes: ends.minutes(&run.bosses),
         status: run.status.as_str(),
+        ended: ends.frozen(run, ctx.now),
         bosses: ctx.bosses(&run.bosses),
         tally: tally(&participants),
         short_id: short_id(&run.id),
@@ -375,7 +376,7 @@ pub fn week(
     snapshot: &ScheduleSnapshot,
     frame: &WeekFrame,
     version: u64,
-    run_lengths: &RunLengths,
+    ends: &RunEnds,
 ) -> Week {
     let start_date = ctx.local_date(frame.start);
     Week {
@@ -387,7 +388,7 @@ pub fn week(
             .runs
             .iter()
             .filter(|run| run.week_start == frame.start)
-            .map(|run| run_dto(ctx, snapshot, start_date, run, run_lengths))
+            .map(|run| run_dto(ctx, snapshot, start_date, run, ends))
             .collect(),
         stats: stats(ctx, snapshot, frame),
         generated_at: iso_instant(ctx.now),

@@ -1,14 +1,12 @@
 //! SQLite-only journal behaviour: the card index and recovery across a real
 //! close and reopen.
 
-use kanade::bot::events::CardIndex;
-use kanade::domain::notify::{
-    AttemptState, Claim, DeliveryJournal, DeliveryTarget, EffectKind, IntentContent,
+use kanade_domain::notify::{
+    AttemptState, CardIndex, Claim, DeliveryJournal, DeliveryTarget, EffectKind, IntentContent,
     NotificationIntent, Receipt,
 };
-use kanade::domain::scheduler::{ScheduleStore, Scope};
-use kanade::infrastructure::store::SqliteStore;
-use twilight_model::id::Id;
+use kanade_domain::scheduler::{ScheduleStore, Scope};
+use kanade_store::SqliteStore;
 
 use crate::support::{TempDir, at, seed};
 
@@ -35,10 +33,10 @@ async fn unsent(store: &SqliteStore) {
     store
         .commit(
             state.revision,
-            kanade::domain::schedule::ChangeSet {
-                changes: vec![kanade::domain::schedule::Change::PutReminder(row)],
+            kanade_domain::schedule::ChangeSet {
+                changes: vec![kanade_domain::schedule::Change::PutReminder(row)],
             },
-            kanade::infrastructure::store::conformance::meta(),
+            kanade_store::conformance::meta(),
         )
         .await
         .expect("commit");
@@ -54,7 +52,7 @@ async fn card_index_finds_runs_by_the_bound_message_in_any_channel() {
     unsent(&store).await;
     assert!(
         store
-            .runs_for_message(Id::new(4242))
+            .runs_for_message("4242")
             .await
             .expect("lookup")
             .is_empty()
@@ -80,12 +78,12 @@ async fn card_index_finds_runs_by_the_bound_message_in_any_channel() {
         .await
         .expect("bind");
     assert_eq!(
-        store.runs_for_message(Id::new(5001)).await.expect("lookup"),
+        store.runs_for_message("5001").await.expect("lookup"),
         ["r-1"]
     );
     assert!(
         store
-            .runs_for_message(Id::new(5002))
+            .runs_for_message("5002")
             .await
             .expect("lookup")
             .is_empty()
@@ -138,7 +136,7 @@ async fn an_intent_left_by_a_crash_is_indeterminate_after_reopen() {
 
 #[tokio::test]
 async fn a_cancelled_journal_write_leaves_the_next_one_working() {
-    use kanade::domain::schedule::{Change, ChangeSet, Reminder};
+    use kanade_domain::schedule::{Change, ChangeSet, Reminder};
     use std::time::Duration;
 
     let dir = TempDir::new();
@@ -175,7 +173,7 @@ async fn a_cancelled_journal_write_leaves_the_next_one_working() {
             .commit(
                 revision,
                 ChangeSet { changes },
-                kanade::infrastructure::store::conformance::meta(),
+                kanade_store::conformance::meta(),
             )
             .await
             .expect("seed reminders");

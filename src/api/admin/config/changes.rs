@@ -6,12 +6,8 @@
 use serde_json::{Map, Value, json};
 
 use super::models::LocalContextWarning;
-use crate::{
-    chat::persona::PersonaSnapshot,
-    domain::settings::{LOCAL_CONTEXT_WARNING, RuntimeSettings, diff_rows},
-    infrastructure::llm::setup::{RoleSwap, RunningRole},
-    runtime::logging,
-};
+use kanade_domain::settings::{LOCAL_CONTEXT_WARNING, RuntimeSettings, diff_rows};
+use kanade_voice::persona::PersonaSnapshot;
 
 /// `{key: {"from", "to"}}` for every stored row that differs.
 pub(super) fn diff(before: &RuntimeSettings, after: &RuntimeSettings) -> Map<String, Value> {
@@ -30,7 +26,7 @@ pub(super) fn settings_changed(
 ) {
     let values = diff(before, after);
     let keys: Vec<&String> = values.keys().collect();
-    logging::log!(
+    kanade_log::log!(
         info,
         "settings_changed",
         revision,
@@ -46,7 +42,7 @@ pub(super) fn settings_changed(
 /// threshold (the save itself is never blocked).
 pub(super) fn local_context_warnings(warnings: &[LocalContextWarning]) {
     for warning in warnings {
-        logging::log!(
+        kanade_log::log!(
             warn,
             "model_warning",
             kind = "local_context",
@@ -57,33 +53,6 @@ pub(super) fn local_context_warnings(warnings: &[LocalContextWarning]) {
             surface = "admin_portal",
         );
     }
-}
-
-fn running(running: Option<&RunningRole>) -> Value {
-    running.map_or(Value::Null, |running| {
-        json!({
-            "alias": running.alias,
-            "effort": running.effort.map(|effort| effort.as_str()),
-        })
-    })
-}
-
-/// One line per role whose running alias or effort changed; the next
-/// session of that role opens with `to`.
-pub(super) fn models_applied(swaps: &[RoleSwap]) {
-    for swap in swaps {
-        logging::log!(
-            info,
-            "model_role_switched",
-            role = swap.role.as_str(),
-            from = running(swap.before.as_ref()),
-            to = running(swap.after.as_ref()),
-        );
-    }
-}
-
-pub(super) fn models_apply_failed(error: &str) {
-    logging::log!(warn, "model_roles_not_applied", error);
 }
 
 fn profile_count(snapshot: &PersonaSnapshot) -> usize {
@@ -101,7 +70,7 @@ fn effective(snapshot: &PersonaSnapshot) -> Option<String> {
 }
 
 pub(super) fn persona_switched(from: &PersonaSnapshot, to: &PersonaSnapshot) {
-    logging::log!(
+    kanade_log::log!(
         info,
         "persona_switched",
         from = effective(from),
@@ -119,7 +88,7 @@ pub(super) fn personas_reloaded(snapshot: &PersonaSnapshot) {
             .map(|issue| json!({"file": issue.basename, "error": issue.error.to_string()}))
             .collect()
     });
-    logging::log!(
+    kanade_log::log!(
         if issues.is_empty() { "INFO" } else { "WARN" },
         "personas_reloaded",
         persona = effective(snapshot),
@@ -134,13 +103,13 @@ mod tests {
 
     #[test]
     fn settings_changed_names_keys_and_persona_before_after() {
-        logging::capture();
+        kanade_log::capture();
         let before = RuntimeSettings::default();
         let mut after = before.clone();
         after.persona.active = "aria".into();
         after.chatbot.enabled = !before.chatbot.enabled;
         settings_changed(7, "persona", "admin:discord:42", &before, &after);
-        let line = logging::captured().remove(0);
+        let line = kanade_log::captured().remove(0);
         assert_eq!(line["event"], "settings_changed");
         assert_eq!(line["revision"], 7);
         assert_eq!(line["surface"], "admin_portal");
@@ -166,7 +135,7 @@ mod tests {
 
     #[test]
     fn a_context_change_logs_its_row_before_and_after_and_local_warnings() {
-        logging::capture();
+        kanade_log::capture();
         let before = RuntimeSettings::default();
         let mut after = before.clone();
         after.models.context.chat.cap = Some(32_768);
@@ -176,7 +145,7 @@ mod tests {
             alias: "kanata/chat".into(),
             window: 32_768,
         }]);
-        let lines = logging::captured();
+        let lines = kanade_log::captured();
         let changed = &lines[0];
         assert_eq!(changed["keys"], serde_json::json!(["v5.model_context"]));
         let row = &changed["values"]["v5.model_context"];
@@ -201,7 +170,7 @@ mod tests {
 
     #[test]
     fn a_run_length_change_audits_its_row_once_and_a_noop_has_none() {
-        logging::capture();
+        kanade_log::capture();
         let before = RuntimeSettings::default();
         let mut after = before.clone();
         after.run_lengths.default_minutes = 20;
@@ -212,7 +181,7 @@ mod tests {
             &before,
             &after,
         );
-        let lines = logging::captured();
+        let lines = kanade_log::captured();
         assert_eq!(lines.len(), 1);
         assert_eq!(lines[0]["section"], "run_lengths");
         assert_eq!(lines[0]["keys"], serde_json::json!(["v5.run_lengths"]));
@@ -229,12 +198,12 @@ mod tests {
 
     #[test]
     fn a_profanity_change_audits_its_row() {
-        logging::capture();
+        kanade_log::capture();
         let before = RuntimeSettings::default();
         let mut after = before.clone();
         after.profanity.extra_words = vec!["frick".into()];
         settings_changed(9, "profanity", "admin:token", &before, &after);
-        let lines = logging::captured();
+        let lines = kanade_log::captured();
         assert_eq!(lines[0]["section"], "profanity");
         assert_eq!(lines[0]["keys"], serde_json::json!(["v5.profanity"]));
         let row = &lines[0]["values"]["v5.profanity"];

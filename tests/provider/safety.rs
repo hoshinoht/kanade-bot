@@ -1,6 +1,6 @@
 use std::{panic::AssertUnwindSafe, sync::Arc, time::Duration};
 
-use kanade::infrastructure::llm::{
+use kanade_llm::{
     ChatRequest, CompletionFuture, CompletionResponse, CompletionRunner, ErrorCode,
     ExecutionLimits, FakeAction, FakeProvider, FinishReason, LlmProvider, Message, OutputSchema,
     OutputValidation, ProviderFailure, ProviderFailureKind, RetryPolicy, ToolCall, ToolCallRequest,

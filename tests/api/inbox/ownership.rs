@@ -3,7 +3,7 @@
 //! inbox, and accepted or declined by any admin session as staff.
 
 use chrono::TimeDelta;
-use kanade::domain::ownership::{OwnerRequest, OwnerRequestStatus, OwnerRequestStore};
+use kanade_domain::ownership::{OwnerRequest, OwnerRequestStatus, OwnerRequestStore};
 
 use super::*;
 

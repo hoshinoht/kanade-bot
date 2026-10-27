@@ -1,6 +1,6 @@
 use kanade::bot::delivery::AdminAlert;
-use kanade::bot::transport::{Call, DiscordTransport, Op, Outcome, RejectionKind, Step};
-use kanade::domain::schedule::RsvpState;
+use kanade::discord::transport::{Call, DiscordTransport, Op, Outcome, RejectionKind, Step};
+use kanade_domain::schedule::RsvpState;
 use twilight_model::channel::message::ReactionType;
 use twilight_model::id::Id;
 

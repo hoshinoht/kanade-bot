@@ -3,7 +3,7 @@ use std::{
     time::Duration,
 };
 
-use kanade::infrastructure::llm::governor::{CallKind, Priority, Refused, Role, Ticket};
+use kanade_llm::governor::{CallKind, Priority, Refused, Role, Ticket};
 use tokio::time::Instant;
 
 use crate::support::{LONG, governor, settle, snap, ticket};
@@ -11,7 +11,7 @@ use crate::support::{LONG, governor, settle, snap, ticket};
 type Log = Arc<Mutex<Vec<String>>>;
 
 fn spawn_logged(
-    governor: &Arc<kanade::infrastructure::llm::governor::Governor>,
+    governor: &Arc<kanade_llm::governor::Governor>,
     log: &Log,
     priority: Priority,
     who: &str,

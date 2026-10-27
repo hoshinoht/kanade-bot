@@ -4,15 +4,13 @@
 //! (`PATCH /api/admin/members/{id}` with `persona`), which accepts only
 //! public profiles.
 
-use crate::{
-    api::{
-        dto::account::{ReplyStyle, ReplyStyleRef},
-        state::ApiState,
-    },
-    chat::persona::{
-        ProfileId, ProfileQuery, ProfileSet, ProfileSource, RoleAssignment, RoleId, resolve_profile,
-    },
-    domain::members::MemberProfile,
+use crate::api::{
+    dto::account::{ReplyStyle, ReplyStyleRef},
+    state::ApiState,
+};
+use kanade_domain::members::MemberProfile;
+use kanade_voice::persona::{
+    ProfileId, ProfileQuery, ProfileSet, ProfileSource, RoleAssignment, RoleId, resolve_profile,
 };
 
 fn named(

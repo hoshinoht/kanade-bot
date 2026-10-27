@@ -13,12 +13,10 @@ use axum::{
 };
 
 use super::context::{state, unavailable};
-use crate::api::{
-    auth::AdminSession,
-    avatars::{AvatarRef, Portrait, respond},
-    error::ApiError,
-    listeners::Site,
-    state::ApiState,
+use crate::{
+    api::{assets::respond, auth::AdminSession, error::ApiError, listeners::Site, state::ApiState},
+    app::guild::AvatarRef,
+    discord::avatars::Portrait,
 };
 
 pub fn routes() -> Router<Arc<Site>> {

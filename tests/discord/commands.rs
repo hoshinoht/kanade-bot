@@ -18,20 +18,26 @@ use twilight_model::gateway::payload::incoming::InteractionCreate;
 use twilight_model::guild::Permissions;
 use twilight_model::id::Id;
 
-use kanade::bot::commands::{
-    AccessPolicy, CommandError, CommandFuture, Denial, Dispatcher, Disposition, GENERIC_FAILURE,
-    Gate, Handled, Invocation, SlashCommand, spawn_interaction,
-};
-use kanade::bot::events::{AdminRoles, BotEvent, EventHandler};
 use kanade::bot::gateway::{
     ConnectionStatus, EventSource, GatewayError, RunExit, RunnerConfig, run,
 };
 use kanade::bot::handler::Fanout;
-use kanade::bot::transport::{
+use kanade::discord::transport::{
     AmbiguousKind, Call, DiscordTransport, FakeDiscord, InteractionReply, Op, Outcome,
     RejectionKind, Step,
 };
-use kanade::domain::members::Roster;
+use kanade::{
+    app::access::{AccessPolicy, Denial, Gate},
+    bot::commands::{
+        CommandError, CommandFuture, Dispatcher, Disposition, GENERIC_FAILURE, Handled, Invocation,
+        SlashCommand, spawn_interaction,
+    },
+};
+use kanade::{
+    app::roster::AdminRoles,
+    bot::events::{BotEvent, EventHandler},
+};
+use kanade_domain::members::Roster;
 
 use super::support::*;
 
@@ -388,7 +394,7 @@ async fn fanout_bounds_task_drain_and_aborts_hanging_command_tasks() {
         ConnectionStatus::new(),
         Box::new(|_| {}),
         guild_ready,
-        Arc::new(kanade::api::auth::system_now),
+        Arc::new(kanade::app::clock::system_now),
     );
 
     fanout
@@ -472,7 +478,7 @@ fn feeding_fanout(
 async fn fanout_stamps_received_messages_with_the_injected_clock() {
     use kanade::bot::events::GuildMessage;
     use kanade::bot::extract_feed::{FeedItem, origin};
-    use kanade::extract::pipeline::MessageOrigin;
+    use kanade_extract::pipeline::MessageOrigin;
 
     // `message_json` is posted at 2026-09-25 12:00:00 UTC.
     let at = |seconds| {

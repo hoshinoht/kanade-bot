@@ -6,7 +6,7 @@ use std::{fs, path::Path};
 
 use chrono::DateTime;
 use chrono_tz::Tz;
-use kanade::chat::persona::{CompiledPersona, ExampleSource, Profile, TurnContext, VoiceSource};
+use kanade_voice::persona::{CompiledPersona, ExampleSource, Profile, TurnContext, VoiceSource};
 use serde_json::Value;
 
 use crate::support::{Fixture, pid, prof};

@@ -96,7 +96,7 @@ async fn chat_lists_every_row_newest_first_with_total_facets_and_summary() {
 #[test]
 fn chat_summary_usage_sums_round_rows_per_model() {
     use kanade::api::dto::logs::chat_summary;
-    use kanade::domain::model_log::ChatOutcome;
+    use kanade_domain::model_log::ChatOutcome;
 
     let round = |model: &str, pair: Option<(u64, u64)>| {
         let mut round = super::round(model, &[], json!([]), None);
@@ -282,7 +282,7 @@ fn an_imported_v4_turn_shows_its_output_and_ms() {
     use std::collections::BTreeMap;
 
     use kanade::api::dto::logs::{Names, chat_turn};
-    use kanade::domain::{members::Roster, model_log::ChatOutcome};
+    use kanade_domain::{members::Roster, model_log::ChatOutcome};
 
     let calls = json!([
         {"name": "get_boss_strategy", "round": 1, "arguments": "{\"boss\":\"Kalos\"}",
@@ -336,7 +336,7 @@ fn an_imported_v4_turn_shows_its_output_and_ms() {
 /// (never a user id). Signed-in admin only; withheld turns hide it.
 #[tokio::test]
 async fn a_masked_turn_shows_its_model_view_with_names_never_ids() {
-    use kanade::domain::model_log::{
+    use kanade_domain::model_log::{
         ChatOutcome, MaskedName, MaskedRound, MaskedTurn, ModelLogStore,
     };
 
@@ -455,7 +455,7 @@ async fn a_masked_turn_shows_its_model_view_with_names_never_ids() {
 
 #[tokio::test]
 async fn profanity_turns_filter_facet_and_show_their_detail() {
-    use kanade::domain::model_log::{ChatOutcome, ModelLogStore};
+    use kanade_domain::model_log::{ChatOutcome, ModelLogStore};
 
     let logs = Logs::new().await;
     let line = "Language, please!";

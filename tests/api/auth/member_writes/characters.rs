@@ -18,15 +18,14 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use chrono::TimeDelta;
-use kanade::{
-    bot::chardata::copy::notice_text,
-    domain::{
-        chardata::{CharDataStore, ConsentSurface, Link, LinkPut, LinkStatus, NOTICE_VERSION},
-        history::{Actor, Surface},
-        settings::{SettingsChangeQuery, SettingsStore},
-    },
-    infrastructure::{character_data::CharacterData, scouter::JobState, store::SqliteCharData},
+use kanade::cards::chardata::notice_text;
+use kanade_chardata::{character_data::CharacterData, scouter::JobState};
+use kanade_domain::{
+    chardata::{CharDataStore, ConsentSurface, Link, LinkPut, LinkStatus, NOTICE_VERSION},
+    history::{Actor, Surface},
+    settings::{SettingsChangeQuery, SettingsStore},
 };
+use kanade_store::SqliteCharData;
 use serde_json::{Value, json};
 
 use super::{ALICE, BOB, CARA, Portal, refused};
@@ -1191,7 +1190,7 @@ async fn the_party_sees_roster_levels_and_estimates_never_another_members_nexon_
 #[tokio::test]
 async fn the_party_sees_per_boss_characters_only_where_they_differ() {
     use chrono::{TimeZone, Utc};
-    use kanade::domain::schedule::{Change, Run, RunSource, RunStatus};
+    use kanade_domain::schedule::{Change, Run, RunSource, RunStatus};
 
     let chars = Chars::new(true, false).await;
     let kanna = json!({"ign": "AsahiKanna", "class": "Kanna", "level": 250});

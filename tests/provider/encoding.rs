@@ -1,6 +1,4 @@
-use kanade::infrastructure::llm::{
-    ChatRequest, CompletionResponse, ErrorCode, ExecutionLimits, Message,
-};
+use kanade_llm::{ChatRequest, CompletionResponse, ErrorCode, ExecutionLimits, Message};
 use serde_json::{Map, Value, json};
 
 use super::support::{

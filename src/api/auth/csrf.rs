@@ -9,7 +9,7 @@ use axum::http::{
     header::{HOST, ORIGIN},
 };
 
-use super::crypto;
+use crate::app::crypto;
 
 /// Response header on the session reads and required request header on mutations.
 pub const CSRF_HEADER: &str = "x-kanade-csrf";

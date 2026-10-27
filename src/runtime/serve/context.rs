@@ -1,21 +1,22 @@
-//! Live context windows for extraction and heading rewrites: each resolves
-//! from the settings saved at the moment it is asked, over the cached catalog,
-//! so a Config save applies to the next call without a restart.
+//! Live context windows for extraction and heading rewrites (the bot's):
+//! each resolves from the settings saved at the moment it is asked, over the
+//! cached catalog, so a Config save applies to the next call without a
+//! restart.
 
 use std::sync::Arc;
 
 use tokio::sync::watch;
 
-use crate::{
-    api::admin::config::SettingsChanged,
-    domain::settings::RuntimeSettings,
-    infrastructure::llm::{
-        governor::Role,
-        setup::{ContextResolution, ModelStack, resolve_context},
-    },
+use crate::app::config::SettingsChanged;
+use kanade_domain::settings::RuntimeSettings;
+#[cfg(feature = "bot")]
+use kanade_llm::{
+    governor::Role,
+    setup::{ContextResolution, ModelStack, resolve_context},
 };
 
 /// Resolves `role`'s context for an alias from the latest saved settings.
+#[cfg(feature = "bot")]
 pub type Resolver = Arc<dyn Fn(&str) -> ContextResolution + Send + Sync>;
 
 /// The config desk's changes, or `settings` fixed when nothing publishes.
@@ -34,6 +35,7 @@ pub fn changes_or(
     })
 }
 
+#[cfg(feature = "bot")]
 pub fn resolver(
     stack: Arc<ModelStack>,
     settings: watch::Receiver<SettingsChanged>,

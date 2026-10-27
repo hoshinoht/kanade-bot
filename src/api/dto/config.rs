@@ -8,23 +8,23 @@ use chrono_tz::Tz;
 use ring::digest::{SHA256, digest};
 use serde::Serialize;
 
-use crate::{
-    api::state::{ChannelEntry, RoleEntry},
-    chat::persona::{PersonaSnapshot, ProfileId},
-    domain::notify::WeeklyDigest,
-    domain::settings::{
+use crate::app::guild::{ChannelEntry, RoleEntry};
+use kanade_domain::{
+    notify::WeeklyDigest,
+    settings::{
         ContextRole as StoredContextRole, Profanity as StoredProfanity, Rate as StoredRate,
         RoleModel as StoredRole, RoleProfileAssignment as StoredRoleProfile,
         RunLengthOverride as StoredRunLengthOverride, RunLengths as StoredRunLengths,
         RuntimeSettings,
     },
-    domain::time::ZonedDateTime,
-    infrastructure::llm::{
-        TrustZone,
-        governor::Role,
-        setup::{CatalogModel, CatalogSnapshot, RunningRole, resolve_context},
-    },
+    time::ZonedDateTime,
 };
+use kanade_llm::{
+    TrustZone,
+    governor::Role,
+    setup::{CatalogModel, CatalogSnapshot, RunningRole, resolve_context},
+};
+use kanade_voice::persona::{PersonaSnapshot, ProfileId};
 
 const SUMMARY_CHARS: usize = 140;
 
@@ -122,8 +122,6 @@ pub struct Chatbot {
 #[cfg_attr(test, derive(ts_rs::TS))]
 pub struct Notifications {
     pub quiet_mode: bool,
-    #[cfg_attr(test, ts(type = "MessageStyle"))]
-    pub message_style: &'static str,
     /// `HH:MM` in the guild's zone: when the daily reminder-header rewrite
     /// batch runs.
     pub header_generation_time: String,
@@ -183,7 +181,7 @@ pub fn profanity(settings: &StoredProfanity) -> Profanity {
         check_questions: settings.check_questions,
         check_replies: settings.check_replies,
         deflection_line: settings.deflection_line.clone(),
-        builtin_words: crate::chat::nudge::builtin_words(),
+        builtin_words: kanade_voice::nudge::builtin_words(),
     }
 }
 
@@ -576,7 +574,7 @@ pub fn roles(
     }
 }
 
-pub fn context_settings(settings: &crate::domain::settings::ContextSettings) -> ContextSettings {
+pub fn context_settings(settings: &kanade_domain::settings::ContextSettings) -> ContextSettings {
     let role = |role: &StoredContextRole| ContextRole {
         reserve: role.reserve,
         cap: role.cap,

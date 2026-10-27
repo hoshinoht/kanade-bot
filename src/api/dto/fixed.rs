@@ -8,7 +8,7 @@ use super::{
     week::{Context, WeekKey, day_index, is_amended, run_time},
     weekday_name,
 };
-use crate::domain::{
+use kanade_domain::{
     completion::RunEnds,
     ids::short_id,
     schedule::{FixedRun, ScheduleSnapshot},

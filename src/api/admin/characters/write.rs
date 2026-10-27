@@ -25,23 +25,21 @@ use crate::{
         auth::AdminSession,
         dto::characters::{CharacterCreated, row},
         listeners::Site,
-        state::{ApiState, CharacterRoster},
+        state::ApiState,
     },
-    domain::{
-        characters::{
-            Character, CharacterChange, CharacterEdit, CharacterRecord, CharacterRole,
-            CharacterWrite, DEFAULT_WORLD, new_role, parse_class, parse_ign, parse_level,
-            parse_role, parse_world,
-        },
-        chardata::LINK_REGION,
-        history::Actor,
-        ids::{IdGenerator, RandomIds},
-    },
-    infrastructure::{
-        character_data::AdminLinkOutcome,
-        store::replays::{KeyedWrite, ReplayScope, StoredReplay},
-    },
+    app::read::CharacterRoster,
 };
+use kanade_chardata::character_data::AdminLinkOutcome;
+use kanade_domain::{
+    characters::{
+        Character, CharacterChange, CharacterEdit, CharacterRecord, CharacterRole, CharacterWrite,
+        DEFAULT_WORLD, new_role, parse_class, parse_ign, parse_level, parse_role, parse_world,
+    },
+    chardata::LINK_REGION,
+    history::Actor,
+    ids::{IdGenerator, RandomIds},
+};
+use kanade_store::replays::{KeyedWrite, ReplayScope, StoredReplay};
 
 fn not_found() -> Refusal {
     Refusal::not_found("not_found", "That character is not on the roster.")
@@ -273,7 +271,7 @@ pub async fn create(
             .is_err()
     {
         // A retry finds the link on file and answers `linked` (resume_link).
-        crate::runtime::logging::log!(warn, "idempotency_replay_unrecorded");
+        kanade_log::log!(warn, "idempotency_replay_unrecorded");
     }
     Ok((StatusCode::CREATED, Json(body)).into_response())
 }
@@ -377,7 +375,7 @@ async fn ask_link(
             Some("linked")
         }
         _ => {
-            crate::runtime::logging::log!(warn, "chardata_create_link_failed");
+            kanade_log::log!(warn, "chardata_create_link_failed");
             Some("failed")
         }
     }

@@ -1,26 +1,23 @@
-//! "Open in portal" under the redesigned day-of and countdown cards: a
-//! legacy link row beside the text and embeds while the public portal is
-//! open, to the run's page (the root for several runs or an unsafe id);
-//! nothing when it is closed or unconfigured, and never in the classic style.
+//! "Open in portal" under the day-of and countdown cards: a legacy link
+//! row beside the text and embeds while the public portal is open, to the
+//! run's page (the root for several runs or an unsafe id); nothing when it
+//! is closed or unconfigured.
 
 use std::sync::Arc;
 
-use kanade::bot::delivery::cards::redesign::{
+use kanade::cards::redesign::{
     MAX_COMPONENTS, MAX_EMBEDS, MAX_ROW_BUTTONS, MAX_ROWS, OPEN_IN_PORTAL, component_count,
 };
-use kanade::bot::delivery::cards::{self, Card, CardArt, CardContext, V2Kit, fetch_art};
-use kanade::bot::transport::{COMPONENTS_V2, OutgoingMessage, legacy_rows, v2_body_valid};
-use kanade::domain::attendance::AttendancePolicy;
-use kanade::domain::catalog::BossTable;
-use kanade::domain::members::Roster;
-use kanade::domain::notify::IntentContent;
-use kanade::domain::schedule::ScheduleSnapshot;
+use kanade::cards::{self, Card, CardArt, CardContext, V2Kit, fetch_art};
+use kanade::discord::transport::{COMPONENTS_V2, OutgoingMessage, legacy_rows, v2_body_valid};
+use kanade_domain::catalog::BossTable;
+use kanade_domain::members::Roster;
+use kanade_domain::notify::IntentContent;
+use kanade_domain::schedule::ScheduleSnapshot;
 use twilight_model::channel::message::component::{Button, ButtonStyle};
 use twilight_model::channel::message::{Component, MessageFlags};
 
-use super::{
-    KALOS, MALEFIC, art, context, countdown, day_of, kalos_copies, members, redesigned_v5, week,
-};
+use super::{KALOS, MALEFIC, art, countdown, day_of, kalos_copies, members, redesigned_v5, week};
 use crate::cards::catalog;
 
 const ORIGIN: &str = "https://portal.example";
@@ -149,27 +146,6 @@ async fn a_closed_or_unconfigured_portal_adds_nothing_and_an_edit_clears_the_row
             assert_eq!(edit.components, Some(Vec::new()), "a stale row is cleared");
             assert!(edit.valid() && edit.v2_components().is_none());
         }
-    }
-}
-
-#[tokio::test]
-async fn the_classic_style_never_links() {
-    let (schedule, roster, table) = (week(), members(), catalog());
-    let kit = portal(Some(ORIGIN), true);
-    let ctx = CardContext {
-        v2: Some(&kit),
-        ..context(&schedule, &roster, &table, AttendancePolicy::V5, false)
-    };
-    for content in [countdown(MALEFIC), day_of(&[MALEFIC])] {
-        let card = cards::build(&content, &ctx, None, &[]).unwrap();
-        assert_eq!(
-            card.rows,
-            Some(Vec::new()),
-            "a run card still owns its rows"
-        );
-        assert!(post(&card).await.components.is_empty());
-        let edit = card.edit(&CardArt::default());
-        assert_eq!(edit.components, Some(Vec::new()), "clears a redesigned row");
     }
 }
 

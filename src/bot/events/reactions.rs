@@ -6,7 +6,6 @@
 
 use std::future::Future;
 
-use chrono::{DateTime, Utc};
 use twilight_model::channel::message::EmojiReactionType;
 use twilight_model::gateway::GatewayReaction;
 use twilight_model::id::{
@@ -14,16 +13,17 @@ use twilight_model::id::{
     marker::{ChannelMarker, MessageMarker, UserMarker},
 };
 
-use crate::bot::ids::id_text;
-use crate::domain::history::{Actor, Origin, Surface};
-use crate::domain::members::Directory;
-use crate::domain::schedule::{
+use crate::app::ids::id_text;
+use kanade_domain::history::{Actor, Origin, Surface};
+use kanade_domain::members::Directory;
+use kanade_domain::notify::{CardIndex, LookupError};
+use kanade_domain::schedule::{
     EMOJI_NO, EMOJI_YES, ReactionResult, RsvpState, ScheduleError, state_for_emoji,
 };
-use crate::domain::scheduler::{
+use kanade_domain::scheduler::{
     Clock, IdSource, ScheduleStore, SchedulerError, SchedulerResult, SchedulerService,
 };
-use crate::domain::scheduler::{DeclineNoticeContext, DeclineRsvpResult};
+use kanade_domain::scheduler::{DeclineNoticeContext, DeclineRsvpResult};
 
 /// The two answers a card reaction can give.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -109,47 +109,6 @@ pub fn rsvp_reaction(
     })
 }
 
-/// A card-index lookup failure (storage).
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct LookupError(pub String);
-
-/// Which runs a posted message is a card for; implemented by storage.
-pub trait CardIndex: Send + Sync {
-    /// Run ids bound to `message`, empty when it is not a run card.
-    fn runs_for_message(
-        &self,
-        message: Id<MessageMarker>,
-    ) -> impl Future<Output = Result<Vec<String>, LookupError>> + Send;
-}
-
-/// One remotely readable message that still maps to a run. `evidence` is the
-/// narrow, fresh bound-card subset; every row remains mapped for removal
-/// guards and conflict detection.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct ReplayCard {
-    pub channel_id: Option<String>,
-    pub message_id: String,
-    pub evidence: bool,
-    pub resolved_at: Option<DateTime<Utc>>,
-}
-
-/// All message mappings for one candidate run.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct ReplayRunCards {
-    pub run_id: String,
-    pub cards: Vec<ReplayCard>,
-}
-
-/// The journal view needed for bounded RSVP recovery.
-pub trait ReplayCards: Send + Sync {
-    /// Returns only runs with at least one fresh evidence card, but each
-    /// returned run carries every mapped message needed by the removal guard.
-    fn replay_cards(
-        &self,
-        not_before: DateTime<Utc>,
-    ) -> impl Future<Output = Result<Vec<ReplayRunCards>, LookupError>> + Send;
-}
-
 /// Where reaction RSVPs are applied.
 pub trait ReactionSink: Send {
     fn apply_reaction(
@@ -164,7 +123,7 @@ pub trait ReactionSink: Send {
 
 impl<S, I, C> ReactionSink for SchedulerService<S, I, C>
 where
-    S: ScheduleStore + crate::domain::notify::DeclineNoticeStore + Send + Sync,
+    S: ScheduleStore + kanade_domain::notify::DeclineNoticeStore + Send + Sync,
     I: IdSource + Send,
     C: Clock + Send + Sync,
 {
@@ -233,7 +192,7 @@ impl<I: CardIndex, S: ReactionSink> ReactionRouter<I, S> {
     ) -> Result<Vec<RoutedReaction>, RouteError> {
         let runs = self
             .index
-            .runs_for_message(reaction.message_id)
+            .runs_for_message(&id_text(reaction.message_id))
             .await
             .map_err(RouteError::Lookup)?;
         let user_id = id_text(reaction.user_id);

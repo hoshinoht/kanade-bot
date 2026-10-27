@@ -1,45 +1,28 @@
-//! The message style through the tick and the refresh worker: read live per
-//! card, posted with each picture once, edited without uploads.
+//! Cards through the tick and the refresh worker: posted with each picture
+//! once, edited without uploads.
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use chrono::TimeDelta;
-use kanade::bot::delivery::cards::redesign::OPEN_IN_PORTAL;
-use kanade::bot::delivery::cards::{CardKit, V2Kit};
-use kanade::bot::transport::Op;
-use kanade::domain::settings::MessageStyle;
-use kanade::infrastructure::store::SqliteStore;
+use kanade::cards::redesign::OPEN_IN_PORTAL;
+use kanade::cards::{CardKit, V2Kit};
+use kanade::discord::transport::Op;
+use kanade_store::SqliteStore;
 use twilight_model::channel::message::Component;
 
 use crate::cards::{answer, art_dir, created, edits, kit, pictures, refresher, seed_day_of, world};
 use crate::scenarios::{self, now};
 use crate::support;
 
-/// The style read through `redesigned` on every card.
-fn styled(art: &crate::support::TempDir, redesigned: &Arc<AtomicBool>) -> CardKit {
-    let live = Arc::clone(redesigned);
-    CardKit {
-        style: Some(Arc::new(move || {
-            if live.load(Ordering::SeqCst) {
-                MessageStyle::Redesigned
-            } else {
-                MessageStyle::Classic
-            }
-        })),
-        ..kit(Some(art))
-    }
-}
-
 #[tokio::test]
-async fn the_tick_posts_and_refresh_edits_in_the_live_style() {
+async fn the_tick_posts_and_refresh_edits_without_uploads() {
     let art = art_dir();
     let store = Arc::new(SqliteStore::open_temp().await);
     let world = world();
     let fake = Arc::new(support::fake());
     let (star, _) = seed_day_of(&*store).await;
-    let redesigned = Arc::new(AtomicBool::new(true));
-    let cards = styled(&art, &redesigned);
+    let cards = kit(Some(&art));
     let mut delivery = scenarios::delivery(&*store, &world, &*fake).with_cards(cards.clone());
     delivery.dispatch_reminders(now()).await.expect("dispatch");
     let posts = created(&fake);
@@ -88,13 +71,6 @@ async fn the_tick_posts_and_refresh_edits_in_the_live_style() {
         "{:?}",
         embeds[0].fields
     );
-
-    // Switching back applies on the next render.
-    redesigned.store(false, Ordering::SeqCst);
-    answer(&*store, &star, "1001", true, now() + TimeDelta::minutes(2)).await;
-    assert_eq!(refresh.refresh(std::slice::from_ref(&star)).await, 1);
-    let latest = edits(&fake).pop().expect("classic edit");
-    assert_eq!(latest.embeds.as_ref().expect("embeds").len(), 1, "classic");
 }
 
 /// The link buttons of a legacy post or edit: (label, url).
@@ -111,8 +87,8 @@ fn links(rows: &[Component]) -> Vec<(String, String)> {
         .collect()
 }
 
-/// "Open in portal" follows the live portal switch and the style on the
-/// next re-render of the posted card (the refresh and header-rewrite path).
+/// "Open in portal" follows the live portal switch on the next re-render
+/// of the posted card (the refresh and header-rewrite path).
 #[tokio::test]
 async fn refresh_adds_and_drops_the_portal_link_with_the_switch() {
     let art = art_dir();
@@ -120,7 +96,6 @@ async fn refresh_adds_and_drops_the_portal_link_with_the_switch() {
     let world = world();
     let fake = Arc::new(support::fake());
     let (star, _) = seed_day_of(&*store).await;
-    let redesigned = Arc::new(AtomicBool::new(true));
     let open = Arc::new(AtomicBool::new(true));
     let switch = Arc::clone(&open);
     let cards = CardKit {
@@ -129,7 +104,7 @@ async fn refresh_adds_and_drops_the_portal_link_with_the_switch() {
             portal_open: Some(Arc::new(move || switch.load(Ordering::SeqCst))),
             ..V2Kit::default()
         },
-        ..styled(&art, &redesigned)
+        ..kit(Some(&art))
     };
     let mut delivery = scenarios::delivery(&*store, &world, &*fake).with_cards(cards.clone());
     delivery.dispatch_reminders(now()).await.expect("dispatch");
@@ -177,13 +152,4 @@ async fn refresh_adds_and_drops_the_portal_link_with_the_switch() {
     let reopened = rerender(2, "1001").await;
     assert_eq!(links(reopened.components.as_deref().unwrap()), link);
     assert!(reopened.valid() && reopened.v2_components().is_none());
-
-    redesigned.store(false, Ordering::SeqCst);
-    let classic = rerender(3, "1002").await;
-    assert_eq!(
-        classic.components,
-        Some(Vec::new()),
-        "classic shows no link"
-    );
-    assert_eq!(classic.embeds.as_ref().expect("embeds").len(), 1);
 }

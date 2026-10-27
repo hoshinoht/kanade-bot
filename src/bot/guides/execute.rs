@@ -11,19 +11,18 @@ use uuid::Uuid;
 use super::inspect::deadline;
 use super::reconcile::Found;
 use super::{CALL_DEADLINE, GUIDE_PUBLISH_OPERATION, Publisher, payload};
+use crate::app::ids::{id_text, parse_id};
 use crate::bot::delivery::{Executor, LogAlerts, SendOutcome};
-use crate::bot::ids::{id_text, parse_id};
-use crate::bot::transport::{
+use crate::discord::transport::{
     ChannelId, DiscordTransport, Outcome, Presence, RejectionKind, SILENT,
 };
-use crate::domain::guides::{
+use kanade_domain::guides::{
     GuideStore, OpOutcome, PlanOp, Publish, PublishOp, PublishState, PublishedSlot, RenderedSlot,
     SlotEffect, SlotState, StopReason,
 };
-use crate::domain::notify::{
+use kanade_domain::notify::{
     DeliveryJournal, EffectKind, IntentContent, Lease, NotificationIntent,
 };
-use crate::runtime::logging;
 
 /// What follows an op.
 pub(super) enum Next {
@@ -129,7 +128,7 @@ where
                 .record_op(self.publish.id.clone(), pending)
                 .await
             {
-                logging::log!(warn, "guide_op_record_failed", error = error.to_string());
+                kanade_log::log!(warn, "guide_op_record_failed", error = error.to_string());
                 return self
                     .end(PublishState::Stopped, Some(StopReason::Interrupted))
                     .await;
@@ -208,7 +207,7 @@ where
             )
             .await;
         if let Err(error) = stored {
-            logging::log!(
+            kanade_log::log!(
                 warn,
                 "guide_op_settle_failed",
                 publish = self.publish.id.as_str(),
@@ -272,7 +271,7 @@ where
             {
                 Ok(lease) => self.lease = Some(lease),
                 Err(error) => {
-                    logging::log!(warn, "guide_lease_failed", error = error.to_string());
+                    kanade_log::log!(warn, "guide_lease_failed", error = error.to_string());
                 }
             }
         }

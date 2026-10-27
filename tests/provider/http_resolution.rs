@@ -6,7 +6,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use kanade::infrastructure::llm::{
+use kanade_llm::{
     ChatRequest, CompletionRunner, ErrorCode, ExecutionLimits, HttpProviderConfig,
     ModelCapabilities, OpenAiCompatibleProvider, RetryPolicy, shape_request,
 };

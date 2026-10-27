@@ -6,22 +6,15 @@
 use std::collections::BTreeSet;
 
 use chrono::{DateTime, TimeZone, Utc};
-use kanade::{
-    bot::delivery::{
-        cards::{CardContext, CardRecord, ReminderCardStore, redesign::NO_MARKS},
-        render,
+use kanade::cards::{CardContext, redesign::NO_MARKS, render::render};
+use kanade_domain::{
+    history::ChangeHistory,
+    notify::{
+        CardRecord, Claim, DedupeKey, DeliveryJournal, DeliverySettings, DeliveryTarget,
+        DispatchInput, NotificationIntent, Receipt, ReminderCardStore, plan_dispatch,
     },
-    domain::{
-        attendance::AttendancePolicy,
-        history::ChangeHistory,
-        notify::{
-            Claim, DedupeKey, DeliveryJournal, DeliverySettings, DeliveryTarget, DispatchInput,
-            NotificationIntent, Receipt, plan_dispatch,
-        },
-        schedule::{Change, Reminder, Run},
-        scheduler::{ScheduleStore, Scope},
-        settings::MessageStyle,
-    },
+    schedule::{Change, Reminder, Run},
+    scheduler::{ScheduleStore, Scope},
 };
 use serde_json::Value;
 
@@ -43,7 +36,10 @@ async fn tick_post(
     reminder_id: &str,
     at: DateTime<Utc>,
     heading: Option<&str>,
-) -> (NotificationIntent, kanade::bot::transport::OutgoingMessage) {
+) -> (
+    NotificationIntent,
+    kanade::discord::transport::OutgoingMessage,
+) {
     let mut schedule = reads.store.load(&Scope::All).await.unwrap();
     // As at its fire time: not yet posted.
     for row in &mut schedule.reminders {
@@ -56,7 +52,6 @@ async fn tick_post(
     let settings = DeliverySettings {
         post_channel_id: None,
         quiet_mode: false,
-        attendance: AttendancePolicy::V4_COMPAT,
     };
     let plan = plan_dispatch(&DispatchInput {
         now: at,
@@ -75,12 +70,10 @@ async fn tick_post(
         .expect("the tick posts it");
     let ctx = CardContext {
         schedule: &schedule,
-        attendance: AttendancePolicy::V4_COMPAT,
         zone: chrono_tz::Asia::Kuala_Lumpur,
         quiet: false,
         members: &members,
         catalog: Some(&reads.catalog()),
-        style: MessageStyle::Classic,
         marks: &NO_MARKS,
         v2: None,
     };
@@ -88,7 +81,7 @@ async fn tick_post(
     (intent, message)
 }
 
-fn assert_same(card: &Value, message: &kanade::bot::transport::OutgoingMessage) {
+fn assert_same(card: &Value, message: &kanade::discord::transport::OutgoingMessage) {
     let embed = &message.embeds[0];
     assert_eq!(card["content"], message.content.clone().unwrap());
     assert_eq!(
@@ -245,8 +238,11 @@ async fn post_morning(
     intent
 }
 
+/// The runs a day-of preview shows: one embed title per run.
 fn field_names(card: &Value) -> Vec<&str> {
-    strs(&card["fields"], "name")
+    let mut titles = vec![card["title"].as_str().unwrap_or_default()];
+    titles.extend(strs(&card["more_embeds"], "title"));
+    titles
 }
 
 #[tokio::test]
@@ -328,7 +324,7 @@ async fn a_late_same_day_run_never_joins_the_posted_card() {
     let preview = reads.read(&preview_path("m-kalos-day"), SCHEMA).await;
     let card = &preview["card"];
     assert_eq!(field_names(card).len(), 1, "{card}");
-    assert!(field_names(card)[0].contains("XKalos"));
+    assert!(field_names(card)[0].contains("Kalos"));
     assert!(card["content"].as_str().unwrap().contains(heading));
     assert_eq!(card["heading_final"], true);
 
@@ -385,8 +381,8 @@ async fn a_sibling_moved_after_posting_stays_on_the_posted_card() {
     let card = &preview["card"];
     let names = field_names(card);
     assert_eq!(names.len(), 2, "{names:?}");
-    assert!(names.iter().any(|name| name.contains("XKalos")));
-    assert!(names.iter().any(|name| name.contains("NMaleficStar")));
+    assert!(names.iter().any(|name| name.contains("Kalos")));
+    assert!(names.iter().any(|name| name.contains("Malefic Star")));
     assert!(card["content"].as_str().unwrap().contains(heading));
     assert_eq!(card["heading_final"], true);
 }

@@ -4,21 +4,21 @@ use chrono::{DateTime, NaiveTime, TimeZone, Utc, Weekday};
 use kanade::bot::cards::{Authority, CardDesk, CardOutbox, CardSettings, DeskDeps};
 use kanade::bot::delivery::{AlertRecorder, FixedClock};
 use kanade::bot::rsvp_replay::{ReplayReport, RsvpReplay};
-use kanade::bot::transport::{FakeDiscord, MessageId};
-use kanade::domain::history::{Actor, ChangeMeta, Origin, Surface};
-use kanade::domain::ids::RandomIds;
-use kanade::domain::members::{Directory, Member};
-use kanade::domain::notify::{
+use kanade::discord::transport::{FakeDiscord, MessageId};
+use kanade_domain::history::{Actor, ChangeMeta, Origin, Surface};
+use kanade_domain::ids::RandomIds;
+use kanade_domain::members::{Directory, Member};
+use kanade_domain::notify::{
     AttemptId, Claim, DeliveryJournal, DeliveryTarget, EffectKind, IntentContent, Lease,
     NotificationIntent, Receipt,
 };
-use kanade::domain::proposals::Approver;
-use kanade::domain::schedule::{
+use kanade_domain::proposals::Approver;
+use kanade_domain::schedule::{
     Change, ChangeSet, NewRun, Reminder, ReminderPolicy, RsvpState, RunSource, RunStatus,
     SchedulePolicy,
 };
-use kanade::domain::scheduler::{ScheduleStore, SchedulerService};
-use kanade::infrastructure::store::SqliteStore;
+use kanade_domain::scheduler::{ScheduleStore, SchedulerService};
+use kanade_store::SqliteStore;
 use twilight_model::channel::message::ReactionType;
 use twilight_model::id::Id;
 
@@ -83,7 +83,7 @@ impl TestClock {
     pub fn set(&self, at: DateTime<Utc>) {
         *self.0.lock().unwrap() = at;
     }
-    pub fn wall(&self) -> kanade::api::auth::Clock {
+    pub fn wall(&self) -> kanade::app::clock::Clock {
         let clock = self.clone();
         Arc::new(move || clock.get())
     }
@@ -316,9 +316,9 @@ impl World {
         )
     }
 
-    pub async fn snapshot(&self, run: &str) -> kanade::domain::schedule::ScheduleSnapshot {
+    pub async fn snapshot(&self, run: &str) -> kanade_domain::schedule::ScheduleSnapshot {
         self.store
-            .load(&kanade::domain::scheduler::Scope::Run(run.into()))
+            .load(&kanade_domain::scheduler::Scope::Run(run.into()))
             .await
             .unwrap()
     }

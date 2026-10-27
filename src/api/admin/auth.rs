@@ -23,7 +23,6 @@ use crate::{
         auth::{
             AdminAuth, AdminSession, SignIn,
             audit::{AuditContext, AuditEvent},
-            crypto,
             csrf::{self, CSRF_HEADER},
             device,
             discord::{BeginError, DiscordLogin},
@@ -34,8 +33,9 @@ use crate::{
         error::ApiError,
         listeners::Site,
     },
-    infrastructure::store::web_sessions::LoginMethod,
+    app::crypto,
 };
+use kanade_store::web_sessions::LoginMethod;
 
 const SESSION_SAME_SITE: &str = "Strict";
 /// The pre-auth cookie must survive Discord's cross-site redirect back.

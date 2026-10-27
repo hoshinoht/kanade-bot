@@ -1,7 +1,7 @@
 //! `GET /api/admin/reminders/{id}/preview`: one reminder's card as the bot
 //! posts it (unsent: the tick's planner) or edits it (posted: the refresh
 //! worker's content), through the delivery card builder
-//! (`bot::delivery::preview`). A row retired without posting has no card. Read only: no record is written, no heading
+//! (`cards::preview`). A row retired without posting has no card. Read only: no record is written, no heading
 //! is generated, no art is read and nothing goes to Discord. Difficulty marks are the ones serve listed at startup.
 //!
 //! `GET /api/admin/reminders/{id}/estimate.png`: the "Who carries" image a
@@ -37,20 +37,18 @@ use crate::{
         },
         error::ApiError,
         listeners::Site,
-        state::{ApiState, CharacterRoster},
+        state::ApiState,
     },
-    bot::delivery::{
-        CachedEstimates,
-        cards::{
-            Card, CardContext, HeaderSwitches,
-            chart::{self, Chart},
-            resolve_heading,
-        },
-        draw,
+    app::read::CharacterRoster,
+    cards::{
+        Card, CardContext, HeaderSwitches,
+        chart::{self, Chart},
+        estimates::{CachedEstimates, draw},
         preview::{posted, record_key, reminder_card, reminder_chart, reminder_intent},
+        resolve_heading,
     },
-    domain::{notify::DeliverySettings, settings::RuntimeSettings},
 };
+use kanade_domain::{notify::DeliverySettings, settings::RuntimeSettings};
 
 pub fn routes() -> Router<Arc<Site>> {
     Router::new()
@@ -150,12 +148,10 @@ async fn read<'a>(site: &'a Site, id: &str) -> Result<Read<'a>, ApiError> {
     };
     let cards = CardContext {
         schedule: &snapshot,
-        attendance: state.policy.attendance,
         zone: state.policy.zone(),
         quiet: settings.notifications.quiet_mode,
         members: &ctx.roster,
         catalog: Some(&state.catalog),
-        style: settings.notifications.message_style,
         marks: &state.marks,
         // The preview keeps the embed rendering of a V2 digest.
         v2: None,
@@ -200,7 +196,6 @@ async fn read<'a>(site: &'a Site, id: &str) -> Result<Read<'a>, ApiError> {
             DeliverySettings {
                 post_channel_id: settings.posting.channel_id.as_deref(),
                 quiet_mode: settings.notifications.quiet_mode,
-                attendance: state.policy.attendance,
             },
         ) {
             None => None,

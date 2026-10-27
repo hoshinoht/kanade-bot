@@ -56,7 +56,7 @@
     "MemberRun": {
       "type": "object",
       "additionalProperties": false,
-      "description": "One run as the signed-in member sees it: `week.json#/$defs/Run` minus `short_id`, `channel_id`, `cards`, `amended` and `roster_change`, plus `mine` and `can_edit`. Runs the member is not on are sent in full (drawn faded).",
+      "description": "One run as the signed-in member sees it: `week.json#/$defs/Run` minus `short_id`, `channel_id`, `cards`, `ended`, `amended` and `roster_change`, plus `mine` and `can_edit`. Runs the member is not on are sent in full (drawn faded).",
       "required": ["id", "day", "time", "minutes", "status", "bosses", "tally", "participants", "party", "channel", "fixed_id", "mine", "can_edit"],
       "properties": {
         "id": { "type": "string" },

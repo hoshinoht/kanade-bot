@@ -3,12 +3,10 @@
 //! (mock `portal`), written as both sign-in realms record them.
 
 use chrono::{DateTime, Duration, Utc};
-use kanade::{
-    api::auth::crypto,
-    infrastructure::store::{
-        auth_audit::{AuditKind, AuditRealm, AuditRow, AuthAuditStore},
-        web_sessions::{LoginMethod, SessionOrigin, WebSession, WebSessionStore},
-    },
+use kanade::app::crypto;
+use kanade_store::{
+    auth_audit::{AuditKind, AuditRealm, AuditRow, AuthAuditStore},
+    web_sessions::{LoginMethod, SessionOrigin, WebSession, WebSessionStore},
 };
 
 use super::{Seed, ids::*};

@@ -12,15 +12,13 @@ use axum::{
 use serde::{Deserialize, Serialize};
 
 use super::{Body, Refusal, Reply, scheduler, slot, state};
-use crate::{
-    api::{
-        admin::context::{context, frames, roster, run_ends, weeks},
-        auth::AdminSession,
-        dto,
-        listeners::Site,
-    },
-    domain::schedule::{Draft, FixedEdit, preview_fixed_edit},
+use crate::api::{
+    admin::context::{context, frames, roster, run_ends, weeks},
+    auth::AdminSession,
+    dto,
+    listeners::Site,
 };
+use kanade_domain::schedule::{Draft, FixedEdit, preview_fixed_edit};
 
 /// `FixedChoicesRequest`: the day and time the editor is about to save.
 #[derive(Deserialize)]

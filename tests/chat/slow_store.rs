@@ -6,15 +6,15 @@ use std::future::Future;
 use std::time::Duration;
 
 use chrono::{DateTime, Utc};
-use kanade::domain::drafts::{
+use kanade_domain::drafts::{
     DraftCreated, DraftEvent, DraftStatus, DraftStore, DraftUpdate, DraftWrite, LoadedDraft,
     MergeCommit, NewDraft, NewProposal, ProposalCreated, ProposalInfo, ProposalStore, StoredDraft,
     StoredProposal,
 };
-use kanade::domain::history::{Actor, ChangeMeta, ChangeRecord, ChangeRef};
-use kanade::domain::schedule::{ChangeSet, ScheduleSnapshot};
-use kanade::domain::scheduler::{Committed, RecordedRequest, ScheduleStore, Scope, StoreError};
-use kanade::infrastructure::store::SqliteStore;
+use kanade_domain::history::{Actor, ChangeMeta, ChangeRecord, ChangeRef};
+use kanade_domain::schedule::{ChangeSet, ScheduleSnapshot};
+use kanade_domain::scheduler::{Committed, RecordedRequest, ScheduleStore, Scope, StoreError};
+use kanade_store::SqliteStore;
 
 pub struct SlowStore<'a> {
     pub inner: &'a SqliteStore,
@@ -129,7 +129,7 @@ impl DraftStore for SlowStore<'_> {
         week: DateTime<Utc>,
         at: DateTime<Utc>,
         actor: &Actor,
-        notices: Vec<(String, kanade::domain::schedule::Notice)>,
+        notices: Vec<(String, kanade_domain::schedule::Notice)>,
     ) -> impl Future<Output = Result<Vec<String>, StoreError>> + Send {
         self.inner.expire_drafts(week, at, actor, notices)
     }
@@ -140,7 +140,7 @@ impl ProposalStore for SlowStore<'_> {
         &self,
         new: NewProposal,
         current_week: DateTime<Utc>,
-    ) -> Result<kanade::domain::drafts::ProposalSubmission, StoreError> {
+    ) -> Result<kanade_domain::drafts::ProposalSubmission, StoreError> {
         let created = self
             .inner
             .create_proposal_or_existing(new, current_week)

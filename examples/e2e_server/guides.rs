@@ -21,24 +21,23 @@ use std::{
 };
 
 use kanade::{
-    api::{
-        auth::Clock,
-        state::{ApiState, GuidePort},
+    api::state::ApiState,
+    app::{clock::Clock, ports::GuidePort},
+    bot::guides::{ChannelView, GuideChannels, Pauses, Publisher, PublisherParts},
+    discord::transport::{
+        AmbiguousKind, Call, FakeDiscord, Hold, Op, Outcome, RejectionKind, Step,
     },
-    bot::{
-        guides::{ChannelView, GuideChannels, Pauses, Publisher, PublisherParts},
-        transport::{AmbiguousKind, Call, FakeDiscord, Hold, Op, Outcome, RejectionKind, Step},
-    },
-    domain::{
-        guides::{
-            ArtFile, ArtKind, Block, BossEntry, GuideChange, GuideGrants, GuideRecord,
-            GuideSources, GuideStore, OpKind, OpOutcome, PlanCounts, Publish, PublishKind,
-            PublishOp, PublishRequest, PublishRequested, PublishState, SlotState, plan, render,
-        },
-        history::{Actor, Surface},
-    },
-    infrastructure::{files::GuideFiles, store::SqliteStore},
 };
+use kanade_domain::{
+    guides::{
+        ArtFile, ArtKind, Block, BossEntry, GuideChange, GuideGrants, GuideRecord, GuideSources,
+        GuideStore, OpKind, OpOutcome, PlanCounts, Publish, PublishKind, PublishOp, PublishRequest,
+        PublishRequested, PublishState, SlotState, plan, render,
+    },
+    history::{Actor, Surface},
+};
+use kanade_files::GuideFiles;
+use kanade_store::SqliteStore;
 use serde_json::{Value, json};
 use tokio::{sync::watch, task::JoinHandle};
 use twilight_model::{channel::message::MessageFlags, id::Id};

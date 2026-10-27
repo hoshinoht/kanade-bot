@@ -37,20 +37,13 @@ use std::{
 };
 
 use chrono::{DateTime, Datelike, Timelike, Utc};
-use kanade::{
-    infrastructure::llm::governor::Role,
-    runtime::{
-        serve::{harness, settings},
-        tls,
-    },
-};
+use kanade::runtime::{serve::harness, tls};
+use kanade_llm::governor::Role;
 use serde_json::{Value, json};
 
 use attempt::{Shared, TempDir};
-use kanade::{
-    chat::persona::SelectionSource, infrastructure::files::load_personas,
-    runtime::config::ServeConfig,
-};
+use kanade::runtime::config::ServeConfig;
+use kanade_voice::persona::{SelectionSource, load_personas};
 use persona::PersonaBundle;
 use requests::{HARD_CAP, Requests};
 use score::Detector;
@@ -273,7 +266,7 @@ async fn run() -> Result<ExitCode, String> {
         ("KANADE_GUILD_ID", world::GUILD.to_string()),
         ("KANADE_BOSSING_ROLE_ID", world::BOSSING.to_string()),
         ("KANADE_CHAT_PILOT_ROLE_ID", world::BOSSING.to_string()),
-        ("KANADE_DISCORD_GATEWAY", "1".to_owned()),
+        ("KANADE_COMPONENTS", "bot,web".to_owned()),
         ("KANADE_CHAT_ENABLED", "1".to_owned()),
         ("KANADE_CHAT_CATEGORY_IDS", world::CATEGORY.to_string()),
         ("KANADE_EXTRACTION_ENABLED", "1".to_owned()),
@@ -367,9 +360,6 @@ async fn run() -> Result<ExitCode, String> {
         "warnings": startup.warnings.iter().map(ToString::to_string).collect::<Vec<_>>(),
         "groups": config.models.groups.iter().map(|g| g.name.clone()).collect::<Vec<_>>(),
         "ca_file": config.models.ca_file().map_err(|e| e.to_string())?.is_some(),
-        "attendance": "V4_COMPAT",
-        // No stored row: the code default (Classic) styles reminder cards.
-        "message_style": settings::seed(&config.seeds).notifications.message_style.as_str(),
         "persona": persona_meta(&persona),
         "aborted": false,
     });
@@ -521,7 +511,7 @@ async fn run_headers(args: &Args, persona: Arc<PersonaBundle>) -> Result<ExitCod
         .map_err(|e| e.to_string())?
         .ok_or("no model stack (KANADE_MODEL_BASE_URL unset)")?;
     drop(scratch);
-    let compiled = kanade::chat::persona::CompiledPersona::compile(&persona.bundle, None);
+    let compiled = kanade_voice::persona::CompiledPersona::compile(&persona.bundle, None);
     let heading = harness::header_rewrite(&config, &models, compiled)
         .ok_or("the rewrite role has no alias")?;
     let startup = models.check_startup().await;
@@ -534,10 +524,9 @@ async fn run_headers(args: &Args, persona: Arc<PersonaBundle>) -> Result<ExitCod
             "group": route.group,
         })
     });
-    let catalog = kanade::infrastructure::files::load_catalog(
-        &Path::new(env!("CARGO_MANIFEST_DIR")).join("boss/bosses.yaml"),
-    )
-    .map_err(|e| e.to_string())?;
+    let catalog =
+        kanade_files::load_catalog(&Path::new(env!("CARGO_MANIFEST_DIR")).join("boss/bosses.yaml"))
+            .map_err(|e| e.to_string())?;
     let mut meta = json!({
         "run": run_name,
         "mode": "headers",

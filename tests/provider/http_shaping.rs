@@ -1,6 +1,6 @@
 use std::{collections::BTreeMap, sync::Arc};
 
-use kanade::infrastructure::llm::{
+use kanade_llm::{
     BearerKey, Capability, ChatRequest, CompletionRunner, Effort, ErrorCode, ExecutionLimits,
     HttpProviderConfig, LlmProvider, Message, ModelCapabilities, OpenAiCompatibleProvider,
     OutputSchema, OutputValidation, ProviderFailureKind, Sampling, ToolDefinition, shape_request,

@@ -5,18 +5,18 @@ use std::sync::{Arc, Mutex, PoisonError};
 
 use twilight_model::application::command::Command;
 
-use super::access::Gate;
 use super::build::{choices, command, flag};
 use super::context::CommandContext;
 use super::dispatch::{CommandError, CommandFuture, SlashCommand};
 use super::invocation::Invocation;
 use super::options::Args;
-use crate::api::rescan::{RescanRunner, RescanView};
-use crate::bot::ids::id_text;
-use crate::bot::transport::InteractionReply;
-use crate::domain::ids::short_id;
-use crate::extract::rescan::{RescanError, RescanRequest};
-use crate::extract::window::{DEFAULT_WINDOW, WINDOWS};
+use crate::app::access::Gate;
+use crate::app::ids::id_text;
+use crate::app::rescan::{RescanRunner, RescanView};
+use crate::discord::transport::InteractionReply;
+use kanade_domain::ids::short_id;
+use kanade_extract::rescan::{RescanError, RescanRequest};
+use kanade_extract::window::{DEFAULT_WINDOW, WINDOWS};
 
 /// Until the extractor's rescan runner is wired into `serve`.
 pub const RESCAN_UNAVAILABLE: &str = "Rescans aren't available right now.";

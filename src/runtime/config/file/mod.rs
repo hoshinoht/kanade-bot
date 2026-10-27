@@ -186,18 +186,29 @@ fn convert(value: &Value, kind: Kind, path: &str) -> Result<String, Error> {
             .ok_or_else(|| wrong(path, "true or false")),
         Kind::Id => id(value).ok_or_else(|| wrong(path, "a snowflake string or integer")),
         Kind::Ids => list("a list of snowflake strings or integers", &id),
-        Kind::Texts => list("a list of strings without commas", &|value| {
-            value
-                .as_str()
-                .filter(|text| !text.contains(','))
-                .map(str::to_owned)
-        }),
+        Kind::Texts => list("a list of strings without commas", &text_item),
+        // An empty list would read as unset (the default), not as "nothing".
+        Kind::NonEmptyTexts => list("a non-empty list of strings without commas", &text_item)
+            .and_then(|joined| {
+                if joined.is_empty() {
+                    Err(wrong(path, "a non-empty list of strings without commas"))
+                } else {
+                    Ok(joined)
+                }
+            }),
         Kind::Groups => groups(value, path),
         Kind::Capabilities => value
             .as_table()
             .and_then(|_| serde_json::to_string(value).ok())
             .ok_or_else(|| wrong(path, "a table of model alias tables")),
     }
+}
+
+fn text_item(value: &Value) -> Option<String> {
+    value
+        .as_str()
+        .filter(|text| !text.contains(','))
+        .map(str::to_owned)
 }
 
 fn integer(value: &Value) -> Option<String> {

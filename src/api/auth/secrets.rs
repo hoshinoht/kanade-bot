@@ -7,20 +7,18 @@ use chrono::TimeDelta;
 
 use super::{
     AdminAuth, SessionPolicy,
-    crypto::SealedSecret,
     discord::{DiscordClient, DiscordLogin, Secret},
     discord_http::HttpsDiscord,
     member::{EligibilityGate, MemberAuth, MemberPolicy, PortalOpen},
     staff::StaffGate,
 };
-use crate::{
-    infrastructure::store::web_sessions::WebSessionStore,
-    runtime::{
-        config::{AdminAuthSettings, DiscordOAuthSettings, PublicAuthSettings},
-        error::Error,
-        secrets::SecretFile,
-    },
+use crate::app::crypto::SealedSecret;
+use crate::runtime::{
+    config::{AdminAuthSettings, DiscordOAuthSettings, PublicAuthSettings},
+    error::Error,
+    secrets::SecretFile,
 };
+use kanade_store::web_sessions::WebSessionStore;
 
 /// Break-glass tokens must be long enough that guessing is not a strategy.
 const MIN_TOKEN_BYTES: usize = 32;
@@ -133,7 +131,7 @@ pub fn member_from_settings(
 mod tests {
     use super::*;
     use crate::api::auth::staff::{GateFuture, StaffCheck};
-    use crate::infrastructure::store::SqliteStore;
+    use kanade_store::SqliteStore;
 
     struct Nobody;
 

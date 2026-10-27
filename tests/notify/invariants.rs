@@ -3,7 +3,7 @@
 
 use std::collections::BTreeSet;
 
-use kanade::domain::{
+use kanade_domain::{
     members::{Directory, Member, PingLevel, Roster},
     notify::{PingKind, allowed_mentions, resolve_mentions, swap_audience},
 };
@@ -104,7 +104,7 @@ fn swap_mentions_stay_within_the_listed_people_and_quiet_mode_clears_all() {
 
 #[test]
 fn notices_mention_only_listed_members_on_all_and_fall_back_or_drop() {
-    use kanade::domain::{
+    use kanade_domain::{
         notify::{DeliverySettings, DeliveryWarning, EffectKind, plan_notice},
         schedule::{FixedField, Notice, NoticeChange, RunStatus},
     };
@@ -122,7 +122,6 @@ fn notices_mention_only_listed_members_on_all_and_fall_back_or_drop() {
     let loud = DeliverySettings {
         post_channel_id: Some("555"),
         quiet_mode: false,
-        attendance: kanade::domain::attendance::AttendancePolicy::V4_COMPAT,
     };
     for roster in rosters() {
         let intent = plan_notice(&notice(Some("222")), &roster, &channels, loud).expect("home");

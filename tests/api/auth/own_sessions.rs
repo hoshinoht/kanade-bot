@@ -127,9 +127,7 @@ async fn lists_only_live_sessions_of_the_same_identity_without_ids_or_hashes() {
     for browser in [&mac, &phone, &curl, &alice, &bob] {
         assert!(!text.contains(&browser.id), "no cookie value");
         assert!(
-            !text.contains(&kanade::api::auth::crypto::sha256_hex(
-                browser.id.as_bytes()
-            )),
+            !text.contains(&kanade::app::crypto::sha256_hex(browser.id.as_bytes())),
             "no stored hash"
         );
     }

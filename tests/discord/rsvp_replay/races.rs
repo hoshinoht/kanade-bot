@@ -3,9 +3,9 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use kanade::bot::cards::ReplayLive;
-use kanade::bot::transport::Op;
-use kanade::domain::history::{Actor, Origin, Surface};
-use kanade::domain::schedule::RunStatus;
+use kanade::discord::transport::Op;
+use kanade_domain::history::{Actor, Origin, Surface};
+use kanade_domain::schedule::RunStatus;
 use twilight_model::id::Id;
 
 use super::support::*;
@@ -175,7 +175,7 @@ async fn row_10_live_event_restarts_once_and_retry_cap_is_three_restarts() {
     assert_eq!(world.fake.count(Op::ReactionUsers), 4);
     assert_eq!(
         world.snapshot(&run).await.rsvps[0].state,
-        kanade::domain::schedule::RsvpState::Yes
+        kanade_domain::schedule::RsvpState::Yes
     );
     let world = World::new().await;
     let (_run, message) = world.carded_run().await;

@@ -32,10 +32,8 @@ use super::{
     error::Error,
     serve::store,
 };
-use crate::{
-    domain::history::{ChangeHistory, ChangeRef},
-    infrastructure::store::{SqliteStore, SqliteStoreConfig, SqliteStoreError},
-};
+use kanade_domain::history::{ChangeHistory, ChangeRef};
+use kanade_store::{SqliteStore, SqliteStoreConfig, SqliteStoreError};
 
 /// SQLite's companions of a database file.
 const SIDECARS: [&str; 3] = ["-wal", "-shm", "-journal"];

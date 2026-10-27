@@ -7,10 +7,11 @@ use axum::{Router, extract::DefaultBodyLimit, middleware::from_fn_with_state, ro
 
 use super::{
     admin, assets,
-    auth::{AdminAuth, crypto::SealedSecret, member::MemberAuth},
+    auth::{AdminAuth, member::MemberAuth},
     error, guard, public,
-    state::{ApiState, ChannelList},
+    state::ApiState,
 };
+use crate::app::{crypto::SealedSecret, guild::ChannelList};
 use crate::runtime::{application::HealthProbe, config::HttpConfig};
 
 /// The masthead name before `READY`, and in offline mode.

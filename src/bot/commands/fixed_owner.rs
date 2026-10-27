@@ -1,20 +1,20 @@
 //! `/fixed owner`: hand a weekly timing to another party member (`to:`), or
 //! ask to own it; and the Accept/Decline presses on the posted request
-//! (user decision 2026-10-10). Rules and writes are `api::ownership`; the
+//! (user decision 2026-10-10). Rules and writes are `app::ownership`; the
 //! request's message is posted by the delivery tick.
 
-use super::access::Invoker;
 use super::dispatch::CommandError;
 use super::fixed::FixedCommand;
 use super::invocation::Invocation;
 use super::lookup::resolve;
 use super::options::Args;
-use crate::api::ownership::{self, OwnershipError};
-use crate::bot::ids::id_text;
-use crate::bot::transport::InteractionReply;
-use crate::domain::ids::short_id;
-use crate::domain::ownership::OwnershipRefusal;
-use crate::domain::scheduler::SchedulerError;
+use crate::app::access::Invoker;
+use crate::app::ids::id_text;
+use crate::app::ownership::{self, OwnershipError};
+use crate::discord::transport::InteractionReply;
+use kanade_domain::ids::short_id;
+use kanade_domain::ownership::OwnershipRefusal;
+use kanade_domain::scheduler::SchedulerError;
 
 /// Internal path of a request button press (never registered).
 pub const OWNER_PRESS: &str = "owner-press";

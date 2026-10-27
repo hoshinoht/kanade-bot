@@ -5,9 +5,9 @@ use std::sync::Arc;
 use twilight_model::channel::message::MessageFlags;
 use twilight_model::id::Id;
 
-use kanade::bot::delivery::cards::redesign::{container, text};
-use kanade::bot::mentions;
-use kanade::bot::transport::{
+use kanade::cards::redesign::{container, text};
+use kanade::discord::mentions;
+use kanade::discord::transport::{
     AmbiguousKind, COMPONENTS_V2, Call, DiscordTransport, FakeDiscord, HistoryPage, InteractionRef,
     InteractionReply, MessageEdit, Op, Outcome, OutgoingMessage, Presence, RejectionKind, SILENT,
     Step,
@@ -516,7 +516,7 @@ async fn a_hold_released_early_lets_the_call_through_and_a_cancelled_one_does_no
 
 #[tokio::test]
 async fn the_application_reports_settable_flags_and_scripted_failures() {
-    use kanade::bot::transport::FAKE_APPLICATION_ID;
+    use kanade::discord::transport::FAKE_APPLICATION_ID;
     use twilight_model::oauth::ApplicationFlags;
     let fake = FakeDiscord::new();
     let Outcome::Delivered(info) = fake.application_info().await else {

@@ -11,7 +11,7 @@ use std::{
     },
 };
 
-use kanade::infrastructure::llm::{SentRequest, set_request_hook};
+use kanade_llm::{SentRequest, set_request_hook};
 
 /// The user's hard ceiling for one run (2026-10-07).
 pub const HARD_CAP: usize = 500;

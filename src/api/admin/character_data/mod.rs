@@ -31,14 +31,12 @@ use super::{
     replay::recall,
     write::{Body, Refusal, state},
 };
-use crate::{
-    api::{
-        auth::AdminSession, dto::character_data::link, error::ApiError, listeners::Site,
-        state::ApiState,
-    },
-    domain::chardata::UnlinkReason,
-    infrastructure::character_data::{AdminLinkOutcome, CharacterData, RefreshOutcome},
+use crate::api::{
+    auth::AdminSession, dto::character_data::link, error::ApiError, listeners::Site,
+    state::ApiState,
 };
+use kanade_chardata::character_data::{AdminLinkOutcome, CharacterData, RefreshOutcome};
+use kanade_domain::chardata::UnlinkReason;
 
 pub fn routes() -> Router<Arc<Site>> {
     Router::new()

@@ -8,12 +8,12 @@
 
 use crate::bot::delivery::{AdminAlert, AlertSink};
 use crate::bot::events::RsvpAnswer;
-use crate::bot::transport::DiscordTransport;
-use crate::domain::drafts::{ProposalSource, ProposalStore};
-use crate::domain::notify::DeliveryJournal;
-use crate::domain::proposals::{ProposalCardStore, StoredCard};
-use crate::domain::schedule::Notice;
-use crate::domain::scheduler::{
+use crate::discord::transport::DiscordTransport;
+use kanade_domain::drafts::{ProposalSource, ProposalStore};
+use kanade_domain::notify::DeliveryJournal;
+use kanade_domain::proposals::{ProposalCardStore, StoredCard};
+use kanade_domain::schedule::Notice;
+use kanade_domain::scheduler::{
     DraftError, IdSource, ProposalApproved, ProposalError, ScheduleStore,
 };
 
@@ -142,7 +142,7 @@ fn failure(error: &ProposalError) -> Failure {
 impl<S, T, I, A> CardDesk<S, T, I, A>
 where
     S: ScheduleStore
-        + crate::domain::notify::DeclineNoticeStore
+        + kanade_domain::notify::DeclineNoticeStore
         + ProposalStore
         + ProposalCardStore
         + DeliveryJournal

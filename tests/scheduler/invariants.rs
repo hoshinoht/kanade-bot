@@ -3,14 +3,14 @@
 
 use chrono::{DateTime, FixedOffset, NaiveTime, TimeDelta, TimeZone, Utc, Weekday};
 use chrono_tz::{America::New_York, Asia::Kuala_Lumpur, Tz};
-use kanade::domain::{
+use kanade_domain::{
     schedule::{
         COUNTDOWN_GRACE, DAY_OF, DAY_OF_GRACE, NewFixedRun, NewRun, ReminderPolicy, RunSource,
         RunStatus, ScheduleSnapshot, is_stale, reminder_specs,
     },
     scheduler::{ScheduleStore, SchedulerService, Scope},
 };
-use kanade::infrastructure::store::SqliteStore;
+use kanade_store::SqliteStore;
 
 use crate::common::TestClock;
 use crate::support::{CountingIds, by_tests, hm};
@@ -143,7 +143,7 @@ async fn a_tick_free_restart_creates_no_due_reminders_for_past_slots() {
         .await
         .unwrap();
     assert_eq!(
-        cold.as_origin(kanade::domain::history::Origin::for_tests())
+        cold.as_origin(kanade_domain::history::Origin::for_tests())
             .materialise_week(week, &policy)
             .await
             .unwrap()
@@ -175,7 +175,7 @@ async fn a_tick_free_restart_creates_no_due_reminders_for_past_slots() {
     let before = state(&warm).await;
     clock.set(late);
     assert!(
-        warm.as_origin(kanade::domain::history::Origin::for_tests())
+        warm.as_origin(kanade_domain::history::Origin::for_tests())
             .materialise_week(week, &policy)
             .await
             .unwrap()
@@ -220,21 +220,25 @@ async fn cancelled_and_done_runs_keep_no_pending_reminders() {
     }
     assert_eq!(
         service
-            .as_origin(kanade::domain::history::Origin::for_tests())
+            .as_origin(kanade_domain::history::Origin::for_tests())
             .retire_fixed_run(&retired, &weeks, &policy)
             .await
             .unwrap(),
         2
     );
-    clock.set(kl(2026, 9, 2, 0, 0));
-    assert_eq!(
+    let first = state(&service)
+        .await
+        .runs
+        .into_iter()
+        .filter(|run| run.status.is_live())
+        .min_by_key(|run| run.datetime)
+        .unwrap();
+    assert!(
         service
-            .as_origin(kanade::domain::history::Origin::for_tests())
-            .mark_done()
+            .as_origin(kanade_domain::history::Origin::for_tests())
+            .finish_run(&first.id)
             .await
             .unwrap()
-            .len(),
-        1
     );
     let end = state(&service).await;
     for run in end.runs.iter().filter(|run| run.status.is_terminal()) {
@@ -302,8 +306,8 @@ fn day_of_never_fires_at_or_after_the_start_across_dst_transitions() {
 /// ids `00000000-0000-4000-8003-{n:012}`, ping 09:00, countdowns [60].
 #[tokio::test]
 async fn a_reset_inside_a_dst_gap_materialises_like_v4() {
-    use kanade::domain::schedule::SchedulePolicy;
-    use kanade::domain::weeks::week_end;
+    use kanade_domain::schedule::SchedulePolicy;
+    use kanade_domain::weeks::week_end;
     use serde_json::json;
 
     let ids: Vec<String> = (1..200)

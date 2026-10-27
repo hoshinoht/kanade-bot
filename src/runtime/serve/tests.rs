@@ -7,8 +7,10 @@ use std::{
 
 use chrono::{NaiveTime, Weekday};
 
+use super::web::api;
 use super::*;
-use crate::domain::settings::{IdList, Section, SettingsStore, keys, save_section};
+use crate::app::guild::StaticChannels;
+use kanade_domain::settings::{IdList, Section, SettingsStore, keys, save_section};
 
 /// A scratch root that is also the secrets directory.
 pub(super) struct Temp(pub(super) PathBuf);
@@ -44,7 +46,7 @@ impl Temp {
                 repo("boss/bosses.yaml").display().to_string(),
             ),
             ("KANADE_PERSONA_DIR", path("Personas")),
-            ("KANADE_DISCORD_GATEWAY", "0".to_owned()),
+            ("KANADE_COMPONENTS", "web".to_owned()),
         ]
         .into_iter()
         .map(|(key, value)| (key.to_owned(), value))
@@ -138,7 +140,7 @@ async fn seeds_apply_under_stored_rows_and_category_lists_round_trip() {
     let defaults = settings::seed(&temp.config(&[]).seeds);
     assert_eq!(
         defaults,
-        crate::domain::settings::RuntimeSettings::default()
+        kanade_domain::settings::RuntimeSettings::default()
     );
 }
 
@@ -244,7 +246,7 @@ async fn compose_builds_the_model_stack_and_seeds_unset_role_aliases_from_env() 
     with_rows(&config, &[(keys::CHAT_MODEL, "kanata/stored")]).await;
     let store = store::open(&config.store).await.unwrap();
     let health = LiveHealth::new(store.clone());
-    let composition = api::compose(
+    let composition = composition::compose(
         &config,
         store.clone(),
         Arc::new(StaticChannels(Vec::new())),
@@ -292,13 +294,13 @@ async fn compose_and_report(config: &ServeConfig) -> Vec<serde_json::Value> {
 async fn compose_context(
     config: &ServeConfig,
 ) -> (
-    crate::domain::settings::ContextSettings,
+    kanade_domain::settings::ContextSettings,
     Vec<serde_json::Value>,
 ) {
     let store = store::open(&config.store).await.unwrap();
     let health = LiveHealth::new(store.clone());
-    crate::runtime::logging::capture();
-    let mut composition = api::compose(
+    kanade_log::capture();
+    let mut composition = composition::compose(
         config,
         store.clone(),
         Arc::new(StaticChannels(Vec::new())),
@@ -307,7 +309,7 @@ async fn compose_context(
     .await
     .unwrap();
     composition.model_tasks.report_done().await;
-    let lines = crate::runtime::logging::captured();
+    let lines = kanade_log::captured();
     let context = composition.settings.models.context.clone();
     drop(composition);
     store::close(store, Duration::ZERO).await;
@@ -509,7 +511,7 @@ async fn a_context_seed_applies_only_while_unsaved_and_clamps_past_the_hard_cap(
         ("KANADE_MODEL_BASE_URL", "http://127.0.0.1:9/v1"),
         ("KANADE_MODEL_CONTEXT", seed.as_str()),
     ]);
-    let saved = crate::domain::settings::ContextSettings {
+    let saved = kanade_domain::settings::ContextSettings {
         local_default: 12_000,
         ..Default::default()
     };
@@ -636,13 +638,14 @@ async fn compose_for_tests_serves_on_the_injected_clock_and_a_fake_discord() {
     use chrono::TimeZone;
 
     use crate::{
-        api::{auth::fake::FakeDiscord, listeners, write::ApiClock},
-        domain::{
-            history::{Actor, Origin, Surface},
-            ids::RandomIds,
-            schedule::{NewRun, RunSource, RunStatus, utc_instant},
-            scheduler::SchedulerService,
-        },
+        api::{auth::fake::FakeDiscord, listeners},
+        app::write::ApiClock,
+    };
+    use kanade_domain::{
+        history::{Actor, Origin, Surface},
+        ids::RandomIds,
+        schedule::{NewRun, RunSource, RunStatus, utc_instant},
+        scheduler::SchedulerService,
     };
 
     // Admin sign-in builds its HTTPS client before the fake replaces it.
@@ -761,7 +764,8 @@ async fn compose_for_tests_serves_on_the_injected_clock_and_a_fake_discord() {
 async fn compose_for_tests_points_character_data_at_a_loopback_nexon() {
     use std::sync::atomic::{AtomicUsize, Ordering};
 
-    use crate::{domain::history::Actor, infrastructure::character_data::LookupOutcome};
+    use kanade_chardata::character_data::LookupOutcome;
+    use kanade_domain::history::Actor;
 
     // A NEXON that knows no name: every call answers an empty body.
     let calls = Arc::new(AtomicUsize::new(0));
@@ -792,7 +796,7 @@ async fn compose_for_tests_points_character_data_at_a_loopback_nexon() {
         &config,
         store.clone(),
         api::Overrides {
-            clock: Arc::new(auth::system_now),
+            clock: Arc::new(clock::system_now),
             discord: None,
             authorize_url: None,
             model_limits: None,

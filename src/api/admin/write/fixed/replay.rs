@@ -251,8 +251,8 @@ mod tests {
             overrides: None,
         };
         let mut context = WriteContext {
-            policy: crate::domain::schedule::SchedulePolicy::new(
-                crate::domain::schedule::ReminderPolicy {
+            policy: kanade_domain::schedule::SchedulePolicy::new(
+                kanade_domain::schedule::ReminderPolicy {
                     zone: chrono_tz::Asia::Kuala_Lumpur,
                     ping_time: NaiveTime::from_hms_opt(9, 0, 0).unwrap(),
                     countdowns: vec![60, 15],

@@ -28,12 +28,10 @@ pub use rewrite::{
 };
 
 use super::Named;
-use crate::{
-    api::state::ChannelEntry,
-    domain::{
-        members::{Roster, member_name},
-        model_log::LogFacets as Facets,
-    },
+use crate::app::guild::ChannelEntry;
+use kanade_domain::{
+    members::{Roster, member_name},
+    model_log::LogFacets as Facets,
 };
 
 pub struct Names<'a> {

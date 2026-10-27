@@ -3,17 +3,15 @@
 use std::collections::BTreeMap;
 
 use chrono::{DateTime, TimeZone, Utc};
-use twilight_model::id::{Id, marker::MessageMarker};
+use twilight_model::id::Id;
 
-use kanade::bot::events::{
-    BotEvent, CardIndex, LookupError, ReactionRouter, RouteError, RsvpAnswer, rsvp_reaction,
-};
-use kanade::domain::ids::RandomIds;
-use kanade::domain::members::{Member, Roster};
-use kanade::domain::notify::DeclineNoticeStore;
-use kanade::domain::schedule::{NewRun, RsvpState, RunSource, RunStatus};
-use kanade::domain::scheduler::{Clock, SchedulerService};
-use kanade::infrastructure::store::SqliteStore;
+use kanade::bot::events::{BotEvent, ReactionRouter, RouteError, RsvpAnswer, rsvp_reaction};
+use kanade_domain::ids::RandomIds;
+use kanade_domain::members::{Member, Roster};
+use kanade_domain::notify::{CardIndex, DeclineNoticeStore, LookupError};
+use kanade_domain::schedule::{NewRun, RsvpState, RunSource, RunStatus};
+use kanade_domain::scheduler::{Clock, SchedulerService};
+use kanade_store::SqliteStore;
 
 use super::support::*;
 
@@ -121,19 +119,16 @@ impl Clock for FixedClock {
 
 #[derive(Default)]
 struct Cards {
-    runs: BTreeMap<Id<MessageMarker>, Vec<String>>,
+    runs: BTreeMap<String, Vec<String>>,
     fail: bool,
 }
 
 impl CardIndex for Cards {
-    async fn runs_for_message(
-        &self,
-        message: Id<MessageMarker>,
-    ) -> Result<Vec<String>, LookupError> {
+    async fn runs_for_message(&self, message_id: &str) -> Result<Vec<String>, LookupError> {
         if self.fail {
             return Err(LookupError("store offline".into()));
         }
-        Ok(self.runs.get(&message).cloned().unwrap_or_default())
+        Ok(self.runs.get(message_id).cloned().unwrap_or_default())
     }
 }
 
@@ -147,7 +142,7 @@ async fn service_with_run(participants: &[u64]) -> (Service, String) {
         FixedClock(Utc.with_ymd_and_hms(2026, 9, 25, 12, 0, 0).unwrap()),
     );
     let run_id = service
-        .as_origin(kanade::domain::history::Origin::for_tests())
+        .as_origin(kanade_domain::history::Origin::for_tests())
         .create_run(NewRun {
             fixed_run_id: None,
             channel_id: Some(CHANNEL.to_string()),
@@ -180,9 +175,10 @@ fn alice_yes() -> kanade::bot::events::RsvpReaction {
 async fn card_reaction_reaches_the_scheduler() {
     let (service, run_id) = service_with_run(&[ALICE]).await;
     let mut cards = Cards::default();
-    cards
-        .runs
-        .insert(Id::new(MESSAGE), vec!["deleted-run".into(), run_id.clone()]);
+    cards.runs.insert(
+        MESSAGE.to_string(),
+        vec!["deleted-run".into(), run_id.clone()],
+    );
     let mut router = ReactionRouter::new(cards, service);
 
     let results = router.route(&alice_yes()).await.expect("routed");
@@ -197,7 +193,7 @@ async fn card_reaction_reaches_the_scheduler() {
 async fn a_decline_reaction_commits_its_reply_candidate() {
     let (service, run_id) = service_with_run(&[ALICE, BOB]).await;
     let mut cards = Cards::default();
-    cards.runs.insert(Id::new(MESSAGE), vec![run_id.clone()]);
+    cards.runs.insert(MESSAGE.to_string(), vec![run_id.clone()]);
     let mut router = ReactionRouter::new(cards, service);
     let decline = rsvp_from(
         reaction_add(reaction(

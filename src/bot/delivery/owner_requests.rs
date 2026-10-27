@@ -15,23 +15,23 @@ use twilight_model::channel::message::Component;
 use twilight_model::channel::message::component::ButtonStyle;
 
 use super::alerts::{AdminAlert, AlertSink};
-use super::cards::redesign::{ButtonId, action_row, button};
 use super::executor::SendOutcome;
 use super::tick::{Delivery, DeliveryError, TickLease};
-use crate::bot::commands::text::{hhmm, weekday_name};
-use crate::bot::ids::{id_text, parse_id};
-use crate::bot::mentions;
-use crate::bot::transport::{DiscordTransport, MessageEdit, OutgoingMessage};
-use crate::domain::drafts::ProposalStore;
-use crate::domain::history::Checkpoints;
-use crate::domain::ids::short_id;
-use crate::domain::notify::{
+use crate::app::ids::{id_text, parse_id};
+use crate::cards::redesign::{ButtonId, action_row, button};
+use crate::cards::text::{hhmm, weekday_name};
+use crate::discord::mentions;
+use crate::discord::transport::{DiscordTransport, MessageEdit, OutgoingMessage};
+use kanade_domain::drafts::ProposalStore;
+use kanade_domain::history::Checkpoints;
+use kanade_domain::ids::short_id;
+use kanade_domain::notify::{
     ChannelChoice, DeliveryJournal, EffectKind, IntentContent, NoticeOutbox, NotificationIntent,
     choose_channel,
 };
-use crate::domain::ownership::{OwnerRequest, OwnerRequestStatus, OwnerRequestStore};
-use crate::domain::schedule::FixedRun;
-use crate::domain::scheduler::{IdSource, ScheduleStore, Scope, StoreError};
+use kanade_domain::ownership::{OwnerRequest, OwnerRequestStatus, OwnerRequestStore};
+use kanade_domain::schedule::FixedRun;
+use kanade_domain::scheduler::{IdSource, ScheduleStore, Scope, StoreError};
 
 /// The post's journal effect kind.
 pub const OWNER_REQUEST_EFFECT: &str = "notice.owner.request";
@@ -106,7 +106,7 @@ where
         + NoticeOutbox
         + Checkpoints
         + ProposalStore
-        + super::cards::ReminderCardStore
+        + kanade_domain::notify::ReminderCardStore
         + OwnerRequestStore
         + Sync,
     I: IdSource,

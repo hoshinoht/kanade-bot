@@ -3,13 +3,13 @@
 //! Lumpur). Without a catalog every boss lasts the default 30 minutes.
 
 use chrono::{DateTime, TimeDelta, Utc};
-use kanade::bot::transport::Call;
-use kanade::domain::completion::{PromptClose, PromptOutcome, RunPrompt};
-use kanade::domain::history::{Actor, ChangeHistory, Origin};
-use kanade::domain::ids::RandomIds;
-use kanade::domain::schedule::{NewRun, RunSource, RunStatus, StatusChange};
-use kanade::domain::scheduler::Scope;
-use kanade::infrastructure::store::SqliteStore;
+use kanade::discord::transport::Call;
+use kanade_domain::completion::{PromptClose, PromptOutcome, RunPrompt};
+use kanade_domain::history::{Actor, ChangeHistory, Origin};
+use kanade_domain::ids::RandomIds;
+use kanade_domain::schedule::{NewRun, RunSource, RunStatus, StatusChange};
+use kanade_domain::scheduler::Scope;
+use kanade_store::SqliteStore;
 use twilight_model::channel::message::Component;
 
 use crate::scenarios::{HOME, config, delivery, now, week, world};
@@ -175,7 +175,7 @@ async fn pressed_edits_without_a_notice<S: Store>(store: &S) {
     support::service(store, &mut ids, now())
         .as_origin(Origin::new(
             Actor::member("1002"),
-            kanade::domain::history::Surface::Discord,
+            kanade_domain::history::Surface::Discord,
         ))
         .set_status(
             &id,
@@ -451,10 +451,10 @@ async fn cutoff_then_press_guard<S: Store>(store: &S) {
     let settled = support::service(store, &mut ids, cutoff())
         .as_origin(Origin::new(
             Actor::member("1001"),
-            kanade::domain::history::Surface::Discord,
+            kanade_domain::history::Surface::Discord,
         ))
         .settle_run(
-            kanade::domain::schedule::SettleRun {
+            kanade_domain::schedule::SettleRun {
                 run_id: id.clone(),
                 status: RunStatus::Cancelled,
                 datetime: seen.datetime,
@@ -475,7 +475,7 @@ async fn a_press_landing_after_the_cutoff_leaves_the_run_done() {
 }
 
 async fn bound_post_is_recovered<S: Store>(store: &S) {
-    use kanade::domain::notify::{Claim, EffectKind, IntentContent, NotificationIntent, Receipt};
+    use kanade_domain::notify::{Claim, EffectKind, IntentContent, NotificationIntent, Receipt};
     let world = world();
     let id = run(store, RunStatus::Planned, started()).await;
     // A previous process posted and bound ask 0, then died before recording it.
@@ -544,6 +544,108 @@ async fn reopened_run_is_asked_again<S: Store>(store: &S) {
 #[tokio::test]
 async fn a_run_live_again_after_its_prompt_closed_is_asked_again() {
     reopened_run_is_asked_again(&SqliteStore::open_temp().await).await;
+}
+
+/// Staff reopening a run after it was marked done automatically: it stays
+/// planned past its cutoff and can be moved; the move ends the reopen, so
+/// the moved run is completed as usual.
+async fn reopened_after_auto_done_stays_open<S: Store>(store: &S) {
+    use kanade_domain::completion::RunEndsSource;
+    use kanade_domain::settings::RunLengths;
+
+    let world = world();
+    let id = run(store, RunStatus::Planned, started()).await;
+    let mut delivery = delivery(store, &world, &world.fake);
+    delivery.tick_at(now()).await.expect("tick");
+    delivery.tick_at(cutoff()).await.expect("tick");
+    assert_eq!(status(store, &id).await, RunStatus::Done);
+
+    let policy = config().policy;
+    let ends = RunEndsSource::fixed(RunLengths::default(), None, policy.clone());
+    let reopen_at = cutoff() + TimeDelta::minutes(1);
+    let mut ids = RandomIds;
+    support::service(store, &mut ids, reopen_at)
+        .with_run_ends(ends.clone())
+        .as_origin(Origin::for_tests())
+        .set_status(
+            &id,
+            StatusChange {
+                status: RunStatus::Planned,
+                announce: true,
+                via_portal: true,
+            },
+            &policy.reminders,
+        )
+        .await
+        .expect("reopened");
+    let report = delivery
+        .tick_at(reopen_at + TimeDelta::hours(2))
+        .await
+        .expect("tick");
+    assert!(report.done.is_empty(), "not marked done again");
+    assert_eq!(status(store, &id).await, RunStatus::Planned);
+
+    let to = now() + TimeDelta::days(1);
+    support::service(store, &mut ids, reopen_at + TimeDelta::hours(2))
+        .with_run_ends(ends)
+        .as_origin(Origin::for_tests())
+        .amend_run(&id, to, &policy)
+        .await
+        .expect("a reopened run moves");
+    let report = delivery
+        .tick_at(cutoff() + TimeDelta::days(1))
+        .await
+        .expect("tick");
+    assert_eq!(
+        report.done,
+        std::slice::from_ref(&id),
+        "done at its new cutoff"
+    );
+}
+
+#[tokio::test]
+async fn a_run_reopened_after_auto_done_stays_open_until_moved() {
+    reopened_after_auto_done_stays_open(&SqliteStore::open_temp().await).await;
+}
+
+/// An ended run still planned is reopened by setting Planned again: it is
+/// not marked done at its cutoff.
+async fn same_status_reopens_an_ended_run<S: Store>(store: &S) {
+    use kanade_domain::completion::RunEndsSource;
+    use kanade_domain::settings::RunLengths;
+
+    let world = world();
+    let id = run(store, RunStatus::Planned, started()).await;
+    let mut delivery = delivery(store, &world, &world.fake);
+    delivery.tick_at(now()).await.expect("tick");
+    let policy = config().policy;
+    let mut ids = RandomIds;
+    support::service(store, &mut ids, now())
+        .with_run_ends(RunEndsSource::fixed(
+            RunLengths::default(),
+            None,
+            policy.clone(),
+        ))
+        .as_origin(Origin::for_tests())
+        .set_status(
+            &id,
+            StatusChange {
+                status: RunStatus::Planned,
+                announce: false,
+                via_portal: true,
+            },
+            &policy.reminders,
+        )
+        .await
+        .expect("reopened");
+    let report = delivery.tick_at(cutoff()).await.expect("tick");
+    assert!(report.done.is_empty(), "not marked done");
+    assert_eq!(status(store, &id).await, RunStatus::Planned);
+}
+
+#[tokio::test]
+async fn setting_an_ended_runs_own_status_again_reopens_it() {
+    same_status_reopens_an_ended_run(&SqliteStore::open_temp().await).await;
 }
 
 async fn after_midnight_end<S: Store>(store: &S) {

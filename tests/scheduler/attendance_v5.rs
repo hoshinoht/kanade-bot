@@ -1,25 +1,24 @@
 //! v5 attendance on the write path: status fully derived from standing
 //! answers, the timing default and the unknown window (re-derived in the
-//! same commit as the change), one source for the attendance rules across
-//! reactions, draft merges and cherry-picks, and the same actions in
-//! v4-compat mode (which must stay v4).
+//! same commit as the change), and one source for the attendance rules
+//! across reactions, draft merges and cherry-picks.
 
 use chrono::{DateTime, FixedOffset, NaiveTime, TimeDelta, TimeZone, Utc, Weekday};
 use chrono_tz::Asia::Kuala_Lumpur;
-use kanade::domain::attendance::{
+use kanade_domain::attendance::{
     AnswerState, AssumedSource, AttendanceDefault, AttendancePolicy, StatusLabel, Tally,
     snapshot_states, status_label,
 };
-use kanade::domain::history::{
+use kanade_domain::history::{
     Actor, Attribution, BlameTarget, ChangeHistory, Origin, PickMode, PickRefusal, Surface, blame,
 };
-use kanade::domain::members::{Directory, Member};
-use kanade::domain::schedule::{
+use kanade_domain::members::{Directory, Member};
+use kanade_domain::schedule::{
     EMOJI_NO, EMOJI_YES, FixedEdit, ReminderPolicy, RsvpSource, RsvpState, Run, RunStatus,
     ScheduleError, SchedulePolicy, StatusChange,
 };
-use kanade::domain::scheduler::{DraftError, PickError, SchedulerError, SchedulerService};
-use kanade::infrastructure::store::SqliteStore;
+use kanade_domain::scheduler::{DraftError, PickError, SchedulerError, SchedulerService};
+use kanade_store::SqliteStore;
 
 use crate::common::TestClock;
 use crate::support::{CountingIds, hm, snapshot, swap, weekly};
@@ -49,7 +48,7 @@ fn kl(month: u32, day: u32, hour: u32, minute: u32) -> DateTime<FixedOffset> {
         .unwrap()
 }
 
-fn policy(attendance: AttendancePolicy) -> SchedulePolicy {
+fn policy() -> SchedulePolicy {
     SchedulePolicy::new(
         ReminderPolicy {
             zone: Kuala_Lumpur,
@@ -59,7 +58,6 @@ fn policy(attendance: AttendancePolicy) -> SchedulePolicy {
         Weekday::Thu,
         NaiveTime::MIN,
     )
-    .with_attendance(attendance)
 }
 
 fn admin() -> Origin {
@@ -77,7 +75,6 @@ fn tick() -> Origin {
 struct Fixture {
     service: Service,
     clock: TestClock,
-    attendance: AttendancePolicy,
     fixed: String,
     /// Runs by week: Sat 29 Aug, 5 Sep and 12 Sep, 20:00 in Kuala Lumpur.
     runs: [String; 3],
@@ -90,14 +87,13 @@ impl Fixture {
 }
 
 /// Weekly Sat 20:00 with `party`, materialised on Thu 27 Aug.
-async fn fixture_with(attendance: AttendancePolicy, party: &[&str]) -> Fixture {
+async fn fixture_with(party: &[&str]) -> Fixture {
     let clock = TestClock::new(kl(8, 27, 1, 0));
     let mut service = SchedulerService::new(
         SqliteStore::open_temp().await,
         CountingIds::default(),
         clock.clone(),
-    )
-    .with_attendance(attendance);
+    );
     let fixed = service
         .as_origin(admin())
         .add_fixed_run(weekly("222", Weekday::Sat, hm(20, 0), party))
@@ -105,7 +101,7 @@ async fn fixture_with(attendance: AttendancePolicy, party: &[&str]) -> Fixture {
         .unwrap();
     service
         .as_origin(admin())
-        .materialise_weeks(&policy(attendance))
+        .materialise_weeks(&policy())
         .await
         .unwrap();
     let state = snapshot(&service).await;
@@ -121,14 +117,13 @@ async fn fixture_with(attendance: AttendancePolicy, party: &[&str]) -> Fixture {
     Fixture {
         service,
         clock,
-        attendance,
         fixed,
         runs,
     }
 }
 
-async fn fixture(attendance: AttendancePolicy) -> Fixture {
-    fixture_with(attendance, &["1001", "1002"]).await
+async fn fixture() -> Fixture {
+    fixture_with(&["1001", "1002"]).await
 }
 
 async fn run_row(service: &Service, run: &str) -> Run {
@@ -170,7 +165,7 @@ async fn pick(
 async fn tally(f: &Fixture, run: &str) -> (Tally, bool) {
     let state = snapshot(&f.service).await;
     let row = state.runs.iter().find(|row| row.id == run).unwrap();
-    let states = snapshot_states(&state, row, f.attendance.mode);
+    let states = snapshot_states(&state, row);
     let tally = Tally::of(states.iter().map(|(_, state)| state));
     let coming = tally.confirmed + tally.assumed == tally.total;
     assert_eq!(
@@ -213,7 +208,7 @@ async fn standing(f: &mut Fixture, user: &str, on: bool) {
 
 #[tokio::test]
 async fn the_timing_default_confirms_and_withdraws_in_its_own_commit() {
-    let mut f = fixture(AttendancePolicy::V5).await;
+    let mut f = fixture().await;
     let before = head(&f.service).await;
     set_default(&mut f, AttendanceDefault::AssumeComing).await;
     assert_eq!(head(&f.service).await, before + 1, "one commit");
@@ -233,7 +228,7 @@ async fn the_timing_default_confirms_and_withdraws_in_its_own_commit() {
     let state = snapshot(&f.service).await;
     let row = state.runs.iter().find(|row| row.id == run).unwrap();
     assert_eq!(
-        snapshot_states(&state, row, f.attendance.mode),
+        snapshot_states(&state, row),
         [
             (
                 "1001".to_owned(),
@@ -283,7 +278,7 @@ async fn the_timing_default_confirms_and_withdraws_in_its_own_commit() {
 
 #[tokio::test]
 async fn standing_answers_confirm_and_withdraw_at_once() {
-    let mut f = fixture(AttendancePolicy::V5).await;
+    let mut f = fixture().await;
     let run = f.run().to_owned();
     assert_eq!(
         react(&mut f, 0, "1002", EMOJI_YES, true).await,
@@ -321,24 +316,18 @@ async fn standing_answers_confirm_and_withdraw_at_once() {
 }
 
 #[tokio::test]
-async fn a_standing_answer_and_one_reaction_confirm_a_run_in_v5_only() {
-    for (attendance, expected) in [
-        (AttendancePolicy::V5, RunStatus::Confirmed),
-        (AttendancePolicy::V4_COMPAT, RunStatus::Planned),
-    ] {
-        let mut f = fixture(attendance).await;
-        standing(&mut f, "1001", true).await;
-        assert_eq!(
-            react(&mut f, 0, "1002", EMOJI_YES, true).await,
-            expected,
-            "{attendance:?}"
-        );
-    }
+async fn a_standing_answer_and_one_reaction_confirm_a_run() {
+    let mut f = fixture().await;
+    standing(&mut f, "1001", true).await;
+    assert_eq!(
+        react(&mut f, 0, "1002", EMOJI_YES, true).await,
+        RunStatus::Confirmed
+    );
 }
 
 #[tokio::test]
 async fn unknown_answers_put_a_run_at_risk_once_its_window_opens() {
-    let mut f = fixture(AttendancePolicy::V5).await;
+    let mut f = fixture().await;
     let run = f.run().to_owned();
     assert_eq!(
         react(&mut f, 0, "1001", EMOJI_YES, true).await,
@@ -368,41 +357,9 @@ async fn unknown_answers_put_a_run_at_risk_once_its_window_opens() {
     );
 }
 
-#[tokio::test]
-async fn v4_compat_ignores_standing_answers_defaults_and_the_window() {
-    let mut f = fixture(AttendancePolicy::V4_COMPAT).await;
-    let run = f.run().to_owned();
-    let before = head(&f.service).await;
-    set_default(&mut f, AttendanceDefault::AssumeComing).await;
-    standing(&mut f, "1001", true).await;
-    assert_eq!(head(&f.service).await, before + 2);
-    assert_eq!(
-        status(&f.service, &run).await,
-        RunStatus::Planned,
-        "written, no effect"
-    );
-    f.clock.set(kl(8, 29, 19, 0));
-    let before = head(&f.service).await;
-    assert!(recount(&mut f).await.is_empty());
-    assert_eq!(head(&f.service).await, before);
-    assert_eq!(
-        react(&mut f, 0, "1002", EMOJI_YES, true).await,
-        RunStatus::Planned
-    );
-    assert_eq!(
-        react(&mut f, 0, "1001", EMOJI_YES, true).await,
-        RunStatus::Confirmed
-    );
-    // v4's confirmation survives silence.
-    assert_eq!(
-        react(&mut f, 0, "1001", EMOJI_YES, false).await,
-        RunStatus::Confirmed
-    );
-}
-
 /// 1001 "always in", 1002 said ✅, 1003 has not answered on the first run.
-async fn three_ways_fixture(attendance: AttendancePolicy) -> Fixture {
-    let mut f = fixture_with(attendance, &["1001", "1002", "1003"]).await;
+async fn three_ways_fixture() -> Fixture {
+    let mut f = fixture_with(&["1001", "1002", "1003"]).await;
     standing(&mut f, "1001", true).await;
     react(&mut f, 0, "1002", EMOJI_YES, true).await;
     f
@@ -412,62 +369,59 @@ async fn three_ways_fixture(attendance: AttendancePolicy) -> Fixture {
 /// a cherry-picked answer: every path follows the scheduler's rules.
 #[tokio::test]
 async fn reactions_merges_and_picks_derive_status_from_one_source() {
-    for (attendance, expected) in [
-        (AttendancePolicy::V5, RunStatus::Confirmed),
-        (AttendancePolicy::V4_COMPAT, RunStatus::Planned),
-    ] {
-        let schedule = policy(attendance);
-        // A reaction: 1003 says yes.
-        let mut f = three_ways_fixture(attendance).await;
-        assert_eq!(react(&mut f, 0, "1003", EMOJI_YES, true).await, expected);
-        // A draft merge: 1003 leaves the run.
-        let mut f = three_ways_fixture(attendance).await;
-        let run = f.run().to_owned();
-        let draft = f.service.create_draft("root", "swap", None).await.unwrap();
-        let staged = f
-            .service
-            .add_draft_op(
-                "root",
-                &draft.id,
-                draft.version,
-                swap(&run, &["1003"], &[]),
-                &schedule,
-                &Guild,
-            )
-            .await
-            .unwrap();
-        let version = staged.draft.version;
-        f.service
-            .merge_draft("root", &draft.id, version, &schedule, &Guild, None)
-            .await
-            .unwrap();
-        assert_eq!(
-            status(&f.service, &run).await,
-            expected,
-            "merge {attendance:?}"
-        );
-        // A cherry-pick of 1003's ✅ from the next week, recounted.
-        let mut f = three_ways_fixture(attendance).await;
-        let run = f.run().to_owned();
-        react(&mut f, 1, "1003", EMOJI_YES, true).await;
-        let picked = head(&f.service).await;
-        let week = run_row(&f.service, &run).await.week_start;
-        pick(&mut f, picked, week, &schedule).await.unwrap();
-        assert_eq!(
-            status(&f.service, &run).await,
-            expected,
-            "pick {attendance:?}"
-        );
-    }
+    let schedule = policy();
+    // A reaction: 1003 says yes.
+    let mut f = three_ways_fixture().await;
+    assert_eq!(
+        react(&mut f, 0, "1003", EMOJI_YES, true).await,
+        RunStatus::Confirmed
+    );
+    // A draft merge: 1003 leaves the run.
+    let mut f = three_ways_fixture().await;
+    let run = f.run().to_owned();
+    let draft = f.service.create_draft("root", "swap", None).await.unwrap();
+    let staged = f
+        .service
+        .add_draft_op(
+            "root",
+            &draft.id,
+            draft.version,
+            swap(&run, &["1003"], &[]),
+            &schedule,
+            &Guild,
+        )
+        .await
+        .unwrap();
+    let version = staged.draft.version;
+    f.service
+        .merge_draft("root", &draft.id, version, &schedule, &Guild, None)
+        .await
+        .unwrap();
+    assert_eq!(
+        status(&f.service, &run).await,
+        RunStatus::Confirmed,
+        "merge"
+    );
+    // A cherry-pick of 1003's ✅ from the next week, recounted.
+    let mut f = three_ways_fixture().await;
+    let run = f.run().to_owned();
+    react(&mut f, 1, "1003", EMOJI_YES, true).await;
+    let picked = head(&f.service).await;
+    let week = run_row(&f.service, &run).await.week_start;
+    pick(&mut f, picked, week, &schedule).await.unwrap();
+    assert_eq!(status(&f.service, &run).await, RunStatus::Confirmed, "pick");
 }
 
 #[tokio::test]
 async fn a_policy_with_other_attendance_rules_is_refused() {
-    let mut f = fixture(AttendancePolicy::V5).await;
-    let other = policy(AttendancePolicy::V4_COMPAT);
+    let mut f = fixture().await;
+    let narrower = AttendancePolicy {
+        unknown_window: TimeDelta::hours(6),
+    };
+    let other = policy().with_attendance(narrower);
     let mismatch = ScheduleError::AttendanceMismatch {
         service: AttendancePolicy::V5,
-        policy: AttendancePolicy::V4_COMPAT,
+        policy: narrower,
     };
     assert_eq!(
         f.service
@@ -494,7 +448,7 @@ async fn a_policy_with_other_attendance_rules_is_refused() {
 
 #[tokio::test]
 async fn tick_changes_cannot_be_cherry_picked() {
-    let mut f = fixture(AttendancePolicy::V5).await;
+    let mut f = fixture().await;
     let run = f.run().to_owned();
     react(&mut f, 1, "1001", EMOJI_YES, true).await;
     react(&mut f, 1, "1002", EMOJI_YES, true).await;
@@ -506,14 +460,14 @@ async fn tick_changes_cannot_be_cherry_picked() {
     f.clock.set(kl(8, 27, 2, 0));
     let week = run_row(&f.service, &run).await.week_start;
     assert!(matches!(
-        pick(&mut f, seq, week, &policy(AttendancePolicy::V5)).await,
+        pick(&mut f, seq, week, &policy()).await,
         Err(PickError::Refused(PickRefusal::UnsupportedPick { .. }))
     ));
 }
 
 async fn set_status(f: &mut Fixture, run: usize, status: RunStatus) {
     let run = f.runs[run].clone();
-    let reminders = policy(f.attendance).reminders;
+    let reminders = policy().reminders;
     let change = StatusChange {
         status,
         announce: false,
@@ -529,14 +483,14 @@ async fn set_status(f: &mut Fixture, run: usize, status: RunStatus) {
 async fn label(f: &Fixture, run: usize) -> Option<StatusLabel> {
     let state = snapshot(&f.service).await;
     let row = state.runs.iter().find(|row| row.id == f.runs[run]).unwrap();
-    let states = snapshot_states(&state, row, f.attendance.mode);
+    let states = snapshot_states(&state, row);
     let tally = Tally::of(states.iter().map(|(_, state)| state));
-    status_label(row.status, row.status_pin, &tally, f.attendance.mode)
+    status_label(row.status, row.status_pin, &tally)
 }
 
 #[tokio::test]
 async fn a_hand_set_confirmed_holds_until_an_explicit_answer() {
-    let mut f = fixture(AttendancePolicy::V5).await;
+    let mut f = fixture().await;
     let run = f.run().to_owned();
     react(&mut f, 0, "1001", EMOJI_YES, true).await;
     set_status(&mut f, 0, RunStatus::Confirmed).await;
@@ -585,7 +539,7 @@ async fn portal_answer(f: &mut Fixture, run: usize, user: &str, answer: Option<R
 
 #[tokio::test]
 async fn portal_answers_are_chat_recount_and_keep_a_hand_set_status() {
-    let mut f = fixture(AttendancePolicy::V5).await;
+    let mut f = fixture().await;
     let run = f.run().to_owned();
     set_status(&mut f, 0, RunStatus::Confirmed).await;
     portal_answer(&mut f, 0, "1002", Some(RsvpState::No)).await;
@@ -627,7 +581,7 @@ async fn portal_answers_are_chat_recount_and_keep_a_hand_set_status() {
 
 #[tokio::test]
 async fn portal_answers_recount_an_unpinned_run() {
-    let mut f = fixture(AttendancePolicy::V4_COMPAT).await;
+    let mut f = fixture().await;
     let run = f.run().to_owned();
     portal_answer(&mut f, 0, "1002", Some(RsvpState::No)).await;
     assert_eq!(status(&f.service, &run).await, RunStatus::AtRisk);
@@ -641,7 +595,7 @@ async fn portal_answers_recount_an_unpinned_run() {
 
 #[tokio::test]
 async fn a_hand_set_planned_on_an_assumed_run_survives_the_recount() {
-    let mut f = fixture(AttendancePolicy::V5).await;
+    let mut f = fixture().await;
     let run = f.run().to_owned();
     set_default(&mut f, AttendanceDefault::AssumeComing).await;
     assert_eq!(status(&f.service, &run).await, RunStatus::Confirmed);
@@ -668,12 +622,12 @@ async fn a_hand_set_planned_on_an_assumed_run_survives_the_recount() {
 
 #[tokio::test]
 async fn a_cherry_picked_status_step_pins() {
-    let mut f = fixture(AttendancePolicy::V5).await;
+    let mut f = fixture().await;
     let run = f.run().to_owned();
     set_status(&mut f, 1, RunStatus::Confirmed).await;
     let picked = head(&f.service).await;
     let week = run_row(&f.service, &run).await.week_start;
-    let schedule = policy(f.attendance);
+    let schedule = policy();
     pick(&mut f, picked, week, &schedule).await.unwrap();
     let row = run_row(&f.service, &run).await;
     assert_eq!(row.status, RunStatus::Confirmed);
@@ -685,45 +639,31 @@ async fn a_cherry_picked_status_step_pins() {
 }
 
 #[tokio::test]
-async fn a_started_run_is_frozen_in_v5_only() {
-    for (attendance, after_swap) in [
-        (AttendancePolicy::V5, RunStatus::Confirmed),
-        (AttendancePolicy::V4_COMPAT, RunStatus::Planned),
-    ] {
-        let mut f = fixture(attendance).await;
-        let run = f.run().to_owned();
-        react(&mut f, 0, "1001", EMOJI_YES, true).await;
-        react(&mut f, 0, "1002", EMOJI_YES, true).await;
-        assert_eq!(status(&f.service, &run).await, RunStatus::Confirmed);
-        f.clock.set(kl(8, 29, 20, 10));
-        assert_eq!(
-            react(&mut f, 0, "1001", EMOJI_YES, false).await,
-            RunStatus::Confirmed,
-            "{attendance:?}: taking a ✅ back after the start"
-        );
-        f.service
-            .as_origin(admin())
-            .swap_participants(&run, &[], &["1003".into()], true, &Guild)
-            .await
-            .unwrap();
-        assert_eq!(
-            status(&f.service, &run).await,
-            after_swap,
-            "{attendance:?}: swapping someone in after the start"
-        );
-        assert!(recount(&mut f).await.is_empty());
-        set_status(&mut f, 0, RunStatus::Done).await;
-        assert_eq!(status(&f.service, &run).await, RunStatus::Done, "manual");
-    }
-}
-
-#[tokio::test]
-async fn v4_compat_never_pins() {
-    let mut f = fixture(AttendancePolicy::V4_COMPAT).await;
-    set_status(&mut f, 0, RunStatus::Confirmed).await;
-    let row = run_row(&f.service, f.run()).await;
-    assert_eq!((row.status, row.status_pin), (RunStatus::Confirmed, None));
-    assert_eq!(label(&f, 0).await, None);
+async fn a_started_run_is_frozen() {
+    let mut f = fixture().await;
+    let run = f.run().to_owned();
+    react(&mut f, 0, "1001", EMOJI_YES, true).await;
+    react(&mut f, 0, "1002", EMOJI_YES, true).await;
+    assert_eq!(status(&f.service, &run).await, RunStatus::Confirmed);
+    f.clock.set(kl(8, 29, 20, 10));
+    assert_eq!(
+        react(&mut f, 0, "1001", EMOJI_YES, false).await,
+        RunStatus::Confirmed,
+        "taking a ✅ back after the start"
+    );
+    f.service
+        .as_origin(admin())
+        .swap_participants(&run, &[], &["1003".into()], true, &Guild)
+        .await
+        .unwrap();
+    assert_eq!(
+        status(&f.service, &run).await,
+        RunStatus::Confirmed,
+        "swapping someone in after the start"
+    );
+    assert!(recount(&mut f).await.is_empty());
+    set_status(&mut f, 0, RunStatus::Done).await;
+    assert_eq!(status(&f.service, &run).await, RunStatus::Done, "manual");
 }
 
 /// A pinned confirmed run on incomplete answers (1002 unknown).
@@ -752,14 +692,14 @@ async fn move_run(f: &mut Fixture, run: &str) {
     let to = kl(8, 29, 22, 0).with_timezone(&Utc);
     f.service
         .as_origin(admin())
-        .amend_run(run, to, &policy(f.attendance))
+        .amend_run(run, to, &policy())
         .await
         .unwrap();
 }
 
 #[tokio::test]
 async fn a_move_ends_the_pin_and_re_derives() {
-    let mut f = fixture(AttendancePolicy::V5).await;
+    let mut f = fixture().await;
     let run = pinned_on_incomplete_answers(&mut f).await;
     let before = head(&f.service).await;
     move_run(&mut f, &run).await;
@@ -769,7 +709,7 @@ async fn a_move_ends_the_pin_and_re_derives() {
 
 #[tokio::test]
 async fn a_reset_of_slot_only_ends_the_pin_and_re_derives() {
-    let mut f = fixture(AttendancePolicy::V5).await;
+    let mut f = fixture().await;
     let run = f.run().to_owned();
     move_run(&mut f, &run).await;
     pinned_on_incomplete_answers(&mut f).await;
@@ -777,7 +717,7 @@ async fn a_reset_of_slot_only_ends_the_pin_and_re_derives() {
     let outcome = f
         .service
         .as_origin(admin())
-        .reset_to_fixed(&run, &policy(f.attendance))
+        .reset_to_fixed(&run, &policy())
         .await
         .unwrap();
     assert_eq!(outcome.value.run.datetime, kl(8, 29, 20, 0));
@@ -787,7 +727,7 @@ async fn a_reset_of_slot_only_ends_the_pin_and_re_derives() {
 
 #[tokio::test]
 async fn a_weekly_time_edit_moving_the_run_ends_the_pin() {
-    let mut f = fixture(AttendancePolicy::V5).await;
+    let mut f = fixture().await;
     let run = pinned_on_incomplete_answers(&mut f).await;
     let fixed = f.fixed.clone();
     let before = head(&f.service).await;
@@ -797,7 +737,7 @@ async fn a_weekly_time_edit_moving_the_run_ends_the_pin() {
     };
     f.service
         .as_origin(admin())
-        .update_fixed(&fixed, edit, &Guild, &policy(f.attendance))
+        .update_fixed(&fixed, edit, &Guild, &policy())
         .await
         .unwrap();
     assert_eq!(head(&f.service).await, before + 1, "one commit");
@@ -810,7 +750,7 @@ async fn a_weekly_time_edit_moving_the_run_ends_the_pin() {
 
 #[tokio::test]
 async fn after_the_start_party_changes_keep_the_pin() {
-    let mut f = fixture(AttendancePolicy::V5).await;
+    let mut f = fixture().await;
     let run = pinned_on_incomplete_answers(&mut f).await;
     let pinned = run_row(&f.service, &run).await.status_pin;
     async fn pin_blame(service: &Service, run: &str) -> Attribution {
@@ -834,13 +774,7 @@ async fn after_the_start_party_changes_keep_the_pin() {
         .unwrap();
     f.service
         .as_origin(admin())
-        .change_fixed_party(
-            &f.fixed,
-            &[],
-            &["1003".into()],
-            &Guild,
-            &policy(f.attendance),
-        )
+        .change_fixed_party(&f.fixed, &[], &["1003".into()], &Guild, &policy())
         .await
         .unwrap();
     let row = run_row(&f.service, &run).await;

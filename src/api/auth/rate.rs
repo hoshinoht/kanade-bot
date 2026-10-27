@@ -12,7 +12,7 @@ use std::{
 
 use chrono::{DateTime, TimeDelta, Utc};
 
-crate::domain::spelled! {
+kanade_domain::spelled! {
     Route {
         DiscordStart => "discord_start",
         DiscordCallback => "discord_callback",

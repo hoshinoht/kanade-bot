@@ -4,15 +4,15 @@
 use std::collections::BTreeMap;
 
 use chrono::{DateTime, TimeDelta, Utc, Weekday};
-use kanade::domain::history::Origin;
-use kanade::domain::notify::NoticeOutbox;
-use kanade::domain::schedule::{
+use kanade_domain::history::Origin;
+use kanade_domain::notify::NoticeOutbox;
+use kanade_domain::schedule::{
     AmendedRunChoice, EMOJI_NO, EMOJI_YES, FixedEdit, FixedEditChoices, FixedEditRequest, FixedRun,
     NewRun, NoticeChange, Outcome, Reminder, RunSource, RunState, RunStatus, ScheduleError,
     ScheduleSnapshot, StatusChange,
 };
-use kanade::domain::scheduler::{SchedulerError, SchedulerResult, SchedulerService};
-use kanade::infrastructure::store::SqliteStore;
+use kanade_domain::scheduler::{SchedulerError, SchedulerResult, SchedulerService};
+use kanade_store::SqliteStore;
 
 use crate::common::{TestClock, assert_sound};
 use crate::support::{
@@ -332,7 +332,9 @@ async fn reset_restores_the_weekly_slot_party_and_channel() {
     assert_eq!(state.run.datetime, utc(kl(7, 21, 30)));
     assert_eq!(state.run.participants, ["1001", "1002"]);
     assert_eq!(state.run.channel_id.as_deref(), Some("222"));
-    assert_eq!(state.run.status, RunStatus::Planned, "amend status rule");
+    // The amend status rule, then a re-derive: 1002 is unknown inside the
+    // 12 h window.
+    assert_eq!(state.run.status, RunStatus::AtRisk, "re-derived");
     assert_eq!(
         state.rsvps.keys().collect::<Vec<_>>(),
         ["1001"],

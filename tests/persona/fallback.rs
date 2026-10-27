@@ -4,7 +4,7 @@ use std::{
     sync::{Arc, Barrier},
 };
 
-use kanade::chat::persona::{
+use kanade_voice::persona::{
     MAX_PROFILE_FILES, PersonaError, PersonaId, PersonaRoot, PersonaSnapshot, PersonaStore,
     ProfileQuery, ReloadError, SelectionSource,
 };

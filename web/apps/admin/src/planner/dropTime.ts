@@ -88,7 +88,7 @@ export interface CardBox {
   id: string;
   top: number;
   height: number;
-  /** Done and cancelled runs take no swaps: their middle is a between zone too. */
+  /** Done, cancelled and ended runs take no swaps: their middle is a between zone too. */
   swappable: boolean;
 }
 

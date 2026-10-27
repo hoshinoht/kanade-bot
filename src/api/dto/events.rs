@@ -4,7 +4,7 @@
 
 use serde::Serialize;
 
-use crate::infrastructure::store::Written;
+use kanade_store::Written;
 
 /// What kind of data changed.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]

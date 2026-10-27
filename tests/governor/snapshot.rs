@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use chrono::TimeDelta;
-use kanade::infrastructure::llm::governor::{
+use kanade_llm::governor::{
     BreakerState, CallKind, GovernorConfig, GovernorPolicy, Outcome, PermitUsage, Priority,
     QueuedCall, RateLevel, RetryLevel, Role,
 };
@@ -39,7 +39,7 @@ async fn snapshot_matches_the_backend_group_dto() {
     for (priority, kind, who) in queued {
         let governor = governor.clone();
         tasks.push(tokio::spawn(async move {
-            let ticket = kanade::infrastructure::llm::governor::Ticket {
+            let ticket = kanade_llm::governor::Ticket {
                 priority,
                 kind,
                 who: who.into(),

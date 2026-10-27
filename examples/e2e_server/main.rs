@@ -39,12 +39,9 @@ use std::{
 
 use chrono::{DateTime, Utc};
 use kanade::{
-    api::{
-        auth::{crypto, fake::FakeDiscord},
-        listeners::Origin,
-        server::wait_for_shutdown,
-    },
-    runtime::config::ServeConfig,
+    api::{auth::fake::FakeDiscord, listeners::Origin},
+    app::crypto,
+    runtime::{config::ServeConfig, serve::wait_for_shutdown},
 };
 use tokio::{net::TcpListener, sync::watch};
 
@@ -196,7 +193,7 @@ fn config(
         ("KANADE_PUBLIC_HOST", public.clone()),
         // The browser is the edge's loopback peer.
         ("KANADE_CLOUDFLARED_PEER", LOOPBACK.to_string()),
-        ("KANADE_DISCORD_GATEWAY", "0".to_owned()),
+        ("KANADE_COMPONENTS", "web".to_owned()),
         ("KANADE_SECRETS_DIR", root.display().to_string()),
         // Setup saves into it; a reset empties it (`World::forget_saved_secrets`).
         (

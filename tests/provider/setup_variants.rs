@@ -1,12 +1,10 @@
 use std::collections::BTreeMap;
 
-use kanade::{
-    cli::models::{Args, check},
-    infrastructure::llm::{
-        Effort,
-        governor::Role,
-        setup::{ModelRoles, RoleEffort, Variant, variant_of},
-    },
+use kanade::cli::models::{Args, check};
+use kanade_llm::{
+    Effort,
+    governor::Role,
+    setup::{ModelRoles, RoleEffort, Variant, variant_of},
 };
 use serde_json::{Value, json};
 

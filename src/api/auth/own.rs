@@ -7,9 +7,9 @@
 use super::{
     AdminAuth, AdminSession,
     audit::{AuditContext, AuditEvent},
-    crypto,
 };
-use crate::infrastructure::store::web_sessions::{LoginMethod, SessionOrigin, WebSession};
+use crate::app::crypto;
+use kanade_store::web_sessions::{LoginMethod, SessionOrigin, WebSession};
 
 /// Domain separation for [`handle`]; the hash itself never leaves the server.
 const HANDLE_CONTEXT: &str = "kanade.own-session-handle.v1\0";

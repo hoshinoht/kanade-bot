@@ -4,7 +4,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use chrono::{DateTime, TimeZone, Utc, Weekday};
-use kanade::domain::{
+use kanade_domain::{
     drafts::{
         DRAFT_OP_FORMAT, DraftOp, Entity, Field, FieldValue, MergeAnalysis, MergeConflict, Removal,
         ReplayError, Target, analyze_merge, analyze_merge_since, decode, encode, replay,
@@ -19,7 +19,7 @@ use kanade::domain::{
     },
     scheduler::SchedulerService,
 };
-use kanade::infrastructure::store::SqliteStore;
+use kanade_store::SqliteStore;
 use serde_json::{Value, json};
 
 use crate::common::TestClock;
@@ -930,7 +930,7 @@ fn materialised_now(at: DateTime<Utc>) -> Vec<DateTime<Utc>> {
         .materialised_weeks(at)
         .unwrap()
         .iter()
-        .map(|week| kanade::domain::schedule::utc_instant(week).unwrap())
+        .map(|week| kanade_domain::schedule::utc_instant(week).unwrap())
         .collect()
 }
 

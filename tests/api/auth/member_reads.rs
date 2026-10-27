@@ -9,14 +9,12 @@ use std::{
 };
 
 use chrono::{DateTime, NaiveTime, TimeDelta, Utc};
-use kanade::{
-    api::auth::{audit::AuditEvent, rate::MEMBER_READ_ROUTE},
-    domain::{
-        members::MemberStore,
-        schedule::{Change, Run, RunSource, RunStatus},
-    },
-    infrastructure::llm::governor::{CallKind, GroupSnapshot, QueuedCall},
+use kanade::api::auth::{audit::AuditEvent, rate::MEMBER_READ_ROUTE};
+use kanade_domain::{
+    members::MemberStore,
+    schedule::{Change, Run, RunSource, RunStatus},
 };
+use kanade_llm::governor::{CallKind, GroupSnapshot, QueuedCall};
 use serde_json::{Value, json};
 
 use super::{
@@ -429,7 +427,7 @@ async fn set_roles(reads: &Reads, id: u64, roles: &[&str]) {
 #[tokio::test]
 async fn the_allowance_is_the_callers_own() {
     let busy = Arc::new(Mutex::new(false));
-    let limits: kanade::api::state::ModelLimits = {
+    let limits: kanade::app::ports::ModelLimits = {
         let busy = busy.clone();
         Arc::new(move |_| {
             vec![

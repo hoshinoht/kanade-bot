@@ -5,15 +5,15 @@ use std::sync::Arc;
 
 use twilight_model::application::command::Command;
 
-use super::access::Gate;
 use super::build::command;
 use super::context::CommandContext;
 use super::dispatch::{CommandError, CommandFuture, SlashCommand};
 use super::invocation::Invocation;
-use crate::bot::ids::id_text;
-use crate::bot::transport::InteractionReply;
-use crate::chat::gate::retry_note;
-use crate::chat::pilot::AllowanceSnapshot;
+use crate::app::access::Gate;
+use crate::app::ids::id_text;
+use crate::discord::transport::InteractionReply;
+use kanade_chat::gate::retry_note;
+use kanade_chat::pilot::AllowanceSnapshot;
 
 pub const STAFF_LIMITS_REPLY: &str = "No limits for staff — fire away! 🎀🐾";
 /// A zero allowance with no override of their own.
@@ -132,7 +132,7 @@ mod tests {
 
     #[test]
     fn a_zero_allowance_reads_staff_only() {
-        use crate::chat::pilot::{MemberUsage, PoolUsage};
+        use kanade_chat::pilot::{MemberUsage, PoolUsage};
         let pool = PoolUsage {
             used: 0,
             limit: 12,

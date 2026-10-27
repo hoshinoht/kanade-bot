@@ -1,30 +1,45 @@
-//! The plain-text test messages (v4 `formatting.amend_notice` for a move
-//! from a day earlier, `formatting.decline_notice` as the invoker).
+//! The plain-text test messages, rendered as the real notices are: a move
+//! from a day earlier and a decline by the invoker.
 
 use chrono::TimeDelta;
 
-use crate::bot::commands::text::{format_bosses, local_day, local_time};
-use crate::bot::delivery::cards::{CardContext, People, REACT_HINT};
-use crate::domain::ids::short_id;
-use crate::domain::schedule::Run;
+use crate::cards::format::Audience;
+use crate::cards::redesign::{self, NoticeLook};
+use crate::cards::{CardContext, People};
+use kanade_domain::notify::display_names;
+use kanade_domain::schedule::{Notice, NoticeChange, Run};
 
-/// v4 `amend_notice(run, run.datetime - 1 day)`.
-pub fn amend_text(ctx: &CardContext<'_>, run: &Run, mentioned: &[String]) -> String {
-    let who = People::new(ctx, &run.participants, mentioned);
-    let old = run.datetime - TimeDelta::days(1);
-    format!(
-        "🔁 **{}** moved: ~~{} {}~~ → **{} {}** — {}\n{REACT_HINT}",
-        format_bosses(&run.bosses),
-        local_day(old, ctx.zone),
-        local_time(old, ctx.zone),
-        local_day(run.datetime, ctx.zone),
-        local_time(run.datetime, ctx.zone),
-        who.list(&run.participants)
-    )
+/// The move notice for `run` from a day earlier, naming its party.
+pub fn amend_text(ctx: &CardContext<'_>, run: &Run, mentioned: &[String]) -> Option<String> {
+    let notice = Notice {
+        change: NoticeChange::RunMoved {
+            run_id: run.id.clone(),
+            from: run.datetime - TimeDelta::days(1),
+            to: run.datetime,
+        },
+        channel_id: run.channel_id.clone(),
+        listed: run.participants.clone(),
+        via_portal: false,
+    };
+    let look = NoticeLook {
+        schedule: ctx.schedule,
+        zone: ctx.zone,
+        catalog: ctx.catalog,
+        marks: ctx.marks,
+        quiet: ctx.quiet,
+        portal: ctx.v2.and_then(|kit| kit.portal_url()),
+    };
+    let who = Audience {
+        names: display_names(ctx.members, &run.participants)
+            .into_iter()
+            .collect(),
+        mentioned: mentioned.to_vec(),
+    };
+    redesign::notice_text(&notice, &look, &who)
 }
 
-/// v4 `decline_notice(run, invoker, display_name)`: the rest of the party,
-/// then who can't make it.
+/// The decline notice as `decliner` (shown as `decliner_name`), telling
+/// the rest of the party.
 pub fn decline_text(
     ctx: &CardContext<'_>,
     run: &Run,
@@ -38,18 +53,10 @@ pub fn decline_text(
         .filter(|user| *user != decliner)
         .cloned()
         .collect();
-    let tag = if others.is_empty() {
+    let recipients = if others.is_empty() {
         String::new()
     } else {
         People::new(ctx, &others, mentioned).list(&others)
     };
-    format!(
-        "{tag} {decliner_name} can't make **{}** ({} {}) — reschedule? `/amend run_id:{} to:...`",
-        format_bosses(&run.bosses),
-        local_day(run.datetime, ctx.zone),
-        local_time(run.datetime, ctx.zone),
-        short_id(&run.id)
-    )
-    .trim()
-    .to_owned()
+    redesign::decline_text(decliner_name, run, &recipients, ctx.catalog, ctx.marks)
 }

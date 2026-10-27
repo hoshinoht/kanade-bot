@@ -44,13 +44,14 @@ use crate::{
         },
         error::ApiError,
         listeners::Site,
-        state::{ApiState, CharacterRoster},
+        state::ApiState,
     },
-    domain::{
-        characters::{PartyRoster, PartySlot, PickScope, pick_version},
-        members::Roster as Members,
-        schedule::{FixedRun, RUN_ENDED, Run},
-    },
+    app::read::CharacterRoster,
+};
+use kanade_domain::{
+    characters::{PartyRoster, PartySlot, PickScope, pick_version},
+    members::Roster as Members,
+    schedule::{FixedRun, RUN_ENDED, Run},
 };
 
 /// The run, from its own snapshot (`404 not_found` when it is gone).

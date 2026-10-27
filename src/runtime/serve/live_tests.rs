@@ -17,50 +17,47 @@ use twilight_model::gateway::payload::incoming::{
 };
 use twilight_model::id::Id;
 
-use super::{
-    api::{self, Composition},
-    discord::{self, Discord, Wiring},
-    extract,
-    health::LiveHealth,
-    serve_with, store,
-    tests::Temp,
+use super::{health::LiveHealth, serve_with, store, tests::Temp};
+use crate::runtime::serve::{
+    bot::{
+        discord::{self, Discord, Wiring},
+        extract,
+    },
+    composition::{self, Composition},
 };
 use crate::{
-    api::{
-        auth::{
-            self,
-            staff::{GuildStaffGate, StaffCheck, StaffGate, StoreGuildMembers},
-        },
-        state::GuildAccess,
-    },
+    api::auth::staff::{GuildStaffGate, StaffCheck, StaffGate, StoreGuildMembers},
+    app::{clock, guild::GuildAccess},
     bot::{
         cards::{Authority, CardDesk, CardSettings, DeskDeps},
-        delivery::{FixedClock, LogAlerts, StoreRef},
+        delivery::{FixedClock, LogAlerts},
         gateway::{Connection, ConnectionStatus, DeliveryEligibility, EventSource, GatewayError},
+    },
+    discord::{
         guild_cache::GuildCache,
         roster::LiveRoster,
         transport::{Call, FakeDiscord, Op, RejectionKind, Step},
     },
-    domain::{
-        drafts::{DraftStatus, ProposalSource, ProposalStore},
-        history::Origin,
-        ids::RandomIds,
-        members::{GatewayMember, MemberStore, Roster},
-        notify::{
-            Claim, DeliveryJournal, DeliverySettings, DeliveryTarget, EffectKind, IntentContent,
-            NoticeOutbox, NotificationIntent, Receipt, WeekReset, plan_notice,
-        },
-        proposals::{Approver, ChangeKind, ProposedChange},
-        schedule::{NewRun, RsvpState, RunSource, RunStatus, SchedulePolicy, StatusChange},
-        scheduler::{ProposalRequest, ScheduleStore, SchedulerService, Scope, Supersede},
-    },
-    extract::{
-        AmendmentKind,
-        pipeline::{Card, CardEntry, PostResult},
-    },
-    infrastructure::store::SqliteStore,
     runtime::{application::HealthProbe, config::ServeConfig},
 };
+use kanade_domain::{
+    drafts::{DraftStatus, ProposalSource, ProposalStore},
+    history::Origin,
+    ids::RandomIds,
+    members::{GatewayMember, MemberStore, Roster},
+    notify::{
+        Claim, DeliveryJournal, DeliverySettings, DeliveryTarget, EffectKind, IntentContent,
+        NoticeOutbox, NotificationIntent, Receipt, WeekReset, plan_notice,
+    },
+    proposals::{Approver, ChangeKind, ProposedChange},
+    schedule::{NewRun, RsvpState, RunSource, RunStatus, SchedulePolicy, StatusChange},
+    scheduler::{ProposalRequest, ScheduleStore, SchedulerService, Scope, StoreRef, Supersede},
+};
+use kanade_extract::{
+    AmendmentKind,
+    pipeline::{Card, CardEntry, PostResult},
+};
+use kanade_store::SqliteStore;
 
 const GUILD: u64 = 900;
 const OTHER_GUILD: u64 = 901;
@@ -312,7 +309,7 @@ impl Harness {
     fn with(extra: &[(&str, &str)]) -> Self {
         let temp = Temp::new();
         let mut values = vec![
-            ("KANADE_DISCORD_GATEWAY", "1"),
+            ("KANADE_COMPONENTS", "bot,web"),
             ("KANADE_ADMIN_ROLE_ID", "20"),
         ];
         values.extend_from_slice(extra);
@@ -332,10 +329,10 @@ impl Harness {
     }
 
     async fn start(&self) -> (Discord, Ctx) {
-        self.start_with_clock(Arc::new(auth::system_now)).await
+        self.start_with_clock(Arc::new(clock::system_now)).await
     }
 
-    async fn start_with_clock(&self, clock: auth::Clock) -> (Discord, Ctx) {
+    async fn start_with_clock(&self, clock: clock::Clock) -> (Discord, Ctx) {
         let store = store::open(&self.config.store).await.unwrap();
         let prepared = discord::prepare(&self.config, TICK);
         let connection = prepared.probe.connection.clone();
@@ -343,7 +340,7 @@ impl Harness {
             .with_discord(prepared.probe.clone(), prepared.tick_status.clone())
             .with_extraction(prepared.extraction.clone());
         let mut composition =
-            api::compose(&self.config, store.clone(), prepared.cache.clone(), health)
+            composition::compose(&self.config, store.clone(), prepared.cache.clone(), health)
                 .await
                 .unwrap();
         let (events, source) = script();
@@ -386,7 +383,7 @@ impl Harness {
                 } if to.get() == channel => Some((
                     message.content.unwrap_or_default(),
                     match outcome {
-                        crate::bot::transport::Outcome::Delivered(id) => Some(id.get()),
+                        crate::discord::transport::Outcome::Delivered(id) => Some(id.get()),
                         _ => None,
                     },
                 )),
@@ -791,7 +788,7 @@ fn cache_with_test_channel() -> Arc<GuildCache> {
 async fn first_tick_waits_for_roster_reconciliation_before_sending() {
     let harness = Harness::new();
     let policy = policy(&harness);
-    let now = auth::system_now();
+    let now = clock::system_now();
     let store = store::open(&harness.config.store).await.unwrap();
     let start = now + chrono::Duration::seconds(59 * 60 + 30);
     let run = create_run(&store, &policy, now, HOME_C, start).await;
@@ -843,7 +840,7 @@ async fn first_tick_waits_for_roster_reconciliation_before_sending() {
 async fn stop_interrupts_a_tick_waiting_for_reconciliation() {
     let harness = Harness::new();
     let policy = policy(&harness);
-    let now = auth::system_now();
+    let now = clock::system_now();
     let store = store::open(&harness.config.store).await.unwrap();
     super::tick::recover(&store, now).await.unwrap();
 
@@ -877,7 +874,7 @@ async fn the_tick_sends_due_work_once_and_never_resends_an_interrupted_send() {
         .fake
         .script(Op::ListMembers, Step::Reject(RejectionKind::MissingAccess));
     let policy = policy(&harness);
-    let now = auth::system_now();
+    let now = clock::system_now();
     let mut due_run = String::new();
     harness
         .seed(async |store| {
@@ -919,7 +916,6 @@ async fn the_tick_sends_due_work_once_and_never_resends_an_interrupted_send() {
                 DeliverySettings {
                     post_channel_id: None,
                     quiet_mode: false,
-                    attendance: policy.attendance,
                 },
             )
             .unwrap();
@@ -935,7 +931,7 @@ async fn the_tick_sends_due_work_once_and_never_resends_an_interrupted_send() {
         })
         .await;
 
-    let pill = crate::bot::transport::ApplicationEmoji {
+    let pill = crate::discord::transport::ApplicationEmoji {
         id: Id::new(7),
         name: "diff_h".into(),
         animated: false,
@@ -953,7 +949,7 @@ async fn the_tick_sends_due_work_once_and_never_resends_an_interrupted_send() {
         // could send: nothing is left in flight to recover now.
         let again = ctx
             .store
-            .recover_on_start(auth::system_now())
+            .recover_on_start(clock::system_now())
             .await
             .unwrap();
         assert!(again.indeterminate.is_empty() && again.orphaned_leases == 0);
@@ -961,7 +957,7 @@ async fn the_tick_sends_due_work_once_and_never_resends_an_interrupted_send() {
         assert_eq!(
             harness.fake.calls(),
             [Call::ApplicationEmojis {
-                outcome: crate::bot::transport::Outcome::Delivered(vec![pill]),
+                outcome: crate::discord::transport::Outcome::Delivered(vec![pill]),
             }],
             "nothing but the startup emoji list before the gateway is ready"
         );
@@ -1047,11 +1043,11 @@ async fn a_check_on_a_proposal_card_is_approved_through_the_desk_not_via_portal(
     let policy = policy(&harness);
     let (mut discord, ctx) = harness.start().await;
     drive(&mut discord, async {
-        let now = auth::system_now();
+        let now = clock::system_now();
         let at = now + chrono::Duration::hours(30);
         let run = create_run(&ctx.store, &policy, now, HOME_C, at).await;
         let mut roster = Roster::new();
-        roster.upsert(crate::domain::members::Member {
+        roster.upsert(kanade_domain::members::Member {
             user_id: ALICE.to_string(),
             display_name: Some("alice".into()),
             has_role: true,
@@ -1096,7 +1092,8 @@ async fn a_check_on_a_proposal_card_is_approved_through_the_desk_not_via_portal(
                 policy: policy.clone(),
                 instance_id: "seed".into(),
             },
-        );
+        )
+        .posting_legacy();
         let posted = desk
             .post_card(&Card {
                 channel_id: HOME_C.to_string(),
@@ -1120,7 +1117,7 @@ async fn a_check_on_a_proposal_card_is_approved_through_the_desk_not_via_portal(
             .await;
         assert_eq!(posted, PostResult::Posted);
         drop(desk);
-        let message = crate::domain::proposals::ProposalCardStore::load_cards(
+        let message = kanade_domain::proposals::ProposalCardStore::load_cards(
             &*ctx.store,
             std::slice::from_ref(&proposal),
         )
@@ -1182,7 +1179,7 @@ async fn a_check_on_a_proposal_card_is_approved_through_the_desk_not_via_portal(
             harness.fake.calls().iter().any(|call| matches!(
                 call,
                 Call::Edit { edit, .. }
-                    if edit.content.as_deref().is_some_and(|text| text.contains("✅ applied by"))
+                    if format!("{edit:?}").contains("✅ Applied by")
             ))
         );
     })
@@ -1207,7 +1204,7 @@ async fn a_disallowed_intents_close_keeps_serving_http_without_reconnecting() {
     let wiring = Wiring {
         source,
         transport: Arc::clone(&harness.fake),
-        clock: Arc::new(auth::system_now),
+        clock: Arc::new(clock::system_now),
         tick: TICK,
         extraction: extract::Timing::default(),
     };
@@ -1229,12 +1226,11 @@ async fn a_disallowed_intents_close_keeps_serving_http_without_reconnecting() {
 async fn serve_prunes_model_logs_past_retention_and_stops_the_task_on_shutdown() {
     use sqlx::{ConnectOptions, Connection, sqlite::SqliteConnectOptions};
 
-    use crate::{
-        domain::model_log::ModelLogStore, infrastructure::store::model_log_conformance::extraction,
-    };
+    use kanade_domain::model_log::ModelLogStore;
+    use kanade_store::model_log_conformance::extraction;
 
     let harness = Harness::new();
-    let now = auth::system_now() + chrono::TimeDelta::days(400);
+    let now = clock::system_now() + chrono::TimeDelta::days(400);
     harness
         .seed(async |store| {
             for (id, days) in [("x-old", 91), ("x-recent", 89)] {
@@ -1383,7 +1379,9 @@ async fn retained_commands_and_their_autocomplete_dispatch_through_the_registry(
                 _ => None,
             })
             .unwrap();
-        assert!(!reply.content.is_empty() || !reply.embeds.is_empty());
+        assert!(
+            !reply.content.is_empty() || !reply.embeds.is_empty() || !reply.components.is_empty()
+        );
         assert_ne!(
             reply.content,
             crate::bot::commands::GENERIC_FAILURE,
@@ -1394,7 +1392,9 @@ async fn retained_commands_and_their_autocomplete_dispatch_through_the_registry(
     finish(&harness, ctx).await;
 }
 
+mod bot_only;
 mod extraction;
 mod outage;
 mod replay;
 mod shutdown;
+mod web_only;

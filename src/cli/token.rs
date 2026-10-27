@@ -12,7 +12,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use crate::{api::auth::crypto::random_token, runtime::error::Error};
+use crate::{app::crypto::random_token, runtime::error::Error};
 
 pub const USAGE: &str = "token rotate --out FILE [--force]";
 

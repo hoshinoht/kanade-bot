@@ -17,18 +17,18 @@ mod support;
 
 use chrono::{DateTime, NaiveTime, TimeZone, Utc, Weekday};
 use chrono_tz::Asia::Kuala_Lumpur;
-use kanade::domain::settings::{
+use kanade_domain::settings::{
     RoleProfileAssignment, RuntimeSettings, Section, SettingsStore, keys, load_settings,
     save_section,
 };
-use kanade::domain::{
+use kanade_domain::{
     history::{BlameTarget, ChangeHistory, Origin, changed_fields},
     ids::RandomIds,
     notify::NoticeOutbox,
     schedule::{NewRun, ReminderPolicy, RunSource, RunStatus, ScheduleError, SchedulePolicy},
     scheduler::{Clock, ScheduleStore, SchedulerError, SchedulerService},
 };
-use kanade::infrastructure::store::{
+use kanade_store::{
     SqliteCharData, SqliteStore, attendance_conformance, auth_audit_conformance, card_conformance,
     characters_conformance, chardata_conformance, cherry_pick_conformance, conformance,
     decline_conformance, draft_conformance, guides_conformance, history_conformance,
@@ -189,6 +189,27 @@ async fn settings_conform() {
     settings_conformance::run_suite(SqliteStore::open_temp).await;
 }
 
+/// The retired `v5.message_style` row (live stores hold `redesigned`) is
+/// neither read nor refused, and saves cannot write it again.
+#[tokio::test]
+async fn a_retired_message_style_row_is_ignored() {
+    let store = SqliteStore::open_temp().await;
+    store
+        .temp_dir()
+        .raw("INSERT INTO config (key, value) VALUES ('v5.message_style', 'redesigned')")
+        .await
+        .expect("raw row");
+    assert!(store.settings_rows().await.unwrap().is_empty());
+    let seed = RuntimeSettings::default();
+    assert_eq!(load_settings(&store, &seed).await.unwrap(), seed);
+    assert!(
+        store
+            .put_settings_rows(vec![("v5.message_style".into(), "classic".into())])
+            .await
+            .is_err()
+    );
+}
+
 #[tokio::test]
 async fn replays_conform() {
     replay_conformance::run_suite(SqliteStore::open_temp).await;
@@ -233,11 +254,11 @@ async fn guides_conform() {
 /// reopen, and the character's delete after the reopen still drops both.
 #[tokio::test]
 async fn sqlite_picks_survive_reopen() {
-    use kanade::domain::characters::{
+    use kanade_domain::characters::{
         Character, CharacterChange, CharacterRecord, CharacterRole, CharacterStore, PickChange,
         PickScope, PickWrite,
     };
-    use kanade::domain::history::{Actor, Surface};
+    use kanade_domain::history::{Actor, Surface};
 
     let dir = support::TempDir::new();
     let config = dir.config("picks-reopen");
@@ -450,7 +471,7 @@ async fn history_conforms() {
 
 #[tokio::test]
 async fn write_hints_conform() {
-    use kanade::infrastructure::store::hints_conformance::run_suite;
+    use kanade_store::hints_conformance::run_suite;
     let store = SqliteStore::open_temp().await;
     run_suite(&store, |store, observer| store.observe_writes(observer)).await;
     store.close().await.expect("store closes");

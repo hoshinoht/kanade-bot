@@ -3,15 +3,15 @@
 //! a real close and reopen).
 
 use kanade::bot::delivery::SendOutcome;
-use kanade::bot::transport::{Op, RejectionKind, Step};
-use kanade::domain::history::Origin;
-use kanade::domain::ids::RandomIds;
-use kanade::domain::notify::{
+use kanade::discord::transport::{Op, RejectionKind, Step};
+use kanade_domain::history::Origin;
+use kanade_domain::ids::RandomIds;
+use kanade_domain::notify::{
     AttemptState, Claim, DeliveryJournal, DeliverySettings, Receipt, plan_notice,
 };
-use kanade::domain::schedule::{NewRun, RunSource, RunStatus, StatusChange};
-use kanade::domain::scheduler::SchedulerError;
-use kanade::infrastructure::store::SqliteStore;
+use kanade_domain::schedule::{NewRun, RunSource, RunStatus, StatusChange};
+use kanade_domain::scheduler::SchedulerError;
+use kanade_store::SqliteStore;
 
 use crate::scenarios::{HOME, POST, World, config, delivery, now, week, world};
 use crate::support::{self, INSTANCE, Store, TempDir};
@@ -21,7 +21,7 @@ use crate::support::{self, INSTANCE, Store, TempDir};
 async fn cancel_with_notice<S: Store>(store: &S, request_id: &str) -> Result<(), SchedulerError> {
     let mut ids = RandomIds;
     let mut service = support::service(store, &mut ids, now());
-    let run = match store.load(&kanade::domain::scheduler::Scope::All).await {
+    let run = match store.load(&kanade_domain::scheduler::Scope::All).await {
         Ok(snapshot) if !snapshot.runs.is_empty() => snapshot.runs[0].id.clone(),
         _ => service
             .as_origin(Origin::for_tests())
@@ -75,7 +75,6 @@ async fn claim_then_crash<S: Store>(store: &S, world: &World, bind: bool) {
     let settings = DeliverySettings {
         post_channel_id: Some(POST),
         quiet_mode: false,
-        attendance: config().policy.attendance,
     };
     let intent =
         plan_notice(&row.notice, &world.roster, &world.channels, settings).expect("routed");

@@ -144,9 +144,19 @@ it is 404 through a proxy. A gateway close for a bad token (4004) or missing
 privileged intents (4014) is logged once (`gateway_closed_for_good`) and the
 container keeps serving the portal with `discord: closed` (unhealthy) but
 never reconnects, so a restart loop cannot burn the token's IDENTIFY budget;
-fix the cause, then restart it. `discord.gateway = false` runs the admin API
-alone (no gateway, no tick); for the old shell-only mode set
-`command: ["serve", "--offline"]`.
+fix the cause, then restart it.
+
+`runtime.components` in `kanade.toml` picks what the container runs
+(default `["bot", "web"]`). `["web"]` runs the admin app and member portal
+without the bot: no gateway or tick, `/healthz` decided by storage alone, and
+with the `discord_token` secret present it reads the guild (channels, roles,
+members) over Discord's REST API every 5 minutes, so channel pickers and
+member departures stay current; guides can be edited but not published.
+`["bot"]` runs the bot alone: the admin listener answers only `/healthz`,
+the public listener is not bound and cards carry no portal button.
+`discord.gateway` (and `KANADE_DISCORD_GATEWAY`) now refuse startup; replace
+`gateway = false` with `components = ["web"]` under `[runtime]`. For the old
+shell-only mode set `command: ["serve", "--offline"]` (it needs `web`).
 
 ## Add-ons
 
@@ -535,11 +545,11 @@ docker run --rm --user 65532:65532 -v kanade_v5_chardata:/c alpine \
 A rollback image that predates `kanade backup` cannot run step 5, so step 5
 can then only use the new image (`KANADE_BACKUP_IMAGE` unset). That is safe
 only when the release adds no store migration. Migrations are the
-`src/infrastructure/store/sqlite/migrations/*.sql` files registered in
-`MIGRATIONS` in `src/infrastructure/store/sqlite/migrate.rs`; check with:
+`crates/kanade-store/src/sqlite/migrations/*.sql` files registered in
+`MIGRATIONS` in `crates/kanade-store/src/sqlite/migrate.rs`; check with:
 
 ```sh
-git diff --stat <old-sha> HEAD -- ../src/infrastructure/store/sqlite/migrations ../src/infrastructure/store/sqlite/migrate.rs
+git diff --stat <old-sha> HEAD -- ../crates/kanade-store/src/sqlite/migrations ../crates/kanade-store/src/sqlite/migrate.rs
 ```
 
 If it lists changes, do not run `kanade backup` with the new image before

@@ -1,8 +1,6 @@
 //! Reminder header pre-generation: the persona rewrite of each upcoming
 //! card's day-of heading or countdown/digest phrase, stored before its send
-//! under the key the send path reads (`card_records`). Classic countdown and
-//! digest cards show no phrase (v4), so while the live message style is
-//! classic only day-of headings are rewritten.
+//! under the key the send path reads (`card_records`).
 //!
 //! A daily batch at the configured guild-local time
 //! (`notifications.header_generation_time`, read live) rewrites every card
@@ -36,25 +34,20 @@ use tokio::sync::watch;
 use tokio::time::MissedTickBehavior;
 
 use super::card_records::{digest_phrase_key, record_kind};
-use super::cards::{
-    CardContext, CardKit, CardRecord, DAY_OF_KIND, DigestPhraseStore, HeaderContext, HeadingSource,
-    PhraseKind, ReminderCardStore, card_runs,
-};
-use super::estimates::header_context;
-use super::preview::{record_key, reminder_intent};
 use super::refresh::Now;
-use crate::bot::commands::text::local_day;
-use crate::domain::members::Directory;
-use crate::domain::model_log::RewriteStage;
-use crate::domain::notify::{
-    DeliveryJournal, DeliverySettings, DeliveryTarget, DigestLog, IntentContent, JournalView,
-    WeekReset,
+use crate::cards::estimates::header_context;
+use crate::cards::preview::{record_key, reminder_intent};
+use crate::cards::text::local_day;
+use crate::cards::{CardContext, CardKit, HeaderContext, HeadingSource, PhraseKind, card_runs};
+use kanade_domain::members::Directory;
+use kanade_domain::model_log::RewriteStage;
+use kanade_domain::notify::{
+    CardRecord, DAY_OF_KIND, DeliveryJournal, DeliverySettings, DeliveryTarget, DigestLog,
+    DigestPhraseStore, IntentContent, JournalView, ReminderCardStore, WeekReset,
 };
-use crate::domain::schedule::{Reminder, SchedulePolicy, ScheduleSnapshot};
-use crate::domain::scheduler::{ScheduleStore, Scope};
-use crate::domain::settings::MessageStyle;
-use crate::domain::time::from_iso;
-use crate::runtime::logging;
+use kanade_domain::schedule::{Reminder, SchedulePolicy, ScheduleSnapshot};
+use kanade_domain::scheduler::{ScheduleStore, Scope};
+use kanade_domain::time::from_iso;
 
 /// Cards firing within this window are rewritten (by a batch or catch-up).
 pub const HEADER_HORIZON: TimeDelta = TimeDelta::hours(24);
@@ -260,7 +253,7 @@ where
         let now = (self.now)();
         let batch = self.batch_due(now);
         let Some(candidates) = self.candidates(now, now + SEEN_HORIZON).await else {
-            logging::log!(warn, "header_pregen_failed", operation = "plan");
+            kanade_log::log!(warn, "header_pregen_failed", operation = "plan");
             return report;
         };
         let due: Vec<&Candidate> = candidates
@@ -356,12 +349,10 @@ where
 
     /// Unsent cards firing in `(now, until]` and no journal claim, plus the
     /// coming boss week's digest when that week has no digest yet; earliest
-    /// first. Countdowns and the digest only in the redesigned style.
+    /// first.
     async fn candidates(&self, now: DateTime<Utc>, until: DateTime<Utc>) -> Option<Vec<Candidate>> {
         let schedule = self.store.load(&Scope::All).await.ok()?;
         let view = self.store.load_view().await.ok()?;
-        // Read live, as the cards do: classic shows no countdown/digest phrase.
-        let phrases = self.cards.style() == MessageStyle::Redesigned;
         let mut upcoming: Vec<&Reminder> = schedule
             .reminders
             .iter()
@@ -371,8 +362,7 @@ where
         let mut seen = HashSet::new();
         let mut out = Vec::new();
         for reminder in upcoming {
-            let Some(candidate) = self.reminder_candidate(&schedule, reminder, &view, phrases)
-            else {
+            let Some(candidate) = self.reminder_candidate(&schedule, reminder, &view) else {
                 continue;
             };
             if seen.insert(candidate.key.clone()) {
@@ -386,7 +376,7 @@ where
         };
         // The week starting at the first reset after `now`.
         let next = reset.current_week(now + TimeDelta::days(7)).ok()?;
-        if phrases && next > reset.current_week(now).ok()? && next <= until {
+        if next > reset.current_week(now).ok()? && next <= until {
             let log = self.store.load_digests().await.ok()?;
             if digest_open(&log, next)
                 && let Some(key) = digest_phrase_key(next)
@@ -409,13 +399,11 @@ where
         schedule: &ScheduleSnapshot,
         reminder: &Reminder,
         view: &impl JournalView,
-        phrases: bool,
     ) -> Option<Candidate> {
         // Only targets and grouping matter here, not channels or mentions.
         let settings = DeliverySettings {
             post_channel_id: None,
             quiet_mode: false,
-            attendance: self.policy.attendance,
         };
         let intent = reminder_intent(schedule, &reminder.id, &*self.members, settings)?;
         if intent.targets.iter().any(|target| view.holds(target)) {
@@ -427,12 +415,10 @@ where
             IntentContent::DayOf { run_ids } => {
                 let ctx = CardContext {
                     schedule,
-                    attendance: self.policy.attendance,
                     zone: self.policy.zone(),
                     quiet: false,
                     members: &*self.members,
                     catalog: self.cards.catalog.as_deref(),
-                    style: self.cards.style(),
                     marks: &self.cards.marks,
                     v2: None,
                 };
@@ -441,7 +427,7 @@ where
                     day: local_day(first, ctx.zone),
                 }
             }
-            IntentContent::Countdown { .. } if phrases => Header::Countdown { kind },
+            IntentContent::Countdown { .. } => Header::Countdown { kind },
             _ => return None,
         };
         Some(Candidate {
@@ -506,12 +492,10 @@ where
         let schedule = self.store.load(&Scope::All).await.ok()?;
         let ctx = CardContext {
             schedule: &schedule,
-            attendance: self.policy.attendance,
             zone: self.policy.zone(),
             quiet: false,
             members: &*self.members,
             catalog: self.cards.catalog.as_deref(),
-            style: self.cards.style(),
             marks: &self.cards.marks,
             v2: None,
         };
@@ -612,7 +596,7 @@ where
             Ok(true) => Done::Stored,
             Ok(false) => Done::Lost,
             Err(_) => {
-                logging::log!(warn, "header_pregen_failed", operation = "write");
+                kanade_log::log!(warn, "header_pregen_failed", operation = "write");
                 Done::Failed { busy: false }
             }
         }

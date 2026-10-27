@@ -5,15 +5,13 @@
 
 use std::{collections::BTreeMap, sync::Arc, time::Duration};
 
-use kanade::{
-    domain::settings::ContextSettings,
-    infrastructure::llm::{
-        Capability, ChatRequest, Effort, ErrorCode, HttpProviderConfig, LlmProvider, Message,
-        ModelCapabilities, NO_LISTING, OpenAiCompatibleProvider, OutputLimit, OutputSchema,
-        OutputValidation, ProviderFailure, ProviderFailureKind, Sampling, ToolDefinition,
-        governor::{QuestionLimits, Role, SessionFailure},
-        setup::{ContextSource, Listing, ModelRoles, ModelStack, RoleEffort, resolve_context},
-    },
+use kanade_domain::settings::ContextSettings;
+use kanade_llm::{
+    Capability, ChatRequest, Effort, ErrorCode, HttpProviderConfig, LlmProvider, Message,
+    ModelCapabilities, NO_LISTING, OpenAiCompatibleProvider, OutputLimit, OutputSchema,
+    OutputValidation, ProviderFailure, ProviderFailureKind, Sampling, ToolDefinition,
+    governor::{QuestionLimits, Role, SessionFailure},
+    setup::{ContextSource, Listing, ModelRoles, ModelStack, RoleEffort, resolve_context},
 };
 use serde_json::{Value, json};
 

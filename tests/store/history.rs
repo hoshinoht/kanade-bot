@@ -3,19 +3,17 @@
 
 use std::collections::BTreeSet;
 
-use kanade::domain::history::{
+use kanade_domain::history::{
     BrokenLink, ChangeFilter, ChangeHistory, ChangeQuery, CheckedChange, HistoryRefusal,
     RevertMode, RevertOutcome, RowKey,
 };
-use kanade::domain::schedule::{Change, ReminderPolicy};
-use kanade::domain::scheduler::{ScheduleStore, SchedulerError, Scope};
-use kanade::infrastructure::store::{
-    BackupManifest, SqliteStore, SqliteStoreConfig, SqliteStoreError,
-};
+use kanade_domain::schedule::{Change, ReminderPolicy};
+use kanade_domain::scheduler::{ScheduleStore, SchedulerError, Scope};
+use kanade_store::{BackupManifest, SqliteStore, SqliteStoreConfig, SqliteStoreError};
 
 use crate::support::{TempDir, commit, create, fixed, raw, seed, tamper};
 
-async fn verify<S: ChangeHistory>(store: &S) -> kanade::domain::history::HistoryVerification {
+async fn verify<S: ChangeHistory>(store: &S) -> kanade_domain::history::HistoryVerification {
     store.verify_history().await.expect("verify")
 }
 
@@ -158,14 +156,14 @@ async fn the_chain_continues_across_restarts() {
 /// A service over `store` with a fresh id source and a fixed clock.
 fn service<S: ScheduleStore>(
     store: S,
-) -> kanade::domain::scheduler::SchedulerService<S, Ids, Fixed> {
-    kanade::domain::scheduler::SchedulerService::new(store, Ids::default(), Fixed)
+) -> kanade_domain::scheduler::SchedulerService<S, Ids, Fixed> {
+    kanade_domain::scheduler::SchedulerService::new(store, Ids::default(), Fixed)
 }
 
 #[derive(Default)]
 struct Ids(u64);
 
-impl kanade::domain::ids::IdGenerator for Ids {
+impl kanade_domain::ids::IdGenerator for Ids {
     fn new_id(&mut self) -> String {
         self.0 += 1;
         format!("id-{}", self.0)
@@ -174,7 +172,7 @@ impl kanade::domain::ids::IdGenerator for Ids {
 
 struct Fixed;
 
-impl kanade::domain::scheduler::Clock for Fixed {
+impl kanade_domain::scheduler::Clock for Fixed {
     fn now(&self) -> chrono::DateTime<chrono::Utc> {
         crate::support::at(26, 12)
     }
@@ -228,9 +226,9 @@ async fn a_recorded_request_replays_after_a_restart() {
     let dir = TempDir::new();
     let config = dir.config("replay");
     let request = || {
-        kanade::domain::history::Origin::new(
-            kanade::domain::history::Actor::member("2"),
-            kanade::domain::history::Surface::PublicPortal,
+        kanade_domain::history::Origin::new(
+            kanade_domain::history::Actor::member("2"),
+            kanade_domain::history::Surface::PublicPortal,
         )
         .with_request_id("fixed-1")
     };
@@ -268,8 +266,8 @@ async fn a_recorded_request_replays_after_a_restart() {
 }
 
 /// Boss weeks reset Wednesday 16:00 UTC.
-fn schedule_policy() -> kanade::domain::schedule::SchedulePolicy {
-    kanade::domain::schedule::SchedulePolicy::new(
+fn schedule_policy() -> kanade_domain::schedule::SchedulePolicy {
+    kanade_domain::schedule::SchedulePolicy::new(
         ReminderPolicy {
             zone: chrono_tz::UTC,
             ping_time: chrono::NaiveTime::from_hms_opt(9, 0, 0).expect("valid time"),
@@ -280,8 +278,8 @@ fn schedule_policy() -> kanade::domain::schedule::SchedulePolicy {
     )
 }
 
-fn fixed_run() -> kanade::domain::schedule::NewFixedRun {
-    kanade::domain::schedule::NewFixedRun {
+fn fixed_run() -> kanade_domain::schedule::NewFixedRun {
+    kanade_domain::schedule::NewFixedRun {
         owner_pinned: false,
         owner_id: "2".into(),
         channel_id: Some("900".into()),
@@ -373,7 +371,7 @@ async fn backups_anchor_the_history_and_truncation_is_detected() {
 
 #[tokio::test]
 async fn rows_from_before_the_history_blame_as_unknown() {
-    use kanade::domain::history::{BlameTarget, blame};
+    use kanade_domain::history::{BlameTarget, blame};
 
     let dir = TempDir::new();
     let config = dir.config("imported");
@@ -400,12 +398,12 @@ async fn rows_from_before_the_history_blame_as_unknown() {
     );
     let mut service = service(store);
     service
-        .as_origin(kanade::domain::history::Origin::for_tests())
+        .as_origin(kanade_domain::history::Origin::for_tests())
         .set_rsvp(
             "r-old",
             "1",
-            kanade::domain::schedule::RsvpState::Yes,
-            kanade::domain::schedule::RsvpSource::Chat,
+            kanade_domain::schedule::RsvpState::Yes,
+            kanade_domain::schedule::RsvpSource::Chat,
         )
         .await
         .expect("rsvp");
@@ -439,7 +437,7 @@ async fn pinned_checkpoint(config: &SqliteStoreConfig) {
 
 /// After `sql` forges the checkpoint, verification and a restore refuse it.
 async fn assert_forged_checkpoint_refused(config: &SqliteStoreConfig, sql: &str) {
-    use kanade::domain::history::Checkpoints;
+    use kanade_domain::history::Checkpoints;
     let broken = broken_after(config, sql).await;
     assert!(broken.reason.contains("checkpoint"), "{}", broken.reason);
     let store = SqliteStore::open(config).await.expect("reopens");
@@ -495,13 +493,13 @@ async fn blame_index_and_checkpoints_are_tamper_evident() {
 
 #[tokio::test]
 async fn upgrading_to_the_blame_index_backfills_earlier_records() {
-    use kanade::domain::history::{BlameTarget, blame};
+    use kanade_domain::history::{BlameTarget, blame};
 
     let dir = TempDir::new();
     let config = dir.config("backfill");
     let mut owner = service(SqliteStore::open(&config).await.expect("opens"));
     owner
-        .as_origin(kanade::domain::history::Origin::for_tests())
+        .as_origin(kanade_domain::history::Origin::for_tests())
         .add_fixed_run(fixed_run())
         .await
         .expect("fixed run");

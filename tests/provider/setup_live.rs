@@ -4,8 +4,8 @@
 
 use std::{sync::Arc, time::Duration};
 
-use kanade::api::admin::config::ModelCatalog;
-use kanade::infrastructure::llm::{
+use kanade::app::config::ModelCatalog;
+use kanade_llm::{
     ChatRequest, Effort, Message,
     governor::{QuestionLimits, Refused, Role, SessionFailure, XorShift},
     setup::{
@@ -313,7 +313,7 @@ async fn an_extraction_that_inherits_is_refused_and_nothing_moves() {
 
 #[tokio::test]
 async fn a_saved_rewrite_level_reaches_the_next_rewrite() {
-    use kanade::chat::{
+    use kanade_voice::{
         nudge::{GovernedRewriter, NudgeRewriter, RewritePrompt},
         persona::{CompiledPersona, NudgeMood, PersonaId, parse_bundle},
     };

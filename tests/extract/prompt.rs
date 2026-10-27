@@ -1,10 +1,10 @@
 use chrono::{DateTime, NaiveTime, Weekday};
-use kanade::domain::attendance::AttendanceDefault;
-use kanade::domain::catalog::BossTable;
-use kanade::domain::schedule::{FixedRun, Run};
-use kanade::extract::prompt::{PromptContext, PromptMessage, build_messages, extraction_request};
-use kanade::extract::schema::{AttemptOutcome, ExtractionAttempts, Next};
-use kanade::infrastructure::llm::identity::{Member, PassthroughSession};
+use kanade_domain::attendance::AttendanceDefault;
+use kanade_domain::catalog::BossTable;
+use kanade_domain::schedule::{FixedRun, Run};
+use kanade_extract::prompt::{PromptContext, PromptMessage, build_messages, extraction_request};
+use kanade_extract::schema::{AttemptOutcome, ExtractionAttempts, Next};
+use kanade_llm::identity::{Member, PassthroughSession};
 
 use crate::support::fixture_catalog;
 
@@ -82,8 +82,8 @@ fn raw_fixture() -> (Vec<Member>, Owned) {
         datetime: at("2026-08-31T21:30:00+08:00"),
         bosses: vec!["HMaleficStar".into()],
         participants: participants.iter().map(|m| m.user_id.clone()).collect(),
-        status: kanade::domain::schedule::RunStatus::Planned,
-        source: kanade::domain::schedule::RunSource::Amend,
+        status: kanade_domain::schedule::RunStatus::Planned,
+        source: kanade_domain::schedule::RunSource::Amend,
         attendance: Vec::new(),
         status_pin: None,
     };

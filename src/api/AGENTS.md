@@ -6,3 +6,4 @@
 - chrono's `format()` is not compiled in: format dates by hand (see `admin/config/access.rs`).
 - Fixed-PATCH replay identity is the full normalized incoming form, not a diff against current state (`admin/write/fixed/replay.rs`). Its fixed-only path rechecks the recorded identity after both successful and refused transactions, because the legacy `check_no_op` can swallow an atomic mismatch. Discord digest pins stay unchanged; pre-fix PATCH keys fail closed and need a reload and a fresh key.
 - Check: `cargo test --all-features --test api`.
+- Never import anything from `src/bot/` here; shared code comes from `src/app/`, `src/discord/` and `src/cards/` (see their guides).

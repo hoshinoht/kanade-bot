@@ -104,7 +104,8 @@ export function describe(item: SetupItem, context: CopyContext): SetupRow {
       if (state === 'ok') return row('Connected to Discord.');
       if (reason === 'connecting') return row('Connecting to Discord; refresh in a minute.');
       if (reason === 'gateway_closed') return row('Discord closed the connection, usually over a missing intent; fix that, then restart the bot.', runbook());
-      return row('Not connected to Discord: check the bot token and guild, then restart the bot.', runbook());
+      // gateway_off: this server runs without the bot.
+      return row('The bot isn\'t running on this server: add "bot" to runtime.components in kanade.toml and restart.', runbook());
     case 'discord_intents': {
       if (state === 'ok') return row('Server Members Intent and Message Content Intent are on.');
       if (state === 'warn') return row("Couldn't read the bot's Discord application; refresh to try again.");

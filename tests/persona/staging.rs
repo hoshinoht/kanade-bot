@@ -1,6 +1,6 @@
 //! Strict five-key staging and literal `{boss}` substitution.
 
-use kanade::chat::persona::{
+use kanade_voice::persona::{
     CompiledPersona, MAX_RENDERED_STAGING_CHARS, MAX_STAGING_CHARS, PersonaError, Staging,
     StagingState, YamlIssue, parse_bundle, parse_profile,
 };
@@ -158,7 +158,7 @@ fn boss_substitution_is_literal_and_bounded() {
 
 #[test]
 fn tracked_kanade_staging_is_valid_and_substitutes() {
-    let root = kanade::chat::persona::PersonaRoot::open(&crate::support::tracked_dir()).unwrap();
+    let root = kanade_voice::persona::PersonaRoot::open(&crate::support::tracked_dir()).unwrap();
     let kanade = root.load_bundle(&pid("kanade")).unwrap().value;
     let compiled = CompiledPersona::compile(&kanade, None);
     assert_eq!(

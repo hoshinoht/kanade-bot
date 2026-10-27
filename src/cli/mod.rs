@@ -1,3 +1,4 @@
+#[cfg(feature = "web")]
 pub mod admin;
 pub mod backup;
 pub mod emojis;
@@ -21,7 +22,9 @@ pub enum Command {
     },
     Backup(backup::Args),
     Restore(RestoreOptions),
-    /// `portal …` and `sessions …`: online, through the admin API.
+    /// `portal …` and `sessions …`: online, through the admin API (only a
+    /// build with the web side has its client).
+    #[cfg(feature = "web")]
     Admin(admin::Args),
     TokenRotate(token::Args),
     Models(models::Args),
@@ -46,7 +49,9 @@ pub fn parse(arguments: impl IntoIterator<Item = String>) -> Result<Command, Err
         },
         "backup" => backup::parse(&arguments[1..]).map(Command::Backup),
         "restore" => restore::parse(&arguments[1..]).map(Command::Restore),
+        #[cfg(feature = "web")]
         "portal" => admin::parse_portal(&arguments[1..]).map(Command::Admin),
+        #[cfg(feature = "web")]
         "sessions" => admin::parse_sessions(&arguments[1..]).map(Command::Admin),
         "token" => token::parse(&arguments[1..]).map(Command::TokenRotate),
         _ => Err(usage()),
@@ -72,11 +77,14 @@ fn parse_healthcheck(arguments: &[String]) -> Result<Command, Error> {
 }
 
 fn usage() -> Error {
+    #[cfg(feature = "web")]
+    let admin = format!("{}|", admin::USAGE);
+    #[cfg(not(feature = "web"))]
+    let admin = "";
     Error::Usage(format!(
-        "usage: kanade {{serve [--offline]|healthcheck [--url http://127.0.0.1:8080/healthz]|models check [--probe]|{}|{}|{}|{}|ctl emojis [--dry-run] [--dir PATH]|--version}}",
+        "usage: kanade {{serve [--offline]|healthcheck [--url http://127.0.0.1:8080/healthz]|models check [--probe]|{}|{}|{admin}{}|ctl emojis [--dry-run] [--dir PATH]|--version}}",
         backup::USAGE,
         restore::USAGE,
-        admin::USAGE,
         token::USAGE
     ))
 }

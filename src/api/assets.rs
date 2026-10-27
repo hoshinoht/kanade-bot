@@ -36,12 +36,11 @@ use super::{
     listeners::{Origin, Site},
     state::ApiState,
 };
+use crate::discord::{avatars::Portrait, identity::files::IDENTITY_SUFFIXES};
 
 const ART_SUFFIXES: [&str; 4] = ["png", "webp", "jpg", "jpeg"];
 /// The `animated` kind only; still kinds never serve video.
 const VIDEO_SUFFIXES: [&str; 1] = ["mp4"];
-/// Cached identity art, in lookup order (`bot::identity` writes these).
-pub const IDENTITY_SUFFIXES: [&str; 5] = ["png", "webp", "jpg", "jpeg", "gif"];
 
 #[derive(Clone)]
 struct CachedIdentityImage {
@@ -201,6 +200,14 @@ async fn identity_image(site: &Site, stem: &str, request: &HeaderMap) -> Respons
         ),
         None => etagged("image/svg+xml", WASH.as_bytes().to_vec(), request),
     }
+}
+
+/// The portrait (or the monogram of `name`) with a content ETag; a matching
+/// `If-None-Match` is a 304. Served as an image type only, never sniffed.
+pub fn respond(portrait: Option<Portrait>, name: &str, request: &HeaderMap) -> Response {
+    let (content_type, bytes) =
+        portrait.unwrap_or_else(|| ("image/svg+xml", monogram(name).into_bytes()));
+    etagged(content_type, bytes, request)
 }
 
 /// `bytes` with a content ETag; a matching `If-None-Match` is a 304.

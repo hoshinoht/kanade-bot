@@ -44,7 +44,7 @@
 
 ### Discord delivery
 
-- **Reminder cards:** a day-of card at the configured ping time and countdown pings at configured minutes before each run, in a classic or redesigned message style.
+- **Reminder cards:** a day-of card at the configured ping time and countdown pings at configured minutes before each run.
 - **Weekly digest:** one digest per boss week in the post channel, edited in place as the schedule changes.
 - **Slash commands:** `/schedule`, `/fixed`, `/amend`, `/status`, `/swap`, `/rsvp`, `/pings`, `/style`, `/limits`, `/rescan`, admin-only `/say`, `/nick` and `/debug`, and `/character` with the character data module.
 
@@ -79,10 +79,14 @@ Full behaviour, settings and limits are in [docs/v5/runtime-bootstrap.md](docs/v
 flowchart LR
   discord["Discord gateway and API"]
   subgraph serve["kanade serve"]
-    bot["Discord bot<br/>commands, reactions, chat, extraction"]
-    tick["Scheduler and delivery tick<br/>reminders, digest, notices"]
-    adminl["Admin listener<br/>admin API"]
-    publicl["Public listener<br/>public API"]
+    subgraph botc["bot component"]
+      bot["Discord bot<br/>commands, reactions, chat, extraction"]
+      tick["Scheduler and delivery tick<br/>reminders, digest, notices"]
+    end
+    subgraph webc["web component"]
+      adminl["Admin listener<br/>admin API"]
+      publicl["Public listener<br/>public API"]
+    end
   end
   store[("SQLite store")]
   llm["OpenAI-compatible model gateway"]
@@ -107,6 +111,8 @@ flowchart LR
 ```
 
 `kanade serve` is one process that owns the store; the admin and public routers are built separately, and the public one has no admin route. The dotted parts run only with the character data module. Details: [docs/v5/runtime-bootstrap.md](docs/v5/runtime-bootstrap.md).
+
+The bot and the web side (admin app and member portal) are separate components. `runtime.components` in `kanade.toml` runs both (the default), only the bot, or only the web side; a web-only server keeps its channel lists and staff roster current over Discord's REST API. The `bot` and `web` cargo features build a binary with only one of them ([source layout](docs/v5/runtime-bootstrap.md#source-layout)).
 
 ## Quick start
 
@@ -164,10 +170,12 @@ The admin portal is then at `http://localhost:8080` on the host; sign in with th
 ## Development
 
 ```sh
-cargo fmt --check
-cargo clippy --all-targets --all-features -- -D warnings
-cargo test --locked --all-targets --all-features
+cargo fmt --all --check
+cargo clippy --workspace --all-targets --all-features -- -D warnings
+cargo test --locked --workspace --all-targets --all-features
 cargo build --locked --release
+# one side only:
+cargo build --locked --no-default-features --features bot   # or --features web
 
 cd web && bun install --frozen-lockfile && bun run lint && bun run check && bun run test && bun run build
 ```
@@ -178,12 +186,15 @@ The Rust suite is offline (fake Discord and model providers, temporary stores). 
 
 | Path | Contents |
 |---|---|
-| `src/runtime/` | Command dispatch, configuration, `serve`, backup and restore |
+| `src/runtime/` | Command dispatch, configuration, `serve` (shared core plus `serve/bot` and `serve/web`), backup and restore |
 | `src/cli/` | Command-line parsing and the admin API client for `portal` and `sessions` |
-| `src/bot/` | Discord commands, cards, delivery and the chat and extraction feeds |
-| `src/api/` | Admin and public HTTP routers, authentication and guards |
-| `src/domain/`, `src/extract/`, `src/chat/` | Scheduling rules, extraction rules, chat tools, prompts and personas |
-| `src/infrastructure/` | SQLite store, model client, character data store, NEXON and scouter clients |
+| `src/bot/` | The Discord gateway bot: commands, reactions, delivery and the chat and extraction feeds (feature `bot`) |
+| `src/api/` | Admin and public HTTP routers, authentication and guards (feature `web`) |
+| `src/app/`, `src/discord/`, `src/cards/` | What the bot and web sides share: app services and ports, Discord REST and guild cache, card rendering |
+| `crates/kanade-domain/`, `crates/kanade-log/` | Pure scheduling and settings rules; JSON log lines |
+| `crates/kanade-store/`, `crates/kanade-llm/`, `crates/kanade-files/` | SQLite store and migrations, model gateway client, catalog/art/guide loaders |
+| `crates/kanade-voice/`, `crates/kanade-extract/`, `crates/kanade-chat/` | Personas, prompts and nudges; extraction; the chatbot |
+| `crates/kanade-chardata/` | Character data service, NEXON and scouter clients |
 | `tests/` | Integration suites, one directory per target |
 | `web/` | Bun workspace: `apps/admin`, `apps/public` and shared `packages/` |
 | `examples/e2e_server/` | Dev and browser e2e server for the web apps (`--features test-support`, never shipped) |

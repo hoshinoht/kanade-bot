@@ -1,6 +1,6 @@
 //! The synthetic boss catalog the extraction tests share.
 
-use kanade::domain::catalog::{BossSpec, BossTable, CatalogSpec, DifficultySpec};
+use kanade_domain::catalog::{BossSpec, BossTable, CatalogSpec, DifficultySpec};
 
 /// Malefic Star, First Adversary, Chief Carling, Kalos, Baldrix and Limbo over
 /// five difficulties (e, n, h, c, x).

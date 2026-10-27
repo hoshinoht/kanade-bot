@@ -9,17 +9,18 @@ use std::time::Duration;
 
 use kanade::bot::commands::{DebugCards, HeaderTrialKind, HeaderTrials, PingRequest, TestKind};
 use kanade::bot::delivery::DebugDesk;
-use kanade::bot::delivery::cards::{CardKit, ReminderCardStore};
-use kanade::bot::transport::FakeDiscord;
-use kanade::chat::nudge::{
+use kanade::cards::CardKit;
+use kanade::discord::transport::FakeDiscord;
+use kanade_domain::model_log::{
+    LogPage, RewriteFacets, RewriteFilter, RewriteKind, RewriteLog, RewriteLogStore, RewriteStage,
+};
+use kanade_domain::notify::ReminderCardStore;
+use kanade_domain::scheduler::StoreError;
+use kanade_store::SqliteStore;
+use kanade_voice::nudge::{
     NudgeRewriter, RewriteDetail, RewriteFailure, RewriteOutcome, RewritePrompt, SharedRewriteSink,
     StoreRewriteSink,
 };
-use kanade::domain::model_log::{
-    LogPage, RewriteFacets, RewriteFilter, RewriteKind, RewriteLog, RewriteLogStore, RewriteStage,
-};
-use kanade::domain::scheduler::StoreError;
-use kanade::infrastructure::store::SqliteStore;
 
 use crate::cards::{before_due, created, pregen, rewriting, seed_day_of, world};
 use crate::debug::{desk, star};
@@ -78,7 +79,7 @@ fn over_budget() -> RewriteOutcome {
         detail: RewriteDetail {
             code: Some("budget_exceeded"),
             alias: Some("kanata/rewrite".into()),
-            usage: Some(kanade::infrastructure::llm::Usage {
+            usage: Some(kanade_llm::Usage {
                 prompt_tokens: 300,
                 completion_tokens: 112,
                 cached_tokens: Some(256),

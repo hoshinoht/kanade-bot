@@ -1,4 +1,4 @@
-use kanade::infrastructure::llm::{
+use kanade_llm::{
     ChatRequest, CompletionResponse, ErrorCode, ExecutionLimits, FakeAction, FinishReason, Message,
     ToolCallRequest, ToolDefinition,
 };

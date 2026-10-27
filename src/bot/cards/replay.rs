@@ -8,17 +8,16 @@ use twilight_model::id::{Id, marker::UserMarker};
 
 use super::react::{CHANGED_SINCE_CARD, OUT_OF_DATE_NOTICE};
 use super::{CardDesk, CardReaction};
+use crate::app::ids::{id_text, parse_id};
 use crate::bot::delivery::AlertSink;
-use crate::bot::delivery::cards::redesign::known_or_fetched;
 use crate::bot::events::RsvpAnswer;
-use crate::bot::ids::{id_text, parse_id};
 use crate::bot::reaction_read;
-use crate::bot::transport::DiscordTransport;
-use crate::domain::drafts::{DraftStatus, ProposalStore};
-use crate::domain::notify::{DeclineNoticeStore, DeliveryJournal};
-use crate::domain::proposals::{ProposalCardStore, StoredCard};
-use crate::domain::scheduler::{IdSource, ScheduleStore};
-use crate::runtime::logging;
+use crate::cards::redesign::known_or_fetched;
+use crate::discord::transport::DiscordTransport;
+use kanade_domain::drafts::{DraftStatus, ProposalStore};
+use kanade_domain::notify::{DeclineNoticeStore, DeliveryJournal};
+use kanade_domain::proposals::{ProposalCardStore, StoredCard};
+use kanade_domain::scheduler::{IdSource, ScheduleStore};
 
 pub const OFFLINE_CONFLICT_NOTICE: &str = "⚠️ Both ✅ and ❌ were added while Kanade was offline. An approver should remove and re-add the intended one.";
 
@@ -228,7 +227,7 @@ where
                             changed_note = true;
                             if reported_conflicts.insert(card.proposal_id.clone()) {
                                 report.conflicts += 1;
-                                logging::log!(
+                                kanade_log::log!(
                                     warn,
                                     "proposal_replay_conflict",
                                     message_id = message,
@@ -282,7 +281,7 @@ where
                         }
                         _ => "ignored",
                     };
-                    logging::log!(
+                    kanade_log::log!(
                         info,
                         "proposal_replay_answer",
                         message_id = message,
@@ -316,7 +315,7 @@ fn live_retry(message: &str, retry: usize, report: &mut ReplayReport) {
 }
 
 fn finished(report: &ReplayReport) {
-    logging::log!(
+    kanade_log::log!(
         if report.aborted { "WARN" } else { "INFO" },
         if report.aborted {
             "proposal_replay_aborted"
@@ -332,7 +331,7 @@ fn finished(report: &ReplayReport) {
 }
 
 fn skipped(message: Option<&str>, reason: &str) {
-    logging::log!(
+    kanade_log::log!(
         warn,
         "proposal_replay_skipped",
         message_id = message,
@@ -341,5 +340,5 @@ fn skipped(message: Option<&str>, reason: &str) {
 }
 
 fn v2_ignored(message: &str) {
-    logging::log!(info, "proposal_replay_v2_card", message_id = message);
+    kanade_log::log!(info, "proposal_replay_v2_card", message_id = message);
 }

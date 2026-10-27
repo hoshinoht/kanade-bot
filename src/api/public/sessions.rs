@@ -12,22 +12,24 @@ use axum::{
     response::{IntoResponse, Response},
 };
 
-use crate::api::{
-    auth::{
-        audit::AuditContext,
-        crypto,
-        csrf::CSRF_HEADER,
-        member::{EndError, MemberAuth, MemberSession, SESSION_SAME_SITE},
-        wire::{self, MEMBER_SESSION_COOKIE},
+use crate::{
+    api::{
+        assets::respond,
+        auth::{
+            audit::AuditContext,
+            csrf::CSRF_HEADER,
+            member::{EndError, MemberAuth, MemberSession, SESSION_SAME_SITE},
+            wire::{self, MEMBER_SESSION_COOKIE},
+        },
+        dto::{
+            account::SessionsEnded,
+            iso_instant,
+            public::{PublicMember, PublicSession, PublicSessionRow, PublicSessions},
+        },
+        error::ApiError,
+        listeners::Site,
     },
-    avatars::{AvatarRef, respond},
-    dto::{
-        account::SessionsEnded,
-        iso_instant,
-        public::{PublicMember, PublicSession, PublicSessionRow, PublicSessions},
-    },
-    error::ApiError,
-    listeners::Site,
+    app::{crypto, guild::AvatarRef},
 };
 
 fn member(site: &Site) -> Result<&MemberAuth, ApiError> {

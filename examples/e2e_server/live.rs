@@ -30,22 +30,24 @@ use kanade::{
     api::{
         assets,
         auth::{
-            self, Clock, crypto,
+            self,
             fake::FakeDiscord,
             wire::{self, query_pairs, query_value},
         },
         listeners::{Site, router},
         server::LiveAdmin,
     },
-    infrastructure::store::{SqliteStore, SqliteStoreConfig},
+    app::{clock::Clock, crypto},
     runtime::{
         config::ServeConfig,
         serve::{
             CharacterDataModule,
-            api::{Composition, Overrides, TestComposition, compose_for_tests},
+            composition::Composition,
+            web::api::{Overrides, TestComposition, compose_for_tests},
         },
     },
 };
+use kanade_store::{SqliteStore, SqliteStoreConfig};
 use tokio::net::{TcpListener, TcpStream};
 
 use crate::{
@@ -147,7 +149,7 @@ pub struct Generation {
     character_data: Option<CharacterDataModule>,
     bot: Option<Bot>,
     /// This generation's fake Discord (the Discord side's transport).
-    discord: Arc<kanade::bot::transport::FakeDiscord>,
+    discord: Arc<kanade::discord::transport::FakeDiscord>,
     /// Module `guides`: its publisher over `discord`.
     guides: Option<GuideSide>,
 }

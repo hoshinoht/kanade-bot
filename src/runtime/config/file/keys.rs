@@ -14,6 +14,8 @@ pub(super) enum Kind {
     Ids,
     /// List of strings without commas.
     Texts,
+    /// Non-empty list of strings without commas.
+    NonEmptyTexts,
     /// `[[models.groups]]`, encoded as JSON.
     Groups,
     /// `[models.capabilities]` (alias → capability table), encoded as JSON;
@@ -24,6 +26,7 @@ pub(super) enum Kind {
 use Kind::*;
 
 pub(in crate::runtime::config) const KEYS: &[(&str, &str, Kind)] = &[
+    ("runtime.components", "KANADE_COMPONENTS", NonEmptyTexts),
     ("runtime.timezone", "KANADE_TIMEZONE", Text),
     ("runtime.instance_id", "KANADE_INSTANCE_ID", Text),
     ("runtime.tick_seconds", "KANADE_TICK_SECONDS", Int),
@@ -47,7 +50,6 @@ pub(in crate::runtime::config) const KEYS: &[(&str, &str, Kind)] = &[
         "KANADE_BOSS_WEEK_RESET_TIME",
         Text,
     ),
-    ("discord.gateway", "KANADE_DISCORD_GATEWAY", Flag),
     ("discord.guild_id", "KANADE_GUILD_ID", Id),
     ("discord.bossing_role_id", "KANADE_BOSSING_ROLE_ID", Id),
     ("discord.admin_role_id", "KANADE_ADMIN_ROLE_ID", Id),
@@ -276,6 +278,15 @@ pub(in crate::runtime::config) const RETIRED: &[(&str, &str)] = &[
     (
         "settings.boss_week_reset_time",
         "it moved to `runtime.boss_week_reset_time`",
+    ),
+    // Replaced by the component list.
+    (
+        "discord.gateway",
+        "replaced by `runtime.components` (`[\"web\"]` runs without the bot)",
+    ),
+    (
+        "KANADE_DISCORD_GATEWAY",
+        "replaced by KANADE_COMPONENTS (`web` runs without the bot)",
     ),
     // Model calls are never masked.
     (

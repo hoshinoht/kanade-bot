@@ -18,16 +18,15 @@ use twilight_model::id::{
     marker::{ApplicationMarker, GuildMarker, UserMarker},
 };
 
-use crate::api::auth::Clock;
+use crate::app::clock::Clock;
 use crate::bot::chat_feed::ChatFeed;
 use crate::bot::commands::{Dispatcher, Disposition};
 use crate::bot::events::{BotEvent, EventHandler, RsvpReaction, rsvp_reaction};
 use crate::bot::extract_feed::{FeedItem, MessageFeed};
 use crate::bot::gateway::ConnectionStatus;
 use crate::bot::roster::RosterJob;
-use crate::bot::transport::{DiscordTransport, Outcome};
-use crate::domain::members::Directory;
-use crate::runtime::logging;
+use crate::discord::transport::{DiscordTransport, Outcome};
+use kanade_domain::members::Directory;
 
 pub use reactions::{PressJob, Reacted, Reactions, press_port};
 
@@ -160,7 +159,7 @@ impl<T: DiscordTransport + 'static> Fanout<T> {
             for task in pending {
                 let _ = task.await;
             }
-            logging::log!(warn, "gateway_tasks_aborted", tasks = count);
+            kanade_log::log!(warn, "gateway_tasks_aborted", tasks = count);
         }
     }
 
@@ -181,9 +180,9 @@ impl<T: DiscordTransport + 'static> Fanout<T> {
             let outcome = transport.register_guild_commands(guild, &commands).await;
             let names: Vec<String> = commands.into_iter().map(|command| command.name).collect();
             if outcome.is_delivered() {
-                logging::log!(info, "commands_registered", commands = names);
+                kanade_log::log!(info, "commands_registered", commands = names);
             } else {
-                logging::log!(
+                kanade_log::log!(
                     warn,
                     "commands_register_failed",
                     outcome = format!("{outcome:?}"),
@@ -211,7 +210,7 @@ impl<T: DiscordTransport + 'static> Fanout<T> {
         let dispatcher = match &self.dispatcher {
             Some(dispatcher) if self.is_ours(&interaction) => Arc::clone(dispatcher),
             _ => {
-                logging::log!(info, "interaction_ignored");
+                kanade_log::log!(info, "interaction_ignored");
                 return;
             }
         };
@@ -228,7 +227,7 @@ impl<T: DiscordTransport + 'static> Fanout<T> {
                     Disposition::Failed(_) => "WARN",
                     _ => "INFO",
                 };
-                logging::event(
+                kanade_log::event(
                     level,
                     "interaction_handled",
                     handled_fields(&disposition, &outcome),
@@ -267,7 +266,7 @@ impl<T: DiscordTransport + 'static> EventHandler for Fanout<T> {
                     self.dispatcher = Some((self.commands)(Some(name)));
                 }
                 self.sync_pending = true;
-                logging::log!(info, "gateway_ready");
+                kanade_log::log!(info, "gateway_ready");
             }
             BotEvent::GuildAvailable {
                 owner_id,
@@ -288,7 +287,7 @@ impl<T: DiscordTransport + 'static> EventHandler for Fanout<T> {
                         });
                     }
                     self.guild_ready.send_replace(true);
-                    logging::log!(info, "guild_available");
+                    kanade_log::log!(info, "guild_available");
                 } else {
                     let _ = self.roster.send(RosterJob::GuildAvailable {
                         owner_id,

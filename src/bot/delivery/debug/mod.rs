@@ -22,7 +22,6 @@
 
 mod header;
 mod sample;
-mod store;
 mod text;
 
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -33,36 +32,33 @@ use tokio::time::Instant;
 
 pub use header::{code_span, verdict_text};
 pub use sample::{SAMPLE_RUN_ID, sample_schedule};
-pub use store::{DebugCardStore, PostedDebugCard};
 
 use super::alerts::{AlertThrottle, LogAlerts};
-use super::cards::{
-    self, CardContext, CardKit, HeaderKind, PhraseKind, TrialOrigin, Verdict, fetch_art,
-};
-use super::estimates::attach_chart;
 use super::executor::{Executor, SendOutcome};
-use super::notice_text::QUIET_NOTE;
 use super::pregen::PREGEN_DEADLINE;
 use super::refresh::Now;
-use crate::bot::commands::text::local_day;
+use crate::app::ids::parse_id;
 use crate::bot::commands::{
     DebugCards, HeaderNote, HeaderRequest, HeaderTrialKind, HeaderTrials, PingRequest, PortFuture,
     TestKind, TestPosted, TestReport, TestSubject,
 };
-use crate::bot::ids::parse_id;
-use crate::bot::mentions;
-use crate::bot::transport::{DiscordTransport, Outcome, OutgoingMessage, RejectionKind};
-use crate::domain::members::Directory;
-use crate::domain::model_log::RewriteStage;
-use crate::domain::notify::{
-    ChannelChoice, ChannelDirectory, DeliveryJournal, DeliveryTarget, EffectKind, IntentContent,
-    NotificationIntent, PingKind, PlannedSend, SendDisposition, WeekReset, choose_channel,
-    digest_inclusion, resolve_mentions, sandbox_kind,
+use crate::cards::estimates::attach_chart;
+use crate::cards::text::local_day;
+use crate::cards::{
+    self, CardContext, CardKit, HeaderKind, PhraseKind, TrialOrigin, Verdict, fetch_art,
 };
-use crate::domain::schedule::{Run, SchedulePolicy, ScheduleSnapshot};
-use crate::domain::scheduler::{ScheduleStore, Scope};
-use crate::domain::settings::MessageStyle;
-use crate::domain::time::to_iso;
+use crate::discord::mentions;
+use crate::discord::transport::{DiscordTransport, Outcome, OutgoingMessage, RejectionKind};
+use kanade_domain::members::Directory;
+use kanade_domain::model_log::RewriteStage;
+use kanade_domain::notify::{
+    ChannelChoice, ChannelDirectory, DebugCardStore, DeliveryJournal, DeliveryTarget, EffectKind,
+    IntentContent, NotificationIntent, PingKind, PlannedSend, SendDisposition, WeekReset,
+    choose_channel, digest_inclusion, resolve_mentions, sandbox_kind,
+};
+use kanade_domain::schedule::{Run, SchedulePolicy, ScheduleSnapshot};
+use kanade_domain::scheduler::{ScheduleStore, Scope};
+use kanade_domain::time::to_iso;
 
 /// v4 `TEST_PREFIX`.
 pub const TEST_PREFIX: &str = "🧪 TEST — ";
@@ -75,7 +71,6 @@ struct Shown<'a> {
     run: Option<&'a Run>,
     /// The digest's boss week.
     week: DateTime<Utc>,
-    style: MessageStyle,
     /// A fresh rewrite; `None` is the seed.
     header: Option<&'a str>,
 }
@@ -201,7 +196,6 @@ where
             schedule: &schedule,
             run,
             week,
-            style: request.style.unwrap_or_else(|| self.cards.style()),
             header: header.as_deref(),
         };
         let mut message = self
@@ -352,8 +346,7 @@ where
         }
     }
 
-    /// The real message of `kind`, prefixed; plain texts carry v4's quiet
-    /// line while quiet (cards never announce it).
+    /// The real message of `kind`, prefixed.
     async fn render(
         &self,
         shown: &Shown<'_>,
@@ -364,12 +357,10 @@ where
     ) -> Result<OutgoingMessage, String> {
         let ctx = CardContext {
             schedule: shown.schedule,
-            attendance: self.policy.attendance,
             zone: self.policy.zone(),
             quiet,
             members: &*self.members,
             catalog: self.cards.catalog.as_deref(),
-            style: shown.style,
             marks: &self.cards.marks,
             v2: Some(&self.cards.v2),
         };
@@ -428,13 +419,9 @@ where
             });
             text::decline_text(&ctx, run, mentioned, requested_by, &name)
         } else {
-            text::amend_text(&ctx, run, mentioned)
+            text::amend_text(&ctx, run, mentioned).ok_or("no amend notice")?
         };
-        let mut content = format!("{TEST_PREFIX}{text}");
-        if quiet {
-            // v4 `formatting.quieted` for a message without an embed.
-            content = format!("{content}\n_{QUIET_NOTE}_");
-        }
+        let content = format!("{TEST_PREFIX}{text}");
         Ok(OutgoingMessage {
             content: Some(content),
             embeds: Vec::new(),

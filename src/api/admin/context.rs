@@ -7,24 +7,22 @@ use std::{collections::BTreeMap, sync::Arc};
 use axum::http::Uri;
 use chrono::{DateTime, Utc};
 
-use crate::{
-    api::{
-        auth::wire,
-        dto::{
-            Art, dow, hhmm,
-            week::{Context, WeekFrame},
-        },
-        error::ApiError,
-        listeners::Site,
-        state::ApiState,
+use crate::api::{
+    auth::wire,
+    dto::{
+        Art, dow, hhmm,
+        week::{Context, WeekFrame},
     },
-    domain::{
-        completion::RunEnds,
-        members::{MemberProfile, Roster},
-        schedule::{ScheduleSnapshot, utc_instant},
-        scheduler::{Scope, StoreError},
-        settings::RunLengths,
-    },
+    error::ApiError,
+    listeners::Site,
+    state::ApiState,
+};
+use kanade_domain::{
+    completion::RunEnds,
+    members::{MemberProfile, Roster},
+    schedule::{ScheduleSnapshot, utc_instant},
+    scheduler::{Scope, StoreError},
+    settings::RunLengths,
 };
 
 pub fn state(site: &Site) -> Result<&Arc<ApiState>, ApiError> {

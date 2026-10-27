@@ -11,7 +11,7 @@ use std::{
     process::{Command, Output, Stdio},
 };
 
-use kanade::infrastructure::store::{BackupManifest, SqliteStore, SqliteStoreConfig};
+use kanade_store::{BackupManifest, SqliteStore, SqliteStoreConfig};
 use sqlx::{ConnectOptions, sqlite::SqliteConnectOptions};
 
 pub(super) struct TempDir(pub(super) PathBuf);

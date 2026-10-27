@@ -4,7 +4,7 @@
 
 use serde::Serialize;
 
-crate::domain::spelled! {
+kanade_domain::spelled! {
     /// One checklist item; [`SetupItemId::ALL`] is the answer's order,
     /// required items first.
     #[derive(Serialize)]
@@ -46,7 +46,7 @@ impl SetupItemId {
     }
 }
 
-crate::domain::spelled! {
+kanade_domain::spelled! {
     #[derive(Serialize)]
     #[cfg_attr(test, derive(ts_rs::TS))]
     #[serde(rename_all = "snake_case")]
@@ -60,7 +60,7 @@ crate::domain::spelled! {
     }
 }
 
-crate::domain::spelled! {
+kanade_domain::spelled! {
     /// Where an item's value comes from.
     #[derive(Serialize)]
     #[cfg_attr(test, derive(ts_rs::TS))]
@@ -77,14 +77,14 @@ crate::domain::spelled! {
     }
 }
 
-crate::domain::spelled! {
+kanade_domain::spelled! {
     /// Why an item is not `ok`; on an `ok` item, a note (`no_listing`).
     #[derive(Serialize)]
     #[cfg_attr(test, derive(ts_rs::TS))]
     #[serde(rename_all = "snake_case")]
     SetupReason {
-        /// The Discord gateway is switched off (`KANADE_DISCORD_GATEWAY=0`)
-        /// or the server runs offline.
+        /// The bot does not run on this server (`runtime.components` has no
+        /// `bot`) or the server runs offline.
         GatewayOff => "gateway_off",
         /// The gateway is connecting or reconnecting.
         Connecting => "connecting",
@@ -118,7 +118,7 @@ crate::domain::spelled! {
     }
 }
 
-crate::domain::spelled! {
+kanade_domain::spelled! {
     /// A privileged gateway intent the bot needs (Developer Portal, Bot page).
     #[derive(Serialize)]
     #[cfg_attr(test, derive(ts_rs::TS))]
@@ -256,7 +256,7 @@ impl SetupItem {
     }
 }
 
-crate::domain::spelled! {
+kanade_domain::spelled! {
     /// A secret Setup may save (`runtime::secrets::SAVEABLE`, same order).
     #[derive(Serialize)]
     #[cfg_attr(test, derive(ts_rs::TS))]
@@ -270,7 +270,7 @@ crate::domain::spelled! {
     }
 }
 
-crate::domain::spelled! {
+kanade_domain::spelled! {
     /// Where a secret is set.
     #[derive(Serialize)]
     #[cfg_attr(test, derive(ts_rs::TS))]
@@ -285,7 +285,7 @@ crate::domain::spelled! {
     }
 }
 
-crate::domain::spelled! {
+kanade_domain::spelled! {
     /// What checking a candidate secret found.
     #[derive(Serialize)]
     #[cfg_attr(test, derive(ts_rs::TS))]

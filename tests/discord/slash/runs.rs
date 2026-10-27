@@ -3,10 +3,10 @@
 
 use serde_json::json;
 
-use kanade::domain::history::{Actor, ChangeHistory, Surface};
-use kanade::domain::notify::NoticeOutbox;
-use kanade::domain::schedule::{NoticeChange, RsvpState, RunStatus};
-use kanade::domain::scheduler::{ScheduleStore, Scope};
+use kanade_domain::history::{Actor, ChangeHistory, Surface};
+use kanade_domain::notify::NoticeOutbox;
+use kanade_domain::schedule::{NoticeChange, RsvpState, RunStatus};
+use kanade_domain::scheduler::{ScheduleStore, Scope};
 
 use super::super::support::{ADMIN_ROLE, BOSSING_ROLE};
 use super::{ALICE, BOB, DAN, KALOS, R_DONE, R_KALOS, R_NEXT, Slash, focused, opt, user_opt};

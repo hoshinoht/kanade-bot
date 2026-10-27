@@ -5,7 +5,6 @@
 //! Presses of the bot's Components V2 buttons are dispatched here too
 //! (`components.rs`).
 
-mod access;
 mod build;
 mod character;
 mod components;
@@ -26,11 +25,9 @@ mod runs;
 mod say;
 mod schedule;
 mod split;
-pub(crate) mod text;
 
 use std::sync::Arc;
 
-pub use access::{AccessPolicy, Denial, Gate, Invoker};
 pub use character::{CANCEL_PRESS, CharacterCommand, CharacterParts, LINK_PRESS};
 pub use components::{CardPresses, INACTIVE, NOT_YOURS, Press};
 pub use context::{
@@ -55,7 +52,7 @@ pub use say::{SAY_LIMIT, SayCommand, mentioned_users};
 pub use schedule::ScheduleCommand;
 pub use split::{CONTENT_LIMIT, fit_embed, split_lines, split_reply};
 
-use crate::bot::transport::DiscordTransport;
+use crate::discord::transport::DiscordTransport;
 
 /// Every retained command, in v4's registration order (dropped and merged
 /// commands are absent). `serve` registers `definitions()` for the guild only.

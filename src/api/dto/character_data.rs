@@ -5,11 +5,11 @@
 use serde::Serialize;
 
 use super::{history::SettingsActor, iso_instant};
-use crate::domain::chardata::{
+use kanade_chardata::character_data::{Found, Health, LinkView};
+use kanade_domain::chardata::{
     ATTRIBUTION, ConsentSurface, Link, LinkStatus, NOTICE_VERSION, SNAPSHOT_TTL, Snapshot,
     date_text,
 };
-use crate::infrastructure::character_data::{Found, Health, LinkView};
 
 #[derive(Serialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
@@ -277,7 +277,7 @@ pub struct PostIssueItem {
 pub fn health(
     health: &Health,
     guild_id: Option<&str>,
-    settings: crate::domain::settings::CharacterData,
+    settings: kanade_domain::settings::CharacterData,
 ) -> CharacterDataHealth {
     CharacterDataHealth {
         nexon: health.nexon.as_str(),

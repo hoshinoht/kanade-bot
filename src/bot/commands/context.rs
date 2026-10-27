@@ -11,21 +11,20 @@ use std::sync::Arc;
 use chrono::{DateTime, Utc};
 use twilight_model::id::{Id, marker::InteractionMarker};
 
-use super::access::Invoker;
 use super::dispatch::CommandError;
-use crate::api::admin::config::ConfigDesk;
-use crate::api::rescan::RescanRunner;
-use crate::api::state::{DeclineRetraction, GuildAccess, ReadStore};
-use crate::api::write::{WriteContext, Writer};
-use crate::bot::guild_cache::GuildCache;
-use crate::bot::ids::{id_text, parse_id};
-use crate::chat::pilot::AllowanceSnapshot;
-use crate::domain::catalog::BossTable;
-use crate::domain::history::{Actor, Origin, Surface};
-use crate::domain::members::{GatewayMember, MemberProfile, MemberStore, Roster};
-use crate::domain::schedule::{RunStatus, SchedulePolicy};
-use crate::domain::scheduler::StoreError;
-use crate::domain::settings::MessageStyle;
+use crate::app::access::Invoker;
+use crate::app::config::ConfigDesk;
+use crate::app::ids::{id_text, parse_id};
+use crate::app::rescan::RescanRunner;
+use crate::app::write::{WriteContext, Writer};
+use crate::app::{guild::GuildAccess, ports::DeclineRetraction, read::ReadStore};
+use crate::discord::guild_cache::GuildCache;
+use kanade_chat::pilot::AllowanceSnapshot;
+use kanade_domain::catalog::BossTable;
+use kanade_domain::history::{Actor, Origin, Surface};
+use kanade_domain::members::{GatewayMember, MemberProfile, MemberStore, Roster};
+use kanade_domain::schedule::{RunStatus, SchedulePolicy};
+use kanade_domain::scheduler::StoreError;
 
 pub type PortFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 
@@ -99,7 +98,7 @@ pub trait ChatAllowance: Send + Sync {
     fn snapshot(&self) -> AllowanceSnapshot;
 }
 
-crate::domain::spelled! {
+kanade_domain::spelled! {
     /// Which test message `/debug ping` posts (v4's kinds plus `digest`).
     TestKind {
         DayOf => "day_of",
@@ -145,8 +144,6 @@ pub struct PingRequest {
     pub channel: Option<String>,
     /// Where the command was used (samples' default).
     pub invoked_in: Option<String>,
-    /// Overrides the live message style for this post only.
-    pub style: Option<MessageStyle>,
     /// Rewrite the header now instead of using the seed.
     pub rewrite: bool,
 }
@@ -160,7 +157,6 @@ impl PingRequest {
             requested_by,
             channel: None,
             invoked_in: None,
-            style: None,
             rewrite: false,
         }
     }
@@ -195,7 +191,7 @@ pub struct TestReport {
     pub header: Option<HeaderNote>,
 }
 
-crate::domain::spelled! {
+kanade_domain::spelled! {
     /// Which header `/debug header` rewrites.
     HeaderTrialKind {
         DayOf => "day_of",
@@ -266,7 +262,7 @@ pub struct CommandContext {
     pub writer: Arc<dyn Writer>,
     pub members: Arc<dyn MemberRows>,
     /// Run completion prompts, which their buttons answer.
-    pub run_prompts: Arc<dyn crate::domain::completion::RunPromptStore>,
+    pub run_prompts: Arc<dyn kanade_domain::completion::RunPromptStore>,
     pub policy: SchedulePolicy,
     pub catalog: Arc<BossTable>,
     pub channels: Arc<dyn GuildChannels>,
@@ -283,7 +279,7 @@ pub struct CommandContext {
     /// Live best-effort decline retraction; absent in offline composition.
     pub decline_retraction: Option<DeclineRetraction>,
     /// `/debug rewrite`'s manual header rewrite; absent offline.
-    pub header_rewrite: Option<crate::api::state::HeaderRewritePort>,
+    pub header_rewrite: Option<crate::app::ports::HeaderRewritePort>,
     /// The bot's own name for access problems (v4 falls back to "the bot").
     pub bot_name: Option<String>,
     pub clock: Clock,

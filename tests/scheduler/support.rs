@@ -5,17 +5,17 @@
 
 use chrono::{DateTime, FixedOffset, NaiveTime, TimeDelta, TimeZone, Utc, Weekday};
 use chrono_tz::Asia::Kuala_Lumpur;
-use kanade::domain::drafts::{DraftOp, Target};
-use kanade::domain::history::Origin;
-use kanade::domain::ids::{IdGenerator, RandomIds};
-use kanade::domain::members::{Directory, Member};
-use kanade::domain::notify::ChannelDirectory;
-use kanade::domain::schedule::{
+use kanade_domain::drafts::{DraftOp, Target};
+use kanade_domain::history::Origin;
+use kanade_domain::ids::{IdGenerator, RandomIds};
+use kanade_domain::members::{Directory, Member};
+use kanade_domain::notify::ChannelDirectory;
+use kanade_domain::schedule::{
     NewFixedRun, ReminderPolicy, RsvpSource, RsvpState, RunSource, RunStatus, SchedulePolicy,
     ScheduleSnapshot,
 };
-use kanade::domain::scheduler::{Attributed, Clock, ScheduleStore, SchedulerService, Scope};
-use kanade::infrastructure::store::SqliteStore;
+use kanade_domain::scheduler::{Attributed, Clock, ScheduleStore, SchedulerService, Scope};
+use kanade_store::SqliteStore;
 
 use crate::common::TestClock;
 

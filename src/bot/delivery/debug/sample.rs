@@ -4,8 +4,8 @@
 use chrono::{DateTime, Utc};
 
 use crate::bot::commands::SampleRun;
-use crate::domain::notify::WeekReset;
-use crate::domain::schedule::{
+use kanade_domain::notify::WeekReset;
+use kanade_domain::schedule::{
     Rsvp, RsvpSource, RsvpState, Run, RunSource, SchedulePolicy, ScheduleSnapshot,
 };
 

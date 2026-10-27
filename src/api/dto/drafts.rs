@@ -13,7 +13,7 @@ use super::{
     week::Context,
     when,
 };
-use crate::domain::{
+use kanade_domain::{
     drafts::{
         DraftOp, DraftScope, DraftStatus, Entity, LoadedDraft, MergeConflict, Removal, StagedOp,
         Target,
@@ -579,13 +579,13 @@ pub fn preview(ctx: &Context<'_>, preview: &DraftPreview) -> Result<DraftPreview
     })
 }
 
-fn row_change(change: &crate::domain::history::RowChange) -> Result<RowChange, RecordError> {
+fn row_change(change: &kanade_domain::history::RowChange) -> Result<RowChange, RecordError> {
     diff::row(change)
 }
 
 /// A write's answer for `draft` as the write left it.
 pub fn written(
-    draft: &crate::domain::drafts::StoredDraft,
+    draft: &kanade_domain::drafts::StoredDraft,
     seq: Option<u64>,
     message: String,
 ) -> DraftWritten {

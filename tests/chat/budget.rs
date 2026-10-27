@@ -5,16 +5,16 @@
 use std::sync::Arc;
 
 use chrono::Utc;
-use kanade::chat::answer::{
+use kanade_chat::answer::{
     AnswerDeps, AnswerFailure, CONTEXT_BUDGET_REPLY, Generation, Question, answer, chat_outcome,
     interaction,
 };
-use kanade::chat::context::ContextBudgetError;
-use kanade::chat::tools::ToolContext;
-use kanade::chat::tools::bundles::{Bundle, ToolOffer};
-use kanade::domain::model_log::ChatOutcome;
-use kanade::domain::scheduler::Clock;
-use kanade::infrastructure::llm::{FakeAction, FakeProvider};
+use kanade_chat::context::ContextBudgetError;
+use kanade_chat::tools::ToolContext;
+use kanade_chat::tools::bundles::{Bundle, ToolOffer};
+use kanade_domain::model_log::ChatOutcome;
+use kanade_domain::scheduler::Clock;
+use kanade_llm::{FakeAction, FakeProvider};
 
 use crate::looping::{Ports, conversation, said, settings};
 use crate::model::{Scripted, capabilities, client, wants};

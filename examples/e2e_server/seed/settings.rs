@@ -4,8 +4,9 @@
 use std::{fs, io, path::Path};
 
 use chrono::NaiveTime;
-use kanade::domain::settings::{
-    Chatbot, Persona, Pings, Profanity, RoleProfileAssignment, Section, SelfService, save_section,
+use kanade_domain::settings::{
+    Chatbot, Notifications, Persona, Pings, Profanity, RoleProfileAssignment, Section, SelfService,
+    save_section,
 };
 
 use super::{Seed, members::STAFF_ROLE};
@@ -92,6 +93,13 @@ pub async fn seed(seed: &Seed<'_>) -> Result<(), Fail> {
         Section::Pings(Pings {
             day_of_ping_time: NaiveTime::from_hms_opt(9, 0, 0).ok_or("09:00")?,
             countdown_minutes: vec![60, 15],
+        }),
+        // The header batch at 18:00, after the pinned noon and before the
+        // first countdown (21:00): a generation starting at noon has no batch
+        // due and nothing to catch up on, so no rewrite runs behind a spec.
+        Section::Notifications(Notifications {
+            header_generation_time: NaiveTime::from_hms_opt(18, 0, 0).ok_or("18:00")?,
+            ..Notifications::default()
         }),
         Section::Chatbot(Chatbot {
             enabled: true,

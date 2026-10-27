@@ -7,20 +7,20 @@ use std::{net::SocketAddr, sync::Arc, time::Duration};
 use chrono::{TimeDelta, TimeZone, Utc};
 use kanade::{
     api::server::{LiveAdmin, serve},
-    domain::{
-        drafts::ProposalSource,
-        members::MemberStore,
-        notify::{
-            Claim, DeliveryJournal, DeliveryTarget, EffectKind, IntentContent, NotificationIntent,
-            Receipt,
-        },
-        proposals::{ChangeKind, ProposedChange},
-        scheduler::{ProposalRequest, Supersede},
-    },
     runtime::{
         application::{HealthFuture, HealthProbe, OfflineApplication},
         config::{HttpConfig, RuntimeConfig},
     },
+};
+use kanade_domain::{
+    drafts::ProposalSource,
+    members::MemberStore,
+    notify::{
+        Claim, DeliveryJournal, DeliveryTarget, EffectKind, IntentContent, NotificationIntent,
+        Receipt,
+    },
+    proposals::{ChangeKind, ProposedChange},
+    scheduler::{ProposalRequest, Supersede},
 };
 use serde_json::{Value, json};
 use tokio::{
@@ -520,7 +520,7 @@ async fn member_edits_hint_members_and_identical_roster_syncs_do_not() {
     let bob = reads.store.load_member("1002").await.unwrap().unwrap();
     reads
         .store
-        .apply_gateway(kanade::domain::members::GatewayMember {
+        .apply_gateway(kanade_domain::members::GatewayMember {
             user_id: bob.member.user_id.clone(),
             display_name: bob.member.display_name.clone(),
             nickname: bob.member.nickname.clone(),

@@ -4,10 +4,8 @@
 use axum::http::StatusCode as S;
 
 use super::super::write::{Refusal, scheduler};
-use crate::{
-    api::error::ApiError,
-    domain::scheduler::{DraftError, SchedulerError},
-};
+use crate::api::error::ApiError;
+use kanade_domain::scheduler::{DraftError, SchedulerError};
 
 pub fn not_found() -> Refusal {
     Refusal::not_found("not_found", "You have no draft with that id.")

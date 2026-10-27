@@ -76,6 +76,8 @@
   const bossTitle = (boss: Boss) => `${boss.name} ${DIFFICULTY_WORDS[boss.difficulty]}`;
   const totalBosses = $derived(run.bosses.map((boss) => ({ token: boss.token, title: bossTitle(boss) })));
   const multi = $derived(run.bosses.length > 1);
+  // An ended (frozen) run refuses party changes; character picks are not frozen.
+  const endedWhy = $derived(run.ended ? 'This run has ended.' : undefined);
 
   type Cell = {
     i: number;
@@ -459,7 +461,7 @@
                 <span class="bossgrid__id"
                   ><span class="slot__mark" aria-hidden="true">{ANSWER_MARKS[person.answer].mark}</span><b class="slot__name">{who(person)}</b><span class="slot__state"
                     >{ANSWER_MARKS[person.answer].word}</span
-                  ><button type="button" class="chip__x slot__x" aria-label="Take {who(person)} off this run for this week only" disabled={busy} onclick={() => onremove(person)}
+                  ><button type="button" class="chip__x slot__x" aria-label="Take {who(person)} off this run for this week only" title={endedWhy} disabled={busy || run.ended} onclick={() => onremove(person)}
                     >×</button
                   ></span
                 >{#if basis}<span class="bossgrid__basis">{basis}</span>{/if}
@@ -506,7 +508,7 @@
         <span class="slot__head">
           <span class="slot__mark" aria-hidden="true">{ANSWER_MARKS[person.answer].mark}</span>
           <span class="slot__text"><b class="slot__name">{who(person)}</b><span class="slot__state">{ANSWER_MARKS[person.answer].word}</span></span>
-          <button type="button" class="chip__x slot__x" aria-label="Take {who(person)} off this run for this week only" disabled={busy} onclick={() => onremove(person)}>×</button>
+          <button type="button" class="chip__x slot__x" aria-label="Take {who(person)} off this run for this week only" title={endedWhy} disabled={busy || run.ended} onclick={() => onremove(person)}>×</button>
         </span>
         {#if basis}<span class="bossgrid__basis">{basis}</span>{/if}
         {#if slot && slot.candidates.length === 0}

@@ -1,4 +1,4 @@
-use kanade::chat::persona::{
+use kanade_voice::persona::{
     PersonaError, Staging, StagingOverride, YamlIssue, parse_bundle, parse_catalog, parse_profile,
 };
 
@@ -33,7 +33,7 @@ fn tracked_kanade_bundle_keeps_block_scalars() {
 #[test]
 fn tracked_kanade_header_rewrite_is_the_approved_bytes() {
     const SHA256: &str = "1244d33dd24f5d9d5939487f6c4051b9496097a8cd86a8a4aa326372c87f6bc8";
-    let root = kanade::chat::persona::PersonaRoot::open(&crate::support::tracked_dir()).unwrap();
+    let root = kanade_voice::persona::PersonaRoot::open(&crate::support::tracked_dir()).unwrap();
     let compact = root.load_bundle(&pid("kanade")).unwrap().value.compact;
     let text = compact
         .expect("tracked Kanade carries compact")
@@ -193,16 +193,16 @@ fn unsafe_ids_are_rejected() {
         &"a".repeat(51),
     ] {
         assert_eq!(
-            kanade::chat::persona::PersonaId::parse(id),
+            kanade_voice::persona::PersonaId::parse(id),
             Err(PersonaError::UnsafeId),
             "{id:?}"
         );
         assert_eq!(
-            kanade::chat::persona::ProfileId::parse(id),
+            kanade_voice::persona::ProfileId::parse(id),
             Err(PersonaError::UnsafeId)
         );
     }
-    assert!(kanade::chat::persona::PersonaId::parse(&"a".repeat(50)).is_ok());
+    assert!(kanade_voice::persona::PersonaId::parse(&"a".repeat(50)).is_ok());
     let text = catalog("alpha", &[("alpha", &[]), ("Beta", &[])]);
     assert_eq!(parse_catalog(&text).unwrap_err(), PersonaError::UnsafeId);
     let text = catalog("../alpha", &[("alpha", &[])]);

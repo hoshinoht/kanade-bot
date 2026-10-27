@@ -157,8 +157,9 @@ test.describe('run sheet backdrop', () => {
 
   test('closes on a backdrop click when clean, stays open with unsaved input or a drag from the panel', async ({ page }) => {
     await page.goto(`${ADMIN}/?sw=off`);
-    const open = page.locator('[data-run="r-limbo"] .plan-card__open');
-    const sheet = page.getByRole('dialog', { name: 'HLimbo' });
+    // XBM (Tue 23:30) is still ahead at the pinned noon; HLimbo has ended, so it has no Move or Swap.
+    const open = page.locator('[data-run="r-bm"] .plan-card__open');
+    const sheet = page.getByRole('dialog', { name: 'XBM' });
 
     await open.click();
     await expect(sheet).toBeVisible();
@@ -171,20 +172,20 @@ test.describe('run sheet backdrop', () => {
     await open.click();
     await expect(sheet).toBeVisible();
     at = await backdrop(page);
-    await sheet.getByRole('button', { name: 'Move HLimbo…' }).click();
-    const move = page.getByRole('dialog', { name: 'Move HLimbo' });
+    await sheet.getByRole('button', { name: 'Move XBM…' }).click();
+    const move = page.getByRole('dialog', { name: 'Move XBM' });
     await expect(move.getByRole('radiogroup', { name: 'Day' })).toBeVisible();
     await page.mouse.click(at.x, at.y);
     await expect(move).toBeVisible();
     await move.getByRole('button', { name: 'Back to the run' }).click();
-    await expect(sheet.getByRole('button', { name: 'Move HLimbo…' })).toBeFocused();
+    await expect(sheet.getByRole('button', { name: 'Move XBM…' })).toBeFocused();
 
     // So is an open swap picker (behind the sheet's More actions).
     await sheet.getByRole('button', { name: 'More actions' }).click();
     await sheet.getByRole('button', { name: 'Swap timing with…' }).click();
     await page.mouse.click(at.x, at.y);
     await expect(sheet).toBeVisible();
-    await sheet.getByRole('group', { name: /Swap HLimbo's timing/ }).getByRole('button', { name: 'Cancel' }).click();
+    await sheet.getByRole('group', { name: /Swap XBM's timing/ }).getByRole('button', { name: 'Cancel' }).click();
 
     // A press in the panel released on the backdrop (a text selection) is not a dismiss.
     const title = (await sheet.locator('.modal__title').boundingBox())!;

@@ -1,8 +1,8 @@
 //! The authority boundary and the party validation shared by the proposal
 //! tools, on the synthetic chat world.
 
-use kanade::chat::authority::{Asker, Subject, require_authority};
-use kanade::chat::tools::read::participants::validate_participants;
+use kanade_chat::authority::{Asker, Subject, require_authority};
+use kanade_chat::tools::read::participants::validate_participants;
 use serde_json::json;
 
 use crate::support::world_input;

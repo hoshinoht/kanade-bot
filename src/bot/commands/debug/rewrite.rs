@@ -5,9 +5,9 @@
 use super::super::context::CommandContext;
 use super::super::dispatch::CommandError;
 use super::super::invocation::Invocation;
-use crate::bot::delivery::{ManualRequest, ManualStart};
-use crate::bot::ids::id_text;
-use crate::bot::transport::InteractionReply;
+use crate::app::ids::id_text;
+use crate::app::ports::{ManualRequest, ManualStart};
+use crate::discord::transport::InteractionReply;
 
 /// While Discord delivery is not composed.
 pub const REWRITE_UNAVAILABLE: &str = "Header rewrites aren't available right now.";

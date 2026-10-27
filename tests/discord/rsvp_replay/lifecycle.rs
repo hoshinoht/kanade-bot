@@ -1,7 +1,7 @@
-use kanade::domain::history::{Actor, ChangeHistory, Origin, Surface};
-use kanade::domain::notify::DeclineNoticeStore;
-use kanade::domain::schedule::RsvpState;
-use kanade::domain::scheduler::DeclineNoticeContext;
+use kanade_domain::history::{Actor, ChangeHistory, Origin, Surface};
+use kanade_domain::notify::DeclineNoticeStore;
+use kanade_domain::schedule::RsvpState;
+use kanade_domain::scheduler::DeclineNoticeContext;
 
 use super::support::*;
 

@@ -6,7 +6,7 @@ use super::{
     merge, resolve,
 };
 use crate::runtime::config::{
-    HealthcheckConfig, ModelSettings, RuntimeConfig, ServeConfig, SettingSeeds,
+    Components, HealthcheckConfig, ModelSettings, RuntimeConfig, ServeConfig, SettingSeeds,
 };
 
 const EXAMPLE: &str = include_str!("../../../../kanade.example.toml");
@@ -109,7 +109,7 @@ fn the_example_file_starts_under_the_image_and_base_compose() {
     assert_eq!(config.runtime.timezone, chrono_tz::Asia::Kuala_Lumpur);
     assert_eq!(config.guild.guild_id, 123456789012345678);
     assert_eq!(config.guild.bossing_role_id, 223456789012345678);
-    assert!(config.discord.gateway);
+    assert_eq!(config.components, Components::default(), "bot and web");
     assert_eq!(
         config.discord.token.path(),
         Path::new("/run/secrets/discord_token")
@@ -197,7 +197,7 @@ fn the_openai_compatible_fragment_declares_its_models() {
     assert_eq!(models.capabilities["example-extract"].output_limit, None);
     assert_eq!(
         models.capabilities["example-reasoning"].output_limit,
-        Some(crate::infrastructure::llm::OutputLimit::MaxCompletionTokens)
+        Some(kanade_llm::OutputLimit::MaxCompletionTokens)
     );
 }
 
@@ -388,6 +388,15 @@ fn every_removed_entry_names_its_new_home() {
             let target = target.strip_suffix('`').unwrap();
             assert!(KEYS.iter().any(|(key, _, _)| *key == target), "{name}");
         }
+        // A replaced key or variable names a current one.
+        if let Some(target) = home.strip_prefix("replaced by ") {
+            let target = target.split(' ').next().unwrap().trim_matches('`');
+            assert!(
+                KEYS.iter()
+                    .any(|(key, env, _)| *key == target || *env == target),
+                "{name}"
+            );
+        }
         let homes = [
             "secrets directory as `",
             "backups directory as `",
@@ -399,6 +408,7 @@ fn every_removed_entry_names_its_new_home() {
             "the healthcheck targets",
             "it is https://",
             "remove it;",
+            "replaced by ",
         ];
         assert!(
             homes.iter().any(|known| home.contains(known)),
@@ -426,8 +436,12 @@ fn unknown_keys_and_bad_types_name_the_key_only() {
         "kanade.toml `runtime.tick_seconds` must be a non-negative integer"
     );
     assert_eq!(
-        error("[discord]\ngateway = 1\n"),
-        "kanade.toml `discord.gateway` must be true or false"
+        error("[modules]\nguides = 1\n"),
+        "kanade.toml `modules.guides` must be true or false"
+    );
+    assert_eq!(
+        error("[runtime]\ncomponents = []\n"),
+        "kanade.toml `runtime.components` must be a non-empty list of strings without commas"
     );
     assert_eq!(
         error("[discord]\ndebug_user_ids = [1, true]\n"),
@@ -586,7 +600,7 @@ fn groups_feed_the_model_settings() {
 
 #[test]
 fn capability_declarations_feed_the_model_settings() {
-    use crate::infrastructure::llm::{Effort, ModelCapabilities, OutputLimit};
+    use kanade_llm::{Effort, ModelCapabilities, OutputLimit};
 
     let base = "[models]\nbase_url = \"https://llm.example/v1\"\n";
     let models = |tables: &str| {

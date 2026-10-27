@@ -6,21 +6,21 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use chrono::Utc;
-use kanade::chat::answer::{
+use kanade_chat::answer::{
     AnswerDeps, AnswerFailure, CARD_NOT_POSTED, Generation, Question, answer, chat_outcome,
     interaction,
 };
-use kanade::chat::sanitize::shape_reply;
-use kanade::chat::tools::bundles::{Bundle, NO_ROUND_LEFT, ToolOffer};
-use kanade::chat::tools::propose::Proposer;
-use kanade::chat::tools::{REFUSED, ToolContext, UNKNOWN};
-use kanade::domain::drafts::{DraftStatus, ProposalSource, ProposalStore, SUPERSEDED};
-use kanade::domain::model_log::{ChatInteraction, ChatOutcome, ModelLogStore};
-use kanade::domain::proposals::{ChangeKind, ProposedChange};
-use kanade::domain::scheduler::Clock;
-use kanade::domain::scheduler::{ProposalRequest, SchedulerService, Supersede};
-use kanade::infrastructure::llm::governor::{DEFAULT_TOOL_ROUNDS, Governor, Role};
-use kanade::infrastructure::llm::{ChatRequest, Effort, FakeAction, FakeProvider, Message};
+use kanade_chat::sanitize::shape_reply;
+use kanade_chat::tools::bundles::{Bundle, NO_ROUND_LEFT, ToolOffer};
+use kanade_chat::tools::propose::Proposer;
+use kanade_chat::tools::{REFUSED, ToolContext, UNKNOWN};
+use kanade_domain::drafts::{DraftStatus, ProposalSource, ProposalStore, SUPERSEDED};
+use kanade_domain::model_log::{ChatInteraction, ChatOutcome, ModelLogStore};
+use kanade_domain::proposals::{ChangeKind, ProposedChange};
+use kanade_domain::scheduler::Clock;
+use kanade_domain::scheduler::{ProposalRequest, SchedulerService, Supersede};
+use kanade_llm::governor::{DEFAULT_TOOL_ROUNDS, Governor, Role};
+use kanade_llm::{ChatRequest, Effort, FakeAction, FakeProvider, Message};
 use serde_json::{Value, json};
 
 use crate::looping::{Ports, V4_TOOL_ROUNDS, said, settings};
@@ -103,7 +103,7 @@ async fn run(
     offer: ToolOffer,
     tool_rounds: u8,
     question: &str,
-    ports: &impl kanade::chat::answer::ChatPorts,
+    ports: &impl kanade_chat::answer::ChatPorts,
 ) -> Run {
     run_routed(actions, offer, tool_rounds, question, ports, |_| {}).await
 }
@@ -119,7 +119,7 @@ async fn run_routed(
     offer: ToolOffer,
     tool_rounds: u8,
     question: &str,
-    ports: &impl kanade::chat::answer::ChatPorts,
+    ports: &impl kanade_chat::answer::ChatPorts,
     route: impl FnOnce(&Governor),
 ) -> Run {
     let input = world_input();
@@ -173,7 +173,7 @@ fn the_default_round_cap_is_the_user_decision() {
     assert_eq!(DEFAULT_TOOL_ROUNDS, 8);
     assert_eq!(
         u32::from(DEFAULT_TOOL_ROUNDS),
-        kanade::chat::tools::bundles::DEFAULT_TOOL_ROUNDS
+        kanade_chat::tools::bundles::DEFAULT_TOOL_ROUNDS
     );
 }
 
@@ -605,7 +605,7 @@ async fn external_chat_rounds_tools_and_clean_retry_send_raw_synthetic_data() {
 
 #[tokio::test(start_paused = true)]
 async fn an_external_pre_admission_refusal_does_not_claim_disclosure() {
-    use kanade::infrastructure::llm::governor::{Refused, SessionError, SessionFailure};
+    use kanade_llm::governor::{Refused, SessionError, SessionFailure};
 
     let input = world_input();
     let mut world = World::new(&input).await;
@@ -717,7 +717,7 @@ fn reported(
     let FakeAction::Response(mut response) = action else {
         panic!("a response");
     };
-    response.usage = Some(kanade::infrastructure::llm::Usage {
+    response.usage = Some(kanade_llm::Usage {
         prompt_tokens,
         completion_tokens,
         cached_tokens,
@@ -728,9 +728,9 @@ fn reported(
 /// The budget's estimate for a request as sent: its messages without the
 /// trailing voice reminder, re-budgeted untrimmed with its tool schemas.
 fn estimate_of(request: &ChatRequest) -> Option<u64> {
-    use kanade::chat::context::budgeted;
-    use kanade::chat::tools::ToolName;
-    use kanade::chat::tools::schemas::surface_text;
+    use kanade_chat::context::budgeted;
+    use kanade_chat::tools::ToolName;
+    use kanade_chat::tools::schemas::surface_text;
     let mut messages = request.messages.clone();
     let Some(Message::User { content: reminder }) = messages.pop() else {
         panic!("the reminder is last");
@@ -805,8 +805,8 @@ async fn each_round_logs_its_reported_pair_and_prompt_estimate() {
 
 #[tokio::test(start_paused = true)]
 async fn reasoning_is_logged_per_round_but_never_enters_the_tool_loop() {
-    use kanade::domain::model_log::{REASONING_CAP, REASONING_TRUNCATED};
-    use kanade::infrastructure::llm::wire_body;
+    use kanade_domain::model_log::{REASONING_CAP, REASONING_TRUNCATED};
+    use kanade_llm::wire_body;
     let FakeAction::Response(mut first) = wants(&[("r1", "list_fixed", json!({}))]) else {
         panic!("response")
     };
@@ -880,7 +880,7 @@ fn numbered(session: &str, n: usize) -> Vec<String> {
 
 #[tokio::test(start_paused = true)]
 async fn logged_request_ids_are_exactly_the_ids_sent_across_rounds_and_retries() {
-    use kanade::infrastructure::llm::LlmProvider as _;
+    use kanade_llm::LlmProvider as _;
     // Round 1 answers at once; round 2's first request fails transiently and
     // its retry answers.
     let run = ask(
@@ -931,17 +931,17 @@ async fn logged_request_ids_are_exactly_the_ids_sent_across_rounds_and_retries()
 #[derive(Default)]
 struct SlowPorts(Ports);
 
-impl kanade::chat::answer::ChatPorts for SlowPorts {
+impl kanade_chat::answer::ChatPorts for SlowPorts {
     async fn refresh_proposals(&self, proposal_ids: &[String]) {
         self.0.refresh_proposals(proposal_ids).await;
     }
 
-    async fn pending(&self) -> Vec<kanade::chat::tools::read::PendingCard> {
+    async fn pending(&self) -> Vec<kanade_chat::tools::read::PendingCard> {
         tokio::time::sleep(Duration::from_millis(250)).await;
         self.0.pending().await
     }
 
-    async fn post_card(&self, card: &kanade::chat::tools::ProposalCard) -> Result<(), String> {
+    async fn post_card(&self, card: &kanade_chat::tools::ProposalCard) -> Result<(), String> {
         self.0.post_card(card).await
     }
 }
@@ -974,7 +974,7 @@ async fn a_logged_call_keeps_its_result_and_wall_time_through_the_store_and_the_
     store.record_chat(row.clone()).await.expect("recorded");
     let stored = store.load_chat("chat-t").await.expect("load").expect("row");
     assert_eq!(stored, row);
-    let roster = kanade::domain::members::Roster::new();
+    let roster = kanade_domain::members::Roster::new();
     let channels = std::collections::BTreeMap::new();
     let names = Names {
         roster: &roster,

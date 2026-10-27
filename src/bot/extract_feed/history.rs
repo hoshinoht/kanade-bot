@@ -8,12 +8,13 @@ use chrono::{DateTime, Utc};
 use twilight_model::id::{Id, marker::ChannelMarker};
 
 use super::convert::{extractable, incoming};
-use crate::bot::guild_cache::GuildCache;
-use crate::bot::ids::{id_text, parse_id};
-use crate::bot::transport::{DiscordTransport, HistoryPage, MAX_MESSAGES_PAGE, MessageId, Outcome};
-use crate::extract::pipeline::{IncomingMessage, MessageOrigin};
-use crate::extract::rescan::{Backfilled, History};
-use crate::runtime::logging;
+use crate::app::ids::{id_text, parse_id};
+use crate::discord::guild_cache::GuildCache;
+use crate::discord::transport::{
+    DiscordTransport, HistoryPage, MAX_MESSAGES_PAGE, MessageId, Outcome,
+};
+use kanade_extract::pipeline::{IncomingMessage, MessageOrigin};
+use kanade_extract::rescan::{Backfilled, History};
 
 /// Discord's snowflake epoch (2015-01-01), in Unix milliseconds.
 const DISCORD_EPOCH_MS: i64 = 1_420_070_400_000;
@@ -99,7 +100,7 @@ impl<T: DiscordTransport> History for DiscordHistory<T> {
             match self.read(thread, channel, since).await {
                 Ok(more) => messages.extend(more),
                 Err(kind) => {
-                    logging::log!(
+                    kanade_log::log!(
                         warn,
                         "thread_history_skipped",
                         thread_id = id_text(thread),
@@ -135,7 +136,7 @@ mod tests {
 
     #[tokio::test]
     async fn an_unreadable_thread_is_skipped_and_reported() {
-        use crate::bot::transport::{FakeDiscord, Op, RejectionKind, Step};
+        use crate::discord::transport::{FakeDiscord, Op, RejectionKind, Step};
         let channel: twilight_model::channel::Channel = serde_json::from_value(json!({
             "id": "301", "type": 0, "name": "party", "guild_id": "900",
             "parent_id": null, "position": 0, "permission_overwrites": [],

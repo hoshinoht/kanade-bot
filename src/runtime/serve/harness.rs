@@ -5,23 +5,21 @@
 
 use std::{collections::BTreeMap, sync::Arc, time::Duration};
 
-use super::{
-    CLOSE_WAIT, api,
-    budget::ShutdownClock,
-    discord::{self, Discord, GatewayTransport, Wiring},
-    health::LiveHealth,
-    models, settings, store,
+use super::{CLOSE_WAIT, budget::ShutdownClock, health::LiveHealth, models, settings, store};
+use crate::runtime::serve::{
+    bot::discord::{self, Discord, Wiring},
+    composition::{self, Composition},
+    late::GatewayTransport,
 };
 use crate::{
-    api::admin::config::SettingsChanged,
-    bot::{delivery::cards::HeadingRewrite, gateway::EventSource},
-    chat::persona::CompiledPersona,
-    infrastructure::{
-        llm::{governor::Role, setup::ModelStack},
-        store::SqliteStore,
-    },
+    app::config::SettingsChanged,
+    bot::gateway::EventSource,
+    cards::HeadingRewrite,
     runtime::{config::ServeConfig, error::Error},
 };
+use kanade_llm::{governor::Role, setup::ModelStack};
+use kanade_store::SqliteStore;
+use kanade_voice::persona::CompiledPersona;
 
 /// The model stack serve would compose over an empty store: env seeds fill
 /// every role (`seed_roles`), then the same provider, governor and groups.
@@ -30,7 +28,7 @@ use crate::{
 pub fn shared_models(config: &ServeConfig) -> Result<Option<Arc<ModelStack>>, Error> {
     let mut seeded = settings::seed(&config.seeds);
     models::seed_roles(&mut seeded, &config.models, &BTreeMap::new());
-    api::model_stack(&config.models, &seeded, config.guild.guild_id)
+    composition::model_stack(&config.models, &seeded, config.guild.guild_id)
 }
 
 /// The reminder header rewrite serve's card kit builds (`tick::card_kit`):
@@ -81,7 +79,7 @@ pub async fn with_store<R>(
 pub struct LiveServe {
     pub discord: Discord,
     pub store: Arc<SqliteStore>,
-    composition: api::Composition,
+    composition: Composition,
     /// Serve's one shutdown deadline: `Discord::until` starts it on the stop
     /// signal, and the store close gets what is left of it.
     shutdown: ShutdownClock,
@@ -105,13 +103,13 @@ where
     let health = LiveHealth::new(store.clone())
         .with_discord(prepared.probe.clone(), prepared.tick_status.clone())
         .with_extraction(prepared.extraction.clone());
-    let composed = api::compose_with(
+    let composed = composition::compose_with(
         config,
         store.clone(),
         prepared.cache.clone(),
         health,
         models,
-        Arc::new(crate::api::auth::system_now),
+        Arc::new(crate::app::clock::system_now),
     )
     .await;
     let mut composition = match composed {

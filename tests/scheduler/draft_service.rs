@@ -6,27 +6,26 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use chrono::{DateTime, FixedOffset, TimeDelta, TimeZone, Utc, Weekday};
-use kanade::domain::attendance::AttendancePolicy;
-use kanade::domain::drafts::{
+use kanade_domain::drafts::{
     DraftCreated, DraftEvent, DraftEventKind, DraftKind, DraftOp, DraftScope, DraftStatus,
     DraftStore, DraftUpdate, DraftWrite, Field, LoadedDraft, MergeAnalysis, MergeCommit,
     MergeConflict, NewDraft, ReplayError, Settle, StagedOp, StoredDraft, Target,
 };
-use kanade::domain::history::{
+use kanade_domain::history::{
     Actor, BlameTarget, ChangeFilter, ChangeHistory, ChangeMeta, ChangePage, ChangeQuery,
     ChangeRecord, ChangeRef, CheckedChange, HistoryVerification, Origin, Surface, blame,
 };
-use kanade::domain::ids::RandomIds;
-use kanade::domain::notify::{DeliveryJournal, DeliverySettings, plan_notice};
-use kanade::domain::schedule::{
+use kanade_domain::ids::RandomIds;
+use kanade_domain::notify::{DeliveryJournal, DeliverySettings, plan_notice};
+use kanade_domain::schedule::{
     Change, ChangeSet, DRAFT_MERGED, FixedEdit, FixedEditChoices, NewFixedRun, Notice,
     NoticeChange, RsvpSource, RsvpState, RunStatus, ScheduleSnapshot, StatusChange,
 };
-use kanade::domain::scheduler::{
+use kanade_domain::scheduler::{
     Committed, DraftError, DraftResult, MergeOutcome, RecordedRequest, ScheduleStore,
     SchedulerService, Scope, StoreError,
 };
-use kanade::infrastructure::store::SqliteStore;
+use kanade_store::SqliteStore;
 
 use crate::common::TestClock;
 use crate::support::{
@@ -272,7 +271,6 @@ async fn merge_posts_one_notice_per_channel_and_advances_history() {
         let settings = DeliverySettings {
             post_channel_id: None,
             quiet_mode: false,
-            attendance: AttendancePolicy::V4_COMPAT,
         };
         let intent = plan_notice(notice, &Guild, &AnyChannel, settings).expect("plannable");
         assert_eq!(Some(intent.channel_id.clone()), notice.channel_id);

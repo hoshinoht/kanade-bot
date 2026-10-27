@@ -2,6 +2,8 @@
 //! driver's [`Asked`] (resolved lists only; nothing is fetched), a deletion
 //! cancels its question. `surface.rs` is the driver's Discord side.
 
+#[cfg(test)]
+mod driver_tests;
 mod surface;
 #[cfg(test)]
 mod surface_tests;
@@ -16,12 +18,12 @@ use twilight_model::id::{
 
 pub use surface::DiscordSurface;
 
+use crate::app::ids::id_text;
 use crate::bot::events::{DeletedMessages, GuildMessage};
-use crate::bot::guild_cache::GuildCache;
-use crate::bot::ids::id_text;
-use crate::chat::context::{Parent, QuestionMessage, Reference};
-use crate::chat::driver::{Answerer, Asked, ChatDriver, Surface};
-use crate::chat::gate::{Author, ChannelDirectory, ChannelInfo, IncomingMessage};
+use crate::discord::guild_cache::GuildCache;
+use kanade_chat::context::{Parent, QuestionMessage, Reference};
+use kanade_chat::driver::{Answerer, Asked, ChatDriver, Surface};
+use kanade_chat::gate::{Author, ChannelDirectory, ChannelInfo, IncomingMessage};
 
 /// Where offered messages go (the chat driver).
 pub trait ChatSink: Send + Sync {

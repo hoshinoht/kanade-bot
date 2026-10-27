@@ -5,6 +5,7 @@
 !Cargo.toml
 !Cargo.lock
 !src/
+!crates/
 !boss/bosses.yaml
 !boss/knowledge/
 !assets/emojis/

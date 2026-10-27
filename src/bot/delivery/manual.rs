@@ -4,8 +4,7 @@
 //! and edits the posts in place, so nobody is pinged again, nothing is
 //! uploaded and ✅/❌ and the journal binding stay.
 //!
-//! The classic style shows no countdown or digest phrase, so only day-of
-//! headings are rewritten then. Calls are sequential through the shared
+//! Calls are sequential through the shared
 //! [`HeadingRewrite`](super::cards::HeadingRewrite) (each logged once in the
 //! Rewrites log, stage `manual`) with the pre-generation deadline. An
 //! accepted line is appended as an override (the original line is kept) and
@@ -23,49 +22,25 @@ use chrono::{DateTime, Utc};
 use tokio::sync::{Notify, watch};
 
 use super::card_records::digest_phrase_key;
-use super::cards::{
-    DAY_OF_KIND, DigestPhraseStore, HeaderContext, HeaderOverrideStore, HeadingSource, PhraseKind,
-    PostedCard, ReminderCardStore, card_runs,
-};
-use super::estimates::header_context;
 use super::pregen::PREGEN_DEADLINE;
-use super::refresh::{CardRefresh, posted_content};
-use crate::bot::commands::text::local_day;
-use crate::bot::ids::parse_id;
-use crate::bot::mentions;
-use crate::bot::transport::{DiscordTransport, OutgoingMessage};
-use crate::chat::nudge::{
+use super::refresh::CardRefresh;
+use crate::app::ids::parse_id;
+use crate::app::ports::{ManualRequest, ManualStart};
+use crate::cards::estimates::header_context;
+use crate::cards::preview::posted_content;
+use crate::cards::text::local_day;
+use crate::cards::{HeaderContext, HeadingSource, PhraseKind, card_runs};
+use crate::discord::mentions;
+use crate::discord::transport::{DiscordTransport, OutgoingMessage};
+use kanade_domain::model_log::RewriteStage;
+use kanade_domain::notify::{
+    DAY_OF_KIND, DeliveryJournal, DigestPhraseStore, HeaderOverrideStore, PostedCard,
+    ReminderCardStore, WeekReset, WeeklyDigest,
+};
+use kanade_domain::scheduler::{ScheduleStore, Scope};
+use kanade_voice::nudge::{
     NudgeRewriter, RewriteFailure, RewriteOutcome, RewritePrompt, SharedRewriter,
 };
-use crate::domain::model_log::RewriteStage;
-use crate::domain::notify::{DeliveryJournal, WeekReset, WeeklyDigest};
-use crate::domain::scheduler::{ScheduleStore, Scope};
-use crate::domain::settings::MessageStyle;
-use crate::runtime::logging;
-
-/// Who asked for a run and where its summary goes.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct ManualRequest {
-    /// Recorded with each override: `member:<id>` or the admin session's actor.
-    pub actor: String,
-    /// A channel to post the summary in when the run ends (`/debug rewrite`).
-    pub report_to: Option<String>,
-}
-
-/// The answer to a trigger, given before any model call.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum ManualStart {
-    /// Queued: this many headers will be rewritten.
-    Started(usize),
-    /// Another manual run is queued or running.
-    Running,
-    /// No rewrite model or persona.
-    Disabled,
-    /// Nothing posted this boss week has a header to rewrite.
-    Nothing,
-    /// The store could not be read, or the worker has stopped.
-    Unavailable,
-}
 
 /// What a finished run did.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -212,7 +187,7 @@ where
         } else {
             match self.plan((self.refresh.now)()).await {
                 None => {
-                    logging::log!(warn, "manual_rewrite_failed", operation = "plan");
+                    kanade_log::log!(warn, "manual_rewrite_failed", operation = "plan");
                     ManualStart::Unavailable
                 }
                 Some(targets) if targets.is_empty() => ManualStart::Nothing,
@@ -231,7 +206,7 @@ where
                         ManualStart::Unavailable
                     } else {
                         self.wake.notify_one();
-                        logging::log!(info, "manual_rewrite_started", headers = count);
+                        kanade_log::log!(info, "manual_rewrite_started", headers = count);
                         return ManualStart::Started(count);
                     }
                 }
@@ -260,7 +235,7 @@ where
                 continue;
             };
             let report = self.execute(&job, &stop).await;
-            logging::log!(
+            kanade_log::log!(
                 info,
                 "manual_rewrite_done",
                 accepted = report.accepted,
@@ -287,7 +262,7 @@ where
                     .await
                     .is_delivered()
                 {
-                    logging::log!(warn, "manual_rewrite_failed", operation = "summary");
+                    kanade_log::log!(warn, "manual_rewrite_failed", operation = "summary");
                 }
             }
             self.busy.store(false, Ordering::Release);
@@ -310,9 +285,9 @@ where
         }
     }
 
-    /// Every bound card of this boss week naming a run still ahead (day-of
-    /// only in the classic style), earliest run first, then the week's
-    /// active digest (redesigned only); `None` on a store error.
+    /// Every bound card of this boss week naming a run still ahead,
+    /// earliest run first, then the week's active digest; `None` on a
+    /// store error.
     async fn plan(&self, now: DateTime<Utc>) -> Option<Vec<Target>> {
         let refresh = &*self.refresh;
         let policy = &refresh.policy;
@@ -322,7 +297,6 @@ where
             time: policy.reset_time,
         };
         let week = reset.current_week(now).ok()?;
-        let phrases = refresh.cards.style() == MessageStyle::Redesigned;
         let schedule = refresh.store.load(&Scope::All).await.ok()?;
         let mut runs: Vec<(DateTime<Utc>, String)> = schedule
             .runs
@@ -350,10 +324,8 @@ where
                         Header::DayOf {
                             day: local_day(first, ctx.zone),
                         }
-                    } else if phrases {
-                        Header::Countdown
                     } else {
-                        return None;
+                        Header::Countdown
                     };
                     Some(Target::Card {
                         key: card.dedupe_key.clone()?,
@@ -363,15 +335,13 @@ where
                 })
                 .collect::<Vec<_>>()
         };
-        if phrases {
-            let log = refresh.store.load_digests().await.ok()?;
-            let digest = log
-                .digests
-                .into_iter()
-                .find(|digest| digest.week_start == week && digest.retired_at.is_none());
-            if let (Some(digest), Some(key)) = (digest, digest_phrase_key(week)) {
-                targets.push(Target::Digest { digest, key });
-            }
+        let log = refresh.store.load_digests().await.ok()?;
+        let digest = log
+            .digests
+            .into_iter()
+            .find(|digest| digest.week_start == week && digest.retired_at.is_none());
+        if let (Some(digest), Some(key)) = (digest, digest_phrase_key(week)) {
+            targets.push(Target::Digest { digest, key });
         }
         Some(targets)
     }
@@ -455,7 +425,7 @@ where
                 .await
                 .is_err()
             {
-                logging::log!(warn, "manual_rewrite_failed", operation = "write");
+                kanade_log::log!(warn, "manual_rewrite_failed", operation = "write");
                 report.failed += 1;
                 continue;
             }

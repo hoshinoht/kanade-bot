@@ -16,17 +16,14 @@ use std::{sync::Arc, time::Duration};
 
 use tokio::{sync::watch, task::JoinHandle};
 
-use crate::{
-    api::auth::Clock,
-    domain::{
-        model_log::{DEFAULT_LOG_RETENTION, ModelLogStore, PruneCounts, retention_cutoff},
-        notify::DeliveryJournal,
-        scheduler::StoreError,
-        time::to_iso,
-    },
-    infrastructure::store::maintenance::{StoreMaintenance, WalCheckpoint},
-    runtime::logging,
+use crate::app::clock::Clock;
+use kanade_domain::{
+    model_log::{DEFAULT_LOG_RETENTION, ModelLogStore, PruneCounts, retention_cutoff},
+    notify::DeliveryJournal,
+    scheduler::StoreError,
+    time::to_iso,
 };
+use kanade_store::maintenance::{StoreMaintenance, WalCheckpoint};
 
 pub(super) const EVERY: Duration = Duration::from_secs(24 * 60 * 60);
 pub(super) const RUN_LIMIT: Duration = Duration::from_secs(60);
@@ -111,7 +108,7 @@ fn report(
     let cutoff =
         retention_cutoff(now, DEFAULT_LOG_RETENTION).and_then(|cutoff| to_iso(&cutoff).ok());
     match outcome {
-        Ok(Ok((counts, leases))) => logging::log!(
+        Ok(Ok((counts, leases))) => kanade_log::log!(
             info,
             "model_logs_pruned",
             cutoff,
@@ -123,8 +120,8 @@ fn report(
             leases,
         ),
         // Store error text may carry paths.
-        Ok(Err(_)) => logging::log!(warn, "model_logs_prune_failed"),
-        Err(_) => logging::log!(
+        Ok(Err(_)) => kanade_log::log!(warn, "model_logs_prune_failed"),
+        Err(_) => kanade_log::log!(
             warn,
             "model_logs_prune_cut",
             limit_seconds = RUN_LIMIT.as_secs(),
@@ -136,7 +133,7 @@ fn report_checkpoint(
     outcome: Result<Result<WalCheckpoint, StoreError>, tokio::time::error::Elapsed>,
 ) {
     match outcome {
-        Ok(Ok(done)) => logging::log!(
+        Ok(Ok(done)) => kanade_log::log!(
             info,
             "wal_checkpointed",
             busy = done.busy,
@@ -144,8 +141,8 @@ fn report_checkpoint(
             checkpointed = done.checkpointed,
         ),
         // Store error text may carry paths.
-        Ok(Err(_)) => logging::log!(warn, "wal_checkpoint_failed"),
-        Err(_) => logging::log!(
+        Ok(Err(_)) => kanade_log::log!(warn, "wal_checkpoint_failed"),
+        Err(_) => kanade_log::log!(
             warn,
             "wal_checkpoint_cut",
             limit_seconds = RUN_LIMIT.as_secs(),
@@ -160,7 +157,7 @@ mod tests {
     use chrono::{DateTime, TimeDelta, TimeZone, Utc};
 
     use super::*;
-    use crate::infrastructure::store::{SqliteStore, model_log_conformance::extraction};
+    use kanade_store::{SqliteStore, model_log_conformance::extraction};
 
     fn at(day: i64) -> DateTime<Utc> {
         Utc.with_ymd_and_hms(2026, 10, 11, 0, 0, 0).unwrap() + TimeDelta::days(day)
@@ -182,7 +179,7 @@ mod tests {
 
     #[tokio::test]
     async fn prunes_at_start_and_each_period_by_the_injected_clock_until_stopped() {
-        logging::capture();
+        kanade_log::capture();
         let store = Arc::new(SqliteStore::open_temp().await);
         for (id, day) in [("x-old", -91), ("x-edge", -89), ("x-new", 0)] {
             store
@@ -216,7 +213,7 @@ mod tests {
         tokio::time::sleep(Duration::from_millis(60)).await;
         assert!(kept(&store, "x-late").await, "the loop ended with stop");
 
-        let pruned: Vec<_> = logging::captured()
+        let pruned: Vec<_> = kanade_log::captured()
             .into_iter()
             .filter(|line| line["event"] == "model_logs_pruned")
             .collect();
@@ -228,7 +225,7 @@ mod tests {
 
         // Each run checkpoints right after its prune; stop may cut the last
         // run between the two, leaving one trailing prune.
-        let mut order: Vec<_> = logging::captured()
+        let mut order: Vec<_> = kanade_log::captured()
             .into_iter()
             .filter_map(|line| line["event"].as_str().map(str::to_owned))
             .filter(|event| event == "model_logs_pruned" || event == "wal_checkpointed")
@@ -250,7 +247,7 @@ mod tests {
     /// frame counts.
     #[tokio::test]
     async fn a_run_truncates_the_sqlite_wal_after_pruning() {
-        logging::capture();
+        kanade_log::capture();
         let store = Arc::new(SqliteStore::open_temp().await);
         for (n, day) in [-120, -100, 0].into_iter().enumerate() {
             store
@@ -265,7 +262,7 @@ mod tests {
         let running = Retention::start(store.clone(), Arc::new(|| at(0)), EVERY);
         let mut lines = Vec::new();
         for _ in 0..500 {
-            lines = logging::captured();
+            lines = kanade_log::captured();
             if lines.iter().any(|line| line["event"] == "wal_checkpointed") {
                 break;
             }

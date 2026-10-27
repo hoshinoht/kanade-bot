@@ -1,5 +1,5 @@
 //! `/debug ping`'s options: a stored run or an in-memory sample run, the
-//! channel, a one-off message style and a fresh header rewrite.
+//! channel and a fresh header rewrite.
 
 use chrono::TimeDelta;
 use twilight_model::application::command::CommandOption;
@@ -11,10 +11,9 @@ use super::super::invocation::Invocation;
 use super::super::lookup::everything;
 use super::super::options::Args;
 use super::super::say::mentioned_users;
-use crate::bot::ids::id_text;
-use crate::domain::ids::resolve_id;
-use crate::domain::schedule::RunStatus;
-use crate::domain::settings::MessageStyle;
+use crate::app::ids::id_text;
+use kanade_domain::ids::resolve_id;
+use kanade_domain::schedule::RunStatus;
 
 /// A sample run's default start, in minutes from now.
 const SAMPLE_MINUTES: i64 = 120;
@@ -33,10 +32,6 @@ fn user(message: impl Into<String>) -> CommandError {
 
 /// The registered options; required ones first, as Discord requires.
 pub fn options(kinds: &[(&str, &str)]) -> Vec<CommandOption> {
-    let styles: Vec<(&str, &str)> = [MessageStyle::Classic, MessageStyle::Redesigned]
-        .iter()
-        .map(|style| (style.as_str(), style.as_str()))
-        .collect();
     let statuses: Vec<(&str, &str)> = STATUSES
         .iter()
         .map(|status| (status.as_str(), status.as_str()))
@@ -52,7 +47,6 @@ pub fn options(kinds: &[(&str, &str)]) -> Vec<CommandOption> {
             "channel",
             "Post here instead (elsewhere than home: display only)",
         ),
-        choices("style", "Message style for this post only", false, &styles),
         choices(
             "header",
             "default: the seed; rewrite: a fresh persona rewrite (never stored)",
@@ -124,7 +118,6 @@ pub async fn request(
         requested_by: id_text(invocation.invoker.user_id),
         channel: args.channel("channel"),
         invoked_in: invocation.channel_id.map(id_text),
-        style: args.text("style").and_then(MessageStyle::parse),
         rewrite: args.text("header") == Some("rewrite"),
     })
 }

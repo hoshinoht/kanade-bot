@@ -14,38 +14,38 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use chrono::{DateTime, NaiveTime, TimeZone, Utc, Weekday};
-use kanade::api::state::ProposalCardRefresh;
+use kanade::app::ports::ProposalCardRefresh;
 use kanade::bot::cards::CardOutbox;
 use kanade::bot::cards::{Authority, CardDesk, CardReaction, CardSettings, DeskDeps};
 use kanade::bot::delivery::AdminAlert;
-use kanade::bot::delivery::{AlertRecorder, FixedClock, StoreRef};
+use kanade::bot::delivery::{AlertRecorder, FixedClock};
 use kanade::bot::events::RsvpAnswer;
-use kanade::bot::transport::{
+use kanade::discord::transport::{
     AmbiguousKind, Call, ChannelId, DiscordTransport, FakeDiscord, InteractionRef,
     InteractionReply, MessageEdit, MessageId, Op, Outcome, OutgoingMessage, Presence,
     RejectionKind, Step,
 };
-use kanade::chat::persona::NudgePurpose;
-use kanade::domain::drafts::{DraftStatus, ProposalSource, ProposalStore};
-use kanade::domain::history::Origin;
-use kanade::domain::history::{Actor, Surface};
-use kanade::domain::ids::IdGenerator;
-use kanade::domain::members::{Directory, Member};
-use kanade::domain::notify::{DeclineNoticeStore, DeliveryJournal};
-use kanade::domain::proposals::{Approver, ChangeKind, ProposalCardStore, ProposedChange};
-use kanade::domain::schedule::RsvpSource;
-use kanade::domain::schedule::{
+use kanade_domain::drafts::{DraftStatus, ProposalSource, ProposalStore};
+use kanade_domain::history::Origin;
+use kanade_domain::history::{Actor, Surface};
+use kanade_domain::ids::IdGenerator;
+use kanade_domain::members::{Directory, Member};
+use kanade_domain::notify::{DeclineNoticeStore, DeliveryJournal};
+use kanade_domain::proposals::{Approver, ChangeKind, ProposalCardStore, ProposedChange};
+use kanade_domain::schedule::RsvpSource;
+use kanade_domain::schedule::{
     NewRun, ReminderPolicy, RsvpState, RunSource, RunStatus, SchedulePolicy,
 };
-use kanade::domain::scheduler::{
-    ProposalRequest, ScheduleStore, SchedulerService, Scope, Supersede, SupersedeScope,
+use kanade_domain::scheduler::{
+    ProposalRequest, ScheduleStore, SchedulerService, Scope, StoreRef, Supersede, SupersedeScope,
 };
-use kanade::extract::AmendmentKind;
-use kanade::extract::pipeline::{
+use kanade_extract::AmendmentKind;
+use kanade_extract::pipeline::{
     BacklogDrop, Card, CardEntry, ChatAnswer, Outbox, PostResult, Redirected, SelfServiceTip,
 };
-use kanade::extract::redirect::RedirectLink;
-use kanade::infrastructure::store::SqliteStore;
+use kanade_extract::redirect::RedirectLink;
+use kanade_store::SqliteStore;
+use kanade_voice::persona::NudgePurpose;
 use twilight_model::application::command::Command;
 use twilight_model::id::{Id, marker::GuildMarker};
 
@@ -186,7 +186,7 @@ impl World {
             })
             .await
             .expect("run");
-        let desk = desk_with(&store, discord.clone(), &alerts, &ids, now());
+        let desk = desk_with(&store, discord.clone(), &alerts, &ids, now()).posting_legacy();
         Self {
             store,
             discord,
@@ -197,7 +197,8 @@ impl World {
         }
     }
 
-    /// Another desk on this world's store and fake Discord, clocked at `at`.
+    /// Another desk on this world's store and fake Discord, clocked at `at`,
+    /// posting the embed card with seeded ✅/❌ (the reaction path).
     fn desk_at(&self, at: DateTime<Utc>) -> Desk {
         desk_with(
             &self.store,
@@ -206,6 +207,7 @@ impl World {
             &self.ids,
             at,
         )
+        .posting_legacy()
     }
 
     /// A fresh desk, as after a restart.
@@ -298,7 +300,7 @@ impl World {
         self.desk.on_reaction(message, user, answer, true).await
     }
 
-    async fn run_state(&self) -> kanade::domain::schedule::ScheduleSnapshot {
+    async fn run_state(&self) -> kanade_domain::schedule::ScheduleSnapshot {
         self.store
             .load(&Scope::Run(self.run.clone()))
             .await
@@ -404,17 +406,13 @@ async fn a_card_is_journalled_bound_and_mentions_nobody() {
         "nobody is pinged"
     );
     let content = message.content.as_deref().unwrap_or_default();
-    assert_eq!(content, "📋 Proposed change\nMylene");
-    let field = &message.embeds[0].fields[0];
-    assert!(
-        field
-            .name
-            .starts_with("move · Hard MaleficStar + Hard FA · `#")
-    );
     assert_eq!(
-        field.value,
-        "~~Mon 31 Aug 21:30~~ → **Wed 02 Sep 21:30**\nMylene\n_moving to wed_"
+        content,
+        "📋 **Move Hard MaleficStar + Hard FA?** moving to wed"
     );
+    let field = &message.embeds[0].fields[0];
+    assert_eq!(field.name, "From");
+    assert!(field.value.contains("Mon 31 Aug 21:30"), "{field:?}");
     let Outcome::Delivered(posted) = outcome else {
         panic!("delivered");
     };
@@ -496,7 +494,7 @@ async fn a_participant_approves_and_the_card_says_so() {
     assert_eq!(world.status(&id).await, DraftStatus::Merged);
     // The merge's notices were written to the outbox with it.
     let outbox = || async {
-        kanade::domain::notify::NoticeOutbox::outbox_notices(&*world.store)
+        kanade_domain::notify::NoticeOutbox::outbox_notices(&*world.store)
             .await
             .expect("outbox")
     };
@@ -504,7 +502,7 @@ async fn a_participant_approves_and_the_card_says_so() {
     assert!(!written.is_empty());
     assert!(
         written.iter().all(|row| {
-            row.source == kanade::domain::notify::change_source(approved[0].merge.seq)
+            row.source == kanade_domain::notify::change_source(approved[0].merge.seq)
         })
     );
     assert_eq!(
@@ -518,11 +516,7 @@ async fn a_participant_approves_and_the_card_says_so() {
         world.run_state().await.runs[0].datetime,
         local(9, 2, 21, 30)
     );
-    assert!(
-        world
-            .last_edit_content()
-            .ends_with("\n✅ applied by Mylene")
-    );
+    assert!(world.last_edit_content().contains("✅ Applied by Mylene"));
     assert_eq!(
         world.answer(&message, MY, RsvpAnswer::Yes).await,
         CardReaction::Ignored,
@@ -542,7 +536,7 @@ async fn an_admin_rejects_and_the_card_says_so() {
         }
     );
     assert_eq!(world.status(&id).await, DraftStatus::Rejected);
-    assert!(world.last_edit_content().ends_with("\n❌ rejected by Boss"));
+    assert!(world.last_edit_content().contains("❌ Rejected by Boss"));
     assert!(
         world
             .desk
@@ -640,7 +634,7 @@ async fn a_newer_card_marks_the_retired_one_superseded() {
     assert!(
         world
             .last_edit_content()
-            .ends_with("\n↪ superseded by a newer card")
+            .contains("↪ Superseded by a newer card")
     );
 }
 
@@ -652,11 +646,14 @@ async fn a_restarted_desk_re_renders_a_card_from_its_stored_details() {
     let Some(Call::Edit { edit, .. }) = world.discord.calls().pop() else {
         panic!("an edit");
     };
-    assert_eq!(edit.content.as_deref(), Some("📋 Proposed change\nMylene"));
+    assert_eq!(
+        edit.content.as_deref(),
+        Some("📋 **Move Hard MaleficStar + Hard FA?** moving to wed")
+    );
     assert!(
         edit.embeds.expect("embed")[0].fields[0]
             .value
-            .contains("_moving to wed_")
+            .contains("Mon 31 Aug 21:30")
     );
 }
 
@@ -870,7 +867,7 @@ async fn a_hand_edited_run_leaves_the_card_out_of_date() {
              Check the run and ask again if it still needs changing."
         )
     );
-    assert!(world.last_edit_content().ends_with("\n⚠️ out of date"));
+    assert!(world.last_edit_content().contains("⚠️ Out of date"));
     assert_eq!(world.status(&id).await, DraftStatus::Submitted);
 }
 
@@ -953,7 +950,7 @@ async fn the_portal_refresh_port_re_renders_a_committed_card_on_fake_discord() {
         })
     };
     refresh(vec![id]).await;
-    assert!(world.last_edit_content().ends_with("\n✅ applied by Boss"));
+    assert!(world.last_edit_content().contains("✅ Applied by Boss"));
 }
 
 /// `FakeDiscord` whose creates orphan every live lease first (a restart
@@ -1061,7 +1058,7 @@ impl DiscordTransport for LeaseLost {
     fn channel_messages(
         &self,
         channel: ChannelId,
-        page: kanade::bot::transport::HistoryPage,
+        page: kanade::discord::transport::HistoryPage,
         limit: u16,
     ) -> impl std::future::Future<Output = Outcome<Vec<twilight_model::channel::Message>>> + Send
     {

@@ -5,19 +5,19 @@
 //! as cleared. Each case runs the same run just before and just after its end.
 
 use chrono::{DateTime, NaiveTime, TimeZone, Utc, Weekday};
-use kanade::domain::completion::{RunEnds, RunEndsSource};
-use kanade::domain::members::Roster;
-use kanade::domain::notify::digest_inclusion;
-use kanade::domain::schedule::{
+use kanade_domain::completion::{RunEnds, RunEndsSource};
+use kanade_domain::members::Roster;
+use kanade_domain::notify::digest_inclusion;
+use kanade_domain::schedule::{
     FixedField, FixedRunPatch, MemberRunRefusal, NewFixedRun, NewRun, ReminderPolicy, RsvpSource,
     RsvpState, RunSource, RunStatus, ScheduleError, SchedulePolicy, SettleRun, StatusChange,
     utc_instant,
 };
-use kanade::domain::scheduler::{
+use kanade_domain::scheduler::{
     Attributed, DeclineNoticeContext, ScheduleStore, SchedulerError, SchedulerService, Scope,
 };
-use kanade::domain::settings::RunLengths;
-use kanade::infrastructure::store::SqliteStore;
+use kanade_domain::settings::RunLengths;
+use kanade_store::SqliteStore;
 
 use crate::common::{SeqIds, TestClock};
 use crate::support::by_tests;
@@ -371,7 +371,7 @@ fn at(now: DateTime<Utc>) -> chrono::DateTime<chrono::FixedOffset> {
 /// A party change recorded on next week's run, picked onto this week's.
 #[tokio::test]
 async fn a_cherry_pick_onto_an_ended_run_is_refused() {
-    use kanade::domain::history::{ChangeHistory, PickMode};
+    use kanade_domain::history::{ChangeHistory, PickMode};
     let policy = policy();
     let this_week = utc_instant(&policy.week_of(&start()).unwrap()).unwrap();
     for (now, refused) in [(before_end(), false), (after_end(), true)] {
@@ -414,7 +414,7 @@ async fn a_cherry_pick_onto_an_ended_run_is_refused() {
             assert!(
                 matches!(
                     result,
-                    Err(kanade::domain::scheduler::PickError::Schedule(
+                    Err(kanade_domain::scheduler::PickError::Schedule(
                         ScheduleError::RunEnded { .. }
                     ))
                 ),
@@ -431,7 +431,7 @@ async fn a_cherry_pick_onto_an_ended_run_is_refused() {
 /// without a choice for it.
 #[tokio::test]
 async fn a_weekly_change_asks_no_choice_for_an_ended_amended_run() {
-    use kanade::domain::schedule::{FixedEdit, FixedEditChoices, FixedEditRequest};
+    use kanade_domain::schedule::{FixedEdit, FixedEditChoices, FixedEditRequest};
     let policy = policy();
     let mut world = world(RunStatus::Planned, utc(10, 11, 0)).await;
     let run = world.run.clone();
@@ -486,11 +486,11 @@ async fn a_weekly_change_asks_no_choice_for_an_ended_amended_run() {
 /// scheduler's run ends.
 async fn propose(
     world: &World,
-    kind: kanade::domain::proposals::ChangeKind,
+    kind: kanade_domain::proposals::ChangeKind,
     to: Option<DateTime<Utc>>,
     now: DateTime<Utc>,
 ) -> Result<(), String> {
-    use kanade::domain::proposals::{ProposedChange, translate};
+    use kanade_domain::proposals::{ProposedChange, translate};
     let policy = policy();
     let ends = std::sync::Arc::new(RunEnds::new(RunLengths::default(), None, policy.clone()));
     let snapshot = world.service.store().load(&Scope::All).await.unwrap();
@@ -499,7 +499,7 @@ async fn propose(
     change.new_datetime = to;
     let translation = translate(&change, &snapshot, &policy, Some(&ends), now)
         .map_err(|refusal| refusal.to_string())?;
-    kanade::domain::drafts::replay(
+    kanade_domain::drafts::replay(
         &snapshot,
         &translation.ops,
         &policy,
@@ -513,7 +513,7 @@ async fn propose(
 
 #[tokio::test]
 async fn moving_a_cancelled_or_own_time_run_after_its_old_slot_works() {
-    use kanade::domain::proposals::ChangeKind;
+    use kanade_domain::proposals::ChangeKind;
     let to = Some(utc(12, 12, 0));
     let cancelled = world(RunStatus::Cancelled, after_end()).await;
     propose(&cancelled, ChangeKind::Move, to, after_end())
@@ -528,7 +528,7 @@ async fn moving_a_cancelled_or_own_time_run_after_its_old_slot_works() {
 
 #[tokio::test]
 async fn cancel_and_own_time_proposals_are_refused_on_an_ended_run() {
-    use kanade::domain::proposals::ChangeKind;
+    use kanade_domain::proposals::ChangeKind;
     for kind in [ChangeKind::Cancel, ChangeKind::Otot] {
         let open = world(RunStatus::Planned, before_end()).await;
         propose(&open, kind, None, before_end())
@@ -537,7 +537,7 @@ async fn cancel_and_own_time_proposals_are_refused_on_an_ended_run() {
         let frozen = world(RunStatus::Planned, after_end()).await;
         assert_eq!(
             propose(&frozen, kind, None, after_end()).await,
-            Err(kanade::domain::schedule::RUN_ENDED.to_owned()),
+            Err(kanade_domain::schedule::RUN_ENDED.to_owned()),
             "{kind:?}"
         );
     }
@@ -545,11 +545,11 @@ async fn cancel_and_own_time_proposals_are_refused_on_an_ended_run() {
 
 struct Party;
 
-impl kanade::domain::members::Directory for Party {
-    fn member(&self, user_id: &str) -> Option<kanade::domain::members::Member> {
+impl kanade_domain::members::Directory for Party {
+    fn member(&self, user_id: &str) -> Option<kanade_domain::members::Member> {
         [ALICE, BOB]
             .contains(&user_id)
-            .then(|| kanade::domain::members::Member {
+            .then(|| kanade_domain::members::Member {
                 user_id: user_id.to_owned(),
                 has_role: true,
                 ..Default::default()
@@ -563,9 +563,9 @@ impl kanade::domain::members::Directory for Party {
 
 #[tokio::test]
 async fn a_cancel_proposed_before_the_end_is_refused_when_approved_after_it() {
-    use kanade::domain::drafts::ProposalSource;
-    use kanade::domain::proposals::{Approver, ChangeKind, ProposedChange, Refusal};
-    use kanade::domain::scheduler::{ProposalError, ProposalRequest, Supersede};
+    use kanade_domain::drafts::ProposalSource;
+    use kanade_domain::proposals::{Approver, ChangeKind, ProposedChange, Refusal};
+    use kanade_domain::scheduler::{ProposalError, ProposalRequest, Supersede};
     for kind in [ChangeKind::Cancel, ChangeKind::Otot] {
         let mut world = world(RunStatus::Planned, before_end()).await;
         let mut change = ProposedChange::new(kind);
@@ -601,7 +601,7 @@ async fn a_cancel_proposed_before_the_end_is_refused_when_approved_after_it() {
         assert_eq!(
             refused.map(|_| ()),
             Err(ProposalError::Refused(Refusal::Rule(
-                kanade::domain::schedule::RUN_ENDED.to_owned()
+                kanade_domain::schedule::RUN_ENDED.to_owned()
             ))),
             "{kind:?}"
         );

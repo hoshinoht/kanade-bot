@@ -12,7 +12,7 @@ use tokio::net::{TcpListener, TcpStream};
 use twilight_http::Client;
 use twilight_model::id::Id;
 
-use kanade::bot::transport::{
+use kanade::discord::transport::{
     AmbiguousKind, DiscordTransport, HistoryPage, InteractionRef, InteractionReply, MAX_SENDS,
     MessageEdit, Outcome, OutgoingMessage, Presence, RejectionKind, SILENT, TransportConfig,
     TwilightTransport, Upload,
@@ -288,7 +288,7 @@ async fn an_edit_sends_no_attachments_field() {
     let edit = MessageEdit {
         content: Some("📅 **Tonight**".into()),
         embeds: Some(Vec::new()),
-        allowed_mentions: kanade::bot::mentions::none(),
+        allowed_mentions: kanade::discord::mentions::none(),
         components: Some(Vec::new()),
     };
     let outcome = quick(addr)

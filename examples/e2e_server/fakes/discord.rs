@@ -17,11 +17,13 @@ use axum::{
     response::{IntoResponse, Response},
     routing::get,
 };
-use kanade::api::auth::{
-    crypto,
-    discord::DiscordUser,
-    fake::FakeDiscord,
-    wire::{self, query_pairs, query_value},
+use kanade::{
+    api::auth::{
+        discord::DiscordUser,
+        fake::FakeDiscord,
+        wire::{self, query_pairs, query_value},
+    },
+    app::crypto,
 };
 
 use crate::seed::ids::{BOTTY as BOT, MIKAN as ELIGIBLE, PARTNER, PLAIN as INELIGIBLE};
