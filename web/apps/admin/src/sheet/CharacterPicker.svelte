@@ -9,7 +9,7 @@
   default (the timing's pick, the main or the only character; for a later
   boss the timing's pick for it, else the first boss's character); a timing's
   caller clears when the default is chosen. Picks save live, never into a
-  staged draft or a form.
+  form.
 -->
 <script lang="ts">
   import { tick, untrack, type Snippet } from 'svelte';
@@ -29,7 +29,6 @@
     tagEveryOption = false,
     open = $bindable(false),
     busy = false,
-    staging = false,
     meta,
     under,
     note,
@@ -55,8 +54,6 @@
     /** The bottom sheet's state (the popover is mounted only while open). */
     open?: boolean;
     busy?: boolean;
-    /** Run-sheet staging is on: say the pick still saves live. */
-    staging?: boolean;
     /** More words after a choice's class ("the default", "picked 12 Oct by Asahi"). */
     meta?: (c: CharacterChoice) => string[];
     /** A choice below an entry level: tinted, still offered (it never blocks). */
@@ -165,7 +162,6 @@
   {/if}
   {#if slot.retired}<p class="charpick__note">{slot.retired} retired character{slot.retired === 1 ? '' : 's'} not offered.</p>{/if}
   {@render note?.()}
-  {#if staging}<p class="charpick__note">Saves live: character picks are not staged in the draft.</p>{/if}
 {/snippet}
 
 {#if variant === 'popover'}

@@ -30,11 +30,11 @@ use kanade_domain::{
 };
 use kanade_store::{
     SqliteCharData, SqliteStore, attendance_conformance, auth_audit_conformance, card_conformance,
-    characters_conformance, chardata_conformance, cherry_pick_conformance, conformance,
-    decline_conformance, draft_conformance, guides_conformance, history_conformance,
-    journal_conformance, members_conformance, model_log_conformance, outbox_conformance,
-    owner_request_conformance, picks_conformance, precondition_conformance, proposal_conformance,
-    replay_conformance, run_prompt_conformance, settings_conformance, web_sessions_conformance,
+    characters_conformance, chardata_conformance, conformance, decline_conformance,
+    draft_conformance, guides_conformance, history_conformance, journal_conformance,
+    members_conformance, model_log_conformance, outbox_conformance, owner_request_conformance,
+    picks_conformance, precondition_conformance, proposal_conformance, replay_conformance,
+    run_prompt_conformance, settings_conformance, web_sessions_conformance,
 };
 
 #[derive(Clone, Copy)]
@@ -452,11 +452,6 @@ async fn drafts_conform() {
 #[tokio::test]
 async fn attendance_conforms() {
     attendance_conformance::run_suite(SqliteStore::open_temp).await;
-}
-
-#[tokio::test]
-async fn cherry_picks_conform() {
-    cherry_pick_conformance::run_suite(SqliteStore::open_temp).await;
 }
 
 #[tokio::test]

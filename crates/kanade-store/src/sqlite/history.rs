@@ -964,18 +964,6 @@ impl Checkpoints for SqliteStore {
             })
     }
 
-    async fn load_checkpoint(&self, name: &str) -> Result<Option<Checkpoint>, StoreError> {
-        let mut conn = self.reader().await.map_err(backend)?;
-        let row = sqlx::query(&format!(
-            "SELECT {CHECKPOINT_COLUMNS} FROM checkpoints WHERE name = ?1"
-        ))
-        .bind(name)
-        .fetch_optional(&mut *conn)
-        .await
-        .map_err(backend)?;
-        row.as_ref().map(checkpoint).transpose()
-    }
-
     async fn list_checkpoints(
         &self,
         week: Option<DateTime<Utc>>,

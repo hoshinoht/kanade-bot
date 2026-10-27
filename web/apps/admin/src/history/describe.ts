@@ -51,6 +51,15 @@ export function shortAt(iso: string, timeZone: string, time = true): string {
 }
 
 /**
+ * When something was last edited, guild-local: "11:48" today (by the server's
+ * clock, `now`), else "Mon 22:15" (the boss week is on screen, so no date).
+ */
+export function editedAt(iso: string, timeZone: string, now: string): string {
+  const at = shortAt(iso, timeZone);
+  return now && shortAt(now, timeZone, false) === shortAt(iso, timeZone, false) ? at.slice(-5) : at.replace(/ \d{2} /, ' ');
+}
+
+/**
  * A record's boss week as its guild-local start date (`YYYY-MM-DD`), which is
  * what `weekStartLabel` and `Week.starts` use; records name it by instant.
  */

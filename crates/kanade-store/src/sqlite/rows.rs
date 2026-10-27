@@ -5,9 +5,7 @@ use chrono::{DateTime, NaiveTime, Timelike, Utc, Weekday};
 use sqlx::Row;
 use sqlx::sqlite::SqliteRow;
 
-use kanade_domain::attendance::{
-    AttendanceDefault, AttendanceRecord, PastRun, StandingAnswer, StatusPin,
-};
+use kanade_domain::attendance::{AttendanceDefault, AttendanceRecord, StandingAnswer, StatusPin};
 use kanade_domain::schedule::{
     FixedRun, Reminder, Rsvp, RsvpSource, RsvpState, Run, RunSource, RunStatus,
 };
@@ -249,48 +247,6 @@ pub(super) async fn attach_status_pins(
         }
     }
     Ok(())
-}
-
-/// One member's recorded attendance on done runs, newest first, at most
-/// `per_timing` per weekly timing (one-off runs share one group).
-pub(super) async fn member_history(
-    conn: &mut sqlx::SqliteConnection,
-    member: &str,
-    per_timing: usize,
-) -> Result<Vec<PastRun>, StoreError> {
-    let limit = i64::try_from(per_timing).unwrap_or(i64::MAX);
-    let found = sqlx::query(
-        "SELECT run_id, fixed_run_id, datetime, attended, state FROM ( \
-             SELECT r.id AS run_id, r.fixed_run_id, r.datetime, a.attended, v.state, \
-                    ROW_NUMBER() OVER ( \
-                        PARTITION BY r.fixed_run_id ORDER BY r.datetime DESC, r.id DESC \
-                    ) AS recent \
-             FROM run_attendance a \
-             JOIN runs r ON r.id = a.run_id \
-             LEFT JOIN rsvps v ON v.run_id = a.run_id AND v.user_id = a.user_id \
-             WHERE a.user_id = ?1 AND r.status = 'done' \
-         ) WHERE recent <= ?2 ORDER BY datetime DESC, run_id DESC",
-    )
-    .bind(member)
-    .bind(limit)
-    .fetch_all(&mut *conn)
-    .await
-    .map_err(corrupt)?;
-    found
-        .iter()
-        .map(|row| {
-            let attended: i64 = row.try_get("attended").map_err(corrupt)?;
-            Ok(PastRun {
-                run_id: text(row, "run_id")?,
-                fixed_run_id: optional_text(row, "fixed_run_id")?,
-                at: read_instant(row, "datetime")?,
-                explicit: optional_text(row, "state")?
-                    .map(|state| RsvpState::parse(&state).map_err(corrupt))
-                    .transpose()?,
-                attended: attended != 0,
-            })
-        })
-        .collect()
 }
 
 pub(super) fn reminder(row: &SqliteRow) -> Result<Reminder, StoreError> {

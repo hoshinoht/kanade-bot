@@ -274,59 +274,6 @@ pub fn countdown_mentions(states: &[(String, AnswerState)]) -> Vec<String> {
         .collect()
 }
 
-/// Who recorded attendance.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum AttendanceActor {
-    Admin,
-    Member(String),
-}
-
-/// Why an attendance record was refused.
-#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
-pub enum AttendanceRefusal {
-    /// Attendance is recorded at or after marking the run done.
-    #[error("attendance is recorded once the run is done")]
-    NotDone,
-    /// A member may confirm only their own attendance.
-    #[error("members may confirm only their own attendance")]
-    OthersNotAllowed,
-    /// A member not on the run.
-    #[error("{0} is not on the run")]
-    NotOnRun(String),
-}
-
-/// The roster pre-ticked for one-tap correction: everyone not declined.
-pub fn prefill(states: &[(String, AnswerState)]) -> BTreeSet<String> {
-    countdown_mentions(states).into_iter().collect()
-}
-
-/// Check an attendance change: the run is done; attendees are on the run;
-/// a member changes only their own entry (`recorded` is what is stored).
-///
-/// # Errors
-/// [`AttendanceRefusal`].
-pub fn check_attendance(
-    actor: &AttendanceActor,
-    status: RunStatus,
-    participants: &[String],
-    recorded: &BTreeSet<String>,
-    attended: &BTreeSet<String>,
-) -> Result<(), AttendanceRefusal> {
-    if status != RunStatus::Done {
-        return Err(AttendanceRefusal::NotDone);
-    }
-    if let Some(stranger) = attended.iter().find(|user| !participants.contains(user)) {
-        return Err(AttendanceRefusal::NotOnRun(stranger.clone()));
-    }
-    if let AttendanceActor::Member(me) = actor {
-        let changed: BTreeSet<&String> = recorded.symmetric_difference(attended).collect();
-        if changed.iter().any(|user| *user != me) {
-            return Err(AttendanceRefusal::OthersNotAllowed);
-        }
-    }
-    Ok(())
-}
-
 /// One member's recorded attendance on a done run (stored with the run,
 /// `Run.attendance`, sorted by user).
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -336,24 +283,6 @@ pub struct AttendanceRecord {
     /// Who recorded it, `<kind>:<id>`.
     pub recorded_by: String,
     pub at: DateTime<Utc>,
-}
-
-/// What stands for each participant now: their recorded entry, else the
-/// prefill (everyone not declined).
-pub fn recorded_or_prefill(
-    states: &[(String, AnswerState)],
-    records: &[AttendanceRecord],
-) -> BTreeSet<String> {
-    states
-        .iter()
-        .filter(
-            |(user, state)| match records.iter().find(|record| &record.user_id == user) {
-                Some(record) => record.attended,
-                None => *state != AnswerState::Declined,
-            },
-        )
-        .map(|(user, _)| user.clone())
-        .collect()
 }
 
 /// v5: a status an administrator set by hand (planned or confirmed),
@@ -396,105 +325,6 @@ pub fn status_label(
         Some(pin) if pin.status == status => Some(StatusLabel::SetByAdmin(status)),
         _ if status == RunStatus::Confirmed && tally.assumed > 0 => Some(StatusLabel::Expected),
         _ => None,
-    }
-}
-
-/// Runs per timing the patterns and the suggestion read ("last 4 runs").
-pub const RECENT_RUNS_PER_TIMING: usize = 4;
-
-/// One member's patterns and the timings suggested for "always in".
-/// Visible only to administrators and to the member themselves.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct MemberAttendance {
-    pub member: String,
-    /// Their recorded runs, newest first per timing (at most
-    /// [`RECENT_RUNS_PER_TIMING`] each).
-    pub history: Vec<PastRun>,
-    pub patterns: Patterns,
-    /// Weekly timings to suggest a standing answer on (never applied).
-    pub suggest_standing: Vec<String>,
-}
-
-/// One member's past run: what they answered explicitly and whether they
-/// attended.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct PastRun {
-    pub run_id: String,
-    pub fixed_run_id: Option<String>,
-    pub at: DateTime<Utc>,
-    pub explicit: Option<RsvpState>,
-    pub attended: bool,
-}
-
-/// A member's attendance patterns. Visible only to administrators and to
-/// the member themselves.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct Patterns {
-    pub attended_without_answering: usize,
-    pub answered_in_but_absent: usize,
-    pub answered_out_but_attended: usize,
-}
-
-pub fn attendance_patterns(history: &[PastRun]) -> Patterns {
-    let mut patterns = Patterns::default();
-    for run in history {
-        match (run.explicit, run.attended) {
-            (None, true) => patterns.attended_without_answering += 1,
-            (Some(RsvpState::Yes), false) => patterns.answered_in_but_absent += 1,
-            (Some(RsvpState::No), true) => patterns.answered_out_but_attended += 1,
-            _ => {}
-        }
-    }
-    patterns
-}
-
-/// Suggest "always in" for a timing when the member attended without
-/// answering on at least 3 of their last 4 runs of it (never applied
-/// automatically).
-pub fn suggest_standing(history: &[PastRun], fixed_run_id: &str) -> bool {
-    let mut runs: Vec<&PastRun> = history
-        .iter()
-        .filter(|run| run.fixed_run_id.as_deref() == Some(fixed_run_id))
-        .collect();
-    runs.sort_by_key(|run| std::cmp::Reverse(run.at));
-    runs.iter()
-        .take(4)
-        .filter(|run| run.explicit.is_none() && run.attended)
-        .count()
-        >= 3
-}
-
-/// A card control setting a standing answer ("✅ every week"). The Discord
-/// adapter renders it as a button with this custom id and routes presses
-/// back here; nothing is wired yet.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct StandingAction {
-    pub fixed_run_id: String,
-    pub on: bool,
-}
-
-impl StandingAction {
-    /// `standing:<fixed_run_id>:on|off`.
-    pub fn custom_id(&self) -> String {
-        format!(
-            "standing:{}:{}",
-            self.fixed_run_id,
-            if self.on { "on" } else { "off" }
-        )
-    }
-
-    pub fn parse(custom_id: &str) -> Option<Self> {
-        let rest = custom_id.strip_prefix("standing:")?;
-        let (fixed_run_id, on) = rest.rsplit_once(':')?;
-        let on = match on {
-            "on" => true,
-            "off" => false,
-            _ => return None,
-        };
-        (!fixed_run_id.is_empty()).then(|| Self {
-            fixed_run_id: fixed_run_id.to_owned(),
-            on,
-        })
     }
 }
 
@@ -655,108 +485,10 @@ mod tests {
         ];
         assert_eq!(Tally::of(&full).to_string(), "4/4 (2 assumed)");
         assert_eq!(Tally::of(&[Confirmed]).to_string(), "1/1");
-        assert_eq!(
-            prefill(&states),
-            BTreeSet::from(["1".into(), "2".into(), "3".into()])
-        );
     }
 
     #[test]
-    fn attendance_permissions() {
-        let party = vec!["1".to_owned(), "2".to_owned()];
-        let recorded = BTreeSet::from(["1".to_owned(), "2".to_owned()]);
-        let without_2 = BTreeSet::from(["1".to_owned()]);
-        let member = |id: &str| AttendanceActor::Member(id.to_owned());
-        assert_eq!(
-            check_attendance(
-                &AttendanceActor::Admin,
-                RunStatus::Planned,
-                &party,
-                &recorded,
-                &recorded
-            ),
-            Err(AttendanceRefusal::NotDone)
-        );
-        assert!(
-            check_attendance(
-                &AttendanceActor::Admin,
-                RunStatus::Done,
-                &party,
-                &recorded,
-                &without_2
-            )
-            .is_ok()
-        );
-        // A member may change only their own entry.
-        assert!(
-            check_attendance(&member("2"), RunStatus::Done, &party, &recorded, &without_2).is_ok()
-        );
-        assert_eq!(
-            check_attendance(&member("1"), RunStatus::Done, &party, &recorded, &without_2),
-            Err(AttendanceRefusal::OthersNotAllowed)
-        );
-        assert_eq!(
-            check_attendance(
-                &AttendanceActor::Admin,
-                RunStatus::Done,
-                &party,
-                &recorded,
-                &BTreeSet::from(["9".to_owned()])
-            ),
-            Err(AttendanceRefusal::NotOnRun("9".into()))
-        );
-    }
-
-    #[test]
-    fn patterns_and_the_suggestion() {
-        let run = |day: u32, fixed: &str, explicit, attended| PastRun {
-            run_id: format!("r{day}"),
-            fixed_run_id: Some(fixed.to_owned()),
-            at: Utc.with_ymd_and_hms(2026, 9, day, 20, 0, 0).unwrap(),
-            explicit,
-            attended,
-        };
-        let history = vec![
-            run(1, "f", None, true),
-            run(8, "f", Some(RsvpState::Yes), false),
-            run(15, "f", None, true),
-            run(22, "f", None, true),
-            run(29, "f", Some(RsvpState::No), true),
-            run(2, "g", None, true),
-        ];
-        assert_eq!(
-            attendance_patterns(&history),
-            Patterns {
-                attended_without_answering: 4,
-                answered_in_but_absent: 1,
-                answered_out_but_attended: 1,
-            }
-        );
-        // Last four runs of f: 29 (answered), 22, 15 (silent, attended),
-        // 8 (answered): only 2 silent attendances.
-        assert!(!suggest_standing(&history, "f"));
-        let mostly_silent = vec![
-            run(8, "f", None, true),
-            run(15, "f", None, true),
-            run(22, "f", Some(RsvpState::Yes), true),
-            run(29, "f", None, true),
-            run(1, "f", Some(RsvpState::Yes), true),
-        ];
-        assert!(suggest_standing(&mostly_silent, "f"));
-        assert!(!suggest_standing(&mostly_silent, "g"));
-    }
-
-    #[test]
-    fn standing_actions_round_trip() {
-        for on in [true, false] {
-            let action = StandingAction {
-                fixed_run_id: "abc".into(),
-                on,
-            };
-            assert_eq!(StandingAction::parse(&action.custom_id()), Some(action));
-        }
-        assert_eq!(StandingAction::parse("standing::on"), None);
-        assert_eq!(StandingAction::parse("standing:abc:maybe"), None);
+    fn attendance_defaults_parse() {
         assert_eq!(
             AttendanceDefault::parse("assume_coming"),
             Some(AttendanceDefault::AssumeComing)

@@ -726,7 +726,7 @@ async fn a_repeated_approval_never_retires_a_newer_sibling() {
 }
 
 #[tokio::test]
-async fn drafts_and_requests_refuse_proposal_only_operations() {
+async fn requests_refuse_proposal_only_operations() {
     let mut f = fixture().await;
     let run = Target::Existing(f.run.clone());
     let internal = [
@@ -739,57 +739,6 @@ async fn drafts_and_requests_refuse_proposal_only_operations() {
         DraftOp::ReviveRun { run: run.clone() },
     ];
     let policy = f.policy.clone();
-    let draft = f.service.create_draft("root", "tidy", None).await.unwrap();
-    for op in &internal {
-        assert_eq!(
-            f.service
-                .add_draft_op(
-                    "root",
-                    &draft.id,
-                    draft.version,
-                    op.clone(),
-                    &policy,
-                    &Guild
-                )
-                .await
-                .unwrap_err(),
-            DraftError::ProposalOnlyOp(op.kind())
-        );
-    }
-    let staged = f
-        .service
-        .add_draft_op(
-            "root",
-            &draft.id,
-            draft.version,
-            DraftOp::SetStatus {
-                run: run.clone(),
-                change: StatusChange {
-                    status: RunStatus::Otot,
-                    announce: false,
-                    via_portal: true,
-                },
-            },
-            &policy,
-            &Guild,
-        )
-        .await
-        .unwrap();
-    assert_eq!(
-        f.service
-            .edit_draft_op(
-                "root",
-                &draft.id,
-                staged.draft.version,
-                0,
-                internal[3].clone(),
-                &policy,
-                &Guild
-            )
-            .await
-            .unwrap_err(),
-        DraftError::ProposalOnlyOp("revive_run")
-    );
     let request = f
         .service
         .submit_request(
@@ -803,20 +752,23 @@ async fn drafts_and_requests_refuse_proposal_only_operations() {
         )
         .await
         .unwrap();
-    assert!(matches!(
-        f.service
-            .edit_request(
-                &Actor::admin("root"),
-                &request.id,
-                request.version,
-                vec![internal[1].clone()],
-                &policy,
-                &Guild,
-            )
-            .await
-            .unwrap_err(),
-        RequestError::Draft(DraftError::ProposalOnlyOp("ensure_reminders"))
-    ));
+    for op in internal {
+        let kind = op.kind();
+        assert_eq!(
+            f.service
+                .edit_request(
+                    &Actor::admin("root"),
+                    &request.id,
+                    request.version,
+                    vec![op],
+                    &policy,
+                    &Guild,
+                )
+                .await
+                .unwrap_err(),
+            RequestError::Draft(DraftError::ProposalOnlyOp(kind))
+        );
+    }
 }
 
 #[tokio::test]

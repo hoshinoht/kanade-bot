@@ -5,8 +5,7 @@
  * `GET /api/admin/{runs,fixed}/{id}/characters`, `PUT …/characters/{member}`
  * (the first boss and every boss without its own pick), `PUT …/bosses/{key}`
  * (a later boss) and `POST …/same` (same for every boss). Picks save directly,
- * never through run-sheet staging or the timing's form, and a warning never
- * blocks a save. UI only: characters never reach a model path.
+ * never through the timing's form, and a warning never blocks a save. UI only: characters never reach a model path.
  */
 import type { CharacterChoice, CharacterClash, RunCharacterSlot, Week } from '@kanade/api-types';
 import { ApiRequestError, createClient, type Client } from '@kanade/client';

@@ -6,27 +6,26 @@ use std::sync::Arc;
 
 use chrono::{DateTime, Utc};
 
-use super::ports::{
-    AttendanceHistory, Clock, Committed, IdSource, ScheduleStore, Scope, StoreError,
-};
-use crate::attendance::{self, AttendanceActor, AttendancePolicy, AttendanceRefusal};
+use super::ports::{Clock, Committed, IdSource, ScheduleStore, Scope, StoreError};
+use crate::attendance::AttendancePolicy;
 use crate::completion::{RunEnds, RunEndsSource};
 use crate::history::{
-    Actor, ChangeFilter, ChangeHistory, ChangeMeta, ChangeQuery, ChangeRecord, ChangeRef,
-    CheckedChange, Checkpoint, CheckpointKind, Checkpoints, EDIT_OVERRIDE, Expect, HeldReminders,
-    HistoryRefusal, NewCheckpoint, Origin, PreconditionError, RevertMode, RevertOutcome,
-    RevertScope, StaleField, Surface, apply_revert, changed_rows, changes_by_actor,
+    Actor, ChangeFilter, ChangeHistory, ChangeMeta, ChangeQuery, ChangeRecord, CheckedChange,
+    EDIT_OVERRIDE, Expect, HeldReminders, HistoryRefusal, Origin, PreconditionError, RevertMode,
+    RevertOutcome, RevertScope, StaleField, Surface, apply_revert, changed_rows, changes_by_actor,
     changes_for_week, sha256_hex,
 };
 use crate::members::Directory;
 use crate::notify::{DeclineNotice, DeclineNoticeStore};
 use crate::ownership::OwnerPin;
 use crate::schedule::{
-    self, AmendedRun, Draft, FixedEdit, FixedEditRequest, FixedField, FixedRun, FixedRunPatch,
-    MemberRunRefusal, NewFixedRun, NewRun, Notice, NoticeChange, Op, OpResult, Outcome,
-    ReactionResult, Reminder, ReminderPolicy, RsvpSource, RsvpState, RunState, RunStatus,
-    ScheduleError, SchedulePolicy, StatusChange, WeekStart, apply_op, utc_instant,
+    self, AmendedRun, Draft, FixedEdit, FixedEditRequest, FixedRun, MemberRunRefusal, NewFixedRun,
+    NewRun, Notice, Op, OpResult, Outcome, ReactionResult, Reminder, ReminderPolicy, RsvpSource,
+    RsvpState, RunState, RunStatus, ScheduleError, SchedulePolicy, StatusChange, WeekStart,
+    apply_op, utc_instant,
 };
+#[cfg(any(test, feature = "test-support"))]
+use crate::schedule::{FixedField, FixedRunPatch};
 use crate::time::AwareDateTime;
 
 mod fixed_patch;
@@ -316,56 +315,6 @@ impl<S: ScheduleStore, I: IdSource, C: Clock> SchedulerService<S, I, C> {
         }
     }
 
-    /// v5 attendance: `member`'s patterns over their last
-    /// [`attendance::RECENT_RUNS_PER_TIMING`] recorded runs per timing, and
-    /// the timings to suggest "always in" on (never applied). Only an
-    /// administrator or the member themselves may read them.
-    ///
-    /// # Errors
-    /// [`SchedulerError::Forbidden`] for anyone else, or the store failed.
-    pub async fn member_attendance(
-        &self,
-        viewer: &Actor,
-        member: &str,
-    ) -> SchedulerResult<attendance::MemberAttendance>
-    where
-        S: AttendanceHistory,
-    {
-        let allowed = match viewer {
-            Actor::Admin { .. } => true,
-            Actor::Member { id } => id == member,
-            Actor::System { .. } => false,
-        };
-        if !allowed {
-            return Err(SchedulerError::Forbidden(
-                "attendance patterns are for administrators and the member".into(),
-            ));
-        }
-        let history = self
-            .store
-            .member_history(member, attendance::RECENT_RUNS_PER_TIMING)
-            .await?;
-        let timings = self.store.load(&Scope::Weeks(Vec::new())).await?.fixed_runs;
-        let suggest_standing = timings
-            .iter()
-            .filter(|timing| {
-                timing.participants.iter().any(|user| user == member)
-                    && !timing
-                        .standing
-                        .iter()
-                        .any(|answer| answer.user_id == member)
-                    && attendance::suggest_standing(&history, &timing.id)
-            })
-            .map(|timing| timing.id.clone())
-            .collect();
-        Ok(attendance::MemberAttendance {
-            member: member.to_owned(),
-            patterns: attendance::attendance_patterns(&history),
-            history,
-            suggest_standing,
-        })
-    }
-
     /// The amended runs a weekly-timing edit would move; choose for each
     /// before [`Self::apply_fixed_edit`].
     pub async fn preview_fixed_edit(
@@ -502,6 +451,7 @@ impl<S: ScheduleStore, I: IdSource, C: Clock> Attributed<'_, S, I, C> {
     }
 
     /// Materialise one boss week; returns the ids of newly created runs.
+    #[cfg(any(test, feature = "test-support"))]
     pub async fn materialise_week(
         self,
         week_start: impl AwareDateTime,
@@ -621,6 +571,7 @@ impl<S: ScheduleStore, I: IdSource, C: Clock> Attributed<'_, S, I, C> {
 
     /// Update a weekly timing and push the `changed` fields onto its runs in
     /// `week_starts`, atomically. Returns how many runs were touched.
+    #[cfg(any(test, feature = "test-support"))]
     pub async fn edit_fixed_run(
         self,
         fixed_id: &str,
@@ -656,6 +607,7 @@ impl<S: ScheduleStore, I: IdSource, C: Clock> Attributed<'_, S, I, C> {
         Ok(count(self.apply(scope, op).await?.value))
     }
 
+    #[cfg(any(test, feature = "test-support"))]
     pub async fn ensure_reminders(
         self,
         run_id: &str,
@@ -722,12 +674,6 @@ impl<S: ScheduleStore, I: IdSource, C: Clock> Attributed<'_, S, I, C> {
                 .await?
                 .value,
         ))
-    }
-
-    /// Move unposted day-of pings after the ping time changed.
-    pub async fn reconcile_day_of(self, policy: &ReminderPolicy) -> SchedulerResult<usize> {
-        let op = Op::ReconcileDayOf { policy };
-        Ok(count(self.apply(Scope::All, op).await?.value))
     }
 
     /// v5 (run completion): mark one live run done at its cutoff, without a
@@ -839,6 +785,7 @@ impl<S: ScheduleStore, I: IdSource, C: Clock> Attributed<'_, S, I, C> {
     }
 
     /// Exchange two runs' slots as one history-recorded transaction.
+    #[cfg(any(test, feature = "test-support"))]
     pub async fn swap_run_slots(
         self,
         run_id: &str,
@@ -945,6 +892,7 @@ impl<S: ScheduleStore, I: IdSource, C: Clock> Attributed<'_, S, I, C> {
     }
 
     /// v4 `update_fixed`: apply an edit, every amended run following it.
+    #[cfg(any(test, feature = "test-support"))]
     pub async fn update_fixed(
         self,
         fixed_id: &str,
@@ -975,99 +923,6 @@ impl<S: ScheduleStore, I: IdSource, C: Clock> Attributed<'_, S, I, C> {
         ))
     }
 
-    /// v5 attendance: set (`on`) or clear `member`'s standing answer ("always
-    /// in") on a weekly timing. A member may set only their own, and only
-    /// on a timing whose party they are in; an administrator may set anyone
-    /// in the party. Returns the timing.
-    ///
-    /// # Errors
-    /// [`SchedulerError::Forbidden`] for a member acting for someone else,
-    /// [`ScheduleError::NotInParty`], or as any edit (preconditions on
-    /// `standing:<member>`).
-    pub async fn set_standing_answer(
-        self,
-        member: &str,
-        fixed_id: &str,
-        on: bool,
-    ) -> SchedulerResult<FixedRun> {
-        let actor = &self.origin.actor;
-        if matches!(actor, Actor::Member { id } if id != member) {
-            return Err(SchedulerError::Forbidden(
-                "members set only their own standing answer".into(),
-            ));
-        }
-        let op = Op::SetStandingAnswer {
-            fixed_id: fixed_id.to_owned(),
-            user_id: member.to_owned(),
-            on,
-            set_by: format!("{}:{}", actor.kind(), actor.id()),
-        };
-        // Every run is loaded: the timing's runs are re-derived (v5).
-        fixed(self.apply(Scope::All, op).await?.value)
-    }
-
-    /// v5 attendance: a weekly timing's default for unanswered members,
-    /// administrators only. Returns the timing.
-    ///
-    /// # Errors
-    /// [`SchedulerError::Forbidden`] for a non-administrator, or as any
-    /// edit (preconditions on `attendance_default`).
-    pub async fn set_attendance_default(
-        self,
-        fixed_id: &str,
-        default: crate::attendance::AttendanceDefault,
-    ) -> SchedulerResult<FixedRun> {
-        if !matches!(self.origin.actor, Actor::Admin { .. }) {
-            return Err(SchedulerError::Forbidden(
-                "only administrators set a timing's attendance default".into(),
-            ));
-        }
-        let op = Op::SetAttendanceDefault {
-            fixed_id: fixed_id.to_owned(),
-            default,
-        };
-        fixed(self.apply(Scope::All, op).await?.value)
-    }
-
-    /// v5 attendance: record who attended a done run. `attended` is the
-    /// whole attended set as the caller sees it (start from
-    /// [`attendance::prefill`]); administrators record anyone, a member only
-    /// their own entry. Returns the run with its recorded attendance.
-    ///
-    /// # Errors
-    /// [`SchedulerError::Forbidden`] for a system actor or a member changing
-    /// someone else's entry, [`ScheduleError::Attendance`] (`NotDone`,
-    /// `NotOnRun`), or as any edit (preconditions on `attended:<user>`).
-    pub async fn record_attendance(
-        self,
-        run_id: &str,
-        attended: &BTreeSet<String>,
-    ) -> SchedulerResult<RunState> {
-        let actor = &self.origin.actor;
-        let who = match actor {
-            Actor::Admin { .. } => AttendanceActor::Admin,
-            Actor::Member { id } => AttendanceActor::Member(id.clone()),
-            Actor::System { .. } => {
-                return Err(SchedulerError::Forbidden(
-                    "attendance is recorded by administrators and members".into(),
-                ));
-            }
-        };
-        let op = Op::RecordAttendance {
-            run_id: run_id.to_owned(),
-            actor: who,
-            attended: attended.clone(),
-            recorded_by: format!("{}:{}", actor.kind(), actor.id()),
-        };
-        match self.apply(Scope::Run(run_id.to_owned()), op).await {
-            Ok(outcome) => Ok(run_state(outcome).value),
-            Err(SchedulerError::Schedule(ScheduleError::Attendance(
-                refusal @ AttendanceRefusal::OthersNotAllowed,
-            ))) => Err(SchedulerError::Forbidden(refusal.to_string())),
-            Err(error) => Err(error),
-        }
-    }
-
     /// Re-derive live runs' statuses now (the tick's step, so a run turns at
     /// risk when its unknown window opens). Returns the runs whose status
     /// changed.
@@ -1081,6 +936,7 @@ impl<S: ScheduleStore, I: IdSource, C: Clock> Attributed<'_, S, I, C> {
     /// v5 only: change a weekly timing's party by delta (remove, then add),
     /// applying the same delta to its live runs so one-off substitutions
     /// survive; runs it would empty are left alone and reported.
+    #[cfg(any(test, feature = "test-support"))]
     pub async fn change_fixed_party(
         self,
         fixed_id: &str,
@@ -1467,18 +1323,6 @@ fn op_digest(op: &Op<'_>) -> SchedulerResult<String> {
             remove,
             ..
         } => digest("fixed_participants", &(fixed_id, add, remove)),
-        Op::SetStandingAnswer {
-            fixed_id,
-            user_id,
-            on,
-            ..
-        } => digest("set_standing_answer", &(fixed_id, user_id, on)),
-        Op::SetAttendanceDefault { fixed_id, default } => {
-            digest("set_attendance_default", &(fixed_id, default))
-        }
-        Op::RecordAttendance {
-            run_id, attended, ..
-        } => digest("record_attendance", &(run_id, attended)),
         Op::RecountAttendance => digest("recount_attendance", &()),
         Op::SetRunBosses { run_id, bosses, .. } => digest("set_run_bosses", &(run_id, bosses)),
         Op::RecountRun { run_id } => digest("recount_run", run_id),
@@ -1573,166 +1417,76 @@ fn weeks_scope(week_starts: &[impl AwareDateTime]) -> Result<Scope, ScheduleErro
 }
 
 /// Which recorded changes a rollback undoes.
-#[derive(Debug)]
-enum Selection<'a> {
-    Seqs(&'a [u64]),
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum RollbackSelection {
+    Seqs(Vec<u64>),
+    /// Every later change touching the week since store `revision`, only
+    /// within it (weekly timings and other weeks are reported as skipped).
     Week {
         week: DateTime<Utc>,
         revision: u64,
     },
+    /// Everything `actor` changed since `since` (spam cleanup).
     Actor {
-        actor: &'a Actor,
+        actor: Actor,
         since: DateTime<Utc>,
     },
 }
 
+/// One rollback: what it undoes, how, and whether it only plans.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RollbackRequest {
+    pub selection: RollbackSelection,
+    pub mode: RevertMode,
+    /// Plan only: return the outcome without committing.
+    pub preview: bool,
+}
+
 /// What one rollback call asks for; the request digest covers all of it.
-#[derive(Debug)]
-struct Rollback<'a> {
-    selection: Selection<'a>,
+struct Rollback {
+    selection: RollbackSelection,
     scope: RevertScope,
     mode: RevertMode,
-    /// A checkpoint restored to (name, head), named in the notices and
-    /// referenced last by the rollback record.
-    checkpoint: Option<(String, ChangeRef)>,
     /// Plan only: return the outcome without committing.
     preview: bool,
 }
 
-impl<'a> Rollback<'a> {
-    /// A rollback with no checkpoint; a week selection reverts only within
-    /// that week.
-    fn new(selection: Selection<'a>, mode: RevertMode, preview: bool) -> Self {
+/// The request digest's form: still names the retired `checkpoint` (always
+/// `None`), so recorded request ids keep replaying.
+impl fmt::Debug for Rollback {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Rollback")
+            .field("selection", &self.selection)
+            .field("scope", &self.scope)
+            .field("mode", &self.mode)
+            .field("checkpoint", &None::<()>)
+            .field("preview", &self.preview)
+            .finish()
+    }
+}
+
+impl Rollback {
+    /// A week selection reverts only within that week.
+    fn new(request: RollbackRequest) -> Self {
+        let RollbackRequest {
+            selection,
+            mode,
+            preview,
+        } = request;
         let scope = match selection {
-            Selection::Week { week, .. } => RevertScope::Week(week),
-            Selection::Seqs(_) | Selection::Actor { .. } => RevertScope::Whole,
+            RollbackSelection::Week { week, .. } => RevertScope::Week(week),
+            RollbackSelection::Seqs(_) | RollbackSelection::Actor { .. } => RevertScope::Whole,
         };
         Self {
             selection,
             scope,
             mode,
-            checkpoint: None,
             preview,
         }
     }
 }
 
 impl<S: ScheduleStore + ChangeHistory, I: IdSource, C: Clock> SchedulerService<S, I, C> {
-    /// Revert the named records as one new change by `admin` through
-    /// [`Surface::Rollback`] (history is never rewritten). `held` supplies
-    /// the reminders unresolved delivery attempts hold, re-read on every
-    /// attempt. [`RevertOutcome::Conflicts`] and [`RevertOutcome::Unchanged`]
-    /// record and announce nothing.
-    ///
-    /// # Errors
-    /// [`SchedulerError::History`] for an unknown or tampered record;
-    /// [`SchedulerError::AlreadyApplied`] / [`SchedulerError::IdempotencyMismatch`]
-    /// for a reused request id.
-    #[allow(clippy::too_many_arguments)]
-    pub async fn revert_changes(
-        &mut self,
-        admin: &str,
-        request_id: Option<String>,
-        seqs: &[u64],
-        mode: RevertMode,
-        policy: &ReminderPolicy,
-        held: &impl HeldReminders,
-    ) -> SchedulerResult<RevertOutcome> {
-        let rollback = Rollback::new(Selection::Seqs(seqs), mode, false);
-        self.rollback(admin, request_id, rollback, policy, held)
-            .await
-    }
-
-    /// Restore `week` to how it was at store `revision`: revert every later
-    /// change touching it, only within the week (weekly timings and other
-    /// weeks are reported as skipped).
-    ///
-    /// # Errors
-    /// As [`Self::revert_changes`].
-    #[allow(clippy::too_many_arguments)]
-    pub async fn restore_week_to(
-        &mut self,
-        admin: &str,
-        request_id: Option<String>,
-        week: DateTime<Utc>,
-        revision: u64,
-        mode: RevertMode,
-        policy: &ReminderPolicy,
-        held: &impl HeldReminders,
-    ) -> SchedulerResult<RevertOutcome> {
-        let rollback = Rollback::new(Selection::Week { week, revision }, mode, false);
-        self.rollback(admin, request_id, rollback, policy, held)
-            .await
-    }
-
-    /// Revert everything `actor` changed since `since` (spam cleanup).
-    ///
-    /// # Errors
-    /// As [`Self::revert_changes`].
-    #[allow(clippy::too_many_arguments)]
-    pub async fn revert_by_actor(
-        &mut self,
-        admin: &str,
-        request_id: Option<String>,
-        actor: &Actor,
-        since: DateTime<Utc>,
-        mode: RevertMode,
-        policy: &ReminderPolicy,
-        held: &impl HeldReminders,
-    ) -> SchedulerResult<RevertOutcome> {
-        let rollback = Rollback::new(Selection::Actor { actor, since }, mode, false);
-        self.rollback(admin, request_id, rollback, policy, held)
-            .await
-    }
-
-    /// What [`Self::revert_changes`] would do now; nothing is written.
-    /// Reminder ids in `rows` are planned afresh by the apply.
-    ///
-    /// # Errors
-    /// As [`Self::revert_changes`], without the request-id refusals.
-    pub async fn preview_revert_changes(
-        &mut self,
-        seqs: &[u64],
-        mode: RevertMode,
-        policy: &ReminderPolicy,
-        held: &impl HeldReminders,
-    ) -> SchedulerResult<RevertOutcome> {
-        let rollback = Rollback::new(Selection::Seqs(seqs), mode, true);
-        self.rollback("preview", None, rollback, policy, held).await
-    }
-
-    /// What [`Self::restore_week_to`] would do now; nothing is written.
-    ///
-    /// # Errors
-    /// As [`Self::preview_revert_changes`].
-    pub async fn preview_restore_week(
-        &mut self,
-        week: DateTime<Utc>,
-        revision: u64,
-        mode: RevertMode,
-        policy: &ReminderPolicy,
-        held: &impl HeldReminders,
-    ) -> SchedulerResult<RevertOutcome> {
-        let rollback = Rollback::new(Selection::Week { week, revision }, mode, true);
-        self.rollback("preview", None, rollback, policy, held).await
-    }
-
-    /// What [`Self::revert_by_actor`] would do now; nothing is written.
-    ///
-    /// # Errors
-    /// As [`Self::preview_revert_changes`].
-    pub async fn preview_revert_by_actor(
-        &mut self,
-        actor: &Actor,
-        since: DateTime<Utc>,
-        mode: RevertMode,
-        policy: &ReminderPolicy,
-        held: &impl HeldReminders,
-    ) -> SchedulerResult<RevertOutcome> {
-        let rollback = Rollback::new(Selection::Actor { actor, since }, mode, true);
-        self.rollback("preview", None, rollback, policy, held).await
-    }
-
     async fn history(&self, filter: ChangeFilter) -> SchedulerResult<Vec<ChangeRecord>> {
         let mut query = ChangeQuery::new(filter);
         let mut records = Vec::new();
@@ -1748,10 +1502,10 @@ impl<S: ScheduleStore + ChangeHistory, I: IdSource, C: Clock> SchedulerService<S
 
     /// The selected records, newest first, each loaded with its stored bytes
     /// checked.
-    async fn select(&self, selection: &Selection<'_>) -> SchedulerResult<Vec<ChangeRecord>> {
+    async fn select(&self, selection: &RollbackSelection) -> SchedulerResult<Vec<ChangeRecord>> {
         let seqs: BTreeSet<u64> = match selection {
-            Selection::Seqs(seqs) => seqs.iter().copied().collect(),
-            Selection::Week { week, revision } => changes_for_week(
+            RollbackSelection::Seqs(seqs) => seqs.iter().copied().collect(),
+            RollbackSelection::Week { week, revision } => changes_for_week(
                 &self.history(ChangeFilter::Week(*week)).await?,
                 *week,
                 *revision,
@@ -1759,7 +1513,7 @@ impl<S: ScheduleStore + ChangeHistory, I: IdSource, C: Clock> SchedulerService<S
             .iter()
             .map(|record| record.seq)
             .collect(),
-            Selection::Actor { actor, since } => changes_by_actor(
+            RollbackSelection::Actor { actor, since } => changes_by_actor(
                 &self.history(ChangeFilter::Actor((*actor).clone())).await?,
                 actor,
                 *since,
@@ -1786,14 +1540,32 @@ impl<S: ScheduleStore + ChangeHistory, I: IdSource, C: Clock> SchedulerService<S
         Ok(records)
     }
 
-    async fn rollback(
+    /// Revert the selected records as one new change by `admin` through
+    /// [`Surface::Rollback`] (history is never rewritten), or with
+    /// `preview` plan it and write nothing (the request id is then ignored;
+    /// reminder ids in the outcome's rows are planned afresh by the apply).
+    /// `held` supplies the reminders unresolved delivery attempts hold,
+    /// re-read on every attempt. [`RevertOutcome::Conflicts`] and
+    /// [`RevertOutcome::Unchanged`] record and announce nothing.
+    ///
+    /// # Errors
+    /// [`SchedulerError::History`] for an unknown or tampered record or an
+    /// empty selection; [`SchedulerError::AlreadyApplied`] /
+    /// [`SchedulerError::IdempotencyMismatch`] for a reused request id.
+    pub async fn rollback(
         &mut self,
         admin: &str,
         request_id: Option<String>,
-        rollback: Rollback<'_>,
+        request: RollbackRequest,
         policy: &ReminderPolicy,
         held: &impl HeldReminders,
     ) -> SchedulerResult<RevertOutcome> {
+        let (admin, request_id) = if request.preview {
+            ("preview", None)
+        } else {
+            (admin, request_id)
+        };
+        let rollback = Rollback::new(request);
         let request_digest = request_id.as_ref().map(|_| digest("rollback", &rollback));
         let origin = Origin {
             actor: Actor::admin(admin),
@@ -1833,15 +1605,6 @@ impl<S: ScheduleStore + ChangeHistory, I: IdSource, C: Clock> SchedulerService<S
                 now,
             )?;
             let mut outcome = outcome;
-            if let (RevertOutcome::Reverted { notices, .. }, Some((name, _))) =
-                (&mut outcome, &rollback.checkpoint)
-            {
-                for notice in notices {
-                    if let NoticeChange::Rollback { checkpoint, .. } = &mut notice.change {
-                        *checkpoint = Some(name.clone());
-                    }
-                }
-            }
             let RevertOutcome::Reverted {
                 seqs,
                 skipped,
@@ -1868,8 +1631,6 @@ impl<S: ScheduleStore + ChangeHistory, I: IdSource, C: Clock> SchedulerService<S
             meta.notices = notices.iter().map(Notice::effect_kind).collect();
             meta.outbox = notices.clone();
             meta.refs = records.iter().map(ChangeRecord::reference).collect();
-            meta.refs
-                .extend(rollback.checkpoint.as_ref().map(|(_, head)| head.clone()));
             match self.store.commit(revision, changes, meta.clone()).await {
                 Ok(Some(committed)) if committed.replayed => {
                     return Err(already_applied(committed));
@@ -1882,132 +1643,6 @@ impl<S: ScheduleStore + ChangeHistory, I: IdSource, C: Clock> SchedulerService<S
                 Err(error) => return Err(store_failure(error)),
             }
         }
-    }
-}
-
-impl<S: ScheduleStore + ChangeHistory + Checkpoints, I: IdSource, C: Clock>
-    SchedulerService<S, I, C>
-{
-    /// Name a checkpoint at the current history head for the boss week
-    /// containing `at` (normalised to that week's start under `policy`).
-    ///
-    /// # Errors
-    /// [`StoreError::Constraint`] (as [`SchedulerError::Store`]) for an
-    /// invalid, reserved or taken name.
-    pub async fn create_checkpoint(
-        &self,
-        admin: &str,
-        name: &str,
-        at: DateTime<Utc>,
-        policy: &SchedulePolicy,
-    ) -> SchedulerResult<Checkpoint> {
-        let start = policy.week_of(&at).map_err(ScheduleError::from)?;
-        let week = utc_instant(&start).map_err(ScheduleError::from)?;
-        let new = NewCheckpoint {
-            name: name.to_owned(),
-            kind: CheckpointKind::Admin,
-            week,
-            created_at: self.clock.now(),
-            created_by: Actor::admin(admin),
-        };
-        Ok(self
-            .store
-            .create_checkpoint(new)
-            .await?
-            .checkpoint()
-            .clone())
-    }
-
-    /// The checkpoint, with its head (hash and revision) re-checked against
-    /// the history.
-    async fn checkpoint(&self, name: &str) -> SchedulerResult<Checkpoint> {
-        let checkpoint = self.store.load_checkpoint(name).await?.ok_or_else(|| {
-            SchedulerError::History(HistoryRefusal::UnknownCheckpoint(name.to_owned()))
-        })?;
-        match self.store.load_checked(checkpoint.head.seq).await? {
-            CheckedChange::Intact(record)
-                if record.hash == checkpoint.head.hash
-                    && record.revision == checkpoint.revision =>
-            {
-                Ok(checkpoint)
-            }
-            _ => Err(SchedulerError::History(HistoryRefusal::Tampered(
-                checkpoint.head.seq,
-            ))),
-        }
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    async fn restore_checkpoint(
-        &mut self,
-        admin: &str,
-        request_id: Option<String>,
-        name: &str,
-        mode: RevertMode,
-        preview: bool,
-        policy: &ReminderPolicy,
-        held: &impl HeldReminders,
-    ) -> SchedulerResult<RevertOutcome> {
-        let checkpoint = self.checkpoint(name).await?;
-        let week = Selection::Week {
-            week: checkpoint.week,
-            revision: checkpoint.revision,
-        };
-        let rollback = Rollback {
-            checkpoint: Some((checkpoint.name.clone(), checkpoint.head)),
-            ..Rollback::new(week, mode, preview)
-        };
-        match self
-            .rollback(admin, request_id, rollback, policy, held)
-            .await
-        {
-            // Nothing after the checkpoint touched its week: nothing to do.
-            Err(SchedulerError::History(HistoryRefusal::NothingToRevert)) => {
-                Ok(RevertOutcome::Unchanged {
-                    seqs: Vec::new(),
-                    skipped: Vec::new(),
-                })
-            }
-            other => other,
-        }
-    }
-
-    /// What restoring the checkpoint's boss week to it would do (the
-    /// outcome, conflicts or skipped rows) without changing anything.
-    ///
-    /// # Errors
-    /// As [`Self::restore_to_checkpoint`].
-    pub async fn preview_checkpoint_restore(
-        &mut self,
-        name: &str,
-        mode: RevertMode,
-        policy: &ReminderPolicy,
-        held: &impl HeldReminders,
-    ) -> SchedulerResult<RevertOutcome> {
-        self.restore_checkpoint("preview", None, name, mode, true, policy, held)
-            .await
-    }
-
-    /// Restore the checkpoint's boss week to it ([`Self::restore_week_to`]
-    /// at the checkpoint); the rollback record also references the
-    /// checkpoint's head.
-    ///
-    /// # Errors
-    /// [`HistoryRefusal::UnknownCheckpoint`], a checkpoint whose head no
-    /// longer matches the history ([`HistoryRefusal::Tampered`]), or as
-    /// [`Self::revert_changes`].
-    #[allow(clippy::too_many_arguments)]
-    pub async fn restore_to_checkpoint(
-        &mut self,
-        admin: &str,
-        request_id: Option<String>,
-        name: &str,
-        mode: RevertMode,
-        policy: &ReminderPolicy,
-        held: &impl HeldReminders,
-    ) -> SchedulerResult<RevertOutcome> {
-        self.restore_checkpoint(admin, request_id, name, mode, false, policy, held)
-            .await
     }
 }
 
@@ -2142,7 +1777,7 @@ mod digest_pins {
     /// An edit with expectations, pinned; declaration order is irrelevant.
     #[test]
     fn expectation_digests_are_pinned_and_order_free() {
-        use crate::history::{BlameTarget, Precondition};
+        use crate::history::{BlameTarget, ChangeRef, Precondition};
 
         let op = Op::SetRunStatus {
             run_id: "r-1".into(),
@@ -2343,6 +1978,24 @@ mod digest_pins {
             );
             assert_ne!(edit_digest(op, &expect).unwrap(), *pinned, "{kind}");
         }
+    }
+
+    /// A rollback digests as it did while it could name a checkpoint, so
+    /// recorded request ids still replay.
+    #[test]
+    fn rollback_digests_keep_the_retired_checkpoint_field() {
+        let rollback = Rollback::new(RollbackRequest {
+            selection: RollbackSelection::Seqs(vec![3, 5]),
+            mode: RevertMode::Strict,
+            preview: false,
+        });
+        assert_eq!(
+            digest("rollback", &rollback),
+            sha256_hex(
+                b"rollback\nRollback { selection: Seqs([3, 5]), scope: Whole, mode: Strict, \
+                  checkpoint: None, preview: false }"
+            )
+        );
     }
 
     /// The one-commit create keeps the plain create's digest, so keys

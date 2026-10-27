@@ -1,39 +1,47 @@
 //! The tick expires past-week drafts and never fails when expiry does.
 
 use chrono::TimeDelta;
-use kanade::bot::delivery::{AdminAlert, FixedClock};
-use kanade_domain::drafts::{DraftChange, DraftEventKind, DraftStatus, DraftUpdate, DraftWrite};
+use kanade::bot::delivery::AdminAlert;
+use kanade_domain::drafts::{
+    DraftChange, DraftCreated, DraftEventKind, DraftKind, DraftStatus, DraftUpdate, DraftWrite,
+    NewDraft, StoredDraft,
+};
 use kanade_domain::history::Actor;
-use kanade_domain::ids::IdGenerator;
-use kanade_domain::scheduler::{SchedulerService, StoreRef};
 use kanade_store::SqliteStore;
 
 use crate::scenarios::{delivery, now, previous_week, week, world};
 use crate::support::Store;
 
-#[derive(Default)]
-struct Counter(u64);
-
-impl IdGenerator for Counter {
-    fn new_id(&mut self) -> String {
-        self.0 += 1;
-        format!("draft-{n}", n = self.0)
-    }
+/// An open administrator draft, as older stores hold them.
+async fn open_draft<S: Store>(store: &S, id: &str, title: &str) -> StoredDraft {
+    let (snapshot, base) = store.snapshot_with_head().await.expect("head");
+    let created = store
+        .create_draft(NewDraft {
+            id: id.into(),
+            kind: DraftKind::Admin,
+            title: title.into(),
+            author: Actor::admin("root"),
+            base,
+            base_revision: snapshot.revision,
+            request_type: None,
+            subject: None,
+            at: now(),
+            request: None,
+            submit: None,
+        })
+        .await
+        .expect("draft");
+    let DraftCreated::Created(draft) = created else {
+        panic!("draft not created: {created:?}");
+    };
+    draft
 }
 
 async fn expire_past_week_drafts<S: Store>(store: &S) {
     let world = world();
-    let mut drafts = SchedulerService::new(StoreRef(store), Counter::default(), FixedClock(now()));
-    let past = drafts
-        .create_draft("root", "past", None)
-        .await
-        .expect("draft");
-    let weekly = drafts
-        .create_draft("root", "weekly", None)
-        .await
-        .expect("draft");
-    // The service derives the week from staged run operations; here the
-    // store is handed that derived week directly (the tick only reads it).
+    let past = open_draft(store, "draft-1", "past").await;
+    let weekly = open_draft(store, "draft-2", "weekly").await;
+    // The store is handed a derived week directly (the tick only reads it).
     let scoped = store
         .update_draft(DraftUpdate {
             draft_id: past.id.clone(),

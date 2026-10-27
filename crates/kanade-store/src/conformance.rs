@@ -7,6 +7,7 @@
 use chrono::{DateTime, NaiveTime, TimeZone, Utc, Weekday};
 
 use super::fixtures::refused_for;
+use kanade_domain::attendance::{AttendanceDefault, AttendanceRecord, StandingAnswer};
 use kanade_domain::history::{Actor, ChangeMeta, Origin, Surface};
 use kanade_domain::schedule::{
     Change, ChangeSet, FixedRun, Reminder, Rsvp, RsvpSource, RsvpState, Run, RunSource, RunStatus,
@@ -113,6 +114,71 @@ pub fn meta() -> ChangeMeta {
         expect: Default::default(),
         outbox: Vec::new(),
     }
+}
+
+/// Store standing answers (each set by the member) and the attendance
+/// default on weekly timing `fixed_id` through a plain commit: no write path
+/// sets them any more, but stored ones still count in every tally.
+pub async fn seed_attendance<S: ScheduleStore>(
+    store: &S,
+    fixed_id: &str,
+    standing: &[&str],
+    default: AttendanceDefault,
+) {
+    let snapshot = load(store, Scope::Weeks(Vec::new())).await;
+    let mut row = snapshot
+        .fixed_runs
+        .into_iter()
+        .find(|row| row.id == fixed_id)
+        .expect("the timing exists");
+    let mut users: Vec<&str> = standing.to_vec();
+    users.sort_unstable();
+    row.standing = users
+        .into_iter()
+        .map(|user| StandingAnswer {
+            user_id: user.to_owned(),
+            set_by: format!("member:{user}"),
+            at: meta().at,
+        })
+        .collect();
+    row.attendance_default = default;
+    let changes = vec![Change::PutFixedRun(row)];
+    store
+        .commit(snapshot.revision, ChangeSet { changes }, meta())
+        .await
+        .expect("attendance seeded");
+}
+
+/// Store recorded attendance (`(user, attended)`, each recorded by the
+/// conformance admin) on run `run_id` through a plain commit: no write path
+/// records it any more, but stored entries still follow the run.
+pub async fn seed_run_attendance<S: ScheduleStore>(
+    store: &S,
+    run_id: &str,
+    entries: &[(&str, bool)],
+) {
+    let snapshot = load(store, Scope::Run(run_id.to_owned())).await;
+    let mut run = snapshot
+        .runs
+        .into_iter()
+        .find(|run| run.id == run_id)
+        .expect("the run exists");
+    let mut entries = entries.to_vec();
+    entries.sort_unstable();
+    run.attendance = entries
+        .into_iter()
+        .map(|(user, attended)| AttendanceRecord {
+            user_id: user.to_owned(),
+            attended,
+            recorded_by: "admin:conformance".to_owned(),
+            at: meta().at,
+        })
+        .collect();
+    let changes = vec![Change::PutRun(run)];
+    store
+        .commit(snapshot.revision, ChangeSet { changes }, meta())
+        .await
+        .expect("attendance recorded");
 }
 
 /// Commit at the store's current revision.

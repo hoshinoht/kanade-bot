@@ -1,6 +1,7 @@
 //! Checkpoints (tags): named pointers at the history head, created
-//! automatically at each boss-week rollover or by an administrator. They are
-//! immutable: never renamed, moved or deleted.
+//! automatically at each boss-week rollover (older stores also hold
+//! administrator-named ones). They are immutable: never renamed, moved or
+//! deleted, and history verification checks each against its record.
 
 use std::future::Future;
 
@@ -15,7 +16,8 @@ spelled! {
     CheckpointKind {
         /// At a boss-week rollover; one per week.
         Auto => "auto",
-        /// Named by an administrator.
+        /// Named by an administrator (no longer created; kept so stored rows
+        /// decode).
         Admin => "admin",
     }
 }
@@ -118,11 +120,6 @@ pub trait Checkpoints {
         &self,
         new: NewCheckpoint,
     ) -> impl Future<Output = Result<CheckpointCreated, StoreError>> + Send;
-
-    fn load_checkpoint(
-        &self,
-        name: &str,
-    ) -> impl Future<Output = Result<Option<Checkpoint>, StoreError>> + Send;
 
     /// Checkpoints in creation order, optionally of one boss week.
     fn list_checkpoints(

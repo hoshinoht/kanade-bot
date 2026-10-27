@@ -1,17 +1,17 @@
-//! Draft storage over SQLite: the merge commit, races, gaps, expiry and
-//! the append-only event log. Every test works in its own fresh temp
-//! directory.
+//! Draft storage over SQLite: history gaps under the shared merge, the
+//! append-only event log and the closed-status checks. Every test works in
+//! its own fresh temp directory.
 
 use chrono::{NaiveTime, TimeZone, Utc, Weekday};
-use kanade_domain::drafts::{DraftOp, DraftStatus, DraftStore, LoadedDraft, Target};
-use kanade_domain::history::{ChangeHistory, HistoryGap, Origin, Surface};
+use kanade_domain::drafts::{
+    DraftCreated, DraftKind, DraftStatus, DraftStore, LoadedDraft, NewDraft,
+};
+use kanade_domain::history::{Actor, ChangeHistory, HistoryGap, Origin};
 use kanade_domain::ids::IdGenerator;
 use kanade_domain::members::{Directory, Member};
-use kanade_domain::notify::DeliveryJournal;
+use kanade_domain::requests::{NoFreezes, RequestSpec, Subject};
 use kanade_domain::schedule::{NewFixedRun, ReminderPolicy, SchedulePolicy};
-use kanade_domain::scheduler::{
-    DraftError, DraftResult, MergeOutcome, ScheduleStore, SchedulerService, Scope,
-};
+use kanade_domain::scheduler::{DraftError, RequestError, ScheduleStore, SchedulerService, Scope};
 use kanade_store::{SqliteStore, SqliteStoreConfig};
 
 use crate::support::{TempDir, raw, tamper};
@@ -30,7 +30,7 @@ struct Guild;
 
 impl Directory for Guild {
     fn member(&self, user_id: &str) -> Option<Member> {
-        ["1001", "1002"].contains(&user_id).then(|| Member {
+        ["1001", "1002", "1003"].contains(&user_id).then(|| Member {
             user_id: user_id.to_owned(),
             display_name: Some(format!("member {user_id}")),
             has_role: true,
@@ -114,122 +114,21 @@ async fn fixture(service: &mut Service) -> (String, Vec<String>) {
     (fixed, runs.iter().map(|run| run.id.clone()).collect())
 }
 
-/// A draft moving `run` to Sun 30 Aug 12:00: its id and staged version.
-async fn stage_amend(service: &mut Service, run: &str) -> (String, u64) {
-    let draft = service.create_draft("root", "retime", None).await.unwrap();
-    let op = DraftOp::AmendRun {
-        run: Target::Existing(run.to_owned()),
-        to: at(30, 12),
-    };
-    let loaded = service
-        .add_draft_op("root", &draft.id, draft.version, op, &policy(), &Guild)
-        .await
-        .unwrap();
-    (draft.id, loaded.draft.version)
-}
-
-async fn merge(
-    service: &mut Service,
-    id: &str,
-    version: u64,
-    request_id: Option<&str>,
-) -> DraftResult<MergeOutcome> {
-    let (policy, request_id) = (policy(), request_id.map(Into::into));
-    service
-        .merge_draft("root", id, version, &policy, &Guild, request_id)
-        .await
-}
-
 async fn loaded(service: &Service, id: &str) -> LoadedDraft {
     service.store().load_draft(id).await.unwrap().unwrap()
 }
 
-async fn journal_is_empty(service: &Service) -> bool {
-    let view = service.store().load_view().await.unwrap();
-    view.targets().is_empty()
-}
-
+/// A tampered record after a request's base refuses its approval: the
+/// shared draft merge reads the chain as a gap.
 #[tokio::test]
-async fn merge_commits_one_record_and_verifies() {
-    let (_dir, mut service) = open().await;
-    let (_fixed, runs) = fixture(&mut service).await;
-    let seq = service.store().history_head().await.unwrap().seq;
-    assert!(journal_is_empty(&service).await);
-
-    let (id, version) = stage_amend(&mut service, &runs[0]).await;
-    // Staging wrote draft rows only.
-    assert_eq!(service.store().history_head().await.unwrap().seq, seq);
-    assert!(journal_is_empty(&service).await);
-
-    let outcome = merge(&mut service, &id, version, None).await.unwrap();
-    assert_eq!(outcome.seq, seq + 1);
-    assert_eq!(outcome.notices.len(), 1);
-    assert_eq!(outcome.notices[0].channel_id.as_deref(), Some("222"));
-
-    let record = service.store().load_change(outcome.seq).await.unwrap();
-    let record = record.unwrap();
-    assert_eq!(record.origin.surface, Surface::DraftMerge);
-    assert_eq!(
-        record.origin.request_id.as_deref(),
-        Some(format!("merge:{id}@v2")).as_deref()
-    );
-    assert_eq!(record.refs, [loaded(&service, &id).await.draft.base]);
-    assert!(service.store().verify_history().await.unwrap().is_intact());
-    assert!(journal_is_empty(&service).await);
-    assert_eq!(
-        loaded(&service, &id).await.draft.status,
-        DraftStatus::Merged
-    );
-}
-
-#[tokio::test]
-async fn a_sequential_second_merge_is_already_merged() {
-    let (_dir, mut service) = open().await;
-    let (_fixed, runs) = fixture(&mut service).await;
-    let (id, version) = stage_amend(&mut service, &runs[0]).await;
-    let first = merge(&mut service, &id, version, Some("merge-a"))
-        .await
-        .unwrap();
-    assert!(matches!(
-        merge(&mut service, &id, version + 1, Some("merge-b")).await,
-        Err(DraftError::AlreadyMerged { seq }) if seq == first.seq
-    ));
-    service.into_store().close().await.expect("close");
-}
-
-#[tokio::test]
-async fn an_exact_retry_after_reopen_is_already_applied() {
-    let dir = TempDir::new();
-    let config = dir.config("retry");
-    let (id, version) = {
-        let mut service = open_at(&config).await;
-        let (_fixed, runs) = fixture(&mut service).await;
-        let (id, version) = stage_amend(&mut service, &runs[0]).await;
-        merge(&mut service, &id, version, Some("merge-a"))
-            .await
-            .unwrap();
-        service.into_store().close().await.expect("close");
-        (id, version)
-    };
-    let mut service = open_at(&config).await;
-    let seq = service.store().history_head().await.unwrap().seq;
-    assert!(matches!(
-        merge(&mut service, &id, version, Some("merge-a")).await,
-        Err(DraftError::AlreadyApplied { .. })
-    ));
-    assert_eq!(
-        service.store().history_head().await.unwrap().seq,
-        seq,
-        "nothing was written"
-    );
-    service.into_store().close().await.expect("close");
-}
-
-#[tokio::test]
-async fn a_tampered_record_refuses_preview_and_merge() {
+async fn a_tampered_record_refuses_a_request_merge() {
     let (dir, mut service) = open().await;
     let (_fixed, runs) = fixture(&mut service).await;
-    let (id, version) = stage_amend(&mut service, &runs[0]).await;
+    let join = RequestSpec::Join(Subject::Run(runs[0].clone()));
+    let request = service
+        .submit_request("1003", "please", join, None, &policy(), &Guild, &NoFreezes)
+        .await
+        .unwrap();
     service
         .as_origin(Origin::for_tests())
         .amend_run(&runs[2], at(15, 12), &policy())
@@ -245,13 +144,15 @@ async fn a_tampered_record_refuses_preview_and_merge() {
         ),
     )
     .await;
+    let approve = async |service: &mut Service| {
+        let admin = Actor::admin("root");
+        service
+            .approve_request(&admin, &request.id, 1, None, &policy(), &Guild, &NoFreezes)
+            .await
+    };
     assert!(matches!(
-        service.preview_draft(&id, &policy(), &Guild).await,
-        Err(DraftError::HistoryGap(_))
-    ));
-    assert!(matches!(
-        merge(&mut service, &id, version, None).await,
-        Err(DraftError::HistoryGap(_))
+        approve(&mut service).await,
+        Err(RequestError::Draft(DraftError::HistoryGap(_)))
     ));
     // A record that no longer parses is a typed tampered link, not a
     // backend failure.
@@ -264,16 +165,38 @@ async fn a_tampered_record_refuses_preview_and_merge() {
     )
     .await;
     assert!(matches!(
-        service.preview_draft(&id, &policy(), &Guild).await,
-        Err(DraftError::HistoryGap(HistoryGap::Tampered { seq })) if seq == tip.seq
+        approve(&mut service).await,
+        Err(RequestError::Draft(DraftError::HistoryGap(HistoryGap::Tampered { seq }))) if seq == tip.seq
     ));
     service.into_store().close().await.expect("close");
 }
 
+/// An open administrator draft, as older stores hold them.
+async fn admin_draft(service: &Service) -> String {
+    let (snapshot, base) = service.store().snapshot_with_head().await.unwrap();
+    let new = NewDraft {
+        id: "draft-1".into(),
+        kind: DraftKind::Admin,
+        title: "retime".into(),
+        author: Actor::admin("root"),
+        base,
+        base_revision: snapshot.revision,
+        request_type: None,
+        subject: None,
+        at: at(27, 1),
+        request: None,
+        submit: None,
+    };
+    match service.store().create_draft(new).await.unwrap() {
+        DraftCreated::Created(draft) => draft.id,
+        other => panic!("{other:?}"),
+    }
+}
+
 #[tokio::test]
 async fn draft_events_are_append_only() {
-    let (dir, mut service) = open().await;
-    let draft = service.create_draft("root", "retime", None).await.unwrap();
+    let (dir, service) = open().await;
+    let draft = admin_draft(&service).await;
     let config = dir.config("drafts");
     for sql in [
         "UPDATE draft_events SET kind = 'merged'",
@@ -282,15 +205,15 @@ async fn draft_events_are_append_only() {
         let result = raw(&config, sql).await;
         assert!(result.is_err(), "{sql} must be refused");
     }
-    let events = service.store().draft_events(&draft.id).await.unwrap();
+    let events = service.store().draft_events(&draft).await.unwrap();
     assert_eq!(events.len(), 1);
     service.into_store().close().await.expect("close");
 }
 
 #[tokio::test]
 async fn closed_status_checks_hold_in_the_schema() {
-    let (dir, mut service) = open().await;
-    let draft = service.create_draft("root", "retime", None).await.unwrap();
+    let (dir, service) = open().await;
+    let draft = admin_draft(&service).await;
     let config = dir.config("drafts");
     for sql in [
         // Merged names its record, and only merged does.
@@ -304,7 +227,7 @@ async fn closed_status_checks_hold_in_the_schema() {
         let result = raw(&config, sql).await;
         assert!(result.is_err(), "{sql} must be refused");
     }
-    let loaded = loaded(&service, &draft.id).await;
+    let loaded = loaded(&service, &draft).await;
     assert_eq!(loaded.draft.status, DraftStatus::Open);
     assert_eq!(loaded.draft.closed_by, None);
     service.into_store().close().await.expect("close");

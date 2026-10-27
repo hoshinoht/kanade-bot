@@ -1,13 +1,13 @@
 //! The Inbox (mock `inbox::seed`, `past::seeded`, `requests::seed`,
-//! `ownership::seed`, `drafts::seed`): Kanade's proposals with their cards
-//! and the channel messages they cite, member requests, their closed
-//! predecessors, ownership requests and administrator drafts, each written
+//! `ownership::seed`): Kanade's proposals with their cards and the channel
+//! messages they cite, member requests, their closed predecessors and
+//! ownership requests, each written
 //! through the scheduler as the extractor, the chatbot, the member and the
 //! deciding admin wrote it, at the mock's times.
 
 use chrono::{DateTime, Duration, Utc, Weekday};
 use kanade_domain::{
-    drafts::{DraftOp, ProposalSource, Target},
+    drafts::ProposalSource,
     history::Actor,
     model_log::{ModelLogStore, WatchedMessage},
     notify::{DeliveryTarget, EffectKind, IntentContent, NotificationIntent},
@@ -396,7 +396,6 @@ pub async fn seed(seed: &Seed<'_>) -> Result<(), Fail> {
     requests(seed).await?;
     mine(seed).await?;
     ownership(seed).await?;
-    drafts(seed).await?;
     Ok(())
 }
 
@@ -644,77 +643,6 @@ async fn ownership(seed: &Seed<'_>) -> Result<(), Fail> {
                 seed.ago(hours * 3_600),
             ))
             .await?;
-    }
-    Ok(())
-}
-
-/// A draft: id, title, created and each op's hour, from the week's start.
-type DraftPlan = (&'static str, &'static str, i64, Vec<(i64, DraftOp)>);
-
-/// Two open administrator drafts. Drafts are their author's own, so they
-/// are Asahi's, the admin the template signs in with Discord (as the mock).
-async fn drafts(seed: &Seed<'_>) -> Result<(), Fail> {
-    let me = &format!("discord:{ASAHI}");
-    let directory = seed.directory().await?;
-    // The mock's drafts count hours from the boss week's start.
-    let at = |hours: i64| seed.week + Duration::hours(hours);
-    let target = |id: &str| Target::Existing(id.into());
-    let plans: [DraftPlan; 2] = [
-        (
-            "d-carling",
-            "Carling retime",
-            99,
-            vec![(
-                100,
-                DraftOp::AmendRun {
-                    run: target("r-carling"),
-                    to: seed.at(0, 3, Some("21:00"))?,
-                },
-            )],
-        ),
-        (
-            "d-weekend",
-            "Weekend reshuffle",
-            109,
-            // The mock moves Friday's Kalos, which has ended by Monday; the
-            // real scheduler refuses staging that, so the reshuffle takes
-            // Tuesday's Black Mage instead.
-            vec![
-                (
-                    110,
-                    DraftOp::AmendRun {
-                        run: target("r-bm"),
-                        to: seed.at(0, 6, Some("21:30"))?,
-                    },
-                ),
-                (
-                    111,
-                    DraftOp::SwapParticipants {
-                        run: target("r-bm"),
-                        remove: Vec::new(),
-                        add: vec![HINATA.into()],
-                        via_portal: true,
-                    },
-                ),
-            ],
-        ),
-    ];
-    for (id, title, created, ops) in plans {
-        let mut version = seed
-            .scheduler(at(created), &[id])
-            .create_draft(me, title, None)
-            .await
-            .map_err(|error| failed(id)(format!("{error:?}")))?
-            .version;
-        for (hour, op) in ops {
-            version = seed
-                .scheduler(at(hour), &[])
-                .add_draft_op(me, id, version, op, &seed.state.policy, &directory)
-                .await
-                .map_err(|error| failed(id)(format!("{error:?}")))?
-                .draft
-                .version;
-        }
     }
     Ok(())
 }

@@ -243,17 +243,6 @@ pub enum DraftChange {
         ord: usize,
         expires_week: Option<DateTime<Utc>>,
     },
-    /// Re-point the draft at a newer head, with its freshly derived scope.
-    /// `ops` replaces the staged operations in the same write when the
-    /// rebase settled conflicts (dropped or revived); `None` keeps them.
-    Rebase {
-        base: ChangeRef,
-        base_revision: u64,
-        expires_week: Option<DateTime<Utc>>,
-        ops: Option<Vec<StagedOp>>,
-    },
-    /// Rename the draft (1..=200 characters).
-    Retitle { title: String },
     /// Close it for good (discarded, rejected, withdrawn, expired).
     /// `notices` (a request's requester notice) are written to the notice
     /// outbox in the same transaction, keyed by the draft's close.

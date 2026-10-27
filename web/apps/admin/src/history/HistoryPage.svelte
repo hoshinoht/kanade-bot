@@ -10,7 +10,7 @@
   import type { Channel, ChangeRecord, Checkpoints, GuideList, HistoryPage, RevertPlan, SettingsChangeRow } from '@kanade/api-types';
   import { createClient } from '@kanade/client';
   import { SvelteSet } from 'svelte/reactivity';
-  import { onMount, tick } from 'svelte';
+  import { onMount } from 'svelte';
   import { DatePicker, Icon, LoadError, LoadingState, Presence, RowContent, Select, serverClock, Toaster, TWO_PANE_QUERY, watchMedia, weekStartLabel, type SelectOption } from '@kanade/ui';
   import { live, Resource } from '../resource.svelte';
   import type { AdminWeek } from '../store.svelte';
@@ -22,7 +22,6 @@
   import { guideEvent, isGuideChange, type GuideLookup } from './guides';
   import CheckpointsPanel from './CheckpointsPanel.svelte';
   import SignInsPanel from './SignInsPanel.svelte';
-  import GraphPanel from './GraphPanel.svelte';
   import TextModal from '../shared/TextModal.svelte';
   import { memberLabel } from '../names/directory.svelte';
 
@@ -153,35 +152,15 @@
     for (const record of records) for (const ref of record.refs) by.set(ref.seq, [...(by.get(ref.seq) ?? []), record.seq]);
     return by;
   });
-  type Tab = 'timeline' | 'graph' | 'checkpoints' | 'sign-ins';
+  type Tab = 'timeline' | 'checkpoints' | 'sign-ins';
   const TABS: { id: Tab; label: string }[] = [
     { id: 'timeline', label: 'Timeline' },
-    { id: 'graph', label: 'Graph' },
     { id: 'checkpoints', label: 'Checkpoints' },
     { id: 'sign-ins', label: 'Sign-ins' },
   ];
-  // `?tab=sign-ins` opens the audit log directly (the old `/audit` link); `?tab=graph` the graph.
+  // `?tab=sign-ins` opens the audit log directly (the old `/audit` link).
   const linkedTab = new URLSearchParams(location.search).get('tab');
   let tab = $state<Tab>(TABS.find((t) => t.id === linkedTab)?.id ?? 'timeline');
-  // The Graph tab's title-bar tools: Graph / List, and Go to # (B_HistoryGraph).
-  let graphView = $state<'graph' | 'list'>('graph');
-  let graphPanel = $state<GraphPanel>();
-  let goOpen = $state(false);
-  let goValue = $state('');
-  let goError = $state('');
-  let goInput = $state<HTMLInputElement>();
-  // No drafts to draw: the phone drops the tools for the empty state (B_PhoneHistoryGraphEmpty).
-  let graphEmpty = $state(false);
-  async function openGo() {
-    goOpen = true;
-    await tick();
-    goInput?.focus();
-  }
-  async function go(event: SubmitEvent) {
-    event.preventDefault();
-    const seq = Number(goValue.replace(/^#/, ''));
-    goError = (await graphPanel?.goTo(seq)) ? '' : `There is no change #${goValue.replace(/^#/, '')}.`;
-  }
   // Sign-ins filters (the Timeline's stay as they were).
   let signInRealm = $state('');
   let signInEvent = $state('');
@@ -391,13 +370,13 @@
   </form>
 {/snippet}
 
-<!-- The phone frame has the top bar's title (B_PhoneHistoryGraph): the page line is for screen readers only. -->
+<!-- The phone frame has the top bar's title: the page line is for screen readers only. -->
 <PageLine title="History" class={chrome?.phone ? 'pageline--echo' : ''}>
   <h1><span class="pageline__num">{(total + settingsTotal).toLocaleString('en')}</span> change{total + settingsTotal === 1 ? '' : 's'}</h1>
   {#if head}<p class="pageline__context">head #{head.seq} · <span class="mono">{head.hash.slice(0, 12)}</span></p>{/if}
 </PageLine>
 
-<!-- On the phone frame the tabs and then the tab's tools sit on the window's surface (B_PhoneHistoryGraph): no title bar. -->
+<!-- On the phone frame the tabs and then the tab's tools sit on the window's surface: no title bar. -->
 <section data-fid="window" class="card history-window window-fill" aria-labelledby="history-title">
   <header class="card__head tabs__strip history-window__head" data-fid={chrome?.phone ? undefined : 'window-bar'}>
     <h2 class="vh" id="history-title">History</h2>
@@ -416,24 +395,6 @@
       <div class="history-window__filters" role="search" aria-label="Filter the sign-ins">
         <Select size="tbar" label="Portal" options={REALM_OPTIONS} bind:value={signInRealm} />
         <Select size="tbar" label="Event" options={EVENT_OPTIONS} bind:value={signInEvent} noun="events" />
-      </div>
-    {:else if tab === 'graph' && !(graphEmpty && chrome?.phone)}
-      <!-- Graph tools (B_HistoryGraph): no Week / Who filters here; a filtered chain has gaps the lanes would point into. -->
-      <div class="history-window__filters graph-tools" data-fid="graph-tools">
-        <div class="seg" role="group" aria-label="Show as">
-          <button type="button" aria-pressed={graphView === 'graph'} onclick={() => (graphView = 'graph')}>Graph</button>
-          <button type="button" aria-pressed={graphView === 'list'} onclick={() => (graphView = 'list')}>List</button>
-        </div>
-        <span class="graph-tools__mine">Drafts: mine</span>
-        {#if goOpen}
-          <form class="graph-tools__go" aria-label="Go to a change" onsubmit={go}>
-            <input bind:this={goInput} bind:value={goValue} aria-label="Change number" inputmode="numeric" autocomplete="off" placeholder="#" aria-describedby="history-go-error" />
-            <button class="btn" type="submit">Go</button>
-            <span class="vh" id="history-go-error" role="status">{goError}</span>
-          </form>
-        {:else}
-          <button class="btn" type="button" onclick={() => void openGo()}>Go to #…</button>
-        {/if}
       </div>
     {/if}
   </header>
@@ -487,28 +448,6 @@
       </div>
       {#if pane.shown?.kind === 'change'}<HistoryDetail wide={wide} member={memberRevert} record={selected ?? pane.shown.record} week={selected ? selectedWeek : pane.shown.week} timezone={tz} {names} runTitle={runName} onclose={closeDetail} onrevert={revert} onrestore={restoreWeek} onraw={showRaw} leaving={pane.leaving} onleft={(event) => pane.done(event)} />
       {:else if pane.shown?.kind === 'config'}{@const change = selectedSave ?? pane.shown.change}<ConfigDetail wide={wide} {change} guide={guideOf(change)} surface={surfaceOf(change)} timezone={tz} actor={actorName(change.actor, names, known)} onclose={closeDetail} onraw={showSaveRaw} leaving={pane.leaving} onleft={(event) => pane.done(event)} />{/if}
-    </div>
-  {:else if tab === 'graph'}
-    <div class="history-window__body history-window__body--graph" id="history-graph" role="tabpanel" aria-labelledby="history-tab-graph">
-      <GraphPanel
-        bind:this={graphPanel}
-        {names}
-        {known}
-        timezone={tz}
-        week={store.week}
-        {runs}
-        {wide}
-        view={graphView}
-        onrevert={revert}
-        onrestore={restoreWeek}
-        onraw={showRaw}
-        ontimeline={() => (tab = 'timeline')}
-        onwindow={(target) => {
-          goOpen = target !== null || goOpen;
-          goValue = target !== null ? String(target) : '';
-        }}
-        onempty={(empty) => (graphEmpty = empty)}
-      />
     </div>
   {:else if tab === 'checkpoints'}
     <div class="history-window__body" id="history-checkpoints" role="tabpanel" aria-labelledby="history-tab-checkpoints">

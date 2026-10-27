@@ -11,8 +11,6 @@
 //! - `POST /__e2e/public/remove` `{run}`: Ren takes Asahi off `run`.
 //! - `POST /__e2e/inbox/kalos-v4`: `p-kalos-fixed` changes to Sunday under
 //!   an admin editing it; answers `{version}`, the request's new version.
-//! - `POST /__e2e/drafts/board`, `POST /__e2e/graph/board`: the drafts and
-//!   History graph boards' drafts and History.
 //! - `POST /__e2e/presence` `{at, id, name, editing?, seen_s?, held?,
 //!   leave?}`: another admin (`id`, e.g. `discord:<snowflake>`) is at `at`
 //!   (`request:<id>` or `run:<id>`), seen `seen_s` ago and aging from there
@@ -50,8 +48,6 @@ pub fn routes<S: Clone + Send + Sync + 'static>(shared: &Arc<Shared>) -> Router<
         .route("/__e2e/public/hint", post(member_hint))
         .route("/__e2e/public/remove", post(remove))
         .route("/__e2e/inbox/kalos-v4", post(kalos_v4))
-        .route("/__e2e/drafts/board", post(drafts_board))
-        .route("/__e2e/graph/board", post(graph_board))
         .route("/__e2e/presence", post(presence).delete(nobody))
         .route("/__e2e/presence/board", post(presence_board))
         .with_state(Arc::clone(shared))
@@ -150,14 +146,6 @@ async fn kalos_v4(State(shared): State<Arc<Shared>>) -> Response {
         Ok(version) => Json(serde_json::json!({ "version": version })).into_response(),
         Err(error) => refused(error),
     })
-}
-
-async fn drafts_board(State(shared): State<Arc<Shared>>) -> Response {
-    over_live!(shared, |seed| done(p6::drafts_board(&seed).await))
-}
-
-async fn graph_board(State(shared): State<Arc<Shared>>) -> Response {
-    over_live!(shared, |seed| done(p6::graph_board(&seed).await))
 }
 
 #[derive(Deserialize)]

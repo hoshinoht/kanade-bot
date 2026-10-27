@@ -99,43 +99,6 @@ pub enum MergeConflict {
     Divergent { entity: Entity, field: Field },
 }
 
-spelled! {
-    /// How an administrator settles one conflict when rebasing: keep the
-    /// draft's operations (a cancelled or finished run is revived first), or
-    /// take upstream's version by dropping the operations involved.
-    Settle {
-        Keep => "keep",
-        Take => "take",
-    }
-}
-
-fn entity_key(entity: &Entity) -> String {
-    match entity {
-        Entity::Fixed(id) => format!("fixed:{id}"),
-        Entity::Run(id) => format!("run:{id}"),
-        Entity::Rsvp { run_id, user_id } => format!("rsvp:{run_id}:{user_id}"),
-    }
-}
-
-impl MergeConflict {
-    /// A name for the conflict that stays the same across analyses of the
-    /// same draft and schedule (a rebase names the conflicts it settles).
-    pub fn key(&self) -> String {
-        match self {
-            Self::BothChanged { entity, field, .. } => {
-                format!("both/{}/{}", entity_key(entity), field.as_str())
-            }
-            Self::UpstreamRemoved { entity, .. } => format!("removed/{}", entity_key(entity)),
-            Self::OpRejected { ord, .. } => format!("rejected/{ord}"),
-            Self::ChoicesStale { ord, .. } => format!("choices/{ord}"),
-            Self::StaleWeeks { ord, .. } => format!("weeks/{ord}"),
-            Self::Divergent { entity, field } => {
-                format!("divergent/{}/{}", entity_key(entity), field.as_str())
-            }
-        }
-    }
-}
-
 impl fmt::Display for Entity {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {

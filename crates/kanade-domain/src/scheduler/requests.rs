@@ -1,20 +1,24 @@
 //! Member requests on the scheduler service: submit, withdraw, admin edit,
 //! approve (a merge through `Surface::RequestMerge`) and reject. Requests
-//! are drafts of kind `request`; the administrator draft methods refuse
-//! them and these methods refuse administrator drafts.
+//! are drafts of kind `request`; these methods refuse the administrator
+//! drafts older stores still hold.
 
 use chrono::{DateTime, Utc};
 
+#[cfg(any(test, feature = "test-support"))]
+use super::drafts::check_stageable;
 use super::drafts::{
-    DraftError, MergeInput, MergeOutcome, MergeWarning, check_stageable, check_title, is_expired,
-    merge_request_id, replay_scope, skipped_runs, stale_of, upstream,
+    DraftError, MergeInput, MergeOutcome, MergeWarning, check_title, is_expired, merge_request_id,
+    replay_scope, skipped_runs, stale_of, upstream,
 };
 use super::ports::{Clock, IdSource, ScheduleStore, Scope};
 use super::service::{SchedulerService, digest};
+#[cfg(any(test, feature = "test-support"))]
+use crate::drafts::DraftEventKind;
 use crate::drafts::{
-    DraftChange, DraftCreated, DraftEventKind, DraftKind, DraftOp, DraftRequest, DraftStale,
-    DraftStatus, DraftStore, DraftUpdate, DraftWrite, LoadedDraft, MergeAnalysis, NewDraft,
-    RequestLimit, StagedOp, StoredDraft, Submission, analyze_merge, replay,
+    DraftChange, DraftCreated, DraftKind, DraftOp, DraftRequest, DraftStale, DraftStatus,
+    DraftStore, DraftUpdate, DraftWrite, LoadedDraft, MergeAnalysis, NewDraft, RequestLimit,
+    StagedOp, StoredDraft, Submission, analyze_merge, replay,
 };
 use crate::history::{Actor, Surface};
 use crate::members::Directory;
@@ -39,7 +43,7 @@ pub enum RequestError {
     /// Over the pending cap or the rolling submission limit.
     #[error("{0}")]
     Limited(RequestLimit),
-    /// An administrator draft; use the draft methods.
+    /// An administrator draft (older stores still hold them).
     #[error("that is an administrator draft, not a request")]
     AdminDraft,
     /// The request's boss week passed; it is now closed as expired and the
@@ -333,6 +337,7 @@ impl<S: ScheduleStore + DraftStore, I: IdSource, C: Clock> SchedulerService<S, I
     /// An administrator replaces the request's operations before approving
     /// (bumping its version); they must still replay on its base, and the
     /// expiry week is re-derived.
+    #[cfg(any(test, feature = "test-support"))]
     pub async fn edit_request(
         &mut self,
         actor: &Actor,
@@ -575,7 +580,6 @@ impl<S: ScheduleStore + DraftStore, I: IdSource, C: Clock> SchedulerService<S, I
                     also_notify: vec![approved.clone()],
                     expired_notice: Some(expired.clone()),
                     notices: None,
-                    on_head: false,
                 },
                 policy,
                 directory,

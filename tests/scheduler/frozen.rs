@@ -368,64 +368,6 @@ fn at(now: DateTime<Utc>) -> chrono::DateTime<chrono::FixedOffset> {
     now.fixed_offset()
 }
 
-/// A party change recorded on next week's run, picked onto this week's.
-#[tokio::test]
-async fn a_cherry_pick_onto_an_ended_run_is_refused() {
-    use kanade_domain::history::{ChangeHistory, PickMode};
-    let policy = policy();
-    let this_week = utc_instant(&policy.week_of(&start()).unwrap()).unwrap();
-    for (now, refused) in [(before_end(), false), (after_end(), true)] {
-        let mut world = world(RunStatus::Planned, utc(1, 0, 0)).await;
-        let fixed = world.fixed.clone();
-        let next = world
-            .op()
-            .create_run(NewRun {
-                fixed_run_id: Some(fixed),
-                channel_id: Some("900".into()),
-                week_start: this_week + chrono::TimeDelta::days(7),
-                datetime: start() + chrono::TimeDelta::days(7),
-                bosses: vec!["Kalos".into()],
-                participants: vec![ALICE.into(), BOB.into()],
-                status: RunStatus::Planned,
-                source: RunSource::Fixed,
-            })
-            .await
-            .unwrap();
-        world
-            .op()
-            .swap_participants(&next, &[BOB.to_owned()], &[], false, &Roster::new())
-            .await
-            .unwrap();
-        let picked = world.service.store().history_head().await.unwrap();
-        world.clock.set(at(now));
-        let result = world
-            .service
-            .cherry_pick(
-                "root",
-                None,
-                picked.seq,
-                this_week,
-                PickMode::Strict,
-                &policy,
-                &Roster::new(),
-            )
-            .await;
-        if refused {
-            assert!(
-                matches!(
-                    result,
-                    Err(kanade_domain::scheduler::PickError::Schedule(
-                        ScheduleError::RunEnded { .. }
-                    ))
-                ),
-                "{result:?}"
-            );
-        } else {
-            result.expect("before its end the pick applies");
-        }
-    }
-}
-
 /// The inbox lists the amended runs a weekly-timing change asks about from
 /// this preview: an ended amended run is not one, and the change approves
 /// without a choice for it.

@@ -5,7 +5,6 @@
 
 mod blame;
 mod checkpoint;
-mod cherry_pick;
 mod origin;
 mod port;
 mod precondition;
@@ -22,9 +21,6 @@ pub use checkpoint::{
     Checkpoint, CheckpointCreated, CheckpointKind, Checkpoints, MAX_CHECKPOINT_NAME, NewCheckpoint,
     auto_checkpoint_name, check_checkpoint,
 };
-pub use cherry_pick::{
-    PickConflict, PickMode, PickPlan, PickRefusal, PickStep, PickValue, plan_pick,
-};
 pub use origin::{Actor, ChangeMeta, Origin, Surface};
 pub use port::{
     BrokenLink, ChangeFilter, ChangeHistory, ChangePage, ChangeQuery, CheckedChange,
@@ -34,6 +30,7 @@ pub use precondition::{
     EDIT_OVERRIDE, Expect, FieldNow, LastChange, Precondition, PreconditionError, StaleField,
     Versioned, check_field, target_key, validate_fields,
 };
+pub(crate) use record::wall;
 pub use record::{
     CHANGE_FORMAT, ChangeRecord, ChangeRef, GENESIS_PREV_HASH, RecordError, RowChange, RowKey,
     RowValue, sha256_hex,

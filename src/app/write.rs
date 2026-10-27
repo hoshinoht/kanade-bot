@@ -2,11 +2,7 @@
 //! mutex, so admin mutations are serialised; reads never take it. The port is
 //! object-safe so `ApiState` stays non-generic.
 
-use std::{
-    collections::{BTreeMap, BTreeSet},
-    future::Future,
-    pin::Pin,
-};
+use std::{collections::BTreeSet, future::Future, pin::Pin};
 
 #[cfg(any(test, feature = "test-support"))]
 use std::sync::{Arc, Mutex as StdMutex, OnceLock};
@@ -18,10 +14,8 @@ use tokio::sync::Notify;
 
 use super::{clock::Clock as ApiClockFn, read::ReadStore};
 use kanade_domain::{
-    drafts::{DraftOp, DraftStatus, ProposalStore, Settle, StoredDraft},
-    history::{
-        Actor, ChangeHistory, Expect, HeldReminders, Origin, RevertMode, RevertOutcome, Surface,
-    },
+    drafts::{DraftStatus, ProposalStore, StoredDraft},
+    history::{Actor, ChangeHistory, Expect, HeldReminders, Origin, RevertOutcome, Surface},
     ids::RandomIds,
     members::Roster,
     notify::DeclineNoticeStore,
@@ -33,9 +27,9 @@ use kanade_domain::{
         StatusChange,
     },
     scheduler::{
-        Approved, Clock, DeclineNoticeContext, DeclineRsvpResult, DraftError, DraftPreview,
-        IdSource, MergeOutcome, ProposalApproved, ProposalError, ProposalPreview, Rejected,
-        RequestError, RequestPreview, ScheduleStore, SchedulerResult, SchedulerService, StoreError,
+        Approved, Clock, DeclineNoticeContext, DeclineRsvpResult, DraftError, IdSource,
+        ProposalApproved, ProposalError, ProposalPreview, Rejected, RequestError, RequestPreview,
+        RollbackRequest, ScheduleStore, SchedulerResult, SchedulerService, StoreError,
     },
 };
 
@@ -200,53 +194,6 @@ pub enum RunWrite {
     Reset,
 }
 
-/// One administrator draft write, as the session's admin; every write but
-/// `Create` names the version it was planned from.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum DraftCommand {
-    Create {
-        title: String,
-        request_id: Option<String>,
-    },
-    Retitle {
-        id: String,
-        version: u64,
-        title: String,
-    },
-    AddOp {
-        id: String,
-        version: u64,
-        op: DraftOp,
-    },
-    RemoveOp {
-        id: String,
-        version: u64,
-        ord: usize,
-    },
-    /// Settles each conflict by its key.
-    Rebase {
-        id: String,
-        version: u64,
-        settle: BTreeMap<String, Settle>,
-    },
-    Discard {
-        id: String,
-        version: u64,
-    },
-    /// Only on the current head.
-    Merge {
-        id: String,
-        version: u64,
-    },
-}
-
-/// What a draft write did.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum DraftDone {
-    Written(StoredDraft),
-    Merged(MergeOutcome),
-}
-
 pub trait Writer: Send + Sync {
     fn run<'a>(
         &'a self,
@@ -395,23 +342,6 @@ pub trait Writer: Send + Sync {
         ctx: &'a WriteContext,
     ) -> DecideFuture<'a, Approved, RequestError>;
 
-    /// An administrator draft write by `admin` (an admin actor id).
-    fn draft<'a>(
-        &'a self,
-        admin: &'a str,
-        command: DraftCommand,
-        ctx: &'a WriteContext,
-    ) -> DecideFuture<'a, DraftDone, DraftError>;
-
-    /// A draft's merge preview; writes nothing and never waits for the
-    /// writer.
-    fn preview_draft<'a>(
-        &'a self,
-        id: &'a str,
-        ctx: &'a WriteContext,
-        now: DateTime<Utc>,
-    ) -> DecideFuture<'a, DraftPreview, DraftError>;
-
     fn reject_request<'a>(
         &'a self,
         actor: &'a Actor,
@@ -453,28 +383,6 @@ pub trait Writer: Send + Sync {
         id: &'a str,
         approver: &'a Approver,
     ) -> DecideFuture<'a, StoredDraft, ProposalError>;
-}
-
-/// Which recorded changes a rollback undoes.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum RollbackSelection {
-    Seqs(Vec<u64>),
-    /// Every later change touching the week, only within it.
-    Week {
-        week: DateTime<Utc>,
-        revision: u64,
-    },
-    Actor {
-        actor: Actor,
-        since: DateTime<Utc>,
-    },
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct RollbackRequest {
-    pub selection: RollbackSelection,
-    pub mode: RevertMode,
-    pub preview: bool,
 }
 
 /// The held reminders, read through the API's store on each call.
@@ -765,40 +673,17 @@ where
     ) -> WriteFuture<'a, RevertOutcome> {
         Box::pin(async move {
             let mut service = self.service.lock().await;
-            let (admin, request_id) = (origin.actor.id().to_owned(), origin.request_id);
-            let (held, reminders, mode) = (StoreHeld(held), &ctx.policy.reminders, request.mode);
-            match (request.selection, request.preview) {
-                (RollbackSelection::Seqs(seqs), true) => {
-                    service
-                        .preview_revert_changes(&seqs, mode, reminders, &held)
-                        .await
-                }
-                (RollbackSelection::Seqs(seqs), false) => {
-                    service
-                        .revert_changes(&admin, request_id, &seqs, mode, reminders, &held)
-                        .await
-                }
-                (RollbackSelection::Week { week, revision }, true) => {
-                    service
-                        .preview_restore_week(week, revision, mode, reminders, &held)
-                        .await
-                }
-                (RollbackSelection::Week { week, revision }, false) => {
-                    service
-                        .restore_week_to(&admin, request_id, week, revision, mode, reminders, &held)
-                        .await
-                }
-                (RollbackSelection::Actor { actor, since }, true) => {
-                    service
-                        .preview_revert_by_actor(&actor, since, mode, reminders, &held)
-                        .await
-                }
-                (RollbackSelection::Actor { actor, since }, false) => {
-                    service
-                        .revert_by_actor(&admin, request_id, &actor, since, mode, reminders, &held)
-                        .await
-                }
-            }
+            let admin = origin.actor.id().to_owned();
+            let held = StoreHeld(held);
+            service
+                .rollback(
+                    &admin,
+                    origin.request_id,
+                    request,
+                    &ctx.policy.reminders,
+                    &held,
+                )
+                .await
         })
     }
 
@@ -853,70 +738,6 @@ where
                     &ctx.directory,
                     &GATE,
                 )
-                .await
-        })
-    }
-
-    fn draft<'a>(
-        &'a self,
-        admin: &'a str,
-        command: DraftCommand,
-        ctx: &'a WriteContext,
-    ) -> DecideFuture<'a, DraftDone, DraftError> {
-        Box::pin(async move {
-            let mut service = self.service.lock().await;
-            let (policy, directory) = (&ctx.policy, &ctx.directory);
-            let written = match command {
-                DraftCommand::Create { title, request_id } => {
-                    service.create_draft(admin, &title, request_id).await?
-                }
-                DraftCommand::Retitle { id, version, title } => {
-                    service.retitle_draft(admin, &id, version, &title).await?
-                }
-                DraftCommand::AddOp { id, version, op } => {
-                    service
-                        .add_draft_op(admin, &id, version, op, policy, directory)
-                        .await?
-                        .draft
-                }
-                DraftCommand::RemoveOp { id, version, ord } => {
-                    service
-                        .remove_draft_op(admin, &id, version, ord, policy, directory)
-                        .await?
-                        .draft
-                }
-                DraftCommand::Rebase {
-                    id,
-                    version,
-                    settle,
-                } => {
-                    service
-                        .rebase_draft_settling(admin, &id, version, &settle, policy, directory)
-                        .await?
-                }
-                DraftCommand::Discard { id, version } => {
-                    service.discard_draft(admin, &id, version, None).await?
-                }
-                DraftCommand::Merge { id, version } => {
-                    return service
-                        .merge_draft_on_head(admin, &id, version, policy, directory, None)
-                        .await
-                        .map(DraftDone::Merged);
-                }
-            };
-            Ok(DraftDone::Written(written))
-        })
-    }
-
-    fn preview_draft<'a>(
-        &'a self,
-        id: &'a str,
-        ctx: &'a WriteContext,
-        now: DateTime<Utc>,
-    ) -> DecideFuture<'a, DraftPreview, DraftError> {
-        Box::pin(async move {
-            self.previewer(now)
-                .draft_preview(id, &ctx.policy, &ctx.directory)
                 .await
         })
     }

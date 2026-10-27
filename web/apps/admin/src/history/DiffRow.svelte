@@ -1,7 +1,7 @@
 <!--
   One History diff row (B_History `.diff`): a head line, then only the
   fields that differ as name, was → now. History shows a record's rows with
-  it; Drafts' preview shows the rows a merge would write.
+  it.
 -->
 <script lang="ts">
   import type { RowChange } from '@kanade/api-types';

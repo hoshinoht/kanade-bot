@@ -25,7 +25,8 @@ use kanade_domain::schedule::{
     RunSource, RunStatus, SchedulePolicy, ScheduleSnapshot, StatusChange,
 };
 use kanade_domain::scheduler::{
-    Clock, Committed, ScheduleStore, SchedulerError, SchedulerService, Scope, StoreError,
+    Clock, Committed, RollbackRequest, RollbackSelection, ScheduleStore, SchedulerError,
+    SchedulerService, Scope, StoreError,
 };
 use kanade_domain::settings::{RowDiff, SettingsChange, SettingsChangeQuery, SettingsStore};
 
@@ -56,7 +57,6 @@ pub async fn run_suite<
     rollback_notices_go_to_each_channel(make().await).await;
     blame_names_the_last_change_per_field(make().await).await;
     checkpoints_are_immutable_named_heads(make().await).await;
-    restoring_a_checkpoint_previews_then_applies(make().await).await;
 }
 
 type Service<S> = SchedulerService<S, Ids, TestClock>;
@@ -187,11 +187,14 @@ async fn revert<S: ScheduleStore + ChangeHistory>(
     held: &BTreeSet<String>,
 ) -> RevertOutcome {
     service
-        .revert_changes(
+        .rollback(
             "root",
             unique_request(),
-            seqs,
-            mode,
+            RollbackRequest {
+                selection: RollbackSelection::Seqs(seqs.to_vec()),
+                mode,
+                preview: false,
+            },
             &policy().reminders,
             held,
         )
@@ -616,15 +619,6 @@ async fn a_run_log_lists_every_record_touching_the_run<S: ScheduleStore + Change
         service.store().count_changes(&filter).await.expect("count"),
         expected.len() as u64
     );
-    // The same records as the filter's own predicate over the whole history.
-    let mut touching: Vec<u64> = all_records(service.store())
-        .await
-        .iter()
-        .filter(|record| record.touches_run(&run))
-        .map(|record| record.seq)
-        .collect();
-    touching.reverse();
-    assert_eq!(touching, expected);
     // The swapped-with run lists the swap but not this run's own changes.
     let with = ChangeQuery::new(ChangeFilter::Run(other));
     let with: Vec<u64> = service
@@ -752,11 +746,14 @@ async fn unknown_changes_are_refused<S: ScheduleStore + ChangeHistory>(store: S)
     let revision = snapshot(&service).await.revision;
     for seq in [0, 9_999] {
         let refused = service
-            .revert_changes(
+            .rollback(
                 "root",
                 unique_request(),
-                &[seq],
-                RevertMode::Force,
+                RollbackRequest {
+                    selection: RollbackSelection::Seqs(vec![seq]),
+                    mode: RevertMode::Force,
+                    preview: false,
+                },
                 &policy().reminders,
                 &BTreeSet::new(),
             )
@@ -768,12 +765,17 @@ async fn unknown_changes_are_refused<S: ScheduleStore + ChangeHistory>(store: S)
         );
     }
     let nothing = service
-        .revert_by_actor(
+        .rollback(
             "root",
             unique_request(),
-            &Actor::member("nobody"),
-            utc(1, 1, 0, 0),
-            RevertMode::Strict,
+            RollbackRequest {
+                selection: RollbackSelection::Actor {
+                    actor: Actor::member("nobody"),
+                    since: utc(1, 1, 0, 0),
+                },
+                mode: RevertMode::Strict,
+                preview: false,
+            },
             &policy().reminders,
             &BTreeSet::new(),
         )
@@ -850,12 +852,17 @@ async fn week_restore_leaves_timings_and_other_weeks<S: ScheduleStore + ChangeHi
     set_status(&mut service, &runs[1], RunStatus::Confirmed).await;
     let edited = snapshot(&service).await;
     let outcome = service
-        .restore_week_to(
+        .rollback(
             "root",
             unique_request(),
-            week(0),
-            point.revision,
-            mode,
+            RollbackRequest {
+                selection: RollbackSelection::Week {
+                    week: week(0),
+                    revision: point.revision,
+                },
+                mode,
+                preview: false,
+            },
             &policy().reminders,
             &BTreeSet::new(),
         )
@@ -910,12 +917,17 @@ async fn week_restores_to_a_point_leaving_other_weeks<S: ScheduleStore + ChangeH
     answer(&mut service, "1", &this_sunday, RsvpState::Yes).await;
     set_status(&mut service, &this_sunday, RunStatus::Cancelled).await;
     let outcome = service
-        .restore_week_to(
+        .rollback(
             "root",
             unique_request(),
-            week(0),
-            point.revision,
-            RevertMode::Strict,
+            RollbackRequest {
+                selection: RollbackSelection::Week {
+                    week: week(0),
+                    revision: point.revision,
+                },
+                mode: RevertMode::Strict,
+                preview: false,
+            },
             &policy().reminders,
             &BTreeSet::new(),
         )
@@ -985,12 +997,17 @@ async fn spam_by_one_member_reverts_exactly<S: ScheduleStore + ChangeHistory>(st
     let next_week = run_of(&service, &fixed[0], 1).await;
     answer(&mut service, "1", &next_week, RsvpState::Yes).await;
     let outcome = service
-        .revert_by_actor(
+        .rollback(
             "root",
             unique_request(),
-            &Actor::member("2"),
-            since,
-            RevertMode::Strict,
+            RollbackRequest {
+                selection: RollbackSelection::Actor {
+                    actor: Actor::member("2"),
+                    since,
+                },
+                mode: RevertMode::Strict,
+                preview: false,
+            },
             &policy().reminders,
             &BTreeSet::new(),
         )
@@ -1125,12 +1142,17 @@ async fn due_unsent_reminders_survive_a_revert<S: ScheduleStore + ChangeHistory>
         Some(RunStatus::Confirmed)
     );
     service
-        .revert_by_actor(
+        .rollback(
             "root",
             unique_request(),
-            &Actor::member("2"),
-            since,
-            RevertMode::Strict,
+            RollbackRequest {
+                selection: RollbackSelection::Actor {
+                    actor: Actor::member("2"),
+                    since,
+                },
+                mode: RevertMode::Strict,
+                preview: false,
+            },
             &policy().reminders,
             &BTreeSet::new(),
         )
@@ -1263,11 +1285,14 @@ async fn exact_retries_are_already_applied<S: ScheduleStore + ChangeHistory>(sto
         (RevertMode::Force, "rv-force", swapped.seq),
     ] {
         let first = service
-            .revert_changes(
+            .rollback(
                 "root",
                 Some(request.into()),
-                &[target],
-                mode,
+                RollbackRequest {
+                    selection: RollbackSelection::Seqs(vec![target]),
+                    mode,
+                    preview: false,
+                },
                 &policy().reminders,
                 &BTreeSet::new(),
             )
@@ -1277,11 +1302,14 @@ async fn exact_retries_are_already_applied<S: ScheduleStore + ChangeHistory>(sto
         let undo = latest(service.store()).await;
         let count = all_records(service.store()).await.len();
         let retry = service
-            .revert_changes(
+            .rollback(
                 "root",
                 Some(request.into()),
-                &[target],
-                mode,
+                RollbackRequest {
+                    selection: RollbackSelection::Seqs(vec![target]),
+                    mode,
+                    preview: false,
+                },
                 &policy().reminders,
                 &BTreeSet::new(),
             )
@@ -1356,12 +1384,17 @@ async fn rollback_notices_go_to_each_channel<S: ScheduleStore + ChangeHistory>(s
         answer(&mut service, "2", run, RsvpState::No).await;
     }
     let outcome = service
-        .revert_by_actor(
+        .rollback(
             "root",
             unique_request(),
-            &Actor::member("2"),
-            since,
-            RevertMode::Strict,
+            RollbackRequest {
+                selection: RollbackSelection::Actor {
+                    actor: Actor::member("2"),
+                    since,
+                },
+                mode: RevertMode::Strict,
+                preview: false,
+            },
             &policy().reminders,
             &BTreeSet::new(),
         )
@@ -1522,10 +1555,21 @@ async fn checkpoints_are_immutable_named_heads<S: ScheduleStore + ChangeHistory 
 ) {
     let Fixture { service, .. } = fixture(store).await;
     let head = service.store().history_head().await.expect("head");
+    let admin = |name: &str| NewCheckpoint {
+        name: name.into(),
+        kind: CheckpointKind::Admin,
+        week: week(0),
+        created_at: utc(8, 27, 1, 0),
+        created_by: Actor::admin("root"),
+    };
     let named = service
-        .create_checkpoint("root", "before the raid", week(0), &policy())
+        .store()
+        .create_checkpoint(admin("before the raid"))
         .await
         .expect("checkpoint");
+    let CheckpointCreated::Created(named) = named else {
+        panic!("checkpoints_are_immutable_named_heads: {named:?}");
+    };
     assert_eq!(named.head, head, "checkpoints_are_immutable_named_heads");
     assert_eq!(named.kind, CheckpointKind::Admin);
     assert_eq!(named.created_by, Actor::admin("root"));
@@ -1537,14 +1581,9 @@ async fn checkpoints_are_immutable_named_heads<S: ScheduleStore + ChangeHistory 
         ("week 2026-08-27 start", "reserved"),
         ("tab\there", "control character"),
     ] {
-        let refused = service
-            .create_checkpoint("root", name, week(0), &policy())
-            .await;
+        let refused = service.store().create_checkpoint(admin(name)).await;
         assert!(
-            matches!(
-                refused,
-                Err(SchedulerError::Store(StoreError::Constraint(_)))
-            ),
+            matches!(refused, Err(StoreError::Constraint(_))),
             "{why}: {refused:?}"
         );
     }
@@ -1583,17 +1622,12 @@ async fn checkpoints_are_immutable_named_heads<S: ScheduleStore + ChangeHistory 
         CheckpointCreated::Existing(first.checkpoint().clone()),
         "the same local week under another reset instant is the same checkpoint"
     );
-    let midweek = service
-        .create_checkpoint("root", "midweek", week(0) + TimeDelta::days(2), &policy())
-        .await
-        .expect("normalised");
-    assert_eq!(midweek.week, week(0), "normalised to the boss-week start");
     let listed = service
         .store()
         .list_checkpoints(Some(week(0)))
         .await
         .expect("list");
-    assert_eq!(listed, [named.clone(), first.checkpoint().clone(), midweek]);
+    assert_eq!(listed, [named, first.checkpoint().clone()]);
     assert!(
         service
             .store()
@@ -1601,137 +1635,5 @@ async fn checkpoints_are_immutable_named_heads<S: ScheduleStore + ChangeHistory 
             .await
             .expect("list")
             .is_empty()
-    );
-    assert_eq!(
-        service
-            .store()
-            .load_checkpoint("before the raid")
-            .await
-            .expect("load"),
-        Some(named)
-    );
-}
-
-async fn restoring_a_checkpoint_previews_then_applies<
-    S: ScheduleStore + ChangeHistory + BlameIndex + Checkpoints,
->(
-    store: S,
-) {
-    let Fixture {
-        mut service, fixed, ..
-    } = fixture(store).await;
-    let run = run_of(&service, &fixed[0], 0).await;
-    let next_week = run_of(&service, &fixed[0], 1).await;
-    let checkpoint = service
-        .create_checkpoint("root", "clean week", week(0), &policy())
-        .await
-        .expect("checkpoint");
-    let clean = snapshot(&service).await;
-    move_run(&mut service, &run, utc(8, 29, 22, 0)).await;
-    answer(&mut service, "2", &next_week, RsvpState::No).await;
-    let changed = snapshot(&service).await;
-    let count = all_records(service.store()).await.len();
-
-    let preview = service
-        .preview_checkpoint_restore(
-            "clean week",
-            RevertMode::Strict,
-            &policy().reminders,
-            &BTreeSet::new(),
-        )
-        .await
-        .expect("preview");
-    assert!(
-        matches!(&preview, RevertOutcome::Reverted { seqs, .. } if seqs.len() == 1),
-        "restoring_a_checkpoint_previews_then_applies: {preview:?}"
-    );
-    assert_eq!(
-        snapshot(&service).await,
-        changed,
-        "a preview changes nothing"
-    );
-    assert_eq!(
-        all_records(service.store()).await.len(),
-        count,
-        "and records nothing"
-    );
-
-    service
-        .restore_to_checkpoint(
-            "root",
-            unique_request(),
-            "clean week",
-            RevertMode::Strict,
-            &policy().reminders,
-            &BTreeSet::new(),
-        )
-        .await
-        .expect("restore");
-    let after = snapshot(&service).await;
-    let find =
-        |state: &ScheduleSnapshot, id: &str| state.runs.iter().find(|row| row.id == id).cloned();
-    assert_eq!(find(&after, &run), find(&clean, &run));
-    assert!(
-        after
-            .rsvps
-            .iter()
-            .any(|row| row.run_id == next_week && row.user_id == "2"),
-        "other weeks keep their changes"
-    );
-    let record = latest(service.store()).await;
-    assert_eq!(
-        record.refs.last(),
-        Some(&checkpoint.head),
-        "{:?}",
-        record.refs
-    );
-    let blamed = blame(service.store(), &BlameTarget::Run(run.clone()))
-        .await
-        .expect("blame")
-        .expect("run");
-    let slot = line(&blamed, "slot").expect("slot");
-    assert!(
-        matches!(&slot.via, Via::Rollback { undid, restored_to: Some(head) }
-            if *head == checkpoint.head && !undid.contains(head) && undid.len() == 1),
-        "the checkpoint head is not an undone change: {:?}",
-        slot.via
-    );
-
-    service
-        .create_checkpoint("root", "nothing since", week(0), &policy())
-        .await
-        .expect("checkpoint");
-    let nothing = service
-        .preview_checkpoint_restore(
-            "nothing since",
-            RevertMode::Strict,
-            &policy().reminders,
-            &BTreeSet::new(),
-        )
-        .await;
-    assert_eq!(
-        nothing,
-        Ok(RevertOutcome::Unchanged {
-            seqs: Vec::new(),
-            skipped: Vec::new(),
-        }),
-        "nothing after the checkpoint: unchanged, not an error"
-    );
-
-    let unknown = service
-        .restore_to_checkpoint(
-            "root",
-            unique_request(),
-            "no such checkpoint",
-            RevertMode::Strict,
-            &policy().reminders,
-            &BTreeSet::new(),
-        )
-        .await;
-    assert_eq!(
-        unknown,
-        Err(SchedulerError::History(HistoryRefusal::UnknownCheckpoint(
-            "no such checkpoint".into()
-        )))
     );
 }

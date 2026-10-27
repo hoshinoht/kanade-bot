@@ -168,7 +168,7 @@ async fn page(State(site): State<Arc<Site>>, _: AdminSession, uri: Uri) -> Reply
 }
 
 /// The chain check and the backup manifests in `KANADE_BACKUP_DIR` (A5-9),
-/// both redone on every request; named checkpoints await a schema extension.
+/// both redone on every request.
 async fn checkpoints(State(site): State<Arc<Site>>, _: AdminSession) -> Reply {
     let state = state(&site)?;
     let verification = state.store.verify_history().await.map_err(unavailable)?;

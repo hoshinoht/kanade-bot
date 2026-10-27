@@ -2,7 +2,6 @@
 //! proposals, requests, attendance and invariants.
 
 mod attendance_v5;
-mod draft_service;
 mod drafts;
 mod fixed_create;
 mod frozen;

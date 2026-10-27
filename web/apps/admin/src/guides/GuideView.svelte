@@ -1,6 +1,5 @@
 <!--
-  One guide (boards G_List … G_RunStates, G_Phone*): DraftView's two
-  columns. The editor: head (portrait, "Guide · #channel", title with
+  One guide (boards G_List … G_RunStates, G_Phone*): two columns. The editor: head (portrait, "Guide · #channel", title with
   rename, who saved which version), the unconfirmed-post card when a post
   could not be confirmed, "Saving never posts", the channel (one guide per
   channel), the blocks and Config's save bar with Save draft. The pane: the
@@ -8,7 +7,7 @@
   decision (off while there are unsaved changes), or a run's progress with
   Cancel, or how it ended. A save refused as stale never merges: copy your
   text blocks or load the newer version. Phones: Edit / Preview tabs and
-  Drafts' bottom bar.
+  a bottom bar.
 -->
 <script lang="ts">
   import type { BossRow, Channel, GuideBlock, GuideBlocksRefused, GuideDetail, GuidePlan, GuidePreview as Preview, GuidePublishResult, GuideRow, GuideRun, GuideSaved, Reminders } from '@kanade/api-types';
@@ -18,8 +17,7 @@
   import '@kanade/ui/styles/screens/settings.scss';
   import { tick, untrack } from 'svelte';
   import SaveBar from '../config/SaveBar.svelte';
-  import { editedAt } from '../drafts/drafts';
-  import { actorName } from '../history/describe';
+  import { actorName, editedAt } from '../history/describe';
   import { directory } from '../names/directory.svelte';
   import { Resource, errorText, send } from '../resource.svelte';
   import { discordLink } from '../shared/discordLink.svelte';

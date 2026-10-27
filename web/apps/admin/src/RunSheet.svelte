@@ -19,8 +19,6 @@
   import '@kanade/ui/styles/screens/move-picker.scss';
   import { discordLink } from './shared/discordLink.svelte';
   import { STATUS_LABELS, type MoveOutcome } from './store.svelte';
-  import StagePicker from './drafts/StagePicker.svelte';
-  import type { Staging, StagingDraft } from './drafts/staging.svelte';
   import PartyGrid from './sheet/PartyGrid.svelte';
   import { CharacterSlots, rosterRoutes } from './sheet/characters.svelte';
   import { Presence } from './presence/presence.svelte';
@@ -40,8 +38,6 @@
     onmove,
     onswap,
     onstatus,
-    staging = null,
-    onopendraft,
     onrsvp,
     onroster,
     onping,
@@ -80,10 +76,6 @@
     step?: number;
     /** The pane's close button and Escape. */
     onclose?: () => void;
-    /** Run-sheet staging (app state): while on, edits go into its draft, not live. */
-    staging?: Staging | null;
-    /** The staging strip's Open draft. */
-    onopendraft?: (id: string) => void;
     /** The character roster module is on (the session says so): the Party tab names who each member brings. */
     rosterModule?: boolean;
   } = $props();
@@ -108,15 +100,6 @@
   let sheetTab = $state<SheetTab>('party');
   // The phone sheet's "More actions" row (Swap, Preview ping, Reset to fixed).
   let moreOpen = $state(false);
-  // "Stage in draft…" (B_RunSheetStage): the draft picker, a popover on wide sheets, a bottom sheet on phones.
-  let stageOpen = $state(false);
-  let stageError = $state('');
-  let stageButton = $state<HTMLButtonElement>();
-  const stagingOn = $derived(Boolean(staging?.draft));
-  // What this run already has in the draft: its last staged move, and staged party changes as marked slots.
-  const stagedOps = $derived(run && staging?.draft ? staging.opsFor(run.id) : []);
-  const stagedMove = $derived(stagedOps.filter((op) => op.kind === 'amend_run').at(-1) ?? null);
-  const stagedParty = $derived(stagedOps.filter((op) => op.kind === 'swap_participants'));
   const sheetTabs: Record<string, HTMLButtonElement> = {};
   // The pane's pop-out: the same run in the full sheet (the modal used below
   // 900 px), with the pane gone meanwhile. Closing it returns to the pane on
@@ -193,7 +176,6 @@
       paneTab = 'run';
       sheetTab = 'party';
       moreOpen = false;
-      stageOpen = false;
     }
     if (!open) {
       seeded = null;
@@ -237,8 +219,7 @@
     void act(() => onreread(target));
   }
 
-  // Status changes are reversible, so they get Undo here rather than v4's confirm dialog;
-  // a staged one is undone by removing it from the draft.
+  // Status changes are reversible, so they get Undo here rather than v4's confirm dialog.
   function setStatus(status: RunStatus) {
     if (!run) return;
     // An ended run takes its own status again: Planned or Confirmed reopens it.
@@ -246,42 +227,13 @@
     if (again && !run.ended) return;
     const id = run.id;
     const before = run.status;
-    void act(() => onstatus(id, status), again || before === 'at_risk' || stagingOn ? undefined : () => onstatus(id, before));
+    void act(() => onstatus(id, status), again || before === 'at_risk' ? undefined : () => onstatus(id, before));
   }
 
-  // The picker takes focus (its first choice), as a dialog does; Cancel and Escape return it.
-  async function openStage() {
-    stageError = '';
-    stageOpen = true;
-    await tick();
-    document.querySelector<HTMLElement>('.stagepick input[type="radio"]:checked, .stagepick input[type="radio"]:not(:disabled)')?.focus({ preventScroll: true });
-  }
-
-  async function closeStage() {
-    stageOpen = false;
-    await tick();
-    (stageButton ?? moveButton)?.focus({ preventScroll: true });
-  }
-
-  async function startStage(pick: { draft: StagingDraft } | { title: string }) {
-    if (!staging) return;
-    busy = true;
-    const outcome = await staging.start(pick).finally(() => (busy = false));
-    if (!outcome.ok) {
-      stageError = outcome.message;
-      return;
-    }
-    stageOpen = false;
-    // The staging strip (a status region) says what changed; the notice line is cleared.
-    notice = null;
-    await tick();
-    moveButton?.focus({ preventScroll: true });
-  }
-
-  // A live move of a done or cancelled run waits on the reopen ask; staging posts it as before.
+  // A move of a done or cancelled run waits on the reopen ask.
   async function move(slot: Slot) {
     if (!run || saving) return;
-    if (!stagingOn && (run.status === 'done' || run.status === 'cancelled')) await askReopen(slot);
+    if (run.status === 'done' || run.status === 'cancelled') await askReopen(slot);
     else await send(slot);
   }
 
@@ -420,12 +372,12 @@
   let picking = $state(false);
 
   // Who else has this run's sheet open (B_PresenceRunSheet): the full sheet only, editing
-  // while Move, Swap, a character pick or staging is active. A hint: it disables nothing.
+  // while Move, Swap or a character pick is active. A hint: it disables nothing.
   const presence = new Presence('run');
   const presentAt = $derived(run && (wide ? popped && open : open) ? run.id : null);
   $effect(() => (presentAt ? presence.watch(presentAt) : undefined));
   $effect(() => {
-    presence.mode = moving || swapping || stagingOn || picking ? 'editing' : 'viewing';
+    presence.mode = moving || swapping || picking ? 'editing' : 'viewing';
   });
 </script>
 
@@ -573,8 +525,8 @@
         {names}
         {step}
         {variant}
-        legend={variant === 'phone' ? 'Day' : stagingOn ? 'Stage a move to' : 'Move to'}
-        submitLabel={stagingOn ? 'Stage move' : 'Move'}
+        legend={variant === 'phone' ? 'Day' : 'Move to'}
+        submitLabel="Move"
         aside={variant === 'phone'
           ? `boss week · ${dayLabel(week, 0)} – ${dayLabel(week, week.days.length - 1)}`
           : `from ${dayLabel(week, run.day)} · ${own.time ?? 'own time'}`}
@@ -633,13 +585,13 @@
       type="button"
       class="btn btn--primary btn--key"
       bind:this={moveButton}
-      aria-label="{stagingOn ? 'Stage a move of' : 'Move'} {runTitle(run)}…"
+      aria-label="Move {runTitle(run)}…"
       disabled={busy || saving || frozen}
       title={endedTitle}
       onclick={openMove}
       ><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"
         ><path d="M5 12h14M13 6l6 6-6 6" /></svg
-      >{stagingOn ? 'Stage move…' : 'Move…'}</button
+      >Move…</button
     >
     {#if more}
       <button
@@ -655,20 +607,6 @@
         ></button
       >
     {/if}
-    {#if more && staging && !stagingOn}
-      <!-- B_RunSheetStagePhone: an icon button beside More actions opens the picker as a bottom sheet. -->
-      <button
-        type="button"
-        class="btn btn--key runsheet__more-btn runsheet__stage-btn"
-        data-fid="sheet-stage"
-        aria-label="Stage in draft…"
-        title="Stage in draft…"
-        aria-haspopup="dialog"
-        aria-expanded={stageOpen}
-        bind:this={stageButton}
-        onclick={openStage}><Icon name="layers" /></button
-      >
-    {/if}
   </div>
 {/snippet}
 
@@ -681,9 +619,9 @@
       disabled={busy || saving || frozen || swapChoices.length === 0}
       aria-expanded={swapping}
       aria-controls="{uid}-swap"
-      aria-label={wide ? (stagingOn ? 'Stage swap timing with…' : 'Swap timing with…') : undefined}
-      title={frozen ? ENDED : wide ? (stagingOn ? 'Stage swap timing with…' : 'Swap timing with…') : undefined}
-      onclick={() => (swapping ? void closeSwap() : void openSwap())}>{stagingOn ? (wide ? 'Stage swap…' : 'Stage a timing swap…') : wide ? 'Swap…' : 'Swap timing with…'}</button
+      aria-label={wide ? 'Swap timing with…' : undefined}
+      title={frozen ? ENDED : wide ? 'Swap timing with…' : undefined}
+      onclick={() => (swapping ? void closeSwap() : void openSwap())}>{wide ? 'Swap…' : 'Swap timing with…'}</button
     >
   {/if}
   <button class="btn" type="button" disabled={busy} title="Preview this run's morning card; nothing is posted"
@@ -691,24 +629,8 @@
   >
   {#if run.fixed_id && run.amended && !['done', 'cancelled'].includes(run.status)}
     <!-- v5: undo this week's amendments in one step (day, time and roster). -->
-    <button class="btn" type="button" disabled={busy || frozen} title={frozen ? ENDED : stagingOn ? 'Stage putting this run back on its weekly timing' : 'Put this run back on its weekly timing'}
-      onclick={() => void act(() => onreset(run.id))}>{stagingOn ? 'Stage reset' : 'Reset to fixed'}</button
-    >
-  {/if}
-  {#if wide && popped}{@render stageOpener()}{/if}
-{/snippet}
-
-<!-- Stage in draft… on wide sheets: in the action row of the larger view, on a row of its own in the pane. -->
-{#snippet stageOpener()}
-  {#if staging && !stagingOn}
-    <button
-      class="btn runsheet__stage-open"
-      type="button"
-      data-fid="sheet-stage"
-      aria-haspopup="dialog"
-      aria-expanded={stageOpen}
-      bind:this={stageButton}
-      onclick={openStage}><Icon name="layers" />Stage in draft…</button
+    <button class="btn" type="button" disabled={busy || frozen} title={frozen ? ENDED : 'Put this run back on its weekly timing'}
+      onclick={() => void act(() => onreset(run.id))}>Reset to fixed</button
     >
   {/if}
 {/snippet}
@@ -746,7 +668,7 @@
 
 {#snippet status(run: Run)}
   <div class="statusbar" role="group" aria-labelledby="{uid}-status">
-    <span class="statusbar__label" id="{uid}-status">{stagingOn ? 'Stage status' : 'Status'}</span>
+    <span class="statusbar__label" id="{uid}-status">Status</span>
     <div class="seg seg--status" data-fid="week-status">
       {#each Object.entries(STATUS_LABELS) as [value, label] (value)}
         <button
@@ -783,53 +705,6 @@
 <!-- B_PresenceRunSheet: the other admins in the laptop sheet's title bar. -->
 {#snippet sheetPresence()}
   <PresenceButton list={presence.list} kind="run" variant="dark" />
-{/snippet}
-
-<!-- B_RunSheetStageActive: on every run sheet while staging, until Stop staging. -->
-{#snippet stagingStrip()}
-  {#if staging?.draft}
-    {@const draft = staging.draft}
-    <div class="runsheet__staging" data-fid="sheet-staging" role="status">
-      <Icon name="layers" />
-      <span class="runsheet__stagingtext">Staging into <b>{draft.title}</b> · edits on this run go into the draft, not live</span>
-      <button type="button" class="btn runsheet__stagingbtn" onclick={() => onopendraft?.(draft.id)}>Open draft</button>
-      <button type="button" class="btn runsheet__stagingbtn" data-fid="sheet-stage-stop" onclick={() => staging?.stop()}>Stop staging</button>
-    </div>
-  {/if}
-{/snippet}
-
-{#snippet stagedWhen(run: Run)}
-  {#if stagedMove}
-    <span class="runsheet__stagedwhen" data-fid="sheet-staged-when">In draft: {stagedMove.summary} (change {stagedMove.ord + 1})</span>
-  {:else if stagedOps.length && run}
-    <span class="runsheet__stagedwhen" data-fid="sheet-staged-when">In draft: {stagedOps.length} change{stagedOps.length === 1 ? '' : 's'} to this run</span>
-  {/if}
-{/snippet}
-
-{#snippet stagePicker()}
-  <StagePicker week={week.starts} busy={busy} error={stageError} onstart={(pick) => void startStage(pick)} oncancel={() => void closeStage()} />
-{/snippet}
-
-<!-- The wide sheet's and the pane's picker: a non-modal dialog by the action row; Escape closes it. -->
-{#snippet stagePopover()}
-  {#if stageOpen && wide}
-    <div
-      class="runsheet__stagepop"
-      class:runsheet__stagepop--pane={!popped}
-      role="dialog"
-      aria-label="Stage in draft"
-      data-fid="sheet-stage-picker"
-      tabindex="-1"
-      onkeydown={(event) => {
-        if (event.key !== 'Escape' || event.defaultPrevented) return;
-        event.preventDefault();
-        event.stopPropagation();
-        void closeStage();
-      }}
-    >
-      {@render stagePicker()}
-    </div>
-  {/if}
 {/snippet}
 
 {#snippet answerRows(run: Run)}
@@ -946,7 +821,6 @@
             <p class="week-pane__when">
               <span class="week-pane__time mono">{run.status === 'otot' || !run.time ? 'own time' : run.time}</span>
               <span class="cap week-pane__day">{dayLabel(week, run.day)}{countdown ? ` · ${countdown}` : ''}</span>
-              {@render stagedWhen(run)}
             </p>
             {#if until}
               <WavyProgress
@@ -974,11 +848,8 @@
             </div>
           </header>
           <div class="week-pane__body">
-            {@render stagingStrip()}
             {@render picker(run, 'pane')}
             <div class="week-pane__actions">{@render actions(run)}</div>
-            {#if staging && !stagingOn}<div class="runsheet__stagerow">{@render stageOpener()}</div>{/if}
-            {@render stagePopover()}
             {@render swapBox(run)}
             <p class="cap week-pane__label">Party · {@render channel(run)} <span class="id">#{run.short_id}</span></p>
             {@render rereadNote()}
@@ -1041,14 +912,12 @@
       {:else}
       <article class="runsheet__body runsheet--{run.status}" data-fid="sheet">
         {#if wide}<PresenceNote list={presence.list} kind="run" variant="strip" />{/if}
-        {@render stagingStrip()}
         <LiveRegion message={presence.announcement} />
         <header class="runsheet__hero" data-fid="sheet-hero">
           {@render arts()}
           <p class="runsheet__when" data-fid="sheet-when">
             <span class="runsheet__time mono">{run.status === 'otot' || !run.time ? 'own time' : run.time}</span>
             <span class="cap runsheet__day">{dayLabel(week, run.day)}{countdown ? ` · ${countdown}` : ''}</span>
-            {@render stagedWhen(run)}
             <span class="runsheet__stripe" aria-hidden="true"></span>
           </p>
           <div class="runsheet__id">
@@ -1127,16 +996,8 @@
           </div>
           <div class="runsheet__panel runsheet__panel--{sheetTab}" role="tabpanel" id="{uid}-spanel" aria-labelledby="{uid}-stab-{sheetTab}">
             {#if sheetTab === 'party'}
-              <!-- Staged additions and "Add someone…": rows of the plain list or the phone cards, a dashed line under the grid. -->
+              <!-- "Add someone…": a row of the plain list or the phone cards, a dashed line under the grid. -->
               {#snippet extraRows(grid: boolean)}
-                {#each stagedParty as op (op.ord)}
-                  <svelte:element this={grid ? 'div' : 'li'} class={grid ? 'bossgrid__add slot--staged' : 'slot slot--staged'} data-fid="sheet-party-staged">
-                    <span class="slot__head">
-                      <span class="slot__mark" aria-hidden="true">+</span>
-                      <span class="slot__text"><b class="slot__name">{op.summary.split(': ').at(-1)}</b><span class="slot__state">in draft · change {op.ord + 1}</span></span>
-                    </span>
-                  </svelte:element>
-                {/each}
                 {#if addable.length > 0}
                   <svelte:element this={grid ? 'div' : 'li'} class={grid ? 'bossgrid__add' : 'slot slot--open'}>
                     <span class="slot__head">
@@ -1172,7 +1033,6 @@
                       ready={ready?.data ?? null}
                       {wide}
                       {busy}
-                      staging={stagingOn}
                       {who}
                       bind:picking
                       eyebrow="{runTitle(run)} · {whenLabel(week, run.day, run.status === 'otot' ? null : run.time)}"
@@ -1252,17 +1112,10 @@
           {/if}
         </section>
         {/if}
-        {@render stagePopover()}
       </article>
       {/if}
     {/if}
   </Modal>
-  {#if !wide && staging}
-    <!-- B_RunSheetStagePhone: the same picker as a modal bottom sheet over the sheet. -->
-    <Modal bind:open={stageOpen} title="Stage in draft" narrow className="stagesheet" fid="sheet-stage-picker" fidParts={{}} returnFocus={() => stageButton ?? null}>
-      {@render stagePicker()}
-    </Modal>
-  {/if}
 {/if}
 
 <style>

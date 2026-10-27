@@ -12,7 +12,7 @@ const EDGE_SECRET: &[u8] = b"edge-secret-shared-with-the-caddy-edge!!";
 const METHODS: [&str; 7] = ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"];
 
 /// Every admin path the PWA calls (docs/notes/admin-api.md) plus test/mock hooks.
-const ADMIN_PATHS: [&str; 57] = [
+const ADMIN_PATHS: [&str; 56] = [
     "/api/admin/week?week=next",
     "/api/admin/summary",
     "/api/admin/members",
@@ -65,7 +65,6 @@ const ADMIN_PATHS: [&str; 57] = [
     "/api/admin/headers/rewrite",
     "/api/admin/access/recheck",
     "/api/admin/history/revert",
-    "/api/admin/history/1/cherry-pick",
     "/api/admin/requests/q1/approve",
     "/__test/whoami",
     "/__e2e/reports",
@@ -114,7 +113,7 @@ async fn admin_api_is_not_served_before_auth_exists() {
         assert_eq!(reply.api_error(), "not_found");
     }
     // Without a configured sign-in, mounted admin routes fail closed rather than disappear.
-    for path in ["/api/admin/session", "/api/admin/week", "/api/admin/drafts"] {
+    for path in ["/api/admin/session", "/api/admin/week", "/api/admin/inbox"] {
         let reply = get(admin, ADMIN_HOST, path).await;
         assert_eq!(reply.error(), (503, "auth_unavailable".into()), "{path}");
     }

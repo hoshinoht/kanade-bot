@@ -12,7 +12,7 @@
   boss" ends a row whose run picks make the bosses differ. Four bosses or more
   scroll sideways with the member column frozen. The phone draws the Party
   total first, then a card per member with one line per boss. Picks save
-  live (never staged), with Undo; a 409 `stale` re-reads and says so.
+  live, with Undo; a 409 `stale` re-reads and says so.
 -->
 <script lang="ts">
   import { tick, type Snippet } from 'svelte';
@@ -32,7 +32,6 @@
     ready,
     wide,
     busy,
-    staging,
     who,
     picking = $bindable(false),
     onremove,
@@ -51,8 +50,6 @@
     wide: boolean;
     /** A party change is on its way: × waits. */
     busy: boolean;
-    /** Run-sheet staging is on: picks still save live, and say so. */
-    staging: boolean;
     who: (person: Participant) => string;
     /** A picker is open (presence shows the sheet as being edited). */
     picking?: boolean;
@@ -64,7 +61,7 @@
     eyebrow: string;
     /** The phone list's first items (the readiness note). */
     before?: Snippet;
-    /** Staged additions and "Add someone…", in the grid's or the list's own markup. */
+    /** "Add someone…", in the grid's or the list's own markup. */
     extra?: Snippet;
     /** The phone list's last item (the Estimate panel). */
     tail?: Snippet;
@@ -223,7 +220,7 @@
           : `Cleared ${label}'s pick.`;
       onnotice({
         ok: true,
-        message: staging ? `${done} Saved live, not in the draft.` : done,
+        message: done,
         undo: undoable && before !== characterId ? () => void choose(person, i, before, false) : undefined,
       });
     } else if (result.code === 'stale') {
@@ -248,7 +245,7 @@
       const done = shown ? `${label} brings ${shown.ign} to every boss again.` : `${label}'s per-boss picks are cleared.`;
       onnotice({
         ok: true,
-        message: staging ? `${done} Saved live, not in the draft.` : done,
+        message: done,
         undo: kept.length ? () => void restore(person, kept) : undefined,
       });
     } else if (result.code === 'stale') {
@@ -347,7 +344,6 @@
         name={label}
         {title}
         busy={saving}
-        {staging}
         fid={cell.i > 0 ? 'party-pick-menu' : 'roster-picker'}
         boss={cell.i > 0 && cell.entry ? { token: cell.boss.token, first, brings: cell.entry.brings, picked: cell.entry.picked } : null}
         meta={(c) => meta(cell.i, slot, cell, c)}
@@ -550,7 +546,6 @@
       {title}
       {eyebrow}
       busy={saving}
-      {staging}
       fid={i > 0 ? 'party-pick-menu' : 'roster-picker'}
       boss={i > 0 && cell?.entry ? { token: cell.boss.token, first, brings: cell.entry.brings, picked: cell.entry.picked } : null}
       meta={(c) => meta(i, slot, cell, c)}

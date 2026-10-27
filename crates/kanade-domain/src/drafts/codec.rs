@@ -8,10 +8,11 @@
 use std::collections::BTreeMap;
 use std::fmt;
 
-use chrono::{DateTime, NaiveTime, Timelike, Utc, Weekday};
+use chrono::{DateTime, NaiveTime, Utc, Weekday};
 use serde_json::{Map, Value, json};
 
 use super::op::{DraftOp, Target};
+use crate::history::wall;
 use crate::schedule::{
     AmendedRunChoice, FixedEdit, FixedEditChoices, NewFixedRun, RsvpSource, RsvpState, RunSource,
     RunStatus, StatusChange,
@@ -31,15 +32,6 @@ fn bad(detail: impl fmt::Display) -> CodecError {
 
 fn iso(at: &DateTime<Utc>) -> Result<String, CodecError> {
     to_iso(at).map_err(bad)
-}
-
-fn wall(time: NaiveTime) -> String {
-    format!(
-        "{:02}:{:02}:{:02}",
-        time.hour(),
-        time.minute(),
-        time.second()
-    )
 }
 
 fn target(target: &Target) -> Value {

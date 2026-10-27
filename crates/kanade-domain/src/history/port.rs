@@ -22,8 +22,8 @@ pub enum ChangeFilter {
     /// Records by this actor touching this boss week (the history page with
     /// both filters).
     ActorInWeek(Actor, DateTime<Utc>),
-    /// Records touching this run (see [`ChangeRecord::touches_run`]): a run's
-    /// change log.
+    /// Records that set a blamed field of this run (its row or one of its
+    /// RSVPs, as blame's field index names them): a run's change log.
     Run(String),
     /// Records whose store revision is within `from..=to`.
     Revisions {
@@ -51,26 +51,6 @@ impl ChangeQuery {
             limit: MAX_PAGE,
             newest_first: false,
         }
-    }
-
-    /// Whether `record` passes the filter and lies beyond the cursor.
-    pub fn selects(&self, record: &ChangeRecord) -> bool {
-        let beyond = match self.cursor {
-            None => true,
-            Some(cursor) if self.newest_first => record.seq < cursor,
-            Some(cursor) => record.seq > cursor,
-        };
-        beyond
-            && match &self.filter {
-                ChangeFilter::All => true,
-                ChangeFilter::Week(week) => record.touches_week(*week),
-                ChangeFilter::Actor(actor) => &record.origin.actor == actor,
-                ChangeFilter::ActorInWeek(actor, week) => {
-                    &record.origin.actor == actor && record.touches_week(*week)
-                }
-                ChangeFilter::Run(run_id) => record.touches_run(run_id),
-                ChangeFilter::Revisions { from, to } => (*from..=*to).contains(&record.revision),
-            }
     }
 
     pub fn page_size(&self) -> usize {
@@ -115,9 +95,6 @@ pub enum HistoryRefusal {
     /// The selection matched no change.
     #[error("no change matches; nothing to revert")]
     NothingToRevert,
-    /// No checkpoint has this name.
-    #[error("no checkpoint named {0:?}")]
-    UnknownCheckpoint(String),
 }
 
 /// Where the chain first fails.

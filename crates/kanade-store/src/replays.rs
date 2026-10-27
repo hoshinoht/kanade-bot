@@ -43,8 +43,8 @@ kanade_domain::spelled! {
         Rescan => "rescan",
         /// Config PATCH, admin member edits, admin character and guide writes.
         Config => "config",
-        /// Admin draft writes (create, rename, stage, remove, rebase, discard,
-        /// merge); migration 0038.
+        /// Admin draft writes (migration 0038); no longer written, kept so
+        /// stored rows decode until they expire.
         Drafts => "drafts",
     }
 }

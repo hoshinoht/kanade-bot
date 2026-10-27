@@ -13,13 +13,12 @@ mod replay;
 
 pub use crate::schedule::party_delta;
 pub use codec::{CodecError, DRAFT_OP_FORMAT, decode, encode};
-pub use conflict::{Entity, Field, FieldValue, MergeConflict, Removal, Settle};
+pub use conflict::{Entity, Field, FieldValue, MergeConflict, Removal};
 pub use expiry::expires_week;
-pub use merge::{
-    MergeAnalysis, analyze_merge, analyze_merge_applying, analyze_merge_since, conflict_ops,
-    replay_equivalent,
-};
-pub use op::{DraftOp, ReplayError, Target, renumber_created, resolve};
+#[cfg(any(test, feature = "test-support"))]
+pub use merge::analyze_merge_since;
+pub use merge::{MergeAnalysis, analyze_merge, analyze_merge_applying, replay_equivalent};
+pub use op::{DraftOp, ReplayError, Target, resolve};
 pub use port::{
     DraftChange, DraftCreated, DraftEvent, DraftEventKind, DraftKind, DraftRequest, DraftScope,
     DraftStale, DraftStatus, DraftStore, DraftUpdate, DraftWrite, LoadedDraft, MergeCommit,

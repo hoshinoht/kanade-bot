@@ -196,12 +196,3 @@ test('presence: leaving the request sends a DELETE', async ({ page }) => {
   // The next request checks in instead.
   await expect.poll(() => seen.at(-1)).toMatch(/^PUT \{"at":\{"kind":"request","id":"(?!p-kalos-fixed)/);
 });
-
-test('presence: Draft detail never checks in (drafts are their author’s only)', async ({ page }) => {
-  const seen = calls(page);
-  await page.goto(`${ADMIN}/drafts?item=d-weekend&sw=off`);
-  await expect(page.getByRole('heading', { level: 2, name: 'Weekend reshuffle' })).toBeVisible();
-  await page.waitForLoadState('networkidle');
-  expect([...seen]).toEqual([]);
-  await expect(page.locator('.presence')).toHaveCount(0);
-});

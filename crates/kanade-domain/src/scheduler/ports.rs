@@ -4,7 +4,6 @@ use std::future::Future;
 
 use chrono::{DateTime, Utc};
 
-use crate::attendance::PastRun;
 use crate::history::{Actor, ChangeMeta, HistoryGap, PreconditionError, StaleField};
 use crate::schedule::{ChangeSet, ScheduleSnapshot};
 
@@ -137,20 +136,4 @@ forward_store!(ScheduleStore for [arc, ref] {
         changes: ChangeSet,
         meta: ChangeMeta,
     ) -> Result<Option<Committed>, StoreError>;
-});
-
-/// v5 attendance reads: one member's recorded attendance.
-pub trait AttendanceHistory {
-    /// `member`'s recorded attendance on done runs with their explicit
-    /// answer, newest first (`(datetime, run id)` descending), at most
-    /// `per_timing` runs per weekly timing (one-off runs share one group).
-    fn member_history(
-        &self,
-        member: &str,
-        per_timing: usize,
-    ) -> impl Future<Output = Result<Vec<PastRun>, StoreError>> + Send;
-}
-
-forward_store!(AttendanceHistory for [ref] {
-    fn member_history(&self, member: &str, per_timing: usize) -> Result<Vec<PastRun>, StoreError>;
 });

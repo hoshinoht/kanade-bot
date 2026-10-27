@@ -11,7 +11,7 @@ export type Difficulty = 'e' | 'n' | 'h' | 'c' | 'x';
 
 /**
  * The schedule facts the shared run components render (`RunCardBody`,
- * `RunTable`, `sortRuns`); the admin `Run` carries them and more.
+ * `sortRuns`); the admin `Run` carries them and more.
  * - `id`: render key, stable across reads.
  * - `day`, `time`, `status`, `bosses`: the schedule itself.
  * - `tally`: aggregate count ("3/4").
@@ -195,19 +195,6 @@ export interface RequestEditBody {
   retime: { change: string; day: number; time: string }[];
   drop: string[];
 }
-
-// ── Drafts (docs/v5/api-schemas/drafts.json) ──────────────────────────────
-
-/**
- * `POST /api/admin/drafts/{id}/ops` `op`: one change to stage. `run` is a
- * run id (or `created:<n>`); a move's `day` is in the run's boss week
- * (0 = its reset day), as the run sheet's Move picker names it.
- */
-export type DraftOpBody =
-  | { kind: 'move'; run: string; day: number; time: string | null }
-  | { kind: 'status'; run: string; status: string }
-  | { kind: 'party'; run: string; add?: string[]; remove?: string[] }
-  | { kind: 'reset'; run: string };
 
 // ── Extractions and rescans ───────────────────────────────────────────────
 

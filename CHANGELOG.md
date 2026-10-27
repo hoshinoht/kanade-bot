@@ -12,6 +12,8 @@ Rescheduling and reopening runs that already ended, with safer run controls in t
 > Guilds still on v4-compatible attendance switch to v5 attendance on upgrade: cards show tallies and who is expected, the morning ping mentions only members who haven't answered, a run's status holds from its start, and a Planned or Confirmed set by hand is kept until someone answers or the run changes.
 >
 > `discord.gateway` in kanade.toml (and `KANADE_DISCORD_GATEWAY`) now refuses to start: use `runtime.components` instead, where `["web"]` runs the admin app and portal without the bot.
+>
+> The admin Drafts page is gone, so merge or discard any open admin draft before upgrading: afterwards it can no longer be opened, merged or discarded.
 
 ### New features
 
@@ -30,6 +32,8 @@ Rescheduling and reopening runs that already ended, with safer run controls in t
 
 - Removed the attendance mode setting: v5 attendance is now the only behaviour, and a saved v4-compatible choice is ignored.
 - Removed the classic message style and its choice under Config › Notifications and in `/debug ping`: reminder, digest, notice and proposal cards always use the redesigned layout.
+- Removed the admin Drafts page and the run sheet's Stage in draft…, so every run sheet edit now saves live.
+- Removed the History Graph tab, which drew admin drafts beside the change history.
 
 ## 1.0.0-beta.14
 

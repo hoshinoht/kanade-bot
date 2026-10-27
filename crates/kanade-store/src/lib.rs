@@ -23,8 +23,6 @@ pub mod characters_conformance;
 #[cfg(any(test, feature = "test-support"))]
 pub mod chardata_conformance;
 #[cfg(any(test, feature = "test-support"))]
-pub mod cherry_pick_conformance;
-#[cfg(any(test, feature = "test-support"))]
 pub mod conformance;
 #[cfg(any(test, feature = "test-support"))]
 pub mod decline_conformance;

@@ -21,9 +21,7 @@ mod rsvp;
 mod run;
 mod state;
 
-pub use attendance::{
-    record_attendance, recount_attendance, set_attendance_default, set_standing_answer,
-};
+pub use attendance::recount_attendance;
 pub use draft::Draft;
 pub use error::{MemberRunRefusal, RUN_ENDED, ScheduleError};
 pub use fixed_edit::{
@@ -36,8 +34,7 @@ pub use lifecycle::{
 };
 pub use materialise::{adoptable_run, materialise_week, materialise_weeks};
 pub use mutate::{
-    StatusChange, amend_run, reset_to_fixed, set_status, settable_status, swap_participants,
-    swap_run_slots,
+    StatusChange, amend_run, reset_to_fixed, set_status, swap_participants, swap_run_slots,
 };
 pub use notice::{DRAFT_MERGED, Notice, NoticeChange, Outcome, ROLLBACK_RESTORED, RequestDecision};
 pub use op::{Op, OpResult, WeekStart, apply_op};

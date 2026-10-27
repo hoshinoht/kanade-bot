@@ -242,7 +242,7 @@ fn requested(
                     row.map(|row| channel(row.channel_id.as_ref())),
                 ),
                 (_, DraftOp::AddFixedRun(new)) => ("change", slot(new.weekday, new.time), None),
-                (_, op) => ("change", super::drafts::summary(ctx, current, op), None),
+                (_, op) => ("change", super::op_summary::summary(ctx, current, op), None),
             };
             let asked_at = requests::asked_time(ops, id);
             RequestedChange {

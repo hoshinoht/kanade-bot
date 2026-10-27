@@ -5,9 +5,7 @@
 //! the caller's generator exactly when v4's `new_id()` ran, including inserts
 //! the `(run_id, kind)` uniqueness then ignores.
 
-use crate::attendance::{
-    AttendanceDefault, AttendancePolicy, AttendanceRecord, StandingAnswer, StatusPin,
-};
+use crate::attendance::{AttendanceDefault, AttendancePolicy, StatusPin};
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
@@ -194,25 +192,6 @@ impl Draft {
         self.fixed.remove(id);
     }
 
-    /// Set (`Some`) or clear a member's standing answer on a weekly timing;
-    /// a missing timing is a no-op. Answers stay sorted by user id.
-    pub fn set_standing(&mut self, fixed_id: &str, user_id: &str, answer: Option<StandingAnswer>) {
-        let Some(row) = self.fixed.get_mut(fixed_id) else {
-            return;
-        };
-        row.standing.retain(|existing| existing.user_id != user_id);
-        if let Some(answer) = answer {
-            row.standing.push(answer);
-            row.standing.sort_by(|a, b| a.user_id.cmp(&b.user_id));
-        }
-    }
-
-    pub fn set_attendance_default(&mut self, fixed_id: &str, default: AttendanceDefault) {
-        if let Some(row) = self.fixed.get_mut(fixed_id) {
-            row.attendance_default = default;
-        }
-    }
-
     /// # Errors
     /// [`ScheduleError::RunMoveConflict`] when the weekly already has a run that week.
     pub fn create_run(
@@ -347,14 +326,6 @@ impl Draft {
                 run.status_pin = None;
             }
             run.participants = participants;
-        }
-    }
-
-    /// Replace a run's recorded attendance (kept sorted by user id).
-    pub fn set_run_attendance(&mut self, id: &str, mut records: Vec<AttendanceRecord>) {
-        if let Some(run) = self.runs.get_mut(id) {
-            records.sort_by(|a, b| a.user_id.cmp(&b.user_id));
-            run.attendance = records;
         }
     }
 

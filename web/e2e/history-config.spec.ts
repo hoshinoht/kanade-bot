@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test';
-import { choose, expect, go, test, toast } from './support';
+import { ADMIN, choose, csrf, expect, go, test, toast } from './support';
 
 // A Config section save joins the History timeline as a view-only row with
 // its before/after. Clock pinned.
@@ -69,4 +69,26 @@ test('history: on a phone a Config save opens as a sheet without Revert', async 
   await page.keyboard.press('Escape');
   await expect(detail).toBeHidden();
   await expect(row).toBeFocused();
+});
+
+test('history: an answer reads "→ on for <run>" in the Timeline and the change pane', async ({ page }) => {
+  type WeekRead = { version: number; runs: { id: string; participants: { id: string; name: string; answer: string }[] }[] };
+  const answer = async (pick: number) => {
+    const week = (await (await page.request.get(`${ADMIN}/api/admin/week`)).json()) as WeekRead;
+    const who = week.runs.find((r) => r.id === 'r-carling')!.participants.filter((p) => p.answer !== 'yes')[pick]!;
+    const answered = await page.request.post(`${ADMIN}/api/admin/runs/r-carling/rsvp`, { headers: await csrf(page.request), data: { member_id: who.id, answer: 'yes', version: week.version } });
+    expect(answered.ok()).toBe(true);
+    return who;
+  };
+  // The first answer also moves the run's status (the record's headline); the second is an answer alone.
+  await answer(0);
+  const who = await answer(0);
+  const line = new RegExp(`${who.name}(?: \\(\\d\\))? → on for HCarling \\+ HMaleficStar`);
+  await go(page, '/history');
+  const summary = page.locator('[data-history] .history-row__summary').filter({ hasText: line }).first();
+  await expect(summary).toHaveText(line);
+  await expect(summary).not.toContainText('on on');
+  await expect(summary).not.toContainText('r-carling');
+  await summary.click();
+  await expect(page.getByRole('complementary', { name: 'Change details' }).getByRole('heading', { level: 2 })).toHaveText(line);
 });

@@ -1,10 +1,10 @@
 //! Member requests over a temp SQLite store: submit, limits, withdraw,
 //! admin edit, approve (merge) and reject, expiry and requester notices.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
-use chrono::{DateTime, TimeDelta, Utc};
+use chrono::{DateTime, FixedOffset, TimeDelta, TimeZone, Utc};
 use kanade_domain::drafts::{
     DraftCreated, DraftEvent, DraftEventKind, DraftOp, DraftStatus, DraftStore, DraftUpdate,
     DraftWrite, LoadedDraft, MergeCommit, MergeConflict, NewDraft, RequestLimit, StoredDraft,
@@ -18,19 +18,19 @@ use kanade_domain::ids::RandomIds;
 use kanade_domain::notify::{DeliverySettings, NoticeOutbox, draft_source, plan_notice};
 use kanade_domain::requests::{MemberGate, NoFreezes, RequestRefusal, RequestSpec, Subject};
 use kanade_domain::schedule::{
-    AmendedRunChoice, Change, ChangeSet, FixedEdit, FixedEditChoices, Notice, NoticeChange,
-    RequestDecision, RsvpSource, RsvpState, Run, ScheduleSnapshot,
+    AmendedRunChoice, Change, ChangeSet, DRAFT_MERGED, FixedEdit, FixedEditChoices, Notice,
+    NoticeChange, RequestDecision, RsvpSource, RsvpState, Run, ScheduleSnapshot,
 };
 use kanade_domain::scheduler::{
-    Approved, Committed, DraftError, MergeWarning, RecordedRequest, RequestError, RequestPreview,
-    RequestResult, ScheduleStore, SchedulerService, Scope, SkipReason, StoreError,
+    Approved, Committed, DraftError, MergeOutcome, MergeWarning, RecordedRequest, RequestError,
+    RequestPreview, RequestResult, ScheduleStore, SchedulerService, Scope, SkipReason, StoreError,
 };
 use kanade_store::SqliteStore;
 
 use crate::common::TestClock;
 use crate::support::{
     AnyChannel, Guild, TwoTimings as Fixture, by_tests, hm, kl, owned, policy, snapshot,
-    two_timings as fixture,
+    two_timings as fixture, utc,
 };
 
 type Svc<S> = SchedulerService<S, RandomIds, TestClock>;
@@ -557,14 +557,32 @@ async fn run_requests_expire_after_the_reset_and_weekly_ones_do_not() {
     ));
 }
 
+/// Administrator drafts are no longer created, but older stores hold them.
 #[tokio::test]
-async fn request_and_admin_methods_refuse_each_others_drafts() {
+async fn request_methods_refuse_admin_drafts() {
     let mut f = fixture().await;
-    let draft = f
+    let (snapshot, base) = f.service.store().snapshot_with_head().await.unwrap();
+    let created = f
         .service
-        .create_draft("root", "admin draft", None)
+        .store()
+        .create_draft(NewDraft {
+            id: "admin-draft".into(),
+            kind: kanade_domain::drafts::DraftKind::Admin,
+            title: "admin draft".into(),
+            author: admin(),
+            base,
+            base_revision: snapshot.revision,
+            request_type: None,
+            subject: None,
+            at: kl(27, 1, 0).with_timezone(&Utc),
+            request: None,
+            submit: None,
+        })
         .await
         .unwrap();
+    let DraftCreated::Created(draft) = created else {
+        panic!("{created:?}");
+    };
     assert!(matches!(
         f.service.withdraw_request("1003", &draft.id, 1).await,
         Err(RequestError::AdminDraft)
@@ -572,13 +590,6 @@ async fn request_and_admin_methods_refuse_each_others_drafts() {
     assert!(matches!(
         approve(&mut f.service, &draft.id, 1).await,
         Err(RequestError::AdminDraft)
-    ));
-    let request = filed(&mut f.service, "1003", join(&f.runs[0][0])).await;
-    assert!(matches!(
-        f.service
-            .merge_draft("root", &request.id, 1, &policy(), &Guild, None)
-            .await,
-        Err(DraftError::RequestDraft)
     ));
 }
 
@@ -746,12 +757,19 @@ async fn approved_choices_are_recorded_in_the_merged_event() {
 }
 
 /// What the wrapper does around writes.
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 enum Twist {
     /// Before the first merge commit, remove the requester from the timing.
     RemoveRequester,
     /// Every load after a successful write fails.
     FailLoadsAfterWrite,
+    /// The first merge commit finds the revision moved (a race with nothing
+    /// in it).
+    FakeConflict,
+    /// Before the first merge commit, another admin moves `run` to `to`.
+    UpstreamAmend { run: String, to: DateTime<Utc> },
+    /// Before the first merge commit, the expiry closes every live draft.
+    Expire,
 }
 
 struct Twisted<'a> {
@@ -774,6 +792,30 @@ impl Twisted<'_> {
 
     fn wrote(&self) {
         self.written.store(true, Ordering::SeqCst);
+    }
+
+    /// Another admin's commit of `change`, landing between the merge's
+    /// analysis and its commit.
+    async fn upstream(&self, change: Change) -> StoreResult<()> {
+        let state = self.inner.load(&Scope::All).await?;
+        let upstream = ChangeMeta {
+            origin: Origin::new(Actor::admin("upstream"), Surface::AdminPortal),
+            at: state
+                .runs
+                .first()
+                .map(|run| run.datetime)
+                .unwrap_or_default(),
+            notices: Vec::new(),
+            refs: Vec::new(),
+            request_digest: None,
+            expect: Default::default(),
+            outbox: Vec::new(),
+        };
+        let changes = ChangeSet {
+            changes: vec![change],
+        };
+        self.inner.commit(state.revision, changes, upstream).await?;
+        Ok(())
     }
 }
 
@@ -854,32 +896,43 @@ impl DraftStore for Twisted<'_> {
         note: Option<String>,
     ) -> StoreResult<MergeCommit> {
         let first = self.merges.fetch_add(1, Ordering::SeqCst) == 0;
-        if first && self.twist == Twist::RemoveRequester {
-            let state = self.inner.load(&Scope::All).await?;
-            let mut row = state
-                .fixed_runs
-                .iter()
-                .find(|row| row.id == self.fixed)
-                .unwrap()
-                .clone();
-            row.participants.retain(|user| *user != self.requester);
-            let upstream = ChangeMeta {
-                origin: Origin::new(Actor::admin("upstream"), Surface::AdminPortal),
-                at: state
+        match &self.twist {
+            Twist::RemoveRequester if first => {
+                let state = self.inner.load(&Scope::All).await?;
+                let mut row = state
+                    .fixed_runs
+                    .iter()
+                    .find(|row| row.id == self.fixed)
+                    .unwrap()
+                    .clone();
+                row.participants.retain(|user| *user != self.requester);
+                self.upstream(Change::PutFixedRun(row)).await?;
+            }
+            Twist::FakeConflict if first => {
+                return Err(StoreError::Conflict {
+                    expected: expected_revision,
+                    found: expected_revision + 1,
+                });
+            }
+            Twist::UpstreamAmend { run, to } if first => {
+                let state = self.inner.load(&Scope::All).await?;
+                let mut row = state
                     .runs
-                    .first()
-                    .map(|run| run.datetime)
-                    .unwrap_or_default(),
-                notices: Vec::new(),
-                refs: Vec::new(),
-                request_digest: None,
-                expect: Default::default(),
-                outbox: Vec::new(),
-            };
-            let changes = ChangeSet {
-                changes: vec![Change::PutFixedRun(row)],
-            };
-            self.inner.commit(state.revision, changes, upstream).await?;
+                    .iter()
+                    .find(|row| row.id == *run)
+                    .unwrap()
+                    .clone();
+                row.datetime = *to;
+                self.upstream(Change::PutRun(row)).await?;
+            }
+            Twist::Expire if first => {
+                let far = meta.at + TimeDelta::days(365);
+                let actor = Actor::system("delivery");
+                self.inner
+                    .expire_drafts(far, meta.at, &actor, Vec::new())
+                    .await?;
+            }
+            _ => {}
         }
         let merged = self
             .inner
@@ -1078,4 +1131,238 @@ async fn a_delta_that_would_empty_a_run_skips_it_and_warns() {
         "left as it was"
     );
     assert_eq!(party_of(&state, &f.fixed[1]), ["1001"]);
+}
+
+// ---- the shared draft merge, as a request's approval runs it -------------
+
+fn merged_channels(outcome: &MergeOutcome) -> BTreeSet<Option<String>> {
+    outcome
+        .notices
+        .iter()
+        .map(|notice| notice.channel_id.clone())
+        .collect()
+}
+
+/// The run and timing ids a merge summary lists.
+fn merged_ids(notice: &Notice) -> (&[String], &[String]) {
+    match &notice.change {
+        NoticeChange::Merged {
+            run_ids, fixed_ids, ..
+        } => (run_ids, fixed_ids),
+        other => panic!("not a merge notice: {other:?}"),
+    }
+}
+
+/// 1001 asks to move the Monday timing to channel 333.
+fn move_channel(fixed: &str) -> RequestSpec {
+    RequestSpec::ChangeFixed {
+        fixed_id: fixed.to_owned(),
+        edit: FixedEdit {
+            channel_id: Some("333".into()),
+            ..FixedEdit::default()
+        },
+    }
+}
+
+async fn head_seq(service: &Service) -> u64 {
+    service.store().history_head().await.unwrap().seq
+}
+
+#[tokio::test]
+async fn a_request_merge_posts_one_notice_per_channel_and_advances_history() {
+    let mut f = fixture().await;
+    let base_seq = head_seq(&f.service).await;
+    let request = filed(&mut f.service, "1001", move_channel(&f.fixed[0])).await;
+    let approved = approve_with(
+        &mut f.service,
+        &request.id,
+        Some(FixedEditChoices::UpdateAll),
+    )
+    .await
+    .unwrap();
+    let outcome = &approved.merge;
+    assert_eq!(outcome.seq, base_seq + 1);
+    assert_eq!(outcome.notices.len(), 2, "one summary notice per channel");
+    assert_eq!(
+        merged_channels(outcome),
+        BTreeSet::from([Some("222".into()), Some("333".into())])
+    );
+    for notice in &outcome.notices {
+        assert_eq!(notice.effect_kind(), DRAFT_MERGED);
+        let settings = DeliverySettings {
+            post_channel_id: None,
+            quiet_mode: false,
+        };
+        let intent = plan_notice(notice, &Guild, &AnyChannel, settings).expect("plannable");
+        assert_eq!(Some(intent.channel_id.clone()), notice.channel_id);
+    }
+    assert!(!outcome.weeks.is_empty());
+    let store = f.service.store();
+    let record = store.load_change(outcome.seq).await.unwrap().unwrap();
+    assert_eq!(record.origin.surface, Surface::RequestMerge);
+    assert_eq!(record.refs, std::slice::from_ref(&request.base));
+    assert!(
+        store.verify_history().await.unwrap().is_intact(),
+        "the merged record verifies"
+    );
+    // Blame names the merge for the fields it set.
+    let blamed = blame(store, &BlameTarget::Run(f.runs[0][0].clone()))
+        .await
+        .unwrap()
+        .expect("blamed");
+    let channel = blamed.lines.iter().find(|line| line.field == "channel");
+    let channel = channel.expect("channel").last.as_ref().expect("attributed");
+    assert_eq!(channel.seq, outcome.seq);
+}
+
+#[tokio::test]
+async fn request_merge_notices_name_the_run_and_both_sides_of_a_move() {
+    let mut f = fixture().await;
+    // A run request names its run's channel with the run listed.
+    let request = filed(&mut f.service, "1003", join(&f.runs[1][2])).await;
+    let outcome = approve(&mut f.service, &request.id, 1).await.unwrap().merge;
+    assert_eq!(outcome.notices.len(), 1);
+    assert_eq!(outcome.notices[0].channel_id.as_deref(), Some("333"));
+    let (run_ids, fixed_ids) = merged_ids(&outcome.notices[0]);
+    assert_eq!(run_ids, std::slice::from_ref(&f.runs[1][2]));
+    assert!(fixed_ids.is_empty());
+    // Moving a timing's runs to another channel notifies both channels.
+    let request = filed(&mut f.service, "1001", move_channel(&f.fixed[0])).await;
+    let approved = approve_with(
+        &mut f.service,
+        &request.id,
+        Some(FixedEditChoices::UpdateAll),
+    );
+    let outcome = approved.await.unwrap().merge;
+    assert_eq!(
+        merged_channels(&outcome),
+        BTreeSet::from([Some("222".into()), Some("333".into())])
+    );
+    for notice in &outcome.notices {
+        let (run_ids, _) = merged_ids(notice);
+        assert!(
+            run_ids.contains(&f.runs[0][0]),
+            "the moved run is named in both summaries: {run_ids:?}"
+        );
+    }
+}
+
+/// Approve `request` through a store that applies `twist` around the merge
+/// commit: the result and the merge commit attempts.
+async fn race_approve(
+    f: &Fixture,
+    request: &StoredDraft,
+    twist: Twist,
+) -> (RequestResult<Approved>, usize) {
+    let store = twisted(f, twist, "1003");
+    let mut service = SchedulerService::new(&store, RandomIds, TestClock::new(kl(27, 1, 0)));
+    let approved = approve(&mut service, &request.id, 1).await;
+    (approved, store.merges.load(Ordering::SeqCst))
+}
+
+#[tokio::test]
+async fn a_request_revision_race_is_re_analysed_and_retried() {
+    let mut f = fixture().await;
+    let base_seq = head_seq(&f.service).await;
+    let request = filed(&mut f.service, "1003", join(&f.runs[0][0])).await;
+    let (approved, attempts) = race_approve(&f, &request, Twist::FakeConflict).await;
+    let outcome = approved.unwrap().merge;
+    assert_eq!(outcome.seq, base_seq + 1);
+    assert_eq!(outcome.notices.len(), 1);
+    // One failed commit plus the retry.
+    assert_eq!(attempts, 2);
+    assert_eq!(head_seq(&f.service).await, outcome.seq);
+}
+
+#[tokio::test]
+async fn a_conflicting_race_is_re_analysed_into_conflicts() {
+    let mut f = fixture().await;
+    let request = filed(&mut f.service, "1001", retime(&f.fixed[0])).await;
+    let base_seq = head_seq(&f.service).await;
+    // Another admin amends one of the timing's runs between the analysis and
+    // the commit: the reviewed per-run choices no longer cover it.
+    let moved = run_row(&snapshot(&f.service).await, &f.runs[0][2]).datetime + TimeDelta::days(1);
+    let twist = Twist::UpstreamAmend {
+        run: f.runs[0][2].clone(),
+        to: moved,
+    };
+    let store = twisted(&f, twist, "1001");
+    let mut service = SchedulerService::new(&store, RandomIds, TestClock::new(kl(27, 1, 0)));
+    let choices = keep_for_this_week(&[&f.runs[0][1]]);
+    let result = approve_as(
+        &mut service,
+        &admin(),
+        &request.id,
+        1,
+        Some(choices),
+        &NoFreezes,
+    )
+    .await;
+    assert!(
+        matches!(&result, Err(RequestError::Draft(DraftError::Conflicts(_)))),
+        "{result:?}"
+    );
+    // The approval committed nothing itself; only the upstream commit landed.
+    assert_eq!(store.merges.load(Ordering::SeqCst), 1);
+    assert_eq!(
+        head_seq(&f.service).await,
+        base_seq + 1,
+        "only the upstream commit landed"
+    );
+    assert_eq!(
+        stored(&f.service, &request.id).await.draft.status,
+        DraftStatus::Submitted
+    );
+}
+
+#[tokio::test]
+async fn a_request_expired_between_check_and_commit_reports_expired() {
+    let mut f = fixture().await;
+    let request = filed(&mut f.service, "1003", join(&f.runs[0][0])).await;
+    let base_seq = head_seq(&f.service).await;
+    let (approved, attempts) = race_approve(&f, &request, Twist::Expire).await;
+    assert!(
+        matches!(&approved, Err(RequestError::Expired(_))),
+        "{approved:?}"
+    );
+    assert_eq!(attempts, 1);
+    assert_eq!(head_seq(&f.service).await, base_seq, "nothing was merged");
+    assert_eq!(
+        stored(&f.service, &request.id).await.draft.status,
+        DraftStatus::Expired
+    );
+}
+
+#[tokio::test]
+async fn an_upstream_move_into_a_past_week_expires_the_request_at_merge() {
+    let mut f = fixture().await;
+    let request = filed(&mut f.service, "1003", join(&f.runs[1][2])).await;
+    // The stored scope is the run's week; upstream then moves the run into
+    // last week (26 Aug 20:00 +08:00, before the 27 Aug reset).
+    let past = FixedOffset::east_opt(8 * 3600)
+        .unwrap()
+        .with_ymd_and_hms(2026, 8, 26, 20, 0, 0)
+        .unwrap();
+    by_tests(&mut f.service)
+        .amend_run(&f.runs[1][2], utc(past), &policy())
+        .await
+        .unwrap();
+    let seq = head_seq(&f.service).await;
+    assert!(
+        request
+            .scope
+            .expires_week()
+            .is_some_and(|week| week > utc(past)),
+        "{:?}",
+        request.scope
+    );
+    let approved = approve(&mut f.service, &request.id, 1).await;
+    assert!(
+        matches!(&approved, Err(RequestError::Expired(_))),
+        "{approved:?}"
+    );
+    assert_eq!(head_seq(&f.service).await, seq, "nothing was merged");
+    let stored = stored(&f.service, &request.id).await;
+    assert_eq!(stored.draft.status, DraftStatus::Expired);
+    assert_eq!(stored.draft.closed_by, Some(Actor::system("delivery")));
 }

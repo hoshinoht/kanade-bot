@@ -1,8 +1,9 @@
 <!--
-  Guides (module `guides`; boards G_List, G_PhoneList, G_EditorStates): the
-  Drafts window, titled Guides, with New guide in the title bar, the guides
-  as a listbox (portrait, title, channel, messages, why it needs a look, the
-  status chip and a time) beside the open guide (`GuideView`). Deep link
+  Guides (module `guides`; boards G_List, G_PhoneList, G_EditorStates): a
+  list-detail window (`_drafts.scss`, kept from the retired Drafts page),
+  with New guide in the title bar, the guides as a listbox (portrait, title,
+  channel, messages, why it needs a look, the status chip and a time) beside
+  the open guide (`GuideView`). Deep link
   `?item=`. Phones show the list, then the guide with "‹ Guides" in the top
   bar. Nothing posts until an admin publishes.
 -->

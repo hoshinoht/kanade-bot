@@ -5,6 +5,7 @@
 use chrono::{DateTime, NaiveTime, TimeDelta, TimeZone, Utc, Weekday};
 use kanade::bot::delivery::Delivery;
 use kanade::discord::transport::Call;
+use kanade_domain::attendance::AttendanceDefault;
 use kanade_domain::history::{Actor, Origin, Surface};
 use kanade_domain::ids::RandomIds;
 use kanade_domain::schedule::{EMOJI_YES, NewFixedRun, RunStatus};
@@ -83,11 +84,8 @@ async fn seed<S: Store>(store: &S) -> String {
         })
         .await
         .expect("timing");
-    service
-        .as_origin(Origin::new(Actor::member("1001"), Surface::PublicPortal))
-        .set_standing_answer("1001", &fixed, true)
-        .await
-        .expect("standing");
+    kanade_store::conformance::seed_attendance(store, &fixed, &["1001"], AttendanceDefault::OptIn)
+        .await;
     mark_digest_week(store, previous_week(), now()).await;
     fixed
 }

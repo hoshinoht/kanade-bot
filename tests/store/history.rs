@@ -8,7 +8,9 @@ use kanade_domain::history::{
     RevertMode, RevertOutcome, RowKey,
 };
 use kanade_domain::schedule::{Change, ReminderPolicy};
-use kanade_domain::scheduler::{ScheduleStore, SchedulerError, Scope};
+use kanade_domain::scheduler::{
+    RollbackRequest, RollbackSelection, ScheduleStore, SchedulerError, Scope,
+};
 use kanade_store::{BackupManifest, SqliteStore, SqliteStoreConfig, SqliteStoreError};
 
 use crate::support::{TempDir, commit, create, fixed, raw, seed, tamper};
@@ -184,11 +186,14 @@ async fn revert_seq<S: ScheduleStore + ChangeHistory>(
 ) -> Result<RevertOutcome, SchedulerError> {
     let policy = schedule_policy().reminders;
     service(store)
-        .revert_changes(
+        .rollback(
             "root",
             None,
-            &[seq],
-            RevertMode::Force,
+            RollbackRequest {
+                selection: RollbackSelection::Seqs(vec![seq]),
+                mode: RevertMode::Force,
+                preview: false,
+            },
             &policy,
             &BTreeSet::new(),
         )
@@ -427,34 +432,25 @@ async fn rows_from_before_the_history_blame_as_unknown() {
 
 /// Leaves history and the checkpoint `pinned` in the store at `config`.
 async fn pinned_checkpoint(config: &SqliteStoreConfig) {
+    use kanade_domain::history::{Actor, CheckpointKind, Checkpoints, NewCheckpoint};
     let store = SqliteStore::open(config).await.expect("opens");
     history(&store, 2).await;
-    let (at, policy) = (crate::support::at(26, 16), schedule_policy());
-    let owner = service(store);
-    let created = owner.create_checkpoint("root", "pinned", at, &policy);
+    let at = crate::support::at(26, 16);
+    let created = store.create_checkpoint(NewCheckpoint {
+        name: "pinned".into(),
+        kind: CheckpointKind::Admin,
+        week: at,
+        created_at: at,
+        created_by: Actor::admin("root"),
+    });
     created.await.expect("checkpoint");
+    store.close().await.expect("close");
 }
 
-/// After `sql` forges the checkpoint, verification and a restore refuse it.
+/// After `sql` forges the checkpoint, verification refuses it.
 async fn assert_forged_checkpoint_refused(config: &SqliteStoreConfig, sql: &str) {
-    use kanade_domain::history::Checkpoints;
     let broken = broken_after(config, sql).await;
     assert!(broken.reason.contains("checkpoint"), "{}", broken.reason);
-    let store = SqliteStore::open(config).await.expect("reopens");
-    let checkpoint = store.load_checkpoint("pinned").await.expect("load");
-    let head = checkpoint.expect("exists").head.seq;
-    let refused = service(store)
-        .restore_to_checkpoint(
-            "root",
-            None,
-            "pinned",
-            RevertMode::Strict,
-            &schedule_policy().reminders,
-            &BTreeSet::new(),
-        )
-        .await;
-    let tampered = HistoryRefusal::Tampered(head);
-    assert_eq!(refused, Err(SchedulerError::History(tampered)));
 }
 
 #[tokio::test]

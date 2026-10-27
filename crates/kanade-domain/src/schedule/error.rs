@@ -1,4 +1,4 @@
-use crate::attendance::{AttendancePolicy, AttendanceRefusal};
+use crate::attendance::AttendancePolicy;
 use crate::pytext::repr;
 use crate::time::DateOutOfRange;
 
@@ -100,12 +100,6 @@ pub enum ScheduleError {
     /// An affected amended run has no fixed-edit choice.
     #[error("run {0} was amended this week - choose whether it follows the new time")]
     MissingChoice(String),
-    /// v5: a standing answer for someone not in the weekly timing's party.
-    #[error("{user_id} is not in that weekly run's party")]
-    NotInParty { user_id: String },
-    /// v5: an attendance record the rules refuse.
-    #[error("{0}")]
-    Attendance(AttendanceRefusal),
     /// Configuration: a call's `SchedulePolicy.attendance` differs from the
     /// scheduler's (one source of truth for the attendance rules).
     #[error(

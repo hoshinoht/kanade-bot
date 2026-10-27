@@ -1,7 +1,6 @@
-// Drafts (boards B_Drafts*, B_PhoneDraft*): the Inbox window pattern -- a
-// 280 px list beside the open draft -- plus a 380 px side pane for the
-// preview (History's diff rows) or the conflicts, with the decision card at
-// its foot. Rows, empty state and decision card are the Inbox's
+// The Guides window (built for the retired Drafts page, boards B_Drafts*,
+// B_PhoneDraft*): the Inbox window pattern -- a 280 px list beside the open
+// item -- plus a 380 px side pane with the decision card at its foot. Rows, empty state and decision card are the Inbox's
 // (`_inbox.scss`); only what drafts add is here. The list, the draft and the
 // pane each scroll on their own; the window never does.
 
@@ -16,7 +15,7 @@ $cookie: polygon(50% 0%, 56.7% 2.2%, 62.5% 6.3%, 68.5% 8.5%, 75.6% 9.1%, 82.1% 1
   overflow: clip;
 }
 
-// New draft sits at the title bar's end, an outlined bar pill.
+// The window's New button (New guide) sits at the title bar's end, an outlined bar pill.
 .drafts__new { margin-left: auto; }
 .drafts__newbtn { gap: 6px; }
 .drafts__newbtn .icon { width: 16px; height: 16px; }
@@ -57,8 +56,6 @@ $cookie: polygon(50% 0%, 56.7% 2.2%, 62.5% 6.3%, 68.5% 8.5%, 75.6% 9.1%, 82.1% 1
 .drafts__row .inbox__lines { gap: 3px; }
 .drafts__art { width: 40px; height: 40px; }
 .drafts__art .portrait { width: 40px; height: 40px; }
-.drafts__art--sm,
-.drafts__art--sm .portrait { width: 34px; height: 34px; }
 .inbox-empty__row .drafts__art .portrait { border: 0; border-radius: 0; clip-path: $cookie; }
 .drafts__count { color: var(--ink); font-weight: 700; }
 .drafts__state { align-items: center; gap: 6px; min-width: 0; }
@@ -158,13 +155,10 @@ $cookie: polygon(50% 0%, 56.7% 2.2%, 62.5% 6.3%, 68.5% 8.5%, 75.6% 9.1%, 82.1% 1
 .drafts__ops { display: flex; flex-direction: column; gap: 8px; }
 .drafts__opshead { display: flex; align-items: center; gap: 8px; }
 .drafts__opshead > h3 { margin: 0; }
-.drafts__add { margin-left: auto; gap: 6px; }
-.drafts__add .icon { width: 16px; height: 16px; }
 .drafts__noops { margin: 0; }
 
 // The staged changes (B_Drafts `.opl`): a grouped list of row cards, the
-// outer corners round; a change a conflict names takes the risk tint and a
-// flag line in words.
+// outer corners round.
 .draftops {
   display: flex;
   flex-direction: column;
@@ -184,11 +178,6 @@ $cookie: polygon(50% 0%, 56.7% 2.2%, 62.5% 6.3%, 68.5% 8.5%, 75.6% 9.1%, 82.1% 1
 
 .draftops > .draftop:first-child { border-top-left-radius: 16px; border-top-right-radius: 16px; }
 .draftops > .draftop:last-child { border-bottom-left-radius: 16px; border-bottom-right-radius: 16px; }
-
-.draftop--bad {
-  background: color-mix(in srgb, var(--risk) 8%, var(--surface));
-  box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--risk) 35%, var(--surface));
-}
 
 .draftop__ord { color: var(--dim-text); font-size: var(--fs-mini); font-weight: 600; text-align: center; }
 
@@ -269,20 +258,6 @@ $cookie: polygon(50% 0%, 56.7% 2.2%, 62.5% 6.3%, 68.5% 8.5%, 75.6% 9.1%, 82.1% 1
 
 .drafts__panebody > * { flex: none; margin: 0; }
 
-// A diff row's head: the run, and which staged changes made it.
-.drafts__diffhead {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 8px;
-  margin: 0;
-}
-
-.drafts__diffhead b { font-size: var(--fs-body-sm); }
-.drafts__diffhead span { color: var(--dim-text); font-size: var(--fs-mini); white-space: nowrap; }
-.drafts__preview { display: flex; flex-direction: column; gap: 8px; }
-.drafts__preview > h3 { margin: 0; }
-
 // The decision card at the pane's foot.
 .drafts__pane .decision-card {
   flex: none;
@@ -294,16 +269,12 @@ $cookie: polygon(50% 0%, 56.7% 2.2%, 62.5% 6.3%, 68.5% 8.5%, 75.6% 9.1%, 82.1% 1
 
 .drafts__pane .decision-card > .cap { margin: 0; }
 .drafts__pane .decision__spacer { display: none; }
-.drafts__merge,
-.drafts__rebase { justify-content: center; gap: 8px; min-height: 52px; border-radius: 26px; font-size: var(--fs-body); }
-.drafts__merge--small,
-.drafts__rebase { min-height: 48px; border-radius: 24px; }
-.drafts__merge[aria-disabled="true"],
-.drafts__rebase[aria-disabled="true"] { opacity: 0.45; cursor: not-allowed; }
+.drafts__merge { justify-content: center; gap: 8px; min-height: 52px; border-radius: 26px; font-size: var(--fs-body); }
+.drafts__merge[aria-disabled="true"] { opacity: 0.45; cursor: not-allowed; }
 .drafts__foot { gap: 8px; }
 .drafts__foot .decision__foot { flex: 1 1 auto; min-width: 0; }
 
-// A conflict (B_DraftsConflict `.cfl`): what clashed, Base / Yours / Now, and the two answers.
+// A conflict card (B_DraftsConflict `.cfl`): its head and its words.
 .draftcfl {
   display: flex;
   flex-direction: column;
@@ -318,30 +289,6 @@ $cookie: polygon(50% 0%, 56.7% 2.2%, 62.5% 6.3%, 68.5% 8.5%, 75.6% 9.1%, 82.1% 1
 .draftcfl__head b { font-size: var(--fs-body-sm); }
 .draftcfl__text { margin: 0; font-size: var(--fs-small); line-height: 1.4; }
 
-.draftcfl__grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  margin: 0;
-}
-
-.draftcfl__cell {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: 6px 8px;
-  border-radius: 10px;
-  background: var(--pane);
-  font-size: var(--fs-small);
-}
-
-.draftcfl__cell dt,
-.draftcfl__cell dd { margin: 0; }
-// The value is a timestamp: the counted-things step keeps "Sat 26 21:00" on one line in a phone's third.
-.draftcfl__cell dd.mono { font-size: var(--fs-mini); }
-.draftcfl__cell .cap { overflow: hidden; font-size: var(--fs-micro); letter-spacing: 0.04em; text-overflow: ellipsis; white-space: nowrap; }
-.draftcfl__cell--mine { background: var(--select); box-shadow: inset 0 0 0 1.5px var(--select-edge); }
-.draftcfl__settle { display: flex; flex-wrap: wrap; }
-.draftcfl__settle button { padding: 0 12px; font-size: var(--fs-small); }
 
 .drafts .field__error:empty,
 .drafts__view .decision__why:empty { display: none; }
@@ -365,7 +312,7 @@ $cookie: polygon(50% 0%, 56.7% 2.2%, 62.5% 6.3%, 68.5% 8.5%, 75.6% 9.1%, 82.1% 1
   .drafts__view--bar .draftop { grid-template-columns: 18px minmax(0, 1fr) 32px; gap: 8px; }
   .drafts__view--bar .draftop__kind { height: 20px; }
 
-  // The decision bar (B_PhoneDraftConflict): the reason Merge is off over Discard… and the key.
+  // The decision bar: why the key action is off, over the secondary action and the key.
   .drafts__view--bar .decision-card {
     flex: none;
     display: flex;
@@ -379,14 +326,13 @@ $cookie: polygon(50% 0%, 56.7% 2.2%, 62.5% 6.3%, 68.5% 8.5%, 75.6% 9.1%, 82.1% 1
 
   .drafts__view--bar .decision__why { flex: 1 0 100%; text-align: center; font-size: var(--fs-small); }
   .drafts__view--bar .drafts__discard { flex: none; min-height: 48px; }
-  .drafts__view--bar .drafts__merge,
-  .drafts__view--bar .drafts__rebase { flex: 1 1 auto; min-height: 52px; border-radius: 26px; }
+  .drafts__view--bar .drafts__merge { flex: 1 1 auto; min-height: 52px; border-radius: 26px; }
   .drafts__view--bar .field__error { flex: 1 0 100%; }
 }
 
-// The phone frame (B_PhoneDrafts): no window chrome; pill tabs and New draft
-// on the ground, then the note and the rows. An open draft drops the tabs
-// too (`drafts--compact`): "‹ Drafts" is in the top bar.
+// The phone frame: no window chrome; pill tabs and the New button on the
+// ground, then the note and the rows. An open item drops the tabs too
+// (`drafts--compact`): its back step is in the top bar.
 .frame--phone .drafts.card {
   gap: 10px;
   border: 0;
@@ -411,7 +357,6 @@ $cookie: polygon(50% 0%, 56.7% 2.2%, 62.5% 6.3%, 68.5% 8.5%, 75.6% 9.1%, 82.1% 1
 .frame--phone .drafts__row.inbox__option--art { gap: 10px; }
 .frame--phone .drafts__row .drafts__art,
 .frame--phone .drafts__row .drafts__art .portrait { width: 44px; height: 44px; }
-.frame--phone .drafts__live--list { margin: 0; }
 
 .frame--phone .shell:has(> .drafts--compact) {
   padding-right: 0;
@@ -419,8 +364,7 @@ $cookie: polygon(50% 0%, 56.7% 2.2%, 62.5% 6.3%, 68.5% 8.5%, 75.6% 9.1%, 82.1% 1
   padding-left: 0;
 }
 
-.frame--phone .drafts--compact > .card__head,
-.frame--phone .drafts--compact > .drafts__live--list { display: none; }
+.frame--phone .drafts--compact > .card__head { display: none; }
 .frame--phone .drafts--compact .drafts__main { background: var(--surface); }
 
 /* ── board geometry (B_Drafts*, B_PhoneDraft*) ─────────────────────────── */
@@ -434,9 +378,6 @@ $cookie: polygon(50% 0%, 56.7% 2.2%, 62.5% 6.3%, 68.5% 8.5%, 75.6% 9.1%, 82.1% 1
 .drafts__panehead { padding-block: 10px; }
 .drafts__panetitle { line-height: 1.2; }
 .drafts__pane .decision-card { align-self: auto; }
-.draftcfl__grid { gap: 4px; }
-.draftcfl__cell { line-height: 1.3; }
-.draftcfl__settle button { min-height: 30px; }
 .drafts__notebtn { min-height: 40px; border-radius: 20px; padding-inline: 18px; }
 // Loading: the list pane stands empty beside the words, centred in the draft's place.
 .drafts__list--waiting { display: block; }
@@ -449,8 +390,7 @@ $cookie: polygon(50% 0%, 56.7% 2.2%, 62.5% 6.3%, 68.5% 8.5%, 75.6% 9.1%, 82.1% 1
 @media #{$single-pane} {
   .drafts__view--bar .decision-card { flex-flow: column nowrap; align-items: normal; align-self: auto; }
   .drafts__view--bar .decision-card > .decision__why { flex: none; }
-  .drafts__view--bar .drafts__barrow .drafts__merge,
-  .drafts__view--bar .drafts__barrow .drafts__rebase { flex: 1 1 auto; }
+  .drafts__view--bar .drafts__barrow .drafts__merge { flex: 1 1 auto; }
   .drafts__view--bar .drafts__head .drafts__headart .portrait { width: 44px; height: 44px; }
 }
 

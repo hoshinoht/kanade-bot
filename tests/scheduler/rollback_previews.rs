@@ -1,6 +1,5 @@
-//! Rollback previews (`preview_revert_changes`, `preview_restore_week`,
-//! `preview_revert_by_actor`): they write nothing, and the rows they plan are
-//! the rows the apply records.
+//! Rollback previews (`rollback` with `preview`, for each selection): they
+//! write nothing, and the rows they plan are the rows the apply records.
 
 use std::collections::BTreeSet;
 
@@ -9,7 +8,7 @@ use kanade_domain::history::{
     Actor, ChangeHistory, Origin, RevertMode, RevertOutcome, RowChange, RowKey, Surface,
 };
 use kanade_domain::schedule::{RsvpSource, RsvpState, SchedulePolicy};
-use kanade_domain::scheduler::SchedulerService;
+use kanade_domain::scheduler::{RollbackRequest, RollbackSelection, SchedulerService};
 use kanade_store::SqliteStore;
 
 use crate::common::TestClock;
@@ -125,12 +124,32 @@ async fn previewing_a_revert_writes_nothing_and_matches_the_apply() {
     let none = BTreeSet::new();
     let preview = f
         .service
-        .preview_revert_changes(&[seq], RevertMode::Strict, &reminders, &none)
+        .rollback(
+            "preview",
+            None,
+            RollbackRequest {
+                selection: RollbackSelection::Seqs(vec![seq]),
+                mode: RevertMode::Strict,
+                preview: true,
+            },
+            &reminders,
+            &none,
+        )
         .await
         .unwrap();
     check(&mut f, preview, async |service| {
         service
-            .revert_changes("root", None, &[seq], RevertMode::Strict, &reminders, &none)
+            .rollback(
+                "root",
+                None,
+                RollbackRequest {
+                    selection: RollbackSelection::Seqs(vec![seq]),
+                    mode: RevertMode::Strict,
+                    preview: false,
+                },
+                &reminders,
+                &none,
+            )
             .await
             .unwrap()
     })
@@ -154,17 +173,35 @@ async fn previewing_a_week_restore_and_an_actor_revert_match_the_apply() {
     let (week, reminders, none) = (f.week, policy().reminders, BTreeSet::new());
     let preview = f
         .service
-        .preview_restore_week(week, mark, RevertMode::Strict, &reminders, &none)
+        .rollback(
+            "preview",
+            None,
+            RollbackRequest {
+                selection: RollbackSelection::Week {
+                    week,
+                    revision: mark,
+                },
+                mode: RevertMode::Strict,
+                preview: true,
+            },
+            &reminders,
+            &none,
+        )
         .await
         .unwrap();
     check(&mut f, preview, async |service| {
         service
-            .restore_week_to(
+            .rollback(
                 "root",
                 None,
-                week,
-                mark,
-                RevertMode::Strict,
+                RollbackRequest {
+                    selection: RollbackSelection::Week {
+                        week,
+                        revision: mark,
+                    },
+                    mode: RevertMode::Strict,
+                    preview: false,
+                },
                 &reminders,
                 &none,
             )
@@ -178,17 +215,35 @@ async fn previewing_a_week_restore_and_an_actor_revert_match_the_apply() {
     let since = DateTime::<Utc>::UNIX_EPOCH;
     let preview = f
         .service
-        .preview_revert_by_actor(&spammer, since, RevertMode::Force, &reminders, &none)
+        .rollback(
+            "preview",
+            None,
+            RollbackRequest {
+                selection: RollbackSelection::Actor {
+                    actor: spammer.clone(),
+                    since,
+                },
+                mode: RevertMode::Force,
+                preview: true,
+            },
+            &reminders,
+            &none,
+        )
         .await
         .unwrap();
     check(&mut f, preview, async |service| {
         service
-            .revert_by_actor(
+            .rollback(
                 "root",
                 None,
-                &spammer,
-                since,
-                RevertMode::Force,
+                RollbackRequest {
+                    selection: RollbackSelection::Actor {
+                        actor: spammer.clone(),
+                        since,
+                    },
+                    mode: RevertMode::Force,
+                    preview: false,
+                },
                 &reminders,
                 &none,
             )
@@ -207,7 +262,17 @@ async fn a_strict_preview_reports_conflicts_without_writing() {
     let (reminders, none) = (policy().reminders, BTreeSet::new());
     let preview = f
         .service
-        .preview_revert_changes(&[seq], RevertMode::Strict, &reminders, &none)
+        .rollback(
+            "preview",
+            None,
+            RollbackRequest {
+                selection: RollbackSelection::Seqs(vec![seq]),
+                mode: RevertMode::Strict,
+                preview: true,
+            },
+            &reminders,
+            &none,
+        )
         .await
         .unwrap();
     let RevertOutcome::Conflicts { seqs, conflicts } = preview else {

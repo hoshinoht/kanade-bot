@@ -23,7 +23,7 @@ pub async fn run_suite<S: ScheduleStore + ChangeHistory + DraftStore + Sync>(
     create_load_list_and_log(make().await).await;
     create_request_ids_replay_or_mismatch(make().await).await;
     op_edits_bump_the_version_and_refuse_stale_writes(make().await).await;
-    rebase_moves_the_base_and_close_is_final(make().await).await;
+    close_is_final(make().await).await;
     commit_merge_writes_rows_record_and_close(make().await).await;
     commit_merge_replays_request_ids(make().await).await;
     commit_merge_refuses_empty_stale_and_conflicted(make().await).await;
@@ -332,67 +332,11 @@ async fn op_edits_bump_the_version_and_refuse_stale_writes<
     ));
 }
 
-async fn rebase_moves_the_base_and_close_is_final<S: ScheduleStore + ChangeHistory + DraftStore>(
-    store: S,
-) {
-    let (mut service, base, revision) = started(store).await;
-    let created = create(&service, draft(&base, revision), "rebase").await;
+async fn close_is_final<S: ScheduleStore + ChangeHistory + DraftStore>(store: S) {
+    let (service, base, revision) = started(store).await;
+    let created = create(&service, draft(&base, revision), "close").await;
     let id = created.id.as_str();
-    // New history lands after the base.
-    service
-        .as_origin(admin())
-        .add_fixed_run(solo_timing())
-        .await
-        .expect("upstream");
-    let tip = head(&service).await;
     let at = utc(27, 3, 0);
-    let rebase = DraftChange::Rebase {
-        base: tip.clone(),
-        base_revision: snapshot(&service).await.revision,
-        expires_week: None,
-        ops: None,
-    };
-    let rebased = written(&service, update(id, 1, at, rebase), "rebase").await;
-    assert_eq!(rebased.version, 2);
-    assert_eq!(rebased.base, tip);
-    assert_eq!(
-        rebased.scope,
-        DraftScope::Weekly,
-        "the rebase stores its derived scope"
-    );
-    // A rename bumps the version and keeps everything else.
-    let retitle = DraftChange::Retitle {
-        title: "weekend reshuffle".into(),
-    };
-    let renamed = written(&service, update(id, 2, at, retitle), "retitle").await;
-    assert_eq!(
-        (renamed.title.as_str(), renamed.version, &renamed.base),
-        ("weekend reshuffle", 3, &tip)
-    );
-    // A settling rebase replaces the operations in the same write.
-    let staged = kanade_domain::drafts::StagedOp {
-        ord: 5,
-        op: kanade_domain::drafts::DraftOp::ResetToFixed {
-            run: kanade_domain::drafts::Target::Existing("run-1".into()),
-        },
-        author: Actor::admin("root"),
-        added_at: at,
-    };
-    let settle = DraftChange::Rebase {
-        base: tip.clone(),
-        base_revision: snapshot(&service).await.revision,
-        expires_week: None,
-        ops: Some(vec![staged.clone()]),
-    };
-    let settled = written(&service, update(id, 3, at, settle), "settling rebase").await;
-    assert_eq!(settled.version, 4);
-    let loaded = loaded(&service, id).await;
-    assert_eq!(
-        loaded.ops,
-        [kanade_domain::drafts::StagedOp { ord: 0, ..staged }],
-        "the rebase renumbers the operations it stores"
-    );
-    assert_eq!(loaded.draft.title, "weekend reshuffle");
     // Only a merge commit closes a draft as merged (it names the record);
     // `Close` refuses non-closing statuses and writes nothing.
     for status in [
@@ -400,19 +344,19 @@ async fn rebase_moves_the_base_and_close_is_final<S: ScheduleStore + ChangeHisto
         DraftStatus::Open,
         DraftStatus::Submitted,
     ] {
-        let closing = update(id, 4, at, close(status, None));
+        let closing = update(id, 1, at, close(status, None));
         refused(service.store().update_draft(closing).await);
     }
-    let discard = update(id, 4, at, close(DraftStatus::Discarded, Some("stale")));
-    let closed = written(&service, discard, "rebase: close").await;
+    let discard = update(id, 1, at, close(DraftStatus::Discarded, Some("stale")));
+    let closed = written(&service, discard, "close").await;
     assert_eq!(closed.status, DraftStatus::Discarded);
-    assert_eq!(closed.version, 4, "closing does not bump the version");
+    assert_eq!(closed.version, 1, "closing does not bump the version");
     assert_eq!(closed.closed_by, Some(Actor::admin("root")));
     // A closed draft refuses every write.
     assert!(matches!(
         write(
             &service,
-            update(id, 4, at, close(DraftStatus::Withdrawn, None))
+            update(id, 1, at, close(DraftStatus::Withdrawn, None))
         )
         .await,
         DraftWrite::Stale(DraftStale::Moved {
@@ -423,16 +367,9 @@ async fn rebase_moves_the_base_and_close_is_final<S: ScheduleStore + ChangeHisto
     let events = events(&service, id).await;
     assert_eq!(
         events.iter().map(|event| event.kind).collect::<Vec<_>>(),
-        [
-            DraftEventKind::Created,
-            DraftEventKind::Rebased,
-            DraftEventKind::Retitled,
-            DraftEventKind::Rebased,
-            DraftEventKind::Discarded
-        ]
+        [DraftEventKind::Created, DraftEventKind::Discarded]
     );
-    // The log dates the close (the History graph places it by this time),
-    // and it is the row's last change.
+    // The log dates the close, and it is the row's last change.
     assert_eq!(closed_at(&events), Some(at));
     assert_eq!(closed.updated_at, at);
 }

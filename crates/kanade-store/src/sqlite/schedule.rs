@@ -16,12 +16,9 @@ use super::rows::{self, FIXED_COLUMNS, REMINDER_COLUMNS, RSVP_COLUMNS, RUN_COLUM
 use super::{SqliteStore, history};
 use crate::history::touched_keys;
 use crate::order::sort_snapshot;
-use kanade_domain::attendance::PastRun;
 use kanade_domain::history::{Actor, ChangeMeta};
 use kanade_domain::schedule::{Change, ChangeSet, FixedRun, Reminder, Rsvp, Run, ScheduleSnapshot};
-use kanade_domain::scheduler::{
-    AttendanceHistory, Committed, RecordedRequest, ScheduleStore, Scope, StoreError,
-};
+use kanade_domain::scheduler::{Committed, RecordedRequest, ScheduleStore, Scope, StoreError};
 
 /// `SQLITE_CONSTRAINT_TRIGGER` (a trigger's `RAISE`): sqlx 0.8.6 reports it
 /// as `ErrorKind::Other`, so it is matched by extended code.
@@ -442,17 +439,6 @@ impl SqliteStore {
             self.written().notify(crate::Written::Schedule);
         }
         result
-    }
-}
-
-impl AttendanceHistory for SqliteStore {
-    async fn member_history(
-        &self,
-        member: &str,
-        per_timing: usize,
-    ) -> Result<Vec<PastRun>, StoreError> {
-        let mut conn = self.reader().await.map_err(store_error)?;
-        rows::member_history(&mut conn, member, per_timing).await
     }
 }
 

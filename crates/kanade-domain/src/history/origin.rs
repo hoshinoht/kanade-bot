@@ -76,7 +76,8 @@ spelled! {
         DraftMerge => "draft_merge",
         /// An approved member request was merged (S3).
         RequestMerge => "request_merge",
-        /// A change cherry-picked into another boss week (S4).
+        /// A change cherry-picked into another boss week (S4; no longer
+        /// written, kept so stored records decode).
         CherryPick => "cherry_pick",
     }
 }

@@ -1,6 +1,6 @@
 //! Scenarios over a live generation (`controls_p6`): changes made outside
 //! the page under test, as the actor who would make them, written through
-//! the scheduler, the drafts service and the stores' own APIs. Every write
+//! the scheduler and the stores' own APIs. Every write
 //! commits through the live store, so its write hook sends the hints a real
 //! change sends; nothing here notifies by hand except where no store write
 //! exists (the chat window).
@@ -15,18 +15,15 @@ use std::{fmt::Debug, sync::Arc};
 use chrono::{Duration, Weekday};
 use kanade::api::{dto::events::Topic, state::ApiState};
 use kanade_domain::{
-    drafts::{DraftOp, DraftStore, ProposalSource, Target},
-    history::{Actor, ChangeHistory, Origin, Surface},
+    drafts::{DraftOp, DraftStore, ProposalSource},
+    history::{Actor, Origin, Surface},
     members::MemberStore,
     model_log::{
         ChatInteraction, ChatOutcome, ExtractionLog, ExtractionOutcome, ModelLogStore,
         WatchedMessage,
     },
     proposals::{CardDetails, CardPayload, ChangeKind, ProposalCardStore, ProposedChange},
-    schedule::{
-        Change, FixedEdit, FixedEditChoices, NewRun, Rsvp, RsvpSource, RsvpState, RunSource,
-        RunStatus, StatusChange, utc_instant,
-    },
+    schedule::{Change, NewRun, Rsvp, RsvpSource, RsvpState, RunSource, RunStatus, utc_instant},
     scheduler::{ProposalRequest, ScheduleStore, Scope, Supersede},
 };
 use kanade_store::SqliteStore;
@@ -53,11 +50,6 @@ fn refused<E: Debug>(what: &'static str) -> impl FnOnce(E) -> Fail {
 
 fn admin(id: &str) -> Actor {
     Actor::admin(format!("discord:{id}"))
-}
-
-/// The admin every spec browses as: drafts are their author's own.
-fn me() -> String {
-    format!("discord:{ASAHI}")
 }
 
 impl Seed<'_> {
@@ -110,16 +102,6 @@ impl Seed<'_> {
         self.react(run, user, state, at).await
     }
 
-    async fn version(&self, draft: &str) -> Result<u64, Fail> {
-        Ok(self
-            .store
-            .load_draft(draft)
-            .await?
-            .ok_or("no such draft")?
-            .draft
-            .version)
-    }
-
     /// Admin `who` moves `run` to `to` from the portal at `at`.
     async fn amend(
         &self,
@@ -134,100 +116,6 @@ impl Seed<'_> {
             .await
             .map(drop)
             .map_err(refused("moving the run"))
-    }
-
-    /// Admin `who` cancels `run` from the portal at `at`.
-    async fn cancel(
-        &self,
-        who: &str,
-        run: &str,
-        at: chrono::DateTime<chrono::Utc>,
-    ) -> Result<(), Fail> {
-        let change = StatusChange {
-            status: RunStatus::Cancelled,
-            announce: false,
-            via_portal: true,
-        };
-        self.scheduler(at, &[])
-            .as_origin(Origin::new(admin(who), Surface::AdminPortal))
-            .set_status(run, change, &self.state.policy.reminders)
-            .await
-            .map(drop)
-            .map_err(refused("cancelling the run"))
-    }
-
-    /// Asahi starts draft `id` titled `title` at `at`, staging `ops`; its version.
-    async fn draft(
-        &self,
-        id: &str,
-        title: &str,
-        at: chrono::DateTime<chrono::Utc>,
-        ops: Vec<DraftOp>,
-    ) -> Result<u64, Fail> {
-        let me = me();
-        let mut version = self
-            .scheduler(at, &[id])
-            .create_draft(&me, title, None)
-            .await
-            .map_err(refused("starting the draft"))?
-            .version;
-        for op in ops {
-            version = self.stage(id, version, op, at).await?;
-        }
-        Ok(version)
-    }
-
-    async fn stage(
-        &self,
-        id: &str,
-        version: u64,
-        op: DraftOp,
-        at: chrono::DateTime<chrono::Utc>,
-    ) -> Result<u64, Fail> {
-        let directory = self.directory().await?;
-        Ok(self
-            .scheduler(at, &[])
-            .add_draft_op(&me(), id, version, op, &self.state.policy, &directory)
-            .await
-            .map_err(refused("staging in the draft"))?
-            .draft
-            .version)
-    }
-
-    async fn discard(&self, id: &str, at: chrono::DateTime<chrono::Utc>) -> Result<(), Fail> {
-        let version = self.version(id).await?;
-        self.scheduler(at, &[])
-            .discard_draft(&me(), id, version, None)
-            .await
-            .map(drop)
-            .map_err(refused("discarding the draft"))
-    }
-
-    async fn merge(&self, id: &str, at: chrono::DateTime<chrono::Utc>) -> Result<(), Fail> {
-        let version = self.version(id).await?;
-        let directory = self.directory().await?;
-        self.scheduler(at, &[])
-            .merge_draft(&me(), id, version, &self.state.policy, &directory, None)
-            .await
-            .map(drop)
-            .map_err(refused("merging the draft"))
-    }
-
-    async fn rebase(&self, id: &str, at: chrono::DateTime<chrono::Utc>) -> Result<(), Fail> {
-        let version = self.version(id).await?;
-        let directory = self.directory().await?;
-        self.scheduler(at, &[])
-            .rebase_draft(&me(), id, version, &self.state.policy, &directory)
-            .await
-            .map(drop)
-            .map_err(refused("rebasing the draft"))
-    }
-}
-
-fn amend_op(run: &str, to: chrono::DateTime<chrono::Utc>) -> DraftOp {
-    DraftOp::AmendRun {
-        run: Target::Existing(run.into()),
-        to,
     }
 }
 
@@ -505,185 +393,4 @@ pub async fn kalos_v4(seed: &Seed<'_>) -> Result<u64, Fail> {
         .await
         .map_err(refused("editing p-kalos-fixed"))?;
     Ok(edited.draft.version)
-}
-
-/// `POST /__e2e/drafts/board`: the mock's drafts on the seeded week. The
-/// closed Scratch (discarded) and Tuesday Kalos (merged, next week's XKalos
-/// to Tue 22:00: the record after the seed's head); Carling retime three
-/// records behind with two conflicts (Ren moved HCarling + HMaleficStar
-/// since, and cancelled next week's HFA, which it re-parties and confirms);
-/// Weekend reshuffle rebased onto the head, so up to date.
-pub async fn drafts_board(seed: &Seed<'_>) -> Result<(), Fail> {
-    let at = |minutes: i64| seed.now - Duration::minutes(60 - minutes);
-    seed.draft("d-scratch", "Scratch", at(0), Vec::new())
-        .await?;
-    seed.discard("d-scratch", at(1)).await?;
-    seed.draft(
-        "d-tuesday",
-        "Tuesday Kalos",
-        at(2),
-        vec![amend_op("n-kalos", seed.at(1, 5, Some("22:00"))?)],
-    )
-    .await?;
-    seed.merge("d-tuesday", at(3)).await?;
-    let mut version = seed.version("d-carling").await?;
-    for op in [
-        DraftOp::SwapParticipants {
-            run: Target::Existing("n-fa".into()),
-            remove: Vec::new(),
-            add: vec![MIKA.into()],
-            via_portal: true,
-        },
-        DraftOp::SetStatus {
-            run: Target::Existing("n-fa".into()),
-            change: StatusChange {
-                status: RunStatus::Confirmed,
-                announce: false,
-                via_portal: true,
-            },
-        },
-    ] {
-        version = seed.stage("d-carling", version, op, at(4)).await?;
-    }
-    seed.amend(REN, "r-carling", seed.at(0, 6, Some("20:00"))?, at(5))
-        .await?;
-    seed.cancel(REN, "n-fa", at(6)).await?;
-    seed.rebase("d-weekend", at(7)).await
-}
-
-/// `POST /__e2e/graph/board`: the History graph boards. History grows from
-/// the seed's head (#10) to #39 with members' answers and the board's
-/// changes, and the drafts take the boards' lanes: an untitled draft from
-/// #12 (discarded between #24 and #25), Tuesday Kalos (#31, merged as #33),
-/// Scratch (#32, discarded after #33), Kalos to Saturdays (#34, weekly
-/// timings), Weekend reshuffle (a HCarling + HMaleficStar move staged, then
-/// rebased onto #36; Kaito cancels XBM in #38 and Ren moves HCarling +
-/// HMaleficStar in #39: two conflicts) and Bellona clean-up (#38; #39: one
-/// conflict). The store keeps
-/// every draft, so the seeded Carling retime plays Bellona clean-up
-/// (retitled, its change re-aimed, rebased onto #38) rather than leaving
-/// a lane open from #10.
-pub async fn graph_board(seed: &Seed<'_>) -> Result<(), Fail> {
-    // Records from Mon 28 19:00 (after the seed's last), nine minutes apart.
-    let start = seed.at(0, 4, Some("19:00"))?;
-    let tick = |n: i64| start + Duration::minutes(9 * n);
-    let head = || async { Ok::<u64, Fail>(seed.store.history_head().await?.seq) };
-    // Members answering in Discord, on runs no draft stages.
-    const FILLER: [(&str, &str); 4] = [
-        ("r-fa", HOTARU),
-        ("r-jupiter", SORA),
-        ("r-limbo", SORA),
-        ("r-bellona", KAITO),
-    ];
-    let mut n = 0;
-    let filler = |n: &mut i64| {
-        let (run, who) = FILLER[(*n as usize) % FILLER.len()];
-        *n += 1;
-        (run, who, tick(*n))
-    };
-    while head().await? < 12 {
-        let (run, who, at) = filler(&mut n);
-        seed.flip(run, who, at).await?;
-    }
-    seed.draft(
-        "d-untitled",
-        "Untitled draft",
-        tick(n) + Duration::minutes(1),
-        vec![amend_op("n-fa", seed.at(1, 3, Some("20:00"))?)],
-    )
-    .await?;
-    while head().await? < 30 {
-        let (run, who, at) = filler(&mut n);
-        seed.flip(run, who, at).await?;
-        if head().await? == 24 {
-            seed.discard("d-untitled", at + Duration::minutes(4))
-                .await?;
-        }
-    }
-    let board = seed.at(0, 4, Some("22:00"))?;
-    let at = |minutes: i64| board + Duration::minutes(minutes);
-    seed.flip("r-kalos", TSUBAME, at(0)).await?; // #31
-    seed.draft(
-        "d-tuesday",
-        "Tuesday Kalos",
-        at(5),
-        vec![amend_op("n-kalos", seed.at(1, 5, Some("22:30"))?)],
-    )
-    .await?;
-    seed.flip("r-kalos", REN, at(30)).await?; // #32
-    seed.draft("d-scratch", "Scratch", at(35), Vec::new())
-        .await?;
-    seed.merge("d-tuesday", at(80)).await?; // #33
-    seed.discard("d-scratch", at(120)).await?;
-    seed.flip("r-bellona", KAITO, at(185)).await?; // #34
-    seed.draft(
-        "d-kalos",
-        "Kalos to Saturdays",
-        at(190),
-        vec![
-            DraftOp::ApplyFixedEdit {
-                fixed: Target::Existing("f-kalos".into()),
-                edit: FixedEdit {
-                    weekday: Some(Weekday::Sat),
-                    ..FixedEdit::default()
-                },
-                choices: FixedEditChoices::default(),
-            },
-            DraftOp::FixedParticipants {
-                fixed: Target::Existing("f-kalos".into()),
-                add: vec![YUZU.into()],
-                remove: Vec::new(),
-            },
-        ],
-    )
-    .await?;
-    seed.flip("r-jupiter", MINATO, at(250)).await?; // #35
-    seed.flip("r-jupiter", ASAHI, at(340)).await?; // #36
-    // The board's Weekend reshuffle also moves HCarling + HMaleficStar, which
-    // Ren moves after it (#39): with XBM cancelled (#38), two conflicts.
-    let version = seed.version("d-weekend").await?;
-    seed.stage(
-        "d-weekend",
-        version,
-        amend_op("r-carling", seed.at(0, 6, Some("21:30"))?),
-        at(342),
-    )
-    .await?;
-    seed.rebase("d-weekend", at(345)).await?;
-    seed.amend(REN, "r-bm", seed.at(0, 6, Some("22:00"))?, at(690))
-        .await?; // #37
-    seed.cancel(KAITO, "r-bm", at(700)).await?; // #38
-    let version = seed.version("d-carling").await?;
-    let version = seed
-        .scheduler(at(705), &[])
-        .retitle_draft(&me(), "d-carling", version, "Bellona clean-up")
-        .await
-        .map_err(refused("retitling the draft"))?
-        .version;
-    let directory = seed.directory().await?;
-    seed.scheduler(at(705), &[])
-        .edit_draft_op(
-            &me(),
-            "d-carling",
-            version,
-            0,
-            amend_op("r-carling", seed.at(0, 6, Some("22:30"))?),
-            &seed.state.policy,
-            &directory,
-        )
-        .await
-        .map_err(refused("re-aiming the draft"))?;
-    seed.rebase("d-carling", at(706)).await?;
-    // The tips list the most recently edited first: the board's order.
-    let version = seed.version("d-weekend").await?;
-    seed.scheduler(at(708), &[])
-        .retitle_draft(&me(), "d-weekend", version, "Weekend reshuffle")
-        .await
-        .map_err(refused("touching the draft"))?;
-    seed.amend(REN, "r-carling", seed.at(0, 6, Some("21:00"))?, at(720))
-        .await?; // #39
-    if head().await? != 39 {
-        return Err(format!("the board ended at #{}, not #39", head().await?).into());
-    }
-    Ok(())
 }

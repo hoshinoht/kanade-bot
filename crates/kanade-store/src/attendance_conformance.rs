@@ -1,38 +1,30 @@
-//! v5 attendance writes every store must keep (standing answers, the
-//! timing default, recorded attendance and the member history query),
-//! driven through [`SchedulerService`] against a fresh store per check.
+//! v5 attendance every store must keep (standing answers and the timing
+//! default stored with their timing, recorded attendance stored with its
+//! run, status pins), driven through [`SchedulerService`] against a fresh
+//! store per check.
 //! Failures panic with the check name.
-
-use std::collections::BTreeSet;
 
 use chrono::{DateTime, Utc, Weekday};
 
+use super::conformance::{seed_attendance, seed_run_attendance};
 use super::fixtures::{self, Ids, Stopped, admin, member, policy_in, utc2026};
-use kanade_domain::attendance::{AttendanceDefault, AttendanceRefusal, Patterns};
+use kanade_domain::attendance::AttendanceDefault;
 use kanade_domain::history::{
     ATTENDANCE_DEFAULT_FIELD, Actor, BlameIndex, BlameTarget, ChangeHistory, Expect, Origin,
     Precondition, RowValue, STATUS_PIN_FIELD, Surface, attended_field, blame, standing_field,
 };
 use kanade_domain::members::{Member, Roster};
 use kanade_domain::schedule::{
-    EMOJI_NO, FixedEdit, FixedRun, RsvpSource, RsvpState, Run, RunStatus, ScheduleError,
-    SchedulePolicy, StatusChange,
+    EMOJI_NO, FixedEdit, FixedRun, Run, RunStatus, SchedulePolicy, StatusChange,
 };
-use kanade_domain::scheduler::{
-    AttendanceHistory, ScheduleStore, SchedulerError, SchedulerService, Scope,
-};
+use kanade_domain::scheduler::{ScheduleStore, SchedulerError, SchedulerService, Scope};
 
 /// Run every check, each against a fresh store from `make`.
-pub async fn run_suite<S: ScheduleStore + ChangeHistory + BlameIndex + AttendanceHistory + Sync>(
+pub async fn run_suite<S: ScheduleStore + ChangeHistory + BlameIndex + Sync>(
     make: impl AsyncFn() -> S,
 ) {
-    standing_answers_set_clear_and_blame(make().await).await;
-    standing_answers_are_for_party_members_themselves(make().await).await;
     leaving_the_party_removes_the_standing_answer(make().await).await;
-    the_attendance_default_is_admin_only_blamed_and_guarded(make().await).await;
     versioned_reads_carry_the_attendance_fields(make().await).await;
-    recording_attendance_checks_permissions_and_is_recorded(make().await).await;
-    member_patterns_and_the_standing_suggestion(make().await).await;
     recorded_attendance_follows_the_run(make().await).await;
     status_pins_are_recorded_blamed_and_guarded(make().await).await;
 }
@@ -112,109 +104,19 @@ async fn last_set<S: ScheduleStore + ChangeHistory + BlameIndex>(
         })
 }
 
-async fn standing_answers_set_clear_and_blame<
-    S: ScheduleStore + ChangeHistory + BlameIndex + Sync,
->(
-    store: S,
-) {
-    let (mut service, fixed) = fixture(store).await;
-    let row = service
-        .as_origin(member("2"))
-        .set_standing_answer("2", &fixed, true)
-        .await
-        .expect("standing: set");
-    assert_eq!(standing_users(&row), ["2"], "standing");
-    assert_eq!(row.standing[0].set_by, "member:2", "standing: who");
-    let set = service.store().history_head().await.expect("head");
-    assert_eq!(
-        timing(&service, &fixed).await.expect("timing").standing,
-        row.standing,
-        "standing: stored"
-    );
-    assert_eq!(
-        last_set(&service, &fixed, &standing_field("2")).await,
-        Some((set.seq, Actor::member("2"))),
-        "standing: blamed"
-    );
-    // Setting it again changes nothing and records nothing.
-    service
-        .as_origin(member("2"))
-        .set_standing_answer("2", &fixed, true)
-        .await
-        .expect("standing: again");
-    assert_eq!(
-        service.store().history_head().await.expect("head"),
-        set,
-        "standing: idempotent"
-    );
-    service
-        .as_origin(member("2"))
-        .set_standing_answer("2", &fixed, false)
-        .await
-        .expect("standing: clear");
-    let cleared = service.store().history_head().await.expect("head");
-    assert!(
-        timing(&service, &fixed)
-            .await
-            .expect("timing")
-            .standing
-            .is_empty(),
-        "standing: cleared"
-    );
-    assert_eq!(
-        last_set(&service, &fixed, &standing_field("2")).await,
-        Some((cleared.seq, Actor::member("2"))),
-        "standing: the clear is blamed"
-    );
-}
-
-async fn standing_answers_are_for_party_members_themselves<
-    S: ScheduleStore + ChangeHistory + BlameIndex + Sync,
->(
-    store: S,
-) {
-    let (mut service, fixed) = fixture(store).await;
-    assert!(
-        matches!(
-            service
-                .as_origin(member("1"))
-                .set_standing_answer("2", &fixed, true)
-                .await,
-            Err(SchedulerError::Forbidden(_))
-        ),
-        "standing: not for someone else"
-    );
-    assert!(
-        matches!(
-            service
-                .as_origin(member("3"))
-                .set_standing_answer("3", &fixed, true)
-                .await,
-            Err(SchedulerError::Schedule(ScheduleError::NotInParty { .. }))
-        ),
-        "standing: only party members"
-    );
-    let row = service
-        .as_origin(admin())
-        .set_standing_answer("1", &fixed, true)
-        .await
-        .expect("standing: an admin for a member");
-    assert_eq!(row.standing[0].set_by, "admin:root", "standing");
-}
-
 async fn leaving_the_party_removes_the_standing_answer<
     S: ScheduleStore + ChangeHistory + BlameIndex + Sync,
 >(
     store: S,
 ) {
     let (mut service, fixed) = fixture(store).await;
-    for user in ["1", "2"] {
-        service
-            .as_origin(member(user))
-            .set_standing_answer(user, &fixed, true)
-            .await
-            .expect("leave: set");
-    }
+    seed_attendance(
+        service.store(),
+        &fixed,
+        &["1", "2"],
+        AttendanceDefault::OptIn,
+    )
+    .await;
     // A party delta (a request's leave) drops 2's answer in its commit.
     service
         .as_origin(admin())
@@ -255,11 +157,7 @@ async fn leaving_the_party_removes_the_standing_answer<
         "leave: edit"
     );
     // Retiring the timing takes its answers with it.
-    service
-        .as_origin(member("2"))
-        .set_standing_answer("2", &fixed, true)
-        .await
-        .expect("leave: set again");
+    seed_attendance(service.store(), &fixed, &["2"], AttendanceDefault::OptIn).await;
     let weeks: Vec<DateTime<Utc>> = Vec::new();
     service
         .as_origin(admin())
@@ -278,113 +176,19 @@ async fn leaving_the_party_removes_the_standing_answer<
     );
 }
 
-async fn the_attendance_default_is_admin_only_blamed_and_guarded<
-    S: ScheduleStore + ChangeHistory + BlameIndex + Sync,
->(
-    store: S,
-) {
-    let (mut service, fixed) = fixture(store).await;
-    assert_eq!(
-        timing(&service, &fixed)
-            .await
-            .expect("timing")
-            .attendance_default,
-        AttendanceDefault::OptIn,
-        "default: opt-in to start"
-    );
-    assert!(
-        matches!(
-            service
-                .as_origin(member("1"))
-                .set_attendance_default(&fixed, AttendanceDefault::AssumeComing)
-                .await,
-            Err(SchedulerError::Forbidden(_))
-        ),
-        "default: admin only"
-    );
-    let target = BlameTarget::FixedRun(fixed.clone());
-    let seen = service
-        .store()
-        .last_changes(&target)
-        .await
-        .expect("versions")
-        .get(ATTENDANCE_DEFAULT_FIELD)
-        .copied();
-    assert_eq!(seen, None, "default: no version yet");
-    let view = Expect::fields([Precondition::new(
-        target.clone(),
-        ATTENDANCE_DEFAULT_FIELD,
-        seen,
-    )]);
-    service
-        .as_origin(admin())
-        .expecting(view.clone())
-        .set_attendance_default(&fixed, AttendanceDefault::AssumeComing)
-        .await
-        .expect("default: set");
-    let set = service.store().history_head().await.expect("head");
-    assert_eq!(
-        timing(&service, &fixed)
-            .await
-            .expect("timing")
-            .attendance_default,
-        AttendanceDefault::AssumeComing,
-        "default: stored"
-    );
-    assert_eq!(
-        last_set(&service, &fixed, ATTENDANCE_DEFAULT_FIELD).await,
-        Some((set.seq, Actor::admin("root"))),
-        "default: blamed"
-    );
-    // A second admin working from the same view is stale.
-    assert!(
-        matches!(
-            service
-                .as_origin(Origin::new(Actor::admin("other"), Surface::AdminPortal))
-                .expecting(view)
-                .set_attendance_default(&fixed, AttendanceDefault::OptIn)
-                .await,
-            Err(SchedulerError::StaleEdit { .. })
-        ),
-        "default: stale view"
-    );
-    // Preconditions on a standing answer work the same way.
-    let standing = Expect::fields([Precondition::new(target, standing_field("2"), None)]);
-    service
-        .as_origin(member("2"))
-        .expecting(standing.clone())
-        .set_standing_answer("2", &fixed, true)
-        .await
-        .expect("default: standing with a fresh view");
-    assert!(
-        matches!(
-            service
-                .as_origin(member("2"))
-                .expecting(standing)
-                .set_standing_answer("2", &fixed, false)
-                .await,
-            Err(SchedulerError::StaleEdit { .. })
-        ),
-        "default: stale standing view"
-    );
-}
-
 async fn versioned_reads_carry_the_attendance_fields<
     S: ScheduleStore + ChangeHistory + BlameIndex + Sync,
 >(
     store: S,
 ) {
-    let (mut service, fixed) = fixture(store).await;
-    service
-        .as_origin(member("2"))
-        .set_standing_answer("2", &fixed, true)
-        .await
-        .expect("versioned: standing");
-    service
-        .as_origin(admin())
-        .set_attendance_default(&fixed, AttendanceDefault::AssumeComing)
-        .await
-        .expect("versioned: default");
+    let (service, fixed) = fixture(store).await;
+    seed_attendance(
+        service.store(),
+        &fixed,
+        &["2"],
+        AttendanceDefault::AssumeComing,
+    )
+    .await;
     let read = service
         .store()
         .read_versioned(&[BlameTarget::FixedRun(fixed.clone())])
@@ -430,10 +234,6 @@ async fn mark_done<S: ScheduleStore>(service: &mut Service<S>, run_id: &str) {
         .expect("done");
 }
 
-fn set(users: &[&str]) -> BTreeSet<String> {
-    users.iter().map(|user| (*user).to_owned()).collect()
-}
-
 fn attendance_of(run: &Run) -> Vec<(String, bool, String)> {
     run.attendance
         .iter()
@@ -463,287 +263,6 @@ async fn run_blame<S: ScheduleStore + ChangeHistory + BlameIndex>(
         .map(|last| (last.seq, last.actor))
 }
 
-async fn recording_attendance_checks_permissions_and_is_recorded<
-    S: ScheduleStore + ChangeHistory + BlameIndex + Sync,
->(
-    store: S,
-) {
-    let (mut service, _) = fixture(store).await;
-    let run = runs(&service).await[0].id.clone();
-    // 2 declined; the prefill is everyone not declined.
-    service
-        .as_origin(member("2"))
-        .set_rsvp(&run, "2", RsvpState::No, RsvpSource::Chat)
-        .await
-        .expect("attendance: answer");
-    assert!(
-        matches!(
-            service
-                .as_origin(admin())
-                .record_attendance(&run, &set(&["1"]))
-                .await,
-            Err(SchedulerError::Schedule(ScheduleError::Attendance(
-                AttendanceRefusal::NotDone
-            )))
-        ),
-        "attendance: only once done"
-    );
-    mark_done(&mut service, &run).await;
-    let head = service.store().history_head().await.expect("head");
-    assert!(
-        matches!(
-            service
-                .as_origin(member("1"))
-                .record_attendance(&run, &set(&["1", "2"]))
-                .await,
-            Err(SchedulerError::Forbidden(_))
-        ),
-        "attendance: a member cannot mark someone else"
-    );
-    assert!(
-        matches!(
-            service
-                .as_origin(Origin::new(
-                    Actor::system("delivery"),
-                    Surface::DeliveryTick
-                ))
-                .record_attendance(&run, &set(&["1"]))
-                .await,
-            Err(SchedulerError::Forbidden(_))
-        ),
-        "attendance: not the system"
-    );
-    assert!(
-        matches!(
-            service
-                .as_origin(admin())
-                .record_attendance(&run, &set(&["1", "3"]))
-                .await,
-            Err(SchedulerError::Schedule(ScheduleError::Attendance(
-                AttendanceRefusal::NotOnRun(_)
-            )))
-        ),
-        "attendance: only people on the run"
-    );
-    assert_eq!(
-        service.store().history_head().await.expect("head"),
-        head,
-        "attendance: refusals record nothing"
-    );
-    // The member confirms their own entry from the prefill ({1}): only
-    // their entry is written.
-    let state = service
-        .as_origin(member("2"))
-        .record_attendance(&run, &set(&["1", "2"]))
-        .await
-        .expect("attendance: own entry");
-    assert_eq!(
-        attendance_of(&state.run),
-        [("2".to_owned(), true, "member:2".to_owned())],
-        "attendance: a member writes only their own"
-    );
-    let own = service.store().history_head().await.expect("head");
-    let target = BlameTarget::Run(run.clone());
-    assert_eq!(
-        run_blame(&service, &target, attended_field("2")).await,
-        Some((own.seq, Actor::member("2"))),
-        "attendance: blamed"
-    );
-    // The admin records the whole roster: 1 absent; 2 unchanged keeps the
-    // member's entry.
-    let seen = service
-        .store()
-        .last_changes(&target)
-        .await
-        .expect("versions")
-        .get(&attended_field("1"))
-        .copied();
-    assert_eq!(seen, None, "attendance: 1 not recorded yet");
-    let view = Expect::fields([Precondition::new(target.clone(), attended_field("1"), seen)]);
-    let state = service
-        .as_origin(admin())
-        .expecting(view.clone())
-        .record_attendance(&run, &set(&["2"]))
-        .await
-        .expect("attendance: admin");
-    assert_eq!(
-        attendance_of(&state.run),
-        [
-            ("1".to_owned(), false, "admin:root".to_owned()),
-            ("2".to_owned(), true, "member:2".to_owned()),
-        ],
-        "attendance: admin roster"
-    );
-    let recorded = service.store().history_head().await.expect("head");
-    assert_eq!(
-        run_blame(&service, &target, attended_field("1")).await,
-        Some((recorded.seq, Actor::admin("root"))),
-        "attendance: admin blamed"
-    );
-    assert_eq!(
-        run_blame(&service, &target, attended_field("2")).await,
-        Some((own.seq, Actor::member("2"))),
-        "attendance: an unchanged entry keeps its attribution"
-    );
-    // A second admin working from the same view is stale.
-    assert!(
-        matches!(
-            service
-                .as_origin(Origin::new(Actor::admin("other"), Surface::AdminPortal))
-                .expecting(view)
-                .record_attendance(&run, &set(&["1", "2"]))
-                .await,
-            Err(SchedulerError::StaleEdit { .. })
-        ),
-        "attendance: stale view"
-    );
-    // The stored row, its versions and the change record agree.
-    let read = service
-        .store()
-        .read_versioned(std::slice::from_ref(&target))
-        .await
-        .expect("versioned");
-    let Some(RowValue::Run(row)) = &read[0].row else {
-        panic!("attendance: no run row");
-    };
-    assert_eq!(
-        row.attendance, state.run.attendance,
-        "attendance: versioned"
-    );
-    assert_eq!(
-        read[0].versions.get(&attended_field("1")),
-        Some(&recorded.seq),
-        "attendance: versioned"
-    );
-    assert_eq!(
-        runs(&service).await[0].attendance,
-        state.run.attendance,
-        "attendance: stored"
-    );
-    assert!(
-        service
-            .store()
-            .verify_history()
-            .await
-            .expect("verify")
-            .is_intact(),
-        "attendance: the history verifies"
-    );
-}
-
-async fn member_patterns_and_the_standing_suggestion<
-    S: ScheduleStore + ChangeHistory + BlameIndex + AttendanceHistory + Sync,
->(
-    store: S,
-) {
-    let (mut service, fixed) = fixture(store).await;
-    let ids: Vec<String> = runs(&service).await.into_iter().map(|run| run.id).collect();
-    // Member 1 said no on the oldest run and came anyway; member 2 never
-    // answered and came to all three.
-    service
-        .as_origin(member("1"))
-        .set_rsvp(&ids[0], "1", RsvpState::No, RsvpSource::Chat)
-        .await
-        .expect("patterns: answer");
-    for id in &ids {
-        mark_done(&mut service, id).await;
-        service
-            .as_origin(admin())
-            .record_attendance(id, &set(&["1", "2"]))
-            .await
-            .expect("patterns: record");
-    }
-    // Only the member themselves or an administrator may read them.
-    assert!(
-        matches!(
-            service.member_attendance(&Actor::member("1"), "2").await,
-            Err(SchedulerError::Forbidden(_))
-        ),
-        "patterns: private"
-    );
-    let two = service
-        .member_attendance(&Actor::member("2"), "2")
-        .await
-        .expect("patterns: own");
-    let newest_first: Vec<String> = ids.iter().rev().cloned().collect();
-    assert_eq!(
-        two.history
-            .iter()
-            .map(|run| run.run_id.clone())
-            .collect::<Vec<_>>(),
-        newest_first,
-        "patterns: newest first"
-    );
-    assert_eq!(
-        two.patterns,
-        Patterns {
-            attended_without_answering: 3,
-            answered_in_but_absent: 0,
-            answered_out_but_attended: 0,
-        },
-        "patterns: 2"
-    );
-    assert_eq!(
-        two.suggest_standing,
-        std::slice::from_ref(&fixed),
-        "patterns: suggested"
-    );
-    let one = service
-        .member_attendance(&Actor::admin("root"), "1")
-        .await
-        .expect("patterns: admin");
-    assert_eq!(
-        one.patterns,
-        Patterns {
-            attended_without_answering: 2,
-            answered_in_but_absent: 0,
-            answered_out_but_attended: 1,
-        },
-        "patterns: 1"
-    );
-    assert!(
-        one.suggest_standing.is_empty(),
-        "patterns: 2 of 3 is not enough"
-    );
-    // A suggestion is never applied, and goes once the answer is set.
-    assert!(
-        timing(&service, &fixed)
-            .await
-            .expect("timing")
-            .standing
-            .is_empty(),
-        "patterns: not applied"
-    );
-    service
-        .as_origin(member("2"))
-        .set_standing_answer("2", &fixed, true)
-        .await
-        .expect("patterns: standing");
-    assert!(
-        service
-            .member_attendance(&Actor::member("2"), "2")
-            .await
-            .expect("patterns: again")
-            .suggest_standing
-            .is_empty(),
-        "patterns: already set"
-    );
-    // At most the last runs per timing are read.
-    let limited = service
-        .store()
-        .member_history("2", 2)
-        .await
-        .expect("history");
-    assert_eq!(
-        limited
-            .iter()
-            .map(|run| run.run_id.clone())
-            .collect::<Vec<_>>(),
-        newest_first[..2],
-        "patterns: per-timing limit"
-    );
-}
-
 /// Entries never outlive what they describe: a swap (allowed on a done
 /// run) drops the leaver's entry in its commit, and reviving the run from
 /// done clears them all.
@@ -755,11 +274,28 @@ async fn recorded_attendance_follows_the_run<
     let (mut service, _) = fixture(store).await;
     let run = runs(&service).await[0].id.clone();
     mark_done(&mut service, &run).await;
-    service
-        .as_origin(admin())
-        .record_attendance(&run, &set(&["1", "2"]))
+    seed_run_attendance(service.store(), &run, &[("1", true), ("2", true)]).await;
+    let recorded = service.store().history_head().await.expect("head");
+    let target = BlameTarget::Run(run.clone());
+    assert_eq!(
+        run_blame(&service, &target, attended_field("2")).await,
+        Some((recorded.seq, Actor::admin("conformance"))),
+        "follows: recorded entries are blamed"
+    );
+    let read = service
+        .store()
+        .read_versioned(std::slice::from_ref(&target))
         .await
-        .expect("follows: record");
+        .expect("versioned");
+    let Some(RowValue::Run(row)) = &read[0].row else {
+        panic!("follows: no run row");
+    };
+    assert_eq!(row.attendance.len(), 2, "follows: versioned");
+    assert_eq!(
+        read[0].versions.get(&attended_field("1")),
+        Some(&recorded.seq),
+        "follows: versioned"
+    );
     let state = service
         .as_origin(admin())
         .swap_participants(&run, &["2".into()], &["3".into()], true, &roster())
@@ -769,23 +305,15 @@ async fn recorded_attendance_follows_the_run<
     assert_eq!(state.run.status, RunStatus::Done, "follows: still done");
     assert_eq!(
         attendance_of(&state.run),
-        [("1".to_owned(), true, "admin:root".to_owned())],
+        [("1".to_owned(), true, "admin:conformance".to_owned())],
         "follows: the leaver's entry is dropped"
     );
     let swapped = service.store().history_head().await.expect("head");
-    let target = BlameTarget::Run(run.clone());
     assert_eq!(
         run_blame(&service, &target, attended_field("2")).await,
         Some((swapped.seq, Actor::admin("root"))),
         "follows: the drop is recorded with the swap"
     );
-    // The newcomer can be recorded like anyone on the run.
-    let state = service
-        .as_origin(member("3"))
-        .record_attendance(&run, &set(&["1", "3"]))
-        .await
-        .expect("follows: newcomer");
-    assert_eq!(state.run.attendance.len(), 2, "follows: newcomer");
     // Reviving the run clears what it recorded.
     service
         .as_origin(admin())

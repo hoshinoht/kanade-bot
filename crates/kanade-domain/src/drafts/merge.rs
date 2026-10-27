@@ -11,9 +11,10 @@ use std::sync::Arc;
 use chrono::{DateTime, Utc};
 
 use super::conflict::{Entity, Field, FieldValue, MergeConflict, Removal};
-use super::op::{DraftOp, Target};
+use super::op::DraftOp;
 use super::replay::{Replay, replay_partial};
 use crate::completion::RunEnds;
+#[cfg(any(test, feature = "test-support"))]
 use crate::history::{ChangeRecord, ChangeRef, HistoryGap, rewind};
 use crate::members::Directory;
 use crate::schedule::{ChangeSet, Notice, SchedulePolicy, ScheduleSnapshot, utc_instant};
@@ -37,6 +38,7 @@ pub struct MergeAnalysis {
 }
 
 impl MergeAnalysis {
+    #[cfg(any(test, feature = "test-support"))]
     pub fn is_clean(&self) -> bool {
         self.conflicts.is_empty() && self.result_changes.is_some()
     }
@@ -48,6 +50,7 @@ impl MergeAnalysis {
 ///
 /// # Errors
 /// [`HistoryGap`] when `upstream` is not exactly that chain.
+#[cfg(any(test, feature = "test-support"))]
 #[allow(clippy::too_many_arguments)]
 pub fn analyze_merge_since(
     current: &ScheduleSnapshot,
@@ -177,96 +180,6 @@ fn created_names(replay: &Replay) -> BTreeMap<String, String> {
         }
     }
     names
-}
-
-/// The staged operations behind each conflict, by `ord` and in order:
-/// replayed on the draft's `base` one operation at a time, an operation is
-/// involved when it changes the conflicting field (any field of an entity
-/// upstream removed, its answers included, or a run it ties to a retired
-/// timing). Operation-level conflicts name their own operation. Later
-/// operations acting on a row an involved operation creates are involved
-/// too, so dropping the set never leaves a dangling target. Operations
-/// after one the base refuses are attributed to nothing.
-pub fn conflict_ops(
-    base: &ScheduleSnapshot,
-    ops: &[DraftOp],
-    conflicts: &[MergeConflict],
-    policy: &SchedulePolicy,
-    ends: Option<&Arc<RunEnds>>,
-    directory: &(dyn Directory + Sync),
-    now: DateTime<Utc>,
-) -> Vec<Vec<usize>> {
-    // Per operation: the keys it changed and their new values.
-    let mut touched: Vec<Fields> = Vec::with_capacity(ops.len());
-    let mut previous = fields(base, &BTreeMap::new());
-    for end in 1..=ops.len() {
-        let (replayed, rejected) = replay_partial(base, &ops[..end], policy, ends, directory, now);
-        if rejected.is_some() {
-            break;
-        }
-        let next = fields(&replayed.draft.to_snapshot(), &created_names(&replayed));
-        let keys: BTreeSet<&(Entity, Field)> = previous.keys().chain(next.keys()).collect();
-        let changed: Fields = keys
-            .into_iter()
-            .filter(|key| previous.get(*key) != next.get(*key))
-            .map(|key| {
-                let value = next.get(key).cloned().unwrap_or(FieldValue::Text(None));
-                (key.clone(), value)
-            })
-            .collect();
-        touched.push(changed);
-        previous = next;
-    }
-    let about = |entity: &Entity, (found, field): &(Entity, Field), value: &FieldValue| {
-        if found == entity {
-            return true;
-        }
-        match (entity, found) {
-            (Entity::Run(run), Entity::Rsvp { run_id, .. }) => run == run_id,
-            (Entity::Fixed(id), Entity::Run(_)) => {
-                *field == Field::FixedRun && *value == FieldValue::Text(Some(id.clone()))
-            }
-            _ => false,
-        }
-    };
-    conflicts
-        .iter()
-        .map(|conflict| {
-            let mut involved: BTreeSet<usize> = match conflict {
-                MergeConflict::BothChanged { entity, field, .. }
-                | MergeConflict::Divergent { entity, field } => touched
-                    .iter()
-                    .enumerate()
-                    .filter(|(_, changed)| changed.contains_key(&(entity.clone(), *field)))
-                    .map(|(ord, _)| ord)
-                    .collect(),
-                MergeConflict::UpstreamRemoved { entity, .. } => touched
-                    .iter()
-                    .enumerate()
-                    .filter(|(_, changed)| {
-                        changed.iter().any(|(key, value)| about(entity, key, value))
-                    })
-                    .map(|(ord, _)| ord)
-                    .collect(),
-                MergeConflict::OpRejected { ord, .. }
-                | MergeConflict::ChoicesStale { ord, .. }
-                | MergeConflict::StaleWeeks { ord, .. } => BTreeSet::from([*ord]),
-            };
-            for (ord, op) in ops.iter().enumerate() {
-                let mut probe = op.clone();
-                let mut needs = false;
-                probe.each_target_mut(|target| {
-                    if let Target::Created(creator) = target {
-                        needs |= involved.contains(creator);
-                    }
-                });
-                if needs {
-                    involved.insert(ord);
-                }
-            }
-            involved.into_iter().collect()
-        })
-        .collect()
 }
 
 fn rename(names: &BTreeMap<String, String>, id: &str) -> String {

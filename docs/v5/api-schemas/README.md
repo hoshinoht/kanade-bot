@@ -95,11 +95,11 @@ Pointers are `<file>#/$defs/<Name>`.
 | `PATCH /api/admin/characters/{id}` | `characters.json#/$defs/CharacterRow` (body `CharacterPatch`; 422 `version_required`, 409 `stale` for another version, 409 `main_required` to retire or demote the main while the member has other active characters; refusals, Idempotency-Key and History as the POST; a no-op answers the row and records nothing) |
 | `DELETE /api/admin/characters/{id}` | `common.json#/$defs/Message` (removes the row and its run and timing picks; History keeps its fields; 409 `main_required` for the main while the member has other active characters; Idempotency-Key as the POST) |
 | `GET /api/admin/runs/{id}/characters` | `characters.json#/$defs/RunCharacters` (module `roster`, generic 404 while off; 404 `not_found` for a run that is gone; one slot per party member with candidates, the run's own `picked`, `brings` and its `basis` (the run's pick, else its weekly timing's pick read live, else the main, else the only active character; recomputed on every read; a read never writes) and `warnings`) |
-| `PUT /api/admin/runs/{id}/characters/{member}` | body `characters.json#/$defs/CharacterPick`; `characters.json#/$defs/RunCharacterSlot` (that member's slot as it now reads; saves directly, never staged in a draft, outside the history chain; 400 `invalid_body`, 422 `invalid`/`version_required`, 409 `stale` for another slot version, 409 `run_ended` for a live run past its end, 422 `not_on_run` for a member not in the party, 404 `not_found` for an unknown run or character, 422 `not_their_character`, 422 `character_retired`; a no-op answers the slot and records nothing; Idempotency-Key as the character POST; each effective write adds one History settings row, section `characters`, key `pick.<run>.<member>`) |
+| `PUT /api/admin/runs/{id}/characters/{member}` | body `characters.json#/$defs/CharacterPick`; `characters.json#/$defs/RunCharacterSlot` (that member's slot as it now reads; saves directly, outside the history chain; 400 `invalid_body`, 422 `invalid`/`version_required`, 409 `stale` for another slot version, 409 `run_ended` for a live run past its end, 422 `not_on_run` for a member not in the party, 404 `not_found` for an unknown run or character, 422 `not_their_character`, 422 `character_retired`; a no-op answers the slot and records nothing; Idempotency-Key as the character POST; each effective write adds one History settings row, section `characters`, key `pick.<run>.<member>`) |
 | `PUT /api/admin/runs/{id}/characters/{member}/bosses/{boss}` | body `characters.json#/$defs/CharacterPick` (with that boss's own `version`); `characters.json#/$defs/RunCharacterSlot` (one party member's pick for a later boss of the run; `{boss}` is a boss token of the run or its catalog boss (`bosses[].key`); the pick is kept under the catalog boss, any difficulty; 422 `first_boss` for the run's first boss (its character is the member's own pick), 422 `boss_not_on_run`; other refusals, 409 `run_ended`, no-op and Idempotency-Key as the member's pick; each effective write adds one History settings row, key `pick.<run>.<member>.<boss>`, its sides naming `boss`, an empty side meaning "same as the first boss") |
 | `POST /api/admin/runs/{id}/characters/{member}/same` | body `characters.json#/$defs/SameForEveryBoss`; `characters.json#/$defs/RunCharacterSlot` ("same for every boss": clears the member's per-boss picks for the run's later bosses in one write; a pick kept for a boss no longer on the run stays; 409 `stale` when any later boss is at another version than sent; 409 `run_ended`, 422 `not_on_run`; nothing to clear answers the slot and records nothing; Idempotency-Key as the member's pick; an effective write adds one History settings row, key `pick.<run>.<member>.*`, its `from` side a JSON list of the cleared picks) |
 | `GET /api/admin/fixed/{id}/characters` | `characters.json#/$defs/TimingCharacters` (modules `roster` and `character_data`: every timing character and readiness route answers the generic 404, before the session check, while either is off; 404 `not_found` for a timing that is gone (retired); one slot per member of the saved party with the timing's own `picked`, `brings` and `basis` (the pick, else the main, else the only active character); `warnings` always empty) |
-| `PUT /api/admin/fixed/{id}/characters/{member}` | body `characters.json#/$defs/CharacterPick`; `characters.json#/$defs/RunCharacterSlot` (that member's timing slot as it now reads; saves directly, outside the timing's own PATCH, drafts and the history chain; runs made from the timing read it live unless they have their own pick; 422 `not_on_timing` for a member not in the saved party, 404 `not_found` for an unknown timing or character, other refusals, no-op and Idempotency-Key as the run pick; each effective write adds one History settings row, section `characters`, key `fixedpick.<fixed>.<member>`. A retired timing's picks stay stored but no read uses them) |
+| `PUT /api/admin/fixed/{id}/characters/{member}` | body `characters.json#/$defs/CharacterPick`; `characters.json#/$defs/RunCharacterSlot` (that member's timing slot as it now reads; saves directly, outside the timing's own PATCH and the history chain; runs made from the timing read it live unless they have their own pick; 422 `not_on_timing` for a member not in the saved party, 404 `not_found` for an unknown timing or character, other refusals, no-op and Idempotency-Key as the run pick; each effective write adds one History settings row, section `characters`, key `fixedpick.<fixed>.<member>`. A retired timing's picks stay stored but no read uses them) |
 | `PUT /api/admin/fixed/{id}/characters/{member}/bosses/{boss}` | body `characters.json#/$defs/CharacterPick`; `characters.json#/$defs/RunCharacterSlot` (one party member's pick for a later boss of the timing, as the run's per-boss pick; runs made from the timing read it live unless they have their own pick for that boss, whatever the run's own first-boss pick; 422 `first_boss`, 422 `boss_not_on_timing`, 422 `not_on_timing`; History key `fixedpick.<fixed>.<member>.<boss>`) |
 | `POST /api/admin/fixed/{id}/characters/{member}/same` | body `characters.json#/$defs/SameForEveryBoss`; `characters.json#/$defs/RunCharacterSlot` ("same for every boss" for the timing, as the run's; History key `fixedpick.<fixed>.<member>.*`) |
 | `GET /api/admin/characters/lookup` | `character_data.json#/$defs/LookupStatus` (module `character_data`, generic 404 before the session check while off; `connected` is whether a Nexon key is configured) |
@@ -142,15 +142,6 @@ Pointers are `<file>#/$defs/<Name>`.
 | `GET /api/admin/inbox` | `inbox.json#/$defs/Proposals` |
 | `GET /api/admin/inbox/past?before=&limit=` | `inbox.json#/$defs/PastPage` (422 `invalid_query`) |
 | `POST /api/admin/inbox/{id}/approve`, `/reject` | `common.json#/$defs/Message`. A member request's approve body may carry `edit: {retime: [{change, day, time}], drop: [change]}` (change ids from `Proposal.requested`; `day` 0 = Monday): approved with those changes, 409 `stale` when the request is no longer the `version` edited, 422 `unknown_change`/`not_retimable`/`nothing_approved` |
-| `GET /api/admin/drafts?state=open\|closed` | `drafts.json#/$defs/DraftList` (the session admin's own drafts; 422 `invalid_query`) |
-| `POST /api/admin/drafts` | body `{title?}`; `drafts.json#/$defs/DraftWritten` (201) |
-| `GET /api/admin/drafts/graph?from=&to=` | `drafts.json#/$defs/DraftGraph` (the session admin's own drafts whose span touches History records `from..=to`, any status; both seqs required, `from <= to`, else 422 `invalid_query`) |
-| `GET /api/admin/drafts/{id}` | `drafts.json#/$defs/DraftDetail` (404 `not_found` for anyone but its author) |
-| `PATCH /api/admin/drafts/{id}`, `DELETE /api/admin/drafts/{id}?version=` | body `{version, title}` / none; `drafts.json#/$defs/DraftWritten` (rename / discard) |
-| `POST /api/admin/drafts/{id}/ops`, `DELETE /api/admin/drafts/{id}/ops/{n}?version=` | body `{version, op}` (`drafts.json#/$defs/OpBody`); `drafts.json#/$defs/DraftWritten` (422 `op_refused`/`op_needed`) |
-| `GET /api/admin/drafts/{id}/preview` | `drafts.json#/$defs/DraftPreview` (410 `expired`) |
-| `POST /api/admin/drafts/{id}/rebase` | body `{version, settle: {conflict key: keep\|take}}`; `drafts.json#/$defs/DraftWritten` (409 `conflicts` while any conflict is unsettled or the result no longer applies) |
-| `POST /api/admin/drafts/{id}/merge` | body `{version}`; `drafts.json#/$defs/DraftWritten` with `seq` (409 `base_moved` off the head, `conflicts`, `no_effect`; 422 `empty`) |
 | `GET /api/admin/inbox/ownership` | `inbox.json#/$defs/OwnershipRequests` (open, unexpired, oldest first) |
 | `POST /api/admin/inbox/ownership/{id}/accept`, `/decline` | `common.json#/$defs/Message` (404 `not_found`; 409 `conflicts` with the rule's words when the request is closed, expired or the requester left the party) |
 | `GET /api/admin/extractions?…` | `extractions.json#/$defs/Extractions` (422 `invalid_filter`) |
@@ -187,9 +178,9 @@ Pointers are `<file>#/$defs/<Name>`.
 `common.json` (enums, `Boss`, `Tally`, `Member`, `Channel`, `WeekDay`, `Head`,
 `Message`, `ReloadResult`, `LogFacets`), `error.json`, `identity.json`,
 `public.json`, `week.json`, `members.json`, `characters.json`, `fixed.json`,
-`bosses.json`, `reminders.json`, `inbox.json`, `drafts.json`, `extractions.json`,
-`chat.json`, `rewrites.json`, `limits.json`, `history.json`, `config.json`,
-`presence.json`, `guides.json`, `setup.json`.
+`bosses.json`, `reminders.json`, `inbox.json`, `extractions.json`, `chat.json`,
+`rewrites.json`, `limits.json`, `history.json`, `config.json`, `presence.json`,
+`guides.json`, `setup.json`.
 
 ## Changes since A0
 
@@ -257,9 +248,8 @@ Pointers are `<file>#/$defs/<Name>`.
   `WithoutDetail`) for `GET /api/public/bosses/{key}/knowledge`; the
   public list and event bosses reuse `bosses.json` `BossRows` and
   `EventBosses`.
-- Admin drafts (2026-10-11): `drafts.json` for the Drafts page
-  (list, detail, preview with History diff rows and conflicts, writes;
-  every write takes `version` and honours `Idempotency-Key`);
+- Admin drafts (2026-10-11): `drafts.json` for the Drafts page (since
+  removed, 2026-10-27);
   `inbox.json` `Proposal.requested` / `RequestedChange` for approving a
   member request with changes; `public.json` `MemberRequest.edited` and
   `not_approved`.
@@ -271,8 +261,7 @@ Pointers are `<file>#/$defs/<Name>`.
   `CharacterPick` body) for `GET /api/admin/runs/{id}/characters` and
   `PUT /api/admin/runs/{id}/characters/{member}` of module `roster`.
 - History graph (2026-10-12): `drafts.json` `DraftGraph` and `GraphDraft`
-  for `GET /api/admin/drafts/graph?from=&to=` (own drafts spanning the
-  loaded History records, with each close time from the draft's event log).
+  for `GET /api/admin/drafts/graph?from=&to=` (since removed, 2026-10-27).
 - Admin presence (2026-10-12): `presence.json` (`PresenceCheckIn` body,
   `PresenceHere`, `PresenceList`, `PresenceEntry`) for
   `PUT`/`GET`/`DELETE /api/admin/presence`; the events stream adds topic
@@ -391,3 +380,6 @@ Pointers are `<file>#/$defs/<Name>`.
   `GET /api/admin/setup/secrets`, `PUT …/{name}`, `POST …/{name}/check` and
   `POST /api/admin/setup/restart`; `error.json` `ApiError.error` adds
   `admin_reauth_required`.
+- Admin drafts removed (2026-10-27): `drafts.json` and every
+  `/api/admin/drafts` route, the History graph's read included. Stored
+  `draft_merge` and `cherry_pick` records keep their `Surface` spellings.

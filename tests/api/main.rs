@@ -10,7 +10,6 @@ mod boss_picks;
 mod character_data;
 mod characters;
 mod config;
-mod drafts;
 mod estimates;
 mod etag;
 mod events;

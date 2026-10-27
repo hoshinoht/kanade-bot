@@ -93,13 +93,10 @@ pub fn draft(error: DraftError) -> Refusal {
         DraftError::Expired => expired(),
         DraftError::NoEffect => no_effect(),
         DraftError::RequesterUnauthorised => requester_unauthorised(),
-        moved @ DraftError::BaseMoved { .. } => conflicts(moved.to_string()),
         DraftError::HistoryGap(_)
-        | DraftError::EditRefused(_)
         | DraftError::Empty
         | DraftError::InvalidTitle
         | DraftError::RequestMismatch { .. }
-        | DraftError::RequestDraft
         | DraftError::ProposalOnlyOp(_) => ApiError::UNAVAILABLE.into(),
     }
 }

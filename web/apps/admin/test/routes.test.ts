@@ -1,17 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { ALL_SECTIONS, CAPABILITIES, enabledSections, forModules, MORE, ROUTES, routesFor, SECTIONS, sumBadges } from '../src/routes';
+import { forModules, ROUTES, routesFor, SECTIONS, sumBadges } from '../src/routes';
 
-describe('capabilities', () => {
-  it('put Drafts in Schedule after Bosses, routed, now that its page has landed', () => {
-    expect(CAPABILITIES.drafts).toBe(true);
-    expect(SECTIONS.filter((s) => s.group === 'Schedule').map((s) => s.label)).toEqual(['Week', 'Fixed', 'Bosses', 'Drafts']);
-    expect(SECTIONS.find((s) => s.key === 'drafts')).toMatchObject({ href: '/drafts', icon: 'layers' });
-    expect(ROUTES.map((r) => r.pattern)).toContain('/drafts');
-  });
+/** Behind the rail's More item, in nav order (as `NavList` derives it). */
+const MORE = SECTIONS.filter((s) => s.more);
 
-  it('leave a destination out everywhere while its capability is off', () => {
-    const off = enabledSections(ALL_SECTIONS, { ...CAPABILITIES, drafts: false });
-    expect(off.map((s) => s.key)).not.toContain('drafts');
+describe('Schedule', () => {
+  it('holds Week, Fixed and Bosses, and Drafts is gone', () => {
+    expect(SECTIONS.filter((s) => s.group === 'Schedule').map((s) => s.label)).toEqual(['Week', 'Fixed', 'Bosses']);
+    expect(ROUTES.map((r) => r.pattern)).not.toContain('/drafts');
   });
 });
 

@@ -11,7 +11,7 @@
 @use "../core/mixins" as *;
 
 $pane: "week-pane" !default;
-// The member portal leaves out admin-only parts (staging into a draft).
+// The member portal leaves out admin-only parts (who each member brings).
 $admin: true !default;
 
 dialog.modal.runsheet {
@@ -964,134 +964,13 @@ dialog.runsheet--narrow .modal__head {
   min-width: 0;
 }
 
-/* ── staging into a draft (B_RunSheetStage*), admin only ──────────────────── */
-
 @if $admin {
-
-// The strip over the identity card: what the sheet's edits do now, Open draft and Stop staging.
-.runsheet__staging {
-  flex: none;
-  display: flex;
-  flex-wrap: nowrap;
-  align-items: center;
-  gap: 10px;
-  padding: 8px 12px 8px 18px;
-  border-bottom: 1.5px solid var(--select-edge);
-  background: var(--select);
-  color: var(--select-ink);
-  font-size: var(--fs-small);
-}
-
-.runsheet__staging > .icon { flex: none; width: 16px; height: 16px; }
-.runsheet__stagingtext { flex: 1 1 14rem; min-width: 0; }
-.runsheet__stagingbtn { min-height: 34px; border-radius: 17px; background: var(--surface); color: var(--ink); }
-// In the pane the strip is a card of the body, not a band.
-.week-pane__body > .runsheet__staging { margin: 0; padding: 8px 10px 8px 12px; border: 0; border-radius: 16px; }
-
-// "In draft: …" under the clock: the run's last staged move.
-.runsheet__stagedwhen {
-  display: block;
-  color: var(--select-ink);
-  font-size: var(--fs-small);
-  line-height: 1.35;
-}
-
-// In the sheet's clock column it wraps within the column instead of widening it
-// (the column is the clock's width; the pane's line is a row and keeps its size).
-.runsheet__when > .runsheet__stagedwhen { contain: inline-size; }
-
-.runsheet__stage-open { gap: 6px; background: var(--select); border-color: var(--select-edge); color: var(--select-ink); }
-.runsheet__stage-open .icon,
-.runsheet__stage-btn .icon { width: 18px; height: 18px; }
-.runsheet__stage-btn { background: var(--select); border-color: var(--select-edge); color: var(--select-ink); }
-
-// A party change staged in the draft: a marked slot of its own.
-.slot--staged {
-  border-color: var(--accent);
-  background: var(--select);
-}
-
-.slot--staged .slot__mark { border: 1.5px solid var(--accent); color: var(--select-ink); }
-.slot--staged .slot__state { color: var(--select-ink); }
-
-// The picker: a popover by the actions on the wide sheet, a card in the pane.
-.runsheet__body:has(> .runsheet__stagepop) { position: relative; }
-
-.runsheet__stagepop {
-  position: absolute;
-  display: flex;
-  flex-direction: column;
-  top: 200px;
-  right: 22px;
-  z-index: 3;
-  width: min(380px, calc(100% - 2rem));
-  padding: 16px;
-  border: 2px solid var(--win);
-  border-radius: 20px;
-  background: var(--surface);
-  box-shadow: 0 16px 32px -16px rgb(0 0 0 / 45%);
-}
-
-.runsheet__stagepop:focus { outline: none; }
-.runsheet__stagepop--pane { position: static; width: auto; box-shadow: none; }
-
-.stagepick { display: flex; flex-direction: column; gap: 12px; }
-.stagepick > * { margin: 0; }
-.stagepick__head { display: flex; flex-direction: column; gap: 4px; }
-.stagepick__head > * { margin: 0; }
-.stagepick__title { font-family: var(--display); font-size: var(--fs-lg); font-weight: 700; line-height: 1.2; }
-.stagepick__options { display: flex; flex-direction: column; gap: 3px; }
-
-.stagepick__option {
-  display: flex;
-  align-items: flex-start;
-  gap: 12px;
-  padding: 10px 12px;
-  border-radius: 6px;
-  background: var(--row);
-  box-shadow: inset 0 0 0 1.5px var(--line);
-  cursor: pointer;
-}
-
-.stagepick__option input[type="radio"] { flex: none; width: 18px; height: 18px; margin: 1px 0 0; accent-color: var(--accent); }
-.stagepick__option--on { border-radius: 18px; background: var(--select); box-shadow: inset 0 0 0 1.5px var(--select-edge); }
-// Cannot hold this run's change: dashed, quiet, with the reason in words.
-.stagepick__option--off { background: transparent; box-shadow: none; outline: 2px dashed var(--line); outline-offset: -2px; color: var(--dim-text); cursor: not-allowed; }
-// Name, scope line and flag at text height (B_RunSheetStage `.pick`), so four drafts fit beside the sheet.
-.stagepick__lines { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; min-width: 0; line-height: 1.3; }
-.stagepick__lines--grow { flex: 1 1 auto; align-items: stretch; gap: 6px; }
-.stagepick__meta { color: var(--dim-text); font-size: var(--fs-small); }
-.stagepick__option--on .stagepick__meta { color: var(--select-ink); }
-.stagepick__name { width: 100%; min-height: 36px; }
-.stagepick__note { color: var(--dim-text); font-size: var(--fs-small); line-height: 1.45; }
-.stagepick__acts { display: flex; justify-content: flex-end; gap: 8px; }
-.stagepick__acts .btn { min-height: 40px; border-radius: 20px; }
-.stagepick__go { gap: 6px; }
-.stagepick .field__error:empty { display: none; }
-
-// Phones (B_RunSheetStagePhone): a modal bottom sheet over the sheet; Cancel and Escape close it.
-dialog.modal.stagesheet {
-  width: 100%;
-  max-width: none;
-  margin: auto 0 0;
-}
-
-// The pane: Stage in draft… on its own row under the actions.
-.runsheet__stagerow { display: flex; }
-
-dialog.stagesheet[open] { display: flex; flex-direction: column; }
-dialog.stagesheet .modal__panel { border: 0; border-radius: 24px 24px 0 0; box-shadow: 0 -12px 28px -14px rgb(0 0 0 / 45%); }
-dialog.stagesheet .modal__head { @include hide-visually; }
-dialog.stagesheet .modal__body { padding: 14px 14px max(16px, env(safe-area-inset-bottom)); }
-dialog.stagesheet .stagepick__name { min-height: 44px; }
-dialog.stagesheet .stagepick__acts .btn { min-height: 48px; border-radius: 24px; }
-dialog.stagesheet .stagepick__go { flex: 1 1 auto; justify-content: center; }
 
 /* ── who each member brings (module roster; B_RosterRunPick, B_PhoneRosterRunPick) ── */
 
 // A member's slot with its character (`slot--chars`, the board's `.slot` over `.shead`): the
 // head row (mark, name and answer, ×), the chip row, then any clash lines; on phones the chip
-// joins the head row. A staged addition stays the one-row slot B_RunSheetStageActive draws.
+// joins the head row.
 .runsheet__party--chars { grid-auto-rows: auto; }
 
 .slot--chars {

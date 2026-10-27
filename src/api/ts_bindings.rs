@@ -12,9 +12,9 @@ use super::{
     },
     assets::Identity,
     dto::{
-        self, account, bosses, character_data, characters, config, drafts, estimates, events,
-        fixed, guides, history, inbox, inbox_past, limits, logs, members, presence, readiness,
-        reminders, rescan, setup, sign_ins, week,
+        self, account, bosses, character_data, characters, config, estimates, events, fixed,
+        guides, history, inbox, inbox_past, limits, logs, members, presence, readiness, reminders,
+        rescan, setup, sign_ins, week,
     },
     error, public,
 };
@@ -257,17 +257,6 @@ fn bindings() -> String {
         .add::<inbox_past::Decider>()
         .add::<inbox_past::PastItem>()
         .add::<inbox_past::PastPage>()
-        // Drafts
-        .add::<drafts::DraftRow>()
-        .add::<drafts::DraftList>()
-        .add::<drafts::StagedOpRow>()
-        .add::<drafts::DraftDetail>()
-        .add::<drafts::GraphDraft>()
-        .add::<drafts::DraftGraph>()
-        .add::<drafts::ConflictRecord>()
-        .add::<drafts::DraftConflict>()
-        .add::<drafts::DraftPreviewView>()
-        .add::<drafts::DraftWritten>()
         // Config
         .add::<config::ConfigView>()
         .add::<config::Pings>()

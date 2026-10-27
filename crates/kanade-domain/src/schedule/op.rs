@@ -168,27 +168,6 @@ pub enum Op<'a> {
         run_id: String,
         policy: &'a SchedulePolicy,
     },
-    /// v5 attendance: set or clear a member's standing answer.
-    SetStandingAnswer {
-        fixed_id: String,
-        user_id: String,
-        on: bool,
-        /// `<kind>:<id>` of who set it (stored with the answer).
-        set_by: String,
-    },
-    /// v5 attendance: a weekly timing's default for unanswered members.
-    SetAttendanceDefault {
-        fixed_id: String,
-        default: crate::attendance::AttendanceDefault,
-    },
-    /// v5 attendance: record who attended a done run.
-    RecordAttendance {
-        run_id: String,
-        actor: crate::attendance::AttendanceActor,
-        attended: std::collections::BTreeSet<String>,
-        /// `<kind>:<id>` of who recorded it.
-        recorded_by: String,
-    },
     /// v5 attendance: re-derive live runs' statuses (the tick).
     RecountAttendance,
     /// v5 only (draft replay): a weekly timing's party changed by delta.
@@ -488,27 +467,6 @@ pub fn apply_op(
                 notices: outcome.notices,
             }
         }
-        Op::SetStandingAnswer {
-            fixed_id,
-            user_id,
-            on,
-            set_by,
-        } => {
-            let outcome =
-                super::attendance::set_standing_answer(draft, fixed_id, user_id, *on, set_by, now)?;
-            Outcome {
-                value: OpResult::Fixed(outcome.value),
-                notices: outcome.notices,
-            }
-        }
-        Op::SetAttendanceDefault { fixed_id, default } => {
-            let outcome =
-                super::attendance::set_attendance_default(draft, fixed_id, *default, now)?;
-            Outcome {
-                value: OpResult::Fixed(outcome.value),
-                notices: outcome.notices,
-            }
-        }
         Op::FixedParticipants {
             fixed_id,
             add,
@@ -523,19 +481,6 @@ pub fn apply_op(
                 notices: outcome.notices,
             }
         }
-        Op::RecordAttendance {
-            run_id,
-            actor,
-            attended,
-            recorded_by,
-        } => run(super::attendance::record_attendance(
-            draft,
-            run_id,
-            actor,
-            attended,
-            recorded_by,
-            now,
-        )?),
         Op::RecountAttendance => quiet(OpResult::Ids(super::attendance::recount_attendance(
             draft, now,
         ))),

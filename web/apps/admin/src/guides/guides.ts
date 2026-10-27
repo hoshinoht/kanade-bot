@@ -5,7 +5,7 @@
  */
 import type { GuideBlock, GuidePlan, GuidePlanOp, GuideRow, GuideRun, GuideStopReason, PreviewSlot } from '@kanade/api-types';
 import type { Change } from '../config/dirty';
-import { editedAt } from '../drafts/drafts';
+import { editedAt } from '../history/describe';
 import { cardLines, type Run } from '../reminders/discord';
 
 export const GUIDES_PATH = '/api/admin/guides';

@@ -1,7 +1,7 @@
 import { ADMIN, expect, moreNamed, test, HEADING, choose } from './support';
 
 const SECTIONS = {
-  Schedule: ['Week', 'Fixed', 'Bosses', 'Drafts'],
+  Schedule: ['Week', 'Fixed', 'Bosses'],
   Kanade: ['Inbox', 'Extractions', 'Chat'],
   Operate: ['Members', 'Config', 'History'],
 };
@@ -35,7 +35,6 @@ test('admin: grouped nav has every v4 section as a real route', async ({ page })
   // Real seed counts: Mikan's weekly timing and the two sign-in users (bossers) for e2e/harness/member.spec;
   // the real inbox lists only the 9 proposals and requests its scheduler accepts.
   for (const [label, heading] of [
-    ['Drafts', '2 open'],
     ['Fixed', '9 weekly timings'],
     ['Bosses', /^11 bosses/],
     ['Members', '15 bossers'],

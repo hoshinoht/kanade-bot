@@ -42,7 +42,6 @@ Both origins unless noted; source in `controls.rs`, `controls_p5.rs`, `controls_
 - `POST /__e2e/public/hint` `{topic, member?}`: a member-stream hint (`schedule`, `mine`, `allowance`).
 - `POST /__e2e/public/remove` `{run}`: Ren takes Asahi off `run`.
 - `POST /__e2e/inbox/kalos-v4`: `p-kalos-fixed` changes to Sunday under an admin editing it; `{version}`.
-- `POST /__e2e/drafts/board`, `POST /__e2e/graph/board`: the drafts and History graph boards' state.
 - `POST`/`DELETE /__e2e/presence`, `POST /__e2e/presence/board`: another admin's presence, nobody else, or the presence boards' admins.
 - `GET`/`POST`/`DELETE /__e2e/reports`: the CSP report sink every enforced policy names.
 - `POST /__e2e/discord/guide` `{script}`: what the fake Discord does next for the guide publisher (module `guides`, on by default): `ambiguous_create` (the next post times out unposted, so its message is left unconfirmed), `edit_404` (the next edit finds its message deleted by hand), `offline` / `online` (the gateway disconnects or comes back; a reset brings it back), `hold` / `release` (the next post waits until released). 404 while the module is off.

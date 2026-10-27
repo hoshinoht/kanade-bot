@@ -191,32 +191,6 @@ test('roster run: a stale pick (409) reloads the slot and says so', async ({ pag
   expect((await picked(page, MIKA)).picked).toBe('ch-s2');
 });
 
-test('roster run: while staging into a draft, a pick saves live and stages nothing', async ({ page }) => {
-  await page.goto(`${ADMIN}/?sw=off`);
-  await showWeekEnd(page);
-  await page.locator(`[data-run="${RUN}"] .plan-card__open`).click();
-  const pane = page.getByRole('complementary', { name: T });
-  await pane.getByRole('button', { name: 'Stage in draft…' }).click();
-  await pane.getByRole('dialog', { name: 'Stage in draft' }).getByRole('button', { name: 'Start staging' }).click();
-  await expect(pane.getByText('Staging into Weekend reshuffle')).toBeVisible();
-  const before = (await (await page.request.get(`${ADMIN}/api/admin/drafts/d-weekend`)).json()).ops.length;
-  const writes: string[] = [];
-  // Presence check-ins (the open sheet, editing while picking) write nothing; the rest must be the one pick.
-  page.on('request', (r) => r.method() !== 'GET' && r.url().includes('/api/') && !r.url().includes('/api/admin/presence') && writes.push(`${r.method()} ${new URL(r.url()).pathname}`));
-
-  await pane.getByRole('button', { name: 'Open in a larger view' }).click();
-  const sheet = page.getByRole('dialog', { name: T });
-  await expect(sheet.getByText('Staging into Weekend reshuffle')).toBeVisible();
-  await sheet.getByRole('button', { name: /^Mika's character on HCarling/ }).click();
-  const picker = sheet.getByRole('dialog', { name: `Mika's character for ${T}` });
-  await expect(picker).toContainText('Saves live: character picks are not staged in the draft.');
-  await picker.getByRole('option', { name: /MikaNL/ }).click();
-  await expect(notice(sheet)).toContainText(`Mika brings MikaNL to ${T}. Saved live, not in the draft.`);
-  expect(writes).toEqual([`PUT /api/admin/runs/${RUN}/characters/${MIKA}`]);
-  expect((await picked(page, MIKA)).picked).toBe('ch-s2');
-  expect((await (await page.request.get(`${ADMIN}/api/admin/drafts/d-weekend`)).json()).ops).toHaveLength(before);
-});
-
 test('roster run: the phone picks from a bottom sheet, 44 px rows', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   const sheet = await carling(page);

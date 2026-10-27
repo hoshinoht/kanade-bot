@@ -253,51 +253,9 @@ impl DraftOp {
     }
 }
 
-/// Rewrite every created-target ordinal: `renumber` maps the old position
-/// to the new one (`None` refuses the rewrite).
-pub fn renumber_created(
-    op: &mut DraftOp,
-    renumber: impl Fn(usize) -> Option<usize> + Copy,
-) -> bool {
-    let mut ok = true;
-    op.each_target_mut(|target| {
-        if let Target::Created(ord) = target {
-            match renumber(*ord) {
-                Some(next) => *ord = next,
-                None => ok = false,
-            }
-        }
-    });
-    ok
-}
-
 impl DraftOp {
-    /// Every row target the operation names.
-    pub fn each_target_mut(&mut self, mut visit: impl FnMut(&mut Target)) {
-        match self {
-            Self::AddFixedRun(_) => {}
-            Self::ApplyFixedEdit { fixed, .. }
-            | Self::FixedParticipants { fixed, .. }
-            | Self::RetireFixedRun { fixed, .. } => visit(fixed),
-            Self::CreateRun { fixed, .. } => {
-                if let Some(fixed) = fixed {
-                    visit(fixed);
-                }
-            }
-            Self::AmendRun { run, .. }
-            | Self::SetStatus { run, .. }
-            | Self::SwapParticipants { run, .. }
-            | Self::SetRsvp { run, .. }
-            | Self::ResetToFixed { run }
-            | Self::SetRunBosses { run, .. }
-            | Self::EnsureReminders { run }
-            | Self::RecountRun { run }
-            | Self::ReviveRun { run } => visit(run),
-        }
-    }
-
-    /// Only a proposal stages it (v4 `commit` semantics); administrator
-    /// drafts and requests refuse it.
+    /// Only a proposal stages it (v4 `commit` semantics); requests refuse
+    /// it.
     pub fn is_proposal_only(&self) -> bool {
         matches!(
             self,
@@ -306,11 +264,6 @@ impl DraftOp {
                 | Self::RecountRun { .. }
                 | Self::ReviveRun { .. }
         )
-    }
-
-    /// Whether this operation creates the row `Target::Created` names.
-    pub fn creates_row(&self) -> bool {
-        matches!(self, Self::AddFixedRun(_) | Self::CreateRun { .. })
     }
 
     /// The operation's kind, as the codec names it.
