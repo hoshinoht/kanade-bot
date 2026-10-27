@@ -741,10 +741,12 @@ harden-and-package revisits connection limits.
 
 `serve --offline` builds neither `AdminAuth` nor `ApiState`, so admin reads
 answer `503 auth_unavailable`. Live `serve` composes both (above) with
-the gateway's `GuildCache` as the channel list. Gateway wiring (see
-"Live serve"): `BotEvent::Roster` → `api::auth::roster::on_roster_update`,
-`BotEvent::GuildAvailable` → role pruning then `on_guild_available`, both on
-one sequential roster task with startup reconciliation, so the Discord
+the `GuildCache` as the channel list, fed by the gateway (or, with `web`
+alone, by the REST guild sync). Roster wiring: member updates and guild
+availability reach `app::roster` (store side) on one sequential roster task
+with startup reconciliation, and its `RosterHooks` end sessions and drop
+portraits through the web side (`api::auth::roster`; a no-op without `web`,
+where the web side's 5-minute re-check ends them later), so the Discord
 sign-in preconditions (ordering, reconciliation, admin-role deletion) hold.
 Rescans (A7): live serve builds the extractor's `Rescans` queue (Discord
 `History` backfill, `Extractor` over the governed model client, the
@@ -939,65 +941,63 @@ them, so the production graph has no SQLx MySQL/RSA path from the spike.
 
 ## Source layout
 
-The bootstrap is organized by responsibility rather than a flat source
-directory:
+The repository is a Cargo workspace: one `kanade` binary (the root package)
+over library crates in `crates/`, one `Cargo.lock`, shared exact pins in
+`[workspace.dependencies]`. Each crate builds and tests on its own
+(`cargo test -p kanade-store`); the root `test-support` feature turns on every
+crate's.
+
+| Crate | Holds | Depends on |
+|---|---|---|
+| `kanade-log` | JSON log lines (`log!`, `event`, `emit`) | — |
+| `kanade-domain` | pure rules: scheduling, attendance, completion, notify planning, settings, history | — |
+| `kanade-store` | SQLite store and delivery journal, both migration sets | domain, log |
+| `kanade-llm` | OpenAI-compatible model gateway and governor | domain |
+| `kanade-files` | boss catalog, boss knowledge, art and guide source loaders | domain, log |
+| `kanade-chardata` | NEXON client, scouter client, character data service | domain, store, log |
+| `kanade-voice` | persona bundles, policy prompts, nudge rewrites | domain, llm, files, log |
+| `kanade-extract` | extraction rules and pipeline, rescans | domain, llm, voice |
+| `kanade-chat` | chatbot driver, tools, context, gate | domain, llm, voice, extract |
+
+The root package keeps what composes them:
 
 ```text
 src/
-├── lib.rs
-├── main.rs
-├── api/
-│   ├── mod.rs
-│   ├── server.rs        # binding, both listeners, graceful drain
-│   ├── listeners.rs     # per-origin Site policy and router assembly
-│   ├── admin/           # admin-only routes (auth.rs: sign-in, session, logout)
-│   ├── auth/            # sessions, CSRF, Discord OAuth, Tailscale, break-glass, staff gate
-│   ├── public/mod.rs    # public-only routes (closed portal)
-│   ├── guard/           # host, proxy, headers, limits
-│   ├── assets.rs        # shell, art, identity
-│   └── error.rs         # ApiError
-├── cli/
-│   ├── mod.rs
-│   ├── admin/           # `portal`/`sessions`: arguments, client.rs (signed-in loopback admin API calls)
-│   ├── backup.rs        # `backup` snapshot and age tool arguments
-│   ├── restore.rs       # `restore` arguments
-│   ├── token.rs         # `token rotate`
-│   └── healthcheck.rs
+├── main.rs        # crypto provider, process inputs, exit codes
+├── lib.rs         # module groups; `api` needs feature `web`, `bot` feature `bot`
+├── app/           # shared by both sides: scheduler writer, store reads, guild facts,
+│                  #   staff rule, settings desk, rescans, roster persistence, ports
+├── discord/       # Discord REST transport, mentions, guild cache, identity, reconcile (no gateway)
+├── cards/         # card rendering, previews, wording, estimate chart
+├── bot/           # the Discord gateway bot (feature `bot`)
+├── api/           # admin and public HTTP APIs (feature `web`)
+├── cli/           # command-line parsing, healthcheck, `portal`/`sessions` client (web)
 └── runtime/
-    ├── mod.rs
-    ├── application.rs   # command dispatch, `/healthz` document
-    ├── backup/          # `kanade backup`: snapshot, age keys (crypt.rs), keygen/encrypt/decrypt (tools.rs)
-    ├── restore.rs       # `kanade restore`: owner check, staged validation, side copy and swap
-    ├── serve/           # live serve: store, settings, API composition, health, retention, discord/ (gateway, roster, tick)
-    ├── config.rs
-    ├── error.rs
-    ├── logging.rs
-    └── tls.rs
-
-tests/
-├── api/                 # listeners, guards, headers, static serving
-└── runtime_bootstrap/
-    └── main.rs
+    ├── application.rs, config/, secrets.rs, error.rs, logging.rs, tls.rs, backup/, restore.rs
+    └── serve/     # shared core (store, settings, health, retention, character data)
+        ├── bot/   # gateway, tick, chat, extraction, commands (feature `bot`)
+        └── web/   # listeners, sessions, setup secrets, REST guild sync (feature `web`)
 ```
 
-`main.rs` remains the entrypoint: it installs the crypto provider, captures
-process inputs, delegates to the runtime application, and maps failures to
-exit codes. `lib.rs` only declares the top-level module groups. The nested
-module paths are canonical; the former flat paths are not re-exported.
+`src/bot` and `src/api` never import each other; what both need lives in
+`app`, `discord` or `cards`. Integration suites stay in the root `tests/`,
+each with the features it needs (`required-features` in `Cargo.toml`).
 
-### Feature-boundary roadmap
+### Bot and web as separate builds
 
-Future implementation directories will be added with their first real module;
-the bootstrap does not create empty placeholders:
+The root features `bot` and `web` (default both) choose what the binary can
+run; `runtime.components` chooses what a `serve` runs. A bot-only build has no
+HTTP framework and no `src/api`; a web-only build has no gateway crate and no
+`src/bot`. Naming a component the build lacks refuses startup.
 
-- `bot/` — Discord client, commands, cards, and workers.
-- `chat/` — conversation tools, prompts, and safety.
-- `extract/` — extraction pipeline.
-- `domain/` — pure scheduling rules.
-- `infrastructure/` — persistence and external integrations.
-- `api/` — routes, authentication, and wire types.
-- `runtime/` — process start, configuration, and lifecycle.
-- `cli/` — operational commands and outbound healthcheck client.
+```sh
+cargo build --release --no-default-features --features bot   # Discord bot only
+cargo build --release --no-default-features --features web   # admin app and portal only
+```
+
+The image is built with both. One `serve` owns a store (a second process is
+refused), so bot and web on the same data always run in one process; pick
+the components per deployment, not per process on a shared store.
 
 ## Log events
 
