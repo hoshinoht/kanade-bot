@@ -15,7 +15,7 @@
 
 <script lang="ts">
   import { tick } from 'svelte';
-  import { Icon, Select, type SelectOption } from '@kanade/ui';
+  import { Icon, pressAway, Select, type SelectOption } from '@kanade/ui';
   import '@kanade/ui/styles/core/select.scss';
 
   let {
@@ -49,12 +49,7 @@
 
   $effect(() => {
     if (!open) return;
-    const away = (event: PointerEvent) => {
-      const target = event.target as Node;
-      if (!panel?.contains(target) && !button?.contains(target)) close(false);
-    };
-    document.addEventListener('pointerdown', away, true);
-    return () => document.removeEventListener('pointerdown', away, true);
+    return pressAway(() => [panel, button], () => close(false));
   });
 </script>
 

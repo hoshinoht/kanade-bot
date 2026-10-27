@@ -74,6 +74,7 @@ pub(super) struct Grounded {
 
 /// Keep the model's wording with the canonical records of the runs it
 /// names, replacing only retold records and lines with unlisted facts.
+#[cfg(any(test, feature = "test-support"))]
 pub fn ground_schedule_reply(reply: &str, outcomes: &[ToolOutcome]) -> String {
     ground(reply, outcomes).text
 }

@@ -1,32 +1,5 @@
-// Ported from v4 portal/_panes.scss: a table page is one window whose body
-// scrolls while the page head and the title bar (with its search) stay put.
-// v5 applies the framed layout at every width.
-
-.pane {
-  display: flex;
-  flex-direction: column;
-  padding-bottom: 0;
-  overflow: hidden;
-}
-
-.pane > .card__head {
-  flex: none;
-}
-
-.pane__search {
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
-  margin-left: auto;
-}
-
-/* No fixed height: it holds body-size text, and a box shorter than its own
-   line clips the descenders (the lesson `.filters` learned in package one). */
-.pane__search input {
-  width: min(20rem, 42vw);
-  padding-top: 0.28rem;
-  padding-bottom: 0.28rem;
-}
+// Ported from v4 portal/_panes.scss: pane sub-headings, the pager and the
+// log filters.
 
 /* A sub-heading inside a pane -- the Reminders page puts two tables in one. */
 .pane__section {
@@ -64,40 +37,6 @@
 
 .pager .btn:first-child + .pager__at {
   margin-left: 0;
-}
-
-.pane__body {
-  flex: 1 1 auto;
-  min-height: 0;
-  overflow: auto;
-  margin: 0 -1.1rem;
-  padding: 0 1.1rem 1rem;
-}
-
-.pane__body thead th {
-  position: sticky;
-  top: 0;
-  z-index: 1;
-  background: var(--surface);
-  border-bottom: 0;
-  box-shadow: inset 0 -2px 0 var(--line);
-}
-
-@media (max-width: 640px) {
-  .pane__search {
-    margin-left: 0;
-    width: 100%;
-  }
-
-  .pane__search input {
-    flex: 1 1 auto;
-    width: auto;
-  }
-
-  .pane__body {
-    margin: 0 -0.7rem;
-    padding: 0 0.7rem 0.8rem;
-  }
 }
 
 // Log filters (Chat, Extractions): one row of "Filters (n)" and chips under

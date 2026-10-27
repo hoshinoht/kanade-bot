@@ -27,6 +27,7 @@ pub const CONVERSATION_BUDGET_TOKENS: usize = 2500;
 /// Answered exchanges kept for re-anchoring a late reply.
 pub const ANCHOR_CACHE: usize = 64;
 /// Tokens held back so the model has room to reply.
+#[cfg(any(test, feature = "test-support"))]
 pub const COMPLETION_RESERVE_TOKENS: usize = 1024;
 /// The smallest conversation budget, whatever the system prompt costs.
 pub const CONVERSATION_FLOOR_TOKENS: usize = 256;

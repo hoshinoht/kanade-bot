@@ -9,7 +9,7 @@
 <script lang="ts">
   import '@kanade/ui/styles/core/panes.scss';
   import '@kanade/ui/styles/screens/extract.scss';
-  import { Icon, LoadError, LoadingState, SINGLE_PANE_QUERY, watchMedia, type Toaster } from '@kanade/ui';
+  import { Icon, LoadError, LoadingState, pressAway, SINGLE_PANE_QUERY, watchMedia, type Toaster } from '@kanade/ui';
   import type { Channel, Extractions } from '@kanade/api-types';
   import { tick, untrack } from 'svelte';
   import { activeCount, parseFilter, toSearch, type LogFilter } from '../logs/filters';
@@ -145,12 +145,7 @@
   }
   $effect(() => {
     if (!rereadOpen) return;
-    const away = (event: PointerEvent) => {
-      const target = event.target as Node;
-      if (!rereadPanel?.contains(target) && !rereadButton?.contains(target)) closeReread(false);
-    };
-    document.addEventListener('pointerdown', away, true);
-    return () => document.removeEventListener('pointerdown', away, true);
+    return pressAway(() => [rereadPanel, rereadButton], () => closeReread(false));
   });
   const canReread = (channel: string) => !rescanOff && Boolean(channel) && (targets.data ?? []).some((t) => t.id === channel);
 </script>

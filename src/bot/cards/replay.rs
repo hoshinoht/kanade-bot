@@ -62,6 +62,7 @@ where
     /// Called only by the sequential reaction worker after roster reconciliation.
     /// `current` cancels stale generations/shutdown between HTTP calls and effects.
     /// Does not invoke the chat driver's rejection follow-up port.
+    #[cfg(any(test, feature = "test-support"))]
     pub async fn replay_reactions(
         &self,
         self_id: Id<UserMarker>,

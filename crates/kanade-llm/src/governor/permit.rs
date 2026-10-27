@@ -281,6 +281,7 @@ impl fmt::Debug for Attempt {
 
 impl Attempt {
     /// This request is the breaker's single half-open probe.
+    #[cfg(any(test, feature = "test-support"))]
     pub fn is_probe(&self) -> bool {
         self.probe
     }

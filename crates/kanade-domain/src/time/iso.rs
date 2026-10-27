@@ -101,6 +101,7 @@ pub fn local_naive(at: &impl AwareDateTime, zone: Tz) -> Result<NaiveDateTime, D
 }
 
 /// Python `isoformat()` of a naive datetime, e.g. `2026-09-09T12:00:00`.
+#[cfg(any(test, feature = "test-support"))]
 pub fn isoformat_naive(wall: &NaiveDateTime) -> String {
     format_iso(wall, None)
 }

@@ -17,7 +17,7 @@ use kanade_domain::ids::short_id;
 use kanade_domain::schedule::{Run, RunStatus, ScheduleSnapshot};
 
 use crate::cards::redesign::v2::{container, separator, text};
-use crate::cards::redesign::vocab::{DifficultyMarks, INK_BLUE, boss_labels, subtext};
+use crate::cards::redesign::vocab::{DifficultyMarks, INK_BLUE, boss_labels, emoji, subtext};
 use crate::cards::text::{local_day, local_time};
 
 /// The footer with runs hidden, and without.
@@ -57,17 +57,6 @@ impl ScheduleWeek<'_> {
     /// Still to come: live and not past its end.
     fn to_go(&self, run: &Run) -> bool {
         run.status.is_live() && !self.ended.contains(&run.id)
-    }
-}
-
-fn emoji(status: RunStatus) -> &'static str {
-    match status {
-        RunStatus::Done => "🏁",
-        RunStatus::Confirmed => "✅",
-        RunStatus::Planned => "⚠️",
-        RunStatus::AtRisk => "❗",
-        RunStatus::Otot => "🕒",
-        RunStatus::Cancelled => "🚫",
     }
 }
 

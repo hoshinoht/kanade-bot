@@ -9,7 +9,7 @@ use twilight_model::channel::message::AllowedMentions;
 use twilight_model::id::{Id, marker::UserMarker};
 
 use crate::app::ids::parse_id;
-use kanade_domain::notify::{self, NotificationIntent};
+use kanade_domain::notify::NotificationIntent;
 
 /// Allow exactly these users; unparsable ids are dropped, never widened.
 /// The list is sorted and deduplicated to match the journal's canonical form.
@@ -39,8 +39,9 @@ pub fn for_intent(intent: &NotificationIntent) -> AllowedMentions {
 }
 
 /// The allow-list for the domain policy value. `replied_user` stays off even
-/// for [`notify::AllowedMentions::Users`]: the adapter never sends replies
+/// for [`kanade_domain::notify::AllowedMentions::Users`]: the adapter never sends replies
 /// that should notify their author.
-pub fn for_policy(policy: &notify::AllowedMentions) -> AllowedMentions {
+#[cfg(any(test, feature = "test-support"))]
+pub fn for_policy(policy: &kanade_domain::notify::AllowedMentions) -> AllowedMentions {
     allow_users(policy.users())
 }

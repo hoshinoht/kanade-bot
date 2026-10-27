@@ -162,6 +162,7 @@ impl Governor {
     }
 
     /// Returns false for an unconfigured role.
+    #[cfg(any(test, feature = "test-support"))]
     pub fn set_external(&self, role: Role, external: bool) -> bool {
         self.write_routes()
             .get_mut(&role)

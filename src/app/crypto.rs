@@ -24,25 +24,6 @@ pub fn base64url(bytes: &[u8]) -> String {
     out
 }
 
-pub fn decode_base64url(text: &str) -> Option<Vec<u8>> {
-    if text.len() % 4 == 1 {
-        return None;
-    }
-    let mut out = Vec::with_capacity(text.len() * 3 / 4);
-    for chunk in text.as_bytes().chunks(4) {
-        let mut n = 0u32;
-        for (i, byte) in chunk.iter().enumerate() {
-            let value = ALPHABET.iter().position(|c| c == byte)? as u32;
-            n |= value << (18 - 6 * i);
-        }
-        for i in 0..chunk.len() - 1 {
-            out.push((n >> (16 - 8 * i)) as u8);
-        }
-    }
-    // Refuse non-canonical trailing bits so each token has exactly one spelling.
-    (base64url(&out) == text).then_some(out)
-}
-
 /// Padded standard base64 (RFC 4648 §4), for HTTP Basic credentials.
 pub fn base64_standard(bytes: &[u8]) -> String {
     let mut out: String = base64url(bytes)
@@ -73,13 +54,7 @@ pub fn random_token() -> Option<String> {
     Some(base64url(&bytes))
 }
 
-pub fn sha256_hex(bytes: &[u8]) -> String {
-    digest(&SHA256, bytes)
-        .as_ref()
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect()
-}
+pub use kanade_domain::history::sha256_hex;
 
 pub fn sha256_base64url(bytes: &[u8]) -> String {
     base64url(digest(&SHA256, bytes).as_ref())
@@ -175,7 +150,6 @@ mod tests {
             ("foobar", "Zm9vYmFy"),
         ] {
             assert_eq!(base64url(plain.as_bytes()), encoded);
-            assert_eq!(decode_base64url(encoded).unwrap(), plain.as_bytes());
         }
         assert_eq!(base64url(&[0xfb, 0xff]), "-_8");
         assert_eq!(base64_standard(&[0xfb, 0xff]), "+/8=");
@@ -184,9 +158,6 @@ mod tests {
             "QWxhZGRpbjpvcGVuIHNlc2FtZQ=="
         );
         assert_eq!(random_id().unwrap().len(), 16);
-        assert_eq!(decode_base64url("Zh"), None, "non-canonical tail");
-        assert_eq!(decode_base64url("Z"), None);
-        assert_eq!(decode_base64url("Zm9v!"), None);
     }
 
     #[test]
@@ -206,6 +177,5 @@ mod tests {
         assert_eq!(format!("{sealed:?}"), "SealedSecret(..)");
         let token = random_token().unwrap();
         assert_eq!(token.len(), 43);
-        assert_eq!(decode_base64url(&token).unwrap().len(), 32);
     }
 }

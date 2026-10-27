@@ -173,14 +173,3 @@ pub fn find_bosses(text: &str, lexicon: &BossLexicon<'_>) -> Vec<BossHit> {
     }
     out
 }
-
-/// The canonical names among `hits`, in order, de-duplicated.
-pub fn canonical_bosses(hits: &[BossHit]) -> Vec<String> {
-    let mut out: Vec<String> = Vec::new();
-    for canonical in hits.iter().filter_map(|hit| hit.canonical.as_ref()) {
-        if !out.contains(canonical) {
-            out.push(canonical.clone());
-        }
-    }
-    out
-}

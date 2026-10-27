@@ -254,6 +254,7 @@ impl ConnectionStatus {
     }
 
     /// New Discord sends remain paused until the current session is usable.
+    #[cfg(any(test, feature = "test-support"))]
     pub fn delivery_claims_allowed(&self) -> bool {
         let state = self.0.lock().unwrap_or_else(PoisonError::into_inner);
         delivery_allowed(&state)

@@ -35,12 +35,14 @@ pub use art::{
     lead_portrait,
 };
 pub use common::{CardContext, People, REACT_HINT, UNNAMED, card_runs};
+#[cfg(any(test, feature = "test-support"))]
+pub use heading::accept_phrase;
 pub use heading::{
     COUNTDOWN_PHRASE_SEED, Chosen, DAY_OF_HEADING_SEED, DIGEST_PHRASE_SEED, HeaderContext,
     HeaderKind, HeaderLine, HeaderSwitchSource, HeaderSwitches, HeadingRewrite, HeadingSource,
     MAX_SLOTS, PersonaSource, PhraseKind, PhraseRejection, SlotFill, SlotRule, Teasable, Trial,
-    TrialOrigin, Verdict, accept_header_with, accept_phrase, accept_phrase_with, failure_reason,
-    fill_slots, resolve_heading, seed_heading,
+    TrialOrigin, Verdict, accept_header_with, accept_phrase_with, failure_reason, fill_slots,
+    resolve_heading, seed_heading,
 };
 pub use redesign::{DifficultyMarks, PortalSwitch, V2Kit};
 

@@ -180,11 +180,6 @@ pub mod budget {
                 .map_or(wait, |elapsed| store_allot(elapsed, wait))
         }
 
-        /// Whether the deadline, not the phase's own grace, limits `grace`.
-        pub fn cuts(&self, grace: Duration) -> bool {
-            self.phase(grace) < grace
-        }
-
         /// One structured line per phase the deadline cut.
         pub fn cut(&self, phase: &'static str) {
             let elapsed = self.elapsed().unwrap_or_default();

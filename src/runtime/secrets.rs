@@ -155,6 +155,7 @@ impl SecretFile {
     }
 
     /// Where Setup saves it, when it may.
+    #[cfg(any(test, feature = "test-support"))]
     pub fn saved_path(&self) -> Option<&Path> {
         self.saved.as_deref()
     }

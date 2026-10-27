@@ -10,7 +10,7 @@
   import { activeCount, KIND_LABEL, NO_LOG_FILTER, OUTCOME_LABEL, STAGE_LABEL, type LogFilter } from './filters';
   import { directory, memberLabel } from '../names/directory.svelte';
   import '@kanade/ui/styles/core/select.scss';
-  import { DatePicker, Icon, Select, serverClock, type SelectOption } from '@kanade/ui';
+  import { DatePicker, Icon, pressAway, Select, serverClock, type SelectOption } from '@kanade/ui';
 
   let {
     filter,
@@ -43,11 +43,7 @@
   // A press outside the bar (button, chips, Clear, panel) closes the panel.
   $effect(() => {
     if (!open) return;
-    const away = (event: PointerEvent) => {
-      if (!root?.contains(event.target as Node)) close(false);
-    };
-    document.addEventListener('pointerdown', away, true);
-    return () => document.removeEventListener('pointerdown', away, true);
+    return pressAway(() => [root], () => close(false));
   });
 
   const set = (patch: Partial<LogFilter>) => onchange({ ...filter, ...patch });

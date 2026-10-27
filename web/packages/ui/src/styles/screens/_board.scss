@@ -156,13 +156,11 @@
   animation: settle 0.28s cubic-bezier(0.2, 0.7, 0.3, 1) backwards;
 }
 
-button.runcard,
-.runcard--interactive {
+button.runcard {
   cursor: pointer;
 }
 
-button.runcard:hover,
-.runcard--interactive:hover {
+button.runcard:hover {
   --card-face: var(--raise);
   border-color: color-mix(in srgb, var(--accent) 45%, var(--line));
 }

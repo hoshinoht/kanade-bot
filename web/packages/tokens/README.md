@@ -66,7 +66,7 @@ in `core/`, Kanade screens in `screens/`.
 | `StatusMark`, `AnswerChip`, `BossTag`, `Icon` | `_chips-status.scss`, `_bosses.scss`, `partials/icons.html` (Feather) | Same shapes/words; text uses `--*-text` tokens |
 | `Modal.svelte`, `_modal.scss` | `_modal.scss` | Native `showModal()`; focus returns to the opener |
 | `ThemeTiles.svelte`, `_theme-tiles.scss` | `_theme-picker.scss`, `config.html` | Tiles with a window preview in labelled sets (both apps); colours from per-colourway classes, not an inline `style` |
-| `RunTable.svelte`, `_stats-tables.scss` | `_stats-tables.scss` | Bosses are the row header (HPK) |
+| `_stats-tables.scss` | `_stats-tables.scss` | Bosses are the row header (HPK) |
 | `CommandPalette.svelte` (component CSS) | none | New; selection in chrome colours |
 | `ToastRegion.svelte`, `_toast.scss` | `.flash` | New; timed toasts pause on hover/focus |
 | `NapArt.svelte`, `NapWindow.svelte`, `nap/` | `web/shared/nap` | SVG inlined without its `<style>` (moved to component CSS); `--nap-*` mapping unchanged |

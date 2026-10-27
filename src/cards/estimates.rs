@@ -27,9 +27,9 @@ use crate::cards::text::{MONTH_NAMES, local_time, weekday_name};
 use crate::cards::{CardContext, CardKit, HeaderContext, Teasable, card_runs};
 use crate::discord::transport::{OutgoingMessage, Upload, legacy_rows};
 use kanade_chardata::character_data::CharacterData;
-use kanade_chardata::scouter::{
-    CarrierOwner, Estimates, Member, RosterIgn, SavedParty, Totals, saved_party,
-};
+use kanade_chardata::scouter::{CarrierOwner, Estimates, SavedParty, saved_party};
+#[cfg(any(test, feature = "test-support"))]
+use kanade_chardata::scouter::{Member, RosterIgn, Totals};
 use kanade_domain::catalog::BossTable;
 use kanade_domain::characters::{PartyReads, PartyRoster, PartySlot};
 use kanade_domain::chardata::PartyShares;
@@ -196,6 +196,7 @@ fn estimate_of(saved: SavedParty) -> RunEstimate {
 /// `run`'s slots read against the estimates memory ([`saved_party`], the
 /// run reads' Party total's source too). `older_than` is left for the
 /// caller.
+#[cfg(any(test, feature = "test-support"))]
 pub fn read_estimates(
     run: &Run,
     slots: &[PartySlot],

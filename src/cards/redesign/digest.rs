@@ -25,7 +25,7 @@ use crate::cards::redesign::v2::{
     DIGEST_MINE, action_row, button, container, link_button, section_with_thumbnail, separator,
     text, within_budget,
 };
-use crate::cards::redesign::vocab::{INK_BLUE, boss_labels};
+use crate::cards::redesign::vocab::{INK_BLUE, boss_labels, emoji};
 use crate::cards::text::{local_day, local_time};
 use crate::cards::{Card, CardEmbed, CardField};
 use kanade_domain::attendance::Tally;
@@ -49,17 +49,6 @@ fn bar(cleared: usize, live: usize) -> String {
         ((cleared * BAR * 2 + live) / (live * 2)).min(BAR)
     };
     "▰".repeat(filled) + &"▱".repeat(BAR - filled)
-}
-
-fn emoji(status: RunStatus) -> &'static str {
-    match status {
-        RunStatus::Done => "🏁",
-        RunStatus::Confirmed => "✅",
-        RunStatus::Planned => "⚠️",
-        RunStatus::AtRisk => "❗",
-        RunStatus::Otot => "🕒",
-        RunStatus::Cancelled => "🚫",
-    }
 }
 
 /// `2 in, 1 out, 1 waiting` (out and waiting only when non-zero).

@@ -175,7 +175,8 @@ fn is_profile_id(profile: &str) -> bool {
         && chars.all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
 }
 
-fn is_canonical_role_id(role_id: &str) -> bool {
+/// A Discord role id as written once: a non-zero `u64` without padding.
+pub fn is_canonical_role_id(role_id: &str) -> bool {
     role_id
         .parse::<u64>()
         .ok()

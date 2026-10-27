@@ -729,6 +729,7 @@ where
     ///
     /// # Errors
     /// A journal, store or date failure.
+    #[cfg(any(test, feature = "test-support"))]
     pub async fn post_week_digest(
         &mut self,
         now: DateTime<Utc>,

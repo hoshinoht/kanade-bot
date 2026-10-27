@@ -90,6 +90,7 @@ where
     ///
     /// # Errors
     /// Lease loss or a journal/store failure.
+    #[cfg(any(test, feature = "test-support"))]
     pub async fn drain_notices(
         &mut self,
         now: DateTime<Utc>,

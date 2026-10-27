@@ -13,7 +13,6 @@
     "@kanade/client": "workspace:*",
     "@kanade/tokens": "workspace:*",
     "@kanade/ui": "workspace:*",
-    "@dnd-kit/dom": "0.5.0",
-    "uplot": "1.6.32"
+    "@dnd-kit/dom": "0.5.0"
   }
 }

@@ -128,7 +128,7 @@ async fn judge<'c>(
 
 /// The character brought to each of `bosses`: the slot's bosses whose
 /// token the catalog knows (as [`requirements`] keeps them), in order.
-fn brought_to<'s>(
+pub(crate) fn brought_to<'s>(
     catalog: &BossTable,
     slot: &'s PartySlot,
     bosses: &[Requirement],

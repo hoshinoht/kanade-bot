@@ -13,10 +13,10 @@ use std::fmt;
 use std::future::Future;
 
 use chrono::{DateTime, Utc};
-use ring::digest::{SHA256, digest};
 
 use super::digest::WeeklyDigest;
 use super::intent::{DeliveryTarget, JournalView, NotificationIntent};
+use crate::history::sha256_hex;
 use crate::time::DateOutOfRange;
 
 /// v4's dedupe-key namespace.
@@ -35,14 +35,6 @@ pub const DECLINE_RETRACTION_ACTOR: &str = "service:decline-retraction";
 pub const DECLINE_RETRACTION_REASON: &str = "confirmed Discord deletion for decline retraction";
 /// The config key holding the last posted digest week.
 pub const DIGEST_MARKER_KEY: &str = "last_digest_week";
-
-fn sha256_hex(bytes: &[u8]) -> String {
-    digest(&SHA256, bytes)
-        .as_ref()
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect()
-}
 
 /// One journalled send.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]

@@ -16,8 +16,6 @@ pub struct UnpublishedEffort {
 /// Startup/config-change check mirroring the runner's shaping rule: an effort
 /// other than `off` on a model with reasoning control and a published list
 /// must be in that list.
-// TODO(config slice): run at startup and on every extraction alias/effort
-// change once runtime config resolves capabilities from `/v1/models`.
 pub fn check_reasoning_effort(
     alias: &str,
     effort: Option<Effort>,

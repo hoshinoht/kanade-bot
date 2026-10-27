@@ -316,6 +316,7 @@ impl<P: LlmProvider> ModelClient<P> {
     /// [`Session::answer_retry`] after a reply the caller rejects: queues up to
     /// `wait`, then `timeout` bounds the session. Requests are capped at the
     /// runner's attempts plus one reshape, plus one reserved for the answer retry.
+    #[cfg(any(test, feature = "test-support"))]
     pub async fn open_extraction(
         &self,
         who: impl Into<String>,
@@ -558,12 +559,14 @@ impl<P: LlmProvider> Session<'_, P> {
         self.deadline
     }
 
+    #[cfg(any(test, feature = "test-support"))]
     pub fn requeued(&self) -> bool {
         // Rewrite sessions start with no requeue to spend.
         self.requeues_left == 0 && self.role != Role::Rewrite
     }
 
     /// No further request may be sent.
+    #[cfg(any(test, feature = "test-support"))]
     pub fn is_ended(&self) -> bool {
         self.ended
             || (!self.question && self.completed && (!self.answered || self.answer_retry_used))

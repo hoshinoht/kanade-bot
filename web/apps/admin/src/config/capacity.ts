@@ -7,11 +7,6 @@ export const ROLES: { id: ModelRole; name: string; job: string }[] = [
   { id: 'rewrite', name: 'Rewrite', job: 'A small local model that nudges replies into the persona’s voice.' },
 ];
 
-/** The effort an inheriting role resolves to: the extraction role's level. */
-export function effectiveReasoning(reasoning: string, extractionEffort: string): string {
-  return reasoning === '' ? extractionEffort : reasoning;
-}
-
 /** Every stored reasoning level after `off`, in the server's order. */
 export const ALL_EFFORTS = ['minimal', 'low', 'medium', 'high', 'xhigh', 'max'];
 

@@ -5,6 +5,5 @@
 export const ADMIN_ONLY_MODULES = [
   '/apps/admin/',
   '/@dnd-kit/',
-  '/uplot/',
   '/packages/ui/src/components/CommandPalette.svelte',
 ];

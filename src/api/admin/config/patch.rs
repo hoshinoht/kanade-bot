@@ -15,7 +15,7 @@ use kanade_domain::settings::{
     MAX_PROFANITY_WORDS, MAX_ROLE_PROFILE_ASSIGNMENTS, Notifications, OVERRIDE_RUN_MINUTES,
     PROFANITY_WORD_CHARS, Persona, Pings, Posting, Profanity, RUN_MINUTES, Rate,
     RoleProfileAssignment, RunLengthOverride, RunLengths, SelfService, SelfServiceMode, Watching,
-    is_profanity_word,
+    is_canonical_role_id, is_profanity_word,
 };
 use kanade_voice::{
     nudge::{WordFilter, is_builtin_word},
@@ -203,7 +203,7 @@ pub fn ids(value: &Value, path: &str) -> Result<Vec<String>, PatchError> {
     for item in items {
         let id = item
             .as_str()
-            .filter(|id| canonical_role_id(id))
+            .filter(|id| is_canonical_role_id(id))
             .ok_or_else(|| field_error(path, "an array of canonical positive Discord ids"))?;
         if ids.iter().any(|seen| seen == id) {
             return Err(PatchError::invalid(format!(
@@ -604,7 +604,7 @@ pub fn posting(
         value => Some(
             value
                 .as_str()
-                .filter(|id| canonical_role_id(id))
+                .filter(|id| is_canonical_role_id(id))
                 .ok_or_else(|| {
                     field_error(
                         "posting.channel_id",
@@ -672,7 +672,7 @@ pub fn role_profiles(
         let role_id = fields
             .get("role_id")
             .and_then(Value::as_str)
-            .filter(|role_id| canonical_role_id(role_id))
+            .filter(|role_id| is_canonical_role_id(role_id))
             .ok_or_else(|| {
                 field_error(
                     &format!("{path}.role_id"),
@@ -699,14 +699,6 @@ pub fn role_profiles(
         });
     }
     Ok((assignments, expected_digest))
-}
-
-fn canonical_role_id(role_id: &str) -> bool {
-    role_id
-        .parse::<u64>()
-        .ok()
-        .filter(|id| *id > 0)
-        .is_some_and(|id| id.to_string() == role_id)
 }
 
 /// Merge the selected-key visibility delta onto the settings locked by the

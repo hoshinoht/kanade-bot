@@ -14,6 +14,7 @@ mod lookup;
 mod readiness;
 
 pub(crate) use lookup::answer as lookup_answer;
+pub(crate) use readiness::brought_to;
 
 use std::sync::Arc;
 

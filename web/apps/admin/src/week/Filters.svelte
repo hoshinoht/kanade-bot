@@ -7,7 +7,7 @@
 <script lang="ts">
   import { tick } from 'svelte';
   import type { Member } from '@kanade/api-types';
-  import { Icon, Select, type SelectOption } from '@kanade/ui';
+  import { Icon, pressAway, Select, type SelectOption } from '@kanade/ui';
   import '@kanade/ui/styles/core/select.scss';
   import { filtering, NO_FILTER, type WeekFilter } from './filters';
   import { directory, memberLabel } from '../names/directory.svelte';
@@ -57,12 +57,7 @@
   // A press outside the button and the panel folds it away.
   $effect(() => {
     if (!open) return;
-    const away = (event: PointerEvent) => {
-      const target = event.target as Node;
-      if (!panel?.contains(target) && !button?.contains(target)) close(false);
-    };
-    document.addEventListener('pointerdown', away, true);
-    return () => document.removeEventListener('pointerdown', away, true);
+    return pressAway(() => [panel, button], () => close(false));
   });
 </script>
 

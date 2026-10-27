@@ -28,7 +28,6 @@
 
 // Pane-level measures: prose and forms stop at a readable width while
 // tables, the board and lists use what the window has (screens add theirs).
-.frame--rail .pane__body > p,
 .frame--rail .tabs__panel > p {
   max-width: 72rem;
 }

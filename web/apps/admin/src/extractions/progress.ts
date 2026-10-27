@@ -21,8 +21,3 @@ export function rescanProgress(job: Pick<RescanJob, 'messages' | 'messages_total
   const at = job.started_at && !Number.isNaN(Date.parse(job.started_at)) ? clockTime(job.started_at, timeZone, false) : '';
   return { percent, count, started: at ? `started ${at}` : '' };
 }
-
-/** "41% · 27 of 66 messages · started 01:40", leaving out what is missing. */
-export function progressLine(p: RescanProgress): string {
-  return [p.percent === null ? '' : `${p.percent}%`, p.count, p.started].filter(Boolean).join(' · ');
-}

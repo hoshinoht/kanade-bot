@@ -457,6 +457,7 @@ impl SqliteStore {
     ///
     /// # Errors
     /// The check failed to run.
+    #[cfg(any(test, feature = "test-support"))]
     pub async fn foreign_key_violations(&self) -> Result<usize, SqliteStoreError> {
         let rows = sqlx::query("PRAGMA foreign_key_check")
             .fetch_all(&mut *self.reader().await?)

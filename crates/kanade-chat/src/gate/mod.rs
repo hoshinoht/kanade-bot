@@ -259,22 +259,6 @@ pub fn decide(
     ChatDecision::ok()
 }
 
-/// Who runs this bot: a server admin, the owner, or the configured role.
-pub fn is_bot_admin(
-    is_guild_admin: bool,
-    is_guild_owner: bool,
-    role_ids: &[String],
-    admin_role_id: Option<&str>,
-) -> bool {
-    if is_guild_admin || is_guild_owner {
-        return true;
-    }
-    let Some(admin) = admin_role_id.and_then(as_int) else {
-        return false;
-    };
-    role_ids.iter().any(|role| as_int(role) == Some(admin))
-}
-
 /// A retry interval rounded up: `59.5` → `60s`, `121` → `3 min`.
 pub fn retry_note(seconds: f64) -> String {
     // Saturating float → int; negative and NaN become 0 and then 1.

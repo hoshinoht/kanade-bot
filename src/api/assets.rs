@@ -30,6 +30,7 @@ use tokio::{
 };
 
 use super::{
+    auth::wire::escape_html,
     dto::bosses::is_event,
     encoding::{self, Coding},
     error::ApiError,
@@ -177,15 +178,6 @@ fn identity_file(site: &Site, stem: &str) -> Option<PathBuf> {
         .find(|path| path.is_file())
 }
 
-/// Safe in text and in quoted attribute values.
-fn escape(text: &str) -> String {
-    text.replace('&', "&amp;")
-        .replace('<', "&lt;")
-        .replace('>', "&gt;")
-        .replace('"', "&quot;")
-        .replace('\'', "&#39;")
-}
-
 /// Identity images with a content ETag; a matching `If-None-Match` is a 304.
 async fn identity_image(site: &Site, stem: &str, request: &HeaderMap) -> Response {
     match identity_file(site, stem) {
@@ -252,7 +244,7 @@ pub(crate) fn monogram(name: &str) -> String {
         .unwrap_or('K')
         .to_uppercase()
         .collect();
-    let initial = escape(&initial);
+    let initial = escape_html(&initial);
     format!(
         r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="14" fill="#5f6579"/><text x="32" y="44" text-anchor="middle" font-family="Georgia, serif" font-weight="700" font-size="34" fill="#fbf6e8">{initial}</text></svg>"##
     )
@@ -718,7 +710,7 @@ fn with_preview(html: &str, name: &str, image: Option<&PreviewImage>) -> String 
     let Some((head, tail)) = html.split_once(PREVIEW_MARKER) else {
         return html.to_owned();
     };
-    let name = escape(name);
+    let name = escape_html(name);
     let title = format!("{name}{TITLE_SUFFIX}");
     let card = if image.is_some_and(|image| image.wide) {
         "summary_large_image"
@@ -733,7 +725,7 @@ fn with_preview(html: &str, name: &str, image: Option<&PreviewImage>) -> String 
     if let Some(image) = image {
         tags.push(format!(
             r#"<meta property="og:image" content="{}" />"#,
-            escape(&image.url)
+            escape_html(&image.url)
         ));
     }
     let head = match (head.find("<title>"), head.find("</title>")) {

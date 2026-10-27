@@ -30,6 +30,7 @@ use axum::{
 };
 
 use super::{closed, read_bucket, unmounted, write::audit_refusals};
+use crate::api::admin::character_data::estimates::roster;
 use crate::{
     api::{admin::write::Refusal, auth::member, error::ApiError, listeners::Site, state::ApiState},
     app::read::CharacterRoster,
@@ -148,14 +149,6 @@ async fn gate(
     } else {
         ApiError::NOT_FOUND.into_response()
     }
-}
-
-/// The roster (its gate let the request through).
-fn roster(state: &ApiState) -> Result<&Arc<dyn CharacterRoster>, Refusal> {
-    state
-        .characters
-        .as_ref()
-        .ok_or_else(|| ApiError::NOT_FOUND.into())
 }
 
 /// Module `character_data` (its gate let the request through).

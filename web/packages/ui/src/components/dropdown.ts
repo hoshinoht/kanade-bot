@@ -1,5 +1,6 @@
 // Shared popover plumbing for Select and MultiSelect: placement through CSSOM
-// custom properties (strict CSP, as Portrait.svelte), and a press-away hook.
+// custom properties (strict CSP, as Portrait.svelte), and a press-away hook
+// (also the admin's filter popovers).
 
 const GAP = 6;
 const EDGE = 8;

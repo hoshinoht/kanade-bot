@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import {
-  effectiveReasoning,
   groupRows,
   isReasoningValid,
   kanataLimits,
@@ -26,11 +25,6 @@ const roles = {
 };
 describe('reasoning', () => {
   const byId = (id: string) => catalog.find((m) => m.id === id);
-  it('resolves inherit to the extraction effort', () => {
-    expect(effectiveReasoning('', 'medium')).toBe('medium');
-    expect(effectiveReasoning('off', 'medium')).toBe('off');
-  });
-
   it('validates off, published, and model-decides levels', () => {
     expect(isReasoningValid(byId('x'), 'off')).toBe(true);
     expect(isReasoningValid(byId('x'), 'high')).toBe(true);

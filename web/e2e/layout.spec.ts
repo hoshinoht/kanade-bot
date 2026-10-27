@@ -15,7 +15,6 @@ const SURFACE = [
   '.inbox__list:not([hidden])',
   '.settings__detail',
   '.tabs__panel:not([hidden])',
-  '.pane__body',
   '.window-fill',
 ].join(', ');
 

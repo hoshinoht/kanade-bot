@@ -14,7 +14,7 @@ mod model;
 use std::collections::BTreeMap;
 
 pub use audit::{RowDiff, SettingsChange, SettingsChangeQuery, diff_rows};
-pub use codec::{IdList, Section};
+pub use codec::{IdList, Section, is_canonical_role_id};
 pub use model::{
     CharacterData, Chatbot, ContextRole, ContextSettings, DEFAULT_DEFLECTION_LINE,
     DEFAULT_ESTIMATE_DAYS, DEFAULT_RUN_MINUTES, ESTIMATE_DAYS, LOCAL_CONTEXT_WARNING,

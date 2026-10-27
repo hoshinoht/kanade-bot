@@ -192,6 +192,7 @@ impl ModelCapabilities {
     }
 
     /// Ollama's cloud proxy reports `local`; the `-cloud` alias suffix is what marks it.
+    #[cfg(any(test, feature = "test-support"))]
     pub fn is_cloud(&self, alias: &str) -> bool {
         self.trust_zone == Some(TrustZone::External) || alias.ends_with("-cloud")
     }

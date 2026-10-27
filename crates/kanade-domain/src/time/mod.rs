@@ -4,5 +4,7 @@ mod iso;
 mod iso_parse;
 mod zoned;
 
-pub use iso::{IsoDateTime, IsoError, from_iso, isoformat, isoformat_naive, local_naive, to_iso};
+#[cfg(any(test, feature = "test-support"))]
+pub use iso::isoformat_naive;
+pub use iso::{IsoDateTime, IsoError, from_iso, isoformat, local_naive, to_iso};
 pub use zoned::{AwareDateTime, DateOutOfRange, ZonedDateTime};

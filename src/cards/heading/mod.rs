@@ -374,6 +374,7 @@ pub fn seed_heading(day: &str) -> String {
 /// Accept a short persona phrase: the shared line rules, then no digits, no
 /// date, time or status word and no catalog name; emoji, `~`, dashes and
 /// ellipses are fine.
+#[cfg(any(test, feature = "test-support"))]
 pub fn accept_phrase(
     output: &str,
     seed: &str,
@@ -575,6 +576,7 @@ impl HeadingRewrite {
 
     /// The prompt a rewrite of `kind` with `context` would send, if one
     /// would be attempted (digest phrases never carry context).
+    #[cfg(any(test, feature = "test-support"))]
     pub fn prompt_with(
         &self,
         kind: HeaderKind,

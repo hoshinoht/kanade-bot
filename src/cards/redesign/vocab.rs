@@ -7,6 +7,7 @@ use chrono::{DateTime, Utc};
 use crate::cards::format;
 use kanade_domain::attendance::AnswerState;
 use kanade_domain::catalog::BossTable;
+use kanade_domain::schedule::RunStatus;
 
 use crate::cards::common::People;
 
@@ -83,6 +84,18 @@ pub fn boss_labels(
 }
 
 /// `<t:…:t>`: the clock in each reader's own zone.
+/// A run status's mark in the digest and `/schedule` lines.
+pub fn emoji(status: RunStatus) -> &'static str {
+    match status {
+        RunStatus::Done => "🏁",
+        RunStatus::Confirmed => "✅",
+        RunStatus::Planned => "⚠️",
+        RunStatus::AtRisk => "❗",
+        RunStatus::Otot => "🕒",
+        RunStatus::Cancelled => "🚫",
+    }
+}
+
 pub fn short_time(at: DateTime<Utc>) -> String {
     format!("<t:{}:t>", at.timestamp())
 }

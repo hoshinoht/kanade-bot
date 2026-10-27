@@ -5,7 +5,7 @@
 //! Production keeps them twice: JSON lines on stderr and the stored sign-in
 //! audit log ([`StoreAudit`], History › Sign-ins).
 
-use std::{net::IpAddr, sync::Arc, sync::Mutex, time::Duration};
+use std::{net::IpAddr, sync::Arc, time::Duration};
 
 use axum::{
     extract::FromRequestParts,
@@ -339,9 +339,11 @@ impl AuditSink for StderrAudit {
 }
 
 /// Test sink that keeps every record.
+#[cfg(any(test, feature = "test-support"))]
 #[derive(Default)]
-pub struct RecordingAudit(Mutex<Vec<AuditRecord>>);
+pub struct RecordingAudit(std::sync::Mutex<Vec<AuditRecord>>);
 
+#[cfg(any(test, feature = "test-support"))]
 impl RecordingAudit {
     pub fn records(&self) -> Vec<AuditRecord> {
         self.0
@@ -366,6 +368,7 @@ impl RecordingAudit {
     }
 }
 
+#[cfg(any(test, feature = "test-support"))]
 impl AuditSink for RecordingAudit {
     fn record(&self, record: AuditRecord) {
         self.0

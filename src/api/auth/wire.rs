@@ -163,6 +163,7 @@ pub fn see_other(location: &str, cookies: impl IntoIterator<Item = HeaderValue>)
     response
 }
 
+/// Safe in text and in quoted attribute values.
 pub fn escape_html(text: &str) -> String {
     text.replace('&', "&amp;")
         .replace('<', "&lt;")

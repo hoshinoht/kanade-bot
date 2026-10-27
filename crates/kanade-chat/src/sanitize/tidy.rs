@@ -36,15 +36,6 @@ fn tidy_blank_lines(text: &str) -> String {
     compact.join("\n")
 }
 
-/// Repair a first list item glued to its heading.
-pub fn unglue_first_bullet(text: &str) -> String {
-    if text.contains("\n- ") {
-        text.replace(GLUED_BULLET, ":\n\n- ")
-    } else {
-        text.to_owned()
-    }
-}
-
 fn chars(text: &str) -> usize {
     text.chars().count()
 }

@@ -8,6 +8,7 @@ use hyper::{
     header::{ACCEPT, AUTHORIZATION, CONTENT_TYPE, HOST, RETRY_AFTER, USER_AGENT},
 };
 use hyper_util::rt::TokioIo;
+use kanade_domain::model_log::is_correlation_id;
 use rustls::{ClientConfig, RootCertStore, crypto::CryptoProvider};
 use tokio::{
     io::{AsyncRead, AsyncWrite},
@@ -119,7 +120,7 @@ impl Transport {
             builder = builder.header(CONTENT_TYPE, "application/json");
         }
         // Kanata rejects a malformed id, so one that does not fit is left out.
-        if let Some(id) = request_id.filter(|id| valid_request_id(id)) {
+        if let Some(id) = request_id.filter(|id| is_correlation_id(id)) {
             builder = builder.header(REQUEST_ID, id);
         }
         if let Some(key) = &self.bearer {
@@ -267,13 +268,6 @@ where
 }
 
 const REQUEST_ID: &str = "x-request-id";
-
-fn valid_request_id(id: &str) -> bool {
-    (1..=128).contains(&id.len())
-        && id
-            .bytes()
-            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-'))
-}
 
 fn retry_after(headers: &HeaderMap) -> Option<Duration> {
     let value = headers.get(RETRY_AFTER)?.to_str().ok()?.trim();

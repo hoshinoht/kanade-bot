@@ -73,7 +73,7 @@ impl Scouter {
     }
 }
 
-fn roster(state: &ApiState) -> Result<&Arc<dyn CharacterRoster>, Refusal> {
+pub(crate) fn roster(state: &ApiState) -> Result<&Arc<dyn CharacterRoster>, Refusal> {
     // The module needs the roster; without it there is nothing to look up.
     state
         .characters

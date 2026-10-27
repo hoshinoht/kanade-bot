@@ -39,17 +39,6 @@ fn local_time(at: &impl AwareDateTime, zone: Tz) -> Result<String, DateOutOfRang
     Ok(format!("{:02}:{:02}", wall.hour(), wall.minute()))
 }
 
-/// v4 `SETTABLE_STATUSES` gate: `at_risk` is derived, never set by hand.
-///
-/// # Errors
-/// [`ScheduleError::NotSettable`] for `at_risk` or unknown text.
-pub fn settable_status(text: &str) -> Result<RunStatus, ScheduleError> {
-    match RunStatus::parse(text) {
-        Ok(status) if status != RunStatus::AtRisk => Ok(status),
-        _ => Err(ScheduleError::NotSettable(text.to_owned())),
-    }
-}
-
 fn notice(run: &Run, change: NoticeChange, listed: Vec<String>, via_portal: bool) -> Notice {
     Notice {
         change,

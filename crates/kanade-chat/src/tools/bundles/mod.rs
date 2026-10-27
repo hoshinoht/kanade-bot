@@ -19,10 +19,12 @@ use super::READ_ONLY_TURN;
 use super::schemas::{ToolName, ToolName as Tool, surface_text, v4_surface};
 
 /// v4's tool-round cap.
+#[cfg(any(test, feature = "test-support"))]
 pub const V4_MAX_TOOL_ROUNDS: u32 = 4;
 /// v5's default tool rounds per question (admin-adjustable).
 pub const DEFAULT_TOOL_ROUNDS: u32 = 8;
 /// The configurable range of tool rounds.
+#[cfg(any(test, feature = "test-support"))]
 pub const TOOL_ROUNDS: std::ops::RangeInclusive<u32> = 1..=12;
 
 /// A fixed group of tools offered together.
@@ -155,6 +157,7 @@ pub struct ToolOffer {
 
 impl ToolOffer {
     /// v4 parity: all twelve tools, or the six read tools on a read-only turn.
+    #[cfg(any(test, feature = "test-support"))]
     pub fn full_set(read_only: bool) -> Self {
         Self {
             mode: Mode::FullSet,
@@ -294,6 +297,7 @@ impl ToolOffer {
     }
 
     /// What the surface costs the prompt (v4 `estimate_tokens`).
+    #[cfg(any(test, feature = "test-support"))]
     pub fn estimated_tokens(&self) -> usize {
         kanade_extract::prompt::estimate_tokens(&self.surface_text())
     }

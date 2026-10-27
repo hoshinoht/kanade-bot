@@ -22,6 +22,7 @@ use axum::{
 use super::roster;
 use crate::api::{
     admin::{
+        character_data::brought_to,
         characters::party,
         context::{context, roster as directory},
         write::{Refusal, run_not_found, state},
@@ -44,8 +45,7 @@ use kanade_chardata::{
     scouter::{Estimates, RosterIgn},
 };
 use kanade_domain::{
-    catalog::BossTable,
-    characters::{Character, PartySlot},
+    characters::Character,
     chardata::{ATTRIBUTION, Requirement, date_text},
 };
 
@@ -93,24 +93,6 @@ async fn shown(
     })
 }
 
-/// The character brought to each of `bosses` (the run's tokens the catalog
-/// knows, in order).
-fn per_boss<'s>(
-    catalog: &BossTable,
-    slot: &'s PartySlot,
-    bosses: &[Requirement],
-) -> Vec<Option<&'s Character>> {
-    let known: Vec<usize> = (0..slot.bosses.len())
-        .filter(|at| catalog.split(&slot.bosses[*at].token).is_some())
-        .collect();
-    (0..bosses.len())
-        .map(|at| match known.get(at) {
-            Some(boss) => slot.brought_to(*boss).map(|(character, _)| character),
-            None => slot.brought().map(|(character, _)| character),
-        })
-        .collect()
-}
-
 pub(super) async fn read(
     State(site): State<Arc<Site>>,
     session: MemberSession,
@@ -151,7 +133,7 @@ pub(super) async fn read(
             }
             None => None,
         };
-        let carried = per_boss(&state.catalog, slot, &bosses);
+        let carried = brought_to(&state.catalog, slot, &bosses);
         let differs = carried
             .iter()
             .any(|character| character.map(|row| &row.id) != brought.map(|row| &row.id));
