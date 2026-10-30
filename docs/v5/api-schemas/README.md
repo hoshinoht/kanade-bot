@@ -161,7 +161,7 @@ Pointers are `<file>#/$defs/<Name>`.
 | `POST /api/admin/setup/secrets/{name}/check` | body `SecretCandidate`; `setup.json#/$defs/SecretCheck` (tests a candidate bot token against Discord or a model key against the configured gateway within 10 s; the candidate is never kept; other secrets answer `not_checked`) |
 | `POST /api/admin/setup/restart` | `202`, no body (fresh sign-in as above; checks the configuration and secrets the next start reads, then shuts down gracefully for the supervisor to start again; 409 `not_supervised` without one, 422 `would_fail` naming what would fail) |
 | `POST /api/admin/config/profiles/reload` | `common.json#/$defs/ReloadResult` |
-| `POST /api/admin/digest` | `common.json#/$defs/Message` |
+| `POST /api/admin/digest` | `common.json#/$defs/Message` (200 only after a confirmed, journal-bound Discord post; 409 `digest_unconfirmed` when a send or replacement cannot be confirmed or an earlier unresolved attempt prevents a retry; 422 `digest_rejected` when Discord refuses the post; 503 `unavailable` when nothing was sent or delivery is unavailable) |
 | `POST /api/admin/headers/rewrite` | `202` `common.json#/$defs/Message` (the run continues in the background; `200` when nothing posted this boss week has a header; 409 `ApiError` `rewrite_running`/`rewrite_off`) |
 | `GET /api/admin/access`, `POST /api/admin/access/recheck` | `config.json#/$defs/AccessReport` |
 | `GET /api/admin/history?week=&actor=&run=&before=&limit=` | `history.json#/$defs/HistoryPage` |

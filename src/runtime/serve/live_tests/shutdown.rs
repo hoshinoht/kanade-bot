@@ -1245,6 +1245,86 @@ async fn sign_in_for_writes(address: SocketAddr) -> (String, String) {
     (cookie, header("x-kanade-csrf"))
 }
 
+#[tokio::test]
+async fn a_manual_digest_reports_delivery_failures_and_only_confirms_a_bound_post() {
+    kanade_log::capture();
+    let harness = Harness::with(&[("KANADE_ADMIN_HOST", HOST)]);
+    std::fs::write(harness._temp.0.join("admin_token"), format!("{TOKEN}\n")).unwrap();
+    seed_discord_members(&harness);
+    let (events, trigger, serve) = launch(
+        &harness,
+        SlowCdn::default(),
+        budget::ShutdownClock::default(),
+        |_| {},
+    );
+    let scenario = async {
+        let address = listening().await;
+        events.send(ready()).unwrap();
+        events.send(guild()).unwrap();
+        eventually!("the tick running", scheduler(address).await == "running");
+        let (cookie, csrf) = sign_in_for_writes(address).await;
+        let body = format!(r#"{{"week":"this","channel_id":"{HOME_B}"}}"#);
+        let post = || {
+            request(
+                "POST",
+                "/api/admin/digest",
+                &[
+                    ("Origin", ORIGIN),
+                    ("Cookie", &cookie),
+                    ("X-Kanade-CSRF", &csrf),
+                ],
+                Some(&body),
+            )
+        };
+        for (step, status, error) in [
+            (
+                Step::Reject(RejectionKind::NotSent),
+                503,
+                Some("unavailable"),
+            ),
+            (
+                Step::Reject(RejectionKind::MissingPermissions),
+                422,
+                Some("digest_rejected"),
+            ),
+            (Step::Succeed, 200, None),
+            (
+                Step::Ambiguous {
+                    kind: crate::discord::transport::AmbiguousKind::Timeout,
+                    applied: false,
+                },
+                409,
+                Some("digest_unconfirmed"),
+            ),
+        ] {
+            harness.fake.script(Op::Create, step);
+            let (actual, _, text) = http(address, post()).await;
+            assert_eq!(actual, status, "{text}");
+            let answer: Value = serde_json::from_str(&text).unwrap();
+            if let Some(error) = error {
+                assert_eq!(answer["error"], error, "{text}");
+                assert!(!answer["message"].as_str().unwrap().starts_with("Posted"));
+            } else {
+                assert!(answer["message"].as_str().unwrap().starts_with("Posted"));
+            }
+        }
+        // A retry of the uncertain attempt must report the hold, not success
+        // or a second Discord create.
+        let creates = harness.fake.count(Op::Create);
+        let (status, _, text) = http(address, post()).await;
+        assert_eq!(status, 409, "{text}");
+        assert_eq!(
+            serde_json::from_str::<Value>(&text).unwrap()["error"],
+            "digest_unconfirmed"
+        );
+        assert_eq!(harness.fake.count(Op::Create), creates);
+        trigger.send(()).unwrap();
+    };
+    let ((served, _, _), ()) = tokio::join!(serve, scenario);
+    assert!(served.is_ok(), "{served:?}");
+    assert_eq!(logged("manual_digest_finished").len(), 5);
+}
+
 /// A manual digest (`POST /api/admin/digest`) is inside its Discord post
 /// when shutdown begins near the cutoff. The shared shutdown-aware transport
 /// ends the post as a possible delivery at the send cut, the handler
@@ -1323,7 +1403,11 @@ async fn a_manual_digest_in_flight_at_the_cutoff_is_journalled_before_the_store_
     eprintln!("manual digest shutdown breakdown (from trigger):\n{breakdown}");
 
     let (status, _, body) = answered.expect("the digest request was answered");
-    assert_eq!(status, 200, "{body}\n{breakdown}");
+    assert_eq!(status, 409, "{body}\n{breakdown}");
+    assert_eq!(
+        serde_json::from_str::<Value>(&body).unwrap()["error"],
+        "digest_unconfirmed"
+    );
     assert!(served.is_ok(), "{served:?}\n{breakdown}");
     assert_eq!(steps.last(), Some(&"tick_stopped"), "{breakdown}");
     let order = ["v03_trigger", "v03_digest_answered", "store_closed"];

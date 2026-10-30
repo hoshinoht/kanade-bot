@@ -48,3 +48,86 @@ impl CardIndex for StoreIndex {
         self.0.runs_for_message(message_id).await
     }
 }
+
+#[cfg(feature = "web")]
+pub(super) fn digest_result(
+    report: &crate::bot::delivery::DigestReport,
+) -> crate::app::ports::DigestPostResult {
+    use crate::app::ports::DigestPostResult;
+    use crate::bot::delivery::{DigestOutcome, SendOutcome};
+
+    if report.outcome == DigestOutcome::ClockRolledBack {
+        return DigestPostResult::NewerWeekAlreadyPosted;
+    }
+    if report.message_id().is_some() {
+        return DigestPostResult::Completed;
+    }
+    match report.send.as_ref().map(|send| &send.outcome) {
+        Some(SendOutcome::Uncertain | SendOutcome::Suppressed) => DigestPostResult::Unconfirmed,
+        Some(SendOutcome::Rejected(_)) => DigestPostResult::Rejected,
+        _ if matches!(report.outcome, DigestOutcome::ReplacementSuppressed(_)) => {
+            DigestPostResult::Unconfirmed
+        }
+        _ => DigestPostResult::Unavailable,
+    }
+}
+
+#[cfg(all(test, feature = "web"))]
+mod tests {
+    use super::digest_result;
+    use crate::app::ports::DigestPostResult;
+    use crate::bot::delivery::{DigestOutcome, DigestReport, SendOutcome, SendReport};
+    use crate::discord::transport::{MessageId, RejectionKind};
+    use kanade_domain::notify::{EffectKind, IntentContent, NotificationIntent};
+
+    #[test]
+    fn a_manual_digest_is_completed_only_when_the_send_is_bound() {
+        let week = "2026-10-28T16:00:00Z".parse().unwrap();
+        for (outcome, expected) in [
+            (
+                SendOutcome::Bound(MessageId::new(7001)),
+                DigestPostResult::Completed,
+            ),
+            (SendOutcome::Uncertain, DigestPostResult::Unconfirmed),
+            (SendOutcome::Suppressed, DigestPostResult::Unconfirmed),
+            (
+                SendOutcome::Released(RejectionKind::NotSent),
+                DigestPostResult::Unavailable,
+            ),
+            (
+                SendOutcome::Rejected(RejectionKind::MissingPermissions),
+                DigestPostResult::Rejected,
+            ),
+            (
+                SendOutcome::Unavailable("gone".into()),
+                DigestPostResult::Unavailable,
+            ),
+            (
+                SendOutcome::Failed("journal failed".into()),
+                DigestPostResult::Unavailable,
+            ),
+        ] {
+            let report = DigestReport {
+                current_week: week,
+                retired: 0,
+                outcome: DigestOutcome::Attempted,
+                send: Some(SendReport {
+                    intent: NotificationIntent {
+                        effect: EffectKind::Digest,
+                        effect_context: vec![],
+                        channel_id: "222".into(),
+                        targets: vec![],
+                        mentions: vec![],
+                        content: IntentContent::Digest {
+                            week_start: week,
+                            inclusion: Default::default(),
+                        },
+                        warnings: vec![],
+                    },
+                    outcome,
+                }),
+            };
+            assert_eq!(digest_result(&report), expected, "{report:?}");
+        }
+    }
+}

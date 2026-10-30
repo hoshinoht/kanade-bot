@@ -2,6 +2,16 @@
 
 What changed in each Kanade release, newest first. Upgrading across several releases? Read each one's upgrade notes on the way.
 
+## 1.0.1
+
+_In development_
+
+Clearer results when posting a weekly digest from the admin app.
+
+### Fixes
+
+- Fixed the weekly digest button reporting a successful post when delivery was rejected, unconfirmed or blocked by an earlier attempt; admins now see an error and operators can inspect the result in the log.
+
 ## 1.0.0
 
 _27 Oct 2026_

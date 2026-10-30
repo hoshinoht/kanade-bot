@@ -37,6 +37,8 @@ pub struct DigestPostRequest {
 pub enum DigestPostResult {
     Completed,
     NewerWeekAlreadyPosted,
+    Unconfirmed,
+    Rejected,
     Unavailable,
 }
 

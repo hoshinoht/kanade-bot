@@ -35,8 +35,6 @@ use crate::app::{
     rescan::RescanDesk,
 };
 #[cfg(feature = "web")]
-use crate::bot::delivery::DigestOutcome;
-#[cfg(feature = "web")]
 use crate::discord::transport::{DiscordTransport, Outcome};
 use crate::runtime::serve::{
     bot::{
@@ -461,22 +459,30 @@ where
                     )
                     .with_cards(cards)
                     .with_admission_gate(move || connection.delivery_eligibility());
-                    match delivery
+                    let result = delivery
                         .post_requested_digest(
                             request.at,
                             request.week_start,
                             request.channel_id.as_deref(),
                         )
-                        .await
-                    {
-                        Ok(report) if report.outcome == DigestOutcome::ClockRolledBack => {
-                            DigestPostResult::NewerWeekAlreadyPosted
-                        }
-                        Ok(report) if report.outcome == DigestOutcome::Attempted => {
-                            DigestPostResult::Completed
-                        }
-                        Ok(_) | Err(_) => DigestPostResult::Unavailable,
+                        .await;
+                    match &result {
+                        Ok(report) => kanade_log::log!(
+                            info,
+                            "manual_digest_finished",
+                            week_start = request.week_start.to_string(),
+                            channel_id = request.channel_id,
+                            outcome = format!("{:?}", report.outcome),
+                            send = report
+                                .send
+                                .as_ref()
+                                .map(|send| format!("{:?}", send.outcome)),
+                        ),
+                        Err(_) => kanade_log::log!(warn, "manual_digest_failed"),
                     }
+                    result
+                        .as_ref()
+                        .map_or(DigestPostResult::Unavailable, ports::digest_result)
                 })
             })
         };

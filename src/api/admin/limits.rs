@@ -82,6 +82,14 @@ fn digest_result(result: DigestPostResult) -> Result<(), Refusal> {
         DigestPostResult::NewerWeekAlreadyPosted => {
             Err(Refusal::invalid("A newer week's digest is already posted."))
         }
+        DigestPostResult::Unconfirmed => Err(Refusal::conflict(
+            "digest_unconfirmed",
+            "Digest delivery could not be confirmed. Check Discord and the delivery log before trying again; an earlier attempt may have posted it.",
+        )),
+        DigestPostResult::Rejected => Err(Refusal::unprocessable(
+            "digest_rejected",
+            "Discord refused the digest. Check the bot's channel permissions and the delivery log.",
+        )),
         DigestPostResult::Unavailable => Err(ApiError::UNAVAILABLE.into()),
     }
 }
