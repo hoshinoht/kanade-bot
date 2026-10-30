@@ -129,6 +129,33 @@ test.describe('Week: own-move FLIP', () => {
 test.describe('panes', () => {
   test.beforeEach(async ({ page }) => recordAnimations(page));
 
+  test('Week: changing an answer keeps the pane still; selecting another run enters again', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.goto(`${ADMIN}/?sw=off`);
+    await page.locator('[data-run="r-carling"]').click();
+    const pane = page.locator('aside.week-pane');
+    await expect(pane).toBeVisible();
+    const title = await pane.getAttribute('aria-label');
+    expect((await animated(page)).some((a) => a.target === title && a.from === 'translateX(24px)')).toBe(true);
+    await pane.getByRole('tab', { name: /^Answers/ }).click();
+    const answer = pane.getByRole('group', { name: /^Answer for / }).first();
+    for (const label of ['Out', 'On', 'Clear']) {
+      await clearAnimated(page);
+      const saved = page.waitForResponse((r) => r.request().method() === 'POST' && r.url().endsWith('/r-carling/rsvp'));
+      await answer.getByRole('button', { name: label, exact: true }).click();
+      expect((await saved).ok()).toBe(true);
+      await expect(answer.getByRole('button', { name: 'On', exact: true })).toBeEnabled();
+      if (label === 'Clear') await expect(answer.getByRole('button', { name: label, exact: true })).toBeDisabled();
+      else await expect(answer.getByRole('button', { name: label, exact: true })).toHaveAttribute('aria-pressed', 'true');
+      expect((await animated(page)).filter((a) => a.target === title)).toEqual([]);
+    }
+    await clearAnimated(page);
+    await page.locator('[data-run="r-kalos"]').click();
+    await expect(pane.getByRole('tab', { name: 'Run', exact: true })).toHaveAttribute('aria-selected', 'true');
+    const other = await pane.getAttribute('aria-label');
+    expect((await animated(page)).some((a) => a.target === other && a.from === 'translateX(24px)')).toBe(true);
+  });
+
   test('Members: the pane enters forward, leaves through is-leaving (inert), then unmounts', async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 800 });
     // CSS exit animations as they start: the leaving pane can unmount before a

@@ -86,6 +86,8 @@
     ['clear', 'Clear'],
   ] as const;
   const uid = $props.id();
+  // Only selecting a different run replays the pane's entrance.
+  const runId = $derived(run?.id ?? null);
   // The pane's status group is one row (B_WeekSel); each short word sits inside its full name.
   const SHORT: Record<string, string> = { otot: 'Own', cancelled: 'Cancel' };
   let error = $state('');
@@ -760,7 +762,7 @@
       { id: 'answers', label: 'Answers', count: counts.waiting + counts.maybe || null },
       { id: 'changes', label: 'Changes', count: null },
     ] as const}
-    <aside class="side-pane week-pane run--{run.status}" aria-label={runTitle(run)} data-fid="week-pane" {@attach enter(run.id)}>
+    <aside class="side-pane week-pane run--{run.status}" aria-label={runTitle(run)} data-fid="week-pane" {@attach enter(runId)}>
       <div class="week-pane__head" data-fid="week-pane-head">
         <div class="week-pane__tabs" role="tablist" aria-label="Run details">
           {#each tabs as tab, index (tab.id)}

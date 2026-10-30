@@ -6,11 +6,12 @@ What changed in each Kanade release, newest first. Upgrading across several rele
 
 _In development_
 
-Clearer results when posting a weekly digest from the admin app.
+Clearer weekly digest results and steadier run controls in the admin app.
 
 ### Fixes
 
 - Fixed the weekly digest button reporting a successful post when delivery was rejected, unconfirmed or blocked by an earlier attempt; admins now see an error and operators can inspect the result in the log.
+- Fixed the run pane replaying its entrance animation when an admin changes a member's answer.
 
 ## 1.0.0
 
