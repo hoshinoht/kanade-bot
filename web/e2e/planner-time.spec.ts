@@ -4,10 +4,10 @@ import { ADMIN, csrf, expect, test, choose } from './support';
 
 // Workplan step planner-time-drops (user decisions 2026-10-01): a pointer drop
 // sets the time from the runs around it (Config → Run lengths), the keyboard
-// steps by the configured default, and a drop that double-books somebody
+// steps by 30 minutes, and a drop that double-books somebody
 // warns (icon + words) but still saves. Seed: Tue has HCarling + HMaleficStar
-// 22:00 (two bosses, 60 min) and XBM 23:30; Mon has HFA 20:00 and HJupiter
-// 21:00; every boss takes the 30-minute default. The server clock stands at
+// 22:00 (two bosses, 40 min) and XBM 23:30; Mon has HFA 20:00 and HJupiter
+// 21:00; every boss takes the 20-minute default. The server clock stands at
 // Mon 28 12:00 (guild time), before Monday's runs: at the pinned Tuesday they
 // have ended and the server refuses to move them.
 
@@ -58,27 +58,36 @@ test('pointer drop between two runs starts right after the one above, with a liv
   const to = await above(page, 'r-bm');
   await pointerDrag(page, 'r-fa', to, async () => {
     const ghost = page.locator('.dnd-ghost--on');
-    // Carling + Star: 22:00 plus two 30-minute bosses.
-    await expect(ghost).toContainText('→ 23:00');
+    // Carling + Star: 22:00 plus two 20-minute bosses.
+    await expect(ghost).toContainText('→ 22:40');
     await expect(page.locator('[data-run="r-bm"]')).toHaveClass(/plan-card--drop-before/);
     // Said too, politely, for screen readers.
-    await expect(page.locator('[aria-live="polite"]').filter({ hasText: 'Drop on Tue 29, 23:00.' })).toHaveCount(1);
+    await expect(page.locator('[aria-live="polite"]').filter({ hasText: 'Drop on Tue 29, 22:40.' })).toHaveCount(1);
   });
-  await expect(page.getByText('Moved HFA to Tue 29 23:00.')).toBeVisible();
-  expect((await weekRun(page, 'r-fa')).run).toMatchObject({ day: 5, time: '23:00' });
+  await expect(page.getByText('Moved HFA to Tue 29 22:40.')).toBeVisible();
+  expect((await weekRun(page, 'r-fa')).run).toMatchObject({ day: 5, time: '22:40' });
 });
 
 test('pointer drop at the top of a day ends right before the run below', async ({ page }) => {
   await openAdmin(page);
   await pointerDrag(page, 'r-fa', await above(page, 'r-carling'), async () => {
-    await expect(page.locator('.dnd-ghost--on')).toContainText('→ 21:30');
+    await expect(page.locator('.dnd-ghost--on')).toContainText('→ 21:40');
   });
-  await expect(page.getByText('Moved HFA to Tue 29 21:30.')).toBeVisible();
-  expect((await weekRun(page, 'r-fa')).run.time).toBe('21:30');
+  await expect(page.getByText('Moved HFA to Tue 29 21:40.')).toBeVisible();
+  expect((await weekRun(page, 'r-fa')).run.time).toBe('21:40');
 });
 
-test('a drop that double-books a member warns on the indicator and the card, and still saves', async ({ page }) => {
+async function extendExtremeBlackMage(request: Page['request']) {
+  const result = await request.patch(`${ADMIN}/api/admin/config`, {
+    headers: await csrf(request),
+    data: { run_lengths: { overrides: [{ boss: 'BM', difficulty: 'x', minutes: 30 }] } },
+  });
+  expect(result.ok()).toBe(true);
+}
+
+test('a drop that double-books a member warns on the indicator and the card, and still saves', async ({ page, request }) => {
   // The seed puts Kaito on both HFA and XBM (Tue 23:30).
+  await extendExtremeBlackMage(request);
   await openAdmin(page);
   // After XBM (23:30 + 30) is past midnight: held at 23:59, inside XBM's half hour.
   await pointerDrag(page, 'r-fa', await below(page, 'r-bm'), async () => {
@@ -98,6 +107,7 @@ test('a drop that double-books a member warns on the indicator and the card, and
 });
 
 test('an overlap without a shared member is no clash', async ({ page, request }) => {
+  await extendExtremeBlackMage(request);
   // Take the players HFA shares with XBM off HFA this week.
   const { version, run: bm } = await weekRun(page, 'r-bm');
   const week = (await (await request.get(`${ADMIN}/api/admin/week`)).json()) as { runs: { id: string; participants: { id: string }[] }[] };
@@ -134,7 +144,7 @@ test('a change by someone else during the drag is not overwritten: the drop conf
     const polled = page.waitForResponse((r) => r.url().includes('/api/admin/week') && r.request().method() === 'GET');
     await page.evaluate(() => window.dispatchEvent(new Event('online')));
     await polled;
-    await expect(page.locator('.dnd-ghost--on')).toContainText('→ 23:00');
+    await expect(page.locator('.dnd-ghost--on')).toContainText('→ 22:40');
   });
   // Sent against the week the drag began on, so the server refuses it.
   await expect(page.getByText(/^Couldn't move HFA/)).toBeVisible();
@@ -177,7 +187,7 @@ test.describe('touch', () => {
   test('a long press drags, and the drop sets the time the same way', async ({ page }) => {
     await openAdmin(page);
     const cdp = await page.context().newCDPSession(page);
-    const touch = (type: string, x?: number, y?: number) =>
+    const touch = (type: 'touchStart' | 'touchMove' | 'touchEnd', x?: number, y?: number) =>
       cdp.send('Input.dispatchTouchEvent', { type, touchPoints: x === undefined ? [] : [{ x, y: y! }] });
     const from = (await page.locator('[data-run="r-fa"]').boundingBox())!;
     const to = await above(page, 'r-bm');
@@ -187,18 +197,18 @@ test.describe('touch', () => {
     await expect(page.locator('.dnd-ghost--on')).toHaveCount(1);
     for (let i = 1; i <= 12; i++) await touch('touchMove', x0 + ((to.x - x0) * i) / 12, y0 + ((to.y - y0) * i) / 12);
     await touch('touchMove', to.x + 1, to.y + 1);
-    await expect(page.locator('.dnd-ghost--on')).toContainText('→ 23:00');
+    await expect(page.locator('.dnd-ghost--on')).toContainText('→ 22:40');
     await touch('touchEnd');
-    await expect(page.getByText('Moved HFA to Tue 29 23:00.')).toBeVisible();
+    await expect(page.getByText('Moved HFA to Tue 29 22:40.')).toBeVisible();
     await expect(page.getByRole('dialog')).toBeHidden();
   });
 });
 
-test('keyboard M-move steps by the Run lengths default, and Shift jumps next to a run', async ({ page }) => {
-  // Set the default to 20 in Config, then plan by keyboard on the Week.
+test('keyboard M-move keeps the 30-minute step after a duration edit, and Shift jumps next to a run', async ({ page }) => {
+  // Change the run duration, then plan by keyboard on the Week.
   await page.goto(`${ADMIN}/config?section=run-lengths&sw=off`);
   const panel = page.getByRole('tabpanel', { name: 'Run lengths' });
-  await panel.getByRole('spinbutton', { name: 'Each boss' }).fill('20');
+  await panel.getByRole('spinbutton', { name: 'Each boss' }).fill('25');
   await panel.getByRole('button', { name: 'Save run lengths' }).click();
   await expect(page.getByText(/Run lengths saved/)).toBeVisible();
   await page.getByRole('navigation', { name: 'Sections' }).getByRole('link', { name: 'Week' }).click();
@@ -207,24 +217,23 @@ test('keyboard M-move steps by the Run lengths default, and Shift jumps next to 
   const handle = page.locator('[data-handle="r-fa"]');
   await handle.focus();
   await page.keyboard.press('m');
-  await expect(page.locator('[aria-live="assertive"]')).toContainText('up and down change the time by 20 minutes');
+  await expect(page.locator('[aria-live="assertive"]')).toContainText('up and down change the time by 30 minutes');
   await page.keyboard.press('ArrowDown');
-  await expect(column(page, 'Mon').locator('.plan-preview')).toContainText('20:20 HFA');
-  // HJupiter starts 21:00; HFA (one boss) now lasts 20 minutes: just before it is 20:40.
+  await expect(column(page, 'Mon').locator('.plan-preview')).toContainText('20:30 HFA');
+  // HJupiter starts 21:00. A 25-minute HFA fits before it at 20:35.
   await page.keyboard.press('Shift+ArrowDown');
-  await expect(column(page, 'Mon').locator('.plan-preview')).toContainText('20:40 HFA');
+  await expect(column(page, 'Mon').locator('.plan-preview')).toContainText('20:35 HFA');
   await page.keyboard.press('Enter');
-  await expect(page.getByText('Moved HFA to Mon 28 20:40.')).toBeVisible();
-  expect((await weekRun(page, 'r-fa')).run).toMatchObject({ time: '20:40', minutes: 20 });
+  await expect(page.getByText('Moved HFA to Mon 28 20:35.')).toBeVisible();
+  expect((await weekRun(page, 'r-fa')).run).toMatchObject({ time: '20:35', minutes: 25 });
 });
 
 test('Config Run lengths: overrides from the catalog save whole; bad values are refused inline', async ({ page }) => {
   await page.goto(`${ADMIN}/config?section=run-lengths&sw=off`);
   const panel = page.getByRole('tabpanel', { name: 'Run lengths' });
   await expect(panel.getByRole('heading', { name: 'Run lengths' })).toBeVisible();
-  await expect(panel.getByRole('spinbutton', { name: 'Each boss' })).toHaveValue('30');
-  // The seeded Hard Black Mage override.
-  await expect(panel.getByRole('combobox', { name: 'Boss', exact: true })).toHaveCount(1);
+  await expect(panel.getByRole('spinbutton', { name: 'Each boss' })).toHaveValue('20');
+  await expect(panel.getByRole('combobox', { name: 'Boss', exact: true })).toHaveCount(0);
 
   // Client check: out of range, nothing sent.
   await panel.getByRole('button', { name: 'Add an override' }).click();
@@ -233,7 +242,7 @@ test('Config Run lengths: overrides from the catalog save whole; bad values are 
   await choose(boss, { label: 'Karling' });
   await panel.getByRole('spinbutton', { name: 'Minutes' }).last().fill('600');
   await panel.getByRole('button', { name: 'Save run lengths' }).click();
-  await expect(panel.getByRole('alert')).toHaveText('Override 2: a run length is 5–480 whole minutes.');
+  await expect(panel.getByRole('alert')).toHaveText('Override 1: a run length is 5–480 whole minutes.');
 
   // A refusal from the server stays inline, the edits kept.
   await panel.getByRole('spinbutton', { name: 'Minutes' }).last().fill('45');
@@ -251,9 +260,8 @@ test('Config Run lengths: overrides from the catalog save whole; bad values are 
   await panel.getByRole('button', { name: 'Save run lengths' }).click();
   expect((await sent).postDataJSON()).toEqual({
     run_lengths: {
-      default_minutes: 30,
+      default_minutes: 20,
       overrides: [
-        { boss: 'BM', difficulty: 'h', minutes: 60 },
         { boss: 'Carling', difficulty: expect.any(String), minutes: 45 },
       ],
     },
@@ -264,5 +272,5 @@ test('Config Run lengths: overrides from the catalog save whole; bad values are 
   // Remove returns focus to "Add an override".
   await panel.getByRole('button', { name: /^Remove the Karling override/ }).click();
   await expect(panel.getByRole('button', { name: 'Add an override' })).toBeFocused();
-  await expect(panel.getByRole('combobox', { name: 'Boss', exact: true })).toHaveCount(1);
+  await expect(panel.getByRole('combobox', { name: 'Boss', exact: true })).toHaveCount(0);
 });

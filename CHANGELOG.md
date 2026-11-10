@@ -8,6 +8,10 @@ _In development_
 
 Clearer weekly digest results and steadier run controls in the admin app.
 
+### Changes
+
+- Updated boss guides with Overdrive HP estimates and 20-minute fight limits, and made runs default to 20 minutes per boss while time pickers and planner arrow keys still step by 30 minutes.
+
 ### Fixes
 
 - Fixed the weekly digest button reporting a successful post when delivery was rejected, unconfirmed or blocked by an earlier attempt; admins now see an error and operators can inspect the result in the log.

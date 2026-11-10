@@ -1,8 +1,8 @@
 <!--
   Run lengths (workplan step planner-time-drops): how long one boss takes by
   default, and per boss + difficulty overrides. A run's length is the sum of
-  its bosses'; the planner places dropped runs by it and steps keyboard moves
-  by the default. Saved whole in one `run_lengths` PATCH; refusals stay
+  its bosses'; the planner places dropped runs by that length.
+  Saved whole in one `run_lengths` PATCH; refusals stay
   inline and the success joins the toast like every other section.
 -->
 <script lang="ts">
@@ -23,7 +23,7 @@
     runLengths,
     save,
     onsaved,
-  }: { runLengths: ConfigView['run_lengths']; save: Save; /** The saved default (the planner's keyboard step). */ onsaved?: (defaultMinutes: number) => void } =
+  }: { runLengths: ConfigView['run_lengths']; save: Save; onsaved?: () => void } =
     $props();
   const uid = $props.id();
 
@@ -99,7 +99,7 @@
     // The saved object is the truth: resync (a refusal keeps the edits to fix).
     if (!error) {
       draft = draftOf(runLengths);
-      onsaved?.(runLengths.default_minutes);
+      onsaved?.();
     }
   }
 </script>
@@ -107,7 +107,7 @@
 <SettingsPanel title="Run lengths">
   {#snippet lead()}How long one boss takes; a run lasts the sum of its bosses' lengths.{/snippet}
 <p class="settings__box">
-  Dropping a run on the planner starts it right after the run above, and the arrow keys move a picked-up run by the default.
+  Dropping a run on the planner starts it right after the run above. The time picker and planner arrow keys step by 30 minutes.
 </p>
 <form class="runlen" id="{uid}-form" onsubmit={submit} aria-label="Run lengths" novalidate>
   <fieldset class="settings__card" data-fid="cfg-card">

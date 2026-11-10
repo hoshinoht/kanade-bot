@@ -1500,16 +1500,13 @@ async fn a_keyed_patch_replays_across_a_restart_and_expires() {
 async fn run_lengths_are_validated_saved_once_and_apply_to_the_next_week_read() {
     let config = Config::new().await;
     let initial = config.get().await;
-    assert_eq!(initial["run_lengths"]["default_minutes"], 30);
-    assert_eq!(
-        initial["run_lengths"]["overrides"],
-        json!([{ "boss": "BM", "difficulty": "h", "minutes": 60 }])
-    );
+    assert_eq!(initial["run_lengths"]["default_minutes"], 20);
+    assert_eq!(initial["run_lengths"]["overrides"], json!([]));
     let before = admin_week(&config, "").await;
     let kalos = find(&before["runs"], "id", "r-kalos");
-    assert_eq!(kalos["minutes"], 30, "one non-overridden boss");
+    assert_eq!(kalos["minutes"], 20, "one non-overridden boss");
     let star = find(&before["runs"], "id", "r-star");
-    assert_eq!(star["minutes"], 90, "three default bosses sum");
+    assert_eq!(star["minutes"], 60, "three default bosses sum");
     let own_time = admin_week(&config, "?week=next").await["runs"]
         .as_array()
         .unwrap()
@@ -1535,18 +1532,18 @@ async fn run_lengths_are_validated_saved_once_and_apply_to_the_next_week_read() 
     }
 
     let mut changes = config.desk.subscribe();
-    let body = json!({"run_lengths": {"default_minutes": 20}});
+    let body = json!({"run_lengths": {"default_minutes": 25}});
     let saved = config.keyed("run-lengths", &body).await;
-    assert_eq!(saved["run_lengths"]["default_minutes"], 20);
+    assert_eq!(saved["run_lengths"]["default_minutes"], 25);
     let replay = config.keyed("run-lengths", &body).await;
     assert_eq!(replay, saved);
     assert_eq!(changes.borrow_and_update().revision, 1);
     assert!(!changes.has_changed().unwrap());
     let changed = admin_week(&config, "").await;
     let kalos = find(&changed["runs"], "id", "r-kalos");
-    assert_eq!(kalos["minutes"], 20, "the next read uses the saved default");
+    assert_eq!(kalos["minutes"], 25, "the next read uses the saved default");
     let no_op = config.patch(body).await;
-    assert_eq!(no_op["run_lengths"]["default_minutes"], 20);
+    assert_eq!(no_op["run_lengths"]["default_minutes"], 25);
     assert!(!changes.has_changed().unwrap());
 }
 

@@ -1,7 +1,7 @@
 /**
  * Keyboard alternative to dragging a run (WCAG 2.5.7): M on the focused card
  * picks up (Enter and Space still open it), arrows move (left/right = day,
- * up/down = the configured run length, `run_lengths.default_minutes`),
+ * up/down = the half-hour time step),
  * Shift+Up/Down jump to just after the previous run / just before the next
  * one that day, Enter/Space drops, S swaps with the run whose slot it is on,
  * Escape cancels. Pure so the announcements are unit-tested.
@@ -26,7 +26,7 @@ export interface MovableRun {
 export interface MoveContext {
   dayLabel: (day: number) => string;
   lastDay: number;
-  /** Up/Down step in minutes (Config → Run lengths default); 30 when absent. */
+  /** Up/Down step in minutes, 30 when absent. */
   step?: number;
   /** The other timed runs of a day, for Shift+Up/Down. */
   others?: (day: number) => TimedRun[];

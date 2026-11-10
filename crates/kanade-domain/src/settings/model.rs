@@ -121,7 +121,7 @@ pub struct RunLengthOverride {
     pub minutes: u32,
 }
 
-pub const DEFAULT_RUN_MINUTES: u32 = 30;
+pub const DEFAULT_RUN_MINUTES: u32 = 20;
 pub const RUN_MINUTES: std::ops::RangeInclusive<u32> = 5..=240;
 pub const OVERRIDE_RUN_MINUTES: std::ops::RangeInclusive<u32> = 5..=480;
 
@@ -129,11 +129,7 @@ impl Default for RunLengths {
     fn default() -> Self {
         Self {
             default_minutes: DEFAULT_RUN_MINUTES,
-            overrides: vec![RunLengthOverride {
-                boss: "BM".into(),
-                difficulty: "h".into(),
-                minutes: 60,
-            }],
+            overrides: Vec::new(),
         }
     }
 }

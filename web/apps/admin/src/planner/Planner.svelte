@@ -37,7 +37,7 @@
     busyChannels?: Set<string>;
     /** A planner write is pending; starting another one would make rollback unsafe. */
     saving?: boolean;
-    /** Keyboard Up/Down step: Config → Run lengths default minutes. */
+    /** Keyboard Up/Down step in minutes. */
     step?: number;
     /** Every run of the week, filtered out or not: a clash with a hidden run is still a clash. */
     allRuns?: Run[];

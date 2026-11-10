@@ -57,7 +57,7 @@
     timeZone?: string;
     /** The week on screen: dates, other runs and clashes for the edit picker when the proposal falls in it. */
     week?: Week | null;
-    /** The edit picker's time step: Config → Run lengths default minutes. */
+    /** The edit picker's time step in minutes. */
     step?: number;
     /** Bumps when an edited approval was refused (409): the editor closes and its edits are cleared. */
     refusal?: number;

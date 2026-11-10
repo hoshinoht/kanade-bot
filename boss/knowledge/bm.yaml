@@ -114,16 +114,16 @@ tips:
 difficulty_notes:
   x:
     title: Extreme
-    text: 'Every 30 s, after a warning, your Phase 4 state is set at random (it may stay the same). 30-minute limit, not 60.'
-    detail: Extreme sets your Phase 4 state at random every 30 seconds after a warning (it can stay the same), and has a 30 minute limit instead of Hard's 60 (before OVERDRIVE).
+    text: 'Every 30 s, after a warning, your Phase 4 state is set at random (it may stay the same).'
+    detail: Extreme sets your Phase 4 state at random every 30 seconds after a warning (it can stay the same).
 notes:
 - title: Monthly clear
   text: 'Hard and Extreme share one clear per month.'
-- title: HP rows
-  text: 'KMS values before OVERDRIVE, which match MapleSEA now.'
 - title: MapleSEA changes
   text: 'v244 stopped the Phase 3 ultimate overlapping absorption, v246 dropped the entry item, v249 cut two Phase 2-3 patterns.'
   detail: 'MapleSEA changes: v244 stopped the Phase 3 Creation ultimate overlapping the absorption pattern; v246 removed the entry item; v249 removed Dark Falling and Morning Starfall from Phases 2 and 3.'
+- title: HP estimates
+  text: 'Overdrive HP is estimated from the published KMS reductions.'
 difficulties:
 - name: Hard
   entry_level: 255
@@ -132,15 +132,14 @@ difficulties:
   party_max: 6
   force: {kind: arcane, value: 1320}
   hp:
-  - {phase: '1', value: 63t}
-  - {phase: '2', value: 115.5t}
-  - {phase: '3', value: 157.5t}
-  - {phase: '4', value: 136.5t}
-  - {phase: total, value: 472.5t}
+  - {phase: '1', value: 22.1t}
+  - {phase: '2', value: 40.5t}
+  - {phase: '3', value: 55.3t}
+  - {phase: '4', value: 47.9t}
+  - {phase: total, value: 166t}
   recommended_spec: {kind: HEXA-converted stat, value: ≈ 45k, basis: 'KMS, Aug 2024', text: 'KMS solo minimum-cut clears around 45k (Aug 2024, before OVERDRIVE).'}
   notes:
-  - Phase 1 HP is one bar shared by both knights, plus white shields. 12 lives per player, 60 minute limit. Boss level 265 in phases 1 and 4.
-  - 'After OVERDRIVE (KMS Jul 2026, due in MapleSEA Oct-Nov 2026): HP about 166t total, 20-minute limit.'
+  - Phase 1 HP is one bar shared by both knights, plus white shields. 12 lives per player, 20-minute limit. Boss level 265 in phases 1 and 4.
 - name: Extreme
   entry_level: 255
   boss_level: 280
@@ -148,15 +147,14 @@ difficulties:
   party_max: 6
   force: {kind: arcane, value: 1320}
   hp:
-  - {phase: '1', value: 1.18q}
-  - {phase: '2', value: 1.191q}
-  - {phase: '3', value: 1.285q}
-  - {phase: '4', value: 1.155q}
-  - {phase: total, value: 4.811q}
+  - {phase: '1', value: 799t}
+  - {phase: '2', value: 806t}
+  - {phase: '3', value: 870t}
+  - {phase: '4', value: 782t}
+  - {phase: total, value: 3.26q}
   recommended_spec: {kind: HEXA-converted stat, value: 96–110k, basis: 'KMS, Sep 2025', text: 'KMS solo clears reported around 96k (minimum cut, 99% of HP) to 110k (Sep 2025), before OVERDRIVE; single clears, not a cut table.'}
   notes:
-  - 12 lives per player, 30 minute limit. Boss level 275 in Phase 1.
-  - 'After OVERDRIVE (KMS Jul 2026, due in MapleSEA Oct-Nov 2026): HP about 3.26q total, 20-minute limit.'
+  - 12 lives per player, 20-minute limit. Boss level 275 in Phase 1.
 - name: Champion
   entry_level: 260
   party_max: 1
@@ -165,22 +163,21 @@ difficulties:
     order: 3
     title: Rank S trial
     needs: A Rank A champion
-    rules: [Solo, 45-minute limit, Practice Mode clears count]
+    rules: [Solo, 20-minute limit, Practice Mode clears count]
   notes:
   - title: S insignia
     text: '+5% Boss Damage for every character. Hard Black Mage solo in Champion Mode (Champion Evaluation Match).'
     detail: 'Union Champion Rank S trial (Champion Evaluation Match): Hard Black Mage solo in Champion Mode, after Rank A. The S insignia gives every character +5% Boss Damage.'
-  - title: 45-minute limit
-    text: 'The other trials allow 20 minutes. After OVERDRIVE, KMS cut this one to 20 as well.'
-    detail: 'The Rank S trial has a 45-minute limit; the other trials allow 20 minutes. After OVERDRIVE, KMS cut it to 20 as well.'
   - title: Practice Mode
     text: 'Clears count and add Hamcelot''s Protection: 25% less damage taken.'
-    detail: 'Practice Mode clears count and add Hamcelot''s Protection (25% less damage taken). After OVERDRIVE, KMS adds Hamcelot''s Trial (Final Damage -30%, -25% on Black Mage); not in MapleSEA yet.'
+    detail: 'Practice Mode clears count and grant Hamcelot''s Protection (25% less damage taken).'
+  - title: Hamcelot's Trial
+    text: 'Final Damage −25% in this Champion trial.'
   - title: 5th champion slot
     text: 'In KMS it needs four Rank S champions, i.e. four Hard Black Mage solos.'
 strategies:
 - name: P4 burst only
-  when: Ordinary Hard with plenty of clear-time slack (60 minute limit); not Champion or shorter limits unless your damage is proven
+  when: Ordinary Hard with enough damage to clear within 20 minutes using bursts alone
   risk: low
   damage: medium
   payoff: Damage lands on fresh barriers while the rest of the phase is spent surviving
@@ -237,11 +234,11 @@ sources:
   author: Nexon SEA
   kind: official
   fetched: '2026-10-02'
-- url: https://orangemushroom.net/2026/07/04/kms-ver-1-2-416-maplestory-overdrive-ruler-of-covenants-lethe/
-  title: Orange Mushroom - KMS ver. 1.2.416 (OVERDRIVE)
-  author: Orange Mushroom
-  kind: guide
-  fetched: '2026-10-02'
+- url: https://maplestory.nexon.com/news/update/806
+  title: KMS 1.2.416 OVERDRIVE patch notes
+  author: Nexon Korea
+  kind: official
+  fetched: '2026-11-10'
 - url: https://www.digitaltq.com/maplestory-black-mage-guide
   title: DigitalTQ - MapleStory Black Mage guide
   author: Aleph (DigitalTQ)

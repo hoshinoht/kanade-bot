@@ -289,11 +289,7 @@
           toaster,
           section: router.query.get('section') ?? '',
           onsection: (key: string) => router.go(`/config?section=${key}`, { replace: true }),
-          // New lengths change every run's minutes and the keyboard step at once.
-          onrunlengths: (minutes: number) => {
-            store.runStep = minutes;
-            void store.refresh();
-          },
+          onrunlengths: () => void store.refresh(),
           onquiet: (on: boolean) => store.setQuiet(on),
           // A save can settle a setup step: the badge follows without a visit to Setup.
           onsaved: () => void setupStatus.refresh(),

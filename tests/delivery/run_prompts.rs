@@ -1,6 +1,6 @@
 //! Run completion prompts on the tick (user decisions 2026-10-09/10), on one
 //! fixture-scoped pinned clock (`scenarios::now`, Thu 10 Sep 20:00 Kuala
-//! Lumpur). Without a catalog every boss lasts the default 30 minutes.
+//! Lumpur). Without a catalog every boss lasts the default 20 minutes.
 
 use chrono::{DateTime, TimeDelta, Utc};
 use kanade::discord::transport::Call;
@@ -15,7 +15,7 @@ use twilight_model::channel::message::Component;
 use crate::scenarios::{HOME, config, delivery, now, week, world};
 use crate::support::{self, Store, v2_texts as texts};
 
-/// A run that started an hour before `now()`: ends 30 minutes before it, so
+/// A run that started 50 minutes before `now()`: ends 30 minutes before it, so
 /// its prompt is due at `now()`; its cutoff is local midnight, 16:00Z.
 async fn run<S: Store>(store: &S, status: RunStatus, at: DateTime<Utc>) -> String {
     let mut ids = RandomIds;
@@ -36,7 +36,7 @@ async fn run<S: Store>(store: &S, status: RunStatus, at: DateTime<Utc>) -> Strin
 }
 
 fn started() -> DateTime<Utc> {
-    now() - TimeDelta::hours(1)
+    now() - TimeDelta::minutes(50)
 }
 
 fn cutoff() -> DateTime<Utc> {
@@ -295,8 +295,8 @@ async fn an_unanswered_run_is_marked_done_at_the_end_of_the_day() {
 
 async fn skipped_prompt_done_at_reset<S: Store + ChangeHistory>(store: &S) {
     let world = world();
-    // Tue 23:00 local: the prompt would fall on the Wed 00:00 reset.
-    let id = run(store, RunStatus::Planned, reset() - TimeDelta::hours(1)).await;
+    // Tue 23:10 local: the prompt would fall on the Wed 00:00 reset.
+    let id = run(store, RunStatus::Planned, reset() - TimeDelta::minutes(50)).await;
     let mut delivery = delivery(store, &world, &world.fake);
     let report = delivery
         .tick_at(reset() - TimeDelta::minutes(1))
@@ -365,8 +365,8 @@ async fn moved_run_replans<S: Store>(store: &S) {
     assert_eq!(report.prompts.opened, [format!("{id}:1")]);
     let edits = edits(&world.fake.calls());
     assert!(edits[0].0.starts_with("This run moved"), "{edits:?}");
-    // New end 21:30 local, prompt due 22:00 local.
-    let due = moved_to + TimeDelta::minutes(60);
+    // New end 21:20 local, prompt due 21:50 local.
+    let due = moved_to + TimeDelta::minutes(50);
     delivery
         .tick_at(due - TimeDelta::minutes(1))
         .await
@@ -650,11 +650,11 @@ async fn setting_an_ended_runs_own_status_again_reopens_it() {
 
 async fn after_midnight_end<S: Store>(store: &S) {
     let world = world();
-    // Thu 23:30 local: ends Fri 00:00, prompt Fri 00:30, cutoff Sat 00:00.
-    let start = now() + TimeDelta::minutes(210);
+    // Thu 23:40 local: ends Fri 00:00, prompt Fri 00:30, cutoff Sat 00:00.
+    let start = now() + TimeDelta::minutes(220);
     let id = run(store, RunStatus::Planned, start).await;
     let mut delivery = delivery(store, &world, &world.fake);
-    let due = start + TimeDelta::hours(1);
+    let due = start + TimeDelta::minutes(50);
     let report = delivery.tick_at(due).await.expect("tick");
     assert_eq!(report.prompts.posted, [format!("{id}:0")]);
     let report = delivery

@@ -118,8 +118,8 @@ tips:
   text: Usable except against Specter D and Limbo Black.
 notes:
 - title: Limits
-  text: 30 min · 10s potions · 1-3 players · 12 boss kills a week.
-  detail: 30-minute limit, 10-second potion cooldown, 1-3 players. MapleSEA v249 also caps boss kills at 12 per week.
+  text: 20 min · 10s potions · 1-3 players · 12 boss kills a week.
+  detail: 20-minute limit, 10-second potion cooldown, 1-3 players. MapleSEA v249 also caps boss kills at 12 per week.
 - title: MapleSEA v251 (Jun 2026)
   text: Purification works during Origin/Ascent; Phase 3 map ~32% taller.
   detail: MapleSEA v251 (Jun 2026) made Purification Energy usable during Origin and Ascent casts and made the Phase 3 map (Limbo's Unconscious) about 32% taller.
@@ -128,6 +128,8 @@ notes:
 - title: Destiny Resolve per clear
   text: Normal 120 · Hard 360, split among entrants.
   detail: 'Destiny Weapon: each clear gives Adversary''s Resolve, split among everyone who entered: Normal 120, Hard 360.'
+- title: HP estimates
+  text: 'Overdrive HP is estimated from the published KMS reductions.'
 difficulties:
 - name: Normal
   entry_level: 285
@@ -136,17 +138,14 @@ difficulties:
   party_max: 3
   force: {kind: sacred, value: 500}
   hp:
-  - {phase: '1', value: 1.945q}
-  - {phase: 2-1, value: 972.5t}
-  - {phase: 2-2, value: 972.5t}
-  - {phase: '3', value: 2.625q}
+  - {phase: '1', value: 1.31q}
+  - {phase: 2-1, value: 656t}
+  - {phase: 2-2, value: 656t}
+  - {phase: '3', value: 1.77q}
   notes:
   - title: Aim for 550 Force
     text: The full 1.25x damage tier.
     detail: 500 Authentic Force to enter; 550 (the full 1.25x damage tier, +5% per 10 above the requirement) is strongly recommended.
-  - title: After OVERDRIVE
-    text: HP ≈ 1.31q / 656t / 656t / 1.77q (-32.5%), 20 min. SEA due Oct-Nov 2026.
-    detail: 'After OVERDRIVE (KMS Jul 2026, due in MapleSEA Oct-Nov 2026): HP about 1.31q / 656t / 656t / 1.77q (32.5% less), 20-minute limit.'
 - name: Hard
   entry_level: 285
   boss_level: 285
@@ -154,17 +153,14 @@ difficulties:
   party_max: 3
   force: {kind: sacred, value: 500}
   hp:
-  - {phase: '1', value: 3.78q}
-  - {phase: 2-1, value: 1.89q}
-  - {phase: 2-2, value: 1.89q}
-  - {phase: '3', value: 4.993q}
+  - {phase: '1', value: 2.55q}
+  - {phase: 2-1, value: 1.28q}
+  - {phase: 2-2, value: 1.28q}
+  - {phase: '3', value: 3.37q}
   notes:
   - title: Aim for 550 Force
     text: The full 1.25x damage tier.
     detail: 500 Authentic Force to enter; 550 (the full 1.25x damage tier, +5% per 10 above the requirement) is strongly recommended.
-  - title: After OVERDRIVE
-    text: HP ≈ 2.55q / 1.28q / 1.28q / 3.37q (-32.5%), 20 min. SEA due Oct-Nov 2026.
-    detail: 'After OVERDRIVE (KMS Jul 2026, due in MapleSEA Oct-Nov 2026): HP about 2.55q / 1.28q / 1.28q / 3.37q (32.5% less), 20-minute limit.'
 - name: Destiny
   entry_level: 285
   boss_level: 285
@@ -179,7 +175,7 @@ difficulties:
   notes:
   - title: 200 Erosion of room
     text: Hard, solo. One death (+150) nearly ends it; avoid every hit and the grab.
-    detail: 'Destiny Weapon 2nd Growth mission "Battle, Limbo" (MapleSEA v252): Hard Limbo solo in Destiny Mode, starting at 800 Erosion instead of 0. Fifth mission; needs 12,500 Adversary''s Resolve. With only 200 Erosion of room, one death (+150) leaves almost nothing; avoid every 50/80-Erosion hit and Limbo Black''s grab. Practice Mode clears count (MapleSEA v249); not available in Cross World boss content. OVERDRIVE''s phase-specific practice will not count.'
+    detail: 'Destiny Weapon 2nd Growth mission "Battle, Limbo" (MapleSEA v252): Hard Limbo solo in Destiny Mode, starting at 800 Erosion instead of 0. Fifth mission; needs 12,500 Adversary''s Resolve. With only 200 Erosion of room, one death (+150) leaves almost nothing; avoid every 50/80-Erosion hit and Limbo Black''s grab. Full-fight Practice Mode clears count (MapleSEA v249) outside Cross World.'
   - title: 800 is only the start
     text: 'The Passageway (-150) and Phase 3 recovery can take you below 800; record Erosion at each phase.'
     detail: '800 is a starting value, not a floor: the Passageway after Specter C (-150) and recovery in Phase 3 can bring Erosion below it, so complete them and note your Erosion at each phase entry. The second-fusion skip also works on Hard, but only plan around it with damage to spare.'
@@ -232,11 +228,11 @@ sources:
   author: Orange Mushroom
   kind: official
   fetched: '2026-10-02'
-- url: https://orangemushroom.net/2026/07/04/kms-ver-1-2-416-maplestory-overdrive-ruler-of-covenants-lethe/
-  title: KMS ver. 1.2.416 - MapleStory OVERDRIVE
-  author: Orange Mushroom
+- url: https://maplestory.nexon.com/news/update/806
+  title: KMS 1.2.416 OVERDRIVE patch notes
+  author: Nexon Korea
   kind: official
-  fetched: '2026-10-02'
+  fetched: '2026-11-10'
 - url: https://mapletools.app/bosses/limbo
   title: MapleTools - Limbo
   author: MapleTools

@@ -139,11 +139,11 @@ notes:
   text: 'Normal 20 · Hard 160 · Extreme 1,200, split among everyone who entered.'
   detail: 'Destiny Weapon: each clear gives Adversary''s Resolve, split among everyone who entered: Normal 20, Hard 160, Extreme 1,200.'
 - title: Limits
-  text: '30 min before OVERDRIVE; bindable since MapleSEA v244; 12 boss clears per week (v249).'
-  detail: 30 minute limit before OVERDRIVE. Bindable since MapleSEA v244. MapleSEA caps boss clears at 12 per week (v249).
+  text: '20 min; bindable since MapleSEA v244; 12 boss clears per week (v249).'
+  detail: 20-minute limit. Bindable since MapleSEA v244. MapleSEA caps boss clears at 12 per week (v249).
 - title: HP rows
-  text: 'KMS values before OVERDRIVE, which is what MapleSEA has now. Perils rows show one bar per Peril.'
-  detail: HP rows are KMS values before OVERDRIVE (what MapleSEA has now, including the v244 and v251 cuts). Phase 1 and 3-1 rows are per Peril (three each); 3-2 is Carling; Phase 3 rows are rounded.
+  text: 'Overdrive HP is estimated. Peril rows show one bar per Peril.'
+  detail: HP is estimated using the KMS Overdrive reduction. Phases 1 and 3-1 show HP per Peril (three each). Phase 3-2 is Carling.
 difficulties:
 - name: Easy
   entry_level: 275
@@ -152,14 +152,12 @@ difficulties:
   party_max: 6
   force: {kind: sacred, value: 230}
   hp:
-  - {phase: '1', value: 96.6t, count: 3, target: Perils}
-  - {phase: '2', value: 105t}
-  - {phase: 3-1, value: 93.2t, count: 3, target: Perils}
-  - {phase: 3-2, value: 111t, target: Carling}
-  - {phase: total, value: 786t}
+  - {phase: '1', value: 65.5t, count: 3, target: Perils}
+  - {phase: '2', value: 71.2t}
+  - {phase: 3-1, value: 63.2t, count: 3, target: Perils}
+  - {phase: 3-2, value: 75.3t, target: Carling}
+  - {phase: total, value: 533t}
   recommended_spec: {kind: HEXA-converted stat, value: ≈ 51k, basis: 'KMS, May 2025', text: 'KMS solo minimum-cut clears around 51k (May 2025, before the Phase 3 HP cut MapleSEA now has); treat as a rough floor.'}
-  notes:
-  - 'After OVERDRIVE (KMS Jul 2026, due in MapleSEA Oct-Nov 2026): HP about 533t total, 20-minute limit.'
 - name: Normal
   entry_level: 275
   boss_level: 285
@@ -167,14 +165,12 @@ difficulties:
   party_max: 6
   force: {kind: sacred, value: 330}
   hp:
-  - {phase: '1', value: 399t, count: 3, target: Perils}
-  - {phase: '2', value: 468t}
-  - {phase: 3-1, value: 399t, count: 3, target: Perils}
-  - {phase: 3-2, value: 462t, target: Carling}
-  - {phase: total, value: 3.33q}
+  - {phase: '1', value: 271t, count: 3, target: Perils}
+  - {phase: '2', value: 317t}
+  - {phase: 3-1, value: 271t, count: 3, target: Perils}
+  - {phase: 3-2, value: 313t, target: Carling}
+  - {phase: total, value: 2.26q}
   recommended_spec: {kind: HEXA-converted stat, value: ≈ 86k, basis: 'KMS, Oct 2025', text: 'KMS solo minimum-cut clear about 86k (Oct 2025, before the March 2026 Phase 3 cut that MapleSEA has), so slightly less should work.'}
-  notes:
-  - 'After OVERDRIVE (KMS Jul 2026, due in MapleSEA Oct-Nov 2026): HP about 2.26q total, 20-minute limit.'
 - name: Hard
   entry_level: 275
   boss_level: 285
@@ -182,14 +178,12 @@ difficulties:
   party_max: 6
   force: {kind: sacred, value: 350}
   hp:
-  - {phase: '1', value: 920t, count: 3, target: Perils}
-  - {phase: '2', value: 1.404q}
-  - {phase: 3-1, value: 1.407q, count: 3, target: Perils}
-  - {phase: 3-2, value: 1.883q, target: Carling}
-  - {phase: total, value: 10.27q}
+  - {phase: '1', value: 624t, count: 3, target: Perils}
+  - {phase: '2', value: 952t}
+  - {phase: 3-1, value: 954t, count: 3, target: Perils}
+  - {phase: 3-2, value: 1.28q, target: Carling}
+  - {phase: total, value: 6.96q}
   recommended_spec: {kind: HEXA-converted stat, value: ≈ 113k, basis: 'KMS, Mar 2026', text: 'KMS solo clear at about 113k right after the March 2026 Phase 3 cut (the state MapleSEA is in); a single sample, not a cut table.'}
-  notes:
-  - 'After OVERDRIVE (KMS Jul 2026, due in MapleSEA Oct-Nov 2026): HP about 6.96q total, 20-minute limit.'
 - name: Extreme
   entry_level: 275
   boss_level: 285
@@ -197,13 +191,11 @@ difficulties:
   party_max: 6
   force: {kind: sacred, value: 480}
   hp:
-  - {phase: '1', value: 6.018q, count: 3, target: Perils}
-  - {phase: '2', value: 6.93q}
-  - {phase: 3-1, value: 5.198q, count: 3, target: Perils}
-  - {phase: 3-2, value: 6.497q, target: Carling}
-  - {phase: total, value: 47.1q}
-  notes:
-  - 'After OVERDRIVE (KMS Jul 2026, due in MapleSEA Oct-Nov 2026): HP about 31.9q total, 20-minute limit.'
+  - {phase: '1', value: 4.08q, count: 3, target: Perils}
+  - {phase: '2', value: 4.7q}
+  - {phase: 3-1, value: 3.52q, count: 3, target: Perils}
+  - {phase: 3-2, value: 4.4q, target: Carling}
+  - {phase: total, value: 31.9q}
 - name: Destiny
   entry_level: 275
   boss_level: 285
@@ -223,13 +215,13 @@ difficulties:
     text: 'Hard Carling solo in Destiny Mode; the third mission, after Chosen Serene and Gatekeeper Kalos (MapleSEA v244).'
     detail: 'Destiny Weapon mission "Battle, Apostle Carling" (MapleSEA v244): Hard Carling solo in Destiny Mode with +20% Final Damage, the only mission modifier in your favour. Third mission, after Chosen Serene and Gatekeeper Kalos; needs 3,000 Adversary''s Resolve.'
   - title: Practice Mode
-    text: 'Practice clears count (MapleSEA v249), but not in Cross World. OVERDRIVE''s phase-specific practice will not count.'
-    detail: 'Practice Mode clears count (MapleSEA v249); not available in Cross World boss content. The phase-specific practice that OVERDRIVE adds will not count.'
+    text: 'Full-fight Practice Mode clears count outside Cross World.'
+    detail: 'Full-fight Practice Mode clears count (MapleSEA v249) outside Cross World.'
   - title: Clear builds
     text: 'About 88% of 322 tracked Destiny clears used the Tiger + Bird break; the top Phase 1 order was Dog, Tiger, Bird (43%).'
     detail: 'Of 322 Destiny clear builds tracked by MapleBossLab, about 88% used the Tiger + Bird break; the most common Phase 1 order was Dog, Tiger, Bird (43%).'
-  - title: After OVERDRIVE
-    text: 'KMS players found it harder under the 20-minute limit; Destiny Mode HP after OVERDRIVE is unconfirmed.'
+  - title: Overdrive timing
+    text: 'KMS players reported a 20-minute limit. Destiny Mode HP is unconfirmed.'
 strategies:
 - name: Balance all gauges
   when: Parties, first clears and practice runs, or any spec with room to spare
@@ -282,11 +274,11 @@ sources:
   author: Nexon SEA
   kind: official
   fetched: '2026-10-02'
-- url: https://orangemushroom.net/2026/07/04/kms-ver-1-2-416-maplestory-overdrive-ruler-of-covenants-lethe/
-  title: Orange Mushroom - KMS ver. 1.2.416 (OVERDRIVE)
-  author: Orange Mushroom
-  kind: guide
-  fetched: '2026-10-02'
+- url: https://maplestory.nexon.com/news/update/806
+  title: KMS 1.2.416 OVERDRIVE patch notes
+  author: Nexon Korea
+  kind: official
+  fetched: '2026-11-10'
 - url: https://maplestorywiki.net/w/Kaling/Monster
   title: MapleStory Wiki - Kaling/Monster
   author: MapleStory Wiki contributors

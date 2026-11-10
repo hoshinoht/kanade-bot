@@ -180,7 +180,7 @@ fn strategy_guides_render_tracked_knowledge_in_the_v4_shape() {
         "- PDR: 380%\n",
         "- Party max: 3\n",
         "- Authentic Force: 550\n",
-        "- HP: total 14.74q",
+        "- HP: total 10q",
     ] {
         assert!(hard.contains(fact), "{fact}: {hard}");
     }

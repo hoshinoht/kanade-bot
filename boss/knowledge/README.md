@@ -34,9 +34,9 @@ Optional: `difficulty_notes` (catalog letter to text), `notes`, and new in v2:
 - MapleSEA wording: SEA patch-note terms first, other names once as "also
   called". `force.kind: sacred` is MapleSEA's Authentic Force. Exception: Carling's
   Perils are Tiger (Do'oul), Bird (Gunggi) and Dog (Hondon), introduced once
-  with the SEA name and the animal name afterwards (user decision 2026-10-05). HP rows are the
-  KMS values before OVERDRIVE (what MapleSEA has now); a per-difficulty note
-  gives the post-OVERDRIVE value until MapleSEA ships it.
+  with the SEA name and the animal name afterwards (user decision 2026-10-05).
+  HP rows reflect OVERDRIVE. For affected bosses, phase and total HP are
+  estimates based on the published KMS reduction for each difficulty.
 - Guide redesign (added 2026-10, all optional):
   - Bullets (`core`, `danger`, `tips`, `notes`, `difficulty_notes` values,
     `difficulties[].notes`, `phases[].items`) are plain text or `{title (≤40),

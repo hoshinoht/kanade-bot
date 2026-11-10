@@ -1,4 +1,4 @@
-import type { Channel, ConfigView, EventTopic, Identity, Me, MemberRow, Role, MoveResult, Run, RunResult, RunStatus, Session, Summary, SwapResult, Week, WeekKey } from '@kanade/api-types';
+import type { Channel, EventTopic, Identity, Me, MemberRow, Role, MoveResult, Run, RunResult, RunStatus, Session, Summary, SwapResult, Week, WeekKey } from '@kanade/api-types';
 import { ApiRequestError, createClient, createPoller, wroteWithin, type LiveEvents, type Poller } from '@kanade/client';
 import { arrival, live, OWN_ECHO_MS } from './resource.svelte';
 import { clockTime, runTitle, whenLabel, type FreshState } from '@kanade/ui';
@@ -52,8 +52,8 @@ export class AdminWeek {
   session = $state<Session | null>(null);
   /** The signed-in admin as the guild sees them (`member` null for the token and Tailscale). */
   me = $state<Me | null>(null);
-  /** The planner's keyboard time step: Config → Run lengths default minutes (30 until it loads). */
-  runStep = $state(30);
+  /** Time picker and planner keyboard step in minutes. */
+  readonly runStep = 30;
   /** This boss week, polled alongside while Next week is on screen (read-only). */
   #current = $state<Week | null>(null);
   /** A 403 `discord_session_required` arrived anyway (e.g. a session read before sign-in changed). */
@@ -213,16 +213,14 @@ export class AdminWeek {
   /** Reference data that changes rarely: loaded once per page. */
   async #loadReference(): Promise<void> {
     const get = <T>(path: string) => this.#client.get<T>(path).catch(() => null);
-    const [members, channels, identity, session, roles, config, me] = await Promise.all([
+    const [members, channels, identity, session, roles, me] = await Promise.all([
       get<MemberRow[]>('/api/admin/members'),
       get<Channel[]>('/api/admin/channels'),
       get<Identity>('/api/identity'),
       get<Session>('/api/admin/session'),
       get<Role[]>('/api/admin/roles'),
-      get<ConfigView>('/api/admin/config'),
       get<Me>('/api/admin/me'),
     ]);
-    if (config?.run_lengths) this.runStep = config.run_lengths.default_minutes;
     this.members = members ?? [];
     this.channels = channels ?? [];
     this.identity = identity;

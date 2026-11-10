@@ -154,14 +154,16 @@ strategies:
   - When the Reality timer sends you back to Illusion, catch two Essences and swap back to Reality, then resume the cycle.
 notes:
 - title: Limits
-  text: '30 min now (20 after OVERDRIVE), 10s potions; no slows, and she resists Zero''s critical bind.'
-  detail: 30-minute limit in MapleSEA now (20 minutes after OVERDRIVE) and 10-second potion cooldown; she cannot be slowed and resists Zero's critical bind.
+  text: '20 min, 10s potions; no slows, and she resists Zero''s critical bind.'
+  detail: 20-minute limit and 10-second potion cooldown; she cannot be slowed and resists Zero's critical bind.
 - title: 'Unresolved: altar arithmetic'
   text: 'Sources disagree on damage after three rights from 0 (105/115/130% or 105/110/120%); trust the in-game value.'
   detail: 'Unresolved: one source lists the altar bonus by the gauge before activation, which gives 105, 110, then 120% after three rights from 0; other guides, and these routes, expect 105, 115, then 130%. Until a MapleSEA run records the displayed modifier, read it in game rather than counting altars.'
 - title: Symbol bonus
   text: 'The area''s Authentic Symbol at Growth Level 11: +20% damage to her.'
   detail: The area's Authentic Symbol at Growth Level 11 gives +20% damage against her (MapleSEA v251).
+- title: HP estimates
+  text: 'Overdrive HP is estimated from the published KMS reductions.'
 difficulties:
 - name: Normal
   entry_level: 280
@@ -170,7 +172,7 @@ difficulties:
   party_max: 3
   force: {kind: sacred, value: 400}
   hp:
-  - {phase: total, value: 3.288q}
+  - {phase: total, value: 2.24q}
   recommended_spec:
     kind: HEXA-converted stat
     basis: With Reality bonus held
@@ -180,8 +182,7 @@ difficulties:
     - {party: Duo, value: 57k}
     - {party: Solo, value: 76k}
   notes:
-  - 3.288q is the KMS value after its Feb 2026 Normal HP cut (about 30% from 4.697q). GMS launched with it a week before MapleSEA (25 Jun 2026); MapleSEA notes give no HP, so SEA is expected to match KMS.
-  - 'After OVERDRIVE (KMS Jul 2026, due in MapleSEA Oct-Nov 2026): HP about 2.24q, 20-minute limit.'
+  - Normal HP uses the KMS estimate. MapleSEA has not published a separate HP value.
 - name: Hard
   entry_level: 280
   boss_level: 280
@@ -189,7 +190,7 @@ difficulties:
   party_max: 3
   force: {kind: sacred, value: 550}
   hp:
-  - {phase: total, value: 14.74q}
+  - {phase: total, value: 10q}
   recommended_spec:
     kind: HEXA-converted stat
     basis: With Reality bonus held
@@ -198,9 +199,12 @@ difficulties:
     - {party: Trio, value: 89k}
     - {party: Duo, value: 104k}
     - {party: Solo, value: 123k}
-  notes:
-  - 'After OVERDRIVE (KMS Jul 2026, due in MapleSEA Oct-Nov 2026): HP about 10.0q, 20-minute limit.'
 sources:
+- url: https://maplestory.nexon.com/news/update/806
+  title: KMS 1.2.416 OVERDRIVE patch notes
+  author: Nexon Korea
+  kind: official
+  fetched: '2026-11-10'
 - url: https://www.youtube.com/watch?v=3Lk5_0yNXJA
   title: MapleStory Complete Radiant Malefic Star Guide (video)
   author: iSIingGunz

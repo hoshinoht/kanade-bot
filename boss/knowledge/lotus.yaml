@@ -90,6 +90,8 @@ notes:
 - title: Only Extreme tracked
   text: 'Normal and Hard: level 210, 300% PDR, up to 6 players.'
   detail: Only Extreme is tracked here; Normal and Hard are level 210 with 300% PDR and a party of up to 6.
+- title: HP estimates
+  text: 'Overdrive HP is estimated from the published KMS reductions.'
 difficulties:
 - name: Extreme
   entry_level: 190
@@ -97,9 +99,9 @@ difficulties:
   pdr_percent: 380
   party_max: 2
   hp:
-  - {phase: '1', value: 543.3t}
-  - {phase: '2', value: 543.3t}
-  - {phase: '3', value: 724.4t}
+  - {phase: '1', value: 368t}
+  - {phase: '2', value: 368t}
+  - {phase: '3', value: 491t}
   recommended_spec:
     kind: Combat power
     basis: CMS reference
@@ -108,9 +110,8 @@ difficulties:
     - {party: Solo, value: 200M}
     - {party: Duo (each), value: ≈ 65M}
   notes:
-  - 5 lives, 30 minutes, 10 s potion cooldown; the clear is shared with Normal and Hard, once a week. Entry level 190 comes from the GMS guide (unconfirmed for SEA).
-  - HP is the KMS value before OVERDRIVE; each Phase 1 shield holds about 2.7t more.
-  - 'After OVERDRIVE (KMS Jul 2026, due in MapleSEA Oct-Nov 2026): HP about 368t / 368t / 491t (32.2% less; KMS calls Lotus Suu), 20-minute limit.'
+  - 5 lives, 20 minutes, 10 s potion cooldown; the clear is shared with Normal and Hard, once a week. Entry level 190 comes from the GMS guide (unconfirmed for SEA).
+  - Phase 1 shields add HP beyond the boss HP shown.
 - name: Champion
   entry_level: 260
   party_max: 1
@@ -126,7 +127,9 @@ difficulties:
     detail: 'Union Champion Rank B trial (Champion Evaluation Match): Hard Lotus (not Extreme; also called Suu) solo in Champion Mode within 20 minutes; every champion starts at Rank C. The B insignia gives every character +20 All Stats and +1,000 Max HP/MP.'
   - title: Practice Mode
     text: 'Clears count and add Hamcelot''s Protection: 25% less damage taken.'
-    detail: 'Practice Mode clears count and add Hamcelot''s Protection (25% less damage taken). After OVERDRIVE, KMS adds Hamcelot''s Trial (Final Damage -30%, -25% on Black Mage); not in MapleSEA yet.'
+    detail: 'Practice Mode clears count and grant Hamcelot''s Protection (25% less damage taken).'
+  - title: Hamcelot's Trial
+    text: 'Final Damage −30% in this Champion trial.'
 strategies:
 - name: Standard duo
   when: Two players, the group's usual setup
@@ -162,11 +165,11 @@ sources:
   author: MapleStorySEA
   kind: official
   fetched: '2026-10-02'
-- url: https://orangemushroom.net/2026/07/04/kms-ver-1-2-416-maplestory-overdrive-ruler-of-covenants-lethe/
-  title: KMS ver. 1.2.416 - MapleStory Overdrive
-  author: Orange Mushroom
-  kind: guide
-  fetched: '2026-10-02'
+- url: https://maplestory.nexon.com/news/update/806
+  title: KMS 1.2.416 OVERDRIVE patch notes
+  author: Nexon Korea
+  kind: official
+  fetched: '2026-11-10'
 - url: https://www.digitaltq.com/maplestory-lotus-remaster-guide
   title: Lotus Remaster Guide
   author: Aleph (DigitalTQ)

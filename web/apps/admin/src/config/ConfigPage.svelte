@@ -51,8 +51,8 @@
     toaster: Toaster;
     section?: string;
     onsection?: (key: string) => void;
-    /** Run lengths saved: the planner's keyboard step follows the new default. */
-    onrunlengths?: (defaultMinutes: number) => void;
+    /** Run lengths saved: refresh the durations on the planner. */
+    onrunlengths?: () => void;
     /** A save answered: the shell's quiet-mode chip follows the saved value at once. */
     onquiet?: (on: boolean) => void;
     /** Any section saved (Setup's badge re-reads). */

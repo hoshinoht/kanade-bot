@@ -136,6 +136,8 @@ notes:
 - title: Destiny Resolve per clear
   text: 'Hard 6 · Extreme 80, split among everyone who entered.'
   detail: 'Destiny Weapon: each clear gives Adversary''s Resolve, split among everyone who entered: Hard 6, Extreme 80.'
+- title: HP estimates
+  text: 'Overdrive HP is estimated from the published KMS reductions.'
 difficulties:
 - name: Normal
   entry_level: 260
@@ -144,13 +146,12 @@ difficulties:
   party_max: 6
   force: {kind: sacred, value: 200}
   hp:
-  - {phase: '1', value: 52.5t}
-  - {phase: '2', value: 155.4t}
+  - {phase: '1', value: 35.6t}
+  - {phase: '2', value: 106t}
   recommended_spec: {kind: Authentic Force, text: 'Phase 1 needs 150 and Phase 2 needs 200 Authentic Force; 200/250 gives the full +25%. Authentic Symbol: Cernium Lv 11 adds +20% damage (SEA v251). CMS lists 50M combat power solo (about 5.4M each in a 6-party) as a rough reference.'}
   notes:
-  - 8 lives in MapleSEA, 30 minutes, 10 s potion cooldown.
-  - HP is the KMS value before OVERDRIVE (wiki estimate); MapleSEA v227 cut Normal HP by about 14% and its level to 270.
-  - 'After OVERDRIVE (KMS Jul 2026, due in MapleSEA Oct-Nov 2026): HP about 35.6t / 105.5t (32.1% less), 20-minute limit.'
+  - 8 lives in MapleSEA, 20 minutes, 10 s potion cooldown.
+  - The HP estimate uses the KMS baseline. MapleSEA v227 separately cut Normal HP by about 14% and lowered its boss level to 270.
 - name: Hard
   entry_level: 260
   boss_level: 275
@@ -158,12 +159,11 @@ difficulties:
   party_max: 6
   force: {kind: sacred, value: 200}
   hp:
-  - {phase: '1', value: 126t}
-  - {phase: '2', value: 357t}
+  - {phase: '1', value: 85.6t}
+  - {phase: '2', value: 242t}
   recommended_spec: {kind: Authentic Force, text: 'Phase 1 needs 150 and Phase 2 needs 200 Authentic Force (250 for the full +25%). CMS lists 80M combat power solo (about 8.6M each in a 6-party) as a rough reference.'}
   notes:
-  - 8 lives in MapleSEA, 30 minutes.
-  - 'After OVERDRIVE (KMS Jul 2026, due in MapleSEA Oct-Nov 2026): HP about 85.5t / 242.4t (32.1% less), 20-minute limit.'
+  - 8 lives in MapleSEA, 20 minutes.
 - name: Extreme
   entry_level: 260
   boss_level: 280
@@ -171,8 +171,8 @@ difficulties:
   party_max: 6
   force: {kind: sacred, value: 200}
   hp:
-  - {phase: '1', value: 1.32q}
-  - {phase: '2', value: 5.16q}
+  - {phase: '1', value: 896t}
+  - {phase: '2', value: 3.5q}
   recommended_spec:
     kind: Combat power
     basis: CMS reference
@@ -181,8 +181,7 @@ difficulties:
     - {party: Solo, value: 800M}
     - {party: 6-party (each), value: ≈ 86M}
   notes:
-  - 8 lives in MapleSEA, 30 minutes. Phase 1 is level 275 and Phase 2 level 280.
-  - 'After OVERDRIVE (KMS Jul 2026, due in MapleSEA Oct-Nov 2026): HP about 896t / 3.50q (32.1% less), 20-minute limit.'
+  - 8 lives in MapleSEA, 20 minutes. Phase 1 is level 275 and Phase 2 level 280.
 - name: Destiny
   entry_level: 275
   boss_level: 275
@@ -201,8 +200,8 @@ difficulties:
     text: 'Hard Serene solo in Destiny Mode (MapleSEA v244); Gatekeeper Kalos comes next.'
     detail: 'Destiny Weapon mission "Battle, Chosen Serene" (MapleSEA v244): Hard Serene solo in Destiny Mode with Final Damage reduced by 80%. It is the first mission (Gatekeeper Kalos is next) and needs 2,000 Adversary''s Resolve.'
   - title: Practice Mode
-    text: 'Practice clears count (MapleSEA v249), but not in Cross World. OVERDRIVE''s phase-specific practice will not count.'
-    detail: 'Practice Mode clears count (MapleSEA v249); not available in Cross World boss content. The phase-specific practice that OVERDRIVE adds will not count.'
+    text: 'Full-fight Practice Mode clears count outside Cross World.'
+    detail: 'Full-fight Practice Mode clears count (MapleSEA v249) outside Cross World.'
 - name: Champion
   entry_level: 260
   boss_level: 275
@@ -219,7 +218,9 @@ difficulties:
     detail: 'Union Champion Rank SS trial (Champion Evaluation Match): Hard Serene solo in Champion Mode within 20 minutes, after the champion reaches Rank S. The SS insignia gives every character +3% Critical Damage.'
   - title: Practice Mode
     text: 'Clears count and add Hamcelot''s Protection: 25% less damage taken.'
-    detail: 'Practice Mode clears count and add Hamcelot''s Protection (25% less damage taken). After OVERDRIVE, KMS adds Hamcelot''s Trial (Final Damage -30%, -25% on Black Mage); not in MapleSEA yet.'
+    detail: 'Practice Mode clears count and grant Hamcelot''s Protection (25% less damage taken).'
+  - title: Hamcelot's Trial
+    text: 'Final Damage −30% in this Champion trial.'
 strategies:
 - name: Burst at Midnight
   when: Parties of 2-6, especially Normal and Hard with mixed damage; a learning default the party agrees before entry
@@ -275,11 +276,11 @@ sources:
   author: MapleStorySEA
   kind: official
   fetched: '2026-10-02'
-- url: https://orangemushroom.net/2026/07/04/kms-ver-1-2-416-maplestory-overdrive-ruler-of-covenants-lethe/
-  title: KMS ver. 1.2.416 - MapleStory Overdrive
-  author: Orange Mushroom
-  kind: guide
-  fetched: '2026-10-02'
+- url: https://maplestory.nexon.com/news/update/806
+  title: KMS 1.2.416 OVERDRIVE patch notes
+  author: Nexon Korea
+  kind: official
+  fetched: '2026-11-10'
 - url: https://www.youtube.com/watch?v=20mLjzD5PtQ
   title: CHOSEN SEREN Boss Guide, all difficulties (2026)
   author: Rath GMS

@@ -1363,7 +1363,7 @@ async fn retries_and_reaction_edits_reuse_the_stored_heading() {
     };
     assert_eq!(later.refresh(std::slice::from_ref(&star)).await, 0);
 
-    // v5: with live run lengths (default 30 minutes) a started run's card
+    // v5: with live run lengths (default 20 minutes) a started run's card
     // follows its answers until the run ends, then stays as the record.
     let timed = |minutes: i64| CardRefresh {
         now: Arc::new(move || tonight() + TimeDelta::minutes(minutes)),
@@ -1387,7 +1387,7 @@ async fn retries_and_reaction_edits_reuse_the_stored_heading() {
         "started, not ended"
     );
     assert_eq!(
-        timed(31).refresh(std::slice::from_ref(&star)).await,
+        timed(20).refresh(std::slice::from_ref(&star)).await,
         0,
         "ended"
     );

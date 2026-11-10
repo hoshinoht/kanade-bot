@@ -173,7 +173,7 @@ mod tests {
         kanade_log::capture();
         let before = RuntimeSettings::default();
         let mut after = before.clone();
-        after.run_lengths.default_minutes = 20;
+        after.run_lengths.default_minutes = 25;
         settings_changed(
             8,
             "run_lengths",
@@ -188,8 +188,8 @@ mod tests {
         let row = &lines[0]["values"]["v5.run_lengths"];
         let from: Value = serde_json::from_str(row["from"].as_str().unwrap()).unwrap();
         let to: Value = serde_json::from_str(row["to"].as_str().unwrap()).unwrap();
-        assert_eq!(from["default_minutes"], 30);
-        assert_eq!(to["default_minutes"], 20);
+        assert_eq!(from["default_minutes"], 20);
+        assert_eq!(to["default_minutes"], 25);
         assert!(
             diff(&after, &after).is_empty(),
             "a no-op emits no audit row"

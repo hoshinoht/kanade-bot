@@ -100,6 +100,8 @@ notes:
 - title: Destiny Resolve per clear
   text: 'Normal 10 · Chaos 70 · Extreme 400, split among everyone who entered.'
   detail: 'Destiny Weapon: each clear gives Adversary''s Resolve, split among everyone who entered: Normal 10, Chaos 70, Extreme 400.'
+- title: HP estimates
+  text: 'Overdrive HP is estimated from the published KMS reductions.'
 difficulties:
 - name: Easy
   entry_level: 265
@@ -108,13 +110,12 @@ difficulties:
   party_max: 6
   force: {kind: sacred, value: 200}
   hp:
-  - {phase: '1', value: 94.5t}
-  - {phase: '2', value: 262.5t}
+  - {phase: '1', value: 63.1t}
+  - {phase: '2', value: 175t}
   recommended_spec: {kind: Authentic Force, text: '200 Authentic Force in both phases; 250 gives the full +25%. CMS lists 35M combat power solo (about 3.7M each in a 6-party) as a rough reference.'}
   notes:
-  - 8 lives in MapleSEA, 30 minutes; weapons activate every 80 s (SEA v251, up from 60).
-  - Phase 1 has 330% PDR and Phase 2 has 380%. HP is the KMS value before OVERDRIVE (wiki estimate).
-  - 'After OVERDRIVE (KMS Jul 2026, due in MapleSEA Oct-Nov 2026): HP about 63.1t / 175.4t (33.2% less), 20-minute limit.'
+  - 8 lives in MapleSEA, 20 minutes; weapons activate every 80 s (SEA v251, up from 60).
+  - Phase 1 has 330% PDR and Phase 2 has 380%.
 - name: Normal
   entry_level: 265
   boss_level: 280
@@ -122,13 +123,12 @@ difficulties:
   party_max: 6
   force: {kind: sacred, value: 300}
   hp:
-  - {phase: '1', value: 336t}
-  - {phase: '2', value: 720t}
+  - {phase: '1', value: 224t}
+  - {phase: '2', value: 481t}
   recommended_spec: {kind: Authentic Force, text: 'Phase 1 needs 250 and Phase 2 needs 300 Authentic Force (350 for the full +25%). CMS lists 120M combat power solo (about 13M each in a 6-party) as a rough reference.'}
   notes:
-  - 8 lives in MapleSEA, 30 minutes; weapons activate every 70 s (SEA v251, up from 60).
+  - 8 lives in MapleSEA, 20 minutes; weapons activate every 70 s (SEA v251, up from 60).
   - Phase 1 is level 275 with 330% PDR, and Phase 2 is level 280 with 380%.
-  - 'After OVERDRIVE (KMS Jul 2026, due in MapleSEA Oct-Nov 2026): HP about 224.4t / 481t (33.2% less), 20-minute limit.'
 - name: Chaos
   entry_level: 265
   boss_level: 285
@@ -136,12 +136,11 @@ difficulties:
   party_max: 6
   force: {kind: sacred, value: 330}
   hp:
-  - {phase: '1', value: 1.066q}
-  - {phase: '2', value: 4.06q}
+  - {phase: '1', value: 712t}
+  - {phase: '2', value: 2.71q}
   recommended_spec: {kind: Authentic Force, text: '330 Authentic Force (380 for the full +25%). CMS lists 550M combat power solo (about 59M each in a 6-party) as a rough reference.'}
   notes:
-  - 8 lives in MapleSEA, 30 minutes; the Destiny Weapon mission runs with 3. Weapons activate every 60 s.
-  - 'After OVERDRIVE (KMS Jul 2026, due in MapleSEA Oct-Nov 2026): HP about 712t / 2.71q (33.2% less), 20-minute limit.'
+  - 8 lives in MapleSEA, 20 minutes; the Destiny Weapon mission runs with 3. Weapons activate every 60 s.
 - name: Extreme
   entry_level: 265
   boss_level: 285
@@ -149,12 +148,11 @@ difficulties:
   party_max: 6
   force: {kind: sacred, value: 440}
   hp:
-  - {phase: '1', value: 5.798q}
-  - {phase: '2', value: 15.498q}
+  - {phase: '1', value: 3.87q}
+  - {phase: '2', value: 10.4q}
   recommended_spec: {kind: Authentic Force, text: '440 Authentic Force (490 for the full +25%). CMS lists 2.5B combat power solo (about 270M each in a 6-party) as a rough reference.'}
   notes:
-  - 8 lives in MapleSEA, 30 minutes. Watcher's Roar is replaced by marked pillars that one-shot.
-  - 'After OVERDRIVE (KMS Jul 2026, due in MapleSEA Oct-Nov 2026): HP about 3.87q / 10.35q (33.2% less), 20-minute limit.'
+  - 8 lives in MapleSEA, 20 minutes. Watcher's Roar is replaced by marked pillars that one-shot.
 - name: Destiny
   entry_level: 275
   boss_level: 285
@@ -172,8 +170,8 @@ difficulties:
     text: 'Chaos Kalos solo in Destiny Mode (MapleSEA v244), after Chosen Serene.'
     detail: 'Destiny Weapon mission "Battle, Gatekeeper Kalos" (MapleSEA v244): Chaos Kalos solo in Destiny Mode with the Death Count cut from 8 to 3. Second mission, after Chosen Serene; needs 2,500 Adversary''s Resolve.'
   - title: Practice Mode
-    text: 'Practice clears count (MapleSEA v249), but not in Cross World. OVERDRIVE''s phase-specific practice will not count.'
-    detail: 'Practice Mode clears count (MapleSEA v249); not available in Cross World boss content. The phase-specific practice that OVERDRIVE adds will not count.'
+    text: 'Full-fight Practice Mode clears count outside Cross World.'
+    detail: 'Full-fight Practice Mode clears count (MapleSEA v249) outside Cross World.'
 - name: Champion
   entry_level: 260
   party_max: 1
@@ -189,7 +187,9 @@ difficulties:
     detail: 'Union Champion Rank SSS trial (Champion Evaluation Match): Normal Kalos solo in Champion Mode within 20 minutes, after Rank SS. The SSS insignia gives every character +5% Ignore Enemy DEF.'
   - title: Practice Mode
     text: 'Clears count and add Hamcelot''s Protection: 25% less damage taken.'
-    detail: 'Practice Mode clears count and add Hamcelot''s Protection (25% less damage taken). After OVERDRIVE, KMS adds Hamcelot''s Trial (Final Damage -30%, -25% on Black Mage); not in MapleSEA yet.'
+    detail: 'Practice Mode clears count and grant Hamcelot''s Protection (25% less damage taken).'
+  - title: Hamcelot's Trial
+    text: 'Final Damage −30% in this Champion trial.'
   - title: Many stop at SS
     text: 'Community view: Normal Kalos solo needs more spec than Hard Serene, for only +5% IED.'
     detail: 'Community view: a Normal Kalos solo needs more spec than Hard Serene for only +5% IED, so many players stop at Rank SS.'
@@ -245,11 +245,11 @@ sources:
   author: MapleStorySEA
   kind: official
   fetched: '2026-10-02'
-- url: https://orangemushroom.net/2026/07/04/kms-ver-1-2-416-maplestory-overdrive-ruler-of-covenants-lethe/
-  title: KMS ver. 1.2.416 - MapleStory Overdrive
-  author: Orange Mushroom
-  kind: guide
-  fetched: '2026-10-02'
+- url: https://maplestory.nexon.com/news/update/806
+  title: KMS 1.2.416 OVERDRIVE patch notes
+  author: Nexon Korea
+  kind: official
+  fetched: '2026-11-10'
 - url: https://www.youtube.com/watch?v=CS7aTJUxwfA
   title: Comprehensive Kalos Boss Guide 2024
   author: Duky

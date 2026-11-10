@@ -62,7 +62,7 @@
     /** Closed, playing its exit (FixedPage's Presence): inert, and the phone dialog closes. */
     leaving?: boolean;
     onleft?: (event: AnimationEvent) => void;
-    /** The time stepper's step: Config → Run lengths default minutes, as the Move picker. */
+    /** The time stepper's step in minutes, as in the Move picker. */
     timeStep?: number;
     /** The session's `roster` flag; null until the session is read. */
     rosterModule?: boolean | null;

@@ -130,17 +130,10 @@ fn every_section_round_trips_through_its_rows() {
 }
 
 #[test]
-fn run_lengths_default_to_thirty_with_hard_black_mage_overridden() {
+fn run_lengths_default_to_twenty_without_overrides() {
     let lengths = RunLengths::default();
-    assert_eq!(lengths.default_minutes, DEFAULT_RUN_MINUTES);
-    assert_eq!(
-        lengths.overrides,
-        [RunLengthOverride {
-            boss: "BM".into(),
-            difficulty: "h".into(),
-            minutes: 60,
-        }]
-    );
+    assert_eq!(lengths.default_minutes, 20);
+    assert!(lengths.overrides.is_empty());
 }
 
 #[test]

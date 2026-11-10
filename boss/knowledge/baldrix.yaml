@@ -119,8 +119,8 @@ tips:
   detail: Under Soul Execution, meet any hit with damage reduction, a shield or i-frames, and never leave the Zone.
 notes:
 - title: Limits
-  text: 30 min now (20 after OVERDRIVE) · 10s potions.
-  detail: 30-minute limit in MapleSEA now (20 minutes after OVERDRIVE) and 10-second potion cooldown. Phases 1-2 keep players in separate rooms, so party buffs do not reach each other until Phase 3.
+  text: 20 min · 10s potions.
+  detail: 20-minute limit and 10-second potion cooldown. Phases 1-2 keep players in separate rooms, so party buffs do not reach each other until Phase 3.
 - title: Separate rooms
   text: Party buffs don't reach each other until Phase 3.
 - title: Talahart symbol Lv 11
@@ -131,6 +131,8 @@ notes:
 - title: Destiny Resolve per clear
   text: Normal 150 · Hard 450, split among entrants.
   detail: 'Destiny Weapon: each clear gives Adversary''s Resolve, split among everyone who entered: Normal 150, Hard 450.'
+- title: HP estimates
+  text: 'Overdrive HP is estimated from the published KMS reductions.'
 difficulties:
 - name: Normal
   entry_level: 290
@@ -139,18 +141,14 @@ difficulties:
   party_max: 3
   force: {kind: sacred, value: 700}
   hp:
-  - {phase: '1', value: 2.379q}
-  - {phase: '2', value: 2.531q}
-  - {phase: '3', value: 4.145q}
+  - {phase: '1', value: 1.61q}
+  - {phase: '2', value: 1.72q}
+  - {phase: '3', value: 2.81q}
   recommended_spec:
     kind: HEXA-converted stat
     text: About 87k-92k for a full-timer minimum clear, depending on party composition (KMS release-era figures).
     value: 87k-92k
     basis: KMS release era
-  notes:
-  - title: After OVERDRIVE
-    text: HP ≈ 1.61q / 1.72q / 2.81q (≈ 6.14q), 20 min. SEA due Oct-Nov 2026.
-    detail: 'After OVERDRIVE (KMS Jul 2026, due in MapleSEA Oct-Nov 2026): HP about 1.61q / 1.72q / 2.81q (about 6.14q total), 20-minute limit.'
 - name: Hard
   entry_level: 290
   boss_level: 290
@@ -158,9 +156,9 @@ difficulties:
   party_max: 3
   force: {kind: sacred, value: 700}
   hp:
-  - {phase: '1', value: 5.344q}
-  - {phase: '2', value: 5.685q}
-  - {phase: '3', value: 9.309q}
+  - {phase: '1', value: 3.62q}
+  - {phase: '2', value: 3.85q}
+  - {phase: '3', value: 6.31q}
   recommended_spec:
     kind: HEXA-converted stat
     text: About 108k-113k for a full-timer minimum trio clear, depending on party composition (KMS release-era figures); a duo needs about 115k or more and solo about 131k (KMS plus MapleSEA and MapleScouter research).
@@ -169,10 +167,6 @@ difficulties:
     - {party: Trio, value: 108k–113k}
     - {party: Duo, value: ≈ 115k+}
     - {party: Solo, value: ≈ 131k}
-  notes:
-  - title: After OVERDRIVE
-    text: HP ≈ 3.62q / 3.85q / 6.31q (≈ 13.8q), 20 min. SEA due Oct-Nov 2026.
-    detail: 'After OVERDRIVE (KMS Jul 2026, due in MapleSEA Oct-Nov 2026): HP about 3.62q / 3.85q / 6.31q (about 13.8q total), 20-minute limit.'
 - name: Destiny
   entry_level: 290
   party_max: 1
@@ -186,7 +180,7 @@ difficulties:
   notes:
   - title: Hard, solo
     text: The +30% includes %HP attacks (wiki). Last Destiny mission.
-    detail: 'Destiny Weapon 2nd Growth mission "Battle, Baldrix" (MapleSEA v252): Hard Baldrix solo in Destiny Mode taking 30% more damage (the wiki says this includes %HP attacks). The last mission; needs 15,000 Adversary''s Resolve. Practice Mode clears count (MapleSEA v249); not available in Cross World boss content. The phase-specific practice that OVERDRIVE adds will not count.'
+    detail: 'Destiny Weapon 2nd Growth mission "Battle, Baldrix" (MapleSEA v252): Hard Baldrix solo in Destiny Mode taking 30% more damage (the wiki says this includes %HP attacks). The last mission; needs 15,000 Adversary''s Resolve. Full-fight Practice Mode clears count (MapleSEA v249) outside Cross World.'
 strategies:
 - name: P1 room split
   when: Every party, set before entering.
@@ -209,6 +203,11 @@ strategies:
   - Crouch Magic Storm and warn the next side; the storm's portal shows where it goes next.
   - Identify each pillar or orb pattern by its tell, then stand inside the purple safe area and keep out of the blue one; never tank a hit because it is purple.
 sources:
+- url: https://maplestory.nexon.com/news/update/806
+  title: KMS 1.2.416 OVERDRIVE patch notes
+  author: Nexon Korea
+  kind: official
+  fetched: '2026-11-10'
 - url: https://docs.google.com/document/d/1uBXXBbUt86N2T67HY0dQrFjo7fbOthVrWBMWfUyi4NY/edit
   title: MapleStory Complete Baldrix Guide
   author: iSIingGunz

@@ -200,3 +200,12 @@ were left unchanged.
   선택받은 세렌, https://m.namu.moe/w/선택받은%20세렌; Orange Mushroom KMS
   v1.2.355,
   https://orangemushroom.net/2021/10/14/kms-ver-1-2-355-haste-tactical-relay/.
+
+## Update 2026-11-10
+
+- Prepared the guides for MapleSEA v255 Overdrive, scheduled for 11 November.
+- Replaced the old HP rows and preview notes with rounded estimates based on
+  Nexon's KMS 1.2.416 reductions and updated the fight limits to 20 minutes.
+  Hard Black Mage uses a 64.9% reduction. Destiny Mode HP is still unconfirmed.
+- Updated Bellona's release note using the MapleSEA Overdrive announcement.
+  Her existing HP values already reflect Overdrive.

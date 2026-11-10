@@ -130,11 +130,13 @@ difficulty_notes:
     detail: 'Every third merge is forced to Auspicious or Ruinous; off-centre it follows the needle as usual. When centred, forced merges alternate: the 3rd, 9th, 15th merges are Auspicious and the 6th, 12th Ruinous (a KMS pattern write-up and MapleTools agree).'
 notes:
 - title: Limits
-  text: '30 min now (20 after OVERDRIVE), 10s potions; no slows or critical binds.'
-  detail: 30-minute limit in MapleSEA now (20 minutes after OVERDRIVE) and 10-second potion cooldown; Jupiter cannot be slowed or critically bound.
+  text: '20 min, 10s potions; no slows or critical binds.'
+  detail: 20-minute limit and 10-second potion cooldown; Jupiter cannot be slowed or critically bound.
 - title: Shared HP and binds
   text: 'The five bodies share one bar; bind resistance carries between rooms.'
   detail: The five bodies share one HP bar, and bind resistance carries over between separated and merged rooms.
+- title: HP estimates
+  text: 'Overdrive HP is estimated from the published KMS reductions.'
 difficulties:
 - name: Normal
   entry_level: 295
@@ -143,7 +145,7 @@ difficulties:
   party_max: 3
   force: {kind: sacred, value: 810}
   hp:
-  - {phase: total, value: 10.266q}
+  - {phase: total, value: 6.98q}
   recommended_spec:
     kind: HEXA-converted stat
     basis: 860 AF, level 300
@@ -152,8 +154,6 @@ difficulties:
     - {party: Trio, value: 80k}
     - {party: Duo, value: 95k}
     - {party: Solo, value: 117k}
-  notes:
-  - 'After OVERDRIVE (KMS Jul 2026, due in MapleSEA Oct-Nov 2026): HP about 6.98q, 20-minute limit.'
 - name: Hard
   entry_level: 295
   boss_level: 295
@@ -161,7 +161,7 @@ difficulties:
   party_max: 3
   force: {kind: sacred, value: 810}
   hp:
-  - {phase: total, value: 49.4q}
+  - {phase: total, value: 33.6q}
   recommended_spec:
     kind: HEXA-converted stat
     basis: 860 AF, level 300
@@ -169,9 +169,12 @@ difficulties:
     parties:
     - {party: Trio, value: 130k}
     - {party: Duo, value: 142k}
-  notes:
-  - 'After OVERDRIVE (KMS Jul 2026, due in MapleSEA Oct-Nov 2026): HP about 33.6q, 20-minute limit.'
 sources:
+- url: https://maplestory.nexon.com/news/update/806
+  title: KMS 1.2.416 OVERDRIVE patch notes
+  author: Nexon Korea
+  kind: official
+  fetched: '2026-11-10'
 - url: https://docs.google.com/document/d/1DwlX_-lXPA6-KRKCxGZ2g6Xzwl3DPniq-BcBudOyr98/edit
   title: MapleStory Complete Jupiter Guide
   author: iSIingGunz

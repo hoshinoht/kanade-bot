@@ -1,6 +1,6 @@
 boss: Bellona
-summary: 'Bellona is not in MapleSEA yet (KMS 1.2.418, Aug 2026); this is a prep guide. She is a dodge check: red attacks take a life, a shared gauge flips her into Insane mode where she takes +30% damage and hurts herself, and surviving an Insane window un-hit gives a life back.'
-lead: 'A dodge check (KMS only so far): red attacks cost a life, and an Insane window survived un-hit gives one back.'
+summary: 'Cruel Executioner, Bellona joins MapleSEA with Overdrive. Red attacks take a life, a shared gauge flips her into Insane mode where she takes +30% damage and hurts herself, and surviving an Insane window un-hit gives a life back.'
+lead: 'Red attacks cost a life, and an Insane window survived un-hit gives one back.'
 core:
 - title: Red attacks cost a life
   text: 'Red hits take 1 Death Count and cut the gauge hard; purple hits cut it a little.'
@@ -63,9 +63,9 @@ tips:
   text: 'They show the next Berserk sequence.'
   detail: During binds, read the sigils already on the map so you know the next Berserk sequence.
 notes:
-- title: Not in MapleSEA yet
-  text: 'Unreleased as of v254; facts are KMS ver. 1.2.418 (Aug 2026) and may change.'
-  detail: Not released in MapleSEA as of v254 (28 Sep 2026); her MapleSEA name and release date are unannounced. Facts are from KMS ver. 1.2.418 (27 Aug 2026) and may differ on release.
+- title: MapleSEA Overdrive
+  text: 'Announced for v255 in Easy, Normal and Hard. HP and mechanics use KMS data.'
+  detail: MapleSEA announced all three difficulties for Overdrive. The HP and mechanics here come from KMS v1.2.418.
 - title: Entry and credit
   text: 'Post-OVERDRIVE only. Level 280 and [Solatum] The Truth of Solatum; break the Ark after the kill.'
   detail: 'She was released in KMS after OVERDRIVE, so only post-OVERDRIVE values exist (20-minute limit). Entry needs level 280 and the quest [Solatum] The Truth of Solatum; break the Ark of Solatum after the kill for clear credit.'
@@ -143,11 +143,11 @@ sources:
   author: Orange Mushroom
   kind: guide
   fetched: '2026-10-02'
-- url: https://www.maplesea.com/updates/view/v254_Events/
-  title: MapleSEA v254 events
+- url: https://www.maplesea.com/news/view/MOT_SG_OVERDRIVE/
+  title: MapleSEA Overdrive preview
   author: Nexon SEA
   kind: official
-  fetched: '2026-10-02'
+  fetched: '2026-11-10'
 - url: https://maplestorywiki.net/w/Bellona/Monster
   title: MapleStory Wiki - Bellona/Monster
   author: MapleStory Wiki contributors
