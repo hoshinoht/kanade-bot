@@ -98,9 +98,8 @@ were left unchanged.
   (its countdown runs 14 Oct to 24 Nov 2026).
 - Seren and Kalos have 8 lives on every difficulty.
 - Bellona is a prep guide: she is not in MapleSEA yet (KMS 1.2.418).
-- Meilin (new, `meilin.yaml`) is an active event prep guide: KMS Challengers
-  Season 4 ended on 17 Sep 2026, and MapleSEA is expected around Nov 2026. The
-  aliases Maerin and 메이린 let chat find her.
+- Maerin (`maerin.yaml`) uses the MapleSEA v255 name and event dates. The
+  aliases Meilin and 메이린 let chat find her.
 - Kai: the MapleSEA season ended at the 30 Sep 2026 maintenance. The file stays,
   and its availability is in the past tense. There is no automatic expiry; the
   user removes or edits event files by hand.
@@ -131,7 +130,7 @@ were left unchanged.
 | Black Mage | 12 lives, limits, Origin-only binds, Laser Jail and platform rules | Phase 4 burst-only, Laser Jail invincibility |
 | Bellona | Prep guide; gauge numbers, Berserk sequence, Death Count 8/8/5 | Survival first, Party life-sharing |
 | Kai | Availability past tense | - |
-| Meilin | New event prep guide | Four routes from KMS guides |
+| Maerin | MapleSEA name and event details | Four routes from KMS guides |
 
 ## Still unconfirmed (marked in the files)
 

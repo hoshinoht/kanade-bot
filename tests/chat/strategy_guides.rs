@@ -222,7 +222,7 @@ async fn d_seasonal_list_appends_tracked_guides_after_the_unchanged_catalog_bloc
         format!(
             "{catalog_only}\n\n**Seasonal bosses (guide only, not scheduled)**\n\
              **Kai** (Challengers World Season 3): MapleSEA: ran in Challengers World Season 3 only, from 3 Jun 2026 (after the v251 patch) until it ended at the 30 Sep 2026 maintenance; solo only. Not currently available.\n\
-             **Meilin** (Challengers World Season 4): KMS Challengers World Season 4 ran 18 Jun – 17 Sep 2026. Expected in MapleSEA around Nov 2026 (not yet announced); MapleSEA names may differ. Also called Maerin, 메이린."
+             **Maerin** (Challengers World Season 4): MapleSEA: 12 Nov 2026 at 10:00 to 9 Mar 2027 at 23:59 SGT, in Challengers World Season 4 only. Also called Meilin, 메이린."
         )
     );
 }

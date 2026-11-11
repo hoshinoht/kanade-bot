@@ -11,6 +11,7 @@ Clearer weekly digest results and steadier run controls in the admin app.
 ### Changes
 
 - Updated boss guides with Overdrive HP estimates and 20-minute fight limits, and made runs default to 20 minutes per boss while time pickers and planner arrow keys still step by 30 minutes.
+- Renamed Meilin’s boss guide to Maerin and added the MapleSEA Challengers World Season 4 dates and entry rules.
 
 ### Fixes
 

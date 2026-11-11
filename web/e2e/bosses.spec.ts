@@ -4,7 +4,7 @@ import { GUIDE_DOC, GUIDE_MISSIONS } from './guide-fixture';
 import { ADMIN, REAL_ART, expect, go, settle, test, unconditional, useLook } from './support';
 
 // Event bosses (knowledge documents with an `event`, outside the catalog: Kai,
-// Meilin in the tracked boss/knowledge): art like catalog rows and the
+// Maerin in the tracked boss/knowledge): art like catalog rows and the
 // "Seasonal boss" label. The synthetic fixtures carry no event art, so the
 // image path is driven through the events read with fixture art.
 
@@ -18,9 +18,9 @@ test.describe('event bosses', () => {
     await go(page, '/bosses');
     const events = page.getByRole('list', { name: 'Event bosses' });
     const kai = events.getByRole('listitem').filter({ has: page.getByRole('link', { name: 'Kai', exact: true }) });
-    const meilin = events.getByRole('listitem').filter({ has: page.getByRole('link', { name: 'Meilin', exact: true }) });
+    const maerin = events.getByRole('listitem').filter({ has: page.getByRole('link', { name: 'Maerin', exact: true }) });
     await expect(kai.locator('.status-chip')).toHaveText(SEASON_3);
-    await expect(meilin.locator('.status-chip')).toHaveText(SEASON_4);
+    await expect(maerin.locator('.status-chip')).toHaveText(SEASON_4);
     // The short tag keeps the event's full name from the data.
     await expect(kai.locator('.status-chip abbr')).toHaveAttribute('title', 'Challengers World Season 3');
     // No fixture art for event keys: the monogram holds the same box.
@@ -73,7 +73,7 @@ test.describe('event bosses', () => {
   });
 
   test('an event knowledge page carries the season label; a catalog one does not', async ({ page }) => {
-    await go(page, '/bosses/Meilin/knowledge');
+    await go(page, '/bosses/Maerin/knowledge');
     await expect(page.locator('.knowledge-hero .status-chip')).toHaveText(SEASON_4);
     await go(page, '/bosses/MaleficStar/knowledge');
     await expect(page.getByRole('heading', { level: 2, name: 'Radiant Malefic Star' })).toBeVisible();
@@ -203,12 +203,12 @@ test('capture event bosses with real art', async ({ page }) => {
   await settle();
   await page.screenshot({ path: 'e2e/.captures/real/bosses-events-blossom-light.png', animations: 'disabled' });
 
-  await go(page, '/bosses/Meilin/knowledge');
+  await go(page, '/bosses/Maerin/knowledge');
   const hero = page.locator('.knowledge-hero');
   await expect(hero.locator('.status-chip')).toHaveText(SEASON_4);
   await expect(hero.locator('img.portrait')).toBeVisible();
   await settle();
-  await page.screenshot({ path: 'e2e/.captures/real/knowledge-meilin-blossom-light.png', animations: 'disabled' });
+  await page.screenshot({ path: 'e2e/.captures/real/knowledge-maerin-blossom-light.png', animations: 'disabled' });
 });
 
 // Synthetic fixtures: MaleficStar has an invented 1-second solid-colour MP4

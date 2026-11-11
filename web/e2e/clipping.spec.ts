@@ -217,7 +217,7 @@ const STATES: Screen[] = [
   { name: 'admin/bosses/Carling/knowledge?difficulty=Extreme (HP open)', url: screenUrl(ADMIN, '/bosses/Carling/knowledge?difficulty=Extreme'), open: async (page) => { await page.locator('.guide-hp__toggle').first().click(); await expect(page.locator('.guide-hp__phase').first()).toBeVisible(); } },
   { name: 'admin/bosses/Seren/knowledge?tab=phases', url: screenUrl(ADMIN, '/bosses/Seren/knowledge?tab=phases') },
   { name: 'admin/bosses/BM/knowledge?tab=phases', url: screenUrl(ADMIN, '/bosses/BM/knowledge?tab=phases') },
-  { name: 'admin/bosses/Meilin/knowledge?tab=notes', url: screenUrl(ADMIN, '/bosses/Meilin/knowledge?tab=notes') },
+  { name: 'admin/bosses/Maerin/knowledge?tab=notes', url: screenUrl(ADMIN, '/bosses/Maerin/knowledge?tab=notes') },
   { name: 'admin/bosses/Carling/knowledge?tab=sources', url: screenUrl(ADMIN, '/bosses/Carling/knowledge?tab=sources') },
   {
     name: 'admin/bosses/BM/knowledge?tab=strategies (steps open)',

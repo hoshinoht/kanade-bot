@@ -1,17 +1,17 @@
-boss: Meilin
+boss: Maerin
 event:
   name: Challengers World Season 4
-  availability: 'KMS Challengers World Season 4 ran 18 Jun – 17 Sep 2026. Expected in MapleSEA around Nov 2026 (not yet announced); MapleSEA names may differ.'
-  aliases: [Maerin, 메이린]
-summary: 'Meilin (also called Maerin), Guide of Destiny, is a solo fortune-teller fight: clear her Destiny patterns to fill Remnants of Destiny, borrow another class''s burst skill (Chaos) at the altar, and match three class icons to earn a powerful Tab skill (Order).'
+  availability: 'MapleSEA: 12 Nov 2026 at 10:00 to 9 Mar 2027 at 23:59 SGT, in Challengers World Season 4 only.'
+  aliases: [Meilin, 메이린]
+summary: 'Maerin (also called Meilin), Guide of Destiny, is a solo fortune-teller fight: clear her Destiny patterns to fill Remnants of Destiny, borrow another class''s burst skill (Chaos) at the altar, and match three class icons to earn a powerful Tab skill (Order).'
 lead: 'Solo fortune-teller fight: clear Destiny patterns to fill the gauge, borrow other classes'' bursts (Chaos) and earn an Order skill.'
 core:
 - title: Rules
   text: 'Challengers World characters only. Solo, 20 minutes, 5 lives, 10s potions, 380% PDR.'
   detail: Challengers World characters only. Solo, 20-minute limit, 5 lives, 10s potion cooldown, 380% PDR. One HP bar; at 50% she becomes immune, strips all debuffs and binds, and transforms into Phase 2.
 - title: Weekly clear
-  text: 'One per Maple ID across Normal and Hard (KMS reset Thursday 00:00), outside the boss limit.'
-  detail: One clear per Maple ID per week, shared by Normal and Hard (KMS reset Thursday 00:00), not counted in the weekly boss limit.
+  text: 'One per Maple ID across Normal and Hard. Resets Wednesday at 23:59 SGT.'
+  detail: One clear per Maple ID per week, shared by Normal and Hard and outside the weekly boss clear limit. MapleSEA resets the count every Wednesday at 23:59 SGT.
 - title: Remnants of Destiny
   text: '0–1,000 gauge, filled mostly by clearing Destiny patterns (far less on Hard).'
   detail: Remnants of Destiny gauge (0 to 1,000) fills slowly over time and by a large amount for each Destiny pattern you clear. Her hits and failed Destiny patterns drain it; on Hard the diagonal map explosions drain it too. Hard gives far less gauge per cleared pattern than Normal.
@@ -97,15 +97,15 @@ tips:
   text: 'A 2-minute or Origin burst. Bind Order stacks with your binds; +1 Ascent is the weakest roll.'
   detail: Most players save Order for a 2-minute or Origin burst. Stack the bind Order with your existing binds; reset-Origin also resets her Origin bind resistance. Reset-5th lets you run a second normal burst at once, but her bind resistance is not reset. +1 Ascent is the weakest roll.
 notes:
-- title: KMS seasonal boss
-  text: 'Not in the catalog or MapleSEA yet; names follow Orange Mushroom (who spells her Maerin).'
-  detail: Not in the boss catalog; it is a KMS seasonal boss that MapleSEA has not released. Pattern names follow Orange Mushroom's KMS translations (which spell her Maerin) and may differ in MapleSEA.
-- title: KMS values only
+- title: MapleSEA entry
+  text: 'Speak to Annette in Challengers World. Normal Lv. 270, Hard Lv. 280.'
+  detail: Speak to Annette in Henesys, Nameless Village, Cernium Square or the City of Researchers. Zero characters must also complete Chapter 2 of their story quest.
+- title: KMS fight data
   text: 'She launched with OVERDRIVE; the 20-minute limit is her own.'
-  detail: All values are KMS values. She launched alongside KMS OVERDRIVE, so there are no separate pre-OVERDRIVE numbers; the 20-minute limit is her own.
+  detail: The fight values and pattern names come from KMS guides. Maerin launched with KMS OVERDRIVE.
 - title: Clear credit
-  text: 'Also defeat the Forbidden Sacred Object in the reward map (fixed damage per hit).'
-  detail: A clear only counts after you also defeat the Forbidden Sacred Object in the reward map, which takes fixed damage per hit.
+  text: 'For the Hard first-clear mission, also defeat the Forbidden Relic in the reward map.'
+  detail: MapleSEA requires you to survive and defeat the Forbidden Relic after Maerin (Hard) for first-clear mission credit. The regular defeat mission requires defeating Maerin solo and entering the reward map.
 difficulties:
 - name: Normal
   entry_level: 270
@@ -134,7 +134,7 @@ strategies:
   damage: medium
   payoff: About one extra borrowed burst per minute plus an Order skill roughly every three minutes
   steps:
-  - Stay glued to Meilin and clear every Destiny pattern so the gauge fills about once per pattern cycle.
+  - Stay glued to Maerin and clear every Destiny pattern so the gauge fills about once per pattern cycle.
   - Take the altar pick at once, choosing picks that complete the three class icons for an Order.
   - Fire each held Chaos skill in a burst or semi-burst before the next full gauge, so the altar does not overwrite it.
 - name: P2 sword and storm iframes
@@ -163,6 +163,11 @@ strategies:
   - Restart runs with poor Order rolls; one guide ranks reset-5th, then +20% final damage, then the bind, though the best roll depends on class.
   - Hide heavy skill and Soul effects so the diagonal explosions and gauge stay readable.
 sources:
+- url: https://www.maplesea.com/updates/view/v255_Maerin/
+  title: '[v255] - Seasonal Boss: Guide of Destiny, Maerin'
+  author: MapleStorySEA
+  kind: official
+  fetched: '2026-11-11'
 - url: https://namu.wiki/w/%EB%A9%94%EC%9D%B4%EB%A6%B0(%EB%A9%94%EC%9D%B4%ED%94%8C%EC%8A%A4%ED%86%A0%EB%A6%AC)
   title: 메이린(메이플스토리)
   author: Namu Wiki contributors
