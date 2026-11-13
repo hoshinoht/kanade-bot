@@ -9,6 +9,19 @@ use kanade_llm::governor::GroupSnapshot;
 
 #[derive(Serialize)]
 #[cfg_attr(test, derive(ts_rs::TS))]
+pub struct DigestHold {
+    pub attempt_id: String,
+    pub week_start: String,
+    pub attempted_at: String,
+    pub channel_id: String,
+    #[cfg_attr(test, ts(optional = nullable))]
+    pub channel_name: Option<String>,
+    #[cfg_attr(test, ts(optional = nullable))]
+    pub channel_url: Option<String>,
+}
+
+#[derive(Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct Permits {
     pub in_use: u32,
     pub total: u32,

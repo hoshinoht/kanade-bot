@@ -24,8 +24,10 @@ use crate::{
     api::{
         auth::AdminSession,
         dto::{
-            Named, iso_instant,
-            limits::{AdmissionWindow, Allowance as AllowanceRow, Limits, Quota, group},
+            Named, iso_date, iso_instant,
+            limits::{
+                AdmissionWindow, Allowance as AllowanceRow, DigestHold, Limits, Quota, group,
+            },
         },
         error::ApiError,
         listeners::Site,
@@ -36,7 +38,9 @@ use crate::{
 use kanade_chat::pilot::{Allowance, AllowanceSnapshot, MemberUsage};
 use kanade_domain::{
     members::MemberProfile,
+    notify::JournalError,
     settings::{RowDiff, SettingsChange},
+    time::ZonedDateTime,
 };
 use kanade_store::replays::{ReplayScope, StoredReplay};
 
@@ -60,6 +64,10 @@ pub fn routes() -> Router<Arc<Site>> {
             axum::routing::delete(reset_window),
         )
         .route("/api/admin/digest", post(digest))
+        .route(
+            "/api/admin/digest/recovery",
+            get(digest_holds).post(release_digest_hold),
+        )
 }
 
 pub(super) fn actor(session: &AdminSession) -> String {
@@ -84,7 +92,7 @@ fn digest_result(result: DigestPostResult) -> Result<(), Refusal> {
         }
         DigestPostResult::Unconfirmed => Err(Refusal::conflict(
             "digest_unconfirmed",
-            "Digest delivery could not be confirmed. Check Discord and the delivery log before trying again; an earlier attempt may have posted it.",
+            "Digest delivery could not be confirmed. Check Discord before trying again; an earlier attempt may have posted it.",
         )),
         DigestPostResult::Rejected => Err(Refusal::unprocessable(
             "digest_rejected",
@@ -310,6 +318,85 @@ async fn clear_window(
 struct DigestBody {
     week: String,
     channel_id: Option<String>,
+}
+
+async fn digest_holds(State(site): State<Arc<Site>>, _session: AdminSession) -> Reply {
+    let state = state(&site)?;
+    let channels = state.channels.channels();
+    let zone = state.policy.zone();
+    let mut holds = Vec::new();
+    for week in frames(state, state.now())? {
+        let Some(hold) = state
+            .store
+            .digest_hold(week.start)
+            .await
+            .map_err(Refusal::unavailable)?
+        else {
+            continue;
+        };
+        let start =
+            ZonedDateTime::from_instant(&week.start, zone).map_err(|_| ApiError::UNAVAILABLE)?;
+        let attempted_at = ZonedDateTime::from_instant(&hold.intended_at, zone)
+            .map_err(|_| ApiError::UNAVAILABLE)?
+            .isoformat();
+        holds.push(DigestHold {
+            attempt_id: hold.attempt.0,
+            week_start: iso_date(start.wall().date()),
+            attempted_at,
+            channel_name: channels
+                .iter()
+                .find(|channel| channel.id == hold.channel_id)
+                .map(|channel| channel.name.clone()),
+            channel_url: state
+                .guild_id
+                .as_ref()
+                .map(|guild| format!("https://discord.com/channels/{guild}/{}", hold.channel_id)),
+            channel_id: hold.channel_id,
+        });
+    }
+    Ok(Json(holds).into_response())
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct DigestRecoveryBody {
+    attempt_id: String,
+}
+
+fn digest_hold_changed() -> Refusal {
+    Refusal::conflict(
+        "digest_attempt_changed",
+        "That digest attempt has changed. Check the current delivery status.",
+    )
+}
+
+async fn release_digest_hold(
+    State(site): State<Arc<Site>>,
+    session: AdminSession,
+    body: Result<Json<DigestRecoveryBody>, JsonRejection>,
+) -> Reply {
+    let state = state(&site)?;
+    let Json(body) = body.map_err(bad_body)?;
+    let now = state.now();
+    for week in frames(state, now)? {
+        let hold = state
+            .store
+            .digest_hold(week.start)
+            .await
+            .map_err(Refusal::unavailable)?;
+        if let Some(hold) = hold.filter(|hold| hold.attempt.0 == body.attempt_id) {
+            state
+                .store
+                .release_digest_hold(hold.attempt, actor(&session), now)
+                .await
+                .map_err(|error| match error {
+                    JournalError::StateChanged(_) => digest_hold_changed(),
+                    _ => ApiError::UNAVAILABLE.into(),
+                })?;
+            return Ok(Json(json!({"message": "Digest hold cleared."})).into_response());
+        }
+    }
+    Err(digest_hold_changed())
 }
 
 async fn digest(

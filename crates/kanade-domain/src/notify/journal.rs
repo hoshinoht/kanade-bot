@@ -265,6 +265,14 @@ pub struct AttemptRecord {
     pub targets: Vec<DeliveryTarget>,
 }
 
+/// An unresolved digest whose send operation has ended.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct HeldDigest {
+    pub attempt: AttemptId,
+    pub channel_id: String,
+    pub intended_at: DateTime<Utc>,
+}
+
 /// The digest bookkeeping a weekly tick reads.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct DigestLog {
@@ -337,6 +345,11 @@ pub trait DeliveryJournal {
     ) -> impl Future<Output = Result<Option<AttemptRecord>, JournalError>> + Send;
 
     fn load_digests(&self) -> impl Future<Output = Result<DigestLog, JournalError>> + Send;
+
+    fn held_digest(
+        &self,
+        week: DateTime<Utc>,
+    ) -> impl Future<Output = Result<Option<HeldDigest>, JournalError>> + Send;
 
     /// The receipt of the bound attempt claimed by `(source, ordinal)`, if
     /// any: recovers a post bound before its caller recorded it.

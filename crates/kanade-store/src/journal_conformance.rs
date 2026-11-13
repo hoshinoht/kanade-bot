@@ -659,7 +659,16 @@ async fn rejected_digest_raises_the_marker<S: DeliveryJournal>(store: &S) {
 async fn unproven_digest_raises_the_marker<S: DeliveryJournal>(store: &S) {
     let old = lease(store).await;
     let attempt = fresh(store, &old, &digest_intent()).await;
+    assert_eq!(store.held_digest(week()).await.expect("live send"), None);
     store.recover_on_start(at(9)).await.expect("recovery");
+    let held = store
+        .held_digest(week())
+        .await
+        .expect("read hold")
+        .expect("recoverable digest");
+    assert_eq!(held.attempt, attempt);
+    assert_eq!(held.channel_id, HOME);
+    assert_eq!(held.intended_at, at(8));
     store
         .retire_unproven(&attempt, "operator:alice", "no evidence either way", at(9))
         .await
@@ -669,6 +678,9 @@ async fn unproven_digest_raises_the_marker<S: DeliveryJournal>(store: &S) {
         DigestAction::UpToDate,
         "unproven_digest_raises_the_marker: the tick never reposts"
     );
+    assert_eq!(store.held_digest(week()).await.expect("retired"), None);
+    let next = lease(store).await;
+    assert_ne!(fresh(store, &next, &digest_intent()).await, attempt);
 }
 
 async fn card_runs_survive_a_reminder_rebuild<S: ScheduleStore + DeliveryJournal + CardIndex>(

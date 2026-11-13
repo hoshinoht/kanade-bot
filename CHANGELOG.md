@@ -15,7 +15,7 @@ Clearer weekly digest results and steadier run controls in the admin app.
 
 ### Fixes
 
-- Fixed the weekly digest button reporting a successful post when delivery was rejected, unconfirmed or blocked by an earlier attempt; admins now see an error and operators can inspect the result in the log.
+- Fixed the weekly digest button reporting success before delivery was confirmed and let admins clear a stuck attempt in Weekly digest after checking the original Discord channel.
 - Fixed the run pane replaying its entrance animation when an admin changes a member's answer.
 
 ## 1.0.0

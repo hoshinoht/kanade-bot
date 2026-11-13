@@ -48,8 +48,8 @@ pub use intent::{
 pub use journal::{
     ActiveClaims, AttemptId, AttemptRecord, AttemptState, Claim, DECLINE_RETRACTION_ACTOR,
     DECLINE_RETRACTION_REASON, DEDUPE_NAMESPACE, DIGEST_MARKER_KEY, DIGEST_REPLACEMENT_ACTOR,
-    DIGEST_REPLACEMENT_REASON, DedupeKey, DeliveryJournal, DigestLog, JournalError, Lease,
-    NOT_SENT_ACTOR, REJECTED_ACTOR, REQUEST_FINGERPRINT_VERSION, Receipt, Recovery,
+    DIGEST_REPLACEMENT_REASON, DedupeKey, DeliveryJournal, DigestLog, HeldDigest, JournalError,
+    Lease, NOT_SENT_ACTOR, REJECTED_ACTOR, REQUEST_FINGERPRINT_VERSION, Receipt, Recovery,
     check_resolution, claim_key, effect_ordinal, request_fingerprint,
 };
 pub use notice::plan_notice;

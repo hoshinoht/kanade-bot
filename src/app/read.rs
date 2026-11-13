@@ -34,7 +34,10 @@ use kanade_domain::{
         MaskedTurn, ModelLogStore, RewriteFacets, RewriteFilter, RewriteLog, RewriteLogStore,
         WatchedMessage,
     },
-    notify::{CardRecord, DeliveryJournal, PostedCard, ReminderCardStore, WeeklyDigest},
+    notify::{
+        AttemptId, CardRecord, DeliveryJournal, HeldDigest, JournalError, PostedCard,
+        ReminderCardStore, WeeklyDigest,
+    },
     ownership::{OwnerRequest, OwnerRequestStatus, OwnerRequestStore},
     proposals::{ProposalCardStore, StoredCard},
     schedule::ScheduleSnapshot,
@@ -256,6 +259,13 @@ pub trait ReadStore: Send + Sync {
     fn rewrite_log_facets(&self) -> ReadFuture<'_, RewriteFacets>;
     /// Every weekly digest card, active or retired (the Config page's last post).
     fn digests(&self) -> ReadFuture<'_, Vec<WeeklyDigest>>;
+    fn digest_hold(&self, week: DateTime<Utc>) -> ReadFuture<'_, Option<HeldDigest>>;
+    fn release_digest_hold(
+        &self,
+        attempt: AttemptId,
+        actor: String,
+        at: DateTime<Utc>,
+    ) -> Pin<Box<dyn Future<Output = Result<(), JournalError>> + Send + '_>>;
     /// Recorded Config section saves, newest first.
     fn settings_changes(&self, query: SettingsChangeQuery) -> ReadFuture<'_, Vec<SettingsChange>>;
     /// Record a History entry that writes no settings row (a Limits window
@@ -710,6 +720,31 @@ where
                 .await
                 .map(|log| log.digests)
                 .map_err(|error| StoreError::Backend(error.to_string()))
+        })
+    }
+
+    fn digest_hold(&self, week: DateTime<Utc>) -> ReadFuture<'_, Option<HeldDigest>> {
+        Box::pin(async move {
+            self.held_digest(week)
+                .await
+                .map_err(|error| StoreError::Backend(error.to_string()))
+        })
+    }
+
+    fn release_digest_hold(
+        &self,
+        attempt: AttemptId,
+        actor: String,
+        at: DateTime<Utc>,
+    ) -> Pin<Box<dyn Future<Output = Result<(), JournalError>> + Send + '_>> {
+        Box::pin(async move {
+            self.retire_unproven(
+                &attempt,
+                &actor,
+                "Admin checked Discord and found no digest",
+                at,
+            )
+            .await
         })
     }
 

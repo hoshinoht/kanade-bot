@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { Channel, LastDigest } from '@kanade/api-types';
+  import type { Channel, DigestHold, LastDigest } from '@kanade/api-types';
   import { Icon, Modal, Select, weekStartLabel, type Toaster } from '@kanade/ui';
   import '@kanade/ui/styles/core/select.scss';
   import SettingsPanel from './SettingsPanel.svelte';
@@ -14,14 +14,20 @@
   const uid = $props.id();
 
   const channels = new Resource<Channel[]>('/api/admin/channels');
+  const recoveryPath = '/api/admin/digest/recovery';
+  const holds = new Resource<DigestHold[]>(recoveryPath, { topics: ['delivery'] });
   $effect(() => {
     void channels.load();
+    void holds.load();
   });
+  $effect(() => holds.follow());
   let week = $state<'this' | 'next'>('this');
   let channel = $state('');
   let busy = $state(false);
   let error = $state('');
   let asking = $state(false);
+  let recovery = $state<DigestHold | null>(null);
+  let postButton: HTMLButtonElement;
   const channelName = $derived(channel ? (channels.data?.find((c) => c.id === channel)?.name ?? channel) : 'the digest channel');
   // `posted_at` already carries the guild's offset, so its own date and clock are guild time.
   const lastAt = $derived(last ? `${weekStartLabel(last.posted_at)} ${last.posted_at.slice(11, 16)}` : '');
@@ -36,12 +42,26 @@
     if (busy) return;
     busy = true;
     const result = await send((c) => c.post<{ message: string }>('/api/admin/digest', { week, channel_id: channel || null }));
-    busy = false;
     error = result.ok ? '' : result.message;
     if (result.ok) {
       toaster.show({ message: result.value.message, tone: 'ok' });
       void onposted?.();
     }
+    await holds.refresh();
+    busy = false;
+  }
+
+  async function release(hold: DigestHold) {
+    if (busy) return;
+    busy = true;
+    const result = await send((c) => c.post<{ message: string }>(recoveryPath, { attempt_id: hold.attempt_id }));
+    error = result.ok ? '' : result.message;
+    if (result.ok) {
+      holds.data = (holds.data ?? []).filter((item) => item.attempt_id !== hold.attempt_id);
+      toaster.show({ message: 'Digest hold cleared. You can post it now.', tone: 'ok' });
+    }
+    await holds.refresh();
+    busy = false;
   }
 </script>
 
@@ -64,9 +84,21 @@
         noun="channels"
       />
     </div>
-    <button class="btn btn--primary settings__key" type="submit" aria-disabled={busy}>Post it now…</button>
+    <button class="btn btn--primary settings__key" type="submit" aria-disabled={busy} bind:this={postButton}>Post it now…</button>
   </form>
   {#if error}<p class="field__error" role="alert">{error}</p>{/if}
+  {#each holds.data ?? [] as hold (hold.attempt_id)}
+    <section class="settings__card digest__last" aria-label="Unconfirmed digest for {weekStartLabel(hold.week_start)}">
+      <h4 class="cap">Unconfirmed delivery</h4>
+      <p class="digest__lastline">
+        Week of {weekStartLabel(hold.week_start)} · Attempted {weekStartLabel(hold.attempted_at)} at {hold.attempted_at.slice(11, 16)}
+        in {#if hold.channel_url}<a {...discordLink(hold.channel_url)}>{hold.channel_name ?? hold.channel_id}<Icon name="external-link" /></a>{:else}{hold.channel_name ?? hold.channel_id}{/if}
+      </p>
+      <div>
+        <button class="btn" type="button" disabled={busy} onclick={() => (recovery = hold)}>Clear hold…</button>
+      </div>
+    </section>
+  {/each}
   <p class="settings__box">
     It follows clears and answers through the week and replaces an earlier digest for the same week. “Post it now…” asks first.
   </p>
@@ -93,6 +125,28 @@
         close();
         void post();
       }}>Post it now</button
+    >
+  {/snippet}
+</Modal>
+
+<Modal open={recovery !== null} onclose={() => (recovery = null)} returnFocus={() => (busy ? postButton : null)} title="Clear the digest hold?" narrow alert describedby="{uid}-recovery">
+  {#if recovery}
+    <p id="{uid}-recovery">
+      Check {recovery.channel_name ?? recovery.channel_id} in Discord for the digest for the week of
+      {weekStartLabel(recovery.week_start)}. If it’s missing, clear this attempt so you can post the digest again.
+    </p>
+  {/if}
+  {#snippet footer(close)}
+    <button class="btn" type="button" onclick={close}>Cancel</button>
+    <button
+      class="btn btn--risk"
+      type="button"
+      disabled={busy}
+      onclick={() => {
+        const hold = recovery;
+        close();
+        if (hold) void release(hold);
+      }}>I checked Discord · clear hold</button
     >
   {/snippet}
 </Modal>

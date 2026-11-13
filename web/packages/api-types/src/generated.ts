@@ -2550,6 +2550,8 @@ export type Limits = { groups: Array<BackendGroup>, admission: AdmissionWindow, 
  */
 generated_at: string, };
 
+export type DigestHold = { attempt_id: string, week_start: string, attempted_at: string, channel_id: string, channel_name?: string | null, channel_url?: string | null, };
+
 export type ReplyStyleRef = { key: string, 
 /**
  * The profile's label; the key when its file is no longer readable.

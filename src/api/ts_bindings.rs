@@ -347,6 +347,7 @@ fn bindings() -> String {
         .add::<limits::Quota>()
         .add::<limits::Allowance>()
         .add::<limits::Limits>()
+        .add::<limits::DigestHold>()
         // Account
         .add::<account::ReplyStyleRef>()
         .add::<account::ReplyStyle>()

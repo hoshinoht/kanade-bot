@@ -23,9 +23,9 @@ use crate::Written;
 use kanade_domain::model_log::PRUNE_BATCH;
 use kanade_domain::notify::{
     ActiveClaims, AttemptId, AttemptRecord, AttemptState, Claim, DIGEST_MARKER_KEY,
-    DeliveryJournal, DeliveryTarget, DigestLog, DrainReason, JournalError, Lease, NoticeCursor,
-    NoticeOutbox, NotificationIntent, OutboxNotice, PendingNotices, Receipt, Recovery,
-    WeeklyDigest,
+    DeliveryJournal, DeliveryTarget, DigestLog, DrainReason, HeldDigest, JournalError, Lease,
+    NoticeCursor, NoticeOutbox, NotificationIntent, OutboxNotice, PendingNotices, Receipt,
+    Recovery, WeeklyDigest,
 };
 use kanade_domain::time::{from_iso, to_iso};
 
@@ -271,6 +271,34 @@ pub(super) async fn release_and_retire(
 }
 
 impl DeliveryJournal for SqliteStore {
+    async fn held_digest(&self, week: DateTime<Utc>) -> Result<Option<HeldDigest>, JournalError> {
+        let mut conn = self.reader().await.map_err(backend)?;
+        let row: Option<(String, String, String)> = sqlx::query_as(
+            "SELECT a.attempt_id, a.channel_id, a.intended_at
+             FROM delivery_attempt_targets t JOIN delivery_attempts a USING (attempt_id)
+             WHERE t.binding_type = 'digest' AND t.key_primary = ?1 AND t.released_at IS NULL
+               AND a.effect_kind = 'digest' AND a.dedupe_scope = 'native'
+               AND a.dedupe_active = 1 AND a.state IN ('intent', 'indeterminate')
+               AND a.channel_id IS NOT NULL AND a.message_id IS NULL
+               AND NOT EXISTS (SELECT 1 FROM maintenance_leases l
+                               WHERE l.operation_id = a.operation_id AND l.lifecycle = 'live')
+               AND (SELECT count(*) FROM delivery_attempt_targets s
+                    WHERE s.attempt_id = a.attempt_id) = 1",
+        )
+        .bind(iso(&week)?)
+        .fetch_optional(&mut *conn)
+        .await
+        .map_err(backend)?;
+        row.map(|(id, channel_id, intended_at)| {
+            Ok(HeldDigest {
+                attempt: AttemptId(id),
+                channel_id,
+                intended_at: from_iso(&intended_at).map_err(corrupt)?,
+            })
+        })
+        .transpose()
+    }
+
     async fn load_view(&self) -> Result<ActiveClaims, JournalError> {
         let mut conn = self.reader().await.map_err(backend)?;
         let rows = sqlx::query(

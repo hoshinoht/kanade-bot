@@ -1318,11 +1318,46 @@ async fn a_manual_digest_reports_delivery_failures_and_only_confirms_a_bound_pos
             "digest_unconfirmed"
         );
         assert_eq!(harness.fake.count(Op::Create), creates);
+        let recovery_path = "/api/admin/digest/recovery";
+        let (status, _, text) = http(
+            address,
+            request("GET", recovery_path, &[("Cookie", &cookie)], None),
+        )
+        .await;
+        assert_eq!(status, 200, "{text}");
+        let holds: Vec<Value> = serde_json::from_str(&text).unwrap();
+        assert_eq!(holds.len(), 1, "{holds:?}");
+        assert_eq!(
+            holds[0]["channel_id"].as_str(),
+            Some(HOME_B.to_string().as_str())
+        );
+        let release_body = serde_json::json!({"attempt_id": holds[0]["attempt_id"]}).to_string();
+        let release = || {
+            request(
+                "POST",
+                recovery_path,
+                &[
+                    ("Origin", ORIGIN),
+                    ("Cookie", &cookie),
+                    ("X-Kanade-CSRF", &csrf),
+                ],
+                Some(&release_body),
+            )
+        };
+        let (status, _, text) = http(address, release()).await;
+        assert_eq!(status, 200, "{text}");
+        assert_eq!(harness.fake.count(Op::Create), creates);
+        harness.fake.script(Op::Create, Step::Succeed);
+        let (status, _, text) = http(address, post()).await;
+        assert_eq!(status, 200, "{text}");
+        assert_eq!(harness.fake.count(Op::Create), creates + 1);
+        let (status, _, text) = http(address, release()).await;
+        assert_eq!(status, 409, "{text}");
         trigger.send(()).unwrap();
     };
     let ((served, _, _), ()) = tokio::join!(serve, scenario);
     assert!(served.is_ok(), "{served:?}");
-    assert_eq!(logged("manual_digest_finished").len(), 5);
+    assert_eq!(logged("manual_digest_finished").len(), 6);
 }
 
 /// A manual digest (`POST /api/admin/digest`) is inside its Discord post

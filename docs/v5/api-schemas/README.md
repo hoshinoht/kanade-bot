@@ -162,6 +162,8 @@ Pointers are `<file>#/$defs/<Name>`.
 | `POST /api/admin/setup/restart` | `202`, no body (fresh sign-in as above; checks the configuration and secrets the next start reads, then shuts down gracefully for the supervisor to start again; 409 `not_supervised` without one, 422 `would_fail` naming what would fail) |
 | `POST /api/admin/config/profiles/reload` | `common.json#/$defs/ReloadResult` |
 | `POST /api/admin/digest` | `common.json#/$defs/Message` (200 only after a confirmed, journal-bound Discord post; 409 `digest_unconfirmed` when a send or replacement cannot be confirmed or an earlier unresolved attempt prevents a retry; 422 `digest_rejected` when Discord refuses the post; 503 `unavailable` when nothing was sent or delivery is unavailable) |
+| `GET /api/admin/digest/recovery` | Array of `{attempt_id, week_start, attempted_at, channel_id, channel_name, channel_url}` for unresolved attempts this week and next whose sends have ended; dates use guild time and the channel name and URL can be null. |
+| `POST /api/admin/digest/recovery` | Body `{attempt_id}` confirms the admin checked Discord and found no digest. Retires that exact attempt with attribution and returns `common.json#/$defs/Message`. The admin then posts through the normal digest control. Returns 409 `digest_attempt_changed` if the attempt is no longer eligible. |
 | `POST /api/admin/headers/rewrite` | `202` `common.json#/$defs/Message` (the run continues in the background; `200` when nothing posted this boss week has a header; 409 `ApiError` `rewrite_running`/`rewrite_off`) |
 | `GET /api/admin/access`, `POST /api/admin/access/recheck` | `config.json#/$defs/AccessReport` |
 | `GET /api/admin/history?week=&actor=&run=&before=&limit=` | `history.json#/$defs/HistoryPage` |

@@ -912,6 +912,47 @@ test.describe('config sections save', () => {
     await expect(panel.getByRole('alert')).toHaveCount(0);
   });
 
+  test('weekly digest: clears an unconfirmed attempt after checking Discord', async ({ page }) => {
+    let held = true;
+    const channelUrl = 'https://discord.com/channels/120000000000000001/120000000000000004';
+    await page.route(`${ADMIN}/api/admin/digest/recovery`, async (route) => {
+      if (route.request().method() === 'POST') {
+        expect(route.request().postDataJSON()).toEqual({ attempt_id: 'digest-attempt' });
+        held = false;
+        await route.fulfill({ json: { message: 'Digest hold cleared.' } });
+      } else {
+        await route.fulfill({
+          json: held
+            ? [{
+                attempt_id: 'digest-attempt',
+                week_start: '2026-09-24',
+                attempted_at: '2026-09-29T12:00:00+08:00',
+                channel_id: '120000000000000004',
+                channel_name: '#fa-night',
+                channel_url: channelUrl,
+              }]
+            : [],
+        });
+      }
+    });
+    const panel = await config(page);
+    await page.getByRole('tab', { name: 'Weekly digest' }).click();
+    const attempt = panel.getByRole('region', { name: 'Unconfirmed digest for Thu 24 Sep' });
+    await expect(attempt.getByRole('link', { name: '#fa-night' })).toHaveAttribute(
+      'href',
+      'discord://-/channels/120000000000000001/120000000000000004',
+    );
+    await attempt.getByRole('button', { name: 'Clear hold…' }).click();
+    const dialog = page.getByRole('alertdialog', { name: 'Clear the digest hold?' });
+    await dialog.getByRole('button', { name: 'Cancel' }).click();
+    await expect(attempt).toBeVisible();
+    await attempt.getByRole('button', { name: 'Clear hold…' }).click();
+    await dialog.getByRole('button', { name: 'I checked Discord · clear hold' }).click();
+    await expect(toast(page, 'Digest hold cleared. You can post it now.')).toBeVisible();
+    await expect(attempt).toHaveCount(0);
+    await expect(panel.getByRole('button', { name: 'Post it now…' })).toBeFocused();
+  });
+
   test('set in kanade.toml: read-only values with reasons', async ({ page }) => {
     const panel = await config(page);
     // Read-only table: values, reasons, and no inputs at all.
